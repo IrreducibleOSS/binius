@@ -1,0 +1,47 @@
+[package]
+name = "binius"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ulvetanna Team <ulvt_dev@ulvetanna.io>"]
+
+[dependencies]
+assert_matches = "1.5.0"
+bytemuck = { version = "1.14.0", features = ["derive", "min_const_generics", "must_cast"]}
+cfg-if = "1.0.0"
+derive_more = "0.99.17"
+digest = "0.10.7"
+ff = "0.13.0"
+groestl = "0.10.1"
+p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "6049a30c3b1f5351c3eb0f7c994dc97e8f68d10d" }
+p3-commit = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "6049a30c3b1f5351c3eb0f7c994dc97e8f68d10d" }
+p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "6049a30c3b1f5351c3eb0f7c994dc97e8f68d10d" }
+p3-merkle-tree = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "6049a30c3b1f5351c3eb0f7c994dc97e8f68d10d" }
+p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "6049a30c3b1f5351c3eb0f7c994dc97e8f68d10d" }
+rand = "0.8.5"
+static_assertions = "1.1.0"
+subtle = "2.5.0"
+thiserror = "1.0.47"
+
+[dev-dependencies]
+criterion = "0.5.1"
+hex-literal = "0.4.1"
+proptest = "1.2.0"
+
+[lib]
+bench = false
+
+[[bench]]
+name = "binary_field"
+harness = false
+
+[[bench]]
+name = "binary_field_packed"
+harness = false
+
+[[bench]]
+name = "additive_ntt"
+harness = false
+
+[[bench]]
+name = "sumcheck"
+harness = false
