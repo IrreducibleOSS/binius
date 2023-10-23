@@ -12,6 +12,7 @@ use std::{
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+use subtle::{Choice, ConstantTimeEq};
 
 use super::constants::*;
 use crate::field::{
@@ -33,6 +34,18 @@ macro_rules! binary_tower_packed_shared {
 		impl From<u128> for $name {
 			fn from(val: u128) -> Self {
 				Self(unsafe { _mm_loadu_si128(&val as *const u128 as *const __m128i) })
+			}
+		}
+
+		impl ConstantTimeEq for $name {
+			fn ct_eq(&self, other: &Self) -> Choice {
+				let mut a = 0u128;
+				let mut b = 0u128;
+				unsafe {
+					_mm_storeu_si128(&mut a as *mut u128 as *mut __m128i, self.0);
+					_mm_storeu_si128(&mut b as *mut u128 as *mut __m128i, other.0);
+				}
+				a.ct_eq(&b)
 			}
 		}
 

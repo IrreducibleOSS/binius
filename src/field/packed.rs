@@ -10,6 +10,7 @@ use std::{
 	iter::{self, Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+use subtle::ConstantTimeEq;
 
 use super::Error;
 
@@ -19,6 +20,7 @@ pub trait PackedField:
 	+ Copy
     + Eq
 	+ Sized
+	+ ConstantTimeEq
 	+ Add<Output = Self>
 	+ Sub<Output = Self>
 	+ Mul<Output = Self>

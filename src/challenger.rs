@@ -30,7 +30,6 @@ where
 {
 	pub fn new() -> Self {
 		Self {
-			// TODO: This shouldn't be a buffer, it should be a hasher state
 			hasher: H::new(),
 			output_buffer: H::Digest::default(),
 			output_index: H::Digest::WIDTH,
@@ -126,10 +125,8 @@ where
 	}
 }
 
-/// Sample a u32 with a specified number of bits from a HashChallenger. If the requested number
-/// of bits is unsupported, [`sample_bits`] returns an error with the maximum number of bits
-/// supported.
-impl<F, H> CanSampleBits<Result<u32, usize>> for HashChallenger<F, H>
+/// Sample a usize with a specified number of bits from a HashChallenger.
+impl<F, H> CanSampleBits<usize> for HashChallenger<F, H>
 where
 	F: Field,
 	H: Hasher<F>,
@@ -138,12 +135,8 @@ where
 	// values
 	<H::Digest as PackedField>::Scalar: Pod + AnyBitPattern,
 {
-	fn sample_bits(&mut self, bits: usize) -> Result<u32, usize> {
-		let max_bits = 32;
-		if bits > max_bits {
-			return Err(max_bits);
-		}
-
+	fn sample_bits(&mut self, bits: usize) -> usize {
+		let bits = bits.min(usize::BITS as usize);
 		let f_bits = mem::size_of::<<H::Digest as PackedField>::Scalar>() * 8;
 
 		let mut sampled = 0;
@@ -157,16 +150,18 @@ where
 				self.flush();
 			}
 
-			let n_new_bits = (bits - bits_sampled).min(f_bits - self.output_bit_index);
+			let n_new_bits = (bits - bits_sampled)
+				.min(f_bits - self.output_bit_index)
+				.min(32);
 			let new_bits = get_bits_le(
 				bytes_of(&self.output_buffer.get(self.output_index)),
 				self.output_bit_index..self.output_bit_index + n_new_bits,
-			);
+			) as usize;
 			sampled |= new_bits << bits_sampled;
 			bits_sampled += n_new_bits;
 			self.output_bit_index += n_new_bits;
 		}
-		Ok(sampled)
+		sampled
 	}
 }
 
@@ -197,7 +192,7 @@ fn get_bits_le(bytes: &[u8], bit_range: Range<usize>) -> u32 {
 mod tests {
 	use super::*;
 	use crate::{
-		field::{BinaryField128b, BinaryField64b},
+		field::{BinaryField128b, BinaryField64b, BinaryField8b},
 		hash::GroestlHasher,
 	};
 
@@ -219,7 +214,7 @@ mod tests {
 
 	#[test]
 	fn test_groestl_challenger_can_sample_ext_field() {
-		let mut challenger = <HashChallenger<_, GroestlHasher>>::new();
+		let mut challenger = <HashChallenger<_, GroestlHasher<BinaryField8b>>>::new();
 		let _: BinaryField64b = challenger.sample();
 		let _: BinaryField128b = challenger.sample();
 		// This sample triggers a flush

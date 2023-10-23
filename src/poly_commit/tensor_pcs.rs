@@ -1,11 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
-use p3_commit::DirectMmcs;
-use p3_matrix::{dense::RowMajorMatrix, Dimensions};
-use p3_merkle_tree::MerkleTreeMmcs;
+use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
+use p3_util::log2_strict_usize;
+use rayon::prelude::*;
 use std::{
 	fmt::{self, Debug, Formatter},
+	iter,
 	iter::repeat_with,
 	marker::PhantomData,
 };
@@ -13,47 +14,55 @@ use std::{
 use super::error::{Error, VerificationError};
 use crate::{
 	field::{
-		get_packed_slice, unpack_scalars_mut, BinaryField8b, ExtensionField, PackedExtensionField,
-		PackedField,
+		get_packed_slice, unpack_scalars, unpack_scalars_mut, BinaryField8b, ExtensionField, Field,
+		PackedExtensionField, PackedField,
 	},
-	hash::{GroestlDigest, GroestlDigestCompression, GroestlHash},
+	hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher},
 	linear_code::LinearCodeWithExtensionEncoding,
+	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
 	polynomial::{Error as PolynomialError, MultilinearPoly},
-	util::log2,
 };
 
 #[derive(Debug)]
-pub struct Proof<'a, P, PE, MMCSProof>
+pub struct Proof<'a, F, PE, VCSProof>
 where
 	PE: PackedField,
 {
 	pub t_prime: MultilinearPoly<'a, PE>,
-	pub mmcs_proofs: Vec<(Vec<Vec<P>>, MMCSProof)>,
+	pub vcs_proofs: Vec<(Vec<F>, VCSProof)>,
 }
 
+/// The multilinear polynomial commitment scheme specified in [DP23].
+///
+/// [DP23]: https://eprint.iacr.org/2023/630
 #[derive(Copy, Clone)]
-pub struct TensorPCS<P, PE, LC, MMCS>
+pub struct TensorPCS<F, P, PE, LC, H, VCS>
 where
-	P: PackedField,
+	F: Field,
+	P: PackedField<Scalar = F>,
 	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	PE::Scalar: ExtensionField<F>,
 	LC: LinearCodeWithExtensionEncoding<P = P>,
-	MMCS: DirectMmcs<P>,
+	H: Hasher<F>,
+	VCS: VectorCommitScheme<H::Digest>,
 {
 	log_rows: usize,
 	code: LC,
-	mmcs: MMCS,
+	vcs: VCS,
+	_h_marker: PhantomData<H>,
 	_ext_marker: PhantomData<PE>,
 }
 
-impl<P, PE, LC, MMCS> Debug for TensorPCS<P, PE, LC, MMCS>
+impl<F, P, PE, LC, H, VCS> Debug for TensorPCS<F, P, PE, LC, H, VCS>
 where
-	P: PackedField,
+	F: Field,
+	P: PackedField<Scalar = F>,
 	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	PE::Scalar: ExtensionField<F>,
 	LC: LinearCodeWithExtensionEncoding<P = P> + Debug,
-	MMCS: DirectMmcs<P>,
+	H: Hasher<F>,
+	VCS: VectorCommitScheme<H::Digest>,
 {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		f.debug_struct("PolyCommitScheme")
@@ -63,40 +72,51 @@ where
 	}
 }
 
-impl<P, PE, LC>
-	TensorPCS<P, PE, LC, MerkleTreeMmcs<P, GroestlDigest, GroestlHash, GroestlDigestCompression>>
-where
-	P: PackedExtensionField<BinaryField8b>,
-	P::Scalar: ExtensionField<BinaryField8b>,
+impl<F, P, PE, LC>
+	TensorPCS<
+		F,
+		P,
+		PE,
+		LC,
+		GroestlHasher<F>,
+		MerkleTreeVCS<
+			GroestlDigest,
+			GroestlDigest,
+			GroestlHasher<GroestlDigest>,
+			GroestlDigestCompression,
+		>,
+	> where
+	F: ExtensionField<BinaryField8b>
+		+ PackedField<Scalar = F>
+		+ PackedExtensionField<BinaryField8b>,
+	P: PackedField<Scalar = F> + Sync,
 	PE: PackedExtensionField<P>,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	PE::Scalar: ExtensionField<F>,
 	LC: LinearCodeWithExtensionEncoding<P = P>,
 {
-	pub fn new_using_groestl(log_rows: usize, code: LC) -> Self {
-		Self {
-			log_rows,
-			code,
-			mmcs: MerkleTreeMmcs::new(GroestlHash, GroestlDigestCompression),
-			_ext_marker: PhantomData,
+	pub fn new_using_groestl_merkle_tree(log_rows: usize, code: LC) -> Result<Self, Error> {
+		if !code.len().is_power_of_two() {
+			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
+		let log_len = log2_strict_usize(code.len());
+		Self::new(log_rows, code, MerkleTreeVCS::new(log_len, GroestlDigestCompression))
 	}
 }
 
-impl<P, FE, PE, LC, MMCS> PolyCommitScheme<P, FE> for TensorPCS<P, PE, LC, MMCS>
+impl<F, P, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE> for TensorPCS<F, P, PE, LC, H, VCS>
 where
-	P: PackedField,
-	FE: ExtensionField<P::Scalar>,
-	PE: PackedField<Scalar = FE>
-		+ PackedExtensionField<P>
-		+ PackedExtensionField<FE>
-		+ PackedExtensionField<P::Scalar>,
+	F: Field,
+	P: PackedField<Scalar = F> + PackedExtensionField<F> + Send,
+	FE: ExtensionField<F>,
+	PE: PackedField<Scalar = FE> + PackedExtensionField<P> + PackedExtensionField<FE>,
 	LC: LinearCodeWithExtensionEncoding<P = P>,
-	LC::EncodeError: 'static,
-	MMCS: DirectMmcs<P>,
+	H: Hasher<F>,
+	H::Digest: Copy + Default + Send,
+	VCS: VectorCommitScheme<H::Digest>,
 {
-	type Commitment = MMCS::Commitment;
-	type Committed = MMCS::ProverData;
-	type Proof = Proof<'static, P, FE, MMCS::Proof>;
+	type Commitment = VCS::Commitment;
+	type Committed = (RowMajorMatrix<F>, VCS::Committed);
+	type Proof = Proof<'static, F, FE, VCS::Proof>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -107,20 +127,20 @@ where
 		&self,
 		poly: &MultilinearPoly<P>,
 	) -> Result<(Self::Commitment, Self::Committed), Error> {
+		// This condition is checked by the constructor.
+		debug_assert!(self.code.dim() >= P::WIDTH);
+
 		if poly.n_vars() != self.n_vars() {
 			return Err(Error::IncorrectPolynomialSize {
 				expected: self.n_vars(),
 			});
 		}
 
-		// TODO: Check this during construction. Should be an invariant of the struct.
-		assert!(self.code.dim() >= P::WIDTH);
+		let n_rows = 1 << self.log_rows;
+		let n_cols = self.code.len();
 
-		let n_cols_packed = self.code.len() / P::WIDTH;
-		let mut encoded = RowMajorMatrix::new(
-			vec![P::default(); (1 << self.log_rows) * n_cols_packed],
-			n_cols_packed,
-		);
+		let mut encoded =
+			RowMajorMatrix::new(vec![P::default(); n_rows * n_cols / P::WIDTH], n_cols / P::WIDTH);
 
 		// TODO: Create better interface/impl for batch encoding & batch NTTs
 		poly.iter_subpolynomials(self.code.dim_bits())?
@@ -132,7 +152,21 @@ where
 			})
 			.map_err(|err| Error::EncodeError(Box::new(err)))?;
 
-		Ok(self.mmcs.commit_matrix(encoded))
+		let mut transposed = vec![P::Scalar::ZERO; n_rows * n_cols];
+		transpose::transpose(unpack_scalars(&encoded.values), &mut transposed, n_cols, n_rows);
+
+		let mut digests = vec![H::Digest::default(); n_cols];
+		transposed
+			.par_chunks_exact(n_rows)
+			.map(hash::<_, H>)
+			.collect_into_vec(&mut digests);
+
+		let transposed_mat = RowMajorMatrix::new(transposed, n_rows);
+		let (commitment, vcs_committed) = self
+			.vcs
+			.commit_batch(iter::once(&digests))
+			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+		Ok((commitment, (transposed_mat, vcs_committed)))
 	}
 
 	/// Generate an evaluation proof at a *random* challenge point.
@@ -158,25 +192,30 @@ where
 			}
 			.into());
 		}
-		if !self.code.len().is_power_of_two() {
-			// This requirement is just to make sampling indices easier. With a little work it
-			// could be relaxed, but power-of-two code lengths are more convenient to work with.
-			return Err(Error::CodeLengthPowerOfTwoRequired);
-		}
-		let code_len_bits = log2(self.code.len());
+
+		let code_len_bits = log2_strict_usize(self.code.len());
 
 		let t = poly;
-		let t_prime = t.evaluate_partial(&query[self.code.dim()..])?;
+		let t_prime = t.evaluate_partial(&query[self.code.dim_bits()..])?;
 
 		challenger.observe_slice(t_prime.evals());
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))
 			.take(self.code.n_test_queries())
-			.map(|index| self.mmcs.open_batch(index, committed))
-			.collect();
+			.map(|index| {
+				let (col_major_mat, ref vcs_committed) = committed;
+				let col = col_major_mat.row_slice(index).to_vec();
+
+				let vcs_proof = self
+					.vcs
+					.prove_batch_opening(vcs_committed, index)
+					.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+				Ok((col.to_vec(), vcs_proof))
+			})
+			.collect::<Result<_, Error>>()?;
 
 		Ok(Proof {
 			t_prime,
-			mmcs_proofs: merkle_proofs,
+			vcs_proofs: merkle_proofs,
 		})
 	}
 
@@ -192,7 +231,7 @@ where
 		challenger: &mut CH,
 		commitment: &Self::Commitment,
 		query: &[FE],
-		proof: &Self::Proof,
+		proof: Self::Proof,
 		value: FE,
 	) -> Result<(), Error>
 	where
@@ -205,11 +244,6 @@ where
 		assert_eq!(self.code.len() % P::WIDTH, 0);
 		assert_eq!(self.code.len() % PE::WIDTH, 0);
 
-		let dimensions = Dimensions {
-			width: self.code.len() / P::WIDTH,
-			height: 1 << self.log_rows,
-		};
-
 		if query.len() != self.n_vars() {
 			return Err(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars(),
@@ -217,17 +251,18 @@ where
 			.into());
 		}
 
-		self.check_proof_shape(proof)?;
+		self.check_proof_shape(&proof)?;
 
 		if !self.code.len().is_power_of_two() {
 			// This requirement is just to make sampling indices easier. With a little work it
 			// could be relaxed, but power-of-two code lengths are more convenient to work with.
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
-		let code_len_bits = log2(self.code.len());
+		let code_len_bits = log2_strict_usize(self.code.len());
 
 		challenger.observe_slice(proof.t_prime.evals());
 
+		// Check evaluation of t' matches the claimed value
 		let computed_value = proof
 			.t_prime
 			.evaluate(&query[..self.code.dim_bits()])
@@ -236,6 +271,7 @@ where
 			return Err(VerificationError::IncorrectEvaluation.into());
 		}
 
+		// Encode t' into u'
 		let mut u_prime = vec![PE::default(); self.code.len() / PE::WIDTH];
 		unpack_scalars_mut::<_, FE>(&mut u_prime[..self.code.dim() / PE::WIDTH])
 			.copy_from_slice(proof.t_prime.evals());
@@ -244,22 +280,24 @@ where
 			.encode_extension_inplace(&mut u_prime)
 			.map_err(|err| Error::EncodeError(Box::new(err)))?;
 
-		let column_tests = (0..self.code.n_test_queries())
-			.map(|i| {
+		// Check vector commitment openings and get a sequence of column tests.
+		let column_tests = proof
+			.vcs_proofs
+			.into_iter()
+			.map(|(col, vcs_proof)| {
 				let index = challenger.sample_bits(code_len_bits);
+				let leaf_digest = hash::<_, H>(&col);
 
-				// Indices guaranteed in range by check_proof_shape
-				let (leaves, branch) = &proof.mmcs_proofs[i];
+				self.vcs
+					.verify_batch_opening(commitment, index, vcs_proof, iter::once(leaf_digest))
+					.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
-				self.mmcs
-					.verify_batch(commitment, &[dimensions], index, leaves, branch)
-					.map_err(|_| VerificationError::MerkleProof)?;
-
-				Ok((get_packed_slice(&u_prime, index), &leaves[0]))
+				let u_prime_i = get_packed_slice(&u_prime, index);
+				Ok((u_prime_i, col))
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		// TODO: Check evaluations of leaves match t_prime
+		// Batch evaluate all opened columns
 		let leaf_evaluations = MultilinearPoly::batch_evaluate(
 			column_tests.iter().map(|(_, leaf)| {
 				MultilinearPoly::from_values_slice(leaf)
@@ -268,6 +306,7 @@ where
 			&query[self.code.dim_bits()..],
 		);
 
+		// Check that opened column evaluations match u'
 		for ((expected, _), leaf_eval_result) in column_tests.iter().zip(leaf_evaluations) {
 			let leaf_eval = leaf_eval_result
 				.expect("leaf polynomials are the correct length by check_proof_shape");
@@ -280,42 +319,67 @@ where
 	}
 }
 
-impl<P, PE, LC, MMCS> TensorPCS<P, PE, LC, MMCS>
+impl<F, P, PE, LC, H, VCS> TensorPCS<F, P, PE, LC, H, VCS>
 where
-	P: PackedField,
+	F: Field,
+	P: PackedField<Scalar = F>,
 	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	PE::Scalar: ExtensionField<F>,
 	LC: LinearCodeWithExtensionEncoding<P = P>,
 	LC::EncodeError: 'static,
-	MMCS: DirectMmcs<P>,
+	H: Hasher<F>,
+	VCS: VectorCommitScheme<H::Digest>,
 {
+	/// Construct a [`TensorPCS`].
+	///
+	/// Throws if the linear code block length is not a power of 2.
+	/// Throws if the packing width does not divide the code dimension.
+	pub fn new(log_rows: usize, code: LC, vcs: VCS) -> Result<Self, Error> {
+		if !code.len().is_power_of_two() {
+			// This requirement is just to make sampling indices easier. With a little work it
+			// could be relaxed, but power-of-two code lengths are more convenient to work with.
+			return Err(Error::CodeLengthPowerOfTwoRequired);
+		}
+		if code.dim() % P::WIDTH != 0 {
+			return Err(Error::PackingWidthMustDivideCodeDimension);
+		}
+		if code.dim() % PE::WIDTH != 0 {
+			return Err(Error::PackingWidthMustDivideCodeDimension);
+		}
+
+		Ok(Self {
+			log_rows,
+			code,
+			vcs,
+			_h_marker: PhantomData,
+			_ext_marker: PhantomData,
+		})
+	}
+
 	fn n_vars(&self) -> usize {
 		self.log_rows + self.code.dim_bits()
 	}
 
 	fn check_proof_shape(
 		&self,
-		proof: &Proof<P, PE::Scalar, MMCS::Proof>,
+		proof: &Proof<F, PE::Scalar, VCS::Proof>,
 	) -> Result<(), VerificationError> {
-		assert!(self.code.dim() >= P::WIDTH);
+		let n_rows = 1 << self.log_rows;
+		let n_queries = self.code.n_test_queries();
 
-		let dimensions = Dimensions {
-			width: self.code.len() / P::WIDTH,
-			height: 1 << self.log_rows,
-		};
-
-		if proof.mmcs_proofs.len() != self.code.n_test_queries() {
-			return Err(VerificationError::NumberOfMerkleProofs);
+		if proof.vcs_proofs.len() != n_queries {
+			return Err(VerificationError::NumberOfOpeningProofs {
+				expected: n_queries,
+			});
 		}
-		for (leaves, _) in proof.mmcs_proofs.iter() {
-			if leaves.len() != 1 {
-				return Err(VerificationError::NumberOfMerkleProofs);
-			}
-			if leaves[0].len() != dimensions.height {
-				return Err(VerificationError::MerkleLeafSize);
+		for (i, (col, _)) in proof.vcs_proofs.iter().enumerate() {
+			if col.len() != n_rows {
+				return Err(VerificationError::OpenedColumnSize {
+					index: i,
+					expected: n_rows,
+				});
 			}
 		}
-
 		if proof.t_prime.n_vars() != self.code.dim_bits() {
 			return Err(VerificationError::PartialEvaluationSize);
 		}
@@ -328,6 +392,7 @@ where
 mod tests {
 	use super::*;
 	use crate::{
+		challenger::HashChallenger,
 		field::{PackedBinaryField16x8b, PackedBinaryField1x128b},
 		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
@@ -335,11 +400,12 @@ mod tests {
 	use std::iter::repeat_with;
 
 	#[test]
-	fn test_commit_without_error() {
+	fn test_commit_prove_verify_without_error() {
 		type Packed = PackedBinaryField16x8b;
 
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
-		let pcs = <TensorPCS<Packed, PackedBinaryField1x128b, _, _>>::new_using_groestl(3, rs_code);
+		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let pcs =
+			<TensorPCS<_, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(3, rs_code).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| Packed::random(&mut rng))
@@ -347,6 +413,22 @@ mod tests {
 			.collect::<Vec<_>>();
 		let poly = MultilinearPoly::from_values(evals).unwrap();
 
-		let _ = pcs.commit(&poly).unwrap();
+		let (commitment, committed) = pcs.commit(&poly).unwrap();
+
+		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let query = repeat_with(|| challenger.sample())
+			.take(pcs.n_vars())
+			.collect::<Vec<_>>();
+
+		let value = poly.evaluate(&query).unwrap();
+
+		let mut prove_challenger = challenger.clone();
+		let proof = pcs
+			.prove_evaluation(&mut prove_challenger, &committed, &poly, &query)
+			.unwrap();
+
+		let mut verify_challenger = challenger.clone();
+		pcs.verify_evaluation(&mut verify_challenger, &commitment, &query, proof, value)
+			.unwrap();
 	}
 }

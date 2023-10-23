@@ -63,7 +63,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::HashChallenger,
-		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, BinaryField8b},
+		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b},
 		hash::GroestlHasher,
 		polynomial::MultilinearPoly,
 		protocols::{
@@ -104,7 +104,7 @@ mod tests {
 		// SETUP
 		let domain_points: Vec<F> = (0..=(1 << n_vars) + 1).map(F::new).collect::<Vec<_>>();
 		let domain: EvaluationDomain<F> = EvaluationDomain::new(domain_points).unwrap();
-		let mut prove_challenger = <HashChallenger<BinaryField8b, GroestlHasher>>::new();
+		let mut prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 		let mut verify_challenger = prove_challenger.clone();
 
 		// PROVER
@@ -148,7 +148,7 @@ mod tests {
 		// SETUP
 		let domain_points: Vec<F> = (0..=(1 << n_vars) + 1).map(F::new).collect::<Vec<_>>();
 		let domain: EvaluationDomain<F> = EvaluationDomain::new(domain_points).unwrap();
-		let mut prove_challenger = <HashChallenger<BinaryField8b, GroestlHasher>>::new();
+		let mut prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 		let mut verify_challenger = prove_challenger.clone();
 
 		// PROVER

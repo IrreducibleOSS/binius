@@ -1,6 +1,6 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, BinaryField8b, Field},
+	field::{BinaryField128b, BinaryField128bPolyval, Field},
 	hash::GroestlHasher,
 	polynomial::{
 		Error as PolynomialError, EvaluationDomain, MultilinearComposite, MultilinearPoly,
@@ -75,7 +75,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let poly =
 				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
-			let mut challenger = <HashChallenger<BinaryField8b, GroestlHasher>>::new();
+			let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			let sumcheck_witness = SumcheckWitness { polynomial: &poly };
 			b.iter(|| sumcheck::prove::prove(sumcheck_witness, &domain, &mut challenger).unwrap());

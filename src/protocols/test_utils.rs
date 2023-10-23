@@ -1,14 +1,13 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use p3_util::log2_ceil_usize;
 use std::sync::Arc;
 
-use crate::field::{ExtensionField, Field, PackedField};
-
 use crate::{
+	field::{ExtensionField, Field, PackedField},
 	polynomial::{
 		Error as PolynomialError, MultilinearComposite, MultilinearPoly, MultivariatePoly,
 	},
-	util::log2,
 };
 
 use super::evalcheck::evalcheck::EvalcheckClaim;
@@ -54,7 +53,7 @@ impl<F: Field> MultivariatePoly<F, F> for ProductMultivariate {
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<F, PolynomialError> {
 		let n_vars = MultivariatePoly::<F, F>::n_vars(self);
-		assert!(log2(index) < n_vars);
+		assert!(log2_ceil_usize(index) <= n_vars);
 		if index == (1 << n_vars) - 1 {
 			Ok(F::ONE)
 		} else {

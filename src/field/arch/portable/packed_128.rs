@@ -18,6 +18,7 @@ use std::{
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+use subtle::{Choice, ConstantTimeEq};
 
 macro_rules! packed_binary_field_u128 {
 	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); $width:literal], Iterator = $iter_name:ident) => {
@@ -30,6 +31,12 @@ macro_rules! packed_binary_field_u128 {
 		impl From<u128> for $name {
 			fn from(val: u128) -> Self {
 				Self(val)
+			}
+		}
+
+		impl ConstantTimeEq for $name {
+			fn ct_eq(&self, other: &Self) -> Choice {
+				self.0.ct_eq(&other.0)
 			}
 		}
 

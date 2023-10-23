@@ -40,7 +40,7 @@ where
 		challenger: &mut CH,
 		commitment: &Self::Commitment,
 		query: &[FE],
-		proof: &Self::Proof,
+		proof: Self::Proof,
 		value: FE,
 	) -> Result<(), Self::Error>
 	where

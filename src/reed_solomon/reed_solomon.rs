@@ -17,6 +17,7 @@ where
 	ntt: AdditiveNTT<P::Scalar>,
 	log_dimension: usize,
 	log_inv_rate: usize,
+	n_test_queries: usize,
 	_p_marker: PhantomData<P>,
 }
 
@@ -25,12 +26,17 @@ where
 	P: PackedField,
 	P::Scalar: BinaryField,
 {
-	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
+	pub fn new(
+		log_dimension: usize,
+		log_inv_rate: usize,
+		n_test_queries: usize,
+	) -> Result<Self, Error> {
 		let ntt = AdditiveNTT::new(log_dimension + log_inv_rate)?;
 		Ok(Self {
 			ntt,
 			log_dimension,
 			log_inv_rate,
+			n_test_queries,
 			_p_marker: PhantomData,
 		})
 	}
@@ -57,7 +63,7 @@ where
 	}
 
 	fn n_test_queries(&self) -> usize {
-		todo!()
+		self.n_test_queries
 	}
 
 	fn inv_rate(&self) -> usize {

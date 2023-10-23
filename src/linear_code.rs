@@ -15,7 +15,7 @@ use crate::field::{ExtensionField, PackedExtensionField, PackedField};
 #[allow(clippy::len_without_is_empty)]
 pub trait LinearCode {
 	type P: PackedField;
-	type EncodeError: std::error::Error;
+	type EncodeError: std::error::Error + 'static;
 
 	/// The block length.
 	fn len(&self) -> usize {

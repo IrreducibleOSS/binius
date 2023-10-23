@@ -15,12 +15,19 @@ use std::{
 	iter::{FlatMap, Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+use subtle::{Choice, ConstantTimeEq};
 
 macro_rules! packed_field_array {
 	($vis:vis struct $name:ident([$inner:ty; 2])) => {
 		#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
 		pub struct $name([$inner; 2]);
+
+		impl ConstantTimeEq for $name {
+			fn ct_eq(&self, other: &Self) -> Choice {
+				self.0.ct_eq(&other.0)
+			}
+		}
 
 		impl Add for $name {
 			type Output = Self;
