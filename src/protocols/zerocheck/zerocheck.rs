@@ -4,7 +4,7 @@ use crate::{field::Field, polynomial::MultilinearPoly};
 use std::sync::Arc;
 
 use crate::{
-	polynomial::{Error as PolynomialError, MultilinearComposite, MultivariatePoly},
+	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::SumcheckProof,
 };
 
@@ -15,29 +15,29 @@ pub struct ZerocheckProof<F> {
 pub struct ZerocheckClaim<F> {
 	/// Virtual Polynomial Oracle is derivable from (Multilinear) Polynomial Oracles
 	/// compositions may be nested
-	pub multilinear_composition: Arc<dyn MultivariatePoly<F, F>>,
+	pub multilinear_composition: Arc<dyn CompositionPoly<F, F>>,
 	/// Number of variables
 	pub n_vars: usize,
 }
 
 pub struct ZerocheckWitness<'a, OF: Field> {
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: &'a MultilinearComposite<'a, OF>,
+	pub polynomial: &'a MultilinearComposite<'a, OF, OF>,
 }
 
 pub struct CompositeMultilinearProductComposition<F: Field> {
-	inner: Arc<dyn MultivariatePoly<F, F>>,
+	inner: Arc<dyn CompositionPoly<F, F>>,
 }
 
 impl<F: Field> CompositeMultilinearProductComposition<F> {
-	pub fn new(inner: Arc<dyn MultivariatePoly<F, F>>) -> Self {
+	pub fn new(inner: Arc<dyn CompositionPoly<F, F>>) -> Self {
 		Self { inner }
 	}
 }
 
 // MultivariatePoly trait is overkill for what you need as the composition polynomial to MultiLinearComposite
 // e.g. will never need to call evaluate_hypercube
-impl<F: Field> MultivariatePoly<F, F> for CompositeMultilinearProductComposition<F> {
+impl<F: Field> CompositionPoly<F, F> for CompositeMultilinearProductComposition<F> {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars() + 1
 	}
@@ -46,12 +46,8 @@ impl<F: Field> MultivariatePoly<F, F> for CompositeMultilinearProductComposition
 		self.inner.degree() + 1
 	}
 
-	fn evaluate_on_hypercube(&self, _index: usize) -> Result<F, PolynomialError> {
-		unreachable!()
-	}
-
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = MultivariatePoly::<F, F>::n_vars(self);
+		let n_vars = CompositionPoly::<F, F>::n_vars(self);
 		if query.len() != n_vars {
 			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
 		}
@@ -67,9 +63,9 @@ impl<F: Field> MultivariatePoly<F, F> for CompositeMultilinearProductComposition
 }
 
 pub fn multiply_multilinear_composite<'a, F: 'static + Field>(
-	composite: MultilinearComposite<'a, F>,
+	composite: MultilinearComposite<'a, F, F>,
 	new_multilinear: MultilinearPoly<'a, F>,
-) -> Result<MultilinearComposite<'a, F>, PolynomialError> {
+) -> Result<MultilinearComposite<'a, F, F>, PolynomialError> {
 	let n_vars: usize = composite.n_vars();
 	let inner_composition: CompositeMultilinearProductComposition<F> =
 		CompositeMultilinearProductComposition::new(composite.composition);

@@ -2,7 +2,7 @@
 
 use crate::{
 	field::{Field, PackedField},
-	polynomial::{EvaluationDomain, MultilinearComposite, MultivariatePoly},
+	polynomial::EvaluationDomain,
 };
 use p3_challenger::{CanObserve, CanSample};
 use std::{borrow::Cow, slice};
@@ -28,12 +28,12 @@ where
 	OF: Field + From<F> + Into<F>,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let poly: &MultilinearComposite<OF> = sumcheck_witness.polynomial;
-	let degree = poly.degree();
+	let poly = sumcheck_witness.polynomial;
+	let degree = poly.composition.degree();
 	if degree == 0 {
 		return Err(Error::PolynomialDegreeIsZero);
 	}
-	if domain.size() != poly.degree() + 1 {
+	if domain.size() != degree + 1 {
 		return Err(Error::EvaluationDomainMismatch);
 	}
 	if domain.points()[0] != F::ZERO {
@@ -110,7 +110,7 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b},
 		hash::GroestlHasher,
-		polynomial::MultilinearPoly,
+		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
 			sumcheck::{verify::verify, SumcheckClaim},
 			test_utils::{transform_poly, verify_evalcheck_claim, ProductMultivariate},
@@ -126,7 +126,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let n_vars = 8;
-		let composition: Arc<dyn MultivariatePoly<F, F>> = Arc::new(ProductMultivariate::new(3));
+		let composition: Arc<dyn CompositionPoly<F, F>> = Arc::new(ProductMultivariate::new(3));
 		let multilinears = repeat_with(|| {
 			let values = repeat_with(|| Field::random(&mut rng))
 				.take(1 << n_vars)
@@ -174,7 +174,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let n_vars = 8;
-		let composition: Arc<dyn MultivariatePoly<F, F>> = Arc::new(ProductMultivariate::new(3));
+		let composition: Arc<dyn CompositionPoly<F, F>> = Arc::new(ProductMultivariate::new(3));
 		let multilinears = repeat_with(|| {
 			let values = repeat_with(|| Field::random(&mut rng))
 				.take(1 << n_vars)
@@ -202,7 +202,7 @@ mod tests {
 		let mut verify_challenger = prove_challenger.clone();
 
 		// PROVER
-		let prover_composition: Arc<dyn MultivariatePoly<OF, OF>> =
+		let prover_composition: Arc<dyn CompositionPoly<OF, OF>> =
 			Arc::new(ProductMultivariate::new(3));
 		let prover_poly = transform_poly(&poly, prover_composition).unwrap();
 		let sumcheck_witness = SumcheckWitness {

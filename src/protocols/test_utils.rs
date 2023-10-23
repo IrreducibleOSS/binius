@@ -1,12 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use p3_util::log2_ceil_usize;
 use std::sync::Arc;
 
 use crate::{
 	field::{ExtensionField, Field, PackedField},
 	polynomial::{
-		Error as PolynomialError, MultilinearComposite, MultilinearPoly, MultivariatePoly,
+		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
 	},
 };
 
@@ -42,7 +41,7 @@ impl ProductMultivariate {
 	}
 }
 
-impl<F: Field> MultivariatePoly<F, F> for ProductMultivariate {
+impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
 	fn n_vars(&self) -> usize {
 		self.arity
 	}
@@ -51,33 +50,23 @@ impl<F: Field> MultivariatePoly<F, F> for ProductMultivariate {
 		self.arity
 	}
 
-	fn evaluate_on_hypercube(&self, index: usize) -> Result<F, PolynomialError> {
-		let n_vars = MultivariatePoly::<F, F>::n_vars(self);
-		assert!(log2_ceil_usize(index) <= n_vars);
-		if index == (1 << n_vars) - 1 {
-			Ok(F::ONE)
-		} else {
-			Ok(F::ZERO)
-		}
-	}
-
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = MultivariatePoly::<F, F>::n_vars(self);
+		let n_vars = CompositionPoly::<F, F>::n_vars(self);
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
 
 	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = MultivariatePoly::<F, F>::n_vars(self);
+		let n_vars = CompositionPoly::<F, F>::n_vars(self);
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
 }
 
 pub fn transform_poly<F, OF>(
-	poly: &MultilinearComposite<F>,
-	composition: Arc<dyn MultivariatePoly<OF, OF>>,
-) -> Result<MultilinearComposite<'static, OF>, PolynomialError>
+	poly: &MultilinearComposite<F, F>,
+	composition: Arc<dyn CompositionPoly<OF, OF>>,
+) -> Result<MultilinearComposite<'static, OF, OF>, PolynomialError>
 where
 	F: Field,
 	OF: Field + From<F> + Into<F>,

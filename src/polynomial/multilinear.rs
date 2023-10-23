@@ -2,12 +2,13 @@
 
 use super::error::Error;
 use crate::field::{
-	get_packed_slice, get_packed_slice_checked, iter_packed_slice, set_packed_slice,
-	Error as FieldError, ExtensionField, Field, PackedField,
+	get_packed_slice, iter_packed_slice, set_packed_slice, ExtensionField, Field, PackedField,
 };
 use std::borrow::Cow;
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
+///
+/// The packed field width must be a power of two.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultilinearPoly<'a, P: PackedField> {
 	// The number of variables
@@ -69,11 +70,17 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 		}
 	}
 
-	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
-		get_packed_slice_checked(self.evals(), index).map_err(|err| match err {
-			FieldError::IndexOutOfRange { .. } => Error::HypercubeIndexOutOfRange { index },
-			_ => Error::FieldError(err),
-		})
+	/// Get the evaluations of the polynomial on a subcube of the hypercube of size equal to the
+	/// packing width.
+	///
+	/// # Arguments
+	///
+	/// * `index` - The index of the subcube
+	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P, Error> {
+		self.evals()
+			.get(index)
+			.ok_or(Error::HypercubeIndexOutOfRange { index })
+			.copied()
 	}
 
 	pub fn evaluate<FE>(&self, q: &[FE]) -> Result<FE, Error>
@@ -89,13 +96,10 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 		Ok(result)
 	}
 
-	pub fn batch_evaluate<FE>(
+	pub fn batch_evaluate<FE: ExtensionField<P::Scalar>>(
 		polys: impl Iterator<Item = Self> + 'a,
 		q: &[FE],
-	) -> impl Iterator<Item = Result<FE, Error>> + 'a
-	where
-		FE: ExtensionField<P::Scalar>,
-	{
+	) -> impl Iterator<Item = Result<FE, Error>> + 'a {
 		let n_vars = q.len();
 		let basis_eval = expand_query(q);
 

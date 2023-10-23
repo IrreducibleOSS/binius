@@ -3,8 +3,8 @@ use binius::{
 	field::{BinaryField128b, BinaryField128bPolyval, Field},
 	hash::GroestlHasher,
 	polynomial::{
-		Error as PolynomialError, EvaluationDomain, MultilinearComposite, MultilinearPoly,
-		MultivariatePoly,
+		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
+		MultilinearPoly,
 	},
 	protocols::sumcheck::{self, SumcheckWitness},
 };
@@ -17,22 +17,13 @@ struct ProductMultivariate {
 	n_vars: usize,
 }
 
-impl<F: Field> MultivariatePoly<F, F> for ProductMultivariate {
+impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 
 	fn degree(&self) -> usize {
 		self.n_vars
-	}
-
-	fn evaluate_on_hypercube(&self, index: usize) -> Result<F, PolynomialError> {
-		assert!(log2(index) < self.n_vars);
-		if index == (1 << self.n_vars) - 1 {
-			Ok(F::ONE)
-		} else {
-			Ok(F::ZERO)
-		}
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
@@ -50,7 +41,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	type FTower = BinaryField128b;
 	type FPolyval = BinaryField128bPolyval;
 
-	let composition: Arc<dyn MultivariatePoly<FPolyval, FPolyval>> =
+	let composition: Arc<dyn CompositionPoly<FPolyval, FPolyval>> =
 		Arc::new(ProductMultivariate { n_vars: 2 });
 
 	let domain = EvaluationDomain::new(vec![FTower::ZERO, FTower::ONE, FTower::new(2)]).unwrap();

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
 	field::Field,
-	polynomial::{MultilinearComposite, MultivariatePoly},
+	polynomial::{CompositionPoly, MultilinearComposite},
 };
 
 pub struct SumcheckRound<F> {
@@ -18,7 +18,7 @@ pub struct SumcheckProof<F> {
 pub struct SumcheckClaim<F> {
 	/// Virtual Polynomial Oracle is derivable from (Multilinear) Polynomial Oracles
 	/// compositions may be nested
-	pub multilinear_composition: Arc<dyn MultivariatePoly<F, F>>,
+	pub multilinear_composition: Arc<dyn CompositionPoly<F, F>>,
 	/// Claimed Sum over the Boolean Hypercube
 	pub sum: F,
 	/// Number of variables
@@ -29,5 +29,5 @@ pub struct SumcheckClaim<F> {
 #[derive(Clone, Copy)]
 pub struct SumcheckWitness<'a, OF: Field> {
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: &'a MultilinearComposite<'a, OF>,
+	pub polynomial: &'a MultilinearComposite<'a, OF, OF>,
 }

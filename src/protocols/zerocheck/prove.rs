@@ -4,10 +4,7 @@ use std::iter::repeat_with;
 
 use crate::{
 	field::Field,
-	polynomial::{
-		eq_ind_partial_eval, EvaluationDomain, MultilinearComposite, MultilinearPoly,
-		MultivariatePoly,
-	},
+	polynomial::{eq_ind_partial_eval, EvaluationDomain, MultilinearPoly},
 	protocols::sumcheck::{self, SumcheckProof, SumcheckWitness},
 };
 use p3_challenger::{CanObserve, CanSample};
@@ -32,7 +29,7 @@ where
 	OF: Field + From<F> + Into<F>,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let poly: &MultilinearComposite<OF> = zerocheck_witness.polynomial;
+	let poly = zerocheck_witness.polynomial;
 	let n_vars: usize = poly.n_vars();
 
 	let r: Vec<OF> = repeat_with(|| OF::from(challenger.sample()))
@@ -46,7 +43,7 @@ where
 
 	// Step 3: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
-	let new_poly: MultilinearComposite<OF> = multiply_multilinear_composite(poly.clone(), eq_r)?;
+	let new_poly = multiply_multilinear_composite(poly.clone(), eq_r)?;
 
 	// Step 4: Run the SumCheck Protocol on the new multivariate polynomial
 	let sumcheck_witness = SumcheckWitness {
@@ -65,7 +62,7 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b},
 		hash::GroestlHasher,
-		polynomial::MultilinearPoly,
+		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
 			test_utils::{transform_poly, verify_evalcheck_claim, ProductMultivariate},
 			zerocheck::{verify::verify, zerocheck::ZerocheckClaim},
@@ -82,7 +79,7 @@ mod tests {
 		type F = BinaryField32b; //field and operating field are both BinaryField32b
 
 		let n_vars: usize = 3;
-		let composition: Arc<dyn MultivariatePoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F, F>> =
 			Arc::new(ProductMultivariate::new(1 << n_vars));
 		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
 			.map(|i| {
@@ -92,8 +89,7 @@ mod tests {
 				MultilinearPoly::from_values(values).unwrap()
 			})
 			.collect::<Vec<_>>();
-		let poly: MultilinearComposite<'_, F> =
-			MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
+		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 
 		// CLAIM
 		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim {
@@ -126,7 +122,7 @@ mod tests {
 		type OF = BinaryField128bPolyval;
 
 		let n_vars: usize = 3;
-		let composition: Arc<dyn MultivariatePoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F, F>> =
 			Arc::new(ProductMultivariate::new(1 << n_vars));
 		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
 			.map(|i| {
@@ -136,8 +132,7 @@ mod tests {
 				MultilinearPoly::from_values(values).unwrap()
 			})
 			.collect::<Vec<_>>();
-		let poly: MultilinearComposite<'_, F> =
-			MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
+		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 
 		// CLAIM
 		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim {
@@ -152,10 +147,9 @@ mod tests {
 		let mut verify_challenger = prove_challenger.clone();
 
 		// PROVER
-		let prover_composition: Arc<dyn MultivariatePoly<OF, OF>> =
+		let prover_composition: Arc<dyn CompositionPoly<OF, OF>> =
 			Arc::new(ProductMultivariate::new(1 << n_vars));
-		let prover_poly: MultilinearComposite<'_, OF> =
-			transform_poly(&poly, prover_composition).unwrap();
+		let prover_poly = transform_poly(&poly, prover_composition).unwrap();
 		let zerocheck_witness: ZerocheckWitness<OF> = ZerocheckWitness {
 			polynomial: &prover_poly,
 		};
