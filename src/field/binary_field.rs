@@ -9,7 +9,7 @@ use std::{
 	array,
 	convert::TryFrom,
 	fmt::{self, Display, Formatter},
-	iter::{Product, Sum},
+	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -225,6 +225,23 @@ macro_rules! binary_field {
 		}
 
 		impl BinaryField for $name {}
+
+		impl Step for $name {
+			fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+				let diff = end.val().checked_sub(start.val())?;
+				usize::try_from(diff).ok()
+			}
+
+			fn forward_checked(start: Self, count: usize) -> Option<Self> {
+				let val = start.val().checked_add(count as $typ)?;
+				Self::new_checked(val).ok()
+			}
+
+			fn backward_checked(start: Self, count: usize) -> Option<Self> {
+				let val = start.val().checked_sub(count as $typ)?;
+				Self::new_checked(val).ok()
+			}
+		}
 	}
 }
 
@@ -953,5 +970,16 @@ mod tests {
 			let x_inverse = x.invert().unwrap();
 			assert_eq!(x * x_inverse, BinaryField32b::ONE);
 		}
+	}
+
+	#[test]
+	fn test_step_32b() {
+		let step0 = BinaryField32b::ZERO;
+		let step1 = BinaryField32b::forward_checked(step0, 0x10000000);
+		assert_eq!(step1, Some(BinaryField32b::new(0x10000000)));
+		let step2 = BinaryField32b::forward_checked(step1.unwrap(), 0x01000000);
+		assert_eq!(step2, Some(BinaryField32b::new(0x11000000)));
+		let step3 = BinaryField32b::forward_checked(step2.unwrap(), 0xF0000000);
+		assert_eq!(step3, None);
 	}
 }
