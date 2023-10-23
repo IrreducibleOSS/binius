@@ -1,12 +1,12 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, Field},
+	field::{BinaryField128b, BinaryField128bPolyval, BinaryField8b, Field},
 	hash::GroestlHasher,
 	polynomial::{
 		Error as PolynomialError, EvaluationDomain, MultilinearComposite, MultilinearPoly,
 		MultivariatePoly,
 	},
-	sumcheck,
+	protocols::sumcheck::{self, SumcheckWitness},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
@@ -75,9 +75,10 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let poly =
 				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
-			let mut challenger = <HashChallenger<_, GroestlHasher>>::new();
+			let mut challenger = <HashChallenger<BinaryField8b, GroestlHasher>>::new();
 
-			b.iter(|| sumcheck::prove::prove(&poly, &domain, &mut challenger).unwrap());
+			let sumcheck_witness = SumcheckWitness { polynomial: &poly };
+			b.iter(|| sumcheck::prove::prove(sumcheck_witness, &domain, &mut challenger).unwrap());
 		});
 	}
 }

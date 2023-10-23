@@ -28,7 +28,7 @@ pub struct MultilinearComposite<'a, P: PackedField> {
 	pub(crate) composition: Arc<dyn MultivariatePoly<P::Scalar, P::Scalar>>,
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
-	multilinears: Vec<MultilinearPoly<'a, P>>,
+	pub multilinears: Vec<MultilinearPoly<'a, P>>,
 }
 
 impl<'a, P: PackedField> MultilinearComposite<'a, P> {
@@ -38,15 +38,21 @@ impl<'a, P: PackedField> MultilinearComposite<'a, P> {
 		multilinears: Vec<MultilinearPoly<'a, P>>,
 	) -> Result<Self, Error> {
 		if composition.n_vars() != multilinears.len() {
-			return Err(Error::MultilinearCompositeValidation(
-				"the number of variables does not match".into(),
-			));
+			let err_str = format!(
+				"Number of variables in composition {} does not match length of multilinears {}",
+				composition.n_vars(),
+				multilinears.len()
+			);
+			return Err(Error::MultilinearCompositeValidation(err_str));
 		}
 		for multilin in multilinears.iter() {
 			if multilin.n_vars() != n_vars {
-				return Err(Error::MultilinearCompositeValidation(
-					"the number of multilinear variables does not match".into(),
-				));
+				let err_str = format!(
+					"Number of variables in multilinear {} does not match n_vars {}",
+					multilin.n_vars(),
+					n_vars
+				);
+				return Err(Error::MultilinearCompositeValidation(err_str));
 			}
 		}
 		Ok(Self {

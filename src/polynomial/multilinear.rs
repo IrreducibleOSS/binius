@@ -170,6 +170,23 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 	}
 }
 
+/// Given n_vars, and a vector r of length n_vars, returns the multilinear polynomial
+/// corresponding to the MLE of eq(X, Y) partially evaluated at r, i.e. eq_r(X) := eq(X, r)
+/// eq_r(X) = \prod_{i=0}^{n_vars - 1} (X_i r_i + (1 - X_i)(1-r_i))
+///
+/// Recall multilinear polynomial eq(X, Y) = \prod_{i=0}^{n_vars - 1} (X_iY_i + (1 - X_i)(1-Y_i)).
+/// This has the property that if X = Y then eq(X, Y) = 1, and if X != Y then eq(X, Y) = 0, over boolean hypercube domain.
+pub fn eq_ind_partial_eval<F: Field>(
+	n_vars: usize,
+	r: &[F],
+) -> Result<MultilinearPoly<'static, F>, Error> {
+	if r.len() != n_vars {
+		return Err(Error::IncorrectQuerySize { expected: n_vars });
+	}
+	let values = expand_query(r)?;
+	MultilinearPoly::from_values(values)
+}
+
 /// Expand the tensor product of the query values.
 ///
 /// [`query`] is a sequence of field elements $z_0, ..., z_{k-1}$. The expansion is given by the

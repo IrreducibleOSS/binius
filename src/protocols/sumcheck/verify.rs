@@ -1,27 +1,31 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{field::Field, polynomial::EvaluationDomain};
+use crate::{
+	field::Field, polynomial::EvaluationDomain, protocols::evalcheck::evalcheck::EvalcheckClaim,
+};
 use p3_challenger::{CanObserve, CanSample};
 
 use super::{
 	error::{Error, VerificationError},
 	sumcheck::SumcheckProof,
+	SumcheckClaim,
 };
 
 /// Verifies a sumcheck reduction proof.
 ///
 /// Returns the evaluation point and the claimed evaluation.
 pub fn verify<F, CH>(
-	n_vars: usize,
+	claim: SumcheckClaim<F>,
 	domain: &EvaluationDomain<F>,
-	sum: F,
 	proof: &SumcheckProof<F>,
 	challenger: &mut CH,
-) -> Result<(Vec<F>, F), Error>
+) -> Result<EvalcheckClaim<F>, Error>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
 {
+	let n_vars = claim.n_vars;
+	let sum = claim.sum;
 	if domain.size() == 0 {
 		return Err(Error::EvaluationDomainMismatch);
 	}
@@ -60,5 +64,9 @@ where
 	}
 
 	point.reverse();
-	Ok((point, round_sum))
+	Ok(EvalcheckClaim {
+		multilinear_composition: claim.multilinear_composition,
+		eval_point: point,
+		eval: round_sum,
+	})
 }

@@ -14,9 +14,9 @@ pub mod hash;
 pub mod linear_code;
 pub mod poly_commit;
 pub mod polynomial;
+pub mod protocols;
 #[allow(clippy::module_inception)]
 pub mod reed_solomon;
-pub mod sumcheck;
 mod util;
 
 pub use core::iter::Step;
