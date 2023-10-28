@@ -1,21 +1,79 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::field::{BinaryField, ExtensionField, Field, PackedExtensionField, PackedField};
+use p3_util::log2_strict_usize;
 
 use super::error::Error;
 
 /// The additive NTT defined defined in [LCH14]
 ///
+/// [LCH14]: https://arxiv.org/abs/1404.3458
+pub trait AdditiveNTT<P: PackedField> {
+	/// Forward transformation defined in [LCH14] on a batch of inputs.
+	///
+	/// Input is the vector of polynomial coefficients in novel basis, output is in Lagrange basis.
+	/// The batched inputs are interleaved, which improves the cache-efficiency of the computation.
+	///
+	/// [LCH14]: https://arxiv.org/abs/1404.3458
+	fn forward_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error>;
+
+	/// Inverse transformation defined in [LCH14] on a batch of inputs.
+	///
+	/// Input is the vector of polynomial coefficients in Lagrange basis, output is in novel basis.
+	/// The batched inputs are interleaved, which improves the cache-efficiency of the computation.
+	///
+	/// [LCH14]: https://arxiv.org/abs/1404.3458
+	fn inverse_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error>;
+
+	fn forward_transform_ext<PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
+	where
+		PE: PackedExtensionField<P>,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		if !PE::Scalar::DEGREE.is_power_of_two() {
+			return Err(Error::PowerOfTwoExtensionDegreeRequired);
+		}
+
+		let log_batch_size = log2_strict_usize(PE::Scalar::DEGREE);
+		self.forward_transform(PE::cast_to_bases_mut(data), coset, log_batch_size)
+	}
+
+	fn inverse_transform_ext<PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
+	where
+		PE: PackedExtensionField<P>,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		if !PE::Scalar::DEGREE.is_power_of_two() {
+			return Err(Error::PowerOfTwoExtensionDegreeRequired);
+		}
+
+		let log_batch_size = log2_strict_usize(PE::Scalar::DEGREE);
+		self.inverse_transform(PE::cast_to_bases_mut(data), coset, log_batch_size)
+	}
+}
+
+/// Implementation of `AdditiveNTT` that does on-the-fly computation to reduce its memory footprint.
+///
 /// This implementation uses a small amount of precomputed constants from which the twiddle factors
-/// are derived on the fly. The number of constants is ~1/2 k^2 field elements for a domain of size
-/// 2^k.
+/// are derived on the fly (OTF). The number of constants is ~1/2 k^2 field elements for a domain
+/// of size 2^k.
 #[derive(Debug)]
-pub struct AdditiveNTT<F: BinaryField> {
+pub struct AdditiveNTTWithOTFCompute<F: BinaryField> {
 	log_domain_size: usize,
 	s_evals: Vec<Vec<F>>,
 }
 
-impl<F: BinaryField> AdditiveNTT<F> {
+impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
 		if F::N_BITS < log_domain_size {
 			return Err(Error::FieldTooSmall { log_domain_size });
@@ -30,6 +88,7 @@ impl<F: BinaryField> AdditiveNTT<F> {
 			.collect::<Vec<_>>();
 		s_evals.push(s0_evals);
 
+		// TODO: Update this for the Fan-Paar tower construction
 		for _ in 1..log_domain_size {
 			let s_i_evals = {
 				let s_prev_evals = s_evals.last_mut().expect("s_evals is not empty");
@@ -42,115 +101,38 @@ impl<F: BinaryField> AdditiveNTT<F> {
 			s_evals.push(s_i_evals);
 		}
 
-		Ok(AdditiveNTT {
+		Ok(AdditiveNTTWithOTFCompute {
 			log_domain_size,
 			s_evals,
 		})
 	}
+}
 
-	/// Forward transformation defined in [LCH14]
-	///
-	/// Input is the vector of polynomial coefficients in novel basis, output is in Lagrange basis.
-	///
-	/// [LCH14]: https://arxiv.org/abs/1404.3458
-	pub fn forward_transform<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-	where
-		FF: ExtensionField<F>,
-	{
-		let n = data.len();
-		assert!(n.is_power_of_two());
-
-		let log_n = n.trailing_zeros() as usize;
-		let coset_bits = 32 - coset.leading_zeros() as usize;
-		if log_n + coset_bits > self.log_domain_size {
-			return Err(Error::DomainTooSmall {
-				log_required_domain_size: log_n + coset_bits,
-			});
+impl<F: BinaryField, P: PackedField<Scalar = F>> AdditiveNTT<P> for AdditiveNTTWithOTFCompute<F> {
+	fn forward_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error> {
+		if data.is_empty() {
+			return Ok(());
 		}
 
-		for i in (0..log_n).rev() {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
+		let log_b = log_batch_size;
 
-			for j in 0..1 << (log_n - 1 - i) {
-				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-				let twiddle = block_twiddle + coset_twiddle;
-
-				for k in 0..1 << i {
-					let idx0 = j << (i + 1) | k;
-					let idx1 = idx0 | 1 << i;
-					data[idx0] += data[idx1] * twiddle;
-					data[idx1] += data[idx0];
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	/// Inverse transformation defined in [LCH14]
-	///
-	/// Input is the vector of polynomial coefficients in Lagrange basis, output is in novel basis.
-	///
-	/// [LCH14]: https://arxiv.org/abs/1404.3458
-	pub fn inverse_transform<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-	where
-		FF: ExtensionField<F>,
-	{
-		let n = data.len();
-		assert!(n.is_power_of_two());
-
-		let log_n = n.trailing_zeros() as usize;
-		let coset_bits = 32 - coset.leading_zeros() as usize;
-		if log_n + coset_bits > self.log_domain_size {
-			return Err(Error::DomainTooSmall {
-				log_required_domain_size: log_n + coset_bits,
-			});
-		}
-
-		for i in 0..log_n {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-			for j in 0..1 << (log_n - 1 - i) {
-				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-				let twiddle = block_twiddle + coset_twiddle;
-
-				for k in 0..1 << i {
-					let idx0 = j << (i + 1) | k;
-					let idx1 = idx0 | 1 << i;
-					data[idx1] += data[idx0];
-					data[idx0] += data[idx1] * twiddle;
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	/// Input is in novel basis, output in Lagrange basis.
-	pub fn forward_transform_packed<PB, PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PB: PackedField<Scalar = F>,
-		PE: PackedExtensionField<PB>,
-		PE::Scalar: ExtensionField<PB::Scalar>,
-	{
-		let PackedNTTParams {
+		let NTTParams {
 			log_n,
 			log_w,
-			log_d,
 			coset_bits,
-		} = check_packed_transform_inputs::<PB, PE>(self.log_domain_size, data, coset)?;
+			..
+		} = check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
 
 		// Cutoff is the stage of the NTT where each the butterfly units are contained within
 		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_d);
+		let cutoff = log_w.saturating_sub(log_b);
 
-		let data = PE::cast_to_bases_mut(data);
-
-		if data.is_empty() {
-			return Ok(());
-		} else if data.len() == 1 {
+		if data.len() == 1 {
 			// TODO: In this case, transpose and call forward_transform
 			todo!("case where data.len() == 1 not handled");
 		}
@@ -163,9 +145,9 @@ impl<F: BinaryField> AdditiveNTT<F> {
 				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
 				let twiddle = block_twiddle + coset_twiddle;
 
-				for k in 0..1 << (i + log_d - log_w) {
-					let idx0 = j << (i + log_d - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_d - log_w);
+				for k in 0..1 << (i + log_b - log_w) {
+					let idx0 = j << (i + log_b - log_w + 1) | k;
+					let idx1 = idx0 | 1 << (i + log_b - log_w);
 					data[idx0] += data[idx1] * twiddle;
 					data[idx1] += data[idx0];
 				}
@@ -179,50 +161,51 @@ impl<F: BinaryField> AdditiveNTT<F> {
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
 
-				let mut twiddle = PB::default();
+				let mut twiddle = P::default();
 				for k in 0..1 << (cutoff - i - 1) {
 					let subblock_twiddle_0 = subset_sum(s_evals_i, cutoff - i - 1, k);
 					let subblock_twiddle_1 = subblock_twiddle_0 + s_evals_i[cutoff - i - 1];
-					for l in 0..1 << (i + log_d) {
-						let idx0 = k << (i + log_d + 1) | l;
-						let idx1 = idx0 | 1 << (i + log_d);
+					for l in 0..1 << (i + log_b) {
+						let idx0 = k << (i + log_b + 1) | l;
+						let idx1 = idx0 | 1 << (i + log_b);
 						twiddle.set(idx0, block_twiddle + coset_twiddle + subblock_twiddle_0);
 						twiddle.set(idx1, block_twiddle + coset_twiddle + subblock_twiddle_1);
 					}
 				}
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_d));
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_b));
 				u += v * twiddle;
 				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_d));
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_b));
 			}
 		}
 
 		Ok(())
 	}
 
-	pub fn inverse_transform_packed<PB, PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PB: PackedField<Scalar = F>,
-		PE: PackedExtensionField<PB>,
-		PE::Scalar: ExtensionField<PB::Scalar>,
-	{
-		let PackedNTTParams {
+	fn inverse_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error> {
+		if data.is_empty() {
+			return Ok(());
+		}
+
+		let log_b = log_batch_size;
+
+		let NTTParams {
 			log_n,
 			log_w,
-			log_d,
 			coset_bits,
-		} = check_packed_transform_inputs::<PB, PE>(self.log_domain_size, data, coset)?;
+		} = check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
 
 		// Cutoff is the stage of the NTT where each the butterfly units are contained within
 		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_d);
+		let cutoff = log_w.saturating_sub(log_b);
 
-		let data = PE::cast_to_bases_mut(data);
-
-		if data.is_empty() {
-			return Ok(());
-		} else if data.len() == 1 {
+		if data.len() == 1 {
 			// TODO: In this case, transpose and call forward_transform
 			todo!("case where data.len() == 1 not handled");
 		}
@@ -234,22 +217,22 @@ impl<F: BinaryField> AdditiveNTT<F> {
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
 
-				let mut twiddle = PB::default();
+				let mut twiddle = P::default();
 				for k in 0..1 << (cutoff - i - 1) {
 					let subblock_twiddle_0 = subset_sum(s_evals_i, cutoff - i - 1, k);
 					let subblock_twiddle_1 = subblock_twiddle_0 + s_evals_i[cutoff - i - 1];
-					for l in 0..1 << (i + log_d) {
-						let idx0 = k << (i + log_d + 1) | l;
-						let idx1 = idx0 | 1 << (i + log_d);
+					for l in 0..1 << (i + log_b) {
+						let idx0 = k << (i + log_b + 1) | l;
+						let idx1 = idx0 | 1 << (i + log_b);
 						twiddle.set(idx0, block_twiddle + coset_twiddle + subblock_twiddle_0);
 						twiddle.set(idx1, block_twiddle + coset_twiddle + subblock_twiddle_1);
 					}
 				}
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_d));
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_b));
 				v += u;
 				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_d));
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_b));
 			}
 		}
 
@@ -261,9 +244,9 @@ impl<F: BinaryField> AdditiveNTT<F> {
 				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
 				let twiddle = block_twiddle + coset_twiddle;
 
-				for k in 0..1 << (i + log_d - log_w) {
-					let idx0 = j << (i + log_d - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_d - log_w);
+				for k in 0..1 << (i + log_b - log_w) {
+					let idx0 = j << (i + log_b - log_w + 1) | k;
+					let idx1 = idx0 | 1 << (i + log_b - log_w);
 					data[idx1] += data[idx0];
 					data[idx0] += data[idx1] * twiddle;
 				}
@@ -305,6 +288,7 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 			.collect::<Vec<_>>();
 		s_evals.push(s0_evals);
 
+		// TODO: Update this for the Fan-Paar tower construction
 		for _ in 1..log_domain_size {
 			let s_i_evals = {
 				let s_prev_evals = s_evals.last_mut().expect("s_evals is not empty");
@@ -336,92 +320,27 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 			s_evals_expanded,
 		})
 	}
+}
 
-	/// Input is in novel basis, output in Lagrange basis.
-	pub fn forward_transform<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-	where
-		FF: ExtensionField<F>,
-	{
-		let n = data.len();
-		assert!(n.is_power_of_two());
-
-		let log_n = n.trailing_zeros() as usize;
-		let coset_bits = 32 - coset.leading_zeros() as usize;
-		if log_n + coset_bits > self.log_domain_size {
-			return Err(Error::DomainTooSmall {
-				log_required_domain_size: log_n + coset_bits,
-			});
-		}
-
-		for i in (0..log_n).rev() {
-			let s_evals_i = &self.s_evals_expanded[i];
-			for j in 0..1 << (log_n - 1 - i) {
-				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << i {
-					let idx0 = j << (i + 1) | k;
-					let idx1 = idx0 | 1 << i;
-					data[idx0] += data[idx1] * twiddle;
-					data[idx1] += data[idx0];
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	pub fn inverse_transform<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-	where
-		FF: ExtensionField<F>,
-	{
-		let n = data.len();
-		assert!(n.is_power_of_two());
-
-		let log_n = n.trailing_zeros() as usize;
-		let coset_bits = 32 - coset.leading_zeros() as usize;
-		if log_n + coset_bits > self.log_domain_size {
-			return Err(Error::DomainTooSmall {
-				log_required_domain_size: log_n + coset_bits,
-			});
-		}
-
-		for i in 0..log_n {
-			let s_evals_i = &self.s_evals_expanded[i];
-			for j in 0..1 << (log_n - 1 - i) {
-				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << i {
-					let idx0 = j << (i + 1) | k;
-					let idx1 = idx0 | 1 << i;
-					data[idx1] += data[idx0];
-					data[idx0] += data[idx1] * twiddle;
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	pub fn forward_transform_packed<PB, PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PB: PackedField<Scalar = F>,
-		PE: PackedExtensionField<PB>,
-		PE::Scalar: ExtensionField<PB::Scalar>,
-	{
+impl<F: BinaryField, P: PackedField<Scalar = F>> AdditiveNTT<P> for AdditiveNTTWithPrecompute<F> {
+	fn forward_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error> {
 		if data.is_empty() {
 			return Ok(());
 		}
 
-		let PackedNTTParams {
-			log_n,
-			log_w,
-			log_d,
-			..
-		} = check_packed_transform_inputs::<PB, PE>(self.log_domain_size, data, coset)?;
+		let log_b = log_batch_size;
+
+		let NTTParams { log_n, log_w, .. } =
+			check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
 
 		// Cutoff is the stage of the NTT where each the butterfly units are contained within
 		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_d);
-
-		let data = PE::cast_to_bases_mut(data);
+		let cutoff = log_w.saturating_sub(log_b);
 
 		if data.len() == 1 {
 			// TODO: In this case, transpose and call forward_transform
@@ -432,9 +351,9 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 			let s_evals_i = &self.s_evals_expanded[i];
 			for j in 0..1 << (log_n - 1 - i) {
 				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << (i + log_d - log_w) {
-					let idx0 = j << (i + log_d - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_d - log_w);
+				for k in 0..1 << (i + log_b - log_w) {
+					let idx0 = j << (i + log_b - log_w + 1) | k;
+					let idx1 = idx0 | 1 << (i + log_b - log_w);
 					data[idx0] += data[idx1] * twiddle;
 					data[idx1] += data[idx0];
 				}
@@ -444,53 +363,49 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 		for i in (0..cutoff).rev() {
 			let s_evals_i = &self.s_evals_expanded[i];
 			for j in 0..1 << (log_n - 1 - cutoff) {
-				let mut twiddle = PB::default();
+				let mut twiddle = P::default();
 				for k in 0..1 << (cutoff - i - 1) {
 					let subblock_twiddle_0 =
 						s_evals_i[(coset as usize) << (log_n - 1 - i) | j << (cutoff - i) | k];
 					let subblock_twiddle_1 = s_evals_i[(coset as usize) << (log_n - 1 - i)
 						| j << (cutoff - i) | 1 << (cutoff - i - 1)
 						| k];
-					for l in 0..1 << (i + log_d) {
-						let idx0 = k << (i + log_d + 1) | l;
-						let idx1 = idx0 | 1 << (i + log_d);
+					for l in 0..1 << (i + log_b) {
+						let idx0 = k << (i + log_b + 1) | l;
+						let idx1 = idx0 | 1 << (i + log_b);
 						twiddle.set(idx0, subblock_twiddle_0);
 						twiddle.set(idx1, subblock_twiddle_1);
 					}
 				}
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_d));
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_b));
 				u += v * twiddle;
 				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_d));
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_b));
 			}
 		}
 
 		Ok(())
 	}
 
-	pub fn inverse_transform_packed<PB, PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PB: PackedField<Scalar = F>,
-		PE: PackedExtensionField<PB>,
-		PE::Scalar: ExtensionField<PB::Scalar>,
-	{
+	fn inverse_transform(
+		&self,
+		data: &mut [P],
+		coset: u32,
+		log_batch_size: usize,
+	) -> Result<(), Error> {
 		if data.is_empty() {
 			return Ok(());
 		}
 
-		let PackedNTTParams {
-			log_n,
-			log_w,
-			log_d,
-			..
-		} = check_packed_transform_inputs::<PB, PE>(self.log_domain_size, data, coset)?;
+		let log_b = log_batch_size;
+
+		let NTTParams { log_n, log_w, .. } =
+			check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
 
 		// Cutoff is the stage of the NTT where each the butterfly units are contained within
 		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_d);
-
-		let data = PE::cast_to_bases_mut(data);
+		let cutoff = log_w.saturating_sub(log_b);
 
 		if data.len() == 1 {
 			// TODO: In this case, transpose and call forward_transform
@@ -500,25 +415,25 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 		for i in 0..cutoff {
 			let s_evals_i = &self.s_evals_expanded[i];
 			for j in 0..1 << (log_n - 1 - cutoff) {
-				let mut twiddle = PB::default();
+				let mut twiddle = P::default();
 				for k in 0..1 << (cutoff - i - 1) {
 					let subblock_twiddle_0 =
 						s_evals_i[(coset as usize) << (log_n - 1 - i) | j << (cutoff - i) | k];
 					let subblock_twiddle_1 = s_evals_i[(coset as usize) << (log_n - 1 - i)
 						| j << (cutoff - i) | 1 << (cutoff - i - 1)
 						| k];
-					for l in 0..1 << (i + log_d) {
-						let idx0 = k << (i + log_d + 1) | l;
-						let idx1 = idx0 | 1 << (i + log_d);
+					for l in 0..1 << (i + log_b) {
+						let idx0 = k << (i + log_b + 1) | l;
+						let idx1 = idx0 | 1 << (i + log_b);
 						twiddle.set(idx0, subblock_twiddle_0);
 						twiddle.set(idx1, subblock_twiddle_1);
 					}
 				}
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_d));
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], 1 << (i + log_b));
 				v += u;
 				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_d));
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, 1 << (i + log_b));
 			}
 		}
 
@@ -526,9 +441,9 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 			let s_evals_i = &self.s_evals_expanded[i];
 			for j in 0..1 << (log_n - 1 - i) {
 				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << (i + log_d - log_w) {
-					let idx0 = j << (i + log_d - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_d - log_w);
+				for k in 0..1 << (i + log_b - log_w) {
+					let idx0 = j << (i + log_b - log_w + 1) | k;
+					let idx1 = idx0 | 1 << (i + log_b - log_w);
 					data[idx1] += data[idx0];
 					data[idx0] += data[idx1] * twiddle;
 				}
@@ -543,44 +458,32 @@ fn cantor_basis_subspace_map<F: BinaryField>(elem: F) -> F {
 	elem.square() + elem
 }
 
-struct PackedNTTParams {
+struct NTTParams {
 	log_n: usize,
 	log_w: usize,
-	log_d: usize,
 	coset_bits: usize,
 }
 
-fn check_packed_transform_inputs<PB, PE>(
+fn check_batch_transform_inputs<PB: PackedField>(
 	log_domain_size: usize,
-	data: &[PE],
+	data: &[PB],
 	coset: u32,
-) -> Result<PackedNTTParams, Error>
-where
-	PB: PackedField,
-	PE: PackedExtensionField<PB>,
-	PE::Scalar: ExtensionField<PB::Scalar>,
-{
-	if !PE::Scalar::DEGREE.is_power_of_two() {
-		return Err(Error::PowerOfTwoExtensionDegreeRequired);
-	}
-
+	log_batch_size: usize,
+) -> Result<NTTParams, Error> {
 	if !data.len().is_power_of_two() {
 		return Err(Error::PowerOfTwoLengthRequired);
 	}
-	if !PE::WIDTH.is_power_of_two() {
+	if !PB::WIDTH.is_power_of_two() {
 		return Err(Error::PackingWidthMustDivideDimension);
 	}
 
-	// Because the extension degree is a power of two, the extension packed width is a power of two,
-	// and PE is a packed extension of PB, we can safely conclude that the base packed width is also
-	// a power of two.
-	assert!(PB::WIDTH.is_power_of_two());
-
-	let n = data.len() * PE::WIDTH;
+	let n = (data.len() * PB::WIDTH) >> log_batch_size;
+	if n == 0 {
+		return Err(Error::BatchTooLarge);
+	}
 
 	let log_n = n.trailing_zeros() as usize;
 	let log_w = PB::WIDTH.trailing_zeros() as usize;
-	let log_d = PE::Scalar::DEGREE.trailing_zeros() as usize;
 
 	let coset_bits = 32 - coset.leading_zeros() as usize;
 	if log_n + coset_bits > log_domain_size {
@@ -589,10 +492,9 @@ where
 		});
 	}
 
-	Ok(PackedNTTParams {
+	Ok(NTTParams {
 		log_n,
 		log_w,
-		log_d,
 		coset_bits,
 	})
 }
@@ -610,10 +512,152 @@ mod tests {
 		unpack_scalars_mut, BinaryField32b, BinaryField8b,
 	};
 
+	impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
+		/// Simple implementation of forward transform on non-packed field elements for testing.
+		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
+		where
+			FF: ExtensionField<F>,
+		{
+			let n = data.len();
+			assert!(n.is_power_of_two());
+
+			let log_n = n.trailing_zeros() as usize;
+			let coset_bits = 32 - coset.leading_zeros() as usize;
+			if log_n + coset_bits > self.log_domain_size {
+				return Err(Error::DomainTooSmall {
+					log_required_domain_size: log_n + coset_bits,
+				});
+			}
+
+			for i in (0..log_n).rev() {
+				let s_evals_i = &self.s_evals[i];
+				let coset_twiddle =
+					subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
+
+				for j in 0..1 << (log_n - 1 - i) {
+					let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
+					let twiddle = block_twiddle + coset_twiddle;
+
+					for k in 0..1 << i {
+						let idx0 = j << (i + 1) | k;
+						let idx1 = idx0 | 1 << i;
+						data[idx0] += data[idx1] * twiddle;
+						data[idx1] += data[idx0];
+					}
+				}
+			}
+
+			Ok(())
+		}
+
+		/// Simple implementation of inverse transform on non-packed field elements for testing.
+		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
+		where
+			FF: ExtensionField<F>,
+		{
+			let n = data.len();
+			assert!(n.is_power_of_two());
+
+			let log_n = n.trailing_zeros() as usize;
+			let coset_bits = 32 - coset.leading_zeros() as usize;
+			if log_n + coset_bits > self.log_domain_size {
+				return Err(Error::DomainTooSmall {
+					log_required_domain_size: log_n + coset_bits,
+				});
+			}
+
+			for i in 0..log_n {
+				let s_evals_i = &self.s_evals[i];
+				let coset_twiddle =
+					subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
+
+				for j in 0..1 << (log_n - 1 - i) {
+					let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
+					let twiddle = block_twiddle + coset_twiddle;
+
+					for k in 0..1 << i {
+						let idx0 = j << (i + 1) | k;
+						let idx1 = idx0 | 1 << i;
+						data[idx1] += data[idx0];
+						data[idx0] += data[idx1] * twiddle;
+					}
+				}
+			}
+
+			Ok(())
+		}
+	}
+
+	impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
+		/// Simple implementation of forward transform on non-packed field elements for testing.
+		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
+		where
+			FF: ExtensionField<F>,
+		{
+			let n = data.len();
+			assert!(n.is_power_of_two());
+
+			let log_n = n.trailing_zeros() as usize;
+			let coset_bits = 32 - coset.leading_zeros() as usize;
+			if log_n + coset_bits > self.log_domain_size {
+				return Err(Error::DomainTooSmall {
+					log_required_domain_size: log_n + coset_bits,
+				});
+			}
+
+			for i in (0..log_n).rev() {
+				let s_evals_i = &self.s_evals_expanded[i];
+				for j in 0..1 << (log_n - 1 - i) {
+					let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
+					for k in 0..1 << i {
+						let idx0 = j << (i + 1) | k;
+						let idx1 = idx0 | 1 << i;
+						data[idx0] += data[idx1] * twiddle;
+						data[idx1] += data[idx0];
+					}
+				}
+			}
+
+			Ok(())
+		}
+
+		/// Simple implementation of inverse transform on non-packed field elements for testing.
+		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
+		where
+			FF: ExtensionField<F>,
+		{
+			let n = data.len();
+			assert!(n.is_power_of_two());
+
+			let log_n = n.trailing_zeros() as usize;
+			let coset_bits = 32 - coset.leading_zeros() as usize;
+			if log_n + coset_bits > self.log_domain_size {
+				return Err(Error::DomainTooSmall {
+					log_required_domain_size: log_n + coset_bits,
+				});
+			}
+
+			for i in 0..log_n {
+				let s_evals_i = &self.s_evals_expanded[i];
+				for j in 0..1 << (log_n - 1 - i) {
+					let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
+					for k in 0..1 << i {
+						let idx0 = j << (i + 1) | k;
+						let idx1 = idx0 | 1 << i;
+						data[idx1] += data[idx0];
+						data[idx0] += data[idx1] * twiddle;
+					}
+				}
+			}
+
+			Ok(())
+		}
+	}
+
 	#[test]
 	fn test_additive_ntt_fails_with_field_too_small() {
 		assert_matches!(
-			<AdditiveNTT<BinaryField8b>>::new(10),
+			<AdditiveNTTWithOTFCompute<BinaryField8b>>::new(10),
 			Err(Error::FieldTooSmall {
 				log_domain_size: 10
 			})
@@ -622,22 +666,22 @@ mod tests {
 
 	#[test]
 	fn test_additive_ntt_transform() {
-		let ntt = <AdditiveNTT<BinaryField8b>>::new(8).unwrap();
+		let ntt = <AdditiveNTTWithOTFCompute<BinaryField8b>>::new(8).unwrap();
 		let data = (0..1 << 6)
 			.map(|i| BinaryField8b(i as u8))
 			.collect::<Vec<_>>();
 
 		let mut result = data.clone();
 		for coset in 0..4 {
-			ntt.inverse_transform(&mut result, coset).unwrap();
-			ntt.forward_transform(&mut result, coset).unwrap();
+			ntt.inverse_transform_simple(&mut result, coset).unwrap();
+			ntt.forward_transform_simple(&mut result, coset).unwrap();
 			assert_eq!(result, data);
 		}
 	}
 
 	#[test]
 	fn test_additive_ntt_with_precompute_matches() {
-		let ntt = <AdditiveNTT<BinaryField8b>>::new(8).unwrap();
+		let ntt = <AdditiveNTTWithOTFCompute<BinaryField8b>>::new(8).unwrap();
 		let ntt_with_precompute = <AdditiveNTTWithPrecompute<BinaryField8b>>::new(8).unwrap();
 		let data = (0..1 << 6)
 			.map(|i| BinaryField8b(i as u8))
@@ -646,15 +690,15 @@ mod tests {
 		let mut result1 = data.clone();
 		let mut result2 = data;
 		for coset in 0..4 {
-			ntt.inverse_transform(&mut result1, coset).unwrap();
+			ntt.inverse_transform_simple(&mut result1, coset).unwrap();
 			ntt_with_precompute
-				.inverse_transform(&mut result2, coset)
+				.inverse_transform_simple(&mut result2, coset)
 				.unwrap();
 			assert_eq!(result1, result2);
 
-			ntt.forward_transform(&mut result1, coset).unwrap();
+			ntt.forward_transform_simple(&mut result1, coset).unwrap();
 			ntt_with_precompute
-				.forward_transform(&mut result2, coset)
+				.forward_transform_simple(&mut result2, coset)
 				.unwrap();
 			assert_eq!(result1, result2);
 		}
@@ -664,15 +708,15 @@ mod tests {
 	fn test_additive_ntt_transform_over_larger_field() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let ntt = <AdditiveNTT<BinaryField8b>>::new(8).unwrap();
+		let ntt = <AdditiveNTTWithOTFCompute<BinaryField8b>>::new(8).unwrap();
 		let data = repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
 			.take(1 << 6)
 			.collect::<Vec<_>>();
 
 		let mut result = data.clone();
 		for coset in 0..4 {
-			ntt.inverse_transform(&mut result, coset).unwrap();
-			ntt.forward_transform(&mut result, coset).unwrap();
+			ntt.inverse_transform_simple(&mut result, coset).unwrap();
+			ntt.forward_transform_simple(&mut result, coset).unwrap();
 			assert_eq!(result, data);
 		}
 	}
@@ -683,22 +727,20 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let ntt = <AdditiveNTT<BinaryField8b>>::new(8).unwrap();
+		let ntt = <AdditiveNTTWithOTFCompute<BinaryField8b>>::new(8).unwrap();
 		let mut data = repeat_with(|| Packed::random(&mut rng))
 			.take(1 << 2)
 			.collect::<Vec<_>>();
 		let mut data_copy = data.clone();
 
-		ntt.inverse_transform::<BinaryField8b>(unpack_scalars_mut(&mut data), 2)
+		ntt.inverse_transform_simple::<BinaryField8b>(unpack_scalars_mut(&mut data), 2)
 			.unwrap();
-		ntt.inverse_transform_packed::<Packed, _>(&mut data_copy, 2)
-			.unwrap();
+		AdditiveNTT::<Packed>::inverse_transform_ext(&ntt, &mut data_copy, 2).unwrap();
 		assert_eq!(data, data_copy);
 
-		ntt.forward_transform::<BinaryField8b>(unpack_scalars_mut(&mut data), 3)
+		ntt.forward_transform_simple::<BinaryField8b>(unpack_scalars_mut(&mut data), 3)
 			.unwrap();
-		ntt.forward_transform_packed::<Packed, _>(&mut data_copy, 3)
-			.unwrap();
+		AdditiveNTT::<Packed>::forward_transform_ext(&ntt, &mut data_copy, 3).unwrap();
 		assert_eq!(data, data_copy);
 	}
 
@@ -708,7 +750,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let ntt = <AdditiveNTT<BinaryField8b>>::new(8).unwrap();
+		let ntt = <AdditiveNTTWithOTFCompute<BinaryField8b>>::new(8).unwrap();
 		let ntt_with_precompute = <AdditiveNTTWithPrecompute<BinaryField8b>>::new(8).unwrap();
 		let mut data = repeat_with(|| Packed::random(&mut rng))
 			.take(1 << 4)
@@ -717,23 +759,29 @@ mod tests {
 		let mut data_copy = data.clone();
 		let mut data_copy_2 = data.clone();
 
-		ntt.inverse_transform(unpack_scalars_mut(&mut data), 2)
+		ntt.inverse_transform_simple(unpack_scalars_mut(&mut data), 2)
 			.unwrap();
-		ntt.inverse_transform_packed::<PackedBinaryField16x8b, _>(&mut data_copy, 2)
+		AdditiveNTT::<PackedBinaryField16x8b>::inverse_transform_ext(&ntt, &mut data_copy, 2)
 			.unwrap();
-		ntt_with_precompute
-			.inverse_transform_packed::<PackedBinaryField16x8b, _>(&mut data_copy_2, 2)
-			.unwrap();
+		AdditiveNTT::<PackedBinaryField16x8b>::inverse_transform_ext(
+			&ntt_with_precompute,
+			&mut data_copy_2,
+			2,
+		)
+		.unwrap();
 		assert_eq!(data, data_copy);
 		assert_eq!(data, data_copy_2);
 
-		ntt.forward_transform(unpack_scalars_mut(&mut data), 3)
+		ntt.forward_transform_simple(unpack_scalars_mut(&mut data), 3)
 			.unwrap();
-		ntt.forward_transform_packed::<PackedBinaryField16x8b, _>(&mut data_copy, 3)
+		AdditiveNTT::<PackedBinaryField16x8b>::forward_transform_ext(&ntt, &mut data_copy, 3)
 			.unwrap();
-		ntt_with_precompute
-			.forward_transform_packed::<PackedBinaryField16x8b, _>(&mut data_copy_2, 3)
-			.unwrap();
+		AdditiveNTT::<PackedBinaryField16x8b>::forward_transform_ext(
+			&ntt_with_precompute,
+			&mut data_copy_2,
+			3,
+		)
+		.unwrap();
 		assert_eq!(data, data_copy);
 		assert_eq!(data, data_copy_2);
 	}

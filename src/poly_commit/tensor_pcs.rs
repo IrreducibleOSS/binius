@@ -106,7 +106,7 @@ impl<F, P, PE, LC>
 impl<F, P, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE> for TensorPCS<F, P, PE, LC, H, VCS>
 where
 	F: Field,
-	P: PackedField<Scalar = F> + PackedExtensionField<F> + Send,
+	P: PackedField<Scalar = F> + PackedExtensionField<F> + Send + Sync,
 	FE: ExtensionField<F>,
 	PE: PackedField<Scalar = FE> + PackedExtensionField<P> + PackedExtensionField<FE>,
 	LC: LinearCodeWithExtensionEncoding<P = P>,
@@ -115,7 +115,7 @@ where
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	type Commitment = VCS::Commitment;
-	type Committed = (RowMajorMatrix<F>, VCS::Committed);
+	type Committed = (RowMajorMatrix<P>, VCS::Committed);
 	type Proof = Proof<'static, F, FE, VCS::Proof>;
 	type Error = Error;
 
@@ -139,34 +139,30 @@ where
 		let n_rows = 1 << self.log_rows;
 		let n_cols = self.code.len();
 
-		let mut encoded =
-			RowMajorMatrix::new(vec![P::default(); n_rows * n_cols / P::WIDTH], n_cols / P::WIDTH);
+		let mut encoded = vec![P::default(); n_rows * n_cols / P::WIDTH];
+		transpose::transpose(
+			unpack_scalars(poly.evals()),
+			unpack_scalars_mut(&mut encoded[..n_rows * self.code.dim() / P::WIDTH]),
+			self.code.dim(),
+			n_rows,
+		);
 
-		// TODO: Create better interface/impl for batch encoding & batch NTTs
-		poly.iter_subpolynomials(self.code.dim_bits())?
-			.zip(encoded.rows_mut())
-			.try_for_each(|(subpoly, codeword)| {
-				let msg = subpoly.evals();
-				codeword[..msg.len()].copy_from_slice(msg);
-				self.code.encode_inplace(codeword)
-			})
+		self.code
+			.encode_batch_inplace(&mut encoded, self.log_rows)
 			.map_err(|err| Error::EncodeError(Box::new(err)))?;
 
-		let mut transposed = vec![P::Scalar::ZERO; n_rows * n_cols];
-		transpose::transpose(unpack_scalars(&encoded.values), &mut transposed, n_cols, n_rows);
-
 		let mut digests = vec![H::Digest::default(); n_cols];
-		transposed
-			.par_chunks_exact(n_rows)
-			.map(hash::<_, H>)
+		encoded
+			.par_chunks_exact(n_rows / P::WIDTH)
+			.map(|col| hash::<_, H>(unpack_scalars(col)))
 			.collect_into_vec(&mut digests);
 
-		let transposed_mat = RowMajorMatrix::new(transposed, n_rows);
+		let encoded_mat = RowMajorMatrix::new(encoded, n_rows / P::WIDTH);
 		let (commitment, vcs_committed) = self
 			.vcs
 			.commit_batch(iter::once(&digests))
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-		Ok((commitment, (transposed_mat, vcs_committed)))
+		Ok((commitment, (encoded_mat, vcs_committed)))
 	}
 
 	/// Generate an evaluation proof at a *random* challenge point.
@@ -203,13 +199,13 @@ where
 			.take(self.code.n_test_queries())
 			.map(|index| {
 				let (col_major_mat, ref vcs_committed) = committed;
-				let col = col_major_mat.row_slice(index).to_vec();
+				let col = unpack_scalars(col_major_mat.row_slice(index)).to_vec();
 
 				let vcs_proof = self
 					.vcs
 					.prove_batch_opening(vcs_committed, index)
 					.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-				Ok((col.to_vec(), vcs_proof))
+				Ok((col, vcs_proof))
 			})
 			.collect::<Result<_, Error>>()?;
 
@@ -340,6 +336,9 @@ where
 			// could be relaxed, but power-of-two code lengths are more convenient to work with.
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
+		if (1 << log_rows) % P::WIDTH != 0 {
+			return Err(Error::PackingWidthMustDivideNumberOfRows);
+		}
 		if code.dim() % P::WIDTH != 0 {
 			return Err(Error::PackingWidthMustDivideCodeDimension);
 		}
@@ -405,7 +404,7 @@ mod tests {
 
 		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
 		let pcs =
-			<TensorPCS<_, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(3, rs_code).unwrap();
+			<TensorPCS<_, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| Packed::random(&mut rng))

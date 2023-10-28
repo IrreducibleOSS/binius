@@ -10,7 +10,9 @@ use binius::{
 		packed_binary_field::{PackedBinaryField2x64b, PackedBinaryField8x16b},
 		BinaryField16b, ExtensionField, PackedExtensionField,
 	},
-	reed_solomon::additive_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute},
+	reed_solomon::additive_ntt::{
+		AdditiveNTT, AdditiveNTTWithOTFCompute, AdditiveNTTWithPrecompute,
+	},
 };
 
 fn tower_ntt_16b(c: &mut Criterion) {
@@ -20,7 +22,7 @@ fn tower_ntt_16b(c: &mut Criterion) {
 		PE::Scalar: ExtensionField<BinaryField16b>,
 	{
 		let n = 1 << log_n;
-		let ntt = AdditiveNTT::<BinaryField16b>::new(log_n).unwrap();
+		let ntt = AdditiveNTTWithOTFCompute::<BinaryField16b>::new(log_n).unwrap();
 		let mut rng = thread_rng();
 
 		let bench_id = BenchmarkId::new(id, log_n);
@@ -30,7 +32,7 @@ fn tower_ntt_16b(c: &mut Criterion) {
 				.take(n / PE::WIDTH)
 				.collect::<Vec<_>>();
 
-			b.iter(|| ntt.forward_transform_packed::<PackedBinaryField8x16b, _>(&mut data, 0));
+			b.iter(|| ntt.forward_transform_ext(&mut data, 0));
 		});
 	}
 
@@ -59,7 +61,7 @@ fn tower_ntt_with_precompute_16b(c: &mut Criterion) {
 				.take(n / PE::WIDTH)
 				.collect::<Vec<_>>();
 
-			b.iter(|| ntt.forward_transform_packed::<PackedBinaryField8x16b, _>(&mut data, 0));
+			b.iter(|| ntt.forward_transform_ext(&mut data, 0));
 		});
 	}
 

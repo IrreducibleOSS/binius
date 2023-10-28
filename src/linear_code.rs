@@ -42,7 +42,18 @@ pub trait LinearCode {
 	/// Encode a message in-place in a provided buffer.
 	///
 	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
-	fn encode_inplace(&self, code: &mut [Self::P]) -> Result<(), Self::EncodeError>;
+	fn encode_inplace(&self, code: &mut [Self::P]) -> Result<(), Self::EncodeError> {
+		self.encode_batch_inplace(code, 0)
+	}
+
+	/// Encode a message in-place in a provided buffer.
+	///
+	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
+	fn encode_batch_inplace(
+		&self,
+		code: &mut [Self::P],
+		log_batch_size: usize,
+	) -> Result<(), Self::EncodeError>;
 
 	/// Encode a message provided as a vector of packed field elements.
 	fn encode(&self, mut msg: Vec<Self::P>) -> Result<Vec<Self::P>, Self::EncodeError> {

@@ -16,4 +16,6 @@ pub enum Error {
 	PowerOfTwoExtensionDegreeRequired,
 	#[error("the stride cannot be greater than the packed width")]
 	StrideGreaterThanPackedWidth,
+	#[error("the batch size is greater than the number of elements")]
+	BatchTooLarge,
 }

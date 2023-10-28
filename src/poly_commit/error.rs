@@ -12,6 +12,8 @@ pub enum Error {
 	CodeLengthPowerOfTwoRequired,
 	#[error("packing width must divide code dimension")]
 	PackingWidthMustDivideCodeDimension,
+	#[error("packing width must divide the number of rows")]
+	PackingWidthMustDivideNumberOfRows,
 	#[error("{0}")]
 	Polynomial(#[from] polynomial::Error),
 	#[error("vector commit error: {0}")]

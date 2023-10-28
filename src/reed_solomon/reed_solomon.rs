@@ -3,10 +3,11 @@
 use crate::{
 	field::{BinaryField, ExtensionField, PackedExtensionField, PackedField},
 	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
+	reed_solomon::additive_ntt::AdditiveNTT,
 };
 use std::marker::PhantomData;
 
-use super::{additive_ntt::AdditiveNTT, error::Error};
+use super::{additive_ntt::AdditiveNTTWithOTFCompute, error::Error};
 
 pub struct ReedSolomonCode<P>
 where
@@ -14,7 +15,7 @@ where
 	P::Scalar: BinaryField,
 {
 	// TODO: Genericize whether to use AdditiveNTT or AdditiveNTTWithPrecompute
-	ntt: AdditiveNTT<P::Scalar>,
+	ntt: AdditiveNTTWithOTFCompute<P::Scalar>,
 	log_dimension: usize,
 	log_inv_rate: usize,
 	n_test_queries: usize,
@@ -31,7 +32,7 @@ where
 		log_inv_rate: usize,
 		n_test_queries: usize,
 	) -> Result<Self, Error> {
-		let ntt = AdditiveNTT::new(log_dimension + log_inv_rate)?;
+		let ntt = AdditiveNTTWithOTFCompute::new(log_dimension + log_inv_rate)?;
 		Ok(Self {
 			ntt,
 			log_dimension,
@@ -70,8 +71,32 @@ where
 		1 << self.log_inv_rate
 	}
 
-	fn encode_inplace(&self, code: &mut [Self::P]) -> Result<(), Self::EncodeError> {
-		self.encode_extension_inplace::<Self::P>(code)
+	fn encode_batch_inplace(
+		&self,
+		code: &mut [Self::P],
+		log_batch_size: usize,
+	) -> Result<(), Self::EncodeError> {
+		if (code.len() << log_batch_size) < self.len() {
+			return Err(Error::BufferTooSmall {
+				log_code_len: self.len(),
+			});
+		}
+		if self.dim() % P::WIDTH != 0 {
+			return Err(Error::PackingWidthMustDivideDimension);
+		}
+
+		let msgs_len = (self.dim() / P::WIDTH) << log_batch_size;
+		for i in 1..(1 << self.log_inv_rate) {
+			code.copy_within(0..msgs_len, i * msgs_len);
+		}
+		for i in 0..(1 << self.log_inv_rate) {
+			self.ntt.forward_transform(
+				&mut code[i * msgs_len..(i + 1) * msgs_len],
+				i as u32,
+				log_batch_size,
+			)?;
+		}
+		Ok(())
 	}
 }
 
@@ -100,7 +125,7 @@ where
 		}
 		for i in 0..(1 << self.log_inv_rate) {
 			self.ntt
-				.forward_transform_packed::<P, _>(&mut code[i * dim..(i + 1) * dim], i as u32)?;
+				.forward_transform_ext(&mut code[i * dim..(i + 1) * dim], i as u32)?;
 		}
 		Ok(())
 	}
