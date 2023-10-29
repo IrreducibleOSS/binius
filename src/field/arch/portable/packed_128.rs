@@ -9,9 +9,9 @@ use crate::{
 	impl_packed_field_display,
 };
 use bytemuck::{
-	must_cast, must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod,
-	Zeroable,
+	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
 };
+use p3_util::log2_strict_usize;
 use rand::{Rng, RngCore};
 use static_assertions::const_assert_eq;
 use std::{
@@ -205,7 +205,11 @@ macro_rules! packed_binary_field_u128 {
 			}
 
 			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
-				self.interleave(other, block_len)
+				assert_eq!(Self::WIDTH % (2 * block_len), 0);
+				let log_block_len = log2_strict_usize(block_len);
+				let log_bit_len = log2_strict_usize(Self::Scalar::N_BITS);
+				let (c, d) = interleave_bits(self.0, other.0, log_block_len + log_bit_len);
+				(Self(c), Self(d))
 			}
 		}
 
@@ -251,18 +255,13 @@ macro_rules! impl_packed_binary_field_u128_broadcast_multiply {
 	};
 }
 
-macro_rules! impl_non_unpackable_packed_binary_field_u128 {
-	($name:ident) => {
-		impl $name {
-			fn interleave(self, _other: Self, _block_len: usize) -> (Self, Self) {
-				todo!()
-			}
-		}
-	};
-}
-
 macro_rules! impl_unpackable_packed_binary_field_u128 {
 	($name:ident) => {
+		/// Implement the PackedExtensionField trait for binary fields that are subfields of the
+		/// scalar type.
+		///
+		/// For example, `PackedField2x64b` is `PackedExtensionField<BinaryField64b>` and also
+		/// `PackedExtensionField<BinaryField32b>`, and so on.
 		#[cfg(target_endian = "little")]
 		unsafe impl<P> PackedExtensionField<P> for $name
 		where
@@ -286,24 +285,6 @@ macro_rules! impl_unpackable_packed_binary_field_u128 {
 			fn try_cast_to_ext_mut(packed: &mut [P]) -> Option<&mut [Self]> {
 				Self::Scalar::try_cast_to_ext_mut(packed)
 					.and_then(|scalars| try_cast_slice_mut(scalars).ok())
-			}
-		}
-
-		#[cfg(target_endian = "little")]
-		impl $name {
-			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
-				assert_eq!(Self::WIDTH % (2 * block_len), 0);
-
-				let a: [<Self as PackedField>::Scalar; Self::WIDTH] = must_cast(self);
-				let b: [<Self as PackedField>::Scalar; Self::WIDTH] = must_cast(other);
-
-				let (mut c, mut d) = (a, b);
-				for i in (0..Self::WIDTH).step_by(2 * block_len) {
-					c[i + block_len..i + 2 * block_len].copy_from_slice(&b[i..i + block_len]);
-					d[i..i + block_len].copy_from_slice(&a[i + block_len..i + 2 * block_len]);
-				}
-
-				(must_cast(c), must_cast(d))
 			}
 		}
 	};
@@ -360,10 +341,6 @@ impl PackedBinaryField128x1b {
 	}
 }
 
-impl_non_unpackable_packed_binary_field_u128!(PackedBinaryField128x1b);
-impl_non_unpackable_packed_binary_field_u128!(PackedBinaryField64x2b);
-impl_non_unpackable_packed_binary_field_u128!(PackedBinaryField32x4b);
-
 impl_unpackable_packed_binary_field_u128!(PackedBinaryField16x8b);
 impl_unpackable_packed_binary_field_u128!(PackedBinaryField8x16b);
 impl_unpackable_packed_binary_field_u128!(PackedBinaryField4x32b);
@@ -410,3 +387,28 @@ packed_binary_field_tower!(
 	< PackedBinaryField2x64b
 	< PackedBinaryField1x128b
 );
+
+fn interleave_bits(a: u128, b: u128, log_block_len: usize) -> (u128, u128) {
+	// There are 2^7 = 128 bits in a u128
+	assert!(log_block_len < 7);
+
+	const MASKS: [u128; 7] = [
+		0x55555555555555555555555555555555u128,
+		0x33333333333333333333333333333333u128,
+		0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0fu128,
+		0x00ff00ff00ff00ff00ff00ff00ff00ffu128,
+		0x0000ffff0000ffff0000ffff0000ffffu128,
+		0x00000000ffffffff00000000ffffffffu128,
+		0x0000000000000000ffffffffffffffffu128,
+	];
+
+	let block_len = 1 << log_block_len;
+
+	// See Hacker's Delight, Section 7-3.
+	// https://dl.acm.org/doi/10.5555/2462741
+	let t = ((a >> block_len) ^ b) & MASKS[log_block_len];
+	let c = a ^ t.overflowing_shl(block_len as u32).0;
+	let d = b ^ t;
+
+	(c, d)
+}

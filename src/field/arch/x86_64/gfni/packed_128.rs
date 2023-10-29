@@ -15,14 +15,17 @@ use std::{
 use subtle::{Choice, ConstantTimeEq};
 
 use super::constants::*;
-use crate::field::{
-	binary_field::{
-		BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
-		BinaryField64b, BinaryField8b,
+use crate::{
+	field::{
+		binary_field::{
+			BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b,
+			BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b,
+		},
+		extension::{ExtensionField, PackedExtensionField},
+		packed::PackedField,
+		Error,
 	},
-	extension::{ExtensionField, PackedExtensionField},
-	packed::PackedField,
-	Error,
+	impl_packed_field_display,
 };
 
 macro_rules! binary_tower_packed_shared {
@@ -154,18 +157,45 @@ macro_rules! binary_tower_packed_shared {
 				iter.fold(Self::broadcast(<$scalar_ty>::ONE), |result, next| result * next)
 			}
 		}
+
+		impl_packed_field_display!($name);
 	};
 }
 
 macro_rules! binary_tower_packed_bits {
-	($vis:vis $name:ident, Scalar = $scalar_ty:ty, WIDTH = $width:literal) => {
+	(
+		$vis:vis $name:ident,
+		Scalar = $scalar_ty:ty,
+		Iterator = $iter_name:ident,
+		WIDTH = $width:literal
+	) => {
 		binary_tower_packed_shared!($vis $name, Scalar = $scalar_ty, WIDTH = $width);
 
 		assert_eq_size!($scalar_ty, u8);
 
+		$vis struct $iter_name {
+			inner: $name,
+			index: usize,
+		}
+
+		impl Iterator for $iter_name {
+			type Item = $scalar_ty;
+
+			fn next(&mut self) -> Option<Self::Item> {
+				let result = self.inner.get_checked(self.index).ok()?;
+				self.index += 1;
+				Some(result)
+			}
+
+			fn size_hint(&self) -> (usize, Option<usize>) {
+				let remaining = $width - self.index;
+				(remaining, Some(remaining))
+			}
+		}
+
 		impl PackedField for $name {
 			type Scalar = $scalar_ty;
-			type Iterator = <[$scalar_ty; $width] as IntoIterator>::IntoIter;
+			type Iterator = $iter_name;
 
 			const WIDTH: usize = $width;
 
@@ -184,11 +214,14 @@ macro_rules! binary_tower_packed_bits {
 			}
 
 			fn set_checked(&mut self, _i: usize, _scalar: Self::Scalar) -> Result<(), Error> {
-				todo!()
+				todo!("implement set_checked")
 			}
 
 			fn iter(&self) -> Self::Iterator {
-				todo!()
+				$iter_name {
+					inner: *self,
+					index: 0,
+				}
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
@@ -197,7 +230,7 @@ macro_rules! binary_tower_packed_bits {
 			}
 
 			fn broadcast(_scalar: Self::Scalar) -> Self {
-				todo!()
+				todo!("broadcast")
 			}
 
 			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
@@ -255,7 +288,7 @@ macro_rules! binary_tower_packed_bytes {
 
 			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
 				let (a, b) = unsafe {
-					interleave_bytes(self.0, other.0, block_len * 16 / Self::WIDTH)
+					interleave_bits(self.0, other.0, block_len * 128 / Self::WIDTH)
 				};
 				(Self(a), Self(b))
 			}
@@ -288,7 +321,23 @@ macro_rules! binary_tower_packed_bytes {
 	};
 }
 
-macro_rules! packed_binary_field_tower {
+macro_rules! packed_binary_field_tower_recursive_mul_bits {
+	($subfield_name:ident < $name:ident) => {
+		impl Mul for $name {
+			type Output = Self;
+
+			fn mul(self, _rhs: Self) -> Self::Output {
+				todo!("implement mul")
+			}
+		}
+	};
+	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
+		packed_binary_field_tower_recursive_mul_bits!($subfield_name < $name);
+		packed_binary_field_tower_recursive_mul_bits!($name $(< $extfield_name)+);
+	};
+}
+
+macro_rules! packed_binary_field_tower_recursive_mul_bytes {
 	($subfield_name:ident < $name:ident) => {
 		impl Mul for $name {
 			type Output = Self;
@@ -326,16 +375,15 @@ macro_rules! packed_binary_field_tower {
 				}
 			}
 		}
-
-		packed_binary_field_tower!($subfield_name << $name);
 	};
 	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
-		packed_binary_field_tower!($subfield_name < $name);
-		packed_binary_field_tower!($name $(< $extfield_name)+);
-		packed_binary_field_tower!($subfield_name << $($extfield_name)<+);
+		packed_binary_field_tower_recursive_mul_bytes!($subfield_name < $name);
+		packed_binary_field_tower_recursive_mul_bytes!($name $(< $extfield_name)+);
 	};
-	($subfield_name:ident << $name:ident) => {
-		#[cfg(target_endian = "little")]
+}
+
+macro_rules! packed_binary_field_tower {
+	($subfield_name:ident < $name:ident) => {
 		unsafe impl PackedExtensionField<$subfield_name> for $name {
 			fn cast_to_bases(packed: &[Self]) -> &[$subfield_name] {
 				must_cast_slice(packed)
@@ -354,20 +402,46 @@ macro_rules! packed_binary_field_tower {
 			}
 		}
 	};
-	($subfield_name:ident << $name:ident $(< $extfield_name:ident)+) => {
-		packed_binary_field_tower!($subfield_name << $name);
-		packed_binary_field_tower!($subfield_name << $($extfield_name)<+);
+	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
+		packed_binary_field_tower!($subfield_name < $name);
+		$(
+			packed_binary_field_tower!($subfield_name < $extfield_name);
+		)+
+		packed_binary_field_tower!($name $(< $extfield_name)+);
 	};
 }
 
-binary_tower_packed_bits!(pub PackedBinaryField128x1b, Scalar = BinaryField1b, WIDTH = 128);
+binary_tower_packed_bits!(
+	pub PackedBinaryField128x1b,
+	Scalar = BinaryField1b,
+	Iterator = PackedBinaryField128x1bIter,
+	WIDTH = 128
+);
+binary_tower_packed_bits!(
+	pub PackedBinaryField64x2b,
+	Scalar = BinaryField2b,
+	Iterator = PackedBinaryField64x2bIter,
+	WIDTH = 64
+);
+binary_tower_packed_bits!(
+	pub PackedBinaryField32x4b,
+	Scalar = BinaryField4b,
+	Iterator = PackedBinaryField32x4bIter,
+	WIDTH = 32
+);
 binary_tower_packed_bytes!(pub PackedBinaryField16x8b, Scalar = BinaryField8b, WIDTH = 16);
 binary_tower_packed_bytes!(pub PackedBinaryField8x16b, Scalar = BinaryField16b, WIDTH = 8);
 binary_tower_packed_bytes!(pub PackedBinaryField4x32b, Scalar = BinaryField32b, WIDTH = 4);
 binary_tower_packed_bytes!(pub PackedBinaryField2x64b, Scalar = BinaryField64b, WIDTH = 2);
 binary_tower_packed_bytes!(pub PackedBinaryField1x128b, Scalar = BinaryField128b, WIDTH = 1);
 
-packed_binary_field_tower!(
+packed_binary_field_tower_recursive_mul_bits!(
+	PackedBinaryField128x8b
+	< PackedBinaryField64x2b
+	< PackedBinaryField32x4b
+);
+
+packed_binary_field_tower_recursive_mul_bytes!(
 	PackedBinaryField16x8b
 	< PackedBinaryField8x16b
 	< PackedBinaryField4x32b
@@ -377,7 +451,9 @@ packed_binary_field_tower!(
 
 packed_binary_field_tower!(
 	PackedBinaryField128x1b
-	<< PackedBinaryField16x8b
+	< PackedBinaryField64x2b
+	< PackedBinaryField32x4b
+	< PackedBinaryField16x8b
 	< PackedBinaryField8x16b
 	< PackedBinaryField4x32b
 	< PackedBinaryField2x64b
@@ -468,43 +544,22 @@ impl PackedBinaryField2x64b {
 	}
 }
 
-impl Mul<BinaryField8b> for PackedBinaryField8x16b {
-	type Output = Self;
-
-	fn mul(self, rhs: BinaryField8b) -> Self::Output {
-		unsafe { Self(mul_16x8b(self.0, PackedBinaryField16x8b::broadcast(rhs).0)) }
-	}
-}
-
-// TODO: From/Into are the wrong traits. We really need a trait specific to packed field extensions.
-impl From<PackedBinaryField16x8b> for PackedBinaryField8x16b {
-	fn from(value: PackedBinaryField16x8b) -> Self {
-		Self(value.0)
-	}
-}
-
-impl From<PackedBinaryField8x16b> for PackedBinaryField16x8b {
-	fn from(value: PackedBinaryField8x16b) -> Self {
-		Self(value.0)
-	}
-}
-
-impl From<PackedBinaryField8x16b> for PackedBinaryField2x64b {
-	fn from(value: PackedBinaryField8x16b) -> Self {
-		Self(value.0)
-	}
-}
-
-impl From<PackedBinaryField2x64b> for PackedBinaryField8x16b {
-	fn from(value: PackedBinaryField2x64b) -> Self {
-		Self(value.0)
-	}
-}
-
 #[inline]
-unsafe fn interleave_bytes(a: __m128i, b: __m128i, block_len: usize) -> (__m128i, __m128i) {
+unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i, __m128i) {
 	match block_len {
 		1 => {
+			let mask = _mm_set1_epi8(0x55i8);
+			interleave_bits_imm::<1>(a, b, mask)
+		}
+		2 => {
+			let mask = _mm_set1_epi8(0x33i8);
+			interleave_bits_imm::<2>(a, b, mask)
+		}
+		4 => {
+			let mask = _mm_set1_epi8(0x0fi8);
+			interleave_bits_imm::<4>(a, b, mask)
+		}
+		8 => {
 			let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -512,7 +567,7 @@ unsafe fn interleave_bytes(a: __m128i, b: __m128i, block_len: usize) -> (__m128i
 			let b_prime = _mm_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
 		}
-		2 => {
+		16 => {
 			let shuffle = _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -520,7 +575,7 @@ unsafe fn interleave_bytes(a: __m128i, b: __m128i, block_len: usize) -> (__m128i
 			let b_prime = _mm_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
 		}
-		4 => {
+		32 => {
 			let shuffle = _mm_set_epi8(15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -528,7 +583,7 @@ unsafe fn interleave_bytes(a: __m128i, b: __m128i, block_len: usize) -> (__m128i
 			let b_prime = _mm_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
 		}
-		8 => {
+		64 => {
 			let a_prime = _mm_unpacklo_epi64(a, b);
 			let b_prime = _mm_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
@@ -538,43 +593,15 @@ unsafe fn interleave_bytes(a: __m128i, b: __m128i, block_len: usize) -> (__m128i
 }
 
 #[inline]
-unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i, __m128i) {
-	match block_len {
-		1 => {
-			let lo_mask = _mm_set1_epi8(0x55u8 as i8);
-			let hi_mask = _mm_set1_epi8(0xaau8 as i8);
-			let a_lo = _mm_and_si128(a, lo_mask);
-			let a_hi = _mm_and_si128(a, hi_mask);
-			let b_lo = _mm_and_si128(b, lo_mask);
-			let b_hi = _mm_and_si128(b, hi_mask);
-			let a_prime = _mm_or_si128(a_lo, _mm_slli_si128::<1>(b_lo));
-			let b_prime = _mm_or_si128(_mm_srli_si128::<1>(a_hi), b_hi);
-			(a_prime, b_prime)
-		}
-		2 => {
-			let lo_mask = _mm_set1_epi8(0x33u8 as i8);
-			let hi_mask = _mm_set1_epi8(0xccu8 as i8);
-			let a_lo = _mm_and_si128(a, lo_mask);
-			let a_hi = _mm_and_si128(a, hi_mask);
-			let b_lo = _mm_and_si128(b, lo_mask);
-			let b_hi = _mm_and_si128(b, hi_mask);
-			let a_prime = _mm_or_si128(a_lo, _mm_slli_si128::<2>(b_lo));
-			let b_prime = _mm_or_si128(_mm_srli_si128::<2>(a_hi), b_hi);
-			(a_prime, b_prime)
-		}
-		4 => {
-			let lo_mask = _mm_set1_epi8(0x0fu8 as i8);
-			let hi_mask = _mm_set1_epi8(0xf0u8 as i8);
-			let a_lo = _mm_and_si128(a, lo_mask);
-			let a_hi = _mm_and_si128(a, hi_mask);
-			let b_lo = _mm_and_si128(b, lo_mask);
-			let b_hi = _mm_and_si128(b, hi_mask);
-			let a_prime = _mm_or_si128(a_lo, _mm_slli_si128::<4>(b_lo));
-			let b_prime = _mm_or_si128(_mm_srli_si128::<4>(a_hi), b_hi);
-			(a_prime, b_prime)
-		}
-		_ => panic!("unsupported block length"),
-	}
+unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
+	a: __m128i,
+	b: __m128i,
+	mask: __m128i,
+) -> (__m128i, __m128i) {
+	let t = _mm_and_si128(_mm_xor_si128(_mm_srli_epi64::<BLOCK_LEN>(a), b), mask);
+	let a_prime = _mm_xor_si128(a, _mm_slli_epi64::<BLOCK_LEN>(t));
+	let b_prime = _mm_xor_si128(b, t);
+	(a_prime, b_prime)
 }
 
 impl Mul for PackedBinaryField128x1b {

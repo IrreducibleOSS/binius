@@ -11,4 +11,8 @@ pub enum Error {
 	/// in the binary field.
 	#[error("value is not in the field")]
 	NotInField,
+	#[error("power of two size required for square transpose")]
+	SquareTransposePowerOfTwoSizeRequired,
+	#[error("size of transpose must divide packing width for square transpose")]
+	SquareTransposeSizeMustDivideWidth,
 }

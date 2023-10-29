@@ -249,4 +249,26 @@ mod tests {
 		assert_eq!(c, expected_c);
 		assert_eq!(d, expected_d);
 	}
+
+	#[test]
+	fn test_interleave_1b() {
+		let a = PackedBinaryField128x1b::from(0x0000000000000000ffffffffffffffffu128);
+		let b = PackedBinaryField128x1b::from(0xffffffffffffffff0000000000000000u128);
+		let c = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
+		let d = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
+
+		let (e, f) = a.interleave(b, 1);
+		assert_eq!(a.interleave(b, 1), (c, d));
+		assert_eq!(c.interleave(d, 1), (a, b));
+
+		let c = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
+		let d = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
+		assert_eq!(a.interleave(b, 2), (c, d));
+		assert_eq!(c.interleave(d, 2), (a, b));
+
+		let c = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
+		let d = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
+		assert_eq!(a.interleave(b, 4), (c, d));
+		assert_eq!(c.interleave(d, 4), (a, b));
+	}
 }
