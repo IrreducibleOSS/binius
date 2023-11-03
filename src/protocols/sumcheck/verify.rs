@@ -1,72 +1,48 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::Field, polynomial::EvaluationDomain, protocols::evalcheck::evalcheck::EvalcheckClaim,
+	field::Field, iopoly::MultivariatePolyOracle, polynomial::EvaluationDomain,
+	protocols::evalcheck::evalcheck::EvalcheckClaim,
 };
-use p3_challenger::{CanObserve, CanSample};
 
 use super::{
-	error::{Error, VerificationError},
-	sumcheck::SumcheckProof,
-	SumcheckClaim,
+	error::VerificationError, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round,
+	SumcheckClaim, SumcheckRound, SumcheckRoundClaim,
 };
 
-/// Verifies a sumcheck reduction proof.
+/// Verifies a sumcheck round reduction proof.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify<F, CH>(
-	claim: SumcheckClaim<F>,
+pub fn verify_round<F>(
+	poly_oracle: &MultivariatePolyOracle<F>,
 	domain: &EvaluationDomain<F>,
-	proof: &SumcheckProof<F>,
-	challenger: &mut CH,
-) -> Result<EvalcheckClaim<F>, Error>
+	round: SumcheckRound<F>,
+	round_sum: F,
+	partial_reversed_point: Vec<F>,
+	challenge: F,
+) -> Result<SumcheckRoundClaim<F>, VerificationError>
 where
 	F: Field,
-	CH: CanSample<F> + CanObserve<F>,
 {
-	let n_vars = claim.n_vars;
-	let sum = claim.sum;
-	if domain.size() == 0 {
-		return Err(Error::EvaluationDomainMismatch);
-	}
+	reduce_sumcheck_claim_round(
+		poly_oracle,
+		domain,
+		round,
+		round_sum,
+		partial_reversed_point,
+		challenge,
+	)
+}
 
-	let degree = domain.size() - 1;
-	if degree == 0 {
-		return Err(Error::PolynomialDegreeIsZero);
-	}
-	if domain.points()[0] != F::ZERO {
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	if domain.points()[1] != F::ONE {
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	if proof.rounds.len() != n_vars {
-		return Err(VerificationError::NumberOfRounds.into());
-	}
-
-	let mut round_sum = sum;
-	let mut point = Vec::with_capacity(n_vars);
-
-	for i in 0..n_vars {
-		let round = &proof.rounds[i];
-		if round.coeffs.len() != degree {
-			return Err(VerificationError::NumberOfCoefficients { round: i }.into());
-		}
-
-		challenger.observe_slice(&round.coeffs);
-
-		let mut round_coeffs = round.coeffs.clone();
-		round_coeffs.insert(0, round_sum - round_coeffs[0]);
-
-		let challenge = challenger.sample();
-		point.push(challenge);
-		round_sum = domain.extrapolate(&round_coeffs, challenge)?;
-	}
-
-	point.reverse();
-	Ok(EvalcheckClaim {
-		multilinear_composition: claim.multilinear_composition,
-		eval_point: point,
-		eval: round_sum,
-	})
+/// Verifies a sumcheck reduction proof final step, after all rounds completed.
+///
+/// Returns the evaluation point and the claimed evaluation.
+pub fn verify_final<'a, F>(
+	claim: &'a SumcheckClaim<'a, F>,
+	final_rd_reduced_claim_output: &SumcheckRoundClaim<F>,
+) -> Result<EvalcheckClaim<'a, F>, VerificationError>
+where
+	F: Field,
+{
+	reduce_sumcheck_claim_final(claim, final_rd_reduced_claim_output)
 }

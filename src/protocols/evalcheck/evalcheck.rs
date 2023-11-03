@@ -1,25 +1,19 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::sync::Arc;
+use crate::{field::Field, iopoly::MultivariatePolyOracle, polynomial::MultilinearComposite};
 
-use crate::{
-	field::Field,
-	polynomial::{CompositionPoly, MultilinearComposite},
-};
-
-/// EvalcheckClaim Struct
-pub struct EvalcheckClaim<F> {
-	/// Virtual Polynomial Oracle is derivable from (Multilinear) Polynomial Oracles
-	/// compositions may be nested
-	pub multilinear_composition: Arc<dyn CompositionPoly<F, F>>,
+#[derive(Debug)]
+pub struct EvalcheckClaim<'a, F: Field> {
+	/// Virtual Polynomial Oracle for which the evaluation is claimed
+	pub poly: MultivariatePolyOracle<'a, F>,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
 	pub eval: F,
 }
 
-/// EvalCheckWitness Struct
+#[derive(Debug)]
 pub struct EvalcheckWitness<'a, OF: Field> {
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: &'a MultilinearComposite<'a, OF, OF>,
+	pub polynomial: MultilinearComposite<'a, OF, OF>,
 }

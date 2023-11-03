@@ -4,8 +4,19 @@ use super::{error::Error, multilinear::MultilinearPoly};
 use crate::field::{ExtensionField, PackedField};
 use std::sync::Arc;
 
+pub trait MultivariatePoly<F>: std::fmt::Debug {
+	// The number of variables.
+	fn n_vars(&self) -> usize;
+
+	/// Total degree of the polynomial.
+	fn degree(&self) -> usize;
+
+	/// Evaluate the polynomial at a point in the extension field.
+	fn evaluate(&self, query: &[F]) -> Result<F, Error>;
+}
+
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P, FE>
+pub trait CompositionPoly<P, FE>: std::fmt::Debug
 where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
@@ -33,14 +44,14 @@ where
 ///
 /// where $g(Y_0, ..., Y_{k-1})$ is a $k$-variate polynomial and $f_0, ..., f_k$ are all multilinear
 /// in $\mu$ variables.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MultilinearComposite<'a, P, FE>
 where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
 {
 	// TODO: Consider whether to define this struct as generic over the composition function
-	pub(crate) composition: Arc<dyn CompositionPoly<P, FE>>,
+	pub composition: Arc<dyn CompositionPoly<P, FE>>,
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<MultilinearPoly<'a, P>>,
@@ -91,10 +102,6 @@ where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
 {
-	pub fn n_vars(&self) -> usize {
-		self.n_vars
-	}
-
 	pub fn evaluate_partial(
 		&self,
 		query: &[P::Scalar],
@@ -119,12 +126,11 @@ where
 		self.composition.evaluate(&multilinear_evals)
 	}
 
-	pub fn evaluate_ext(&self, query: &[FE]) -> Result<FE, Error> {
-		let multilinear_evals = MultilinearPoly::batch_evaluate(
-			self.iter_multilinear_polys().map(|poly| poly.borrow_copy()),
-			query,
-		)
-		.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate_ext(&multilinear_evals)
+	pub fn degree(&self) -> usize {
+		self.composition.degree()
+	}
+
+	pub fn n_vars(&self) -> usize {
+		self.n_vars
 	}
 }

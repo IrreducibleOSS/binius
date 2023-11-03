@@ -11,6 +11,7 @@
 pub mod challenger;
 pub mod field;
 pub mod hash;
+pub mod iopoly;
 pub mod linear_code;
 pub mod merkle_tree;
 pub mod poly_commit;

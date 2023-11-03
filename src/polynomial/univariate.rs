@@ -2,7 +2,7 @@
 // Copyright (c) 2022 The Plonky2 Authors
 
 use super::error::Error;
-use crate::field::{ExtensionField, Field};
+use crate::field::{ExtensionField, Field, PackedField};
 
 /// A domain that univariate polynomials may be evaluated on.
 ///
@@ -50,6 +50,11 @@ impl<F: Field> EvaluationDomain<F> {
 
 		Ok(result)
 	}
+}
+
+#[inline]
+pub fn extrapolate_line<P: PackedField>(x_0: P, x_1: P, z: P::Scalar) -> P {
+	x_0 + (x_1 - x_0) * z
 }
 
 pub fn evaluate_univariate<F: Field>(coeffs: impl DoubleEndedIterator<Item = F>, x: F) -> F {

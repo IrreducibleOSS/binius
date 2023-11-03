@@ -2,46 +2,25 @@
 
 use std::sync::Arc;
 
-use crate::{
-	field::{ExtensionField, Field, PackedField},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
-	},
+use crate::field::Field;
+
+use crate::polynomial::{
+	CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
+	MultivariatePoly,
 };
 
-use super::evalcheck::evalcheck::EvalcheckClaim;
-
-// A verifier has oracles to multilinears, but not the composite function
-pub fn verify_evalcheck_claim<P: PackedField, F: ExtensionField<P::Scalar>>(
-	evalcheck: EvalcheckClaim<F>,
-	multilinears: &[MultilinearPoly<'static, P>],
-) {
-	assert_eq!(evalcheck.multilinear_composition.n_vars(), multilinears.len());
-	// evaluate each multilinear on the eval point
-
-	let evaluations = multilinears
-		.iter()
-		.map(|multilin| multilin.evaluate(&evalcheck.eval_point).unwrap())
-		.collect::<Vec<_>>();
-
-	let eval = evalcheck
-		.multilinear_composition
-		.evaluate(&evaluations)
-		.unwrap();
-	assert_eq!(eval, evalcheck.eval);
-}
-
-pub struct ProductMultivariate {
+#[derive(Debug)]
+pub struct TestProductComposition {
 	arity: usize,
 }
 
-impl ProductMultivariate {
+impl TestProductComposition {
 	pub fn new(arity: usize) -> Self {
 		Self { arity }
 	}
 }
 
-impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
+impl<F: Field> CompositionPoly<F, F> for TestProductComposition {
 	fn n_vars(&self) -> usize {
 		self.arity
 	}
@@ -51,13 +30,40 @@ impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = CompositionPoly::<F, F>::n_vars(self);
+		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
 
 	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = CompositionPoly::<F, F>::n_vars(self);
+		let n_vars = self.arity;
+		assert_eq!(query.len(), n_vars);
+		Ok(query.iter().product())
+	}
+}
+
+#[derive(Debug)]
+pub struct TestProductCompositionOracle {
+	arity: usize,
+}
+
+impl TestProductCompositionOracle {
+	pub fn new(arity: usize) -> Self {
+		Self { arity }
+	}
+}
+
+impl<F: Field> MultivariatePoly<F> for TestProductCompositionOracle {
+	fn n_vars(&self) -> usize {
+		self.arity
+	}
+
+	fn degree(&self) -> usize {
+		self.arity
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
+		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
@@ -65,7 +71,7 @@ impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
 
 pub fn transform_poly<F, OF>(
 	poly: &MultilinearComposite<F, F>,
-	composition: Arc<dyn CompositionPoly<OF, OF>>,
+	replacement_composition: Arc<dyn CompositionPoly<OF, OF>>,
 ) -> Result<MultilinearComposite<'static, OF, OF>, PolynomialError>
 where
 	F: Field,
@@ -83,6 +89,6 @@ where
 			MultilinearPoly::from_values(values)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
-	let ret = MultilinearComposite::new(poly.n_vars(), composition, multilinears)?;
+	let ret = MultilinearComposite::new(poly.n_vars(), replacement_composition, multilinears)?;
 	Ok(ret)
 }
