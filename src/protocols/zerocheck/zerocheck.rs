@@ -8,7 +8,7 @@ use crate::{
 };
 use std::sync::Arc;
 
-use crate::polynomial::{Error as PolynomialError, MultilinearComposite};
+use crate::polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite};
 
 use super::VerificationError;
 
@@ -77,26 +77,27 @@ impl<F: Field> MultivariatePoly<F> for EqIndPartialEval<F> {
 	}
 }
 
-/// Represents the product composition of a MultivariatePolyOracle and a
-/// MultilinearPolyOracle
+/// This wraps an inner composition polynomial $f$ and multiplies by another variable..
+///
+/// The function is $g(X_0, ..., X_n) = f(X_0, ..., X_{n-1}) * X_n$.
 #[derive(Debug)]
-struct ProductCompositionOracle<F: Field> {
-	first_inner: Arc<dyn MultivariatePoly<F>>,
+pub struct ProductComposition<F: Field> {
+	inner: Arc<dyn CompositionPoly<F, F>>,
 }
 
-impl<F: Field> ProductCompositionOracle<F> {
-	pub fn new(first_inner: Arc<dyn MultivariatePoly<F>>) -> Self {
-		Self { first_inner }
+impl<F: Field> ProductComposition<F> {
+	pub fn new(inner: Arc<dyn CompositionPoly<F, F>>) -> Self {
+		Self { inner }
 	}
 }
 
-impl<F: Field> MultivariatePoly<F> for ProductCompositionOracle<F> {
+impl<F: Field> CompositionPoly<F, F> for ProductComposition<F> {
 	fn n_vars(&self) -> usize {
-		self.first_inner.n_vars() + 1
+		self.inner.n_vars() + 1
 	}
 
 	fn degree(&self) -> usize {
-		self.first_inner.degree() + 1
+		self.inner.degree() + 1
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
@@ -105,10 +106,13 @@ impl<F: Field> MultivariatePoly<F> for ProductCompositionOracle<F> {
 			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
 		}
 
-		let first_inner_query = &query[..n_vars - 1];
-		let first_inner_eval = self.first_inner.evaluate(first_inner_query)?;
+		let inner_query = &query[..n_vars - 1];
+		let inner_eval = self.inner.evaluate(inner_query)?;
+		Ok(inner_eval * query[n_vars - 1])
+	}
 
-		Ok(first_inner_eval * query[n_vars - 1])
+	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
+		self.evaluate(query)
 	}
 }
 
@@ -127,7 +131,7 @@ pub fn reduce_zerocheck_claim<'a, F: Field>(
 	let mut inners = poly_composite.inner_polys();
 	inners.push(eq_r);
 
-	let new_composition = ProductCompositionOracle::new(poly_composite.composition());
+	let new_composition = ProductComposition::new(poly_composite.composition());
 	let composite_poly =
 		CompositePoly::new(claim.poly.n_vars(), inners, Arc::new(new_composition))?;
 	let f_hat = MultivariatePolyOracle::Composite(composite_poly);

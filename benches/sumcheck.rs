@@ -1,11 +1,11 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, Field},
+	field::{BinaryField128b, BinaryField128bPolyval, ExtensionField, Field},
 	hash::GroestlHasher,
 	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearPoly, MultivariatePoly,
+		MultilinearPoly,
 	},
 	protocols::sumcheck::{
 		self, Error as SumcheckError, SumcheckClaim, SumcheckProveOutput, SumcheckWitness,
@@ -16,58 +16,14 @@ use p3_challenger::CanSample;
 use rand::thread_rng;
 use std::{iter::repeat_with, mem, sync::Arc};
 
-#[derive(Debug)]
-struct ProductMultivariate {
-	n_vars: usize,
-}
-
-impl<F: Field> CompositionPoly<F, F> for ProductMultivariate {
-	fn n_vars(&self) -> usize {
-		self.n_vars
-	}
-
-	fn degree(&self) -> usize {
-		self.n_vars
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		assert_eq!(query.len(), self.n_vars);
-		Ok(query.iter().product())
-	}
-
-	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		assert_eq!(query.len(), self.n_vars);
-		Ok(query.iter().product())
-	}
-}
-
-#[derive(Debug)]
-struct ProductMultivariateOracle {
-	n_vars: usize,
-}
-
-impl<F: Field> MultivariatePoly<F> for ProductMultivariateOracle {
-	fn n_vars(&self) -> usize {
-		self.n_vars
-	}
-
-	fn degree(&self) -> usize {
-		self.n_vars
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		assert_eq!(query.len(), self.n_vars);
-		Ok(query.iter().product())
-	}
-}
-
 fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	type FTower = BinaryField128b;
 	type FPolyval = BinaryField128bPolyval;
 
-	let composition: Arc<dyn CompositionPoly<FPolyval, FPolyval>> =
-		Arc::new(ProductMultivariate { n_vars: 2 });
-	let composition_oracle = Arc::new(ProductMultivariateOracle { n_vars: 2 });
+	let composition: Arc<dyn CompositionPoly<FTower, FTower>> =
+		Arc::new(TestProductComposition::new(2));
+	let prover_composition: Arc<dyn CompositionPoly<FPolyval, FPolyval>> =
+		Arc::new(TestProductComposition::new(2));
 
 	let domain = EvaluationDomain::new(vec![FTower::ZERO, FTower::ONE, FTower::new(2)]).unwrap();
 
@@ -88,8 +44,8 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			})
 			.take(composition.n_vars())
 			.collect::<Vec<_>>();
-			let poly =
-				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
+			let poly = MultilinearComposite::new(n_vars, prover_composition.clone(), multilinears)
+				.unwrap();
 			let sumcheck_witness = SumcheckWitness {
 				polynomial: poly.clone(),
 			};
@@ -105,7 +61,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 				},
 			];
 			let composite_poly =
-				CompositePoly::new(poly.n_vars(), inner, composition_oracle.clone()).unwrap();
+				CompositePoly::new(poly.n_vars(), inner, composition.clone()).unwrap();
 			let f_oracle = MultivariatePolyOracle::Composite(composite_poly);
 			let sumcheck_claim = make_sumcheck_claim(f_oracle, sumcheck_witness.clone()).unwrap();
 			let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -160,7 +116,42 @@ where
 	Ok(sumcheck_claim)
 }
 
-pub fn full_prove_wrapper<'a, F: Field, OF: Field + Into<F> + From<F>>(
+#[derive(Debug)]
+pub struct TestProductComposition {
+	arity: usize,
+}
+
+impl TestProductComposition {
+	pub fn new(arity: usize) -> Self {
+		Self { arity }
+	}
+}
+
+impl<F, FE> CompositionPoly<F, FE> for TestProductComposition
+where
+	F: Field,
+	FE: ExtensionField<F>,
+{
+	fn n_vars(&self) -> usize {
+		self.arity
+	}
+
+	fn degree(&self) -> usize {
+		self.arity
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
+		let n_vars = self.arity;
+		assert_eq!(query.len(), n_vars);
+		Ok(query.iter().product())
+	}
+
+	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, PolynomialError> {
+		CompositionPoly::<FE, FE>::evaluate(self, query)
+	}
+}
+
+fn full_prove_wrapper<'a, F: Field, OF: Field + Into<F> + From<F>>(
 	claim: &'a SumcheckClaim<F>,
 	witness: SumcheckWitness<'a, OF>,
 	domain: &'a EvaluationDomain<F>,

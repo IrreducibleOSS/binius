@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::field::Field;
+use crate::field::{ExtensionField, Field};
 
 use crate::polynomial::{
 	CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
-	MultivariatePoly,
 };
 
 #[derive(Debug)]
@@ -20,7 +19,11 @@ impl TestProductComposition {
 	}
 }
 
-impl<F: Field> CompositionPoly<F, F> for TestProductComposition {
+impl<F, FE> CompositionPoly<F, FE> for TestProductComposition
+where
+	F: Field,
+	FE: ExtensionField<F>,
+{
 	fn n_vars(&self) -> usize {
 		self.arity
 	}
@@ -35,37 +38,8 @@ impl<F: Field> CompositionPoly<F, F> for TestProductComposition {
 		Ok(query.iter().product())
 	}
 
-	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = self.arity;
-		assert_eq!(query.len(), n_vars);
-		Ok(query.iter().product())
-	}
-}
-
-#[derive(Debug)]
-pub struct TestProductCompositionOracle {
-	arity: usize,
-}
-
-impl TestProductCompositionOracle {
-	pub fn new(arity: usize) -> Self {
-		Self { arity }
-	}
-}
-
-impl<F: Field> MultivariatePoly<F> for TestProductCompositionOracle {
-	fn n_vars(&self) -> usize {
-		self.arity
-	}
-
-	fn degree(&self) -> usize {
-		self.arity
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = self.arity;
-		assert_eq!(query.len(), n_vars);
-		Ok(query.iter().product())
+	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, PolynomialError> {
+		CompositionPoly::<FE, FE>::evaluate(self, query)
 	}
 }
 

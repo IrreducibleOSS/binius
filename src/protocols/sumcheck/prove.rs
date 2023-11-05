@@ -214,7 +214,7 @@ mod tests {
 				verify::{verify_final, verify_round},
 				SumcheckClaim,
 			},
-			test_utils::{transform_poly, TestProductComposition, TestProductCompositionOracle},
+			test_utils::{transform_poly, TestProductComposition},
 		},
 	};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -309,12 +309,9 @@ mod tests {
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
 			.collect();
-		let composite_poly = CompositePoly::new(
-			n_vars,
-			h,
-			Arc::new(TestProductCompositionOracle::new(n_multilinears)),
-		)
-		.unwrap();
+		let composite_poly =
+			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
+				.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let sumcheck_claim = SumcheckClaim {
 			sum,
@@ -369,12 +366,9 @@ mod tests {
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
 			.collect();
-		let composite_poly = CompositePoly::new(
-			n_vars,
-			h,
-			Arc::new(TestProductCompositionOracle::new(n_multilinears)),
-		)
-		.unwrap();
+		let composite_poly =
+			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
+				.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let sumcheck_claim = SumcheckClaim {
 			sum,

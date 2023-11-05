@@ -1,12 +1,10 @@
+use crate::{field::Field, polynomial::Error as PolynomialError};
+
 use crate::{
-	field::Field,
-	polynomial::{Error as PolynomialError, MultivariatePoly},
+	field::{ExtensionField, PackedField},
+	polynomial::{CompositionPoly, MultivariatePoly},
 };
-
 use std::sync::Arc;
-
-#[derive(Debug)]
-pub struct IdentityCompositionOracle {}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -58,10 +56,18 @@ pub enum MultivariatePolyOracle<'a, F: Field> {
 pub struct CompositePoly<'a, F: Field> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<'a, F>>,
-	composition: Arc<dyn MultivariatePoly<F>>,
+	composition: Arc<dyn CompositionPoly<F, F>>,
 }
 
-impl<F: Field> MultivariatePoly<F> for IdentityCompositionOracle {
+/// Identity composition function $g(X) = X$.
+#[derive(Debug)]
+struct IdentityComposition;
+
+impl<P, FE> CompositionPoly<P, FE> for IdentityComposition
+where
+	P: PackedField,
+	FE: ExtensionField<P::Scalar>,
+{
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -70,11 +76,15 @@ impl<F: Field> MultivariatePoly<F> for IdentityCompositionOracle {
 		1
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 1 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 1 });
 		}
 		Ok(query[0])
+	}
+
+	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, PolynomialError> {
+		CompositionPoly::<FE, FE>::evaluate(self, query)
 	}
 }
 
@@ -85,7 +95,7 @@ impl<'a, F: Field> MultivariatePolyOracle<'a, F> {
 			MultivariatePolyOracle::Multilinear(multilinear) => CompositePoly::new(
 				multilinear.n_vars(),
 				vec![multilinear.clone()],
-				Arc::new(IdentityCompositionOracle {}),
+				Arc::new(IdentityComposition),
 			)
 			.unwrap(),
 		}
@@ -110,7 +120,7 @@ impl<'a, F: Field> CompositePoly<'a, F> {
 	pub fn new(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<'a, F>>,
-		composition: Arc<dyn MultivariatePoly<F>>,
+		composition: Arc<dyn CompositionPoly<F, F>>,
 	) -> Result<Self, Error> {
 		if inner.len() != composition.n_vars() {
 			return Err(Error::CompositionMismatch);
@@ -135,7 +145,7 @@ impl<'a, F: Field> CompositePoly<'a, F> {
 		self.inner.clone()
 	}
 
-	pub fn composition(&self) -> Arc<dyn MultivariatePoly<F>> {
+	pub fn composition(&self) -> Arc<dyn CompositionPoly<F, F>> {
 		self.composition.clone()
 	}
 }

@@ -5,54 +5,17 @@ use std::sync::Arc;
 use crate::{
 	field::Field,
 	polynomial::{
-		eq_ind_partial_eval, CompositionPoly, Error as PolynomialError, MultilinearComposite,
-		MultilinearPoly,
+		eq_ind_partial_eval, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
 	},
 	protocols::{sumcheck::SumcheckWitness, zerocheck::zerocheck::reduce_zerocheck_claim},
 };
 
 use super::{
 	error::Error,
-	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness},
+	zerocheck::{
+		ProductComposition, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
+	},
 };
-
-/// Represents the product composition of a MultilinearComposite poly and
-/// a Multilinear poly
-#[derive(Debug)]
-struct ProductComposition<F: Field> {
-	inner: Arc<dyn CompositionPoly<F, F>>,
-}
-
-impl<F: Field> ProductComposition<F> {
-	fn new(inner: Arc<dyn CompositionPoly<F, F>>) -> Self {
-		Self { inner }
-	}
-}
-
-impl<F: Field> CompositionPoly<F, F> for ProductComposition<F> {
-	fn n_vars(&self) -> usize {
-		self.inner.n_vars() + 1
-	}
-
-	fn degree(&self) -> usize {
-		self.inner.degree() + 1
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let n_vars = self.n_vars();
-		if query.len() != n_vars {
-			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
-		}
-
-		let inner_query = &query[..n_vars - 1];
-		let inner_eval = self.inner.evaluate(inner_query)?;
-		Ok(inner_eval * query[n_vars - 1])
-	}
-
-	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate(query)
-	}
-}
 
 fn multiply_multilinear_composite<'a, F: 'static + Field>(
 	composite: MultilinearComposite<'a, F, F>,
@@ -130,7 +93,7 @@ mod tests {
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
-			test_utils::{transform_poly, TestProductComposition, TestProductCompositionOracle},
+			test_utils::{transform_poly, TestProductComposition},
 			zerocheck::{verify::verify, zerocheck::ZerocheckClaim},
 		},
 	};
@@ -167,12 +130,9 @@ mod tests {
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
 			.collect();
-		let composite_poly = CompositePoly::new(
-			n_vars,
-			h,
-			Arc::new(TestProductCompositionOracle::new(n_multilinears)),
-		)
-		.unwrap();
+		let composite_poly =
+			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
+				.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim { poly: poly_oracle };
 
@@ -223,12 +183,9 @@ mod tests {
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
 			.collect();
-		let composite_poly = CompositePoly::new(
-			n_vars,
-			h,
-			Arc::new(TestProductCompositionOracle::new(n_multilinears)),
-		)
-		.unwrap();
+		let composite_poly =
+			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
+				.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim { poly: poly_oracle };
 
