@@ -1,7 +1,7 @@
-use thiserror::Error;
+// Copyright 2023 Ulvetanna Inc.
 
 /// Error thrown when a field operation fails.
-#[derive(Clone, Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum Error {
 	#[error("the argument does not match the field extension degree")]
 	ExtensionDegreeMismatch,
@@ -11,8 +11,4 @@ pub enum Error {
 	/// in the binary field.
 	#[error("value is not in the field")]
 	NotInField,
-	#[error("power of two size required for square transpose")]
-	SquareTransposePowerOfTwoSizeRequired,
-	#[error("size of transpose must divide packing width for square transpose")]
-	SquareTransposeSizeMustDivideWidth,
 }

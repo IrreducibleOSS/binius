@@ -8,6 +8,7 @@ mod macros;
 pub mod packed;
 pub mod packed_binary_field;
 pub mod polyval;
+pub mod transpose;
 
 pub use binary_field::*;
 pub use error::*;
@@ -16,3 +17,4 @@ pub use ff::Field;
 pub use packed::*;
 pub use packed_binary_field::*;
 pub use polyval::*;
+pub use transpose::{square_transpose, transpose_scalars, Error as TransposeError};

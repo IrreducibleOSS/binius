@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::polynomial;
+use crate::{field, polynomial};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -10,14 +10,22 @@ pub enum Error {
 	EncodeError(#[source] Box<dyn std::error::Error>),
 	#[error("the polynomial commitment scheme requires a power of two code block length")]
 	CodeLengthPowerOfTwoRequired,
+	#[error("the polynomial commitment scheme requires a power of two extension degree")]
+	ExtensionDegreePowerOfTwoRequired,
+	#[error("cannot commit unaligned message")]
+	UnalignedMessage,
 	#[error("packing width must divide code dimension")]
 	PackingWidthMustDivideCodeDimension,
 	#[error("packing width must divide the number of rows")]
 	PackingWidthMustDivideNumberOfRows,
-	#[error("{0}")]
+	#[error("field error: {0}")]
+	Field(#[from] field::Error),
+	#[error("polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),
 	#[error("vector commit error: {0}")]
 	VectorCommit(#[source] Box<dyn std::error::Error>),
+	#[error("transpose error: {0}")]
+	Transpose(#[from] field::transpose::Error),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
 }

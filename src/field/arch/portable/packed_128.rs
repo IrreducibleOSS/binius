@@ -15,6 +15,7 @@ use p3_util::log2_strict_usize;
 use rand::{Rng, RngCore};
 use static_assertions::const_assert_eq;
 use std::{
+	fmt,
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
@@ -24,7 +25,7 @@ macro_rules! packed_binary_field_u128 {
 	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); $width:literal], Iterator = $iter_name:ident) => {
 		const_assert_eq!($scalar::N_BITS * $width, 128);
 
-		#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
+		#[derive(Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
 		pub struct $name(u128);
 
@@ -227,6 +228,12 @@ macro_rules! packed_binary_field_u128 {
 		}
 
 		impl_packed_field_display!($name);
+
+		impl fmt::Debug for $name {
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				write!(f, "{}({})", stringify!($name), self)
+			}
+		}
 	};
 }
 

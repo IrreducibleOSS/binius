@@ -5,7 +5,6 @@
 //! Interfaces are derived from [`plonky2`](https://github.com/mir-protocol/plonky2).
 
 use ff::Field;
-use p3_util::log2_strict_usize;
 use rand::RngCore;
 use std::{
 	iter::{self, Product, Sum},
@@ -69,36 +68,6 @@ pub trait PackedField:
 	// TODO: This should return a Result
 	// TODO: Change block_len to log_block_len
 	fn interleave(self, other: Self, block_len: usize) -> (Self, Self);
-
-	fn square_transpose(elems: &mut [Self]) -> Result<(), Error> {
-		let size = elems.len();
-		if !size.is_power_of_two() {
-			return Err(Error::SquareTransposePowerOfTwoSizeRequired);
-		}
-		if Self::WIDTH % size != 0 {
-			return Err(Error::SquareTransposeSizeMustDivideWidth);
-		}
-
-		// See Hacker's Delight, Section 7-3.
-		// https://dl.acm.org/doi/10.5555/2462741
-		let log_size = log2_strict_usize(size);
-		for i in 0..log_size {
-			for j in 0..1 << (log_size - i - 1) {
-				for k in 0..1 << i {
-					let idx0 = j << (i + 1) | k;
-					let idx1 = idx0 | (1 << i);
-
-					let v0 = elems[idx0];
-					let v1 = elems[idx1];
-					let (v0, v1) = v0.interleave(v1, 1 << i);
-					elems[idx0] = v0;
-					elems[idx1] = v1;
-				}
-			}
-		}
-
-		Ok(())
-	}
 }
 
 pub fn iter_packed_slice<P: PackedField>(packed: &[P]) -> impl Iterator<Item = P::Scalar> + '_ {
@@ -172,65 +141,5 @@ impl<F: Field> PackedField for F {
 
 	fn interleave(self, _other: Self, _block_len: usize) -> (Self, Self) {
 		panic!("cannot interleave when WIDTH = 1");
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::field::{PackedBinaryField128x1b, PackedBinaryField64x2b};
-
-	#[test]
-	fn test_square_transpose_128x1b() {
-		let mut elems = [
-			PackedBinaryField128x1b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField128x1b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField128x1b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField128x1b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField128x1b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField128x1b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField128x1b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField128x1b::from(0xffffffffffffffffffffffffffffffffu128),
-		];
-		PackedField::square_transpose(&mut elems).unwrap();
-
-		let expected = [
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-			PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0u128),
-		];
-		assert_eq!(elems, expected);
-	}
-
-	#[test]
-	fn test_square_transpose_64x2b() {
-		let mut elems = [
-			PackedBinaryField64x2b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField64x2b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField64x2b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField64x2b::from(0x00000000000000000000000000000000u128),
-			PackedBinaryField64x2b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField64x2b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField64x2b::from(0xffffffffffffffffffffffffffffffffu128),
-			PackedBinaryField64x2b::from(0xffffffffffffffffffffffffffffffffu128),
-		];
-		PackedField::square_transpose(&mut elems).unwrap();
-
-		let expected = [
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-			PackedBinaryField64x2b::from(0xff00ff00ff00ff00ff00ff00ff00ff00u128),
-		];
-		assert_eq!(elems, expected);
 	}
 }
