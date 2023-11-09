@@ -74,10 +74,11 @@ fn prove_round<'a, F: Field, OF: Field + From<F> + Into<F>>(
 
 	for i in 0..1 << (poly.n_vars() - 1) {
 		for (j, multilin) in poly.iter_multilinear_polys().enumerate() {
-			evals_0[j] = multilin.evaluate_on_hypercube(i)?;
-			evals_1[j] = multilin.evaluate_on_hypercube(i | 1 << (poly.n_vars() - 1))?;
+			evals_0[j] = multilin.evaluate_on_hypercube(2 * i)?;
+			evals_1[j] = multilin.evaluate_on_hypercube(2 * i + 1)?;
 		}
 
+		// round_evals[d-1] = poly(d, <i>)
 		round_evals[0] += poly.composition.evaluate(&evals_1)?;
 		for d in 2..degree + 1 {
 			evals_0
@@ -91,6 +92,8 @@ fn prove_round<'a, F: Field, OF: Field + From<F> + Into<F>>(
 		}
 	}
 
+	// round_evals + round_claim, if honest, gives verifier enough information to
+	// determine r(X) := \sum_{i \in B_{n-1}} poly(X, i)
 	let coeffs = round_evals
 		.iter()
 		.map(|&elem| elem.into())
@@ -114,7 +117,7 @@ pub fn prove_first_round<'a, F: Field, OF: Field + From<F> + Into<F>>(
 
 	let current_proof = SumcheckProof { rounds: vec![] };
 	let curr_rd_reduced_claim = SumcheckRoundClaim {
-		partial_reversed_point: vec![],
+		partial_point: vec![],
 		current_round_sum: claim.sum,
 	};
 
@@ -151,7 +154,7 @@ where
 		return Err(Error::ImproperInput);
 	}
 	// Update poly from end of last round
-	poly = poly.evaluate_partial(slice::from_ref(&OF::from(prev_rd_challenge)))?;
+	poly = poly.evaluate_partial_low(slice::from_ref(&OF::from(prev_rd_challenge)))?;
 	// Perform reduce sumcheck claim round from result of last round
 	let round = current_proof.rounds[current_proof.rounds.len() - 1].clone();
 	let curr_rd_reduced_claim = reduce_sumcheck_claim_round(
@@ -159,7 +162,7 @@ where
 		domain,
 		round,
 		prev_rd_reduced_claim.current_round_sum,
-		prev_rd_reduced_claim.partial_reversed_point,
+		prev_rd_reduced_claim.partial_point,
 		prev_rd_challenge,
 	)?;
 	if poly.n_vars() == 0 {
@@ -244,7 +247,7 @@ mod tests {
 				domain,
 				current_partial_proof.rounds[i].clone(),
 				prev_rd_reduced_claim.current_round_sum,
-				prev_rd_reduced_claim.partial_reversed_point.clone(),
+				prev_rd_reduced_claim.partial_point.clone(),
 				challenges[i],
 			)
 			.unwrap();

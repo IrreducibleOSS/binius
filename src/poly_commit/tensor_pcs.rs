@@ -191,7 +191,7 @@ where
 		let log_n_cols = self.code.dim_bits() + log_degree;
 
 		let t = poly;
-		let t_prime = t.evaluate_partial(&query[log_n_cols..])?;
+		let t_prime = t.evaluate_partial_high(&query[log_n_cols..])?;
 
 		challenger.observe_slice(unpack_scalars(t_prime.evals()));
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))

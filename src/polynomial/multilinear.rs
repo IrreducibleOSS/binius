@@ -119,11 +119,14 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	///
-	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu}$. Given a query
+	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu - 1}$. Given a query
 	/// vector of length $k$ representing $(z_{\mu - k + 1}, ..., z_{\mu - 1})$, this returns the
 	/// multilinear polynomial with $\mu - k$ variables,
 	/// $p(X_0, ..., X_{\mu - k}, z_{\mu - k + 1}, ..., z_{\mu - 1})$.
-	pub fn evaluate_partial<PE>(
+	///
+	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
+	/// PE::WIDTH, i.e. 2^(\mu - k) \geq PE::WIDTH, since WIDTH is power of two
+	pub fn evaluate_partial_high<PE>(
 		&self,
 		q: &[PE::Scalar],
 	) -> Result<MultilinearPoly<'static, PE>, Error>
@@ -134,11 +137,15 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 		if self.mu < q.len() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
+		if (1 << (self.mu - q.len())) < PE::WIDTH {
+			return Err(Error::IncorrectQuerySize { expected: self.mu });
+		}
+
 		// TODO: Optimize this by packing expanded query and using packed arithmetic.
 		let basis_eval = expand_query(q)?;
 
 		let mut result_evals = vec![PE::default(); (1 << (self.mu - q.len())) / PE::WIDTH];
-		self.iter_subpolynomials(self.mu - q.len())?
+		self.iter_subpolynomials_high(self.mu - q.len())?
 			.zip(basis_eval)
 			.for_each(|(subpoly, basis_eval)| {
 				for (i, subpoly_eval_i) in iter_packed_slice(subpoly.evals()).enumerate() {
@@ -151,7 +158,7 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 		MultilinearPoly::from_values(result_evals)
 	}
 
-	pub fn iter_subpolynomials(
+	pub fn iter_subpolynomials_high(
 		&self,
 		n_vars: usize,
 	) -> Result<impl Iterator<Item = MultilinearPoly<P>>, Error> {
@@ -171,6 +178,44 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 				evals: Cow::Borrowed(evals),
 			});
 		Ok(iter)
+	}
+
+	/// Partially evaluate the polynomial with assignment to the low-indexed variables.
+	///
+	/// The polynomial is multilinear with $\mu$ variables, $p(X_0, ..., X_{\mu-1}$. Given a query
+	/// vector of length $k$ representing $(z_0, ..., z_{k-1})$, this returns the
+	/// multilinear polynomial with $\mu - k$ variables,
+	/// $p(z_0, ..., z_{k-1}, X_k, ..., X_{\mu - 1})$.
+	///
+	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
+	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
+	pub fn evaluate_partial_low(
+		&self,
+		q: &[P::Scalar],
+	) -> Result<MultilinearPoly<'static, P>, Error> {
+		if self.mu < q.len() {
+			return Err(Error::IncorrectQuerySize { expected: self.mu });
+		}
+		if (1 << (self.mu - q.len())) < P::WIDTH {
+			return Err(Error::IncorrectQuerySize { expected: self.mu });
+		}
+
+		let basis_evals = expand_query(q)?;
+
+		let mut packed_result_evals = vec![P::default(); (1 << (self.mu - q.len())) / P::WIDTH];
+
+		for (i, packed_result_eval) in packed_result_evals.iter_mut().enumerate() {
+			(0..P::WIDTH).for_each(|j| {
+				let mut result_eval = P::Scalar::ZERO;
+				for (k, basis_eval_k) in basis_evals.iter().enumerate() {
+					let old_slice_idx = (i * P::WIDTH + j) << q.len() | k;
+					let old_eval = get_packed_slice(&self.evals, old_slice_idx);
+					result_eval += old_eval * basis_eval_k;
+				}
+				packed_result_eval.set(j, result_eval);
+			});
+		}
+		MultilinearPoly::from_values(packed_result_evals)
 	}
 }
 
@@ -311,7 +356,7 @@ mod tests {
 
 		let poly = MultilinearPoly::from_values_slice(&values).unwrap();
 
-		let mut iter = poly.iter_subpolynomials(2).unwrap();
+		let mut iter = poly.iter_subpolynomials_high(2).unwrap();
 
 		let expected_poly0 = MultilinearPoly::from_values_slice(&values[0..4]).unwrap();
 		assert_eq!(iter.next().unwrap(), expected_poly0);
@@ -332,7 +377,7 @@ mod tests {
 		let mut index = q.len();
 		for split_vars in splits[0..splits.len() - 1].iter() {
 			partial_result = partial_result
-				.evaluate_partial(&q[index - split_vars..index])
+				.evaluate_partial_high(&q[index - split_vars..index])
 				.unwrap();
 			index -= split_vars;
 		}

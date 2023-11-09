@@ -57,7 +57,7 @@ pub fn check_evaluation_domain<F: Field>(
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SumcheckRoundClaim<F: Field> {
-	pub partial_reversed_point: Vec<F>,
+	pub partial_point: Vec<F>,
 	pub current_round_sum: F,
 }
 
@@ -70,7 +70,7 @@ pub fn reduce_sumcheck_claim_round<F>(
 	domain: &EvaluationDomain<F>,
 	round: SumcheckRound<F>,
 	current_round_sum: F,
-	mut partial_reversed_point: Vec<F>,
+	mut partial_point: Vec<F>,
 	challenge: F,
 ) -> Result<SumcheckRoundClaim<F>, VerificationError>
 where
@@ -81,17 +81,17 @@ where
 
 	if round.coeffs.len() != max_individual_degree {
 		return Err(VerificationError::NumberOfCoefficients {
-			round: partial_reversed_point.len() + 1,
+			round: partial_point.len() + 1,
 		});
 	}
 
 	let mut round_coeffs = round.coeffs.clone();
 	round_coeffs.insert(0, current_round_sum - round_coeffs[0]);
 
-	partial_reversed_point.push(challenge);
+	partial_point.push(challenge);
 	let new_round_sum = domain.extrapolate(&round_coeffs, challenge)?;
 	Ok(SumcheckRoundClaim {
-		partial_reversed_point,
+		partial_point,
 		current_round_sum: new_round_sum,
 	})
 }
@@ -100,8 +100,7 @@ pub fn reduce_sumcheck_claim_final<'a, F: Field>(
 	claim: &'a SumcheckClaim<F>,
 	final_rd_reduced_claim_output: &SumcheckRoundClaim<F>,
 ) -> Result<EvalcheckClaim<'a, F>, VerificationError> {
-	let mut eval_point = final_rd_reduced_claim_output.partial_reversed_point.clone();
-	eval_point.reverse();
+	let eval_point = final_rd_reduced_claim_output.partial_point.clone();
 	let eval = final_rd_reduced_claim_output.current_round_sum;
 	let evalcheck_claim = EvalcheckClaim {
 		poly: claim.poly.clone(),

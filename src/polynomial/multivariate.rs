@@ -102,13 +102,28 @@ where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
 {
-	pub fn evaluate_partial(
+	pub fn evaluate_partial_high(
 		&self,
 		query: &[P::Scalar],
 	) -> Result<MultilinearComposite<'static, P, FE>, Error> {
 		let new_multilinears = self
 			.iter_multilinear_polys()
-			.map(|multilin| multilin.evaluate_partial(query))
+			.map(|multilin| multilin.evaluate_partial_high(query))
+			.collect::<Result<Vec<_>, _>>()?;
+		Ok(MultilinearComposite {
+			composition: self.composition.clone(),
+			n_vars: self.n_vars - query.len(),
+			multilinears: new_multilinears,
+		})
+	}
+
+	pub fn evaluate_partial_low(
+		&self,
+		query: &[P::Scalar],
+	) -> Result<MultilinearComposite<'static, P, FE>, Error> {
+		let new_multilinears = self
+			.iter_multilinear_polys()
+			.map(|multilin| multilin.evaluate_partial_low(query))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(MultilinearComposite {
 			composition: self.composition.clone(),
