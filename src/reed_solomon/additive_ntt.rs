@@ -75,32 +75,7 @@ pub struct AdditiveNTTWithOTFCompute<F: BinaryField> {
 
 impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		if F::N_BITS < log_domain_size {
-			return Err(Error::FieldTooSmall { log_domain_size });
-		}
-
-		let mut s_evals = Vec::with_capacity(log_domain_size);
-
-		let s0_evals = (1..log_domain_size)
-			.map(|i| {
-				F::basis(i).expect("basis vector must exist because of FieldTooSmall check above")
-			})
-			.collect::<Vec<_>>();
-		s_evals.push(s0_evals);
-
-		// TODO: Update this for the Fan-Paar tower construction
-		for _ in 1..log_domain_size {
-			let s_i_evals = {
-				let s_prev_evals = s_evals.last_mut().expect("s_evals is not empty");
-				s_prev_evals
-					.iter()
-					.skip(1)
-					.map(|&s_ij_prev| cantor_basis_subspace_map(s_ij_prev))
-					.collect::<Vec<_>>()
-			};
-			s_evals.push(s_i_evals);
-		}
-
+		let s_evals = precompute_subspace_evals(log_domain_size)?;
 		Ok(AdditiveNTTWithOTFCompute {
 			log_domain_size,
 			s_evals,
@@ -275,32 +250,7 @@ pub struct AdditiveNTTWithPrecompute<F: BinaryField> {
 
 impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		if F::N_BITS < log_domain_size {
-			return Err(Error::FieldTooSmall { log_domain_size });
-		}
-
-		let mut s_evals = Vec::with_capacity(log_domain_size);
-
-		let s0_evals = (1..log_domain_size)
-			.map(|i| {
-				F::basis(i).expect("basis vector must exist because of FieldTooSmall check above")
-			})
-			.collect::<Vec<_>>();
-		s_evals.push(s0_evals);
-
-		// TODO: Update this for the Fan-Paar tower construction
-		for _ in 1..log_domain_size {
-			let s_i_evals = {
-				let s_prev_evals = s_evals.last_mut().expect("s_evals is not empty");
-				s_prev_evals
-					.iter()
-					.skip(1)
-					.map(|&s_ij_prev| cantor_basis_subspace_map(s_ij_prev))
-					.collect::<Vec<_>>()
-			};
-			s_evals.push(s_i_evals);
-		}
-
+		let s_evals = precompute_subspace_evals::<F>(log_domain_size)?;
 		let s_evals_expanded = s_evals
 			.iter()
 			.map(|s_evals_i| {
@@ -454,8 +404,57 @@ impl<F: BinaryField, P: PackedField<Scalar = F>> AdditiveNTT<P> for AdditiveNTTW
 	}
 }
 
-fn cantor_basis_subspace_map<F: BinaryField>(elem: F) -> F {
-	elem.square() + elem
+fn precompute_subspace_evals<F: BinaryField>(log_domain_size: usize) -> Result<Vec<Vec<F>>, Error> {
+	if F::N_BITS < log_domain_size {
+		return Err(Error::FieldTooSmall { log_domain_size });
+	}
+
+	let mut s_evals = Vec::with_capacity(log_domain_size);
+
+	// normalization_consts[i] = W_i(2^i)
+	let mut normalization_consts = Vec::with_capacity(log_domain_size);
+	normalization_consts.push(F::ONE);
+
+	let s0_evals = (1..log_domain_size)
+		.map(|i| F::basis(i).expect("basis vector must exist because of FieldTooSmall check above"))
+		.collect::<Vec<_>>();
+	s_evals.push(s0_evals);
+
+	for _ in 1..log_domain_size {
+		let (norm_const_i, s_i_evals) = {
+			let norm_prev = *normalization_consts
+				.last()
+				.expect("normalization_consts is not empty");
+			let s_prev_evals = s_evals.last().expect("s_evals is not empty");
+
+			let norm_const_i = subspace_map(s_prev_evals[0], norm_prev);
+			let s_i_evals = s_prev_evals
+				.iter()
+				.skip(1)
+				.map(|&s_ij_prev| subspace_map(s_ij_prev, norm_prev))
+				.collect::<Vec<_>>();
+
+			(norm_const_i, s_i_evals)
+		};
+
+		normalization_consts.push(norm_const_i);
+		s_evals.push(s_i_evals);
+	}
+
+	for (norm_const_i, s_evals_i) in normalization_consts.iter().zip(s_evals.iter_mut()) {
+		let inv_norm_const = norm_const_i
+			.invert()
+			.expect("normalization constants are nonzero");
+		for s_ij in s_evals_i.iter_mut() {
+			*s_ij *= inv_norm_const;
+		}
+	}
+
+	Ok(s_evals)
+}
+
+fn subspace_map<F: Field>(elem: F, constant: F) -> F {
+	elem.square() + constant * elem
 }
 
 struct NTTParams {
