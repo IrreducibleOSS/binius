@@ -40,17 +40,19 @@ where
 /// # Type Parameters
 ///
 /// * `P`: The base field type of committed elements.
-/// * `PI`: The intermediate field type used for encoding.
+/// * `PA`: The field type of the encoding alphabet.
+/// * `PI`: The intermediate field type that base field elements are packed into.
 /// * `PE`: The extension field type used for cryptographic challenges.
 ///
 /// [DP23]: https://eprint.iacr.org/2023/630
 #[derive(Debug, Copy, Clone)]
-pub struct TensorPCS<P, PI, PE, LC, H, VCS>
+pub struct TensorPCS<P, PA, PI, PE, LC, H, VCS>
 where
 	P: PackedField,
+	PA: PackedField,
 	PI: PackedField,
 	PE: PackedField,
-	LC: LinearCode<P = PI>,
+	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
@@ -58,13 +60,15 @@ where
 	code: LC,
 	vcs: VCS,
 	_p_marker: PhantomData<P>,
+	_pi_marker: PhantomData<PI>,
 	_h_marker: PhantomData<H>,
 	_ext_marker: PhantomData<PE>,
 }
 
-impl<P, PI, PE, LC>
+impl<P, PA, PI, PE, LC>
 	TensorPCS<
 		P,
+		PA,
 		PI,
 		PE,
 		LC,
@@ -77,11 +81,12 @@ impl<P, PI, PE, LC>
 		>,
 	> where
 	P: PackedField,
+	PA: PackedField,
 	PI: PackedField + PackedExtensionField<BinaryField8b> + Sync,
 	PI::Scalar: ExtensionField<P::Scalar> + ExtensionField<BinaryField8b>,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
-	LC: LinearCode<P = PI>,
+	LC: LinearCode<P = PA>,
 {
 	pub fn new_using_groestl_merkle_tree(log_rows: usize, code: LC) -> Result<Self, Error> {
 		// Check power of two length because MerkleTreeVCS requires it
@@ -93,15 +98,22 @@ impl<P, PI, PE, LC>
 	}
 }
 
-impl<F, P, FI, PI, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE> for TensorPCS<P, PI, PE, LC, H, VCS>
+impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE>
+	for TensorPCS<P, PA, PI, PE, LC, H, VCS>
 where
 	F: Field,
 	P: PackedField<Scalar = F> + Send,
-	FI: ExtensionField<P::Scalar>,
-	PI: PackedField<Scalar = FI> + PackedExtensionField<FI> + PackedExtensionField<P> + Sync,
+	FA: Field,
+	PA: PackedField<Scalar = FA>,
+	FI: ExtensionField<F> + ExtensionField<FA>,
+	PI: PackedField<Scalar = FI>
+		+ PackedExtensionField<FI>
+		+ PackedExtensionField<P>
+		+ PackedExtensionField<PA>
+		+ Sync,
 	FE: ExtensionField<F> + ExtensionField<FI>,
 	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
-	LC: LinearCode<P = PI>,
+	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
@@ -125,7 +137,7 @@ where
 			});
 		}
 
-		// This condition is checked by the constructor.
+		// These conditions are checked by the constructor, so are safe to assert defensively
 		debug_assert_eq!(self.code.dim() % PI::WIDTH, 0);
 
 		// Dimensions as an intermediate field matrix.
@@ -145,7 +157,10 @@ where
 
 		// TODO: Parallelize
 		self.code
-			.encode_batch_inplace(&mut encoded, self.log_rows)
+			.encode_batch_inplace(
+				<PI as PackedExtensionField<PA>>::cast_to_bases_mut(&mut encoded),
+				self.log_rows + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
+			)
 			.map_err(|err| Error::EncodeError(Box::new(err)))?;
 
 		let mut digests = vec![H::Digest::default(); n_cols_enc];
@@ -187,8 +202,8 @@ where
 		}
 
 		let code_len_bits = log2_strict_usize(self.code.len());
-		let log_degree = log2_strict_usize(FI::DEGREE);
-		let log_n_cols = self.code.dim_bits() + log_degree;
+		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
+		let log_n_cols = self.code.dim_bits() + log_block_size;
 
 		let t = poly;
 		let t_prime = t.evaluate_partial_high(&query[log_n_cols..])?;
@@ -252,8 +267,9 @@ where
 
 		// Code length is checked to be a power of two in the constructor
 		let code_len_bits = log2_strict_usize(self.code.len());
-		let log_degree = log2_strict_usize(FI::DEGREE);
-		let log_n_cols = self.code.dim_bits() + log_degree;
+		let block_size = <FI as ExtensionField<F>>::DEGREE;
+		let log_block_size = log2_strict_usize(block_size);
+		let log_n_cols = self.code.dim_bits() + log_block_size;
 
 		let n_rows = 1 << self.log_rows;
 
@@ -269,7 +285,7 @@ where
 		}
 
 		// Encode t' into u'
-		let mut u_prime = vec![PE::default(); (1 << (code_len_bits + log_degree)) / PE::WIDTH];
+		let mut u_prime = vec![PE::default(); (1 << (code_len_bits + log_block_size)) / PE::WIDTH];
 		self.encode_ext(proof.t_prime.evals(), &mut u_prime)?;
 
 		// Check vector commitment openings.
@@ -306,12 +322,12 @@ where
 						alignment is guaranteed the cast from a PI slice",
 				);
 
-				debug_assert_eq!(base_cols.len(), n_rows / P::WIDTH * FI::DEGREE);
+				debug_assert_eq!(base_cols.len(), n_rows / P::WIDTH * block_size);
 
-				(0..FI::DEGREE)
+				(0..block_size)
 					.zip(base_cols.chunks_exact(n_rows / P::WIDTH))
 					.map(|(j, col)| {
-						let u_prime_i = get_packed_slice(&u_prime, index << log_degree | j);
+						let u_prime_i = get_packed_slice(&u_prime, index << log_block_size | j);
 						(u_prime_i, col.to_vec())
 					})
 					.collect::<Vec<_>>()
@@ -341,15 +357,17 @@ where
 	}
 }
 
-impl<F, P, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PI, PE, LC, H, VCS>
+impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
+	FA: Field,
+	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F>,
 	PI: PackedField<Scalar = FI>,
 	FE: ExtensionField<F>,
 	PE: PackedField<Scalar = FE>,
-	LC: LinearCode<P = PI>,
+	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
@@ -366,7 +384,7 @@ where
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
 
-		if !FI::DEGREE.is_power_of_two() {
+		if !<FI as ExtensionField<F>>::DEGREE.is_power_of_two() {
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 		if !FE::DEGREE.is_power_of_two() {
@@ -391,6 +409,7 @@ where
 			code,
 			vcs,
 			_p_marker: PhantomData,
+			_pi_marker: PhantomData,
 			_h_marker: PhantomData,
 			_ext_marker: PhantomData,
 		})
@@ -408,15 +427,21 @@ where
 }
 
 // Helper functions for PolyCommitScheme implementation.
-impl<F, P, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PI, PE, LC, H, VCS>
+impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
 where
 	F: Field,
 	P: PackedField<Scalar = F> + Send,
-	FI: ExtensionField<P::Scalar>,
-	PI: PackedField<Scalar = FI> + PackedExtensionField<FI> + PackedExtensionField<P> + Sync,
+	FA: Field,
+	PA: PackedField<Scalar = FA>,
+	FI: ExtensionField<P::Scalar> + ExtensionField<PA::Scalar>,
+	PI: PackedField<Scalar = FI>
+		+ PackedExtensionField<FI>
+		+ PackedExtensionField<P>
+		+ PackedExtensionField<PA>
+		+ Sync,
 	FE: ExtensionField<F> + ExtensionField<FI>,
 	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
-	LC: LinearCode<P = PI>,
+	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
@@ -426,7 +451,8 @@ where
 		proof: &Proof<PI, PE, VCS::Proof>,
 	) -> Result<(), VerificationError> {
 		let n_rows = 1 << self.log_rows;
-		let log_n_cols = self.code.dim_bits() + log2_strict_usize(FI::DEGREE);
+		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
+		let log_n_cols = self.code.dim_bits() + log_block_size;
 		let n_queries = self.code.n_test_queries();
 
 		if proof.vcs_proofs.len() != n_queries {
@@ -452,17 +478,18 @@ where
 
 	fn encode_ext(&self, t_prime: &[PE], u_prime: &mut [PE]) -> Result<(), Error> {
 		let code_len_bits = log2_strict_usize(self.code.len());
-		let log_degree = log2_strict_usize(FI::DEGREE);
-		let log_n_cols = self.code.dim_bits() + log_degree;
+		let block_size = <FI as ExtensionField<F>>::DEGREE;
+		let log_block_size = log2_strict_usize(block_size);
+		let log_n_cols = self.code.dim_bits() + log_block_size;
 
 		assert_eq!(t_prime.len(), (1 << log_n_cols) / PE::WIDTH);
-		assert_eq!(u_prime.len(), (1 << (code_len_bits + log_degree)) / PE::WIDTH);
+		assert_eq!(u_prime.len(), (1 << (code_len_bits + log_block_size)) / PE::WIDTH);
 
 		u_prime[..(1 << log_n_cols) / PE::WIDTH].copy_from_slice(t_prime);
 
 		// View u' as a vector of packed base field elements and transpose into packed intermediate
 		// field elements in order to apply the extension encoding.
-		{
+		if log_block_size > 0 {
 			// TODO: This requirement is necessary for how we perform the following transpose.
 			// It should be relaxed by providing yet another PackedField type as a generic
 			// parameter for which this is true.
@@ -474,8 +501,8 @@ where
 				),
 			);
 			f_view
-				.par_chunks_exact_mut(FI::DEGREE)
-				.try_for_each(|chunk| square_transpose(log_degree, chunk))?;
+				.par_chunks_exact_mut(block_size)
+				.try_for_each(|chunk| square_transpose(log_block_size, chunk))?;
 		}
 
 		// View u' as a vector of packed intermediate field elements and batch encode.
@@ -483,11 +510,14 @@ where
 			let fi_view = PackedExtensionField::<PI>::cast_to_bases_mut(u_prime);
 			let log_batch_size = log2_strict_usize(<FE as ExtensionField<F>>::DEGREE);
 			self.code
-				.encode_batch_inplace(fi_view, log_batch_size)
+				.encode_batch_inplace(
+					<PI as PackedExtensionField<PA>>::cast_to_bases_mut(fi_view),
+					log_batch_size + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
+				)
 				.map_err(|err| Error::EncodeError(Box::new(err)))?;
 		}
 
-		{
+		if log_block_size > 0 {
 			// TODO: This requirement is necessary for how we perform the following transpose.
 			// It should be relaxed by providing yet another PackedField type as a generic
 			// parameter for which this is true.
@@ -497,20 +527,35 @@ where
 				PackedExtensionField::<PI>::cast_to_bases_mut(u_prime),
 			);
 			f_view
-				.par_chunks_exact_mut(FI::DEGREE)
-				.try_for_each(|chunk| square_transpose(log_degree, chunk))?;
+				.par_chunks_exact_mut(block_size)
+				.try_for_each(|chunk| square_transpose(log_block_size, chunk))?;
 		}
 
 		Ok(())
 	}
 }
 
+/// The basic multilinear polynomial commitment scheme from [DP23].
+///
+/// The basic scheme follows Construction 3.7. In this case, the encoding alphabet is a subfield of
+/// the polynomial's coefficient field.
+pub type BasicTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, P, PE, LC, H, VCS>;
+
+/// The multilinear polynomial commitment scheme from [DP23] with block-level encoding.
+///
+/// The basic scheme follows Construction 3.11. In this case, the encoding alphabet is an extension
+/// field of the polynomial's coefficient field.
+pub type BlockTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, PA, PE, LC, H, VCS>;
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::{
 		challenger::HashChallenger,
-		field::{PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b},
+		field::{
+			PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+			PackedBinaryField4x32b,
+		},
 		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -522,7 +567,7 @@ mod tests {
 
 		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
 		let pcs =
-			<TensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code).unwrap();
+			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| Packed::random(&mut rng))
@@ -552,7 +597,7 @@ mod tests {
 	#[test]
 	fn test_packed_1b_commit_prove_verify_without_error() {
 		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
-		let pcs = <TensorPCS<
+		let pcs = <BlockTensorPCS<
 			PackedBinaryField128x1b,
 			PackedBinaryField16x8b,
 			PackedBinaryField1x128b,
@@ -565,6 +610,44 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| PackedBinaryField128x1b::random(&mut rng))
 			.take((1 << pcs.n_vars()) / PackedBinaryField128x1b::WIDTH)
+			.collect::<Vec<_>>();
+		let poly = MultilinearPoly::from_values(evals).unwrap();
+
+		let (commitment, committed) = pcs.commit(&poly).unwrap();
+
+		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let query = repeat_with(|| challenger.sample())
+			.take(pcs.n_vars())
+			.collect::<Vec<_>>();
+
+		let value = poly.evaluate(&query).unwrap();
+
+		let mut prove_challenger = challenger.clone();
+		let proof = pcs
+			.prove_evaluation(&mut prove_challenger, &committed, &poly, &query)
+			.unwrap();
+
+		let mut verify_challenger = challenger.clone();
+		pcs.verify_evaluation(&mut verify_challenger, &commitment, &query, proof, value)
+			.unwrap();
+	}
+
+	#[test]
+	fn test_packed_32b_commit_prove_verify_without_error() {
+		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let pcs = <BasicTensorPCS<
+			PackedBinaryField4x32b,
+			PackedBinaryField16x8b,
+			PackedBinaryField1x128b,
+			_,
+			_,
+			_,
+		>>::new_using_groestl_merkle_tree(8, rs_code)
+		.unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+			.take((1 << pcs.n_vars()) / PackedBinaryField4x32b::WIDTH)
 			.collect::<Vec<_>>();
 		let poly = MultilinearPoly::from_values(evals).unwrap();
 
