@@ -1,5 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use rayon::{iter::IntoParallelIterator, prelude::*};
+
 use crate::{
 	field::Field,
 	polynomial::{extrapolate_line, EvaluationDomain, MultilinearComposite},
@@ -67,32 +69,65 @@ fn prove_round<'a, F: Field, OF: Field + From<F> + Into<F>>(
 
 	let n_multilinears = poly.composition.n_vars();
 
-	let mut evals_0 = vec![OF::ZERO; n_multilinears];
-	let mut evals_1 = vec![OF::ZERO; n_multilinears];
-	let mut evals_z = vec![OF::ZERO; n_multilinears];
-	let mut round_evals = vec![OF::ZERO; degree];
+	let fold_result = (0..1 << (poly.n_vars() - 1)).into_par_iter().fold(
+		|| {
+			(
+				vec![OF::ZERO; n_multilinears],
+				vec![OF::ZERO; n_multilinears],
+				vec![OF::ZERO; n_multilinears],
+				vec![OF::ZERO; degree],
+			)
+		},
+		|(mut evals_0, mut evals_1, mut evals_z, mut round_evals), i| {
+			for (j, multilin) in poly.iter_multilinear_polys().enumerate() {
+				evals_0[j] = multilin.evaluate_on_hypercube(2 * i).expect(
+					"all multilinear polynomials in a composite have n_vars variables by
+						an invariant on the struct; i is in the range [0, 2^{n_vars - 1}) by
+						iteration range; thus 2 * i is in the range [0, 2^{n_vars}) and indexes
+						a valid hypercube vertex",
+				);
+				evals_1[j] = multilin.evaluate_on_hypercube(2 * i + 1).expect(
+					"all multilinear polynomials in a composite have n_vars variables by
+						an invariant on the struct; i is in the range [0, 2^{n_vars - 1}) by
+						iteration range; thus 2 * i + 1 is in the range [0, 2^{n_vars}) and
+						indexes a valid hypercube vertex",
+				);
+			}
+			round_evals[0] = poly
+				.composition
+				.evaluate(&evals_1)
+				.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
+			for d in 2..degree + 1 {
+				evals_0
+					.iter()
+					.zip(evals_1.iter())
+					.zip(evals_z.iter_mut())
+					.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
+						*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, operating_domain[d]);
+					});
+				round_evals[d - 1] = poly
+					.composition
+					.evaluate(&evals_z)
+					.expect("evals_z is initialized with a length of poly.composition.n_vars()");
+			}
+			(evals_0, evals_1, evals_z, round_evals)
+		},
+	);
 
-	for i in 0..1 << (poly.n_vars() - 1) {
-		for (j, multilin) in poly.iter_multilinear_polys().enumerate() {
-			evals_0[j] = multilin.evaluate_on_hypercube(2 * i)?;
-			evals_1[j] = multilin.evaluate_on_hypercube(2 * i + 1)?;
-		}
+	let round_evals = fold_result
+		.map(|(_, _, _, round_evals)| round_evals)
+		.reduce(
+			|| vec![OF::ZERO; degree],
+			|mut overall_round_evals, partial_round_evals| {
+				overall_round_evals
+					.iter_mut()
+					.zip(partial_round_evals.iter())
+					.for_each(|(f, s)| *f += s);
+				overall_round_evals
+			},
+		);
 
-		// round_evals[d-1] = poly(d, <i>)
-		round_evals[0] += poly.composition.evaluate(&evals_1)?;
-		for d in 2..degree + 1 {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, operating_domain[d]);
-				});
-			round_evals[d - 1] += poly.composition.evaluate(&evals_z)?;
-		}
-	}
-
-	// round_evals + round_claim, if honest, gives verifier enough information to
+	// round_evals and round_claim, if honest, gives verifier enough information to
 	// determine r(X) := \sum_{i \in B_{n-1}} poly(X, i)
 	let coeffs = round_evals
 		.iter()

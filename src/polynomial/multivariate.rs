@@ -16,7 +16,7 @@ pub trait MultivariatePoly<F>: std::fmt::Debug {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P, FE>: std::fmt::Debug
+pub trait CompositionPoly<P, FE>: std::fmt::Debug + Send + Sync
 where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
