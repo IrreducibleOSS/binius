@@ -5,21 +5,21 @@ stages:
 
 cargofmt:
   tags:
-    - frobenius
+    - binius
   stage: lint
   script:
     - cargo fmt --check
 
 clippy:
   tags:
-    - frobenius
+    - binius
   stage: lint
   script:
     - cargo clippy --all --all-features -- -D warnings
 
 build-debug:
   tags:
-    - frobenius
+    - binius
   stage: build
   script:
     - RUSTFLAGS="-C target-cpu=native" cargo build --tests --benches
@@ -30,7 +30,7 @@ build-debug:
 
 unit-test:
   tags:
-    - frobenius
+    - binius
   stage: test
   script:
     - RUSTFLAGS="-C target-cpu=native" cargo test
