@@ -10,6 +10,8 @@ pub enum Error {
 	IncorrectQuerySize { expected: usize },
 	#[error("expected the number of evaluations to match the domain size")]
 	ExtrapolateNumberOfEvaluations,
+	#[error("domain size is larger than the field")]
+	DomainSizeTooLarge,
 	#[error("duplicate point in domain")]
 	DuplicateDomainPoint,
 	#[error("argument length must be a power of two")]
