@@ -340,7 +340,7 @@ mod tests {
 
 		let sum = (0..1 << n_vars)
 			.map(|i| poly.evaluate_on_hypercube(i).unwrap())
-			.sum();
+			.sum::<F>();
 		let sumcheck_witness = SumcheckWitness { polynomial: poly };
 
 		// Setup Claim
@@ -357,10 +357,7 @@ mod tests {
 		};
 
 		// Setup evaluation domain
-		let points = (0..=n_multilinears)
-			.map(|i| F::new(i.try_into().unwrap()))
-			.collect::<Vec<_>>();
-		let domain = EvaluationDomain::new(points).unwrap();
+		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
 		let challenges = repeat_with(|| Field::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
@@ -391,7 +388,7 @@ mod tests {
 
 		let sum = (0..1 << n_vars)
 			.map(|i| poly.evaluate_on_hypercube(i).unwrap())
-			.sum();
+			.sum::<F>();
 
 		let prover_composition: Arc<dyn CompositionPoly<OF, OF>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
@@ -414,10 +411,7 @@ mod tests {
 		};
 
 		// Setup evaluation domain
-		let points = (0..=n_multilinears)
-			.map(|i| F::new(i.try_into().unwrap()))
-			.collect::<Vec<_>>();
-		let domain = EvaluationDomain::new(points).unwrap();
+		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
 		let challenges = repeat_with(|| Field::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();

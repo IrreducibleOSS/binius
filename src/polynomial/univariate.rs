@@ -3,18 +3,32 @@
 
 use super::error::Error;
 use crate::field::{ExtensionField, Field, PackedField};
+use std::{iter, iter::Step};
 
 /// A domain that univariate polynomials may be evaluated on.
 ///
 /// An evaluation domain of size d + 1 along with polynomial values on that domain are sufficient
 /// to reconstruct a degree <= d.
+#[derive(Debug, Clone)]
 pub struct EvaluationDomain<F: Field> {
 	points: Vec<F>,
 	weights: Vec<F>,
 }
 
+impl<F: Field + Step> EvaluationDomain<F> {
+	pub fn new(size: usize) -> Result<Self, Error> {
+		let points = iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1))
+			.take(size)
+			.collect::<Vec<_>>();
+		if points.len() != size {
+			return Err(Error::DomainSizeTooLarge);
+		}
+		Self::from_points(points)
+	}
+}
+
 impl<F: Field> EvaluationDomain<F> {
-	pub fn new(points: Vec<F>) -> Result<Self, Error> {
+	pub fn from_points(points: Vec<F>) -> Result<Self, Error> {
 		let weights = compute_barycentric_weights(&points)?;
 		Ok(Self { points, weights })
 	}
@@ -85,6 +99,7 @@ fn compute_barycentric_weights<F: Field>(points: &[F]) -> Result<Vec<F>, Error> 
 mod tests {
 	use super::*;
 	use crate::field::{BinaryField32b, BinaryField8b};
+	use assert_matches::assert_matches;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, slice};
 
@@ -93,6 +108,26 @@ mod tests {
 			.enumerate()
 			.map(|(i, coeff)| coeff * x.pow(slice::from_ref(&(i as u64))))
 			.sum()
+	}
+
+	#[test]
+	fn test_new_domain() {
+		assert_eq!(
+			<EvaluationDomain<BinaryField8b>>::new(3).unwrap().points,
+			&[
+				BinaryField8b::new(0),
+				BinaryField8b::new(1),
+				BinaryField8b::new(2)
+			]
+		);
+	}
+
+	#[test]
+	fn test_new_oversized_domain() {
+		assert_matches!(
+			<EvaluationDomain<BinaryField8b>>::new(300),
+			Err(Error::DomainSizeTooLarge)
+		);
 	}
 
 	#[test]
@@ -120,7 +155,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let degree = 1;
 
-		let domain = EvaluationDomain::new(
+		let domain = EvaluationDomain::from_points(
 			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
 				.take(degree + 1)
 				.collect(),

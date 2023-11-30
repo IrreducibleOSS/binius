@@ -25,7 +25,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	let prover_composition: Arc<dyn CompositionPoly<FPolyval, FPolyval>> =
 		Arc::new(TestProductComposition::new(2));
 
-	let domain = EvaluationDomain::new(vec![FTower::ZERO, FTower::ONE, FTower::new(2)]).unwrap();
+	let domain = EvaluationDomain::new(3).unwrap();
 
 	let mut rng = thread_rng();
 
