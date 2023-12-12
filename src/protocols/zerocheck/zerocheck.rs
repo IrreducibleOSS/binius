@@ -82,16 +82,16 @@ impl<F: Field> MultivariatePoly<F> for EqIndPartialEval<F> {
 /// The function is $g(X_0, ..., X_n) = f(X_0, ..., X_{n-1}) * X_n$.
 #[derive(Debug)]
 pub struct ProductComposition<F: Field> {
-	inner: Arc<dyn CompositionPoly<F, F>>,
+	inner: Arc<dyn CompositionPoly<F>>,
 }
 
 impl<F: Field> ProductComposition<F> {
-	pub fn new(inner: Arc<dyn CompositionPoly<F, F>>) -> Self {
+	pub fn new(inner: Arc<dyn CompositionPoly<F>>) -> Self {
 		Self { inner }
 	}
 }
 
-impl<F: Field> CompositionPoly<F, F> for ProductComposition<F> {
+impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars() + 1
 	}
@@ -109,10 +109,6 @@ impl<F: Field> CompositionPoly<F, F> for ProductComposition<F> {
 		let inner_query = &query[..n_vars - 1];
 		let inner_eval = self.inner.evaluate(inner_query)?;
 		Ok(inner_eval * query[n_vars - 1])
-	}
-
-	fn evaluate_ext(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate(query)
 	}
 }
 

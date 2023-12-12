@@ -111,7 +111,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		// Setup witness
-		let composition: Arc<dyn CompositionPoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
 			.map(|i| {
@@ -161,7 +161,7 @@ mod tests {
 		let n_multilinears = 1 << n_vars;
 
 		// Setup witness
-		let composition: Arc<dyn CompositionPoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
 			.map(|i| {
@@ -172,7 +172,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
-		let prover_composition: Arc<dyn CompositionPoly<OF, OF>> =
+		let prover_composition: Arc<dyn CompositionPoly<OF>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let prover_poly = transform_poly(&poly, prover_composition).unwrap();
 		let zerocheck_witness = ZerocheckWitness {

@@ -1,6 +1,6 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, ExtensionField, Field},
+	field::{BinaryField128b, BinaryField128bPolyval, Field},
 	hash::GroestlHasher,
 	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
@@ -20,9 +20,8 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	type FTower = BinaryField128b;
 	type FPolyval = BinaryField128bPolyval;
 
-	let composition: Arc<dyn CompositionPoly<FTower, FTower>> =
-		Arc::new(TestProductComposition::new(2));
-	let prover_composition: Arc<dyn CompositionPoly<FPolyval, FPolyval>> =
+	let composition: Arc<dyn CompositionPoly<FTower>> = Arc::new(TestProductComposition::new(2));
+	let prover_composition: Arc<dyn CompositionPoly<FPolyval>> =
 		Arc::new(TestProductComposition::new(2));
 
 	let domain = EvaluationDomain::new(3).unwrap();
@@ -127,10 +126,9 @@ impl TestProductComposition {
 	}
 }
 
-impl<F, FE> CompositionPoly<F, FE> for TestProductComposition
+impl<F> CompositionPoly<F> for TestProductComposition
 where
 	F: Field,
-	FE: ExtensionField<F>,
 {
 	fn n_vars(&self) -> usize {
 		self.arity
@@ -144,10 +142,6 @@ where
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
-	}
-
-	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, PolynomialError> {
-		CompositionPoly::<FE, FE>::evaluate(self, query)
 	}
 }
 
