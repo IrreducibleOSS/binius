@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::field::{ExtensionField, Field};
+use crate::field::Field;
 
 use crate::polynomial::{
 	CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
@@ -19,10 +19,9 @@ impl TestProductComposition {
 	}
 }
 
-impl<F, FE> CompositionPoly<F, FE> for TestProductComposition
+impl<F> CompositionPoly<F> for TestProductComposition
 where
 	F: Field,
-	FE: ExtensionField<F>,
 {
 	fn n_vars(&self) -> usize {
 		self.arity
@@ -37,15 +36,11 @@ where
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
-
-	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, PolynomialError> {
-		CompositionPoly::<FE, FE>::evaluate(self, query)
-	}
 }
 
 pub fn transform_poly<F, OF>(
 	poly: &MultilinearComposite<F, F>,
-	replacement_composition: Arc<dyn CompositionPoly<OF, OF>>,
+	replacement_composition: Arc<dyn CompositionPoly<OF>>,
 ) -> Result<MultilinearComposite<'static, OF, OF>, PolynomialError>
 where
 	F: Field,

@@ -16,10 +16,9 @@ pub trait MultivariatePoly<F>: std::fmt::Debug {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P, FE>: std::fmt::Debug + Send + Sync
+pub trait CompositionPoly<P>: std::fmt::Debug + Send + Sync
 where
 	P: PackedField,
-	FE: ExtensionField<P::Scalar>,
 {
 	// The number of variables.
 	fn n_vars(&self) -> usize;
@@ -29,9 +28,6 @@ where
 
 	/// Evaluate the polynomial at packed evaluation points.
 	fn evaluate(&self, query: &[P]) -> Result<P, Error>;
-
-	/// Evaluate the polynomial at a point in the extension field.
-	fn evaluate_ext(&self, query: &[FE]) -> Result<FE, Error>;
 }
 
 /// A polynomial defined as the composition of several multilinear polynomials.
@@ -51,7 +47,7 @@ where
 	FE: ExtensionField<P::Scalar>,
 {
 	// TODO: Consider whether to define this struct as generic over the composition function
-	pub composition: Arc<dyn CompositionPoly<P, FE>>,
+	pub composition: Arc<dyn CompositionPoly<FE>>,
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<MultilinearPoly<'a, P>>,
@@ -64,7 +60,7 @@ where
 {
 	pub fn new(
 		n_vars: usize,
-		composition: Arc<dyn CompositionPoly<P, FE>>,
+		composition: Arc<dyn CompositionPoly<FE>>,
 		multilinears: Vec<MultilinearPoly<'a, P>>,
 	) -> Result<Self, Error> {
 		if composition.n_vars() != multilinears.len() {
@@ -130,15 +126,6 @@ where
 			n_vars: self.n_vars - query.len(),
 			multilinears: new_multilinears,
 		})
-	}
-
-	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P, Error> {
-		let multilinear_evals = self
-			.multilinears
-			.iter()
-			.map(|poly| poly.evaluate_on_hypercube(index))
-			.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate(&multilinear_evals)
 	}
 
 	pub fn degree(&self) -> usize {

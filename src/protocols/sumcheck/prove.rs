@@ -326,7 +326,7 @@ mod tests {
 		// Setup Witness
 		let n_vars = 8;
 		let n_multilinears = 3;
-		let composition: Arc<dyn CompositionPoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let multilinears = repeat_with(|| {
 			let values = repeat_with(|| Field::random(&mut rng))
@@ -339,7 +339,13 @@ mod tests {
 		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 
 		let sum = (0..1 << n_vars)
-			.map(|i| poly.evaluate_on_hypercube(i).unwrap())
+			.map(|i| {
+				let mut prod = F::ONE;
+				(0..n_multilinears).for_each(|j| {
+					prod *= multilinears[j].evaluate_on_hypercube(i).unwrap();
+				});
+				prod
+			})
 			.sum::<F>();
 		let sumcheck_witness = SumcheckWitness { polynomial: poly };
 
@@ -374,7 +380,7 @@ mod tests {
 
 		let n_vars = 8;
 		let n_multilinears = 3;
-		let composition: Arc<dyn CompositionPoly<F, F>> =
+		let composition: Arc<dyn CompositionPoly<F>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let multilinears = repeat_with(|| {
 			let values = repeat_with(|| Field::random(&mut rng))
@@ -387,10 +393,16 @@ mod tests {
 		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 
 		let sum = (0..1 << n_vars)
-			.map(|i| poly.evaluate_on_hypercube(i).unwrap())
+			.map(|i| {
+				let mut prod = F::ONE;
+				(0..n_multilinears).for_each(|j| {
+					prod *= multilinears[j].evaluate_on_hypercube(i).unwrap();
+				});
+				prod
+			})
 			.sum::<F>();
 
-		let prover_composition: Arc<dyn CompositionPoly<OF, OF>> =
+		let prover_composition: Arc<dyn CompositionPoly<OF>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let prover_poly = transform_poly(&poly, prover_composition).unwrap();
 		let sumcheck_witness = SumcheckWitness {
