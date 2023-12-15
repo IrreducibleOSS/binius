@@ -16,9 +16,9 @@ use super::VerificationError;
 pub struct ZerocheckProof {}
 
 #[derive(Debug)]
-pub struct ZerocheckProveOutput<'a, F: Field, OF: Field> {
+pub struct ZerocheckProveOutput<'a, F: Field> {
 	pub sumcheck_claim: SumcheckClaim<'a, F>,
-	pub sumcheck_witness: SumcheckWitness<'a, OF>,
+	pub sumcheck_witness: SumcheckWitness<'a, F, F>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
@@ -29,9 +29,9 @@ pub struct ZerocheckClaim<'a, F: Field> {
 }
 
 #[derive(Debug)]
-pub struct ZerocheckWitness<'a, OF: Field> {
+pub struct ZerocheckWitness<'a, F: Field> {
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: MultilinearComposite<'a, OF, OF>,
+	pub polynomial: MultilinearComposite<'a, F, F>,
 }
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables

@@ -1,6 +1,6 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, Field},
+	field::{BinaryField128b, BinaryField128bPolyval, BinaryField8b, ExtensionField, Field},
 	hash::GroestlHasher,
 	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
@@ -8,27 +8,81 @@ use binius::{
 		MultilinearPoly,
 	},
 	protocols::sumcheck::{
-		self, Error as SumcheckError, SumcheckClaim, SumcheckProveOutput, SumcheckWitness,
+		prove::{
+			prove_at_switchover, prove_before_switchover, prove_final, prove_first_round,
+			prove_first_round_with_operating_field, prove_later_round_with_operating_field,
+			prove_post_switchover,
+		},
+		setup_first_round_claim, Error as SumcheckError, SumcheckClaim, SumcheckProveOutput,
+		SumcheckWitness,
 	},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use p3_challenger::CanSample;
+use p3_challenger::{CanObserve, CanSample};
 use rand::thread_rng;
 use std::{iter::repeat_with, mem, sync::Arc};
 
-fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
-	type FTower = BinaryField128b;
-	type FPolyval = BinaryField128bPolyval;
+fn sumcheck_8b_128b(c: &mut Criterion) {
+	type F = BinaryField8b;
+	type FE = BinaryField128b;
 
-	let composition: Arc<dyn CompositionPoly<FTower>> = Arc::new(TestProductComposition::new(2));
-	let prover_composition: Arc<dyn CompositionPoly<FPolyval>> =
-		Arc::new(TestProductComposition::new(2));
-
-	let domain = EvaluationDomain::new(3).unwrap();
+	let n_multilinears = 3;
+	let composition = Arc::new(TestProductComposition::new(n_multilinears));
+	let composition_nvars = 3;
+	let domain = EvaluationDomain::<FE>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
-	let mut group = c.benchmark_group("Sumcheck 128b");
+	let mut group = c.benchmark_group("Small Sumcheck 8b_128b");
+	for &n_vars in [13, 14, 15, 16].iter() {
+		let n = 1 << n_vars;
+		group.throughput(Throughput::Bytes((n * composition_nvars * mem::size_of::<FE>()) as u64));
+		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
+			let multilinears = repeat_with(|| {
+				let values = repeat_with(|| Field::random(&mut rng))
+					.take(1 << n_vars)
+					.collect::<Vec<F>>();
+				MultilinearPoly::from_values(values).unwrap()
+			})
+			.take(composition_nvars)
+			.collect::<Vec<_>>();
+			let poly =
+				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
+			let sumcheck_witness = SumcheckWitness {
+				polynomial: poly.clone(),
+			};
+
+			let sumcheck_claim =
+				make_sumcheck_claim(n_vars, n_multilinears, sumcheck_witness.clone()).unwrap();
+			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+
+			b.iter(|| {
+				full_prove_wrapper(
+					&sumcheck_claim,
+					sumcheck_witness.clone(),
+					&domain,
+					prove_challenger.clone(),
+				)
+			});
+		});
+	}
+}
+
+fn classic_sumcheck_128b_monomial_basis(c: &mut Criterion) {
+	type FTower = BinaryField128b;
+	type FPolyval = BinaryField128bPolyval;
+
+	let n_multilinears = 3;
+	let composition: Arc<dyn CompositionPoly<FTower>> =
+		Arc::new(TestProductComposition::new(n_multilinears));
+	let prover_composition: Arc<dyn CompositionPoly<FPolyval>> =
+		Arc::new(TestProductComposition::new(n_multilinears));
+
+	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+
+	let mut rng = thread_rng();
+
+	let mut group = c.benchmark_group("Sumcheck 128b monomial basis");
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
 		group.throughput(Throughput::Bytes(
@@ -38,40 +92,34 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let multilinears = repeat_with(|| {
 				let values = repeat_with(|| Field::random(&mut rng))
 					.take(1 << n_vars)
-					.collect::<Vec<FPolyval>>();
+					.collect::<Vec<FTower>>();
 				MultilinearPoly::from_values(values).unwrap()
 			})
 			.take(composition.n_vars())
 			.collect::<Vec<_>>();
-			let poly = MultilinearComposite::new(n_vars, prover_composition.clone(), multilinears)
-				.unwrap();
+			let poly =
+				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
+			let prover_poly: MultilinearComposite<'_, FPolyval, FPolyval> =
+				transform_poly(&poly, prover_composition.clone()).unwrap();
+
 			let sumcheck_witness = SumcheckWitness {
 				polynomial: poly.clone(),
 			};
+			let operating_witness = SumcheckWitness {
+				polynomial: prover_poly,
+			};
 
-			let inner: Vec<MultilinearPolyOracle<'_, FTower>> = vec![
-				MultilinearPolyOracle::Committed {
-					id: 0,
-					n_vars: poly.n_vars(),
-				},
-				MultilinearPolyOracle::Committed {
-					id: 1,
-					n_vars: poly.n_vars(),
-				},
-			];
-			let composite_poly =
-				CompositePoly::new(poly.n_vars(), inner, composition.clone()).unwrap();
-			let f_oracle = MultivariatePolyOracle::Composite(composite_poly);
-			let sumcheck_claim = make_sumcheck_claim(f_oracle, sumcheck_witness.clone()).unwrap();
-			let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-			let challenges = challenger.sample_vec(n_vars);
+			let sumcheck_claim =
+				make_sumcheck_claim(n_vars, n_multilinears, sumcheck_witness.clone()).unwrap();
+			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_wrapper(
+				full_classic_prove_wrapper(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
+					operating_witness.clone(),
 					&domain,
-					challenges.clone(),
+					prove_challenger.clone(),
 				)
 			});
 		});
@@ -79,15 +127,27 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 }
 
 /// Given a sumcheck witness and a domain, make sumcheck claim
-/// REQUIRES: f_oracle corresponds to the sumcheck_witness polynomial
-pub fn make_sumcheck_claim<'a, F, OF>(
-	poly_oracle: MultivariatePolyOracle<'a, F>,
-	sumcheck_witness: SumcheckWitness<'a, OF>,
-) -> Result<SumcheckClaim<'a, F>, SumcheckError>
+/// REQUIRES: Composition is the product composition
+pub fn make_sumcheck_claim<F, FE>(
+	n_vars: usize,
+	n_multilinears: usize,
+	sumcheck_witness: SumcheckWitness<'_, F, FE>,
+) -> Result<SumcheckClaim<'_, F>, SumcheckError>
 where
 	F: Field,
-	OF: Field + From<F> + Into<F>,
+	FE: ExtensionField<F>,
 {
+	// Setup poly_oracle
+	let composition = Arc::new(TestProductComposition::new(n_multilinears));
+	let inner = vec![
+		MultilinearPolyOracle::Committed { id: 0, n_vars },
+		MultilinearPolyOracle::Committed { id: 1, n_vars },
+		MultilinearPolyOracle::Committed { id: 2, n_vars },
+	];
+	let composite_poly = CompositePoly::new(n_vars, inner, composition.clone()).unwrap();
+	let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
+
+	// Calculate sum
 	let poly = sumcheck_witness.polynomial;
 	let degree = poly.composition.degree();
 	if degree == 0 {
@@ -96,17 +156,16 @@ where
 
 	let n_multilinears = poly.composition.n_vars();
 
-	let mut multilinear_evals = vec![OF::ZERO; n_multilinears];
-	let mut total_sum = OF::ZERO;
+	let sum = (0..1 << n_vars)
+		.map(|i| {
+			let mut prod = F::ONE;
+			(0..n_multilinears).for_each(|j| {
+				prod *= poly.multilinears[j].evaluate_on_hypercube(i).unwrap();
+			});
+			prod
+		})
+		.sum();
 
-	for i in 0..1 << (poly.n_vars()) {
-		for (j, multilin) in poly.iter_multilinear_polys().enumerate() {
-			multilinear_evals[j] = multilin.evaluate_on_hypercube(i)?;
-		}
-		total_sum += poly.composition.evaluate(&multilinear_evals)?;
-	}
-
-	let sum = total_sum.into();
 	let sumcheck_claim = SumcheckClaim {
 		poly: poly_oracle,
 		sum,
@@ -145,46 +204,128 @@ where
 	}
 }
 
-fn full_prove_wrapper<'a, F: Field, OF: Field + Into<F> + From<F>>(
+fn full_prove_wrapper<'a, F: Field, FE: ExtensionField<F>, CH: CanSample<FE> + CanObserve<FE>>(
 	claim: &'a SumcheckClaim<F>,
-	witness: SumcheckWitness<'a, OF>,
-	domain: &'a EvaluationDomain<F>,
-	challenges: Vec<F>,
-) -> SumcheckProveOutput<'a, F, OF> {
-	let mut current_witness = witness.clone();
-
+	witness: SumcheckWitness<'a, F, FE>,
+	domain: &'a EvaluationDomain<FE>,
+	mut prove_challenger: CH,
+) -> SumcheckProveOutput<'a, F, FE> {
 	let n_vars = claim.poly.n_vars();
-	assert_eq!(witness.polynomial.n_vars(), n_vars);
-	assert_eq!(challenges.len(), n_vars);
-	assert!(n_vars > 0);
-	let prove_round_output =
-		sumcheck::prove::prove_first_round(claim.clone(), current_witness, domain).unwrap();
-	current_witness = prove_round_output.sumcheck_witness;
-	let mut current_partial_proof = prove_round_output.sumcheck_proof;
-	let mut prev_rd_reduced_claim = prove_round_output.sumcheck_reduced_claim;
+	let switchover = n_vars / 2 - 1;
 
+	// Setup Round Claim
+	let mut rd_claim = setup_first_round_claim(claim);
+
+	// FIRST ROUND
+	let mut prove_rd_output =
+		prove_first_round(claim, witness.clone(), domain, switchover).unwrap();
+	prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
+
+	// BEFORE SWITCHOVER
 	#[allow(clippy::needless_range_loop)]
-	for i in 0..n_vars {
-		let partial_prove_round_output = sumcheck::prove::prove_later_rounds(
+	for i in 1..switchover {
+		(prove_rd_output, rd_claim) = prove_before_switchover(
 			claim,
-			current_witness,
+			rd_claim,
+			prove_challenger.sample(),
+			prove_rd_output,
 			domain,
-			current_partial_proof,
-			challenges[i],
-			prev_rd_reduced_claim,
 		)
 		.unwrap();
-		current_witness = partial_prove_round_output.sumcheck_witness;
-		current_partial_proof = partial_prove_round_output.sumcheck_proof;
-		prev_rd_reduced_claim = partial_prove_round_output.sumcheck_reduced_claim;
+		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
 	}
-	sumcheck::prove::prove_final(claim, witness, current_partial_proof, &prev_rd_reduced_claim)
-		.unwrap()
+
+	// AT SWITCHOVER
+	let (mut prove_rd_output, mut rd_claim) =
+		prove_at_switchover(claim, rd_claim, prove_challenger.sample(), prove_rd_output, domain)
+			.unwrap();
+	prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[switchover].coeffs);
+
+	// AFTER SWITCHOVER
+	#[allow(clippy::needless_range_loop)]
+	for i in switchover + 1..n_vars {
+		(prove_rd_output, rd_claim) = prove_post_switchover(
+			claim,
+			rd_claim,
+			prove_challenger.sample(),
+			prove_rd_output,
+			domain,
+		)
+		.unwrap();
+		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
+	}
+
+	let sumcheck_proof = prove_rd_output.current_proof;
+	let final_prove_output =
+		prove_final(claim, witness, sumcheck_proof, rd_claim, prove_challenger.sample(), domain)
+			.unwrap();
+	final_prove_output
 }
 
-pub fn log2(v: usize) -> usize {
-	63 - (v as u64).leading_zeros() as usize
+fn full_classic_prove_wrapper<
+	'a,
+	F: Field,
+	OF: Field + Into<F> + From<F>,
+	CH: CanObserve<F> + CanSample<F>,
+>(
+	claim: &'a SumcheckClaim<F>,
+	witness: SumcheckWitness<'a, F, F>,
+	operating_witness: SumcheckWitness<'a, OF, OF>,
+	domain: &'a EvaluationDomain<F>,
+	mut prove_challenger: CH,
+) -> SumcheckProveOutput<'a, F, F> {
+	let n_vars = claim.poly.n_vars();
+	assert_eq!(n_vars, witness.polynomial.n_vars());
+
+	// Setup Round Claim
+	let mut rd_claim = setup_first_round_claim(claim);
+
+	let mut prove_rd_output =
+		prove_first_round_with_operating_field(claim, operating_witness, domain).unwrap();
+	prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
+
+	#[allow(clippy::needless_range_loop)]
+	for i in 1..n_vars {
+		(prove_rd_output, rd_claim) = prove_later_round_with_operating_field(
+			claim,
+			rd_claim,
+			prove_challenger.sample(),
+			prove_rd_output,
+			domain,
+		)
+		.unwrap();
+		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
+	}
+	let sumcheck_proof = prove_rd_output.current_proof;
+	let final_prove_output =
+		prove_final(claim, witness, sumcheck_proof, rd_claim, prove_challenger.sample(), domain)
+			.unwrap();
+	final_prove_output
 }
 
-criterion_group!(sumcheck, sumcheck_128b_monomial_basis);
+fn transform_poly<F, OF>(
+	poly: &MultilinearComposite<F, F>,
+	replacement_composition: Arc<dyn CompositionPoly<OF>>,
+) -> Result<MultilinearComposite<'static, OF, OF>, PolynomialError>
+where
+	F: Field,
+	OF: Field + From<F> + Into<F>,
+{
+	let multilinears = poly
+		.iter_multilinear_polys()
+		.map(|multilin| {
+			let values = multilin
+				.evals()
+				.iter()
+				.cloned()
+				.map(OF::from)
+				.collect::<Vec<_>>();
+			MultilinearPoly::from_values(values)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	let ret = MultilinearComposite::new(poly.n_vars(), replacement_composition, multilinears)?;
+	Ok(ret)
+}
+
+criterion_group!(sumcheck, classic_sumcheck_128b_monomial_basis, sumcheck_8b_128b);
 criterion_main!(sumcheck);

@@ -6,8 +6,12 @@ use crate::polynomial::Error as PolynomialError;
 pub enum Error {
 	#[error("sumcheck polynomial degree must be greater than zero")]
 	PolynomialDegreeIsZero,
-	#[error("the input was not well formed")]
-	ImproperInput,
+	#[error("the input was not well formed: {0}")]
+	ImproperInput(String),
+	#[error("the evaluation domain does not match the expected size")]
+	EvaluationDomainMismatch,
+	#[error("prover has mismatch between claim and witness: {0}")]
+	ProverClaimWitnessMismatch(String),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]

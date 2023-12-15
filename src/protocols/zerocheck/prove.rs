@@ -36,15 +36,11 @@ fn multiply_multilinear_composite<'a, F: 'static + Field>(
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
-pub fn prove<'a, F, OF>(
-	zerocheck_witness: ZerocheckWitness<'a, OF>,
+pub fn prove<'a, F: Field>(
+	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &'a ZerocheckClaim<F>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<'a, F, OF>, Error>
-where
-	F: Field,
-	OF: Field + From<F> + Into<F>,
-{
+) -> Result<ZerocheckProveOutput<'a, F>, Error> {
 	let poly = zerocheck_witness.polynomial;
 	let n_vars = poly.n_vars();
 
@@ -55,12 +51,7 @@ where
 	// Step 1: Construct a multilinear polynomial eq(X, Y) on 2*n_vars variables
 	// partially evaluated at r, will refer to this multilinear polynomial
 	// as eq_r(X) on n_vars variables
-	let r_of = challenge
-		.clone()
-		.into_iter()
-		.map(OF::from)
-		.collect::<Vec<OF>>();
-	let eq_r = eq_ind_partial_eval(n_vars, &r_of)?;
+	let eq_r = eq_ind_partial_eval(n_vars, &challenge)?;
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
@@ -89,11 +80,11 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b},
+		field::BinaryField32b,
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
-			test_utils::{transform_poly, TestProductComposition},
+			test_utils::TestProductComposition,
 			zerocheck::{verify::verify, zerocheck::ZerocheckClaim},
 		},
 	};
@@ -124,59 +115,6 @@ mod tests {
 		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 		let zerocheck_witness: ZerocheckWitness<F> = ZerocheckWitness {
 			polynomial: poly.clone(),
-		};
-
-		// Setup claim
-		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
-			.collect();
-		let composite_poly =
-			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
-				.unwrap();
-		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
-		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim { poly: poly_oracle };
-
-		// Setup challenge
-		let challenge = repeat_with(|| Field::random(&mut rng))
-			.take(n_vars)
-			.collect::<Vec<_>>();
-
-		// PROVER
-		let prove_output = prove(zerocheck_witness, &zerocheck_claim, challenge.clone()).unwrap();
-		let proof = prove_output.zerocheck_proof;
-		// VERIFIER
-		let sumcheck_claim = verify(&zerocheck_claim, proof, challenge).unwrap();
-		assert_eq!(sumcheck_claim.sum, F::ZERO);
-		assert_eq!(sumcheck_claim.poly.n_vars(), n_vars);
-		assert_eq!(prove_output.sumcheck_claim.sum, F::ZERO);
-		assert_eq!(prove_output.sumcheck_claim.poly.n_vars(), n_vars);
-	}
-
-	#[test]
-	fn test_prove_verify_interaction_with_monomial_basis_conversion() {
-		type F = BinaryField128b;
-		type OF = BinaryField128bPolyval;
-		let mut rng = StdRng::seed_from_u64(0);
-		let n_vars: usize = 3;
-		let n_multilinears = 1 << n_vars;
-
-		// Setup witness
-		let composition: Arc<dyn CompositionPoly<F>> =
-			Arc::new(TestProductComposition::new(n_multilinears));
-		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
-			.map(|i| {
-				let values: Vec<F> = (0..1 << n_vars)
-					.map(|j| if i == j { F::ZERO } else { F::ONE })
-					.collect::<Vec<_>>();
-				MultilinearPoly::from_values(values).unwrap()
-			})
-			.collect::<Vec<_>>();
-		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
-		let prover_composition: Arc<dyn CompositionPoly<OF>> =
-			Arc::new(TestProductComposition::new(n_multilinears));
-		let prover_poly = transform_poly(&poly, prover_composition).unwrap();
-		let zerocheck_witness = ZerocheckWitness {
-			polynomial: prover_poly,
 		};
 
 		// Setup claim
