@@ -7,11 +7,11 @@ use super::{
 	zerocheck::{reduce_zerocheck_claim, ZerocheckClaim, ZerocheckProof},
 };
 
-pub fn verify<'a, F>(
-	claim: &'a ZerocheckClaim<F>,
+pub fn verify<F>(
+	claim: &ZerocheckClaim<F>,
 	proof: ZerocheckProof,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<'a, F>, VerificationError>
+) -> Result<SumcheckClaim<F>, VerificationError>
 where
 	F: Field,
 {

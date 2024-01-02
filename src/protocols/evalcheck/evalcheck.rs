@@ -7,9 +7,9 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct EvalcheckClaim<'a, F: Field, FE: ExtensionField<F>> {
+pub struct EvalcheckClaim<F: Field, FE: ExtensionField<F>> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: MultivariatePolyOracle<'a, F>,
+	pub poly: MultivariatePolyOracle<F>,
 	/// Evaluation Point
 	pub eval_point: Vec<FE>,
 	/// Claimed Evaluation

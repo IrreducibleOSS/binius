@@ -132,7 +132,7 @@ pub fn make_sumcheck_claim<F, FE>(
 	n_vars: usize,
 	n_multilinears: usize,
 	sumcheck_witness: SumcheckWitness<'_, F, FE>,
-) -> Result<SumcheckClaim<'_, F>, SumcheckError>
+) -> Result<SumcheckClaim<F>, SumcheckError>
 where
 	F: Field,
 	FE: ExtensionField<F>,

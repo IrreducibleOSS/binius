@@ -19,43 +19,43 @@ pub enum Error {
 pub type CommittedId = usize;
 
 #[derive(Debug, Clone)]
-pub enum MultilinearPolyOracle<'a, F: Field> {
-	Transparent(Arc<dyn MultivariatePoly<F> + 'a>),
+pub enum MultilinearPolyOracle<F: Field> {
+	Transparent(Arc<dyn MultivariatePoly<F>>),
 	Committed {
 		id: CommittedId,
 		n_vars: usize,
 	},
 	Repeating {
-		inner: Box<MultilinearPolyOracle<'a, F>>,
+		inner: Box<MultilinearPolyOracle<F>>,
 		log_count: usize,
 	},
-	Merged(Box<MultilinearPolyOracle<'a, F>>, Box<MultilinearPolyOracle<'a, F>>),
+	Merged(Box<MultilinearPolyOracle<F>>, Box<MultilinearPolyOracle<F>>),
 	ProjectFirstVar {
-		inner: Box<MultilinearPolyOracle<'a, F>>,
+		inner: Box<MultilinearPolyOracle<F>>,
 		value: F,
 	},
 	ProjectLastVar {
-		inner: Box<MultilinearPolyOracle<'a, F>>,
+		inner: Box<MultilinearPolyOracle<F>>,
 		value: F,
 	},
 	// TODO: Make ShiftedPoly struct that validates fields on construction
 	Shifted {
-		inner: Box<MultilinearPolyOracle<'a, F>>,
+		inner: Box<MultilinearPolyOracle<F>>,
 		shift: usize,
 		shift_bits: usize,
 	},
 }
 
 #[derive(Debug, Clone)]
-pub enum MultivariatePolyOracle<'a, F: Field> {
-	Multilinear(MultilinearPolyOracle<'a, F>),
-	Composite(CompositePoly<'a, F>),
+pub enum MultivariatePolyOracle<F: Field> {
+	Multilinear(MultilinearPolyOracle<F>),
+	Composite(CompositePoly<F>),
 }
 
 #[derive(Debug, Clone)]
-pub struct CompositePoly<'a, F: Field> {
+pub struct CompositePoly<F: Field> {
 	n_vars: usize,
-	inner: Vec<MultilinearPolyOracle<'a, F>>,
+	inner: Vec<MultilinearPolyOracle<F>>,
 	composition: Arc<dyn CompositionPoly<F>>,
 }
 
@@ -83,8 +83,8 @@ where
 	}
 }
 
-impl<'a, F: Field> MultivariatePolyOracle<'a, F> {
-	pub fn into_composite(self) -> CompositePoly<'a, F> {
+impl<F: Field> MultivariatePolyOracle<F> {
+	pub fn into_composite(self) -> CompositePoly<F> {
 		match self {
 			MultivariatePolyOracle::Composite(composite) => composite.clone(),
 			MultivariatePolyOracle::Multilinear(multilinear) => CompositePoly::new(
@@ -111,10 +111,10 @@ impl<'a, F: Field> MultivariatePolyOracle<'a, F> {
 	}
 }
 
-impl<'a, F: Field> CompositePoly<'a, F> {
+impl<F: Field> CompositePoly<F> {
 	pub fn new(
 		n_vars: usize,
-		inner: Vec<MultilinearPolyOracle<'a, F>>,
+		inner: Vec<MultilinearPolyOracle<F>>,
 		composition: Arc<dyn CompositionPoly<F>>,
 	) -> Result<Self, Error> {
 		if inner.len() != composition.n_vars() {
@@ -136,7 +136,7 @@ impl<'a, F: Field> CompositePoly<'a, F> {
 		self.n_vars
 	}
 
-	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<'a, F>> {
+	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {
 		self.inner.clone()
 	}
 
@@ -145,7 +145,7 @@ impl<'a, F: Field> CompositePoly<'a, F> {
 	}
 }
 
-impl<'a, F: Field> MultilinearPolyOracle<'a, F> {
+impl<F: Field> MultilinearPolyOracle<F> {
 	pub fn n_vars(&self) -> usize {
 		match self {
 			MultilinearPolyOracle::Transparent(poly) => poly.n_vars(),

@@ -32,13 +32,13 @@ where
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify_final<'a, F, FE>(
-	poly_oracle: &'a MultivariatePolyOracle<F>,
+pub fn verify_final<F, FE>(
+	poly_oracle: &MultivariatePolyOracle<F>,
 	round: SumcheckRound<FE>,
 	round_claim: SumcheckRoundClaim<FE>,
 	challenge: FE,
 	domain: &EvaluationDomain<FE>,
-) -> Result<EvalcheckClaim<'a, F, FE>, Error>
+) -> Result<EvalcheckClaim<F, FE>, Error>
 where
 	F: Field,
 	FE: ExtensionField<F>,

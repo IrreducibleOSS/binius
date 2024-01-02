@@ -17,15 +17,15 @@ pub struct ZerocheckProof {}
 
 #[derive(Debug)]
 pub struct ZerocheckProveOutput<'a, F: Field> {
-	pub sumcheck_claim: SumcheckClaim<'a, F>,
+	pub sumcheck_claim: SumcheckClaim<F>,
 	pub sumcheck_witness: SumcheckWitness<'a, F, F>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
 #[derive(Debug)]
-pub struct ZerocheckClaim<'a, F: Field> {
+pub struct ZerocheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
-	pub poly: MultivariatePolyOracle<'a, F>,
+	pub poly: MultivariatePolyOracle<F>,
 }
 
 #[derive(Debug)]
@@ -112,10 +112,10 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	}
 }
 
-pub fn reduce_zerocheck_claim<'a, F: Field>(
-	claim: &'a ZerocheckClaim<F>,
+pub fn reduce_zerocheck_claim<F: Field>(
+	claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<'a, F>, VerificationError> {
+) -> Result<SumcheckClaim<F>, VerificationError> {
 	if claim.poly.n_vars() != challenge.len() {
 		return Err(VerificationError::ChallengeVectorMismatch);
 	}

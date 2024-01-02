@@ -24,9 +24,9 @@ use crate::{
 pub mod tensor;
 pub mod utils;
 
-fn validate_input<'a, F: Field, FE: ExtensionField<F>>(
-	sumcheck_claim: &SumcheckClaim<'a, F>,
-	sumcheck_witness: &SumcheckWitness<'a, F, FE>,
+fn validate_input<F: Field, FE: ExtensionField<F>>(
+	sumcheck_claim: &SumcheckClaim<F>,
+	sumcheck_witness: &SumcheckWitness<F, FE>,
 	domain: &EvaluationDomain<FE>,
 ) -> Result<(), Error> {
 	let degree = sumcheck_witness.polynomial.composition.degree();
@@ -45,9 +45,9 @@ fn validate_input<'a, F: Field, FE: ExtensionField<F>>(
 	Ok(())
 }
 
-fn validate_input_classic<'a, F: Field, OF: Field + Into<F> + From<F>>(
-	sumcheck_claim: &SumcheckClaim<'a, F>,
-	sumcheck_witness: &SumcheckWitness<'a, OF, OF>,
+fn validate_input_classic<F: Field, OF: Field + Into<F> + From<F>>(
+	sumcheck_claim: &SumcheckClaim<F>,
+	sumcheck_witness: &SumcheckWitness<OF, OF>,
 	domain: &EvaluationDomain<F>,
 ) -> Result<(), Error> {
 	let degree = sumcheck_witness.polynomial.composition.degree();
@@ -67,7 +67,7 @@ fn validate_input_classic<'a, F: Field, OF: Field + Into<F> + From<F>>(
 }
 
 pub fn prove_first_round<'a, F: Field, FE: ExtensionField<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<'a, F, FE>,
 	domain: &EvaluationDomain<FE>,
 	max_switchover: usize,
@@ -85,7 +85,7 @@ pub fn prove_first_round<'a, F: Field, FE: ExtensionField<F>>(
 }
 
 pub fn prove_before_switchover<'a, F: Field, FE: ExtensionField<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	prev_rd_reduced_claim: SumcheckRoundClaim<FE>,
 	prev_rd_challenge: FE,
 	prev_rd_output: PreSwitchoverRoundOutput<'a, F, FE>,
@@ -122,7 +122,7 @@ pub fn prove_before_switchover<'a, F: Field, FE: ExtensionField<F>>(
 }
 
 pub fn prove_at_switchover<'a, F: Field, FE: ExtensionField<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	prev_rd_reduced_claim: SumcheckRoundClaim<FE>,
 	prev_rd_challenge: FE,
 	prev_rd_output: PreSwitchoverRoundOutput<'a, F, FE>,
@@ -160,7 +160,7 @@ pub fn prove_at_switchover<'a, F: Field, FE: ExtensionField<F>>(
 }
 
 pub fn prove_post_switchover<'a, F: Field, FE: ExtensionField<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	prev_rd_reduced_claim: SumcheckRoundClaim<FE>,
 	prev_rd_challenge: FE,
 	mut prev_rd_output: PostSwitchoverRoundOutput<'a, FE, FE>,
@@ -226,7 +226,7 @@ where
 }
 
 pub fn prove_first_round_with_operating_field<'a, F: Field, OF: Field + Into<F> + From<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<'a, OF, OF>,
 	domain: &EvaluationDomain<F>,
 ) -> Result<PostSwitchoverRoundOutput<'a, F, OF>, Error> {
@@ -244,7 +244,7 @@ pub fn prove_first_round_with_operating_field<'a, F: Field, OF: Field + Into<F> 
 }
 
 pub fn prove_later_round_with_operating_field<'a, F: Field, OF: Field + Into<F> + From<F>>(
-	original_claim: &SumcheckClaim<'a, F>,
+	original_claim: &SumcheckClaim<F>,
 	prev_rd_reduced_claim: SumcheckRoundClaim<F>,
 	prev_rd_challenge: F,
 	mut prev_rd_output: PostSwitchoverRoundOutput<'a, F, OF>,
@@ -315,7 +315,7 @@ mod tests {
 		CH: CanSample<FE> + CanObserve<FE>,
 	>(
 		witness: SumcheckWitness<'a, F, FE>,
-		claim: &SumcheckClaim<'a, F>,
+		claim: &SumcheckClaim<F>,
 		domain: &EvaluationDomain<FE>,
 		mut prove_challenger: CH,
 		mut verify_challenger: CH,
@@ -462,7 +462,7 @@ mod tests {
 	>(
 		operating_witness: SumcheckWitness<'a, OF, OF>,
 		witness: SumcheckWitness<'a, F, F>,
-		claim: SumcheckClaim<'a, F>,
+		claim: SumcheckClaim<F>,
 		domain: &EvaluationDomain<F>,
 		mut prove_challenger: CH,
 		mut verify_challenger: CH,

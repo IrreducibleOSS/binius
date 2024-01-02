@@ -21,15 +21,15 @@ pub struct SumcheckProof<F> {
 
 #[derive(Debug)]
 pub struct SumcheckProveOutput<'a, F: Field, FE: ExtensionField<F>> {
-	pub evalcheck_claim: EvalcheckClaim<'a, F, FE>,
+	pub evalcheck_claim: EvalcheckClaim<F, FE>,
 	pub evalcheck_witness: EvalcheckWitness<'a, F, FE>,
 	pub sumcheck_proof: SumcheckProof<FE>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SumcheckClaim<'a, F: Field> {
+pub struct SumcheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function whose sum is claimed on hypercube domain
-	pub poly: MultivariatePolyOracle<'a, F>,
+	pub poly: MultivariatePolyOracle<F>,
 	/// Claimed Sum over the Boolean Hypercube
 	pub sum: F,
 }
@@ -109,10 +109,10 @@ where
 	})
 }
 
-pub fn reduce_sumcheck_claim_final<'a, F: Field, FE: ExtensionField<F>>(
-	poly_oracle: &'a MultivariatePolyOracle<F>,
+pub fn reduce_sumcheck_claim_final<F: Field, FE: ExtensionField<F>>(
+	poly_oracle: &MultivariatePolyOracle<F>,
 	round_claim: SumcheckRoundClaim<FE>,
-) -> Result<EvalcheckClaim<'a, F, FE>, Error> {
+) -> Result<EvalcheckClaim<F, FE>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: eval,
