@@ -55,7 +55,7 @@ pub fn check_evaluation_domain<F: Field>(
 	Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SumcheckRoundClaim<F: Field> {
 	pub partial_point: Vec<F>,
 	pub current_round_sum: F,

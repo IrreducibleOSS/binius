@@ -14,6 +14,9 @@ use super::{
 
 /// Verifies a sumcheck round reduction proof.
 ///
+/// Given a round proof which are the coefficients of a univariate polynomial and the sampled challenge, evaluate the
+/// polynomial at the challenge point and reduce to a sumcheck claim over the partially evaluated polynomial.
+///
 /// Returns the evaluation point and the claimed evaluation.
 pub fn verify_round<F, FE>(
 	poly_oracle: &MultivariatePolyOracle<F>,

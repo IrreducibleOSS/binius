@@ -193,7 +193,7 @@ pub fn prove_post_switchover<'a, F: Field, FE: ExtensionField<F>>(
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 pub fn prove_final<'a, F, FE>(
-	sumcheck_claim: &'a SumcheckClaim<F>,
+	sumcheck_claim: &SumcheckClaim<F>,
 	sumcheck_witness: SumcheckWitness<'a, F, FE>,
 	sumcheck_proof: SumcheckProof<FE>,
 	prev_rd_reduced_claim: SumcheckRoundClaim<FE>,
@@ -285,6 +285,7 @@ mod tests {
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
+			evalcheck::evalcheck::EvalcheckClaim,
 			sumcheck::{
 				setup_first_round_claim,
 				verify::{verify_final, verify_round},
@@ -297,29 +298,62 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, sync::Arc};
 
-	fn assert_round_claims_match<F: Field>(
-		rd_claim: SumcheckRoundClaim<F>,
-		other_rd_claim: SumcheckRoundClaim<F>,
-	) {
-		assert_eq!(rd_claim.partial_point.len(), other_rd_claim.partial_point.len());
-		assert_eq!(rd_claim.current_round_sum, other_rd_claim.current_round_sum);
-		for i in 0..rd_claim.partial_point.len() {
-			assert_eq!(rd_claim.partial_point[i], other_rd_claim.partial_point[i]);
-		}
-	}
-
-	fn full_prove_verify_checks<
-		'a,
+	fn full_verify<'a, F, FE, CH>(
+		claim: &SumcheckClaim<F>,
+		proof: SumcheckProof<FE>,
+		domain: &EvaluationDomain<FE>,
+		mut challenger: CH,
+	) -> (Vec<SumcheckRoundClaim<FE>>, EvalcheckClaim<F, FE>)
+	where
 		F: Field,
 		FE: ExtensionField<F>,
 		CH: CanSample<FE> + CanObserve<FE>,
-	>(
-		witness: SumcheckWitness<'a, F, FE>,
+	{
+		let n_vars = claim.poly.n_vars();
+		assert!(n_vars > 0);
+
+		// Make initial round claim
+		let mut rd_claim = setup_first_round_claim(claim);
+		let mut rd_claims = vec![rd_claim.clone()];
+
+		let n_rounds = proof.rounds.len();
+		for round_proof in proof.rounds[..n_rounds - 1].iter() {
+			challenger.observe_slice(round_proof.coeffs.as_slice());
+			rd_claim = verify_round(
+				&claim.poly,
+				round_proof.clone(),
+				rd_claim,
+				challenger.sample(),
+				domain,
+			)
+			.unwrap();
+			rd_claims.push(rd_claim.clone());
+		}
+
+		let last_round_proof = &proof.rounds[n_rounds - 1];
+		let final_claim = verify_final(
+			&claim.poly,
+			last_round_proof.clone(),
+			rd_claim,
+			challenger.sample(),
+			domain,
+		)
+		.unwrap();
+
+		(rd_claims, final_claim)
+	}
+
+	fn full_prove_with_switchover<'a, F, FE, CH>(
 		claim: &SumcheckClaim<F>,
+		witness: SumcheckWitness<'a, F, FE>,
 		domain: &EvaluationDomain<FE>,
-		mut prove_challenger: CH,
-		mut verify_challenger: CH,
-	) {
+		mut challenger: CH,
+	) -> (Vec<SumcheckRoundClaim<FE>>, SumcheckProveOutput<'a, F, FE>)
+	where
+		F: Field,
+		FE: ExtensionField<F>,
+		CH: CanSample<FE> + CanObserve<FE>,
+	{
 		let current_witness = witness.clone();
 
 		let n_vars = claim.poly.n_vars();
@@ -329,226 +363,100 @@ mod tests {
 		assert!(n_vars > 0);
 
 		// Make initial round claim
-		let mut prover_rd_claim = setup_first_round_claim(claim);
-		let mut verifier_rd_claim = prover_rd_claim.clone();
+		let mut rd_claim = setup_first_round_claim(claim);
+		let mut rd_claims = vec![rd_claim.clone()];
 
 		// FIRST ROUND
-		let mut prove_rd_output =
-			prove_first_round(claim, current_witness, domain, switchover).unwrap();
-		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
-		verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
-
-		verifier_rd_claim = verify_round(
-			&claim.poly,
-			prove_rd_output.current_proof.rounds[0].clone(),
-			verifier_rd_claim,
-			verify_challenger.sample(),
-			domain,
-		)
-		.unwrap();
+		let mut rd_output = prove_first_round(claim, current_witness, domain, switchover).unwrap();
 
 		// BEFORE SWITCHOVER
 		#[allow(clippy::needless_range_loop)]
-		for i in 1..switchover {
-			(prove_rd_output, prover_rd_claim) = prove_before_switchover(
-				claim,
-				prover_rd_claim,
-				prove_challenger.sample(),
-				prove_rd_output,
-				domain,
-			)
-			.unwrap();
-			prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			assert_round_claims_match(prover_rd_claim.clone(), verifier_rd_claim.clone());
-
-			verifier_rd_claim = verify_round(
-				&claim.poly,
-				prove_rd_output.current_proof.rounds[i].clone(),
-				verifier_rd_claim,
-				verify_challenger.sample(),
-				domain,
-			)
-			.unwrap();
+		for i in 0..switchover - 1 {
+			challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
+			(rd_output, rd_claim) =
+				prove_before_switchover(claim, rd_claim, challenger.sample(), rd_output, domain)
+					.unwrap();
+			rd_claims.push(rd_claim.clone());
 		}
 
 		// AT SWITCHOVER
-		let (mut prove_rd_output, mut rd_claim) = prove_at_switchover(
-			claim,
-			prover_rd_claim,
-			prove_challenger.sample(),
-			prove_rd_output,
-			domain,
-		)
-		.unwrap();
-		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[switchover].coeffs);
-		verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[switchover].coeffs);
-		assert_round_claims_match(rd_claim.clone(), verifier_rd_claim.clone());
-
-		let mut verified_rd_claim = verify_round(
-			&claim.poly,
-			prove_rd_output.current_proof.rounds[switchover].clone(),
-			verifier_rd_claim,
-			verify_challenger.sample(),
-			domain,
-		)
-		.unwrap();
+		challenger.observe_slice(&rd_output.current_proof.rounds[switchover - 1].coeffs);
+		let (mut rd_output, mut rd_claim) =
+			prove_at_switchover(claim, rd_claim, challenger.sample(), rd_output, domain).unwrap();
+		rd_claims.push(rd_claim.clone());
 
 		// AFTER SWITCHOVER
 		#[allow(clippy::needless_range_loop)]
-		for i in switchover + 1..n_vars {
-			(prove_rd_output, rd_claim) = prove_post_switchover(
-				claim,
-				rd_claim,
-				prove_challenger.sample(),
-				prove_rd_output,
-				domain,
-			)
-			.unwrap();
-			prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			assert_round_claims_match(rd_claim.clone(), verified_rd_claim.clone());
-
-			if i == n_vars - 1 {
-				break;
-			}
-			verified_rd_claim = verify_round(
-				&claim.poly,
-				prove_rd_output.current_proof.rounds[i].clone(),
-				verified_rd_claim,
-				verify_challenger.sample(),
-				domain,
-			)
-			.unwrap();
+		for i in switchover..n_vars - 1 {
+			challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
+			(rd_output, rd_claim) =
+				prove_post_switchover(claim, rd_claim, challenger.sample(), rd_output, domain)
+					.unwrap();
+			rd_claims.push(rd_claim.clone());
 		}
 
-		let sumcheck_proof = prove_rd_output.current_proof;
-		let final_verify_output = verify_final(
-			&claim.poly,
-			sumcheck_proof.rounds[n_vars - 1].clone(),
-			verified_rd_claim,
-			verify_challenger.sample(),
-			domain,
-		)
-		.unwrap();
-		let final_prove_output = prove_final(
+		let final_output = prove_final(
 			claim,
 			witness,
-			sumcheck_proof,
+			rd_output.current_proof,
 			rd_claim,
-			prove_challenger.sample(),
+			challenger.sample(),
 			domain,
 		)
 		.unwrap();
 
-		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
-		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
-		assert_eq!(
-			final_prove_output
-				.evalcheck_claim
-				.poly
-				.into_composite()
-				.n_vars(),
-			claim.poly.n_vars()
-		);
-		assert_eq!(final_verify_output.poly.into_composite().n_vars(), claim.poly.n_vars());
+		(rd_claims, final_output)
 	}
 
-	fn full_prove_verify_checks_with_operating_field<
-		'a,
+	fn full_prove_with_operating_field<'a, F, OF, CH>(
+		claim: &SumcheckClaim<F>,
+		witness: SumcheckWitness<'a, F, F>,
+		operating_witness: SumcheckWitness<'a, OF, OF>,
+		domain: &EvaluationDomain<F>,
+		mut challenger: CH,
+	) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<'a, F, F>)
+	where
 		F: Field,
 		OF: Field + From<F> + Into<F>,
 		CH: CanObserve<F> + CanSample<F>,
-	>(
-		operating_witness: SumcheckWitness<'a, OF, OF>,
-		witness: SumcheckWitness<'a, F, F>,
-		claim: SumcheckClaim<F>,
-		domain: &EvaluationDomain<F>,
-		mut prove_challenger: CH,
-		mut verify_challenger: CH,
-	) {
+	{
 		let n_vars = claim.poly.n_vars();
 
 		assert_eq!(operating_witness.polynomial.n_vars(), n_vars);
 		assert!(n_vars > 0);
 
 		// Setup Round Claim
-		let mut prover_rd_claim = setup_first_round_claim(&claim);
-		let mut verifier_rd_claim = prover_rd_claim.clone();
+		let mut rd_claim = setup_first_round_claim(claim);
+		let mut rd_claims = vec![rd_claim.clone()];
 
 		// FIRST ROUND
-		let mut prove_rd_output =
+		let mut rd_output =
 			prove_first_round_with_operating_field(&claim, operating_witness, domain).unwrap();
-		prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
-		verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[0].coeffs);
 
-		verifier_rd_claim = verify_round(
-			&claim.poly,
-			prove_rd_output.current_proof.rounds[0].clone(),
-			verifier_rd_claim,
-			verify_challenger.sample(),
-			domain,
-		)
-		.unwrap();
-
-		// BEFORE SWITCHOVER
-		#[allow(clippy::needless_range_loop)]
-		for i in 1..n_vars {
-			(prove_rd_output, prover_rd_claim) = prove_later_round_with_operating_field(
+		for i in 0..n_vars - 1 {
+			challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
+			(rd_output, rd_claim) = prove_later_round_with_operating_field(
 				&claim,
-				prover_rd_claim,
-				prove_challenger.sample(),
-				prove_rd_output,
+				rd_claim,
+				challenger.sample(),
+				rd_output,
 				domain,
 			)
 			.unwrap();
-			prove_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			verify_challenger.observe_slice(&prove_rd_output.current_proof.rounds[i].coeffs);
-			assert_round_claims_match(prover_rd_claim.clone(), verifier_rd_claim.clone());
-
-			if i == n_vars - 1 {
-				break;
-			}
-			verifier_rd_claim = verify_round(
-				&claim.poly,
-				prove_rd_output.current_proof.rounds[i].clone(),
-				verifier_rd_claim,
-				verify_challenger.sample(),
-				domain,
-			)
-			.unwrap();
+			rd_claims.push(rd_claim.clone());
 		}
 
-		let sumcheck_proof = prove_rd_output.current_proof;
-		let final_verify_output = verify_final(
-			&claim.poly,
-			sumcheck_proof.rounds[n_vars - 1].clone(),
-			verifier_rd_claim,
-			verify_challenger.sample(),
-			domain,
-		)
-		.unwrap();
-		let final_prove_output = prove_final(
+		let final_output = prove_final(
 			&claim,
 			witness,
-			sumcheck_proof,
-			prover_rd_claim,
-			prove_challenger.sample(),
+			rd_output.current_proof,
+			rd_claim,
+			challenger.sample(),
 			domain,
 		)
 		.unwrap();
 
-		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
-		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
-		assert_eq!(
-			final_prove_output
-				.evalcheck_claim
-				.poly
-				.into_composite()
-				.n_vars(),
-			claim.poly.n_vars()
-		);
-		assert_eq!(final_verify_output.poly.into_composite().n_vars(), claim.poly.n_vars());
+		(rd_claims, final_output)
 	}
 
 	#[test]
@@ -602,16 +510,27 @@ mod tests {
 		// Setup evaluation domain
 		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
 
-		let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-		let verify_challenger = prove_challenger.clone();
+		let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-		full_prove_verify_checks(
-			sumcheck_witness,
+		let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
 			&sumcheck_claim,
+			sumcheck_witness,
 			&domain,
-			prove_challenger,
-			verify_challenger,
+			challenger.clone(),
 		);
+
+		let (verifier_rd_claims, final_verify_output) = full_verify(
+			&sumcheck_claim,
+			final_prove_output.sumcheck_proof,
+			&domain,
+			challenger.clone(),
+		);
+
+		assert_eq!(prover_rd_claims, verifier_rd_claims);
+		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
+		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
+		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
+		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
 	}
 
 	#[test]
@@ -670,16 +589,26 @@ mod tests {
 		// Setup evaluation domain
 		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
 
-		let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-		let verify_challenger = prove_challenger.clone();
-
-		full_prove_verify_checks_with_operating_field(
-			operating_witness,
+		let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let (prover_rd_claims, final_prove_output) = full_prove_with_operating_field(
+			&sumcheck_claim,
 			witness,
-			sumcheck_claim,
+			operating_witness,
 			&domain,
-			prove_challenger,
-			verify_challenger,
+			challenger.clone(),
 		);
+
+		let (verifier_rd_claims, final_verify_output) = full_verify(
+			&sumcheck_claim,
+			final_prove_output.sumcheck_proof,
+			&domain,
+			challenger.clone(),
+		);
+
+		assert_eq!(prover_rd_claims, verifier_rd_claims);
+		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
+		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
+		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
+		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
 	}
 }
