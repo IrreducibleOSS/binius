@@ -127,6 +127,7 @@ pub fn reduce_sumcheck_claim_final<F: Field, FE: ExtensionField<F>>(
 		poly: poly_oracle.clone(),
 		eval_point,
 		eval,
+		is_random_point: true,
 	};
 	Ok(evalcheck_claim)
 }

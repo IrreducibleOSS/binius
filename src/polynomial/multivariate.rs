@@ -30,6 +30,26 @@ where
 	fn evaluate(&self, query: &[P]) -> Result<P, Error>;
 }
 
+#[derive(Debug)]
+pub struct IdentityCompositionPoly;
+
+impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
+	fn n_vars(&self) -> usize {
+		1
+	}
+
+	fn degree(&self) -> usize {
+		1
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+		if query.len() != 1 {
+			return Err(Error::IncorrectQuerySize { expected: 1 });
+		}
+		Ok(query[0])
+	}
+}
+
 /// A polynomial defined as the composition of several multilinear polynomials.
 ///
 /// A $\mu$-variate multilinear composite polynomial $p(X_0, ..., X_{\mu})$ is defined as

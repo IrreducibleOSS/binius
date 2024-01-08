@@ -29,6 +29,7 @@ pub enum MultilinearPolyOracle<F: Field> {
 		inner: Box<MultilinearPolyOracle<F>>,
 		log_count: usize,
 	},
+	Interleaved(Box<MultilinearPolyOracle<F>>, Box<MultilinearPolyOracle<F>>),
 	Merged(Box<MultilinearPolyOracle<F>>, Box<MultilinearPolyOracle<F>>),
 	ProjectFirstVar {
 		inner: Box<MultilinearPolyOracle<F>>,
@@ -151,10 +152,17 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			MultilinearPolyOracle::Transparent(poly) => poly.n_vars(),
 			MultilinearPolyOracle::Committed { n_vars, .. } => *n_vars,
 			MultilinearPolyOracle::Repeating { inner, log_count } => inner.n_vars() + log_count,
-			MultilinearPolyOracle::Merged(poly0, poly1) => poly0.n_vars().max(poly1.n_vars()),
+			MultilinearPolyOracle::Interleaved(poly0, _poly1) => 1 + poly0.n_vars(),
+			MultilinearPolyOracle::Merged(poly0, _poly1) => 1 + poly0.n_vars(),
 			MultilinearPolyOracle::Shifted { inner, .. } => inner.n_vars(),
 			MultilinearPolyOracle::ProjectFirstVar { inner, value: _ } => inner.n_vars() - 1,
 			MultilinearPolyOracle::ProjectLastVar { inner, value: _ } => inner.n_vars() - 1,
 		}
+	}
+}
+
+impl<F: Field> From<MultilinearPolyOracle<F>> for MultivariatePolyOracle<F> {
+	fn from(multilinear: MultilinearPolyOracle<F>) -> Self {
+		MultivariatePolyOracle::Multilinear(multilinear)
 	}
 }

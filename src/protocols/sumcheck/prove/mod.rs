@@ -298,7 +298,7 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, sync::Arc};
 
-	fn full_verify<'a, F, FE, CH>(
+	fn full_verify<F, FE, CH>(
 		claim: &SumcheckClaim<F>,
 		proof: SumcheckProof<FE>,
 		domain: &EvaluationDomain<FE>,
@@ -431,12 +431,12 @@ mod tests {
 
 		// FIRST ROUND
 		let mut rd_output =
-			prove_first_round_with_operating_field(&claim, operating_witness, domain).unwrap();
+			prove_first_round_with_operating_field(claim, operating_witness, domain).unwrap();
 
 		for i in 0..n_vars - 1 {
 			challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
 			(rd_output, rd_claim) = prove_later_round_with_operating_field(
-				&claim,
+				claim,
 				rd_claim,
 				challenger.sample(),
 				rd_output,
@@ -447,7 +447,7 @@ mod tests {
 		}
 
 		let final_output = prove_final(
-			&claim,
+			claim,
 			witness,
 			rd_output.current_proof,
 			rd_claim,
@@ -530,6 +530,7 @@ mod tests {
 		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
 		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
 		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
+		assert!(final_prove_output.evalcheck_claim.is_random_point);
 		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
 	}
 
@@ -609,6 +610,7 @@ mod tests {
 		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
 		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
 		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
+		assert!(final_prove_output.evalcheck_claim.is_random_point);
 		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
 	}
 }

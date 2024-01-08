@@ -28,7 +28,7 @@
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
 pub mod evalcheck;
-// pub mod prodcheck;
+pub mod prodcheck;
 pub mod sumcheck;
 #[cfg(test)]
 pub mod test_utils;

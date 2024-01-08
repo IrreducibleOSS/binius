@@ -14,6 +14,8 @@ pub struct EvalcheckClaim<F: Field, FE: ExtensionField<F>> {
 	pub eval_point: Vec<FE>,
 	/// Claimed Evaluation
 	pub eval: FE,
+	/// Whether the evaluation point is random
+	pub is_random_point: bool,
 }
 
 #[derive(Debug)]

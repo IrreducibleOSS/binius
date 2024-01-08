@@ -1,10 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::error::Error;
+use super::{error::Error, IdentityCompositionPoly, MultilinearComposite};
 use crate::field::{
 	get_packed_slice, iter_packed_slice, set_packed_slice, ExtensionField, Field, PackedField,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -216,6 +216,15 @@ impl<'a, P: PackedField> MultilinearPoly<'a, P> {
 			});
 		}
 		MultilinearPoly::from_values(packed_result_evals)
+	}
+
+	pub fn into_multilinear_composite(
+		self,
+	) -> Result<MultilinearComposite<'a, P, P::Scalar>, Error> {
+		let composition = Arc::new(IdentityCompositionPoly);
+		let n_vars = self.mu;
+		let multilinears = vec![self];
+		MultilinearComposite::new(n_vars, composition, multilinears)
 	}
 }
 
