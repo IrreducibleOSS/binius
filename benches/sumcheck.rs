@@ -1,6 +1,8 @@
 use binius::{
 	challenger::HashChallenger,
-	field::{BinaryField128b, BinaryField128bPolyval, BinaryField8b, ExtensionField, Field},
+	field::{
+		BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField8b, ExtensionField, Field,
+	},
 	hash::GroestlHasher,
 	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
@@ -134,15 +136,27 @@ pub fn make_sumcheck_claim<F, FE>(
 	sumcheck_witness: SumcheckWitness<'_, F, FE>,
 ) -> Result<SumcheckClaim<F>, SumcheckError>
 where
-	F: Field,
+	F: BinaryField,
 	FE: ExtensionField<F>,
 {
 	// Setup poly_oracle
 	let composition = Arc::new(TestProductComposition::new(n_multilinears));
 	let inner = vec![
-		MultilinearPolyOracle::Committed { id: 0, n_vars },
-		MultilinearPolyOracle::Committed { id: 1, n_vars },
-		MultilinearPolyOracle::Committed { id: 2, n_vars },
+		MultilinearPolyOracle::Committed {
+			id: 0,
+			n_vars,
+			tower_level: F::TOWER_LEVEL,
+		},
+		MultilinearPolyOracle::Committed {
+			id: 1,
+			n_vars,
+			tower_level: F::TOWER_LEVEL,
+		},
+		MultilinearPolyOracle::Committed {
+			id: 2,
+			n_vars,
+			tower_level: F::TOWER_LEVEL,
+		},
 	];
 	let composite_poly = CompositePoly::new(n_vars, inner, composition.clone()).unwrap();
 	let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);

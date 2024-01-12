@@ -190,7 +190,9 @@ pub fn prove_step_two<'a, F: Field>(
 mod tests {
 	use super::*;
 	use crate::{
-		field::BinaryField32b, iopoly::MultilinearPolyOracle, polynomial::MultilinearPoly,
+		field::{BinaryField, BinaryField32b},
+		iopoly::MultilinearPolyOracle,
+		polynomial::MultilinearPoly,
 		protocols::prodcheck::verify::verify,
 	};
 
@@ -205,7 +207,11 @@ mod tests {
 
 	fn create_numerator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
 		let n_vars = 2;
-		MultilinearPolyOracle::Committed { id: 0, n_vars }
+		MultilinearPolyOracle::Committed {
+			id: 0,
+			n_vars,
+			tower_level: BinaryField32b::TOWER_LEVEL,
+		}
 	}
 
 	// Creates U(x), a multilinear with evaluations {3, 2, 4, 1} over the boolean hypercube on 2 vars
@@ -220,7 +226,11 @@ mod tests {
 
 	fn create_denominator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
 		let n_vars = 2;
-		MultilinearPolyOracle::Committed { id: 1, n_vars }
+		MultilinearPolyOracle::Committed {
+			id: 1,
+			n_vars,
+			tower_level: BinaryField32b::TOWER_LEVEL,
+		}
 	}
 
 	#[test]
@@ -250,6 +260,7 @@ mod tests {
 		let f_prime_oracle = MultilinearPolyOracle::Committed {
 			id: 99,
 			n_vars: n_vars + 1,
+			tower_level: F::TOWER_LEVEL,
 		};
 		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 2], F::ONE);
 		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 1], F::ZERO);

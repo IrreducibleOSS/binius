@@ -280,7 +280,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::HashChallenger,
-		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b},
+		field::{BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField32b},
 		hash::GroestlHasher,
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
@@ -496,7 +496,11 @@ mod tests {
 
 		// Setup Claim
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
+			.map(|i| MultilinearPolyOracle::Committed {
+				id: i,
+				n_vars,
+				tower_level: F::TOWER_LEVEL,
+			})
 			.collect();
 		let composite_poly =
 			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
@@ -576,7 +580,11 @@ mod tests {
 
 		// CLAIM
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
+			.map(|i| MultilinearPolyOracle::Committed {
+				id: i,
+				n_vars,
+				tower_level: F::TOWER_LEVEL,
+			})
 			.collect();
 		let composite_poly =
 			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))

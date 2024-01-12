@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{field::Field, protocols::sumcheck::SumcheckClaim};
+use crate::{field::BinaryField, protocols::sumcheck::SumcheckClaim};
 
 use super::{
 	error::VerificationError,
@@ -13,7 +13,7 @@ pub fn verify<F>(
 	challenge: Vec<F>,
 ) -> Result<SumcheckClaim<F>, VerificationError>
 where
-	F: Field,
+	F: BinaryField,
 {
 	let _ = proof;
 	reduce_zerocheck_claim(claim, challenge)

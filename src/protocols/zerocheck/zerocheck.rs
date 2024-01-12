@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::Field,
+	field::{BinaryField, Field},
 	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
@@ -112,7 +112,7 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	}
 }
 
-pub fn reduce_zerocheck_claim<F: Field>(
+pub fn reduce_zerocheck_claim<F: BinaryField>(
 	claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
 ) -> Result<SumcheckClaim<F>, VerificationError> {
@@ -121,7 +121,10 @@ pub fn reduce_zerocheck_claim<F: Field>(
 	}
 
 	let eq_r_multilinear = EqIndPartialEval::new(claim.poly.n_vars(), challenge)?;
-	let eq_r = MultilinearPolyOracle::Transparent(Arc::new(eq_r_multilinear));
+	let eq_r = MultilinearPolyOracle::Transparent {
+		poly: Arc::new(eq_r_multilinear),
+		tower_level: F::TOWER_LEVEL,
+	};
 
 	let poly_composite = claim.poly.clone().into_composite();
 	let mut inners = poly_composite.inner_polys();

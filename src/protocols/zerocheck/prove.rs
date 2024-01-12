@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::{
-	field::Field,
+	field::{BinaryField, Field},
 	polynomial::{
 		eq_ind_partial_eval, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
 	},
@@ -36,7 +36,7 @@ fn multiply_multilinear_composite<'a, F: 'static + Field>(
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
-pub fn prove<'a, F: Field>(
+pub fn prove<'a, F: BinaryField>(
 	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &'a ZerocheckClaim<F>,
 	challenge: Vec<F>,
@@ -80,7 +80,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		field::BinaryField32b,
+		field::{BinaryField, BinaryField32b},
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
 		protocols::{
@@ -119,7 +119,11 @@ mod tests {
 
 		// Setup claim
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed { id: i, n_vars })
+			.map(|i| MultilinearPolyOracle::Committed {
+				id: i,
+				n_vars,
+				tower_level: F::TOWER_LEVEL,
+			})
 			.collect();
 		let composite_poly =
 			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))

@@ -22,6 +22,7 @@ use super::{
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
 	const N_BITS: usize = <Self as ExtensionField<BinaryField1b>>::DEGREE;
+	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;
 }
 
 /// Macro to generate an implementation of a BinaryField.
