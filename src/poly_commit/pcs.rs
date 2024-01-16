@@ -2,7 +2,7 @@
 
 use crate::{
 	field::{ExtensionField, PackedField},
-	polynomial::MultilinearPoly,
+	polynomial::MultilinearExtension,
 };
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 
@@ -20,7 +20,7 @@ where
 
 	fn commit(
 		&self,
-		poly: &MultilinearPoly<P>,
+		poly: &MultilinearExtension<P>,
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
 
 	/// Generate an evaluation proof at a *random* challenge point.
@@ -28,7 +28,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		poly: &MultilinearPoly<P>,
+		poly: &MultilinearExtension<P>,
 		query: &[FE],
 	) -> Result<Self::Proof, Self::Error>
 	where

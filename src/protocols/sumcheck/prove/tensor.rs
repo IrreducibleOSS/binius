@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::{ExtensionField, Field},
+	field::Field,
 	polynomial::{Error as PolynomialError, MultilinearPoly},
 	protocols::sumcheck::Error,
 };
@@ -63,15 +63,13 @@ impl<FE: Field> Tensor<FE> {
 	///     Let multilin_prime = multilin.evaluate_partial_low(r) be a partially evaluated multilinear on (n - self.rd) variables.
 	///     Outputs multilin_prime.evaluate_on_hypercube(idx) =
 	///         \sum_{h = 0}^{2^{self.rd}} values[h] * multilin.evaluate_on_hypercube(idx << self.rd | h)
-	pub fn tensor_query<F>(&self, multilin: &MultilinearPoly<F>, idx: usize) -> Result<FE, Error>
-	where
-		F: Field,
-		FE: ExtensionField<F>,
-	{
-		let mut result = FE::ZERO;
-		for h in 0..1 << self.rd {
-			result += self.values[h] * multilin.evaluate_on_hypercube(idx << self.rd | h)?;
-		}
-		Ok(result)
+	pub fn tensor_query<M: MultilinearPoly<FE>>(
+		&self,
+		multilin: &M,
+		idx: usize,
+	) -> Result<FE, Error> {
+		multilin
+			.inner_prod_subcube(idx, &self.values)
+			.map_err(Error::Polynomial)
 	}
 }

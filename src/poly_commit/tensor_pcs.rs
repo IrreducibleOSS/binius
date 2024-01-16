@@ -16,7 +16,7 @@ use crate::{
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
-	polynomial::{Error as PolynomialError, MultilinearPoly},
+	polynomial::{Error as PolynomialError, MultilinearExtension},
 };
 
 /// Evaluation proof data for the `TensorPCS` polynomial commitment scheme.
@@ -31,7 +31,7 @@ pub struct Proof<'a, PI, PE, VCSProof>
 where
 	PE: PackedField,
 {
-	pub t_prime: MultilinearPoly<'a, PE>,
+	pub t_prime: MultilinearExtension<'a, PE>,
 	pub vcs_proofs: Vec<(Vec<PI>, VCSProof)>,
 }
 
@@ -129,7 +129,7 @@ where
 
 	fn commit(
 		&self,
-		poly: &MultilinearPoly<P>,
+		poly: &MultilinearExtension<P>,
 	) -> Result<(Self::Commitment, Self::Committed), Error> {
 		if poly.n_vars() != self.n_vars() {
 			return Err(Error::IncorrectPolynomialSize {
@@ -188,7 +188,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		poly: &MultilinearPoly<P>,
+		poly: &MultilinearExtension<P>,
 		query: &[FE],
 	) -> Result<Self::Proof, Error>
 	where
@@ -336,9 +336,9 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let leaf_evaluations = MultilinearPoly::batch_evaluate(
+		let leaf_evaluations = MultilinearExtension::batch_evaluate(
 			column_tests.iter().map(|(_, leaf)| {
-				MultilinearPoly::from_values_slice(leaf)
+				MultilinearExtension::from_values_slice(leaf)
 					.expect("leaf is guaranteed power of two length due to check_proof_shape")
 			}),
 			&query[log_n_cols..],
@@ -573,7 +573,7 @@ mod tests {
 		let evals = repeat_with(|| Packed::random(&mut rng))
 			.take((1 << pcs.n_vars()) / Packed::WIDTH)
 			.collect::<Vec<_>>();
-		let poly = MultilinearPoly::from_values(evals).unwrap();
+		let poly = MultilinearExtension::from_values(evals).unwrap();
 
 		let (commitment, committed) = pcs.commit(&poly).unwrap();
 
@@ -611,7 +611,7 @@ mod tests {
 		let evals = repeat_with(|| PackedBinaryField128x1b::random(&mut rng))
 			.take((1 << pcs.n_vars()) / PackedBinaryField128x1b::WIDTH)
 			.collect::<Vec<_>>();
-		let poly = MultilinearPoly::from_values(evals).unwrap();
+		let poly = MultilinearExtension::from_values(evals).unwrap();
 
 		let (commitment, committed) = pcs.commit(&poly).unwrap();
 
@@ -649,7 +649,7 @@ mod tests {
 		let evals = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
 			.take((1 << pcs.n_vars()) / PackedBinaryField4x32b::WIDTH)
 			.collect::<Vec<_>>();
-		let poly = MultilinearPoly::from_values(evals).unwrap();
+		let poly = MultilinearExtension::from_values(evals).unwrap();
 
 		let (commitment, committed) = pcs.commit(&poly).unwrap();
 

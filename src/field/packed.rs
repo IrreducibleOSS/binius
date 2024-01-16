@@ -36,6 +36,8 @@ pub trait PackedField:
 	// TODO: Get rid of Sum and Product. It's confusing with nested impls of Packed.
 	+ Sum
 	+ Product
+	+ Send
+	+ Sync
 	+ 'static
 {
 	type Scalar: Field;

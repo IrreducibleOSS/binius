@@ -6,9 +6,11 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
-use crate::polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite};
+use crate::polynomial::{
+	CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
+};
 
 use super::VerificationError;
 
@@ -16,9 +18,10 @@ use super::VerificationError;
 pub struct ZerocheckProof {}
 
 #[derive(Debug)]
-pub struct ZerocheckProveOutput<'a, F: Field> {
+pub struct ZerocheckProveOutput<F: Field> {
 	pub sumcheck_claim: SumcheckClaim<F>,
-	pub sumcheck_witness: SumcheckWitness<'a, F, F>,
+	pub sumcheck_witness:
+		SumcheckWitness<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
@@ -29,9 +32,10 @@ pub struct ZerocheckClaim<F: Field> {
 }
 
 #[derive(Debug)]
-pub struct ZerocheckWitness<'a, F: Field> {
+pub struct ZerocheckWitness<F: Field> {
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: MultilinearComposite<'a, F, F>,
+	pub polynomial:
+		MultilinearComposite<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>,
 }
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables

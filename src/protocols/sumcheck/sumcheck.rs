@@ -3,9 +3,10 @@
 use crate::{
 	field::{ExtensionField, Field},
 	iopoly::MultivariatePolyOracle,
-	polynomial::{EvaluationDomain, MultilinearComposite},
+	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };
+use std::borrow::Borrow;
 
 use super::{Error, VerificationError};
 
@@ -20,10 +21,15 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<'a, F: Field, FE: ExtensionField<F>> {
-	pub evalcheck_claim: EvalcheckClaim<F, FE>,
-	pub evalcheck_witness: EvalcheckWitness<'a, F, FE>,
-	pub sumcheck_proof: SumcheckProof<FE>,
+pub struct SumcheckProveOutput<F, M, BM>
+where
+	F: Field,
+	M: MultilinearPoly<F>,
+	BM: Borrow<M>,
+{
+	pub evalcheck_claim: EvalcheckClaim<F>,
+	pub evalcheck_witness: EvalcheckWitness<F, M, BM>,
+	pub sumcheck_proof: SumcheckProof<F>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,10 +41,28 @@ pub struct SumcheckClaim<F: Field> {
 }
 
 /// SumCheckWitness Struct
-#[derive(Debug, Clone)]
-pub struct SumcheckWitness<'a, F: Field, FE: ExtensionField<F>> {
+#[derive(Debug)]
+pub struct SumcheckWitness<F, M, BM>
+where
+	F: Field,
+	M: MultilinearPoly<F> + ?Sized,
+	BM: Borrow<M>,
+{
 	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: MultilinearComposite<'a, F, FE>,
+	pub polynomial: MultilinearComposite<F, M, BM>,
+}
+
+impl<F, M, BM> Clone for SumcheckWitness<F, M, BM>
+where
+	F: Field,
+	M: MultilinearPoly<F> + ?Sized,
+	BM: Borrow<M> + Clone,
+{
+	fn clone(&self) -> Self {
+		SumcheckWitness {
+			polynomial: self.polynomial.clone(),
+		}
+	}
 }
 
 pub fn check_evaluation_domain<F: Field>(
@@ -109,10 +133,10 @@ where
 	})
 }
 
-pub fn reduce_sumcheck_claim_final<F: Field, FE: ExtensionField<F>>(
+pub fn reduce_sumcheck_claim_final<F: Field>(
 	poly_oracle: &MultivariatePolyOracle<F>,
-	round_claim: SumcheckRoundClaim<FE>,
-) -> Result<EvalcheckClaim<F, FE>, Error> {
+	round_claim: SumcheckRoundClaim<F>,
+) -> Result<EvalcheckClaim<F>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: eval,

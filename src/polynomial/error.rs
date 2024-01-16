@@ -8,6 +8,8 @@ use crate::field::Error as FieldError;
 pub enum Error {
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
+	#[error("the output polynomial must have size {expected}")]
+	IncorrectOutputPolynomialSize { expected: usize },
 	#[error("expected the number of evaluations to match the domain size")]
 	ExtrapolateNumberOfEvaluations,
 	#[error("domain size is larger than the field")]
@@ -22,6 +24,7 @@ pub enum Error {
 	HypercubeIndexOutOfRange { index: usize },
 	#[error("MultilinearComposite constructed with incorrect arguments: {0}")]
 	MultilinearCompositeValidation(String),
+	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>
 	#[error("argument {arg} must be in the range {range:?}")]
 	ArgumentRangeError { arg: String, range: Range<usize> },
 	#[error("{0}")]

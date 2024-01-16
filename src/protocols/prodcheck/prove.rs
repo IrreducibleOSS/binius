@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 // Copyright 2024 Ulvetanna Inc.
 use std::sync::Arc;
 
@@ -5,7 +6,7 @@ use crate::field::Field;
 
 use crate::{
 	iopoly::MultilinearPolyOracle,
-	polynomial::{MultilinearComposite, MultilinearPoly},
+	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
 	protocols::{
 		evalcheck::evalcheck::EvalcheckWitness, prodcheck::error::Error,
 		zerocheck::zerocheck::ZerocheckWitness,
@@ -18,24 +19,35 @@ use super::prodcheck::{
 };
 
 /// Returns merge(x, y) where x, y are multilinear polynomials
-fn construct_merge_polynomial<F: Field>(
-	x: MultilinearPoly<F>,
-	y: MultilinearPoly<F>,
-) -> Result<MultilinearPoly<'static, F>, Error> {
-	if x.n_vars() != y.n_vars() {
+fn construct_merge_polynomial<F, MX, BMX, MY, BMY>(
+	x: BMX,
+	y: BMY,
+) -> Result<MultilinearExtension<'static, F>, Error>
+where
+	F: Field,
+	MX: MultilinearPoly<F> + ?Sized,
+	BMX: Borrow<MX>,
+	MY: MultilinearPoly<F> + ?Sized,
+	BMY: Borrow<MY>,
+{
+	let x = x.borrow();
+	let y = y.borrow();
+
+	let n_vars = x.n_vars();
+	if y.n_vars() != n_vars {
 		return Err(Error::ImproperInput(format!(
 			"x and y must have same number of variables, but x has {} and y has {}",
 			x.n_vars(),
 			y.n_vars()
 		)));
 	}
-	let n_vars = x.n_vars() + 1;
 
 	// TODO: Find a way to avoid these copies
-	let mut values = Vec::with_capacity(1 << n_vars);
-	values.extend(x.evals());
-	values.extend(y.evals());
-	let merge_poly = MultilinearPoly::from_values(values)?;
+	let mut values = vec![F::ZERO; 1 << (n_vars + 1)];
+	let (x_values, y_values) = values.split_at_mut(1 << n_vars);
+	x.subcube_evals(x.n_vars(), 0, x_values)?;
+	y.subcube_evals(y.n_vars(), 0, y_values)?;
+	let merge_poly = MultilinearExtension::from_values(values)?;
 	Ok(merge_poly)
 }
 
@@ -46,21 +58,17 @@ fn construct_merge_polynomial<F: Field>(
 /// 1) $f'(v, 0) = f(v)$
 /// 2) $f'(v, 1) = f'(0, v) * f'(1, v)$
 pub fn prove_step_one<F: Field>(
-	prodcheck_witness: ProdcheckWitness<'_, F>,
-) -> Result<MultilinearPoly<'_, F>, Error> {
-	if prodcheck_witness.t_polynomial.n_vars() != prodcheck_witness.u_polynomial.n_vars() {
-		return Err(Error::NumVariablesMismatch);
-	}
-	let n_vars = prodcheck_witness.t_polynomial.n_vars();
+	prodcheck_witness: ProdcheckWitness<F>,
+) -> Result<MultilinearExtension<'static, F>, Error> {
+	let ProdcheckWitness {
+		t_polynomial,
+		u_polynomial,
+	} = prodcheck_witness;
 
-	let t_evals = prodcheck_witness.t_polynomial.evals();
-	let u_evals = prodcheck_witness.u_polynomial.evals();
-	if t_evals.len() != u_evals.len() {
+	if t_polynomial.n_vars() != u_polynomial.n_vars() {
 		return Err(Error::NumVariablesMismatch);
 	}
-	if t_evals.len() != (1 << n_vars) {
-		return Err(Error::NumVariablesMismatch);
-	}
+	let n_vars = t_polynomial.n_vars();
 
 	// Step 1: Prover constructs f' polynomial, and sends oracle to verifier
 	let n_values = 1 << (n_vars + 1);
@@ -68,19 +76,17 @@ pub fn prove_step_one<F: Field>(
 	let mut values = vec![F::ZERO; n_values];
 
 	// for each v in B_{n_vars}, set values[v] = f(v) := T(v)/U(v)
-	t_evals
-		.iter()
-		.zip(u_evals.iter())
-		.enumerate()
-		.for_each(|(i, (t_i, u_i))| {
-			values[i] = u_i.invert().map(|u_i_inv| *t_i * u_i_inv).unwrap_or(F::ONE)
-		});
+	for (i, values_i) in values[..(1 << n_vars)].iter_mut().enumerate() {
+		let t_i = t_polynomial.evaluate_on_hypercube(i)?;
+		let u_i = u_polynomial.evaluate_on_hypercube(i)?;
+		*values_i = u_i.invert().map(|u_i_inv| t_i * u_i_inv).unwrap_or(F::ONE);
+	}
 
 	// for each v in B_{n_vars}, set values[2^n_vars + v] = values[2v] * values[2v+1]
 	for i in 0..(1 << n_vars) {
 		values[(1 << n_vars) | i] = values[i << 1] * values[i << 1 | 1];
 	}
-	let f_prime_poly = MultilinearPoly::from_values(values)?;
+	let f_prime_poly = MultilinearExtension::from_values(values)?;
 	Ok(f_prime_poly)
 }
 
@@ -114,10 +120,10 @@ pub fn prove_step_one<F: Field>(
 /// polynomial instead of the interleave virtual polynomial. This is an
 /// optimization, and does not affect the soundness of prodcheck.
 pub fn prove_step_two<'a, F: Field>(
-	prodcheck_witness: ProdcheckWitness<'a, F>,
-	prodcheck_claim: &'a ProdcheckClaim<F>,
+	prodcheck_witness: ProdcheckWitness<F>,
+	prodcheck_claim: &ProdcheckClaim<F>,
 	f_prime_oracle: MultilinearPolyOracle<F>,
-	f_prime_poly: MultilinearPoly<'a, F>,
+	f_prime_poly: MultilinearExtension<'a, F>,
 ) -> Result<ProdcheckProveOutput<'a, F>, Error> {
 	let n_vars = prodcheck_witness.t_polynomial.n_vars();
 	if n_vars != prodcheck_witness.u_polynomial.n_vars() {
@@ -138,26 +144,35 @@ pub fn prove_step_two<'a, F: Field>(
 	}
 
 	let first_values = &values[0..n_values / 2];
-	let f_prime_x_zero = MultilinearPoly::from_values_slice(first_values)?;
+	let f_prime_x_zero = MultilinearExtension::from_values_slice(first_values)?;
 	let second_values = &values[n_values / 2..];
-	let f_prime_x_one = MultilinearPoly::from_values_slice(second_values)?;
+	let f_prime_x_one = MultilinearExtension::from_values_slice(second_values)?;
 	let even_values = values.iter().copied().step_by(2).collect::<Vec<_>>();
-	let f_prime_zero_x = MultilinearPoly::from_values(even_values)?;
+	let f_prime_zero_x = MultilinearExtension::from_values(even_values)?;
 	let odd_values = values
 		.iter()
 		.copied()
 		.skip(1)
 		.step_by(2)
 		.collect::<Vec<_>>();
-	let f_prime_one_x = MultilinearPoly::from_values(odd_values)?;
+	let f_prime_one_x = MultilinearExtension::from_values(odd_values)?;
 
 	// Construct merge primed polynomials
-	let out_poly = construct_merge_polynomial(t_poly, f_prime_x_one)?;
-	let in1_poly = construct_merge_polynomial(u_poly, f_prime_zero_x)?;
+	let out_poly = construct_merge_polynomial::<_, dyn MultilinearPoly<F> + Sync, _, _, _>(
+		t_poly,
+		f_prime_x_one,
+	)?;
+	let in1_poly = construct_merge_polynomial::<_, dyn MultilinearPoly<F> + Sync, _, _, _>(
+		u_poly,
+		f_prime_zero_x,
+	)?;
 	let in2_poly = construct_merge_polynomial(f_prime_x_zero, f_prime_one_x)?;
 
 	// Construct T' polynomial
-	let t_prime_multilinears = vec![out_poly, in1_poly, in2_poly];
+	let t_prime_multilinears = [out_poly, in1_poly, in2_poly]
+		.into_iter()
+		.map(|poly| Arc::new(poly) as Arc<dyn MultilinearPoly<F> + Sync>)
+		.collect();
 
 	let t_prime_poly = MultilinearComposite::new(
 		n_vars + 1,
@@ -171,7 +186,9 @@ pub fn prove_step_two<'a, F: Field>(
 	};
 
 	let grand_product_poly_witness = EvalcheckWitness {
-		polynomial: f_prime_poly.into_multilinear_composite()?,
+		polynomial: MultilinearComposite::from_multilinear(
+			Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Sync + 'a>
+		),
 	};
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
@@ -192,17 +209,16 @@ mod tests {
 	use crate::{
 		field::{BinaryField, BinaryField32b},
 		iopoly::MultilinearPolyOracle,
-		polynomial::MultilinearPoly,
 		protocols::prodcheck::verify::verify,
 	};
 
 	// Creates T(x), a multilinear with evaluations {1, 2, 3, 4} over the boolean hypercube on 2 vars
-	fn create_numerator() -> MultilinearPoly<'static, BinaryField32b> {
+	fn create_numerator() -> MultilinearExtension<'static, BinaryField32b> {
 		type F = BinaryField32b;
 		let n_vars = 2;
 		let values: Vec<F> = (0..1 << n_vars).map(|i| F::new(i + 1)).collect::<Vec<_>>();
 
-		MultilinearPoly::from_values(values).unwrap()
+		MultilinearExtension::from_values(values).unwrap()
 	}
 
 	fn create_numerator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
@@ -215,13 +231,13 @@ mod tests {
 	}
 
 	// Creates U(x), a multilinear with evaluations {3, 2, 4, 1} over the boolean hypercube on 2 vars
-	fn create_denominator() -> MultilinearPoly<'static, BinaryField32b> {
+	fn create_denominator() -> MultilinearExtension<'static, BinaryField32b> {
 		type F = BinaryField32b;
 		let n_vars = 2;
 		let values = vec![F::new(3), F::new(2), F::new(4), F::new(1)];
 		assert_eq!(values.len(), 1 << n_vars);
 
-		MultilinearPoly::from_values(values).unwrap()
+		MultilinearExtension::from_values(values).unwrap()
 	}
 
 	fn create_denominator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
@@ -242,8 +258,8 @@ mod tests {
 		let numerator = create_numerator();
 		let denominator = create_denominator();
 		let prodcheck_witness = ProdcheckWitness {
-			t_polynomial: numerator,
-			u_polynomial: denominator,
+			t_polynomial: Arc::new(numerator),
+			u_polynomial: Arc::new(denominator),
 		};
 
 		// Setup claim

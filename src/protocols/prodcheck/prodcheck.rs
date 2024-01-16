@@ -16,13 +16,17 @@ use crate::{
 #[derive(Debug)]
 pub struct ReducedProductCheckClaims<F: Field> {
 	pub t_prime_claim: ZerocheckClaim<F>,
-	pub grand_product_poly_claim: EvalcheckClaim<F, F>,
+	pub grand_product_poly_claim: EvalcheckClaim<F>,
 }
 
 #[derive(Debug)]
 pub struct ReducedProductCheckWitnesses<'a, F: Field> {
-	pub t_prime_witness: ZerocheckWitness<'a, F>,
-	pub grand_product_poly_witness: EvalcheckWitness<'a, F, F>,
+	pub t_prime_witness: ZerocheckWitness<F>,
+	pub grand_product_poly_witness: EvalcheckWitness<
+		F,
+		dyn MultilinearPoly<F> + Sync + 'a,
+		Arc<dyn MultilinearPoly<F> + Sync + 'a>,
+	>,
 }
 
 #[derive(Debug)]
@@ -42,9 +46,9 @@ pub struct ProdcheckClaim<F: Field> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProdcheckWitness<'a, F: Field> {
-	pub t_polynomial: MultilinearPoly<'a, F>,
-	pub u_polynomial: MultilinearPoly<'a, F>,
+pub struct ProdcheckWitness<F: Field> {
+	pub t_polynomial: Arc<dyn MultilinearPoly<F> + Sync>,
+	pub u_polynomial: Arc<dyn MultilinearPoly<F> + Sync>,
 }
 
 /// Composition for Simple Multiplication Gate: f(X, Y, Z) := X - Y*Z

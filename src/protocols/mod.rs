@@ -30,6 +30,7 @@
 pub mod evalcheck;
 pub mod prodcheck;
 pub mod sumcheck;
-#[cfg(test)]
+#[allow(dead_code)]
+#[doc(hidden)]
 pub mod test_utils;
 pub mod zerocheck;

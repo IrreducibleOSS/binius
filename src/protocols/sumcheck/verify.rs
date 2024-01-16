@@ -1,9 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::{ExtensionField, Field},
-	iopoly::MultivariatePolyOracle,
-	polynomial::EvaluationDomain,
+	field::Field, iopoly::MultivariatePolyOracle, polynomial::EvaluationDomain,
 	protocols::evalcheck::evalcheck::EvalcheckClaim,
 };
 
@@ -18,34 +16,26 @@ use super::{
 /// polynomial at the challenge point and reduce to a sumcheck claim over the partially evaluated polynomial.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify_round<F, FE>(
+pub fn verify_round<F: Field>(
 	poly_oracle: &MultivariatePolyOracle<F>,
-	round: SumcheckRound<FE>,
-	round_claim: SumcheckRoundClaim<FE>,
-	challenge: FE,
-	domain: &EvaluationDomain<FE>,
-) -> Result<SumcheckRoundClaim<FE>, Error>
-where
-	F: Field,
-	FE: ExtensionField<F>,
-{
+	round: SumcheckRound<F>,
+	round_claim: SumcheckRoundClaim<F>,
+	challenge: F,
+	domain: &EvaluationDomain<F>,
+) -> Result<SumcheckRoundClaim<F>, Error> {
 	reduce_sumcheck_claim_round(poly_oracle, domain, round, round_claim, challenge)
 }
 
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify_final<F, FE>(
+pub fn verify_final<F: Field>(
 	poly_oracle: &MultivariatePolyOracle<F>,
-	round: SumcheckRound<FE>,
-	round_claim: SumcheckRoundClaim<FE>,
-	challenge: FE,
-	domain: &EvaluationDomain<FE>,
-) -> Result<EvalcheckClaim<F, FE>, Error>
-where
-	F: Field,
-	FE: ExtensionField<F>,
-{
+	round: SumcheckRound<F>,
+	round_claim: SumcheckRoundClaim<F>,
+	challenge: F,
+	domain: &EvaluationDomain<F>,
+) -> Result<EvalcheckClaim<F>, Error> {
 	let round_claim =
 		reduce_sumcheck_claim_round(poly_oracle, domain, round, round_claim, challenge)?;
 	reduce_sumcheck_claim_final(poly_oracle, round_claim)

@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::sync::Arc;
+use std::{borrow::Borrow, sync::Arc};
 
 use crate::{
 	field::{BinaryField, Field},
@@ -17,14 +17,19 @@ use super::{
 	},
 };
 
-fn multiply_multilinear_composite<'a, F: 'static + Field>(
-	composite: MultilinearComposite<'a, F, F>,
-	new_multilinear: MultilinearPoly<'a, F>,
-) -> Result<MultilinearComposite<'a, F, F>, PolynomialError> {
+fn multiply_multilinear_composite<F, M, BM>(
+	composite: MultilinearComposite<F, M, BM>,
+	new_multilinear: BM,
+) -> Result<MultilinearComposite<F, M, BM>, PolynomialError>
+where
+	F: Field,
+	M: MultilinearPoly<F> + ?Sized,
+	BM: Borrow<M>,
+{
 	let n_vars: usize = composite.n_vars();
 	let inner_composition = ProductComposition::new(composite.composition);
 	let composition: Arc<ProductComposition<F>> = Arc::new(inner_composition);
-	let mut multilinears: Vec<MultilinearPoly<F>> = composite.multilinears;
+	let mut multilinears = composite.multilinears;
 	multilinears.push(new_multilinear);
 
 	MultilinearComposite::new(n_vars, composition, multilinears)
@@ -36,11 +41,11 @@ fn multiply_multilinear_composite<'a, F: 'static + Field>(
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
-pub fn prove<'a, F: BinaryField>(
-	zerocheck_witness: ZerocheckWitness<'a, F>,
-	zerocheck_claim: &'a ZerocheckClaim<F>,
+pub fn prove<F: BinaryField>(
+	zerocheck_witness: ZerocheckWitness<F>,
+	zerocheck_claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<'a, F>, Error> {
+) -> Result<ZerocheckProveOutput<F>, Error> {
 	let poly = zerocheck_witness.polynomial;
 	let n_vars = poly.n_vars();
 
@@ -55,7 +60,7 @@ pub fn prove<'a, F: BinaryField>(
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
-	let new_poly = multiply_multilinear_composite(poly.clone(), eq_r)?;
+	let new_poly = multiply_multilinear_composite(poly, Arc::new(eq_r))?;
 
 	// Step 3: Make Sumcheck Witness on New Polynomial
 	let sumcheck_witness = SumcheckWitness {
@@ -82,7 +87,7 @@ mod tests {
 	use crate::{
 		field::{BinaryField, BinaryField32b},
 		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
-		polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
+		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{
 			test_utils::TestProductComposition,
 			zerocheck::{verify::verify, zerocheck::ZerocheckClaim},
@@ -104,18 +109,17 @@ mod tests {
 		// Setup witness
 		let composition: Arc<dyn CompositionPoly<F>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
-		let multilinears: Vec<MultilinearPoly<'_, F>> = (0..1 << n_vars)
+		let multilinears = (0..1 << n_vars)
 			.map(|i| {
 				let values: Vec<F> = (0..1 << n_vars)
 					.map(|j| if i == j { F::ZERO } else { F::ONE })
 					.collect::<Vec<_>>();
-				MultilinearPoly::from_values(values).unwrap()
+				Arc::new(MultilinearExtension::from_values(values).unwrap())
+					as Arc<dyn MultilinearPoly<F> + Sync>
 			})
 			.collect::<Vec<_>>();
-		let poly = MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
-		let zerocheck_witness: ZerocheckWitness<F> = ZerocheckWitness {
-			polynomial: poly.clone(),
-		};
+		let poly = MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
+		let zerocheck_witness: ZerocheckWitness<F> = ZerocheckWitness { polynomial: poly };
 
 		// Setup claim
 		let h = (0..n_multilinears)
