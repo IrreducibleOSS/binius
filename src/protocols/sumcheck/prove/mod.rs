@@ -1,11 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{borrow::Borrow, slice};
+use std::borrow::Borrow;
 
 use self::utils::{
 	compute_round_coeffs_first, compute_round_coeffs_post_switchover,
-	compute_round_coeffs_pre_switchover, switchover, PostSwitchoverRoundOutput,
-	PostSwitchoverWitness, PreSwitchoverRoundOutput, PreSwitchoverWitness,
+	compute_round_coeffs_pre_switchover, PostSwitchoverRoundOutput, PreSwitchoverRoundOutput,
+	PreSwitchoverWitness,
 };
 
 use super::{
@@ -18,7 +18,6 @@ use crate::{
 		multilinear_query::MultilinearQuery, EvaluationDomain, MultilinearExtension,
 		MultilinearPoly,
 	},
-	protocols::evalcheck::evalcheck::EvalcheckWitness,
 };
 
 pub mod utils;
@@ -33,16 +32,16 @@ where
 	M: MultilinearPoly<F>,
 	BM: Borrow<M>,
 {
-	let degree = sumcheck_witness.polynomial.composition.degree();
+	let degree = sumcheck_witness.composition.degree();
 	if degree == 0 {
 		return Err(Error::PolynomialDegreeIsZero);
 	}
 	check_evaluation_domain(degree, domain)?;
-	if sumcheck_claim.poly.n_vars() != sumcheck_witness.polynomial.n_vars() {
+	if sumcheck_claim.poly.n_vars() != sumcheck_witness.n_vars() {
 		let err_str = format!(
 			"Claim and Witness n_vars mismatch. Claim: {}, Witness: {}",
 			sumcheck_claim.poly.n_vars(),
-			sumcheck_witness.polynomial.n_vars()
+			sumcheck_witness.n_vars()
 		);
 		return Err(Error::ProverClaimWitnessMismatch(err_str));
 	}
@@ -60,16 +59,16 @@ where
 	M: MultilinearPoly<OF> + ?Sized,
 	BM: Borrow<M>,
 {
-	let degree = sumcheck_witness.polynomial.composition.degree();
+	let degree = sumcheck_witness.composition.degree();
 	if degree == 0 {
 		return Err(Error::PolynomialDegreeIsZero);
 	}
 	check_evaluation_domain(degree, domain)?;
-	if sumcheck_claim.poly.n_vars() != sumcheck_witness.polynomial.n_vars() {
+	if sumcheck_claim.poly.n_vars() != sumcheck_witness.n_vars() {
 		let err_str = format!(
 			"Claim and Witness n_vars mismatch. Claim: {}, Witness: {}",
 			sumcheck_claim.poly.n_vars(),
-			sumcheck_witness.polynomial.n_vars()
+			sumcheck_witness.n_vars()
 		);
 		return Err(Error::ProverClaimWitnessMismatch(err_str));
 	}
@@ -96,7 +95,7 @@ where
 		current_round_sum: original_claim.sum,
 	};
 	let current_witness = PreSwitchoverWitness {
-		polynomial: witness.polynomial,
+		polynomial: witness,
 		tensor,
 	};
 	let round_output = compute_round_coeffs_first(round_claim, current_witness, domain)?;
@@ -181,15 +180,13 @@ where
 	// STEP 1: Update tensor
 	let PreSwitchoverWitness { polynomial, tensor } = current_witness;
 	let tensor = tensor.update(&[prev_rd_challenge])?;
-	let current_witness = PreSwitchoverWitness { polynomial, tensor };
-
 	// STEP 2: Perform Switchover
-	let switched_witness = switchover(current_witness)?;
+	let updated_witness = polynomial.evaluate_partial_low(&tensor)?;
 	// Step 3: Compute round coefficients
 	compute_round_coeffs_post_switchover(
 		curr_rd_reduced_claim,
 		current_proof,
-		switched_witness,
+		updated_witness,
 		domain,
 	)
 }
@@ -228,12 +225,8 @@ pub fn prove_post_switchover<F: Field>(
 		prev_rd_challenge,
 	)?;
 	// STEP 1: Update polynomial
-	let updated_poly = current_witness
-		.polynomial
-		.evaluate_partial_low(slice::from_ref(&prev_rd_challenge))?;
-	let updated_witness = PostSwitchoverWitness {
-		polynomial: updated_poly,
-	};
+	let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge])?;
+	let updated_witness = current_witness.evaluate_partial_low(&partial_query)?;
 	// STEP 2: Compute round coefficients
 	compute_round_coeffs_post_switchover(
 		curr_rd_reduced_claim,
@@ -272,13 +265,10 @@ where
 	)?;
 
 	let evalcheck_claim = reduce_sumcheck_claim_final(&sumcheck_claim.poly, final_rd_claim)?;
-	let evalcheck_witness = EvalcheckWitness {
-		polynomial: sumcheck_witness.polynomial,
-	};
 	Ok(SumcheckProveOutput {
 		sumcheck_proof,
 		evalcheck_claim,
-		evalcheck_witness,
+		evalcheck_witness: sumcheck_witness,
 	})
 }
 
@@ -298,11 +288,8 @@ where
 		partial_point: vec![],
 		current_round_sum: original_claim.sum,
 	};
-	let current_witness = PostSwitchoverWitness {
-		polynomial: witness.polynomial,
-	};
 	let current_proof = SumcheckProof { rounds: vec![] };
-	compute_round_coeffs_post_switchover(round_claim, current_proof, current_witness, domain)
+	compute_round_coeffs_post_switchover(round_claim, current_proof, witness, domain)
 }
 
 pub fn prove_later_round_with_operating_field<F, OF, M, BM>(
@@ -343,13 +330,15 @@ where
 		prev_rd_challenge,
 	)?;
 	// STEP 1: Update polynomial
-	let query = [prev_rd_challenge.into()];
-	let updated_poly = current_witness.polynomial.evaluate_partial_low(&query)?;
-	let witness = PostSwitchoverWitness {
-		polynomial: updated_poly,
-	};
+	let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge.into()])?;
+	let updated_witness = current_witness.evaluate_partial_low(&partial_query)?;
 	// STEP 2: Compute round coefficients
-	compute_round_coeffs_post_switchover(curr_rd_reduced_claim, current_proof, witness, domain)
+	compute_round_coeffs_post_switchover(
+		curr_rd_reduced_claim,
+		current_proof,
+		updated_witness,
+		domain,
+	)
 }
 
 #[cfg(test)]
@@ -405,7 +394,7 @@ mod tests {
 			})
 			.sum::<F>();
 
-		let sumcheck_witness = SumcheckWitness { polynomial: poly };
+		let sumcheck_witness = poly;
 
 		// Setup Claim
 		let h = (0..n_multilinears)
@@ -486,10 +475,8 @@ mod tests {
 			})
 			.sum();
 
-		let operating_witness = SumcheckWitness {
-			polynomial: prover_poly,
-		};
-		let witness = SumcheckWitness { polynomial: poly };
+		let operating_witness = prover_poly;
+		let witness = poly;
 
 		// CLAIM
 		let h = (0..n_multilinears)

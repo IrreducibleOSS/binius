@@ -31,12 +31,9 @@ pub struct ZerocheckClaim<F: Field> {
 	pub poly: MultivariatePolyOracle<F>,
 }
 
-#[derive(Debug)]
-pub struct ZerocheckWitness<F: Field> {
-	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial:
-		MultilinearComposite<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>,
-}
+/// Polynomial must be representable as a composition of multilinear polynomials
+pub type ZerocheckWitness<F> =
+	MultilinearComposite<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables
 /// partially evaluated at Y = r. Recall that the multilinear polynomial

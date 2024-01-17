@@ -1,19 +1,13 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use rayon::{
-	iter::{
-		Fold, IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator,
-		ParallelIterator,
-	},
-	range::Iter,
-};
+use rayon::{iter::Fold, prelude::*, range::Iter};
 use std::borrow::Borrow;
 
 use crate::{
 	field::Field,
 	polynomial::{
 		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
-		MultilinearComposite, MultilinearExtension, MultilinearPoly,
+		MultilinearComposite, MultilinearPoly,
 	},
 	protocols::sumcheck::{Error, SumcheckProof, SumcheckRound, SumcheckRoundClaim},
 };
@@ -41,15 +35,7 @@ where
 	pub current_witness: PreSwitchoverWitness<F, M, BM>,
 }
 
-#[derive(Clone)]
-pub struct PostSwitchoverWitness<F, M, BM>
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	pub polynomial: MultilinearComposite<F, M, BM>,
-}
+pub type PostSwitchoverWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
 
 #[derive(Clone)]
 pub struct PostSwitchoverRoundOutput<F, OF, M, BM>
@@ -202,7 +188,7 @@ where
 
 	let mut updated_proof = current_proof;
 
-	let n_multilinears = poly.composition.n_vars();
+	let n_multilinears = poly.n_multilinears();
 	let rd_vars = poly.n_vars() - tensor.n_vars();
 
 	let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
@@ -216,12 +202,12 @@ where
 		},
 		|(mut evals_0, mut evals_1, mut evals_z, mut round_evals), i| {
 			for (j, multilin) in poly.iter_multilinear_polys().enumerate() {
-				evals_0[j] = tensor
-					.tensor_query(multilin, i << 1)
-					.expect("Failed to query tensor");
-				evals_1[j] = tensor
-					.tensor_query(multilin, (i << 1) + 1)
-					.expect("Failed to query tensor");
+				evals_0[j] = multilin
+					.evaluate_subcube(i << 1, &tensor)
+					.expect("index is in the range 0..(1 << rd_vars)");
+				evals_1[j] = multilin
+					.evaluate_subcube((i << 1) + 1, &tensor)
+					.expect("index is in the range 0..(1 << rd_vars)");
 			}
 			process_round_evals(
 				poly.composition.as_ref(),
@@ -252,52 +238,6 @@ where
 	Ok(result)
 }
 
-fn fold_multilinear_with_tensor<F: Field, M: MultilinearPoly<F> + Sync>(
-	multilin: &M,
-	tensor: &MultilinearQuery<F>,
-) -> Result<MultilinearExtension<'static, F>, Error> {
-	let rd_vars = multilin.n_vars() - tensor.n_vars();
-	let mut result_evals = vec![F::default(); 1 << rd_vars];
-
-	result_evals
-		.par_iter_mut()
-		.enumerate()
-		.for_each(|(i, result_eval)| {
-			*result_eval = tensor
-				.tensor_query(multilin, i)
-				.expect("Failed to query tensor");
-		});
-
-	Ok(MultilinearExtension::from_values(result_evals)?)
-}
-
-pub fn switchover<F, M, BM>(
-	pre_switchover_witness: PreSwitchoverWitness<F, M, BM>,
-) -> Result<
-	PostSwitchoverWitness<F, MultilinearExtension<'static, F>, MultilinearExtension<'static, F>>,
-	Error,
->
-where
-	F: Field,
-	M: MultilinearPoly<F> + Sync,
-	BM: Borrow<M>,
-{
-	let PreSwitchoverWitness { polynomial, tensor } = pre_switchover_witness;
-
-	let rd_vars = polynomial.n_vars() - tensor.n_vars();
-
-	let new_multilinears = polynomial
-		.iter_multilinear_polys()
-		.map(|multilin| fold_multilinear_with_tensor(multilin, &tensor))
-		.collect::<Result<Vec<_>, _>>()?;
-
-	let new_poly = MultilinearComposite::new(rd_vars, polynomial.composition, new_multilinears)?;
-
-	Ok(PostSwitchoverWitness {
-		polynomial: new_poly,
-	})
-}
-
 pub fn compute_round_coeffs_post_switchover<F, OF, M, BM>(
 	updated_claim: SumcheckRoundClaim<F>,
 	current_proof: SumcheckProof<F>,
@@ -310,7 +250,7 @@ where
 	M: MultilinearPoly<OF> + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
-	let poly = current_witness.polynomial;
+	let poly = current_witness;
 	let degree = poly.degree();
 	let operating_domain = domain
 		.points()
@@ -365,7 +305,7 @@ where
 	let result = PostSwitchoverRoundOutput {
 		claim: updated_claim,
 		current_proof: updated_proof,
-		current_witness: PostSwitchoverWitness { polynomial: poly },
+		current_witness: poly,
 	};
 	Ok(result)
 }

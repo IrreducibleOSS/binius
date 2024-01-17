@@ -7,7 +7,7 @@ use crate::{
 	polynomial::{
 		eq_ind_partial_eval, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
 	},
-	protocols::{sumcheck::SumcheckWitness, zerocheck::zerocheck::reduce_zerocheck_claim},
+	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
 };
 
 use super::{
@@ -46,8 +46,7 @@ pub fn prove<F: BinaryField>(
 	zerocheck_claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
 ) -> Result<ZerocheckProveOutput<F>, Error> {
-	let poly = zerocheck_witness.polynomial;
-	let n_vars = poly.n_vars();
+	let n_vars = zerocheck_witness.n_vars();
 
 	if challenge.len() != n_vars {
 		return Err(Error::ChallengeVectorMismatch);
@@ -60,17 +59,12 @@ pub fn prove<F: BinaryField>(
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
-	let new_poly = multiply_multilinear_composite(poly, Arc::new(eq_r))?;
+	let sumcheck_witness = multiply_multilinear_composite(zerocheck_witness, Arc::new(eq_r))?;
 
-	// Step 3: Make Sumcheck Witness on New Polynomial
-	let sumcheck_witness = SumcheckWitness {
-		polynomial: new_poly,
-	};
-
-	// Step 4: Make Sumcheck Claim on New Polynomial
+	// Step 3: Make Sumcheck Claim on New Polynomial
 	let sumcheck_claim = reduce_zerocheck_claim(zerocheck_claim, challenge)?;
 
-	// Step 5: Wrap everything up
+	// Step 4: Wrap everything up
 	let zerocheck_proof = ZerocheckProof {};
 	Ok(ZerocheckProveOutput {
 		sumcheck_claim,
@@ -118,8 +112,8 @@ mod tests {
 					as Arc<dyn MultilinearPoly<F> + Sync>
 			})
 			.collect::<Vec<_>>();
-		let poly = MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
-		let zerocheck_witness: ZerocheckWitness<F> = ZerocheckWitness { polynomial: poly };
+		let zerocheck_witness =
+			MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
 
 		// Setup claim
 		let h = (0..n_multilinears)

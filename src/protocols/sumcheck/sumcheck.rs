@@ -40,30 +40,8 @@ pub struct SumcheckClaim<F: Field> {
 	pub sum: F,
 }
 
-/// SumCheckWitness Struct
-#[derive(Debug)]
-pub struct SumcheckWitness<F, M, BM>
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: MultilinearComposite<F, M, BM>,
-}
-
-impl<F, M, BM> Clone for SumcheckWitness<F, M, BM>
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M> + Clone,
-{
-	fn clone(&self) -> Self {
-		SumcheckWitness {
-			polynomial: self.polynomial.clone(),
-		}
-	}
-}
+/// Polynomial must be representable as a composition of multilinear polynomials
+pub type SumcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
 
 pub fn check_evaluation_domain<F: Field>(
 	max_individual_degree: usize,

@@ -1,11 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{
-	field::Field,
-	iopoly::MultivariatePolyOracle,
-	polynomial::{MultilinearComposite, MultilinearPoly},
-};
-use std::borrow::Borrow;
+use crate::{field::Field, iopoly::MultivariatePolyOracle, polynomial::MultilinearComposite};
 
 #[derive(Debug)]
 pub struct EvalcheckClaim<F: Field> {
@@ -19,13 +14,5 @@ pub struct EvalcheckClaim<F: Field> {
 	pub is_random_point: bool,
 }
 
-#[derive(Debug)]
-pub struct EvalcheckWitness<F, M, BM>
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	/// Polynomial must be representable as a composition of multilinear polynomials
-	pub polynomial: MultilinearComposite<F, M, BM>,
-}
+/// Polynomial must be representable as a composition of multilinear polynomials
+pub type EvalcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;

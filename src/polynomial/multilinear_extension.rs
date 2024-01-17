@@ -5,6 +5,7 @@ use crate::field::{
 };
 use itertools::Either;
 use p3_util::log2_strict_usize;
+use rayon::prelude::*;
 use std::{borrow::Cow, fmt::Debug};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
@@ -219,17 +220,20 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		}
 
 		let packed_result_evals = out.evals.to_mut();
-		for (i, packed_result_eval) in packed_result_evals.iter_mut().enumerate() {
-			(0..P::WIDTH).for_each(|j| {
-				let mut result_eval: <PE as PackedField>::Scalar = PE::Scalar::ZERO;
-				for (k, &basis_eval_k) in query.expansion().iter().enumerate() {
-					let old_slice_idx = (i * P::WIDTH + j) << query.n_vars() | k;
-					let old_eval = get_packed_slice(&self.evals, old_slice_idx);
-					result_eval += basis_eval_k * old_eval;
-				}
-				packed_result_eval.set(j, result_eval);
+		packed_result_evals
+			.par_iter_mut()
+			.enumerate()
+			.for_each(|(i, packed_result_eval)| {
+				(0..PE::WIDTH).for_each(|j| {
+					let subcube_evals = self
+						.iter_subcube_scalars(query.n_vars(), i * PE::WIDTH + j)
+						.expect("n_vars and index arguments are in range");
+					let result_eval =
+						inner_product_unchecked(query.expansion().iter().copied(), subcube_evals);
+					packed_result_eval.set(j, result_eval);
+				});
 			});
-		}
+
 		Ok(())
 	}
 
@@ -259,6 +263,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 			Either::Left(
 				self.evals[(index << n_vars) / P::WIDTH]
 					.iter()
+					.skip((index << n_vars) % P::WIDTH)
 					.take(1 << n_vars),
 			)
 		} else {
@@ -296,15 +301,14 @@ where
 		self.evaluate_partial_low(query)
 	}
 
-	fn inner_prod_subcube(&self, index: usize, expanded_query: &[PE]) -> Result<PE::Scalar, Error> {
-		if !expanded_query.len().is_power_of_two() {
-			return Err(Error::PowerOfTwoLengthRequired);
-		}
-		let q_vars = log2_strict_usize(expanded_query.len());
-
+	fn evaluate_subcube(
+		&self,
+		index: usize,
+		query: &MultilinearQuery<PE::Scalar>,
+	) -> Result<PE::Scalar, Error> {
 		let ret = inner_product_unchecked(
-			iter_packed_slice(expanded_query),
-			self.iter_subcube_scalars(q_vars, index)?,
+			query.expansion().iter().copied(),
+			self.iter_subcube_scalars(query.n_vars(), index)?,
 		);
 		Ok(ret)
 	}
@@ -404,7 +408,10 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
-	use crate::field::{unpack_scalars_mut, BinaryField16b as F};
+	use crate::field::{
+		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField32b,
+		PackedBinaryField4x32b,
+	};
 
 	#[test]
 	fn test_expand_query_impls_consistent() {
@@ -495,5 +502,55 @@ mod tests {
 		let result1 = poly.evaluate(&multilin_query).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);
+	}
+
+	#[test]
+	fn test_evaluate_subcube_and_evaluate_partial_low_consistent() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let poly = MultilinearExtension::from_values(
+			repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+				.take(1 << 8)
+				.collect(),
+		)
+		.unwrap();
+
+		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
+			.take(6)
+			.collect::<Vec<_>>();
+		let query = MultilinearQuery::with_full_query(&q).unwrap();
+
+		let partial_low =
+			MultilinearPoly::<BinaryField128b>::evaluate_partial_low(&poly, &query).unwrap();
+
+		for idx in 0..(1 << 4) {
+			assert_eq!(
+				MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, idx, &query).unwrap(),
+				MultilinearPoly::<BinaryField128b>::evaluate_on_hypercube(&partial_low, idx)
+					.unwrap(),
+			);
+		}
+	}
+
+	#[test]
+	fn test_evaluate_subcube_small_than_packed_width() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let poly = MultilinearExtension::from_values(vec![PackedBinaryField4x32b::from(
+			[2, 2, 9, 9].map(BinaryField32b::new),
+		)])
+		.unwrap();
+
+		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
+			.take(1)
+			.collect::<Vec<_>>();
+		let query = MultilinearQuery::with_full_query(&q).unwrap();
+
+		assert_eq!(
+			MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, 0, &query).unwrap(),
+			BinaryField128b::new(2)
+		);
+		assert_eq!(
+			MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, 1, &query).unwrap(),
+			BinaryField128b::new(9)
+		);
 	}
 }

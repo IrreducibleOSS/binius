@@ -132,7 +132,7 @@ where
 	let n_vars = claim.poly.n_vars();
 
 	assert!(switchover > 0);
-	assert_eq!(witness.polynomial.n_vars(), n_vars);
+	assert_eq!(witness.n_vars(), n_vars);
 	assert!(n_vars > 0);
 
 	// Make initial round claim
@@ -191,7 +191,7 @@ where
 {
 	let n_vars = claim.poly.n_vars();
 
-	assert_eq!(operating_witness.polynomial.n_vars(), n_vars);
+	assert_eq!(operating_witness.n_vars(), n_vars);
 	assert!(n_vars > 0);
 
 	// Setup Round Claim

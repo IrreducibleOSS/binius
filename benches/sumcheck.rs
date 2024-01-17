@@ -11,7 +11,7 @@ use binius::{
 		MultilinearPoly,
 	},
 	protocols::{
-		sumcheck::{Error as SumcheckError, SumcheckClaim, SumcheckWitness},
+		sumcheck::{Error as SumcheckError, SumcheckClaim},
 		test_utils::{
 			full_prove_with_operating_field, full_prove_with_switchover, transform_poly,
 			TestProductComposition,
@@ -68,9 +68,7 @@ where
 				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
 			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
-			let sumcheck_witness = SumcheckWitness {
-				polynomial: poly.clone(),
-			};
+			let sumcheck_witness = poly.clone();
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
@@ -120,19 +118,13 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prover_poly = transform_poly(&poly, prover_composition.clone()).unwrap();
 
 			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
-			let sumcheck_witness = SumcheckWitness {
-				polynomial: poly.clone(),
-			};
-			let operating_witness = SumcheckWitness {
-				polynomial: prover_poly,
-			};
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
 				full_prove_with_operating_field(
 					&sumcheck_claim,
-					sumcheck_witness.clone(),
-					operating_witness.clone(),
+					poly.clone(),
+					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
 				)
@@ -188,19 +180,13 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			> = MultilinearComposite::new(n_vars, prover_composition.clone(), multilinears).unwrap();
 
 			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
-			let sumcheck_witness = SumcheckWitness {
-				polynomial: poly.clone(),
-			};
-			let operating_witness = SumcheckWitness {
-				polynomial: prover_poly,
-			};
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
 				full_prove_with_operating_field(
 					&sumcheck_claim,
-					sumcheck_witness.clone(),
-					operating_witness.clone(),
+					poly.clone(),
+					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
 				)

@@ -1,10 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{
-	field::Field,
-	polynomial::{Error as PolynomialError, MultilinearPoly},
-	protocols::sumcheck::Error,
-};
+use crate::{field::Field, polynomial::Error as PolynomialError};
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -76,23 +72,5 @@ impl<FE: Field> MultilinearQuery<FE> {
 			expanded_query: new_expanded_query,
 			n_vars: new_n_vars,
 		})
-	}
-
-	/// Inputs:
-	/// - `multilin`: a multilinear polynomial on n variables
-	/// - `idx`: a hypercube index in [0, 2^{n - self.rd}]
-	/// Outputs:
-	///     Given the tensor has been updated with r = [r_0, ..., r_{self.rd - 1}],
-	///     Let multilin_prime = multilin.evaluate_partial_low(r) be a partially evaluated multilinear on (n - self.rd) variables.
-	///     Outputs multilin_prime.evaluate_on_hypercube(idx) =
-	///         \sum_{h = 0}^{2^{self.rd}} self.tensor_expanded_values[h] * multilin.evaluate_on_hypercube(idx << self.rd | h)
-	pub fn tensor_query<M: MultilinearPoly<FE>>(
-		&self,
-		multilin: &M,
-		idx: usize,
-	) -> Result<FE, Error> {
-		multilin
-			.inner_prod_subcube(idx, &self.expanded_query)
-			.map_err(Error::Polynomial)
 	}
 }
