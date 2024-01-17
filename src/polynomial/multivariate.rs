@@ -29,8 +29,11 @@ where
 	/// Total degree of the polynomial.
 	fn degree(&self) -> usize;
 
+	/// Evaluate the polynomial at a scalar evaluation point.
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error>;
+
 	/// Evaluate the polynomial at packed evaluation points.
-	fn evaluate(&self, query: &[P]) -> Result<P, Error>;
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error>;
 }
 
 #[derive(Debug)]
@@ -45,7 +48,11 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 		1
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
+		self.evaluate_packed(query)
+	}
+
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != 1 {
 			return Err(Error::IncorrectQuerySize { expected: 1 });
 		}
@@ -137,6 +144,14 @@ where
 
 	pub fn iter_multilinear_polys(&self) -> impl Iterator<Item = &M> {
 		self.multilinears.iter().map(Borrow::borrow)
+	}
+
+	pub fn evaluate(&self, query: &MultilinearQuery<P::Scalar>) -> Result<P::Scalar, Error> {
+		let evals = self
+			.iter_multilinear_polys()
+			.map(|multilin| multilin.evaluate(query))
+			.collect::<Result<Vec<_>, _>>()?;
+		self.composition.evaluate(&evals)
 	}
 
 	pub fn evaluate_partial_low(

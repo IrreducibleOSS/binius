@@ -69,7 +69,11 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 		2
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		self.evaluate_packed(query)
+	}
+
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}

@@ -102,13 +102,17 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
+		self.evaluate_packed(query)
+	}
+
+	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
 			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
 		}
 
 		let inner_query = &query[..n_vars - 1];
-		let inner_eval = self.inner.evaluate(inner_query)?;
+		let inner_eval = self.inner.evaluate_packed(inner_query)?;
 		Ok(inner_eval * query[n_vars - 1])
 	}
 }

@@ -229,7 +229,7 @@ where
 			for (evals_i, multilin) in evals.iter_mut().zip(poly.iter_multilinear_polys()) {
 				*evals_i = multilin.evaluate_on_hypercube(i).unwrap();
 			}
-			poly.composition.evaluate(&evals).unwrap()
+			poly.composition.evaluate_packed(&evals).unwrap()
 		})
 		.sum();
 

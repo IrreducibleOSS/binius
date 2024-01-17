@@ -49,6 +49,10 @@ where
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
+		self.evaluate_packed(query)
+	}
+
+	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())

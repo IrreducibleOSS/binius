@@ -137,7 +137,11 @@ where
 		1
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		self.evaluate_packed(query)
+	}
+
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 1 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 1 });
 		}
