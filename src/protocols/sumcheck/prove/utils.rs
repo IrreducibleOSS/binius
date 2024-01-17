@@ -61,7 +61,7 @@ fn process_round_evals<F: Field, C: CompositionPoly<F> + ?Sized>(
 ) {
 	let degree = domain.len() - 1;
 
-	round_evals[0] = composition
+	round_evals[0] += composition
 		.evaluate_packed(evals_1)
 		.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
 
@@ -73,7 +73,7 @@ fn process_round_evals<F: Field, C: CompositionPoly<F> + ?Sized>(
 			.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
 				*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, domain[d]);
 			});
-		round_evals[d - 1] = composition
+		round_evals[d - 1] += composition
 			.evaluate_packed(evals_z)
 			.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 	}

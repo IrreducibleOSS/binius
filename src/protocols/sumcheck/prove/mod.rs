@@ -358,19 +358,22 @@ mod tests {
 			},
 		},
 	};
+	use p3_util::log2_ceil_usize;
 	use rand::{rngs::StdRng, SeedableRng};
+	use rayon::current_num_threads;
 	use std::{iter::repeat_with, sync::Arc};
 
-	#[test]
-	fn test_prove_verify_interaction() {
+	fn test_prove_verify_interaction_helper(
+		n_vars: usize,
+		n_multilinears: usize,
+		switchover_rd: usize,
+	) {
 		type F = BinaryField32b;
 		type FE = BinaryField128b;
 
 		let mut rng = StdRng::seed_from_u64(0);
 
 		// Setup Witness
-		let n_vars = 8;
-		let n_multilinears = 3;
 		let composition: Arc<dyn CompositionPoly<FE>> =
 			Arc::new(TestProductComposition::new(n_multilinears));
 		let multilinears = repeat_with(|| {
@@ -394,7 +397,7 @@ mod tests {
 			})
 			.sum::<F>();
 
-		let sumcheck_witness = poly;
+		let sumcheck_witness = poly.clone();
 
 		// Setup Claim
 		let h = (0..n_multilinears)
@@ -423,7 +426,7 @@ mod tests {
 			sumcheck_witness,
 			&domain,
 			challenger.clone(),
-			n_vars / 2,
+			switchover_rd,
 		);
 
 		let (verifier_rd_claims, final_verify_output) = full_verify(
@@ -439,17 +442,29 @@ mod tests {
 		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
 		assert!(final_prove_output.evalcheck_claim.is_random_point);
 		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
+
+		// Verify that the evalcheck claim is correct
+		let eval_point = &final_verify_output.eval_point;
+		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+		let actual = poly.evaluate(&multilin_query).unwrap();
+		assert_eq!(actual, final_verify_output.eval);
+
+		let actual = final_prove_output
+			.evalcheck_witness
+			.evaluate(&multilin_query)
+			.unwrap();
+		assert_eq!(actual, final_verify_output.eval);
 	}
 
-	#[test]
-	fn test_prove_verify_interaction_with_monomial_basis_conversion() {
+	fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+		n_vars: usize,
+		n_multilinears: usize,
+	) {
 		type F = BinaryField128b;
 		type OF = BinaryField128bPolyval;
 
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let n_vars = 8;
-		let n_multilinears = 3;
 		let composition = Arc::new(TestProductComposition::new(n_multilinears));
 		let prover_composition = composition.clone();
 		let composition_nvars = n_multilinears;
@@ -476,7 +491,7 @@ mod tests {
 			.sum();
 
 		let operating_witness = prover_poly;
-		let witness = poly;
+		let witness = poly.clone();
 
 		// CLAIM
 		let h = (0..n_multilinears)
@@ -520,5 +535,63 @@ mod tests {
 		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
 		assert!(final_prove_output.evalcheck_claim.is_random_point);
 		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
+
+		// Verify that the evalcheck claim is correct
+		let eval_point = &final_verify_output.eval_point;
+		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+		let actual = poly.evaluate(&multilin_query).unwrap();
+		assert_eq!(actual, final_verify_output.eval);
+
+		let actual = final_prove_output
+			.evalcheck_witness
+			.evaluate(&multilin_query)
+			.unwrap();
+		assert_eq!(actual, final_verify_output.eval);
+	}
+
+	#[test]
+	fn test_prove_verify_interaction_basic() {
+		for n_vars in 2..8 {
+			for n_multilinears in 1..4 {
+				for switchover_rd in 1..=n_vars / 2 {
+					test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn test_prove_verify_interaction_pigeonhole_cores() {
+		let n_threads = current_num_threads();
+		let n_vars = log2_ceil_usize(n_threads) + 1;
+		for n_multilinears in 1..4 {
+			for switchover_rd in 1..=n_vars / 2 {
+				test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
+			}
+		}
+	}
+
+	#[test]
+	fn test_prove_verify_interaction_with_monomial_basis_conversion_basic() {
+		for n_vars in 2..8 {
+			for n_multilinears in 1..4 {
+				test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+					n_vars,
+					n_multilinears,
+				);
+			}
+		}
+	}
+
+	#[test]
+	fn test_prove_verify_interaction_with_monomial_basis_conversion_pigeonhole_cores() {
+		let n_threads = current_num_threads();
+		let n_vars = log2_ceil_usize(n_threads) + 1;
+		for n_multilinears in 1..6 {
+			test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+				n_vars,
+				n_multilinears,
+			);
+		}
 	}
 }
