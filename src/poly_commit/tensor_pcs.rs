@@ -16,7 +16,9 @@ use crate::{
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
-	polynomial::{Error as PolynomialError, MultilinearExtension},
+	polynomial::{
+		multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
+	},
 };
 
 /// Evaluation proof data for the `TensorPCS` polynomial commitment scheme.
@@ -206,7 +208,8 @@ where
 		let log_n_cols = self.code.dim_bits() + log_block_size;
 
 		let t = poly;
-		let t_prime = t.evaluate_partial_high(&query[log_n_cols..])?;
+		let t_prime =
+			t.evaluate_partial_high(&MultilinearQuery::with_full_query(&query[log_n_cols..])?)?;
 
 		challenger.observe_slice(unpack_scalars(t_prime.evals()));
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))
@@ -276,9 +279,10 @@ where
 		challenger.observe_slice(unpack_scalars(proof.t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
+		let multilin_query = MultilinearQuery::with_full_query(&query[..log_n_cols])?;
 		let computed_value = proof
 			.t_prime
-			.evaluate(&query[..log_n_cols])
+			.evaluate(&multilin_query)
 			.expect("query is the correct size by check_proof_shape checks");
 		if computed_value != value {
 			return Err(VerificationError::IncorrectEvaluation.into());
@@ -336,13 +340,12 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let leaf_evaluations = MultilinearExtension::batch_evaluate(
-			column_tests.iter().map(|(_, leaf)| {
-				MultilinearExtension::from_values_slice(leaf)
-					.expect("leaf is guaranteed power of two length due to check_proof_shape")
-			}),
-			&query[log_n_cols..],
-		);
+		let multilin_query = MultilinearQuery::with_full_query(&query[log_n_cols..]).unwrap();
+		let leaf_evaluations = column_tests.iter().map(|(_, leaf)| {
+			let poly = MultilinearExtension::from_values_slice(leaf)
+				.expect("leaf is guaranteed power of two length due to check_proof_shape");
+			poly.evaluate(&multilin_query)
+		});
 
 		// Check that opened column evaluations match u'
 		for ((expected, _), leaf_eval_result) in column_tests.iter().zip(leaf_evaluations) {
@@ -556,6 +559,7 @@ mod tests {
 			PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 			PackedBinaryField4x32b,
 		},
+		polynomial::multilinear_query::MultilinearQuery,
 		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -582,7 +586,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let value = poly.evaluate(&query).unwrap();
+		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let value = poly.evaluate(&multilin_query).unwrap();
 
 		let mut prove_challenger = challenger.clone();
 		let proof = pcs
@@ -620,7 +625,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let value = poly.evaluate(&query).unwrap();
+		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let value = poly.evaluate(&multilin_query).unwrap();
 
 		let mut prove_challenger = challenger.clone();
 		let proof = pcs
@@ -658,7 +664,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let value = poly.evaluate(&query).unwrap();
+		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let value = poly.evaluate(&multilin_query).unwrap();
 
 		let mut prove_challenger = challenger.clone();
 		let proof = pcs

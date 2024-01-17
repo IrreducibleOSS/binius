@@ -22,6 +22,8 @@ pub enum Error {
 	TooManyVariables,
 	#[error("indexed point on hypercube is out of range: index={index}")]
 	HypercubeIndexOutOfRange { index: usize },
+	#[error("MultilinearQuery is full, cannot update further. Has {max_query_vars} variables")]
+	MultilinearQueryFull { max_query_vars: usize },
 	#[error("MultilinearComposite constructed with incorrect arguments: {0}")]
 	MultilinearCompositeValidation(String),
 	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>

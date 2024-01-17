@@ -2,13 +2,10 @@
 
 use std::{borrow::Borrow, slice};
 
-use self::{
-	tensor::Tensor,
-	utils::{
-		compute_round_coeffs_first, compute_round_coeffs_post_switchover,
-		compute_round_coeffs_pre_switchover, switchover, PostSwitchoverRoundOutput,
-		PostSwitchoverWitness, PreSwitchoverRoundOutput, PreSwitchoverWitness,
-	},
+use self::utils::{
+	compute_round_coeffs_first, compute_round_coeffs_post_switchover,
+	compute_round_coeffs_pre_switchover, switchover, PostSwitchoverRoundOutput,
+	PostSwitchoverWitness, PreSwitchoverRoundOutput, PreSwitchoverWitness,
 };
 
 use super::{
@@ -17,11 +14,13 @@ use super::{
 };
 use crate::{
 	field::Field,
-	polynomial::{EvaluationDomain, MultilinearExtension, MultilinearPoly},
+	polynomial::{
+		multilinear_query::MultilinearQuery, EvaluationDomain, MultilinearExtension,
+		MultilinearPoly,
+	},
 	protocols::evalcheck::evalcheck::EvalcheckWitness,
 };
 
-pub mod tensor;
 pub mod utils;
 
 fn validate_input<F, M, BM>(
@@ -91,7 +90,7 @@ where
 	validate_input(original_claim, &witness, domain)?;
 
 	// SETUP
-	let tensor = Tensor::new(max_switchover)?;
+	let tensor = MultilinearQuery::new(max_switchover)?;
 	let round_claim = SumcheckRoundClaim {
 		partial_point: vec![],
 		current_round_sum: original_claim.sum,
@@ -134,7 +133,7 @@ where
 	)?;
 	// STEP 1: Update tensor
 	let PreSwitchoverWitness { polynomial, tensor } = current_witness;
-	let tensor = tensor.update(prev_rd_challenge)?;
+	let tensor = tensor.update(&[prev_rd_challenge])?;
 	let current_witness = PreSwitchoverWitness { polynomial, tensor };
 	// STEP 2: Compute round coefficients
 	compute_round_coeffs_pre_switchover(
@@ -181,7 +180,7 @@ where
 	)?;
 	// STEP 1: Update tensor
 	let PreSwitchoverWitness { polynomial, tensor } = current_witness;
-	let tensor = tensor.update(prev_rd_challenge)?;
+	let tensor = tensor.update(&[prev_rd_challenge])?;
 	let current_witness = PreSwitchoverWitness { polynomial, tensor };
 
 	// STEP 2: Perform Switchover

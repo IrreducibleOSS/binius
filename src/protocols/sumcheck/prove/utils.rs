@@ -12,13 +12,11 @@ use std::borrow::Borrow;
 use crate::{
 	field::Field,
 	polynomial::{
-		extrapolate_line, CompositionPoly, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearPoly,
+		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
+		MultilinearComposite, MultilinearExtension, MultilinearPoly,
 	},
 	protocols::sumcheck::{Error, SumcheckProof, SumcheckRound, SumcheckRoundClaim},
 };
-
-use super::tensor::Tensor;
 
 #[derive(Clone)]
 pub struct PreSwitchoverWitness<F, M, BM>
@@ -28,7 +26,7 @@ where
 	BM: Borrow<M>,
 {
 	pub polynomial: MultilinearComposite<F, M, BM>,
-	pub tensor: Tensor<F>,
+	pub tensor: MultilinearQuery<F>,
 }
 
 #[derive(Clone)]
@@ -205,7 +203,7 @@ where
 	let mut updated_proof = current_proof;
 
 	let n_multilinears = poly.composition.n_vars();
-	let rd_vars = poly.n_vars() - tensor.round();
+	let rd_vars = poly.n_vars() - tensor.n_vars();
 
 	let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
 		|| {
@@ -256,9 +254,9 @@ where
 
 fn fold_multilinear_with_tensor<F: Field, M: MultilinearPoly<F> + Sync>(
 	multilin: &M,
-	tensor: &Tensor<F>,
+	tensor: &MultilinearQuery<F>,
 ) -> Result<MultilinearExtension<'static, F>, Error> {
-	let rd_vars = multilin.n_vars() - tensor.round();
+	let rd_vars = multilin.n_vars() - tensor.n_vars();
 	let mut result_evals = vec![F::default(); 1 << rd_vars];
 
 	result_evals
@@ -286,7 +284,7 @@ where
 {
 	let PreSwitchoverWitness { polynomial, tensor } = pre_switchover_witness;
 
-	let rd_vars = polynomial.n_vars() - tensor.round();
+	let rd_vars = polynomial.n_vars() - tensor.n_vars();
 
 	let new_multilinears = polynomial
 		.iter_multilinear_polys()

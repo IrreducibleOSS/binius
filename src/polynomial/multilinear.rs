@@ -2,7 +2,7 @@
 
 use crate::{
 	field::PackedField,
-	polynomial::{Error, MultilinearExtension},
+	polynomial::{multilinear_query::MultilinearQuery, Error, MultilinearExtension},
 };
 use std::fmt::Debug;
 
@@ -25,11 +25,11 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// * `index` - The index of the point, in lexicographic order
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error>;
 
-	fn evaluate(&self, q: &[P::Scalar]) -> Result<P::Scalar, Error>;
+	fn evaluate(&self, q: &MultilinearQuery<P::Scalar>) -> Result<P::Scalar, Error>;
 
 	fn evaluate_partial_low(
 		&self,
-		q: &[P::Scalar],
+		query: &MultilinearQuery<P::Scalar>,
 	) -> Result<MultilinearExtension<'static, P>, Error>;
 
 	fn inner_prod_subcube(&self, index: usize, expanded_query: &[P]) -> Result<P::Scalar, Error>;
