@@ -18,4 +18,6 @@ pub enum VerificationError {
 	ChallengeVectorMismatch,
 	#[error("iopolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
+	#[error("polynomial error: {0}")]
+	Polynomial(#[from] PolynomialError),
 }

@@ -5,6 +5,7 @@ pub mod multilinear;
 pub mod multilinear_extension;
 pub mod multilinear_query;
 pub mod multivariate;
+pub mod transparent;
 pub mod univariate;
 
 pub use error::*;

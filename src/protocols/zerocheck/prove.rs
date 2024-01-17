@@ -5,7 +5,8 @@ use std::{borrow::Borrow, sync::Arc};
 use crate::{
 	field::{BinaryField, Field},
 	polynomial::{
-		eq_ind_partial_eval, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
+		transparent::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
+		MultilinearPoly,
 	},
 	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
 };
@@ -55,7 +56,7 @@ pub fn prove<F: BinaryField>(
 	// Step 1: Construct a multilinear polynomial eq(X, Y) on 2*n_vars variables
 	// partially evaluated at r, will refer to this multilinear polynomial
 	// as eq_r(X) on n_vars variables
-	let eq_r = eq_ind_partial_eval(n_vars, &challenge)?;
+	let eq_r = EqIndPartialEval::new(n_vars, challenge.clone())?.multilinear_extension()?;
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
@@ -95,7 +96,7 @@ mod tests {
 	// Specifically, f should vanish on the boolean hypercube, because some h_i will be 0.
 	#[test]
 	fn test_prove_verify_interaction() {
-		type F = BinaryField32b; //field and operating field are both BinaryField32b
+		type F = BinaryField32b;
 		let n_vars: usize = 3;
 		let n_multilinears = 1 << n_vars;
 		let mut rng = StdRng::seed_from_u64(0);
