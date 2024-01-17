@@ -18,9 +18,10 @@ where
 
 	fn n_vars(&self) -> usize;
 
+	/// Commit to a batch of polynomials
 	fn commit(
 		&self,
-		poly: &MultilinearExtension<P>,
+		polys: &[&MultilinearExtension<P>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
 
 	/// Generate an evaluation proof at a *random* challenge point.
@@ -28,7 +29,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		poly: &MultilinearExtension<P>,
+		polys: &[&MultilinearExtension<P>],
 		query: &[FE],
 	) -> Result<Self::Proof, Self::Error>
 	where
@@ -41,7 +42,7 @@ where
 		commitment: &Self::Commitment,
 		query: &[FE],
 		proof: Self::Proof,
-		value: FE,
+		values: &[FE],
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanSample<FE> + CanSampleBits<usize>;

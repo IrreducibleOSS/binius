@@ -1,7 +1,8 @@
 // Copyright 2023 Ulvetanna Inc.
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
 use crate::field::{
-	get_packed_slice, iter_packed_slice, set_packed_slice, ExtensionField, Field, PackedField,
+	get_packed_slice, iter_packed_slice, set_packed_slice, util::inner_product_unchecked,
+	ExtensionField, Field, PackedField,
 };
 use itertools::Either;
 use p3_util::log2_strict_usize;
@@ -386,15 +387,6 @@ fn eval_basis<F: Field>(query: &[F], i: usize) -> F {
 		.enumerate()
 		.map(|(j, &v)| if i & (1 << j) == 0 { F::ONE - v } else { v })
 		.product()
-}
-
-/// Computes the inner product of two vectors without checking that the lengths are equal
-fn inner_product_unchecked<F, FE>(a: impl Iterator<Item = FE>, b: impl Iterator<Item = F>) -> FE
-where
-	F: Field,
-	FE: ExtensionField<F>,
-{
-	a.zip(b).map(|(a_i, b_i)| a_i * b_i).sum::<FE>()
 }
 
 fn log2(v: usize) -> usize {

@@ -18,6 +18,8 @@ pub enum Error {
 	PackingWidthMustDivideCodeDimension,
 	#[error("packing width must divide the number of rows")]
 	PackingWidthMustDivideNumberOfRows,
+	#[error("error in batching: {err_str}")]
+	NumBatchedMismatchError { err_str: String },
 	#[error("field error: {0}")]
 	Field(#[from] field::Error),
 	#[error("polynomial error: {0}")]
@@ -32,12 +34,15 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("merkle proof is invalid")]
-	MerkleProof,
 	#[error("incorrect number of vector commitment opening proofs, expected {expected}")]
 	NumberOfOpeningProofs { expected: usize },
-	#[error("column opening at index {index} has incorrect size, expected {expected}")]
-	OpenedColumnSize { index: usize, expected: usize },
+	#[error("column opening at poly_index {poly_index}, col_index {col_index} has incorrect size, got {actual} expected {expected}")]
+	OpenedColumnSize {
+		poly_index: usize,
+		col_index: usize,
+		expected: usize,
+		actual: usize,
+	},
 	#[error("evaluation is incorrect")]
 	IncorrectEvaluation,
 	#[error("partial evaluation is incorrect")]

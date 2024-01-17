@@ -9,6 +9,7 @@ pub mod packed;
 pub mod packed_binary_field;
 pub mod polyval;
 pub mod transpose;
+pub mod util;
 
 pub use binary_field::*;
 pub use error::*;
