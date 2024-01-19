@@ -1,6 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{field::Field, polynomial::Error as PolynomialError};
+use rayon::prelude::*;
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -58,15 +59,15 @@ impl<FE: Field> MultilinearQuery<FE> {
 		for challenge in extra_query_coordinates {
 			let prev_length = new_expanded_query.len();
 			new_expanded_query.extend_from_within(0..prev_length);
-			for h in 0..prev_length {
-				// expanded_query[h] should be multiplied by 1 - challenge
-				// expanded_query[length + h] should be expanded_query[h] * challenge
-				// we can perform these updates with a single multiplication by leveraging the fact that
-				// x - x * y = x * (1 - y)
-				let prod = new_expanded_query[h] * challenge;
-				new_expanded_query[h] -= prod;
-				new_expanded_query[prev_length | h] = prod;
-			}
+			let (xs, ys) = new_expanded_query.split_at_mut(prev_length);
+			xs.par_iter_mut().zip(ys.par_iter_mut()).for_each(|(x, y)| {
+				// x = x * (1 - challenge) = x - x * challenge
+				// y = x * challenge
+				// Notice that we can reuse the multiplication: (x * challenge)
+				let prod = (*x) * (*challenge);
+				*x -= prod;
+				*y = prod;
+			});
 		}
 		Ok(Self {
 			expanded_query: new_expanded_query,
