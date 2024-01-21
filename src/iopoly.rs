@@ -111,11 +111,11 @@ impl<F: Field> Packed<F> {
 #[derive(Debug, Clone)]
 pub enum MultivariatePolyOracle<F: Field> {
 	Multilinear(MultilinearPolyOracle<F>),
-	Composite(CompositePoly<F>),
+	Composite(CompositePolyOracle<F>),
 }
 
 #[derive(Debug, Clone)]
-pub struct CompositePoly<F: Field> {
+pub struct CompositePolyOracle<F: Field> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
 	composition: Arc<dyn CompositionPoly<F>>,
@@ -150,10 +150,10 @@ where
 }
 
 impl<F: Field> MultivariatePolyOracle<F> {
-	pub fn into_composite(self) -> CompositePoly<F> {
+	pub fn into_composite(self) -> CompositePolyOracle<F> {
 		match self {
 			MultivariatePolyOracle::Composite(composite) => composite.clone(),
-			MultivariatePolyOracle::Multilinear(multilinear) => CompositePoly::new(
+			MultivariatePolyOracle::Multilinear(multilinear) => CompositePolyOracle::new(
 				multilinear.n_vars(),
 				vec![multilinear.clone()],
 				Arc::new(IdentityComposition),
@@ -164,8 +164,8 @@ impl<F: Field> MultivariatePolyOracle<F> {
 
 	pub fn max_individual_degree(&self) -> usize {
 		match self {
+			MultivariatePolyOracle::Multilinear(_) => 1,
 			MultivariatePolyOracle::Composite(composite) => composite.composition.degree(),
-			_ => 1,
 		}
 	}
 
@@ -177,7 +177,7 @@ impl<F: Field> MultivariatePolyOracle<F> {
 	}
 }
 
-impl<F: Field> CompositePoly<F> {
+impl<F: Field> CompositePolyOracle<F> {
 	pub fn new(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<F>>,
@@ -198,8 +198,17 @@ impl<F: Field> CompositePoly<F> {
 		})
 	}
 
+	// Total degree of the polynomial
+	pub fn degree(&self) -> usize {
+		self.composition.degree()
+	}
+
 	pub fn n_vars(&self) -> usize {
 		self.n_vars
+	}
+
+	pub fn n_multilinears(&self) -> usize {
+		self.composition.n_vars()
 	}
 
 	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {

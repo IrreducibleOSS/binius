@@ -29,10 +29,10 @@ fn validate_input<F, M, BM>(
 ) -> Result<(), Error>
 where
 	F: Field,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
-	let degree = sumcheck_witness.composition.degree();
+	let degree = sumcheck_claim.poly.max_individual_degree();
 	if degree == 0 {
 		return Err(Error::PolynomialDegreeIsZero);
 	}
@@ -59,7 +59,7 @@ where
 	M: MultilinearPoly<OF> + ?Sized,
 	BM: Borrow<M>,
 {
-	let degree = sumcheck_witness.composition.degree();
+	let degree = sumcheck_claim.poly.max_individual_degree();
 	if degree == 0 {
 		return Err(Error::PolynomialDegreeIsZero);
 	}
@@ -83,7 +83,7 @@ pub fn prove_first_round<F, M, BM>(
 ) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + Sync,
+	M: MultilinearPoly<F> + Send + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
 	validate_input(original_claim, &witness, domain)?;
@@ -110,7 +110,7 @@ pub fn prove_before_switchover<F, M, BM>(
 ) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + Sync,
+	M: MultilinearPoly<F> + Send + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
 	// STEP 0: Reduce sumcheck claim
@@ -159,7 +159,7 @@ pub fn prove_at_switchover<F, M, BM>(
 >
 where
 	F: Field,
-	M: MultilinearPoly<F> + Sync,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
 	let PreSwitchoverRoundOutput {
@@ -251,7 +251,7 @@ pub fn prove_final<F, M, BM>(
 ) -> Result<SumcheckProveOutput<F, M, BM>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
 	// STEP 0: Reduce sumcheck claim
@@ -348,7 +348,7 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField32b},
 		hash::GroestlHasher,
-		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
+		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{
 			sumcheck::SumcheckClaim,
@@ -407,9 +407,12 @@ mod tests {
 				tower_level: F::TOWER_LEVEL,
 			})
 			.collect();
-		let composite_poly =
-			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
-				.unwrap();
+		let composite_poly = CompositePolyOracle::new(
+			n_vars,
+			h,
+			Arc::new(TestProductComposition::new(n_multilinears)),
+		)
+		.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let sumcheck_claim = SumcheckClaim {
 			sum: sum.into(),
@@ -501,9 +504,12 @@ mod tests {
 				tower_level: F::TOWER_LEVEL,
 			})
 			.collect();
-		let composite_poly =
-			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
-				.unwrap();
+		let composite_poly = CompositePolyOracle::new(
+			n_vars,
+			h,
+			Arc::new(TestProductComposition::new(n_multilinears)),
+		)
+		.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let sumcheck_claim = SumcheckClaim {
 			sum,

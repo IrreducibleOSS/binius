@@ -168,7 +168,7 @@ pub fn prove_step_two<'a, F: Field>(
 	// Construct T' polynomial
 	let t_prime_multilinears = [out_poly, in1_poly, in2_poly]
 		.into_iter()
-		.map(|poly| Arc::new(poly) as Arc<dyn MultilinearPoly<F> + Sync>)
+		.map(|poly| Arc::new(poly) as Arc<dyn MultilinearPoly<F> + Send + Sync>)
 		.collect();
 
 	let t_prime_witness = MultilinearComposite::new(
@@ -179,7 +179,7 @@ pub fn prove_step_two<'a, F: Field>(
 
 	// Package return values
 	let grand_product_poly_witness = MultilinearComposite::from_multilinear(
-		Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Sync + 'a>
+		Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>
 	);
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {

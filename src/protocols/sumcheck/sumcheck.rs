@@ -24,7 +24,7 @@ pub struct SumcheckProof<F> {
 pub struct SumcheckProveOutput<F, M, BM>
 where
 	F: Field,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
 	pub evalcheck_claim: EvalcheckClaim<F>,

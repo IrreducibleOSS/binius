@@ -154,6 +154,14 @@ where
 		self.composition.evaluate(&evals)
 	}
 
+	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
+		let evals = self
+			.iter_multilinear_polys()
+			.map(|multilin| multilin.evaluate_on_hypercube(index))
+			.collect::<Result<Vec<_>, _>>()?;
+		self.composition.evaluate(&evals)
+	}
+
 	pub fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<P::Scalar>,

@@ -42,11 +42,11 @@ where
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
-pub fn prove<F: BinaryField>(
-	zerocheck_witness: ZerocheckWitness<F>,
+pub fn prove<'a, F: BinaryField>(
+	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<F>, Error> {
+) -> Result<ZerocheckProveOutput<'a, F>, Error> {
 	let n_vars = zerocheck_witness.n_vars();
 
 	if challenge.len() != n_vars {
@@ -81,7 +81,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::{BinaryField, BinaryField32b},
-		iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
+		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{
 			test_utils::TestProductComposition,
@@ -110,7 +110,7 @@ mod tests {
 					.map(|j| if i == j { F::ZERO } else { F::ONE })
 					.collect::<Vec<_>>();
 				Arc::new(MultilinearExtension::from_values(values).unwrap())
-					as Arc<dyn MultilinearPoly<F> + Sync>
+					as Arc<dyn MultilinearPoly<F> + Send + Sync>
 			})
 			.collect::<Vec<_>>();
 		let zerocheck_witness =
@@ -124,9 +124,12 @@ mod tests {
 				tower_level: F::TOWER_LEVEL,
 			})
 			.collect();
-		let composite_poly =
-			CompositePoly::new(n_vars, h, Arc::new(TestProductComposition::new(n_multilinears)))
-				.unwrap();
+		let composite_poly = CompositePolyOracle::new(
+			n_vars,
+			h,
+			Arc::new(TestProductComposition::new(n_multilinears)),
+		)
+		.unwrap();
 		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim { poly: poly_oracle };
 

@@ -4,7 +4,7 @@
 ///
 /// The main implementation is [`crate::merkle_tree::MerkleTreeVCS`].
 pub trait VectorCommitScheme<T> {
-	type Commitment;
+	type Commitment: Clone;
 	type Committed;
 	type Proof;
 	type Error: std::error::Error + 'static;

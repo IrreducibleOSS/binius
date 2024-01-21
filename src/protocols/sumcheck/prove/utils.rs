@@ -16,7 +16,7 @@ use crate::{
 pub struct PreSwitchoverWitness<F, M, BM>
 where
 	F: Field,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
 	pub polynomial: MultilinearComposite<F, M, BM>,
@@ -27,7 +27,7 @@ where
 pub struct PreSwitchoverRoundOutput<F, M, BM>
 where
 	F: Field,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
 	BM: Borrow<M>,
 {
 	pub claim: SumcheckRoundClaim<F>,
@@ -111,7 +111,7 @@ pub fn compute_round_coeffs_first<F, M, BM>(
 ) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + Sync,
+	M: MultilinearPoly<F> + Send + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
 	let poly = current_witness.polynomial;
@@ -178,7 +178,7 @@ pub fn compute_round_coeffs_pre_switchover<F, M, BM>(
 ) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + Sync,
+	M: MultilinearPoly<F> + Send + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
 	let tensor = current_witness.tensor;

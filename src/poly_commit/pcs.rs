@@ -11,7 +11,7 @@ where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
 {
-	type Commitment;
+	type Commitment: Clone;
 	type Committed;
 	type Proof;
 	type Error;

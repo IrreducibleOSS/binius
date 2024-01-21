@@ -5,7 +5,7 @@ use binius::{
 		ExtensionField, Field, PackedField,
 	},
 	hash::GroestlHasher,
-	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
+	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
 		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
 		MultilinearPoly,
@@ -214,7 +214,7 @@ where
 		})
 		.collect::<Vec<_>>();
 	let composite_poly =
-		CompositePoly::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();
+		CompositePolyOracle::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();
 	let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 
 	// Calculate sum

@@ -2,15 +2,13 @@
 
 use crate::{
 	field::{BinaryField, Field},
-	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
-	polynomial::transparent::EqIndPartialEval,
+	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	polynomial::{transparent::EqIndPartialEval, MultilinearPoly},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
 use std::{fmt::Debug, sync::Arc};
 
-use crate::polynomial::{
-	CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
-};
+use crate::polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite};
 
 use super::VerificationError;
 
@@ -18,10 +16,13 @@ use super::VerificationError;
 pub struct ZerocheckProof {}
 
 #[derive(Debug)]
-pub struct ZerocheckProveOutput<F: Field> {
+pub struct ZerocheckProveOutput<'a, F: Field> {
 	pub sumcheck_claim: SumcheckClaim<F>,
-	pub sumcheck_witness:
-		SumcheckWitness<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>,
+	pub sumcheck_witness: SumcheckWitness<
+		F,
+		dyn MultilinearPoly<F> + Send + Sync + 'a,
+		Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
+	>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
@@ -32,8 +33,11 @@ pub struct ZerocheckClaim<F: Field> {
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type ZerocheckWitness<F> =
-	MultilinearComposite<F, dyn MultilinearPoly<F> + Sync, Arc<dyn MultilinearPoly<F> + Sync>>;
+pub type ZerocheckWitness<'a, F> = MultilinearComposite<
+	F,
+	dyn MultilinearPoly<F> + Send + Sync + 'a,
+	Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
+>;
 
 /// This wraps an inner composition polynomial $f$ and multiplies by another variable..
 ///
@@ -94,7 +98,7 @@ pub fn reduce_zerocheck_claim<F: BinaryField>(
 
 	let new_composition = ProductComposition::new(poly_composite.composition());
 	let composite_poly =
-		CompositePoly::new(claim.poly.n_vars(), inners, Arc::new(new_composition))?;
+		CompositePolyOracle::new(claim.poly.n_vars(), inners, Arc::new(new_composition))?;
 	let f_hat = MultivariatePolyOracle::Composite(composite_poly);
 
 	let sumcheck_claim = SumcheckClaim {

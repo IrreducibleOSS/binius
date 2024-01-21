@@ -18,4 +18,6 @@ pub enum Error {
 pub enum VerificationError {
 	#[error("evaluation is incorrect")]
 	IncorrectEvaluation,
+	#[error("subproof type or shape does not match the claim")]
+	SubproofMismatch,
 }

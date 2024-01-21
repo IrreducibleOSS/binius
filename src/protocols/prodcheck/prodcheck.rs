@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
-	iopoly::{CompositePoly, MultilinearPolyOracle, MultivariatePolyOracle},
+	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly},
 	protocols::{
 		evalcheck::evalcheck::{EvalcheckClaim, EvalcheckWitness},
@@ -21,11 +21,11 @@ pub struct ReducedProductCheckClaims<F: Field> {
 
 #[derive(Debug)]
 pub struct ReducedProductCheckWitnesses<'a, F: Field> {
-	pub t_prime_witness: ZerocheckWitness<F>,
+	pub t_prime_witness: ZerocheckWitness<'a, F>,
 	pub grand_product_poly_witness: EvalcheckWitness<
 		F,
-		dyn MultilinearPoly<F> + Sync + 'a,
-		Arc<dyn MultilinearPoly<F> + Sync + 'a>,
+		dyn MultilinearPoly<F> + Send + Sync + 'a,
+		Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
 	>,
 }
 
@@ -137,7 +137,7 @@ pub fn reduce_prodcheck_claim<F: Field>(
 	);
 
 	// Construct T' polynomial oracle
-	let composite_poly = CompositePoly::new(
+	let composite_poly = CompositePolyOracle::new(
 		n_vars + 1,
 		vec![out_oracle, in1_oracle, in2_oracle],
 		Arc::new(SimpleMultGateComposition),

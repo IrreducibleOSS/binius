@@ -30,6 +30,7 @@ derive-getters = "0.3.0"
 criterion = "0.4.0"
 hex-literal = "0.4.1"
 proptest = "1.2.0"
+tracing-subscriber = "0.3.18"
 
 [lib]
 bench = false

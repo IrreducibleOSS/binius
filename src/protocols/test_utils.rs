@@ -120,16 +120,17 @@ where
 	(rd_claims, final_claim)
 }
 
-pub fn full_prove_with_switchover<F, M, CH>(
+pub fn full_prove_with_switchover<F, M, BM, CH>(
 	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M, M>,
+	witness: SumcheckWitness<F, M, BM>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, M>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
 where
 	F: Field,
-	M: MultilinearPoly<F> + Clone + Sync,
+	M: MultilinearPoly<F> + Send + Sync + ?Sized,
+	BM: Borrow<M> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let current_witness = witness.clone();
@@ -178,17 +179,18 @@ where
 	(rd_claims, final_output)
 }
 
-pub fn full_prove_with_operating_field<F, OF, M, OM, BOM, CH>(
+pub fn full_prove_with_operating_field<F, OF, M, BM, OM, BOM, CH>(
 	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M, M>,
+	witness: SumcheckWitness<F, M, BM>,
 	operating_witness: SumcheckWitness<OF, OM, BOM>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, M>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
 where
 	F: Field,
 	OF: Field + From<F> + Into<F>,
-	M: MultilinearPoly<F>,
+	M: MultilinearPoly<F> + ?Sized,
+	BM: Borrow<M>,
 	OM: MultilinearPoly<OF> + Sync + ?Sized,
 	BOM: Borrow<OM> + Sync,
 	CH: CanObserve<F> + CanSample<F>,
