@@ -61,13 +61,14 @@ mod tests {
 
 	use super::EqIndPartialEval;
 	use crate::{
-		field::{BinaryField32b, PackedField},
+		field::{BinaryField32b, PackedBinaryField4x32b, PackedField},
 		polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly},
 	};
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {
 		type F = BinaryField32b;
+		type P = PackedBinaryField4x32b;
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let r = repeat_with(|| F::random(&mut rng))
@@ -83,7 +84,7 @@ mod tests {
 
 		// Get MultilinearComposite version of eq_r evaluation
 		let eq_r_mlc = eq_r_mvp.multilinear_extension().unwrap();
-		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point).unwrap();
 		let eval_mlc = eq_r_mlc.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

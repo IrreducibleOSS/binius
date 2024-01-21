@@ -9,9 +9,9 @@ use std::{iter::repeat_with, marker::PhantomData};
 use super::error::{Error, VerificationError};
 use crate::{
 	field::{
-		get_packed_slice, square_transpose, transpose_scalars, unpack_scalars, unpack_scalars_mut,
-		util::inner_product_unchecked, BinaryField8b, ExtensionField, Field, PackedExtensionField,
-		PackedField,
+		get_packed_slice, iter_packed_slice, square_transpose, transpose_scalars, unpack_scalars,
+		unpack_scalars_mut, util::inner_product_unchecked, BinaryField8b, ExtensionField, Field,
+		PackedExtensionField, PackedField,
 	},
 	hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher},
 	linear_code::LinearCode,
@@ -355,10 +355,10 @@ where
 
 		let n_challenges = log2_ceil_usize(proof.n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::with_full_query(&mixing_challenges)?
+		let mixing_coefficients = &MultilinearQuery::<PE>::with_full_query(&mixing_challenges)?
 			.into_expansion()[..proof.n_polys];
 		let value =
-			inner_product_unchecked(values.iter().copied(), mixing_coefficients.iter().copied());
+			inner_product_unchecked(values.iter().copied(), iter_packed_slice(mixing_coefficients));
 
 		if query.len() != self.n_vars() {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -380,7 +380,7 @@ where
 		challenger.observe_slice(unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
-		let multilin_query = MultilinearQuery::with_full_query(&query[..log_n_cols])?;
+		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[..log_n_cols])?;
 		let computed_value = proof
 			.mixed_t_prime
 			.evaluate(&multilin_query)
@@ -451,7 +451,7 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let multilin_query = MultilinearQuery::with_full_query(&query[log_n_cols..])?;
+		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[log_n_cols..])?;
 		let expected_and_actual_results = column_tests.iter().map(|(expected, leaves)| {
 			let actual_evals = leaves
 				.iter()
@@ -470,7 +470,7 @@ where
 			let (expected_result, unmixed_actual_results) = test;
 			let actual_result = inner_product_unchecked(
 				unmixed_actual_results.into_iter(),
-				mixing_coefficients.iter().copied(),
+				iter_packed_slice(mixing_coefficients),
 			);
 			if actual_result != *expected_result {
 				return Err(VerificationError::IncorrectPartialEvaluation.into());
@@ -722,7 +722,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -762,7 +763,8 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 
 		let values = polys
 			.iter()
@@ -806,7 +808,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -850,7 +853,8 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilinear_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilinear_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 
 		let values = polys
 			.iter()
@@ -894,7 +898,8 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -938,7 +943,8 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query = MultilinearQuery::with_full_query(&query).unwrap();
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
 
 		let values = polys
 			.iter()

@@ -95,15 +95,16 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 			.copied()
 	}
 
-	pub fn evaluate<FE>(&self, query: &MultilinearQuery<FE>) -> Result<FE, Error>
+	pub fn evaluate<FE, PE>(&self, query: &MultilinearQuery<PE>) -> Result<FE, Error>
 	where
 		FE: ExtensionField<P::Scalar>,
+		PE: PackedField<Scalar = FE>,
 	{
 		if self.mu != query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
 		Ok(inner_product_unchecked(
-			query.expansion().iter().copied(),
+			iter_packed_slice(query.expansion()),
 			iter_packed_slice(&self.evals),
 		))
 	}
@@ -380,12 +381,13 @@ fn log2(v: usize) -> usize {
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
+	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
 	use crate::field::{
 		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField32b,
-		PackedBinaryField4x32b,
+		PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
 
 	#[test]
@@ -394,9 +396,9 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let result1 = MultilinearQuery::with_full_query(&q).unwrap();
+		let result1 = MultilinearQuery::<P>::with_full_query(&q).unwrap();
 		let result2 = expand_query_naive(&q).unwrap();
-		assert_eq!(result1.expansion(), result2);
+		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
 	}
 
 	#[test]
@@ -412,7 +414,7 @@ mod tests {
 			let q = (0..6)
 				.map(|j| if (i >> j) & 1 != 0 { F::ONE } else { F::ZERO })
 				.collect::<Vec<_>>();
-			let multilin_query = MultilinearQuery::with_full_query(&q).unwrap();
+			let multilin_query = MultilinearQuery::<P>::with_full_query(&q).unwrap();
 			let result = poly.evaluate(&multilin_query).unwrap();
 			assert_eq!(result, F::new(i));
 		}
@@ -459,7 +461,7 @@ mod tests {
 			index -= split_vars;
 		}
 
-		let multilin_query = MultilinearQuery::with_full_query(&q[..index]).unwrap();
+		let multilin_query = MultilinearQuery::<P>::with_full_query(&q[..index]).unwrap();
 		partial_result.evaluate(&multilin_query).unwrap()
 	}
 
@@ -473,7 +475,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let multilin_query = MultilinearQuery::with_full_query(&q).unwrap();
+		let multilin_query = MultilinearQuery::<P>::with_full_query(&q).unwrap();
 		let result1 = poly.evaluate(&multilin_query).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);

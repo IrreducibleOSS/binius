@@ -45,6 +45,7 @@ pub trait PackedField:
 
 	// TODO: WIDTH should probably be required to be power of two
 	const WIDTH: usize;
+	const LOG_WIDTH: usize = Self::WIDTH.ilog2() as usize;
 
 	/// Get the scalar at a given index.
 	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error>;
