@@ -13,10 +13,10 @@ digest = "0.10.7"
 ff = "0.13.0"
 groestl = "0.10.1"
 itertools = "0.12.0"
-p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3" }
-p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3" }
-p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3" }
-p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3" }
+p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
+p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
+p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
+p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
 rand = "0.8.5"
 rayon = "1.8.0"
 static_assertions = "1.1.0"
