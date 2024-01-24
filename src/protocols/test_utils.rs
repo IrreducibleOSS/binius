@@ -208,27 +208,42 @@ where
 		prove_first_round_with_operating_field(claim, operating_witness, domain).unwrap();
 	rd_claims.push(rd_output.claim.clone());
 
-	// Run second round outside the loop because this one takes an OM witness and the subsequent rounds take a
-	// concrete MultilinearExtension witness.
-	challenger.observe_slice(&rd_output.current_proof.rounds[0].coeffs);
-	let mut rd_output =
-		prove_later_round_with_operating_field(claim, challenger.sample(), rd_output, domain)
+	let (final_round_proof, final_round_claim) = match n_vars {
+		1 => (rd_output.current_proof, rd_output.claim),
+		_ => {
+			// Run second round outside the loop because this one takes an OM witness and the subsequent rounds take a
+			// concrete MultilinearExtension witness.
+			challenger.observe_slice(&rd_output.current_proof.rounds[0].coeffs);
+			let mut rd_output = prove_later_round_with_operating_field(
+				claim,
+				challenger.sample(),
+				rd_output,
+				domain,
+			)
 			.unwrap();
-	rd_claims.push(rd_output.claim.clone());
+			rd_claims.push(rd_output.claim.clone());
 
-	for i in 1..n_vars - 1 {
-		challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
-		rd_output =
-			prove_later_round_with_operating_field(claim, challenger.sample(), rd_output, domain)
+			for i in 1..n_vars - 1 {
+				challenger.observe_slice(&rd_output.current_proof.rounds[i].coeffs);
+				rd_output = prove_later_round_with_operating_field(
+					claim,
+					challenger.sample(),
+					rd_output,
+					domain,
+				)
 				.unwrap();
-		rd_claims.push(rd_output.claim.clone());
-	}
+				rd_claims.push(rd_output.claim.clone());
+			}
+
+			(rd_output.current_proof, rd_output.claim)
+		}
+	};
 
 	let final_output = prove_final(
 		claim,
 		witness,
-		rd_output.current_proof,
-		rd_output.claim,
+		final_round_proof,
+		final_round_claim,
 		challenger.sample(),
 		domain,
 	)
