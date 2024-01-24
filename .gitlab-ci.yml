@@ -22,13 +22,27 @@ build-debug:
     - binius
   stage: build
   script:
-    - RUSTFLAGS="-C target-cpu=native" cargo build --tests --benches
+    - cargo build --tests --benches --examples
   artifacts:
     paths:
       - target/debug
     expire_in: 1 day
 
 unit-test:
+  tags:
+    - binius
+  stage: test
+  script:
+    - cargo test
+
+unit-test-single-threaded:
+  tags:
+    - binius
+  stage: test
+  script:
+    - RAYON_NUM_THREADS=1 cargo test
+
+unit-test-native:
   tags:
     - binius
   stage: test
