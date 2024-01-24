@@ -22,7 +22,7 @@ use std::{
 use subtle::{Choice, ConstantTimeEq};
 
 macro_rules! packed_binary_field_u128 {
-	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); $width:literal], Iterator = $iter_name:ident) => {
+	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); $width:literal]) => {
 		const_assert_eq!($scalar::N_BITS * $width, 128);
 
 		#[derive(Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
@@ -126,40 +126,19 @@ macro_rules! packed_binary_field_u128 {
 		}
 
 		impl Sum for $name {
-			fn sum<I: Iterator<Item=Self>>(iter: I) -> Self {
+			fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 				iter.fold(Self(0), |result, next| result + next)
 			}
 		}
 
 		impl Product for $name {
-			fn product<I: Iterator<Item=Self>>(iter: I) -> Self {
+			fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 				iter.fold(Self::broadcast($scalar(1)), |result, next| result * next)
-			}
-		}
-
-		$vis struct $iter_name {
-			inner: $name,
-			index: usize,
-		}
-
-		impl Iterator for $iter_name {
-			type Item = $scalar;
-
-			fn next(&mut self) -> Option<Self::Item> {
-				let result = self.inner.get_checked(self.index).ok()?;
-				self.index += 1;
-				Some(result)
-			}
-
-			fn size_hint(&self) -> (usize, Option<usize>) {
-				let remaining = $width - self.index;
-				(remaining, Some(remaining))
 			}
 		}
 
 		impl PackedField for $name {
 			type Scalar = $scalar;
-			type Iterator = $iter_name;
 
 			const WIDTH: usize = $width;
 
@@ -172,7 +151,10 @@ macro_rules! packed_binary_field_u128 {
 							(_, true) => $scalar(value),
 						}
 					})
-					.ok_or(Error::IndexOutOfRange { index: i, max: Self::WIDTH })
+					.ok_or(Error::IndexOutOfRange {
+						index: i,
+						max: Self::WIDTH,
+					})
 			}
 
 			fn set_checked(&mut self, i: usize, scalar: $scalar) -> Result<(), Error> {
@@ -187,14 +169,10 @@ macro_rules! packed_binary_field_u128 {
 							self.0 = (scalar.0 as u128) << (i * $scalar::N_BITS);
 						}
 					})
-					.ok_or(Error::IndexOutOfRange { index: i, max: Self::WIDTH })
-			}
-
-			fn iter(&self) -> $iter_name {
-				$iter_name {
-					inner: *self,
-					index: 0,
-				}
+					.ok_or(Error::IndexOutOfRange {
+						index: i,
+						max: Self::WIDTH,
+					})
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
@@ -297,38 +275,14 @@ macro_rules! impl_unpackable_packed_binary_field_u128 {
 	};
 }
 
-packed_binary_field_u128!(
-	pub PackedBinaryField128x1b[BinaryField1b(u8); 128],
-	Iterator = PackedBinaryField128x1bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField64x2b[BinaryField2b(u8); 64],
-	Iterator = PackedBinaryField64x2bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField32x4b[BinaryField4b(u8); 32],
-	Iterator = PackedBinaryField32x4bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField16x8b[BinaryField8b(u8); 16],
-	Iterator = PackedBinaryField16x8bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField8x16b[BinaryField16b(u16); 8],
-	Iterator = PackedBinaryField8x16bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField4x32b[BinaryField32b(u32); 4],
-	Iterator = PackedBinaryField4x32bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField2x64b[BinaryField64b(u64); 2],
-	Iterator = PackedBinaryField2x64bIter
-);
-packed_binary_field_u128!(
-	pub PackedBinaryField1x128b[BinaryField128b(u128); 1],
-	Iterator = PackedBinaryField1x128bIter
-);
+packed_binary_field_u128!(pub PackedBinaryField128x1b[BinaryField1b(u8); 128]);
+packed_binary_field_u128!(pub PackedBinaryField64x2b[BinaryField2b(u8); 64]);
+packed_binary_field_u128!(pub PackedBinaryField32x4b[BinaryField4b(u8); 32]);
+packed_binary_field_u128!(pub PackedBinaryField16x8b[BinaryField8b(u8); 16]);
+packed_binary_field_u128!(pub PackedBinaryField8x16b[BinaryField16b(u16); 8]);
+packed_binary_field_u128!(pub PackedBinaryField4x32b[BinaryField32b(u32); 4]);
+packed_binary_field_u128!(pub PackedBinaryField2x64b[BinaryField64b(u64); 2]);
+packed_binary_field_u128!(pub PackedBinaryField1x128b[BinaryField128b(u128); 1]);
 
 impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField64x2b, LOG_BITS = 1);
 impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField32x4b, LOG_BITS = 2);

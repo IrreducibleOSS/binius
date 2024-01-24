@@ -41,7 +41,6 @@ pub trait PackedField:
 	+ 'static
 {
 	type Scalar: Field;
-	type Iterator: Iterator<Item=Self::Scalar>;
 
 	// TODO: WIDTH should probably be required to be power of two
 	const WIDTH: usize;
@@ -63,7 +62,13 @@ pub trait PackedField:
 		self.set_checked(i, scalar).expect("index must be less than width")
 	}
 
-	fn iter(&self) -> Self::Iterator;
+	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> {
+		(0..Self::WIDTH).map(move |i| self.get(i))
+	}
+
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> {
+		(0..Self::WIDTH).map(|i| self.get(i))
+	}
 
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
@@ -114,7 +119,6 @@ pub fn set_packed_slice_checked<P: PackedField>(
 
 impl<F: Field> PackedField for F {
 	type Scalar = F;
-	type Iterator = iter::Once<F>;
 
 	const WIDTH: usize = 1;
 
@@ -130,7 +134,7 @@ impl<F: Field> PackedField for F {
 			.ok_or(Error::IndexOutOfRange { index: i, max: 1 })
 	}
 
-	fn iter(&self) -> Self::Iterator {
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> {
 		iter::once(*self)
 	}
 

@@ -270,4 +270,24 @@ mod tests {
 		assert_eq!(a.interleave(b, 4), (c, d));
 		assert_eq!(c.interleave(d, 4), (a, b));
 	}
+
+	#[test]
+	fn test_iter_size_hint() {
+		assert_valid_iterator_with_exact_size_hint::<crate::field::BinaryField128b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::BinaryField32b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::BinaryField1b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField128x1b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField64x2b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField32x4b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField16x16b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField8x32b>();
+		assert_valid_iterator_with_exact_size_hint::<crate::field::PackedBinaryField4x64b>();
+	}
+
+	fn assert_valid_iterator_with_exact_size_hint<P: PackedField>() {
+		assert_eq!(P::default().iter().size_hint(), (P::WIDTH, Some(P::WIDTH)));
+		assert_eq!(P::default().into_iter().size_hint(), (P::WIDTH, Some(P::WIDTH)));
+		assert_eq!(P::default().iter().count(), P::WIDTH);
+		assert_eq!(P::default().into_iter().count(), P::WIDTH);
+	}
 }

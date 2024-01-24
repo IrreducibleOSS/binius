@@ -78,7 +78,7 @@ impl<F: Field> ExtensionField<F> for F {
 ///         PE: PackedExtensionField<P>,
 ///         PE::Scalar: ExtensionField<P::Scalar>,
 /// {
-///     iter_packed_slice(PE::cast_to_bases(packed)).flat_map(|p| p.iter())
+///     iter_packed_slice(PE::cast_to_bases(packed)).flat_map(|p| p.into_iter())
 /// }
 /// ```
 ///

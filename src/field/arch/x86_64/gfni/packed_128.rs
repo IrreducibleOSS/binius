@@ -166,36 +166,14 @@ macro_rules! binary_tower_packed_bits {
 	(
 		$vis:vis $name:ident,
 		Scalar = $scalar_ty:ty,
-		Iterator = $iter_name:ident,
 		WIDTH = $width:literal
 	) => {
 		binary_tower_packed_shared!($vis $name, Scalar = $scalar_ty, WIDTH = $width);
 
 		assert_eq_size!($scalar_ty, u8);
 
-		$vis struct $iter_name {
-			inner: $name,
-			index: usize,
-		}
-
-		impl Iterator for $iter_name {
-			type Item = $scalar_ty;
-
-			fn next(&mut self) -> Option<Self::Item> {
-				let result = self.inner.get_checked(self.index).ok()?;
-				self.index += 1;
-				Some(result)
-			}
-
-			fn size_hint(&self) -> (usize, Option<usize>) {
-				let remaining = $width - self.index;
-				(remaining, Some(remaining))
-			}
-		}
-
 		impl PackedField for $name {
 			type Scalar = $scalar_ty;
-			type Iterator = $iter_name;
 
 			const WIDTH: usize = $width;
 
@@ -215,13 +193,6 @@ macro_rules! binary_tower_packed_bits {
 
 			fn set_checked(&mut self, _i: usize, _scalar: Self::Scalar) -> Result<(), Error> {
 				todo!("implement set_checked")
-			}
-
-			fn iter(&self) -> Self::Iterator {
-				$iter_name {
-					inner: *self,
-					index: 0,
-				}
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
@@ -257,7 +228,6 @@ macro_rules! binary_tower_packed_bytes {
 
 		impl PackedField for $name {
 			type Scalar = $scalar_ty;
-			type Iterator = <[$scalar_ty; $width] as IntoIterator>::IntoIter;
 
 			const WIDTH: usize = $width;
 
@@ -271,10 +241,6 @@ macro_rules! binary_tower_packed_bytes {
 				(i < Self::WIDTH)
 					.then(|| must_cast_mut::<_, [Self::Scalar; Self::WIDTH]>(self)[i] = scalar)
 					.ok_or(Error::IndexOutOfRange { index: i, max: Self::WIDTH })
-			}
-
-			fn iter(&self) -> Self::Iterator {
-				must_cast::<_, [Self::Scalar; Self::WIDTH]>(*self).into_iter()
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
@@ -414,19 +380,16 @@ macro_rules! packed_binary_field_tower {
 binary_tower_packed_bits!(
 	pub PackedBinaryField128x1b,
 	Scalar = BinaryField1b,
-	Iterator = PackedBinaryField128x1bIter,
 	WIDTH = 128
 );
 binary_tower_packed_bits!(
 	pub PackedBinaryField64x2b,
 	Scalar = BinaryField2b,
-	Iterator = PackedBinaryField64x2bIter,
 	WIDTH = 64
 );
 binary_tower_packed_bits!(
 	pub PackedBinaryField32x4b,
 	Scalar = BinaryField4b,
-	Iterator = PackedBinaryField32x4bIter,
 	WIDTH = 32
 );
 binary_tower_packed_bytes!(pub PackedBinaryField16x8b, Scalar = BinaryField8b, WIDTH = 16);

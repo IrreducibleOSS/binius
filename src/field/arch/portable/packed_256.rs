@@ -12,7 +12,7 @@ use bytemuck::{
 use rand::RngCore;
 use std::{
 	array,
-	iter::{FlatMap, Product, Sum},
+	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 use subtle::{Choice, ConstantTimeEq};
@@ -147,11 +147,6 @@ macro_rules! packed_field_array {
 
 		impl PackedField for $name {
 			type Scalar = <$inner as PackedField>::Scalar;
-			type Iterator = FlatMap<
-				array::IntoIter<$inner, 2>,
-				<$inner as PackedField>::Iterator,
-				fn($inner) -> <$inner as PackedField>::Iterator,
-			>;
 			const WIDTH: usize = <$inner as PackedField>::WIDTH * 2;
 
 			#[allow(clippy::modulo_one)]
@@ -178,10 +173,6 @@ macro_rules! packed_field_array {
 						max: Self::WIDTH,
 					})
 					.and_then(|inner| inner.set_checked(inner_i, scalar))
-			}
-
-			fn iter(&self) -> Self::Iterator {
-				self.0.into_iter().flat_map(|inner| inner.iter())
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
