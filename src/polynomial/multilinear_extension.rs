@@ -1,7 +1,8 @@
 // Copyright 2023 Ulvetanna Inc.
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
 use crate::field::{
-	get_packed_slice, iter_packed_slice, set_packed_slice, util::inner_product_unchecked,
+	get_packed_slice, iter_packed_slice, set_packed_slice,
+	util::{inner_product_par, inner_product_unchecked},
 	ExtensionField, Field, PackedField,
 };
 use itertools::Either;
@@ -103,10 +104,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		if self.mu != query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		Ok(inner_product_unchecked(
-			iter_packed_slice(query.expansion()),
-			iter_packed_slice(&self.evals),
-		))
+		Ok(inner_product_par(query.expansion(), &self.evals))
 	}
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
