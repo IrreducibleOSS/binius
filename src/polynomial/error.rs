@@ -14,6 +14,13 @@ pub enum Error {
 	ExtrapolateNumberOfEvaluations,
 	#[error("domain size is larger than the field")]
 	DomainSizeTooLarge,
+	#[error("block size must between 1 and {n_vars} (inclusive)")]
+	InvalidBlockSize { n_vars: usize },
+	#[error("shift offset must be at most {max_right_shift_offset}, got {right_shift_offset}")]
+	InvalidShiftOffset {
+		max_right_shift_offset: usize,
+		right_shift_offset: usize,
+	},
 	#[error("duplicate point in domain")]
 	DuplicateDomainPoint,
 	#[error("argument length must be a power of two")]

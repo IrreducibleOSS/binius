@@ -10,3 +10,9 @@ where
 {
 	a.zip(b).map(|(a_i, b_i)| a_i * b_i).sum::<FE>()
 }
+
+/// Evaluation of the 2-variate multilinear which indicates the condition x == y
+#[inline(always)]
+pub fn eq<F: Field>(x: F, y: F) -> F {
+	x * y + (F::ONE - x) * (F::ONE - y)
+}

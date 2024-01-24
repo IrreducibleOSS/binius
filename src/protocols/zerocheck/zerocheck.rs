@@ -3,7 +3,7 @@
 use crate::{
 	field::{BinaryField, Field},
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
-	polynomial::{transparent::EqIndPartialEval, MultilinearPoly},
+	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
 use std::{fmt::Debug, sync::Arc};

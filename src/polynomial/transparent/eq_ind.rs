@@ -2,7 +2,9 @@
 
 use crate::field::Field;
 
-use super::{multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly};
+use crate::polynomial::{
+	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
+};
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -78,21 +80,21 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		// Get Multivariate Poly version of eq_r evaluation
+		// Get Multivariate Poly version of eq_r
 		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();
 		let eval_mvp = eq_r_mvp.evaluate(eval_point).unwrap();
 
-		// Get MultilinearComposite version of eq_r evaluation
-		let eq_r_mlc = eq_r_mvp.multilinear_extension().unwrap();
+		// Get MultilinearExtension version of eq_r
+		let eq_r_mle = eq_r_mvp.multilinear_extension().unwrap();
 		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point).unwrap();
-		let eval_mlc = eq_r_mlc.evaluate(&multilin_query).unwrap();
+		let eval_mle = eq_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
-		assert_eq!(eval_mlc, eval_mvp);
+		assert_eq!(eval_mle, eval_mvp);
 	}
 
 	#[test]
-	fn test_eq_consistency_schwarz_zippel() {
+	fn test_eq_consistency_schwartz_zippel() {
 		for n_vars in 2..=10 {
 			test_eq_consistency_help(n_vars);
 		}

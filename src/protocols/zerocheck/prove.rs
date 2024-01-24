@@ -5,7 +5,7 @@ use std::{borrow::Borrow, sync::Arc};
 use crate::{
 	field::{BinaryField, Field},
 	polynomial::{
-		transparent::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
+		transparent::eq_ind::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
 		MultilinearPoly,
 	},
 	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
