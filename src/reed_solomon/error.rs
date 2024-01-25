@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
 	#[error("codeword buffer must be at least 2**{log_code_len} elements")]
 	BufferTooSmall { log_code_len: usize },

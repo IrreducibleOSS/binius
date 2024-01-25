@@ -43,10 +43,10 @@ where
 	}
 }
 
-impl<P> LinearCode for ReedSolomonCode<P>
+impl<P, F> LinearCode for ReedSolomonCode<P>
 where
-	P: PackedField,
-	P::Scalar: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	F: BinaryField,
 {
 	type P = P;
 	type EncodeError = Error;
@@ -100,10 +100,10 @@ where
 	}
 }
 
-impl<P> LinearCodeWithExtensionEncoding for ReedSolomonCode<P>
+impl<P, F> LinearCodeWithExtensionEncoding for ReedSolomonCode<P>
 where
-	P: PackedField,
-	P::Scalar: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	F: BinaryField,
 {
 	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
 	where
