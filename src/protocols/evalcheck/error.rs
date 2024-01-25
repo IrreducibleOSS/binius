@@ -1,13 +1,18 @@
-use crate::polynomial::Error as PolynomialError;
+use super::evalcheck::BatchId;
+use crate::{iopoly::CommittedId, polynomial::Error as PolynomialError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("sumcheck polynomial degree must be greater than zero")]
-	PolynomialDegreeIsZero,
-	#[error("the input was not well formed")]
-	ImproperInput,
-	#[error("the evaluation domain does not match the expected size")]
-	EvaluationDomainMismatch,
+	#[error("unknown committed polynomial id {0}")]
+	UnknownCommittedId(CommittedId),
+	#[error("unknown batch {0}")]
+	UnknownBatchId(BatchId),
+	#[error("empty batch {0}")]
+	EmptyBatch(BatchId),
+	#[error("conflicting evaluations in batch {0}")]
+	ConflictingEvals(BatchId),
+	#[error("missing evaluation in batch {0}")]
+	MissingEvals(BatchId),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]

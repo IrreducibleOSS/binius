@@ -8,11 +8,15 @@ use binius::{
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	poly_commit::{BlockTensorPCS, PolyCommitScheme},
 	polynomial::{
-		multilinear_query::MultilinearQuery, CompositionPoly, Error as PolynomialError,
-		EvaluationDomain, MultilinearComposite, MultilinearExtension, MultilinearPoly,
+		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
+		MultilinearExtension, MultilinearPoly,
 	},
 	protocols::{
-		evalcheck::evalcheck::{verify as verify_evalcheck, EvalcheckProof},
+		evalcheck::{
+			evalcheck::{BatchCommittedEvalClaims, EvalcheckProof},
+			prove::prove as prove_evalcheck,
+			verify::verify as verify_evalcheck,
+		},
 		sumcheck::{SumcheckProof, SumcheckProveOutput},
 		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck::{
@@ -66,7 +70,7 @@ fn prove<PCS, CH>(
 	b_in: MultilinearExtension<PackedBinaryField128x1b>,
 	c_out: MultilinearExtension<PackedBinaryField128x1b>,
 	mut challenger: CH,
-) -> Proof<PCS::Commitment>
+) -> Proof<PCS::Commitment, PCS::Proof>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
 	PCS::Error: Debug,
@@ -107,13 +111,10 @@ where
 	);
 
 	// Round 1
-	let (a_in_comm, a_in_committed) = pcs.commit(&[&a_in]).unwrap();
-	let (b_in_comm, b_in_committed) = pcs.commit(&[&b_in]).unwrap();
-	let (c_out_comm, c_out_committed) = pcs.commit(&[&c_out]).unwrap();
+	let (abc_comm, abc_committed) = pcs.commit(&[&a_in, &b_in, &c_out]).unwrap();
+	challenger.observe(abc_comm.clone());
 
-	challenger.observe(a_in_comm.clone());
-	challenger.observe(b_in_comm.clone());
-	challenger.observe(c_out_comm.clone());
+	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
 
 	// Round 2
 	let zerocheck_challenge = challenger.sample_vec(log_size);
@@ -158,55 +159,48 @@ where
 		sumcheck_proof,
 	} = output;
 
-	assert!(evalcheck_claim.is_random_point);
+	let evalcheck_proof =
+		prove_evalcheck(evalcheck_witness, evalcheck_claim, &mut batch_committed_eval_claims)
+			.unwrap();
 
-	let a_in_eval_proof = pcs
-		.prove_evaluation(&mut challenger, &a_in_committed, &[&a_in], &evalcheck_claim.eval_point)
-		.unwrap();
-	let b_in_eval_proof = pcs
-		.prove_evaluation(&mut challenger, &b_in_committed, &[&b_in], &evalcheck_claim.eval_point)
-		.unwrap();
-	let c_out_eval_proof = pcs
-		.prove_evaluation(&mut challenger, &c_out_committed, &[&c_out], &evalcheck_claim.eval_point)
+	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	let same_query_pcs_claim = batch_committed_eval_claims
+		.get_same_query_pcs_claim(0)
+		.unwrap()
 		.unwrap();
 
-	let query = MultilinearQuery::with_full_query(&evalcheck_claim.eval_point).unwrap();
-	let evals = evalcheck_witness
-		.iter_multilinear_polys()
-		.map(|multilin| multilin.evaluate(&query).unwrap())
-		.collect::<Vec<_>>();
-
-	let evalcheck_proof = EvalcheckProof::Composite {
-		evals,
-		subproofs: vec![
-			EvalcheckProof::Committed(Box::new(a_in_eval_proof)),
-			EvalcheckProof::Committed(Box::new(b_in_eval_proof)),
-			EvalcheckProof::Committed(Box::new(c_out_eval_proof)),
-			EvalcheckProof::Transparent,
-		],
-	};
+	let abc_eval_proof = pcs
+		.prove_evaluation(
+			&mut challenger,
+			&abc_committed,
+			&[&a_in, &b_in, &c_out],
+			&same_query_pcs_claim.eval_point,
+		)
+		.unwrap();
 
 	Proof {
-		a_in_comm,
-		b_in_comm,
-		c_out_comm,
+		abc_comm,
+		abc_eval_proof,
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
 	}
 }
 
-struct Proof<D> {
-	a_in_comm: D,
-	b_in_comm: D,
-	c_out_comm: D,
+struct Proof<C, P> {
+	abc_comm: C,
+	abc_eval_proof: P,
 	zerocheck_proof: ZerocheckProof,
 	sumcheck_proof: SumcheckProof<BinaryField128b>,
 	evalcheck_proof: EvalcheckProof<BinaryField128b>,
 }
 
-fn verify<PCS, CH>(log_size: usize, pcs: &PCS, proof: Proof<PCS::Commitment>, mut challenger: CH)
-where
+fn verify<PCS, CH>(
+	log_size: usize,
+	pcs: &PCS,
+	proof: Proof<PCS::Commitment, PCS::Proof>,
+	mut challenger: CH,
+) where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
@@ -243,18 +237,15 @@ where
 	);
 
 	let Proof {
-		a_in_comm,
-		b_in_comm,
-		c_out_comm,
+		abc_comm,
+		abc_eval_proof,
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
 	} = proof;
 
 	// Observe the trace commitments
-	challenger.observe(a_in_comm.clone());
-	challenger.observe(b_in_comm.clone());
-	challenger.observe(c_out_comm.clone());
+	challenger.observe(abc_comm.clone());
 
 	let zerocheck_challenge = challenger.sample_vec(log_size);
 
@@ -266,55 +257,26 @@ where
 	// Run sumcheck protocol
 	let sumcheck_domain =
 		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
+
 	let (_, evalcheck_claim) =
 		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
 
 	// Verify commitment openings
-	let mut committed_claims = Vec::new();
-	verify_evalcheck(evalcheck_claim, evalcheck_proof, &mut committed_claims).unwrap();
+	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
+	verify_evalcheck(evalcheck_claim, evalcheck_proof, &mut batch_committed_eval_claims).unwrap();
 
-	assert_eq!(committed_claims.len(), 3);
-	assert!(committed_claims
-		.iter()
-		.all(|(claim, _)| claim.is_random_point));
-
-	let mut iter = committed_claims.into_iter();
-	let (a_in_evalclaim, a_in_eval_proof) = iter.next().unwrap();
-	let (b_in_evalclaim, b_in_eval_proof) = iter.next().unwrap();
-	let (c_out_evalclaim, c_out_eval_proof) = iter.next().unwrap();
-
-	assert_eq!(a_in_evalclaim.id, 0);
-	assert_eq!(b_in_evalclaim.id, 1);
-	assert_eq!(c_out_evalclaim.id, 2);
+	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	let same_query_pcs_claim = batch_committed_eval_claims
+		.get_same_query_pcs_claim(0)
+		.unwrap()
+		.unwrap();
 
 	pcs.verify_evaluation(
 		&mut challenger,
-		&a_in_comm,
-		&a_in_evalclaim.eval_point,
-		*a_in_eval_proof
-			.downcast()
-			.expect("eval proof is the wrong type"),
-		&[a_in_evalclaim.eval],
-	)
-	.unwrap();
-	pcs.verify_evaluation(
-		&mut challenger,
-		&b_in_comm,
-		&b_in_evalclaim.eval_point,
-		*b_in_eval_proof
-			.downcast()
-			.expect("eval proof is the wrong type"),
-		&[b_in_evalclaim.eval],
-	)
-	.unwrap();
-	pcs.verify_evaluation(
-		&mut challenger,
-		&c_out_comm,
-		&c_out_evalclaim.eval_point,
-		*c_out_eval_proof
-			.downcast()
-			.expect("eval proof is the wrong type"),
-		&[c_out_evalclaim.eval],
+		&abc_comm,
+		&same_query_pcs_claim.eval_point,
+		abc_eval_proof,
+		&same_query_pcs_claim.evals,
 	)
 	.unwrap();
 }

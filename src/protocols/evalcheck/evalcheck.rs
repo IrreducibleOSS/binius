@@ -1,12 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::error::{Error, VerificationError};
+use super::error::Error;
 use crate::{
 	field::Field,
-	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle},
-	polynomial::{extrapolate_line, MultilinearComposite},
+	iopoly::{CommittedId, MultivariatePolyOracle},
+	polynomial::MultilinearComposite,
 };
-use std::any::Any;
+use std::{collections::HashMap, convert::AsRef};
 
 #[derive(Debug)]
 pub struct EvalcheckClaim<F: Field> {
@@ -26,7 +26,7 @@ pub type EvalcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
 #[derive(Debug)]
 pub enum EvalcheckProof<F: Field> {
 	Transparent,
-	Committed(Box<dyn Any>),
+	Committed,
 	Repeating(Box<EvalcheckProof<F>>),
 	Merged {
 		eval1: F,
@@ -40,8 +40,8 @@ pub enum EvalcheckProof<F: Field> {
 	},
 }
 
-#[derive(Debug)]
-pub struct CommittedEvalClaim<F> {
+#[derive(Debug, Clone)]
+pub struct CommittedEvalClaim<F: Field> {
 	pub id: CommittedId,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
@@ -51,163 +51,146 @@ pub struct CommittedEvalClaim<F> {
 	pub is_random_point: bool,
 }
 
-pub fn verify<F: Field>(
-	claim: EvalcheckClaim<F>,
-	proof: EvalcheckProof<F>,
-	committed_claims: &mut Vec<(CommittedEvalClaim<F>, Box<dyn Any>)>,
-) -> Result<(), Error> {
-	let EvalcheckClaim {
-		poly,
-		mut eval_point,
-		eval,
-		is_random_point,
-	} = claim;
-	match poly {
-		MultivariatePolyOracle::Multilinear(multilinear) => match multilinear {
-			MultilinearPolyOracle::Transparent {
-				poly,
-				tower_level: _,
-			} => {
-				match proof {
-					EvalcheckProof::Transparent => {}
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+/// PCS batches are identified by their sequential number in 0..n_batches() range
+pub type BatchId = usize;
 
-				let actual_eval = poly.evaluate(&eval_point)?;
-				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
-				}
-			}
-			MultilinearPolyOracle::Committed { id, .. } => {
-				let subproof = match proof {
-					EvalcheckProof::Committed(subproof) => subproof,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+#[derive(Debug)]
+struct BatchRef {
+	batch_id: BatchId,
+	idx_in_batch: usize,
+}
 
-				let subclaim = CommittedEvalClaim {
-					id,
-					eval_point,
-					eval,
-					is_random_point,
-				};
-				committed_claims.push((subclaim, subproof));
-			}
-			MultilinearPolyOracle::Repeating { inner, log_count } => {
-				let subproof = match proof {
-					EvalcheckProof::Repeating(subproof) => subproof,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
-				let n_vars = inner.n_vars();
-				let subclaim = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*inner),
-					eval_point: eval_point[..n_vars - log_count].to_vec(),
-					eval,
-					is_random_point,
-				};
-				verify(subclaim, *subproof, committed_claims)?;
-			}
-			MultilinearPolyOracle::Interleaved(_poly1, _poly2) => {
-				// TODO: Implement interleaved reduction, similar to merged
-				todo!()
-			}
-			MultilinearPolyOracle::Merged(poly1, poly2) => {
-				let (eval1, eval2, subproof1, subproof2) = match proof {
-					EvalcheckProof::Merged {
-						eval1,
-						eval2,
-						subproof1,
-						subproof2,
-					} => (eval1, eval2, subproof1, subproof2),
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+/// A batched PCS claim where all member polynomials have the same query (can be verified directly)
+pub struct SameQueryPcsClaim<F: Field> {
+	/// Common evaluation point
+	pub eval_point: Vec<F>,
+	/// Vector of individual claimed evaluations (in batch_ref.idx_in_batch order)
+	pub evals: Vec<F>,
+}
 
-				// Verify the evaluation of the merged function over the claimed evaluations
-				let n_vars = poly1.n_vars();
-				let subclaim_eval_point = &eval_point[..n_vars];
-				let actual_eval = extrapolate_line(eval1, eval2, eval_point[n_vars]);
-				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
-				}
+/// A mutable structure which keeps track of PCS claims for polynomial batches, potentially over
+/// several evalcheck/sumcheck calls
+#[derive(Debug)]
+pub struct BatchCommittedEvalClaims<F: Field> {
+	/// mapping from committed polynomial id to batch & position in batch
+	id_to_batch: HashMap<CommittedId, BatchRef>,
+	/// Number of polynomials in each batch
+	batch_lengths: Vec<usize>,
+	/// Claims accumulated for each batch
+	claims_by_batch: Vec<Vec<CommittedEvalClaim<F>>>,
+}
 
-				let claim1 = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*poly1),
-					eval_point: subclaim_eval_point.to_vec(),
-					eval: eval1,
-					is_random_point,
-				};
-				verify(claim1, *subproof1, committed_claims)?;
+impl<F: Field> BatchCommittedEvalClaims<F> {
+	/// Creates a new PCS claims accumulator.
+	/// `batches` is a nested array listing which committed ids belong to which batch, for example
+	/// `[[1, 2], [3, 4]]` batches polys 1 & 2 into first batch and 3 and 4 into second batch. Order
+	/// within batch is important.
+	pub fn new<CI>(batches: &[CI]) -> Self
+	where
+		CI: AsRef<[CommittedId]>,
+	{
+		let mut id_to_batch = HashMap::new();
+		let mut batch_lengths = Vec::new();
 
-				let claim2 = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*poly2),
-					eval_point: subclaim_eval_point.to_vec(),
-					eval: eval2,
-					is_random_point,
-				};
-				verify(claim2, *subproof2, committed_claims)?;
-			}
-			MultilinearPolyOracle::ProjectFirstVar { inner, value } => {
-				eval_point.insert(0, value);
-				let new_claim = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*inner),
-					eval_point,
-					eval,
-					is_random_point,
-				};
-				verify(new_claim, proof, committed_claims)?;
-			}
-			MultilinearPolyOracle::ProjectLastVar { inner, value } => {
-				eval_point.push(value);
-				let new_claim = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*inner),
-					eval_point,
-					eval,
-					is_random_point,
-				};
-				verify(new_claim, proof, committed_claims)?;
-			}
-			MultilinearPolyOracle::Shifted(_) => {
-				// TODO
-				todo!()
-			}
-			MultilinearPolyOracle::Packed(_) => {
-				// TODO
-				todo!()
-			}
-		},
-		MultivariatePolyOracle::Composite(composite) => {
-			let (evals, subproofs) = match proof {
-				EvalcheckProof::Composite { evals, subproofs } => (evals, subproofs),
-				_ => return Err(VerificationError::SubproofMismatch.into()),
-			};
+		for (batch_id, batch) in batches.iter().enumerate() {
+			batch_lengths.push(batch.as_ref().len());
 
-			if evals.len() != composite.n_multilinears() {
-				return Err(VerificationError::SubproofMismatch.into());
+			for (idx_in_batch, &committed_id) in batch.as_ref().iter().enumerate() {
+				id_to_batch.insert(
+					committed_id,
+					BatchRef {
+						batch_id,
+						idx_in_batch,
+					},
+				);
 			}
-			if subproofs.len() != composite.n_multilinears() {
-				return Err(VerificationError::SubproofMismatch.into());
-			}
+		}
 
-			// Verify the evaluation of the composition function over the claimed evaluations
-			let actual_eval = composite.composition().evaluate(&evals)?;
-			if actual_eval != eval {
-				return Err(VerificationError::IncorrectEvaluation.into());
-			}
+		let claims_by_batch = vec![vec![]; batches.len()];
 
-			evals
-				.into_iter()
-				.zip(subproofs.into_iter())
-				.zip(composite.inner_polys().into_iter())
-				.try_for_each(|((eval, subproof), suboracle)| {
-					let subclaim = EvalcheckClaim {
-						poly: MultivariatePolyOracle::Multilinear(suboracle),
-						eval_point: eval_point.clone(),
-						eval,
-						is_random_point,
-					};
-					verify(subclaim, subproof, committed_claims)
-				})?;
+		Self {
+			id_to_batch,
+			batch_lengths,
+			claims_by_batch,
 		}
 	}
 
-	Ok(())
+	/// Insert a new claim into the batch.
+	pub fn insert(&mut self, claim: CommittedEvalClaim<F>) -> Result<(), Error> {
+		let id = claim.id;
+		let batch_ref = self
+			.id_to_batch
+			.get(&id)
+			.ok_or(Error::UnknownCommittedId(id))?;
+
+		self.claims_by_batch[batch_ref.batch_id].push(claim);
+
+		Ok(())
+	}
+
+	pub fn nbatches(&self) -> usize {
+		self.claims_by_batch.len()
+	}
+
+	/// Extract a same query claim, if possible (hence the Option in happy path)
+	pub fn get_same_query_pcs_claim(
+		&self,
+		batch_id: BatchId,
+	) -> Result<Option<SameQueryPcsClaim<F>>, Error> {
+		let claims = self
+			.claims_by_batch
+			.get(batch_id)
+			.ok_or(Error::UnknownBatchId(batch_id))?;
+
+		// batches cannot be empty
+		let first = claims.first().ok_or(Error::EmptyBatch(batch_id))?;
+
+		// all evaluation points should match
+		if claims
+			.iter()
+			.any(|claim| claim.eval_point != first.eval_point)
+		{
+			return Ok(None);
+		}
+
+		// PCS requires random queries, thus abort when non-random one is found
+		if claims.iter().any(|claim| !claim.is_random_point) {
+			return Ok(None);
+		}
+
+		// assemble the evals vector according to idx_in_batch of each poly
+		let mut evals: Vec<Option<F>> = vec![None; self.batch_lengths[batch_id]];
+
+		for claim in claims {
+			let batch_ref = self.id_to_batch.get(&claim.id).unwrap();
+
+			let opt_other_eval = evals[batch_ref.idx_in_batch].replace(claim.eval);
+
+			// if two claims somehow end pointing into the same slot, check that they don't conflict
+			if opt_other_eval.map_or(false, |other_eval| other_eval != claim.eval) {
+				return Err(Error::ConflictingEvals(batch_id));
+			}
+		}
+
+		// strip the inner Option
+		let evals = evals
+			.into_iter()
+			.collect::<Option<Vec<_>>>()
+			.ok_or(Error::MissingEvals(batch_id))?;
+
+		let eval_point = first.eval_point.clone();
+
+		Ok(Some(SameQueryPcsClaim { eval_point, evals }))
+	}
+
+	/// Take out potentially non-same-query claims of a batch for additional processing - one example
+	/// would be an extra sumcheck round to convert non-same-query claims into same query claims
+	pub fn take_claims(&mut self, batch_id: BatchId) -> Result<Vec<CommittedEvalClaim<F>>, Error> {
+		let claims = self
+			.claims_by_batch
+			.get_mut(batch_id)
+			.ok_or(Error::UnknownBatchId(batch_id))?;
+
+		Ok(std::mem::take(claims))
+	}
 }
