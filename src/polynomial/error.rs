@@ -16,10 +16,10 @@ pub enum Error {
 	DomainSizeTooLarge,
 	#[error("block size must between 1 and {n_vars} (inclusive)")]
 	InvalidBlockSize { n_vars: usize },
-	#[error("shift offset must be at most {max_right_shift_offset}, got {right_shift_offset}")]
+	#[error("shift offset must be between 1 and {max_shift_offset} inclusive, got {shift_offset}")]
 	InvalidShiftOffset {
-		max_right_shift_offset: usize,
-		right_shift_offset: usize,
+		max_shift_offset: usize,
+		shift_offset: usize,
 	},
 	#[error("duplicate point in domain")]
 	DuplicateDomainPoint,

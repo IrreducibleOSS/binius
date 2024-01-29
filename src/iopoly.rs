@@ -17,6 +17,8 @@ pub enum Error {
 	CompositionMismatch,
 	#[error("expected the polynomial to have {expected} variables")]
 	IncorrectNumberOfVariables { expected: usize },
+	#[error("attempted to project more variables {values_len} than inner polynomial has {n_vars}")]
+	InvalidProjection { values_len: usize, n_vars: usize },
 	#[error("polynomial error")]
 	Polynomial(#[from] PolynomialError),
 	#[error(
@@ -46,36 +48,88 @@ pub enum MultilinearPolyOracle<F: Field> {
 	},
 	Interleaved(Box<MultilinearPolyOracle<F>>, Box<MultilinearPolyOracle<F>>),
 	Merged(Box<MultilinearPolyOracle<F>>, Box<MultilinearPolyOracle<F>>),
-	ProjectFirstVar {
-		inner: Box<MultilinearPolyOracle<F>>,
-		value: F,
-	},
-	ProjectLastVar {
-		inner: Box<MultilinearPolyOracle<F>>,
-		value: F,
-	},
+	Projected(Projected<F>),
 	Shifted(Shifted<F>),
 	Packed(Packed<F>),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ProjectionVariant {
+	FirstVars,
+	LastVars,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct Projected<F: Field> {
+	inner: Box<MultilinearPolyOracle<F>>,
+	values: Vec<F>,
+	projection_variant: ProjectionVariant,
+}
+impl<F: Field> Projected<F> {
+	pub fn new(
+		inner: MultilinearPolyOracle<F>,
+		values: Vec<F>,
+		projection_variant: ProjectionVariant,
+	) -> Result<Self, Error> {
+		let n_vars = inner.n_vars();
+		let values_len = values.len();
+		if values_len >= n_vars {
+			return Err(Error::InvalidProjection { n_vars, values_len });
+		}
+		Ok(Self {
+			inner: inner.into(),
+			values,
+			projection_variant,
+		})
+	}
+
+	fn n_vars(&self) -> usize {
+		self.inner.n_vars() - self.values.len()
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ShiftVariant {
+	CircularRight,
+	LogicalRight,
+	LogicalLeft,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct Shifted<F: Field> {
 	inner: Box<MultilinearPolyOracle<F>>,
-	shift: usize,
-	shift_bits: usize,
+	shift_offset: usize,
+	block_size: usize,
+	shift_variant: ShiftVariant,
 }
 
 impl<F: Field> Shifted<F> {
 	pub fn new(
 		inner: MultilinearPolyOracle<F>,
-		shift: usize,
-		shift_bits: usize,
+		shift_offset: usize,
+		block_size: usize,
+		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
-		// TODO: Validate result
+		if block_size > inner.n_vars() {
+			return Err(PolynomialError::InvalidBlockSize {
+				n_vars: inner.n_vars(),
+			}
+			.into());
+		}
+
+		if shift_offset == 0 || shift_offset >= block_size {
+			return Err(PolynomialError::InvalidShiftOffset {
+				max_shift_offset: (1 << block_size) - 1,
+				shift_offset,
+			}
+			.into());
+		}
+
 		Ok(Self {
 			inner: inner.into(),
-			shift,
-			shift_bits,
+			shift_offset,
+			block_size,
+			shift_variant,
 		})
 	}
 }
@@ -221,8 +275,13 @@ impl<F: Field> CompositePolyOracle<F> {
 }
 
 impl<F: Field> MultilinearPolyOracle<F> {
-	pub fn shifted(self, shift: usize, shift_bits: usize) -> Result<Self, Error> {
-		Ok(Self::Shifted(Shifted::new(self, shift, shift_bits)?))
+	pub fn shifted(
+		self,
+		shift: usize,
+		shift_bits: usize,
+		shift_variant: ShiftVariant,
+	) -> Result<Self, Error> {
+		Ok(Self::Shifted(Shifted::new(self, shift, shift_bits, shift_variant)?))
 	}
 
 	pub fn packed(self, log_degree: usize) -> Result<Self, Error> {
@@ -237,8 +296,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Repeating { inner, log_count } => inner.n_vars() + log_count,
 			Interleaved(poly0, ..) => 1 + poly0.n_vars(),
 			Merged(poly0, ..) => 1 + poly0.n_vars(),
-			ProjectFirstVar { inner, .. } => inner.n_vars() - 1,
-			ProjectLastVar { inner, .. } => inner.n_vars() - 1,
+			Projected(projected) => projected.n_vars(),
 			Shifted(shifted) => shifted.inner().n_vars(),
 			Packed(packed) => packed.inner().n_vars() - packed.log_degree(),
 		}
@@ -252,8 +310,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Repeating { inner, .. } => inner.binary_tower_level(),
 			Interleaved(poly0, poly1) => poly0.binary_tower_level().max(poly1.binary_tower_level()),
 			Merged(poly0, poly1) => poly0.binary_tower_level().max(poly1.binary_tower_level()),
-			ProjectFirstVar { inner, .. } => inner.binary_tower_level(),
-			ProjectLastVar { inner, .. } => inner.binary_tower_level(),
+			Projected(projected) => projected.inner().binary_tower_level(),
 			Shifted(shifted) => shifted.inner().binary_tower_level(),
 			Packed(packed) => packed.log_degree + packed.inner().binary_tower_level(),
 		}

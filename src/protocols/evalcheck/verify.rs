@@ -2,8 +2,9 @@
 
 use crate::{
 	field::Field,
-	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle},
+	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
 	polynomial::extrapolate_line,
+	protocols::evalcheck::evalcheck::ShiftedEvalClaim,
 };
 
 use super::{
@@ -15,6 +16,7 @@ pub fn verify<F: Field>(
 	evalcheck_claim: EvalcheckClaim<F>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
+	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
 ) -> Result<(), Error> {
 	let EvalcheckClaim {
 		poly,
@@ -68,7 +70,7 @@ pub fn verify<F: Field>(
 					is_random_point,
 				};
 
-				verify(subclaim, *subproof, batch_commited_eval_claims)?;
+				verify(subclaim, *subproof, batch_commited_eval_claims, shifted_eval_claims)?;
 			}
 			MultilinearPolyOracle::Interleaved(_poly1, _poly2) => {
 				// TODO: Implement interleaved reduction, similar to merged
@@ -99,7 +101,7 @@ pub fn verify<F: Field>(
 					eval: eval1,
 					is_random_point,
 				};
-				verify(claim1, *subproof1, batch_commited_eval_claims)?;
+				verify(claim1, *subproof1, batch_commited_eval_claims, shifted_eval_claims)?;
 
 				let claim2 = EvalcheckClaim {
 					poly: MultivariatePolyOracle::Multilinear(*poly2),
@@ -107,31 +109,46 @@ pub fn verify<F: Field>(
 					eval: eval2,
 					is_random_point,
 				};
-				verify(claim2, *subproof2, batch_commited_eval_claims)?;
+				verify(claim2, *subproof2, batch_commited_eval_claims, shifted_eval_claims)?;
 			}
-			MultilinearPolyOracle::ProjectFirstVar { inner, value } => {
-				eval_point.insert(0, value);
+			MultilinearPolyOracle::Projected(projected) => {
+				let (inner, values) = (projected.inner(), projected.values());
+				let eval_point = match projected.projection_variant() {
+					ProjectionVariant::LastVars => {
+						eval_point.extend(values);
+						eval_point
+					}
+					ProjectionVariant::FirstVars => {
+						values.iter().cloned().chain(eval_point).collect()
+					}
+				};
 				let new_claim = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*inner),
+					poly: MultivariatePolyOracle::Multilinear(*inner.clone()),
 					eval_point,
 					eval,
 					is_random_point,
 				};
-				verify(new_claim, evalcheck_proof, batch_commited_eval_claims)?;
+				verify(
+					new_claim,
+					evalcheck_proof,
+					batch_commited_eval_claims,
+					shifted_eval_claims,
+				)?;
 			}
-			MultilinearPolyOracle::ProjectLastVar { inner, value } => {
-				eval_point.push(value);
-				let new_claim = EvalcheckClaim {
-					poly: MultivariatePolyOracle::Multilinear(*inner),
+			MultilinearPolyOracle::Shifted(shifted) => {
+				match evalcheck_proof {
+					EvalcheckProof::Shifted => {}
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
+
+				let subclaim = ShiftedEvalClaim {
+					poly: *shifted.inner().clone(),
 					eval_point,
 					eval,
 					is_random_point,
+					shifted,
 				};
-				verify(new_claim, evalcheck_proof, batch_commited_eval_claims)?;
-			}
-			MultilinearPolyOracle::Shifted(_) => {
-				// TODO
-				todo!()
+				shifted_eval_claims.push(subclaim);
 			}
 			MultilinearPolyOracle::Packed(_) => {
 				// TODO
@@ -168,7 +185,7 @@ pub fn verify<F: Field>(
 						eval,
 						is_random_point,
 					};
-					verify(subclaim, subproof, batch_commited_eval_claims)
+					verify(subclaim, subproof, batch_commited_eval_claims, shifted_eval_claims)
 				})?;
 		}
 	}

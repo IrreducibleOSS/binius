@@ -41,7 +41,7 @@ use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 pub struct CircularRightShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
-	/// Right shift offset $o \in \{0, \ldots, 2^b - 1\}$
+	/// Right shift offset $o \in \{1, \ldots, 2^b - 1\}$
 	right_shift_offset: usize,
 	/// partial evaluation point $r$, typically lowest $b$ coords
 	/// from a larger challenge point.
@@ -120,7 +120,7 @@ impl<F: Field> CircularRightShiftIndPartialEval<F> {
 pub struct LogicalRightShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
-	/// Right shift offset $o \in \{0, \ldots, 2^b - 1\}$
+	/// Right shift offset $o \in \{1, \ldots, 2^b - 1\}$
 	right_shift_offset: usize,
 	/// partial evaluation point $r$, typically lowest $b$ coords
 	/// from a larger challenge point.
@@ -189,12 +189,11 @@ impl<F: Field> LogicalRightShiftIndPartialEval<F> {
 /// Then, by considering the index of each hypercube point in the above array, we observe:
 ///     * $f((1, 1), (0, 0)) = 1$ because $0 = 3 - o$
 /// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-/// Observe that even though the shift offset is $1$, the logical left shift amount here is $2^b - 1 = 3$.
 #[derive(Debug)]
 pub struct LogicalLeftShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
-	/// Left shift offset $o \in \{1, \ldots, 2^b\}$
+	/// Left shift offset $o \in \{1, \ldots, 2^b - 1\}$
 	left_shift_offset: usize,
 	/// partial evaluation point $r$, typically lowest $b$ coords
 	/// from a larger challenge point.
@@ -203,8 +202,7 @@ pub struct LogicalLeftShiftIndPartialEval<F: Field> {
 
 impl<F: Field> LogicalLeftShiftIndPartialEval<F> {
 	pub fn new(block_size: usize, left_shift_offset: usize, r: Vec<F>) -> Result<Self, Error> {
-		let right_shift_offset = get_right_shift_offset(block_size, left_shift_offset);
-		assert_valid_shift_ind_args(block_size, right_shift_offset, &r)?;
+		assert_valid_shift_ind_args(block_size, left_shift_offset, &r)?;
 		Ok(Self {
 			block_size,
 			left_shift_offset,
@@ -284,7 +282,7 @@ fn get_right_shift_offset(block_size: usize, left_shift_offset: usize) -> usize 
 /// Checks validity of shift indicator arguments
 fn assert_valid_shift_ind_args<F: Field>(
 	block_size: usize,
-	right_shift_offset: usize,
+	shift_offset: usize,
 	partial_query_point: &[F],
 ) -> Result<(), Error> {
 	if partial_query_point.len() != block_size {
@@ -292,10 +290,10 @@ fn assert_valid_shift_ind_args<F: Field>(
 			expected: block_size,
 		});
 	}
-	if right_shift_offset >= 1 << block_size {
+	if shift_offset == 0 || shift_offset >= 1 << block_size {
 		return Err(Error::InvalidShiftOffset {
-			max_right_shift_offset: (1 << block_size) - 1,
-			right_shift_offset,
+			max_shift_offset: (1 << block_size) - 1,
+			shift_offset,
 		});
 	}
 
@@ -474,7 +472,7 @@ mod tests {
 	#[test]
 	fn test_logical_right_shift_consistency_schwartz_zippel() {
 		for block_size in 2..=10 {
-			for right_shift_offset in [0, 1, 2, 3, (1 << block_size) - 1, (1 << block_size) / 2] {
+			for right_shift_offset in [1, 2, 3, (1 << block_size) - 1, (1 << block_size) / 2] {
 				test_logical_right_shift_consistency_help::<BinaryField32b>(
 					block_size,
 					right_shift_offset,
@@ -486,7 +484,7 @@ mod tests {
 	#[test]
 	fn test_circular_right_shift_consistency_schwartz_zippel() {
 		for block_size in 2..=10 {
-			for right_shift_offset in [0, 1, 2, 3, (1 << block_size) - 1, (1 << block_size) / 2] {
+			for right_shift_offset in [1, 2, 3, (1 << block_size) - 1, (1 << block_size) / 2] {
 				test_circular_right_shift_consistency_help::<BinaryField32b>(
 					block_size,
 					right_shift_offset,
@@ -498,14 +496,7 @@ mod tests {
 	#[test]
 	fn test_logical_left_shift_consistency_schwartz_zippel() {
 		for block_size in 2..=10 {
-			for left_shift_offset in [
-				1 << block_size,
-				1,
-				2,
-				3,
-				(1 << block_size) - 1,
-				(1 << block_size) / 2,
-			] {
+			for left_shift_offset in [1, 2, 3, (1 << block_size) - 1, (1 << block_size) / 2] {
 				test_logical_left_shift_consistency_help::<BinaryField32b>(
 					block_size,
 					left_shift_offset,
@@ -589,7 +580,6 @@ mod tests {
 	fn test_circular_right_shift_functionality() {
 		for block_size in 3..5 {
 			for right_shift_offset in [
-				0,
 				1,
 				3,
 				(1 << block_size) - 1,
@@ -607,7 +597,6 @@ mod tests {
 	fn test_logical_right_shift_functionality() {
 		for block_size in 3..5 {
 			for right_shift_offset in [
-				0,
 				1,
 				3,
 				(1 << block_size) - 1,
@@ -625,7 +614,6 @@ mod tests {
 	fn test_logical_left_shift_functionality() {
 		for block_size in 3..5 {
 			for left_shift_offset in [
-				1 << block_size,
 				1,
 				3,
 				(1 << block_size) - 1,

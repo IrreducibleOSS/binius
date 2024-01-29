@@ -11,7 +11,7 @@ use super::{
 	error::Error,
 	evalcheck::{
 		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim, EvalcheckProof,
-		EvalcheckWitness,
+		EvalcheckWitness, ShiftedEvalClaim,
 	},
 };
 
@@ -19,6 +19,7 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 	evalcheck_witness: EvalcheckWitness<F, M, BM>,
 	evalcheck_claim: EvalcheckClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
+	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
 ) -> Result<EvalcheckProof<F>, Error> {
 	let EvalcheckClaim {
 		poly,
@@ -40,6 +41,18 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 
 				batch_commited_eval_claims.insert(subclaim)?;
 				EvalcheckProof::Committed
+			}
+			MultilinearPolyOracle::Shifted(shifted) => {
+				let subclaim = ShiftedEvalClaim {
+					poly: *shifted.inner().clone(),
+					eval_point,
+					eval,
+					is_random_point,
+					shifted,
+				};
+
+				shifted_eval_claims.push(subclaim);
+				EvalcheckProof::Shifted
 			}
 
 			_ => todo!(),
@@ -69,7 +82,12 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 					is_random_point,
 				};
 
-				let subproof = prove::<F, M, &M>(subwitness, subclaim, batch_commited_eval_claims)?;
+				let subproof = prove::<F, M, &M>(
+					subwitness,
+					subclaim,
+					batch_commited_eval_claims,
+					shifted_eval_claims,
+				)?;
 
 				subproofs.push(subproof);
 			}

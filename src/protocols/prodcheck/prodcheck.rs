@@ -5,7 +5,10 @@ use std::sync::Arc;
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	iopoly::{
+		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, Projected,
+		ProjectionVariant,
+	},
 	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly},
 	protocols::{
 		evalcheck::evalcheck::{EvalcheckClaim, EvalcheckWitness},
@@ -90,30 +93,25 @@ pub fn reduce_prodcheck_claim<F: Field>(
 	let f_prime_oracle = grand_prod_oracle.clone();
 
 	// Construct f' partially evaluated oracles
-
 	// [f'](x, 0)
-	let f_prime_x_zero_oracle = MultilinearPolyOracle::ProjectLastVar {
-		inner: Box::new(f_prime_oracle.clone()),
-		value: F::ZERO,
-	};
+	let projected_zero_last =
+		Projected::new(f_prime_oracle.clone(), vec![F::ZERO], ProjectionVariant::LastVars)?;
+	let f_prime_x_zero_oracle = MultilinearPolyOracle::Projected(projected_zero_last);
 
 	// [f'](x, 1)
-	let f_prime_x_one_oracle = MultilinearPolyOracle::ProjectLastVar {
-		inner: Box::new(f_prime_oracle.clone()),
-		value: F::ONE,
-	};
+	let projected_one_last =
+		Projected::new(f_prime_oracle.clone(), vec![F::ONE], ProjectionVariant::LastVars)?;
+	let f_prime_x_one_oracle = MultilinearPolyOracle::Projected(projected_one_last);
 
 	// [f'](0, x)
-	let f_prime_zero_x_oracle = MultilinearPolyOracle::ProjectFirstVar {
-		inner: Box::new(f_prime_oracle.clone()),
-		value: F::ZERO,
-	};
+	let projected_zero_first =
+		Projected::new(f_prime_oracle.clone(), vec![F::ZERO], ProjectionVariant::FirstVars)?;
+	let f_prime_zero_x_oracle = MultilinearPolyOracle::Projected(projected_zero_first);
 
 	// [f'](1, x)
-	let f_prime_one_x_oracle = MultilinearPolyOracle::ProjectFirstVar {
-		inner: Box::new(f_prime_oracle),
-		value: F::ONE,
-	};
+	let projected_one_first =
+		Projected::new(f_prime_oracle.clone(), vec![F::ONE], ProjectionVariant::FirstVars)?;
+	let f_prime_one_x_oracle = MultilinearPolyOracle::Projected(projected_one_first);
 
 	// merge([T], [f'](x, 1))
 	// Note: What the paper calls "merge" is called "interleave" in the code

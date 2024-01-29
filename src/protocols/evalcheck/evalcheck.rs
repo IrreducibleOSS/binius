@@ -3,7 +3,7 @@
 use super::error::Error;
 use crate::{
 	field::Field,
-	iopoly::{CommittedId, MultivariatePolyOracle},
+	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle, Shifted},
 	polynomial::MultilinearComposite,
 };
 use std::{collections::HashMap, convert::AsRef};
@@ -20,6 +20,19 @@ pub struct EvalcheckClaim<F: Field> {
 	pub is_random_point: bool,
 }
 
+pub struct ShiftedEvalClaim<F: Field> {
+	/// Unshifted Virtual Polynomial Oracle for which the evaluation is claimed
+	pub poly: MultilinearPolyOracle<F>,
+	/// Evaluation Point
+	pub eval_point: Vec<F>,
+	/// Claimed Evaluation
+	pub eval: F,
+	/// Whether the evaluation point is random
+	pub is_random_point: bool,
+	/// Shift Description
+	pub shifted: Shifted<F>,
+}
+
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type EvalcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
 
@@ -27,6 +40,7 @@ pub type EvalcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
 pub enum EvalcheckProof<F: Field> {
 	Transparent,
 	Committed,
+	Shifted,
 	Repeating(Box<EvalcheckProof<F>>),
 	Merged {
 		eval1: F,

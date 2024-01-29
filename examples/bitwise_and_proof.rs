@@ -159,10 +159,16 @@ where
 		sumcheck_proof,
 	} = output;
 
-	let evalcheck_proof =
-		prove_evalcheck(evalcheck_witness, evalcheck_claim, &mut batch_committed_eval_claims)
-			.unwrap();
+	let mut shifted_eval_claims = Vec::new();
+	let evalcheck_proof = prove_evalcheck(
+		evalcheck_witness,
+		evalcheck_claim,
+		&mut batch_committed_eval_claims,
+		&mut shifted_eval_claims,
+	)
+	.unwrap();
 
+	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.get_same_query_pcs_claim(0)
@@ -262,9 +268,17 @@ fn verify<PCS, CH>(
 		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
 
 	// Verify commitment openings
+	let mut shifted_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
-	verify_evalcheck(evalcheck_claim, evalcheck_proof, &mut batch_committed_eval_claims).unwrap();
+	verify_evalcheck(
+		evalcheck_claim,
+		evalcheck_proof,
+		&mut batch_committed_eval_claims,
+		&mut shifted_eval_claims,
+	)
+	.unwrap();
 
+	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.get_same_query_pcs_claim(0)
