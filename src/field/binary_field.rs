@@ -3,6 +3,7 @@
 use bytemuck::{
 	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
 };
+use cfg_if::cfg_if;
 use ff::Field;
 use rand::{Rng, RngCore};
 use std::{
@@ -246,6 +247,37 @@ macro_rules! binary_field {
 	}
 }
 
+macro_rules! binary_subfield_mul_packed_128b {
+	($subfield_name:ident, $subfield_packed:ident) => {
+		cfg_if! {
+			// HACK: Carve-out for accelerated packed field arithmetic. This is temporary until the
+			// portable packed128b implementation is refactored to not rely on BinaryField mul.
+			if #[cfg(all(target_arch = "x86_64", target_feature = "gfni", target_feature = "sse2"))] {
+				impl Mul<$subfield_name> for BinaryField128b {
+					type Output = Self;
+
+					fn mul(self, rhs: $subfield_name) -> Self::Output {
+						use bytemuck::must_cast;
+						use crate::field::$subfield_packed;
+
+						let a = must_cast::<_, $subfield_packed>(self);
+						must_cast(a * rhs)
+					}
+				}
+			} else {
+				impl Mul<$subfield_name> for BinaryField128b {
+					type Output = Self;
+
+					fn mul(self, rhs: $subfield_name) -> Self::Output {
+						let (a, b) = self.into();
+						(a * rhs, b * rhs).into()
+					}
+				}
+			}
+		}
+	};
+}
+
 macro_rules! binary_subfield_mul {
 	// HACK: Special case when the subfield is GF(2)
 	(BinaryField1b, $name:ident) => {
@@ -256,6 +288,22 @@ macro_rules! binary_subfield_mul {
 				Self::conditional_select(&Self::ZERO, &self, rhs.0.into())
 			}
 		}
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField8b, BinaryField128b) => {
+		binary_subfield_mul_packed_128b!(BinaryField8b, PackedBinaryField16x8b);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField16b, BinaryField128b) => {
+		binary_subfield_mul_packed_128b!(BinaryField16b, PackedBinaryField8x16b);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField32b, BinaryField128b) => {
+		binary_subfield_mul_packed_128b!(BinaryField32b, PackedBinaryField4x32b);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField64b, BinaryField128b) => {
+		binary_subfield_mul_packed_128b!(BinaryField64b, PackedBinaryField2x64b);
 	};
 	($subfield_name:ident, $name:ident) => {
 		impl Mul<$subfield_name> for $name {
@@ -522,7 +570,25 @@ binary_tower_mul!(BinaryField8b);
 binary_tower_mul!(BinaryField16b);
 binary_tower_mul!(BinaryField32b);
 binary_tower_mul!(BinaryField64b);
-binary_tower_mul!(BinaryField128b);
+
+cfg_if! {
+	// HACK: Carve-out for accelerated packed field arithmetic. This is temporary until the
+	// portable packed128b implementation is refactored to not rely on BinaryField mul.
+	if #[cfg(all(target_arch = "x86_64", target_feature = "gfni", target_feature = "sse2"))] {
+		impl BinaryField128b {
+			fn multiply(self, rhs: Self) -> Self {
+				use bytemuck::must_cast;
+				use crate::field::PackedBinaryField1x128b;
+
+				let a = must_cast::<_, PackedBinaryField1x128b>(self);
+				let b = must_cast::<_, PackedBinaryField1x128b>(rhs);
+				must_cast(a * b)
+			}
+		}
+	} else {
+		binary_tower_mul!(BinaryField128b);
+	}
+}
 
 fn mul_bin_4b(a: u8, b: u8) -> u8 {
 	#[rustfmt::skip]
