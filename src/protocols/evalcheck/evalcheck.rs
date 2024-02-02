@@ -8,7 +8,7 @@ use crate::{
 };
 use std::{collections::HashMap, convert::AsRef};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EvalcheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
 	pub poly: MultivariatePolyOracle<F>,
