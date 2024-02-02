@@ -33,9 +33,6 @@ pub trait LinearCode {
 	/// The minimum distance between codewords.
 	fn min_dist(&self) -> usize;
 
-	/// The number of random queries required for the polynomial commitment opening proof.
-	fn n_test_queries(&self) -> usize;
-
 	/// The reciprocal of the rate, ie. `self.len() / self.dim()`.
 	fn inv_rate(&self) -> usize;
 

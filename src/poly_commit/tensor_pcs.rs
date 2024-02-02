@@ -4,14 +4,14 @@ use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
-use std::{iter::repeat_with, marker::PhantomData};
+use std::{iter::repeat_with, marker::PhantomData, mem};
 
 use super::error::{Error, VerificationError};
 use crate::{
 	field::{
 		get_packed_slice, iter_packed_slice, square_transpose, transpose_scalars, unpack_scalars,
-		unpack_scalars_mut, util::inner_product_unchecked, BinaryField8b, ExtensionField, Field,
-		PackedExtensionField, PackedField,
+		unpack_scalars_mut, util::inner_product_unchecked, BinaryField, BinaryField8b,
+		ExtensionField, Field, PackedExtensionField, PackedField,
 	},
 	hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher},
 	linear_code::LinearCode,
@@ -20,6 +20,7 @@ use crate::{
 	polynomial::{
 		multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
 	},
+	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 
 /// Creates a new multilinear from a batch of multilinears and a mixing challenge
@@ -117,6 +118,7 @@ where
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	log_rows: usize,
+	n_test_queries: usize,
 	code: LC,
 	vcs: VCS,
 	_p_marker: PhantomData<P>,
@@ -125,36 +127,39 @@ where
 	_ext_marker: PhantomData<PE>,
 }
 
-impl<P, PA, PI, PE, LC>
-	TensorPCS<
-		P,
-		PA,
-		PI,
-		PE,
-		LC,
-		GroestlHasher<PI>,
-		MerkleTreeVCS<
-			GroestlDigest,
-			GroestlDigest,
-			GroestlHasher<GroestlDigest>,
-			GroestlDigestCompression,
-		>,
-	> where
+type GroestlMerkleTreeVCS = MerkleTreeVCS<
+	GroestlDigest,
+	GroestlDigest,
+	GroestlHasher<GroestlDigest>,
+	GroestlDigestCompression,
+>;
+
+impl<P, PA, PI, PE, LC> TensorPCS<P, PA, PI, PE, LC, GroestlHasher<PI>, GroestlMerkleTreeVCS>
+where
 	P: PackedField,
 	PA: PackedField,
 	PI: PackedField + PackedExtensionField<BinaryField8b> + Sync,
 	PI::Scalar: ExtensionField<P::Scalar> + ExtensionField<BinaryField8b>,
 	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	PE::Scalar: ExtensionField<P::Scalar> + BinaryField,
 	LC: LinearCode<P = PA>,
 {
-	pub fn new_using_groestl_merkle_tree(log_rows: usize, code: LC) -> Result<Self, Error> {
+	pub fn new_using_groestl_merkle_tree(
+		log_rows: usize,
+		code: LC,
+		n_test_queries: usize,
+	) -> Result<Self, Error> {
 		// Check power of two length because MerkleTreeVCS requires it
 		if !code.len().is_power_of_two() {
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
 		let log_len = log2_strict_usize(code.len());
-		Self::new(log_rows, code, MerkleTreeVCS::new(log_len, GroestlDigestCompression))
+		Self::new(
+			log_rows,
+			code,
+			n_test_queries,
+			MerkleTreeVCS::new(log_len, GroestlDigestCompression),
+		)
 	}
 }
 
@@ -162,15 +167,14 @@ impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE>
 	for TensorPCS<P, PA, PI, PE, LC, H, VCS>
 where
 	F: Field,
-	P: PackedField<Scalar = F> + Send,
+	P: PackedField<Scalar = F>,
 	FA: Field,
 	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F> + ExtensionField<FA>,
 	PI: PackedField<Scalar = FI>
 		+ PackedExtensionField<FI>
 		+ PackedExtensionField<P>
-		+ PackedExtensionField<PA>
-		+ Sync,
+		+ PackedExtensionField<PA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
 	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
 	LC: LinearCode<P = PA>,
@@ -297,7 +301,7 @@ where
 
 		challenger.observe_slice(unpack_scalars(t_prime.evals()));
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))
-			.take(self.code.n_test_queries())
+			.take(self.n_test_queries)
 			.map(|index| {
 				let vcs_proof = self
 					.vcs
@@ -479,6 +483,12 @@ where
 
 		Ok(())
 	}
+
+	fn proof_size(&self, n_polys: usize) -> usize {
+		let t_prime_size = (mem::size_of::<PE>() << self.log_cols()) / PE::WIDTH;
+		let column_size = (mem::size_of::<PI>() << self.log_rows()) / PI::WIDTH;
+		t_prime_size + (n_polys * column_size + self.vcs.proof_size(n_polys)) * self.n_test_queries
+	}
 }
 
 impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
@@ -495,13 +505,38 @@ where
 	H: Hasher<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
+	/// The base-2 logarithm of the number of rows in the committed matrix.
+	pub fn log_rows(&self) -> usize {
+		self.log_rows
+	}
+
+	/// The base-2 logarithm of the number of columns in the pre-encoded matrix.
+	pub fn log_cols(&self) -> usize {
+		self.code.dim_bits() + log2_strict_usize(FI::DEGREE)
+	}
+}
+
+impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	FA: Field,
+	PA: PackedField<Scalar = FA>,
+	FI: ExtensionField<F>,
+	PI: PackedField<Scalar = FI>,
+	FE: ExtensionField<F> + BinaryField,
+	PE: PackedField<Scalar = FE>,
+	LC: LinearCode<P = PA>,
+	H: Hasher<PI>,
+	VCS: VectorCommitScheme<H::Digest>,
+{
 	/// Construct a [`TensorPCS`].
 	///
 	/// The constructor checks the validity of the type arguments and constructor arguments.
 	///
 	/// Throws if the linear code block length is not a power of 2.
 	/// Throws if the packing width does not divide the code dimension.
-	pub fn new(log_rows: usize, code: LC, vcs: VCS) -> Result<Self, Error> {
+	pub fn new(log_rows: usize, code: LC, n_test_queries: usize, vcs: VCS) -> Result<Self, Error> {
 		if !code.len().is_power_of_two() {
 			// This requirement is just to make sampling indices easier. With a little work it
 			// could be relaxed, but power-of-two code lengths are more convenient to work with.
@@ -511,7 +546,7 @@ where
 		if !<FI as ExtensionField<F>>::DEGREE.is_power_of_two() {
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
-		if !FE::DEGREE.is_power_of_two() {
+		if !<FE as ExtensionField<F>>::DEGREE.is_power_of_two() {
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 
@@ -530,6 +565,7 @@ where
 
 		Ok(Self {
 			log_rows,
+			n_test_queries,
 			code,
 			vcs,
 			_p_marker: PhantomData,
@@ -537,16 +573,6 @@ where
 			_h_marker: PhantomData,
 			_ext_marker: PhantomData,
 		})
-	}
-
-	/// The base-2 logarithm of the number of rows in the committed matrix.
-	pub fn log_rows(&self) -> usize {
-		self.log_rows
-	}
-
-	/// The base-2 logarithm of the number of columns in the pre-encoded matrix.
-	pub fn log_cols(&self) -> usize {
-		self.code.dim_bits() + log2_strict_usize(FI::DEGREE)
 	}
 }
 
@@ -574,7 +600,7 @@ where
 		let n_rows = 1 << self.log_rows;
 		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
-		let n_queries = self.code.n_test_queries();
+		let n_queries = self.n_test_queries;
 
 		if proof.vcs_proofs.len() != n_queries {
 			return Err(VerificationError::NumberOfOpeningProofs {
@@ -685,14 +711,180 @@ pub type BasicTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, P, PE, LC, H, 
 /// field of the polynomial's coefficient field.
 pub type BlockTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, PA, PE, LC, H, VCS>;
 
+pub fn calculate_n_test_queries<F: BinaryField, LC: LinearCode>(
+	security_bits: usize,
+	log_rows: usize,
+	code: &LC,
+) -> Result<usize, Error> {
+	// Assume we are limited by the non-proximal error term
+	let relative_dist = code.min_dist() as f64 / code.len() as f64;
+	let non_proximal_per_query_err = 1.0 - (relative_dist / 3.0);
+	let mut n_queries =
+		(-(security_bits as f64) / non_proximal_per_query_err.log2()).ceil() as usize;
+	for _ in 0..10 {
+		if calculate_error_bound::<F, _>(log_rows, code, n_queries) >= security_bits {
+			return Ok(n_queries);
+		}
+		n_queries += 1;
+	}
+	Err(Error::ParameterError)
+}
+
+/// Calculates the base-2 log soundness error bound when using general linear codes.
+///
+/// Returns the number of bits of security achieved with the given parameters. This is computed
+/// using the formulae in Section 3.5 of [DP23].
+///
+/// [DP23]: https://eprint.iacr.org/2023/1784
+fn calculate_error_bound<F: BinaryField, LC: LinearCode>(
+	log_rows: usize,
+	code: &LC,
+	n_queries: usize,
+) -> usize {
+	let e = (code.min_dist() - 1) / 3;
+	let relative_dist = code.min_dist() as f64 / code.len() as f64;
+	let tensor_batching_err = (2 * log_rows * (e + 1)) as f64 / 2.0_f64.powi(F::N_BITS as i32);
+	let non_proximal_err = (1.0 - relative_dist / 3.0).powi(n_queries as i32);
+	let proximal_err = (1.0 - 2.0 * relative_dist / 3.0).powi(n_queries as i32);
+	let total_err = (tensor_batching_err + non_proximal_err).max(proximal_err);
+	-total_err.log2() as usize
+}
+
+pub fn calculate_n_test_queries_reed_solomon<F, FE, P>(
+	security_bits: usize,
+	log_rows: usize,
+	code: &ReedSolomonCode<P>,
+) -> Result<usize, Error>
+where
+	F: BinaryField,
+	FE: BinaryField + ExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P::Scalar: BinaryField,
+{
+	// Assume we are limited by the non-proximal error term
+	let relative_dist = code.min_dist() as f64 / code.len() as f64;
+	let non_proximal_per_query_err = 1.0 - (relative_dist / 2.0);
+	let mut n_queries =
+		(-(security_bits as f64) / non_proximal_per_query_err.log2()).ceil() as usize;
+	for _ in 0..10 {
+		if calculate_error_bound_reed_solomon::<_, FE, _>(log_rows, code, n_queries)
+			>= security_bits
+		{
+			return Ok(n_queries);
+		}
+		n_queries += 1;
+	}
+	Err(Error::ParameterError)
+}
+
+/// Calculates the base-2 log soundness error bound when using Reed–Solomon codes.
+///
+/// Returns the number of bits of security achieved with the given parameters. This is computed
+/// using the formulae in Section 3.5 of [DP23]. We use the improved proximity gap result for
+/// Reed–Solomon codes, following Remark 3.18 in [DP23].
+///
+/// [DP23]: https://eprint.iacr.org/2023/1784
+fn calculate_error_bound_reed_solomon<F, FE, P>(
+	log_rows: usize,
+	code: &ReedSolomonCode<P>,
+	n_queries: usize,
+) -> usize
+where
+	F: BinaryField,
+	FE: BinaryField + ExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P::Scalar: BinaryField,
+{
+	let e = (code.min_dist() - 1) / 2;
+	let relative_dist = code.min_dist() as f64 / code.len() as f64;
+	let tensor_batching_err = (2 * log_rows * (e + 1)) as f64 / 2.0_f64.powi(FE::N_BITS as i32);
+	let non_proximal_err = (1.0 - (relative_dist / 2.0)).powi(n_queries as i32);
+	let proximal_err = (1.0 - relative_dist / 2.0).powi(n_queries as i32);
+	let total_err = (tensor_batching_err + non_proximal_err).max(proximal_err);
+	-total_err.log2() as usize
+}
+
+/// Find the TensorPCS parameterization that optimizes proof size.
+///
+/// This constructs a TensorPCS using a Reed-Solomon code and a Merkle tree using Groestl.
+#[allow(clippy::type_complexity)]
+pub fn find_proof_size_optimal_pcs<F, P, FA, PA, FI, PI, FE, PE>(
+	security_bits: usize,
+	n_vars: usize,
+	n_polys: usize,
+	log_inv_rate: usize,
+	conservative_testing: bool,
+) -> Option<TensorPCS<P, PA, PI, PE, ReedSolomonCode<PA>, GroestlHasher<PI>, GroestlMerkleTreeVCS>>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	FA: BinaryField,
+	PA: PackedField<Scalar = FA> + PackedExtensionField<FA>,
+	FI: ExtensionField<F> + ExtensionField<FA> + ExtensionField<BinaryField8b>,
+	PI: PackedField<Scalar = FI>
+		+ PackedExtensionField<BinaryField8b>
+		+ PackedExtensionField<FI>
+		+ PackedExtensionField<P>
+		+ PackedExtensionField<PA>,
+	FE: BinaryField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
+	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
+{
+	let mut best_proof_size = None;
+	let mut best_pcs = None;
+	let log_degree = log2_strict_usize(<PI::Scalar as ExtensionField<P::Scalar>>::DEGREE);
+
+	for log_rows in 0..=(n_vars - log_degree) {
+		let log_dim = n_vars - log_rows - log_degree;
+		let rs_code = match ReedSolomonCode::new(log_dim, log_inv_rate) {
+			Ok(rs_code) => rs_code,
+			Err(_) => continue,
+		};
+
+		let n_test_queries_result = if conservative_testing {
+			calculate_n_test_queries::<FE, _>(security_bits, log_rows, &rs_code)
+		} else {
+			calculate_n_test_queries_reed_solomon::<_, FE, _>(security_bits, log_rows, &rs_code)
+		};
+		let n_test_queries = match n_test_queries_result {
+			Ok(n_test_queries) => n_test_queries,
+			Err(_) => continue,
+		};
+
+		let pcs = match TensorPCS::<P, PA, PI, PE, _, _, _>::new_using_groestl_merkle_tree(
+			log_rows,
+			rs_code,
+			n_test_queries,
+		) {
+			Ok(pcs) => pcs,
+			Err(_) => continue,
+		};
+
+		match best_proof_size {
+			None => {
+				best_proof_size = Some(pcs.proof_size(n_polys));
+				best_pcs = Some(pcs);
+			}
+			Some(current_best) => {
+				let proof_size = pcs.proof_size(n_polys);
+				if proof_size < current_best {
+					best_proof_size = Some(proof_size);
+					best_pcs = Some(pcs);
+				}
+			}
+		}
+	}
+
+	best_pcs
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::{
 		challenger::HashChallenger,
 		field::{
-			PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-			PackedBinaryField4x32b,
+			BinaryField128b, PackedBinaryField128x1b, PackedBinaryField16x8b,
+			PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b,
 		},
 		polynomial::multilinear_query::MultilinearQuery,
 		reed_solomon::reed_solomon::ReedSolomonCode,
@@ -704,9 +896,12 @@ mod tests {
 	fn test_simple_commit_prove_verify_without_error() {
 		type Packed = PackedBinaryField16x8b;
 
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
+				.unwrap();
 		let pcs =
-			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code).unwrap();
+			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| Packed::random(&mut rng))
@@ -741,9 +936,12 @@ mod tests {
 	fn test_simple_commit_prove_verify_batch_without_error() {
 		type Packed = PackedBinaryField16x8b;
 
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
+				.unwrap();
 		let pcs =
-			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code).unwrap();
+			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let batch_size = thread_rng().gen_range(1..=10);
@@ -783,7 +981,10 @@ mod tests {
 
 	#[test]
 	fn test_packed_1b_commit_prove_verify_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
+				.unwrap();
 		let pcs = <BlockTensorPCS<
 			PackedBinaryField128x1b,
 			PackedBinaryField16x8b,
@@ -791,7 +992,7 @@ mod tests {
 			_,
 			_,
 			_,
-		>>::new_using_groestl_merkle_tree(8, rs_code)
+		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
 		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -825,7 +1026,10 @@ mod tests {
 
 	#[test]
 	fn test_packed_1b_commit_prove_verify_batch_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
+				.unwrap();
 		let pcs = <BlockTensorPCS<
 			PackedBinaryField128x1b,
 			PackedBinaryField16x8b,
@@ -833,7 +1037,7 @@ mod tests {
 			_,
 			_,
 			_,
-		>>::new_using_groestl_merkle_tree(8, rs_code)
+		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
 		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -873,7 +1077,10 @@ mod tests {
 
 	#[test]
 	fn test_packed_32b_commit_prove_verify_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
+				.unwrap();
 		let pcs = <BasicTensorPCS<
 			PackedBinaryField4x32b,
 			PackedBinaryField16x8b,
@@ -881,7 +1088,7 @@ mod tests {
 			_,
 			_,
 			_,
-		>>::new_using_groestl_merkle_tree(8, rs_code)
+		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
 		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -915,7 +1122,10 @@ mod tests {
 
 	#[test]
 	fn test_packed_32b_commit_prove_verify_batch_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2, 12).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
+				.unwrap();
 		let pcs = <BasicTensorPCS<
 			PackedBinaryField4x32b,
 			PackedBinaryField16x8b,
@@ -923,7 +1133,7 @@ mod tests {
 			_,
 			_,
 			_,
-		>>::new_using_groestl_merkle_tree(8, rs_code)
+		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
 		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -959,5 +1169,93 @@ mod tests {
 		let mut verify_challenger = challenger.clone();
 		pcs.verify_evaluation(&mut verify_challenger, &commitment, &query, proof, &values)
 			.unwrap();
+	}
+
+	#[test]
+	fn test_proof_size() {
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
+				.unwrap();
+		let pcs = <BasicTensorPCS<
+			PackedBinaryField4x32b,
+			PackedBinaryField16x8b,
+			PackedBinaryField1x128b,
+			_,
+			_,
+			_,
+		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
+		.unwrap();
+
+		assert_eq!(pcs.proof_size(1), 182720);
+		assert_eq!(pcs.proof_size(2), 332224);
+	}
+
+	#[test]
+	fn test_proof_size_optimal_block_pcs() {
+		let pcs = find_proof_size_optimal_pcs::<
+			_,
+			PackedBinaryField128x1b,
+			_,
+			PackedBinaryField8x16b,
+			_,
+			PackedBinaryField8x16b,
+			_,
+			PackedBinaryField1x128b,
+		>(100, 28, 1, 2, false)
+		.unwrap();
+		assert_eq!(pcs.n_vars(), 28);
+		assert_eq!(pcs.log_rows(), 12);
+		assert_eq!(pcs.log_cols(), 16);
+
+		// Matrix should be wider with more polynomials per batch.
+		let pcs = find_proof_size_optimal_pcs::<
+			_,
+			PackedBinaryField128x1b,
+			_,
+			PackedBinaryField8x16b,
+			_,
+			PackedBinaryField8x16b,
+			_,
+			PackedBinaryField1x128b,
+		>(100, 28, 8, 2, false)
+		.unwrap();
+		assert_eq!(pcs.n_vars(), 28);
+		assert_eq!(pcs.log_rows(), 10);
+		assert_eq!(pcs.log_cols(), 18);
+	}
+
+	#[test]
+	fn test_proof_size_optimal_basic_pcs() {
+		let pcs = find_proof_size_optimal_pcs::<
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField1x128b,
+		>(100, 28, 1, 2, false)
+		.unwrap();
+		assert_eq!(pcs.n_vars(), 28);
+		assert_eq!(pcs.log_rows(), 11);
+		assert_eq!(pcs.log_cols(), 17);
+
+		// Matrix should be wider with more polynomials per batch.
+		let pcs = find_proof_size_optimal_pcs::<
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField4x32b,
+			_,
+			PackedBinaryField1x128b,
+		>(100, 28, 8, 2, false)
+		.unwrap();
+		assert_eq!(pcs.n_vars(), 28);
+		assert_eq!(pcs.log_rows(), 10);
+		assert_eq!(pcs.log_cols(), 18);
 	}
 }

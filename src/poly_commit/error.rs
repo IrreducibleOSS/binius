@@ -20,6 +20,8 @@ pub enum Error {
 	PackingWidthMustDivideNumberOfRows,
 	#[error("error in batching: {err_str}")]
 	NumBatchedMismatchError { err_str: String },
+	#[error("cannot calculate parameters satisfying the security target")]
+	ParameterError,
 	#[error("field error: {0}")]
 	Field(#[from] field::Error),
 	#[error("polynomial error: {0}")]

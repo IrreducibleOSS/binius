@@ -6,7 +6,7 @@ use binius::{
 	},
 	hash::GroestlHasher,
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
-	poly_commit::{BlockTensorPCS, PolyCommitScheme},
+	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
 		MultilinearExtension, MultilinearPoly,
@@ -25,7 +25,6 @@ use binius::{
 			zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 		},
 	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
@@ -298,15 +297,30 @@ fn verify<PCS, CH>(
 fn main() {
 	tracing_subscriber::fmt::init();
 
+	const SECURITY_BITS: usize = 100;
+
 	let log_size = 20;
+	let log_inv_rate = 1;
 
 	// Set up the public parameters
-	let rs_code = ReedSolomonCode::<PackedBinaryField8x16b>::new(8, 1, 64).unwrap();
-	let pcs =
-		BlockTensorPCS::<_, _, PackedBinaryField1x128b, _, _, _>::new_using_groestl_merkle_tree(
-			8, rs_code,
-		)
-		.unwrap();
+	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
+		_,
+		PackedBinaryField128x1b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField1x128b,
+	>(SECURITY_BITS, log_size, 3, log_inv_rate, false)
+	.unwrap();
+
+	tracing::debug!(
+		"Using BlockTensorPCS with log_rows = {}, log_cols = {}, proof_size = {}",
+		pcs.log_rows(),
+		pcs.log_cols(),
+		pcs.proof_size(3),
+	);
 
 	tracing::info!("Generating the trace");
 

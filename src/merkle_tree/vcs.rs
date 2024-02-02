@@ -9,6 +9,7 @@ pub trait VectorCommitScheme<T> {
 	type Proof;
 	type Error: std::error::Error + 'static;
 
+	/// Returns the length of the vectors that can be committed.
 	fn vector_len(&self) -> usize;
 
 	/// Commit a batch of vectors.
@@ -32,4 +33,7 @@ pub trait VectorCommitScheme<T> {
 		proof: Self::Proof,
 		values: impl Iterator<Item = T>,
 	) -> Result<(), Self::Error>;
+
+	/// Returns the byte-size of a proof.
+	fn proof_size(&self, n_vecs: usize) -> usize;
 }

@@ -46,4 +46,7 @@ where
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanSample<FE> + CanSampleBits<usize>;
+
+	/// Return the byte-size of a proof.
+	fn proof_size(&self, n_polys: usize) -> usize;
 }

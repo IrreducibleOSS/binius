@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{iter::repeat_with, marker::PhantomData, slice};
+use std::{iter::repeat_with, marker::PhantomData, mem, slice};
 
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
@@ -239,6 +239,10 @@ where
 			Err(VerificationError::MerkleRootMismatch.into())
 		}
 	}
+
+	fn proof_size(&self, _n_vecs: usize) -> usize {
+		self.log_len * mem::size_of::<D>()
+	}
 }
 
 #[cfg(test)]
@@ -351,5 +355,15 @@ mod tests {
 			vcs.verify_batch_opening(&commitment, 6, corrupted_proof, values.clone()),
 			Err(Error::Verification(VerificationError::IncorrectBranchLength { .. }))
 		);
+	}
+
+	#[test]
+	fn test_proof_size() {
+		let vcs = <MerkleTreeVCS<BinaryField16b, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression,
+		);
+		assert_eq!(vcs.proof_size(1), 4 * 32);
+		assert_eq!(vcs.proof_size(2), 4 * 32);
 	}
 }
