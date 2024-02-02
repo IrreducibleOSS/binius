@@ -15,7 +15,7 @@ clippy:
     - binius
   stage: lint
   script:
-    - cargo clippy --all --all-features -- -D warnings
+    - cargo clippy --all --all-features --tests --benches --examples -- -D warnings
 
 build-debug:
   tags:

@@ -187,7 +187,6 @@ mod tests {
 		.unwrap();
 
 		let suboracles = (0..4)
-			.into_iter()
 			.map(|id| MultilinearPolyOracle::<EF>::Committed {
 				id,
 				n_vars: log_size,

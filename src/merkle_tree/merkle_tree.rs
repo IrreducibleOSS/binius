@@ -287,7 +287,7 @@ mod tests {
 
 		for i in 0..16 {
 			let proof = vcs.prove_batch_opening(&tree, i).unwrap();
-			let values = vecs.iter().map(|vec| vec[i].clone());
+			let values = vecs.iter().map(|vec| vec[i]);
 			vcs.verify_batch_opening(&commitment, i, proof, values)
 				.unwrap();
 		}
@@ -311,7 +311,7 @@ mod tests {
 		assert_eq!(commitment, tree.root());
 
 		let proof = vcs.prove_batch_opening(&tree, 6).unwrap();
-		let values = vecs.iter().map(|vec| vec[6].clone());
+		let values = vecs.iter().map(|vec| vec[6]);
 		assert!(vcs
 			.verify_batch_opening(&commitment, 6, proof.clone(), values.clone())
 			.is_ok());
@@ -330,7 +330,7 @@ mod tests {
 
 		// Case: corrupted proof
 		let mut corrupted_proof = proof.clone();
-		corrupted_proof[1] = corrupted_proof[0].clone();
+		corrupted_proof[1] = corrupted_proof[0];
 		assert_matches!(
 			vcs.verify_batch_opening(&commitment, 6, corrupted_proof, values.clone()),
 			Err(Error::Verification(VerificationError::MerkleRootMismatch))

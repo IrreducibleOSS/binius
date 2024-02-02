@@ -43,11 +43,11 @@ mod tests {
 			.take(P::WIDTH)
 			.collect::<Vec<P::Scalar>>();
 
-		for i in 0..P::WIDTH {
-			elem.set(i, scalars[i]);
+		for (i, val) in scalars.iter().enumerate() {
+			elem.set(i, *val);
 		}
-		for i in 0..P::WIDTH {
-			assert_eq!(elem.get(i), scalars[i]);
+		for (i, val) in scalars.iter().enumerate() {
+			assert_eq!(elem.get(i), *val);
 		}
 	}
 
