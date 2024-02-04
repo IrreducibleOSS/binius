@@ -1,10 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use std::cmp::max;
+
+use super::util::tensor_prod_eq_ind;
 use crate::{
 	field::{Field, PackedField},
 	polynomial::Error as PolynomialError,
 };
-use rayon::prelude::*;
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -57,39 +59,16 @@ impl<P: PackedField> MultilinearQuery<P> {
 	pub fn update(self, extra_query_coordinates: &[P::Scalar]) -> Result<Self, PolynomialError> {
 		let old_n_vars = self.n_vars;
 		let new_n_vars = old_n_vars + extra_query_coordinates.len();
-		let new_length = (1 << new_n_vars) / P::WIDTH;
+		let new_length = max((1 << new_n_vars) / P::WIDTH, 1);
 		if new_length > self.expanded_query.capacity() {
 			return Err(PolynomialError::MultilinearQueryFull {
 				max_query_vars: old_n_vars,
 			});
 		}
 		let mut new_expanded_query = self.expanded_query;
+		new_expanded_query.resize(new_length, P::default());
+		tensor_prod_eq_ind(old_n_vars, &mut new_expanded_query[..], extra_query_coordinates)?;
 
-		for (i, challenge) in extra_query_coordinates.iter().enumerate() {
-			let prev_length = 1 << (old_n_vars + i);
-			if prev_length < P::WIDTH {
-				let q = &mut new_expanded_query[0];
-				for h in 0..prev_length {
-					let x = q.get(h);
-					let prod = x * challenge;
-					q.set(h, x - prod);
-					q.set(prev_length | h, prod);
-				}
-			} else {
-				let prev_length = prev_length / P::WIDTH;
-				let challenge = P::broadcast(*challenge);
-				new_expanded_query.extend_from_within(0..prev_length);
-				let (xs, ys) = new_expanded_query.split_at_mut(prev_length);
-				xs.par_iter_mut().zip(ys.par_iter_mut()).for_each(|(x, y)| {
-					// x = x * (1 - challenge) = x - x * challenge
-					// y = x * challenge
-					// Notice that we can reuse the multiplication: (x * challenge)
-					let prod = (*x) * challenge;
-					*x -= prod;
-					*y = prod;
-				});
-			}
-		}
 		Ok(Self {
 			expanded_query: new_expanded_query,
 			n_vars: new_n_vars,

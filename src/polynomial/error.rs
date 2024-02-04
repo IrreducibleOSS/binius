@@ -14,6 +14,8 @@ pub enum Error {
 	ExtrapolateNumberOfEvaluations,
 	#[error("domain size is larger than the field")]
 	DomainSizeTooLarge,
+	#[error("the inputted packed values slice had an unexpected length")]
+	InvalidPackedValuesLength,
 	#[error("block size must between 1 and {n_vars} (inclusive)")]
 	InvalidBlockSize { n_vars: usize },
 	#[error("shift offset must be between 1 and {max_shift_offset} inclusive, got {shift_offset}")]
