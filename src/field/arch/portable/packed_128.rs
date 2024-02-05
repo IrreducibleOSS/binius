@@ -11,7 +11,6 @@ use crate::{
 use bytemuck::{
 	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
 };
-use p3_util::log2_strict_usize;
 use rand::{Rng, RngCore};
 use static_assertions::const_assert_eq;
 use std::{
@@ -22,8 +21,8 @@ use std::{
 use subtle::{Choice, ConstantTimeEq};
 
 macro_rules! packed_binary_field_u128 {
-	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); $width:literal]) => {
-		const_assert_eq!($scalar::N_BITS * $width, 128);
+	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); 1 << $log_width:literal]) => {
+		const_assert_eq!($scalar::N_BITS << $log_width, 128);
 
 		#[derive(Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
@@ -140,7 +139,7 @@ macro_rules! packed_binary_field_u128 {
 		impl PackedField for $name {
 			type Scalar = $scalar;
 
-			const WIDTH: usize = $width;
+			const LOG_WIDTH: usize = $log_width;
 
 			fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 				(i < Self::WIDTH)
@@ -183,19 +182,18 @@ macro_rules! packed_binary_field_u128 {
 				Self::broadcast(scalar)
 			}
 
-			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
-				assert_eq!(Self::WIDTH % (2 * block_len), 0);
-				let log_block_len = log2_strict_usize(block_len);
-				let log_bit_len = log2_strict_usize(Self::Scalar::N_BITS);
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				assert!(log_block_len < Self::LOG_WIDTH);
+				let log_bit_len = Self::Scalar::N_BITS.ilog2() as usize;
 				let (c, d) = interleave_bits(self.0, other.0, log_block_len + log_bit_len);
 				(Self(c), Self(d))
 			}
 		}
 
-		impl From<[$scalar; $width]> for $name {
-			fn from(scalars: [$scalar; $width]) -> Self {
+		impl From<[$scalar; 1 << $log_width]> for $name {
+			fn from(scalars: [$scalar; 1 << $log_width]) -> Self {
 				let mut value = 0u128;
-				for i in (0..$width).rev() {
+				for i in (0..1 << $log_width).rev() {
 					match value.overflowing_shl($scalar::N_BITS as u32) {
 						(shl, false) => value = shl | scalars[i].0 as u128,
 						_ => panic!("impossible condition if macro is called correctly"),
@@ -275,14 +273,14 @@ macro_rules! impl_unpackable_packed_binary_field_u128 {
 	};
 }
 
-packed_binary_field_u128!(pub PackedBinaryField128x1b[BinaryField1b(u8); 128]);
-packed_binary_field_u128!(pub PackedBinaryField64x2b[BinaryField2b(u8); 64]);
-packed_binary_field_u128!(pub PackedBinaryField32x4b[BinaryField4b(u8); 32]);
-packed_binary_field_u128!(pub PackedBinaryField16x8b[BinaryField8b(u8); 16]);
-packed_binary_field_u128!(pub PackedBinaryField8x16b[BinaryField16b(u16); 8]);
-packed_binary_field_u128!(pub PackedBinaryField4x32b[BinaryField32b(u32); 4]);
-packed_binary_field_u128!(pub PackedBinaryField2x64b[BinaryField64b(u64); 2]);
-packed_binary_field_u128!(pub PackedBinaryField1x128b[BinaryField128b(u128); 1]);
+packed_binary_field_u128!(pub PackedBinaryField128x1b[BinaryField1b(u8); 1 << 7]);
+packed_binary_field_u128!(pub PackedBinaryField64x2b[BinaryField2b(u8); 1 << 6]);
+packed_binary_field_u128!(pub PackedBinaryField32x4b[BinaryField4b(u8); 1 << 5]);
+packed_binary_field_u128!(pub PackedBinaryField16x8b[BinaryField8b(u8); 1 << 4]);
+packed_binary_field_u128!(pub PackedBinaryField8x16b[BinaryField16b(u16); 1 << 3]);
+packed_binary_field_u128!(pub PackedBinaryField4x32b[BinaryField32b(u32); 1 << 2]);
+packed_binary_field_u128!(pub PackedBinaryField2x64b[BinaryField64b(u64); 1 << 1]);
+packed_binary_field_u128!(pub PackedBinaryField1x128b[BinaryField128b(u128); 1 << 0]);
 
 impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField64x2b, LOG_BITS = 1);
 impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField32x4b, LOG_BITS = 2);

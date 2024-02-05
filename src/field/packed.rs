@@ -14,6 +14,11 @@ use subtle::ConstantTimeEq;
 
 use super::Error;
 
+/// A packed field represents a vector of underlying field elements.
+///
+/// Arithmetic operations on packed field elements can be accelerated with SIMD CPU instructions.
+/// The vector width is a constant, `WIDTH`. This trait requires that the width must be a power of
+/// two.
 pub trait PackedField:
 	Default
 	+ Clone
@@ -42,9 +47,13 @@ pub trait PackedField:
 {
 	type Scalar: Field;
 
-	// TODO: WIDTH should probably be required to be power of two
-	const WIDTH: usize;
-	const LOG_WIDTH: usize = Self::WIDTH.ilog2() as usize;
+	/// Base-2 logarithm of the number of field elements packed into one packed element.
+	const LOG_WIDTH: usize;
+
+	/// The number of field elements packed into one packed element.
+	///
+	/// WIDTH is guaranteed to equal 2^LOG_WIDTH.
+	const WIDTH: usize = 1 << Self::LOG_WIDTH;
 
 	/// Get the scalar at a given index.
 	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error>;
@@ -73,9 +82,22 @@ pub trait PackedField:
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
 
-	// TODO: This should return a Result
-	// TODO: Change block_len to log_block_len
-	fn interleave(self, other: Self, block_len: usize) -> (Self, Self);
+	/// Interleaves blocks of this packed vector with another packed vector.
+	///
+	/// The operation can be seen as stacking the two vectors, dividing them into 2x2 matrices of
+	/// blocks, where each block is 2^`log_block_width` elements, and transposing the matrices.
+	///
+	/// Consider this example, where `LOG_WIDTH` is 3 and `log_block_len` is 1:
+	///     A = [a0, a1, a2, a3, a4, a5, a6, a7]
+	///     B = [b0, b1, b2, b3, b4, b5, b6, b7]
+	///
+	/// The interleaved result is
+	///     A' = [a0, a1, b0, b1, a4, a5, b4, b5]
+	///     B' = [a2, a3, b2, b3, a6, a7, b6, b7]
+	///
+	/// ## Preconditions
+	/// * `log_block_len` must be strictly less than `LOG_WIDTH`.
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self);
 }
 
 pub fn iter_packed_slice<P: PackedField>(packed: &[P]) -> impl Iterator<Item = P::Scalar> + '_ {
@@ -120,7 +142,7 @@ pub fn set_packed_slice_checked<P: PackedField>(
 impl<F: Field> PackedField for F {
 	type Scalar = F;
 
-	const WIDTH: usize = 1;
+	const LOG_WIDTH: usize = 0;
 
 	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 		(i == 0)
@@ -146,7 +168,7 @@ impl<F: Field> PackedField for F {
 		scalar
 	}
 
-	fn interleave(self, _other: Self, _block_len: usize) -> (Self, Self) {
+	fn interleave(self, _other: Self, _log_block_len: usize) -> (Self, Self) {
 		panic!("cannot interleave when WIDTH = 1");
 	}
 }

@@ -61,7 +61,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 
 				let v0 = elems[idx0];
 				let v1 = elems[idx1];
-				let (v0, v1) = v0.interleave(v1, 1 << i);
+				let (v0, v1) = v0.interleave(v1, i);
 				elems[idx0] = v0;
 				elems[idx1] = v1;
 			}

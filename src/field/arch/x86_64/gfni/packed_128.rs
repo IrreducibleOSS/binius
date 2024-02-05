@@ -29,7 +29,7 @@ use crate::{
 };
 
 macro_rules! binary_tower_packed_shared {
-	($vis:vis $name:ident, Scalar = $scalar_ty:ty, WIDTH = $width:literal) => {
+	($vis:vis $name:ident[$scalar_ty:ty; 1 << $width:literal]) => {
 		#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 		#[repr(transparent)]
 		$vis struct $name(__m128i);
@@ -163,19 +163,15 @@ macro_rules! binary_tower_packed_shared {
 }
 
 macro_rules! binary_tower_packed_bits {
-	(
-		$vis:vis $name:ident,
-		Scalar = $scalar_ty:ty,
-		WIDTH = $width:literal
-	) => {
-		binary_tower_packed_shared!($vis $name, Scalar = $scalar_ty, WIDTH = $width);
+	($vis:vis $name:ident[$scalar_ty:ty; 1 << $log_width:literal]) => {
+		binary_tower_packed_shared!($vis $name[$scalar_ty; 1 << $log_width]);
 
 		assert_eq_size!($scalar_ty, u8);
 
 		impl PackedField for $name {
 			type Scalar = $scalar_ty;
 
-			const WIDTH: usize = $width;
+			const LOG_WIDTH: usize = $log_width;
 
 			fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 				(i < Self::WIDTH)
@@ -204,9 +200,11 @@ macro_rules! binary_tower_packed_bits {
 				todo!("broadcast")
 			}
 
-			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				assert!(log_block_len < Self::LOG_WIDTH);
+				let log_bit_width = Self::Scalar::N_BITS.ilog2() as usize;
 				let (a, b) = unsafe {
-					interleave_bits(self.0, other.0, block_len * 128 / Self::WIDTH)
+					interleave_bits(self.0, other.0, log_block_len + log_bit_width)
 				};
 				(Self(a), Self(b))
 			}
@@ -215,13 +213,13 @@ macro_rules! binary_tower_packed_bits {
 }
 
 macro_rules! binary_tower_packed_bytes {
-	($vis:vis $name:ident, Scalar = $scalar_ty:ty, WIDTH = $width:literal) => {
-		binary_tower_packed_shared!($vis $name, Scalar = $scalar_ty, WIDTH = $width);
+	($vis:vis $name:ident[$scalar_ty:ty; 1 << $log_width:literal]) => {
+		binary_tower_packed_shared!($vis $name[$scalar_ty; 1 << $log_width]);
 
-		assert_eq_size!([$scalar_ty; $width], $name);
+		assert_eq_size!([$scalar_ty; 1 << $log_width], $name);
 
-		impl From<[$scalar_ty; $width]> for $name {
-			fn from(val: [$scalar_ty; $width]) -> Self {
+		impl From<[$scalar_ty; 1 << $log_width]> for $name {
+			fn from(val: [$scalar_ty; 1 << $log_width]) -> Self {
 				Self(unsafe { _mm_loadu_si128(val.as_ptr() as *const __m128i) })
 			}
 		}
@@ -229,7 +227,7 @@ macro_rules! binary_tower_packed_bytes {
 		impl PackedField for $name {
 			type Scalar = $scalar_ty;
 
-			const WIDTH: usize = $width;
+			const LOG_WIDTH: usize = $log_width;
 
 			fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 				(i < Self::WIDTH)
@@ -252,9 +250,11 @@ macro_rules! binary_tower_packed_bytes {
 				must_cast([scalar; Self::WIDTH])
 			}
 
-			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				assert!(log_block_len < Self::LOG_WIDTH);
+				let log_bit_width = Self::Scalar::N_BITS.ilog2() as usize;
 				let (a, b) = unsafe {
-					interleave_bits(self.0, other.0, block_len * 128 / Self::WIDTH)
+					interleave_bits(self.0, other.0, log_block_len + log_bit_width)
 				};
 				(Self(a), Self(b))
 			}
@@ -317,7 +317,7 @@ macro_rules! packed_binary_field_tower_recursive_mul_bytes {
 
 				// [a0_lo, b0_lo, a1_lo, b1_lo, ...]
 				// [a0_hi, b0_hi, a1_hi, b1_hi, ...]
-				let (lo, hi) = a.interleave(b, 1);
+				let (lo, hi) = a.interleave(b, 0);
 				// [a0_lo + a0_hi, b0_lo + b0_hi, a1_lo + a1_hi, b1lo + b1_hi, ...]
 				let lo_plus_hi_a_even_b_odd = lo + hi;
 
@@ -327,7 +327,7 @@ macro_rules! packed_binary_field_tower_recursive_mul_bytes {
 					// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not a
 					$subfield_name(_mm_blendv_epi8(z0_even_z2_odd, alpha, mask))
 				};
-				let (lhs, rhs) = lo_plus_hi_a_even_b_odd.interleave(alpha_even_z2_odd, 1);
+				let (lhs, rhs) = lo_plus_hi_a_even_b_odd.interleave(alpha_even_z2_odd, 0);
 				let z1_xor_z0z2_even_z2a_odd = (lhs * rhs).0;
 
 				unsafe {
@@ -377,26 +377,14 @@ macro_rules! packed_binary_field_tower {
 	};
 }
 
-binary_tower_packed_bits!(
-	pub PackedBinaryField128x1b,
-	Scalar = BinaryField1b,
-	WIDTH = 128
-);
-binary_tower_packed_bits!(
-	pub PackedBinaryField64x2b,
-	Scalar = BinaryField2b,
-	WIDTH = 64
-);
-binary_tower_packed_bits!(
-	pub PackedBinaryField32x4b,
-	Scalar = BinaryField4b,
-	WIDTH = 32
-);
-binary_tower_packed_bytes!(pub PackedBinaryField16x8b, Scalar = BinaryField8b, WIDTH = 16);
-binary_tower_packed_bytes!(pub PackedBinaryField8x16b, Scalar = BinaryField16b, WIDTH = 8);
-binary_tower_packed_bytes!(pub PackedBinaryField4x32b, Scalar = BinaryField32b, WIDTH = 4);
-binary_tower_packed_bytes!(pub PackedBinaryField2x64b, Scalar = BinaryField64b, WIDTH = 2);
-binary_tower_packed_bytes!(pub PackedBinaryField1x128b, Scalar = BinaryField128b, WIDTH = 1);
+binary_tower_packed_bits!(pub PackedBinaryField128x1b[BinaryField1b; 1 << 7]);
+binary_tower_packed_bits!(pub PackedBinaryField64x2b[BinaryField2b; 1 << 6]);
+binary_tower_packed_bits!(pub PackedBinaryField32x4b[BinaryField4b; 1 << 5]);
+binary_tower_packed_bytes!(pub PackedBinaryField16x8b[BinaryField8b; 1 << 4]);
+binary_tower_packed_bytes!(pub PackedBinaryField8x16b[BinaryField16b; 1 << 3]);
+binary_tower_packed_bytes!(pub PackedBinaryField4x32b[BinaryField32b; 1 << 2]);
+binary_tower_packed_bytes!(pub PackedBinaryField2x64b[BinaryField64b; 1 << 1]);
+binary_tower_packed_bytes!(pub PackedBinaryField1x128b[BinaryField128b; 1 << 0]);
 
 packed_binary_field_tower_recursive_mul_bits!(
 	PackedBinaryField128x8b
@@ -508,21 +496,21 @@ impl PackedBinaryField2x64b {
 }
 
 #[inline]
-unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i, __m128i) {
-	match block_len {
-		1 => {
+unsafe fn interleave_bits(a: __m128i, b: __m128i, log_block_len: usize) -> (__m128i, __m128i) {
+	match log_block_len {
+		0 => {
 			let mask = _mm_set1_epi8(0x55i8);
 			interleave_bits_imm::<1>(a, b, mask)
 		}
-		2 => {
+		1 => {
 			let mask = _mm_set1_epi8(0x33i8);
 			interleave_bits_imm::<2>(a, b, mask)
 		}
-		4 => {
+		2 => {
 			let mask = _mm_set1_epi8(0x0fi8);
 			interleave_bits_imm::<4>(a, b, mask)
 		}
-		8 => {
+		3 => {
 			let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -530,7 +518,7 @@ unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i,
 			let b_prime = _mm_unpackhi_epi8(a, b);
 			(a_prime, b_prime)
 		}
-		16 => {
+		4 => {
 			let shuffle = _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -538,7 +526,7 @@ unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i,
 			let b_prime = _mm_unpackhi_epi16(a, b);
 			(a_prime, b_prime)
 		}
-		32 => {
+		5 => {
 			let shuffle = _mm_set_epi8(15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0);
 			let a = _mm_shuffle_epi8(a, shuffle);
 			let b = _mm_shuffle_epi8(b, shuffle);
@@ -546,7 +534,7 @@ unsafe fn interleave_bits(a: __m128i, b: __m128i, block_len: usize) -> (__m128i,
 			let b_prime = _mm_unpackhi_epi32(a, b);
 			(a_prime, b_prime)
 		}
-		64 => {
+		6 => {
 			let a_prime = _mm_unpacklo_epi64(a, b);
 			let b_prime = _mm_unpackhi_epi64(a, b);
 			(a_prime, b_prime)

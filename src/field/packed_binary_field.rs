@@ -177,7 +177,7 @@ mod tests {
 				.map(BinaryField8b::new),
 		);
 
-		let (c, d) = a.interleave(b, 1);
+		let (c, d) = a.interleave(b, 0);
 		let expected_c = PackedBinaryField16x8b::from(
 			[
 				0x00, 0x10, 0x02, 0x12, 0x04, 0x14, 0x06, 0x16,
@@ -195,7 +195,7 @@ mod tests {
 		assert_eq!(c, expected_c);
 		assert_eq!(d, expected_d);
 
-		let (c, d) = a.interleave(b, 2);
+		let (c, d) = a.interleave(b, 1);
 		let expected_c = PackedBinaryField16x8b::from(
 			[
 				0x00, 0x01, 0x10, 0x11, 0x04, 0x05, 0x14, 0x15,
@@ -213,7 +213,7 @@ mod tests {
 		assert_eq!(c, expected_c);
 		assert_eq!(d, expected_d);
 
-		let (c, d) = a.interleave(b, 4);
+		let (c, d) = a.interleave(b, 2);
 		let expected_c = PackedBinaryField16x8b::from(
 			[
 				0x00, 0x01, 0x02, 0x03, 0x10, 0x11, 0x12, 0x13,
@@ -231,7 +231,7 @@ mod tests {
 		assert_eq!(c, expected_c);
 		assert_eq!(d, expected_d);
 
-		let (c, d) = a.interleave(b, 8);
+		let (c, d) = a.interleave(b, 3);
 		let expected_c = PackedBinaryField16x8b::from(
 			[
 				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -257,18 +257,18 @@ mod tests {
 
 		let c = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
 		let d = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
-		assert_eq!(a.interleave(b, 1), (c, d));
-		assert_eq!(c.interleave(d, 1), (a, b));
+		assert_eq!(a.interleave(b, 0), (c, d));
+		assert_eq!(c.interleave(d, 0), (a, b));
 
 		let c = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
 		let d = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
-		assert_eq!(a.interleave(b, 2), (c, d));
-		assert_eq!(c.interleave(d, 2), (a, b));
+		assert_eq!(a.interleave(b, 1), (c, d));
+		assert_eq!(c.interleave(d, 1), (a, b));
 
 		let c = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
 		let d = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
-		assert_eq!(a.interleave(b, 4), (c, d));
-		assert_eq!(c.interleave(d, 4), (a, b));
+		assert_eq!(a.interleave(b, 2), (c, d));
+		assert_eq!(c.interleave(d, 2), (a, b));
 	}
 
 	#[test]

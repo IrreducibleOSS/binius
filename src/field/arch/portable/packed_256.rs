@@ -147,7 +147,7 @@ macro_rules! packed_field_array {
 
 		impl PackedField for $name {
 			type Scalar = <$inner as PackedField>::Scalar;
-			const WIDTH: usize = <$inner as PackedField>::WIDTH * 2;
+			const LOG_WIDTH: usize = <$inner as PackedField>::LOG_WIDTH + 1;
 
 			#[allow(clippy::modulo_one)]
 			fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
@@ -183,14 +183,14 @@ macro_rules! packed_field_array {
 				Self(array::from_fn(|_| <$inner>::broadcast(scalar)))
 			}
 
-			fn interleave(self, other: Self, block_len: usize) -> (Self, Self) {
-				assert_eq!(Self::WIDTH % (2 * block_len), 0);
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				assert!(log_block_len < Self::LOG_WIDTH);
 
-				if 2 * block_len == Self::WIDTH {
+				if log_block_len + 1 == Self::LOG_WIDTH {
 					(Self([self.0[0], other.0[0]]), Self([self.0[1], other.0[1]]))
 				} else {
-					let (ret_00, ret_01) = self.0[0].interleave(other.0[0], block_len);
-					let (ret_10, ret_11) = self.0[1].interleave(other.0[1], block_len);
+					let (ret_00, ret_01) = self.0[0].interleave(other.0[0], log_block_len);
+					let (ret_10, ret_11) = self.0[1].interleave(other.0[1], log_block_len);
 					(Self([ret_00, ret_01]), Self([ret_10, ret_11]))
 				}
 			}

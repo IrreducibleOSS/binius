@@ -166,7 +166,6 @@ where
 			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
 
 			let log_block_len = i + log_b;
-			let block_len = 1 << log_block_len;
 			let log_blocks_count = cutoff - i - 1;
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
@@ -178,10 +177,10 @@ where
 					block_twiddle + coset_twiddle,
 				);
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], block_len);
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 				u += v * twiddle;
 				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, block_len);
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
 			}
 		}
 
@@ -222,7 +221,6 @@ where
 			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
 
 			let log_block_len = i + log_b;
-			let block_len = 1 << log_block_len;
 			let log_blocks_count = cutoff - i - 1;
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
@@ -234,10 +232,10 @@ where
 					block_twiddle + coset_twiddle,
 				);
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], block_len);
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 				v += u;
 				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, block_len);
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
 			}
 		}
 
@@ -372,7 +370,6 @@ where
 			let s_evals_i = &self.s_evals_expanded[i];
 			let log_blocks_count = cutoff - i - 1;
 			let log_block_len = i + log_b;
-			let block_len = 1 << log_block_len;
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let evals_index_init_val = (coset as usize) << (log_n - 1 - i) | j << (cutoff - i);
 				let twiddle: P = self.calculate_twiddle(
@@ -382,10 +379,10 @@ where
 					evals_index_init_val,
 				);
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], block_len);
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 				u += v * twiddle;
 				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, block_len);
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
 			}
 		}
 
@@ -423,7 +420,6 @@ where
 
 			let log_block_count = cutoff - i - 1;
 			let log_block_len = i + log_b;
-			let block_len = 1 << log_block_len;
 			for j in 0..1 << (log_n - 1 - cutoff) {
 				let evals_index_init_val = (coset as usize) << (log_n - 1 - i) | j << (cutoff - i);
 				let twiddle: P = self.calculate_twiddle(
@@ -433,10 +429,10 @@ where
 					evals_index_init_val,
 				);
 
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], block_len);
+				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 				v += u;
 				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, block_len);
+				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
 			}
 		}
 
