@@ -2,8 +2,8 @@
 
 use crate::{
 	field::Field,
-	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle},
-	polynomial::{multilinear_query::MultilinearQuery, MultilinearComposite, MultilinearPoly},
+	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
+	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
 use std::borrow::Borrow;
 
@@ -29,52 +29,86 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 	} = evalcheck_claim;
 
 	let proof = match poly {
-		MultivariatePolyOracle::Multilinear(multilinear) => match multilinear {
-			MultilinearPolyOracle::Transparent { .. } => EvalcheckProof::Transparent,
-			MultilinearPolyOracle::Committed { id, .. } => {
-				let subclaim = CommittedEvalClaim {
-					id,
-					eval_point,
-					eval,
-					is_random_point,
-				};
+		MultivariatePolyOracle::Multilinear(multilinear) => {
+			match evalcheck_witness {
+				EvalcheckWitness::Multilinear => (),
+				EvalcheckWitness::Composite(_) => return Err(Error::InvalidWitness),
+			};
+			match multilinear {
+				MultilinearPolyOracle::Transparent { .. } => EvalcheckProof::Transparent,
+				MultilinearPolyOracle::Committed { id, .. } => {
+					let subclaim = CommittedEvalClaim {
+						id,
+						eval_point,
+						eval,
+						is_random_point,
+					};
 
-				batch_commited_eval_claims.insert(subclaim)?;
-				EvalcheckProof::Committed
+					batch_commited_eval_claims.insert(subclaim)?;
+					EvalcheckProof::Committed
+				}
+				MultilinearPolyOracle::Shifted(shifted) => {
+					let subclaim = ShiftedEvalClaim {
+						poly: *shifted.inner().clone(),
+						eval_point,
+						eval,
+						is_random_point,
+						shifted,
+					};
+
+					shifted_eval_claims.push(subclaim);
+					EvalcheckProof::Shifted
+				}
+				MultilinearPolyOracle::Projected(projected) => {
+					let (inner, values) = (projected.inner(), projected.values());
+					let new_eval_point = match projected.projection_variant() {
+						ProjectionVariant::LastVars => {
+							let mut new_eval_point = eval_point.clone();
+							new_eval_point.extend(values);
+							new_eval_point
+						}
+						ProjectionVariant::FirstVars => {
+							values.iter().cloned().chain(eval_point).collect()
+						}
+					};
+
+					let new_poly = MultivariatePolyOracle::Multilinear(*inner.clone());
+
+					let subclaim = EvalcheckClaim {
+						poly: new_poly,
+						eval_point: new_eval_point,
+						eval,
+						is_random_point,
+					};
+
+					prove(
+						evalcheck_witness,
+						subclaim,
+						batch_commited_eval_claims,
+						shifted_eval_claims,
+					)?
+				}
+
+				_ => todo!(),
 			}
-			MultilinearPolyOracle::Shifted(shifted) => {
-				let subclaim = ShiftedEvalClaim {
-					poly: *shifted.inner().clone(),
-					eval_point,
-					eval,
-					is_random_point,
-					shifted,
-				};
-
-				shifted_eval_claims.push(subclaim);
-				EvalcheckProof::Shifted
-			}
-
-			_ => todo!(),
-		},
+		}
 
 		MultivariatePolyOracle::Composite(composite) => {
 			let query = MultilinearQuery::with_full_query(&eval_point)?;
 
-			let evals = evalcheck_witness
+			let composite_witness = match evalcheck_witness {
+				EvalcheckWitness::Multilinear => return Err(Error::InvalidWitness),
+				EvalcheckWitness::Composite(composite) => composite,
+			};
+
+			let evals = composite_witness
 				.iter_multilinear_polys()
 				.map(|multilin| multilin.evaluate(&query))
 				.collect::<Result<Vec<_>, _>>()?;
 
 			let mut subproofs = vec![];
 
-			for ((multilin, &eval), suboracle) in evalcheck_witness
-				.iter_multilinear_polys()
-				.zip(&evals)
-				.zip(composite.inner_polys())
-			{
-				let subwitness = MultilinearComposite::from_multilinear(multilin);
-
+			for (&eval, suboracle) in evals.iter().zip(composite.inner_polys()) {
 				let subclaim = EvalcheckClaim {
 					poly: MultivariatePolyOracle::Multilinear(suboracle),
 					eval_point: eval_point.clone(),
@@ -82,8 +116,8 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 					is_random_point,
 				};
 
-				let subproof = prove::<F, M, &M>(
-					subwitness,
+				let subproof = prove::<F, M, BM>(
+					EvalcheckWitness::Multilinear,
 					subclaim,
 					batch_commited_eval_claims,
 					shifted_eval_claims,
@@ -108,7 +142,9 @@ mod tests {
 	use crate::{
 		field::{BinaryField128b, PackedBinaryField4x32b, PackedField},
 		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
-		polynomial::{CompositionPoly, Error as PolynomialError, MultilinearExtension},
+		polynomial::{
+			CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
+		},
 		protocols::evalcheck::verify::verify,
 	};
 
@@ -213,15 +249,26 @@ mod tests {
 
 		let mut bcec_prove = BatchCommittedEvalClaims::new(&batches);
 		let mut shifted_claims_prove = Vec::new();
-		let proof =
-			prove(witness, claim.clone(), &mut bcec_prove, &mut shifted_claims_prove).unwrap();
+		let proof = prove(
+			EvalcheckWitness::Composite(witness),
+			claim.clone(),
+			&mut bcec_prove,
+			&mut shifted_claims_prove,
+		)
+		.unwrap();
 
 		let mut bcec_verify = BatchCommittedEvalClaims::new(&batches);
 		let mut shifted_claims_verify = Vec::new();
 		verify(claim, proof, &mut bcec_verify, &mut shifted_claims_verify).unwrap();
 
-		let prove_batch0 = bcec_prove.get_same_query_pcs_claim(0).unwrap().unwrap();
-		let verify_batch0 = bcec_verify.get_same_query_pcs_claim(0).unwrap().unwrap();
+		let prove_batch0 = bcec_prove
+			.try_extract_same_query_pcs_claim(0)
+			.unwrap()
+			.unwrap();
+		let verify_batch0 = bcec_verify
+			.try_extract_same_query_pcs_claim(0)
+			.unwrap()
+			.unwrap();
 
 		assert_eq!(prove_batch0.eval_point, eval_point);
 		assert_eq!(verify_batch0.eval_point, eval_point);
@@ -229,8 +276,14 @@ mod tests {
 		assert_eq!(prove_batch0.evals, [batch_evals[0], batch_evals[2]]);
 		assert_eq!(verify_batch0.evals, [batch_evals[0], batch_evals[2]]);
 
-		let prove_batch1 = bcec_prove.get_same_query_pcs_claim(1).unwrap().unwrap();
-		let verify_batch1 = bcec_verify.get_same_query_pcs_claim(1).unwrap().unwrap();
+		let prove_batch1 = bcec_prove
+			.try_extract_same_query_pcs_claim(1)
+			.unwrap()
+			.unwrap();
+		let verify_batch1 = bcec_verify
+			.try_extract_same_query_pcs_claim(1)
+			.unwrap()
+			.unwrap();
 
 		assert_eq!(prove_batch1.eval_point, eval_point);
 		assert_eq!(verify_batch1.eval_point, eval_point);

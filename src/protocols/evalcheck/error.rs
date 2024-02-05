@@ -3,6 +3,8 @@ use crate::{iopoly::CommittedId, polynomial::Error as PolynomialError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("mismatch between witness and claim (multilinear vs composite)")]
+	InvalidWitness,
 	#[error("unknown committed polynomial id {0}")]
 	UnknownCommittedId(CommittedId),
 	#[error("unknown batch {0}")]

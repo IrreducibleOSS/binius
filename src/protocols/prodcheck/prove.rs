@@ -7,7 +7,7 @@ use crate::field::Field;
 use crate::{
 	iopoly::MultilinearPolyOracle,
 	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
-	protocols::prodcheck::error::Error,
+	protocols::{evalcheck::evalcheck::EvalcheckWitness, prodcheck::error::Error},
 };
 
 use super::prodcheck::{
@@ -178,9 +178,10 @@ pub fn prove_step_two<'a, F: Field>(
 	)?;
 
 	// Package return values
-	let grand_product_poly_witness = MultilinearComposite::from_multilinear(
-		Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>
-	);
+	let grand_product_poly_witness =
+		EvalcheckWitness::Composite(MultilinearComposite::from_multilinear(
+			Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>
+		));
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
 		t_prime_witness,

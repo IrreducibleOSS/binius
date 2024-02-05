@@ -18,6 +18,7 @@ use crate::{
 		multilinear_query::MultilinearQuery, EvaluationDomain, MultilinearExtension,
 		MultilinearPoly,
 	},
+	protocols::evalcheck::evalcheck::EvalcheckWitness,
 };
 
 pub mod utils;
@@ -268,7 +269,7 @@ where
 	Ok(SumcheckProveOutput {
 		sumcheck_proof,
 		evalcheck_claim,
-		evalcheck_witness: sumcheck_witness,
+		evalcheck_witness: EvalcheckWitness::Composite(sumcheck_witness),
 	})
 }
 
@@ -452,8 +453,12 @@ mod tests {
 		let actual = poly.evaluate(&multilin_query).unwrap();
 		assert_eq!(actual, final_verify_output.eval);
 
-		let actual = final_prove_output
-			.evalcheck_witness
+		let actual_evalcheck_witness_mlc = match final_prove_output.evalcheck_witness {
+			EvalcheckWitness::Composite(w) => w,
+			_ => panic!("Expected Composite Witness"),
+		};
+
+		let actual = actual_evalcheck_witness_mlc
 			.evaluate(&multilin_query)
 			.unwrap();
 		assert_eq!(actual, final_verify_output.eval);
@@ -548,8 +553,11 @@ mod tests {
 		let actual = poly.evaluate(&multilin_query).unwrap();
 		assert_eq!(actual, final_verify_output.eval);
 
-		let actual = final_prove_output
-			.evalcheck_witness
+		let actual_evalcheck_witness_mlc = match final_prove_output.evalcheck_witness {
+			EvalcheckWitness::Composite(w) => w,
+			_ => panic!("Expected Composite Witness"),
+		};
+		let actual = actual_evalcheck_witness_mlc
 			.evaluate(&multilin_query)
 			.unwrap();
 		assert_eq!(actual, final_verify_output.eval);

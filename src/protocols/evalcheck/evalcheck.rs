@@ -2,11 +2,11 @@
 
 use super::error::Error;
 use crate::{
-	field::Field,
+	field::{Field, PackedField},
 	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle, Shifted},
-	polynomial::MultilinearComposite,
+	polynomial::{MultilinearComposite, MultilinearPoly},
 };
-use std::{collections::HashMap, convert::AsRef};
+use std::{borrow::Borrow, collections::HashMap, convert::AsRef};
 
 #[derive(Debug, Clone)]
 pub struct EvalcheckClaim<F: Field> {
@@ -20,6 +20,7 @@ pub struct EvalcheckClaim<F: Field> {
 	pub is_random_point: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct ShiftedEvalClaim<F: Field> {
 	/// Unshifted Virtual Polynomial Oracle for which the evaluation is claimed
 	pub poly: MultilinearPolyOracle<F>,
@@ -33,8 +34,16 @@ pub struct ShiftedEvalClaim<F: Field> {
 	pub shifted: Shifted<F>,
 }
 
-/// Polynomial must be representable as a composition of multilinear polynomials
-pub type EvalcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
+#[derive(Debug)]
+pub enum EvalcheckWitness<P, M, BM>
+where
+	P: PackedField,
+	M: MultilinearPoly<P> + ?Sized,
+	BM: Borrow<M>,
+{
+	Multilinear,
+	Composite(MultilinearComposite<P, M, BM>),
+}
 
 #[derive(Debug)]
 pub enum EvalcheckProof<F: Field> {
@@ -147,7 +156,7 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 	}
 
 	/// Extract a same query claim, if possible (hence the Option in happy path)
-	pub fn get_same_query_pcs_claim(
+	pub fn try_extract_same_query_pcs_claim(
 		&self,
 		batch_id: BatchId,
 	) -> Result<Option<SameQueryPcsClaim<F>>, Error> {

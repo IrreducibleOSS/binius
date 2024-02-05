@@ -174,7 +174,7 @@ where
 	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
-		.get_same_query_pcs_claim(0)
+		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
 		.unwrap();
 
@@ -284,7 +284,7 @@ fn verify<PCS, CH>(
 	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
-		.get_same_query_pcs_claim(0)
+		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
 		.unwrap();
 
