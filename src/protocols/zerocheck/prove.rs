@@ -3,7 +3,7 @@
 use std::{borrow::Borrow, sync::Arc};
 
 use crate::{
-	field::{BinaryField, Field},
+	field::{Field, TowerField},
 	polynomial::{
 		transparent::eq_ind::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
 		MultilinearPoly,
@@ -42,7 +42,7 @@ where
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
-pub fn prove<'a, F: BinaryField>(
+pub fn prove<'a, F: TowerField>(
 	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
@@ -80,7 +80,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		field::{BinaryField, BinaryField32b},
+		field::{BinaryField32b, TowerField},
 		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{

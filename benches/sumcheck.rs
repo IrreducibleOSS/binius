@@ -1,8 +1,8 @@
 use binius::{
 	challenger::HashChallenger,
 	field::{
-		BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField8b,
-		ExtensionField, Field, PackedField,
+		BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField8b, ExtensionField,
+		Field, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
@@ -201,7 +201,7 @@ pub fn make_sumcheck_claim<F, M, BM>(
 	poly: &MultilinearComposite<F, M, BM>,
 ) -> Result<SumcheckClaim<F>, SumcheckError>
 where
-	F: BinaryField,
+	F: TowerField,
 	M: MultilinearPoly<F>,
 	BM: Borrow<M>,
 {

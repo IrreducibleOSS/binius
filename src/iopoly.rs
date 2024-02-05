@@ -1,12 +1,12 @@
 use derive_getters::Getters;
 
 use crate::{
-	field::{BinaryField, BinaryField128b, Field},
+	field::{BinaryField128b, Field},
 	polynomial::Error as PolynomialError,
 };
 
 use crate::{
-	field::PackedField,
+	field::{PackedField, TowerField},
 	polynomial::{CompositionPoly, MultivariatePoly},
 };
 use std::sync::Arc;
@@ -326,9 +326,10 @@ impl<F: Field> From<MultilinearPolyOracle<F>> for MultivariatePolyOracle<F> {
 #[cfg(test)]
 mod tests {
 	use crate::{
-		field::{BinaryField, BinaryField2b},
+		field::{BinaryField2b, TowerField},
 		iopoly::MultilinearPolyOracle,
 	};
+
 	#[test]
 	fn test_packing() {
 		type F = BinaryField2b;

@@ -346,7 +346,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::HashChallenger,
-		field::{BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField32b},
+		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, TowerField},
 		hash::GroestlHasher,
 		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},

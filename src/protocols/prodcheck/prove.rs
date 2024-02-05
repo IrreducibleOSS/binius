@@ -198,7 +198,7 @@ pub fn prove_step_two<'a, F: Field>(
 mod tests {
 	use super::*;
 	use crate::{
-		field::{BinaryField, BinaryField32b},
+		field::{BinaryField32b, TowerField},
 		iopoly::MultilinearPolyOracle,
 		protocols::prodcheck::verify::verify,
 	};

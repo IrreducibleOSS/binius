@@ -2,6 +2,7 @@
 
 pub mod arch;
 pub mod binary_field;
+mod binary_field_arithmetic;
 pub mod error;
 pub mod extension;
 mod macros;

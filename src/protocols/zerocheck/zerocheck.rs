@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::{BinaryField, Field},
+	field::{Field, TowerField},
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
@@ -78,7 +78,7 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	}
 }
 
-pub fn reduce_zerocheck_claim<F: BinaryField>(
+pub fn reduce_zerocheck_claim<F: TowerField>(
 	claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
 ) -> Result<SumcheckClaim<F>, VerificationError> {
