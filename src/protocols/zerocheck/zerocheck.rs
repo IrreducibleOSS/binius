@@ -76,6 +76,10 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 		let inner_eval = self.inner.evaluate_packed(inner_query)?;
 		Ok(inner_eval * query[n_vars - 1])
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.inner.binary_tower_level()
+	}
 }
 
 pub fn reduce_zerocheck_claim<F: TowerField>(

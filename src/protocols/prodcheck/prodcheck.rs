@@ -83,6 +83,10 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 
 		Ok(query[0] - query[1] * query[2])
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
 }
 
 pub fn reduce_prodcheck_claim<F: Field>(

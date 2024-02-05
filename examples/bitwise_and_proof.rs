@@ -60,6 +60,10 @@ impl CompositionPoly<BinaryField128b> for BitwiseAndConstraint {
 		let c = query[2];
 		Ok(a * b - c)
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
 }
 
 fn prove<PCS, CH>(

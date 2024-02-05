@@ -34,8 +34,12 @@ where
 
 	/// Evaluate the polynomial at packed evaluation points.
 	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error>;
+
+	/// Returns the maximum binary tower level of a constant used in the composition
+	fn binary_tower_level(&self) -> usize;
 }
 
+/// Identity composition function $g(X) = X$.
 #[derive(Debug)]
 pub struct IdentityCompositionPoly;
 
@@ -57,6 +61,10 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 			return Err(Error::IncorrectQuerySize { expected: 1 });
 		}
 		Ok(query[0])
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
 	}
 }
 

@@ -2,11 +2,11 @@ use derive_getters::Getters;
 
 use crate::{
 	field::{BinaryField128b, Field},
-	polynomial::Error as PolynomialError,
+	polynomial::{Error as PolynomialError, IdentityCompositionPoly},
 };
 
 use crate::{
-	field::{PackedField, TowerField},
+	field::TowerField,
 	polynomial::{CompositionPoly, MultivariatePoly},
 };
 use std::sync::Arc;
@@ -175,34 +175,6 @@ pub struct CompositePolyOracle<F: Field> {
 	composition: Arc<dyn CompositionPoly<F>>,
 }
 
-/// Identity composition function $g(X) = X$.
-#[derive(Debug)]
-struct IdentityComposition;
-
-impl<P> CompositionPoly<P> for IdentityComposition
-where
-	P: PackedField,
-{
-	fn n_vars(&self) -> usize {
-		1
-	}
-
-	fn degree(&self) -> usize {
-		1
-	}
-
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
-		if query.len() != 1 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 1 });
-		}
-		Ok(query[0])
-	}
-}
-
 impl<F: Field> MultivariatePolyOracle<F> {
 	pub fn into_composite(self) -> CompositePolyOracle<F> {
 		match self {
@@ -210,7 +182,7 @@ impl<F: Field> MultivariatePolyOracle<F> {
 			MultivariatePolyOracle::Multilinear(multilinear) => CompositePolyOracle::new(
 				multilinear.n_vars(),
 				vec![multilinear.clone()],
-				Arc::new(IdentityComposition),
+				Arc::new(IdentityCompositionPoly),
 			)
 			.unwrap(),
 		}
@@ -227,6 +199,13 @@ impl<F: Field> MultivariatePolyOracle<F> {
 		match self {
 			MultivariatePolyOracle::Multilinear(multilinear) => multilinear.n_vars(),
 			MultivariatePolyOracle::Composite(composite) => composite.n_vars(),
+		}
+	}
+
+	pub fn binary_tower_level(&self) -> usize {
+		match self {
+			MultivariatePolyOracle::Multilinear(multilinear) => multilinear.binary_tower_level(),
+			MultivariatePolyOracle::Composite(composite) => composite.binary_tower_level(),
 		}
 	}
 }
@@ -271,6 +250,16 @@ impl<F: Field> CompositePolyOracle<F> {
 
 	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
 		self.composition.clone()
+	}
+
+	pub fn binary_tower_level(&self) -> usize {
+		self.composition.binary_tower_level().max(
+			self.inner
+				.iter()
+				.map(MultilinearPolyOracle::binary_tower_level)
+				.max()
+				.unwrap_or(0),
+		)
 	}
 }
 
@@ -325,10 +314,43 @@ impl<F: Field> From<MultilinearPolyOracle<F>> for MultivariatePolyOracle<F> {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
+
 	use crate::{
-		field::{BinaryField2b, TowerField},
-		iopoly::MultilinearPolyOracle,
+		field::{
+			BinaryField128b, BinaryField16b, BinaryField2b, BinaryField32b, BinaryField4b,
+			BinaryField8b, TowerField,
+		},
+		iopoly::{CompositePolyOracle, MultilinearPolyOracle},
+		polynomial::{CompositionPoly, Error as PolynomialError},
 	};
+
+	#[derive(Debug)]
+	struct TestByteCommposition;
+	impl CompositionPoly<BinaryField128b> for TestByteCommposition {
+		fn n_vars(&self) -> usize {
+			5
+		}
+
+		fn degree(&self) -> usize {
+			1
+		}
+
+		fn evaluate(&self, query: &[BinaryField128b]) -> Result<BinaryField128b, PolynomialError> {
+			self.evaluate_packed(query)
+		}
+
+		fn evaluate_packed(
+			&self,
+			query: &[BinaryField128b],
+		) -> Result<BinaryField128b, PolynomialError> {
+			Ok(query[0] * query[1] + query[2] * query[3] + query[4] * BinaryField8b::new(125))
+		}
+
+		fn binary_tower_level(&self) -> usize {
+			BinaryField8b::TOWER_LEVEL
+		}
+	}
 
 	#[test]
 	fn test_packing() {
@@ -351,5 +373,58 @@ mod tests {
 			poly.clone().packed(2).unwrap_err().to_string(),
 			"tower_level (8) cannot be greater than 7 (128 bits)"
 		);
+	}
+
+	#[test]
+	fn test_binary_tower_level() {
+		type F = BinaryField128b;
+		let n_vars = 5;
+		let poly_2 = MultilinearPolyOracle::<F>::Committed {
+			id: 0,
+			n_vars,
+			tower_level: BinaryField2b::TOWER_LEVEL,
+		};
+		let poly_4 = MultilinearPolyOracle::<F>::Committed {
+			id: 1,
+			n_vars,
+			tower_level: BinaryField4b::TOWER_LEVEL,
+		};
+		let poly_8 = MultilinearPolyOracle::<F>::Committed {
+			id: 2,
+			n_vars,
+			tower_level: BinaryField8b::TOWER_LEVEL,
+		};
+		let poly_16 = MultilinearPolyOracle::<F>::Committed {
+			id: 3,
+			n_vars,
+			tower_level: BinaryField16b::TOWER_LEVEL,
+		};
+		let poly_32 = MultilinearPolyOracle::<F>::Committed {
+			id: 4,
+			n_vars,
+			tower_level: BinaryField32b::TOWER_LEVEL,
+		};
+		let mut inner = vec![poly_2.clone(); n_vars];
+
+		let composition = Arc::new(TestByteCommposition);
+		let composite_2 =
+			CompositePolyOracle::new(n_vars, inner.clone(), composition.clone()).unwrap();
+		inner[1] = poly_4;
+		let composite_4 =
+			CompositePolyOracle::new(n_vars, inner.clone(), composition.clone()).unwrap();
+		inner[2] = poly_8;
+		let composite_8 =
+			CompositePolyOracle::new(n_vars, inner.clone(), composition.clone()).unwrap();
+		inner[3] = poly_16;
+		let composite_16 =
+			CompositePolyOracle::new(n_vars, inner.clone(), composition.clone()).unwrap();
+		inner[4] = poly_32;
+		let composite_32 = CompositePolyOracle::new(n_vars, inner.clone(), composition).unwrap();
+
+		assert_eq!(composite_2.binary_tower_level(), BinaryField8b::TOWER_LEVEL);
+		assert_eq!(composite_4.binary_tower_level(), BinaryField8b::TOWER_LEVEL);
+		assert_eq!(composite_8.binary_tower_level(), BinaryField8b::TOWER_LEVEL);
+		assert_eq!(composite_16.binary_tower_level(), BinaryField16b::TOWER_LEVEL);
+		assert_eq!(composite_32.binary_tower_level(), BinaryField32b::TOWER_LEVEL);
 	}
 }

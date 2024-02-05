@@ -138,6 +138,10 @@ mod tests {
 			let (a, b, c, d) = (query[0], query[1], query[2], query[3]);
 			Ok(a * b * c * d)
 		}
+
+		fn binary_tower_level(&self) -> usize {
+			0
+		}
 	}
 
 	#[test]

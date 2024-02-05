@@ -57,6 +57,10 @@ where
 		assert_eq!(query.len(), n_vars);
 		Ok(query.iter().product())
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
 }
 
 pub fn transform_poly<'a, F, OF>(
