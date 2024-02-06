@@ -251,6 +251,18 @@ macro_rules! binary_field {
 				Self::new_checked(val).ok()
 			}
 		}
+
+		impl From<$typ> for $name {
+			fn from(val: $typ) -> Self {
+				return Self(val)
+			}
+		}
+
+		impl From<$name> for $typ {
+			fn from(val: $name) -> Self {
+				return val.0
+			}
+		}
 	}
 }
 

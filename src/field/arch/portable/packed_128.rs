@@ -20,6 +20,8 @@ use std::{
 };
 use subtle::{Choice, ConstantTimeEq};
 
+use super::packed_128_arithmetic::PackedTowerField;
+
 macro_rules! packed_binary_field_u128 {
 	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); 1 << $log_width:literal]) => {
 		const_assert_eq!($scalar::N_BITS << $log_width, 128);
@@ -31,6 +33,12 @@ macro_rules! packed_binary_field_u128 {
 		impl From<u128> for $name {
 			fn from(val: u128) -> Self {
 				Self(val)
+			}
+		}
+
+		impl From<$name> for u128 {
+			fn from(value: $name) -> Self {
+				value.0
 			}
 		}
 
@@ -60,7 +68,7 @@ macro_rules! packed_binary_field_u128 {
 			type Output = Self;
 
 			fn mul(self, rhs: Self) -> Self::Output {
-				Self::multiply(self, rhs)
+				<Self as super::packed_128_arithmetic::PackedMultiply>::packed_multiply(self, rhs)
 			}
 		}
 
@@ -226,14 +234,6 @@ macro_rules! impl_packed_binary_field_u128_broadcast_multiply {
 				}
 				Self(value)
 			}
-
-			fn multiply(a: Self, b: Self) -> Self {
-				let mut result = Self::default();
-				for i in 0..Self::WIDTH {
-					result.set(i, a.get(i) * b.get(i));
-				}
-				result
-			}
 		}
 	};
 }
@@ -291,10 +291,6 @@ impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField2x64b, LOG_BI
 impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField1x128b, LOG_BITS = 7);
 
 impl PackedBinaryField128x1b {
-	fn multiply(a: Self, b: Self) -> Self {
-		Self(a.0 & b.0)
-	}
-
 	fn broadcast(scalar: BinaryField1b) -> Self {
 		Self((scalar.0 as u128).wrapping_neg())
 	}
@@ -306,7 +302,7 @@ impl_unpackable_packed_binary_field_u128!(PackedBinaryField4x32b);
 impl_unpackable_packed_binary_field_u128!(PackedBinaryField2x64b);
 impl_unpackable_packed_binary_field_u128!(PackedBinaryField1x128b);
 
-macro_rules! packed_binary_field_tower {
+macro_rules! packed_binary_field_tower_extension {
 	($subfield_name:ident < $name:ident) => {
 		#[cfg(target_endian = "little")]
 		unsafe impl PackedExtensionField<$subfield_name> for $name {
@@ -328,12 +324,38 @@ macro_rules! packed_binary_field_tower {
 		}
 	};
 	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
-		packed_binary_field_tower!($subfield_name < $name);
+		packed_binary_field_tower_extension!($subfield_name < $name);
 		$(
-			packed_binary_field_tower!($subfield_name < $extfield_name);
+			packed_binary_field_tower_extension!($subfield_name < $extfield_name);
 		)+
-		packed_binary_field_tower!($name $(< $extfield_name)+);
+		packed_binary_field_tower_extension!($name $(< $extfield_name)+);
 	};
+}
+
+macro_rules! packed_binary_field_tower_impl {
+	($subfield_name:ident < $name:ident) => {
+		impl PackedTowerField for $name {
+			type DirectSubfield = <$subfield_name as PackedField>::Scalar;
+
+			type PackedDirectSubfield = $subfield_name;
+		}
+	};
+	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
+		impl PackedTowerField for $name {
+			type DirectSubfield = <$subfield_name as PackedField>::Scalar;
+
+			type PackedDirectSubfield = $subfield_name;
+		}
+
+		packed_binary_field_tower_impl!($name $(< $extfield_name)+);
+	}
+}
+
+macro_rules! packed_binary_field_tower {
+	($name:ident $(< $extfield_name:ident)+) => {
+		packed_binary_field_tower_extension!($name $(< $extfield_name)+ );
+		packed_binary_field_tower_impl!($name $(< $extfield_name)+ );
+	}
 }
 
 packed_binary_field_tower!(

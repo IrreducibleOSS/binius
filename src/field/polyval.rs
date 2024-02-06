@@ -184,6 +184,18 @@ impl Field for BinaryField128bPolyval {
 	}
 }
 
+impl From<u128> for BinaryField128bPolyval {
+	fn from(value: u128) -> Self {
+		Self(value)
+	}
+}
+
+impl From<BinaryField128bPolyval> for u128 {
+	fn from(value: BinaryField128bPolyval) -> Self {
+		value.0
+	}
+}
+
 impl Display for BinaryField128bPolyval {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "0x{repr:0>32x}", repr = self.from_montgomery().0)
