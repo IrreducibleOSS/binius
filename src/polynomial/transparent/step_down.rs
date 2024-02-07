@@ -1,0 +1,265 @@
+use crate::{
+	field::{set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField},
+	iopoly::MultilinearPolyOracle,
+	polynomial::{Error, MultilinearExtension, MultivariatePoly},
+};
+use std::sync::Arc;
+
+/// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
+/// specified index where they change to 0.
+///
+/// ```txt
+///     (1 << n_vars)
+/// <-------------------->
+/// 1,1 .. 1,1,0,0, .. 0,0
+///            ^
+///            index of first 0
+/// ```
+///
+/// This is useful for making constraints that are not enforced at the last rows of the trace
+#[derive(Debug, Clone)]
+pub struct StepDown {
+	n_vars: usize,
+	index: usize,
+}
+
+impl StepDown {
+	pub fn new(n_vars: usize, index: usize) -> Result<Self, Error> {
+		if index < 1 || index >= (1 << n_vars) {
+			Err(Error::ArgumentRangeError {
+				arg: "index".into(),
+				range: 1..(1 << n_vars),
+			})
+		} else {
+			Ok(Self { n_vars, index })
+		}
+	}
+
+	pub fn multilinear_extension<P: PackedField<Scalar = BinaryField1b>>(
+		&self,
+	) -> Result<MultilinearExtension<P>, Error> {
+		if self.n_vars < P::LOG_WIDTH {
+			return Err(Error::PackedFieldNotFilled {
+				length: 1 << self.n_vars,
+				packed_width: 1 << P::LOG_WIDTH,
+			});
+		}
+		let log_packed_length = self.n_vars - P::LOG_WIDTH;
+		let packed_index = self.index / P::WIDTH;
+		let mut result = vec![P::zero(); 1 << log_packed_length];
+		result[..packed_index].fill(P::one());
+		for i in P::WIDTH * packed_index..self.index {
+			set_packed_slice(&mut result, i, P::Scalar::ONE);
+		}
+		MultilinearExtension::from_values(result)
+	}
+
+	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<BinaryField128b> {
+		MultilinearPolyOracle::Transparent {
+			poly: Arc::new(self.clone()),
+			tower_level: 0,
+		}
+	}
+}
+
+impl<F: Field> MultivariatePoly<F> for StepDown {
+	fn degree(&self) -> usize {
+		self.n_vars
+	}
+
+	fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		let n_vars = MultivariatePoly::<F>::n_vars(self);
+		if query.len() != n_vars {
+			return Err(Error::IncorrectQuerySize { expected: n_vars });
+		}
+		let mut k = self.index;
+
+		// `result` is the evaluation of the complimentary "step-up" function that is 0 at indices 0..self.index and 1
+		// at indices self.index..2^n. The "step-down" evaluation is then 1 - `result`.
+		let mut result = F::ONE;
+		for q in query {
+			if k & 1 == 1 {
+				// interpolate a line that is 0 at 0 and `result` at 1, at the point q
+				result *= q;
+			} else {
+				// interpolate a line that is `result` at 0 and 1 at 1, and evaluate at q
+				result = result * (F::ONE - q) + q;
+			}
+			k >>= 1;
+		}
+
+		Ok(F::ONE - result)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::StepDown;
+	use crate::{
+		field::{
+			set_packed_slice, BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b,
+			PackedField,
+		},
+		polynomial::MultivariatePoly,
+		protocols::test_utils::{decompose_index_to_hypercube_point, macros::felts},
+	};
+	use std::ops::Range;
+
+	#[test]
+	fn test_step_down_trace_without_packing_simple_cases() {
+		assert_eq!(stepdown_evals::<BinaryField1b>(2, 1), felts!(BinaryField1b[1, 0, 0, 0]));
+		assert_eq!(stepdown_evals::<BinaryField1b>(2, 2), felts!(BinaryField1b[1, 1, 0, 0]));
+		assert_eq!(stepdown_evals::<BinaryField1b>(2, 3), felts!(BinaryField1b[1, 1, 1, 0]));
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 1),
+			felts!(BinaryField1b[1, 0, 0, 0, 0, 0, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 2),
+			felts!(BinaryField1b[1, 1, 0, 0, 0, 0, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 3),
+			felts!(BinaryField1b[1, 1, 1, 0, 0, 0, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 4),
+			felts!(BinaryField1b[1, 1, 1, 1, 0, 0, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 5),
+			felts!(BinaryField1b[1, 1, 1, 1, 1, 0, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 6),
+			felts!(BinaryField1b[1, 1, 1, 1, 1, 1, 0, 0])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 7),
+			felts!(BinaryField1b[1, 1, 1, 1, 1, 1, 1, 0])
+		);
+	}
+
+	#[test]
+	fn test_step_down_trace_without_packing() {
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(9, 314),
+			packed_slice::<BinaryField1b>(&[(0..314, 1), (314..512, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(10, 555),
+			packed_slice::<BinaryField1b>(&[(0..555, 1), (555..1024, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(11, 1),
+			packed_slice::<BinaryField1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+	}
+
+	#[test]
+	fn test_step_down_trace_with_packing_128() {
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField128x1b>(9, 314),
+			packed_slice::<PackedBinaryField128x1b>(&[(0..314, 1), (314..512, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField128x1b>(10, 555),
+			packed_slice::<PackedBinaryField128x1b>(&[(0..555, 1), (555..1024, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField128x1b>(11, 1),
+			packed_slice::<PackedBinaryField128x1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+	}
+
+	#[test]
+	fn test_step_down_trace_with_packing_256() {
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField256x1b>(9, 314),
+			packed_slice::<PackedBinaryField256x1b>(&[(0..314, 1), (314..512, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField256x1b>(10, 555),
+			packed_slice::<PackedBinaryField256x1b>(&[(0..555, 1), (555..1024, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField256x1b>(11, 1),
+			packed_slice::<PackedBinaryField256x1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+	}
+
+	#[test]
+	fn test_consistency_between_multilinear_extension_and_multilinear_poly_oracle() {
+		for n_vars in 1..5 {
+			for index in 1..(1 << n_vars) {
+				let step_down = StepDown::new(n_vars, index).unwrap();
+				assert_eq!(
+					hypercube_evals_from_oracle(&step_down),
+					step_down
+						.multilinear_extension::<BinaryField1b>()
+						.unwrap()
+						.evals()
+				);
+			}
+		}
+	}
+
+	fn packed_slice<P>(assignments: &[(Range<usize>, u8)]) -> Vec<P>
+	where
+		P: PackedField<Scalar = BinaryField1b>,
+	{
+		assert_eq!(assignments[0].0.start, 0, "First assignment must start at index 0");
+		assert_eq!(
+			assignments[assignments.len() - 1].0.end % P::WIDTH,
+			0,
+			"Last assignment must end at an index divisible by packing width"
+		);
+		for i in 1..assignments.len() {
+			assert_eq!(
+				assignments[i].0.start,
+				assignments[i - 1].0.end,
+				"2 assignments following each other can't be overlapping or have holes in between"
+			);
+		}
+		assignments
+			.iter()
+			.for_each(|(r, _)| assert!(r.end > r.start, "Range must have positive size"));
+		let packed_len = (P::WIDTH - 1
+			+ (assignments.iter().map(|(range, _)| range.end))
+				.max()
+				.unwrap_or(0))
+			/ P::WIDTH;
+		let mut result: Vec<P> = vec![P::default(); packed_len];
+		for (range, value) in assignments.iter() {
+			for i in range.clone() {
+				set_packed_slice(&mut result, i, P::Scalar::new(*value));
+			}
+		}
+		result
+	}
+
+	fn stepdown_evals<P>(n_vars: usize, index: usize) -> Vec<P>
+	where
+		P: PackedField<Scalar = BinaryField1b>,
+	{
+		StepDown::new(n_vars, index)
+			.unwrap()
+			.multilinear_extension::<P>()
+			.unwrap()
+			.evals()
+			.to_vec()
+	}
+
+	fn hypercube_evals_from_oracle(s: &dyn MultivariatePoly<BinaryField1b>) -> Vec<BinaryField1b> {
+		(0..(1 << s.n_vars()))
+			.map(|i| {
+				s.evaluate(&decompose_index_to_hypercube_point(s.n_vars(), i))
+					.unwrap()
+			})
+			.collect()
+	}
+}

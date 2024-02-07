@@ -79,13 +79,12 @@ impl<P: PackedField> MultilinearQuery<P> {
 #[cfg(test)]
 mod tests {
 	use super::MultilinearQuery;
+	use crate::protocols::test_utils::macros::felts;
+
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident) => {
 			crate::field::iter_packed_slice(MultilinearQuery::<$p>::with_full_query(&[$($f($elem)),*]).unwrap().expansion()).collect::<Vec<_>>()
 		};
-	}
-	macro_rules! felts {
-		($f:ident[$($elem:expr),* $(,)?]) => { vec![$($f($elem)),*] };
 	}
 
 	#[test]

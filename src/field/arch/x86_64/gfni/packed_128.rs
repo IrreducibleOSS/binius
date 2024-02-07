@@ -7,7 +7,7 @@ use bytemuck::{
 use core::arch::x86_64::*;
 use ff::Field;
 use rand::{Rng, RngCore};
-use static_assertions::assert_eq_size;
+use static_assertions::{assert_eq_size, const_assert};
 use std::{
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -187,8 +187,26 @@ macro_rules! binary_tower_packed_bits {
 					.ok_or(Error::IndexOutOfRange { index: i, max: Self::WIDTH })
 			}
 
-			fn set_checked(&mut self, _i: usize, _scalar: Self::Scalar) -> Result<(), Error> {
-				todo!("implement set_checked")
+			fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error> {
+				(i < Self::WIDTH)
+					.then(|| {
+						match (1u128.overflowing_shl(Self::Scalar::N_BITS as u32)) {
+							(max, false) => {
+								// Mask off the corresponding bits
+								let mask = must_cast(!((max-1) << (i * Self::Scalar::N_BITS)));
+								let val = must_cast((scalar.0 as u128) << (i * Self::Scalar::N_BITS));
+								self.0 = unsafe { _mm_or_si128(_mm_and_si128(self.0, mask), val) };
+							}
+							(_, true) => {
+								let val = must_cast((scalar.0 as u128) << (i * Self::Scalar::N_BITS));
+								self.0 = val;
+							}
+						}
+					})
+					.ok_or(Error::IndexOutOfRange {
+						index: i,
+						max: Self::WIDTH,
+					})
 			}
 
 			fn random(mut rng: impl RngCore) -> Self {
@@ -196,8 +214,22 @@ macro_rules! binary_tower_packed_bits {
 				Self(unsafe { _mm_loadu_epi64(rand_i64.as_ptr()) })
 			}
 
-			fn broadcast(_scalar: Self::Scalar) -> Self {
-				todo!("broadcast")
+			fn broadcast(scalar: $scalar_ty) -> Self {
+				const TOWER_LEVEL: usize = <$scalar_ty>::N_BITS.ilog2() as usize;
+				const_assert!(TOWER_LEVEL <= 7);
+				let mut tmp = scalar.0 as u128;
+				for n in TOWER_LEVEL..3 {
+					tmp |= tmp << (1 << n);
+				}
+				let tmp = must_cast(tmp);
+				Self(match TOWER_LEVEL {
+					0..=3 => unsafe { _mm_broadcastb_epi8(tmp) },
+					4 => unsafe { _mm_broadcastw_epi16(tmp) },
+					5 => unsafe { _mm_broadcastd_epi32(tmp) },
+					6 => unsafe { _mm_broadcastq_epi64(tmp) },
+					7 => tmp,
+					_ => unreachable!()
+				})
 			}
 
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {

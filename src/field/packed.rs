@@ -79,6 +79,14 @@ pub trait PackedField:
 		(0..Self::WIDTH).map(|i| self.get(i))
 	}
 
+	fn zero() -> Self {
+		Self::broadcast(Self::Scalar::ZERO)
+	}
+
+	fn one() -> Self {
+		Self::broadcast(Self::Scalar::ONE)
+	}
+
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
 

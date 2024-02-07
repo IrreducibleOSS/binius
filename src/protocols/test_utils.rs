@@ -25,6 +25,27 @@ use crate::{
 	},
 };
 
+// If the macro is not used in the same module, rustc thinks it is unused for some reason
+#[allow(unused_macros, unused_imports)]
+pub mod macros {
+	macro_rules! felts {
+		($f:ident[$($elem:expr),* $(,)?]) => { vec![$($f::new($elem)),*] };
+	}
+	pub(crate) use felts;
+}
+
+pub fn decompose_index_to_hypercube_point<F: Field>(n_vars: usize, index: usize) -> Vec<F> {
+	(0..n_vars)
+		.map(|k| {
+			if (index >> k) % 2 == 1 {
+				F::ONE
+			} else {
+				F::ZERO
+			}
+		})
+		.collect::<Vec<_>>()
+}
+
 #[derive(Debug)]
 pub struct TestProductComposition {
 	arity: usize,

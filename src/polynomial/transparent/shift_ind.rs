@@ -387,6 +387,7 @@ mod tests {
 	use crate::{
 		field::{BinaryField32b, Field},
 		polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly},
+		protocols::test_utils::decompose_index_to_hypercube_point,
 	};
 	use std::iter::repeat_with;
 
@@ -506,18 +507,6 @@ mod tests {
 	}
 
 	// Functionality Tests
-	fn decompose_index_to_hypercube_point<F: Field>(block_size: usize, index: usize) -> Vec<F> {
-		(0..block_size)
-			.map(|k| {
-				if (index >> k) % 2 == 1 {
-					F::ONE
-				} else {
-					F::ZERO
-				}
-			})
-			.collect::<Vec<_>>()
-	}
-
 	fn test_circular_right_shift_functionality_help<F: Field>(
 		block_size: usize,
 		right_shift_offset: usize,

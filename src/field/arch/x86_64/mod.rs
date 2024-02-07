@@ -11,7 +11,7 @@ cfg_if! {
 }
 
 cfg_if! {
-	if #[cfg(all(target_feature = "gfni", target_feature = "sse2"))] {
+	if #[cfg(all(target_feature = "gfni", target_feature = "sse2", target_feature = "avx2"))] {
 		mod gfni;
 		pub use gfni::packed_128;
 	} else {
