@@ -11,8 +11,8 @@ use crate::{
 	},
 	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly},
 	protocols::{
-		evalcheck::evalcheck::{EvalcheckClaim, EvalcheckWitness},
-		zerocheck::zerocheck::{ZerocheckClaim, ZerocheckWitness},
+		evalcheck::{EvalcheckClaim, EvalcheckWitness},
+		zerocheck::{ZerocheckClaim, ZerocheckWitness},
 	},
 };
 

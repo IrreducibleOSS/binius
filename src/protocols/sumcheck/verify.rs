@@ -2,12 +2,15 @@
 
 use crate::{
 	field::Field, iopoly::MultivariatePolyOracle, polynomial::EvaluationDomain,
-	protocols::evalcheck::evalcheck::EvalcheckClaim,
+	protocols::evalcheck::EvalcheckClaim,
 };
 
 use super::{
-	error::Error, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, SumcheckRound,
-	SumcheckRoundClaim,
+	error::Error,
+	sumcheck::{
+		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, SumcheckClaim, SumcheckRound,
+		SumcheckRoundClaim,
+	},
 };
 
 /// Verifies a sumcheck round reduction proof.
@@ -39,4 +42,11 @@ pub fn verify_final<F: Field>(
 	let round_claim =
 		reduce_sumcheck_claim_round(poly_oracle, domain, round, round_claim, challenge)?;
 	reduce_sumcheck_claim_final(poly_oracle, round_claim)
+}
+
+pub fn setup_first_round_claim<F: Field>(claim: &SumcheckClaim<F>) -> SumcheckRoundClaim<F> {
+	SumcheckRoundClaim {
+		partial_point: vec![],
+		current_round_sum: claim.sum,
+	}
 }

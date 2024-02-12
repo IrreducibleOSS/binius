@@ -4,7 +4,7 @@ use crate::{
 	field::{ExtensionField, Field},
 	iopoly::MultivariatePolyOracle,
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
-	protocols::evalcheck::evalcheck::{EvalcheckClaim, EvalcheckWitness},
+	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };
 use std::borrow::Borrow;
 
@@ -61,15 +61,6 @@ pub fn check_evaluation_domain<F: Field>(
 pub struct SumcheckRoundClaim<F: Field> {
 	pub partial_point: Vec<F>,
 	pub current_round_sum: F,
-}
-
-pub fn setup_first_round_claim<F: Field, FE: ExtensionField<F>>(
-	claim: &SumcheckClaim<F>,
-) -> SumcheckRoundClaim<FE> {
-	SumcheckRoundClaim {
-		partial_point: vec![],
-		current_round_sum: claim.sum.into(),
-	}
 }
 
 /// Reduce a sumcheck round claim to a claim for the next round.

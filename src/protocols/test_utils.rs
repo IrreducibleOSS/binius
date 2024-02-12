@@ -11,15 +11,11 @@ use crate::{
 		MultilinearExtension, MultilinearPoly,
 	},
 	protocols::{
-		evalcheck::evalcheck::EvalcheckClaim,
+		evalcheck::EvalcheckClaim,
 		sumcheck::{
-			prove::{
-				prove_at_switchover, prove_before_switchover, prove_final, prove_first_round,
-				prove_first_round_with_operating_field, prove_later_round_with_operating_field,
-				prove_post_switchover,
-			},
-			setup_first_round_claim,
-			verify::{verify_final, verify_round},
+			prove_at_switchover, prove_before_switchover, prove_final, prove_first_round,
+			prove_first_round_with_operating_field, prove_later_round_with_operating_field,
+			prove_post_switchover, setup_first_round_claim, verify_final, verify_round,
 			SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRoundClaim, SumcheckWitness,
 		},
 	},

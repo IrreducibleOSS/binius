@@ -6,7 +6,7 @@ use crate::{
 	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{MultilinearComposite, MultilinearPoly},
 	protocols::{
-		sumcheck::mix::MixComposition,
+		sumcheck::MixComposition,
 		zerocheck::{
 			zerocheck::{ZerocheckClaim, ZerocheckWitness},
 			Error,

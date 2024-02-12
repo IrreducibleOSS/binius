@@ -1,7 +1,15 @@
 // Copyright 2024 Ulvetanna Inc.
 
-pub mod error;
+mod error;
 #[allow(clippy::module_inception)]
-pub mod prodcheck;
-pub mod prove;
-pub mod verify;
+mod prodcheck;
+mod prove;
+mod verify;
+
+pub use error::*;
+pub use prodcheck::{
+	ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness, ReducedProductCheckClaims,
+	ReducedProductCheckWitnesses,
+};
+pub use prove::*;
+pub use verify::*;

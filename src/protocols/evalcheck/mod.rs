@@ -1,7 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
-pub mod error;
+mod error;
 #[allow(clippy::module_inception)]
-pub mod evalcheck;
-pub mod prove;
-pub mod verify;
+mod evalcheck;
+mod prove;
+mod verify;
+
+pub use error::*;
+pub use evalcheck::*;
+pub use prove::*;
+pub use verify::*;

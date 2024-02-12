@@ -12,10 +12,10 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite};
 
-use super::VerificationError;
+use super::error::VerificationError;
 
 #[derive(Debug)]
-pub struct ZerocheckProof {}
+pub struct ZerocheckProof;
 
 #[derive(Debug)]
 pub struct ZerocheckProveOutput<'a, F: Field> {

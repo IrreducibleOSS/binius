@@ -5,13 +5,23 @@
 //! Sumcheck supports an efficient prover algorithm when the virtual polynomial is a multilinear composite, so this
 //! module only handles that case, rather than the case of general multivariate polynomials.
 
-pub mod error;
-pub mod prove;
-
-pub mod mix;
+mod error;
+mod mix;
+mod prove;
+mod prove_utils;
 #[allow(clippy::module_inception)]
-pub mod sumcheck;
-pub mod verify;
+mod sumcheck;
+mod verify;
 
 pub use error::*;
-pub use sumcheck::*;
+pub use mix::*;
+pub use prove::*;
+pub use prove_utils::{
+	PostSwitchoverRoundOutput, PostSwitchoverWitness, PreSwitchoverRoundOutput,
+	PreSwitchoverWitness,
+};
+pub use sumcheck::{
+	SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,
+	SumcheckWitness,
+};
+pub use verify::*;

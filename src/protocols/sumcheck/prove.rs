@@ -2,15 +2,18 @@
 
 use std::borrow::Borrow;
 
-use self::utils::{
+use super::prove_utils::{
 	compute_round_coeffs_first, compute_round_coeffs_post_switchover,
 	compute_round_coeffs_pre_switchover, PostSwitchoverRoundOutput, PreSwitchoverRoundOutput,
 	PreSwitchoverWitness,
 };
 
 use super::{
-	check_evaluation_domain, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, Error,
-	SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRoundClaim, SumcheckWitness,
+	error::Error,
+	sumcheck::{
+		check_evaluation_domain, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round,
+		SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRoundClaim, SumcheckWitness,
+	},
 };
 use crate::{
 	field::Field,
@@ -18,10 +21,8 @@ use crate::{
 		multilinear_query::MultilinearQuery, EvaluationDomain, MultilinearExtension,
 		MultilinearPoly,
 	},
-	protocols::evalcheck::evalcheck::EvalcheckWitness,
+	protocols::evalcheck::EvalcheckWitness,
 };
-
-pub mod utils;
 
 fn validate_input<F, M, BM>(
 	sumcheck_claim: &SumcheckClaim<F>,

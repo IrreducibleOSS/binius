@@ -7,7 +7,7 @@ use crate::field::Field;
 use crate::{
 	iopoly::MultilinearPolyOracle,
 	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
-	protocols::{evalcheck::evalcheck::EvalcheckWitness, prodcheck::error::Error},
+	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
 };
 
 use super::prodcheck::{

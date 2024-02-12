@@ -13,16 +13,14 @@ use binius::{
 	},
 	protocols::{
 		evalcheck::{
-			evalcheck::{BatchCommittedEvalClaims, EvalcheckProof},
-			prove::prove as prove_evalcheck,
-			verify::verify as verify_evalcheck,
+			prove as prove_evalcheck, verify as verify_evalcheck, BatchCommittedEvalClaims,
+			EvalcheckProof,
 		},
 		sumcheck::{SumcheckProof, SumcheckProveOutput},
 		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck::{
-			prove::prove as prove_zerocheck,
-			verify::verify as verify_zerocheck,
-			zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
+			prove as prove_zerocheck, verify as verify_zerocheck, ZerocheckClaim, ZerocheckProof,
+			ZerocheckProveOutput,
 		},
 	},
 };
