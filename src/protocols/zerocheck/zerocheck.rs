@@ -2,7 +2,9 @@
 
 use crate::{
 	field::{Field, TowerField},
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	iopoly::{
+		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, TransparentPolyOracle,
+	},
 	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
@@ -91,10 +93,10 @@ pub fn reduce_zerocheck_claim<F: TowerField>(
 	}
 
 	let eq_r_multilinear = EqIndPartialEval::new(claim.poly.n_vars(), challenge)?;
-	let eq_r = MultilinearPolyOracle::Transparent {
-		poly: Arc::new(eq_r_multilinear),
-		tower_level: F::TOWER_LEVEL,
-	};
+	let eq_r = MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(
+		Arc::new(eq_r_multilinear),
+		F::TOWER_LEVEL,
+	));
 
 	let poly_composite = claim.poly.clone().into_composite();
 	let mut inners = poly_composite.inner_polys();

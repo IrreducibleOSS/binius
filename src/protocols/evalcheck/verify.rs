@@ -27,16 +27,13 @@ pub fn verify<F: Field>(
 
 	match poly {
 		MultivariatePolyOracle::Multilinear(multilinear) => match multilinear {
-			MultilinearPolyOracle::Transparent {
-				poly,
-				tower_level: _,
-			} => {
+			MultilinearPolyOracle::Transparent(transparent) => {
 				match evalcheck_proof {
 					EvalcheckProof::Transparent => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let actual_eval = poly.evaluate(&eval_point)?;
+				let actual_eval = transparent.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation.into());
 				}

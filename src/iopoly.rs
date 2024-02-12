@@ -1,9 +1,8 @@
-use derive_getters::Getters;
-
 use crate::{
 	field::{BinaryField128b, Field},
 	polynomial::{Error as PolynomialError, IdentityCompositionPoly},
 };
+use getset::{CopyGetters, Getters};
 
 use crate::{
 	field::TowerField,
@@ -31,12 +30,9 @@ pub enum Error {
 
 pub type CommittedId = usize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MultilinearPolyOracle<F: Field> {
-	Transparent {
-		poly: Arc<dyn MultivariatePoly<F>>,
-		tower_level: usize,
-	},
+	Transparent(TransparentPolyOracle<F>),
 	Committed {
 		id: CommittedId,
 		n_vars: usize,
@@ -53,18 +49,44 @@ pub enum MultilinearPolyOracle<F: Field> {
 	Packed(Packed<F>),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Getters, CopyGetters)]
+pub struct TransparentPolyOracle<F: Field> {
+	#[get = "pub"]
+	poly: Arc<dyn MultivariatePoly<F> + Send + Sync>,
+	#[get_copy = "pub"]
+	tower_level: usize,
+}
+
+impl<F: Field> TransparentPolyOracle<F> {
+	pub fn new(poly: Arc<dyn MultivariatePoly<F> + Send + Sync>, tower_level: usize) -> Self {
+		TransparentPolyOracle { poly, tower_level }
+	}
+}
+
+impl<F: Field> PartialEq for TransparentPolyOracle<F> {
+	fn eq(&self, other: &Self) -> bool {
+		Arc::ptr_eq(&self.poly, &other.poly) && self.tower_level == other.tower_level
+	}
+}
+
+impl<F: Field> Eq for TransparentPolyOracle<F> {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ProjectionVariant {
 	FirstVars,
 	LastVars,
 }
 
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct Projected<F: Field> {
+	#[get = "pub"]
 	inner: Box<MultilinearPolyOracle<F>>,
+	#[get = "pub"]
 	values: Vec<F>,
+	#[get_copy = "pub"]
 	projection_variant: ProjectionVariant,
 }
+
 impl<F: Field> Projected<F> {
 	pub fn new(
 		inner: MultilinearPolyOracle<F>,
@@ -88,18 +110,22 @@ impl<F: Field> Projected<F> {
 	}
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ShiftVariant {
 	CircularRight,
 	LogicalRight,
 	LogicalLeft,
 }
 
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct Shifted<F: Field> {
+	#[get = "pub"]
 	inner: Box<MultilinearPolyOracle<F>>,
+	#[get_copy = "pub"]
 	shift_offset: usize,
+	#[get_copy = "pub"]
 	block_size: usize,
+	#[get_copy = "pub"]
 	shift_variant: ShiftVariant,
 }
 
@@ -134,14 +160,16 @@ impl<F: Field> Shifted<F> {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct Packed<F: Field> {
+	#[get = "pub"]
 	inner: Box<MultilinearPolyOracle<F>>,
 	/// The number of tower levels increased by the packing operation.
 	///
 	/// This is the base 2 logarithm of the field extension, and is called $\kappa$ in [DP23], Section 4.3.
 	///
 	/// [DP23] https://eprint.iacr.org/2023/1784
+	#[get_copy = "pub"]
 	log_degree: usize,
 }
 
@@ -280,7 +308,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 	pub fn n_vars(&self) -> usize {
 		use MultilinearPolyOracle::*;
 		match self {
-			Transparent { poly, .. } => poly.n_vars(),
+			Transparent(transparent) => transparent.poly().n_vars(),
 			Committed { n_vars, .. } => *n_vars,
 			Repeating { inner, log_count } => inner.n_vars() + log_count,
 			Interleaved(poly0, ..) => 1 + poly0.n_vars(),
@@ -294,7 +322,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 	pub fn binary_tower_level(&self) -> usize {
 		use MultilinearPolyOracle::*;
 		match self {
-			Transparent { tower_level, .. } => *tower_level,
+			Transparent(transparent) => transparent.tower_level(),
 			Committed { tower_level, .. } => *tower_level,
 			Repeating { inner, .. } => inner.binary_tower_level(),
 			Interleaved(poly0, poly1) => poly0.binary_tower_level().max(poly1.binary_tower_level()),

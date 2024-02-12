@@ -1,6 +1,6 @@
 use crate::{
 	field::{set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField},
-	iopoly::MultilinearPolyOracle,
+	iopoly::{MultilinearPolyOracle, TransparentPolyOracle},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
 use std::sync::Arc;
@@ -55,10 +55,7 @@ impl StepDown {
 	}
 
 	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<BinaryField128b> {
-		MultilinearPolyOracle::Transparent {
-			poly: Arc::new(self.clone()),
-			tower_level: 0,
-		}
+		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(Arc::new(self.clone()), 0))
 	}
 }
 

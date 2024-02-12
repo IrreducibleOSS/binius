@@ -8,6 +8,7 @@
 pub mod error;
 pub mod prove;
 
+pub mod mix;
 #[allow(clippy::module_inception)]
 pub mod sumcheck;
 pub mod verify;

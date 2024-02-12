@@ -2,12 +2,11 @@
 // Copyright (c) 2022-2023 The Plonky3 Authors
 
 use crate::{
-	field::{ExtensionField, PackedExtensionField, PackedField},
+	field::{ExtensionField, Field, PackedExtensionField, PackedField},
 	hash::Hasher,
 };
 use bytemuck::{bytes_of, AnyBitPattern, Pod};
-use ff::Field;
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
+pub use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::{mem, ops::Range, slice};
 
 // TODO(jimpo): Whole module needs review
