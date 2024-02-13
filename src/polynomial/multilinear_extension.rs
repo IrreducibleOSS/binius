@@ -118,7 +118,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	/// PE::WIDTH, i.e. 2^(\mu - k) \geq PE::WIDTH, since WIDTH is power of two
 	pub fn evaluate_partial_high<PE>(
 		&self,
-		query: &MultilinearQuery<PE::Scalar>,
+		query: &MultilinearQuery<PE>,
 	) -> Result<MultilinearExtension<'static, PE>, Error>
 	where
 		PE: PackedField,
@@ -131,11 +131,13 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
 
+		// This operation is a left vector-matrix product of the vector of tensor product-expanded
+		// query coefficients with the matrix of multilinear coefficients.
 		let mut result_evals = vec![PE::default(); (1 << (self.mu - query.n_vars())) / PE::WIDTH];
 		self.iter_subpolynomials_high(self.mu - query.n_vars())?
-			.zip(query.expansion().iter().copied())
-			.for_each(|(subpoly, basis_eval)| {
-				for (i, subpoly_eval_i) in iter_packed_slice(subpoly.evals()).enumerate() {
+			.zip(iter_packed_slice(query.expansion()))
+			.for_each(|(subpoly_coeffs, basis_eval)| {
+				for (i, subpoly_eval_i) in subpoly_coeffs.enumerate() {
 					let mut value = get_packed_slice(&result_evals, i);
 					value += basis_eval * subpoly_eval_i;
 					set_packed_slice(&mut result_evals, i, value);
@@ -145,25 +147,33 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		MultilinearExtension::from_values(result_evals)
 	}
 
-	pub fn iter_subpolynomials_high(
+	fn iter_subpolynomials_high(
 		&self,
 		n_vars: usize,
-	) -> Result<impl Iterator<Item = MultilinearExtension<P>>, Error> {
+	) -> Result<impl Iterator<Item = impl Iterator<Item = P::Scalar> + '_>, Error> {
 		let log_width = log2(P::WIDTH);
-		if n_vars < log_width || n_vars > self.mu {
-			return Err(Error::ArgumentRangeError {
-				arg: "n_vars".into(),
-				range: log_width..self.mu,
-			});
-		}
 
-		let iter = self
-			.evals
-			.chunks_exact(1 << (n_vars - log_width))
-			.map(move |evals| MultilinearExtension {
-				mu: n_vars,
-				evals: Cow::Borrowed(evals),
-			});
+		let iter = if n_vars < log_width {
+			Either::Left(
+				self.evals
+					.iter()
+					.flat_map(move |packed| {
+						std::iter::repeat(*packed)
+							.take(1 << (log_width - n_vars))
+							.enumerate()
+							.map(move |(i, packed)| {
+								packed.into_iter().skip(i << n_vars).take(1 << n_vars)
+							})
+					})
+					.map(Either::Left),
+			)
+		} else {
+			Either::Right(
+				self.evals
+					.chunks_exact(1 << (n_vars - log_width))
+					.map(|evals| Either::Right(iter_packed_slice(evals))),
+			)
+		};
 		Ok(iter)
 	}
 
@@ -378,13 +388,12 @@ fn log2(v: usize) -> usize {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use assert_matches::assert_matches;
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
 	use crate::field::{
-		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField32b,
+		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField16b, BinaryField32b,
 		PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
 
@@ -419,7 +428,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_iter_subpolynomials() {
+	fn test_iter_subpolynomials_n_vars_gt_width() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let values = repeat_with(|| Field::random(&mut rng))
 			.take(8)
@@ -429,13 +438,39 @@ mod tests {
 
 		let mut iter = poly.iter_subpolynomials_high(2).unwrap();
 
-		let expected_poly0 = MultilinearExtension::from_values_slice(&values[0..4]).unwrap();
-		assert_eq!(iter.next().unwrap(), expected_poly0);
+		assert_eq!(&iter.next().unwrap().collect::<Vec<_>>(), &values[0..4]);
+		assert_eq!(&iter.next().unwrap().collect::<Vec<_>>(), &values[4..8]);
+		assert!(iter.next().is_none());
+	}
 
-		let expected_poly1 = MultilinearExtension::from_values_slice(&values[4..8]).unwrap();
-		assert_eq!(iter.next().unwrap(), expected_poly1);
+	#[test]
+	fn test_iter_subpolynomials_n_vars_lt_width() {
+		let mut values = vec![P::default(); 2];
+		for i in 0..values.len() * P::WIDTH {
+			set_packed_slice(&mut values, i, BinaryField16b::new(i as u16));
+		}
 
-		assert_matches!(iter.next(), None);
+		let poly = MultilinearExtension::from_values_slice(&values).unwrap();
+
+		let mut iter = poly.iter_subpolynomials_high(2).unwrap();
+
+		assert_eq!(
+			&iter.next().unwrap().collect::<Vec<_>>(),
+			&[0x0, 0x1, 0x2, 0x3].map(BinaryField16b::new)
+		);
+		assert_eq!(
+			&iter.next().unwrap().collect::<Vec<_>>(),
+			&[0x4, 0x5, 0x6, 0x7].map(BinaryField16b::new)
+		);
+		assert_eq!(
+			&iter.next().unwrap().collect::<Vec<_>>(),
+			&[0x8, 0x9, 0xA, 0xB].map(BinaryField16b::new)
+		);
+		assert_eq!(
+			&iter.next().unwrap().collect::<Vec<_>>(),
+			&[0xC, 0xD, 0xE, 0xF].map(BinaryField16b::new)
+		);
+		assert!(iter.next().is_none());
 	}
 
 	fn evaluate_split<P>(
@@ -477,6 +512,30 @@ mod tests {
 		let result1 = poly.evaluate(&multilin_query).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);
+	}
+
+	#[test]
+	fn test_evaluate_partial_high_packed() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| P::random(&mut rng))
+			.take(256 >> P::LOG_WIDTH)
+			.collect::<Vec<_>>();
+		let poly = MultilinearExtension::from_values(evals).unwrap();
+		let q = repeat_with(|| Field::random(&mut rng))
+			.take(8)
+			.collect::<Vec<BinaryField128b>>();
+		let multilin_query = MultilinearQuery::<BinaryField128b>::with_full_query(&q).unwrap();
+
+		let expected = poly.evaluate(&multilin_query).unwrap();
+
+		// The final split has a number of coefficients less than the packing width
+		let query_hi = MultilinearQuery::<BinaryField128b>::with_full_query(&q[1..]).unwrap();
+		let partial_eval = poly.evaluate_partial_high(&query_hi).unwrap();
+		assert!(partial_eval.n_vars() < P::LOG_WIDTH);
+
+		let query_lo = MultilinearQuery::<BinaryField128b>::with_full_query(&q[..1]).unwrap();
+		let eval = partial_eval.evaluate(&query_lo).unwrap();
+		assert_eq!(eval, expected);
 	}
 
 	#[test]
