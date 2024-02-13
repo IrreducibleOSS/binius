@@ -28,7 +28,7 @@ pub struct ZerocheckProveOutput<'a, F: Field> {
 	pub zerocheck_proof: ZerocheckProof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ZerocheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
 	pub poly: MultivariatePolyOracle<F>,
