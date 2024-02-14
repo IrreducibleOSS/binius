@@ -194,6 +194,14 @@ macro_rules! packed_field_array {
 					(Self([ret_00, ret_01]), Self([ret_10, ret_11]))
 				}
 			}
+
+			fn square(self) -> Self {
+				Self([self.0[0].square(), self.0[1].square()])
+			}
+
+			fn invert(self) -> Self {
+				Self([self.0[0].invert(), self.0[1].invert()])
+			}
 		}
 
 		unsafe impl<P> PackedExtensionField<P> for $name

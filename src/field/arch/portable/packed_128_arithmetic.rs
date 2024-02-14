@@ -36,12 +36,14 @@ impl PackedMultiply for PackedBinaryField128x1b {
 /// Compile-time known constants needed for packed multiply implementation.
 trait PackedMultiplyConstants {
 	const ALPHAS: u128;
-	const INTERLEAVE_MASK: u128;
+	const INTERLEAVE_EVEN_MASK: u128;
+	const INTERLEAVE_ODD_MASK: u128;
 }
 
 impl<F: TowerField> PackedMultiplyConstants for F {
 	const ALPHAS: u128 = generate_alphas_even::<F>();
-	const INTERLEAVE_MASK: u128 = generate_interleave_mask::<F>();
+	const INTERLEAVE_EVEN_MASK: u128 = generate_interleave_mask::<F>();
+	const INTERLEAVE_ODD_MASK: u128 = Self::INTERLEAVE_EVEN_MASK << F::N_BITS;
 }
 
 impl<PT> PackedMultiply for PT
@@ -68,7 +70,7 @@ where
 		// <a_lo_0 + a_hi_0, b_lo_0 + b_hi_0, a_lo_1 + a_hi_1, b_lo_1 + b_hi_1, ...>
 		let lo_plus_hi_a_even_b_odd = lo ^ hi;
 
-		let even_mask = PT::DirectSubfield::INTERLEAVE_MASK;
+		let even_mask = PT::DirectSubfield::INTERLEAVE_EVEN_MASK;
 		let odd_mask = even_mask << PT::DirectSubfield::N_BITS;
 
 		let alphas = PT::DirectSubfield::ALPHAS;
@@ -115,12 +117,13 @@ const fn generate_interleave_mask<F: BinaryField>() -> u128 {
 /// Given vectors <a_0, a_1, a_2, a_3, ...> and <b_0, b_1, b_2, b_3, ...>, returns a tuple with
 /// <a0, b0, a2, b2, ...> and <a1, b1, a3, b3>.
 fn interleave<F: TowerField>(a: u128, b: u128) -> (u128, u128) {
-	let mask = F::INTERLEAVE_MASK;
+	let mask = F::INTERLEAVE_EVEN_MASK;
 
 	let block_len = 1 << F::TOWER_LEVEL;
 	let t = ((a >> block_len) ^ b) & mask;
 	let c = a ^ (t << block_len);
 	let d = b ^ t;
+
 	(c, d)
 }
 
@@ -145,12 +148,114 @@ const fn generate_alphas_even<F: TowerField>() -> u128 {
 /// View the input as a vector of packed binary tower elements and add the adjacent ones.
 /// Given a vector <a_0, a_1, a_2, a_3, ...>, returns <a0 + a1, a0 + a1, a2 + a3, a2 + a3, ...>.
 fn xor_adjacent<F: TowerField>(a: u128) -> u128 {
-	let mask = F::INTERLEAVE_MASK;
+	let mask = F::INTERLEAVE_EVEN_MASK;
 
 	let block_len = F::N_BITS;
 	let t = ((a >> block_len) ^ a) & mask;
 
 	t ^ (t << block_len)
+}
+/// A trait for packed field that implements multiplying by alpha
+pub(super) trait PackedMultiplyAlpha {
+	fn packed_multiply_alpha(self) -> Self;
+}
+
+impl PackedMultiplyAlpha for PackedBinaryField128x1b {
+	fn packed_multiply_alpha(self) -> Self {
+		self
+	}
+}
+
+impl<PT> PackedMultiplyAlpha for PT
+where
+	PT: PackedTowerField,
+	PT::PackedDirectSubfield: PackedMultiplyAlpha,
+{
+	fn packed_multiply_alpha(self) -> Self {
+		let block_len = PT::DirectSubfield::N_BITS;
+		let even_mask = PT::DirectSubfield::INTERLEAVE_EVEN_MASK;
+		let odd_mask = PT::DirectSubfield::INTERLEAVE_ODD_MASK;
+
+		let a = self.into();
+		let a0 = a & even_mask;
+		let a1 = a & odd_mask;
+		let z1 = PT::PackedDirectSubfield::packed_multiply_alpha(a1.into()).into();
+
+		((a1 >> block_len) | ((a0 << block_len) ^ z1)).into()
+	}
+}
+
+/// A trait for a packed field that can be multiplied by itself
+pub(super) trait PackedSquare {
+	fn packed_square(self) -> Self;
+}
+
+impl PackedSquare for PackedBinaryField128x1b {
+	fn packed_square(self) -> Self {
+		self
+	}
+}
+
+impl<PT> PackedSquare for PT
+where
+	PT: PackedTowerField,
+	PT::PackedDirectSubfield: PackedMultiplyAlpha + PackedSquare,
+{
+	fn packed_square(self) -> Self {
+		let block_len = PT::DirectSubfield::N_BITS;
+		let even_mask = PT::DirectSubfield::INTERLEAVE_EVEN_MASK;
+		let odd_mask = PT::DirectSubfield::INTERLEAVE_ODD_MASK;
+
+		let z_02 = self.as_packed_subfield().packed_square();
+		let z_2a = z_02.packed_multiply_alpha().into() & odd_mask;
+
+		let z_0_xor_z_2 = (z_02.into() ^ (z_02.into() >> block_len)) & even_mask;
+
+		(z_0_xor_z_2 | z_2a).into()
+	}
+}
+
+/// A trait for a packed field that can be inverted.
+/// Zero values will be mapped to zero values.
+pub(super) trait PackedInvert {
+	fn packed_invert(self) -> Self;
+}
+
+impl PackedInvert for PackedBinaryField128x1b {
+	fn packed_invert(self) -> Self {
+		self
+	}
+}
+
+impl<PT> PackedInvert for PT
+where
+	PT: PackedTowerField,
+	PT::PackedDirectSubfield: PackedMultiplyAlpha + PackedSquare + PackedMultiply + PackedInvert,
+{
+	fn packed_invert(self) -> Self {
+		let block_len = PT::DirectSubfield::N_BITS;
+		let even_mask = PT::DirectSubfield::INTERLEAVE_EVEN_MASK;
+		let odd_mask = PT::DirectSubfield::INTERLEAVE_ODD_MASK;
+
+		// has meaningful values in even positions
+		let a_1_even = self.into() >> block_len;
+		let intermediate = self.as_packed_subfield()
+			+ PT::PackedDirectSubfield::from(a_1_even).packed_multiply_alpha();
+		let delta = PackedMultiply::packed_multiply(self.as_packed_subfield(), intermediate)
+			+ PT::PackedDirectSubfield::packed_square(a_1_even.into());
+		let delta_inv = delta.packed_invert();
+
+		// set values from even positions to odd as well
+		let mut delta_inv_delta_inv = delta_inv.into() & even_mask;
+		delta_inv_delta_inv |= delta_inv_delta_inv << block_len;
+
+		let intermediate_a1 = (self.into() & odd_mask) | (intermediate.into() & even_mask);
+		let result = PT::PackedDirectSubfield::packed_multiply(
+			delta_inv_delta_inv.into(),
+			intermediate_a1.into(),
+		);
+		Into::<u128>::into(result).into()
+	}
 }
 
 #[cfg(test)]
@@ -160,15 +265,20 @@ mod tests {
 	use rand::thread_rng;
 	use std::fmt::Debug;
 
-	use crate::field::arch::portable::packed_128::{
-		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-		PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
-		PackedBinaryField8x16b,
+	use proptest::{arbitrary::any, proptest};
+
+	use crate::field::{
+		arch::portable::packed_128::{
+			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
+			PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
+			PackedBinaryField8x16b,
+		},
+		test_utils::{define_invert_tests, define_multiply_tests, define_square_tests},
 	};
 
 	use crate::field::{
-		BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-		BinaryField64b, BinaryField8b,
+		binary_field_arithmetic::TowerFieldArithmetic, BinaryField16b, BinaryField1b,
+		BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b,
 	};
 
 	#[test]
@@ -181,31 +291,7 @@ mod tests {
 		);
 	}
 
-	fn test_packed_multiply<P>()
-	where
-		P: PackedField + PackedMultiply + Debug,
-	{
-		let mut rng = thread_rng();
-		let a = P::random(&mut rng);
-		let b = P::random(&mut rng);
-
-		let result = P::packed_multiply(a, b);
-		for i in 0..P::WIDTH {
-			assert_eq!(result.get(i), a.get(i) * b.get(i));
-		}
-	}
-
-	#[test]
-	fn test_multiply() {
-		test_packed_multiply::<PackedBinaryField128x1b>();
-		test_packed_multiply::<PackedBinaryField64x2b>();
-		test_packed_multiply::<PackedBinaryField32x4b>();
-		test_packed_multiply::<PackedBinaryField16x8b>();
-		test_packed_multiply::<PackedBinaryField8x16b>();
-		test_packed_multiply::<PackedBinaryField4x32b>();
-		test_packed_multiply::<PackedBinaryField2x64b>();
-		test_packed_multiply::<PackedBinaryField1x128b>();
-	}
+	const NUM_TESTS: u64 = 100;
 
 	fn check_interleave<F: TowerField>(a: u128, b: u128, c: u128, d: u128) {
 		assert_eq!(interleave::<F>(a, b), (c, d));
@@ -263,4 +349,58 @@ mod tests {
 			0x1F1E1D1C1B1A19180F0E0D0C0B0A0908,
 		);
 	}
+
+	fn test_packed_multiply_alpha<P>()
+	where
+		P: PackedField + PackedMultiplyAlpha + Debug,
+		P::Scalar: TowerFieldArithmetic,
+	{
+		let mut rng = thread_rng();
+
+		for _ in 0..NUM_TESTS {
+			let a = P::random(&mut rng);
+
+			let result = a.packed_multiply_alpha();
+			for i in 0..P::WIDTH {
+				assert_eq!(result.get(i), a.get(i).multiply_alpha());
+			}
+		}
+	}
+
+	#[test]
+	fn test_multiply_alpha() {
+		test_packed_multiply_alpha::<PackedBinaryField128x1b>();
+		test_packed_multiply_alpha::<PackedBinaryField64x2b>();
+		test_packed_multiply_alpha::<PackedBinaryField32x4b>();
+		test_packed_multiply_alpha::<PackedBinaryField16x8b>();
+		test_packed_multiply_alpha::<PackedBinaryField8x16b>();
+		test_packed_multiply_alpha::<PackedBinaryField4x32b>();
+		test_packed_multiply_alpha::<PackedBinaryField2x64b>();
+		test_packed_multiply_alpha::<PackedBinaryField1x128b>();
+	}
+
+	trait PackedFieldWithPackedOps: PackedField + PackedMultiply + PackedSquare + PackedInvert {}
+
+	impl<P> PackedFieldWithPackedOps for P where
+		P: PackedField + PackedMultiply + PackedSquare + PackedInvert
+	{
+	}
+
+	fn packed_mult<P: PackedFieldWithPackedOps>(a: P, b: P) -> P {
+		P::packed_multiply(a, b)
+	}
+
+	define_multiply_tests!(packed_mult, PackedFieldWithPackedOps);
+
+	fn packed_square<P: PackedFieldWithPackedOps>(a: P) -> P {
+		P::packed_square(a)
+	}
+
+	define_square_tests!(packed_square, PackedFieldWithPackedOps);
+
+	fn packed_invert<P: PackedFieldWithPackedOps>(a: P) -> P {
+		P::packed_invert(a)
+	}
+
+	define_invert_tests!(packed_invert, PackedFieldWithPackedOps);
 }

@@ -90,6 +90,12 @@ pub trait PackedField:
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
 
+	/// Returns the value multiplied by itself
+	fn square(self) -> Self;
+
+	/// Returns the packed inversed values or zeroes at indices where `self` is zero.
+	fn invert(self) -> Self;
+
 	/// Interleaves blocks of this packed vector with another packed vector.
 	///
 	/// The operation can be seen as stacking the two vectors, dividing them into 2x2 matrices of
@@ -178,5 +184,13 @@ impl<F: Field> PackedField for F {
 
 	fn interleave(self, _other: Self, _log_block_len: usize) -> (Self, Self) {
 		panic!("cannot interleave when WIDTH = 1");
+	}
+
+	fn square(self) -> Self {
+		<Self as Field>::square(&self)
+	}
+
+	fn invert(self) -> Self {
+		<Self as Field>::invert(&self).unwrap_or(Self::ZERO)
 	}
 }

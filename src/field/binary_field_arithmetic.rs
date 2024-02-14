@@ -4,7 +4,7 @@ use super::binary_field::*;
 use cfg_if::cfg_if;
 use subtle::{ConstantTimeEq, CtOption};
 
-pub(super) trait TowerFieldArithmetic: TowerField {
+pub(crate) trait TowerFieldArithmetic: TowerField {
 	fn multiply(self, rhs: Self) -> Self;
 
 	fn multiply_alpha(self) -> Self;

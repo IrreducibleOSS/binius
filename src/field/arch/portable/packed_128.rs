@@ -20,7 +20,7 @@ use std::{
 };
 use subtle::{Choice, ConstantTimeEq};
 
-use super::packed_128_arithmetic::PackedTowerField;
+use super::packed_128_arithmetic::{PackedInvert, PackedSquare, PackedTowerField};
 
 macro_rules! packed_binary_field_u128 {
 	($vis:vis $name:ident[$scalar:ident($scalar_ty:ty); 1 << $log_width:literal]) => {
@@ -196,6 +196,14 @@ macro_rules! packed_binary_field_u128 {
 				let (c, d) = interleave_bits(self.0, other.0, log_block_len + log_bit_len);
 				(Self(c), Self(d))
 			}
+
+			fn square(self) -> Self {
+				self.packed_square()
+			}
+
+			fn invert(self) -> Self {
+				self.packed_invert()
+			}
 		}
 
 		impl From<[$scalar; 1 << $log_width]> for $name {
@@ -221,7 +229,7 @@ macro_rules! packed_binary_field_u128 {
 	};
 }
 
-macro_rules! impl_packed_binary_field_u128_broadcast_multiply {
+macro_rules! impl_packed_binary_field_u128_broadcast {
 	($name:ident, LOG_BITS = $log_bits:literal) => {
 		impl $name {
 			fn broadcast(scalar: <Self as PackedField>::Scalar) -> Self {
@@ -237,6 +245,19 @@ macro_rules! impl_packed_binary_field_u128_broadcast_multiply {
 		}
 	};
 }
+
+macro_rules! impl_packed_binary_field_operations {
+	($name:ty) => {};
+}
+
+impl_packed_binary_field_operations!(PackedBinaryField128x1b);
+impl_packed_binary_field_operations!(PackedBinaryField64x2b);
+impl_packed_binary_field_operations!(PackedBinaryField32x4b);
+impl_packed_binary_field_operations!(PackedBinaryField16x8b);
+impl_packed_binary_field_operations!(PackedBinaryField8x16b);
+impl_packed_binary_field_operations!(PackedBinaryField4x32b);
+impl_packed_binary_field_operations!(PackedBinaryField2x64b);
+impl_packed_binary_field_operations!(PackedBinaryField1x128b);
 
 macro_rules! impl_unpackable_packed_binary_field_u128 {
 	($name:ident) => {
@@ -282,13 +303,13 @@ packed_binary_field_u128!(pub PackedBinaryField4x32b[BinaryField32b(u32); 1 << 2
 packed_binary_field_u128!(pub PackedBinaryField2x64b[BinaryField64b(u64); 1 << 1]);
 packed_binary_field_u128!(pub PackedBinaryField1x128b[BinaryField128b(u128); 1 << 0]);
 
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField64x2b, LOG_BITS = 1);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField32x4b, LOG_BITS = 2);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField16x8b, LOG_BITS = 3);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField8x16b, LOG_BITS = 4);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField4x32b, LOG_BITS = 5);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField2x64b, LOG_BITS = 6);
-impl_packed_binary_field_u128_broadcast_multiply!(PackedBinaryField1x128b, LOG_BITS = 7);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField64x2b, LOG_BITS = 1);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField32x4b, LOG_BITS = 2);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField16x8b, LOG_BITS = 3);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField8x16b, LOG_BITS = 4);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField4x32b, LOG_BITS = 5);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField2x64b, LOG_BITS = 6);
+impl_packed_binary_field_u128_broadcast!(PackedBinaryField1x128b, LOG_BITS = 7);
 
 impl PackedBinaryField128x1b {
 	fn broadcast(scalar: BinaryField1b) -> Self {

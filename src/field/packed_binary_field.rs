@@ -2,14 +2,125 @@
 
 pub use crate::field::arch::{packed_128::*, packed_256::*};
 
+/// Common code to test different multiply, square and invert implementations
+#[cfg(test)]
+pub mod test_utils {
+	/// Test if `mult_func` operation is a valid multiply operation on the given values for
+	/// all possible packed fields defined on u128.
+	macro_rules! define_multiply_tests {
+		($mult_func:ident, $constraint:ident) => {
+			fn check_mul_packed<P: $constraint>(a: P, b: P) {
+				let c = $mult_func(a, b);
+				for i in 0..P::WIDTH {
+					assert_eq!(c.get(i), a.get(i) * b.get(i));
+				}
+			}
+
+			fn check_mul_packed_u128(a_val: u128, b_val: u128) {
+				check_mul_packed::<PackedBinaryField128x1b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField64x2b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField32x4b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField16x8b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField8x16b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField4x32b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField2x64b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField1x128b>(a_val.into(), b_val.into());
+			}
+
+			proptest! {
+				#[test]
+				fn test_mul_packed_128(a_val in any::<u128>(), b_val in any::<u128>()) {
+					check_mul_packed_u128(a_val, b_val);
+				}
+			}
+		};
+	}
+
+	/// Test if `square_func` operation is a valid square operation on the given value for
+	/// all possible packed fields.
+	macro_rules! define_square_tests {
+		($square_func:ident, $constraint:ident) => {
+			fn check_square_packed<P: $constraint>(a: P) {
+				let c = $square_func(a);
+				for i in 0..P::WIDTH {
+					assert_eq!(c.get(i), a.get(i) * a.get(i));
+				}
+			}
+
+			fn check_square_packed_128(a_val: u128) {
+				check_square_packed::<PackedBinaryField128x1b>(a_val.into());
+				check_square_packed::<PackedBinaryField64x2b>(a_val.into());
+				check_square_packed::<PackedBinaryField32x4b>(a_val.into());
+				check_square_packed::<PackedBinaryField16x8b>(a_val.into());
+				check_square_packed::<PackedBinaryField8x16b>(a_val.into());
+				check_square_packed::<PackedBinaryField4x32b>(a_val.into());
+				check_square_packed::<PackedBinaryField2x64b>(a_val.into());
+				check_square_packed::<PackedBinaryField1x128b>(a_val.into());
+			}
+
+			proptest! {
+				#[test]
+				fn test_square_packed_128(a_val in any::<u128>()) {
+					check_square_packed_128(a_val);
+				}
+			}
+		};
+	}
+
+	/// Test if `invert_func` operation is a valid invert operation on the given value for
+	/// all possible packed fields.
+	macro_rules! define_invert_tests {
+		($invert_func:ident, $constraint:ident) => {
+			fn test_inverse_packed<P: $constraint>(a: P) {
+				use $crate::field::Field;
+
+				let c = $invert_func(a);
+				for i in 0..P::WIDTH {
+					assert!(
+						(c.get(i).is_zero().into()
+							&& a.get(i).is_zero().into()
+							&& c.get(i).is_zero().into())
+							|| P::Scalar::ONE == a.get(i) * c.get(i)
+					);
+				}
+			}
+
+			pub fn check_inverse_packed_128(a_val: u128) {
+				test_inverse_packed::<PackedBinaryField128x1b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField64x2b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField32x4b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField16x8b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField8x16b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField4x32b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField2x64b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField1x128b>(a_val.into());
+			}
+
+			proptest! {
+				#[test]
+				fn test_invert_packed_128(a_val in any::<u128>()) {
+					check_inverse_packed_128(a_val);
+				}
+			}
+		};
+	}
+
+	pub(crate) use define_invert_tests;
+	pub(crate) use define_multiply_tests;
+	pub(crate) use define_square_tests;
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+
 	use crate::field::{BinaryField8b, Field, PackedField};
 
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, thread_rng, SeedableRng};
 	use std::iter::repeat_with;
+
+	use super::test_utils::{define_invert_tests, define_multiply_tests, define_square_tests};
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
 		let a = P::from(a_val);
@@ -25,10 +136,6 @@ mod tests {
 		for i in 0..P::WIDTH {
 			assert_eq!(c.get(i), a.get(i) * b.get(i));
 		}
-	}
-
-	fn test_mul_packed_u128<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
-		test_mul_packed(P::from(a_val), P::from(b_val))
 	}
 
 	fn test_mul_packed_random<P: PackedField>(mut rng: impl Rng) {
@@ -96,36 +203,6 @@ mod tests {
 		#[test]
 		fn test_add_packed_1x128b(a_val in any::<u128>(), b_val in any::<u128>()) {
 			test_add_packed::<PackedBinaryField1x128b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_128x1b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField128x1b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_16x8b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField16x8b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_8x16b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField8x16b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_4x32b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField4x32b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_2x64b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField2x64b>(a_val, b_val)
-		}
-
-		#[test]
-		fn test_mul_packed_1x128b(a_val in any::<u128>(), b_val in any::<u128>()) {
-			test_mul_packed_u128::<PackedBinaryField1x128b>(a_val, b_val)
 		}
 	}
 
@@ -290,4 +367,22 @@ mod tests {
 		assert_eq!(P::default().iter().count(), P::WIDTH);
 		assert_eq!(P::default().into_iter().count(), P::WIDTH);
 	}
+
+	fn mult<P: PackedField>(a: P, b: P) -> P {
+		a * b
+	}
+
+	define_multiply_tests!(mult, PackedField);
+
+	fn square<P: PackedField>(a: P) -> P {
+		a.square()
+	}
+
+	define_square_tests!(square, PackedField);
+
+	fn invert<P: PackedField>(a: P) -> P {
+		a.invert()
+	}
+
+	define_invert_tests!(invert, PackedField);
 }

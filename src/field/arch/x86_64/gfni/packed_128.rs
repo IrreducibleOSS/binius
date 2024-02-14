@@ -240,6 +240,26 @@ macro_rules! binary_tower_packed_bits {
 				};
 				(Self(a), Self(b))
 			}
+
+			fn square(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).square())
+				}
+
+				result
+			}
+
+			fn invert(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).invert())
+				}
+
+				result
+			}
 		}
 	};
 }
@@ -290,6 +310,26 @@ macro_rules! binary_tower_packed_bytes {
 				};
 				(Self(a), Self(b))
 			}
+
+			fn square(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).square())
+				}
+
+				result
+			}
+
+			fn invert(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).invert())
+				}
+
+				result
+			}
 		}
 
 		unsafe impl<P> PackedExtensionField<P> for $name
@@ -324,8 +364,15 @@ macro_rules! packed_binary_field_tower_recursive_mul_bits {
 		impl Mul for $name {
 			type Output = Self;
 
-			fn mul(self, _rhs: Self) -> Self::Output {
-				todo!("implement mul")
+			fn mul(self, rhs: Self) -> Self::Output {
+				// TODO: implement it in an efficient way
+				let mut result = Self::zero();
+
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i) * rhs.get(i))
+				}
+
+				result
 			}
 		}
 	};
