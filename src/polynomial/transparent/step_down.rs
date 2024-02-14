@@ -97,14 +97,9 @@ impl<F: Field> MultivariatePoly<F> for StepDown {
 mod tests {
 	use super::StepDown;
 	use crate::{
-		field::{
-			set_packed_slice, BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b,
-			PackedField,
-		},
-		polynomial::MultivariatePoly,
-		protocols::test_utils::{decompose_index_to_hypercube_point, macros::felts},
+		field::{BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b, PackedField},
+		protocols::test_utils::{hypercube_evals_from_oracle, macros::felts, packed_slice},
 	};
-	use std::ops::Range;
 
 	#[test]
 	fn test_step_down_trace_without_packing_simple_cases() {
@@ -195,7 +190,7 @@ mod tests {
 			for index in 1..(1 << n_vars) {
 				let step_down = StepDown::new(n_vars, index).unwrap();
 				assert_eq!(
-					hypercube_evals_from_oracle(&step_down),
+					hypercube_evals_from_oracle::<BinaryField1b>(&step_down),
 					step_down
 						.multilinear_extension::<BinaryField1b>()
 						.unwrap()
@@ -203,40 +198,6 @@ mod tests {
 				);
 			}
 		}
-	}
-
-	fn packed_slice<P>(assignments: &[(Range<usize>, u8)]) -> Vec<P>
-	where
-		P: PackedField<Scalar = BinaryField1b>,
-	{
-		assert_eq!(assignments[0].0.start, 0, "First assignment must start at index 0");
-		assert_eq!(
-			assignments[assignments.len() - 1].0.end % P::WIDTH,
-			0,
-			"Last assignment must end at an index divisible by packing width"
-		);
-		for i in 1..assignments.len() {
-			assert_eq!(
-				assignments[i].0.start,
-				assignments[i - 1].0.end,
-				"2 assignments following each other can't be overlapping or have holes in between"
-			);
-		}
-		assignments
-			.iter()
-			.for_each(|(r, _)| assert!(r.end > r.start, "Range must have positive size"));
-		let packed_len = (P::WIDTH - 1
-			+ (assignments.iter().map(|(range, _)| range.end))
-				.max()
-				.unwrap_or(0))
-			/ P::WIDTH;
-		let mut result: Vec<P> = vec![P::default(); packed_len];
-		for (range, value) in assignments.iter() {
-			for i in range.clone() {
-				set_packed_slice(&mut result, i, P::Scalar::new(*value));
-			}
-		}
-		result
 	}
 
 	fn stepdown_evals<P>(n_vars: usize, index: usize) -> Vec<P>
@@ -249,14 +210,5 @@ mod tests {
 			.unwrap()
 			.evals()
 			.to_vec()
-	}
-
-	fn hypercube_evals_from_oracle(s: &dyn MultivariatePoly<BinaryField1b>) -> Vec<BinaryField1b> {
-		(0..(1 << s.n_vars()))
-			.map(|i| {
-				s.evaluate(&decompose_index_to_hypercube_point(s.n_vars(), i))
-					.unwrap()
-			})
-			.collect()
 	}
 }
