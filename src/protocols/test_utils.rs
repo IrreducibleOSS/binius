@@ -2,6 +2,7 @@
 
 use p3_challenger::{CanObserve, CanSample};
 use std::{borrow::Borrow, sync::Arc};
+use tracing::instrument;
 
 use crate::field::{set_packed_slice, BinaryField1b, Field, PackedField};
 
@@ -185,6 +186,7 @@ where
 	(rd_claims, final_claim)
 }
 
+#[instrument(skip_all)]
 pub fn full_prove_with_switchover<F, M, BM, CH>(
 	claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<F, M, BM>,

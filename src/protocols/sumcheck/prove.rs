@@ -1,12 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::borrow::Borrow;
-
 use super::prove_utils::{
 	compute_round_coeffs_first, compute_round_coeffs_post_switchover,
 	compute_round_coeffs_pre_switchover, PostSwitchoverRoundOutput, PreSwitchoverRoundOutput,
 	PreSwitchoverWitness,
 };
+use std::borrow::Borrow;
+use tracing::instrument;
 
 use super::{
 	error::Error,
@@ -77,6 +77,7 @@ where
 	Ok(())
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_first_round")]
 pub fn prove_first_round<F, M, BM>(
 	original_claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<F, M, BM>,
@@ -104,6 +105,7 @@ where
 	Ok(round_output)
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_before_switchover")]
 pub fn prove_before_switchover<F, M, BM>(
 	original_claim: &SumcheckClaim<F>,
 	prev_rd_challenge: F,
@@ -145,6 +147,7 @@ where
 	)
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_at_switchover")]
 pub fn prove_at_switchover<F, M, BM>(
 	original_claim: &SumcheckClaim<F>,
 	prev_rd_challenge: F,
@@ -193,6 +196,7 @@ where
 	)
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_post_switchover")]
 pub fn prove_post_switchover<F: Field>(
 	original_claim: &SumcheckClaim<F>,
 	prev_rd_challenge: F,
@@ -243,6 +247,7 @@ pub fn prove_post_switchover<F: Field>(
 /// The input polynomial is a composition of multilinear polynomials over a field F. The routine is
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
+#[instrument(skip_all, name = "sumcheck::prove_final")]
 pub fn prove_final<F, M, BM>(
 	sumcheck_claim: &SumcheckClaim<F>,
 	sumcheck_witness: SumcheckWitness<F, M, BM>,
@@ -274,6 +279,7 @@ where
 	})
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_first_round_with_operating_field")]
 pub fn prove_first_round_with_operating_field<F, OF, M, BM>(
 	original_claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<OF, M, BM>,
@@ -294,6 +300,7 @@ where
 	compute_round_coeffs_post_switchover(round_claim, current_proof, witness, domain)
 }
 
+#[instrument(skip_all, name = "sumcheck::prove_later_round_with_operating_field")]
 pub fn prove_later_round_with_operating_field<F, OF, M, BM>(
 	original_claim: &SumcheckClaim<F>,
 	prev_rd_challenge: F,
@@ -566,6 +573,8 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction_basic() {
+		crate::util::init_tracing();
+
 		for n_vars in 2..8 {
 			for n_multilinears in 1..4 {
 				for switchover_rd in 1..=n_vars / 2 {

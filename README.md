@@ -26,6 +26,22 @@ rustc --print cfg -C target-cpu=native | grep gfni
 
 If the output of the command above is empty, the processor does not support these instructions.
 
+### Examples
+
+There are examples of simple commit-and-prove SNARKs in the `examples` directory. For example, you may run
+
+```bash
+cargo run --release --example bitwise_and_proof
+```
+
+To print out profiling information, set the environment variable `PROFILE_PRINT_TREE=1`:
+
+```bash
+PROFILE_PRINT_TREE=1 cargo run --release --example bitwise_and_proof
+```
+
+The environment variable `PROFILE_CSV_FILE` can be set to an output filename to dump profiling data to a CSV file for more detailed analysis.
+
 ## Support
 
 This project is under active development. The developers with make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.

@@ -2,6 +2,8 @@ use std::borrow::Borrow;
 // Copyright 2024 Ulvetanna Inc.
 use std::sync::Arc;
 
+use tracing::instrument;
+
 use crate::field::Field;
 
 use crate::{
@@ -54,6 +56,7 @@ where
 /// We output (\nu+1)-variate f' such that for all $v \in \{0, 1\}^{\nu}$
 /// 1) $f'(v, 0) = f(v)$
 /// 2) $f'(v, 1) = f'(0, v) * f'(1, v)$
+#[instrument(skip_all, name = "prodcheck::prove_step_one")]
 pub fn prove_step_one<F: Field>(
 	prodcheck_witness: ProdcheckWitness<F>,
 ) -> Result<MultilinearExtension<'static, F>, Error> {
@@ -116,6 +119,7 @@ pub fn prove_step_one<F: Field>(
 /// Towers of Binary Fields paper in that we use the merge virtual
 /// polynomial instead of the interleave virtual polynomial. This is an
 /// optimization, and does not affect the soundness of prodcheck.
+#[instrument(skip_all, name = "prodcheck::prove_step_two")]
 pub fn prove_step_two<'a, F: Field>(
 	prodcheck_witness: ProdcheckWitness<F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
@@ -243,6 +247,8 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction() {
+		crate::util::init_tracing();
+
 		type F = BinaryField32b;
 		let n_vars = 2;
 

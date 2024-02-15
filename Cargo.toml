@@ -26,6 +26,11 @@ thiserror = "1.0.47"
 thread_local = "1.1.7"
 tracing = "0.1.38"
 transpose = "0.2.2"
+tracing-profile = "0.1.0"
+
+[profile.profiling]
+inherits = "release"
+debug = true
 
 [dev-dependencies]
 criterion = "0.4.0"

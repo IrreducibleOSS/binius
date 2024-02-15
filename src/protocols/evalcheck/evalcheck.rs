@@ -1,5 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use tracing::instrument;
+
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
@@ -156,6 +158,7 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 	}
 
 	/// Extract a same query claim, if possible (hence the Option in happy path)
+	#[instrument(skip_all, name = "evalcheck::extract_pcs_claim")]
 	pub fn try_extract_same_query_pcs_claim(
 		&self,
 		batch_id: BatchId,

@@ -28,7 +28,9 @@ use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
-use std::{fmt::Debug, sync::Arc};
+use std::{env, fmt::Debug, sync::Arc};
+use tracing_profile::{CsvLayer, PrintTreeLayer};
+use tracing_subscriber::prelude::*;
 
 #[derive(Debug)]
 struct BitwiseAndConstraint;
@@ -81,6 +83,9 @@ where
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>,
 {
+	let span = tracing::debug_span!("commit");
+	let commit_scope = span.enter();
+
 	assert_eq!(pcs.n_vars(), log_size);
 	assert_eq!(a_in.n_vars(), log_size);
 	assert_eq!(b_in.n_vars(), log_size);
@@ -116,6 +121,7 @@ where
 	challenger.observe(abc_comm.clone());
 
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
+	drop(commit_scope);
 
 	// Round 2
 	let zerocheck_challenge = challenger.sample_vec(log_size);
@@ -132,6 +138,7 @@ where
 	)
 	.unwrap();
 
+	// prove_zerocheck is instrumented
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 	let ZerocheckProveOutput {
 		sumcheck_claim,
@@ -145,6 +152,7 @@ where
 	// TODO: Improve the logic to commit the optimal switchover.
 	let switchover = log_size / 2;
 
+	// full_prove_with_switchover is instrumented
 	tracing::debug!("Proving sumcheck");
 	let (_, output) = full_prove_with_switchover(
 		&sumcheck_claim,
@@ -160,6 +168,7 @@ where
 		sumcheck_proof,
 	} = output;
 
+	// prove_evalcheck is instrumented
 	let mut shifted_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
 		evalcheck_witness,
@@ -169,6 +178,7 @@ where
 	)
 	.unwrap();
 
+	// try_extract_same_query_pcs_claim is instrumented
 	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
@@ -176,6 +186,7 @@ where
 		.unwrap()
 		.unwrap();
 
+	// all implementaions of prove_evaluation are instrumented
 	let abc_eval_proof = pcs
 		.prove_evaluation(
 			&mut challenger,
@@ -297,11 +308,24 @@ fn verify<PCS, CH>(
 }
 
 fn main() {
-	tracing_subscriber::fmt::init();
+	if let Ok(csv_path) = env::var("PROFILE_CSV_FILE") {
+		let _ = tracing_subscriber::registry()
+			.with(CsvLayer::new(csv_path))
+			.with(tracing_subscriber::fmt::layer())
+			.try_init();
+	} else if env::var("PROFILE_PRINT_TREE").is_ok() {
+		let _ = tracing_subscriber::registry()
+			.with(PrintTreeLayer::new())
+			.try_init();
+	} else {
+		let _ = tracing_subscriber::registry()
+			.with(tracing_subscriber::fmt::layer())
+			.try_init();
+	};
 
 	const SECURITY_BITS: usize = 100;
 
-	let log_size = 20;
+	let log_size = 24;
 	let log_inv_rate = 1;
 
 	// Set up the public parameters
@@ -325,6 +349,7 @@ fn main() {
 	);
 
 	tracing::info!("Generating the trace");
+	let trace_span = tracing::debug_span!("generate_trace").entered();
 
 	let len = (1 << log_size) / PackedBinaryField128x1b::WIDTH;
 	let mut a_in_vals = vec![PackedBinaryField128x1b::default(); len];
@@ -342,6 +367,7 @@ fn main() {
 			let c_i_uint128 = must_cast_mut::<_, u128>(c_i);
 			*c_i_uint128 = a_i_uint128 & b_i_uint128;
 		});
+	drop(trace_span);
 
 	let a_in = MultilinearExtension::from_values(a_in_vals).unwrap();
 	let b_in = MultilinearExtension::from_values(b_in_vals).unwrap();
@@ -350,8 +376,28 @@ fn main() {
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 	tracing::info!("Proving");
+	let prove_span = tracing::debug_span!(
+		"prove",
+		log_rows = pcs.log_rows(),
+		log_cols = pcs.log_cols(),
+		proof_size = pcs.proof_size(3),
+		log_size = log_size,
+		n_vars = pcs.n_vars(),
+	)
+	.entered();
 	let proof = prove(log_size, &pcs, a_in, b_in, c_out, challenger.clone());
+	drop(prove_span);
 
 	tracing::info!("Verifying");
+	let verify_span = tracing::debug_span!(
+		"verify",
+		log_rows = pcs.log_rows(),
+		log_cols = pcs.log_cols(),
+		proof_size = pcs.proof_size(3),
+		log_size = log_size,
+		n_vars = pcs.n_vars(),
+	)
+	.entered();
 	verify(log_size, &pcs, proof, challenger.clone());
+	drop(verify_span);
 }

@@ -1,5 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use tracing::instrument;
+
 use crate::{
 	field::Field,
 	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
@@ -15,6 +17,7 @@ use super::{
 	},
 };
 
+#[instrument(skip_all, name = "evalcheck::prove")]
 pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 	evalcheck_witness: EvalcheckWitness<F, M, BM>,
 	evalcheck_claim: EvalcheckClaim<F>,
@@ -182,6 +185,8 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction() {
+		crate::util::init_tracing();
+
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let log_size = 8;

@@ -5,6 +5,7 @@ use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
 use std::{iter::repeat_with, marker::PhantomData, mem};
+use tracing::instrument;
 
 use super::error::{Error, VerificationError};
 use crate::{
@@ -257,6 +258,7 @@ where
 	/// Precondition: The queried point must already be observed by the challenger.
 	///
 	/// [DP23]: https://eprint.iacr.org/2023/630
+	#[instrument(skip_all, name = "tensor_pcs::prove_evaluation")]
 	fn prove_evaluation<CH>(
 		&self,
 		challenger: &mut CH,

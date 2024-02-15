@@ -2,6 +2,8 @@
 
 use std::{borrow::Borrow, sync::Arc};
 
+use tracing::instrument;
+
 use crate::{
 	field::{Field, TowerField},
 	polynomial::{
@@ -42,6 +44,7 @@ where
 /// also parameterized by an operating field OF, which is isomorphic to F and over which the
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
+#[instrument(skip_all, name = "zerocheck::prove")]
 pub fn prove<'a, F: TowerField>(
 	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &ZerocheckClaim<F>,
@@ -96,6 +99,8 @@ mod tests {
 	// Specifically, f should vanish on the boolean hypercube, because some h_i will be 0.
 	#[test]
 	fn test_prove_verify_interaction() {
+		crate::util::init_tracing();
+
 		type F = BinaryField32b;
 		let n_vars: usize = 3;
 		let n_multilinears = 1 << n_vars;
