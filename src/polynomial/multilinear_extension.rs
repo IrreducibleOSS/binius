@@ -127,54 +127,39 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		if (1 << (self.mu - query.n_vars())) < PE::WIDTH {
+		if self.mu - query.n_vars() < PE::LOG_WIDTH {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
 
+		let query_expansion = query.expansion();
+		let new_n_vars = self.mu - query.n_vars();
+		let result_evals_len = 1 << (new_n_vars - PE::LOG_WIDTH);
+
 		// This operation is a left vector-matrix product of the vector of tensor product-expanded
 		// query coefficients with the matrix of multilinear coefficients.
-		let mut result_evals = vec![PE::default(); (1 << (self.mu - query.n_vars())) / PE::WIDTH];
-		self.iter_subpolynomials_high(self.mu - query.n_vars())?
-			.zip(iter_packed_slice(query.expansion()))
-			.for_each(|(subpoly_coeffs, basis_eval)| {
-				for (i, subpoly_eval_i) in subpoly_coeffs.enumerate() {
-					let mut value = get_packed_slice(&result_evals, i);
-					value += basis_eval * subpoly_eval_i;
-					set_packed_slice(&mut result_evals, i, value);
-				}
-			});
-
-		MultilinearExtension::from_values(result_evals)
-	}
-
-	fn iter_subpolynomials_high(
-		&self,
-		n_vars: usize,
-	) -> Result<impl Iterator<Item = impl Iterator<Item = P::Scalar> + '_>, Error> {
-		let log_width = log2(P::WIDTH);
-
-		let iter = if n_vars < log_width {
-			Either::Left(
-				self.evals
-					.iter()
-					.flat_map(move |packed| {
-						std::iter::repeat(*packed)
-							.take(1 << (log_width - n_vars))
-							.enumerate()
-							.map(move |(i, packed)| {
-								packed.into_iter().skip(i << n_vars).take(1 << n_vars)
+		let result_evals = (0..result_evals_len)
+			.into_par_iter()
+			.map(|outer_index| {
+				let mut res = PE::default();
+				for inner_index in 0..PE::WIDTH {
+					res.set(
+						inner_index,
+						(0..query_expansion.len())
+							.into_par_iter()
+							.map(|query_index| {
+								let eval_index = (query_index << new_n_vars)
+									| (outer_index << PE::LOG_WIDTH) | inner_index;
+								let subpoly_eval_i = get_packed_slice(&self.evals, eval_index);
+								let basis_eval = get_packed_slice(query_expansion, query_index);
+								basis_eval * subpoly_eval_i
 							})
-					})
-					.map(Either::Left),
-			)
-		} else {
-			Either::Right(
-				self.evals
-					.chunks_exact(1 << (n_vars - log_width))
-					.map(|evals| Either::Right(iter_packed_slice(evals))),
-			)
-		};
-		Ok(iter)
+							.sum(),
+					);
+				}
+				res
+			})
+			.collect();
+		MultilinearExtension::from_values(result_evals)
 	}
 
 	/// Partially evaluate the polynomial with assignment to the low-indexed variables.
@@ -393,7 +378,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use crate::field::{
-		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField16b, BinaryField32b,
+		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField32b,
 		PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
 
@@ -425,52 +410,6 @@ mod tests {
 			let result = poly.evaluate(&multilin_query).unwrap();
 			assert_eq!(result, F::new(i));
 		}
-	}
-
-	#[test]
-	fn test_iter_subpolynomials_n_vars_gt_width() {
-		let mut rng = StdRng::seed_from_u64(0);
-		let values = repeat_with(|| Field::random(&mut rng))
-			.take(8)
-			.collect::<Vec<F>>();
-
-		let poly = MultilinearExtension::from_values_slice(&values).unwrap();
-
-		let mut iter = poly.iter_subpolynomials_high(2).unwrap();
-
-		assert_eq!(&iter.next().unwrap().collect::<Vec<_>>(), &values[0..4]);
-		assert_eq!(&iter.next().unwrap().collect::<Vec<_>>(), &values[4..8]);
-		assert!(iter.next().is_none());
-	}
-
-	#[test]
-	fn test_iter_subpolynomials_n_vars_lt_width() {
-		let mut values = vec![P::default(); 2];
-		for i in 0..values.len() * P::WIDTH {
-			set_packed_slice(&mut values, i, BinaryField16b::new(i as u16));
-		}
-
-		let poly = MultilinearExtension::from_values_slice(&values).unwrap();
-
-		let mut iter = poly.iter_subpolynomials_high(2).unwrap();
-
-		assert_eq!(
-			&iter.next().unwrap().collect::<Vec<_>>(),
-			&[0x0, 0x1, 0x2, 0x3].map(BinaryField16b::new)
-		);
-		assert_eq!(
-			&iter.next().unwrap().collect::<Vec<_>>(),
-			&[0x4, 0x5, 0x6, 0x7].map(BinaryField16b::new)
-		);
-		assert_eq!(
-			&iter.next().unwrap().collect::<Vec<_>>(),
-			&[0x8, 0x9, 0xA, 0xB].map(BinaryField16b::new)
-		);
-		assert_eq!(
-			&iter.next().unwrap().collect::<Vec<_>>(),
-			&[0xC, 0xD, 0xE, 0xF].map(BinaryField16b::new)
-		);
-		assert!(iter.next().is_none());
 	}
 
 	fn evaluate_split<P>(
