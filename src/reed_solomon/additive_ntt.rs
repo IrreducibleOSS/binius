@@ -7,16 +7,16 @@ use p3_util::log2_strict_usize;
 
 use super::error::Error;
 
-/// The additive NTT defined defined in [LCH14]
+/// The additive NTT defined defined in [LCH14].
 ///
-/// [LCH14]: https://arxiv.org/abs/1404.3458
+/// [LCH14]: <https://arxiv.org/abs/1404.3458>
 pub trait AdditiveNTT<P: PackedField> {
 	/// Forward transformation defined in [LCH14] on a batch of inputs.
 	///
 	/// Input is the vector of polynomial coefficients in novel basis, output is in Lagrange basis.
 	/// The batched inputs are interleaved, which improves the cache-efficiency of the computation.
 	///
-	/// [LCH14]: https://arxiv.org/abs/1404.3458
+	/// [LCH14]: <https://arxiv.org/abs/1404.3458>
 	fn forward_transform(
 		&self,
 		data: &mut [P],
@@ -270,6 +270,8 @@ fn subset_sum<F: Field>(values: &[F], n_bits: usize, index: usize) -> F {
 /// The additive NTT defined defined in [LCH14] with a larger table of precomputed constants.
 ///
 /// This implementation precomputes all 2^k twiddle factors for a domain of size 2^k.
+///
+/// [LCH14]: <https://arxiv.org/abs/1404.3458>
 #[derive(Debug)]
 pub struct AdditiveNTTWithPrecompute<F: BinaryField> {
 	log_domain_size: usize,

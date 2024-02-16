@@ -166,9 +166,10 @@ pub struct Packed<F: Field> {
 	inner: Box<MultilinearPolyOracle<F>>,
 	/// The number of tower levels increased by the packing operation.
 	///
-	/// This is the base 2 logarithm of the field extension, and is called $\kappa$ in [DP23], Section 4.3.
+	/// This is the base 2 logarithm of the field extension, and is called $\kappa$ in [DP23],
+	/// Section 4.3.
 	///
-	/// [DP23] https://eprint.iacr.org/2023/1784
+	/// [DP23]: https://eprint.iacr.org/2023/1784
 	#[get_copy = "pub"]
 	log_degree: usize,
 }

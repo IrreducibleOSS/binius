@@ -705,12 +705,16 @@ where
 ///
 /// The basic scheme follows Construction 3.7. In this case, the encoding alphabet is a subfield of
 /// the polynomial's coefficient field.
+///
+/// [DP23]: <https://eprint.iacr.org/2023/1784>
 pub type BasicTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, P, PE, LC, H, VCS>;
 
 /// The multilinear polynomial commitment scheme from [DP23] with block-level encoding.
 ///
 /// The basic scheme follows Construction 3.11. In this case, the encoding alphabet is an extension
 /// field of the polynomial's coefficient field.
+///
+/// [DP23]: <https://eprint.iacr.org/2023/1784>
 pub type BlockTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, PA, PE, LC, H, VCS>;
 
 pub fn calculate_n_test_queries<F: BinaryField, LC: LinearCode>(

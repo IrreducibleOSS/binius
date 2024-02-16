@@ -79,9 +79,9 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 /// where $g(Y_0, ..., Y_{k-1})$ is a $k$-variate polynomial and $f_0, ..., f_k$ are all multilinear
 /// in $\mu$ variables.
 ///
-/// TODO: Document type parameters. The BM: Borrow<M> type parameter is necessary so that we can
-/// handle the case of a MultilinearComposite that contains boxed trait objects as well as the case
-/// where it directly holds some implementation of MultilinearPoly.
+/// The `BM` type parameter is necessary so that we can handle the case of a `MultilinearComposite`
+/// that contains boxed trait objects, as well as the case where it directly holds some
+/// implementation of `MultilinearPoly`.
 #[derive(Debug)]
 pub struct MultilinearComposite<P, M, BM>
 where

@@ -13,11 +13,11 @@ use subtle::CtOption;
 
 /// The POLYVAL "dot" operation defined in [`RFC 8542`][1], Section 3.
 ///
-/// This is the operation a * b * x^{-128} in the field
-/// F_2[X] / (X^128 + X^127 + X^126 + X^121 + 1), which is a Montgomery multiplication of
-/// polynomials with an R value of X^128.
+/// This is the operation $a b x^{-128}$ in the field
+/// $F_2\[X\] / (X^128 + X^127 + X^126 + X^121 + 1)$, which is a Montgomery multiplication of
+/// polynomials with an R value of $X^128$.
 ///
-/// [1] https://datatracker.ietf.org/doc/html/rfc8452
+/// [1]: <https://datatracker.ietf.org/doc/html/rfc8452>
 pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
 	let h0 = a as u64;
 	let h1 = (a >> 64) as u64;
