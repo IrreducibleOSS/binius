@@ -472,14 +472,17 @@ where
 	let eval_point = evalcheck_claim.eval_point.clone();
 	debug_assert!(evalcheck_claim.is_random_point);
 	let mut shifted_eval_claims = Vec::new();
+	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
 		evalcheck_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 	debug_assert_eq!(shifted_eval_claims.len(), 1);
+	debug_assert_eq!(packed_eval_claims.len(), 0);
 
 	// Get all claimed evaluations
 	let shifted_eval_claim = shifted_eval_claims.pop().unwrap();
@@ -582,9 +585,11 @@ where
 		second_evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 	debug_assert_eq!(shifted_eval_claims.len(), 0);
+	debug_assert_eq!(packed_eval_claims.len(), 0);
 	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
@@ -676,15 +681,18 @@ fn verify<PCS, CH>(
 	let eval_point = evalcheck_claim.eval_point.clone();
 	let mut batch_committed_eval_claims = new_batch_committed_eval_claims();
 	let mut shifted_eval_claims = Vec::new();
+	let mut packed_eval_claims = Vec::new();
 	verify_evalcheck(
 		evalcheck_claim,
 		evalcheck_proof,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	debug_assert_eq!(shifted_eval_claims.len(), 1);
+	debug_assert_eq!(packed_eval_claims.len(), 0);
 
 	// Get all claimed evaluations
 	let shifted_eval_claim = shifted_eval_claims.pop().unwrap();
@@ -727,10 +735,12 @@ fn verify<PCS, CH>(
 		second_evalcheck_proof,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	debug_assert_eq!(shifted_eval_claims.len(), 0);
+	debug_assert_eq!(packed_eval_claims.len(), 0);
 
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)

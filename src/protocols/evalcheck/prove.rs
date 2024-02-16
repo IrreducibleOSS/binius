@@ -13,7 +13,7 @@ use super::{
 	error::Error,
 	evalcheck::{
 		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim, EvalcheckProof,
-		EvalcheckWitness, ShiftedEvalClaim,
+		EvalcheckWitness, PackedEvalClaim, ShiftedEvalClaim,
 	},
 };
 
@@ -23,6 +23,7 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 	evalcheck_claim: EvalcheckClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
+	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
 ) -> Result<EvalcheckProof<F>, Error> {
 	let EvalcheckClaim {
 		poly,
@@ -62,6 +63,18 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 					shifted_eval_claims.push(subclaim);
 					EvalcheckProof::Shifted
 				}
+				MultilinearPolyOracle::Packed(packed) => {
+					let subclaim = PackedEvalClaim {
+						poly: *packed.inner().clone(),
+						eval_point,
+						eval,
+						is_random_point,
+						packed,
+					};
+
+					packed_eval_claims.push(subclaim);
+					EvalcheckProof::Packed
+				}
 				MultilinearPolyOracle::Projected(projected) => {
 					let (inner, values) = (projected.inner(), projected.values());
 					let new_eval_point = match projected.projection_variant() {
@@ -89,6 +102,7 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 						subclaim,
 						batch_commited_eval_claims,
 						shifted_eval_claims,
+						packed_eval_claims,
 					)?
 				}
 
@@ -124,6 +138,7 @@ pub fn prove<F: Field, M: MultilinearPoly<F> + ?Sized, BM: Borrow<M>>(
 					subclaim,
 					batch_commited_eval_claims,
 					shifted_eval_claims,
+					packed_eval_claims,
 				)?;
 
 				subproofs.push(subproof);
@@ -254,17 +269,27 @@ mod tests {
 
 		let mut bcec_prove = BatchCommittedEvalClaims::new(&batches);
 		let mut shifted_claims_prove = Vec::new();
+		let mut packed_claims_prove = Vec::new();
 		let proof = prove(
 			EvalcheckWitness::Composite(witness),
 			claim.clone(),
 			&mut bcec_prove,
 			&mut shifted_claims_prove,
+			&mut packed_claims_prove,
 		)
 		.unwrap();
 
 		let mut bcec_verify = BatchCommittedEvalClaims::new(&batches);
 		let mut shifted_claims_verify = Vec::new();
-		verify(claim, proof, &mut bcec_verify, &mut shifted_claims_verify).unwrap();
+		let mut packed_claims_verify = Vec::new();
+		verify(
+			claim,
+			proof,
+			&mut bcec_verify,
+			&mut shifted_claims_verify,
+			&mut packed_claims_verify,
+		)
+		.unwrap();
 
 		let prove_batch0 = bcec_prove
 			.try_extract_same_query_pcs_claim(0)

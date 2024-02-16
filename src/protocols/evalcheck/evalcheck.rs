@@ -5,7 +5,7 @@ use tracing::instrument;
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
-	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle, Shifted},
+	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle, Packed, Shifted},
 	polynomial::{MultilinearComposite, MultilinearPoly},
 };
 use std::{borrow::Borrow, collections::HashMap, convert::AsRef};
@@ -36,6 +36,20 @@ pub struct ShiftedEvalClaim<F: Field> {
 	pub shifted: Shifted<F>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PackedEvalClaim<F: Field> {
+	/// Unpacked Virtual Polynomial Oracle for which the evaluation is claimed
+	pub poly: MultilinearPolyOracle<F>,
+	/// Evaluation Point
+	pub eval_point: Vec<F>,
+	/// Claimed Evaluation
+	pub eval: F,
+	/// Whether the evaluation point is random
+	pub is_random_point: bool,
+	/// Packing Description
+	pub packed: Packed<F>,
+}
+
 #[derive(Debug)]
 pub enum EvalcheckWitness<P, M, BM>
 where
@@ -52,6 +66,7 @@ pub enum EvalcheckProof<F: Field> {
 	Transparent,
 	Committed,
 	Shifted,
+	Packed,
 	Repeating(Box<EvalcheckProof<F>>),
 	Merged {
 		eval1: F,

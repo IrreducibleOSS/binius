@@ -170,15 +170,18 @@ where
 
 	// prove_evalcheck is instrumented
 	let mut shifted_eval_claims = Vec::new();
+	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
 		evalcheck_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 
 	// try_extract_same_query_pcs_claim is instrumented
+	assert!(packed_eval_claims.is_empty());
 	assert!(shifted_eval_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
@@ -281,12 +284,14 @@ fn verify<PCS, CH>(
 
 	// Verify commitment openings
 	let mut shifted_eval_claims = Vec::new();
+	let mut packed_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
 	verify_evalcheck(
 		evalcheck_claim,
 		evalcheck_proof,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
+		&mut packed_eval_claims,
 	)
 	.unwrap();
 
