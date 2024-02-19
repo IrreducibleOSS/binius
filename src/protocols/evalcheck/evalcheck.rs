@@ -5,10 +5,13 @@ use tracing::instrument;
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
-	iopoly::{CommittedId, MultilinearPolyOracle, MultivariatePolyOracle, Packed, Shifted},
+	oracle::{
+		BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle, MultivariatePolyOracle,
+		Packed, Shifted,
+	},
 	polynomial::{MultilinearComposite, MultilinearPoly},
 };
-use std::{borrow::Borrow, collections::HashMap, convert::AsRef};
+use std::borrow::Borrow;
 
 #[derive(Debug, Clone)]
 pub struct EvalcheckClaim<F: Field> {
@@ -91,15 +94,6 @@ pub struct CommittedEvalClaim<F: Field> {
 	pub is_random_point: bool,
 }
 
-/// PCS batches are identified by their sequential number in 0..n_batches() range
-pub type BatchId = usize;
-
-#[derive(Debug)]
-struct BatchRef {
-	batch_id: BatchId,
-	idx_in_batch: usize,
-}
-
 /// A batched PCS claim where all member polynomials have the same query (can be verified directly)
 pub struct SameQueryPcsClaim<F: Field> {
 	/// Common evaluation point
@@ -112,8 +106,10 @@ pub struct SameQueryPcsClaim<F: Field> {
 /// several evalcheck/sumcheck calls
 #[derive(Debug)]
 pub struct BatchCommittedEvalClaims<F: Field> {
+	/*
 	/// mapping from committed polynomial id to batch & position in batch
 	id_to_batch: HashMap<CommittedId, BatchRef>,
+	 */
 	/// Number of polynomials in each batch
 	batch_lengths: Vec<usize>,
 	/// Claims accumulated for each batch
@@ -125,31 +121,11 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 	/// `batches` is a nested array listing which committed ids belong to which batch, for example
 	/// `[[1, 2], [3, 4]]` batches polys 1 & 2 into first batch and 3 and 4 into second batch. Order
 	/// within batch is important.
-	pub fn new<CI>(batches: &[CI]) -> Self
-	where
-		CI: AsRef<[CommittedId]>,
-	{
-		let mut id_to_batch = HashMap::new();
-		let mut batch_lengths = Vec::new();
-
-		for (batch_id, batch) in batches.iter().enumerate() {
-			batch_lengths.push(batch.as_ref().len());
-
-			for (idx_in_batch, &committed_id) in batch.as_ref().iter().enumerate() {
-				id_to_batch.insert(
-					committed_id,
-					BatchRef {
-						batch_id,
-						idx_in_batch,
-					},
-				);
-			}
-		}
-
+	pub fn new(batches: &[CommittedBatch]) -> Self {
+		let batch_lengths = batches.iter().map(|batch| batch.n_polys).collect();
 		let claims_by_batch = vec![vec![]; batches.len()];
 
 		Self {
-			id_to_batch,
 			batch_lengths,
 			claims_by_batch,
 		}
@@ -157,18 +133,11 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 
 	/// Insert a new claim into the batch.
 	pub fn insert(&mut self, claim: CommittedEvalClaim<F>) -> Result<(), Error> {
-		let id = claim.id;
-		let batch_ref = self
-			.id_to_batch
-			.get(&id)
-			.ok_or(Error::UnknownCommittedId(id))?;
-
-		self.claims_by_batch[batch_ref.batch_id].push(claim);
-
+		self.claims_by_batch[claim.id.batch_id].push(claim);
 		Ok(())
 	}
 
-	pub fn nbatches(&self) -> usize {
+	pub fn n_batches(&self) -> usize {
 		self.claims_by_batch.len()
 	}
 
@@ -203,9 +172,7 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 		let mut evals: Vec<Option<F>> = vec![None; self.batch_lengths[batch_id]];
 
 		for claim in claims {
-			let batch_ref = self.id_to_batch.get(&claim.id).unwrap();
-
-			let opt_other_eval = evals[batch_ref.idx_in_batch].replace(claim.eval);
+			let opt_other_eval = evals[claim.id.index].replace(claim.eval);
 
 			// if two claims somehow end pointing into the same slot, check that they don't conflict
 			if opt_other_eval.map_or(false, |other_eval| other_eval != claim.eval) {

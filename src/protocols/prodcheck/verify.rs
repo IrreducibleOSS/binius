@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{field::Field, iopoly::MultilinearPolyOracle};
+use crate::{field::Field, oracle::MultilinearPolyOracle};
 
 use super::{
 	error::Error,

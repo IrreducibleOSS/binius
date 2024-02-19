@@ -7,7 +7,7 @@ use tracing::instrument;
 use crate::field::Field;
 
 use crate::{
-	iopoly::MultilinearPolyOracle,
+	oracle::MultilinearPolyOracle,
 	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
 	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
 };
@@ -204,7 +204,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::{BinaryField32b, TowerField},
-		iopoly::MultilinearPolyOracle,
+		oracle::{CommittedId, MultilinearPolyOracle},
 		protocols::prodcheck::verify::verify,
 	};
 
@@ -220,7 +220,10 @@ mod tests {
 	fn create_numerator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
 		let n_vars = 2;
 		MultilinearPolyOracle::Committed {
-			id: 0,
+			id: CommittedId {
+				batch_id: 0,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField32b::TOWER_LEVEL,
 		}
@@ -239,7 +242,10 @@ mod tests {
 	fn create_denominator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
 		let n_vars = 2;
 		MultilinearPolyOracle::Committed {
-			id: 1,
+			id: CommittedId {
+				batch_id: 0,
+				index: 1,
+			},
 			n_vars,
 			tower_level: BinaryField32b::TOWER_LEVEL,
 		}
@@ -272,7 +278,10 @@ mod tests {
 		// PROVER
 		let f_prime_poly = prove_step_one(prodcheck_witness.clone()).unwrap();
 		let f_prime_oracle = MultilinearPolyOracle::Committed {
-			id: 99,
+			id: CommittedId {
+				batch_id: 1,
+				index: 0,
+			},
 			n_vars: n_vars + 1,
 			tower_level: F::TOWER_LEVEL,
 		};

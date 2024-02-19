@@ -5,7 +5,7 @@ use binius::{
 		PackedField,
 	},
 	hash::GroestlHasher,
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	oracle::{CommittedBatch, CompositePolyOracle, MultivariatePolyOracle},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
@@ -91,21 +91,17 @@ where
 	assert_eq!(b_in.n_vars(), log_size);
 	assert_eq!(c_out.n_vars(), log_size);
 
-	let a_in_oracle = MultilinearPolyOracle::Committed {
+	let trace_batch = CommittedBatch {
 		id: 0,
+		round_id: 1,
 		n_vars: log_size,
+		n_polys: 3,
 		tower_level: 0,
 	};
-	let b_in_oracle = MultilinearPolyOracle::Committed {
-		id: 1,
-		n_vars: log_size,
-		tower_level: 0,
-	};
-	let c_out_oracle = MultilinearPolyOracle::Committed {
-		id: 2,
-		n_vars: log_size,
-		tower_level: 0,
-	};
+
+	let a_in_oracle = trace_batch.oracle(0).unwrap();
+	let b_in_oracle = trace_batch.oracle(1).unwrap();
+	let c_out_oracle = trace_batch.oracle(2).unwrap();
 
 	let constraint = MultivariatePolyOracle::Composite(
 		CompositePolyOracle::new(
@@ -120,7 +116,7 @@ where
 	let (abc_comm, abc_committed) = pcs.commit(&[&a_in, &b_in, &c_out]).unwrap();
 	challenger.observe(abc_comm.clone());
 
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
+	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
 	drop(commit_scope);
 
 	// Round 2
@@ -183,7 +179,7 @@ where
 	// try_extract_same_query_pcs_claim is instrumented
 	assert!(packed_eval_claims.is_empty());
 	assert!(shifted_eval_claims.is_empty());
-	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
@@ -232,21 +228,17 @@ fn verify<PCS, CH>(
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
-	let a_in_oracle = MultilinearPolyOracle::Committed {
+	let trace_batch = CommittedBatch {
 		id: 0,
+		round_id: 1,
 		n_vars: log_size,
+		n_polys: 3,
 		tower_level: 0,
 	};
-	let b_in_oracle = MultilinearPolyOracle::Committed {
-		id: 1,
-		n_vars: log_size,
-		tower_level: 0,
-	};
-	let c_out_oracle = MultilinearPolyOracle::Committed {
-		id: 2,
-		n_vars: log_size,
-		tower_level: 0,
-	};
+
+	let a_in_oracle = trace_batch.oracle(0).unwrap();
+	let b_in_oracle = trace_batch.oracle(1).unwrap();
+	let c_out_oracle = trace_batch.oracle(2).unwrap();
 
 	let constraint = MultivariatePolyOracle::Composite(
 		CompositePolyOracle::new(
@@ -285,7 +277,7 @@ fn verify<PCS, CH>(
 	// Verify commitment openings
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[[0, 1, 2]]);
+	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
 	verify_evalcheck(
 		evalcheck_claim,
 		evalcheck_proof,
@@ -296,7 +288,7 @@ fn verify<PCS, CH>(
 	.unwrap();
 
 	assert!(shifted_eval_claims.is_empty());
-	assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()

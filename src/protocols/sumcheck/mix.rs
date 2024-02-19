@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
 	field::{Field, TowerField},
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	oracle::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
 	},
@@ -207,7 +207,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::BinaryField128b,
-		iopoly::{CompositePolyOracle, ShiftVariant, Shifted},
+		oracle::{CommittedBatch, CompositePolyOracle, ShiftVariant, Shifted},
 	};
 
 	struct TestConstantChallenger<F: Field> {
@@ -302,26 +302,17 @@ mod tests {
 
 		let n_vars = 12;
 
-		let x_oracle = MultilinearPolyOracle::Committed {
+		let trace_batch = CommittedBatch {
 			id: 0,
+			round_id: 1,
 			n_vars,
+			n_polys: 4,
 			tower_level: 0,
 		};
-		let y_oracle = MultilinearPolyOracle::Committed {
-			id: 1,
-			n_vars,
-			tower_level: 0,
-		};
-		let z_oracle = MultilinearPolyOracle::Committed {
-			id: 2,
-			n_vars,
-			tower_level: 0,
-		};
-		let c_out_oracle = MultilinearPolyOracle::Committed {
-			id: 3,
-			n_vars,
-			tower_level: 0,
-		};
+		let x_oracle = trace_batch.oracle(0).unwrap();
+		let y_oracle = trace_batch.oracle(1).unwrap();
+		let z_oracle = trace_batch.oracle(2).unwrap();
+		let c_out_oracle = trace_batch.oracle(3).unwrap();
 
 		let c_in_oracle = MultilinearPolyOracle::Shifted(
 			Shifted::new(c_out_oracle.clone(), 1, 5, ShiftVariant::LogicalRight).unwrap(),

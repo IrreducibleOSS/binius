@@ -84,7 +84,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::{BinaryField32b, TowerField},
-		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{
 			test_utils::TestProductComposition,
@@ -124,7 +124,10 @@ mod tests {
 		// Setup claim
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed {
-				id: i,
+				id: CommittedId {
+					batch_id: 0,
+					index: i,
+				},
 				n_vars,
 				tower_level: F::TOWER_LEVEL,
 			})

@@ -1,34 +1,57 @@
+// Copyright 2024 Ulvetanna Inc.
+
+mod error;
+
 use crate::{
-	field::{BinaryField128b, Field},
-	polynomial::{Error as PolynomialError, IdentityCompositionPoly},
+	field::{BinaryField128b, Field, TowerField},
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
+	},
 };
 use getset::{CopyGetters, Getters};
-
-use crate::{
-	field::TowerField,
-	polynomial::{CompositionPoly, MultivariatePoly},
-};
 use std::sync::Arc;
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-	#[error("the number of variables of the composition polynomial does not match the number of composed polynomials")]
-	CompositionMismatch,
-	#[error("expected the polynomial to have {expected} variables")]
-	IncorrectNumberOfVariables { expected: usize },
-	#[error("attempted to project more variables {values_len} than inner polynomial has {n_vars}")]
-	InvalidProjection { values_len: usize, n_vars: usize },
-	#[error("polynomial error")]
-	Polynomial(#[from] PolynomialError),
-	#[error(
-		"n_vars ({n_vars}) must be at least as big as the requested log_degree ({log_degree})"
-	)]
-	NotEnoughVarsForPacking { n_vars: usize, log_degree: usize },
-	#[error("tower_level ({tower_level}) cannot be greater than 7 (128 bits)")]
-	MaxPackingSurpassed { tower_level: usize },
+pub use error::Error;
+
+/// Committed polynomial batches are identified by their index.
+pub type BatchId = usize;
+
+// Round ID 0 is precommitment.
+type RoundId = usize;
+
+/// Metadata about a batch of committed multilinear polynomials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommittedBatch {
+	pub id: BatchId,
+	pub round_id: RoundId,
+	pub n_vars: usize,
+	pub n_polys: usize,
+	pub tower_level: usize,
 }
 
-pub type CommittedId = usize;
+impl CommittedBatch {
+	pub fn oracle<F: Field>(&self, index: usize) -> Result<MultilinearPolyOracle<F>, Error> {
+		if index >= self.n_polys {
+			return Err(Error::InvalidPolynomialIndex);
+		}
+		Ok(MultilinearPolyOracle::Committed {
+			id: CommittedId {
+				batch_id: self.id,
+				index,
+			},
+			n_vars: self.n_vars,
+			tower_level: self.tower_level,
+		})
+	}
+}
+
+/// Committed polynomials are identified by a batch ID and an index in the batch
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display)]
+#[display(fmt = "({}, {})", batch_id, index)]
+pub struct CommittedId {
+	pub batch_id: BatchId,
+	pub index: usize,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MultilinearPolyOracle<F: Field> {
@@ -350,7 +373,7 @@ mod tests {
 			BinaryField128b, BinaryField16b, BinaryField2b, BinaryField32b, BinaryField4b,
 			BinaryField8b, TowerField,
 		},
-		iopoly::{CompositePolyOracle, MultilinearPolyOracle},
+		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle},
 		polynomial::{CompositionPoly, Error as PolynomialError},
 	};
 
@@ -385,7 +408,10 @@ mod tests {
 	fn test_packing() {
 		type F = BinaryField2b;
 		let poly = MultilinearPolyOracle::<F>::Committed {
-			id: 0,
+			id: CommittedId {
+				batch_id: 0,
+				index: 0,
+			},
 			n_vars: 5,
 			tower_level: F::TOWER_LEVEL,
 		};
@@ -409,27 +435,42 @@ mod tests {
 		type F = BinaryField128b;
 		let n_vars = 5;
 		let poly_2 = MultilinearPolyOracle::<F>::Committed {
-			id: 0,
+			id: CommittedId {
+				batch_id: 0,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField2b::TOWER_LEVEL,
 		};
 		let poly_4 = MultilinearPolyOracle::<F>::Committed {
-			id: 1,
+			id: CommittedId {
+				batch_id: 1,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField4b::TOWER_LEVEL,
 		};
 		let poly_8 = MultilinearPolyOracle::<F>::Committed {
-			id: 2,
+			id: CommittedId {
+				batch_id: 2,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField8b::TOWER_LEVEL,
 		};
 		let poly_16 = MultilinearPolyOracle::<F>::Committed {
-			id: 3,
+			id: CommittedId {
+				batch_id: 3,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField16b::TOWER_LEVEL,
 		};
 		let poly_32 = MultilinearPolyOracle::<F>::Committed {
-			id: 4,
+			id: CommittedId {
+				batch_id: 4,
+				index: 0,
+			},
 			n_vars,
 			tower_level: BinaryField32b::TOWER_LEVEL,
 		};

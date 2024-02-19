@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::Field, iopoly::MultivariatePolyOracle, polynomial::EvaluationDomain,
+	field::Field, oracle::MultivariatePolyOracle, polynomial::EvaluationDomain,
 	protocols::evalcheck::EvalcheckClaim,
 };
 

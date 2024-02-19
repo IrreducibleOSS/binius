@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
-	iopoly::{
+	oracle::{
 		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, Projected,
 		ProjectionVariant,
 	},

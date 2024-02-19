@@ -2,7 +2,7 @@
 
 use crate::{
 	field::{Field, TowerField},
-	iopoly::{
+	oracle::{
 		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, TransparentPolyOracle,
 	},
 	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},

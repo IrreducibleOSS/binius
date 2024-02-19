@@ -357,7 +357,7 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, TowerField},
 		hash::GroestlHasher,
-		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 		protocols::{
 			sumcheck::SumcheckClaim,
@@ -411,7 +411,10 @@ mod tests {
 		// Setup Claim
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed {
-				id: i,
+				id: CommittedId {
+					batch_id: 0,
+					index: i,
+				},
 				n_vars,
 				tower_level: F::TOWER_LEVEL,
 			})
@@ -512,7 +515,10 @@ mod tests {
 		// CLAIM
 		let h = (0..n_multilinears)
 			.map(|i| MultilinearPolyOracle::Committed {
-				id: i,
+				id: CommittedId {
+					batch_id: 0,
+					index: i,
+				},
 				n_vars,
 				tower_level: F::TOWER_LEVEL,
 			})

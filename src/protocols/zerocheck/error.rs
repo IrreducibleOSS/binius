@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	iopoly::Error as IOPolynomialError, polynomial::Error as PolynomialError,
+	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
 	protocols::sumcheck::Error as SumcheckError,
 };
 

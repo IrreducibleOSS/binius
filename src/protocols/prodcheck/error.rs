@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{iopoly::Error as IOPolynomialError, polynomial::Error as PolynomialError};
+use crate::{oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

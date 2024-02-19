@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
 	field::{set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField},
-	iopoly::{MultilinearPolyOracle, TransparentPolyOracle},
+	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
 

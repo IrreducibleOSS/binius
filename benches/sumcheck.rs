@@ -5,7 +5,7 @@ use binius::{
 		Field, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{
 		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
 		MultilinearPoly,
@@ -207,8 +207,8 @@ where
 {
 	// Setup poly_oracle
 	let inner = (0..poly.n_multilinears())
-		.map(|id| MultilinearPolyOracle::Committed {
-			id,
+		.map(|index| MultilinearPolyOracle::Committed {
+			id: CommittedId { batch_id: 0, index },
 			n_vars: poly.n_vars(),
 			tower_level: F::TOWER_LEVEL,
 		})

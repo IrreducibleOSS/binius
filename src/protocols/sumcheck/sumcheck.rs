@@ -2,7 +2,7 @@
 
 use crate::{
 	field::{ExtensionField, Field},
-	iopoly::MultivariatePolyOracle,
+	oracle::MultivariatePolyOracle,
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };

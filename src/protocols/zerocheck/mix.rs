@@ -3,7 +3,7 @@
 use crate::{
 	challenger::CanSample,
 	field::TowerField,
-	iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	oracle::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
 	polynomial::{MultilinearComposite, MultilinearPoly},
 	protocols::{
 		sumcheck::MixComposition,

@@ -5,9 +5,9 @@ use binius::{
 		PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	iopoly::{
-		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, Projected,
-		ProjectionVariant, ShiftVariant, Shifted, TransparentPolyOracle,
+	oracle::{
+		CommittedBatch, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle,
+		Projected, ProjectionVariant, ShiftVariant, Shifted, TransparentPolyOracle,
 	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -45,8 +45,8 @@ const NUM_TRACE_COLUMNS: usize = 5;
 const X_COL_IDX: usize = 0;
 const Y_COL_IDX: usize = 1;
 const Z_COL_IDX: usize = 2;
-const C_IN_COL_IDX: usize = 3;
-const C_OUT_COL_IDX: usize = 4;
+const C_OUT_COL_IDX: usize = 3;
+const C_IN_COL_IDX: usize = 4;
 
 // SHIFT INFORMATION
 const LOG_BLOCK_SIZE: usize = 5; //u32 add, so 2^{BLOCK_SIZE} = 32
@@ -168,36 +168,13 @@ struct ProverTrace {
 }
 
 impl ProverTrace {
-	fn new(
-		x: MultilinearExtension<'static, PackedBinaryField128x1b>,
-		y: MultilinearExtension<'static, PackedBinaryField128x1b>,
-		z: MultilinearExtension<'static, PackedBinaryField128x1b>,
-		c_in: MultilinearExtension<'static, PackedBinaryField128x1b>,
-		c_out: MultilinearExtension<'static, PackedBinaryField128x1b>,
-		n_vars: usize,
-	) -> Self {
-		debug_assert_eq!(x.n_vars(), n_vars);
-		debug_assert_eq!(y.n_vars(), n_vars);
-		debug_assert_eq!(z.n_vars(), n_vars);
-		debug_assert_eq!(c_in.n_vars(), n_vars);
-		debug_assert_eq!(c_out.n_vars(), n_vars);
-
-		Self {
-			x,
-			y,
-			z,
-			c_in,
-			c_out,
-		}
-	}
-
 	fn get_all_columns(&self) -> Vec<Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>> {
 		vec![
 			Arc::new(self.x.clone()) as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
 			Arc::new(self.y.clone()) as _,
 			Arc::new(self.z.clone()) as _,
-			Arc::new(self.c_in.clone()) as _,
 			Arc::new(self.c_out.clone()) as _,
+			Arc::new(self.c_in.clone()) as _,
 		]
 	}
 
@@ -210,6 +187,7 @@ impl ProverTrace {
 
 #[derive(Debug, Clone)]
 struct VerifierTrace {
+	trace_batch: CommittedBatch,
 	x_oracle: MultilinearPolyOracle<BinaryField128b>,
 	y_oracle: MultilinearPolyOracle<BinaryField128b>,
 	z_oracle: MultilinearPolyOracle<BinaryField128b>,
@@ -218,36 +196,13 @@ struct VerifierTrace {
 }
 
 impl VerifierTrace {
-	fn new(
-		x_oracle: MultilinearPolyOracle<BinaryField128b>,
-		y_oracle: MultilinearPolyOracle<BinaryField128b>,
-		z_oracle: MultilinearPolyOracle<BinaryField128b>,
-		c_in_oracle: MultilinearPolyOracle<BinaryField128b>,
-		c_out_oracle: MultilinearPolyOracle<BinaryField128b>,
-		log_size: usize,
-	) -> Self {
-		debug_assert_eq!(x_oracle.n_vars(), log_size);
-		debug_assert_eq!(y_oracle.n_vars(), log_size);
-		debug_assert_eq!(z_oracle.n_vars(), log_size);
-		debug_assert_eq!(c_in_oracle.n_vars(), log_size);
-		debug_assert_eq!(c_out_oracle.n_vars(), log_size);
-
-		Self {
-			x_oracle,
-			y_oracle,
-			z_oracle,
-			c_in_oracle,
-			c_out_oracle,
-		}
-	}
-
 	fn into_all_column_oracles(self) -> Vec<MultilinearPolyOracle<BinaryField128b>> {
 		vec![
 			self.x_oracle,
 			self.y_oracle,
 			self.z_oracle,
-			self.c_in_oracle,
 			self.c_out_oracle,
+			self.c_in_oracle,
 		]
 	}
 
@@ -259,10 +214,6 @@ impl VerifierTrace {
 			self.c_out_oracle,
 		]
 	}
-}
-
-fn new_batch_committed_eval_claims() -> BatchCommittedEvalClaims<BinaryField128b> {
-	BatchCommittedEvalClaims::new(&[[X_COL_IDX, Y_COL_IDX, Z_COL_IDX, C_OUT_COL_IDX]])
 }
 
 fn project_to_last_vars(
@@ -418,7 +369,8 @@ where
 
 	// Round 1
 	let (trace_comm, trace_committed) = pcs.commit(&committed_cols).unwrap();
-	let mut batch_committed_eval_claims = new_batch_committed_eval_claims();
+	let mut batch_committed_eval_claims =
+		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
 
 	challenger.observe(trace_comm.clone());
 
@@ -506,7 +458,7 @@ where
 		shifted_eval_claim,
 		same_query_pcs_claim,
 		eval_point.clone(),
-		verifier_trace,
+		verifier_trace.clone(),
 		&mut challenger,
 	);
 
@@ -578,7 +530,8 @@ where
 	} = second_sumcheck_prove_output;
 	// do second evalcheck
 	tracing::debug!("Proving second evalcheck");
-	let mut batch_committed_eval_claims = new_batch_committed_eval_claims();
+	let mut batch_committed_eval_claims =
+		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
 	debug_assert!(second_evalcheck_claim.is_random_point);
 	let second_evalcheck_proof = prove_evalcheck(
 		second_evalcheck_witness,
@@ -590,7 +543,7 @@ where
 	.unwrap();
 	debug_assert_eq!(shifted_eval_claims.len(), 0);
 	debug_assert_eq!(packed_eval_claims.len(), 0);
-	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
@@ -679,7 +632,8 @@ fn verify<PCS, CH>(
 	// Verify evalcheck
 	tracing::debug!("Verifying first evalcheck");
 	let eval_point = evalcheck_claim.eval_point.clone();
-	let mut batch_committed_eval_claims = new_batch_committed_eval_claims();
+	let mut batch_committed_eval_claims =
+		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	verify_evalcheck(
@@ -690,7 +644,7 @@ fn verify<PCS, CH>(
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	debug_assert_eq!(shifted_eval_claims.len(), 1);
 	debug_assert_eq!(packed_eval_claims.len(), 0);
 
@@ -712,7 +666,7 @@ fn verify<PCS, CH>(
 		shifted_eval_claim,
 		same_query_pcs_claim,
 		eval_point,
-		verifier_trace,
+		verifier_trace.clone(),
 		&mut challenger,
 	);
 
@@ -728,7 +682,8 @@ fn verify<PCS, CH>(
 
 	// do second evalcheck verification
 	tracing::debug!("Verifying second evalcheck");
-	let mut batch_committed_eval_claims = new_batch_committed_eval_claims();
+	let mut batch_committed_eval_claims =
+		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
 
 	verify_evalcheck(
 		second_evalcheck_claim,
@@ -738,7 +693,7 @@ fn verify<PCS, CH>(
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(batch_committed_eval_claims.nbatches(), 1);
+	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	debug_assert_eq!(shifted_eval_claims.len(), 0);
 	debug_assert_eq!(packed_eval_claims.len(), 0);
 
@@ -817,29 +772,28 @@ fn main() {
 	let z = MultilinearExtension::from_values(z_vals).unwrap();
 	let c_in = MultilinearExtension::from_values(c_in_vals).unwrap();
 	let c_out = MultilinearExtension::from_values(c_out_vals).unwrap();
-	let trace = ProverTrace::new(x, y, z, c_in, c_out, log_size);
+	let trace = ProverTrace {
+		x,
+		y,
+		z,
+		c_in,
+		c_out,
+	};
 
 	// verifier view of trace
-	let x_oracle = MultilinearPolyOracle::Committed {
-		id: X_COL_IDX,
+	let trace_batch = CommittedBatch {
+		id: 0,
+		round_id: 1,
 		n_vars: log_size,
+		n_polys: 4,
 		tower_level: 0,
 	};
-	let y_oracle = MultilinearPolyOracle::Committed {
-		id: Y_COL_IDX,
-		n_vars: log_size,
-		tower_level: 0,
-	};
-	let z_oracle = MultilinearPolyOracle::Committed {
-		id: Z_COL_IDX,
-		n_vars: log_size,
-		tower_level: 0,
-	};
-	let c_out_oracle = MultilinearPolyOracle::Committed {
-		id: C_OUT_COL_IDX,
-		n_vars: log_size,
-		tower_level: 0,
-	};
+
+	let x_oracle = trace_batch.oracle(X_COL_IDX).unwrap();
+	let y_oracle = trace_batch.oracle(Y_COL_IDX).unwrap();
+	let z_oracle = trace_batch.oracle(Z_COL_IDX).unwrap();
+	let c_out_oracle = trace_batch.oracle(C_OUT_COL_IDX).unwrap();
+
 	let logical_right_shift_offset = 1;
 	let logical_right_shift_block_size = LOG_BLOCK_SIZE;
 	let shifted = Shifted::new(
@@ -850,8 +804,14 @@ fn main() {
 	)
 	.unwrap();
 	let c_in_oracle = MultilinearPolyOracle::Shifted(shifted);
-	let verifier_trace =
-		VerifierTrace::new(x_oracle, y_oracle, z_oracle, c_in_oracle, c_out_oracle, log_size);
+	let verifier_trace = VerifierTrace {
+		trace_batch,
+		x_oracle,
+		y_oracle,
+		z_oracle,
+		c_in_oracle,
+		c_out_oracle,
+	};
 
 	// Set up the challenger
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();

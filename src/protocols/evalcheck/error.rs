@@ -1,5 +1,9 @@
-use super::evalcheck::BatchId;
-use crate::{iopoly::CommittedId, polynomial::Error as PolynomialError};
+// Copyright 2024 Ulvetanna Inc.
+
+use crate::{
+	oracle::{BatchId, CommittedId},
+	polynomial::Error as PolynomialError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

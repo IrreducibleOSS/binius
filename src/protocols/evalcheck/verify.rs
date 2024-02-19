@@ -2,7 +2,7 @@
 
 use crate::{
 	field::Field,
-	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
+	oracle::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
 	polynomial::extrapolate_line,
 	protocols::evalcheck::evalcheck::ShiftedEvalClaim,
 };

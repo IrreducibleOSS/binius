@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::{
 	field::Field,
-	iopoly::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
+	oracle::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
 	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
 use std::borrow::Borrow;
@@ -159,7 +159,7 @@ mod tests {
 
 	use crate::{
 		field::{BinaryField128b, PackedBinaryField4x32b, PackedField},
-		iopoly::{CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+		oracle::{CommittedBatch, CompositePolyOracle, MultivariatePolyOracle},
 		polynomial::{
 			CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
 		},
@@ -246,13 +246,29 @@ mod tests {
 		)
 		.unwrap();
 
-		let suboracles = (0..4)
-			.map(|id| MultilinearPolyOracle::<EF>::Committed {
-				id,
+		let batches = [
+			CommittedBatch {
+				id: 0,
+				round_id: 1,
 				n_vars: log_size,
+				n_polys: 2,
 				tower_level,
-			})
-			.collect();
+			},
+			CommittedBatch {
+				id: 1,
+				round_id: 1,
+				n_vars: log_size,
+				n_polys: 2,
+				tower_level,
+			},
+		];
+
+		let suboracles = vec![
+			batches[0].oracle(0).unwrap(),
+			batches[1].oracle(0).unwrap(),
+			batches[0].oracle(1).unwrap(),
+			batches[1].oracle(1).unwrap(),
+		];
 
 		let oracle = MultivariatePolyOracle::Composite(
 			CompositePolyOracle::new(log_size, suboracles, Arc::new(QuadProduct)).unwrap(),
@@ -264,8 +280,6 @@ mod tests {
 			eval,
 			is_random_point: true,
 		};
-
-		let batches = vec![vec![0, 2], vec![1, 3]];
 
 		let mut bcec_prove = BatchCommittedEvalClaims::new(&batches);
 		let mut shifted_claims_prove = Vec::new();
