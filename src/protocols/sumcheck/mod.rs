@@ -8,7 +8,6 @@
 mod error;
 mod mix;
 mod prove;
-mod prove_utils;
 #[allow(clippy::module_inception)]
 mod sumcheck;
 mod verify;
@@ -16,10 +15,6 @@ mod verify;
 pub use error::*;
 pub use mix::*;
 pub use prove::*;
-pub use prove_utils::{
-	PostSwitchoverRoundOutput, PostSwitchoverWitness, PreSwitchoverRoundOutput,
-	PreSwitchoverWitness,
-};
 pub use sumcheck::{
 	SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,
 	SumcheckWitness,

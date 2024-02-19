@@ -26,7 +26,13 @@ pub fn verify_round<F: Field>(
 	challenge: F,
 	domain: &EvaluationDomain<F>,
 ) -> Result<SumcheckRoundClaim<F>, Error> {
-	reduce_sumcheck_claim_round(poly_oracle, domain, round, round_claim, challenge)
+	reduce_sumcheck_claim_round(
+		poly_oracle.max_individual_degree(),
+		domain,
+		round,
+		round_claim,
+		challenge,
+	)
 }
 
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
@@ -39,8 +45,13 @@ pub fn verify_final<F: Field>(
 	challenge: F,
 	domain: &EvaluationDomain<F>,
 ) -> Result<EvalcheckClaim<F>, Error> {
-	let round_claim =
-		reduce_sumcheck_claim_round(poly_oracle, domain, round, round_claim, challenge)?;
+	let round_claim = reduce_sumcheck_claim_round(
+		poly_oracle.max_individual_degree(),
+		domain,
+		round,
+		round_claim,
+		challenge,
+	)?;
 	reduce_sumcheck_claim_final(poly_oracle, round_claim)
 }
 

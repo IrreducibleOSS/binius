@@ -1,353 +1,588 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::prove_utils::{
-	compute_round_coeffs_first, compute_round_coeffs_post_switchover,
-	compute_round_coeffs_pre_switchover, PostSwitchoverRoundOutput, PreSwitchoverRoundOutput,
-	PreSwitchoverWitness,
-};
-use std::borrow::Borrow;
+use std::{borrow::Borrow, cmp::max, convert::Into, fmt::Debug, marker::PhantomData, sync::Arc};
+
+use rayon::prelude::*;
+
 use tracing::instrument;
 
 use super::{
 	error::Error,
 	sumcheck::{
 		check_evaluation_domain, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round,
-		SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRoundClaim, SumcheckWitness,
+		SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,
+		SumcheckWitness,
 	},
 };
+
 use crate::{
-	field::Field,
+	field::{Field, PackedField},
+	oracle::MultivariatePolyOracle,
 	polynomial::{
-		multilinear_query::MultilinearQuery, EvaluationDomain, MultilinearExtension,
-		MultilinearPoly,
+		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
+		MultilinearExtension, MultilinearPoly,
 	},
 	protocols::evalcheck::EvalcheckWitness,
 };
 
-fn validate_input<F, M, BM>(
-	sumcheck_claim: &SumcheckClaim<F>,
-	sumcheck_witness: &SumcheckWitness<F, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error>
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	let degree = sumcheck_claim.poly.max_individual_degree();
-	if degree == 0 {
-		return Err(Error::PolynomialDegreeIsZero);
+/// An individual multilinear polynomial in a multivariate composite
+enum SumcheckMultilinear<P: PackedField, BM> {
+	/// Small field polynomial - to be folded into large field at `switchover` round
+	Transparent {
+		switchover: usize,
+		small_field_multilin: BM,
+	},
+	/// Large field polynomial - halved in size each round
+	Folded {
+		large_field_folded_multilin: MultilinearExtension<'static, P>,
+	},
+}
+
+/// Parallel fold state, consisting of scratch area and result accumulator.
+struct ParFoldState<F: Field> {
+	// Evaluations at 0, 1 and domain points, per MLE. Scratch space.
+	evals_0: Vec<F>,
+	evals_1: Vec<F>,
+	evals_z: Vec<F>,
+
+	// Accumulated sums of evaluations over univariate domain.
+	round_evals: Vec<F>,
+}
+
+impl<F: Field> ParFoldState<F> {
+	fn new(n_multilinears: usize, degree: usize) -> Self {
+		Self {
+			evals_0: vec![F::ZERO; n_multilinears],
+			evals_1: vec![F::ZERO; n_multilinears],
+			evals_z: vec![F::ZERO; n_multilinears],
+			round_evals: vec![F::ZERO; degree],
+		}
 	}
-	check_evaluation_domain(degree, domain)?;
-	if sumcheck_claim.poly.n_vars() != sumcheck_witness.n_vars() {
-		let err_str = format!(
-			"Claim and Witness n_vars mismatch. Claim: {}, Witness: {}",
-			sumcheck_claim.poly.n_vars(),
-			sumcheck_witness.n_vars()
-		);
-		return Err(Error::ProverClaimWitnessMismatch(err_str));
-	}
-	Ok(())
 }
 
-fn validate_input_classic<F, OF, M, BM>(
-	sumcheck_claim: &SumcheckClaim<F>,
-	sumcheck_witness: &SumcheckWitness<OF, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error>
-where
-	F: Field,
-	OF: Field + Into<F> + From<F>,
-	M: MultilinearPoly<OF> + ?Sized,
-	BM: Borrow<M>,
-{
-	let degree = sumcheck_claim.poly.max_individual_degree();
-	if degree == 0 {
-		return Err(Error::PolynomialDegreeIsZero);
-	}
-	check_evaluation_domain(degree, domain)?;
-	if sumcheck_claim.poly.n_vars() != sumcheck_witness.n_vars() {
-		let err_str = format!(
-			"Claim and Witness n_vars mismatch. Claim: {}, Witness: {}",
-			sumcheck_claim.poly.n_vars(),
-			sumcheck_witness.n_vars()
-		);
-		return Err(Error::ProverClaimWitnessMismatch(err_str));
-	}
-	Ok(())
-}
-
-#[instrument(skip_all, name = "sumcheck::prove_first_round")]
-pub fn prove_first_round<F, M, BM>(
-	original_claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M, BM>,
-	domain: &EvaluationDomain<F>,
-	max_switchover: usize,
-) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
-where
-	F: Field,
-	M: MultilinearPoly<F> + Send + Sync + ?Sized,
-	BM: Borrow<M> + Sync,
-{
-	validate_input(original_claim, &witness, domain)?;
-
-	// SETUP
-	let tensor = MultilinearQuery::new(max_switchover)?;
-	let round_claim = SumcheckRoundClaim {
-		partial_point: vec![],
-		current_round_sum: original_claim.sum,
-	};
-	let current_witness = PreSwitchoverWitness {
-		polynomial: witness,
-		tensor,
-	};
-	let round_output = compute_round_coeffs_first(round_claim, current_witness, domain)?;
-	Ok(round_output)
-}
-
-#[instrument(skip_all, name = "sumcheck::prove_before_switchover")]
-pub fn prove_before_switchover<F, M, BM>(
-	original_claim: &SumcheckClaim<F>,
-	prev_rd_challenge: F,
-	prev_rd_output: PreSwitchoverRoundOutput<F, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<PreSwitchoverRoundOutput<F, M, BM>, Error>
-where
-	F: Field,
-	M: MultilinearPoly<F> + Send + Sync + ?Sized,
-	BM: Borrow<M> + Sync,
-{
-	// STEP 0: Reduce sumcheck claim
-	let PreSwitchoverRoundOutput {
-		claim: prev_rd_reduced_claim,
-		current_witness,
-		current_proof,
-	} = prev_rd_output;
-	let round = current_proof.rounds.last().cloned().ok_or_else(|| {
-		Error::ImproperInput("prev_rd_output contains no previous rounds".to_string())
-	})?;
-
-	let curr_rd_reduced_claim = reduce_sumcheck_claim_round(
-		&original_claim.poly,
-		domain,
-		round,
-		prev_rd_reduced_claim,
-		prev_rd_challenge,
-	)?;
-	// STEP 1: Update tensor
-	let PreSwitchoverWitness { polynomial, tensor } = current_witness;
-	let tensor = tensor.update(&[prev_rd_challenge])?;
-	let current_witness = PreSwitchoverWitness { polynomial, tensor };
-	// STEP 2: Compute round coefficients
-	compute_round_coeffs_pre_switchover(
-		curr_rd_reduced_claim,
-		current_proof,
-		current_witness,
-		domain,
-	)
-}
-
-#[instrument(skip_all, name = "sumcheck::prove_at_switchover")]
-pub fn prove_at_switchover<F, M, BM>(
-	original_claim: &SumcheckClaim<F>,
-	prev_rd_challenge: F,
-	prev_rd_output: PreSwitchoverRoundOutput<F, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<
-	PostSwitchoverRoundOutput<
-		F,
-		F,
-		MultilinearExtension<'static, F>,
-		MultilinearExtension<'static, F>,
-	>,
-	Error,
->
-where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	let PreSwitchoverRoundOutput {
-		claim: prev_rd_reduced_claim,
-		current_witness,
-		current_proof,
-	} = prev_rd_output;
-
-	// STEP 0: Reduce sumcheck claim
-	let round = current_proof.rounds[current_proof.rounds.len() - 1].clone();
-	let curr_rd_reduced_claim = reduce_sumcheck_claim_round(
-		&original_claim.poly,
-		domain,
-		round,
-		prev_rd_reduced_claim,
-		prev_rd_challenge,
-	)?;
-	// STEP 1: Update tensor
-	let PreSwitchoverWitness { polynomial, tensor } = current_witness;
-	let tensor = tensor.update(&[prev_rd_challenge])?;
-	// STEP 2: Perform Switchover
-	let updated_witness = polynomial.evaluate_partial_low(&tensor)?;
-	// Step 3: Compute round coefficients
-	compute_round_coeffs_post_switchover(
-		curr_rd_reduced_claim,
-		current_proof,
-		updated_witness,
-		domain,
-	)
-}
-
-#[instrument(skip_all, name = "sumcheck::prove_post_switchover")]
-pub fn prove_post_switchover<F: Field>(
-	original_claim: &SumcheckClaim<F>,
-	prev_rd_challenge: F,
-	prev_rd_output: PostSwitchoverRoundOutput<
-		F,
-		F,
-		MultilinearExtension<'static, F>,
-		MultilinearExtension<'static, F>,
-	>,
-	domain: &EvaluationDomain<F>,
-) -> Result<
-	PostSwitchoverRoundOutput<
-		F,
-		F,
-		MultilinearExtension<'static, F>,
-		MultilinearExtension<'static, F>,
-	>,
-	Error,
-> {
-	// STEP 0: Reduce sumcheck claim
-	let PostSwitchoverRoundOutput {
-		claim: prev_rd_reduced_claim,
-		current_witness,
-		current_proof,
-	} = prev_rd_output;
-	let round = current_proof.rounds[current_proof.rounds.len() - 1].clone();
-	let curr_rd_reduced_claim = reduce_sumcheck_claim_round(
-		&original_claim.poly,
-		domain,
-		round,
-		prev_rd_reduced_claim,
-		prev_rd_challenge,
-	)?;
-	// STEP 1: Update polynomial
-	let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge])?;
-	let updated_witness = current_witness.evaluate_partial_low(&partial_query)?;
-	// STEP 2: Compute round coefficients
-	compute_round_coeffs_post_switchover(
-		curr_rd_reduced_claim,
-		current_proof,
-		updated_witness,
-		domain,
-	)
-}
-
-/// Prove a sumcheck instance reduction, final step, after all rounds are completed.
+/// A mutable prover state. To prove a sumcheck claim, supply a multivariate composite witness. In
+/// some cases it makes sense to do so in an different yet isomorphic field OPF (operating packed
+/// field) which may preferable due to superior performance. One example of such operating field
+/// would be BinaryField128bPolyval, which tends to be much faster than 128-bit tower field on x86
+/// CPUs. The only constraint is that constituent MLEs should have MultilinearPoly impls for OPF -
+/// something which is trivially satisfied for MLEs with tower field scalars for claims in tower
+/// field as well.
 ///
-/// The input polynomial is a composition of multilinear polynomials over a field F. The routine is
-/// also parameterized by an operating field OF, which is isomorphic to F and over which the
-/// majority of field operations are to be performed.
-#[instrument(skip_all, name = "sumcheck::prove_final")]
-pub fn prove_final<F, M, BM>(
-	sumcheck_claim: &SumcheckClaim<F>,
-	sumcheck_witness: SumcheckWitness<F, M, BM>,
-	sumcheck_proof: SumcheckProof<F>,
-	prev_rd_reduced_claim: SumcheckRoundClaim<F>,
-	prev_rd_challenge: F,
-	domain: &EvaluationDomain<F>,
-) -> Result<SumcheckProveOutput<F, M, BM>, Error>
+/// Prover state is instantiated via `new` method, followed by exactly n_vars `execute_round` invocations.
+/// Each of those takes in an optional challenge (None on first round and Some on following rounds) and
+/// evaluation domain. Proof and Evalcheck claim are obtained via `finalize` call at the end.
+///
+/// Each MLE in the multivariate composite is parameterized by `switchover` round number, which
+/// controls small field optimization and corresponding time/memory tradeoff. In rounds
+/// 0..(switchover-1) the partial evaluation of a specific MLE is obtained by doing
+/// 2**(n_vars-round) inner products, with total time complexity proportional to the MLE size.
+/// After switchover the inner products are stored in a new MLE in large field, which is halved on each
+/// round. There are two tradeoffs at play:
+///   1) Pre-switchover rounds perform Small * Large field multiplications, but do 2^round as many of them.
+///   2) Pre-switchover rounds require no additional memory, but initial folding allocates a new MLE in a
+///      large field that is 2^switchover times smaller - for example for 1-bit polynomial and 128-bit large
+///      field a switchover of 7 would require additional memory identical to the polynomial size.
+///
+/// NB. Note that switchover=0 does not make sense, as first round is never folded.
+pub struct SumcheckProverState<F, OPF, M, BM>
 where
-	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-{
-	// STEP 0: Reduce sumcheck claim
-	let round = sumcheck_proof.rounds[sumcheck_proof.rounds.len() - 1].clone();
-	let final_rd_claim = reduce_sumcheck_claim_round(
-		&sumcheck_claim.poly,
-		domain,
-		round,
-		prev_rd_reduced_claim,
-		prev_rd_challenge,
-	)?;
-
-	let evalcheck_claim = reduce_sumcheck_claim_final(&sumcheck_claim.poly, final_rd_claim)?;
-	Ok(SumcheckProveOutput {
-		sumcheck_proof,
-		evalcheck_claim,
-		evalcheck_witness: EvalcheckWitness::Composite(sumcheck_witness),
-	})
-}
-
-#[instrument(skip_all, name = "sumcheck::prove_first_round_with_operating_field")]
-pub fn prove_first_round_with_operating_field<F, OF, M, BM>(
-	original_claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<OF, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<PostSwitchoverRoundOutput<F, OF, M, BM>, Error>
-where
-	F: Field,
-	OF: Field + Into<F> + From<F>,
-	M: MultilinearPoly<OF> + Sync + ?Sized,
+	F: Field + From<OPF::Scalar> + Into<OPF::Scalar>,
+	OPF: PackedField + Debug,
+	M: MultilinearPoly<OPF> + Sync + ?Sized,
 	BM: Borrow<M> + Sync,
 {
-	validate_input_classic(original_claim, &witness, domain)?;
-	let round_claim = SumcheckRoundClaim {
-		partial_point: vec![],
-		current_round_sum: original_claim.sum,
-	};
-	let current_proof = SumcheckProof { rounds: vec![] };
-	compute_round_coeffs_post_switchover(round_claim, current_proof, witness, domain)
+	n_vars: usize,
+	max_individual_degree: usize,
+
+	composition: Arc<dyn CompositionPoly<OPF>>,
+	multilinears: Vec<SumcheckMultilinear<OPF, BM>>,
+
+	query: Option<MultilinearQuery<OPF::Scalar>>,
+
+	proof: SumcheckProof<F>,
+	round_claim: Option<SumcheckRoundClaim<F>>,
+
+	round: usize,
+	_m_marker: PhantomData<M>,
 }
 
-#[instrument(skip_all, name = "sumcheck::prove_later_round_with_operating_field")]
-pub fn prove_later_round_with_operating_field<F, OF, M, BM>(
-	original_claim: &SumcheckClaim<F>,
-	prev_rd_challenge: F,
-	prev_rd_output: PostSwitchoverRoundOutput<F, OF, M, BM>,
-	domain: &EvaluationDomain<F>,
-) -> Result<
-	PostSwitchoverRoundOutput<
-		F,
-		OF,
-		MultilinearExtension<'static, OF>,
-		MultilinearExtension<'static, OF>,
-	>,
-	Error,
->
+impl<F, OPF, M, BM> SumcheckProverState<F, OPF, M, BM>
 where
-	F: Field,
-	OF: Field + Into<F> + From<F>,
-	M: MultilinearPoly<OF> + ?Sized,
-	BM: Borrow<M>,
+	F: Field + From<OPF::Scalar> + Into<OPF::Scalar>,
+	OPF: PackedField + Debug,
+	M: MultilinearPoly<OPF> + Sync + ?Sized,
+	BM: Borrow<M> + Sync,
 {
-	// STEP 0: Reduce sumcheck claim
-	let PostSwitchoverRoundOutput {
-		claim: prev_rd_reduced_claim,
-		current_proof,
-		current_witness,
-	} = prev_rd_output;
-	let round = current_proof.rounds.last().cloned().ok_or_else(|| {
-		Error::ImproperInput("prev_rd_output contains no previous rounds".to_string())
-	})?;
+	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
+	/// a different (but isomorphic) packed field OPF. `switchovers` slice contains rounds
+	/// given multilinear index - expectation is that the caller would have enough context to
+	/// introspect on field & polynomial sizes. This is a stopgap measure until a proper type
+	/// reflection mechanism is introduced.
+	pub fn new(
+		sumcheck_claim: &SumcheckClaim<F>,
+		sumcheck_witness: SumcheckWitness<OPF, M, BM>,
+		switchovers: &[usize],
+	) -> Result<Self, Error> {
+		let n_vars = sumcheck_witness.n_vars();
+		let max_individual_degree = sumcheck_claim.poly.max_individual_degree();
 
-	let curr_rd_reduced_claim = reduce_sumcheck_claim_round(
-		&original_claim.poly,
-		domain,
-		round,
-		prev_rd_reduced_claim,
-		prev_rd_challenge,
-	)?;
-	// STEP 1: Update polynomial
-	let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge.into()])?;
-	let updated_witness = current_witness.evaluate_partial_low(&partial_query)?;
-	// STEP 2: Compute round coefficients
-	compute_round_coeffs_post_switchover(
-		curr_rd_reduced_claim,
-		current_proof,
-		updated_witness,
-		domain,
-	)
+		if max_individual_degree == 0 {
+			return Err(Error::PolynomialDegreeIsZero);
+		}
+
+		if sumcheck_claim.poly.n_vars() != n_vars {
+			let err_str = format!(
+				"Claim and Witness n_vars mismatch in sumcheck. Claim: {}, Witness: {}",
+				sumcheck_claim.poly.n_vars(),
+				n_vars
+			);
+
+			return Err(Error::ProverClaimWitnessMismatch(err_str));
+		}
+
+		if switchovers.len() != sumcheck_witness.n_multilinears() {
+			let err_str = format!(
+				"Witness contains {} multilinears but {} switchovers are given.",
+				sumcheck_witness.n_multilinears(),
+				switchovers.len()
+			);
+
+			return Err(Error::ImproperInput(err_str));
+		}
+
+		let mut max_query_vars = 1;
+		let mut multilinears = Vec::new();
+
+		for (small_field_multilin, &switchover) in
+			sumcheck_witness.multilinears.into_iter().zip(switchovers)
+		{
+			max_query_vars = max(max_query_vars, switchover);
+			multilinears.push(SumcheckMultilinear::Transparent {
+				switchover,
+				small_field_multilin,
+			});
+		}
+
+		let composition = sumcheck_witness.composition;
+
+		let query = Some(MultilinearQuery::new(max_query_vars)?);
+
+		let proof = SumcheckProof { rounds: Vec::new() };
+
+		let round_claim = Some(SumcheckRoundClaim {
+			partial_point: Vec::new(),
+			current_round_sum: sumcheck_claim.sum,
+		});
+
+		let prover_state = SumcheckProverState {
+			n_vars,
+			max_individual_degree,
+
+			composition,
+			multilinears,
+
+			query,
+
+			proof,
+			round_claim,
+
+			round: 0,
+			_m_marker: PhantomData,
+		};
+
+		Ok(prover_state)
+	}
+
+	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
+	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::finalize")]
+	pub fn finalize<WPF, WM, WBM>(
+		&mut self,
+		poly_oracle: &MultivariatePolyOracle<F>,
+		sumcheck_witness: SumcheckWitness<WPF, WM, WBM>,
+		domain: &EvaluationDomain<F>,
+		prev_rd_challenge: Option<F>,
+	) -> Result<SumcheckProveOutput<F, WPF, WM, WBM>, Error>
+	where
+		WPF: PackedField,
+		WM: MultilinearPoly<WPF> + ?Sized,
+		WBM: Borrow<WM>,
+	{
+		// First round has no challenge, other rounds should have it
+		self.validate_rd_challenge(prev_rd_challenge)?;
+
+		if self.round != self.n_vars {
+			return Err(Error::ImproperInput(format!(
+				"finalize() called on round {} while n_vars={}",
+				self.round, self.n_vars
+			)));
+		}
+
+		// Last reduction to obtain eval value at eval_point
+		if let Some(prev_rd_challenge) = prev_rd_challenge {
+			self.reduce_claim(domain, prev_rd_challenge)?;
+		}
+
+		let evalcheck_claim = reduce_sumcheck_claim_final(
+			poly_oracle,
+			self.round_claim
+				.take()
+				.expect("round_claim always present by invariant"),
+		)?;
+
+		self.round += 1;
+
+		let sumcheck_proof = self.proof.clone();
+		let evalcheck_witness = EvalcheckWitness::Composite(sumcheck_witness);
+
+		Ok(SumcheckProveOutput {
+			sumcheck_proof,
+			evalcheck_claim,
+			evalcheck_witness,
+		})
+	}
+
+	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::execute_round")]
+	pub fn execute_round(
+		&mut self,
+		domain: &EvaluationDomain<F>,
+		prev_rd_challenge: Option<F>,
+	) -> Result<SumcheckRound<F>, Error> {
+		// First round has no challenge, other rounds should have it
+		self.validate_rd_challenge(prev_rd_challenge)?;
+
+		if self.round >= self.n_vars {
+			return Err(Error::ImproperInput("too many execute_round calls".to_string()));
+		}
+
+		// Validate that evaluation domain starts with 0 & 1 and is large enough to
+		// interpolate a univariate of a maximum individual degree
+		check_evaluation_domain(self.max_individual_degree, domain)?;
+
+		// Rounds 1..n_vars-1 - Some(..) challenge is given
+		if let Some(prev_rd_challenge) = prev_rd_challenge {
+			// Process switchovers of small field multilinears and folding of large field ones
+			self.handle_switchover_and_fold(prev_rd_challenge.into())?;
+
+			// Reduce Evalcheck claim
+			self.reduce_claim(domain, prev_rd_challenge)?;
+		}
+
+		// Extract multilinears & round
+		let &mut Self {
+			round,
+			ref multilinears,
+			..
+		} = self;
+
+		// Transform evaluation domain points to operating field
+		let opf_domain = domain
+			.points()
+			.iter()
+			.copied()
+			.map(Into::into)
+			.collect::<Vec<_>>();
+
+		// Handling different cases separately for more inlining opportunities
+		// (especially in early rounds)
+		let any_transparent = multilinears
+			.iter()
+			.any(|ml| matches!(ml, SumcheckMultilinear::Transparent { .. }));
+		let any_folded = multilinears
+			.iter()
+			.any(|ml| matches!(ml, SumcheckMultilinear::Folded { .. }));
+
+		let coeffs = match (round, any_transparent, any_folded) {
+			// All transparent, first round - direct sampling
+			(0, true, false) => {
+				self.sum_to_round_evals(&opf_domain, Self::only_transparent, Self::direct_sample)
+			}
+
+			// All transparent, rounds 1..n_vars - small field inner product
+			(_, true, false) => {
+				self.sum_to_round_evals(&opf_domain, Self::only_transparent, |multilin, i| {
+					self.subcube_inner_product(multilin, i)
+				})
+			}
+
+			// All folded - direct sampling
+			(_, false, true) => {
+				self.sum_to_round_evals(&opf_domain, Self::only_folded, Self::direct_sample)
+			}
+
+			// Heterogeneous case
+			_ => self.sum_to_round_evals(
+				&opf_domain,
+				|x| x,
+				|sc_multilin, i| match sc_multilin {
+					SumcheckMultilinear::Transparent {
+						small_field_multilin,
+						..
+					} => self.subcube_inner_product(small_field_multilin.borrow(), i),
+
+					SumcheckMultilinear::Folded {
+						large_field_folded_multilin,
+					} => Self::direct_sample(large_field_folded_multilin, i),
+				},
+			),
+		};
+
+		self.round += 1;
+
+		let proof_round = SumcheckRound { coeffs };
+		self.proof.rounds.push(proof_round.clone());
+
+		Ok(proof_round)
+	}
+
+	fn only_transparent(sc_multilin: &SumcheckMultilinear<OPF, BM>) -> &M {
+		match sc_multilin {
+			SumcheckMultilinear::Transparent {
+				small_field_multilin,
+				..
+			} => small_field_multilin.borrow(),
+			_ => panic!("all transparent by invariant"),
+		}
+	}
+
+	fn only_folded(
+		sc_multilin: &SumcheckMultilinear<OPF, BM>,
+	) -> &MultilinearExtension<'static, OPF> {
+		match sc_multilin {
+			SumcheckMultilinear::Folded {
+				large_field_folded_multilin,
+			} => large_field_folded_multilin,
+			_ => panic!("all folded by invariant"),
+		}
+	}
+
+	// Note the generic parameter - this method samples small field in first round and
+	// large field post-switchover.
+	#[inline]
+	fn direct_sample<MD>(multilin: &MD, i: usize) -> (OPF::Scalar, OPF::Scalar)
+	where
+		MD: MultilinearPoly<OPF> + ?Sized,
+	{
+		let eval0 = multilin
+			.evaluate_on_hypercube(i << 1)
+			.expect("eval 0 within range");
+		let eval1 = multilin
+			.evaluate_on_hypercube((i << 1) + 1)
+			.expect("eval 1 within range");
+
+		(eval0, eval1)
+	}
+
+	#[inline]
+	fn subcube_inner_product(&self, multilin: &M, i: usize) -> (OPF::Scalar, OPF::Scalar) where {
+		let query = self.query.as_ref().expect("tensor present by invariant");
+
+		let eval0 = multilin
+			.evaluate_subcube(i << 1, query)
+			.expect("eval 0 within range");
+		let eval1 = multilin
+			.evaluate_subcube((i << 1) + 1, query)
+			.expect("eval 1 within range");
+
+		(eval0, eval1)
+	}
+
+	// The gist of sumcheck - summing over evaluations of the multivariate composite on evaluation domain
+	// for the remaining variables: there are `round-1` already assigned variables with values from large
+	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
+	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
+	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
+	fn sum_to_round_evals<'a, T>(
+		&'a self,
+		eval_points: &[OPF::Scalar],
+		precomp: impl Fn(&'a SumcheckMultilinear<OPF, BM>) -> T,
+		eval01: impl Fn(T, usize) -> (OPF::Scalar, OPF::Scalar) + Sync,
+	) -> Vec<F>
+	where
+		T: Copy + Sync + 'a,
+		BM: 'a,
+	{
+		let rd_vars = self.n_vars - self.round;
+
+		let n_multilinears = self.multilinears.len();
+		let degree = self.composition.degree();
+
+		debug_assert_eq!(eval_points.len(), degree + 1);
+
+		// When there is some unpacking to do on each multilinear, hoist it out of the tight loop.
+		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
+
+		let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
+			|| ParFoldState::new(n_multilinears, degree),
+			|mut state, i| {
+				for (j, precomp) in precomps.iter().enumerate() {
+					let (eval0, eval1) = eval01(*precomp, i);
+					state.evals_0[j] = eval0;
+					state.evals_1[j] = eval1;
+				}
+
+				process_round_evals(
+					self.composition.as_ref(),
+					&state.evals_0,
+					&state.evals_1,
+					&mut state.evals_z,
+					&mut state.round_evals,
+					eval_points,
+				);
+
+				state
+			},
+		);
+
+		// Simply sum up the fold partitions.
+		let opf_round_evals = fold_result.map(|state| state.round_evals).reduce(
+			|| vec![OPF::Scalar::ZERO; degree],
+			|mut overall_round_evals, partial_round_evals| {
+				overall_round_evals
+					.iter_mut()
+					.zip(partial_round_evals.iter())
+					.for_each(|(f, s)| *f += s);
+				overall_round_evals
+			},
+		);
+
+		opf_round_evals.into_iter().map(Into::into).collect()
+	}
+
+	fn validate_rd_challenge(&self, prev_rd_challenge: Option<F>) -> Result<(), Error> {
+		if prev_rd_challenge.map_or(self.round > 0, |_| self.round == 0) {
+			return Err(Error::ImproperInput(format!(
+				"incorrect optional challenge: is_some()={:?} at round {}",
+				prev_rd_challenge.is_some(),
+				self.round
+			)));
+		}
+
+		Ok(())
+	}
+
+	pub fn get_claim(&self) -> SumcheckRoundClaim<F> {
+		self.round_claim
+			.clone()
+			.expect("round_claim always present by invariant")
+	}
+
+	fn reduce_claim(
+		&mut self,
+		domain: &EvaluationDomain<F>,
+		prev_rd_challenge: F,
+	) -> Result<(), Error> {
+		let new_round_claim = reduce_sumcheck_claim_round(
+			self.max_individual_degree,
+			domain,
+			self.proof
+				.rounds
+				.last()
+				.expect("not first round by invariant")
+				.clone(),
+			self.round_claim
+				.take()
+				.expect("round_claim always present by invariant"),
+			prev_rd_challenge,
+		)?;
+
+		self.round_claim.replace(new_round_claim);
+
+		Ok(())
+	}
+
+	fn handle_switchover_and_fold(&mut self, prev_rd_challenge: OPF::Scalar) -> Result<(), Error> {
+		let &mut Self {
+			round,
+			ref mut multilinears,
+			ref mut query,
+			..
+		} = self;
+
+		// Update query (has to be done before switchover)
+		if let Some(prev_query) = query.take() {
+			let expanded_query = prev_query.update(&[prev_rd_challenge])?;
+			query.replace(expanded_query);
+		}
+
+		// Partial query (for folding)
+		let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge])?;
+
+		// Perform switchover and/or folding
+		let mut any_transparent_left = false;
+
+		for multilin in multilinears.iter_mut() {
+			match *multilin {
+				SumcheckMultilinear::Transparent {
+					switchover,
+					ref small_field_multilin,
+				} => {
+					if switchover <= round {
+						// At switchover, perform inner products in large field and save them
+						// in a newly created MLE.
+						let query_ref = query.as_ref().expect("tensor available by invariant");
+						let large_field_folded_multilin = small_field_multilin
+							.borrow()
+							.evaluate_partial_low(query_ref)?;
+
+						*multilin = SumcheckMultilinear::Folded {
+							large_field_folded_multilin,
+						};
+					} else {
+						any_transparent_left = true;
+					}
+				}
+
+				SumcheckMultilinear::Folded {
+					ref mut large_field_folded_multilin,
+				} => {
+					// Post-switchover, simply halve large field MLE.
+					*large_field_folded_multilin =
+						large_field_folded_multilin.evaluate_partial_low(&partial_query)?;
+				}
+			}
+		}
+
+		// All folded large field - tensor is no more needed.
+		if !any_transparent_left {
+			*query = None;
+		}
+
+		Ok(())
+	}
+}
+
+// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some index,
+// uses them to linearly interpolate each MLE value at domain point, and then evaluate multivariate
+// composite over those.
+// NB: Evaluation at 0 is not computed, due to it being derivable from the claim (sum = eval_0 + eval_1).
+fn process_round_evals<P: PackedField, C: CompositionPoly<P> + ?Sized>(
+	composition: &C,
+	evals_0: &[P::Scalar],
+	evals_1: &[P::Scalar],
+	evals_z: &mut [P::Scalar],
+	round_evals: &mut [P::Scalar],
+	domain: &[P::Scalar],
+) {
+	let degree = domain.len() - 1;
+
+	// Having evaluation at 1, can directly compute multivariate there.
+	round_evals[0] += composition
+		.evaluate(evals_1)
+		.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
+
+	// The rest require interpolation.
+	for d in 2..degree + 1 {
+		evals_0
+			.iter()
+			.zip(evals_1.iter())
+			.zip(evals_z.iter_mut())
+			.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
+				*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, domain[d]);
+			});
+		round_evals[d - 1] += composition
+			.evaluate(evals_z)
+			.expect("evals_z is initialized with a length of poly.composition.n_vars()");
+	}
 }
 
 #[cfg(test)]

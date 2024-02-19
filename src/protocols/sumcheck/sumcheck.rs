@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	field::{ExtensionField, Field},
+	field::{ExtensionField, Field, PackedField},
 	oracle::MultivariatePolyOracle,
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
@@ -21,14 +21,15 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<F, M, BM>
+pub struct SumcheckProveOutput<F, WPF, M, BM>
 where
 	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
+	WPF: PackedField,
+	M: MultilinearPoly<WPF> + ?Sized,
 	BM: Borrow<M>,
 {
 	pub evalcheck_claim: EvalcheckClaim<F>,
-	pub evalcheck_witness: EvalcheckWitness<F, M, BM>,
+	pub evalcheck_witness: EvalcheckWitness<WPF, M, BM>,
 	pub sumcheck_proof: SumcheckProof<F>,
 }
 
@@ -41,7 +42,7 @@ pub struct SumcheckClaim<F: Field> {
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type SumcheckWitness<F, M, BM> = MultilinearComposite<F, M, BM>;
+pub type SumcheckWitness<P, M, BM> = MultilinearComposite<P, M, BM>;
 
 pub fn check_evaluation_domain<F: Field>(
 	max_individual_degree: usize,
@@ -68,7 +69,7 @@ pub struct SumcheckRoundClaim<F: Field> {
 /// Arguments:
 /// * `challenge`: The random challenge sampled by the verifier at the beginning of the round
 pub fn reduce_sumcheck_claim_round<F, FE>(
-	poly_oracle: &MultivariatePolyOracle<F>,
+	poly_oracle_max_individual_degree: usize,
 	domain: &EvaluationDomain<FE>,
 	round: SumcheckRound<FE>,
 	round_claim: SumcheckRoundClaim<FE>,
@@ -82,10 +83,10 @@ where
 		mut partial_point,
 		current_round_sum,
 	} = round_claim;
-	let max_individual_degree = poly_oracle.max_individual_degree();
-	check_evaluation_domain(max_individual_degree, domain)?;
 
-	if round.coeffs.len() != max_individual_degree {
+	check_evaluation_domain(poly_oracle_max_individual_degree, domain)?;
+
+	if round.coeffs.len() != poly_oracle_max_individual_degree {
 		return Err(Error::Verification(VerificationError::NumberOfCoefficients {
 			round: partial_point.len(),
 		}));
@@ -96,6 +97,7 @@ where
 
 	partial_point.push(challenge);
 	let new_round_sum = domain.extrapolate(&coeffs, challenge)?;
+
 	Ok(SumcheckRoundClaim {
 		partial_point,
 		current_round_sum: new_round_sum,
