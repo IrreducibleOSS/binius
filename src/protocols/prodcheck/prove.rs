@@ -182,10 +182,9 @@ pub fn prove_step_two<'a, F: Field>(
 	)?;
 
 	// Package return values
-	let grand_product_poly_witness =
-		EvalcheckWitness::Composite(MultilinearComposite::from_multilinear(
-			Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>
-		));
+	let grand_product_poly_witness = EvalcheckWitness::composite(vec![
+		Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync>
+	]);
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
 		t_prime_witness,

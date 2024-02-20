@@ -232,7 +232,7 @@ where
 		self.round += 1;
 
 		let sumcheck_proof = self.proof.clone();
-		let evalcheck_witness = EvalcheckWitness::Composite(sumcheck_witness);
+		let evalcheck_witness = EvalcheckWitness::composite(sumcheck_witness.multilinears);
 
 		Ok(SumcheckProveOutput {
 			sumcheck_proof,
@@ -698,16 +698,6 @@ mod tests {
 		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
 		let actual = poly.evaluate(&multilin_query).unwrap();
 		assert_eq!(actual, final_verify_output.eval);
-
-		let actual_evalcheck_witness_mlc = match final_prove_output.evalcheck_witness {
-			EvalcheckWitness::Composite(w) => w,
-			_ => panic!("Expected Composite Witness"),
-		};
-
-		let actual = actual_evalcheck_witness_mlc
-			.evaluate(&multilin_query)
-			.unwrap();
-		assert_eq!(actual, final_verify_output.eval);
 	}
 
 	fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
@@ -800,15 +790,6 @@ mod tests {
 		let eval_point = &final_verify_output.eval_point;
 		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
 		let actual = poly.evaluate(&multilin_query).unwrap();
-		assert_eq!(actual, final_verify_output.eval);
-
-		let actual_evalcheck_witness_mlc = match final_prove_output.evalcheck_witness {
-			EvalcheckWitness::Composite(w) => w,
-			_ => panic!("Expected Composite Witness"),
-		};
-		let actual = actual_evalcheck_witness_mlc
-			.evaluate(&multilin_query)
-			.unwrap();
 		assert_eq!(actual, final_verify_output.eval);
 	}
 

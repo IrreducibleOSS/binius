@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	field::Field,
+	field::{util::inner_product_unchecked, Field},
 	oracle::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
 	polynomial::extrapolate_line,
 	protocols::evalcheck::evalcheck::ShiftedEvalClaim,
@@ -172,7 +172,7 @@ pub fn verify<F: Field>(
 			}
 			MultilinearPolyOracle::Packed(packed) => {
 				match evalcheck_proof {
-					EvalcheckProof::Shifted => {}
+					EvalcheckProof::Packed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
@@ -184,6 +184,46 @@ pub fn verify<F: Field>(
 					packed,
 				};
 				packed_eval_claims.push(subclaim);
+			}
+			MultilinearPolyOracle::LinearCombination(lin_com) => {
+				let (evals, subproofs) = match evalcheck_proof {
+					EvalcheckProof::Composite { evals, subproofs } => (evals, subproofs),
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
+
+				if evals.len() != lin_com.n_polys() {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
+				if subproofs.len() != lin_com.n_polys() {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
+
+				// Verify the evaluation of the linear combination over the claimed evaluations
+				let actual_eval =
+					inner_product_unchecked(evals.iter().copied(), lin_com.coefficients());
+				if actual_eval != eval {
+					return Err(VerificationError::IncorrectEvaluation.into());
+				}
+
+				evals
+					.into_iter()
+					.zip(subproofs.into_iter())
+					.zip(lin_com.polys())
+					.try_for_each(|((eval, subproof), suboracle)| {
+						let subclaim = EvalcheckClaim {
+							poly: MultivariatePolyOracle::Multilinear(suboracle.clone()),
+							eval_point: eval_point.clone(),
+							eval,
+							is_random_point,
+						};
+						verify(
+							subclaim,
+							subproof,
+							batch_commited_eval_claims,
+							shifted_eval_claims,
+							packed_eval_claims,
+						)
+					})?;
 			}
 		},
 		MultivariatePolyOracle::Composite(composite) => {

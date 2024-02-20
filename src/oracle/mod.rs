@@ -3,15 +3,14 @@
 mod error;
 
 use crate::{
-	field::{BinaryField128b, Field, TowerField},
+	field::{Field, TowerField},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
 	},
 };
+pub use error::Error;
 use getset::{CopyGetters, Getters};
 use std::sync::Arc;
-
-pub use error::Error;
 
 /// Committed polynomial batches are identified by their index.
 pub type BatchId = usize;
@@ -70,6 +69,7 @@ pub enum MultilinearPolyOracle<F: Field> {
 	Projected(Projected<F>),
 	Shifted(Shifted<F>),
 	Packed(Packed<F>),
+	LinearCombination(LinearCombination<F>),
 }
 
 #[derive(Debug, Clone, Getters, CopyGetters)]
@@ -197,11 +197,11 @@ pub struct Packed<F: Field> {
 	log_degree: usize,
 }
 
-impl<F: Field> Packed<F> {
+impl<F: TowerField> Packed<F> {
 	pub fn new(inner: MultilinearPolyOracle<F>, log_degree: usize) -> Result<Self, Error> {
 		let n_vars = inner.n_vars();
 		let tower_level = log_degree + inner.binary_tower_level();
-		if tower_level > BinaryField128b::TOWER_LEVEL {
+		if tower_level > F::TOWER_LEVEL {
 			Err(Error::MaxPackingSurpassed { tower_level })
 		} else if log_degree > n_vars {
 			Err(Error::NotEnoughVarsForPacking { n_vars, log_degree })
@@ -211,6 +211,39 @@ impl<F: Field> Packed<F> {
 				log_degree,
 			})
 		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
+pub struct LinearCombination<F: Field> {
+	#[get_copy = "pub"]
+	n_vars: usize,
+	inner: Vec<(Box<MultilinearPolyOracle<F>>, F)>,
+}
+
+impl<F: Field> LinearCombination<F> {
+	pub fn new(
+		n_vars: usize,
+		inner: Vec<(Box<MultilinearPolyOracle<F>>, F)>,
+	) -> Result<Self, Error> {
+		for (poly, _) in inner.iter() {
+			if poly.n_vars() != n_vars {
+				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+			}
+		}
+		Ok(Self { n_vars, inner })
+	}
+
+	pub fn n_polys(&self) -> usize {
+		self.inner.len()
+	}
+
+	pub fn polys(&self) -> impl Iterator<Item = &MultilinearPolyOracle<F>> {
+		self.inner.iter().map(|(poly, _)| poly.as_ref())
+	}
+
+	pub fn coefficients(&self) -> impl Iterator<Item = F> + '_ {
+		self.inner.iter().map(|(_, coeff)| *coeff)
 	}
 }
 
@@ -325,10 +358,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		Ok(Self::Shifted(Shifted::new(self, shift, shift_bits, shift_variant)?))
 	}
 
-	pub fn packed(self, log_degree: usize) -> Result<Self, Error> {
-		Ok(Self::Packed(Packed::new(self, log_degree)?))
-	}
-
 	pub fn n_vars(&self) -> usize {
 		use MultilinearPolyOracle::*;
 		match self {
@@ -340,6 +369,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Projected(projected) => projected.n_vars(),
 			Shifted(shifted) => shifted.inner().n_vars(),
 			Packed(packed) => packed.inner().n_vars() - packed.log_degree(),
+			LinearCombination(lin_com) => lin_com.n_vars,
 		}
 	}
 
@@ -354,7 +384,19 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Projected(projected) => projected.inner().binary_tower_level(),
 			Shifted(shifted) => shifted.inner().binary_tower_level(),
 			Packed(packed) => packed.log_degree + packed.inner().binary_tower_level(),
+			LinearCombination(lin_com) => lin_com
+				.inner
+				.iter()
+				.map(|(poly, _)| poly.binary_tower_level())
+				.max()
+				.unwrap_or(0),
 		}
+	}
+}
+
+impl<F: TowerField> MultilinearPolyOracle<F> {
+	pub fn packed(self, log_degree: usize) -> Result<Self, Error> {
+		Ok(Self::Packed(Packed::new(self, log_degree)?))
 	}
 }
 
@@ -407,7 +449,7 @@ mod tests {
 	#[test]
 	fn test_packing() {
 		type F = BinaryField2b;
-		let poly = MultilinearPolyOracle::<F>::Committed {
+		let poly = MultilinearPolyOracle::<BinaryField128b>::Committed {
 			id: CommittedId {
 				batch_id: 0,
 				index: 0,

@@ -1,17 +1,15 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use tracing::instrument;
-
 use super::error::Error;
 use crate::{
-	field::{Field, PackedField},
+	field::Field,
 	oracle::{
 		BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle, MultivariatePolyOracle,
 		Packed, Shifted,
 	},
-	polynomial::{MultilinearComposite, MultilinearPoly},
 };
-use std::borrow::Borrow;
+use std::marker::PhantomData;
+use tracing::instrument;
 
 #[derive(Debug, Clone)]
 pub struct EvalcheckClaim<F: Field> {
@@ -54,14 +52,36 @@ pub struct PackedEvalClaim<F: Field> {
 }
 
 #[derive(Debug)]
-pub enum EvalcheckWitness<P, M, BM>
-where
-	P: PackedField,
-	M: MultilinearPoly<P> + ?Sized,
-	BM: Borrow<M>,
-{
+pub enum EvalcheckWitness<F, M: ?Sized, BM> {
 	Multilinear,
-	Composite(MultilinearComposite<P, M, BM>),
+	Composite(CompositeWitness<F, M, BM>),
+}
+
+impl<F, M: ?Sized, BM> EvalcheckWitness<F, M, BM> {
+	pub fn composite(multilinears: Vec<BM>) -> Self {
+		Self::Composite(CompositeWitness::new(multilinears))
+	}
+}
+
+#[derive(Debug)]
+pub struct CompositeWitness<F, M: ?Sized, BM> {
+	multilinears: Vec<BM>,
+	_f_marker: PhantomData<F>,
+	_m_marker: PhantomData<M>,
+}
+
+impl<F, M: ?Sized, BM> CompositeWitness<F, M, BM> {
+	pub fn new(multilinears: Vec<BM>) -> Self {
+		Self {
+			multilinears,
+			_f_marker: PhantomData,
+			_m_marker: PhantomData,
+		}
+	}
+
+	pub fn multilinears(&self) -> &[BM] {
+		&self.multilinears
+	}
 }
 
 #[derive(Debug)]
