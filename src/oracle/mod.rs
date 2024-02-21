@@ -349,6 +349,13 @@ impl<F: Field> CompositePolyOracle<F> {
 }
 
 impl<F: Field> MultilinearPolyOracle<F> {
+	pub fn repeating(inner: MultilinearPolyOracle<F>, log_count: usize) -> Self {
+		Self::Repeating {
+			inner: Box::new(inner),
+			log_count,
+		}
+	}
+
 	pub fn shifted(
 		self,
 		shift: usize,

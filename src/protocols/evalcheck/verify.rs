@@ -57,7 +57,10 @@ pub fn verify<F: Field>(
 
 				batch_commited_eval_claims.insert(subclaim)?;
 			}
-			MultilinearPolyOracle::Repeating { inner, log_count } => {
+			MultilinearPolyOracle::Repeating {
+				inner,
+				log_count: _,
+			} => {
 				let subproof = match evalcheck_proof {
 					EvalcheckProof::Repeating(subproof) => subproof,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -66,7 +69,7 @@ pub fn verify<F: Field>(
 				let n_vars = inner.n_vars();
 				let subclaim = EvalcheckClaim {
 					poly: MultivariatePolyOracle::Multilinear(*inner),
-					eval_point: eval_point[..n_vars - log_count].to_vec(),
+					eval_point: eval_point[..n_vars].to_vec(),
 					eval,
 					is_random_point,
 				};

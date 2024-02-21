@@ -64,7 +64,28 @@ where
 					batch_commited_eval_claims.insert(subclaim)?;
 					EvalcheckProof::Committed
 				}
-				Repeating { .. } => todo!(),
+				Repeating {
+					inner,
+					log_count: _,
+				} => {
+					let n_vars = inner.n_vars();
+					let subclaim = EvalcheckClaim {
+						poly: MultivariatePolyOracle::Multilinear(*inner),
+						eval_point: eval_point[..n_vars].to_vec(),
+						eval,
+						is_random_point,
+					};
+
+					let subproof = prove(
+						evalcheck_witness,
+						subclaim,
+						batch_commited_eval_claims,
+						shifted_eval_claims,
+						packed_eval_claims,
+					)?;
+
+					EvalcheckProof::Repeating(Box::new(subproof))
+				}
 				Merged(_, _) => todo!(),
 				Interleaved(_, _) => todo!(),
 				Shifted(shifted) => {
@@ -214,6 +235,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use assert_matches::assert_matches;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, sync::Arc};
 
@@ -443,6 +465,53 @@ mod tests {
 			&mut packed_claims_verify,
 		)
 		.unwrap();
+
+		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
+		let mut shifted_claims_verify = Vec::new();
+		let mut packed_claims_verify = Vec::new();
+		verify(
+			claim,
+			proof,
+			&mut batch_claims,
+			&mut shifted_claims_verify,
+			&mut packed_claims_verify,
+		)
+		.unwrap();
+	}
+
+	#[test]
+	fn test_evalcheck_repeating() {
+		let n_vars = 7;
+
+		let select_row = SelectRow::new(n_vars, 11).unwrap();
+		let repeating = MultilinearPolyOracle::repeating(select_row.multilinear_poly_oracle(), 2);
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
+			.take(n_vars + 2)
+			.collect::<Vec<_>>();
+
+		let eval = select_row.evaluate(&eval_point[..n_vars]).unwrap();
+
+		let claim = EvalcheckClaim {
+			poly: repeating.into(),
+			eval_point,
+			eval,
+			is_random_point: true,
+		};
+
+		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
+		let mut shifted_claims_verify = Vec::new();
+		let mut packed_claims_verify = Vec::new();
+		let proof = prove(
+			EvalcheckWitness::<_, MultilinearExtension<EF>, MultilinearExtension<EF>>::Multilinear,
+			claim.clone(),
+			&mut batch_claims,
+			&mut shifted_claims_verify,
+			&mut packed_claims_verify,
+		)
+		.unwrap();
+		assert_matches!(proof, EvalcheckProof::Repeating(_));
 
 		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
 		let mut shifted_claims_verify = Vec::new();
