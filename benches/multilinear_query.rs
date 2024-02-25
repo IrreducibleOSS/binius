@@ -1,5 +1,4 @@
 use binius::{
-	self,
 	field::{BinaryField128b, PackedBinaryField1x128b, PackedField},
 	polynomial::{multilinear_query::MultilinearQuery, MultilinearExtension},
 };

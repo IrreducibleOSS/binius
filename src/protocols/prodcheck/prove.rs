@@ -203,7 +203,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::{BinaryField32b, TowerField},
-		oracle::{CommittedId, MultilinearPolyOracle},
+		oracle::CommittedId,
 		protocols::prodcheck::verify::verify,
 	};
 

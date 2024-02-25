@@ -552,15 +552,13 @@ fn check_batch_transform_inputs<PB: PackedField>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-
+	use crate::field::{
+		packed_binary_field::{PackedBinaryField16x8b, PackedBinaryField4x32b},
+		BinaryField32b, BinaryField8b, PackedBinaryField8x16b,
+	};
 	use assert_matches::assert_matches;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{fmt::Debug, iter::repeat_with};
-
-	use crate::field::{
-		packed_binary_field::{PackedBinaryField16x8b, PackedBinaryField4x32b},
-		unpack_scalars_mut, BinaryField32b, BinaryField8b, PackedBinaryField8x16b,
-	};
 
 	trait SimpleAdditiveNTT<F: BinaryField> {
 		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>

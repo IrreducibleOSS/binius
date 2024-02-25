@@ -207,7 +207,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::BinaryField128b,
-		oracle::{CommittedBatch, CompositePolyOracle, ShiftVariant, Shifted},
+		oracle::{CommittedBatch, ShiftVariant, Shifted},
 	};
 
 	struct TestConstantChallenger<F: Field> {

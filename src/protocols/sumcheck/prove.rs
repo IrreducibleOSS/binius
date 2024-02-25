@@ -1,9 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{borrow::Borrow, cmp::max, convert::Into, fmt::Debug, marker::PhantomData, sync::Arc};
-
 use rayon::prelude::*;
-
+use std::{borrow::Borrow, cmp::max, fmt::Debug, marker::PhantomData, sync::Arc};
 use tracing::instrument;
 
 use super::{
@@ -592,20 +590,17 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, TowerField},
 		hash::GroestlHasher,
-		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
-		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
-		protocols::{
-			sumcheck::SumcheckClaim,
-			test_utils::{
-				full_prove_with_operating_field, full_prove_with_switchover, full_verify,
-				transform_poly, TestProductComposition,
-			},
+		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle},
+		polynomial::MultilinearComposite,
+		protocols::test_utils::{
+			full_prove_with_operating_field, full_prove_with_switchover, full_verify,
+			transform_poly, TestProductComposition,
 		},
 	};
 	use p3_util::log2_ceil_usize;
 	use rand::{rngs::StdRng, SeedableRng};
 	use rayon::current_num_threads;
-	use std::{iter::repeat_with, sync::Arc};
+	use std::iter::repeat_with;
 
 	fn test_prove_verify_interaction_helper(
 		n_vars: usize,

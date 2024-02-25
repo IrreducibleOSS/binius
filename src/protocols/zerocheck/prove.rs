@@ -83,15 +83,12 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		field::{BinaryField32b, TowerField},
+		field::BinaryField32b,
 		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
-		polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
-		protocols::{
-			test_utils::TestProductComposition,
-			zerocheck::{verify::verify, zerocheck::ZerocheckClaim},
-		},
+		polynomial::{CompositionPoly, MultilinearExtension},
+		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
 	};
-	use std::{iter::repeat_with, sync::Arc};
+	use std::iter::repeat_with;
 
 	// f(x) = (x_1, x_2, x_3)) = g(h_0(x), ..., h_7(x)) where
 	// g is the product composition

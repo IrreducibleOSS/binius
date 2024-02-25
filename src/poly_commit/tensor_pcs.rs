@@ -892,11 +892,8 @@ mod tests {
 			BinaryField128b, PackedBinaryField128x1b, PackedBinaryField16x8b,
 			PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b,
 		},
-		polynomial::multilinear_query::MultilinearQuery,
-		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
 	use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
-	use std::iter::repeat_with;
 
 	#[test]
 	fn test_simple_commit_prove_verify_without_error() {

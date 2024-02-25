@@ -241,7 +241,7 @@ mod tests {
 
 	use crate::{
 		field::{BinaryField128b, PackedBinaryField128x1b, PackedBinaryField4x32b, PackedField},
-		oracle::{CommittedBatch, CompositePolyOracle, LinearCombination, MultivariatePolyOracle},
+		oracle::{CommittedBatch, CompositePolyOracle, LinearCombination},
 		polynomial::{
 			transparent::select_row::SelectRow, CompositionPoly, Error as PolynomialError,
 			MultilinearExtension, MultivariatePoly,

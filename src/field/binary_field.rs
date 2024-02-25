@@ -8,7 +8,6 @@ use ff::Field;
 use rand::{Rng, RngCore};
 use std::{
 	array,
-	convert::TryFrom,
 	fmt::{self, Display, Formatter},
 	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},

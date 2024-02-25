@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-#![feature(stdsimd)]
+#![feature(stdarch_x86_avx512)]
 #![feature(step_trait)]
 // This is to silence clippy errors around suspicious usage of XOR
 // in our arithmetic. This is safe to do becasue we're operating
