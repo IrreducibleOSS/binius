@@ -168,7 +168,7 @@ where
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
-		evalcheck_witness,
+		&evalcheck_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,

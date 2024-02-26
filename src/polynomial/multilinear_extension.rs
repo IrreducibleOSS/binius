@@ -173,7 +173,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
 	pub fn evaluate_partial_low<PE>(
 		&self,
-		query: &MultilinearQuery<PE::Scalar>,
+		query: &MultilinearQuery<PE>,
 	) -> Result<MultilinearExtension<'static, PE>, Error>
 	where
 		PE: PackedField,
@@ -198,7 +198,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
 	pub fn evaluate_partial_low_into<PE>(
 		&self,
-		query: &MultilinearQuery<PE::Scalar>,
+		query: &MultilinearQuery<PE>,
 		out: &mut MultilinearExtension<'static, PE>,
 	) -> Result<(), Error>
 	where
@@ -223,8 +223,10 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 					let subcube_evals = self
 						.iter_subcube_scalars(query.n_vars(), i * PE::WIDTH + j)
 						.expect("n_vars and index arguments are in range");
-					let result_eval =
-						inner_product_unchecked(query.expansion().iter().copied(), subcube_evals);
+					let result_eval = inner_product_unchecked(
+						iter_packed_slice(query.expansion()),
+						subcube_evals,
+					);
 					packed_result_eval.set(j, result_eval);
 				});
 			});
@@ -285,13 +287,13 @@ where
 		Ok(subcube_eval.get(index % P::WIDTH).into())
 	}
 
-	fn evaluate(&self, query: &MultilinearQuery<PE::Scalar>) -> Result<PE::Scalar, Error> {
+	fn evaluate(&self, query: &MultilinearQuery<PE>) -> Result<PE::Scalar, Error> {
 		self.evaluate(query)
 	}
 
 	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<PE::Scalar>,
+		query: &MultilinearQuery<PE>,
 	) -> Result<MultilinearExtension<'static, PE>, Error> {
 		self.evaluate_partial_low(query)
 	}
@@ -299,10 +301,10 @@ where
 	fn evaluate_subcube(
 		&self,
 		index: usize,
-		query: &MultilinearQuery<PE::Scalar>,
+		query: &MultilinearQuery<PE>,
 	) -> Result<PE::Scalar, Error> {
 		let ret = inner_product_unchecked(
-			query.expansion().iter().copied(),
+			iter_packed_slice(query.expansion()),
 			self.iter_subcube_scalars(query.n_vars(), index)?,
 		);
 		Ok(ret)

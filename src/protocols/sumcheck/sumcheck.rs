@@ -21,16 +21,15 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<F, WPF, M, BM>
+pub struct SumcheckProveOutput<P, M, BM>
 where
-	F: Field,
-	WPF: PackedField,
-	M: MultilinearPoly<WPF> + ?Sized,
+	P: PackedField,
+	M: MultilinearPoly<P> + ?Sized,
 	BM: Borrow<M>,
 {
-	pub evalcheck_claim: EvalcheckClaim<F>,
-	pub evalcheck_witness: EvalcheckWitness<WPF, M, BM>,
-	pub sumcheck_proof: SumcheckProof<F>,
+	pub evalcheck_claim: EvalcheckClaim<P::Scalar>,
+	pub evalcheck_witness: EvalcheckWitness<P, M, BM>,
+	pub sumcheck_proof: SumcheckProof<P::Scalar>,
 }
 
 #[derive(Debug, Clone)]

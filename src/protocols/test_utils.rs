@@ -194,7 +194,7 @@ pub fn full_prove_with_switchover<F, M, BM, CH>(
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, F, M, BM>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
 where
 	F: Field,
 	M: MultilinearPoly<F> + Send + Sync + ?Sized,
@@ -241,7 +241,7 @@ pub fn full_prove_with_operating_field<F, OF, M, BM, OM, BOM, CH>(
 	operating_witness: SumcheckWitness<OF, OM, BOM>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, F, M, BM>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
 where
 	F: Field + From<OF> + Into<OF>,
 	OF: Field,
@@ -278,7 +278,7 @@ where
 	}
 
 	let prove_output = prover_state
-		.finalize(&claim.poly, witness, domain, prev_rd_challenge)
+		.finalize::<F, M, BM>(&claim.poly, witness, domain, prev_rd_challenge)
 		.unwrap();
 
 	(rd_claims, prove_output)

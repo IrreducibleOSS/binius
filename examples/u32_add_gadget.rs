@@ -426,7 +426,7 @@ where
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
-		evalcheck_witness,
+		&evalcheck_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
@@ -534,7 +534,7 @@ where
 		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
 	debug_assert!(second_evalcheck_claim.is_random_point);
 	let second_evalcheck_proof = prove_evalcheck(
-		second_evalcheck_witness,
+		&second_evalcheck_witness,
 		second_evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,

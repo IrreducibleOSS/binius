@@ -3,7 +3,7 @@
 use tracing::instrument;
 
 use crate::{
-	field::Field,
+	field::{Field, PackedField},
 	oracle::{MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant},
 	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
@@ -18,8 +18,8 @@ use super::{
 };
 
 #[instrument(skip_all, name = "evalcheck::prove")]
-pub fn prove<F, M, BM>(
-	evalcheck_witness: EvalcheckWitness<F, M, BM>,
+pub fn prove<F, WPF, M, BM>(
+	evalcheck_witness: &EvalcheckWitness<WPF, M, BM>,
 	evalcheck_claim: EvalcheckClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
@@ -27,7 +27,8 @@ pub fn prove<F, M, BM>(
 ) -> Result<EvalcheckProof<F>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
+	WPF: PackedField<Scalar = F>,
+	M: MultilinearPoly<WPF> + ?Sized,
 	BM: Borrow<M>,
 {
 	let EvalcheckClaim {
@@ -41,19 +42,8 @@ where
 		MultivariatePolyOracle::Multilinear(multilinear) => {
 			use MultilinearPolyOracle::*;
 			match multilinear {
-				Transparent { .. } => {
-					match evalcheck_witness {
-						EvalcheckWitness::Multilinear => {}
-						_ => return Err(Error::InvalidWitness),
-					};
-					EvalcheckProof::Transparent
-				}
+				Transparent { .. } => EvalcheckProof::Transparent,
 				Committed { id, .. } => {
-					match evalcheck_witness {
-						EvalcheckWitness::Multilinear => {}
-						_ => return Err(Error::InvalidWitness),
-					};
-
 					let subclaim = CommittedEvalClaim {
 						id,
 						eval_point,
@@ -89,11 +79,6 @@ where
 				Merged(_, _) => todo!(),
 				Interleaved(_, _) => todo!(),
 				Shifted(shifted) => {
-					match evalcheck_witness {
-						EvalcheckWitness::Multilinear => {}
-						_ => return Err(Error::InvalidWitness),
-					};
-
 					let subclaim = ShiftedEvalClaim {
 						poly: *shifted.inner().clone(),
 						eval_point,
@@ -106,11 +91,6 @@ where
 					EvalcheckProof::Shifted
 				}
 				Packed(packed) => {
-					match evalcheck_witness {
-						EvalcheckWitness::Multilinear => {}
-						_ => return Err(Error::InvalidWitness),
-					};
-
 					let subclaim = PackedEvalClaim {
 						poly: *packed.inner().clone(),
 						eval_point,
@@ -123,11 +103,6 @@ where
 					EvalcheckProof::Packed
 				}
 				Projected(projected) => {
-					match evalcheck_witness {
-						EvalcheckWitness::Multilinear => {}
-						_ => return Err(Error::InvalidWitness),
-					};
-
 					let (inner, values) = (projected.inner(), projected.values());
 					let new_eval_point = match projected.projection_variant() {
 						ProjectionVariant::LastVars => {
@@ -182,36 +157,31 @@ where
 	Ok(proof)
 }
 
-fn prove_composite<F, M, BM>(
+fn prove_composite<F, P, M, BM>(
 	oracles: impl Iterator<Item = MultilinearPolyOracle<F>>,
 	eval_point: Vec<F>,
 	is_random_point: bool,
-	witness: EvalcheckWitness<F, M, BM>,
+	witness: &EvalcheckWitness<P, M, BM>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
 	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
 ) -> Result<EvalcheckProof<F>, Error>
 where
 	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P> + ?Sized,
 	BM: Borrow<M>,
 {
-	let witness = match witness {
-		EvalcheckWitness::Composite(witness) => witness,
-		_ => return Err(Error::InvalidWitness),
-	};
-
-	let query = MultilinearQuery::with_full_query(&eval_point)?;
-	let evals = witness
-		.multilinears()
+	let witness_eval_point = eval_point
 		.iter()
-		.map(|multilin| multilin.borrow().evaluate(&query))
-		.collect::<Result<Vec<_>, _>>()?;
+		.copied()
+		.map(Into::into)
+		.collect::<Vec<P::Scalar>>();
+	let witness_query = MultilinearQuery::with_full_query(&witness_eval_point)?;
 
-	let subproofs = evals
-		.iter()
-		.zip(oracles)
-		.map(|(&eval, suboracle)| {
+	let subproofs = oracles
+		.map(|suboracle| {
+			let eval = witness.evaluate(&suboracle, &witness_query)?;
 			let subclaim = EvalcheckClaim {
 				poly: MultivariatePolyOracle::Multilinear(suboracle),
 				eval_point: eval_point.clone(),
@@ -219,17 +189,19 @@ where
 				is_random_point,
 			};
 
-			prove::<F, M, BM>(
-				EvalcheckWitness::Multilinear,
+			let proof = prove(
+				witness,
 				subclaim,
 				batch_commited_eval_claims,
 				shifted_eval_claims,
 				packed_eval_claims,
-			)
-		})
-		.collect::<Result<_, _>>()?;
+			)?;
 
-	Ok(EvalcheckProof::Composite { evals, subproofs })
+			Ok((eval, proof))
+		})
+		.collect::<Result<_, Error>>()?;
+
+	Ok(EvalcheckProof::Composite { subproofs })
 }
 
 #[cfg(test)]
@@ -240,7 +212,7 @@ mod tests {
 	use std::{iter::repeat_with, sync::Arc};
 
 	use crate::{
-		field::{BinaryField128b, PackedBinaryField128x1b, PackedBinaryField4x32b, PackedField},
+		field::{BinaryField128b, BinaryField1b, PackedBinaryField128x1b, PackedBinaryField4x32b},
 		oracle::{CommittedBatch, CompositePolyOracle, LinearCombination},
 		polynomial::{
 			transparent::select_row::SelectRow, CompositionPoly, Error as PolynomialError,
@@ -341,7 +313,7 @@ mod tests {
 		];
 
 		let oracle = MultivariatePolyOracle::Composite(
-			CompositePolyOracle::new(log_size, suboracles, Arc::new(QuadProduct)).unwrap(),
+			CompositePolyOracle::new(log_size, suboracles.clone(), Arc::new(QuadProduct)).unwrap(),
 		);
 
 		let claim = EvalcheckClaim {
@@ -355,7 +327,7 @@ mod tests {
 		let mut shifted_claims_prove = Vec::new();
 		let mut packed_claims_prove = Vec::new();
 		let proof = prove(
-			EvalcheckWitness::composite(multilins),
+			&EvalcheckWitness::<EF, _, _>::new(suboracles.into_iter().zip(multilins).collect()),
 			claim.clone(),
 			&mut bcec_prove,
 			&mut shifted_claims_prove,
@@ -414,13 +386,17 @@ mod tests {
 		let select_row2 = SelectRow::new(n_vars, 5).unwrap();
 		let select_row3 = SelectRow::new(n_vars, 10).unwrap();
 
+		let select_row1_oracle = select_row1.multilinear_poly_oracle();
+		let select_row2_oracle = select_row2.multilinear_poly_oracle();
+		let select_row3_oracle = select_row3.multilinear_poly_oracle();
+
 		let lin_com = MultilinearPolyOracle::LinearCombination(
 			LinearCombination::new(
 				n_vars,
 				vec![
-					(Box::new(select_row1.multilinear_poly_oracle()), EF::new(2)),
-					(Box::new(select_row2.multilinear_poly_oracle()), EF::new(3)),
-					(Box::new(select_row3.multilinear_poly_oracle()), EF::new(4)),
+					(Box::new(select_row1_oracle.clone()), EF::new(2)),
+					(Box::new(select_row2_oracle.clone()), EF::new(3)),
+					(Box::new(select_row3_oracle.clone()), EF::new(4)),
 				],
 			)
 			.unwrap(),
@@ -435,30 +411,58 @@ mod tests {
 			+ select_row2.evaluate(&eval_point).unwrap() * EF::new(3)
 			+ select_row3.evaluate(&eval_point).unwrap() * EF::new(4);
 
+		let select_row1_witness = select_row1
+			.multilinear_extension::<PackedBinaryField128x1b>()
+			.unwrap();
+		let select_row2_witness = select_row2
+			.multilinear_extension::<PackedBinaryField128x1b>()
+			.unwrap();
+		let select_row3_witness = select_row3
+			.multilinear_extension::<PackedBinaryField128x1b>()
+			.unwrap();
+
+		let lin_com_values = (0..1 << n_vars)
+			.map(|i| {
+				MultilinearPoly::<BinaryField1b>::evaluate_on_hypercube(&select_row1_witness, i)
+					.unwrap() * EF::new(2)
+					+ MultilinearPoly::<BinaryField1b>::evaluate_on_hypercube(
+						&select_row2_witness,
+						i,
+					)
+					.unwrap() * EF::new(3)
+					+ MultilinearPoly::<BinaryField1b>::evaluate_on_hypercube(
+						&select_row3_witness,
+						i,
+					)
+					.unwrap() * EF::new(4)
+			})
+			.collect();
+		let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
+
+		// Make the claim a composite oracle over a linear combination, in order to test the case
+		// of requiring nested composite evalcheck proofs.
+		let claim_oracle = MultivariatePolyOracle::Multilinear(lin_com.clone());
+		let claim_oracle = MultivariatePolyOracle::Composite(claim_oracle.into_composite());
+
 		let claim = EvalcheckClaim {
-			poly: MultivariatePolyOracle::Multilinear(lin_com),
+			poly: claim_oracle,
 			eval_point,
 			eval,
 			is_random_point: true,
 		};
 
-		let witness = EvalcheckWitness::composite(vec![
-			select_row1
-				.multilinear_extension::<PackedBinaryField128x1b>()
-				.unwrap(),
-			select_row2
-				.multilinear_extension::<PackedBinaryField128x1b>()
-				.unwrap(),
-			select_row3
-				.multilinear_extension::<PackedBinaryField128x1b>()
-				.unwrap(),
+		let witness = EvalcheckWitness::<_, dyn MultilinearPoly<EF>, _>::new(vec![
+			(select_row1_oracle, Arc::new(select_row1_witness) as Arc<dyn MultilinearPoly<EF>>),
+			(select_row2_oracle, Arc::new(select_row2_witness) as Arc<dyn MultilinearPoly<EF>>),
+			(select_row3_oracle, Arc::new(select_row3_witness) as Arc<dyn MultilinearPoly<EF>>),
+			(lin_com, Arc::new(lin_com_witness) as Arc<dyn MultilinearPoly<EF>>),
 		]);
 
 		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
 		let mut shifted_claims_verify = Vec::new();
 		let mut packed_claims_verify = Vec::new();
 		let proof = prove(
-			witness,
+			&witness,
 			claim.clone(),
 			&mut batch_claims,
 			&mut shifted_claims_verify,
@@ -504,7 +508,7 @@ mod tests {
 		let mut shifted_claims_verify = Vec::new();
 		let mut packed_claims_verify = Vec::new();
 		let proof = prove(
-			EvalcheckWitness::<_, MultilinearExtension<EF>, MultilinearExtension<EF>>::Multilinear,
+			&EvalcheckWitness::<_, dyn MultilinearPoly<EF>, Arc<_>>::new(vec![]),
 			claim.clone(),
 			&mut batch_claims,
 			&mut shifted_claims_verify,

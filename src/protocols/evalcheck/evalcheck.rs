@@ -2,13 +2,14 @@
 
 use super::error::Error;
 use crate::{
-	field::Field,
+	field::{Field, PackedField},
 	oracle::{
 		BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle, MultivariatePolyOracle,
 		Packed, Shifted,
 	},
+	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
-use std::marker::PhantomData;
+use std::{borrow::Borrow, marker::PhantomData};
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
@@ -52,35 +53,39 @@ pub struct PackedEvalClaim<F: Field> {
 }
 
 #[derive(Debug)]
-pub enum EvalcheckWitness<F, M: ?Sized, BM> {
-	Multilinear,
-	Composite(CompositeWitness<F, M, BM>),
-}
-
-impl<F, M: ?Sized, BM> EvalcheckWitness<F, M, BM> {
-	pub fn composite(multilinears: Vec<BM>) -> Self {
-		Self::Composite(CompositeWitness::new(multilinears))
-	}
-}
-
-#[derive(Debug)]
-pub struct CompositeWitness<F, M: ?Sized, BM> {
-	multilinears: Vec<BM>,
-	_f_marker: PhantomData<F>,
+pub struct EvalcheckWitness<P: PackedField, M: ?Sized, BM> {
+	multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, BM)>,
+	_p_marker: PhantomData<P>,
 	_m_marker: PhantomData<M>,
 }
 
-impl<F, M: ?Sized, BM> CompositeWitness<F, M, BM> {
-	pub fn new(multilinears: Vec<BM>) -> Self {
+impl<P, M, BM> EvalcheckWitness<P, M, BM>
+where
+	P: PackedField,
+	M: MultilinearPoly<P> + ?Sized,
+	BM: Borrow<M>,
+{
+	pub fn new(multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, BM)>) -> Self {
 		Self {
 			multilinears,
-			_f_marker: PhantomData,
+			_p_marker: PhantomData,
 			_m_marker: PhantomData,
 		}
 	}
 
-	pub fn multilinears(&self) -> &[BM] {
-		&self.multilinears
+	pub fn evaluate(
+		&self,
+		oracle: &MultilinearPolyOracle<P::Scalar>,
+		query: &MultilinearQuery<P>,
+	) -> Result<P::Scalar, Error> {
+		// TODO: Use HashMap to reduce O(n) search to O(1)
+		let (_, multilin) = self
+			.multilinears
+			.iter()
+			.find(|(oracle_i, _)| oracle_i == oracle)
+			.ok_or_else(|| Error::InvalidWitness(format!("{:?}", oracle)))?;
+		let eval = multilin.borrow().evaluate(query)?;
+		Ok(eval)
 	}
 }
 
@@ -98,8 +103,7 @@ pub enum EvalcheckProof<F: Field> {
 		subproof2: Box<EvalcheckProof<F>>,
 	},
 	Composite {
-		evals: Vec<F>,
-		subproofs: Vec<EvalcheckProof<F>>,
+		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
 }
 

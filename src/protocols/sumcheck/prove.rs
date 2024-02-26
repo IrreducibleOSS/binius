@@ -95,7 +95,7 @@ where
 	composition: Arc<dyn CompositionPoly<OPF>>,
 	multilinears: Vec<SumcheckMultilinear<OPF, BM>>,
 
-	query: Option<MultilinearQuery<OPF::Scalar>>,
+	query: Option<MultilinearQuery<OPF>>,
 
 	proof: SumcheckProof<F>,
 	round_claim: Option<SumcheckRoundClaim<F>>,
@@ -199,9 +199,9 @@ where
 		sumcheck_witness: SumcheckWitness<WPF, WM, WBM>,
 		domain: &EvaluationDomain<F>,
 		prev_rd_challenge: Option<F>,
-	) -> Result<SumcheckProveOutput<F, WPF, WM, WBM>, Error>
+	) -> Result<SumcheckProveOutput<WPF, WM, WBM>, Error>
 	where
-		WPF: PackedField,
+		WPF: PackedField<Scalar = F>,
 		WM: MultilinearPoly<WPF> + ?Sized,
 		WBM: Borrow<WM>,
 	{
@@ -230,7 +230,15 @@ where
 		self.round += 1;
 
 		let sumcheck_proof = self.proof.clone();
-		let evalcheck_witness = EvalcheckWitness::composite(sumcheck_witness.multilinears);
+		let evalcheck_witness = EvalcheckWitness::new(
+			poly_oracle
+				.clone()
+				.into_composite()
+				.inner_polys()
+				.into_iter()
+				.zip(sumcheck_witness.multilinears.into_iter())
+				.collect(),
+		);
 
 		Ok(SumcheckProveOutput {
 			sumcheck_proof,

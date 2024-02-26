@@ -7,8 +7,8 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("mismatch between witness and claim (multilinear vs composite)")]
-	InvalidWitness,
+	#[error("witness is unable to evaluate multilinear: {0}")]
+	InvalidWitness(String),
 	#[error("unknown committed polynomial id {0}")]
 	UnknownCommittedId(CommittedId),
 	#[error("unknown batch {0}")]

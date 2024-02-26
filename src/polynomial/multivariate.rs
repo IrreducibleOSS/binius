@@ -154,7 +154,7 @@ where
 		self.multilinears.iter().map(Borrow::borrow)
 	}
 
-	pub fn evaluate(&self, query: &MultilinearQuery<P::Scalar>) -> Result<P::Scalar, Error> {
+	pub fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
 		let evals = self
 			.iter_multilinear_polys()
 			.map(|multilin| multilin.evaluate(query))
@@ -172,7 +172,7 @@ where
 
 	pub fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<P::Scalar>,
+		query: &MultilinearQuery<P>,
 	) -> Result<
 		MultilinearComposite<P, MultilinearExtension<'static, P>, MultilinearExtension<'static, P>>,
 		Error,

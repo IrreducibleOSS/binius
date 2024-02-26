@@ -25,13 +25,13 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// * `index` - The index of the point, in lexicographic order
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error>;
 
-	fn evaluate(&self, q: &MultilinearQuery<P::Scalar>) -> Result<P::Scalar, Error> {
+	fn evaluate(&self, q: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
 		self.evaluate_subcube(0, q)
 	}
 
 	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<P::Scalar>,
+		query: &MultilinearQuery<P>,
 	) -> Result<MultilinearExtension<'static, P>, Error>;
 
 	/// Evaluate the multilinear extension of a subcube of the multilinear.
@@ -42,7 +42,7 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	fn evaluate_subcube(
 		&self,
 		index: usize,
-		query: &MultilinearQuery<P::Scalar>,
+		query: &MultilinearQuery<P>,
 	) -> Result<P::Scalar, Error>;
 
 	/// Get a subcube of the boolean hypercube of a given size.
