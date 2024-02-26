@@ -458,32 +458,35 @@ where
 
 		// Batch evaluate all opened columns
 		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[log_n_cols..])?;
-		let expected_and_actual_results = column_tests.iter().map(|(expected, leaves)| {
-			let actual_evals = leaves
-				.iter()
-				.map(|leaf| {
-					MultilinearExtension::from_values_slice(leaf)
+		let incorrect_evaluation = column_tests
+			.par_iter()
+			.map(|(expected, leaves)| {
+				let actual_evals =
+					leaves
+						.par_iter()
+						.map(|leaf| {
+							MultilinearExtension::from_values_slice(leaf)
 						.expect("leaf is guaranteed power of two length due to check_proof_shape")
 						.evaluate(&multilin_query)
 						.expect("failed to evaluate")
-				})
-				.collect::<Vec<_>>();
-			(expected, actual_evals)
-		});
+						})
+						.collect::<Vec<_>>();
+				(expected, actual_evals)
+			})
+			.any(|(expected_result, unmixed_actual_results)| {
+				// Check that opened column evaluations match u'
+				let actual_result = inner_product_unchecked(
+					unmixed_actual_results.into_iter(),
+					iter_packed_slice(mixing_coefficients),
+				);
+				actual_result != *expected_result
+			});
 
-		// Check that opened column evaluations match u'
-		for test in expected_and_actual_results {
-			let (expected_result, unmixed_actual_results) = test;
-			let actual_result = inner_product_unchecked(
-				unmixed_actual_results.into_iter(),
-				iter_packed_slice(mixing_coefficients),
-			);
-			if actual_result != *expected_result {
-				return Err(VerificationError::IncorrectPartialEvaluation.into());
-			}
+		if incorrect_evaluation {
+			Err(VerificationError::IncorrectPartialEvaluation.into())
+		} else {
+			Ok(())
 		}
-
-		Ok(())
 	}
 
 	fn proof_size(&self, n_polys: usize) -> usize {
