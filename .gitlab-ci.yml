@@ -75,6 +75,4 @@ pages:
       - public
   only:
     refs:
-      - tags
-    variables:
-      - /^v?\d+\.\d+\.\d+$/ # only version tags such as v1.0.0 or 1.0.0
+      - main # Deploy for every push to the main branch, for now
