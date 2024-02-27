@@ -25,11 +25,31 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// * `index` - The index of the point, in lexicographic order
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error>;
 
+	/// Get the evaluations of the polynomial at a vertex of the hypercube and scale the value.
+	///
+	/// This can be more efficient than calling `evaluate_on_hypercube` followed by a
+	/// multiplication when the trait implementation can use a subfield multiplication.
+	///
+	/// # Arguments
+	///
+	/// * `index` - The index of the point, in lexicographic order
+	/// * `scalar` - The scaling coefficient
+	fn evaluate_on_hypercube_and_scale(
+		&self,
+		index: usize,
+		scalar: P::Scalar,
+	) -> Result<P::Scalar, Error>;
+
 	fn evaluate(&self, q: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
 		self.evaluate_subcube(0, q)
 	}
 
 	fn evaluate_partial_low(
+		&self,
+		query: &MultilinearQuery<P>,
+	) -> Result<MultilinearExtension<'static, P>, Error>;
+
+	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<P>,
 	) -> Result<MultilinearExtension<'static, P>, Error>;

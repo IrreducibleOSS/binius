@@ -1,5 +1,5 @@
 use crate::{
-	field::{set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField},
+	field::{set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField},
 	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
@@ -54,7 +54,10 @@ impl StepDown {
 		MultilinearExtension::from_values(result)
 	}
 
-	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<BinaryField128b> {
+	pub fn multilinear_poly_oracle<F>(&self) -> MultilinearPolyOracle<F>
+	where
+		F: ExtensionField<BinaryField1b>,
+	{
 		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(Arc::new(self.clone()), 0))
 	}
 }

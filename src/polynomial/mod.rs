@@ -1,5 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
+pub mod composition;
 pub mod error;
 pub mod multilinear;
 pub mod multilinear_extension;

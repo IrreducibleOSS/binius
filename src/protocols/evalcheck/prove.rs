@@ -18,8 +18,8 @@ use super::{
 };
 
 #[instrument(skip_all, name = "evalcheck::prove")]
-pub fn prove<F, WPF, M, BM>(
-	evalcheck_witness: &EvalcheckWitness<WPF, M, BM>,
+pub fn prove<F, P, M, BM>(
+	evalcheck_witness: &EvalcheckWitness<P, M, BM>,
 	evalcheck_claim: EvalcheckClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
@@ -27,8 +27,33 @@ pub fn prove<F, WPF, M, BM>(
 ) -> Result<EvalcheckProof<F>, Error>
 where
 	F: Field,
-	WPF: PackedField<Scalar = F>,
-	M: MultilinearPoly<WPF> + ?Sized,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P> + ?Sized,
+	BM: Borrow<M>,
+{
+	let mut memoized_queries = Vec::new();
+	prove_inner(
+		evalcheck_witness,
+		evalcheck_claim,
+		batch_commited_eval_claims,
+		shifted_eval_claims,
+		packed_eval_claims,
+		&mut memoized_queries,
+	)
+}
+
+pub fn prove_inner<F, P, M, BM>(
+	evalcheck_witness: &EvalcheckWitness<P, M, BM>,
+	evalcheck_claim: EvalcheckClaim<F>,
+	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
+	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
+	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
+	memoized_queries: &mut Vec<(Vec<F>, MultilinearQuery<P>)>,
+) -> Result<EvalcheckProof<F>, Error>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P> + ?Sized,
 	BM: Borrow<M>,
 {
 	let EvalcheckClaim {
@@ -59,19 +84,21 @@ where
 					log_count: _,
 				} => {
 					let n_vars = inner.n_vars();
+					let inner_eval_point = eval_point[..n_vars].to_vec();
 					let subclaim = EvalcheckClaim {
 						poly: MultivariatePolyOracle::Multilinear(*inner),
-						eval_point: eval_point[..n_vars].to_vec(),
+						eval_point: inner_eval_point,
 						eval,
 						is_random_point,
 					};
 
-					let subproof = prove(
+					let subproof = prove_inner(
 						evalcheck_witness,
 						subclaim,
 						batch_commited_eval_claims,
 						shifted_eval_claims,
 						packed_eval_claims,
+						memoized_queries,
 					)?;
 
 					EvalcheckProof::Repeating(Box::new(subproof))
@@ -80,7 +107,6 @@ where
 				Interleaved(_, _) => todo!(),
 				Shifted(shifted) => {
 					let subclaim = ShiftedEvalClaim {
-						poly: *shifted.inner().clone(),
 						eval_point,
 						eval,
 						is_random_point,
@@ -92,7 +118,6 @@ where
 				}
 				Packed(packed) => {
 					let subclaim = PackedEvalClaim {
-						poly: *packed.inner().clone(),
 						eval_point,
 						eval,
 						is_random_point,
@@ -124,12 +149,13 @@ where
 						is_random_point,
 					};
 
-					prove(
+					prove_inner(
 						evalcheck_witness,
 						subclaim,
 						batch_commited_eval_claims,
 						shifted_eval_claims,
 						packed_eval_claims,
+						memoized_queries,
 					)?
 				}
 				LinearCombination(lin_com) => prove_composite(
@@ -140,6 +166,7 @@ where
 					batch_commited_eval_claims,
 					shifted_eval_claims,
 					packed_eval_claims,
+					memoized_queries,
 				)?,
 			}
 		}
@@ -151,12 +178,14 @@ where
 			batch_commited_eval_claims,
 			shifted_eval_claims,
 			packed_eval_claims,
+			memoized_queries,
 		)?,
 	};
 
 	Ok(proof)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn prove_composite<F, P, M, BM>(
 	oracles: impl Iterator<Item = MultilinearPolyOracle<F>>,
 	eval_point: Vec<F>,
@@ -165,6 +194,7 @@ fn prove_composite<F, P, M, BM>(
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
 	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
+	memoized_queries: &mut Vec<(Vec<F>, MultilinearQuery<P>)>,
 ) -> Result<EvalcheckProof<F>, Error>
 where
 	F: Field,
@@ -172,16 +202,25 @@ where
 	M: MultilinearPoly<P> + ?Sized,
 	BM: Borrow<M>,
 {
-	let witness_eval_point = eval_point
-		.iter()
-		.copied()
-		.map(Into::into)
-		.collect::<Vec<P::Scalar>>();
-	let witness_query = MultilinearQuery::with_full_query(&witness_eval_point)?;
-
 	let subproofs = oracles
 		.map(|suboracle| {
-			let eval = witness.evaluate(&suboracle, &witness_query)?;
+			let eval_query = if let Some((_, ref query)) = memoized_queries
+				.iter()
+				.find(|(memoized_eval_point, _)| memoized_eval_point == &eval_point)
+			{
+				query
+			} else {
+				memoized_queries.push((
+					eval_point.clone(),
+					MultilinearQuery::<P>::with_full_query(&eval_point)?,
+				));
+				let (_, ref query) = memoized_queries
+					.last()
+					.expect("pushed query immediately above");
+				query
+			};
+
+			let eval = witness.evaluate(&suboracle, eval_query)?;
 			let subclaim = EvalcheckClaim {
 				poly: MultivariatePolyOracle::Multilinear(suboracle),
 				eval_point: eval_point.clone(),
@@ -189,12 +228,13 @@ where
 				is_random_point,
 			};
 
-			let proof = prove(
+			let proof = prove_inner(
 				witness,
 				subclaim,
 				batch_commited_eval_claims,
 				shifted_eval_claims,
 				packed_eval_claims,
+				memoized_queries,
 			)?;
 
 			Ok((eval, proof))
@@ -393,10 +433,10 @@ mod tests {
 		let lin_com = MultilinearPolyOracle::LinearCombination(
 			LinearCombination::new(
 				n_vars,
-				vec![
-					(Box::new(select_row1_oracle.clone()), EF::new(2)),
-					(Box::new(select_row2_oracle.clone()), EF::new(3)),
-					(Box::new(select_row3_oracle.clone()), EF::new(4)),
+				[
+					(select_row1_oracle.clone(), EF::new(2)),
+					(select_row2_oracle.clone(), EF::new(3)),
+					(select_row3_oracle.clone(), EF::new(4)),
 				],
 			)
 			.unwrap(),

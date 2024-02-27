@@ -26,8 +26,6 @@ pub struct EvalcheckClaim<F: Field> {
 
 #[derive(Debug, Clone)]
 pub struct ShiftedEvalClaim<F: Field> {
-	/// Unshifted Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: MultilinearPolyOracle<F>,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
@@ -40,8 +38,6 @@ pub struct ShiftedEvalClaim<F: Field> {
 
 #[derive(Debug, Clone)]
 pub struct PackedEvalClaim<F: Field> {
-	/// Unpacked Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: MultilinearPolyOracle<F>,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
@@ -73,19 +69,32 @@ where
 		}
 	}
 
-	pub fn evaluate(
+	pub fn witness_for_oracle(
 		&self,
 		oracle: &MultilinearPolyOracle<P::Scalar>,
-		query: &MultilinearQuery<P>,
-	) -> Result<P::Scalar, Error> {
+	) -> Result<&BM, Error> {
 		// TODO: Use HashMap to reduce O(n) search to O(1)
 		let (_, multilin) = self
 			.multilinears
 			.iter()
 			.find(|(oracle_i, _)| oracle_i == oracle)
 			.ok_or_else(|| Error::InvalidWitness(format!("{:?}", oracle)))?;
+		Ok(multilin)
+	}
+
+	pub fn evaluate(
+		&self,
+		oracle: &MultilinearPolyOracle<P::Scalar>,
+		query: &MultilinearQuery<P>,
+	) -> Result<P::Scalar, Error> {
+		let multilin = self.witness_for_oracle(oracle)?;
 		let eval = multilin.borrow().evaluate(query)?;
 		Ok(eval)
+	}
+
+	pub fn merge(mut self, other: EvalcheckWitness<P, M, BM>) -> Self {
+		self.multilinears.extend(other.multilinears);
+		self
 	}
 }
 

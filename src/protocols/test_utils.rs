@@ -151,6 +151,7 @@ where
 	Ok(ret)
 }
 
+#[instrument(skip_all, name = "test_utils::full_verify")]
 pub fn full_verify<F, CH>(
 	claim: &SumcheckClaim<F>,
 	proof: SumcheckProof<F>,

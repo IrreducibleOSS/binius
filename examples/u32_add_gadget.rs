@@ -11,6 +11,7 @@ use binius::{
 	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
+		composition::BivariateProduct,
 		multilinear_query::MultilinearQuery,
 		transparent::{eq_ind::EqIndPartialEval, shift_ind::LogicalRightShiftIndPartialEval},
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
@@ -119,33 +120,6 @@ impl CompositionPoly<BinaryField128b> for CarryConstraint {
 		let c_in = query[C_IN_COL_IDX];
 		let c_out = query[C_OUT_COL_IDX];
 		Ok(x * y + x * c_in + y * c_in - c_out)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
-
-#[derive(Debug, Copy, Clone)]
-struct TwofoldProductComposition;
-impl<F: TowerField> CompositionPoly<F> for TwofoldProductComposition {
-	fn n_vars(&self) -> usize {
-		2
-	}
-
-	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
-		if query.len() != 2 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
-		}
-		Ok(query[0] * query[1])
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -291,9 +265,9 @@ where
 {
 	// Make all the required multilinears
 	let b = shifted_eval_claim.shifted.block_size();
-	debug_assert_eq!(b, LOG_BLOCK_SIZE);
-	debug_assert_eq!(eval_point, shifted_eval_claim.eval_point);
-	debug_assert_eq!(eval_point, pcs_eval_claim.eval_point);
+	assert_eq!(b, LOG_BLOCK_SIZE);
+	assert_eq!(eval_point, shifted_eval_claim.eval_point);
+	assert_eq!(eval_point, pcs_eval_claim.eval_point);
 	let offset = shifted_eval_claim.shifted.shift_offset();
 
 	let q_lo = &eval_point[..b];
@@ -301,7 +275,7 @@ where
 
 	let committed_col_oracles = verifier_trace.into_committed_column_oracles();
 	let committed_multilins = project_to_last_vars(committed_col_oracles, q_hi);
-	debug_assert_eq!(committed_multilins.len(), pcs_eval_claim.evals.len());
+	assert_eq!(committed_multilins.len(), pcs_eval_claim.evals.len());
 	let c_lo = committed_multilins[3].clone();
 
 	let eq_qlo = EqIndPartialEval::new(b, q_lo.to_vec()).unwrap();
@@ -326,7 +300,7 @@ where
 				CompositePolyOracle::new(
 					b,
 					vec![comm_multilin.clone(), eq_lo.clone()],
-					Arc::new(TwofoldProductComposition),
+					Arc::new(BivariateProduct),
 				)
 				.unwrap(),
 			);
@@ -335,8 +309,7 @@ where
 		.collect::<Vec<_>>();
 	all_sumcheck_claims.push(SumcheckClaim {
 		poly: MultivariatePolyOracle::Composite(
-			CompositePolyOracle::new(b, vec![c_lo, shift_lo], Arc::new(TwofoldProductComposition))
-				.unwrap(),
+			CompositePolyOracle::new(b, vec![c_lo, shift_lo], Arc::new(BivariateProduct)).unwrap(),
 		),
 		sum: shifted_eval_claim.eval,
 	});
@@ -365,7 +338,7 @@ where
 		+ CanSampleBits<usize>,
 {
 	let committed_cols = prover_trace.get_committed_columns_vec();
-	debug_assert_eq!(pcs.n_vars(), log_size);
+	assert_eq!(pcs.n_vars(), log_size);
 
 	// Round 1
 	let (trace_comm, trace_committed) = pcs.commit(&committed_cols).unwrap();
@@ -385,7 +358,7 @@ where
 
 	// sanity check that zerocheck claim is true
 	for index in 0..(1 << log_size) {
-		debug_assert_eq!(
+		assert_eq!(
 			zerocheck_witness.evaluate_on_hypercube(index).unwrap(),
 			BinaryField128b::new(0)
 		);
@@ -422,7 +395,7 @@ where
 	// Prove evalcheck
 	tracing::debug!("Proving evalcheck");
 	let eval_point = evalcheck_claim.eval_point.clone();
-	debug_assert!(evalcheck_claim.is_random_point);
+	assert!(evalcheck_claim.is_random_point);
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
@@ -433,8 +406,8 @@ where
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(shifted_eval_claims.len(), 1);
-	debug_assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(shifted_eval_claims.len(), 1);
+	assert_eq!(packed_eval_claims.len(), 0);
 
 	// Get all claimed evaluations
 	let shifted_eval_claim = shifted_eval_claims.pop().unwrap();
@@ -448,7 +421,7 @@ where
 	// Run sumcheck protocol again
 	// make second sumcheck witness and claim
 	let b = shifted_eval_claim.shifted.block_size();
-	debug_assert_eq!(b, LOG_BLOCK_SIZE);
+	assert_eq!(b, LOG_BLOCK_SIZE);
 	let offset = shifted_eval_claim.shifted.shift_offset();
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
@@ -532,7 +505,7 @@ where
 	tracing::debug!("Proving second evalcheck");
 	let mut batch_committed_eval_claims =
 		BatchCommittedEvalClaims::new(&[verifier_trace.trace_batch.clone()]);
-	debug_assert!(second_evalcheck_claim.is_random_point);
+	assert!(second_evalcheck_claim.is_random_point);
 	let second_evalcheck_proof = prove_evalcheck(
 		&second_evalcheck_witness,
 		second_evalcheck_claim,
@@ -541,9 +514,9 @@ where
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(shifted_eval_claims.len(), 0);
-	debug_assert_eq!(packed_eval_claims.len(), 0);
-	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	assert_eq!(shifted_eval_claims.len(), 0);
+	assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
@@ -595,7 +568,7 @@ fn verify<PCS, CH>(
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>,
 {
-	debug_assert_eq!(pcs.n_vars(), log_size);
+	assert_eq!(pcs.n_vars(), log_size);
 	let Proof {
 		trace_comm,
 		trace_eval_proof,
@@ -644,9 +617,9 @@ fn verify<PCS, CH>(
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	debug_assert_eq!(shifted_eval_claims.len(), 1);
-	debug_assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	assert_eq!(shifted_eval_claims.len(), 1);
+	assert_eq!(packed_eval_claims.len(), 0);
 
 	// Get all claimed evaluations
 	let shifted_eval_claim = shifted_eval_claims.pop().unwrap();
@@ -693,9 +666,9 @@ fn verify<PCS, CH>(
 		&mut packed_eval_claims,
 	)
 	.unwrap();
-	debug_assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	debug_assert_eq!(shifted_eval_claims.len(), 0);
-	debug_assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	assert_eq!(shifted_eval_claims.len(), 0);
+	assert_eq!(packed_eval_claims.len(), 0);
 
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)

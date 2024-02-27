@@ -6,9 +6,11 @@ repos:
     language: rust
     types: [rust]
     entry: rustfmt
+    stages: [commit]
   - id: clippy
     name: Run cargo clippy
     types: [rust]
     language: rust
     entry: cargo clippy --all --all-features --tests --benches --examples -- -D warnings
     pass_filenames: false
+    stages: [push]

@@ -294,6 +294,15 @@ where
 		Ok(subcube_eval.get(index % P::WIDTH).into())
 	}
 
+	fn evaluate_on_hypercube_and_scale(
+		&self,
+		index: usize,
+		scalar: PE::Scalar,
+	) -> Result<PE::Scalar, Error> {
+		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
+		Ok(scalar * subcube_eval.get(index % P::WIDTH))
+	}
+
 	fn evaluate(&self, query: &MultilinearQuery<PE>) -> Result<PE::Scalar, Error> {
 		self.evaluate(query)
 	}
@@ -303,6 +312,13 @@ where
 		query: &MultilinearQuery<PE>,
 	) -> Result<MultilinearExtension<'static, PE>, Error> {
 		self.evaluate_partial_low(query)
+	}
+
+	fn evaluate_partial_high(
+		&self,
+		query: &MultilinearQuery<PE>,
+	) -> Result<MultilinearExtension<'static, PE>, Error> {
+		self.evaluate_partial_high(query)
 	}
 
 	fn evaluate_subcube(

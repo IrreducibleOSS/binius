@@ -1,6 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::field::{util::eq, Field};
+// TODO: Fix the naming -- left means right and right means left
+
+use crate::{
+	field::{util::eq, Field},
+	oracle::ShiftVariant,
+};
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 
@@ -37,7 +42,7 @@ use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 ///     * $f((0, 1), (1, 1)) = 1$ because $3 = 2 + o$ mod $(2^b)$
 ///     * $f((1, 1), (0, 0)) = 1$ because $0 = 3 + o$ mod $(2^b)$
 /// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CircularRightShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
@@ -116,7 +121,7 @@ impl<F: Field> CircularRightShiftIndPartialEval<F> {
 ///     * $f((1, 0), (0, 1)) = 1$ because $2 = 1 + o$
 ///     * $f((0, 1), (1, 1)) = 1$ because $3 = 2 + o$
 /// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogicalRightShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
@@ -189,7 +194,7 @@ impl<F: Field> LogicalRightShiftIndPartialEval<F> {
 /// Then, by considering the index of each hypercube point in the above array, we observe:
 ///     * $f((1, 1), (0, 0)) = 1$ because $0 = 3 - o$
 /// and every other pair of $b$-variate hypercube points $x, y \in \{0, 1\}^{b}$ is s.t. f(x, y) = 0.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogicalLeftShiftIndPartialEval<F: Field> {
 	/// Block size $b$, also the number of variables
 	block_size: usize,
@@ -374,6 +379,71 @@ fn partial_evaluate_hypercube_help<F: Field>(
 	});
 
 	Ok((s_ind_p, s_ind_pp))
+}
+
+#[derive(Debug, Clone)]
+pub enum ShiftIndPartialEval<F: Field> {
+	CircularRight(CircularRightShiftIndPartialEval<F>),
+	LogicalRight(LogicalRightShiftIndPartialEval<F>),
+	LogicalLeft(LogicalLeftShiftIndPartialEval<F>),
+}
+
+impl<F: Field> ShiftIndPartialEval<F> {
+	pub fn new(
+		block_size: usize,
+		shift_offset: usize,
+		shift_variant: ShiftVariant,
+		r: Vec<F>,
+	) -> Result<Self, Error> {
+		match shift_variant {
+			ShiftVariant::CircularRight => {
+				CircularRightShiftIndPartialEval::new(block_size, shift_offset, r)
+					.map(Self::CircularRight)
+			}
+			ShiftVariant::LogicalRight => {
+				LogicalRightShiftIndPartialEval::new(block_size, shift_offset, r)
+					.map(Self::LogicalRight)
+			}
+			ShiftVariant::LogicalLeft => {
+				LogicalLeftShiftIndPartialEval::new(block_size, shift_offset, r)
+					.map(Self::LogicalLeft)
+			}
+		}
+	}
+
+	pub fn multilinear_extension(&self) -> Result<MultilinearExtension<'static, F>, Error> {
+		match self {
+			Self::CircularRight(inner) => inner.multilinear_extension(),
+			Self::LogicalRight(inner) => inner.multilinear_extension(),
+			Self::LogicalLeft(inner) => inner.multilinear_extension(),
+		}
+	}
+}
+
+impl<F: Field> MultivariatePoly<F> for ShiftIndPartialEval<F> {
+	fn n_vars(&self) -> usize {
+		match self {
+			Self::CircularRight(inner) => inner.n_vars(),
+			Self::LogicalRight(inner) => inner.n_vars(),
+			Self::LogicalLeft(inner) => inner.n_vars(),
+		}
+	}
+
+	fn degree(&self) -> usize {
+		match self {
+			Self::CircularRight(inner) => inner.degree(),
+			Self::LogicalRight(inner) => inner.degree(),
+			Self::LogicalLeft(inner) => inner.degree(),
+		}
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		match self {
+			Self::CircularRight(inner) => inner.evaluate(query),
+			Self::LogicalRight(inner) => inner.evaluate(query),
+			Self::LogicalLeft(inner) => inner.evaluate(query),
+		}
+	}
 }
 
 #[cfg(test)]

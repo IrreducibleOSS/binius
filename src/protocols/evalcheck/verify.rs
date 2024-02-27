@@ -6,6 +6,7 @@ use crate::{
 	polynomial::extrapolate_line,
 	protocols::evalcheck::evalcheck::ShiftedEvalClaim,
 };
+use tracing::instrument;
 
 use super::{
 	error::{Error, VerificationError},
@@ -15,7 +16,24 @@ use super::{
 	},
 };
 
+#[instrument(skip_all, name = "evalcheck::verify")]
 pub fn verify<F: Field>(
+	evalcheck_claim: EvalcheckClaim<F>,
+	evalcheck_proof: EvalcheckProof<F>,
+	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
+	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
+	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
+) -> Result<(), Error> {
+	verify_inner(
+		evalcheck_claim,
+		evalcheck_proof,
+		batch_commited_eval_claims,
+		shifted_eval_claims,
+		packed_eval_claims,
+	)
+}
+
+pub fn verify_inner<F: Field>(
 	evalcheck_claim: EvalcheckClaim<F>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
@@ -74,7 +92,7 @@ pub fn verify<F: Field>(
 					is_random_point,
 				};
 
-				verify(
+				verify_inner(
 					subclaim,
 					*subproof,
 					batch_commited_eval_claims,
@@ -111,7 +129,7 @@ pub fn verify<F: Field>(
 					eval: eval1,
 					is_random_point,
 				};
-				verify(
+				verify_inner(
 					claim1,
 					*subproof1,
 					batch_commited_eval_claims,
@@ -125,7 +143,7 @@ pub fn verify<F: Field>(
 					eval: eval2,
 					is_random_point,
 				};
-				verify(
+				verify_inner(
 					claim2,
 					*subproof2,
 					batch_commited_eval_claims,
@@ -150,7 +168,7 @@ pub fn verify<F: Field>(
 					eval,
 					is_random_point,
 				};
-				verify(
+				verify_inner(
 					new_claim,
 					evalcheck_proof,
 					batch_commited_eval_claims,
@@ -165,7 +183,6 @@ pub fn verify<F: Field>(
 				};
 
 				let subclaim = ShiftedEvalClaim {
-					poly: *shifted.inner().clone(),
 					eval_point,
 					eval,
 					is_random_point,
@@ -180,7 +197,6 @@ pub fn verify<F: Field>(
 				};
 
 				let subclaim = PackedEvalClaim {
-					poly: *packed.inner().clone(),
 					eval_point,
 					eval,
 					is_random_point,
@@ -215,7 +231,7 @@ pub fn verify<F: Field>(
 							eval,
 							is_random_point,
 						};
-						verify(
+						verify_inner(
 							subclaim,
 							subproof,
 							batch_commited_eval_claims,
@@ -253,7 +269,7 @@ pub fn verify<F: Field>(
 						eval,
 						is_random_point,
 					};
-					verify(
+					verify_inner(
 						subclaim,
 						subproof,
 						batch_commited_eval_claims,

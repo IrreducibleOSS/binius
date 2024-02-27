@@ -142,7 +142,6 @@ pub enum ShiftVariant {
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct Shifted<F: Field> {
-	#[get = "pub"]
 	inner: Box<MultilinearPolyOracle<F>>,
 	#[get_copy = "pub"]
 	shift_offset: usize,
@@ -166,7 +165,7 @@ impl<F: Field> Shifted<F> {
 			.into());
 		}
 
-		if shift_offset == 0 || shift_offset >= block_size {
+		if shift_offset == 0 || shift_offset >= 1 << block_size {
 			return Err(PolynomialError::InvalidShiftOffset {
 				max_shift_offset: (1 << block_size) - 1,
 				shift_offset,
@@ -180,6 +179,10 @@ impl<F: Field> Shifted<F> {
 			block_size,
 			shift_variant,
 		})
+	}
+
+	pub fn inner(&self) -> &MultilinearPolyOracle<F> {
+		&self.inner
 	}
 }
 
@@ -224,13 +227,18 @@ pub struct LinearCombination<F: Field> {
 impl<F: Field> LinearCombination<F> {
 	pub fn new(
 		n_vars: usize,
-		inner: Vec<(Box<MultilinearPolyOracle<F>>, F)>,
+		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
 	) -> Result<Self, Error> {
-		for (poly, _) in inner.iter() {
-			if poly.n_vars() != n_vars {
-				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
-			}
-		}
+		let inner = inner
+			.into_iter()
+			.map(|(poly, coeff)| {
+				if poly.n_vars() != n_vars {
+					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+				}
+				Ok((Box::new(poly), coeff))
+			})
+			.collect::<Result<_, _>>()?;
+
 		Ok(Self { n_vars, inner })
 	}
 
@@ -247,7 +255,7 @@ impl<F: Field> LinearCombination<F> {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::From)]
 pub enum MultivariatePolyOracle<F: Field> {
 	Multilinear(MultilinearPolyOracle<F>),
 	Composite(CompositePolyOracle<F>),
@@ -356,13 +364,31 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		}
 	}
 
+	pub fn transparent(
+		poly: Arc<dyn MultivariatePoly<F> + Send + Sync>,
+		tower_level: usize,
+	) -> Self {
+		Self::Transparent(TransparentPolyOracle::new(poly, tower_level))
+	}
+
+	pub fn projected(self, values: Vec<F>, projection: ProjectionVariant) -> Result<Self, Error> {
+		Projected::new(self, values, projection).map(Self::Projected)
+	}
+
 	pub fn shifted(
 		self,
 		shift: usize,
 		shift_bits: usize,
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
-		Ok(Self::Shifted(Shifted::new(self, shift, shift_bits, shift_variant)?))
+		Shifted::new(self, shift, shift_bits, shift_variant).map(Self::Shifted)
+	}
+
+	pub fn linear_combination(
+		n_vars: usize,
+		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
+	) -> Result<Self, Error> {
+		LinearCombination::new(n_vars, inner).map(Self::LinearCombination)
 	}
 
 	pub fn n_vars(&self) -> usize {
@@ -404,12 +430,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 impl<F: TowerField> MultilinearPolyOracle<F> {
 	pub fn packed(self, log_degree: usize) -> Result<Self, Error> {
 		Ok(Self::Packed(Packed::new(self, log_degree)?))
-	}
-}
-
-impl<F: Field> From<MultilinearPolyOracle<F>> for MultivariatePolyOracle<F> {
-	fn from(multilinear: MultilinearPolyOracle<F>) -> Self {
-		MultivariatePolyOracle::Multilinear(multilinear)
 	}
 }
 

@@ -27,6 +27,7 @@ thread_local = "1.1.7"
 tracing = "0.1.38"
 transpose = "0.2.2"
 tracing-profile = "0.1.0"
+log = "0.4.20"
 
 [profile.profiling]
 inherits = "release"
@@ -36,6 +37,7 @@ debug = true
 criterion = "0.4.0"
 hex-literal = "0.4.1"
 proptest = "1.2.0"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tracing-subscriber = "0.3.18"
 
 [lib]
