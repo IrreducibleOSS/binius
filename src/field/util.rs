@@ -25,6 +25,7 @@ where
 	);
 	(0..PX::WIDTH * xs.len())
 		.into_par_iter()
+		.with_min_len(256)
 		.map(|i| get_packed_slice(xs, i) * get_packed_slice(ys, i))
 		.sum()
 }

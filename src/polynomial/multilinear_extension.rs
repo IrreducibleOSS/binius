@@ -132,6 +132,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		}
 
 		let query_expansion = query.expansion();
+		let query_length = PE::WIDTH * query_expansion.len();
 		let new_n_vars = self.mu - query.n_vars();
 		let result_evals_len = 1 << (new_n_vars - PE::LOG_WIDTH);
 
@@ -144,8 +145,9 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 				for inner_index in 0..PE::WIDTH {
 					res.set(
 						inner_index,
-						(0..query_expansion.len())
+						(0..query_length)
 							.into_par_iter()
+							.with_min_len(256)
 							.map(|query_index| {
 								let eval_index = (query_index << new_n_vars)
 									| (outer_index << PE::LOG_WIDTH) | inner_index;
@@ -214,23 +216,28 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 			});
 		}
 
+		let n_vars = query.n_vars();
+		let query_expansion = query.expansion();
+		let query_length = PE::WIDTH * query_expansion.len();
 		let packed_result_evals = out.evals.to_mut();
 		packed_result_evals
 			.par_iter_mut()
 			.enumerate()
 			.for_each(|(i, packed_result_eval)| {
 				(0..PE::WIDTH).for_each(|j| {
-					let subcube_evals = self
-						.iter_subcube_scalars(query.n_vars(), i * PE::WIDTH + j)
-						.expect("n_vars and index arguments are in range");
-					let result_eval = inner_product_unchecked(
-						iter_packed_slice(query.expansion()),
-						subcube_evals,
-					);
+					let index = (i << PE::LOG_WIDTH) | j;
+					let result_eval = (0..query_length)
+						.into_par_iter()
+						.zip(((index << n_vars)..((index + 1) << n_vars)).into_par_iter())
+						.with_min_len(256)
+						.map(|(query_index, eval_index)| {
+							get_packed_slice(query_expansion, query_index)
+								* get_packed_slice(&self.evals, eval_index)
+						})
+						.sum();
 					packed_result_eval.set(j, result_eval);
 				});
 			});
-
 		Ok(())
 	}
 

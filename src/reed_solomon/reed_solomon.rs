@@ -5,6 +5,7 @@ use crate::{
 	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
 	reed_solomon::additive_ntt::AdditiveNTT,
 };
+use rayon::prelude::*;
 use std::marker::PhantomData;
 
 use super::{additive_ntt::AdditiveNTTWithOTFCompute, error::Error};
@@ -79,14 +80,11 @@ where
 		for i in 1..(1 << self.log_inv_rate) {
 			code.copy_within(0..msgs_len, i * msgs_len);
 		}
-		for i in 0..(1 << self.log_inv_rate) {
-			self.ntt.forward_transform(
-				&mut code[i * msgs_len..(i + 1) * msgs_len],
-				i as u32,
-				log_batch_size,
-			)?;
-		}
-		Ok(())
+
+		(0..(1 << self.log_inv_rate))
+			.into_par_iter()
+			.zip(code.par_chunks_exact_mut(msgs_len))
+			.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
 	}
 }
 
@@ -113,10 +111,9 @@ where
 		for i in 1..(1 << self.log_inv_rate) {
 			code.copy_within(0..dim, i * dim);
 		}
-		for i in 0..(1 << self.log_inv_rate) {
-			self.ntt
-				.forward_transform_ext(&mut code[i * dim..(i + 1) * dim], i as u32)?;
-		}
-		Ok(())
+		(0..(1 << self.log_inv_rate))
+			.into_par_iter()
+			.zip(code.par_chunks_exact_mut(dim))
+			.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
 	}
 }

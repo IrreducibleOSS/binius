@@ -225,7 +225,6 @@ where
 				1 << self.log_rows,
 			);
 
-			// TODO: Parallelize
 			self.code
 				.encode_batch_inplace(
 					<PI as PackedExtensionField<PA>>::cast_to_bases_mut(&mut encoded),
