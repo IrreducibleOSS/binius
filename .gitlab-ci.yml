@@ -69,7 +69,7 @@ pages:
   dependencies:
     - build-docs
   script:
-    - mv target/doc public
+    - mv target/doc/binius public
   artifacts:
     paths:
       - public
