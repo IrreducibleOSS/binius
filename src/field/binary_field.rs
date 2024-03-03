@@ -70,6 +70,10 @@ macro_rules! binary_field {
 			}
 		}
 
+		impl $crate::field::underlier::WithUnderlier for $name {
+			type Underlier = $typ;
+		}
+
 		impl Neg for $name {
 			type Output = Self;
 

@@ -17,6 +17,8 @@ use std::{
 };
 use subtle::{Choice, ConstantTimeEq};
 
+use crate::field::arithmetic_traits::MulAlpha;
+
 macro_rules! packed_field_array {
 	($vis:vis struct $name:ident([$inner:ty; 2])) => {
 		#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Zeroable, Pod)]
@@ -145,6 +147,12 @@ macro_rules! packed_field_array {
 			}
 		}
 
+		impl MulAlpha for $name {
+			fn mul_alpha(self) -> Self {
+				Self([self.0[0].mul_alpha(), self.0[1].mul_alpha()])
+			}
+		}
+
 		impl PackedField for $name {
 			type Scalar = <$inner as PackedField>::Scalar;
 			const LOG_WIDTH: usize = <$inner as PackedField>::LOG_WIDTH + 1;
@@ -179,10 +187,6 @@ macro_rules! packed_field_array {
 				Self(array::from_fn(|_| <$inner>::random(&mut rng)))
 			}
 
-			fn broadcast(scalar: Self::Scalar) -> Self {
-				Self(array::from_fn(|_| <$inner>::broadcast(scalar)))
-			}
-
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 				assert!(log_block_len < Self::LOG_WIDTH);
 
@@ -195,12 +199,22 @@ macro_rules! packed_field_array {
 				}
 			}
 
-			fn square(self) -> Self {
-				Self([self.0[0].square(), self.0[1].square()])
+			fn broadcast(scalar: <$inner as PackedField>::Scalar) -> Self {
+				Self(array::from_fn(|_| <$inner>::broadcast(scalar)))
 			}
 
-			fn invert(self) -> Self {
-				Self([self.0[0].invert(), self.0[1].invert()])
+			fn square(self) -> Self {
+				Self([
+					PackedField::square(self.0[0]),
+					PackedField::square(self.0[1]),
+				])
+			}
+
+			fn invert_or_zero(self) -> Self {
+				Self([
+					PackedField::invert_or_zero(self.0[0]),
+					PackedField::invert_or_zero(self.0[1]),
+				])
 			}
 		}
 

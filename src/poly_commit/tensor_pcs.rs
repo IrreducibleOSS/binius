@@ -10,9 +10,10 @@ use tracing::instrument;
 use super::error::{Error, VerificationError};
 use crate::{
 	field::{
-		get_packed_slice, iter_packed_slice, square_transpose, transpose_scalars, unpack_scalars,
-		unpack_scalars_mut, util::inner_product_unchecked, BinaryField, BinaryField8b,
-		ExtensionField, Field, PackedExtensionField, PackedField,
+		packed::{get_packed_slice, iter_packed_slice},
+		square_transpose, transpose_scalars, unpack_scalars, unpack_scalars_mut,
+		util::inner_product_unchecked,
+		BinaryField, BinaryField8b, ExtensionField, Field, PackedExtensionField, PackedField,
 	},
 	hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher},
 	linear_code::LinearCode,

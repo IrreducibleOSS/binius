@@ -16,7 +16,21 @@ pub mod test_utils {
 				}
 			}
 
+			fn check_mul_packed_u64(a_val: u64, b_val: u64) {
+				use $crate::field::arch::packed_64::*;
+
+				check_mul_packed::<PackedBinaryField64x1b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField32x2b>(2.into(), 3.into());
+				check_mul_packed::<PackedBinaryField16x4b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField8x8b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField4x16b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField2x32b>(a_val.into(), b_val.into());
+				check_mul_packed::<PackedBinaryField1x64b>(a_val.into(), b_val.into());
+			}
+
 			fn check_mul_packed_u128(a_val: u128, b_val: u128) {
+				use $crate::field::arch::packed_128::*;
+
 				check_mul_packed::<PackedBinaryField128x1b>(a_val.into(), b_val.into());
 				check_mul_packed::<PackedBinaryField64x2b>(a_val.into(), b_val.into());
 				check_mul_packed::<PackedBinaryField32x4b>(a_val.into(), b_val.into());
@@ -25,6 +39,13 @@ pub mod test_utils {
 				check_mul_packed::<PackedBinaryField4x32b>(a_val.into(), b_val.into());
 				check_mul_packed::<PackedBinaryField2x64b>(a_val.into(), b_val.into());
 				check_mul_packed::<PackedBinaryField1x128b>(a_val.into(), b_val.into());
+			}
+
+			proptest! {
+				#[test]
+				fn test_mul_packed_64(a_val in any::<u64>(), b_val in any::<u64>()) {
+					check_mul_packed_u64(a_val, b_val);
+				}
 			}
 
 			proptest! {
@@ -47,7 +68,21 @@ pub mod test_utils {
 				}
 			}
 
+			fn check_square_packed_64(a_val: u64) {
+				use $crate::field::arch::packed_64::*;
+
+				check_square_packed::<PackedBinaryField64x1b>(a_val.into());
+				check_square_packed::<PackedBinaryField32x2b>(a_val.into());
+				check_square_packed::<PackedBinaryField16x4b>(a_val.into());
+				check_square_packed::<PackedBinaryField8x8b>(a_val.into());
+				check_square_packed::<PackedBinaryField4x16b>(a_val.into());
+				check_square_packed::<PackedBinaryField2x32b>(a_val.into());
+				check_square_packed::<PackedBinaryField1x64b>(a_val.into());
+			}
+
 			fn check_square_packed_128(a_val: u128) {
+				use $crate::field::arch::packed_128::*;
+
 				check_square_packed::<PackedBinaryField128x1b>(a_val.into());
 				check_square_packed::<PackedBinaryField64x2b>(a_val.into());
 				check_square_packed::<PackedBinaryField32x4b>(a_val.into());
@@ -59,6 +94,11 @@ pub mod test_utils {
 			}
 
 			proptest! {
+				#[test]
+				fn test_square_packed_64(a_val in any::<u64>()) {
+					check_square_packed_64(a_val);
+				}
+
 				#[test]
 				fn test_square_packed_128(a_val in any::<u128>()) {
 					check_square_packed_128(a_val);
@@ -85,6 +125,18 @@ pub mod test_utils {
 				}
 			}
 
+			pub fn check_inverse_packed_64(a_val: u64) {
+				use $crate::field::arch::packed_64::*;
+
+				test_inverse_packed::<PackedBinaryField64x1b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField32x2b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField16x4b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField8x8b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField4x16b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField2x32b>(a_val.into());
+				test_inverse_packed::<PackedBinaryField1x64b>(a_val.into());
+			}
+
 			pub fn check_inverse_packed_128(a_val: u128) {
 				test_inverse_packed::<PackedBinaryField128x1b>(a_val.into());
 				test_inverse_packed::<PackedBinaryField64x2b>(a_val.into());
@@ -97,6 +149,11 @@ pub mod test_utils {
 			}
 
 			proptest! {
+				#[test]
+				fn test_invert_packed_64(a_val in any::<u64>()) {
+					check_inverse_packed_64(a_val);
+				}
+
 				#[test]
 				fn test_invert_packed_128(a_val in any::<u128>()) {
 					check_inverse_packed_128(a_val);
@@ -381,7 +438,7 @@ mod tests {
 	define_square_tests!(square, PackedField);
 
 	fn invert<P: PackedField>(a: P) -> P {
-		a.invert()
+		a.invert_or_zero()
 	}
 
 	define_invert_tests!(invert, PackedField);

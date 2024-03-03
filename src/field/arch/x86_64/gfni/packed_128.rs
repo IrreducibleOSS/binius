@@ -17,6 +17,7 @@ use subtle::{Choice, ConstantTimeEq};
 use super::constants::*;
 use crate::{
 	field::{
+		arithmetic_traits::{InvertOrZero, MulAlpha, Square},
 		binary_field::{
 			BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b,
 			BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b,
@@ -214,6 +215,15 @@ macro_rules! binary_tower_packed_bits {
 				Self(unsafe { _mm_loadu_epi64(rand_i64.as_ptr()) })
 			}
 
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				assert!(log_block_len < Self::LOG_WIDTH);
+				let log_bit_width = Self::Scalar::N_BITS.ilog2() as usize;
+				let (a, b) = unsafe {
+					interleave_bits(self.0, other.0, log_block_len + log_bit_width)
+				};
+				(Self(a), Self(b))
+			}
+
 			fn broadcast(scalar: $scalar_ty) -> Self {
 				const TOWER_LEVEL: usize = <$scalar_ty>::N_BITS.ilog2() as usize;
 				const_assert!(TOWER_LEVEL <= 7);
@@ -232,30 +242,33 @@ macro_rules! binary_tower_packed_bits {
 				})
 			}
 
-			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
-				assert!(log_block_len < Self::LOG_WIDTH);
-				let log_bit_width = Self::Scalar::N_BITS.ilog2() as usize;
-				let (a, b) = unsafe {
-					interleave_bits(self.0, other.0, log_block_len + log_bit_width)
-				};
-				(Self(a), Self(b))
-			}
-
 			fn square(self) -> Self {
 				// TODO: use more efficient implementation
 				let mut result = Self::zero();
 				for i in 0..Self::WIDTH {
-					result.set(i, self.get(i).square())
+					result.set(i, Square::square(self.get(i)))
 				}
 
 				result
 			}
 
-			fn invert(self) -> Self {
+			fn invert_or_zero(self) -> Self {
 				// TODO: use more efficient implementation
 				let mut result = Self::zero();
 				for i in 0..Self::WIDTH {
-					result.set(i, self.get(i).invert())
+					result.set(i, InvertOrZero::invert_or_zero(self.get(i)))
+				}
+
+				result
+			}
+		}
+
+		impl MulAlpha for $name {
+			fn mul_alpha(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).mul_alpha())
 				}
 
 				result
@@ -298,10 +311,6 @@ macro_rules! binary_tower_packed_bytes {
 				Self(unsafe { _mm_loadu_epi64(rand_i64.as_ptr()) })
 			}
 
-			fn broadcast(scalar: Self::Scalar) -> Self {
-				must_cast([scalar; Self::WIDTH])
-			}
-
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 				assert!(log_block_len < Self::LOG_WIDTH);
 				let log_bit_width = Self::Scalar::N_BITS.ilog2() as usize;
@@ -311,21 +320,37 @@ macro_rules! binary_tower_packed_bytes {
 				(Self(a), Self(b))
 			}
 
+			fn broadcast(scalar: $scalar_ty) -> Self {
+				must_cast([scalar; Self::WIDTH])
+			}
+
 			fn square(self) -> Self {
 				// TODO: use more efficient implementation
 				let mut result = Self::zero();
 				for i in 0..Self::WIDTH {
-					result.set(i, self.get(i).square())
+					result.set(i, Square::square(self.get(i)))
 				}
 
 				result
 			}
 
-			fn invert(self) -> Self {
+			fn invert_or_zero(self) -> Self {
 				// TODO: use more efficient implementation
 				let mut result = Self::zero();
 				for i in 0..Self::WIDTH {
-					result.set(i, self.get(i).invert())
+					result.set(i, InvertOrZero::invert_or_zero(self.get(i)))
+				}
+
+				result
+			}
+		}
+
+		impl MulAlpha for $name {
+			fn mul_alpha(self) -> Self {
+				// TODO: use more efficient implementation
+				let mut result = Self::zero();
+				for i in 0..Self::WIDTH {
+					result.set(i, self.get(i).mul_alpha())
 				}
 
 				result

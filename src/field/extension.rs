@@ -61,7 +61,7 @@ impl<F: Field> ExtensionField<F> for F {
 /// elements:
 ///
 /// ```
-/// use binius::field::{ExtensionField, iter_packed_slice, PackedExtensionField, PackedField};
+/// use binius::field::{ExtensionField, packed::iter_packed_slice, PackedExtensionField, PackedField};
 ///
 /// fn iter_ext_then_bases<'a, P, PE>(packed: &'a [PE]) -> impl Iterator<Item=P::Scalar> + 'a
 ///     where

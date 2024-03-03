@@ -1,5 +1,5 @@
 use crate::{
-	field::{set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField},
+	field::{packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField},
 	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };

@@ -5,7 +5,7 @@ use std::{borrow::Borrow, iter::repeat, sync::Arc};
 
 use tracing::instrument;
 
-use crate::field::{set_packed_slice, BinaryField1b, Field, PackedField};
+use crate::field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
 
 use crate::{
 	polynomial::{

@@ -15,4 +15,4 @@ cfg_if! {
 	}
 }
 
-pub use portable::packed_256;
+pub use portable::{packed_256, packed_64, PackedStrategy, PairwiseStrategy};

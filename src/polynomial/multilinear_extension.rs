@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
 use crate::field::{
-	get_packed_slice, iter_packed_slice, set_packed_slice,
+	packed::{get_packed_slice, iter_packed_slice, set_packed_slice},
 	util::{inner_product_par, inner_product_unchecked},
 	ExtensionField, Field, PackedField,
 };

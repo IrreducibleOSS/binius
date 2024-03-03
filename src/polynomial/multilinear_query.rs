@@ -83,7 +83,7 @@ mod tests {
 
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident) => {
-			crate::field::iter_packed_slice(MultilinearQuery::<$p>::with_full_query(&[$($f($elem)),*]).unwrap().expansion()).collect::<Vec<_>>()
+			crate::field::packed::iter_packed_slice(MultilinearQuery::<$p>::with_full_query(&[$($f($elem)),*]).unwrap().expansion()).collect::<Vec<_>>()
 		};
 	}
 

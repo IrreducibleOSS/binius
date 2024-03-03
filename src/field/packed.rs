@@ -12,7 +12,11 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 
-use super::Error;
+use super::{
+	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
+	binary_field_arithmetic::TowerFieldArithmetic,
+	Error,
+};
 
 /// A packed field represents a vector of underlying field elements.
 ///
@@ -94,7 +98,7 @@ pub trait PackedField:
 	fn square(self) -> Self;
 
 	/// Returns the packed inversed values or zeroes at indices where `self` is zero.
-	fn invert(self) -> Self;
+	fn invert_or_zero(self) -> Self;
 
 	/// Interleaves blocks of this packed vector with another packed vector.
 	///
@@ -153,6 +157,30 @@ pub fn set_packed_slice_checked<P: PackedField>(
 		})
 }
 
+impl<F: Field> Square for F {
+	fn square(self) -> Self {
+		<Self as Field>::square(&self)
+	}
+}
+
+impl<F: Field> InvertOrZero for F {
+	fn invert_or_zero(self) -> Self {
+		self.invert().unwrap_or(Self::ZERO)
+	}
+}
+
+impl<F: Field> Broadcast<F> for F {
+	fn broadcast(scalar: F) -> Self {
+		scalar
+	}
+}
+
+impl<T: TowerFieldArithmetic> MulAlpha for T {
+	fn mul_alpha(self) -> Self {
+		<Self as TowerFieldArithmetic>::multiply_alpha(self)
+	}
+}
+
 impl<F: Field> PackedField for F {
 	type Scalar = F;
 
@@ -178,19 +206,19 @@ impl<F: Field> PackedField for F {
 		<Self as Field>::random(rng)
 	}
 
-	fn broadcast(scalar: Self::Scalar) -> Self {
-		scalar
-	}
-
 	fn interleave(self, _other: Self, _log_block_len: usize) -> (Self, Self) {
 		panic!("cannot interleave when WIDTH = 1");
+	}
+
+	fn broadcast(scalar: Self::Scalar) -> Self {
+		scalar
 	}
 
 	fn square(self) -> Self {
 		<Self as Field>::square(&self)
 	}
 
-	fn invert(self) -> Self {
-		<Self as Field>::invert(&self).unwrap_or(Self::ZERO)
+	fn invert_or_zero(self) -> Self {
+		<Self as Field>::invert(&self).unwrap_or(Self::default())
 	}
 }

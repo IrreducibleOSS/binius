@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::field::{get_packed_slice, ExtensionField, Field, PackedField};
+use crate::field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
 use rayon::prelude::*;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
