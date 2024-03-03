@@ -69,7 +69,8 @@ pages:
   dependencies:
     - build-docs
   script:
-    - mv target/doc/binius public
+    - mv target/doc public
+    - echo "/ /binius 302" > public/_redirects
   artifacts:
     paths:
       - public
