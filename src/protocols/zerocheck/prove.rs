@@ -96,7 +96,7 @@ mod tests {
 	// Specifically, f should vanish on the boolean hypercube, because some h_i will be 0.
 	#[test]
 	fn test_prove_verify_interaction() {
-		crate::util::init_tracing();
+		crate::util::tracing::init_tracing();
 
 		type F = BinaryField32b;
 		let n_vars: usize = 3;

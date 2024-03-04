@@ -798,7 +798,7 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction_basic() {
-		crate::util::init_tracing();
+		crate::util::tracing::init_tracing();
 
 		for n_vars in 2..8 {
 			for n_multilinears in 1..4 {

@@ -253,7 +253,7 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction() {
-		crate::util::init_tracing();
+		crate::util::tracing::init_tracing();
 
 		type F = BinaryField32b;
 		let n_vars = 2;

@@ -12,6 +12,8 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 
+use crate::util::iter::IterExtensions;
+
 use super::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
@@ -76,11 +78,11 @@ pub trait PackedField:
 	}
 
 	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> {
-		(0..Self::WIDTH).map(move |i| self.get(i))
+		(0..Self::WIDTH).map_skippable(move |i| self.get(i))
 	}
 
 	fn iter(&self) -> impl Iterator<Item=Self::Scalar> {
-		(0..Self::WIDTH).map(|i| self.get(i))
+		(0..Self::WIDTH).map_skippable(move |i| self.get(i))
 	}
 
 	fn zero() -> Self {

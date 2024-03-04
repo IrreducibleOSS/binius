@@ -295,7 +295,7 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_interaction() {
-		crate::util::init_tracing();
+		crate::util::tracing::init_tracing();
 
 		let mut rng = StdRng::seed_from_u64(0);
 
