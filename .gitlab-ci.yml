@@ -55,7 +55,7 @@ build-docs:
     - binius
   stage: build
   script:
-    - export RUSTDOCFLAGS=-Dwarnings
+    - export RUSTDOCFLAGS="-Dwarnings --html-in-header doc/katex-header.html"
     - cargo doc --no-deps
   artifacts:
     paths:
