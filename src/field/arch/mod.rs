@@ -9,6 +9,13 @@ cfg_if! {
 
 		mod x86_64;
 		pub use x86_64::{packed_128, polyval};
+	} else if #[cfg(target_arch = "aarch64")] {
+		#[allow(dead_code)]
+		mod portable;
+
+		mod aarch64;
+		pub use aarch64::polyval;
+		pub use portable::packed_128;
 	} else {
 		mod portable;
 		pub use portable::{packed_128, polyval};

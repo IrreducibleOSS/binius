@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
-#![feature(stdarch_x86_avx512)]
 #![feature(step_trait)]
+#![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
 // This is to silence clippy errors around suspicious usage of XOR
 // in our arithmetic. This is safe to do becasue we're operating
 // over binary fields.
