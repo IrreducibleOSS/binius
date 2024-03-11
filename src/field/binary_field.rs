@@ -27,6 +27,20 @@ pub trait BinaryField: ExtensionField<BinaryField1b> {
 
 pub trait TowerField: BinaryField {
 	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;
+
+	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
+		if iota > Self::TOWER_LEVEL {
+			return Err(Error::ExtensionDegreeTooHigh);
+		}
+		let n_basis_elts = 1 << (Self::TOWER_LEVEL - iota);
+		if i >= n_basis_elts {
+			return Err(Error::IndexOutOfRange {
+				index: i,
+				max: n_basis_elts,
+			});
+		}
+		<Self as ExtensionField<BinaryField1b>>::basis(i << iota)
+	}
 }
 
 pub(super) trait TowerExtensionField:
