@@ -1,23 +1,24 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use std::hint::black_box;
-
-use super::binary_field::*;
+use super::{arithmetic_traits::InvertOrZero, binary_field::*};
 use cfg_if::cfg_if;
-use subtle::{ConstantTimeEq, CtOption};
 
-pub(crate) trait TowerFieldArithmetic: TowerField {
+pub(crate) trait TowerFieldArithmetic: TowerField + InvertOrZero {
 	fn multiply(self, rhs: Self) -> Self;
 
 	fn multiply_alpha(self) -> Self;
 
 	fn square(self) -> Self;
-
-	fn invert(self) -> CtOption<Self>;
 }
 
 macro_rules! binary_tower_unary_arithmetic_recursive {
 	($name:ident) => {
+		impl InvertOrZero for $name {
+			fn invert_or_zero(self) -> Self {
+				invert_or_zero(self)
+			}
+		}
+
 		impl TowerFieldArithmetic for $name {
 			fn multiply(self, rhs: Self) -> Self {
 				multiply(self, rhs)
@@ -30,15 +31,17 @@ macro_rules! binary_tower_unary_arithmetic_recursive {
 			fn square(self) -> Self {
 				square(self)
 			}
-
-			fn invert(self) -> CtOption<Self> {
-				invert(self)
-			}
 		}
 	};
 }
 
 impl TowerField for BinaryField1b {}
+
+impl InvertOrZero for BinaryField1b {
+	fn invert_or_zero(self) -> Self {
+		self
+	}
+}
 
 impl TowerFieldArithmetic for BinaryField1b {
 	fn multiply(self, rhs: Self) -> Self {
@@ -51,10 +54,6 @@ impl TowerFieldArithmetic for BinaryField1b {
 
 	fn square(self) -> Self {
 		self
-	}
-
-	fn invert(self) -> CtOption<Self> {
-		CtOption::new(self, self.into())
 	}
 }
 
@@ -118,6 +117,12 @@ const INVERSE_8B: [u8; 256] = [
 	0x9b, 0xa1, 0xb4, 0x70, 0x59, 0x89, 0xd6, 0xcb,
 ];
 
+impl InvertOrZero for BinaryField2b {
+	fn invert_or_zero(self) -> Self {
+		Self(INVERSE_8B[self.0 as usize])
+	}
+}
+
 impl TowerFieldArithmetic for BinaryField2b {
 	fn multiply(self, rhs: Self) -> Self {
 		Self(mul_bin_4b(self.0, rhs.0))
@@ -130,9 +135,11 @@ impl TowerFieldArithmetic for BinaryField2b {
 	fn square(self) -> Self {
 		self * self
 	}
+}
 
-	fn invert(self) -> CtOption<Self> {
-		CtOption::new(Self(INVERSE_8B[self.0 as usize]), self.0.ct_ne(&0))
+impl InvertOrZero for BinaryField4b {
+	fn invert_or_zero(self) -> Self {
+		Self(INVERSE_8B[self.0 as usize])
 	}
 }
 
@@ -148,9 +155,11 @@ impl TowerFieldArithmetic for BinaryField4b {
 	fn square(self) -> Self {
 		self * self
 	}
+}
 
-	fn invert(self) -> CtOption<Self> {
-		CtOption::new(Self(INVERSE_8B[self.0 as usize]), self.0.ct_ne(&0))
+impl InvertOrZero for BinaryField8b {
+	fn invert_or_zero(self) -> Self {
+		Self(INVERSE_8B[self.0 as usize])
 	}
 }
 
@@ -227,27 +236,27 @@ impl TowerFieldArithmetic for BinaryField8b {
 			0x7f, 0x46, 0x12, 0x3e, 0xf5, 0xae, 0xe9, 0xe0,
 		];
 
-		let log_table_index =
-			LOG_TABLE[self.0 as usize] as usize + LOG_TABLE[rhs.0 as usize] as usize;
-		// This line is a constant-time equivalent to `if (log_table_index ? 255) { log_table_index - 255 } else { 0 }`
-		// for the range 0..254*2, which is faster than `log_table_index % 255`.
-		let log_table_index = log_table_index - 255 * (((log_table_index + 1) >> 8) & 1);
+		let result = if self.0 != 0 && rhs.0 != 0 {
+			let log_table_index =
+				LOG_TABLE[self.0 as usize] as usize + LOG_TABLE[rhs.0 as usize] as usize;
+			let log_table_index = if log_table_index > 254 {
+				log_table_index - 255
+			} else {
+				log_table_index
+			};
 
-		/// This code is an optimized version of x.ct_neq(&0)
-		fn const_time_neq_zero(x: u8) -> u8 {
-			let y = (x | x.wrapping_neg()) >> 7;
-			black_box(y & 1)
-		}
+			unsafe {
+				// Safety: `log_table_index` is smaller than 255 because:
+				// - all values in `LOG_TABLE` do not exceed 254
+				// - sum of two values do not exceed 254*2
+				// - the previous line reduces `log_table_index` by 255 if it is
+				// bigger than 254
+				*EXP_TABLE.get_unchecked(log_table_index)
+			}
+		} else {
+			0
+		};
 
-		let result = unsafe {
-			// Safety: `log_table_index` is smaller than 255 because:
-			// - all values in `LOG_TABLE` do not exceed 254
-			// - sum of two values do not exceed 254*2
-			// - the previous line reduces `log_table_index` by 255 if it is
-			// bigger than 254
-			EXP_TABLE.get_unchecked(log_table_index)
-		} * const_time_neq_zero(self.0)
-			* const_time_neq_zero(rhs.0);
 		Self(result)
 	}
 
@@ -328,15 +337,17 @@ impl TowerFieldArithmetic for BinaryField8b {
 		];
 		Self(SQUARE_MAP[self.0 as usize])
 	}
-
-	fn invert(self) -> CtOption<Self> {
-		CtOption::new(Self(INVERSE_8B[self.0 as usize]), self.0.ct_ne(&0))
-	}
 }
 
 binary_tower_unary_arithmetic_recursive!(BinaryField16b);
 binary_tower_unary_arithmetic_recursive!(BinaryField32b);
 binary_tower_unary_arithmetic_recursive!(BinaryField64b);
+
+impl InvertOrZero for BinaryField128b {
+	fn invert_or_zero(self) -> Self {
+		invert_or_zero(self)
+	}
+}
 
 impl TowerFieldArithmetic for BinaryField128b {
 	cfg_if! {
@@ -364,10 +375,6 @@ impl TowerFieldArithmetic for BinaryField128b {
 
 	fn square(self) -> Self {
 		square(self)
-	}
-
-	fn invert(self) -> CtOption<Self> {
-		invert(self)
 	}
 }
 
@@ -408,7 +415,7 @@ where
 	(z0 + z2, z2a).into()
 }
 
-fn invert<F>(a: F) -> CtOption<F>
+fn invert_or_zero<F>(a: F) -> F
 where
 	F: TowerExtensionField,
 	F::DirectSubfield: TowerFieldArithmetic,
@@ -416,9 +423,8 @@ where
 	let (a0, a1) = a.into();
 	let a0z1 = a0 + a1.multiply_alpha();
 	let delta = a0 * a0z1 + a1.square();
-	delta.invert().map(|delta_inv| {
-		let inv0 = delta_inv * a0z1;
-		let inv1 = delta_inv * a1;
-		(inv0, inv1).into()
-	})
+	let delta_inv = delta.invert_or_zero();
+	let inv0 = delta_inv * a0z1;
+	let inv1 = delta_inv * a1;
+	(inv0, inv1).into()
 }

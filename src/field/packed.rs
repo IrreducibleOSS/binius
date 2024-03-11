@@ -15,7 +15,7 @@ use subtle::ConstantTimeEq;
 use crate::util::iter::IterExtensions;
 
 use super::{
-	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
+	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
 	Error,
 };
@@ -99,7 +99,7 @@ pub trait PackedField:
 	/// Returns the value multiplied by itself
 	fn square(self) -> Self;
 
-	/// Returns the packed inversed values or zeroes at indices where `self` is zero.
+	/// Returns the packed inverse values or zeroes at indices where `self` is zero.
 	fn invert_or_zero(self) -> Self;
 
 	/// Interleaves blocks of this packed vector with another packed vector.
@@ -162,12 +162,6 @@ pub fn set_packed_slice_checked<P: PackedField>(
 impl<F: Field> Square for F {
 	fn square(self) -> Self {
 		<Self as Field>::square(&self)
-	}
-}
-
-impl<F: Field> InvertOrZero for F {
-	fn invert_or_zero(self) -> Self {
-		self.invert().unwrap_or(Self::ZERO)
 	}
 }
 

@@ -236,7 +236,10 @@ macro_rules! binary_field {
 			}
 
 			fn invert(&self) -> CtOption<Self> {
-				TowerFieldArithmetic::invert(*self)
+				use crate::field::arithmetic_traits::InvertOrZero;
+
+				let inv = InvertOrZero::invert_or_zero(*self);
+				CtOption::new(inv, inv.ct_ne(&Self::ZERO))
 			}
 
 			fn sqrt_ratio(_num: &Self, _div: &Self) -> (Choice, Self) {
@@ -369,7 +372,7 @@ macro_rules! binary_tower {
 
 		impl From<($subfield_name, $subfield_name)> for $name {
 			fn from((a, b): ($subfield_name, $subfield_name)) -> Self {
-				$name::new_unchecked(a.val() as $typ | (b.val() as $typ << $subfield_name::N_BITS))
+				$name::new_unchecked(a.val() as $typ | ((b.val() as $typ) << $subfield_name::N_BITS))
 			}
 		}
 
