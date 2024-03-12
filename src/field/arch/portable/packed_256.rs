@@ -2,7 +2,8 @@
 
 use crate::{
 	field::{
-		packed_binary_field::*, Error, ExtensionField, Field, PackedExtensionField, PackedField,
+		arithmetic_traits::MulAlpha, packed_binary_field::*, Error, ExtensionField, Field,
+		PackedExtensionField, PackedField,
 	},
 	impl_packed_field_display,
 };
@@ -16,8 +17,6 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 use subtle::{Choice, ConstantTimeEq};
-
-use crate::field::arithmetic_traits::MulAlpha;
 
 macro_rules! packed_field_array {
 	($vis:vis struct $name:ident([$inner:ty; 2])) => {

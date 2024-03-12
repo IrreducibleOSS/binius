@@ -1,6 +1,8 @@
+// Copyright 2024 Ulvetanna Inc.
+
 #[repr(align(16))]
 #[derive(derive_more::Deref)]
-pub struct AlignedBytes16<const N: usize>([u8; N]);
+pub struct AlignedBytes16<const N: usize>(pub [u8; N]);
 
 #[rustfmt::skip]
 pub const TOWER_TO_GFNI_MAP: AlignedBytes16<32> = AlignedBytes16([

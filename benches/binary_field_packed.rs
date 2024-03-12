@@ -19,43 +19,32 @@ use binius::field::{
 	PackedField,
 };
 
-use cfg_if::cfg_if;
+trait PackedFieldWithOps:
+	PackedField
+	+ TaggedMul<PackedStrategy>
+	+ TaggedMul<PairwiseStrategy>
+	+ TaggedSquare<PackedStrategy>
+	+ TaggedSquare<PairwiseStrategy>
+	+ TaggedInvertOrZero<PackedStrategy>
+	+ TaggedInvertOrZero<PairwiseStrategy>
+	+ MulAlpha
+	+ TaggedMulAlpha<PackedStrategy>
+	+ TaggedMulAlpha<PairwiseStrategy>
+{
+}
 
-cfg_if! {
-	if #[cfg(not(target_feature = "gfni"))] {
-		trait PackedFieldWithOps:
-			PackedField
-			+ TaggedMul<PackedStrategy>
-			+ TaggedMul<PairwiseStrategy>
-			+ TaggedSquare<PackedStrategy>
-			+ TaggedSquare<PairwiseStrategy>
-			+ TaggedInvertOrZero<PackedStrategy>
-			+ TaggedInvertOrZero<PairwiseStrategy>
-			+ MulAlpha
-			+ TaggedMulAlpha<PackedStrategy>
-			+ TaggedMulAlpha<PairwiseStrategy>
-		{
-		}
-
-		impl<PT> PackedFieldWithOps for PT where
-			PT: PackedField
-				+ TaggedMul<PackedStrategy>
-				+ TaggedMul<PairwiseStrategy>
-				+ TaggedSquare<PackedStrategy>
-				+ TaggedSquare<PairwiseStrategy>
-				+ TaggedInvertOrZero<PackedStrategy>
-				+ TaggedInvertOrZero<PairwiseStrategy>
-				+ MulAlpha
-				+ TaggedMulAlpha<PackedStrategy>
-				+ TaggedMulAlpha<PairwiseStrategy>
-		{
-		}
-	} else {
-		trait PackedFieldWithOps : PackedField + MulAlpha {}
-
-		impl<PT> PackedFieldWithOps for PT where
-			PT: PackedField + MulAlpha {}
-	}
+impl<PT> PackedFieldWithOps for PT where
+	PT: PackedField
+		+ TaggedMul<PackedStrategy>
+		+ TaggedMul<PairwiseStrategy>
+		+ TaggedSquare<PackedStrategy>
+		+ TaggedSquare<PairwiseStrategy>
+		+ TaggedInvertOrZero<PackedStrategy>
+		+ TaggedInvertOrZero<PairwiseStrategy>
+		+ MulAlpha
+		+ TaggedMulAlpha<PackedStrategy>
+		+ TaggedMulAlpha<PairwiseStrategy>
+{
 }
 
 trait BenchmarkFunction {
@@ -110,16 +99,12 @@ impl BenchmarkFunction for MultiplyBenchmark {
 		let b = P::random(&mut rng);
 
 		group.bench_function("main", |bench| bench.iter(|| a * b));
-
-		#[cfg(not(target_feature = "gfni"))]
-		{
-			group.bench_function("packed", |bench| {
-				bench.iter(|| TaggedMul::<PackedStrategy>::mul(a, b))
-			});
-			group.bench_function("pairwise", |bench| {
-				bench.iter(|| TaggedMul::<PairwiseStrategy>::mul(a, b))
-			});
-		}
+		group.bench_function("packed", |bench| {
+			bench.iter(|| TaggedMul::<PackedStrategy>::mul(a, b))
+		});
+		group.bench_function("pairwise", |bench| {
+			bench.iter(|| TaggedMul::<PairwiseStrategy>::mul(a, b))
+		});
 	}
 }
 
@@ -138,16 +123,12 @@ impl BenchmarkFunction for SquareBenchmark {
 		let a = P::random(&mut rng);
 
 		group.bench_function("main", |bench| bench.iter(|| PackedField::square(a)));
-
-		#[cfg(not(target_feature = "gfni"))]
-		{
-			group.bench_function("packed", |bench| {
-				bench.iter(|| TaggedSquare::<PackedStrategy>::square(a))
-			});
-			group.bench_function("pairwise", |bench| {
-				bench.iter(|| TaggedSquare::<PairwiseStrategy>::square(a))
-			});
-		}
+		group.bench_function("packed", |bench| {
+			bench.iter(|| TaggedSquare::<PackedStrategy>::square(a))
+		});
+		group.bench_function("pairwise", |bench| {
+			bench.iter(|| TaggedSquare::<PairwiseStrategy>::square(a))
+		});
 	}
 }
 
@@ -166,16 +147,12 @@ impl BenchmarkFunction for InvertBenchmark {
 		let a = P::random(&mut rng);
 
 		group.bench_function("main", |bench| bench.iter(|| PackedField::invert_or_zero(a)));
-
-		#[cfg(not(target_feature = "gfni"))]
-		{
-			group.bench_function("packed", |bench| {
-				bench.iter(|| TaggedInvertOrZero::<PackedStrategy>::invert_or_zero(a))
-			});
-			group.bench_function("pairwise", |bench| {
-				bench.iter(|| TaggedInvertOrZero::<PairwiseStrategy>::invert_or_zero(a))
-			});
-		}
+		group.bench_function("packed", |bench| {
+			bench.iter(|| TaggedInvertOrZero::<PackedStrategy>::invert_or_zero(a))
+		});
+		group.bench_function("pairwise", |bench| {
+			bench.iter(|| TaggedInvertOrZero::<PairwiseStrategy>::invert_or_zero(a))
+		});
 	}
 }
 
@@ -194,15 +171,12 @@ impl BenchmarkFunction for MulAlphaBenchmark {
 		let a = P::random(&mut rng);
 
 		group.bench_function("main", |bench| bench.iter(|| MulAlpha::mul_alpha(a)));
-		#[cfg(not(target_feature = "gfni"))]
-		{
-			group.bench_function("packed", |bench| {
-				bench.iter(|| TaggedMulAlpha::<PackedStrategy>::mul_alpha(a))
-			});
-			group.bench_function("pairwise", |bench| {
-				bench.iter(|| TaggedMulAlpha::<PairwiseStrategy>::mul_alpha(a))
-			});
-		}
+		group.bench_function("packed", |bench| {
+			bench.iter(|| TaggedMulAlpha::<PackedStrategy>::mul_alpha(a))
+		});
+		group.bench_function("pairwise", |bench| {
+			bench.iter(|| TaggedMulAlpha::<PairwiseStrategy>::mul_alpha(a))
+		});
 	}
 }
 

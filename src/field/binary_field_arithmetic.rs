@@ -11,29 +11,31 @@ pub(crate) trait TowerFieldArithmetic: TowerField + InvertOrZero {
 	fn square(self) -> Self;
 }
 
-macro_rules! binary_tower_unary_arithmetic_recursive {
+macro_rules! binary_tower_arithmetic_recursive {
 	($name:ident) => {
 		impl InvertOrZero for $name {
 			fn invert_or_zero(self) -> Self {
-				invert_or_zero(self)
+				crate::field::binary_field_arithmetic::invert_or_zero(self)
 			}
 		}
 
 		impl TowerFieldArithmetic for $name {
 			fn multiply(self, rhs: Self) -> Self {
-				multiply(self, rhs)
+				$crate::field::binary_field_arithmetic::multiply(self, rhs)
 			}
 
 			fn multiply_alpha(self) -> Self {
-				multiply_alpha(self)
+				$crate::field::binary_field_arithmetic::multiply_alpha(self)
 			}
 
 			fn square(self) -> Self {
-				square(self)
+				$crate::field::binary_field_arithmetic::square(self)
 			}
 		}
 	};
 }
+
+pub(crate) use binary_tower_arithmetic_recursive;
 
 impl TowerField for BinaryField1b {}
 
@@ -339,9 +341,9 @@ impl TowerFieldArithmetic for BinaryField8b {
 	}
 }
 
-binary_tower_unary_arithmetic_recursive!(BinaryField16b);
-binary_tower_unary_arithmetic_recursive!(BinaryField32b);
-binary_tower_unary_arithmetic_recursive!(BinaryField64b);
+binary_tower_arithmetic_recursive!(BinaryField16b);
+binary_tower_arithmetic_recursive!(BinaryField32b);
+binary_tower_arithmetic_recursive!(BinaryField64b);
 
 impl InvertOrZero for BinaryField128b {
 	fn invert_or_zero(self) -> Self {
@@ -378,7 +380,7 @@ impl TowerFieldArithmetic for BinaryField128b {
 	}
 }
 
-fn multiply<F>(a: F, b: F) -> F
+pub(super) fn multiply<F>(a: F, b: F) -> F
 where
 	F: TowerExtensionField,
 	F::DirectSubfield: TowerFieldArithmetic,
@@ -393,7 +395,7 @@ where
 	(z0z2, z1 + z2a).into()
 }
 
-fn multiply_alpha<F>(a: F) -> F
+pub(super) fn multiply_alpha<F>(a: F) -> F
 where
 	F: TowerExtensionField,
 	F::DirectSubfield: TowerFieldArithmetic,
@@ -403,7 +405,7 @@ where
 	(a1, a0 + z1).into()
 }
 
-fn square<F>(a: F) -> F
+pub(super) fn square<F>(a: F) -> F
 where
 	F: TowerExtensionField,
 	F::DirectSubfield: TowerFieldArithmetic,
@@ -415,7 +417,7 @@ where
 	(z0 + z2, z2a).into()
 }
 
-fn invert_or_zero<F>(a: F) -> F
+pub(super) fn invert_or_zero<F>(a: F) -> F
 where
 	F: TowerExtensionField,
 	F::DirectSubfield: TowerFieldArithmetic,

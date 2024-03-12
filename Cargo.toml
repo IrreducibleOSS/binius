@@ -20,6 +20,7 @@ p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", 
 p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
 rand = "0.8.5"
 rayon = "1.8.0"
+seq-macro = "0.3.5"
 static_assertions = "1.1.0"
 subtle = "2.5.0"
 thiserror = "1.0.47"
@@ -42,6 +43,10 @@ tracing-subscriber = "0.3.18"
 
 [lib]
 bench = false
+
+[[bench]]
+name = "aes_field_packed"
+harness = false
 
 [[bench]]
 name = "binary_field"

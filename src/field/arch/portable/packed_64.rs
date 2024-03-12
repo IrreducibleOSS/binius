@@ -1,5 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::{
+	packed::{
+		impl_broadcast, impl_conversion, impl_ops_for_zero_height, impl_packed_extension_field,
+		packed_binary_field_tower, PackedPrimitiveType,
+	},
+	packed_arithmetic::{alphas, impl_tower_constants, PackedStrategy},
+	pairwise_arithmetic::PairwiseStrategy,
+};
 use crate::field::{
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
@@ -9,58 +17,6 @@ use crate::field::{
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b,
 	BinaryField8b,
 };
-
-use super::{
-	packed::{
-		impl_broadcast, impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
-		PackedPrimitiveType,
-	},
-	packed_arithmetic::{
-		alphas, define_packed_ops_for_zero_height, interleave_mask_even, interleave_mask_odd,
-		single_element_mask, PackedStrategy, UnderlierWithConstants,
-	},
-	pairwise_arithmetic::PairwiseStrategy,
-};
-
-// Implement traits for u64
-impl UnderlierWithConstants for u64 {
-	const ALPHAS_ODD: &'static [Self] = &[
-		alphas!(u64, 0),
-		alphas!(u64, 1),
-		alphas!(u64, 2),
-		alphas!(u64, 3),
-		alphas!(u64, 4),
-		alphas!(u64, 5),
-	];
-
-	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
-		interleave_mask_even!(u64, 0),
-		interleave_mask_even!(u64, 1),
-		interleave_mask_even!(u64, 2),
-		interleave_mask_even!(u64, 3),
-		interleave_mask_even!(u64, 4),
-		interleave_mask_even!(u64, 5),
-	];
-
-	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
-		interleave_mask_odd!(u64, 0),
-		interleave_mask_odd!(u64, 1),
-		interleave_mask_odd!(u64, 2),
-		interleave_mask_odd!(u64, 3),
-		interleave_mask_odd!(u64, 4),
-		interleave_mask_odd!(u64, 5),
-	];
-
-	const ZERO_ELEMENT_MASKS: &'static [Self] = &[
-		single_element_mask!(u64, 0),
-		single_element_mask!(u64, 1),
-		single_element_mask!(u64, 2),
-		single_element_mask!(u64, 3),
-		single_element_mask!(u64, 4),
-		single_element_mask!(u64, 5),
-		single_element_mask!(u64, 6),
-	];
-}
 
 // Define 64 bit packed field types
 pub type PackedBinaryField64x1b = PackedPrimitiveType<u64, BinaryField1b>;
@@ -107,10 +63,17 @@ impl_broadcast!(u64, BinaryField32b);
 impl_broadcast!(u64, BinaryField64b);
 
 // Define operations for height 0
-define_packed_ops_for_zero_height!(PackedBinaryField64x1b);
+impl_ops_for_zero_height!(PackedBinaryField64x1b);
+
+// Define constants
+impl_tower_constants!(BinaryField1b, u64, { alphas!(u64, 0) });
+impl_tower_constants!(BinaryField2b, u64, { alphas!(u64, 1) });
+impl_tower_constants!(BinaryField4b, u64, { alphas!(u64, 2) });
+impl_tower_constants!(BinaryField8b, u64, { alphas!(u64, 3) });
+impl_tower_constants!(BinaryField16b, u64, { alphas!(u64, 4) });
+impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 
 // Define multiplication
-impl_mul_with_strategy!(PackedBinaryField64x1b, PackedStrategy);
 impl_mul_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_mul_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
 impl_mul_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
@@ -119,16 +82,14 @@ impl_mul_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
 impl_mul_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
 
 // Define square
-impl_square_with_strategy!(PackedBinaryField64x1b, PackedStrategy);
 impl_square_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_square_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
 impl_square_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField4x16b, PackedStrategy);
+impl_square_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
 impl_square_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
 impl_square_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedBinaryField64x1b, PackedStrategy);
 impl_invert_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_invert_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
 impl_invert_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
@@ -137,7 +98,6 @@ impl_invert_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedBinaryField64x1b, PackedStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField8x8b, PackedStrategy);

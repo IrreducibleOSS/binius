@@ -4,7 +4,7 @@ use crate::field::{
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
-	PackedField,
+	packed::PackedField,
 };
 
 /// Implement operation per element

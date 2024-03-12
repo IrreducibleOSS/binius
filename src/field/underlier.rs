@@ -36,6 +36,10 @@ pub trait UnderlierType:
 
 	const ONE: Self;
 	const ZERO: Self;
+
+	/// Fill value with the given bit
+	/// `val` must be 0 or 1.
+	fn fill_with_bit(val: u8) -> Self;
 }
 
 /// A value that can be randomly generated
@@ -86,6 +90,11 @@ macro_rules! impl_underlier_type {
 
 			const ONE: Self = 1;
 			const ZERO: Self = 0;
+
+			fn fill_with_bit(val: u8) -> Self {
+				debug_assert!(val == 0 || val == 1);
+				(val as Self).wrapping_neg()
+			}
 		}
 	};
 }

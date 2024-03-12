@@ -1,21 +1,20 @@
+// Copyright 2024 Ulvetanna Inc.
+
+use super::packed_arithmetic::UnderlierWithBitConstants;
+use crate::field::{
+	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
+	underlier::{NumCast, UnderlierType, WithUnderlier},
+	Error, PackedField, TowerField,
+};
+use bytemuck::{Pod, Zeroable};
+use rand::RngCore;
 use std::{
 	fmt::Debug,
 	iter::{Product, Sum},
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
-
-use bytemuck::{Pod, Zeroable};
-use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
-
-use crate::field::{
-	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
-	underlier::{NumCast, UnderlierType, WithUnderlier},
-	Error, PackedField, TowerField,
-};
-
-use super::packed_arithmetic::UnderlierWithConstants;
 
 #[derive(PartialEq, Eq, Clone, Copy, Default)]
 pub struct PackedPrimitiveType<U: UnderlierType, Scalar: TowerField>(
@@ -24,13 +23,13 @@ pub struct PackedPrimitiveType<U: UnderlierType, Scalar: TowerField>(
 );
 
 impl<U: UnderlierType, Scalar: TowerField> PackedPrimitiveType<U, Scalar> {
-	const WIDTH: usize = {
+	pub const WIDTH: usize = {
 		assert!(U::BITS % Scalar::N_BITS == 0);
 
 		U::BITS / Scalar::N_BITS
 	};
 
-	const LOG_WIDTH: usize = {
+	pub const LOG_WIDTH: usize = {
 		let result = Self::WIDTH.ilog2();
 
 		assert!(2usize.pow(result) == Self::WIDTH);
@@ -51,9 +50,14 @@ where
 	type Underlier = U;
 }
 
-impl<U: UnderlierType, Scalar: TowerField> Debug for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierType, Scalar: TowerField> Debug for PackedPrimitiveType<U, Scalar>
+where
+	Self: PackedField,
+{
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "Packed{}x{}({})", Scalar::N_BITS, U::BITS / Scalar::N_BITS, self.0)
+		let width = U::BITS / Scalar::N_BITS;
+		let values: Vec<_> = (0..width).map(|i| self.get(i)).collect();
+		write!(f, "Packed{}x{}({:?})", width, Scalar::N_BITS, values)
 	}
 }
 
@@ -191,7 +195,7 @@ unsafe impl<U: UnderlierType + Pod, Scalar: TowerField> Pod for PackedPrimitiveT
 impl<U: UnderlierType, Scalar: TowerField> PackedField for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + Square + InvertOrZero + Mul<Output = Self> + MulAlpha,
-	U: UnderlierWithConstants + Send + Sync + 'static,
+	U: UnderlierWithBitConstants + Send + Sync + 'static,
 	Scalar: WithUnderlier,
 	U: From<Scalar::Underlier>,
 	Scalar::Underlier: NumCast<U>,
@@ -237,7 +241,7 @@ where
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		assert!(log_block_len < Self::LOG_WIDTH);
 		let log_bit_len = Self::Scalar::N_BITS.ilog2() as usize;
-		let (c, d) = interleave_bits(self.0, other.0, log_block_len + log_bit_len);
+		let (c, d) = self.0.interleave(other.0, log_block_len + log_bit_len);
 		(c.into(), d.into())
 	}
 
@@ -252,21 +256,6 @@ where
 	fn invert_or_zero(self) -> Self {
 		<Self as InvertOrZero>::invert_or_zero(self)
 	}
-}
-
-fn interleave_bits<U: UnderlierWithConstants>(a: U, b: U, log_block_len: usize) -> (U, U) {
-	// There are 2^7 = 128 bits in a u128
-	assert!(log_block_len < U::INTERLEAVE_EVEN_MASK.len());
-
-	let block_len = 1 << log_block_len;
-
-	// See Hacker's Delight, Section 7-3.
-	// https://dl.acm.org/doi/10.5555/2462741
-	let t = ((a >> block_len) ^ b) & U::INTERLEAVE_EVEN_MASK[log_block_len];
-	let c = a ^ t << block_len;
-	let d = b ^ t;
-
-	(c, d)
 }
 
 /// Implement the PackedExtensionField trait for binary fields that are subfields of the
@@ -314,7 +303,9 @@ macro_rules! impl_broadcast {
 			for PackedPrimitiveType<$name, BinaryField1b>
 		{
 			fn broadcast(scalar: BinaryField1b) -> Self {
-				(scalar.0 as $name).wrapping_neg().into()
+				use $crate::field::underlier::WithUnderlier;
+
+				<Self as WithUnderlier>::Underlier::fill_with_bit(scalar.0).into()
 			}
 		}
 	};
@@ -325,7 +316,7 @@ macro_rules! impl_broadcast {
 			fn broadcast(scalar: $scalar_type) -> Self {
 				use $crate::field::BinaryField;
 
-				let mut value = scalar.0 as $name;
+				let mut value = <$name>::from(scalar.0);
 				// For PackedBinaryField1x128b, the log bits is 7, so this is
 				// an empty range. This is safe behavior.
 				#[allow(clippy::reversed_empty_ranges)]
@@ -350,16 +341,8 @@ macro_rules! impl_conversion {
 			}
 		}
 
-		impl
-			From<
-				[<$name as $crate::field::PackedField>::Scalar;
-					<$name as $crate::field::PackedField>::WIDTH],
-			> for $name
-		{
-			fn from(
-				val: [<$name as $crate::field::PackedField>::Scalar;
-					<$name as $crate::field::PackedField>::WIDTH],
-			) -> Self {
+		impl From<[<$name as $crate::field::PackedField>::Scalar; <$name>::WIDTH]> for $name {
+			fn from(val: [<$name as $crate::field::PackedField>::Scalar; <$name>::WIDTH]) -> Self {
 				use $crate::field::{underlier::WithUnderlier, BinaryField, PackedField};
 
 				let mut result = <$underlier>::ZERO;
@@ -440,3 +423,35 @@ macro_rules! packed_binary_field_tower {
 }
 
 pub(crate) use packed_binary_field_tower;
+
+macro_rules! impl_ops_for_zero_height {
+	($name:ty) => {
+		impl std::ops::Mul for $name {
+			type Output = Self;
+
+			fn mul(self, b: Self) -> Self {
+				(self.to_underlier() & b.to_underlier()).into()
+			}
+		}
+
+		impl $crate::field::arithmetic_traits::MulAlpha for $name {
+			fn mul_alpha(self) -> Self {
+				self
+			}
+		}
+
+		impl $crate::field::arithmetic_traits::Square for $name {
+			fn square(self) -> Self {
+				self
+			}
+		}
+
+		impl $crate::field::arithmetic_traits::InvertOrZero for $name {
+			fn invert_or_zero(self) -> Self {
+				self
+			}
+		}
+	};
+}
+
+pub(crate) use impl_ops_for_zero_height;

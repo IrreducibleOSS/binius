@@ -1,25 +1,39 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::field::{
-	underlier::UnderlierType, BinaryField, ExtensionField, PackedField, TowerField,
+	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
+	underlier::UnderlierType,
+	BinaryField, ExtensionField, PackedField, TowerField,
 };
 
-use crate::field::arithmetic_traits::{
-	MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
-};
-
-pub trait UnderlierWithConstants: UnderlierType
+pub trait UnderlierWithBitConstants: UnderlierType
 where
 	Self: 'static,
 {
-	const ALPHAS_ODD: &'static [Self];
 	const INTERLEAVE_EVEN_MASK: &'static [Self];
 	const INTERLEAVE_ODD_MASK: &'static [Self];
 	const ZERO_ELEMENT_MASKS: &'static [Self];
+
+	/// Interleave with the given bit size
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		// There are 2^7 = 128 bits in a u128
+		assert!(log_block_len < Self::INTERLEAVE_EVEN_MASK.len());
+
+		let block_len = 1 << log_block_len;
+
+		// See Hacker's Delight, Section 7-3.
+		// https://dl.acm.org/doi/10.5555/2462741
+		let t = ((self >> block_len) ^ other) & Self::INTERLEAVE_EVEN_MASK[log_block_len];
+		let c = self ^ t << block_len;
+		let d = other ^ t;
+
+		(c, d)
+	}
 }
+
 /// Abstraction for a packed tower field of height greater than 0.
 pub trait PackedTowerField: PackedField + From<Self::Underlier> + Into<Self::Underlier> {
-	type Underlier: UnderlierWithConstants;
+	type Underlier: UnderlierType;
 	/// A scalar of a lower height
 	type DirectSubfield: TowerField;
 	/// Packed type with the same underlier with a lower height
@@ -33,71 +47,36 @@ pub trait PackedTowerField: PackedField + From<Self::Underlier> + Into<Self::Und
 	}
 }
 
-/// Packed strategy for arithmetic operations
-pub struct PackedStrategy;
+/// Compile-time known constants needed for packed multiply implementation.
+pub(crate) trait TowerConstants<U> {
+	/// Alpha values in odd positions, zeroes in even.
+	const ALPHAS_ODD: U;
+}
 
-macro_rules! define_packed_ops_for_zero_height {
-	($name:ty) => {
-		impl
-			$crate::field::arithmetic_traits::TaggedMul<
-				$crate::field::arch::portable::packed_arithmetic::PackedStrategy,
-			> for $name
+macro_rules! impl_tower_constants {
+	($tower_field:ty, $underlier:ty, $value:tt) => {
+		impl $crate::field::arch::portable::packed_arithmetic::TowerConstants<$underlier>
+			for $tower_field
 		{
-			fn mul(self: Self, b: Self) -> Self {
-				(self.to_underlier() & b.to_underlier()).into()
-			}
-		}
-
-		impl
-			$crate::field::arithmetic_traits::TaggedMulAlpha<
-				$crate::field::arch::portable::packed_arithmetic::PackedStrategy,
-			> for $name
-		{
-			fn mul_alpha(self) -> Self {
-				self
-			}
-		}
-
-		impl
-			$crate::field::arithmetic_traits::TaggedSquare<
-				$crate::field::arch::portable::packed_arithmetic::PackedStrategy,
-			> for $name
-		{
-			fn square(self) -> Self {
-				self
-			}
-		}
-
-		impl
-			$crate::field::arithmetic_traits::TaggedInvertOrZero<
-				$crate::field::arch::portable::packed_arithmetic::PackedStrategy,
-			> for $name
-		{
-			fn invert_or_zero(self) -> Self {
-				self
-			}
+			const ALPHAS_ODD: $underlier = $value;
 		}
 	};
 }
 
-pub(crate) use define_packed_ops_for_zero_height;
+pub(crate) use impl_tower_constants;
 
-/// Compile-time known constants needed for packed multiply implementation.
-pub(crate) trait PackedOpsConstants<U, F: TowerField> {
-	const ALPHAS: U;
-	const INTERLEAVE_EVEN_MASK: U;
-	const INTERLEAVE_ODD_MASK: U;
-}
+/// Packed staregy for arithmetic operations
+pub struct PackedStrategy;
 
 impl<PT> TaggedMul<PackedStrategy> for PT
 where
 	PT: PackedTowerField,
-	PT::Underlier: UnderlierWithConstants,
+	PT::Underlier: UnderlierWithBitConstants,
+	PT::DirectSubfield: TowerConstants<PT::Underlier>,
 {
 	/// Optimized packed field multiplication algorithm
 	fn mul(self, b: Self) -> Self {
 		assert_ne!(PT::DirectSubfield::DEGREE, 0);
-
 		let a = self;
 
 		// a and b can be interpreted as packed subfield elements:
@@ -116,12 +95,10 @@ where
 		// <a_lo_0 + a_hi_0, b_lo_0 + b_hi_0, a_lo_1 + a_hi_1, b_lo_1 + b_hi_1, ...>
 		let lo_plus_hi_a_even_b_odd = lo ^ hi;
 
-		let even_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_EVEN_MASK
+		let odd_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_ODD_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
-		let odd_mask = even_mask << PT::DirectSubfield::N_BITS;
 
-		let alphas =
-			<PT::Underlier as UnderlierWithConstants>::ALPHAS_ODD[PT::DirectSubfield::TOWER_LEVEL];
+		let alphas = PT::DirectSubfield::ALPHAS_ODD;
 
 		// <α, z2_0, α, z2_1, ...>
 		let alpha_even_z2_odd = alphas ^ (z0_even_z2_odd.into() & odd_mask);
@@ -219,10 +196,10 @@ pub(crate) use single_element_mask;
 /// View the inputs as vectors of packed binary tower elements and transpose as 2x2 square matrices.
 /// Given vectors <a_0, a_1, a_2, a_3, ...> and <b_0, b_1, b_2, b_3, ...>, returns a tuple with
 /// <a0, b0, a2, b2, ...> and <a1, b1, a3, b3>.
-fn interleave<U: UnderlierWithConstants, F: TowerField>(a: U, b: U) -> (U, U) {
+fn interleave<U: UnderlierWithBitConstants, F: TowerField>(a: U, b: U) -> (U, U) {
 	let mask = U::INTERLEAVE_EVEN_MASK[F::TOWER_LEVEL];
 
-	let block_len = 1 << F::TOWER_LEVEL;
+	let block_len = F::N_BITS;
 	let t = ((a >> block_len) ^ b) & mask;
 	let c = a ^ (t << block_len);
 	let d = b ^ t;
@@ -232,7 +209,7 @@ fn interleave<U: UnderlierWithConstants, F: TowerField>(a: U, b: U) -> (U, U) {
 
 /// View the input as a vector of packed binary tower elements and add the adjacent ones.
 /// Given a vector <a_0, a_1, a_2, a_3, ...>, returns <a0 + a1, a0 + a1, a2 + a3, a2 + a3, ...>.
-fn xor_adjacent<U: UnderlierWithConstants, F: TowerField>(a: U) -> U {
+fn xor_adjacent<U: UnderlierWithBitConstants, F: TowerField>(a: U) -> U {
 	let mask = U::INTERLEAVE_EVEN_MASK[F::TOWER_LEVEL];
 
 	let block_len = F::N_BITS;
@@ -245,12 +222,13 @@ impl<PT> TaggedMulAlpha<PackedStrategy> for PT
 where
 	PT: PackedTowerField,
 	PT::PackedDirectSubfield: MulAlpha,
+	PT::Underlier: UnderlierWithBitConstants,
 {
 	fn mul_alpha(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
-		let even_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_EVEN_MASK
+		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
-		let odd_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_ODD_MASK
+		let odd_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_ODD_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
 
 		let a = self.into();
@@ -266,12 +244,13 @@ impl<PT> TaggedSquare<PackedStrategy> for PT
 where
 	PT: PackedTowerField,
 	PT::PackedDirectSubfield: MulAlpha,
+	PT::Underlier: UnderlierWithBitConstants,
 {
 	fn square(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
-		let even_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_EVEN_MASK
+		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
-		let odd_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_ODD_MASK
+		let odd_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_ODD_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
 
 		let z_02 = PackedField::square(self.as_packed_subfield());
@@ -287,12 +266,13 @@ impl<PT> TaggedInvertOrZero<PackedStrategy> for PT
 where
 	PT: PackedTowerField,
 	PT::PackedDirectSubfield: MulAlpha,
+	PT::Underlier: UnderlierWithBitConstants,
 {
 	fn invert_or_zero(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
-		let even_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_EVEN_MASK
+		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
-		let odd_mask = <PT::Underlier as UnderlierWithConstants>::INTERLEAVE_ODD_MASK
+		let odd_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_ODD_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
 
 		// has meaningful values in even positions
@@ -324,10 +304,13 @@ mod tests {
 	use proptest::{arbitrary::any, proptest};
 
 	use crate::field::{
-		arch::portable::packed_128::{
-			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-			PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
-			PackedBinaryField8x16b,
+		arch::{
+			packed_64::PackedBinaryField64x1b,
+			portable::packed_128::{
+				PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
+				PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
+				PackedBinaryField8x16b,
+			},
 		},
 		test_utils::{define_invert_tests, define_multiply_tests, define_square_tests},
 		PackedBinaryField128x1b,
@@ -399,7 +382,7 @@ mod tests {
 
 	fn test_packed_multiply_alpha<P>()
 	where
-		P: PackedField + TaggedMulAlpha<PackedStrategy> + Debug,
+		P: PackedField + Debug,
 		P::Scalar: MulAlpha,
 	{
 		let mut rng = thread_rng();
@@ -414,11 +397,8 @@ mod tests {
 		}
 	}
 
-	// TODO: currently gfni implementation doesn't implement packed operations
-	#[cfg(not(target_feature = "gfni"))]
 	#[test]
 	fn test_multiply_alpha() {
-		test_packed_multiply_alpha::<PackedBinaryField128x1b>();
 		test_packed_multiply_alpha::<PackedBinaryField64x2b>();
 		test_packed_multiply_alpha::<PackedBinaryField32x4b>();
 		test_packed_multiply_alpha::<PackedBinaryField16x8b>();
@@ -428,44 +408,49 @@ mod tests {
 		test_packed_multiply_alpha::<PackedBinaryField1x128b>();
 	}
 
-	trait PackedFieldWithPackedOps:
-		PackedField
-		+ TaggedMul<PackedStrategy>
-		+ TaggedSquare<PackedStrategy>
-		+ TaggedInvertOrZero<PackedStrategy>
-	{
+	trait PackedFieldWithPackedOps: PackedField {
+		fn mul(a: Self, b: Self) -> Self {
+			a * b
+		}
+
+		fn square(self) -> Self {
+			<Self as PackedField>::square(self)
+		}
+
+		fn invert_or_zero(self) -> Self {
+			<Self as PackedField>::invert_or_zero(self)
+		}
 	}
 
-	impl<P> PackedFieldWithPackedOps for P where
+	impl<P> PackedFieldWithPackedOps for P
+	where
 		P: PackedField
 			+ PackedField
 			+ TaggedMul<PackedStrategy>
 			+ TaggedSquare<PackedStrategy>
-			+ TaggedInvertOrZero<PackedStrategy>
+			+ TaggedInvertOrZero<PackedStrategy>,
 	{
+		fn mul(a: Self, b: Self) -> Self {
+			<P as TaggedMul<PackedStrategy>>::mul(a, b)
+		}
+
+		fn square(self) -> Self {
+			<P as TaggedSquare<PackedStrategy>>::square(self)
+		}
+
+		fn invert_or_zero(self) -> Self {
+			<P as TaggedInvertOrZero<PackedStrategy>>::invert_or_zero(self)
+		}
 	}
 
-	fn packed_mult<P: PackedFieldWithPackedOps>(a: P, b: P) -> P {
-		<P as TaggedMul<PackedStrategy>>::mul(a, b)
-	}
+	// Fallback to main implementations for 1 bit-fields because
+	// packed strategy is not defined for this height
+	impl PackedFieldWithPackedOps for PackedBinaryField64x1b {}
+	impl PackedFieldWithPackedOps for PackedBinaryField128x1b {}
 
-	// TODO: currently gfni implementation doesn't implement packed operations
-	#[cfg(not(target_feature = "gfni"))]
-	define_multiply_tests!(packed_mult, PackedFieldWithPackedOps);
+	define_multiply_tests!(PackedFieldWithPackedOps::mul, PackedFieldWithPackedOps);
 
-	fn packed_square<P: PackedFieldWithPackedOps>(a: P) -> P {
-		<P as TaggedSquare<PackedStrategy>>::square(a)
-	}
+	define_square_tests!(PackedFieldWithPackedOps::square, PackedFieldWithPackedOps);
 
-	// TODO: currently gfni implementation doesn't implement packed operations
-	#[cfg(not(target_feature = "gfni"))]
-	define_square_tests!(packed_square, PackedFieldWithPackedOps);
-
-	fn packed_invert<P: PackedFieldWithPackedOps>(a: P) -> P {
-		<P as TaggedInvertOrZero<PackedStrategy>>::invert_or_zero(a)
-	}
-
-	// TODO: currently gfni implementation doesn't implement packed operations
-	#[cfg(not(target_feature = "gfni"))]
-	define_invert_tests!(packed_invert, PackedFieldWithPackedOps);
+	define_invert_tests!(PackedFieldWithPackedOps::invert_or_zero, PackedFieldWithPackedOps);
 }

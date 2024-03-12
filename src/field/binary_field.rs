@@ -1,24 +1,23 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use bytemuck::{
-	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
-};
-use cfg_if::cfg_if;
-use ff::Field;
-use rand::{Rng, RngCore};
-use std::{
-	array,
-	fmt::{self, Display, Formatter},
-	iter::{Product, Step, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-};
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
-
 use super::{
 	binary_field_arithmetic::TowerFieldArithmetic,
 	error::Error,
 	extension::{ExtensionField, PackedExtensionField},
 };
+use bytemuck::{
+	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
+};
+use cfg_if::cfg_if;
+use ff::Field;
+use rand::RngCore;
+use std::{
+	array,
+	fmt::{Display, Formatter},
+	iter::{Product, Step, Sum},
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
@@ -221,6 +220,8 @@ macro_rules! binary_field {
 			const ONE: Self = $name::new_unchecked(1);
 
 			fn random(mut rng: impl RngCore) -> Self {
+				use rand::Rng;
+
 				match (1 as $typ).overflowing_shl(Self::N_BITS as u32) {
 					(max, false) => Self(rng.gen::<$typ>() & (max - 1).to_le()),
 					(_, true) => Self(rng.gen::<$typ>())
@@ -248,7 +249,7 @@ macro_rules! binary_field {
 		}
 
 		impl Display for $name {
-			fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+			fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 				write!(f, "0x{repr:0>width$x}", repr=self.val(), width=Self::N_BITS.max(4) / 4)
 			}
 		}
@@ -286,6 +287,8 @@ macro_rules! binary_field {
 	}
 }
 
+pub(crate) use binary_field;
+
 macro_rules! binary_subfield_mul_packed_128b {
 	($subfield_name:ident, $subfield_packed:ident) => {
 		cfg_if! {
@@ -317,9 +320,8 @@ macro_rules! binary_subfield_mul_packed_128b {
 	};
 }
 
-macro_rules! binary_subfield_mul {
-	// HACK: Special case when the subfield is GF(2)
-	(BinaryField1b, $name:ident) => {
+macro_rules! mul_by_binary_field_1b {
+	($name:ident) => {
 		impl Mul<BinaryField1b> for $name {
 			type Output = Self;
 
@@ -327,6 +329,15 @@ macro_rules! binary_subfield_mul {
 				Self::conditional_select(&Self::ZERO, &self, rhs.0.into())
 			}
 		}
+	};
+}
+
+pub(crate) use mul_by_binary_field_1b;
+
+macro_rules! binary_tower_subfield_mul {
+	// HACK: Special case when the subfield is GF(2)
+	(BinaryField1b, $name:ident) => {
+		mul_by_binary_field_1b!($name);
 	};
 	// HACK: Special case when the field is GF(2^128)
 	(BinaryField8b, BinaryField128b) => {
@@ -356,39 +367,9 @@ macro_rules! binary_subfield_mul {
 	};
 }
 
-#[macro_export]
-macro_rules! binary_tower {
-	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty)) => {
-		impl From<$name> for ($subfield_name, $subfield_name) {
-			fn from(src: $name) -> ($subfield_name, $subfield_name) {
-				let lo = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32) {
-					(shl, false) => src.val() as $subfield_typ & (shl - 1),
-					(_, true) => src.val() as $subfield_typ,
-				};
-				let hi = (src.val() >> $subfield_name::N_BITS) as $subfield_typ;
-				($subfield_name::new_unchecked(lo), $subfield_name::new_unchecked(hi))
-			}
-		}
+pub(crate) use binary_tower_subfield_mul;
 
-		impl From<($subfield_name, $subfield_name)> for $name {
-			fn from((a, b): ($subfield_name, $subfield_name)) -> Self {
-				$name::new_unchecked(a.val() as $typ | ((b.val() as $typ) << $subfield_name::N_BITS))
-			}
-		}
-
-		impl TowerField for $name {}
-
-		impl TowerExtensionField for $name {
-			type DirectSubfield = $subfield_name;
-		}
-
-		binary_tower!($subfield_name($subfield_typ) < @2 => $name($typ));
-	};
-	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
-		binary_tower!($subfield_name($subfield_typ) < $name($typ));
-		binary_tower!($name($typ) $(< $extfield_name($extfield_typ))+);
-		binary_tower!($subfield_name($subfield_typ) < @4 => $($extfield_name($extfield_typ))<+);
-	};
+macro_rules! impl_field_extension {
 	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty)) => {
 		impl TryFrom<$name> for $subfield_name {
 			type Error = ();
@@ -423,8 +404,6 @@ macro_rules! binary_tower {
 				self - Self::from(rhs)
 			}
 		}
-
-		binary_subfield_mul!($subfield_name, $name);
 
 		impl AddAssign<$subfield_name> for $name {
 			fn add_assign(&mut self, rhs: $subfield_name) {
@@ -483,27 +462,71 @@ macro_rules! binary_tower {
 				if base_elems.len() > $degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
-				let value = base_elems.iter()
+				let value = base_elems
+					.iter()
 					.rev()
-					.fold(0, |value, elem| {
-						value << $subfield_name::N_BITS | elem.val() as $typ
-					});
+					.fold(0, |value, elem| value << $subfield_name::N_BITS | elem.val() as $typ);
 				Ok(Self::new_unchecked(value))
 			}
 
 			fn iter_bases(&self) -> Self::Iterator {
-				let mask = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32) {
+				let mask = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32)
+				{
 					(max, false) => max - 1,
 					(_, true) => (1 as $subfield_typ).overflowing_neg().0,
 				};
 				let base_elems = array::from_fn(|i| {
 					<$subfield_name>::new_unchecked(
-						((self.0 >> (i * $subfield_name::N_BITS)) as $subfield_typ) & mask
+						((self.0 >> (i * $subfield_name::N_BITS)) as $subfield_typ) & mask,
 					)
 				});
 				base_elems.into_iter()
 			}
 		}
+	};
+}
+
+pub(crate) use impl_field_extension;
+
+#[macro_export]
+macro_rules! binary_tower {
+	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty)) => {
+		impl From<$name> for ($subfield_name, $subfield_name) {
+			fn from(src: $name) -> ($subfield_name, $subfield_name) {
+				let lo = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32) {
+					(shl, false) => src.val() as $subfield_typ & (shl - 1),
+					(_, true) => src.val() as $subfield_typ,
+				};
+				let hi = (src.val() >> $subfield_name::N_BITS) as $subfield_typ;
+				($subfield_name::new_unchecked(lo), $subfield_name::new_unchecked(hi))
+			}
+		}
+
+		impl From<($subfield_name, $subfield_name)> for $name {
+			fn from((a, b): ($subfield_name, $subfield_name)) -> Self {
+				$name::new_unchecked(a.val() as $typ | ((b.val() as $typ) << $subfield_name::N_BITS))
+			}
+		}
+
+		impl TowerField for $name {
+			const TOWER_LEVEL: usize = { $subfield_name::TOWER_LEVEL + 1 };
+		}
+
+		impl TowerExtensionField for $name {
+			type DirectSubfield = $subfield_name;
+		}
+
+		binary_tower!($subfield_name($subfield_typ) < @2 => $name($typ));
+	};
+	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
+		binary_tower!($subfield_name($subfield_typ) < $name($typ));
+		binary_tower!($name($typ) $(< $extfield_name($extfield_typ))+);
+		binary_tower!($subfield_name($subfield_typ) < @4 => $($extfield_name($extfield_typ))<+);
+	};
+	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty)) => {
+		$crate::field::binary_field::impl_field_extension!($subfield_name($subfield_typ) < @$degree => $name($typ));
+
+		$crate::field::binary_field::binary_tower_subfield_mul!($subfield_name, $name);
 	};
 	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
 		binary_tower!($subfield_name($subfield_typ) < @$degree => $name($typ));
@@ -804,6 +827,13 @@ mod tests {
 			let x = BinaryField32b(val);
 			let x_inverse = x.invert().unwrap();
 			assert_eq!(x * x_inverse, BinaryField32b::ONE);
+		}
+
+		#[test]
+		fn test_inverse_128b(val in 1u128..) {
+			let x = BinaryField128b(val);
+			let x_inverse = x.invert().unwrap();
+			assert_eq!(x * x_inverse, BinaryField128b::ONE);
 		}
 	}
 
