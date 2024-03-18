@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::packed_arithmetic::{
-	interleave_mask_even, interleave_mask_odd, single_element_mask, UnderlierWithBitConstants,
+	interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 };
 use crate::field::underlier::UnderlierType;
 
@@ -23,16 +23,6 @@ impl UnderlierWithBitConstants for u64 {
 		interleave_mask_odd!(u64, 3),
 		interleave_mask_odd!(u64, 4),
 		interleave_mask_odd!(u64, 5),
-	];
-
-	const ZERO_ELEMENT_MASKS: &'static [Self] = &[
-		single_element_mask!(u64, 0),
-		single_element_mask!(u64, 1),
-		single_element_mask!(u64, 2),
-		single_element_mask!(u64, 3),
-		single_element_mask!(u64, 4),
-		single_element_mask!(u64, 5),
-		single_element_mask!(u64, 6),
 	];
 }
 
@@ -56,16 +46,5 @@ impl UnderlierWithBitConstants for u128 {
 		interleave_mask_odd!(u128, 4),
 		interleave_mask_odd!(u128, 5),
 		interleave_mask_odd!(u128, 6),
-	];
-
-	const ZERO_ELEMENT_MASKS: &'static [Self] = &[
-		single_element_mask!(u128, 0),
-		single_element_mask!(u128, 1),
-		single_element_mask!(u128, 2),
-		single_element_mask!(u128, 3),
-		single_element_mask!(u128, 4),
-		single_element_mask!(u128, 5),
-		single_element_mask!(u128, 6),
-		single_element_mask!(u128, 7),
 	];
 }

@@ -202,6 +202,10 @@ macro_rules! packed_field_array {
 				Self(array::from_fn(|_| <$inner>::broadcast(scalar)))
 			}
 
+			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+				Self(array::from_fn(move |i| <$inner>::from_fn(|j| f(<$inner>::WIDTH * i + j))))
+			}
+
 			fn square(self) -> Self {
 				Self([
 					PackedField::square(self.0[0]),

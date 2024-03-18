@@ -2,7 +2,7 @@
 
 use crate::field::{
 	arch::portable::packed_arithmetic::{
-		interleave_mask_even, interleave_mask_odd, single_element_mask, UnderlierWithBitConstants,
+		interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 	},
 	underlier::{NumCast, Random, UnderlierType},
 };
@@ -269,7 +269,7 @@ macro_rules! m128_from_bytes {
 pub(super) use m128_from_bytes;
 
 impl UnderlierType for M128 {
-	const BITS: usize = 128;
+	const LOG_BITS: usize = 7;
 
 	const ONE: Self = { Self(m128_from_bytes!(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,)) };
 
@@ -308,17 +308,6 @@ impl UnderlierWithBitConstants for M128 {
 		Self::from_u128(interleave_mask_odd!(u128, 4)),
 		Self::from_u128(interleave_mask_odd!(u128, 5)),
 		Self::from_u128(interleave_mask_odd!(u128, 6)),
-	];
-
-	const ZERO_ELEMENT_MASKS: &'static [Self] = &[
-		Self::from_u128(single_element_mask!(u128, 0)),
-		Self::from_u128(single_element_mask!(u128, 1)),
-		Self::from_u128(single_element_mask!(u128, 2)),
-		Self::from_u128(single_element_mask!(u128, 3)),
-		Self::from_u128(single_element_mask!(u128, 4)),
-		Self::from_u128(single_element_mask!(u128, 5)),
-		Self::from_u128(single_element_mask!(u128, 6)),
-		Self::from_u128(single_element_mask!(u128, 7)),
 	];
 
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {

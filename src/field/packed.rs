@@ -95,6 +95,7 @@ pub trait PackedField:
 
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
+	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self;
 
 	/// Returns the value multiplied by itself
 	fn square(self) -> Self;
@@ -216,5 +217,9 @@ impl<F: Field> PackedField for F {
 
 	fn invert_or_zero(self) -> Self {
 		<Self as Field>::invert(&self).unwrap_or(Self::default())
+	}
+
+	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+		f(0)
 	}
 }

@@ -21,7 +21,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
-	const N_BITS: usize = <Self as ExtensionField<BinaryField1b>>::DEGREE;
+	const N_BITS: usize = Self::DEGREE;
 }
 
 pub trait TowerField: BinaryField {
@@ -84,6 +84,7 @@ macro_rules! binary_field {
 		}
 
 		impl $crate::field::underlier::WithUnderlier for $name {
+			const MEANINGFUL_BITS: usize = Self::N_BITS;
 			type Underlier = $typ;
 		}
 

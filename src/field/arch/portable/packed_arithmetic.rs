@@ -2,8 +2,9 @@
 
 use crate::field::{
 	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
+	binary_field::BinaryField,
 	underlier::UnderlierType,
-	BinaryField, ExtensionField, PackedField, TowerField,
+	ExtensionField, PackedField, TowerField,
 };
 
 pub trait UnderlierWithBitConstants: UnderlierType
@@ -12,7 +13,6 @@ where
 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self];
 	const INTERLEAVE_ODD_MASK: &'static [Self];
-	const ZERO_ELEMENT_MASKS: &'static [Self];
 
 	/// Interleave with the given bit size
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
@@ -179,19 +179,6 @@ macro_rules! interleave_mask_odd {
 }
 
 pub(crate) use interleave_mask_odd;
-
-/// Generate the mask for a single element
-macro_rules! single_element_mask {
-	($underlier:ty, $tower_level:literal) => {
-		if <$underlier>::LOG_BITS == $tower_level {
-			<$underlier>::MAX
-		} else {
-			((1 as $underlier) << (1 << $tower_level)) - 1
-		}
-	};
-}
-
-pub(crate) use single_element_mask;
 
 /// View the inputs as vectors of packed binary tower elements and transpose as 2x2 square matrices.
 /// Given vectors <a_0, a_1, a_2, a_3, ...> and <b_0, b_1, b_2, b_3, ...>, returns a tuple with

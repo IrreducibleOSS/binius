@@ -47,6 +47,7 @@ where
 	U: From<Self>,
 	Self: From<U>,
 {
+	const MEANINGFUL_BITS: usize = U::BITS;
 	type Underlier = U;
 }
 
@@ -206,11 +207,7 @@ where
 
 	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 		(i < Self::WIDTH)
-			.then(|| {
-				let value = self.0 >> (i * Self::Scalar::N_BITS);
-				Scalar::Underlier::num_cast_from(value & U::ZERO_ELEMENT_MASKS[Scalar::TOWER_LEVEL])
-					.into()
-			})
+			.then(|| self.0.get_subvalue(i))
 			.ok_or(Error::IndexOutOfRange {
 				index: i,
 				max: Self::WIDTH,
@@ -219,15 +216,7 @@ where
 
 	fn set_checked(&mut self, i: usize, scalar: Scalar) -> Result<(), Error> {
 		(i < Self::WIDTH)
-			.then(|| {
-				let mask = U::ZERO_ELEMENT_MASKS[Scalar::TOWER_LEVEL];
-
-				// Mask off the corresponding bits
-				self.0 &= !(mask << (i * Scalar::N_BITS));
-
-				// Set value
-				self.0 |= U::from(scalar.to_underlier()) << (i * Scalar::N_BITS);
-			})
+			.then(|| self.0.set_subvalue(i, scalar))
 			.ok_or(Error::IndexOutOfRange {
 				index: i,
 				max: Self::WIDTH,
@@ -247,6 +236,10 @@ where
 
 	fn broadcast(scalar: Self::Scalar) -> Self {
 		<Self as Broadcast<Self::Scalar>>::broadcast(scalar)
+	}
+
+	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self {
+		U::from_fn(f).into()
 	}
 
 	fn square(self) -> Self {
@@ -314,13 +307,13 @@ macro_rules! impl_broadcast {
 			for PackedPrimitiveType<$name, $scalar_type>
 		{
 			fn broadcast(scalar: $scalar_type) -> Self {
-				use $crate::field::BinaryField;
-
 				let mut value = <$name>::from(scalar.0);
 				// For PackedBinaryField1x128b, the log bits is 7, so this is
 				// an empty range. This is safe behavior.
 				#[allow(clippy::reversed_empty_ranges)]
-				for i in <$scalar_type>::N_BITS.ilog2()..<$name>::BITS.ilog2() {
+				for i in <$scalar_type as $crate::field::binary_field::BinaryField>::N_BITS.ilog2()
+					..<$name>::BITS.ilog2()
+				{
 					value = value << (1 << i) | value;
 				}
 
@@ -343,13 +336,16 @@ macro_rules! impl_conversion {
 
 		impl From<[<$name as $crate::field::PackedField>::Scalar; <$name>::WIDTH]> for $name {
 			fn from(val: [<$name as $crate::field::PackedField>::Scalar; <$name>::WIDTH]) -> Self {
-				use $crate::field::{underlier::WithUnderlier, BinaryField, PackedField};
+				use $crate::field::{
+					underlier::WithUnderlier,
+					PackedField,
+				};
 
 				let mut result = <$underlier>::ZERO;
 
 				for i in 0..Self::WIDTH {
 					result |= <$underlier>::from(val[i].to_underlier())
-						<< (i * <Self as PackedField>::Scalar::N_BITS);
+						<< (i * <<Self as PackedField>::Scalar as $crate::field::binary_field::BinaryField>::N_BITS);
 				}
 
 				result.into()
