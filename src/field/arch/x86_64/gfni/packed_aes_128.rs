@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{m128::M128, simd_arithmetic::SimdStrategy};
+use super::{super::m128::M128, simd_arithmetic::SimdStrategy};
 use crate::field::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
@@ -19,7 +19,6 @@ use crate::field::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
 		impl_square_with_strategy,
 	},
-	underlier::UnderlierType,
 };
 use std::{arch::x86_64::*, ops::Mul};
 

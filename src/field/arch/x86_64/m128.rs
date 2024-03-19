@@ -1,12 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
-
 use crate::field::{
-	arch::portable::packed_arithmetic::{
-		interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+	arch::portable::{
+		packed::PackedPrimitiveType,
+		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
-	underlier::{NumCast, Random, UnderlierType},
+	arithmetic_traits::Broadcast,
+	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
+	BinaryField,
 };
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{must_cast, Pod, Zeroable};
 use rand::{Rng, RngCore};
 use seq_macro::seq;
 use std::{
@@ -15,7 +17,7 @@ use std::{
 };
 use subtle::{Choice, ConstantTimeEq};
 
-/// 128-bit value that is used for 128-bit operations
+/// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
 pub struct M128(__m128i);
 
@@ -139,10 +141,7 @@ impl Not for M128 {
 	type Output = Self;
 
 	fn not(self) -> Self::Output {
-		const ONES: __m128i = m128_from_bytes!(
-			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-			0xff, 0xff,
-		);
+		const ONES: __m128i = m128_from_u128!(u128::MAX);
 
 		self ^ Self(ONES)
 	}
@@ -189,7 +188,7 @@ impl Shr<usize> for M128 {
 			}
 		});
 
-		return Self::default();
+		Self::default()
 	}
 }
 
@@ -221,7 +220,7 @@ impl Shl<usize> for M128 {
 			}
 		});
 
-		return Self::default();
+		Self::default()
 	}
 }
 
@@ -259,24 +258,27 @@ impl std::fmt::Display for M128 {
 	}
 }
 
-macro_rules! m128_from_bytes {
-    ($($bytes:literal,)+) => {{
-        let aligned_data = $crate::field::arch::x86_64::gfni::constants::AlignedBytes16([$($bytes,)*]);
-        unsafe {* (aligned_data.0.as_ptr() as *const __m128i)}
-    }};
+#[repr(align(16))]
+pub struct AlignedData(pub [u128; 1]);
+
+macro_rules! m128_from_u128 {
+	($val:expr) => {{
+		let aligned_data = $crate::field::arch::x86_64::m128::AlignedData([$val]);
+		unsafe { *(aligned_data.0.as_ptr() as *const __m128i) }
+	}};
 }
 
-pub(super) use m128_from_bytes;
+pub(super) use m128_from_u128;
 
 impl UnderlierType for M128 {
 	const LOG_BITS: usize = 7;
 
-	const ONE: Self = { Self(m128_from_bytes!(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,)) };
+	const ONE: Self = { Self(m128_from_u128!(1)) };
 
-	const ZERO: Self = { Self(m128_from_bytes!(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,)) };
+	const ZERO: Self = { Self(m128_from_u128!(0)) };
 
 	fn fill_with_bit(val: u8) -> Self {
-		debug_assert!(val == 0 || val == 1);
+		assert!(val == 0 || val == 1);
 		Self(unsafe { _mm_set1_epi8(val.wrapping_neg() as i8) })
 	}
 }
@@ -317,8 +319,51 @@ impl UnderlierWithBitConstants for M128 {
 				Into::<M128>::into(other).into(),
 				log_block_len,
 			);
-			(M128::from(c).into(), M128::from(d).into())
+			(M128::from(c), M128::from(d))
 		}
+	}
+}
+
+impl<Scalar: BinaryField> From<__m128i> for PackedPrimitiveType<M128, Scalar> {
+	fn from(value: __m128i) -> Self {
+		PackedPrimitiveType::from(M128::from(value))
+	}
+}
+
+impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
+	fn from(value: u128) -> Self {
+		PackedPrimitiveType::from(M128::from(value))
+	}
+}
+
+impl<Scalar: BinaryField> From<PackedPrimitiveType<M128, Scalar>> for __m128i {
+	fn from(value: PackedPrimitiveType<M128, Scalar>) -> Self {
+		value.to_underlier().into()
+	}
+}
+
+impl<Scalar: BinaryField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveType<M128, Scalar>
+where
+	u128: From<Scalar::Underlier>,
+{
+	fn broadcast(scalar: Scalar) -> Self {
+		let tower_level = Scalar::N_BITS.ilog2() as usize;
+		let mut value = u128::from(scalar.to_underlier());
+		for n in tower_level..3 {
+			value |= value << (1 << n);
+		}
+
+		let value = must_cast(value);
+		let value = match tower_level {
+			0..=3 => unsafe { _mm_broadcastb_epi8(value) },
+			4 => unsafe { _mm_broadcastw_epi16(value) },
+			5 => unsafe { _mm_broadcastd_epi32(value) },
+			6 => unsafe { _mm_broadcastq_epi64(value) },
+			7 => value,
+			_ => unreachable!(),
+		};
+
+		value.into()
 	}
 }
 

@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::m128::M128;
+use super::super::m128::M128;
 use crate::field::{
 	aes_field::AESTowerField8b,
 	arch::portable::{packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField},

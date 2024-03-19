@@ -2,7 +2,9 @@
 
 //! Binary field implementation of GF(2^128) with a modulus of X^128 + X^127 + X^126 + 1.
 
-use super::binary_field::BinaryField128b;
+use super::{
+	arithmetic_traits::InvertOrZero, binary_field::BinaryField128b, underlier::WithUnderlier,
+};
 use bytemuck::{Pod, Zeroable};
 use ff::Field;
 use rand::{Rng, RngCore};
@@ -29,6 +31,12 @@ impl BinaryField128bPolyval {
 	pub fn new(value: u128) -> Self {
 		Self(value).to_montgomery()
 	}
+}
+
+impl WithUnderlier for BinaryField128bPolyval {
+	type Underlier = u128;
+
+	const MEANINGFUL_BITS: usize = 128;
 }
 
 impl Neg for BinaryField128bPolyval {
@@ -181,6 +189,12 @@ impl Field for BinaryField128bPolyval {
 
 	fn sqrt_ratio(_num: &Self, _div: &Self) -> (Choice, Self) {
 		todo!()
+	}
+}
+
+impl InvertOrZero for BinaryField128bPolyval {
+	fn invert_or_zero(self) -> Self {
+		polyval::invert(self.0).map(Self).unwrap_or(Self::ZERO)
 	}
 }
 

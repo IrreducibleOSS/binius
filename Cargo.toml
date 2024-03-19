@@ -71,3 +71,7 @@ harness = false
 [[bench]]
 name = "multilinear_query"
 harness = false
+
+[[bench]]
+name = "polyval_packed"
+harness = false

@@ -139,7 +139,8 @@ macro_rules! alphas {
 			1 << (1 << ($tower_level - 1))
 		};
 
-		let log_width = <$underlier>::LOG_BITS - $tower_level;
+		let log_width =
+			<$underlier as $crate::field::underlier::UnderlierType>::LOG_BITS - $tower_level;
 		let mut i = 1;
 		while i < log_width {
 			alphas |= alphas << (1 << ($tower_level + i));

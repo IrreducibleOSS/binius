@@ -1,8 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
+	super::m128::M128,
 	constants::{GFNI_TO_TOWER_MAP, TOWER_TO_GFNI_MAP},
-	m128::M128,
 	simd_arithmetic::SimdStrategy,
 };
 use crate::field::{
@@ -18,13 +18,11 @@ use crate::field::{
 	},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy, Broadcast,
+		impl_square_with_strategy,
 	},
-	underlier::{UnderlierType, WithUnderlier},
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b, TowerField,
+	BinaryField64b, BinaryField8b,
 };
-use bytemuck::must_cast;
 use std::{arch::x86_64::*, ops::Mul};
 
 // Define 128 bit packed field types
@@ -47,24 +45,6 @@ impl_conversion!(M128, PackedBinaryField4x32b);
 impl_conversion!(M128, PackedBinaryField2x64b);
 impl_conversion!(M128, PackedBinaryField1x128b);
 
-impl<Scalar: TowerField> From<__m128i> for PackedPrimitiveType<M128, Scalar> {
-	fn from(value: __m128i) -> Self {
-		PackedPrimitiveType::from(M128::from(value))
-	}
-}
-
-impl<Scalar: TowerField> From<u128> for PackedPrimitiveType<M128, Scalar> {
-	fn from(value: u128) -> Self {
-		PackedPrimitiveType::from(M128::from(value))
-	}
-}
-
-impl<Scalar: TowerField> From<PackedPrimitiveType<M128, Scalar>> for __m128i {
-	fn from(value: PackedPrimitiveType<M128, Scalar>) -> Self {
-		value.to_underlier().into()
-	}
-}
-
 // Define tower
 packed_binary_field_tower!(
 	PackedBinaryField128x1b
@@ -83,32 +63,6 @@ impl_packed_extension_field!(PackedBinaryField8x16b);
 impl_packed_extension_field!(PackedBinaryField4x32b);
 impl_packed_extension_field!(PackedBinaryField2x64b);
 impl_packed_extension_field!(PackedBinaryField1x128b);
-
-// Define broadcast
-impl<Scalar: TowerField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveType<M128, Scalar>
-where
-	u128: From<Scalar::Underlier>,
-{
-	fn broadcast(scalar: Scalar) -> Self {
-		let tower_level = Scalar::TOWER_LEVEL;
-		let mut tmp = u128::from(scalar.to_underlier());
-		for n in tower_level..3 {
-			tmp |= tmp << (1 << n);
-		}
-		let tmp = must_cast(tmp);
-		let value: M128 = (match tower_level {
-			0..=3 => unsafe { _mm_broadcastb_epi8(tmp) },
-			4 => unsafe { _mm_broadcastw_epi16(tmp) },
-			5 => unsafe { _mm_broadcastd_epi32(tmp) },
-			6 => unsafe { _mm_broadcastq_epi64(tmp) },
-			7 => tmp,
-			_ => unreachable!(),
-		})
-		.into();
-
-		value.into()
-	}
-}
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField128x1b);

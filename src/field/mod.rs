@@ -11,6 +11,7 @@ mod macros;
 pub mod packed;
 pub mod packed_aes_field;
 pub mod packed_binary_field;
+mod packed_polyval;
 pub mod polyval;
 pub mod transpose;
 mod underlier;

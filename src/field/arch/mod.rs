@@ -8,17 +8,17 @@ cfg_if! {
 		mod portable;
 
 		mod x86_64;
-		pub use x86_64::{packed_128, packed_aes_128, polyval};
+		pub use x86_64::{packed_128, packed_aes_128, polyval, packed_polyval_256, packed_polyval_512};
 	} else if #[cfg(target_arch = "aarch64")] {
 		#[allow(dead_code)]
 		mod portable;
 
 		mod aarch64;
 		pub use aarch64::polyval;
-		pub use portable::{packed_128, packed_aes_128};
+		pub use portable::{packed_128, packed_aes_128, packed_polyval_256, packed_polyval_512};
 	} else {
 		mod portable;
-		pub use portable::{packed_128, packed_aes_128, polyval};
+		pub use portable::{packed_128, packed_aes_128, polyval, packed_polyval_256, packed_polyval_512};
 	}
 }
 

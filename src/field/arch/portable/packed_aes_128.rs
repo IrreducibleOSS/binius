@@ -16,7 +16,6 @@ use crate::field::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
 		impl_square_with_strategy,
 	},
-	underlier::UnderlierType,
 };
 
 // Define 128 bit packed AES field types
