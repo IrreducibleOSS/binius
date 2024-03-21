@@ -6,6 +6,7 @@ use tracing::instrument;
 
 use crate::{
 	field::{Field, TowerField},
+	oracle::MultilinearOracleSet,
 	polynomial::{
 		transparent::eq_ind::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
 		MultilinearPoly,
@@ -46,6 +47,7 @@ where
 /// Takes a challenge vector r as input
 #[instrument(skip_all, name = "zerocheck::prove")]
 pub fn prove<'a, F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	zerocheck_witness: ZerocheckWitness<'a, F>,
 	zerocheck_claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
@@ -66,7 +68,7 @@ pub fn prove<'a, F: TowerField>(
 	let sumcheck_witness = multiply_multilinear_composite(zerocheck_witness, Arc::new(eq_r))?;
 
 	// Step 3: Make Sumcheck Claim on New Polynomial
-	let sumcheck_claim = reduce_zerocheck_claim(zerocheck_claim, challenge)?;
+	let sumcheck_claim = reduce_zerocheck_claim(oracles, zerocheck_claim, challenge)?;
 
 	// Step 4: Wrap everything up
 	let zerocheck_proof = ZerocheckProof {};
@@ -84,7 +86,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::BinaryField32b,
-		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultivariatePolyOracle},
 		polynomial::{CompositionPoly, MultilinearExtension},
 		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
 	};
@@ -118,16 +120,17 @@ mod tests {
 		let zerocheck_witness =
 			MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
 
+		let mut oracles = MultilinearOracleSet::new();
+		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 0,
+			n_vars,
+			n_polys: n_multilinears,
+			tower_level: F::TOWER_LEVEL,
+		});
+
 		// Setup claim
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed {
-				id: CommittedId {
-					batch_id: 0,
-					index: i,
-				},
-				n_vars,
-				tower_level: F::TOWER_LEVEL,
-			})
+			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
 			.collect();
 		let composite_poly = CompositePolyOracle::new(
 			n_vars,
@@ -144,10 +147,13 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		// PROVER
-		let prove_output = prove(zerocheck_witness, &zerocheck_claim, challenge.clone()).unwrap();
+		let prove_output =
+			prove(&mut oracles.clone(), zerocheck_witness, &zerocheck_claim, challenge.clone())
+				.unwrap();
 		let proof = prove_output.zerocheck_proof;
 		// VERIFIER
-		let sumcheck_claim = verify(&zerocheck_claim, proof, challenge).unwrap();
+		let sumcheck_claim =
+			verify(&mut oracles.clone(), &zerocheck_claim, proof, challenge).unwrap();
 		assert_eq!(sumcheck_claim.sum, F::ZERO);
 		assert_eq!(sumcheck_claim.poly.n_vars(), n_vars);
 		assert_eq!(prove_output.sumcheck_claim.sum, F::ZERO);

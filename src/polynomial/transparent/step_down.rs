@@ -1,9 +1,7 @@
 use crate::{
-	field::{packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField},
-	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
+	field::{packed::set_packed_slice, BinaryField1b, Field, PackedField},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
-use std::sync::Arc;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
 /// specified index where they change to 0.
@@ -52,13 +50,6 @@ impl StepDown {
 			set_packed_slice(&mut result, i, P::Scalar::ONE);
 		}
 		MultilinearExtension::from_values(result)
-	}
-
-	pub fn multilinear_poly_oracle<F>(&self) -> MultilinearPolyOracle<F>
-	where
-		F: ExtensionField<BinaryField1b>,
-	{
-		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(Arc::new(self.clone()), 0))
 	}
 }
 

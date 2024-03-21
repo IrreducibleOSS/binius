@@ -1,6 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{field::Field, oracle::MultilinearPolyOracle};
+use crate::{
+	field::TowerField,
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
+};
 
 use super::{
 	error::Error,
@@ -8,12 +11,10 @@ use super::{
 };
 
 /// Verify a product check instance reduction.
-pub fn verify<F>(
+pub fn verify<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	claim: &ProdcheckClaim<F>,
 	grand_prod_oracle: MultilinearPolyOracle<F>,
-) -> Result<ReducedProductCheckClaims<F>, Error>
-where
-	F: Field,
-{
-	reduce_prodcheck_claim(claim, grand_prod_oracle)
+) -> Result<ReducedProductCheckClaims<F>, Error> {
+	reduce_prodcheck_claim(oracles, claim, grand_prod_oracle)
 }

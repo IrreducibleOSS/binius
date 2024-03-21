@@ -79,10 +79,7 @@ where
 					batch_commited_eval_claims.insert(subclaim)?;
 					EvalcheckProof::Committed
 				}
-				Repeating {
-					inner,
-					log_count: _,
-				} => {
+				Repeating { inner, .. } => {
 					let n_vars = inner.n_vars();
 					let inner_eval_point = eval_point[..n_vars].to_vec();
 					let subclaim = EvalcheckClaim {
@@ -103,9 +100,9 @@ where
 
 					EvalcheckProof::Repeating(Box::new(subproof))
 				}
-				Merged(_, _) => todo!(),
-				Interleaved(_, _) => todo!(),
-				Shifted(shifted) => {
+				Merged(..) => todo!(),
+				Interleaved(..) => todo!(),
+				Shifted(_id, shifted) => {
 					let subclaim = ShiftedEvalClaim {
 						eval_point,
 						eval,
@@ -116,7 +113,7 @@ where
 					shifted_eval_claims.push(subclaim);
 					EvalcheckProof::Shifted
 				}
-				Packed(packed) => {
+				Packed(_id, packed) => {
 					let subclaim = PackedEvalClaim {
 						eval_point,
 						eval,
@@ -127,7 +124,7 @@ where
 					packed_eval_claims.push(subclaim);
 					EvalcheckProof::Packed
 				}
-				Projected(projected) => {
+				Projected(_id, projected) => {
 					let (inner, values) = (projected.inner(), projected.values());
 					let new_eval_point = match projected.projection_variant() {
 						ProjectionVariant::LastVars => {
@@ -158,7 +155,7 @@ where
 						memoized_queries,
 					)?
 				}
-				LinearCombination(lin_com) => prove_composite(
+				LinearCombination(_id, lin_com) => prove_composite(
 					lin_com.polys().cloned(),
 					eval_point,
 					is_random_point,
@@ -247,19 +244,18 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use assert_matches::assert_matches;
-	use rand::{rngs::StdRng, SeedableRng};
-	use std::{iter::repeat_with, sync::Arc};
-
 	use crate::{
 		field::{BinaryField128b, BinaryField1b, PackedBinaryField128x1b, PackedBinaryField4x32b},
-		oracle::{CommittedBatch, CompositePolyOracle, LinearCombination},
+		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 		polynomial::{
 			transparent::select_row::SelectRow, CompositionPoly, Error as PolynomialError,
 			MultilinearExtension, MultivariatePoly,
 		},
 		protocols::evalcheck::verify::verify,
 	};
+	use assert_matches::assert_matches;
+	use rand::{rngs::StdRng, SeedableRng};
+	use std::{iter::repeat_with, sync::Arc};
 
 	type EF = BinaryField128b;
 	type PF = PackedBinaryField4x32b;
@@ -328,28 +324,37 @@ mod tests {
 
 		let eval = batch_evals.iter().fold(EF::ONE, |acc, cur| acc * cur);
 
-		let batches = [
-			CommittedBatch {
-				id: 0,
-				round_id: 1,
-				n_vars: log_size,
-				n_polys: 2,
-				tower_level,
-			},
-			CommittedBatch {
-				id: 1,
-				round_id: 1,
-				n_vars: log_size,
-				n_polys: 2,
-				tower_level,
-			},
-		];
+		let mut oracles = MultilinearOracleSet::new();
+		let batch_0_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 1,
+			n_vars: log_size,
+			n_polys: 2,
+			tower_level,
+		});
+		let batch_1_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 1,
+			n_vars: log_size,
+			n_polys: 2,
+			tower_level,
+		});
 
 		let suboracles = vec![
-			batches[0].oracle(0).unwrap(),
-			batches[1].oracle(0).unwrap(),
-			batches[0].oracle(1).unwrap(),
-			batches[1].oracle(1).unwrap(),
+			oracles.committed_oracle(CommittedId {
+				batch_id: batch_0_id,
+				index: 0,
+			}),
+			oracles.committed_oracle(CommittedId {
+				batch_id: batch_1_id,
+				index: 0,
+			}),
+			oracles.committed_oracle(CommittedId {
+				batch_id: batch_0_id,
+				index: 1,
+			}),
+			oracles.committed_oracle(CommittedId {
+				batch_id: batch_1_id,
+				index: 1,
+			}),
 		];
 
 		let oracle = MultivariatePolyOracle::Composite(
@@ -363,7 +368,7 @@ mod tests {
 			is_random_point: true,
 		};
 
-		let mut bcec_prove = BatchCommittedEvalClaims::new(&batches);
+		let mut bcec_prove = BatchCommittedEvalClaims::new(&oracles.committed_batches());
 		let mut shifted_claims_prove = Vec::new();
 		let mut packed_claims_prove = Vec::new();
 		let proof = prove(
@@ -375,7 +380,7 @@ mod tests {
 		)
 		.unwrap();
 
-		let mut bcec_verify = BatchCommittedEvalClaims::new(&batches);
+		let mut bcec_verify = BatchCommittedEvalClaims::new(&oracles.committed_batches());
 		let mut shifted_claims_verify = Vec::new();
 		let mut packed_claims_verify = Vec::new();
 		verify(
@@ -426,21 +431,33 @@ mod tests {
 		let select_row2 = SelectRow::new(n_vars, 5).unwrap();
 		let select_row3 = SelectRow::new(n_vars, 10).unwrap();
 
-		let select_row1_oracle = select_row1.multilinear_poly_oracle();
-		let select_row2_oracle = select_row2.multilinear_poly_oracle();
-		let select_row3_oracle = select_row3.multilinear_poly_oracle();
+		let mut oracles = MultilinearOracleSet::new();
 
-		let lin_com = MultilinearPolyOracle::LinearCombination(
-			LinearCombination::new(
+		let select_row1_oracle_id = oracles
+			.add_transparent(Arc::new(select_row1.clone()), 0)
+			.unwrap();
+		let select_row2_oracle_id = oracles
+			.add_transparent(Arc::new(select_row2.clone()), 0)
+			.unwrap();
+		let select_row3_oracle_id = oracles
+			.add_transparent(Arc::new(select_row3.clone()), 0)
+			.unwrap();
+
+		let select_row1_oracle = oracles.oracle(select_row1_oracle_id);
+		let select_row2_oracle = oracles.oracle(select_row2_oracle_id);
+		let select_row3_oracle = oracles.oracle(select_row3_oracle_id);
+
+		let lin_com_id = oracles
+			.add_linear_combination(
 				n_vars,
 				[
-					(select_row1_oracle.clone(), EF::new(2)),
-					(select_row2_oracle.clone(), EF::new(3)),
-					(select_row3_oracle.clone(), EF::new(4)),
+					(select_row1_oracle_id, EF::new(2)),
+					(select_row2_oracle_id, EF::new(3)),
+					(select_row3_oracle_id, EF::new(4)),
 				],
 			)
-			.unwrap(),
-		);
+			.unwrap();
+		let lin_com = oracles.oracle(lin_com_id);
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
@@ -527,8 +544,15 @@ mod tests {
 	fn test_evalcheck_repeating() {
 		let n_vars = 7;
 
+		let mut oracles = MultilinearOracleSet::new();
+
 		let select_row = SelectRow::new(n_vars, 11).unwrap();
-		let repeating = MultilinearPolyOracle::repeating(select_row.multilinear_poly_oracle(), 2);
+		let select_row_oracle_id = oracles
+			.add_transparent(Arc::new(select_row.clone()), 0)
+			.unwrap();
+
+		let repeating_id = oracles.add_repeating(select_row_oracle_id, 2).unwrap();
+		let repeating = oracles.oracle(repeating_id);
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))

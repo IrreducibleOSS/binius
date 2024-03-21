@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use super::error::Error;
 use crate::{
-	field::{Field, PackedField},
+	field::{Field, PackedField, TowerField},
 	oracle::{
-		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, Projected,
+		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, MultivariatePolyOracle,
 		ProjectionVariant,
 	},
 	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly},
@@ -89,7 +89,8 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 	}
 }
 
-pub fn reduce_prodcheck_claim<F: Field>(
+pub fn reduce_prodcheck_claim<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
 	grand_prod_oracle: MultilinearPolyOracle<F>,
 ) -> Result<ReducedProductCheckClaims<F>, Error> {
@@ -98,50 +99,47 @@ pub fn reduce_prodcheck_claim<F: Field>(
 
 	// Construct f' partially evaluated oracles
 	// [f'](x, 0)
-	let projected_zero_last =
-		Projected::new(f_prime_oracle.clone(), vec![F::ZERO], ProjectionVariant::LastVars)?;
-	let f_prime_x_zero_oracle = MultilinearPolyOracle::Projected(projected_zero_last);
+	let f_prime_x_zero_oracle_id =
+		oracles.add_projected(f_prime_oracle.id(), vec![F::ZERO], ProjectionVariant::LastVars)?;
+	let f_prime_x_zero_oracle = oracles.oracle(f_prime_x_zero_oracle_id);
 
 	// [f'](x, 1)
-	let projected_one_last =
-		Projected::new(f_prime_oracle.clone(), vec![F::ONE], ProjectionVariant::LastVars)?;
-	let f_prime_x_one_oracle = MultilinearPolyOracle::Projected(projected_one_last);
+	let f_prime_x_one_oracle_id =
+		oracles.add_projected(f_prime_oracle.id(), vec![F::ONE], ProjectionVariant::LastVars)?;
+	let f_prime_x_one_oracle = oracles.oracle(f_prime_x_one_oracle_id);
 
 	// [f'](0, x)
-	let projected_zero_first =
-		Projected::new(f_prime_oracle.clone(), vec![F::ZERO], ProjectionVariant::FirstVars)?;
-	let f_prime_zero_x_oracle = MultilinearPolyOracle::Projected(projected_zero_first);
+	let f_prime_zero_x_oracle_id =
+		oracles.add_projected(f_prime_oracle.id(), vec![F::ZERO], ProjectionVariant::FirstVars)?;
+	let f_prime_zero_x_oracle = oracles.oracle(f_prime_zero_x_oracle_id);
 
 	// [f'](1, x)
-	let projected_one_first =
-		Projected::new(f_prime_oracle.clone(), vec![F::ONE], ProjectionVariant::FirstVars)?;
-	let f_prime_one_x_oracle = MultilinearPolyOracle::Projected(projected_one_first);
+	let f_prime_one_x_oracle =
+		oracles.add_projected(f_prime_oracle.id(), vec![F::ONE], ProjectionVariant::FirstVars)?;
+	let f_prime_one_x_oracle = oracles.oracle(f_prime_one_x_oracle);
 
 	// merge([T], [f'](x, 1))
 	// Note: What the paper calls "merge" is called "interleave" in the code
 	// merge is similar to interleave, but the new selector variables are introduced
 	// as the highest indices rather than the lowest
-	let out_oracle = MultilinearPolyOracle::Merged(
-		Box::new(prodcheck_claim.t_oracle.clone()),
-		Box::new(f_prime_x_one_oracle),
-	);
+	let out_oracle =
+		oracles.add_merged(prodcheck_claim.t_oracle.id(), f_prime_x_one_oracle.id())?;
 
 	// merge([U], [f'](0, x))
-	let in1_oracle = MultilinearPolyOracle::Merged(
-		Box::new(prodcheck_claim.u_oracle.clone()),
-		Box::new(f_prime_zero_x_oracle),
-	);
+	let in1_oracle =
+		oracles.add_merged(prodcheck_claim.u_oracle.id(), f_prime_zero_x_oracle.id())?;
 
 	// merge([f'](x, 0), [f'](1, x))
-	let in2_oracle = MultilinearPolyOracle::Merged(
-		Box::new(f_prime_x_zero_oracle),
-		Box::new(f_prime_one_x_oracle),
-	);
+	let in2_oracle = oracles.add_merged(f_prime_x_zero_oracle.id(), f_prime_one_x_oracle.id())?;
 
 	// Construct T' polynomial oracle
 	let composite_poly = CompositePolyOracle::new(
 		n_vars + 1,
-		vec![out_oracle, in1_oracle, in2_oracle],
+		vec![
+			oracles.oracle(out_oracle),
+			oracles.oracle(in1_oracle),
+			oracles.oracle(in2_oracle),
+		],
 		Arc::new(SimpleMultGateComposition),
 	)?;
 	let t_prime_oracle = MultivariatePolyOracle::Composite(composite_poly);

@@ -12,8 +12,9 @@ use binius::{
 	},
 	hash::GroestlHasher,
 	oracle::{
-		CommittedBatch, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle,
-		ProjectionVariant, ShiftVariant,
+		BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, CompositePolyOracle,
+		MultilinearOracleSet, MultilinearPolyOracle, MultivariatePolyOracle, ProjectionVariant,
+		ShiftVariant,
 	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -275,26 +276,25 @@ struct FixedOracle<F: Field> {
 	selector: MultilinearPolyOracle<F>,
 }
 
-impl<F: BinaryField> FixedOracle<F> {
-	pub fn new(log_size: usize) -> Self {
-		let round_consts = MultilinearPolyOracle::Repeating {
-			inner: Box::new(MultilinearPolyOracle::<F>::transparent(
-				Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()),
-				0,
-			)),
-			log_count: log_size - 11,
-		};
-		let selector = MultilinearPolyOracle::Repeating {
-			inner: Box::new(
-				StepDown::new(11, 24 * 64)
-					.unwrap()
-					.multilinear_poly_oracle(),
-			),
-			log_count: log_size - 11,
-		};
+impl<F: TowerField> FixedOracle<F> {
+	pub fn new(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
+		let round_consts_single = oracles
+			.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()), 0)
+			.unwrap();
+		let round_consts = oracles
+			.add_repeating(round_consts_single, log_size - 11)
+			.unwrap();
+
+		let selector_single = oracles
+			.add_transparent(Arc::new(StepDown::new(11, 24 * 64).unwrap()), 0)
+			.unwrap();
+		let selector = oracles
+			.add_repeating(selector_single, log_size - 11)
+			.unwrap();
+
 		Self {
-			round_consts,
-			selector,
+			round_consts: oracles.oracle(round_consts),
+			selector: oracles.oracle(selector),
 		}
 	}
 }
@@ -310,57 +310,82 @@ struct TraceOracle<F: Field> {
 	next_state_in: [MultilinearPolyOracle<F>; 25],
 }
 
-impl<F: Field> TraceOracle<F> {
-	pub fn new(trace_batch: &CommittedBatch) -> Self {
+impl<F: TowerField> TraceOracle<F> {
+	pub fn new(oracles: &mut MultilinearOracleSet<F>, batch_id: BatchId) -> Self {
+		let trace_batch = oracles.committed_batch(batch_id);
 		let log_size = trace_batch.n_vars;
 
-		let state_in_oracle = array::from_fn(|xy| trace_batch.oracle::<F>(xy).unwrap());
-		let state_out_oracle = array::from_fn(|xy| trace_batch.oracle::<F>(25 + xy).unwrap());
-		let c_oracle = array::from_fn(|x| trace_batch.oracle::<F>(50 + x).unwrap());
-		let d_oracle = array::from_fn(|x| trace_batch.oracle::<F>(55 + x).unwrap());
+		let state_in_oracle = array::from_fn(|xy| {
+			oracles.committed_oracle_id(CommittedId {
+				batch_id,
+				index: xy,
+			})
+		});
+		let state_out_oracle = array::from_fn(|xy| {
+			oracles.committed_oracle_id(CommittedId {
+				batch_id,
+				index: 25 + xy,
+			})
+		});
+		let c_oracle = array::from_fn(|x| {
+			oracles.committed_oracle_id(CommittedId {
+				batch_id,
+				index: 50 + x,
+			})
+		});
+		let d_oracle = array::from_fn(|x| {
+			oracles.committed_oracle_id(CommittedId {
+				batch_id,
+				index: 55 + x,
+			})
+		});
 
-		let c_shift_oracle = c_oracle
-			.clone()
-			.map(|c_x| c_x.shifted(1, 6, ShiftVariant::CircularRight).unwrap());
+		let c_shift_oracle = c_oracle.map(|c_x| {
+			oracles
+				.add_shifted(c_x, 1, 6, ShiftVariant::CircularRight)
+				.unwrap()
+		});
 
 		let a_theta_oracle = array::from_fn(|xy| {
 			let x = xy % 5;
-			MultilinearPolyOracle::linear_combination(
-				log_size,
-				[
-					(state_in_oracle[xy].clone(), F::ONE),
-					(d_oracle[x].clone(), F::ONE),
-				],
-			)
-			.unwrap()
+			oracles
+				.add_linear_combination(
+					log_size,
+					[(state_in_oracle[xy], F::ONE), (d_oracle[x], F::ONE)],
+				)
+				.unwrap()
 		});
 
 		let b_oracle: [_; 25] = array::from_fn(|xy| {
 			if xy == 0 {
-				a_theta_oracle[0].clone()
+				a_theta_oracle[0]
 			} else {
-				a_theta_oracle[PI[xy]]
-					.clone()
-					.shifted(RHO[xy] as usize, 6, ShiftVariant::CircularRight)
+				oracles
+					.add_shifted(
+						a_theta_oracle[PI[xy]],
+						RHO[xy] as usize,
+						6,
+						ShiftVariant::CircularRight,
+					)
 					.unwrap()
 			}
 		});
 
-		let next_state_in = state_in_oracle.clone().map(|state_in_xy| {
-			state_in_xy
-				.shifted(64, 11, ShiftVariant::LogicalLeft)
+		let next_state_in = state_in_oracle.map(|state_in_xy| {
+			oracles
+				.add_shifted(state_in_xy, 64, 11, ShiftVariant::LogicalLeft)
 				.unwrap()
 		});
 
 		TraceOracle {
-			state_in: state_in_oracle,
-			state_out: state_out_oracle,
-			c: c_oracle,
-			c_shift: c_shift_oracle,
-			d: d_oracle,
-			a_theta: a_theta_oracle,
-			b: b_oracle,
-			next_state_in,
+			state_in: state_in_oracle.map(|id| oracles.oracle(id)),
+			state_out: state_out_oracle.map(|id| oracles.oracle(id)),
+			c: c_oracle.map(|id| oracles.oracle(id)),
+			c_shift: c_shift_oracle.map(|id| oracles.oracle(id)),
+			d: d_oracle.map(|id| oracles.oracle(id)),
+			a_theta: a_theta_oracle.map(|id| oracles.oracle(id)),
+			b: b_oracle.map(|id| oracles.oracle(id)),
+			next_state_in: next_state_in.map(|id| oracles.oracle(id)),
 		}
 	}
 }
@@ -499,6 +524,7 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all)]
 fn make_second_round_sumcheck<'a, F, CH>(
+	oracle_set: &mut MultilinearOracleSet<F>,
 	trace_batch: &CommittedBatch,
 	batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: Vec<ShiftedEvalClaim<F>>,
@@ -538,20 +564,32 @@ where
 		trace_mixing_challenges.iter().copied(),
 	);
 
-	let mixed_trace_oracle = MultilinearPolyOracle::linear_combination(
-		log_size,
-		trace_mixing_challenges
-			.iter()
-			.enumerate()
-			.map(|(i, &coeff)| (trace_batch.oracle(i).unwrap(), coeff)),
-	)
-	.unwrap()
-	.projected(
-		same_query_claim.eval_point[max_shift_block_size..].to_vec(),
-		ProjectionVariant::LastVars,
-	)
-	.unwrap();
-	oracles.push(mixed_trace_oracle.clone());
+	let mixed_trace = oracle_set
+		.add_linear_combination(
+			log_size,
+			trace_mixing_challenges
+				.iter()
+				.enumerate()
+				.map(|(i, &coeff)| {
+					(
+						oracle_set.committed_oracle_id(CommittedId {
+							batch_id: trace_batch.id,
+							index: i,
+						}),
+						coeff,
+					)
+				})
+				.collect::<Vec<_>>(),
+		)
+		.unwrap();
+	let mixed_trace_projection = oracle_set
+		.add_projected(
+			mixed_trace,
+			same_query_claim.eval_point[max_shift_block_size..].to_vec(),
+			ProjectionVariant::LastVars,
+		)
+		.unwrap();
+	oracles.push(oracle_set.oracle(mixed_trace_projection));
 
 	let partial_eval_query = evalcheck_witness.map(|_| {
 		MultilinearQuery::<F>::with_full_query(&same_query_claim.eval_point[max_shift_block_size..])
@@ -563,7 +601,10 @@ where
 
 		let trace_witnesses = (0..trace_batch.n_polys)
 			.map(|i| {
-				let oracle = trace_batch.oracle(i).unwrap();
+				let oracle = oracle_set.committed_oracle(CommittedId {
+					batch_id: trace_batch.id,
+					index: i,
+				});
 				evalcheck_witness.witness_for_oracle(&oracle).unwrap()
 			})
 			.collect::<Vec<_>>();
@@ -599,13 +640,18 @@ where
 		witnesses.push(Arc::new(eq_ind_witness));
 	}
 
-	let eq_ind_oracle = MultilinearPolyOracle::transparent(Arc::new(eq_ind), F::TOWER_LEVEL);
-	oracles.push(eq_ind_oracle.clone());
+	let eq_ind_oracle = oracle_set
+		.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)
+		.unwrap();
+	oracles.push(oracle_set.oracle(eq_ind_oracle));
 
 	let trace_eval_oracle = MultivariatePolyOracle::Composite(
 		CompositePolyOracle::new(
 			max_shift_block_size,
-			vec![mixed_trace_oracle, eq_ind_oracle],
+			vec![
+				oracle_set.oracle(mixed_trace_projection),
+				oracle_set.oracle(eq_ind_oracle),
+			],
 			Arc::new(BivariateProduct),
 		)
 		.unwrap(),
@@ -617,15 +663,14 @@ where
 
 	for claim in shifted_eval_claims {
 		let shifted = claim.shifted;
-		let shifted_oracle = shifted
-			.inner()
-			.clone()
-			.projected(
+		let shifted_oracle = oracle_set
+			.add_projected(
+				shifted.inner().id(),
 				claim.eval_point[max_shift_block_size..].to_vec(),
 				ProjectionVariant::LastVars,
 			)
 			.unwrap();
-		oracles.push(shifted_oracle.clone());
+		oracles.push(oracle_set.oracle(shifted_oracle));
 
 		if let Some(evalcheck_witness) = evalcheck_witness {
 			let multilin = evalcheck_witness
@@ -645,21 +690,25 @@ where
 		.unwrap();
 
 		let shift_ind_oracle = if shifted.block_size() < max_shift_block_size {
-			MultilinearPolyOracle::transparent(
-				Arc::new(DisjointProduct(
-					shift_ind.clone(),
-					EqIndPartialEval::new(
-						max_shift_block_size - shifted.block_size(),
-						claim.eval_point[shifted.block_size()..max_shift_block_size].to_vec(),
-					)
-					.unwrap(),
-				)),
-				F::TOWER_LEVEL,
-			)
+			oracle_set
+				.add_transparent(
+					Arc::new(DisjointProduct(
+						shift_ind.clone(),
+						EqIndPartialEval::new(
+							max_shift_block_size - shifted.block_size(),
+							claim.eval_point[shifted.block_size()..max_shift_block_size].to_vec(),
+						)
+						.unwrap(),
+					)),
+					F::TOWER_LEVEL,
+				)
+				.unwrap()
 		} else {
-			MultilinearPolyOracle::transparent(Arc::new(shift_ind.clone()), F::TOWER_LEVEL)
+			oracle_set
+				.add_transparent(Arc::new(shift_ind.clone()), F::TOWER_LEVEL)
+				.unwrap()
 		};
-		oracles.push(shift_ind_oracle.clone());
+		oracles.push(oracle_set.oracle(shift_ind_oracle));
 
 		if evalcheck_witness.is_some() {
 			let shift_ind_mle = shift_ind.multilinear_extension().unwrap();
@@ -683,7 +732,10 @@ where
 		let oracle = MultivariatePolyOracle::Composite(
 			CompositePolyOracle::new(
 				max_shift_block_size,
-				vec![shifted_oracle, shift_ind_oracle],
+				vec![
+					oracle_set.oracle(shifted_oracle),
+					oracle_set.oracle(shift_ind_oracle),
+				],
 				Arc::new(BivariateProduct),
 			)
 			.unwrap(),
@@ -712,7 +764,8 @@ where
 #[instrument(skip_all)]
 fn prove<P, F, PCS, CH>(
 	log_size: usize,
-	trace_batch: &CommittedBatch,
+	oracles: &mut MultilinearOracleSet<F>,
+	trace_batch_id: BatchId,
 	fixed_oracle: &FixedOracle<F>,
 	trace_oracle: &TraceOracle<F>,
 	constraints: &[MultivariatePolyOracle<F>],
@@ -792,7 +845,7 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = zerocheck::prove(zerocheck_witness, &zerocheck_claim, zerocheck_challenge).unwrap();
+	} = zerocheck::prove(oracles, zerocheck_witness, &zerocheck_claim, zerocheck_challenge).unwrap();
 
 	// Sumcheck
 	let sumcheck_domain =
@@ -815,6 +868,8 @@ where
 	} = output;
 
 	// Evalcheck
+	let trace_batch = oracles.committed_batch(trace_batch_id);
+
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
@@ -831,7 +886,8 @@ where
 	assert_eq!(packed_eval_claims.len(), 0);
 
 	let (second_sumcheck_claim, second_sumcheck_witness) = make_second_round_sumcheck(
-		trace_batch,
+		oracles,
+		&trace_batch,
 		batch_committed_eval_claims,
 		shifted_eval_claims,
 		Some(&evalcheck_witness),
@@ -904,7 +960,8 @@ where
 #[instrument(skip_all)]
 fn verify<P, F, PCS, CH>(
 	log_size: usize,
-	trace_batch: &CommittedBatch,
+	oracles: &mut MultilinearOracleSet<F>,
+	trace_batch_id: BatchId,
 	fixed_oracle: &FixedOracle<F>,
 	trace_oracle: &TraceOracle<F>,
 	constraints: &[MultivariatePolyOracle<F>],
@@ -960,7 +1017,7 @@ fn verify<P, F, PCS, CH>(
 	// Zerocheck
 	let zerocheck_challenge = challenger.sample_vec(log_size);
 	let sumcheck_claim =
-		zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
+		zerocheck::verify(oracles, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Sumcheck
 	let sumcheck_domain =
@@ -970,6 +1027,8 @@ fn verify<P, F, PCS, CH>(
 		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
 
 	// Evalcheck
+	let trace_batch = oracles.committed_batch(trace_batch_id);
+
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
@@ -987,7 +1046,8 @@ fn verify<P, F, PCS, CH>(
 
 	// Second Sumcheck
 	let (second_sumcheck_claim, _) = make_second_round_sumcheck(
-		trace_batch,
+		oracles,
+		&trace_batch,
 		batch_committed_eval_claims,
 		shifted_eval_claims,
 		None,
@@ -1141,16 +1201,16 @@ fn main() {
 	>(SECURITY_BITS, log_size, 60, log_inv_rate, false)
 	.unwrap();
 
-	let trace_batch = CommittedBatch {
-		id: 0,
+	let mut oracles = MultilinearOracleSet::new();
+	let trace_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
 		round_id: 0,
 		n_vars: log_size,
 		n_polys: 60,
 		tower_level: 0,
-	};
+	});
 
-	let fixed_oracle = FixedOracle::new(log_size);
-	let trace_oracle = TraceOracle::new(&trace_batch);
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size);
+	let trace_oracle = TraceOracle::new(&mut oracles, trace_batch_id);
 	let constraints = make_constraints(log_size, &fixed_oracle, &trace_oracle);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -1158,7 +1218,8 @@ fn main() {
 	let witness = generate_trace(log_size);
 	let proof = prove(
 		log_size,
-		&trace_batch,
+		&mut oracles.clone(),
+		trace_batch_id,
 		&fixed_oracle,
 		&trace_oracle,
 		&constraints,
@@ -1169,7 +1230,8 @@ fn main() {
 
 	verify(
 		log_size,
-		&trace_batch,
+		&mut oracles.clone(),
+		trace_batch_id,
 		&fixed_oracle,
 		&trace_oracle,
 		&constraints,

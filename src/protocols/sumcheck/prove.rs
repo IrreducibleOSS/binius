@@ -598,7 +598,7 @@ mod tests {
 		challenger::HashChallenger,
 		field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, TowerField},
 		hash::GroestlHasher,
-		oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle},
+		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 		polynomial::MultilinearComposite,
 		protocols::test_utils::{
 			full_prove_with_operating_field, full_prove_with_switchover, full_verify,
@@ -647,15 +647,15 @@ mod tests {
 		let sumcheck_witness = poly.clone();
 
 		// Setup Claim
+		let mut oracles = MultilinearOracleSet::new();
+		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 0,
+			n_vars,
+			n_polys: n_multilinears,
+			tower_level: F::TOWER_LEVEL,
+		});
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed {
-				id: CommittedId {
-					batch_id: 0,
-					index: i,
-				},
-				n_vars,
-				tower_level: F::TOWER_LEVEL,
-			})
+			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
 			.collect();
 		let composite_poly = CompositePolyOracle::new(
 			n_vars,
@@ -741,15 +741,15 @@ mod tests {
 		let witness = poly.clone();
 
 		// CLAIM
+		let mut oracles = MultilinearOracleSet::new();
+		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 0,
+			n_vars,
+			n_polys: n_multilinears,
+			tower_level: F::TOWER_LEVEL,
+		});
 		let h = (0..n_multilinears)
-			.map(|i| MultilinearPolyOracle::Committed {
-				id: CommittedId {
-					batch_id: 0,
-					index: i,
-				},
-				n_vars,
-				tower_level: F::TOWER_LEVEL,
-			})
+			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
 			.collect();
 		let composite_poly = CompositePolyOracle::new(
 			n_vars,

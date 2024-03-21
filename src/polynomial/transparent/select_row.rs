@@ -1,10 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::sync::Arc;
-
 use crate::{
-	field::{packed::set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField},
-	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
+	field::{packed::set_packed_slice, BinaryField1b, Field, PackedField},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
 
@@ -50,10 +47,6 @@ impl SelectRow {
 		let mut result = vec![P::zero(); 1 << (self.n_vars - P::LOG_WIDTH)];
 		set_packed_slice(&mut result, self.index, P::Scalar::ONE);
 		MultilinearExtension::from_values(result)
-	}
-
-	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<BinaryField128b> {
-		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(Arc::new(self.clone()), 0))
 	}
 }
 

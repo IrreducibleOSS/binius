@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use tracing::instrument;
 
-use crate::field::Field;
+use crate::field::{Field, TowerField};
 
 use crate::{
-	oracle::MultilinearPolyOracle,
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
 	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
 	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
 };
@@ -60,6 +60,9 @@ where
 pub fn prove_step_one<F: Field>(
 	prodcheck_witness: ProdcheckWitness<F>,
 ) -> Result<MultilinearExtension<'static, F>, Error> {
+	// TODO: This is inefficient because it cannot construct the new witness polynomial in the
+	// subfield.
+
 	let ProdcheckWitness {
 		t_polynomial,
 		u_polynomial,
@@ -120,7 +123,8 @@ pub fn prove_step_one<F: Field>(
 /// polynomial instead of the interleave virtual polynomial. This is an
 /// optimization, and does not affect the soundness of prodcheck.
 #[instrument(skip_all, name = "prodcheck::prove_step_two")]
-pub fn prove_step_two<'a, F: Field>(
+pub fn prove_step_two<'a, F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	prodcheck_witness: ProdcheckWitness<F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
 	f_prime_oracle: MultilinearPolyOracle<F>,
@@ -135,7 +139,7 @@ pub fn prove_step_two<'a, F: Field>(
 
 	// Construct the claims
 	let reduced_product_check_claims =
-		reduce_prodcheck_claim(prodcheck_claim, f_prime_oracle.clone())?;
+		reduce_prodcheck_claim(oracles, prodcheck_claim, f_prime_oracle.clone())?;
 
 	// Construct the witnesses
 	let values = f_prime_poly.evals();
@@ -203,8 +207,8 @@ pub fn prove_step_two<'a, F: Field>(
 mod tests {
 	use super::*;
 	use crate::{
-		field::{BinaryField32b, TowerField},
-		oracle::CommittedId,
+		field::BinaryField32b,
+		oracle::{CommittedBatchSpec, CommittedId},
 		protocols::prodcheck::verify::verify,
 	};
 
@@ -217,18 +221,6 @@ mod tests {
 		MultilinearExtension::from_values(values).unwrap()
 	}
 
-	fn create_numerator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
-		let n_vars = 2;
-		MultilinearPolyOracle::Committed {
-			id: CommittedId {
-				batch_id: 0,
-				index: 0,
-			},
-			n_vars,
-			tower_level: BinaryField32b::TOWER_LEVEL,
-		}
-	}
-
 	// Creates U(x), a multilinear with evaluations {3, 2, 4, 1} over the boolean hypercube on 2 vars
 	fn create_denominator() -> MultilinearExtension<'static, BinaryField32b> {
 		type F = BinaryField32b;
@@ -239,56 +231,61 @@ mod tests {
 		MultilinearExtension::from_values(values).unwrap()
 	}
 
-	fn create_denominator_oracle() -> MultilinearPolyOracle<BinaryField32b> {
-		let n_vars = 2;
-		MultilinearPolyOracle::Committed {
-			id: CommittedId {
-				batch_id: 0,
-				index: 1,
-			},
-			n_vars,
-			tower_level: BinaryField32b::TOWER_LEVEL,
-		}
-	}
-
 	#[test]
 	fn test_prove_verify_interaction() {
-		crate::util::tracing::init_tracing();
-
 		type F = BinaryField32b;
 		let n_vars = 2;
 
 		// Setup witness
 		let numerator = create_numerator();
 		let denominator = create_denominator();
-		let prodcheck_witness = ProdcheckWitness {
+		let prodcheck_witness = ProdcheckWitness::<F> {
 			t_polynomial: Arc::new(numerator),
 			u_polynomial: Arc::new(denominator),
 		};
 
 		// Setup claim
-		let numerator_oracle = create_numerator_oracle();
-		let denominator_oracle = create_denominator_oracle();
+		let mut oracles = MultilinearOracleSet::new();
+		let round_1_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 1,
+			n_vars,
+			n_polys: 2,
+			tower_level: F::TOWER_LEVEL,
+		});
+
+		let numerator_oracle = oracles.committed_oracle(CommittedId {
+			batch_id: round_1_batch_id,
+			index: 0,
+		});
+		let denominator_oracle = oracles.committed_oracle(CommittedId {
+			batch_id: round_1_batch_id,
+			index: 1,
+		});
 		let prodcheck_claim = ProdcheckClaim {
 			t_oracle: numerator_oracle,
 			u_oracle: denominator_oracle,
 			n_vars,
 		};
 
+		let round_2_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+			round_id: 2,
+			n_vars: n_vars + 1,
+			n_polys: 1,
+			tower_level: F::TOWER_LEVEL,
+		});
+
+		let f_prime_oracle = oracles.committed_oracle(CommittedId {
+			batch_id: round_2_batch_id,
+			index: 0,
+		});
+
 		// PROVER
 		let f_prime_poly = prove_step_one(prodcheck_witness.clone()).unwrap();
-		let f_prime_oracle = MultilinearPolyOracle::Committed {
-			id: CommittedId {
-				batch_id: 1,
-				index: 0,
-			},
-			n_vars: n_vars + 1,
-			tower_level: F::TOWER_LEVEL,
-		};
 		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 2], F::ONE);
 		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 1], F::ZERO);
 
 		let prove_output = prove_step_two(
+			&mut oracles.clone(),
 			prodcheck_witness,
 			&prodcheck_claim,
 			f_prime_oracle.clone(),
@@ -298,7 +295,8 @@ mod tests {
 		let reduced_claims = prove_output.reduced_product_check_claims;
 
 		// VERIFIER
-		let verified_reduced_claims = verify(&prodcheck_claim, f_prime_oracle).unwrap();
+		let verified_reduced_claims =
+			verify(&mut oracles.clone(), &prodcheck_claim, f_prime_oracle).unwrap();
 
 		// Check consistency
 		assert_eq!(reduced_claims.grand_product_poly_claim.eval, F::ONE);

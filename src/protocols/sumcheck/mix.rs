@@ -207,7 +207,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		field::BinaryField128b,
-		oracle::{CommittedBatch, ShiftVariant, Shifted},
+		oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet, ShiftVariant},
 	};
 
 	struct TestConstantChallenger<F: Field> {
@@ -302,21 +302,27 @@ mod tests {
 
 		let n_vars = 12;
 
-		let trace_batch = CommittedBatch {
-			id: 0,
+		let mut oracles = MultilinearOracleSet::new();
+		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
 			round_id: 1,
 			n_vars,
 			n_polys: 4,
 			tower_level: 0,
-		};
-		let x_oracle = trace_batch.oracle(0).unwrap();
-		let y_oracle = trace_batch.oracle(1).unwrap();
-		let z_oracle = trace_batch.oracle(2).unwrap();
-		let c_out_oracle = trace_batch.oracle(3).unwrap();
+		});
 
-		let c_in_oracle = MultilinearPolyOracle::Shifted(
-			Shifted::new(c_out_oracle.clone(), 1, 5, ShiftVariant::LogicalRight).unwrap(),
-		);
+		let x_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 0 });
+		let y_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 1 });
+		let z_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 2 });
+		let c_out_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 3 });
+		let c_in_oracle_id = oracles
+			.add_shifted(c_out_oracle_id, 1, 5, ShiftVariant::LogicalRight)
+			.unwrap();
+
+		let x_oracle = oracles.oracle(x_oracle_id);
+		let y_oracle = oracles.oracle(y_oracle_id);
+		let z_oracle = oracles.oracle(z_oracle_id);
+		let c_out_oracle = oracles.oracle(c_out_oracle_id);
+		let c_in_oracle = oracles.oracle(c_in_oracle_id);
 
 		let add_constraint = CompositePolyOracle::new(
 			n_vars,

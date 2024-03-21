@@ -5,7 +5,10 @@ use binius::{
 		Field, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	oracle::{CommittedId, CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle},
+	oracle::{
+		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
+		MultivariatePolyOracle,
+	},
 	polynomial::{
 		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
 		MultilinearPoly,
@@ -206,12 +209,15 @@ where
 	BM: Borrow<M>,
 {
 	// Setup poly_oracle
+	let mut oracles = MultilinearOracleSet::new();
+	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
+		round_id: 0,
+		n_vars: poly.n_vars(),
+		n_polys: poly.n_multilinears(),
+		tower_level: F::TOWER_LEVEL,
+	});
 	let inner = (0..poly.n_multilinears())
-		.map(|index| MultilinearPolyOracle::Committed {
-			id: CommittedId { batch_id: 0, index },
-			n_vars: poly.n_vars(),
-			tower_level: F::TOWER_LEVEL,
-		})
+		.map(|index| oracles.committed_oracle(CommittedId { batch_id, index }))
 		.collect::<Vec<_>>();
 	let composite_poly =
 		CompositePolyOracle::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();

@@ -1,11 +1,14 @@
 use binius::{
 	challenger::HashChallenger,
 	field::{
-		BinaryField128b, PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField8x16b,
-		PackedField,
+		BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField1x128b,
+		PackedBinaryField8x16b, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	oracle::{CommittedBatch, CompositePolyOracle, MultivariatePolyOracle},
+	oracle::{
+		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
+		MultivariatePolyOracle,
+	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
@@ -35,7 +38,7 @@ use tracing_subscriber::prelude::*;
 #[derive(Debug)]
 struct BitwiseAndConstraint;
 
-impl CompositionPoly<BinaryField128b> for BitwiseAndConstraint {
+impl<F: Field> CompositionPoly<F> for BitwiseAndConstraint {
 	fn n_vars(&self) -> usize {
 		3
 	}
@@ -44,14 +47,11 @@ impl CompositionPoly<BinaryField128b> for BitwiseAndConstraint {
 		2
 	}
 
-	fn evaluate(&self, query: &[BinaryField128b]) -> Result<BinaryField128b, PolynomialError> {
+	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
 		self.evaluate_packed(query)
 	}
 
-	fn evaluate_packed(
-		&self,
-		query: &[BinaryField128b],
-	) -> Result<BinaryField128b, PolynomialError> {
+	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
 		if query.len() != 3 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}
@@ -69,9 +69,9 @@ impl CompositionPoly<BinaryField128b> for BitwiseAndConstraint {
 fn prove<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
-	a_in: MultilinearExtension<PackedBinaryField128x1b>,
-	b_in: MultilinearExtension<PackedBinaryField128x1b>,
-	c_out: MultilinearExtension<PackedBinaryField128x1b>,
+	trace: &mut MultilinearOracleSet<BinaryField128b>,
+	constraints: &[MultivariatePolyOracle<BinaryField128b>],
+	witness: &TraceWitness<PackedBinaryField128x1b>,
 	mut challenger: CH,
 ) -> Proof<PCS::Commitment, PCS::Proof>
 where
@@ -87,48 +87,31 @@ where
 	let commit_scope = span.enter();
 
 	assert_eq!(pcs.n_vars(), log_size);
-	assert_eq!(a_in.n_vars(), log_size);
-	assert_eq!(b_in.n_vars(), log_size);
-	assert_eq!(c_out.n_vars(), log_size);
 
-	let trace_batch = CommittedBatch {
-		id: 0,
-		round_id: 1,
-		n_vars: log_size,
-		n_polys: 3,
-		tower_level: 0,
-	};
-
-	let a_in_oracle = trace_batch.oracle(0).unwrap();
-	let b_in_oracle = trace_batch.oracle(1).unwrap();
-	let c_out_oracle = trace_batch.oracle(2).unwrap();
-
-	let constraint = MultivariatePolyOracle::Composite(
-		CompositePolyOracle::new(
-			log_size,
-			vec![a_in_oracle, b_in_oracle, c_out_oracle],
-			Arc::new(BitwiseAndConstraint),
-		)
-		.unwrap(),
-	);
+	assert_eq!(constraints.len(), 1);
+	let constraint = constraints[0].clone();
 
 	// Round 1
-	let (abc_comm, abc_committed) = pcs.commit(&[&a_in, &b_in, &c_out]).unwrap();
+	let (abc_comm, abc_committed) = pcs
+		.commit(&[&witness.a_in, &witness.b_in, &witness.c_out])
+		.unwrap();
 	challenger.observe(abc_comm.clone());
 
+	let trace_batch = trace.committed_batch(0);
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
 	drop(commit_scope);
 
 	// Round 2
 	let zerocheck_challenge = challenger.sample_vec(log_size);
-
 	let zerocheck_witness = MultilinearComposite::new(
 		log_size,
-		Arc::new(BitwiseAndConstraint),
+		constraint.clone().into_composite().composition(),
 		vec![
-			Arc::new(a_in.borrow_copy()) as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(b_in.borrow_copy()) as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(c_out.borrow_copy())
+			Arc::new(witness.a_in.borrow_copy())
+				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
+			Arc::new(witness.b_in.borrow_copy())
+				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
+			Arc::new(witness.c_out.borrow_copy())
 				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
 		],
 	)
@@ -140,7 +123,7 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = prove_zerocheck(zerocheck_witness, &zerocheck_claim, zerocheck_challenge).unwrap();
+	} = prove_zerocheck(trace, zerocheck_witness, &zerocheck_claim, zerocheck_challenge).unwrap();
 
 	let sumcheck_domain =
 		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -190,7 +173,7 @@ where
 		.prove_evaluation(
 			&mut challenger,
 			&abc_committed,
-			&[&a_in, &b_in, &c_out],
+			&[&witness.a_in, &witness.b_in, &witness.c_out],
 			&same_query_pcs_claim.eval_point,
 		)
 		.unwrap();
@@ -215,6 +198,8 @@ struct Proof<C, P> {
 fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
+	trace: &mut MultilinearOracleSet<BinaryField128b>,
+	constraints: &[MultivariatePolyOracle<BinaryField128b>],
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
 ) where
@@ -228,26 +213,8 @@ fn verify<PCS, CH>(
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
-	let trace_batch = CommittedBatch {
-		id: 0,
-		round_id: 1,
-		n_vars: log_size,
-		n_polys: 3,
-		tower_level: 0,
-	};
-
-	let a_in_oracle = trace_batch.oracle(0).unwrap();
-	let b_in_oracle = trace_batch.oracle(1).unwrap();
-	let c_out_oracle = trace_batch.oracle(2).unwrap();
-
-	let constraint = MultivariatePolyOracle::Composite(
-		CompositePolyOracle::new(
-			log_size,
-			vec![a_in_oracle, b_in_oracle, c_out_oracle],
-			Arc::new(BitwiseAndConstraint),
-		)
-		.unwrap(),
-	);
+	assert_eq!(constraints.len(), 1);
+	let constraint = constraints[0].clone();
 
 	let Proof {
 		abc_comm,
@@ -265,7 +232,7 @@ fn verify<PCS, CH>(
 	// Run zerocheck protocol
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 	let sumcheck_claim =
-		verify_zerocheck(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
+		verify_zerocheck(trace, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Run sumcheck protocol
 	let sumcheck_domain =
@@ -273,6 +240,8 @@ fn verify<PCS, CH>(
 
 	let (_, evalcheck_claim) =
 		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
+
+	let trace_batch = trace.committed_batch(0);
 
 	// Verify commitment openings
 	let mut shifted_eval_claims = Vec::new();
@@ -302,6 +271,70 @@ fn verify<PCS, CH>(
 		&same_query_pcs_claim.evals,
 	)
 	.unwrap();
+}
+
+#[derive(Debug)]
+struct TraceWitness<'a, P: PackedField> {
+	a_in: MultilinearExtension<'a, P>,
+	b_in: MultilinearExtension<'a, P>,
+	c_out: MultilinearExtension<'a, P>,
+}
+
+fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128x1b> {
+	let len = (1 << log_size) >> PackedBinaryField128x1b::LOG_WIDTH;
+	let mut a_in_vals = vec![PackedBinaryField128x1b::default(); len];
+	let mut b_in_vals = vec![PackedBinaryField128x1b::default(); len];
+	let mut c_out_vals = vec![PackedBinaryField128x1b::default(); len];
+	a_in_vals
+		.par_iter_mut()
+		.zip(b_in_vals.par_iter_mut())
+		.zip(c_out_vals.par_iter_mut())
+		.for_each_init(thread_rng, |rng, ((a_i, b_i), c_i)| {
+			*a_i = PackedBinaryField128x1b::random(&mut *rng);
+			*b_i = PackedBinaryField128x1b::random(&mut *rng);
+			let a_i_uint128 = must_cast::<_, u128>(*a_i);
+			let b_i_uint128 = must_cast::<_, u128>(*b_i);
+			let c_i_uint128 = must_cast_mut::<_, u128>(c_i);
+			*c_i_uint128 = a_i_uint128 & b_i_uint128;
+		});
+
+	let a_in = MultilinearExtension::from_values(a_in_vals).unwrap();
+	let b_in = MultilinearExtension::from_values(b_in_vals).unwrap();
+	let c_out = MultilinearExtension::from_values(c_out_vals).unwrap();
+
+	TraceWitness { a_in, b_in, c_out }
+}
+
+fn make_constraints<F: TowerField>(
+	log_size: usize,
+	trace_oracle: &MultilinearOracleSet<F>,
+) -> Vec<MultivariatePolyOracle<F>> {
+	let mut constraints = Vec::new();
+
+	let a_in_oracle = trace_oracle.committed_oracle(CommittedId {
+		batch_id: 0,
+		index: 0,
+	});
+	let b_in_oracle = trace_oracle.committed_oracle(CommittedId {
+		batch_id: 0,
+		index: 1,
+	});
+	let c_out_oracle = trace_oracle.committed_oracle(CommittedId {
+		batch_id: 0,
+		index: 2,
+	});
+
+	let constraint = MultivariatePolyOracle::Composite(
+		CompositePolyOracle::new(
+			log_size,
+			vec![a_in_oracle, b_in_oracle, c_out_oracle],
+			Arc::new(BitwiseAndConstraint),
+		)
+		.unwrap(),
+	);
+	constraints.push(constraint);
+
+	constraints
 }
 
 fn main() {
@@ -345,30 +378,21 @@ fn main() {
 		pcs.proof_size(3),
 	);
 
+	let mut trace_oracle = MultilinearOracleSet::new();
+
+	trace_oracle.add_committed_batch(CommittedBatchSpec {
+		round_id: 1,
+		n_vars: log_size,
+		n_polys: 3,
+		tower_level: 0,
+	});
+
+	let constraints = make_constraints(log_size, &trace_oracle);
+
 	tracing::info!("Generating the trace");
 	let trace_span = tracing::debug_span!("generate_trace").entered();
-
-	let len = (1 << log_size) / PackedBinaryField128x1b::WIDTH;
-	let mut a_in_vals = vec![PackedBinaryField128x1b::default(); len];
-	let mut b_in_vals = vec![PackedBinaryField128x1b::default(); len];
-	let mut c_out_vals = vec![PackedBinaryField128x1b::default(); len];
-	a_in_vals
-		.par_iter_mut()
-		.zip(b_in_vals.par_iter_mut())
-		.zip(c_out_vals.par_iter_mut())
-		.for_each_init(thread_rng, |rng, ((a_i, b_i), c_i)| {
-			*a_i = PackedBinaryField128x1b::random(&mut *rng);
-			*b_i = PackedBinaryField128x1b::random(&mut *rng);
-			let a_i_uint128 = must_cast::<_, u128>(*a_i);
-			let b_i_uint128 = must_cast::<_, u128>(*b_i);
-			let c_i_uint128 = must_cast_mut::<_, u128>(c_i);
-			*c_i_uint128 = a_i_uint128 & b_i_uint128;
-		});
+	let witness = generate_trace(log_size);
 	drop(trace_span);
-
-	let a_in = MultilinearExtension::from_values(a_in_vals).unwrap();
-	let b_in = MultilinearExtension::from_values(b_in_vals).unwrap();
-	let c_out = MultilinearExtension::from_values(c_out_vals).unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
@@ -382,7 +406,14 @@ fn main() {
 		n_vars = pcs.n_vars(),
 	)
 	.entered();
-	let proof = prove(log_size, &pcs, a_in, b_in, c_out, challenger.clone());
+	let proof = prove(
+		log_size,
+		&pcs,
+		&mut trace_oracle.clone(),
+		&constraints,
+		&witness,
+		challenger.clone(),
+	);
 	drop(prove_span);
 
 	tracing::info!("Verifying");
@@ -395,6 +426,6 @@ fn main() {
 		n_vars = pcs.n_vars(),
 	)
 	.entered();
-	verify(log_size, &pcs, proof, challenger.clone());
+	verify(log_size, &pcs, &mut trace_oracle.clone(), &constraints, proof, challenger.clone());
 	drop(verify_span);
 }

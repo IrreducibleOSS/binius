@@ -2,10 +2,9 @@
 
 use crate::{
 	field::{PackedField, TowerField},
-	oracle::{MultilinearPolyOracle, TransparentPolyOracle},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 /// Represents the $\mathcal{T}_{\iota}$-basis of $\mathcal{T}_{\iota+k}$
 ///
@@ -59,12 +58,14 @@ impl<F: TowerField> TowerBasis<F> {
 		MultilinearExtension::from_values(values)
 	}
 
+	/*
 	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<F> {
 		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(
 			Arc::new(*self),
 			F::TOWER_LEVEL,
 		))
 	}
+	 */
 }
 
 impl<F> MultivariatePoly<F> for TowerBasis<F>

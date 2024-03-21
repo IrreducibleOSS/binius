@@ -49,7 +49,7 @@ pub fn verify_inner<F: Field>(
 
 	match poly {
 		MultivariatePolyOracle::Multilinear(multilinear) => match multilinear {
-			MultilinearPolyOracle::Transparent(transparent) => {
+			MultilinearPolyOracle::Transparent(_id, transparent) => {
 				match evalcheck_proof {
 					EvalcheckProof::Transparent => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -75,10 +75,7 @@ pub fn verify_inner<F: Field>(
 
 				batch_commited_eval_claims.insert(subclaim)?;
 			}
-			MultilinearPolyOracle::Repeating {
-				inner,
-				log_count: _,
-			} => {
+			MultilinearPolyOracle::Repeating { inner, .. } => {
 				let subproof = match evalcheck_proof {
 					EvalcheckProof::Repeating(subproof) => subproof,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -100,11 +97,11 @@ pub fn verify_inner<F: Field>(
 					packed_eval_claims,
 				)?;
 			}
-			MultilinearPolyOracle::Interleaved(_poly1, _poly2) => {
+			MultilinearPolyOracle::Interleaved(..) => {
 				// TODO: Implement interleaved reduction, similar to merged
 				todo!()
 			}
-			MultilinearPolyOracle::Merged(poly1, poly2) => {
+			MultilinearPolyOracle::Merged(_id, poly1, poly2) => {
 				let (eval1, eval2, subproof1, subproof2) = match evalcheck_proof {
 					EvalcheckProof::Merged {
 						eval1,
@@ -151,7 +148,7 @@ pub fn verify_inner<F: Field>(
 					packed_eval_claims,
 				)?;
 			}
-			MultilinearPolyOracle::Projected(projected) => {
+			MultilinearPolyOracle::Projected(_id, projected) => {
 				let (inner, values) = (projected.inner(), projected.values());
 				let eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
@@ -176,7 +173,7 @@ pub fn verify_inner<F: Field>(
 					packed_eval_claims,
 				)?;
 			}
-			MultilinearPolyOracle::Shifted(shifted) => {
+			MultilinearPolyOracle::Shifted(_id, shifted) => {
 				match evalcheck_proof {
 					EvalcheckProof::Shifted => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -190,7 +187,7 @@ pub fn verify_inner<F: Field>(
 				};
 				shifted_eval_claims.push(subclaim);
 			}
-			MultilinearPolyOracle::Packed(packed) => {
+			MultilinearPolyOracle::Packed(_id, packed) => {
 				match evalcheck_proof {
 					EvalcheckProof::Packed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -204,7 +201,7 @@ pub fn verify_inner<F: Field>(
 				};
 				packed_eval_claims.push(subclaim);
 			}
-			MultilinearPolyOracle::LinearCombination(lin_com) => {
+			MultilinearPolyOracle::LinearCombination(_id, lin_com) => {
 				let subproofs = match evalcheck_proof {
 					EvalcheckProof::Composite { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),

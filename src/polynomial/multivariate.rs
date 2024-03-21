@@ -7,7 +7,7 @@ use super::{
 use crate::field::PackedField;
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
 
-pub trait MultivariatePoly<F>: std::fmt::Debug {
+pub trait MultivariatePoly<F>: Debug + Send + Sync {
 	// The number of variables.
 	fn n_vars(&self) -> usize;
 
@@ -19,7 +19,7 @@ pub trait MultivariatePoly<F>: std::fmt::Debug {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P>: std::fmt::Debug + Send + Sync
+pub trait CompositionPoly<P>: Debug + Send + Sync
 where
 	P: PackedField,
 {

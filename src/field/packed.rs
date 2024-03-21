@@ -4,21 +4,20 @@
 //!
 //! Interfaces are derived from [`plonky2`](https://github.com/mir-protocol/plonky2).
 
-use ff::Field;
-use rand::RngCore;
-use std::{
-	iter::{self, Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
-};
-use subtle::ConstantTimeEq;
-
-use crate::util::iter::IterExtensions;
-
 use super::{
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
 	Error,
 };
+use crate::util::iter::IterExtensions;
+use ff::Field;
+use rand::RngCore;
+use std::{
+	fmt::Debug,
+	iter::{self, Product, Sum},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+};
+use subtle::ConstantTimeEq;
 
 /// A packed field represents a vector of underlying field elements.
 ///
@@ -27,9 +26,10 @@ use super::{
 /// two.
 pub trait PackedField:
 	Default
+	+ Debug
 	+ Clone
 	+ Copy
-    + Eq
+	+ Eq
 	+ Sized
 	+ ConstantTimeEq
 	+ Add<Output = Self>

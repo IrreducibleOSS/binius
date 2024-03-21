@@ -2,9 +2,7 @@
 
 use crate::{
 	field::{Field, TowerField},
-	oracle::{
-		CompositePolyOracle, MultilinearPolyOracle, MultivariatePolyOracle, TransparentPolyOracle,
-	},
+	oracle::{CompositePolyOracle, MultilinearOracleSet, MultivariatePolyOracle},
 	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
@@ -85,6 +83,7 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 }
 
 pub fn reduce_zerocheck_claim<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
 ) -> Result<SumcheckClaim<F>, VerificationError> {
@@ -93,14 +92,11 @@ pub fn reduce_zerocheck_claim<F: TowerField>(
 	}
 
 	let eq_r_multilinear = EqIndPartialEval::new(claim.poly.n_vars(), challenge)?;
-	let eq_r = MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(
-		Arc::new(eq_r_multilinear),
-		F::TOWER_LEVEL,
-	));
+	let eq_r_oracle_id = oracles.add_transparent(Arc::new(eq_r_multilinear), F::TOWER_LEVEL)?;
 
 	let poly_composite = claim.poly.clone().into_composite();
 	let mut inners = poly_composite.inner_polys();
-	inners.push(eq_r);
+	inners.push(oracles.oracle(eq_r_oracle_id));
 
 	let new_composition = ProductComposition::new(poly_composite.composition());
 	let composite_poly =
