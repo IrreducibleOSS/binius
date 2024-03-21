@@ -342,7 +342,7 @@ impl<F: TowerField> TraceOracle<F> {
 
 		let c_shift_oracle = c_oracle.map(|c_x| {
 			oracles
-				.add_shifted(c_x, 1, 6, ShiftVariant::CircularRight)
+				.add_shifted(c_x, 1, 6, ShiftVariant::CircularLeft)
 				.unwrap()
 		});
 
@@ -365,7 +365,7 @@ impl<F: TowerField> TraceOracle<F> {
 						a_theta_oracle[PI[xy]],
 						RHO[xy] as usize,
 						6,
-						ShiftVariant::CircularRight,
+						ShiftVariant::CircularLeft,
 					)
 					.unwrap()
 			}
@@ -373,7 +373,7 @@ impl<F: TowerField> TraceOracle<F> {
 
 		let next_state_in = state_in_oracle.map(|state_in_xy| {
 			oracles
-				.add_shifted(state_in_xy, 64, 11, ShiftVariant::LogicalLeft)
+				.add_shifted(state_in_xy, 64, 11, ShiftVariant::LogicalRight)
 				.unwrap()
 		});
 

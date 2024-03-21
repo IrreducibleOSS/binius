@@ -474,9 +474,9 @@ impl<F: Field> Projected<F> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ShiftVariant {
-	CircularRight,
-	LogicalRight,
+	CircularLeft,
 	LogicalLeft,
+	LogicalRight,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]

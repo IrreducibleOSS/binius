@@ -315,7 +315,7 @@ mod tests {
 		let z_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 2 });
 		let c_out_oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 3 });
 		let c_in_oracle_id = oracles
-			.add_shifted(c_out_oracle_id, 1, 5, ShiftVariant::LogicalRight)
+			.add_shifted(c_out_oracle_id, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
 
 		let x_oracle = oracles.oracle(x_oracle_id);
