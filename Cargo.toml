@@ -35,6 +35,7 @@ inherits = "release"
 debug = true
 
 [dev-dependencies]
+anyhow = "1.0.81"
 criterion = "0.4.0"
 hex-literal = "0.4.1"
 proptest = "1.2.0"

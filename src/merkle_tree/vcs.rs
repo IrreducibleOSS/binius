@@ -7,7 +7,7 @@ pub trait VectorCommitScheme<T> {
 	type Commitment: Clone;
 	type Committed;
 	type Proof;
-	type Error: std::error::Error + 'static;
+	type Error: std::error::Error + Send + Sync + 'static;
 
 	/// Returns the length of the vectors that can be committed.
 	fn vector_len(&self) -> usize;

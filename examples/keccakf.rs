@@ -4,6 +4,7 @@
 
 extern crate core;
 
+use anyhow::Result;
 use binius::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
 	field::{
@@ -243,10 +244,11 @@ impl<F: Field> CompositionPoly<F> for RoundConsistency {
 struct RoundConstant<P: PackedField<Scalar = BinaryField1b>>(MultilinearExtension<'static, P>);
 
 impl<P: PackedField<Scalar = BinaryField1b> + Pod> RoundConstant<P> {
-	fn new() -> Self {
+	fn new() -> Result<Self> {
 		let mut values = vec![P::default(); 1 << (11 - P::LOG_WIDTH)];
 		must_cast_slice_mut::<_, u64>(&mut values).copy_from_slice(KECCAKF_RC.as_slice());
-		Self(MultilinearExtension::from_values(values).unwrap())
+		let mle = MultilinearExtension::from_values(values)?;
+		Ok(Self(mle))
 	}
 }
 
@@ -277,25 +279,18 @@ struct FixedOracle<F: Field> {
 }
 
 impl<F: TowerField> FixedOracle<F> {
-	pub fn new(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
+	pub fn new(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Result<Self> {
 		let round_consts_single = oracles
-			.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()), 0)
-			.unwrap();
-		let round_consts = oracles
-			.add_repeating(round_consts_single, log_size - 11)
-			.unwrap();
+			.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()?), 0)?;
+		let round_consts = oracles.add_repeating(round_consts_single, log_size - 11)?;
 
-		let selector_single = oracles
-			.add_transparent(Arc::new(StepDown::new(11, 24 * 64).unwrap()), 0)
-			.unwrap();
-		let selector = oracles
-			.add_repeating(selector_single, log_size - 11)
-			.unwrap();
+		let selector_single = oracles.add_transparent(Arc::new(StepDown::new(11, 24 * 64)?), 0)?;
+		let selector = oracles.add_repeating(selector_single, log_size - 11)?;
 
-		Self {
+		Ok(Self {
 			round_consts: oracles.oracle(round_consts),
 			selector: oracles.oracle(selector),
-		}
+		})
 	}
 }
 
@@ -532,10 +527,10 @@ fn make_second_round_sumcheck<'a, F, CH>(
 		&EvalcheckWitness<F, DynMultilinearPoly<'a, F>, Arc<DynMultilinearPoly<'a, F>>>,
 	>,
 	mut challenger: CH,
-) -> (
+) -> Result<(
 	SumcheckClaim<F>,
 	Option<SumcheckWitness<F, DynMultilinearPoly<'a, F>, Arc<DynMultilinearPoly<'a, F>>>>,
-)
+)>
 where
 	F: TowerField,
 	CH: CanSample<F>,
@@ -554,9 +549,8 @@ where
 	let mut witnesses: Vec<Arc<dyn MultilinearPoly<F> + Send + Sync>> = Vec::new();
 
 	let same_query_claim = batch_committed_eval_claims
-		.try_extract_same_query_pcs_claim(trace_batch.id)
-		.unwrap()
-		.unwrap();
+		.try_extract_same_query_pcs_claim(trace_batch.id)?
+		.expect("eval queries must be at a single point");
 
 	let trace_mixing_challenges = challenger.sample_vec(trace_batch.n_polys);
 	let mixed_trace_eval = inner_product_unchecked::<F, F>(
@@ -564,31 +558,27 @@ where
 		trace_mixing_challenges.iter().copied(),
 	);
 
-	let mixed_trace = oracle_set
-		.add_linear_combination(
-			log_size,
-			trace_mixing_challenges
-				.iter()
-				.enumerate()
-				.map(|(i, &coeff)| {
-					(
-						oracle_set.committed_oracle_id(CommittedId {
-							batch_id: trace_batch.id,
-							index: i,
-						}),
-						coeff,
-					)
-				})
-				.collect::<Vec<_>>(),
-		)
-		.unwrap();
-	let mixed_trace_projection = oracle_set
-		.add_projected(
-			mixed_trace,
-			same_query_claim.eval_point[max_shift_block_size..].to_vec(),
-			ProjectionVariant::LastVars,
-		)
-		.unwrap();
+	let mixed_trace = oracle_set.add_linear_combination(
+		log_size,
+		trace_mixing_challenges
+			.iter()
+			.enumerate()
+			.map(|(i, &coeff)| {
+				(
+					oracle_set.committed_oracle_id(CommittedId {
+						batch_id: trace_batch.id,
+						index: i,
+					}),
+					coeff,
+				)
+			})
+			.collect::<Vec<_>>(),
+	)?;
+	let mixed_trace_projection = oracle_set.add_projected(
+		mixed_trace,
+		same_query_claim.eval_point[max_shift_block_size..].to_vec(),
+		ProjectionVariant::LastVars,
+	)?;
 	oracles.push(oracle_set.oracle(mixed_trace_projection));
 
 	let partial_eval_query = evalcheck_witness.map(|_| {
@@ -597,7 +587,9 @@ where
 	});
 
 	if let Some(evalcheck_witness) = evalcheck_witness {
-		let partial_eval_query = partial_eval_query.as_ref().unwrap();
+		let partial_eval_query = partial_eval_query
+			.as_ref()
+			.expect("evalcheck_witness is Some");
 
 		let trace_witnesses = (0..trace_batch.n_polys)
 			.map(|i| {
@@ -605,26 +597,22 @@ where
 					batch_id: trace_batch.id,
 					index: i,
 				});
-				evalcheck_witness.witness_for_oracle(&oracle).unwrap()
+				evalcheck_witness.witness_for_oracle(&oracle)
 			})
-			.collect::<Vec<_>>();
+			.collect::<Result<Vec<_>, _>>()?;
 		let mixed_trace_values = (0..1 << log_size)
 			.into_par_iter()
 			.map(|i| {
 				trace_witnesses
 					.iter()
 					.zip(trace_mixing_challenges.iter())
-					.map(|(multilin, &coeff)| {
-						multilin.evaluate_on_hypercube_and_scale(i, coeff).unwrap()
-					})
-					.sum::<F>()
+					.map(|(multilin, &coeff)| multilin.evaluate_on_hypercube_and_scale(i, coeff))
+					.sum::<Result<F, _>>()
 			})
-			.collect::<Vec<_>>();
+			.collect::<Result<Vec<_>, _>>()?;
 
-		let mixed_trace_witness = MultilinearExtension::from_values(mixed_trace_values)
-			.unwrap()
-			.evaluate_partial_high(partial_eval_query)
-			.unwrap();
+		let mixed_trace_witness = MultilinearExtension::from_values(mixed_trace_values)?
+			.evaluate_partial_high(partial_eval_query)?;
 
 		witnesses.push(Arc::new(mixed_trace_witness));
 	}
@@ -632,30 +620,24 @@ where
 	let eq_ind = EqIndPartialEval::new(
 		max_shift_block_size,
 		same_query_claim.eval_point[..max_shift_block_size].to_vec(),
-	)
-	.unwrap();
+	)?;
 
 	if evalcheck_witness.is_some() {
-		let eq_ind_witness = eq_ind.multilinear_extension().unwrap();
+		let eq_ind_witness = eq_ind.multilinear_extension()?;
 		witnesses.push(Arc::new(eq_ind_witness));
 	}
 
-	let eq_ind_oracle = oracle_set
-		.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)
-		.unwrap();
+	let eq_ind_oracle = oracle_set.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)?;
 	oracles.push(oracle_set.oracle(eq_ind_oracle));
 
-	let trace_eval_oracle = MultivariatePolyOracle::Composite(
-		CompositePolyOracle::new(
-			max_shift_block_size,
-			vec![
-				oracle_set.oracle(mixed_trace_projection),
-				oracle_set.oracle(eq_ind_oracle),
-			],
-			Arc::new(BivariateProduct),
-		)
-		.unwrap(),
-	);
+	let trace_eval_oracle = MultivariatePolyOracle::Composite(CompositePolyOracle::new(
+		max_shift_block_size,
+		vec![
+			oracle_set.oracle(mixed_trace_projection),
+			oracle_set.oracle(eq_ind_oracle),
+		],
+		Arc::new(BivariateProduct),
+	)?);
 	sumcheck_claims.push(SumcheckClaim {
 		poly: trace_eval_oracle,
 		sum: mixed_trace_eval,
@@ -663,21 +645,19 @@ where
 
 	for claim in shifted_eval_claims {
 		let shifted = claim.shifted;
-		let shifted_oracle = oracle_set
-			.add_projected(
-				shifted.inner().id(),
-				claim.eval_point[max_shift_block_size..].to_vec(),
-				ProjectionVariant::LastVars,
-			)
-			.unwrap();
+		let shifted_oracle = oracle_set.add_projected(
+			shifted.inner().id(),
+			claim.eval_point[max_shift_block_size..].to_vec(),
+			ProjectionVariant::LastVars,
+		)?;
 		oracles.push(oracle_set.oracle(shifted_oracle));
 
 		if let Some(evalcheck_witness) = evalcheck_witness {
-			let multilin = evalcheck_witness
-				.witness_for_oracle(shifted.inner())
-				.unwrap();
-			let partial_eval_query = partial_eval_query.as_ref().unwrap();
-			let projected_multilin = multilin.evaluate_partial_high(partial_eval_query).unwrap();
+			let multilin = evalcheck_witness.witness_for_oracle(shifted.inner())?;
+			let partial_eval_query = partial_eval_query
+				.as_ref()
+				.expect("evalcheck_witness is Some");
+			let projected_multilin = multilin.evaluate_partial_high(partial_eval_query)?;
 			witnesses.push(Arc::new(projected_multilin));
 		}
 
@@ -686,32 +666,27 @@ where
 			shifted.shift_offset(),
 			shifted.shift_variant(),
 			claim.eval_point[..shifted.block_size()].to_vec(),
-		)
-		.unwrap();
+		)?;
 
 		let shift_ind_oracle = if shifted.block_size() < max_shift_block_size {
-			oracle_set
-				.add_transparent(
-					Arc::new(DisjointProduct(
-						shift_ind.clone(),
-						EqIndPartialEval::new(
-							max_shift_block_size - shifted.block_size(),
-							claim.eval_point[shifted.block_size()..max_shift_block_size].to_vec(),
-						)
-						.unwrap(),
-					)),
-					F::TOWER_LEVEL,
-				)
-				.unwrap()
+			oracle_set.add_transparent(
+				Arc::new(DisjointProduct(
+					shift_ind.clone(),
+					EqIndPartialEval::new(
+						max_shift_block_size - shifted.block_size(),
+						claim.eval_point[shifted.block_size()..max_shift_block_size].to_vec(),
+					)
+					.unwrap(),
+				)),
+				F::TOWER_LEVEL,
+			)?
 		} else {
-			oracle_set
-				.add_transparent(Arc::new(shift_ind.clone()), F::TOWER_LEVEL)
-				.unwrap()
+			oracle_set.add_transparent(Arc::new(shift_ind.clone()), F::TOWER_LEVEL)?
 		};
 		oracles.push(oracle_set.oracle(shift_ind_oracle));
 
 		if evalcheck_witness.is_some() {
-			let shift_ind_mle = shift_ind.multilinear_extension().unwrap();
+			let shift_ind_mle = shift_ind.multilinear_extension()?;
 			let shift_ind_witness = if shifted.block_size() < max_shift_block_size {
 				let mut shift_ind_values = vec![F::ZERO; 1 << max_shift_block_size];
 				shift_ind_values[..1 << shifted.block_size()]
@@ -720,26 +695,22 @@ where
 					shifted.block_size(),
 					&mut shift_ind_values,
 					&claim.eval_point[shifted.block_size()..max_shift_block_size],
-				)
-				.unwrap();
-				MultilinearExtension::from_values(shift_ind_values).unwrap()
+				)?;
+				MultilinearExtension::from_values(shift_ind_values)?
 			} else {
 				shift_ind_mle
 			};
 			witnesses.push(Arc::new(shift_ind_witness));
 		}
 
-		let oracle = MultivariatePolyOracle::Composite(
-			CompositePolyOracle::new(
-				max_shift_block_size,
-				vec![
-					oracle_set.oracle(shifted_oracle),
-					oracle_set.oracle(shift_ind_oracle),
-				],
-				Arc::new(BivariateProduct),
-			)
-			.unwrap(),
-		);
+		let oracle = MultivariatePolyOracle::Composite(CompositePolyOracle::new(
+			max_shift_block_size,
+			vec![
+				oracle_set.oracle(shifted_oracle),
+				oracle_set.oracle(shift_ind_oracle),
+			],
+			Arc::new(BivariateProduct),
+		)?);
 		sumcheck_claims.push(SumcheckClaim {
 			poly: oracle,
 			sum: claim.eval,
@@ -750,14 +721,14 @@ where
 		oracles,
 		sumcheck_claims.iter(),
 		&mut challenger,
-	)
-	.unwrap();
+	)?;
 
 	let mixed_sumcheck_claim_clone = mixed_sumcheck_claim.clone();
 	let mixed_sumcheck_witness = evalcheck_witness
-		.map(move |_| sumcheck::mix_witnesses(mixed_sumcheck_claim_clone, witnesses).unwrap());
+		.map(move |_| sumcheck::mix_witnesses(mixed_sumcheck_claim_clone, witnesses))
+		.transpose()?;
 
-	(mixed_sumcheck_claim, mixed_sumcheck_witness)
+	Ok((mixed_sumcheck_claim, mixed_sumcheck_witness))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -772,7 +743,7 @@ fn prove<P, F, PCS, CH>(
 	pcs: &PCS,
 	mut challenger: CH,
 	witness: TraceWitness<P>,
-) -> Proof<F, PCS::Commitment, PCS::Proof>
+) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	P: PackedField<Scalar = BinaryField1b> + Debug + Pod,
 	F: TowerField + Step,
@@ -790,7 +761,6 @@ where
 		.chain(witness.d.iter())
 		.map(|vals| MultilinearExtension::from_values_slice(vals.as_slice()).unwrap())
 		.collect::<Vec<_>>();
-	let trace_commit_polys = trace_commit_polys.iter().collect::<Vec<_>>();
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys).unwrap();
 	challenger.observe(trace_comm.clone());
 
@@ -892,7 +862,7 @@ where
 		shifted_eval_claims,
 		Some(&evalcheck_witness),
 		&mut challenger,
-	);
+	)?;
 
 	let sumcheck_domain =
 		EvaluationDomain::new(second_sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -945,7 +915,7 @@ where
 		)
 		.unwrap();
 
-	Proof {
+	Ok(Proof {
 		trace_comm,
 		zerocheck_proof,
 		sumcheck_proof,
@@ -953,7 +923,7 @@ where
 		second_sumcheck_proof,
 		second_evalcheck_proof,
 		trace_open_proof,
-	}
+	})
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -968,7 +938,8 @@ fn verify<P, F, PCS, CH>(
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
-) where
+) -> Result<()>
+where
 	P: PackedField<Scalar = BinaryField1b> + Debug,
 	F: TowerField + Step,
 	PCS: PolyCommitScheme<P, F>,
@@ -1052,7 +1023,7 @@ fn verify<P, F, PCS, CH>(
 		shifted_eval_claims,
 		None,
 		&mut challenger,
-	);
+	)?;
 
 	let sumcheck_domain =
 		EvaluationDomain::new(second_sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -1074,16 +1045,14 @@ fn verify<P, F, PCS, CH>(
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
 		&mut packed_eval_claims,
-	)
-	.unwrap();
+	)?;
 	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	assert_eq!(shifted_eval_claims.len(), 0);
 	assert_eq!(packed_eval_claims.len(), 0);
 
 	let same_query_claim = batch_committed_eval_claims
-		.try_extract_same_query_pcs_claim(trace_batch.id)
-		.unwrap()
-		.unwrap();
+		.try_extract_same_query_pcs_claim(trace_batch.id)?
+		.expect("eval queries must be at a single point");
 
 	pcs.verify_evaluation(
 		&mut challenger,
@@ -1091,8 +1060,9 @@ fn verify<P, F, PCS, CH>(
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
-	)
-	.unwrap();
+	)?;
+
+	Ok(())
 }
 
 fn make_constraints<F: Field>(
@@ -1209,7 +1179,7 @@ fn main() {
 		tower_level: 0,
 	});
 
-	let fixed_oracle = FixedOracle::new(&mut oracles, log_size);
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, trace_batch_id);
 	let constraints = make_constraints(log_size, &fixed_oracle, &trace_oracle);
 
@@ -1226,7 +1196,8 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		witness,
-	);
+	)
+	.unwrap();
 
 	verify(
 		log_size,
@@ -1238,5 +1209,6 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		proof,
-	);
+	)
+	.unwrap();
 }

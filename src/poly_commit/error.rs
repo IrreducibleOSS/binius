@@ -7,7 +7,7 @@ pub enum Error {
 	#[error("the polynomial must have {expected} variables")]
 	IncorrectPolynomialSize { expected: usize },
 	#[error("linear encoding error: {0}")]
-	EncodeError(#[source] Box<dyn std::error::Error>),
+	EncodeError(#[source] Box<dyn std::error::Error + Send + Sync>),
 	#[error("the polynomial commitment scheme requires a power of two code block length")]
 	CodeLengthPowerOfTwoRequired,
 	#[error("the polynomial commitment scheme requires a power of two extension degree")]
@@ -27,7 +27,7 @@ pub enum Error {
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),
 	#[error("vector commit error: {0}")]
-	VectorCommit(#[source] Box<dyn std::error::Error>),
+	VectorCommit(#[source] Box<dyn std::error::Error + Send + Sync>),
 	#[error("transpose error: {0}")]
 	Transpose(#[from] field::transpose::Error),
 	#[error("verification failure: {0}")]

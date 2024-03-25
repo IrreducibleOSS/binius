@@ -14,14 +14,14 @@ where
 	type Commitment: Clone;
 	type Committed;
 	type Proof;
-	type Error;
+	type Error: std::error::Error + Send + Sync + 'static;
 
 	fn n_vars(&self) -> usize;
 
 	/// Commit to a batch of polynomials
 	fn commit(
 		&self,
-		polys: &[&MultilinearExtension<P>],
+		polys: &[MultilinearExtension<P>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
 
 	/// Generate an evaluation proof at a *random* challenge point.
@@ -29,7 +29,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		polys: &[&MultilinearExtension<P>],
+		polys: &[MultilinearExtension<P>],
 		query: &[FE],
 	) -> Result<Self::Proof, Self::Error>
 	where

@@ -93,7 +93,11 @@ where
 
 	// Round 1
 	let (abc_comm, abc_committed) = pcs
-		.commit(&[&witness.a_in, &witness.b_in, &witness.c_out])
+		.commit(&[
+			witness.a_in.to_ref(),
+			witness.b_in.to_ref(),
+			witness.c_out.to_ref(),
+		])
 		.unwrap();
 	challenger.observe(abc_comm.clone());
 
@@ -107,11 +111,11 @@ where
 		log_size,
 		constraint.clone().into_composite().composition(),
 		vec![
-			Arc::new(witness.a_in.borrow_copy())
+			Arc::new(witness.a_in.to_ref())
 				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(witness.b_in.borrow_copy())
+			Arc::new(witness.b_in.to_ref())
 				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(witness.c_out.borrow_copy())
+			Arc::new(witness.c_out.to_ref())
 				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
 		],
 	)
@@ -173,7 +177,11 @@ where
 		.prove_evaluation(
 			&mut challenger,
 			&abc_committed,
-			&[&witness.a_in, &witness.b_in, &witness.c_out],
+			&[
+				witness.a_in.to_ref(),
+				witness.b_in.to_ref(),
+				witness.c_out.to_ref(),
+			],
 			&same_query_pcs_claim.eval_point,
 		)
 		.unwrap();

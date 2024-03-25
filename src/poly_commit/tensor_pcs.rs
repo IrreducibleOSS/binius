@@ -196,7 +196,7 @@ where
 	#[instrument(skip_all, name = "tensor_pcs::commit")]
 	fn commit(
 		&self,
-		polys: &[&MultilinearExtension<P>],
+		polys: &[MultilinearExtension<P>],
 	) -> Result<(Self::Commitment, Self::Committed), Error> {
 		for poly in polys {
 			if poly.n_vars() != self.n_vars() {
@@ -264,7 +264,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		polys: &[&MultilinearExtension<P>],
+		polys: &[MultilinearExtension<P>],
 		query: &[FE],
 	) -> Result<Self::Proof, Error>
 	where
@@ -916,7 +916,7 @@ mod tests {
 			.take((1 << pcs.n_vars()) / Packed::WIDTH)
 			.collect::<Vec<_>>();
 		let poly = MultilinearExtension::from_values(evals).unwrap();
-		let polys = vec![&poly];
+		let polys = [poly.to_ref()];
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -961,7 +961,6 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let polys = polys.iter().collect::<Vec<_>>();
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1008,7 +1007,7 @@ mod tests {
 			.take((1 << pcs.n_vars()) / PackedBinaryField128x1b::WIDTH)
 			.collect::<Vec<_>>();
 		let poly = MultilinearExtension::from_values(evals).unwrap();
-		let polys = vec![&poly];
+		let polys = [poly.to_ref()];
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1058,7 +1057,6 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let polys = polys.iter().collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -1104,7 +1102,7 @@ mod tests {
 			.take((1 << pcs.n_vars()) / PackedBinaryField4x32b::WIDTH)
 			.collect::<Vec<_>>();
 		let poly = MultilinearExtension::from_values(evals).unwrap();
-		let polys = vec![&poly];
+		let polys = [poly.to_ref()];
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1154,7 +1152,6 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let polys = polys.iter().collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();

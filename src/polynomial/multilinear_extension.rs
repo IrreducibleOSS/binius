@@ -76,7 +76,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		self.evals.as_ref()
 	}
 
-	pub fn borrow_copy(&self) -> MultilinearExtension<P> {
+	pub fn to_ref(&self) -> MultilinearExtension<P> {
 		MultilinearExtension {
 			mu: self.mu,
 			evals: Cow::Borrowed(self.evals()),
@@ -447,7 +447,7 @@ mod tests {
 	{
 		assert_eq!(splits.iter().sum::<usize>(), poly.n_vars());
 
-		let mut partial_result = poly.borrow_copy();
+		let mut partial_result = poly.to_ref();
 		let mut index = q.len();
 		for split_vars in splits[0..splits.len() - 1].iter() {
 			partial_result = partial_result
