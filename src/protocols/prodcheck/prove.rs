@@ -18,16 +18,14 @@ use super::prodcheck::{
 };
 
 /// Returns merge(x, y) where x, y are multilinear polynomials
-fn construct_merge_polynomial<F, MX, BMX, MY, BMY>(
-	x: BMX,
-	y: BMY,
-) -> Result<MultilinearExtension<'static, F>, Error>
+fn construct_merge_polynomial<F, MX, MY>(
+	x: MX,
+	y: MY,
+) -> Result<impl MultilinearPoly<F> + Send + Sync, Error>
 where
 	F: Field,
-	MX: MultilinearPoly<F> + ?Sized,
-	BMX: Borrow<MX>,
-	MY: MultilinearPoly<F> + ?Sized,
-	BMY: Borrow<MY>,
+	MX: MultilinearPoly<F>,
+	MY: MultilinearPoly<F>,
 {
 	let x = x.borrow();
 	let y = y.borrow();
@@ -47,7 +45,7 @@ where
 	x.subcube_evals(x.n_vars(), 0, x_values)?;
 	y.subcube_evals(y.n_vars(), 0, y_values)?;
 	let merge_poly = MultilinearExtension::from_values(values)?;
-	Ok(merge_poly)
+	Ok(merge_poly.specialize())
 }
 
 /// Prove a prodcheck instance reduction, step one of two.
@@ -128,7 +126,7 @@ pub fn prove_step_two<'a, F: TowerField>(
 	prodcheck_witness: ProdcheckWitness<F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
 	f_prime_oracle: MultilinearPolyOracle<F>,
-	f_prime_poly: MultilinearExtension<'a, F>,
+	f_prime_poly: &'a MultilinearExtension<'a, F>,
 ) -> Result<ProdcheckProveOutput<'a, F>, Error> {
 	let n_vars = prodcheck_witness.t_polynomial.n_vars();
 	if n_vars != prodcheck_witness.u_polynomial.n_vars() {
@@ -163,21 +161,14 @@ pub fn prove_step_two<'a, F: TowerField>(
 	let f_prime_one_x = MultilinearExtension::from_values(odd_values)?;
 
 	// Construct merge primed polynomials
-	let out_poly = construct_merge_polynomial::<_, dyn MultilinearPoly<F> + Sync, _, _, _>(
-		t_poly,
-		f_prime_x_one,
-	)?;
-	let in1_poly = construct_merge_polynomial::<_, dyn MultilinearPoly<F> + Sync, _, _, _>(
-		u_poly,
-		f_prime_zero_x,
-	)?;
-	let in2_poly = construct_merge_polynomial(f_prime_x_zero, f_prime_one_x)?;
+	let out_poly = construct_merge_polynomial(t_poly, f_prime_x_one.specialize())?;
+	let in1_poly = construct_merge_polynomial(u_poly, f_prime_zero_x.specialize())?;
+	let in2_poly =
+		construct_merge_polynomial(f_prime_x_zero.specialize(), f_prime_one_x.specialize())?;
 
 	// Construct T' polynomial
-	let t_prime_multilinears = [out_poly, in1_poly, in2_poly]
-		.into_iter()
-		.map(|poly| Arc::new(poly) as Arc<dyn MultilinearPoly<F> + Send + Sync>)
-		.collect();
+	let t_prime_multilinears: Vec<Arc<dyn MultilinearPoly<F> + Send + Sync>> =
+		vec![Arc::new(out_poly), Arc::new(in1_poly), Arc::new(in2_poly)];
 
 	let t_prime_witness = MultilinearComposite::new(
 		n_vars + 1,
@@ -186,10 +177,8 @@ pub fn prove_step_two<'a, F: TowerField>(
 	)?;
 
 	// Package return values
-	let grand_product_poly_witness = EvalcheckWitness::new(vec![(
-		f_prime_oracle,
-		Arc::new(f_prime_poly) as Arc<dyn MultilinearPoly<F> + Send + Sync>,
-	)]);
+	let grand_product_poly_witness =
+		EvalcheckWitness::new(vec![(f_prime_oracle, f_prime_poly.to_ref().specialize_arc_dyn())]);
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
 		t_prime_witness,
@@ -240,8 +229,8 @@ mod tests {
 		let numerator = create_numerator();
 		let denominator = create_denominator();
 		let prodcheck_witness = ProdcheckWitness::<F> {
-			t_polynomial: Arc::new(numerator),
-			u_polynomial: Arc::new(denominator),
+			t_polynomial: numerator.specialize_arc_dyn(),
+			u_polynomial: denominator.specialize_arc_dyn(),
 		};
 
 		// Setup claim
@@ -289,7 +278,7 @@ mod tests {
 			prodcheck_witness,
 			&prodcheck_claim,
 			f_prime_oracle.clone(),
-			f_prime_poly,
+			&f_prime_poly,
 		)
 		.unwrap();
 		let reduced_claims = prove_output.reduced_product_check_claims;

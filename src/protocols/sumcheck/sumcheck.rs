@@ -1,14 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use super::{Error, VerificationError};
 use crate::{
 	field::{ExtensionField, Field, PackedField},
 	oracle::MultivariatePolyOracle,
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };
-use std::borrow::Borrow;
-
-use super::{Error, VerificationError};
 
 #[derive(Debug, Clone)]
 pub struct SumcheckRound<F> {
@@ -21,14 +19,13 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<P, M, BM>
+pub struct SumcheckProveOutput<P, M>
 where
 	P: PackedField,
-	M: MultilinearPoly<P> + ?Sized,
-	BM: Borrow<M>,
+	M: MultilinearPoly<P>,
 {
 	pub evalcheck_claim: EvalcheckClaim<P::Scalar>,
-	pub evalcheck_witness: EvalcheckWitness<P, M, BM>,
+	pub evalcheck_witness: EvalcheckWitness<P, M>,
 	pub sumcheck_proof: SumcheckProof<P::Scalar>,
 }
 
@@ -41,7 +38,7 @@ pub struct SumcheckClaim<F: Field> {
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type SumcheckWitness<P, M, BM> = MultilinearComposite<P, M, BM>;
+pub type SumcheckWitness<P, M> = MultilinearComposite<P, M>;
 
 pub fn check_evaluation_domain<F: Field>(
 	max_individual_degree: usize,

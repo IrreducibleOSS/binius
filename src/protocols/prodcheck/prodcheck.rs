@@ -25,11 +25,8 @@ pub struct ReducedProductCheckClaims<F: Field> {
 #[derive(Debug)]
 pub struct ReducedProductCheckWitnesses<'a, F: Field> {
 	pub t_prime_witness: ZerocheckWitness<'a, F>,
-	pub grand_product_poly_witness: EvalcheckWitness<
-		F,
-		dyn MultilinearPoly<F> + Send + Sync + 'a,
-		Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
-	>,
+	pub grand_product_poly_witness:
+		EvalcheckWitness<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>,
 }
 
 #[derive(Debug)]

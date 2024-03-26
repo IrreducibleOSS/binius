@@ -23,7 +23,7 @@ use binius::{
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
-use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, mem, sync::Arc};
+use std::{fmt::Debug, iter::repeat_with, mem, sync::Arc};
 
 fn sumcheck_128b_over_1b(c: &mut Criterion) {
 	sumcheck_128b_with_switchover::<BinaryField1b>(c, "Sumcheck 128b over 1b", 8)
@@ -63,7 +63,9 @@ where
 				let values = repeat_with(|| P::random(&mut rng))
 					.take((1 << n_vars) / P::WIDTH)
 					.collect::<Vec<_>>();
-				MultilinearExtension::from_values(values).unwrap()
+				MultilinearExtension::from_values(values)
+					.unwrap()
+					.specialize::<FTower>()
 			})
 			.take(composition.n_vars())
 			.collect::<Vec<_>>();
@@ -116,9 +118,28 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			})
 			.take(composition.n_vars())
 			.collect::<Vec<_>>();
-			let poly =
-				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
-			let prover_poly = transform_poly(&poly, prover_composition.clone()).unwrap();
+			let poly = MultilinearComposite::new(
+				n_vars,
+				composition.clone(),
+				multilinears
+					.iter()
+					.map(|multilin| multilin.to_ref().specialize())
+					.collect(),
+			)
+			.unwrap();
+			let prover_poly = MultilinearComposite::new(
+				n_vars,
+				prover_composition.clone(),
+				multilinears
+					.iter()
+					.map(|multilin| {
+						transform_poly::<_, FPolyval>(multilin.to_ref())
+							.unwrap()
+							.specialize()
+					})
+					.collect(),
+			)
+			.unwrap();
 
 			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -165,9 +186,28 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			})
 			.take(composition.n_vars())
 			.collect::<Vec<_>>();
-			let poly =
-				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
-			let prover_poly = transform_poly(&poly, prover_composition.clone()).unwrap();
+			let poly = MultilinearComposite::new(
+				n_vars,
+				composition.clone(),
+				multilinears
+					.iter()
+					.map(|multilin| multilin.to_ref().specialize())
+					.collect(),
+			)
+			.unwrap();
+			let prover_poly = MultilinearComposite::new(
+				n_vars,
+				prover_composition.clone(),
+				multilinears
+					.iter()
+					.map(|multilin| {
+						transform_poly::<_, FPolyval>(multilin.to_ref())
+							.unwrap()
+							.specialize()
+					})
+					.collect(),
+			)
+			.unwrap();
 
 			let multilinears = prover_poly
 				.multilinears
@@ -178,7 +218,6 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 				.collect::<Vec<_>>();
 			let prover_poly: MultilinearComposite<
 				FPolyval,
-				dyn MultilinearPoly<FPolyval> + Send + Sync,
 				Arc<dyn MultilinearPoly<FPolyval> + Send + Sync>,
 			> = MultilinearComposite::new(n_vars, prover_composition.clone(), multilinears).unwrap();
 
@@ -200,13 +239,12 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 
 /// Given a sumcheck witness and a domain, make sumcheck claim
 /// REQUIRES: Composition is the product composition
-pub fn make_sumcheck_claim<F, M, BM>(
-	poly: &MultilinearComposite<F, M, BM>,
+pub fn make_sumcheck_claim<F, M>(
+	poly: &MultilinearComposite<F, M>,
 ) -> Result<SumcheckClaim<F>, SumcheckError>
 where
 	F: TowerField,
 	M: MultilinearPoly<F>,
-	BM: Borrow<M>,
 {
 	// Setup poly_oracle
 	let mut oracles = MultilinearOracleSet::new();

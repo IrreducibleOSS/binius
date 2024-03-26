@@ -2,9 +2,9 @@
 
 use crate::{
 	field::PackedField,
-	polynomial::{multilinear_query::MultilinearQuery, Error, MultilinearExtension},
+	polynomial::{multilinear_query::MultilinearQuery, Error, MultilinearExtensionSpecialized},
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Deref};
 
 /// Represents a multilinear polynomial.
 ///
@@ -40,19 +40,17 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		scalar: P::Scalar,
 	) -> Result<P::Scalar, Error>;
 
-	fn evaluate(&self, q: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
-		self.evaluate_subcube(0, q)
-	}
+	fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error>;
 
 	fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtension<'static, P>, Error>;
+	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error>;
 
 	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtension<'static, P>, Error>;
+	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error>;
 
 	/// Evaluate the multilinear extension of a subcube of the multilinear.
 	///
@@ -67,4 +65,60 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 
 	/// Get a subcube of the boolean hypercube of a given size.
 	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error>;
+}
+
+impl<T, P: PackedField> MultilinearPoly<P> for T
+where
+	T: Deref + Debug,
+	T::Target: MultilinearPoly<P>,
+{
+	fn n_vars(&self) -> usize {
+		(**self).n_vars()
+	}
+
+	fn size(&self) -> usize {
+		(**self).size()
+	}
+
+	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
+		(**self).evaluate_on_hypercube(index)
+	}
+
+	fn evaluate_on_hypercube_and_scale(
+		&self,
+		index: usize,
+		scalar: P::Scalar,
+	) -> Result<P::Scalar, Error> {
+		(**self).evaluate_on_hypercube_and_scale(index, scalar)
+	}
+
+	fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
+		(**self).evaluate(query)
+	}
+
+	fn evaluate_partial_low(
+		&self,
+		query: &MultilinearQuery<P>,
+	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error> {
+		(**self).evaluate_partial_low(query)
+	}
+
+	fn evaluate_partial_high(
+		&self,
+		query: &MultilinearQuery<P>,
+	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error> {
+		(**self).evaluate_partial_high(query)
+	}
+
+	fn evaluate_subcube(
+		&self,
+		index: usize,
+		query: &MultilinearQuery<P>,
+	) -> Result<P::Scalar, Error> {
+		(**self).evaluate_subcube(index, query)
+	}
+
+	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error> {
+		(**self).subcube_evals(vars, index, dst)
+	}
 }

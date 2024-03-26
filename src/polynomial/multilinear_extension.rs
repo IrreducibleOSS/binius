@@ -8,7 +8,7 @@ use crate::field::{
 use itertools::Either;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{borrow::Cow, fmt::Debug};
+use std::{borrow::Cow, fmt::Debug, marker::PhantomData, sync::Arc};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -94,6 +94,11 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 			.get(index)
 			.ok_or(Error::HypercubeIndexOutOfRange { index })
 			.copied()
+	}
+
+	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
+		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
+		Ok(subcube_eval.get(index % P::WIDTH))
 	}
 
 	pub fn evaluate<FE, PE>(&self, query: &MultilinearQuery<PE>) -> Result<FE, Error>
@@ -277,21 +282,81 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		};
 		Ok(iter)
 	}
+
+	pub fn specialize<PE>(self) -> MultilinearExtensionSpecialized<'a, P, PE>
+	where
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		MultilinearExtensionSpecialized::from(self)
+	}
+
+	pub fn specialize_arc_dyn<PE>(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a>
+	where
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		self.specialize().upcast_arc_dyn()
+	}
 }
 
-impl<'a, P, PE> MultilinearPoly<PE> for MultilinearExtension<'a, P>
+/// A wrapper type for [`MultilinearExtension`] that specializes to a packed extension field type.
+///
+/// This struct implements `MultilinearPoly` for an extension field of the base field that the
+/// multilinear extension is defined over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultilinearExtensionSpecialized<'a, P, PE>(MultilinearExtension<'a, P>, PhantomData<PE>)
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>;
+
+impl<'a, P, PE> MultilinearExtensionSpecialized<'a, P, PE>
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
+{
+	pub fn upcast_arc_dyn(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a> {
+		Arc::new(self)
+	}
+}
+
+impl<'a, P, PE> From<MultilinearExtension<'a, P>> for MultilinearExtensionSpecialized<'a, P, PE>
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
+{
+	fn from(inner: MultilinearExtension<'a, P>) -> Self {
+		Self(inner, PhantomData)
+	}
+}
+
+impl<'a, P, PE> AsRef<MultilinearExtension<'a, P>> for MultilinearExtensionSpecialized<'a, P, PE>
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
+{
+	fn as_ref(&self) -> &MultilinearExtension<'a, P> {
+		&self.0
+	}
+}
+
+impl<'a, P, PE> MultilinearPoly<PE> for MultilinearExtensionSpecialized<'a, P, PE>
 where
 	P: PackedField + Debug,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	fn n_vars(&self) -> usize {
-		self.mu
+		self.0.n_vars()
 	}
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<PE::Scalar, Error> {
-		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
-		Ok(subcube_eval.get(index % P::WIDTH).into())
+		let eval = self.0.evaluate_on_hypercube(index)?;
+		Ok(eval.into())
 	}
 
 	fn evaluate_on_hypercube_and_scale(
@@ -299,26 +364,30 @@ where
 		index: usize,
 		scalar: PE::Scalar,
 	) -> Result<PE::Scalar, Error> {
-		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
-		Ok(scalar * subcube_eval.get(index % P::WIDTH))
+		let eval = self.0.evaluate_on_hypercube(index)?;
+		Ok(scalar * eval)
 	}
 
 	fn evaluate(&self, query: &MultilinearQuery<PE>) -> Result<PE::Scalar, Error> {
-		self.evaluate(query)
+		self.0.evaluate(query)
 	}
 
 	fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtension<'static, PE>, Error> {
-		self.evaluate_partial_low(query)
+	) -> Result<MultilinearExtensionSpecialized<'static, PE, PE>, Error> {
+		self.0
+			.evaluate_partial_low(query)
+			.map(MultilinearExtensionSpecialized::from)
 	}
 
 	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtension<'static, PE>, Error> {
-		self.evaluate_partial_high(query)
+	) -> Result<MultilinearExtensionSpecialized<'static, PE, PE>, Error> {
+		self.0
+			.evaluate_partial_high(query)
+			.map(MultilinearExtensionSpecialized::from)
 	}
 
 	fn evaluate_subcube(
@@ -328,7 +397,7 @@ where
 	) -> Result<PE::Scalar, Error> {
 		let ret = inner_product_unchecked(
 			iter_packed_slice(query.expansion()),
-			self.iter_subcube_scalars(query.n_vars(), index)?,
+			self.0.iter_subcube_scalars(query.n_vars(), index)?,
 		);
 		Ok(ret)
 	}
@@ -354,7 +423,7 @@ where
 			});
 		}
 
-		let evals = &self.evals()[(index << vars) / PE::WIDTH..((index + 1) << vars) / PE::WIDTH];
+		let evals = &self.0.evals()[(index << vars) / PE::WIDTH..((index + 1) << vars) / PE::WIDTH];
 		for i in 0..1 << vars {
 			set_packed_slice(dst, i, get_packed_slice(evals, i).into());
 		}
@@ -510,21 +579,20 @@ mod tests {
 				.take(1 << 8)
 				.collect(),
 		)
-		.unwrap();
+		.unwrap()
+		.specialize::<BinaryField128b>();
 
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
 			.collect::<Vec<_>>();
 		let query = MultilinearQuery::with_full_query(&q).unwrap();
 
-		let partial_low =
-			MultilinearPoly::<BinaryField128b>::evaluate_partial_low(&poly, &query).unwrap();
+		let partial_low = poly.evaluate_partial_low(&query).unwrap();
 
 		for idx in 0..(1 << 4) {
 			assert_eq!(
-				MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, idx, &query).unwrap(),
-				MultilinearPoly::<BinaryField128b>::evaluate_on_hypercube(&partial_low, idx)
-					.unwrap(),
+				poly.evaluate_subcube(idx, &query).unwrap(),
+				partial_low.evaluate_on_hypercube(idx).unwrap(),
 			);
 		}
 	}
@@ -535,20 +603,15 @@ mod tests {
 		let poly = MultilinearExtension::from_values(vec![PackedBinaryField4x32b::from(
 			[2, 2, 9, 9].map(BinaryField32b::new),
 		)])
-		.unwrap();
+		.unwrap()
+		.specialize::<BinaryField128b>();
 
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
 		let query = MultilinearQuery::with_full_query(&q).unwrap();
 
-		assert_eq!(
-			MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, 0, &query).unwrap(),
-			BinaryField128b::new(2)
-		);
-		assert_eq!(
-			MultilinearPoly::<BinaryField128b>::evaluate_subcube(&poly, 1, &query).unwrap(),
-			BinaryField128b::new(9)
-		);
+		assert_eq!(poly.evaluate_subcube(0, &query).unwrap(), BinaryField128b::new(2));
+		assert_eq!(poly.evaluate_subcube(1, &query).unwrap(), BinaryField128b::new(9));
 	}
 }

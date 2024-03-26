@@ -12,7 +12,7 @@ use crate::{
 	},
 };
 use p3_challenger::CanSample;
-use std::{borrow::Borrow, cell::RefCell, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 use thread_local::ThreadLocal;
 
 /// Securely mix several sumcheck claims into a single claim.
@@ -45,14 +45,13 @@ where
 }
 
 /// Construct the sumcheck witness for a mixed sumcheck claim.
-pub fn mix_witnesses<F, M, BM>(
+pub fn mix_witnesses<F, M>(
 	claim: SumcheckClaim<F>,
-	multilinears: Vec<BM>,
-) -> Result<SumcheckWitness<F, M, BM>, Error>
+	multilinears: Vec<M>,
+) -> Result<SumcheckWitness<F, M>, Error>
 where
 	F: TowerField,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
+	M: MultilinearPoly<F>,
 {
 	let composite = claim.poly.into_composite();
 	let witness =

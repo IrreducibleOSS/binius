@@ -12,7 +12,7 @@ use binius::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearPoly,
+		MultilinearExtension,
 	},
 	protocols::{
 		evalcheck::{
@@ -111,12 +111,9 @@ where
 		log_size,
 		constraint.clone().into_composite().composition(),
 		vec![
-			Arc::new(witness.a_in.to_ref())
-				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(witness.b_in.to_ref())
-				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
-			Arc::new(witness.c_out.to_ref())
-				as Arc<dyn MultilinearPoly<BinaryField128b> + Send + Sync>,
+			witness.a_in.to_ref().specialize_arc_dyn(),
+			witness.b_in.to_ref().specialize_arc_dyn(),
+			witness.c_out.to_ref().specialize_arc_dyn(),
 		],
 	)
 	.unwrap();

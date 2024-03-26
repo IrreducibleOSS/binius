@@ -9,7 +9,7 @@ use crate::{
 	},
 	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
-use std::{borrow::Borrow, marker::PhantomData};
+use std::marker::PhantomData;
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
@@ -49,19 +49,18 @@ pub struct PackedEvalClaim<F: Field> {
 }
 
 #[derive(Debug)]
-pub struct EvalcheckWitness<P: PackedField, M: ?Sized, BM> {
-	multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, BM)>,
+pub struct EvalcheckWitness<P: PackedField, M> {
+	multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, M)>,
 	_p_marker: PhantomData<P>,
 	_m_marker: PhantomData<M>,
 }
 
-impl<P, M, BM> EvalcheckWitness<P, M, BM>
+impl<P, M> EvalcheckWitness<P, M>
 where
 	P: PackedField,
-	M: MultilinearPoly<P> + ?Sized,
-	BM: Borrow<M>,
+	M: MultilinearPoly<P>,
 {
-	pub fn new(multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, BM)>) -> Self {
+	pub fn new(multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, M)>) -> Self {
 		Self {
 			multilinears,
 			_p_marker: PhantomData,
@@ -72,7 +71,7 @@ where
 	pub fn witness_for_oracle(
 		&self,
 		oracle: &MultilinearPolyOracle<P::Scalar>,
-	) -> Result<&BM, Error> {
+	) -> Result<&M, Error> {
 		// TODO: Use HashMap to reduce O(n) search to O(1)
 		let (_, multilin) = self
 			.multilinears
@@ -88,11 +87,11 @@ where
 		query: &MultilinearQuery<P>,
 	) -> Result<P::Scalar, Error> {
 		let multilin = self.witness_for_oracle(oracle)?;
-		let eval = multilin.borrow().evaluate(query)?;
+		let eval = multilin.evaluate(query)?;
 		Ok(eval)
 	}
 
-	pub fn merge(mut self, other: EvalcheckWitness<P, M, BM>) -> Self {
+	pub fn merge(mut self, other: EvalcheckWitness<P, M>) -> Self {
 		self.multilinears.extend(other.multilinears);
 		self
 	}

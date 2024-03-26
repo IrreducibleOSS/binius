@@ -1,9 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{borrow::Borrow, sync::Arc};
-
-use tracing::instrument;
-
+use super::{
+	error::Error,
+	zerocheck::{
+		ProductComposition, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
+	},
+};
 use crate::{
 	field::{Field, TowerField},
 	oracle::MultilinearOracleSet,
@@ -13,22 +15,16 @@ use crate::{
 	},
 	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
 };
+use std::sync::Arc;
+use tracing::instrument;
 
-use super::{
-	error::Error,
-	zerocheck::{
-		ProductComposition, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
-	},
-};
-
-fn multiply_multilinear_composite<F, M, BM>(
-	composite: MultilinearComposite<F, M, BM>,
-	new_multilinear: BM,
-) -> Result<MultilinearComposite<F, M, BM>, PolynomialError>
+fn multiply_multilinear_composite<F, M>(
+	composite: MultilinearComposite<F, M>,
+	new_multilinear: M,
+) -> Result<MultilinearComposite<F, M>, PolynomialError>
 where
 	F: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
+	M: MultilinearPoly<F>,
 {
 	let n_vars: usize = composite.n_vars();
 	let inner_composition = ProductComposition::new(composite.composition);
@@ -65,7 +61,8 @@ pub fn prove<'a, F: TowerField>(
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
-	let sumcheck_witness = multiply_multilinear_composite(zerocheck_witness, Arc::new(eq_r))?;
+	let sumcheck_witness =
+		multiply_multilinear_composite(zerocheck_witness, eq_r.specialize_arc_dyn())?;
 
 	// Step 3: Make Sumcheck Claim on New Polynomial
 	let sumcheck_claim = reduce_zerocheck_claim(oracles, zerocheck_claim, challenge)?;
@@ -113,8 +110,11 @@ mod tests {
 				let values: Vec<F> = (0..1 << n_vars)
 					.map(|j| if i == j { F::ZERO } else { F::ONE })
 					.collect::<Vec<_>>();
-				Arc::new(MultilinearExtension::from_values(values).unwrap())
-					as Arc<dyn MultilinearPoly<F> + Send + Sync>
+				Arc::new(
+					MultilinearExtension::from_values(values)
+						.unwrap()
+						.specialize(),
+				) as Arc<dyn MultilinearPoly<F> + Send + Sync>
 			})
 			.collect::<Vec<_>>();
 		let zerocheck_witness =

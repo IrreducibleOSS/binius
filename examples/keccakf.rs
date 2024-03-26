@@ -523,14 +523,9 @@ fn make_second_round_sumcheck<'a, F, CH>(
 	trace_batch: &CommittedBatch,
 	batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: Vec<ShiftedEvalClaim<F>>,
-	evalcheck_witness: Option<
-		&EvalcheckWitness<F, DynMultilinearPoly<'a, F>, Arc<DynMultilinearPoly<'a, F>>>,
-	>,
+	evalcheck_witness: Option<&EvalcheckWitness<F, Arc<DynMultilinearPoly<'a, F>>>>,
 	mut challenger: CH,
-) -> Result<(
-	SumcheckClaim<F>,
-	Option<SumcheckWitness<F, DynMultilinearPoly<'a, F>, Arc<DynMultilinearPoly<'a, F>>>>,
-)>
+) -> Result<(SumcheckClaim<F>, Option<SumcheckWitness<F, Arc<DynMultilinearPoly<'a, F>>>>)>
 where
 	F: TowerField,
 	CH: CanSample<F>,
@@ -614,7 +609,7 @@ where
 		let mixed_trace_witness = MultilinearExtension::from_values(mixed_trace_values)?
 			.evaluate_partial_high(partial_eval_query)?;
 
-		witnesses.push(Arc::new(mixed_trace_witness));
+		witnesses.push(mixed_trace_witness.specialize_arc_dyn());
 	}
 
 	let eq_ind = EqIndPartialEval::new(
@@ -624,7 +619,7 @@ where
 
 	if evalcheck_witness.is_some() {
 		let eq_ind_witness = eq_ind.multilinear_extension()?;
-		witnesses.push(Arc::new(eq_ind_witness));
+		witnesses.push(eq_ind_witness.specialize_arc_dyn());
 	}
 
 	let eq_ind_oracle = oracle_set.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)?;
@@ -658,7 +653,7 @@ where
 				.as_ref()
 				.expect("evalcheck_witness is Some");
 			let projected_multilin = multilin.evaluate_partial_high(partial_eval_query)?;
-			witnesses.push(Arc::new(projected_multilin));
+			witnesses.push(projected_multilin.upcast_arc_dyn());
 		}
 
 		let shift_ind = ShiftIndPartialEval::new(
@@ -700,7 +695,7 @@ where
 			} else {
 				shift_ind_mle
 			};
-			witnesses.push(Arc::new(shift_ind_witness));
+			witnesses.push(shift_ind_witness.specialize_arc_dyn());
 		}
 
 		let oracle = MultivariatePolyOracle::Composite(CompositePolyOracle::new(
@@ -802,8 +797,9 @@ where
 			.chain(witness.b.iter())
 			.chain(witness.next_state_in.iter())
 			.map(|values| {
-				Arc::new(MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-					as Arc<dyn MultilinearPoly<F> + Send + Sync>
+				MultilinearExtension::from_values_slice(values.as_slice())
+					.unwrap()
+					.specialize_arc_dyn()
 			})
 			.collect(),
 	)

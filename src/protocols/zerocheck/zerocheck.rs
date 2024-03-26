@@ -18,11 +18,7 @@ pub struct ZerocheckProof;
 #[derive(Debug)]
 pub struct ZerocheckProveOutput<'a, F: Field> {
 	pub sumcheck_claim: SumcheckClaim<F>,
-	pub sumcheck_witness: SumcheckWitness<
-		F,
-		dyn MultilinearPoly<F> + Send + Sync + 'a,
-		Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
-	>,
+	pub sumcheck_witness: SumcheckWitness<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
@@ -33,11 +29,8 @@ pub struct ZerocheckClaim<F: Field> {
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type ZerocheckWitness<'a, F> = MultilinearComposite<
-	F,
-	dyn MultilinearPoly<F> + Send + Sync + 'a,
-	Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>,
->;
+pub type ZerocheckWitness<'a, F> =
+	MultilinearComposite<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>;
 
 /// This wraps an inner composition polynomial $f$ and multiplies by another variable..
 ///

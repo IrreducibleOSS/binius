@@ -1,16 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use p3_challenger::{CanObserve, CanSample};
-use std::{borrow::Borrow, iter::repeat, sync::Arc};
-
-use tracing::instrument;
-
-use crate::field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
-
 use crate::{
+	field::{packed::set_packed_slice, BinaryField1b, Field, PackedField},
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearPoly, MultivariatePoly,
+		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
+		MultilinearPoly, MultivariatePoly,
 	},
 	protocols::{
 		evalcheck::EvalcheckClaim,
@@ -20,6 +14,9 @@ use crate::{
 		},
 	},
 };
+use p3_challenger::{CanObserve, CanSample};
+use std::iter::repeat;
+use tracing::instrument;
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
 #[allow(unused_macros, unused_imports)]
@@ -124,31 +121,20 @@ where
 	}
 }
 
-pub fn transform_poly<'a, F, OF>(
-	poly: &MultilinearComposite<F, MultilinearExtension<'a, F>, MultilinearExtension<'a, F>>,
-	replacement_composition: Arc<dyn CompositionPoly<OF>>,
-) -> Result<
-	MultilinearComposite<OF, MultilinearExtension<'static, OF>, MultilinearExtension<'static, OF>>,
-	PolynomialError,
->
+pub fn transform_poly<F, OF>(
+	multilin: MultilinearExtension<F>,
+) -> Result<MultilinearExtension<'static, OF>, PolynomialError>
 where
 	F: Field,
 	OF: Field + From<F> + Into<F>,
 {
-	let multilinears = poly
-		.iter_multilinear_polys()
-		.map(|multilin| {
-			let values = multilin
-				.evals()
-				.iter()
-				.cloned()
-				.map(OF::from)
-				.collect::<Vec<_>>();
-			MultilinearExtension::from_values(values)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-	let ret = MultilinearComposite::new(poly.n_vars(), replacement_composition, multilinears)?;
-	Ok(ret)
+	let values = multilin
+		.evals()
+		.iter()
+		.cloned()
+		.map(OF::from)
+		.collect::<Vec<_>>();
+	MultilinearExtension::from_values(values)
 }
 
 #[instrument(skip_all, name = "test_utils::full_verify")]
@@ -189,17 +175,16 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::full_prove_with_switchover")]
-pub fn full_prove_with_switchover<F, M, BM, CH>(
+pub fn full_prove_with_switchover<F, M, CH>(
 	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M, BM>,
+	witness: SumcheckWitness<F, M>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M>)
 where
 	F: Field,
-	M: MultilinearPoly<F> + Send + Sync + ?Sized,
-	BM: Borrow<M> + Clone + Sync,
+	M: MultilinearPoly<F> + Clone + Send + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
@@ -236,20 +221,18 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::full_prove_with_operating_field")]
-pub fn full_prove_with_operating_field<F, OF, M, BM, OM, BOM, CH>(
+pub fn full_prove_with_operating_field<F, OF, M, OM, CH>(
 	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M, BM>,
-	operating_witness: SumcheckWitness<OF, OM, BOM>,
+	witness: SumcheckWitness<F, M>,
+	operating_witness: SumcheckWitness<OF, OM>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M, BM>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M>)
 where
 	F: Field + From<OF> + Into<OF>,
 	OF: Field,
-	M: MultilinearPoly<F> + ?Sized,
-	BM: Borrow<M>,
-	OM: MultilinearPoly<OF> + Sync + ?Sized,
-	BOM: Borrow<OM> + Sync,
+	M: MultilinearPoly<F>,
+	OM: MultilinearPoly<OF> + Send + Sync,
 	CH: CanObserve<F> + CanSample<F>,
 {
 	let n_vars = claim.poly.n_vars();
@@ -261,7 +244,7 @@ where
 		.collect::<Vec<_>>();
 
 	let mut prover_state =
-		SumcheckProverState::<F, OF, OM, BOM>::new(claim, operating_witness, &switchovers).unwrap();
+		SumcheckProverState::new(claim, operating_witness, &switchovers).unwrap();
 
 	let mut prev_rd_challenge = None;
 	let mut rd_claims = Vec::new();
@@ -279,7 +262,7 @@ where
 	}
 
 	let prove_output = prover_state
-		.finalize::<F, M, BM>(&claim.poly, witness, domain, prev_rd_challenge)
+		.finalize(&claim.poly, witness, domain, prev_rd_challenge)
 		.unwrap();
 
 	(rd_claims, prove_output)
