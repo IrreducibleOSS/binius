@@ -1,14 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::field::{
+	arch::PairwiseStrategy,
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
 	packed::PackedField,
 };
-
-/// Implement operation per element
-pub struct PairwiseStrategy;
 
 impl<PT: PackedField> TaggedMul<PairwiseStrategy> for PT {
 	fn mul(self, b: Self) -> Self {

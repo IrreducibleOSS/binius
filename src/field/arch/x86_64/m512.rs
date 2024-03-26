@@ -1,12 +1,4 @@
-use std::{
-	arch::x86_64::*,
-	mem::transmute_copy,
-	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
-};
-
-use bytemuck::{must_cast, Pod, Zeroable};
-use rand::{Rng, RngCore};
-use subtle::{Choice, ConstantTimeEq};
+// Copyright 2024 Ulvetanna Inc.
 
 use crate::field::{
 	arch::portable::{
@@ -17,10 +9,24 @@ use crate::field::{
 	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
 	BinaryField,
 };
+use bytemuck::{must_cast, Pod, Zeroable};
+use rand::{Rng, RngCore};
+use std::{
+	arch::x86_64::*,
+	mem::transmute_copy,
+	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
+};
+use subtle::{Choice, ConstantTimeEq};
 
 /// 512-bit value that is used for 512-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
-pub struct M512(__m512i);
+pub struct M512(pub(super) __m512i);
+
+impl M512 {
+	pub const fn from_equal_u128s(val: u128) -> M512 {
+		unsafe { transmute_copy(&AlignedData([val, val, val, val])) }
+	}
+}
 
 impl From<__m512i> for M512 {
 	fn from(value: __m512i) -> Self {
@@ -352,38 +358,111 @@ where
 	}
 }
 
-const fn from_equal_u128s(val: u128) -> M512 {
-	unsafe { transmute_copy(&AlignedData([val, val, val, val])) }
-}
-
 // TODO: Add efficient interleave specialization for 512-bit values
 impl UnderlierWithBitConstants for M512 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
-		from_equal_u128s(interleave_mask_even!(u128, 0)),
-		from_equal_u128s(interleave_mask_even!(u128, 1)),
-		from_equal_u128s(interleave_mask_even!(u128, 2)),
-		from_equal_u128s(interleave_mask_even!(u128, 3)),
-		from_equal_u128s(interleave_mask_even!(u128, 4)),
-		from_equal_u128s(interleave_mask_even!(u128, 5)),
-		from_equal_u128s(interleave_mask_even!(u128, 6)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 0)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 1)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 2)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 3)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 4)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 5)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 6)),
 	];
 
 	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
-		from_equal_u128s(interleave_mask_odd!(u128, 0)),
-		from_equal_u128s(interleave_mask_odd!(u128, 1)),
-		from_equal_u128s(interleave_mask_odd!(u128, 2)),
-		from_equal_u128s(interleave_mask_odd!(u128, 3)),
-		from_equal_u128s(interleave_mask_odd!(u128, 4)),
-		from_equal_u128s(interleave_mask_odd!(u128, 5)),
-		from_equal_u128s(interleave_mask_odd!(u128, 6)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 0)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 1)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 2)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 3)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 4)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 5)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 6)),
 	];
+
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
+		(Self(a), Self(b))
+	}
+}
+
+#[inline]
+unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m512i, __m512i) {
+	match log_block_len {
+		0 => {
+			let mask = _mm512_set1_epi8(0x55i8);
+			interleave_bits_imm::<1>(a, b, mask)
+		}
+		1 => {
+			let mask = _mm512_set1_epi8(0x33i8);
+			interleave_bits_imm::<2>(a, b, mask)
+		}
+		2 => {
+			let mask = _mm512_set1_epi8(0x0fi8);
+			interleave_bits_imm::<4>(a, b, mask)
+		}
+		3 => {
+			let shuffle = _mm512_set_epi8(
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
+				14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+			);
+			let a = _mm512_shuffle_epi8(a, shuffle);
+			let b = _mm512_shuffle_epi8(b, shuffle);
+			let a_prime = _mm512_unpacklo_epi8(a, b);
+			let b_prime = _mm512_unpackhi_epi8(a, b);
+			(a_prime, b_prime)
+		}
+		4 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
+				13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15,
+				14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0,
+			);
+			let a = _mm512_shuffle_epi8(a, shuffle);
+			let b = _mm512_shuffle_epi8(b, shuffle);
+			let a_prime = _mm512_unpacklo_epi16(a, b);
+			let b_prime = _mm512_unpackhi_epi16(a, b);
+			(a_prime, b_prime)
+		}
+		5 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
+				11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15,
+				14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0,
+			);
+			let a = _mm512_shuffle_epi8(a, shuffle);
+			let b = _mm512_shuffle_epi8(b, shuffle);
+			let a_prime = _mm512_unpacklo_epi32(a, b);
+			let b_prime = _mm512_unpackhi_epi32(a, b);
+			(a_prime, b_prime)
+		}
+		6 => {
+			let a_prime = _mm512_unpacklo_epi64(a, b);
+			let b_prime = _mm512_unpackhi_epi64(a, b);
+			(a_prime, b_prime)
+		}
+		_ => panic!("unsupported block length"),
+	}
+}
+
+#[inline]
+unsafe fn interleave_bits_imm<const BLOCK_LEN: u32>(
+	a: __m512i,
+	b: __m512i,
+	mask: __m512i,
+) -> (__m512i, __m512i) {
+	let t = _mm512_and_si512(_mm512_xor_si512(_mm512_srli_epi64::<BLOCK_LEN>(a), b), mask);
+	let a_prime = _mm512_xor_si512(a, _mm512_slli_epi64::<BLOCK_LEN>(t));
+	let b_prime = _mm512_xor_si512(b, t);
+	(a_prime, b_prime)
 }
 
 #[cfg(test)]
 mod tests {
-	use proptest::{arbitrary::any, proptest};
-
 	use super::*;
+	use crate::field::underlier::single_element_mask_bits;
+	use proptest::{arbitrary::any, proptest};
 
 	fn check_roundtrip<T>(val: M512)
 	where
@@ -484,6 +563,25 @@ mod tests {
 		fn test_shifts(a in any::<[u128; 4]>(), rhs in 0..255usize) {
 			assert_eq!(M512::from(a) << rhs, M512::from(ByteData::from(a) << rhs));
 			assert_eq!(M512::from(a) >> rhs, M512::from(ByteData::from(a) >> rhs));
+		}
+
+		#[test]
+		fn test_interleave_bits(a in any::<[u128; 4]>(), b in any::<[u128; 4]>(), height in 0usize..7) {
+			let a = M512::from(a);
+			let b = M512::from(b);
+			let (c, d) = unsafe {interleave_bits(a.0, b.0, height)};
+			let (c, d) = (M512::from(c), M512::from(d));
+
+			let block_len = 1usize << height;
+			let get = |v, i| {
+				u128::num_cast_from((v >> (i * block_len)) & single_element_mask_bits::<M512>(1 << height))
+			};
+			for i in (0..512/block_len).step_by(2) {
+				assert_eq!(get(c, i), get(a, i));
+				assert_eq!(get(c, i+1), get(b, i));
+				assert_eq!(get(d, i), get(a, i+1));
+				assert_eq!(get(d, i+1), get(b, i+1));
+			}
 		}
 	}
 

@@ -1,12 +1,4 @@
-use std::{
-	arch::x86_64::*,
-	mem::transmute_copy,
-	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
-};
-
-use bytemuck::{must_cast, Pod, Zeroable};
-use rand::{Rng, RngCore};
-use subtle::{Choice, ConstantTimeEq};
+// Copyright 2024 Ulvetanna Inc.
 
 use crate::field::{
 	arch::portable::{
@@ -17,10 +9,24 @@ use crate::field::{
 	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
 	BinaryField,
 };
+use bytemuck::{must_cast, Pod, Zeroable};
+use rand::{Rng, RngCore};
+use std::{
+	arch::x86_64::*,
+	mem::transmute_copy,
+	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
+};
+use subtle::{Choice, ConstantTimeEq};
 
 /// 256-bit value that is used for 256-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
-pub struct M256(__m256i);
+pub struct M256(pub(super) __m256i);
+
+impl M256 {
+	pub const fn from_equal_u128s(val: u128) -> Self {
+		unsafe { transmute_copy(&[val, val]) }
+	}
+}
 
 impl From<__m256i> for M256 {
 	fn from(value: __m256i) -> Self {
@@ -301,38 +307,107 @@ where
 	}
 }
 
-const fn from_equal_u128s(val: u128) -> M256 {
-	unsafe { transmute_copy(&[val, val]) }
-}
-
-// TODO: Add efficient interleave specialization for 256 values
 impl UnderlierWithBitConstants for M256 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
-		from_equal_u128s(interleave_mask_even!(u128, 0)),
-		from_equal_u128s(interleave_mask_even!(u128, 1)),
-		from_equal_u128s(interleave_mask_even!(u128, 2)),
-		from_equal_u128s(interleave_mask_even!(u128, 3)),
-		from_equal_u128s(interleave_mask_even!(u128, 4)),
-		from_equal_u128s(interleave_mask_even!(u128, 5)),
-		from_equal_u128s(interleave_mask_even!(u128, 6)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 0)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 1)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 2)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 3)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 4)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 5)),
+		Self::from_equal_u128s(interleave_mask_even!(u128, 6)),
 	];
 
 	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
-		from_equal_u128s(interleave_mask_odd!(u128, 0)),
-		from_equal_u128s(interleave_mask_odd!(u128, 1)),
-		from_equal_u128s(interleave_mask_odd!(u128, 2)),
-		from_equal_u128s(interleave_mask_odd!(u128, 3)),
-		from_equal_u128s(interleave_mask_odd!(u128, 4)),
-		from_equal_u128s(interleave_mask_odd!(u128, 5)),
-		from_equal_u128s(interleave_mask_odd!(u128, 6)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 0)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 1)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 2)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 3)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 4)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 5)),
+		Self::from_equal_u128s(interleave_mask_odd!(u128, 6)),
 	];
+
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
+		(Self(a), Self(b))
+	}
+}
+
+#[inline]
+unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
+	match log_block_len {
+		0 => {
+			let mask = _mm256_set1_epi8(0x55i8);
+			interleave_bits_imm::<1>(a, b, mask)
+		}
+		1 => {
+			let mask = _mm256_set1_epi8(0x33i8);
+			interleave_bits_imm::<2>(a, b, mask)
+		}
+		2 => {
+			let mask = _mm256_set1_epi8(0x0fi8);
+			interleave_bits_imm::<4>(a, b, mask)
+		}
+		3 => {
+			let shuffle = _mm256_set_epi8(
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
+				14, 12, 10, 8, 6, 4, 2, 0,
+			);
+			let a = _mm256_shuffle_epi8(a, shuffle);
+			let b = _mm256_shuffle_epi8(b, shuffle);
+			let a_prime = _mm256_unpacklo_epi8(a, b);
+			let b_prime = _mm256_unpackhi_epi8(a, b);
+			(a_prime, b_prime)
+		}
+		4 => {
+			let shuffle = _mm256_set_epi8(
+				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
+				13, 12, 9, 8, 5, 4, 1, 0,
+			);
+			let a = _mm256_shuffle_epi8(a, shuffle);
+			let b = _mm256_shuffle_epi8(b, shuffle);
+			let a_prime = _mm256_unpacklo_epi16(a, b);
+			let b_prime = _mm256_unpackhi_epi16(a, b);
+			(a_prime, b_prime)
+		}
+		5 => {
+			let shuffle = _mm256_set_epi8(
+				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
+				11, 10, 9, 8, 3, 2, 1, 0,
+			);
+			let a = _mm256_shuffle_epi8(a, shuffle);
+			let b = _mm256_shuffle_epi8(b, shuffle);
+			let a_prime = _mm256_unpacklo_epi32(a, b);
+			let b_prime = _mm256_unpackhi_epi32(a, b);
+			(a_prime, b_prime)
+		}
+		6 => {
+			let a_prime = _mm256_unpacklo_epi64(a, b);
+			let b_prime = _mm256_unpackhi_epi64(a, b);
+			(a_prime, b_prime)
+		}
+		_ => panic!("unsupported block length"),
+	}
+}
+
+#[inline]
+unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
+	a: __m256i,
+	b: __m256i,
+	mask: __m256i,
+) -> (__m256i, __m256i) {
+	let t = _mm256_and_si256(_mm256_xor_si256(_mm256_srli_epi64::<BLOCK_LEN>(a), b), mask);
+	let a_prime = _mm256_xor_si256(a, _mm256_slli_epi64::<BLOCK_LEN>(t));
+	let b_prime = _mm256_xor_si256(b, t);
+	(a_prime, b_prime)
 }
 
 #[cfg(test)]
 mod tests {
-	use proptest::{arbitrary::any, proptest};
-
 	use super::*;
+	use crate::field::underlier::single_element_mask_bits;
+	use proptest::{arbitrary::any, proptest};
 
 	fn check_roundtrip<T>(val: M256)
 	where
@@ -433,6 +508,25 @@ mod tests {
 		fn test_shifts(a in any::<[u128; 2]>(), rhs in 0..255usize) {
 			assert_eq!(M256::from(a) << rhs, M256::from(ByteData::from(a) << rhs));
 			assert_eq!(M256::from(a) >> rhs, M256::from(ByteData::from(a) >> rhs));
+		}
+
+		#[test]
+		fn test_interleave_bits(a in any::<[u128; 2]>(), b in any::<[u128; 2]>(), height in 0usize..7) {
+			let a = M256::from(a);
+			let b = M256::from(b);
+			let (c, d) = unsafe {interleave_bits(a.0, b.0, height)};
+			let (c, d) = (M256::from(c), M256::from(d));
+
+			let block_len = 1usize << height;
+			let get = |v, i| {
+				u128::num_cast_from((v >> (i * block_len)) & single_element_mask_bits::<M256>(1 << height))
+			};
+			for i in (0..256/block_len).step_by(2) {
+				assert_eq!(get(c, i), get(a, i));
+				assert_eq!(get(c, i+1), get(b, i));
+				assert_eq!(get(d, i), get(a, i+1));
+				assert_eq!(get(d, i+1), get(b, i+1));
+			}
 		}
 	}
 

@@ -19,7 +19,7 @@ use subtle::{Choice, ConstantTimeEq};
 
 /// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
-pub struct M128(__m128i);
+pub struct M128(pub(super) __m128i);
 
 impl M128 {
 	pub const fn from_u128(val: u128) -> Self {
@@ -429,9 +429,11 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 
 #[cfg(test)]
 mod tests {
-	use proptest::{arbitrary::any, proptest};
+	use crate::field::underlier::single_element_mask_bits;
 
 	use super::*;
+
+	use proptest::{arbitrary::any, proptest};
 
 	fn check_roundtrip<T>(val: M128)
 	where
@@ -471,6 +473,26 @@ mod tests {
 		fn test_shifts(a in any::<u128>(), b in 0..128usize) {
 			assert_eq!(M128::from(a << b), M128::from(a) << b);
 			assert_eq!(M128::from(a >> b), M128::from(a) >> b);
+		}
+
+		#[test]
+		fn test_interleave_bits(a in any::<u128>(), b in any::<u128>(), height in 0usize..7) {
+			let a = M128::from(a);
+			let b = M128::from(b);
+
+			let (c, d) = unsafe {interleave_bits(a.0, b.0, height)};
+			let (c, d) = (M128::from(c), M128::from(d));
+
+			let block_len = 1usize << height;
+			let get = |v, i| {
+				u128::num_cast_from((v >> (i * block_len)) & single_element_mask_bits::<M128>(1 << height))
+			};
+			for i in (0..128/block_len).step_by(2) {
+				assert_eq!(get(c, i), get(a, i));
+				assert_eq!(get(c, i+1), get(b, i));
+				assert_eq!(get(d, i), get(a, i+1));
+				assert_eq!(get(d, i+1), get(b, i+1));
+			}
 		}
 	}
 

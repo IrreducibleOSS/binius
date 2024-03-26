@@ -117,11 +117,15 @@ fn single_element_mask<T>() -> T::Underlier
 where
 	T: WithUnderlier,
 {
-	if T::MEANINGFUL_BITS == T::Underlier::BITS {
-		!T::Underlier::ZERO
+	single_element_mask_bits::<T::Underlier>(T::MEANINGFUL_BITS)
+}
+
+pub(super) fn single_element_mask_bits<T: UnderlierType>(bits_count: usize) -> T {
+	if bits_count == T::BITS {
+		!T::ZERO
 	} else {
-		let mut result = T::Underlier::ONE;
-		for height in 0..checked_log_2(T::MEANINGFUL_BITS) {
+		let mut result = T::ONE;
+		for height in 0..checked_log_2(bits_count) {
 			result |= result << (1 << height)
 		}
 

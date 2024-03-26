@@ -1,15 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::field::{arithmetic_traits::MulAlpha, Error, PackedField};
+use bytemuck::{Pod, Zeroable};
 use std::{
 	array,
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
-
-use bytemuck::{Pod, Zeroable};
 use subtle::ConstantTimeEq;
-
-use crate::field::{Error, PackedField};
 
 /// Packed field that just stores smaller packed field N times and performs all operations
 /// one by one.
@@ -34,9 +32,12 @@ where
 	}
 }
 
-impl<PT, const N: usize> From<[PT; N]> for ScaledPackedField<PT, N> {
-	fn from(value: [PT; N]) -> Self {
-		Self(value)
+impl<U, PT, const N: usize> From<[U; N]> for ScaledPackedField<PT, N>
+where
+	PT: From<U>,
+{
+	fn from(value: [U; N]) -> Self {
+		Self(value.map(Into::into))
 	}
 }
 
@@ -241,6 +242,15 @@ where
 
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 		Self(std::array::from_fn(|i| PT::from_fn(|j| f(i * PT::WIDTH + j))))
+	}
+}
+
+impl<PT: PackedField + MulAlpha, const N: usize> MulAlpha for ScaledPackedField<PT, N>
+where
+	[PT; N]: Default,
+{
+	fn mul_alpha(self) -> Self {
+		Self(self.0.map(|v| v.mul_alpha()))
 	}
 }
 

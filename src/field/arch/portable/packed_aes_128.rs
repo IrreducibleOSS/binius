@@ -5,13 +5,13 @@ use super::{
 		impl_broadcast, impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
 		PackedPrimitiveType,
 	},
-	packed_arithmetic::{alphas, impl_tower_constants, PackedStrategy},
-	pairwise_arithmetic::PairwiseStrategy,
+	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::field::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	},
+	arch::{PackedStrategy, PairwiseStrategy},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
 		impl_square_with_strategy,

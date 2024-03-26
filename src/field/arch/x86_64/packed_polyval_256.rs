@@ -1,6 +1,9 @@
-use core::arch::x86_64::*;
-use std::ops::Mul;
+// Copyright 2024 Ulvetanna Inc.
 
+use super::{
+	m256::M256,
+	polyval::{simd_montgomery_multiply, PolyvalSimdType},
+};
 use crate::field::{
 	arch::{
 		portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
@@ -9,11 +12,8 @@ use crate::field::{
 	arithmetic_traits::{impl_invert_with_strategy, impl_square_with_strategy},
 	BinaryField128bPolyval,
 };
-
-use super::{
-	m256::M256,
-	polyval::{simd_montgomery_multiply, PolyvalSimdType},
-};
+use core::arch::x86_64::*;
+use std::ops::Mul;
 
 /// Define packed type
 pub type PackedBinaryPolyval2x128b = PackedPrimitiveType<M256, BinaryField128bPolyval>;

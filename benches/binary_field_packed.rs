@@ -1,7 +1,8 @@
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
 };
-use rand::{thread_rng, RngCore};
+use rand::thread_rng;
+use std::ops::Mul;
 
 use binius::field::{
 	arch::{
@@ -9,181 +10,185 @@ use binius::field::{
 			PackedBinaryField1x64b, PackedBinaryField2x32b, PackedBinaryField4x16b,
 			PackedBinaryField8x8b,
 		},
-		PackedStrategy, PairwiseStrategy,
+		PackedStrategy, PairwiseStrategy, SimdStrategy,
 	},
-	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
+	arithmetic_traits::{
+		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
+	},
 	packed_binary_field::{
 		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
 		PackedBinaryField4x32b, PackedBinaryField8x16b,
 	},
+	PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
+	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
+	PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
+	PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
+	PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
+	PackedBinaryField16x16b, PackedBinaryField16x32b, PackedBinaryField2x128b,
+	PackedBinaryField32x16b, PackedBinaryField32x8b, PackedBinaryField4x128b,
+	PackedBinaryField4x64b, PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b,
 	PackedField,
 };
 
-trait PackedFieldWithOps:
-	PackedField
-	+ TaggedMul<PackedStrategy>
-	+ TaggedMul<PairwiseStrategy>
-	+ TaggedSquare<PackedStrategy>
-	+ TaggedSquare<PairwiseStrategy>
-	+ TaggedInvertOrZero<PackedStrategy>
-	+ TaggedInvertOrZero<PairwiseStrategy>
-	+ MulAlpha
-	+ TaggedMulAlpha<PackedStrategy>
-	+ TaggedMulAlpha<PairwiseStrategy>
-{
+fn run_benchmark<R>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, func: impl Fn() -> R) {
+	group.bench_function(name, |bench| bench.iter(&func));
 }
 
-impl<PT> PackedFieldWithOps for PT where
-	PT: PackedField
-		+ TaggedMul<PackedStrategy>
-		+ TaggedMul<PairwiseStrategy>
-		+ TaggedSquare<PackedStrategy>
-		+ TaggedSquare<PairwiseStrategy>
-		+ TaggedInvertOrZero<PackedStrategy>
-		+ TaggedInvertOrZero<PairwiseStrategy>
-		+ MulAlpha
-		+ TaggedMulAlpha<PackedStrategy>
-		+ TaggedMulAlpha<PairwiseStrategy>
-{
-}
+macro_rules! benchmark_strategy {
+	// run benchmark for a single type for single strategy
+	($packed_field:ty, $strategy_name:literal, $constraint:path, $func:expr, $group:ident, $a:expr, $b:expr) => {
+		{
+			#[allow(unused)]
+			trait BenchmarkFallback {
+				const ENABLED: bool = false;
 
-trait BenchmarkFunction {
-	fn execute<P: PackedFieldWithOps>(group: &mut BenchmarkGroup<WallTime>) {
-		let rng: rand::prelude::ThreadRng = thread_rng();
+				fn bench<T>(_: T, _: T) {}
+			}
 
-		group.throughput(Throughput::Elements(P::WIDTH as u64));
+			impl<T> BenchmarkFallback for T {}
 
-		Self::execute_impl::<P>(group, rng);
-	}
+			struct BenchmarkImpl<T>(T);
 
-	fn execute_impl<P: PackedFieldWithOps>(group: &mut BenchmarkGroup<WallTime>, rng: impl RngCore);
-}
+			#[allow(unused)]
+			impl<T: $constraint> BenchmarkImpl<T>{
+				const ENABLED: bool = true;
 
-macro_rules! run_implementations_for_field {
-	($c:ident, $packed_field:ty, $op_name:literal, $benchmark:ty) => {
-		let mut group = $c.benchmark_group(format!("{}/{}", $op_name, stringify!($packed_field)));
+				fn bench(a: T, b: T) -> T{
+					$func(a, b)
+				}
+			}
 
-		<$benchmark>::execute::<$packed_field>(&mut group);
+			// use trick similar to the `impls` crate to run benchmark only if constraint
+			// is satisfied.
+			if BenchmarkImpl::<$packed_field>::ENABLED {
+				run_benchmark(&mut $group, &format!("{}/{}", stringify!($packed_field), $strategy_name), || -> () {BenchmarkImpl::<$packed_field>::bench($a, $b);});
+			}
+		}
+	};
+	// run benchmark on a single type for all strategies
+	($packed_field:ty, $group:ident, strategies @ ($(($strategy_name:literal, $constraint:path, $func:expr),)*)) => {
+		$group.throughput(Throughput::Elements(<$packed_field>::WIDTH as u64));
+		let mut rng = thread_rng();
+		let a = <$packed_field>::random(&mut rng);
+		let b = <$packed_field>::random(&mut rng);
+		$(
+			benchmark_strategy!($packed_field, $strategy_name, $constraint, $func, $group, a, b);
+		)*
+	};
+	// Run list of strategies for the list of fields
+	($group:ident, strategies @ $strategies:tt, packed_fields @ [$($packed_field:ty)*]) => {
+		$(
+			benchmark_strategy!($packed_field, $group, strategies @ $strategies);
+		)*
+	};
+	// Run given strategies on the full list of types
+	($group:ident, strategies @ $strategies:tt) => {
+		benchmark_strategy!($group,
+			strategies @ $strategies,
+			packed_fields @ [
+				// 64-bit binary tower
+				PackedBinaryField8x8b
+				PackedBinaryField4x16b
+				PackedBinaryField2x32b
+				PackedBinaryField1x64b
 
-		group.finish();
+				// 128-bit binary tower
+				PackedBinaryField16x8b
+				PackedBinaryField8x16b
+				PackedBinaryField4x32b
+				PackedBinaryField2x64b
+				PackedBinaryField1x128b
+
+				// 256-bit binary tower
+				PackedBinaryField32x8b
+				PackedBinaryField16x16b
+				PackedBinaryField8x32b
+				PackedBinaryField4x64b
+				PackedBinaryField2x128b
+
+				// 512-bit binary tower
+				PackedBinaryField64x8b
+				PackedBinaryField32x16b
+				PackedBinaryField16x32b
+				PackedBinaryField8x64b
+				PackedBinaryField4x128b
+
+				// 128-bit AES tower
+				PackedAESBinaryField16x8b
+				PackedAESBinaryField8x16b
+				PackedAESBinaryField4x32b
+				PackedAESBinaryField2x64b
+				PackedAESBinaryField1x128b
+
+				// 256-bit AES tower
+				PackedAESBinaryField32x8b
+				PackedAESBinaryField16x16b
+				PackedAESBinaryField8x32b
+				PackedAESBinaryField4x64b
+				PackedAESBinaryField2x128b
+
+				// 512-bit AES tower
+				PackedAESBinaryField64x8b
+				PackedAESBinaryField32x16b
+				PackedAESBinaryField16x32b
+				PackedAESBinaryField8x64b
+				PackedAESBinaryField4x128b
+			])
 	};
 }
 
-macro_rules! run_implementations_on_packed_fields_128u {
-	($c:ident, $op_name:literal, $benchmark:ty) => {
-		run_implementations_for_field!($c, PackedBinaryField16x8b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField8x16b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField4x32b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField2x64b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField1x128b, $op_name, $benchmark);
-	};
+/// This trait is needed to specify `Mul` constraint only
+trait SelfMul: Mul<Self, Output = Self> + Sized {}
+
+impl<T: Mul<Self, Output = Self> + Sized> SelfMul for T {}
+
+fn multiply(c: &mut Criterion) {
+	let mut group = c.benchmark_group("multiply");
+	benchmark_strategy!(group, strategies @ (
+		("main", SelfMul, |a, b| { a * b }),
+		("pairwise", TaggedMul::<PairwiseStrategy>, |a, b| { TaggedMul::<PairwiseStrategy>::mul(a, b) }),
+		("packed", TaggedMul::<PackedStrategy>, |a, b| { TaggedMul::<PackedStrategy>::mul(a, b) }),
+		("simd", TaggedMul::<SimdStrategy>, |a, b| { TaggedMul::<SimdStrategy>::mul(a, b) }),
+		)
+	);
+	group.finish();
 }
 
-macro_rules! run_implementations_on_packed_fields_64u {
-	($c:ident, $op_name:literal, $benchmark:ty) => {
-		run_implementations_for_field!($c, PackedBinaryField8x8b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField4x16b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField2x32b, $op_name, $benchmark);
-		run_implementations_for_field!($c, PackedBinaryField1x64b, $op_name, $benchmark);
-	};
+fn invert(c: &mut Criterion) {
+	let mut group = c.benchmark_group("invert");
+	benchmark_strategy!(group, strategies @ (
+		("main", InvertOrZero, |a, _| { InvertOrZero::invert_or_zero(a) }),
+		("pairwise", TaggedInvertOrZero::<PairwiseStrategy>, |a, _| { TaggedInvertOrZero::<PairwiseStrategy>::invert_or_zero(a) }),
+		("packed", TaggedInvertOrZero::<PackedStrategy>, |a, _| { TaggedInvertOrZero::<PackedStrategy>::invert_or_zero(a) }),
+		("simd", TaggedInvertOrZero::<SimdStrategy>, |a, _| { TaggedInvertOrZero::<SimdStrategy>::invert_or_zero(a) }),
+		)
+	);
+	group.finish();
 }
 
-struct MultiplyBenchmark;
-
-impl BenchmarkFunction for MultiplyBenchmark {
-	fn execute_impl<P: PackedFieldWithOps>(
-		group: &mut BenchmarkGroup<WallTime>,
-		mut rng: impl RngCore,
-	) {
-		let a = P::random(&mut rng);
-		let b = P::random(&mut rng);
-
-		group.bench_function("main", |bench| bench.iter(|| a * b));
-		group.bench_function("packed", |bench| {
-			bench.iter(|| TaggedMul::<PackedStrategy>::mul(a, b))
-		});
-		group.bench_function("pairwise", |bench| {
-			bench.iter(|| TaggedMul::<PairwiseStrategy>::mul(a, b))
-		});
-	}
+fn square(c: &mut Criterion) {
+	let mut group = c.benchmark_group("square");
+	benchmark_strategy!(group, strategies @ (
+		("main", Square, |a, _| { Square::square(a) }),
+		("pairwise", TaggedSquare::<PairwiseStrategy>, |a, _| { TaggedSquare::<PairwiseStrategy>::square(a) }),
+		("packed", TaggedSquare::<PackedStrategy>, |a, _| { TaggedSquare::<PackedStrategy>::square(a) }),
+		("simd", TaggedSquare::<SimdStrategy>, |a, _| { TaggedSquare::<SimdStrategy>::square(a) }),
+		)
+	);
+	group.finish();
 }
 
-fn tower_mul(c: &mut Criterion) {
-	run_implementations_on_packed_fields_64u!(c, "multiply", MultiplyBenchmark);
-	run_implementations_on_packed_fields_128u!(c, "multiply", MultiplyBenchmark);
+fn mul_alpha(c: &mut Criterion) {
+	let mut group = c.benchmark_group("mul_alpha");
+	benchmark_strategy!(group, strategies @ (
+		("main", MulAlpha, |a, _| { MulAlpha::mul_alpha(a) }),
+		("pairwise", TaggedMulAlpha::<PairwiseStrategy>, |a, _| { TaggedMulAlpha::<PairwiseStrategy>::mul_alpha(a) }),
+		("packed", TaggedMulAlpha::<PackedStrategy>, |a, _| { TaggedMulAlpha::<PackedStrategy>::mul_alpha(a) }),
+		("simd", TaggedMulAlpha::<SimdStrategy>, |a, _| { TaggedMulAlpha::<SimdStrategy>::mul_alpha(a) }),
+		)
+	);
+	group.finish();
 }
 
-struct SquareBenchmark;
-
-impl BenchmarkFunction for SquareBenchmark {
-	fn execute_impl<P: PackedFieldWithOps>(
-		group: &mut BenchmarkGroup<WallTime>,
-		mut rng: impl RngCore,
-	) {
-		let a = P::random(&mut rng);
-
-		group.bench_function("main", |bench| bench.iter(|| PackedField::square(a)));
-		group.bench_function("packed", |bench| {
-			bench.iter(|| TaggedSquare::<PackedStrategy>::square(a))
-		});
-		group.bench_function("pairwise", |bench| {
-			bench.iter(|| TaggedSquare::<PairwiseStrategy>::square(a))
-		});
-	}
-}
-
-fn tower_square(c: &mut Criterion) {
-	run_implementations_on_packed_fields_64u!(c, "square", SquareBenchmark);
-	run_implementations_on_packed_fields_128u!(c, "square", SquareBenchmark);
-}
-
-struct InvertBenchmark;
-
-impl BenchmarkFunction for InvertBenchmark {
-	fn execute_impl<P: PackedFieldWithOps>(
-		group: &mut BenchmarkGroup<WallTime>,
-		mut rng: impl RngCore,
-	) {
-		let a = P::random(&mut rng);
-
-		group.bench_function("main", |bench| bench.iter(|| PackedField::invert_or_zero(a)));
-		group.bench_function("packed", |bench| {
-			bench.iter(|| TaggedInvertOrZero::<PackedStrategy>::invert_or_zero(a))
-		});
-		group.bench_function("pairwise", |bench| {
-			bench.iter(|| TaggedInvertOrZero::<PairwiseStrategy>::invert_or_zero(a))
-		});
-	}
-}
-
-fn tower_invert(c: &mut Criterion) {
-	run_implementations_on_packed_fields_64u!(c, "invert", InvertBenchmark);
-	run_implementations_on_packed_fields_128u!(c, "invert", InvertBenchmark);
-}
-
-struct MulAlphaBenchmark;
-
-impl BenchmarkFunction for MulAlphaBenchmark {
-	fn execute_impl<P: PackedFieldWithOps>(
-		group: &mut BenchmarkGroup<WallTime>,
-		mut rng: impl RngCore,
-	) {
-		let a = P::random(&mut rng);
-
-		group.bench_function("main", |bench| bench.iter(|| MulAlpha::mul_alpha(a)));
-		group.bench_function("packed", |bench| {
-			bench.iter(|| TaggedMulAlpha::<PackedStrategy>::mul_alpha(a))
-		});
-		group.bench_function("pairwise", |bench| {
-			bench.iter(|| TaggedMulAlpha::<PairwiseStrategy>::mul_alpha(a))
-		});
-	}
-}
-
-fn tower_mul_alpha(c: &mut Criterion) {
-	run_implementations_on_packed_fields_64u!(c, "mul_alpha", MulAlphaBenchmark);
-	run_implementations_on_packed_fields_128u!(c, "mul_alpha", MulAlphaBenchmark);
-}
-
-criterion_group!(packed, tower_mul, tower_square, tower_invert, tower_mul_alpha);
+criterion_group!(packed, multiply, square, invert, mul_alpha);
 criterion_main!(packed);

@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::field::{
+	arch::PackedStrategy,
 	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	binary_field::BinaryField,
 	underlier::UnderlierType,
@@ -64,9 +65,6 @@ macro_rules! impl_tower_constants {
 }
 
 pub(crate) use impl_tower_constants;
-
-/// Packed staregy for arithmetic operations
-pub struct PackedStrategy;
 
 impl<PT> TaggedMul<PackedStrategy> for PT
 where
@@ -292,16 +290,12 @@ mod tests {
 	use proptest::{arbitrary::any, proptest};
 
 	use crate::field::{
-		arch::{
-			packed_64::PackedBinaryField64x1b,
-			portable::packed_128::{
-				PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-				PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
-				PackedBinaryField8x16b,
-			},
+		arch::portable::packed_128::{
+			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
+			PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
+			PackedBinaryField8x16b,
 		},
 		test_utils::{define_invert_tests, define_multiply_tests, define_square_tests},
-		PackedBinaryField128x1b,
 	};
 
 	use crate::field::{
@@ -396,49 +390,12 @@ mod tests {
 		test_packed_multiply_alpha::<PackedBinaryField1x128b>();
 	}
 
-	trait PackedFieldWithPackedOps: PackedField {
-		fn mul(a: Self, b: Self) -> Self {
-			a * b
-		}
+	define_multiply_tests!(TaggedMul<PackedStrategy>::mul, TaggedMul<PackedStrategy>);
 
-		fn square(self) -> Self {
-			<Self as PackedField>::square(self)
-		}
+	define_square_tests!(TaggedSquare<PackedStrategy>::square, TaggedSquare<PackedStrategy>);
 
-		fn invert_or_zero(self) -> Self {
-			<Self as PackedField>::invert_or_zero(self)
-		}
-	}
-
-	impl<P> PackedFieldWithPackedOps for P
-	where
-		P: PackedField
-			+ PackedField
-			+ TaggedMul<PackedStrategy>
-			+ TaggedSquare<PackedStrategy>
-			+ TaggedInvertOrZero<PackedStrategy>,
-	{
-		fn mul(a: Self, b: Self) -> Self {
-			<P as TaggedMul<PackedStrategy>>::mul(a, b)
-		}
-
-		fn square(self) -> Self {
-			<P as TaggedSquare<PackedStrategy>>::square(self)
-		}
-
-		fn invert_or_zero(self) -> Self {
-			<P as TaggedInvertOrZero<PackedStrategy>>::invert_or_zero(self)
-		}
-	}
-
-	// Fallback to main implementations for 1 bit-fields because
-	// packed strategy is not defined for this height
-	impl PackedFieldWithPackedOps for PackedBinaryField64x1b {}
-	impl PackedFieldWithPackedOps for PackedBinaryField128x1b {}
-
-	define_multiply_tests!(PackedFieldWithPackedOps::mul, PackedFieldWithPackedOps);
-
-	define_square_tests!(PackedFieldWithPackedOps::square, PackedFieldWithPackedOps);
-
-	define_invert_tests!(PackedFieldWithPackedOps::invert_or_zero, PackedFieldWithPackedOps);
+	define_invert_tests!(
+		TaggedInvertOrZero<PackedStrategy>::invert_or_zero,
+		TaggedInvertOrZero<PackedStrategy>
+	);
 }

@@ -3,7 +3,7 @@
 use super::{
 	super::m128::M128,
 	constants::{GFNI_TO_TOWER_MAP, TOWER_TO_GFNI_MAP},
-	simd_arithmetic::SimdStrategy,
+	simd_arithmetic::TowerSimdType,
 };
 use crate::field::{
 	arch::{
@@ -14,14 +14,14 @@ use crate::field::{
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PairwiseStrategy,
+		PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
 		impl_square_with_strategy,
 	},
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b,
+	BinaryField64b, BinaryField8b, TowerField,
 };
 use std::{arch::x86_64::*, ops::Mul};
 
@@ -89,8 +89,8 @@ impl Mul for PackedBinaryField16x8b {
 
 	fn mul(self, rhs: Self) -> Self {
 		unsafe {
-			let tower_to_gfni_map = _mm_load_epi32(TOWER_TO_GFNI_MAP.as_ptr() as *const i32);
-			let gfni_to_tower_map = _mm_load_epi32(GFNI_TO_TOWER_MAP.as_ptr() as *const i32);
+			let tower_to_gfni_map = _mm_set1_epi64x(TOWER_TO_GFNI_MAP);
+			let gfni_to_tower_map = _mm_set1_epi64x(GFNI_TO_TOWER_MAP);
 
 			let lhs_gfni =
 				_mm_gf2p8affine_epi64_epi8::<0>(self.to_underlier().into(), tower_to_gfni_map);
@@ -131,3 +131,27 @@ impl_mul_alpha_with_strategy!(PackedBinaryField8x16b, PairwiseStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField4x32b, PairwiseStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField2x64b, PairwiseStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField1x128b, PairwiseStrategy);
+
+impl TowerSimdType for M128 {
+	fn xor(a: Self, b: Self) -> Self {
+		unsafe { _mm_xor_si128(a.0, b.0) }.into()
+	}
+
+	fn shuffle_epi8(a: Self, b: Self) -> Self {
+		unsafe { _mm_shuffle_epi8(a.0, b.0) }.into()
+	}
+
+	fn set_alpha_even<Scalar: TowerField>(self) -> Self {
+		unsafe {
+			let alpha = Self::alpha::<Scalar>();
+			let mask = Self::even_mask::<Scalar>();
+			// NOTE: There appears to be a bug in _mm_blendv_epi8 where the mask bit selects b, not a
+			_mm_blendv_epi8(self.0, alpha.0, mask.0)
+		}
+		.into()
+	}
+
+	fn set1_epi128(val: __m128i) -> Self {
+		val.into()
+	}
+}

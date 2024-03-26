@@ -2,5 +2,13 @@
 
 pub mod constants;
 pub mod packed_128;
+#[cfg(target_feature = "avx2")]
+pub mod packed_256;
+#[cfg(target_feature = "avx512f")]
+pub mod packed_512;
 pub mod packed_aes_128;
-mod simd_arithmetic;
+#[cfg(target_feature = "avx2")]
+pub mod packed_aes_256;
+#[cfg(target_feature = "avx512f")]
+pub mod packed_aes_512;
+pub(super) mod simd_arithmetic;
