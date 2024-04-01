@@ -1,9 +1,3 @@
-use criterion::{
-	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
-};
-use rand::thread_rng;
-use std::ops::Mul;
-
 use binius::field::{
 	arch::{
 		packed_64::{
@@ -12,9 +6,7 @@ use binius::field::{
 		},
 		PackedStrategy, PairwiseStrategy, SimdStrategy,
 	},
-	arithmetic_traits::{
-		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
-	},
+	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	packed_binary_field::{
 		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
 		PackedBinaryField4x32b, PackedBinaryField8x16b,
@@ -29,20 +21,28 @@ use binius::field::{
 	PackedBinaryField4x64b, PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b,
 	PackedField,
 };
+use criterion::{
+	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
+};
+use rand::thread_rng;
+use std::ops::Mul;
 
 fn run_benchmark<R>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, func: impl Fn() -> R) {
 	group.bench_function(name, |bench| bench.iter(&func));
 }
 
+/// This number is chosen for values to fit into L1 cache
+const BATCH_SIZE: usize = 32;
+
 macro_rules! benchmark_strategy {
 	// run benchmark for a single type for single strategy
-	($packed_field:ty, $strategy_name:literal, $constraint:path, $func:expr, $group:ident, $a:expr, $b:expr) => {
+	($packed_field:ty, $strategy_name:literal, $constraint:path, $func:expr, $group:ident, $iters:expr) => {
 		{
 			#[allow(unused)]
 			trait BenchmarkFallback {
 				const ENABLED: bool = false;
 
-				fn bench<T>(_: T, _: T) {}
+				fn bench<T>(_: &T, _: &T, _: &mut T) {}
 			}
 
 			impl<T> BenchmarkFallback for T {}
@@ -50,29 +50,39 @@ macro_rules! benchmark_strategy {
 			struct BenchmarkImpl<T>(T);
 
 			#[allow(unused)]
-			impl<T: $constraint> BenchmarkImpl<T>{
+			impl<T: $constraint + Copy> BenchmarkImpl<T>{
 				const ENABLED: bool = true;
 
-				fn bench(a: T, b: T) -> T{
-					$func(a, b)
+				#[inline(always)]
+				fn bench(a: &T, b: &T, c: &mut T) {
+					*c = $func(*a, *b);
 				}
 			}
 
 			// use trick similar to the `impls` crate to run benchmark only if constraint
 			// is satisfied.
 			if BenchmarkImpl::<$packed_field>::ENABLED {
-				run_benchmark(&mut $group, &format!("{}/{}", stringify!($packed_field), $strategy_name), || -> () {BenchmarkImpl::<$packed_field>::bench($a, $b);});
+				run_benchmark(&mut $group, &format!("{}/{}", stringify!($packed_field), $strategy_name),
+					|| {
+						let (a, b, mut c) = $iters;
+						for (a, b, c) in itertools::izip!(a.iter(), b.iter(), c.iter_mut()) {
+							BenchmarkImpl::<$packed_field>::bench(a, b, c);
+						}
+
+						c
+					});
 			}
 		}
 	};
 	// run benchmark on a single type for all strategies
 	($packed_field:ty, $group:ident, strategies @ ($(($strategy_name:literal, $constraint:path, $func:expr),)*)) => {
-		$group.throughput(Throughput::Elements(<$packed_field>::WIDTH as u64));
+		$group.throughput(Throughput::Elements((<$packed_field>::WIDTH as u64) * 1024));
 		let mut rng = thread_rng();
-		let a = <$packed_field>::random(&mut rng);
-		let b = <$packed_field>::random(&mut rng);
+		let a: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));
+		let b: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));
+		let c = [<$packed_field>::default(); BATCH_SIZE];
 		$(
-			benchmark_strategy!($packed_field, $strategy_name, $constraint, $func, $group, a, b);
+			benchmark_strategy!($packed_field, $strategy_name, $constraint, $func, $group, (a, b, c));
 		)*
 	};
 	// Run list of strategies for the list of fields
@@ -157,7 +167,7 @@ fn multiply(c: &mut Criterion) {
 fn invert(c: &mut Criterion) {
 	let mut group = c.benchmark_group("invert");
 	benchmark_strategy!(group, strategies @ (
-		("main", InvertOrZero, |a, _| { InvertOrZero::invert_or_zero(a) }),
+		("main", PackedField, |a, _| { PackedField::invert_or_zero(a) }),
 		("pairwise", TaggedInvertOrZero::<PairwiseStrategy>, |a, _| { TaggedInvertOrZero::<PairwiseStrategy>::invert_or_zero(a) }),
 		("packed", TaggedInvertOrZero::<PackedStrategy>, |a, _| { TaggedInvertOrZero::<PackedStrategy>::invert_or_zero(a) }),
 		("simd", TaggedInvertOrZero::<SimdStrategy>, |a, _| { TaggedInvertOrZero::<SimdStrategy>::invert_or_zero(a) }),
@@ -169,7 +179,7 @@ fn invert(c: &mut Criterion) {
 fn square(c: &mut Criterion) {
 	let mut group = c.benchmark_group("square");
 	benchmark_strategy!(group, strategies @ (
-		("main", Square, |a, _| { Square::square(a) }),
+		("main", PackedField, |a, _| { PackedField::square(a) }),
 		("pairwise", TaggedSquare::<PairwiseStrategy>, |a, _| { TaggedSquare::<PairwiseStrategy>::square(a) }),
 		("packed", TaggedSquare::<PackedStrategy>, |a, _| { TaggedSquare::<PackedStrategy>::square(a) }),
 		("simd", TaggedSquare::<SimdStrategy>, |a, _| { TaggedSquare::<SimdStrategy>::square(a) }),

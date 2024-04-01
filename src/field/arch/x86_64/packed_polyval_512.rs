@@ -48,18 +48,22 @@ impl_square_with_strategy!(PackedBinaryPolyval4x128b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryPolyval4x128b, PairwiseStrategy);
 
 impl PolyvalSimdType for __m512i {
+	#[inline(always)]
 	unsafe fn shuffle_epi32<const IMM8: i32>(a: Self) -> Self {
 		_mm512_shuffle_epi32::<IMM8>(a)
 	}
 
+	#[inline(always)]
 	unsafe fn xor(a: Self, b: Self) -> Self {
 		_mm512_xor_si512(a, b)
 	}
 
+	#[inline(always)]
 	unsafe fn clmul_epi64<const IMM8: i32>(a: Self, b: Self) -> Self {
 		_mm512_clmulepi64_epi128::<IMM8>(a, b)
 	}
 
+	#[inline(always)]
 	unsafe fn slli_epi64<const IMM8: i32>(a: Self) -> Self {
 		// This is a workaround for the problem that `_mm512_slli_epi64` and
 		// `_mm256_slli_epi64` have different generic constant type and stable Rust
@@ -74,6 +78,7 @@ impl PolyvalSimdType for __m512i {
 		unreachable!("bit shift count shouldn't exceed 63")
 	}
 
+	#[inline(always)]
 	unsafe fn srli_epi64<const IMM8: i32>(a: Self) -> Self {
 		seq!(N in 0..64 {
 			if IMM8 == N {
@@ -84,6 +89,7 @@ impl PolyvalSimdType for __m512i {
 		unreachable!("bit shift count shouldn't exceed 63")
 	}
 
+	#[inline(always)]
 	unsafe fn unpacklo_epi64(a: Self, b: Self) -> Self {
 		_mm512_unpacklo_epi64(a, b)
 	}

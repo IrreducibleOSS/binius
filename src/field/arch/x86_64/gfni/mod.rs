@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-pub mod constants;
+mod gfni_arithmetics;
 pub mod packed_128;
 #[cfg(target_feature = "avx2")]
 pub mod packed_256;

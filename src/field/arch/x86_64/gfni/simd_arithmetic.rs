@@ -3,10 +3,13 @@
 use crate::field::{
 	aes_field::AESTowerField8b,
 	arch::{
-		portable::{packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField},
+		portable::{
+			packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField,
+			reuse_multiply_arithmetic::Alpha,
+		},
 		SimdStrategy,
 	},
-	arithmetic_traits::TaggedMul,
+	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
 	underlier::UnderlierType,
 	BinaryField8b, PackedField, TowerField,
 };
@@ -14,8 +17,12 @@ use std::{any::TypeId, arch::x86_64::*};
 
 pub(super) trait TowerSimdType: Sized {
 	fn shuffle_epi8(a: Self, b: Self) -> Self;
+	fn blend_odd_even<Scalar: TowerField>(a: Self, b: Self) -> Self;
 	fn xor(a: Self, b: Self) -> Self;
+	fn set_alpha_even<Scalar: TowerField>(self) -> Self;
+	fn set1_epi128(val: __m128i) -> Self;
 
+	#[inline(always)]
 	fn dup_shuffle<Scalar: TowerField>() -> Self {
 		let shuffle_mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
@@ -30,6 +37,7 @@ pub(super) trait TowerSimdType: Sized {
 		Self::set1_epi128(shuffle_mask_128)
 	}
 
+	#[inline(always)]
 	fn flip_shuffle<Scalar: TowerField>() -> Self {
 		let flip_mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
@@ -44,6 +52,7 @@ pub(super) trait TowerSimdType: Sized {
 		Self::set1_epi128(flip_mask_128)
 	}
 
+	#[inline(always)]
 	fn alpha<Scalar: TowerField>() -> Self {
 		let alpha_128 = unsafe {
 			match Scalar::TOWER_LEVEL {
@@ -69,6 +78,7 @@ pub(super) trait TowerSimdType: Sized {
 		Self::set1_epi128(alpha_128)
 	}
 
+	#[inline(always)]
 	fn even_mask<Scalar: TowerField>() -> Self {
 		let mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
@@ -82,9 +92,54 @@ pub(super) trait TowerSimdType: Sized {
 
 		Self::set1_epi128(mask_128)
 	}
+}
 
-	fn set_alpha_even<Scalar: TowerField>(self) -> Self;
-	fn set1_epi128(val: __m128i) -> Self;
+impl<U: UnderlierType + TowerSimdType, Scalar: TowerField> Alpha
+	for PackedPrimitiveType<U, Scalar>
+{
+	#[inline(always)]
+	fn alpha() -> Self {
+		U::alpha::<Scalar>().into()
+	}
+}
+
+#[inline(always)]
+fn blend_odd_even<U, PT>(a: PT, b: PT) -> PT
+where
+	U: TowerSimdType,
+	PT: PackedField + From<U> + Into<U>,
+	PT::Scalar: TowerField,
+{
+	U::blend_odd_even::<PT::Scalar>(a.into(), b.into()).into()
+}
+
+#[inline(always)]
+fn xor<U, PT>(a: PT, b: PT) -> PT
+where
+	U: TowerSimdType,
+	PT: From<U> + Into<U>,
+{
+	U::xor(a.into(), b.into()).into()
+}
+
+#[inline(always)]
+fn duplicate_odd<U, PT>(val: PT) -> PT
+where
+	U: TowerSimdType,
+	PT: PackedField + From<U> + Into<U>,
+	PT::Scalar: TowerField,
+{
+	U::shuffle_epi8(val.into(), U::dup_shuffle::<PT::Scalar>()).into()
+}
+
+#[inline(always)]
+fn flip_even_odd<U, PT>(val: PT) -> PT
+where
+	U: TowerSimdType,
+	PT: PackedField + From<U> + Into<U>,
+	PT::Scalar: TowerField,
+{
+	U::shuffle_epi8(val.into(), U::flip_shuffle::<PT::Scalar>()).into()
 }
 
 impl<U, Scalar: TowerField> TaggedMul<SimdStrategy> for PackedPrimitiveType<U, Scalar>
@@ -117,19 +172,103 @@ where
 		let (lhs, rhs) = lo_plus_hi_a_even_b_odd.interleave(alpha_even_z2_odd, 0);
 		let z1_xor_z0z2_even_z2a_odd = lhs * rhs;
 
-		let z1_xor_z0z2 = U::shuffle_epi8(
-			z1_xor_z0z2_even_z2a_odd.into(),
-			U::dup_shuffle::<<Self as PackedTowerField>::DirectSubfield>(),
-		);
-		let zero_even_z1_xor_z2a_xor_z0z2_odd =
-			U::xor(z1_xor_z0z2_even_z2a_odd.into(), z1_xor_z0z2);
+		let z1_xor_z0z2 = duplicate_odd(z1_xor_z0z2_even_z2a_odd);
+		let zero_even_z1_xor_z2a_xor_z0z2_odd = xor(z1_xor_z0z2_even_z2a_odd, z1_xor_z0z2);
 
-		let z2_even_z0_odd = U::shuffle_epi8(
-			z0_even_z2_odd.into(),
-			U::flip_shuffle::<<Self as PackedTowerField>::DirectSubfield>(),
-		);
-		let z0z2 = U::xor(z0_even_z2_odd.into(), z2_even_z0_odd);
+		let z2_even_z0_odd = flip_even_odd(z0_even_z2_odd);
+		let z0z2 = xor(z0_even_z2_odd, z2_even_z0_odd);
 
-		Self::from(U::xor(zero_even_z1_xor_z2a_xor_z0z2_odd, z0z2))
+		xor(zero_even_z1_xor_z2a_xor_z0z2_odd, z0z2).into().into()
 	}
+}
+
+impl<U, Scalar: TowerField> TaggedMulAlpha<SimdStrategy> for PackedPrimitiveType<U, Scalar>
+where
+	Self: PackedTowerField<Underlier = U> + MulAlpha,
+	<Self as PackedTowerField>::PackedDirectSubfield: MulAlpha,
+	U: TowerSimdType + UnderlierType,
+{
+	fn mul_alpha(self) -> Self {
+		// This fallback is needed to generically use SimdStrategy in benchmarks.
+		if Scalar::TOWER_LEVEL <= 3 {
+			return MulAlpha::mul_alpha(self);
+		}
+
+		let a_0_a_1 = self.as_packed_subfield();
+		let a_0_mul_alpha_a_1_mul_alpha = a_0_a_1.mul_alpha();
+
+		let a_1_a_0 = flip_even_odd(self.as_packed_subfield());
+		let a0_plus_a1_alpha = xor(a_0_mul_alpha_a_1_mul_alpha, a_1_a_0);
+
+		blend_odd_even(a0_plus_a1_alpha, a_1_a_0).into().into()
+	}
+}
+
+impl<U, Scalar: TowerField> TaggedSquare<SimdStrategy> for PackedPrimitiveType<U, Scalar>
+where
+	Self: PackedTowerField<Underlier = U>,
+	<Self as PackedTowerField>::PackedDirectSubfield: MulAlpha,
+	U: TowerSimdType + UnderlierType,
+{
+	fn square(self) -> Self {
+		// This fallback is needed to generically use SimdStrategy in benchmarks.
+		if Scalar::TOWER_LEVEL <= 3 {
+			return PackedField::square(self);
+		}
+
+		let a_0_a_1 = self.as_packed_subfield();
+		let a_0_sq_a_1_sq = PackedField::square(a_0_a_1);
+		let a_1_sq_a_0_sq = flip_even_odd(a_0_sq_a_1_sq);
+		let a_0_sq_plus_a_1_sq = a_0_sq_a_1_sq + a_1_sq_a_0_sq;
+		let a_1_mul_alpha = a_0_sq_a_1_sq.mul_alpha();
+
+		blend_odd_even(a_1_mul_alpha, a_0_sq_plus_a_1_sq)
+			.into()
+			.into()
+	}
+}
+
+impl<U, Scalar: TowerField> TaggedInvertOrZero<SimdStrategy> for PackedPrimitiveType<U, Scalar>
+where
+	Self: PackedTowerField<Underlier = U>,
+	<Self as PackedTowerField>::PackedDirectSubfield: MulAlpha,
+	U: TowerSimdType + UnderlierType,
+{
+	fn invert_or_zero(self) -> Self {
+		// This fallback is needed to generically use SimdStrategy in benchmarks.
+		if Scalar::TOWER_LEVEL <= 3 {
+			return PackedField::invert_or_zero(self);
+		}
+
+		let a_0_a_1 = self.as_packed_subfield();
+		let a_1_a_0 = flip_even_odd(a_0_a_1);
+		let a_1_mul_alpha = a_1_a_0.mul_alpha();
+		let a_0_plus_a1_mul_alpha = xor(a_0_a_1, a_1_mul_alpha);
+		let a_1_sq_a_0_sq = PackedField::square(a_1_a_0);
+		let delta = xor(a_1_sq_a_0_sq, a_0_plus_a1_mul_alpha * a_0_a_1);
+		let delta_inv = delta.invert_or_zero();
+		let delta_inv_delta_inv = duplicate_odd(delta_inv);
+		let delta_multiplier = blend_odd_even(a_0_a_1, a_0_plus_a1_mul_alpha);
+
+		(delta_inv_delta_inv * delta_multiplier).into().into()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::field::test_utils::{
+		define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
+	};
+
+	define_multiply_tests!(TaggedMul<SimdStrategy>::mul, TaggedMul<SimdStrategy>);
+
+	define_square_tests!(TaggedSquare<SimdStrategy>::square, TaggedSquare<SimdStrategy>);
+
+	define_invert_tests!(
+		TaggedInvertOrZero<SimdStrategy>::invert_or_zero,
+		TaggedInvertOrZero<SimdStrategy>
+	);
+
+	define_mul_alpha_tests!(TaggedMulAlpha<SimdStrategy>::mul_alpha, TaggedMulAlpha<SimdStrategy>);
 }

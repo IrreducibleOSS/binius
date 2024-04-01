@@ -1,9 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	super::m256::M256,
-	constants::{GFNI_TO_TOWER_MAP, TOWER_TO_GFNI_MAP},
-	simd_arithmetic::TowerSimdType,
+	super::m256::M256, gfni_arithmetics::GfniBinaryTowerStrategy, simd_arithmetic::TowerSimdType,
 };
 use crate::field::{
 	arch::{
@@ -14,7 +12,7 @@ use crate::field::{
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PairwiseStrategy, SimdStrategy,
+		PairwiseStrategy, ReuseMultiplyStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
@@ -23,7 +21,7 @@ use crate::field::{
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
 	BinaryField64b, BinaryField8b, TowerField,
 };
-use std::{arch::x86_64::*, ops::Mul};
+use std::arch::x86_64::*;
 
 // Define 128 bit packed field types
 pub type PackedBinaryField256x1b = PackedPrimitiveType<M256, BinaryField1b>;
@@ -79,68 +77,57 @@ impl_tower_constants!(BinaryField64b, M256, { M256::from_equal_u128s(alphas!(u12
 // Define multiplication
 impl_mul_with_strategy!(PackedBinaryField128x2b, PairwiseStrategy);
 impl_mul_with_strategy!(PackedBinaryField64x4b, PairwiseStrategy);
+impl_mul_with_strategy!(PackedBinaryField32x8b, GfniBinaryTowerStrategy);
 impl_mul_with_strategy!(PackedBinaryField16x16b, SimdStrategy);
 impl_mul_with_strategy!(PackedBinaryField8x32b, SimdStrategy);
 impl_mul_with_strategy!(PackedBinaryField4x64b, SimdStrategy);
 impl_mul_with_strategy!(PackedBinaryField2x128b, SimdStrategy);
 
-impl Mul for PackedBinaryField32x8b {
-	type Output = Self;
-
-	fn mul(self, rhs: Self) -> Self {
-		unsafe {
-			let tower_to_gfni_map = _mm256_set1_epi64x(TOWER_TO_GFNI_MAP);
-			let gfni_to_tower_map = _mm256_set1_epi64x(GFNI_TO_TOWER_MAP);
-
-			let lhs_gfni =
-				_mm256_gf2p8affine_epi64_epi8::<0>(self.to_underlier().into(), tower_to_gfni_map);
-			let rhs_gfni =
-				_mm256_gf2p8affine_epi64_epi8::<0>(rhs.to_underlier().into(), tower_to_gfni_map);
-			let prod_gfni = _mm256_gf2p8mul_epi8(lhs_gfni, rhs_gfni);
-			M256::from(_mm256_gf2p8affine_epi64_epi8::<0>(prod_gfni, gfni_to_tower_map)).into()
-		}
-	}
-}
-
-// TODO: use more optimal SIMD implementation
 // Define square
 impl_square_with_strategy!(PackedBinaryField128x2b, PairwiseStrategy);
 impl_square_with_strategy!(PackedBinaryField64x4b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField32x8b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField16x16b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField8x32b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField4x64b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField2x128b, PairwiseStrategy);
+impl_square_with_strategy!(PackedBinaryField32x8b, ReuseMultiplyStrategy);
+impl_square_with_strategy!(PackedBinaryField16x16b, SimdStrategy);
+impl_square_with_strategy!(PackedBinaryField8x32b, SimdStrategy);
+impl_square_with_strategy!(PackedBinaryField4x64b, SimdStrategy);
+impl_square_with_strategy!(PackedBinaryField2x128b, SimdStrategy);
 
-// TODO: use more optimal SIMD implementation
 // Define invert
 impl_invert_with_strategy!(PackedBinaryField128x2b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryField64x4b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField32x8b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField16x16b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField8x32b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField4x64b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField2x128b, PairwiseStrategy);
+impl_invert_with_strategy!(PackedBinaryField32x8b, GfniBinaryTowerStrategy);
+impl_invert_with_strategy!(PackedBinaryField16x16b, SimdStrategy);
+impl_invert_with_strategy!(PackedBinaryField8x32b, SimdStrategy);
+impl_invert_with_strategy!(PackedBinaryField4x64b, SimdStrategy);
+impl_invert_with_strategy!(PackedBinaryField2x128b, SimdStrategy);
 
-// TODO: use more optimal SIMD implementation
 // Define multiply by alpha
 impl_mul_alpha_with_strategy!(PackedBinaryField128x2b, PairwiseStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField64x4b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField32x8b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField16x16b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField8x32b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField4x64b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField2x128b, PairwiseStrategy);
+impl_mul_alpha_with_strategy!(PackedBinaryField32x8b, ReuseMultiplyStrategy);
+impl_mul_alpha_with_strategy!(PackedBinaryField16x16b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedBinaryField8x32b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedBinaryField4x64b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedBinaryField2x128b, SimdStrategy);
 
 impl TowerSimdType for M256 {
+	#[inline(always)]
 	fn xor(a: Self, b: Self) -> Self {
 		unsafe { _mm256_xor_si256(a.0, b.0) }.into()
 	}
 
+	#[inline(always)]
 	fn shuffle_epi8(a: Self, b: Self) -> Self {
 		unsafe { _mm256_shuffle_epi8(a.0, b.0) }.into()
 	}
 
+	#[inline(always)]
+	fn blend_odd_even<Scalar: TowerField>(a: Self, b: Self) -> Self {
+		let mask = Self::even_mask::<Scalar>();
+		unsafe { _mm256_blendv_epi8(a.0, b.0, mask.0) }.into()
+	}
+
+	#[inline(always)]
 	fn set_alpha_even<Scalar: TowerField>(self) -> Self {
 		unsafe {
 			let alpha = Self::alpha::<Scalar>();
@@ -151,6 +138,7 @@ impl TowerSimdType for M256 {
 		.into()
 	}
 
+	#[inline(always)]
 	fn set1_epi128(val: __m128i) -> Self {
 		unsafe { _mm256_broadcastsi128_si256(val) }.into()
 	}

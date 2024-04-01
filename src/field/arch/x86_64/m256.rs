@@ -29,6 +29,7 @@ impl M256 {
 }
 
 impl From<__m256i> for M256 {
+	#[inline(always)]
 	fn from(value: __m256i) -> Self {
 		Self(value)
 	}
@@ -85,6 +86,7 @@ impl From<M256> for [u128; 2] {
 }
 
 impl From<M256> for __m256i {
+	#[inline(always)]
 	fn from(value: M256) -> Self {
 		value.0
 	}

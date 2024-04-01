@@ -14,4 +14,5 @@ pub mod packed_polyval_512;
 pub(super) mod packed_scaled;
 pub(super) mod pairwise_arithmetic;
 pub mod polyval;
+pub(super) mod reuse_multiply_arithmetic;
 pub(super) mod underlier_constants;

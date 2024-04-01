@@ -29,6 +29,7 @@ impl M512 {
 }
 
 impl From<__m512i> for M512 {
+	#[inline(always)]
 	fn from(value: __m512i) -> Self {
 		Self(value)
 	}
@@ -89,6 +90,7 @@ impl From<M512> for [u128; 4] {
 }
 
 impl From<M512> for __m512i {
+	#[inline(always)]
 	fn from(value: M512) -> Self {
 		value.0
 	}

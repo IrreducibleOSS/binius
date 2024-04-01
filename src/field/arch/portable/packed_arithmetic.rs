@@ -287,15 +287,15 @@ mod tests {
 	use rand::thread_rng;
 	use std::fmt::Debug;
 
-	use proptest::{arbitrary::any, proptest};
-
 	use crate::field::{
 		arch::portable::packed_128::{
 			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
 			PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,
 			PackedBinaryField8x16b,
 		},
-		test_utils::{define_invert_tests, define_multiply_tests, define_square_tests},
+		test_utils::{
+			define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
+		},
 	};
 
 	use crate::field::{
@@ -397,5 +397,10 @@ mod tests {
 	define_invert_tests!(
 		TaggedInvertOrZero<PackedStrategy>::invert_or_zero,
 		TaggedInvertOrZero<PackedStrategy>
+	);
+
+	define_mul_alpha_tests!(
+		TaggedMulAlpha<PackedStrategy>::mul_alpha,
+		TaggedMulAlpha<PackedStrategy>
 	);
 }

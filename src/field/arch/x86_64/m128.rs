@@ -1,4 +1,5 @@
 // Copyright 2024 Ulvetanna Inc.
+
 use crate::field::{
 	arch::portable::{
 		packed::PackedPrimitiveType,
@@ -22,6 +23,7 @@ use subtle::{Choice, ConstantTimeEq};
 pub struct M128(pub(super) __m128i);
 
 impl M128 {
+	#[inline(always)]
 	pub const fn from_u128(val: u128) -> Self {
 		let mut result = Self::ZERO;
 		unsafe {
@@ -33,6 +35,7 @@ impl M128 {
 }
 
 impl From<__m128i> for M128 {
+	#[inline(always)]
 	fn from(value: __m128i) -> Self {
 		Self(value)
 	}
@@ -78,6 +81,7 @@ impl From<M128> for u128 {
 }
 
 impl From<M128> for __m128i {
+	#[inline(always)]
 	fn from(value: M128) -> Self {
 		value.0
 	}

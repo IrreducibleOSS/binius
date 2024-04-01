@@ -30,7 +30,14 @@ transpose = "0.2.2"
 tracing-profile = "0.1.0"
 log = "0.4.20"
 
+[profile.release]
+lto = "fat"
+
 [profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.bench]
 inherits = "release"
 debug = true
 

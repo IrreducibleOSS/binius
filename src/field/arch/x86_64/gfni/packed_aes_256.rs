@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::super::m256::M256;
+use super::{super::m256::M256, gfni_arithmetics::GfniAESTowerStrategy};
 use crate::field::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
@@ -10,14 +10,13 @@ use crate::field::{
 			impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
 			PackedPrimitiveType,
 		},
-		PackedStrategy, PairwiseStrategy, SimdStrategy,
+		ReuseMultiplyStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
 		impl_square_with_strategy,
 	},
 };
-use std::{arch::x86_64::*, ops::Mul};
 
 // Define 128 bit packed field types
 pub type PackedAESBinaryField32x8b = PackedPrimitiveType<M256, AESTowerField8b>;
@@ -50,39 +49,29 @@ impl_packed_extension_field!(PackedAESBinaryField4x64b);
 impl_packed_extension_field!(PackedAESBinaryField2x128b);
 
 // Define multiplication
+impl_mul_with_strategy!(PackedAESBinaryField32x8b, GfniAESTowerStrategy);
 impl_mul_with_strategy!(PackedAESBinaryField16x16b, SimdStrategy);
 impl_mul_with_strategy!(PackedAESBinaryField8x32b, SimdStrategy);
 impl_mul_with_strategy!(PackedAESBinaryField4x64b, SimdStrategy);
 impl_mul_with_strategy!(PackedAESBinaryField2x128b, SimdStrategy);
 
-impl Mul for PackedAESBinaryField32x8b {
-	type Output = Self;
-
-	fn mul(self, rhs: Self) -> Self {
-		unsafe { M256::from(_mm256_gf2p8mul_epi8(self.0.into(), rhs.0.into())).into() }
-	}
-}
-
-// TODO: use more optimal SIMD implementation
 // Define square
-impl_square_with_strategy!(PackedAESBinaryField32x8b, PairwiseStrategy);
-impl_square_with_strategy!(PackedAESBinaryField16x16b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField8x32b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField4x64b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField2x128b, PackedStrategy);
+impl_square_with_strategy!(PackedAESBinaryField32x8b, ReuseMultiplyStrategy);
+impl_square_with_strategy!(PackedAESBinaryField16x16b, SimdStrategy);
+impl_square_with_strategy!(PackedAESBinaryField8x32b, SimdStrategy);
+impl_square_with_strategy!(PackedAESBinaryField4x64b, SimdStrategy);
+impl_square_with_strategy!(PackedAESBinaryField2x128b, SimdStrategy);
 
-// TODO: use more optimal SIMD implementation
 // Define invert
-impl_invert_with_strategy!(PackedAESBinaryField32x8b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField16x16b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField8x32b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField4x64b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField2x128b, PairwiseStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField32x8b, GfniAESTowerStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField16x16b, SimdStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField8x32b, SimdStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField4x64b, SimdStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField2x128b, SimdStrategy);
 
-// TODO: use more optimal SIMD implementation
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedAESBinaryField32x8b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField16x16b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField8x32b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField4x64b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField2x128b, PairwiseStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField32x8b, ReuseMultiplyStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField16x16b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField8x32b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField4x64b, SimdStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField2x128b, SimdStrategy);

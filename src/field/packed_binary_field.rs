@@ -113,6 +113,35 @@ pub mod test_utils {
 
 	pub(crate) use define_check_packed_inverse;
 
+	macro_rules! define_check_packed_mul_alpha {
+		($mul_alpha_func:path, $constraint:path) => {
+			#[allow(unused)]
+			trait TestMulAlphaTrait<T> {
+				fn test_mul_alpha(_a: T) {}
+			}
+
+			impl<T> TestMulAlphaTrait<$crate::field::packed_binary_field::test_utils::Unit> for T {}
+
+			struct TestMulAlpha<T>(std::marker::PhantomData<T>);
+
+			impl<T: $constraint + PackedField> TestMulAlpha<T>
+			where
+				T::Scalar: $crate::field::arithmetic_traits::MulAlpha,
+			{
+				fn test_mul_alpha(a: T) {
+					use $crate::field::arithmetic_traits::MulAlpha;
+
+					let c = $mul_alpha_func(a);
+					for i in 0..T::WIDTH {
+						assert_eq!(c.get(i), MulAlpha::mul_alpha(a.get(i)));
+					}
+				}
+			}
+		};
+	}
+
+	pub(crate) use define_check_packed_mul_alpha;
+
 	/// Test if `mult_func` operation is a valid multiply operation on the given values for
 	/// all possible packed fields defined on u128.
 	macro_rules! define_multiply_tests {
@@ -122,9 +151,9 @@ pub mod test_utils {
 				$constraint
 			);
 
-			proptest! {
+			proptest::proptest! {
 				#[test]
-				fn test_mul_packed_64(a_val in any::<u64>(), b_val in any::<u64>()) {
+				fn test_mul_packed_64(a_val in proptest::prelude::any::<u64>(), b_val in proptest::prelude::any::<u64>()) {
 					use $crate::field::arch::packed_64::*;
 
 					TestMult::<PackedBinaryField64x1b>::test_mul(a_val.into(), b_val.into());
@@ -137,7 +166,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_mul_packed_128(a_val in any::<u128>(), b_val in any::<u128>()) {
+				fn test_mul_packed_128(a_val in proptest::prelude::any::<u128>(), b_val in proptest::prelude::any::<u128>()) {
 					use $crate::field::arch::packed_128::*;
 
 					TestMult::<PackedBinaryField128x1b>::test_mul(a_val.into(), b_val.into());
@@ -151,7 +180,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_mul_packed_256(a_val in any::<[u128; 2]>(), b_val in any::<[u128; 2]>()) {
+				fn test_mul_packed_256(a_val in proptest::prelude::any::<[u128; 2]>(), b_val in proptest::prelude::any::<[u128; 2]>()) {
 					use $crate::field::arch::packed_256::*;
 
 					TestMult::<PackedBinaryField256x1b>::test_mul(a_val.into(), b_val.into());
@@ -165,7 +194,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_mul_packed_512(a_val in any::<[u128; 4]>(), b_val in any::<[u128; 4]>()) {
+				fn test_mul_packed_512(a_val in proptest::prelude::any::<[u128; 4]>(), b_val in proptest::prelude::any::<[u128; 4]>()) {
 					use $crate::field::arch::packed_512::*;
 
 					TestMult::<PackedBinaryField512x1b>::test_mul(a_val.into(), b_val.into());
@@ -190,9 +219,9 @@ pub mod test_utils {
 				$constraint
 			);
 
-			proptest! {
+			proptest::proptest! {
 				#[test]
-				fn test_square_packed_64(a_val in any::<u64>()) {
+				fn test_square_packed_64(a_val in proptest::prelude::any::<u64>()) {
 					use $crate::field::arch::packed_64::*;
 
 					TestSquare::<PackedBinaryField64x1b>::test_square(a_val.into());
@@ -205,7 +234,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_square_packed_128(a_val in any::<u128>()) {
+				fn test_square_packed_128(a_val in proptest::prelude::any::<u128>()) {
 					use $crate::field::arch::packed_128::*;
 
 					TestSquare::<PackedBinaryField128x1b>::test_square(a_val.into());
@@ -219,7 +248,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_square_packed_256(a_val in any::<[u128; 2]>()) {
+				fn test_square_packed_256(a_val in proptest::prelude::any::<[u128; 2]>()) {
 					use $crate::field::arch::packed_256::*;
 
 					TestSquare::<PackedBinaryField256x1b>::test_square(a_val.into());
@@ -233,7 +262,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_square_packed_512(a_val in any::<[u128; 4]>()) {
+				fn test_square_packed_512(a_val in proptest::prelude::any::<[u128; 4]>()) {
 					use $crate::field::arch::packed_512::*;
 
 					TestSquare::<PackedBinaryField512x1b>::test_square(a_val.into());
@@ -258,9 +287,9 @@ pub mod test_utils {
 				$constraint
 			);
 
-			proptest! {
+			proptest::proptest! {
 				#[test]
-				fn test_invert_packed_64(a_val in any::<u64>()) {
+				fn test_invert_packed_64(a_val in proptest::prelude::any::<u64>()) {
 					use $crate::field::arch::packed_64::*;
 
 					TestInvert::<PackedBinaryField64x1b>::test_invert(a_val.into());
@@ -273,7 +302,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_invert_packed_128(a_val in any::<u128>()) {
+				fn test_invert_packed_128(a_val in proptest::prelude::any::<u128>()) {
 					use $crate::field::arch::packed_128::*;
 
 					TestInvert::<PackedBinaryField128x1b>::test_invert(a_val.into());
@@ -287,7 +316,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_invert_packed_256(a_val in any::<[u128; 2]>()) {
+				fn test_invert_packed_256(a_val in proptest::prelude::any::<[u128; 2]>()) {
 					use $crate::field::arch::packed_256::*;
 
 					TestInvert::<PackedBinaryField256x1b>::test_invert(a_val.into());
@@ -301,7 +330,7 @@ pub mod test_utils {
 				}
 
 				#[test]
-				fn test_invert_packed_512(a_val in any::<[u128; 4]>()) {
+				fn test_invert_packed_512(a_val in proptest::prelude::any::<[u128; 4]>()) {
 					use $crate::field::arch::packed_512::*;
 
 					TestInvert::<PackedBinaryField512x1b>::test_invert(a_val.into());
@@ -317,7 +346,76 @@ pub mod test_utils {
 		};
 	}
 
+	/// Test if `mul_alpha_func` operation is a valid multiply by alpha operation on the given value for
+	/// all possible packed fields.
+	macro_rules! define_mul_alpha_tests {
+		($mul_alpha_func:path, $constraint:path) => {
+			$crate::field::packed_binary_field::test_utils::define_check_packed_mul_alpha!(
+				$mul_alpha_func,
+				$constraint
+			);
+
+			proptest::proptest! {
+				#[test]
+				fn test_mul_alpha_packed_64(a_val in proptest::prelude::any::<u64>()) {
+					use $crate::field::arch::packed_64::*;
+
+					TestMulAlpha::<PackedBinaryField64x1b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField32x2b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField16x4b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField8x8b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField4x16b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField2x32b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField1x64b>::test_mul_alpha(a_val.into());
+				}
+
+				#[test]
+				fn test_mul_alpha_packed_128(a_val in proptest::prelude::any::<u128>()) {
+					use $crate::field::arch::packed_128::*;
+
+					TestMulAlpha::<PackedBinaryField128x1b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField64x2b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField32x4b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField16x8b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField8x16b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField4x32b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField2x64b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField1x128b>::test_mul_alpha(a_val.into());
+				}
+
+				#[test]
+				fn test_mul_alpha_packed_256(a_val in proptest::prelude::any::<[u128; 2]>()) {
+					use $crate::field::arch::packed_256::*;
+
+					TestMulAlpha::<PackedBinaryField256x1b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField128x2b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField64x4b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField32x8b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField16x16b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField8x32b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField4x64b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField2x128b>::test_mul_alpha(a_val.into());
+				}
+
+				#[test]
+				fn test_mul_alpha_packed_512(a_val in proptest::prelude::any::<[u128; 4]>()) {
+					use $crate::field::arch::packed_512::*;
+
+					TestMulAlpha::<PackedBinaryField512x1b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField256x2b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField128x4b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField64x8b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField32x16b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField16x32b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField8x64b>::test_mul_alpha(a_val.into());
+					TestMulAlpha::<PackedBinaryField4x128b>::test_mul_alpha(a_val.into());
+				}
+			}
+		};
+	}
+
 	pub(crate) use define_invert_tests;
+	pub(crate) use define_mul_alpha_tests;
 	pub(crate) use define_multiply_tests;
 	pub(crate) use define_square_tests;
 }
@@ -325,10 +423,12 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
 	use super::{
-		test_utils::{define_invert_tests, define_multiply_tests, define_square_tests},
+		test_utils::{
+			define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
+		},
 		*,
 	};
-	use crate::field::{BinaryField8b, Field, PackedField};
+	use crate::field::{arithmetic_traits::MulAlpha, BinaryField8b, Field, PackedField};
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, thread_rng, SeedableRng};
 	use std::{iter::repeat_with, ops::Mul};
@@ -584,4 +684,6 @@ mod tests {
 	define_square_tests!(PackedField::square, PackedField);
 
 	define_invert_tests!(PackedField::invert_or_zero, PackedField);
+
+	define_mul_alpha_tests!(MulAlpha::mul_alpha, MulAlpha);
 }
