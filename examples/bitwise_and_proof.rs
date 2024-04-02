@@ -240,11 +240,7 @@ fn verify<PCS, CH>(
 		verify_zerocheck(trace, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Run sumcheck protocol
-	let sumcheck_domain =
-		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
-
-	let (_, evalcheck_claim) =
-		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
+	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
 
 	let trace_batch = trace.committed_batch(0);
 

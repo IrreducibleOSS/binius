@@ -141,7 +141,6 @@ where
 pub fn full_verify<F, CH>(
 	claim: &SumcheckClaim<F>,
 	proof: SumcheckProof<F>,
-	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 ) -> (Vec<SumcheckRoundClaim<F>>, EvalcheckClaim<F>)
 where
@@ -158,9 +157,7 @@ where
 	let n_rounds = proof.rounds.len();
 	for round_proof in proof.rounds[..n_rounds - 1].iter() {
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim =
-			verify_round(&claim.poly, round_proof.clone(), rd_claim, challenger.sample(), domain)
-				.unwrap();
+		rd_claim = verify_round(rd_claim, challenger.sample(), round_proof.clone()).unwrap();
 		rd_claims.push(rd_claim.clone());
 	}
 
@@ -168,8 +165,7 @@ where
 	challenger.observe_slice(last_round_proof.coeffs.as_slice());
 
 	let final_claim =
-		verify_final(&claim.poly, last_round_proof.clone(), rd_claim, challenger.sample(), domain)
-			.unwrap();
+		verify_final(&claim.poly, rd_claim, challenger.sample(), last_round_proof.clone()).unwrap();
 
 	(rd_claims, final_claim)
 }
@@ -214,7 +210,7 @@ where
 	}
 
 	let prove_output = prover_state
-		.finalize(&claim.poly, witness, domain, prev_rd_challenge)
+		.finalize(&claim.poly, witness, prev_rd_challenge)
 		.unwrap();
 
 	(rd_claims, prove_output)
@@ -262,7 +258,7 @@ where
 	}
 
 	let prove_output = prover_state
-		.finalize(&claim.poly, witness, domain, prev_rd_challenge)
+		.finalize(&claim.poly, witness, prev_rd_challenge)
 		.unwrap();
 
 	(rd_claims, prove_output)

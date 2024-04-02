@@ -937,7 +937,7 @@ fn verify<P, F, PCS, CH>(
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b> + Debug,
-	F: TowerField + Step,
+	F: TowerField,
 	PCS: PolyCommitScheme<P, F>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
@@ -987,11 +987,7 @@ where
 		zerocheck::verify(oracles, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Sumcheck
-	let sumcheck_domain =
-		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
-
-	let (_, evalcheck_claim) =
-		full_verify(&sumcheck_claim, sumcheck_proof, &sumcheck_domain, &mut challenger);
+	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
 
 	// Evalcheck
 	let trace_batch = oracles.committed_batch(trace_batch_id);
@@ -1021,15 +1017,8 @@ where
 		&mut challenger,
 	)?;
 
-	let sumcheck_domain =
-		EvaluationDomain::new(second_sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
-
-	let (_, second_evalcheck_claim) = full_verify(
-		&second_sumcheck_claim,
-		second_sumcheck_proof,
-		&sumcheck_domain,
-		&mut challenger,
-	);
+	let (_, second_evalcheck_claim) =
+		full_verify(&second_sumcheck_claim, second_sumcheck_proof, &mut challenger);
 
 	// Second Evalcheck
 	let mut shifted_eval_claims = Vec::new();

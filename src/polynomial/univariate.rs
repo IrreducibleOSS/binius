@@ -2,7 +2,10 @@
 // Copyright (c) 2022 The Plonky2 Authors
 
 use super::error::Error;
-use crate::field::{ExtensionField, Field, PackedField};
+use crate::{
+	field::{ExtensionField, Field, PackedField},
+	linalg::Matrix,
+};
 use std::{iter, iter::Step};
 
 /// A domain that univariate polynomials may be evaluated on.
@@ -13,6 +16,7 @@ use std::{iter, iter::Step};
 pub struct EvaluationDomain<F: Field> {
 	points: Vec<F>,
 	weights: Vec<F>,
+	interpolation_matrix: Matrix<F>,
 }
 
 impl<F: Field + Step> EvaluationDomain<F> {
@@ -30,7 +34,24 @@ impl<F: Field + Step> EvaluationDomain<F> {
 impl<F: Field> EvaluationDomain<F> {
 	pub fn from_points(points: Vec<F>) -> Result<Self, Error> {
 		let weights = compute_barycentric_weights(&points)?;
-		Ok(Self { points, weights })
+
+		let n = points.len();
+		let evaluation_matrix = vandermonde(&points);
+		let mut interpolation_matrix = Matrix::zeros(n, n);
+		evaluation_matrix
+			.inverse_into(&mut interpolation_matrix)
+			.expect(
+				"matrix is square; \
+				there are no duplicate points because that would have been caught when computing \
+				weights; \
+				matrix is non-singular because it is Vandermonde with no duplicate points",
+			);
+
+		Ok(Self {
+			points,
+			weights,
+			interpolation_matrix,
+		})
 	}
 
 	pub fn size(&self) -> usize {
@@ -39,6 +60,17 @@ impl<F: Field> EvaluationDomain<F> {
 
 	pub fn points(&self) -> &[F] {
 		self.points.as_slice()
+	}
+
+	pub fn interpolate<FE: ExtensionField<F>>(&self, values: &[FE]) -> Result<Vec<FE>, Error> {
+		let n = self.size();
+		if values.len() != n {
+			return Err(Error::ExtrapolateNumberOfEvaluations);
+		}
+
+		let mut coeffs = vec![FE::ZERO; values.len()];
+		self.interpolation_matrix.mul_vec_into(values, &mut coeffs);
+		Ok(coeffs)
 	}
 
 	pub fn extrapolate<FE: ExtensionField<F>>(&self, values: &[FE], x: FE) -> Result<FE, Error> {
@@ -71,14 +103,11 @@ pub fn extrapolate_line<P: PackedField>(x_0: P, x_1: P, z: P::Scalar) -> P {
 	x_0 + (x_1 - x_0) * z
 }
 
-pub fn evaluate_univariate<F: Field>(coeffs: impl DoubleEndedIterator<Item = F>, x: F) -> F {
-	let mut rev_coeffs = coeffs.rev();
-
+/// Evaluate a univariate polynomial specified by its monomial coefficients.
+pub fn evaluate_univariate<F: Field>(coeffs: &[F], x: F) -> F {
 	// Evaluate using Horner's method
-	let last_coeff = match rev_coeffs.next() {
-		Some(coeff) => coeff,
-		None => F::ZERO,
-	};
+	let mut rev_coeffs = coeffs.iter().copied().rev();
+	let last_coeff = rev_coeffs.next().unwrap_or(F::ZERO);
 	rev_coeffs.fold(last_coeff, |eval, coeff| eval * x + coeff)
 }
 
@@ -95,6 +124,22 @@ fn compute_barycentric_weights<F: Field>(points: &[F]) -> Result<Vec<F>, Error> 
 		.collect()
 }
 
+fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
+	let n = xs.len();
+
+	let mut mat = Matrix::zeros(n, n);
+	for (i, x_i) in xs.iter().copied().enumerate() {
+		let mut acc = F::ONE;
+		mat[(i, 0)] = acc;
+
+		for j in 1..n {
+			acc *= x_i;
+			mat[(i, j)] = acc;
+		}
+	}
+	mat
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -103,10 +148,11 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, slice};
 
-	fn evaluate_univariate_naive<F: Field>(coeffs: impl Iterator<Item = F>, x: F) -> F {
+	fn evaluate_univariate_naive<F: Field>(coeffs: &[F], x: F) -> F {
 		coeffs
+			.iter()
 			.enumerate()
-			.map(|(i, coeff)| coeff * x.pow(slice::from_ref(&(i as u64))))
+			.map(|(i, &coeff)| coeff * x.pow(slice::from_ref(&(i as u64))))
 			.sum()
 	}
 
@@ -137,23 +183,20 @@ mod tests {
 			.take(6)
 			.collect::<Vec<_>>();
 		let x = <BinaryField8b as Field>::random(&mut rng);
-		assert_eq!(
-			evaluate_univariate(coeffs.iter().cloned(), x),
-			evaluate_univariate_naive(coeffs.iter().cloned(), x),
-		);
+		assert_eq!(evaluate_univariate(&coeffs, x), evaluate_univariate_naive(&coeffs, x));
 	}
 
 	#[test]
 	fn test_evaluate_univariate_no_coeffs() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let x = <BinaryField32b as Field>::random(&mut rng);
-		assert_eq!(evaluate_univariate([].iter().cloned(), x), BinaryField32b::ZERO);
+		assert_eq!(evaluate_univariate(&[], x), BinaryField32b::ZERO);
 	}
 
 	#[test]
 	fn test_random_extrapolate() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let degree = 1;
+		let degree = 6;
 
 		let domain = EvaluationDomain::from_points(
 			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
@@ -163,17 +206,43 @@ mod tests {
 		.unwrap();
 
 		let coeffs = repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
-			.take(degree)
+			.take(degree + 1)
 			.collect::<Vec<_>>();
 
 		let values = domain
 			.points()
 			.iter()
-			.map(|&x| evaluate_univariate(coeffs.iter().cloned(), x))
+			.map(|&x| evaluate_univariate(&coeffs, x))
 			.collect::<Vec<_>>();
 
 		let x = <BinaryField32b as Field>::random(&mut rng);
-		let expected_y = evaluate_univariate(coeffs.iter().cloned(), x);
+		let expected_y = evaluate_univariate(&coeffs, x);
 		assert_eq!(domain.extrapolate(&values, x).unwrap(), expected_y);
+	}
+
+	#[test]
+	fn test_interpolation() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let degree = 6;
+
+		let domain = EvaluationDomain::from_points(
+			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
+				.take(degree + 1)
+				.collect(),
+		)
+		.unwrap();
+
+		let coeffs = repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
+			.take(degree + 1)
+			.collect::<Vec<_>>();
+
+		let values = domain
+			.points()
+			.iter()
+			.map(|&x| evaluate_univariate(&coeffs, x))
+			.collect::<Vec<_>>();
+
+		let interpolated = domain.interpolate(&values).unwrap();
+		assert_eq!(interpolated, coeffs);
 	}
 }

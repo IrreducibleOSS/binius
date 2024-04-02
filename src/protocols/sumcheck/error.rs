@@ -24,9 +24,9 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("incorrect number of coefficients in round {round}")]
-	NumberOfCoefficients { round: usize },
-	#[error("incorrect number of coefficients")]
+	#[error("round proof must have at least one coefficient")]
+	NumberOfCoefficients,
+	#[error("incorrect number of rounds")]
 	NumberOfRounds,
 	#[error("the evaluation domain does not match the expected size")]
 	EvaluationDomainMismatch,

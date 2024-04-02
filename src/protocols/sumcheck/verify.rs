@@ -1,9 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{
-	field::Field, oracle::MultivariatePolyOracle, polynomial::EvaluationDomain,
-	protocols::evalcheck::EvalcheckClaim,
-};
+use crate::{field::Field, oracle::MultivariatePolyOracle, protocols::evalcheck::EvalcheckClaim};
 
 use super::{
 	error::Error,
@@ -20,19 +17,11 @@ use super::{
 ///
 /// Returns the evaluation point and the claimed evaluation.
 pub fn verify_round<F: Field>(
-	poly_oracle: &MultivariatePolyOracle<F>,
-	round: SumcheckRound<F>,
-	round_claim: SumcheckRoundClaim<F>,
+	claim: SumcheckRoundClaim<F>,
 	challenge: F,
-	domain: &EvaluationDomain<F>,
+	proof: SumcheckRound<F>,
 ) -> Result<SumcheckRoundClaim<F>, Error> {
-	reduce_sumcheck_claim_round(
-		poly_oracle.max_individual_degree(),
-		domain,
-		round,
-		round_claim,
-		challenge,
-	)
+	reduce_sumcheck_claim_round(claim, challenge, proof)
 }
 
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
@@ -40,18 +29,11 @@ pub fn verify_round<F: Field>(
 /// Returns the evaluation point and the claimed evaluation.
 pub fn verify_final<F: Field>(
 	poly_oracle: &MultivariatePolyOracle<F>,
-	round: SumcheckRound<F>,
-	round_claim: SumcheckRoundClaim<F>,
+	claim: SumcheckRoundClaim<F>,
 	challenge: F,
-	domain: &EvaluationDomain<F>,
+	proof: SumcheckRound<F>,
 ) -> Result<EvalcheckClaim<F>, Error> {
-	let round_claim = reduce_sumcheck_claim_round(
-		poly_oracle.max_individual_degree(),
-		domain,
-		round,
-		round_claim,
-		challenge,
-	)?;
+	let round_claim = reduce_sumcheck_claim_round(claim, challenge, proof)?;
 	reduce_sumcheck_claim_final(poly_oracle, round_claim)
 }
 

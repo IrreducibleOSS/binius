@@ -2,9 +2,9 @@
 
 use super::{Error, VerificationError};
 use crate::{
-	field::{ExtensionField, Field, PackedField},
+	field::{Field, PackedField},
 	oracle::MultivariatePolyOracle,
-	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearPoly},
+	polynomial::{evaluate_univariate, EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };
 
@@ -64,35 +64,30 @@ pub struct SumcheckRoundClaim<F: Field> {
 ///
 /// Arguments:
 /// * `challenge`: The random challenge sampled by the verifier at the beginning of the round
-pub fn reduce_sumcheck_claim_round<F, FE>(
-	poly_oracle_max_individual_degree: usize,
-	domain: &EvaluationDomain<FE>,
-	round: SumcheckRound<FE>,
-	round_claim: SumcheckRoundClaim<FE>,
-	challenge: FE,
-) -> Result<SumcheckRoundClaim<FE>, Error>
-where
-	F: Field,
-	FE: ExtensionField<F>,
-{
+pub fn reduce_sumcheck_claim_round<F: Field>(
+	claim: SumcheckRoundClaim<F>,
+	challenge: F,
+	proof: SumcheckRound<F>,
+) -> Result<SumcheckRoundClaim<F>, Error> {
 	let SumcheckRoundClaim {
 		mut partial_point,
 		current_round_sum,
-	} = round_claim;
+	} = claim;
 
-	check_evaluation_domain(poly_oracle_max_individual_degree, domain)?;
-
-	if round.coeffs.len() != poly_oracle_max_individual_degree {
-		return Err(Error::Verification(VerificationError::NumberOfCoefficients {
-			round: partial_point.len(),
-		}));
+	let SumcheckRound { mut coeffs } = proof;
+	if coeffs.is_empty() {
+		return Err(VerificationError::NumberOfCoefficients.into());
 	}
 
-	let SumcheckRound { mut coeffs } = round;
-	coeffs.insert(0, current_round_sum - coeffs[0]);
+	// f(X) = ∑ᵢ₌₀ᵈ aᵢ Xⁱ
+	// f(0) = a₀
+	// f(1) = ∑ᵢ₌₀ᵈ aᵢ
+	// => a_d = f(0) + f(1) − a₀ − ∑ᵢ₌₀ᵈ⁻¹ aᵢ
+	let last_coeff = current_round_sum - coeffs[0] - coeffs.iter().sum::<F>();
+	coeffs.push(last_coeff);
+	let new_round_sum = evaluate_univariate(&coeffs, challenge);
 
 	partial_point.push(challenge);
-	let new_round_sum = domain.extrapolate(&coeffs, challenge)?;
 
 	Ok(SumcheckRoundClaim {
 		partial_point,
@@ -109,9 +104,7 @@ pub fn reduce_sumcheck_claim_final<F: Field>(
 		current_round_sum: eval,
 	} = round_claim;
 	if eval_point.len() != poly_oracle.n_vars() {
-		return Err(Error::Verification(VerificationError::NumberOfCoefficients {
-			round: eval_point.len(),
-		}));
+		return Err(VerificationError::NumberOfCoefficients.into());
 	}
 
 	let evalcheck_claim = EvalcheckClaim {

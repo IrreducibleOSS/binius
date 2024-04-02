@@ -195,7 +195,6 @@ where
 		&mut self,
 		poly_oracle: &MultivariatePolyOracle<F>,
 		sumcheck_witness: SumcheckWitness<WPF, WM>,
-		domain: &EvaluationDomain<F>,
 		prev_rd_challenge: Option<F>,
 	) -> Result<SumcheckProveOutput<WPF, WM>, Error>
 	where
@@ -214,7 +213,7 @@ where
 
 		// Last reduction to obtain eval value at eval_point
 		if let Some(prev_rd_challenge) = prev_rd_challenge {
-			self.reduce_claim(domain, prev_rd_challenge)?;
+			self.reduce_claim(prev_rd_challenge)?;
 		}
 
 		let evalcheck_claim = reduce_sumcheck_claim_final(
@@ -267,7 +266,7 @@ where
 			self.handle_switchover_and_fold(prev_rd_challenge.into())?;
 
 			// Reduce Evalcheck claim
-			self.reduce_claim(domain, prev_rd_challenge)?;
+			self.reduce_claim(prev_rd_challenge)?;
 		}
 
 		// Extract multilinears & round
@@ -294,7 +293,7 @@ where
 			.iter()
 			.any(|ml| matches!(ml, SumcheckMultilinear::Folded { .. }));
 
-		let coeffs = match (round, any_transparent, any_folded) {
+		let mut evals = match (round, any_transparent, any_folded) {
 			// All transparent, first round - direct sampling
 			(0, true, false) => {
 				self.sum_to_round_evals(&opf_domain, Self::only_transparent, Self::direct_sample)
@@ -330,6 +329,9 @@ where
 		};
 
 		self.round += 1;
+
+		evals.insert(0, self.get_claim().current_round_sum - evals[0]);
+		let coeffs = domain.interpolate(&evals)?;
 
 		let proof_round = SumcheckRound { coeffs };
 		self.proof.rounds.push(proof_round.clone());
@@ -469,23 +471,17 @@ where
 			.expect("round_claim always present by invariant")
 	}
 
-	fn reduce_claim(
-		&mut self,
-		domain: &EvaluationDomain<F>,
-		prev_rd_challenge: F,
-	) -> Result<(), Error> {
+	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
 		let new_round_claim = reduce_sumcheck_claim_round(
-			self.max_individual_degree,
-			domain,
+			self.round_claim
+				.take()
+				.expect("round_claim always present by invariant"),
+			prev_rd_challenge,
 			self.proof
 				.rounds
 				.last()
 				.expect("not first round by invariant")
 				.clone(),
-			self.round_claim
-				.take()
-				.expect("round_claim always present by invariant"),
-			prev_rd_challenge,
 		)?;
 
 		self.round_claim.replace(new_round_claim);
@@ -687,12 +683,8 @@ mod tests {
 			switchover_rd,
 		);
 
-		let (verifier_rd_claims, final_verify_output) = full_verify(
-			&sumcheck_claim,
-			final_prove_output.sumcheck_proof,
-			&domain,
-			challenger.clone(),
-		);
+		let (verifier_rd_claims, final_verify_output) =
+			full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
 
 		assert_eq!(prover_rd_claims, verifier_rd_claims);
 		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
@@ -801,12 +793,8 @@ mod tests {
 			challenger.clone(),
 		);
 
-		let (verifier_rd_claims, final_verify_output) = full_verify(
-			&sumcheck_claim,
-			final_prove_output.sumcheck_proof,
-			&domain,
-			challenger.clone(),
-		);
+		let (verifier_rd_claims, final_verify_output) =
+			full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
 
 		assert_eq!(prover_rd_claims, verifier_rd_claims);
 		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
