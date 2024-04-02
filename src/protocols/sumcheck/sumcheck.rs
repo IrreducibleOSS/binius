@@ -2,10 +2,10 @@
 
 use super::{Error, VerificationError};
 use crate::{
-	field::{Field, PackedField},
+	field::Field,
 	oracle::CompositePolyOracle,
-	polynomial::{evaluate_univariate, EvaluationDomain, MultilinearComposite, MultilinearPoly},
-	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
+	polynomial::{evaluate_univariate, EvaluationDomain, MultilinearComposite},
+	protocols::evalcheck::EvalcheckClaim,
 };
 
 #[derive(Debug, Clone)]
@@ -19,14 +19,8 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<F, PW, C, M>
-where
-	F: Field,
-	PW: PackedField,
-	M: MultilinearPoly<PW>,
-{
+pub struct SumcheckProveOutput<F: Field, C> {
 	pub evalcheck_claim: EvalcheckClaim<F, C>,
-	pub evalcheck_witness: EvalcheckWitness<PW, M>,
 	pub sumcheck_proof: SumcheckProof<F>,
 }
 

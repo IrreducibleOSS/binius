@@ -3,12 +3,13 @@
 use super::error::VerificationError;
 use crate::{
 	field::{Field, PackedField, TowerField},
-	oracle::{CompositePolyOracle, MultilinearOracleSet},
+	oracle::{CompositePolyOracle, MultilinearOracleSet, OracleId},
 	polynomial::{
 		transparent::eq_ind::EqIndPartialEval, CompositionPoly, Error as PolynomialError,
-		MultilinearComposite, MultilinearPoly,
+		MultilinearComposite,
 	},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
+	witness::MultilinearWitness,
 };
 use std::{fmt::Debug, sync::Arc};
 
@@ -16,9 +17,10 @@ use std::{fmt::Debug, sync::Arc};
 pub struct ZerocheckProof;
 
 #[derive(Debug)]
+
 pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, C, CW> {
 	pub sumcheck_claim: SumcheckClaim<F, C>,
-	pub sumcheck_witness: SumcheckWitness<PW, CW, Arc<dyn MultilinearPoly<PW> + Send + Sync + 'a>>,
+	pub sumcheck_witness: SumcheckWitness<PW, CW, MultilinearWitness<'a, PW>>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
@@ -29,8 +31,7 @@ pub struct ZerocheckClaim<F: Field, C> {
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type ZerocheckWitness<'a, P, C> =
-	MultilinearComposite<P, C, Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>>;
+pub type ZerocheckWitness<'a, P, C> = MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
 
 /// This wraps an inner composition polynomial $f$ and multiplies by another variable..
 ///
@@ -86,7 +87,7 @@ pub fn reduce_zerocheck_claim<F: TowerField, C: CompositionPoly<F>>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claim: &ZerocheckClaim<F, C>,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<F, ProductComposition<C>>, VerificationError> {
+) -> Result<(SumcheckClaim<F, ProductComposition<C>>, OracleId), VerificationError> {
 	if claim.poly.n_vars() != challenge.len() {
 		return Err(VerificationError::ChallengeVectorMismatch);
 	}
@@ -105,5 +106,5 @@ pub fn reduce_zerocheck_claim<F: TowerField, C: CompositionPoly<F>>(
 		poly: composite_poly,
 		sum: F::ZERO,
 	};
-	Ok(sumcheck_claim)
+	Ok((sumcheck_claim, eq_r_oracle_id))
 }

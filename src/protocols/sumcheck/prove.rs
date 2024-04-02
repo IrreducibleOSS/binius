@@ -15,7 +15,6 @@ use crate::{
 		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
 		MultilinearExtensionSpecialized, MultilinearPoly,
 	},
-	protocols::evalcheck::EvalcheckWitness,
 };
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp::max, fmt::Debug, marker::PhantomData};
@@ -105,7 +104,7 @@ where
 impl<F, PW, CW, M> SumcheckProverState<F, PW, CW, M>
 where
 	F: Field + From<PW::Scalar>,
-	PW: PackedField + Debug,
+	PW: PackedField,
 	PW::Scalar: From<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
@@ -195,9 +194,8 @@ where
 	pub fn finalize<C: Clone>(
 		&mut self,
 		poly_oracle: &CompositePolyOracle<F, C>,
-		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		prev_rd_challenge: Option<F>,
-	) -> Result<SumcheckProveOutput<F, PW, C, M>, Error> {
+	) -> Result<SumcheckProveOutput<F, C>, Error> {
 		// First round has no challenge, other rounds should have it
 		self.validate_rd_challenge(prev_rd_challenge)?;
 
@@ -223,20 +221,10 @@ where
 		self.round += 1;
 
 		let sumcheck_proof = self.proof.clone();
-		let evalcheck_witness = EvalcheckWitness::<PW, M>::new(
-			poly_oracle
-				.clone()
-				.inner_polys()
-				.into_iter()
-				.map(|oracle| oracle.id())
-				.zip(sumcheck_witness.multilinears.into_iter())
-				.collect(),
-		);
 
 		Ok(SumcheckProveOutput {
 			sumcheck_proof,
 			evalcheck_claim,
-			evalcheck_witness,
 		})
 	}
 

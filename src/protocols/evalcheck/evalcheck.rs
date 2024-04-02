@@ -2,14 +2,12 @@
 
 use super::error::Error;
 use crate::{
-	field::{Field, PackedField},
+	field::Field,
 	oracle::{
-		BatchId, CommittedBatch, CommittedId, CompositePolyOracle, MultilinearPolyOracle, OracleId,
-		Packed, Shifted,
+		BatchId, CommittedBatch, CommittedId, CompositePolyOracle, MultilinearPolyOracle, Packed,
+		Shifted,
 	},
-	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
 };
-use std::marker::PhantomData;
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
@@ -58,53 +56,6 @@ pub struct PackedEvalClaim<F: Field> {
 	pub is_random_point: bool,
 	/// Packing Description
 	pub packed: Packed<F>,
-}
-
-#[derive(Debug)]
-pub struct EvalcheckWitness<P: PackedField, M> {
-	multilinears: Vec<(OracleId, M)>,
-	_p_marker: PhantomData<P>,
-}
-
-impl<P, M> EvalcheckWitness<P, M>
-where
-	P: PackedField,
-	M: MultilinearPoly<P>,
-{
-	pub fn new(multilinears: Vec<(OracleId, M)>) -> Self {
-		Self {
-			multilinears,
-			_p_marker: PhantomData,
-		}
-	}
-
-	pub fn witness_for_oracle<F: Field>(
-		&self,
-		oracle: &MultilinearPolyOracle<F>,
-	) -> Result<&M, Error> {
-		// TODO: Use HashMap to reduce O(n) search to O(1)
-		let (_, multilin) = self
-			.multilinears
-			.iter()
-			.find(|(oracle_id, _)| *oracle_id == oracle.id())
-			.ok_or_else(|| Error::InvalidWitness(format!("{:?}", oracle)))?;
-		Ok(multilin)
-	}
-
-	pub fn evaluate<F: Field>(
-		&self,
-		oracle: &MultilinearPolyOracle<F>,
-		query: &MultilinearQuery<P>,
-	) -> Result<P::Scalar, Error> {
-		let multilin = self.witness_for_oracle(oracle)?;
-		let eval = multilin.evaluate(query)?;
-		Ok(eval)
-	}
-
-	pub fn merge(mut self, other: EvalcheckWitness<P, M>) -> Self {
-		self.multilinears.extend(other.multilinears);
-		self
-	}
 }
 
 #[derive(Debug)]

@@ -179,7 +179,7 @@ pub fn full_prove_with_switchover<F, PW, C, CW, M, CH>(
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, PW, C, M>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, C>)
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
@@ -198,7 +198,7 @@ where
 		.take(witness.n_multilinears())
 		.collect::<Vec<_>>();
 
-	let mut prover_state = SumcheckProverState::new(claim, witness.clone(), &switchovers).unwrap();
+	let mut prover_state = SumcheckProverState::new(claim, witness, &switchovers).unwrap();
 
 	let mut prev_rd_challenge = None;
 	let mut rd_claims = Vec::new();
@@ -216,7 +216,7 @@ where
 	}
 
 	let prove_output = prover_state
-		.finalize(&claim.poly, witness, prev_rd_challenge)
+		.finalize(&claim.poly, prev_rd_challenge)
 		.unwrap();
 
 	(rd_claims, prove_output)

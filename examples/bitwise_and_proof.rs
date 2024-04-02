@@ -1,7 +1,7 @@
 use binius::{
 	challenger::HashChallenger,
 	field::{
-		BinaryField128b, BinaryField128bPolyval, Field, PackedBinaryField128x1b,
+		BinaryField128b, BinaryField128bPolyval, ExtensionField, PackedBinaryField128x1b,
 		PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
@@ -23,6 +23,7 @@ use binius::{
 			ZerocheckProveOutput,
 		},
 	},
+	witness::MultilinearWitnessIndex,
 };
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
@@ -35,7 +36,19 @@ use tracing_subscriber::prelude::*;
 #[derive(Clone, Debug)]
 struct BitwiseAndConstraint;
 
-impl<F: Field> CompositionPoly<F> for BitwiseAndConstraint {
+impl BitwiseAndConstraint {
+	fn evaluate<P: PackedField>(query: &[P]) -> Result<P, PolynomialError> {
+		if query.len() != 3 {
+			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
+		}
+		let a = query[0];
+		let b = query[1];
+		let c = query[2];
+		Ok(a * b - c)
+	}
+}
+
+impl<P: PackedField> CompositionPoly<P> for BitwiseAndConstraint {
 	fn n_vars(&self) -> usize {
 		3
 	}
@@ -44,18 +57,12 @@ impl<F: Field> CompositionPoly<F> for BitwiseAndConstraint {
 		2
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		Self::evaluate(query)
 	}
 
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
-		if query.len() != 3 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
-		}
-		let a = query[0];
-		let b = query[1];
-		let c = query[2];
-		Ok(a * b - c)
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
+		Self::evaluate(query)
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -84,6 +91,8 @@ where
 	let commit_scope = span.enter();
 
 	assert_eq!(pcs.n_vars(), log_size);
+
+	let mut witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
 
 	assert_eq!(constraints.len(), 1);
 	let constraint = constraints[0].clone();
@@ -121,7 +130,14 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = prove_zerocheck(trace, &zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
+	} = prove_zerocheck(
+		trace,
+		&mut witness_index,
+		&zerocheck_claim,
+		zerocheck_witness,
+		zerocheck_challenge,
+	)
+	.unwrap();
 
 	let sumcheck_domain =
 		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -141,7 +157,6 @@ where
 
 	let SumcheckProveOutput {
 		evalcheck_claim,
-		evalcheck_witness,
 		sumcheck_proof,
 	} = output;
 
@@ -149,7 +164,7 @@ where
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
-		&evalcheck_witness,
+		&witness_index,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
@@ -276,6 +291,41 @@ struct TraceWitness<'a, P: PackedField> {
 	a_in: MultilinearExtension<'a, P>,
 	b_in: MultilinearExtension<'a, P>,
 	c_out: MultilinearExtension<'a, P>,
+}
+
+impl<'a, P: PackedField> TraceWitness<'a, P> {
+	fn to_index<F, PE>(&self, trace: &MultilinearOracleSet<F>) -> MultilinearWitnessIndex<PE>
+	where
+		F: TowerField + ExtensionField<P::Scalar>,
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		let mut index = MultilinearWitnessIndex::new();
+
+		index.set(
+			trace.committed_oracle_id(CommittedId {
+				batch_id: 0,
+				index: 0,
+			}),
+			self.a_in.to_ref().specialize_arc_dyn(),
+		);
+		index.set(
+			trace.committed_oracle_id(CommittedId {
+				batch_id: 0,
+				index: 1,
+			}),
+			self.b_in.to_ref().specialize_arc_dyn(),
+		);
+		index.set(
+			trace.committed_oracle_id(CommittedId {
+				batch_id: 0,
+				index: 2,
+			}),
+			self.c_out.to_ref().specialize_arc_dyn(),
+		);
+
+		index
+	}
 }
 
 fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128x1b> {

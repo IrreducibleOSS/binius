@@ -1,14 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{BatchId, CommittedId},
+	oracle::{BatchId, CommittedId, OracleId},
 	polynomial::Error as PolynomialError,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("witness is unable to evaluate multilinear: {0}")]
-	InvalidWitness(String),
+	#[error("witness is unable to evaluate multilinear with ID: {0}")]
+	InvalidWitness(OracleId),
 	#[error("unknown committed polynomial id {0}")]
 	UnknownCommittedId(CommittedId),
 	#[error("unknown batch {0}")]

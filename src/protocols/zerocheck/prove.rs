@@ -14,8 +14,8 @@ use crate::{
 		MultilinearComposite, MultilinearPoly,
 	},
 	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
+	witness::MultilinearWitnessIndex,
 };
-
 use tracing::instrument;
 
 fn multiply_multilinear_composite<P, C, M>(
@@ -29,7 +29,6 @@ where
 {
 	let n_vars: usize = composite.n_vars();
 	let composition = ProductComposition::new(composite.composition);
-
 	let mut multilinears = composite.multilinears;
 	multilinears.push(new_multilinear);
 
@@ -45,6 +44,7 @@ where
 #[instrument(skip_all, name = "zerocheck::prove")]
 pub fn prove<'a, F, PW, C, CW>(
 	oracles: &mut MultilinearOracleSet<F>,
+	witness: &mut MultilinearWitnessIndex<'a, PW>,
 	zerocheck_claim: &ZerocheckClaim<F, C>,
 	zerocheck_witness: ZerocheckWitness<'a, PW, CW>,
 	challenge: Vec<F>,
@@ -71,18 +71,22 @@ where
 		.map(Into::into)
 		.collect::<Vec<PW::Scalar>>();
 
-	let eq_r = EqIndPartialEval::<PW>::new(n_vars, wf_challenge)?.multilinear_extension()?;
+	let eq_r = EqIndPartialEval::<PW>::new(n_vars, wf_challenge)?
+		.multilinear_extension()?
+		.specialize_arc_dyn();
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
-	let sumcheck_witness =
-		multiply_multilinear_composite(zerocheck_witness, eq_r.specialize_arc_dyn())?;
+	let sumcheck_witness = multiply_multilinear_composite(zerocheck_witness, eq_r.clone())?;
 
 	// Step 3: Make Sumcheck Claim on New Polynomial
-	let sumcheck_claim = reduce_zerocheck_claim(oracles, zerocheck_claim, challenge)?;
+	let (sumcheck_claim, eq_r_id) = reduce_zerocheck_claim(oracles, zerocheck_claim, challenge)?;
 
-	// Step 4: Wrap everything up
-	let zerocheck_proof = ZerocheckProof {};
+	// Step 4: Add the eq_r polynomial to the trace witness
+	witness.set(eq_r_id, eq_r);
+
+	// Step 5: Wrap everything up
+	let zerocheck_proof = ZerocheckProof;
 	Ok(ZerocheckProveOutput {
 		sumcheck_claim,
 		sumcheck_witness,
@@ -92,8 +96,6 @@ where
 
 #[cfg(test)]
 mod tests {
-	use rand::{rngs::StdRng, SeedableRng};
-
 	use super::*;
 	use crate::{
 		field::{BinaryField32b, Field},
@@ -101,7 +103,8 @@ mod tests {
 		polynomial::MultilinearExtension,
 		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
 	};
-	use std::{iter::repeat_with, sync::Arc};
+	use rand::{rngs::StdRng, SeedableRng};
+	use std::iter::repeat_with;
 
 	// f(x) = (x_1, x_2, x_3)) = g(h_0(x), ..., h_7(x)) where
 	// g is the product composition
@@ -123,15 +126,14 @@ mod tests {
 				let values: Vec<F> = (0..1 << n_vars)
 					.map(|j| if i == j { F::ZERO } else { F::ONE })
 					.collect::<Vec<_>>();
-				Arc::new(
-					MultilinearExtension::from_values(values)
-						.unwrap()
-						.specialize(),
-				) as Arc<dyn MultilinearPoly<F> + Send + Sync>
+				MultilinearExtension::from_values(values)
+					.unwrap()
+					.specialize_arc_dyn::<F>()
 			})
 			.collect::<Vec<_>>();
+
 		let zerocheck_witness =
-			MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
+			MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
 
 		let mut oracles = MultilinearOracleSet::<F>::new();
 		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
@@ -140,6 +142,12 @@ mod tests {
 			n_polys: n_multilinears,
 			tower_level: F::TOWER_LEVEL,
 		});
+
+		let mut witness = MultilinearWitnessIndex::new();
+		for (i, multilinear) in multilinears.iter().cloned().enumerate() {
+			let oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: i });
+			witness.set(oracle_id, multilinear);
+		}
 
 		// Setup claim
 		let h = (0..n_multilinears)
@@ -159,9 +167,15 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		// PROVER
-		let prove_output =
-			prove(&mut oracles.clone(), &zerocheck_claim, zerocheck_witness, challenge.clone())
-				.unwrap();
+		let prove_output = prove(
+			&mut oracles.clone(),
+			&mut witness,
+			&zerocheck_claim,
+			zerocheck_witness,
+			challenge.clone(),
+		)
+		.unwrap();
+
 		let proof = prove_output.zerocheck_proof;
 		// VERIFIER
 		let sumcheck_claim =

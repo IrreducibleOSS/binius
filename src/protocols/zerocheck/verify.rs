@@ -16,5 +16,6 @@ pub fn verify<F: TowerField, C: CompositionPoly<F>>(
 	challenge: Vec<F>,
 ) -> Result<SumcheckClaim<F, ProductComposition<C>>, VerificationError> {
 	let _ = proof;
-	reduce_zerocheck_claim(oracles, claim, challenge)
+	let (claim, _) = reduce_zerocheck_claim(oracles, claim, challenge)?;
+	Ok(claim)
 }

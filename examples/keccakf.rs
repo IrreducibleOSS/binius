@@ -31,23 +31,22 @@ use binius::{
 	},
 	protocols::{
 		evalcheck,
-		evalcheck::{BatchCommittedEvalClaims, EvalcheckProof, EvalcheckWitness, ShiftedEvalClaim},
+		evalcheck::{BatchCommittedEvalClaims, EvalcheckProof, ShiftedEvalClaim},
 		sumcheck::{SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckWitness},
 		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck,
 		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
+	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
-use std::{array, env, fmt::Debug, iter, iter::Step, sync::Arc};
+use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
 use tiny_keccak::keccakf;
 use tracing::instrument;
 use tracing_profile::{CsvLayer, PrintTreeLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-type DynMultilinearPoly<'a, F> = dyn MultilinearPoly<F> + Send + Sync + 'a;
 
 const KECCAKF_RC: [u64; 32] = [
 	0x0000000000000001,
@@ -397,6 +396,45 @@ struct TraceWitness<P: PackedField> {
 	selector: Vec<P>,
 }
 
+impl<P: PackedField> TraceWitness<P> {
+	fn to_index<F, PE>(
+		&self,
+		fixed_oracle: &FixedOracle<F>,
+		trace_oracle: &TraceOracle<F>,
+	) -> MultilinearWitnessIndex<PE>
+	where
+		F: ExtensionField<P::Scalar>,
+		PE: PackedField,
+		PE::Scalar: ExtensionField<P::Scalar>,
+	{
+		let mut index = MultilinearWitnessIndex::new();
+
+		for (oracle_arr, witness_arr) in [
+			(&trace_oracle.state_in[..], &self.state_in[..]),
+			(&trace_oracle.state_out[..], &self.state_out[..]),
+			(&trace_oracle.c[..], &self.c[..]),
+			(&trace_oracle.d[..], &self.d[..]),
+			(&trace_oracle.c_shift[..], &self.c_shift[..]),
+			(&trace_oracle.a_theta[..], &self.a_theta[..]),
+			(&trace_oracle.b[..], &self.b[..]),
+			(&trace_oracle.next_state_in[..], &self.next_state_in[..]),
+			(slice::from_ref(&fixed_oracle.round_consts), slice::from_ref(&self.round_consts)),
+			(slice::from_ref(&fixed_oracle.selector), slice::from_ref(&self.selector)),
+		] {
+			for (oracle, witness) in oracle_arr.iter().zip(witness_arr.iter()) {
+				index.set(
+					oracle.id(),
+					MultilinearExtension::from_values_slice(witness.as_slice())
+						.unwrap()
+						.specialize_arc_dyn(),
+				);
+			}
+		}
+
+		index
+	}
+}
+
 struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
 	zerocheck_proof: ZerocheckProof,
@@ -528,13 +566,11 @@ fn make_second_round_sumcheck<'a, F, PW, CH>(
 	trace_batch: &CommittedBatch,
 	batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: Vec<ShiftedEvalClaim<F>>,
-	evalcheck_witness: Option<&EvalcheckWitness<PW, Arc<DynMultilinearPoly<'a, PW>>>>,
+	mut witness_index: Option<&mut MultilinearWitnessIndex<PW>>,
 	mut challenger: CH,
 ) -> Result<(
 	SumcheckClaim<F, impl CompositionPoly<F> + 'static>,
-	Option<
-		SumcheckWitness<PW, impl CompositionPoly<PW> + 'static, Arc<DynMultilinearPoly<'a, PW>>>,
-	>,
+	Option<SumcheckWitness<PW, impl CompositionPoly<PW> + 'static, MultilinearWitness<'a, PW>>>,
 )>
 where
 	F: TowerField + From<PW>,
@@ -567,7 +603,7 @@ where
 
 	let trace_mixing_challenges = challenger.sample_vec(trace_batch.n_polys);
 
-	let wf_trace_mixing_challenges = evalcheck_witness.map(|_| {
+	let wf_trace_mixing_challenges = witness_index.as_ref().map(|_| {
 		trace_mixing_challenges
 			.iter()
 			.copied()
@@ -603,17 +639,15 @@ where
 	)?;
 	oracles.push(mixed_trace_projection);
 
-	let partial_eval_query = evalcheck_witness.map(|_| {
+	let partial_eval_query = witness_index.as_ref().map(|_| {
 		MultilinearQuery::<PW>::with_full_query(
 			&wf_same_query_claim_eval_point[max_shift_block_size..],
 		)
 		.unwrap()
 	});
 
-	if let Some(evalcheck_witness) = evalcheck_witness {
-		let partial_eval_query = partial_eval_query
-			.as_ref()
-			.expect("evalcheck_witness is Some");
+	if let Some(ref mut witness_index) = witness_index {
+		let partial_eval_query = partial_eval_query.as_ref().expect("witness_index is Some");
 
 		let wf_mixing_challenges = wf_trace_mixing_challenges.unwrap();
 
@@ -623,9 +657,9 @@ where
 					batch_id: trace_batch.id,
 					index: i,
 				});
-				evalcheck_witness.witness_for_oracle(&oracle)
+				witness_index.get(oracle.id()).unwrap().clone()
 			})
-			.collect::<Result<Vec<_>, _>>()?;
+			.collect::<Vec<_>>();
 		let mixed_trace_values = (0..1 << log_size)
 			.into_par_iter()
 			.map(|i| {
@@ -638,9 +672,11 @@ where
 			.collect::<Result<Vec<_>, _>>()?;
 
 		let mixed_trace_witness = MultilinearExtension::from_values(mixed_trace_values)?
-			.evaluate_partial_high(partial_eval_query)?;
+			.evaluate_partial_high(partial_eval_query)?
+			.specialize_arc_dyn();
 
-		witnesses.push(mixed_trace_witness.specialize_arc_dyn());
+		witness_index.set(mixed_trace_projection, mixed_trace_witness.clone());
+		witnesses.push(mixed_trace_witness);
 	}
 
 	let eq_ind = EqIndPartialEval::new(
@@ -648,19 +684,19 @@ where
 		same_query_claim.eval_point[..max_shift_block_size].to_vec(),
 	)?;
 
-	if evalcheck_witness.is_some() {
+	let eq_ind_oracle = oracle_set.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)?;
+	oracles.push(eq_ind_oracle);
+
+	if let Some(ref mut witness_index) = witness_index {
 		let eq_ind_wf = EqIndPartialEval::<PW>::new(
 			max_shift_block_size,
 			wf_same_query_claim_eval_point[..max_shift_block_size].to_vec(),
 		)?;
 
-		let eq_ind_witness = eq_ind_wf.multilinear_extension()?;
-
-		witnesses.push(eq_ind_witness.specialize_arc_dyn());
+		let eq_ind_witness = eq_ind_wf.multilinear_extension()?.specialize_arc_dyn();
+		witness_index.set(eq_ind_oracle, eq_ind_witness.clone());
+		witnesses.push(eq_ind_witness);
 	}
-
-	let eq_ind_oracle = oracle_set.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)?;
-	oracles.push(eq_ind_oracle);
 
 	bivariate_metas.push(BivariateMeta {
 		query0: mixed_trace_projection,
@@ -677,13 +713,17 @@ where
 		)?;
 		oracles.push(shifted_oracle);
 
-		if let Some(evalcheck_witness) = evalcheck_witness {
-			let multilin = evalcheck_witness.witness_for_oracle(shifted.inner())?;
+		if let Some(ref mut witness_index) = witness_index {
+			let multilin = witness_index.get(shifted.inner().id()).unwrap();
 			let partial_eval_query = partial_eval_query
 				.as_ref()
 				.expect("evalcheck_witness is Some");
-			let projected_multilin = multilin.evaluate_partial_high(partial_eval_query)?;
-			witnesses.push(projected_multilin.upcast_arc_dyn());
+			let projected_multilin = multilin
+				.evaluate_partial_high(partial_eval_query)?
+				.upcast_arc_dyn();
+
+			witness_index.set(shifted_oracle, projected_multilin.clone());
+			witnesses.push(projected_multilin);
 		}
 
 		let wf_claim_eval_point = claim
@@ -700,7 +740,7 @@ where
 			claim.eval_point[..shifted.block_size()].to_vec(),
 		)?;
 
-		let shift_ind_wf = evalcheck_witness.map(|_| {
+		let shift_ind_wf = witness_index.as_ref().map(|_| {
 			ShiftIndPartialEval::new(
 				shifted.block_size(),
 				shifted.shift_offset(),
@@ -727,7 +767,7 @@ where
 		};
 		oracles.push(shift_ind_oracle);
 
-		if evalcheck_witness.is_some() {
+		if let Some(ref mut witness_index) = witness_index {
 			let shift_ind_mle = shift_ind_wf.unwrap().multilinear_extension()?;
 			let shift_ind_witness = if shifted.block_size() < max_shift_block_size {
 				let mut shift_ind_values = vec![PW::ZERO; 1 << max_shift_block_size];
@@ -742,7 +782,10 @@ where
 			} else {
 				shift_ind_mle
 			};
-			witnesses.push(shift_ind_witness.specialize_arc_dyn());
+
+			let shift_ind_witness = shift_ind_witness.specialize_arc_dyn();
+			witness_index.set(shift_ind_oracle, shift_ind_witness.clone());
+			witnesses.push(shift_ind_witness);
 		}
 
 		bivariate_metas.push(BivariateMeta {
@@ -782,7 +825,7 @@ where
 		sum: mixed_sum,
 	};
 
-	let mixed_sumcheck_witness = evalcheck_witness
+	let mixed_sumcheck_witness = witness_index
 		.map(move |_| {
 			let mix_prover = empty_mix_composition(composition_nvars, mixing_challenge.into());
 			let mix_prover = mix_prover.include(index_compositions);
@@ -854,7 +897,7 @@ fn prove<P, F, PW, PCS, CH>(
 	trace_oracle: &TraceOracle<F>,
 	pcs: &PCS,
 	mut challenger: CH,
-	witness: TraceWitness<P>,
+	witness: &TraceWitness<P>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	P: PackedField<Scalar = BinaryField1b> + Debug + Pod,
@@ -865,6 +908,8 @@ where
 	PCS::Proof: 'static,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
+	let mut trace_witness = witness.to_index(fixed_oracle, trace_oracle);
+
 	// Round 1
 	let trace_commit_polys = witness
 		.state_in
@@ -903,7 +948,7 @@ where
 		)?,
 	};
 
-	let zerocheck_witness = zerocheck_prover_witness(log_size, &witness, mix_composition_prover)?;
+	let zerocheck_witness = zerocheck_prover_witness(log_size, witness, mix_composition_prover)?;
 
 	// Zerocheck
 	let zerocheck_challenge = challenger.sample_vec(log_size);
@@ -912,7 +957,14 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = zerocheck::prove(oracles, &zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
+	} = zerocheck::prove(
+		oracles,
+		&mut trace_witness,
+		&zerocheck_claim,
+		zerocheck_witness,
+		zerocheck_challenge,
+	)
+	.unwrap();
 
 	// Sumcheck
 	let sumcheck_domain =
@@ -930,7 +982,6 @@ where
 
 	let SumcheckProveOutput {
 		evalcheck_claim,
-		evalcheck_witness,
 		sumcheck_proof,
 	} = output;
 
@@ -941,7 +992,7 @@ where
 	let mut packed_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
 	let evalcheck_proof = evalcheck::prove(
-		&evalcheck_witness,
+		&trace_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
@@ -957,7 +1008,7 @@ where
 		&trace_batch,
 		batch_committed_eval_claims,
 		shifted_eval_claims,
-		Some(&evalcheck_witness),
+		Some(&mut trace_witness),
 		&mut challenger,
 	)?;
 
@@ -976,18 +1027,15 @@ where
 
 	let SumcheckProveOutput {
 		evalcheck_claim: second_evalcheck_claim,
-		evalcheck_witness: second_evalcheck_witness,
 		sumcheck_proof: second_sumcheck_proof,
 	} = output;
-
-	let evalcheck_witness = evalcheck_witness.merge(second_evalcheck_witness);
 
 	// Second Evalcheck
 	let mut shifted_eval_claims = Vec::new();
 	let mut packed_eval_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
 	let second_evalcheck_proof = evalcheck::prove(
-		&evalcheck_witness,
+		&trace_witness,
 		second_evalcheck_claim,
 		&mut batch_committed_eval_claims,
 		&mut shifted_eval_claims,
@@ -1260,14 +1308,14 @@ fn main() {
 	.unwrap();
 
 	let mut oracles = MultilinearOracleSet::new();
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
+
 	let trace_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
 		round_id: 0,
 		n_vars: log_size,
 		n_polys: 60,
 		tower_level: 0,
 	});
-
-	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, trace_batch_id);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -1281,7 +1329,7 @@ fn main() {
 		&trace_oracle,
 		&pcs,
 		challenger.clone(),
-		witness,
+		&witness,
 	)
 	.unwrap();
 

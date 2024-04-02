@@ -205,9 +205,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let multilinears = prover_poly
 				.multilinears
 				.into_iter()
-				.map(|multilin| {
-					Arc::new(multilin) as Arc<dyn MultilinearPoly<FPolyval> + Send + Sync>
-				})
+				.map(|multilin| multilin.upcast_arc_dyn())
 				.collect::<Vec<_>>();
 
 			let prover_poly: MultilinearComposite<

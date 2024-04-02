@@ -6,18 +6,19 @@ use super::{
 	error::Error,
 	evalcheck::{
 		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckWitness, PackedEvalClaim, ShiftedEvalClaim,
+		EvalcheckProof, PackedEvalClaim, ShiftedEvalClaim,
 	},
 };
 use crate::{
 	field::{Field, PackedField},
 	oracle::{MultilinearPolyOracle, ProjectionVariant},
-	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
+	polynomial::multilinear_query::MultilinearQuery,
+	witness::MultilinearWitnessIndex,
 };
 
 #[instrument(skip_all, name = "evalcheck::prove")]
-pub fn prove<F, PW, C, M>(
-	evalcheck_witness: &EvalcheckWitness<PW, M>,
+pub fn prove<F, PW, C>(
+	witness_index: &MultilinearWitnessIndex<'_, PW>,
 	evalcheck_claim: EvalcheckClaim<F, C>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
@@ -27,7 +28,6 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	M: MultilinearPoly<PW>,
 {
 	let mut memoized_queries = Vec::new();
 
@@ -39,10 +39,10 @@ where
 	} = evalcheck_claim;
 
 	prove_composite(
+		witness_index,
 		composite.inner_polys().into_iter(),
 		eval_point,
 		is_random_point,
-		evalcheck_witness,
 		batch_commited_eval_claims,
 		shifted_eval_claims,
 		packed_eval_claims,
@@ -51,11 +51,11 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prove_composite<F, PW, M>(
+fn prove_composite<F, PW>(
+	witness_index: &MultilinearWitnessIndex<'_, PW>,
 	oracles: impl Iterator<Item = MultilinearPolyOracle<F>>,
 	eval_point: Vec<F>,
 	is_random_point: bool,
-	witness: &EvalcheckWitness<PW, M>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
 	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
@@ -65,7 +65,6 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	M: MultilinearPoly<PW>,
 {
 	let subproofs = oracles
 		.map(|suboracle| {
@@ -92,7 +91,10 @@ where
 				query
 			};
 
-			let eval = witness.evaluate(&suboracle, eval_query)?.into();
+			let witness_poly = witness_index
+				.get(suboracle.id())
+				.ok_or(Error::InvalidWitness(suboracle.id()))?;
+			let eval = witness_poly.evaluate(eval_query)?.into();
 			let subclaim = EvalcheckMultilinearClaim {
 				poly: suboracle,
 				eval_point: eval_point.clone(),
@@ -101,7 +103,7 @@ where
 			};
 
 			let proof = prove_multilinear(
-				witness,
+				witness_index,
 				subclaim,
 				batch_commited_eval_claims,
 				shifted_eval_claims,
@@ -116,8 +118,8 @@ where
 	Ok(EvalcheckProof::Composite { subproofs })
 }
 
-pub fn prove_multilinear<F, PW, M>(
-	evalcheck_witness: &EvalcheckWitness<PW, M>,
+pub fn prove_multilinear<F, PW>(
+	witness_index: &MultilinearWitnessIndex<'_, PW>,
 	evalcheck_claim: EvalcheckMultilinearClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
@@ -128,7 +130,6 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	M: MultilinearPoly<PW>,
 {
 	let EvalcheckMultilinearClaim {
 		poly: multilinear,
@@ -165,7 +166,7 @@ where
 			};
 
 			let subproof = prove_multilinear(
-				evalcheck_witness,
+				witness_index,
 				subclaim,
 				batch_commited_eval_claims,
 				shifted_eval_claims,
@@ -224,7 +225,7 @@ where
 			};
 
 			prove_multilinear(
-				evalcheck_witness,
+				witness_index,
 				subclaim,
 				batch_commited_eval_claims,
 				shifted_eval_claims,
@@ -234,10 +235,10 @@ where
 		}
 
 		LinearCombination(_id, lin_com) => prove_composite(
+			witness_index,
 			lin_com.polys().cloned(),
 			eval_point,
 			is_random_point,
-			evalcheck_witness,
 			batch_commited_eval_claims,
 			shifted_eval_claims,
 			packed_eval_claims,
@@ -256,7 +257,7 @@ mod tests {
 		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 		polynomial::{
 			transparent::select_row::SelectRow, CompositionPoly, Error as PolynomialError,
-			MultilinearExtension, MultivariatePoly,
+			MultilinearExtension, MultilinearPoly, MultivariatePoly,
 		},
 		protocols::evalcheck::verify::verify,
 	};
@@ -363,6 +364,11 @@ mod tests {
 			}),
 		];
 
+		let mut witness_index = MultilinearWitnessIndex::new();
+		for (oracle, multilin) in suboracles.iter().zip(multilins.into_iter()) {
+			witness_index.set(oracle.id(), multilin.upcast_arc_dyn());
+		}
+
 		let oracle = CompositePolyOracle::new(log_size, suboracles.clone(), QuadProduct).unwrap();
 
 		let claim = EvalcheckClaim {
@@ -376,13 +382,7 @@ mod tests {
 		let mut shifted_claims_prove = Vec::new();
 		let mut packed_claims_prove = Vec::new();
 		let proof = prove(
-			&EvalcheckWitness::new(
-				suboracles
-					.into_iter()
-					.map(|oracle| oracle.id())
-					.zip(multilins)
-					.collect(),
-			),
+			&witness_index,
 			claim.clone(),
 			&mut bcec_prove,
 			&mut shifted_claims_prove,
@@ -453,10 +453,6 @@ mod tests {
 			.add_transparent(Arc::new(select_row3.clone()), 0)
 			.unwrap();
 
-		let select_row1_oracle = oracles.oracle(select_row1_oracle_id);
-		let select_row2_oracle = oracles.oracle(select_row2_oracle_id);
-		let select_row3_oracle = oracles.oracle(select_row3_oracle_id);
-
 		let lin_com_id = oracles
 			.add_linear_combination(
 				n_vars,
@@ -509,12 +505,11 @@ mod tests {
 			is_random_point: true,
 		};
 
-		let witness = EvalcheckWitness::new(vec![
-			(select_row1_oracle.id(), select_row1_witness.specialize_arc_dyn::<EF>()),
-			(select_row2_oracle.id(), select_row2_witness.specialize_arc_dyn::<EF>()),
-			(select_row3_oracle.id(), select_row3_witness.specialize_arc_dyn::<EF>()),
-			(lin_com.id(), lin_com_witness.specialize_arc_dyn::<EF>()),
-		]);
+		let mut witness = MultilinearWitnessIndex::<EF>::new();
+		witness.set(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn());
+		witness.set(select_row2_oracle_id, select_row2_witness.specialize_arc_dyn());
+		witness.set(select_row3_oracle_id, select_row3_witness.specialize_arc_dyn());
+		witness.set(lin_com_id, lin_com_witness.specialize_arc_dyn());
 
 		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
 		let mut shifted_claims_verify = Vec::new();
@@ -567,6 +562,8 @@ mod tests {
 		let repeating_id = oracles.add_repeating(select_row_oracle_id, 2).unwrap();
 		let repeating = oracles.oracle(repeating_id);
 
+		let mut witness_index = MultilinearWitnessIndex::<EF>::new();
+
 		let mut rng = StdRng::seed_from_u64(0);
 		let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
 			.take(n_vars + 2)
@@ -584,12 +581,11 @@ mod tests {
 		let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
 		let mut shifted_claims_verify = Vec::new();
 		let mut packed_claims_verify = Vec::new();
-		let witness = EvalcheckWitness::<_, Arc<dyn MultilinearPoly<EF>>>::new(vec![(
-			repeating_id,
-			select_row_witness,
-		)]);
+
+		witness_index.set(repeating_id, select_row_witness);
+
 		let proof = prove(
-			&witness,
+			&witness_index,
 			claim.clone(),
 			&mut batch_claims,
 			&mut shifted_claims_verify,

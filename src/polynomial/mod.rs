@@ -13,5 +13,6 @@ pub mod util;
 pub use error::*;
 pub use multilinear::*;
 pub use multilinear_extension::*;
+pub use multilinear_query::*;
 pub use multivariate::*;
 pub use univariate::*;
