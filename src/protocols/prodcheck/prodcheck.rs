@@ -1,30 +1,28 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::sync::Arc;
-
 use super::error::Error;
 use crate::{
 	field::{Field, PackedField, TowerField},
-	oracle::{
-		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, MultivariatePolyOracle,
-		ProjectionVariant,
+	oracle::{CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearPoly,
 	},
-	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckWitness},
 		zerocheck::{ZerocheckClaim, ZerocheckWitness},
 	},
 };
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct ReducedProductCheckClaims<F: Field> {
-	pub t_prime_claim: ZerocheckClaim<F>,
-	pub grand_product_poly_claim: EvalcheckClaim<F>,
+	pub t_prime_claim: ZerocheckClaim<F, SimpleMultGateComposition>,
+	pub grand_product_poly_claim: EvalcheckClaim<F, IdentityCompositionPoly>,
 }
 
 #[derive(Debug)]
 pub struct ReducedProductCheckWitnesses<'a, F: Field> {
-	pub t_prime_witness: ZerocheckWitness<'a, F>,
+	pub t_prime_witness: ZerocheckWitness<'a, F, SimpleMultGateComposition>,
 	pub grand_product_poly_witness:
 		EvalcheckWitness<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>,
 }
@@ -57,7 +55,7 @@ pub struct ProdcheckWitness<F: Field> {
 /// 1) Output (X)
 /// 2) First Input (Y)
 /// 3) Second Input (Z)
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SimpleMultGateComposition;
 
 impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
@@ -130,16 +128,15 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 	let in2_oracle = oracles.add_merged(f_prime_x_zero_oracle.id(), f_prime_one_x_oracle.id())?;
 
 	// Construct T' polynomial oracle
-	let composite_poly = CompositePolyOracle::new(
+	let t_prime_oracle = CompositePolyOracle::new(
 		n_vars + 1,
 		vec![
 			oracles.oracle(out_oracle),
 			oracles.oracle(in1_oracle),
 			oracles.oracle(in2_oracle),
 		],
-		Arc::new(SimpleMultGateComposition),
+		SimpleMultGateComposition,
 	)?;
-	let t_prime_oracle = MultivariatePolyOracle::Composite(composite_poly);
 
 	// Construct ReducedProductCheckClaims
 	let t_prime_claim = ZerocheckClaim {
@@ -148,7 +145,7 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 	let mut grand_prod_eval_point = vec![F::ONE; n_vars + 1];
 	grand_prod_eval_point[0] = F::ZERO;
 	let grand_product_poly_claim = EvalcheckClaim {
-		poly: grand_prod_oracle.into(),
+		poly: grand_prod_oracle.into_composite(),
 		eval: F::ONE,
 		eval_point: grand_prod_eval_point,
 		is_random_point: false,

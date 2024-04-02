@@ -1,13 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	field::TowerField,
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-};
-
 use super::{
 	error::Error,
 	prodcheck::{reduce_prodcheck_claim, ProdcheckClaim, ReducedProductCheckClaims},
+};
+use crate::{
+	field::TowerField,
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
 };
 
 /// Verify a product check instance reduction.

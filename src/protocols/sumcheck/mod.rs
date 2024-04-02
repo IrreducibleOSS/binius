@@ -6,14 +6,12 @@
 //! module only handles that case, rather than the case of general multivariate polynomials.
 
 mod error;
-mod mix;
 mod prove;
 #[allow(clippy::module_inception)]
 mod sumcheck;
 mod verify;
 
 pub use error::*;
-pub use mix::*;
 pub use prove::*;
 pub use sumcheck::{
 	SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,

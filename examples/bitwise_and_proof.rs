@@ -1,14 +1,11 @@
 use binius::{
 	challenger::HashChallenger,
 	field::{
-		BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField1x128b,
-		PackedBinaryField8x16b, PackedField, TowerField,
+		BinaryField128b, BinaryField128bPolyval, Field, PackedBinaryField128x1b,
+		PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	oracle::{
-		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultivariatePolyOracle,
-	},
+	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
@@ -31,11 +28,11 @@ use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
-use std::{env, fmt::Debug, sync::Arc};
+use std::{env, fmt::Debug};
 use tracing_profile::{CsvLayer, PrintTreeLayer};
 use tracing_subscriber::prelude::*;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct BitwiseAndConstraint;
 
 impl<F: Field> CompositionPoly<F> for BitwiseAndConstraint {
@@ -70,7 +67,7 @@ fn prove<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
-	constraints: &[MultivariatePolyOracle<BinaryField128b>],
+	constraints: &[CompositePolyOracle<BinaryField128b, BitwiseAndConstraint>],
 	witness: &TraceWitness<PackedBinaryField128x1b>,
 	mut challenger: CH,
 ) -> Proof<PCS::Commitment, PCS::Proof>
@@ -107,9 +104,9 @@ where
 
 	// Round 2
 	let zerocheck_challenge = challenger.sample_vec(log_size);
-	let zerocheck_witness = MultilinearComposite::new(
+	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
 		log_size,
-		constraint.clone().into_composite().composition(),
+		constraint.composition(),
 		vec![
 			witness.a_in.to_ref().specialize_arc_dyn(),
 			witness.b_in.to_ref().specialize_arc_dyn(),
@@ -124,7 +121,7 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = prove_zerocheck(trace, zerocheck_witness, &zerocheck_claim, zerocheck_challenge).unwrap();
+	} = prove_zerocheck(trace, &zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
 
 	let sumcheck_domain =
 		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -204,7 +201,7 @@ fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
-	constraints: &[MultivariatePolyOracle<BinaryField128b>],
+	constraints: &[CompositePolyOracle<BinaryField128b, BitwiseAndConstraint>],
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
 ) where
@@ -309,7 +306,7 @@ fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128
 fn make_constraints<F: TowerField>(
 	log_size: usize,
 	trace_oracle: &MultilinearOracleSet<F>,
-) -> Vec<MultivariatePolyOracle<F>> {
+) -> Vec<CompositePolyOracle<F, BitwiseAndConstraint>> {
 	let mut constraints = Vec::new();
 
 	let a_in_oracle = trace_oracle.committed_oracle(CommittedId {
@@ -325,16 +322,14 @@ fn make_constraints<F: TowerField>(
 		index: 2,
 	});
 
-	let constraint = MultivariatePolyOracle::Composite(
-		CompositePolyOracle::new(
-			log_size,
-			vec![a_in_oracle, b_in_oracle, c_out_oracle],
-			Arc::new(BitwiseAndConstraint),
-		)
-		.unwrap(),
-	);
-	constraints.push(constraint);
+	let constraint = CompositePolyOracle::new(
+		log_size,
+		vec![a_in_oracle, b_in_oracle, c_out_oracle],
+		BitwiseAndConstraint,
+	)
+	.unwrap();
 
+	constraints.push(constraint);
 	constraints
 }
 

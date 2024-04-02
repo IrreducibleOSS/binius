@@ -1,10 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::Error;
 use crate::field::PackedField;
 use rayon::prelude::*;
 use std::cmp::max;
-
-use super::Error;
 
 /// Tensor Product expansion of values with partial eq indicator evaluated at extra_query_coordinates
 ///

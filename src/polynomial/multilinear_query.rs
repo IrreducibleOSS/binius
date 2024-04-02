@@ -1,12 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::cmp::max;
-
 use super::util::tensor_prod_eq_ind;
 use crate::{
 	field::{Field, PackedField},
 	polynomial::Error as PolynomialError,
 };
+use std::cmp::max;
 
 /// Tensor product expansion of sumcheck round challenges.
 ///

@@ -18,7 +18,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{
 	arch::polyval,
-	binary_field::{BinaryField, BinaryField1b},
+	binary_field::{BinaryField, BinaryField1b, TowerField},
 	error::Error,
 	extension::ExtensionField,
 };
@@ -342,6 +342,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 }
 
 impl BinaryField for BinaryField128bPolyval {}
+impl TowerField for BinaryField128bPolyval {}
 
 impl From<BinaryField128b> for BinaryField128bPolyval {
 	fn from(value: BinaryField128b) -> Self {

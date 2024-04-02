@@ -5,20 +5,14 @@ use binius::{
 		Field, PackedField, TowerField,
 	},
 	hash::GroestlHasher,
-	oracle::{
-		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultivariatePolyOracle,
-	},
+	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
 		MultilinearPoly,
 	},
 	protocols::{
 		sumcheck::{Error as SumcheckError, SumcheckClaim},
-		test_utils::{
-			full_prove_with_operating_field, full_prove_with_switchover, transform_poly,
-			TestProductComposition,
-		},
+		test_utils::{full_prove_with_switchover, transform_poly, TestProductComposition},
 	},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -45,18 +39,18 @@ where
 	type FTower = BinaryField128b;
 
 	let n_multilinears = 3;
-	let composition: Arc<dyn CompositionPoly<FTower>> =
-		Arc::new(TestProductComposition::new(n_multilinears));
+	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
 	let mut group = c.benchmark_group(id);
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
+		let composition_n_vars = <_ as CompositionPoly<FTower>>::n_vars(&composition);
 		group.throughput(Throughput::Bytes(
-			(n * composition.n_vars() * mem::size_of::<FTower>()) as u64,
+			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
 			let multilinears = repeat_with(|| {
@@ -67,7 +61,7 @@ where
 					.unwrap()
 					.specialize::<FTower>()
 			})
-			.take(composition.n_vars())
+			.take(composition_n_vars)
 			.collect::<Vec<_>>();
 			let poly =
 				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
@@ -77,7 +71,7 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover(
+				full_prove_with_switchover::<FTower, FTower, _, _, _, _>(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
 					&domain,
@@ -94,20 +88,18 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	type FPolyval = BinaryField128bPolyval;
 
 	let n_multilinears = 3;
-	let composition: Arc<dyn CompositionPoly<FTower>> =
-		Arc::new(TestProductComposition::new(n_multilinears));
-	let prover_composition: Arc<dyn CompositionPoly<FPolyval>> =
-		Arc::new(TestProductComposition::new(n_multilinears));
+	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
 	let mut group = c.benchmark_group("Sumcheck 128b monomial basis (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
+		let composition_n_vars = <_ as CompositionPoly<FTower>>::n_vars(&composition);
 		group.throughput(Throughput::Bytes(
-			(n * composition.n_vars() * mem::size_of::<FTower>()) as u64,
+			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
 			let multilinears = repeat_with(|| {
@@ -116,8 +108,9 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 					.collect::<Vec<FTower>>();
 				MultilinearExtension::from_values(values).unwrap()
 			})
-			.take(composition.n_vars())
+			.take(composition_n_vars)
 			.collect::<Vec<_>>();
+
 			let poly = MultilinearComposite::new(
 				n_vars,
 				composition.clone(),
@@ -127,9 +120,10 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 					.collect(),
 			)
 			.unwrap();
+
 			let prover_poly = MultilinearComposite::new(
 				n_vars,
-				prover_composition.clone(),
+				composition.clone(),
 				multilinears
 					.iter()
 					.map(|multilin| {
@@ -145,12 +139,12 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_operating_field(
+				full_prove_with_switchover::<FTower, FPolyval, _, _, _, _>(
 					&sumcheck_claim,
-					poly.clone(),
 					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
+					1,
 				)
 			});
 		});
@@ -162,20 +156,18 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	type FPolyval = BinaryField128bPolyval;
 
 	let n_multilinears = 3;
-	let composition: Arc<dyn CompositionPoly<FTower>> =
-		Arc::new(TestProductComposition::new(n_multilinears));
-	let prover_composition: Arc<dyn CompositionPoly<FPolyval>> =
-		Arc::new(TestProductComposition::new(n_multilinears));
+	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
 	let mut group = c.benchmark_group("Sumcheck 128b monomial basis with Arc (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
+		let composition_n_vars = <_ as CompositionPoly<FTower>>::n_vars(&composition);
 		group.throughput(Throughput::Bytes(
-			(n * composition.n_vars() * mem::size_of::<FTower>()) as u64,
+			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
 			let multilinears = repeat_with(|| {
@@ -184,8 +176,9 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					.collect::<Vec<FTower>>();
 				MultilinearExtension::from_values(values).unwrap()
 			})
-			.take(composition.n_vars())
+			.take(composition_n_vars)
 			.collect::<Vec<_>>();
+
 			let poly = MultilinearComposite::new(
 				n_vars,
 				composition.clone(),
@@ -197,7 +190,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			.unwrap();
 			let prover_poly = MultilinearComposite::new(
 				n_vars,
-				prover_composition.clone(),
+				composition.clone(),
 				multilinears
 					.iter()
 					.map(|multilin| {
@@ -216,21 +209,23 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					Arc::new(multilin) as Arc<dyn MultilinearPoly<FPolyval> + Send + Sync>
 				})
 				.collect::<Vec<_>>();
+
 			let prover_poly: MultilinearComposite<
 				FPolyval,
+				_,
 				Arc<dyn MultilinearPoly<FPolyval> + Send + Sync>,
-			> = MultilinearComposite::new(n_vars, prover_composition.clone(), multilinears).unwrap();
+			> = MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
 			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_operating_field(
+				full_prove_with_switchover(
 					&sumcheck_claim,
-					poly.clone(),
 					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
+					1,
 				)
 			});
 		});
@@ -239,12 +234,13 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 
 /// Given a sumcheck witness and a domain, make sumcheck claim
 /// REQUIRES: Composition is the product composition
-pub fn make_sumcheck_claim<F, M>(
-	poly: &MultilinearComposite<F, M>,
-) -> Result<SumcheckClaim<F>, SumcheckError>
+pub fn make_sumcheck_claim<F, C, M>(
+	poly: &MultilinearComposite<F, C, M>,
+) -> Result<SumcheckClaim<F, C>, SumcheckError>
 where
 	F: TowerField,
 	M: MultilinearPoly<F>,
+	C: CompositionPoly<F>,
 {
 	// Setup poly_oracle
 	let mut oracles = MultilinearOracleSet::new();
@@ -259,7 +255,6 @@ where
 		.collect::<Vec<_>>();
 	let composite_poly =
 		CompositePolyOracle::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();
-	let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
 
 	// Calculate sum
 	let degree = poly.composition.degree();
@@ -270,7 +265,7 @@ where
 	let mut evals = vec![F::ZERO; poly.n_multilinears()];
 	let sum = (0..1 << poly.n_vars())
 		.map(|i| {
-			for (evals_i, multilin) in evals.iter_mut().zip(poly.iter_multilinear_polys()) {
+			for (evals_i, multilin) in evals.iter_mut().zip(&poly.multilinears) {
 				*evals_i = multilin.evaluate_on_hypercube(i).unwrap();
 			}
 			poly.composition.evaluate_packed(&evals).unwrap()
@@ -278,7 +273,7 @@ where
 		.sum();
 
 	let sumcheck_claim = SumcheckClaim {
-		poly: poly_oracle,
+		poly: composite_poly,
 		sum,
 	};
 

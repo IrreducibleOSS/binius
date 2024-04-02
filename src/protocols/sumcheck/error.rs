@@ -12,8 +12,6 @@ pub enum Error {
 	EvaluationDomainMismatch,
 	#[error("prover has mismatch between claim and witness: {0}")]
 	ProverClaimWitnessMismatch(String),
-	#[error("mixed polynomial was not provided")]
-	MixedMultilinearNotFound,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]

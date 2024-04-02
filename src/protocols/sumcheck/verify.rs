@@ -1,7 +1,5 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{field::Field, oracle::MultivariatePolyOracle, protocols::evalcheck::EvalcheckClaim};
-
 use super::{
 	error::Error,
 	sumcheck::{
@@ -9,6 +7,7 @@ use super::{
 		SumcheckRoundClaim,
 	},
 };
+use crate::{field::Field, oracle::CompositePolyOracle, protocols::evalcheck::EvalcheckClaim};
 
 /// Verifies a sumcheck round reduction proof.
 ///
@@ -27,17 +26,17 @@ pub fn verify_round<F: Field>(
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify_final<F: Field>(
-	poly_oracle: &MultivariatePolyOracle<F>,
+pub fn verify_final<F: Field, C: Clone>(
+	poly_oracle: &CompositePolyOracle<F, C>,
 	claim: SumcheckRoundClaim<F>,
 	challenge: F,
 	proof: SumcheckRound<F>,
-) -> Result<EvalcheckClaim<F>, Error> {
+) -> Result<EvalcheckClaim<F, C>, Error> {
 	let round_claim = reduce_sumcheck_claim_round(claim, challenge, proof)?;
 	reduce_sumcheck_claim_final(poly_oracle, round_claim)
 }
 
-pub fn setup_first_round_claim<F: Field>(claim: &SumcheckClaim<F>) -> SumcheckRoundClaim<F> {
+pub fn setup_first_round_claim<F: Field, C>(claim: &SumcheckClaim<F, C>) -> SumcheckRoundClaim<F> {
 	SumcheckRoundClaim {
 		partial_point: vec![],
 		current_round_sum: claim.sum,

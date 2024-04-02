@@ -7,28 +7,29 @@ use super::{
 	},
 };
 use crate::{
-	field::{Field, TowerField},
+	field::{PackedField, TowerField},
 	oracle::MultilinearOracleSet,
 	polynomial::{
-		transparent::eq_ind::EqIndPartialEval, Error as PolynomialError, MultilinearComposite,
-		MultilinearPoly,
+		transparent::eq_ind::EqIndPartialEval, CompositionPoly, Error as PolynomialError,
+		MultilinearComposite, MultilinearPoly,
 	},
 	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
 };
-use std::sync::Arc;
+
 use tracing::instrument;
 
-fn multiply_multilinear_composite<F, M>(
-	composite: MultilinearComposite<F, M>,
+fn multiply_multilinear_composite<P, C, M>(
+	composite: MultilinearComposite<P, C, M>,
 	new_multilinear: M,
-) -> Result<MultilinearComposite<F, M>, PolynomialError>
+) -> Result<MultilinearComposite<P, ProductComposition<C>, M>, PolynomialError>
 where
-	F: Field,
-	M: MultilinearPoly<F>,
+	P: PackedField,
+	C: CompositionPoly<P>,
+	M: MultilinearPoly<P>,
 {
 	let n_vars: usize = composite.n_vars();
-	let inner_composition = ProductComposition::new(composite.composition);
-	let composition: Arc<ProductComposition<F>> = Arc::new(inner_composition);
+	let composition = ProductComposition::new(composite.composition);
+
 	let mut multilinears = composite.multilinears;
 	multilinears.push(new_multilinear);
 
@@ -42,12 +43,19 @@ where
 /// majority of field operations are to be performed.
 /// Takes a challenge vector r as input
 #[instrument(skip_all, name = "zerocheck::prove")]
-pub fn prove<'a, F: TowerField>(
+pub fn prove<'a, F, PW, C, CW>(
 	oracles: &mut MultilinearOracleSet<F>,
-	zerocheck_witness: ZerocheckWitness<'a, F>,
-	zerocheck_claim: &ZerocheckClaim<F>,
+	zerocheck_claim: &ZerocheckClaim<F, C>,
+	zerocheck_witness: ZerocheckWitness<'a, PW, CW>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<'a, F>, Error> {
+) -> Result<ZerocheckProveOutput<'a, F, PW, ProductComposition<C>, ProductComposition<CW>>, Error>
+where
+	F: TowerField + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: TowerField + From<F>,
+	C: CompositionPoly<F>,
+	CW: CompositionPoly<PW>,
+{
 	let n_vars = zerocheck_witness.n_vars();
 
 	if challenge.len() != n_vars {
@@ -57,7 +65,13 @@ pub fn prove<'a, F: TowerField>(
 	// Step 1: Construct a multilinear polynomial eq(X, Y) on 2*n_vars variables
 	// partially evaluated at r, will refer to this multilinear polynomial
 	// as eq_r(X) on n_vars variables
-	let eq_r = EqIndPartialEval::new(n_vars, challenge.clone())?.multilinear_extension()?;
+	let wf_challenge = challenge
+		.iter()
+		.copied()
+		.map(Into::into)
+		.collect::<Vec<PW::Scalar>>();
+
+	let eq_r = EqIndPartialEval::<PW>::new(n_vars, wf_challenge)?.multilinear_extension()?;
 
 	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
 	// and represent it as a Multilinear composite
@@ -82,12 +96,12 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		field::BinaryField32b,
-		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultivariatePolyOracle},
-		polynomial::{CompositionPoly, MultilinearExtension},
+		field::{BinaryField32b, Field},
+		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle},
+		polynomial::MultilinearExtension,
 		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
 	};
-	use std::iter::repeat_with;
+	use std::{iter::repeat_with, sync::Arc};
 
 	// f(x) = (x_1, x_2, x_3)) = g(h_0(x), ..., h_7(x)) where
 	// g is the product composition
@@ -103,8 +117,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		// Setup witness
-		let composition: Arc<dyn CompositionPoly<F>> =
-			Arc::new(TestProductComposition::new(n_multilinears));
+		let composition = TestProductComposition::new(n_multilinears);
 		let multilinears = (0..1 << n_vars)
 			.map(|i| {
 				let values: Vec<F> = (0..1 << n_vars)
@@ -120,7 +133,7 @@ mod tests {
 		let zerocheck_witness =
 			MultilinearComposite::new(n_vars, composition, multilinears).unwrap();
 
-		let mut oracles = MultilinearOracleSet::new();
+		let mut oracles = MultilinearOracleSet::<F>::new();
 		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
 			round_id: 0,
 			n_vars,
@@ -132,14 +145,13 @@ mod tests {
 		let h = (0..n_multilinears)
 			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
 			.collect();
-		let composite_poly = CompositePolyOracle::new(
-			n_vars,
-			h,
-			Arc::new(TestProductComposition::new(n_multilinears)),
-		)
-		.unwrap();
-		let poly_oracle = MultivariatePolyOracle::Composite(composite_poly);
-		let zerocheck_claim: ZerocheckClaim<F> = ZerocheckClaim { poly: poly_oracle };
+		let composite_poly =
+			CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears))
+				.unwrap();
+
+		let zerocheck_claim = ZerocheckClaim {
+			poly: composite_poly,
+		};
 
 		// Setup challenge
 		let challenge = repeat_with(|| Field::random(&mut rng))
@@ -148,7 +160,7 @@ mod tests {
 
 		// PROVER
 		let prove_output =
-			prove(&mut oracles.clone(), zerocheck_witness, &zerocheck_claim, challenge.clone())
+			prove(&mut oracles.clone(), &zerocheck_claim, zerocheck_witness, challenge.clone())
 				.unwrap();
 		let proof = prove_output.zerocheck_proof;
 		// VERIFIER

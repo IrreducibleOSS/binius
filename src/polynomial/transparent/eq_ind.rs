@@ -1,9 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::field::Field;
-
-use crate::polynomial::{
-	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
+use crate::{
+	field::PackedField,
+	polynomial::{
+		multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
+	},
 };
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
@@ -12,26 +13,26 @@ use crate::polynomial::{
 /// eq(x, y) = 1 iff x = y and eq(x, y) = 0 otherwise.
 /// Specifically, the function is defined like so $\prod_{i=0}^{\mu - 1} (X_i * Y_i + (1 - X_i)(1-Y_i))$
 #[derive(Debug)]
-pub struct EqIndPartialEval<F: Field> {
+pub struct EqIndPartialEval<P: PackedField> {
 	n_vars: usize,
-	r: Vec<F>,
+	r: Vec<P::Scalar>,
 }
 
-impl<F: Field> EqIndPartialEval<F> {
-	pub fn new(n_vars: usize, r: Vec<F>) -> Result<Self, Error> {
+impl<P: PackedField> EqIndPartialEval<P> {
+	pub fn new(n_vars: usize, r: Vec<P::Scalar>) -> Result<Self, Error> {
 		if r.len() != n_vars {
 			return Err(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		Ok(Self { n_vars, r })
 	}
 
-	pub fn multilinear_extension(&self) -> Result<MultilinearExtension<'static, F>, Error> {
+	pub fn multilinear_extension(&self) -> Result<MultilinearExtension<'static, P>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r)?.into_expansion();
 		MultilinearExtension::from_values(multilin_query)
 	}
 }
 
-impl<F: Field> MultivariatePoly<F> for EqIndPartialEval<F> {
+impl<P: PackedField> MultivariatePoly<P> for EqIndPartialEval<P> {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -40,16 +41,16 @@ impl<F: Field> MultivariatePoly<F> for EqIndPartialEval<F> {
 		self.n_vars
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let n_vars = MultivariatePoly::<F>::n_vars(self);
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+		let n_vars = MultivariatePoly::<P>::n_vars(self);
 		if query.len() != n_vars {
 			return Err(Error::IncorrectQuerySize { expected: n_vars });
 		}
 
-		let mut result = F::ONE;
-		for (q_i, r_i) in query.iter().zip(self.r.iter()) {
-			let term_one = *q_i * r_i;
-			let term_two = (F::ONE - q_i) * (F::ONE - r_i);
+		let mut result = P::one();
+		for (&q_i, &r_i) in query.iter().zip(self.r.iter()) {
+			let term_one = q_i * r_i;
+			let term_two = (P::one() - q_i) * (P::one() - r_i);
 			let factor = term_one + term_two;
 			result *= factor;
 		}

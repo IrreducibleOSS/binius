@@ -3,9 +3,8 @@
 use crate::{
 	field::{util::eq, Field},
 	oracle::ShiftVariant,
+	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
-
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
 /// partially evaluated at $Y = r$
@@ -32,7 +31,7 @@ use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 /// Thus, we can give each element on the hypercube a unique index $\in \{0, \ldots, 2^b - 1\}$
 /// Let $x, y \in \{0, 1\}^{b}$ be s.t. $\{x\} = i$ and $\{y\} = j$
 /// $f(x, y) = 1$ iff:
-///     * taking $o$ steps from $j$ gets you to $i$    
+///     * taking $o$ steps from $j$ gets you to $i$
 /// (wrap around if ShiftVariant is Circular + direction of steps depending on ShiftVariant's direction)
 ///
 /// # Note

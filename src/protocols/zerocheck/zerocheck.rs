@@ -1,52 +1,52 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use super::error::VerificationError;
 use crate::{
-	field::{Field, TowerField},
-	oracle::{CompositePolyOracle, MultilinearOracleSet, MultivariatePolyOracle},
-	polynomial::{transparent::eq_ind::EqIndPartialEval, MultilinearPoly},
+	field::{Field, PackedField, TowerField},
+	oracle::{CompositePolyOracle, MultilinearOracleSet},
+	polynomial::{
+		transparent::eq_ind::EqIndPartialEval, CompositionPoly, Error as PolynomialError,
+		MultilinearComposite, MultilinearPoly,
+	},
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 };
 use std::{fmt::Debug, sync::Arc};
-
-use crate::polynomial::{CompositionPoly, Error as PolynomialError, MultilinearComposite};
-
-use super::error::VerificationError;
 
 #[derive(Debug)]
 pub struct ZerocheckProof;
 
 #[derive(Debug)]
-pub struct ZerocheckProveOutput<'a, F: Field> {
-	pub sumcheck_claim: SumcheckClaim<F>,
-	pub sumcheck_witness: SumcheckWitness<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>,
+pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, C, CW> {
+	pub sumcheck_claim: SumcheckClaim<F, C>,
+	pub sumcheck_witness: SumcheckWitness<PW, CW, Arc<dyn MultilinearPoly<PW> + Send + Sync + 'a>>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
 #[derive(Debug, Clone)]
-pub struct ZerocheckClaim<F: Field> {
+pub struct ZerocheckClaim<F: Field, C> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
-	pub poly: MultivariatePolyOracle<F>,
+	pub poly: CompositePolyOracle<F, C>,
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type ZerocheckWitness<'a, F> =
-	MultilinearComposite<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>;
+pub type ZerocheckWitness<'a, P, C> =
+	MultilinearComposite<P, C, Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>>;
 
 /// This wraps an inner composition polynomial $f$ and multiplies by another variable..
 ///
 /// The function is $g(X_0, ..., X_n) = f(X_0, ..., X_{n-1}) * X_n$.
-#[derive(Debug)]
-pub struct ProductComposition<F: Field> {
-	inner: Arc<dyn CompositionPoly<F>>,
+#[derive(Clone, Debug)]
+pub struct ProductComposition<C> {
+	inner: C,
 }
 
-impl<F: Field> ProductComposition<F> {
-	pub fn new(inner: Arc<dyn CompositionPoly<F>>) -> Self {
+impl<C> ProductComposition<C> {
+	pub fn new(inner: C) -> Self {
 		Self { inner }
 	}
 }
 
-impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
+impl<P: PackedField, C: CompositionPoly<P>> CompositionPoly<P> for ProductComposition<C> {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars() + 1
 	}
@@ -55,11 +55,18 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 		self.inner.degree() + 1
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
+	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		let n_vars = self.n_vars();
+		if query.len() != n_vars {
+			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
+		}
+
+		let inner_query = &query[..n_vars - 1];
+		let inner_eval = self.inner.evaluate(inner_query)?;
+		Ok(inner_eval * query[n_vars - 1])
 	}
 
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
+	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
 			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
@@ -75,11 +82,11 @@ impl<F: Field> CompositionPoly<F> for ProductComposition<F> {
 	}
 }
 
-pub fn reduce_zerocheck_claim<F: TowerField>(
+pub fn reduce_zerocheck_claim<F: TowerField, C: CompositionPoly<F>>(
 	oracles: &mut MultilinearOracleSet<F>,
-	claim: &ZerocheckClaim<F>,
+	claim: &ZerocheckClaim<F, C>,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<F>, VerificationError> {
+) -> Result<SumcheckClaim<F, ProductComposition<C>>, VerificationError> {
 	if claim.poly.n_vars() != challenge.len() {
 		return Err(VerificationError::ChallengeVectorMismatch);
 	}
@@ -87,17 +94,15 @@ pub fn reduce_zerocheck_claim<F: TowerField>(
 	let eq_r_multilinear = EqIndPartialEval::new(claim.poly.n_vars(), challenge)?;
 	let eq_r_oracle_id = oracles.add_transparent(Arc::new(eq_r_multilinear), F::TOWER_LEVEL)?;
 
-	let poly_composite = claim.poly.clone().into_composite();
+	let poly_composite = &claim.poly;
 	let mut inners = poly_composite.inner_polys();
 	inners.push(oracles.oracle(eq_r_oracle_id));
 
 	let new_composition = ProductComposition::new(poly_composite.composition());
-	let composite_poly =
-		CompositePolyOracle::new(claim.poly.n_vars(), inners, Arc::new(new_composition))?;
-	let f_hat = MultivariatePolyOracle::Composite(composite_poly);
+	let composite_poly = CompositePolyOracle::new(claim.poly.n_vars(), inners, new_composition)?;
 
 	let sumcheck_claim = SumcheckClaim {
-		poly: f_hat,
+		poly: composite_poly,
 		sum: F::ZERO,
 	};
 	Ok(sumcheck_claim)

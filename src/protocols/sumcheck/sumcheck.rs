@@ -3,7 +3,7 @@
 use super::{Error, VerificationError};
 use crate::{
 	field::{Field, PackedField},
-	oracle::MultivariatePolyOracle,
+	oracle::CompositePolyOracle,
 	polynomial::{evaluate_univariate, EvaluationDomain, MultilinearComposite, MultilinearPoly},
 	protocols::evalcheck::{EvalcheckClaim, EvalcheckWitness},
 };
@@ -19,26 +19,27 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<P, M>
+pub struct SumcheckProveOutput<F, PW, C, M>
 where
-	P: PackedField,
-	M: MultilinearPoly<P>,
+	F: Field,
+	PW: PackedField,
+	M: MultilinearPoly<PW>,
 {
-	pub evalcheck_claim: EvalcheckClaim<P::Scalar>,
-	pub evalcheck_witness: EvalcheckWitness<P, M>,
-	pub sumcheck_proof: SumcheckProof<P::Scalar>,
+	pub evalcheck_claim: EvalcheckClaim<F, C>,
+	pub evalcheck_witness: EvalcheckWitness<PW, M>,
+	pub sumcheck_proof: SumcheckProof<F>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SumcheckClaim<F: Field> {
+pub struct SumcheckClaim<F: Field, C> {
 	/// Virtual Polynomial Oracle of the function whose sum is claimed on hypercube domain
-	pub poly: MultivariatePolyOracle<F>,
+	pub poly: CompositePolyOracle<F, C>,
 	/// Claimed Sum over the Boolean Hypercube
 	pub sum: F,
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
-pub type SumcheckWitness<P, M> = MultilinearComposite<P, M>;
+pub type SumcheckWitness<P, C, M> = MultilinearComposite<P, C, M>;
 
 pub fn check_evaluation_domain<F: Field>(
 	max_individual_degree: usize,
@@ -95,10 +96,10 @@ pub fn reduce_sumcheck_claim_round<F: Field>(
 	})
 }
 
-pub fn reduce_sumcheck_claim_final<F: Field>(
-	poly_oracle: &MultivariatePolyOracle<F>,
+pub fn reduce_sumcheck_claim_final<F: Field, C: Clone>(
+	poly_oracle: &CompositePolyOracle<F, C>,
 	round_claim: SumcheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F>, Error> {
+) -> Result<EvalcheckClaim<F, C>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: eval,

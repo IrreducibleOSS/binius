@@ -1,13 +1,16 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::ops::Range;
-
 use crate::field::Error as FieldError;
+use std::ops::Range;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
+	#[error("all polynomials in mixed composition should have {expected} vars")]
+	IncorrectArityInMixedComposition { expected: usize },
+	#[error("array of inner composition evaluations is of incorrect length")]
+	IncorrectInnerEvalsLength,
 	#[error("the output polynomial must have size {expected}")]
 	IncorrectOutputPolynomialSize { expected: usize },
 	#[error("expected the number of evaluations to match the domain size")]
@@ -33,6 +36,8 @@ pub enum Error {
 	HypercubeIndexOutOfRange { index: usize },
 	#[error("MultilinearQuery is full, cannot update further. Has {max_query_vars} variables")]
 	MultilinearQueryFull { max_query_vars: usize },
+	#[error("mixed polynomial was not provided")]
+	MixedMultilinearNotFound,
 	#[error("MultilinearComposite constructed with incorrect arguments: {0}")]
 	MultilinearCompositeValidation(String),
 	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>

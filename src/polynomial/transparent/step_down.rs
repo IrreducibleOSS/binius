@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use crate::{
 	field::{packed::set_packed_slice, BinaryField1b, Field, PackedField},
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},

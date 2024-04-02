@@ -1,21 +1,17 @@
-use std::borrow::Borrow;
 // Copyright 2024 Ulvetanna Inc.
-use std::sync::Arc;
-
-use tracing::instrument;
-
-use crate::field::{Field, TowerField};
-
-use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
-	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
-};
 
 use super::prodcheck::{
 	reduce_prodcheck_claim, ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness,
 	ReducedProductCheckWitnesses, SimpleMultGateComposition,
 };
+use crate::{
+	field::{Field, TowerField},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
+	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
+	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
+};
+use std::{borrow::Borrow, sync::Arc};
+use tracing::instrument;
 
 /// Returns merge(x, y) where x, y are multilinear polynomials
 fn construct_merge_polynomial<F, MX, MY>(
@@ -170,15 +166,14 @@ pub fn prove_step_two<'a, F: TowerField>(
 	let t_prime_multilinears: Vec<Arc<dyn MultilinearPoly<F> + Send + Sync>> =
 		vec![Arc::new(out_poly), Arc::new(in1_poly), Arc::new(in2_poly)];
 
-	let t_prime_witness = MultilinearComposite::new(
-		n_vars + 1,
-		Arc::new(SimpleMultGateComposition),
-		t_prime_multilinears,
-	)?;
+	let t_prime_witness =
+		MultilinearComposite::new(n_vars + 1, SimpleMultGateComposition, t_prime_multilinears)?;
 
 	// Package return values
-	let grand_product_poly_witness =
-		EvalcheckWitness::new(vec![(f_prime_oracle, f_prime_poly.to_ref().specialize_arc_dyn())]);
+	let grand_product_poly_witness = EvalcheckWitness::new(vec![(
+		f_prime_oracle.id(),
+		f_prime_poly.to_ref().specialize_arc_dyn(),
+	)]);
 
 	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
 		t_prime_witness,

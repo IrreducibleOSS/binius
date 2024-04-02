@@ -83,7 +83,7 @@ where
 	result
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TestProductComposition {
 	arity: usize,
 }
@@ -134,17 +134,19 @@ where
 		.cloned()
 		.map(OF::from)
 		.collect::<Vec<_>>();
+
 	MultilinearExtension::from_values(values)
 }
 
 #[instrument(skip_all, name = "test_utils::full_verify")]
-pub fn full_verify<F, CH>(
-	claim: &SumcheckClaim<F>,
+pub fn full_verify<F, C, CH>(
+	claim: &SumcheckClaim<F, C>,
 	proof: SumcheckProof<F>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, EvalcheckClaim<F>)
+) -> (Vec<SumcheckRoundClaim<F>>, EvalcheckClaim<F, C>)
 where
 	F: Field,
+	C: CompositionPoly<F>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
@@ -171,16 +173,20 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::full_prove_with_switchover")]
-pub fn full_prove_with_switchover<F, M, CH>(
-	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M>,
+pub fn full_prove_with_switchover<F, PW, C, CW, M, CH>(
+	claim: &SumcheckClaim<F, C>,
+	witness: SumcheckWitness<PW, CW, M>,
 	domain: &EvaluationDomain<F>,
 	mut challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, PW, C, M>)
 where
-	F: Field,
-	M: MultilinearPoly<F> + Clone + Send + Sync,
+	F: Field + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	C: Clone,
+	CW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
@@ -193,54 +199,6 @@ where
 		.collect::<Vec<_>>();
 
 	let mut prover_state = SumcheckProverState::new(claim, witness.clone(), &switchovers).unwrap();
-
-	let mut prev_rd_challenge = None;
-	let mut rd_claims = Vec::new();
-
-	for _round in 0..n_vars {
-		let proof_round = prover_state
-			.execute_round(domain, prev_rd_challenge)
-			.unwrap();
-
-		challenger.observe_slice(&proof_round.coeffs);
-
-		prev_rd_challenge = Some(challenger.sample());
-
-		rd_claims.push(prover_state.get_claim());
-	}
-
-	let prove_output = prover_state
-		.finalize(&claim.poly, witness, prev_rd_challenge)
-		.unwrap();
-
-	(rd_claims, prove_output)
-}
-
-#[instrument(skip_all, name = "test_utils::full_prove_with_operating_field")]
-pub fn full_prove_with_operating_field<F, OF, M, OM, CH>(
-	claim: &SumcheckClaim<F>,
-	witness: SumcheckWitness<F, M>,
-	operating_witness: SumcheckWitness<OF, OM>,
-	domain: &EvaluationDomain<F>,
-	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, M>)
-where
-	F: Field + From<OF> + Into<OF>,
-	OF: Field,
-	M: MultilinearPoly<F>,
-	OM: MultilinearPoly<OF> + Send + Sync,
-	CH: CanObserve<F> + CanSample<F>,
-{
-	let n_vars = claim.poly.n_vars();
-
-	assert_eq!(witness.n_vars(), n_vars);
-
-	let switchovers = repeat(1)
-		.take(operating_witness.n_multilinears())
-		.collect::<Vec<_>>();
-
-	let mut prover_state =
-		SumcheckProverState::new(claim, operating_witness, &switchovers).unwrap();
 
 	let mut prev_rd_challenge = None;
 	let mut rd_claims = Vec::new();

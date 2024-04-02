@@ -3,63 +3,21 @@
 use crate::{
 	field::Field,
 	oracle::{Error, MultilinearPolyOracle},
-	polynomial::{CompositionPoly, IdentityCompositionPoly},
+	polynomial::CompositionPoly,
 };
-use std::sync::Arc;
-
-#[derive(Debug, Clone, derive_more::From)]
-pub enum MultivariatePolyOracle<F: Field> {
-	Multilinear(MultilinearPolyOracle<F>),
-	Composite(CompositePolyOracle<F>),
-}
 
 #[derive(Debug, Clone)]
-pub struct CompositePolyOracle<F: Field> {
+pub struct CompositePolyOracle<F: Field, C> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
-	composition: Arc<dyn CompositionPoly<F>>,
+	composition: C,
 }
 
-impl<F: Field> MultivariatePolyOracle<F> {
-	pub fn into_composite(self) -> CompositePolyOracle<F> {
-		match self {
-			MultivariatePolyOracle::Composite(composite) => composite.clone(),
-			MultivariatePolyOracle::Multilinear(multilinear) => CompositePolyOracle::new(
-				multilinear.n_vars(),
-				vec![multilinear.clone()],
-				Arc::new(IdentityCompositionPoly),
-			)
-			.unwrap(),
-		}
-	}
-
-	pub fn max_individual_degree(&self) -> usize {
-		match self {
-			MultivariatePolyOracle::Multilinear(_) => 1,
-			MultivariatePolyOracle::Composite(composite) => composite.composition.degree(),
-		}
-	}
-
-	pub fn n_vars(&self) -> usize {
-		match self {
-			MultivariatePolyOracle::Multilinear(multilinear) => multilinear.n_vars(),
-			MultivariatePolyOracle::Composite(composite) => composite.n_vars(),
-		}
-	}
-
-	pub fn binary_tower_level(&self) -> usize {
-		match self {
-			MultivariatePolyOracle::Multilinear(multilinear) => multilinear.binary_tower_level(),
-			MultivariatePolyOracle::Composite(composite) => composite.binary_tower_level(),
-		}
-	}
-}
-
-impl<F: Field> CompositePolyOracle<F> {
+impl<F: Field, C: CompositionPoly<F>> CompositePolyOracle<F, C> {
 	pub fn new(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<F>>,
-		composition: Arc<dyn CompositionPoly<F>>,
+		composition: C,
 	) -> Result<Self, Error> {
 		if inner.len() != composition.n_vars() {
 			return Err(Error::CompositionMismatch);
@@ -76,25 +34,13 @@ impl<F: Field> CompositePolyOracle<F> {
 		})
 	}
 
-	// Total degree of the polynomial
-	pub fn degree(&self) -> usize {
+	pub fn max_individual_degree(&self) -> usize {
+		// Maximum individual degree of the multilinear composite equals composition degree
 		self.composition.degree()
-	}
-
-	pub fn n_vars(&self) -> usize {
-		self.n_vars
 	}
 
 	pub fn n_multilinears(&self) -> usize {
 		self.composition.n_vars()
-	}
-
-	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {
-		self.inner.clone()
-	}
-
-	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
-		self.composition.clone()
 	}
 
 	pub fn binary_tower_level(&self) -> usize {
@@ -108,6 +54,22 @@ impl<F: Field> CompositePolyOracle<F> {
 	}
 }
 
+impl<F: Field, C> CompositePolyOracle<F, C> {
+	pub fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {
+		self.inner.clone()
+	}
+}
+
+impl<F: Field, C: Clone> CompositePolyOracle<F, C> {
+	pub fn composition(&self) -> C {
+		self.composition.clone()
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -117,9 +79,9 @@ mod tests {
 		polynomial::Error as PolynomialError,
 	};
 
-	#[derive(Debug)]
-	struct TestByteCommposition;
-	impl CompositionPoly<BinaryField128b> for TestByteCommposition {
+	#[derive(Clone, Debug)]
+	struct TestByteComposition;
+	impl CompositionPoly<BinaryField128b> for TestByteComposition {
 		fn n_vars(&self) -> usize {
 			3
 		}
@@ -185,7 +147,7 @@ mod tests {
 			index: 0,
 		});
 
-		let composition = Arc::new(TestByteCommposition);
+		let composition = TestByteComposition;
 		let composite = CompositePolyOracle::new(
 			n_vars,
 			vec![

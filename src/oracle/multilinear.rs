@@ -2,8 +2,10 @@
 
 use crate::{
 	field::{Field, TowerField},
-	oracle::{BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, Error},
-	polynomial::{Error as PolynomialError, MultivariatePoly},
+	oracle::{
+		BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, CompositePolyOracle, Error,
+	},
+	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
 use getset::{CopyGetters, Getters};
 use std::{fmt::Debug, sync::Arc};
@@ -631,5 +633,11 @@ impl<F: Field> MultilinearPolyOracle<F> {
 				.max()
 				.unwrap_or(0),
 		}
+	}
+
+	pub fn into_composite(self) -> CompositePolyOracle<F, IdentityCompositionPoly> {
+		let composite =
+			CompositePolyOracle::new(self.n_vars(), vec![self], IdentityCompositionPoly);
+		composite.expect("Can always apply the identity composition to one variable")
 	}
 }

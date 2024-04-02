@@ -2,10 +2,10 @@
 
 use super::{error::Error, multilinear_query::MultilinearQuery, MultilinearPoly};
 use crate::field::PackedField;
-use std::{borrow::Borrow, fmt::Debug, sync::Arc};
+use std::{borrow::Borrow, fmt::Debug, marker::PhantomData};
 
 pub trait MultivariatePoly<F>: Debug + Send + Sync {
-	// The number of variables.
+	/// The number of variables.
 	fn n_vars(&self) -> usize;
 
 	/// Total degree of the polynomial.
@@ -16,11 +16,11 @@ pub trait MultivariatePoly<F>: Debug + Send + Sync {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P>: Debug + Send + Sync
+pub trait CompositionPoly<P>: Clone + Debug + Send + Sync
 where
 	P: PackedField,
 {
-	// The number of variables.
+	/// The number of variables.
 	fn n_vars(&self) -> usize;
 
 	/// Total degree of the polynomial.
@@ -37,7 +37,7 @@ where
 }
 
 /// Identity composition function $g(X) = X$.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IdentityCompositionPoly;
 
 impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
@@ -80,21 +80,22 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 /// that contains boxed trait objects, as well as the case where it directly holds some
 /// implementation of `MultilinearPoly`.
 #[derive(Debug)]
-pub struct MultilinearComposite<P, M>
+pub struct MultilinearComposite<P, C, M>
 where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	// TODO: Consider whether to define this struct as generic over the composition function
-	pub composition: Arc<dyn CompositionPoly<P>>,
+	pub composition: C,
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<M>,
+	pub _p_marker: PhantomData<P>,
 }
 
-impl<P, M> Clone for MultilinearComposite<P, M>
+impl<P, C, M> Clone for MultilinearComposite<P, C, M>
 where
 	P: PackedField,
+	C: Clone,
 	M: MultilinearPoly<P> + Clone,
 {
 	fn clone(&self) -> Self {
@@ -102,20 +103,18 @@ where
 			composition: self.composition.clone(),
 			n_vars: self.n_vars,
 			multilinears: self.multilinears.clone(),
+			_p_marker: PhantomData,
 		}
 	}
 }
 
-impl<P, M> MultilinearComposite<P, M>
+impl<P, C, M> MultilinearComposite<P, C, M>
 where
-	P: PackedField + Debug,
+	P: PackedField,
+	C: CompositionPoly<P>,
 	M: MultilinearPoly<P>,
 {
-	pub fn new(
-		n_vars: usize,
-		composition: Arc<dyn CompositionPoly<P>>,
-		multilinears: Vec<M>,
-	) -> Result<Self, Error> {
+	pub fn new(n_vars: usize, composition: C, multilinears: Vec<M>) -> Result<Self, Error> {
 		if composition.n_vars() != multilinears.len() {
 			let err_str = format!(
 				"Number of variables in composition {} does not match length of multilinears {}",
@@ -138,16 +137,14 @@ where
 			n_vars,
 			composition,
 			multilinears,
+			_p_marker: PhantomData,
 		})
-	}
-
-	pub fn iter_multilinear_polys(&self) -> impl Iterator<Item = &M> {
-		self.multilinears.iter().map(Borrow::borrow)
 	}
 
 	pub fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
 		let evals = self
-			.iter_multilinear_polys()
+			.multilinears
+			.iter()
 			.map(|multilin| multilin.evaluate(query))
 			.collect::<Result<Vec<_>, _>>()?;
 		self.composition.evaluate(&evals)
@@ -155,44 +152,55 @@ where
 
 	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
 		let evals = self
-			.iter_multilinear_polys()
+			.multilinears
+			.iter()
 			.map(|multilin| multilin.evaluate_on_hypercube(index))
 			.collect::<Result<Vec<_>, _>>()?;
 		self.composition.evaluate(&evals)
-	}
-
-	pub fn evaluate_partial_low(
-		&self,
-		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearComposite<P, impl MultilinearPoly<P>>, Error> {
-		let new_multilinears = self
-			.iter_multilinear_polys()
-			.map(|multilin| multilin.evaluate_partial_low(query))
-			.collect::<Result<Vec<_>, _>>()?;
-		Ok(MultilinearComposite {
-			composition: self.composition.clone(),
-			n_vars: self.n_vars - query.n_vars(),
-			multilinears: new_multilinears,
-		})
-	}
-
-	pub fn degree(&self) -> usize {
-		self.composition.degree()
 	}
 
 	pub fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 
+	pub fn max_individual_degree(&self) -> usize {
+		// Maximum individual degree of the multilinear composite equals composition degree
+		self.composition.degree()
+	}
+
 	pub fn n_multilinears(&self) -> usize {
 		self.composition.n_vars()
 	}
 
+	pub fn evaluate_partial_low(
+		&self,
+		query: &MultilinearQuery<P>,
+	) -> Result<MultilinearComposite<P, C, impl MultilinearPoly<P>>, Error> {
+		let new_multilinears = self
+			.multilinears
+			.iter()
+			.map(|multilin| multilin.evaluate_partial_low(query))
+			.collect::<Result<Vec<_>, _>>()?;
+		Ok(MultilinearComposite {
+			composition: self.composition.clone(),
+			n_vars: self.n_vars - query.n_vars(),
+			multilinears: new_multilinears,
+			_p_marker: PhantomData,
+		})
+	}
+}
+
+impl<P, M> MultilinearComposite<P, IdentityCompositionPoly, M>
+where
+	P: PackedField,
+	M: MultilinearPoly<P>,
+{
 	pub fn from_multilinear(poly: M) -> Self {
 		MultilinearComposite {
-			composition: Arc::new(IdentityCompositionPoly),
+			composition: IdentityCompositionPoly,
 			n_vars: poly.borrow().n_vars(),
 			multilinears: vec![poly],
+			_p_marker: PhantomData,
 		}
 	}
 }

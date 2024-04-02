@@ -4,7 +4,7 @@ use super::error::Error;
 use crate::{
 	field::{Field, PackedField},
 	oracle::{
-		BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle, MultivariatePolyOracle,
+		BatchId, CommittedBatch, CommittedId, CompositePolyOracle, MultilinearPolyOracle, OracleId,
 		Packed, Shifted,
 	},
 	polynomial::{multilinear_query::MultilinearQuery, MultilinearPoly},
@@ -13,9 +13,21 @@ use std::marker::PhantomData;
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
-pub struct EvalcheckClaim<F: Field> {
+pub struct EvalcheckClaim<F: Field, C> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: MultivariatePolyOracle<F>,
+	pub poly: CompositePolyOracle<F, C>,
+	/// Evaluation Point
+	pub eval_point: Vec<F>,
+	/// Claimed Evaluation
+	pub eval: F,
+	/// Whether the evaluation point is random
+	pub is_random_point: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct EvalcheckMultilinearClaim<F: Field> {
+	/// Virtual Polynomial Oracle for which the evaluation is claimed
+	pub poly: MultilinearPolyOracle<F>,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
@@ -50,9 +62,8 @@ pub struct PackedEvalClaim<F: Field> {
 
 #[derive(Debug)]
 pub struct EvalcheckWitness<P: PackedField, M> {
-	multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, M)>,
+	multilinears: Vec<(OracleId, M)>,
 	_p_marker: PhantomData<P>,
-	_m_marker: PhantomData<M>,
 }
 
 impl<P, M> EvalcheckWitness<P, M>
@@ -60,30 +71,29 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	pub fn new(multilinears: Vec<(MultilinearPolyOracle<P::Scalar>, M)>) -> Self {
+	pub fn new(multilinears: Vec<(OracleId, M)>) -> Self {
 		Self {
 			multilinears,
 			_p_marker: PhantomData,
-			_m_marker: PhantomData,
 		}
 	}
 
-	pub fn witness_for_oracle(
+	pub fn witness_for_oracle<F: Field>(
 		&self,
-		oracle: &MultilinearPolyOracle<P::Scalar>,
+		oracle: &MultilinearPolyOracle<F>,
 	) -> Result<&M, Error> {
 		// TODO: Use HashMap to reduce O(n) search to O(1)
 		let (_, multilin) = self
 			.multilinears
 			.iter()
-			.find(|(oracle_i, _)| oracle_i == oracle)
+			.find(|(oracle_id, _)| *oracle_id == oracle.id())
 			.ok_or_else(|| Error::InvalidWitness(format!("{:?}", oracle)))?;
 		Ok(multilin)
 	}
 
-	pub fn evaluate(
+	pub fn evaluate<F: Field>(
 		&self,
-		oracle: &MultilinearPolyOracle<P::Scalar>,
+		oracle: &MultilinearPolyOracle<F>,
 		query: &MultilinearQuery<P>,
 	) -> Result<P::Scalar, Error> {
 		let multilin = self.witness_for_oracle(oracle)?;

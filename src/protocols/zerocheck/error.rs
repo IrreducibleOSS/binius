@@ -1,16 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{
-	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
-	protocols::sumcheck::Error as SumcheckError,
-};
+use crate::{oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("the challenge vector does not match the expected size")]
 	ChallengeVectorMismatch,
-	#[error("Sumcheck error: {0}")]
-	Sumcheck(#[from] SumcheckError),
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]
