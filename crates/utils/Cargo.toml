@@ -1,0 +1,5 @@
+[package]
+name = "binius_utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true

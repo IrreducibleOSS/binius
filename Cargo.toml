@@ -1,23 +1,33 @@
-[package]
-name = "binius"
+[workspace]
+members = [
+    "crates/*",
+    "examples"
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 authors = ["Ulvetanna Team <ulvt_dev@ulvetanna.io>"]
 
-[dependencies]
+[workspace.dependencies]
+anyhow = "1.0.81"
 assert_matches = "1.5.0"
 bytemuck = { version = "1.14.0", features = ["derive", "min_const_generics", "must_cast"]}
 cfg-if = "1.0.0"
+criterion = "0.4.0"
 derive_more = "0.99.17"
 digest = "0.10.7"
 ff = "0.13.0"
 getset = "0.1.2"
 groestl = "0.10.1"
+hex-literal = "0.4.1"
 itertools = "0.12.0"
+log = "0.4.20"
 p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
 p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
 p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
 p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
+proptest = "1.2.0"
 rand = "0.8.5"
 rayon = "1.8.0"
 seq-macro = "0.3.5"
@@ -25,10 +35,11 @@ static_assertions = "1.1.0"
 subtle = "2.5.0"
 thiserror = "1.0.47"
 thread_local = "1.1.7"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tracing = "0.1.38"
-transpose = "0.2.2"
 tracing-profile = "0.1.0"
-log = "0.4.20"
+tracing-subscriber = "0.3.18"
+transpose = "0.2.2"
 
 [profile.release]
 lto = "fat"
@@ -40,42 +51,3 @@ debug = true
 [profile.bench]
 inherits = "release"
 debug = true
-
-[dev-dependencies]
-anyhow = "1.0.81"
-criterion = "0.4.0"
-hex-literal = "0.4.1"
-proptest = "1.2.0"
-tiny-keccak = { version = "2.0.2", features = ["keccak"] }
-tracing-subscriber = "0.3.18"
-
-[lib]
-bench = false
-
-[[bench]]
-name = "binary_field"
-harness = false
-
-[[bench]]
-name = "binary_field_packed"
-harness = false
-
-[[bench]]
-name = "additive_ntt"
-harness = false
-
-[[bench]]
-name = "hash"
-harness = false
-
-[[bench]]
-name = "sumcheck"
-harness = false
-
-[[bench]]
-name = "multilinear_query"
-harness = false
-
-[[bench]]
-name = "polyval_packed"
-harness = false

@@ -1,0 +1,26 @@
+[package]
+name = "examples"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+binius_core = { path = "../crates/core" }
+binius_field = { path = "../crates/field" }
+bytemuck.workspace = true
+p3-challenger.workspace = true
+rand.workspace = true
+rayon.workspace = true
+tiny-keccak.workspace = true
+tracing-profile.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+
+[[example]]
+name = "bitwise_and_proof"
+path = "bitwise_and_proof.rs"
+
+[[example]]
+name = "keccakf"
+path = "keccakf.rs"

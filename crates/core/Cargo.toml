@@ -1,0 +1,54 @@
+[package]
+name = "binius_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+assert_matches.workspace = true
+binius_field = { path = "../field" }
+binius_utils = { path = "../utils" }
+bytemuck.workspace = true
+derive_more.workspace = true
+digest.workspace = true
+getset.workspace = true
+groestl.workspace = true
+hex-literal.workspace = true
+itertools.workspace = true
+p3-challenger.workspace = true
+p3-matrix.workspace = true
+p3-symmetric.workspace = true
+p3-util.workspace = true
+rand.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+thread_local.workspace = true
+tracing.workspace = true
+transpose.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+criterion.workspace = true
+proptest.workspace = true
+tiny-keccak.workspace = true
+tracing-profile.workspace = true
+tracing-subscriber.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "additive_ntt"
+harness = false
+
+[[bench]]
+name = "hash"
+harness = false
+
+[[bench]]
+name = "sumcheck"
+harness = false
+
+[[bench]]
+name = "multilinear_query"
+harness = false

@@ -1,0 +1,39 @@
+[package]
+name = "binius_field"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_utils = { path = "../utils"}
+bytemuck.workspace = true
+cfg-if.workspace = true
+derive_more.workspace = true
+ff.workspace = true
+p3-util.workspace = true
+rand.workspace = true
+rayon.workspace = true
+seq-macro.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+transpose.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+itertools.workspace = true
+proptest.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "binary_field"
+harness = false
+
+[[bench]]
+name = "binary_field_packed"
+harness = false
+
+[[bench]]
+name = "polyval_packed"
+harness = false

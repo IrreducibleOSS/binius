@@ -1,9 +1,5 @@
-use binius::{
+use binius_core::{
 	challenger::HashChallenger,
-	field::{
-		BinaryField128b, BinaryField128bPolyval, ExtensionField, PackedBinaryField128x1b,
-		PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
-	},
 	hash::GroestlHasher,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
@@ -24,6 +20,10 @@ use binius::{
 		},
 	},
 	witness::MultilinearWitnessIndex,
+};
+use binius_field::{
+	BinaryField128b, BinaryField128bPolyval, ExtensionField, PackedBinaryField128x1b,
+	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 };
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};

@@ -5,13 +5,8 @@
 extern crate core;
 
 use anyhow::Result;
-use binius::{
+use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
-	field::{
-		util::inner_product_unchecked, BinaryField, BinaryField128bPolyval, BinaryField1b,
-		ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField1x128b,
-		PackedBinaryField8x16b, PackedField, TowerField,
-	},
 	hash::GroestlHasher,
 	oracle::{
 		BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, CompositePolyOracle,
@@ -38,6 +33,11 @@ use binius::{
 		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
+};
+use binius_field::{
+	util::inner_product_unchecked, BinaryField, BinaryField128bPolyval, BinaryField1b,
+	ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField1x128b,
+	PackedBinaryField8x16b, PackedField, TowerField,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
