@@ -3,9 +3,8 @@
 use super::{
 	error::Error,
 	sumcheck::{
-		check_evaluation_domain, reduce_sumcheck_claim_final, reduce_sumcheck_claim_round,
-		SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,
-		SumcheckWitness,
+		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, SumcheckClaim, SumcheckRound,
+		SumcheckRoundClaim, SumcheckWitness,
 	},
 };
 use crate::{
@@ -14,13 +13,16 @@ use crate::{
 		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
 		MultilinearExtensionSpecialized, MultilinearPoly,
 	},
+	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::{Field, PackedField};
+use getset::Getters;
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp::max, fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
 /// An individual multilinear polynomial in a multivariate composite
+#[derive(Debug)]
 enum SumcheckMultilinear<P: PackedField, M> {
 	/// Small field polynomial - to be folded into large field at `switchover` round
 	Transparent {
@@ -79,33 +81,36 @@ impl<F: Field> ParFoldState<F> {
 ///      field a switchover of 7 would require additional memory identical to the polynomial size.
 ///
 /// NB. Note that switchover=0 does not make sense, as first round is never folded.
-pub struct SumcheckProverState<F, PW, CW, M>
-where
-	F: Field + From<PW::Scalar>,
-	PW: PackedField + Debug,
-	PW::Scalar: From<F>,
-	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
-{
-	n_vars: usize,
-	max_individual_degree: usize,
-	composition: CW,
-	multilinears: Vec<SumcheckMultilinear<PW, M>>,
-
-	query: Option<MultilinearQuery<PW>>,
-
-	proof: SumcheckProof<F>,
-	round_claim: Option<SumcheckRoundClaim<F>>,
-
-	round: usize,
-	_m_marker: PhantomData<M>,
-}
-
-impl<F, PW, CW, M> SumcheckProverState<F, PW, CW, M>
+#[derive(Debug, Getters)]
+pub struct SumcheckProverState<'a, F, PW, C, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
+	CW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Sync,
+{
+	oracle: CompositePolyOracle<F, C>,
+	composition: CW,
+	multilinears: Vec<SumcheckMultilinear<PW, M>>,
+
+	domain: &'a EvaluationDomain<F>,
+	query: Option<MultilinearQuery<PW>>,
+
+	#[getset(get = "pub")]
+	round_claim: SumcheckRoundClaim<F>,
+
+	round: usize,
+	last_round_proof: Option<SumcheckRound<F>>,
+	_m_marker: PhantomData<M>,
+}
+
+impl<'a, F, PW, C, CW, M> SumcheckProverState<'a, F, PW, C, CW, M>
+where
+	F: Field + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
@@ -114,23 +119,23 @@ where
 	/// given multilinear index - expectation is that the caller would have enough context to
 	/// introspect on field & polynomial sizes. This is a stopgap measure until a proper type
 	/// reflection mechanism is introduced.
-	pub fn new<C>(
-		sumcheck_claim: &SumcheckClaim<F, C>,
+	pub fn new(
+		domain: &'a EvaluationDomain<F>,
+		sumcheck_claim: SumcheckClaim<F, C>,
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		switchovers: &[usize],
 	) -> Result<Self, Error> {
-		let n_vars = sumcheck_witness.n_vars();
-		let max_individual_degree = sumcheck_witness.max_individual_degree();
+		let n_vars = sumcheck_claim.n_vars();
 
-		if max_individual_degree == 0 {
+		if sumcheck_claim.poly.max_individual_degree() == 0 {
 			return Err(Error::PolynomialDegreeIsZero);
 		}
 
-		if sumcheck_claim.poly.n_vars() != n_vars {
+		if sumcheck_witness.n_vars() != n_vars {
 			let err_str = format!(
 				"Claim and Witness n_vars mismatch in sumcheck. Claim: {}, Witness: {}",
-				sumcheck_claim.poly.n_vars(),
-				n_vars
+				sumcheck_claim.n_vars(),
+				sumcheck_witness.n_vars(),
 			);
 
 			return Err(Error::ProverClaimWitnessMismatch(err_str));
@@ -145,6 +150,8 @@ where
 
 			return Err(Error::ImproperInput(err_str));
 		}
+
+		check_evaluation_domain(sumcheck_claim.poly.max_individual_degree(), domain)?;
 
 		let mut max_query_vars = 1;
 		let mut multilinears = Vec::new();
@@ -163,46 +170,41 @@ where
 
 		let query = Some(MultilinearQuery::new(max_query_vars)?);
 
-		let proof = SumcheckProof { rounds: Vec::new() };
-
-		let round_claim = Some(SumcheckRoundClaim {
+		let round_claim = SumcheckRoundClaim {
 			partial_point: Vec::new(),
 			current_round_sum: sumcheck_claim.sum,
-		});
+		};
 
 		let prover_state = SumcheckProverState {
-			n_vars,
-			max_individual_degree,
-
+			oracle: sumcheck_claim.poly,
 			composition,
 			multilinears,
-
+			domain,
 			query,
-
-			proof,
 			round_claim,
-
 			round: 0,
+			last_round_proof: None,
 			_m_marker: PhantomData,
 		};
 
 		Ok(prover_state)
 	}
 
+	pub fn n_vars(&self) -> usize {
+		self.oracle.n_vars()
+	}
+
 	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
 	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::finalize")]
-	pub fn finalize<C: Clone>(
-		&mut self,
-		poly_oracle: &CompositePolyOracle<F, C>,
-		prev_rd_challenge: Option<F>,
-	) -> Result<SumcheckProveOutput<F, C>, Error> {
+	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F, C>, Error> {
 		// First round has no challenge, other rounds should have it
 		self.validate_rd_challenge(prev_rd_challenge)?;
 
-		if self.round != self.n_vars {
+		if self.round != self.n_vars() {
 			return Err(Error::ImproperInput(format!(
 				"finalize() called on round {} while n_vars={}",
-				self.round, self.n_vars
+				self.round,
+				self.n_vars()
 			)));
 		}
 
@@ -211,39 +213,20 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let evalcheck_claim = reduce_sumcheck_claim_final(
-			poly_oracle,
-			self.round_claim
-				.take()
-				.expect("round_claim always present by invariant"),
-		)?;
-
-		self.round += 1;
-
-		let sumcheck_proof = self.proof.clone();
-
-		Ok(SumcheckProveOutput {
-			sumcheck_proof,
-			evalcheck_claim,
-		})
+		reduce_sumcheck_claim_final(&self.oracle, self.round_claim)
 	}
 
 	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::execute_round")]
 	pub fn execute_round(
 		&mut self,
-		domain: &EvaluationDomain<F>,
 		prev_rd_challenge: Option<F>,
 	) -> Result<SumcheckRound<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		self.validate_rd_challenge(prev_rd_challenge)?;
 
-		if self.round >= self.n_vars {
+		if self.round >= self.n_vars() {
 			return Err(Error::ImproperInput("too many execute_round calls".to_string()));
 		}
-
-		// Validate that evaluation domain starts with 0 & 1 and is large enough to
-		// interpolate a univariate of a maximum individual degree
-		check_evaluation_domain(self.max_individual_degree, domain)?;
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given
 		if let Some(prev_rd_challenge) = prev_rd_challenge {
@@ -262,7 +245,8 @@ where
 		} = self;
 
 		// Transform evaluation domain points to operating field
-		let wf_domain = domain
+		let wf_domain = self
+			.domain
 			.points()
 			.iter()
 			.copied()
@@ -315,12 +299,13 @@ where
 
 		self.round += 1;
 
-		evals.insert(0, self.get_claim().current_round_sum - evals[0]);
-		let coeffs = domain.interpolate(&evals)?;
+		evals.insert(0, self.round_claim.current_round_sum - evals[0]);
+		let mut coeffs = self.domain.interpolate(&evals)?;
+		// Omit the last coefficient because the verifier can compute it themself
+		coeffs.truncate(coeffs.len() - 1);
 
 		let proof_round = SumcheckRound { coeffs };
-		self.proof.rounds.push(proof_round.clone());
-
+		self.last_round_proof = Some(proof_round.clone());
 		Ok(proof_round)
 	}
 
@@ -381,20 +366,20 @@ where
 	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
 	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
 	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
-	fn sum_to_round_evals<'a, T>(
-		&'a self,
+	fn sum_to_round_evals<'b, T>(
+		&'b self,
 		eval_points: &[PW::Scalar],
-		precomp: impl Fn(&'a SumcheckMultilinear<PW, M>) -> T,
+		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
 	) -> Vec<F>
 	where
-		T: Copy + Sync + 'a,
-		M: 'a,
+		T: Copy + Sync + 'b,
+		M: 'b,
 	{
-		let rd_vars = self.n_vars - self.round;
+		let rd_vars = self.n_vars() - self.round;
 
 		let n_multilinears = self.multilinears.len();
-		let degree = self.max_individual_degree;
+		let degree = self.composition.degree();
 
 		debug_assert_eq!(eval_points.len(), degree + 1);
 
@@ -439,7 +424,7 @@ where
 	}
 
 	fn validate_rd_challenge(&self, prev_rd_challenge: Option<F>) -> Result<(), Error> {
-		if prev_rd_challenge.map_or(self.round > 0, |_| self.round == 0) {
+		if prev_rd_challenge.is_none() != (self.round == 0) {
 			return Err(Error::ImproperInput(format!(
 				"incorrect optional challenge: is_some()={:?} at round {}",
 				prev_rd_challenge.is_some(),
@@ -450,27 +435,15 @@ where
 		Ok(())
 	}
 
-	pub fn get_claim(&self) -> SumcheckRoundClaim<F> {
-		self.round_claim
-			.clone()
-			.expect("round_claim always present by invariant")
-	}
-
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
-		let new_round_claim = reduce_sumcheck_claim_round(
-			self.round_claim
-				.take()
-				.expect("round_claim always present by invariant"),
+		self.round_claim = reduce_sumcheck_claim_round(
+			self.round_claim.clone(),
 			prev_rd_challenge,
-			self.proof
-				.rounds
-				.last()
+			self.last_round_proof
+				.as_ref()
 				.expect("not first round by invariant")
 				.clone(),
 		)?;
-
-		self.round_claim.replace(new_round_claim);
-
 		Ok(())
 	}
 
@@ -569,269 +542,18 @@ fn process_round_evals<P: PackedField, C: CompositionPoly<P> + ?Sized>(
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::{
-		challenger::HashChallenger,
-		hash::GroestlHasher,
-		oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
-		polynomial::{MultilinearComposite, MultilinearExtension},
-		protocols::test_utils::{
-			full_prove_with_switchover, full_verify, transform_poly, TestProductComposition,
-		},
-	};
-	use binius_field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, TowerField};
-	use p3_util::log2_ceil_usize;
-	use rand::{rngs::StdRng, SeedableRng};
-	use rayon::current_num_threads;
-	use std::iter::repeat_with;
-
-	fn test_prove_verify_interaction_helper(
-		n_vars: usize,
-		n_multilinears: usize,
-		switchover_rd: usize,
-	) {
-		type F = BinaryField32b;
-		type FE = BinaryField128b;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		// Setup Witness
-		let composition = TestProductComposition::new(n_multilinears);
-		let multilinears = repeat_with(|| {
-			let values = repeat_with(|| Field::random(&mut rng))
-				.take(1 << n_vars)
-				.collect::<Vec<F>>();
-			MultilinearExtension::from_values(values).unwrap()
-		})
-		.take(<_ as CompositionPoly<FE>>::n_vars(&composition))
-		.collect::<Vec<_>>();
-		let poly = MultilinearComposite::<FE, _, _>::new(
-			n_vars,
-			composition,
-			multilinears
-				.iter()
-				.map(|multilin| multilin.to_ref().specialize())
-				.collect(),
-		)
-		.unwrap();
-
-		// Get the sum
-		let sum = (0..1 << n_vars)
-			.map(|i| {
-				let mut prod = F::ONE;
-				(0..n_multilinears).for_each(|j| {
-					prod *= multilinears[j].packed_evaluate_on_hypercube(i).unwrap();
-				});
-				prod
-			})
-			.sum::<F>();
-
-		let sumcheck_witness = poly.clone();
-
-		// Setup Claim
-		let mut oracles = MultilinearOracleSet::new();
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 0,
-			n_vars,
-			n_polys: n_multilinears,
-			tower_level: F::TOWER_LEVEL,
-		});
-		let h = (0..n_multilinears)
-			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
-			.collect();
-		let composite_poly =
-			CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears))
-				.unwrap();
-
-		let sumcheck_claim = SumcheckClaim {
-			sum: sum.into(),
-			poly: composite_poly,
-		};
-
-		// Setup evaluation domain
-		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
-
-		let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-
-		let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
-			&sumcheck_claim,
-			sumcheck_witness,
-			&domain,
-			challenger.clone(),
-			switchover_rd,
-		);
-
-		let (verifier_rd_claims, final_verify_output) =
-			full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
-
-		assert_eq!(prover_rd_claims, verifier_rd_claims);
-		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
-		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
-		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
-		assert!(final_prove_output.evalcheck_claim.is_random_point);
-		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
-
-		// Verify that the evalcheck claim is correct
-		let eval_point = &final_verify_output.eval_point;
-		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
-		let actual = poly.evaluate(&multilin_query).unwrap();
-		assert_eq!(actual, final_verify_output.eval);
+/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
+/// maximum individual degree of the polynomial.
+fn check_evaluation_domain<F: Field>(
+	max_individual_degree: usize,
+	domain: &EvaluationDomain<F>,
+) -> Result<(), Error> {
+	if max_individual_degree == 0
+		|| domain.size() != max_individual_degree + 1
+		|| domain.points()[0] != F::ZERO
+		|| domain.points()[1] != F::ONE
+	{
+		return Err(Error::EvaluationDomainMismatch);
 	}
-
-	fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
-		n_vars: usize,
-		n_multilinears: usize,
-	) {
-		type F = BinaryField128b;
-		type OF = BinaryField128bPolyval;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let composition = TestProductComposition::new(n_multilinears);
-		let prover_composition = composition.clone();
-		let composition_nvars = n_multilinears;
-
-		let multilinears = repeat_with(|| {
-			let values = repeat_with(|| Field::random(&mut rng))
-				.take(1 << n_vars)
-				.collect::<Vec<F>>();
-			MultilinearExtension::from_values(values).unwrap()
-		})
-		.take(composition_nvars)
-		.collect::<Vec<_>>();
-
-		let poly = MultilinearComposite::new(
-			n_vars,
-			composition,
-			multilinears
-				.iter()
-				.map(|multilin| multilin.to_ref().specialize::<F>())
-				.collect(),
-		)
-		.unwrap();
-		let prover_poly = MultilinearComposite::new(
-			n_vars,
-			prover_composition,
-			multilinears
-				.iter()
-				.map(|multilin| {
-					transform_poly::<_, OF>(multilin.to_ref())
-						.unwrap()
-						.specialize::<OF>()
-				})
-				.collect(),
-		)
-		.unwrap();
-
-		let sum = (0..1 << n_vars)
-			.map(|i| {
-				let mut prod = F::ONE;
-				(0..n_multilinears).for_each(|j| {
-					prod *= multilinears[j].packed_evaluate_on_hypercube(i).unwrap();
-				});
-				prod
-			})
-			.sum();
-
-		let operating_witness = prover_poly;
-
-		// CLAIM
-		let mut oracles = MultilinearOracleSet::new();
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 0,
-			n_vars,
-			n_polys: n_multilinears,
-			tower_level: F::TOWER_LEVEL,
-		});
-		let h = (0..n_multilinears)
-			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
-			.collect();
-		let composite_poly =
-			CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears))
-				.unwrap();
-		let poly_oracle = composite_poly;
-		let sumcheck_claim = SumcheckClaim {
-			sum,
-			poly: poly_oracle,
-		};
-
-		// Setup evaluation domain
-		let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
-
-		let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-		let switchover = 3;
-		let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
-			&sumcheck_claim,
-			operating_witness,
-			&domain,
-			challenger.clone(),
-			switchover,
-		);
-
-		let (verifier_rd_claims, final_verify_output) =
-			full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
-
-		assert_eq!(prover_rd_claims, verifier_rd_claims);
-		assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
-		assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
-		assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
-		assert!(final_prove_output.evalcheck_claim.is_random_point);
-		assert_eq!(final_verify_output.poly.n_vars(), n_vars);
-
-		// Verify that the evalcheck claim is correct
-		let eval_point = &final_verify_output.eval_point;
-		let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
-		let actual = poly.evaluate(&multilin_query).unwrap();
-		assert_eq!(actual, final_verify_output.eval);
-	}
-
-	#[test]
-	fn test_prove_verify_interaction_basic() {
-		crate::util::tracing::init_tracing();
-
-		for n_vars in 2..8 {
-			for n_multilinears in 1..4 {
-				for switchover_rd in 1..=n_vars / 2 {
-					test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
-				}
-			}
-		}
-	}
-
-	#[test]
-	fn test_prove_verify_interaction_pigeonhole_cores() {
-		let n_threads = current_num_threads();
-		let n_vars = log2_ceil_usize(n_threads) + 1;
-		for n_multilinears in 1..4 {
-			for switchover_rd in 1..=n_vars / 2 {
-				test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
-			}
-		}
-	}
-
-	#[test]
-	fn test_prove_verify_interaction_with_monomial_basis_conversion_basic() {
-		for n_vars in 2..8 {
-			for n_multilinears in 1..4 {
-				test_prove_verify_interaction_with_monomial_basis_conversion_helper(
-					n_vars,
-					n_multilinears,
-				);
-			}
-		}
-	}
-
-	#[test]
-	fn test_prove_verify_interaction_with_monomial_basis_conversion_pigeonhole_cores() {
-		let n_threads = current_num_threads();
-		let n_vars = log2_ceil_usize(n_threads) + 1;
-		for n_multilinears in 1..6 {
-			test_prove_verify_interaction_with_monomial_basis_conversion_helper(
-				n_vars,
-				n_multilinears,
-			);
-		}
-	}
+	Ok(())
 }

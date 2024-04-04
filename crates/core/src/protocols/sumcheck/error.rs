@@ -8,6 +8,8 @@ pub enum Error {
 	PolynomialDegreeIsZero,
 	#[error("the input was not well formed: {0}")]
 	ImproperInput(String),
+	#[error("oracles must be sorted in descending order by number of variables")]
+	OraclesOutOfOrder,
 	#[error("the evaluation domain does not match the expected size")]
 	EvaluationDomainMismatch,
 	#[error("prover has mismatch between claim and witness: {0}")]
@@ -26,6 +28,8 @@ pub enum VerificationError {
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]
 	NumberOfRounds,
+	#[error("the number of final evaluations must match the number of instances")]
+	NumberOfFinalEvaluations,
 	#[error("the evaluation domain does not match the expected size")]
 	EvaluationDomainMismatch,
 	#[error("polynomial error: {0}")]

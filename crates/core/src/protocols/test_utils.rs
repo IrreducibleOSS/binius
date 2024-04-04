@@ -150,25 +150,19 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
-	assert!(n_vars > 0);
-
-	// Make initial round claim
-	let mut rd_claim = setup_first_round_claim(claim);
-	let mut rd_claims = vec![rd_claim.clone()];
-
 	let n_rounds = proof.rounds.len();
-	for round_proof in proof.rounds[..n_rounds - 1].iter() {
+	assert_eq!(n_rounds, n_vars);
+
+	let mut rd_claim = setup_first_round_claim(claim);
+	let mut rd_claims = Vec::with_capacity(n_rounds);
+	for round_proof in proof.rounds {
+		rd_claims.push(rd_claim.clone());
+
 		challenger.observe_slice(round_proof.coeffs.as_slice());
 		rd_claim = verify_round(rd_claim, challenger.sample(), round_proof.clone()).unwrap();
-		rd_claims.push(rd_claim.clone());
 	}
 
-	let last_round_proof = &proof.rounds[n_rounds - 1];
-	challenger.observe_slice(last_round_proof.coeffs.as_slice());
-
-	let final_claim =
-		verify_final(&claim.poly, rd_claim, challenger.sample(), last_round_proof.clone()).unwrap();
-
+	let final_claim = verify_final(&claim.poly, rd_claim).unwrap();
 	(rd_claims, final_claim)
 }
 
@@ -184,7 +178,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	C: Clone,
+	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
@@ -198,26 +192,29 @@ where
 		.take(witness.n_multilinears())
 		.collect::<Vec<_>>();
 
-	let mut prover_state = SumcheckProverState::new(claim, witness, &switchovers).unwrap();
+	let mut prover_state =
+		SumcheckProverState::new(domain, claim.clone(), witness, &switchovers).unwrap();
 
 	let mut prev_rd_challenge = None;
-	let mut rd_claims = Vec::new();
+	let mut rd_claims = Vec::with_capacity(n_vars);
+	let mut rd_proofs = Vec::with_capacity(n_vars);
 
 	for _round in 0..n_vars {
-		let proof_round = prover_state
-			.execute_round(domain, prev_rd_challenge)
-			.unwrap();
+		let proof_round = prover_state.execute_round(prev_rd_challenge).unwrap();
 
 		challenger.observe_slice(&proof_round.coeffs);
 
 		prev_rd_challenge = Some(challenger.sample());
 
-		rd_claims.push(prover_state.get_claim());
+		rd_claims.push(prover_state.round_claim().clone());
+		rd_proofs.push(proof_round);
 	}
 
-	let prove_output = prover_state
-		.finalize(&claim.poly, prev_rd_challenge)
-		.unwrap();
+	let evalcheck_claim = prover_state.finalize(prev_rd_challenge).unwrap();
+	let prove_output = SumcheckProveOutput {
+		evalcheck_claim,
+		sumcheck_proof: SumcheckProof { rounds: rd_proofs },
+	};
 
 	(rd_claims, prove_output)
 }

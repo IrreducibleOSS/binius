@@ -3,7 +3,7 @@
 use super::{Error, VerificationError};
 use crate::{
 	oracle::CompositePolyOracle,
-	polynomial::{evaluate_univariate, EvaluationDomain, MultilinearComposite},
+	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::Field;
@@ -32,22 +32,14 @@ pub struct SumcheckClaim<F: Field, C> {
 	pub sum: F,
 }
 
+impl<F: Field, C> SumcheckClaim<F, C> {
+	pub fn n_vars(&self) -> usize {
+		self.poly.n_vars()
+	}
+}
+
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type SumcheckWitness<P, C, M> = MultilinearComposite<P, C, M>;
-
-pub fn check_evaluation_domain<F: Field>(
-	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error> {
-	if max_individual_degree == 0
-		|| domain.size() != max_individual_degree + 1
-		|| domain.points()[0] != F::ZERO
-		|| domain.points()[1] != F::ONE
-	{
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	Ok(())
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SumcheckRoundClaim<F: Field> {

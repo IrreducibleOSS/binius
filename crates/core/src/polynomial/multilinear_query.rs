@@ -12,7 +12,7 @@ use std::cmp::max;
 /// The tensor product can be updated with a new round challenge in linear time.
 /// This is used in the first several rounds of the sumcheck prover for small-field polynomials,
 /// before it becomes more efficient to switch over to the method that store folded multilinears.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MultilinearQuery<P: PackedField> {
 	expanded_query: Vec<P>,
 	n_vars: usize,
