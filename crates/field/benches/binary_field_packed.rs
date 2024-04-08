@@ -76,7 +76,7 @@ macro_rules! benchmark_strategy {
 	};
 	// run benchmark on a single type for all strategies
 	($packed_field:ty, $group:ident, strategies @ ($(($strategy_name:literal, $constraint:path, $func:expr),)*)) => {
-		$group.throughput(Throughput::Elements((<$packed_field>::WIDTH as u64) * 1024));
+		$group.throughput(Throughput::Elements((<$packed_field>::WIDTH * BATCH_SIZE) as u64));
 		let mut rng = thread_rng();
 		let a: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));
 		let b: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));

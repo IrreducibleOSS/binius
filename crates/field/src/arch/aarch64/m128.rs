@@ -1,5 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
+use seq_macro::seq;
 use std::{
 	arch::aarch64::*,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Shl, Shr},
@@ -22,9 +23,59 @@ use derive_more::Not;
 #[repr(transparent)]
 pub struct M128(pub u128);
 
-impl Into<u128> for M128 {
-	fn into(self) -> u128 {
-		self.0
+impl M128 {
+	pub const fn from_le_bytes(bytes: [u8; 16]) -> Self {
+		Self(u128::from_le_bytes(bytes))
+	}
+
+	pub const fn from_be_bytes(bytes: [u8; 16]) -> Self {
+		Self(u128::from_be_bytes(bytes))
+	}
+
+	#[inline]
+	pub fn shuffle_u8(self, src: [u8; 16]) -> Self {
+		unsafe { vqtbl1q_u8(self.into(), M128::from_le_bytes(src).into()).into() }
+	}
+}
+
+impl From<M128> for u128 {
+	fn from(value: M128) -> Self {
+		value.0
+	}
+}
+impl From<M128> for uint8x16_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_u8_p128(value.0) }
+	}
+}
+impl From<M128> for uint16x8_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_u16_p128(value.0) }
+	}
+}
+impl From<M128> for uint32x4_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_u32_p128(value.0) }
+	}
+}
+impl From<M128> for uint64x2_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_u64_p128(value.0) }
+	}
+}
+impl From<M128> for poly8x16_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_p8_p128(value.0) }
+	}
+}
+impl From<M128> for poly16x8_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_p16_p128(value.0) }
+	}
+}
+impl From<M128> for poly64x2_t {
+	fn from(value: M128) -> Self {
+		unsafe { vreinterpretq_p64_p128(value.0) }
 	}
 }
 
@@ -33,40 +84,60 @@ impl From<u128> for M128 {
 		Self(value)
 	}
 }
-
 impl From<u64> for M128 {
 	fn from(value: u64) -> Self {
 		Self(value as u128)
 	}
 }
-
 impl From<u32> for M128 {
 	fn from(value: u32) -> Self {
 		Self(value as u128)
 	}
 }
-
 impl From<u16> for M128 {
 	fn from(value: u16) -> Self {
 		Self(value as u128)
 	}
 }
-
 impl From<u8> for M128 {
 	fn from(value: u8) -> Self {
 		Self(value as u128)
 	}
 }
 
-impl Into<uint8x16_t> for M128 {
-	fn into(self) -> uint8x16_t {
-		unsafe { vreinterpretq_u8_p128(self.0) }
-	}
-}
-
 impl From<uint8x16_t> for M128 {
 	fn from(value: uint8x16_t) -> Self {
 		Self(unsafe { vreinterpretq_p128_u8(value) })
+	}
+}
+impl From<uint16x8_t> for M128 {
+	fn from(value: uint16x8_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_u16(value) })
+	}
+}
+impl From<uint32x4_t> for M128 {
+	fn from(value: uint32x4_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_u32(value) })
+	}
+}
+impl From<uint64x2_t> for M128 {
+	fn from(value: uint64x2_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_u64(value) })
+	}
+}
+impl From<poly8x16_t> for M128 {
+	fn from(value: poly8x16_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_p8(value) })
+	}
+}
+impl From<poly16x8_t> for M128 {
+	fn from(value: poly16x8_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_p16(value) })
+	}
+}
+impl From<poly64x2_t> for M128 {
+	fn from(value: poly64x2_t) -> Self {
+		Self(unsafe { vreinterpretq_p128_p64(value) })
 	}
 }
 
@@ -180,6 +251,49 @@ impl UnderlierWithBitConstants for M128 {
 		Self(interleave_mask_odd!(u128, 5)),
 		Self(interleave_mask_odd!(u128, 6)),
 	];
+
+	#[inline]
+	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		unsafe {
+			seq!(LOG_BLOCK_LEN in 0..=2 {
+				if log_block_len == LOG_BLOCK_LEN {
+					let (a, b) = (self.into(), other.into());
+					let mask = Self::INTERLEAVE_EVEN_MASK[LOG_BLOCK_LEN].into();
+					let t = vandq_u64(veorq_u64(vshrq_n_u64(a, 1 << LOG_BLOCK_LEN), b), mask);
+					let c = veorq_u64(a, vshlq_n_u64(t, 1 << LOG_BLOCK_LEN));
+					let d = veorq_u64(b, t);
+					return (c.into(), d.into());
+				}
+			});
+			match log_block_len {
+				3 => {
+					let (a, b) = (self.into(), other.into());
+					let c = vtrn1q_u8(a, b);
+					let d = vtrn2q_u8(a, b);
+					(c.into(), d.into())
+				}
+				4 => {
+					let (a, b) = (self.into(), other.into());
+					let c = vtrn1q_u16(a, b);
+					let d = vtrn2q_u16(a, b);
+					(c.into(), d.into())
+				}
+				5 => {
+					let (a, b) = (self.into(), other.into());
+					let c = vtrn1q_u32(a, b);
+					let d = vtrn2q_u32(a, b);
+					(c.into(), d.into())
+				}
+				6 => {
+					let (a, b) = (self.into(), other.into());
+					let c = vtrn1q_u64(a, b);
+					let d = vtrn2q_u64(a, b);
+					(c.into(), d.into())
+				}
+				_ => panic!("Unsupported block length"),
+			}
+		}
+	}
 }
 
 impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
@@ -204,6 +318,7 @@ impl<Scalar: BinaryField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveT
 where
 	u128: From<Scalar::Underlier>,
 {
+	#[inline]
 	fn broadcast(scalar: Scalar) -> Self {
 		let tower_level = Scalar::N_BITS.ilog2() as usize;
 		let mut value = u128::from(scalar.to_underlier());

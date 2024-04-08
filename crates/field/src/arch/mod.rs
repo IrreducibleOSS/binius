@@ -16,8 +16,8 @@ cfg_if! {
 		mod portable;
 
 		mod aarch64;
-		pub use aarch64::{polyval, packed_aes_128};
-		pub use portable::{packed_128, packed_256, packed_512, packed_aes_256, packed_aes_512, packed_polyval_256, packed_polyval_512};
+		pub use aarch64::{packed_128, polyval, packed_aes_128};
+		pub use portable::{packed_256, packed_512, packed_aes_256, packed_aes_512, packed_polyval_256, packed_polyval_512};
 	} else {
 		mod portable;
 		pub use portable::{packed_128, packed_256, packed_512, packed_aes_128, packed_aes_256, packed_aes_512, polyval, packed_polyval_256, packed_polyval_512};
