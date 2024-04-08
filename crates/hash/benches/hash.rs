@@ -1,5 +1,5 @@
-use binius_core::hash::{hash as hash_data, GroestlHasher};
 use binius_field::{BinaryField8b, Field};
+use binius_hash::{hash as hash_data, GroestlHasher};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::thread_rng;
 use std::{any::type_name, iter::repeat_with, mem};

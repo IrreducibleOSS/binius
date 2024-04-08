@@ -1,6 +1,5 @@
 use binius_core::{
 	challenger::HashChallenger,
-	hash::GroestlHasher,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -25,6 +24,7 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, ExtensionField, PackedBinaryField128x1b,
 	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 };
+use binius_hash::GroestlHasher;
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;

@@ -8,6 +8,7 @@ authors.workspace = true
 anyhow.workspace = true
 binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
+binius_hash = { path = "../crates/hash" }
 bytemuck.workspace = true
 p3-challenger.workspace = true
 rand.workspace = true

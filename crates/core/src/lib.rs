@@ -7,7 +7,6 @@
 #![allow(clippy::suspicious_op_assign_impl)]
 
 pub mod challenger;
-pub mod hash;
 pub mod linalg;
 pub mod linear_code;
 pub mod merkle_tree;

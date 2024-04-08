@@ -7,13 +7,11 @@ authors.workspace = true
 [dependencies]
 assert_matches.workspace = true
 binius_field = { path = "../field" }
+binius_hash = { path = "../hash" }
 binius_utils = { path = "../utils" }
 bytemuck.workspace = true
 derive_more.workspace = true
-digest.workspace = true
 getset.workspace = true
-groestl.workspace = true
-hex-literal.workspace = true
 itertools.workspace = true
 p3-challenger.workspace = true
 p3-matrix.workspace = true
@@ -39,10 +37,6 @@ bench = false
 
 [[bench]]
 name = "additive_ntt"
-harness = false
-
-[[bench]]
-name = "hash"
 harness = false
 
 [[bench]]

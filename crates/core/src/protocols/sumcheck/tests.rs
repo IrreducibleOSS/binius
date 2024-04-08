@@ -2,7 +2,6 @@
 
 use crate::{
 	challenger::HashChallenger,
-	hash::GroestlHasher,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
@@ -17,6 +16,7 @@ use crate::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, Field, TowerField};
+use binius_hash::GroestlHasher;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;

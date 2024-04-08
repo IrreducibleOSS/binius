@@ -1,0 +1,25 @@
+[package]
+name = "binius_hash"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_field = { path = "../field" }
+binius_utils = { path = "../utils"}
+p3-symmetric.workspace = true
+bytemuck.workspace = true
+digest.workspace = true
+groestl.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+hex-literal.workspace = true
+rand.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "hash"
+harness = false

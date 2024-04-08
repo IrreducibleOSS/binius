@@ -9,8 +9,8 @@ use super::{
 	error::{Error, VerificationError},
 	vcs::VectorCommitScheme,
 };
-use crate::hash::Hasher;
 use binius_field::PackedField;
+use binius_hash::Hasher;
 
 /// A binary Merkle tree that commits batches of vectors.
 ///
@@ -249,9 +249,9 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::hash::{GroestlDigestCompression, GroestlHasher};
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField16b, Field};
+	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use rand::{rngs::StdRng, SeedableRng};
 
 	#[test]

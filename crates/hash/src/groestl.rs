@@ -1,7 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::hasher::Hasher;
-use crate::hash::hash;
+use super::{hash, hasher::Hasher};
 use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField32x8b, PackedExtensionField};
 use bytemuck::{must_cast_slice, must_cast_slice_mut};
 use digest::Digest;

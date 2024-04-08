@@ -9,7 +9,6 @@ use tracing::instrument;
 
 use super::error::{Error, VerificationError};
 use crate::{
-	hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher},
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
@@ -24,6 +23,7 @@ use binius_field::{
 	util::inner_product_unchecked,
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtensionField, PackedField,
 };
+use binius_hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher};
 
 /// Creates a new multilinear from a batch of multilinears and a mixing challenge
 ///

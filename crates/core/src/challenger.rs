@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 // Copyright (c) 2022-2023 The Plonky3 Authors
-use crate::hash::Hasher;
 use binius_field::{ExtensionField, Field, PackedExtensionField, PackedField};
+use binius_hash::Hasher;
 use bytemuck::{bytes_of, AnyBitPattern, Pod};
 pub use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::{mem, ops::Range, slice};
@@ -187,8 +187,8 @@ fn get_bits_le(bytes: &[u8], bit_range: Range<usize>) -> u32 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::hash::GroestlHasher;
 	use binius_field::{BinaryField128b, BinaryField64b, BinaryField8b};
+	use binius_hash::GroestlHasher;
 
 	#[test]
 	fn test_get_bits_le() {

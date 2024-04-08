@@ -1,6 +1,5 @@
 use binius_core::{
 	challenger::HashChallenger,
-	hash::GroestlHasher,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
@@ -15,6 +14,7 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField8b, ExtensionField, Field,
 	PackedField, TowerField,
 };
+use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
 use std::{fmt::Debug, iter::repeat_with, mem, sync::Arc};
