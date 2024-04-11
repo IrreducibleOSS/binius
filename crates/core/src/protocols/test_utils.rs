@@ -8,8 +8,9 @@ use crate::{
 	protocols::{
 		evalcheck::EvalcheckClaim,
 		sumcheck::{
-			setup_first_round_claim, verify_final, verify_round, SumcheckClaim, SumcheckProof,
-			SumcheckProveOutput, SumcheckProverState, SumcheckRoundClaim, SumcheckWitness,
+			setup_first_round_claim, verify_final, verify_round, verify_zerocheck_round,
+			SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckProverState,
+			SumcheckRoundClaim, SumcheckWitness,
 		},
 	},
 };
@@ -150,51 +151,49 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
+	assert!(n_vars > 0);
+	let is_zerocheck = claim.zerocheck_challenges.is_some();
+
 	let n_rounds = proof.rounds.len();
 	assert_eq!(n_rounds, n_vars);
 
 	let mut rd_claim = setup_first_round_claim(claim);
 	let mut rd_claims = Vec::with_capacity(n_rounds);
-	for round_proof in proof.rounds {
+	for (i, round_proof) in proof.rounds.into_iter().enumerate() {
 		rd_claims.push(rd_claim.clone());
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim = verify_round(rd_claim, challenger.sample(), round_proof.clone()).unwrap();
+		rd_claim = if is_zerocheck {
+			let alpha = if i == 0 {
+				None
+			} else {
+				Some(claim.zerocheck_challenges.clone().unwrap()[i - 1])
+			};
+			verify_zerocheck_round(rd_claim, challenger.sample(), round_proof.clone(), alpha)
+				.unwrap()
+		} else {
+			verify_round(rd_claim, challenger.sample(), round_proof.clone()).unwrap()
+		};
 	}
 
 	let final_claim = verify_final(&claim.poly, rd_claim).unwrap();
 	(rd_claims, final_claim)
 }
 
-#[instrument(skip_all, name = "test_utils::full_prove_with_switchover")]
-pub fn full_prove_with_switchover<F, PW, C, CW, M, CH>(
-	claim: &SumcheckClaim<F, C>,
-	witness: SumcheckWitness<PW, CW, M>,
-	domain: &EvaluationDomain<F>,
+fn full_prove_with_switchover_impl<F, PW, C, PCW, M, CH>(
+	n_vars: usize,
+	mut prover_state: SumcheckProverState<F, PW, C, PCW, M>,
 	mut challenger: CH,
-	switchover: usize,
 ) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, C>)
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
 	C: CompositionPoly<F>,
-	CW: CompositionPoly<PW>,
+	PCW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let n_vars = claim.poly.n_vars();
-
-	assert!(switchover > 0);
-	assert_eq!(witness.n_vars(), n_vars);
-
-	let switchovers = repeat(switchover)
-		.take(witness.n_multilinears())
-		.collect::<Vec<_>>();
-
-	let mut prover_state =
-		SumcheckProverState::new(domain, claim.clone(), witness, &switchovers).unwrap();
-
 	let mut prev_rd_challenge = None;
 	let mut rd_claims = Vec::with_capacity(n_vars);
 	let mut rd_proofs = Vec::with_capacity(n_vars);
@@ -217,4 +216,35 @@ where
 	};
 
 	(rd_claims, prove_output)
+}
+
+#[instrument(skip_all, name = "test_utils::full_prove_with_switchover")]
+pub fn full_prove_with_switchover<F, PW, C, CW, M, CH>(
+	claim: &SumcheckClaim<F, C>,
+	witness: SumcheckWitness<PW, CW, M>,
+	domain: &EvaluationDomain<F>,
+	challenger: CH,
+	switchover: usize,
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, C>)
+where
+	F: Field + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	C: CompositionPoly<F>,
+	CW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Clone + Sync,
+	CH: CanSample<F> + CanObserve<F>,
+{
+	let n_vars = claim.poly.n_vars();
+
+	assert!(switchover > 0);
+	assert_eq!(witness.n_vars(), n_vars);
+
+	let switchovers = repeat(switchover)
+		.take(witness.n_multilinears())
+		.collect::<Vec<_>>();
+
+	let prover_state =
+		SumcheckProverState::new(domain, claim.clone(), witness, &switchovers).unwrap();
+	full_prove_with_switchover_impl(n_vars, prover_state, challenger)
 }

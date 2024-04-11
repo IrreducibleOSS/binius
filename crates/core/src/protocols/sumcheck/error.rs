@@ -24,6 +24,12 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
+	#[error("the claimed sum for a sumcheck that came from zerocheck must be zero")]
+	ExpectedClaimedSumToBeZero,
+	#[error("did not expect a zerocheck challenge")]
+	UnexpectedZerocheckChallengeFound,
+	#[error("expected to see a zerocheck challenge")]
+	ExpectedZerocheckChallengeNotFound,
 	#[error("round proof must have at least one coefficient")]
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]

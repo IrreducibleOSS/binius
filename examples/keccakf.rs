@@ -823,6 +823,7 @@ where
 	let mixed_sumcheck_claim = SumcheckClaim {
 		poly,
 		sum: mixed_sum,
+		zerocheck_challenges: None,
 	};
 
 	let mixed_sumcheck_witness = witness_index
@@ -908,7 +909,7 @@ where
 	PCS::Proof: 'static,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.to_index(fixed_oracle, trace_oracle);
+	let mut trace_witness = witness.to_index::<_, PW>(fixed_oracle, trace_oracle);
 
 	// Round 1
 	let trace_commit_polys = witness
@@ -951,20 +952,13 @@ where
 	let zerocheck_witness = zerocheck_prover_witness(log_size, witness, mix_composition_prover)?;
 
 	// Zerocheck
-	let zerocheck_challenge = challenger.sample_vec(log_size);
+	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
 
 	let ZerocheckProveOutput {
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = zerocheck::prove(
-		oracles,
-		&mut trace_witness,
-		&zerocheck_claim,
-		zerocheck_witness,
-		zerocheck_challenge,
-	)
-	.unwrap();
+	} = zerocheck::prove(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
 
 	// Sumcheck
 	let sumcheck_domain =
@@ -1117,14 +1111,14 @@ where
 		make_constraints(fixed_oracle, trace_oracle, &zerocheck_column_ids, mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_challenge = challenger.sample_vec(log_size);
+	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
 
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(log_size, zerocheck_column_oracles, mix_composition)?,
 	};
 
 	let sumcheck_claim =
-		zerocheck::verify(oracles, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
+		zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Sumcheck
 	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);

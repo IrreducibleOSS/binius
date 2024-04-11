@@ -2,53 +2,19 @@
 
 use super::{
 	error::Error,
-	zerocheck::{
-		ProductComposition, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
-	},
+	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness},
 };
-use crate::{
-	oracle::MultilinearOracleSet,
-	polynomial::{
-		transparent::eq_ind::EqIndPartialEval, CompositionPoly, Error as PolynomialError,
-		MultilinearComposite, MultilinearPoly,
-	},
-	protocols::zerocheck::zerocheck::reduce_zerocheck_claim,
-	witness::MultilinearWitnessIndex,
-};
+use crate::{polynomial::CompositionPoly, protocols::zerocheck::zerocheck::reduce_zerocheck_claim};
 use binius_field::{PackedField, TowerField};
 use tracing::instrument;
 
-fn multiply_multilinear_composite<P, C, M>(
-	composite: MultilinearComposite<P, C, M>,
-	new_multilinear: M,
-) -> Result<MultilinearComposite<P, ProductComposition<C>, M>, PolynomialError>
-where
-	P: PackedField,
-	C: CompositionPoly<P>,
-	M: MultilinearPoly<P>,
-{
-	let n_vars: usize = composite.n_vars();
-	let composition = ProductComposition::new(composite.composition);
-	let mut multilinears = composite.multilinears;
-	multilinears.push(new_multilinear);
-
-	MultilinearComposite::new(n_vars, composition, multilinears)
-}
-
 /// Prove a zerocheck instance reduction.
-///
-/// The input polynomial is a composition of multilinear polynomials over a field F. The routine is
-/// also parameterized by an operating field OF, which is isomorphic to F and over which the
-/// majority of field operations are to be performed.
-/// Takes a challenge vector r as input
 #[instrument(skip_all, name = "zerocheck::prove")]
 pub fn prove<'a, F, PW, C, CW>(
-	oracles: &mut MultilinearOracleSet<F>,
-	witness: &mut MultilinearWitnessIndex<'a, PW>,
 	zerocheck_claim: &ZerocheckClaim<F, C>,
 	zerocheck_witness: ZerocheckWitness<'a, PW, CW>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<'a, F, PW, ProductComposition<C>, ProductComposition<CW>>, Error>
+) -> Result<ZerocheckProveOutput<'a, F, PW, C, CW>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField,
@@ -58,38 +24,16 @@ where
 {
 	let n_vars = zerocheck_witness.n_vars();
 
-	if challenge.len() != n_vars {
+	if challenge.len() + 1 != n_vars {
 		return Err(Error::ChallengeVectorMismatch);
 	}
 
-	// Step 1: Construct a multilinear polynomial eq(X, Y) on 2*n_vars variables
-	// partially evaluated at r, will refer to this multilinear polynomial
-	// as eq_r(X) on n_vars variables
-	let wf_challenge = challenge
-		.iter()
-		.copied()
-		.map(Into::into)
-		.collect::<Vec<PW::Scalar>>();
+	let sumcheck_claim = reduce_zerocheck_claim(zerocheck_claim, challenge)?;
 
-	let eq_r = EqIndPartialEval::<PW>::new(n_vars, wf_challenge)?
-		.multilinear_extension()?
-		.specialize_arc_dyn();
-
-	// Step 2: Multiply eq_r(X) by poly to get a new multivariate polynomial
-	// and represent it as a Multilinear composite
-	let sumcheck_witness = multiply_multilinear_composite(zerocheck_witness, eq_r.clone())?;
-
-	// Step 3: Make Sumcheck Claim on New Polynomial
-	let (sumcheck_claim, eq_r_id) = reduce_zerocheck_claim(oracles, zerocheck_claim, challenge)?;
-
-	// Step 4: Add the eq_r polynomial to the trace witness
-	witness.set(eq_r_id, eq_r);
-
-	// Step 5: Wrap everything up
 	let zerocheck_proof = ZerocheckProof;
 	Ok(ZerocheckProveOutput {
 		sumcheck_claim,
-		sumcheck_witness,
+		sumcheck_witness: zerocheck_witness,
 		zerocheck_proof,
 	})
 }
@@ -98,9 +42,10 @@ where
 mod tests {
 	use super::*;
 	use crate::{
-		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle},
-		polynomial::MultilinearExtension,
+		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
+		polynomial::{MultilinearComposite, MultilinearExtension},
 		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
+		witness::MultilinearWitnessIndex,
 	};
 	use binius_field::{BinaryField32b, Field};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -163,23 +108,15 @@ mod tests {
 
 		// Setup challenge
 		let challenge = repeat_with(|| Field::random(&mut rng))
-			.take(n_vars)
+			.take(n_vars - 1)
 			.collect::<Vec<_>>();
 
 		// PROVER
-		let prove_output = prove(
-			&mut oracles.clone(),
-			&mut witness,
-			&zerocheck_claim,
-			zerocheck_witness,
-			challenge.clone(),
-		)
-		.unwrap();
+		let prove_output = prove(&zerocheck_claim, zerocheck_witness, challenge.clone()).unwrap();
 
 		let proof = prove_output.zerocheck_proof;
 		// VERIFIER
-		let sumcheck_claim =
-			verify(&mut oracles.clone(), &zerocheck_claim, proof, challenge).unwrap();
+		let sumcheck_claim = verify(&zerocheck_claim, proof, challenge).unwrap();
 		assert_eq!(sumcheck_claim.sum, F::ZERO);
 		assert_eq!(sumcheck_claim.poly.n_vars(), n_vars);
 		assert_eq!(prove_output.sumcheck_claim.sum, F::ZERO);

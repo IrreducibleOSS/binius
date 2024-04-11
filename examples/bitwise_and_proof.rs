@@ -92,7 +92,7 @@ where
 
 	assert_eq!(pcs.n_vars(), log_size);
 
-	let mut witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
+	let witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
 
 	assert_eq!(constraints.len(), 1);
 	let constraint = constraints[0].clone();
@@ -112,7 +112,7 @@ where
 	drop(commit_scope);
 
 	// Round 2
-	let zerocheck_challenge = challenger.sample_vec(log_size);
+	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
 	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
 		log_size,
 		constraint.composition(),
@@ -130,14 +130,7 @@ where
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = prove_zerocheck(
-		trace,
-		&mut witness_index,
-		&zerocheck_claim,
-		zerocheck_witness,
-		zerocheck_challenge,
-	)
-	.unwrap();
+	} = prove_zerocheck(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
 
 	let sumcheck_domain =
 		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
@@ -244,12 +237,12 @@ fn verify<PCS, CH>(
 	// Observe the trace commitments
 	challenger.observe(abc_comm.clone());
 
-	let zerocheck_challenge = challenger.sample_vec(log_size);
+	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
 
 	// Run zerocheck protocol
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 	let sumcheck_claim =
-		verify_zerocheck(trace, &zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
+		verify_zerocheck(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Run sumcheck protocol
 	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);

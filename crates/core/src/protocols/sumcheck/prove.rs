@@ -3,15 +3,16 @@
 use super::{
 	error::Error,
 	sumcheck::{
-		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, SumcheckClaim, SumcheckRound,
-		SumcheckRoundClaim, SumcheckWitness,
+		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, reduce_zerocheck_claim_round,
+		SumcheckClaim, SumcheckRound, SumcheckRoundClaim, SumcheckWitness,
 	},
 };
 use crate::{
 	oracle::CompositePolyOracle,
 	polynomial::{
-		extrapolate_line, multilinear_query::MultilinearQuery, CompositionPoly, EvaluationDomain,
-		MultilinearExtensionSpecialized, MultilinearPoly,
+		extrapolate_line, multilinear_query::MultilinearQuery,
+		transparent::eq_ind::EqIndPartialEval, CompositionPoly, EvaluationDomain,
+		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly,
 	},
 	protocols::evalcheck::EvalcheckClaim,
 };
@@ -47,13 +48,61 @@ struct ParFoldState<F: Field> {
 }
 
 impl<F: Field> ParFoldState<F> {
-	fn new(n_multilinears: usize, degree: usize) -> Self {
+	fn new(n_multilinears: usize, n_round_evals: usize) -> Self {
 		Self {
 			evals_0: vec![F::ZERO; n_multilinears],
 			evals_1: vec![F::ZERO; n_multilinears],
 			evals_z: vec![F::ZERO; n_multilinears],
-			round_evals: vec![F::ZERO; degree],
+			round_evals: vec![F::ZERO; n_round_evals],
 		}
+	}
+}
+
+#[derive(Debug)]
+struct ZerocheckAuxiliaryState<F, PW>
+where
+	F: Field,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+{
+	challenges: Vec<F>,
+	round_eq_ind: MultilinearExtension<'static, PW::Scalar>,
+}
+
+impl<F, PW> ZerocheckAuxiliaryState<F, PW>
+where
+	F: Field,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+{
+	// Update the round_eq_ind for the next sumcheck round
+	//
+	// Let
+	//  * $n$ be the number of variables in the sumcheck claim
+	//  * $eq_k(X, Y)$ denote the equality indicator polynomial on $2 * k$ variables.
+	//  * $\alpha_1, \ldots, \alpha_{n-1}$ be the $n-1$ zerocheck challenges
+	// In round $i$, before computing the round polynomial, we seek the invariant that
+	// * round_eq_ind is MLE of $eq_{n-i-1}(X, Y)$ partially evaluated at $Y = (\alpha_{i+1}, \ldots, \alpha_{n-1})$.
+	//
+	// To update the round_eq_ind, from $eq_{n-i}(X, \alpha_i, \ldots, \alpha_{n-1})$
+	// to $eq_{n-i-1}(X, \alpha_{i+1}, \ldots, \alpha_{n-1})$, we sum consecutive hypercube evaluations.
+	//
+	// For example consider the hypercube evaluations of $eq_2(X, $\alpha_1, \alpha_2)$
+	// * [$(1-\alpha_1) * (1-\alpha_2)$, $\alpha_1 * (1-\alpha_2)$, $(1-\alpha_1) * \alpha_2$, $\alpha_1 * \alpha_2$]
+	// and consider the hypercube evaluations of $eq_1(X, \alpha_2)$
+	// * [$(1-\alpha_2)$, $\alpha_2$]
+	// We obtain the ith hypercube evaluation of $eq_1(X, \alpha_2)$ by summing the $(2*i)$ and $(2*i+1)$
+	// hypercube evaluations of $eq_2(X, \alpha_1, \alpha_2)$.
+	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
+		let current_evals = self.round_eq_ind.evals();
+		let mut new_evals = vec![PW::Scalar::default(); current_evals.len() >> 1];
+		new_evals.par_iter_mut().enumerate().for_each(|(i, e)| {
+			*e = current_evals[i << 1] + current_evals[(i << 1) + 1];
+		});
+		let new_multilin = MultilinearExtension::from_values(new_evals)?;
+		self.round_eq_ind = new_multilin;
+
+		Ok(())
 	}
 }
 
@@ -102,6 +151,7 @@ where
 
 	round: usize,
 	last_round_proof: Option<SumcheckRound<F>>,
+	zerocheck_aux_state: Option<ZerocheckAuxiliaryState<F, PW>>,
 	_m_marker: PhantomData<M>,
 }
 
@@ -175,6 +225,23 @@ where
 			current_round_sum: sumcheck_claim.sum,
 		};
 
+		let zerocheck_aux_state =
+			if let Some(zc_challenges) = sumcheck_claim.zerocheck_challenges.clone() {
+				let pw_challenges = zc_challenges
+					.iter()
+					.map(|&f| f.into())
+					.collect::<Vec<PW::Scalar>>();
+
+				let round_eq_multilin =
+					EqIndPartialEval::new(n_vars - 1, pw_challenges)?.multilinear_extension()?;
+				Some(ZerocheckAuxiliaryState {
+					challenges: zc_challenges,
+					round_eq_ind: round_eq_multilin,
+				})
+			} else {
+				None
+			};
+
 		let prover_state = SumcheckProverState {
 			oracle: sumcheck_claim.poly,
 			composition,
@@ -184,6 +251,7 @@ where
 			round_claim,
 			round: 0,
 			last_round_proof: None,
+			zerocheck_aux_state,
 			_m_marker: PhantomData,
 		};
 
@@ -216,6 +284,80 @@ where
 		reduce_sumcheck_claim_final(&self.oracle, self.round_claim)
 	}
 
+	fn is_zerocheck(&self) -> bool {
+		self.zerocheck_aux_state.is_some()
+	}
+
+	fn zerocheck_challenges(&self) -> Option<&Vec<F>> {
+		self.zerocheck_aux_state.as_ref().map(|aux| &aux.challenges)
+	}
+
+	fn zerocheck_eq_ind(&self) -> Option<&MultilinearExtension<'static, PW::Scalar>> {
+		self.zerocheck_aux_state
+			.as_ref()
+			.map(|aux| &aux.round_eq_ind)
+	}
+
+	fn get_round_polynomial_degree(&self) -> usize {
+		self.composition.degree()
+	}
+
+	fn evals_to_coeffs(
+		&self,
+		mut evals: Vec<F>,
+		domain: &EvaluationDomain<F>,
+	) -> Result<Vec<F>, Error> {
+		// We have partial information about the degree $d$ univariate round polynomial $r(X)$,
+		// but in each of the following cases, we can complete the picture and attain evaluations
+		// at $r(0), \ldots, r(d+1)$.
+		if let Some(zc_challenges) = self.zerocheck_challenges() {
+			if self.round == 0 {
+				// This is the case where we are processing the first round of a sumcheck that came from zerocheck.
+				// We are given $r(2), \ldots, r(d+1)$.
+				// From context, we infer that $r(0) = r(1) = 0$.
+				evals.insert(0, F::ZERO);
+				evals.insert(0, F::ZERO);
+			} else {
+				// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d+1)$
+				// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
+				// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
+				// which allows us to compute the value of $r(0)$
+				let alpha = zc_challenges[self.round - 1];
+				let alpha_bar = F::ONE - alpha;
+				let one_evaluation = evals[0];
+				let zero_evaluation_numerator =
+					self.round_claim().current_round_sum - one_evaluation * alpha;
+				let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap();
+				let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
+
+				evals.insert(0, zero_evaluation);
+			}
+		} else {
+			// In the case where this is a sumcheck that did not come from zerocheck,
+			// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
+			// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
+			evals.insert(0, self.round_claim().current_round_sum - evals[0]);
+		}
+
+		assert_eq!(evals.len(), domain.size());
+		let coeffs = domain.interpolate(&evals)?;
+		Ok(coeffs)
+	}
+
+	// NB: Can omit some coefficients to reduce proof size because verifier can compute
+	// these missing coefficients.
+	// This is documented in detail in the common prover-verifier logic for
+	// reducing a sumcheck round claim.
+	fn trim_coeffs<T: Clone>(&self, coeffs: Vec<T>) -> Vec<T> {
+		if self.is_zerocheck() && self.round == 0 {
+			coeffs[2..].to_vec()
+		} else if self.is_zerocheck() {
+			coeffs[1..].to_vec()
+		} else {
+			coeffs[..coeffs.len() - 1].to_vec()
+		}
+	}
+
 	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::execute_round")]
 	pub fn execute_round(
 		&mut self,
@@ -230,6 +372,14 @@ where
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given
 		if let Some(prev_rd_challenge) = prev_rd_challenge {
+			// If zerocheck, update round_eq_ind
+			if self.is_zerocheck() {
+				self.zerocheck_aux_state
+					.as_mut()
+					.unwrap()
+					.update_round_eq_ind()?;
+			}
+
 			// Process switchovers of small field multilinears and folding of large field ones
 			self.handle_switchover_and_fold(prev_rd_challenge.into())?;
 
@@ -262,7 +412,7 @@ where
 			.iter()
 			.any(|ml| matches!(ml, SumcheckMultilinear::Folded { .. }));
 
-		let mut evals = match (round, any_transparent, any_folded) {
+		let evals = match (round, any_transparent, any_folded) {
 			// All transparent, first round - direct sampling
 			(0, true, false) => {
 				self.sum_to_round_evals(&wf_domain, Self::only_transparent, Self::direct_sample)
@@ -295,39 +445,18 @@ where
 					} => Self::direct_sample(large_field_folded_multilin, i),
 				},
 			),
+		}?;
+
+		let untrimmed_coeffs = self.evals_to_coeffs(evals, self.domain)?;
+		let trimmed_coeffs = self.trim_coeffs(untrimmed_coeffs);
+		let proof_round = SumcheckRound {
+			coeffs: trimmed_coeffs,
 		};
+		self.last_round_proof = Some(proof_round.clone());
 
 		self.round += 1;
 
-		evals.insert(0, self.round_claim.current_round_sum - evals[0]);
-		let mut coeffs = self.domain.interpolate(&evals)?;
-		// Omit the last coefficient because the verifier can compute it themself
-		coeffs.truncate(coeffs.len() - 1);
-
-		let proof_round = SumcheckRound { coeffs };
-		self.last_round_proof = Some(proof_round.clone());
 		Ok(proof_round)
-	}
-
-	fn only_transparent(sc_multilin: &SumcheckMultilinear<PW, M>) -> &M {
-		match sc_multilin {
-			SumcheckMultilinear::Transparent {
-				small_field_multilin,
-				..
-			} => small_field_multilin.borrow(),
-			_ => panic!("all transparent by invariant"),
-		}
-	}
-
-	fn only_folded(
-		sc_multilin: &SumcheckMultilinear<PW, M>,
-	) -> &MultilinearExtensionSpecialized<'static, PW, PW> {
-		match sc_multilin {
-			SumcheckMultilinear::Folded {
-				large_field_folded_multilin,
-			} => large_field_folded_multilin,
-			_ => panic!("all folded by invariant"),
-		}
 	}
 
 	// Note the generic parameter - this method samples small field in first round and
@@ -361,33 +490,42 @@ where
 		(eval0, eval1)
 	}
 
-	// The gist of sumcheck - summing over evaluations of the multivariate composite on evaluation domain
-	// for the remaining variables: there are `round-1` already assigned variables with values from large
-	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
-	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
-	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
-	fn sum_to_round_evals<'b, T>(
-		&'b self,
+	fn only_transparent(sc_multilin: &SumcheckMultilinear<PW, M>) -> &M {
+		match sc_multilin {
+			SumcheckMultilinear::Transparent {
+				small_field_multilin,
+				..
+			} => small_field_multilin.borrow(),
+			_ => panic!("all transparent by invariant"),
+		}
+	}
+
+	fn only_folded(
+		sc_multilin: &SumcheckMultilinear<PW, M>,
+	) -> &MultilinearExtensionSpecialized<'static, PW, PW> {
+		match sc_multilin {
+			SumcheckMultilinear::Folded {
+				large_field_folded_multilin,
+			} => large_field_folded_multilin,
+			_ => panic!("all folded by invariant"),
+		}
+	}
+
+	fn calculate_fold_result_sumcheck<'b, T>(
+		&self,
+		rd_vars: usize,
+		n_multilinears: usize,
+		n_round_evals: usize,
 		eval_points: &[PW::Scalar],
-		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
+		precomps: Vec<T>,
 	) -> Vec<F>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
 	{
-		let rd_vars = self.n_vars() - self.round;
-
-		let n_multilinears = self.multilinears.len();
-		let degree = self.composition.degree();
-
-		debug_assert_eq!(eval_points.len(), degree + 1);
-
-		// When there is some unpacking to do on each multilinear, hoist it out of the tight loop.
-		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
-
 		let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
-			|| ParFoldState::new(n_multilinears, degree),
+			|| ParFoldState::new(n_multilinears, n_round_evals),
 			|mut state, i| {
 				for (j, precomp) in precomps.iter().enumerate() {
 					let (eval0, eval1) = eval01(*precomp, i);
@@ -395,7 +533,7 @@ where
 					state.evals_1[j] = eval1;
 				}
 
-				process_round_evals::<PW, CW>(
+				process_round_evals_sumcheck::<PW, CW>(
 					&self.composition,
 					&state.evals_0,
 					&state.evals_1,
@@ -410,7 +548,7 @@ where
 
 		// Simply sum up the fold partitions.
 		let wf_round_evals = fold_result.map(|state| state.round_evals).reduce(
-			|| vec![PW::Scalar::ZERO; degree],
+			|| vec![PW::Scalar::ZERO; n_round_evals],
 			|mut overall_round_evals, partial_round_evals| {
 				overall_round_evals
 					.iter_mut()
@@ -421,6 +559,124 @@ where
 		);
 
 		wf_round_evals.into_iter().map(Into::into).collect()
+	}
+
+	fn calculate_fold_result_zerocheck<'b, T>(
+		&self,
+		rd_vars: usize,
+		n_multilinears: usize,
+		n_round_evals: usize,
+		eval_points: &[PW::Scalar],
+		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
+		precomps: Vec<T>,
+	) -> Vec<F>
+	where
+		T: Copy + Sync + 'b,
+		M: 'b,
+	{
+		let zerocheck_eq_ind = self
+			.zerocheck_eq_ind()
+			.expect("zerocheck eq ind available by invariant");
+
+		let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
+			|| ParFoldState::new(n_multilinears, n_round_evals),
+			|mut state, i| {
+				for (j, precomp) in precomps.iter().enumerate() {
+					let (eval0, eval1) = eval01(*precomp, i);
+					state.evals_0[j] = eval0;
+					state.evals_1[j] = eval1;
+				}
+
+				let zerocheck_eq_factor = zerocheck_eq_ind
+					.evaluate_on_hypercube(i)
+					.expect("zerocheck eq ind hypercube eval within range");
+
+				process_round_evals_zerocheck::<PW, CW>(
+					zerocheck_eq_factor,
+					&self.composition,
+					&state.evals_0,
+					&state.evals_1,
+					&mut state.evals_z,
+					&mut state.round_evals,
+					eval_points,
+				);
+
+				state
+			},
+		);
+
+		// Simply sum up the fold partitions.
+		let wf_round_evals = fold_result.map(|state| state.round_evals).reduce(
+			|| vec![PW::Scalar::ZERO; n_round_evals],
+			|mut overall_round_evals, partial_round_evals| {
+				overall_round_evals
+					.iter_mut()
+					.zip(partial_round_evals.iter())
+					.for_each(|(f, s)| *f += s);
+				overall_round_evals
+			},
+		);
+
+		wf_round_evals.into_iter().map(Into::into).collect()
+	}
+
+	// The gist of sumcheck - summing over evaluations of the multivariate composite on evaluation domain
+	// for the remaining variables: there are `round-1` already assigned variables with values from large
+	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
+	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
+	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
+	fn sum_to_round_evals<'b, T>(
+		&'b self,
+		eval_points: &[PW::Scalar],
+		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
+		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
+	) -> Result<Vec<F>, Error>
+	where
+		T: Copy + Sync + 'b,
+		M: 'b,
+	{
+		let rd_vars = self.n_vars() - self.round;
+		let n_multilinears = self.multilinears.len();
+		let n_round_evals = {
+			if self.round == 0 && self.is_zerocheck() {
+				// In the very first round of a sumcheck that comes from zerocheck
+				// we can uniquely determine the degree d univariate round polynomial r
+				// with evaluations at X = 2, ..., d+1 because we know r(0) = r(1) = 0
+				self.get_round_polynomial_degree() - 1
+			} else {
+				// Generally, we can uniquely derive the degree d univariate round polynomial r
+				// from evaluations at X = 1, ..., d+1 because we have an identity that
+				// relates r(0), r(1), and the current round's claimed sum
+				self.get_round_polynomial_degree()
+			}
+		};
+		debug_assert_eq!(eval_points.len(), self.get_round_polynomial_degree() + 1);
+
+		// When possible to pre-process unpacking sumcheck multilinears, we do so.
+		// For performance, it's ideal to hoist this out of the tight loop.
+		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
+
+		// Note: to avoid extra logic inside the tight loop, we have two separate implementations at the cost
+		// of slight code duplication. This is a tradeoff for better performance.
+		if self.is_zerocheck() {
+			Ok(self.calculate_fold_result_zerocheck(
+				rd_vars,
+				n_multilinears,
+				n_round_evals,
+				eval_points,
+				eval01,
+				precomps,
+			))
+		} else {
+			Ok(self.calculate_fold_result_sumcheck(
+				rd_vars,
+				n_multilinears,
+				n_round_evals,
+				eval_points,
+				eval01,
+				precomps,
+			))
+		}
 	}
 
 	fn validate_rd_challenge(&self, prev_rd_challenge: Option<F>) -> Result<(), Error> {
@@ -436,14 +692,26 @@ where
 	}
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
-		self.round_claim = reduce_sumcheck_claim_round(
-			self.round_claim.clone(),
-			prev_rd_challenge,
-			self.last_round_proof
-				.as_ref()
-				.expect("not first round by invariant")
-				.clone(),
-		)?;
+		let round_claim = self.round_claim.clone();
+		let round_proof = self
+			.last_round_proof
+			.as_ref()
+			.expect("round is at least 1 by invariant")
+			.clone();
+
+		let new_round_claim = if let Some(zc_challenges) = self.zerocheck_challenges() {
+			let alpha = if self.round == 1 {
+				None
+			} else {
+				Some(zc_challenges[self.round - 2])
+			};
+			reduce_zerocheck_claim_round(round_claim, prev_rd_challenge, round_proof, alpha)
+		} else {
+			reduce_sumcheck_claim_round(round_claim, prev_rd_challenge, round_proof)
+		}?;
+
+		self.round_claim = new_round_claim;
+
 		Ok(())
 	}
 
@@ -511,8 +779,7 @@ where
 // Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some index,
 // uses them to linearly interpolate each MLE value at domain point, and then evaluate multivariate
 // composite over those.
-// NB: Evaluation at 0 is not computed, due to it being derivable from the claim (sum = eval_0 + eval_1).
-fn process_round_evals<P: PackedField, C: CompositionPoly<P> + ?Sized>(
+fn process_round_evals_sumcheck<P: PackedField, C: CompositionPoly<P> + ?Sized>(
 	composition: &C,
 	evals_0: &[P::Scalar],
 	evals_1: &[P::Scalar],
@@ -521,8 +788,9 @@ fn process_round_evals<P: PackedField, C: CompositionPoly<P> + ?Sized>(
 	domain: &[P::Scalar],
 ) {
 	let degree = domain.len() - 1;
+	// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the current_round_sum - $r(1)$.
+	assert!(domain.len() - round_evals.len() == 1);
 
-	// Having evaluation at 1, can directly compute multivariate there.
 	round_evals[0] += composition
 		.evaluate(evals_1)
 		.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
@@ -536,9 +804,57 @@ fn process_round_evals<P: PackedField, C: CompositionPoly<P> + ?Sized>(
 			.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
 				*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, domain[d]);
 			});
+
 		round_evals[d - 1] += composition
 			.evaluate(evals_z)
 			.expect("evals_z is initialized with a length of poly.composition.n_vars()");
+	}
+}
+
+// Zerocheck evaluation at a specific point - given an array of 0 & 1 evaluations at some index,
+// uses them to linearly interpolate each MLE value at domain point, and then evaluate multivariate
+// composite over those.
+// This is a special version of the function used when the sumcheck claim came directly from a zerocheck reduction.
+fn process_round_evals_zerocheck<P: PackedField, C: CompositionPoly<P> + ?Sized>(
+	zerocheck_eq_ind_factor: P::Scalar,
+	composition: &C,
+	evals_0: &[P::Scalar],
+	evals_1: &[P::Scalar],
+	evals_z: &mut [P::Scalar],
+	round_evals: &mut [P::Scalar],
+	domain: &[P::Scalar],
+) {
+	let degree = domain.len() - 1;
+	// NB: We should skip evaluating $r(X)$ at $X = 0$, and in some contexts, also skip at $X = 1$.
+	// Generally, we can skip evaluation at 0;
+	// * It can be dervied from current_round_sum, zerocheck_eq_ind_factor, and $r(1)$.
+	// However, in the special case where this is the first round of zerocheck, we know
+	// * $r(0) = r(1) = 0$.
+	// We can therefore skip explicit evaluations at $X = 0$ and $X = 1$.
+	let n_skipped_evaluations = domain.len() - round_evals.len();
+	assert!((1..=2).contains(&n_skipped_evaluations));
+
+	if n_skipped_evaluations == 1 {
+		round_evals[0] += zerocheck_eq_ind_factor
+			* composition
+				.evaluate(evals_1)
+				.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
+	}
+
+	// The rest require interpolation.
+	for d in 2..degree + 1 {
+		evals_0
+			.iter()
+			.zip(evals_1.iter())
+			.zip(evals_z.iter_mut())
+			.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
+				*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, domain[d]);
+			});
+
+		round_evals[d - n_skipped_evaluations] += zerocheck_eq_ind_factor
+			* composition
+				.evaluate(evals_z)
+				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 	}
 }
 

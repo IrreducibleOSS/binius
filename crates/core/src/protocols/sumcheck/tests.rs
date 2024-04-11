@@ -5,7 +5,7 @@ use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearQuery,
+		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearQuery,
 	},
 	protocols::{
 		sumcheck::{batch_prove, batch_verify, SumcheckClaim, SumcheckProverState},
@@ -15,39 +15,63 @@ use crate::{
 	},
 	witness::MultilinearWitnessIndex,
 };
-use binius_field::{BinaryField128b, BinaryField128bPolyval, BinaryField32b, Field, TowerField};
+use binius_field::{
+	BinaryField128b, BinaryField128bPolyval, BinaryField32b, ExtensionField, Field, PackedField,
+	TowerField,
+};
 use binius_hash::GroestlHasher;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
 use std::iter::repeat_with;
 
-fn test_prove_verify_interaction_helper(
+fn generate_poly_and_sum_helper<F, FE>(
+	rng: &mut StdRng,
+	is_zerocheck: bool,
 	n_vars: usize,
 	n_multilinears: usize,
-	switchover_rd: usize,
-) {
-	type F = BinaryField32b;
-	type FE = BinaryField128b;
-
-	let mut rng = StdRng::seed_from_u64(0);
-
-	// Setup Witness
+) -> (
+	MultilinearComposite<
+		FE,
+		TestProductComposition,
+		MultilinearExtensionSpecialized<'static, F, FE>,
+	>,
+	F,
+)
+where
+	F: Field,
+	FE: ExtensionField<F>,
+{
 	let composition = TestProductComposition::new(n_multilinears);
-	let multilinears = repeat_with(|| {
-		let values = repeat_with(|| Field::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<F>>();
-		MultilinearExtension::from_values(values).unwrap()
-	})
-	.take(<_ as CompositionPoly<FE>>::n_vars(&composition))
-	.collect::<Vec<_>>();
+	let multilinears = if is_zerocheck {
+		(0..n_multilinears)
+			.map(|j| {
+				let mut values = vec![F::ZERO; 1 << n_vars];
+				(0..(1 << n_vars)).for_each(|i| {
+					if i % n_multilinears != j {
+						values[i] = Field::random(&mut *rng);
+					}
+				});
+				MultilinearExtension::from_values(values).unwrap()
+			})
+			.collect::<Vec<_>>()
+	} else {
+		repeat_with(|| {
+			let values = repeat_with(|| Field::random(&mut *rng))
+				.take(1 << n_vars)
+				.collect::<Vec<F>>();
+			MultilinearExtension::from_values(values).unwrap()
+		})
+		.take(<_ as CompositionPoly<FE>>::n_vars(&composition))
+		.collect::<Vec<_>>()
+	};
+
 	let poly = MultilinearComposite::<FE, _, _>::new(
 		n_vars,
 		composition,
 		multilinears
 			.iter()
-			.map(|multilin| multilin.to_ref().specialize())
+			.map(|multilin| multilin.clone().specialize())
 			.collect(),
 	)
 	.unwrap();
@@ -63,6 +87,25 @@ fn test_prove_verify_interaction_helper(
 		})
 		.sum::<F>();
 
+	if is_zerocheck && sum != F::ZERO {
+		panic!("Zerocheck sum is not zero");
+	}
+
+	(poly, sum)
+}
+
+fn test_prove_verify_interaction_helper(
+	is_zerocheck: bool,
+	n_vars: usize,
+	n_multilinears: usize,
+	switchover_rd: usize,
+) {
+	type F = BinaryField32b;
+	type FE = BinaryField128b;
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let (poly, sum) =
+		generate_poly_and_sum_helper::<F, FE>(&mut rng, is_zerocheck, n_vars, n_multilinears);
 	let sumcheck_witness = poly.clone();
 
 	// Setup Claim
@@ -79,9 +122,19 @@ fn test_prove_verify_interaction_helper(
 	let composite_poly =
 		CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears)).unwrap();
 
+	let zerocheck_challenges = if is_zerocheck {
+		let zc_challenges = repeat_with(|| Field::random(&mut rng))
+			.take(n_vars - 1)
+			.collect::<Vec<FE>>();
+		Some(zc_challenges)
+	} else {
+		None
+	};
+
 	let sumcheck_claim = SumcheckClaim {
 		sum: sum.into(),
 		poly: composite_poly,
+		zerocheck_challenges,
 	};
 
 	// Setup evaluation domain
@@ -115,59 +168,30 @@ fn test_prove_verify_interaction_helper(
 }
 
 fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+	is_zerocheck: bool,
 	n_vars: usize,
 	n_multilinears: usize,
 ) {
 	type F = BinaryField128b;
 	type OF = BinaryField128bPolyval;
-
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let composition = TestProductComposition::new(n_multilinears);
-	let prover_composition = composition.clone();
-	let composition_nvars = n_multilinears;
+	let (poly, sum) =
+		generate_poly_and_sum_helper::<F, F>(&mut rng, is_zerocheck, n_vars, n_multilinears);
 
-	let multilinears = repeat_with(|| {
-		let values = repeat_with(|| Field::random(&mut rng))
-			.take(1 << n_vars)
-			.collect::<Vec<F>>();
-		MultilinearExtension::from_values(values).unwrap()
-	})
-	.take(composition_nvars)
-	.collect::<Vec<_>>();
-
-	let poly = MultilinearComposite::new(
-		n_vars,
-		composition,
-		multilinears
-			.iter()
-			.map(|multilin| multilin.to_ref().specialize::<F>())
-			.collect(),
-	)
-	.unwrap();
 	let prover_poly = MultilinearComposite::new(
 		n_vars,
-		prover_composition,
-		multilinears
+		poly.composition.clone(),
+		poly.multilinears
 			.iter()
 			.map(|multilin| {
-				transform_poly::<_, OF>(multilin.to_ref())
+				transform_poly::<_, OF>(multilin.as_ref().to_ref())
 					.unwrap()
 					.specialize::<OF>()
 			})
 			.collect(),
 	)
 	.unwrap();
-
-	let sum = (0..1 << n_vars)
-		.map(|i| {
-			let mut prod = F::ONE;
-			(0..n_multilinears).for_each(|j| {
-				prod *= multilinears[j].packed_evaluate_on_hypercube(i).unwrap();
-			});
-			prod
-		})
-		.sum();
 
 	let operating_witness = prover_poly;
 
@@ -185,9 +209,20 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	let composite_poly =
 		CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears)).unwrap();
 	let poly_oracle = composite_poly;
+
+	let zerocheck_challenges = if is_zerocheck {
+		let zc_challenges = repeat_with(|| Field::random(&mut rng))
+			.take(n_vars - 1)
+			.collect::<Vec<F>>();
+		Some(zc_challenges)
+	} else {
+		None
+	};
+
 	let sumcheck_claim = SumcheckClaim {
 		sum,
 		poly: poly_oracle,
+		zerocheck_challenges,
 	};
 
 	// Setup evaluation domain
@@ -227,7 +262,8 @@ fn test_prove_verify_interaction_basic() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			for switchover_rd in 1..=n_vars / 2 {
-				test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
+				test_prove_verify_interaction_helper(true, n_vars, n_multilinears, switchover_rd);
+				test_prove_verify_interaction_helper(false, n_vars, n_multilinears, switchover_rd);
 			}
 		}
 	}
@@ -239,7 +275,8 @@ fn test_prove_verify_interaction_pigeonhole_cores() {
 	let n_vars = log2_ceil_usize(n_threads) + 1;
 	for n_multilinears in 1..4 {
 		for switchover_rd in 1..=n_vars / 2 {
-			test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
+			test_prove_verify_interaction_helper(true, n_vars, n_multilinears, switchover_rd);
+			test_prove_verify_interaction_helper(false, n_vars, n_multilinears, switchover_rd);
 		}
 	}
 }
@@ -249,6 +286,12 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_basic() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+				true,
+				n_vars,
+				n_multilinears,
+			);
+			test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+				false,
 				n_vars,
 				n_multilinears,
 			);
@@ -261,7 +304,16 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_pigeonhole_cores
 	let n_threads = current_num_threads();
 	let n_vars = log2_ceil_usize(n_threads) + 1;
 	for n_multilinears in 1..6 {
-		test_prove_verify_interaction_with_monomial_basis_conversion_helper(n_vars, n_multilinears);
+		test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+			true,
+			n_vars,
+			n_multilinears,
+		);
+		test_prove_verify_interaction_with_monomial_basis_conversion_helper(
+			false,
+			n_vars,
+			n_multilinears,
+		);
 	}
 }
 
@@ -364,7 +416,11 @@ fn test_prove_verify_batch() {
 	let sumcheck_claims = composites
 		.into_iter()
 		.zip(composite_sums)
-		.map(|(poly, sum)| SumcheckClaim { poly, sum })
+		.map(|(poly, sum)| SumcheckClaim {
+			poly,
+			sum,
+			zerocheck_challenges: None,
+		})
 		.collect::<Vec<_>>();
 
 	let domain = EvaluationDomain::new(3).unwrap();

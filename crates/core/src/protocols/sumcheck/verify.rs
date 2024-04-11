@@ -3,8 +3,8 @@
 use super::{
 	error::Error,
 	sumcheck::{
-		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, SumcheckClaim, SumcheckRound,
-		SumcheckRoundClaim,
+		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, reduce_zerocheck_claim_round,
+		SumcheckClaim, SumcheckRound, SumcheckRoundClaim,
 	},
 	VerificationError,
 };
@@ -23,6 +23,21 @@ pub fn verify_round<F: Field>(
 	proof: SumcheckRound<F>,
 ) -> Result<SumcheckRoundClaim<F>, Error> {
 	reduce_sumcheck_claim_round(claim, challenge, proof)
+}
+
+/// Verifies a sumcheck round reduction proof.
+///
+/// Given a round proof which are the coefficients of a univariate polynomial and the sampled challenge, evaluate the
+/// polynomial at the challenge point and reduce to a sumcheck claim over the partially evaluated polynomial.
+///
+/// Returns the evaluation point and the claimed evaluation.
+pub fn verify_zerocheck_round<F: Field>(
+	claim: SumcheckRoundClaim<F>,
+	challenge: F,
+	proof: SumcheckRound<F>,
+	zerocheck_challenge: Option<F>,
+) -> Result<SumcheckRoundClaim<F>, Error> {
+	reduce_zerocheck_claim_round(claim, challenge, proof, zerocheck_challenge)
 }
 
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
