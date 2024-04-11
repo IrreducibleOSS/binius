@@ -1,58 +1,136 @@
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/cargo"
+
 stages:
   - lint
   - build
   - test
   - deploy
 
-cargofmt:
+# AMD job configuration template
+.job_template_amd:
+  image: rustlang/rust:nightly
+  variables:
+    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-c6i-large"
   tags:
-    - binius
+    - k8s
+
+# ARM job configuration template
+.job_template_arm:
+  image: rustlang/rust:nightly
+  variables:
+    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-t4g-large"
+    KUBERNETES_NODE_SELECTOR_ARCH: 'kubernetes.io/arch=arm64'
+  before_script:
+    - if [ "$(uname -m)" != "aarch64" ]; then echo "This job is intended to run on ARM architecture only."; exit 1; fi
+  tags:
+    - k8s
+
+# Linting jobs
+cargofmt:
+  extends: .job_template_amd
   stage: lint
   script:
     - cargo fmt --check
 
 clippy:
-  tags:
-    - binius
+  extends: .job_template_amd
   stage: lint
   script:
     - cargo clippy --all --all-features --tests --benches --examples -- -D warnings
 
-build-debug:
-  tags:
-    - binius
+.cached_job_template_amd:
+  extends: .job_template_amd
+  cache:
+    key: "biniusOSS-amd-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - target
+      - cargo
+
+.cached_job_template_arm:
+  extends: .job_template_arm
+  cache:
+    key: "biniusOSS-arm-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - target
+      - cargo
+
+# Building jobs
+build-debug-amd:
+  extends: .cached_job_template_amd
   stage: build
   script:
     - cargo build --tests --benches --examples
   artifacts:
     paths:
-      - target/debug
+      - Cargo.lock
     expire_in: 1 day
 
-unit-test:
-  tags:
-    - binius
-  stage: test
+build-debug-arm:
+  extends: .cached_job_template_arm
+  stage: build
+  script:
+    - cargo build --tests --benches --examples
+  artifacts:
+    paths:
+      - Cargo.lock
+    expire_in: 1 day
+
+.test_job_template_amd:
+  extends: .job_template_amd
+  cache:
+    key: "biniusOSS-amd-${CI_COMMIT_REF_SLUG}"
+    policy: pull # do not push cache at the end to save time
+    paths:
+      - target
+      - cargo
+  dependencies:
+    - build-debug-amd
+
+.test_job_template_arm:
+  extends: .job_template_arm
+  cache:
+    key: "biniusOSS-arm-${CI_COMMIT_REF_SLUG}"
+    policy: pull # do not push cache at the end to save time
+    paths:
+      - target
+      - cargo
+  dependencies:
+    - build-debug-arm
+
+unit-test-amd:
+  extends: .test_job_template_amd
   script:
     - cargo test
 
-unit-test-single-threaded:
-  tags:
-    - binius
-  stage: test
+unit-test-arm:
+  extends: .test_job_template_arm
+  script:
+    - cargo test
+
+unit-test-single-threaded-amd:
+  extends: .test_job_template_amd
   script:
     - RAYON_NUM_THREADS=1 cargo test
 
-unit-test-native:
-  tags:
-    - binius
-  stage: test
+unit-test-single-threaded-arm:
+  extends: .test_job_template_arm
+  script:
+    - RAYON_NUM_THREADS=1 cargo test
+
+unit-test-native-amd:
+  extends: .test_job_template_amd
   script:
     - RUSTFLAGS="-C target-cpu=native" cargo test
 
+unit-test-native-arm:
+  extends: .test_job_template_arm
+  script:
+    - RUSTFLAGS="-C target-cpu=native" cargo test
+
+# Documentation and pages jobs
 build-docs:
-  tags:
-    - binius
+  extends: .job_template_amd
   stage: build
   script:
     - export RUSTDOCFLAGS="-Dwarnings --html-in-header doc/katex-header.html"
@@ -63,8 +141,7 @@ build-docs:
     expire_in: 1 week
 
 pages:
-  tags:
-    - binius
+  extends: .job_template_amd
   stage: deploy
   dependencies:
     - build-docs
@@ -77,3 +154,4 @@ pages:
   only:
     refs:
       - main # Deploy for every push to the main branch, for now
+
