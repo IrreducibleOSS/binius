@@ -70,7 +70,7 @@ pages:
     - build-docs
   script:
     - mv target/doc public
-    - echo "/ /binius 302" > public/_redirects
+    - echo "/ /binius_core 302" > public/_redirects
   artifacts:
     paths:
       - public
