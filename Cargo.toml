@@ -20,7 +20,7 @@ derive_more = "0.99.17"
 digest = "0.10.7"
 ff = "0.13.0"
 getset = "0.1.2"
-groestl = "0.10.1"
+groestl_crypto = { package = "groestl", version = "0.10.1" }
 hex-literal = "0.4.1"
 itertools = "0.12.0"
 log = "0.4.20"

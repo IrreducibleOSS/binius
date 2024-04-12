@@ -7,10 +7,11 @@ authors.workspace = true
 [dependencies]
 binius_field = { path = "../field" }
 binius_utils = { path = "../utils"}
-p3-symmetric.workspace = true
 bytemuck.workspace = true
+cfg-if.workspace = true
 digest.workspace = true
-groestl.workspace = true
+groestl_crypto.workspace = true
+p3-symmetric.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

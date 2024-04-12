@@ -1,10 +1,12 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2024 Ulvetanna Inc.
 
-use super::{hash, hasher::Hasher};
+use super::{
+	super::{hash, hasher::Hasher},
+	arch::Groestl256,
+};
 use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField32x8b, PackedExtensionField};
 use bytemuck::{must_cast_slice, must_cast_slice_mut};
 use digest::Digest;
-use groestl::Groestl256;
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 use std::{marker::PhantomData, slice};
 
