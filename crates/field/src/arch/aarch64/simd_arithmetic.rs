@@ -377,7 +377,7 @@ fn flip_even_odd<F: TowerField>(x: M128) -> M128 {
 		3 => x.shuffle_u8([1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14]),
 		4 => x.shuffle_u8([2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13]),
 		5 => x.shuffle_u8([4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11]),
-		6 => x.shuffle_u8([9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8]),
+		6 => x.shuffle_u8([8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7]),
 		_ => panic!("Unsupported tower level"),
 	}
 }
@@ -397,6 +397,9 @@ fn shift_left<F: TowerField>(x: M128) -> M128 {
 			return unsafe { vshlq_n_u64(x.into(), 1 << TOWER_LEVEL).into() };
 		}
 	});
+	if tower_level == 6 {
+		return unsafe { vcombine_u64(std::mem::transmute(0u64), vget_low_u64(x.into())).into() };
+	}
 	panic!("Unsupported tower level {tower_level}");
 }
 
@@ -408,5 +411,8 @@ fn shift_right<F: TowerField>(x: M128) -> M128 {
 			return unsafe { vshrq_n_u64(x.into(), 1 << TOWER_LEVEL).into() };
 		}
 	});
+	if tower_level == 6 {
+		return unsafe { vcombine_u64(vget_high_u64(x.into()), std::mem::transmute(0u64)).into() };
+	}
 	panic!("Unsupported tower level {tower_level}");
 }
