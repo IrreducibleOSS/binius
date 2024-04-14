@@ -4,6 +4,8 @@ use binius_field::{
 			PackedBinaryField1x64b, PackedBinaryField2x32b, PackedBinaryField4x16b,
 			PackedBinaryField8x8b,
 		},
+		packed_polyval_256::PackedBinaryPolyval2x128b,
+		packed_polyval_512::PackedBinaryPolyval4x128b,
 		PackedStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
@@ -11,21 +13,21 @@ use binius_field::{
 		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
 		PackedBinaryField4x32b, PackedBinaryField8x16b,
 	},
-	PackedAESBinaryField16x16b, PackedAESBinaryField16x32b, PackedAESBinaryField16x8b,
-	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField2x64b,
-	PackedAESBinaryField32x16b, PackedAESBinaryField32x8b, PackedAESBinaryField4x128b,
-	PackedAESBinaryField4x32b, PackedAESBinaryField4x64b, PackedAESBinaryField64x8b,
-	PackedAESBinaryField8x16b, PackedAESBinaryField8x32b, PackedAESBinaryField8x64b,
-	PackedBinaryField16x16b, PackedBinaryField16x32b, PackedBinaryField2x128b,
-	PackedBinaryField32x16b, PackedBinaryField32x8b, PackedBinaryField4x128b,
-	PackedBinaryField4x64b, PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b,
-	PackedField,
+	BinaryField128bPolyval, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
+	PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
+	PackedAESBinaryField2x64b, PackedAESBinaryField32x16b, PackedAESBinaryField32x8b,
+	PackedAESBinaryField4x128b, PackedAESBinaryField4x32b, PackedAESBinaryField4x64b,
+	PackedAESBinaryField64x8b, PackedAESBinaryField8x16b, PackedAESBinaryField8x32b,
+	PackedAESBinaryField8x64b, PackedBinaryField16x16b, PackedBinaryField16x32b,
+	PackedBinaryField2x128b, PackedBinaryField32x16b, PackedBinaryField32x8b,
+	PackedBinaryField4x128b, PackedBinaryField4x64b, PackedBinaryField64x8b,
+	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
 };
 use rand::thread_rng;
-use std::ops::Mul;
+use std::{array, ops::Mul};
 
 fn run_benchmark<R>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, func: impl Fn() -> R) {
 	group.bench_function(name, |bench| bench.iter(&func));
@@ -42,7 +44,7 @@ macro_rules! benchmark_strategy {
 			trait BenchmarkFallback {
 				const ENABLED: bool = false;
 
-				fn bench<T>(_: &T, _: &T, _: &mut T) {}
+				fn bench<T>(_: T, _: T) -> T { unreachable!() }
 			}
 
 			impl<T> BenchmarkFallback for T {}
@@ -54,8 +56,8 @@ macro_rules! benchmark_strategy {
 				const ENABLED: bool = true;
 
 				#[inline(always)]
-				fn bench(a: &T, b: &T, c: &mut T) {
-					*c = $func(*a, *b);
+				fn bench(a: T, b: T) -> T {
+					$func(a, b)
 				}
 			}
 
@@ -64,12 +66,8 @@ macro_rules! benchmark_strategy {
 			if BenchmarkImpl::<$packed_field>::ENABLED {
 				run_benchmark(&mut $group, &format!("{}/{}", stringify!($packed_field), $strategy_name),
 					|| {
-						let (a, b, mut c) = $iters;
-						for (a, b, c) in itertools::izip!(a.iter(), b.iter(), c.iter_mut()) {
-							BenchmarkImpl::<$packed_field>::bench(a, b, c);
-						}
-
-						c
+						let (a, b) = $iters;
+						array::from_fn::<_, BATCH_SIZE, _>(|i| BenchmarkImpl::<$packed_field>::bench(a[i], b[i]))
 					});
 			}
 		}
@@ -80,9 +78,8 @@ macro_rules! benchmark_strategy {
 		let mut rng = thread_rng();
 		let a: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));
 		let b: [$packed_field; BATCH_SIZE] = std::array::from_fn(|_| <$packed_field>::random(&mut rng));
-		let c = [<$packed_field>::default(); BATCH_SIZE];
 		$(
-			benchmark_strategy!($packed_field, $strategy_name, $constraint, $func, $group, (a, b, c));
+			benchmark_strategy!($packed_field, $strategy_name, $constraint, $func, $group, (a, b));
 		)*
 	};
 	// Run list of strategies for the list of fields
@@ -143,6 +140,11 @@ macro_rules! benchmark_strategy {
 				PackedAESBinaryField16x32b
 				PackedAESBinaryField8x64b
 				PackedAESBinaryField4x128b
+
+				// Packed polyval fields
+				BinaryField128bPolyval
+				PackedBinaryPolyval2x128b
+				PackedBinaryPolyval4x128b
 			])
 	};
 }

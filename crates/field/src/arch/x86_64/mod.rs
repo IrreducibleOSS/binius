@@ -20,7 +20,7 @@ cfg_if! {
 }
 
 cfg_if! {
-	if #[cfg(all(target_feature = "pclmulqdq", target_feature = "avx2"))] {
+	if #[cfg(all(target_feature = "vpclmulqdq", target_feature = "avx2"))] {
 		pub mod packed_polyval_256;
 	} else {
 		pub use super::portable::packed_polyval_256;
@@ -28,7 +28,7 @@ cfg_if! {
 }
 
 cfg_if! {
-	if #[cfg(all(target_feature = "pclmulqdq", target_feature = "avx512f"))] {
+	if #[cfg(all(target_feature = "vpclmulqdq", target_feature = "avx512f"))] {
 		pub mod packed_polyval_512;
 	} else {
 		pub use super::portable::packed_polyval_512;

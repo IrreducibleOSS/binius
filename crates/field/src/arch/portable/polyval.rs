@@ -9,7 +9,6 @@
 //! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul64.c;hb=4b6046412>
 
 use core::num::Wrapping;
-use subtle::CtOption;
 
 /// The POLYVAL "dot" operation defined in [`RFC 8542`][1], Section 3.
 ///
@@ -62,10 +61,6 @@ pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
 pub fn montgomery_square(x: u128) -> u128 {
 	// TODO: Optimize this using the squaring tricks in characteristic-2 fields
 	montgomery_multiply(x, x)
-}
-
-pub fn invert(_x: u128) -> CtOption<u128> {
-	todo!()
 }
 
 /// Multiplication in GF(2)[X], truncated to the low 64-bits, with “holes”

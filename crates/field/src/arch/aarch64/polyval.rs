@@ -33,10 +33,6 @@ pub fn montgomery_square(x: u128) -> u128 {
 	montgomery_multiply(x, x)
 }
 
-pub fn invert(_x: u128) -> CtOption<u128> {
-	todo!()
-}
-
 /// Karatsuba decomposition for `x*y`.
 #[inline]
 unsafe fn karatsuba1(x: uint8x16_t, y: uint8x16_t) -> (uint8x16_t, uint8x16_t, uint8x16_t) {

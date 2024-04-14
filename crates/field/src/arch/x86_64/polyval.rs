@@ -5,7 +5,6 @@
 //! (i.e. Intel Sandy Bridge-compatible or newer)
 
 use core::arch::x86_64::*;
-use subtle::CtOption;
 
 #[inline]
 pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
@@ -21,10 +20,6 @@ pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
 pub fn montgomery_square(x: u128) -> u128 {
 	// TODO: Optimize this using the squaring tricks in characteristic-2 fields
 	montgomery_multiply(x, x)
-}
-
-pub fn invert(_x: u128) -> CtOption<u128> {
-	todo!()
 }
 
 /// A type that can be used in SIMD polyval field multiplication

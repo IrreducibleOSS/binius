@@ -33,7 +33,3 @@ harness = false
 [[bench]]
 name = "binary_field_packed"
 harness = false
-
-[[bench]]
-name = "polyval_packed"
-harness = false
