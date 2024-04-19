@@ -285,6 +285,44 @@ impl UnderlierType for M128 {
 		assert!(val == 0 || val == 1);
 		Self(unsafe { _mm_set1_epi8(val.wrapping_neg() as i8) })
 	}
+
+	#[inline(always)]
+	fn get_subvalue<T>(&self, i: usize) -> T
+	where
+		T: WithUnderlier,
+		T::Underlier: NumCast<Self>,
+	{
+		match T::MEANINGFUL_BITS {
+			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
+				let elements_in_64 = 64 / T::MEANINGFUL_BITS;
+				let chunk_64 = unsafe {
+					if i >= elements_in_64 {
+						_mm_extract_epi64(self.0, 1)
+					} else {
+						_mm_extract_epi64(self.0, 0)
+					}
+				};
+
+				let result_64 = if T::MEANINGFUL_BITS == 64 {
+					chunk_64
+				} else {
+					let ones = ((1u128 << T::MEANINGFUL_BITS) - 1) as u64;
+					let val_64 = (chunk_64 as u64)
+						>> (T::MEANINGFUL_BITS
+							* (if i >= elements_in_64 {
+								i - elements_in_64
+							} else {
+								i
+							})) & ones;
+
+					val_64 as i64
+				};
+				T::Underlier::num_cast_from(Self(unsafe { _mm_set_epi64x(0, result_64) })).into()
+			}
+			128 => T::Underlier::num_cast_from(*self).into(),
+			_ => panic!("unsupported bit count"),
+		}
+	}
 }
 
 unsafe impl Zeroable for M128 {}
@@ -433,10 +471,8 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 
 #[cfg(test)]
 mod tests {
-	use crate::underlier::single_element_mask_bits;
-
 	use super::*;
-
+	use crate::underlier::single_element_mask_bits;
 	use proptest::{arbitrary::any, proptest};
 
 	fn check_roundtrip<T>(val: M128)

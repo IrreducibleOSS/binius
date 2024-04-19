@@ -31,5 +31,9 @@ name = "binary_field"
 harness = false
 
 [[bench]]
-name = "binary_field_packed"
+name = "packed_binary_field_arithmetic"
+harness = false
+
+[[bench]]
+name = "packed_binary_field_element_access"
 harness = false

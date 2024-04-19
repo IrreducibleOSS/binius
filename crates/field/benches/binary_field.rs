@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 

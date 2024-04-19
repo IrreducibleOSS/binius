@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use binius_field::{
 	arch::{
 		packed_64::{

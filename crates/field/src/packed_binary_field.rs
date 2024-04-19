@@ -471,17 +471,30 @@ mod tests {
 
 	#[test]
 	fn test_set_then_get_4b() {
-		test_set_then_get::<PackedBinaryField4x32b>();
+		test_set_then_get::<PackedBinaryField32x4b>();
+		test_set_then_get::<PackedBinaryField64x4b>();
+		test_set_then_get::<PackedBinaryField128x4b>();
 	}
 
 	#[test]
 	fn test_set_then_get_32b() {
 		test_set_then_get::<PackedBinaryField4x32b>();
+		test_set_then_get::<PackedBinaryField8x32b>();
+		test_set_then_get::<PackedBinaryField16x32b>();
+	}
+
+	#[test]
+	fn test_set_then_get_64b() {
+		test_set_then_get::<PackedBinaryField2x64b>();
+		test_set_then_get::<PackedBinaryField4x64b>();
+		test_set_then_get::<PackedBinaryField8x64b>();
 	}
 
 	#[test]
 	fn test_set_then_get_128b() {
 		test_set_then_get::<PackedBinaryField1x128b>();
+		test_set_then_get::<PackedBinaryField2x128b>();
+		test_set_then_get::<PackedBinaryField4x128b>();
 	}
 
 	// TODO: Generate lots more proptests using macros

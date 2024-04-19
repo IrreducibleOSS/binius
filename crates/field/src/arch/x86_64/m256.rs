@@ -13,7 +13,7 @@ use bytemuck::{must_cast, Pod, Zeroable};
 use rand::{Rng, RngCore};
 use std::{
 	arch::x86_64::*,
-	mem::transmute_copy,
+	mem::transmute,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 use subtle::{Choice, ConstantTimeEq};
@@ -24,7 +24,7 @@ pub struct M256(pub(super) __m256i);
 
 impl M256 {
 	pub const fn from_equal_u128s(val: u128) -> Self {
-		unsafe { transmute_copy(&[val, val]) }
+		unsafe { transmute([val, val]) }
 	}
 }
 
@@ -79,7 +79,7 @@ impl From<u8> for M256 {
 }
 impl From<M256> for [u128; 2] {
 	fn from(value: M256) -> Self {
-		let result: [u128; 2] = unsafe { transmute_copy(&value.0) };
+		let result: [u128; 2] = unsafe { transmute(value.0) };
 
 		result
 	}
@@ -258,6 +258,64 @@ impl UnderlierType for M256 {
 
 	fn fill_with_bit(val: u8) -> Self {
 		Self(unsafe { _mm256_set1_epi8(val.wrapping_neg() as i8) })
+	}
+
+	#[inline(always)]
+	fn get_subvalue<T>(&self, i: usize) -> T
+	where
+		T: WithUnderlier,
+		T::Underlier: NumCast<Self>,
+	{
+		match T::MEANINGFUL_BITS {
+			1 | 2 | 4 | 8 | 16 | 32 => {
+				let elements_in_64 = 64 / T::MEANINGFUL_BITS;
+				let chunk_64 = unsafe {
+					match i / elements_in_64 {
+						0 => _mm256_extract_epi64(self.0, 0),
+						1 => _mm256_extract_epi64(self.0, 1),
+						2 => _mm256_extract_epi64(self.0, 2),
+						_ => _mm256_extract_epi64(self.0, 3),
+					}
+				};
+
+				let result_64 = if T::MEANINGFUL_BITS == 64 {
+					chunk_64
+				} else {
+					let ones = ((1u128 << T::MEANINGFUL_BITS) - 1) as u64;
+					let val_64 =
+						(chunk_64 as u64) >> (T::MEANINGFUL_BITS * (i % elements_in_64)) & ones;
+
+					val_64 as i64
+				};
+				T::Underlier::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
+					.into()
+			}
+			// NOTE: benchmark show that this strategy is optimal for getting 64-bit subvalues from 256-bit register.
+			// However using similar code for 1..32 bits is slower than the version above.
+			// Also even getting `chunk_64` in the code above using this code shows worser benchmarks results.
+			64 => {
+				#[repr(align(16))]
+				struct Data64x4([i64; 4]);
+				let result_64 = unsafe { transmute::<_, Data64x4>(self.0) }.0[i];
+
+				T::Underlier::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
+					.into()
+			}
+			128 => {
+				let chunk_128 = unsafe {
+					if i == 0 {
+						_mm256_extracti128_si256(self.0, 0)
+					} else {
+						_mm256_extracti128_si256(self.0, 1)
+					}
+				};
+				T::Underlier::num_cast_from(Self(unsafe {
+					_mm256_set_m128i(_mm_setzero_si128(), chunk_128)
+				}))
+				.into()
+			}
+			_ => panic!("unsupported bit count"),
+		}
 	}
 }
 

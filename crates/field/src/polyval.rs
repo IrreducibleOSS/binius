@@ -3,8 +3,14 @@
 //! Binary field implementation of GF(2^128) with a modulus of X^128 + X^127 + X^126 + 1.
 
 use super::{
-	arithmetic_traits::InvertOrZero, binary_field::BinaryField128b, underlier::WithUnderlier,
+	arch::polyval,
+	arithmetic_traits::InvertOrZero,
+	binary_field::{BinaryField, BinaryField128b, BinaryField1b, TowerField},
+	error::Error,
+	extension::ExtensionField,
+	underlier::WithUnderlier,
 };
+use crate::underlier::UnderlierType;
 use bytemuck::{Pod, Zeroable};
 use ff::Field;
 use rand::{Rng, RngCore};
@@ -15,13 +21,6 @@ use std::{
 	ops::{Add, AddAssign, BitXor, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
-
-use super::{
-	arch::polyval,
-	binary_field::{BinaryField, BinaryField1b, TowerField},
-	error::Error,
-	extension::ExtensionField,
-};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
 #[repr(transparent)]
@@ -299,8 +298,9 @@ impl Sub<BinaryField1b> for BinaryField128bPolyval {
 impl Mul<BinaryField1b> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[allow(clippy::suspicious_arithmetic_impl)]
 	fn mul(self, rhs: BinaryField1b) -> Self::Output {
-		Self::conditional_select(&Self::ZERO, &self, rhs.0.into())
+		Self(self.0 & u128::fill_with_bit(rhs.0))
 	}
 }
 
