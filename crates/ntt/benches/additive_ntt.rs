@@ -1,10 +1,8 @@
-use binius_core::reed_solomon::additive_ntt::{
-	AdditiveNTT, AdditiveNTTWithOTFCompute, AdditiveNTTWithPrecompute,
-};
 use binius_field::{
 	packed_binary_field::{PackedBinaryField2x64b, PackedBinaryField8x16b},
 	BinaryField16b, ExtensionField, PackedExtensionField,
 };
+use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, AdditiveNTTWithPrecompute};
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 	Throughput,

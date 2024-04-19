@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2024 Ulvetanna Inc.
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {

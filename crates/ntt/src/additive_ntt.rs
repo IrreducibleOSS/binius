@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{
 	unpack_scalars_mut, BinaryField, ExtensionField, Field, PackedExtensionField, PackedField,
@@ -105,6 +105,16 @@ impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 		}
 
 		twiddle
+	}
+
+	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
+	///
+	/// ## Preconditions
+	///
+	/// * `i` must be less than `self.log_domain_size()`
+	/// * `j` must be less than `i`
+	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
+		self.s_evals[i][j]
 	}
 }
 

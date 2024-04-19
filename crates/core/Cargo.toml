@@ -8,6 +8,7 @@ authors.workspace = true
 assert_matches.workspace = true
 binius_field = { path = "../field" }
 binius_hash = { path = "../hash" }
+binius_ntt = { path = "../ntt" }
 binius_utils = { path = "../utils" }
 bytemuck.workspace = true
 derive_more.workspace = true
@@ -34,10 +35,6 @@ tracing-subscriber.workspace = true
 
 [lib]
 bench = false
-
-[[bench]]
-name = "additive_ntt"
-harness = false
 
 [[bench]]
 name = "sumcheck"

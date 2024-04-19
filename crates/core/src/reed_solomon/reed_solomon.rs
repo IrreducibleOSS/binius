@@ -1,14 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::{
-	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
-	reed_solomon::additive_ntt::AdditiveNTT,
-};
+use crate::linear_code::{LinearCode, LinearCodeWithExtensionEncoding};
 use binius_field::{BinaryField, ExtensionField, PackedExtensionField, PackedField};
+use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, Error};
 use rayon::prelude::*;
 use std::marker::PhantomData;
-
-use super::{additive_ntt::AdditiveNTTWithOTFCompute, error::Error};
 
 pub struct ReedSolomonCode<P>
 where
