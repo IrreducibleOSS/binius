@@ -187,7 +187,7 @@ impl Field for BinaryField128bPolyval {
 	}
 
 	fn invert(&self) -> CtOption<Self> {
-		CtOption::new(self.invert_or_zero(), self.ct_eq(&Self::ZERO))
+		CtOption::new(self.invert_or_zero(), self.ct_ne(&Self::ZERO))
 	}
 
 	fn sqrt_ratio(_num: &Self, _div: &Self) -> (Choice, Self) {
@@ -4218,7 +4218,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_invert(a_val in any::<u128>()) {
+		fn test_invert_or_zero(a_val in any::<u128>()) {
 			let a = BinaryField128bPolyval::new(a_val);
 			let a_invert = a.invert_or_zero();
 			if a != BinaryField128bPolyval::ZERO {
@@ -4260,4 +4260,13 @@ mod tests {
 	// 	}
 	// 	println!("]");
 	// }
+
+	/// Test that `invert` method properly wraps `invert_or_zero`
+	#[test]
+	fn test_invert() {
+		let x = BinaryField128bPolyval::new(2);
+		let y = x.invert().unwrap();
+
+		assert_eq!(x * y, BinaryField128bPolyval::ONE);
+	}
 }
