@@ -961,7 +961,7 @@ fn make_constraints<F: TowerField, FI: TowerField>(
 	trace_oracle: &TraceOracle<F>,
 	zerocheck_column_ids: &[OracleId],
 	challenge: FI,
-) -> Result<impl CompositionPoly<FI>> {
+) -> Result<impl CompositionPoly<FI> + Clone> {
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
 	// C_x - \sum_{y=0}^4 A_{x,y} = 0

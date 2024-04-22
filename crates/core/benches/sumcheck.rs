@@ -71,7 +71,7 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover::<FTower, FTower, _, _, _, _>(
+				full_prove_with_switchover::<FTower, FTower, _, _, _>(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
 					&domain,
@@ -139,7 +139,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover::<FTower, FPolyval, _, _, _, _>(
+				full_prove_with_switchover::<FTower, FPolyval, _, _, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
 					&domain,
@@ -234,11 +234,11 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 /// REQUIRES: Composition is the product composition
 pub fn make_sumcheck_claim<F, C, M>(
 	poly: &MultilinearComposite<F, C, M>,
-) -> Result<SumcheckClaim<F, C>, SumcheckError>
+) -> Result<SumcheckClaim<F>, SumcheckError>
 where
 	F: TowerField,
 	M: MultilinearPoly<F>,
-	C: CompositionPoly<F>,
+	C: CompositionPoly<F> + Clone + 'static,
 {
 	// Setup poly_oracle
 	let mut oracles = MultilinearOracleSet::new();

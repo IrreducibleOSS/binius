@@ -5,16 +5,17 @@ use crate::{
 	polynomial::CompositionPoly,
 };
 use binius_field::Field;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub struct CompositePolyOracle<F: Field, C> {
+pub struct CompositePolyOracle<F: Field> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
-	composition: C,
+	composition: Arc<dyn CompositionPoly<F>>,
 }
 
-impl<F: Field, C: CompositionPoly<F>> CompositePolyOracle<F, C> {
-	pub fn new(
+impl<F: Field> CompositePolyOracle<F> {
+	pub fn new<C: CompositionPoly<F> + 'static>(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<F>>,
 		composition: C,
@@ -30,7 +31,7 @@ impl<F: Field, C: CompositionPoly<F>> CompositePolyOracle<F, C> {
 		Ok(Self {
 			n_vars,
 			inner,
-			composition,
+			composition: Arc::new(composition),
 		})
 	}
 
@@ -52,9 +53,7 @@ impl<F: Field, C: CompositionPoly<F>> CompositePolyOracle<F, C> {
 				.unwrap_or(0),
 		)
 	}
-}
 
-impl<F: Field, C> CompositePolyOracle<F, C> {
 	pub fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -62,10 +61,8 @@ impl<F: Field, C> CompositePolyOracle<F, C> {
 	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {
 		self.inner.clone()
 	}
-}
 
-impl<F: Field, C: Clone> CompositePolyOracle<F, C> {
-	pub fn composition(&self) -> C {
+	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
 		self.composition.clone()
 	}
 }

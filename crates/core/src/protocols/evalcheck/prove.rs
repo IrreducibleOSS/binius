@@ -33,10 +33,10 @@ use binius_field::{PackedField, TowerField};
 ///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 ///  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 #[instrument(skip_all, name = "evalcheck::prove")]
-pub fn prove<'a, F, PW, C>(
+pub fn prove<'a, F, PW>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
-	evalcheck_claim: EvalcheckClaim<F, C>,
+	evalcheck_claim: EvalcheckClaim<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
 	new_sumchecks: &mut Vec<BivariateSumcheck<'a, F, PW>>,
 ) -> Result<EvalcheckProof<F>, Error>

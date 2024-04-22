@@ -4,14 +4,14 @@ use super::{
 	error::VerificationError,
 	zerocheck::{reduce_zerocheck_claim, ZerocheckClaim, ZerocheckProof},
 };
-use crate::{polynomial::CompositionPoly, protocols::sumcheck::SumcheckClaim};
+use crate::protocols::sumcheck::SumcheckClaim;
 use binius_field::TowerField;
 
-pub fn verify<F: TowerField, C: CompositionPoly<F>>(
-	claim: &ZerocheckClaim<F, C>,
+pub fn verify<F: TowerField>(
+	claim: &ZerocheckClaim<F>,
 	proof: ZerocheckProof,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<F, C>, VerificationError> {
+) -> Result<SumcheckClaim<F>, VerificationError> {
 	let _ = proof;
 	let claim = reduce_zerocheck_claim(claim, challenge)?;
 	Ok(claim)

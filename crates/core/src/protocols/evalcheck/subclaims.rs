@@ -12,7 +12,7 @@
 
 use super::{
 	error::Error,
-	evalcheck::{BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim},
+	evalcheck::{BatchCommittedEvalClaims, CommittedEvalClaim},
 };
 use crate::{
 	oracle::{
@@ -33,10 +33,7 @@ use binius_field::{Field, PackedField, TowerField};
 use std::sync::Arc;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
-pub type BivariateSumcheck<'a, F, PW> =
-	(BivariateSumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
-pub type BivariateEvalcheckClaim<F> = EvalcheckClaim<F, BivariateProduct>;
-pub type BivariateSumcheckClaim<F> = SumcheckClaim<F, BivariateProduct>;
+pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
 pub type BivariateSumcheckWitness<'a, PW> =
 	SumcheckWitness<PW, BivariateProduct, MultilinearWitness<'a, PW>>;
 
@@ -233,7 +230,7 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 pub fn non_same_query_pcs_sumcheck_claim<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	meta: NonSameQueryPcsClaimMeta<F>,
-) -> Result<BivariateSumcheckClaim<F>, Error> {
+) -> Result<SumcheckClaim<F>, Error> {
 	projected_bivariate_claim(oracles, meta.projected_bivariate_meta, meta.eval)
 }
 
@@ -319,7 +316,7 @@ pub fn projected_bivariate_claim<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	meta: ProjectedBivariateMeta,
 	eval: F,
-) -> Result<BivariateSumcheckClaim<F>, Error> {
+) -> Result<SumcheckClaim<F>, Error> {
 	let ProjectedBivariateMeta {
 		projected_n_vars,
 		multiplier_id,

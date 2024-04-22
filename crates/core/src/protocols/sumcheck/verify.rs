@@ -43,19 +43,19 @@ pub fn verify_zerocheck_round<F: Field>(
 /// Verifies a sumcheck reduction proof final step, after all rounds completed.
 ///
 /// Returns the evaluation point and the claimed evaluation.
-pub fn verify_final<F: Field, C: Clone>(
-	poly_oracle: &CompositePolyOracle<F, C>,
+pub fn verify_final<F: Field>(
+	poly_oracle: &CompositePolyOracle<F>,
 	claim: SumcheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F, C>, Error> {
+) -> Result<EvalcheckClaim<F>, Error> {
 	reduce_sumcheck_claim_final(poly_oracle, claim)
 }
 
 /// Verifies a batch sumcheck proof final step, reducing the final claim to evaluation claims.
-pub fn batch_verify_final<'a, F: Field, C: Clone>(
-	oracles: impl IntoIterator<Item = (CompositePolyOracle<F, C>, F)> + 'a,
+pub fn batch_verify_final<'a, F: Field>(
+	oracles: impl IntoIterator<Item = (CompositePolyOracle<F>, F)> + 'a,
 	evals: Vec<F>,
 	final_claim: SumcheckRoundClaim<F>,
-) -> Result<impl IntoIterator<Item = EvalcheckClaim<F, C>>, Error> {
+) -> Result<impl IntoIterator<Item = EvalcheckClaim<F>>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: final_eval,
@@ -104,7 +104,7 @@ pub fn batch_verify_final<'a, F: Field, C: Clone>(
 	Ok(eval_claims)
 }
 
-pub fn setup_first_round_claim<F: Field, C>(claim: &SumcheckClaim<F, C>) -> SumcheckRoundClaim<F> {
+pub fn setup_first_round_claim<F: Field>(claim: &SumcheckClaim<F>) -> SumcheckRoundClaim<F> {
 	SumcheckRoundClaim {
 		partial_point: vec![],
 		current_round_sum: claim.sum,

@@ -3,7 +3,7 @@
 use super::error::VerificationError;
 use crate::{
 	oracle::CompositePolyOracle,
-	polynomial::{CompositionPoly, MultilinearComposite},
+	polynomial::MultilinearComposite,
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 	witness::MultilinearWitness,
 };
@@ -15,25 +15,25 @@ pub struct ZerocheckProof;
 
 #[derive(Debug)]
 
-pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, C, CW> {
-	pub sumcheck_claim: SumcheckClaim<F, C>,
+pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, CW> {
+	pub sumcheck_claim: SumcheckClaim<F>,
 	pub sumcheck_witness: SumcheckWitness<PW, CW, MultilinearWitness<'a, PW>>,
 	pub zerocheck_proof: ZerocheckProof,
 }
 
 #[derive(Debug, Clone)]
-pub struct ZerocheckClaim<F: Field, C> {
+pub struct ZerocheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
-	pub poly: CompositePolyOracle<F, C>,
+	pub poly: CompositePolyOracle<F>,
 }
 
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type ZerocheckWitness<'a, P, C> = MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
 
-pub fn reduce_zerocheck_claim<F: TowerField, C: CompositionPoly<F>>(
-	claim: &ZerocheckClaim<F, C>,
+pub fn reduce_zerocheck_claim<F: TowerField>(
+	claim: &ZerocheckClaim<F>,
 	challenge: Vec<F>,
-) -> Result<SumcheckClaim<F, C>, VerificationError> {
+) -> Result<SumcheckClaim<F>, VerificationError> {
 	if claim.poly.n_vars() != challenge.len() + 1 {
 		return Err(VerificationError::ChallengeVectorMismatch);
 	}

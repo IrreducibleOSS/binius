@@ -394,7 +394,7 @@ fn test_prove_verify_batch() {
 	let witnesses = composites.clone().map(|oracle| {
 		MultilinearComposite::new(
 			oracle.n_vars(),
-			oracle.composition(),
+			SquareComposition,
 			oracle
 				.inner_polys()
 				.into_iter()

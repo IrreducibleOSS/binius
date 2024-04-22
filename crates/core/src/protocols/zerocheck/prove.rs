@@ -10,16 +10,15 @@ use tracing::instrument;
 
 /// Prove a zerocheck instance reduction.
 #[instrument(skip_all, name = "zerocheck::prove")]
-pub fn prove<'a, F, PW, C, CW>(
-	zerocheck_claim: &ZerocheckClaim<F, C>,
+pub fn prove<'a, F, PW, CW>(
+	zerocheck_claim: &ZerocheckClaim<F>,
 	zerocheck_witness: ZerocheckWitness<'a, PW, CW>,
 	challenge: Vec<F>,
-) -> Result<ZerocheckProveOutput<'a, F, PW, C, CW>, Error>
+) -> Result<ZerocheckProveOutput<'a, F, PW, CW>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: TowerField + From<F>,
-	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 {
 	let n_vars = zerocheck_witness.n_vars();

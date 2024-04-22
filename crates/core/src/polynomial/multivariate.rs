@@ -16,7 +16,7 @@ pub trait MultivariatePoly<F>: Debug + Send + Sync {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P>: Clone + Debug + Send + Sync
+pub trait CompositionPoly<P>: Debug + Send + Sync
 where
 	P: PackedField,
 {
@@ -171,7 +171,14 @@ where
 	pub fn n_multilinears(&self) -> usize {
 		self.composition.n_vars()
 	}
+}
 
+impl<P, C, M> MultilinearComposite<P, C, M>
+where
+	P: PackedField,
+	C: Clone,
+	M: MultilinearPoly<P>,
+{
 	pub fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<P>,
@@ -187,20 +194,5 @@ where
 			multilinears: new_multilinears,
 			_p_marker: PhantomData,
 		})
-	}
-}
-
-impl<P, M> MultilinearComposite<P, IdentityCompositionPoly, M>
-where
-	P: PackedField,
-	M: MultilinearPoly<P>,
-{
-	pub fn from_multilinear(poly: M) -> Self {
-		MultilinearComposite {
-			composition: IdentityCompositionPoly,
-			n_vars: poly.borrow().n_vars(),
-			multilinears: vec![poly],
-			_p_marker: PhantomData,
-		}
 	}
 }

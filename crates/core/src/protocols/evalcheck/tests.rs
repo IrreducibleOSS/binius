@@ -249,7 +249,7 @@ fn test_shifted_evaluation_whole_cube() {
 
 	let composite_witness = MultilinearComposite::new(
 		n_vars,
-		composite.composition(),
+		BivariateProduct,
 		vec![
 			poly_witness.to_ref().specialize::<EF>(),
 			shifted_witness.to_ref().specialize::<EF>(),
@@ -351,7 +351,7 @@ fn test_shifted_evaluation_subcube() {
 
 	let composite_witness = MultilinearComposite::new(
 		n_vars,
-		composite.composition(),
+		BivariateProduct,
 		vec![
 			poly_witness.to_ref().specialize::<EF>(),
 			shifted_witness.to_ref().specialize::<EF>(),

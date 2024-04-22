@@ -131,7 +131,7 @@ where
 ///
 /// NB. Note that switchover=0 does not make sense, as first round is never folded.
 #[derive(Debug, Getters)]
-pub struct SumcheckProverState<'a, F, PW, C, CW, M>
+pub struct SumcheckProverState<'a, F, PW, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
@@ -139,7 +139,7 @@ where
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
-	oracle: CompositePolyOracle<F, C>,
+	oracle: CompositePolyOracle<F>,
 	composition: CW,
 	multilinears: Vec<SumcheckMultilinear<PW, M>>,
 
@@ -155,12 +155,11 @@ where
 	_m_marker: PhantomData<M>,
 }
 
-impl<'a, F, PW, C, CW, M> SumcheckProverState<'a, F, PW, C, CW, M>
+impl<'a, F, PW, CW, M> SumcheckProverState<'a, F, PW, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
@@ -171,7 +170,7 @@ where
 	/// reflection mechanism is introduced.
 	pub fn new(
 		domain: &'a EvaluationDomain<F>,
-		sumcheck_claim: SumcheckClaim<F, C>,
+		sumcheck_claim: SumcheckClaim<F>,
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		switchovers: &[usize],
 	) -> Result<Self, Error> {
@@ -264,7 +263,7 @@ where
 
 	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
 	#[instrument(skip_all, name = "sumcheck::SumcheckProverState::finalize")]
-	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F, C>, Error> {
+	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		self.validate_rd_challenge(prev_rd_challenge)?;
 

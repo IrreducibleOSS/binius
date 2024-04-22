@@ -74,7 +74,7 @@ fn prove<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
-	constraints: &[CompositePolyOracle<BinaryField128b, BitwiseAndConstraint>],
+	constraints: &[CompositePolyOracle<BinaryField128b>],
 	witness: &TraceWitness<PackedBinaryField128x1b>,
 	mut challenger: CH,
 ) -> Proof<PCS::Commitment, PCS::Proof>
@@ -115,7 +115,7 @@ where
 	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
 	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
 		log_size,
-		constraint.composition(),
+		BitwiseAndConstraint,
 		vec![
 			witness.a_in.to_ref().specialize_arc_dyn(),
 			witness.b_in.to_ref().specialize_arc_dyn(),
@@ -207,7 +207,7 @@ fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
-	constraints: &[CompositePolyOracle<BinaryField128b, BitwiseAndConstraint>],
+	constraints: &[CompositePolyOracle<BinaryField128b>],
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
 ) where
@@ -346,9 +346,7 @@ fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128
 fn make_constraints<F: TowerField>(
 	log_size: usize,
 	trace_oracle: &MultilinearOracleSet<F>,
-) -> Vec<CompositePolyOracle<F, BitwiseAndConstraint>> {
-	let mut constraints = Vec::new();
-
+) -> Vec<CompositePolyOracle<F>> {
 	let a_in_oracle = trace_oracle.committed_oracle(CommittedId {
 		batch_id: 0,
 		index: 0,
@@ -369,8 +367,7 @@ fn make_constraints<F: TowerField>(
 	)
 	.unwrap();
 
-	constraints.push(constraint);
-	constraints
+	vec![constraint]
 }
 
 fn main() {

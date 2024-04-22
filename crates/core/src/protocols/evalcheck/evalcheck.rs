@@ -8,9 +8,9 @@ use binius_field::Field;
 use tracing::instrument;
 
 #[derive(Debug, Clone)]
-pub struct EvalcheckClaim<F: Field, C> {
+pub struct EvalcheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: CompositePolyOracle<F, C>,
+	pub poly: CompositePolyOracle<F>,
 	/// Evaluation Point
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation

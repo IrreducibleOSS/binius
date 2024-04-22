@@ -30,15 +30,14 @@ pub struct SumcheckBatchProof<F> {
 /// Prove a batched sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<'a, F, PW, C, CW, M, CH>(
-	provers: impl IntoIterator<Item = SumcheckProverState<'a, F, PW, C, CW, M>>,
+pub fn batch_prove<'a, F, PW, CW, M, CH>(
+	provers: impl IntoIterator<Item = SumcheckProverState<'a, F, PW, CW, M>>,
 	mut challenger: CH,
 ) -> Result<SumcheckBatchProof<F>, Error>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 	CH: CanObserve<F> + CanSample<F>,
@@ -104,14 +103,13 @@ where
 /// Verify a batched sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_verify<F, C, CH>(
-	claims: impl IntoIterator<Item = SumcheckClaim<F, C>>,
+pub fn batch_verify<F, CH>(
+	claims: impl IntoIterator<Item = SumcheckClaim<F>>,
 	proof: SumcheckBatchProof<F>,
 	mut challenger: CH,
-) -> Result<impl IntoIterator<Item = EvalcheckClaim<F, C>>, Error>
+) -> Result<impl IntoIterator<Item = EvalcheckClaim<F>>, Error>
 where
 	F: Field,
-	C: Clone,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let mut claims_vec = claims.into_iter().collect::<Vec<_>>();

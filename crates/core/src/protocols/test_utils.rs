@@ -10,8 +10,7 @@ use crate::{
 		evalcheck::{
 			subclaims::{
 				non_same_query_pcs_sumcheck_claim, non_same_query_pcs_sumcheck_metas,
-				non_same_query_pcs_sumcheck_witness, BivariateEvalcheckClaim, BivariateSumcheck,
-				BivariateSumcheckClaim, MemoizedQueries,
+				non_same_query_pcs_sumcheck_witness, BivariateSumcheck, MemoizedQueries,
 			},
 			BatchCommittedEvalClaims, CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim,
 		},
@@ -150,14 +149,13 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::full_verify")]
-pub fn full_verify<F, C, CH>(
-	claim: &SumcheckClaim<F, C>,
+pub fn full_verify<F, CH>(
+	claim: &SumcheckClaim<F>,
 	proof: SumcheckProof<F>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, EvalcheckClaim<F, C>)
+) -> (Vec<SumcheckRoundClaim<F>>, EvalcheckClaim<F>)
 where
 	F: Field,
-	C: CompositionPoly<F>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = claim.poly.n_vars();
@@ -190,16 +188,15 @@ where
 	(rd_claims, final_claim)
 }
 
-fn full_prove_with_switchover_impl<F, PW, C, PCW, M, CH>(
+fn full_prove_with_switchover_impl<F, PW, PCW, M, CH>(
 	n_vars: usize,
-	mut prover_state: SumcheckProverState<F, PW, C, PCW, M>,
+	mut prover_state: SumcheckProverState<F, PW, PCW, M>,
 	mut challenger: CH,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, C>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F>)
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	C: CompositionPoly<F>,
 	PCW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
@@ -229,18 +226,17 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::full_prove_with_switchover")]
-pub fn full_prove_with_switchover<F, PW, C, CW, M, CH>(
-	claim: &SumcheckClaim<F, C>,
+pub fn full_prove_with_switchover<F, PW, CW, M, CH>(
+	claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<PW, CW, M>,
 	domain: &EvaluationDomain<F>,
 	challenger: CH,
 	switchover: usize,
-) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F, C>)
+) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F>)
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	C: CompositionPoly<F>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
@@ -267,10 +263,7 @@ pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
 	switchover: usize,
-) -> Result<
-	(SumcheckBatchProof<F>, impl IntoIterator<Item = BivariateEvalcheckClaim<F>>),
-	SumcheckError,
->
+) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + Step + From<PW::Scalar>,
 	PW: PackedField,
@@ -303,7 +296,7 @@ pub fn make_non_same_query_pcs_sumcheck_claims<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
 	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
-) -> Result<Vec<BivariateSumcheckClaim<F>>, EvalcheckError> {
+) -> Result<Vec<SumcheckClaim<F>>, EvalcheckError> {
 	let metas = non_same_query_pcs_sumcheck_metas(
 		oracles,
 		committed_eval_claims,

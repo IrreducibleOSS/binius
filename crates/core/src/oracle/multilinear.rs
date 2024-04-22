@@ -635,7 +635,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		}
 	}
 
-	pub fn into_composite(self) -> CompositePolyOracle<F, IdentityCompositionPoly> {
+	pub fn into_composite(self) -> CompositePolyOracle<F> {
 		let composite =
 			CompositePolyOracle::new(self.n_vars(), vec![self], IdentityCompositionPoly);
 		composite.expect("Can always apply the identity composition to one variable")

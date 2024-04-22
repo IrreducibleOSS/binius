@@ -29,22 +29,22 @@ pub struct SumcheckProof<F> {
 }
 
 #[derive(Debug)]
-pub struct SumcheckProveOutput<F: Field, C> {
-	pub evalcheck_claim: EvalcheckClaim<F, C>,
+pub struct SumcheckProveOutput<F: Field> {
+	pub evalcheck_claim: EvalcheckClaim<F>,
 	pub sumcheck_proof: SumcheckProof<F>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SumcheckClaim<F: Field, C> {
+pub struct SumcheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function whose sum is claimed on hypercube domain
-	pub poly: CompositePolyOracle<F, C>,
+	pub poly: CompositePolyOracle<F>,
 	/// Claimed Sum over the Boolean Hypercube
 	pub sum: F,
 	/// The zerocheck challenges if the sumcheck claim came directly from a zerocheck reduction
 	pub zerocheck_challenges: Option<Vec<F>>,
 }
 
-impl<F: Field, C> SumcheckClaim<F, C> {
+impl<F: Field> SumcheckClaim<F> {
 	pub fn n_vars(&self) -> usize {
 		self.poly.n_vars()
 	}
@@ -193,10 +193,10 @@ pub fn reduce_zerocheck_claim_round<F: Field>(
 	})
 }
 
-pub fn reduce_sumcheck_claim_final<F: Field, C: Clone>(
-	poly_oracle: &CompositePolyOracle<F, C>,
+pub fn reduce_sumcheck_claim_final<F: Field>(
+	poly_oracle: &CompositePolyOracle<F>,
 	round_claim: SumcheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F, C>, Error> {
+) -> Result<EvalcheckClaim<F>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: eval,

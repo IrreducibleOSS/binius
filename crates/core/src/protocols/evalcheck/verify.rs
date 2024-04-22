@@ -6,14 +6,12 @@ use super::{
 		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim, EvalcheckMultilinearClaim,
 		EvalcheckProof,
 	},
-	subclaims::{
-		packed_sumcheck_meta, projected_bivariate_claim, shifted_sumcheck_meta,
-		BivariateSumcheckClaim,
-	},
+	subclaims::{packed_sumcheck_meta, projected_bivariate_claim, shifted_sumcheck_meta},
 };
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
-	polynomial::{extrapolate_line, CompositionPoly},
+	polynomial::extrapolate_line,
+	protocols::sumcheck::SumcheckClaim,
 };
 use binius_field::{util::inner_product_unchecked, TowerField};
 use tracing::instrument;
@@ -22,16 +20,13 @@ use tracing::instrument;
 ///
 /// See [`evalcheck::prove`](`super::prove::prove`) docs for comments on [`BatchCommittedEvalClaims`] and `new_sumchecks`.
 #[instrument(skip_all, name = "evalcheck::verify")]
-pub fn verify<F: TowerField, C>(
+pub fn verify<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	evalcheck_claim: EvalcheckClaim<F, C>,
+	evalcheck_claim: EvalcheckClaim<F>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
-	new_sumchecks: &mut Vec<BivariateSumcheckClaim<F>>,
-) -> Result<(), Error>
-where
-	C: CompositionPoly<F>,
-{
+	new_sumchecks: &mut Vec<SumcheckClaim<F>>,
+) -> Result<(), Error> {
 	let EvalcheckClaim {
 		poly: composite,
 		eval_point,
@@ -83,7 +78,7 @@ fn verify_multilinear<F: TowerField>(
 	evalcheck_claim: EvalcheckMultilinearClaim<F>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
-	new_sumchecks: &mut Vec<BivariateSumcheckClaim<F>>,
+	new_sumchecks: &mut Vec<SumcheckClaim<F>>,
 ) -> Result<(), Error> {
 	let EvalcheckMultilinearClaim {
 		poly: multilinear,
