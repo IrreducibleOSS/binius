@@ -1,22 +1,32 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
+	oracle::MultilinearOracleSet,
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
 		MultilinearPoly, MultivariatePoly,
 	},
 	protocols::{
-		evalcheck::EvalcheckClaim,
+		evalcheck::{
+			subclaims::{
+				non_same_query_pcs_sumcheck_claim, non_same_query_pcs_sumcheck_metas,
+				non_same_query_pcs_sumcheck_witness, BivariateEvalcheckClaim, BivariateSumcheck,
+				BivariateSumcheckClaim, MemoizedQueries,
+			},
+			BatchCommittedEvalClaims, CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim,
+		},
 		sumcheck::{
-			setup_first_round_claim, verify_final, verify_round, verify_zerocheck_round,
-			SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckProverState,
-			SumcheckRoundClaim, SumcheckWitness,
+			batch_prove, batch_verify, setup_first_round_claim, verify_final, verify_round,
+			verify_zerocheck_round, Error as SumcheckError, SumcheckBatchProof, SumcheckClaim,
+			SumcheckProof, SumcheckProveOutput, SumcheckProverState, SumcheckRoundClaim,
+			SumcheckWitness,
 		},
 	},
+	witness::MultilinearWitnessIndex,
 };
-use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField, TowerField};
 use p3_challenger::{CanObserve, CanSample};
-use std::iter::repeat;
+use std::iter::{repeat, Step};
 use tracing::instrument;
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
@@ -247,4 +257,96 @@ where
 	let prover_state =
 		SumcheckProverState::new(domain, claim.clone(), witness, &switchovers).unwrap();
 	full_prove_with_switchover_impl(n_vars, prover_state, challenger)
+}
+
+#[instrument(
+	skip_all,
+	name = "test_utils::prove_bivariate_sumchecks_with_switchover"
+)]
+pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, CH>(
+	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
+	challenger: &mut CH,
+	switchover: usize,
+) -> Result<
+	(SumcheckBatchProof<F>, impl IntoIterator<Item = BivariateEvalcheckClaim<F>>),
+	SumcheckError,
+>
+where
+	F: Field + Step + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	CH: CanObserve<F> + CanSample<F> + Clone,
+{
+	let bivariate_domain = EvaluationDomain::new(3)?;
+
+	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
+
+	assert!(switchover > 0);
+	let prover_states = witnesses
+		.into_iter()
+		.zip(&claims)
+		.map(|(witness, claim)| {
+			// FIXME temporary hack until a better way to specify switchovers is implemented
+			SumcheckProverState::new(&bivariate_domain, claim.clone(), witness, &[switchover; 2])
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
+	let challenger_snapshot = challenger.clone();
+	let batch_proof = batch_prove(prover_states, challenger)?;
+	let evalcheck_claims = batch_verify(claims, batch_proof.clone(), challenger_snapshot)?;
+
+	Ok((batch_proof, evalcheck_claims))
+}
+
+#[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumcheck_claims")]
+pub fn make_non_same_query_pcs_sumcheck_claims<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	committed_eval_claims: &[CommittedEvalClaim<F>],
+	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
+) -> Result<Vec<BivariateSumcheckClaim<F>>, EvalcheckError> {
+	let metas = non_same_query_pcs_sumcheck_metas(
+		oracles,
+		committed_eval_claims,
+		new_batch_committed_eval_claims,
+	)?;
+
+	let claims = metas
+		.into_iter()
+		.map(|meta| non_same_query_pcs_sumcheck_claim(oracles, meta))
+		.collect::<Result<Vec<_>, EvalcheckError>>()?;
+
+	Ok(claims)
+}
+
+#[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumchecks")]
+pub fn make_non_same_query_pcs_sumchecks<'a, F, PW>(
+	oracles: &mut MultilinearOracleSet<F>,
+	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+	committed_eval_claims: &[CommittedEvalClaim<F>],
+	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
+) -> Result<Vec<BivariateSumcheck<'a, F, PW>>, EvalcheckError>
+where
+	F: TowerField + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+{
+	let metas = non_same_query_pcs_sumcheck_metas(
+		oracles,
+		committed_eval_claims,
+		new_batch_committed_eval_claims,
+	)?;
+
+	let mut memoized_queries = MemoizedQueries::new();
+
+	let sumchecks = metas
+		.into_iter()
+		.map(|meta| {
+			let claim = non_same_query_pcs_sumcheck_claim(oracles, meta.clone())?;
+			let witness =
+				non_same_query_pcs_sumcheck_witness(witness_index, &mut memoized_queries, meta)?;
+			Ok((claim, witness))
+		})
+		.collect::<Result<Vec<_>, EvalcheckError>>()?;
+
+	Ok(sumchecks)
 }

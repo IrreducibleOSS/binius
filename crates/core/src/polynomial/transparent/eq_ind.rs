@@ -3,7 +3,7 @@
 use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
-use binius_field::PackedField;
+use binius_field::{Field, PackedField};
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -11,26 +11,28 @@ use binius_field::PackedField;
 /// eq(x, y) = 1 iff x = y and eq(x, y) = 0 otherwise.
 /// Specifically, the function is defined like so $\prod_{i=0}^{\mu - 1} (X_i * Y_i + (1 - X_i)(1-Y_i))$
 #[derive(Debug)]
-pub struct EqIndPartialEval<P: PackedField> {
+pub struct EqIndPartialEval<F: Field> {
 	n_vars: usize,
-	r: Vec<P::Scalar>,
+	r: Vec<F>,
 }
 
-impl<P: PackedField> EqIndPartialEval<P> {
-	pub fn new(n_vars: usize, r: Vec<P::Scalar>) -> Result<Self, Error> {
+impl<F: Field> EqIndPartialEval<F> {
+	pub fn new(n_vars: usize, r: Vec<F>) -> Result<Self, Error> {
 		if r.len() != n_vars {
 			return Err(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		Ok(Self { n_vars, r })
 	}
 
-	pub fn multilinear_extension(&self) -> Result<MultilinearExtension<'static, P>, Error> {
+	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
+		&self,
+	) -> Result<MultilinearExtension<'static, P>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r)?.into_expansion();
 		MultilinearExtension::from_values(multilin_query)
 	}
 }
 
-impl<P: PackedField> MultivariatePoly<P> for EqIndPartialEval<P> {
+impl<F: Field, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPartialEval<F> {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -82,7 +84,7 @@ mod tests {
 		let eval_mvp = eq_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version of eq_r
-		let eq_r_mle = eq_r_mvp.multilinear_extension().unwrap();
+		let eq_r_mle = eq_r_mvp.multilinear_extension::<P>().unwrap();
 		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point).unwrap();
 		let eval_mle = eq_r_mle.evaluate(&multilin_query).unwrap();
 

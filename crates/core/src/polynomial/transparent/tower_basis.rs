@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
-use binius_field::{PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use std::marker::PhantomData;
 
 /// Represents the $\mathcal{T}_{\iota}$-basis of $\mathcal{T}_{\iota+k}$
@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 /// Thus, $\mathcal{T}_{\iota+k}$ has a $\mathcal{T}_{\iota}$-basis of size $2^k$:
 /// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1} \ldots X_{\iota+k-1}$
 #[derive(Debug, Copy, Clone)]
-pub struct TowerBasis<F: TowerField> {
+pub struct TowerBasis<F: Field> {
 	k: usize,
 	iota: usize,
 	_marker: PhantomData<F>,
@@ -39,7 +39,7 @@ impl<F: TowerField> TowerBasis<F> {
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
+	) -> Result<MultilinearExtension<'static, P>, Error> {
 		let n_values = (1 << self.k) / P::WIDTH;
 		let values = (0..n_values)
 			.map(|i| {
@@ -55,15 +55,6 @@ impl<F: TowerField> TowerBasis<F> {
 
 		MultilinearExtension::from_values(values)
 	}
-
-	/*
-	pub fn multilinear_poly_oracle(&self) -> MultilinearPolyOracle<F> {
-		MultilinearPolyOracle::Transparent(TransparentPolyOracle::new(
-			Arc::new(*self),
-			F::TOWER_LEVEL,
-		))
-	}
-	 */
 }
 
 impl<F> MultivariatePoly<F> for TowerBasis<F>
@@ -106,7 +97,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let basis = TowerBasis::<F>::new(k, iota).unwrap();
-		let challenge = repeat_with(|| F::random(&mut rng))
+		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(k)
 			.collect::<Vec<_>>();
 
@@ -127,7 +118,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let basis = TowerBasis::<F>::new(kappa, iota).unwrap();
-		let challenge = repeat_with(|| F::random(&mut rng))
+		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(kappa)
 			.collect::<Vec<_>>();
 		let eval1 = basis.evaluate(&challenge).unwrap();

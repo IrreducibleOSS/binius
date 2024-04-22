@@ -92,7 +92,7 @@ where
 
 	assert_eq!(pcs.n_vars(), log_size);
 
-	let witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
+	let mut witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
 
 	assert_eq!(constraints.len(), 1);
 	let constraint = constraints[0].clone();
@@ -154,20 +154,18 @@ where
 	} = output;
 
 	// prove_evalcheck is instrumented
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
+	let mut new_sumchecks = Vec::new();
 	let evalcheck_proof = prove_evalcheck(
-		&witness_index,
+		trace,
+		&mut witness_index,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
+		&mut new_sumchecks,
 	)
 	.unwrap();
 
 	// try_extract_same_query_pcs_claim is instrumented
-	assert!(packed_eval_claims.is_empty());
-	assert!(shifted_eval_claims.is_empty());
+	assert!(new_sumchecks.is_empty());
 	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)
@@ -250,19 +248,18 @@ fn verify<PCS, CH>(
 	let trace_batch = trace.committed_batch(0);
 
 	// Verify commitment openings
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
+	let mut new_sumcheck_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
 	verify_evalcheck(
+		trace,
 		evalcheck_claim,
 		evalcheck_proof,
 		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
+		&mut new_sumcheck_claims,
 	)
 	.unwrap();
 
-	assert!(shifted_eval_claims.is_empty());
+	assert!(new_sumcheck_claims.is_empty());
 	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
 	let same_query_pcs_claim = batch_committed_eval_claims
 		.try_extract_same_query_pcs_claim(0)

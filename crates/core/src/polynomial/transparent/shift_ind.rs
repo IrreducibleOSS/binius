@@ -4,7 +4,11 @@ use crate::{
 	oracle::ShiftVariant,
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
-use binius_field::{util::eq, Field};
+use binius_field::{
+	packed::{get_packed_slice, set_packed_slice},
+	util::eq,
+	Field, PackedField,
+};
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
 /// partially evaluated at $Y = r$
@@ -103,9 +107,12 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		})
 	}
 
-	fn multilinear_extension_circular(&self) -> Result<MultilinearExtension<'static, F>, Error> {
+	fn multilinear_extension_circular<P>(&self) -> Result<MultilinearExtension<'static, P>, Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		let (ps, pps) =
-			partial_evaluate_hypercube_help(self.block_size, self.shift_offset, &self.r)?;
+			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
 		let values = ps
 			.iter()
 			.zip(pps)
@@ -114,25 +121,35 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		MultilinearExtension::from_values(values)
 	}
 
-	fn multilinear_extension_logical_left(
+	fn multilinear_extension_logical_left<P>(
 		&self,
-	) -> Result<MultilinearExtension<'static, F>, Error> {
-		let (ps, _) = partial_evaluate_hypercube_help(self.block_size, self.shift_offset, &self.r)?;
+	) -> Result<MultilinearExtension<'static, P>, Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
+		let (ps, _) =
+			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
 		MultilinearExtension::from_values(ps)
 	}
 
-	fn multilinear_extension_logical_right(
+	fn multilinear_extension_logical_right<P>(
 		&self,
-	) -> Result<MultilinearExtension<'static, F>, Error> {
+	) -> Result<MultilinearExtension<'static, P>, Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		let right_shift_offset = get_left_shift_offset(self.block_size, self.shift_offset);
 		let (_, pps) =
-			partial_evaluate_hypercube_help(self.block_size, right_shift_offset, &self.r)?;
+			partial_evaluate_hypercube_impl::<P>(self.block_size, right_shift_offset, &self.r)?;
 		MultilinearExtension::from_values(pps)
 	}
 
 	/// Evaluates this partially evaluated circular shift indicator MLE $f(X, r)$
 	/// over the entire $b$-variate hypercube
-	pub fn multilinear_extension(&self) -> Result<MultilinearExtension<'static, F>, Error> {
+	pub fn multilinear_extension<P>(&self) -> Result<MultilinearExtension<'static, P>, Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		match self.shift_variant {
 			ShiftVariant::CircularLeft => self.multilinear_extension_circular(),
 			ShiftVariant::LogicalLeft => self.multilinear_extension_logical_left(),
@@ -246,34 +263,48 @@ fn evaluate_shift_ind_help<F: Field>(
 /// Total time is O(2^b) field operations (optimal in light of output size)
 /// Requires length of $r$ is exactly block_size
 /// Requires shift offset is at most $2^b$ where $b$ is block_size
-fn partial_evaluate_hypercube_help<F: Field>(
+fn partial_evaluate_hypercube_impl<P: PackedField>(
 	block_size: usize,
 	shift_offset: usize,
-	r: &[F],
-) -> Result<(Vec<F>, Vec<F>), Error> {
+	r: &[P::Scalar],
+) -> Result<(Vec<P>, Vec<P>), Error> {
 	assert_valid_shift_ind_args(block_size, shift_offset, r)?;
-	let mut s_ind_p = vec![F::ONE; 1 << block_size];
-	let mut s_ind_pp = vec![F::ZERO; 1 << block_size];
+	let mut s_ind_p = vec![P::one(); 1 << (block_size - P::LOG_WIDTH)];
+	let mut s_ind_pp = vec![P::zero(); 1 << (block_size - P::LOG_WIDTH)];
 
 	(0..block_size).for_each(|k| {
 		let o_k = shift_offset >> k;
 		// complexity: just two multiplications per iteration!
 		(0..(1 << k)).for_each(|i| {
 			if o_k % 2 == 1 {
-				s_ind_pp[1 << k | i] = s_ind_pp[i] * r[k];
-				let tmp = s_ind_pp[1 << k | i];
-				s_ind_pp[i] -= tmp;
-				s_ind_p[1 << k | i] = s_ind_p[i] * r[k]; // gimmick: use this as a stash slot
-				s_ind_pp[1 << k | i] += s_ind_p[i] - s_ind_p[1 << k | i]; // * 1 - r
-				s_ind_p[i] = s_ind_p[1 << k | i]; // now move to lower half
-				s_ind_p[1 << k | i] = F::ZERO; // clear upper half
+				let mut pp_lo = get_packed_slice(&s_ind_pp, i);
+				let mut pp_hi = pp_lo * r[k];
+
+				pp_lo -= pp_hi;
+
+				let p_lo = get_packed_slice(&s_ind_p, i);
+				let p_hi = p_lo * r[k];
+				pp_hi += p_lo - p_hi; // * 1 - r
+
+				set_packed_slice(&mut s_ind_pp, i, pp_lo);
+				set_packed_slice(&mut s_ind_pp, 1 << k | i, pp_hi);
+
+				set_packed_slice(&mut s_ind_p, i, p_hi);
+				set_packed_slice(&mut s_ind_p, 1 << k | i, P::Scalar::ZERO); // clear upper half
 			} else {
-				s_ind_p[1 << k | i] = s_ind_p[i] * r[k];
-				let tmp = s_ind_p[1 << k | i];
-				s_ind_p[i] -= tmp;
-				s_ind_pp[1 << k | i] = s_ind_pp[i] * (F::ONE - r[k]);
-				s_ind_p[i] += s_ind_pp[i] - s_ind_pp[1 << k | i];
-				s_ind_pp[i] = F::ZERO; // clear lower half
+				let mut p_lo = get_packed_slice(&s_ind_p, i);
+				let p_hi = p_lo * r[k];
+				p_lo -= p_hi;
+
+				let pp_lo = get_packed_slice(&s_ind_pp, i);
+				let pp_hi = pp_lo * (P::Scalar::ONE - r[k]);
+				p_lo += pp_lo - pp_hi;
+
+				set_packed_slice(&mut s_ind_p, i, p_lo);
+				set_packed_slice(&mut s_ind_p, 1 << k | i, p_hi);
+
+				set_packed_slice(&mut s_ind_pp, i, P::Scalar::ZERO); // clear lower half
+				set_packed_slice(&mut s_ind_pp, 1 << k | i, pp_hi);
 			}
 		})
 	});
@@ -312,7 +343,7 @@ mod tests {
 		let eval_mvp = shift_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version
-		let shift_r_mle = shift_r_mvp.multilinear_extension().unwrap();
+		let shift_r_mle = shift_r_mvp.multilinear_extension::<F>().unwrap();
 		let multilin_query = MultilinearQuery::<F>::with_full_query(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
@@ -339,7 +370,7 @@ mod tests {
 		let eval_mvp = shift_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version
-		let shift_r_mle = shift_r_mvp.multilinear_extension().unwrap();
+		let shift_r_mle = shift_r_mvp.multilinear_extension::<F>().unwrap();
 		let multilin_query = MultilinearQuery::<F>::with_full_query(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
@@ -366,7 +397,7 @@ mod tests {
 		let eval_mvp = shift_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version
-		let shift_r_mle = shift_r_mvp.multilinear_extension().unwrap();
+		let shift_r_mle = shift_r_mvp.multilinear_extension::<F>().unwrap();
 		let multilin_query = MultilinearQuery::<F>::with_full_query(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 

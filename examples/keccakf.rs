@@ -8,40 +8,38 @@ use anyhow::Result;
 use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
 	oracle::{
-		BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, CompositePolyOracle,
-		MultilinearOracleSet, MultilinearPolyOracle, OracleId, ProjectionVariant, ShiftVariant,
+		BatchId, CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
+		MultilinearPolyOracle, OracleId, ShiftVariant,
 	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
-		composition::{empty_mix_composition, index_composition, BivariateProduct},
+		composition::{empty_mix_composition, index_composition},
 		multilinear_query::MultilinearQuery,
-		transparent::{
-			disjoint_product::DisjointProduct, eq_ind::EqIndPartialEval,
-			shift_ind::ShiftIndPartialEval, step_down::StepDown,
-		},
-		util::tensor_prod_eq_ind,
+		transparent::step_down::StepDown,
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
 		MultilinearExtension, MultilinearPoly, MultivariatePoly,
 	},
 	protocols::{
 		evalcheck,
-		evalcheck::{BatchCommittedEvalClaims, EvalcheckProof, ShiftedEvalClaim},
-		sumcheck::{SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckWitness},
-		test_utils::{full_prove_with_switchover, full_verify},
+		evalcheck::{BatchCommittedEvalClaims, EvalcheckProof},
+		sumcheck::{batch_verify, SumcheckBatchProof, SumcheckProof, SumcheckProveOutput},
+		test_utils::{
+			full_prove_with_switchover, full_verify, make_non_same_query_pcs_sumcheck_claims,
+			make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover,
+		},
 		zerocheck,
 		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	util::inner_product_unchecked, BinaryField, BinaryField128bPolyval, BinaryField1b,
-	ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField1x128b,
-	PackedBinaryField8x16b, PackedField, TowerField,
+	BinaryField, BinaryField128bPolyval, BinaryField1b, ExtensionField, Field,
+	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField,
+	TowerField,
 };
 use binius_hash::GroestlHasher;
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
-use rayon::prelude::*;
 use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
 use tiny_keccak::keccakf;
 use tracing::instrument;
@@ -440,8 +438,10 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 	zerocheck_proof: ZerocheckProof,
 	sumcheck_proof: SumcheckProof<F>,
 	evalcheck_proof: EvalcheckProof<F>,
-	second_sumcheck_proof: SumcheckProof<F>,
-	second_evalcheck_proof: EvalcheckProof<F>,
+	second_round_batch_sumcheck_proof: SumcheckBatchProof<F>,
+	second_round_evalcheck_proofs: Vec<EvalcheckProof<F>>,
+	third_round_batch_sumcheck_proof: SumcheckBatchProof<F>,
+	third_round_evalcheck_proofs: Vec<EvalcheckProof<F>>,
 	trace_open_proof: PCSProof,
 }
 
@@ -553,293 +553,6 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 	witness
 }
 
-struct BivariateMeta<F: Field> {
-	query0: OracleId,
-	query1: OracleId,
-	sum: F,
-}
-
-#[allow(clippy::type_complexity)]
-#[instrument(skip_all)]
-fn make_second_round_sumcheck<'a, F, PW, CH>(
-	oracle_set: &mut MultilinearOracleSet<F>,
-	trace_batch: &CommittedBatch,
-	batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
-	shifted_eval_claims: Vec<ShiftedEvalClaim<F>>,
-	mut witness_index: Option<&mut MultilinearWitnessIndex<PW>>,
-	mut challenger: CH,
-) -> Result<(
-	SumcheckClaim<F, impl CompositionPoly<F> + 'static>,
-	Option<SumcheckWitness<PW, impl CompositionPoly<PW> + 'static, MultilinearWitness<'a, PW>>>,
-)>
-where
-	F: TowerField + From<PW>,
-	PW: TowerField + From<F>,
-	CH: CanSample<F>,
-{
-	let log_size = trace_batch.n_vars;
-
-	let max_shift_block_size = shifted_eval_claims
-		.iter()
-		.map(|shift_claim| shift_claim.shifted.block_size())
-		.max()
-		.unwrap_or(0);
-	assert_eq!(max_shift_block_size, 11);
-
-	let mut bivariate_metas = Vec::new();
-	let mut oracles = Vec::new();
-	let mut witnesses: Vec<Arc<dyn MultilinearPoly<PW> + Send + Sync>> = Vec::new();
-
-	let same_query_claim = batch_committed_eval_claims
-		.try_extract_same_query_pcs_claim(trace_batch.id)?
-		.expect("eval queries must be at a single point");
-
-	let wf_same_query_claim_eval_point = same_query_claim
-		.eval_point
-		.iter()
-		.copied()
-		.map(Into::into)
-		.collect::<Vec<PW>>();
-
-	let trace_mixing_challenges = challenger.sample_vec(trace_batch.n_polys);
-
-	let wf_trace_mixing_challenges = witness_index.as_ref().map(|_| {
-		trace_mixing_challenges
-			.iter()
-			.copied()
-			.map(Into::into)
-			.collect::<Vec<PW>>()
-	});
-
-	let mixed_trace_eval = inner_product_unchecked::<F, F>(
-		same_query_claim.evals.iter().copied(),
-		trace_mixing_challenges.iter().copied(),
-	);
-
-	let mixed_trace = oracle_set.add_linear_combination(
-		log_size,
-		trace_mixing_challenges
-			.iter()
-			.enumerate()
-			.map(|(i, &coeff)| {
-				(
-					oracle_set.committed_oracle_id(CommittedId {
-						batch_id: trace_batch.id,
-						index: i,
-					}),
-					coeff,
-				)
-			})
-			.collect::<Vec<_>>(),
-	)?;
-	let mixed_trace_projection = oracle_set.add_projected(
-		mixed_trace,
-		same_query_claim.eval_point[max_shift_block_size..].to_vec(),
-		ProjectionVariant::LastVars,
-	)?;
-	oracles.push(mixed_trace_projection);
-
-	let partial_eval_query = witness_index.as_ref().map(|_| {
-		MultilinearQuery::<PW>::with_full_query(
-			&wf_same_query_claim_eval_point[max_shift_block_size..],
-		)
-		.unwrap()
-	});
-
-	if let Some(ref mut witness_index) = witness_index {
-		let partial_eval_query = partial_eval_query.as_ref().expect("witness_index is Some");
-
-		let wf_mixing_challenges = wf_trace_mixing_challenges.unwrap();
-
-		let trace_witnesses = (0..trace_batch.n_polys)
-			.map(|i| {
-				let oracle = oracle_set.committed_oracle(CommittedId {
-					batch_id: trace_batch.id,
-					index: i,
-				});
-				witness_index.get(oracle.id()).unwrap().clone()
-			})
-			.collect::<Vec<_>>();
-		let mixed_trace_values = (0..1 << log_size)
-			.into_par_iter()
-			.map(|i| {
-				trace_witnesses
-					.iter()
-					.zip(wf_mixing_challenges.iter())
-					.map(|(multilin, &coeff)| multilin.evaluate_on_hypercube_and_scale(i, coeff))
-					.sum::<Result<PW, _>>()
-			})
-			.collect::<Result<Vec<_>, _>>()?;
-
-		let mixed_trace_witness = MultilinearExtension::from_values(mixed_trace_values)?
-			.evaluate_partial_high(partial_eval_query)?
-			.specialize_arc_dyn();
-
-		witness_index.set(mixed_trace_projection, mixed_trace_witness.clone());
-		witnesses.push(mixed_trace_witness);
-	}
-
-	let eq_ind = EqIndPartialEval::new(
-		max_shift_block_size,
-		same_query_claim.eval_point[..max_shift_block_size].to_vec(),
-	)?;
-
-	let eq_ind_oracle = oracle_set.add_transparent(Arc::new(eq_ind), F::TOWER_LEVEL)?;
-	oracles.push(eq_ind_oracle);
-
-	if let Some(ref mut witness_index) = witness_index {
-		let eq_ind_wf = EqIndPartialEval::<PW>::new(
-			max_shift_block_size,
-			wf_same_query_claim_eval_point[..max_shift_block_size].to_vec(),
-		)?;
-
-		let eq_ind_witness = eq_ind_wf.multilinear_extension()?.specialize_arc_dyn();
-		witness_index.set(eq_ind_oracle, eq_ind_witness.clone());
-		witnesses.push(eq_ind_witness);
-	}
-
-	bivariate_metas.push(BivariateMeta {
-		query0: mixed_trace_projection,
-		query1: eq_ind_oracle,
-		sum: mixed_trace_eval,
-	});
-
-	for claim in shifted_eval_claims {
-		let shifted = claim.shifted;
-		let shifted_oracle = oracle_set.add_projected(
-			shifted.inner().id(),
-			claim.eval_point[max_shift_block_size..].to_vec(),
-			ProjectionVariant::LastVars,
-		)?;
-		oracles.push(shifted_oracle);
-
-		if let Some(ref mut witness_index) = witness_index {
-			let multilin = witness_index.get(shifted.inner().id()).unwrap();
-			let partial_eval_query = partial_eval_query
-				.as_ref()
-				.expect("evalcheck_witness is Some");
-			let projected_multilin = multilin
-				.evaluate_partial_high(partial_eval_query)?
-				.upcast_arc_dyn();
-
-			witness_index.set(shifted_oracle, projected_multilin.clone());
-			witnesses.push(projected_multilin);
-		}
-
-		let wf_claim_eval_point = claim
-			.eval_point
-			.iter()
-			.copied()
-			.map(Into::into)
-			.collect::<Vec<PW>>();
-
-		let shift_ind = ShiftIndPartialEval::new(
-			shifted.block_size(),
-			shifted.shift_offset(),
-			shifted.shift_variant(),
-			claim.eval_point[..shifted.block_size()].to_vec(),
-		)?;
-
-		let shift_ind_wf = witness_index.as_ref().map(|_| {
-			ShiftIndPartialEval::new(
-				shifted.block_size(),
-				shifted.shift_offset(),
-				shifted.shift_variant(),
-				wf_claim_eval_point[..shifted.block_size()].to_vec(),
-			)
-			.unwrap()
-		});
-
-		let shift_ind_oracle = if shifted.block_size() < max_shift_block_size {
-			oracle_set.add_transparent(
-				Arc::new(DisjointProduct(
-					shift_ind.clone(),
-					EqIndPartialEval::new(
-						max_shift_block_size - shifted.block_size(),
-						claim.eval_point[shifted.block_size()..max_shift_block_size].to_vec(),
-					)
-					.unwrap(),
-				)),
-				F::TOWER_LEVEL,
-			)?
-		} else {
-			oracle_set.add_transparent(Arc::new(shift_ind.clone()), F::TOWER_LEVEL)?
-		};
-		oracles.push(shift_ind_oracle);
-
-		if let Some(ref mut witness_index) = witness_index {
-			let shift_ind_mle = shift_ind_wf.unwrap().multilinear_extension()?;
-			let shift_ind_witness = if shifted.block_size() < max_shift_block_size {
-				let mut shift_ind_values = vec![PW::ZERO; 1 << max_shift_block_size];
-				shift_ind_values[..1 << shifted.block_size()]
-					.copy_from_slice(shift_ind_mle.evals());
-				tensor_prod_eq_ind(
-					shifted.block_size(),
-					&mut shift_ind_values,
-					&wf_claim_eval_point[shifted.block_size()..max_shift_block_size],
-				)?;
-				MultilinearExtension::from_values(shift_ind_values)?
-			} else {
-				shift_ind_mle
-			};
-
-			let shift_ind_witness = shift_ind_witness.specialize_arc_dyn();
-			witness_index.set(shift_ind_oracle, shift_ind_witness.clone());
-			witnesses.push(shift_ind_witness);
-		}
-
-		bivariate_metas.push(BivariateMeta {
-			query0: shifted_oracle,
-			query1: shift_ind_oracle,
-			sum: claim.eval,
-		});
-	}
-
-	let index_compositions = bivariate_metas
-		.iter()
-		.map(|meta| {
-			index_composition(&oracles, [meta.query0, meta.query1], BivariateProduct).unwrap()
-		})
-		.collect::<Vec<_>>();
-
-	let composition_nvars = oracles.len();
-
-	let mixing_challenge = challenger.sample();
-	let mix_verifier = empty_mix_composition(composition_nvars, mixing_challenge);
-	let mix_verifier = mix_verifier.include(index_compositions.clone())?;
-
-	let inner_sums = bivariate_metas
-		.into_iter()
-		.map(|meta| meta.sum)
-		.collect::<Vec<_>>();
-	let mixed_sum = mix_verifier.evaluate_with_inner_evals(&inner_sums)?;
-
-	let multilinears = oracles
-		.into_iter()
-		.map(|id| oracle_set.oracle(id))
-		.collect();
-	let poly = CompositePolyOracle::new(max_shift_block_size, multilinears, mix_verifier)?;
-
-	let mixed_sumcheck_claim = SumcheckClaim {
-		poly,
-		sum: mixed_sum,
-		zerocheck_challenges: None,
-	};
-
-	let mixed_sumcheck_witness = witness_index
-		.map(move |_| {
-			let mix_prover = empty_mix_composition(composition_nvars, mixing_challenge.into());
-			let mix_prover = mix_prover.include(index_compositions);
-
-			mix_prover.and_then(|composition| {
-				MultilinearComposite::new(max_shift_block_size, composition, witnesses)
-			})
-		})
-		.transpose()?;
-
-	Ok((mixed_sumcheck_claim, mixed_sumcheck_witness))
-}
-
 fn zerocheck_verifier_oracles<F: Field>(
 	fixed_oracle: &FixedOracle<F>,
 	trace_oracle: &TraceOracle<F>,
@@ -907,7 +620,7 @@ where
 	PCS: PolyCommitScheme<P, F>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
-	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
 	let mut trace_witness = witness.to_index::<_, PW>(fixed_oracle, trace_oracle);
 
@@ -982,65 +695,87 @@ where
 	// Evalcheck
 	let trace_batch = oracles.committed_batch(trace_batch_id);
 
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
+	let mut new_sumchecks = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
 	let evalcheck_proof = evalcheck::prove(
-		&trace_witness,
+		oracles,
+		&mut trace_witness,
 		evalcheck_claim,
 		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
+		&mut new_sumchecks,
 	)
 	.unwrap();
 	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	assert_eq!(shifted_eval_claims.len(), 54);
-	assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(new_sumchecks.len(), 54);
 
-	let (second_sumcheck_claim, second_sumcheck_witness) = make_second_round_sumcheck(
+	// Second sumcheck
+	let second_switchover = 3;
+	let (second_round_batch_sumcheck_proof, second_round_evalcheck_claims) =
+		prove_bivariate_sumchecks_with_switchover(
+			new_sumchecks,
+			&mut challenger,
+			second_switchover,
+		)?;
+
+	// Second Evalchecks
+	let mut new_sumchecks_2 = Vec::new();
+
+	let second_round_evalcheck_proofs = second_round_evalcheck_claims
+		.into_iter()
+		.map(|claim| {
+			evalcheck::prove(
+				oracles,
+				&mut trace_witness,
+				claim,
+				&mut batch_committed_eval_claims,
+				&mut new_sumchecks_2,
+			)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	assert_eq!(new_sumchecks_2.len(), 0);
+
+	// Third sumcheck
+	assert!(batch_committed_eval_claims
+		.try_extract_same_query_pcs_claim(trace_batch.id)
+		.transpose()
+		.is_none());
+
+	let non_sqpcs_claims = batch_committed_eval_claims.take_claims(trace_batch.id)?;
+	let mut batch_committed_eval_claims_final =
+		BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
+
+	let non_sqpcs_sumchecks = make_non_same_query_pcs_sumchecks(
 		oracles,
-		&trace_batch,
-		batch_committed_eval_claims,
-		shifted_eval_claims,
-		Some(&mut trace_witness),
-		&mut challenger,
+		&mut trace_witness,
+		&non_sqpcs_claims,
+		&mut batch_committed_eval_claims_final,
 	)?;
 
-	let sumcheck_domain =
-		EvaluationDomain::new(second_sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
+	let third_switchover = 3;
+	let (third_round_batch_sumcheck_proof, third_round_evalcheck_claims) =
+		prove_bivariate_sumchecks_with_switchover(
+			non_sqpcs_sumchecks,
+			&mut challenger,
+			third_switchover,
+		)?;
 
-	// TODO: Improve the logic to commit the optimal switchover.
-	let switchover = 7;
-	let (_, output) = full_prove_with_switchover(
-		&second_sumcheck_claim,
-		second_sumcheck_witness.unwrap(),
-		&sumcheck_domain,
-		&mut challenger,
-		switchover,
-	);
+	let mut new_sumchecks_3 = Vec::new();
+	let third_round_evalcheck_proofs = third_round_evalcheck_claims
+		.into_iter()
+		.map(|claim| {
+			evalcheck::prove(
+				oracles,
+				&mut trace_witness,
+				claim,
+				&mut batch_committed_eval_claims_final,
+				&mut new_sumchecks_3,
+			)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	assert_eq!(new_sumchecks_3.len(), 0);
 
-	let SumcheckProveOutput {
-		evalcheck_claim: second_evalcheck_claim,
-		sumcheck_proof: second_sumcheck_proof,
-	} = output;
-
-	// Second Evalcheck
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
-	let second_evalcheck_proof = evalcheck::prove(
-		&trace_witness,
-		second_evalcheck_claim,
-		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
-	)
-	.unwrap();
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	assert_eq!(shifted_eval_claims.len(), 0);
-	assert_eq!(packed_eval_claims.len(), 0);
-
-	let same_query_claim = batch_committed_eval_claims
+	// Should be same query pcs claim
+	let same_query_claim = batch_committed_eval_claims_final
 		.try_extract_same_query_pcs_claim(trace_batch.id)
 		.unwrap()
 		.unwrap();
@@ -1059,8 +794,10 @@ where
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
-		second_sumcheck_proof,
-		second_evalcheck_proof,
+		second_round_batch_sumcheck_proof,
+		second_round_evalcheck_proofs,
+		third_round_batch_sumcheck_proof,
+		third_round_evalcheck_proofs,
 		trace_open_proof,
 	})
 }
@@ -1090,8 +827,10 @@ where
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
-		second_sumcheck_proof,
-		second_evalcheck_proof,
+		second_round_batch_sumcheck_proof,
+		second_round_evalcheck_proofs,
+		third_round_batch_sumcheck_proof,
+		third_round_evalcheck_proofs,
 		trace_open_proof,
 	} = proof;
 
@@ -1126,50 +865,82 @@ where
 	// Evalcheck
 	let trace_batch = oracles.committed_batch(trace_batch_id);
 
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
+	let mut new_sumcheck_claims = Vec::new();
 	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
 	evalcheck::verify(
+		oracles,
 		evalcheck_claim,
 		evalcheck_proof,
 		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
+		&mut new_sumcheck_claims,
 	)
 	.unwrap();
 	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	assert_eq!(shifted_eval_claims.len(), 54);
-	assert_eq!(packed_eval_claims.len(), 0);
+	assert_eq!(new_sumcheck_claims.len(), 54);
 
 	// Second Sumcheck
-	let (second_sumcheck_claim, _) = make_second_round_sumcheck::<F, F, _>(
+	let second_round_evalcheck_claims =
+		batch_verify(new_sumcheck_claims, second_round_batch_sumcheck_proof, &mut challenger)?;
+
+	// Second Evalchecks
+	let mut new_sumcheck_claims_2 = Vec::new();
+
+	second_round_evalcheck_claims
+		.into_iter()
+		.zip(second_round_evalcheck_proofs)
+		.try_for_each(|(claim, proof)| {
+			evalcheck::verify(
+				oracles,
+				claim,
+				proof,
+				&mut batch_committed_eval_claims,
+				&mut new_sumcheck_claims_2,
+			)
+		})?;
+
+	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	assert_eq!(new_sumcheck_claims_2.len(), 0);
+
+	// Third sumcheck
+	assert!(batch_committed_eval_claims
+		.try_extract_same_query_pcs_claim(trace_batch.id)
+		.transpose()
+		.is_none());
+
+	let non_sqpcs_claims = batch_committed_eval_claims.take_claims(trace_batch.id)?;
+	let mut batch_committed_eval_claims_final =
+		BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
+
+	let third_round_sumcheck_claims = make_non_same_query_pcs_sumcheck_claims(
 		oracles,
-		&trace_batch,
-		batch_committed_eval_claims,
-		shifted_eval_claims,
-		None,
+		&non_sqpcs_claims,
+		&mut batch_committed_eval_claims_final,
+	)?;
+
+	let third_round_evalcheck_claims = batch_verify(
+		third_round_sumcheck_claims,
+		third_round_batch_sumcheck_proof,
 		&mut challenger,
 	)?;
 
-	let (_, second_evalcheck_claim) =
-		full_verify(&second_sumcheck_claim, second_sumcheck_proof, &mut challenger);
+	let mut new_sumcheck_claims_3 = Vec::new();
 
-	// Second Evalcheck
-	let mut shifted_eval_claims = Vec::new();
-	let mut packed_eval_claims = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
-	evalcheck::verify(
-		second_evalcheck_claim,
-		second_evalcheck_proof,
-		&mut batch_committed_eval_claims,
-		&mut shifted_eval_claims,
-		&mut packed_eval_claims,
-	)?;
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	assert_eq!(shifted_eval_claims.len(), 0);
-	assert_eq!(packed_eval_claims.len(), 0);
+	third_round_evalcheck_claims
+		.into_iter()
+		.zip(third_round_evalcheck_proofs)
+		.try_for_each(|(claim, proof)| {
+			evalcheck::verify(
+				oracles,
+				claim,
+				proof,
+				&mut batch_committed_eval_claims_final,
+				&mut new_sumcheck_claims_3,
+			)
+		})?;
+	assert_eq!(new_sumcheck_claims_3.len(), 0);
 
-	let same_query_claim = batch_committed_eval_claims
+	// Should be same query pcs claim
+	let same_query_claim = batch_committed_eval_claims_final
 		.try_extract_same_query_pcs_claim(trace_batch.id)?
 		.expect("eval queries must be at a single point");
 

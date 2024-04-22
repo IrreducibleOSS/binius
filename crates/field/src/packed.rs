@@ -160,6 +160,10 @@ pub fn set_packed_slice_checked<P: PackedField>(
 		})
 }
 
+pub fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
+	packed.len() * P::WIDTH
+}
+
 impl<F: Field> Square for F {
 	fn square(self) -> Self {
 		<Self as Field>::square(&self)

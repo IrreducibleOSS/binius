@@ -2,8 +2,7 @@
 
 use super::error::Error;
 use crate::oracle::{
-	BatchId, CommittedBatch, CommittedId, CompositePolyOracle, MultilinearPolyOracle, Packed,
-	Shifted,
+	BatchId, CommittedBatch, CommittedId, CompositePolyOracle, MultilinearPolyOracle,
 };
 use binius_field::Field;
 use tracing::instrument;
@@ -30,30 +29,6 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub eval: F,
 	/// Whether the evaluation point is random
 	pub is_random_point: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ShiftedEvalClaim<F: Field> {
-	/// Evaluation Point
-	pub eval_point: Vec<F>,
-	/// Claimed Evaluation
-	pub eval: F,
-	/// Whether the evaluation point is random
-	pub is_random_point: bool,
-	/// Shift Description
-	pub shifted: Shifted<F>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PackedEvalClaim<F: Field> {
-	/// Evaluation Point
-	pub eval_point: Vec<F>,
-	/// Claimed Evaluation
-	pub eval: F,
-	/// Whether the evaluation point is random
-	pub is_random_point: bool,
-	/// Packing Description
-	pub packed: Packed<F>,
 }
 
 #[derive(Debug)]
@@ -86,6 +61,7 @@ pub struct CommittedEvalClaim<F: Field> {
 }
 
 /// A batched PCS claim where all member polynomials have the same query (can be verified directly)
+#[derive(Debug)]
 pub struct SameQueryPcsClaim<F: Field> {
 	/// Common evaluation point
 	pub eval_point: Vec<F>,
@@ -97,10 +73,6 @@ pub struct SameQueryPcsClaim<F: Field> {
 /// several evalcheck/sumcheck calls
 #[derive(Debug)]
 pub struct BatchCommittedEvalClaims<F: Field> {
-	/*
-	/// mapping from committed polynomial id to batch & position in batch
-	id_to_batch: HashMap<CommittedId, BatchRef>,
-	 */
 	/// Number of polynomials in each batch
 	batch_lengths: Vec<usize>,
 	/// Claims accumulated for each batch
@@ -123,9 +95,8 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 	}
 
 	/// Insert a new claim into the batch.
-	pub fn insert(&mut self, claim: CommittedEvalClaim<F>) -> Result<(), Error> {
+	pub fn insert(&mut self, claim: CommittedEvalClaim<F>) {
 		self.claims_by_batch[claim.id.batch_id].push(claim);
-		Ok(())
 	}
 
 	pub fn n_batches(&self) -> usize {

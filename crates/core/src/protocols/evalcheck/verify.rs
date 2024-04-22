@@ -4,24 +4,30 @@ use super::{
 	error::{Error, VerificationError},
 	evalcheck::{
 		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckClaim, EvalcheckMultilinearClaim,
-		EvalcheckProof, PackedEvalClaim,
+		EvalcheckProof,
+	},
+	subclaims::{
+		packed_sumcheck_meta, projected_bivariate_claim, shifted_sumcheck_meta,
+		BivariateSumcheckClaim,
 	},
 };
 use crate::{
-	oracle::{MultilinearPolyOracle, ProjectionVariant},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
 	polynomial::{extrapolate_line, CompositionPoly},
-	protocols::evalcheck::evalcheck::ShiftedEvalClaim,
 };
-use binius_field::{util::inner_product_unchecked, Field};
+use binius_field::{util::inner_product_unchecked, TowerField};
 use tracing::instrument;
 
+/// Verify an evalcheck claim.
+///
+/// See [`evalcheck::prove`](`super::prove::prove`) docs for comments on [`BatchCommittedEvalClaims`] and `new_sumchecks`.
 #[instrument(skip_all, name = "evalcheck::verify")]
-pub fn verify<F: Field, C>(
+pub fn verify<F: TowerField, C>(
+	oracles: &mut MultilinearOracleSet<F>,
 	evalcheck_claim: EvalcheckClaim<F, C>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
-	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
-	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
+	new_sumchecks: &mut Vec<BivariateSumcheckClaim<F>>,
 ) -> Result<(), Error>
 where
 	C: CompositionPoly<F>,
@@ -61,23 +67,23 @@ where
 			};
 
 			verify_multilinear(
+				oracles,
 				subclaim,
 				subproof,
 				batch_commited_eval_claims,
-				shifted_eval_claims,
-				packed_eval_claims,
+				new_sumchecks,
 			)
 		})?;
 
 	Ok(())
 }
 
-pub fn verify_multilinear<F: Field>(
+fn verify_multilinear<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
 	evalcheck_claim: EvalcheckMultilinearClaim<F>,
 	evalcheck_proof: EvalcheckProof<F>,
 	batch_commited_eval_claims: &mut BatchCommittedEvalClaims<F>,
-	shifted_eval_claims: &mut Vec<ShiftedEvalClaim<F>>,
-	packed_eval_claims: &mut Vec<PackedEvalClaim<F>>,
+	new_sumchecks: &mut Vec<BivariateSumcheckClaim<F>>,
 ) -> Result<(), Error> {
 	let EvalcheckMultilinearClaim {
 		poly: multilinear,
@@ -112,7 +118,7 @@ pub fn verify_multilinear<F: Field>(
 				is_random_point,
 			};
 
-			batch_commited_eval_claims.insert(subclaim)?;
+			batch_commited_eval_claims.insert(subclaim);
 		}
 
 		MultilinearPolyOracle::Repeating { inner, .. } => {
@@ -130,11 +136,11 @@ pub fn verify_multilinear<F: Field>(
 			};
 
 			verify_multilinear(
+				oracles,
 				subclaim,
 				*subproof,
 				batch_commited_eval_claims,
-				shifted_eval_claims,
-				packed_eval_claims,
+				new_sumchecks,
 			)?;
 		}
 
@@ -170,11 +176,11 @@ pub fn verify_multilinear<F: Field>(
 			};
 
 			verify_multilinear(
+				oracles,
 				claim1,
 				*subproof1,
 				batch_commited_eval_claims,
-				shifted_eval_claims,
-				packed_eval_claims,
+				new_sumchecks,
 			)?;
 
 			let claim2 = EvalcheckMultilinearClaim {
@@ -185,11 +191,11 @@ pub fn verify_multilinear<F: Field>(
 			};
 
 			verify_multilinear(
+				oracles,
 				claim2,
 				*subproof2,
 				batch_commited_eval_claims,
-				shifted_eval_claims,
-				packed_eval_claims,
+				new_sumchecks,
 			)?;
 		}
 
@@ -211,11 +217,11 @@ pub fn verify_multilinear<F: Field>(
 			};
 
 			verify_multilinear(
+				oracles,
 				new_claim,
 				evalcheck_proof,
 				batch_commited_eval_claims,
-				shifted_eval_claims,
-				packed_eval_claims,
+				new_sumchecks,
 			)?;
 		}
 
@@ -225,14 +231,9 @@ pub fn verify_multilinear<F: Field>(
 				_ => return Err(VerificationError::SubproofMismatch.into()),
 			};
 
-			let subclaim = ShiftedEvalClaim {
-				eval_point,
-				eval,
-				is_random_point,
-				shifted,
-			};
-
-			shifted_eval_claims.push(subclaim);
+			let meta = shifted_sumcheck_meta(oracles, &shifted, eval_point.as_slice())?;
+			let sumcheck_claim = projected_bivariate_claim(oracles, meta, eval)?;
+			new_sumchecks.push(sumcheck_claim);
 		}
 
 		MultilinearPolyOracle::Packed(_id, packed) => {
@@ -241,14 +242,9 @@ pub fn verify_multilinear<F: Field>(
 				_ => return Err(VerificationError::SubproofMismatch.into()),
 			};
 
-			let subclaim = PackedEvalClaim {
-				eval_point,
-				eval,
-				is_random_point,
-				packed,
-			};
-
-			packed_eval_claims.push(subclaim);
+			let meta = packed_sumcheck_meta(oracles, &packed, eval_point.as_slice())?;
+			let sumcheck_claim = projected_bivariate_claim(oracles, meta, eval)?;
+			new_sumchecks.push(sumcheck_claim);
 		}
 
 		MultilinearPolyOracle::LinearCombination(_id, lin_com) => {
@@ -262,7 +258,7 @@ pub fn verify_multilinear<F: Field>(
 			}
 
 			// Verify the evaluation of the linear combination over the claimed evaluations
-			let actual_eval = inner_product_unchecked(
+			let actual_eval = inner_product_unchecked::<F, F>(
 				subproofs.iter().map(|(eval, _)| *eval),
 				lin_com.coefficients(),
 			);
@@ -281,11 +277,11 @@ pub fn verify_multilinear<F: Field>(
 					};
 
 					verify_multilinear(
+						oracles,
 						subclaim,
 						subproof,
 						batch_commited_eval_claims,
-						shifted_eval_claims,
-						packed_eval_claims,
+						new_sumchecks,
 					)
 				},
 			)?;

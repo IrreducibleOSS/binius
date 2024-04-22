@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{BatchId, CommittedId, OracleId},
+	oracle::{BatchId, CommittedId, Error as OracleError, OracleId},
 	polynomial::Error as PolynomialError,
 };
 
@@ -19,6 +19,8 @@ pub enum Error {
 	ConflictingEvals(BatchId),
 	#[error("missing evaluation in batch {0}")]
 	MissingEvals(BatchId),
+	#[error("oracle error: {0}")]
+	Oracle(#[from] OracleError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
