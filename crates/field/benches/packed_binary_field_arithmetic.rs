@@ -2,28 +2,12 @@
 
 use binius_field::{
 	arch::{
-		packed_64::{
-			PackedBinaryField1x64b, PackedBinaryField2x32b, PackedBinaryField4x16b,
-			PackedBinaryField8x8b,
-		},
-		packed_polyval_256::PackedBinaryPolyval2x128b,
-		packed_polyval_512::PackedBinaryPolyval4x128b,
+		packed_128::*, packed_256::*, packed_512::*, packed_64::*, packed_aes_128::*,
+		packed_aes_256::*, packed_aes_512::*, packed_polyval_256::*, packed_polyval_512::*,
 		PackedStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
-	packed_binary_field::{
-		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b,
-	},
-	BinaryField128bPolyval, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
-	PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
-	PackedAESBinaryField2x64b, PackedAESBinaryField32x16b, PackedAESBinaryField32x8b,
-	PackedAESBinaryField4x128b, PackedAESBinaryField4x32b, PackedAESBinaryField4x64b,
-	PackedAESBinaryField64x8b, PackedAESBinaryField8x16b, PackedAESBinaryField8x32b,
-	PackedAESBinaryField8x64b, PackedBinaryField16x16b, PackedBinaryField16x32b,
-	PackedBinaryField2x128b, PackedBinaryField32x16b, PackedBinaryField32x8b,
-	PackedBinaryField4x128b, PackedBinaryField4x64b, PackedBinaryField64x8b,
-	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField,
+	BinaryField128bPolyval, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
@@ -159,10 +143,10 @@ impl<T: Mul<Self, Output = Self> + Sized> SelfMul for T {}
 fn multiply(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multiply");
 	benchmark_strategy!(group, strategies @ (
-		("main", SelfMul, |a, b| { a * b }),
-		("pairwise", TaggedMul::<PairwiseStrategy>, |a, b| { TaggedMul::<PairwiseStrategy>::mul(a, b) }),
-		("packed", TaggedMul::<PackedStrategy>, |a, b| { TaggedMul::<PackedStrategy>::mul(a, b) }),
-		("simd", TaggedMul::<SimdStrategy>, |a, b| { TaggedMul::<SimdStrategy>::mul(a, b) }),
+		("main", SelfMul, Mul::mul),
+		("pairwise", TaggedMul::<PairwiseStrategy>, TaggedMul::<PairwiseStrategy>::mul),
+		("packed", TaggedMul::<PackedStrategy>, TaggedMul::<PackedStrategy>::mul),
+		("simd", TaggedMul::<SimdStrategy>, TaggedMul::<SimdStrategy>::mul),
 		)
 	);
 	group.finish();
