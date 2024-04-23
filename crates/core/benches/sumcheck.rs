@@ -76,7 +76,7 @@ where
 					sumcheck_witness.clone(),
 					&domain,
 					prove_challenger.clone(),
-					switchover,
+					|_| switchover,
 				)
 			});
 		});
@@ -145,7 +145,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
-					1,
+					|_| 1,
 				)
 			});
 		});
@@ -225,7 +225,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
-					1,
+					|_| 1,
 				)
 			});
 		});

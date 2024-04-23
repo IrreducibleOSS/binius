@@ -137,8 +137,10 @@ where
 	>(sumcheck_claim.poly.max_individual_degree() + 1)
 	.unwrap();
 
-	// TODO: Improve the logic to commit the optimal switchover.
-	let switchover = log_size / 2;
+	let switchover_fn = |extension_degree| match extension_degree {
+		128 => 5,
+		_ => 1,
+	};
 
 	// full_prove_with_switchover is instrumented
 	tracing::debug!("Proving sumcheck");
@@ -147,7 +149,7 @@ where
 		sumcheck_witness,
 		&sumcheck_domain,
 		&mut challenger,
-		switchover,
+		switchover_fn,
 	);
 
 	let SumcheckProveOutput {

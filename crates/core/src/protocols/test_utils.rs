@@ -25,7 +25,7 @@ use crate::{
 };
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField, TowerField};
 use p3_challenger::{CanObserve, CanSample};
-use std::iter::{repeat, Step};
+use std::iter::Step;
 use tracing::instrument;
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
@@ -231,7 +231,7 @@ pub fn full_prove_with_switchover<F, PW, CW, M, CH>(
 	witness: SumcheckWitness<PW, CW, M>,
 	domain: &EvaluationDomain<PW::Scalar>,
 	challenger: CH,
-	switchover: usize,
+	switchover_fn: impl Fn(usize) -> usize,
 ) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F>)
 where
 	F: Field + From<PW::Scalar>,
@@ -243,15 +243,10 @@ where
 {
 	let n_vars = claim.poly.n_vars();
 
-	assert!(switchover > 0);
 	assert_eq!(witness.n_vars(), n_vars);
 
-	let switchovers = repeat(switchover)
-		.take(witness.n_multilinears())
-		.collect::<Vec<_>>();
-
 	let prover_state =
-		SumcheckProverState::new(domain, claim.clone(), witness, &switchovers).unwrap();
+		SumcheckProverState::new(domain, claim.clone(), witness, switchover_fn).unwrap();
 	full_prove_with_switchover_impl(n_vars, prover_state, challenger)
 }
 
@@ -262,7 +257,7 @@ where
 pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
-	switchover: usize,
+	switchover_fn: impl Fn(usize) -> usize + Clone,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + Step + From<PW::Scalar>,
@@ -274,13 +269,16 @@ where
 
 	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
-	assert!(switchover > 0);
 	let prover_states = witnesses
 		.into_iter()
 		.zip(&claims)
 		.map(|(witness, claim)| {
-			// FIXME temporary hack until a better way to specify switchovers is implemented
-			SumcheckProverState::new(&bivariate_domain, claim.clone(), witness, &[switchover; 2])
+			SumcheckProverState::new(
+				&bivariate_domain,
+				claim.clone(),
+				witness,
+				switchover_fn.clone(),
+			)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 

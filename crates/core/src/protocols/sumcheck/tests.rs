@@ -147,7 +147,7 @@ fn test_prove_verify_interaction_helper(
 		sumcheck_witness,
 		&domain,
 		challenger.clone(),
-		switchover_rd,
+		|_| switchover_rd,
 	);
 
 	let (verifier_rd_claims, final_verify_output) =
@@ -229,13 +229,13 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	let domain = EvaluationDomain::<OF>::new_isomorphic::<F>(n_multilinears + 1).unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-	let switchover = 3;
+	let switchover_fn = |_| 3;
 	let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
 		&sumcheck_claim,
 		operating_witness,
 		&domain,
 		challenger.clone(),
-		switchover,
+		switchover_fn,
 	);
 
 	let (verifier_rd_claims, final_verify_output) =
@@ -430,21 +430,21 @@ fn test_prove_verify_batch() {
 		&domain,
 		sumcheck_claims[0].clone(),
 		witness_iter.next().unwrap(),
-		&[3],
+		|_| 3,
 	)
 	.unwrap();
 	let prover1 = SumcheckProverState::new(
 		&domain,
 		sumcheck_claims[1].clone(),
 		witness_iter.next().unwrap(),
-		&[4],
+		|_| 4,
 	)
 	.unwrap();
 	let prover2 = SumcheckProverState::new(
 		&domain,
 		sumcheck_claims[2].clone(),
 		witness_iter.next().unwrap(),
-		&[5],
+		|_| 5,
 	)
 	.unwrap();
 

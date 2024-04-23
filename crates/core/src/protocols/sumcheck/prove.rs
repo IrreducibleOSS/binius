@@ -109,27 +109,27 @@ where
 /// A mutable prover state. To prove a sumcheck claim, supply a multivariate composite witness. In
 /// some cases it makes sense to do so in an different yet isomorphic field PW (witness packed
 /// field) which may preferable due to superior performance. One example of such operating field
-/// would be BinaryField128bPolyval, which tends to be much faster than 128-bit tower field on x86
+/// would be `BinaryField128bPolyval`, which tends to be much faster than 128-bit tower field on x86
 /// CPUs. The only constraint is that constituent MLEs should have MultilinearPoly impls for PW -
 /// something which is trivially satisfied for MLEs with tower field scalars for claims in tower
 /// field as well.
 ///
-/// Prover state is instantiated via `new` method, followed by exactly n_vars `execute_round` invocations.
+/// Prover state is instantiated via `new` method, followed by exactly $n\\_vars$ `execute_round` invocations.
 /// Each of those takes in an optional challenge (None on first round and Some on following rounds) and
 /// evaluation domain. Proof and Evalcheck claim are obtained via `finalize` call at the end.
 ///
 /// Each MLE in the multivariate composite is parameterized by `switchover` round number, which
 /// controls small field optimization and corresponding time/memory tradeoff. In rounds
-/// 0..(switchover-1) the partial evaluation of a specific MLE is obtained by doing
-/// 2**(n_vars-round) inner products, with total time complexity proportional to the MLE size.
+/// $0, \ldots, switchover-1$ the partial evaluation of a specific MLE is obtained by doing
+/// $2^{n\\_vars - round}$ inner products, with total time complexity proportional to the MLE size.
 /// After switchover the inner products are stored in a new MLE in large field, which is halved on each
 /// round. There are two tradeoffs at play:
-///   1) Pre-switchover rounds perform Small * Large field multiplications, but do 2^round as many of them.
+///   1) Pre-switchover rounds perform Small * Large field multiplications, but do $2^{round}$ as many of them.
 ///   2) Pre-switchover rounds require no additional memory, but initial folding allocates a new MLE in a
-///      large field that is 2^switchover times smaller - for example for 1-bit polynomial and 128-bit large
+///      large field that is $2^{switchover}$ times smaller - for example for 1-bit polynomial and 128-bit large
 ///      field a switchover of 7 would require additional memory identical to the polynomial size.
 ///
-/// NB. Note that switchover=0 does not make sense, as first round is never folded.
+/// NB. Note that `switchover=0` does not make sense, as first round is never folded.
 #[derive(Debug, Getters)]
 pub struct SumcheckProverState<'a, F, PW, CW, M>
 where
@@ -164,15 +164,14 @@ where
 	M: MultilinearPoly<PW> + Sync,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
-	/// a different (but isomorphic) packed field PW. `switchovers` slice contains rounds
-	/// given multilinear index - expectation is that the caller would have enough context to
-	/// introspect on field & polynomial sizes. This is a stopgap measure until a proper type
-	/// reflection mechanism is introduced.
+	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
+	/// switchover round number per multilinear polynomial as a function of its
+	/// [`MultilinearPoly::extension_degree`] value.
 	pub fn new(
 		domain: &'a EvaluationDomain<PW::Scalar>,
 		sumcheck_claim: SumcheckClaim<F>,
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
-		switchovers: &[usize],
+		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
 		let n_vars = sumcheck_claim.n_vars();
 
@@ -190,24 +189,13 @@ where
 			return Err(Error::ProverClaimWitnessMismatch(err_str));
 		}
 
-		if switchovers.len() != sumcheck_witness.n_multilinears() {
-			let err_str = format!(
-				"Witness contains {} multilinears but {} switchovers are given.",
-				sumcheck_witness.n_multilinears(),
-				switchovers.len()
-			);
-
-			return Err(Error::ImproperInput(err_str));
-		}
-
 		check_evaluation_domain(sumcheck_claim.poly.max_individual_degree(), domain)?;
 
 		let mut max_query_vars = 1;
 		let mut multilinears = Vec::new();
 
-		for (small_field_multilin, &switchover) in
-			sumcheck_witness.multilinears.into_iter().zip(switchovers)
-		{
+		for small_field_multilin in sumcheck_witness.multilinears {
+			let switchover = switchover_fn(small_field_multilin.extension_degree());
 			max_query_vars = max(max_query_vars, switchover);
 			multilinears.push(SumcheckMultilinear::Transparent {
 				switchover,

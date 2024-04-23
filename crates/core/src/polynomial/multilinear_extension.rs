@@ -355,6 +355,10 @@ where
 		self.0.n_vars()
 	}
 
+	fn extension_degree(&self) -> usize {
+		PE::Scalar::DEGREE
+	}
+
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<PE::Scalar, Error> {
 		let eval = self.0.evaluate_on_hypercube(index)?;
 		Ok(eval.into())

@@ -679,14 +679,17 @@ where
 	)
 	.unwrap();
 
-	// TODO: Improve the logic to commit the optimal switchover.
-	let switchover = 3;
+	let switchover_fn = |extension_degree| match extension_degree {
+		128 => 5,
+		_ => 1,
+	};
+
 	let (_, output) = full_prove_with_switchover(
 		&sumcheck_claim,
 		sumcheck_witness,
 		&sumcheck_domain,
 		&mut challenger,
-		switchover,
+		switchover_fn,
 	);
 
 	let SumcheckProveOutput {
@@ -711,13 +714,8 @@ where
 	assert_eq!(new_sumchecks.len(), 54);
 
 	// Second sumcheck
-	let second_switchover = 3;
 	let (second_round_batch_sumcheck_proof, second_round_evalcheck_claims) =
-		prove_bivariate_sumchecks_with_switchover(
-			new_sumchecks,
-			&mut challenger,
-			second_switchover,
-		)?;
+		prove_bivariate_sumchecks_with_switchover(new_sumchecks, &mut challenger, switchover_fn)?;
 
 	// Second Evalchecks
 	let mut new_sumchecks_2 = Vec::new();
@@ -753,12 +751,11 @@ where
 		&mut batch_committed_eval_claims_final,
 	)?;
 
-	let third_switchover = 3;
 	let (third_round_batch_sumcheck_proof, third_round_evalcheck_claims) =
 		prove_bivariate_sumchecks_with_switchover(
 			non_sqpcs_sumchecks,
 			&mut challenger,
-			third_switchover,
+			switchover_fn,
 		)?;
 
 	let mut new_sumchecks_3 = Vec::new();

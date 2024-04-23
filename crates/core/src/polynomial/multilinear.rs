@@ -18,6 +18,9 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		1 << self.n_vars()
 	}
 
+	/// Degree of `P::Scalar` as a field extension over the smallest subfield containing the polynomial's coefficients.
+	fn extension_degree(&self) -> usize;
+
 	/// Get the evaluations of the polynomial at a vertex of the hypercube.
 	///
 	/// # Arguments
@@ -78,6 +81,10 @@ where
 
 	fn size(&self) -> usize {
 		(**self).size()
+	}
+
+	fn extension_degree(&self) -> usize {
+		(**self).extension_degree()
 	}
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
