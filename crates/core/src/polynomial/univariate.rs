@@ -17,14 +17,29 @@ pub struct EvaluationDomain<F: Field> {
 	interpolation_matrix: Matrix<F>,
 }
 
+fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error> {
+	let points = iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1))
+		.take(size)
+		.collect::<Vec<F>>();
+	if points.len() != size {
+		return Err(Error::DomainSizeTooLarge);
+	}
+	Ok(points)
+}
+
 impl<F: Field + Step> EvaluationDomain<F> {
 	pub fn new(size: usize) -> Result<Self, Error> {
-		let points = iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1))
-			.take(size)
-			.collect::<Vec<_>>();
-		if points.len() != size {
-			return Err(Error::DomainSizeTooLarge);
-		}
+		let points = make_evaluation_points::<F>(size)?;
+		Self::from_points(points)
+	}
+}
+
+impl<OF: Field> EvaluationDomain<OF> {
+	pub fn new_isomorphic<F: Field + Step + Into<OF>>(size: usize) -> Result<Self, Error> {
+		let points = make_evaluation_points::<F>(size)?
+			.into_iter()
+			.map(Into::into)
+			.collect::<Vec<OF>>();
 		Self::from_points(points)
 	}
 }

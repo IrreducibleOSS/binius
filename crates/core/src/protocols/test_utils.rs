@@ -229,7 +229,7 @@ where
 pub fn full_prove_with_switchover<F, PW, CW, M, CH>(
 	claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<PW, CW, M>,
-	domain: &EvaluationDomain<F>,
+	domain: &EvaluationDomain<PW::Scalar>,
 	challenger: CH,
 	switchover: usize,
 ) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F>)
@@ -270,7 +270,7 @@ where
 	PW::Scalar: From<F>,
 	CH: CanObserve<F> + CanSample<F> + Clone,
 {
-	let bivariate_domain = EvaluationDomain::new(3)?;
+	let bivariate_domain = EvaluationDomain::new_isomorphic::<F>(3)?;
 
 	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 

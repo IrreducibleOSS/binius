@@ -143,7 +143,7 @@ where
 	composition: CW,
 	multilinears: Vec<SumcheckMultilinear<PW, M>>,
 
-	domain: &'a EvaluationDomain<F>,
+	domain: &'a EvaluationDomain<PW::Scalar>,
 	query: Option<MultilinearQuery<PW>>,
 
 	#[getset(get = "pub")]
@@ -169,7 +169,7 @@ where
 	/// introspect on field & polynomial sizes. This is a stopgap measure until a proper type
 	/// reflection mechanism is introduced.
 	pub fn new(
-		domain: &'a EvaluationDomain<F>,
+		domain: &'a EvaluationDomain<PW::Scalar>,
 		sumcheck_claim: SumcheckClaim<F>,
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		switchovers: &[usize],
@@ -301,11 +301,7 @@ where
 		self.composition.degree()
 	}
 
-	fn evals_to_coeffs(
-		&self,
-		mut evals: Vec<F>,
-		domain: &EvaluationDomain<F>,
-	) -> Result<Vec<F>, Error> {
+	fn evals_to_coeffs(&self, mut evals: Vec<PW::Scalar>) -> Result<Vec<PW::Scalar>, Error> {
 		// We have partial information about the degree $d$ univariate round polynomial $r(X)$,
 		// but in each of the following cases, we can complete the picture and attain evaluations
 		// at $r(0), \ldots, r(d+1)$.
@@ -314,32 +310,33 @@ where
 				// This is the case where we are processing the first round of a sumcheck that came from zerocheck.
 				// We are given $r(2), \ldots, r(d+1)$.
 				// From context, we infer that $r(0) = r(1) = 0$.
-				evals.insert(0, F::ZERO);
-				evals.insert(0, F::ZERO);
+				evals.insert(0, PW::Scalar::ZERO);
+				evals.insert(0, PW::Scalar::ZERO);
 			} else {
+				let current_round_sum = PW::Scalar::from(self.round_claim().current_round_sum);
 				// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d+1)$
 				// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
 				// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
 				// which allows us to compute the value of $r(0)$
-				let alpha = zc_challenges[self.round - 1];
-				let alpha_bar = F::ONE - alpha;
+				let alpha = PW::Scalar::from(zc_challenges[self.round - 1]);
+				let alpha_bar = PW::Scalar::ONE - alpha;
 				let one_evaluation = evals[0];
-				let zero_evaluation_numerator =
-					self.round_claim().current_round_sum - one_evaluation * alpha;
+				let zero_evaluation_numerator = current_round_sum - one_evaluation * alpha;
 				let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap();
 				let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 
 				evals.insert(0, zero_evaluation);
 			}
 		} else {
+			let current_round_sum = PW::Scalar::from(self.round_claim().current_round_sum);
 			// In the case where this is a sumcheck that did not come from zerocheck,
 			// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
 			// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
-			evals.insert(0, self.round_claim().current_round_sum - evals[0]);
+			evals.insert(0, current_round_sum - evals[0]);
 		}
 
-		assert_eq!(evals.len(), domain.size());
-		let coeffs = domain.interpolate(&evals)?;
+		assert_eq!(evals.len(), self.domain.size());
+		let coeffs = self.domain.interpolate(&evals)?;
 		Ok(coeffs)
 	}
 
@@ -393,15 +390,6 @@ where
 			..
 		} = self;
 
-		// Transform evaluation domain points to operating field
-		let wf_domain = self
-			.domain
-			.points()
-			.iter()
-			.copied()
-			.map(Into::into)
-			.collect::<Vec<_>>();
-
 		// Handling different cases separately for more inlining opportunities
 		// (especially in early rounds)
 		let any_transparent = multilinears
@@ -414,24 +402,19 @@ where
 		let evals = match (round, any_transparent, any_folded) {
 			// All transparent, first round - direct sampling
 			(0, true, false) => {
-				self.sum_to_round_evals(&wf_domain, Self::only_transparent, Self::direct_sample)
+				self.sum_to_round_evals(Self::only_transparent, Self::direct_sample)
 			}
 
 			// All transparent, rounds 1..n_vars - small field inner product
-			(_, true, false) => {
-				self.sum_to_round_evals(&wf_domain, Self::only_transparent, |multilin, i| {
-					self.subcube_inner_product(multilin, i)
-				})
-			}
+			(_, true, false) => self.sum_to_round_evals(Self::only_transparent, |multilin, i| {
+				self.subcube_inner_product(multilin, i)
+			}),
 
 			// All folded - direct sampling
-			(_, false, true) => {
-				self.sum_to_round_evals(&wf_domain, Self::only_folded, Self::direct_sample)
-			}
+			(_, false, true) => self.sum_to_round_evals(Self::only_folded, Self::direct_sample),
 
 			// Heterogeneous case
 			_ => self.sum_to_round_evals(
-				&wf_domain,
 				|x| x,
 				|sc_multilin, i| match sc_multilin {
 					SumcheckMultilinear::Transparent {
@@ -446,10 +429,10 @@ where
 			),
 		}?;
 
-		let untrimmed_coeffs = self.evals_to_coeffs(evals, self.domain)?;
+		let untrimmed_coeffs = self.evals_to_coeffs(evals)?;
 		let trimmed_coeffs = self.trim_coeffs(untrimmed_coeffs);
 		let proof_round = SumcheckRound {
-			coeffs: trimmed_coeffs,
+			coeffs: trimmed_coeffs.into_iter().map(Into::into).collect(),
 		};
 		self.last_round_proof = Some(proof_round.clone());
 
@@ -515,14 +498,14 @@ where
 		rd_vars: usize,
 		n_multilinears: usize,
 		n_round_evals: usize,
-		eval_points: &[PW::Scalar],
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
 		precomps: Vec<T>,
-	) -> Vec<F>
+	) -> Vec<PW::Scalar>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
 	{
+		let eval_points = self.domain.points();
 		let fold_result = (0..1 << (rd_vars - 1)).into_par_iter().fold(
 			|| ParFoldState::new(n_multilinears, n_round_evals),
 			|mut state, i| {
@@ -546,7 +529,7 @@ where
 		);
 
 		// Simply sum up the fold partitions.
-		let wf_round_evals = fold_result.map(|state| state.round_evals).reduce(
+		fold_result.map(|state| state.round_evals).reduce(
 			|| vec![PW::Scalar::ZERO; n_round_evals],
 			|mut overall_round_evals, partial_round_evals| {
 				overall_round_evals
@@ -555,9 +538,7 @@ where
 					.for_each(|(f, s)| *f += s);
 				overall_round_evals
 			},
-		);
-
-		wf_round_evals.into_iter().map(Into::into).collect()
+		)
 	}
 
 	fn calculate_fold_result_zerocheck<'b, T>(
@@ -565,14 +546,14 @@ where
 		rd_vars: usize,
 		n_multilinears: usize,
 		n_round_evals: usize,
-		eval_points: &[PW::Scalar],
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
 		precomps: Vec<T>,
-	) -> Vec<F>
+	) -> Vec<PW::Scalar>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
 	{
+		let eval_points = self.domain.points();
 		let zerocheck_eq_ind = self
 			.zerocheck_eq_ind()
 			.expect("zerocheck eq ind available by invariant");
@@ -605,7 +586,7 @@ where
 		);
 
 		// Simply sum up the fold partitions.
-		let wf_round_evals = fold_result.map(|state| state.round_evals).reduce(
+		fold_result.map(|state| state.round_evals).reduce(
 			|| vec![PW::Scalar::ZERO; n_round_evals],
 			|mut overall_round_evals, partial_round_evals| {
 				overall_round_evals
@@ -614,9 +595,7 @@ where
 					.for_each(|(f, s)| *f += s);
 				overall_round_evals
 			},
-		);
-
-		wf_round_evals.into_iter().map(Into::into).collect()
+		)
 	}
 
 	// The gist of sumcheck - summing over evaluations of the multivariate composite on evaluation domain
@@ -626,10 +605,9 @@ where
 	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
 	fn sum_to_round_evals<'b, T>(
 		&'b self,
-		eval_points: &[PW::Scalar],
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-	) -> Result<Vec<F>, Error>
+	) -> Result<Vec<PW::Scalar>, Error>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
@@ -649,7 +627,6 @@ where
 				self.get_round_polynomial_degree()
 			}
 		};
-		debug_assert_eq!(eval_points.len(), self.get_round_polynomial_degree() + 1);
 
 		// When possible to pre-process unpacking sumcheck multilinears, we do so.
 		// For performance, it's ideal to hoist this out of the tight loop.
@@ -662,7 +639,6 @@ where
 				rd_vars,
 				n_multilinears,
 				n_round_evals,
-				eval_points,
 				eval01,
 				precomps,
 			))
@@ -671,7 +647,6 @@ where
 				rd_vars,
 				n_multilinears,
 				n_round_evals,
-				eval_points,
 				eval01,
 				precomps,
 			))

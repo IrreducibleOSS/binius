@@ -226,7 +226,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	};
 
 	// Setup evaluation domain
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<OF>::new_isomorphic::<F>(n_multilinears + 1).unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let switchover = 3;

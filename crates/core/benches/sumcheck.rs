@@ -90,7 +90,8 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
+	let domain =
+		EvaluationDomain::<FPolyval>::new_isomorphic::<FTower>(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
@@ -158,7 +159,8 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
+	let domain =
+		EvaluationDomain::<FPolyval>::new_isomorphic::<FTower>(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
@@ -184,7 +186,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 				composition.clone(),
 				multilinears
 					.iter()
-					.map(|multilin| multilin.to_ref().specialize())
+					.map(|multilin| multilin.to_ref().specialize::<FTower>())
 					.collect(),
 			)
 			.unwrap();

@@ -132,8 +132,10 @@ where
 		zerocheck_proof,
 	} = prove_zerocheck(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
 
-	let sumcheck_domain =
-		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
+	let sumcheck_domain = EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<
+		BinaryField128b,
+	>(sumcheck_claim.poly.max_individual_degree() + 1)
+	.unwrap();
 
 	// TODO: Improve the logic to commit the optimal switchover.
 	let switchover = log_size / 2;

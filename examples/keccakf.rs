@@ -674,8 +674,10 @@ where
 	} = zerocheck::prove(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
 
 	// Sumcheck
-	let sumcheck_domain =
-		EvaluationDomain::new(sumcheck_claim.poly.max_individual_degree() + 1).unwrap();
+	let sumcheck_domain = EvaluationDomain::<PW>::new_isomorphic::<F>(
+		sumcheck_claim.poly.max_individual_degree() + 1,
+	)
+	.unwrap();
 
 	// TODO: Improve the logic to commit the optimal switchover.
 	let switchover = 3;
