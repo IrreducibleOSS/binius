@@ -52,11 +52,11 @@ This codebase certainly contains many bugs at this point in its development. *We
 
 ## Authors
 
-Binius is developed by [Ulvetanna](https://www.ulvetanna.io).
+Binius is developed by [Irreducible](https://www.irreducible.com).
 
 ## License
 
-Copyright 2023 Ulvetanna Inc.
+Copyright 2023-2024 Ulvetanna Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
