@@ -158,30 +158,26 @@ impl Groestl256AVX512 {
 		block
 	}
 
-	fn perm_func_q(&self, block: __m512i) -> __m512i {
-		let mut block = block;
+	fn combined_perm(&self, p_block: __m512i, q_block: __m512i) -> __m512i {
+		let mut p_block = p_block;
+		let mut q_block = q_block;
 		for r in 0..ROUND_SIZE {
-			block = self.add_round_constants_q(block, r as u8);
-			block = self.sub_bytes(block);
-			block = self.shift_bytes(block, &SHIFT_ARRAY_Q);
-			block = self.mix_bytes(block);
+			p_block = self.add_round_constants_p(p_block, r as u8);
+			q_block = self.add_round_constants_q(q_block, r as u8);
+			p_block = self.sub_bytes(p_block);
+			q_block = self.sub_bytes(q_block);
+			p_block = self.shift_bytes(p_block, &SHIFT_ARRAY_P);
+			q_block = self.shift_bytes(q_block, &SHIFT_ARRAY_Q);
+			p_block = self.mix_bytes(p_block);
+			q_block = self.mix_bytes(q_block);
 		}
-		block
+
+		xor_blocks(q_block, p_block)
 	}
 
 	#[inline]
 	pub fn compression_func(&self, h: __m512i, m: __m512i) -> __m512i {
-		let mut p_io = h;
-
-		let mut q_io = m;
-
-		q_io = self.perm_func_q(q_io);
-
-		p_io = xor_blocks(p_io, m);
-		p_io = self.perm_func_p(p_io);
-
-		let h = xor_blocks(h, q_io);
-		xor_blocks(h, p_io)
+		xor_blocks(self.combined_perm(xor_blocks(h, m), m), h)
 	}
 }
 
