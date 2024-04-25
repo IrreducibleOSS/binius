@@ -34,6 +34,8 @@ pub enum VerificationError {
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]
 	NumberOfRounds,
+	#[error("incorrect number of batch mixing coefficients")]
+	NumberOfBatchCoeffs,
 	#[error("the number of final evaluations must match the number of instances")]
 	NumberOfFinalEvaluations,
 	#[error("the evaluation domain does not match the expected size")]

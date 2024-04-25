@@ -27,13 +27,19 @@ pub struct SumcheckBatchProof<F> {
 	pub evals: Vec<F>,
 }
 
+#[derive(Debug)]
+pub struct SumcheckBatchProveOutput<F: Field> {
+	pub evalcheck_claims: Vec<EvalcheckClaim<F>>,
+	pub proof: SumcheckBatchProof<F>,
+}
+
 /// Prove a batched sumcheck instance.
 ///
 /// See module documentation for details.
 pub fn batch_prove<'a, F, PW, CW, M, CH>(
 	provers: impl IntoIterator<Item = SumcheckProverState<'a, F, PW, CW, M>>,
 	mut challenger: CH,
-) -> Result<SumcheckBatchProof<F>, Error>
+) -> Result<SumcheckBatchProveOutput<F>, Error>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
@@ -82,21 +88,27 @@ where
 		prev_rd_challenge = Some(challenger.sample());
 	}
 
-	let evals = provers_vec
+	let evalcheck_claims = provers_vec
 		.into_iter()
 		.map(|prover| {
-			let evalcheck_claim = if prover.n_vars() == 0 {
-				prover.finalize(None)?
+			if prover.n_vars() == 0 {
+				prover.finalize(None)
 			} else {
-				prover.finalize(prev_rd_challenge)?
-			};
-			Ok(evalcheck_claim.eval)
+				prover.finalize(prev_rd_challenge)
+			}
 		})
-		.collect::<Result<_, Error>>()?;
+		.collect::<Result<Vec<_>, _>>()?;
 
-	Ok(SumcheckBatchProof {
+	let evals = evalcheck_claims.iter().map(|claim| claim.eval).collect();
+
+	let sumcheck_batch_proof = SumcheckBatchProof {
 		rounds: round_proofs,
 		evals,
+	};
+
+	Ok(SumcheckBatchProveOutput {
+		proof: sumcheck_batch_proof,
+		evalcheck_claims,
 	})
 }
 
@@ -107,7 +119,7 @@ pub fn batch_verify<F, CH>(
 	claims: impl IntoIterator<Item = SumcheckClaim<F>>,
 	proof: SumcheckBatchProof<F>,
 	mut challenger: CH,
-) -> Result<impl IntoIterator<Item = EvalcheckClaim<F>>, Error>
+) -> Result<Vec<EvalcheckClaim<F>>, Error>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
@@ -158,15 +170,7 @@ where
 		rd_claim.current_round_sum += claim.sum * challenge;
 	}
 
-	batch_verify_final(
-		claims_vec
-			.iter()
-			.map(|claim| claim.poly.clone())
-			.zip(batch_coeffs)
-			.collect::<Vec<_>>(), // TODO: collect seems unnecessary but compiler is complaining
-		proof.evals,
-		rd_claim,
-	)
+	batch_verify_final(&claims_vec, &batch_coeffs, &proof.evals, rd_claim)
 }
 
 fn mix_round_proofs<F: Field>(

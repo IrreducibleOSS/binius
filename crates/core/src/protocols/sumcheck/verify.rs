@@ -51,56 +51,56 @@ pub fn verify_final<F: Field>(
 }
 
 /// Verifies a batch sumcheck proof final step, reducing the final claim to evaluation claims.
-pub fn batch_verify_final<'a, F: Field>(
-	oracles: impl IntoIterator<Item = (CompositePolyOracle<F>, F)> + 'a,
-	evals: Vec<F>,
+pub fn batch_verify_final<F: Field>(
+	claims: &[SumcheckClaim<F>],
+	batch_coeffs: &[F],
+	evals: &[F],
 	final_claim: SumcheckRoundClaim<F>,
-) -> Result<impl IntoIterator<Item = EvalcheckClaim<F>>, Error> {
+) -> Result<Vec<EvalcheckClaim<F>>, Error> {
 	let SumcheckRoundClaim {
 		partial_point: eval_point,
 		current_round_sum: final_eval,
 	} = final_claim;
 
-	let oracles = oracles.into_iter().collect::<Vec<_>>();
-
 	// Check that oracles are in descending order by n_vars
-	if oracles
+	if claims
 		.windows(2)
-		.any(|pair| pair[0].0.n_vars() < pair[1].0.n_vars())
+		.any(|pair| pair[0].n_vars() < pair[1].n_vars())
 	{
 		return Err(Error::OraclesOutOfOrder);
 	}
 
-	let n_rounds = oracles
-		.first()
-		.map(|(oracle, _)| oracle.n_vars())
-		.unwrap_or(0);
+	let n_rounds = claims.first().map(|claim| claim.n_vars()).unwrap_or(0);
 
 	if eval_point.len() != n_rounds {
 		return Err(VerificationError::NumberOfRounds.into());
 	}
-	if evals.len() != oracles.len() {
+	if claims.len() != batch_coeffs.len() {
+		return Err(VerificationError::NumberOfBatchCoeffs.into());
+	}
+	if evals.len() != claims.len() {
 		return Err(VerificationError::NumberOfFinalEvaluations.into());
 	}
 
 	let batched_eval = evals
 		.iter()
-		.zip(oracles.iter())
-		.map(|(eval, (_, coeff))| *eval * *coeff)
+		.zip(batch_coeffs)
+		.map(|(eval, coeff)| *eval * *coeff)
 		.sum::<F>();
 
 	assert_eq!(batched_eval, final_eval);
 
 	let eval_claims = evals
 		.iter()
-		.zip(oracles.iter())
-		.map(|(eval, (oracle, _))| EvalcheckClaim {
-			poly: oracle.clone(),
-			eval_point: eval_point[n_rounds - oracle.n_vars()..].to_vec(),
+		.zip(claims)
+		.map(|(eval, claim)| EvalcheckClaim {
+			poly: claim.poly.clone(),
+			eval_point: eval_point[n_rounds - claim.n_vars()..].to_vec(),
 			eval: *eval,
 			is_random_point: true,
 		})
-		.collect::<Vec<_>>();
+		.collect();
+
 	Ok(eval_claims)
 }
 

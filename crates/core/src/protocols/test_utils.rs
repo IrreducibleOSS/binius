@@ -15,10 +15,10 @@ use crate::{
 			BatchCommittedEvalClaims, CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim,
 		},
 		sumcheck::{
-			batch_prove, batch_verify, setup_first_round_claim, verify_final, verify_round,
-			verify_zerocheck_round, Error as SumcheckError, SumcheckBatchProof, SumcheckClaim,
-			SumcheckProof, SumcheckProveOutput, SumcheckProverState, SumcheckRoundClaim,
-			SumcheckWitness,
+			batch_prove, setup_first_round_claim, verify_final, verify_round,
+			verify_zerocheck_round, Error as SumcheckError, SumcheckBatchProof,
+			SumcheckBatchProveOutput, SumcheckClaim, SumcheckProof, SumcheckProveOutput,
+			SumcheckProverState, SumcheckRoundClaim, SumcheckWitness,
 		},
 	},
 	witness::MultilinearWitnessIndex,
@@ -263,7 +263,7 @@ where
 	F: Field + Step + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	CH: CanObserve<F> + CanSample<F> + Clone,
+	CH: CanObserve<F> + CanSample<F>,
 {
 	let bivariate_domain = EvaluationDomain::new_isomorphic::<F>(3)?;
 
@@ -282,11 +282,12 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let challenger_snapshot = challenger.clone();
-	let batch_proof = batch_prove(prover_states, challenger)?;
-	let evalcheck_claims = batch_verify(claims, batch_proof.clone(), challenger_snapshot)?;
+	let SumcheckBatchProveOutput {
+		proof,
+		evalcheck_claims,
+	} = batch_prove(prover_states, challenger)?;
 
-	Ok((batch_proof, evalcheck_claims))
+	Ok((proof, evalcheck_claims))
 }
 
 #[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumcheck_claims")]

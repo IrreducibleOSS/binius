@@ -451,7 +451,8 @@ fn test_prove_verify_batch() {
 	// Setup evaluation domain
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let proof = batch_prove([prover0, prover1, prover2], challenger.clone()).unwrap();
+	let prove_output = batch_prove([prover0, prover1, prover2], challenger.clone()).unwrap();
+	let proof = prove_output.proof;
 	assert_eq!(proof.rounds.len(), 8);
 
 	let _evalcheck_claims =
