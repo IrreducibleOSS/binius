@@ -295,7 +295,7 @@ where
 ///     [<base vec N> ... <base vec N>]
 /// ]
 /// Transformation complexity is `N*log(N)` where `N` is `OP::Scalar::DEGREE`.
-struct PackedTransformation<OP> {
+pub struct PackedTransformation<OP> {
 	bases: Vec<OP>,
 }
 
@@ -355,9 +355,11 @@ where
 	IP: PackedBinaryField + WithUnderlier,
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 {
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>> = PackedTransformation<OP>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
-	) -> impl Transformation<Self, OP> {
+	) -> Self::PackedTransformation<Data> {
 		PackedTransformation::new(transformation)
 	}
 }

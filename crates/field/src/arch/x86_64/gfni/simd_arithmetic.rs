@@ -293,11 +293,12 @@ where
 /// SIMD packed field transformation.
 /// The idea is similar to `PackedTransformation` but we use SIMD instructions
 /// to multiply a component with zeros/ones by a basis vector.
-struct SimdTransformation<OP> {
+pub struct SimdTransformation<OP> {
 	bases: Vec<OP>,
 	ones: OP,
 }
 
+#[allow(private_bounds)]
 impl<OP> SimdTransformation<OP>
 where
 	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType>,
@@ -350,9 +351,11 @@ where
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 	IP::Underlier: TowerSimdType,
 {
+	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = SimdTransformation<OP>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
-	) -> impl Transformation<Self, OP> {
+	) -> Self::PackedTransformation<Data> {
 		SimdTransformation::new(transformation)
 	}
 }

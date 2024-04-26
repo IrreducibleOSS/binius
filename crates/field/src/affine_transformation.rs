@@ -63,7 +63,9 @@ pub trait PackedTransformationFactory<OP>: PackedBinaryField
 where
 	OP: PackedBinaryField,
 {
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
-	) -> impl Transformation<Self, OP>;
+	) -> Self::PackedTransformation<Data>;
 }

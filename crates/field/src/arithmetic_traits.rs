@@ -107,9 +107,11 @@ pub trait TaggedPackedTransformationFactory<Strategy, OP>: PackedBinaryField
 where
 	OP: PackedBinaryField,
 {
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
-	) -> impl Transformation<Self, OP>;
+	) -> Self::PackedTransformation<Data>;
 }
 
 macro_rules! impl_transformation_with_strategy {
@@ -121,12 +123,18 @@ macro_rules! impl_transformation_with_strategy {
 					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
 				>,
 		{
+			type PackedTransformation<Data: std::ops::Deref<Target = [OP::Scalar]>> =
+				<Self as $crate::arithmetic_traits::TaggedPackedTransformationFactory<
+					$strategy,
+					OP,
+				>>::PackedTransformation<Data>;
+
 			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
 				transformation: $crate::affine_transformation::FieldAffineTransformation<
 					OP::Scalar,
 					Data,
 				>,
-			) -> impl $crate::affine_transformation::Transformation<Self, OP> {
+			) -> Self::PackedTransformation<Data> {
 				<Self as $crate::arithmetic_traits::TaggedPackedTransformationFactory<
 					$strategy,
 					OP,

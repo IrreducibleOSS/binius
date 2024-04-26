@@ -115,7 +115,8 @@ impl<
 
 /// Transformation that uses `gf2p8affine_epi64_epi8` transformation to apply affine transformation to a
 /// 8-bit packed field. It appeared that this dedicated implementation is more efficient than `GfniTransformationNxN<_, 1>`.
-pub(super) struct GfniTransformation<OP>
+#[allow(private_bounds)]
+pub struct GfniTransformation<OP>
 where
 	OP: WithUnderlier<Underlier: GfniType>,
 {
@@ -139,6 +140,7 @@ fn transpose_8x8(mut matrix: i64) -> i64 {
 	result
 }
 
+#[allow(private_bounds)]
 impl<OP> GfniTransformation<OP>
 where
 	OP: WithUnderlier<Underlier: GfniType>
@@ -180,12 +182,16 @@ macro_rules! impl_transformation_with_gfni {
 					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
 				>,
 		{
+			type PackedTransformation<
+				Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>,
+			> = $crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformation<OP>;
+
 			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
 				transformation: $crate::affine_transformation::FieldAffineTransformation<
 					OP::Scalar,
 					Data,
 				>,
-			) -> impl $crate::affine_transformation::Transformation<Self, OP> {
+			) -> Self::PackedTransformation<Data> {
 				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformation::new(
 					transformation,
 				)
@@ -229,13 +235,15 @@ impl ToLEBytes<8> for u64 {
 /// Splits elements itself and transformation matrix to 8-bit size blocks and uses `gf2p8affine_epi64_epi8`
 /// to perform multiplications of those.
 /// Transformation complexity is `BLOCKS^2`.
-pub(super) struct GfniTransformationNxN<OP, const BLOCKS: usize>
+#[allow(private_bounds)]
+pub struct GfniTransformationNxN<OP, const BLOCKS: usize>
 where
 	OP: WithUnderlier<Underlier: GfniType>,
 {
 	bases_8x8: [[OP::Underlier; BLOCKS]; BLOCKS],
 }
 
+#[allow(private_bounds)]
 impl<OP, const BLOCKS: usize> GfniTransformationNxN<OP, BLOCKS>
 where
 	OP: WithUnderlier<Underlier: GfniType>
@@ -346,7 +354,10 @@ fn blend_values<T: TowerSimdType>(values: &[T]) -> T {
 macro_rules! impl_transformation_with_gfni_nxn {
 	($name:ty, $blocks:literal) => {
 		impl<OP> $crate::affine_transformation::PackedTransformationFactory<OP> for $name where OP: $crate::packed::PackedBinaryField<Scalar: $crate::underlier::WithUnderlier<Underlier: $crate::arch::x86_64::gfni::gfni_arithmetics::ToLEBytes<$blocks>>> + $crate::underlier::WithUnderlier<Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier> {
-			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(transformation: $crate::affine_transformation::FieldAffineTransformation<OP::Scalar, Data>) -> impl $crate::affine_transformation::Transformation<Self, OP> {
+			type PackedTransformation<Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>> =
+				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN::<OP, $blocks>;
+
+			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(transformation: $crate::affine_transformation::FieldAffineTransformation<OP::Scalar, Data>) -> Self::PackedTransformation<Data> {
 				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN::<OP, $blocks>::new(transformation)
 			}
 		}

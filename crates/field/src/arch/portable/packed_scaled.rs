@@ -262,7 +262,7 @@ where
 }
 
 /// Per-element transformation as a scaled packed field.
-struct ScaledTransformation<I> {
+pub struct ScaledTransformation<I> {
 	inner: I,
 }
 
@@ -290,12 +290,15 @@ where
 	OP: PackedBinaryField,
 	IP: PackedTransformationFactory<OP>,
 {
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>> =
+		ScaledTransformation<IP::PackedTransformation<Data>>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<
 			<ScaledPackedField<OP, N> as PackedField>::Scalar,
 			Data,
 		>,
-	) -> impl Transformation<Self, ScaledPackedField<OP, N>> {
+	) -> Self::PackedTransformation<Data> {
 		ScaledTransformation::new(IP::make_packed_transformation(transformation))
 	}
 }

@@ -46,7 +46,7 @@ where
 }
 
 /// Per element transformation
-struct PairwiseTransformation<I> {
+pub struct PairwiseTransformation<I> {
 	inner: I,
 }
 
@@ -72,9 +72,12 @@ where
 	IP: PackedBinaryField,
 	OP: PackedBinaryField,
 {
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>> =
+		PairwiseTransformation<FieldAffineTransformation<OP::Scalar, Data>>;
+
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
-	) -> impl Transformation<Self, OP> {
+	) -> Self::PackedTransformation<Data> {
 		PairwiseTransformation::new(transformation)
 	}
 }
