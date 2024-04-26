@@ -1,7 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	super::m128::M128, gfni_arithmetics::GfniBinaryTowerStrategy, simd_arithmetic::TowerSimdType,
+	super::m128::M128,
+	gfni_arithmetics::{
+		impl_transformation_with_gfni, impl_transformation_with_gfni_nxn, GfniBinaryTowerStrategy,
+	},
+	simd_arithmetic::TowerSimdType,
 };
 use crate::{
 	arch::{
@@ -16,10 +20,10 @@ use crate::{
 	},
 	arithmetic_traits::{
 		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy,
+		impl_square_with_strategy, impl_transformation_with_strategy,
 	},
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
-	BinaryField64b, BinaryField8b, TowerField,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b,
+	BinaryField4b, BinaryField64b, BinaryField8b,
 };
 use std::arch::x86_64::*;
 
@@ -110,6 +114,16 @@ impl_mul_alpha_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
 impl_mul_alpha_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
 
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryField128x1b, SimdStrategy);
+impl_transformation_with_strategy!(PackedBinaryField64x2b, SimdStrategy);
+impl_transformation_with_strategy!(PackedBinaryField32x4b, SimdStrategy);
+impl_transformation_with_gfni!(PackedBinaryField16x8b, GfniBinaryTowerStrategy);
+impl_transformation_with_gfni_nxn!(PackedBinaryField8x16b, 2);
+impl_transformation_with_gfni_nxn!(PackedBinaryField4x32b, 4);
+impl_transformation_with_gfni_nxn!(PackedBinaryField2x64b, 8);
+impl_transformation_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
+
 impl TowerSimdType for M128 {
 	#[inline(always)]
 	fn xor(a: Self, b: Self) -> Self {
@@ -122,13 +136,13 @@ impl TowerSimdType for M128 {
 	}
 
 	#[inline(always)]
-	fn blend_odd_even<Scalar: TowerField>(a: Self, b: Self) -> Self {
+	fn blend_odd_even<Scalar: BinaryField>(a: Self, b: Self) -> Self {
 		let mask = Self::even_mask::<Scalar>();
 		unsafe { _mm_blendv_epi8(a.0, b.0, mask.0) }.into()
 	}
 
 	#[inline(always)]
-	fn set_alpha_even<Scalar: TowerField>(self) -> Self {
+	fn set_alpha_even<Scalar: BinaryField>(self) -> Self {
 		unsafe {
 			let alpha = Self::alpha::<Scalar>();
 			let mask = Self::even_mask::<Scalar>();
@@ -141,5 +155,44 @@ impl TowerSimdType for M128 {
 	#[inline(always)]
 	fn set1_epi128(val: __m128i) -> Self {
 		val.into()
+	}
+
+	#[inline(always)]
+	fn set_epi_64(val: i64) -> Self {
+		unsafe { _mm_set1_epi64x(val) }.into()
+	}
+
+	#[inline(always)]
+	fn bslli_epi128<const IMM8: i32>(self) -> Self {
+		unsafe { _mm_bslli_si128::<IMM8>(self.0) }.into()
+	}
+
+	#[inline(always)]
+	fn bsrli_epi128<const IMM8: i32>(self) -> Self {
+		unsafe { _mm_bsrli_si128::<IMM8>(self.0) }.into()
+	}
+
+	#[inline(always)]
+	fn apply_mask<Scalar: BinaryField>(mut mask: Self, a: Self) -> Self {
+		let tower_level = Scalar::N_BITS.ilog2();
+		match tower_level {
+			0..=2 => {
+				for i in 0..tower_level {
+					mask |= mask >> (1 << i);
+				}
+
+				unsafe { _mm_and_si128(a.0, mask.0) }
+			}
+			3 => unsafe { _mm_blendv_epi8(_mm_setzero_si128(), a.0, mask.0) },
+			4..=7 => {
+				let shuffle = Self::make_epi8_mask_shuffle::<Scalar>();
+				unsafe {
+					let mask = _mm_shuffle_epi8(mask.0, shuffle.0);
+					_mm_blendv_epi8(_mm_setzero_si128(), a.0, mask)
+				}
+			}
+			_ => panic!("unsupported bit count"),
+		}
+		.into()
 	}
 }

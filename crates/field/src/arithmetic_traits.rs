@@ -1,5 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use std::ops::Deref;
+
+use crate::{
+	affine_transformation::{FieldAffineTransformation, Transformation},
+	packed::PackedBinaryField,
+};
+
 /// Value that can be multiplied by itself
 pub trait Square {
 	/// Returns the value multiplied by itself
@@ -93,3 +100,40 @@ macro_rules! impl_mul_alpha_with_strategy {
 }
 
 pub(crate) use impl_mul_alpha_with_strategy;
+
+/// Affine transformation factory that is parameterized with some strategy.
+#[allow(private_bounds)]
+pub trait TaggedPackedTransformationFactory<Strategy, OP>: PackedBinaryField
+where
+	OP: PackedBinaryField,
+{
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> impl Transformation<Self, OP>;
+}
+
+macro_rules! impl_transformation_with_strategy {
+	($name:ty, $strategy:ty) => {
+		impl<OP> $crate::affine_transformation::PackedTransformationFactory<OP> for $name
+		where
+			OP: $crate::packed::PackedBinaryField
+				+ $crate::underlier::WithUnderlier<
+					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
+				>,
+		{
+			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
+				transformation: $crate::affine_transformation::FieldAffineTransformation<
+					OP::Scalar,
+					Data,
+				>,
+			) -> impl $crate::affine_transformation::Transformation<Self, OP> {
+				<Self as $crate::arithmetic_traits::TaggedPackedTransformationFactory<
+					$strategy,
+					OP,
+				>>::make_packed_transformation(transformation)
+			}
+		}
+	};
+}
+
+pub(crate) use impl_transformation_with_strategy;

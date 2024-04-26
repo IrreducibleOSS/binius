@@ -1,11 +1,18 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{arithmetic_traits::MulAlpha, Error, PackedField};
+use crate::{
+	affine_transformation::{
+		FieldAffineTransformation, PackedTransformationFactory, Transformation,
+	},
+	arithmetic_traits::MulAlpha,
+	packed::PackedBinaryField,
+	Error, PackedField,
+};
 use bytemuck::{Pod, Zeroable};
 use std::{
 	array,
 	iter::{Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
 };
 use subtle::ConstantTimeEq;
 
@@ -251,6 +258,45 @@ where
 {
 	fn mul_alpha(self) -> Self {
 		Self(self.0.map(|v| v.mul_alpha()))
+	}
+}
+
+/// Per-element transformation as a scaled packed field.
+struct ScaledTransformation<I> {
+	inner: I,
+}
+
+impl<I> ScaledTransformation<I> {
+	fn new(inner: I) -> Self {
+		Self { inner }
+	}
+}
+
+impl<OP, IP, const N: usize, I> Transformation<ScaledPackedField<IP, N>, ScaledPackedField<OP, N>>
+	for ScaledTransformation<I>
+where
+	I: Transformation<IP, OP>,
+{
+	fn transform(&self, data: &ScaledPackedField<IP, N>) -> ScaledPackedField<OP, N> {
+		ScaledPackedField::from_fn(|i| self.inner.transform(&data.0[i]))
+	}
+}
+
+impl<OP, IP, const N: usize> PackedTransformationFactory<ScaledPackedField<OP, N>>
+	for ScaledPackedField<IP, N>
+where
+	ScaledPackedField<IP, N>: PackedBinaryField,
+	ScaledPackedField<OP, N>: PackedBinaryField<Scalar = OP::Scalar>,
+	OP: PackedBinaryField,
+	IP: PackedTransformationFactory<OP>,
+{
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<
+			<ScaledPackedField<OP, N> as PackedField>::Scalar,
+			Data,
+		>,
+	) -> impl Transformation<Self, ScaledPackedField<OP, N>> {
+		ScaledTransformation::new(IP::make_packed_transformation(transformation))
 	}
 }
 

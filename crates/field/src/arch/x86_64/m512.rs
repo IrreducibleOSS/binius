@@ -103,6 +103,7 @@ impl<U: NumCast<u128>> NumCast<M512> for U {
 }
 
 impl Default for M512 {
+	#[inline(always)]
 	fn default() -> Self {
 		Self(unsafe { _mm512_setzero_si512() })
 	}
@@ -111,12 +112,14 @@ impl Default for M512 {
 impl BitAnd for M512 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitand(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm512_and_si512(self.0, rhs.0) })
 	}
 }
 
 impl BitAndAssign for M512 {
+	#[inline(always)]
 	fn bitand_assign(&mut self, rhs: Self) {
 		*self = *self & rhs
 	}
@@ -125,12 +128,14 @@ impl BitAndAssign for M512 {
 impl BitOr for M512 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm512_or_si512(self.0, rhs.0) })
 	}
 }
 
 impl BitOrAssign for M512 {
+	#[inline(always)]
 	fn bitor_assign(&mut self, rhs: Self) {
 		*self = *self | rhs
 	}
@@ -139,12 +144,14 @@ impl BitOrAssign for M512 {
 impl BitXor for M512 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitxor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm512_xor_si512(self.0, rhs.0) })
 	}
 }
 
 impl BitXorAssign for M512 {
+	#[inline(always)]
 	fn bitxor_assign(&mut self, rhs: Self) {
 		*self = *self ^ rhs;
 	}
@@ -153,6 +160,7 @@ impl BitXorAssign for M512 {
 impl Not for M512 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn not(self) -> Self::Output {
 		const ONES: __m512i = m512_from_u128s!(u128::MAX, u128::MAX, u128::MAX, u128::MAX,);
 
@@ -164,6 +172,7 @@ impl Shl<usize> for M512 {
 	type Output = Self;
 
 	/// TODO: this is not the most efficient implementation
+	#[inline(always)]
 	fn shl(self, rhs: usize) -> Self::Output {
 		match rhs {
 			rhs if rhs >= 512 => Self::ZERO,
@@ -211,6 +220,7 @@ impl Shr<usize> for M512 {
 	type Output = Self;
 
 	/// TODO: this is not the most efficient implementation
+	#[inline(always)]
 	fn shr(self, rhs: usize) -> Self::Output {
 		match rhs {
 			rhs if rhs >= 512 => Self::ZERO,
@@ -255,6 +265,7 @@ impl Shr<usize> for M512 {
 }
 
 impl PartialEq for M512 {
+	#[inline(always)]
 	fn eq(&self, other: &Self) -> bool {
 		unsafe {
 			let pcmp = _mm512_cmpeq_epi32_mask(self.0, other.0);
@@ -266,6 +277,7 @@ impl PartialEq for M512 {
 impl Eq for M512 {}
 
 impl ConstantTimeEq for M512 {
+	#[inline(always)]
 	fn ct_eq(&self, other: &Self) -> Choice {
 		unsafe {
 			let pcmp = _mm512_cmpeq_epi32_mask(self.0, other.0);
@@ -307,6 +319,7 @@ impl UnderlierType for M512 {
 
 	const ZERO: Self = { Self(m512_from_u128s!(0, 0, 0, 0,)) };
 
+	#[inline(always)]
 	fn fill_with_bit(val: u8) -> Self {
 		Self(unsafe { _mm512_set1_epi8(val.wrapping_neg() as i8) })
 	}
@@ -422,6 +435,7 @@ impl UnderlierWithBitConstants for M512 {
 		Self::from_equal_u128s(interleave_mask_odd!(u128, 6)),
 	];
 
+	#[inline(always)]
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
 		(Self(a), Self(b))

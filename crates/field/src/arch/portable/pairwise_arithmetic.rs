@@ -1,11 +1,15 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use std::ops::Deref;
+
 use crate::{
+	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::PairwiseStrategy,
 	arithmetic_traits::{
-		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
+		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha,
+		TaggedPackedTransformationFactory, TaggedSquare,
 	},
-	packed::PackedField,
+	packed::{PackedBinaryField, PackedField},
 };
 
 impl<PT: PackedField> TaggedMul<PairwiseStrategy> for PT {
@@ -38,5 +42,39 @@ where
 {
 	fn mul_alpha(self) -> Self {
 		Self::from_fn(|i| MulAlpha::mul_alpha(self.get(i)))
+	}
+}
+
+/// Per element transformation
+struct PairwiseTransformation<I> {
+	inner: I,
+}
+
+impl<I> PairwiseTransformation<I> {
+	pub fn new(inner: I) -> Self {
+		Self { inner }
+	}
+}
+
+impl<IP, OP, IF, OF, I> Transformation<IP, OP> for PairwiseTransformation<I>
+where
+	IP: PackedField<Scalar = IF>,
+	OP: PackedField<Scalar = OF>,
+	I: Transformation<IF, OF>,
+{
+	fn transform(&self, data: &IP) -> OP {
+		OP::from_fn(|i| self.inner.transform(&data.get(i)))
+	}
+}
+
+impl<IP, OP> TaggedPackedTransformationFactory<PairwiseStrategy, OP> for IP
+where
+	IP: PackedBinaryField,
+	OP: PackedBinaryField,
+{
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> impl Transformation<Self, OP> {
+		PairwiseTransformation::new(transformation)
 	}
 }

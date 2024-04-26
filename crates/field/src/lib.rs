@@ -3,6 +3,7 @@
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
 
 pub mod aes_field;
+pub mod affine_transformation;
 pub mod arch;
 pub mod arithmetic_traits;
 pub mod binary_field;

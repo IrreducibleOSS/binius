@@ -99,6 +99,7 @@ impl<U: NumCast<u128>> NumCast<M256> for U {
 }
 
 impl Default for M256 {
+	#[inline(always)]
 	fn default() -> Self {
 		Self(unsafe { _mm256_setzero_si256() })
 	}
@@ -107,12 +108,14 @@ impl Default for M256 {
 impl BitAnd for M256 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitand(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm256_and_si256(self.0, rhs.0) })
 	}
 }
 
 impl BitAndAssign for M256 {
+	#[inline(always)]
 	fn bitand_assign(&mut self, rhs: Self) {
 		*self = *self & rhs
 	}
@@ -121,12 +124,14 @@ impl BitAndAssign for M256 {
 impl BitOr for M256 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm256_or_si256(self.0, rhs.0) })
 	}
 }
 
 impl BitOrAssign for M256 {
+	#[inline(always)]
 	fn bitor_assign(&mut self, rhs: Self) {
 		*self = *self | rhs
 	}
@@ -135,12 +140,14 @@ impl BitOrAssign for M256 {
 impl BitXor for M256 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitxor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm256_xor_si256(self.0, rhs.0) })
 	}
 }
 
 impl BitXorAssign for M256 {
+	#[inline(always)]
 	fn bitxor_assign(&mut self, rhs: Self) {
 		*self = *self ^ rhs;
 	}
@@ -149,6 +156,7 @@ impl BitXorAssign for M256 {
 impl Not for M256 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn not(self) -> Self::Output {
 		const ONES: __m256i = m256_from_u128s!(u128::MAX, u128::MAX,);
 
@@ -160,6 +168,7 @@ impl Shr<usize> for M256 {
 	type Output = Self;
 
 	/// TODO: this is unefficient implementation
+	#[inline(always)]
 	fn shr(self, rhs: usize) -> Self::Output {
 		match rhs {
 			rhs if rhs >= 256 => Self::ZERO,
@@ -182,6 +191,7 @@ impl Shl<usize> for M256 {
 	type Output = Self;
 
 	/// TODO: this is unefficient implementation
+	#[inline(always)]
 	fn shl(self, rhs: usize) -> Self::Output {
 		match rhs {
 			rhs if rhs >= 256 => Self::ZERO,
@@ -202,6 +212,7 @@ impl Shl<usize> for M256 {
 }
 
 impl PartialEq for M256 {
+	#[inline(always)]
 	fn eq(&self, other: &Self) -> bool {
 		unsafe {
 			let pcmp = _mm256_cmpeq_epi32(self.0, other.0);
@@ -214,6 +225,7 @@ impl PartialEq for M256 {
 impl Eq for M256 {}
 
 impl ConstantTimeEq for M256 {
+	#[inline(always)]
 	fn ct_eq(&self, other: &Self) -> Choice {
 		unsafe {
 			let pcmp = _mm256_cmpeq_epi32(self.0, other.0);

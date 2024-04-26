@@ -6,7 +6,10 @@ use super::{
 	binary_field_arithmetic::{binary_tower_arithmetic_recursive, TowerFieldArithmetic},
 	mul_by_binary_field_1b, BinaryField8b, Error,
 };
-use crate::{binary_tower, ExtensionField, Field, TowerExtensionField, TowerField};
+use crate::{
+	affine_transformation::{FieldAffineTransformation, Transformation},
+	binary_tower, ExtensionField, Field, TowerExtensionField, TowerField,
+};
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
 use std::{
@@ -152,21 +155,37 @@ impl TowerFieldArithmetic for AESTowerField8b {
 
 impl From<AESTowerField8b> for BinaryField8b {
 	fn from(value: AESTowerField8b) -> Self {
-		const BASIS: [u8; 8] = [0x01, 0x3c, 0x8c, 0x8a, 0x59, 0x7a, 0x53, 0x27];
+		const AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryField8b> =
+			FieldAffineTransformation::new_const(&[
+				Self(0x01),
+				Self(0x3c),
+				Self(0x8c),
+				Self(0x8a),
+				Self(0x59),
+				Self(0x7a),
+				Self(0x53),
+				Self(0x27),
+			]);
 
-		(0..8)
-			.map(|i| Self(BASIS[i]) * Self(value.0 >> i & 1))
-			.sum()
+		AFFINE_TRANSFORMATION.transform(&value)
 	}
 }
 
 impl From<BinaryField8b> for AESTowerField8b {
 	fn from(value: BinaryField8b) -> Self {
-		const BASIS: [u8; 8] = [0x01, 0xbc, 0xb0, 0xec, 0xd3, 0x8d, 0x2e, 0x58];
+		const AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowerField8b> =
+			FieldAffineTransformation::new_const(&[
+				Self(0x01),
+				Self(0xbc),
+				Self(0xb0),
+				Self(0xec),
+				Self(0xd3),
+				Self(0x8d),
+				Self(0x2e),
+				Self(0x58),
+			]);
 
-		(0..8)
-			.map(|i| Self(BASIS[i]) * Self(value.0 >> i & 1))
-			.sum()
+		AFFINE_TRANSFORMATION.transform(&value)
 	}
 }
 
@@ -331,6 +350,13 @@ mod tests {
 		#[test]
 		fn test_mul_128(a in any::<u128>(), b in any::<u128>(), c in any::<u128>()) {
 			check_mul(AESTowerField128b::from(a), AESTowerField128b::from(b), AESTowerField128b::from(c))
+		}
+
+		#[test]
+		fn test_conversion_roundtrip(a in any::<u8>()) {
+			let a_val = AESTowerField8b(a);
+			let converted = BinaryField8b::from(a_val);
+			assert_eq!(a_val, AESTowerField8b::from(converted));
 		}
 	}
 }

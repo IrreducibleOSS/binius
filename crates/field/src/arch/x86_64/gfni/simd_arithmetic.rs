@@ -2,6 +2,7 @@
 
 use crate::{
 	aes_field::AESTowerField8b,
+	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::{
 		portable::{
 			packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField,
@@ -9,21 +10,40 @@ use crate::{
 		},
 		SimdStrategy,
 	},
-	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
-	underlier::UnderlierType,
-	BinaryField8b, PackedField, TowerField,
+	arithmetic_traits::{
+		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
+		TaggedSquare,
+	},
+	packed::PackedBinaryField,
+	underlier::{UnderlierType, WithUnderlier},
+	BinaryField, BinaryField8b, PackedField, TowerField,
 };
-use std::{any::TypeId, arch::x86_64::*};
+use std::{any::TypeId, arch::x86_64::*, ops::Deref};
 
-pub(super) trait TowerSimdType: Sized {
-	fn shuffle_epi8(a: Self, b: Self) -> Self;
-	fn blend_odd_even<Scalar: TowerField>(a: Self, b: Self) -> Self;
+pub(super) trait TowerSimdType: Sized + Copy {
+	/// Blend odd and even elements
+	fn blend_odd_even<Scalar: BinaryField>(a: Self, b: Self) -> Self;
+	/// Set alpha to even elements
+	fn set_alpha_even<Scalar: BinaryField>(self) -> Self;
+	/// Apply `mask` to `a` (set zeros at positions where high bit of the `mask` is 0).
+	fn apply_mask<Scalar: BinaryField>(mask: Self, a: Self) -> Self;
+
+	/// Bit xor operation
 	fn xor(a: Self, b: Self) -> Self;
-	fn set_alpha_even<Scalar: TowerField>(self) -> Self;
+
+	/// Shuffle 8-bit elements within 128-bit lanes
+	fn shuffle_epi8(a: Self, b: Self) -> Self;
+
+	/// Byte shifts within 128-bit lanes
+	fn bslli_epi128<const IMM8: i32>(self) -> Self;
+	fn bsrli_epi128<const IMM8: i32>(self) -> Self;
+
+	/// Initialize value with a single element
 	fn set1_epi128(val: __m128i) -> Self;
+	fn set_epi_64(val: i64) -> Self;
 
 	#[inline(always)]
-	fn dup_shuffle<Scalar: TowerField>() -> Self {
+	fn dup_shuffle<Scalar: BinaryField>() -> Self {
 		let shuffle_mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
 				3 => _mm_set_epi8(14, 14, 12, 12, 10, 10, 8, 8, 6, 6, 4, 4, 2, 2, 0, 0),
@@ -38,7 +58,7 @@ pub(super) trait TowerSimdType: Sized {
 	}
 
 	#[inline(always)]
-	fn flip_shuffle<Scalar: TowerField>() -> Self {
+	fn flip_shuffle<Scalar: BinaryField>() -> Self {
 		let flip_mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
 				3 => _mm_set_epi8(14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1),
@@ -52,10 +72,26 @@ pub(super) trait TowerSimdType: Sized {
 		Self::set1_epi128(flip_mask_128)
 	}
 
+	/// Creates mask to propagate the highest bit form mask to other element bytes
 	#[inline(always)]
-	fn alpha<Scalar: TowerField>() -> Self {
+	fn make_epi8_mask_shuffle<Scalar: BinaryField>() -> Self {
+		let epi8_mask_128 = unsafe {
+			match Scalar::N_BITS.ilog2() {
+				4 => _mm_set_epi8(15, 15, 13, 13, 11, 11, 9, 9, 7, 7, 5, 5, 3, 3, 1, 1),
+				5 => _mm_set_epi8(15, 15, 15, 15, 11, 11, 11, 11, 7, 7, 7, 7, 3, 3, 3, 3),
+				6 => _mm_set_epi8(15, 15, 15, 15, 15, 15, 15, 15, 7, 7, 7, 7, 7, 7, 7, 7),
+				7 => _mm_set1_epi8(15),
+				_ => panic!("unsupported bit count"),
+			}
+		};
+
+		Self::set1_epi128(epi8_mask_128)
+	}
+
+	#[inline(always)]
+	fn alpha<Scalar: BinaryField>() -> Self {
 		let alpha_128 = unsafe {
-			match Scalar::TOWER_LEVEL {
+			match Scalar::N_BITS.ilog2() {
 				3 => {
 					// Compiler will optimize this if out for each instantiation
 					let type_id = TypeId::of::<Scalar>();
@@ -79,7 +115,7 @@ pub(super) trait TowerSimdType: Sized {
 	}
 
 	#[inline(always)]
-	fn even_mask<Scalar: TowerField>() -> Self {
+	fn even_mask<Scalar: BinaryField>() -> Self {
 		let mask_128 = unsafe {
 			match Scalar::N_BITS.ilog2() {
 				3 => _mm_set1_epi16(0x00FF),
@@ -254,11 +290,79 @@ where
 	}
 }
 
+/// SIMD packed field transformation.
+/// The idea is similar to `PackedTransformation` but we use SIMD instructions
+/// to multiply a component with zeros/ones by a basis vector.
+struct SimdTransformation<OP> {
+	bases: Vec<OP>,
+	ones: OP,
+}
+
+impl<OP> SimdTransformation<OP>
+where
+	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType>,
+{
+	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> Self {
+		Self {
+			bases: transformation
+				.bases()
+				.iter()
+				.map(|base| OP::broadcast(*base))
+				.collect(),
+			// Set ones to the highest bit
+			// This is the format that is used in SIMD masks
+			ones: (OP::one().to_underlier() << (OP::Scalar::N_BITS - 1)).into(),
+		}
+	}
+}
+
+impl<U, IP, OP, IF, OF> Transformation<IP, OP> for SimdTransformation<OP>
+where
+	IP: PackedField<Scalar = IF> + WithUnderlier<Underlier = U>,
+	OP: PackedField<Scalar = OF> + WithUnderlier<Underlier = U>,
+	IF: BinaryField,
+	OF: BinaryField,
+	U: UnderlierType + TowerSimdType,
+{
+	fn transform(&self, input: &IP) -> OP {
+		let mut result = OP::zero();
+		let ones = self.ones.to_underlier();
+		let mut input = input.to_underlier();
+
+		// Unlike `PackedTransformation`, we iterate from the highest bit to lowest one
+		// keeping current component in the highest bit.
+		for base in self.bases.iter().rev() {
+			let bases_mask = input & ones;
+			let component = U::apply_mask::<OP::Scalar>(bases_mask, base.to_underlier());
+			result += OP::from(component);
+			input = input << 1;
+		}
+
+		result
+	}
+}
+
+impl<IP, OP> TaggedPackedTransformationFactory<SimdStrategy, OP> for IP
+where
+	IP: PackedBinaryField + WithUnderlier,
+	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
+	IP::Underlier: TowerSimdType,
+{
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> impl Transformation<Self, OP> {
+		SimdTransformation::new(transformation)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::test_utils::{
 		define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
+		define_transformation_tests,
 	};
 
 	define_multiply_tests!(TaggedMul<SimdStrategy>::mul, TaggedMul<SimdStrategy>);
@@ -271,4 +375,17 @@ mod tests {
 	);
 
 	define_mul_alpha_tests!(TaggedMulAlpha<SimdStrategy>::mul_alpha, TaggedMulAlpha<SimdStrategy>);
+
+	#[allow(unused)]
+	trait SelfPackedTransformationFactory:
+		TaggedPackedTransformationFactory<SimdStrategy, Self>
+	{
+	}
+
+	impl<T: TaggedPackedTransformationFactory<SimdStrategy, Self>> SelfPackedTransformationFactory
+		for T
+	{
+	}
+
+	define_transformation_tests!(SelfPackedTransformationFactory);
 }

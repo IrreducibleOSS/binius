@@ -4,6 +4,8 @@
 //!
 //! Interfaces are derived from [`plonky2`](https://github.com/mir-protocol/plonky2).
 
+use crate::BinaryField;
+
 use super::{
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
@@ -227,3 +229,8 @@ impl<F: Field> PackedField for F {
 		f(0)
 	}
 }
+
+/// A helper trait to make the generic bunds shorter
+pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
+
+impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}

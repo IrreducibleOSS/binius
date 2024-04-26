@@ -1,10 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use std::ops::Deref;
+
 use crate::{
+	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::PackedStrategy,
-	arithmetic_traits::{MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
+	arithmetic_traits::{
+		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
+		TaggedSquare,
+	},
 	binary_field::BinaryField,
-	underlier::UnderlierType,
+	packed::PackedBinaryField,
+	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, PackedField, TowerField,
 };
 
@@ -64,6 +71,7 @@ macro_rules! impl_tower_constants {
 	};
 }
 
+use binius_utils::checked_arithmetics::checked_log_2;
 pub(crate) use impl_tower_constants;
 
 impl<PT> TaggedMul<PackedStrategy> for PT
@@ -279,6 +287,81 @@ where
 	}
 }
 
+/// Packed transformation implementation.
+/// Stores bases in a form of:
+/// [
+///     [<base vec 1> ... <base vec 1>],
+///     ...
+///     [<base vec N> ... <base vec N>]
+/// ]
+/// Transformation complexity is `N*log(N)` where `N` is `OP::Scalar::DEGREE`.
+struct PackedTransformation<OP> {
+	bases: Vec<OP>,
+}
+
+impl<OP> PackedTransformation<OP>
+where
+	OP: PackedBinaryField,
+{
+	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> Self {
+		Self {
+			bases: transformation
+				.bases()
+				.iter()
+				.map(|base| OP::broadcast(*base))
+				.collect(),
+		}
+	}
+}
+
+/// Broadcast lowest field for each element, e.g. [<0001><0000>] -> [<1111><0000>]
+fn broadcast_lowest_bit<U: UnderlierType>(mut data: U, log_packed_bits: usize) -> U {
+	for i in 0..log_packed_bits {
+		data |= data << (1 << i)
+	}
+
+	data
+}
+
+impl<U, IP, OP, IF, OF> Transformation<IP, OP> for PackedTransformation<OP>
+where
+	IP: PackedField<Scalar = IF> + WithUnderlier<Underlier = U>,
+	OP: PackedField<Scalar = OF> + WithUnderlier<Underlier = U>,
+	IF: BinaryField,
+	OF: BinaryField,
+	U: UnderlierType,
+{
+	fn transform(&self, input: &IP) -> OP {
+		let mut result = OP::zero();
+		let ones = OP::one().to_underlier();
+		let mut input = input.to_underlier();
+
+		for base in self.bases.iter() {
+			let base_component = input & ones;
+			// contains ones at positions which correspond to non-zero components
+			let mask = broadcast_lowest_bit(base_component, checked_log_2(OF::DEGREE));
+			result += OP::from(mask & base.to_underlier());
+			input = input >> 1;
+		}
+
+		result
+	}
+}
+
+impl<IP, OP> TaggedPackedTransformationFactory<PackedStrategy, OP> for IP
+where
+	IP: PackedBinaryField + WithUnderlier,
+	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
+{
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+	) -> impl Transformation<Self, OP> {
+		PackedTransformation::new(transformation)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -293,7 +376,8 @@ mod tests {
 			PackedBinaryField8x16b,
 		},
 		test_utils::{
-			define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
+			define_invert_tests, define_mul_alpha_tests, define_multiply_tests,
+			define_square_tests, define_transformation_tests,
 		},
 	};
 
@@ -402,4 +486,17 @@ mod tests {
 		TaggedMulAlpha<PackedStrategy>::mul_alpha,
 		TaggedMulAlpha<PackedStrategy>
 	);
+
+	#[allow(unused)]
+	trait SelfPackedTransformationFactory:
+		TaggedPackedTransformationFactory<PackedStrategy, Self>
+	{
+	}
+
+	impl<T: TaggedPackedTransformationFactory<PackedStrategy, Self>> SelfPackedTransformationFactory
+		for T
+	{
+	}
+
+	define_transformation_tests!(SelfPackedTransformationFactory);
 }

@@ -94,6 +94,7 @@ impl<U: NumCast<u128>> NumCast<M128> for U {
 }
 
 impl Default for M128 {
+	#[inline(always)]
 	fn default() -> Self {
 		Self(unsafe { _mm_setzero_si128() })
 	}
@@ -102,12 +103,14 @@ impl Default for M128 {
 impl BitAnd for M128 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitand(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm_and_si128(self.0, rhs.0) })
 	}
 }
 
 impl BitAndAssign for M128 {
+	#[inline(always)]
 	fn bitand_assign(&mut self, rhs: Self) {
 		*self = *self & rhs
 	}
@@ -116,12 +119,14 @@ impl BitAndAssign for M128 {
 impl BitOr for M128 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm_or_si128(self.0, rhs.0) })
 	}
 }
 
 impl BitOrAssign for M128 {
+	#[inline(always)]
 	fn bitor_assign(&mut self, rhs: Self) {
 		*self = *self | rhs
 	}
@@ -130,12 +135,14 @@ impl BitOrAssign for M128 {
 impl BitXor for M128 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn bitxor(self, rhs: Self) -> Self::Output {
 		Self(unsafe { _mm_xor_si128(self.0, rhs.0) })
 	}
 }
 
 impl BitXorAssign for M128 {
+	#[inline(always)]
 	fn bitxor_assign(&mut self, rhs: Self) {
 		*self = *self ^ rhs;
 	}
@@ -183,6 +190,7 @@ macro_rules! bitshift_right {
 impl Shr<usize> for M128 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn shr(self, rhs: usize) -> Self::Output {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
@@ -215,6 +223,7 @@ macro_rules! bitshift_left {
 impl Shl<usize> for M128 {
 	type Output = Self;
 
+	#[inline(always)]
 	fn shl(self, rhs: usize) -> Self::Output {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
@@ -281,6 +290,7 @@ impl UnderlierType for M128 {
 
 	const ZERO: Self = { Self(m128_from_u128!(0)) };
 
+	#[inline(always)]
 	fn fill_with_bit(val: u8) -> Self {
 		assert!(val == 0 || val == 1);
 		Self(unsafe { _mm_set1_epi8(val.wrapping_neg() as i8) })
@@ -354,6 +364,7 @@ impl UnderlierWithBitConstants for M128 {
 		Self::from_u128(interleave_mask_odd!(u128, 6)),
 	];
 
+	#[inline(always)]
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		unsafe {
 			let (c, d) = interleave_bits(
@@ -388,6 +399,7 @@ impl<Scalar: BinaryField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveT
 where
 	u128: From<Scalar::Underlier>,
 {
+	#[inline(always)]
 	fn broadcast(scalar: Scalar) -> Self {
 		let tower_level = Scalar::N_BITS.ilog2() as usize;
 		let mut value = u128::from(scalar.to_underlier());
