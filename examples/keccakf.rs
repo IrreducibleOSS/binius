@@ -43,7 +43,7 @@ use rand::{thread_rng, Rng};
 use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
 use tiny_keccak::keccakf;
 use tracing::instrument;
-use tracing_profile::{CsvLayer, PrintTreeLayer};
+use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const KECCAKF_RC: [u64; 32] = [
@@ -106,12 +106,14 @@ fn init_tracing() {
 			.with(CsvLayer::new(csv_path))
 			.with(tracing_subscriber::fmt::layer())
 			.try_init();
-	} else if env::var("PROFILE_PRINT_TREE").is_ok() {
-		let _ = tracing_subscriber::registry()
-			.with(PrintTreeLayer::new())
-			.try_init();
 	} else {
 		let _ = tracing_subscriber::registry()
+			.with(PrintTreeLayer::new(PrintTreeConfig {
+				attention_above_percent: 25.0,
+				relevant_above_percent: 2.5,
+				hide_below_percent: 1.0,
+				display_unaccounted: false,
+			}))
 			.with(tracing_subscriber::fmt::layer())
 			.try_init();
 	}

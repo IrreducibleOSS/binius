@@ -30,7 +30,7 @@ use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
 use std::{env, fmt::Debug};
-use tracing_profile::{CsvLayer, PrintTreeLayer};
+use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
 use tracing_subscriber::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -380,12 +380,14 @@ fn main() {
 			.with(CsvLayer::new(csv_path))
 			.with(tracing_subscriber::fmt::layer())
 			.try_init();
-	} else if env::var("PROFILE_PRINT_TREE").is_ok() {
-		let _ = tracing_subscriber::registry()
-			.with(PrintTreeLayer::new())
-			.try_init();
 	} else {
 		let _ = tracing_subscriber::registry()
+			.with(PrintTreeLayer::new(PrintTreeConfig {
+				attention_above_percent: 25.0,
+				relevant_above_percent: 2.5,
+				hide_below_percent: 1.0,
+				display_unaccounted: false,
+			}))
 			.with(tracing_subscriber::fmt::layer())
 			.try_init();
 	};

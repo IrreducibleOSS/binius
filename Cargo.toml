@@ -38,7 +38,7 @@ thiserror = "1.0.47"
 thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tracing = "0.1.38"
-tracing-profile = "0.1.0"
+tracing-profile = "0.3.0"
 tracing-subscriber = "0.3.18"
 transpose = "0.2.2"
 

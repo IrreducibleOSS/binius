@@ -15,7 +15,6 @@
 //! - <https://eprint.iacr.org/2015/688.pdf>
 
 use core::{arch::aarch64::*, mem};
-use subtle::CtOption;
 
 #[inline]
 pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
