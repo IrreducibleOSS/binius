@@ -432,6 +432,69 @@ impl<P: PackedField> TraceWitness<P> {
 
 		index
 	}
+
+	fn all_polys(&self) -> Vec<MultilinearExtension<P>> {
+		iter::once(&self.round_consts)
+			.chain(iter::once(&self.selector))
+			.chain(self.state_in.iter())
+			.chain(self.state_out.iter())
+			.chain(self.c.iter())
+			.chain(self.d.iter())
+			.chain(self.c_shift.iter())
+			.chain(self.a_theta.iter())
+			.chain(self.b.iter())
+			.chain(self.next_state_in.iter())
+			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+			.collect()
+	}
+
+	fn commit_polys(&self) -> Vec<MultilinearExtension<P>> {
+		self.state_in
+			.iter()
+			.chain(self.state_out.iter())
+			.chain(self.c.iter())
+			.chain(self.d.iter())
+			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+			.collect()
+	}
+}
+
+fn make_multilinear_composition<'a, P, PW, C>(
+	log_size: usize,
+	multilinears: Vec<MultilinearExtension<'a, P>>,
+	composition: C,
+) -> Result<MultilinearComposite<PW, C, Arc<dyn MultilinearPoly<PW> + Send + Sync + 'a>>>
+where
+	P: PackedField<Scalar = BinaryField1b>,
+	PW: ExtensionField<BinaryField1b>,
+	C: CompositionPoly<PW>,
+{
+	Ok(MultilinearComposite::new(
+		log_size,
+		composition,
+		multilinears
+			.into_iter()
+			.map(|mle| mle.specialize_arc_dyn())
+			.collect(),
+	)?)
+}
+
+fn zerocheck_verifier_oracles<F: Field>(
+	fixed_oracle: &FixedOracle<F>,
+	trace_oracle: &TraceOracle<F>,
+) -> Vec<MultilinearPolyOracle<F>> {
+	iter::once(&fixed_oracle.round_consts)
+		.chain(iter::once(&fixed_oracle.selector))
+		.chain(trace_oracle.state_in.iter())
+		.chain(trace_oracle.state_out.iter())
+		.chain(trace_oracle.c.iter())
+		.chain(trace_oracle.d.iter())
+		.chain(trace_oracle.c_shift.iter())
+		.chain(trace_oracle.a_theta.iter())
+		.chain(trace_oracle.b.iter())
+		.chain(trace_oracle.next_state_in.iter())
+		.cloned()
+		.collect()
 }
 
 struct Proof<F: Field, PCSComm, PCSProof> {
@@ -554,54 +617,6 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 	witness
 }
 
-fn zerocheck_verifier_oracles<F: Field>(
-	fixed_oracle: &FixedOracle<F>,
-	trace_oracle: &TraceOracle<F>,
-) -> Vec<MultilinearPolyOracle<F>> {
-	iter::once(&fixed_oracle.round_consts)
-		.chain(iter::once(&fixed_oracle.selector))
-		.chain(trace_oracle.state_in.iter())
-		.chain(trace_oracle.state_out.iter())
-		.chain(trace_oracle.c.iter())
-		.chain(trace_oracle.d.iter())
-		.chain(trace_oracle.c_shift.iter())
-		.chain(trace_oracle.a_theta.iter())
-		.chain(trace_oracle.b.iter())
-		.chain(trace_oracle.next_state_in.iter())
-		.cloned()
-		.collect()
-}
-
-fn zerocheck_prover_witness<'a, P, PW, C>(
-	log_size: usize,
-	witness: &'a TraceWitness<P>,
-	composition: C,
-) -> Result<MultilinearComposite<PW, C, Arc<dyn MultilinearPoly<PW> + Send + Sync + 'a>>>
-where
-	P: PackedField<Scalar = BinaryField1b>,
-	PW: ExtensionField<BinaryField1b>,
-	C: CompositionPoly<PW>,
-{
-	let multilinears = iter::once(&witness.round_consts)
-		.chain(iter::once(&witness.selector))
-		.chain(witness.state_in.iter())
-		.chain(witness.state_out.iter())
-		.chain(witness.c.iter())
-		.chain(witness.d.iter())
-		.chain(witness.c_shift.iter())
-		.chain(witness.a_theta.iter())
-		.chain(witness.b.iter())
-		.chain(witness.next_state_in.iter())
-		.map(|values| {
-			MultilinearExtension::from_values_slice(values.as_slice())
-				.unwrap()
-				.specialize_arc_dyn()
-		})
-		.collect();
-
-	Ok(MultilinearComposite::new(log_size, composition, multilinears)?)
-}
-
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
 fn prove<P, F, PW, PCS, CH>(
@@ -615,25 +630,16 @@ fn prove<P, F, PW, PCS, CH>(
 	witness: &TraceWitness<P>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
-	P: PackedField<Scalar = BinaryField1b> + Debug + Pod,
+	P: PackedField<Scalar = BinaryField1b> + Pod,
 	F: TowerField + Step + From<PW>,
 	PW: TowerField + From<F>,
-	PCS: PolyCommitScheme<P, F>,
-	PCS::Error: Debug,
-	PCS::Proof: 'static,
+	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
 	let mut trace_witness = witness.to_index::<_, PW>(fixed_oracle, trace_oracle);
 
 	// Round 1
-	let trace_commit_polys = witness
-		.state_in
-		.iter()
-		.chain(witness.state_out.iter())
-		.chain(witness.c.iter())
-		.chain(witness.d.iter())
-		.map(|vals| MultilinearExtension::from_values_slice(vals.as_slice()).unwrap())
-		.collect::<Vec<_>>();
+	let trace_commit_polys = witness.commit_polys();
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys).unwrap();
 	challenger.observe(trace_comm.clone());
 
@@ -663,7 +669,8 @@ where
 		)?,
 	};
 
-	let zerocheck_witness = zerocheck_prover_witness(log_size, witness, mix_composition_prover)?;
+	let zerocheck_witness =
+		make_multilinear_composition(log_size, witness.all_polys(), mix_composition_prover)?;
 
 	// Zerocheck
 	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
@@ -794,11 +801,9 @@ fn verify<P, F, PCS, CH>(
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
 ) -> Result<()>
 where
-	P: PackedField<Scalar = BinaryField1b> + Debug,
+	P: PackedField<Scalar = BinaryField1b>,
 	F: TowerField,
-	PCS: PolyCommitScheme<P, F>,
-	PCS::Error: Debug,
-	PCS::Proof: 'static,
+	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
 	let Proof {

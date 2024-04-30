@@ -398,7 +398,7 @@ fn shift_left<F: TowerField>(x: M128) -> M128 {
 		}
 	});
 	if tower_level == 6 {
-		return unsafe { vcombine_u64(std::mem::transmute(0u64), vget_low_u64(x.into())).into() };
+		return unsafe { vcombine_u64(vcreate_u64(0), vget_low_u64(x.into())).into() };
 	}
 	panic!("Unsupported tower level {tower_level}");
 }
@@ -412,7 +412,7 @@ fn shift_right<F: TowerField>(x: M128) -> M128 {
 		}
 	});
 	if tower_level == 6 {
-		return unsafe { vcombine_u64(vget_high_u64(x.into()), std::mem::transmute(0u64)).into() };
+		return unsafe { vcombine_u64(vget_high_u64(x.into()), vcreate_u64(0)).into() };
 	}
 	panic!("Unsupported tower level {tower_level}");
 }

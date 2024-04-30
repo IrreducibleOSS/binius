@@ -2,7 +2,7 @@
 
 use crate::{oracle::OracleId, polynomial::MultilinearPoly};
 use binius_field::PackedField;
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
 
@@ -12,22 +12,17 @@ pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 
 /// unique, sequential  oracle IDs. This index stores the corresponding witnesses, as
 /// [`MultilinearPoly`] trait objects. Not every oracle is required to have a stored witness -- in
 /// some cases, only a derived multilinear witness is required.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct MultilinearWitnessIndex<'a, P: PackedField> {
 	multilinears: Vec<Option<MultilinearWitness<'a, P>>>,
-	_p_marker: PhantomData<P>,
 }
 
 impl<'a, P> MultilinearWitnessIndex<'a, P>
 where
 	P: PackedField,
 {
-	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
-		Self {
-			multilinears: Vec::new(),
-			_p_marker: PhantomData,
-		}
+		Self::default()
 	}
 
 	pub fn get(&self, id: OracleId) -> Option<&MultilinearWitness<'a, P>> {
