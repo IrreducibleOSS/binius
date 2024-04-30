@@ -13,6 +13,8 @@ pub enum Error {
 	IncorrectInnerEvalsLength,
 	#[error("the output polynomial must have size {expected}")]
 	IncorrectOutputPolynomialSize { expected: usize },
+	#[error("the polynomial is expected to have {expected} variables, and instead has {actual}")]
+	IncorrectNumberOfVariables { expected: usize, actual: usize },
 	#[error("expected the number of evaluations to match the domain size")]
 	ExtrapolateNumberOfEvaluations,
 	#[error("domain size is larger than the field")]

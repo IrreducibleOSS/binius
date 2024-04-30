@@ -18,7 +18,7 @@ use crate::{
 			batch_prove, setup_first_round_claim, verify_final, verify_round,
 			verify_zerocheck_round, Error as SumcheckError, SumcheckBatchProof,
 			SumcheckBatchProveOutput, SumcheckClaim, SumcheckProof, SumcheckProveOutput,
-			SumcheckProverState, SumcheckRoundClaim, SumcheckWitness,
+			SumcheckProver, SumcheckRoundClaim, SumcheckWitness,
 		},
 	},
 };
@@ -189,7 +189,7 @@ where
 
 fn full_prove_with_switchover_impl<F, PW, PCW, M, CH>(
 	n_vars: usize,
-	mut prover_state: SumcheckProverState<F, PW, PCW, M>,
+	mut prover_state: SumcheckProver<F, PW, PCW, M>,
 	mut challenger: CH,
 ) -> (Vec<SumcheckRoundClaim<F>>, SumcheckProveOutput<F>)
 where
@@ -244,8 +244,7 @@ where
 
 	assert_eq!(witness.n_vars(), n_vars);
 
-	let prover_state =
-		SumcheckProverState::new(domain, claim.clone(), witness, switchover_fn).unwrap();
+	let prover_state = SumcheckProver::new(domain, claim.clone(), witness, switchover_fn).unwrap();
 	full_prove_with_switchover_impl(n_vars, prover_state, challenger)
 }
 
@@ -272,12 +271,7 @@ where
 		.into_iter()
 		.zip(&claims)
 		.map(|(witness, claim)| {
-			SumcheckProverState::new(
-				&bivariate_domain,
-				claim.clone(),
-				witness,
-				switchover_fn.clone(),
-			)
+			SumcheckProver::new(&bivariate_domain, claim.clone(), witness, switchover_fn.clone())
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 

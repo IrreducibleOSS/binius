@@ -10,7 +10,7 @@
 //! after the last sumcheck round message has been sent by the prover.
 
 use super::{
-	batch_verify_final, error::Error, prove::SumcheckProverState, verify_round, SumcheckClaim,
+	batch_verify_final, error::Error, prove::SumcheckProver, verify_round, SumcheckClaim,
 	SumcheckRound, SumcheckRoundClaim, VerificationError,
 };
 use crate::{
@@ -37,7 +37,7 @@ pub struct SumcheckBatchProveOutput<F: Field> {
 ///
 /// See module documentation for details.
 pub fn batch_prove<'a, F, PW, CW, M, CH>(
-	provers: impl IntoIterator<Item = SumcheckProverState<'a, F, PW, CW, M>>,
+	provers: impl IntoIterator<Item = SumcheckProver<'a, F, PW, CW, M>>,
 	mut challenger: CH,
 ) -> Result<SumcheckBatchProveOutput<F>, Error>
 where

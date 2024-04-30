@@ -12,6 +12,7 @@ binius_ntt = { path = "../ntt" }
 binius_utils = { path = "../utils" }
 bytemuck.workspace = true
 derive_more.workspace = true
+either.workspace = true
 getset.workspace = true
 itertools.workspace = true
 p3-challenger.workspace = true

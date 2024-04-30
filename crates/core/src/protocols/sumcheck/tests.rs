@@ -8,7 +8,7 @@ use crate::{
 		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearQuery,
 	},
 	protocols::{
-		sumcheck::{batch_prove, batch_verify, SumcheckClaim, SumcheckProverState},
+		sumcheck::{batch_prove, batch_verify, SumcheckClaim, SumcheckProver},
 		test_utils::{
 			full_prove_with_switchover, full_verify, transform_poly, TestProductComposition,
 		},
@@ -256,14 +256,22 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 }
 
 #[test]
-fn test_prove_verify_interaction_basic() {
-	crate::util::tracing::init_tracing();
+fn test_sumcheck_prove_verify_interaction_basic() {
+	for n_vars in 2..8 {
+		for n_multilinears in 1..4 {
+			for switchover_rd in 1..=n_vars / 2 {
+				test_prove_verify_interaction_helper(false, n_vars, n_multilinears, switchover_rd);
+			}
+		}
+	}
+}
 
+#[test]
+fn test_zerocheck_prove_verify_interaction_basic() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			for switchover_rd in 1..=n_vars / 2 {
 				test_prove_verify_interaction_helper(true, n_vars, n_multilinears, switchover_rd);
-				test_prove_verify_interaction_helper(false, n_vars, n_multilinears, switchover_rd);
 			}
 		}
 	}
@@ -426,21 +434,21 @@ fn test_prove_verify_batch() {
 	let domain = EvaluationDomain::new(3).unwrap();
 
 	let mut witness_iter = witnesses.into_iter();
-	let prover0 = SumcheckProverState::new(
+	let prover0 = SumcheckProver::new(
 		&domain,
 		sumcheck_claims[0].clone(),
 		witness_iter.next().unwrap(),
 		|_| 3,
 	)
 	.unwrap();
-	let prover1 = SumcheckProverState::new(
+	let prover1 = SumcheckProver::new(
 		&domain,
 		sumcheck_claims[1].clone(),
 		witness_iter.next().unwrap(),
 		|_| 4,
 	)
 	.unwrap();
-	let prover2 = SumcheckProverState::new(
+	let prover2 = SumcheckProver::new(
 		&domain,
 		sumcheck_claims[2].clone(),
 		witness_iter.next().unwrap(),
