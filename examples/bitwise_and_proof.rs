@@ -7,10 +7,7 @@ use binius_core::{
 		MultilinearExtension,
 	},
 	protocols::{
-		evalcheck::{
-			prove as prove_evalcheck, verify as verify_evalcheck, BatchCommittedEvalClaims,
-			EvalcheckProof,
-		},
+		evalcheck::{EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::{SumcheckProof, SumcheckProveOutput},
 		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck::{
@@ -107,8 +104,6 @@ where
 		.unwrap();
 	challenger.observe(abc_comm.clone());
 
-	let trace_batch = trace.committed_batch(0);
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
 	drop(commit_scope);
 
 	// Round 2
@@ -158,20 +153,14 @@ where
 	} = output;
 
 	// prove_evalcheck is instrumented
-	let mut new_sumchecks = Vec::new();
-	let evalcheck_proof = prove_evalcheck(
-		trace,
-		&mut witness_index,
-		evalcheck_claim,
-		&mut batch_committed_eval_claims,
-		&mut new_sumchecks,
-	)
-	.unwrap();
+	let mut evalcheck_prover = EvalcheckProver::new(trace, &mut witness_index);
+	let evalcheck_proof = evalcheck_prover.prove(evalcheck_claim).unwrap();
 
 	// try_extract_same_query_pcs_claim is instrumented
-	assert!(new_sumchecks.is_empty());
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	let same_query_pcs_claim = batch_committed_eval_claims
+	assert!(evalcheck_prover.new_sumchecks().is_empty());
+	assert_eq!(evalcheck_prover.batch_committed_eval_claims().n_batches(), 1);
+	let same_query_pcs_claim = evalcheck_prover
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
 		.unwrap();
@@ -249,23 +238,16 @@ fn verify<PCS, CH>(
 	// Run sumcheck protocol
 	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
 
-	let trace_batch = trace.committed_batch(0);
-
 	// Verify commitment openings
-	let mut new_sumcheck_claims = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch]);
-	verify_evalcheck(
-		trace,
-		evalcheck_claim,
-		evalcheck_proof,
-		&mut batch_committed_eval_claims,
-		&mut new_sumcheck_claims,
-	)
-	.unwrap();
+	let mut evalcheck_verifier = EvalcheckVerifier::new(trace);
+	evalcheck_verifier
+		.verify(evalcheck_claim, evalcheck_proof)
+		.unwrap();
 
-	assert!(new_sumcheck_claims.is_empty());
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	let same_query_pcs_claim = batch_committed_eval_claims
+	assert!(evalcheck_verifier.new_sumcheck_claims().is_empty());
+	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
+	let same_query_pcs_claim = evalcheck_verifier
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
 		.unwrap();

@@ -20,8 +20,7 @@ use binius_core::{
 		MultilinearExtension, MultilinearPoly, MultivariatePoly,
 	},
 	protocols::{
-		evalcheck,
-		evalcheck::{BatchCommittedEvalClaims, EvalcheckProof},
+		evalcheck::{EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::{batch_verify, SumcheckBatchProof, SumcheckProof, SumcheckProveOutput},
 		test_utils::{
 			full_prove_with_switchover, full_verify, make_non_same_query_pcs_sumcheck_claims,
@@ -702,17 +701,11 @@ where
 	// Evalcheck
 	let trace_batch = oracles.committed_batch(trace_batch_id);
 
-	let mut new_sumchecks = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
-	let evalcheck_proof = evalcheck::prove(
-		oracles,
-		&mut trace_witness,
-		evalcheck_claim,
-		&mut batch_committed_eval_claims,
-		&mut new_sumchecks,
-	)
-	.unwrap();
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	let mut evalcheck_prover = EvalcheckProver::new(oracles, &mut trace_witness);
+
+	let evalcheck_proof = evalcheck_prover.prove(evalcheck_claim).unwrap();
+	let new_sumchecks = evalcheck_prover.take_new_sumchecks();
+	assert_eq!(evalcheck_prover.batch_committed_eval_claims().n_batches(), 1);
 	assert_eq!(new_sumchecks.len(), 54);
 
 	// Second sumcheck
@@ -720,38 +713,29 @@ where
 		prove_bivariate_sumchecks_with_switchover(new_sumchecks, &mut challenger, switchover_fn)?;
 
 	// Second Evalchecks
-	let mut new_sumchecks_2 = Vec::new();
-
 	let second_round_evalcheck_proofs = second_round_evalcheck_claims
 		.into_iter()
-		.map(|claim| {
-			evalcheck::prove(
-				oracles,
-				&mut trace_witness,
-				claim,
-				&mut batch_committed_eval_claims,
-				&mut new_sumchecks_2,
-			)
-		})
+		.map(|claim| evalcheck_prover.prove(claim))
 		.collect::<Result<Vec<_>, _>>()?;
+
+	let new_sumchecks_2 = evalcheck_prover.take_new_sumchecks();
 	assert_eq!(new_sumchecks_2.len(), 0);
 
 	// Third sumcheck
-	assert!(batch_committed_eval_claims
+	assert!(evalcheck_prover
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(trace_batch.id)
 		.transpose()
 		.is_none());
 
-	let non_sqpcs_claims = batch_committed_eval_claims.take_claims(trace_batch.id)?;
-	let mut batch_committed_eval_claims_final =
-		BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
+	let non_sqpcs_claims = evalcheck_prover
+		.batch_committed_eval_claims_mut()
+		.take_claims(trace_batch.id)?;
 
-	let non_sqpcs_sumchecks = make_non_same_query_pcs_sumchecks(
-		oracles,
-		&mut trace_witness,
-		&non_sqpcs_claims,
-		&mut batch_committed_eval_claims_final,
-	)?;
+	let mut evalcheck_prover_final = EvalcheckProver::new(oracles, &mut trace_witness);
+
+	let non_sqpcs_sumchecks =
+		make_non_same_query_pcs_sumchecks(&mut evalcheck_prover_final, &non_sqpcs_claims)?;
 
 	let (third_round_batch_sumcheck_proof, third_round_evalcheck_claims) =
 		prove_bivariate_sumchecks_with_switchover(
@@ -760,23 +744,17 @@ where
 			switchover_fn,
 		)?;
 
-	let mut new_sumchecks_3 = Vec::new();
 	let third_round_evalcheck_proofs = third_round_evalcheck_claims
 		.into_iter()
-		.map(|claim| {
-			evalcheck::prove(
-				oracles,
-				&mut trace_witness,
-				claim,
-				&mut batch_committed_eval_claims_final,
-				&mut new_sumchecks_3,
-			)
-		})
+		.map(|claim| evalcheck_prover_final.prove(claim))
 		.collect::<Result<Vec<_>, _>>()?;
+
+	let new_sumchecks_3 = evalcheck_prover_final.take_new_sumchecks();
 	assert_eq!(new_sumchecks_3.len(), 0);
 
 	// Should be same query pcs claim
-	let same_query_claim = batch_committed_eval_claims_final
+	let same_query_claim = evalcheck_prover_final
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(trace_batch.id)
 		.unwrap()
 		.unwrap();
@@ -866,17 +844,11 @@ where
 	// Evalcheck
 	let trace_batch = oracles.committed_batch(trace_batch_id);
 
-	let mut new_sumcheck_claims = Vec::new();
-	let mut batch_committed_eval_claims = BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
-	evalcheck::verify(
-		oracles,
-		evalcheck_claim,
-		evalcheck_proof,
-		&mut batch_committed_eval_claims,
-		&mut new_sumcheck_claims,
-	)
-	.unwrap();
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
+	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);
+	evalcheck_verifier.verify(evalcheck_claim, evalcheck_proof)?;
+	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
+
+	let new_sumcheck_claims = evalcheck_verifier.take_new_sumcheck_claims();
 	assert_eq!(new_sumcheck_claims.len(), 54);
 
 	// Second Sumcheck
@@ -884,39 +856,29 @@ where
 		batch_verify(new_sumcheck_claims, second_round_batch_sumcheck_proof, &mut challenger)?;
 
 	// Second Evalchecks
-	let mut new_sumcheck_claims_2 = Vec::new();
-
 	second_round_evalcheck_claims
 		.into_iter()
 		.zip(second_round_evalcheck_proofs)
-		.try_for_each(|(claim, proof)| {
-			evalcheck::verify(
-				oracles,
-				claim,
-				proof,
-				&mut batch_committed_eval_claims,
-				&mut new_sumcheck_claims_2,
-			)
-		})?;
+		.try_for_each(|(claim, proof)| evalcheck_verifier.verify(claim, proof))?;
 
-	assert_eq!(batch_committed_eval_claims.n_batches(), 1);
-	assert_eq!(new_sumcheck_claims_2.len(), 0);
+	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
+	assert_eq!(evalcheck_verifier.new_sumcheck_claims().len(), 0);
 
 	// Third sumcheck
-	assert!(batch_committed_eval_claims
+	assert!(evalcheck_verifier
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(trace_batch.id)
 		.transpose()
 		.is_none());
 
-	let non_sqpcs_claims = batch_committed_eval_claims.take_claims(trace_batch.id)?;
-	let mut batch_committed_eval_claims_final =
-		BatchCommittedEvalClaims::new(&[trace_batch.clone()]);
+	let non_sqpcs_claims = evalcheck_verifier
+		.batch_committed_eval_claims_mut()
+		.take_claims(trace_batch.id)?;
 
-	let third_round_sumcheck_claims = make_non_same_query_pcs_sumcheck_claims(
-		oracles,
-		&non_sqpcs_claims,
-		&mut batch_committed_eval_claims_final,
-	)?;
+	let mut evalcheck_verifier_final = EvalcheckVerifier::new(oracles);
+
+	let third_round_sumcheck_claims =
+		make_non_same_query_pcs_sumcheck_claims(&mut evalcheck_verifier_final, &non_sqpcs_claims)?;
 
 	let third_round_evalcheck_claims = batch_verify(
 		third_round_sumcheck_claims,
@@ -924,24 +886,15 @@ where
 		&mut challenger,
 	)?;
 
-	let mut new_sumcheck_claims_3 = Vec::new();
-
 	third_round_evalcheck_claims
 		.into_iter()
 		.zip(third_round_evalcheck_proofs)
-		.try_for_each(|(claim, proof)| {
-			evalcheck::verify(
-				oracles,
-				claim,
-				proof,
-				&mut batch_committed_eval_claims_final,
-				&mut new_sumcheck_claims_3,
-			)
-		})?;
-	assert_eq!(new_sumcheck_claims_3.len(), 0);
+		.try_for_each(|(claim, proof)| evalcheck_verifier_final.verify(claim, proof))?;
+	assert_eq!(evalcheck_verifier_final.new_sumcheck_claims().len(), 0);
 
 	// Should be same query pcs claim
-	let same_query_claim = batch_committed_eval_claims_final
+	let same_query_claim = evalcheck_verifier_final
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(trace_batch.id)?
 		.expect("eval queries must be at a single point");
 

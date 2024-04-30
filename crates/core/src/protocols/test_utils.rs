@@ -1,7 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	oracle::MultilinearOracleSet,
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
 		MultilinearPoly, MultivariatePoly,
@@ -12,7 +11,8 @@ use crate::{
 				non_same_query_pcs_sumcheck_claim, non_same_query_pcs_sumcheck_metas,
 				non_same_query_pcs_sumcheck_witness, BivariateSumcheck, MemoizedQueries,
 			},
-			BatchCommittedEvalClaims, CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim,
+			CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim, EvalcheckProver,
+			EvalcheckVerifier,
 		},
 		sumcheck::{
 			batch_prove, setup_first_round_claim, verify_final, verify_round,
@@ -21,7 +21,6 @@ use crate::{
 			SumcheckProverState, SumcheckRoundClaim, SumcheckWitness,
 		},
 	},
-	witness::MultilinearWitnessIndex,
 };
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField, TowerField};
 use p3_challenger::{CanObserve, CanSample};
@@ -291,31 +290,28 @@ where
 }
 
 #[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumcheck_claims")]
-pub fn make_non_same_query_pcs_sumcheck_claims<F: TowerField>(
-	oracles: &mut MultilinearOracleSet<F>,
+pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
+	verifier: &mut EvalcheckVerifier<'a, F>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
-	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
 ) -> Result<Vec<SumcheckClaim<F>>, EvalcheckError> {
 	let metas = non_same_query_pcs_sumcheck_metas(
-		oracles,
+		verifier.oracles,
 		committed_eval_claims,
-		new_batch_committed_eval_claims,
+		&mut verifier.batch_committed_eval_claims,
 	)?;
 
 	let claims = metas
 		.into_iter()
-		.map(|meta| non_same_query_pcs_sumcheck_claim(oracles, meta))
+		.map(|meta| non_same_query_pcs_sumcheck_claim(verifier.oracles, meta))
 		.collect::<Result<Vec<_>, EvalcheckError>>()?;
 
 	Ok(claims)
 }
 
 #[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumchecks")]
-pub fn make_non_same_query_pcs_sumchecks<'a, F, PW>(
-	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW>(
+	prover: &mut EvalcheckProver<'a, 'b, F, PW>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
-	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
 ) -> Result<Vec<BivariateSumcheck<'a, F, PW>>, EvalcheckError>
 where
 	F: TowerField + From<PW::Scalar>,
@@ -323,9 +319,9 @@ where
 	PW::Scalar: From<F>,
 {
 	let metas = non_same_query_pcs_sumcheck_metas(
-		oracles,
+		prover.oracles,
 		committed_eval_claims,
-		new_batch_committed_eval_claims,
+		&mut prover.batch_committed_eval_claims,
 	)?;
 
 	let mut memoized_queries = MemoizedQueries::new();
@@ -333,9 +329,12 @@ where
 	let sumchecks = metas
 		.into_iter()
 		.map(|meta| {
-			let claim = non_same_query_pcs_sumcheck_claim(oracles, meta.clone())?;
-			let witness =
-				non_same_query_pcs_sumcheck_witness(witness_index, &mut memoized_queries, meta)?;
+			let claim = non_same_query_pcs_sumcheck_claim(prover.oracles, meta.clone())?;
+			let witness = non_same_query_pcs_sumcheck_witness(
+				prover.witness_index,
+				&mut memoized_queries,
+				meta,
+			)?;
 			Ok((claim, witness))
 		})
 		.collect::<Result<Vec<_>, EvalcheckError>>()?;

@@ -11,7 +11,7 @@ use crate::{
 		MultilinearQuery, MultivariatePoly,
 	},
 	protocols::{
-		evalcheck::{prove, verify, BatchCommittedEvalClaims, EvalcheckClaim, EvalcheckProof},
+		evalcheck::{EvalcheckClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::SumcheckClaim,
 	},
 	witness::MultilinearWitnessIndex,
@@ -140,22 +140,35 @@ fn test_evaluation_point_batching() {
 		is_random_point: true,
 	};
 
-	let mut bcec_prove = BatchCommittedEvalClaims::new(&oracles.committed_batches());
-	let mut new_sumchecks = Vec::new();
-	let proof =
-		prove(&mut oracles, &mut witness_index, claim.clone(), &mut bcec_prove, &mut new_sumchecks)
-			.unwrap();
+	let mut prover_oracles = oracles.clone();
+	let mut prover_state = EvalcheckProver::new(&mut prover_oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
 
-	let mut bcec_verify = BatchCommittedEvalClaims::new(&oracles.committed_batches());
-	let mut new_sumcheck_claims_verify = Vec::new();
-	verify(&mut oracles, claim, proof, &mut bcec_verify, &mut new_sumcheck_claims_verify).unwrap();
-
-	let prove_batch0 = bcec_prove
+	let prove_batch0 = prover_state
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(0)
 		.unwrap()
 		.unwrap();
-	let verify_batch0 = bcec_verify
+
+	let prove_batch1 = prover_state
+		.batch_committed_eval_claims()
+		.try_extract_same_query_pcs_claim(1)
+		.unwrap()
+		.unwrap();
+
+	let mut verifier_oracles = oracles;
+	let mut verifier_state = EvalcheckVerifier::new(&mut verifier_oracles);
+	verifier_state.verify(claim, proof).unwrap();
+
+	let verify_batch0 = verifier_state
+		.batch_committed_eval_claims()
 		.try_extract_same_query_pcs_claim(0)
+		.unwrap()
+		.unwrap();
+
+	let verify_batch1 = verifier_state
+		.batch_committed_eval_claims()
+		.try_extract_same_query_pcs_claim(1)
 		.unwrap()
 		.unwrap();
 
@@ -164,15 +177,6 @@ fn test_evaluation_point_batching() {
 
 	assert_eq!(prove_batch0.evals, [batch_evals[0], batch_evals[2]]);
 	assert_eq!(verify_batch0.evals, [batch_evals[0], batch_evals[2]]);
-
-	let prove_batch1 = bcec_prove
-		.try_extract_same_query_pcs_claim(1)
-		.unwrap()
-		.unwrap();
-	let verify_batch1 = bcec_verify
-		.try_extract_same_query_pcs_claim(1)
-		.unwrap()
-		.unwrap();
 
 	assert_eq!(prove_batch1.eval_point, eval_point);
 	assert_eq!(verify_batch1.eval_point, eval_point);
@@ -272,33 +276,34 @@ fn test_shifted_evaluation_whole_cube() {
 	witness_index.set(poly_id, poly_witness.to_ref().specialize_arc_dyn::<EF>());
 	witness_index.set(shifted_id, shifted_witness.to_ref().specialize_arc_dyn::<EF>());
 
-	let mut prover_batch_claims =
-		BatchCommittedEvalClaims::new(&[oracles.committed_batch(batch_id)]);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
+	assert_eq!(
+		prover_state
+			.batch_committed_eval_claims_mut()
+			.take_claims(batch_id)
+			.unwrap()
+			.len(),
+		1
+	);
 
-	let mut new_sumchecks = Vec::new();
-	let proof = prove(
-		&mut oracles,
-		&mut witness_index,
-		claim.clone(),
-		&mut prover_batch_claims,
-		&mut new_sumchecks,
-	)
-	.unwrap();
-	assert_eq!(prover_batch_claims.take_claims(batch_id).unwrap().len(), 1);
-
-	let mut verifier_batch_claims =
-		BatchCommittedEvalClaims::new(&[oracles.committed_batch(batch_id)]);
-	let mut sumcheck_claims = Vec::new();
-	verify(&mut oracles, claim.clone(), proof, &mut verifier_batch_claims, &mut sumcheck_claims)
-		.unwrap();
-	assert_eq!(verifier_batch_claims.take_claims(batch_id).unwrap().len(), 1);
-	assert_eq!(sumcheck_claims.len(), 1);
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
+	assert_eq!(verifier_state.new_sumcheck_claims().len(), 1);
+	assert_eq!(
+		verifier_state
+			.batch_committed_eval_claims_mut()
+			.take_claims(batch_id)
+			.unwrap()
+			.len(),
+		1
+	);
 
 	let SumcheckClaim {
 		poly: composite,
 		sum,
 		..
-	} = sumcheck_claims.first().unwrap();
+	} = verifier_state.new_sumcheck_claims().first().unwrap();
 
 	assert_eq!(composite.inner_polys()[0].id(), poly_id);
 	assert_eq!(*sum, shifted_witness.evaluate(&query).unwrap());
@@ -374,32 +379,34 @@ fn test_shifted_evaluation_subcube() {
 	witness_index.set(poly_id, poly_witness.to_ref().specialize_arc_dyn::<EF>());
 	witness_index.set(shifted_id, shifted_witness.to_ref().specialize_arc_dyn::<EF>());
 
-	let mut prover_batch_claims =
-		BatchCommittedEvalClaims::new(&[oracles.committed_batch(batch_id)]);
-	let mut new_sumchecks = Vec::new();
-	let proof = prove(
-		&mut oracles,
-		&mut witness_index,
-		claim.clone(),
-		&mut prover_batch_claims,
-		&mut new_sumchecks,
-	)
-	.unwrap();
-	assert_eq!(prover_batch_claims.take_claims(batch_id).unwrap().len(), 1);
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
+	assert_eq!(
+		prover_state
+			.batch_committed_eval_claims_mut()
+			.take_claims(batch_id)
+			.unwrap()
+			.len(),
+		1
+	);
 
-	let mut verifier_batch_claims =
-		BatchCommittedEvalClaims::new(&[oracles.committed_batch(batch_id)]);
-	let mut sumcheck_claims = Vec::new();
-	verify(&mut oracles, claim.clone(), proof, &mut verifier_batch_claims, &mut sumcheck_claims)
-		.unwrap();
-	assert_eq!(verifier_batch_claims.take_claims(batch_id).unwrap().len(), 1);
-	assert_eq!(sumcheck_claims.len(), 1);
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
+	assert_eq!(
+		verifier_state
+			.batch_committed_eval_claims_mut()
+			.take_claims(batch_id)
+			.unwrap()
+			.len(),
+		1
+	);
+	assert_eq!(verifier_state.new_sumcheck_claims().len(), 1);
 
 	let SumcheckClaim {
 		poly: composite,
 		sum,
 		..
-	} = sumcheck_claims.first().unwrap();
+	} = verifier_state.new_sumcheck_claims().first().unwrap();
 
 	match composite.inner_polys()[0] {
 		MultilinearPolyOracle::Projected(_, ref projected) => {
@@ -491,15 +498,11 @@ fn test_evalcheck_linear_combination() {
 	witness.set(select_row3_oracle_id, select_row3_witness.specialize_arc_dyn());
 	witness.set(lin_com_id, lin_com_witness.specialize_arc_dyn());
 
-	let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
-	let mut new_sumchecks = Vec::new();
-	let proof =
-		prove(&mut oracles, &mut witness, claim.clone(), &mut batch_claims, &mut new_sumchecks)
-			.unwrap();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness);
+	let proof = prover_state.prove(claim.clone()).unwrap();
 
-	let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
-	let mut new_sumcheck_claims_verify = Vec::new();
-	verify(&mut oracles, claim, proof, &mut batch_claims, &mut new_sumcheck_claims_verify).unwrap();
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
 }
 
 #[test]
@@ -544,19 +547,10 @@ fn test_evalcheck_repeating() {
 		is_random_point: true,
 	};
 
-	let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
-	let mut new_sumchecks = Vec::new();
-
 	witness_index.set(repeating_id, select_row_witness);
 
-	let proof = prove(
-		&mut oracles,
-		&mut witness_index,
-		claim.clone(),
-		&mut batch_claims,
-		&mut new_sumchecks,
-	)
-	.unwrap();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	if let EvalcheckProof::Composite { ref subproofs } = proof {
 		assert_eq!(subproofs.len(), 1);
@@ -565,7 +559,6 @@ fn test_evalcheck_repeating() {
 		panic!("Proof should be Composite.");
 	}
 
-	let mut batch_claims = BatchCommittedEvalClaims::new(&[]);
-	let mut new_sumcheck_claims_verify = Vec::new();
-	verify(&mut oracles, claim, proof, &mut batch_claims, &mut new_sumcheck_claims_verify).unwrap();
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
 }
