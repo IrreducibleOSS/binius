@@ -64,28 +64,28 @@ impl_tower_constants!(AESTowerField64b, u128, { alphas!(u128, 6) });
 
 // Define multiplication
 impl_mul_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField1x128b, PackedStrategy);
+impl_mul_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
+impl_mul_with_strategy!(PackedAESBinaryField4x32b, PairwiseStrategy);
+impl_mul_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
+impl_mul_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
 
 // Define square
 impl_square_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_square_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
+impl_square_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
 impl_square_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
 impl_square_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField1x128b, PackedStrategy);
+impl_square_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
 
 // Define invert
 impl_invert_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField1x128b, PackedStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField4x32b, PairwiseStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
+impl_invert_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
 
 // Define multiply by alpha
 impl_mul_alpha_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField4x32b, PairwiseStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
+impl_mul_alpha_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
 impl_mul_alpha_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
 impl_mul_alpha_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);

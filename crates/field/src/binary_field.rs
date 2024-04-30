@@ -40,6 +40,18 @@ pub trait TowerField: BinaryField {
 		}
 		<Self as ExtensionField<BinaryField1b>>::basis(i << iota)
 	}
+
+	/// Multiplies a field element by the canonical primitive element of the extension $T_{\iota + 1} / T_{iota}$.
+	///
+	/// We represent the tower field $T_{\iota + 1}$ as a vector space over $T_{\iota}$ with the basis $\{1, \beta^{(\iota)}_1\}$.
+	/// This operation multiplies the element by $\beta^{(\iota)}_1$.
+	///
+	/// ## Throws
+	///
+	/// * `Error::ExtensionDegreeTooHigh` if `iota >= Self::TOWER_LEVEL`
+	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
+		Ok(self * <Self as ExtensionField<BinaryField1b>>::basis(1 << iota)?)
+	}
 }
 
 pub(super) trait TowerExtensionField:
@@ -494,6 +506,12 @@ macro_rules! impl_field_extension {
 
 pub(crate) use impl_field_extension;
 
+/// Internal trait to implement multiply by primitive
+/// for the specific tower,
+pub(super) trait MulPrimitive: Sized {
+	fn mul_primitive(self, iota: usize) -> Result<Self, Error>;
+}
+
 #[macro_export]
 macro_rules! binary_tower {
 	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty)) => {
@@ -516,6 +534,10 @@ macro_rules! binary_tower {
 
 		impl TowerField for $name {
 			const TOWER_LEVEL: usize = { $subfield_name::TOWER_LEVEL + 1 };
+
+			fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
+				<Self as $crate::binary_field::MulPrimitive>::mul_primitive(self, iota)
+			}
 		}
 
 		impl TowerExtensionField for $name {
@@ -852,5 +874,58 @@ mod tests {
 		assert_eq!(step2, Some(BinaryField32b::new(0x11000000)));
 		let step3 = BinaryField32b::forward_checked(step2.unwrap(), 0xF0000000);
 		assert_eq!(step3, None);
+	}
+
+	fn test_mul_primitive<F: TowerField>(val: F, iota: usize) {
+		let result = val.mul_primitive(iota);
+		let expected = <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b);
+		assert_eq!(result.is_ok(), expected.is_ok());
+		if result.is_ok() {
+			assert_eq!(result.unwrap(), expected.unwrap());
+		} else {
+			assert!(matches!(result.unwrap_err(), Error::ExtensionDegreeMismatch));
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn test_mul_primitive_1b(val in 0u8..2u8, iota in 0usize..8) {
+			test_mul_primitive::<BinaryField1b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_2b(val in 0u8..4u8, iota in 0usize..8) {
+			test_mul_primitive::<BinaryField2b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_4b(val in 0u8..16u8, iota in 0usize..8) {
+			test_mul_primitive::<BinaryField4b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_8b(val in 0u8.., iota in 0usize..8) {
+			test_mul_primitive::<BinaryField8b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_16b(val in 0u16.., iota in 0usize..8) {
+			test_mul_primitive::<BinaryField16b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_32b(val in 0u32.., iota in 0usize..8) {
+			test_mul_primitive::<BinaryField32b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_64b(val in 0u64.., iota in 0usize..8) {
+			test_mul_primitive::<BinaryField64b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_128b(val in 0u128.., iota in 0usize..8) {
+			test_mul_primitive::<BinaryField128b>(val.into(), iota)
+		}
 	}
 }

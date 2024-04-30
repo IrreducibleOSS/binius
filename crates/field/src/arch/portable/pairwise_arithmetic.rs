@@ -13,6 +13,7 @@ use crate::{
 };
 
 impl<PT: PackedField> TaggedMul<PairwiseStrategy> for PT {
+	#[inline]
 	fn mul(self, b: Self) -> Self {
 		Self::from_fn(|i| self.get(i) * b.get(i))
 	}
@@ -22,6 +23,7 @@ impl<PT: PackedField> TaggedSquare<PairwiseStrategy> for PT
 where
 	PT::Scalar: Square,
 {
+	#[inline]
 	fn square(self) -> Self {
 		Self::from_fn(|i| Square::square(self.get(i)))
 	}
@@ -31,6 +33,7 @@ impl<PT: PackedField> TaggedInvertOrZero<PairwiseStrategy> for PT
 where
 	PT::Scalar: InvertOrZero,
 {
+	#[inline]
 	fn invert_or_zero(self) -> Self {
 		Self::from_fn(|i| InvertOrZero::invert_or_zero(self.get(i)))
 	}
@@ -40,6 +43,7 @@ impl<PT: PackedField> TaggedMulAlpha<PairwiseStrategy> for PT
 where
 	PT::Scalar: MulAlpha,
 {
+	#[inline]
 	fn mul_alpha(self) -> Self {
 		Self::from_fn(|i| MulAlpha::mul_alpha(self.get(i)))
 	}

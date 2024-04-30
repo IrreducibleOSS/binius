@@ -378,7 +378,13 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 }
 
 impl BinaryField for BinaryField128bPolyval {}
-impl TowerField for BinaryField128bPolyval {}
+impl TowerField for BinaryField128bPolyval {
+	fn mul_primitive(self, _iota: usize) -> Result<Self, Error> {
+		// This method could be implemented by multiplying by isomorphic alpha value
+		// But it's not being used as for now
+		unimplemented!()
+	}
+}
 
 impl From<BinaryField128b> for BinaryField128bPolyval {
 	fn from(value: BinaryField128b) -> Self {

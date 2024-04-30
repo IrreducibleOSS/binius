@@ -5,26 +5,16 @@ use binius_field::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
 	arch::{
-		packed_64::*, packed_polyval_256::*, packed_polyval_512::*, PackedStrategy,
-		PairwiseStrategy, SimdStrategy,
+		packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
+		packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
+		packed_aes_512::*, packed_aes_64::*, packed_polyval_256::*, packed_polyval_512::*,
+		PackedStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
 		TaggedSquare,
 	},
-	packed_binary_field::{
-		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b,
-	},
-	BinaryField128bPolyval, ExtensionField, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
-	PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
-	PackedAESBinaryField2x64b, PackedAESBinaryField32x16b, PackedAESBinaryField32x8b,
-	PackedAESBinaryField4x128b, PackedAESBinaryField4x32b, PackedAESBinaryField4x64b,
-	PackedAESBinaryField64x8b, PackedAESBinaryField8x16b, PackedAESBinaryField8x32b,
-	PackedAESBinaryField8x64b, PackedBinaryField16x16b, PackedBinaryField16x32b,
-	PackedBinaryField2x128b, PackedBinaryField32x16b, PackedBinaryField32x8b,
-	PackedBinaryField4x128b, PackedBinaryField4x64b, PackedBinaryField64x8b,
-	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField,
+	BinaryField128bPolyval, ExtensionField, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
@@ -58,7 +48,6 @@ macro_rules! benchmark_strategy {
 			impl<T: $constraint + Copy> BenchmarkImpl<T>{
 				const ENABLED: bool = true;
 
-				#[inline(always)]
 				fn bench(a: T, b: T) -> T {
 					$func(a, b)
 				}
@@ -178,6 +167,18 @@ macro_rules! benchmark_strategy {
 			bench_type @ $benchmark_type,
 			strategies @ $strategies,
 			packed_fields @ [
+				// 8-bit binary tower
+				PackedBinaryField1x8b
+
+				// 16-bit binary tower
+				PackedBinaryField2x8b
+				PackedBinaryField1x16b
+
+				// 32-bit binary tower
+				PackedBinaryField4x8b
+				PackedBinaryField2x16b
+				PackedBinaryField1x32b
+
 				// 64-bit binary tower
 				PackedBinaryField8x8b
 				PackedBinaryField4x16b
@@ -204,6 +205,21 @@ macro_rules! benchmark_strategy {
 				PackedBinaryField16x32b
 				PackedBinaryField8x64b
 				PackedBinaryField4x128b
+
+				// 16-bit AES tower
+				PackedAESBinaryField2x8b
+				PackedAESBinaryField1x16b
+
+				// 32-bit AES tower
+				PackedAESBinaryField4x8b
+				PackedAESBinaryField2x16b
+				PackedAESBinaryField1x32b
+
+				// 64-bit AES tower
+				PackedAESBinaryField8x8b
+				PackedAESBinaryField4x16b
+				PackedAESBinaryField2x32b
+				PackedAESBinaryField1x64b
 
 				// 128-bit AES tower
 				PackedAESBinaryField16x8b

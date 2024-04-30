@@ -5,7 +5,54 @@ use super::packed_arithmetic::{
 };
 use crate::underlier::UnderlierType;
 
-// Implement traits for u64
+impl UnderlierWithBitConstants for u8 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
+		interleave_mask_even!(u8, 0),
+		interleave_mask_even!(u8, 1),
+		interleave_mask_even!(u8, 2),
+	];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
+		interleave_mask_odd!(u8, 0),
+		interleave_mask_odd!(u8, 1),
+		interleave_mask_odd!(u8, 2),
+	];
+}
+
+impl UnderlierWithBitConstants for u16 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
+		interleave_mask_even!(u16, 0),
+		interleave_mask_even!(u16, 1),
+		interleave_mask_even!(u16, 2),
+		interleave_mask_even!(u16, 3),
+	];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
+		interleave_mask_odd!(u16, 0),
+		interleave_mask_odd!(u16, 1),
+		interleave_mask_odd!(u16, 2),
+		interleave_mask_odd!(u16, 3),
+	];
+}
+
+impl UnderlierWithBitConstants for u32 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
+		interleave_mask_even!(u32, 0),
+		interleave_mask_even!(u32, 1),
+		interleave_mask_even!(u32, 2),
+		interleave_mask_even!(u32, 3),
+		interleave_mask_even!(u32, 4),
+	];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
+		interleave_mask_odd!(u32, 0),
+		interleave_mask_odd!(u32, 1),
+		interleave_mask_odd!(u32, 2),
+		interleave_mask_odd!(u32, 3),
+		interleave_mask_odd!(u32, 4),
+	];
+}
+
 impl UnderlierWithBitConstants for u64 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
 		interleave_mask_even!(u64, 0),
@@ -26,7 +73,6 @@ impl UnderlierWithBitConstants for u64 {
 	];
 }
 
-// Implement traits for u128
 impl UnderlierWithBitConstants for u128 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
 		interleave_mask_even!(u128, 0),

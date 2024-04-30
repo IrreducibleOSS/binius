@@ -20,6 +20,7 @@ pub mod transpose;
 mod underlier;
 pub mod util;
 
+pub use aes_field::*;
 pub use binary_field::*;
 pub use error::*;
 pub use extension::*;

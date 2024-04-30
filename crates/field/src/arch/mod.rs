@@ -24,5 +24,8 @@ cfg_if! {
 	}
 }
 
-pub use portable::packed_64;
+pub(crate) use portable::packed;
+pub use portable::{
+	packed_16, packed_32, packed_64, packed_8, packed_aes_16, packed_aes_32, packed_aes_64,
+};
 pub use strategies::*;

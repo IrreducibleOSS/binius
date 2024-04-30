@@ -41,6 +41,7 @@ macro_rules! impl_mul_with_strategy {
 		impl std::ops::Mul for $name {
 			type Output = Self;
 
+			#[inline]
 			fn mul(self, rhs: Self) -> Self {
 				$crate::arithmetic_traits::TaggedMul::<$strategy>::mul(self, rhs)
 			}
@@ -58,6 +59,7 @@ pub trait TaggedSquare<Strategy> {
 macro_rules! impl_square_with_strategy {
 	($name:ty, $strategy:ty) => {
 		impl $crate::arithmetic_traits::Square for $name {
+			#[inline]
 			fn square(self) -> Self {
 				$crate::arithmetic_traits::TaggedSquare::<$strategy>::square(self)
 			}
@@ -75,6 +77,7 @@ pub trait TaggedInvertOrZero<Strategy> {
 macro_rules! impl_invert_with_strategy {
 	($name:ty, $strategy:ty) => {
 		impl $crate::arithmetic_traits::InvertOrZero for $name {
+			#[inline]
 			fn invert_or_zero(self) -> Self {
 				$crate::arithmetic_traits::TaggedInvertOrZero::<$strategy>::invert_or_zero(self)
 			}
@@ -92,6 +95,7 @@ pub trait TaggedMulAlpha<Strategy> {
 macro_rules! impl_mul_alpha_with_strategy {
 	($name:ty, $strategy:ty) => {
 		impl $crate::arithmetic_traits::MulAlpha for $name {
+			#[inline]
 			fn mul_alpha(self) -> Self {
 				$crate::arithmetic_traits::TaggedMulAlpha::<$strategy>::mul_alpha(self)
 			}

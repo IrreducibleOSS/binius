@@ -76,7 +76,7 @@ impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 // Define multiplication
 impl_mul_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_mul_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_mul_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
+impl_mul_with_strategy!(PackedBinaryField8x8b, PairwiseStrategy);
 impl_mul_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
 impl_mul_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
 impl_mul_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
@@ -92,7 +92,7 @@ impl_square_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
 // Define invert
 impl_invert_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
 impl_invert_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_invert_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
+impl_invert_with_strategy!(PackedBinaryField8x8b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
 impl_invert_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);

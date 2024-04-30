@@ -81,6 +81,7 @@ where
 	PT::DirectSubfield: TowerConstants<PT::Underlier>,
 {
 	/// Optimized packed field multiplication algorithm
+	#[inline]
 	fn mul(self, b: Self) -> Self {
 		assert_ne!(PT::DirectSubfield::DEGREE, 0);
 		let a = self;
@@ -217,6 +218,7 @@ where
 	PT::PackedDirectSubfield: MulAlpha,
 	PT::Underlier: UnderlierWithBitConstants,
 {
+	#[inline]
 	fn mul_alpha(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
 		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK
@@ -239,6 +241,7 @@ where
 	PT::PackedDirectSubfield: MulAlpha,
 	PT::Underlier: UnderlierWithBitConstants,
 {
+	#[inline]
 	fn square(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
 		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK
@@ -261,6 +264,7 @@ where
 	PT::PackedDirectSubfield: MulAlpha,
 	PT::Underlier: UnderlierWithBitConstants,
 {
+	#[inline]
 	fn invert_or_zero(self) -> Self {
 		let block_len = PT::DirectSubfield::N_BITS;
 		let even_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_EVEN_MASK

@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
+	binary_field_arithmetic::impl_mul_primitive,
 	binary_tower, ExtensionField, Field, TowerExtensionField, TowerField,
 };
 use bytemuck::{Pod, Zeroable};
@@ -98,7 +99,15 @@ const AES_LOG_TABLE: [u8; 256] = [
 	0x67, 0x4a, 0xed, 0xde, 0xc5, 0x31, 0xfe, 0x18, 0x0d, 0x63, 0x8c, 0x80, 0xc0, 0xf7, 0x70, 0x07,
 ];
 
-impl TowerField for AESTowerField8b {}
+impl TowerField for AESTowerField8b {
+	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
+		match iota {
+			0..=1 => Ok(self * ISOMORPHIC_ALPHAS[iota]),
+			2 => Ok(self.multiply_alpha()),
+			_ => Err(Error::ExtensionDegreeMismatch),
+		}
+	}
+}
 
 impl InvertOrZero for AESTowerField8b {
 	fn invert_or_zero(self) -> Self {
@@ -110,6 +119,13 @@ impl InvertOrZero for AESTowerField8b {
 		}
 	}
 }
+
+/// Values isomorphic to 0x02, 0x04 and 0x10 in BinaryField8b
+const ISOMORPHIC_ALPHAS: [AESTowerField8b; 3] = [
+	AESTowerField8b(0xBC),
+	AESTowerField8b(0xB0),
+	AESTowerField8b(0xD3),
+];
 
 impl TowerFieldArithmetic for AESTowerField8b {
 	fn multiply(self, rhs: Self) -> Self {
@@ -138,7 +154,7 @@ impl TowerFieldArithmetic for AESTowerField8b {
 	fn multiply_alpha(self) -> Self {
 		// TODO: use lookup table
 		// `0xD3` is the value isomorphic to 0x10 in BinaryField8b
-		self * Self(0xD3)
+		self * ISOMORPHIC_ALPHAS[2]
 	}
 
 	fn square(self) -> Self {
@@ -194,9 +210,43 @@ binary_tower_arithmetic_recursive!(AESTowerField32b);
 binary_tower_arithmetic_recursive!(AESTowerField64b);
 binary_tower_arithmetic_recursive!(AESTowerField128b);
 
+// MulPrimitive implementation for AES tower
+
+impl_mul_primitive!(AESTowerField16b,
+	mul_by 0 => ISOMORPHIC_ALPHAS[0],
+	mul_by 1 => ISOMORPHIC_ALPHAS[1],
+	repack 2 => AESTowerField8b,
+	repack 3 => AESTowerField16b,
+);
+impl_mul_primitive!(AESTowerField32b,
+	mul_by 0 => ISOMORPHIC_ALPHAS[0],
+	mul_by 1 => ISOMORPHIC_ALPHAS[1],
+	repack 2 => AESTowerField8b,
+	repack 3 => AESTowerField16b,
+	repack 4 => AESTowerField32b,
+);
+impl_mul_primitive!(AESTowerField64b,
+	mul_by 0 => ISOMORPHIC_ALPHAS[0],
+	mul_by 1 => ISOMORPHIC_ALPHAS[1],
+	repack 2 => AESTowerField8b,
+	repack 3 => AESTowerField16b,
+	repack 4 => AESTowerField32b,
+	repack 5 => AESTowerField64b,
+);
+impl_mul_primitive!(AESTowerField128b,
+	mul_by 0 => ISOMORPHIC_ALPHAS[0],
+	mul_by 1 => ISOMORPHIC_ALPHAS[1],
+	repack 2 => AESTowerField8b,
+	repack 3 => AESTowerField16b,
+	repack 4 => AESTowerField32b,
+	repack 5 => AESTowerField64b,
+	repack 6 => AESTowerField128b,
+);
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::underlier::WithUnderlier;
 
 	use proptest::{arbitrary::any, proptest};
 
@@ -357,6 +407,47 @@ mod tests {
 			let a_val = AESTowerField8b(a);
 			let converted = BinaryField8b::from(a_val);
 			assert_eq!(a_val, AESTowerField8b::from(converted));
+		}
+	}
+
+	fn test_mul_primitive<F: TowerField + WithUnderlier<Underlier: From<u8>>>(val: F, iota: usize) {
+		let result = val.mul_primitive(iota);
+		let expected = match iota {
+			0..=2 => Ok(val * F::from(F::Underlier::from(ISOMORPHIC_ALPHAS[iota].to_underlier()))),
+			_ => <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b),
+		};
+		assert_eq!(result.is_ok(), expected.is_ok());
+		if result.is_ok() {
+			assert_eq!(result.unwrap(), expected.unwrap());
+		} else {
+			assert!(matches!(result.unwrap_err(), Error::ExtensionDegreeMismatch));
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn test_mul_primitive_8b(val in 0u8.., iota in 3usize..8) {
+			test_mul_primitive::<AESTowerField8b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_16b(val in 0u16.., iota in 3usize..8) {
+			test_mul_primitive::<AESTowerField16b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_32b(val in 0u32.., iota in 3usize..8) {
+			test_mul_primitive::<AESTowerField32b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_64b(val in 0u64.., iota in 3usize..8) {
+			test_mul_primitive::<AESTowerField64b>(val.into(), iota)
+		}
+
+		#[test]
+		fn test_mul_primitive_128b(val in 0u128.., iota in 3usize..8) {
+			test_mul_primitive::<AESTowerField128b>(val.into(), iota)
 		}
 	}
 }
