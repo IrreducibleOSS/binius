@@ -1,28 +1,29 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::prodcheck::{
-	reduce_prodcheck_claim, ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness,
-	ReducedProductCheckWitnesses, SimpleMultGateComposition,
+use super::{
+	error::Error,
+	prodcheck::{
+		reduce_prodcheck_claim, ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness,
+		SimpleMultGateComposition,
+	},
 };
 use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
-	protocols::{evalcheck::EvalcheckWitness, prodcheck::error::Error},
+	oracle::{CommittedId, MultilinearOracleSet},
+	polynomial::{
+		Error as PolynomialError, MultilinearComposite, MultilinearExtension, MultilinearPoly,
+	},
+	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{Field, TowerField};
-use std::{borrow::Borrow, sync::Arc};
+use rayon::prelude::*;
+use std::borrow::Borrow;
 use tracing::instrument;
 
 /// Returns merge(x, y) where x, y are multilinear polynomials
-fn construct_merge_polynomial<F, MX, MY>(
-	x: MX,
-	y: MY,
-) -> Result<impl MultilinearPoly<F> + Send + Sync, Error>
-where
-	F: Field,
-	MX: MultilinearPoly<F>,
-	MY: MultilinearPoly<F>,
-{
+fn construct_merge_polynomial<F: Field>(
+	x: impl MultilinearPoly<F>,
+	y: impl MultilinearPoly<F>,
+) -> Result<MultilinearWitness<'static, F>, Error> {
 	let x = x.borrow();
 	let y = y.borrow();
 
@@ -41,56 +42,18 @@ where
 	x.subcube_evals(x.n_vars(), 0, x_values)?;
 	y.subcube_evals(y.n_vars(), 0, y_values)?;
 	let merge_poly = MultilinearExtension::from_values(values)?;
-	Ok(merge_poly.specialize())
+	Ok(merge_poly.specialize_arc_dyn())
 }
 
 /// Prove a prodcheck instance reduction, step one of two.
 ///
-/// Given as input $\nu$-variate multilins $T, U$, we define $f := T/U$
-/// We output (\nu+1)-variate f' such that for all $v \in \{0, 1\}^{\nu}$
+/// Given as input $\nu$-variate multilins $T, U$, we define $f := T/U$.
+/// We output $(\nu+1)$-variate f' such that for all $v \in \{0, 1\}^{\nu}$
 /// 1) $f'(v, 0) = f(v)$
 /// 2) $f'(v, 1) = f'(0, v) * f'(1, v)$
-#[instrument(skip_all, name = "prodcheck::prove_step_one")]
-pub fn prove_step_one<F: Field>(
-	prodcheck_witness: ProdcheckWitness<F>,
-) -> Result<MultilinearExtension<'static, F>, Error> {
-	// TODO: This is inefficient because it cannot construct the new witness polynomial in the
-	// subfield.
-
-	let ProdcheckWitness {
-		t_polynomial,
-		u_polynomial,
-	} = prodcheck_witness;
-
-	if t_polynomial.n_vars() != u_polynomial.n_vars() {
-		return Err(Error::NumVariablesMismatch);
-	}
-	let n_vars = t_polynomial.n_vars();
-
-	// Step 1: Prover constructs f' polynomial, and sends oracle to verifier
-	let n_values = 1 << (n_vars + 1);
-	// TODO: Preallocate values and parallelize initialization
-	let mut values = vec![F::ZERO; n_values];
-
-	// for each v in B_{n_vars}, set values[v] = f(v) := T(v)/U(v)
-	for (i, values_i) in values[..(1 << n_vars)].iter_mut().enumerate() {
-		let t_i = t_polynomial.evaluate_on_hypercube(i)?;
-		let u_i = u_polynomial.evaluate_on_hypercube(i)?;
-		*values_i = u_i.invert().map(|u_i_inv| t_i * u_i_inv).unwrap_or(F::ONE);
-	}
-
-	// for each v in B_{n_vars}, set values[2^n_vars + v] = values[2v] * values[2v+1]
-	for i in 0..(1 << n_vars) {
-		values[(1 << n_vars) | i] = values[i << 1] * values[i << 1 | 1];
-	}
-	let f_prime_poly = MultilinearExtension::from_values(values)?;
-	Ok(f_prime_poly)
-}
-
-/// Prove a prodcheck instance reduction, step two of two.
 ///
 /// Given f' polynomial and its oracle, we construct multivariate polynomial
-/// T'(x) := merge(T(x), f'(x, 1)) - merge(U(x), f'(0, x)) * merge(f'(x, 0), f'(1, x))
+/// `T'(x) := merge(T(x), f'(x, 1)) - merge(U(x), f'(0, x)) * merge(f'(x, 0), f'(1, x))`
 /// such that prodcheck reduces to a zerocheck instance on T'(x) as well as
 /// a Hypercube Evalcheck instance on f'
 ///
@@ -116,36 +79,67 @@ pub fn prove_step_one<F: Field>(
 /// Towers of Binary Fields paper in that we use the merge virtual
 /// polynomial instead of the interleave virtual polynomial. This is an
 /// optimization, and does not affect the soundness of prodcheck.
-#[instrument(skip_all, name = "prodcheck::prove_step_two")]
-pub fn prove_step_two<'a, F: TowerField>(
+#[instrument(skip_all, name = "prodcheck::prove")]
+pub fn prove<'a, F: TowerField, FW: Field>(
 	oracles: &mut MultilinearOracleSet<F>,
-	prodcheck_witness: ProdcheckWitness<F>,
+	witness_index: &mut MultilinearWitnessIndex<'a, FW>,
 	prodcheck_claim: &ProdcheckClaim<F>,
-	f_prime_oracle: MultilinearPolyOracle<F>,
-	f_prime_poly: &'a MultilinearExtension<'a, F>,
-) -> Result<ProdcheckProveOutput<'a, F>, Error> {
-	let n_vars = prodcheck_witness.t_polynomial.n_vars();
-	if n_vars != prodcheck_witness.u_polynomial.n_vars() {
+	prodcheck_witness: ProdcheckWitness<'a, FW>,
+	f_prime_committed_id: CommittedId,
+) -> Result<ProdcheckProveOutput<'a, F, FW>, Error> {
+	// TODO: This is inefficient because it cannot construct the new witness polynomial in the
+	// subfield.
+
+	let ProdcheckWitness {
+		t_polynomial,
+		u_polynomial,
+	} = prodcheck_witness;
+
+	if t_polynomial.n_vars() != u_polynomial.n_vars() {
 		return Err(Error::NumVariablesMismatch);
 	}
-	let t_poly = prodcheck_witness.t_polynomial;
-	let u_poly = prodcheck_witness.u_polynomial;
+	let n_vars = t_polynomial.n_vars();
+
+	let f_prime_oracle = oracles.committed_oracle(f_prime_committed_id);
+	if f_prime_oracle.n_vars() != n_vars + 1 {
+		return Err(Error::NumGrandProductVariablesIncorrect);
+	}
+
+	// Step 1: Prover constructs f' polynomial, and sends oracle to verifier
+	let n_values = 1 << (n_vars + 1);
+	// TODO: Preallocate values
+	let mut values = vec![FW::ZERO; n_values];
+
+	// for each v in B_{n_vars}, set values[v] = f(v) := T(v)/U(v)
+	values[..(1 << n_vars)]
+		.par_iter_mut()
+		.enumerate()
+		.try_for_each(|(i, values_i)| -> Result<_, PolynomialError> {
+			let t_i = t_polynomial.evaluate_on_hypercube(i)?;
+			let u_i = u_polynomial.evaluate_on_hypercube(i)?;
+			*values_i = u_i.invert().map(|u_i_inv| t_i * u_i_inv).unwrap_or(FW::ONE);
+			Ok(())
+		})?;
+
+	// for each v in B_{n_vars}, set values[2^n_vars + v] = values[2v] * values[2v+1]
+	for i in 0..(1 << n_vars) {
+		values[(1 << n_vars) | i] = values[i << 1] * values[i << 1 | 1];
+	}
+
+	if n_vars != t_polynomial.n_vars() || n_vars != u_polynomial.n_vars() {
+		return Err(Error::NumVariablesMismatch);
+	}
 
 	// Construct the claims
 	let reduced_product_check_claims =
 		reduce_prodcheck_claim(oracles, prodcheck_claim, f_prime_oracle.clone())?;
 
 	// Construct the witnesses
-	let values = f_prime_poly.evals();
-	let n_values = values.len();
-	if n_values != (1 << (t_poly.n_vars() + 1)) {
-		return Err(Error::NumVariablesMismatch);
-	}
-
-	let first_values = &values[0..n_values / 2];
-	let f_prime_x_zero = MultilinearExtension::from_values_slice(first_values)?;
-	let second_values = &values[n_values / 2..];
-	let f_prime_x_one = MultilinearExtension::from_values_slice(second_values)?;
+	// TODO: try to find right lifetimes to eliminate duplicate witnesses within index
+	let first_values = values[0..n_values / 2].to_vec();
+	let f_prime_x_zero = MultilinearExtension::from_values(first_values)?;
+	let second_values = values[n_values / 2..].to_vec();
+	let f_prime_x_one = MultilinearExtension::from_values(second_values)?;
 	let even_values = values.iter().copied().step_by(2).collect::<Vec<_>>();
 	let f_prime_zero_x = MultilinearExtension::from_values(even_values)?;
 	let odd_values = values
@@ -156,44 +150,34 @@ pub fn prove_step_two<'a, F: TowerField>(
 		.collect::<Vec<_>>();
 	let f_prime_one_x = MultilinearExtension::from_values(odd_values)?;
 
+	let f_prime_poly = MultilinearExtension::from_values(values)?;
+	witness_index.set(f_prime_oracle.id(), f_prime_poly.specialize_arc_dyn());
+
 	// Construct merge primed polynomials
-	let out_poly = construct_merge_polynomial(t_poly, f_prime_x_one.specialize())?;
-	let in1_poly = construct_merge_polynomial(u_poly, f_prime_zero_x.specialize())?;
+	let out_poly = construct_merge_polynomial(t_polynomial, f_prime_x_one.specialize())?;
+	let in1_poly = construct_merge_polynomial(u_polynomial, f_prime_zero_x.specialize())?;
 	let in2_poly =
 		construct_merge_polynomial(f_prime_x_zero.specialize(), f_prime_one_x.specialize())?;
 
 	// Construct T' polynomial
-	let t_prime_multilinears: Vec<Arc<dyn MultilinearPoly<F> + Send + Sync>> =
-		vec![Arc::new(out_poly), Arc::new(in1_poly), Arc::new(in2_poly)];
+	let t_prime_multilinears: Vec<MultilinearWitness<FW>> = vec![out_poly, in1_poly, in2_poly];
 
 	let t_prime_witness =
 		MultilinearComposite::new(n_vars + 1, SimpleMultGateComposition, t_prime_multilinears)?;
 
 	// Package return values
-	let grand_product_poly_witness = EvalcheckWitness::new(vec![(
-		f_prime_oracle.id(),
-		f_prime_poly.to_ref().specialize_arc_dyn(),
-	)]);
-
-	let reduced_product_check_witnesses = ReducedProductCheckWitnesses {
-		t_prime_witness,
-		grand_product_poly_witness,
-	};
-
 	let prodcheck_proof = ProdcheckProveOutput {
-		reduced_product_check_witnesses,
 		reduced_product_check_claims,
+		t_prime_witness,
 	};
+
 	Ok(prodcheck_proof)
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		oracle::{CommittedBatchSpec, CommittedId},
-		protocols::prodcheck::verify::verify,
-	};
+	use crate::{oracle::CommittedBatchSpec, protocols::prodcheck::verify::verify};
 	use binius_field::BinaryField32b;
 
 	// Creates T(x), a multilinear with evaluations {1, 2, 3, 4} over the boolean hypercube on 2 vars
@@ -229,7 +213,7 @@ mod tests {
 		};
 
 		// Setup claim
-		let mut oracles = MultilinearOracleSet::new();
+		let mut oracles = MultilinearOracleSet::<F>::new();
 		let round_1_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
 			round_id: 1,
 			n_vars,
@@ -258,25 +242,40 @@ mod tests {
 			tower_level: F::TOWER_LEVEL,
 		});
 
-		let f_prime_oracle = oracles.committed_oracle(CommittedId {
+		let f_prime_oracle_committed_id = CommittedId {
 			batch_id: round_2_batch_id,
 			index: 0,
-		});
+		};
+
+		let f_prime_oracle = oracles.committed_oracle(f_prime_oracle_committed_id);
 
 		// PROVER
-		let f_prime_poly = prove_step_one(prodcheck_witness.clone()).unwrap();
-		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 2], F::ONE);
-		assert_eq!(f_prime_poly.evals()[(1 << (n_vars + 1)) - 1], F::ZERO);
+		let mut witness_index = MultilinearWitnessIndex::new();
 
-		let prove_output = prove_step_two(
+		let prove_output = prove(
 			&mut oracles.clone(),
-			prodcheck_witness,
+			&mut witness_index,
 			&prodcheck_claim,
-			f_prime_oracle.clone(),
-			&f_prime_poly,
+			prodcheck_witness,
+			f_prime_oracle_committed_id,
 		)
 		.unwrap();
 		let reduced_claims = prove_output.reduced_product_check_claims;
+
+		let f_prime_poly = witness_index.get(f_prime_oracle.id()).unwrap();
+
+		assert_eq!(
+			f_prime_poly
+				.evaluate_on_hypercube((1 << (n_vars + 1)) - 2)
+				.unwrap(),
+			F::ONE
+		);
+		assert_eq!(
+			f_prime_poly
+				.evaluate_on_hypercube((1 << (n_vars + 1)) - 1)
+				.unwrap(),
+			F::ZERO
+		);
 
 		// VERIFIER
 		let verified_reduced_claims =

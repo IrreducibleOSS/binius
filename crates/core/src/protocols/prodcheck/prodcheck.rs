@@ -3,34 +3,25 @@
 use super::error::Error;
 use crate::{
 	oracle::{CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearPoly,
-	},
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
-		evalcheck::{EvalcheckClaim, EvalcheckWitness},
+		evalcheck::EvalcheckClaim,
 		zerocheck::{ZerocheckClaim, ZerocheckWitness},
 	},
+	witness::MultilinearWitness,
 };
 use binius_field::{Field, PackedField, TowerField};
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct ReducedProductCheckClaims<F: Field> {
-	pub t_prime_claim: ZerocheckClaim<F, SimpleMultGateComposition>,
-	pub grand_product_poly_claim: EvalcheckClaim<F, IdentityCompositionPoly>,
+	pub t_prime_claim: ZerocheckClaim<F>,
+	pub grand_product_poly_claim: EvalcheckClaim<F>,
 }
 
 #[derive(Debug)]
-pub struct ReducedProductCheckWitnesses<'a, F: Field> {
-	pub t_prime_witness: ZerocheckWitness<'a, F, SimpleMultGateComposition>,
-	pub grand_product_poly_witness:
-		EvalcheckWitness<F, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>,
-}
-
-#[derive(Debug)]
-pub struct ProdcheckProveOutput<'a, F: Field> {
+pub struct ProdcheckProveOutput<'a, F: Field, FW: Field> {
 	pub reduced_product_check_claims: ReducedProductCheckClaims<F>,
-	pub reduced_product_check_witnesses: ReducedProductCheckWitnesses<'a, F>,
+	pub t_prime_witness: ZerocheckWitness<'a, FW, SimpleMultGateComposition>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,9 +35,9 @@ pub struct ProdcheckClaim<F: Field> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProdcheckWitness<F: Field> {
-	pub t_polynomial: Arc<dyn MultilinearPoly<F> + Sync>,
-	pub u_polynomial: Arc<dyn MultilinearPoly<F> + Sync>,
+pub struct ProdcheckWitness<'a, FW: Field> {
+	pub t_polynomial: MultilinearWitness<'a, FW>,
+	pub u_polynomial: MultilinearWitness<'a, FW>,
 }
 
 /// Composition for Simple Multiplication Gate: f(X, Y, Z) := X - Y*Z

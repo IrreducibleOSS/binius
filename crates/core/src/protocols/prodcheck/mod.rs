@@ -9,7 +9,6 @@ mod verify;
 pub use error::*;
 pub use prodcheck::{
 	ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness, ReducedProductCheckClaims,
-	ReducedProductCheckWitnesses,
 };
 pub use prove::*;
 pub use verify::*;

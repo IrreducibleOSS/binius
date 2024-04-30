@@ -10,6 +10,8 @@ pub enum Error {
 	EvaluationDomainMismatch,
 	#[error("the number of variables of the two input polynomials do not match")]
 	NumVariablesMismatch,
+	#[error("the number of variables of the grand product oracle is incorrect")]
+	NumGrandProductVariablesIncorrect,
 	#[error("the input was not well formed: {0}")]
 	ImproperInput(String),
 	#[error("polynomial error: {0}")]
