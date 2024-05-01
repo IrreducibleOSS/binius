@@ -25,7 +25,8 @@ pub struct ScaledPackedField<PT, const N: usize>(pub(super) [PT; N]);
 impl<PT, const N: usize> ScaledPackedField<PT, N> {
 	pub const WIDTH_IN_PT: usize = N;
 
-	pub fn from_fn(f: impl FnMut(usize) -> PT) -> Self {
+	/// In general case PT != Self::Scalar, so this function has a different name from `PackedField::from_fn`
+	pub fn from_direct_packed_fn(f: impl FnMut(usize) -> PT) -> Self {
 		Self(std::array::from_fn(f))
 	}
 }
@@ -71,7 +72,7 @@ where
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
-		Self::from_fn(|i| self.0[i] + rhs.0[i])
+		Self::from_direct_packed_fn(|i| self.0[i] + rhs.0[i])
 	}
 }
 
@@ -93,7 +94,7 @@ where
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
-		Self::from_fn(|i| self.0[i] - rhs.0[i])
+		Self::from_direct_packed_fn(|i| self.0[i] - rhs.0[i])
 	}
 }
 
@@ -115,7 +116,7 @@ where
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
-		Self::from_fn(|i| self.0[i] * rhs.0[i])
+		Self::from_direct_packed_fn(|i| self.0[i] * rhs.0[i])
 	}
 }
 
@@ -278,7 +279,7 @@ where
 	I: Transformation<IP, OP>,
 {
 	fn transform(&self, data: &ScaledPackedField<IP, N>) -> ScaledPackedField<OP, N> {
-		ScaledPackedField::from_fn(|i| self.inner.transform(&data.0[i]))
+		ScaledPackedField::from_direct_packed_fn(|i| self.inner.transform(&data.0[i]))
 	}
 }
 

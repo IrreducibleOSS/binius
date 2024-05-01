@@ -333,6 +333,16 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 
 		twiddle
 	}
+
+	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
+	///
+	/// ## Preconditions
+	///
+	/// * `i` must be less than `self.log_domain_size()`
+	/// * `j` must be less than `i`
+	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
+		self.s_evals_expanded[i][j]
+	}
 }
 
 impl<F: BinaryField, P> AdditiveNTT<P> for AdditiveNTTWithPrecompute<F>
