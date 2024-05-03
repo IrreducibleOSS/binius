@@ -22,6 +22,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
 	const N_BITS: usize = Self::DEGREE;
+	const MULTIPLICATIVE_GENERATOR: Self;
 }
 
 pub trait TowerField: BinaryField {
@@ -64,7 +65,7 @@ pub(super) trait TowerExtensionField:
 
 /// Macro to generate an implementation of a BinaryField.
 macro_rules! binary_field {
-	($vis:vis $name:ident($typ:ty)) => {
+	($vis:vis $name:ident($typ:ty), $gen:expr) => {
 		#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
 		#[repr(transparent)]
 		$vis struct $name(pub(crate) $typ);
@@ -271,7 +272,9 @@ macro_rules! binary_field {
 			}
 		}
 
-		impl BinaryField for $name {}
+		impl BinaryField for $name {
+			const MULTIPLICATIVE_GENERATOR: $name = $name($gen);
+		}
 
 		impl Step for $name {
 			fn steps_between(start: &Self, end: &Self) -> Option<usize> {
@@ -562,14 +565,14 @@ macro_rules! binary_tower {
 	};
 }
 
-binary_field!(pub BinaryField1b(u8));
-binary_field!(pub BinaryField2b(u8));
-binary_field!(pub BinaryField4b(u8));
-binary_field!(pub BinaryField8b(u8));
-binary_field!(pub BinaryField16b(u16));
-binary_field!(pub BinaryField32b(u32));
-binary_field!(pub BinaryField64b(u64));
-binary_field!(pub BinaryField128b(u128));
+binary_field!(pub BinaryField1b(u8), 0x1);
+binary_field!(pub BinaryField2b(u8), 0x2);
+binary_field!(pub BinaryField4b(u8), 0x5);
+binary_field!(pub BinaryField8b(u8), 0x2D);
+binary_field!(pub BinaryField16b(u16), 0xE2DE);
+binary_field!(pub BinaryField32b(u32), 0x03E21CEA);
+binary_field!(pub BinaryField64b(u64), 0x070F870DCD9C1D88);
+binary_field!(pub BinaryField128b(u128), 0x2E895399AF449ACE499596F6E5FCCAFA);
 
 unsafe impl Pod for BinaryField8b {}
 unsafe impl Pod for BinaryField16b {}
@@ -632,7 +635,7 @@ packed_extension_tower!(
 );
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
 	use super::{
 		BinaryField16b as BF16, BinaryField1b as BF1, BinaryField2b as BF2, BinaryField4b as BF4,
 		BinaryField64b as BF64, BinaryField8b as BF8, *,
@@ -761,6 +764,79 @@ mod tests {
 			BF64::new(0x00000000000000eb) * BF64::new(0x000000000000fba1),
 			BF64::new(0x0000000000007689)
 		);
+	}
+
+	pub(crate) fn is_binary_field_valid_generator<F: BinaryField>() -> bool {
+		// Binary fields should contain a multiplicative subgroup of size 2^n - 1
+		let mut order = if F::N_BITS == 128 {
+			u128::MAX
+		} else {
+			(1 << F::N_BITS) - 1
+		};
+
+		// Naive factorization of group order - represented as a multiset of prime factors
+		let mut factorization = Vec::new();
+
+		let mut prime = 2;
+		while prime * prime <= order {
+			while order % prime == 0 {
+				order /= prime;
+				factorization.push(prime);
+			}
+
+			prime += if prime > 2 { 2 } else { 1 };
+		}
+
+		if order > 1 {
+			factorization.push(order);
+		}
+
+		// Iterate over all divisors (some may be tested several times if order is non-square-free)
+		for mask in 0..(1 << factorization.len()) {
+			let mut divisor = 1;
+
+			for (bit_index, &prime) in factorization.iter().enumerate() {
+				if (1 << bit_index) & mask != 0 {
+					divisor *= prime;
+				}
+			}
+
+			// Compute pow(generator, divisor) in log time
+			divisor = divisor.reverse_bits();
+
+			let mut pow_divisor = F::ONE;
+			while divisor > 0 {
+				pow_divisor *= pow_divisor;
+
+				if divisor & 1 != 0 {
+					pow_divisor *= F::MULTIPLICATIVE_GENERATOR;
+				}
+
+				divisor >>= 1;
+			}
+
+			// Generator invariant
+			let is_root_of_unity = pow_divisor == F::ONE;
+			let is_full_group = mask + 1 == 1 << factorization.len();
+
+			if is_root_of_unity && !is_full_group || !is_root_of_unity && is_full_group {
+				return false;
+			}
+		}
+
+		true
+	}
+
+	#[test]
+	fn test_multiplicative_generators() {
+		assert!(is_binary_field_valid_generator::<BF1>());
+		assert!(is_binary_field_valid_generator::<BF2>());
+		assert!(is_binary_field_valid_generator::<BF4>());
+		assert!(is_binary_field_valid_generator::<BF8>());
+		assert!(is_binary_field_valid_generator::<BF16>());
+		assert!(is_binary_field_valid_generator::<BinaryField32b>());
+		assert!(is_binary_field_valid_generator::<BF64>());
+		assert!(is_binary_field_valid_generator::<BinaryField128b>());
 	}
 
 	proptest! {

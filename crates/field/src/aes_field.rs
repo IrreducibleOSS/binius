@@ -27,11 +27,11 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 // BinaryField8b isomorphically projected to AESTowerField8b.
 //  - AESTowerField32b is GF(2^32) / (x^2 + x * x_3 + 1), where `x_3` is 0x1000 from AESTowerField16b.
 //  ...
-binary_field!(pub AESTowerField8b(u8));
-binary_field!(pub AESTowerField16b(u16));
-binary_field!(pub AESTowerField32b(u32));
-binary_field!(pub AESTowerField64b(u64));
-binary_field!(pub AESTowerField128b(u128));
+binary_field!(pub AESTowerField8b(u8), 0xD0);
+binary_field!(pub AESTowerField16b(u16), 0x4745);
+binary_field!(pub AESTowerField32b(u32), 0xBD478FAB);
+binary_field!(pub AESTowerField64b(u64), 0x0DE1555D2BD78EB4);
+binary_field!(pub AESTowerField128b(u128), 0x6DB54066349EDB96C33A87244A742678);
 
 unsafe impl Pod for AESTowerField8b {}
 unsafe impl Pod for AESTowerField16b {}
@@ -246,7 +246,7 @@ impl_mul_primitive!(AESTowerField128b,
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::underlier::WithUnderlier;
+	use crate::{binary_field::tests::is_binary_field_valid_generator, underlier::WithUnderlier};
 
 	use proptest::{arbitrary::any, proptest};
 
@@ -408,6 +408,15 @@ mod tests {
 			let converted = BinaryField8b::from(a_val);
 			assert_eq!(a_val, AESTowerField8b::from(converted));
 		}
+	}
+
+	#[test]
+	fn test_multiplicative_generators() {
+		assert!(is_binary_field_valid_generator::<AESTowerField8b>());
+		assert!(is_binary_field_valid_generator::<AESTowerField16b>());
+		assert!(is_binary_field_valid_generator::<AESTowerField32b>());
+		assert!(is_binary_field_valid_generator::<AESTowerField64b>());
+		assert!(is_binary_field_valid_generator::<AESTowerField128b>());
 	}
 
 	fn test_mul_primitive<F: TowerField + WithUnderlier<Underlier: From<u8>>>(val: F, iota: usize) {

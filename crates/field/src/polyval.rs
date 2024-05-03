@@ -377,7 +377,11 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	}
 }
 
-impl BinaryField for BinaryField128bPolyval {}
+impl BinaryField for BinaryField128bPolyval {
+	const MULTIPLICATIVE_GENERATOR: BinaryField128bPolyval =
+		BinaryField128bPolyval(0x72bdf2504ce49c03105433c1c25a4a7);
+}
+
 impl TowerField for BinaryField128bPolyval {
 	fn mul_primitive(self, _iota: usize) -> Result<Self, Error> {
 		// This method could be implemented by multiplying by isomorphic alpha value
@@ -4160,6 +4164,8 @@ const POLYVAL_NIBBLE_POW_2_N_TABLE: [[[u128; 16]; 32]; 6] = [
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::binary_field::tests::is_binary_field_valid_generator;
+
 	use proptest::prelude::*;
 
 	#[test]
@@ -4197,6 +4203,11 @@ mod tests {
 			BinaryField128bPolyval::new(0x2a9055e4e69a61f0b5cfd6f4161087ba).square(),
 			BinaryField128bPolyval::new(0x59aba0d4ffa9dca427b5b489f293e529)
 		);
+	}
+
+	#[test]
+	fn test_multiplicative_generator() {
+		assert!(is_binary_field_valid_generator::<BinaryField128bPolyval>());
 	}
 
 	proptest! {
