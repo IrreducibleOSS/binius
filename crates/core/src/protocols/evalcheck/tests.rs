@@ -6,9 +6,9 @@ use crate::{
 		MultilinearPolyOracle, ProjectionVariant, ShiftVariant,
 	},
 	polynomial::{
-		composition::BivariateProduct, transparent::select_row::SelectRow, CompositionPoly,
-		Error as PolynomialError, MultilinearComposite, MultilinearExtension, MultilinearPoly,
-		MultilinearQuery, MultivariatePoly,
+		composition::BivariateProduct, extrapolate_line, transparent::select_row::SelectRow,
+		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
+		MultilinearPoly, MultilinearQuery, MultivariatePoly,
 	},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
@@ -555,6 +555,200 @@ fn test_evalcheck_repeating() {
 	if let EvalcheckProof::Composite { ref subproofs } = proof {
 		assert_eq!(subproofs.len(), 1);
 		assert_matches!(subproofs[0].1, EvalcheckProof::Repeating(..));
+	} else {
+		panic!("Proof should be Composite.");
+	}
+
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
+}
+
+#[test]
+/// Constructs a small Merged oracle, proves and verifies it.
+fn test_evalcheck_merged() {
+	let n_vars = 7;
+	let row1_id = 9;
+	let row2_id = 10;
+
+	let mut oracles = MultilinearOracleSet::new();
+
+	let select_row1 = SelectRow::new(n_vars, row1_id).unwrap();
+	let select_row2 = SelectRow::new(n_vars, row2_id).unwrap();
+
+	let select_row1_subwitness = select_row1
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let select_row2_subwitness = select_row2
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let merged_witness = {
+		let x = select_row1_subwitness
+			.clone()
+			.specialize::<PackedBinaryField128x1b>();
+		let y = select_row2_subwitness
+			.clone()
+			.specialize::<PackedBinaryField128x1b>();
+		assert!(x.n_vars() >= PackedBinaryField128x1b::LOG_WIDTH);
+		assert_eq!(x.n_vars(), y.n_vars());
+		let mut values = vec![
+			PackedBinaryField128x1b::zero();
+			1 << (x.n_vars() + 1 - PackedBinaryField128x1b::LOG_WIDTH)
+		];
+		let (x_values, y_values) =
+			values.split_at_mut(1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH));
+		x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
+		y.subcube_evals(y.n_vars(), 0, y_values).unwrap();
+		let merge_poly = MultilinearExtension::from_values(values).unwrap();
+		let res = merge_poly.specialize();
+		res
+	};
+
+	let select_row1_oracle_id = oracles
+		.add_transparent(Arc::new(select_row1.clone()), 0)
+		.unwrap();
+	let select_row2_oracle_id = oracles
+		.add_transparent(Arc::new(select_row2.clone()), 0)
+		.unwrap();
+
+	let merged_id = oracles
+		.add_merged(select_row1_oracle_id, select_row2_oracle_id)
+		.unwrap();
+	let merged = oracles.oracle(merged_id);
+
+	let mut witness_index = MultilinearWitnessIndex::<EF>::new();
+
+	let select_row1_subwitness = select_row1_subwitness.specialize_arc_dyn();
+	let select_row2_subwitness = select_row2_subwitness.specialize_arc_dyn();
+
+	witness_index.set(select_row1_oracle_id, select_row1_subwitness);
+	witness_index.set(select_row2_oracle_id, select_row2_subwitness);
+	witness_index.set(merged_id, merged_witness.upcast_arc_dyn());
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
+		.take(n_vars + 1)
+		.collect::<Vec<_>>();
+
+	let inner_eval_point = &eval_point[..n_vars];
+	let eval1 = select_row1.evaluate(inner_eval_point).unwrap();
+	let eval2 = select_row2.evaluate(inner_eval_point).unwrap();
+
+	let eval = extrapolate_line(eval1, eval2, eval_point[n_vars]);
+	let claim = EvalcheckClaim {
+		poly: merged.into_composite(),
+		eval_point,
+		eval,
+		is_random_point: true,
+	};
+
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
+
+	if let EvalcheckProof::Composite { ref subproofs } = proof {
+		assert_eq!(subproofs.len(), 1);
+		assert_matches!(subproofs[0].1, EvalcheckProof::Merged { .. });
+	} else {
+		panic!("Proof should be Composite.");
+	}
+
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
+}
+
+#[test]
+/// Constructs a small Interleaved oracle, proves and verifies it.
+fn test_evalcheck_interleaved() {
+	let n_vars = 7;
+	let row1_id = 0;
+	let row2_id = 1;
+
+	let mut oracles = MultilinearOracleSet::new();
+
+	let select_row1 = SelectRow::new(n_vars, row1_id).unwrap();
+	let select_row2 = SelectRow::new(n_vars, row2_id).unwrap();
+
+	let select_row1_subwitness = select_row1
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let select_row2_subwitness = select_row2
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let interleaved_witness = {
+		let x = select_row1_subwitness
+			.clone()
+			.specialize::<PackedBinaryField128x1b>();
+		let y = select_row2_subwitness
+			.clone()
+			.specialize::<PackedBinaryField128x1b>();
+		assert!(x.n_vars() >= PackedBinaryField128x1b::LOG_WIDTH);
+		assert_eq!(x.n_vars(), y.n_vars());
+		let mut values = vec![
+			PackedBinaryField128x1b::zero();
+			1 << (x.n_vars() + 1 - PackedBinaryField128x1b::LOG_WIDTH)
+		];
+		let (x_values, y_values) =
+			values.split_at_mut(1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH));
+		x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
+		y.subcube_evals(y.n_vars(), 0, y_values).unwrap();
+		let mut values2 = vec![
+			PackedBinaryField128x1b::zero();
+			1 << (x.n_vars() + 1 - PackedBinaryField128x1b::LOG_WIDTH)
+		];
+		for i in 0..(1 << x.n_vars()) {
+			set_packed_slice(&mut values2, i * 2, get_packed_slice(x_values, i));
+			set_packed_slice(&mut values2, i * 2 + 1, get_packed_slice(y_values, i));
+		}
+		let poly = MultilinearExtension::from_values(values2).unwrap();
+		let res = poly.specialize();
+		res
+	};
+
+	let select_row1_oracle_id = oracles
+		.add_transparent(Arc::new(select_row1.clone()), 0)
+		.unwrap();
+	let select_row2_oracle_id = oracles
+		.add_transparent(Arc::new(select_row2.clone()), 0)
+		.unwrap();
+
+	let interleaved_id = oracles
+		.add_interleaved(select_row1_oracle_id, select_row2_oracle_id)
+		.unwrap();
+	let interleaved = oracles.oracle(interleaved_id);
+
+	let mut witness_index = MultilinearWitnessIndex::<EF>::new();
+
+	let select_row1_subwitness = select_row1_subwitness.specialize_arc_dyn();
+	let select_row2_subwitness = select_row2_subwitness.specialize_arc_dyn();
+
+	witness_index.set(select_row1_oracle_id, select_row1_subwitness);
+	witness_index.set(select_row2_oracle_id, select_row2_subwitness);
+	witness_index.set(interleaved_id, interleaved_witness.upcast_arc_dyn());
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
+		.take(n_vars + 1)
+		.collect::<Vec<_>>();
+
+	let inner_eval_point = &eval_point[1..];
+	let eval1 = select_row1.evaluate(inner_eval_point).unwrap();
+	let eval2 = select_row2.evaluate(inner_eval_point).unwrap();
+
+	let eval = extrapolate_line(eval1, eval2, eval_point[0]);
+	let claim = EvalcheckClaim {
+		poly: interleaved.into_composite(),
+		eval_point,
+		eval,
+		is_random_point: true,
+	};
+
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
+
+	if let EvalcheckProof::Composite { ref subproofs } = proof {
+		assert_eq!(subproofs.len(), 1);
+		assert_matches!(subproofs[0].1, EvalcheckProof::Interleaved { .. });
 	} else {
 		panic!("Proof should be Composite.");
 	}

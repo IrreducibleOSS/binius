@@ -38,6 +38,12 @@ pub enum EvalcheckProof<F: Field> {
 	Shifted,
 	Packed,
 	Repeating(Box<EvalcheckProof<F>>),
+	Interleaved {
+		eval1: F,
+		eval2: F,
+		subproof1: Box<EvalcheckProof<F>>,
+		subproof2: Box<EvalcheckProof<F>>,
+	},
 	Merged {
 		eval1: F,
 		eval2: F,
