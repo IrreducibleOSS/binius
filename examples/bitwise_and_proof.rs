@@ -2,10 +2,7 @@ use binius_core::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension,
-	},
+	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension},
 	protocols::{
 		evalcheck::{EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::{SumcheckProof, SumcheckProveOutput},
@@ -22,6 +19,7 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
+use binius_macros::composition_poly;
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
@@ -30,42 +28,7 @@ use std::{env, fmt::Debug};
 use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
 use tracing_subscriber::prelude::*;
 
-#[derive(Clone, Debug)]
-struct BitwiseAndConstraint;
-
-impl BitwiseAndConstraint {
-	fn evaluate<P: PackedField>(query: &[P]) -> Result<P, PolynomialError> {
-		if query.len() != 3 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
-		}
-		let a = query[0];
-		let b = query[1];
-		let c = query[2];
-		Ok(a * b - c)
-	}
-}
-
-impl<P: PackedField> CompositionPoly<P> for BitwiseAndConstraint {
-	fn n_vars(&self) -> usize {
-		3
-	}
-
-	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		Self::evaluate(query)
-	}
-
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
-		Self::evaluate(query)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
+composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
 fn prove<PCS, CH>(
 	log_size: usize,

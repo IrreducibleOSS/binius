@@ -26,8 +26,7 @@ use binius_core::{
 			full_prove_with_switchover, full_verify, make_non_same_query_pcs_sumcheck_claims,
 			make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover,
 		},
-		zerocheck,
-		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
+		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
 };
@@ -37,6 +36,7 @@ use binius_field::{
 	TowerField,
 };
 use binius_hash::GroestlHasher;
+use binius_macros::composition_poly;
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
@@ -150,92 +150,9 @@ impl<F: Field> CompositionPoly<F> for SumComposition {
 	}
 }
 
-#[derive(Clone, Debug)]
-struct ChiComposition;
-
-impl<F: Field> CompositionPoly<F> for ChiComposition {
-	fn n_vars(&self) -> usize {
-		4
-	}
-
-	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let a = query[0];
-		let b0 = query[1];
-		let b1 = query[2];
-		let b2 = query[3];
-		Ok(a - (b0 + (F::ONE - b1) * b2))
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
-
-#[derive(Clone, Debug)]
-struct ChiIotaComposition;
-
-impl<F: Field> CompositionPoly<F> for ChiIotaComposition {
-	fn n_vars(&self) -> usize {
-		5
-	}
-
-	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let a = query[0];
-		let b0 = query[1];
-		let b1 = query[2];
-		let b2 = query[3];
-		let rc = query[4];
-		Ok(a - (rc + b0 + (F::ONE - b1) * b2))
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
-
-#[derive(Clone, Debug)]
-struct RoundConsistency;
-
-impl<F: Field> CompositionPoly<F> for RoundConsistency {
-	fn n_vars(&self) -> usize {
-		3
-	}
-
-	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
-		let state_out = query[0];
-		let next_state_in = query[1];
-		let select = query[2];
-		Ok((state_out - next_state_in) * select)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
+composition_poly!(ChiComposition[a, b0, b1, b2] = a - (b0 + (1 - b1) * b2));
+composition_poly!(ChiIotaComposition[a, b0, b1, b2, rc] = a - (rc + b0 + (1 - b1) * b2));
+composition_poly!(RoundConsistency[state_out, next_state_in, select] = (state_out - next_state_in) * select);
 
 #[derive(Debug)]
 struct RoundConstant<P: PackedField<Scalar = BinaryField1b>>(MultilinearExtension<'static, P>);
