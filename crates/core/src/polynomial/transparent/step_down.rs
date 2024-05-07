@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
-use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_field::{BinaryField1b, Field, PackedField};
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
 /// specified index where they change to 0.
@@ -46,8 +46,8 @@ impl StepDown {
 		let packed_index = self.index / P::WIDTH;
 		let mut result = vec![P::zero(); 1 << log_packed_length];
 		result[..packed_index].fill(P::one());
-		for i in P::WIDTH * packed_index..self.index {
-			set_packed_slice(&mut result, i, P::Scalar::ONE);
+		for i in 0..self.index % P::WIDTH {
+			result[packed_index].set(i, P::Scalar::ONE);
 		}
 		MultilinearExtension::from_values(result)
 	}

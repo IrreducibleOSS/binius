@@ -1,9 +1,8 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use super::{
-	binary_field_arithmetic::TowerFieldArithmetic,
-	error::Error,
-	extension::{ExtensionField, PackedExtensionField},
+	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
+	packed_extension::PackedExtensionField,
 };
 use bytemuck::{
 	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,

@@ -477,8 +477,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		unpack_scalars_mut, BinaryField128b, BinaryField16b as F, BinaryField32b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b as P,
+		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
+		PackedBinaryField8x16b as P,
 	};
 
 	#[test]
@@ -495,7 +495,7 @@ mod tests {
 	#[test]
 	fn test_evaluate_on_hypercube() {
 		let mut values = vec![F::ZERO; 64];
-		unpack_scalars_mut(&mut values)
+		values
 			.iter_mut()
 			.enumerate()
 			.for_each(|(i, val)| *val = F::new(i as u16));

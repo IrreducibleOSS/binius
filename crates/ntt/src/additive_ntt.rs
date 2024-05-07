@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{
-	unpack_scalars_mut, BinaryField, ExtensionField, Field, PackedExtensionField, PackedField,
+	BinaryField, ExtensionField, Field, PackedExtensionField, PackedField, PackedFieldIndexable,
 };
 use p3_util::log2_strict_usize;
 
@@ -120,7 +120,7 @@ impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 
 impl<F: BinaryField, P> AdditiveNTT<P> for AdditiveNTTWithOTFCompute<F>
 where
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedFieldIndexable<Scalar = F>,
 {
 	fn forward_transform(
 		&self,
@@ -135,7 +135,7 @@ where
 					1 => Ok(()),
 					// Special case when data.len() is 1 and packing width > 1. We must unpack the data
 					// in order to be able to interleave below.
-					_ => self.forward_transform(unpack_scalars_mut(data), coset, log_batch_size),
+					_ => self.forward_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
 				};
 			}
 			_ => {}
@@ -208,7 +208,7 @@ where
 			1 => {
 				return match P::WIDTH {
 					1 => Ok(()),
-					_ => self.inverse_transform(unpack_scalars_mut(data), coset, log_batch_size),
+					_ => self.inverse_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
 				};
 			}
 			_ => {}
@@ -347,7 +347,7 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 
 impl<F: BinaryField, P> AdditiveNTT<P> for AdditiveNTTWithPrecompute<F>
 where
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedFieldIndexable<Scalar = F>,
 {
 	fn forward_transform(
 		&self,
@@ -360,7 +360,7 @@ where
 			1 => {
 				return match P::WIDTH {
 					1 => Ok(()),
-					_ => self.forward_transform(unpack_scalars_mut(data), coset, log_batch_size),
+					_ => self.forward_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
 				};
 			}
 			_ => {}
@@ -422,7 +422,7 @@ where
 			1 => {
 				return match P::WIDTH {
 					1 => Ok(()),
-					_ => self.inverse_transform(unpack_scalars_mut(data), coset, log_batch_size),
+					_ => self.inverse_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
 				};
 			}
 			_ => {}
@@ -578,7 +578,7 @@ mod tests {
 		BinaryField32b, BinaryField8b, PackedBinaryField8x16b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::{fmt::Debug, iter::repeat_with};
+	use std::iter::repeat_with;
 
 	trait SimpleAdditiveNTT<F: BinaryField> {
 		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
@@ -811,12 +811,12 @@ mod tests {
 			.collect::<Vec<_>>();
 		let mut data_copy = data.clone();
 
-		ntt.inverse_transform_simple::<BinaryField8b>(unpack_scalars_mut(&mut data), 2)
+		ntt.inverse_transform_simple(Packed::unpack_scalars_mut(&mut data), 2)
 			.unwrap();
 		AdditiveNTT::<Packed>::inverse_transform_ext(&ntt, &mut data_copy, 2).unwrap();
 		assert_eq!(data, data_copy);
 
-		ntt.forward_transform_simple::<BinaryField8b>(unpack_scalars_mut(&mut data), 3)
+		ntt.forward_transform_simple(Packed::unpack_scalars_mut(&mut data), 3)
 			.unwrap();
 		AdditiveNTT::<Packed>::forward_transform_ext(&ntt, &mut data_copy, 3).unwrap();
 		assert_eq!(data, data_copy);
@@ -825,9 +825,8 @@ mod tests {
 	fn check_packed_ntt_on_scalars_with_message_size_one<P, S, NTT>(ntt: NTT)
 	where
 		S: Field,
-		P: PackedField<Scalar = S>,
+		P: PackedFieldIndexable<Scalar = S>,
 		P::Scalar: BinaryField + ExtensionField<S>,
-		P: PackedExtensionField<S> + Debug,
 		NTT: AdditiveNTT<P> + SimpleAdditiveNTT<P::Scalar>,
 	{
 		let mut rng = StdRng::seed_from_u64(0);
@@ -837,12 +836,12 @@ mod tests {
 			.collect::<Vec<_>>();
 		let mut data_copy = data.clone();
 
-		ntt.inverse_transform_simple::<P::Scalar>(unpack_scalars_mut(&mut data), 2)
+		ntt.inverse_transform_simple(P::unpack_scalars_mut(&mut data), 2)
 			.unwrap();
 		AdditiveNTT::<P>::inverse_transform_ext(&ntt, &mut data_copy, 2).unwrap();
 		assert_eq!(data, data_copy);
 
-		ntt.forward_transform_simple::<P::Scalar>(unpack_scalars_mut(&mut data), 3)
+		ntt.forward_transform_simple(P::unpack_scalars_mut(&mut data), 3)
 			.unwrap();
 		AdditiveNTT::<P>::forward_transform_ext(&ntt, &mut data_copy, 3).unwrap();
 		assert_eq!(data, data_copy);
@@ -895,7 +894,7 @@ mod tests {
 		let mut data_copy = data.clone();
 		let mut data_copy_2 = data.clone();
 
-		ntt.inverse_transform_simple(unpack_scalars_mut(&mut data), 2)
+		ntt.inverse_transform_simple(PackedFieldIndexable::unpack_scalars_mut(&mut data), 2)
 			.unwrap();
 		AdditiveNTT::<PackedBinaryField16x8b>::inverse_transform_ext(&ntt, &mut data_copy, 2)
 			.unwrap();
@@ -908,7 +907,7 @@ mod tests {
 		assert_eq!(data, data_copy);
 		assert_eq!(data, data_copy_2);
 
-		ntt.forward_transform_simple(unpack_scalars_mut(&mut data), 3)
+		ntt.forward_transform_simple(PackedFieldIndexable::unpack_scalars_mut(&mut data), 3)
 			.unwrap();
 		AdditiveNTT::<PackedBinaryField16x8b>::forward_transform_ext(&ntt, &mut data_copy, 3)
 			.unwrap();

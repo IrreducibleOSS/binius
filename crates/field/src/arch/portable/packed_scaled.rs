@@ -375,10 +375,10 @@ macro_rules! packed_scaled_field {
 			}
 		}
 
-		unsafe impl<P> $crate::extension::PackedExtensionField<P> for $name
+		unsafe impl<P> $crate::packed_extension::PackedExtensionField<P> for $name
 		where
 			P: $crate::packed::PackedField,
-			$inner: $crate::extension::PackedExtensionField<P>,
+			$inner: $crate::packed_extension::PackedExtensionField<P>,
 			<$inner as $crate::packed::PackedField>::Scalar:
 				$crate::extension::ExtensionField<P::Scalar>,
 		{

@@ -6,8 +6,8 @@ use binius_field::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::set_packed_slice,
-	unpack_scalars_mut, BinaryField32b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField8x32b, PackedExtensionField, PackedField,
+	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x32b,
+	PackedExtensionField, PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute};
 use std::{cmp, marker::PhantomData};
@@ -412,7 +412,7 @@ where
 			let to_process = cmp::min(RATE_AS_U32 - cur_block, msg_remaining.len());
 
 			// Firstly copy data into next block
-			let next_block = unpack_scalars_mut(&mut self.state[..2]);
+			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
 			next_block[cur_block..cur_block + to_process]
 				.copy_from_slice(&msg_remaining[..to_process]);
 
@@ -455,7 +455,7 @@ where
 		let cur_block = (self.current_len as usize * P::WIDTH) % RATE_AS_U32;
 		if cur_block != 0 {
 			// Pad and absorb
-			let next_block = unpack_scalars_mut(&mut self.state[..2]);
+			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
 			next_block[cur_block..].fill(BinaryField32b::ZERO);
 			self.permutation();
 		}

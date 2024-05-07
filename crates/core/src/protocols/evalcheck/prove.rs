@@ -15,7 +15,7 @@ use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
 	witness::MultilinearWitnessIndex,
 };
-use binius_field::{PackedField, TowerField};
+use binius_field::{PackedField, PackedFieldIndexable, TowerField};
 use getset::{Getters, MutGetters};
 use tracing::instrument;
 
@@ -41,7 +41,7 @@ pub struct EvalcheckProver<'a, 'b, F: TowerField, PW: PackedField> {
 impl<'a, 'b, F, PW> EvalcheckProver<'a, 'b, F, PW>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedField,
+	PW: PackedFieldIndexable,
 	PW::Scalar: TowerField + From<F>,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and

@@ -1,8 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{
-	packed::PackedField, unpack_scalars, unpack_scalars_mut, ExtensionField, PackedExtensionField,
-};
+use super::{packed::PackedField, ExtensionField, PackedExtensionField, PackedFieldIndexable};
 use p3_util::log2_strict_usize;
 
 /// Error thrown when a transpose operation fails.
@@ -85,7 +83,7 @@ pub fn transpose_scalars<P, FE, PE>(src: &[PE], dst: &mut [P]) -> Result<(), Err
 where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar>,
-	PE: PackedField<Scalar = FE> + PackedExtensionField<P> + PackedExtensionField<FE>,
+	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<P>,
 {
 	let len = src.len();
 	if !len.is_power_of_two() {
@@ -119,8 +117,8 @@ where
 	{
 		let dst_ext = PE::try_cast_to_ext_mut(dst).ok_or(Error::UnalignedDestination)?;
 		transpose::transpose(
-			unpack_scalars(src),
-			unpack_scalars_mut(dst_ext),
+			PE::unpack_scalars(src),
+			PE::unpack_scalars_mut(dst_ext),
 			1 << log_d,
 			1 << (log_n - log_d),
 		);

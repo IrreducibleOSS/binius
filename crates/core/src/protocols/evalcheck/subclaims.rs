@@ -29,7 +29,7 @@ use crate::{
 	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, PackedFieldIndexable, TowerField};
 use std::sync::Arc;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
@@ -68,7 +68,7 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// Takes in metadata object and creates a witness for a bivariate claim on shift indicator.
 ///
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
-pub fn shifted_sumcheck_witness<'a, F: Field, PW: PackedField>(
+pub fn shifted_sumcheck_witness<'a, F: Field, PW: PackedFieldIndexable>(
 	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
 	memoized_queries: &mut MemoizedQueries<PW>,
 	meta: ProjectedBivariateMeta,

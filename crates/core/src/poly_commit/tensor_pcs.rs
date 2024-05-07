@@ -1,12 +1,5 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
-use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
-use p3_util::{log2_ceil_usize, log2_strict_usize};
-use rayon::prelude::*;
-use std::{iter::repeat_with, marker::PhantomData, mem};
-use tracing::instrument;
-
 use super::error::{Error, VerificationError};
 use crate::{
 	linear_code::LinearCode,
@@ -19,11 +12,18 @@ use crate::{
 };
 use binius_field::{
 	packed::{get_packed_slice, iter_packed_slice},
-	square_transpose, transpose_scalars, unpack_scalars, unpack_scalars_mut,
+	square_transpose, transpose_scalars,
 	util::inner_product_unchecked,
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtensionField, PackedField,
+	PackedFieldIndexable,
 };
 use binius_hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher};
+use p3_challenger::{CanObserve, CanSample, CanSampleBits};
+use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
+use p3_util::{log2_ceil_usize, log2_strict_usize};
+use rayon::prelude::*;
+use std::{iter::repeat_with, marker::PhantomData, mem};
+use tracing::instrument;
 
 /// Creates a new multilinear from a batch of multilinears and a mixing challenge
 ///
@@ -173,12 +173,9 @@ where
 	FA: Field,
 	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F> + ExtensionField<FA>,
-	PI: PackedField<Scalar = FI>
-		+ PackedExtensionField<FI>
-		+ PackedExtensionField<P>
-		+ PackedExtensionField<PA>,
+	PI: PackedFieldIndexable<Scalar = FI> + PackedExtensionField<P> + PackedExtensionField<PA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
+	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
 	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	H::Digest: Copy + Default + Send,
@@ -221,8 +218,8 @@ where
 				PI::try_cast_to_ext(poly.evals()).ok_or_else(|| Error::UnalignedMessage)?;
 
 			transpose::transpose(
-				unpack_scalars(poly_vals_packed),
-				unpack_scalars_mut(&mut encoded[..n_rows * self.code.dim() / PI::WIDTH]),
+				PI::unpack_scalars(poly_vals_packed),
+				PI::unpack_scalars_mut(&mut encoded[..n_rows * self.code.dim() / PI::WIDTH]),
 				1 << self.code.dim_bits(),
 				1 << self.log_rows,
 			);
@@ -302,7 +299,7 @@ where
 			.collect::<Result<Vec<_>, _>>()?;
 		let t_prime = mix_t_primes(log_n_cols, &t_primes, mixing_coefficients)?;
 
-		challenger.observe_slice(unpack_scalars(t_prime.evals()));
+		challenger.observe_slice(PE::unpack_scalars(t_prime.evals()));
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))
 			.take(self.n_test_queries)
 			.map(|index| {
@@ -385,7 +382,7 @@ where
 
 		let n_rows = 1 << self.log_rows;
 
-		challenger.observe_slice(unpack_scalars(proof.mixed_t_prime.evals()));
+		challenger.observe_slice(PE::unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
 		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[..log_n_cols])?;
@@ -591,13 +588,12 @@ where
 	FA: Field,
 	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<P::Scalar> + ExtensionField<PA::Scalar>,
-	PI: PackedField<Scalar = FI>
-		+ PackedExtensionField<FI>
+	PI: PackedFieldIndexable<Scalar = FI>
 		+ PackedExtensionField<P>
 		+ PackedExtensionField<PA>
 		+ Sync,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
+	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
 	LC: LinearCode<P = PA>,
 	H: Hasher<PI>,
 	H::Digest: Copy + Default + Send,
