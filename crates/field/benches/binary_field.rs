@@ -1,90 +1,111 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{
+	criterion_group, criterion_main, measurement::Measurement, BenchmarkGroup, Criterion,
+};
 use rand::thread_rng;
+use std::array;
 
 use binius_field::{
+	aes_field::{
+		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+	},
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
 	BinaryField8b, Field,
 };
+use subtle::CtOption;
 
-fn tower_mul_8b(c: &mut Criterion) {
-	field_mul::<BinaryField8b>(c, "BinaryField8b::mul")
-}
+const BATCH_SIZE: usize = 32;
 
-fn tower_mul_16b(c: &mut Criterion) {
-	field_mul::<BinaryField16b>(c, "BinaryField16b::mul")
-}
-
-fn tower_mul_32b(c: &mut Criterion) {
-	field_mul::<BinaryField32b>(c, "BinaryField32b::mul")
-}
-
-fn tower_mul_64b(c: &mut Criterion) {
-	field_mul::<BinaryField64b>(c, "BinaryField64b::mul")
-}
-
-fn tower_mul_128b(c: &mut Criterion) {
-	field_mul::<BinaryField128b>(c, "BinaryField128b::mul")
-}
-
-fn monomial_mul_128b(c: &mut Criterion) {
-	field_mul::<BinaryField128bPolyval>(c, "BinaryField128bPolyval::mul")
-}
-
-fn tower_sqr_8b(c: &mut Criterion) {
-	field_sqr::<BinaryField8b>(c, "BinaryField8b::square")
-}
-
-fn tower_sqr_16b(c: &mut Criterion) {
-	field_sqr::<BinaryField16b>(c, "BinaryField16b::square")
-}
-
-fn tower_sqr_32b(c: &mut Criterion) {
-	field_sqr::<BinaryField32b>(c, "BinaryField32b::square")
-}
-
-fn tower_sqr_64b(c: &mut Criterion) {
-	field_sqr::<BinaryField64b>(c, "BinaryField64b::square")
-}
-
-fn tower_sqr_128b(c: &mut Criterion) {
-	field_sqr::<BinaryField128b>(c, "BinaryField128b::square")
-}
-
-fn monomial_sqr_128b(c: &mut Criterion) {
-	field_sqr::<BinaryField128bPolyval>(c, "BinaryField128bPolyval::square")
-}
-
-fn field_mul<F: Field>(c: &mut Criterion, id: &str) {
+fn bench_function<F: Field, M: Measurement, R>(
+	c: &mut BenchmarkGroup<'_, M>,
+	id: &str,
+	func: impl Fn(F, F) -> R,
+) {
 	let mut rng = thread_rng();
-	let a = F::random(&mut rng);
-	let b = F::random(&mut rng);
-	c.bench_function(id, |bench| bench.iter(|| a * b));
+	let a: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
+	let b: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
+	c.bench_function(id, |bench| {
+		bench.iter(|| array::from_fn::<_, BATCH_SIZE, _>(|i| func(a[i], b[i])))
+	});
 }
 
-fn field_sqr<F: Field>(c: &mut Criterion, id: &str) {
-	let mut rng = thread_rng();
-	let a = F::random(&mut rng);
-	c.bench_function(id, |bench| bench.iter(|| a.square()));
+macro_rules! run_bench {
+	($group:ident, $field:ty, $op:ty) => {
+		bench_function::<$field, _, _>(&mut $group, stringify!($field), <$op>::call::<$field>);
+	};
 }
 
-criterion_group!(
-	multiply,
-	tower_mul_8b,
-	tower_mul_16b,
-	tower_mul_32b,
-	tower_mul_64b,
-	tower_mul_128b,
-	monomial_mul_128b,
-);
-criterion_group!(
-	square,
-	tower_sqr_8b,
-	tower_sqr_16b,
-	tower_sqr_32b,
-	tower_sqr_64b,
-	tower_sqr_128b,
-	monomial_sqr_128b,
-);
-criterion_main!(multiply, square);
+trait FieldOperation {
+	const NAME: &'static str;
+	type Result<F>;
+
+	fn call<F: Field>(lhs: F, rhs: F) -> Self::Result<F>;
+}
+
+fn bench_all_fields<Op: FieldOperation>(c: &mut Criterion) {
+	let mut group = c.benchmark_group(Op::NAME);
+	group.throughput(criterion::Throughput::Elements(BATCH_SIZE as _));
+
+	run_bench!(group, BinaryField8b, Op);
+	run_bench!(group, BinaryField16b, Op);
+	run_bench!(group, BinaryField32b, Op);
+	run_bench!(group, BinaryField64b, Op);
+	run_bench!(group, BinaryField128b, Op);
+
+	run_bench!(group, AESTowerField8b, Op);
+	run_bench!(group, AESTowerField16b, Op);
+	run_bench!(group, AESTowerField32b, Op);
+	run_bench!(group, AESTowerField64b, Op);
+	run_bench!(group, AESTowerField128b, Op);
+
+	run_bench!(group, BinaryField128bPolyval, Op);
+}
+
+struct MultiplyOp;
+
+impl FieldOperation for MultiplyOp {
+	const NAME: &'static str = "multiply";
+	type Result<F> = F;
+
+	fn call<F: Field>(lhs: F, rhs: F) -> F {
+		lhs * rhs
+	}
+}
+
+fn multiply(c: &mut Criterion) {
+	bench_all_fields::<MultiplyOp>(c);
+}
+
+struct SquareOp;
+
+impl FieldOperation for SquareOp {
+	const NAME: &'static str = "square";
+	type Result<F> = F;
+
+	fn call<F: Field>(lhs: F, _: F) -> F {
+		lhs.square()
+	}
+}
+
+fn square(c: &mut Criterion) {
+	bench_all_fields::<SquareOp>(c);
+}
+
+struct InvertOp;
+
+impl FieldOperation for InvertOp {
+	const NAME: &'static str = "invert";
+	type Result<F> = CtOption<F>;
+
+	fn call<F: Field>(lhs: F, _: F) -> CtOption<F> {
+		lhs.invert()
+	}
+}
+
+fn invert(c: &mut Criterion) {
+	bench_all_fields::<InvertOp>(c);
+}
+
+criterion_group!(binary_arithmetic, multiply, square, invert,);
+criterion_main!(binary_arithmetic);

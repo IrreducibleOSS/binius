@@ -95,6 +95,14 @@ pub trait PackedField:
 		Self::broadcast(Self::Scalar::ONE)
 	}
 
+	/// Initialize zero position with `scalar`, set other elements to zero.
+	fn set_single(scalar: Self::Scalar) -> Self {
+		let mut result = Self::default();
+		result.set(0, scalar);
+
+		result
+	}
+
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
 	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self;

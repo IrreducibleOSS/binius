@@ -350,37 +350,42 @@ binary_tower_arithmetic_recursive!(BinaryField32b);
 binary_tower_arithmetic_recursive!(BinaryField64b);
 
 impl InvertOrZero for BinaryField128b {
-	fn invert_or_zero(self) -> Self {
-		invert_or_zero(self)
+	cfg_if! {
+		if #[cfg(all(target_arch = "x86_64", target_feature = "gfni", target_feature = "sse2"))] {
+			fn invert_or_zero(self) -> Self {
+				invert_or_zero_using_packed::<crate::PackedBinaryField1x128b>(self)
+			}
+		} else {
+			fn invert_or_zero(self) -> Self {
+				invert_or_zero(self)
+			}
+		}
 	}
 }
 
 impl TowerFieldArithmetic for BinaryField128b {
 	cfg_if! {
-		// HACK: Carve-out for accelerated packed field arithmetic. This is temporary until the
-		// portable packed128b implementation is refactored to not rely on BinaryField mul.
 		if #[cfg(all(target_arch = "x86_64", target_feature = "gfni", target_feature = "sse2"))] {
 			fn multiply(self, rhs: Self) -> Self {
-				use bytemuck::must_cast;
-				use crate::PackedBinaryField1x128b;
+				multiple_using_packed::<crate::PackedBinaryField1x128b>(self, rhs)
+			}
 
-				let a = must_cast::<_, PackedBinaryField1x128b>(self);
-				let b = must_cast::<_, PackedBinaryField1x128b>(rhs);
-				must_cast(a * b)
+			fn square(self) -> Self {
+				square_using_packed::<crate::PackedBinaryField1x128b>(self)
 			}
 		} else {
 			fn multiply(self, rhs: Self) -> Self {
 				multiply(self, rhs)
+			}
+
+			fn square(self) -> Self {
+				square(self)
 			}
 		}
 	}
 
 	fn multiply_alpha(self) -> Self {
 		multiply_alpha(self)
-	}
-
-	fn square(self) -> Self {
-		square(self)
 	}
 }
 
@@ -435,6 +440,25 @@ where
 	(inv0, inv1).into()
 }
 
+/// For some architectures it may be faster to used SIM versions for packed fields than to use portable
+/// single-element arithmetics. That's why we need these functions
+#[allow(dead_code)]
+pub(super) fn multiple_using_packed<P: crate::PackedField>(
+	lhs: P::Scalar,
+	rhs: P::Scalar,
+) -> P::Scalar {
+	(P::set_single(lhs) * P::set_single(rhs)).get(0)
+}
+
+#[allow(dead_code)]
+pub(super) fn square_using_packed<P: crate::PackedField>(value: P::Scalar) -> P::Scalar {
+	P::set_single(value).square().get(0)
+}
+
+#[allow(dead_code)]
+pub(super) fn invert_or_zero_using_packed<P: crate::PackedField>(value: P::Scalar) -> P::Scalar {
+	P::set_single(value).invert_or_zero().get(0)
+}
 // `MulPrimitive` implementation for binary tower
 
 /// Multiply `val` by alpha as a packed field with `smaller_type` scalar
