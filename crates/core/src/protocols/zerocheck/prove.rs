@@ -4,8 +4,13 @@ use super::{
 	error::Error,
 	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness},
 };
-use crate::{polynomial::CompositionPoly, protocols::zerocheck::zerocheck::reduce_zerocheck_claim};
-use binius_field::{PackedField, TowerField};
+use crate::{
+	polynomial::{extrapolate_line, CompositionPoly, MultilinearExtension},
+	protocols::{
+		sumcheck::prove_general::SumcheckEvaluator, zerocheck::zerocheck::reduce_zerocheck_claim,
+	},
+};
+use binius_field::{Field, PackedField, TowerField};
 use tracing::instrument;
 
 /// Prove a zerocheck instance reduction.
@@ -37,88 +42,132 @@ where
 	})
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::{
-		oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
-		polynomial::{MultilinearComposite, MultilinearExtension},
-		protocols::{test_utils::TestProductComposition, zerocheck::verify::verify},
-		witness::MultilinearWitnessIndex,
-	};
-	use binius_field::{BinaryField32b, Field};
-	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+/// Evaluator for the first round of the zerocheck protocol.
+///
+/// In the first round, we do not need to evaluate at the point F::ONE, because the value is known
+/// to be zero. This version of the zerocheck protocol uses the optimizations from section 3 of
+/// [Gruen24].
+///
+/// [Gruen24]: https://eprint.iacr.org/2024/108
+#[derive(Debug)]
+pub struct ZerocheckFirstRoundEvaluator<'a, P, C>
+where
+	P: PackedField,
+	C: CompositionPoly<P>,
+{
+	pub composition: &'a C,
+	pub domain: &'a [P::Scalar],
+	pub eq_ind: MultilinearExtension<'a, P::Scalar>,
+}
 
-	// f(x) = (x_1, x_2, x_3)) = g(h_0(x), ..., h_7(x)) where
-	// g is the product composition
-	// h_i(x) = 0 if x= <i>, 1 otw, defined first on boolean hypercube, then take multilinear extension
-	// Specifically, f should vanish on the boolean hypercube, because some h_i will be 0.
-	#[test]
-	fn test_prove_verify_interaction() {
-		crate::util::tracing::init_tracing();
+impl<'a, F, P, C> SumcheckEvaluator<F> for ZerocheckFirstRoundEvaluator<'a, P, C>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	C: CompositionPoly<P>,
+{
+	fn n_round_evals(&self) -> usize {
+		// In the very first round of a sumcheck that comes from zerocheck, we can uniquely
+		// determine the degree d univariate round polynomial r with evaluations at X = 2, ..., d
+		// because we know r(0) = r(1) = 0
+		self.domain.len() - 2
+	}
 
-		type F = BinaryField32b;
-		let n_vars: usize = 3;
-		let n_multilinears = 1 << n_vars;
-		let mut rng = StdRng::seed_from_u64(0);
+	fn process_vertex(
+		&self,
+		index: usize,
+		evals_0: &[F],
+		evals_1: &[F],
+		evals_z: &mut [F],
+		round_evals: &mut [F],
+	) {
+		debug_assert!(index < self.eq_ind.size());
 
-		// Setup witness
-		let composition = TestProductComposition::new(n_multilinears);
-		let multilinears = (0..1 << n_vars)
-			.map(|i| {
-				let values: Vec<F> = (0..1 << n_vars)
-					.map(|j| if i == j { F::ZERO } else { F::ONE })
-					.collect::<Vec<_>>();
-				MultilinearExtension::from_values(values)
-					.unwrap()
-					.specialize_arc_dyn::<F>()
-			})
-			.collect::<Vec<_>>();
+		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(index).unwrap_or(F::ZERO);
 
-		let zerocheck_witness =
-			MultilinearComposite::new(n_vars, composition, multilinears.clone()).unwrap();
+		// The rest require interpolation.
+		for d in 2..self.domain.len() {
+			evals_0
+				.iter()
+				.zip(evals_1.iter())
+				.zip(evals_z.iter_mut())
+				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
+					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain[d]);
+				});
 
-		let mut oracles = MultilinearOracleSet::<F>::new();
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 0,
-			n_vars,
-			n_polys: n_multilinears,
-			tower_level: F::TOWER_LEVEL,
-		});
+			let composite_value = self
+				.composition
+				.evaluate(evals_z)
+				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
-		let mut witness = MultilinearWitnessIndex::new();
-		for (i, multilinear) in multilinears.iter().cloned().enumerate() {
-			let oracle_id = oracles.committed_oracle_id(CommittedId { batch_id, index: i });
-			witness.set(oracle_id, multilinear);
+			round_evals[d - 2] += composite_value * eq_ind_factor;
 		}
+	}
+}
 
-		// Setup claim
-		let h = (0..n_multilinears)
-			.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
-			.collect();
-		let composite_poly =
-			CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears))
-				.unwrap();
+/// Evaluator for the later rounds of the zerocheck protocol.
+///
+/// This version of the zerocheck protocol uses the optimizations from section 3 of [Gruen24].
+///
+/// [Gruen24]: https://eprint.iacr.org/2024/108
+#[derive(Debug)]
+pub struct ZerocheckLaterRoundEvaluator<'a, P, C>
+where
+	P: PackedField,
+	C: CompositionPoly<P>,
+{
+	pub composition: &'a C,
+	pub domain: &'a [P::Scalar],
+	pub eq_ind: MultilinearExtension<'a, P::Scalar>,
+}
 
-		let zerocheck_claim = ZerocheckClaim {
-			poly: composite_poly,
-		};
+impl<'a, F, P, C> SumcheckEvaluator<F> for ZerocheckLaterRoundEvaluator<'a, P, C>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	C: CompositionPoly<P>,
+{
+	fn n_round_evals(&self) -> usize {
+		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
+		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
+		// round's claimed sum
+		self.domain.len() - 1
+	}
 
-		// Setup challenge
-		let challenge = repeat_with(|| Field::random(&mut rng))
-			.take(n_vars - 1)
-			.collect::<Vec<_>>();
+	fn process_vertex(
+		&self,
+		index: usize,
+		evals_0: &[F],
+		evals_1: &[F],
+		evals_z: &mut [F],
+		round_evals: &mut [F],
+	) {
+		debug_assert!(index < self.eq_ind.size());
 
-		// PROVER
-		let prove_output = prove(&zerocheck_claim, zerocheck_witness, challenge.clone()).unwrap();
+		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(index).unwrap_or(F::ZERO);
 
-		let proof = prove_output.zerocheck_proof;
-		// VERIFIER
-		let sumcheck_claim = verify(&zerocheck_claim, proof, challenge).unwrap();
-		assert_eq!(sumcheck_claim.sum, F::ZERO);
-		assert_eq!(sumcheck_claim.poly.n_vars(), n_vars);
-		assert_eq!(prove_output.sumcheck_claim.sum, F::ZERO);
-		assert_eq!(prove_output.sumcheck_claim.poly.n_vars(), n_vars);
+		let composite_value = self
+			.composition
+			.evaluate(evals_1)
+			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
+		round_evals[0] += composite_value * eq_ind_factor;
+
+		// The rest require interpolation.
+		for d in 2..self.domain.len() {
+			evals_0
+				.iter()
+				.zip(evals_1.iter())
+				.zip(evals_z.iter_mut())
+				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
+					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain[d]);
+				});
+
+			let composite_value = self
+				.composition
+				.evaluate(evals_z)
+				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
+
+			round_evals[d - 1] += composite_value * eq_ind_factor;
+		}
 	}
 }

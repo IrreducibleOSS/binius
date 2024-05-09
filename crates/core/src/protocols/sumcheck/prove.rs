@@ -16,6 +16,7 @@ use crate::{
 	protocols::{
 		evalcheck::EvalcheckClaim,
 		sumcheck::prove_general::{ProverState, SumcheckEvaluator},
+		zerocheck::{ZerocheckFirstRoundEvaluator, ZerocheckLaterRoundEvaluator},
 	},
 };
 use binius_field::{Field, PackedField};
@@ -441,136 +442,6 @@ where
 				.composition
 				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-		}
-	}
-}
-
-/// Evaluator for the first round of the zerocheck protocol.
-///
-/// In the first round, we do not need to evaluate at the point F::ONE, because the value is known
-/// to be zero. This version of the zerocheck protocol uses the optimizations from section 3 of
-/// [Gruen24].
-///
-/// [Gruen24]: https://eprint.iacr.org/2024/108
-#[derive(Debug)]
-struct ZerocheckFirstRoundEvaluator<'a, P, C>
-where
-	P: PackedField,
-	C: CompositionPoly<P>,
-{
-	composition: &'a C,
-	domain: &'a [P::Scalar],
-	eq_ind: MultilinearExtension<'a, P::Scalar>,
-}
-
-impl<'a, F, P, C> SumcheckEvaluator<F> for ZerocheckFirstRoundEvaluator<'a, P, C>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	C: CompositionPoly<P>,
-{
-	fn n_round_evals(&self) -> usize {
-		// In the very first round of a sumcheck that comes from zerocheck, we can uniquely
-		// determine the degree d univariate round polynomial r with evaluations at X = 2, ..., d
-		// because we know r(0) = r(1) = 0
-		self.domain.len() - 2
-	}
-
-	fn process_vertex(
-		&self,
-		index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
-	) {
-		debug_assert!(index < self.eq_ind.size());
-
-		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(index).unwrap_or(F::ZERO);
-
-		// The rest require interpolation.
-		for d in 2..self.domain.len() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain[d]);
-				});
-
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-
-			round_evals[d - 2] += composite_value * eq_ind_factor;
-		}
-	}
-}
-
-/// Evaluator for the later rounds of the zerocheck protocol.
-///
-/// This version of the zerocheck protocol uses the optimizations from section 3 of [Gruen24].
-///
-/// [Gruen24]: https://eprint.iacr.org/2024/108
-#[derive(Debug)]
-struct ZerocheckLaterRoundEvaluator<'a, P, C>
-where
-	P: PackedField,
-	C: CompositionPoly<P>,
-{
-	composition: &'a C,
-	domain: &'a [P::Scalar],
-	eq_ind: MultilinearExtension<'a, P::Scalar>,
-}
-
-impl<'a, F, P, C> SumcheckEvaluator<F> for ZerocheckLaterRoundEvaluator<'a, P, C>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	C: CompositionPoly<P>,
-{
-	fn n_round_evals(&self) -> usize {
-		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
-		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
-		// round's claimed sum
-		self.domain.len() - 1
-	}
-
-	fn process_vertex(
-		&self,
-		index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
-	) {
-		debug_assert!(index < self.eq_ind.size());
-
-		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(index).unwrap_or(F::ZERO);
-
-		let composite_value = self
-			.composition
-			.evaluate(evals_1)
-			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
-		round_evals[0] += composite_value * eq_ind_factor;
-
-		// The rest require interpolation.
-		for d in 2..self.domain.len() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain[d]);
-				});
-
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-
-			round_evals[d - 1] += composite_value * eq_ind_factor;
 		}
 	}
 }
