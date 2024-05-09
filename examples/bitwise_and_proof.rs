@@ -1,10 +1,11 @@
+use anyhow::Result;
 use binius_core::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension},
 	protocols::{
-		evalcheck::{EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
+		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{SumcheckProof, SumcheckProveOutput},
 		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck::{
@@ -37,7 +38,7 @@ fn prove<PCS, CH>(
 	constraints: &[CompositePolyOracle<BinaryField128b>],
 	witness: &TraceWitness<PackedBinaryField128x1b>,
 	mut challenger: CH,
-) -> Proof<PCS::Commitment, PCS::Proof>
+) -> Result<Proof<PCS::Commitment, PCS::Proof>>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
 	PCS::Error: Debug,
@@ -115,40 +116,43 @@ where
 		sumcheck_proof,
 	} = output;
 
-	// prove_evalcheck is instrumented
-	let mut evalcheck_prover = EvalcheckProver::new(trace, &mut witness_index);
-	let evalcheck_proof = evalcheck_prover.prove(evalcheck_claim).unwrap();
+	// Prove evaluation claims
+	let GreedyEvalcheckProveOutput {
+		same_query_claims,
+		proof: evalcheck_proof,
+	} = greedy_evalcheck::prove(
+		trace,
+		&mut witness_index,
+		[evalcheck_claim],
+		switchover_fn,
+		&mut challenger,
+	)?;
 
-	// try_extract_same_query_pcs_claim is instrumented
-	assert!(evalcheck_prover.new_sumchecks().is_empty());
-	assert_eq!(evalcheck_prover.batch_committed_eval_claims().n_batches(), 1);
-	let same_query_pcs_claim = evalcheck_prover
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(0)
-		.unwrap()
-		.unwrap();
+	assert_eq!(same_query_claims.len(), 1);
+	let (_, same_query_pcs_claim) = same_query_claims
+		.into_iter()
+		.next()
+		.expect("length is asserted to be 1");
 
-	// all implementaions of prove_evaluation are instrumented
-	let abc_eval_proof = pcs
-		.prove_evaluation(
-			&mut challenger,
-			&abc_committed,
-			&[
-				witness.a_in.to_ref(),
-				witness.b_in.to_ref(),
-				witness.c_out.to_ref(),
-			],
-			&same_query_pcs_claim.eval_point,
-		)
-		.unwrap();
+	// Prove commitment openings
+	let abc_eval_proof = pcs.prove_evaluation(
+		&mut challenger,
+		&abc_committed,
+		&[
+			witness.a_in.to_ref(),
+			witness.b_in.to_ref(),
+			witness.c_out.to_ref(),
+		],
+		&same_query_pcs_claim.eval_point,
+	)?;
 
-	Proof {
+	Ok(Proof {
 		abc_comm,
 		abc_eval_proof,
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
-	}
+	})
 }
 
 struct Proof<C, P> {
@@ -156,7 +160,7 @@ struct Proof<C, P> {
 	abc_eval_proof: P,
 	zerocheck_proof: ZerocheckProof,
 	sumcheck_proof: SumcheckProof<BinaryField128b>,
-	evalcheck_proof: EvalcheckProof<BinaryField128b>,
+	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
 fn verify<PCS, CH>(
@@ -166,7 +170,8 @@ fn verify<PCS, CH>(
 	constraints: &[CompositePolyOracle<BinaryField128b>],
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
-) where
+) -> Result<()>
+where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
@@ -201,28 +206,26 @@ fn verify<PCS, CH>(
 	// Run sumcheck protocol
 	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
 
+	// Verify evaluation claims
+	let same_query_claims =
+		greedy_evalcheck::verify(trace, [evalcheck_claim], evalcheck_proof, &mut challenger)?;
+
+	assert_eq!(same_query_claims.len(), 1);
+	let (_, same_query_pcs_claim) = same_query_claims
+		.into_iter()
+		.next()
+		.expect("length is asserted to be 1");
+
 	// Verify commitment openings
-	let mut evalcheck_verifier = EvalcheckVerifier::new(trace);
-	evalcheck_verifier
-		.verify(evalcheck_claim, evalcheck_proof)
-		.unwrap();
-
-	assert!(evalcheck_verifier.new_sumcheck_claims().is_empty());
-	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
-	let same_query_pcs_claim = evalcheck_verifier
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(0)
-		.unwrap()
-		.unwrap();
-
 	pcs.verify_evaluation(
 		&mut challenger,
 		&abc_comm,
 		&same_query_pcs_claim.eval_point,
 		abc_eval_proof,
 		&same_query_pcs_claim.evals,
-	)
-	.unwrap();
+	)?;
+
+	Ok(())
 }
 
 #[derive(Debug)]
@@ -397,7 +400,8 @@ fn main() {
 		&constraints,
 		&witness,
 		challenger.clone(),
-	);
+	)
+	.unwrap();
 	drop(prove_span);
 
 	tracing::info!("Verifying");
@@ -410,6 +414,7 @@ fn main() {
 		n_vars = pcs.n_vars(),
 	)
 	.entered();
-	verify(log_size, &pcs, &mut trace_oracle.clone(), &constraints, proof, challenger.clone());
+	verify(log_size, &pcs, &mut trace_oracle.clone(), &constraints, proof, challenger.clone())
+		.unwrap();
 	drop(verify_span);
 }

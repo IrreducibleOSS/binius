@@ -17,15 +17,13 @@ use binius_core::{
 		multilinear_query::MultilinearQuery,
 		transparent::step_down::StepDown,
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearPoly, MultivariatePoly,
+		MultilinearExtension, MultivariatePoly,
 	},
 	protocols::{
-		evalcheck::{EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
-		sumcheck::{batch_verify, SumcheckBatchProof, SumcheckProof, SumcheckProveOutput},
-		test_utils::{
-			full_prove_with_switchover, full_verify, make_non_same_query_pcs_sumcheck_claims,
-			make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover,
-		},
+		greedy_evalcheck,
+		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
+		sumcheck::{SumcheckProof, SumcheckProveOutput},
+		test_utils::{full_prove_with_switchover, full_verify},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
@@ -350,7 +348,7 @@ impl<P: PackedField> TraceWitness<P> {
 		index
 	}
 
-	fn all_polys(&self) -> Vec<MultilinearExtension<P>> {
+	fn all_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
 		iter::once(&self.round_consts)
 			.chain(iter::once(&self.selector))
 			.chain(self.state_in.iter())
@@ -362,38 +360,16 @@ impl<P: PackedField> TraceWitness<P> {
 			.chain(self.b.iter())
 			.chain(self.next_state_in.iter())
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-			.collect()
 	}
 
-	fn commit_polys(&self) -> Vec<MultilinearExtension<P>> {
+	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
 		self.state_in
 			.iter()
 			.chain(self.state_out.iter())
 			.chain(self.c.iter())
 			.chain(self.d.iter())
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-			.collect()
 	}
-}
-
-fn make_multilinear_composition<'a, P, PW, C>(
-	log_size: usize,
-	multilinears: Vec<MultilinearExtension<'a, P>>,
-	composition: C,
-) -> Result<MultilinearComposite<PW, C, Arc<dyn MultilinearPoly<PW> + Send + Sync + 'a>>>
-where
-	P: PackedField<Scalar = BinaryField1b>,
-	PW: ExtensionField<BinaryField1b>,
-	C: CompositionPoly<PW>,
-{
-	Ok(MultilinearComposite::new(
-		log_size,
-		composition,
-		multilinears
-			.into_iter()
-			.map(|mle| mle.specialize_arc_dyn())
-			.collect(),
-	)?)
 }
 
 fn zerocheck_verifier_oracles<F: Field>(
@@ -418,11 +394,7 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
 	zerocheck_proof: ZerocheckProof,
 	sumcheck_proof: SumcheckProof<F>,
-	evalcheck_proof: EvalcheckProof<F>,
-	second_round_batch_sumcheck_proof: SumcheckBatchProof<F>,
-	second_round_evalcheck_proofs: Vec<EvalcheckProof<F>>,
-	third_round_batch_sumcheck_proof: SumcheckBatchProof<F>,
-	third_round_evalcheck_proofs: Vec<EvalcheckProof<F>>,
+	evalcheck_proof: GreedyEvalcheckProof<F>,
 	trace_open_proof: PCSProof,
 }
 
@@ -556,7 +528,7 @@ where
 	let mut trace_witness = witness.to_index::<_, PW>(fixed_oracle, trace_oracle);
 
 	// Round 1
-	let trace_commit_polys = witness.commit_polys();
+	let trace_commit_polys = witness.commit_polys().collect::<Vec<_>>();
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys).unwrap();
 	challenger.observe(trace_comm.clone());
 
@@ -586,8 +558,14 @@ where
 		)?,
 	};
 
-	let zerocheck_witness =
-		make_multilinear_composition(log_size, witness.all_polys(), mix_composition_prover)?;
+	let zerocheck_witness = MultilinearComposite::new(
+		log_size,
+		mix_composition_prover,
+		witness
+			.all_polys()
+			.map(|mle| mle.specialize_arc_dyn())
+			.collect(),
+	)?;
 
 	// Zerocheck
 	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
@@ -623,65 +601,23 @@ where
 	} = output;
 
 	// Evalcheck
-	let trace_batch = oracles.committed_batch(trace_batch_id);
+	let GreedyEvalcheckProveOutput {
+		same_query_claims,
+		proof: evalcheck_proof,
+	} = greedy_evalcheck::prove(
+		oracles,
+		&mut trace_witness,
+		[evalcheck_claim],
+		switchover_fn,
+		&mut challenger,
+	)?;
 
-	let mut evalcheck_prover = EvalcheckProver::new(oracles, &mut trace_witness);
-
-	let evalcheck_proof = evalcheck_prover.prove(evalcheck_claim).unwrap();
-	let new_sumchecks = evalcheck_prover.take_new_sumchecks();
-	assert_eq!(evalcheck_prover.batch_committed_eval_claims().n_batches(), 1);
-	assert_eq!(new_sumchecks.len(), 54);
-
-	// Second sumcheck
-	let (second_round_batch_sumcheck_proof, second_round_evalcheck_claims) =
-		prove_bivariate_sumchecks_with_switchover(new_sumchecks, &mut challenger, switchover_fn)?;
-
-	// Second Evalchecks
-	let second_round_evalcheck_proofs = second_round_evalcheck_claims
+	assert_eq!(same_query_claims.len(), 1);
+	let (batch_id, same_query_claim) = same_query_claims
 		.into_iter()
-		.map(|claim| evalcheck_prover.prove(claim))
-		.collect::<Result<Vec<_>, _>>()?;
-
-	let new_sumchecks_2 = evalcheck_prover.take_new_sumchecks();
-	assert_eq!(new_sumchecks_2.len(), 0);
-
-	// Third sumcheck
-	assert!(evalcheck_prover
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(trace_batch.id)
-		.transpose()
-		.is_none());
-
-	let non_sqpcs_claims = evalcheck_prover
-		.batch_committed_eval_claims_mut()
-		.take_claims(trace_batch.id)?;
-
-	let mut evalcheck_prover_final = EvalcheckProver::new(oracles, &mut trace_witness);
-
-	let non_sqpcs_sumchecks =
-		make_non_same_query_pcs_sumchecks(&mut evalcheck_prover_final, &non_sqpcs_claims)?;
-
-	let (third_round_batch_sumcheck_proof, third_round_evalcheck_claims) =
-		prove_bivariate_sumchecks_with_switchover(
-			non_sqpcs_sumchecks,
-			&mut challenger,
-			switchover_fn,
-		)?;
-
-	let third_round_evalcheck_proofs = third_round_evalcheck_claims
-		.into_iter()
-		.map(|claim| evalcheck_prover_final.prove(claim))
-		.collect::<Result<Vec<_>, _>>()?;
-
-	let new_sumchecks_3 = evalcheck_prover_final.take_new_sumchecks();
-	assert_eq!(new_sumchecks_3.len(), 0);
-
-	// Should be same query pcs claim
-	let same_query_claim = evalcheck_prover_final
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(trace_batch.id)
-		.unwrap()
-		.unwrap();
+		.next()
+		.expect("length is asserted to be 1");
+	assert_eq!(batch_id, trace_batch_id);
 
 	let trace_open_proof = pcs
 		.prove_evaluation(
@@ -697,10 +633,6 @@ where
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
-		second_round_batch_sumcheck_proof,
-		second_round_evalcheck_proofs,
-		third_round_batch_sumcheck_proof,
-		third_round_evalcheck_proofs,
 		trace_open_proof,
 	})
 }
@@ -728,10 +660,6 @@ where
 		zerocheck_proof,
 		sumcheck_proof,
 		evalcheck_proof,
-		second_round_batch_sumcheck_proof,
-		second_round_evalcheck_proofs,
-		third_round_batch_sumcheck_proof,
-		third_round_evalcheck_proofs,
 		trace_open_proof,
 	} = proof;
 
@@ -764,61 +692,15 @@ where
 	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
 
 	// Evalcheck
-	let trace_batch = oracles.committed_batch(trace_batch_id);
+	let same_query_claims =
+		greedy_evalcheck::verify(oracles, [evalcheck_claim], evalcheck_proof, &mut challenger)?;
 
-	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);
-	evalcheck_verifier.verify(evalcheck_claim, evalcheck_proof)?;
-	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
-
-	let new_sumcheck_claims = evalcheck_verifier.take_new_sumcheck_claims();
-	assert_eq!(new_sumcheck_claims.len(), 54);
-
-	// Second Sumcheck
-	let second_round_evalcheck_claims =
-		batch_verify(new_sumcheck_claims, second_round_batch_sumcheck_proof, &mut challenger)?;
-
-	// Second Evalchecks
-	second_round_evalcheck_claims
+	assert_eq!(same_query_claims.len(), 1);
+	let (batch_id, same_query_claim) = same_query_claims
 		.into_iter()
-		.zip(second_round_evalcheck_proofs)
-		.try_for_each(|(claim, proof)| evalcheck_verifier.verify(claim, proof))?;
-
-	assert_eq!(evalcheck_verifier.batch_committed_eval_claims().n_batches(), 1);
-	assert_eq!(evalcheck_verifier.new_sumcheck_claims().len(), 0);
-
-	// Third sumcheck
-	assert!(evalcheck_verifier
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(trace_batch.id)
-		.transpose()
-		.is_none());
-
-	let non_sqpcs_claims = evalcheck_verifier
-		.batch_committed_eval_claims_mut()
-		.take_claims(trace_batch.id)?;
-
-	let mut evalcheck_verifier_final = EvalcheckVerifier::new(oracles);
-
-	let third_round_sumcheck_claims =
-		make_non_same_query_pcs_sumcheck_claims(&mut evalcheck_verifier_final, &non_sqpcs_claims)?;
-
-	let third_round_evalcheck_claims = batch_verify(
-		third_round_sumcheck_claims,
-		third_round_batch_sumcheck_proof,
-		&mut challenger,
-	)?;
-
-	third_round_evalcheck_claims
-		.into_iter()
-		.zip(third_round_evalcheck_proofs)
-		.try_for_each(|(claim, proof)| evalcheck_verifier_final.verify(claim, proof))?;
-	assert_eq!(evalcheck_verifier_final.new_sumcheck_claims().len(), 0);
-
-	// Should be same query pcs claim
-	let same_query_claim = evalcheck_verifier_final
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(trace_batch.id)?
-		.expect("eval queries must be at a single point");
+		.next()
+		.expect("length is asserted to be 1");
+	assert_eq!(batch_id, trace_batch_id);
 
 	pcs.verify_evaluation(
 		&mut challenger,
@@ -893,9 +775,9 @@ fn make_constraints<F: TowerField, FI: TowerField>(
 	let mix = mix.include([chi_iota_constraint])?;
 
 	// chi
-	let mix = mix.include((1..24).map(|i| {
-		let x = (i + 1) / 5;
-		let y = (i + 1) % 5;
+	let mix = mix.include((1..25).map(|i| {
+		let x = i / 5;
+		let y = i % 5;
 
 		index_composition(
 			zerocheck_column_ids,

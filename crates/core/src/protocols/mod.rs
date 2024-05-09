@@ -28,6 +28,7 @@
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
 pub mod evalcheck;
+pub mod greedy_evalcheck;
 pub mod prodcheck;
 pub mod sumcheck;
 #[allow(dead_code)]

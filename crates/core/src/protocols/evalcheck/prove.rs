@@ -17,6 +17,7 @@ use crate::{
 };
 use binius_field::{PackedField, PackedFieldIndexable, TowerField};
 use getset::{Getters, MutGetters};
+use std::mem;
 use tracing::instrument;
 
 /// A mutable prover state.
@@ -29,8 +30,7 @@ pub struct EvalcheckProver<'a, 'b, F: TowerField, PW: PackedField> {
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 	pub(crate) witness_index: &'a mut MultilinearWitnessIndex<'b, PW>,
 
-	#[get = "pub"]
-	#[get_mut = "pub"]
+	#[getset(get = "pub", get_mut = "pub")]
 	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 
 	#[get = "pub"]
@@ -67,7 +67,7 @@ where
 
 	/// A helper method to move out the set of reduced sumcheck instances
 	pub fn take_new_sumchecks(&mut self) -> Vec<BivariateSumcheck<'b, F, PW>> {
-		std::mem::take(&mut self.new_sumchecks)
+		mem::take(&mut self.new_sumchecks)
 	}
 
 	/// Prove an evalcheck claim.

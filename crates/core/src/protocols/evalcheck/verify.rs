@@ -26,8 +26,7 @@ use tracing::instrument;
 pub struct EvalcheckVerifier<'a, F: TowerField> {
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
-	#[get = "pub"]
-	#[get_mut = "pub"]
+	#[getset(get = "pub", get_mut = "pub")]
 	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 
 	#[get = "pub"]
@@ -51,7 +50,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	}
 
 	/// A helper method to move out the set of reduced claims
-	pub fn take_new_sumcheck_claims(&mut self) -> Vec<SumcheckClaim<F>> {
+	pub fn take_new_sumchecks(&mut self) -> Vec<SumcheckClaim<F>> {
 		std::mem::take(&mut self.new_sumcheck_claims)
 	}
 
