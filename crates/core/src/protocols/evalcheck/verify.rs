@@ -283,10 +283,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				}
 
 				// Verify the evaluation of the linear combination over the claimed evaluations
-				let actual_eval = inner_product_unchecked::<F, F>(
-					subproofs.iter().map(|(eval, _)| *eval),
-					lin_com.coefficients(),
-				);
+				let actual_eval = lin_com.offset()
+					+ inner_product_unchecked::<F, F>(
+						subproofs.iter().map(|(eval, _)| *eval),
+						lin_com.coefficients(),
+					);
 
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation.into());

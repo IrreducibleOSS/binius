@@ -51,6 +51,7 @@ enum MultilinearOracleMeta<F: TowerField> {
 	},
 	LinearCombination {
 		n_vars: usize,
+		offset: F,
 		inner: Vec<(OracleId, F)>,
 	},
 }
@@ -219,6 +220,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn add_linear_combination(
 		&mut self,
 		n_vars: usize,
+		offset: F,
 		inner: impl IntoIterator<Item = (OracleId, F)>,
 	) -> Result<OracleId, Error> {
 		let inner = inner
@@ -234,7 +236,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			})
 			.collect::<Result<_, _>>()?;
 
-		let id = self.add(MultilinearOracleMeta::LinearCombination { n_vars, inner });
+		let id = self.add(MultilinearOracleMeta::LinearCombination {
+			n_vars,
+			offset,
+			inner,
+		});
 		Ok(id)
 	}
 
@@ -336,18 +342,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				Projected::new(self.oracle(*inner_id), values.clone(), *variant)
 					.expect("projection parameters validated by add_projected"),
 			),
-			MultilinearOracleMeta::LinearCombination { n_vars, inner } => {
-				MultilinearPolyOracle::LinearCombination(
-					id,
-					LinearCombination::new(
-						*n_vars,
-						inner
-							.iter()
-							.map(|(inner_id, coeff)| (self.oracle(*inner_id), *coeff)),
-					)
-					.expect("linear combination parameters validated by add_linear_combination"),
+			MultilinearOracleMeta::LinearCombination {
+				n_vars,
+				offset,
+				inner,
+			} => MultilinearPolyOracle::LinearCombination(
+				id,
+				LinearCombination::new(
+					*n_vars,
+					*offset,
+					inner
+						.iter()
+						.map(|(inner_id, coeff)| (self.oracle(*inner_id), *coeff)),
 				)
-			}
+				.expect("linear combination parameters validated by add_linear_combination"),
+			),
 		}
 	}
 
@@ -545,12 +554,15 @@ pub struct Packed<F: Field> {
 pub struct LinearCombination<F: Field> {
 	#[get_copy = "pub"]
 	n_vars: usize,
+	#[get_copy = "pub"]
+	offset: F,
 	inner: Vec<(Box<MultilinearPolyOracle<F>>, F)>,
 }
 
 impl<F: Field> LinearCombination<F> {
 	fn new(
 		n_vars: usize,
+		offset: F,
 		inner: impl IntoIterator<Item = (MultilinearPolyOracle<F>, F)>,
 	) -> Result<Self, Error> {
 		let inner = inner
@@ -563,7 +575,11 @@ impl<F: Field> LinearCombination<F> {
 			})
 			.collect::<Result<_, _>>()?;
 
-		Ok(Self { n_vars, inner })
+		Ok(Self {
+			n_vars,
+			offset,
+			inner,
+		})
 	}
 
 	pub fn n_polys(&self) -> usize {

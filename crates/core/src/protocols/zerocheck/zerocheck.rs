@@ -14,7 +14,6 @@ use std::fmt::Debug;
 pub struct ZerocheckProof;
 
 #[derive(Debug)]
-
 pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, CW> {
 	pub sumcheck_claim: SumcheckClaim<F>,
 	pub sumcheck_witness: SumcheckWitness<PW, CW, MultilinearWitness<'a, PW>>,

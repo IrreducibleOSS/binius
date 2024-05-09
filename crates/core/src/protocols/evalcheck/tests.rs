@@ -443,6 +443,7 @@ fn test_evalcheck_linear_combination() {
 	let lin_com_id = oracles
 		.add_linear_combination(
 			n_vars,
+			EF::new(1),
 			[
 				(select_row1_oracle_id, EF::new(2)),
 				(select_row2_oracle_id, EF::new(3)),
@@ -459,7 +460,8 @@ fn test_evalcheck_linear_combination() {
 
 	let eval = select_row1.evaluate(&eval_point).unwrap() * EF::new(2)
 		+ select_row2.evaluate(&eval_point).unwrap() * EF::new(3)
-		+ select_row3.evaluate(&eval_point).unwrap() * EF::new(4);
+		+ select_row3.evaluate(&eval_point).unwrap() * EF::new(4)
+		+ EF::new(1);
 
 	let select_row1_witness = select_row1
 		.multilinear_extension::<PackedBinaryField128x1b>()
@@ -476,6 +478,7 @@ fn test_evalcheck_linear_combination() {
 			select_row1_witness.evaluate_on_hypercube(i).unwrap() * EF::new(2)
 				+ select_row2_witness.evaluate_on_hypercube(i).unwrap() * EF::new(3)
 				+ select_row3_witness.evaluate_on_hypercube(i).unwrap() * EF::new(4)
+				+ EF::new(1)
 		})
 		.collect();
 	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();

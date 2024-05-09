@@ -258,6 +258,7 @@ impl<F: TowerField> TraceOracle<F> {
 			oracles
 				.add_linear_combination(
 					log_size,
+					F::ZERO,
 					[(state_in_oracle[xy], F::ONE), (d_oracle[x], F::ONE)],
 				)
 				.unwrap()

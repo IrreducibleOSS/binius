@@ -45,7 +45,7 @@ fn construct_merge_polynomial<F: Field>(
 	Ok(merge_poly.specialize_arc_dyn())
 }
 
-/// Prove a prodcheck instance reduction, step one of two.
+/// Prove a prodcheck instance reduction.
 ///
 /// Given as input $\nu$-variate multilins $T, U$, we define $f := T/U$.
 /// We output $(\nu+1)$-variate f' such that for all $v \in \{0, 1\}^{\nu}$
@@ -232,7 +232,6 @@ mod tests {
 		let prodcheck_claim = ProdcheckClaim {
 			t_oracle: numerator_oracle,
 			u_oracle: denominator_oracle,
-			n_vars,
 		};
 
 		let round_2_batch_id = oracles.add_committed_batch(CommittedBatchSpec {

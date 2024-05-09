@@ -30,8 +30,16 @@ pub struct ProdcheckClaim<F: Field> {
 	pub t_oracle: MultilinearPolyOracle<F>,
 	/// Oracle to the polynomial U
 	pub u_oracle: MultilinearPolyOracle<F>,
-	/// Number of variables in T and U
-	pub n_vars: usize,
+}
+
+impl<F: Field> ProdcheckClaim<F> {
+	pub fn n_vars(&self) -> Option<usize> {
+		if self.t_oracle.n_vars() != self.u_oracle.n_vars() {
+			return None;
+		}
+
+		Some(self.t_oracle.n_vars())
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +88,9 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 	prodcheck_claim: &ProdcheckClaim<F>,
 	grand_prod_oracle: MultilinearPolyOracle<F>,
 ) -> Result<ReducedProductCheckClaims<F>, Error> {
-	let n_vars = prodcheck_claim.n_vars;
+	let n_vars = prodcheck_claim
+		.n_vars()
+		.ok_or(Error::NumeratorDenominatorSizeMismatch)?;
 	let f_prime_oracle = grand_prod_oracle.clone();
 
 	// Construct f' partially evaluated oracles
