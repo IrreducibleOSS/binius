@@ -2,10 +2,10 @@
 
 use super::{
 	error::Error,
-	prove_general::{check_evaluation_domain, validate_rd_challenge},
+	prove_general::{check_evaluation_domain, prove_general, validate_rd_challenge},
 	sumcheck::{
 		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, reduce_zerocheck_claim_round,
-		SumcheckClaim, SumcheckRound, SumcheckRoundClaim, SumcheckWitness,
+		SumcheckClaim, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim, SumcheckWitness,
 	},
 };
 use crate::{
@@ -23,9 +23,31 @@ use crate::{
 use binius_field::{Field, PackedField};
 use either::Either;
 use getset::Getters;
+use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use std::fmt::Debug;
 use tracing::instrument;
+
+#[instrument(skip_all, name = "sumcheck::prove")]
+pub fn prove<F, PW, CW, M, CH>(
+	claim: &SumcheckClaim<F>,
+	witness: SumcheckWitness<PW, CW, M>,
+	domain: &EvaluationDomain<PW::Scalar>,
+	challenger: CH,
+	switchover_fn: impl Fn(usize) -> usize,
+) -> Result<SumcheckProveOutput<F>, Error>
+where
+	F: Field + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	CW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Clone + Sync,
+	CH: CanSample<F> + CanObserve<F>,
+{
+	let sumcheck_prover = SumcheckProver::new(domain, claim.clone(), witness, switchover_fn)?;
+
+	prove_general(claim.n_vars(), sumcheck_prover, challenger)
+}
 
 #[derive(Debug)]
 struct ZerocheckAuxiliaryState<F, PW>

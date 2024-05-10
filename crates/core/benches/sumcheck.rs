@@ -6,8 +6,8 @@ use binius_core::{
 		MultilinearPoly,
 	},
 	protocols::{
-		sumcheck::{Error as SumcheckError, SumcheckClaim},
-		test_utils::{full_prove_with_switchover, transform_poly, TestProductComposition},
+		sumcheck::{prove, Error as SumcheckError, SumcheckClaim},
+		test_utils::{transform_poly, TestProductComposition},
 	},
 };
 use binius_field::{
@@ -71,7 +71,7 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover::<FTower, FTower, _, _, _>(
+				prove::<FTower, FTower, _, _, _>(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
 					&domain,
@@ -140,7 +140,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover::<FTower, FPolyval, _, _, _>(
+				prove::<FTower, FPolyval, _, _, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
 					&domain,
@@ -220,7 +220,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				full_prove_with_switchover(
+				prove(
 					&sumcheck_claim,
 					prover_poly.clone(),
 					&domain,

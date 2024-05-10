@@ -10,7 +10,7 @@
 //! after the last sumcheck round message has been sent by the prover.
 
 use super::{
-	batch_verify_final, error::Error, prove::SumcheckProver, verify_round, SumcheckClaim,
+	error::Error, prove::SumcheckProver, sumcheck::reduce_sumcheck_claim_round, SumcheckClaim,
 	SumcheckRound, SumcheckRoundClaim, VerificationError,
 };
 use crate::{
@@ -157,7 +157,7 @@ where
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim = verify_round(rd_claim, challenger.sample(), round_proof.clone())?;
+		rd_claim = reduce_sumcheck_claim_round(rd_claim, challenger.sample(), round_proof.clone())?;
 	}
 
 	// Mix in remaining sumcheck claims with 0 variables
@@ -171,6 +171,60 @@ where
 	}
 
 	batch_verify_final(&claims_vec, &batch_coeffs, &proof.evals, rd_claim)
+}
+
+/// Verifies a batch sumcheck proof final step, reducing the final claim to evaluation claims.
+fn batch_verify_final<F: Field>(
+	claims: &[SumcheckClaim<F>],
+	batch_coeffs: &[F],
+	evals: &[F],
+	final_claim: SumcheckRoundClaim<F>,
+) -> Result<Vec<EvalcheckClaim<F>>, Error> {
+	let SumcheckRoundClaim {
+		partial_point: eval_point,
+		current_round_sum: final_eval,
+	} = final_claim;
+
+	// Check that oracles are in descending order by n_vars
+	if claims
+		.windows(2)
+		.any(|pair| pair[0].n_vars() < pair[1].n_vars())
+	{
+		return Err(Error::OraclesOutOfOrder);
+	}
+
+	let n_rounds = claims.first().map(|claim| claim.n_vars()).unwrap_or(0);
+
+	if eval_point.len() != n_rounds {
+		return Err(VerificationError::NumberOfRounds.into());
+	}
+	if claims.len() != batch_coeffs.len() {
+		return Err(VerificationError::NumberOfBatchCoeffs.into());
+	}
+	if evals.len() != claims.len() {
+		return Err(VerificationError::NumberOfFinalEvaluations.into());
+	}
+
+	let batched_eval = evals
+		.iter()
+		.zip(batch_coeffs)
+		.map(|(eval, coeff)| *eval * *coeff)
+		.sum::<F>();
+
+	assert_eq!(batched_eval, final_eval);
+
+	let eval_claims = evals
+		.iter()
+		.zip(claims)
+		.map(|(eval, claim)| EvalcheckClaim {
+			poly: claim.poly.clone(),
+			eval_point: eval_point[n_rounds - claim.n_vars()..].to_vec(),
+			eval: *eval,
+			is_random_point: true,
+		})
+		.collect();
+
+	Ok(eval_claims)
 }
 
 fn mix_round_proofs<F: Field>(

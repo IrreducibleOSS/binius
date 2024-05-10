@@ -5,7 +5,8 @@ use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension, MultilinearQuery},
 	protocols::{
-		test_utils::{full_prove_with_switchover, full_verify, TestProductComposition},
+		sumcheck::{prove as prove_sumcheck, verify as verify_sumcheck},
+		test_utils::TestProductComposition,
 		zerocheck::{prove, verify, ZerocheckClaim, ZerocheckProveOutput},
 	},
 };
@@ -120,18 +121,16 @@ fn test_prove_verify_interaction_helper(
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
-		&sumcheck_claim,
-		sumcheck_witness,
-		&domain,
-		challenger.clone(),
-		|_| switchover_rd,
-	);
+	let final_prove_output =
+		prove_sumcheck(&sumcheck_claim, sumcheck_witness, &domain, challenger.clone(), |_| {
+			switchover_rd
+		})
+		.expect("Failed to prove sumcheck");
 
-	let (verifier_rd_claims, final_verify_output) =
-		full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
+	let final_verify_output =
+		verify_sumcheck(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
+			.expect("failed to verify sumcheck");
 
-	assert_eq!(prover_rd_claims, verifier_rd_claims);
 	assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
 	assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
 	assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);

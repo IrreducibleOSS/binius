@@ -2,15 +2,51 @@
 
 use crate::{
 	polynomial::{
-		Error as PolynomialError, EvaluationDomain, MultilinearExtensionSpecialized,
-		MultilinearPoly, MultilinearQuery,
+		CompositionPoly, Error as PolynomialError, EvaluationDomain,
+		MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
 	},
 	protocols::sumcheck::Error,
 };
 use binius_field::{Field, PackedField};
 use either::Either;
+use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp};
+
+use super::{SumcheckProof, SumcheckProveOutput, SumcheckProver};
+
+pub fn prove_general<F, PW, PCW, M, CH>(
+	n_vars: usize,
+	mut sumcheck_prover: SumcheckProver<F, PW, PCW, M>,
+	mut challenger: CH,
+) -> Result<SumcheckProveOutput<F>, Error>
+where
+	F: Field + From<PW::Scalar>,
+	PW: PackedField,
+	PW::Scalar: From<F>,
+	PCW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Clone + Sync,
+	CH: CanSample<F> + CanObserve<F>,
+{
+	let mut prev_rd_challenge = None;
+	let mut rd_proofs = Vec::with_capacity(n_vars);
+
+	for _round in 0..n_vars {
+		let proof_round = sumcheck_prover.execute_round(prev_rd_challenge)?;
+
+		challenger.observe_slice(&proof_round.coeffs);
+		prev_rd_challenge = Some(challenger.sample());
+		rd_proofs.push(proof_round);
+	}
+
+	let evalcheck_claim = sumcheck_prover.finalize(prev_rd_challenge)?;
+	let prove_output = SumcheckProveOutput {
+		evalcheck_claim,
+		sumcheck_proof: SumcheckProof { rounds: rd_proofs },
+	};
+
+	Ok(prove_output)
+}
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug)]

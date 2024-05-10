@@ -6,12 +6,8 @@ use binius_core::{
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck::{SumcheckProof, SumcheckProveOutput},
-		test_utils::{full_prove_with_switchover, full_verify},
-		zerocheck::{
-			prove as prove_zerocheck, verify as verify_zerocheck, ZerocheckClaim, ZerocheckProof,
-			ZerocheckProveOutput,
-		},
+		sumcheck::{self, SumcheckProof, SumcheckProveOutput},
+		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
 };
@@ -80,36 +76,34 @@ where
 			witness.b_in.to_ref().specialize_arc_dyn(),
 			witness.c_out.to_ref().specialize_arc_dyn(),
 		],
-	)
-	.unwrap();
+	)?;
 
-	// prove_zerocheck is instrumented
+	// zerocheck::prove is instrumented
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 	let ZerocheckProveOutput {
 		sumcheck_claim,
 		sumcheck_witness,
 		zerocheck_proof,
-	} = prove_zerocheck(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
+	} = zerocheck::prove(&zerocheck_claim, zerocheck_witness, zerocheck_challenge)?;
 
 	let sumcheck_domain = EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<
 		BinaryField128b,
-	>(sumcheck_claim.poly.max_individual_degree() + 1)
-	.unwrap();
+	>(sumcheck_claim.poly.max_individual_degree() + 1)?;
 
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
 	};
 
-	// full_prove_with_switchover is instrumented
+	// sumcheck::prove is instrumented
 	tracing::debug!("Proving sumcheck");
-	let (_, output) = full_prove_with_switchover(
+	let output = sumcheck::prove(
 		&sumcheck_claim,
 		sumcheck_witness,
 		&sumcheck_domain,
 		&mut challenger,
 		switchover_fn,
-	);
+	)?;
 
 	let SumcheckProveOutput {
 		evalcheck_claim,
@@ -200,11 +194,10 @@ where
 
 	// Run zerocheck protocol
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
-	let sumcheck_claim =
-		verify_zerocheck(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
+	let sumcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge)?;
 
 	// Run sumcheck protocol
-	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
+	let evalcheck_claim = sumcheck::verify(&sumcheck_claim, sumcheck_proof, &mut challenger)?;
 
 	// Verify evaluation claims
 	let same_query_claims =

@@ -8,10 +8,8 @@ use crate::{
 		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearQuery,
 	},
 	protocols::{
-		sumcheck::{batch_prove, batch_verify, SumcheckClaim, SumcheckProver},
-		test_utils::{
-			full_prove_with_switchover, full_verify, transform_poly, TestProductComposition,
-		},
+		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim, SumcheckProver},
+		test_utils::{transform_poly, TestProductComposition},
 	},
 	witness::MultilinearWitnessIndex,
 };
@@ -112,18 +110,14 @@ fn test_prove_verify_interaction_helper(
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
-		&sumcheck_claim,
-		sumcheck_witness,
-		&domain,
-		challenger.clone(),
-		|_| switchover_rd,
-	);
+	let final_prove_output =
+		prove(&sumcheck_claim, sumcheck_witness, &domain, challenger.clone(), |_| switchover_rd)
+			.expect("failed to prove sumcheck");
 
-	let (verifier_rd_claims, final_verify_output) =
-		full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
+	let final_verify_output =
+		verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
+			.expect("failed to verify sumcheck proof");
 
-	assert_eq!(prover_rd_claims, verifier_rd_claims);
 	assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
 	assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
 	assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
@@ -189,18 +183,14 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let switchover_fn = |_| 3;
-	let (prover_rd_claims, final_prove_output) = full_prove_with_switchover(
-		&sumcheck_claim,
-		operating_witness,
-		&domain,
-		challenger.clone(),
-		switchover_fn,
-	);
+	let final_prove_output =
+		prove(&sumcheck_claim, operating_witness, &domain, challenger.clone(), switchover_fn)
+			.expect("failed to prove sumcheck");
 
-	let (verifier_rd_claims, final_verify_output) =
-		full_verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone());
+	let final_verify_output =
+		verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
+			.expect("failed to verify sumcheck proof");
 
-	assert_eq!(prover_rd_claims, verifier_rd_claims);
 	assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
 	assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
 	assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);

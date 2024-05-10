@@ -22,8 +22,7 @@ use binius_core::{
 	protocols::{
 		greedy_evalcheck,
 		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck::{SumcheckProof, SumcheckProveOutput},
-		test_utils::{full_prove_with_switchover, full_verify},
+		sumcheck::{self, SumcheckProof, SumcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
@@ -588,13 +587,13 @@ where
 		_ => 1,
 	};
 
-	let (_, output) = full_prove_with_switchover(
+	let output = sumcheck::prove(
 		&sumcheck_claim,
 		sumcheck_witness,
 		&sumcheck_domain,
 		&mut challenger,
 		switchover_fn,
-	);
+	)?;
 
 	let SumcheckProveOutput {
 		evalcheck_claim,
@@ -690,7 +689,7 @@ where
 		zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
 
 	// Sumcheck
-	let (_, evalcheck_claim) = full_verify(&sumcheck_claim, sumcheck_proof, &mut challenger);
+	let evalcheck_claim = sumcheck::verify(&sumcheck_claim, sumcheck_proof, &mut challenger)?;
 
 	// Evalcheck
 	let same_query_claims =
