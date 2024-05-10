@@ -2,8 +2,8 @@
 
 use crate::{
 	polynomial::{
-		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
-		MultilinearQuery,
+		Error as PolynomialError, EvaluationDomain, MultilinearExtensionSpecialized,
+		MultilinearPoly, MultilinearQuery,
 	},
 	protocols::sumcheck::Error,
 };
@@ -51,7 +51,7 @@ impl<F: Field> ParFoldState<F> {
 /// Represents an object that can evaluate the composition function of a generalized sumcheck.
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
-pub trait SumcheckEvaluator<F>: Send + Sync {
+pub trait SumcheckEvaluator<P: PackedField>: Send + Sync {
 	/// The number of points to evaluate at.
 	fn n_round_evals(&self) -> usize;
 
@@ -68,17 +68,30 @@ pub trait SumcheckEvaluator<F>: Send + Sync {
 	fn process_vertex(
 		&self,
 		index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	);
+
+	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
+	///
+	/// ## Arguments
+	///
+	/// * `current_round_sum`: the claimed sum for the current round
+	/// * `round_evals`: the computed evaluations of the round polynomial
+	fn round_evals_to_coeffs(
+		&self,
+		current_round_sum: P::Scalar,
+		round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, Error>;
 }
 
-impl<F, L, R> SumcheckEvaluator<F> for Either<L, R>
+impl<P, L, R> SumcheckEvaluator<P> for Either<L, R>
 where
-	L: SumcheckEvaluator<F>,
-	R: SumcheckEvaluator<F>,
+	P: PackedField,
+	L: SumcheckEvaluator<P>,
+	R: SumcheckEvaluator<P>,
 {
 	fn n_round_evals(&self) -> usize {
 		match self {
@@ -90,10 +103,10 @@ where
 	fn process_vertex(
 		&self,
 		index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	) {
 		match self {
 			Either::Left(left) => {
@@ -102,6 +115,17 @@ where
 			Either::Right(right) => {
 				right.process_vertex(index, evals_0, evals_1, evals_z, round_evals)
 			}
+		}
+	}
+
+	fn round_evals_to_coeffs(
+		&self,
+		current_round_sum: P::Scalar,
+		round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, Error> {
+		match self {
+			Either::Left(left) => left.round_evals_to_coeffs(current_round_sum, round_evals),
+			Either::Right(right) => right.round_evals_to_coeffs(current_round_sum, round_evals),
 		}
 	}
 }
@@ -115,7 +139,7 @@ where
 /// evaluating the composed multilinears.
 ///
 /// Once initialized, the expected caller behavior is to alternate invocations of
-/// [`Self::sum_round_evals`] and [`Self::fold`], for a total of `n_rounds` calls to each.
+/// [`Self::calculate_round_coeffs`] and [`Self::fold`], for a total of `n_rounds` calls to each.
 ///
 /// We associate with each multilinear a `switchover` round number, which controls small field
 /// optimization and corresponding time/memory tradeoff. In rounds $0, \ldots, switchover-1$ the
@@ -258,10 +282,11 @@ where
 	}
 
 	/// Compute the sum of the partial polynomial evaluations over the hypercube.
-	pub fn sum_round_evals(
+	pub fn calculate_round_coeffs(
 		&self,
-		evaluator: impl SumcheckEvaluator<PW::Scalar>,
-	) -> Vec<PW::Scalar> {
+		evaluator: impl SumcheckEvaluator<PW>,
+		current_round_sum: PW::Scalar,
+	) -> Result<Vec<PW::Scalar>, Error> {
 		// Extract multilinears & round
 		let &Self {
 			ref multilinears,
@@ -282,28 +307,33 @@ where
 			(true, false) => {
 				if round == 0 {
 					// All transparent, first round - direct sampling
-					self.sum_round_evals_helper(
+					self.calculate_round_coeffs_helper(
 						Self::only_transparent,
 						Self::direct_sample,
 						evaluator,
+						current_round_sum,
 					)
 				} else {
 					// All transparent, rounds 1..n_vars - small field inner product
-					self.sum_round_evals_helper(
+					self.calculate_round_coeffs_helper(
 						Self::only_transparent,
 						|multilin, i| self.subcube_inner_product(multilin, i),
 						evaluator,
+						current_round_sum,
 					)
 				}
 			}
 
 			// All folded - direct sampling
-			(false, true) => {
-				self.sum_round_evals_helper(Self::only_folded, Self::direct_sample, evaluator)
-			}
+			(false, true) => self.calculate_round_coeffs_helper(
+				Self::only_folded,
+				Self::direct_sample,
+				evaluator,
+				current_round_sum,
+			),
 
 			// Heterogeneous case
-			_ => self.sum_round_evals_helper(
+			_ => self.calculate_round_coeffs_helper(
 				|x| x,
 				|sc_multilin, i| match sc_multilin {
 					SumcheckMultilinear::Transparent {
@@ -316,6 +346,7 @@ where
 					} => Self::direct_sample(large_field_folded_multilin, i),
 				},
 				evaluator,
+				current_round_sum,
 			),
 		}
 	}
@@ -325,12 +356,13 @@ where
 	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
 	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
 	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
-	fn sum_round_evals_helper<'b, T>(
+	fn calculate_round_coeffs_helper<'b, T>(
 		&'b self,
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-		evaluator: impl SumcheckEvaluator<PW::Scalar>,
-	) -> Vec<PW::Scalar>
+		evaluator: impl SumcheckEvaluator<PW>,
+		current_round_sum: PW::Scalar,
+	) -> Result<Vec<PW::Scalar>, Error>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
@@ -343,7 +375,7 @@ where
 		// For performance, it's ideal to hoist this out of the tight loop.
 		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
 
-		(0..1 << (rd_vars - 1))
+		let evals = (0..1 << (rd_vars - 1))
 			.into_par_iter()
 			.fold(
 				|| ParFoldState::new(n_multilinears, n_round_evals),
@@ -376,7 +408,9 @@ where
 						.for_each(|(f, s)| *f += s);
 					overall_round_evals
 				},
-			)
+			);
+
+		evaluator.round_evals_to_coeffs(current_round_sum, evals)
 	}
 
 	// Note the generic parameter - this method samples small field in first round and
@@ -430,4 +464,36 @@ where
 			_ => panic!("all folded by invariant"),
 		}
 	}
+}
+
+/// Ensures that previous round challenge is present if and only if not in the first round.
+pub fn validate_rd_challenge<F: Field>(
+	prev_rd_challenge: Option<F>,
+	round: usize,
+) -> Result<(), Error> {
+	if prev_rd_challenge.is_none() != (round == 0) {
+		return Err(Error::ImproperInput(format!(
+			"incorrect optional challenge: is_some()={:?} at round {}",
+			prev_rd_challenge.is_some(),
+			round
+		)));
+	}
+
+	Ok(())
+}
+
+/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
+/// maximum individual degree of the polynomial.
+pub fn check_evaluation_domain<F: Field>(
+	max_individual_degree: usize,
+	domain: &EvaluationDomain<F>,
+) -> Result<(), Error> {
+	if max_individual_degree == 0
+		|| domain.size() != max_individual_degree + 1
+		|| domain.points()[0] != F::ZERO
+		|| domain.points()[1] != F::ONE
+	{
+		return Err(Error::EvaluationDomainMismatch);
+	}
+	Ok(())
 }

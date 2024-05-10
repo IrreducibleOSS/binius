@@ -2,6 +2,7 @@
 
 use super::{
 	error::Error,
+	prove_general::{check_evaluation_domain, validate_rd_challenge},
 	sumcheck::{
 		reduce_sumcheck_claim_final, reduce_sumcheck_claim_round, reduce_zerocheck_claim_round,
 		SumcheckClaim, SumcheckRound, SumcheckRoundClaim, SumcheckWitness,
@@ -135,7 +136,7 @@ where
 		if sumcheck_witness.n_vars() != n_vars {
 			let err_str = format!(
 				"Claim and Witness n_vars mismatch in sumcheck. Claim: {}, Witness: {}",
-				sumcheck_claim.n_vars(),
+				n_vars,
 				sumcheck_witness.n_vars(),
 			);
 
@@ -170,7 +171,7 @@ where
 				None
 			};
 
-		let prover_state = SumcheckProver {
+		let sumcheck_prover = SumcheckProver {
 			oracle: sumcheck_claim.poly,
 			composition,
 			domain,
@@ -181,7 +182,7 @@ where
 			state,
 		};
 
-		Ok(prover_state)
+		Ok(sumcheck_prover)
 	}
 
 	pub fn n_vars(&self) -> usize {
@@ -192,7 +193,7 @@ where
 	#[instrument(skip_all, name = "sumcheck::finalize")]
 	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
-		self.validate_rd_challenge(prev_rd_challenge)?;
+		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round != self.n_vars() {
 			return Err(Error::ImproperInput(format!(
@@ -218,66 +219,13 @@ where
 		self.zerocheck_aux_state.as_ref().map(|aux| &aux.challenges)
 	}
 
-	fn evals_to_coeffs(&self, mut evals: Vec<PW::Scalar>) -> Result<Vec<PW::Scalar>, Error> {
-		// We have partial information about the degree $d$ univariate round polynomial $r(X)$,
-		// but in each of the following cases, we can complete the picture and attain evaluations
-		// at $r(0), \ldots, r(d+1)$.
-		if let Some(zc_challenges) = self.zerocheck_challenges() {
-			if self.round == 0 {
-				// This is the case where we are processing the first round of a sumcheck that came from zerocheck.
-				// We are given $r(2), \ldots, r(d+1)$.
-				// From context, we infer that $r(0) = r(1) = 0$.
-				evals.insert(0, PW::Scalar::ZERO);
-				evals.insert(0, PW::Scalar::ZERO);
-			} else {
-				let current_round_sum = PW::Scalar::from(self.round_claim().current_round_sum);
-				// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d+1)$
-				// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
-				// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
-				// which allows us to compute the value of $r(0)$
-				let alpha = PW::Scalar::from(zc_challenges[self.round - 1]);
-				let alpha_bar = PW::Scalar::ONE - alpha;
-				let one_evaluation = evals[0];
-				let zero_evaluation_numerator = current_round_sum - one_evaluation * alpha;
-				let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap();
-				let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
-
-				evals.insert(0, zero_evaluation);
-			}
-		} else {
-			let current_round_sum = PW::Scalar::from(self.round_claim().current_round_sum);
-			// In the case where this is a sumcheck that did not come from zerocheck,
-			// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
-			// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
-			evals.insert(0, current_round_sum - evals[0]);
-		}
-
-		assert_eq!(evals.len(), self.domain.size());
-		let coeffs = self.domain.interpolate(&evals)?;
-		Ok(coeffs)
-	}
-
-	// NB: Can omit some coefficients to reduce proof size because verifier can compute
-	// these missing coefficients.
-	// This is documented in detail in the common prover-verifier logic for
-	// reducing a sumcheck round claim.
-	fn trim_coeffs<T: Clone>(&self, coeffs: Vec<T>) -> Vec<T> {
-		if self.is_zerocheck() && self.round == 0 {
-			coeffs[2..].to_vec()
-		} else if self.is_zerocheck() {
-			coeffs[1..].to_vec()
-		} else {
-			coeffs[..coeffs.len() - 1].to_vec()
-		}
-	}
-
 	#[instrument(skip_all, name = "sumcheck::execute_round")]
 	pub fn execute_round(
 		&mut self,
 		prev_rd_challenge: Option<F>,
 	) -> Result<SumcheckRound<F>, Error> {
 		// First round has no challenge, other rounds should have it
-		self.validate_rd_challenge(prev_rd_challenge)?;
+		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round >= self.n_vars() {
 			return Err(Error::ImproperInput("too many execute_round calls".to_string()));
@@ -300,51 +248,47 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
+		let degree = self.oracle.max_individual_degree();
 		let evaluator = if let Some(ref zc_aux_state) = self.zerocheck_aux_state {
 			Either::Left(if self.round == 0 {
 				Either::Left(ZerocheckFirstRoundEvaluator {
-					composition: &self.composition,
-					domain: self.domain.points(),
+					degree,
 					eq_ind: zc_aux_state.round_eq_ind.to_ref(),
+					evaluation_domain: self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
 				})
 			} else {
 				Either::Right(ZerocheckLaterRoundEvaluator {
-					composition: &self.composition,
-					domain: self.domain.points(),
+					degree,
 					eq_ind: zc_aux_state.round_eq_ind.to_ref(),
+					round_zerocheck_challenge: zc_aux_state.challenges[self.round - 1].into(),
+					evaluation_domain: self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
 				})
 			})
 		} else {
 			Either::Right(RegularSumcheckEvaluator {
+				degree,
 				composition: &self.composition,
-				domain: self.domain.points(),
+				evaluation_domain: self.domain,
+				domain_points: self.domain.points(),
 			})
 		};
 
-		let evals = self.state.sum_round_evals(evaluator);
+		let round_coeffs = self
+			.state
+			.calculate_round_coeffs(evaluator, self.round_claim.current_round_sum.into())?;
 
-		let untrimmed_coeffs = self.evals_to_coeffs(evals)?;
-		let trimmed_coeffs = self.trim_coeffs(untrimmed_coeffs);
 		let proof_round = SumcheckRound {
-			coeffs: trimmed_coeffs.into_iter().map(Into::into).collect(),
+			coeffs: round_coeffs.into_iter().map(Into::into).collect(),
 		};
 		self.last_round_proof = Some(proof_round.clone());
 
 		self.round += 1;
 
 		Ok(proof_round)
-	}
-
-	fn validate_rd_challenge(&self, prev_rd_challenge: Option<F>) -> Result<(), Error> {
-		if prev_rd_challenge.is_none() != (self.round == 0) {
-			return Err(Error::ImproperInput(format!(
-				"incorrect optional challenge: is_some()={:?} at round {}",
-				prev_rd_challenge.is_some(),
-				self.round
-			)));
-		}
-
-		Ok(())
 	}
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
@@ -372,22 +316,6 @@ where
 	}
 }
 
-/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
-/// maximum individual degree of the polynomial.
-fn check_evaluation_domain<F: Field>(
-	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error> {
-	if max_individual_degree == 0
-		|| domain.size() != max_individual_degree + 1
-		|| domain.points()[0] != F::ZERO
-		|| domain.points()[1] != F::ONE
-	{
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	Ok(())
-}
-
 /// Evaluator for the regular (non-zerocheck) sumcheck protocol.
 #[derive(Debug)]
 struct RegularSumcheckEvaluator<'a, P, C>
@@ -395,29 +323,28 @@ where
 	P: PackedField,
 	C: CompositionPoly<P>,
 {
+	pub degree: usize,
 	composition: &'a C,
-	domain: &'a [P::Scalar],
+	evaluation_domain: &'a EvaluationDomain<P::Scalar>,
+	domain_points: &'a [P::Scalar],
 }
 
-impl<'a, F, P, C> SumcheckEvaluator<F> for RegularSumcheckEvaluator<'a, P, C>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	C: CompositionPoly<P>,
+impl<'a, P: PackedField, C: CompositionPoly<P>> SumcheckEvaluator<P>
+	for RegularSumcheckEvaluator<'a, P, C>
 {
 	fn n_round_evals(&self) -> usize {
 		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the
 		// current_round_sum - $r(1)$.
-		self.domain.len() - 1
+		self.degree
 	}
 
 	fn process_vertex(
 		&self,
 		_index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	) {
 		// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some
 		// index, use them to linearly interpolate each MLE value at domain point, and then
@@ -429,13 +356,13 @@ where
 			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
 
 		// The rest require interpolation.
-		for d in 2..self.domain.len() {
+		for d in 2..self.domain_points.len() {
 			evals_0
 				.iter()
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain[d]);
+					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			round_evals[d - 1] += self
@@ -443,5 +370,20 @@ where
 				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 		}
+	}
+
+	fn round_evals_to_coeffs(
+		&self,
+		current_round_sum: P::Scalar,
+		mut round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, Error> {
+		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
+		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
+		round_evals.insert(0, current_round_sum - round_evals[0]);
+
+		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+
+		// Trimming highest degree coefficient as it can be recovered by the verifier
+		Ok(coeffs[..coeffs.len() - 1].to_vec())
 	}
 }
