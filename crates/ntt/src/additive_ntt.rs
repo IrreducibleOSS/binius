@@ -1,11 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::error::Error;
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtensionField, PackedField, PackedFieldIndexable,
 };
 use p3_util::log2_strict_usize;
-
-use super::error::Error;
+use std::ops::Deref;
 
 /// The additive NTT defined defined in [LCH14].
 ///
@@ -72,39 +72,24 @@ pub trait AdditiveNTT<P: PackedField> {
 #[derive(Debug)]
 pub struct AdditiveNTTWithOTFCompute<F: BinaryField> {
 	log_domain_size: usize,
-	s_evals: Vec<Vec<F>>,
+	s_evals: Vec<OnTheFlyTwiddleAccess<F, Vec<F>>>,
 }
 
 impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		let s_evals = precompute_subspace_evals(log_domain_size)?;
+		let s_evals = precompute_subspace_evals(log_domain_size)?
+			.into_iter()
+			.enumerate()
+			.map(|(i, s_evals_i)| OnTheFlyTwiddleAccess {
+				log_n: log_domain_size - 1 - i,
+				offset: F::ZERO,
+				s_evals: s_evals_i,
+			})
+			.collect();
 		Ok(AdditiveNTTWithOTFCompute {
 			log_domain_size,
 			s_evals,
 		})
-	}
-
-	/// Calculate twiddle within sub-block
-	fn calculate_twiddle<P: PackedField<Scalar = F>>(
-		&self,
-		s_evals_i: &[F],
-		log_blocks_count: usize,
-		log_block_len: usize,
-		initial_twiddle: F,
-	) -> P {
-		let mut twiddle = P::default();
-		for k in 0..1 << log_blocks_count {
-			let subblock_twiddle_0 = subset_sum(s_evals_i, log_blocks_count, k);
-			let subblock_twiddle_1 = subblock_twiddle_0 + s_evals_i[log_blocks_count];
-			for l in 0..1 << (log_block_len) {
-				let idx0 = k << (log_block_len + 1) | l;
-				let idx1 = idx0 | 1 << log_block_len;
-				twiddle.set(idx0, initial_twiddle + subblock_twiddle_0);
-				twiddle.set(idx1, initial_twiddle + subblock_twiddle_1);
-			}
-		}
-
-		twiddle
 	}
 
 	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
@@ -114,8 +99,148 @@ impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 	/// * `i` must be less than `self.log_domain_size()`
 	/// * `j` must be less than `i`
 	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.s_evals[i][j]
+		self.s_evals[i].get(j)
 	}
+}
+
+fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
+	log_domain_size: usize,
+	s_evals: &[impl TwiddleAccess<F>],
+	data: &mut [P],
+	coset: u32,
+	log_batch_size: usize,
+) -> Result<(), Error> {
+	match data.len() {
+		0 => return Ok(()),
+		1 => {
+			return match P::WIDTH {
+				1 => Ok(()),
+				_ => forward_transform(
+					log_domain_size,
+					s_evals,
+					P::unpack_scalars_mut(data),
+					coset,
+					log_batch_size,
+				),
+			};
+		}
+		_ => {}
+	};
+
+	let log_b = log_batch_size;
+
+	let NTTParams { log_n, log_w } =
+		check_batch_transform_inputs(log_domain_size, data, coset, log_b)?;
+
+	// Cutoff is the stage of the NTT where each the butterfly units are contained within
+	// packed base field elements.
+	let cutoff = log_w.saturating_sub(log_b);
+
+	for i in (cutoff..log_n).rev() {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+
+		for j in 0..1 << (log_n - 1 - i) {
+			let twiddle = coset_twiddle.get(j);
+			for k in 0..1 << (i + log_b - log_w) {
+				let idx0 = j << (i + log_b - log_w + 1) | k;
+				let idx1 = idx0 | 1 << (i + log_b - log_w);
+				data[idx0] += data[idx1] * twiddle;
+				data[idx1] += data[idx0];
+			}
+		}
+	}
+
+	for i in (0..cutoff).rev() {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+
+		let log_block_len = i + log_b;
+		let log_blocks_count = cutoff - i - 1;
+		for j in 0..1 << (log_n - 1 - cutoff) {
+			let twiddle = calculate_twiddle::<P>(
+				coset_twiddle.coset(log_n - 1 - cutoff, j),
+				log_blocks_count,
+				log_block_len,
+			);
+
+			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
+			u += v * twiddle;
+			v += u;
+			(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
+		}
+	}
+
+	Ok(())
+}
+
+fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
+	log_domain_size: usize,
+	s_evals: &[impl TwiddleAccess<F>],
+	data: &mut [P],
+	coset: u32,
+	log_batch_size: usize,
+) -> Result<(), Error> {
+	match data.len() {
+		0 => return Ok(()),
+		1 => {
+			return match P::WIDTH {
+				1 => Ok(()),
+				_ => inverse_transform(
+					log_domain_size,
+					s_evals,
+					P::unpack_scalars_mut(data),
+					coset,
+					log_batch_size,
+				),
+			};
+		}
+		_ => {}
+	};
+
+	let log_b = log_batch_size;
+
+	let NTTParams { log_n, log_w } =
+		check_batch_transform_inputs(log_domain_size, data, coset, log_b)?;
+
+	// Cutoff is the stage of the NTT where each the butterfly units are contained within
+	// packed base field elements.
+	let cutoff = log_w.saturating_sub(log_b);
+
+	#[allow(clippy::needless_range_loop)]
+	for i in 0..cutoff {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+
+		let log_block_count = cutoff - i - 1;
+		let log_block_len = i + log_b;
+		for j in 0..1 << (log_n - 1 - cutoff) {
+			let twiddle = calculate_twiddle::<P>(
+				coset_twiddle.coset(log_n - 1 - cutoff, j),
+				log_block_count,
+				log_block_len,
+			);
+
+			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
+			v += u;
+			u += v * twiddle;
+			(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
+		}
+	}
+
+	#[allow(clippy::needless_range_loop)]
+	for i in cutoff..log_n {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+
+		for j in 0..1 << (log_n - 1 - i) {
+			let twiddle = coset_twiddle.get(j);
+			for k in 0..1 << (i + log_b - log_w) {
+				let idx0 = j << (i + log_b - log_w + 1) | k;
+				let idx1 = idx0 | 1 << (i + log_b - log_w);
+				data[idx1] += data[idx0];
+				data[idx0] += data[idx1] * twiddle;
+			}
+		}
+	}
+
+	Ok(())
 }
 
 impl<F: BinaryField, P> AdditiveNTT<P> for AdditiveNTTWithOTFCompute<F>
@@ -128,73 +253,7 @@ where
 		coset: u32,
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		match data.len() {
-			0 => return Ok(()),
-			1 => {
-				return match P::WIDTH {
-					1 => Ok(()),
-					// Special case when data.len() is 1 and packing width > 1. We must unpack the data
-					// in order to be able to interleave below.
-					_ => self.forward_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
-				};
-			}
-			_ => {}
-		};
-
-		let log_b = log_batch_size;
-
-		let NTTParams {
-			log_n,
-			log_w,
-			coset_bits,
-			..
-		} = check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
-
-		// Cutoff is the stage of the NTT where each the butterfly units are contained within
-		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_b);
-
-		for i in (cutoff..log_n).rev() {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-			for j in 0..1 << (log_n - 1 - i) {
-				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-				let twiddle = block_twiddle + coset_twiddle;
-
-				for k in 0..1 << (i + log_b - log_w) {
-					let idx0 = j << (i + log_b - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_b - log_w);
-					data[idx0] += data[idx1] * twiddle;
-					data[idx1] += data[idx0];
-				}
-			}
-		}
-
-		for i in (0..cutoff).rev() {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-			let log_block_len = i + log_b;
-			let log_blocks_count = cutoff - i - 1;
-			for j in 0..1 << (log_n - 1 - cutoff) {
-				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
-
-				let twiddle: P = self.calculate_twiddle(
-					s_evals_i,
-					log_blocks_count,
-					log_block_len,
-					block_twiddle + coset_twiddle,
-				);
-
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-				u += v * twiddle;
-				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
-			}
-		}
-
-		Ok(())
+		forward_transform(self.log_domain_size, &self.s_evals, data, coset, log_batch_size)
 	}
 
 	fn inverse_transform(
@@ -203,81 +262,11 @@ where
 		coset: u32,
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		match data.len() {
-			0 => return Ok(()),
-			1 => {
-				return match P::WIDTH {
-					1 => Ok(()),
-					_ => self.inverse_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
-				};
-			}
-			_ => {}
-		};
-
-		let log_b = log_batch_size;
-
-		let NTTParams {
-			log_n,
-			log_w,
-			coset_bits,
-		} = check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
-
-		// Cutoff is the stage of the NTT where each the butterfly units are contained within
-		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_b);
-
-		for i in 0..cutoff {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-			let log_block_len = i + log_b;
-			let log_blocks_count = cutoff - i - 1;
-			for j in 0..1 << (log_n - 1 - cutoff) {
-				let block_twiddle = subset_sum(&s_evals_i[cutoff - i..], log_n - 1 - cutoff, j);
-
-				let twiddle: P = self.calculate_twiddle(
-					s_evals_i,
-					log_blocks_count,
-					log_block_len,
-					block_twiddle + coset_twiddle,
-				);
-
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-				v += u;
-				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
-			}
-		}
-
-		for i in cutoff..log_n {
-			let s_evals_i = &self.s_evals[i];
-			let coset_twiddle = subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-			for j in 0..1 << (log_n - 1 - i) {
-				let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-				let twiddle = block_twiddle + coset_twiddle;
-
-				for k in 0..1 << (i + log_b - log_w) {
-					let idx0 = j << (i + log_b - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_b - log_w);
-					data[idx1] += data[idx0];
-					data[idx0] += data[idx1] * twiddle;
-				}
-			}
-		}
-
-		Ok(())
+		inverse_transform(self.log_domain_size, &self.s_evals, data, coset, log_batch_size)
 	}
 }
 
-fn subset_sum<F: Field>(values: &[F], n_bits: usize, index: usize) -> F {
-	(0..n_bits)
-		.filter(|b| (index >> b) & 1 != 0)
-		.map(|b| values[b])
-		.sum()
-}
-
-/// The additive NTT defined defined in [LCH14] with a larger table of precomputed constants.
+/// The additive NTT defined in [LCH14] with a larger table of precomputed constants.
 ///
 /// This implementation precomputes all 2^k twiddle factors for a domain of size 2^k.
 ///
@@ -285,7 +274,7 @@ fn subset_sum<F: Field>(values: &[F], n_bits: usize, index: usize) -> F {
 #[derive(Debug)]
 pub struct AdditiveNTTWithPrecompute<F: BinaryField> {
 	log_domain_size: usize,
-	s_evals_expanded: Vec<Vec<F>>,
+	s_evals: Vec<PrecomputedTwiddleAccess<Vec<F>>>,
 }
 
 impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
@@ -293,7 +282,8 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 		let s_evals = precompute_subspace_evals::<F>(log_domain_size)?;
 		let s_evals_expanded = s_evals
 			.iter()
-			.map(|s_evals_i| {
+			.enumerate()
+			.map(|(i, s_evals_i)| {
 				let mut expanded = Vec::with_capacity(1 << s_evals_i.len());
 				expanded.push(F::ZERO);
 				for &eval in s_evals_i.iter() {
@@ -301,37 +291,18 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 						expanded.push(expanded[i] + eval);
 					}
 				}
-				expanded
+
+				PrecomputedTwiddleAccess {
+					log_n: log_domain_size - 1 - i,
+					s_evals: expanded,
+				}
 			})
-			.collect::<Vec<_>>();
+			.collect();
 
 		Ok(AdditiveNTTWithPrecompute {
 			log_domain_size,
-			s_evals_expanded,
+			s_evals: s_evals_expanded,
 		})
-	}
-
-	#[inline]
-	fn calculate_twiddle<P: PackedField<Scalar = F>>(
-		&self,
-		s_evals_i: &[F],
-		log_blocks_count: usize,
-		log_block_len: usize,
-		evals_index_init_val: usize,
-	) -> P {
-		let mut twiddle = P::default();
-		for k in 0..1 << log_blocks_count {
-			let subblock_twiddle_0 = s_evals_i[evals_index_init_val | k];
-			let subblock_twiddle_1 = s_evals_i[evals_index_init_val | 1 << log_blocks_count | k];
-			for l in 0..1 << log_block_len {
-				let idx0 = k << (log_block_len + 1) | l;
-				let idx1 = idx0 | 1 << log_block_len;
-				twiddle.set(idx0, subblock_twiddle_0);
-				twiddle.set(idx1, subblock_twiddle_1);
-			}
-		}
-
-		twiddle
 	}
 
 	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
@@ -341,7 +312,7 @@ impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 	/// * `i` must be less than `self.log_domain_size()`
 	/// * `j` must be less than `i`
 	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.s_evals_expanded[i][j]
+		self.s_evals[i].get(j)
 	}
 }
 
@@ -355,60 +326,7 @@ where
 		coset: u32,
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		match data.len() {
-			0 => return Ok(()),
-			1 => {
-				return match P::WIDTH {
-					1 => Ok(()),
-					_ => self.forward_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
-				};
-			}
-			_ => {}
-		};
-
-		let log_b = log_batch_size;
-
-		let NTTParams { log_n, log_w, .. } =
-			check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
-
-		// Cutoff is the stage of the NTT where each the butterfly units are contained within
-		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_b);
-
-		for i in (cutoff..log_n).rev() {
-			let s_evals_i = &self.s_evals_expanded[i];
-			for j in 0..1 << (log_n - 1 - i) {
-				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << (i + log_b - log_w) {
-					let idx0 = j << (i + log_b - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_b - log_w);
-					data[idx0] += data[idx1] * twiddle;
-					data[idx1] += data[idx0];
-				}
-			}
-		}
-
-		for i in (0..cutoff).rev() {
-			let s_evals_i = &self.s_evals_expanded[i];
-			let log_blocks_count = cutoff - i - 1;
-			let log_block_len = i + log_b;
-			for j in 0..1 << (log_n - 1 - cutoff) {
-				let evals_index_init_val = (coset as usize) << (log_n - 1 - i) | j << (cutoff - i);
-				let twiddle: P = self.calculate_twiddle(
-					s_evals_i,
-					log_blocks_count,
-					log_block_len,
-					evals_index_init_val,
-				);
-
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-				u += v * twiddle;
-				v += u;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
-			}
-		}
-
-		Ok(())
+		forward_transform(self.log_domain_size, &self.s_evals, data, coset, log_batch_size)
 	}
 
 	fn inverse_transform(
@@ -417,61 +335,7 @@ where
 		coset: u32,
 		log_batch_size: usize,
 	) -> Result<(), Error> {
-		match data.len() {
-			0 => return Ok(()),
-			1 => {
-				return match P::WIDTH {
-					1 => Ok(()),
-					_ => self.inverse_transform(P::unpack_scalars_mut(data), coset, log_batch_size),
-				};
-			}
-			_ => {}
-		};
-
-		let log_b = log_batch_size;
-
-		let NTTParams { log_n, log_w, .. } =
-			check_batch_transform_inputs(self.log_domain_size, data, coset, log_b)?;
-
-		// Cutoff is the stage of the NTT where each the butterfly units are contained within
-		// packed base field elements.
-		let cutoff = log_w.saturating_sub(log_b);
-
-		for i in 0..cutoff {
-			let s_evals_i = &self.s_evals_expanded[i];
-
-			let log_block_count = cutoff - i - 1;
-			let log_block_len = i + log_b;
-			for j in 0..1 << (log_n - 1 - cutoff) {
-				let evals_index_init_val = (coset as usize) << (log_n - 1 - i) | j << (cutoff - i);
-				let twiddle: P = self.calculate_twiddle(
-					s_evals_i,
-					log_block_count,
-					log_block_len,
-					evals_index_init_val,
-				);
-
-				let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
-				v += u;
-				u += v * twiddle;
-				(data[j << 1], data[j << 1 | 1]) = u.interleave(v, log_block_len);
-			}
-		}
-
-		for i in cutoff..log_n {
-			let s_evals_i = &self.s_evals_expanded[i];
-			for j in 0..1 << (log_n - 1 - i) {
-				let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-				for k in 0..1 << (i + log_b - log_w) {
-					let idx0 = j << (i + log_b - log_w + 1) | k;
-					let idx1 = idx0 | 1 << (i + log_b - log_w);
-					data[idx1] += data[idx0];
-					data[idx0] += data[idx1] * twiddle;
-				}
-			}
-		}
-
-		Ok(())
+		inverse_transform(self.log_domain_size, &self.s_evals, data, coset, log_batch_size)
 	}
 }
 
@@ -531,7 +395,6 @@ fn subspace_map<F: Field>(elem: F, constant: F) -> F {
 struct NTTParams {
 	log_n: usize,
 	log_w: usize,
-	coset_bits: usize,
 }
 
 fn check_batch_transform_inputs<PB: PackedField>(
@@ -562,11 +425,111 @@ fn check_batch_transform_inputs<PB: PackedField>(
 		});
 	}
 
-	Ok(NTTParams {
-		log_n,
-		log_w,
-		coset_bits,
-	})
+	Ok(NTTParams { log_n, log_w })
+}
+
+trait TwiddleAccess<F: BinaryField> {
+	fn get(&self, index: usize) -> F;
+
+	fn get_pair(&self, index_bits: usize, index: usize) -> (F, F);
+
+	fn coset(&self, coset_bits: usize, coset: usize) -> impl TwiddleAccess<F>;
+}
+
+#[derive(Debug)]
+struct OnTheFlyTwiddleAccess<F, SEvals> {
+	log_n: usize,
+	offset: F,
+	s_evals: SEvals,
+}
+
+impl<F, SEvals> TwiddleAccess<F> for OnTheFlyTwiddleAccess<F, SEvals>
+where
+	F: BinaryField,
+	SEvals: Deref<Target = [F]>,
+{
+	#[inline]
+	fn get(&self, i: usize) -> F {
+		self.offset + subset_sum(&self.s_evals, self.log_n, i)
+	}
+
+	#[inline]
+	fn get_pair(&self, index_bits: usize, i: usize) -> (F, F) {
+		let t0 = self.offset + subset_sum(&self.s_evals, index_bits, i);
+		(t0, t0 + self.s_evals[index_bits])
+	}
+
+	#[inline]
+	fn coset(&self, coset_bits: usize, coset: usize) -> impl TwiddleAccess<F> {
+		let log_n = self.log_n - coset_bits;
+		let offset = subset_sum(&self.s_evals[log_n..], coset_bits, coset);
+		OnTheFlyTwiddleAccess {
+			log_n,
+			offset: self.offset + offset,
+			s_evals: &self.s_evals[..log_n],
+		}
+	}
+}
+
+fn subset_sum<F: Field>(values: &[F], n_bits: usize, index: usize) -> F {
+	(0..n_bits)
+		.filter(|b| (index >> b) & 1 != 0)
+		.map(|b| values[b])
+		.sum()
+}
+
+#[derive(Debug)]
+struct PrecomputedTwiddleAccess<SEvals> {
+	log_n: usize,
+	s_evals: SEvals,
+}
+
+impl<F, SEvals> TwiddleAccess<F> for PrecomputedTwiddleAccess<SEvals>
+where
+	F: BinaryField,
+	SEvals: Deref<Target = [F]>,
+{
+	#[inline]
+	fn get(&self, i: usize) -> F {
+		self.s_evals[i]
+	}
+
+	#[inline]
+	fn get_pair(&self, index_bits: usize, i: usize) -> (F, F) {
+		(self.s_evals[i], self.s_evals[1 << index_bits | i])
+	}
+
+	#[inline]
+	fn coset(&self, coset_bits: usize, coset: usize) -> impl TwiddleAccess<F> {
+		let log_n = self.log_n - coset_bits;
+		PrecomputedTwiddleAccess {
+			log_n,
+			s_evals: &self.s_evals[coset << log_n..(coset + 1) << log_n],
+		}
+	}
+}
+
+#[inline]
+fn calculate_twiddle<P>(
+	s_evals: impl TwiddleAccess<P::Scalar>,
+	log_blocks_count: usize,
+	log_block_len: usize,
+) -> P
+where
+	P: PackedField<Scalar: BinaryField>,
+{
+	let mut twiddle = P::default();
+	for k in 0..1 << log_blocks_count {
+		let (subblock_twiddle_0, subblock_twiddle_1) = s_evals.get_pair(log_blocks_count, k);
+		for l in 0..1 << log_block_len {
+			let idx0 = k << (log_block_len + 1) | l;
+			let idx1 = idx0 | 1 << log_block_len;
+			twiddle.set(idx0, subblock_twiddle_0);
+			twiddle.set(idx1, subblock_twiddle_1);
+		}
+	}
+
+	twiddle
 }
 
 #[cfg(test)]
@@ -580,6 +543,83 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
+	/// Simple implementation of forward transform on non-packed field elements for testing.
+	fn forward_transform_simple<F, FF>(
+		log_domain_size: usize,
+		s_evals: &[impl TwiddleAccess<F>],
+		data: &mut [FF],
+		coset: u32,
+	) -> Result<(), Error>
+	where
+		F: BinaryField,
+		FF: ExtensionField<F>,
+	{
+		let n = data.len();
+		assert!(n.is_power_of_two());
+
+		let log_n = n.trailing_zeros() as usize;
+		let coset_bits = 32 - coset.leading_zeros() as usize;
+		if log_n + coset_bits > log_domain_size {
+			return Err(Error::DomainTooSmall {
+				log_required_domain_size: log_n + coset_bits,
+			});
+		}
+
+		for i in (0..log_n).rev() {
+			let s_evals_i = &s_evals[i];
+			for j in 0..1 << (log_n - 1 - i) {
+				let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+				for k in 0..1 << i {
+					let idx0 = j << (i + 1) | k;
+					let idx1 = idx0 | 1 << i;
+					data[idx0] += data[idx1] * twiddle;
+					data[idx1] += data[idx0];
+				}
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Simple implementation of inverse transform on non-packed field elements for testing.
+	fn inverse_transform_simple<F, FF>(
+		log_domain_size: usize,
+		s_evals: &[impl TwiddleAccess<F>],
+		data: &mut [FF],
+		coset: u32,
+	) -> Result<(), Error>
+	where
+		F: BinaryField,
+		FF: ExtensionField<F>,
+	{
+		let n = data.len();
+		assert!(n.is_power_of_two());
+
+		let log_n = n.trailing_zeros() as usize;
+		let coset_bits = 32 - coset.leading_zeros() as usize;
+		if log_n + coset_bits > log_domain_size {
+			return Err(Error::DomainTooSmall {
+				log_required_domain_size: log_n + coset_bits,
+			});
+		}
+
+		#[allow(clippy::needless_range_loop)]
+		for i in 0..log_n {
+			let s_evals_i = &s_evals[i];
+			for j in 0..1 << (log_n - 1 - i) {
+				let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+				for k in 0..1 << i {
+					let idx0 = j << (i + 1) | k;
+					let idx1 = idx0 | 1 << i;
+					data[idx1] += data[idx0];
+					data[idx0] += data[idx1] * twiddle;
+				}
+			}
+		}
+
+		Ok(())
+	}
+
 	trait SimpleAdditiveNTT<F: BinaryField> {
 		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
 		where
@@ -591,144 +631,34 @@ mod tests {
 	}
 
 	impl<F: BinaryField> SimpleAdditiveNTT<F> for AdditiveNTTWithOTFCompute<F> {
-		/// Simple implementation of forward transform on non-packed field elements for testing.
 		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
 		where
 			FF: ExtensionField<F>,
 		{
-			let n = data.len();
-			assert!(n.is_power_of_two());
-
-			let log_n = n.trailing_zeros() as usize;
-			let coset_bits = 32 - coset.leading_zeros() as usize;
-			if log_n + coset_bits > self.log_domain_size {
-				return Err(Error::DomainTooSmall {
-					log_required_domain_size: log_n + coset_bits,
-				});
-			}
-
-			for i in (0..log_n).rev() {
-				let s_evals_i = &self.s_evals[i];
-				let coset_twiddle =
-					subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-				for j in 0..1 << (log_n - 1 - i) {
-					let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-					let twiddle = block_twiddle + coset_twiddle;
-
-					for k in 0..1 << i {
-						let idx0 = j << (i + 1) | k;
-						let idx1 = idx0 | 1 << i;
-						data[idx0] += data[idx1] * twiddle;
-						data[idx1] += data[idx0];
-					}
-				}
-			}
-
-			Ok(())
+			forward_transform_simple(self.log_domain_size, &self.s_evals, data, coset)
 		}
 
-		/// Simple implementation of inverse transform on non-packed field elements for testing.
 		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
 		where
 			FF: ExtensionField<F>,
 		{
-			let n = data.len();
-			assert!(n.is_power_of_two());
-
-			let log_n = n.trailing_zeros() as usize;
-			let coset_bits = 32 - coset.leading_zeros() as usize;
-			if log_n + coset_bits > self.log_domain_size {
-				return Err(Error::DomainTooSmall {
-					log_required_domain_size: log_n + coset_bits,
-				});
-			}
-
-			for i in 0..log_n {
-				let s_evals_i = &self.s_evals[i];
-				let coset_twiddle =
-					subset_sum(&s_evals_i[log_n - 1 - i..], coset_bits, coset as usize);
-
-				for j in 0..1 << (log_n - 1 - i) {
-					let block_twiddle = subset_sum(s_evals_i, log_n - 1 - i, j);
-					let twiddle = block_twiddle + coset_twiddle;
-
-					for k in 0..1 << i {
-						let idx0 = j << (i + 1) | k;
-						let idx1 = idx0 | 1 << i;
-						data[idx1] += data[idx0];
-						data[idx0] += data[idx1] * twiddle;
-					}
-				}
-			}
-
-			Ok(())
+			inverse_transform_simple(self.log_domain_size, &self.s_evals, data, coset)
 		}
 	}
 
 	impl<F: BinaryField> SimpleAdditiveNTT<F> for AdditiveNTTWithPrecompute<F> {
-		/// Simple implementation of forward transform on non-packed field elements for testing.
 		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
 		where
 			FF: ExtensionField<F>,
 		{
-			let n = data.len();
-			assert!(n.is_power_of_two());
-
-			let log_n = n.trailing_zeros() as usize;
-			let coset_bits = 32 - coset.leading_zeros() as usize;
-			if log_n + coset_bits > self.log_domain_size {
-				return Err(Error::DomainTooSmall {
-					log_required_domain_size: log_n + coset_bits,
-				});
-			}
-
-			for i in (0..log_n).rev() {
-				let s_evals_i = &self.s_evals_expanded[i];
-				for j in 0..1 << (log_n - 1 - i) {
-					let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-					for k in 0..1 << i {
-						let idx0 = j << (i + 1) | k;
-						let idx1 = idx0 | 1 << i;
-						data[idx0] += data[idx1] * twiddle;
-						data[idx1] += data[idx0];
-					}
-				}
-			}
-
-			Ok(())
+			forward_transform_simple(self.log_domain_size, &self.s_evals, data, coset)
 		}
 
-		/// Simple implementation of inverse transform on non-packed field elements for testing.
 		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
 		where
 			FF: ExtensionField<F>,
 		{
-			let n = data.len();
-			assert!(n.is_power_of_two());
-
-			let log_n = n.trailing_zeros() as usize;
-			let coset_bits = 32 - coset.leading_zeros() as usize;
-			if log_n + coset_bits > self.log_domain_size {
-				return Err(Error::DomainTooSmall {
-					log_required_domain_size: log_n + coset_bits,
-				});
-			}
-
-			for i in 0..log_n {
-				let s_evals_i = &self.s_evals_expanded[i];
-				for j in 0..1 << (log_n - 1 - i) {
-					let twiddle = s_evals_i[(coset as usize) << (log_n - 1 - i) | j];
-					for k in 0..1 << i {
-						let idx0 = j << (i + 1) | k;
-						let idx1 = idx0 | 1 << i;
-						data[idx1] += data[idx0];
-						data[idx0] += data[idx1] * twiddle;
-					}
-				}
-			}
-
-			Ok(())
+			inverse_transform_simple(self.log_domain_size, &self.s_evals, data, coset)
 		}
 	}
 
