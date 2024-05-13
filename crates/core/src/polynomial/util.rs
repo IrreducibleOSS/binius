@@ -75,7 +75,7 @@ mod tests {
 		multilinear_query::MultilinearQuery, transparent::eq_ind::EqIndPartialEval,
 		MultilinearExtension, MultivariatePoly,
 	};
-	use binius_field::{BinaryField32b, Field, PackedField};
+	use binius_field::{BinaryField32b, Field, PackedField, TowerField};
 
 	use super::tensor_prod_eq_ind;
 
@@ -87,7 +87,7 @@ mod tests {
 		extra_query_coordinates: Vec<F>,
 	) -> F
 	where
-		F: Field,
+		F: TowerField,
 		P: PackedField<Scalar = F>,
 	{
 		let eq_ind_k = EqIndPartialEval::new(k, extra_query_coordinates.clone()).unwrap();
@@ -140,7 +140,7 @@ mod tests {
 	// k = num_extra_query_coordinates
 	fn test_consistency<F, P>(log_n_values: usize, k: usize)
 	where
-		F: Field,
+		F: TowerField,
 		P: PackedField<Scalar = F>,
 	{
 		let mut rng = StdRng::seed_from_u64(0);

@@ -4,7 +4,7 @@ use crate::{
 	oracle::ShiftVariant,
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
-use binius_field::{util::eq, Field, PackedFieldIndexable};
+use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
 /// partially evaluated at $Y = r$
@@ -178,7 +178,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 	}
 }
 
-impl<F: Field> MultivariatePoly<F> for ShiftIndPartialEval<F> {
+impl<F: TowerField> MultivariatePoly<F> for ShiftIndPartialEval<F> {
 	fn n_vars(&self) -> usize {
 		self.block_size
 	}
@@ -189,6 +189,10 @@ impl<F: Field> MultivariatePoly<F> for ShiftIndPartialEval<F> {
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		self.evaluate_at_point(query)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		F::TOWER_LEVEL
 	}
 }
 
@@ -346,7 +350,10 @@ mod tests {
 	use std::iter::repeat_with;
 
 	// Consistency Tests for each shift variant
-	fn test_circular_left_shift_consistency_help<F: Field, P: PackedFieldIndexable<Scalar = F>>(
+	fn test_circular_left_shift_consistency_help<
+		F: TowerField,
+		P: PackedFieldIndexable<Scalar = F>,
+	>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -373,7 +380,10 @@ mod tests {
 		assert_eq!(eval_mle, eval_mvp);
 	}
 
-	fn test_logical_left_shift_consistency_help<F: Field, P: PackedFieldIndexable<Scalar = F>>(
+	fn test_logical_left_shift_consistency_help<
+		F: TowerField,
+		P: PackedFieldIndexable<Scalar = F>,
+	>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -400,7 +410,10 @@ mod tests {
 		assert_eq!(eval_mle, eval_mvp);
 	}
 
-	fn test_logical_right_shift_consistency_help<F: Field, P: PackedFieldIndexable<Scalar = F>>(
+	fn test_logical_right_shift_consistency_help<
+		F: TowerField,
+		P: PackedFieldIndexable<Scalar = F>,
+	>(
 		block_size: usize,
 		left_shift_offset: usize,
 	) {
@@ -464,7 +477,7 @@ mod tests {
 	}
 
 	// Functionality Tests for each shift variant
-	fn test_circular_left_shift_functionality_help<F: Field>(
+	fn test_circular_left_shift_functionality_help<F: TowerField>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -484,7 +497,7 @@ mod tests {
 			});
 		});
 	}
-	fn test_logical_left_shift_functionality_help<F: Field>(
+	fn test_logical_left_shift_functionality_help<F: TowerField>(
 		block_size: usize,
 		right_shift_offset: usize,
 	) {
@@ -505,7 +518,7 @@ mod tests {
 		});
 	}
 
-	fn test_logical_right_shift_functionality_help<F: Field>(
+	fn test_logical_right_shift_functionality_help<F: TowerField>(
 		block_size: usize,
 		left_shift_offset: usize,
 	) {

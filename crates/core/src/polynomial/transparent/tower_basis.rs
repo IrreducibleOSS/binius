@@ -82,6 +82,10 @@ where
 		}
 		Ok(result)
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.iota + self.k
+	}
 }
 
 #[cfg(test)]

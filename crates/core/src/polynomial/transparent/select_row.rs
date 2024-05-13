@@ -76,6 +76,10 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 		}
 		Ok(result)
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
 }
 
 #[cfg(test)]

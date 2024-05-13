@@ -3,7 +3,7 @@
 use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
-use binius_field::{Field, PackedField};
+use binius_field::{Field, PackedField, TowerField};
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -32,7 +32,7 @@ impl<F: Field> EqIndPartialEval<F> {
 	}
 }
 
-impl<F: Field, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPartialEval<F> {
+impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPartialEval<F> {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -55,6 +55,10 @@ impl<F: Field, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPartialE
 			result *= factor;
 		}
 		Ok(result)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		F::TOWER_LEVEL
 	}
 }
 

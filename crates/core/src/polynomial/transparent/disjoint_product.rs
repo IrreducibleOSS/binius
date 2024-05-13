@@ -33,4 +33,8 @@ where
 		let eval1 = self.1.evaluate(&query[p0_vars..])?;
 		Ok(eval0 * eval1)
 	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.0.binary_tower_level().max(self.1.binary_tower_level())
+	}
 }

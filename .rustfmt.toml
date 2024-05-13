@@ -1,4 +1,4 @@
 hard_tabs = true
 imports_granularity = "Crate"
 max_width = 100
-fn_call_width = 90
+fn_call_width = 88

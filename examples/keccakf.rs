@@ -163,7 +163,6 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> RoundConstant<P> {
 	}
 }
 
-// TODO: Implement MultivariatePoly on MultilinearExtension?
 impl<P, FE> MultivariatePoly<FE> for RoundConstant<P>
 where
 	P: PackedField<Scalar = BinaryField1b> + Debug,
@@ -180,6 +179,10 @@ where
 	fn evaluate(&self, query: &[FE]) -> Result<FE, PolynomialError> {
 		self.0
 			.evaluate(&MultilinearQuery::<FE>::with_full_query(query)?)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		0
 	}
 }
 

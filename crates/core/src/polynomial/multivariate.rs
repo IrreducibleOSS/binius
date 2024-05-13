@@ -1,8 +1,44 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use super::{error::Error, multilinear_query::MultilinearQuery, MultilinearPoly};
-use binius_field::PackedField;
+use binius_field::{Field, PackedField};
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData};
+
+#[derive(Debug, Clone)]
+/// A wrapper around a CompositionPoly instance that implements MultivariatePoly.
+pub struct CompositionPolyWrapper<P: PackedField, C: CompositionPoly<P>> {
+	inner: C,
+	_p: PhantomData<P>,
+}
+
+impl<P: PackedField, C: CompositionPoly<P>> CompositionPolyWrapper<P, C> {
+	pub(crate) fn new(inner: C) -> Self {
+		Self {
+			inner,
+			_p: Default::default(),
+		}
+	}
+}
+
+impl<P: PackedField<Scalar = F>, F: Field, C: CompositionPoly<P>> MultivariatePoly<F>
+	for CompositionPolyWrapper<P, C>
+{
+	fn n_vars(&self) -> usize {
+		self.inner.n_vars()
+	}
+
+	fn degree(&self) -> usize {
+		self.inner.degree()
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		self.inner.evaluate(query)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.inner.binary_tower_level()
+	}
+}
 
 pub trait MultivariatePoly<F>: Debug + Send + Sync {
 	/// The number of variables.
@@ -13,6 +49,8 @@ pub trait MultivariatePoly<F>: Debug + Send + Sync {
 
 	/// Evaluate the polynomial at a point in the extension field.
 	fn evaluate(&self, query: &[F]) -> Result<F, Error>;
+
+	fn binary_tower_level(&self) -> usize;
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.

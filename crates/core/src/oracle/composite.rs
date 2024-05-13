@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::{Error, MultilinearPolyOracle},
-	polynomial::CompositionPoly,
+	polynomial::{CompositionPoly, CompositionPolyWrapper, MultivariatePoly},
 };
 use binius_field::Field;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct CompositePolyOracle<F: Field> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
-	composition: Arc<dyn CompositionPoly<F>>,
+	composition: Arc<dyn MultivariatePoly<F>>,
 }
 
 impl<F: Field> CompositePolyOracle<F> {
@@ -31,7 +31,7 @@ impl<F: Field> CompositePolyOracle<F> {
 		Ok(Self {
 			n_vars,
 			inner,
-			composition: Arc::new(composition),
+			composition: Arc::new(CompositionPolyWrapper::new(composition)),
 		})
 	}
 
@@ -62,7 +62,7 @@ impl<F: Field> CompositePolyOracle<F> {
 		self.inner.clone()
 	}
 
-	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
+	pub fn composition(&self) -> Arc<dyn MultivariatePoly<F>> {
 		self.composition.clone()
 	}
 }
