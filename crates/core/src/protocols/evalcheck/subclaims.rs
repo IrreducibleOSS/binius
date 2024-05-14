@@ -53,7 +53,6 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 		shifted.inner().id(),
 		shifted.block_size(),
 		eval_point,
-		F::TOWER_LEVEL,
 		|projected_eval_point| {
 			Ok(ShiftIndPartialEval::new(
 				shifted.block_size(),
@@ -114,14 +113,9 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 		return Err(OracleError::NotEnoughVarsForPacking { n_vars, log_degree }.into());
 	}
 
-	projected_bivariate_meta(
-		oracles,
-		packed.inner().id(),
-		log_degree,
-		eval_point,
-		log_degree + binary_tower_level,
-		|_| Ok(TowerBasis::new(log_degree, binary_tower_level)?),
-	)
+	projected_bivariate_meta(oracles, packed.inner().id(), log_degree, eval_point, |_| {
+		Ok(TowerBasis::new(log_degree, binary_tower_level)?)
+	})
 }
 
 /// Takes in metadata object and creates a witness for a bivariate claim on tower basis.
@@ -206,7 +200,6 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 			oracles.committed_oracle_id(claim.id),
 			eval_point.len() - common_suffix_len,
 			eval_point,
-			F::TOWER_LEVEL,
 			|projected_eval_point| {
 				Ok(EqIndPartialEval::new(
 					projected_eval_point.len(),
@@ -277,7 +270,6 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	inner_id: OracleId,
 	projected_n_vars: usize,
 	eval_point: &[F],
-	multiplier_binary_tower_level: usize,
 	multiplier_transparent_ctr: impl FnOnce(&[F]) -> Result<T, Error>,
 ) -> Result<ProjectedBivariateMeta, Error> {
 	let inner = oracles.oracle(inner_id);
@@ -296,10 +288,8 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 
 	let projected_n_vars = projected_eval_point.len();
 
-	let multiplier_id = oracles.add_transparent(
-		Arc::new(multiplier_transparent_ctr(projected_eval_point)?),
-		multiplier_binary_tower_level,
-	)?;
+	let multiplier_id =
+		oracles.add_transparent(Arc::new(multiplier_transparent_ctr(projected_eval_point)?))?;
 
 	let meta = ProjectedBivariateMeta {
 		inner_id,

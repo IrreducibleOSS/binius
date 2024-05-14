@@ -191,11 +191,11 @@ struct FixedOracle<F: Field> {
 
 impl<F: TowerField> FixedOracle<F> {
 	pub fn new(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Result<Self> {
-		let round_consts_single = oracles
-			.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()?), 0)?;
+		let round_consts_single =
+			oracles.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()?))?;
 		let round_consts = oracles.add_repeating(round_consts_single, log_size - 11)?;
 
-		let selector_single = oracles.add_transparent(Arc::new(StepDown::new(11, 24 * 64)?), 0)?;
+		let selector_single = oracles.add_transparent(Arc::new(StepDown::new(11, 24 * 64)?))?;
 		let selector = oracles.add_repeating(selector_single, log_size - 11)?;
 
 		Ok(Self {

@@ -27,10 +27,7 @@ struct CommittedBatchMeta {
 /// This is kept internal to [`MultilinearOracleSet`].
 #[derive(Debug, Clone)]
 enum MultilinearOracleMeta<F: TowerField> {
-	Transparent {
-		poly: Arc<dyn MultivariatePoly<F>>,
-		tower_level: usize,
-	},
+	Transparent(Arc<dyn MultivariatePoly<F>>),
 	Committed(CommittedId),
 	Repeating {
 		inner_id: OracleId,
@@ -88,12 +85,13 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn add_transparent(
 		&mut self,
 		poly: Arc<dyn MultivariatePoly<F>>,
-		tower_level: usize,
 	) -> Result<OracleId, Error> {
-		if tower_level > F::TOWER_LEVEL {
-			return Err(Error::TowerLevelTooHigh { tower_level });
+		if poly.binary_tower_level() > F::TOWER_LEVEL {
+			return Err(Error::TowerLevelTooHigh {
+				tower_level: poly.binary_tower_level(),
+			});
 		}
-		let id = self.add(MultilinearOracleMeta::Transparent { poly, tower_level });
+		let id = self.add(MultilinearOracleMeta::Transparent(poly));
 		Ok(id)
 	}
 
@@ -285,12 +283,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {
 		match &self.oracles[id] {
-			MultilinearOracleMeta::Transparent { poly, tower_level } => {
-				MultilinearPolyOracle::Transparent(
-					id,
-					TransparentPolyOracle::new(poly.clone(), *tower_level),
-				)
-			}
+			MultilinearOracleMeta::Transparent(poly) => MultilinearPolyOracle::Transparent(
+				id,
+				TransparentPolyOracle::new(poly.clone())
+					.expect("polynomial validated by add_transparent"),
+			),
 			MultilinearOracleMeta::Committed(CommittedId { batch_id, index }) => {
 				let batch = &self.batches[*batch_id].spec;
 				MultilinearPolyOracle::Committed {
@@ -363,7 +360,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	pub fn n_vars(&self, id: OracleId) -> usize {
 		use MultilinearOracleMeta::*;
 		match &self.oracles[id] {
-			Transparent { poly, .. } => poly.n_vars(),
+			Transparent(poly) => poly.n_vars(),
 			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].spec.n_vars,
 			Repeating {
 				inner_id,
@@ -379,10 +376,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		}
 	}
 
+	/// Maximum tower level of the oracle's values over the boolean hypercube.
 	pub fn tower_level(&self, id: OracleId) -> usize {
 		use MultilinearOracleMeta::*;
 		match &self.oracles[id] {
-			Transparent { tower_level, .. } => *tower_level,
+			Transparent(poly) => poly.binary_tower_level(),
 			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].spec.tower_level,
 			Repeating { inner_id, .. } => self.tower_level(*inner_id),
 			Interleaved(inner_id_0, inner_id_1) => self
@@ -426,19 +424,29 @@ pub enum MultilinearPolyOracle<F: Field> {
 pub struct TransparentPolyOracle<F: Field> {
 	#[get = "pub"]
 	poly: Arc<dyn MultivariatePoly<F>>,
-	#[get_copy = "pub"]
-	tower_level: usize,
+}
+
+impl<F: TowerField> TransparentPolyOracle<F> {
+	fn new(poly: Arc<dyn MultivariatePoly<F>>) -> Result<Self, Error> {
+		if poly.binary_tower_level() > F::TOWER_LEVEL {
+			return Err(Error::TowerLevelTooHigh {
+				tower_level: poly.binary_tower_level(),
+			});
+		}
+		Ok(TransparentPolyOracle { poly })
+	}
 }
 
 impl<F: Field> TransparentPolyOracle<F> {
-	fn new(poly: Arc<dyn MultivariatePoly<F>>, tower_level: usize) -> Self {
-		TransparentPolyOracle { poly, tower_level }
+	/// Maximum tower level of the oracle's values over the boolean hypercube.
+	pub fn binary_tower_level(&self) -> usize {
+		self.poly.binary_tower_level()
 	}
 }
 
 impl<F: Field> PartialEq for TransparentPolyOracle<F> {
 	fn eq(&self, other: &Self) -> bool {
-		Arc::ptr_eq(&self.poly, &other.poly) && self.tower_level == other.tower_level
+		Arc::ptr_eq(&self.poly, &other.poly)
 	}
 }
 
@@ -628,10 +636,11 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		}
 	}
 
+	/// Maximum tower level of the oracle's values over the boolean hypercube.
 	pub fn binary_tower_level(&self) -> usize {
 		use MultilinearPolyOracle::*;
 		match self {
-			Transparent(_, transparent) => transparent.tower_level(),
+			Transparent(_, transparent) => transparent.binary_tower_level(),
 			Committed { tower_level, .. } => *tower_level,
 			Repeating { inner, .. } => inner.binary_tower_level(),
 			Interleaved(_, poly0, poly1) => {

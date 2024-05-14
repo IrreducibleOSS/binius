@@ -5,7 +5,7 @@ use binius_field::{Field, PackedField};
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData};
 
 #[derive(Debug, Clone)]
-/// A wrapper around a CompositionPoly instance that implements MultivariatePoly.
+/// A wrapper around a [`CompositionPoly`] instance that implements [`MultivariatePoly`].
 pub struct CompositionPolyWrapper<F: Field, C: CompositionPoly<F>> {
 	inner: C,
 	_p: PhantomData<F>,
@@ -38,6 +38,10 @@ impl<F: Field, C: CompositionPoly<F>> MultivariatePoly<F> for CompositionPolyWra
 	}
 }
 
+/// A multivariate polynomial over a binary tower field.
+///
+/// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPoly`], except that
+/// `MultivariatePoly` is _object safe_, whereas `CompositionPoly` is not.
 pub trait MultivariatePoly<F>: Debug + Send + Sync {
 	/// The number of variables.
 	fn n_vars(&self) -> usize;
@@ -48,6 +52,7 @@ pub trait MultivariatePoly<F>: Debug + Send + Sync {
 	/// Evaluate the polynomial at a point in the extension field.
 	fn evaluate(&self, query: &[F]) -> Result<F, Error>;
 
+	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
 	fn binary_tower_level(&self) -> usize;
 }
 
@@ -72,7 +77,7 @@ where
 	/// - There are no operations performed between scalar values within the same packed value.
 	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, Error>;
 
-	/// Returns the maximum binary tower level of a constant used in the composition
+	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
 	fn binary_tower_level(&self) -> usize;
 }
 

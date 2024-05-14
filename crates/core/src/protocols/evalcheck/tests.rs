@@ -427,13 +427,13 @@ fn test_evalcheck_linear_combination() {
 	let mut oracles = MultilinearOracleSet::new();
 
 	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()), 0)
+		.add_transparent(Arc::new(select_row1.clone()))
 		.unwrap();
 	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()), 0)
+		.add_transparent(Arc::new(select_row2.clone()))
 		.unwrap();
 	let select_row3_oracle_id = oracles
-		.add_transparent(Arc::new(select_row3.clone()), 0)
+		.add_transparent(Arc::new(select_row3.clone()))
 		.unwrap();
 
 	let lin_com_id = oracles
@@ -513,7 +513,7 @@ fn test_evalcheck_repeating() {
 
 	let select_row = SelectRow::new(n_vars, row_id).unwrap();
 	let select_row_oracle_id = oracles
-		.add_transparent(Arc::new(select_row.clone()), 0)
+		.add_transparent(Arc::new(select_row.clone()))
 		.unwrap();
 
 	let select_row_subwitness = select_row
@@ -604,10 +604,10 @@ fn test_evalcheck_merged() {
 	};
 
 	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()), 0)
+		.add_transparent(Arc::new(select_row1.clone()))
 		.unwrap();
 	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()), 0)
+		.add_transparent(Arc::new(select_row2.clone()))
 		.unwrap();
 
 	let merged_id = oracles
@@ -705,10 +705,10 @@ fn test_evalcheck_interleaved() {
 	};
 
 	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()), 0)
+		.add_transparent(Arc::new(select_row1.clone()))
 		.unwrap();
 	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()), 0)
+		.add_transparent(Arc::new(select_row2.clone()))
 		.unwrap();
 
 	let interleaved_id = oracles
