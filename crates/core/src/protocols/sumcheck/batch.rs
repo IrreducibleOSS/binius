@@ -44,7 +44,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	CW: CompositionPoly<PW>,
+	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 	CH: CanObserve<F> + CanSample<F>,
 {

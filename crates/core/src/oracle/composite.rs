@@ -74,7 +74,9 @@ mod tests {
 		oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
 		polynomial::Error as PolynomialError,
 	};
-	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
+	use binius_field::{
+		BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, PackedField, TowerField,
+	};
 
 	#[derive(Clone, Debug)]
 	struct TestByteComposition;
@@ -87,15 +89,11 @@ mod tests {
 			1
 		}
 
-		fn evaluate(&self, query: &[BinaryField128b]) -> Result<BinaryField128b, PolynomialError> {
-			self.evaluate_packed(query)
-		}
-
-		fn evaluate_packed(
+		fn evaluate<P: PackedField<Scalar = BinaryField128b>>(
 			&self,
-			query: &[BinaryField128b],
-		) -> Result<BinaryField128b, PolynomialError> {
-			Ok(query[0] * query[1] + query[2] * BinaryField8b::new(125))
+			query: &[P],
+		) -> Result<P, PolynomialError> {
+			Ok(query[0] * query[1] + query[2] * BinaryField128b::new(125))
 		}
 
 		fn binary_tower_level(&self) -> usize {

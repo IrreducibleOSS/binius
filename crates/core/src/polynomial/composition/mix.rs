@@ -2,7 +2,7 @@
 
 use crate::polynomial::{CompositionPoly, Error};
 use binius_field::{Field, PackedField, TowerField};
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
 /// A composition polynomial that securely batches several underlying multivariate polynomials.
 ///
@@ -17,95 +17,64 @@ use std::{fmt::Debug, marker::PhantomData};
 /// verifier-sampled challenge as mixing coefficients, and soundness of the batching technique holds
 /// following the Schwartz-Zippel lemma.
 #[derive(Clone, Debug)]
-pub struct MixComposition<P: PackedField, IC> {
+pub struct MixComposition<F: Field, IC> {
 	n_vars: usize,
 	max_individual_degree: usize,
 
-	challenge: P::Scalar,
+	challenge: F,
 
 	inner_compositions: IC,
-
-	_p_marker: PhantomData<P>,
 }
 
-pub trait HornerCompositions<P: PackedField> {
-	fn evaluate(
+pub trait HornerCompositions<F: Field> {
+	fn evaluate<P: PackedField<Scalar = F>>(
 		&self,
-		challenge: P::Scalar,
-		query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error>;
-	fn evaluate_packed(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error>;
-	fn evaluate_with_inner_evals(
-		&self,
-		challenge: P::Scalar,
-		inner_evals: &[P::Scalar],
-	) -> Result<P::Scalar, Error>;
+		challenge: F,
+		query: &[P],
+	) -> Result<Option<P>, Error>;
+	fn evaluate_with_inner_evals(&self, challenge: F, inner_evals: &[F]) -> Result<F, Error>;
 }
 
-impl<P: PackedField> HornerCompositions<P> for () {
-	fn evaluate(
+impl<F: Field> HornerCompositions<F> for () {
+	fn evaluate<P: PackedField<Scalar = F>>(
 		&self,
-		_challenge: P::Scalar,
-		_query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error> {
+		_challenge: F,
+		_query: &[P],
+	) -> Result<Option<P>, Error> {
 		Ok(None)
 	}
 
-	fn evaluate_packed(&self, _challenge: P::Scalar, _query: &[P]) -> Result<Option<P>, Error> {
-		Ok(None)
-	}
-
-	fn evaluate_with_inner_evals(
-		&self,
-		_challenge: P::Scalar,
-		inner_evals: &[P::Scalar],
-	) -> Result<P::Scalar, Error> {
+	fn evaluate_with_inner_evals(&self, _challenge: F, inner_evals: &[F]) -> Result<F, Error> {
 		if !inner_evals.is_empty() {
 			return Err(Error::IncorrectInnerEvalsLength);
 		}
 
-		Ok(P::Scalar::ZERO)
+		Ok(F::ZERO)
 	}
 }
 
-impl<P: PackedField, C, IC> HornerCompositions<P> for (Vec<C>, IC)
+impl<F: Field, C, IC> HornerCompositions<F> for (Vec<C>, IC)
 where
-	C: CompositionPoly<P>,
-	IC: HornerCompositions<P>,
+	C: CompositionPoly<F>,
+	IC: HornerCompositions<F>,
 {
-	fn evaluate(
+	fn evaluate<P: PackedField<Scalar = F>>(
 		&self,
-		challenge: P::Scalar,
-		query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error> {
+		challenge: F,
+		query: &[P],
+	) -> Result<Option<P>, Error> {
 		let mut acc = self.1.evaluate(challenge, query)?;
 
 		for inner_poly in &self.0 {
 			acc = Some(
-				inner_poly.evaluate(query)? + acc.map_or(P::Scalar::ZERO, |tail| tail * challenge),
+				inner_poly.evaluate::<P>(query)? + acc.map_or(P::zero(), |tail| tail * challenge),
 			);
 		}
 
 		Ok(acc)
 	}
 
-	fn evaluate_packed(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error> {
-		let mut acc = self.1.evaluate_packed(challenge, query)?;
-
-		for inner_poly in &self.0 {
-			acc = Some(
-				inner_poly.evaluate_packed(query)? + acc.map_or(P::zero(), |tail| tail * challenge),
-			);
-		}
-
-		Ok(acc)
-	}
-
-	fn evaluate_with_inner_evals(
-		&self,
-		challenge: P::Scalar,
-		inner_evals: &[P::Scalar],
-	) -> Result<P::Scalar, Error> {
+	fn evaluate_with_inner_evals(&self, challenge: F, inner_evals: &[F]) -> Result<F, Error> {
 		if self.0.len() > inner_evals.len() {
 			return Err(Error::IncorrectInnerEvalsLength);
 		}
@@ -122,11 +91,10 @@ where
 	}
 }
 
-impl<P, IC> CompositionPoly<P> for MixComposition<P, IC>
+impl<F, IC> CompositionPoly<F> for MixComposition<F, IC>
 where
-	P: PackedField,
-	P::Scalar: TowerField,
-	IC: HornerCompositions<P> + Clone + Debug + Send + Sync,
+	F: TowerField,
+	IC: HornerCompositions<F> + Clone + Debug + Send + Sync,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars
@@ -136,46 +104,34 @@ where
 		self.max_individual_degree
 	}
 
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, Error> {
 		Ok(self
 			.inner_compositions
 			.evaluate(self.challenge, query)?
-			.unwrap_or(P::Scalar::ZERO))
-	}
-
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error> {
-		Ok(self
-			.inner_compositions
-			.evaluate_packed(self.challenge, query)?
 			.unwrap_or(P::zero()))
 	}
 
 	fn binary_tower_level(&self) -> usize {
-		P::Scalar::TOWER_LEVEL
+		F::TOWER_LEVEL
 	}
 }
 
-pub fn empty_mix_composition<P: PackedField>(
-	n_vars: usize,
-	challenge: P::Scalar,
-) -> MixComposition<P, ()> {
+pub fn empty_mix_composition<F: Field>(n_vars: usize, challenge: F) -> MixComposition<F, ()> {
 	MixComposition {
 		n_vars,
 		max_individual_degree: 0,
 
 		challenge,
 		inner_compositions: (),
-
-		_p_marker: PhantomData,
 	}
 }
 
-impl<P: PackedField, IC> MixComposition<P, IC> {
+impl<F: Field, IC> MixComposition<F, IC> {
 	#[allow(clippy::type_complexity)]
-	pub fn include<Q>(self, compositions: Q) -> Result<MixComposition<P, (Vec<Q::Item>, IC)>, Error>
+	pub fn include<Q>(self, compositions: Q) -> Result<MixComposition<F, (Vec<Q::Item>, IC)>, Error>
 	where
 		Q: IntoIterator,
-		Q::Item: CompositionPoly<P>,
+		Q::Item: CompositionPoly<F>,
 	{
 		let compositions_vec = compositions.into_iter().collect::<Vec<_>>();
 
@@ -200,14 +156,12 @@ impl<P: PackedField, IC> MixComposition<P, IC> {
 
 			challenge: self.challenge,
 			inner_compositions: (compositions_vec, self.inner_compositions),
-
-			_p_marker: PhantomData,
 		})
 	}
 }
 
-impl<P: PackedField, IC: HornerCompositions<P>> MixComposition<P, IC> {
-	pub fn evaluate_with_inner_evals(&self, inner_evals: &[P::Scalar]) -> Result<P::Scalar, Error> {
+impl<F: Field, IC: HornerCompositions<F>> MixComposition<F, IC> {
+	pub fn evaluate_with_inner_evals(&self, inner_evals: &[F]) -> Result<F, Error> {
 		self.inner_compositions
 			.evaluate_with_inner_evals(self.challenge, inner_evals)
 	}

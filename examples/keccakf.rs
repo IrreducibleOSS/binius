@@ -129,17 +129,14 @@ impl<F: Field> CompositionPoly<F> for SumComposition {
 		1
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}
-		Ok(query.iter().sum())
+		// Sum of scalar values at the corresponding positions of the packed values.
+		Ok(query.iter().copied().sum())
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -566,7 +563,7 @@ where
 		mix_composition_prover,
 		witness
 			.all_polys()
-			.map(|mle| mle.specialize_arc_dyn())
+			.map(|mle| mle.specialize_arc_dyn::<PW>())
 			.collect(),
 	)?;
 

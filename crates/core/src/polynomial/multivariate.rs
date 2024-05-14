@@ -6,12 +6,12 @@ use std::{borrow::Borrow, fmt::Debug, marker::PhantomData};
 
 #[derive(Debug, Clone)]
 /// A wrapper around a CompositionPoly instance that implements MultivariatePoly.
-pub struct CompositionPolyWrapper<P: PackedField, C: CompositionPoly<P>> {
+pub struct CompositionPolyWrapper<F: Field, C: CompositionPoly<F>> {
 	inner: C,
-	_p: PhantomData<P>,
+	_p: PhantomData<F>,
 }
 
-impl<P: PackedField, C: CompositionPoly<P>> CompositionPolyWrapper<P, C> {
+impl<F: Field, C: CompositionPoly<F>> CompositionPolyWrapper<F, C> {
 	pub(crate) fn new(inner: C) -> Self {
 		Self {
 			inner,
@@ -20,9 +20,7 @@ impl<P: PackedField, C: CompositionPoly<P>> CompositionPolyWrapper<P, C> {
 	}
 }
 
-impl<P: PackedField<Scalar = F>, F: Field, C: CompositionPoly<P>> MultivariatePoly<F>
-	for CompositionPolyWrapper<P, C>
-{
+impl<F: Field, C: CompositionPoly<F>> MultivariatePoly<F> for CompositionPolyWrapper<F, C> {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars()
 	}
@@ -54,9 +52,9 @@ pub trait MultivariatePoly<F>: Debug + Send + Sync {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-pub trait CompositionPoly<P>: Debug + Send + Sync
+pub trait CompositionPoly<F>: Debug + Send + Sync
 where
-	P: PackedField,
+	F: Field,
 {
 	/// The number of variables.
 	fn n_vars(&self) -> usize;
@@ -64,11 +62,15 @@ where
 	/// Total degree of the polynomial.
 	fn degree(&self) -> usize;
 
-	/// Evaluate the polynomial at a scalar evaluation point.
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error>;
-
-	/// Evaluate the polynomial at packed evaluation points.
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error>;
+	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
+	/// The evaluation follows SIMD semantics, meaning that operations are performed
+	/// element-wise across corresponding scalar values in the packed values.
+	///
+	/// For example, given a polynomial represented as `query[0] + query[1]`:
+	/// - The addition operation is applied element-wise between `query[0]` and `query[1]`.
+	/// - Each scalar value in `query[0]` is added to the corresponding scalar value in `query[1]`.
+	/// - There are no operations performed between scalar values within the same packed value.
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, Error>;
 
 	/// Returns the maximum binary tower level of a constant used in the composition
 	fn binary_tower_level(&self) -> usize;
@@ -78,7 +80,7 @@ where
 #[derive(Clone, Debug)]
 pub struct IdentityCompositionPoly;
 
-impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
+impl<F: Field> CompositionPoly<F> for IdentityCompositionPoly {
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -87,11 +89,7 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 		1
 	}
 
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != 1 {
 			return Err(Error::IncorrectQuerySize { expected: 1 });
 		}
@@ -149,7 +147,7 @@ where
 impl<P, C, M> MultilinearComposite<P, C, M>
 where
 	P: PackedField,
-	C: CompositionPoly<P>,
+	C: CompositionPoly<P::Scalar>,
 	M: MultilinearPoly<P>,
 {
 	pub fn new(n_vars: usize, composition: C, multilinears: Vec<M>) -> Result<Self, Error> {

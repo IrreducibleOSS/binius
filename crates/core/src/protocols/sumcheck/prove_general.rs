@@ -24,7 +24,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	PCW: CompositionPoly<PW>,
+	PCW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
@@ -87,7 +87,7 @@ impl<F: Field> ParFoldState<F> {
 /// Represents an object that can evaluate the composition function of a generalized sumcheck.
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
-pub trait SumcheckEvaluator<P: PackedField>: Send + Sync {
+pub trait SumcheckEvaluator<F: Field>: Send + Sync {
 	/// The number of points to evaluate at.
 	fn n_round_evals(&self) -> usize;
 
@@ -104,10 +104,10 @@ pub trait SumcheckEvaluator<P: PackedField>: Send + Sync {
 	fn process_vertex(
 		&self,
 		index: usize,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[F],
+		evals_1: &[F],
+		evals_z: &mut [F],
+		round_evals: &mut [F],
 	);
 
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
@@ -118,16 +118,16 @@ pub trait SumcheckEvaluator<P: PackedField>: Send + Sync {
 	/// * `round_evals`: the computed evaluations of the round polynomial
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: P::Scalar,
-		round_evals: Vec<P::Scalar>,
-	) -> Result<Vec<P::Scalar>, Error>;
+		current_round_sum: F,
+		round_evals: Vec<F>,
+	) -> Result<Vec<F>, Error>;
 }
 
-impl<P, L, R> SumcheckEvaluator<P> for Either<L, R>
+impl<F, L, R> SumcheckEvaluator<F> for Either<L, R>
 where
-	P: PackedField,
-	L: SumcheckEvaluator<P>,
-	R: SumcheckEvaluator<P>,
+	F: Field,
+	L: SumcheckEvaluator<F>,
+	R: SumcheckEvaluator<F>,
 {
 	fn n_round_evals(&self) -> usize {
 		match self {
@@ -139,10 +139,10 @@ where
 	fn process_vertex(
 		&self,
 		index: usize,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[F],
+		evals_1: &[F],
+		evals_z: &mut [F],
+		round_evals: &mut [F],
 	) {
 		match self {
 			Either::Left(left) => {
@@ -156,9 +156,9 @@ where
 
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: P::Scalar,
-		round_evals: Vec<P::Scalar>,
-	) -> Result<Vec<P::Scalar>, Error> {
+		current_round_sum: F,
+		round_evals: Vec<F>,
+	) -> Result<Vec<F>, Error> {
 		match self {
 			Either::Left(left) => left.round_evals_to_coeffs(current_round_sum, round_evals),
 			Either::Right(right) => right.round_evals_to_coeffs(current_round_sum, round_evals),
@@ -320,7 +320,7 @@ where
 	/// Compute the sum of the partial polynomial evaluations over the hypercube.
 	pub fn calculate_round_coeffs(
 		&self,
-		evaluator: impl SumcheckEvaluator<PW>,
+		evaluator: impl SumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, Error> {
 		// Extract multilinears & round
@@ -396,7 +396,7 @@ where
 		&'b self,
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-		evaluator: impl SumcheckEvaluator<PW>,
+		evaluator: impl SumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, Error>
 	where

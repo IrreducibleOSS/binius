@@ -42,11 +42,7 @@ impl CompositionPoly<EF> for QuadProduct {
 		4
 	}
 
-	fn evaluate(&self, query: &[EF]) -> Result<EF, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[EF]) -> Result<EF, PolynomialError> {
+	fn evaluate<P: PackedField<Scalar = EF>>(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 4 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
 		}

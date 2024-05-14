@@ -259,11 +259,8 @@ impl<F: Field> CompositionPoly<F> for SquareComposition {
 		2
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+		// Square each scalar value in the given packed value.
 		Ok(query[0].square())
 	}
 

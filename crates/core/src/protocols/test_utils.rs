@@ -113,14 +113,11 @@ where
 		self.arity
 	}
 
-	fn evaluate(&self, query: &[F]) -> Result<F, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[F]) -> Result<F, PolynomialError> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
-		Ok(query.iter().product())
+		// Product of scalar values at the corresponding positions of the packed values.
+		Ok(query.iter().copied().product())
 	}
 
 	fn binary_tower_level(&self) -> usize {

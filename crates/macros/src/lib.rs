@@ -30,11 +30,7 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 				#degree
 			}
 
-			fn evaluate(&self, query: &[F]) -> Result<F, binius_core::polynomial::Error> {
-				self.evaluate_packed(query)
-			}
-
-			fn evaluate_packed(&self, query: &[F]) -> Result<F, binius_core::polynomial::Error> {
+			fn evaluate<P:PackedField<Scalar=F>>(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
 				if query.len() != #n_vars {
 					return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
 				}
@@ -78,10 +74,10 @@ fn rewrite_literals(expr: &mut syn::Expr) {
 			if let syn::Lit::Int(int) = &exprlit.lit {
 				match &*int.to_string() {
 					"0" => {
-						*expr = parse_quote!(F::ZERO);
+						*expr = parse_quote!(P::zero());
 					}
 					"1" => {
-						*expr = parse_quote!(F::ONE);
+						*expr = parse_quote!(P::one());
 					}
 					int => panic!("Value not supported: {int}"),
 				}

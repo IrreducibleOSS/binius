@@ -40,7 +40,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	CW: CompositionPoly<PW>,
+	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
@@ -116,7 +116,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	CW: CompositionPoly<PW>,
+	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	oracle: CompositePolyOracle<F>,
@@ -136,7 +136,7 @@ where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
-	CW: CompositionPoly<PW>,
+	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
@@ -340,19 +340,19 @@ where
 
 /// Evaluator for the regular (non-zerocheck) sumcheck protocol.
 #[derive(Debug)]
-struct RegularSumcheckEvaluator<'a, P, C>
+struct RegularSumcheckEvaluator<'a, F, C>
 where
-	P: PackedField,
-	C: CompositionPoly<P>,
+	F: Field,
+	C: CompositionPoly<F>,
 {
 	pub degree: usize,
 	composition: &'a C,
-	evaluation_domain: &'a EvaluationDomain<P::Scalar>,
-	domain_points: &'a [P::Scalar],
+	evaluation_domain: &'a EvaluationDomain<F>,
+	domain_points: &'a [F],
 }
 
-impl<'a, P: PackedField, C: CompositionPoly<P>> SumcheckEvaluator<P>
-	for RegularSumcheckEvaluator<'a, P, C>
+impl<'a, F: Field, C: CompositionPoly<F>> SumcheckEvaluator<F>
+	for RegularSumcheckEvaluator<'a, F, C>
 {
 	fn n_round_evals(&self) -> usize {
 		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the
@@ -363,10 +363,10 @@ impl<'a, P: PackedField, C: CompositionPoly<P>> SumcheckEvaluator<P>
 	fn process_vertex(
 		&self,
 		_index: usize,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[F],
+		evals_1: &[F],
+		evals_z: &mut [F],
+		round_evals: &mut [F],
 	) {
 		// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some
 		// index, use them to linearly interpolate each MLE value at domain point, and then
@@ -396,9 +396,9 @@ impl<'a, P: PackedField, C: CompositionPoly<P>> SumcheckEvaluator<P>
 
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: P::Scalar,
-		mut round_evals: Vec<P::Scalar>,
-	) -> Result<Vec<P::Scalar>, Error> {
+		current_round_sum: F,
+		mut round_evals: Vec<F>,
+	) -> Result<Vec<F>, Error> {
 		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, current_round_sum - round_evals[0]);

@@ -57,7 +57,7 @@ pub struct ProdcheckWitness<'a, FW: Field> {
 #[derive(Clone, Debug)]
 pub struct SimpleMultGateComposition;
 
-impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
+impl<F: Field> CompositionPoly<F> for SimpleMultGateComposition {
 	fn n_vars(&self) -> usize {
 		3
 	}
@@ -66,11 +66,7 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 		2
 	}
 
-	fn evaluate(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		self.evaluate_packed(query)
-	}
-
-	fn evaluate_packed(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}
