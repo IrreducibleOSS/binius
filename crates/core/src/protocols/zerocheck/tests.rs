@@ -5,9 +5,8 @@ use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension, MultilinearQuery},
 	protocols::{
-		sumcheck::{prove as prove_sumcheck, verify as verify_sumcheck},
 		test_utils::TestProductComposition,
-		zerocheck::{prove, verify, ZerocheckClaim, ZerocheckProveOutput},
+		zerocheck::{prove, verify, zerocheck::ZerocheckProveOutput, ZerocheckClaim},
 	},
 };
 use binius_field::{BinaryField128b, BinaryField32b, Field, TowerField};
@@ -15,7 +14,6 @@ use binius_hash::GroestlHasher;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
-use std::iter::repeat_with;
 
 fn generate_poly_helper<F>(
 	rng: &mut StdRng,
@@ -96,52 +94,33 @@ fn test_prove_verify_interaction_helper(
 		poly: composite_poly,
 	};
 
-	// Reduce zerocheck witness-claim pair to sumcheck witness-claim pair
-	let zc_challenges = repeat_with(|| Field::random(&mut rng))
-		.take(n_vars - 1)
-		.collect::<Vec<FE>>();
-	let ZerocheckProveOutput {
-		sumcheck_claim,
-		sumcheck_witness,
-		zerocheck_proof,
-	} = prove(&zc_claim, zc_witness.clone(), zc_challenges.clone()).unwrap();
-
-	let verified_sumcheck_claim = verify(&zc_claim, zerocheck_proof, zc_challenges).unwrap();
-	assert_eq!(sumcheck_claim.sum, FE::ZERO);
-	assert_eq!(verified_sumcheck_claim.sum, FE::ZERO);
-	assert_eq!(sumcheck_claim.zerocheck_challenges, verified_sumcheck_claim.zerocheck_challenges);
-	assert_eq!(sumcheck_claim.poly.n_vars(), n_vars);
-	assert_eq!(verified_sumcheck_claim.poly.n_vars(), n_vars);
-	assert_eq!(sumcheck_claim.poly.inner_polys(), verified_sumcheck_claim.poly.inner_polys());
-
-	// Perform reduced sumcheck
-
-	// Setup evaluation domain
+	// Zerocheck
 	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let mut prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let mut verifier_challenger = prover_challenger.clone();
+	let switchover_fn = |_| switchover_rd;
 
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let ZerocheckProveOutput {
+		evalcheck_claim,
+		zerocheck_proof,
+	} = prove(&zc_claim, zc_witness.clone(), &domain, &mut prover_challenger, switchover_fn)
+		.expect("failed to prove zerocheck");
 
-	let final_prove_output =
-		prove_sumcheck(&sumcheck_claim, sumcheck_witness, &domain, challenger.clone(), |_| {
-			switchover_rd
-		})
-		.expect("Failed to prove sumcheck");
+	let verified_evalcheck_claim = verify(&zc_claim, zerocheck_proof, &mut verifier_challenger)
+		.expect("failed to verify zerocheck");
 
-	let final_verify_output =
-		verify_sumcheck(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
-			.expect("failed to verify sumcheck");
-
-	assert_eq!(final_prove_output.evalcheck_claim.eval, final_verify_output.eval);
-	assert_eq!(final_prove_output.evalcheck_claim.eval_point, final_verify_output.eval_point);
-	assert_eq!(final_prove_output.evalcheck_claim.poly.n_vars(), n_vars);
-	assert!(final_prove_output.evalcheck_claim.is_random_point);
-	assert_eq!(final_verify_output.poly.n_vars(), n_vars);
+	// Check consistency between prover and verifier view of reduced evalcheck claim
+	assert_eq!(evalcheck_claim.eval, verified_evalcheck_claim.eval);
+	assert_eq!(evalcheck_claim.eval_point, verified_evalcheck_claim.eval_point);
+	assert_eq!(evalcheck_claim.poly.n_vars(), n_vars);
+	assert!(evalcheck_claim.is_random_point);
+	assert_eq!(verified_evalcheck_claim.poly.n_vars(), n_vars);
 
 	// Verify that the evalcheck claim is correct
-	let eval_point = &final_verify_output.eval_point;
+	let eval_point = &verified_evalcheck_claim.eval_point;
 	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
-	assert_eq!(actual, final_verify_output.eval);
+	assert_eq!(actual, verified_evalcheck_claim.eval);
 }
 
 #[test]

@@ -298,7 +298,6 @@ fn test_shifted_evaluation_whole_cube() {
 	let SumcheckClaim {
 		poly: composite,
 		sum,
-		..
 	} = verifier_state.new_sumcheck_claims().first().unwrap();
 
 	assert_eq!(composite.inner_polys()[0].id(), poly_id);
@@ -401,7 +400,6 @@ fn test_shifted_evaluation_subcube() {
 	let SumcheckClaim {
 		poly: composite,
 		sum,
-		..
 	} = verifier_state.new_sumcheck_claims().first().unwrap();
 
 	match composite.inner_polys()[0] {

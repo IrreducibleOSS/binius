@@ -27,6 +27,7 @@
 //!
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
+pub mod abstract_sumcheck;
 pub mod evalcheck;
 pub mod greedy_evalcheck;
 pub mod msetcheck;

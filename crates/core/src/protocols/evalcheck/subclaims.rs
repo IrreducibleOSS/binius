@@ -323,7 +323,6 @@ pub fn projected_bivariate_claim<F: TowerField>(
 	let sumcheck_claim = SumcheckClaim {
 		poly: product,
 		sum: eval,
-		zerocheck_challenges: None,
 	};
 
 	Ok(sumcheck_claim)

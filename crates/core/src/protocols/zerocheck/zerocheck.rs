@@ -1,24 +1,21 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::error::VerificationError;
 use crate::{
 	oracle::CompositePolyOracle,
-	polynomial::MultilinearComposite,
-	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
+	polynomial::{evaluate_univariate, MultilinearComposite},
+	protocols::{
+		abstract_sumcheck::{
+			AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRound,
+			AbstractSumcheckRoundClaim, Error as AbstractSumcheckError,
+		},
+		evalcheck::EvalcheckClaim,
+	},
 	witness::MultilinearWitness,
 };
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::Field;
 use std::fmt::Debug;
 
-#[derive(Debug)]
-pub struct ZerocheckProof;
-
-#[derive(Debug)]
-pub struct ZerocheckProveOutput<'a, F: Field, PW: PackedField, CW> {
-	pub sumcheck_claim: SumcheckClaim<F>,
-	pub sumcheck_witness: SumcheckWitness<PW, CW, MultilinearWitness<'a, PW>>,
-	pub zerocheck_proof: ZerocheckProof,
-}
+use super::{Error, VerificationError};
 
 #[derive(Debug, Clone)]
 pub struct ZerocheckClaim<F: Field> {
@@ -29,18 +26,150 @@ pub struct ZerocheckClaim<F: Field> {
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type ZerocheckWitness<'a, P, C> = MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
 
-pub fn reduce_zerocheck_claim<F: TowerField>(
-	claim: &ZerocheckClaim<F>,
-	challenge: Vec<F>,
-) -> Result<SumcheckClaim<F>, VerificationError> {
-	if claim.poly.n_vars() != challenge.len() + 1 {
-		return Err(VerificationError::ChallengeVectorMismatch);
+pub type ZerocheckRound<F> = AbstractSumcheckRound<F>;
+pub type ZerocheckProof<F> = AbstractSumcheckProof<F>;
+pub type ZerocheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
+
+#[derive(Debug)]
+pub struct ZerocheckProveOutput<F: Field> {
+	pub evalcheck_claim: EvalcheckClaim<F>,
+	pub zerocheck_proof: ZerocheckProof<F>,
+}
+
+pub struct ZerocheckReductor<'a, F> {
+	pub alphas: &'a [F],
+}
+
+impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
+	fn reduce_intermediate_round_claim(
+		&self,
+		round: usize,
+		claim: AbstractSumcheckRoundClaim<F>,
+		challenge: F,
+		round_proof: AbstractSumcheckRound<F>,
+	) -> Result<AbstractSumcheckRoundClaim<F>, AbstractSumcheckError> {
+		let alpha_i = if round == 0 {
+			None
+		} else {
+			Some(self.alphas[round - 1])
+		};
+		let reduced_round_claim =
+			reduce_zerocheck_claim_round(claim, challenge, round_proof, alpha_i)?;
+		Ok(reduced_round_claim)
 	}
 
-	let sumcheck_claim = SumcheckClaim {
-		poly: claim.poly.clone(),
-		sum: F::ZERO,
-		zerocheck_challenges: Some(challenge),
+	fn reduce_final_round_claim(
+		&self,
+		poly_oracle: &CompositePolyOracle<F>,
+		round_claim: AbstractSumcheckRoundClaim<F>,
+	) -> Result<EvalcheckClaim<F>, AbstractSumcheckError> {
+		let evalcheck_claim = reduce_zerocheck_claim_final(poly_oracle, round_claim)?;
+		Ok(evalcheck_claim)
+	}
+}
+
+/// Reduce a zerocheck round claim to a claim for the next round
+///
+/// Arguments:
+/// * `challenge`: The random challenge sampled by the verifier at the beginning of the round.
+/// * `alpha_i`: The zerocheck challenge for round i sampled by the verifier during the zerocheck to sumcheck reduction.
+fn reduce_zerocheck_claim_round<F: Field>(
+	claim: ZerocheckRoundClaim<F>,
+	challenge: F,
+	proof: ZerocheckRound<F>,
+	alpha_i: Option<F>,
+) -> Result<ZerocheckRoundClaim<F>, Error> {
+	let ZerocheckRoundClaim {
+		mut partial_point,
+		current_round_sum,
+	} = claim;
+
+	let ZerocheckRound { mut coeffs } = proof;
+	let which_round = partial_point.len();
+
+	// The prover has sent some coefficients for the purported ith round polynomial
+	// * $r_i(X) = \sum_{j=0}^d a_j * X^j$
+	// The verifier will need to recover the missing coefficient(s).
+	//
+	// Let $s$ denote the current round's claimed sum. There are two cases
+	// Case 1: This is the first round
+	// The verifier expects two identities of $r$ to hold
+	// * $r_i(0) = 0$ and $r(1) = 0$.
+	// Case 2: This is a subsequent round
+	// The verifier expects one identity of $r$ to hold
+	// * $s = (1 - \alpha_i) r(0) + \alpha_i r(1)$.
+	//
+	// In both cases, the prover has sent just enough information that there
+	// will be a unique way to recover missing coefficients that satisfy
+	// the required identities for the round polynomial.
+	//
+	// Not sending the whole round polynomial is an optimization.
+	// In the unoptimized version of the protocol, the verifier will halt and reject
+	// if given a round polynomial that does not satisfy the required identities.
+	// For more information, see Section 3 of https://eprint.iacr.org/2024/108
+	if which_round == 0 {
+		if current_round_sum != F::ZERO {
+			return Err(VerificationError::ExpectedClaimedSumToBeZero.into());
+		}
+		if alpha_i.is_some() {
+			return Err(VerificationError::UnexpectedZerocheckChallengeFound.into());
+		}
+		// In case 1, the verifier has not been given $a_0$ or $a_1$
+		// The identities that must hold are that $f(0) = 0$ and $f(1) = 0$.
+		// Therefore
+		//     $a_0 = f(0) = 0$
+		// This implies
+		//     $r_i(1) = \sum_{j=1}^d a_j$
+		// Therefore
+		//     $a_1 = r_i(1) - \sum_{j=2}^d a_j$
+		let constant_term = F::ZERO;
+		let linear_term = F::ZERO - coeffs.iter().sum::<F>();
+		coeffs.insert(0, linear_term);
+		coeffs.insert(0, constant_term);
+	} else {
+		if coeffs.is_empty() {
+			return Err(VerificationError::NumberOfCoefficients.into());
+		}
+		let alpha_i = alpha_i.ok_or(VerificationError::ExpectedZerocheckChallengeNotFound)?;
+
+		// In case 2, the verifier has not been given $a_0$.
+		// The identity that must hold is:
+		//     $s = (1 - \alpha_i) r_i(0) + \alpha_i r_i(1)$
+		// Or equivalently
+		//     $s = a_0 + \alpha_i * \sum_{j=1}^d a_j$
+		// Therefore
+		//     $a_0 = s - \alpha_i * \sum_{j=1}^d a_j$
+		let constant_term = current_round_sum - alpha_i * coeffs.iter().sum::<F>();
+		coeffs.insert(0, constant_term);
+	}
+
+	let new_round_sum = evaluate_univariate(&coeffs, challenge);
+
+	partial_point.push(challenge);
+
+	Ok(ZerocheckRoundClaim {
+		partial_point,
+		current_round_sum: new_round_sum,
+	})
+}
+
+fn reduce_zerocheck_claim_final<F: Field>(
+	poly_oracle: &CompositePolyOracle<F>,
+	round_claim: ZerocheckRoundClaim<F>,
+) -> Result<EvalcheckClaim<F>, Error> {
+	let ZerocheckRoundClaim {
+		partial_point: eval_point,
+		current_round_sum: eval,
+	} = round_claim;
+	if eval_point.len() != poly_oracle.n_vars() {
+		return Err(VerificationError::NumberOfCoefficients.into());
+	}
+
+	let evalcheck_claim = EvalcheckClaim {
+		poly: poly_oracle.clone(),
+		eval_point,
+		eval,
+		is_random_point: true,
 	};
-	Ok(sumcheck_claim)
+	Ok(evalcheck_claim)
 }

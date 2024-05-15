@@ -10,13 +10,13 @@
 //! after the last sumcheck round message has been sent by the prover.
 
 use super::{
-	error::Error, prove::SumcheckProver, sumcheck::reduce_sumcheck_claim_round, SumcheckClaim,
-	SumcheckRound, SumcheckRoundClaim, VerificationError,
+	error::Error, prove::SumcheckProver, sumcheck::SumcheckReductor, SumcheckClaim, SumcheckRound,
+	SumcheckRoundClaim, VerificationError,
 };
 use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::{CompositionPoly, MultilinearPoly},
-	protocols::evalcheck::EvalcheckClaim,
+	protocols::{abstract_sumcheck::AbstractSumcheckReductor, evalcheck::EvalcheckClaim},
 };
 use binius_field::{Field, PackedField};
 
@@ -124,6 +124,7 @@ where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
 {
+	let sumcheck_reductor = SumcheckReductor;
 	let mut claims_vec = claims.into_iter().collect::<Vec<_>>();
 	// NOTE: Important to use stable sorting for prover-verifier consistency!
 	claims_vec.sort_by_key(|claim| claim.poly.n_vars());
@@ -157,7 +158,12 @@ where
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim = reduce_sumcheck_claim_round(rd_claim, challenger.sample(), round_proof.clone())?;
+		rd_claim = sumcheck_reductor.reduce_intermediate_round_claim(
+			round_no,
+			rd_claim,
+			challenger.sample(),
+			round_proof.clone(),
+		)?;
 	}
 
 	// Mix in remaining sumcheck claims with 0 variables

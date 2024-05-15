@@ -22,7 +22,6 @@ use binius_core::{
 	protocols::{
 		greedy_evalcheck,
 		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck::{self, SumcheckProof, SumcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
@@ -392,8 +391,7 @@ fn zerocheck_verifier_oracles<F: Field>(
 
 struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
-	zerocheck_proof: ZerocheckProof,
-	sumcheck_proof: SumcheckProof<F>,
+	zerocheck_proof: ZerocheckProof<F>,
 	evalcheck_proof: GreedyEvalcheckProof<F>,
 	trace_open_proof: PCSProof,
 }
@@ -529,7 +527,7 @@ where
 
 	// Round 1
 	let trace_commit_polys = witness.commit_polys().collect::<Vec<_>>();
-	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys).unwrap();
+	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys)?;
 	challenger.observe(trace_comm.clone());
 
 	// Zerocheck mixing
@@ -568,37 +566,25 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
-
-	let ZerocheckProveOutput {
-		sumcheck_claim,
-		sumcheck_witness,
-		zerocheck_proof,
-	} = zerocheck::prove(&zerocheck_claim, zerocheck_witness, zerocheck_challenge).unwrap();
-
-	// Sumcheck
-	let sumcheck_domain = EvaluationDomain::<PW>::new_isomorphic::<F>(
-		sumcheck_claim.poly.max_individual_degree() + 1,
-	)
-	.unwrap();
+	let zerocheck_domain = EvaluationDomain::<PW>::new_isomorphic::<F>(
+		zerocheck_claim.poly.max_individual_degree() + 1,
+	)?;
 
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
 	};
 
-	let output = sumcheck::prove(
-		&sumcheck_claim,
-		sumcheck_witness,
-		&sumcheck_domain,
+	let ZerocheckProveOutput {
+		evalcheck_claim,
+		zerocheck_proof,
+	} = zerocheck::prove(
+		&zerocheck_claim,
+		zerocheck_witness,
+		&zerocheck_domain,
 		&mut challenger,
 		switchover_fn,
 	)?;
-
-	let SumcheckProveOutput {
-		evalcheck_claim,
-		sumcheck_proof,
-	} = output;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
@@ -619,19 +605,16 @@ where
 		.expect("length is asserted to be 1");
 	assert_eq!(batch_id, trace_batch_id);
 
-	let trace_open_proof = pcs
-		.prove_evaluation(
-			&mut challenger,
-			&trace_committed,
-			&trace_commit_polys,
-			&same_query_claim.eval_point,
-		)
-		.unwrap();
+	let trace_open_proof = pcs.prove_evaluation(
+		&mut challenger,
+		&trace_committed,
+		&trace_commit_polys,
+		&same_query_claim.eval_point,
+	)?;
 
 	Ok(Proof {
 		trace_comm,
 		zerocheck_proof,
-		sumcheck_proof,
 		evalcheck_proof,
 		trace_open_proof,
 	})
@@ -658,7 +641,6 @@ where
 	let Proof {
 		trace_comm,
 		zerocheck_proof,
-		sumcheck_proof,
 		evalcheck_proof,
 		trace_open_proof,
 	} = proof;
@@ -679,17 +661,11 @@ where
 		make_constraints(fixed_oracle, trace_oracle, &zerocheck_column_ids, mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
-
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(log_size, zerocheck_column_oracles, mix_composition)?,
 	};
 
-	let sumcheck_claim =
-		zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge).unwrap();
-
-	// Sumcheck
-	let evalcheck_claim = sumcheck::verify(&sumcheck_claim, sumcheck_proof, &mut challenger)?;
+	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;
 
 	// Evalcheck
 	let same_query_claims =

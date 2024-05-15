@@ -6,7 +6,6 @@ use binius_core::{
 	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck::{self, SumcheckProof, SumcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
 	witness::MultilinearWitnessIndex,
@@ -67,7 +66,8 @@ where
 	drop(commit_scope);
 
 	// Round 2
-	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
+
+	tracing::debug!("Proving zerocheck");
 	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
 		log_size,
 		BitwiseAndConstraint,
@@ -77,38 +77,27 @@ where
 			witness.c_out.to_ref().specialize_arc_dyn(),
 		],
 	)?;
+	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 
 	// zerocheck::prove is instrumented
-	let zerocheck_claim = ZerocheckClaim { poly: constraint };
-	let ZerocheckProveOutput {
-		sumcheck_claim,
-		sumcheck_witness,
-		zerocheck_proof,
-	} = zerocheck::prove(&zerocheck_claim, zerocheck_witness, zerocheck_challenge)?;
-
-	let sumcheck_domain = EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<
+	let zerocheck_domain = EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<
 		BinaryField128b,
-	>(sumcheck_claim.poly.max_individual_degree() + 1)?;
-
+	>(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
 	};
 
-	// sumcheck::prove is instrumented
-	tracing::debug!("Proving sumcheck");
-	let output = sumcheck::prove(
-		&sumcheck_claim,
-		sumcheck_witness,
-		&sumcheck_domain,
+	let ZerocheckProveOutput {
+		evalcheck_claim,
+		zerocheck_proof,
+	} = zerocheck::prove(
+		&zerocheck_claim,
+		zerocheck_witness,
+		&zerocheck_domain,
 		&mut challenger,
 		switchover_fn,
 	)?;
-
-	let SumcheckProveOutput {
-		evalcheck_claim,
-		sumcheck_proof,
-	} = output;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -144,7 +133,6 @@ where
 		abc_comm,
 		abc_eval_proof,
 		zerocheck_proof,
-		sumcheck_proof,
 		evalcheck_proof,
 	})
 }
@@ -152,8 +140,7 @@ where
 struct Proof<C, P> {
 	abc_comm: C,
 	abc_eval_proof: P,
-	zerocheck_proof: ZerocheckProof,
-	sumcheck_proof: SumcheckProof<BinaryField128b>,
+	zerocheck_proof: ZerocheckProof<BinaryField128b>,
 	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
@@ -183,21 +170,15 @@ where
 		abc_comm,
 		abc_eval_proof,
 		zerocheck_proof,
-		sumcheck_proof,
 		evalcheck_proof,
 	} = proof;
 
 	// Observe the trace commitments
 	challenger.observe(abc_comm.clone());
 
-	let zerocheck_challenge = challenger.sample_vec(log_size - 1);
-
 	// Run zerocheck protocol
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
-	let sumcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, zerocheck_challenge)?;
-
-	// Run sumcheck protocol
-	let evalcheck_claim = sumcheck::verify(&sumcheck_claim, sumcheck_proof, &mut challenger)?;
+	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;
 
 	// Verify evaluation claims
 	let same_query_claims =

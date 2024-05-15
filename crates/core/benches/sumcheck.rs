@@ -275,7 +275,6 @@ where
 	let sumcheck_claim = SumcheckClaim {
 		poly: composite_poly,
 		sum,
-		zerocheck_challenges: None,
 	};
 
 	Ok(sumcheck_claim)

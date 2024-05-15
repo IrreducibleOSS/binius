@@ -1,52 +1,18 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::{AbstractSumcheckProver, AbstractSumcheckRound, Error};
 use crate::{
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, EvaluationDomain,
-		MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
+		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
+		MultilinearQuery,
 	},
-	protocols::sumcheck::Error,
+	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::{Field, PackedField};
 use either::Either;
 use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp};
-
-use super::{SumcheckProof, SumcheckProveOutput, SumcheckProver};
-
-pub fn prove_general<F, PW, PCW, M, CH>(
-	n_vars: usize,
-	mut sumcheck_prover: SumcheckProver<F, PW, PCW, M>,
-	mut challenger: CH,
-) -> Result<SumcheckProveOutput<F>, Error>
-where
-	F: Field + From<PW::Scalar>,
-	PW: PackedField,
-	PW::Scalar: From<F>,
-	PCW: CompositionPoly<PW::Scalar>,
-	M: MultilinearPoly<PW> + Clone + Sync,
-	CH: CanSample<F> + CanObserve<F>,
-{
-	let mut prev_rd_challenge = None;
-	let mut rd_proofs = Vec::with_capacity(n_vars);
-
-	for _round in 0..n_vars {
-		let proof_round = sumcheck_prover.execute_round(prev_rd_challenge)?;
-
-		challenger.observe_slice(&proof_round.coeffs);
-		prev_rd_challenge = Some(challenger.sample());
-		rd_proofs.push(proof_round);
-	}
-
-	let evalcheck_claim = sumcheck_prover.finalize(prev_rd_challenge)?;
-	let prove_output = SumcheckProveOutput {
-		evalcheck_claim,
-		sumcheck_proof: SumcheckProof { rounds: rd_proofs },
-	};
-
-	Ok(prove_output)
-}
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug)]
@@ -87,7 +53,7 @@ impl<F: Field> ParFoldState<F> {
 /// Represents an object that can evaluate the composition function of a generalized sumcheck.
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
-pub trait SumcheckEvaluator<F: Field>: Send + Sync {
+pub trait AbstractSumcheckEvaluator<F: Field>: Send + Sync {
 	/// The number of points to evaluate at.
 	fn n_round_evals(&self) -> usize;
 
@@ -123,11 +89,11 @@ pub trait SumcheckEvaluator<F: Field>: Send + Sync {
 	) -> Result<Vec<F>, Error>;
 }
 
-impl<F, L, R> SumcheckEvaluator<F> for Either<L, R>
+impl<F, L, R> AbstractSumcheckEvaluator<F> for Either<L, R>
 where
 	F: Field,
-	L: SumcheckEvaluator<F>,
-	R: SumcheckEvaluator<F>,
+	L: AbstractSumcheckEvaluator<F>,
+	R: AbstractSumcheckEvaluator<F>,
 {
 	fn n_round_evals(&self) -> usize {
 		match self {
@@ -320,7 +286,7 @@ where
 	/// Compute the sum of the partial polynomial evaluations over the hypercube.
 	pub fn calculate_round_coeffs(
 		&self,
-		evaluator: impl SumcheckEvaluator<PW::Scalar>,
+		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, Error> {
 		// Extract multilinears & round
@@ -396,7 +362,7 @@ where
 		&'b self,
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-		evaluator: impl SumcheckEvaluator<PW::Scalar>,
+		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, Error>
 	where
@@ -502,34 +468,26 @@ where
 	}
 }
 
-/// Ensures that previous round challenge is present if and only if not in the first round.
-pub fn validate_rd_challenge<F: Field>(
-	prev_rd_challenge: Option<F>,
-	round: usize,
-) -> Result<(), Error> {
-	if prev_rd_challenge.is_none() != (round == 0) {
-		return Err(Error::ImproperInput(format!(
-			"incorrect optional challenge: is_some()={:?} at round {}",
-			prev_rd_challenge.is_some(),
-			round
-		)));
+pub fn prove<F, CH>(
+	n_vars: usize,
+	mut sumcheck_prover: impl AbstractSumcheckProver<F>,
+	mut challenger: CH,
+) -> Result<(EvalcheckClaim<F>, Vec<AbstractSumcheckRound<F>>), Error>
+where
+	F: Field,
+	CH: CanSample<F> + CanObserve<F>,
+{
+	let mut prev_rd_challenge = None;
+	let mut rd_proofs = Vec::with_capacity(n_vars);
+
+	for _round in 0..n_vars {
+		let sumcheck_round = sumcheck_prover.execute_round(prev_rd_challenge)?;
+		challenger.observe_slice(&sumcheck_round.coeffs);
+		prev_rd_challenge = Some(challenger.sample());
+		rd_proofs.push(sumcheck_round);
 	}
 
-	Ok(())
-}
+	let evalcheck_claim = sumcheck_prover.finalize(prev_rd_challenge)?;
 
-/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
-/// maximum individual degree of the polynomial.
-pub fn check_evaluation_domain<F: Field>(
-	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error> {
-	if max_individual_degree == 0
-		|| domain.size() != max_individual_degree + 1
-		|| domain.points()[0] != F::ZERO
-		|| domain.points()[1] != F::ONE
-	{
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	Ok(())
+	Ok((evalcheck_claim, rd_proofs))
 }

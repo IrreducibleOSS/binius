@@ -8,7 +8,6 @@
 mod batch;
 mod error;
 mod prove;
-pub mod prove_general;
 #[allow(clippy::module_inception)]
 mod sumcheck;
 #[cfg(test)]

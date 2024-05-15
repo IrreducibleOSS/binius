@@ -102,7 +102,6 @@ fn test_prove_verify_interaction_helper(
 	let sumcheck_claim = SumcheckClaim {
 		sum: sum.into(),
 		poly: composite_poly,
-		zerocheck_challenges: None,
 	};
 
 	// Setup evaluation domain
@@ -175,7 +174,6 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	let sumcheck_claim = SumcheckClaim {
 		sum,
 		poly: poly_oracle,
-		zerocheck_challenges: None,
 	};
 
 	// Setup evaluation domain
@@ -343,11 +341,7 @@ fn test_prove_verify_batch() {
 	let sumcheck_claims = composites
 		.into_iter()
 		.zip(composite_sums)
-		.map(|(poly, sum)| SumcheckClaim {
-			poly,
-			sum,
-			zerocheck_challenges: None,
-		})
+		.map(|(poly, sum)| SumcheckClaim { poly, sum })
 		.collect::<Vec<_>>();
 
 	let domain = EvaluationDomain::new(3).unwrap();

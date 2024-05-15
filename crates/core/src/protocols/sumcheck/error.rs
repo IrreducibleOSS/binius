@@ -1,9 +1,14 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::{oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError};
+use crate::{
+	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
+	protocols::abstract_sumcheck::Error as AbstractSumcheckError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("During sumcheck, received a Zerocheck Error which is a bad error type")]
+	UnexpectedZerocheckError,
 	#[error("sumcheck polynomial degree must be greater than zero")]
 	PolynomialDegreeIsZero,
 	#[error("the input was not well formed: {0}")]
@@ -24,12 +29,6 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("the claimed sum for a sumcheck that came from zerocheck must be zero")]
-	ExpectedClaimedSumToBeZero,
-	#[error("did not expect a zerocheck challenge")]
-	UnexpectedZerocheckChallengeFound,
-	#[error("expected to see a zerocheck challenge")]
-	ExpectedZerocheckChallengeNotFound,
 	#[error("round proof must have at least one coefficient")]
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]
@@ -42,4 +41,14 @@ pub enum VerificationError {
 	EvaluationDomainMismatch,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+}
+
+impl From<AbstractSumcheckError> for Error {
+	fn from(err_value: AbstractSumcheckError) -> Self {
+		match err_value {
+			AbstractSumcheckError::Polynomial(polynomial_err) => Error::Polynomial(polynomial_err),
+			AbstractSumcheckError::Sumcheck(sumcheck_err) => sumcheck_err,
+			AbstractSumcheckError::Zerocheck(_) => Error::UnexpectedZerocheckError,
+		}
+	}
 }

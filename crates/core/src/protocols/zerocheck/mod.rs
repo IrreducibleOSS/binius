@@ -9,6 +9,6 @@ mod verify;
 mod zerocheck;
 
 pub use error::*;
-pub use prove::{prove, ZerocheckFirstRoundEvaluator, ZerocheckLaterRoundEvaluator};
+pub use prove::prove;
 pub use verify::verify;
 pub use zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness};
