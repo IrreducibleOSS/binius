@@ -16,11 +16,11 @@ use crate::{
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PairwiseStrategy, ReuseMultiplyStrategy, SimdStrategy,
+		PackedStrategy, ReuseMultiplyStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy, impl_transformation_with_strategy,
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
 	},
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b,
 	BinaryField4b, BinaryField64b, BinaryField8b,
@@ -79,40 +79,40 @@ impl_tower_constants!(BinaryField32b, M128, { M128::from_u128(alphas!(u128, 5)) 
 impl_tower_constants!(BinaryField64b, M128, { M128::from_u128(alphas!(u128, 6)) });
 
 // Define multiplication
-impl_mul_with_strategy!(PackedBinaryField64x2b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedBinaryField32x4b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedBinaryField16x8b, GfniBinaryTowerStrategy);
-impl_mul_with_strategy!(PackedBinaryField8x16b, SimdStrategy);
-impl_mul_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
-impl_mul_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
-impl_mul_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
+impl_mul_with!(PackedBinaryField64x2b @ PackedStrategy);
+impl_mul_with!(PackedBinaryField32x4b @ PackedStrategy);
+impl_mul_with!(PackedBinaryField16x8b @ GfniBinaryTowerStrategy);
+impl_mul_with!(PackedBinaryField8x16b @ SimdStrategy);
+impl_mul_with!(PackedBinaryField4x32b @ SimdStrategy);
+impl_mul_with!(PackedBinaryField2x64b @ SimdStrategy);
+impl_mul_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define square
-impl_square_with_strategy!(PackedBinaryField64x2b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField32x4b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField16x8b, ReuseMultiplyStrategy);
-impl_square_with_strategy!(PackedBinaryField8x16b, SimdStrategy);
-impl_square_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
-impl_square_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
-impl_square_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
+impl_square_with!(PackedBinaryField64x2b @ PackedStrategy);
+impl_square_with!(PackedBinaryField32x4b @ PackedStrategy);
+impl_square_with!(PackedBinaryField16x8b @ ReuseMultiplyStrategy);
+impl_square_with!(PackedBinaryField8x16b @ SimdStrategy);
+impl_square_with!(PackedBinaryField4x32b @ SimdStrategy);
+impl_square_with!(PackedBinaryField2x64b @ SimdStrategy);
+impl_square_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedBinaryField64x2b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField32x4b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField16x8b, GfniBinaryTowerStrategy);
-impl_invert_with_strategy!(PackedBinaryField8x16b, SimdStrategy);
-impl_invert_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
-impl_invert_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
-impl_invert_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
+impl_invert_with!(PackedBinaryField64x2b @ PackedStrategy);
+impl_invert_with!(PackedBinaryField32x4b @ PackedStrategy);
+impl_invert_with!(PackedBinaryField16x8b @ GfniBinaryTowerStrategy);
+impl_invert_with!(PackedBinaryField8x16b @ SimdStrategy);
+impl_invert_with!(PackedBinaryField4x32b @ SimdStrategy);
+impl_invert_with!(PackedBinaryField2x64b @ SimdStrategy);
+impl_invert_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedBinaryField64x2b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField32x4b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField16x8b, ReuseMultiplyStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField8x16b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
+impl_mul_alpha_with!(PackedBinaryField64x2b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField32x4b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField16x8b @ ReuseMultiplyStrategy);
+impl_mul_alpha_with!(PackedBinaryField8x16b @ SimdStrategy);
+impl_mul_alpha_with!(PackedBinaryField4x32b @ SimdStrategy);
+impl_mul_alpha_with!(PackedBinaryField2x64b @ SimdStrategy);
+impl_mul_alpha_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define affine transformations
 impl_transformation_with_strategy!(PackedBinaryField128x1b, SimdStrategy);

@@ -5,7 +5,7 @@ use std::{
 	arch::aarch64::*,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Shl, Shr},
 };
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	arch::portable::{
@@ -13,7 +13,7 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
+	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
 	BinaryField,
 };
 use derive_more::Not;
@@ -102,6 +102,12 @@ impl From<u16> for M128 {
 impl From<u8> for M128 {
 	fn from(value: u8) -> Self {
 		Self(value as u128)
+	}
+}
+
+impl<const N: usize> From<SmallU<N>> for M128 {
+	fn from(value: SmallU<N>) -> Self {
+		Self::from(value.val() as u128)
 	}
 }
 
@@ -210,6 +216,12 @@ impl ConstantTimeEq for M128 {
 	}
 }
 
+impl ConditionallySelectable for M128 {
+	fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+		ConditionallySelectable::conditional_select(&u128::from(*a), &u128::from(*b), choice).into()
+	}
+}
+
 impl Random for M128 {
 	fn random(rng: impl RngCore) -> Self {
 		Self(u128::random(rng))
@@ -225,8 +237,11 @@ impl std::fmt::Display for M128 {
 
 impl UnderlierType for M128 {
 	const LOG_BITS: usize = 7;
-	const ONE: Self = Self(1);
+
 	const ZERO: Self = Self(0);
+	const ONE: Self = Self(1);
+	const ONES: Self = Self(u128::MAX);
+
 	fn fill_with_bit(val: u8) -> Self {
 		Self(u128::fill_with_bit(val))
 	}

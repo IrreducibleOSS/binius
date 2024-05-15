@@ -7,14 +7,15 @@ use binius_field::{
 	arch::{
 		packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
 		packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
-		packed_aes_512::*, packed_aes_64::*, packed_polyval_256::*, packed_polyval_512::*,
-		PackedStrategy, PairwiseStrategy, SimdStrategy,
+		packed_aes_512::*, packed_aes_64::*, packed_aes_8::*, packed_polyval_128::*,
+		packed_polyval_256::*, packed_polyval_512::*, HybridRecursiveStrategy, PackedStrategy,
+		PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
 		TaggedSquare,
 	},
-	BinaryField128bPolyval, ExtensionField, PackedField,
+	ExtensionField, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
@@ -206,6 +207,9 @@ macro_rules! benchmark_strategy {
 				PackedBinaryField8x64b
 				PackedBinaryField4x128b
 
+				// 8-bit AES tower
+				PackedAESBinaryField1x8b
+
 				// 16-bit AES tower
 				PackedAESBinaryField2x8b
 				PackedAESBinaryField1x16b
@@ -243,7 +247,7 @@ macro_rules! benchmark_strategy {
 				PackedAESBinaryField4x128b
 
 				// Packed polyval fields
-				BinaryField128bPolyval
+				PackedBinaryPolyval1x128b
 				PackedBinaryPolyval2x128b
 				PackedBinaryPolyval4x128b
 			])
@@ -263,8 +267,20 @@ fn mul_pairwise<T: TaggedMul<PairwiseStrategy>>(lhs: T, rhs: T) -> T {
 	TaggedMul::<PairwiseStrategy>::mul(lhs, rhs)
 }
 
+fn mul_pairwise_table<T: TaggedMul<PairwiseTableStrategy>>(lhs: T, rhs: T) -> T {
+	TaggedMul::<PairwiseTableStrategy>::mul(lhs, rhs)
+}
+
+fn mul_pairwise_recursive<T: TaggedMul<PairwiseRecursiveStrategy>>(lhs: T, rhs: T) -> T {
+	TaggedMul::<PairwiseRecursiveStrategy>::mul(lhs, rhs)
+}
+
 fn mul_packed<T: TaggedMul<PackedStrategy>>(lhs: T, rhs: T) -> T {
 	TaggedMul::<PackedStrategy>::mul(lhs, rhs)
+}
+
+fn mul_hybrid_recursive<T: TaggedMul<HybridRecursiveStrategy>>(lhs: T, rhs: T) -> T {
+	TaggedMul::<HybridRecursiveStrategy>::mul(lhs, rhs)
 }
 
 fn mul_simd<T: TaggedMul<SimdStrategy>>(lhs: T, rhs: T) -> T {
@@ -278,7 +294,10 @@ fn multiply(c: &mut Criterion) {
 		strategies @ (
 			("main", SelfMul, mul_main),
 			("pairwise", TaggedMul::<PairwiseStrategy>, mul_pairwise),
-			("packed", TaggedMul::<PackedStrategy>, mul_packed ),
+			("pairwise_recursive", TaggedMul::<PairwiseRecursiveStrategy>, mul_pairwise_recursive),
+			("pairwise_table", TaggedMul::<PairwiseTableStrategy>, mul_pairwise_table),
+			("hybrid_recursive", TaggedMul::<HybridRecursiveStrategy>, mul_hybrid_recursive),
+			("packed", TaggedMul::<PackedStrategy>, mul_packed),
 			("simd", TaggedMul::<SimdStrategy>, mul_simd),
 		)
 	);
@@ -293,7 +312,19 @@ fn invert_pairwise<T: TaggedInvertOrZero<PairwiseStrategy>>(val: T) -> T {
 	val.invert_or_zero()
 }
 
+fn invert_pairwise_recursive<T: TaggedInvertOrZero<PairwiseRecursiveStrategy>>(val: T) -> T {
+	val.invert_or_zero()
+}
+
+fn invert_pairwise_table<T: TaggedInvertOrZero<PairwiseTableStrategy>>(val: T) -> T {
+	val.invert_or_zero()
+}
+
 fn invert_packed<T: TaggedInvertOrZero<PackedStrategy>>(val: T) -> T {
+	val.invert_or_zero()
+}
+
+fn invert_hybrid_recursive<T: TaggedInvertOrZero<HybridRecursiveStrategy>>(val: T) -> T {
 	val.invert_or_zero()
 }
 
@@ -308,6 +339,9 @@ fn invert(c: &mut Criterion) {
 		strategies @ (
 			("main", PackedField, invert_main),
 			("pairwise", TaggedInvertOrZero::<PairwiseStrategy>, invert_pairwise),
+			("pairwise_recursive", TaggedInvertOrZero::<PairwiseRecursiveStrategy>, invert_pairwise_recursive),
+			("pairwise_table", TaggedInvertOrZero::<PairwiseTableStrategy>, invert_pairwise_table),
+			("hybrid_recursive", TaggedInvertOrZero::<HybridRecursiveStrategy>, invert_hybrid_recursive),
 			("packed", TaggedInvertOrZero::<PackedStrategy>, invert_packed),
 			("simd", TaggedInvertOrZero::<SimdStrategy>, invert_simd),
 		)
@@ -323,7 +357,19 @@ fn square_pairwise<T: TaggedSquare<PairwiseStrategy>>(val: T) -> T {
 	val.square()
 }
 
+fn square_pairwise_recursive<T: TaggedSquare<PairwiseRecursiveStrategy>>(val: T) -> T {
+	val.square()
+}
+
+fn square_pairwise_table<T: TaggedSquare<PairwiseTableStrategy>>(val: T) -> T {
+	val.square()
+}
+
 fn square_packed<T: TaggedSquare<PackedStrategy>>(val: T) -> T {
+	val.square()
+}
+
+fn square_hybrid_recursive<T: TaggedSquare<HybridRecursiveStrategy>>(val: T) -> T {
 	val.square()
 }
 
@@ -338,6 +384,9 @@ fn square(c: &mut Criterion) {
 		strategies @ (
 			("main", PackedField, square_main),
 			("pairwise", TaggedSquare::<PairwiseStrategy>, square_pairwise),
+			("pairwise_recursive", TaggedSquare::<PairwiseRecursiveStrategy>, square_pairwise_recursive),
+			("pairwise_table", TaggedSquare::<PairwiseTableStrategy>, square_pairwise_table),
+			("hybrid_recursive", TaggedSquare::<HybridRecursiveStrategy>, square_hybrid_recursive),
 			("packed", TaggedSquare::<PackedStrategy>, square_packed),
 			("simd", TaggedSquare::<SimdStrategy>, square_simd),
 		)
@@ -353,7 +402,19 @@ fn mul_alpha_pairwise<T: TaggedMulAlpha<PairwiseStrategy>>(val: T) -> T {
 	val.mul_alpha()
 }
 
+fn mul_alpha_pairwise_recursive<T: TaggedMulAlpha<PairwiseRecursiveStrategy>>(val: T) -> T {
+	val.mul_alpha()
+}
+
+fn mul_alpha_pairwise_table<T: TaggedMulAlpha<PairwiseTableStrategy>>(val: T) -> T {
+	val.mul_alpha()
+}
+
 fn mul_alpha_packed<T: TaggedMulAlpha<PackedStrategy>>(val: T) -> T {
+	val.mul_alpha()
+}
+
+fn mul_alpha_hybrid_recursive<T: TaggedMulAlpha<HybridRecursiveStrategy>>(val: T) -> T {
 	val.mul_alpha()
 }
 
@@ -368,6 +429,9 @@ fn mul_alpha(c: &mut Criterion) {
 		strategies @ (
 			("main", MulAlpha, mul_alpha_main),
 			("pairwise", TaggedMulAlpha::<PairwiseStrategy>, mul_alpha_pairwise),
+			("pairwise_recursive", TaggedMulAlpha::<PairwiseRecursiveStrategy>, mul_alpha_pairwise_recursive),
+			("pairwise_table", TaggedMulAlpha::<PairwiseTableStrategy>, mul_alpha_pairwise_table),
+			("hybrid_recursive", TaggedMulAlpha::<HybridRecursiveStrategy>, mul_alpha_hybrid_recursive),
 			("packed", TaggedMulAlpha::<PackedStrategy>, mul_alpha_packed),
 			("simd", TaggedMulAlpha::<SimdStrategy>, mul_alpha_simd),
 		)

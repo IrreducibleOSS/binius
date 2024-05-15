@@ -8,11 +8,8 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseStrategy},
-	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy,
-	},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
 	underlier::UnderlierType,
 	BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
@@ -55,21 +52,21 @@ impl_tower_constants!(BinaryField2b, u8, { alphas!(u8, 1) });
 impl_tower_constants!(BinaryField4b, u8, { alphas!(u8, 2) });
 
 // Define multiplication
-impl_mul_with_strategy!(PackedBinaryField4x2b, PackedStrategy);
-impl_mul_with_strategy!(PackedBinaryField2x4b, PackedStrategy);
-impl_mul_with_strategy!(PackedBinaryField1x8b, PairwiseStrategy);
+impl_mul_with!(PackedBinaryField4x2b @ PackedStrategy);
+impl_mul_with!(PackedBinaryField2x4b @ PackedStrategy);
+impl_mul_with!(PackedBinaryField1x8b @ PairwiseTableStrategy);
 
 // Define square
-impl_square_with_strategy!(PackedBinaryField4x2b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField2x4b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField1x8b, PackedStrategy);
+impl_square_with!(PackedBinaryField4x2b @ PackedStrategy);
+impl_square_with!(PackedBinaryField2x4b @ PackedStrategy);
+impl_square_with!(PackedBinaryField1x8b @ PairwiseTableStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedBinaryField4x2b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField2x4b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField1x8b, PairwiseStrategy);
+impl_invert_with!(PackedBinaryField4x2b @ PairwiseRecursiveStrategy);
+impl_invert_with!(PackedBinaryField2x4b @ PairwiseRecursiveStrategy);
+impl_invert_with!(PackedBinaryField1x8b @ PairwiseTableStrategy);
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedBinaryField4x2b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField2x4b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField1x8b, PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField4x2b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField2x4b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField1x8b @ PairwiseTableStrategy);

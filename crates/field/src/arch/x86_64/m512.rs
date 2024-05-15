@@ -6,7 +6,7 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
+	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -16,7 +16,7 @@ use std::{
 	mem::transmute_copy,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
-use subtle::{Choice, ConstantTimeEq};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 512-bit value that is used for 512-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
@@ -81,6 +81,13 @@ impl From<u8> for M512 {
 		Self::from(value as u128)
 	}
 }
+
+impl<const N: usize> From<SmallU<N>> for M512 {
+	fn from(value: SmallU<N>) -> Self {
+		Self::from(value.val() as u128)
+	}
+}
+
 impl From<M512> for [u128; 4] {
 	fn from(value: M512) -> Self {
 		let result: [u128; 4] = unsafe { transmute_copy(&value.0) };
@@ -286,6 +293,18 @@ impl ConstantTimeEq for M512 {
 	}
 }
 
+impl ConditionallySelectable for M512 {
+	fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+		let a = <[u128; 4]>::from(*a);
+		let b = <[u128; 4]>::from(*b);
+		let result: [u128; 4] = std::array::from_fn(|i| {
+			ConditionallySelectable::conditional_select(&a[i], &b[i], choice)
+		});
+
+		result.into()
+	}
+}
+
 impl Random for M512 {
 	fn random(mut rng: impl RngCore) -> Self {
 		let val: [u128; 4] = rng.gen();
@@ -315,9 +334,9 @@ pub(super) use m512_from_u128s;
 impl UnderlierType for M512 {
 	const LOG_BITS: usize = 9;
 
-	const ONE: Self = { Self(m512_from_u128s!(0, 0, 0, 1,)) };
-
 	const ZERO: Self = { Self(m512_from_u128s!(0, 0, 0, 0,)) };
+	const ONE: Self = { Self(m512_from_u128s!(0, 0, 0, 1,)) };
+	const ONES: Self = { Self(m512_from_u128s!(u128::MAX, u128::MAX, u128::MAX, u128::MAX,)) };
 
 	#[inline(always)]
 	fn fill_with_bit(val: u8) -> Self {
@@ -330,18 +349,18 @@ impl UnderlierType for M512 {
 		T: WithUnderlier,
 		T::Underlier: NumCast<Self>,
 	{
-		match T::MEANINGFUL_BITS {
+		match T::Underlier::BITS {
 			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::MEANINGFUL_BITS;
+				let elements_in_64 = 64 / T::Underlier::BITS;
 				let shuffle = unsafe { _mm512_set1_epi64((i / elements_in_64) as i64) };
 				let chunk_64 =
 					u64::num_cast_from(Self(unsafe { _mm512_permutexvar_epi64(shuffle, self.0) }));
 
-				let result_64 = if T::MEANINGFUL_BITS == 64 {
+				let result_64 = if T::Underlier::BITS == 64 {
 					chunk_64
 				} else {
-					let ones = ((1u128 << T::MEANINGFUL_BITS) - 1) as u64;
-					let val_64 = chunk_64 >> (T::MEANINGFUL_BITS * (i % elements_in_64)) & ones;
+					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
+					let val_64 = chunk_64 >> (T::Underlier::BITS * (i % elements_in_64)) & ones;
 
 					val_64
 				};

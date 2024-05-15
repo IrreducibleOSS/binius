@@ -7,10 +7,10 @@ cfg_if! {
 
 		pub mod packed_128;
 		pub mod packed_aes_128;
-		pub mod polyval;
+		pub mod packed_polyval_128;
 	} else {
 		pub use super::portable::packed_128;
 		pub use super::portable::packed_aes_128;
-		pub use super::portable::polyval;
+		pub use super::portable::packed_polyval_128;
 	}
 }

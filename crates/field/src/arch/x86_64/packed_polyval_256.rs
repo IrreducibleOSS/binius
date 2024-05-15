@@ -2,14 +2,14 @@
 
 use super::{
 	m256::M256,
-	polyval::{simd_montgomery_multiply, PolyvalSimdType},
+	packed_polyval_128::{simd_montgomery_multiply, PolyvalSimdType},
 };
 use crate::{
 	arch::{
 		portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
-		PairwiseStrategy,
+		PairwiseStrategy, ReuseMultiplyStrategy,
 	},
-	arithmetic_traits::{impl_invert_with_strategy, impl_square_with_strategy},
+	arithmetic_traits::{impl_invert_with, impl_square_with},
 	BinaryField128bPolyval,
 };
 use core::arch::x86_64::*;
@@ -20,6 +20,12 @@ pub type PackedBinaryPolyval2x128b = PackedPrimitiveType<M256, BinaryField128bPo
 
 // Define conversion from type to underlier
 impl_conversion!(M256, PackedBinaryPolyval2x128b);
+
+impl From<PackedBinaryPolyval2x128b> for [u128; 2] {
+	fn from(value: PackedBinaryPolyval2x128b) -> Self {
+		value.0.into()
+	}
+}
 
 // Define extension fields
 impl_packed_extension_field!(PackedBinaryPolyval2x128b);
@@ -41,10 +47,11 @@ impl Mul for PackedBinaryPolyval2x128b {
 }
 
 // Define square
-impl_square_with_strategy!(PackedBinaryPolyval2x128b, PairwiseStrategy);
+impl_square_with!(PackedBinaryPolyval2x128b @ ReuseMultiplyStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedBinaryPolyval2x128b, PairwiseStrategy);
+// TODO: possible we can use some better strategy using SIMD for some of the operations
+impl_invert_with!(PackedBinaryPolyval2x128b @ PairwiseStrategy);
 
 impl PolyvalSimdType for __m256i {
 	#[inline(always)]

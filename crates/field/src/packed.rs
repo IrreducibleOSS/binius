@@ -70,11 +70,13 @@ pub trait PackedField:
 	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error>;
 
 	/// Get the scalar at a given index.
+	#[inline]
 	fn get(&self, i: usize) -> Self::Scalar {
 		self.get_checked(i).expect("index must be less than width")
 	}
 
 	/// Set the scalar at a given index.
+	#[inline]
 	fn set(&mut self, i: usize, scalar: Self::Scalar) {
 		self.set_checked(i, scalar).expect("index must be less than width")
 	}
@@ -87,15 +89,18 @@ pub trait PackedField:
 		(0..Self::WIDTH).map_skippable(move |i| self.get(i))
 	}
 
+	#[inline]
 	fn zero() -> Self {
 		Self::broadcast(Self::Scalar::ZERO)
 	}
 
+	#[inline]
 	fn one() -> Self {
 		Self::broadcast(Self::Scalar::ONE)
 	}
 
 	/// Initialize zero position with `scalar`, set other elements to zero.
+	#[inline]
 	fn set_single(scalar: Self::Scalar) -> Self {
 		let mut result = Self::default();
 		result.set(0, scalar);
@@ -187,6 +192,7 @@ impl<F: Field> Broadcast<F> for F {
 }
 
 impl<T: TowerFieldArithmetic> MulAlpha for T {
+	#[inline]
 	fn mul_alpha(self) -> Self {
 		<Self as TowerFieldArithmetic>::multiply_alpha(self)
 	}
@@ -233,6 +239,7 @@ impl<F: Field> PackedField for F {
 		<Self as Field>::invert(&self).unwrap_or(Self::default())
 	}
 
+	#[inline]
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 		f(0)
 	}
@@ -242,3 +249,19 @@ impl<F: Field> PackedField for F {
 pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
+
+pub trait AsSinglePacked: Sized {
+	type SingleElementPacked: PackedField<Scalar = Self>;
+
+	fn to_single_packed(self) -> Self::SingleElementPacked {
+		assert_eq!(Self::SingleElementPacked::WIDTH, 1);
+
+		Self::SingleElementPacked::set_single(self)
+	}
+
+	fn from_single_packed(value: Self::SingleElementPacked) -> Self {
+		assert_eq!(Self::SingleElementPacked::WIDTH, 1);
+
+		value.get(0)
+	}
+}

@@ -15,9 +15,53 @@
 //! - <https://eprint.iacr.org/2015/688.pdf>
 
 use core::{arch::aarch64::*, mem};
+use std::ops::Mul;
+
+use crate::{
+	arch::{
+		packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
+		ReuseMultiplyStrategy,
+	},
+	arithmetic_traits::{impl_square_with, InvertOrZero},
+	BinaryField128bPolyval, PackedField,
+};
+
+use super::m128::M128;
+
+pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;
+
+// Define conversion from type to underlier
+impl_conversion!(M128, PackedBinaryPolyval1x128b);
+
+// Define extension field
+impl_packed_extension_field!(PackedBinaryPolyval1x128b);
+
+// Define multiply
+impl Mul for PackedBinaryPolyval1x128b {
+	type Output = Self;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		montgomery_multiply(self.0.into(), rhs.0.into()).into()
+	}
+}
+
+// Define square
+// TODO: implement a more optimal version for square case
+impl_square_with!(PackedBinaryPolyval1x128b @ ReuseMultiplyStrategy);
+
+// Define invert
+impl InvertOrZero for PackedBinaryPolyval1x128b {
+	fn invert_or_zero(self) -> Self {
+		let portable = super::super::portable::packed_polyval_128::PackedBinaryPolyval1x128b::from(
+			u128::from(self.0),
+		);
+
+		Self::from_underlier(PackedField::invert_or_zero(portable).0.into())
+	}
+}
 
 #[inline]
-pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
+fn montgomery_multiply(a: u128, b: u128) -> u128 {
 	unsafe {
 		let h = vreinterpretq_u8_p128(a);
 		let y = vreinterpretq_u8_p128(b);
@@ -25,11 +69,6 @@ pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
 		let (h, l) = karatsuba2(h, m, l);
 		vreinterpretq_p128_u8(mont_reduce(h, l))
 	}
-}
-
-pub fn montgomery_square(x: u128) -> u128 {
-	// TODO: Optimize this using the squaring tricks in characteristic-2 fields
-	montgomery_multiply(x, x)
 }
 
 /// Karatsuba decomposition for `x*y`.

@@ -4,6 +4,7 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 	packed_extension::PackedExtensionField,
 };
+use crate::underlier::{U1, U2, U4};
 use bytemuck::{
 	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
 };
@@ -71,32 +72,15 @@ macro_rules! binary_field {
 
 		impl $name {
 			pub const fn new(value: $typ) -> Self {
-				match (1 as $typ).overflowing_shl(Self::N_BITS as u32) {
-					(max, false) => assert!(value < max),
-					(_, true) => {}
-				};
-				Self::new_unchecked(value)
-			}
-
-			pub const fn new_checked(value: $typ) -> Result<Self, Error> {
-				match (1 as $typ).overflowing_shl(Self::N_BITS as u32) {
-					(max, false) if value >= max => return Err(Error::NotInField),
-					_ => {}
-				};
-				Ok(Self::new_unchecked(value))
-			}
-
-			pub(crate) const fn new_unchecked(value: $typ) -> Self {
-				Self(value.to_le())
+				Self(value)
 			}
 
 			pub fn val(self) -> $typ {
-				<$typ>::from_le(self.0)
+				self.0
 			}
 		}
 
 		impl $crate::underlier::WithUnderlier for $name {
-			const MEANINGFUL_BITS: usize = Self::N_BITS;
 			type Underlier = $typ;
 		}
 
@@ -233,16 +217,11 @@ macro_rules! binary_field {
 		}
 
 		impl Field for $name {
-			const ZERO: Self = $name::new_unchecked(0);
-			const ONE: Self = $name::new_unchecked(1);
+			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ZERO);
+			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ONE);
 
 			fn random(mut rng: impl RngCore) -> Self {
-				use rand::Rng;
-
-				match (1 as $typ).overflowing_shl(Self::N_BITS as u32) {
-					(max, false) => Self(rng.gen::<$typ>() & (max - 1).to_le()),
-					(_, true) => Self(rng.gen::<$typ>())
-				}
+				Self(<$typ as $crate::underlier::Random>::random(&mut rng))
 			}
 
 			fn square(&self) -> Self {
@@ -282,13 +261,17 @@ macro_rules! binary_field {
 			}
 
 			fn forward_checked(start: Self, count: usize) -> Option<Self> {
-				let val = start.val().checked_add(count as $typ)?;
-				Self::new_checked(val).ok()
+				use crate::underlier::NumCast as _;
+
+				let val = start.val().checked_add(<$typ>::num_cast_from(count as u64))?;
+				Some(Self::new(val))
 			}
 
 			fn backward_checked(start: Self, count: usize) -> Option<Self> {
-				let val = start.val().checked_sub(count as $typ)?;
-				Self::new_checked(val).ok()
+				use crate::underlier::NumCast as _;
+
+				let val = start.val().checked_sub(<$typ>::num_cast_from(count as u64))?;
+				Some(Self::new(val))
 			}
 		}
 
@@ -344,8 +327,12 @@ macro_rules! mul_by_binary_field_1b {
 		impl Mul<BinaryField1b> for $name {
 			type Output = Self;
 
+			#[inline]
+			#[allow(clippy::suspicious_arithmetic_impl)]
 			fn mul(self, rhs: BinaryField1b) -> Self::Output {
-				Self::conditional_select(&Self::ZERO, &self, rhs.0.into())
+				use $crate::underlier::{UnderlierType, WithUnderlier};
+
+				Self(self.0 & <$name as WithUnderlier>::Underlier::fill_with_bit(u8::from(rhs.0)))
 			}
 		}
 	};
@@ -394,8 +381,12 @@ macro_rules! impl_field_extension {
 			type Error = ();
 
 			fn try_from(elem: $name) -> Result<Self, Self::Error> {
-				if elem.0 >> $subfield_name::N_BITS == 0 {
-					Ok($subfield_name::new_unchecked(elem.val() as $subfield_typ))
+				use $crate::underlier::NumCast;
+
+				if elem.0 >> $subfield_name::N_BITS
+					== <$typ as $crate::underlier::UnderlierType>::ZERO
+				{
+					Ok($subfield_name::new(<$subfield_typ>::num_cast_from(elem.val())))
 				} else {
 					Err(())
 				}
@@ -404,7 +395,7 @@ macro_rules! impl_field_extension {
 
 		impl From<$subfield_name> for $name {
 			fn from(elem: $subfield_name) -> Self {
-				$name::new_unchecked(elem.val() as $typ)
+				$name::new(<$typ>::from(elem.val()))
 			}
 		}
 
@@ -472,33 +463,33 @@ macro_rules! impl_field_extension {
 			const DEGREE: usize = $degree;
 
 			fn basis(i: usize) -> Result<Self, Error> {
+				use $crate::underlier::UnderlierType;
+
 				if i >= $degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
-				Ok(Self::new_unchecked(1 << (i * $subfield_name::N_BITS)))
+				Ok(Self::new(<$typ>::ONE << (i * $subfield_name::N_BITS)))
 			}
 
 			fn from_bases(base_elems: &[$subfield_name]) -> Result<Self, Error> {
+				use $crate::underlier::UnderlierType;
+
 				if base_elems.len() > $degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
-				let value = base_elems
-					.iter()
-					.rev()
-					.fold(0, |value, elem| value << $subfield_name::N_BITS | elem.val() as $typ);
-				Ok(Self::new_unchecked(value))
+				let value = base_elems.iter().rev().fold(<$typ>::ZERO, |value, elem| {
+					value << $subfield_name::N_BITS | <$typ>::from(elem.val())
+				});
+				Ok(Self::new(value))
 			}
 
 			fn iter_bases(&self) -> Self::Iterator {
-				let mask = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32)
-				{
-					(max, false) => max - 1,
-					(_, true) => (1 as $subfield_typ).overflowing_neg().0,
-				};
+				use $crate::underlier::NumCast;
+
 				let base_elems = array::from_fn(|i| {
-					<$subfield_name>::new_unchecked(
-						((self.0 >> (i * $subfield_name::N_BITS)) as $subfield_typ) & mask,
-					)
+					<$subfield_name>::new(<$subfield_typ>::num_cast_from(
+						(self.0 >> (i * $subfield_name::N_BITS)),
+					))
 				});
 				base_elems.into_iter()
 			}
@@ -518,19 +509,20 @@ pub(super) trait MulPrimitive: Sized {
 macro_rules! binary_tower {
 	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty)) => {
 		impl From<$name> for ($subfield_name, $subfield_name) {
+			#[inline]
 			fn from(src: $name) -> ($subfield_name, $subfield_name) {
-				let lo = match (1 as $subfield_typ).overflowing_shl($subfield_name::N_BITS as u32) {
-					(shl, false) => src.val() as $subfield_typ & (shl - 1),
-					(_, true) => src.val() as $subfield_typ,
-				};
-				let hi = (src.val() >> $subfield_name::N_BITS) as $subfield_typ;
-				($subfield_name::new_unchecked(lo), $subfield_name::new_unchecked(hi))
+				use $crate::underlier::NumCast;
+
+				let lo = <$subfield_typ>::num_cast_from(src.0);
+				let hi = <$subfield_typ>::num_cast_from(src.0 >> $subfield_name::N_BITS);
+				($subfield_name::new(lo), $subfield_name::new(hi))
 			}
 		}
 
 		impl From<($subfield_name, $subfield_name)> for $name {
+			#[inline]
 			fn from((a, b): ($subfield_name, $subfield_name)) -> Self {
-				$name::new_unchecked(a.val() as $typ | ((b.val() as $typ) << $subfield_name::N_BITS))
+				$name(<$typ>::from(a.val()) | (<$typ>::from(b.val()) << $subfield_name::N_BITS))
 			}
 		}
 
@@ -564,14 +556,14 @@ macro_rules! binary_tower {
 	};
 }
 
-binary_field!(pub BinaryField1b(u8), 0x1);
-binary_field!(pub BinaryField2b(u8), 0x2);
-binary_field!(pub BinaryField4b(u8), 0x5);
+binary_field!(pub BinaryField1b(U1), U1::new(0x1));
+binary_field!(pub BinaryField2b(U2), U2::new(0x2));
+binary_field!(pub BinaryField4b(U4), U4::new(0x5));
 binary_field!(pub BinaryField8b(u8), 0x2D);
 binary_field!(pub BinaryField16b(u16), 0xE2DE);
 binary_field!(pub BinaryField32b(u32), 0x03E21CEA);
 binary_field!(pub BinaryField64b(u64), 0x070F870DCD9C1D88);
-binary_field!(pub BinaryField128b(u128), 0x2E895399AF449ACE499596F6E5FCCAFA);
+binary_field!(pub BinaryField128b(u128), 0x2E895399AF449ACE499596F6E5FCCAFAu128);
 
 unsafe impl Pod for BinaryField8b {}
 unsafe impl Pod for BinaryField16b {}
@@ -580,9 +572,9 @@ unsafe impl Pod for BinaryField64b {}
 unsafe impl Pod for BinaryField128b {}
 
 binary_tower!(
-	BinaryField1b(u8)
-	< BinaryField2b(u8)
-	< BinaryField4b(u8)
+	BinaryField1b(U1)
+	< BinaryField2b(U2)
+	< BinaryField4b(U4)
 	< BinaryField8b(u8)
 	< BinaryField16b(u16)
 	< BinaryField32b(u32)
@@ -592,7 +584,88 @@ binary_tower!(
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
-		val.0.into()
+		val.ct_eq(&BinaryField1b::ZERO)
+	}
+}
+
+impl BinaryField1b {
+	/// Creates value without checking that it is 0 or 1
+	///
+	/// # Safety
+	/// Value should not exceed 1
+	#[inline]
+	pub unsafe fn new_unchecked(val: u8) -> Self {
+		debug_assert!(val < 2);
+
+		Self::new(U1::new_unchecked(val))
+	}
+}
+
+impl From<u8> for BinaryField1b {
+	#[inline]
+	fn from(val: u8) -> Self {
+		Self::new(U1::new(val))
+	}
+}
+
+impl From<BinaryField1b> for u8 {
+	#[inline]
+	fn from(value: BinaryField1b) -> Self {
+		value.val().into()
+	}
+}
+
+impl BinaryField2b {
+	/// Creates value without checking that it is 0 or 1
+	///
+	/// # Safety
+	/// Value should not exceed 3
+	#[inline]
+	pub unsafe fn new_unchecked(val: u8) -> Self {
+		debug_assert!(val < 4);
+
+		Self::new(U2::new_unchecked(val))
+	}
+}
+
+impl From<u8> for BinaryField2b {
+	#[inline]
+	fn from(val: u8) -> Self {
+		Self::new(U2::new(val))
+	}
+}
+
+impl From<BinaryField2b> for u8 {
+	#[inline]
+	fn from(value: BinaryField2b) -> Self {
+		value.val().into()
+	}
+}
+
+impl BinaryField4b {
+	/// Creates value without checking that it is 0 or 1
+	///
+	/// # Safety
+	/// Value should not exceed 15
+	#[inline]
+	pub unsafe fn new_unchecked(val: u8) -> Self {
+		debug_assert!(val < 8);
+
+		Self::new(U4::new_unchecked(val))
+	}
+}
+
+impl From<u8> for BinaryField4b {
+	#[inline]
+	fn from(val: u8) -> Self {
+		Self::new(U4::new(val))
+	}
+}
+
+impl From<BinaryField4b> for u8 {
+	#[inline]
+	fn from(value: BinaryField4b) -> Self {
+		value.val().into()
 	}
 }
 
@@ -643,54 +716,54 @@ pub(crate) mod tests {
 
 	#[test]
 	fn test_gf2_add() {
-		assert_eq!(BF1::new(0) + BF1::new(0), BF1::new(0));
-		assert_eq!(BF1::new(0) + BF1::new(1), BF1::new(1));
-		assert_eq!(BF1::new(1) + BF1::new(0), BF1::new(1));
-		assert_eq!(BF1::new(1) + BF1::new(1), BF1::new(0));
+		assert_eq!(BF1::from(0) + BF1::from(0), BF1::from(0));
+		assert_eq!(BF1::from(0) + BF1::from(1), BF1::from(1));
+		assert_eq!(BF1::from(1) + BF1::from(0), BF1::from(1));
+		assert_eq!(BF1::from(1) + BF1::from(1), BF1::from(0));
 	}
 
 	#[test]
 	fn test_gf2_sub() {
-		assert_eq!(BF1(0) - BF1(0), BF1(0));
-		assert_eq!(BF1(0) - BF1(1), BF1(1));
-		assert_eq!(BF1(1) - BF1(0), BF1(1));
-		assert_eq!(BF1(1) - BF1(1), BF1(0));
+		assert_eq!(BF1::from(0) - BF1::from(0), BF1::from(0));
+		assert_eq!(BF1::from(0) - BF1::from(1), BF1::from(1));
+		assert_eq!(BF1::from(1) - BF1::from(0), BF1::from(1));
+		assert_eq!(BF1::from(1) - BF1::from(1), BF1::from(0));
 	}
 
 	#[test]
 	fn test_gf2_mul() {
-		assert_eq!(BF1::new(0) * BF1::new(0), BF1::new(0));
-		assert_eq!(BF1::new(0) * BF1::new(1), BF1::new(0));
-		assert_eq!(BF1::new(1) * BF1::new(0), BF1::new(0));
-		assert_eq!(BF1::new(1) * BF1::new(1), BF1::new(1));
+		assert_eq!(BF1::from(0) * BF1::from(0), BF1::from(0));
+		assert_eq!(BF1::from(0) * BF1::from(1), BF1::from(0));
+		assert_eq!(BF1::from(1) * BF1::from(0), BF1::from(0));
+		assert_eq!(BF1::from(1) * BF1::from(1), BF1::from(1));
 	}
 
 	#[test]
 	fn test_bin2b_mul() {
-		assert_eq!(BF2::new(0x1) * BF2::new(0x0), BF2::new(0x0));
-		assert_eq!(BF2::new(0x1) * BF2::new(0x1), BF2::new(0x1));
-		assert_eq!(BF2::new(0x0) * BF2::new(0x3), BF2::new(0x0));
-		assert_eq!(BF2::new(0x1) * BF2::new(0x2), BF2::new(0x2));
-		assert_eq!(BF2::new(0x0) * BF2::new(0x1), BF2::new(0x0));
-		assert_eq!(BF2::new(0x0) * BF2::new(0x2), BF2::new(0x0));
-		assert_eq!(BF2::new(0x1) * BF2::new(0x3), BF2::new(0x3));
-		assert_eq!(BF2::new(0x3) * BF2::new(0x0), BF2::new(0x0));
-		assert_eq!(BF2::new(0x2) * BF2::new(0x0), BF2::new(0x0));
-		assert_eq!(BF2::new(0x2) * BF2::new(0x2), BF2::new(0x3));
+		assert_eq!(BF2::from(0x1) * BF2::from(0x0), BF2::from(0x0));
+		assert_eq!(BF2::from(0x1) * BF2::from(0x1), BF2::from(0x1));
+		assert_eq!(BF2::from(0x0) * BF2::from(0x3), BF2::from(0x0));
+		assert_eq!(BF2::from(0x1) * BF2::from(0x2), BF2::from(0x2));
+		assert_eq!(BF2::from(0x0) * BF2::from(0x1), BF2::from(0x0));
+		assert_eq!(BF2::from(0x0) * BF2::from(0x2), BF2::from(0x0));
+		assert_eq!(BF2::from(0x1) * BF2::from(0x3), BF2::from(0x3));
+		assert_eq!(BF2::from(0x3) * BF2::from(0x0), BF2::from(0x0));
+		assert_eq!(BF2::from(0x2) * BF2::from(0x0), BF2::from(0x0));
+		assert_eq!(BF2::from(0x2) * BF2::from(0x2), BF2::from(0x3));
 	}
 
 	#[test]
 	fn test_bin4b_mul() {
-		assert_eq!(BF4::new(0x0) * BF4::new(0x0), BF4::new(0x0));
-		assert_eq!(BF4::new(0x9) * BF4::new(0x0), BF4::new(0x0));
-		assert_eq!(BF4::new(0x9) * BF4::new(0x4), BF4::new(0xa));
-		assert_eq!(BF4::new(0x6) * BF4::new(0x0), BF4::new(0x0));
-		assert_eq!(BF4::new(0x6) * BF4::new(0x7), BF4::new(0xc));
-		assert_eq!(BF4::new(0x2) * BF4::new(0x0), BF4::new(0x0));
-		assert_eq!(BF4::new(0x2) * BF4::new(0xa), BF4::new(0xf));
-		assert_eq!(BF4::new(0x1) * BF4::new(0x0), BF4::new(0x0));
-		assert_eq!(BF4::new(0x1) * BF4::new(0x8), BF4::new(0x8));
-		assert_eq!(BF4::new(0x9) * BF4::new(0xb), BF4::new(0x8));
+		assert_eq!(BF4::from(0x0) * BF4::from(0x0), BF4::from(0x0));
+		assert_eq!(BF4::from(0x9) * BF4::from(0x0), BF4::from(0x0));
+		assert_eq!(BF4::from(0x9) * BF4::from(0x4), BF4::from(0xa));
+		assert_eq!(BF4::from(0x6) * BF4::from(0x0), BF4::from(0x0));
+		assert_eq!(BF4::from(0x6) * BF4::from(0x7), BF4::from(0xc));
+		assert_eq!(BF4::from(0x2) * BF4::from(0x0), BF4::from(0x0));
+		assert_eq!(BF4::from(0x2) * BF4::from(0xa), BF4::from(0xf));
+		assert_eq!(BF4::from(0x1) * BF4::from(0x0), BF4::from(0x0));
+		assert_eq!(BF4::from(0x1) * BF4::from(0x8), BF4::from(0x8));
+		assert_eq!(BF4::from(0x9) * BF4::from(0xb), BF4::from(0x8));
 	}
 
 	#[test]
@@ -882,10 +955,10 @@ pub(crate) mod tests {
 
 	#[test]
 	fn test_field_formatting() {
-		assert_eq!(format!("{}", BinaryField4b::new(3)), "0x3");
-		assert_eq!(format!("{}", BinaryField8b::new(3)), "0x03");
-		assert_eq!(format!("{}", BinaryField32b::new(5)), "0x00000005");
-		assert_eq!(format!("{}", BinaryField64b::new(5)), "0x0000000000000005");
+		assert_eq!(format!("{}", BinaryField4b::from(3)), "0x3");
+		assert_eq!(format!("{}", BinaryField8b::from(3)), "0x03");
+		assert_eq!(format!("{}", BinaryField32b::from(5)), "0x00000005");
+		assert_eq!(format!("{}", BinaryField64b::from(5)), "0x0000000000000005");
 	}
 
 	#[test]
@@ -938,17 +1011,6 @@ pub(crate) mod tests {
 			let x_inverse = x.invert().unwrap();
 			assert_eq!(x * x_inverse, BinaryField128b::ONE);
 		}
-	}
-
-	#[test]
-	fn test_step_32b() {
-		let step0 = BinaryField32b::ZERO;
-		let step1 = BinaryField32b::forward_checked(step0, 0x10000000);
-		assert_eq!(step1, Some(BinaryField32b::new(0x10000000)));
-		let step2 = BinaryField32b::forward_checked(step1.unwrap(), 0x01000000);
-		assert_eq!(step2, Some(BinaryField32b::new(0x11000000)));
-		let step3 = BinaryField32b::forward_checked(step2.unwrap(), 0xF0000000);
-		assert_eq!(step3, None);
 	}
 
 	fn test_mul_primitive<F: TowerField>(val: F, iota: usize) {

@@ -11,3 +11,12 @@ impl_scaled_512_bit_conversion_from_u128_array!(
 	PackedBinaryPolyval4x128b,
 	PackedBinaryPolyval2x128b
 );
+
+impl From<PackedBinaryPolyval4x128b> for [u128; 4] {
+	fn from(value: PackedBinaryPolyval4x128b) -> Self {
+		let [a0, a1]: [u128; 2] = value.0[0].into();
+		let [a2, a3]: [u128; 2] = value.0[1].into();
+
+		[a0, a1, a2, a3]
+	}
+}

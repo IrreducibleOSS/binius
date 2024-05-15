@@ -8,15 +8,19 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseStrategy},
+	arch::{
+		HybridRecursiveStrategy, PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy,
+		PairwiseTableStrategy,
+	},
 	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy, impl_transformation_with_strategy,
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
 	},
 	underlier::UnderlierType,
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b,
 	BinaryField8b,
 };
+use cfg_if::cfg_if;
 
 // Define 64 bit packed field types
 pub type PackedBinaryField64x1b = PackedPrimitiveType<u64, BinaryField1b>;
@@ -74,36 +78,63 @@ impl_tower_constants!(BinaryField16b, u64, { alphas!(u64, 4) });
 impl_tower_constants!(BinaryField32b, u64, { alphas!(u64, 5) });
 
 // Define multiplication
-impl_mul_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
-impl_mul_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_mul_with_strategy!(PackedBinaryField8x8b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
+impl_mul_with!(PackedBinaryField32x2b @ PackedStrategy);
+impl_mul_with!(PackedBinaryField16x4b @ PackedStrategy);
+cfg_if! {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+		impl_mul_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
+		impl_mul_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
+		impl_mul_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
+		impl_mul_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
+	} else {
+		impl_mul_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_mul_with!(PackedBinaryField4x16b @ PairwiseRecursiveStrategy);
+		impl_mul_with!(PackedBinaryField2x32b @ PairwiseRecursiveStrategy);
+		impl_mul_with!(PackedBinaryField1x64b @ PairwiseRecursiveStrategy);
+	}
+}
 
 // Define square
-impl_square_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
-impl_square_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
-impl_square_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
+impl_square_with!(PackedBinaryField32x2b @ PackedStrategy);
+impl_square_with!(PackedBinaryField16x4b @ PackedStrategy);
+cfg_if! {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+		impl_square_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
+		impl_square_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
+		impl_square_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
+		impl_square_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
+	} else {
+		impl_square_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_square_with!(PackedBinaryField4x16b @ PairwiseStrategy);
+		impl_square_with!(PackedBinaryField2x32b @ PairwiseRecursiveStrategy);
+		impl_square_with!(PackedBinaryField1x64b @ HybridRecursiveStrategy);
+	}
+}
 
 // Define invert
-impl_invert_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
-impl_invert_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_invert_with_strategy!(PackedBinaryField8x8b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField4x16b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
+impl_invert_with!(PackedBinaryField32x2b @ PackedStrategy);
+impl_invert_with!(PackedBinaryField16x4b @ PackedStrategy);
+cfg_if! {
+	if #[cfg(all(target_arch = "x86_64", target_feature = "sse2", target_feature = "gfni"))] {
+		impl_invert_with!(PackedBinaryField8x8b => crate::PackedBinaryField16x8b);
+		impl_invert_with!(PackedBinaryField4x16b => crate::PackedBinaryField8x16b);
+		impl_invert_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
+		impl_invert_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
+	} else {
+		impl_invert_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_invert_with!(PackedBinaryField4x16b @ PairwiseStrategy);
+		impl_invert_with!(PackedBinaryField2x32b @ PairwiseStrategy);
+		impl_invert_with!(PackedBinaryField1x64b @ PairwiseRecursiveStrategy);
+	}
+}
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedBinaryField32x2b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField16x4b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField8x8b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField4x16b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField2x32b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedBinaryField1x64b, PairwiseStrategy);
+impl_mul_alpha_with!(PackedBinaryField32x2b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField16x4b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField8x8b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField4x16b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField2x32b @ PackedStrategy);
+impl_mul_alpha_with!(PackedBinaryField1x64b @ PairwiseRecursiveStrategy);
 
 // Define affine transformations
 impl_transformation_with_strategy!(PackedBinaryField64x1b, PackedStrategy);

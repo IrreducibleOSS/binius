@@ -181,6 +181,7 @@ where
 
 	const LOG_WIDTH: usize = { PT::LOG_WIDTH + N.ilog2() as usize };
 
+	#[inline]
 	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
 		let outer_i = i / PT::WIDTH;
 		let inner_i = i % PT::WIDTH;
@@ -193,6 +194,7 @@ where
 			.and_then(|inner| inner.get_checked(inner_i))
 	}
 
+	#[inline]
 	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error> {
 		let outer_i = i / PT::WIDTH;
 		let inner_i = i % PT::WIDTH;
@@ -257,6 +259,7 @@ impl<PT: PackedField + MulAlpha, const N: usize> MulAlpha for ScaledPackedField<
 where
 	[PT; N]: Default,
 {
+	#[inline]
 	fn mul_alpha(self) -> Self {
 		Self(self.0.map(|v| v.mul_alpha()))
 	}

@@ -224,6 +224,7 @@ where
 	<Self as PackedTowerField>::PackedDirectSubfield: MulAlpha,
 	U: TowerSimdType + UnderlierType,
 {
+	#[inline]
 	fn mul_alpha(self) -> Self {
 		// This fallback is needed to generically use SimdStrategy in benchmarks.
 		if Scalar::TOWER_LEVEL <= 3 {

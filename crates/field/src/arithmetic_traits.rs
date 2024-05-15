@@ -36,8 +36,8 @@ pub trait TaggedMul<Strategy> {
 	fn mul(self, rhs: Self) -> Self;
 }
 
-macro_rules! impl_mul_with_strategy {
-	($name:ty, $strategy:ty) => {
+macro_rules! impl_mul_with {
+	($name:ident @ $strategy:ty) => {
 		impl std::ops::Mul for $name {
 			type Output = Self;
 
@@ -47,17 +47,27 @@ macro_rules! impl_mul_with_strategy {
 			}
 		}
 	};
+	($name:ty => $bigger:ty) => {
+		impl std::ops::Mul for $name {
+			type Output = Self;
+
+			#[inline]
+			fn mul(self, rhs: Self) -> Self {
+				$crate::arch::portable::packed::mul_as_bigger_type::<_, $bigger>(self, rhs)
+			}
+		}
+	};
 }
 
-pub(crate) use impl_mul_with_strategy;
+pub(crate) use impl_mul_with;
 
 /// Square operation that is parameterized with some some strategy.
 pub trait TaggedSquare<Strategy> {
 	fn square(self) -> Self;
 }
 
-macro_rules! impl_square_with_strategy {
-	($name:ty, $strategy:ty) => {
+macro_rules! impl_square_with {
+	($name:ident @ $strategy:ty) => {
 		impl $crate::arithmetic_traits::Square for $name {
 			#[inline]
 			fn square(self) -> Self {
@@ -65,17 +75,25 @@ macro_rules! impl_square_with_strategy {
 			}
 		}
 	};
+	($name:ty => $bigger:ty) => {
+		impl $crate::arithmetic_traits::Square for $name {
+			#[inline]
+			fn square(self) -> Self {
+				$crate::arch::portable::packed::square_as_bigger_type::<_, $bigger>(self)
+			}
+		}
+	};
 }
 
-pub(crate) use impl_square_with_strategy;
+pub(crate) use impl_square_with;
 
 /// Invert or zero operation that is parameterized with some some strategy.
 pub trait TaggedInvertOrZero<Strategy> {
 	fn invert_or_zero(self) -> Self;
 }
 
-macro_rules! impl_invert_with_strategy {
-	($name:ty, $strategy:ty) => {
+macro_rules! impl_invert_with {
+	($name:ident @ $strategy:ty) => {
 		impl $crate::arithmetic_traits::InvertOrZero for $name {
 			#[inline]
 			fn invert_or_zero(self) -> Self {
@@ -83,17 +101,25 @@ macro_rules! impl_invert_with_strategy {
 			}
 		}
 	};
+	($name:ty => $bigger:ty) => {
+		impl $crate::arithmetic_traits::InvertOrZero for $name {
+			#[inline]
+			fn invert_or_zero(self) -> Self {
+				$crate::arch::portable::packed::invert_as_bigger_type::<_, $bigger>(self)
+			}
+		}
+	};
 }
 
-pub(crate) use impl_invert_with_strategy;
+pub(crate) use impl_invert_with;
 
 /// Multiply by alpha operation that is parameterized with some some strategy.
 pub trait TaggedMulAlpha<Strategy> {
 	fn mul_alpha(self) -> Self;
 }
 
-macro_rules! impl_mul_alpha_with_strategy {
-	($name:ty, $strategy:ty) => {
+macro_rules! impl_mul_alpha_with {
+	($name:ident @ $strategy:ty) => {
 		impl $crate::arithmetic_traits::MulAlpha for $name {
 			#[inline]
 			fn mul_alpha(self) -> Self {
@@ -101,9 +127,17 @@ macro_rules! impl_mul_alpha_with_strategy {
 			}
 		}
 	};
+	($name:ty => $bigger:ty) => {
+		impl $crate::arithmetic_traits::MulAlpha for $name {
+			#[inline]
+			fn mul_alpha(self) -> Self {
+				$crate::arch::portable::packed::mul_alpha_as_bigger_type::<_, $bigger>(self)
+			}
+		}
+	};
 }
 
-pub(crate) use impl_mul_alpha_with_strategy;
+pub(crate) use impl_mul_alpha_with;
 
 /// Affine transformation factory that is parameterized with some strategy.
 #[allow(private_bounds)]

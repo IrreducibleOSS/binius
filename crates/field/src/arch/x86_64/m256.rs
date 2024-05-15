@@ -6,7 +6,7 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
+	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -16,7 +16,7 @@ use std::{
 	mem::transmute,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
-use subtle::{Choice, ConstantTimeEq};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 256-bit value that is used for 256-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
@@ -77,6 +77,13 @@ impl From<u8> for M256 {
 		Self::from(value as u128)
 	}
 }
+
+impl<const N: usize> From<SmallU<N>> for M256 {
+	fn from(value: SmallU<N>) -> Self {
+		Self::from(value.val() as u128)
+	}
+}
+
 impl From<M256> for [u128; 2] {
 	fn from(value: M256) -> Self {
 		let result: [u128; 2] = unsafe { transmute(value.0) };
@@ -235,6 +242,18 @@ impl ConstantTimeEq for M256 {
 	}
 }
 
+impl ConditionallySelectable for M256 {
+	fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+		let a = <[u128; 2]>::from(*a);
+		let b = <[u128; 2]>::from(*b);
+		let result: [u128; 2] = std::array::from_fn(|i| {
+			ConditionallySelectable::conditional_select(&a[i], &b[i], choice)
+		});
+
+		result.into()
+	}
+}
+
 impl Random for M256 {
 	fn random(mut rng: impl RngCore) -> Self {
 		let val: [u128; 2] = rng.gen();
@@ -264,9 +283,9 @@ pub(super) use m256_from_u128s;
 impl UnderlierType for M256 {
 	const LOG_BITS: usize = 8;
 
-	const ONE: Self = { Self(m256_from_u128s!(0, 1,)) };
-
 	const ZERO: Self = { Self(m256_from_u128s!(0, 0,)) };
+	const ONE: Self = { Self(m256_from_u128s!(0, 1,)) };
+	const ONES: Self = { Self(m256_from_u128s!(u128::MAX, u128::MAX,)) };
 
 	fn fill_with_bit(val: u8) -> Self {
 		Self(unsafe { _mm256_set1_epi8(val.wrapping_neg() as i8) })
@@ -278,9 +297,9 @@ impl UnderlierType for M256 {
 		T: WithUnderlier,
 		T::Underlier: NumCast<Self>,
 	{
-		match T::MEANINGFUL_BITS {
+		match T::Underlier::BITS {
 			1 | 2 | 4 | 8 | 16 | 32 => {
-				let elements_in_64 = 64 / T::MEANINGFUL_BITS;
+				let elements_in_64 = 64 / T::Underlier::BITS;
 				let chunk_64 = unsafe {
 					match i / elements_in_64 {
 						0 => _mm256_extract_epi64(self.0, 0),
@@ -290,12 +309,12 @@ impl UnderlierType for M256 {
 					}
 				};
 
-				let result_64 = if T::MEANINGFUL_BITS == 64 {
+				let result_64 = if T::Underlier::BITS == 64 {
 					chunk_64
 				} else {
-					let ones = ((1u128 << T::MEANINGFUL_BITS) - 1) as u64;
+					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
 					let val_64 =
-						(chunk_64 as u64) >> (T::MEANINGFUL_BITS * (i % elements_in_64)) & ones;
+						(chunk_64 as u64) >> (T::Underlier::BITS * (i % elements_in_64)) & ones;
 
 					val_64 as i64
 				};
@@ -308,7 +327,7 @@ impl UnderlierType for M256 {
 			64 => {
 				#[repr(align(16))]
 				struct Data64x4([i64; 4]);
-				let result_64 = unsafe { transmute::<_, Data64x4>(self.0) }.0[i];
+				let result_64 = unsafe { transmute::<__m256i, Data64x4>(self.0) }.0[i];
 
 				T::Underlier::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
 					.into()

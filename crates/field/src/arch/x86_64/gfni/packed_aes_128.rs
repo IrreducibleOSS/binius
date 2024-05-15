@@ -12,10 +12,7 @@ use crate::{
 		},
 		ReuseMultiplyStrategy, SimdStrategy,
 	},
-	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy,
-	},
+	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
 };
 
 // Define 128 bit packed field types
@@ -49,29 +46,29 @@ impl_packed_extension_field!(PackedAESBinaryField2x64b);
 impl_packed_extension_field!(PackedAESBinaryField1x128b);
 
 // Define multiplication
-impl_mul_with_strategy!(PackedAESBinaryField16x8b, GfniAESTowerStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField2x64b, SimdStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField1x128b, SimdStrategy);
+impl_mul_with!(PackedAESBinaryField16x8b @ GfniAESTowerStrategy);
+impl_mul_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_mul_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_mul_with!(PackedAESBinaryField2x64b @ SimdStrategy);
+impl_mul_with!(PackedAESBinaryField1x128b @ SimdStrategy);
 
 // Define square
-impl_square_with_strategy!(PackedAESBinaryField16x8b, ReuseMultiplyStrategy);
-impl_square_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_square_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_square_with_strategy!(PackedAESBinaryField2x64b, SimdStrategy);
-impl_square_with_strategy!(PackedAESBinaryField1x128b, SimdStrategy);
+impl_square_with!(PackedAESBinaryField16x8b @ ReuseMultiplyStrategy);
+impl_square_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_square_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_square_with!(PackedAESBinaryField2x64b @ SimdStrategy);
+impl_square_with!(PackedAESBinaryField1x128b @ SimdStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedAESBinaryField16x8b, GfniAESTowerStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField2x64b, SimdStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField1x128b, SimdStrategy);
+impl_invert_with!(PackedAESBinaryField16x8b @ GfniAESTowerStrategy);
+impl_invert_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_invert_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_invert_with!(PackedAESBinaryField2x64b @ SimdStrategy);
+impl_invert_with!(PackedAESBinaryField1x128b @ SimdStrategy);
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedAESBinaryField16x8b, ReuseMultiplyStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField2x64b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField1x128b, SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField16x8b @ ReuseMultiplyStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField2x64b @ SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField1x128b @ SimdStrategy);

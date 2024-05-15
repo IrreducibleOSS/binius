@@ -1,25 +1,46 @@
-// Copyright 2023 Ulvetanna Inc.
-// Copyright (c) 2019-2023 RustCrypto Developers
+use super::{
+	super::portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
+	m128::M128,
+};
+use crate::{
+	arch::ReuseMultiplyStrategy,
+	arithmetic_traits::{impl_square_with, InvertOrZero},
+	packed::PackedField,
+	BinaryField128bPolyval,
+};
+use std::{arch::x86_64::*, ops::Mul};
 
-//! Intel `CLMUL`-accelerated implementation for modern x86/x86_64 CPUs
-//! (i.e. Intel Sandy Bridge-compatible or newer)
+pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;
 
-use core::arch::x86_64::*;
+// Define conversion from type to underlier
+impl_conversion!(M128, PackedBinaryPolyval1x128b);
 
-#[inline]
-pub fn montgomery_multiply(a: u128, b: u128) -> u128 {
-	let ret = unsafe {
-		let h = _mm_set_epi64x((a >> 64) as i64, a as i64);
-		let y = _mm_set_epi64x((b >> 64) as i64, b as i64);
+// Define extension field
+impl_packed_extension_field!(PackedBinaryPolyval1x128b);
 
-		simd_montgomery_multiply(h, y)
-	};
-	bytemuck::cast(ret)
+// Define multiply
+impl Mul for PackedBinaryPolyval1x128b {
+	type Output = Self;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		unsafe { simd_montgomery_multiply(self.0, rhs.0) }.into()
+	}
 }
 
-pub fn montgomery_square(x: u128) -> u128 {
-	// TODO: Optimize this using the squaring tricks in characteristic-2 fields
-	montgomery_multiply(x, x)
+// Define square
+// TODO: implement a more optimal version for square case
+impl_square_with!(PackedBinaryPolyval1x128b @ ReuseMultiplyStrategy);
+
+// Define invert
+// TODO: implement vectorized version that uses packed multiplication
+impl InvertOrZero for PackedBinaryPolyval1x128b {
+	fn invert_or_zero(self) -> Self {
+		let portable = super::super::portable::packed_polyval_128::PackedBinaryPolyval1x128b::from(
+			u128::from(self.0),
+		);
+
+		Self::from_underlier(PackedField::invert_or_zero(portable).0.into())
+	}
 }
 
 /// A type that can be used in SIMD polyval field multiplication
@@ -63,35 +84,35 @@ pub(super) unsafe fn simd_montgomery_multiply<T: PolyvalSimdType>(h: T, y: T) ->
 	T::unpacklo_epi64(v2, v3)
 }
 
-impl PolyvalSimdType for __m128i {
+impl PolyvalSimdType for M128 {
 	#[inline(always)]
 	unsafe fn shuffle_epi32<const IMM8: i32>(a: Self) -> Self {
-		_mm_shuffle_epi32::<IMM8>(a)
+		_mm_shuffle_epi32::<IMM8>(a.0).into()
 	}
 
 	#[inline(always)]
 	unsafe fn xor(a: Self, b: Self) -> Self {
-		_mm_xor_si128(a, b)
+		_mm_xor_si128(a.0, b.0).into()
 	}
 
 	#[inline(always)]
 	unsafe fn clmul_epi64<const IMM8: i32>(a: Self, b: Self) -> Self {
-		_mm_clmulepi64_si128::<IMM8>(a, b)
+		_mm_clmulepi64_si128::<IMM8>(a.0, b.0).into()
 	}
 
 	#[inline(always)]
 	unsafe fn srli_epi64<const IMM8: i32>(a: Self) -> Self {
-		_mm_srli_epi64::<IMM8>(a)
+		_mm_srli_epi64::<IMM8>(a.0).into()
 	}
 
 	#[inline(always)]
 	unsafe fn slli_epi64<const IMM8: i32>(a: Self) -> Self {
-		_mm_slli_epi64::<IMM8>(a)
+		_mm_slli_epi64::<IMM8>(a.0).into()
 	}
 
 	#[inline(always)]
 	unsafe fn unpacklo_epi64(a: Self, b: Self) -> Self {
-		_mm_unpacklo_epi64(a, b)
+		_mm_unpacklo_epi64(a.0, b.0).into()
 	}
 }
 

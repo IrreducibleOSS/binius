@@ -29,7 +29,7 @@ use tracing::instrument;
 #[allow(unused_macros, unused_imports)]
 pub mod macros {
 	macro_rules! felts {
-		($f:ident[$($elem:expr),* $(,)?]) => { vec![$($f::new($elem)),*] };
+		($f:ident[$($elem:expr),* $(,)?]) => { vec![$($f::from($elem)),*] };
 	}
 	pub(crate) use felts;
 }
@@ -84,7 +84,7 @@ where
 	let mut result: Vec<P> = vec![P::default(); packed_len];
 	for (range, value) in assignments.iter() {
 		for i in range.clone() {
-			set_packed_slice(&mut result, i, P::Scalar::new(*value));
+			set_packed_slice(&mut result, i, P::Scalar::from(*value));
 		}
 	}
 	result

@@ -101,32 +101,32 @@ build-debug-arm:
 unit-test-amd:
   extends: .test_job_template_amd
   script:
-    - cargo test
+    - RUST_BACKTRACE=full cargo test
 
 unit-test-arm:
   extends: .test_job_template_arm
   script:
-    - cargo test
+    - RUST_BACKTRACE=full cargo test
 
 unit-test-single-threaded-amd:
   extends: .test_job_template_amd
   script:
-    - RAYON_NUM_THREADS=1 cargo test
+    - RUST_BACKTRACE=full RAYON_NUM_THREADS=1 cargo test
 
 unit-test-single-threaded-arm:
   extends: .test_job_template_arm
   script:
-    - RAYON_NUM_THREADS=1 cargo test
+    - RUST_BACKTRACE=full RAYON_NUM_THREADS=1 cargo test
 
 unit-test-native-amd:
   extends: .test_job_template_amd
   script:
-    - RUSTFLAGS="-C target-cpu=native" cargo test
+    - RUST_BACKTRACE=full RUSTFLAGS="-C target-cpu=native" cargo test
 
 unit-test-native-arm:
   extends: .test_job_template_arm
   script:
-    - RUSTFLAGS="-C target-cpu=native" cargo test
+    - RUST_BACKTRACE=full RUSTFLAGS="-C target-cpu=native" cargo test
 
 # Documentation and pages jobs
 build-docs:

@@ -50,8 +50,15 @@ pub trait PackedTowerField: PackedField + From<Self::Underlier> + Into<Self::Und
 		+ Into<Self::Underlier>;
 
 	/// Reinterpret value as a packed field over a lower height
+	#[inline]
 	fn as_packed_subfield(self) -> Self::PackedDirectSubfield {
 		Self::PackedDirectSubfield::from(Into::<Self::Underlier>::into(self))
+	}
+
+	/// Reinterpret packed subfield as a current type
+	#[inline]
+	fn from_packed_subfield(value: Self::PackedDirectSubfield) -> Self {
+		Self::from(value.into())
 	}
 }
 
@@ -453,7 +460,7 @@ mod tests {
 
 	fn test_packed_multiply_alpha<P>()
 	where
-		P: PackedField + Debug,
+		P: PackedField + MulAlpha + Debug,
 		P::Scalar: MulAlpha,
 	{
 		let mut rng = thread_rng();

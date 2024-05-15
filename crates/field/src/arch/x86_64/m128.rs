@@ -6,7 +6,7 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, UnderlierType, WithUnderlier},
+	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -16,7 +16,7 @@ use std::{
 	arch::x86_64::*,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
-use subtle::{Choice, ConstantTimeEq};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
@@ -68,6 +68,12 @@ impl From<u16> for M128 {
 impl From<u8> for M128 {
 	fn from(value: u8) -> Self {
 		Self::from(value as u128)
+	}
+}
+
+impl<const N: usize> From<SmallU<N>> for M128 {
+	fn from(value: SmallU<N>) -> Self {
+		Self::from(value.val() as u128)
 	}
 }
 
@@ -257,6 +263,12 @@ impl ConstantTimeEq for M128 {
 	}
 }
 
+impl ConditionallySelectable for M128 {
+	fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+		ConditionallySelectable::conditional_select(&u128::from(*a), &u128::from(*b), choice).into()
+	}
+}
+
 impl Random for M128 {
 	fn random(mut rng: impl RngCore) -> Self {
 		let val: u128 = rng.gen();
@@ -286,9 +298,9 @@ pub(super) use m128_from_u128;
 impl UnderlierType for M128 {
 	const LOG_BITS: usize = 7;
 
-	const ONE: Self = { Self(m128_from_u128!(1)) };
-
 	const ZERO: Self = { Self(m128_from_u128!(0)) };
+	const ONE: Self = { Self(m128_from_u128!(1)) };
+	const ONES: Self = { Self(m128_from_u128!(u128::MAX)) };
 
 	#[inline(always)]
 	fn fill_with_bit(val: u8) -> Self {
@@ -302,9 +314,9 @@ impl UnderlierType for M128 {
 		T: WithUnderlier,
 		T::Underlier: NumCast<Self>,
 	{
-		match T::MEANINGFUL_BITS {
+		match T::Underlier::BITS {
 			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::MEANINGFUL_BITS;
+				let elements_in_64 = 64 / T::Underlier::BITS;
 				let chunk_64 = unsafe {
 					if i >= elements_in_64 {
 						_mm_extract_epi64(self.0, 1)
@@ -313,12 +325,12 @@ impl UnderlierType for M128 {
 					}
 				};
 
-				let result_64 = if T::MEANINGFUL_BITS == 64 {
+				let result_64 = if T::Underlier::BITS == 64 {
 					chunk_64
 				} else {
-					let ones = ((1u128 << T::MEANINGFUL_BITS) - 1) as u64;
+					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
 					let val_64 = (chunk_64 as u64)
-						>> (T::MEANINGFUL_BITS
+						>> (T::Underlier::BITS
 							* (if i >= elements_in_64 {
 								i - elements_in_64
 							} else {

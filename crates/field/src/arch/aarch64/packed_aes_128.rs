@@ -19,11 +19,11 @@ use crate::{
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PairwiseStrategy, SimdStrategy,
+		PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy, InvertOrZero, MulAlpha, Square,
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with, InvertOrZero,
+		MulAlpha, Square,
 	},
 	PackedBinaryField16x8b,
 };
@@ -74,10 +74,10 @@ impl Mul for PackedAESBinaryField16x8b {
 		packed_aes_16x8b_multiply(self.into(), rhs.into()).into()
 	}
 }
-impl_mul_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_mul_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_mul_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_mul_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
+impl_mul_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define square
 impl Square for PackedAESBinaryField16x8b {
@@ -95,8 +95,8 @@ impl Square for PackedAESBinaryField4x32b {
 		self * self
 	}
 }
-impl_square_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_square_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_square_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
+impl_square_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define invert
 impl InvertOrZero for PackedAESBinaryField16x8b {
@@ -104,10 +104,10 @@ impl InvertOrZero for PackedAESBinaryField16x8b {
 		packed_aes_16x8b_invert_or_zero(self.into()).into()
 	}
 }
-impl_invert_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_invert_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_invert_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_invert_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
+impl_invert_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define multiply by alpha
 impl MulAlpha for PackedAESBinaryField16x8b {
@@ -115,10 +115,10 @@ impl MulAlpha for PackedAESBinaryField16x8b {
 		packed_aes_16x8b_mul_alpha(self.into()).into()
 	}
 }
-impl_mul_alpha_with_strategy!(PackedAESBinaryField8x16b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField4x32b, SimdStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField8x16b @ SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField4x32b @ SimdStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 impl From<PackedBinaryField16x8b> for PackedAESBinaryField16x8b {
 	fn from(value: PackedBinaryField16x8b) -> Self {

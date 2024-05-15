@@ -17,6 +17,7 @@ pub mod packed_binary_field;
 pub mod packed_extension;
 mod packed_polyval;
 pub mod polyval;
+pub mod single_packed;
 pub mod transpose;
 mod underlier;
 pub mod util;

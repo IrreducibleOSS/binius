@@ -11,11 +11,8 @@ use crate::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	},
-	arch::{PackedStrategy, PairwiseStrategy},
-	arithmetic_traits::{
-		impl_invert_with_strategy, impl_mul_alpha_with_strategy, impl_mul_with_strategy,
-		impl_square_with_strategy,
-	},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
 };
 
 // Define 128 bit packed AES field types
@@ -63,29 +60,29 @@ impl_tower_constants!(AESTowerField32b, u128, { alphas!(u128, 5) });
 impl_tower_constants!(AESTowerField64b, u128, { alphas!(u128, 6) });
 
 // Define multiplication
-impl_mul_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField4x32b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_mul_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_mul_with!(PackedAESBinaryField16x8b @ PairwiseTableStrategy);
+impl_mul_with!(PackedAESBinaryField8x16b @ PairwiseRecursiveStrategy);
+impl_mul_with!(PackedAESBinaryField4x32b @ PairwiseRecursiveStrategy);
+impl_mul_with!(PackedAESBinaryField2x64b @ PairwiseRecursiveStrategy);
+impl_mul_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define square
-impl_square_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_square_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
-impl_square_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
-impl_square_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_square_with!(PackedAESBinaryField16x8b @ PairwiseTableStrategy);
+impl_square_with!(PackedAESBinaryField8x16b @ PairwiseRecursiveStrategy);
+impl_square_with!(PackedAESBinaryField4x32b @ PackedStrategy);
+impl_square_with!(PackedAESBinaryField2x64b @ PackedStrategy);
+impl_square_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define invert
-impl_invert_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField8x16b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField4x32b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_invert_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_invert_with!(PackedAESBinaryField16x8b @ PairwiseTableStrategy);
+impl_invert_with!(PackedAESBinaryField8x16b @ PairwiseRecursiveStrategy);
+impl_invert_with!(PackedAESBinaryField4x32b @ PairwiseRecursiveStrategy);
+impl_invert_with!(PackedAESBinaryField2x64b @ PairwiseRecursiveStrategy);
+impl_invert_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 // Define multiply by alpha
-impl_mul_alpha_with_strategy!(PackedAESBinaryField16x8b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
-impl_mul_alpha_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField16x8b @ PairwiseTableStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField8x16b @ PackedStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField4x32b @ PackedStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField2x64b @ PairwiseRecursiveStrategy);
+impl_mul_alpha_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);

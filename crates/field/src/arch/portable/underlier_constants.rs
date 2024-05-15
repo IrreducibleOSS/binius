@@ -3,7 +3,31 @@
 use super::packed_arithmetic::{
 	interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 };
-use crate::underlier::UnderlierType;
+use crate::underlier::{UnderlierType, U1, U2, U4};
+
+impl UnderlierWithBitConstants for U1 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[];
+}
+
+impl UnderlierWithBitConstants for U2 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[Self::new(interleave_mask_even!(u8, 0))];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[Self::new(interleave_mask_odd!(u8, 0))];
+}
+
+impl UnderlierWithBitConstants for U4 {
+	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[
+		Self::new(interleave_mask_even!(u8, 0)),
+		Self::new(interleave_mask_even!(u8, 1)),
+	];
+
+	const INTERLEAVE_ODD_MASK: &'static [Self] = &[
+		Self::new(interleave_mask_odd!(u8, 0)),
+		Self::new(interleave_mask_odd!(u8, 1)),
+	];
+}
 
 impl UnderlierWithBitConstants for u8 {
 	const INTERLEAVE_EVEN_MASK: &'static [Self] = &[

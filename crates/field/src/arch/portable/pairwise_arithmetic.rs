@@ -15,7 +15,12 @@ use crate::{
 impl<PT: PackedField> TaggedMul<PairwiseStrategy> for PT {
 	#[inline]
 	fn mul(self, b: Self) -> Self {
-		Self::from_fn(|i| self.get(i) * b.get(i))
+		if PT::WIDTH == 1 {
+			// fallback to be able to benchmark this strategy
+			self * b
+		} else {
+			Self::from_fn(|i| self.get(i) * b.get(i))
+		}
 	}
 }
 
@@ -25,7 +30,12 @@ where
 {
 	#[inline]
 	fn square(self) -> Self {
-		Self::from_fn(|i| Square::square(self.get(i)))
+		if PT::WIDTH == 1 {
+			// fallback to be able to benchmark this strategy
+			PackedField::square(self)
+		} else {
+			Self::from_fn(|i| Square::square(self.get(i)))
+		}
 	}
 }
 
@@ -35,17 +45,27 @@ where
 {
 	#[inline]
 	fn invert_or_zero(self) -> Self {
-		Self::from_fn(|i| InvertOrZero::invert_or_zero(self.get(i)))
+		if PT::WIDTH == 1 {
+			// fallback to be able to benchmark this strategy
+			PackedField::invert_or_zero(self)
+		} else {
+			Self::from_fn(|i| InvertOrZero::invert_or_zero(self.get(i)))
+		}
 	}
 }
 
-impl<PT: PackedField> TaggedMulAlpha<PairwiseStrategy> for PT
+impl<PT: PackedField + MulAlpha> TaggedMulAlpha<PairwiseStrategy> for PT
 where
 	PT::Scalar: MulAlpha,
 {
 	#[inline]
 	fn mul_alpha(self) -> Self {
-		Self::from_fn(|i| MulAlpha::mul_alpha(self.get(i)))
+		if PT::WIDTH == 1 {
+			// fallback to be able to benchmark this strategy
+			MulAlpha::mul_alpha(self)
+		} else {
+			Self::from_fn(|i| MulAlpha::mul_alpha(self.get(i)))
+		}
 	}
 }
 
