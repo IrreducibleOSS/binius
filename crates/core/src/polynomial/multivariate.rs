@@ -1,8 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{error::Error, multilinear_query::MultilinearQuery, MultilinearPoly};
-use binius_field::{Field, PackedField};
-use std::{borrow::Borrow, fmt::Debug, marker::PhantomData};
+use super::{
+	error::Error, multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearPoly,
+};
+use binius_field::{ExtensionField, Field, PackedField, TowerField};
+use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
 
 #[derive(Debug, Clone)]
 /// A wrapper around a [`CompositionPoly`] instance that implements [`MultivariatePoly`].
@@ -120,7 +122,7 @@ impl<F: Field> CompositionPoly<F> for IdentityCompositionPoly {
 /// The `BM` type parameter is necessary so that we can handle the case of a `MultilinearComposite`
 /// that contains boxed trait objects, as well as the case where it directly holds some
 /// implementation of `MultilinearPoly`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MultilinearComposite<P, C, M>
 where
 	P: PackedField,
@@ -131,22 +133,6 @@ where
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<M>,
 	pub _p_marker: PhantomData<P>,
-}
-
-impl<P, C, M> Clone for MultilinearComposite<P, C, M>
-where
-	P: PackedField,
-	C: Clone,
-	M: MultilinearPoly<P> + Clone,
-{
-	fn clone(&self) -> Self {
-		Self {
-			composition: self.composition.clone(),
-			n_vars: self.n_vars,
-			multilinears: self.multilinears.clone(),
-			_p_marker: PhantomData,
-		}
-	}
 }
 
 impl<P, C, M> MultilinearComposite<P, C, M>
@@ -211,6 +197,31 @@ where
 
 	pub fn n_multilinears(&self) -> usize {
 		self.composition.n_vars()
+	}
+}
+
+impl<'a, F, C> MultilinearComposite<F, C, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>
+where
+	F: TowerField,
+	C: CompositionPoly<F>,
+{
+	pub fn from_columns<P>(
+		composition: C,
+		columns: impl IntoIterator<Item = &'a (impl AsRef<[P]> + 'a)>,
+	) -> Result<Self, Error>
+	where
+		P: PackedField,
+		F: ExtensionField<P::Scalar>,
+	{
+		let multilinears = columns
+			.into_iter()
+			.map(|v| {
+				let mle = MultilinearExtension::from_values_slice(v.as_ref())?;
+				Ok(mle.specialize_arc_dyn())
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+		let n_vars = multilinears[0].n_vars();
+		Self::new(n_vars, composition, multilinears)
 	}
 }
 

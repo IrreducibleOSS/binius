@@ -7,6 +7,7 @@ use syn::{bracketed, parse::Parse, parse_macro_input, parse_quote, Token};
 #[proc_macro]
 pub fn composition_poly(input: TokenStream) -> TokenStream {
 	let CompositionPolyItem {
+		is_anonymous,
 		name,
 		vars,
 		mut poly,
@@ -17,8 +18,8 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 	let degree = poly_degree(&poly);
 	rewrite_literals(&mut poly);
 
-	quote! {
-		#[derive(Debug, Clone)]
+	let result = quote! {
+		#[derive(Debug, Clone, Copy)]
 		struct #name;
 
 		impl<F: binius_field::Field> binius_core::polynomial::multivariate::CompositionPoly<F> for #name {
@@ -30,7 +31,7 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 				#degree
 			}
 
-			fn evaluate<P:PackedField<Scalar=F>>(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
+			fn evaluate<P: binius_field::PackedField<Scalar=F>>(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
 				if query.len() != #n_vars {
 					return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
 				}
@@ -42,6 +43,19 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 				0
 			}
 		}
+	};
+
+	if is_anonymous {
+		// In this case we return an instance of our struct rather
+		// than defining the struct within the current scope
+		quote! {
+			{
+				#result
+				#name
+			}
+		}
+	} else {
+		result
 	}
 	.into()
 }
@@ -67,7 +81,7 @@ fn poly_degree(expr: &syn::Expr) -> usize {
 	}
 }
 
-/// Rewrites 0 => F::ZERO, 1 => F::ONE
+/// Rewrites 0 => P::zero(), 1 => P::one()
 fn rewrite_literals(expr: &mut syn::Expr) {
 	match expr {
 		syn::Expr::Lit(exprlit) => {
@@ -96,6 +110,7 @@ fn rewrite_literals(expr: &mut syn::Expr) {
 
 #[derive(Debug)]
 struct CompositionPolyItem {
+	is_anonymous: bool,
 	name: syn::Ident,
 	vars: Vec<syn::Ident>,
 	poly: syn::Expr,
@@ -103,8 +118,10 @@ struct CompositionPolyItem {
 
 impl Parse for CompositionPolyItem {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+		let name = input.parse::<syn::Ident>();
 		Ok(Self {
-			name: input.parse::<syn::Ident>()?,
+			is_anonymous: name.is_err(),
+			name: name.unwrap_or(parse_quote!(UnnamedCompositionPoly)),
 			vars: {
 				let content;
 				bracketed!(content in input);

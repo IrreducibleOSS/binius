@@ -26,3 +26,11 @@ path = "bitwise_and_proof.rs"
 [[example]]
 name = "keccakf"
 path = "keccakf.rs"
+
+[[example]]
+name = "u32add"
+path = "u32add.rs"
+
+[[example]]
+name = "u32fib"
+path = "u32fib.rs"
