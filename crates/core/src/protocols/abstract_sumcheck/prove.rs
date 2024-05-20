@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{AbstractSumcheckProver, AbstractSumcheckRound, Error};
+use super::{AbstractSumcheckProver, AbstractSumcheckRound};
 use crate::{
 	polynomial::{
 		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
@@ -53,7 +53,7 @@ impl<F: Field> ParFoldState<F> {
 /// Represents an object that can evaluate the composition function of a generalized sumcheck.
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
-pub trait AbstractSumcheckEvaluator<F: Field>: Send + Sync {
+pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 	/// The number of points to evaluate at.
 	fn n_round_evals(&self) -> usize;
 
@@ -86,7 +86,7 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Send + Sync {
 		&self,
 		current_round_sum: F,
 		round_evals: Vec<F>,
-	) -> Result<Vec<F>, Error>;
+	) -> Result<Vec<F>, PolynomialError>;
 }
 
 impl<F, L, R> AbstractSumcheckEvaluator<F> for Either<L, R>
@@ -124,7 +124,7 @@ where
 		&self,
 		current_round_sum: F,
 		round_evals: Vec<F>,
-	) -> Result<Vec<F>, Error> {
+	) -> Result<Vec<F>, PolynomialError> {
 		match self {
 			Either::Left(left) => left.round_evals_to_coeffs(current_round_sum, round_evals),
 			Either::Right(right) => right.round_evals_to_coeffs(current_round_sum, round_evals),
@@ -179,7 +179,7 @@ where
 		n_rounds: usize,
 		multilinears: impl IntoIterator<Item = M>,
 		switchover_fn: impl Fn(usize) -> usize,
-	) -> Result<Self, Error> {
+	) -> Result<Self, PolynomialError> {
 		let mut max_query_vars = 1;
 		let multilinears = multilinears
 			.into_iter()
@@ -188,8 +188,7 @@ where
 					return Err(PolynomialError::IncorrectNumberOfVariables {
 						expected: n_rounds,
 						actual: small_field_multilin.n_vars(),
-					}
-					.into());
+					});
 				}
 
 				let switchover = switchover_fn(small_field_multilin.extension_degree());
@@ -199,7 +198,7 @@ where
 					small_field_multilin,
 				})
 			})
-			.collect::<Result<_, Error>>()?;
+			.collect::<Result<_, _>>()?;
 
 		let query = Some(MultilinearQuery::new(max_query_vars)?);
 
@@ -218,7 +217,7 @@ where
 	/// (pre-switchover).
 	///
 	/// See struct documentation for more details on the generalized sumcheck proving algorithm.
-	pub fn fold(&mut self, prev_rd_challenge: PW::Scalar) -> Result<(), Error> {
+	pub fn fold(&mut self, prev_rd_challenge: PW::Scalar) -> Result<(), PolynomialError> {
 		let &mut Self {
 			ref mut multilinears,
 			ref mut query,
@@ -288,7 +287,7 @@ where
 		&self,
 		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
-	) -> Result<Vec<PW::Scalar>, Error> {
+	) -> Result<Vec<PW::Scalar>, PolynomialError> {
 		// Extract multilinears & round
 		let &Self {
 			ref multilinears,
@@ -364,7 +363,7 @@ where
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
 		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
 		current_round_sum: PW::Scalar,
-	) -> Result<Vec<PW::Scalar>, Error>
+	) -> Result<Vec<PW::Scalar>, PolynomialError>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
@@ -468,14 +467,15 @@ where
 	}
 }
 
-pub fn prove<F, CH>(
+pub fn prove<F, CH, E>(
 	n_vars: usize,
-	mut sumcheck_prover: impl AbstractSumcheckProver<F>,
+	mut sumcheck_prover: impl AbstractSumcheckProver<F, Error = E>,
 	mut challenger: CH,
-) -> Result<(EvalcheckClaim<F>, Vec<AbstractSumcheckRound<F>>), Error>
+) -> Result<(EvalcheckClaim<F>, Vec<AbstractSumcheckRound<F>>), E>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
+	E: From<PolynomialError> + Sync,
 {
 	let mut prev_rd_challenge = None;
 	let mut rd_proofs = Vec::with_capacity(n_vars);

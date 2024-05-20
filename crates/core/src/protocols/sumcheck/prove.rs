@@ -9,11 +9,14 @@ use super::{
 };
 use crate::{
 	oracle::CompositePolyOracle,
-	polynomial::{extrapolate_line, CompositionPoly, EvaluationDomain, MultilinearPoly},
+	polynomial::{
+		extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
+		MultilinearPoly,
+	},
 	protocols::{
 		abstract_sumcheck::{
 			self, AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
-			Error as AbstractSumcheckError, ProverState,
+			ProverState,
 		},
 		evalcheck::EvalcheckClaim,
 		sumcheck::SumcheckProof,
@@ -152,7 +155,7 @@ where
 
 	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
 	#[instrument(skip_all, name = "sumcheck::finalize")]
-	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
+	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -176,10 +179,7 @@ where
 	}
 
 	#[instrument(skip_all, name = "sumcheck::execute_round")]
-	pub fn execute_round(
-		&mut self,
-		prev_rd_challenge: Option<F>,
-	) -> Result<SumcheckRound<F>, Error> {
+	fn execute_round(&mut self, prev_rd_challenge: Option<F>) -> Result<SumcheckRound<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -247,24 +247,21 @@ where
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
+	type Error = Error;
+
 	fn execute_round(
 		&mut self,
 		prev_rd_challenge: Option<F>,
-	) -> Result<SumcheckRound<F>, AbstractSumcheckError> {
-		let round = SumcheckProver::execute_round(self, prev_rd_challenge)?;
-		Ok(round)
+	) -> Result<SumcheckRound<F>, Self::Error> {
+		SumcheckProver::execute_round(self, prev_rd_challenge)
 	}
 
-	fn finalize(
-		self,
-		prev_rd_challenge: Option<F>,
-	) -> Result<EvalcheckClaim<F>, AbstractSumcheckError> {
-		let evalcheck_claim = SumcheckProver::finalize(self, prev_rd_challenge)?;
-		Ok(evalcheck_claim)
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
+		SumcheckProver::finalize(self, prev_rd_challenge)
 	}
 }
 
-/// Evaluator for the regular (non-zerocheck) sumcheck protocol.
+/// Evaluator for the sumcheck protocol.
 #[derive(Debug)]
 struct SumcheckEvaluator<'a, F, C>
 where
@@ -324,7 +321,7 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 		&self,
 		current_round_sum: F,
 		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, AbstractSumcheckError> {
+	) -> Result<Vec<F>, PolynomialError> {
 		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, current_round_sum - round_evals[0]);

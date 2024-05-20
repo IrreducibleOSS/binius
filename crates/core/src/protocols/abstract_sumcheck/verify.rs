@@ -3,20 +3,24 @@
 use binius_field::Field;
 use p3_challenger::{CanObserve, CanSample};
 
-use crate::{oracle::CompositePolyOracle, protocols::evalcheck::EvalcheckClaim};
+use crate::{
+	oracle::CompositePolyOracle, polynomial::Error as PolynomialError,
+	protocols::evalcheck::EvalcheckClaim,
+};
 
-use super::{AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRoundClaim, Error};
+use super::{AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRoundClaim};
 
-pub fn verify<F, CH>(
+pub fn verify<F, CH, E>(
 	poly_oracle: &CompositePolyOracle<F>,
 	first_round_claim: AbstractSumcheckRoundClaim<F>,
 	proof: AbstractSumcheckProof<F>,
-	reductor: impl AbstractSumcheckReductor<F>,
+	reductor: impl AbstractSumcheckReductor<F, Error = E>,
 	mut challenger: CH,
-) -> Result<EvalcheckClaim<F>, Error>
+) -> Result<EvalcheckClaim<F>, E>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
+	E: From<PolynomialError> + Sync,
 {
 	let mut rd_claim = first_round_claim;
 	for (which_round, round_proof) in proof.rounds.into_iter().enumerate() {

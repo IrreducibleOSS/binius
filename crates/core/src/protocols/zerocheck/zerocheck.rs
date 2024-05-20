@@ -6,7 +6,7 @@ use crate::{
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRound,
-			AbstractSumcheckRoundClaim, Error as AbstractSumcheckError,
+			AbstractSumcheckRoundClaim,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -41,30 +41,30 @@ pub struct ZerocheckReductor<'a, F> {
 }
 
 impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
+	type Error = Error;
+
 	fn reduce_intermediate_round_claim(
 		&self,
 		round: usize,
 		claim: AbstractSumcheckRoundClaim<F>,
 		challenge: F,
 		round_proof: AbstractSumcheckRound<F>,
-	) -> Result<AbstractSumcheckRoundClaim<F>, AbstractSumcheckError> {
+	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error> {
 		let alpha_i = if round == 0 {
 			None
 		} else {
 			Some(self.alphas[round - 1])
 		};
-		let reduced_round_claim =
-			reduce_zerocheck_claim_round(claim, challenge, round_proof, alpha_i)?;
-		Ok(reduced_round_claim)
+
+		reduce_intermediate_round_claim_helper(claim, challenge, round_proof, alpha_i)
 	}
 
 	fn reduce_final_round_claim(
 		&self,
 		poly_oracle: &CompositePolyOracle<F>,
 		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, AbstractSumcheckError> {
-		let evalcheck_claim = reduce_zerocheck_claim_final(poly_oracle, round_claim)?;
-		Ok(evalcheck_claim)
+	) -> Result<EvalcheckClaim<F>, Self::Error> {
+		reduce_final_round_claim_helper(poly_oracle, round_claim)
 	}
 }
 
@@ -73,7 +73,7 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 /// Arguments:
 /// * `challenge`: The random challenge sampled by the verifier at the beginning of the round.
 /// * `alpha_i`: The zerocheck challenge for round i sampled by the verifier during the zerocheck to sumcheck reduction.
-fn reduce_zerocheck_claim_round<F: Field>(
+fn reduce_intermediate_round_claim_helper<F: Field>(
 	claim: ZerocheckRoundClaim<F>,
 	challenge: F,
 	proof: ZerocheckRound<F>,
@@ -153,7 +153,7 @@ fn reduce_zerocheck_claim_round<F: Field>(
 	})
 }
 
-fn reduce_zerocheck_claim_final<F: Field>(
+fn reduce_final_round_claim_helper<F: Field>(
 	poly_oracle: &CompositePolyOracle<F>,
 	round_claim: ZerocheckRoundClaim<F>,
 ) -> Result<EvalcheckClaim<F>, Error> {

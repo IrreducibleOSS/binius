@@ -10,13 +10,13 @@ use super::{
 use crate::{
 	oracle::CompositePolyOracle,
 	polynomial::{
-		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly, EvaluationDomain,
-		MultilinearExtension,
+		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly,
+		Error as PolynomialError, EvaluationDomain, MultilinearExtension,
 	},
 	protocols::{
 		abstract_sumcheck::{
 			self, AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
-			Error as AbstractSumcheckError, ProverState,
+			ProverState,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -164,12 +164,12 @@ where
 		Ok(zerocheck_prover)
 	}
 
-	pub fn n_vars(&self) -> usize {
+	fn n_vars(&self) -> usize {
 		self.oracle.n_vars()
 	}
 
 	#[instrument(skip_all, name = "zerocheck::finalize")]
-	pub fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
+	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -224,10 +224,7 @@ where
 	}
 
 	#[instrument(skip_all, name = "sumcheck::execute_round")]
-	pub fn execute_round(
-		&mut self,
-		prev_rd_challenge: Option<F>,
-	) -> Result<ZerocheckRound<F>, Error> {
+	fn execute_round(&mut self, prev_rd_challenge: Option<F>) -> Result<ZerocheckRound<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -316,20 +313,17 @@ where
 	PW::Scalar: From<F>,
 	CW: CompositionPoly<PW::Scalar>,
 {
+	type Error = Error;
+
 	fn execute_round(
 		&mut self,
 		prev_rd_challenge: Option<F>,
-	) -> Result<ZerocheckRound<F>, AbstractSumcheckError> {
-		let round = ZerocheckProver::execute_round(self, prev_rd_challenge)?;
-		Ok(round)
+	) -> Result<ZerocheckRound<F>, Self::Error> {
+		ZerocheckProver::execute_round(self, prev_rd_challenge)
 	}
 
-	fn finalize(
-		self,
-		prev_rd_challenge: Option<F>,
-	) -> Result<EvalcheckClaim<F>, AbstractSumcheckError> {
-		let evalcheck_claim = ZerocheckProver::finalize(self, prev_rd_challenge)?;
-		Ok(evalcheck_claim)
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
+		ZerocheckProver::finalize(self, prev_rd_challenge)
 	}
 }
 
@@ -394,7 +388,7 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 		&self,
 		current_round_sum: F,
 		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, AbstractSumcheckError> {
+	) -> Result<Vec<F>, PolynomialError> {
 		debug_assert_eq!(current_round_sum, F::ZERO);
 		// We are given $r(2), \ldots, r(d+1)$.
 		// From context, we infer that $r(0) = r(1) = 0$.
@@ -473,7 +467,7 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 		&self,
 		current_round_sum: F,
 		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, AbstractSumcheckError> {
+	) -> Result<Vec<F>, PolynomialError> {
 		// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d+1)$
 		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
 		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$

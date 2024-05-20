@@ -7,7 +7,7 @@ use crate::{
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRound,
-			AbstractSumcheckRoundClaim, Error as AbstractSumcheckError,
+			AbstractSumcheckRoundClaim,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -45,28 +45,28 @@ pub type SumcheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
 pub struct SumcheckReductor;
 
 impl<F: Field> AbstractSumcheckReductor<F> for SumcheckReductor {
+	type Error = Error;
+
 	fn reduce_intermediate_round_claim(
 		&self,
 		_round: usize,
 		claim: AbstractSumcheckRoundClaim<F>,
 		challenge: F,
 		round_proof: AbstractSumcheckRound<F>,
-	) -> Result<AbstractSumcheckRoundClaim<F>, AbstractSumcheckError> {
-		let reduced_round_claim = reduce_sumcheck_claim_round(claim, challenge, round_proof)?;
-		Ok(reduced_round_claim)
+	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error> {
+		reduce_intermediate_round_claim_helper(claim, challenge, round_proof)
 	}
 
 	fn reduce_final_round_claim(
 		&self,
 		poly_oracle: &CompositePolyOracle<F>,
 		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, AbstractSumcheckError> {
-		let evalcheck_claim = reduce_sumcheck_claim_final(poly_oracle, round_claim)?;
-		Ok(evalcheck_claim)
+	) -> Result<EvalcheckClaim<F>, Self::Error> {
+		reduce_final_round_claim_helper(poly_oracle, round_claim)
 	}
 }
 
-fn reduce_sumcheck_claim_round<F: Field>(
+fn reduce_intermediate_round_claim_helper<F: Field>(
 	claim: SumcheckRoundClaim<F>,
 	challenge: F,
 	proof: SumcheckRound<F>,
@@ -111,7 +111,7 @@ fn reduce_sumcheck_claim_round<F: Field>(
 	})
 }
 
-fn reduce_sumcheck_claim_final<F: Field>(
+fn reduce_final_round_claim_helper<F: Field>(
 	poly_oracle: &CompositePolyOracle<F>,
 	round_claim: SumcheckRoundClaim<F>,
 ) -> Result<EvalcheckClaim<F>, Error> {

@@ -4,8 +4,6 @@ use binius_field::Field;
 
 use crate::{oracle::CompositePolyOracle, protocols::evalcheck::EvalcheckClaim};
 
-use super::Error;
-
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckRound<F> {
 	/// Monomial-Basis Coefficients of a round polynomial sent by the prover
@@ -29,6 +27,8 @@ pub struct AbstractSumcheckRoundClaim<F: Field> {
 }
 
 pub trait AbstractSumcheckReductor<F: Field> {
+	type Error: std::error::Error;
+
 	/// Reduce a round claim to a round claim for the next round
 	///
 	/// Arguments:
@@ -42,7 +42,7 @@ pub trait AbstractSumcheckReductor<F: Field> {
 		claim: AbstractSumcheckRoundClaim<F>,
 		challenge: F,
 		round_proof: AbstractSumcheckRound<F>,
-	) -> Result<AbstractSumcheckRoundClaim<F>, Error>;
+	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error>;
 
 	/// Reduce the final round claim to an evalcheck claim
 	///
@@ -53,13 +53,15 @@ pub trait AbstractSumcheckReductor<F: Field> {
 		&self,
 		poly_oracle: &CompositePolyOracle<F>,
 		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, Error>;
+	) -> Result<EvalcheckClaim<F>, Self::Error>;
 }
 
 pub trait AbstractSumcheckProver<F: Field> {
+	type Error: std::error::Error;
+
 	fn execute_round(
 		&mut self,
 		prev_rd_challenge: Option<F>,
-	) -> Result<AbstractSumcheckRound<F>, Error>;
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error>;
+	) -> Result<AbstractSumcheckRound<F>, Self::Error>;
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error>;
 }

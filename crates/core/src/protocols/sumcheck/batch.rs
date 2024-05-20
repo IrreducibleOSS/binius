@@ -16,7 +16,10 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::{CompositionPoly, MultilinearPoly},
-	protocols::{abstract_sumcheck::AbstractSumcheckReductor, evalcheck::EvalcheckClaim},
+	protocols::{
+		abstract_sumcheck::{AbstractSumcheckProver, AbstractSumcheckReductor},
+		evalcheck::EvalcheckClaim,
+	},
 };
 use binius_field::{Field, PackedField};
 
