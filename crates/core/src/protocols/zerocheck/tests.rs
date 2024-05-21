@@ -79,7 +79,6 @@ fn test_prove_verify_interaction_helper(
 	// Setup ZC Claim
 	let mut oracles = MultilinearOracleSet::new();
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars,
 		n_polys: n_multilinears,
 		tower_level: F::TOWER_LEVEL,

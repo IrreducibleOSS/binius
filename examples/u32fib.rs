@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet, ShiftVariant},
+	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
 		transparent::step_down::StepDown,
@@ -132,15 +132,12 @@ struct U32FibOracle {
 
 impl U32FibOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, n_vars: usize) -> Self {
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			n_polys: 3,
-			n_vars,
-			round_id: 0,
-			tower_level: 0,
-		});
-		let z_out = oracles.committed_oracle_id(CommittedId { batch_id, index: 0 });
-		let c_out = oracles.committed_oracle_id(CommittedId { batch_id, index: 1 });
-		let carry_constraint = oracles.committed_oracle_id(CommittedId { batch_id, index: 2 });
+		let mut batch_scope = oracles.build_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
+		let z_out = batch_scope.add_one();
+		let c_out = batch_scope.add_one();
+		let carry_constraint = batch_scope.add_one();
+		let _batch_id = batch_scope.build();
+
 		let x_in = oracles
 			.add_shifted(z_out, 64, n_vars, ShiftVariant::LogicalLeft)
 			.unwrap();

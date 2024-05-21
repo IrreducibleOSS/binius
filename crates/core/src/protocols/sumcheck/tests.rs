@@ -88,7 +88,6 @@ fn test_prove_verify_interaction_helper(
 	// Setup Claim
 	let mut oracles = MultilinearOracleSet::new();
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars,
 		n_polys: n_multilinears,
 		tower_level: F::TOWER_LEVEL,
@@ -159,7 +158,6 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	// CLAIM
 	let mut oracles = MultilinearOracleSet::new();
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars,
 		n_polys: n_multilinears,
 		tower_level: F::TOWER_LEVEL,
@@ -279,7 +277,6 @@ fn test_prove_verify_batch() {
 
 	let batch_ids = [4, 6, 8].map(|n_vars| {
 		oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 0,
 			n_vars,
 			n_polys: 1,
 			tower_level: F::TOWER_LEVEL,

@@ -342,7 +342,6 @@ fn main() {
 	let mut trace_oracle = MultilinearOracleSet::new();
 
 	trace_oracle.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars: log_size,
 		n_polys: 3,
 		tower_level: 0,

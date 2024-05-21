@@ -91,13 +91,11 @@ fn test_evaluation_point_batching() {
 
 	let mut oracles = MultilinearOracleSet::new();
 	let batch_0_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars: log_size,
 		n_polys: 2,
 		tower_level,
 	});
 	let batch_1_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars: log_size,
 		n_polys: 2,
 		tower_level,
@@ -213,7 +211,6 @@ fn test_shifted_evaluation_whole_cube() {
 	let mut oracles = MultilinearOracleSet::<EF>::new();
 
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars,
 		n_polys: 1,
 		tower_level: <P as PackedField>::Scalar::TOWER_LEVEL,
@@ -313,7 +310,6 @@ fn test_shifted_evaluation_subcube() {
 	let mut oracles = MultilinearOracleSet::<EF>::new();
 
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars,
 		n_polys: 1,
 		tower_level: <P as PackedField>::Scalar::TOWER_LEVEL,

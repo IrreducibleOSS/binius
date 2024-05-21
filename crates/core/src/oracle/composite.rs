@@ -105,12 +105,10 @@ mod tests {
 	fn test_composite_tower_level() {
 		type F = BinaryField128b;
 
-		let round_id = 0;
 		let n_vars = 5;
 
 		let mut oracles = MultilinearOracleSet::<F>::new();
 		let batch_id_2b = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id,
 			n_vars,
 			n_polys: 1,
 			tower_level: BinaryField2b::TOWER_LEVEL,
@@ -121,7 +119,6 @@ mod tests {
 		});
 
 		let batch_id_8b = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id,
 			n_vars,
 			n_polys: 1,
 			tower_level: BinaryField8b::TOWER_LEVEL,
@@ -132,7 +129,6 @@ mod tests {
 		});
 
 		let batch_id_32b = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id,
 			n_vars,
 			n_polys: 1,
 			tower_level: BinaryField32b::TOWER_LEVEL,

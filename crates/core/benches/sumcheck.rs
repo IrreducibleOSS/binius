@@ -245,7 +245,6 @@ where
 	// Setup poly_oracle
 	let mut oracles = MultilinearOracleSet::new();
 	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 0,
 		n_vars: poly.n_vars(),
 		n_polys: poly.n_multilinears(),
 		tower_level: F::TOWER_LEVEL,

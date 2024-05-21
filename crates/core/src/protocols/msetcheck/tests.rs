@@ -66,21 +66,18 @@ fn test_prove_verify_interaction() {
 	let mut oracles = MultilinearOracleSet::<F>::new();
 
 	let round_1_batch_1_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars,
 		n_polys: 2,
 		tower_level: F1::TOWER_LEVEL,
 	});
 
 	let round_1_batch_2_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars,
 		n_polys: 2,
 		tower_level: F2::TOWER_LEVEL,
 	});
 
 	let round_1_batch_3_id = oracles.add_committed_batch(CommittedBatchSpec {
-		round_id: 1,
 		n_vars,
 		n_polys: 2,
 		tower_level: F3::TOWER_LEVEL,

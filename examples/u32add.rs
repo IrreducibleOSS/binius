@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet, ShiftVariant},
+	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
 		CompositionPoly, MultilinearComposite,
@@ -93,16 +93,13 @@ struct U32AddOracle {
 
 impl U32AddOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, n_vars: usize) -> Self {
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			n_polys: 4,
-			n_vars,
-			round_id: 0,
-			tower_level: 0,
-		});
-		let x_in = oracles.committed_oracle_id(CommittedId { batch_id, index: 0 });
-		let y_in = oracles.committed_oracle_id(CommittedId { batch_id, index: 1 });
-		let z_out = oracles.committed_oracle_id(CommittedId { batch_id, index: 2 });
-		let c_out = oracles.committed_oracle_id(CommittedId { batch_id, index: 3 });
+		let mut batch_scope = oracles.build_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
+		let x_in = batch_scope.add_one();
+		let y_in = batch_scope.add_one();
+		let z_out = batch_scope.add_one();
+		let c_out = batch_scope.add_one();
+		let _batch_id = batch_scope.build();
+
 		let c_in = oracles
 			.add_shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();

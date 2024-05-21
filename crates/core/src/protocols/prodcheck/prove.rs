@@ -215,7 +215,6 @@ mod tests {
 		// Setup claim
 		let mut oracles = MultilinearOracleSet::<F>::new();
 		let round_1_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 1,
 			n_vars,
 			n_polys: 2,
 			tower_level: F::TOWER_LEVEL,
@@ -235,7 +234,6 @@ mod tests {
 		};
 
 		let round_2_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			round_id: 2,
 			n_vars: n_vars + 1,
 			n_polys: 1,
 			tower_level: F::TOWER_LEVEL,

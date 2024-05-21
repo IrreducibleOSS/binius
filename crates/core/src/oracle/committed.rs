@@ -3,13 +3,9 @@
 /// Committed polynomial batches are identified by their index.
 pub type BatchId = usize;
 
-// Round ID 0 is precommitment.
-pub type RoundId = usize;
-
 /// Metadata about a batch of committed multilinear polynomials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommittedBatchSpec {
-	pub round_id: RoundId,
 	pub n_vars: usize,
 	pub n_polys: usize,
 	pub tower_level: usize,
@@ -19,7 +15,6 @@ pub struct CommittedBatchSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommittedBatch {
 	pub id: BatchId,
-	pub round_id: RoundId,
 	pub n_vars: usize,
 	pub n_polys: usize,
 	pub tower_level: usize,
