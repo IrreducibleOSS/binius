@@ -17,10 +17,10 @@ macro_rules! impl_arithmetic_using_packed {
 		impl InvertOrZero for $name {
 			#[inline]
 			fn invert_or_zero(self) -> Self {
-				use $crate::single_packed::AsSinglePacked;
+				use $crate::as_packed_field::AsPackedField;
 
 				$crate::binary_field_arithmetic::invert_or_zero_using_packed::<
-					<Self as AsSinglePacked>::SingleElementPacked,
+					<Self as AsPackedField<$name>>::Packed,
 				>(self)
 			}
 		}
@@ -28,28 +28,28 @@ macro_rules! impl_arithmetic_using_packed {
 		impl TowerFieldArithmetic for $name {
 			#[inline]
 			fn multiply(self, rhs: Self) -> Self {
-				use $crate::single_packed::AsSinglePacked;
+				use $crate::as_packed_field::AsPackedField;
 
 				$crate::binary_field_arithmetic::multiple_using_packed::<
-					<Self as AsSinglePacked>::SingleElementPacked,
+					<Self as AsPackedField<$name>>::Packed,
 				>(self, rhs)
 			}
 
 			#[inline]
 			fn multiply_alpha(self) -> Self {
-				use $crate::single_packed::AsSinglePacked;
+				use $crate::as_packed_field::AsPackedField;
 
 				$crate::binary_field_arithmetic::mul_alpha_using_packed::<
-					<Self as AsSinglePacked>::SingleElementPacked,
+					<Self as AsPackedField<$name>>::Packed,
 				>(self)
 			}
 
 			#[inline]
 			fn square(self) -> Self {
-				use $crate::single_packed::AsSinglePacked;
+				use $crate::as_packed_field::AsPackedField;
 
 				$crate::binary_field_arithmetic::square_using_packed::<
-					<Self as AsSinglePacked>::SingleElementPacked,
+					<Self as AsPackedField<$name>>::Packed,
 				>(self)
 			}
 		}
@@ -125,17 +125,12 @@ pub(super) fn mul_alpha_using_packed<P: PackedField + MulAlpha>(value: P::Scalar
 /// Multiply `val` by alpha as a packed field with `smaller_type` scalar
 macro_rules! mul_alpha_as_repacked {
 	($val:ident, $source_type:ty, $smaller_type:ty) => {{
-		use $crate::underlier::WithUnderlier;
+		use $crate::as_packed_field::AsPackedField;
 
-		type Repacked = $crate::arch::packed::PackedPrimitiveType<
-			<$source_type as WithUnderlier>::Underlier,
-			$smaller_type,
-		>;
-
-		let repacked_value: Repacked = ($val.to_underlier()).into();
-		$crate::arithmetic_traits::MulAlpha::mul_alpha(repacked_value)
-			.to_underlier()
-			.into()
+		let repacked_value = <$source_type as AsPackedField<$smaller_type>>::to_packed($val);
+		<$source_type as AsPackedField<$smaller_type>>::from_packed(
+			$crate::arithmetic_traits::MulAlpha::mul_alpha(repacked_value),
+		)
 	}};
 }
 

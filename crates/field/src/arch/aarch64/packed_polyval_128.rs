@@ -17,11 +17,11 @@
 use core::{arch::aarch64::*, mem};
 use std::ops::Mul;
 
+use super::super::portable::packed::{
+	impl_conversion, impl_packed_extension_field, PackedPrimitiveType,
+};
 use crate::{
-	arch::{
-		packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
-		ReuseMultiplyStrategy,
-	},
+	arch::ReuseMultiplyStrategy,
 	arithmetic_traits::{impl_square_with, InvertOrZero},
 	BinaryField128bPolyval, PackedField,
 };

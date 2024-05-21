@@ -7,11 +7,11 @@ use std::{
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
+use super::super::portable::{
+	packed::PackedPrimitiveType,
+	packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
+};
 use crate::{
-	arch::portable::{
-		packed::PackedPrimitiveType,
-		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
-	},
 	arithmetic_traits::Broadcast,
 	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
 	BinaryField,

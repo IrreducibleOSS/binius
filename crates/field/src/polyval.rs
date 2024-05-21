@@ -11,8 +11,8 @@ use super::{
 };
 use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
+	as_packed_field::AsPackedField,
 	packed::PackedField,
-	single_packed::AsSinglePacked,
 	underlier::UnderlierType,
 };
 use bytemuck::{Pod, Zeroable};
@@ -84,7 +84,7 @@ impl Sub<&Self> for BinaryField128bPolyval {
 	}
 }
 
-type SinglePacked = <BinaryField128bPolyval as AsSinglePacked>::SingleElementPacked;
+type SinglePacked = <BinaryField128bPolyval as AsPackedField<BinaryField128bPolyval>>::Packed;
 
 impl Mul<Self> for BinaryField128bPolyval {
 	type Output = Self;

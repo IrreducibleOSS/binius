@@ -8,10 +8,13 @@ use super::{
 };
 use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
+	as_packed_field::AsPackedField,
 	binary_field_arithmetic::{impl_arithmetic_using_packed, impl_mul_primitive},
 	binary_tower,
+	packed::PackedField,
 	underlier::U1,
-	ExtensionField, Field, TowerExtensionField, TowerField,
+	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
+	TowerExtensionField, TowerField,
 };
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
@@ -152,6 +155,44 @@ impl_mul_primitive!(AESTowerField128b,
 	repack 6 => AESTowerField128b,
 );
 
+/// We use this function to define isomorphisms between AES and binary tower fields.
+/// Repack field as 8b packed field and apply isomorphism for each 8b element
+fn convert_as_packed_8b<F1, F2, Scalar1, Scalar2>(val: F1) -> F2
+where
+	Scalar1: Field,
+	Scalar2: Field + From<Scalar1>,
+	F1: AsPackedField<Scalar1>,
+	F2: AsPackedField<Scalar2>,
+{
+	assert_eq!(F1::Packed::WIDTH, F2::Packed::WIDTH);
+
+	let val_repacked = val.to_packed();
+	let converted_repacked = F2::Packed::from_fn(|i| val_repacked.get(i).into());
+
+	F2::from_packed(converted_repacked)
+}
+
+macro_rules! impl_tower_field_conversion {
+	($aes_field:ty, $binary_field:ty) => {
+		impl From<$aes_field> for $binary_field {
+			fn from(value: $aes_field) -> Self {
+				convert_as_packed_8b::<_, _, AESTowerField8b, BinaryField8b>(value)
+			}
+		}
+
+		impl From<$binary_field> for $aes_field {
+			fn from(value: $binary_field) -> Self {
+				convert_as_packed_8b::<_, _, BinaryField8b, AESTowerField8b>(value)
+			}
+		}
+	};
+}
+
+impl_tower_field_conversion!(AESTowerField16b, BinaryField16b);
+impl_tower_field_conversion!(AESTowerField32b, BinaryField32b);
+impl_tower_field_conversion!(AESTowerField64b, BinaryField64b);
+impl_tower_field_conversion!(AESTowerField128b, BinaryField128b);
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -199,6 +240,11 @@ mod tests {
 		}
 	}
 
+	fn check_isomorphism_preserves_ops<F1: Field, F2: Field + From<F1>>(a: F1, b: F1) {
+		assert_eq!(F2::from(a * b), F2::from(a) * F2::from(b));
+		assert_eq!(F2::from(a + b), F2::from(a) + F2::from(b));
+	}
+
 	proptest! {
 		#[test]
 		fn test_invert_8(a in any::<u8>()) {
@@ -234,23 +280,33 @@ mod tests {
 		}
 
 		#[test]
-		fn test_isomorphism_to_binary_tower8b_props(a in any::<u8>(), b in any::<u8>()) {
-			let a_val = AESTowerField8b(a);
-			let b_val = AESTowerField8b(b);
-			assert_eq!(BinaryField8b::from(a_val) * BinaryField8b::from(b_val),
-				BinaryField8b::from(a_val * b_val));
-			assert_eq!(BinaryField8b::from(a_val) + BinaryField8b::from(b_val),
-				BinaryField8b::from(a_val + b_val));
+		fn test_isomorphism_8b(a in any::<u8>(), b in any::<u8>()) {
+			check_isomorphism_preserves_ops::<AESTowerField8b, BinaryField8b>(a.into(), b.into());
+			check_isomorphism_preserves_ops::<BinaryField8b, AESTowerField8b>(a.into(), b.into());
 		}
 
 		#[test]
-		fn test_isomorphism_from_binary_tower8b_props(a in any::<u8>(), b in any::<u8>()) {
-			let a_val = BinaryField8b(a);
-			let b_val = BinaryField8b(b);
-			assert_eq!(AESTowerField8b::from(a_val) * AESTowerField8b::from(b_val),
-				AESTowerField8b::from(a_val * b_val));
-			assert_eq!(AESTowerField8b::from(a_val) + AESTowerField8b::from(b_val),
-				AESTowerField8b::from(a_val + b_val));
+		fn test_isomorphism_16b(a in any::<u16>(), b in any::<u16>()) {
+			check_isomorphism_preserves_ops::<AESTowerField16b, BinaryField16b>(a.into(), b.into());
+			check_isomorphism_preserves_ops::<BinaryField16b, AESTowerField16b>(a.into(), b.into());
+		}
+
+		#[test]
+		fn test_isomorphism_32b(a in any::<u32>(), b in any::<u32>()) {
+			check_isomorphism_preserves_ops::<AESTowerField32b, BinaryField32b>(a.into(), b.into());
+			check_isomorphism_preserves_ops::<BinaryField32b, AESTowerField32b>(a.into(), b.into());
+		}
+
+		#[test]
+		fn test_isomorphism_64b(a in any::<u64>(), b in any::<u64>()) {
+			check_isomorphism_preserves_ops::<AESTowerField64b, BinaryField64b>(a.into(), b.into());
+			check_isomorphism_preserves_ops::<BinaryField64b, AESTowerField64b>(a.into(), b.into());
+		}
+
+		#[test]
+		fn test_isomorphism_128b(a in any::<u128>(), b in any::<u128>()) {
+			check_isomorphism_preserves_ops::<AESTowerField128b, BinaryField128b>(a.into(), b.into());
+			check_isomorphism_preserves_ops::<BinaryField128b, AESTowerField128b>(a.into(), b.into());
 		}
 	}
 
