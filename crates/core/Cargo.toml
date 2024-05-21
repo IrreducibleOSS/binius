@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "multilinear_query"
 harness = false
+
+[[bench]]
+name = "zerocheck"
+harness = false

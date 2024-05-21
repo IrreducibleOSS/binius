@@ -8,8 +8,8 @@ use binius_core::{
 		MultilinearPoly,
 	},
 	protocols::{
-		sumcheck::{prove, Error as SumcheckError, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
+		zerocheck::{prove, Error as ZerocheckError, ZerocheckClaim},
 	},
 };
 use binius_field::{
@@ -18,22 +18,52 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use rand::thread_rng;
-use std::{fmt::Debug, iter::repeat_with, mem, sync::Arc};
+use rand::{rngs::ThreadRng, thread_rng};
+use std::{fmt::Debug, mem, sync::Arc};
 
-fn sumcheck_128b_over_1b(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField1b>(c, "Sumcheck 128b over 1b", 8)
+fn zerocheck_128b_over_1b(c: &mut Criterion) {
+	zerocheck_128b_with_switchover::<BinaryField1b>(c, "Zerocheck 128b over 1b", 8)
 }
 
-fn sumcheck_128b_over_8b(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField8b>(c, "Sumcheck 128b over 8b", 7)
+fn zerocheck_128b_over_8b(c: &mut Criterion) {
+	zerocheck_128b_with_switchover::<BinaryField8b>(c, "Zerocheck 128b over 8b", 7)
 }
 
-fn sumcheck_128b_tower_basis(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField128b>(c, "Sumcheck 128b tower basis", 1)
+fn zerocheck_128b_tower_basis(c: &mut Criterion) {
+	zerocheck_128b_with_switchover::<BinaryField128b>(c, "Zerocheck 128b tower basis", 1)
 }
 
-fn sumcheck_128b_with_switchover<P>(c: &mut Criterion, id: &str, switchover: usize)
+// Helper function that makes n_multilinears MultilinearExtensions in such a way that over
+// the product composition, any hypercube evaluation will be zero.
+fn make_multilinears<P: PackedField>(
+	rng: &mut ThreadRng,
+	n_vars: usize,
+	n_multilinears: usize,
+) -> Vec<MultilinearExtension<'static, P>> {
+	if (1 << n_vars) % P::WIDTH != 0 {
+		panic!("(1 << n_vars) must be divisible by P::WIDTH");
+	}
+
+	let n_packed_values = (1 << n_vars) / P::WIDTH;
+	let mut multilinears = Vec::with_capacity(n_multilinears);
+	for j in 0..n_multilinears {
+		let mut values = vec![P::default(); n_packed_values];
+		for i in 0..(1 << n_vars) {
+			if i % n_multilinears != j {
+				let packed_idx = i / P::WIDTH;
+				let scalar_idx = i % P::WIDTH;
+				if i % n_multilinears != j {
+					values[packed_idx].set(scalar_idx, <P::Scalar as Field>::random(&mut *rng));
+				}
+			}
+		}
+		let multilinear = MultilinearExtension::from_values(values).unwrap();
+		multilinears.push(multilinear);
+	}
+	multilinears
+}
+
+fn zerocheck_128b_with_switchover<P>(c: &mut Criterion, id: &str, switchover: usize)
 where
 	P: PackedField + Debug,
 	BinaryField128b: ExtensionField<P::Scalar>,
@@ -55,27 +85,23 @@ where
 			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
-			let multilinears = repeat_with(|| {
-				let values = repeat_with(|| P::random(&mut rng))
-					.take((1 << n_vars) / P::WIDTH)
-					.collect::<Vec<_>>();
-				MultilinearExtension::from_values(values)
-					.unwrap()
-					.specialize::<FTower>()
-			})
-			.take(composition_n_vars)
-			.collect::<Vec<_>>();
+			let multilinears = make_multilinears::<P>(&mut rng, n_vars, composition_n_vars);
+			let multilinears = multilinears
+				.into_iter()
+				.map(|m| m.specialize_arc_dyn::<FTower>())
+				.collect::<Vec<_>>();
+
 			let poly =
 				MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
-			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
-			let sumcheck_witness = poly.clone();
+			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
+			let zerocheck_witness = poly;
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FTower, _, _, _>(
-					&sumcheck_claim,
-					sumcheck_witness.clone(),
+				prove::<FTower, FTower, _, _>(
+					&zerocheck_claim,
+					zerocheck_witness.clone(),
 					&domain,
 					prove_challenger.clone(),
 					|_| switchover,
@@ -85,7 +111,7 @@ where
 	}
 }
 
-fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
+fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 	type FTower = BinaryField128b;
 	type FPolyval = BinaryField128bPolyval;
 
@@ -97,7 +123,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 
 	let mut rng = thread_rng();
 
-	let mut group = c.benchmark_group("Sumcheck 128b monomial basis (A * B * C)");
+	let mut group = c.benchmark_group("Zerocheck 128b monomial basis (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
 		let composition_n_vars = <_ as CompositionPoly<FTower>>::n_vars(&composition);
@@ -105,14 +131,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
-			let multilinears = repeat_with(|| {
-				let values = repeat_with(|| Field::random(&mut rng))
-					.take(1 << n_vars)
-					.collect::<Vec<FTower>>();
-				MultilinearExtension::from_values(values).unwrap()
-			})
-			.take(composition_n_vars)
-			.collect::<Vec<_>>();
+			let multilinears = make_multilinears::<FTower>(&mut rng, n_vars, composition_n_vars);
 
 			let poly = MultilinearComposite::new(
 				n_vars,
@@ -124,7 +143,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			)
 			.unwrap();
 
-			let prover_poly = MultilinearComposite::new(
+			let zerocheck_witness = MultilinearComposite::new(
 				n_vars,
 				composition.clone(),
 				multilinears
@@ -132,19 +151,19 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 					.map(|multilin| {
 						transform_poly::<_, FPolyval>(multilin.to_ref())
 							.unwrap()
-							.specialize()
+							.specialize_arc_dyn()
 					})
 					.collect(),
 			)
 			.unwrap();
 
-			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
+			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FPolyval, _, _, _>(
-					&sumcheck_claim,
-					prover_poly.clone(),
+				prove::<FTower, FPolyval, _, _>(
+					&zerocheck_claim,
+					zerocheck_witness.clone(),
 					&domain,
 					prove_challenger.clone(),
 					|_| 1,
@@ -154,7 +173,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	}
 }
 
-fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
+fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	type FTower = BinaryField128b;
 	type FPolyval = BinaryField128bPolyval;
 
@@ -166,7 +185,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 
 	let mut rng = thread_rng();
 
-	let mut group = c.benchmark_group("Sumcheck 128b monomial basis with Arc (A * B * C)");
+	let mut group = c.benchmark_group("Zerocheck 128b monomial basis with Arc (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
 		let n = 1 << n_vars;
 		let composition_n_vars = <_ as CompositionPoly<FTower>>::n_vars(&composition);
@@ -174,14 +193,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			(n * composition_n_vars * mem::size_of::<FTower>()) as u64,
 		));
 		group.bench_with_input(BenchmarkId::from_parameter(n_vars), &n_vars, |b, &n_vars| {
-			let multilinears = repeat_with(|| {
-				let values = repeat_with(|| Field::random(&mut rng))
-					.take(1 << n_vars)
-					.collect::<Vec<FTower>>();
-				MultilinearExtension::from_values(values).unwrap()
-			})
-			.take(composition_n_vars)
-			.collect::<Vec<_>>();
+			let multilinears = make_multilinears::<FTower>(&mut rng, n_vars, composition_n_vars);
 
 			let poly = MultilinearComposite::new(
 				n_vars,
@@ -218,12 +230,12 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 				Arc<dyn MultilinearPoly<FPolyval> + Send + Sync>,
 			> = MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
-			let sumcheck_claim = make_sumcheck_claim(&poly).unwrap();
+			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
 				prove(
-					&sumcheck_claim,
+					&zerocheck_claim,
 					prover_poly.clone(),
 					&domain,
 					prove_challenger.clone(),
@@ -234,10 +246,10 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	}
 }
 
-/// Given a sumcheck witness poly, make sumcheck claim
-pub fn make_sumcheck_claim<F, C, M>(
+/// Given a zerocheck witness, make zerocheck claim
+pub fn make_zerocheck_claim<F, C, M>(
 	poly: &MultilinearComposite<F, C, M>,
-) -> Result<SumcheckClaim<F>, SumcheckError>
+) -> Result<ZerocheckClaim<F>, ZerocheckError>
 where
 	F: TowerField,
 	M: MultilinearPoly<F>,
@@ -256,36 +268,19 @@ where
 	let composite_poly =
 		CompositePolyOracle::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();
 
-	// Calculate sum
-	let degree = poly.composition.degree();
-	if degree == 0 {
-		return Err(SumcheckError::PolynomialDegreeIsZero);
-	}
-
-	let mut evals = vec![F::ZERO; poly.n_multilinears()];
-	let sum = (0..1 << poly.n_vars())
-		.map(|i| {
-			for (evals_i, multilin) in evals.iter_mut().zip(&poly.multilinears) {
-				*evals_i = multilin.evaluate_on_hypercube(i).unwrap();
-			}
-			poly.composition.evaluate(&evals).unwrap()
-		})
-		.sum();
-
-	let sumcheck_claim = SumcheckClaim {
+	let zerocheck_claim = ZerocheckClaim {
 		poly: composite_poly,
-		sum,
 	};
 
-	Ok(sumcheck_claim)
+	Ok(zerocheck_claim)
 }
 
 criterion_group!(
-	sumcheck,
-	sumcheck_128b_tower_basis,
-	sumcheck_128b_monomial_basis,
-	sumcheck_128b_monomial_basis_with_arc,
-	sumcheck_128b_over_1b,
-	sumcheck_128b_over_8b
+	zerocheck,
+	zerocheck_128b_tower_basis,
+	zerocheck_128b_monomial_basis,
+	zerocheck_128b_monomial_basis_with_arc,
+	zerocheck_128b_over_1b,
+	zerocheck_128b_over_8b
 );
-criterion_main!(sumcheck);
+criterion_main!(zerocheck);
