@@ -34,12 +34,6 @@ There are examples of simple commit-and-prove SNARKs in the `examples` directory
 cargo run --release --example bitwise_and_proof
 ```
 
-To print out profiling information, set the environment variable `PROFILE_PRINT_TREE=1`:
-
-```bash
-PROFILE_PRINT_TREE=1 cargo run --release --example bitwise_and_proof
-```
-
 The environment variable `PROFILE_CSV_FILE` can be set to an output filename to dump profiling data to a CSV file for more detailed analysis.
 
 ## Support
