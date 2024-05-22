@@ -584,7 +584,7 @@ binary_tower!(
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
-		val.ct_eq(&BinaryField1b::ZERO)
+		val.ct_eq(&BinaryField1b::ONE)
 	}
 }
 
@@ -1063,6 +1063,13 @@ pub(crate) mod tests {
 		#[test]
 		fn test_mul_primitive_128b(val in 0u128.., iota in 0usize..8) {
 			test_mul_primitive::<BinaryField128b>(val.into(), iota)
+		}
+	}
+
+	#[test]
+	fn test_1b_to_choice() {
+		for i in 0..2 {
+			assert_eq!(Choice::from(BinaryField1b::from(i)).unwrap_u8(), i);
 		}
 	}
 }

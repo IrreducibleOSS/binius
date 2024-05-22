@@ -723,4 +723,16 @@ mod tests {
 
 		assert_eq!(x * y, BinaryField128bPolyval::ONE);
 	}
+
+	#[test]
+	fn test_conversion_from_1b() {
+		assert_eq!(
+			BinaryField128bPolyval::from(BinaryField1b::from(0)),
+			BinaryField128bPolyval::ZERO
+		);
+		assert_eq!(
+			BinaryField128bPolyval::from(BinaryField1b::from(1)),
+			BinaryField128bPolyval::ONE
+		);
+	}
 }
