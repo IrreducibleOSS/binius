@@ -16,6 +16,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
+use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
@@ -297,6 +298,10 @@ fn make_constraints<F: TowerField>(
 }
 
 fn main() {
+	adjust_thread_pool()
+		.as_ref()
+		.expect("failed to init thread pool");
+
 	if let Ok(csv_path) = env::var("PROFILE_CSV_FILE") {
 		let _ = tracing_subscriber::registry()
 			.with(CsvLayer::new(csv_path))

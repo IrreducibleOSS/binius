@@ -250,7 +250,9 @@ impl TryInto<BinaryField1b> for BinaryField128bPolyval {
 
 impl From<BinaryField1b> for BinaryField128bPolyval {
 	fn from(value: BinaryField1b) -> Self {
-		Self::conditional_select(&Self::ZERO, &Self::ONE, value.into())
+		debug_assert_eq!(Self::ZERO, Self(0));
+
+		Self(Self::ONE.0 & u128::fill_with_bit(value.val().val()))
 	}
 }
 

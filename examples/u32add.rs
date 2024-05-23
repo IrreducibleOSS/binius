@@ -12,6 +12,7 @@ use binius_field::{
 	BinaryField128b, BinaryField1b, Field, PackedBinaryField128x1b, PackedField, TowerField,
 };
 use binius_macros::composition_poly;
+use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
@@ -19,6 +20,10 @@ use rayon::prelude::*;
 // This doesn't actually create any proof, it only generates the trace and validates it against the relevant constraints.
 
 fn main() {
+	adjust_thread_pool()
+		.as_ref()
+		.expect("failed to init thread pool");
+
 	let log_size = 14;
 	let oracle = U32AddOracle::new(&mut MultilinearOracleSet::<BinaryField128b>::new(), log_size);
 	let witness = U32AddTrace::<PackedBinaryField128x1b>::new(log_size).fill_trace();

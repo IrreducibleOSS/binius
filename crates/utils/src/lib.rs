@@ -2,3 +2,4 @@
 
 pub mod checked_arithmetics;
 pub mod iter;
+pub mod rayon;

@@ -30,6 +30,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
+use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
@@ -754,6 +755,9 @@ fn make_constraints<FI: TowerField>(
 fn main() {
 	const SECURITY_BITS: usize = 100;
 
+	adjust_thread_pool()
+		.as_ref()
+		.expect("failed to init thread pool");
 	init_tracing();
 
 	let log_size = 23;

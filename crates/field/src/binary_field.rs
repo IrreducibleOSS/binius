@@ -584,7 +584,7 @@ binary_tower!(
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
-		val.ct_eq(&BinaryField1b::ONE)
+		Choice::from(val.val().val())
 	}
 }
 
