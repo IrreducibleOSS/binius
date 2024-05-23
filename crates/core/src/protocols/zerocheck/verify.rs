@@ -21,6 +21,11 @@ where
 	F: TowerField,
 	CH: CanSample<F> + CanObserve<F>,
 {
+	if claim.poly.max_individual_degree() == 0 {
+		return Err(Error::PolynomialDegreeIsZero);
+	}
+
+	// Reduction
 	let n_vars = claim.poly.n_vars();
 	let n_rounds = proof.rounds.len();
 	if n_rounds != n_vars {
@@ -34,6 +39,7 @@ where
 	};
 	let evalcheck_claim =
 		abstract_sumcheck::verify(&claim.poly, first_round_claim, proof, reductor, challenger)?;
+
 	Ok(evalcheck_claim)
 }
 

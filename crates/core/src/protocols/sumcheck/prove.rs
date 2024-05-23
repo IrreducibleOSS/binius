@@ -25,6 +25,7 @@ use crate::{
 use binius_field::{Field, PackedField};
 use getset::Getters;
 use p3_challenger::{CanObserve, CanSample};
+use rayon::prelude::*;
 use std::fmt::Debug;
 use tracing::instrument;
 
@@ -204,9 +205,14 @@ where
 			domain_points: self.domain.points(),
 		};
 
-		let round_coeffs = self
-			.state
-			.calculate_round_coeffs(evaluator, self.round_claim.current_round_sum.into())?;
+		let rd_vars = self.n_vars() - self.round;
+		let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
+
+		let round_coeffs = self.state.calculate_round_coeffs(
+			evaluator,
+			self.round_claim.current_round_sum.into(),
+			vertex_state_iterator,
+		)?;
 		let coeffs = round_coeffs.into_iter().map(Into::into).collect::<Vec<F>>();
 
 		let proof_round = SumcheckRound { coeffs };
@@ -277,6 +283,8 @@ where
 impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 	for SumcheckEvaluator<'a, F, C>
 {
+	type VertexState = ();
+
 	fn n_round_evals(&self) -> usize {
 		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the
 		// current_round_sum - $r(1)$.
@@ -285,7 +293,8 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 
 	fn process_vertex(
 		&self,
-		_index: usize,
+		_i: usize,
+		_vertex_state: Self::VertexState,
 		evals_0: &[F],
 		evals_1: &[F],
 		evals_z: &mut [F],

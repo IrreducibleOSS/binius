@@ -6,7 +6,7 @@ use crate::{oracle::Error as IOPolynomialError, polynomial::Error as PolynomialE
 pub enum Error {
 	#[error("prover has mismatch between claim and witness: {0}")]
 	ProverClaimWitnessMismatch(String),
-	#[error("sumcheck polynomial degree must be greater than zero")]
+	#[error("zerocheck polynomial degree must be greater than zero")]
 	PolynomialDegreeIsZero,
 	#[error("the input was not well formed: {0}")]
 	ImproperInput(String),
@@ -32,6 +32,8 @@ pub enum VerificationError {
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]
 	NumberOfRounds,
+	#[error("mismatch between received and expected proof type (multilinear vs multivariate)")]
+	ProofTypeMismatch,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]

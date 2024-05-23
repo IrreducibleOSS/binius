@@ -131,7 +131,7 @@ fn test_prove_verify_interaction_helper(
 #[test]
 fn test_zerocheck_prove_verify_interaction_basic() {
 	for n_vars in 2..8 {
-		for n_multilinears in 1..4 {
+		for n_multilinears in 1..5 {
 			for switchover_rd in 1..=n_vars / 2 {
 				test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
 			}
@@ -143,7 +143,7 @@ fn test_zerocheck_prove_verify_interaction_basic() {
 fn test_zerocheck_prove_verify_interaction_pigeonhole_cores() {
 	let n_threads = current_num_threads();
 	let n_vars = log2_ceil_usize(n_threads) + 1;
-	for n_multilinears in 1..4 {
+	for n_multilinears in 1..5 {
 		for switchover_rd in 1..=n_vars / 2 {
 			test_prove_verify_interaction_helper(n_vars, n_multilinears, switchover_rd);
 		}

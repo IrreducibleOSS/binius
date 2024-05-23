@@ -9,7 +9,6 @@ use crate::{
 	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::{Field, PackedField};
-use either::Either;
 use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp};
@@ -54,6 +53,8 @@ impl<F: Field> ParFoldState<F> {
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
 pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
+	type VertexState;
+
 	/// The number of points to evaluate at.
 	fn n_round_evals(&self) -> usize;
 
@@ -61,7 +62,8 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 	///
 	/// ## Arguments
 	///
-	/// * `index`: index of the hypercube vertex
+	/// * `i`: index of the hypercube vertex under processing
+	/// * `vertex_state`: state of the hypercube vertex under processing
 	/// * `evals_0`: the n multilinear polynomial evaluations at 0
 	/// * `evals_1`: the n multilinear polynomial evaluations at 1
 	/// * `evals_z`: a scratch buffer of size n for storing multilinear polynomial evaluations at a
@@ -69,7 +71,8 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 	/// * `round_evals`: the accumulated evaluations for the round
 	fn process_vertex(
 		&self,
-		index: usize,
+		i: usize,
+		vertex_state: Self::VertexState,
 		evals_0: &[F],
 		evals_1: &[F],
 		evals_z: &mut [F],
@@ -87,49 +90,6 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 		current_round_sum: F,
 		round_evals: Vec<F>,
 	) -> Result<Vec<F>, PolynomialError>;
-}
-
-impl<F, L, R> AbstractSumcheckEvaluator<F> for Either<L, R>
-where
-	F: Field,
-	L: AbstractSumcheckEvaluator<F>,
-	R: AbstractSumcheckEvaluator<F>,
-{
-	fn n_round_evals(&self) -> usize {
-		match self {
-			Either::Left(left) => left.n_round_evals(),
-			Either::Right(right) => right.n_round_evals(),
-		}
-	}
-
-	fn process_vertex(
-		&self,
-		index: usize,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
-	) {
-		match self {
-			Either::Left(left) => {
-				left.process_vertex(index, evals_0, evals_1, evals_z, round_evals)
-			}
-			Either::Right(right) => {
-				right.process_vertex(index, evals_0, evals_1, evals_z, round_evals)
-			}
-		}
-	}
-
-	fn round_evals_to_coeffs(
-		&self,
-		current_round_sum: F,
-		round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		match self {
-			Either::Left(left) => left.round_evals_to_coeffs(current_round_sum, round_evals),
-			Either::Right(right) => right.round_evals_to_coeffs(current_round_sum, round_evals),
-		}
-	}
 }
 
 /// A prover state for a generalized sumcheck protocol.
@@ -167,7 +127,6 @@ where
 	multilinears: Vec<SumcheckMultilinear<PW, M>>,
 	query: Option<MultilinearQuery<PW>>,
 	round: usize,
-	n_rounds: usize,
 }
 
 impl<PW, M> ProverState<PW, M>
@@ -206,7 +165,6 @@ where
 			multilinears,
 			query,
 			round: 0,
-			n_rounds,
 		})
 	}
 
@@ -283,10 +241,11 @@ where
 	}
 
 	/// Compute the sum of the partial polynomial evaluations over the hypercube.
-	pub fn calculate_round_coeffs(
+	pub fn calculate_round_coeffs<S>(
 		&self,
-		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
+		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar, VertexState = S>,
 		current_round_sum: PW::Scalar,
+		vertex_state_iterator: impl IndexedParallelIterator<Item = S>,
 	) -> Result<Vec<PW::Scalar>, PolynomialError> {
 		// Extract multilinears & round
 		let &Self {
@@ -312,6 +271,7 @@ where
 						Self::only_transparent,
 						Self::direct_sample,
 						evaluator,
+						vertex_state_iterator,
 						current_round_sum,
 					)
 				} else {
@@ -320,6 +280,7 @@ where
 						Self::only_transparent,
 						|multilin, i| self.subcube_inner_product(multilin, i),
 						evaluator,
+						vertex_state_iterator,
 						current_round_sum,
 					)
 				}
@@ -330,6 +291,7 @@ where
 				Self::only_folded,
 				Self::direct_sample,
 				evaluator,
+				vertex_state_iterator,
 				current_round_sum,
 			),
 
@@ -347,6 +309,7 @@ where
 					} => Self::direct_sample(large_field_folded_multilin, i),
 				},
 				evaluator,
+				vertex_state_iterator,
 				current_round_sum,
 			),
 		}
@@ -357,18 +320,18 @@ where
 	// field, and `rd_vars = n_vars - round` remaining variables that are being summed over. `eval01` closure
 	// computes 0 & 1 evaluations at some index - either by performing inner product over assigned variables
 	// pre-switchover or directly sampling MLE representation during first round or post-switchover.
-	fn calculate_round_coeffs_helper<'b, T>(
+	fn calculate_round_coeffs_helper<'b, T, S>(
 		&'b self,
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar>,
+		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar, VertexState = S>,
+		vertex_state_iterator: impl IndexedParallelIterator<Item = S>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, PolynomialError>
 	where
 		T: Copy + Sync + 'b,
 		M: 'b,
 	{
-		let rd_vars = self.n_rounds - self.round;
 		let n_multilinears = self.multilinears.len();
 		let n_round_evals = evaluator.n_round_evals();
 
@@ -376,26 +339,27 @@ where
 		// For performance, it's ideal to hoist this out of the tight loop.
 		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
 
-		let evals = (0..1 << (rd_vars - 1))
-			.into_par_iter()
+		let evals = vertex_state_iterator
+			.enumerate()
 			.fold(
 				|| ParFoldState::new(n_multilinears, n_round_evals),
-				|mut state, i| {
+				|mut par_fold_state, (i, vertex_state)| {
 					for (j, precomp) in precomps.iter().enumerate() {
 						let (eval0, eval1) = eval01(*precomp, i);
-						state.evals_0[j] = eval0;
-						state.evals_1[j] = eval1;
+						par_fold_state.evals_0[j] = eval0;
+						par_fold_state.evals_1[j] = eval1;
 					}
 
 					evaluator.process_vertex(
 						i,
-						&state.evals_0,
-						&state.evals_1,
-						&mut state.evals_z,
-						&mut state.round_evals,
+						vertex_state,
+						&par_fold_state.evals_0,
+						&par_fold_state.evals_1,
+						&mut par_fold_state.evals_z,
+						&mut par_fold_state.round_evals,
 					);
 
-					state
+					par_fold_state
 				},
 			)
 			.map(|state| state.round_evals)
