@@ -92,7 +92,7 @@ where
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove(
+	} = zerocheck::prove::<BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
 		&zerocheck_claim,
 		zerocheck_witness,
 		&zerocheck_domain,

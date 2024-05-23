@@ -1,3 +1,4 @@
+#![feature(step_trait)]
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_core::{
@@ -11,10 +12,11 @@ use binius_core::{
 		test_utils::{transform_poly, TestProductComposition},
 		zerocheck::{prove, Error as ZerocheckError, ZerocheckClaim},
 	},
+	Step,
 };
 use binius_field::{
-	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField8b, ExtensionField, Field,
-	PackedField, TowerField,
+	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
+	ExtensionField, Field, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -22,15 +24,35 @@ use rand::{rngs::ThreadRng, thread_rng};
 use std::{fmt::Debug, mem, sync::Arc};
 
 fn zerocheck_128b_over_1b(c: &mut Criterion) {
-	zerocheck_128b_with_switchover::<BinaryField1b>(c, "Zerocheck 128b over 1b", 8)
+	zerocheck_128b_with_switchover::<BinaryField1b, BinaryField128b>(c, "Zerocheck 128b over 1b", 8)
 }
 
 fn zerocheck_128b_over_8b(c: &mut Criterion) {
-	zerocheck_128b_with_switchover::<BinaryField8b>(c, "Zerocheck 128b over 8b", 7)
+	zerocheck_128b_with_switchover::<BinaryField8b, BinaryField128b>(c, "Zerocheck 128b over 8b", 7)
 }
 
 fn zerocheck_128b_tower_basis(c: &mut Criterion) {
-	zerocheck_128b_with_switchover::<BinaryField128b>(c, "Zerocheck 128b tower basis", 1)
+	zerocheck_128b_with_switchover::<BinaryField128b, BinaryField128b>(
+		c,
+		"Zerocheck 128b tower basis, 128b domain",
+		1,
+	)
+}
+
+fn zerocheck_128b_tower_basis_32b_domain(c: &mut Criterion) {
+	zerocheck_128b_with_switchover::<BinaryField128b, BinaryField32b>(
+		c,
+		"Zerocheck 128b tower basis, 32b domain",
+		1,
+	)
+}
+
+fn zerocheck_128b_tower_basis_8b_domain(c: &mut Criterion) {
+	zerocheck_128b_with_switchover::<BinaryField128b, BinaryField8b>(
+		c,
+		"Zerocheck 128b tower basis, 8b domain",
+		1,
+	)
 }
 
 // Helper function that makes n_multilinears MultilinearExtensions in such a way that over
@@ -63,17 +85,19 @@ fn make_multilinears<P: PackedField>(
 	multilinears
 }
 
-fn zerocheck_128b_with_switchover<P>(c: &mut Criterion, id: &str, switchover: usize)
+fn zerocheck_128b_with_switchover<P, FS>(c: &mut Criterion, id: &str, switchover: usize)
 where
 	P: PackedField + Debug,
-	BinaryField128b: ExtensionField<P::Scalar>,
+	P::Scalar: Field,
+	FS: Field + Step + Debug,
+	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<FS>,
 {
 	type FTower = BinaryField128b;
 
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<FS>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
@@ -99,7 +123,7 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FTower, _, _>(
+				prove::<FTower, FTower, FS, _, _>(
 					&zerocheck_claim,
 					zerocheck_witness.clone(),
 					&domain,
@@ -161,7 +185,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FPolyval, _, _>(
+				prove::<FTower, FPolyval, FPolyval, _, _>(
 					&zerocheck_claim,
 					zerocheck_witness.clone(),
 					&domain,
@@ -234,7 +258,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove(
+				prove::<_, _, FPolyval, _, _>(
 					&zerocheck_claim,
 					prover_poly.clone(),
 					&domain,
@@ -281,6 +305,8 @@ criterion_group!(
 	zerocheck_128b_monomial_basis,
 	zerocheck_128b_monomial_basis_with_arc,
 	zerocheck_128b_over_1b,
-	zerocheck_128b_over_8b
+	zerocheck_128b_over_8b,
+	zerocheck_128b_tower_basis_32b_domain,
+	zerocheck_128b_tower_basis_8b_domain
 );
 criterion_main!(zerocheck);

@@ -173,7 +173,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				// Verify the evaluation of the interleaved function over the claimed evaluations
 				let subclaim_eval_point = &eval_point[1..];
-				let actual_eval = extrapolate_line(eval1, eval2, eval_point[0]);
+				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[0]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation.into());
 				}
@@ -207,7 +207,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				// Verify the evaluation of the merged function over the claimed evaluations
 				let n_vars = poly1.n_vars();
 				let subclaim_eval_point = &eval_point[..n_vars];
-				let actual_eval = extrapolate_line(eval1, eval2, eval_point[n_vars]);
+				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[n_vars]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation.into());
 				}

@@ -94,7 +94,7 @@ fn test_prove_verify_interaction_helper(
 	};
 
 	// Zerocheck
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain: EvaluationDomain<F> = EvaluationDomain::new(n_multilinears + 1).unwrap();
 	let mut prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = |_| switchover_rd;
@@ -102,8 +102,14 @@ fn test_prove_verify_interaction_helper(
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = prove(&zc_claim, zc_witness.clone(), &domain, &mut prover_challenger, switchover_fn)
-		.expect("failed to prove zerocheck");
+	} = prove::<FE, FE, F, _, _>(
+		&zc_claim,
+		zc_witness.clone(),
+		&domain,
+		&mut prover_challenger,
+		switchover_fn,
+	)
+	.expect("failed to prove zerocheck");
 
 	let verified_evalcheck_claim = verify(&zc_claim, zerocheck_proof, &mut verifier_challenger)
 		.expect("failed to verify zerocheck");

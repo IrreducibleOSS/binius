@@ -24,7 +24,7 @@ use binius_core::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	BinaryField, BinaryField128bPolyval, BinaryField1b, ExtensionField, Field,
+	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField, Field,
 	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField,
 	TowerField,
 };
@@ -486,7 +486,8 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn prove<P, F, PW, PCS, CH>(
+// FsStep is a type with trait `Step` from which `FS` domain is created.
+fn prove<P, F, PW, FsStep, FS, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -497,8 +498,10 @@ fn prove<P, F, PW, PCS, CH>(
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
-	F: TowerField + Step + From<PW>,
-	PW: TowerField + From<F>,
+	F: TowerField + From<PW> + Step,
+	PW: TowerField + From<F> + ExtensionField<FS>,
+	FsStep: TowerField + Step,
+	FS: TowerField + From<FsStep>,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
@@ -538,7 +541,7 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_domain = EvaluationDomain::<PW>::new_isomorphic::<F>(
+	let zerocheck_domain = EvaluationDomain::<FS>::new_isomorphic::<FsStep>(
 		zerocheck_claim.poly.max_individual_degree() + 1,
 	)?;
 
@@ -550,7 +553,7 @@ where
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove(
+	} = zerocheck::prove::<F, PW, FS, _, _>(
 		&zerocheck_claim,
 		zerocheck_witness,
 		&zerocheck_domain,
@@ -783,7 +786,17 @@ fn main() {
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 	let witness = generate_trace(log_size);
-	let proof = prove::<_, _, BinaryField128bPolyval, _, _>(
+	// TODO: Ideally FS should be considerably smaller than F, something like BinaryField8b.
+	//       However, BinaryField128bPolyval doesn't support any conversions other than to/from 1 and 128 bits.
+	let proof = prove::<
+		_,
+		BinaryField128b,
+		BinaryField128bPolyval,
+		BinaryField128b,
+		BinaryField128bPolyval,
+		_,
+		_,
+	>(
 		log_size,
 		&mut oracles.clone(),
 		&fixed_oracle,

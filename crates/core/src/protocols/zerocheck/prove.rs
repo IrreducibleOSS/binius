@@ -22,7 +22,7 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use either::Either;
 use getset::Getters;
 use p3_challenger::{CanObserve, CanSample};
@@ -30,25 +30,27 @@ use rayon::prelude::*;
 use tracing::instrument;
 
 /// Prove a zerocheck to evalcheck reduction.
+/// FS is the domain type.
 #[instrument(skip_all, name = "zerocheck::prove")]
-pub fn prove<'a, F, PW, CW, CH>(
+pub fn prove<'a, F, PW, FS, CW, CH>(
 	claim: &ZerocheckClaim<F>,
 	witness: ZerocheckWitness<'a, PW, CW>,
-	domain: &EvaluationDomain<PW::Scalar>,
+	domain: &EvaluationDomain<FS>,
 	mut challenger: CH,
 	switchover_fn: impl Fn(usize) -> usize,
 ) -> Result<ZerocheckProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: TowerField + From<F>,
+	PW::Scalar: TowerField + From<F> + ExtensionField<FS>,
+	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = witness.n_vars();
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);
 
-	let zerocheck_prover =
+	let zerocheck_prover: ZerocheckProver<F, PW, FS, _> =
 		ZerocheckProver::new(domain, claim.clone(), witness, zerocheck_challenges, switchover_fn)?;
 
 	let (evalcheck_claim, rounds) =
@@ -76,16 +78,17 @@ where
 /// Each of those takes in an optional challenge (None on first round and Some on following rounds) and
 /// evaluation domain. Proof and Evalcheck claim are obtained via `finalize` call at the end.
 #[derive(Debug, Getters)]
-pub struct ZerocheckProver<'a, F, PW, CW>
+pub struct ZerocheckProver<'a, F, PW, FS, CW>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<FS>,
+	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 {
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
-	domain: &'a EvaluationDomain<PW::Scalar>,
+	domain: &'a EvaluationDomain<FS>,
 	#[getset(get = "pub")]
 	round_claim: ZerocheckRoundClaim<F>,
 
@@ -97,11 +100,12 @@ where
 	round_eq_ind: MultilinearExtension<'static, PW::Scalar>,
 }
 
-impl<'a, F, PW, CW> ZerocheckProver<'a, F, PW, CW>
+impl<'a, F, PW, FS, CW> ZerocheckProver<'a, F, PW, FS, CW>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<FS>,
+	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
@@ -109,7 +113,7 @@ where
 	/// switchover round number per multilinear polynomial as a function of its
 	/// [`MultilinearPoly::extension_degree`] value.
 	pub fn new(
-		domain: &'a EvaluationDomain<PW::Scalar>,
+		domain: &'a EvaluationDomain<FS>,
 		claim: ZerocheckClaim<F>,
 		witness: ZerocheckWitness<'a, PW, CW>,
 		zerocheck_challenges: Vec<F>,
@@ -254,7 +258,7 @@ where
 				composition: &self.composition,
 			})
 		} else {
-			Either::Right(ZerocheckLaterRoundEvaluator {
+			Either::Right(ZerocheckLaterRoundEvaluator::<PW::Scalar, FS, _> {
 				degree,
 				eq_ind: self.round_eq_ind.to_ref(),
 				round_zerocheck_challenge: self.zerocheck_challenges[self.round - 1].into(),
@@ -306,11 +310,12 @@ where
 	}
 }
 
-impl<'a, F, PW, CW> AbstractSumcheckProver<F> for ZerocheckProver<'a, F, PW, CW>
+impl<'a, F, PW, FS, CW> AbstractSumcheckProver<F> for ZerocheckProver<'a, F, PW, FS, CW>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<FS>,
+	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 {
 	type Error = Error;
@@ -335,16 +340,21 @@ where
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub struct ZerocheckFirstRoundEvaluator<'a, F: Field, C: CompositionPoly<F>> {
+pub struct ZerocheckFirstRoundEvaluator<'a, F: Field, FS: Field, C: CompositionPoly<F>>
+where
+	F: ExtensionField<FS>,
+{
 	pub composition: &'a C,
-	pub domain_points: &'a [F],
-	pub evaluation_domain: &'a EvaluationDomain<F>,
+	pub domain_points: &'a [FS],
+	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
 	pub eq_ind: MultilinearExtension<'a, F>,
 }
 
-impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
-	for ZerocheckFirstRoundEvaluator<'a, F, C>
+impl<'a, F: Field, FS: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
+	for ZerocheckFirstRoundEvaluator<'a, F, FS, C>
+where
+	F: ExtensionField<FS>,
 {
 	fn n_round_evals(&self) -> usize {
 		// In the very first round of a sumcheck that comes from zerocheck, we can uniquely
@@ -372,7 +382,8 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
+					*evals_z_j =
+						extrapolate_line::<F, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			let composite_value = self
@@ -407,17 +418,22 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub struct ZerocheckLaterRoundEvaluator<'a, F: Field, C: CompositionPoly<F>> {
+pub struct ZerocheckLaterRoundEvaluator<'a, F: Field, FS: Field, C: CompositionPoly<F>>
+where
+	F: ExtensionField<FS>,
+{
 	pub composition: &'a C,
-	pub domain_points: &'a [F],
-	pub evaluation_domain: &'a EvaluationDomain<F>,
+	pub domain_points: &'a [FS],
+	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
 	pub eq_ind: MultilinearExtension<'a, F>,
 	pub round_zerocheck_challenge: F,
 }
 
-impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
-	for ZerocheckLaterRoundEvaluator<'a, F, C>
+impl<'a, F: Field, FS: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
+	for ZerocheckLaterRoundEvaluator<'a, F, FS, C>
+where
+	F: ExtensionField<FS>,
 {
 	fn n_round_evals(&self) -> usize {
 		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
@@ -451,7 +467,8 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
+					*evals_z_j =
+						extrapolate_line::<F, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			let composite_value = self

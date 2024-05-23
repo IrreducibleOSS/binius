@@ -307,7 +307,9 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
+					// TODO: Enable small field multiplication.
+					*evals_z_j =
+						extrapolate_line::<F, F>(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			round_evals[d - 1] += self

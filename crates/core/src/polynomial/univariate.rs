@@ -3,7 +3,7 @@
 
 use super::error::Error;
 use crate::linalg::Matrix;
-use binius_field::{ExtensionField, Field, PackedField};
+use binius_field::{ExtensionField, Field};
 use std::{iter, iter::Step};
 
 /// A domain that univariate polynomials may be evaluated on.
@@ -112,8 +112,14 @@ impl<F: Field> EvaluationDomain<F> {
 }
 
 #[inline]
-pub fn extrapolate_line<P: PackedField>(x_0: P, x_1: P, z: P::Scalar) -> P {
-	x_0 + (x_1 - x_0) * z
+/// Uses arguments of two distinct types to make multiplication more efficient
+/// when extrapolating in a smaller field.
+pub fn extrapolate_line<F, FS>(x0: F, x1: F, z: FS) -> F
+where
+	F: ExtensionField<FS>,
+	FS: Field,
+{
+	x0 + (x1 - x0) * z
 }
 
 /// Evaluate a univariate polynomial specified by its monomial coefficients.
