@@ -41,6 +41,10 @@ enum MultilinearOracleMeta<F: TowerField> {
 		block_bits: usize,
 		variant: ShiftVariant,
 	},
+	Packed {
+		inner_id: OracleId,
+		log_degree: usize,
+	},
 	Projected {
 		inner_id: OracleId,
 		values: Vec<F>,
@@ -208,6 +212,27 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		Ok(id)
 	}
 
+	pub fn add_packed(&mut self, id: OracleId, log_degree: usize) -> Result<OracleId, Error> {
+		if id >= self.oracles.len() {
+			return Err(Error::InvalidOracleId(id));
+		}
+
+		let inner_n_vars = self.n_vars(id);
+		if log_degree > inner_n_vars {
+			return Err(Error::NotEnoughVarsForPacking {
+				n_vars: inner_n_vars,
+				log_degree,
+			});
+		}
+
+		let id = self.add(MultilinearOracleMeta::Packed {
+			inner_id: id,
+			log_degree,
+		});
+
+		Ok(id)
+	}
+
 	pub fn add_projected(
 		&mut self,
 		id: OracleId,
@@ -343,6 +368,16 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				Shifted::new(self.oracle(*inner_id), *offset, *block_bits, *variant)
 					.expect("shift parameters validated by add_shifted"),
 			),
+			MultilinearOracleMeta::Packed {
+				inner_id,
+				log_degree,
+			} => MultilinearPolyOracle::Packed(
+				id,
+				Packed {
+					inner: Box::new(self.oracle(*inner_id)),
+					log_degree: *log_degree,
+				},
+			),
 			MultilinearOracleMeta::Projected {
 				inner_id,
 				values,
@@ -382,6 +417,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			Interleaved(inner_id_0, _) => self.n_vars(*inner_id_0) + 1,
 			Merged(inner_id_0, _) => self.n_vars(*inner_id_0) + 1,
 			Shifted { inner_id, .. } => self.n_vars(*inner_id),
+			Packed {
+				inner_id,
+				log_degree,
+			} => self.n_vars(*inner_id) - log_degree,
 			Projected {
 				inner_id, values, ..
 			} => self.n_vars(*inner_id) - values.len(),
@@ -403,6 +442,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				.tower_level(*inner_id_0)
 				.max(self.tower_level(*inner_id_1)),
 			Shifted { inner_id, .. } => self.tower_level(*inner_id),
+			Packed {
+				inner_id,
+				log_degree,
+			} => self.tower_level(*inner_id) + log_degree,
 			Projected { .. } => F::TOWER_LEVEL,
 			// TODO: We can derive this more tightly by inspecting the coefficients and inner
 			// polynomials.

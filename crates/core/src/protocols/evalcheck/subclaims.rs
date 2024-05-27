@@ -113,7 +113,8 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 		return Err(OracleError::NotEnoughVarsForPacking { n_vars, log_degree }.into());
 	}
 
-	projected_bivariate_meta(oracles, packed.inner().id(), log_degree, eval_point, |_| {
+	// NB. projected_n_vars = 0 because eval_point length is log_degree less than inner n_vars
+	projected_bivariate_meta(oracles, packed.inner().id(), 0, eval_point, |_| {
 		Ok(TowerBasis::new(log_degree, binary_tower_level)?)
 	})
 }
@@ -308,17 +309,17 @@ pub fn projected_bivariate_claim<F: TowerField>(
 	eval: F,
 ) -> Result<SumcheckClaim<F>, Error> {
 	let ProjectedBivariateMeta {
-		projected_n_vars,
 		multiplier_id,
 		inner_id,
 		projected_id,
+		..
 	} = meta;
 
 	let inner = oracles.oracle(projected_id.unwrap_or(inner_id));
 	let multiplier = oracles.oracle(multiplier_id);
 
 	let product =
-		CompositePolyOracle::new(projected_n_vars, vec![inner, multiplier], BivariateProduct)?;
+		CompositePolyOracle::new(multiplier.n_vars(), vec![inner, multiplier], BivariateProduct)?;
 
 	let sumcheck_claim = SumcheckClaim {
 		poly: product,
@@ -360,12 +361,11 @@ fn projected_bivariate_witness<'a, PW: PackedField>(
 		(inner_multilin.clone(), wf_eval_point)
 	};
 
-	let projected_n_vars = projected_eval_point.len();
 	let multiplier_multilin = multiplier_witness_ctr(projected_eval_point)?;
 	witness_index.set(multiplier_id, multiplier_multilin.clone());
 
 	let witness = SumcheckWitness::new(
-		projected_n_vars,
+		multiplier_multilin.n_vars(),
 		BivariateProduct,
 		vec![projected_inner_multilin, multiplier_multilin],
 	)?;
