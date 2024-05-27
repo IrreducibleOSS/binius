@@ -113,7 +113,7 @@ pub mod test_utils {
 
 			impl<T: $constraint + PackedField> TestInvert<T> {
 				fn test_invert(a: T) {
-					use ff::Field;
+					use crate::Field;
 
 					let c = $invert_func(a);
 					for i in 0..T::WIDTH {

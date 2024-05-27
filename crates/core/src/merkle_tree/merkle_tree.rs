@@ -234,7 +234,7 @@ where
 			next_node
 		});
 
-		if root.ct_eq(commitment).into() {
+		if root == *commitment {
 			Ok(())
 		} else {
 			Err(VerificationError::MerkleRootMismatch.into())

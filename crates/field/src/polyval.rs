@@ -11,12 +11,15 @@ use super::{
 };
 use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
+	arch::packed_polyval_128::PackedBinaryPolyval1x128b,
+	arithmetic_traits::Square,
 	as_packed_field::AsPackedField,
+	binary_field_arithmetic::{invert_or_zero_using_packed, square_using_packed},
 	packed::PackedField,
 	underlier::UnderlierType,
+	Field,
 };
 use bytemuck::{Pod, Zeroable};
-use ff::Field;
 use rand::{Rng, RngCore};
 use std::{
 	array,
@@ -174,6 +177,12 @@ impl ConditionallySelectable for BinaryField128bPolyval {
 	}
 }
 
+impl Square for BinaryField128bPolyval {
+	fn square(self) -> Self {
+		square_using_packed::<PackedBinaryPolyval1x128b>(self)
+	}
+}
+
 impl Field for BinaryField128bPolyval {
 	const ZERO: Self = BinaryField128bPolyval(0);
 	const ONE: Self = BinaryField128bPolyval(0xc2000000000000000000000000000001);
@@ -182,26 +191,14 @@ impl Field for BinaryField128bPolyval {
 		Self(rng.gen())
 	}
 
-	fn square(&self) -> Self {
-		SinglePacked::set_single(*self).square().get(0)
-	}
-
 	fn double(&self) -> Self {
 		Self(0)
-	}
-
-	fn invert(&self) -> CtOption<Self> {
-		CtOption::new(InvertOrZero::invert_or_zero(*self), self.ct_ne(&Self::ZERO))
-	}
-
-	fn sqrt_ratio(_num: &Self, _div: &Self) -> (Choice, Self) {
-		todo!()
 	}
 }
 
 impl InvertOrZero for BinaryField128bPolyval {
 	fn invert_or_zero(self) -> Self {
-		PackedField::invert_or_zero(SinglePacked::set_single(self)).get(0)
+		invert_or_zero_using_packed::<PackedBinaryPolyval1x128b>(self)
 	}
 }
 
@@ -678,7 +675,7 @@ mod tests {
 	#[test]
 	fn test_sqr() {
 		assert_eq!(
-			BinaryField128bPolyval::new(0x2a9055e4e69a61f0b5cfd6f4161087ba).square(),
+			Square::square(BinaryField128bPolyval::new(0x2a9055e4e69a61f0b5cfd6f4161087ba)),
 			BinaryField128bPolyval::new(0x59aba0d4ffa9dca427b5b489f293e529)
 		);
 	}

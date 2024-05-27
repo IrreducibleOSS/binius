@@ -1,7 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::{ExtensionField, PackedField};
-use ff::Field;
+use crate::{ExtensionField, Field, PackedField};
 use std::slice;
 
 /// Trait represents a relationship between a packed struct of field elements and a packed struct

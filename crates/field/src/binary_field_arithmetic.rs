@@ -4,7 +4,7 @@ use crate::{arithmetic_traits::MulAlpha, PackedField};
 
 use super::{arithmetic_traits::InvertOrZero, binary_field::*};
 
-pub(crate) trait TowerFieldArithmetic: TowerField + InvertOrZero {
+pub(crate) trait TowerFieldArithmetic: TowerField {
 	fn multiply(self, rhs: Self) -> Self;
 
 	fn multiply_alpha(self) -> Self;

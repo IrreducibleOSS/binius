@@ -4,22 +4,19 @@
 //!
 //! Interfaces are derived from [`plonky2`](https://github.com/mir-protocol/plonky2).
 
-use crate::BinaryField;
-
 use super::{
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
 	Error,
 };
+use crate::{arithmetic_traits::InvertOrZero, BinaryField, Field};
 use binius_utils::iter::IterExtensions;
-use ff::Field;
 use rand::RngCore;
 use std::{
 	fmt::Debug,
 	iter::{self, Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
-use subtle::ConstantTimeEq;
 
 /// A packed field represents a vector of underlying field elements.
 ///
@@ -33,7 +30,6 @@ pub trait PackedField:
 	+ Copy
 	+ Eq
 	+ Sized
-	+ ConstantTimeEq
 	+ Add<Output = Self>
 	+ Sub<Output = Self>
 	+ Mul<Output = Self>
@@ -179,12 +175,6 @@ pub fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 	packed.len() * P::WIDTH
 }
 
-impl<F: Field> Square for F {
-	fn square(self) -> Self {
-		<Self as Field>::square(&self)
-	}
-}
-
 impl<F: Field> Broadcast<F> for F {
 	fn broadcast(scalar: F) -> Self {
 		scalar
@@ -232,11 +222,11 @@ impl<F: Field> PackedField for F {
 	}
 
 	fn square(self) -> Self {
-		<Self as Field>::square(&self)
+		<Self as Square>::square(self)
 	}
 
 	fn invert_or_zero(self) -> Self {
-		<Self as Field>::invert(&self).unwrap_or(Self::default())
+		<Self as InvertOrZero>::invert_or_zero(self)
 	}
 
 	#[inline]

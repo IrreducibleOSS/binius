@@ -24,7 +24,7 @@ use std::{
 	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
 // that is isomorphically included into binary tower, i.e.:
@@ -233,8 +233,8 @@ mod tests {
 
 	fn check_invert(f: impl Field) {
 		let inversed = f.invert();
-		if f.is_zero().into() {
-			assert!(bool::from(inversed.is_none()));
+		if f.is_zero() {
+			assert!(inversed.is_none());
 		} else {
 			assert_eq!(inversed.unwrap() * f, Field::ONE);
 		}

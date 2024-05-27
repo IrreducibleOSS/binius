@@ -283,7 +283,7 @@ where
 		let a_0_plus_a1_mul_alpha = xor(a_0_a_1, a_1_mul_alpha);
 		let a_1_sq_a_0_sq = PackedField::square(a_1_a_0);
 		let delta = xor(a_1_sq_a_0_sq, a_0_plus_a1_mul_alpha * a_0_a_1);
-		let delta_inv = delta.invert_or_zero();
+		let delta_inv = PackedField::invert_or_zero(delta);
 		let delta_inv_delta_inv = duplicate_odd(delta_inv);
 		let delta_multiplier = blend_odd_even(a_0_a_1, a_0_plus_a1_mul_alpha);
 

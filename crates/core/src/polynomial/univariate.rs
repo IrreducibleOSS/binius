@@ -138,7 +138,7 @@ fn compute_barycentric_weights<F: Field>(points: &[F]) -> Result<Vec<F>, Error> 
 				.filter(|&j| j != i)
 				.map(|j| points[i] - points[j])
 				.product::<F>();
-			Option::from(product.invert()).ok_or(Error::DuplicateDomainPoint)
+			product.invert().ok_or(Error::DuplicateDomainPoint)
 		})
 		.collect()
 }

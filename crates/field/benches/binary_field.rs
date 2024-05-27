@@ -13,7 +13,6 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
 	BinaryField8b, Field,
 };
-use subtle::CtOption;
 
 const BATCH_SIZE: usize = 32;
 
@@ -96,9 +95,9 @@ struct InvertOp;
 
 impl FieldOperation for InvertOp {
 	const NAME: &'static str = "invert";
-	type Result<F> = CtOption<F>;
+	type Result<F> = Option<F>;
 
-	fn call<F: Field>(lhs: F, _: F) -> CtOption<F> {
+	fn call<F: Field>(lhs: F, _: F) -> Option<F> {
 		lhs.invert()
 	}
 }

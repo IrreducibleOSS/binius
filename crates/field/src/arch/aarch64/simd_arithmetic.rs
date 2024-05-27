@@ -12,7 +12,7 @@ use crate::{
 		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
 	underlier::UnderlierType,
-	BinaryField, PackedField, TowerField,
+	BinaryField, TowerField,
 };
 
 use std::arch::aarch64::*;

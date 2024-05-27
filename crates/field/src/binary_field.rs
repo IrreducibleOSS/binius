@@ -4,12 +4,14 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 	packed_extension::PackedExtensionField,
 };
-use crate::underlier::{U1, U2, U4};
+use crate::{
+	underlier::{U1, U2, U4},
+	Field,
+};
 use bytemuck::{
 	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
 };
 use cfg_if::cfg_if;
-use ff::Field;
 use rand::RngCore;
 use std::{
 	array,
@@ -17,7 +19,7 @@ use std::{
 	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
@@ -216,6 +218,12 @@ macro_rules! binary_field {
 			}
 		}
 
+		impl crate::arithmetic_traits::Square for $name {
+			fn square(self) -> Self {
+				TowerFieldArithmetic::square(self)
+			}
+		}
+
 		impl Field for $name {
 			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ZERO);
 			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ONE);
@@ -224,23 +232,8 @@ macro_rules! binary_field {
 				Self(<$typ as $crate::underlier::Random>::random(&mut rng))
 			}
 
-			fn square(&self) -> Self {
-				TowerFieldArithmetic::square(*self)
-			}
-
 			fn double(&self) -> Self {
 				Self::ZERO
-			}
-
-			fn invert(&self) -> CtOption<Self> {
-				use crate::arithmetic_traits::InvertOrZero;
-
-				let inv = InvertOrZero::invert_or_zero(*self);
-				CtOption::new(inv, inv.ct_ne(&Self::ZERO))
-			}
-
-			fn sqrt_ratio(_num: &Self, _div: &Self) -> (Choice, Self) {
-				todo!()
 			}
 		}
 
@@ -980,14 +973,14 @@ pub(crate) mod tests {
 
 	#[test]
 	fn test_inverse_on_zero() {
-		assert_eq!(BinaryField1b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField2b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField4b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField8b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField16b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField32b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField64b::ZERO.invert().is_none().unwrap_u8(), 1);
-		assert_eq!(BinaryField128b::ZERO.invert().is_none().unwrap_u8(), 1);
+		assert!(BinaryField1b::ZERO.invert().is_none());
+		assert!(BinaryField2b::ZERO.invert().is_none());
+		assert!(BinaryField4b::ZERO.invert().is_none());
+		assert!(BinaryField8b::ZERO.invert().is_none());
+		assert!(BinaryField16b::ZERO.invert().is_none());
+		assert!(BinaryField32b::ZERO.invert().is_none());
+		assert!(BinaryField64b::ZERO.invert().is_none());
+		assert!(BinaryField128b::ZERO.invert().is_none());
 	}
 
 	proptest! {
