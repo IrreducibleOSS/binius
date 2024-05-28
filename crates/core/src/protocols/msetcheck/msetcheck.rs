@@ -115,7 +115,7 @@ pub fn reduce_msetcheck_claim<F: TowerField>(
 			let inner = inner_coeffs
 				.zip(relation_oracles)
 				.map(|(coeff, oracle)| (oracle.id(), coeff));
-			let oracle_id = oracles.add_linear_combination(n_vars, gamma, inner)?;
+			let oracle_id = oracles.add_linear_combination_with_offset(n_vars, gamma, inner)?;
 			Ok(oracles.oracle(oracle_id))
 		};
 

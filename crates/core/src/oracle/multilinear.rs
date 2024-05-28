@@ -88,14 +88,14 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_transparent(
 		&mut self,
-		poly: Arc<dyn MultivariatePoly<F>>,
+		poly: impl MultivariatePoly<F> + 'static,
 	) -> Result<OracleId, Error> {
 		if poly.binary_tower_level() > F::TOWER_LEVEL {
 			return Err(Error::TowerLevelTooHigh {
 				tower_level: poly.binary_tower_level(),
 			});
 		}
-		let id = self.add(MultilinearOracleMeta::Transparent(poly));
+		let id = self.add(MultilinearOracleMeta::Transparent(Arc::new(poly)));
 		Ok(id)
 	}
 
@@ -256,6 +256,14 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	}
 
 	pub fn add_linear_combination(
+		&mut self,
+		n_vars: usize,
+		inner: impl IntoIterator<Item = (OracleId, F)>,
+	) -> Result<OracleId, Error> {
+		self.add_linear_combination_with_offset(n_vars, F::ZERO, inner)
+	}
+
+	pub fn add_linear_combination_with_offset(
 		&mut self,
 		n_vars: usize,
 		offset: F,

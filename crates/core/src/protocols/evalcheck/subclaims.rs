@@ -30,7 +30,6 @@ use crate::{
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{Field, PackedField, PackedFieldIndexable, TowerField};
-use std::sync::Arc;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
 pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
@@ -290,7 +289,7 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	let projected_n_vars = projected_eval_point.len();
 
 	let multiplier_id =
-		oracles.add_transparent(Arc::new(multiplier_transparent_ctr(projected_eval_point)?))?;
+		oracles.add_transparent(multiplier_transparent_ctr(projected_eval_point)?)?;
 
 	let meta = ProjectedBivariateMeta {
 		inner_id,

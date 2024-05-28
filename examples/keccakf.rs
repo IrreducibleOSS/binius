@@ -32,8 +32,9 @@ use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
 use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::{must_cast_slice_mut, Pod};
+use itertools::chain;
 use rand::{thread_rng, Rng};
-use std::{array, env, fmt::Debug, iter, iter::Step, slice, sync::Arc};
+use std::{array, env, fmt::Debug, iter, iter::Step, slice};
 use tiny_keccak::keccakf;
 use tracing::instrument;
 use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
@@ -192,16 +193,20 @@ impl FixedOracle {
 		log_size: usize,
 	) -> Result<Self> {
 		let round_consts_single =
-			oracles.add_transparent(Arc::new(RoundConstant::<PackedBinaryField128x1b>::new()?))?;
+			oracles.add_transparent(RoundConstant::<PackedBinaryField128x1b>::new()?)?;
 		let round_consts = oracles.add_repeating(round_consts_single, log_size - 11)?;
 
-		let selector_single = oracles.add_transparent(Arc::new(StepDown::new(11, 24 * 64)?))?;
+		let selector_single = oracles.add_transparent(StepDown::new(11, 24 * 64)?)?;
 		let selector = oracles.add_repeating(selector_single, log_size - 11)?;
 
 		Ok(Self {
 			round_consts,
 			selector,
 		})
+	}
+
+	fn iter(&self) -> impl Iterator<Item = OracleId> {
+		[self.round_consts, self.selector].into_iter()
 	}
 }
 
@@ -237,7 +242,6 @@ impl TraceOracle {
 			oracles
 				.add_linear_combination(
 					log_size,
-					F::ZERO,
 					[(state_in_oracle[xy], F::ONE), (d_oracle[x], F::ONE)],
 				)
 				.unwrap()
@@ -275,6 +279,19 @@ impl TraceOracle {
 			b: b_oracle,
 			next_state_in,
 		}
+	}
+
+	fn iter(&self) -> impl Iterator<Item = OracleId> {
+		chain!(
+			self.state_in,
+			self.state_out,
+			self.c,
+			self.d,
+			self.c_shift,
+			self.a_theta,
+			self.b,
+			self.next_state_in,
+		)
 	}
 }
 
@@ -352,21 +369,8 @@ impl<P: PackedField> TraceWitness<P> {
 	}
 }
 
-fn zerocheck_verifier_oracles(
-	fixed_oracle: &FixedOracle,
-	trace_oracle: &TraceOracle,
-) -> Vec<OracleId> {
-	iter::once(fixed_oracle.round_consts)
-		.chain(iter::once(fixed_oracle.selector))
-		.chain(trace_oracle.state_in)
-		.chain(trace_oracle.state_out)
-		.chain(trace_oracle.c)
-		.chain(trace_oracle.d)
-		.chain(trace_oracle.c_shift)
-		.chain(trace_oracle.a_theta)
-		.chain(trace_oracle.b)
-		.chain(trace_oracle.next_state_in)
-		.collect()
+fn zerocheck_oracles(fixed_oracle: &FixedOracle, trace_oracle: &TraceOracle) -> Vec<OracleId> {
+	fixed_oracle.iter().chain(trace_oracle.iter()).collect()
 }
 
 struct Proof<F: Field, PCSComm, PCSProof> {
@@ -519,7 +523,7 @@ where
 	let mix_composition_prover =
 		make_constraints(fixed_oracle, trace_oracle, PW::from(mixing_challenge))?;
 
-	let zerocheck_column_oracles = zerocheck_verifier_oracles(fixed_oracle, trace_oracle)
+	let zerocheck_column_oracles = zerocheck_oracles(fixed_oracle, trace_oracle)
 		.into_iter()
 		.map(|id| oracles.oracle(id))
 		.collect();
@@ -627,7 +631,7 @@ where
 	let mix_composition = make_constraints(fixed_oracle, trace_oracle, mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_column_oracles = zerocheck_verifier_oracles(fixed_oracle, trace_oracle)
+	let zerocheck_column_oracles = zerocheck_oracles(fixed_oracle, trace_oracle)
 		.into_iter()
 		.map(|id| oracles.oracle(id))
 		.collect();
@@ -665,7 +669,7 @@ fn make_constraints<FI: TowerField>(
 	trace_oracle: &TraceOracle,
 	challenge: FI,
 ) -> Result<impl CompositionPoly<FI> + Clone> {
-	let zerocheck_column_ids = zerocheck_verifier_oracles(fixed_oracle, trace_oracle);
+	let zerocheck_column_ids = zerocheck_oracles(fixed_oracle, trace_oracle);
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
 	// C_x - \sum_{y=0}^4 A_{x,y} = 0

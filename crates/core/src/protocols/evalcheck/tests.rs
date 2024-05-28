@@ -25,7 +25,7 @@ use binius_field::{
 use bytemuck::cast_slice_mut;
 use itertools::Either;
 use rand::{rngs::StdRng, SeedableRng};
-use std::{iter::repeat_with, sync::Arc};
+use std::iter::repeat_with;
 
 type EF = BinaryField128b;
 type PF = PackedBinaryField4x32b;
@@ -420,18 +420,12 @@ fn test_evalcheck_linear_combination() {
 
 	let mut oracles = MultilinearOracleSet::new();
 
-	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()))
-		.unwrap();
-	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()))
-		.unwrap();
-	let select_row3_oracle_id = oracles
-		.add_transparent(Arc::new(select_row3.clone()))
-		.unwrap();
+	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();
+	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
+	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
 
 	let lin_com_id = oracles
-		.add_linear_combination(
+		.add_linear_combination_with_offset(
 			n_vars,
 			EF::new(1),
 			[
@@ -506,9 +500,7 @@ fn test_evalcheck_repeating() {
 	let mut oracles = MultilinearOracleSet::new();
 
 	let select_row = SelectRow::new(n_vars, row_id).unwrap();
-	let select_row_oracle_id = oracles
-		.add_transparent(Arc::new(select_row.clone()))
-		.unwrap();
+	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
 
 	let select_row_subwitness = select_row
 		.multilinear_extension::<PackedBinaryField128x1b>()
@@ -597,12 +589,8 @@ fn test_evalcheck_merged() {
 		res
 	};
 
-	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()))
-		.unwrap();
-	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()))
-		.unwrap();
+	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();
+	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 
 	let merged_id = oracles
 		.add_merged(select_row1_oracle_id, select_row2_oracle_id)
@@ -698,12 +686,8 @@ fn test_evalcheck_interleaved() {
 		res
 	};
 
-	let select_row1_oracle_id = oracles
-		.add_transparent(Arc::new(select_row1.clone()))
-		.unwrap();
-	let select_row2_oracle_id = oracles
-		.add_transparent(Arc::new(select_row2.clone()))
-		.unwrap();
+	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();
+	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
 
 	let interleaved_id = oracles
 		.add_interleaved(select_row1_oracle_id, select_row2_oracle_id)

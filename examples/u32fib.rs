@@ -16,7 +16,6 @@ use binius_macros::composition_poly;
 use binius_utils::rayon::adjust_thread_pool;
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
-use std::sync::Arc;
 
 // This doesn't actually create any proof, it only generates the trace and validates it against the relevant constraints.
 
@@ -153,7 +152,7 @@ impl U32FibOracle {
 			.add_shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
 		let enabled = oracles
-			.add_transparent(Arc::new(StepDown::new(n_vars, (1 << n_vars) - 2).unwrap()))
+			.add_transparent(StepDown::new(n_vars, (1 << n_vars) - 2).unwrap())
 			.unwrap();
 		Self {
 			x_in,
