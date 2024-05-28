@@ -1,9 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	super::{hash, hasher::Hasher},
+	super::hasher::{HashDigest, Hasher},
 	arch::Groestl256,
 };
+use crate::HasherDigest;
 use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField32x8b, PackedExtensionField};
 use bytemuck::{must_cast_slice, must_cast_slice_mut};
 use digest::Digest;
@@ -77,7 +78,7 @@ pub struct GroestlDigestCompression;
 
 impl PseudoCompressionFunction<GroestlDigest, 2> for GroestlDigestCompression {
 	fn compress(&self, input: [GroestlDigest; 2]) -> GroestlDigest {
-		hash::<_, GroestlHasher<_>>(&input[..])
+		HasherDigest::<GroestlDigest, GroestlHasher<GroestlDigest>>::hash(&input[..])
 	}
 }
 

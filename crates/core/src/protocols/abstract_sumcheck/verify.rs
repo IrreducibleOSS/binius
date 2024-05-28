@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::challenger::{CanObserve, CanSample};
 use binius_field::Field;
-use p3_challenger::{CanObserve, CanSample};
 
 use crate::{
 	oracle::CompositePolyOracle, polynomial::Error as PolynomialError,

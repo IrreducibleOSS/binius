@@ -1,6 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
+	challenger::{CanObserve, CanSample},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
 		MultivariatePoly,
@@ -21,7 +22,6 @@ use crate::{
 	},
 };
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField, TowerField};
-use p3_challenger::{CanObserve, CanSample};
 use std::iter::Step;
 use tracing::instrument;
 

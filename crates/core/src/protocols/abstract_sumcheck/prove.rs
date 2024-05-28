@@ -2,6 +2,7 @@
 
 use super::{AbstractSumcheckProver, AbstractSumcheckRound};
 use crate::{
+	challenger::{CanObserve, CanSample},
 	polynomial::{
 		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
 		MultilinearQuery,
@@ -9,7 +10,6 @@ use crate::{
 	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::{Field, PackedField};
-use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use std::{borrow::Borrow, cmp};
 

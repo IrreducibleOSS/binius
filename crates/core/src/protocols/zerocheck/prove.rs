@@ -8,6 +8,7 @@ use super::{
 	},
 };
 use crate::{
+	challenger::{CanObserve, CanSample},
 	oracle::CompositePolyOracle,
 	polynomial::{
 		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly,
@@ -24,7 +25,6 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use getset::Getters;
-use p3_challenger::{CanObserve, CanSample};
 use rayon::prelude::*;
 use tracing::instrument;
 

@@ -5,6 +5,7 @@ use super::{
 	error::Error,
 };
 use crate::{
+	challenger::{CanObserve, CanSample},
 	oracle::MultilinearOracleSet,
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProver},
@@ -15,7 +16,6 @@ use crate::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{PackedFieldIndexable, TowerField};
-use p3_challenger::{CanObserve, CanSample};
 use std::iter::Step;
 
 pub fn prove<F, PW, Challenger>(

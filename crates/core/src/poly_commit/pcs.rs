@@ -1,8 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::polynomial::MultilinearExtension;
+use crate::{
+	challenger::{CanObserve, CanSample, CanSampleBits},
+	polynomial::MultilinearExtension,
+};
 use binius_field::{ExtensionField, PackedField};
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 
 pub trait PolyCommitScheme<P, FE>
 where

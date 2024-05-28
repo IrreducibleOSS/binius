@@ -12,6 +12,7 @@ bytemuck.workspace = true
 cfg-if.workspace = true
 digest.workspace = true
 groestl_crypto.workspace = true
+lazy_static.workspace = true
 p3-symmetric.workspace = true
 thiserror.workspace = true
 

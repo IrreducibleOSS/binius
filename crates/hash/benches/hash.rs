@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 use binius_field::{BinaryField32b, PackedField};
-use binius_hash::{fixed_len_hash, Vision32b};
+use binius_hash::{FixedLenHasherDigest, HashDigest, Vision32b};
 use cfg_if::cfg_if;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -66,7 +66,7 @@ fn bench_vision32(c: &mut Criterion) {
 
 	group.throughput(Throughput::Bytes((N * 4) as u64));
 	group.bench_function(type_name::<Vision32b<BinaryField32b>>(), |bench| {
-		bench.iter(|| fixed_len_hash::<_, Vision32b<BinaryField32b>>(data.as_slice()).unwrap())
+		bench.iter(|| FixedLenHasherDigest::<_, Vision32b<_>>::hash(data.as_slice()))
 	});
 
 	group.finish()

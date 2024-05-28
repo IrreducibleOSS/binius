@@ -2,6 +2,7 @@
 
 use super::{common::GreedyEvalcheckProof, error::Error};
 use crate::{
+	challenger::{CanObserve, CanSample},
 	oracle::{BatchId, MultilinearOracleSet},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckVerifier, SameQueryPcsClaim},
@@ -10,7 +11,6 @@ use crate::{
 	},
 };
 use binius_field::TowerField;
-use p3_challenger::{CanObserve, CanSample};
 use std::iter;
 
 pub fn verify<F, Challenger>(

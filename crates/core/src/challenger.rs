@@ -1,12 +1,15 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Ulvetanna Inc.
 // Copyright (c) 2022-2023 The Plonky3 Authors
+
 use binius_field::{ExtensionField, Field, PackedExtensionField, PackedField};
 use binius_hash::Hasher;
 use bytemuck::{bytes_of, AnyBitPattern, Pod};
 pub use p3_challenger::{CanObserve, CanSample, CanSampleBits};
+use p3_symmetric::CryptographicPermutation;
 use std::{mem, ops::Range, slice};
 
 // TODO(jimpo): Whole module needs review
+// TODO(anex): Padding needs to be rethought
 
 #[derive(Clone)]
 pub struct HashChallenger<F, H>
@@ -34,16 +37,6 @@ where
 	}
 }
 
-impl<F, H> Default for HashChallenger<F, H>
-where
-	H: Hasher<F>,
-	H::Digest: PackedField<Scalar = F>,
-{
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
 impl<F, H> HashChallenger<F, H>
 where
 	F: Field,
@@ -62,78 +55,53 @@ where
 		self.output_index = 0;
 		self.output_bit_index = 0;
 	}
-}
 
-impl<F, H, PE> CanObserve<PE> for HashChallenger<F, H>
-where
-	F: Field,
-	H: Hasher<F>,
-	H::Digest: PackedField<Scalar = F>,
-	PE: PackedExtensionField<F>,
-	PE::Scalar: ExtensionField<F>,
-{
-	fn observe(&mut self, value: PE) {
+	fn observe_scalars(&mut self, input: &[F]) {
 		// Any buffered output is now invalid.
 		self.output_index = H::Digest::WIDTH;
 		self.output_bit_index = 0;
 
-		self.hasher.update(value.as_bases());
+		self.hasher.update(input);
 	}
 
-	fn observe_slice(&mut self, values: &[PE]) {
-		// Any buffered output is now invalid.
-		self.output_index = H::Digest::WIDTH;
-		self.output_bit_index = 0;
-
-		self.hasher.update(PE::cast_to_bases(values));
-	}
-}
-
-impl<F, H, FE> CanSample<FE> for HashChallenger<F, H>
-where
-	F: Field,
-	H: Hasher<F>,
-	H::Digest: PackedField<Scalar = F>,
-	FE: ExtensionField<F>,
-{
-	fn sample(&mut self) -> FE {
+	fn sample_scalars(&mut self, elems: &mut [F]) {
 		if self.output_bit_index != 0 {
 			self.output_index += 1;
 			self.output_bit_index = 0;
 		}
 
-		// elems should be a [F; FE::DEGREE], but that would require the generic_const_exprs
-		// feature. Thus, the code is written as if it were an array, not a resizeable Vec.
-		let mut elems = vec![F::default(); FE::DEGREE];
-		let mut n_elems = 0;
-		while n_elems < FE::DEGREE {
+		for elem in elems.iter_mut() {
 			if self.output_index == H::Digest::WIDTH {
 				self.flush();
 			}
-			let n_new_elems = (FE::DEGREE - n_elems).min(H::Digest::WIDTH - self.output_index);
-			for i in 0..n_new_elems {
-				elems[n_elems + i] = self.output_buffer.get(self.output_index + i);
-			}
-			n_elems += n_new_elems;
-			self.output_index += n_new_elems;
+			*elem = self.output_buffer.get(self.output_index);
+			self.output_index += 1;
 		}
-		FE::from_bases(&elems[..]).expect("length of elems is FE::DEGREE")
+	}
+}
+
+impl<F, H> Default for HashChallenger<F, H>
+where
+	H: Hasher<F>,
+	H::Digest: PackedField<Scalar = F>,
+{
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
 /// Sample a usize with a specified number of bits from a HashChallenger.
 impl<F, H> CanSampleBits<usize> for HashChallenger<F, H>
 where
-	F: Field,
-	H: Hasher<F>,
-	H::Digest: PackedField<Scalar = F>,
 	// AnyBitPattern is not used but is required to guarantee a uniform distribution of sampled
 	// values
-	<H::Digest as PackedField>::Scalar: Pod + AnyBitPattern,
+	F: Field + Pod + AnyBitPattern,
+	H: Hasher<F>,
+	H::Digest: PackedField<Scalar = F>,
 {
 	fn sample_bits(&mut self, bits: usize) -> usize {
 		let bits = bits.min(usize::BITS as usize);
-		let f_bits = mem::size_of::<<H::Digest as PackedField>::Scalar>() * 8;
+		let f_bits = mem::size_of::<F>() * 8;
 
 		let mut sampled = 0;
 		let mut bits_sampled = 0;
@@ -151,6 +119,211 @@ where
 				.min(32);
 			let new_bits = get_bits_le(
 				bytes_of(&self.output_buffer.get(self.output_index)),
+				self.output_bit_index..self.output_bit_index + n_new_bits,
+			) as usize;
+			sampled |= new_bits << bits_sampled;
+			bits_sampled += n_new_bits;
+			self.output_bit_index += n_new_bits;
+		}
+		sampled
+	}
+}
+
+// Duplex challenger for CryptographicPermutation that can fill upto RATE Elements
+#[derive(Clone)]
+pub struct DuplexChallenger<F, H, const RATE: usize, const STATE_SIZE: usize>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]>,
+{
+	permutation: H,
+	sponge_state: [F; STATE_SIZE],
+	input_buffer: [F; RATE],
+	input_index: usize,
+	output_index: usize,
+	output_bit_index: usize,
+}
+
+impl<F, H, const RATE: usize, const STATE_SIZE: usize> DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]> + Default,
+{
+	pub fn new() -> Self {
+		Self {
+			permutation: H::default(),
+			sponge_state: [F::default(); STATE_SIZE],
+			input_buffer: [F::default(); RATE],
+			input_index: 0,
+			output_index: RATE,
+			output_bit_index: 0,
+		}
+	}
+}
+
+impl<F, H, const RATE: usize, const STATE_SIZE: usize> DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]>,
+{
+	fn duplexing(&mut self) {
+		// Take upto size of RATE and hash
+		assert!(self.input_index <= RATE);
+
+		for i in 0..self.input_index {
+			self.sponge_state[i] += self.input_buffer[i];
+		}
+		self.input_index = 0;
+
+		self.permutation.permute_mut(&mut self.sponge_state);
+
+		self.output_index = 0;
+		self.output_bit_index = 0;
+	}
+
+	fn observe_scalars(&mut self, input: &[F]) {
+		// Any buffered output is now invalid.
+		self.output_index = RATE;
+		self.output_bit_index = 0;
+
+		for &val in input {
+			self.input_buffer[self.input_index] = val;
+			self.input_index += 1;
+			if self.input_index == RATE {
+				self.duplexing();
+			}
+		}
+	}
+
+	fn sample_scalars(&mut self, elems: &mut [F]) {
+		if self.output_bit_index != 0 {
+			self.output_index += 1;
+			self.output_bit_index = 0;
+		}
+
+		for elem in elems.iter_mut() {
+			if self.output_index == RATE {
+				self.duplexing();
+			}
+			*elem = self.sponge_state[self.output_index];
+			self.output_index += 1;
+		}
+	}
+}
+
+impl<F, H, const RATE: usize, const STATE_SIZE: usize> Default
+	for DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]> + Default,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
+impl<F: Field, H, PE> CanObserve<PE> for HashChallenger<F, H>
+where
+	F: Field,
+	H: Hasher<F>,
+	H::Digest: PackedField<Scalar = F>,
+	PE: PackedExtensionField<F>,
+	PE::Scalar: ExtensionField<F>,
+{
+	fn observe(&mut self, value: PE) {
+		self.observe_scalars(value.as_bases());
+	}
+
+	fn observe_slice(&mut self, values: &[PE])
+	where
+		PE: Clone,
+	{
+		self.observe_scalars(PE::cast_to_bases(values));
+	}
+}
+
+impl<F: Field, H, FO> CanSample<FO> for HashChallenger<F, H>
+where
+	F: Field,
+	H: Hasher<F>,
+	H::Digest: PackedField<Scalar = F>,
+	FO: ExtensionField<F>,
+{
+	fn sample(&mut self) -> FO {
+		// elems should be a [F; FO::DEGREE], but that would require the generic_const_exprs
+		// feature. Thus, the code is written as if it were an array, not a resizeable Vec.
+		let mut bases = vec![F::default(); FO::DEGREE];
+		self.sample_scalars(&mut bases);
+		FO::from_bases(&bases).unwrap()
+	}
+}
+
+impl<F: Field, H, const RATE: usize, const STATE_SIZE: usize, PE> CanObserve<PE>
+	for DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]>,
+	PE: PackedExtensionField<F>,
+	PE::Scalar: ExtensionField<F>,
+{
+	fn observe(&mut self, value: PE) {
+		self.observe_scalars(value.as_bases());
+	}
+
+	fn observe_slice(&mut self, values: &[PE])
+	where
+		PE: Clone,
+	{
+		self.observe_scalars(PE::cast_to_bases(values));
+	}
+}
+
+impl<F: Field, H, const RATE: usize, const STATE_SIZE: usize, FO> CanSample<FO>
+	for DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	F: Field,
+	H: CryptographicPermutation<[F; STATE_SIZE]>,
+	FO: ExtensionField<F>,
+{
+	fn sample(&mut self) -> FO {
+		// elems should be a [F; FO::DEGREE], but that would require the generic_const_exprs
+		// feature. Thus, the code is written as if it were an array, not a resizeable Vec.
+		let mut bases = vec![F::default(); FO::DEGREE];
+		self.sample_scalars(&mut bases);
+		FO::from_bases(&bases).unwrap()
+	}
+}
+
+impl<F, H, const RATE: usize, const STATE_SIZE: usize> CanSampleBits<usize>
+	for DuplexChallenger<F, H, RATE, STATE_SIZE>
+where
+	// AnyBitPattern is not used but is required to guarantee a uniform distribution of sampled
+	// values
+	F: Field + Pod + AnyBitPattern,
+	H: CryptographicPermutation<[F; STATE_SIZE]>,
+{
+	fn sample_bits(&mut self, bits: usize) -> usize {
+		let bits = bits.min(usize::BITS as usize);
+		let f_bits = mem::size_of::<F>() * 8;
+
+		let mut sampled: usize = 0;
+		let mut bits_sampled = 0;
+
+		while bits_sampled < bits {
+			if self.output_bit_index == f_bits {
+				self.output_index += 1;
+				self.output_bit_index = 0;
+			}
+
+			if self.output_index == RATE {
+				self.duplexing();
+			}
+
+			let n_new_bits = (bits - bits_sampled)
+				.min(f_bits - self.output_bit_index)
+				.min(32);
+			let new_bits = get_bits_le(
+				bytes_of(&self.sponge_state[self.output_index]),
 				self.output_bit_index..self.output_bit_index + n_new_bits,
 			) as usize;
 			sampled |= new_bits << bits_sampled;
@@ -187,8 +360,11 @@ fn get_bits_le(bytes: &[u8], bit_range: Range<usize>) -> u32 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use binius_field::{BinaryField128b, BinaryField64b, BinaryField8b};
-	use binius_hash::GroestlHasher;
+	use binius_field::{
+		BinaryField128b, BinaryField32b, BinaryField64b, BinaryField8b, PackedBinaryField4x64b,
+	};
+	use binius_hash::{GroestlHasher, Vision32bPermutation};
+	use rand::{thread_rng, Rng};
 
 	#[test]
 	fn test_get_bits_le() {
@@ -213,5 +389,49 @@ mod tests {
 		let _: BinaryField128b = challenger.sample();
 		// This sample triggers a flush
 		let _: BinaryField128b = challenger.sample();
+	}
+
+	type Vision32bChallenger = DuplexChallenger<BinaryField32b, Vision32bPermutation, 16, 24>;
+
+	#[test]
+	fn test_duplex_challenger_can_sample_ext_field() {
+		let mut challenger = Vision32bChallenger::new();
+		let _: BinaryField32b = challenger.sample();
+		let _: BinaryField64b = challenger.sample();
+		let _: BinaryField128b = challenger.sample();
+	}
+
+	#[test]
+	fn test_duplex_challenger_can_observe_packed_ext_fields() {
+		let mut challenger = Vision32bChallenger::new();
+		let _: BinaryField32b = challenger.sample();
+		let _: BinaryField64b = challenger.sample();
+		let _: BinaryField128b = challenger.sample();
+
+		let obs: PackedBinaryField4x64b =
+			PackedBinaryField4x64b::from_fn(|i| BinaryField64b::new(i as u64));
+		challenger.observe(obs);
+	}
+
+	#[test]
+	fn test_duplex_challenger_can_sample_bits() {
+		let mut challenger = Vision32bChallenger::new();
+		let mut outputs = [0; 200];
+		for output in outputs.iter_mut() {
+			// If we're not on a 32bit system skip every other because we sample from u64.
+			*output = match usize::BITS {
+				32 => CanSample::<BinaryField32b>::sample(&mut challenger).val() as usize,
+				64 => CanSample::<BinaryField64b>::sample(&mut challenger).val() as usize,
+				_ => panic!("32 or 64 bits supported"),
+			}
+		}
+		let mut challenger = Vision32bChallenger::new();
+		let mut rng = thread_rng();
+		for output in outputs {
+			let first_bits = rng.gen_range(0..usize::BITS) as usize;
+			let first = challenger.sample_bits(first_bits);
+			let last = challenger.sample_bits(usize::BITS as usize - first_bits);
+			assert_eq!(output, last << first_bits | first);
+		}
 	}
 }

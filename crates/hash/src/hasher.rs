@@ -1,5 +1,45 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
+use std::marker::PhantomData;
+
+/// Trait representing the simplest and most straight forward use case of a hash function
+///
+/// This is a highly simplified trait that just treats the entire interface of a hash as a
+/// simple function that takes in a slice of inputs and gives you back an output.
+pub trait HashDigest<T> {
+	/// The hash function output type.
+	type Digest;
+	fn hash(data: impl AsRef<[T]>) -> Self::Digest;
+}
+
+/// Wrapper over structs that implement [`Hasher`] to provide default implementation for [`HashDigest`]
+pub struct HasherDigest<T, H: Hasher<T>> {
+	_t_marker: PhantomData<T>,
+	_h_marker: PhantomData<H>,
+}
+
+impl<T, H: Hasher<T>> HashDigest<T> for HasherDigest<T, H> {
+	type Digest = <H as Hasher<T>>::Digest;
+
+	fn hash(data: impl AsRef<[T]>) -> Self::Digest {
+		hasher_hash::<T, H>(data)
+	}
+}
+
+/// Wrapper over structs that implement [`FixedLenHasher`] to provide default implementation for [`HashDigest`]
+pub struct FixedLenHasherDigest<T, H: FixedLenHasher<T>> {
+	_t_marker: PhantomData<T>,
+	_h_marker: PhantomData<H>,
+}
+
+impl<T, H: FixedLenHasher<T>> HashDigest<T> for FixedLenHasherDigest<T, H> {
+	type Digest = <H as FixedLenHasher<T>>::Digest;
+
+	fn hash(data: impl AsRef<[T]>) -> Self::Digest {
+		fixed_len_hash::<T, H>(data)
+	}
+}
+
 /// Trait representing cryptographic hash functions which is generic over the input type.
 ///
 /// This interface is largely based on the [`digest::Digest`] trait, except that instead of
@@ -26,8 +66,6 @@ pub enum HashError {
 	NotEnoughData { committed: u64, hashed: u64 },
 	#[error("Too much data to hash (expected {committed} elements, received {received} elements)")]
 	TooMuchData { committed: u64, received: u64 },
-	#[error("Empty inputs are not allowed")]
-	EmptyInput,
 }
 
 /// Trait representing a family of fixed-length cryptographic hash functions which is generic over
@@ -50,7 +88,7 @@ where
 	/// Constructor.
 	///
 	/// `msg_len` is the total number of `T` elements to be hashed
-	fn new(msg_len: u64) -> Result<Self, HashError>;
+	fn new(msg_len: u64) -> Self;
 	fn update(&mut self, data: impl AsRef<[T]>);
 	fn chain_update(self, data: impl AsRef<[T]>) -> Self;
 	fn finalize(self) -> Result<Self::Digest, HashError>;
@@ -59,14 +97,13 @@ where
 	fn reset(&mut self);
 }
 
-pub fn fixed_len_hash<T, H: FixedLenHasher<T>>(
-	data: impl AsRef<[T]>,
-) -> Result<H::Digest, HashError> {
-	H::new(data.as_ref().len() as u64)?
-		.chain_update(data)
-		.finalize()
+pub fn hasher_hash<T, H: Hasher<T>>(data: impl AsRef<[T]>) -> H::Digest {
+	H::new().chain_update(data).finalize()
 }
 
-pub fn hash<T, H: Hasher<T>>(data: impl AsRef<[T]>) -> H::Digest {
-	H::new().chain_update(data).finalize()
+pub fn fixed_len_hash<T, H: FixedLenHasher<T>>(data: impl AsRef<[T]>) -> H::Digest {
+	H::new(data.as_ref().len() as u64)
+		.chain_update(data)
+		.finalize()
+		.unwrap()
 }

@@ -1,13 +1,14 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim};
-
 use super::{
 	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckReductor, ZerocheckRoundClaim},
 	Error, VerificationError,
 };
+use crate::{
+	challenger::{CanObserve, CanSample},
+	protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim},
+};
 use binius_field::TowerField;
-use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Verify a zerocheck to evalcheck reduction.

@@ -5,9 +5,11 @@ use super::{
 	sumcheck::{SumcheckClaim, SumcheckReductor, SumcheckRoundClaim},
 	SumcheckProof, VerificationError,
 };
-use crate::protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim};
+use crate::{
+	challenger::{CanObserve, CanSample},
+	protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim},
+};
 use binius_field::Field;
-use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Verify a sumcheck to evalcheck reduction.

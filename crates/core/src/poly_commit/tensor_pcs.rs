@@ -2,6 +2,7 @@
 
 use super::error::{Error, VerificationError};
 use crate::{
+	challenger::{CanObserve, CanSample, CanSampleBits},
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
@@ -17,8 +18,9 @@ use binius_field::{
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtensionField, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hash::{hash, GroestlDigest, GroestlDigestCompression, GroestlHasher, Hasher};
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
+use binius_hash::{
+	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
+};
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
@@ -116,7 +118,7 @@ where
 	PI: PackedField,
 	PE: PackedField,
 	LC: LinearCode<P = PA>,
-	H: Hasher<PI>,
+	H: HashDigest<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	log_rows: usize,
@@ -136,7 +138,8 @@ type GroestlMerkleTreeVCS = MerkleTreeVCS<
 	GroestlDigestCompression,
 >;
 
-impl<P, PA, PI, PE, LC> TensorPCS<P, PA, PI, PE, LC, GroestlHasher<PI>, GroestlMerkleTreeVCS>
+impl<P, PA, PI, PE, LC>
+	TensorPCS<P, PA, PI, PE, LC, HasherDigest<PI, GroestlHasher<PI>>, GroestlMerkleTreeVCS>
 where
 	P: PackedField,
 	PA: PackedField,
@@ -177,7 +180,7 @@ where
 	FE: ExtensionField<F> + ExtensionField<FI>,
 	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
 	LC: LinearCode<P = PA>,
-	H: Hasher<PI>,
+	H: HashDigest<PI>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
 {
@@ -234,7 +237,7 @@ where
 			let mut digests = vec![H::Digest::default(); n_cols_enc];
 			encoded
 				.par_chunks_exact(n_rows / PI::WIDTH)
-				.map(hash::<_, H>)
+				.map(H::hash)
 				.collect_into_vec(&mut digests);
 			all_digests.push(digests);
 
@@ -405,7 +408,7 @@ where
 			.map(|(cols, vcs_proof)| {
 				let index = challenger.sample_bits(code_len_bits);
 
-				let leaf_digests = cols.iter().map(hash::<_, H>);
+				let leaf_digests = cols.iter().map(H::hash);
 
 				self.vcs
 					.verify_batch_opening(commitment, index, vcs_proof, leaf_digests)
@@ -506,7 +509,7 @@ where
 	FE: ExtensionField<F>,
 	PE: PackedField<Scalar = FE>,
 	LC: LinearCode<P = PA>,
-	H: Hasher<PI>,
+	H: HashDigest<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	/// The base-2 logarithm of the number of rows in the committed matrix.
@@ -531,7 +534,7 @@ where
 	FE: ExtensionField<F> + BinaryField,
 	PE: PackedField<Scalar = FE>,
 	LC: LinearCode<P = PA>,
-	H: Hasher<PI>,
+	H: HashDigest<PI>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	/// Construct a [`TensorPCS`].
@@ -595,7 +598,7 @@ where
 	FE: ExtensionField<F> + ExtensionField<FI>,
 	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
 	LC: LinearCode<P = PA>,
-	H: Hasher<PI>,
+	H: HashDigest<PI>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
 {
@@ -821,7 +824,17 @@ pub fn find_proof_size_optimal_pcs<F, P, FA, PA, FI, PI, FE, PE>(
 	n_polys: usize,
 	log_inv_rate: usize,
 	conservative_testing: bool,
-) -> Option<TensorPCS<P, PA, PI, PE, ReedSolomonCode<PA>, GroestlHasher<PI>, GroestlMerkleTreeVCS>>
+) -> Option<
+	TensorPCS<
+		P,
+		PA,
+		PI,
+		PE,
+		ReedSolomonCode<PA>,
+		HasherDigest<PI, GroestlHasher<PI>>,
+		GroestlMerkleTreeVCS,
+	>,
+>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
