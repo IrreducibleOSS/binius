@@ -24,9 +24,11 @@ use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
 use std::fmt::Debug;
+use tracing::instrument;
 
 composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
+#[instrument(skip_all)]
 fn prove<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
@@ -44,9 +46,7 @@ where
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>,
 {
-	let span = tracing::debug_span!("commit");
-	let commit_scope = span.enter();
-
+	let commit_span = tracing::debug_span!("commit").entered();
 	assert_eq!(pcs.n_vars(), log_size);
 
 	let mut witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
@@ -64,7 +64,7 @@ where
 		.unwrap();
 	challenger.observe(abc_comm.clone());
 
-	drop(commit_scope);
+	drop(commit_span);
 
 	// Round 2
 
@@ -145,6 +145,7 @@ struct Proof<C, P> {
 	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
+#[instrument(skip_all)]
 fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
@@ -245,6 +246,7 @@ impl<'a, P: PackedField> TraceWitness<'a, P> {
 	}
 }
 
+#[instrument(skip_all)]
 fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128x1b> {
 	let len = (1 << log_size) >> PackedBinaryField128x1b::LOG_WIDTH;
 	let mut a_in_vals = vec![PackedBinaryField128x1b::default(); len];
@@ -340,22 +342,11 @@ fn main() {
 	let constraints = make_constraints(log_size, &trace_oracle);
 
 	tracing::info!("Generating the trace");
-	let trace_span = tracing::debug_span!("generate_trace").entered();
 	let witness = generate_trace(log_size);
-	drop(trace_span);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 	tracing::info!("Proving");
-	let prove_span = tracing::debug_span!(
-		"prove",
-		log_rows = pcs.log_rows(),
-		log_cols = pcs.log_cols(),
-		proof_size = pcs.proof_size(3),
-		log_size = log_size,
-		n_vars = pcs.n_vars(),
-	)
-	.entered();
 	let proof = prove(
 		log_size,
 		&pcs,
@@ -365,19 +356,8 @@ fn main() {
 		challenger.clone(),
 	)
 	.unwrap();
-	drop(prove_span);
 
 	tracing::info!("Verifying");
-	let verify_span = tracing::debug_span!(
-		"verify",
-		log_rows = pcs.log_rows(),
-		log_cols = pcs.log_cols(),
-		proof_size = pcs.proof_size(3),
-		log_size = log_size,
-		n_vars = pcs.n_vars(),
-	)
-	.entered();
 	verify(log_size, &pcs, &mut trace_oracle.clone(), &constraints, proof, challenger.clone())
 		.unwrap();
-	drop(verify_span);
 }

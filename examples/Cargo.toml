@@ -43,3 +43,6 @@ path = "u32fib.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"
+
+[features]
+aes-tower = []

@@ -8,10 +8,7 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{
-		HybridRecursiveStrategy, PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy,
-		PairwiseTableStrategy,
-	},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
@@ -87,7 +84,7 @@ cfg_if! {
 		impl_mul_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
 		impl_mul_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
 	} else {
-		impl_mul_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_mul_with!(PackedBinaryField8x8b @ crate::arch::PairwiseTableStrategy);
 		impl_mul_with!(PackedBinaryField4x16b @ PairwiseRecursiveStrategy);
 		impl_mul_with!(PackedBinaryField2x32b @ PairwiseRecursiveStrategy);
 		impl_mul_with!(PackedBinaryField1x64b @ PairwiseRecursiveStrategy);
@@ -104,10 +101,10 @@ cfg_if! {
 		impl_square_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
 		impl_square_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
 	} else {
-		impl_square_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_square_with!(PackedBinaryField8x8b @ crate::arch::PairwiseTableStrategy);
 		impl_square_with!(PackedBinaryField4x16b @ PairwiseStrategy);
 		impl_square_with!(PackedBinaryField2x32b @ PairwiseRecursiveStrategy);
-		impl_square_with!(PackedBinaryField1x64b @ HybridRecursiveStrategy);
+		impl_square_with!(PackedBinaryField1x64b @ crate::arch::HybridRecursiveStrategy);
 	}
 }
 
@@ -121,7 +118,7 @@ cfg_if! {
 		impl_invert_with!(PackedBinaryField2x32b => crate::PackedBinaryField4x32b);
 		impl_invert_with!(PackedBinaryField1x64b => crate::PackedBinaryField2x64b);
 	} else {
-		impl_invert_with!(PackedBinaryField8x8b @ PairwiseTableStrategy);
+		impl_invert_with!(PackedBinaryField8x8b @ crate::arch::PairwiseTableStrategy);
 		impl_invert_with!(PackedBinaryField4x16b @ PairwiseStrategy);
 		impl_invert_with!(PackedBinaryField2x32b @ PairwiseStrategy);
 		impl_invert_with!(PackedBinaryField1x64b @ PairwiseRecursiveStrategy);
