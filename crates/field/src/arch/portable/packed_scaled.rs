@@ -412,7 +412,7 @@ macro_rules! impl_scaled_512_bit_conversion_from_u128_array {
 	($name:ty, $inner:ty) => {
 		impl From<[u128; 4]> for $name {
 			fn from(value: [u128; 4]) -> Self {
-				Self([
+				Self::from([
 					<$inner>::from([value[0], value[1]]),
 					<$inner>::from([value[2], value[3]]),
 				])

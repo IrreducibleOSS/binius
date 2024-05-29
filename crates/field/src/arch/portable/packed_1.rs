@@ -4,6 +4,8 @@ use super::packed::{
 	impl_broadcast, impl_conversion, impl_ops_for_zero_height, PackedPrimitiveType,
 };
 use crate::{
+	arch::PairwiseStrategy,
+	arithmetic_traits::impl_transformation_with_strategy,
 	underlier::{UnderlierType, U1},
 	BinaryField1b,
 };
@@ -19,3 +21,6 @@ impl_broadcast!(U1, BinaryField1b);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField1x1b);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryField1x1b, PairwiseStrategy);

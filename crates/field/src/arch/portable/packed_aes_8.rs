@@ -4,8 +4,11 @@ use super::packed::{
 	impl_broadcast, impl_conversion, impl_packed_extension_field, PackedPrimitiveType,
 };
 use crate::{
-	arch::PairwiseTableStrategy,
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arch::{PairwiseStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 	AESTowerField8b,
 };
 
@@ -32,3 +35,6 @@ impl_invert_with!(PackedAESBinaryField1x8b @ PairwiseTableStrategy);
 
 // Define multiply by alpha
 impl_mul_alpha_with!(PackedAESBinaryField1x8b @ PairwiseTableStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedAESBinaryField1x8b, PairwiseStrategy);

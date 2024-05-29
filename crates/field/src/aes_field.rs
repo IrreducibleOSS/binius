@@ -84,14 +84,14 @@ impl From<AESTowerField8b> for BinaryField8b {
 	fn from(value: AESTowerField8b) -> Self {
 		const AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryField8b> =
 			FieldAffineTransformation::new_const(&[
-				Self(0x01),
-				Self(0x3c),
-				Self(0x8c),
-				Self(0x8a),
-				Self(0x59),
-				Self(0x7a),
-				Self(0x53),
-				Self(0x27),
+				BinaryField8b(0x01),
+				BinaryField8b(0x3c),
+				BinaryField8b(0x8c),
+				BinaryField8b(0x8a),
+				BinaryField8b(0x59),
+				BinaryField8b(0x7a),
+				BinaryField8b(0x53),
+				BinaryField8b(0x27),
 			]);
 
 		AFFINE_TRANSFORMATION.transform(&value)
@@ -102,14 +102,14 @@ impl From<BinaryField8b> for AESTowerField8b {
 	fn from(value: BinaryField8b) -> Self {
 		const AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowerField8b> =
 			FieldAffineTransformation::new_const(&[
-				Self(0x01),
-				Self(0xbc),
-				Self(0xb0),
-				Self(0xec),
-				Self(0xd3),
-				Self(0x8d),
-				Self(0x2e),
-				Self(0x58),
+				AESTowerField8b(0x01),
+				AESTowerField8b(0xbc),
+				AESTowerField8b(0xb0),
+				AESTowerField8b(0xec),
+				AESTowerField8b(0xd3),
+				AESTowerField8b(0x8d),
+				AESTowerField8b(0x2e),
+				AESTowerField8b(0x58),
 			]);
 
 		AFFINE_TRANSFORMATION.transform(&value)

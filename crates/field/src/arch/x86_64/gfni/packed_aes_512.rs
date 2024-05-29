@@ -10,9 +10,15 @@ use crate::{
 			impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
 			PackedPrimitiveType,
 		},
+		x86_64::gfni::gfni_arithmetics::{
+			impl_transformation_with_gfni, impl_transformation_with_gfni_nxn,
+		},
 		ReuseMultiplyStrategy, SimdStrategy,
 	},
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 };
 
 // Define 128 bit packed field types
@@ -72,3 +78,10 @@ impl_mul_alpha_with!(PackedAESBinaryField32x16b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField16x32b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField8x64b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField4x128b @ SimdStrategy);
+
+// Define affine transformations
+impl_transformation_with_gfni!(PackedAESBinaryField64x8b, GfniBinaryTowerStrategy);
+impl_transformation_with_gfni_nxn!(PackedAESBinaryField32x16b, 2);
+impl_transformation_with_gfni_nxn!(PackedAESBinaryField16x32b, 4);
+impl_transformation_with_gfni_nxn!(PackedAESBinaryField8x64b, 8);
+impl_transformation_with_strategy!(PackedAESBinaryField4x128b, SimdStrategy);

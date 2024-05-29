@@ -2,8 +2,8 @@ use super::packed::{
 	impl_broadcast, impl_conversion, impl_packed_extension_field, PackedPrimitiveType,
 };
 use crate::{
-	arch::ReuseMultiplyStrategy,
-	arithmetic_traits::{impl_square_with, InvertOrZero},
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	packed::PackedField,
 	BinaryField128bPolyval,
 };
@@ -70,6 +70,9 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 		Self::set_single(res)
 	}
 }
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, PairwiseStrategy);
 
 /// The POLYVAL "dot" operation defined in [`RFC 8542`][1], Section 3.
 ///

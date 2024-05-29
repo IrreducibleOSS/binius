@@ -11,8 +11,11 @@ use crate::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	},
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseTableStrategy},
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 };
 
 // Define 128 bit packed AES field types
@@ -86,3 +89,10 @@ impl_mul_alpha_with!(PackedAESBinaryField8x16b @ PackedStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField4x32b @ PackedStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField2x64b @ PairwiseRecursiveStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedAESBinaryField16x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField2x64b, PairwiseStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);

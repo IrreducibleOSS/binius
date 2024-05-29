@@ -9,8 +9,11 @@ use super::{
 	reuse_multiply_arithmetic::Alpha,
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, ReuseMultiplyStrategy},
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 	underlier::{UnderlierType, U4},
 	BinaryField1b, BinaryField2b, BinaryField4b,
 };
@@ -73,3 +76,8 @@ impl Alpha for PackedBinaryField1x4b {
 		Self::from_underlier(U4::new_unchecked(0x04))
 	}
 }
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryField4x1b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField2x2b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField1x4b, PairwiseStrategy);

@@ -8,8 +8,11 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseTableStrategy},
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 	AESTowerField16b, AESTowerField32b, AESTowerField8b,
 };
 use cfg_if::cfg_if;
@@ -80,3 +83,8 @@ cfg_if! {
 impl_mul_alpha_with!(PackedAESBinaryField4x8b @ PairwiseTableStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField2x16b @ PackedStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField1x32b @ PairwiseRecursiveStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedAESBinaryField4x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField2x16b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField1x32b, PairwiseStrategy);

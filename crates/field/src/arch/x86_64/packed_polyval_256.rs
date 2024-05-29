@@ -7,9 +7,9 @@ use super::{
 use crate::{
 	arch::{
 		portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
-		PairwiseStrategy, ReuseMultiplyStrategy,
+		PairwiseStrategy, ReuseMultiplyStrategy, SimdStrategy,
 	},
-	arithmetic_traits::{impl_invert_with, impl_square_with},
+	arithmetic_traits::{impl_invert_with, impl_square_with, impl_transformation_with_strategy},
 	BinaryField128bPolyval,
 };
 use core::arch::x86_64::*;
@@ -52,6 +52,9 @@ impl_square_with!(PackedBinaryPolyval2x128b @ ReuseMultiplyStrategy);
 // Define invert
 // TODO: possible we can use some better strategy using SIMD for some of the operations
 impl_invert_with!(PackedBinaryPolyval2x128b @ PairwiseStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryPolyval2x128b, SimdStrategy);
 
 impl PolyvalSimdType for __m256i {
 	#[inline(always)]

@@ -5,7 +5,31 @@ pub use crate::arch::{packed_128::*, packed_256::*, packed_512::*};
 /// Common code to test different multiply, square and invert implementations
 #[cfg(test)]
 pub mod test_utils {
+	use crate::{
+		affine_transformation::PackedTransformationFactory,
+		underlier::{U1, U2, U4},
+		BinaryField, PackedField,
+	};
+
 	pub struct Unit;
+
+	impl From<U1> for Unit {
+		fn from(_: U1) -> Self {
+			Self
+		}
+	}
+
+	impl From<U2> for Unit {
+		fn from(_: U2) -> Self {
+			Self
+		}
+	}
+
+	impl From<U4> for Unit {
+		fn from(_: U4) -> Self {
+			Self
+		}
+	}
 
 	impl From<u8> for Unit {
 		fn from(_: u8) -> Self {
@@ -608,6 +632,63 @@ pub mod test_utils {
 
 			proptest::proptest! {
 				#[test]
+				fn test_transformation_packed_1(a_val in 0..2u8) {
+					use crate::arch::packed_1::*;
+
+					TestTransformation::<PackedBinaryField1x1b>::test_transformation($crate::underlier::U1::new_unchecked(a_val).into());
+				}
+
+				#[test]
+				fn test_transformation_packed_2(a_val in 0..4u8) {
+					use crate::arch::packed_2::*;
+
+					TestTransformation::<PackedBinaryField2x1b>::test_transformation($crate::underlier::U2::new_unchecked(a_val).into());
+					TestTransformation::<PackedBinaryField1x2b>::test_transformation($crate::underlier::U2::new_unchecked(a_val).into());
+				}
+
+				#[test]
+				fn test_transformation_packed_4(a_val in 0..16u8) {
+					use crate::arch::packed_4::*;
+
+					TestTransformation::<PackedBinaryField4x1b>::test_transformation($crate::underlier::U4::new_unchecked(a_val).into());
+					TestTransformation::<PackedBinaryField2x2b>::test_transformation($crate::underlier::U4::new_unchecked(a_val).into());
+					TestTransformation::<PackedBinaryField1x4b>::test_transformation($crate::underlier::U4::new_unchecked(a_val).into());
+				}
+
+				#[test]
+				fn test_transformation_packed_8(a_val in proptest::prelude::any::<u8>()) {
+					use crate::arch::packed_8::*;
+
+					TestTransformation::<PackedBinaryField8x1b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField4x2b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField2x4b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField1x8b>::test_transformation(a_val.into());
+				}
+
+				#[test]
+				fn test_transformation_packed_16(a_val in proptest::prelude::any::<u16>()) {
+					use crate::arch::packed_16::*;
+
+					TestTransformation::<PackedBinaryField16x1b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField8x2b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField4x4b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField2x8b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField1x16b>::test_transformation(a_val.into());
+				}
+
+				#[test]
+				fn test_transformation_packed_32(a_val in proptest::prelude::any::<u32>()) {
+					use crate::arch::packed_32::*;
+
+					TestTransformation::<PackedBinaryField32x1b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField16x2b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField8x4b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField4x8b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField2x16b>::test_transformation(a_val.into());
+					TestTransformation::<PackedBinaryField1x32b>::test_transformation(a_val.into());
+				}
+
+				#[test]
 				fn test_transformation_packed_64(a_val in proptest::prelude::any::<u64>()) {
 					use $crate::arch::packed_64::*;
 
@@ -670,6 +751,14 @@ pub mod test_utils {
 	pub(crate) use define_multiply_tests;
 	pub(crate) use define_square_tests;
 	pub(crate) use define_transformation_tests;
+
+	/// Helper function for compile-time checks
+	#[allow(unused)]
+	pub fn implements_transformation_factory<
+		P1: PackedField<Scalar: BinaryField>,
+		P2: PackedTransformationFactory<P1>,
+	>() {
+	}
 }
 
 #[cfg(test)]
@@ -682,12 +771,19 @@ mod tests {
 		*,
 	};
 	use crate::{
-		affine_transformation::PackedTransformationFactory, arithmetic_traits::MulAlpha,
+		affine_transformation::PackedTransformationFactory,
+		arch::{
+			packed_1::*, packed_16::*, packed_2::*, packed_32::*, packed_4::*, packed_64::*,
+			packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
+			packed_aes_512::*, packed_aes_64::*,
+		},
+		arithmetic_traits::MulAlpha,
 		BinaryField8b, Field, PackedField,
 	};
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, thread_rng, SeedableRng};
 	use std::{iter::repeat_with, ops::Mul};
+	use test_utils::implements_transformation_factory;
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
 		let a = P::from(a_val);
@@ -933,12 +1029,12 @@ mod tests {
 		assert_valid_iterator_with_exact_size_hint::<crate::BinaryField128b>();
 		assert_valid_iterator_with_exact_size_hint::<crate::BinaryField32b>();
 		assert_valid_iterator_with_exact_size_hint::<crate::BinaryField1b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField128x1b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField64x2b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField32x4b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField16x16b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField8x32b>();
-		assert_valid_iterator_with_exact_size_hint::<crate::PackedBinaryField4x64b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField128x1b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField64x2b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField32x4b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField16x16b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField8x32b>();
+		assert_valid_iterator_with_exact_size_hint::<PackedBinaryField4x64b>();
 	}
 
 	fn assert_valid_iterator_with_exact_size_hint<P: PackedField>() {
@@ -962,4 +1058,104 @@ mod tests {
 	impl<T: PackedTransformationFactory<T>> SelfTransformationFactory for T {}
 
 	define_transformation_tests!(SelfTransformationFactory);
+
+	/// Compile-time test to ensure packed fields implement `PackedTransformationFactory`.
+	#[allow(unused)]
+	fn test_implement_transformation_factory() {
+		// 1 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField1x1b, PackedBinaryField1x1b>();
+
+		// 2 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField2x1b, PackedBinaryField2x1b>();
+		implements_transformation_factory::<PackedBinaryField1x2b, PackedBinaryField1x2b>();
+
+		// 4 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField4x1b, PackedBinaryField4x1b>();
+		implements_transformation_factory::<PackedBinaryField2x2b, PackedBinaryField2x2b>();
+		implements_transformation_factory::<PackedBinaryField1x4b, PackedBinaryField1x4b>();
+
+		// 8 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField8x1b, PackedBinaryField8x1b>();
+		implements_transformation_factory::<PackedBinaryField4x2b, PackedBinaryField4x2b>();
+		implements_transformation_factory::<PackedBinaryField2x4b, PackedBinaryField2x4b>();
+		implements_transformation_factory::<PackedBinaryField1x8b, PackedBinaryField1x8b>();
+
+		// 16 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField16x1b, PackedBinaryField16x1b>();
+		implements_transformation_factory::<PackedBinaryField8x2b, PackedBinaryField8x2b>();
+		implements_transformation_factory::<PackedBinaryField4x4b, PackedBinaryField4x4b>();
+		implements_transformation_factory::<PackedBinaryField2x8b, PackedBinaryField2x8b>();
+		implements_transformation_factory::<PackedAESBinaryField2x8b, PackedBinaryField2x8b>();
+		implements_transformation_factory::<PackedBinaryField1x16b, PackedBinaryField1x16b>();
+		implements_transformation_factory::<PackedAESBinaryField1x16b, PackedBinaryField1x16b>();
+
+		// 32 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField32x1b, PackedBinaryField32x1b>();
+		implements_transformation_factory::<PackedBinaryField16x2b, PackedBinaryField16x2b>();
+		implements_transformation_factory::<PackedBinaryField8x4b, PackedBinaryField8x4b>();
+		implements_transformation_factory::<PackedBinaryField4x8b, PackedBinaryField4x8b>();
+		implements_transformation_factory::<PackedAESBinaryField4x8b, PackedBinaryField4x8b>();
+		implements_transformation_factory::<PackedBinaryField2x16b, PackedBinaryField2x16b>();
+		implements_transformation_factory::<PackedAESBinaryField2x16b, PackedBinaryField2x16b>();
+		implements_transformation_factory::<PackedBinaryField1x32b, PackedBinaryField1x32b>();
+		implements_transformation_factory::<PackedAESBinaryField1x32b, PackedBinaryField1x32b>();
+
+		// 64 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField64x1b, PackedBinaryField64x1b>();
+		implements_transformation_factory::<PackedBinaryField32x2b, PackedBinaryField32x2b>();
+		implements_transformation_factory::<PackedBinaryField16x4b, PackedBinaryField16x4b>();
+		implements_transformation_factory::<PackedBinaryField8x8b, PackedBinaryField8x8b>();
+		implements_transformation_factory::<PackedAESBinaryField8x8b, PackedBinaryField8x8b>();
+		implements_transformation_factory::<PackedBinaryField4x16b, PackedBinaryField4x16b>();
+		implements_transformation_factory::<PackedAESBinaryField4x16b, PackedBinaryField4x16b>();
+		implements_transformation_factory::<PackedBinaryField2x32b, PackedBinaryField2x32b>();
+		implements_transformation_factory::<PackedAESBinaryField2x32b, PackedBinaryField2x32b>();
+		implements_transformation_factory::<PackedBinaryField1x64b, PackedBinaryField1x64b>();
+		implements_transformation_factory::<PackedAESBinaryField1x64b, PackedBinaryField1x64b>();
+
+		// 128 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField128x1b, PackedBinaryField128x1b>();
+		implements_transformation_factory::<PackedBinaryField64x2b, PackedBinaryField64x2b>();
+		implements_transformation_factory::<PackedBinaryField32x4b, PackedBinaryField32x4b>();
+		implements_transformation_factory::<PackedBinaryField16x8b, PackedBinaryField16x8b>();
+		implements_transformation_factory::<PackedAESBinaryField16x8b, PackedBinaryField16x8b>();
+		implements_transformation_factory::<PackedBinaryField8x16b, PackedBinaryField8x16b>();
+		implements_transformation_factory::<PackedAESBinaryField8x16b, PackedBinaryField8x16b>();
+		implements_transformation_factory::<PackedBinaryField4x32b, PackedBinaryField4x32b>();
+		implements_transformation_factory::<PackedAESBinaryField4x32b, PackedBinaryField4x32b>();
+		implements_transformation_factory::<PackedBinaryField2x64b, PackedBinaryField2x64b>();
+		implements_transformation_factory::<PackedAESBinaryField2x64b, PackedBinaryField2x64b>();
+		implements_transformation_factory::<PackedBinaryField1x128b, PackedBinaryField1x128b>();
+		implements_transformation_factory::<PackedAESBinaryField1x128b, PackedBinaryField1x128b>();
+
+		// 256 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField256x1b, PackedBinaryField256x1b>();
+		implements_transformation_factory::<PackedBinaryField128x2b, PackedBinaryField128x2b>();
+		implements_transformation_factory::<PackedBinaryField64x4b, PackedBinaryField64x4b>();
+		implements_transformation_factory::<PackedBinaryField32x8b, PackedBinaryField32x8b>();
+		implements_transformation_factory::<PackedAESBinaryField32x8b, PackedBinaryField32x8b>();
+		implements_transformation_factory::<PackedBinaryField16x16b, PackedBinaryField16x16b>();
+		implements_transformation_factory::<PackedAESBinaryField16x16b, PackedBinaryField16x16b>();
+		implements_transformation_factory::<PackedBinaryField8x32b, PackedBinaryField8x32b>();
+		implements_transformation_factory::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
+		implements_transformation_factory::<PackedBinaryField4x64b, PackedBinaryField4x64b>();
+		implements_transformation_factory::<PackedAESBinaryField4x64b, PackedBinaryField4x64b>();
+		implements_transformation_factory::<PackedBinaryField2x128b, PackedBinaryField2x128b>();
+		implements_transformation_factory::<PackedAESBinaryField2x128b, PackedBinaryField2x128b>();
+
+		// 512 bit packed binary tower
+		implements_transformation_factory::<PackedBinaryField512x1b, PackedBinaryField512x1b>();
+		implements_transformation_factory::<PackedBinaryField256x2b, PackedBinaryField256x2b>();
+		implements_transformation_factory::<PackedBinaryField128x4b, PackedBinaryField128x4b>();
+		implements_transformation_factory::<PackedBinaryField64x8b, PackedBinaryField64x8b>();
+		implements_transformation_factory::<PackedAESBinaryField64x8b, PackedBinaryField64x8b>();
+		implements_transformation_factory::<PackedBinaryField32x16b, PackedBinaryField32x16b>();
+		implements_transformation_factory::<PackedAESBinaryField32x16b, PackedBinaryField32x16b>();
+		implements_transformation_factory::<PackedBinaryField16x32b, PackedBinaryField16x32b>();
+		implements_transformation_factory::<PackedAESBinaryField16x32b, PackedBinaryField16x32b>();
+		implements_transformation_factory::<PackedBinaryField8x64b, PackedBinaryField8x64b>();
+		implements_transformation_factory::<PackedAESBinaryField8x64b, PackedBinaryField8x64b>();
+		implements_transformation_factory::<PackedBinaryField4x128b, PackedBinaryField4x128b>();
+		implements_transformation_factory::<PackedAESBinaryField4x128b, PackedBinaryField4x128b>();
+	}
 }

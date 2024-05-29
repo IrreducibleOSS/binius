@@ -8,8 +8,11 @@ use super::{
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
-	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseTableStrategy},
-	arithmetic_traits::{impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with},
+	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, PairwiseTableStrategy},
+	arithmetic_traits::{
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy,
+	},
 	underlier::UnderlierType,
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
@@ -80,3 +83,10 @@ impl_mul_alpha_with!(PackedBinaryField8x2b @ PackedStrategy);
 impl_mul_alpha_with!(PackedBinaryField4x4b @ PackedStrategy);
 impl_mul_alpha_with!(PackedBinaryField2x8b @ PackedStrategy);
 impl_mul_alpha_with!(PackedBinaryField1x16b @ PairwiseRecursiveStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryField16x1b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField8x2b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField4x4b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField2x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedBinaryField1x16b, PairwiseStrategy);

@@ -3,8 +3,8 @@ use super::{
 	m128::M128,
 };
 use crate::{
-	arch::ReuseMultiplyStrategy,
-	arithmetic_traits::{impl_square_with, InvertOrZero},
+	arch::{ReuseMultiplyStrategy, SimdStrategy},
+	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	packed::PackedField,
 	BinaryField128bPolyval,
 };
@@ -42,6 +42,9 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 		Self::from_underlier(PackedField::invert_or_zero(portable).0.into())
 	}
 }
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, SimdStrategy);
 
 /// A type that can be used in SIMD polyval field multiplication
 pub(super) trait PolyvalSimdType: Copy {
