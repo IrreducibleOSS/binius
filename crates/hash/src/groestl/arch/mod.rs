@@ -2,16 +2,15 @@
 
 use cfg_if::cfg_if;
 
-mod groestl_table;
-mod portable;
-pub use portable::Groestl256Core;
-
 cfg_if! {
 	if #[cfg(all(target_arch = "x86_64",target_feature = "avx512bw",target_feature = "avx512vbmi",target_feature = "avx512f",target_feature = "gfni",))] {
 
 		mod groestl_avx512;
-		pub use groestl_avx512::Groestl256;
+		pub use groestl_avx512::{Groestl256, Groestl256Core};
 	} else {
+		mod groestl_table;
+		mod portable;
+		pub use portable::Groestl256Core;
 
 		use ::groestl_crypto;
 		pub use groestl_crypto::Groestl256;

@@ -1,5 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use binius_field::{AESTowerField8b, PackedAESBinaryField64x8b, PackedField};
 use digest::{
 	block_buffer::Eager,
 	core_api::{
@@ -9,7 +10,7 @@ use digest::{
 	typenum::{Unsigned, U32, U64},
 	HashMarker, InvalidOutputSize, Output, OutputSizeUser,
 };
-use std::{arch::x86_64::*, fmt, mem::transmute_copy};
+use std::{arch::x86_64::*, array, fmt, mem::transmute_copy};
 
 pub type GroestlShortCore<OutSize> = CtVariableCoreWrapper<Groestl256AVX512, OutSize>;
 
@@ -22,6 +23,12 @@ const ROUND_SIZE: usize = 10;
 
 #[repr(align(64))]
 struct AlignedArray([u8; 64]);
+
+impl Default for AlignedArray {
+	fn default() -> Self {
+		AlignedArray([0; 64])
+	}
+}
 
 impl From<__m512i> for AlignedArray {
 	fn from(value: __m512i) -> Self {
@@ -69,13 +76,17 @@ const INDEX: AlignedArray = AlignedArray([
 	0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]);
 
+#[derive(Clone, Default)]
+pub struct Groestl256Core;
+
 #[derive(Clone)]
 pub struct Groestl256AVX512 {
 	blocks_len: u64,
 	state: __m512i,
+	permutation: Groestl256Core,
 }
 
-impl Groestl256AVX512 {
+impl Groestl256Core {
 	#[inline]
 	fn mix_bytes(&self, block: __m512i) -> __m512i {
 		let b_adj_1: __m512i = unsafe { _mm512_ror_epi64(block, 8) };
@@ -147,7 +158,7 @@ impl Groestl256AVX512 {
 		xor_blocks(res, block)
 	}
 
-	pub fn perm_func_p(&self, block: __m512i) -> __m512i {
+	fn perm_p_m512i(&self, block: __m512i) -> __m512i {
 		let mut block = block;
 		for r in 0..ROUND_SIZE {
 			block = self.add_round_constants_p(block, r as u8);
@@ -158,7 +169,7 @@ impl Groestl256AVX512 {
 		block
 	}
 
-	fn combined_perm(&self, p_block: __m512i, q_block: __m512i) -> __m512i {
+	fn combined_perm_m512i(&self, p_block: __m512i, q_block: __m512i) -> (__m512i, __m512i) {
 		let mut p_block = p_block;
 		let mut q_block = q_block;
 		for r in 0..ROUND_SIZE {
@@ -172,12 +183,42 @@ impl Groestl256AVX512 {
 			q_block = self.mix_bytes(q_block);
 		}
 
-		xor_blocks(q_block, p_block)
+		(q_block, p_block)
 	}
 
 	#[inline]
+	pub fn permutation_p(&self, p: PackedAESBinaryField64x8b) -> PackedAESBinaryField64x8b {
+		let input = AlignedArray(array::from_fn(|i| p.get(i).val()));
+		let out: AlignedArray = self.perm_p_m512i(input.into()).into();
+
+		PackedAESBinaryField64x8b::from_fn(|i| AESTowerField8b::new(out.0[i]))
+	}
+
+	#[inline]
+	pub fn permutation_pq(
+		&self,
+		p: PackedAESBinaryField64x8b,
+		q: PackedAESBinaryField64x8b,
+	) -> (PackedAESBinaryField64x8b, PackedAESBinaryField64x8b) {
+		let p_align = AlignedArray(array::from_fn(|i| p.get(i).val()));
+		let q_align = AlignedArray(array::from_fn(|i| q.get(i).val()));
+
+		let (p_out_arr, q_out_arr) = self.combined_perm_m512i(p_align.into(), q_align.into());
+		let p_out_arr: AlignedArray = p_out_arr.into();
+		let q_out_arr: AlignedArray = q_out_arr.into();
+
+		let p_out = PackedAESBinaryField64x8b::from_fn(|i| AESTowerField8b::new(p_out_arr.0[i]));
+		let q_out = PackedAESBinaryField64x8b::from_fn(|i| AESTowerField8b::new(q_out_arr.0[i]));
+
+		(p_out, q_out)
+	}
+}
+
+impl Groestl256AVX512 {
+	#[inline]
 	pub fn compression_func(&self, h: __m512i, m: __m512i) -> __m512i {
-		xor_blocks(self.combined_perm(xor_blocks(h, m), m), h)
+		let (a, b) = self.permutation.combined_perm_m512i(xor_blocks(h, m), m);
+		xor_blocks(xor_blocks(a, b), h)
 	}
 }
 
@@ -220,6 +261,7 @@ impl VariableOutputCore for Groestl256AVX512 {
 		state.0[56..64].copy_from_slice(&iv.to_be_bytes());
 		let blocks_len = 0;
 		Ok(Self {
+			permutation: Groestl256Core::default(),
 			state: state.into(),
 			blocks_len,
 		})
@@ -237,7 +279,7 @@ impl VariableOutputCore for Groestl256AVX512 {
 			let block = unsafe { _mm512_loadu_epi8(transmute_copy(&block.as_ptr())) };
 			self.state = self.compression_func(self.state, block)
 		});
-		let new_state = self.perm_func_p(self.state);
+		let new_state = self.permutation.perm_p_m512i(self.state);
 		let res: AlignedArray = xor_blocks(new_state, self.state).into();
 		out.copy_from_slice(&res.0[HASH_SIZE..64]);
 	}
