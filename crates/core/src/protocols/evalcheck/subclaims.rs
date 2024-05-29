@@ -166,23 +166,11 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 	committed_eval_claims: &[CommittedEvalClaim<F>],
 	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
 ) -> Result<Vec<NonSameQueryPcsClaimMeta<F>>, Error> {
-	let common_suffix_len = if let Some((first, rest)) = committed_eval_claims.split_first() {
-		let mut common_suffix = first.eval_point.as_slice();
-
-		for claim in rest {
-			let diff = claim
-				.eval_point
-				.iter()
-				.rev()
-				.zip(common_suffix.iter().rev())
-				.position(|(a, b)| a != b);
-			common_suffix = &common_suffix[diff.map_or(0, |diff| diff + 1)..];
-		}
-
-		common_suffix.len()
-	} else {
-		0
-	};
+	let common_suffix_len = compute_common_suffix_len(
+		committed_eval_claims
+			.iter()
+			.map(|claim| claim.eval_point.as_slice()),
+	);
 
 	let mut metas = Vec::new();
 
@@ -218,6 +206,26 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 	}
 
 	Ok(metas)
+}
+
+fn compute_common_suffix_len<'a, F: PartialEq + 'a>(
+	mut eval_points: impl Iterator<Item = &'a [F]>,
+) -> usize {
+	if let Some(first_eval_point) = eval_points.next() {
+		let common_suffix = first_eval_point.iter().rev().collect::<Vec<_>>();
+		let common_suffix = eval_points.fold(common_suffix, |common_suffix, eval_point| {
+			eval_point
+				.iter()
+				.rev()
+				.zip(common_suffix)
+				.take_while(|(a, b)| a == b)
+				.unzip::<_, _, Vec<_>, Vec<_>>()
+				.0
+		});
+		common_suffix.len()
+	} else {
+		0
+	}
 }
 
 pub fn non_same_query_pcs_sumcheck_claim<F: TowerField>(
@@ -397,5 +405,29 @@ impl<P: PackedField> MemoizedQueries<P> {
 
 		let (_, ref query) = self.memo.last().expect("pushed query immediately above");
 		Ok(query)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_compute_common_suffix_len() {
+		let tests = vec![
+			(vec![], 0),
+			(vec![vec![1, 2, 3]], 3),
+			(vec![vec![1, 2, 3], vec![2, 3]], 2),
+			(vec![vec![1, 2, 3], vec![2, 3], vec![3]], 1),
+			(vec![vec![1, 2, 3], vec![4, 2, 3], vec![6, 5, 3]], 1),
+			(vec![vec![1, 2, 3], vec![1, 2, 3], vec![1, 2, 3]], 3),
+			(vec![vec![1, 2, 3], vec![2, 3, 4], vec![3, 4, 5]], 0),
+		];
+		for test in tests {
+			let eval_points = test.0.iter().map(|x| x.as_slice());
+			let expected = test.1;
+			let got = compute_common_suffix_len(eval_points);
+			assert_eq!(got, expected);
+		}
 	}
 }
