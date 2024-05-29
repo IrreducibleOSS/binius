@@ -16,7 +16,6 @@ pub mod polynomial;
 pub mod protocols;
 #[allow(clippy::module_inception)]
 pub mod reed_solomon;
-mod util;
 pub mod witness;
 
 pub use core::iter::Step;

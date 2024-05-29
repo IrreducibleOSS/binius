@@ -30,15 +30,15 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
-use binius_utils::rayon::adjust_thread_pool;
+use binius_utils::{
+	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
+};
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use rand::{thread_rng, Rng};
-use std::{array, env, fmt::Debug, iter, iter::Step, slice};
+use std::{array, fmt::Debug, iter, iter::Step, slice};
 use tiny_keccak::keccakf;
 use tracing::instrument;
-use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const KECCAKF_RC: [u64; 32] = [
 	0x0000000000000001,
@@ -93,25 +93,6 @@ const PI: [usize; 25] = [
 	4, 5, 11, 17, 23,
 	2, 8, 14, 15, 21,
 ];
-
-fn init_tracing() {
-	if let Ok(csv_path) = env::var("PROFILE_CSV_FILE") {
-		let _ = tracing_subscriber::registry()
-			.with(CsvLayer::new(csv_path))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	} else {
-		let _ = tracing_subscriber::registry()
-			.with(PrintTreeLayer::new(PrintTreeConfig {
-				attention_above_percent: 25.0,
-				relevant_above_percent: 2.5,
-				hide_below_percent: 1.0,
-				display_unaccounted: false,
-			}))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	}
-}
 
 #[derive(Clone, Debug)]
 struct SumComposition {
@@ -767,7 +748,7 @@ fn main() {
 		.expect("failed to init thread pool");
 	init_tracing();
 
-	let log_size = 23;
+	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
 
 	// Set up the public parameters

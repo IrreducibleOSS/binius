@@ -16,14 +16,14 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
-use binius_utils::rayon::adjust_thread_pool;
+use binius_utils::{
+	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
+};
 use bytemuck::{must_cast, must_cast_mut};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
-use std::{env, fmt::Debug};
-use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
-use tracing_subscriber::prelude::*;
+use std::fmt::Debug;
 
 composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
@@ -302,26 +302,11 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	if let Ok(csv_path) = env::var("PROFILE_CSV_FILE") {
-		let _ = tracing_subscriber::registry()
-			.with(CsvLayer::new(csv_path))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	} else {
-		let _ = tracing_subscriber::registry()
-			.with(PrintTreeLayer::new(PrintTreeConfig {
-				attention_above_percent: 25.0,
-				relevant_above_percent: 2.5,
-				hide_below_percent: 1.0,
-				display_unaccounted: false,
-			}))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	};
+	init_tracing();
 
 	const SECURITY_BITS: usize = 100;
 
-	let log_size = 24;
+	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
 
 	// Set up the public parameters

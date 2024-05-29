@@ -1,6 +1,5 @@
 // Copyright 2023 Ulvetanna Inc.
 
-#[cfg(test)]
 pub fn init_tracing() {
 	use std::env;
 

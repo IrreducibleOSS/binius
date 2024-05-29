@@ -4,6 +4,8 @@ export RUST_BACKTRACE=full
 
 cargo test
 
+# First compile all the examples in release mode to speed up overall compilation time due to parallelism.
+cargo build --release --examples
 
 # Execute examples. 
 # Unfortunately there cargo doesn't support executing all examples with a single command.

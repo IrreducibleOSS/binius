@@ -6,3 +6,6 @@ authors.workspace = true
 
 [dependencies]
 rayon.workspace = true
+tracing.workspace = true
+tracing-profile.workspace = true
+tracing-subscriber.workspace = true

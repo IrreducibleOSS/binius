@@ -13,7 +13,7 @@ use binius_field::{
 	BinaryField128b, BinaryField1b, Field, PackedBinaryField128x1b, PackedField, TowerField,
 };
 use binius_macros::composition_poly;
-use binius_utils::rayon::adjust_thread_pool;
+use binius_utils::{examples::get_log_trace_size, rayon::adjust_thread_pool};
 use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 
@@ -24,7 +24,7 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	let log_size = 14;
+	let log_size = get_log_trace_size().unwrap_or(10);
 	let oracle = U32FibOracle::new(&mut MultilinearOracleSet::<BinaryField128b>::new(), log_size);
 	let witness = U32FibTrace::<PackedBinaryField128x1b>::new(log_size).fill_trace();
 	let constraints = MultilinearComposite::from_columns(

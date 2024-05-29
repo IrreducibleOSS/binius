@@ -36,6 +36,8 @@ cargo run --release --example bitwise_and_proof
 
 The environment variable `PROFILE_CSV_FILE` can be set to an output filename to dump profiling data to a CSV file for more detailed analysis.
 
+By default all the examples are run on a relatively small data. The environment variable `BINIUS_LOG_TRACE` can be used to override the default log trace size value.
+
 ## Support
 
 This project is under active development. The developers with make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.

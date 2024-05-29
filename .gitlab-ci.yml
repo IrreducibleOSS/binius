@@ -19,7 +19,7 @@ stages:
 .job_template_arm:
   image: rustlang/rust:nightly
   variables:
-    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-t4g-large"
+    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-t4g-xlarge"
     KUBERNETES_NODE_SELECTOR_ARCH: 'kubernetes.io/arch=arm64'
   before_script:
     - if [ "$(uname -m)" != "aarch64" ]; then echo "This job is intended to run on ARM architecture only."; exit 1; fi
@@ -111,7 +111,7 @@ unit-test-arm:
 unit-test-single-threaded-amd:
   extends: .test_job_template_amd
   script:
-    - RAYON_NUM_THREADS=1 ./scripts/run_tests_and_examples.sh
+    - RAYON_NUM_THREADS=1  ./scripts/run_tests_and_examples.sh
 
 unit-test-single-threaded-arm:
   extends: .test_job_template_arm
