@@ -15,7 +15,7 @@ use crate::{
 		TaggedSquare,
 	},
 	packed::PackedBinaryField,
-	underlier::{UnderlierType, WithUnderlier},
+	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	BinaryField, BinaryField8b, PackedField, TowerField,
 };
 use std::{any::TypeId, arch::x86_64::*, ops::Deref};
@@ -302,7 +302,7 @@ pub struct SimdTransformation<OP> {
 #[allow(private_bounds)]
 impl<OP> SimdTransformation<OP>
 where
-	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType>,
+	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType + UnderlierWithBitOps>,
 {
 	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldAffineTransformation<OP::Scalar, Data>,
@@ -326,7 +326,7 @@ where
 	OP: PackedField<Scalar = OF> + WithUnderlier<Underlier = U>,
 	IF: BinaryField,
 	OF: BinaryField,
-	U: UnderlierType + TowerSimdType,
+	U: UnderlierWithBitOps + TowerSimdType,
 {
 	fn transform(&self, input: &IP) -> OP {
 		let mut result = OP::zero();
@@ -348,7 +348,7 @@ where
 
 impl<IP, OP> TaggedPackedTransformationFactory<SimdStrategy, OP> for IP
 where
-	IP: PackedBinaryField + WithUnderlier,
+	IP: PackedBinaryField + WithUnderlier<Underlier: UnderlierWithBitOps>,
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 	IP::Underlier: TowerSimdType,
 {

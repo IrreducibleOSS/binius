@@ -20,6 +20,7 @@ transpose.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 itertools.workspace = true
+paste.workspace = true
 proptest.workspace = true
 
 [lib]
@@ -30,7 +31,19 @@ name = "binary_field"
 harness = false
 
 [[bench]]
-name = "packed_binary_field_arithmetic"
+name = "packed_field_affine_transform"
+harness = false
+
+[[bench]]
+name = "packed_field_multiply"
+harness = false
+
+[[bench]]
+name = "packed_field_mul_alpha"
+harness = false
+
+[[bench]]
+name = "packed_field_square"
 harness = false
 
 [[bench]]

@@ -13,7 +13,6 @@ use crate::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy,
 	},
-	underlier::UnderlierType,
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
 

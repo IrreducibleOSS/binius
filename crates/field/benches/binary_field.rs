@@ -1,11 +1,5 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use criterion::{
-	criterion_group, criterion_main, measurement::Measurement, BenchmarkGroup, Criterion,
-};
-use rand::thread_rng;
-use std::array;
-
 use binius_field::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
@@ -13,6 +7,11 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField32b, BinaryField64b,
 	BinaryField8b, Field,
 };
+use criterion::{
+	criterion_group, criterion_main, measurement::Measurement, BenchmarkGroup, Criterion,
+};
+use rand::thread_rng;
+use std::array;
 
 const BATCH_SIZE: usize = 32;
 

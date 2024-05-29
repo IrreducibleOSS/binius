@@ -11,11 +11,11 @@ use crate::{
 	},
 	binary_field::BinaryField,
 	packed::PackedBinaryField,
-	underlier::{UnderlierType, WithUnderlier},
+	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	ExtensionField, PackedField, TowerField,
 };
 
-pub trait UnderlierWithBitConstants: UnderlierType
+pub trait UnderlierWithBitConstants: UnderlierWithBitOps
 where
 	Self: 'static,
 {
@@ -328,7 +328,7 @@ where
 }
 
 /// Broadcast lowest field for each element, e.g. [<0001><0000>] -> [<1111><0000>]
-fn broadcast_lowest_bit<U: UnderlierType>(mut data: U, log_packed_bits: usize) -> U {
+fn broadcast_lowest_bit<U: UnderlierWithBitOps>(mut data: U, log_packed_bits: usize) -> U {
 	for i in 0..log_packed_bits {
 		data |= data << (1 << i)
 	}
@@ -342,7 +342,7 @@ where
 	OP: PackedField<Scalar = OF> + WithUnderlier<Underlier = U>,
 	IF: BinaryField,
 	OF: BinaryField,
-	U: UnderlierType,
+	U: UnderlierWithBitOps,
 {
 	fn transform(&self, input: &IP) -> OP {
 		let mut result = OP::zero();
@@ -363,7 +363,7 @@ where
 
 impl<IP, OP> TaggedPackedTransformationFactory<PackedStrategy, OP> for IP
 where
-	IP: PackedBinaryField + WithUnderlier,
+	IP: PackedBinaryField + WithUnderlier<Underlier: UnderlierWithBitOps>,
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 {
 	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>> = PackedTransformation<OP>;

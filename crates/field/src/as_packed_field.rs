@@ -9,12 +9,57 @@ use crate::{
 	},
 	binary_field::*,
 	polyval::BinaryField128bPolyval,
-	underlier::WithUnderlier,
-	Field, PackedField,
+	underlier::{UnderlierType, WithUnderlier},
+	ExtensionField, Field, PackedField,
 };
 
+/// Trait that establishes correspondence between the scalar field
+/// and a packed field of the same bit size with a single element.
+/// E.g. `BinaryField64b` -> `PackedBinaryField1x64b`.
+/// Note that the underlier of the packed field may be different.
+/// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s underlier
+/// may be `M128`.
+pub(crate) trait AsSinglePacked: Field + WithUnderlier {
+	type Packed: PackedField<Scalar = Self>
+		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;
+}
+
+macro_rules! impl_as_single_packed_field {
+	($field:ty, $packed_field:ty) => {
+		impl AsSinglePacked for $field {
+			type Packed = $packed_field;
+		}
+	};
+}
+
+impl_as_single_packed_field!(BinaryField1b, PackedBinaryField1x1b);
+impl_as_single_packed_field!(BinaryField2b, PackedBinaryField1x2b);
+impl_as_single_packed_field!(BinaryField4b, PackedBinaryField1x4b);
+impl_as_single_packed_field!(BinaryField8b, PackedBinaryField1x8b);
+impl_as_single_packed_field!(BinaryField16b, PackedBinaryField1x16b);
+impl_as_single_packed_field!(BinaryField32b, PackedBinaryField1x32b);
+impl_as_single_packed_field!(BinaryField64b, PackedBinaryField1x64b);
+impl_as_single_packed_field!(BinaryField128b, PackedBinaryField1x128b);
+
+impl_as_single_packed_field!(AESTowerField8b, PackedAESBinaryField1x8b);
+impl_as_single_packed_field!(AESTowerField16b, PackedAESBinaryField1x16b);
+impl_as_single_packed_field!(AESTowerField32b, PackedAESBinaryField1x32b);
+impl_as_single_packed_field!(AESTowerField64b, PackedAESBinaryField1x64b);
+impl_as_single_packed_field!(AESTowerField128b, PackedAESBinaryField1x128b);
+
+impl_as_single_packed_field!(BinaryField128bPolyval, PackedBinaryPolyval1x128b);
+
+/// This trait represents correspondence (UnderlierType, Field) -> PackedField.
+/// For example (u64, BinaryField16b) -> PackedBinaryField4x16b.
+pub trait PackScalar<F: Field>: UnderlierType {
+	type Packed: PackedField<Scalar = F> + WithUnderlier<Underlier = Self>;
+}
+
 /// A trait to convert field to a same bit size packed field with some smaller scalar.
-pub(crate) trait AsPackedField<Scalar: Field>: Field + WithUnderlier {
+pub(crate) trait AsPackedField<Scalar: Field>: Field + WithUnderlier
+where
+	Self: ExtensionField<Scalar>,
+{
 	type Packed: PackedField<Scalar = Scalar>
 		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;
 
@@ -27,65 +72,13 @@ pub(crate) trait AsPackedField<Scalar: Field>: Field + WithUnderlier {
 	}
 }
 
-macro_rules! impl_as_packed_field {
-	($field:ty, $packed_field:ty) => {
-		impl AsPackedField<<$packed_field as PackedField>::Scalar> for $field {
-			type Packed = $packed_field;
-		}
-	};
+impl<Scalar, F> AsPackedField<Scalar> for F
+where
+	F: Field
+		+ WithUnderlier<Underlier: PackScalar<Scalar>>
+		+ AsSinglePacked
+		+ ExtensionField<Scalar>,
+	Scalar: Field,
+{
+	type Packed = <Self::Underlier as PackScalar<Scalar>>::Packed;
 }
-
-impl_as_packed_field!(BinaryField1b, PackedBinaryField1x1b);
-impl_as_packed_field!(BinaryField2b, PackedBinaryField1x2b);
-impl_as_packed_field!(BinaryField2b, PackedBinaryField2x1b);
-impl_as_packed_field!(BinaryField4b, PackedBinaryField1x4b);
-impl_as_packed_field!(BinaryField4b, PackedBinaryField2x2b);
-impl_as_packed_field!(BinaryField4b, PackedBinaryField4x1b);
-impl_as_packed_field!(BinaryField8b, PackedBinaryField1x8b);
-impl_as_packed_field!(BinaryField8b, PackedBinaryField2x4b);
-impl_as_packed_field!(BinaryField8b, PackedBinaryField4x2b);
-impl_as_packed_field!(BinaryField8b, PackedBinaryField8x1b);
-impl_as_packed_field!(BinaryField16b, PackedBinaryField16x1b);
-impl_as_packed_field!(BinaryField16b, PackedBinaryField8x2b);
-impl_as_packed_field!(BinaryField16b, PackedBinaryField4x4b);
-impl_as_packed_field!(BinaryField16b, PackedBinaryField2x8b);
-impl_as_packed_field!(BinaryField16b, PackedBinaryField1x16b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField32x1b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField16x2b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField8x4b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField4x8b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField2x16b);
-impl_as_packed_field!(BinaryField32b, PackedBinaryField1x32b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField64x1b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField32x2b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField16x4b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField8x8b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField4x16b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField2x32b);
-impl_as_packed_field!(BinaryField64b, PackedBinaryField1x64b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField128x1b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField64x2b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField32x4b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField16x8b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField8x16b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField4x32b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField2x64b);
-impl_as_packed_field!(BinaryField128b, PackedBinaryField1x128b);
-
-impl_as_packed_field!(AESTowerField8b, PackedAESBinaryField1x8b);
-impl_as_packed_field!(AESTowerField16b, PackedAESBinaryField2x8b);
-impl_as_packed_field!(AESTowerField16b, PackedAESBinaryField1x16b);
-impl_as_packed_field!(AESTowerField32b, PackedAESBinaryField4x8b);
-impl_as_packed_field!(AESTowerField32b, PackedAESBinaryField2x16b);
-impl_as_packed_field!(AESTowerField32b, PackedAESBinaryField1x32b);
-impl_as_packed_field!(AESTowerField64b, PackedAESBinaryField8x8b);
-impl_as_packed_field!(AESTowerField64b, PackedAESBinaryField4x16b);
-impl_as_packed_field!(AESTowerField64b, PackedAESBinaryField2x32b);
-impl_as_packed_field!(AESTowerField64b, PackedAESBinaryField1x64b);
-impl_as_packed_field!(AESTowerField128b, PackedAESBinaryField16x8b);
-impl_as_packed_field!(AESTowerField128b, PackedAESBinaryField8x16b);
-impl_as_packed_field!(AESTowerField128b, PackedAESBinaryField4x32b);
-impl_as_packed_field!(AESTowerField128b, PackedAESBinaryField2x64b);
-impl_as_packed_field!(AESTowerField128b, PackedAESBinaryField1x128b);
-
-impl_as_packed_field!(BinaryField128bPolyval, PackedBinaryPolyval1x128b);

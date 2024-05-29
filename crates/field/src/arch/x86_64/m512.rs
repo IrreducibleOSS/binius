@@ -1,12 +1,19 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	arch::portable::{
-		packed::PackedPrimitiveType,
-		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
+	arch::{
+		portable::{
+			packed::PackedPrimitiveType,
+			packed_arithmetic::{
+				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+			},
+		},
+		x86_64::{m128::M128, m256::M256},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
+	underlier::{
+		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+	},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -20,6 +27,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 512-bit value that is used for 512-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
+#[repr(transparent)]
 pub struct M512(pub(super) __m512i);
 
 impl M512 {
@@ -108,6 +116,8 @@ impl<U: NumCast<u128>> NumCast<M512> for U {
 		Self::num_cast_from(low)
 	}
 }
+
+impl_divisible!(@pairs M512, M256, M128, u128, u64, u32, u16, u8);
 
 impl Default for M512 {
 	#[inline(always)]
@@ -333,7 +343,9 @@ pub(super) use m512_from_u128s;
 
 impl UnderlierType for M512 {
 	const LOG_BITS: usize = 9;
+}
 
+impl UnderlierWithBitOps for M512 {
 	const ZERO: Self = { Self(m512_from_u128s!(0, 0, 0, 0,)) };
 	const ONE: Self = { Self(m512_from_u128s!(0, 0, 0, 1,)) };
 	const ONES: Self = { Self(m512_from_u128s!(u128::MAX, u128::MAX, u128::MAX, u128::MAX,)) };

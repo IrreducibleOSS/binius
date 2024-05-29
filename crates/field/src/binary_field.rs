@@ -82,7 +82,7 @@ macro_rules! binary_field {
 			}
 		}
 
-		impl $crate::underlier::WithUnderlier for $name {
+		unsafe impl $crate::underlier::WithUnderlier for $name {
 			type Underlier = $typ;
 		}
 
@@ -225,8 +225,8 @@ macro_rules! binary_field {
 		}
 
 		impl Field for $name {
-			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ZERO);
-			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierType>::ONE);
+			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ZERO);
+			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ONE);
 
 			fn random(mut rng: impl RngCore) -> Self {
 				Self(<$typ as $crate::underlier::Random>::random(&mut rng))
@@ -323,7 +323,7 @@ macro_rules! mul_by_binary_field_1b {
 			#[inline]
 			#[allow(clippy::suspicious_arithmetic_impl)]
 			fn mul(self, rhs: BinaryField1b) -> Self::Output {
-				use $crate::underlier::{UnderlierType, WithUnderlier};
+				use $crate::underlier::{UnderlierWithBitOps, WithUnderlier};
 
 				Self(self.0 & <$name as WithUnderlier>::Underlier::fill_with_bit(u8::from(rhs.0)))
 			}
@@ -377,7 +377,7 @@ macro_rules! impl_field_extension {
 				use $crate::underlier::NumCast;
 
 				if elem.0 >> $subfield_name::N_BITS
-					== <$typ as $crate::underlier::UnderlierType>::ZERO
+					== <$typ as $crate::underlier::UnderlierWithBitOps>::ZERO
 				{
 					Ok($subfield_name::new(<$subfield_typ>::num_cast_from(elem.val())))
 				} else {
@@ -456,7 +456,7 @@ macro_rules! impl_field_extension {
 			const DEGREE: usize = $degree;
 
 			fn basis(i: usize) -> Result<Self, Error> {
-				use $crate::underlier::UnderlierType;
+				use $crate::underlier::UnderlierWithBitOps;
 
 				if i >= $degree {
 					return Err(Error::ExtensionDegreeMismatch);
@@ -465,7 +465,7 @@ macro_rules! impl_field_extension {
 			}
 
 			fn from_bases(base_elems: &[$subfield_name]) -> Result<Self, Error> {
-				use $crate::underlier::UnderlierType;
+				use $crate::underlier::UnderlierWithBitOps;
 
 				if base_elems.len() > $degree {
 					return Err(Error::ExtensionDegreeMismatch);

@@ -49,9 +49,12 @@ where
 	}
 }
 
-impl<PT, const N: usize> From<ScaledPackedField<PT, N>> for [PT; N] {
+impl<U, PT, const N: usize> From<ScaledPackedField<PT, N>> for [U; N]
+where
+	U: From<PT>,
+{
 	fn from(value: ScaledPackedField<PT, N>) -> Self {
-		value.0
+		value.0.map(Into::into)
 	}
 }
 

@@ -6,7 +6,9 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
+	underlier::{
+		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+	},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -20,6 +22,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
+#[repr(transparent)]
 pub struct M128(pub(super) __m128i);
 
 impl M128 {
@@ -92,6 +95,8 @@ impl From<M128> for __m128i {
 		value.0
 	}
 }
+
+impl_divisible!(@pairs M128, u128, u64, u32, u16, u8);
 
 impl<U: NumCast<u128>> NumCast<M128> for U {
 	fn num_cast_from(val: M128) -> Self {
@@ -297,7 +302,9 @@ pub(super) use m128_from_u128;
 
 impl UnderlierType for M128 {
 	const LOG_BITS: usize = 7;
+}
 
+impl UnderlierWithBitOps for M128 {
 	const ZERO: Self = { Self(m128_from_u128!(0)) };
 	const ONE: Self = { Self(m128_from_u128!(1)) };
 	const ONES: Self = { Self(m128_from_u128!(u128::MAX)) };

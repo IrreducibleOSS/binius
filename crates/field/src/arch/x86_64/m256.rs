@@ -6,7 +6,9 @@ use crate::{
 		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 	},
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
+	underlier::{
+		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+	},
 	BinaryField,
 };
 use bytemuck::{must_cast, Pod, Zeroable};
@@ -20,6 +22,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 256-bit value that is used for 256-bit SIMD operations
 #[derive(Copy, Clone, Debug)]
+#[repr(transparent)]
 pub struct M256(pub(super) __m256i);
 
 impl M256 {
@@ -98,6 +101,9 @@ impl From<M256> for __m256i {
 		value.0
 	}
 }
+
+impl_divisible!(@pairs M256, M128, u128, u64, u32, u16, u8);
+
 impl<U: NumCast<u128>> NumCast<M256> for U {
 	fn num_cast_from(val: M256) -> Self {
 		let [low, _high] = val.into();
@@ -280,9 +286,13 @@ macro_rules! m256_from_u128s {
 
 pub(super) use m256_from_u128s;
 
+use super::m128::M128;
+
 impl UnderlierType for M256 {
 	const LOG_BITS: usize = 8;
+}
 
+impl UnderlierWithBitOps for M256 {
 	const ZERO: Self = { Self(m256_from_u128s!(0, 0,)) };
 	const ONE: Self = { Self(m256_from_u128s!(0, 1,)) };
 	const ONES: Self = { Self(m256_from_u128s!(u128::MAX, u128::MAX,)) };

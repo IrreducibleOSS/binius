@@ -16,7 +16,7 @@ use crate::{
 	as_packed_field::AsPackedField,
 	binary_field_arithmetic::{invert_or_zero_using_packed, square_using_packed},
 	packed::PackedField,
-	underlier::UnderlierType,
+	underlier::UnderlierWithBitOps,
 	Field,
 };
 use bytemuck::{Pod, Zeroable};
@@ -39,7 +39,7 @@ impl BinaryField128bPolyval {
 	}
 }
 
-impl WithUnderlier for BinaryField128bPolyval {
+unsafe impl WithUnderlier for BinaryField128bPolyval {
 	type Underlier = u128;
 }
 

@@ -3,7 +3,8 @@
 use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
-	underlier::{NumCast, UnderlierType, WithUnderlier},
+	as_packed_field::PackScalar,
+	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	BinaryField, Error, PackedField,
 };
 use bytemuck::{Pod, Zeroable};
@@ -17,6 +18,7 @@ use std::{
 use subtle::{Choice, ConstantTimeEq};
 
 #[derive(PartialEq, Eq, Clone, Copy, Default)]
+#[repr(transparent)]
 pub struct PackedPrimitiveType<U: UnderlierType, Scalar: BinaryField>(
 	pub U,
 	pub PhantomData<Scalar>,
@@ -48,7 +50,7 @@ impl<U: UnderlierType, Scalar: BinaryField> PackedPrimitiveType<U, Scalar> {
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> WithUnderlier for PackedPrimitiveType<U, Scalar>
+unsafe impl<U: UnderlierType, Scalar: BinaryField> WithUnderlier for PackedPrimitiveType<U, Scalar>
 where
 	U: From<Self>,
 	Self: From<U>,
@@ -80,7 +82,7 @@ impl<U: UnderlierType, Scalar: BinaryField> ConstantTimeEq for PackedPrimitiveTy
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Add for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Add for PackedPrimitiveType<U, Scalar> {
 	type Output = Self;
 
 	#[inline]
@@ -90,7 +92,7 @@ impl<U: UnderlierType, Scalar: BinaryField> Add for PackedPrimitiveType<U, Scala
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Sub for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Sub for PackedPrimitiveType<U, Scalar> {
 	type Output = Self;
 
 	#[inline]
@@ -100,19 +102,19 @@ impl<U: UnderlierType, Scalar: BinaryField> Sub for PackedPrimitiveType<U, Scala
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> AddAssign for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> AddAssign for PackedPrimitiveType<U, Scalar> {
 	fn add_assign(&mut self, rhs: Self) {
 		*self = *self + rhs;
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> SubAssign for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> SubAssign for PackedPrimitiveType<U, Scalar> {
 	fn sub_assign(&mut self, rhs: Self) {
 		*self = *self - rhs;
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> MulAssign for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> MulAssign for PackedPrimitiveType<U, Scalar>
 where
 	Self: Mul<Output = Self>,
 {
@@ -121,7 +123,7 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Add<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Add<Scalar> for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar>,
 {
@@ -132,7 +134,7 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Sub<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Sub<Scalar> for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar>,
 {
@@ -143,7 +145,7 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Mul<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Mul<Scalar> for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + Mul<Output = Self>,
 {
@@ -154,7 +156,8 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> AddAssign<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> AddAssign<Scalar>
+	for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar>,
 {
@@ -163,7 +166,8 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> SubAssign<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> SubAssign<Scalar>
+	for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar>,
 {
@@ -172,7 +176,8 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> MulAssign<Scalar> for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> MulAssign<Scalar>
+	for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + MulAssign<Self>,
 {
@@ -181,13 +186,13 @@ where
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Sum for PackedPrimitiveType<U, Scalar> {
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Sum for PackedPrimitiveType<U, Scalar> {
 	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.fold(Self::from(U::default()), |result, next| result + next)
 	}
 }
 
-impl<U: UnderlierType, Scalar: BinaryField> Product for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> Product for PackedPrimitiveType<U, Scalar>
 where
 	PackedPrimitiveType<U, Scalar>: Broadcast<Scalar> + Mul<Output = Self>,
 {
@@ -196,18 +201,21 @@ where
 	}
 }
 
-unsafe impl<U: UnderlierType + Zeroable, Scalar: BinaryField> Zeroable
+unsafe impl<U: UnderlierWithBitOps + Zeroable, Scalar: BinaryField> Zeroable
 	for PackedPrimitiveType<U, Scalar>
 {
 }
 
-unsafe impl<U: UnderlierType + Pod, Scalar: BinaryField> Pod for PackedPrimitiveType<U, Scalar> {}
+unsafe impl<U: UnderlierWithBitOps + Pod, Scalar: BinaryField> Pod
+	for PackedPrimitiveType<U, Scalar>
+{
+}
 
-impl<U: UnderlierType, Scalar: BinaryField> PackedField for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar: BinaryField> PackedField for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + Square + InvertOrZero + Mul<Output = Self>,
 	U: UnderlierWithBitConstants + Send + Sync + 'static,
-	Scalar: WithUnderlier,
+	Scalar: WithUnderlier<Underlier: UnderlierWithBitOps>,
 	U: From<Scalar::Underlier>,
 	Scalar::Underlier: NumCast<U>,
 {
@@ -313,7 +321,7 @@ macro_rules! impl_broadcast {
 		{
 			#[inline]
 			fn broadcast(scalar: BinaryField1b) -> Self {
-				use $crate::underlier::WithUnderlier;
+				use $crate::underlier::{UnderlierWithBitOps, WithUnderlier};
 
 				<Self as WithUnderlier>::Underlier::fill_with_bit(scalar.0.into()).into()
 			}
@@ -534,4 +542,13 @@ where
 	let bigger_result = bigger_val.mul_alpha();
 
 	PT1::Underlier::num_cast_from(bigger_result.to_underlier()).into()
+}
+
+impl<U, F> PackScalar<F> for U
+where
+	U: UnderlierType,
+	F: BinaryField,
+	PackedPrimitiveType<U, F>: PackedField<Scalar = F> + WithUnderlier<Underlier = U>,
+{
+	type Packed = PackedPrimitiveType<U, F>;
 }

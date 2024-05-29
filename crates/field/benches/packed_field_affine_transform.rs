@@ -1,0 +1,91 @@
+// Copyright 2024 Ulvetanna Inc.
+
+use binius_field::{
+	affine_transformation::{
+		FieldAffineTransformation, PackedTransformationFactory, Transformation,
+	},
+	arch::{
+		packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
+		packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
+		packed_aes_512::*, packed_aes_64::*, packed_aes_8::*, packed_polyval_128::*,
+		packed_polyval_256::*, packed_polyval_512::*, PackedStrategy, PairwiseStrategy,
+		SimdStrategy,
+	},
+	arithmetic_traits::TaggedPackedTransformationFactory,
+	ExtensionField, PackedField,
+};
+use criterion::criterion_main;
+use packed_field_utils::benchmark_packed_operation;
+use rand::thread_rng;
+
+mod packed_field_utils;
+
+trait TransformToSelfFactory: PackedTransformationFactory<Self> {}
+
+impl<T: PackedTransformationFactory<Self>> TransformToSelfFactory for T {}
+
+fn create_transformation_main<PT: TransformToSelfFactory>() -> impl Transformation<PT, PT> {
+	let mut rng = thread_rng();
+	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
+		.map(|_| PT::Scalar::random(&mut rng))
+		.collect();
+	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+
+	PT::make_packed_transformation(transformation)
+}
+
+trait TaggedTransformToSelfFactory<Strategy>:
+	TaggedPackedTransformationFactory<Strategy, Self>
+{
+}
+
+impl<Strategy, T: TaggedPackedTransformationFactory<Strategy, Self>>
+	TaggedTransformToSelfFactory<Strategy> for T
+{
+}
+
+fn create_transformation_pairwise<PT: TaggedTransformToSelfFactory<PairwiseStrategy>>(
+) -> impl Transformation<PT, PT> {
+	let mut rng = thread_rng();
+	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
+		.map(|_| PT::Scalar::random(&mut rng))
+		.collect();
+	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+
+	PT::make_packed_transformation(transformation)
+}
+
+fn create_transformation_packed<PT: TaggedTransformToSelfFactory<PackedStrategy>>(
+) -> impl Transformation<PT, PT> {
+	let mut rng = thread_rng();
+	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
+		.map(|_| PT::Scalar::random(&mut rng))
+		.collect();
+	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+
+	PT::make_packed_transformation(transformation)
+}
+
+fn create_transformation_simd<PT: TaggedTransformToSelfFactory<SimdStrategy>>(
+) -> impl Transformation<PT, PT> {
+	let mut rng = thread_rng();
+	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
+		.map(|_| PT::Scalar::random(&mut rng))
+		.collect();
+	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+
+	PT::make_packed_transformation(transformation)
+}
+
+benchmark_packed_operation!(
+	op_name @ affine_transform,
+	bench_type @ transformation,
+	strategies @ (
+		(main, TransformToSelfFactory, create_transformation_main),
+		(pairwise, TaggedTransformToSelfFactory::<PairwiseStrategy>, create_transformation_pairwise),
+		(packed, TaggedTransformToSelfFactory::<PackedStrategy>, create_transformation_packed),
+		(simd, TaggedTransformToSelfFactory::<SimdStrategy>, create_transformation_simd),
+	)
+);
+
+criterion_main!(affine_transform);

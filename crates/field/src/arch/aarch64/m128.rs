@@ -13,7 +13,9 @@ use super::super::portable::{
 };
 use crate::{
 	arithmetic_traits::Broadcast,
-	underlier::{NumCast, Random, SmallU, UnderlierType, WithUnderlier},
+	underlier::{
+		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+	},
 	BinaryField,
 };
 use derive_more::Not;
@@ -147,6 +149,8 @@ impl From<poly64x2_t> for M128 {
 	}
 }
 
+impl_divisible!(@pairs M128, u128, u64, u32, u16, u8);
+
 impl BitAnd for M128 {
 	type Output = Self;
 
@@ -237,7 +241,9 @@ impl std::fmt::Display for M128 {
 
 impl UnderlierType for M128 {
 	const LOG_BITS: usize = 7;
+}
 
+impl UnderlierWithBitOps for M128 {
 	const ZERO: Self = Self(0);
 	const ONE: Self = Self(1);
 	const ONES: Self = Self(u128::MAX);

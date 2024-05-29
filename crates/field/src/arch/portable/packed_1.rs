@@ -4,9 +4,7 @@ use super::packed::{
 	impl_broadcast, impl_conversion, impl_ops_for_zero_height, PackedPrimitiveType,
 };
 use crate::{
-	arch::PairwiseStrategy,
-	arithmetic_traits::impl_transformation_with_strategy,
-	underlier::{UnderlierType, U1},
+	arch::PairwiseStrategy, arithmetic_traits::impl_transformation_with_strategy, underlier::U1,
 	BinaryField1b,
 };
 

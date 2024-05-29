@@ -11,7 +11,7 @@ use crate::{
 	arithmetic_traits::{
 		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
-	underlier::UnderlierType,
+	underlier::UnderlierWithBitOps,
 	BinaryField, TowerField,
 };
 
