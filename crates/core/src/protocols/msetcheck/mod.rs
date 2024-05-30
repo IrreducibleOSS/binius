@@ -3,6 +3,7 @@
 //! The multiset check polynomial protocol.
 //!
 //! Multiset check provides a deterministic reduction of multiset equality claims to product check claims
+//! (see [`prove`](self::prove::prove()) for an in-depth description)
 
 mod error;
 #[allow(clippy::module_inception)]

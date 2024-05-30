@@ -428,7 +428,7 @@ where
 			});
 		}
 
-		let evals = &self.0.evals()[(index << vars) / PE::WIDTH..((index + 1) << vars) / PE::WIDTH];
+		let evals = &self.0.evals()[(index << vars) / P::WIDTH..((index + 1) << vars) / P::WIDTH];
 		for i in 0..1 << vars {
 			set_packed_slice(dst, i, get_packed_slice(evals, i).into());
 		}

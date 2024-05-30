@@ -13,5 +13,6 @@ pub fn verify<F: TowerField>(
 	claim: &ProdcheckClaim<F>,
 	grand_prod_oracle: MultilinearPolyOracle<F>,
 ) -> Result<ReducedProductCheckClaims<F>, Error> {
-	reduce_prodcheck_claim(oracles, claim, grand_prod_oracle)
+	let (reduced, _) = reduce_prodcheck_claim(oracles, claim, grand_prod_oracle)?;
+	Ok(reduced)
 }

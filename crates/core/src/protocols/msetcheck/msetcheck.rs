@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::error::VerificationError;
+use super::error::Error;
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
 	protocols::prodcheck::{ProdcheckClaim, ProdcheckWitness},
@@ -25,7 +25,7 @@ impl<F: Field> MsetcheckClaim<F> {
 	pub fn new(
 		t_oracles: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
 		u_oracles: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
-	) -> Result<Self, VerificationError> {
+	) -> Result<Self, Error> {
 		let t_oracles = t_oracles.into_iter().collect::<Vec<_>>();
 		let u_oracles = u_oracles.into_iter().collect::<Vec<_>>();
 
@@ -63,7 +63,7 @@ impl<'a, FW: TowerField> MsetcheckWitness<'a, FW> {
 	pub fn new(
 		t_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, FW>>,
 		u_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, FW>>,
-	) -> Result<Self, VerificationError> {
+	) -> Result<Self, Error> {
 		let t_polynomials = t_polynomials.into_iter().collect::<Vec<_>>();
 		let u_polynomials = u_polynomials.into_iter().collect::<Vec<_>>();
 
@@ -97,27 +97,25 @@ pub fn reduce_msetcheck_claim<F: TowerField>(
 	msetcheck_claim: &MsetcheckClaim<F>,
 	gamma: F,
 	alpha: Option<F>,
-) -> Result<ProdcheckClaim<F>, VerificationError> {
+) -> Result<ProdcheckClaim<F>, Error> {
 	// Claim sanity checks
 	let dimensions = msetcheck_claim.dimensions();
 	let n_vars = msetcheck_claim.n_vars();
 
 	if alpha.is_some() != (dimensions > 1) {
-		return Err(VerificationError::IncorrectAlpha);
+		return Err(Error::IncorrectAlpha);
 	}
 
 	// for a relation represented by the polynomials (T1, .., Tn) and challenges (gamma, alpha),
 	// construct a linear combination oracle for gamma + T1 + alpha * T2 + ... + alpha^(n-1) * Tn
-	let mut lincom_oracle =
-		|relation_oracles: &[MultilinearPolyOracle<F>]| -> Result<_, VerificationError> {
-			let inner_coeffs =
-				iter::successors(Some(F::ONE), |coeff| alpha.map(|alpha| alpha * coeff));
-			let inner = inner_coeffs
-				.zip(relation_oracles)
-				.map(|(coeff, oracle)| (oracle.id(), coeff));
-			let oracle_id = oracles.add_linear_combination_with_offset(n_vars, gamma, inner)?;
-			Ok(oracles.oracle(oracle_id))
-		};
+	let mut lincom_oracle = |relation_oracles: &[MultilinearPolyOracle<F>]| -> Result<_, Error> {
+		let inner_coeffs = iter::successors(Some(F::ONE), |coeff| alpha.map(|alpha| alpha * coeff));
+		let inner = inner_coeffs
+			.zip(relation_oracles)
+			.map(|(coeff, oracle)| (oracle.id(), coeff));
+		let oracle_id = oracles.add_linear_combination_with_offset(n_vars, gamma, inner)?;
+		Ok(oracles.oracle(oracle_id))
+	};
 
 	let t_oracle = lincom_oracle(&msetcheck_claim.t_oracles)?;
 	let u_oracle = lincom_oracle(&msetcheck_claim.u_oracles)?;
@@ -131,15 +129,15 @@ fn relation_sanity_checks<Column>(
 	t: &[Column],
 	u: &[Column],
 	n_vars: impl Fn(&Column) -> usize,
-) -> Result<(), VerificationError> {
+) -> Result<(), Error> {
 	// same dimensionality
 	if t.len() != u.len() {
-		return Err(VerificationError::IncorrectDimensions);
+		return Err(Error::IncorrectDimensions);
 	}
 
 	// non-nullary
 	if t.is_empty() {
-		return Err(VerificationError::NullaryRelation);
+		return Err(Error::NullaryRelation);
 	}
 
 	// same n_vars
@@ -150,7 +148,7 @@ fn relation_sanity_checks<Column>(
 		.all(|column| n_vars(column) == first_n_vars);
 
 	if !equal_n_vars {
-		return Err(VerificationError::NumVariablesMismatch);
+		return Err(Error::NumVariablesMismatch);
 	}
 
 	Ok(())

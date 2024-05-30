@@ -12,6 +12,7 @@ use crate::{
 };
 use binius_field::TowerField;
 use rayon::prelude::*;
+use tracing::instrument;
 
 /// Prove a multiset check instance reduction.
 ///
@@ -26,6 +27,7 @@ use rayon::prelude::*;
 ///
 /// where $\gamma$ and $\alpha$ are some large field challenges sampled via Fiat-Shamir
 /// (`alpha` is non-`None` if $n \ge 2$).
+#[instrument(skip_all, name = "msetcheck::prove")]
 pub fn prove<'a, F, FW>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearWitnessIndex<'a, FW>,

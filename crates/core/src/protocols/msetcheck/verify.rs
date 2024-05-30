@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	error::VerificationError,
+	error::Error,
 	msetcheck::{reduce_msetcheck_claim, MsetcheckClaim},
 };
 use crate::{oracle::MultilinearOracleSet, protocols::prodcheck::ProdcheckClaim};
@@ -13,6 +13,6 @@ pub fn verify<F: TowerField>(
 	claim: &MsetcheckClaim<F>,
 	gamma: F,
 	alpha: Option<F>,
-) -> Result<ProdcheckClaim<F>, VerificationError> {
+) -> Result<ProdcheckClaim<F>, Error> {
 	reduce_msetcheck_claim(oracles, claim, gamma, alpha)
 }

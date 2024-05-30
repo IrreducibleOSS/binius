@@ -35,4 +35,13 @@ where
 		}
 		self.multilinears[id] = Some(witness);
 	}
+
+	pub fn set_many(
+		&mut self,
+		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, P>)>,
+	) {
+		for (id, witness) in witnesses {
+			self.set(id, witness);
+		}
+	}
 }

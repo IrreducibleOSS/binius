@@ -3,8 +3,8 @@
 use super::{
 	error::Error,
 	prodcheck::{
-		reduce_prodcheck_claim, ProdcheckClaim, ProdcheckProveOutput, ProdcheckWitness,
-		SimpleMultGateComposition,
+		reduce_prodcheck_claim, ProdcheckClaim, ProdcheckProveOutput,
+		ProdcheckReducedClaimOracleIds, ProdcheckWitness, SimpleMultGateComposition,
 	},
 };
 use crate::{
@@ -80,7 +80,7 @@ fn construct_merge_polynomial<F: Field>(
 /// polynomial instead of the interleave virtual polynomial. This is an
 /// optimization, and does not affect the soundness of prodcheck.
 #[instrument(skip_all, name = "prodcheck::prove")]
-pub fn prove<'a, F: TowerField, FW: Field>(
+pub fn prove<'a, F: TowerField + From<FW>, FW: Field>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearWitnessIndex<'a, FW>,
 	prodcheck_claim: &ProdcheckClaim<F>,
@@ -131,8 +131,18 @@ pub fn prove<'a, F: TowerField, FW: Field>(
 	}
 
 	// Construct the claims
-	let reduced_product_check_claims =
+	let (reduced_product_check_claims, reduced_claim_oracle_ids) =
 		reduce_prodcheck_claim(oracles, prodcheck_claim, f_prime_oracle.clone())?;
+
+	let ProdcheckReducedClaimOracleIds {
+		in1_oracle_id,
+		in2_oracle_id,
+		out_oracle_id,
+		f_prime_x_zero_oracle_id,
+		f_prime_x_one_oracle_id,
+		f_prime_zero_x_oracle_id,
+		f_prime_one_x_oracle_id,
+	} = reduced_claim_oracle_ids;
 
 	// Construct the witnesses
 	// TODO: try to find right lifetimes to eliminate duplicate witnesses within index
@@ -150,6 +160,17 @@ pub fn prove<'a, F: TowerField, FW: Field>(
 		.collect::<Vec<_>>();
 	let f_prime_one_x = MultilinearExtension::from_values(odd_values)?;
 
+	witness_index.set_many([
+		(f_prime_x_zero_oracle_id, f_prime_x_zero.clone().specialize_arc_dyn()),
+		(f_prime_x_one_oracle_id, f_prime_x_one.clone().specialize_arc_dyn()),
+		(f_prime_zero_x_oracle_id, f_prime_zero_x.clone().specialize_arc_dyn()),
+		(f_prime_one_x_oracle_id, f_prime_one_x.clone().specialize_arc_dyn()),
+	]);
+
+	// Construct the commitment value
+	let f_prime_commit =
+		MultilinearExtension::from_values(values.iter().copied().map(Into::into).collect())?;
+
 	let f_prime_poly = MultilinearExtension::from_values(values)?;
 	witness_index.set(f_prime_oracle.id(), f_prime_poly.specialize_arc_dyn());
 
@@ -158,6 +179,12 @@ pub fn prove<'a, F: TowerField, FW: Field>(
 	let in1_poly = construct_merge_polynomial(u_polynomial, f_prime_zero_x.specialize())?;
 	let in2_poly =
 		construct_merge_polynomial(f_prime_x_zero.specialize(), f_prime_one_x.specialize())?;
+
+	witness_index.set_many([
+		(in1_oracle_id, in1_poly.clone()),
+		(in2_oracle_id, in2_poly.clone()),
+		(out_oracle_id, out_poly.clone()),
+	]);
 
 	// Construct T' polynomial
 	let t_prime_multilinears: Vec<MultilinearWitness<FW>> = vec![out_poly, in1_poly, in2_poly];
@@ -169,6 +196,7 @@ pub fn prove<'a, F: TowerField, FW: Field>(
 	let prodcheck_proof = ProdcheckProveOutput {
 		reduced_product_check_claims,
 		t_prime_witness,
+		f_prime_commit,
 	};
 
 	Ok(prodcheck_proof)

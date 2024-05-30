@@ -2,8 +2,11 @@
 
 use super::error::Error;
 use crate::{
-	oracle::{CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
-	polynomial::{CompositionPoly, Error as PolynomialError},
+	oracle::{
+		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
+		ProjectionVariant,
+	},
+	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearExtension},
 	protocols::{
 		evalcheck::EvalcheckClaim,
 		zerocheck::{ZerocheckClaim, ZerocheckWitness},
@@ -22,6 +25,7 @@ pub struct ReducedProductCheckClaims<F: Field> {
 pub struct ProdcheckProveOutput<'a, F: Field, FW: Field> {
 	pub reduced_product_check_claims: ReducedProductCheckClaims<F>,
 	pub t_prime_witness: ZerocheckWitness<'a, FW, SimpleMultGateComposition>,
+	pub f_prime_commit: MultilinearExtension<'a, F>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +50,16 @@ impl<F: Field> ProdcheckClaim<F> {
 pub struct ProdcheckWitness<'a, FW: Field> {
 	pub t_polynomial: MultilinearWitness<'a, FW>,
 	pub u_polynomial: MultilinearWitness<'a, FW>,
+}
+
+pub(super) struct ProdcheckReducedClaimOracleIds {
+	pub in1_oracle_id: OracleId,
+	pub in2_oracle_id: OracleId,
+	pub out_oracle_id: OracleId,
+	pub f_prime_x_zero_oracle_id: OracleId,
+	pub f_prime_x_one_oracle_id: OracleId,
+	pub f_prime_zero_x_oracle_id: OracleId,
+	pub f_prime_one_x_oracle_id: OracleId,
 }
 
 /// Composition for Simple Multiplication Gate: f(X, Y, Z) := X - Y*Z
@@ -83,7 +97,7 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
 	grand_prod_oracle: MultilinearPolyOracle<F>,
-) -> Result<ReducedProductCheckClaims<F>, Error> {
+) -> Result<(ReducedProductCheckClaims<F>, ProdcheckReducedClaimOracleIds), Error> {
 	let n_vars = prodcheck_claim
 		.n_vars()
 		.ok_or(Error::NumeratorDenominatorSizeMismatch)?;
@@ -106,31 +120,32 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 	let f_prime_zero_x_oracle = oracles.oracle(f_prime_zero_x_oracle_id);
 
 	// [f'](1, x)
-	let f_prime_one_x_oracle =
+	let f_prime_one_x_oracle_id =
 		oracles.add_projected(f_prime_oracle.id(), vec![F::ONE], ProjectionVariant::FirstVars)?;
-	let f_prime_one_x_oracle = oracles.oracle(f_prime_one_x_oracle);
+	let f_prime_one_x_oracle = oracles.oracle(f_prime_one_x_oracle_id);
 
 	// merge([T], [f'](x, 1))
 	// Note: What the paper calls "merge" is called "interleave" in the code
 	// merge is similar to interleave, but the new selector variables are introduced
 	// as the highest indices rather than the lowest
-	let out_oracle =
+	let out_oracle_id =
 		oracles.add_merged(prodcheck_claim.t_oracle.id(), f_prime_x_one_oracle.id())?;
 
 	// merge([U], [f'](0, x))
-	let in1_oracle =
+	let in1_oracle_id =
 		oracles.add_merged(prodcheck_claim.u_oracle.id(), f_prime_zero_x_oracle.id())?;
 
 	// merge([f'](x, 0), [f'](1, x))
-	let in2_oracle = oracles.add_merged(f_prime_x_zero_oracle.id(), f_prime_one_x_oracle.id())?;
+	let in2_oracle_id =
+		oracles.add_merged(f_prime_x_zero_oracle.id(), f_prime_one_x_oracle.id())?;
 
 	// Construct T' polynomial oracle
 	let t_prime_oracle = CompositePolyOracle::new(
 		n_vars + 1,
 		vec![
-			oracles.oracle(out_oracle),
-			oracles.oracle(in1_oracle),
-			oracles.oracle(in2_oracle),
+			oracles.oracle(out_oracle_id),
+			oracles.oracle(in1_oracle_id),
+			oracles.oracle(in2_oracle_id),
 		],
 		SimpleMultGateComposition,
 	)?;
@@ -148,8 +163,20 @@ pub fn reduce_prodcheck_claim<F: TowerField>(
 		is_random_point: false,
 	};
 
-	Ok(ReducedProductCheckClaims {
+	let reduced_prodcheck_claims = ReducedProductCheckClaims {
 		t_prime_claim,
 		grand_product_poly_claim,
-	})
+	};
+
+	let prodcheck_claim_oracles = ProdcheckReducedClaimOracleIds {
+		in1_oracle_id,
+		in2_oracle_id,
+		out_oracle_id,
+		f_prime_x_zero_oracle_id,
+		f_prime_x_one_oracle_id,
+		f_prime_zero_x_oracle_id,
+		f_prime_one_x_oracle_id,
+	};
+
+	Ok((reduced_prodcheck_claims, prodcheck_claim_oracles))
 }
