@@ -19,11 +19,11 @@ use crate::{
 			},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
-		PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
+		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{
-		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with, InvertOrZero,
-		MulAlpha, Square,
+		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
+		impl_transformation_with_strategy, InvertOrZero, MulAlpha, Square,
 	},
 	PackedBinaryField16x8b,
 };
@@ -119,6 +119,13 @@ impl_mul_alpha_with!(PackedAESBinaryField8x16b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField4x32b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField2x64b @ PairwiseStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField1x128b @ PairwiseRecursiveStrategy);
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedAESBinaryField16x8b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField8x16b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField4x32b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField2x64b, PackedStrategy);
+impl_transformation_with_strategy!(PackedAESBinaryField1x128b, PairwiseStrategy);
 
 impl From<PackedBinaryField16x8b> for PackedAESBinaryField16x8b {
 	fn from(value: PackedBinaryField16x8b) -> Self {

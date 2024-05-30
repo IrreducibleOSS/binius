@@ -60,6 +60,7 @@ macro_rules! impl_divisible {
     }
 }
 
+#[allow(unused)]
 pub(crate) use impl_divisible;
 
 use super::UnderlierType;

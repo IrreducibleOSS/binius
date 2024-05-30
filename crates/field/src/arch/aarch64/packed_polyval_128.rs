@@ -21,8 +21,8 @@ use super::super::portable::packed::{
 	impl_conversion, impl_packed_extension_field, PackedPrimitiveType,
 };
 use crate::{
-	arch::ReuseMultiplyStrategy,
-	arithmetic_traits::{impl_square_with, InvertOrZero},
+	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	BinaryField128bPolyval, PackedField,
 };
 
@@ -59,6 +59,9 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 		Self::from_underlier(PackedField::invert_or_zero(portable).0.into())
 	}
 }
+
+// Define affine transformations
+impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, PairwiseStrategy);
 
 #[inline]
 fn montgomery_multiply(a: u128, b: u128) -> u128 {
