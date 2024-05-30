@@ -23,6 +23,12 @@ pub struct ZerocheckClaim<F: Field> {
 	pub poly: CompositePolyOracle<F>,
 }
 
+impl<F: Field> ZerocheckClaim<F> {
+	pub fn n_vars(&self) -> usize {
+		self.poly.n_vars()
+	}
+}
+
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type ZerocheckWitness<'a, P, C> = MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
 

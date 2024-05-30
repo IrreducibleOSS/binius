@@ -12,27 +12,43 @@
 
 use anyhow::{ensure, Result};
 use binius_core::{
-	oracle::{MultilinearOracleSet, OracleId, ShiftVariant},
+	challenger::HashChallenger,
+	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
+	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
 		transparent::{
 			constant::Constant, multilinear_extension::MultilinearExtensionTransparent,
 			step_down::StepDown,
 		},
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearPoly,
+		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
+		MultilinearExtension,
 	},
+	protocols::{
+		greedy_evalcheck,
+		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
+		zerocheck,
+		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
+	},
+	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{
-	packed::set_packed_slice, AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField1b,
-	BinaryField8b, ExtensionField, Field, PackedAESBinaryField32x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField16x8b, PackedBinaryField256x1b, PackedField, PackedFieldIndexable, TowerField,
+	affine_transformation::{
+		FieldAffineTransformation, PackedTransformationFactory, Transformation,
+	},
+	packed::set_packed_slice,
+	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField1b, BinaryField8b,
+	ExtensionField, Field, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
+	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+	PackedBinaryField8x16b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hash::Groestl256Core;
+use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
+use binius_utils::rayon::adjust_thread_pool;
 use itertools::chain;
+use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
-use std::{array, env, iter, slice, sync::Arc};
+use std::{array, env, fmt::Debug, iter, iter::Step, slice};
 use tracing::instrument;
 use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -91,7 +107,7 @@ fn p_round_consts() -> [Vec<PackedBinaryField16x8b>; 8] {
 	for i in 0..8 {
 		let p_round_consts =
 			PackedFieldIndexable::unpack_scalars_mut(slice::from_mut(&mut p_round_consts[i]));
-		for r in 0..N_ROUNDS {
+		for r in 0..1 << LOG_COMPRESSION_BLOCK {
 			p_round_consts[r] = AESTowerField8b::new(((i * 0x10) ^ r) as u8).into();
 		}
 	}
@@ -127,6 +143,10 @@ struct TraceOracle {
 	p_sub_bytes_out: [OracleId; 64],
 	/// The next round input, defined as a shift of `p_in`.
 	p_next_in: [OracleId; 64],
+
+	// Batch IDs
+	trace1b_batch_id: BatchId,
+	trace8b_batch_id: BatchId,
 }
 
 impl TraceOracle {
@@ -157,14 +177,14 @@ impl TraceOracle {
 		let mut batch_scope_1b =
 			oracles.build_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
 		let p_sub_bytes_inv_bits = batch_scope_1b.add_multiple::<{ 64 * 8 }>();
-		let _trace1b_batch_id = batch_scope_1b.build();
+		let trace1b_batch_id = batch_scope_1b.build();
 
 		let mut batch_scope_8b =
 			oracles.build_committed_batch(log_size, BinaryField8b::TOWER_LEVEL);
 		let p_in = batch_scope_8b.add_multiple::<64>();
 		let p_out = batch_scope_8b.add_multiple::<64>();
 		let p_sub_bytes_prod = batch_scope_8b.add_multiple::<64>();
-		let _trace8b_batch_id = batch_scope_8b.build();
+		let trace8b_batch_id = batch_scope_8b.build();
 
 		// Virtual witness columns
 		let p_sub_bytes_inv = array::try_from_fn(|ij| {
@@ -203,6 +223,8 @@ impl TraceOracle {
 			p_sub_bytes_inv,
 			p_sub_bytes_out,
 			p_next_in,
+			trace1b_batch_id,
+			trace8b_batch_id,
 		})
 	}
 
@@ -380,7 +402,18 @@ struct TraceWitness<P1b: PackedField, P8b: PackedField> {
 }
 
 impl<P1b: PackedField, P8b: PackedField> TraceWitness<P1b, P8b> {
-	fn all_polys<F>(&self) -> Result<Vec<Arc<dyn MultilinearPoly<F> + Send + Sync + '_>>>
+	fn to_index<F>(&self, trace_oracle: &TraceOracle) -> Result<MultilinearWitnessIndex<F>>
+	where
+		F: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
+	{
+		let mut index = MultilinearWitnessIndex::new();
+		for (oracle, witness) in iter::zip(trace_oracle.iter_oracles(), self.all_polys()?) {
+			index.set(oracle, witness);
+		}
+		Ok(index)
+	}
+
+	fn all_polys<F>(&self) -> Result<Vec<MultilinearWitness<F>>>
 	where
 		F: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
 	{
@@ -412,6 +445,50 @@ impl<P1b: PackedField, P8b: PackedField> TraceWitness<P1b, P8b> {
 			Ok(mle.specialize_arc_dyn())
 		});
 		chain!(fixed_polys_1b, fixed_polys_8b, trace_polys_1b, trace_polys_8b).collect()
+	}
+
+	fn commit_polys_1b(&self) -> impl Iterator<Item = MultilinearExtension<P1b>> {
+		self.p_sub_bytes_inv_bits
+			.iter()
+			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+	}
+}
+
+impl<P1b, P8b> TraceWitness<P1b, P8b>
+where
+	P1b: PackedField,
+	P8b: PackedField<Scalar = AESTowerField8b>,
+{
+	fn commit_polys_8b<PT8b>(&self) -> impl Iterator<Item = MultilinearExtension<PT8b>>
+	where
+		P8b: PackedTransformationFactory<PT8b>,
+		PT8b: PackedField<Scalar = BinaryField8b>,
+	{
+		const AES_TO_TOWER_TRANSFORM: FieldAffineTransformation<BinaryField8b> =
+			FieldAffineTransformation::new_const(&[
+				BinaryField8b::new(0x01),
+				BinaryField8b::new(0x3c),
+				BinaryField8b::new(0x8c),
+				BinaryField8b::new(0x8a),
+				BinaryField8b::new(0x59),
+				BinaryField8b::new(0x7a),
+				BinaryField8b::new(0x53),
+				BinaryField8b::new(0x27),
+			]);
+
+		let transform = <P8b as PackedTransformationFactory<PT8b>>::make_packed_transformation(
+			AES_TO_TOWER_TRANSFORM,
+		);
+
+		chain!(self.p_in.iter(), self.p_out.iter(), self.p_sub_bytes_prod.iter()).map(
+			move |aes_values| {
+				let values = aes_values
+					.iter()
+					.map(|val| transform.transform(val))
+					.collect();
+				MultilinearExtension::from_values(values).unwrap()
+			},
+		)
 	}
 }
 
@@ -583,15 +660,17 @@ where
 	witness
 }
 
+#[allow(dead_code)]
 fn check_witness<FW, P1b: PackedField, P8b: PackedField>(
 	log_size: usize,
 	constraint: impl CompositionPoly<FW>,
-	witness: &TraceWitness<P1b, P8b>,
+	trace_witness: &TraceWitness<P1b, P8b>,
 ) -> Result<()>
 where
 	FW: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
 {
-	let composite = MultilinearComposite::new(log_size, constraint, witness.all_polys::<FW>()?)?;
+	let composite =
+		MultilinearComposite::new(log_size, constraint, trace_witness.all_polys::<FW>()?)?;
 	for z in 0..1 << log_size {
 		let constraint_eval = composite.evaluate_on_hypercube(z)?;
 		ensure!(constraint_eval == FW::ZERO);
@@ -599,21 +678,281 @@ where
 	Ok(())
 }
 
+struct Proof<F: Field, PCSComm, PCS1bProof, PCS8bProof> {
+	trace1b_comm: PCSComm,
+	trace8b_comm: PCSComm,
+	zerocheck_proof: ZerocheckProof<F>,
+	evalcheck_proof: GreedyEvalcheckProof<F>,
+	trace1b_open_proof: PCS1bProof,
+	trace8b_open_proof: PCS8bProof,
+}
+
+#[instrument(skip_all)]
+fn prove<F, FW, P1b, P8b, PW8b, PCS1b, PCS8b, Comm, Challenger>(
+	oracles: &mut MultilinearOracleSet<F>,
+	trace_oracle: &TraceOracle,
+	pcs1b: &PCS1b,
+	pcs8b: &PCS8b,
+	mut challenger: Challenger,
+	witness: &TraceWitness<P1b, PW8b>,
+) -> Result<Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>>
+where
+	F: TowerField + ExtensionField<BinaryField8b> + From<FW> + Step,
+	FW: TowerField + ExtensionField<AESTowerField8b> + From<F>,
+	P1b: PackedField<Scalar = BinaryField1b>,
+	P8b: PackedField<Scalar = BinaryField8b>,
+	PW8b: PackedField<Scalar = AESTowerField8b> + PackedTransformationFactory<P8b>,
+	PCS1b: PolyCommitScheme<P1b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
+	PCS8b: PolyCommitScheme<P8b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
+	Comm: Clone,
+	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
+{
+	let mut trace_witness = witness.to_index::<FW>(trace_oracle)?;
+
+	// Round 1
+	let trace1b_commit_polys = witness.commit_polys_1b().collect::<Vec<_>>();
+	let (trace1b_comm, trace1b_committed) = pcs1b.commit(&trace1b_commit_polys)?;
+	let trace8b_commit_polys = witness.commit_polys_8b().collect::<Vec<_>>();
+	let (trace8b_comm, trace8b_committed) = pcs8b.commit(&trace8b_commit_polys)?;
+	challenger.observe(trace1b_comm.clone());
+	challenger.observe(trace8b_comm.clone());
+
+	// Zerocheck mixing
+	let mixing_challenge = challenger.sample();
+
+	let mix_composition_verifier =
+		make_constraints::<BinaryField8b, _>(trace_oracle, mixing_challenge)?;
+	let mix_composition_prover =
+		make_constraints::<AESTowerField8b, _>(trace_oracle, FW::from(mixing_challenge))?;
+
+	let zerocheck_column_oracles = trace_oracle
+		.iter_oracles()
+		.map(|id| oracles.oracle(id))
+		.collect::<Vec<_>>();
+	let max_n_vars = zerocheck_column_oracles
+		.iter()
+		.map(|oracle| oracle.n_vars())
+		.max()
+		.unwrap_or(0);
+	let zerocheck_claim = ZerocheckClaim {
+		poly: CompositePolyOracle::new(
+			max_n_vars,
+			zerocheck_column_oracles,
+			mix_composition_verifier,
+		)?,
+	};
+
+	let zerocheck_witness = MultilinearComposite::new(
+		zerocheck_claim.n_vars(),
+		mix_composition_prover,
+		witness.all_polys::<FW>()?,
+	)?;
+
+	// Zerocheck
+	let zerocheck_domain = EvaluationDomain::<AESTowerField8b>::new_isomorphic::<BinaryField8b>(
+		zerocheck_claim.poly.max_individual_degree() + 1,
+	)?;
+
+	let switchover_fn = |extension_degree| match extension_degree {
+		128 => 5,
+		16 => 4,
+		_ => 1,
+	};
+
+	let ZerocheckProveOutput {
+		evalcheck_claim,
+		zerocheck_proof,
+	} = zerocheck::prove(
+		&zerocheck_claim,
+		zerocheck_witness,
+		&zerocheck_domain,
+		&mut challenger,
+		switchover_fn,
+	)?;
+
+	// Evalcheck
+	let GreedyEvalcheckProveOutput {
+		same_query_claims,
+		proof: evalcheck_proof,
+	} = greedy_evalcheck::prove(
+		oracles,
+		&mut trace_witness,
+		[evalcheck_claim],
+		switchover_fn,
+		&mut challenger,
+	)?;
+
+	assert_eq!(same_query_claims.len(), 2);
+	let (_, same_query_claim_1b) = same_query_claims
+		.iter()
+		.find(|(batch_id, _)| *batch_id == trace_oracle.trace1b_batch_id)
+		.unwrap();
+	let (_, same_query_claim_8b) = same_query_claims
+		.iter()
+		.find(|(batch_id, _)| *batch_id == trace_oracle.trace8b_batch_id)
+		.unwrap();
+
+	let trace1b_open_proof = pcs1b.prove_evaluation(
+		&mut challenger,
+		&trace1b_committed,
+		&trace1b_commit_polys,
+		&same_query_claim_1b.eval_point,
+	)?;
+	let trace8b_open_proof = pcs8b.prove_evaluation(
+		&mut challenger,
+		&trace8b_committed,
+		&trace8b_commit_polys,
+		&same_query_claim_8b.eval_point,
+	)?;
+
+	Ok(Proof {
+		trace1b_comm,
+		trace8b_comm,
+		zerocheck_proof,
+		evalcheck_proof,
+		trace1b_open_proof,
+		trace8b_open_proof,
+	})
+}
+
+#[instrument(skip_all)]
+fn verify<F, P1b, P8b, PCS1b, PCS8b, Comm, Challenger>(
+	oracles: &mut MultilinearOracleSet<F>,
+	trace_oracle: &TraceOracle,
+	pcs1b: &PCS1b,
+	pcs8b: &PCS8b,
+	mut challenger: Challenger,
+	proof: Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>,
+) -> Result<()>
+where
+	F: TowerField + ExtensionField<BinaryField8b>,
+	P1b: PackedField<Scalar = BinaryField1b>,
+	P8b: PackedField<Scalar = BinaryField8b>,
+	PCS1b: PolyCommitScheme<P1b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
+	PCS8b: PolyCommitScheme<P8b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
+	Comm: Clone,
+	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
+{
+	let Proof {
+		trace1b_comm,
+		trace8b_comm,
+		zerocheck_proof,
+		evalcheck_proof,
+		trace1b_open_proof,
+		trace8b_open_proof,
+	} = proof;
+
+	// Round 1
+	challenger.observe(trace1b_comm.clone());
+	challenger.observe(trace8b_comm.clone());
+
+	// Zerocheck mixing
+	let mixing_challenge = challenger.sample();
+	let mix_composition = make_constraints::<BinaryField8b, _>(trace_oracle, mixing_challenge)?;
+
+	// Zerocheck
+	let zerocheck_column_oracles = trace_oracle
+		.iter_oracles()
+		.map(|id| oracles.oracle(id))
+		.collect::<Vec<_>>();
+	let max_n_vars = zerocheck_column_oracles
+		.iter()
+		.map(|oracle| oracle.n_vars())
+		.max()
+		.unwrap_or(0);
+	let zerocheck_claim = ZerocheckClaim {
+		poly: CompositePolyOracle::new(max_n_vars, zerocheck_column_oracles, mix_composition)?,
+	};
+
+	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;
+
+	// Evalcheck
+	let same_query_claims =
+		greedy_evalcheck::verify(oracles, [evalcheck_claim], evalcheck_proof, &mut challenger)?;
+
+	assert_eq!(same_query_claims.len(), 2);
+	let (_, same_query_claim_1b) = same_query_claims
+		.iter()
+		.find(|(batch_id, _)| *batch_id == trace_oracle.trace1b_batch_id)
+		.unwrap();
+	let (_, same_query_claim_8b) = same_query_claims
+		.iter()
+		.find(|(batch_id, _)| *batch_id == trace_oracle.trace8b_batch_id)
+		.unwrap();
+
+	pcs1b.verify_evaluation(
+		&mut challenger,
+		&trace1b_comm,
+		&same_query_claim_1b.eval_point,
+		trace1b_open_proof,
+		&same_query_claim_1b.evals,
+	)?;
+	pcs8b.verify_evaluation(
+		&mut challenger,
+		&trace8b_comm,
+		&same_query_claim_8b.eval_point,
+		trace8b_open_proof,
+		&same_query_claim_8b.evals,
+	)?;
+
+	Ok(())
+}
+
 fn main() {
+	const SECURITY_BITS: usize = 100;
+
+	adjust_thread_pool()
+		.as_ref()
+		.expect("failed to init thread pool");
 	init_tracing();
 
-	let log_size = 8;
+	let log_size = 16;
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();
 
-	let witness = generate_trace::<PackedBinaryField256x1b, PackedAESBinaryField32x8b>(log_size);
+	let log_inv_rate = 1;
+	let trace1b_batch = oracles.committed_batch(trace_oracle.trace1b_batch_id);
+	let trace8b_batch = oracles.committed_batch(trace_oracle.trace8b_batch_id);
 
-	let mut rng = thread_rng();
-	let mix_challenge = <AESTowerField128b as Field>::random(&mut rng);
-	let prover_composition =
-		make_constraints::<AESTowerField8b, _>(&trace_oracle, mix_challenge).unwrap();
+	let witness = generate_trace::<PackedBinaryField128x1b, PackedAESBinaryField16x8b>(log_size);
 
-	check_witness(log_size, prover_composition, &witness)
-		.expect("trace does not satisify the constraints");
+	// Generate and verify proof
+	let pcs1b = tensor_pcs::find_proof_size_optimal_pcs::<
+		_,
+		PackedBinaryField128x1b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField1x128b,
+	>(SECURITY_BITS, log_size, trace1b_batch.n_polys, log_inv_rate, false)
+	.unwrap();
+
+	let pcs8b = tensor_pcs::find_proof_size_optimal_pcs::<
+		_,
+		PackedBinaryField16x8b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField8x16b,
+		_,
+		PackedBinaryField1x128b,
+	>(SECURITY_BITS, log_size, trace8b_batch.n_polys, log_inv_rate, false)
+	.unwrap();
+
+	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+
+	let proof = prove::<_, AESTowerField128b, _, _, _, _, _, _, _>(
+		&mut oracles,
+		&trace_oracle,
+		&pcs1b,
+		&pcs8b,
+		challenger.clone(),
+		&witness,
+	)
+	.unwrap();
+
+	verify(&mut oracles, &trace_oracle, &pcs1b, &pcs8b, challenger.clone(), proof).unwrap();
 }

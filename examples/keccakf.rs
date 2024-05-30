@@ -36,7 +36,7 @@ use binius_utils::{
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use rand::{thread_rng, Rng};
-use std::{array, fmt::Debug, iter, iter::Step, slice};
+use std::{array, fmt::Debug, iter, iter::Step};
 use tiny_keccak::keccakf;
 use tracing::instrument;
 
@@ -300,29 +300,11 @@ impl<P: PackedField> TraceWitness<P> {
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let mut index = MultilinearWitnessIndex::new();
-
-		for (oracle_arr, witness_arr) in [
-			(&trace_oracle.state_in[..], &self.state_in[..]),
-			(&trace_oracle.state_out[..], &self.state_out[..]),
-			(&trace_oracle.c[..], &self.c[..]),
-			(&trace_oracle.d[..], &self.d[..]),
-			(&trace_oracle.c_shift[..], &self.c_shift[..]),
-			(&trace_oracle.a_theta[..], &self.a_theta[..]),
-			(&trace_oracle.b[..], &self.b[..]),
-			(&trace_oracle.next_state_in[..], &self.next_state_in[..]),
-			(slice::from_ref(&fixed_oracle.round_consts), slice::from_ref(&self.round_consts)),
-			(slice::from_ref(&fixed_oracle.selector), slice::from_ref(&self.selector)),
-		] {
-			for (oracle, witness) in oracle_arr.iter().zip(witness_arr.iter()) {
-				index.set(
-					*oracle,
-					MultilinearExtension::from_values_slice(witness.as_slice())
-						.unwrap()
-						.specialize_arc_dyn(),
-				);
-			}
+		for (oracle, witness) in
+			iter::zip(fixed_oracle.iter().chain(trace_oracle.iter()), self.all_polys())
+		{
+			index.set(oracle, witness.specialize_arc_dyn());
 		}
-
 		index
 	}
 
