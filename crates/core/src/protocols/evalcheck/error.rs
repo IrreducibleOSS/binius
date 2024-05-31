@@ -1,9 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{BatchId, CommittedId, Error as OracleError, OracleId},
+	oracle::{BatchId, CommittedId, CompositePolyOracle, Error as OracleError, OracleId},
 	polynomial::Error as PolynomialError,
 };
+use binius_field::Field;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -29,8 +30,22 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("evaluation is incorrect")]
-	IncorrectEvaluation,
+	#[error("evaluation is incorrect for OracleId: {0:?}")]
+	IncorrectEvaluation(OracleId),
+	#[error("CompositePolyOracle verification failed: {0}")]
+	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
 	SubproofMismatch,
+}
+
+impl VerificationError {
+	pub fn incorrect_composite_poly_evaluation<F: Field>(oracle: CompositePolyOracle<F>) -> Self {
+		let ids = oracle
+			.inner_polys()
+			.iter()
+			.map(|inner| inner.id())
+			.collect::<Vec<_>>();
+		let s = format!("Composition: {:?} with inner: {:?}", oracle.composition(), ids);
+		Self::IncorrectCompositePolyEvaluation(s)
+	}
 }

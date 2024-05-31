@@ -135,12 +135,13 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> U32AddTrace<P> {
 }
 
 struct U32AddOracle {
-	batch_id: BatchId,
 	x_in: OracleId,
 	y_in: OracleId,
 	z_out: OracleId,
 	c_out: OracleId,
 	c_in: OracleId,
+
+	batch_id: BatchId,
 }
 
 impl U32AddOracle {
@@ -156,12 +157,12 @@ impl U32AddOracle {
 			.add_shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
 		Self {
-			batch_id,
 			x_in,
 			y_in,
 			z_out,
 			c_out,
 			c_in,
+			batch_id,
 		}
 	}
 
@@ -169,7 +170,7 @@ impl U32AddOracle {
 		&self,
 		challenge: F,
 	) -> Result<impl CompositionPoly<F> + Clone> {
-		let all_columns = &[self.x_in, self.y_in, self.z_out, self.c_out, self.c_in];
+		let all_columns = &self.oracles();
 		let mix = empty_mix_composition(all_columns.len(), challenge);
 		let mix = mix.include([index_composition(
 			all_columns,
@@ -399,13 +400,10 @@ fn main() {
 
 	let mut oracles = MultilinearOracleSet::new();
 	let oracle = U32AddOracle::new(&mut oracles, log_size);
-
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-
 	let witness = U32AddTrace::<PackedBinaryField128x1b>::new(log_size).fill_trace();
 
 	info!("Proving");
-
 	let proof = prove::<
 		_,
 		BinaryField128b,

@@ -83,7 +83,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		let evals = subproofs.iter().map(|(eval, _)| *eval).collect::<Vec<_>>();
 		let actual_eval = composite.composition().evaluate(&evals)?;
 		if actual_eval != eval {
-			return Err(VerificationError::IncorrectEvaluation.into());
+			return Err(VerificationError::incorrect_composite_poly_evaluation(composite).into());
 		}
 
 		subproofs
@@ -115,7 +115,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		} = evalcheck_claim;
 
 		match multilinear {
-			MultilinearPolyOracle::Transparent(_id, transparent) => {
+			MultilinearPolyOracle::Transparent(id, transparent) => {
 				match evalcheck_proof {
 					EvalcheckProof::Transparent => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -123,7 +123,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				let actual_eval = transparent.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
+					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
 			}
 
@@ -160,7 +160,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear(subclaim, *subproof)?;
 			}
 
-			MultilinearPolyOracle::Interleaved(_id, poly1, poly2) => {
+			MultilinearPolyOracle::Interleaved(id, poly1, poly2) => {
 				let (eval1, eval2, subproof1, subproof2) = match evalcheck_proof {
 					EvalcheckProof::Interleaved {
 						eval1,
@@ -175,7 +175,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = &eval_point[1..];
 				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[0]);
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
+					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
 				self.verify_multilinear_subclaim(
 					eval1,
@@ -193,7 +193,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 
-			MultilinearPolyOracle::Merged(_id, poly1, poly2) => {
+			MultilinearPolyOracle::Merged(id, poly1, poly2) => {
 				let (eval1, eval2, subproof1, subproof2) = match evalcheck_proof {
 					EvalcheckProof::Merged {
 						eval1,
@@ -209,7 +209,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = &eval_point[..n_vars];
 				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[n_vars]);
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
+					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
 
 				self.verify_multilinear_subclaim(
@@ -272,7 +272,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.new_sumcheck_claims.push(sumcheck_claim);
 			}
 
-			MultilinearPolyOracle::LinearCombination(_id, lin_com) => {
+			MultilinearPolyOracle::LinearCombination(id, lin_com) => {
 				let subproofs = match evalcheck_proof {
 					EvalcheckProof::Composite { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -290,7 +290,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					);
 
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation.into());
+					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
 
 				subproofs.into_iter().zip(lin_com.polys()).try_for_each(
