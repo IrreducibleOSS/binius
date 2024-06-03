@@ -436,7 +436,8 @@ where
 		}
 
 		let mut msg_remaining = P::cast_to_bases(msg);
-		let mut cur_block = (self.current_len as usize * P::WIDTH) % RATE_AS_U32;
+		let mut cur_block =
+			(self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
 
 		while !msg_remaining.is_empty() {
 			let to_process = cmp::min(RATE_AS_U32 - cur_block, msg_remaining.len());
@@ -482,7 +483,7 @@ where
 			});
 		}
 
-		let cur_block = (self.current_len as usize * P::WIDTH) % RATE_AS_U32;
+		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
 		if cur_block != 0 {
 			// Pad and absorb
 			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
@@ -505,6 +506,8 @@ mod tests {
 	use crate::{FixedLenHasherDigest, HashDigest};
 	use binius_field::{BinaryField64b, PackedBinaryField4x64b};
 	use hex_literal::hex;
+	use rand::thread_rng;
+	use std::array;
 
 	fn mds_transform(data: &mut [PackedBinaryField8x32b; 3]) {
 		let vision = Vision32bMDS::default();
@@ -800,7 +803,9 @@ mod tests {
 
 	#[test]
 	fn test_extensions_and_packings() {
-		let data_to_hash = &AFFINE_FWD;
+		let mut rng = thread_rng();
+		let data_to_hash: [BinaryField32b; 200] =
+			array::from_fn(|_| <BinaryField32b as Field>::random(&mut rng));
 		let expected = FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_to_hash);
 
 		let data_as_u64 = data_to_hash
