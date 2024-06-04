@@ -215,10 +215,10 @@ lazy_static! {
 		AdditiveNTTWithPrecompute::<BinaryField32b>::new(log_h + 2 + log_rate)
 			.expect("log_domain_size is less than 32")
 	};
-	static ref FWD_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
+	pub static ref FWD_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
 		PackedBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_FWD_TRANS);
-	static ref INV_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
+	pub static ref INV_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
 		PackedBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_INV_TRANS);
 }
@@ -231,7 +231,7 @@ fn add_packed_768(a: &mut [PackedBinaryField8x32b; 3], b: &[PackedBinaryField8x3
 }
 
 #[derive(Debug, Clone)]
-struct Vision32bMDS {
+pub struct Vision32bMDS {
 	x: PackedBinaryField8x32b,
 	y: PackedBinaryField8x32b,
 	z: PackedBinaryField8x32b,

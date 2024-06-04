@@ -44,7 +44,7 @@ use binius_field::{
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
-use binius_utils::rayon::adjust_thread_pool;
+use binius_utils::{examples::get_log_trace_size, rayon::adjust_thread_pool};
 use itertools::chain;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
@@ -906,7 +906,7 @@ fn main() {
 		.expect("failed to init thread pool");
 	init_tracing();
 
-	let log_size = 16;
+	let log_size = get_log_trace_size().unwrap_or(16);
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();

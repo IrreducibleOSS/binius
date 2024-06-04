@@ -14,6 +14,7 @@ binius_utils = { path = "../crates/utils" }
 bytemuck.workspace = true
 itertools.workspace = true
 p3-challenger.workspace = true
+p3-symmetric.workspace = true
 rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
@@ -44,6 +45,10 @@ path = "u32add.rs"
 [[example]]
 name = "u32fib"
 path = "u32fib.rs"
+
+[[example]]
+name = "vision32b"
+path = "vision32b.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"
