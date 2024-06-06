@@ -23,30 +23,36 @@ use crate::{
 		sumcheck::SumcheckProof,
 	},
 };
-use binius_field::{Field, PackedField};
+use binius_field::{ExtensionField, Field, PackedField};
 use getset::Getters;
 use rayon::prelude::*;
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
 /// Prove a sumcheck to evalcheck reduction.
 #[instrument(skip_all, name = "sumcheck::prove")]
-pub fn prove<F, PW, CW, M, CH>(
+pub fn prove<F, PW, DomainField, CW, M, CH>(
 	claim: &SumcheckClaim<F>,
 	witness: SumcheckWitness<PW, CW, M>,
-	domain: &EvaluationDomain<PW::Scalar>,
+	domain: &EvaluationDomain<DomainField>,
 	challenger: CH,
 	switchover_fn: impl Fn(usize) -> usize,
 ) -> Result<SumcheckProveOutput<F>, Error>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	DomainField: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let sumcheck_prover = SumcheckProver::new(domain, claim.clone(), witness, switchover_fn)?;
+	let sumcheck_prover = SumcheckProver::<_, _, DomainField, _, _>::new(
+		domain,
+		claim.clone(),
+		witness,
+		switchover_fn,
+	)?;
 
 	let (evalcheck_claim, rounds) =
 		abstract_sumcheck::prove(claim.n_vars(), sumcheck_prover, challenger)?;
@@ -73,17 +79,18 @@ where
 /// Each of those takes in an optional challenge (None on first round and Some on following rounds) and
 /// evaluation domain. Proof and Evalcheck claim are obtained via `finalize` call at the end.
 #[derive(Debug, Getters)]
-pub struct SumcheckProver<'a, F, PW, CW, M>
+pub struct SumcheckProver<'a, F, PW, DomainField, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F>,
+	DomainField: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
-	domain: &'a EvaluationDomain<PW::Scalar>,
+	domain: &'a EvaluationDomain<DomainField>,
 	#[getset(get = "pub")]
 	round_claim: SumcheckRoundClaim<F>,
 
@@ -92,11 +99,12 @@ where
 	state: ProverState<PW, M>,
 }
 
-impl<'a, F, PW, CW, M> SumcheckProver<'a, F, PW, CW, M>
+impl<'a, F, PW, DomainField, CW, M> SumcheckProver<'a, F, PW, DomainField, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	DomainField: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
@@ -105,7 +113,7 @@ where
 	/// switchover round number per multilinear polynomial as a function of its
 	/// [`MultilinearPoly::extension_degree`] value.
 	pub fn new(
-		domain: &'a EvaluationDomain<PW::Scalar>,
+		domain: &'a EvaluationDomain<DomainField>,
 		sumcheck_claim: SumcheckClaim<F>,
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		switchover_fn: impl Fn(usize) -> usize,
@@ -203,6 +211,7 @@ where
 			composition: &self.composition,
 			evaluation_domain: self.domain,
 			domain_points: self.domain.points(),
+			_p: Default::default(),
 		};
 
 		let rd_vars = self.n_vars() - self.round;
@@ -245,11 +254,13 @@ where
 	}
 }
 
-impl<'a, F, PW, CW, M> AbstractSumcheckProver<F> for SumcheckProver<'a, F, PW, CW, M>
+impl<'a, F, PW, DomainField, CW, M> AbstractSumcheckProver<F>
+	for SumcheckProver<'a, F, PW, DomainField, CW, M>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	DomainField: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 {
@@ -269,19 +280,26 @@ where
 
 /// Evaluator for the sumcheck protocol.
 #[derive(Debug)]
-struct SumcheckEvaluator<'a, F, C>
+struct SumcheckEvaluator<'a, F, DomainField, C>
 where
-	F: Field,
+	F: Field + ExtensionField<DomainField>,
+	DomainField: Field,
 	C: CompositionPoly<F>,
 {
 	pub degree: usize,
 	composition: &'a C,
-	evaluation_domain: &'a EvaluationDomain<F>,
-	domain_points: &'a [F],
+	evaluation_domain: &'a EvaluationDomain<DomainField>,
+	domain_points: &'a [DomainField],
+
+	_p: PhantomData<F>,
 }
 
-impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
-	for SumcheckEvaluator<'a, F, C>
+impl<'a, F, DomainField, C> AbstractSumcheckEvaluator<F>
+	for SumcheckEvaluator<'a, F, DomainField, C>
+where
+	F: Field + ExtensionField<DomainField>,
+	DomainField: Field,
+	C: CompositionPoly<F>,
 {
 	type VertexState = ();
 
@@ -317,8 +335,11 @@ impl<'a, F: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
 					// TODO: Enable small field multiplication.
-					*evals_z_j =
-						extrapolate_line::<F, F>(evals_0_j, evals_1_j, self.domain_points[d]);
+					*evals_z_j = extrapolate_line::<F, DomainField>(
+						evals_0_j,
+						evals_1_j,
+						self.domain_points[d],
+					);
 				});
 
 			round_evals[d - 1] += self

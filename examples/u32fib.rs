@@ -329,7 +329,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, _, DomainFieldWithStep, DomainField, _>(
 		oracles,
 		&mut witness_index,
 		[evalcheck_claim],

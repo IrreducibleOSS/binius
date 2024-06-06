@@ -88,7 +88,6 @@ fn make_multilinears<P: PackedField>(
 fn zerocheck_128b_with_switchover<P, FS>(c: &mut Criterion, id: &str, switchover: usize)
 where
 	P: PackedField + Debug,
-	P::Scalar: Field,
 	FS: Field + Step + Debug,
 	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<FS>,
 {

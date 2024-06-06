@@ -367,7 +367,7 @@ where
 
 	// Greedy Evalcheck
 
-	let greedy_evalcheck_prove_output = greedy_evalcheck::prove(
+	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, B128, _>(
 		oracles,
 		&mut witness_index,
 		[

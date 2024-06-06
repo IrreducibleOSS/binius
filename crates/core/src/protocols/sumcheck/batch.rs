@@ -21,7 +21,7 @@ use crate::{
 		evalcheck::EvalcheckClaim,
 	},
 };
-use binius_field::{Field, PackedField};
+use binius_field::{ExtensionField, Field, PackedField};
 
 #[derive(Debug, Clone)]
 pub struct SumcheckBatchProof<F> {
@@ -39,14 +39,15 @@ pub struct SumcheckBatchProveOutput<F: Field> {
 /// Prove a batched sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<'a, F, PW, CW, M, CH>(
-	provers: impl IntoIterator<Item = SumcheckProver<'a, F, PW, CW, M>>,
+pub fn batch_prove<'a, F, PW, DomainField, CW, M, CH>(
+	provers: impl IntoIterator<Item = SumcheckProver<'a, F, PW, DomainField, CW, M>>,
 	mut challenger: CH,
 ) -> Result<SumcheckBatchProveOutput<F>, Error>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	DomainField: Field,
 	CW: CompositionPoly<PW::Scalar>,
 	M: MultilinearPoly<PW> + Sync,
 	CH: CanObserve<F> + CanSample<F>,

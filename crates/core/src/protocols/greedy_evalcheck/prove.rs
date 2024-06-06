@@ -15,10 +15,10 @@ use crate::{
 	},
 	witness::MultilinearWitnessIndex,
 };
-use binius_field::{PackedFieldIndexable, TowerField};
+use binius_field::{ExtensionField, PackedFieldIndexable, TowerField};
 use std::iter::Step;
 
-pub fn prove<F, PW, Challenger>(
+pub fn prove<F, PW, DomainFieldWithStep, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearWitnessIndex<PW>,
 	claims: impl IntoIterator<Item = EvalcheckClaim<F>>,
@@ -26,8 +26,11 @@ pub fn prove<F, PW, Challenger>(
 	mut challenger: Challenger,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
 where
-	F: TowerField + Step + From<PW::Scalar>,
+	F: TowerField + From<PW::Scalar>,
 	PW: PackedFieldIndexable<Scalar: TowerField + From<F>>,
+	PW::Scalar: ExtensionField<DomainField>,
+	DomainFieldWithStep: TowerField + Step,
+	DomainField: TowerField + From<DomainFieldWithStep>,
 	Challenger: CanObserve<F> + CanSample<F>,
 {
 	let committed_batches = oracles.committed_batches();
@@ -48,7 +51,7 @@ where
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
 		let (batch_sumcheck_proof, new_evalcheck_claims) =
-			prove_bivariate_sumchecks_with_switchover(
+			prove_bivariate_sumchecks_with_switchover::<_, _, DomainFieldWithStep, DomainField, _>(
 				new_sumchecks,
 				&mut challenger,
 				switchover_fn.clone(),
@@ -84,11 +87,13 @@ where
 					make_non_same_query_pcs_sumchecks(&mut evalcheck_prover, &non_sqpcs_claims)?;
 
 				let (sumcheck_proof, new_evalcheck_claims) =
-					prove_bivariate_sumchecks_with_switchover(
-						non_sqpcs_sumchecks,
-						&mut challenger,
-						switchover_fn.clone(),
-					)?;
+					prove_bivariate_sumchecks_with_switchover::<
+						_,
+						_,
+						DomainFieldWithStep,
+						DomainField,
+						_,
+					>(non_sqpcs_sumchecks, &mut challenger, switchover_fn.clone())?;
 
 				let new_evalcheck_proofs = new_evalcheck_claims
 					.into_iter()

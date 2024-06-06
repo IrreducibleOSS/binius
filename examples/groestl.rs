@@ -774,7 +774,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, _, F, FW, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],

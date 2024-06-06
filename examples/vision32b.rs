@@ -1010,7 +1010,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, _, BinaryField32b, BinaryField32b, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],

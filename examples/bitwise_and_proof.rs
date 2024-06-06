@@ -104,7 +104,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, _, BinaryField128b, BinaryField128bPolyval, _>(
 		trace,
 		&mut witness_index,
 		[evalcheck_claim],

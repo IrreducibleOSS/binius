@@ -1,3 +1,4 @@
+#![feature(step_trait)]
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_core::{
@@ -13,37 +14,63 @@ use binius_core::{
 	},
 };
 use binius_field::{
-	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField8b, ExtensionField, Field,
-	PackedField, TowerField,
+	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
+	ExtensionField, Field, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
-use std::{fmt::Debug, iter::repeat_with, mem, sync::Arc};
+use std::{
+	fmt::Debug,
+	iter::{repeat_with, Step},
+	mem,
+	sync::Arc,
+};
 
 fn sumcheck_128b_over_1b(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField1b>(c, "Sumcheck 128b over 1b", 8)
+	sumcheck_128b_with_switchover::<BinaryField1b, BinaryField128b>(c, "Sumcheck 128b over 1b", 8)
 }
 
 fn sumcheck_128b_over_8b(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField8b>(c, "Sumcheck 128b over 8b", 7)
+	sumcheck_128b_with_switchover::<BinaryField8b, BinaryField128b>(c, "Sumcheck 128b over 8b", 7)
 }
 
 fn sumcheck_128b_tower_basis(c: &mut Criterion) {
-	sumcheck_128b_with_switchover::<BinaryField128b>(c, "Sumcheck 128b tower basis", 1)
+	sumcheck_128b_with_switchover::<BinaryField128b, BinaryField128b>(
+		c,
+		"Sumcheck 128b tower basis",
+		1,
+	)
 }
 
-fn sumcheck_128b_with_switchover<P>(c: &mut Criterion, id: &str, switchover: usize)
+fn sumcheck_128b_tower_basis_32b_domain(c: &mut Criterion) {
+	sumcheck_128b_with_switchover::<BinaryField128b, BinaryField32b>(
+		c,
+		"Sumcheck 128b tower basis, 32b domain",
+		1,
+	)
+}
+
+fn sumcheck_128b_tower_basis_8b_domain(c: &mut Criterion) {
+	sumcheck_128b_with_switchover::<BinaryField128b, BinaryField8b>(
+		c,
+		"Sumcheck 128b tower basis, 8b domain",
+		1,
+	)
+}
+
+fn sumcheck_128b_with_switchover<P, DomainField>(c: &mut Criterion, id: &str, switchover: usize)
 where
 	P: PackedField + Debug,
-	BinaryField128b: ExtensionField<P::Scalar>,
+	DomainField: Field + Step + Debug,
+	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<DomainField>,
 {
 	type FTower = BinaryField128b;
 
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::<FTower>::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<DomainField>::new(n_multilinears + 1).unwrap();
 
 	let mut rng = thread_rng();
 
@@ -73,7 +100,7 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FTower, _, _, _>(
+				prove::<FTower, FTower, DomainField, _, _, _>(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
 					&domain,
@@ -142,7 +169,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FPolyval, _, _, _>(
+				prove::<FTower, FPolyval, FPolyval, _, _, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
 					&domain,
@@ -222,7 +249,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove(
+				prove::<_, _, FPolyval, _, _, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
 					&domain,
@@ -286,6 +313,8 @@ criterion_group!(
 	sumcheck_128b_monomial_basis,
 	sumcheck_128b_monomial_basis_with_arc,
 	sumcheck_128b_over_1b,
-	sumcheck_128b_over_8b
+	sumcheck_128b_over_8b,
+	sumcheck_128b_tower_basis_32b_domain,
+	sumcheck_128b_tower_basis_8b_domain
 );
 criterion_main!(sumcheck);

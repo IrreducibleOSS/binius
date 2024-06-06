@@ -104,13 +104,18 @@ fn test_prove_verify_interaction_helper(
 	};
 
 	// Setup evaluation domain
-	let domain = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain = EvaluationDomain::<FE>::new(n_multilinears + 1).unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let final_prove_output =
-		prove(&sumcheck_claim, sumcheck_witness, &domain, challenger.clone(), |_| switchover_rd)
-			.expect("failed to prove sumcheck");
+	let final_prove_output = prove::<_, _, FE, _, _, _>(
+		&sumcheck_claim,
+		sumcheck_witness,
+		&domain,
+		challenger.clone(),
+		|_| switchover_rd,
+	)
+	.expect("failed to prove sumcheck");
 
 	let final_verify_output =
 		verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
@@ -179,9 +184,14 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let switchover_fn = |_| 3;
-	let final_prove_output =
-		prove(&sumcheck_claim, operating_witness, &domain, challenger.clone(), switchover_fn)
-			.expect("failed to prove sumcheck");
+	let final_prove_output = prove::<_, _, OF, _, _, _>(
+		&sumcheck_claim,
+		operating_witness,
+		&domain,
+		challenger.clone(),
+		switchover_fn,
+	)
+	.expect("failed to prove sumcheck");
 
 	let final_verify_output =
 		verify(&sumcheck_claim, final_prove_output.sumcheck_proof, challenger.clone())
@@ -341,10 +351,10 @@ fn test_prove_verify_batch() {
 		.map(|(poly, sum)| SumcheckClaim { poly, sum })
 		.collect::<Vec<_>>();
 
-	let domain = EvaluationDomain::new(3).unwrap();
+	let domain = EvaluationDomain::<FE>::new(3).unwrap();
 
 	let mut witness_iter = witnesses.into_iter();
-	let prover0 = SumcheckProver::new(
+	let prover0 = SumcheckProver::<_, _, FE, _, _>::new(
 		&domain,
 		sumcheck_claims[0].clone(),
 		witness_iter.next().unwrap(),

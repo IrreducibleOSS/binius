@@ -21,7 +21,9 @@ use crate::{
 		},
 	},
 };
-use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField, TowerField};
+use binius_field::{
+	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField, TowerField,
+};
 use std::iter::Step;
 use tracing::instrument;
 
@@ -146,18 +148,21 @@ where
 	skip_all,
 	name = "test_utils::prove_bivariate_sumchecks_with_switchover"
 )]
-pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, CH>(
+pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainFieldWithStep, DomainField, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
-	F: Field + Step + From<PW::Scalar>,
+	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	DomainFieldWithStep: Field + Step,
+	DomainField: Field + From<DomainFieldWithStep>,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let bivariate_domain = EvaluationDomain::new_isomorphic::<F>(3)?;
+	let bivariate_domain =
+		EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(3).unwrap();
 
 	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
@@ -165,7 +170,12 @@ where
 		.into_iter()
 		.zip(&claims)
 		.map(|(witness, claim)| {
-			SumcheckProver::new(&bivariate_domain, claim.clone(), witness, switchover_fn.clone())
+			SumcheckProver::<_, _, DomainField, _, _>::new(
+				&bivariate_domain,
+				claim.clone(),
+				witness,
+				switchover_fn.clone(),
+			)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 

@@ -454,7 +454,7 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
 // FsStep is a type with trait `Step` from which `FS` domain is created.
-fn prove<P, F, PW, FsStep, FS, PCS, CH>(
+fn prove<P, F, PW, DomainFieldWithStep, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -466,9 +466,9 @@ fn prove<P, F, PW, FsStep, FS, PCS, CH>(
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	F: TowerField + From<PW> + Step,
-	PW: TowerField + From<F> + ExtensionField<FS>,
-	FsStep: TowerField + Step,
-	FS: TowerField + From<FsStep>,
+	PW: TowerField + From<F> + ExtensionField<DomainField>,
+	DomainFieldWithStep: TowerField + Step,
+	DomainField: TowerField + From<DomainFieldWithStep>,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
@@ -508,7 +508,7 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_domain = EvaluationDomain::<FS>::new_isomorphic::<FsStep>(
+	let zerocheck_domain = EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(
 		zerocheck_claim.poly.max_individual_degree() + 1,
 	)?;
 
@@ -520,7 +520,7 @@ where
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<F, PW, FS, _, _>(
+	} = zerocheck::prove::<F, PW, DomainField, _, _>(
 		&zerocheck_claim,
 		zerocheck_witness,
 		&zerocheck_domain,
@@ -532,7 +532,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, _, DomainFieldWithStep, DomainField, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],
