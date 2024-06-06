@@ -96,7 +96,7 @@ pub trait PackedField:
 	}
 
 	/// Initialize zero position with `scalar`, set other elements to zero.
-	#[inline]
+	#[inline(always)]
 	fn set_single(scalar: Self::Scalar) -> Self {
 		let mut result = Self::default();
 		result.set(0, scalar);

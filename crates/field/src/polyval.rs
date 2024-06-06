@@ -13,9 +13,9 @@ use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b,
 	arithmetic_traits::Square,
-	as_packed_field::AsPackedField,
-	binary_field_arithmetic::{invert_or_zero_using_packed, square_using_packed},
-	packed::PackedField,
+	binary_field_arithmetic::{
+		invert_or_zero_using_packed, multiple_using_packed, square_using_packed,
+	},
 	underlier::UnderlierWithBitOps,
 	Field,
 };
@@ -87,13 +87,12 @@ impl Sub<&Self> for BinaryField128bPolyval {
 	}
 }
 
-type SinglePacked = <BinaryField128bPolyval as AsPackedField<BinaryField128bPolyval>>::Packed;
-
 impl Mul<Self> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	fn mul(self, rhs: Self) -> Self::Output {
-		(SinglePacked::set_single(self) * SinglePacked::set_single(rhs)).get(0)
+		multiple_using_packed::<PackedBinaryPolyval1x128b>(self, rhs)
 	}
 }
 
