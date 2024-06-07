@@ -1,5 +1,9 @@
 variables:
-  CARGO_HOME: "$CI_PROJECT_DIR/cargo"
+  CARGO_HOME: "$CI_PROJECT_DIR/toolchains/cargo"
+  RUSTUP_HOME: "$CI_PROJECT_DIR/toolchains"
+  # from https://gitlab.com/gitlab-org/gitlab-runner/-/issues/1797
+  FF_USE_FASTZIP: "true"
+  CACHE_COMPRESSION_LEVEL: "fast"
 
 stages:
   - lint
@@ -45,7 +49,7 @@ clippy:
     key: "biniusOSS-amd-${CI_COMMIT_REF_SLUG}"
     paths:
       - target
-      - cargo
+      - toolchains
 
 .cached_job_template_arm:
   extends: .job_template_arm
@@ -53,7 +57,7 @@ clippy:
     key: "biniusOSS-arm-${CI_COMMIT_REF_SLUG}"
     paths:
       - target
-      - cargo
+      - toolchains
 
 # Building jobs
 build-debug-amd:
