@@ -13,10 +13,7 @@ use crate::{
 	},
 	arch::{
 		portable::{
-			packed::{
-				impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
-				PackedPrimitiveType,
-			},
+			packed::{impl_conversion, packed_binary_field_tower, PackedPrimitiveType},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 		PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy,
@@ -51,13 +48,6 @@ packed_binary_field_tower!(
 	< PackedAESBinaryField2x64b
 	< PackedAESBinaryField1x128b
 );
-
-// Define extension fields
-impl_packed_extension_field!(PackedAESBinaryField16x8b);
-impl_packed_extension_field!(PackedAESBinaryField8x16b);
-impl_packed_extension_field!(PackedAESBinaryField4x32b);
-impl_packed_extension_field!(PackedAESBinaryField2x64b);
-impl_packed_extension_field!(PackedAESBinaryField1x128b);
 
 // Define contants
 // 0xD3 corresponds to 0x10 after isomorphism from BinaryField8b to AESField

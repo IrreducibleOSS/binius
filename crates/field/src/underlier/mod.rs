@@ -1,12 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
-pub mod divisible;
-pub mod small_uint;
-pub mod underlier;
+mod divisible;
+mod scaled;
+mod small_uint;
 mod underlier_impls;
-pub mod underlier_with_bit_ops;
+mod underlier_type;
+mod underlier_with_bit_ops;
 
 pub use divisible::*;
+pub use scaled::ScaledUnderlier;
 pub use small_uint::*;
-pub use underlier::*;
+pub use underlier_type::*;
 pub use underlier_with_bit_ops::*;

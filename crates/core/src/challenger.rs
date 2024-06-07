@@ -1,7 +1,10 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 // Copyright (c) 2022-2023 The Plonky3 Authors
 
-use binius_field::{ExtensionField, Field, PackedExtensionField, PackedField};
+use binius_field::{
+	ExtensionField, Field, PackedExtension, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable,
+};
 use binius_hash::Hasher;
 use bytemuck::{bytes_of, AnyBitPattern, Pod};
 pub use p3_challenger::{CanObserve, CanSample, CanSampleBits};
@@ -227,18 +230,18 @@ where
 	F: Field,
 	H: Hasher<F>,
 	H::Digest: PackedField<Scalar = F>,
-	PE: PackedExtensionField<F>,
+	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	PE::Scalar: ExtensionField<F>,
 {
 	fn observe(&mut self, value: PE) {
-		self.observe_scalars(value.as_bases());
+		self.observe_slice(&[value])
 	}
 
 	fn observe_slice(&mut self, values: &[PE])
 	where
 		PE: Clone,
 	{
-		self.observe_scalars(PE::cast_to_bases(values));
+		self.observe_scalars(PE::unpack_base_scalars(values));
 	}
 }
 
@@ -263,18 +266,18 @@ impl<F: Field, H, const RATE: usize, const STATE_SIZE: usize, PE> CanObserve<PE>
 where
 	F: Field,
 	H: CryptographicPermutation<[F; STATE_SIZE]>,
-	PE: PackedExtensionField<F>,
+	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	PE::Scalar: ExtensionField<F>,
 {
 	fn observe(&mut self, value: PE) {
-		self.observe_scalars(value.as_bases());
+		self.observe_slice(&[value]);
 	}
 
 	fn observe_slice(&mut self, values: &[PE])
 	where
 		PE: Clone,
 	{
-		self.observe_scalars(PE::cast_to_bases(values));
+		self.observe_scalars(PE::unpack_base_scalars(values));
 	}
 }
 

@@ -14,8 +14,8 @@ use crate::{
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{
-	BinaryField, BinaryField1b, ExtensionField, Field, PackedExtensionField, PackedField,
-	PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::izip;
@@ -114,7 +114,7 @@ pub fn prove<'a, PC, PB, F, FW, L>(
 	lasso_batch: &LassoBatch,
 ) -> Result<LassoProveOutput<'a, F, FW, PB>, Error>
 where
-	PC: PackedExtensionField<PB, Scalar: LassoCount> + PackedFieldIndexable + Pod,
+	PC: RepackedExtension<PB, Scalar: LassoCount> + PackedFieldIndexable + Pod,
 	PB: PackedField<Scalar = BinaryField1b> + Pod,
 	F: TowerField,
 	FW: TowerField + ExtensionField<PC::Scalar>,

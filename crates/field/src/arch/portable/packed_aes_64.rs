@@ -1,10 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	packed::{
-		impl_broadcast, impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
-		PackedPrimitiveType,
-	},
+	packed::{impl_broadcast, impl_conversion, packed_binary_field_tower, PackedPrimitiveType},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
@@ -36,12 +33,6 @@ packed_binary_field_tower!(
 	< PackedAESBinaryField2x32b
 	< PackedAESBinaryField1x64b
 );
-
-// Define extension fields
-impl_packed_extension_field!(PackedAESBinaryField8x8b);
-impl_packed_extension_field!(PackedAESBinaryField4x16b);
-impl_packed_extension_field!(PackedAESBinaryField2x32b);
-impl_packed_extension_field!(PackedAESBinaryField1x64b);
 
 // Define broadcast
 impl_broadcast!(u64, AESTowerField8b);

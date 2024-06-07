@@ -3,8 +3,7 @@
 use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
-	as_packed_field::PackScalar,
-	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier},
+	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
 	BinaryField, Error, PackedField,
 };
 use bytemuck::{Pod, Zeroable};
@@ -275,45 +274,6 @@ where
 	}
 }
 
-/// Implement the PackedExtensionField trait for binary fields that are subfields of the
-/// scalar type.
-///
-/// For example, `PackedField2x64b` is `PackedExtensionField<BinaryField64b>` and also
-/// `PackedExtensionField<BinaryField32b>`, and so on.
-/// We are using macro because otherwise we will get the conflicting implementation with
-/// `PackedExtensionField<P> for P`
-macro_rules! impl_packed_extension_field {
-	($name:ty) => {
-		#[cfg(target_endian = "little")]
-		unsafe impl<P> $crate::PackedExtensionField<P> for $name
-		where
-			P: $crate::PackedField,
-			Self::Scalar: $crate::PackedExtensionField<P>,
-			Self::Scalar: $crate::ExtensionField<P::Scalar>,
-		{
-			fn cast_to_bases(packed: &[Self]) -> &[P] {
-				Self::Scalar::cast_to_bases(bytemuck::must_cast_slice(packed))
-			}
-
-			fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [P] {
-				Self::Scalar::cast_to_bases_mut(bytemuck::must_cast_slice_mut(packed))
-			}
-
-			fn try_cast_to_ext(packed: &[P]) -> Option<&[Self]> {
-				Self::Scalar::try_cast_to_ext(packed)
-					.and_then(|scalars| bytemuck::try_cast_slice(scalars).ok())
-			}
-
-			fn try_cast_to_ext_mut(packed: &mut [P]) -> Option<&mut [Self]> {
-				Self::Scalar::try_cast_to_ext_mut(packed)
-					.and_then(|scalars| bytemuck::try_cast_slice_mut(scalars).ok())
-			}
-		}
-	};
-}
-
-pub(crate) use impl_packed_extension_field;
-
 macro_rules! impl_broadcast {
 	($name:ty, BinaryField1b) => {
 		impl $crate::arithmetic_traits::Broadcast<BinaryField1b>
@@ -374,42 +334,6 @@ macro_rules! impl_conversion {
 
 pub(crate) use impl_conversion;
 
-macro_rules! packed_binary_field_tower_extension {
-	($subfield_name:ident < $name:ident) => {
-		#[cfg(target_endian = "little")]
-		unsafe impl $crate::PackedExtensionField<$subfield_name> for $name {
-			#[inline]
-			fn cast_to_bases(packed: &[Self]) -> &[$subfield_name] {
-				bytemuck::must_cast_slice(packed)
-			}
-
-			#[inline]
-			fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [$subfield_name] {
-				bytemuck::must_cast_slice_mut(packed)
-			}
-
-			#[inline]
-			fn try_cast_to_ext(packed: &[$subfield_name]) -> Option<&[Self]> {
-				Some(bytemuck::must_cast_slice(packed))
-			}
-
-			#[inline]
-			fn try_cast_to_ext_mut(packed: &mut [$subfield_name]) -> Option<&mut [Self]> {
-				Some(bytemuck::must_cast_slice_mut(packed))
-			}
-		}
-	};
-	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
-		$crate::arch::portable::packed::packed_binary_field_tower_extension!($subfield_name < $name);
-		$(
-			$crate::arch::portable::packed::packed_binary_field_tower_extension!($subfield_name < $extfield_name);
-		)+
-		$crate::arch::portable::packed::packed_binary_field_tower_extension!($name $(< $extfield_name)+);
-	};
-}
-
-pub(crate) use packed_binary_field_tower_extension;
-
 macro_rules! packed_binary_field_tower_impl {
 	($subfield_name:ident < $name:ident) => {
 		impl $crate::arch::portable::packed_arithmetic::PackedTowerField for $name {
@@ -435,7 +359,6 @@ pub(crate) use packed_binary_field_tower_impl;
 
 macro_rules! packed_binary_field_tower {
 	($name:ident $(< $extfield_name:ident)+) => {
-		$crate::arch::portable::packed::packed_binary_field_tower_extension!($name $(< $extfield_name)+ );
 		$crate::arch::portable::packed::packed_binary_field_tower_impl!($name $(< $extfield_name)+ );
 	}
 }
@@ -544,11 +467,26 @@ where
 	PT1::Underlier::num_cast_from(bigger_result.to_underlier()).into()
 }
 
-impl<U, F> PackScalar<F> for U
-where
-	U: UnderlierType,
-	F: BinaryField,
-	PackedPrimitiveType<U, F>: PackedField<Scalar = F> + WithUnderlier<Underlier = U>,
-{
-	type Packed = PackedPrimitiveType<U, F>;
+macro_rules! impl_pack_scalar {
+	($underlier:ty) => {
+		impl<F> $crate::as_packed_field::PackScalar<F> for $underlier
+		where
+			F: BinaryField,
+			PackedPrimitiveType<$underlier, F>:
+				$crate::packed::PackedField<Scalar = F> + WithUnderlier<Underlier = $underlier>,
+		{
+			type Packed = PackedPrimitiveType<$underlier, F>;
+		}
+	};
 }
+
+pub(crate) use impl_pack_scalar;
+
+impl_pack_scalar!(U1);
+impl_pack_scalar!(U2);
+impl_pack_scalar!(U4);
+impl_pack_scalar!(u8);
+impl_pack_scalar!(u16);
+impl_pack_scalar!(u32);
+impl_pack_scalar!(u64);
+impl_pack_scalar!(u128);

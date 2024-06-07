@@ -5,84 +5,6 @@ use crate::{
 	underlier::{Divisible, WithUnderlier},
 	ExtensionField, Field, PackedField,
 };
-use std::slice;
-
-/// Trait represents a relationship between a packed struct of field elements and a packed struct
-/// of elements from an extension field.
-///
-/// This trait relation guarantees that the following iterators yield the same sequence of scalar
-/// elements:
-///
-/// ```
-/// use binius_field::{ExtensionField, packed::iter_packed_slice, PackedExtensionField, PackedField};
-///
-/// fn iter_ext_then_bases<'a, P, PE>(packed: &'a [PE]) -> impl Iterator<Item=P::Scalar> + 'a
-///     where
-///         P: PackedField + 'a,
-///         PE: PackedExtensionField<P>,
-///         PE::Scalar: ExtensionField<P::Scalar>,
-/// {
-///     iter_packed_slice(packed).flat_map(|ext| ext.iter_bases())
-/// }
-///
-/// fn iter_cast_then_iter<'a, P, PE>(packed: &'a [PE]) -> impl Iterator<Item=P::Scalar> + 'a
-///     where
-///         P: PackedField + 'a,
-///         PE: PackedExtensionField<P>,
-///         PE::Scalar: ExtensionField<P::Scalar>,
-/// {
-///     iter_packed_slice(PE::cast_to_bases(packed)).flat_map(|p| p.into_iter())
-/// }
-/// ```
-///
-/// # Safety
-///
-/// In order for the above relation to be guaranteed, the memory representation of a slice of
-/// `PackedExtensionField` elements must be the same as a slice of the underlying `PackedField`
-/// elements, differing only in the slice lengths.
-pub unsafe trait PackedExtensionField<P: PackedField>: PackedField
-where
-	Self::Scalar: ExtensionField<P::Scalar>,
-{
-	fn cast_to_bases(packed: &[Self]) -> &[P];
-	fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [P];
-
-	fn as_bases(&self) -> &[P] {
-		Self::cast_to_bases(slice::from_ref(self))
-	}
-
-	fn as_bases_mut(&mut self) -> &mut [P] {
-		Self::cast_to_bases_mut(slice::from_mut(self))
-	}
-
-	/// Try to cast a slice of base field elements to extension field elements.
-	///
-	/// Returns None if the extension degree does not divide the number of base field elements.
-	fn try_cast_to_ext(packed: &[P]) -> Option<&[Self]>;
-
-	/// Try to cast a mutable slice of base field elements to extension field elements.
-	///
-	/// Returns None if the extension degree does not divide the number of base field elements.
-	fn try_cast_to_ext_mut(packed: &mut [P]) -> Option<&mut [Self]>;
-}
-
-unsafe impl<P: PackedField> PackedExtensionField<P> for P {
-	fn cast_to_bases(packed: &[Self]) -> &[P] {
-		packed
-	}
-
-	fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [P] {
-		packed
-	}
-
-	fn try_cast_to_ext(packed: &[P]) -> Option<&[Self]> {
-		Some(packed)
-	}
-
-	fn try_cast_to_ext_mut(packed: &mut [P]) -> Option<&mut [Self]> {
-		Some(packed)
-	}
-}
 
 /// A [`PackedField`] that can be safely cast to indexable slices of scalars.
 ///
@@ -103,14 +25,14 @@ pub unsafe trait PackedFieldIndexable: PackedField {
 unsafe impl<S, P> PackedFieldIndexable for P
 where
 	S: Field,
-	P: PackedExtensionField<S, Scalar = S>,
+	P: PackedDivisible<S, Scalar = S>,
 {
 	fn unpack_scalars(packed: &[Self]) -> &[Self::Scalar] {
-		Self::cast_to_bases(packed)
+		P::divide(packed)
 	}
 
 	fn unpack_scalars_mut(packed: &mut [Self]) -> &mut [Self::Scalar] {
-		Self::cast_to_bases_mut(packed)
+		P::divide_mut(packed)
 	}
 }
 
@@ -173,6 +95,45 @@ where
 	fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
 		Self::from_underlier_ref_mut(base.to_underlier_ref_mut())
 	}
+}
+
+/// This trait is a shorthand for the case `PackedExtension<P::Scalar, PackedSubfield = P>` which is a
+/// quite common case in our codebase.
+pub trait RepackedExtension<P: PackedField>:
+	PackedExtension<P::Scalar, PackedSubfield = P>
+where
+	Self::Scalar: ExtensionField<P::Scalar>,
+{
+}
+
+impl<PT1, PT2> RepackedExtension<PT1> for PT2
+where
+	PT1: PackedField,
+	PT2: PackedExtension<PT1::Scalar, PackedSubfield = PT1, Scalar: ExtensionField<PT1::Scalar>>,
+{
+}
+
+/// This trait adds shortcut methods for the case `PackedExtension<F, PackedSubfield: PackedFieldIndexable>` which is a
+/// quite common case in our codebase.
+pub trait PackedExtensionIndexable<F: Field>: PackedExtension<F>
+where
+	Self::Scalar: ExtensionField<F>,
+	Self::PackedSubfield: PackedFieldIndexable,
+{
+	fn unpack_base_scalars(packed: &[Self]) -> &[F] {
+		Self::PackedSubfield::unpack_scalars(Self::cast_bases(packed))
+	}
+
+	fn unpack_base_scalars_mut(packed: &mut [Self]) -> &mut [F] {
+		Self::PackedSubfield::unpack_scalars_mut(Self::cast_bases_mut(packed))
+	}
+}
+
+impl<F, PT> PackedExtensionIndexable<F> for PT
+where
+	F: Field,
+	PT: PackedExtension<F, Scalar: ExtensionField<F>, PackedSubfield: PackedFieldIndexable>,
+{
 }
 
 /// Trait represents a relationship between a packed struct of field elements and a smaller packed

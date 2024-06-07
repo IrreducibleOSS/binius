@@ -2,15 +2,12 @@
 
 use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
-	packed_extension::PackedExtensionField,
 };
 use crate::{
 	underlier::{U1, U2, U4},
 	Field,
 };
-use bytemuck::{
-	must_cast_slice, must_cast_slice_mut, try_cast_slice, try_cast_slice_mut, Pod, Zeroable,
-};
+use bytemuck::{Pod, Zeroable};
 use cfg_if::cfg_if;
 use rand::RngCore;
 use std::{
@@ -661,43 +658,6 @@ impl From<BinaryField4b> for u8 {
 		value.val().into()
 	}
 }
-
-macro_rules! packed_extension_tower {
-	($subfield_name:ident < $name:ident) => {
-		unsafe impl PackedExtensionField<$subfield_name> for $name {
-			fn cast_to_bases(packed: &[Self]) -> &[$subfield_name] {
-				must_cast_slice(packed)
-			}
-
-			fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [$subfield_name] {
-				must_cast_slice_mut(packed)
-			}
-
-			fn try_cast_to_ext(packed: &[$subfield_name]) -> Option<&[Self]> {
-				try_cast_slice(packed).ok()
-			}
-
-			fn try_cast_to_ext_mut(packed: &mut [$subfield_name]) -> Option<&mut [Self]> {
-				try_cast_slice_mut(packed).ok()
-			}
-		}
-	};
-	($subfield_name:ident < $name:ident $(< $extfield_name:ident)+) => {
-		packed_extension_tower!($subfield_name < $name);
-		$(
-			packed_extension_tower!($subfield_name < $extfield_name);
-		)+
-		packed_extension_tower!($name $(< $extfield_name)+);
-	};
-}
-
-packed_extension_tower!(
-	BinaryField8b
-	< BinaryField16b
-	< BinaryField32b
-	< BinaryField64b
-	< BinaryField128b
-);
 
 #[cfg(test)]
 pub(crate) mod tests {

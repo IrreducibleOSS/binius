@@ -1,5 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use core::slice;
 use std::{
 	mem::{align_of, size_of},
 	slice::{from_raw_parts, from_raw_parts_mut},
@@ -36,6 +37,16 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 	}
 }
 
+unsafe impl<U: UnderlierType> Divisible<U> for U {
+	fn split_ref(&self) -> &[U] {
+		slice::from_ref(self)
+	}
+
+	fn split_mut(&mut self) -> &mut [U] {
+		slice::from_mut(self)
+	}
+}
+
 macro_rules! impl_divisible {
     (@pairs $name:ty,?) => {};
     (@pairs $bigger:ty, $smaller:ty) => {
@@ -46,6 +57,26 @@ macro_rules! impl_divisible {
 
             fn split_mut(&mut self) -> &mut [$smaller] {
                 bytemuck::must_cast_mut::<_, [$smaller;{(<$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(self)
+            }
+        }
+
+		unsafe impl $crate::underlier::Divisible<$smaller> for $crate::underlier::ScaledUnderlier<$bigger, 2> {
+            fn split_ref(&self) -> &[$smaller] {
+                bytemuck::must_cast_ref::<_, [$smaller;{(2 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&self.0)
+            }
+
+            fn split_mut(&mut self) -> &mut [$smaller] {
+                bytemuck::must_cast_mut::<_, [$smaller;{(2 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&mut self.0)
+            }
+        }
+
+		unsafe impl $crate::underlier::Divisible<$smaller> for $crate::underlier::ScaledUnderlier<$crate::underlier::ScaledUnderlier<$bigger, 2>, 2> {
+            fn split_ref(&self) -> &[$smaller] {
+                bytemuck::must_cast_ref::<_, [$smaller;{(4 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&self.0)
+            }
+
+            fn split_mut(&mut self) -> &mut [$smaller] {
+                bytemuck::must_cast_mut::<_, [$smaller;{(4 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&mut self.0)
             }
         }
     };

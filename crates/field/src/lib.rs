@@ -20,7 +20,7 @@ pub mod packed_extension;
 mod packed_polyval;
 pub mod polyval;
 pub mod transpose;
-mod underlier;
+pub mod underlier;
 pub mod util;
 
 pub use aes_field::*;

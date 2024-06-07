@@ -1,7 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::linear_code::{LinearCode, LinearCodeWithExtensionEncoding};
-use binius_field::{BinaryField, ExtensionField, PackedExtensionField, PackedField};
+use binius_field::{
+	BinaryField, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension,
+};
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, Error};
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -36,7 +39,7 @@ where
 
 impl<P, F> LinearCode for ReedSolomonCode<P>
 where
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
 	F: BinaryField,
 {
 	type P = P;
@@ -86,12 +89,12 @@ where
 
 impl<P, F> LinearCodeWithExtensionEncoding for ReedSolomonCode<P>
 where
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
 	F: BinaryField,
 {
 	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
 	where
-		PE: PackedExtensionField<Self::P>,
+		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
 	{
 		if code.len() * PE::WIDTH < self.len() {

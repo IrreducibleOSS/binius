@@ -6,8 +6,8 @@ use binius_field::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::set_packed_slice,
-	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x32b,
-	PackedExtensionField, PackedField, PackedFieldIndexable,
+	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x32b, PackedExtension,
+	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute};
 use lazy_static::lazy_static;
@@ -371,7 +371,7 @@ impl Permutation<[BinaryField32b; 24]> for Vision32bPermutation {
 		let mut input_packed = [PackedBinaryField8x32b::default(); 3];
 		PackedFieldIndexable::unpack_scalars_mut(&mut input_packed[..]).copy_from_slice(&input[..]);
 		self.permute_mut_packed(&mut input_packed);
-		input.copy_from_slice(PackedBinaryField8x32b::cast_to_bases(&input_packed));
+		input.copy_from_slice(PackedBinaryField8x32b::unpack_scalars(&input_packed));
 	}
 }
 
@@ -391,7 +391,7 @@ pub struct Vision32b<P> {
 
 impl<P> FixedLenHasher<P> for Vision32b<P>
 where
-	P: PackedExtensionField<BinaryField32b>,
+	P: PackedExtension<BinaryField32b, PackedSubfield: PackedFieldIndexable>,
 	P::Scalar: ExtensionField<BinaryField32b>,
 {
 	type Digest = PackedBinaryField8x32b;
@@ -435,7 +435,7 @@ where
 			return;
 		}
 
-		let mut msg_remaining = P::cast_to_bases(msg);
+		let mut msg_remaining = P::unpack_base_scalars(msg);
 		let mut cur_block =
 			(self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
 

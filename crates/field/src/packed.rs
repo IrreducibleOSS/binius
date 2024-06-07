@@ -239,19 +239,3 @@ impl<F: Field> PackedField for F {
 pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
-
-pub trait AsSinglePacked: Sized {
-	type SingleElementPacked: PackedField<Scalar = Self>;
-
-	fn to_single_packed(self) -> Self::SingleElementPacked {
-		assert_eq!(Self::SingleElementPacked::WIDTH, 1);
-
-		Self::SingleElementPacked::set_single(self)
-	}
-
-	fn from_single_packed(value: Self::SingleElementPacked) -> Self {
-		assert_eq!(Self::SingleElementPacked::WIDTH, 1);
-
-		value.get(0)
-	}
-}

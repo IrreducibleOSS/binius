@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use binius_field::{ExtensionField, PackedExtensionField, PackedField};
+use binius_field::{ExtensionField, PackedField, RepackedExtension};
 
 /// An encodable [linear error-correcting code](https://en.wikipedia.org/wiki/Linear_code) intended
 /// for use in a Brakedown-style polynomial commitment scheme.
@@ -72,13 +72,13 @@ pub trait LinearCodeWithExtensionEncoding: LinearCode {
 	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
 	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
 	where
-		PE: PackedExtensionField<Self::P>,
+		PE: RepackedExtension<Self::P>,
 		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>;
 
 	/// Encode a message of extension field elements provided as a vector of packed field elements.
 	fn encode_extension<PE>(&self, mut msg: Vec<PE>) -> Result<Vec<PE>, Self::EncodeError>
 	where
-		PE: PackedExtensionField<Self::P>,
+		PE: RepackedExtension<Self::P>,
 		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
 	{
 		msg.resize(msg.len() * self.inv_rate(), PE::default());

@@ -5,8 +5,11 @@ use super::{
 	arch::Groestl256,
 };
 use crate::HasherDigest;
-use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField32x8b, PackedExtensionField};
-use bytemuck::{must_cast_slice, must_cast_slice_mut};
+use binius_field::{
+	underlier::WithUnderlier, BinaryField8b, ExtensionField, PackedBinaryField32x8b,
+	PackedExtension, PackedField, PackedFieldIndexable,
+};
+use bytemuck::must_cast_slice_mut;
 use digest::Digest;
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 use std::{marker::PhantomData, slice};
@@ -21,7 +24,7 @@ pub struct GroestlHasher<T> {
 
 impl<P> Hasher<P> for GroestlHasher<P>
 where
-	P: PackedExtensionField<BinaryField8b>,
+	P: PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>,
 	P::Scalar: ExtensionField<BinaryField8b>,
 {
 	type Digest = GroestlDigest;
@@ -34,14 +37,13 @@ where
 	}
 
 	fn update(&mut self, data: impl AsRef<[P]>) {
-		self.inner
-			.update(must_cast_slice(P::cast_to_bases(data.as_ref())))
+		self.inner.update(to_u8_slice(data.as_ref()))
 	}
 
 	fn chain_update(self, data: impl AsRef<[P]>) -> Self {
 		let Self { inner, _t_marker } = self;
 		Self {
-			inner: inner.chain_update(must_cast_slice(P::cast_to_bases(data.as_ref()))),
+			inner: inner.chain_update(to_u8_slice(data.as_ref())),
 			_t_marker,
 		}
 	}
@@ -73,6 +75,17 @@ where
 	}
 }
 
+fn to_u8_slice<
+	PT: PackedField<Scalar: ExtensionField<BinaryField8b>>
+		+ PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>,
+>(
+	slice: &[PT],
+) -> &[u8] {
+	let packed_subfields = PT::cast_bases(slice);
+	let scalars = PT::PackedSubfield::unpack_scalars(packed_subfields);
+	BinaryField8b::to_underliers_ref(scalars)
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct GroestlDigestCompression;
 
@@ -94,9 +107,6 @@ mod tests {
 		let expected = hex!("5bea5b2e398c903f0127a3467a961dd681069d06632502aa4297580b8ba50c75");
 		let digest =
 			GroestlDigestCompression.compress([GroestlDigest::default(), GroestlDigest::default()]);
-		assert_eq!(
-			PackedExtensionField::<BinaryField8b>::as_bases(&digest),
-			&expected.map(BinaryField8b::new)[..]
-		);
+		assert_eq!(to_u8_slice(&[digest]), &expected);
 	}
 }

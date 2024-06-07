@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::underlier::{NumCast, UnderlierType, WithUnderlier};
+use super::underlier_type::{NumCast, UnderlierType, WithUnderlier};
 use binius_utils::checked_arithmetics::{checked_div, checked_log_2};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 

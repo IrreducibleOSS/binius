@@ -200,7 +200,7 @@ where
 	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<B128, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
 {
 	lasso_comm: PCS1::Commitment,
 	lasso_proof: PCS1::Proof,
@@ -235,7 +235,7 @@ where
 	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<B128, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -315,7 +315,7 @@ where
 		f_prime_committed_id,
 	)?;
 
-	let grand_prod_polys = [prodcheck_prove_output.f_prime_commit];
+	let grand_prod_polys = [prodcheck_prove_output.f_prime_commit.to_single_packed()];
 	let (grand_prod_comm, grand_prod_committed) = pcs128.commit(&grand_prod_polys)?;
 
 	challenger.observe(grand_prod_comm.clone());
@@ -459,7 +459,7 @@ where
 	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<B128, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -625,7 +625,7 @@ fn main() -> Result<()> {
 	optimal_block_pcs!(pcs32 := 1 x [P32 > P16 > P32 > P128] ^ (log_size));
 
 	// relying on Field -> PackedField impl until prodcheck is aware of packed fields
-	optimal_block_pcs!(pcs128 := 1 x [B128 > P16 > P128 > P128] ^ (log_size + 2));
+	optimal_block_pcs!(pcs128 := 1 x [P128 > P16 > P128 > P128] ^ (log_size + 2));
 
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;

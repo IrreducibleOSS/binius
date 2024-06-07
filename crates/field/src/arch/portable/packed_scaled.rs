@@ -5,8 +5,10 @@ use crate::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
 	arithmetic_traits::MulAlpha,
+	as_packed_field::PackScalar,
 	packed::PackedBinaryField,
-	Error, PackedField,
+	underlier::{ScaledUnderlier, UnderlierType, WithUnderlier},
+	Error, Field, PackedField,
 };
 use bytemuck::{Pod, Zeroable};
 use std::{
@@ -380,32 +382,6 @@ macro_rules! packed_scaled_field {
 				}
 			}
 		}
-
-		unsafe impl<P> $crate::packed_extension::PackedExtensionField<P> for $name
-		where
-			P: $crate::packed::PackedField,
-			$inner: $crate::packed_extension::PackedExtensionField<P>,
-			<$inner as $crate::packed::PackedField>::Scalar:
-				$crate::extension::ExtensionField<P::Scalar>,
-		{
-			fn cast_to_bases(packed: &[Self]) -> &[P] {
-				<$inner>::cast_to_bases(bytemuck::must_cast_slice(packed))
-			}
-
-			fn cast_to_bases_mut(packed: &mut [Self]) -> &mut [P] {
-				<$inner>::cast_to_bases_mut(bytemuck::must_cast_slice_mut(packed))
-			}
-
-			fn try_cast_to_ext(packed: &[P]) -> Option<&[Self]> {
-				<$inner>::try_cast_to_ext(packed)
-					.and_then(|bases| bytemuck::try_cast_slice(bases).ok())
-			}
-
-			fn try_cast_to_ext_mut(packed: &mut [P]) -> Option<&mut [Self]> {
-				<$inner>::try_cast_to_ext_mut(packed)
-					.and_then(|bases| bytemuck::try_cast_slice_mut(bases).ok())
-			}
-		}
 	};
 }
 
@@ -425,3 +401,38 @@ macro_rules! impl_scaled_512_bit_conversion_from_u128_array {
 }
 
 pub(crate) use impl_scaled_512_bit_conversion_from_u128_array;
+
+impl<PT, const N: usize> From<ScaledUnderlier<PT::Underlier, N>> for ScaledPackedField<PT, N>
+where
+	PT: WithUnderlier,
+{
+	fn from(value: ScaledUnderlier<PT::Underlier, N>) -> Self {
+		Self::from(value.0)
+	}
+}
+
+impl<PT, const N: usize> From<ScaledPackedField<PT, N>> for ScaledUnderlier<PT::Underlier, N>
+where
+	PT: WithUnderlier,
+{
+	fn from(value: ScaledPackedField<PT, N>) -> Self {
+		ScaledUnderlier(value.0.map(|v| v.into()))
+	}
+}
+
+unsafe impl<PT, const N: usize> WithUnderlier for ScaledPackedField<PT, N>
+where
+	PT: WithUnderlier<Underlier: Pod>,
+{
+	type Underlier = ScaledUnderlier<PT::Underlier, N>;
+}
+
+impl<U, F, const N: usize> PackScalar<F> for ScaledUnderlier<U, N>
+where
+	U: PackScalar<F> + UnderlierType + Pod,
+	F: Field,
+	ScaledPackedField<U::Packed, N>:
+		PackedField<Scalar = F> + WithUnderlier<Underlier = ScaledUnderlier<U, N>>,
+{
+	type Packed = ScaledPackedField<U::Packed, N>;
+}

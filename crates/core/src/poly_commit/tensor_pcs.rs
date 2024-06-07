@@ -15,8 +15,8 @@ use binius_field::{
 	packed::{get_packed_slice, iter_packed_slice},
 	square_transpose, transpose_scalars,
 	util::inner_product_unchecked,
-	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtensionField, PackedField,
-	PackedFieldIndexable,
+	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, RepackedExtension,
 };
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
@@ -143,7 +143,7 @@ impl<P, PA, PI, PE, LC>
 where
 	P: PackedField,
 	PA: PackedField,
-	PI: PackedField + PackedExtensionField<BinaryField8b> + Sync,
+	PI: PackedField + PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable> + Sync,
 	PI::Scalar: ExtensionField<P::Scalar> + ExtensionField<BinaryField8b>,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar> + BinaryField,
@@ -176,9 +176,9 @@ where
 	FA: Field,
 	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F> + ExtensionField<FA>,
-	PI: PackedFieldIndexable<Scalar = FI> + PackedExtensionField<P> + PackedExtensionField<PA>,
+	PI: PackedFieldIndexable<Scalar = FI> + RepackedExtension<P> + RepackedExtension<PA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
+	PE: PackedFieldIndexable<Scalar = FE> + RepackedExtension<PI>,
 	LC: LinearCode<P = PA>,
 	H: HashDigest<PI>,
 	H::Digest: Copy + Default + Send,
@@ -217,8 +217,7 @@ where
 		let mut all_digests = Vec::with_capacity(polys.len());
 		for poly in polys {
 			let mut encoded = vec![PI::default(); n_rows * n_cols_enc / PI::WIDTH];
-			let poly_vals_packed =
-				PI::try_cast_to_ext(poly.evals()).ok_or_else(|| Error::UnalignedMessage)?;
+			let poly_vals_packed = <PI as PackedExtension<F>>::cast_exts(poly.evals());
 
 			transpose::transpose(
 				PI::unpack_scalars(poly_vals_packed),
@@ -229,7 +228,7 @@ where
 
 			self.code
 				.encode_batch_inplace(
-					<PI as PackedExtensionField<PA>>::cast_to_bases_mut(&mut encoded),
+					<PI as PackedExtension<FA>>::cast_bases_mut(&mut encoded),
 					self.log_rows + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
 				)
 				.map_err(|err| Error::EncodeError(Box::new(err)))?;
@@ -439,8 +438,8 @@ where
 					// elements to perform the consistency checks. Allocate col_transposed as packed
 					// intermediate field elements to guarantee alignment.
 					let mut col_transposed = vec![PI::default(); n_rows / PI::WIDTH];
-					let base_cols =
-						PackedExtensionField::<P>::cast_to_bases_mut(&mut col_transposed);
+					let base_cols: &mut [_] =
+						<PI as PackedExtension<F>>::cast_bases_mut(&mut col_transposed);
 					transpose_scalars(col, base_cols).expect(
 						"guaranteed safe because of parameter checks in constructor; \
 							alignment is guaranteed the cast from a PI slice",
@@ -591,12 +590,9 @@ where
 	FA: Field,
 	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<P::Scalar> + ExtensionField<PA::Scalar>,
-	PI: PackedFieldIndexable<Scalar = FI>
-		+ PackedExtensionField<P>
-		+ PackedExtensionField<PA>
-		+ Sync,
+	PI: PackedFieldIndexable<Scalar = FI> + RepackedExtension<P> + RepackedExtension<PA> + Sync,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedFieldIndexable<Scalar = FE> + PackedExtensionField<PI>,
+	PE: PackedFieldIndexable<Scalar = FE> + RepackedExtension<PI>,
 	LC: LinearCode<P = PA>,
 	H: HashDigest<PI>,
 	H::Digest: Copy + Default + Send,
@@ -665,8 +661,8 @@ where
 			// parameter for which this is true.
 			assert!(P::WIDTH <= <FE as ExtensionField<F>>::DEGREE);
 
-			let f_view = PackedExtensionField::<P>::cast_to_bases_mut(
-				PackedExtensionField::<PI>::cast_to_bases_mut(
+			let f_view = <PI as PackedExtension<F>>::cast_bases_mut(
+				<PE as PackedExtension<FI>>::cast_bases_mut(
 					&mut u_prime[..(1 << log_n_cols) / PE::WIDTH],
 				),
 			);
@@ -677,11 +673,11 @@ where
 
 		// View u' as a vector of packed intermediate field elements and batch encode.
 		{
-			let fi_view = PackedExtensionField::<PI>::cast_to_bases_mut(u_prime);
+			let fi_view = <PE as PackedExtension<FI>>::cast_bases_mut(u_prime);
 			let log_batch_size = log2_strict_usize(<FE as ExtensionField<F>>::DEGREE);
 			self.code
 				.encode_batch_inplace(
-					<PI as PackedExtensionField<PA>>::cast_to_bases_mut(fi_view),
+					<PI as PackedExtension<FA>>::cast_bases_mut(fi_view),
 					log_batch_size + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
 				)
 				.map_err(|err| Error::EncodeError(Box::new(err)))?;
@@ -693,8 +689,8 @@ where
 			// parameter for which this is true.
 			assert!(P::WIDTH <= <FE as ExtensionField<F>>::DEGREE);
 
-			let f_view = PackedExtensionField::<P>::cast_to_bases_mut(
-				PackedExtensionField::<PI>::cast_to_bases_mut(u_prime),
+			let f_view = <PI as PackedExtension<F>>::cast_bases_mut(
+				<PE as PackedExtension<FI>>::cast_bases_mut(u_prime),
 			);
 			f_view
 				.par_chunks_exact_mut(block_size)
@@ -768,7 +764,7 @@ pub fn calculate_n_test_queries_reed_solomon<F, FE, P>(
 where
 	F: BinaryField,
 	FE: BinaryField + ExtensionField<F>,
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
 	P::Scalar: BinaryField,
 {
 	// Assume we are limited by the non-proximal error term
@@ -802,7 +798,7 @@ fn calculate_error_bound_reed_solomon<F, FE, P>(
 where
 	F: BinaryField,
 	FE: BinaryField + ExtensionField<F>,
-	P: PackedField<Scalar = F> + PackedExtensionField<F>,
+	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
 	P::Scalar: BinaryField,
 {
 	let e = (code.min_dist() - 1) / 2;
@@ -839,15 +835,16 @@ where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	FA: BinaryField,
-	PA: PackedField<Scalar = FA> + PackedExtensionField<FA>,
+	PA: PackedField<Scalar = FA> + PackedExtension<FA> + PackedFieldIndexable,
 	FI: ExtensionField<F> + ExtensionField<FA> + ExtensionField<BinaryField8b>,
 	PI: PackedField<Scalar = FI>
-		+ PackedExtensionField<BinaryField8b>
-		+ PackedExtensionField<FI>
-		+ PackedExtensionField<P>
-		+ PackedExtensionField<PA>,
+		+ PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>
+		+ PackedExtension<FI>
+		+ RepackedExtension<P>
+		+ RepackedExtension<PA>
+		+ PackedFieldIndexable,
 	FE: BinaryField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
-	PE: PackedField<Scalar = FE> + PackedExtensionField<PI> + PackedExtensionField<FE>,
+	PE: PackedField<Scalar = FE> + RepackedExtension<PI> + PackedFieldIndexable,
 {
 	let mut best_proof_size = None;
 	let mut best_pcs = None;

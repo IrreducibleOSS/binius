@@ -1,6 +1,6 @@
 use binius_field::{
 	packed_binary_field::{PackedBinaryField2x64b, PackedBinaryField8x16b},
-	BinaryField16b, ExtensionField, PackedExtensionField,
+	BinaryField16b, ExtensionField, PackedExtension, PackedFieldIndexable,
 };
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, AdditiveNTTWithPrecompute};
 use criterion::{
@@ -13,7 +13,7 @@ use std::{iter::repeat_with, mem};
 fn tower_ntt_16b(c: &mut Criterion) {
 	fn bench_helper<PE>(group: &mut BenchmarkGroup<WallTime>, id: &str, log_n: usize)
 	where
-		PE: PackedExtensionField<PackedBinaryField8x16b>,
+		PE: PackedExtension<BinaryField16b, PackedSubfield: PackedFieldIndexable>,
 		PE::Scalar: ExtensionField<BinaryField16b>,
 	{
 		let n = 1 << log_n;
@@ -42,7 +42,7 @@ fn tower_ntt_16b(c: &mut Criterion) {
 fn tower_ntt_with_precompute_16b(c: &mut Criterion) {
 	fn bench_helper<PE>(group: &mut BenchmarkGroup<WallTime>, id: &str, log_n: usize)
 	where
-		PE: PackedExtensionField<PackedBinaryField8x16b>,
+		PE: PackedExtension<BinaryField16b, PackedSubfield: PackedFieldIndexable>,
 		PE::Scalar: ExtensionField<BinaryField16b>,
 	{
 		let n = 1 << log_n;

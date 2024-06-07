@@ -2,8 +2,8 @@
 
 use super::{
 	packed::{
-		impl_broadcast, impl_conversion, impl_ops_for_zero_height, impl_packed_extension_field,
-		packed_binary_field_tower, PackedPrimitiveType,
+		impl_broadcast, impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
+		PackedPrimitiveType,
 	},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
@@ -46,12 +46,6 @@ packed_binary_field_tower!(
 	< PackedBinaryField2x32b
 	< PackedBinaryField1x64b
 );
-
-// Define extension fields
-impl_packed_extension_field!(PackedBinaryField8x8b);
-impl_packed_extension_field!(PackedBinaryField4x16b);
-impl_packed_extension_field!(PackedBinaryField2x32b);
-impl_packed_extension_field!(PackedBinaryField1x64b);
 
 // Define broadcast
 impl_broadcast!(u64, BinaryField1b);

@@ -3,7 +3,7 @@
 use crate::{
 	arch::{
 		portable::{
-			packed::PackedPrimitiveType,
+			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
 				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 			},
@@ -118,6 +118,7 @@ impl<U: NumCast<u128>> NumCast<M512> for U {
 }
 
 impl_divisible!(@pairs M512, M256, M128, u128, u64, u32, u16, u8);
+impl_pack_scalar!(M512);
 
 impl Default for M512 {
 	#[inline(always)]
@@ -422,7 +423,7 @@ impl<Scalar: BinaryField> From<PackedPrimitiveType<M512, Scalar>> for __m512i {
 	}
 }
 
-impl<Scalar: BinaryField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveType<M512, Scalar>
+impl<Scalar: BinaryField> Broadcast<Scalar> for PackedPrimitiveType<M512, Scalar>
 where
 	u128: From<Scalar::Underlier>,
 {

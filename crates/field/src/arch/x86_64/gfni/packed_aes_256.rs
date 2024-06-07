@@ -6,10 +6,7 @@ use crate::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	},
 	arch::{
-		portable::packed::{
-			impl_conversion, impl_packed_extension_field, packed_binary_field_tower,
-			PackedPrimitiveType,
-		},
+		portable::packed::{impl_conversion, packed_binary_field_tower, PackedPrimitiveType},
 		x86_64::gfni::gfni_arithmetics::{
 			impl_transformation_with_gfni, impl_transformation_with_gfni_nxn,
 		},
@@ -43,13 +40,6 @@ packed_binary_field_tower!(
 	< PackedAESBinaryField4x64b
 	< PackedAESBinaryField2x128b
 );
-
-// Define extension fields
-impl_packed_extension_field!(PackedAESBinaryField32x8b);
-impl_packed_extension_field!(PackedAESBinaryField16x16b);
-impl_packed_extension_field!(PackedAESBinaryField8x32b);
-impl_packed_extension_field!(PackedAESBinaryField4x64b);
-impl_packed_extension_field!(PackedAESBinaryField2x128b);
 
 // Define multiplication
 impl_mul_with!(PackedAESBinaryField32x8b @ GfniAESTowerStrategy);

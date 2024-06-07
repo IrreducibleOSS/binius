@@ -2,6 +2,7 @@
 
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
 use binius_field::{
+	as_packed_field::AsSinglePacked,
 	packed::{get_packed_slice, iter_packed_slice, set_packed_slice},
 	util::{inner_product_par, inner_product_unchecked},
 	ExtensionField, Field, PackedField,
@@ -298,6 +299,21 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		self.specialize().upcast_arc_dyn()
+	}
+}
+
+impl<'a, F: Field + AsSinglePacked> MultilinearExtension<'a, F> {
+	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field with single element.
+	pub fn to_single_packed(self) -> MultilinearExtension<'static, F::Packed> {
+		let evals = self.evals.into_owned();
+		let packed_evals = evals
+			.into_iter()
+			.map(|eval| eval.to_single_packed())
+			.collect();
+		MultilinearExtension {
+			mu: self.mu,
+			evals: Cow::Owned(packed_evals),
+		}
 	}
 }
 

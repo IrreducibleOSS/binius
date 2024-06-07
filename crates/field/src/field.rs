@@ -1,4 +1,7 @@
-use crate::arithmetic_traits::{InvertOrZero, Square};
+use crate::{
+	arithmetic_traits::{InvertOrZero, Square},
+	underlier::WithUnderlier,
+};
 use rand::RngCore;
 use std::{
 	fmt::Debug,
@@ -36,6 +39,7 @@ pub trait Field:
 	+ for<'a> MulAssign<&'a Self>
 	+ Square
 	+ InvertOrZero
+	+ WithUnderlier
 {
 	/// The zero element of the field, the additive identity.
 	const ZERO: Self;

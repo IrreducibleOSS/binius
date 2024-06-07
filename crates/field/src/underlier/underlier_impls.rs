@@ -2,7 +2,7 @@
 
 use super::{
 	small_uint::{U1, U2, U4},
-	underlier::{NumCast, UnderlierType},
+	underlier_type::{NumCast, UnderlierType},
 	underlier_with_bit_ops::UnderlierWithBitOps,
 };
 

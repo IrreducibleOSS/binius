@@ -19,9 +19,21 @@ use crate::{
 /// Note that the underlier of the packed field may be different.
 /// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s underlier
 /// may be `M128`.
-pub(crate) trait AsSinglePacked: Field + WithUnderlier {
+pub trait AsSinglePacked: Field {
 	type Packed: PackedField<Scalar = Self>
 		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;
+
+	fn to_single_packed(self) -> Self::Packed {
+		assert_eq!(Self::Packed::WIDTH, 1);
+
+		Self::Packed::set_single(self)
+	}
+
+	fn from_single_packed(value: Self::Packed) -> Self {
+		assert_eq!(Self::Packed::WIDTH, 1);
+
+		value.get(0)
+	}
 }
 
 macro_rules! impl_as_single_packed_field {
@@ -56,7 +68,7 @@ pub trait PackScalar<F: Field>: UnderlierType {
 }
 
 /// A trait to convert field to a same bit size packed field with some smaller scalar.
-pub(crate) trait AsPackedField<Scalar: Field>: Field + WithUnderlier
+pub(crate) trait AsPackedField<Scalar: Field>: Field
 where
 	Self: ExtensionField<Scalar>,
 {

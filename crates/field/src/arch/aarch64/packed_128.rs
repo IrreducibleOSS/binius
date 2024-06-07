@@ -5,8 +5,8 @@ use super::m128::M128;
 use super::{
 	super::portable::{
 		packed::{
-			impl_conversion, impl_ops_for_zero_height, impl_packed_extension_field,
-			packed_binary_field_tower, PackedPrimitiveType,
+			impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
+			PackedPrimitiveType,
 		},
 		packed_arithmetic::{alphas, impl_tower_constants},
 	},
@@ -59,13 +59,6 @@ packed_binary_field_tower!(
 	< PackedBinaryField2x64b
 	< PackedBinaryField1x128b
 );
-
-// Define extension fields
-impl_packed_extension_field!(PackedBinaryField16x8b);
-impl_packed_extension_field!(PackedBinaryField8x16b);
-impl_packed_extension_field!(PackedBinaryField4x32b);
-impl_packed_extension_field!(PackedBinaryField2x64b);
-impl_packed_extension_field!(PackedBinaryField1x128b);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField128x1b);

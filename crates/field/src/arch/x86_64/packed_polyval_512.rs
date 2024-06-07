@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
 	arch::{
-		portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
+		portable::packed::{impl_conversion, PackedPrimitiveType},
 		PairwiseStrategy, ReuseMultiplyStrategy, SimdStrategy,
 	},
 	arithmetic_traits::{impl_invert_with, impl_square_with, impl_transformation_with_strategy},
@@ -27,9 +27,6 @@ impl From<PackedBinaryPolyval4x128b> for [u128; 4] {
 		value.0.into()
 	}
 }
-
-// Define extension fields
-impl_packed_extension_field!(PackedBinaryPolyval4x128b);
 
 // Define multiplication
 impl Mul for PackedBinaryPolyval4x128b {

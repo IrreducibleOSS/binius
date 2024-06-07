@@ -1,5 +1,5 @@
 use super::{
-	super::portable::packed::{impl_conversion, impl_packed_extension_field, PackedPrimitiveType},
+	super::portable::packed::{impl_conversion, PackedPrimitiveType},
 	m128::M128,
 };
 use crate::{
@@ -14,9 +14,6 @@ pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPo
 
 // Define conversion from type to underlier
 impl_conversion!(M128, PackedBinaryPolyval1x128b);
-
-// Define extension field
-impl_packed_extension_field!(PackedBinaryPolyval1x128b);
 
 // Define multiply
 impl Mul for PackedBinaryPolyval1x128b {

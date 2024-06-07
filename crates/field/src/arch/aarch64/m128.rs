@@ -8,7 +8,7 @@ use std::{
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::super::portable::{
-	packed::PackedPrimitiveType,
+	packed::{impl_pack_scalar, PackedPrimitiveType},
 	packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
 };
 use crate::{
@@ -150,6 +150,7 @@ impl From<poly64x2_t> for M128 {
 }
 
 impl_divisible!(@pairs M128, u128, u64, u32, u16, u8);
+impl_pack_scalar!(M128);
 
 impl BitAnd for M128 {
 	type Output = Self;
@@ -335,7 +336,7 @@ impl<U: NumCast<u128>> NumCast<M128> for U {
 	}
 }
 
-impl<Scalar: BinaryField + WithUnderlier> Broadcast<Scalar> for PackedPrimitiveType<M128, Scalar>
+impl<Scalar: BinaryField> Broadcast<Scalar> for PackedPrimitiveType<M128, Scalar>
 where
 	u128: From<Scalar::Underlier>,
 {
