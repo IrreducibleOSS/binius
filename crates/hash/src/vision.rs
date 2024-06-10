@@ -6,8 +6,9 @@ use binius_field::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::set_packed_slice,
-	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField8x32b, PackedExtension,
-	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField32x8b,
+	PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable,
 };
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute};
 use lazy_static::lazy_static;
@@ -209,10 +210,10 @@ type PackedTransformationType8x32b = <PackedBinaryField8x32b as PackedTransforma
 >>::PackedTransformation<&'static [BinaryField32b]>;
 
 lazy_static! {
-	static ref ADDITIVE_NTT: AdditiveNTTWithPrecompute<BinaryField32b> = {
+	static ref ADDITIVE_NTT: AdditiveNTTWithPrecompute<BinaryField8b> = {
 		let log_h = 3;
 		let log_rate = 1;
-		AdditiveNTTWithPrecompute::<BinaryField32b>::new(log_h + 2 + log_rate)
+		AdditiveNTTWithPrecompute::<BinaryField8b>::new(log_h + 2 + log_rate)
 			.expect("log_domain_size is less than 32")
 	};
 	pub static ref FWD_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
@@ -232,16 +233,16 @@ fn add_packed_768(a: &mut [PackedBinaryField8x32b; 3], b: &[PackedBinaryField8x3
 
 #[derive(Debug, Clone)]
 pub struct Vision32bMDS {
-	x: PackedBinaryField8x32b,
-	y: PackedBinaryField8x32b,
-	z: PackedBinaryField8x32b,
+	x: PackedBinaryField32x8b,
+	y: PackedBinaryField32x8b,
+	z: PackedBinaryField32x8b,
 }
 
 impl Default for Vision32bMDS {
 	fn default() -> Self {
-		let x = PackedBinaryField8x32b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 1));
-		let y = PackedBinaryField8x32b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 2));
-		let z = PackedBinaryField8x32b::broadcast(ADDITIVE_NTT.get_subspace_eval(4, 1));
+		let x = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 1));
+		let y = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 2));
+		let z = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(4, 1));
 		Self { x, y, z }
 	}
 }
@@ -250,26 +251,30 @@ impl Vision32bMDS {
 	pub fn transform(&self, data: &mut [PackedBinaryField8x32b; 3]) {
 		for coset in 0..3 {
 			ADDITIVE_NTT
-				.inverse_transform(&mut data[coset..(coset + 1)], coset as u32, 0)
+				.inverse_transform_ext(&mut data[coset..(coset + 1)], coset as u32)
 				.unwrap();
 		}
 
-		data[1] += data[0];
-		let x = self.x * data[1];
-		data[2] += x + data[0];
+		{
+			let data = PackedExtension::cast_bases_mut(data);
 
-		let y = self.y * data[1];
-		let z = self.z * data[2];
+			data[1] += data[0];
+			let x = self.x * data[1];
+			data[2] += x + data[0];
 
-		let stash_0 = data[0];
-		let stash_1 = data[1];
-		data[0] += x + data[1] + data[2];
-		data[1] = stash_0 + y + z;
-		data[2] = data[1] + stash_1;
+			let y = self.y * data[1];
+			let z = self.z * data[2];
+
+			let stash_0 = data[0];
+			let stash_1 = data[1];
+			data[0] += x + data[1] + data[2];
+			data[1] = stash_0 + y + z;
+			data[2] = data[1] + stash_1;
+		}
 
 		for coset in 0..3 {
 			ADDITIVE_NTT
-				.forward_transform(&mut data[coset..(coset + 1)], (coset + 3) as u32, 0)
+				.forward_transform_ext(&mut data[coset..(coset + 1)], (coset + 3) as u32)
 				.unwrap();
 		}
 	}
