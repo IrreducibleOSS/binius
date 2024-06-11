@@ -158,10 +158,6 @@ where
 		Ok(sumcheck_prover)
 	}
 
-	pub fn n_vars(&self) -> usize {
-		self.oracle.n_vars()
-	}
-
 	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
 	#[instrument(skip_all, name = "sumcheck::finalize")]
 	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
@@ -275,6 +271,14 @@ where
 
 	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
 		SumcheckProver::finalize(self, prev_rd_challenge)
+	}
+
+	fn batch_proving_consistent(&self, _other: &Self) -> bool {
+		true
+	}
+
+	fn n_vars(&self) -> usize {
+		self.oracle.n_vars()
 	}
 }
 

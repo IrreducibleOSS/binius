@@ -1,6 +1,9 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::{oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError};
+use crate::{
+	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
+	protocols::abstract_sumcheck::Error as AbstractSumcheckError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -20,6 +23,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("abstract sumcheck failure: {0}")]
+	AbstractSumcheck(#[from] AbstractSumcheckError),
 }
 
 #[derive(Debug, thiserror::Error)]

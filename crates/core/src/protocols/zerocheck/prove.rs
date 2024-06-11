@@ -198,10 +198,6 @@ where
 		Ok(zerocheck_prover)
 	}
 
-	fn n_vars(&self) -> usize {
-		self.oracle.n_vars()
-	}
-
 	#[instrument(skip_all, name = "zerocheck::finalize")]
 	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
@@ -451,6 +447,16 @@ where
 
 	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
 		ZerocheckProver::finalize(self, prev_rd_challenge)
+	}
+
+	fn batch_proving_consistent(&self, other: &Self) -> bool {
+		let common = other.zerocheck_challenges.len();
+		self.zerocheck_challenges[self.zerocheck_challenges.len() - common..]
+			== other.zerocheck_challenges
+	}
+
+	fn n_vars(&self) -> usize {
+		self.oracle.n_vars()
 	}
 }
 

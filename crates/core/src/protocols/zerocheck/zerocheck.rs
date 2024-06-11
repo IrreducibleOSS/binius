@@ -5,8 +5,8 @@ use crate::{
 	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
-			AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRound,
-			AbstractSumcheckRoundClaim,
+			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
+			AbstractSumcheckRound, AbstractSumcheckRoundClaim,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -21,6 +21,15 @@ use super::{Error, VerificationError};
 pub struct ZerocheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
 	pub poly: CompositePolyOracle<F>,
+}
+
+impl<F: Field> From<ZerocheckClaim<F>> for AbstractSumcheckClaim<F> {
+	fn from(value: ZerocheckClaim<F>) -> Self {
+		Self {
+			poly: value.poly,
+			sum: F::ZERO,
+		}
+	}
 }
 
 impl<F: Field> ZerocheckClaim<F> {

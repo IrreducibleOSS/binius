@@ -6,8 +6,8 @@ use crate::{
 	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
-			AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRound,
-			AbstractSumcheckRoundClaim,
+			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
+			AbstractSumcheckRound, AbstractSumcheckRoundClaim,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -23,13 +23,7 @@ pub struct SumcheckProveOutput<F: Field> {
 	pub sumcheck_proof: SumcheckProof<F>,
 }
 
-#[derive(Debug, Clone)]
-pub struct SumcheckClaim<F: Field> {
-	/// Virtual Polynomial Oracle of the function whose sum is claimed on hypercube domain
-	pub poly: CompositePolyOracle<F>,
-	/// Claimed Sum over the Boolean Hypercube
-	pub sum: F,
-}
+pub type SumcheckClaim<F> = AbstractSumcheckClaim<F>;
 
 impl<F: Field> SumcheckClaim<F> {
 	pub fn n_vars(&self) -> usize {

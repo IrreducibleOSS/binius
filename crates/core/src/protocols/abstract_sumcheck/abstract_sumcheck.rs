@@ -4,6 +4,8 @@ use binius_field::Field;
 
 use crate::{oracle::CompositePolyOracle, protocols::evalcheck::EvalcheckClaim};
 
+use super::Error;
+
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckRound<F> {
 	/// Monomial-Basis Coefficients of a round polynomial sent by the prover
@@ -20,6 +22,12 @@ pub struct AbstractSumcheckProof<F> {
 	pub rounds: Vec<AbstractSumcheckRound<F>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AbstractSumcheckClaim<F: Field> {
+	pub poly: CompositePolyOracle<F>,
+	pub sum: F,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AbstractSumcheckRoundClaim<F: Field> {
 	pub partial_point: Vec<F>,
@@ -27,7 +35,7 @@ pub struct AbstractSumcheckRoundClaim<F: Field> {
 }
 
 pub trait AbstractSumcheckReductor<F: Field> {
-	type Error: std::error::Error;
+	type Error: std::error::Error + From<Error>;
 
 	/// Reduce a round claim to a round claim for the next round
 	///
@@ -57,11 +65,21 @@ pub trait AbstractSumcheckReductor<F: Field> {
 }
 
 pub trait AbstractSumcheckProver<F: Field> {
-	type Error: std::error::Error;
+	type Error: std::error::Error + From<Error>;
 
 	fn execute_round(
 		&mut self,
 		prev_rd_challenge: Option<F>,
 	) -> Result<AbstractSumcheckRound<F>, Self::Error>;
+
 	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error>;
+
+	/// Returns whether two provers may be used together in a batch proof
+	///
+	/// REQUIRES:
+	/// * The relation between batch-consistent provers is an equivalence relation
+	/// * self.n_vars() >= other.n_vars()
+	fn batch_proving_consistent(&self, other: &Self) -> bool;
+
+	fn n_vars(&self) -> usize;
 }
