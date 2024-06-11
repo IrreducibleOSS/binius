@@ -55,6 +55,10 @@ where
 		unsafe { from_raw_parts_mut(val.as_mut_ptr() as *mut Self::Underlier, val.len()) }
 	}
 
+	fn from_underlier(value: Self::Underlier) -> Self {
+		Self::from(value)
+	}
+
 	fn from_underlier_ref(val: &Self::Underlier) -> &Self {
 		unsafe { &*(val as *const Self::Underlier as *const Self) }
 	}

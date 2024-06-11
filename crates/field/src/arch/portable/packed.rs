@@ -230,12 +230,13 @@ where
 				index: i,
 				max: Self::WIDTH,
 			})
+			.map(Scalar::from_underlier)
 	}
 
 	#[inline]
 	fn set_checked(&mut self, i: usize, scalar: Scalar) -> Result<(), Error> {
 		(i < Self::WIDTH)
-			.then(|| self.0.set_subvalue(i, scalar))
+			.then(|| self.0.set_subvalue(i, scalar.to_underlier()))
 			.ok_or(Error::IndexOutOfRange {
 				index: i,
 				max: Self::WIDTH,
@@ -259,8 +260,8 @@ where
 	}
 
 	#[inline]
-	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self {
-		U::from_fn(f).into()
+	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+		U::from_fn(move |i| f(i).to_underlier()).into()
 	}
 
 	#[inline]

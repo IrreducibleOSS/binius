@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::underlier_type::{NumCast, UnderlierType, WithUnderlier};
+use super::underlier_type::{NumCast, UnderlierType};
 use binius_utils::checked_arithmetics::{checked_div, checked_log_2};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 
@@ -29,34 +29,34 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
 	where
-		T: WithUnderlier,
-		Self: From<T::Underlier>,
+		T: UnderlierType,
+		Self: From<T>,
 	{
 		// This implementation is optimal for the case when `Self` us u8..u128.
 		// For SIMD types/arrays specialization would be more performant.
 		let mut result = Self::default();
-		let width = checked_div(Self::BITS, T::Underlier::BITS);
+		let width = checked_div(Self::BITS, T::BITS);
 		for i in 0..width {
-			result |= Self::from(f(i).to_underlier()) << (i * T::Underlier::BITS);
+			result |= Self::from(f(i)) << (i * T::BITS);
 		}
 
 		result
 	}
 
 	/// Broadcast subvalue to fill `Self`.
-	/// `Self::BITS/T::Underlier::BITS` is supposed to be a power of 2.
+	/// `Self::BITS/T::BITS` is supposed to be a power of 2.
 	#[inline]
 	fn broadcast_subvalue<T>(value: T) -> Self
 	where
-		T: WithUnderlier,
-		Self: From<T::Underlier>,
+		T: UnderlierType,
+		Self: From<T>,
 	{
 		// This implementation is optimal for the case when `Self` us u8..u128.
 		// For SIMD types/arrays specialization would be more performant.
-		let height = checked_log_2(checked_div(Self::BITS, T::Underlier::BITS));
-		let mut result = Self::from(value.to_underlier());
+		let height = checked_log_2(checked_div(Self::BITS, T::BITS));
+		let mut result = Self::from(value);
 		for i in 0..height {
-			result |= result << ((1 << i) * T::Underlier::BITS);
+			result |= result << ((1 << i) * T::BITS);
 		}
 
 		result
@@ -67,11 +67,10 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: WithUnderlier,
-		T::Underlier: NumCast<Self>,
+		T: UnderlierType + NumCast<Self>,
 	{
-		assert!(i < checked_div(Self::BITS, T::Underlier::BITS));
-		T::Underlier::num_cast_from(*self >> (i * T::Underlier::BITS)).into()
+		assert!(i < checked_div(Self::BITS, T::BITS));
+		T::num_cast_from(*self >> (i * T::BITS))
 	}
 
 	/// Sets the subvalue in the given position.
@@ -79,25 +78,25 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
-		T: WithUnderlier<Underlier: UnderlierWithBitOps>,
-		Self: From<T::Underlier>,
+		T: UnderlierWithBitOps,
+		Self: From<T>,
 	{
-		assert!(i < checked_div(Self::BITS, T::Underlier::BITS));
+		assert!(i < checked_div(Self::BITS, T::BITS));
 		let mask = Self::from(single_element_mask::<T>());
 
-		*self &= !(mask << (i * T::Underlier::BITS));
-		*self |= Self::from(val.to_underlier()) << (i * T::Underlier::BITS);
+		*self &= !(mask << (i * T::BITS));
+		*self |= Self::from(val) << (i * T::BITS);
 	}
 }
 
 /// Returns a bit mask for a single `T` element inside underlier type.
 /// This function is completely optimized out by the compiler in release version
 /// because all the values are known at compile time.
-fn single_element_mask<T>() -> T::Underlier
+fn single_element_mask<T>() -> T
 where
-	T: WithUnderlier<Underlier: UnderlierWithBitOps>,
+	T: UnderlierWithBitOps,
 {
-	single_element_mask_bits::<T::Underlier>(T::Underlier::BITS)
+	single_element_mask_bits(T::BITS)
 }
 
 pub(crate) fn single_element_mask_bits<T: UnderlierWithBitOps>(bits_count: usize) -> T {
