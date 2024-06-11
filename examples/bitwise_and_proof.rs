@@ -5,7 +5,6 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearComposite,
-		MultilinearExtension,
 	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -18,7 +17,7 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_macros::composition_poly;
+use binius_macros::{composition_poly, IterPolys};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -60,11 +59,7 @@ where
 
 	// Round 1
 	let (abc_comm, abc_committed) = pcs
-		.commit(&[
-			witness.a_in.to_ref(),
-			witness.b_in.to_ref(),
-			witness.c_out.to_ref(),
-		])
+		.commit(&witness.iter_polys().collect::<Vec<_>>())
 		.unwrap();
 	challenger.observe(abc_comm.clone());
 
@@ -76,11 +71,10 @@ where
 	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
 		log_size,
 		BitwiseAndConstraint,
-		vec![
-			witness.a_in.to_ref().specialize_arc_dyn(),
-			witness.b_in.to_ref().specialize_arc_dyn(),
-			witness.c_out.to_ref().specialize_arc_dyn(),
-		],
+		witness
+			.iter_polys()
+			.map(|mle| mle.specialize_arc_dyn())
+			.collect::<Vec<_>>(),
 	)?;
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 
@@ -126,11 +120,7 @@ where
 	let abc_eval_proof = pcs.prove_evaluation(
 		&mut challenger,
 		&abc_committed,
-		&[
-			witness.a_in.to_ref(),
-			witness.b_in.to_ref(),
-			witness.c_out.to_ref(),
-		],
+		&witness.iter_polys().collect::<Vec<_>>(),
 		&same_query_pcs_claim.eval_point,
 	)?;
 
@@ -208,14 +198,14 @@ where
 	Ok(())
 }
 
-#[derive(Debug)]
-struct TraceWitness<'a, P: PackedField> {
-	a_in: MultilinearExtension<'a, P>,
-	b_in: MultilinearExtension<'a, P>,
-	c_out: MultilinearExtension<'a, P>,
+#[derive(Debug, IterPolys)]
+struct TraceWitness<P: PackedField> {
+	a_in: Vec<P>,
+	b_in: Vec<P>,
+	c_out: Vec<P>,
 }
 
-impl<'a, P: PackedField> TraceWitness<'a, P> {
+impl<P: PackedField> TraceWitness<P> {
 	fn to_index<F, PE>(&self, trace: &MultilinearOracleSet<F>) -> MultilinearWitnessIndex<PE>
 	where
 		F: TowerField + ExtensionField<P::Scalar>,
@@ -223,43 +213,26 @@ impl<'a, P: PackedField> TraceWitness<'a, P> {
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let mut index = MultilinearWitnessIndex::new();
-
-		index.set(
-			trace.committed_oracle_id(CommittedId {
+		for (i, witness) in self.iter_polys().enumerate() {
+			let id = CommittedId {
+				index: i,
 				batch_id: 0,
-				index: 0,
-			}),
-			self.a_in.to_ref().specialize_arc_dyn(),
-		);
-		index.set(
-			trace.committed_oracle_id(CommittedId {
-				batch_id: 0,
-				index: 1,
-			}),
-			self.b_in.to_ref().specialize_arc_dyn(),
-		);
-		index.set(
-			trace.committed_oracle_id(CommittedId {
-				batch_id: 0,
-				index: 2,
-			}),
-			self.c_out.to_ref().specialize_arc_dyn(),
-		);
-
+			};
+			index.set(trace.committed_oracle_id(id), witness.specialize_arc_dyn());
+		}
 		index
 	}
 }
 
 #[instrument(skip_all)]
-fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128x1b> {
+fn generate_trace(log_size: usize) -> TraceWitness<PackedBinaryField128x1b> {
 	let len = (1 << log_size) >> PackedBinaryField128x1b::LOG_WIDTH;
-	let mut a_in_vals = vec![PackedBinaryField128x1b::default(); len];
-	let mut b_in_vals = vec![PackedBinaryField128x1b::default(); len];
-	let mut c_out_vals = vec![PackedBinaryField128x1b::default(); len];
-	a_in_vals
-		.par_iter_mut()
-		.zip(b_in_vals.par_iter_mut())
-		.zip(c_out_vals.par_iter_mut())
+	let mut a_in = vec![PackedBinaryField128x1b::default(); len];
+	let mut b_in = vec![PackedBinaryField128x1b::default(); len];
+	let mut c_out = vec![PackedBinaryField128x1b::default(); len];
+	a_in.par_iter_mut()
+		.zip(b_in.par_iter_mut())
+		.zip(c_out.par_iter_mut())
 		.for_each_init(thread_rng, |rng, ((a_i, b_i), c_i)| {
 			*a_i = PackedBinaryField128x1b::random(&mut *rng);
 			*b_i = PackedBinaryField128x1b::random(&mut *rng);
@@ -268,11 +241,6 @@ fn generate_trace(log_size: usize) -> TraceWitness<'static, PackedBinaryField128
 			let c_i_uint128 = must_cast_mut::<_, u128>(c_i);
 			*c_i_uint128 = a_i_uint128 & b_i_uint128;
 		});
-
-	let a_in = MultilinearExtension::from_values(a_in_vals).unwrap();
-	let b_in = MultilinearExtension::from_values(b_in_vals).unwrap();
-	let c_out = MultilinearExtension::from_values(c_out_vals).unwrap();
-
 	TraceWitness { a_in, b_in, c_out }
 }
 

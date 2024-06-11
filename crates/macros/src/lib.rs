@@ -1,135 +1,158 @@
+// Copyright 2024 Ulvetanna Inc.
+
 extern crate proc_macro;
+mod composition_poly;
 
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{bracketed, parse::Parse, parse_macro_input, parse_quote, Token};
+use quote::{quote, ToTokens};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
+use crate::composition_poly::CompositionPolyItem;
+
+/// Useful for concisely creating structs that implement CompositionPoly.
+/// This currently only supports creating composition polynomials of tower level 0.
+///
+/// ```
+/// use binius_macros::composition_poly;
+/// use binius_core::polynomial::CompositionPoly;
+/// use binius_field::{Field, BinaryField1b as F};
+///
+/// // Defines named struct without any fields that implements CompositionPoly
+/// composition_poly!(MyComposition[x, y, z] = x + y * z);
+/// assert_eq!(
+///     MyComposition.evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
+///     F::ZERO
+/// );
+///
+/// // If you omit the name you get an anonymous instance instead, which can be used inline
+/// assert_eq!(
+///     composition_poly!([x, y, z] = x + y * z)
+///         .evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),
+///     F::ZERO
+/// );
+/// ```
 #[proc_macro]
 pub fn composition_poly(input: TokenStream) -> TokenStream {
-	let CompositionPolyItem {
-		is_anonymous,
-		name,
-		vars,
-		mut poly,
-	} = parse_macro_input!(input);
+	parse_macro_input!(input as CompositionPolyItem)
+		.into_token_stream()
+		.into()
+}
 
-	let n_vars = vars.len();
-	let i = 0..n_vars;
-	let degree = poly_degree(&poly);
-	rewrite_literals(&mut poly);
-
-	let result = quote! {
-		#[derive(Debug, Clone, Copy)]
-		struct #name;
-
-		impl<F: binius_field::Field> binius_core::polynomial::multivariate::CompositionPoly<F> for #name {
-			fn n_vars(&self) -> usize {
-				#n_vars
-			}
-
-			fn degree(&self) -> usize {
-				#degree
-			}
-
-			fn evaluate<P: binius_field::PackedField<Scalar=F>>(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
-				if query.len() != #n_vars {
-					return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
-				}
-				#( let #vars = query[#i]; )*
-				Ok(#poly)
-			}
-
-			fn binary_tower_level(&self) -> usize {
-				0
-			}
-		}
+/// Implements `pub fn iter_oracles(&self) -> impl Iterator<Item = OracleId>`.
+///
+/// Detects and includes fields with type `OracleId`, `[OracleId; N]`
+///
+/// ```
+/// use binius_macros::IterOracles;
+/// type OracleId = usize;
+/// type BatchId = usize;
+///
+/// #[derive(IterOracles)]
+/// struct Oracle {
+///     x: OracleId,
+///     y: [OracleId; 5],
+///     z: [OracleId; 5*2],
+///     ignored_field1: usize,
+///     ignored_field2: BatchId,
+///     ignored_field3: [[OracleId; 5]; 2],
+/// }
+/// ```
+#[proc_macro_derive(IterOracles)]
+pub fn iter_oracle_derive(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let Data::Struct(data) = &input.data else {
+		panic!("#[derive(IterOracles)] is only defined for structs with named fields");
+	};
+	let Fields::Named(fields) = &data.fields else {
+		panic!("#[derive(IterOracles)] is only defined for structs with named fields");
 	};
 
-	if is_anonymous {
-		// In this case we return an instance of our struct rather
-		// than defining the struct within the current scope
-		quote! {
-			{
-				#result
-				#name
+	let name = &input.ident;
+	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
+
+	let oracles = fields
+		.named
+		.iter()
+		.filter_map(|f| {
+			let name = f.ident.clone();
+			match &f.ty {
+				syn::Type::Path(type_path) if type_path.path.is_ident("OracleId") => {
+					Some(quote!(std::iter::once(self.#name)))
+				}
+				syn::Type::Array(array) => {
+					if let syn::Type::Path(type_path) = *array.elem.clone() {
+						if type_path.path.is_ident("OracleId") {
+							Some(quote!(self.#name.into_iter()))
+						} else {
+							None
+						}
+					} else {
+						None
+					}
+				}
+				_ => None,
+			}
+		})
+		.collect::<Vec<_>>();
+
+	quote! {
+		impl #impl_generics #name #ty_generics #where_clause {
+			pub fn iter_oracles(&self) -> impl Iterator<Item = OracleId> {
+				std::iter::empty()
+					#(.chain(#oracles))*
 			}
 		}
-	} else {
-		result
 	}
 	.into()
 }
 
-/// Make sure to run this before rewrite_literals as it will rewrite Lit to Path,
-/// which will mess up the degree
-fn poly_degree(expr: &syn::Expr) -> usize {
-	match expr.clone() {
-		syn::Expr::Lit(_) => 0,
-		syn::Expr::Path(_) => 1,
-		syn::Expr::Paren(paren) => poly_degree(&paren.expr),
-		syn::Expr::Binary(binary) => {
-			let op = binary.op;
-			let left = poly_degree(&binary.left);
-			let right = poly_degree(&binary.right);
-			match op {
-				syn::BinOp::Add(_) | syn::BinOp::Sub(_) => std::cmp::max(left, right),
-				syn::BinOp::Mul(_) => left + right,
-				_ => panic!("Binary operation is not supported: {}", quote! { #op }),
+/// Implements `pub fn iter_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>>`.
+///
+/// Supports `Vec<P>`, `[Vec<P>; N]`. Currently doesn't filter out fields from the struct, so you can't add any other fields.
+///
+/// ```
+/// use binius_macros::IterPolys;
+/// use binius_field::PackedField;
+///
+/// #[derive(IterPolys)]
+/// struct Witness<P: PackedField> {
+///     x: Vec<P>,
+///     y: [Vec<P>; 5],
+///     z: [Vec<P>; 5*2],
+/// }
+/// ```
+#[proc_macro_derive(IterPolys)]
+pub fn iter_witness_derive(input: TokenStream) -> TokenStream {
+	let input = parse_macro_input!(input as DeriveInput);
+	let Data::Struct(data) = &input.data else {
+		panic!("#[derive(IterPolys)] is only defined for structs with named fields");
+	};
+	let Fields::Named(fields) = &data.fields else {
+		panic!("#[derive(IterPolys)] is only defined for structs with named fields");
+	};
+
+	let name = &input.ident;
+	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
+
+	let witnesses = fields
+		.named
+		.iter()
+		.map(|f| {
+			let name = f.ident.clone();
+			match &f.ty {
+				syn::Type::Array(_) => quote!(self.#name.iter()),
+				_ => quote!(std::iter::once(&self.#name)),
 			}
-		}
-		_ => panic!("Unsupported expression: `{}`", quote! { #expr }),
-	}
-}
-
-/// Rewrites 0 => P::zero(), 1 => P::one()
-fn rewrite_literals(expr: &mut syn::Expr) {
-	match expr {
-		syn::Expr::Lit(exprlit) => {
-			if let syn::Lit::Int(int) = &exprlit.lit {
-				match &*int.to_string() {
-					"0" => {
-						*expr = parse_quote!(P::zero());
-					}
-					"1" => {
-						*expr = parse_quote!(P::one());
-					}
-					int => panic!("Value not supported: {int}"),
-				}
-			}
-		}
-		syn::Expr::Paren(paren) => {
-			rewrite_literals(&mut paren.expr);
-		}
-		syn::Expr::Binary(binary) => {
-			rewrite_literals(&mut binary.left);
-			rewrite_literals(&mut binary.right);
-		}
-		_ => {}
-	}
-}
-
-#[derive(Debug)]
-struct CompositionPolyItem {
-	is_anonymous: bool,
-	name: syn::Ident,
-	vars: Vec<syn::Ident>,
-	poly: syn::Expr,
-}
-
-impl Parse for CompositionPolyItem {
-	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-		let name = input.parse::<syn::Ident>();
-		Ok(Self {
-			is_anonymous: name.is_err(),
-			name: name.unwrap_or(parse_quote!(UnnamedCompositionPoly)),
-			vars: {
-				let content;
-				bracketed!(content in input);
-				let vars = content.parse_terminated(syn::Ident::parse, Token![,])?;
-				input.parse::<Token![=]>()?;
-				vars.into_iter().collect()
-			},
-			poly: input.parse::<syn::Expr>()?,
 		})
-	}
+		.collect::<Vec<_>>();
+
+	quote! {
+		impl #impl_generics #name #ty_generics #where_clause {
+			pub fn iter_polys(&self) -> impl Iterator<Item = binius_core::polynomial::MultilinearExtension #ty_generics> {
+				std::iter::empty()
+					#(.chain(#witnesses))*
+					.map(|values| binius_core::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+			}
+		}
+	}.into()
 }

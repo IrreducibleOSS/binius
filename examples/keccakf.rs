@@ -30,12 +30,11 @@ use binius_field::{
 	TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_macros::composition_poly;
+use binius_macros::{composition_poly, IterOracles, IterPolys};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
-use itertools::chain;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
@@ -163,7 +162,7 @@ where
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, IterOracles)]
 struct FixedOracle {
 	round_consts: OracleId,
 	selector: OracleId,
@@ -186,12 +185,9 @@ impl FixedOracle {
 			selector,
 		})
 	}
-
-	fn iter(&self) -> impl Iterator<Item = OracleId> {
-		[self.round_consts, self.selector].into_iter()
-	}
 }
 
+#[derive(IterOracles)]
 struct TraceOracle {
 	batch_id: BatchId,
 	state_in: [OracleId; 25],
@@ -262,21 +258,9 @@ impl TraceOracle {
 			next_state_in,
 		}
 	}
-
-	fn iter(&self) -> impl Iterator<Item = OracleId> {
-		chain!(
-			self.state_in,
-			self.state_out,
-			self.c,
-			self.d,
-			self.c_shift,
-			self.a_theta,
-			self.b,
-			self.next_state_in,
-		)
-	}
 }
 
+#[derive(IterPolys)]
 struct TraceWitness<P: PackedField> {
 	state_in: [Vec<P>; 25],
 	state_out: [Vec<P>; 25],
@@ -302,25 +286,11 @@ impl<P: PackedField> TraceWitness<P> {
 	{
 		let mut index = MultilinearWitnessIndex::new();
 		for (oracle, witness) in
-			iter::zip(fixed_oracle.iter().chain(trace_oracle.iter()), self.all_polys())
+			iter::zip(all_oracles(fixed_oracle, trace_oracle), self.iter_polys())
 		{
 			index.set(oracle, witness.specialize_arc_dyn());
 		}
 		index
-	}
-
-	fn all_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
-		iter::once(&self.round_consts)
-			.chain(iter::once(&self.selector))
-			.chain(self.state_in.iter())
-			.chain(self.state_out.iter())
-			.chain(self.c.iter())
-			.chain(self.d.iter())
-			.chain(self.c_shift.iter())
-			.chain(self.a_theta.iter())
-			.chain(self.b.iter())
-			.chain(self.next_state_in.iter())
-			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 	}
 
 	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
@@ -333,8 +303,13 @@ impl<P: PackedField> TraceWitness<P> {
 	}
 }
 
-fn zerocheck_oracles(fixed_oracle: &FixedOracle, trace_oracle: &TraceOracle) -> Vec<OracleId> {
-	fixed_oracle.iter().chain(trace_oracle.iter()).collect()
+fn all_oracles(
+	fixed_oracle: &FixedOracle,
+	trace_oracle: &TraceOracle,
+) -> impl Iterator<Item = OracleId> {
+	trace_oracle
+		.iter_oracles()
+		.chain(fixed_oracle.iter_oracles())
 }
 
 struct Proof<F: Field, PCSComm, PCSProof> {
@@ -487,8 +462,7 @@ where
 	let mix_composition_prover =
 		make_constraints(fixed_oracle, trace_oracle, PW::from(mixing_challenge))?;
 
-	let zerocheck_column_oracles = zerocheck_oracles(fixed_oracle, trace_oracle)
-		.into_iter()
+	let zerocheck_column_oracles = all_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
 		.collect();
 	let zerocheck_claim = ZerocheckClaim {
@@ -503,7 +477,7 @@ where
 		log_size,
 		mix_composition_prover,
 		witness
-			.all_polys()
+			.iter_polys()
 			.map(|mle| mle.specialize_arc_dyn::<PW>())
 			.collect(),
 	)?;
@@ -594,8 +568,7 @@ where
 	let mix_composition = make_constraints(fixed_oracle, trace_oracle, mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_column_oracles = zerocheck_oracles(fixed_oracle, trace_oracle)
-		.into_iter()
+	let zerocheck_column_oracles = all_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
 		.collect();
 	let zerocheck_claim = ZerocheckClaim {
@@ -632,7 +605,7 @@ fn make_constraints<FI: TowerField>(
 	trace_oracle: &TraceOracle,
 	challenge: FI,
 ) -> Result<impl CompositionPoly<FI> + Clone> {
-	let zerocheck_column_ids = zerocheck_oracles(fixed_oracle, trace_oracle);
+	let zerocheck_column_ids = all_oracles(fixed_oracle, trace_oracle).collect::<Vec<_>>();
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
 	// C_x - \sum_{y=0}^4 A_{x,y} = 0

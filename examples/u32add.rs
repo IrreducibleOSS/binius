@@ -25,7 +25,7 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_macros::composition_poly;
+use binius_macros::{composition_poly, IterOracles, IterPolys};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -52,6 +52,7 @@ mod field_types {
 	pub type DomainFieldWithStep = binius_field::BinaryField128b;
 }
 
+#[derive(IterPolys)]
 struct U32AddTrace<P: PackedField<Scalar = BinaryField1b>> {
 	x_in: Vec<P>,
 	y_in: Vec<P>,
@@ -101,22 +102,8 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> U32AddTrace<P> {
 	{
 		let mut index = MultilinearWitnessIndex::new();
 
-		for (oracle, witness) in [
-			oracle.x_in,
-			oracle.y_in,
-			oracle.z_out,
-			oracle.c_out,
-			oracle.c_in,
-		]
-		.into_iter()
-		.zip([&self.x_in, &self.y_in, &self.z_out, &self.c_out, &self.c_in])
-		{
-			index.set(
-				oracle,
-				MultilinearExtension::from_values_slice(witness.as_slice())
-					.unwrap()
-					.specialize_arc_dyn(),
-			);
+		for (oracle, witness) in oracle.iter_oracles().zip(self.iter_polys()) {
+			index.set(oracle, witness.specialize_arc_dyn());
 		}
 
 		index
@@ -127,14 +114,9 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> U32AddTrace<P> {
 			.into_iter()
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 	}
-
-	fn all_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
-		[&self.x_in, &self.y_in, &self.z_out, &self.c_out, &self.c_in]
-			.into_iter()
-			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-	}
 }
 
+#[derive(IterOracles)]
 struct U32AddOracle {
 	x_in: OracleId,
 	y_in: OracleId,
@@ -171,7 +153,7 @@ impl U32AddOracle {
 		&self,
 		challenge: F,
 	) -> Result<impl CompositionPoly<F> + Clone> {
-		let all_columns = &self.oracles();
+		let all_columns = &self.iter_oracles().collect::<Vec<_>>();
 		let mix = empty_mix_composition(all_columns.len(), challenge);
 		let mix = mix.include([index_composition(
 			all_columns,
@@ -184,10 +166,6 @@ impl U32AddOracle {
 			composition_poly!([x, y, cin, cout] = (x + cin) * (y + cin) + cin - cout),
 		)?])?;
 		Ok(mix)
-	}
-
-	fn oracles(&self) -> Vec<OracleId> {
-		[self.x_in, self.y_in, self.z_out, self.c_out, self.c_in].to_vec()
 	}
 }
 
@@ -224,11 +202,7 @@ where
 	let mix_composition_verifier = oracle.mixed_constraints(mixing_challenge)?;
 	let mix_composition_prover = oracle.mixed_constraints(PW::from(mixing_challenge))?;
 
-	let zerocheck_column_oracles = oracle
-		.oracles()
-		.into_iter()
-		.map(|id| oracles.oracle(id))
-		.collect();
+	let zerocheck_column_oracles = oracle.iter_oracles().map(|id| oracles.oracle(id)).collect();
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(
 			log_size,
@@ -241,7 +215,7 @@ where
 		log_size,
 		mix_composition_prover,
 		witness
-			.all_polys()
+			.iter_polys()
 			.map(|mle| mle.specialize_arc_dyn::<PW>())
 			.collect(),
 	)?;
@@ -339,11 +313,7 @@ where
 	let mix_composition = oracle.mixed_constraints(mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_column_oracles = oracle
-		.oracles()
-		.into_iter()
-		.map(|id| oracles.oracle(id))
-		.collect();
+	let zerocheck_column_oracles = oracle.iter_oracles().map(|id| oracles.oracle(id)).collect();
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(log_size, zerocheck_column_oracles, mix_composition)?,
 	};

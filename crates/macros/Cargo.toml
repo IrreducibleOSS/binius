@@ -11,3 +11,7 @@ proc-macro = true
 syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
+
+[dev-dependencies]
+binius_field = { path = "../field" }
+binius_core = { path = "../core" }

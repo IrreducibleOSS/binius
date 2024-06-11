@@ -21,7 +21,7 @@ use binius_core::{
 		zerocheck,
 		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
 	affine_transformation::Transformation,
@@ -31,7 +31,7 @@ use binius_field::{
 	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::{GroestlHasher, Vision32bMDS, Vision32bPermutation, INV_PACKED_TRANS};
-use binius_macros::composition_poly;
+use binius_macros::{composition_poly, IterOracles, IterPolys};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -254,6 +254,7 @@ fn round_consts(rc: &[u32; 8]) -> Vec<PackedBinaryField8x32b> {
 	vec![rc_b32]
 }
 
+#[derive(IterOracles)]
 struct TraceOracle {
 	// Transparent columns
 	even_round_consts: [OracleId; 24],
@@ -437,35 +438,9 @@ impl TraceOracle {
 			trace_batch_id: trace_batch,
 		})
 	}
-
-	fn iter_oracles(&self) -> impl Iterator<Item = OracleId> {
-		chain!(
-			self.even_round_consts,
-			self.odd_round_consts,
-			self.round_0_constant,
-			iter::once(self.round_selector),
-			self.state_in,
-			self.round_begin,
-			self.inv_0,
-			self.prod_0,
-			self.s_box_out_0,
-			self.s_box_pow2_0,
-			self.s_box_pow4_0,
-			self.mds_out_0,
-			self.round_out_0,
-			self.inv_1,
-			self.prod_1,
-			self.inv_pow2_1,
-			self.inv_pow4_1,
-			self.s_box_out_1,
-			self.mds_out_1,
-			self.state_out,
-			self.next_state_in,
-		)
-	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, IterPolys)]
 struct TraceWitness<P32b: PackedField> {
 	even_round_consts: [Vec<P32b>; 24],
 	odd_round_consts: [Vec<P32b>; 24],
@@ -491,52 +466,15 @@ struct TraceWitness<P32b: PackedField> {
 }
 
 impl<P32b: PackedField> TraceWitness<P32b> {
-	fn to_index<F>(&self, trace_oracle: &TraceOracle) -> Result<MultilinearWitnessIndex<F>>
+	fn to_index<F>(&self, trace_oracle: &TraceOracle) -> MultilinearWitnessIndex<F>
 	where
 		F: ExtensionField<P32b::Scalar>,
 	{
 		let mut index = MultilinearWitnessIndex::new();
-
-		for (oracle, witness) in iter::zip(trace_oracle.iter_oracles(), self.all_polys()) {
-			index.set(oracle, witness);
+		for (oracle, witness) in trace_oracle.iter_oracles().zip(self.iter_polys()) {
+			index.set(oracle, witness.specialize_arc_dyn());
 		}
-
-		Ok(index)
-	}
-
-	fn all_polys<F>(&self) -> Vec<MultilinearWitness<F>>
-	where
-		F: ExtensionField<P32b::Scalar>,
-	{
-		chain!(
-			self.even_round_consts.iter(),
-			self.odd_round_consts.iter(),
-			self.round_0_constant.iter(),
-			iter::once(&self.round_selector),
-			self.state_in.iter(),
-			self.round_begin.iter(),
-			self.inv_0.iter(),
-			self.prod_0.iter(),
-			self.s_box_out_0.iter(),
-			self.s_box_pow2_0.iter(),
-			self.s_box_pow4_0.iter(),
-			self.mds_out_0.iter(),
-			self.round_out_0.iter(),
-			self.inv_1.iter(),
-			self.prod_1.iter(),
-			self.inv_pow2_1.iter(),
-			self.inv_pow4_1.iter(),
-			self.s_box_out_1.iter(),
-			self.mds_out_1.iter(),
-			self.state_out.iter(),
-			self.next_state_in.iter()
-		)
-		.map(|values| {
-			MultilinearExtension::from_values_slice(values.as_slice())
-				.unwrap()
-				.specialize_arc_dyn()
-		})
-		.collect()
+		index
 	}
 
 	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P32b>> {
@@ -952,7 +890,7 @@ where
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.to_index::<FW>(trace_oracle)?;
+	let mut trace_witness = witness.to_index::<FW>(trace_oracle);
 
 	// Round 1
 	let trace_commit_polys = witness.commit_polys().collect::<Vec<_>>();
@@ -987,7 +925,10 @@ where
 	let zerocheck_witness = MultilinearComposite::new(
 		zerocheck_claim.n_vars(),
 		mix_composition_prover,
-		witness.all_polys::<FW>(),
+		witness
+			.iter_polys()
+			.map(|v| v.specialize_arc_dyn::<FW>())
+			.collect(),
 	)?;
 
 	// Zerocheck
