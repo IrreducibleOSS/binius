@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
 	polynomial::MultilinearExtension,

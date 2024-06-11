@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use crate::{
 	arithmetic_traits::{InvertOrZero, Square},
 	underlier::WithUnderlier,

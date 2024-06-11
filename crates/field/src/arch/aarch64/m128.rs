@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
 use seq_macro::seq;

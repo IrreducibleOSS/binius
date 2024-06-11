@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 #[macro_export]
 macro_rules! impl_packed_field_display {
 	($name:ident) => {

@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use std::ops::Mul;
 
 use crate::{

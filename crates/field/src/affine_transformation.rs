@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
 use rand::RngCore;
 use std::ops::Deref;

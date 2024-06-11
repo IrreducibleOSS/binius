@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use super::{Random, UnderlierType};
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{Pod, Zeroable};

@@ -1,5 +1,5 @@
-#![feature(step_trait)]
 // Copyright 2024 Ulvetanna Inc.
+#![feature(step_trait)]
 
 use binius_core::{
 	challenger::HashChallenger,

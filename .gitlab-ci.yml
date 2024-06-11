@@ -31,6 +31,12 @@ stages:
     - k8s
 
 # Linting jobs
+copyright-check:
+  extends: .job_template_amd
+  stage: lint
+  script:
+    - ./scripts/check_copyright_notice.sh
+
 cargofmt:
   extends: .job_template_amd
   stage: lint

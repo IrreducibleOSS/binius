@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use anyhow::Result;
 use binius_core::{
 	challenger::HashChallenger,

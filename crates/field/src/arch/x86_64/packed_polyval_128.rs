@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use super::{
 	super::portable::packed::{impl_conversion, PackedPrimitiveType},
 	m128::M128,

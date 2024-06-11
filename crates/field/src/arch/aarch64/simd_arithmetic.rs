@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use seq_macro::seq;
 
 use super::m128::M128;

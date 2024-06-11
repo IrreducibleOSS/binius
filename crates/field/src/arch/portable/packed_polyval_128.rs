@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use super::packed::{impl_broadcast, impl_conversion, PackedPrimitiveType};
 use crate::{
 	arch::{PairwiseStrategy, ReuseMultiplyStrategy},

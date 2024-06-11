@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use binius_field::{
 	packed_binary_field::{PackedBinaryField2x64b, PackedBinaryField8x16b},
 	BinaryField16b, ExtensionField, PackedExtension, PackedFieldIndexable,

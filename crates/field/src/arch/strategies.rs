@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 /// Packed strategy for arithmetic operations.
 /// (Uses arithmetic operations with underlier and subfield to simultaneously calculate the result for all packed values)
 pub struct PackedStrategy;

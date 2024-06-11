@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use super::packed_arithmetic::PackedTowerField;
 use crate::{
 	arch::HybridRecursiveStrategy,

@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use cfg_if::cfg_if;
 
 cfg_if! {
