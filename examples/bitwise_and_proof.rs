@@ -3,7 +3,10 @@ use binius_core::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension},
+	polynomial::{
+		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearComposite,
+		MultilinearExtension,
+	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
@@ -36,6 +39,7 @@ fn prove<PCS, CH>(
 	constraints: &[CompositePolyOracle<BinaryField128b>],
 	witness: &TraceWitness<PackedBinaryField128x1b>,
 	mut challenger: CH,
+	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof>>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
@@ -81,9 +85,8 @@ where
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 
 	// zerocheck::prove is instrumented
-	let zerocheck_domain = EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<
-		BinaryField128b,
-	>(zerocheck_claim.poly.max_individual_degree() + 1)?;
+	let zerocheck_domain =
+		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
@@ -104,12 +107,13 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, BinaryField128b, BinaryField128bPolyval, _>(
+	} = greedy_evalcheck::prove::<_, _, BinaryField128bPolyval, _>(
 		trace,
 		&mut witness_index,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -343,8 +347,8 @@ fn main() {
 
 	tracing::info!("Generating the trace");
 	let witness = generate_trace(log_size);
-
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 
 	tracing::info!("Proving");
 	let proof = prove(
@@ -354,6 +358,7 @@ fn main() {
 		&constraints,
 		&witness,
 		challenger.clone(),
+		domain_factory,
 	)
 	.unwrap();
 

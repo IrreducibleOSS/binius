@@ -13,8 +13,9 @@ use binius_core::{
 		composition::{empty_mix_composition, index_composition},
 		multilinear_query::MultilinearQuery,
 		transparent::step_down::StepDown,
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultivariatePoly,
+		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
+		MultivariatePoly,
 	},
 	protocols::{
 		greedy_evalcheck,
@@ -36,7 +37,7 @@ use binius_utils::{
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use rand::{thread_rng, Rng};
-use std::{array, fmt::Debug, iter, iter::Step};
+use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
 use tracing::instrument;
 
@@ -454,7 +455,7 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
 // FsStep is a type with trait `Step` from which `FS` domain is created.
-fn prove<P, F, PW, DomainFieldWithStep, DomainField, PCS, CH>(
+fn prove<P, F, PW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -462,13 +463,13 @@ fn prove<P, F, PW, DomainFieldWithStep, DomainField, PCS, CH>(
 	pcs: &PCS,
 	mut challenger: CH,
 	witness: &TraceWitness<P>,
+	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
-	F: TowerField + From<PW> + Step,
+	F: TowerField + From<PW>,
 	PW: TowerField + From<F> + ExtensionField<DomainField>,
-	DomainFieldWithStep: TowerField + Step,
-	DomainField: TowerField + From<DomainFieldWithStep>,
+	DomainField: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
@@ -508,10 +509,8 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_domain = EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(
-		zerocheck_claim.poly.max_individual_degree() + 1,
-	)?;
-
+	let zerocheck_domain =
+		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
@@ -532,12 +531,13 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, DomainFieldWithStep, DomainField, _>(
+	} = greedy_evalcheck::prove::<_, _, DomainField, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -754,17 +754,10 @@ fn main() {
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 	let witness = generate_trace(log_size);
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 	// TODO: Ideally FS should be considerably smaller than F, something like BinaryField8b.
 	//       However, BinaryField128bPolyval doesn't support any conversions other than to/from 1 and 128 bits.
-	let proof = prove::<
-		_,
-		BinaryField128b,
-		BinaryField128bPolyval,
-		BinaryField128b,
-		BinaryField128bPolyval,
-		_,
-		_,
-	>(
+	let proof = prove::<_, BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
 		log_size,
 		&mut oracles.clone(),
 		&fixed_oracle,
@@ -772,6 +765,7 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		&witness,
+		domain_factory,
 	)
 	.unwrap();
 

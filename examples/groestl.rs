@@ -21,8 +21,8 @@ use binius_core::{
 			constant::Constant, multilinear_extension::MultilinearExtensionTransparent,
 			step_down::StepDown,
 		},
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension,
+		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
 	},
 	protocols::{
 		greedy_evalcheck,
@@ -695,6 +695,7 @@ fn prove<F, FW, P1b, P8b, PW8b, PCS1b, PCS8b, Comm, Challenger>(
 	pcs8b: &PCS8b,
 	mut challenger: Challenger,
 	witness: &TraceWitness<P1b, PW8b>,
+	domain_factory: impl EvaluationDomainFactory<AESTowerField8b>,
 ) -> Result<Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>>
 where
 	F: TowerField + ExtensionField<BinaryField8b> + From<FW> + Step,
@@ -749,10 +750,8 @@ where
 	)?;
 
 	// Zerocheck
-	let zerocheck_domain = EvaluationDomain::<AESTowerField8b>::new_isomorphic::<BinaryField8b>(
-		zerocheck_claim.poly.max_individual_degree() + 1,
-	)?;
-
+	let zerocheck_domain =
+		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		16 => 4,
@@ -774,12 +773,13 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, F, FW, _>(
+	} = greedy_evalcheck::prove::<_, _, AESTowerField8b, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 2);
@@ -943,6 +943,7 @@ fn main() {
 	.unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
 	let proof = prove::<_, AESTowerField128b, _, _, _, _, _, _, _>(
 		&mut oracles,
@@ -951,6 +952,7 @@ fn main() {
 		&pcs8b,
 		challenger.clone(),
 		&witness,
+		domain_factory,
 	)
 	.unwrap();
 

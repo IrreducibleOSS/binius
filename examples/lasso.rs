@@ -5,7 +5,9 @@ use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
 	oracle::{BatchId, CommittedBatchSpec, CommittedId, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{EvaluationDomain, MultilinearExtension},
+	polynomial::{
+		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtension,
+	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatch, LassoClaim, LassoWitness},
@@ -229,6 +231,7 @@ fn prove<PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	pcs32: &PCS32,
 	pcs128: &PCS128,
 	mut challenger: CH,
+	domain_factory: impl EvaluationDomainFactory<B128>,
 ) -> Result<Proof<PCS1, PCS8, PCS16, PCS32, PCS128>>
 where
 	PCS1: PolyCommitScheme<P1, B128, Error: Debug, Proof: 'static>,
@@ -327,7 +330,7 @@ where
 		_ => 1,
 	};
 
-	let prodcheck_zerocheck_domain = EvaluationDomain::<B128>::new(
+	let prodcheck_zerocheck_domain = domain_factory.create(
 		prodcheck_prove_output
 			.reduced_product_check_claims
 			.t_prime_claim
@@ -348,7 +351,7 @@ where
 
 	// Prove Lasso counts zerocheck
 
-	let lasso_zerocheck_domain = EvaluationDomain::<B128>::new(
+	let lasso_zerocheck_domain = domain_factory.create(
 		lasso_prove_output
 			.reduced_lasso_claims
 			.zerocheck_claim
@@ -367,7 +370,7 @@ where
 
 	// Greedy Evalcheck
 
-	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, B128, _>(
+	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, _>(
 		oracles,
 		&mut witness_index,
 		[
@@ -376,6 +379,7 @@ where
 		],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	// PCS opening proofs
@@ -629,10 +633,10 @@ fn main() -> Result<()> {
 
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
-
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-
 	let witness = generate_trace(log_size);
+	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
+
 	let proof = prove(
 		&mut oracles.clone(),
 		&trace_oracle,
@@ -643,6 +647,7 @@ fn main() -> Result<()> {
 		&pcs32,
 		&pcs128,
 		challenger.clone(),
+		domain_factory,
 	)?;
 
 	verify(

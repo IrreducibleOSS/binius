@@ -9,7 +9,8 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
-		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
+		CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+		MultilinearComposite, MultilinearExtension,
 	},
 	protocols::{
 		greedy_evalcheck,
@@ -32,7 +33,7 @@ use bytemuck::{must_cast_slice_mut, Pod};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
-use std::{fmt::Debug, iter::Step};
+use std::fmt::Debug;
 use tracing::{debug, info, instrument};
 
 // mod field_types is a selector of different sets of types which provide
@@ -191,20 +192,20 @@ impl U32AddOracle {
 }
 
 #[instrument(skip_all)]
-fn prove<P, F, PW, DomainFieldWithStep, DomainField, PCS, CH>(
+fn prove<P, F, PW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	pcs: &PCS,
 	oracle: &U32AddOracle,
 	witness: &U32AddTrace<P>,
 	mut challenger: CH,
+	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
-	F: TowerField + From<PW> + Step,
+	F: TowerField + From<PW>,
 	PW: TowerField + From<F> + ExtensionField<DomainField>,
-	DomainFieldWithStep: TowerField + Step,
-	DomainField: TowerField + From<DomainFieldWithStep>,
+	DomainField: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
 {
@@ -246,9 +247,8 @@ where
 	)?;
 
 	// zerocheck::prove is instrumented
-	let zerocheck_domain = EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(
-		zerocheck_claim.poly.max_individual_degree() + 1,
-	)?;
+	let zerocheck_domain =
+		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
 		_ => 1,
@@ -269,12 +269,13 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, DomainFieldWithStep, DomainField, _>(
+	} = greedy_evalcheck::prove::<_, _, DomainField, _>(
 		oracles,
 		&mut witness_index,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -402,17 +403,19 @@ fn main() {
 	let oracle = U32AddOracle::new(&mut oracles, log_size);
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let witness = U32AddTrace::<PackedBinaryField128x1b>::new(log_size).fill_trace();
+	let domain_factory =
+		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
 
 	info!("Proving");
-	let proof = prove::<
-		_,
-		BinaryField128b,
-		field_types::Field,
-		field_types::DomainFieldWithStep,
-		field_types::DomainField,
-		_,
-		_,
-	>(log_size, &mut oracles, &pcs, &oracle, &witness, challenger.clone())
+	let proof = prove::<_, BinaryField128b, field_types::Field, field_types::DomainField, _, _>(
+		log_size,
+		&mut oracles,
+		&pcs,
+		&oracle,
+		&witness,
+		challenger.clone(),
+		domain_factory,
+	)
 	.unwrap();
 
 	info!("Verifying");

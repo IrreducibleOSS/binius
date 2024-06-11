@@ -4,7 +4,7 @@
 use super::error::Error;
 use crate::linalg::Matrix;
 use binius_field::{ExtensionField, Field};
-use std::{iter, iter::Step};
+use std::{iter, iter::Step, marker::PhantomData};
 
 /// A domain that univariate polynomials may be evaluated on.
 ///
@@ -15,6 +15,32 @@ pub struct EvaluationDomain<F: Field> {
 	points: Vec<F>,
 	weights: Vec<F>,
 	interpolation_matrix: Matrix<F>,
+}
+
+/// Wraps type information to enable instantiating EvaluationDomains.
+pub trait EvaluationDomainFactory<DomainField: Field>: Clone {
+	/// Instantiates an EvaluationDomain with the given number of points.
+	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error>;
+}
+
+#[derive(Default, Clone)]
+/// Uses EvaluationDomain::new_isomorphic() to instantiate an EvaluationDomain.
+pub struct IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
+where
+	DomainFieldWithStep: Field + Step,
+{
+	_p: PhantomData<DomainFieldWithStep>,
+}
+
+impl<DomainField, DomainFieldWithStep> EvaluationDomainFactory<DomainField>
+	for IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
+where
+	DomainField: Field + From<DomainFieldWithStep>,
+	DomainFieldWithStep: Field + Step,
+{
+	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
+		EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(size)
+	}
 }
 
 fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error> {
@@ -163,7 +189,9 @@ fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField32b, BinaryField8b};
+	use binius_field::{
+		AESTowerField32b, BinaryField128b, BinaryField128bPolyval, BinaryField32b, BinaryField8b,
+	};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, slice};
 
@@ -185,6 +213,36 @@ mod tests {
 				BinaryField8b::new(2)
 			]
 		);
+	}
+
+	#[test]
+	fn test_domain_factory_binary_field() {
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
+		let domain_1: EvaluationDomain<BinaryField32b> = domain_factory.create(10).unwrap();
+		let domain_2 =
+			EvaluationDomain::<BinaryField32b>::new_isomorphic::<BinaryField32b>(10).unwrap();
+		let domain_3 = EvaluationDomain::<BinaryField32b>::new(10).unwrap();
+		assert_eq!(domain_1.points, domain_2.points);
+		assert_eq!(domain_1.points, domain_3.points);
+	}
+
+	#[test]
+	fn test_domain_factory_aes() {
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
+		let domain_1: EvaluationDomain<AESTowerField32b> = domain_factory.create(10).unwrap();
+		let domain_2 =
+			EvaluationDomain::<AESTowerField32b>::new_isomorphic::<BinaryField32b>(10).unwrap();
+		assert_eq!(domain_1.points, domain_2.points);
+	}
+
+	#[test]
+	fn test_domain_factory_polyval() {
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
+		let domain_1: EvaluationDomain<BinaryField128bPolyval> = domain_factory.create(10).unwrap();
+		let domain_2 =
+			EvaluationDomain::<BinaryField128bPolyval>::new_isomorphic::<BinaryField128b>(10)
+				.unwrap();
+		assert_eq!(domain_1.points, domain_2.points);
 	}
 
 	#[test]

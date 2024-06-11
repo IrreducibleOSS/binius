@@ -12,8 +12,8 @@ use binius_core::{
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
 		transparent::multilinear_extension::MultilinearExtensionTransparent,
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension,
+		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
 	},
 	protocols::{
 		greedy_evalcheck,
@@ -39,7 +39,7 @@ use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use p3_symmetric::Permutation;
 use rand::thread_rng;
-use std::{array, fmt::Debug, iter, iter::Step};
+use std::{array, fmt::Debug, iter};
 use tracing::instrument;
 
 /// Smallest value such that 2^LOG_COMPRESSION_BLOCK >= N_ROUNDS = 8
@@ -942,9 +942,10 @@ fn prove<F, FW, P32b, PCS, Comm, Challenger>(
 	pcs: &PCS,
 	mut challenger: Challenger,
 	witness: &TraceWitness<P32b>,
+	domain_factory: impl EvaluationDomainFactory<BinaryField32b>,
 ) -> Result<Proof<F, Comm, PCS::Proof>>
 where
-	F: TowerField + ExtensionField<BinaryField32b> + Step + From<FW>,
+	F: TowerField + ExtensionField<BinaryField32b> + From<FW>,
 	FW: TowerField + ExtensionField<BinaryField32b> + From<F>,
 	P32b: PackedField<Scalar = BinaryField32b>,
 	PCS: PolyCommitScheme<P32b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
@@ -991,7 +992,7 @@ where
 
 	// Zerocheck
 	let zerocheck_domain =
-		EvaluationDomain::<BinaryField32b>::new(zerocheck_claim.poly.max_individual_degree() + 1)?;
+		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 
 	let switchover_fn = |_| 1;
 
@@ -1010,12 +1011,13 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, BinaryField32b, BinaryField32b, _>(
+	} = greedy_evalcheck::prove::<_, _, BinaryField32b, _>(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
+		domain_factory,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -1128,8 +1130,8 @@ fn main() {
 	.unwrap();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-
 	let witness = TraceWitness::<PackedBinaryField4x32b>::generate_trace(log_size);
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 
 	let proof = prove::<_, BinaryField128b, _, _, _, _>(
 		&mut oracles,
@@ -1137,6 +1139,7 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		&witness,
+		domain_factory,
 	)
 	.unwrap();
 

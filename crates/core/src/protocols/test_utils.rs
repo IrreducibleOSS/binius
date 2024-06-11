@@ -3,7 +3,7 @@
 use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearExtension,
+		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory, MultilinearExtension,
 		MultivariatePoly,
 	},
 	protocols::{
@@ -24,7 +24,6 @@ use crate::{
 use binius_field::{
 	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField, TowerField,
 };
-use std::iter::Step;
 use tracing::instrument;
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
@@ -148,21 +147,20 @@ where
 	skip_all,
 	name = "test_utils::prove_bivariate_sumchecks_with_switchover"
 )]
-pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainFieldWithStep, DomainField, CH>(
+pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
+	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
-	DomainFieldWithStep: Field + Step,
-	DomainField: Field + From<DomainFieldWithStep>,
+	DomainField: Field,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let bivariate_domain =
-		EvaluationDomain::<DomainField>::new_isomorphic::<DomainFieldWithStep>(3).unwrap();
+	let bivariate_domain = domain_factory.create(3).unwrap();
 
 	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
