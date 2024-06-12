@@ -17,19 +17,14 @@
 use core::{arch::aarch64::*, mem};
 use std::ops::Mul;
 
-use super::super::portable::packed::{impl_conversion, PackedPrimitiveType};
+use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
 	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
 	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	BinaryField128bPolyval, PackedField,
 };
 
-use super::m128::M128;
-
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;
-
-// Define conversion from type to underlier
-impl_conversion!(M128, PackedBinaryPolyval1x128b);
 
 // Define multiply
 impl Mul for PackedBinaryPolyval1x128b {

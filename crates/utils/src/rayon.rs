@@ -6,6 +6,7 @@ use std::{env, sync::OnceLock};
 /// `use_current_thread` set to true. This is solves two problems:
 /// 1. The performance is almost the same as if rayon wasn't used at all
 /// 2. Makes profiling and debugging results less noisy
+///
 /// NOTE: rayon doesn't allow initializing global thread pool several times, so
 /// in case when it was initialized before this function returns an error.
 /// The typical usage of the function is to place it's call in the beginning of the `main`.

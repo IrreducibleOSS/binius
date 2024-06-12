@@ -1,7 +1,5 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use seq_macro::seq;
-
 use super::m128::M128;
 use crate::{
 	arch::{
@@ -13,10 +11,10 @@ use crate::{
 	arithmetic_traits::{
 		MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare,
 	},
-	underlier::UnderlierWithBitOps,
+	underlier::{UnderlierWithBitOps, WithUnderlier},
 	BinaryField, TowerField,
 };
-
+use seq_macro::seq;
 use std::arch::aarch64::*;
 
 #[inline]
@@ -288,14 +286,17 @@ where
 		let odd_mask = M128::INTERLEAVE_ODD_MASK[PT::DirectSubfield::TOWER_LEVEL];
 		let a = self.as_packed_subfield();
 		let b = rhs.as_packed_subfield();
-		let p1 = (a * b).into();
-		let (lo, hi) = M128::interleave(a.into(), b.into(), PT::DirectSubfield::TOWER_LEVEL);
+		let p1 = (a * b).to_underlier();
+		let (lo, hi) =
+			M128::interleave(a.to_underlier(), b.to_underlier(), PT::DirectSubfield::TOWER_LEVEL);
 		let (lhs, rhs) =
 			M128::interleave(lo ^ hi, alphas ^ (p1 & odd_mask), PT::DirectSubfield::TOWER_LEVEL);
-		let p2 = (PT::PackedDirectSubfield::from(lhs) * PT::PackedDirectSubfield::from(rhs)).into();
+		let p2 = (PT::PackedDirectSubfield::from_underlier(lhs)
+			* PT::PackedDirectSubfield::from_underlier(rhs))
+		.to_underlier();
 		let q1 = p1 ^ flip_even_odd::<PT::DirectSubfield>(p1);
 		let q2 = p2 ^ shift_left::<PT::DirectSubfield>(p2);
-		(q1 ^ (q2 & odd_mask)).into()
+		Self::from_underlier(q1 ^ (q2 & odd_mask))
 	}
 }
 
@@ -307,9 +308,9 @@ where
 	#[inline]
 	fn mul_alpha(self) -> Self {
 		let a0_a1 = self.as_packed_subfield();
-		let a0alpha_a1alpha: M128 = a0_a1.mul_alpha().into();
-		let a1_a0 = flip_even_odd::<PT::DirectSubfield>(a0_a1.into());
-		blend_odd_even::<PT::DirectSubfield>(a1_a0 ^ a0alpha_a1alpha, a1_a0).into()
+		let a0alpha_a1alpha: M128 = a0_a1.mul_alpha().to_underlier();
+		let a1_a0 = flip_even_odd::<PT::DirectSubfield>(a0_a1.to_underlier());
+		Self::from_underlier(blend_odd_even::<PT::DirectSubfield>(a1_a0 ^ a0alpha_a1alpha, a1_a0))
 	}
 }
 
@@ -322,10 +323,13 @@ where
 	fn square(self) -> Self {
 		let a0_a1 = self.as_packed_subfield();
 		let a0sq_a1sq = Square::square(a0_a1);
-		let a1sq_a0sq = flip_even_odd::<PT::DirectSubfield>(a0sq_a1sq.into());
-		let a0sq_plus_a1sq = a0sq_a1sq.into() ^ a1sq_a0sq;
+		let a1sq_a0sq = flip_even_odd::<PT::DirectSubfield>(a0sq_a1sq.to_underlier());
+		let a0sq_plus_a1sq = a0sq_a1sq.to_underlier() ^ a1sq_a0sq;
 		let a1_mul_alpha = a0sq_a1sq.mul_alpha();
-		blend_odd_even::<PT::DirectSubfield>(a1_mul_alpha.into(), a0sq_plus_a1sq).into()
+		Self::from_underlier(blend_odd_even::<PT::DirectSubfield>(
+			a1_mul_alpha.to_underlier(),
+			a0sq_plus_a1sq,
+		))
 	}
 }
 
@@ -337,18 +341,17 @@ where
 	#[inline]
 	fn invert_or_zero(self) -> Self {
 		let a0_a1 = self.as_packed_subfield();
-		let a1_a0: PT::PackedDirectSubfield =
-			flip_even_odd::<PT::DirectSubfield>(a0_a1.into()).into();
+		let a1_a0 = a0_a1.mutate_underlier(flip_even_odd::<PT::DirectSubfield>);
 		let a1alpha = a1_a0.mul_alpha();
 		let a0_plus_a1alpha = a0_a1 + a1alpha;
 		let a1sq_a0sq = Square::square(a1_a0);
 		let delta = a1sq_a0sq + (a0_plus_a1alpha * a0_a1);
 		let deltainv = delta.invert_or_zero();
-		let deltainv_deltainv: PT::PackedDirectSubfield =
-			duplicate_odd::<PT::DirectSubfield>(deltainv.into()).into();
-		let delta_multiplier: PT::PackedDirectSubfield =
-			blend_odd_even::<PT::DirectSubfield>(a0_a1.into(), a0_plus_a1alpha.into()).into();
-		(deltainv_deltainv * delta_multiplier).into().into()
+		let deltainv_deltainv = deltainv.mutate_underlier(duplicate_odd::<PT::DirectSubfield>);
+		let delta_multiplier = a0_a1.mutate_underlier(|a0_a1| {
+			blend_odd_even::<PT::DirectSubfield>(a0_a1, a0_plus_a1alpha.to_underlier())
+		});
+		PT::from_packed_subfield(deltainv_deltainv * delta_multiplier)
 	}
 }
 

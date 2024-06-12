@@ -167,7 +167,7 @@ where
 	U: GfniType,
 {
 	fn transform(&self, data: &IP) -> OP {
-		U::gf2p8affine_epi64_epi8(data.to_underlier(), self.bases_8x8).into()
+		OP::from_underlier(U::gf2p8affine_epi64_epi8(data.to_underlier(), self.bases_8x8))
 	}
 }
 
@@ -294,7 +294,7 @@ where
 		});
 
 		// Put `i`'s component of each value to the result
-		blend_values(&packed_values).into()
+		OP::from_underlier(blend_values(&packed_values))
 	}
 }
 

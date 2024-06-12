@@ -108,6 +108,19 @@ pub trait PackedField:
 	fn broadcast(scalar: Self::Scalar) -> Self;
 	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self;
 
+	/// Construct a packed field element from a sequence of scalars.
+	///
+	/// If the number of values in the sequence is less than the packing width, the remaining
+	/// elements are set to zero. If greater than the packing width, the excess elements are
+	/// ignored.
+	fn from_scalars(values: impl IntoIterator<Item=Self::Scalar>) -> Self {
+		let mut result = Self::default();
+		for (i, val) in values.into_iter().take(Self::WIDTH).enumerate() {
+			result.set(i, val);
+		}
+		result
+	}
+
 	/// Returns the value multiplied by itself
 	fn square(self) -> Self;
 

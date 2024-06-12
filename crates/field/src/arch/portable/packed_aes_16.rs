@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	packed::{impl_broadcast, impl_conversion, packed_binary_field_tower, PackedPrimitiveType},
+	packed::{impl_broadcast, PackedPrimitiveType},
 	packed_arithmetic::impl_tower_constants,
 };
 use crate::{
@@ -16,13 +16,6 @@ use crate::{
 // Define 16 bit packed field types
 pub type PackedAESBinaryField2x8b = PackedPrimitiveType<u16, AESTowerField8b>;
 pub type PackedAESBinaryField1x16b = PackedPrimitiveType<u16, AESTowerField16b>;
-
-// Define conversion from type to underlier
-impl_conversion!(u16, PackedAESBinaryField2x8b);
-impl_conversion!(u16, PackedAESBinaryField1x16b);
-
-// Define tower
-packed_binary_field_tower!(PackedAESBinaryField2x8b < PackedAESBinaryField1x16b);
 
 // Define broadcast
 impl_broadcast!(u16, AESTowerField8b);

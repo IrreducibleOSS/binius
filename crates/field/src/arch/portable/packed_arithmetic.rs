@@ -1,7 +1,5 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::ops::Deref;
-
 use crate::{
 	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::PackedStrategy,
@@ -9,11 +7,12 @@ use crate::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
 		TaggedSquare,
 	},
-	binary_field::BinaryField,
+	binary_field::{BinaryField, TowerExtensionField},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
-	ExtensionField, PackedField, TowerField,
+	ExtensionField, PackedExtension, PackedField, TowerField,
 };
+use std::ops::Deref;
 
 pub trait UnderlierWithBitConstants: UnderlierWithBitOps
 where
@@ -40,25 +39,39 @@ where
 }
 
 /// Abstraction for a packed tower field of height greater than 0.
-pub trait PackedTowerField: PackedField + From<Self::Underlier> + Into<Self::Underlier> {
-	type Underlier: UnderlierType;
+///
+/// Helper trait
+pub(crate) trait PackedTowerField: PackedField + WithUnderlier {
 	/// A scalar of a lower height
 	type DirectSubfield: TowerField;
 	/// Packed type with the same underlier with a lower height
 	type PackedDirectSubfield: PackedField<Scalar = Self::DirectSubfield>
-		+ From<Self::Underlier>
-		+ Into<Self::Underlier>;
+		+ WithUnderlier<Underlier = Self::Underlier>;
 
 	/// Reinterpret value as a packed field over a lower height
-	#[inline]
-	fn as_packed_subfield(self) -> Self::PackedDirectSubfield {
-		Self::PackedDirectSubfield::from(Into::<Self::Underlier>::into(self))
-	}
+	fn as_packed_subfield(self) -> Self::PackedDirectSubfield;
 
 	/// Reinterpret packed subfield as a current type
+	fn from_packed_subfield(value: Self::PackedDirectSubfield) -> Self;
+}
+
+impl<F, P, U: UnderlierType> PackedTowerField for P
+where
+	F: TowerExtensionField,
+	P: PackedField<Scalar = F> + PackedExtension<F::DirectSubfield> + WithUnderlier<Underlier = U>,
+	P::PackedSubfield: WithUnderlier<Underlier = U>,
+{
+	type DirectSubfield = F::DirectSubfield;
+	type PackedDirectSubfield = <Self as PackedExtension<F::DirectSubfield>>::PackedSubfield;
+
+	#[inline]
+	fn as_packed_subfield(self) -> Self::PackedDirectSubfield {
+		*P::cast_base(&self)
+	}
+
 	#[inline]
 	fn from_packed_subfield(value: Self::PackedDirectSubfield) -> Self {
-		Self::from(value.into())
+		*P::cast_ext(&value)
 	}
 }
 
@@ -104,7 +117,8 @@ where
 
 		// lo = <a_lo_0, b_lo_0, a_lo_1, b_lo_1, ...>
 		// hi = <a_hi_0, b_hi_0, a_hi_1, b_hi_1, ...>
-		let (lo, hi) = interleave::<PT::Underlier, PT::DirectSubfield>(a.into(), b.into());
+		let (lo, hi) =
+			interleave::<PT::Underlier, PT::DirectSubfield>(a.to_underlier(), b.to_underlier());
 
 		// <a_lo_0 + a_hi_0, b_lo_0 + b_hi_0, a_lo_1 + a_hi_1, b_lo_1 + b_hi_1, ...>
 		let lo_plus_hi_a_even_b_odd = lo ^ hi;
@@ -115,7 +129,7 @@ where
 		let alphas = PT::DirectSubfield::ALPHAS_ODD;
 
 		// <α, z2_0, α, z2_1, ...>
-		let alpha_even_z2_odd = alphas ^ (z0_even_z2_odd.into() & odd_mask);
+		let alpha_even_z2_odd = alphas ^ (z0_even_z2_odd.to_underlier() & odd_mask);
 
 		// a_lo_plus_hi_even_z2_odd    = <a_lo_0 + a_hi_0, z2_0, a_lo_1 + a_hi_1, z2_1, ...>
 		// b_lo_plus_hi_even_alpha_odd = <b_lo_0 + b_hi_0,    α, a_lo_1 + a_hi_1,   αz, ...>
@@ -127,20 +141,21 @@ where
 
 		// <z1_0 + z0_0 + z2_0, z2a_0, z1_1 + z0_1 + z2_1, z2a_1, ...>
 		let z1_plus_z0_plus_z2_even_z2a_odd =
-			PT::PackedDirectSubfield::from(a_lo_plus_hi_even_alpha_odd)
-				* PT::PackedDirectSubfield::from(b_lo_plus_hi_even_z2_odd);
+			PT::PackedDirectSubfield::from_underlier(a_lo_plus_hi_even_alpha_odd)
+				* PT::PackedDirectSubfield::from_underlier(b_lo_plus_hi_even_z2_odd);
 
 		// <0, z1_0 + z2a_0 + z0_0 + z2_0, 0, z1_1 + z2a_1 + z0_1 + z2_1, ...>
-		let zero_even_z1_plus_z2a_plus_z0_plus_z2_odd = (z1_plus_z0_plus_z2_even_z2a_odd.into()
-			^ (z1_plus_z0_plus_z2_even_z2a_odd.into() << PT::DirectSubfield::N_BITS))
+		let zero_even_z1_plus_z2a_plus_z0_plus_z2_odd = (z1_plus_z0_plus_z2_even_z2a_odd
+			.to_underlier()
+			^ (z1_plus_z0_plus_z2_even_z2a_odd.to_underlier() << PT::DirectSubfield::N_BITS))
 			& odd_mask;
 
 		// <z0_0 + z2_0, z0_0 + z2_0, z0_1 + z2_1, z0_1 + z2_1, ...>
 		let z0_plus_z2_dup =
-			xor_adjacent::<PT::Underlier, PT::DirectSubfield>(z0_even_z2_odd.into());
+			xor_adjacent::<PT::Underlier, PT::DirectSubfield>(z0_even_z2_odd.to_underlier());
 
 		// <z0_0 + z2_0, z1_0 + z2a_0, z0_1 + z2_1, z1_1 + z2a_1, ...>
-		(z0_plus_z2_dup ^ zero_even_z1_plus_z2a_plus_z0_plus_z2_odd).into()
+		Self::from_underlier(z0_plus_z2_dup ^ zero_even_z1_plus_z2a_plus_z0_plus_z2_odd)
 	}
 }
 
@@ -233,12 +248,14 @@ where
 		let odd_mask = <PT::Underlier as UnderlierWithBitConstants>::INTERLEAVE_ODD_MASK
 			[PT::DirectSubfield::TOWER_LEVEL];
 
-		let a = self.into();
+		let a = self.to_underlier();
 		let a0 = a & even_mask;
 		let a1 = a & odd_mask;
-		let z1 = PT::PackedDirectSubfield::from(a1).mul_alpha().into();
+		let z1 = PT::PackedDirectSubfield::from_underlier(a1)
+			.mul_alpha()
+			.to_underlier();
 
-		((a1 >> block_len) | ((a0 << block_len) ^ z1)).into()
+		Self::from_underlier((a1 >> block_len) | ((a0 << block_len) ^ z1))
 	}
 }
 
@@ -257,11 +274,11 @@ where
 			[PT::DirectSubfield::TOWER_LEVEL];
 
 		let z_02 = PackedField::square(self.as_packed_subfield());
-		let z_2a = z_02.mul_alpha().into() & odd_mask;
+		let z_2a = z_02.mul_alpha().to_underlier() & odd_mask;
 
-		let z_0_xor_z_2 = (z_02.into() ^ (z_02.into() >> block_len)) & even_mask;
+		let z_0_xor_z_2 = (z_02.to_underlier() ^ (z_02.to_underlier() >> block_len)) & even_mask;
 
-		(z_0_xor_z_2 | z_2a).into()
+		Self::from_underlier(z_0_xor_z_2 | z_2a)
 	}
 }
 
@@ -280,21 +297,21 @@ where
 			[PT::DirectSubfield::TOWER_LEVEL];
 
 		// has meaningful values in even positions
-		let a_1_even = self.into() >> block_len;
-		let intermediate =
-			self.as_packed_subfield() + PT::PackedDirectSubfield::from(a_1_even).mul_alpha();
+		let a_1_even = PT::PackedDirectSubfield::from_underlier(self.to_underlier() >> block_len);
+		let intermediate = self.as_packed_subfield() + a_1_even.mul_alpha();
 		let delta = self.as_packed_subfield() * intermediate
-			+ <PT::PackedDirectSubfield as PackedField>::square(a_1_even.into());
+			+ <PT::PackedDirectSubfield as PackedField>::square(a_1_even);
 		let delta_inv = PackedField::invert_or_zero(delta);
 
 		// set values from even positions to odd as well
-		let mut delta_inv_delta_inv = delta_inv.into() & even_mask;
+		let mut delta_inv_delta_inv = delta_inv.to_underlier() & even_mask;
 		delta_inv_delta_inv |= delta_inv_delta_inv << block_len;
 
-		let intermediate_a1 = (self.into() & odd_mask) | (intermediate.into() & even_mask);
-		let result = PT::PackedDirectSubfield::from(delta_inv_delta_inv)
-			* PT::PackedDirectSubfield::from(intermediate_a1);
-		Into::<PT::Underlier>::into(result).into()
+		let intermediate_a1 =
+			(self.to_underlier() & odd_mask) | (intermediate.to_underlier() & even_mask);
+		let result = PT::PackedDirectSubfield::from_underlier(delta_inv_delta_inv)
+			* PT::PackedDirectSubfield::from_underlier(intermediate_a1);
+		Self::from_underlier(result.to_underlier())
 	}
 }
 
@@ -353,7 +370,7 @@ where
 			let base_component = input & ones;
 			// contains ones at positions which correspond to non-zero components
 			let mask = broadcast_lowest_bit(base_component, checked_log_2(OF::DEGREE));
-			result += OP::from(mask & base.to_underlier());
+			result += OP::from_underlier(mask & base.to_underlier());
 			input = input >> 1;
 		}
 

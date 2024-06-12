@@ -87,8 +87,14 @@ pub mod test_utils {
 
 			struct TestMult<T>(std::marker::PhantomData<T>);
 
-			impl<T: $constraint + PackedField> TestMult<T> {
-				fn test_mul(a: T, b: T) {
+			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier> TestMult<T> {
+				fn test_mul(
+					a: <T as $crate::underlier::WithUnderlier>::Underlier,
+					b: <T as $crate::underlier::WithUnderlier>::Underlier,
+				) {
+					let a = T::from_underlier(a);
+					let b = T::from_underlier(b);
+
 					let c = $mult_func(a, b);
 					for i in 0..T::WIDTH {
 						assert_eq!(c.get(i), a.get(i) * b.get(i));
@@ -111,8 +117,10 @@ pub mod test_utils {
 
 			struct TestSquare<T>(std::marker::PhantomData<T>);
 
-			impl<T: $constraint + PackedField> TestSquare<T> {
-				fn test_square(a: T) {
+			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier> TestSquare<T> {
+				fn test_square(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
+					let a = T::from_underlier(a);
+
 					let c = $square_func(a);
 					for i in 0..T::WIDTH {
 						assert_eq!(c.get(i), a.get(i) * a.get(i));
@@ -135,9 +143,11 @@ pub mod test_utils {
 
 			struct TestInvert<T>(std::marker::PhantomData<T>);
 
-			impl<T: $constraint + PackedField> TestInvert<T> {
-				fn test_invert(a: T) {
+			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier> TestInvert<T> {
+				fn test_invert(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
 					use crate::Field;
+
+					let a = T::from_underlier(a);
 
 					let c = $invert_func(a);
 					for i in 0..T::WIDTH {
@@ -166,12 +176,14 @@ pub mod test_utils {
 
 			struct TestMulAlpha<T>(std::marker::PhantomData<T>);
 
-			impl<T: $constraint + PackedField> TestMulAlpha<T>
+			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier> TestMulAlpha<T>
 			where
 				T::Scalar: $crate::arithmetic_traits::MulAlpha,
 			{
-				fn test_mul_alpha(a: T) {
+				fn test_mul_alpha(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
 					use $crate::arithmetic_traits::MulAlpha;
+
+					let a = T::from_underlier(a);
 
 					let c = $mul_alpha_func(a);
 					for i in 0..T::WIDTH {
@@ -195,11 +207,15 @@ pub mod test_utils {
 
 			struct TestTransformation<T>(std::marker::PhantomData<T>);
 
-			impl<T: $constraint + PackedField> TestTransformation<T> {
-				fn test_transformation(a: T) {
+			impl<T: $constraint + PackedField + $crate::underlier::WithUnderlier>
+				TestTransformation<T>
+			{
+				fn test_transformation(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
 					use $crate::affine_transformation::{
 						FieldAffineTransformation, Transformation,
 					};
+
+					let a = T::from_underlier(a);
 
 					// TODO: think how we can use random seed from proptests here
 					let field_transformation =
@@ -915,14 +931,14 @@ mod tests {
 	#[test]
 	#[rustfmt::skip]
 	fn test_interleave_8b() {
-		let a = PackedBinaryField16x8b::from(
+		let a = PackedBinaryField16x8b::from_scalars(
 			[
 				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 			]
 				.map(BinaryField8b::new),
 		);
-		let b = PackedBinaryField16x8b::from(
+		let b = PackedBinaryField16x8b::from_scalars(
 			[
 				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
 				0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
@@ -931,14 +947,14 @@ mod tests {
 		);
 
 		let (c, d) = a.interleave(b, 0);
-		let expected_c = PackedBinaryField16x8b::from(
+		let expected_c = PackedBinaryField16x8b::from_scalars(
 			[
 				0x00, 0x10, 0x02, 0x12, 0x04, 0x14, 0x06, 0x16,
 				0x08, 0x18, 0x0a, 0x1a, 0x0c, 0x1c, 0x0e, 0x1e,
 			]
 				.map(BinaryField8b::new),
 		);
-		let expected_d = PackedBinaryField16x8b::from(
+		let expected_d = PackedBinaryField16x8b::from_scalars(
 			[
 				0x01, 0x11, 0x03, 0x13, 0x05, 0x15, 0x07, 0x17,
 				0x09, 0x19, 0x0b, 0x1b, 0x0d, 0x1d, 0x0f, 0x1f,
@@ -949,14 +965,14 @@ mod tests {
 		assert_eq!(d, expected_d);
 
 		let (c, d) = a.interleave(b, 1);
-		let expected_c = PackedBinaryField16x8b::from(
+		let expected_c = PackedBinaryField16x8b::from_scalars(
 			[
 				0x00, 0x01, 0x10, 0x11, 0x04, 0x05, 0x14, 0x15,
 				0x08, 0x09, 0x18, 0x19, 0x0c, 0x0d, 0x1c, 0x1d,
 			]
 				.map(BinaryField8b::new),
 		);
-		let expected_d = PackedBinaryField16x8b::from(
+		let expected_d = PackedBinaryField16x8b::from_scalars(
 			[
 				0x02, 0x03, 0x12, 0x13, 0x06, 0x07, 0x16, 0x17,
 				0x0a, 0x0b, 0x1a, 0x1b, 0x0e, 0x0f, 0x1e, 0x1f,
@@ -967,14 +983,14 @@ mod tests {
 		assert_eq!(d, expected_d);
 
 		let (c, d) = a.interleave(b, 2);
-		let expected_c = PackedBinaryField16x8b::from(
+		let expected_c = PackedBinaryField16x8b::from_scalars(
 			[
 				0x00, 0x01, 0x02, 0x03, 0x10, 0x11, 0x12, 0x13,
 				0x08, 0x09, 0x0a, 0x0b, 0x18, 0x19, 0x1a, 0x1b,
 			]
 				.map(BinaryField8b::new),
 		);
-		let expected_d = PackedBinaryField16x8b::from(
+		let expected_d = PackedBinaryField16x8b::from_scalars(
 			[
 				0x04, 0x05, 0x06, 0x07, 0x14, 0x15, 0x16, 0x17,
 				0x0c, 0x0d, 0x0e, 0x0f, 0x1c, 0x1d, 0x1e, 0x1f,
@@ -985,14 +1001,14 @@ mod tests {
 		assert_eq!(d, expected_d);
 
 		let (c, d) = a.interleave(b, 3);
-		let expected_c = PackedBinaryField16x8b::from(
+		let expected_c = PackedBinaryField16x8b::from_scalars(
 			[
 				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
 			]
 				.map(BinaryField8b::new),
 		);
-		let expected_d = PackedBinaryField16x8b::from(
+		let expected_d = PackedBinaryField16x8b::from_scalars(
 			[
 				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 				0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,

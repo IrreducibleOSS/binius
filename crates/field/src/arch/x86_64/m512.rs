@@ -359,26 +359,25 @@ impl UnderlierWithBitOps for M512 {
 	#[inline(always)]
 	fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: WithUnderlier,
-		T::Underlier: NumCast<Self>,
+		T: UnderlierType + NumCast<Self>,
 	{
-		match T::Underlier::BITS {
+		match T::BITS {
 			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::Underlier::BITS;
+				let elements_in_64 = 64 / T::BITS;
 				let shuffle = unsafe { _mm512_set1_epi64((i / elements_in_64) as i64) };
 				let chunk_64 =
 					u64::num_cast_from(Self(unsafe { _mm512_permutexvar_epi64(shuffle, self.0) }));
 
-				let result_64 = if T::Underlier::BITS == 64 {
+				let result_64 = if T::BITS == 64 {
 					chunk_64
 				} else {
-					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
-					let val_64 = chunk_64 >> (T::Underlier::BITS * (i % elements_in_64)) & ones;
+					let ones = ((1u128 << T::BITS) - 1) as u64;
+					let val_64 = chunk_64 >> (T::BITS * (i % elements_in_64)) & ones;
 
 					val_64
 				};
 
-				T::Underlier::num_cast_from(Self::from(result_64)).into()
+				T::num_cast_from(Self::from(result_64))
 			}
 			128 => {
 				let chunk_128 = unsafe {
@@ -389,8 +388,7 @@ impl UnderlierWithBitOps for M512 {
 						_ => _mm512_extracti32x4_epi32(self.0, 3),
 					}
 				};
-				T::Underlier::num_cast_from(Self(unsafe { _mm512_castsi128_si512(chunk_128) }))
-					.into()
+				T::num_cast_from(Self(unsafe { _mm512_castsi128_si512(chunk_128) }))
 			}
 			_ => panic!("unsupported bit count"),
 		}

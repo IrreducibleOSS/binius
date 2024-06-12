@@ -5,7 +5,6 @@ use rand::{
 	distributions::{Distribution, Standard},
 	Rng, RngCore,
 };
-use std::slice::{from_raw_parts, from_raw_parts_mut};
 use subtle::ConstantTimeEq;
 
 /// Primitive integer underlying a binary field or packed binary field implementation.
@@ -27,57 +26,89 @@ pub trait UnderlierType:
 /// # Safety
 /// `WithUnderlier` can be implemented for a type only if it's representation is a transparent `Underlier`'s representation.
 /// That's allows us casting references of type and it's underlier in both directions.
-pub unsafe trait WithUnderlier: From<Self::Underlier>
-where
-	Self::Underlier: From<Self>,
-{
+pub unsafe trait WithUnderlier: Sized {
 	/// Underlier primitive type
 	type Underlier: UnderlierType;
 
-	/// Cast value to underlier.
-	fn to_underlier(self) -> Self::Underlier {
-		self.into()
-	}
+	/// Convert value to underlier.
+	fn to_underlier(self) -> Self::Underlier;
 
-	fn to_underlier_ref(&self) -> &Self::Underlier {
-		unsafe { &*(self as *const Self as *const Self::Underlier) }
-	}
+	fn to_underlier_ref(&self) -> &Self::Underlier;
 
-	fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
-		unsafe { &mut *(self as *mut Self as *mut Self::Underlier) }
-	}
+	fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier;
 
-	fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
-		unsafe { from_raw_parts(val.as_ptr() as *const Self::Underlier, val.len()) }
-	}
+	fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier];
 
-	fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
-		unsafe { from_raw_parts_mut(val.as_mut_ptr() as *mut Self::Underlier, val.len()) }
-	}
+	fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier];
 
-	fn from_underlier(value: Self::Underlier) -> Self {
-		Self::from(value)
-	}
+	fn from_underlier(val: Self::Underlier) -> Self;
 
-	fn from_underlier_ref(val: &Self::Underlier) -> &Self {
-		unsafe { &*(val as *const Self::Underlier as *const Self) }
-	}
+	fn from_underlier_ref(val: &Self::Underlier) -> &Self;
 
-	fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
-		unsafe { &mut *(val as *mut Self::Underlier as *mut Self) }
-	}
+	fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self;
 
-	fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
-		unsafe { from_raw_parts(val.as_ptr() as *const Self, val.len()) }
-	}
+	fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self];
 
-	fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
-		unsafe { from_raw_parts_mut(val.as_mut_ptr() as *mut Self, val.len()) }
+	fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self];
+
+	#[inline]
+	fn mutate_underlier(self, f: impl FnOnce(Self::Underlier) -> Self::Underlier) -> Self {
+		Self::from_underlier(f(self.to_underlier()))
 	}
 }
 
 unsafe impl<U: UnderlierType> WithUnderlier for U {
 	type Underlier = U;
+
+	#[inline]
+	fn to_underlier(self) -> Self::Underlier {
+		self
+	}
+
+	#[inline]
+	fn to_underlier_ref(&self) -> &Self::Underlier {
+		self
+	}
+
+	#[inline]
+	fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
+		self
+	}
+
+	#[inline]
+	fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
+		val
+	}
+
+	#[inline]
+	fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
+		val
+	}
+
+	#[inline]
+	fn from_underlier(val: Self::Underlier) -> Self {
+		val
+	}
+
+	#[inline]
+	fn from_underlier_ref(val: &Self::Underlier) -> &Self {
+		val
+	}
+
+	#[inline]
+	fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
+		val
+	}
+
+	#[inline]
+	fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
+		val
+	}
+
+	#[inline]
+	fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
+		val
+	}
 }
 
 /// A value that can be randomly generated

@@ -347,9 +347,11 @@ impl UnderlierWithBitOps for M128 {
 
 					val_64 as i64
 				};
-				T::Underlier::num_cast_from(Self(unsafe { _mm_set_epi64x(0, result_64) })).into()
+				T::from_underlier(T::Underlier::num_cast_from(Self(unsafe {
+					_mm_set_epi64x(0, result_64)
+				})))
 			}
-			128 => T::Underlier::num_cast_from(*self).into(),
+			128 => T::from_underlier(T::Underlier::num_cast_from(*self)),
 			_ => panic!("unsupported bit count"),
 		}
 	}

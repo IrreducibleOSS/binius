@@ -1,10 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	packed::{
-		impl_broadcast, impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
-		PackedPrimitiveType,
-	},
+	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},
 	packed_arithmetic::{alphas, impl_tower_constants},
 };
 use crate::{
@@ -24,24 +21,6 @@ pub type PackedBinaryField8x4b = PackedPrimitiveType<u32, BinaryField4b>;
 pub type PackedBinaryField4x8b = PackedPrimitiveType<u32, BinaryField8b>;
 pub type PackedBinaryField2x16b = PackedPrimitiveType<u32, BinaryField16b>;
 pub type PackedBinaryField1x32b = PackedPrimitiveType<u32, BinaryField32b>;
-
-// Define conversion from type to underlier
-impl_conversion!(u32, PackedBinaryField32x1b);
-impl_conversion!(u32, PackedBinaryField16x2b);
-impl_conversion!(u32, PackedBinaryField8x4b);
-impl_conversion!(u32, PackedBinaryField4x8b);
-impl_conversion!(u32, PackedBinaryField2x16b);
-impl_conversion!(u32, PackedBinaryField1x32b);
-
-// Define tower
-packed_binary_field_tower!(
-	PackedBinaryField32x1b
-	< PackedBinaryField16x2b
-	< PackedBinaryField8x4b
-	< PackedBinaryField4x8b
-	< PackedBinaryField2x16b
-	< PackedBinaryField1x32b
-);
 
 // Define broadcast
 impl_broadcast!(u32, BinaryField1b);

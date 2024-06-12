@@ -6,7 +6,7 @@ use crate::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	},
 	arch::{
-		portable::packed::{impl_conversion, packed_binary_field_tower, PackedPrimitiveType},
+		portable::packed::PackedPrimitiveType,
 		x86_64::gfni::gfni_arithmetics::{
 			impl_transformation_with_gfni, impl_transformation_with_gfni_nxn,
 		},
@@ -24,22 +24,6 @@ pub type PackedAESBinaryField32x16b = PackedPrimitiveType<M512, AESTowerField16b
 pub type PackedAESBinaryField16x32b = PackedPrimitiveType<M512, AESTowerField32b>;
 pub type PackedAESBinaryField8x64b = PackedPrimitiveType<M512, AESTowerField64b>;
 pub type PackedAESBinaryField4x128b = PackedPrimitiveType<M512, AESTowerField128b>;
-
-// Define conversion from type to underlier;
-impl_conversion!(M512, PackedAESBinaryField64x8b);
-impl_conversion!(M512, PackedAESBinaryField32x16b);
-impl_conversion!(M512, PackedAESBinaryField16x32b);
-impl_conversion!(M512, PackedAESBinaryField8x64b);
-impl_conversion!(M512, PackedAESBinaryField4x128b);
-
-// Define tower
-packed_binary_field_tower!(
-	PackedAESBinaryField64x8b
-	< PackedAESBinaryField32x16b
-	< PackedAESBinaryField16x32b
-	< PackedAESBinaryField8x64b
-	< PackedAESBinaryField4x128b
-);
 
 // Define multiplication
 impl_mul_with!(PackedAESBinaryField64x8b @ GfniAESTowerStrategy);

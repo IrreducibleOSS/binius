@@ -268,7 +268,7 @@ mod tests {
 				0x7b7a7978,
 				0x7f7e7d7c,
 			],
-		].map(|vals| PackedBinaryField4x32b::from(vals.map(BinaryField32b::new)));
+		].map(|vals| PackedBinaryField4x32b::from_scalars(vals.map(BinaryField32b::new)));
 
 		let expected = [
 			[0x0c080400, 0x1c181410, 0x2c282420, 0x3c383430],
@@ -282,7 +282,7 @@ mod tests {
 
 			[0x0f0b0703, 0x1f1b1713, 0x2f2b2723, 0x3f3b3733],
 			[0x4f4b4743, 0x5f5b5753, 0x6f6b6763, 0x7f7b7773],
-		].map(|vals| PackedBinaryField4x32b::from(vals.map(BinaryField32b::new)));
+		].map(|vals| PackedBinaryField4x32b::from_scalars(vals.map(BinaryField32b::new)));
 
 		let mut dst = [PackedBinaryField4x32b::default(); 8];
 		transpose_scalars::<PackedBinaryField16x8b,_,_>(&elems, PackedBinaryField4x32b::cast_bases_mut(&mut dst)).unwrap();

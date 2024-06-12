@@ -6,10 +6,7 @@ use super::{
 use crate::{
 	arch::{
 		portable::{
-			packed::{
-				impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
-				PackedPrimitiveType,
-			},
+			packed::{impl_ops_for_zero_height, PackedPrimitiveType},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 		x86_64::gfni::gfni_arithmetics::{
@@ -35,28 +32,6 @@ pub type PackedBinaryField32x16b = PackedPrimitiveType<M512, BinaryField16b>;
 pub type PackedBinaryField16x32b = PackedPrimitiveType<M512, BinaryField32b>;
 pub type PackedBinaryField8x64b = PackedPrimitiveType<M512, BinaryField64b>;
 pub type PackedBinaryField4x128b = PackedPrimitiveType<M512, BinaryField128b>;
-
-// Define conversion from type to underlier
-impl_conversion!(M512, PackedBinaryField512x1b);
-impl_conversion!(M512, PackedBinaryField256x2b);
-impl_conversion!(M512, PackedBinaryField128x4b);
-impl_conversion!(M512, PackedBinaryField64x8b);
-impl_conversion!(M512, PackedBinaryField32x16b);
-impl_conversion!(M512, PackedBinaryField16x32b);
-impl_conversion!(M512, PackedBinaryField8x64b);
-impl_conversion!(M512, PackedBinaryField4x128b);
-
-// Define tower
-packed_binary_field_tower!(
-	PackedBinaryField512x1b
-	< PackedBinaryField256x2b
-	< PackedBinaryField128x4b
-	< PackedBinaryField64x8b
-	< PackedBinaryField32x16b
-	< PackedBinaryField16x32b
-	< PackedBinaryField8x64b
-	< PackedBinaryField4x128b
-);
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField512x1b);

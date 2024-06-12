@@ -621,7 +621,7 @@ mod tests {
 	#[test]
 	fn test_evaluate_subcube_small_than_packed_width() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let poly = MultilinearExtension::from_values(vec![PackedBinaryField4x32b::from(
+		let poly = MultilinearExtension::from_values(vec![PackedBinaryField4x32b::from_scalars(
 			[2, 2, 9, 9].map(BinaryField32b::new),
 		)])
 		.unwrap()

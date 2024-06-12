@@ -76,11 +76,11 @@ where
 		+ WithUnderlier<Underlier: From<Self::Underlier> + Into<Self::Underlier>>;
 
 	fn to_packed(self) -> Self::Packed {
-		Self::Packed::from(self.to_underlier().into())
+		Self::Packed::from_underlier(self.to_underlier().into())
 	}
 
 	fn from_packed(value: Self::Packed) -> Self {
-		Self::from(value.to_underlier().into())
+		Self::from_underlier(value.to_underlier().into())
 	}
 }
 

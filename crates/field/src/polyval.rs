@@ -19,7 +19,7 @@ use crate::{
 	underlier::UnderlierWithBitOps,
 	Field,
 };
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use std::{
 	array,
@@ -29,7 +29,19 @@ use std::{
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
+#[derive(
+	Debug,
+	Default,
+	Clone,
+	Copy,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Hash,
+	Zeroable,
+	bytemuck::TransparentWrapper,
+)]
 #[repr(transparent)]
 pub struct BinaryField128bPolyval(pub(crate) u128);
 
@@ -41,6 +53,46 @@ impl BinaryField128bPolyval {
 
 unsafe impl WithUnderlier for BinaryField128bPolyval {
 	type Underlier = u128;
+
+	fn to_underlier(self) -> Self::Underlier {
+		TransparentWrapper::peel(self)
+	}
+
+	fn to_underlier_ref(&self) -> &Self::Underlier {
+		TransparentWrapper::peel_ref(self)
+	}
+
+	fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
+		TransparentWrapper::peel_mut(self)
+	}
+
+	fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
+		TransparentWrapper::peel_slice(val)
+	}
+
+	fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
+		TransparentWrapper::peel_slice_mut(val)
+	}
+
+	fn from_underlier(val: Self::Underlier) -> Self {
+		TransparentWrapper::wrap(val)
+	}
+
+	fn from_underlier_ref(val: &Self::Underlier) -> &Self {
+		TransparentWrapper::wrap_ref(val)
+	}
+
+	fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
+		TransparentWrapper::wrap_mut(val)
+	}
+
+	fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
+		TransparentWrapper::wrap_slice(val)
+	}
+
+	fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
+		TransparentWrapper::wrap_slice_mut(val)
+	}
 }
 
 impl Neg for BinaryField128bPolyval {

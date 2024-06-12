@@ -1,9 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	super::portable::packed::{impl_conversion, PackedPrimitiveType},
-	m128::M128,
-};
+use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
 	arch::{ReuseMultiplyStrategy, SimdStrategy},
 	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
@@ -13,9 +10,6 @@ use crate::{
 use std::{arch::x86_64::*, ops::Mul};
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;
-
-// Define conversion from type to underlier
-impl_conversion!(M128, PackedBinaryPolyval1x128b);
 
 // Define multiply
 impl Mul for PackedBinaryPolyval1x128b {

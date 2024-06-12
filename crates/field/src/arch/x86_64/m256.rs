@@ -305,12 +305,11 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: WithUnderlier,
-		T::Underlier: NumCast<Self>,
+		T: UnderlierType + NumCast<Self>,
 	{
-		match T::Underlier::BITS {
+		match T::BITS {
 			1 | 2 | 4 | 8 | 16 | 32 => {
-				let elements_in_64 = 64 / T::Underlier::BITS;
+				let elements_in_64 = 64 / T::BITS;
 				let chunk_64 = unsafe {
 					match i / elements_in_64 {
 						0 => _mm256_extract_epi64(self.0, 0),
@@ -320,17 +319,15 @@ impl UnderlierWithBitOps for M256 {
 					}
 				};
 
-				let result_64 = if T::Underlier::BITS == 64 {
+				let result_64 = if T::BITS == 64 {
 					chunk_64
 				} else {
-					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
-					let val_64 =
-						(chunk_64 as u64) >> (T::Underlier::BITS * (i % elements_in_64)) & ones;
+					let ones = ((1u128 << T::BITS) - 1) as u64;
+					let val_64 = (chunk_64 as u64) >> (T::BITS * (i % elements_in_64)) & ones;
 
 					val_64 as i64
 				};
-				T::Underlier::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
-					.into()
+				T::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
 			}
 			// NOTE: benchmark show that this strategy is optimal for getting 64-bit subvalues from 256-bit register.
 			// However using similar code for 1..32 bits is slower than the version above.
@@ -340,8 +337,7 @@ impl UnderlierWithBitOps for M256 {
 				struct Data64x4([i64; 4]);
 				let result_64 = unsafe { transmute::<__m256i, Data64x4>(self.0) }.0[i];
 
-				T::Underlier::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
-					.into()
+				T::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
 			}
 			128 => {
 				let chunk_128 = unsafe {
@@ -351,10 +347,8 @@ impl UnderlierWithBitOps for M256 {
 						_mm256_extracti128_si256(self.0, 1)
 					}
 				};
-				T::Underlier::num_cast_from(Self(unsafe {
-					_mm256_set_m128i(_mm_setzero_si128(), chunk_128)
-				}))
-				.into()
+				T::num_cast_from(Self(unsafe { _mm256_set_m128i(_mm_setzero_si128(), chunk_128) }))
+					.into()
 			}
 			_ => panic!("unsupported bit count"),
 		}

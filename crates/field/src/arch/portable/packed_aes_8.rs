@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::packed::{impl_broadcast, impl_conversion, PackedPrimitiveType};
+use super::packed::{impl_broadcast, PackedPrimitiveType};
 use crate::{
 	arch::{PairwiseStrategy, PairwiseTableStrategy},
 	arithmetic_traits::{
@@ -12,9 +12,6 @@ use crate::{
 
 // Define 16 bit packed field types
 pub type PackedAESBinaryField1x8b = PackedPrimitiveType<u8, AESTowerField8b>;
-
-// Define conversion from type to underlier
-impl_conversion!(u8, PackedAESBinaryField1x8b);
 
 // Define broadcast
 impl_broadcast!(u8, AESTowerField8b);

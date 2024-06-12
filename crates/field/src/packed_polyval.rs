@@ -140,6 +140,7 @@ mod tests {
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
 		test_utils::implements_transformation_factory,
+		underlier::WithUnderlier,
 		BinaryField128bPolyval, PackedBinaryField1x128b, PackedBinaryField2x128b,
 		PackedBinaryField4x128b, PackedField,
 	};
@@ -148,9 +149,10 @@ mod tests {
 
 	fn check_get_set<const WIDTH: usize, PT>(a: [u128; WIDTH], b: [u128; WIDTH])
 	where
-		PT: PackedField<Scalar = BinaryField128bPolyval> + From<[u128; WIDTH]>,
+		PT: PackedField<Scalar = BinaryField128bPolyval>
+			+ WithUnderlier<Underlier: From<[u128; WIDTH]>>,
 	{
-		let mut val = PT::from(a);
+		let mut val = PT::from_underlier(a.into());
 		for i in 0..WIDTH {
 			assert_eq!(val.get(i), BinaryField128bPolyval::from(a[i]));
 			val.set(i, BinaryField128bPolyval::from(b[i]));

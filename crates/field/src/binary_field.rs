@@ -56,6 +56,7 @@ pub trait TowerField: BinaryField {
 
 pub(super) trait TowerExtensionField:
 	TowerField
+	+ ExtensionField<Self::DirectSubfield>
 	+ From<(Self::DirectSubfield, Self::DirectSubfield)>
 	+ Into<(Self::DirectSubfield, Self::DirectSubfield)>
 {
@@ -65,7 +66,7 @@ pub(super) trait TowerExtensionField:
 /// Macro to generate an implementation of a BinaryField.
 macro_rules! binary_field {
 	($vis:vis $name:ident($typ:ty), $gen:expr) => {
-		#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable)]
+		#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, bytemuck::TransparentWrapper)]
 		#[repr(transparent)]
 		$vis struct $name(pub(crate) $typ);
 
@@ -81,6 +82,46 @@ macro_rules! binary_field {
 
 		unsafe impl $crate::underlier::WithUnderlier for $name {
 			type Underlier = $typ;
+
+			fn to_underlier(self) -> Self::Underlier {
+				::bytemuck::TransparentWrapper::peel(self)
+			}
+
+			fn to_underlier_ref(&self) -> &Self::Underlier {
+				::bytemuck::TransparentWrapper::peel_ref(self)
+			}
+
+			fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
+				::bytemuck::TransparentWrapper::peel_mut(self)
+			}
+
+			fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
+				::bytemuck::TransparentWrapper::peel_slice(val)
+			}
+
+			fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
+				::bytemuck::TransparentWrapper::peel_slice_mut(val)
+			}
+
+			fn from_underlier(val: Self::Underlier) -> Self {
+				::bytemuck::TransparentWrapper::wrap(val)
+			}
+
+			fn from_underlier_ref(val: &Self::Underlier) -> &Self {
+				::bytemuck::TransparentWrapper::wrap_ref(val)
+			}
+
+			fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
+				::bytemuck::TransparentWrapper::wrap_mut(val)
+			}
+
+			fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
+				::bytemuck::TransparentWrapper::wrap_slice(val)
+			}
+
+			fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
+				::bytemuck::TransparentWrapper::wrap_slice_mut(val)
+			}
 		}
 
 		impl Neg for $name {

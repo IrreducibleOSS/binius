@@ -6,8 +6,8 @@ use super::{
 };
 use crate::{
 	arch::{
-		portable::packed::{impl_conversion, PackedPrimitiveType},
-		PairwiseStrategy, ReuseMultiplyStrategy, SimdStrategy,
+		portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy,
+		SimdStrategy,
 	},
 	arithmetic_traits::{impl_invert_with, impl_square_with, impl_transformation_with_strategy},
 	BinaryField128bPolyval,
@@ -17,9 +17,6 @@ use std::ops::Mul;
 
 /// Define packed type
 pub type PackedBinaryPolyval2x128b = PackedPrimitiveType<M256, BinaryField128bPolyval>;
-
-// Define conversion from type to underlier
-impl_conversion!(M256, PackedBinaryPolyval2x128b);
 
 impl From<PackedBinaryPolyval2x128b> for [u128; 2] {
 	fn from(value: PackedBinaryPolyval2x128b) -> Self {

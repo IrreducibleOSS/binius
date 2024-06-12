@@ -387,7 +387,10 @@ mod tests {
 	fn test_mul_primitive<F: TowerField + WithUnderlier<Underlier: From<u8>>>(val: F, iota: usize) {
 		let result = val.mul_primitive(iota);
 		let expected = match iota {
-			0..=2 => Ok(val * F::from(F::Underlier::from(ISOMORPHIC_ALPHAS[iota].to_underlier()))),
+			0..=2 => {
+				Ok(val
+					* F::from_underlier(F::Underlier::from(ISOMORPHIC_ALPHAS[iota].to_underlier())))
+			}
 			_ => <F as ExtensionField<BinaryField1b>>::basis(1 << iota).map(|b| val * b),
 		};
 		assert_eq!(result.is_ok(), expected.is_ok());

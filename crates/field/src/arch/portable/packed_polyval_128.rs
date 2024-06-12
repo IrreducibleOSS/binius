@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::packed::{impl_broadcast, impl_conversion, PackedPrimitiveType};
+use super::packed::{impl_broadcast, PackedPrimitiveType};
 use crate::{
 	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
 	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
@@ -13,9 +13,6 @@ use std::{
 };
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<u128, BinaryField128bPolyval>;
-
-// Define conversion from type to underlier
-impl_conversion!(u128, PackedBinaryPolyval1x128b);
 
 // Define broadcast
 impl_broadcast!(u128, BinaryField128bPolyval);

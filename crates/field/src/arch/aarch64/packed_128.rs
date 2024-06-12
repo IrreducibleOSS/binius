@@ -1,31 +1,26 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::m128::M128;
-
 use super::{
 	super::portable::{
-		packed::{
-			impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
-			PackedPrimitiveType,
-		},
+		packed::{impl_ops_for_zero_height, PackedPrimitiveType},
 		packed_arithmetic::{alphas, impl_tower_constants},
 	},
+	m128::M128,
 	simd_arithmetic::{
 		packed_aes_16x8b_into_tower, packed_tower_16x8b_invert_or_zero,
 		packed_tower_16x8b_multiply, packed_tower_16x8b_multiply_alpha, packed_tower_16x8b_square,
 	},
 };
-
 use crate::{
 	arch::{PackedStrategy, PairwiseRecursiveStrategy, PairwiseStrategy, SimdStrategy},
 	arithmetic_traits::{
 		impl_invert_with, impl_mul_alpha_with, impl_mul_with, impl_square_with,
 		impl_transformation_with_strategy, InvertOrZero, MulAlpha, Square,
 	},
+	underlier::WithUnderlier,
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
 	BinaryField64b, BinaryField8b, PackedAESBinaryField16x8b,
 };
-
 use std::ops::Mul;
 
 // Define 128 bit packed field types
@@ -37,28 +32,6 @@ pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
 pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
 pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
 pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
-
-// Define conversion from type to underlier
-impl_conversion!(M128, PackedBinaryField128x1b);
-impl_conversion!(M128, PackedBinaryField64x2b);
-impl_conversion!(M128, PackedBinaryField32x4b);
-impl_conversion!(M128, PackedBinaryField16x8b);
-impl_conversion!(M128, PackedBinaryField8x16b);
-impl_conversion!(M128, PackedBinaryField4x32b);
-impl_conversion!(M128, PackedBinaryField2x64b);
-impl_conversion!(M128, PackedBinaryField1x128b);
-
-// Define tower
-packed_binary_field_tower!(
-	PackedBinaryField128x1b
-	< PackedBinaryField64x2b
-	< PackedBinaryField32x4b
-	< PackedBinaryField16x8b
-	< PackedBinaryField8x16b
-	< PackedBinaryField4x32b
-	< PackedBinaryField2x64b
-	< PackedBinaryField1x128b
-);
 
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField128x1b);
@@ -84,7 +57,9 @@ impl Mul for PackedBinaryField16x8b {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self::Output {
-		packed_tower_16x8b_multiply(self.into(), rhs.into()).into()
+		self.mutate_underlier(|underlier| {
+			packed_tower_16x8b_multiply(underlier, rhs.to_underlier())
+		})
 	}
 }
 
@@ -98,7 +73,7 @@ impl_square_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 impl Square for PackedBinaryField16x8b {
 	fn square(self) -> Self {
-		packed_tower_16x8b_square(self.into()).into()
+		self.mutate_underlier(packed_tower_16x8b_square)
 	}
 }
 
@@ -112,7 +87,7 @@ impl_invert_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
 
 impl InvertOrZero for PackedBinaryField16x8b {
 	fn invert_or_zero(self) -> Self {
-		packed_tower_16x8b_invert_or_zero(self.into()).into()
+		self.mutate_underlier(packed_tower_16x8b_invert_or_zero)
 	}
 }
 
@@ -127,7 +102,7 @@ impl_mul_alpha_with!(PackedBinaryField1x128b @ PairwiseRecursiveStrategy);
 impl MulAlpha for PackedBinaryField16x8b {
 	#[inline]
 	fn mul_alpha(self) -> Self {
-		packed_tower_16x8b_multiply_alpha(self.into()).into()
+		self.mutate_underlier(packed_tower_16x8b_multiply_alpha)
 	}
 }
 
@@ -143,6 +118,6 @@ impl_transformation_with_strategy!(PackedBinaryField1x128b, PairwiseStrategy);
 
 impl From<PackedAESBinaryField16x8b> for PackedBinaryField16x8b {
 	fn from(value: PackedAESBinaryField16x8b) -> Self {
-		packed_aes_16x8b_into_tower(value.into()).into()
+		PackedBinaryField16x8b::from_underlier(packed_aes_16x8b_into_tower(value.to_underlier()))
 	}
 }

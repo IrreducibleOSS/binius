@@ -10,10 +10,7 @@ use super::{
 use crate::{
 	arch::{
 		portable::{
-			packed::{
-				impl_conversion, impl_ops_for_zero_height, packed_binary_field_tower,
-				PackedPrimitiveType,
-			},
+			packed::{impl_ops_for_zero_height, PackedPrimitiveType},
 			packed_arithmetic::{alphas, impl_tower_constants},
 		},
 		PackedStrategy, ReuseMultiplyStrategy, SimdStrategy,
@@ -36,28 +33,6 @@ pub type PackedBinaryField8x16b = PackedPrimitiveType<M128, BinaryField16b>;
 pub type PackedBinaryField4x32b = PackedPrimitiveType<M128, BinaryField32b>;
 pub type PackedBinaryField2x64b = PackedPrimitiveType<M128, BinaryField64b>;
 pub type PackedBinaryField1x128b = PackedPrimitiveType<M128, BinaryField128b>;
-
-// Define conversion from type to underlier
-impl_conversion!(M128, PackedBinaryField128x1b);
-impl_conversion!(M128, PackedBinaryField64x2b);
-impl_conversion!(M128, PackedBinaryField32x4b);
-impl_conversion!(M128, PackedBinaryField16x8b);
-impl_conversion!(M128, PackedBinaryField8x16b);
-impl_conversion!(M128, PackedBinaryField4x32b);
-impl_conversion!(M128, PackedBinaryField2x64b);
-impl_conversion!(M128, PackedBinaryField1x128b);
-
-// Define tower
-packed_binary_field_tower!(
-	PackedBinaryField128x1b
-	< PackedBinaryField64x2b
-	< PackedBinaryField32x4b
-	< PackedBinaryField16x8b
-	< PackedBinaryField8x16b
-	< PackedBinaryField4x32b
-	< PackedBinaryField2x64b
-	< PackedBinaryField1x128b
-);
 
 // Define operations for zero height
 impl_ops_for_zero_height!(PackedBinaryField128x1b);
