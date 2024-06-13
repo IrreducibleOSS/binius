@@ -5,7 +5,6 @@ mod groestl;
 pub mod hasher;
 mod vision;
 
-pub use digest::Digest;
 pub use groestl::*;
 pub use hasher::*;
 pub use vision::*;

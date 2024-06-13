@@ -1,42 +1,63 @@
 // Copyright 2024 Ulvetanna Inc.
 
 #![allow(clippy::needless_range_loop)]
+
 use super::groestl_table::TABLE;
-use binius_field::{AESTowerField8b, PackedAESBinaryField64x8b, PackedField};
+use binius_field::{
+	arch::packed_aes_64::PackedAESBinaryField8x8b, AESTowerField8b, Field,
+	PackedAESBinaryField64x8b, PackedExtensionIndexable, PackedField,
+};
+use lazy_static::lazy_static;
+use std::array;
 
 const ROUND_SIZE: usize = 10;
 
+#[inline(always)]
 fn shift_p_func(row: usize, col: usize) -> usize {
 	let new_row = row;
 	let new_col = (row + col) % 8;
 	new_col * 8 + new_row
 }
 
+#[inline(always)]
 fn shift_q_func(row: usize, col: usize) -> usize {
 	let new_row = row;
 	let new_col = (col + 2 * row - row / 4 + 1) % 8;
 	new_col * 8 + new_row
 }
 
-#[derive(Debug, Clone)]
-pub struct Groestl256Core {
-	round_constant_p: PackedAESBinaryField64x8b,
-	round_constant_q: PackedAESBinaryField64x8b,
-	row_0_select: PackedAESBinaryField64x8b,
-	row_7_select: PackedAESBinaryField64x8b,
-}
-
-impl Default for Groestl256Core {
-	fn default() -> Self {
-		let round_constant_p = PackedAESBinaryField64x8b::from_fn(|i| {
+lazy_static! {
+	static ref ROW_0_SELECT: [PackedAESBinaryField64x8b; 10] = array::from_fn(|r| {
+		PackedAESBinaryField64x8b::from_fn(|i| {
+			let selector = i % 8;
+			if selector == 0 {
+				AESTowerField8b::from(r as u8)
+			} else {
+				AESTowerField8b::ZERO
+			}
+		})
+	});
+	static ref ROW_7_SELECT: [PackedAESBinaryField64x8b; 10] = array::from_fn(|r| {
+		PackedAESBinaryField64x8b::from_fn(|i| {
+			let selector = i % 8;
+			if selector == 7 {
+				AESTowerField8b::from(r as u8)
+			} else {
+				AESTowerField8b::ZERO
+			}
+		})
+	});
+	static ref ROUND_CONSTANT_P: PackedAESBinaryField64x8b =
+		PackedAESBinaryField64x8b::from_fn(|i| {
 			let selector = i % 8;
 			if selector == 0 {
 				AESTowerField8b::new(0x10 * (i / 8) as u8)
 			} else {
-				AESTowerField8b::zero()
+				AESTowerField8b::ZERO
 			}
 		});
-		let round_constant_q = PackedAESBinaryField64x8b::from_fn(|i| {
+	static ref ROUND_CONSTANT_Q: PackedAESBinaryField64x8b =
+		PackedAESBinaryField64x8b::from_fn(|i| {
 			let selector = i % 8;
 			if selector == 7 {
 				AESTowerField8b::new(0xff ^ (0x10 * (i / 8) as u8))
@@ -44,69 +65,56 @@ impl Default for Groestl256Core {
 				AESTowerField8b::new(0xff)
 			}
 		});
-		let row_0_select = PackedAESBinaryField64x8b::from_fn(|i| {
-			let selector = i % 8;
-			if selector == 0 {
-				AESTowerField8b::one()
-			} else {
-				AESTowerField8b::zero()
-			}
-		});
-		let row_7_select = PackedAESBinaryField64x8b::from_fn(|i| {
-			let selector = i % 8;
-			if selector == 7 {
-				AESTowerField8b::one()
-			} else {
-				AESTowerField8b::zero()
-			}
-		});
-		Self {
-			round_constant_p,
-			round_constant_q,
-			row_0_select,
-			row_7_select,
-		}
-	}
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct Groestl256Core;
+
 impl Groestl256Core {
+	#[inline(always)]
 	fn add_round_constants_q(
 		&self,
 		x: PackedAESBinaryField64x8b,
-		r: u8,
+		r: usize,
 	) -> PackedAESBinaryField64x8b {
-		let round = PackedAESBinaryField64x8b::broadcast(AESTowerField8b::new(r));
-		x + round * self.row_7_select + self.round_constant_q
+		x + ROW_7_SELECT[r] + *ROUND_CONSTANT_Q
 	}
 
+	#[inline(always)]
 	fn add_round_constants_p(
 		&self,
 		x: PackedAESBinaryField64x8b,
-		r: u8,
+		r: usize,
 	) -> PackedAESBinaryField64x8b {
-		let round = PackedAESBinaryField64x8b::broadcast(AESTowerField8b::new(r));
-		x + round * self.row_0_select + self.round_constant_p
+		x + ROW_0_SELECT[r] + *ROUND_CONSTANT_P
 	}
 
+	#[inline(always)]
 	fn sub_mix_shift(
 		&self,
 		x: PackedAESBinaryField64x8b,
 		shift_func: fn(usize, usize) -> usize,
 	) -> PackedAESBinaryField64x8b {
-		let mut state = PackedAESBinaryField64x8b::default();
+		let x = [x];
+		let input: &[AESTowerField8b] = PackedAESBinaryField64x8b::unpack_base_scalars(&x);
+		let mut state_arr = [PackedAESBinaryField64x8b::zero()];
+		let state: &mut [AESTowerField8b] =
+			PackedAESBinaryField64x8b::unpack_base_scalars_mut(&mut state_arr);
 
 		for col in 0..8 {
-			let mut final_col: u64 = 0;
+			let mut final_col: PackedAESBinaryField8x8b = PackedAESBinaryField8x8b::zero();
 			for row in 0..8 {
 				let shifted = shift_func(row, col);
-				final_col ^= TABLE[row][x.get(shifted).val() as usize]
+				final_col += PackedAESBinaryField8x8b::from_underlier(
+					TABLE[row][input[shifted].val() as usize],
+				);
 			}
-			for (i, &b) in final_col.to_be_bytes().iter().enumerate() {
-				state.set(col * 8 + i, AESTowerField8b::new(b));
-			}
+			let final_col = [final_col];
+			state[col * 8..col * 8 + 8]
+				.copy_from_slice(PackedAESBinaryField8x8b::unpack_base_scalars(&final_col));
 		}
 
-		state
+		state_arr[0]
 	}
 
 	pub fn permutation_pq(
@@ -117,8 +125,8 @@ impl Groestl256Core {
 		let mut p = p;
 		let mut q = q;
 		for r in 0..ROUND_SIZE {
-			p = self.add_round_constants_p(p, r as u8);
-			q = self.add_round_constants_q(q, r as u8);
+			p = self.add_round_constants_p(p, r);
+			q = self.add_round_constants_q(q, r);
 			p = self.sub_mix_shift(p, shift_p_func);
 			q = self.sub_mix_shift(q, shift_q_func);
 		}
@@ -129,7 +137,7 @@ impl Groestl256Core {
 	pub fn permutation_p(&self, p: PackedAESBinaryField64x8b) -> PackedAESBinaryField64x8b {
 		let mut p = p;
 		for r in 0..ROUND_SIZE {
-			p = self.add_round_constants_p(p, r as u8);
+			p = self.add_round_constants_p(p, r);
 			p = self.sub_mix_shift(p, shift_p_func);
 		}
 		p
@@ -168,7 +176,7 @@ mod tests {
 			PackedAESBinaryField64x8b::from_fn(|i| AESTowerField8b::new((64 * off + i) as u8))
 		});
 
-		let instance = Groestl256Core::default();
+		let instance = Groestl256Core;
 		let (pout, qout) = instance.permutation_pq(input[0], input[1]);
 
 		let pout = (0..8)

@@ -569,7 +569,7 @@ where
 	let p_next_in = cast_8b_cols(&mut witness.p_next_in);
 
 	let mut rng = thread_rng();
-	let groestl_core = Groestl256Core::default();
+	let groestl_core = Groestl256Core;
 
 	// Each round state is 1 rows
 	// Each compression is 10 round states

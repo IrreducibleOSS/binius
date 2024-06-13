@@ -4,5 +4,5 @@ mod hasher;
 
 pub mod arch;
 
-pub use arch::{Groestl256, Groestl256Core};
+pub use arch::Groestl256Core;
 pub use hasher::*;

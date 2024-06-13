@@ -42,7 +42,7 @@ impl<T, H: FixedLenHasher<T>> HashDigest<T> for FixedLenHasherDigest<T, H> {
 
 /// Trait representing cryptographic hash functions which is generic over the input type.
 ///
-/// This interface is largely based on the [`digest::Digest`] trait, except that instead of
+/// This interface is largely based on RustCrypto's Digest trait, except that instead of
 /// requiring byte strings as input and byte arrays as output, this is generic over the input
 /// values and has a less constrained output digest type.
 pub trait Hasher<T> {
