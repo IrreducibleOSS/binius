@@ -22,7 +22,7 @@ use binius_core::{
 		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{
 	underlier::WithUnderlier, BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
@@ -35,6 +35,7 @@ use binius_utils::{
 };
 use bytemuck::{must_cast_slice_mut, Pod};
 use bytesize::ByteSize;
+use itertools::chain;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
@@ -258,6 +259,18 @@ impl TraceOracle {
 			next_state_in,
 		}
 	}
+
+	fn iter_constrained_oracles(&self) -> impl Iterator<Item = OracleId> {
+		chain!(
+			self.state_in,
+			self.state_out,
+			self.c,
+			self.c_shift,
+			self.d,
+			self.b,
+			self.next_state_in,
+		)
+	}
 }
 
 #[derive(IterPolys)]
@@ -285,21 +298,39 @@ impl<P: PackedField> TraceWitness<P> {
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let mut index = MultilinearWitnessIndex::new();
-		for (oracle, witness) in
-			iter::zip(all_oracles(fixed_oracle, trace_oracle), self.iter_polys())
-		{
-			index.set(oracle, witness.specialize_arc_dyn());
-		}
+		index.set_many(iter::zip(
+			all_oracles(fixed_oracle, trace_oracle),
+			self.iter_polys()
+				.map(|witness| witness.specialize_arc_dyn()),
+		));
 		index
 	}
 
 	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
-		self.state_in
-			.iter()
-			.chain(self.state_out.iter())
-			.chain(self.c.iter())
-			.chain(self.d.iter())
+		chain!(self.state_in.iter(), self.state_out.iter(), self.c.iter(), self.d.iter())
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+	}
+
+	fn constrained_polys<PE>(&self) -> impl Iterator<Item = MultilinearWitness<PE>>
+	where
+		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+	{
+		chain!(
+			iter::once(&self.round_consts),
+			iter::once(&self.selector),
+			self.state_in.iter(),
+			self.state_out.iter(),
+			self.c.iter(),
+			self.c_shift.iter(),
+			self.d.iter(),
+			self.b.iter(),
+			self.next_state_in.iter(),
+		)
+		.map(|values| {
+			MultilinearExtension::from_values_slice(values.as_slice())
+				.unwrap()
+				.specialize_arc_dyn()
+		})
 	}
 }
 
@@ -310,6 +341,15 @@ fn all_oracles(
 	trace_oracle
 		.iter_oracles()
 		.chain(fixed_oracle.iter_oracles())
+}
+
+fn constrained_oracles(
+	fixed_oracle: &FixedOracle,
+	trace_oracle: &TraceOracle,
+) -> impl Iterator<Item = OracleId> {
+	fixed_oracle
+		.iter_oracles()
+		.chain(trace_oracle.iter_constrained_oracles())
 }
 
 struct Proof<F: Field, PCSComm, PCSProof> {
@@ -462,7 +502,7 @@ where
 	let mix_composition_prover =
 		make_constraints(fixed_oracle, trace_oracle, PW::from(mixing_challenge))?;
 
-	let zerocheck_column_oracles = all_oracles(fixed_oracle, trace_oracle)
+	let zerocheck_column_oracles = constrained_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
 		.collect();
 	let zerocheck_claim = ZerocheckClaim {
@@ -476,10 +516,7 @@ where
 	let zerocheck_witness = MultilinearComposite::new(
 		log_size,
 		mix_composition_prover,
-		witness
-			.iter_polys()
-			.map(|mle| mle.specialize_arc_dyn::<PW>())
-			.collect(),
+		witness.constrained_polys().collect(),
 	)?;
 
 	// Zerocheck
@@ -568,7 +605,7 @@ where
 	let mix_composition = make_constraints(fixed_oracle, trace_oracle, mixing_challenge)?;
 
 	// Zerocheck
-	let zerocheck_column_oracles = all_oracles(fixed_oracle, trace_oracle)
+	let zerocheck_column_oracles = constrained_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
 		.collect();
 	let zerocheck_claim = ZerocheckClaim {
@@ -605,7 +642,7 @@ fn make_constraints<FI: TowerField>(
 	trace_oracle: &TraceOracle,
 	challenge: FI,
 ) -> Result<impl CompositionPoly<FI> + Clone> {
-	let zerocheck_column_ids = all_oracles(fixed_oracle, trace_oracle).collect::<Vec<_>>();
+	let zerocheck_column_ids = constrained_oracles(fixed_oracle, trace_oracle).collect::<Vec<_>>();
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
 	// C_x - \sum_{y=0}^4 A_{x,y} = 0
@@ -734,7 +771,7 @@ fn main() {
 
 	let witness = generate_trace(log_size);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
-	// TODO: Ideally FS should be considerably smaller than F, something like BinaryField8b.
+	// TODO: Ideally DomainField should be considerably smaller than F, something like BinaryField8b.
 	//       However, BinaryField128bPolyval doesn't support any conversions other than to/from 1 and 128 bits.
 	let proof = prove::<_, BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
 		log_size,
