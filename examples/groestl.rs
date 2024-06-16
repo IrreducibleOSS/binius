@@ -36,11 +36,11 @@ use binius_field::{
 	affine_transformation::{
 		FieldAffineTransformation, PackedTransformationFactory, Transformation,
 	},
+	arch::OptimalUnderlier128b,
 	packed::set_packed_slice,
-	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField1b, BinaryField8b,
-	ExtensionField, Field, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-	PackedBinaryField8x16b, PackedField, PackedFieldIndexable, TowerField,
+	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField16b, BinaryField1b,
+	BinaryField8b, ExtensionField, Field, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
+	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
@@ -919,26 +919,20 @@ fn main() {
 
 	// Generate and verify proof
 	let pcs1b = tensor_pcs::find_proof_size_optimal_pcs::<
-		_,
-		PackedBinaryField128x1b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField1x128b,
+		OptimalUnderlier128b,
+		BinaryField1b,
+		BinaryField16b,
+		BinaryField16b,
+		BinaryField128b,
 	>(SECURITY_BITS, log_size, trace1b_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 
 	let pcs8b = tensor_pcs::find_proof_size_optimal_pcs::<
-		_,
-		PackedBinaryField16x8b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField1x128b,
+		OptimalUnderlier128b,
+		BinaryField8b,
+		BinaryField16b,
+		BinaryField16b,
+		BinaryField128b,
 	>(SECURITY_BITS, log_size, trace8b_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 

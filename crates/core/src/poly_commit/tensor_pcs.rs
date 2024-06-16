@@ -12,11 +12,13 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, iter_packed_slice},
 	square_transpose, transpose_scalars,
+	underlier::Divisible,
 	util::inner_product_unchecked,
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, RepackedExtension,
+	PackedFieldIndexable,
 };
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
@@ -67,6 +69,9 @@ where
 	Ok(mixed_t_prime)
 }
 
+/// Type alias for a collection of VCS proofs for a batch of polynomials.
+pub type VCSProofs<P, VCSProof> = Vec<(Vec<Vec<P>>, VCSProof)>;
+
 /// Evaluation proof data for the `TensorPCS` polynomial commitment scheme.
 ///
 /// # Type Parameters
@@ -75,9 +80,11 @@ where
 /// * `PE`: The packed extension field type.
 /// * `VCSProof`: The vector commitment scheme proof type.
 #[derive(Debug)]
-pub struct Proof<'a, PI, PE, VCSProof>
+pub struct Proof<'a, U, FI, FE, VCSProof>
 where
-	PE: PackedField,
+	U: PackScalar<FI> + PackScalar<FE>,
+	FI: Field,
+	FE: Field,
 {
 	/// Number of distinct multilinear polynomials in the batch opening proof
 	pub n_polys: usize,
@@ -90,14 +97,14 @@ where
 	/// Let $t'_i$ denote the $t'$ for the $i$-th polynomial in the batch opening proof.
 	/// This value represents the multilinear polynomial such that $\forall v \in \{0, 1\}^{\mu}$,
 	/// $v \rightarrow \sum_{i=0}^{n-1} c_i * t'_i(v)$
-	pub mixed_t_prime: MultilinearExtension<'a, PE>,
+	pub mixed_t_prime: MultilinearExtension<'a, PackedType<U, FE>>,
 	/// Opening proofs for chosen columns of the encoded matrices
 	///
 	/// Let $j_1, \ldots, j_k$ be the indices of the columns that are opened.
 	/// The ith element is a tuple of:
 	/// * A vector (size=n_polys) of the $j_i$th columns (one from each polynomial's encoded matrix)
 	/// * A proof that these columns are consistent with the vector commitment
-	pub vcs_proofs: Vec<(Vec<Vec<PI>>, VCSProof)>,
+	pub vcs_proofs: VCSProofs<PackedType<U, FI>, VCSProof>,
 }
 
 /// The multilinear polynomial commitment scheme specified in [DP23].
@@ -111,24 +118,27 @@ where
 ///
 /// [DP23]: https://eprint.iacr.org/2023/630
 #[derive(Debug, Copy, Clone)]
-pub struct TensorPCS<P, PA, PI, PE, LC, H, VCS>
+pub struct TensorPCS<U, F, FA, FI, FE, LC, H, VCS>
 where
-	P: PackedField,
-	PA: PackedField,
-	PI: PackedField,
-	PE: PackedField,
-	LC: LinearCode<P = PA>,
-	H: HashDigest<PI>,
+	U: PackScalar<F> + PackScalar<FA> + PackScalar<FI> + PackScalar<FE>,
+	F: Field,
+	FA: Field,
+	FI: Field,
+	FE: Field,
+	LC: LinearCode<P = PackedType<U, FA>>,
+	H: HashDigest<PackedType<U, FI>>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	log_rows: usize,
 	n_test_queries: usize,
 	code: LC,
 	vcs: VCS,
-	_p_marker: PhantomData<P>,
-	_pi_marker: PhantomData<PI>,
+	_u_marker: PhantomData<U>,
+	_f_marker: PhantomData<F>,
+	_fa_marker: PhantomData<FA>,
+	_fi_marker: PhantomData<FI>,
 	_h_marker: PhantomData<H>,
-	_ext_marker: PhantomData<PE>,
+	_ext_marker: PhantomData<FE>,
 }
 
 type GroestlMerkleTreeVCS = MerkleTreeVCS<
@@ -138,16 +148,28 @@ type GroestlMerkleTreeVCS = MerkleTreeVCS<
 	GroestlDigestCompression,
 >;
 
-impl<P, PA, PI, PE, LC>
-	TensorPCS<P, PA, PI, PE, LC, HasherDigest<PI, GroestlHasher<PI>>, GroestlMerkleTreeVCS>
-where
-	P: PackedField,
-	PA: PackedField,
-	PI: PackedField + PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable> + Sync,
-	PI::Scalar: ExtensionField<P::Scalar> + ExtensionField<BinaryField8b>,
-	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar> + BinaryField,
-	LC: LinearCode<P = PA>,
+impl<U, F, FA, FI, FE, LC>
+	TensorPCS<
+		U,
+		F,
+		FA,
+		FI,
+		FE,
+		LC,
+		HasherDigest<PackedType<U, FI>, GroestlHasher<PackedType<U, FI>>>,
+		GroestlMerkleTreeVCS,
+	> where
+	U: PackScalar<F>
+		+ PackScalar<FA>
+		+ PackScalar<FI>
+		+ PackScalar<FE>
+		+ PackScalar<BinaryField8b>
+		+ binius_field::underlier::Divisible<u8>,
+	F: Field,
+	FA: Field,
+	FI: Field + ExtensionField<BinaryField8b> + ExtensionField<F> + Sync,
+	FE: BinaryField + ExtensionField<F>,
+	LC: LinearCode<P = PackedType<U, FA>>,
 {
 	pub fn new_using_groestl_merkle_tree(
 		log_rows: usize,
@@ -168,25 +190,25 @@ where
 	}
 }
 
-impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> PolyCommitScheme<P, FE>
-	for TensorPCS<P, PA, PI, PE, LC, H, VCS>
+impl<U, F, FA, FI, FE, LC, H, VCS> PolyCommitScheme<PackedType<U, F>, FE>
+	for TensorPCS<U, F, FA, FI, FE, LC, H, VCS>
 where
+	U: PackScalar<F>
+		+ PackScalar<FA>
+		+ PackScalar<FI, Packed: PackedFieldIndexable>
+		+ PackScalar<FE, Packed: PackedFieldIndexable>,
 	F: Field,
-	P: PackedField<Scalar = F>,
 	FA: Field,
-	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F> + ExtensionField<FA>,
-	PI: PackedFieldIndexable<Scalar = FI> + RepackedExtension<P> + RepackedExtension<PA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedFieldIndexable<Scalar = FE> + RepackedExtension<PI>,
-	LC: LinearCode<P = PA>,
-	H: HashDigest<PI>,
+	LC: LinearCode<P = PackedType<U, FA>>,
+	H: HashDigest<PackedType<U, FI>>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	type Commitment = VCS::Commitment;
-	type Committed = (Vec<RowMajorMatrix<PI>>, VCS::Committed);
-	type Proof = Proof<'static, PI, PE, VCS::Proof>;
+	type Committed = (Vec<RowMajorMatrix<PackedType<U, FI>>>, VCS::Committed);
+	type Proof = Proof<'static, U, FI, FE, VCS::Proof>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -196,7 +218,7 @@ where
 	#[instrument(skip_all, name = "tensor_pcs::commit")]
 	fn commit(
 		&self,
-		polys: &[MultilinearExtension<P>],
+		polys: &[MultilinearExtension<PackedType<U, F>>],
 	) -> Result<(Self::Commitment, Self::Committed), Error> {
 		for poly in polys {
 			if poly.n_vars() != self.n_vars() {
@@ -207,7 +229,8 @@ where
 		}
 
 		// These conditions are checked by the constructor, so are safe to assert defensively
-		debug_assert_eq!(self.code.dim() % PI::WIDTH, 0);
+		let pi_width = PackedType::<U, FI>::WIDTH;
+		debug_assert_eq!(self.code.dim() % pi_width, 0);
 
 		// Dimensions as an intermediate field matrix.
 		let n_rows = 1 << self.log_rows;
@@ -216,31 +239,34 @@ where
 		let mut encoded_mats = Vec::with_capacity(polys.len());
 		let mut all_digests = Vec::with_capacity(polys.len());
 		for poly in polys {
-			let mut encoded = vec![PI::default(); n_rows * n_cols_enc / PI::WIDTH];
-			let poly_vals_packed = <PI as PackedExtension<F>>::cast_exts(poly.evals());
+			let mut encoded = vec![PackedType::<U, FI>::default(); n_rows * n_cols_enc / pi_width];
+			let poly_vals_packed =
+				<PackedType<U, FI> as PackedExtension<F>>::cast_exts(poly.evals());
 
 			transpose::transpose(
-				PI::unpack_scalars(poly_vals_packed),
-				PI::unpack_scalars_mut(&mut encoded[..n_rows * self.code.dim() / PI::WIDTH]),
+				PackedType::<U, FI>::unpack_scalars(poly_vals_packed),
+				PackedType::<U, FI>::unpack_scalars_mut(
+					&mut encoded[..n_rows * self.code.dim() / pi_width],
+				),
 				1 << self.code.dim_bits(),
 				1 << self.log_rows,
 			);
 
 			self.code
 				.encode_batch_inplace(
-					<PI as PackedExtension<FA>>::cast_bases_mut(&mut encoded),
+					<PackedType<U, FI> as PackedExtension<FA>>::cast_bases_mut(&mut encoded),
 					self.log_rows + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
 				)
 				.map_err(|err| Error::EncodeError(Box::new(err)))?;
 
 			let mut digests = vec![H::Digest::default(); n_cols_enc];
 			encoded
-				.par_chunks_exact(n_rows / PI::WIDTH)
+				.par_chunks_exact(n_rows / pi_width)
 				.map(H::hash)
 				.collect_into_vec(&mut digests);
 			all_digests.push(digests);
 
-			let encoded_mat = RowMajorMatrix::new(encoded, n_rows / PI::WIDTH);
+			let encoded_mat = RowMajorMatrix::new(encoded, n_rows / pi_width);
 			encoded_mats.push(encoded_mat);
 		}
 
@@ -263,7 +289,7 @@ where
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		polys: &[MultilinearExtension<P>],
+		polys: &[MultilinearExtension<PackedType<U, F>>],
 		query: &[FE],
 	) -> Result<Self::Proof, Error>
 	where
@@ -301,7 +327,7 @@ where
 			.collect::<Result<Vec<_>, _>>()?;
 		let t_prime = mix_t_primes(log_n_cols, &t_primes, mixing_coefficients)?;
 
-		challenger.observe_slice(PE::unpack_scalars(t_prime.evals()));
+		challenger.observe_slice(PackedType::<U, FE>::unpack_scalars(t_prime.evals()));
 		let merkle_proofs = repeat_with(|| challenger.sample_bits(code_len_bits))
 			.take(self.n_test_queries)
 			.map(|index| {
@@ -347,11 +373,14 @@ where
 	{
 		// These are all checked during construction, so it is safe to assert as a defensive
 		// measure.
-		debug_assert_eq!(self.code.dim() % PI::WIDTH, 0);
-		debug_assert_eq!((1 << self.log_rows) % P::WIDTH, 0);
-		debug_assert_eq!((1 << self.log_rows) % PI::WIDTH, 0);
-		debug_assert_eq!(self.code.dim() % PI::WIDTH, 0);
-		debug_assert_eq!(self.code.dim() % PE::WIDTH, 0);
+		let p_width = PackedType::<U, F>::WIDTH;
+		let pi_width = PackedType::<U, FI>::WIDTH;
+		let pe_width = PackedType::<U, FE>::WIDTH;
+		debug_assert_eq!(self.code.dim() % pi_width, 0);
+		debug_assert_eq!((1 << self.log_rows) % p_width, 0);
+		debug_assert_eq!((1 << self.log_rows) % pi_width, 0);
+		debug_assert_eq!(self.code.dim() % pi_width, 0);
+		debug_assert_eq!(self.code.dim() % pe_width, 0);
 
 		if values.len() != proof.n_polys {
 			return Err(Error::NumBatchedMismatchError {
@@ -362,8 +391,9 @@ where
 
 		let n_challenges = log2_ceil_usize(proof.n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::<PE>::with_full_query(&mixing_challenges)?
-			.into_expansion()[..proof.n_polys];
+		let mixing_coefficients =
+			&MultilinearQuery::<PackedType<U, FE>>::with_full_query(&mixing_challenges)?
+				.into_expansion()[..proof.n_polys];
 		let value =
 			inner_product_unchecked(values.iter().copied(), iter_packed_slice(mixing_coefficients));
 
@@ -384,10 +414,11 @@ where
 
 		let n_rows = 1 << self.log_rows;
 
-		challenger.observe_slice(PE::unpack_scalars(proof.mixed_t_prime.evals()));
+		challenger.observe_slice(<PackedType<U, FE>>::unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
-		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[..log_n_cols])?;
+		let multilin_query =
+			MultilinearQuery::<PackedType<U, FE>>::with_full_query(&query[..log_n_cols])?;
 		let computed_value = proof
 			.mixed_t_prime
 			.evaluate(&multilin_query)
@@ -397,7 +428,10 @@ where
 		}
 
 		// Encode t' into u'
-		let mut u_prime = vec![PE::default(); (1 << (code_len_bits + log_block_size)) / PE::WIDTH];
+		let mut u_prime = vec![
+			PackedType::<U, FE>::default();
+			(1 << (code_len_bits + log_block_size)) / pe_width
+		];
 		self.encode_ext(proof.mixed_t_prime.evals(), &mut u_prime)?;
 
 		// Check vector commitment openings.
@@ -431,24 +465,27 @@ where
 
 				cols.iter().for_each(|col| {
 					// Checked by check_proof_shape
-					debug_assert_eq!(col.len(), n_rows / PI::WIDTH);
+					debug_assert_eq!(col.len(), n_rows / pi_width);
 
 					// The columns are committed to and provided by the prover as packed vectors of
 					// intermediate field elements. We need to transpose them into packed base field
 					// elements to perform the consistency checks. Allocate col_transposed as packed
 					// intermediate field elements to guarantee alignment.
-					let mut col_transposed = vec![PI::default(); n_rows / PI::WIDTH];
+					let mut col_transposed =
+						vec![PackedType::<U, FI>::default(); n_rows / pi_width];
 					let base_cols: &mut [_] =
-						<PI as PackedExtension<F>>::cast_bases_mut(&mut col_transposed);
+						<PackedType<U, FI> as PackedExtension<F>>::cast_bases_mut(
+							&mut col_transposed,
+						);
 					transpose_scalars(col, base_cols).expect(
 						"guaranteed safe because of parameter checks in constructor; \
 							alignment is guaranteed the cast from a PI slice",
 					);
 
-					debug_assert_eq!(base_cols.len(), n_rows / P::WIDTH * block_size);
+					debug_assert_eq!(base_cols.len(), n_rows / p_width * block_size);
 
 					(0..block_size)
-						.zip(base_cols.chunks_exact(n_rows / P::WIDTH))
+						.zip(base_cols.chunks_exact(n_rows / p_width))
 						.for_each(|(j, col)| {
 							batched_column_test[j].1.push(col.to_vec());
 						});
@@ -458,7 +495,8 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let multilin_query = MultilinearQuery::<PE>::with_full_query(&query[log_n_cols..])?;
+		let multilin_query =
+			MultilinearQuery::<PackedType<U, FE>>::with_full_query(&query[log_n_cols..])?;
 		let incorrect_evaluation = column_tests
 			.par_iter()
 			.map(|(expected, leaves)| {
@@ -491,24 +529,23 @@ where
 	}
 
 	fn proof_size(&self, n_polys: usize) -> usize {
-		let t_prime_size = (mem::size_of::<PE>() << self.log_cols()) / PE::WIDTH;
-		let column_size = (mem::size_of::<PI>() << self.log_rows()) / PI::WIDTH;
+		let pe_width = PackedType::<U, FE>::WIDTH;
+		let pi_width = PackedType::<U, FI>::WIDTH;
+		let t_prime_size = (mem::size_of::<U>() << self.log_cols()) / pe_width;
+		let column_size = (mem::size_of::<U>() << self.log_rows()) / pi_width;
 		t_prime_size + (n_polys * column_size + self.vcs.proof_size(n_polys)) * self.n_test_queries
 	}
 }
 
-impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
+impl<U, F, FA, FI, FE, LC, H, VCS> TensorPCS<U, F, FA, FI, FE, LC, H, VCS>
 where
+	U: PackScalar<F> + PackScalar<FA> + PackScalar<FI> + PackScalar<FE>,
 	F: Field,
-	P: PackedField<Scalar = F>,
 	FA: Field,
-	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F>,
-	PI: PackedField<Scalar = FI>,
 	FE: ExtensionField<F>,
-	PE: PackedField<Scalar = FE>,
-	LC: LinearCode<P = PA>,
-	H: HashDigest<PI>,
+	LC: LinearCode<P = PackedType<U, FA>>,
+	H: HashDigest<PackedType<U, FI>>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	/// The base-2 logarithm of the number of rows in the committed matrix.
@@ -522,18 +559,15 @@ where
 	}
 }
 
-impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
+impl<U, F, FA, FI, FE, LC, H, VCS> TensorPCS<U, F, FA, FI, FE, LC, H, VCS>
 where
+	U: PackScalar<F> + PackScalar<FA> + PackScalar<FI> + PackScalar<FE>,
 	F: Field,
-	P: PackedField<Scalar = F>,
 	FA: Field,
-	PA: PackedField<Scalar = FA>,
 	FI: ExtensionField<F>,
-	PI: PackedField<Scalar = FI>,
 	FE: ExtensionField<F> + BinaryField,
-	PE: PackedField<Scalar = FE>,
-	LC: LinearCode<P = PA>,
-	H: HashDigest<PI>,
+	LC: LinearCode<P = PackedType<U, FA>>,
+	H: HashDigest<PackedType<U, FI>>,
 	VCS: VectorCommitScheme<H::Digest>,
 {
 	/// Construct a [`TensorPCS`].
@@ -556,16 +590,19 @@ where
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 
-		if (1 << log_rows) % P::WIDTH != 0 {
+		let p_width = PackedType::<U, F>::WIDTH;
+		let pi_width = PackedType::<U, FI>::WIDTH;
+		let pe_width = PackedType::<U, FE>::WIDTH;
+		if (1 << log_rows) % p_width != 0 {
 			return Err(Error::PackingWidthMustDivideNumberOfRows);
 		}
-		if (1 << log_rows) % PI::WIDTH != 0 {
+		if (1 << log_rows) % pi_width != 0 {
 			return Err(Error::PackingWidthMustDivideNumberOfRows);
 		}
-		if code.dim() % PI::WIDTH != 0 {
+		if code.dim() % pi_width != 0 {
 			return Err(Error::PackingWidthMustDivideCodeDimension);
 		}
-		if code.dim() % PE::WIDTH != 0 {
+		if code.dim() % pe_width != 0 {
 			return Err(Error::PackingWidthMustDivideCodeDimension);
 		}
 
@@ -574,8 +611,10 @@ where
 			n_test_queries,
 			code,
 			vcs,
-			_p_marker: PhantomData,
-			_pi_marker: PhantomData,
+			_u_marker: PhantomData,
+			_f_marker: PhantomData,
+			_fa_marker: PhantomData,
+			_fi_marker: PhantomData,
 			_h_marker: PhantomData,
 			_ext_marker: PhantomData,
 		})
@@ -583,22 +622,22 @@ where
 }
 
 // Helper functions for PolyCommitScheme implementation.
-impl<F, P, FA, PA, FI, PI, FE, PE, LC, H, VCS> TensorPCS<P, PA, PI, PE, LC, H, VCS>
+impl<U, F, FA, FI, FE, LC, H, VCS> TensorPCS<U, F, FA, FI, FE, LC, H, VCS>
 where
+	U: PackScalar<F, Packed: Send>
+		+ PackScalar<FA>
+		+ PackScalar<FI, Packed: PackedFieldIndexable>
+		+ PackScalar<FE, Packed: PackedFieldIndexable + Sync>,
 	F: Field,
-	P: PackedField<Scalar = F> + Send,
 	FA: Field,
-	PA: PackedField<Scalar = FA>,
-	FI: ExtensionField<P::Scalar> + ExtensionField<PA::Scalar>,
-	PI: PackedFieldIndexable<Scalar = FI> + RepackedExtension<P> + RepackedExtension<PA> + Sync,
+	FI: ExtensionField<F> + ExtensionField<FA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	PE: PackedFieldIndexable<Scalar = FE> + RepackedExtension<PI>,
-	LC: LinearCode<P = PA>,
-	H: HashDigest<PI>,
+	LC: LinearCode<P = PackedType<U, FA>>,
+	H: HashDigest<PackedType<U, FI>>,
 	H::Digest: Copy + Default + Send,
 	VCS: VectorCommitScheme<H::Digest>,
 {
-	fn check_proof_shape(&self, proof: &Proof<PI, PE, VCS::Proof>) -> Result<(), Error> {
+	fn check_proof_shape(&self, proof: &Proof<U, FI, FE, VCS::Proof>) -> Result<(), Error> {
 		let n_rows = 1 << self.log_rows;
 		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
@@ -623,12 +662,13 @@ where
 			}
 
 			for (poly_idx, poly_col) in polys_col.iter().enumerate() {
-				if poly_col.len() * PI::WIDTH != n_rows {
+				let pi_width = PackedType::<U, FI>::WIDTH;
+				if poly_col.len() * pi_width != n_rows {
 					return Err(VerificationError::OpenedColumnSize {
 						col_index: col_idx,
 						poly_index: poly_idx,
 						expected: n_rows,
-						actual: poly_col.len() * PI::WIDTH,
+						actual: poly_col.len() * pi_width,
 					}
 					.into());
 				}
@@ -642,16 +682,22 @@ where
 		Ok(())
 	}
 
-	fn encode_ext(&self, t_prime: &[PE], u_prime: &mut [PE]) -> Result<(), Error> {
+	fn encode_ext(
+		&self,
+		t_prime: &[PackedType<U, FE>],
+		u_prime: &mut [PackedType<U, FE>],
+	) -> Result<(), Error> {
 		let code_len_bits = log2_strict_usize(self.code.len());
 		let block_size = <FI as ExtensionField<F>>::DEGREE;
 		let log_block_size = log2_strict_usize(block_size);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
 
-		assert_eq!(t_prime.len(), (1 << log_n_cols) / PE::WIDTH);
-		assert_eq!(u_prime.len(), (1 << (code_len_bits + log_block_size)) / PE::WIDTH);
+		let pe_width = PackedType::<U, FE>::WIDTH;
+		let p_width = PackedType::<U, F>::WIDTH;
+		assert_eq!(t_prime.len(), (1 << log_n_cols) / pe_width);
+		assert_eq!(u_prime.len(), (1 << (code_len_bits + log_block_size)) / pe_width);
 
-		u_prime[..(1 << log_n_cols) / PE::WIDTH].copy_from_slice(t_prime);
+		u_prime[..(1 << log_n_cols) / pe_width].copy_from_slice(t_prime);
 
 		// View u' as a vector of packed base field elements and transpose into packed intermediate
 		// field elements in order to apply the extension encoding.
@@ -659,11 +705,11 @@ where
 			// TODO: This requirement is necessary for how we perform the following transpose.
 			// It should be relaxed by providing yet another PackedField type as a generic
 			// parameter for which this is true.
-			assert!(P::WIDTH <= <FE as ExtensionField<F>>::DEGREE);
+			assert!(p_width <= <FE as ExtensionField<F>>::DEGREE);
 
-			let f_view = <PI as PackedExtension<F>>::cast_bases_mut(
-				<PE as PackedExtension<FI>>::cast_bases_mut(
-					&mut u_prime[..(1 << log_n_cols) / PE::WIDTH],
+			let f_view = <PackedType<U, FI> as PackedExtension<F>>::cast_bases_mut(
+				<PackedType<U, FE> as PackedExtension<FI>>::cast_bases_mut(
+					&mut u_prime[..(1 << log_n_cols) / pe_width],
 				),
 			);
 			f_view
@@ -673,11 +719,11 @@ where
 
 		// View u' as a vector of packed intermediate field elements and batch encode.
 		{
-			let fi_view = <PE as PackedExtension<FI>>::cast_bases_mut(u_prime);
+			let fi_view = <PackedType<U, FE> as PackedExtension<FI>>::cast_bases_mut(u_prime);
 			let log_batch_size = log2_strict_usize(<FE as ExtensionField<F>>::DEGREE);
 			self.code
 				.encode_batch_inplace(
-					<PI as PackedExtension<FA>>::cast_bases_mut(fi_view),
+					<PackedType<U, FI> as PackedExtension<FA>>::cast_bases_mut(fi_view),
 					log_batch_size + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
 				)
 				.map_err(|err| Error::EncodeError(Box::new(err)))?;
@@ -687,10 +733,10 @@ where
 			// TODO: This requirement is necessary for how we perform the following transpose.
 			// It should be relaxed by providing yet another PackedField type as a generic
 			// parameter for which this is true.
-			assert!(P::WIDTH <= <FE as ExtensionField<F>>::DEGREE);
+			assert!(p_width <= <FE as ExtensionField<F>>::DEGREE);
 
-			let f_view = <PI as PackedExtension<F>>::cast_bases_mut(
-				<PE as PackedExtension<FI>>::cast_bases_mut(u_prime),
+			let f_view = <PackedType<U, FI> as PackedExtension<F>>::cast_bases_mut(
+				<PackedType<U, FE> as PackedExtension<FI>>::cast_bases_mut(u_prime),
 			);
 			f_view
 				.par_chunks_exact_mut(block_size)
@@ -707,7 +753,7 @@ where
 /// the polynomial's coefficient field.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-pub type BasicTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, P, PE, LC, H, VCS>;
+pub type BasicTensorPCS<U, F, FA, FE, LC, H, VCS> = TensorPCS<U, F, FA, F, FE, LC, H, VCS>;
 
 /// The multilinear polynomial commitment scheme from [DP23] with block-level encoding.
 ///
@@ -715,7 +761,7 @@ pub type BasicTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, P, PE, LC, H, 
 /// field of the polynomial's coefficient field.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-pub type BlockTensorPCS<P, PA, PE, LC, H, VCS> = TensorPCS<P, PA, PA, PE, LC, H, VCS>;
+pub type BlockTensorPCS<U, F, FA, FE, LC, H, VCS> = TensorPCS<U, F, FA, FA, FE, LC, H, VCS>;
 
 pub fn calculate_n_test_queries<F: BinaryField, LC: LinearCode>(
 	security_bits: usize,
@@ -814,7 +860,7 @@ where
 ///
 /// This constructs a TensorPCS using a Reed-Solomon code and a Merkle tree using Groestl.
 #[allow(clippy::type_complexity)]
-pub fn find_proof_size_optimal_pcs<F, P, FA, PA, FI, PI, FE, PE>(
+pub fn find_proof_size_optimal_pcs<U, F, FA, FI, FE>(
 	security_bits: usize,
 	n_vars: usize,
 	n_polys: usize,
@@ -822,33 +868,31 @@ pub fn find_proof_size_optimal_pcs<F, P, FA, PA, FI, PI, FE, PE>(
 	conservative_testing: bool,
 ) -> Option<
 	TensorPCS<
-		P,
-		PA,
-		PI,
-		PE,
-		ReedSolomonCode<PA>,
-		HasherDigest<PI, GroestlHasher<PI>>,
+		U,
+		F,
+		FA,
+		FI,
+		FE,
+		ReedSolomonCode<PackedType<U, FA>>,
+		HasherDigest<PackedType<U, FI>, GroestlHasher<PackedType<U, FI>>>,
 		GroestlMerkleTreeVCS,
 	>,
 >
 where
+	U: PackScalar<F>
+		+ PackScalar<FA, Packed: PackedFieldIndexable>
+		+ PackScalar<FI, Packed: PackedFieldIndexable>
+		+ PackScalar<FE, Packed: PackedFieldIndexable>
+		+ PackScalar<BinaryField8b>
+		+ Divisible<u8>,
 	F: Field,
-	P: PackedField<Scalar = F>,
 	FA: BinaryField,
-	PA: PackedField<Scalar = FA> + PackedExtension<FA> + PackedFieldIndexable,
 	FI: ExtensionField<F> + ExtensionField<FA> + ExtensionField<BinaryField8b>,
-	PI: PackedField<Scalar = FI>
-		+ PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>
-		+ PackedExtension<FI>
-		+ RepackedExtension<P>
-		+ RepackedExtension<PA>
-		+ PackedFieldIndexable,
 	FE: BinaryField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
-	PE: PackedField<Scalar = FE> + RepackedExtension<PI> + PackedFieldIndexable,
 {
 	let mut best_proof_size = None;
 	let mut best_pcs = None;
-	let log_degree = log2_strict_usize(<PI::Scalar as ExtensionField<P::Scalar>>::DEGREE);
+	let log_degree = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 
 	for log_rows in 0..=(n_vars - log_degree) {
 		let log_dim = n_vars - log_rows - log_degree;
@@ -867,7 +911,7 @@ where
 			Err(_) => continue,
 		};
 
-		let pcs = match TensorPCS::<P, PA, PI, PE, _, _, _>::new_using_groestl_merkle_tree(
+		let pcs = match TensorPCS::<U, F, FA, FI, FE, _, _, _>::new_using_groestl_merkle_tree(
 			log_rows,
 			rs_code,
 			n_test_queries,
@@ -899,8 +943,9 @@ mod tests {
 	use super::*;
 	use crate::challenger::HashChallenger;
 	use binius_field::{
-		BinaryField128b, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b,
+		arch::OptimalUnderlier128b, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
+		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+		PackedBinaryField4x32b,
 	};
 	use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
@@ -912,8 +957,16 @@ mod tests {
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
 				.unwrap();
-		let pcs =
-			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries).unwrap();
+		let pcs = <BasicTensorPCS<
+			OptimalUnderlier128b,
+			BinaryField8b,
+			BinaryField8b,
+			BinaryField128b,
+			_,
+			_,
+			_,
+		>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries)
+		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let evals = repeat_with(|| Packed::random(&mut rng))
@@ -952,8 +1005,16 @@ mod tests {
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
 				.unwrap();
-		let pcs =
-			<BasicTensorPCS<Packed, Packed, PackedBinaryField1x128b, _, _, _>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries).unwrap();
+		let pcs = <BasicTensorPCS<
+			OptimalUnderlier128b,
+			BinaryField8b,
+			BinaryField8b,
+			BinaryField128b,
+			_,
+			_,
+			_,
+		>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries)
+		.unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let batch_size = thread_rng().gen_range(1..=10);
@@ -997,9 +1058,10 @@ mod tests {
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
 		let pcs = <BlockTensorPCS<
-			PackedBinaryField128x1b,
-			PackedBinaryField16x8b,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField1b,
+			BinaryField8b,
+			BinaryField128b,
 			_,
 			_,
 			_,
@@ -1042,9 +1104,10 @@ mod tests {
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
 		let pcs = <BlockTensorPCS<
-			PackedBinaryField128x1b,
-			PackedBinaryField16x8b,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField1b,
+			BinaryField8b,
+			BinaryField128b,
 			_,
 			_,
 			_,
@@ -1092,9 +1155,10 @@ mod tests {
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
 		let pcs = <BasicTensorPCS<
-			PackedBinaryField4x32b,
-			PackedBinaryField16x8b,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField32b,
+			BinaryField8b,
+			BinaryField128b,
 			_,
 			_,
 			_,
@@ -1137,9 +1201,10 @@ mod tests {
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
 		let pcs = <BasicTensorPCS<
-			PackedBinaryField4x32b,
-			PackedBinaryField16x8b,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField32b,
+			BinaryField8b,
+			BinaryField128b,
 			_,
 			_,
 			_,
@@ -1187,9 +1252,10 @@ mod tests {
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
 		let pcs = <BasicTensorPCS<
-			PackedBinaryField4x32b,
-			PackedBinaryField16x8b,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField32b,
+			BinaryField8b,
+			BinaryField128b,
 			_,
 			_,
 			_,
@@ -1203,14 +1269,11 @@ mod tests {
 	#[test]
 	fn test_proof_size_optimal_block_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
-			_,
-			PackedBinaryField128x1b,
-			_,
-			PackedBinaryField8x16b,
-			_,
-			PackedBinaryField8x16b,
-			_,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField1b,
+			BinaryField16b,
+			BinaryField16b,
+			BinaryField128b,
 		>(100, 28, 1, 2, false)
 		.unwrap();
 		assert_eq!(pcs.n_vars(), 28);
@@ -1219,14 +1282,11 @@ mod tests {
 
 		// Matrix should be wider with more polynomials per batch.
 		let pcs = find_proof_size_optimal_pcs::<
-			_,
-			PackedBinaryField128x1b,
-			_,
-			PackedBinaryField8x16b,
-			_,
-			PackedBinaryField8x16b,
-			_,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField1b,
+			BinaryField16b,
+			BinaryField16b,
+			BinaryField128b,
 		>(100, 28, 8, 2, false)
 		.unwrap();
 		assert_eq!(pcs.n_vars(), 28);
@@ -1237,14 +1297,11 @@ mod tests {
 	#[test]
 	fn test_proof_size_optimal_basic_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField32b,
+			BinaryField32b,
+			BinaryField32b,
+			BinaryField128b,
 		>(100, 28, 1, 2, false)
 		.unwrap();
 		assert_eq!(pcs.n_vars(), 28);
@@ -1253,14 +1310,11 @@ mod tests {
 
 		// Matrix should be wider with more polynomials per batch.
 		let pcs = find_proof_size_optimal_pcs::<
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField4x32b,
-			_,
-			PackedBinaryField1x128b,
+			OptimalUnderlier128b,
+			BinaryField32b,
+			BinaryField32b,
+			BinaryField32b,
+			BinaryField128b,
 		>(100, 28, 8, 2, false)
 		.unwrap();
 		assert_eq!(pcs.n_vars(), 28);

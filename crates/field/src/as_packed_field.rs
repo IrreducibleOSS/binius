@@ -67,6 +67,9 @@ pub trait PackScalar<F: Field>: UnderlierType {
 	type Packed: PackedField<Scalar = F> + WithUnderlier<Underlier = Self>;
 }
 
+/// Returns the packed field type for the scalar field `F` and underlier `U`.
+pub type PackedType<U, F> = <U as PackScalar<F>>::Packed;
+
 /// A trait to convert field to a same bit size packed field with some smaller scalar.
 pub(crate) trait AsPackedField<Scalar: Field>: Field
 where

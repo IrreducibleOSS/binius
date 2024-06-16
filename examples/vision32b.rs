@@ -27,6 +27,7 @@ use binius_field::{
 	affine_transformation::Transformation,
 	arithmetic_traits::{InvertOrZero, Square},
 	packed::get_packed_slice,
+	underlier::WithUnderlier,
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField1x128b,
 	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -1059,14 +1060,11 @@ fn main() {
 	let log_inv_rate = 1;
 	let trace_batch = oracles.committed_batch(trace_oracle.trace_batch_id);
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
-		_,
-		PackedBinaryField4x32b,
-		_,
-		PackedBinaryField4x32b,
-		_,
-		PackedBinaryField4x32b,
-		_,
-		PackedBinaryField1x128b,
+		<PackedBinaryField1x128b as WithUnderlier>::Underlier,
+		BinaryField32b,
+		BinaryField32b,
+		BinaryField32b,
+		BinaryField128b,
 	>(SECURITY_BITS, log_size, trace_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 

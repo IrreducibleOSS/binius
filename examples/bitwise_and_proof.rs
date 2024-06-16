@@ -15,8 +15,8 @@ use binius_core::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	BinaryField128b, BinaryField128bPolyval, ExtensionField, PackedBinaryField128x1b,
-	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField, TowerField,
+	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
+	BinaryField1b, ExtensionField, PackedBinaryField128x1b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterPolys};
@@ -287,14 +287,11 @@ fn main() {
 
 	// Set up the public parameters
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
-		_,
-		PackedBinaryField128x1b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField8x16b,
-		_,
-		PackedBinaryField1x128b,
+		<PackedBinaryField128x1b as WithUnderlier>::Underlier,
+		BinaryField1b,
+		BinaryField16b,
+		BinaryField16b,
+		BinaryField128b,
 	>(SECURITY_BITS, log_size, 3, log_inv_rate, false)
 	.unwrap();
 

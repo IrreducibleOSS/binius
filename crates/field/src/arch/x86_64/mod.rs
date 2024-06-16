@@ -3,11 +3,11 @@
 #[cfg(target_feature = "gfni")]
 mod gfni;
 #[cfg(target_feature = "sse2")]
-mod m128;
+pub(super) mod m128;
 #[cfg(target_feature = "avx2")]
-mod m256;
+pub(super) mod m256;
 #[cfg(target_feature = "avx512f")]
-mod m512;
+pub(super) mod m512;
 
 use cfg_if::cfg_if;
 

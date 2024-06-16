@@ -17,9 +17,10 @@ use binius_core::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-	PackedBinaryField4x32b, PackedBinaryField8x16b, PackedField, PackedFieldIndexable, TowerField,
+	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
+	BinaryField8b, ExtensionField, PackedBinaryField128x1b, PackedBinaryField16x8b,
+	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedField,
+	PackedFieldIndexable, TowerField,
 };
 use binius_hash::GroestlHasher;
 use binius_utils::{
@@ -30,6 +31,7 @@ use rand::thread_rng;
 use std::fmt::Debug;
 use tracing::instrument;
 
+type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
@@ -40,6 +42,8 @@ type P8 = PackedBinaryField16x8b;
 type P16 = PackedBinaryField8x16b;
 type P32 = PackedBinaryField4x32b;
 type P128 = PackedBinaryField1x128b;
+
+type Underlier = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
 struct TraceOracle {
 	lasso_batch: LassoBatch,
@@ -610,26 +614,25 @@ fn main() -> Result<()> {
 	// Set up the public parameters
 
 	macro_rules! optimal_block_pcs {
-		($pcs_var: ident := $n_polys:literal x [$p:ty > $pa:ty > $pi:ty > $pe:ty] ^ ($log_size:expr)) => {
-			let $pcs_var =
-				tensor_pcs::find_proof_size_optimal_pcs::<_, $p, _, $pa, _, $pi, _, $pe>(
-					SECURITY_BITS,
-					$log_size,
-					$n_polys,
-					log_inv_rate,
-					false,
-				)
-				.ok_or_else(|| anyhow!("Cannot determite optimal TensorPCS"))?;
+		($pcs_var: ident := $n_polys:literal x [$f:ty > $fa:ty > $fi:ty > $fe:ty] ^ ($log_size:expr)) => {
+			let $pcs_var = tensor_pcs::find_proof_size_optimal_pcs::<Underlier, $f, $fa, $fi, $fe>(
+				SECURITY_BITS,
+				$log_size,
+				$n_polys,
+				log_inv_rate,
+				false,
+			)
+			.ok_or_else(|| anyhow!("Cannot determite optimal TensorPCS"))?;
 		};
 	}
 
-	optimal_block_pcs!(pcs1 := 3 x [P1 > P16 > P16 > P128] ^ (log_size + B32::TOWER_LEVEL));
-	optimal_block_pcs!(pcs8 := 2 x [P8 > P16 > P16 > P128] ^ (log_size));
-	optimal_block_pcs!(pcs16 := 1 x [P16 > P16 > P16 > P128] ^ (log_size));
-	optimal_block_pcs!(pcs32 := 1 x [P32 > P16 > P32 > P128] ^ (log_size));
+	optimal_block_pcs!(pcs1 := 3 x [B1 > B16 > B16 > B128] ^ (log_size + B32::TOWER_LEVEL));
+	optimal_block_pcs!(pcs8 := 2 x [B8 > B16 > B16 > B128] ^ (log_size));
+	optimal_block_pcs!(pcs16 := 1 x [B16 > B16 > B16 > B128] ^ (log_size));
+	optimal_block_pcs!(pcs32 := 1 x [B32 > B16 > B32 > B128] ^ (log_size));
 
 	// relying on Field -> PackedField impl until prodcheck is aware of packed fields
-	optimal_block_pcs!(pcs128 := 1 x [P128 > P16 > P128 > P128] ^ (log_size + 2));
+	optimal_block_pcs!(pcs128 := 1 x [B128 > B16 > B128 > B128] ^ (log_size + 2));
 
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
