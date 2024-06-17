@@ -125,13 +125,7 @@ where
 		}
 
 		if sumcheck_witness.n_vars() != n_vars {
-			let err_str = format!(
-				"Claim and Witness n_vars mismatch in sumcheck. Claim: {}, Witness: {}",
-				n_vars,
-				sumcheck_witness.n_vars(),
-			);
-
-			return Err(Error::ProverClaimWitnessMismatch(err_str));
+			return Err(Error::ProverClaimWitnessMismatch);
 		}
 
 		check_evaluation_domain(sumcheck_claim.poly.max_individual_degree(), domain)?;
@@ -165,11 +159,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round != self.n_vars() {
-			return Err(Error::ImproperInput(format!(
-				"finalize() called on round {} while n_vars={}",
-				self.round,
-				self.n_vars()
-			)));
+			return Err(Error::PrematureFinalizeCall);
 		}
 
 		// Last reduction to obtain eval value at eval_point
@@ -189,7 +179,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round >= self.n_vars() {
-			return Err(Error::ImproperInput("too many execute_round calls".to_string()));
+			return Err(Error::TooManyExecuteRoundCalls);
 		}
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given
@@ -390,12 +380,10 @@ fn validate_rd_challenge<F: Field>(
 	prev_rd_challenge: Option<F>,
 	round: usize,
 ) -> Result<(), Error> {
-	if prev_rd_challenge.is_none() != (round == 0) {
-		return Err(Error::ImproperInput(format!(
-			"incorrect optional challenge: is_some()={:?} at round {}",
-			prev_rd_challenge.is_some(),
-			round
-		)));
+	if round == 0 && prev_rd_challenge.is_some() {
+		return Err(Error::PreviousRoundChallengePresent);
+	} else if round > 0 && prev_rd_challenge.is_none() {
+		return Err(Error::PreviousRoundChallengeAbsent);
 	}
 
 	Ok(())

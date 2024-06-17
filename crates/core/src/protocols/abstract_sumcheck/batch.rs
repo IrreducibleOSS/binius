@@ -54,6 +54,7 @@ where
 
 	let n_rounds = provers_vec.first().map(|claim| claim.n_vars()).unwrap_or(0);
 
+	let mut first_batch_coeff = Some(F::ONE);
 	let mut batch_coeffs = Vec::with_capacity(provers_vec.len());
 	let mut round_proofs = Vec::with_capacity(n_rounds);
 
@@ -75,11 +76,11 @@ where
 				break;
 			}
 
-			let coeff = challenger.sample();
-			batch_coeffs.push(coeff);
+			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
+			batch_coeffs.push(batching_coeff);
 
 			let proof = next_prover.execute_round(None)?;
-			mix_round_proofs(&mut batch_round_proof, &proof, coeff);
+			mix_round_proofs(&mut batch_round_proof, &proof, batching_coeff);
 		}
 
 		challenger.observe_slice(&batch_round_proof.coeffs);
@@ -143,6 +144,7 @@ where
 		return Err(Error::Verification(VerificationError::NumberOfRounds).into());
 	}
 
+	let mut first_batch_coeff = Some(F::ONE);
 	let mut batch_coeffs = Vec::with_capacity(claims_vec.len());
 	let mut rd_claim = AbstractSumcheckRoundClaim {
 		partial_point: Vec::with_capacity(n_rounds),
@@ -158,10 +160,10 @@ where
 				break;
 			}
 
-			let challenge = challenger.sample();
-			batch_coeffs.push(challenge);
+			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
+			batch_coeffs.push(batching_coeff);
 
-			rd_claim.current_round_sum += next_claim.sum * challenge;
+			rd_claim.current_round_sum += next_claim.sum * batching_coeff;
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
@@ -177,10 +179,10 @@ where
 	for claim in claims_vec[batch_coeffs.len()..].iter() {
 		debug_assert_eq!(claim.poly.n_vars(), 0);
 
-		let challenge = challenger.sample();
-		batch_coeffs.push(challenge);
+		let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
+		batch_coeffs.push(batching_coeff);
 
-		rd_claim.current_round_sum += claim.sum * challenge;
+		rd_claim.current_round_sum += claim.sum * batching_coeff;
 	}
 
 	batch_verify_final::<F, ASR::Error>(&claims_vec, &batch_coeffs, &proof.evals, rd_claim)
@@ -255,5 +257,17 @@ fn mix_round_proofs<F: Field>(
 
 	for (batch_proof_i, &proof_i) in batch_proof.coeffs.iter_mut().zip(new_proof.coeffs.iter()) {
 		*batch_proof_i += coeff * proof_i;
+	}
+}
+
+fn make_batching_coeff<F, CH>(first_batching_coeff: &mut Option<F>, mut challenger: CH) -> F
+where
+	F: Field,
+	CH: CanSample<F>,
+{
+	if let Some(coeff) = first_batching_coeff.take() {
+		coeff
+	} else {
+		challenger.sample()
 	}
 }

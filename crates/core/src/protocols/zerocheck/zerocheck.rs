@@ -65,6 +65,9 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 		challenge: F,
 		round_proof: AbstractSumcheckRound<F>,
 	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error> {
+		if round != claim.partial_point.len() {
+			return Err(Error::RoundArgumentRoundClaimMismatch);
+		}
 		let alpha_i = if round == 0 {
 			None
 		} else {
@@ -100,7 +103,7 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	} = claim;
 
 	let ZerocheckRound { mut coeffs } = proof;
-	let which_round = partial_point.len();
+	let round = partial_point.len();
 
 	// The prover has sent some coefficients for the purported ith round polynomial
 	// * $r_i(X) = \sum_{j=0}^d a_j * X^j$
@@ -122,15 +125,15 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	// In the unoptimized version of the protocol, the verifier will halt and reject
 	// if given a round polynomial that does not satisfy the required identities.
 	// For more information, see Section 3 of https://eprint.iacr.org/2024/108
-	if which_round == 0 {
-		if current_round_sum != F::ZERO {
-			return Err(VerificationError::ExpectedClaimedSumToBeZero.into());
+	if round == 0 {
+		if coeffs.is_empty() {
+			return Err(VerificationError::NumberOfCoefficients.into());
 		}
 		if alpha_i.is_some() {
 			return Err(VerificationError::UnexpectedZerocheckChallengeFound.into());
 		}
-		// In case 1, the verifier has not been given $a_0$ or $a_1$
-		// The identities that must hold are that $f(0) = 0$ and $f(1) = 0$.
+		// In case 1, the verifier has not been given $a_0$
+		// However, the verifier knows that $f(0) = f(1) = 0$
 		// Therefore
 		//     $a_0 = f(0) = 0$
 		// This implies
@@ -138,8 +141,11 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		// Therefore
 		//     $a_1 = r_i(1) - \sum_{j=2}^d a_j$
 		let constant_term = F::ZERO;
-		let linear_term = F::ZERO - coeffs.iter().sum::<F>();
-		coeffs.insert(0, linear_term);
+		let expected_linear_term = F::ZERO - coeffs.iter().skip(1).sum::<F>();
+		let actual_linear_term = coeffs[0];
+		if expected_linear_term != actual_linear_term {
+			return Err(Error::RoundPolynomialCheckFailed);
+		}
 		coeffs.insert(0, constant_term);
 	} else {
 		if coeffs.is_empty() {
@@ -177,7 +183,7 @@ fn reduce_final_round_claim_helper<F: Field>(
 		current_round_sum: eval,
 	} = round_claim;
 	if eval_point.len() != poly_oracle.n_vars() {
-		return Err(VerificationError::NumberOfCoefficients.into());
+		return Err(VerificationError::NumberOfRounds.into());
 	}
 
 	let evalcheck_claim = EvalcheckClaim {

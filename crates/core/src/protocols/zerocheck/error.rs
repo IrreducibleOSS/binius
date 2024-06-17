@@ -7,14 +7,30 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("prover has mismatch between claim and witness: {0}")]
-	ProverClaimWitnessMismatch(String),
+	#[error("prover has mismatch between claim and witness")]
+	ProverClaimWitnessMismatch,
 	#[error("zerocheck polynomial degree must be greater than zero")]
 	PolynomialDegreeIsZero,
-	#[error("the input was not well formed: {0}")]
-	ImproperInput(String),
+	#[error("zerocheck claims may not be empty")]
+	EmptyClaimsArray,
+	#[error("zerocheck claims must have at least one variable")]
+	ZeroVariableClaim,
+	#[error("zerocheck prover was not given enough challenges for its claim")]
+	NotEnoughZerocheckChallenges,
+	#[error("finalize was called on zerocheck prover before all rounds were completed")]
+	PrematureFinalizeCall,
+	#[error("execute round was called on zerocheck prover too many times")]
+	TooManyExecuteRoundCalls,
+	#[error("zerocheck prover was given a previous sumcheck rd challenge in the inital rd")]
+	PreviousRoundChallengePresent,
+	#[error("zerocheck prover was not given a previous sumcheck rd challenge in a later rd")]
+	PreviousRoundChallengeAbsent,
 	#[error("the evaluation domain does not match the expected size")]
 	EvaluationDomainMismatch,
+	#[error("the input argument for the current round number is not the expected value")]
+	RoundArgumentRoundClaimMismatch,
+	#[error("the round polynomial is inconsistent with the round claim")]
+	RoundPolynomialCheckFailed,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]
@@ -37,8 +53,6 @@ pub enum VerificationError {
 	NumberOfCoefficients,
 	#[error("incorrect number of rounds")]
 	NumberOfRounds,
-	#[error("mismatch between received and expected proof type (multilinear vs multivariate)")]
-	ProofTypeMismatch,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]

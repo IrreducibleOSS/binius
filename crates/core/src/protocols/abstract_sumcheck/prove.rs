@@ -444,7 +444,7 @@ where
 	let mut prev_rd_challenge = None;
 	let mut rd_proofs = Vec::with_capacity(n_vars);
 
-	for _round in 0..n_vars {
+	for _round_no in 0..n_vars {
 		let sumcheck_round = sumcheck_prover.execute_round(prev_rd_challenge)?;
 		challenger.observe_slice(&sumcheck_round.coeffs);
 		prev_rd_challenge = Some(challenger.sample());

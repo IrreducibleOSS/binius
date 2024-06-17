@@ -50,7 +50,7 @@ where
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);
 
 	let zerocheck_prover: ZerocheckProver<F, PW, FS, _> =
-		ZerocheckProver::new(domain, claim.clone(), witness, zerocheck_challenges, switchover_fn)?;
+		ZerocheckProver::new(domain, claim.clone(), witness, &zerocheck_challenges, switchover_fn)?;
 
 	let (evalcheck_claim, rounds) =
 		abstract_sumcheck::prove(claim.poly.n_vars(), zerocheck_prover, challenger)?;
@@ -133,7 +133,7 @@ where
 		domain: &'a EvaluationDomain<FS>,
 		claim: ZerocheckClaim<F>,
 		witness: ZerocheckWitness<'a, PW, CW>,
-		zerocheck_challenges: Vec<F>,
+		zerocheck_challenges: &[F],
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
 		let n_vars = claim.poly.n_vars();
@@ -142,18 +142,18 @@ where
 		if degree == 0 {
 			return Err(Error::PolynomialDegreeIsZero);
 		}
+		check_evaluation_domain(degree, domain)?;
 
 		if witness.n_vars() != n_vars {
-			let err_str = format!(
-				"Claim and Witness n_vars mismatch in sumcheck. Claim: {}, Witness: {}",
-				n_vars,
-				witness.n_vars(),
-			);
-
-			return Err(Error::ProverClaimWitnessMismatch(err_str));
+			return Err(Error::ProverClaimWitnessMismatch);
 		}
 
-		check_evaluation_domain(degree, domain)?;
+		let needed_challenges = n_vars - 1;
+		if zerocheck_challenges.len() < needed_challenges {
+			return Err(Error::NotEnoughZerocheckChallenges);
+		}
+		let zerocheck_challenges =
+			zerocheck_challenges[zerocheck_challenges.len() - needed_challenges..].to_vec();
 
 		let state = ProverState::new(n_vars, witness.multilinears, switchover_fn)?;
 
@@ -204,11 +204,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round != self.n_vars() {
-			return Err(Error::ImproperInput(format!(
-				"finalize() called on round {} while n_vars={}",
-				self.round,
-				self.n_vars()
-			)));
+			return Err(Error::PrematureFinalizeCall);
 		}
 
 		// Last reduction to obtain eval value at eval_point
@@ -314,9 +310,7 @@ where
 
 	fn compute_round_coeffs(&mut self) -> Result<Vec<PW::Scalar>, Error> {
 		let degree = self.oracle.max_individual_degree();
-		if degree == 1 && self.round == 0 {
-			return Ok(Vec::new());
-		} else if degree == 1 {
+		if degree == 1 {
 			return Ok(vec![PW::Scalar::default()]);
 		}
 
@@ -366,7 +360,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round >= self.n_vars() {
-			return Err(Error::ImproperInput("too many execute_round calls".to_string()));
+			return Err(Error::TooManyExecuteRoundCalls);
 		}
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given
@@ -539,8 +533,9 @@ where
 		round_evals.insert(0, F::ZERO);
 
 		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
-
-		Ok(coeffs[2..].to_vec())
+		// We can omit the constant term safely
+		let coeffs = coeffs[1..].to_vec();
+		Ok(coeffs)
 	}
 }
 
@@ -651,8 +646,10 @@ where
 		round_evals.insert(0, zero_evaluation);
 
 		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		// We can omit the constant term safely
+		let coeffs = coeffs[1..].to_vec();
 
-		Ok(coeffs[1..].to_vec())
+		Ok(coeffs)
 	}
 }
 
@@ -677,12 +674,10 @@ fn validate_rd_challenge<F: Field>(
 	prev_rd_challenge: Option<F>,
 	round: usize,
 ) -> Result<(), Error> {
-	if prev_rd_challenge.is_none() != (round == 0) {
-		return Err(Error::ImproperInput(format!(
-			"incorrect optional challenge: is_some()={:?} at round {}",
-			prev_rd_challenge.is_some(),
-			round
-		)));
+	if round == 0 && prev_rd_challenge.is_some() {
+		return Err(Error::PreviousRoundChallengePresent);
+	} else if round > 0 && prev_rd_challenge.is_none() {
+		return Err(Error::PreviousRoundChallengeAbsent);
 	}
 
 	Ok(())

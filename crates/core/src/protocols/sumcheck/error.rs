@@ -9,14 +9,20 @@ use crate::{
 pub enum Error {
 	#[error("sumcheck polynomial degree must be greater than zero")]
 	PolynomialDegreeIsZero,
-	#[error("the input was not well formed: {0}")]
-	ImproperInput(String),
+	#[error("finalize was called on this sumcheck prover before all rounds were completed")]
+	PrematureFinalizeCall,
+	#[error("execute round was called on this sumcheck prover too many times")]
+	TooManyExecuteRoundCalls,
+	#[error("sumcheck prover was given a previous rd challenge in the inital rd")]
+	PreviousRoundChallengePresent,
+	#[error("sumcheck prover was not given a previous rd challenge in a later rd")]
+	PreviousRoundChallengeAbsent,
 	#[error("oracles must be sorted in descending order by number of variables")]
 	OraclesOutOfOrder,
 	#[error("the evaluation domain does not match the expected size")]
 	EvaluationDomainMismatch,
-	#[error("prover has mismatch between claim and witness: {0}")]
-	ProverClaimWitnessMismatch(String),
+	#[error("prover has mismatch between claim and witness")]
+	ProverClaimWitnessMismatch,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]
