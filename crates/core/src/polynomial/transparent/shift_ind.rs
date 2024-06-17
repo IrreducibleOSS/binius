@@ -14,16 +14,20 @@ use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
 /// If ShiftVariant is CircularLeft:
 ///     * $f(x, y) = 1$ if $\{y\} - \{o\} \equiv \{x\} (\text{mod } 2^b)$
 ///     * $f(x, y) = 0$ otw
+///
 /// Else if ShiftVariant is LogicalLeft:
 ///    * $f(x, y) = 1$ if $\{y\} - \{o\} \equiv \{x\}$
 ///    * $f(x, y) = 0$ otw
+///
 /// Else, ShiftVariant is LogicalRight:
 ///    * $f(x, y) = 1$ if $\{y\} + \{o\} \equiv \{x\}$
 ///    * $f(x, y) = 0$ otw
+///
 /// where:
-///     * $\{x\}$ is the integer representation of the hypercube point $x \in \{0, 1\}^b$,
-///     * $b$ is the block size parameter'
-///     * $o$ is the shift offset parameter.
+///    * $\{x\}$ is the integer representation of the hypercube point $x \in \{0, 1\}^b$,
+///    * $b$ is the block size parameter'
+///    * $o$ is the shift offset parameter.
+///
 /// Observe $\forall x \in \{0, 1\}^b$, there is at most one $y \in \{0, 1\}^b$ s.t. $f(x, y) = 1$
 ///
 /// # Intuition

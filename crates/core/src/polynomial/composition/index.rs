@@ -46,6 +46,7 @@ impl<F: Field, C: CompositionPoly<F>, const N: usize> CompositionPoly<F>
 /// A factory helper method to create an [`IndexComposition`] by looking at
 ///  * `superset` - a set of identifiers of a greater (outer) query
 ///  * `subset` - a set of identifiers of a smaller query, the one which corresponds to the inner composition directly
+///
 /// Identifiers may be anything `Eq` - `OracleId`, `MultilinearPolyOracle<F>`, etc.
 pub fn index_composition<E, C, const N: usize>(
 	superset: &[E],
