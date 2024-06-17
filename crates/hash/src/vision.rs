@@ -7,8 +7,8 @@ use binius_field::{
 	},
 	packed::set_packed_slice,
 	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField32x8b,
-	PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable, PackedField,
-	PackedFieldIndexable,
+	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedDivisible, PackedExtension,
+	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute};
 use lazy_static::lazy_static;
@@ -226,8 +226,8 @@ lazy_static! {
 
 #[inline]
 fn add_packed_768(a: &mut [PackedBinaryField8x32b; 3], b: &[PackedBinaryField8x32b; 3]) {
-	for (e1, e2) in a.iter_mut().zip(b.iter()) {
-		*e1 += *e2;
+	for i in 0..3 {
+		a[i] += b[i];
 	}
 }
 
@@ -251,7 +251,13 @@ impl Vision32bMDS {
 	pub fn transform(&self, data: &mut [PackedBinaryField8x32b; 3]) {
 		for coset in 0..3 {
 			ADDITIVE_NTT
-				.inverse_transform_ext(&mut data[coset..(coset + 1)], coset as u32)
+				.inverse_transform_ext(
+					// Divide into 128-bit packed elements to utilize SIMD NTT operations
+					PackedDivisible::<PackedBinaryField4x32b>::divide_mut(
+						&mut data[coset..(coset + 1)],
+					),
+					coset as u32,
+				)
 				.unwrap();
 		}
 
@@ -274,7 +280,13 @@ impl Vision32bMDS {
 
 		for coset in 0..3 {
 			ADDITIVE_NTT
-				.forward_transform_ext(&mut data[coset..(coset + 1)], (coset + 3) as u32)
+				.forward_transform_ext(
+					// Divide into 128-bit packed elements to utilize SIMD NTT operations
+					PackedDivisible::<PackedBinaryField4x32b>::divide_mut(
+						&mut data[coset..(coset + 1)],
+					),
+					(coset + 3) as u32,
+				)
 				.unwrap();
 		}
 	}
@@ -324,15 +336,11 @@ impl Vision32bPermutation {
 
 	fn sbox_step(
 		&self,
-		d: &[PackedBinaryField8x32b; 3],
+		d: [PackedBinaryField8x32b; 3],
 		packed_affine_trans: &PackedTransformationType8x32b,
 		constant: PackedBinaryField8x32b,
 	) -> [PackedBinaryField8x32b; 3] {
-		let mut out = [PackedBinaryField8x32b::default(); 3];
-		for (i, chunk) in d.iter().enumerate() {
-			out[i] = self.sbox_packed_affine(chunk, packed_affine_trans, constant);
-		}
-		out
+		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_affine_trans, constant))
 	}
 
 	// Actually do the rounds of the encryption
@@ -341,14 +349,14 @@ impl Vision32bPermutation {
 		for r in 0..NUM_ROUNDS {
 			// R mod 2 == 0
 			// SBOX step
-			*input = self.sbox_step(input, &INV_PACKED_TRANS, self.inv_const);
+			*input = self.sbox_step(*input, &INV_PACKED_TRANS, self.inv_const);
 			// MDS step
 			self.mds.transform(input);
 			// Round key step
 			add_packed_768(input, &self.round_keys[1 + 2 * r]);
 			// R mod 2 == 1
 			// SBOX step
-			*input = self.sbox_step(input, &FWD_PACKED_TRANS, self.fwd_const);
+			*input = self.sbox_step(*input, &FWD_PACKED_TRANS, self.fwd_const);
 			// MDS step
 			self.mds.transform(input);
 			// Round key step

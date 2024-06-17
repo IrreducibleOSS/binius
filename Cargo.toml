@@ -15,7 +15,7 @@ anyhow = "1.0.81"
 assert_matches = "1.5.0"
 bytemuck = { version = "1.14.0", features = ["derive", "min_const_generics", "must_cast"] }
 cfg-if = "1.0.0"
-criterion = { version = "0.4.0", features = ["real_blackbox"] }
+criterion = { version = "0.5.1", features = ["real_blackbox"] }
 derive_more = "0.99.17"
 either = "1.11.0"
 getset = "0.1.2"

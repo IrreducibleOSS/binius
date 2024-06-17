@@ -521,14 +521,14 @@ where
 	let mut twiddle = P::default();
 	for k in 0..1 << log_blocks_count {
 		let (subblock_twiddle_0, subblock_twiddle_1) = s_evals.get_pair(log_blocks_count, k);
+		let idx0 = k << (log_block_len + 1);
+		let idx1 = idx0 | 1 << log_block_len;
+
 		for l in 0..1 << log_block_len {
-			let idx0 = k << (log_block_len + 1) | l;
-			let idx1 = idx0 | 1 << log_block_len;
-			twiddle.set(idx0, subblock_twiddle_0);
-			twiddle.set(idx1, subblock_twiddle_1);
+			twiddle.set(idx0 | l, subblock_twiddle_0);
+			twiddle.set(idx1 | l, subblock_twiddle_1);
 		}
 	}
-
 	twiddle
 }
 
