@@ -28,41 +28,62 @@ fn benchmark_get_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, 
 	group.bench_function(id, |b| b.iter(|| indices.map(|i| value.get(i))));
 }
 
-macro_rules! benchmark_get {
+fn benchmark_set_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, id: &str) {
+	let mut rng = thread_rng();
+	let mut value = P::random(&mut rng);
+	let distr = Uniform::<usize>::new(0, P::WIDTH);
+	let indices_values = array::from_fn::<_, BATCH_SIZE, _>(|_| {
+		(distr.sample(&mut rng), P::Scalar::random(&mut rng))
+	});
+
+	group.throughput(Throughput::Elements(BATCH_SIZE as _));
+	group.bench_function(id, |b| {
+		b.iter(|| {
+			indices_values
+				.iter()
+				.for_each(|(i, val)| value.set(*i, *val));
+
+			value
+		})
+	});
+}
+
+macro_rules! benchmark_get_set {
 	($field:ty, $g:ident) => {
-		benchmark_get_impl::<$field>(&mut $g, stringify!($field));
+		benchmark_get_impl::<$field>(&mut $g, &format!("{}/get", stringify!($field)));
+		benchmark_set_impl::<$field>(&mut $g, &format!("{}/set", stringify!($field)));
 	};
 }
 
-fn packed_128_get(c: &mut Criterion) {
+fn packed_128(c: &mut Criterion) {
 	let mut group = c.benchmark_group("packed_128");
 
-	benchmark_get!(PackedBinaryField128x1b, group);
-	benchmark_get!(PackedBinaryField16x8b, group);
-	benchmark_get!(PackedBinaryField4x32b, group);
-	benchmark_get!(PackedBinaryField2x64b, group);
-	benchmark_get!(PackedBinaryField1x128b, group);
+	benchmark_get_set!(PackedBinaryField128x1b, group);
+	benchmark_get_set!(PackedBinaryField16x8b, group);
+	benchmark_get_set!(PackedBinaryField4x32b, group);
+	benchmark_get_set!(PackedBinaryField2x64b, group);
+	benchmark_get_set!(PackedBinaryField1x128b, group);
 }
 
-fn packed_256_get(c: &mut Criterion) {
+fn packed_256(c: &mut Criterion) {
 	let mut group = c.benchmark_group("packed_256");
 
-	benchmark_get!(PackedBinaryField256x1b, group);
-	benchmark_get!(PackedBinaryField32x8b, group);
-	benchmark_get!(PackedBinaryField8x32b, group);
-	benchmark_get!(PackedBinaryField4x64b, group);
-	benchmark_get!(PackedBinaryField2x128b, group);
+	benchmark_get_set!(PackedBinaryField256x1b, group);
+	benchmark_get_set!(PackedBinaryField32x8b, group);
+	benchmark_get_set!(PackedBinaryField8x32b, group);
+	benchmark_get_set!(PackedBinaryField4x64b, group);
+	benchmark_get_set!(PackedBinaryField2x128b, group);
 }
 
-fn packed_512_get(c: &mut Criterion) {
+fn packed_512(c: &mut Criterion) {
 	let mut group = c.benchmark_group("packed_512");
 
-	benchmark_get!(PackedBinaryField512x1b, group);
-	benchmark_get!(PackedBinaryField64x8b, group);
-	benchmark_get!(PackedBinaryField16x32b, group);
-	benchmark_get!(PackedBinaryField8x64b, group);
-	benchmark_get!(PackedBinaryField4x128b, group);
+	benchmark_get_set!(PackedBinaryField512x1b, group);
+	benchmark_get_set!(PackedBinaryField64x8b, group);
+	benchmark_get_set!(PackedBinaryField16x32b, group);
+	benchmark_get_set!(PackedBinaryField8x64b, group);
+	benchmark_get_set!(PackedBinaryField4x128b, group);
 }
 
-criterion_group!(get, packed_128_get, packed_256_get, packed_512_get);
-criterion_main!(get);
+criterion_group!(get_set, packed_128, packed_256, packed_512);
+criterion_main!(get_set);

@@ -1,8 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{Random, UnderlierType};
+use super::{Divisible, Random, UnderlierType};
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{must_cast_mut, must_cast_ref, NoUninit, Pod, Zeroable};
 use rand::RngCore;
 use std::array;
 use subtle::{Choice, ConstantTimeEq};
@@ -55,4 +55,32 @@ unsafe impl<U: Pod, const N: usize> Pod for ScaledUnderlier<U, N> {}
 
 impl<U: UnderlierType + Pod, const N: usize> UnderlierType for ScaledUnderlier<U, N> {
 	const LOG_BITS: usize = U::LOG_BITS + checked_log_2(N);
+}
+
+unsafe impl<U, const N: usize> Divisible<U> for ScaledUnderlier<U, N>
+where
+	ScaledUnderlier<U, N>: UnderlierType,
+	U: UnderlierType,
+{
+	fn split_ref(&self) -> &[U] {
+		&self.0
+	}
+
+	fn split_mut(&mut self) -> &mut [U] {
+		&mut self.0
+	}
+}
+
+unsafe impl<U> Divisible<U> for ScaledUnderlier<ScaledUnderlier<U, 2>, 2>
+where
+	ScaledUnderlier<ScaledUnderlier<U, 2>, 2>: UnderlierType + NoUninit,
+	U: UnderlierType + Pod,
+{
+	fn split_ref(&self) -> &[U] {
+		must_cast_ref::<Self, [U; 4]>(self)
+	}
+
+	fn split_mut(&mut self) -> &mut [U] {
+		must_cast_mut::<Self, [U; 4]>(self)
+	}
 }

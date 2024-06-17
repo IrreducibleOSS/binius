@@ -133,6 +133,7 @@ pub trait NumCast<From> {
 }
 
 impl<U: UnderlierType> NumCast<U> for U {
+	#[inline(always)]
 	fn num_cast_from(val: U) -> Self {
 		val
 	}

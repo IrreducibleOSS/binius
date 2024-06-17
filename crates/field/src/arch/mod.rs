@@ -3,6 +3,7 @@
 use cfg_if::cfg_if;
 
 mod arch_optimal;
+mod binary_utils;
 mod strategies;
 
 cfg_if! {

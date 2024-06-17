@@ -794,11 +794,11 @@ mod tests {
 			packed_aes_512::*, packed_aes_64::*,
 		},
 		arithmetic_traits::MulAlpha,
-		BinaryField8b, Field, PackedField,
+		BinaryField8b, Field, PackedField, PackedFieldIndexable,
 	};
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, thread_rng, SeedableRng};
-	use std::{iter::repeat_with, ops::Mul};
+	use std::{iter::repeat_with, ops::Mul, slice};
 	use test_utils::implements_transformation_factory;
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
@@ -837,6 +837,18 @@ mod tests {
 		}
 	}
 
+	fn test_elements_order<P: PackedFieldIndexable>() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let packed = P::random(&mut rng);
+		let scalars = P::unpack_scalars(slice::from_ref(&packed));
+
+		eprintln!("scalars: {:?}", scalars);
+		eprintln!("packed {:?}", packed);
+		for (i, val) in scalars.iter().enumerate() {
+			assert_eq!(packed.get(i), *val, "index: {i}");
+		}
+	}
+
 	#[test]
 	fn test_set_then_get_4b() {
 		test_set_then_get::<PackedBinaryField32x4b>();
@@ -849,6 +861,10 @@ mod tests {
 		test_set_then_get::<PackedBinaryField4x32b>();
 		test_set_then_get::<PackedBinaryField8x32b>();
 		test_set_then_get::<PackedBinaryField16x32b>();
+
+		test_elements_order::<PackedBinaryField4x32b>();
+		test_elements_order::<PackedBinaryField8x32b>();
+		test_elements_order::<PackedBinaryField16x32b>();
 	}
 
 	#[test]
@@ -856,6 +872,10 @@ mod tests {
 		test_set_then_get::<PackedBinaryField2x64b>();
 		test_set_then_get::<PackedBinaryField4x64b>();
 		test_set_then_get::<PackedBinaryField8x64b>();
+
+		test_elements_order::<PackedBinaryField2x64b>();
+		test_elements_order::<PackedBinaryField4x64b>();
+		test_elements_order::<PackedBinaryField8x64b>();
 	}
 
 	#[test]
@@ -863,6 +883,10 @@ mod tests {
 		test_set_then_get::<PackedBinaryField1x128b>();
 		test_set_then_get::<PackedBinaryField2x128b>();
 		test_set_then_get::<PackedBinaryField4x128b>();
+
+		test_elements_order::<PackedBinaryField1x128b>();
+		test_elements_order::<PackedBinaryField2x128b>();
+		test_elements_order::<PackedBinaryField4x128b>();
 	}
 
 	// TODO: Generate lots more proptests using macros

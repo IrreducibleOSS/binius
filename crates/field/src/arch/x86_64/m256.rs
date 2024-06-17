@@ -1,9 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	arch::portable::{
-		packed::{impl_pack_scalar, PackedPrimitiveType},
-		packed_arithmetic::{interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants},
+	arch::{
+		binary_utils::{as_array_mut, as_array_ref},
+		portable::{
+			packed::{impl_pack_scalar, PackedPrimitiveType},
+			packed_arithmetic::{
+				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
+			},
+		},
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
@@ -106,6 +111,7 @@ impl_divisible!(@pairs M256, M128, u128, u64, u32, u16, u8);
 impl_pack_scalar!(M256);
 
 impl<U: NumCast<u128>> NumCast<M256> for U {
+	#[inline(always)]
 	fn num_cast_from(val: M256) -> Self {
 		let [low, _high] = val.into();
 		Self::num_cast_from(low)
@@ -333,11 +339,7 @@ impl UnderlierWithBitOps for M256 {
 			// However using similar code for 1..32 bits is slower than the version above.
 			// Also even getting `chunk_64` in the code above using this code shows worser benchmarks results.
 			64 => {
-				#[repr(align(16))]
-				struct Data64x4([i64; 4]);
-				let result_64 = unsafe { transmute::<__m256i, Data64x4>(self.0) }.0[i];
-
-				T::num_cast_from(Self(unsafe { _mm256_set_epi64x(0, 0, 0, result_64) }))
+				T::num_cast_from(as_array_ref::<_, u64, 4, _>(self, |array| Self::from(array[i])))
 			}
 			128 => {
 				let chunk_128 = unsafe {
@@ -350,6 +352,45 @@ impl UnderlierWithBitOps for M256 {
 				T::num_cast_from(Self(unsafe { _mm256_set_m128i(_mm_setzero_si128(), chunk_128) }))
 					.into()
 			}
+			_ => panic!("unsupported bit count"),
+		}
+	}
+
+	#[inline(always)]
+	fn set_subvalue<T>(&mut self, i: usize, val: T)
+	where
+		T: UnderlierWithBitOps,
+		Self: From<T>,
+	{
+		match T::BITS {
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mask = (1u8 << T::BITS) - 1;
+				let shift = (i % elements_in_8) * T::BITS;
+				let val = u8::num_cast_from(Self::from(val)) << shift;
+				let mask = mask << shift;
+
+				as_array_mut::<_, u8, 32>(self, |array| {
+					let element = &mut array[i / elements_in_8];
+					*element &= !mask;
+					*element |= val;
+				});
+			}
+			8 => as_array_mut::<_, u8, 32>(self, |array| {
+				array[i] = u8::num_cast_from(Self::from(val));
+			}),
+			16 => as_array_mut::<_, u16, 16>(self, |array| {
+				array[i] = u16::num_cast_from(Self::from(val));
+			}),
+			32 => as_array_mut::<_, u32, 8>(self, |array| {
+				array[i] = u32::num_cast_from(Self::from(val));
+			}),
+			64 => as_array_mut::<_, u64, 4>(self, |array| {
+				array[i] = u64::num_cast_from(Self::from(val));
+			}),
+			128 => as_array_mut::<_, u128, 2>(self, |array| {
+				array[i] = u128::num_cast_from(Self::from(val));
+			}),
 			_ => panic!("unsupported bit count"),
 		}
 	}

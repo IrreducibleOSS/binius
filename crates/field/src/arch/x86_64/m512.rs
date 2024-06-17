@@ -2,6 +2,7 @@
 
 use crate::{
 	arch::{
+		binary_utils::as_array_mut,
 		portable::{
 			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
@@ -390,6 +391,45 @@ impl UnderlierWithBitOps for M512 {
 				};
 				T::num_cast_from(Self(unsafe { _mm512_castsi128_si512(chunk_128) }))
 			}
+			_ => panic!("unsupported bit count"),
+		}
+	}
+
+	#[inline(always)]
+	fn set_subvalue<T>(&mut self, i: usize, val: T)
+	where
+		T: UnderlierWithBitOps,
+		Self: From<T>,
+	{
+		match T::BITS {
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mask = (1u8 << T::BITS) - 1;
+				let shift = (i % elements_in_8) * T::BITS;
+				let val = u8::num_cast_from(Self::from(val)) << shift;
+				let mask = mask << shift;
+
+				as_array_mut::<_, u8, 64>(self, |array| {
+					let element = &mut array[i / elements_in_8];
+					*element &= !mask;
+					*element |= val;
+				});
+			}
+			8 => as_array_mut::<_, u8, 64>(self, |array| {
+				array[i] = u8::num_cast_from(Self::from(val));
+			}),
+			16 => as_array_mut::<_, u16, 32>(self, |array| {
+				array[i] = u16::num_cast_from(Self::from(val));
+			}),
+			32 => as_array_mut::<_, u32, 16>(self, |array| {
+				array[i] = u32::num_cast_from(Self::from(val));
+			}),
+			64 => as_array_mut::<_, u64, 8>(self, |array| {
+				array[i] = u64::num_cast_from(Self::from(val));
+			}),
+			128 => as_array_mut::<_, u128, 4>(self, |array| {
+				array[i] = u128::num_cast_from(Self::from(val));
+			}),
 			_ => panic!("unsupported bit count"),
 		}
 	}
