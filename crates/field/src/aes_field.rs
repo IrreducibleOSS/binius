@@ -7,14 +7,16 @@ use super::{
 	mul_by_binary_field_1b, BinaryField8b, Error,
 };
 use crate::{
-	affine_transformation::{FieldAffineTransformation, Transformation},
-	as_packed_field::AsPackedField,
+	affine_transformation::{
+		FieldAffineTransformation, PackedTransformationFactory, Transformation,
+	},
+	as_packed_field::{AsPackedField, PackScalar, PackedType},
 	binary_field_arithmetic::{impl_arithmetic_using_packed, impl_mul_primitive},
 	binary_tower,
 	packed::PackedField,
-	underlier::U1,
+	underlier::{WithUnderlier, U1},
 	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	TowerExtensionField, TowerField,
+	RepackedExtension, TowerExtensionField, TowerField,
 };
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
@@ -22,6 +24,7 @@ use std::{
 	array,
 	fmt::{Debug, Display, Formatter},
 	iter::{Product, Step, Sum},
+	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -80,40 +83,121 @@ impl TowerField for AESTowerField8b {
 	}
 }
 
+pub const AES_TO_BINARY_AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryField8b> =
+	FieldAffineTransformation::new_const(&[
+		BinaryField8b(0x01),
+		BinaryField8b(0x3c),
+		BinaryField8b(0x8c),
+		BinaryField8b(0x8a),
+		BinaryField8b(0x59),
+		BinaryField8b(0x7a),
+		BinaryField8b(0x53),
+		BinaryField8b(0x27),
+	]);
+
 impl From<AESTowerField8b> for BinaryField8b {
 	fn from(value: AESTowerField8b) -> Self {
-		const AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryField8b> =
-			FieldAffineTransformation::new_const(&[
-				BinaryField8b(0x01),
-				BinaryField8b(0x3c),
-				BinaryField8b(0x8c),
-				BinaryField8b(0x8a),
-				BinaryField8b(0x59),
-				BinaryField8b(0x7a),
-				BinaryField8b(0x53),
-				BinaryField8b(0x27),
-			]);
-
-		AFFINE_TRANSFORMATION.transform(&value)
+		AES_TO_BINARY_AFFINE_TRANSFORMATION.transform(&value)
 	}
 }
 
+pub const BINARY_TO_AES_AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowerField8b> =
+	FieldAffineTransformation::new_const(&[
+		AESTowerField8b(0x01),
+		AESTowerField8b(0xbc),
+		AESTowerField8b(0xb0),
+		AESTowerField8b(0xec),
+		AESTowerField8b(0xd3),
+		AESTowerField8b(0x8d),
+		AESTowerField8b(0x2e),
+		AESTowerField8b(0x58),
+	]);
+
 impl From<BinaryField8b> for AESTowerField8b {
 	fn from(value: BinaryField8b) -> Self {
-		const AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowerField8b> =
-			FieldAffineTransformation::new_const(&[
-				AESTowerField8b(0x01),
-				AESTowerField8b(0xbc),
-				AESTowerField8b(0xb0),
-				AESTowerField8b(0xec),
-				AESTowerField8b(0xd3),
-				AESTowerField8b(0x8d),
-				AESTowerField8b(0x2e),
-				AESTowerField8b(0x58),
-			]);
-
-		AFFINE_TRANSFORMATION.transform(&value)
+		BINARY_TO_AES_AFFINE_TRANSFORMATION.transform(&value)
 	}
+}
+
+/// A 3- step transformation :
+/// 1. Cast to base b-bit packed field
+/// 2. Apply affine transformation between aes and binary b8 tower fields
+/// 3. Cast back to the target field
+struct SubfieldTransformer<IP, OP, T> {
+	inner_transform: T,
+	_ip_pd: PhantomData<IP>,
+	_op_pd: PhantomData<OP>,
+}
+
+impl<IP, OP, T> SubfieldTransformer<IP, OP, T> {
+	fn new(inner_transform: T) -> Self {
+		Self {
+			inner_transform,
+			_ip_pd: PhantomData,
+			_op_pd: PhantomData,
+		}
+	}
+}
+
+impl<IP, OP, IEP, OEP, T> Transformation<IEP, OEP> for SubfieldTransformer<IP, OP, T>
+where
+	IP: PackedField + WithUnderlier,
+	OP: PackedField + WithUnderlier<Underlier = IP::Underlier>,
+	IEP: RepackedExtension<IP, Scalar: ExtensionField<IP::Scalar>>
+		+ WithUnderlier<Underlier = IP::Underlier>,
+	OEP: RepackedExtension<OP, Scalar: ExtensionField<OP::Scalar>>
+		+ WithUnderlier<Underlier = IP::Underlier>,
+	T: Transformation<IP, OP>,
+{
+	fn transform(&self, input: &IEP) -> OEP {
+		OEP::from_underlier(
+			self.inner_transform
+				.transform(&IP::from_underlier(input.to_underlier()))
+				.to_underlier(),
+		)
+	}
+}
+
+/// Creates transformation object from AES tower to binary tower for packed field.
+/// Note that creation of this object is not cheap, so it is better to create it once and reuse.
+pub fn make_aes_to_binary_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
+where
+	IP: PackedField<Scalar: ExtensionField<AESTowerField8b>> + WithUnderlier,
+	OP: PackedField<Scalar: ExtensionField<BinaryField8b>>
+		+ WithUnderlier<Underlier = IP::Underlier>,
+	IP::Underlier: PackScalar<
+			AESTowerField8b,
+			Packed: PackedTransformationFactory<PackedType<IP::Underlier, BinaryField8b>>,
+		> + PackScalar<BinaryField8b>,
+{
+	SubfieldTransformer::<
+		PackedType<IP::Underlier, AESTowerField8b>,
+		PackedType<IP::Underlier, BinaryField8b>,
+		_,
+	>::new(PackedType::<IP::Underlier, AESTowerField8b>::make_packed_transformation(
+		AES_TO_BINARY_AFFINE_TRANSFORMATION,
+	))
+}
+
+/// Creates transformation object from AES tower to binary tower for packed field.
+/// Note that creation of this object is not cheap, so it is better to create it once and reuse.
+pub fn make_binary_to_aes_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
+where
+	IP: PackedField<Scalar: ExtensionField<BinaryField8b>> + WithUnderlier,
+	OP: PackedField<Scalar: ExtensionField<AESTowerField8b>>
+		+ WithUnderlier<Underlier = IP::Underlier>,
+	IP::Underlier: PackScalar<
+			BinaryField8b,
+			Packed: PackedTransformationFactory<PackedType<IP::Underlier, AESTowerField8b>>,
+		> + PackScalar<AESTowerField8b>,
+{
+	SubfieldTransformer::<
+		PackedType<IP::Underlier, BinaryField8b>,
+		PackedType<IP::Underlier, AESTowerField8b>,
+		_,
+	>::new(PackedType::<IP::Underlier, BinaryField8b>::make_packed_transformation(
+		BINARY_TO_AES_AFFINE_TRANSFORMATION,
+	))
 }
 
 /// Values isomorphic to 0x02, 0x04 and 0x10 in BinaryField8b
@@ -196,7 +280,11 @@ impl_tower_field_conversion!(AESTowerField128b, BinaryField128b);
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{binary_field::tests::is_binary_field_valid_generator, underlier::WithUnderlier};
+	use crate::{
+		binary_field::tests::is_binary_field_valid_generator, PackedAESBinaryField16x32b,
+		PackedAESBinaryField4x32b, PackedAESBinaryField8x32b, PackedBinaryField16x32b,
+		PackedBinaryField4x32b, PackedBinaryField8x32b,
+	};
 
 	use proptest::{arbitrary::any, proptest};
 
@@ -425,6 +513,64 @@ mod tests {
 		#[test]
 		fn test_mul_primitive_128b(val in 0u128.., iota in 3usize..8) {
 			test_mul_primitive::<AESTowerField128b>(val.into(), iota)
+		}
+	}
+
+	fn convert_pairwise<IP, OP>(val: IP) -> OP
+	where
+		IP: PackedField + WithUnderlier,
+		OP: PackedField<Scalar: From<IP::Scalar>> + WithUnderlier<Underlier = IP::Underlier>,
+	{
+		OP::from_fn(|i| val.get(i).into())
+	}
+
+	proptest! {
+		#[test]
+		fn test_aes_to_binary_packed_transform_128(val in 0u128..) {
+			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField4x32b, PackedBinaryField4x32b>();
+			let input = PackedAESBinaryField4x32b::from(val);
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
+		}
+
+		#[test]
+		fn test_binary_to_aes_packed_transform_128(val in 0u128..) {
+			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField4x32b, PackedAESBinaryField4x32b>();
+			let input = PackedBinaryField4x32b::from(val);
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
+		}
+
+		#[test]
+		fn test_aes_to_binary_packed_transform_256(val in any::<[u128; 2]>()) {
+			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
+			let input = PackedAESBinaryField8x32b::from(val);
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
+		}
+
+		#[test]
+		fn test_binary_to_aes_packed_transform_256(val in any::<[u128; 2]>()) {
+			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField8x32b, PackedAESBinaryField8x32b>();
+			let input = PackedBinaryField8x32b::from(val);
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
+		}
+
+		#[test]
+		fn test_aes_to_binary_packed_transform_512(val in any::<[u128; 4]>()) {
+			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField16x32b, PackedBinaryField16x32b>();
+			let input = PackedAESBinaryField16x32b::from_underlier(val.into());
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
+		}
+
+		#[test]
+		fn test_binary_to_aes_packed_transform_512(val in any::<[u128; 4]>()) {
+			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField16x32b, PackedAESBinaryField16x32b>();
+			let input = PackedBinaryField16x32b::from_underlier(val.into());
+			let result = transform.transform(&input);
+			assert_eq!(result, convert_pairwise(input));
 		}
 	}
 }

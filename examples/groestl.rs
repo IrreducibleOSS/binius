@@ -33,14 +33,13 @@ use binius_core::{
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{
-	affine_transformation::{
-		FieldAffineTransformation, PackedTransformationFactory, Transformation,
-	},
+	affine_transformation::{PackedTransformationFactory, Transformation},
 	arch::OptimalUnderlier128b,
 	packed::set_packed_slice,
 	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField16b, BinaryField1b,
 	BinaryField8b, ExtensionField, Field, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
 	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedField, PackedFieldIndexable, TowerField,
+	AES_TO_BINARY_AFFINE_TRANSFORMATION,
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
@@ -465,20 +464,8 @@ where
 		P8b: PackedTransformationFactory<PT8b>,
 		PT8b: PackedField<Scalar = BinaryField8b>,
 	{
-		const AES_TO_TOWER_TRANSFORM: FieldAffineTransformation<BinaryField8b> =
-			FieldAffineTransformation::new_const(&[
-				BinaryField8b::new(0x01),
-				BinaryField8b::new(0x3c),
-				BinaryField8b::new(0x8c),
-				BinaryField8b::new(0x8a),
-				BinaryField8b::new(0x59),
-				BinaryField8b::new(0x7a),
-				BinaryField8b::new(0x53),
-				BinaryField8b::new(0x27),
-			]);
-
 		let transform = <P8b as PackedTransformationFactory<PT8b>>::make_packed_transformation(
-			AES_TO_TOWER_TRANSFORM,
+			AES_TO_BINARY_AFFINE_TRANSFORMATION,
 		);
 
 		chain!(self.p_in.iter(), self.p_out.iter(), self.p_sub_bytes_prod.iter()).map(
