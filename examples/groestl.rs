@@ -45,6 +45,7 @@ use binius_field::{
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
 use binius_utils::{examples::get_log_trace_size, rayon::adjust_thread_pool};
+use bytesize::ByteSize;
 use itertools::chain;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
@@ -935,6 +936,16 @@ fn main() {
 		BinaryField128b,
 	>(SECURITY_BITS, log_size, trace8b_batch.n_polys, log_inv_rate, false)
 	.unwrap();
+
+	// Since the inputs to the permutations are a linear comb. of state and block this is an estimate
+	let num_p_perms: u64 = 1 << (log_size - LOG_COMPRESSION_BLOCK);
+	let hashable_data = num_p_perms * 64 / 2;
+	let hashable_data = ByteSize::b(hashable_data);
+	let tensorpcs_size =
+		pcs1b.proof_size(trace1b_batch.n_polys) + pcs8b.proof_size(trace8b_batch.n_polys);
+	let tensorpcs_size = ByteSize::b(tensorpcs_size as u64);
+	tracing::info!("Size of hashable Groestl256 data: {}", hashable_data);
+	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();

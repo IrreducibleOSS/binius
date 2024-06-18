@@ -34,6 +34,7 @@ use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
+use bytesize::ByteSize;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
@@ -706,6 +707,12 @@ fn main() {
 	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
 
+	let mut oracles = MultilinearOracleSet::new();
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
+	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
+
+	let trace_batch = oracles.committed_batch(trace_oracle.batch_id);
+
 	// Set up the public parameters
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
 		<PackedBinaryField128x1b as WithUnderlier>::Underlier,
@@ -713,12 +720,15 @@ fn main() {
 		BinaryField16b,
 		BinaryField16b,
 		BinaryField128b,
-	>(SECURITY_BITS, log_size, 60, log_inv_rate, false)
+	>(SECURITY_BITS, log_size, trace_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 
-	let mut oracles = MultilinearOracleSet::new();
-	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
-	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
+	const KECCAK_256_RATE_BYTES: u64 = 1088 / 8;
+	let num_of_perms = 1 << (log_size - 11) as u64;
+	let data_hashed_256 = ByteSize::b(num_of_perms * KECCAK_256_RATE_BYTES);
+	let tensorpcs_size = ByteSize::b(pcs.proof_size(trace_batch.n_polys) as u64);
+	tracing::info!("Size of hashable Keccak-256 data: {}", data_hashed_256);
+	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 

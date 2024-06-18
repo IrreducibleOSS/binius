@@ -28,7 +28,7 @@ use binius_field::{
 	arithmetic_traits::{InvertOrZero, Square},
 	packed::get_packed_slice,
 	underlier::WithUnderlier,
-	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField1x128b,
+	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
 	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::{GroestlHasher, Vision32bMDS, Vision32bPermutation, INV_PACKED_TRANS};
@@ -37,6 +37,7 @@ use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
+use bytesize::ByteSize;
 use itertools::chain;
 use p3_symmetric::Permutation;
 use rand::thread_rng;
@@ -1067,6 +1068,16 @@ fn main() {
 		BinaryField128b,
 	>(SECURITY_BITS, log_size, trace_batch.n_polys, log_inv_rate, false)
 	.unwrap();
+
+	let log_vision32b = log_size - LOG_COMPRESSION_BLOCK;
+	// For vision32b we have our rate fixed to 16-32 bit elemeents so this is pretty straight forward.
+	let data_hashed = ByteSize::b(
+		(1 << log_vision32b)
+			* 16 * (<BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE) as u64,
+	);
+	let tensorpcs_size = ByteSize::b(pcs.proof_size(trace_batch.n_polys) as u64);
+	tracing::info!("Size of hashable vision32b data: {}", data_hashed);
+	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let witness = TraceWitness::<PackedBinaryField4x32b>::generate_trace(log_size);
