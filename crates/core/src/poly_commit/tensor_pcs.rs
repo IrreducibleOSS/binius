@@ -377,7 +377,6 @@ where
 		let pi_width = PackedType::<U, FI>::WIDTH;
 		let pe_width = PackedType::<U, FE>::WIDTH;
 		debug_assert_eq!(self.code.dim() % pi_width, 0);
-		debug_assert_eq!((1 << self.log_rows) % p_width, 0);
 		debug_assert_eq!((1 << self.log_rows) % pi_width, 0);
 		debug_assert_eq!(self.code.dim() % pi_width, 0);
 		debug_assert_eq!(self.code.dim() % pe_width, 0);
@@ -463,33 +462,37 @@ where
 					})
 					.collect::<Vec<_>>();
 
-				cols.iter().for_each(|col| {
+				for mut col in cols {
 					// Checked by check_proof_shape
 					debug_assert_eq!(col.len(), n_rows / pi_width);
+
+					// Pad column with empty elements to accommodate the following scalar transpose.
+					if n_rows < p_width {
+						col.resize(p_width, Default::default());
+					}
 
 					// The columns are committed to and provided by the prover as packed vectors of
 					// intermediate field elements. We need to transpose them into packed base field
 					// elements to perform the consistency checks. Allocate col_transposed as packed
 					// intermediate field elements to guarantee alignment.
-					let mut col_transposed =
-						vec![PackedType::<U, FI>::default(); n_rows / pi_width];
-					let base_cols: &mut [_] =
-						<PackedType<U, FI> as PackedExtension<F>>::cast_bases_mut(
-							&mut col_transposed,
-						);
-					transpose_scalars(col, base_cols).expect(
+					let mut col_transposed = col.clone();
+					let base_cols = <PackedType<U, FI> as PackedExtension<F>>::cast_bases_mut(
+						&mut col_transposed,
+					);
+					transpose_scalars(&col, base_cols).expect(
 						"guaranteed safe because of parameter checks in constructor; \
 							alignment is guaranteed the cast from a PI slice",
 					);
 
-					debug_assert_eq!(base_cols.len(), n_rows / p_width * block_size);
-
-					(0..block_size)
-						.zip(base_cols.chunks_exact(n_rows / p_width))
-						.for_each(|(j, col)| {
-							batched_column_test[j].1.push(col.to_vec());
-						});
-				});
+					for (j, col) in base_cols
+						.chunks_exact(base_cols.len() / block_size)
+						.enumerate()
+					{
+						// Trim off padding rows by converting from packed vec to scalar vec.
+						let scalars_col = iter_packed_slice(col).take(n_rows).collect::<Vec<_>>();
+						batched_column_test[j].1.push(scalars_col);
+					}
+				}
 				batched_column_test
 			})
 			.collect::<Vec<_>>();
@@ -583,19 +586,17 @@ where
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
 
-		if !<FI as ExtensionField<F>>::DEGREE.is_power_of_two() {
+		let fi_degree = <FI as ExtensionField<F>>::DEGREE;
+		let fe_degree = <FE as ExtensionField<F>>::DEGREE;
+		if !fi_degree.is_power_of_two() {
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
-		if !<FE as ExtensionField<F>>::DEGREE.is_power_of_two() {
+		if !fe_degree.is_power_of_two() {
 			return Err(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 
-		let p_width = PackedType::<U, F>::WIDTH;
 		let pi_width = PackedType::<U, FI>::WIDTH;
 		let pe_width = PackedType::<U, FE>::WIDTH;
-		if (1 << log_rows) % p_width != 0 {
-			return Err(Error::PackingWidthMustDivideNumberOfRows);
-		}
 		if (1 << log_rows) % pi_width != 0 {
 			return Err(Error::PackingWidthMustDivideNumberOfRows);
 		}
@@ -1320,5 +1321,53 @@ mod tests {
 		assert_eq!(pcs.n_vars(), 28);
 		assert_eq!(pcs.log_rows(), 10);
 		assert_eq!(pcs.log_cols(), 18);
+	}
+
+	#[test]
+	fn test_commit_prove_verify_with_num_rows_below_packing_width() {
+		type Packed = PackedBinaryField128x1b;
+
+		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
+				.unwrap();
+		let pcs = <BlockTensorPCS<
+			OptimalUnderlier128b,
+			BinaryField1b,
+			BinaryField16b,
+			BinaryField128b,
+			_,
+			_,
+			_,
+		>>::new_using_groestl_merkle_tree(4, rs_code, n_test_queries)
+		.unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| Packed::random(&mut rng))
+			.take((1 << pcs.n_vars()) / Packed::WIDTH)
+			.collect::<Vec<_>>();
+		let poly = MultilinearExtension::from_values(evals).unwrap();
+		let polys = [poly.to_ref()];
+
+		let (commitment, committed) = pcs.commit(&polys).unwrap();
+
+		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let query = repeat_with(|| challenger.sample())
+			.take(pcs.n_vars())
+			.collect::<Vec<_>>();
+
+		let multilin_query =
+			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query).unwrap();
+		let value = poly.evaluate(&multilin_query).unwrap();
+		let values = vec![value];
+
+		let mut prove_challenger = challenger.clone();
+		let proof = pcs
+			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query)
+			.unwrap();
+
+		let mut verify_challenger = challenger.clone();
+		pcs.verify_evaluation(&mut verify_challenger, &commitment, &query, proof, &values)
+			.unwrap();
 	}
 }

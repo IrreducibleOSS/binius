@@ -15,7 +15,8 @@ use binius_hash::Hasher;
 /// A binary Merkle tree that commits batches of vectors.
 ///
 /// The vector entries at each index in a batch are hashed together into leaf digests. Then a
-/// Merkle tree is constructed over the  implementation requires that the number of
+/// Merkle tree is constructed over the leaf digests. The implementation requires that the vector
+/// lengths are all equal to each other and a power of two.
 #[derive(Debug, Clone)]
 pub struct MerkleTree<D> {
 	/// Base-2 logarithm of the number of leaves

@@ -28,7 +28,7 @@ pub enum Error {
 ///   or equal to the base-2 logarithm of the packing width.
 /// * `elems`: The packed field elements, length is a power-of-two multiple of `1 << log_n`.
 pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result<(), Error> {
-	if P::WIDTH % (1 << log_n) != 0 {
+	if P::LOG_WIDTH < log_n {
 		return Err(Error::SquareBlockDimensionMustDivideWidth);
 	}
 
@@ -74,11 +74,6 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 /// The `src` buffer is vector of `n` field extension field elements, or alternatively viewed as an
 /// n x d matrix of base field elements, where `d` is the extension degree. This transposes the
 /// base field elements into a d x n matrix in row-major order.
-///
-/// # Throws
-///
-/// * `Error::UnalignedDestination` if the destination buffer is not aligned to the packed
-///   extension field.
 pub fn transpose_scalars<P, FE, PE>(src: &[PE], dst: &mut [P]) -> Result<(), Error>
 where
 	P: PackedField,
