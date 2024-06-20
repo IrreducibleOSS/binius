@@ -16,7 +16,8 @@ use crate::{
 	},
 	protocols::{
 		abstract_sumcheck::{
-			self, AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
+			self, check_evaluation_domain, reduce_final_round_claim, validate_rd_challenge,
+			AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
 			ProverState,
 		},
 		evalcheck::EvalcheckClaim,
@@ -95,7 +96,7 @@ where
 	last_round_proof: Option<ZerocheckRound<F>>,
 	state: ProverState<PW, MultilinearWitness<'a, PW>>,
 
-	zerocheck_challenges: Vec<F>,
+	zerocheck_challenges: &'a [F],
 	round_eq_ind: MultilinearExtension<'static, PW::Scalar>,
 
 	// Junk (scratch space) at the start of each round
@@ -125,7 +126,7 @@ where
 	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 {
-	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
+	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
 	/// switchover round number per multilinear polynomial as a function of its
 	/// [`MultilinearPoly::extension_degree`] value.
@@ -133,7 +134,7 @@ where
 		domain: &'a EvaluationDomain<FS>,
 		claim: ZerocheckClaim<F>,
 		witness: ZerocheckWitness<'a, PW, CW>,
-		zerocheck_challenges: &[F],
+		zerocheck_challenges: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
 		let n_vars = claim.poly.n_vars();
@@ -153,7 +154,7 @@ where
 			return Err(Error::NotEnoughZerocheckChallenges);
 		}
 		let zerocheck_challenges =
-			zerocheck_challenges[zerocheck_challenges.len() - needed_challenges..].to_vec();
+			zerocheck_challenges[zerocheck_challenges.len() - needed_challenges..].as_ref();
 
 		let state = ProverState::new(n_vars, witness.multilinears, switchover_fn)?;
 
@@ -212,17 +213,14 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let reductor = ZerocheckReductor {
-			alphas: &self.zerocheck_challenges,
-		};
-		let evalcheck_claim = reductor.reduce_final_round_claim(&self.oracle, self.round_claim)?;
+		let evalcheck_claim = reduce_final_round_claim(&self.oracle, self.round_claim)?;
 		Ok(evalcheck_claim)
 	}
 
-	// Update the round_eq_ind for the next sumcheck round
+	// Update the round_eq_ind for the next zerocheck round
 	//
 	// Let
-	//  * $n$ be the number of variables in the sumcheck claim
+	//  * $n$ be the number of variables in the zerocheck claim
 	//  * $eq_k(X, Y)$ denote the equality indicator polynomial on $2 * k$ variables.
 	//  * $\alpha_1, \ldots, \alpha_{n-1}$ be the $n-1$ zerocheck challenges
 	// In round $i$, before computing the round polynomial, we seek the invariant that
@@ -354,7 +352,7 @@ where
 		Ok(round_coeffs)
 	}
 
-	#[instrument(skip_all, name = "sumcheck::execute_round")]
+	#[instrument(skip_all, name = "zerocheck::execute_round")]
 	fn execute_round(&mut self, prev_rd_challenge: Option<F>) -> Result<ZerocheckRound<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
@@ -400,7 +398,7 @@ where
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
 		let reductor = ZerocheckReductor {
-			alphas: &self.zerocheck_challenges,
+			alphas: self.zerocheck_challenges,
 		};
 		let round_claim = self.round_claim.clone();
 		let round_proof = self
@@ -409,7 +407,7 @@ where
 			.expect("round is at least 1 by invariant")
 			.clone();
 
-		let new_round_claim = reductor.reduce_intermediate_round_claim(
+		let new_round_claim = reductor.reduce_round_claim(
 			self.round - 1,
 			round_claim,
 			prev_rd_challenge,
@@ -446,7 +444,7 @@ where
 	fn batch_proving_consistent(&self, other: &Self) -> bool {
 		let common = other.zerocheck_challenges.len();
 		self.zerocheck_challenges[self.zerocheck_challenges.len() - common..]
-			== other.zerocheck_challenges
+			== *other.zerocheck_challenges
 	}
 
 	fn n_vars(&self) -> usize {
@@ -481,8 +479,8 @@ where
 {
 	type VertexState = &'a mut [F];
 	fn n_round_evals(&self) -> usize {
-		// In the very first round of a sumcheck that comes from zerocheck, we can uniquely
-		// determine the degree d univariate round polynomial r with evaluations at X = 2, ..., d
+		// In the first round of zerocheck we can uniquely determine the degree d
+		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
 		// because we know r(0) = r(1) = 0
 		self.degree - 1
 	}
@@ -631,7 +629,7 @@ where
 		current_round_sum: F,
 		mut round_evals: Vec<F>,
 	) -> Result<Vec<F>, PolynomialError> {
-		// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d)$
+		// This is a subsequent round of zerocheck, given $r(1), \ldots, r(d)$
 		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
 		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
 		// which allows us to compute the value of $r(0)$
@@ -651,34 +649,4 @@ where
 
 		Ok(coeffs)
 	}
-}
-
-/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
-/// maximum individual degree of the polynomial.
-fn check_evaluation_domain<F: Field>(
-	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error> {
-	if max_individual_degree == 0
-		|| domain.size() != max_individual_degree + 1
-		|| domain.points()[0] != F::ZERO
-		|| domain.points()[1] != F::ONE
-	{
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	Ok(())
-}
-
-/// Ensures that previous round challenge is present if and only if not in the first round.
-fn validate_rd_challenge<F: Field>(
-	prev_rd_challenge: Option<F>,
-	round: usize,
-) -> Result<(), Error> {
-	if round == 0 && prev_rd_challenge.is_some() {
-		return Err(Error::PreviousRoundChallengePresent);
-	} else if round > 0 && prev_rd_challenge.is_none() {
-		return Err(Error::PreviousRoundChallengeAbsent);
-	}
-
-	Ok(())
 }

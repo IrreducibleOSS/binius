@@ -21,12 +21,6 @@ pub enum Error {
 	PrematureFinalizeCall,
 	#[error("execute round was called on zerocheck prover too many times")]
 	TooManyExecuteRoundCalls,
-	#[error("zerocheck prover was given a previous sumcheck rd challenge in the inital rd")]
-	PreviousRoundChallengePresent,
-	#[error("zerocheck prover was not given a previous sumcheck rd challenge in a later rd")]
-	PreviousRoundChallengeAbsent,
-	#[error("the evaluation domain does not match the expected size")]
-	EvaluationDomainMismatch,
 	#[error("the input argument for the current round number is not the expected value")]
 	RoundArgumentRoundClaimMismatch,
 	#[error("the round polynomial is inconsistent with the round claim")]

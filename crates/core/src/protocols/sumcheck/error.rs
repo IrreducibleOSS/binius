@@ -13,14 +13,8 @@ pub enum Error {
 	PrematureFinalizeCall,
 	#[error("execute round was called on this sumcheck prover too many times")]
 	TooManyExecuteRoundCalls,
-	#[error("sumcheck prover was given a previous rd challenge in the inital rd")]
-	PreviousRoundChallengePresent,
-	#[error("sumcheck prover was not given a previous rd challenge in a later rd")]
-	PreviousRoundChallengeAbsent,
 	#[error("oracles must be sorted in descending order by number of variables")]
 	OraclesOutOfOrder,
-	#[error("the evaluation domain does not match the expected size")]
-	EvaluationDomainMismatch,
 	#[error("prover has mismatch between claim and witness")]
 	ProverClaimWitnessMismatch,
 	#[error("IOPolynomial error: {0}")]
@@ -43,8 +37,6 @@ pub enum VerificationError {
 	NumberOfBatchCoeffs,
 	#[error("the number of final evaluations must match the number of instances")]
 	NumberOfFinalEvaluations,
-	#[error("the evaluation domain does not match the expected size")]
-	EvaluationDomainMismatch,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 }

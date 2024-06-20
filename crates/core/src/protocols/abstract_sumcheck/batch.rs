@@ -167,7 +167,7 @@ where
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim = reductor.reduce_intermediate_round_claim(
+		rd_claim = reductor.reduce_round_claim(
 			round_no,
 			rd_claim,
 			challenger.sample(),

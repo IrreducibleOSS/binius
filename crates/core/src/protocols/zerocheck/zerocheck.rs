@@ -58,7 +58,7 @@ pub struct ZerocheckReductor<'a, F> {
 impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 	type Error = Error;
 
-	fn reduce_intermediate_round_claim(
+	fn reduce_round_claim(
 		&self,
 		round: usize,
 		claim: AbstractSumcheckRoundClaim<F>,
@@ -76,21 +76,13 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 
 		reduce_intermediate_round_claim_helper(claim, challenge, round_proof, alpha_i)
 	}
-
-	fn reduce_final_round_claim(
-		&self,
-		poly_oracle: &CompositePolyOracle<F>,
-		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, Self::Error> {
-		reduce_final_round_claim_helper(poly_oracle, round_claim)
-	}
 }
 
 /// Reduce a zerocheck round claim to a claim for the next round
 ///
 /// Arguments:
 /// * `challenge`: The random challenge sampled by the verifier at the beginning of the round.
-/// * `alpha_i`: The zerocheck challenge for round i sampled by the verifier during the zerocheck to sumcheck reduction.
+/// * `alpha_i`: The zerocheck challenge for round i.
 fn reduce_intermediate_round_claim_helper<F: Field>(
 	claim: ZerocheckRoundClaim<F>,
 	challenge: F,
@@ -172,25 +164,4 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		partial_point,
 		current_round_sum: new_round_sum,
 	})
-}
-
-fn reduce_final_round_claim_helper<F: Field>(
-	poly_oracle: &CompositePolyOracle<F>,
-	round_claim: ZerocheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F>, Error> {
-	let ZerocheckRoundClaim {
-		partial_point: eval_point,
-		current_round_sum: eval,
-	} = round_claim;
-	if eval_point.len() != poly_oracle.n_vars() {
-		return Err(VerificationError::NumberOfRounds.into());
-	}
-
-	let evalcheck_claim = EvalcheckClaim {
-		poly: poly_oracle.clone(),
-		eval_point,
-		eval,
-		is_random_point: true,
-	};
-	Ok(evalcheck_claim)
 }

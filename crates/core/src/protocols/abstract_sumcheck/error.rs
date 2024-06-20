@@ -8,6 +8,12 @@ pub enum Error {
 	EmptyBatch,
 	#[error("The inputted claims are not elligible for batch proving")]
 	InelligibleBatch,
+	#[error("the evaluation domain does not match the expected size")]
+	EvaluationDomainMismatch,
+	#[error("prover was given a previous rd challenge in the inital rd")]
+	PreviousRoundChallengePresent,
+	#[error("prover was not given a previous rd challenge in a later rd")]
+	PreviousRoundChallengeAbsent,
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
 }

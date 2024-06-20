@@ -8,7 +8,10 @@ use crate::{
 	protocols::evalcheck::EvalcheckClaim,
 };
 
-use super::{AbstractSumcheckProof, AbstractSumcheckReductor, AbstractSumcheckRoundClaim};
+use super::{
+	reduce_final_round_claim, AbstractSumcheckProof, AbstractSumcheckReductor,
+	AbstractSumcheckRoundClaim, Error,
+};
 
 pub fn verify<F, CH, E>(
 	poly_oracle: &CompositePolyOracle<F>,
@@ -20,14 +23,14 @@ pub fn verify<F, CH, E>(
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
-	E: From<PolynomialError> + Sync,
+	E: From<PolynomialError> + From<Error> + Sync,
 {
 	let mut rd_claim = first_round_claim;
 	for (which_round, round_proof) in proof.rounds.into_iter().enumerate() {
 		challenger.observe_slice(round_proof.coeffs.as_slice());
 		let sumcheck_round_challenge = challenger.sample();
 
-		rd_claim = reductor.reduce_intermediate_round_claim(
+		rd_claim = reductor.reduce_round_claim(
 			which_round,
 			rd_claim,
 			sumcheck_round_challenge,
@@ -35,5 +38,7 @@ where
 		)?;
 	}
 
-	reductor.reduce_final_round_claim(poly_oracle, rd_claim)
+	let evalcheck_claim = reduce_final_round_claim(poly_oracle, rd_claim)?;
+
+	Ok(evalcheck_claim)
 }

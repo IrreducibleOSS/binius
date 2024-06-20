@@ -16,7 +16,8 @@ use crate::{
 	},
 	protocols::{
 		abstract_sumcheck::{
-			self, AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
+			self, check_evaluation_domain, reduce_final_round_claim, validate_rd_challenge,
+			AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
 			ProverState,
 		},
 		evalcheck::EvalcheckClaim,
@@ -167,9 +168,7 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let sumcheck_reductor = SumcheckReductor;
-		let evalcheck_claim =
-			sumcheck_reductor.reduce_final_round_claim(&self.oracle, self.round_claim)?;
+		let evalcheck_claim = reduce_final_round_claim(&self.oracle, self.round_claim)?;
 		Ok(evalcheck_claim)
 	}
 
@@ -227,7 +226,7 @@ where
 			.expect("round is at least 1 by invariant")
 			.clone();
 
-		let new_round_claim = sumcheck_reductor.reduce_intermediate_round_claim(
+		let new_round_claim = sumcheck_reductor.reduce_round_claim(
 			self.round,
 			round_claim,
 			prev_rd_challenge,
@@ -357,34 +356,4 @@ where
 		// Trimming highest degree coefficient as it can be recovered by the verifier
 		Ok(coeffs[..coeffs.len() - 1].to_vec())
 	}
-}
-
-/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
-/// maximum individual degree of the polynomial.
-fn check_evaluation_domain<F: Field>(
-	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
-) -> Result<(), Error> {
-	if max_individual_degree == 0
-		|| domain.size() != max_individual_degree + 1
-		|| domain.points()[0] != F::ZERO
-		|| domain.points()[1] != F::ONE
-	{
-		return Err(Error::EvaluationDomainMismatch);
-	}
-	Ok(())
-}
-
-/// Ensures that previous round challenge is present if and only if not in the first round.
-fn validate_rd_challenge<F: Field>(
-	prev_rd_challenge: Option<F>,
-	round: usize,
-) -> Result<(), Error> {
-	if round == 0 && prev_rd_challenge.is_some() {
-		return Err(Error::PreviousRoundChallengePresent);
-	} else if round > 0 && prev_rd_challenge.is_none() {
-		return Err(Error::PreviousRoundChallengeAbsent);
-	}
-
-	Ok(())
 }

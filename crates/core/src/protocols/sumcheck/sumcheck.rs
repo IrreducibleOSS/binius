@@ -2,7 +2,6 @@
 
 use super::{Error, VerificationError};
 use crate::{
-	oracle::CompositePolyOracle,
 	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
@@ -41,7 +40,7 @@ pub struct SumcheckReductor;
 impl<F: Field> AbstractSumcheckReductor<F> for SumcheckReductor {
 	type Error = Error;
 
-	fn reduce_intermediate_round_claim(
+	fn reduce_round_claim(
 		&self,
 		_round: usize,
 		claim: AbstractSumcheckRoundClaim<F>,
@@ -49,14 +48,6 @@ impl<F: Field> AbstractSumcheckReductor<F> for SumcheckReductor {
 		round_proof: AbstractSumcheckRound<F>,
 	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error> {
 		reduce_intermediate_round_claim_helper(claim, challenge, round_proof)
-	}
-
-	fn reduce_final_round_claim(
-		&self,
-		poly_oracle: &CompositePolyOracle<F>,
-		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, Self::Error> {
-		reduce_final_round_claim_helper(poly_oracle, round_claim)
 	}
 }
 
@@ -103,25 +94,4 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		partial_point,
 		current_round_sum: new_round_sum,
 	})
-}
-
-fn reduce_final_round_claim_helper<F: Field>(
-	poly_oracle: &CompositePolyOracle<F>,
-	round_claim: SumcheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F>, Error> {
-	let SumcheckRoundClaim {
-		partial_point: eval_point,
-		current_round_sum: eval,
-	} = round_claim;
-	if eval_point.len() != poly_oracle.n_vars() {
-		return Err(VerificationError::NumberOfCoefficients.into());
-	}
-
-	let evalcheck_claim = EvalcheckClaim {
-		poly: poly_oracle.clone(),
-		eval_point,
-		eval,
-		is_random_point: true,
-	};
-	Ok(evalcheck_claim)
 }

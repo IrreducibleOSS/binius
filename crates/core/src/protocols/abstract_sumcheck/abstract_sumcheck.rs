@@ -2,9 +2,11 @@
 
 use binius_field::Field;
 
-use crate::{oracle::CompositePolyOracle, protocols::evalcheck::EvalcheckClaim};
+use crate::{
+	oracle::CompositePolyOracle, polynomial::EvaluationDomain, protocols::evalcheck::EvalcheckClaim,
+};
 
-use super::Error;
+use super::{Error, VerificationError};
 
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckRound<F> {
@@ -44,24 +46,13 @@ pub trait AbstractSumcheckReductor<F: Field> {
 	/// * `claim`: The current round claim
 	/// * `challenge`: The random challenge sampled by the verifier at the beginning of the round
 	/// * `round_proof`: The current round's round proof
-	fn reduce_intermediate_round_claim(
+	fn reduce_round_claim(
 		&self,
 		round: usize,
 		claim: AbstractSumcheckRoundClaim<F>,
 		challenge: F,
 		round_proof: AbstractSumcheckRound<F>,
 	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error>;
-
-	/// Reduce the final round claim to an evalcheck claim
-	///
-	/// Arguments:
-	/// * `poly_oracle`: The original polynomial oracle
-	/// * `round_claim`: The final round claim
-	fn reduce_final_round_claim(
-		&self,
-		poly_oracle: &CompositePolyOracle<F>,
-		round_claim: AbstractSumcheckRoundClaim<F>,
-	) -> Result<EvalcheckClaim<F>, Self::Error>;
 }
 
 pub trait AbstractSumcheckProver<F: Field> {
@@ -82,4 +73,56 @@ pub trait AbstractSumcheckProver<F: Field> {
 	fn batch_proving_consistent(&self, other: &Self) -> bool;
 
 	fn n_vars(&self) -> usize;
+}
+
+pub fn reduce_final_round_claim<F: Field>(
+	poly_oracle: &CompositePolyOracle<F>,
+	round_claim: AbstractSumcheckRoundClaim<F>,
+) -> Result<EvalcheckClaim<F>, Error> {
+	let AbstractSumcheckRoundClaim {
+		partial_point: eval_point,
+		current_round_sum: eval,
+	} = round_claim;
+
+	if eval_point.len() != poly_oracle.n_vars() {
+		return Err(VerificationError::NumberOfRounds.into());
+	}
+
+	let evalcheck_claim = EvalcheckClaim {
+		poly: poly_oracle.clone(),
+		eval_point,
+		eval,
+		is_random_point: true,
+	};
+	Ok(evalcheck_claim)
+}
+
+/// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
+/// maximum individual degree of the polynomial.
+pub fn check_evaluation_domain<F: Field>(
+	max_individual_degree: usize,
+	domain: &EvaluationDomain<F>,
+) -> Result<(), Error> {
+	if max_individual_degree == 0
+		|| domain.size() != max_individual_degree + 1
+		|| domain.points()[0] != F::ZERO
+		|| domain.points()[1] != F::ONE
+	{
+		return Err(Error::EvaluationDomainMismatch);
+	}
+	Ok(())
+}
+
+/// Ensures that previous round challenge is present if and only if not in the first round.
+pub fn validate_rd_challenge<F: Field>(
+	prev_rd_challenge: Option<F>,
+	round: usize,
+) -> Result<(), Error> {
+	if round == 0 && prev_rd_challenge.is_some() {
+		return Err(Error::PreviousRoundChallengePresent);
+	} else if round > 0 && prev_rd_challenge.is_none() {
+		return Err(Error::PreviousRoundChallengeAbsent);
+	}
+
+	Ok(())
 }
