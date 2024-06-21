@@ -26,6 +26,13 @@ rustc --print cfg -C target-cpu=native | grep gfni
 
 If the output of the command above is empty, the processor does not support these instructions.
 
+When including binius as a dependency, it is recommended to add the following lines to your `Cargo.toml` file to have optimizations across crates
+
+```toml
+[profile.release]
+lto = "fat"
+```
+
 ### Examples
 
 There are examples of simple commit-and-prove SNARKs in the `examples` directory. For example, you may run
