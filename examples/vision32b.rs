@@ -148,7 +148,7 @@ struct SumComposition {
 	n_vars: usize,
 }
 
-impl<F: Field> CompositionPoly<F> for SumComposition {
+impl<P: PackedField> CompositionPoly<P> for SumComposition {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -157,7 +157,16 @@ impl<F: Field> CompositionPoly<F> for SumComposition {
 		1
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		if query.len() != self.n_vars {
+			return Err(PolynomialError::IncorrectQuerySize {
+				expected: self.n_vars,
+			});
+		}
+		Ok(query.iter().copied().sum())
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -179,7 +188,7 @@ composition_poly!(ConditionalEquality[x, y, is_equal] = (x - y) * is_equal);
 #[derive(Clone, Debug)]
 struct SquareComposition;
 
-impl<F: Field> CompositionPoly<F> for SquareComposition {
+impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 	fn n_vars(&self) -> usize {
 		2
 	}
@@ -188,7 +197,16 @@ impl<F: Field> CompositionPoly<F> for SquareComposition {
 		2
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		if query.len() != 2 {
+			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
+		}
+		let x = query[0];
+		let y = query[1];
+		Ok(PackedField::square(x) + y)
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 2 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
 		}
@@ -221,10 +239,10 @@ impl<F32b: Clone + From<BinaryField32b>> Default for SBoxFwdComposition<F32b> {
 	}
 }
 
-impl<F32b, F> CompositionPoly<F> for SBoxFwdComposition<F32b>
+impl<F32b, P> CompositionPoly<P> for SBoxFwdComposition<F32b>
 where
 	F32b: Field,
-	F: ExtensionField<F32b>,
+	P: PackedField<Scalar: ExtensionField<F32b>>,
 {
 	fn n_vars(&self) -> usize {
 		4
@@ -234,14 +252,27 @@ where
 		1
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		if query.len() != 4 {
+			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
+		}
+
+		let result = iter::zip(query[..3].iter(), self.coefficients[1..].iter())
+			.map(|(y_i, coeff)| *y_i * (*coeff))
+			.sum::<P::Scalar>()
+			+ P::Scalar::from(self.coefficients[0]);
+
+		Ok(result - query[3])
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 4 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
 		}
 
 		let result = iter::zip(query[..3].iter(), self.coefficients[1..].iter())
 			.map(|(y_i, coeff)| P::from_fn(|j| y_i.get(j) * (*coeff)))
-			.sum::<P>() + P::broadcast(F::from(self.coefficients[0]));
+			.sum::<P>() + P::broadcast(P::Scalar::from(self.coefficients[0]));
 
 		Ok(result - query[3])
 	}

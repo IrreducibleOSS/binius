@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::{Error, MultilinearPolyOracle},
-	polynomial::{CompositionPoly, CompositionPolyWrapper, MultivariatePoly},
+	polynomial::CompositionPoly,
 };
 use binius_field::Field;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct CompositePolyOracle<F: Field> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
-	composition: Arc<dyn MultivariatePoly<F>>,
+	composition: Arc<dyn CompositionPoly<F>>,
 }
 
 impl<F: Field> CompositePolyOracle<F> {
@@ -31,7 +31,7 @@ impl<F: Field> CompositePolyOracle<F> {
 		Ok(Self {
 			n_vars,
 			inner,
-			composition: Arc::new(CompositionPolyWrapper::new(composition)),
+			composition: Arc::new(composition),
 		})
 	}
 
@@ -62,7 +62,7 @@ impl<F: Field> CompositePolyOracle<F> {
 		self.inner.clone()
 	}
 
-	pub fn composition(&self) -> Arc<dyn MultivariatePoly<F>> {
+	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
 		self.composition.clone()
 	}
 }
@@ -74,9 +74,7 @@ mod tests {
 		oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
 		polynomial::Error as PolynomialError,
 	};
-	use binius_field::{
-		BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, PackedField, TowerField,
-	};
+	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
 
 	#[derive(Clone, Debug)]
 	struct TestByteComposition;
@@ -89,10 +87,14 @@ mod tests {
 			1
 		}
 
-		fn evaluate<P: PackedField<Scalar = BinaryField128b>>(
+		fn evaluate_scalar(
 			&self,
-			query: &[P],
-		) -> Result<P, PolynomialError> {
+			query: &[BinaryField128b],
+		) -> Result<BinaryField128b, PolynomialError> {
+			self.evaluate(query)
+		}
+
+		fn evaluate(&self, query: &[BinaryField128b]) -> Result<BinaryField128b, PolynomialError> {
 			Ok(query[0] * query[1] + query[2] * BinaryField128b::new(125))
 		}
 

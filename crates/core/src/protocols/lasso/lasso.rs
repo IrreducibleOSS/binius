@@ -169,7 +169,7 @@ impl<'a, FW: TowerField, L: AsRef<[usize]>> LassoWitness<'a, FW, L> {
 #[derive(Clone, Debug)]
 pub struct UnaryCarryConstraint;
 
-impl<F: Field> CompositionPoly<F> for UnaryCarryConstraint {
+impl<P: PackedField> CompositionPoly<P> for UnaryCarryConstraint {
 	fn n_vars(&self) -> usize {
 		3
 	}
@@ -178,7 +178,15 @@ impl<F: Field> CompositionPoly<F> for UnaryCarryConstraint {
 		2
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		if query.len() != 3 {
+			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
+		}
+
+		Ok(query[0] * query[1] - query[2])
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}

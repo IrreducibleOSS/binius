@@ -24,7 +24,7 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{ExtensionField, Field, PackedField, TowerField};
+use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField, TowerField};
 use getset::Getters;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -44,7 +44,7 @@ where
 	PW: PackedField,
 	PW::Scalar: TowerField + From<F> + ExtensionField<FS>,
 	FS: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let n_vars = witness.n_vars();
@@ -84,7 +84,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<FS>,
 	FS: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 {
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
@@ -97,7 +97,7 @@ where
 	state: ProverState<PW, MultilinearWitness<'a, PW>>,
 
 	zerocheck_challenges: &'a [F],
-	round_eq_ind: MultilinearExtension<'static, PW::Scalar>,
+	round_eq_ind: MultilinearExtension<'static, PW>,
 
 	// Junk (scratch space) at the start of each round
 	// After prover computes ith round polynomial, represents evaluations of
@@ -124,7 +124,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<FS>,
 	FS: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 {
 	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
@@ -237,9 +237,14 @@ where
 	// hypercube evaluations of $eq_2(X, \alpha_1, \alpha_2)$.
 	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
 		let current_evals = self.round_eq_ind.evals();
-		let mut new_evals = vec![PW::Scalar::default(); current_evals.len() >> 1];
+		let mut new_evals = vec![PW::default(); current_evals.len() >> 1];
 		new_evals.par_iter_mut().enumerate().for_each(|(i, e)| {
-			*e = current_evals[i << 1] + current_evals[(i << 1) + 1];
+			for j in 0..PW::WIDTH {
+				let index = i * PW::WIDTH + j;
+				let eval0 = get_packed_slice(current_evals, index << 1);
+				let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
+				e.set(j, eval0 + eval1);
+			}
 		});
 		let new_multilin = MultilinearExtension::from_values(new_evals)?;
 		self.round_eq_ind = new_multilin;
@@ -426,7 +431,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<FS>,
 	FS: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 {
 	type Error = Error;
 
@@ -460,24 +465,27 @@ where
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub struct ZerocheckFirstRoundEvaluator<'a, F: Field, FS: Field, C: CompositionPoly<F>>
+pub struct ZerocheckFirstRoundEvaluator<'a, P, FS, C>
 where
-	F: ExtensionField<FS>,
+	P: PackedField<Scalar: ExtensionField<FS>>,
+	FS: Field,
+	C: CompositionPoly<P>,
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [FS],
 	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
-	pub eq_ind: MultilinearExtension<'a, F>,
+	pub eq_ind: MultilinearExtension<'a, P>,
 	pub denom_inv: &'a [FS],
 }
 
-impl<'a, F: Field, FS: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
-	for ZerocheckFirstRoundEvaluator<'a, F, FS, C>
+impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckFirstRoundEvaluator<'a, P, FS, C>
 where
-	F: ExtensionField<FS>,
+	P: PackedField<Scalar: ExtensionField<FS>>,
+	FS: Field,
+	C: CompositionPoly<P>,
 {
-	type VertexState = &'a mut [F];
+	type VertexState = &'a mut [P::Scalar];
 	fn n_round_evals(&self) -> usize {
 		// In the first round of zerocheck we can uniquely determine the degree d
 		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
@@ -489,14 +497,17 @@ where
 		&self,
 		i: usize,
 		round_q_chunk: Self::VertexState,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	) {
 		debug_assert!(i < self.eq_ind.size());
 
-		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(i).unwrap_or(F::ZERO);
+		let eq_ind_factor = self
+			.eq_ind
+			.evaluate_on_hypercube(i)
+			.unwrap_or(P::Scalar::ZERO);
 
 		// The rest require interpolation.
 		for d in 2..self.domain_points.len() {
@@ -505,13 +516,16 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j =
-						extrapolate_line::<F, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
+					*evals_z_j = extrapolate_line::<P::Scalar, FS>(
+						evals_0_j,
+						evals_1_j,
+						self.domain_points[d],
+					);
 				});
 
 			let composite_value = self
 				.composition
-				.evaluate(evals_z)
+				.evaluate_scalar(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 2] += composite_value * eq_ind_factor;
@@ -521,14 +535,14 @@ where
 
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		debug_assert_eq!(current_round_sum, F::ZERO);
+		current_round_sum: P::Scalar,
+		mut round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, PolynomialError> {
+		debug_assert_eq!(current_round_sum, P::Scalar::ZERO);
 		// We are given $r(2), \ldots, r(d)$.
 		// From context, we infer that $r(0) = r(1) = 0$.
-		round_evals.insert(0, F::ZERO);
-		round_evals.insert(0, F::ZERO);
+		round_evals.insert(0, P::Scalar::ZERO);
+		round_evals.insert(0, P::Scalar::ZERO);
 
 		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
 		// We can omit the constant term safely
@@ -543,26 +557,29 @@ where
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub struct ZerocheckLaterRoundEvaluator<'a, F: Field, FS: Field, C: CompositionPoly<F>>
+pub struct ZerocheckLaterRoundEvaluator<'a, P, FS, C>
 where
-	F: ExtensionField<FS>,
+	P: PackedField<Scalar: ExtensionField<FS>>,
+	FS: Field,
+	C: CompositionPoly<P>,
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [FS],
 	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
-	pub eq_ind: MultilinearExtension<'a, F>,
-	pub round_zerocheck_challenge: F,
+	pub eq_ind: MultilinearExtension<'a, P>,
+	pub round_zerocheck_challenge: P::Scalar,
 	pub denom_inv: &'a [FS],
-	pub round_q_bar: &'a MultilinearExtension<'a, F>,
+	pub round_q_bar: &'a MultilinearExtension<'a, P::Scalar>,
 }
 
-impl<'a, F: Field, FS: Field, C: CompositionPoly<F>> AbstractSumcheckEvaluator<F>
-	for ZerocheckLaterRoundEvaluator<'a, F, FS, C>
+impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>
 where
-	F: ExtensionField<FS>,
+	P: PackedField<Scalar: ExtensionField<FS>>,
+	FS: Field,
+	C: CompositionPoly<P>,
 {
-	type VertexState = &'a mut [F];
+	type VertexState = &'a mut [P::Scalar];
 	fn n_round_evals(&self) -> usize {
 		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
 		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
@@ -574,22 +591,25 @@ where
 		&self,
 		i: usize,
 		round_q_chunk: Self::VertexState,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	) {
 		let q_bar_zero = self
 			.round_q_bar
 			.evaluate_on_hypercube(i << 1)
-			.unwrap_or(F::ZERO);
+			.unwrap_or(P::Scalar::ZERO);
 		let q_bar_one = self
 			.round_q_bar
 			.evaluate_on_hypercube((i << 1) + 1)
-			.unwrap_or(F::ZERO);
+			.unwrap_or(P::Scalar::ZERO);
 		debug_assert!(i < self.eq_ind.size());
 
-		let eq_ind_factor = self.eq_ind.evaluate_on_hypercube(i).unwrap_or(F::ZERO);
+		let eq_ind_factor = self
+			.eq_ind
+			.evaluate_on_hypercube(i)
+			.unwrap_or(P::Scalar::ZERO);
 
 		// We can replace constraint polynomial evaluations at C(r, 1, x) with Q_i_bar(r, 1, x)
 		// See section 4 of [https://eprint.iacr.org/2024/108] for details
@@ -602,13 +622,16 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j =
-						extrapolate_line::<F, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
+					*evals_z_j = extrapolate_line::<P::Scalar, FS>(
+						evals_0_j,
+						evals_1_j,
+						self.domain_points[d],
+					);
 				});
 
 			let composite_value = self
 				.composition
-				.evaluate(evals_z)
+				.evaluate_scalar(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 1] += composite_value * eq_ind_factor;
@@ -626,16 +649,16 @@ where
 
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		// This is a subsequent round of zerocheck, given $r(1), \ldots, r(d)$
+		current_round_sum: P::Scalar,
+		mut round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, PolynomialError> {
+		// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d)$
 		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
 		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
 		// which allows us to compute the value of $r(0)$
 
 		let alpha = self.round_zerocheck_challenge;
-		let alpha_bar = F::ONE - alpha;
+		let alpha_bar = P::Scalar::ONE - alpha;
 		let one_evaluation = round_evals[0];
 		let zero_evaluation_numerator = current_round_sum - one_evaluation * alpha;
 		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap();

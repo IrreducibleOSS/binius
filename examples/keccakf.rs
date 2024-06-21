@@ -100,7 +100,7 @@ struct SumComposition {
 	n_vars: usize,
 }
 
-impl<F: Field> CompositionPoly<F> for SumComposition {
+impl<P: PackedField> CompositionPoly<P> for SumComposition {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -109,7 +109,17 @@ impl<F: Field> CompositionPoly<F> for SumComposition {
 		1
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		if query.len() != self.n_vars {
+			return Err(PolynomialError::IncorrectQuerySize {
+				expected: self.n_vars,
+			});
+		}
+		// Sum of scalar values at the corresponding positions of the packed values.
+		Ok(query.iter().copied().sum())
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -513,7 +523,7 @@ where
 		)?,
 	};
 
-	let zerocheck_witness = MultilinearComposite::new(
+	let zerocheck_witness = MultilinearComposite::<PW, _, _>::new(
 		log_size,
 		mix_composition_prover,
 		witness.constrained_polys().collect(),
@@ -641,7 +651,7 @@ fn make_constraints<FI: TowerField>(
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	challenge: FI,
-) -> Result<impl CompositionPoly<FI> + Clone> {
+) -> Result<impl CompositionPoly<FI> + Clone + 'static> {
 	let zerocheck_column_ids = constrained_oracles(fixed_oracle, trace_oracle).collect::<Vec<_>>();
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 

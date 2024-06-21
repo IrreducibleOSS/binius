@@ -52,7 +52,7 @@ impl<F: Field> ParFoldState<F> {
 /// Represents an object that can evaluate the composition function of a generalized sumcheck.
 ///
 /// Generalizes handling of regular sumcheck and zerocheck protocols.
-pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
+pub trait AbstractSumcheckEvaluator<P: PackedField>: Sync {
 	type VertexState;
 
 	/// The number of points to evaluate at.
@@ -73,10 +73,10 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 		&self,
 		i: usize,
 		vertex_state: Self::VertexState,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	);
 
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
@@ -87,9 +87,9 @@ pub trait AbstractSumcheckEvaluator<F: Field>: Sync {
 	/// * `round_evals`: the computed evaluations of the round polynomial
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: F,
-		round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError>;
+		current_round_sum: P::Scalar,
+		round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, PolynomialError>;
 }
 
 /// A prover state for a generalized sumcheck protocol.
@@ -243,7 +243,7 @@ where
 	/// Compute the sum of the partial polynomial evaluations over the hypercube.
 	pub fn calculate_round_coeffs<S>(
 		&self,
-		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar, VertexState = S>,
+		evaluator: impl AbstractSumcheckEvaluator<PW, VertexState = S>,
 		current_round_sum: PW::Scalar,
 		vertex_state_iterator: impl IndexedParallelIterator<Item = S>,
 	) -> Result<Vec<PW::Scalar>, PolynomialError> {
@@ -324,7 +324,7 @@ where
 		&'b self,
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
 		eval01: impl Fn(T, usize) -> (PW::Scalar, PW::Scalar) + Sync,
-		evaluator: impl AbstractSumcheckEvaluator<PW::Scalar, VertexState = S>,
+		evaluator: impl AbstractSumcheckEvaluator<PW, VertexState = S>,
 		vertex_state_iterator: impl IndexedParallelIterator<Item = S>,
 		current_round_sum: PW::Scalar,
 	) -> Result<Vec<PW::Scalar>, PolynomialError>

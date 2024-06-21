@@ -35,7 +35,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	CH: CanObserve<F> + CanSample<F>,
 {
 	abstract_sumcheck::batch_prove(provers, challenger)

@@ -8,7 +8,8 @@ pub(crate) struct CompositionPolyItem {
 	pub is_anonymous: bool,
 	pub name: syn::Ident,
 	pub vars: Vec<syn::Ident>,
-	pub poly: syn::Expr,
+	pub poly_packed: syn::Expr,
+	pub poly_scalar: syn::Expr,
 	pub degree: usize,
 }
 
@@ -18,7 +19,8 @@ impl ToTokens for CompositionPolyItem {
 			is_anonymous,
 			name,
 			vars,
-			poly,
+			poly_packed,
+			poly_scalar,
 			degree,
 		} = self;
 		let n_vars = vars.len();
@@ -28,7 +30,7 @@ impl ToTokens for CompositionPolyItem {
 			#[derive(Debug, Clone, Copy)]
 			struct #name;
 
-			impl<F: binius_field::Field> binius_core::polynomial::multivariate::CompositionPoly<F> for #name {
+			impl<P: binius_field::PackedField> binius_core::polynomial::multivariate::CompositionPoly<P> for #name {
 				fn n_vars(&self) -> usize {
 					#n_vars
 				}
@@ -37,12 +39,20 @@ impl ToTokens for CompositionPolyItem {
 					#degree
 				}
 
-				fn evaluate<P: binius_field::PackedField<Scalar=F>>(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
+				fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, binius_core::polynomial::Error> {
 					if query.len() != #n_vars {
 						return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 					#( let #vars = query[#i]; )*
-					Ok(#poly)
+					Ok(#poly_scalar)
+				}
+
+				fn evaluate(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
+					if query.len() != #n_vars {
+						return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
+					}
+					#( let #vars = query[#i]; )*
+					Ok(#poly_packed)
 				}
 
 				fn binary_tower_level(&self) -> usize {
@@ -78,14 +88,17 @@ impl Parse for CompositionPolyItem {
 			vars.into_iter().collect()
 		};
 		input.parse::<Token![=]>()?;
-		let mut poly = input.parse::<syn::Expr>()?;
-		let degree = poly_degree(&poly)?;
-		rewrite_literals(&mut poly)?;
+		let mut poly_packed = input.parse::<syn::Expr>()?;
+		let degree = poly_degree(&poly_packed)?;
+		let mut poly_scalar = poly_packed.clone();
+		rewrite_literals(&mut poly_packed, true)?;
+		rewrite_literals(&mut poly_scalar, false)?;
 		Ok(Self {
 			is_anonymous,
 			name,
 			vars,
-			poly,
+			poly_packed,
+			poly_scalar,
 			degree,
 		})
 	}
@@ -115,23 +128,35 @@ fn poly_degree(expr: &syn::Expr) -> Result<usize, syn::Error> {
 }
 
 /// Rewrites 0 => P::zero(), 1 => P::one()
-fn rewrite_literals(expr: &mut syn::Expr) -> Result<(), syn::Error> {
+fn rewrite_literals(expr: &mut syn::Expr, is_packed: bool) -> Result<(), syn::Error> {
 	match expr {
 		syn::Expr::Lit(exprlit) => {
 			if let syn::Lit::Int(int) = &exprlit.lit {
 				*expr = match &*int.to_string() {
-					"0" => parse_quote!(P::zero()),
-					"1" => parse_quote!(P::one()),
+					"0" => {
+						if is_packed {
+							parse_quote!(P::zero())
+						} else {
+							parse_quote!(P::Scalar::ZERO)
+						}
+					}
+					"1" => {
+						if is_packed {
+							parse_quote!(P::one())
+						} else {
+							parse_quote!(P::Scalar::ONE)
+						}
+					}
 					_ => return Err(syn::Error::new(expr.span(), "Unsupported integer")),
 				};
 			}
 		}
 		syn::Expr::Paren(paren) => {
-			rewrite_literals(&mut paren.expr)?;
+			rewrite_literals(&mut paren.expr, is_packed)?;
 		}
 		syn::Expr::Binary(binary) => {
-			rewrite_literals(&mut binary.left)?;
-			rewrite_literals(&mut binary.right)?;
+			rewrite_literals(&mut binary.left, is_packed)?;
+			rewrite_literals(&mut binary.right, is_packed)?;
 		}
 		_ => {}
 	}

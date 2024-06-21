@@ -44,7 +44,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Sync,
 	CH: CanSample<F> + CanObserve<F>,
 {
@@ -86,7 +86,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F>,
 	DomainField: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	oracle: CompositePolyOracle<F>,
@@ -106,7 +106,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
@@ -246,7 +246,7 @@ where
 	PW: PackedField,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
-	CW: CompositionPoly<PW::Scalar>,
+	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync,
 {
 	type Error = Error;
@@ -273,26 +273,26 @@ where
 
 /// Evaluator for the sumcheck protocol.
 #[derive(Debug)]
-struct SumcheckEvaluator<'a, F, DomainField, C>
+struct SumcheckEvaluator<'a, P, DomainField, C>
 where
-	F: Field + ExtensionField<DomainField>,
+	P: PackedField<Scalar: ExtensionField<DomainField>>,
 	DomainField: Field,
-	C: CompositionPoly<F>,
+	C: CompositionPoly<P>,
 {
 	pub degree: usize,
 	composition: &'a C,
 	evaluation_domain: &'a EvaluationDomain<DomainField>,
 	domain_points: &'a [DomainField],
 
-	_p: PhantomData<F>,
+	_p: PhantomData<P>,
 }
 
-impl<'a, F, DomainField, C> AbstractSumcheckEvaluator<F>
-	for SumcheckEvaluator<'a, F, DomainField, C>
+impl<'a, P, DomainField, C> AbstractSumcheckEvaluator<P>
+	for SumcheckEvaluator<'a, P, DomainField, C>
 where
-	F: Field + ExtensionField<DomainField>,
+	P: PackedField<Scalar: ExtensionField<DomainField>>,
 	DomainField: Field,
-	C: CompositionPoly<F>,
+	C: CompositionPoly<P>,
 {
 	type VertexState = ();
 
@@ -306,10 +306,10 @@ where
 		&self,
 		_i: usize,
 		_vertex_state: Self::VertexState,
-		evals_0: &[F],
-		evals_1: &[F],
-		evals_z: &mut [F],
-		round_evals: &mut [F],
+		evals_0: &[P::Scalar],
+		evals_1: &[P::Scalar],
+		evals_z: &mut [P::Scalar],
+		round_evals: &mut [P::Scalar],
 	) {
 		// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some
 		// index, use them to linearly interpolate each MLE value at domain point, and then
@@ -317,7 +317,7 @@ where
 
 		round_evals[0] += self
 			.composition
-			.evaluate(evals_1)
+			.evaluate_scalar(evals_1)
 			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
 
 		// The rest require interpolation.
@@ -328,7 +328,7 @@ where
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
 					// TODO: Enable small field multiplication.
-					*evals_z_j = extrapolate_line::<F, DomainField>(
+					*evals_z_j = extrapolate_line::<P::Scalar, DomainField>(
 						evals_0_j,
 						evals_1_j,
 						self.domain_points[d],
@@ -337,16 +337,16 @@ where
 
 			round_evals[d - 1] += self
 				.composition
-				.evaluate(evals_z)
+				.evaluate_scalar(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 		}
 	}
 
 	fn round_evals_to_coeffs(
 		&self,
-		current_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
+		current_round_sum: P::Scalar,
+		mut round_evals: Vec<P::Scalar>,
+	) -> Result<Vec<P::Scalar>, PolynomialError> {
 		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, current_round_sum - round_evals[0]);

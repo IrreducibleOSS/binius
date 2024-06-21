@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::polynomial::{CompositionPoly, Error};
-use binius_field::{Field, PackedField};
+use binius_field::PackedField;
 use std::fmt::Debug;
 
 /// An adapter which allows evaluating a composition over a larger query by indexing into it.
@@ -16,7 +16,7 @@ pub struct IndexComposition<C, const N: usize> {
 	composition: C,
 }
 
-impl<F: Field, C: CompositionPoly<F>, const N: usize> CompositionPoly<F>
+impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 	for IndexComposition<C, N>
 {
 	fn n_vars(&self) -> usize {
@@ -27,7 +27,18 @@ impl<F: Field, C: CompositionPoly<F>, const N: usize> CompositionPoly<F>
 		self.composition.degree()
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
+		if query.len() != self.n_vars {
+			return Err(Error::IncorrectQuerySize {
+				expected: self.n_vars,
+			});
+		}
+
+		let subquery = self.indices.map(|index| query[index]);
+		self.composition.evaluate_scalar(&subquery)
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,

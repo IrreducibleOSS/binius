@@ -256,7 +256,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_pigeonhole_cores
 #[derive(Debug, Clone)]
 struct SquareComposition;
 
-impl<F: Field> CompositionPoly<F> for SquareComposition {
+impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -265,7 +265,12 @@ impl<F: Field> CompositionPoly<F> for SquareComposition {
 		2
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		// Square each scalar value in the given packed value.
+		Ok(query[0].square())
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		// Square each scalar value in the given packed value.
 		Ok(query[0].square())
 	}

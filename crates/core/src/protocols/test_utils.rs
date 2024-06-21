@@ -102,9 +102,9 @@ impl TestProductComposition {
 	}
 }
 
-impl<F> CompositionPoly<F> for TestProductComposition
+impl<P> CompositionPoly<P> for TestProductComposition
 where
-	F: Field,
+	P: PackedField,
 {
 	fn n_vars(&self) -> usize {
 		self.arity
@@ -114,7 +114,14 @@ where
 		self.arity
 	}
 
-	fn evaluate<P: PackedField<Scalar = F>>(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
+		let n_vars = self.arity;
+		assert_eq!(query.len(), n_vars);
+		// Product of scalar values at the corresponding positions of the packed values.
+		Ok(query.iter().copied().product())
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		// Product of scalar values at the corresponding positions of the packed values.
