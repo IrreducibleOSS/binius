@@ -30,6 +30,12 @@ pub struct AbstractSumcheckClaim<F: Field> {
 	pub sum: F,
 }
 
+impl<F: Field> AbstractSumcheckClaim<F> {
+	pub fn n_vars(&self) -> usize {
+		self.poly.n_vars()
+	}
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AbstractSumcheckRoundClaim<F: Field> {
 	pub partial_point: Vec<F>,

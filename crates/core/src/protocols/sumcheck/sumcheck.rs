@@ -24,12 +24,6 @@ pub struct SumcheckProveOutput<F: Field> {
 
 pub type SumcheckClaim<F> = AbstractSumcheckClaim<F>;
 
-impl<F: Field> SumcheckClaim<F> {
-	pub fn n_vars(&self) -> usize {
-		self.poly.n_vars()
-	}
-}
-
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type SumcheckWitness<P, C, M> = MultilinearComposite<P, C, M>;
 
