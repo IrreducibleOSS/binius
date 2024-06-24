@@ -1,5 +1,9 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
+//! The zerocheck interactive reduction, as defined in [DP23], Section 4.
+//!
+//! [DP23]: https://eprint.iacr.org/2023/1784
+
 mod batch;
 mod error;
 mod prove;

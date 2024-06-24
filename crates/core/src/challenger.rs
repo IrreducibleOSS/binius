@@ -1,6 +1,13 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 // Copyright (c) 2022-2023 The Plonky3 Authors
 
+//! Fiat-Shamir instantiations of a random oracle.
+//!
+//! The design of the `challenger` module is based on the `p3-challenger` crate from [Plonky3].
+//! The challenger can observe prover messages and sample verifier randomness.
+//!
+//! [Plonky3]: <https://github.com/plonky3/plonky3>
+
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedExtensionIndexable, PackedField,
 	PackedFieldIndexable,
@@ -14,6 +21,7 @@ use std::{mem, ops::Range, slice};
 // TODO(jimpo): Whole module needs review
 // TODO(anex): Padding needs to be rethought
 
+/// A Fiat-Shamir challenger constructed with a normal, collision-resistant hash function.
 #[derive(Clone)]
 pub struct HashChallenger<F, H>
 where
@@ -132,7 +140,7 @@ where
 	}
 }
 
-// Duplex challenger for CryptographicPermutation that can fill upto RATE Elements
+/// A Fiat-Shamir challenger based on a duplex sponge construction.
 #[derive(Clone)]
 pub struct DuplexChallenger<F, H, const RATE: usize, const STATE_SIZE: usize>
 where

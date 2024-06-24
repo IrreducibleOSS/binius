@@ -1,5 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
+//! Linear error-correcting code traits.
+
 use binius_field::{ExtensionField, PackedField, RepackedExtension};
 
 /// An encodable [linear error-correcting code](https://en.wikipedia.org/wiki/Linear_code) intended

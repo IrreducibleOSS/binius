@@ -17,6 +17,10 @@ use std::fmt::Debug;
 
 use super::{Error, VerificationError};
 
+/// A claim for the zerocheck interactive reduction.
+///
+/// The claim is that a multilinear composite polynomial, that the verifier has oracle access to,
+/// evaluates to zero on the boolean hypercube.
 #[derive(Debug, Clone)]
 pub struct ZerocheckClaim<F: Field> {
 	/// Virtual Polynomial Oracle of the function claimed to be zero on hypercube
@@ -33,6 +37,7 @@ impl<F: Field> From<ZerocheckClaim<F>> for AbstractSumcheckClaim<F> {
 }
 
 impl<F: Field> ZerocheckClaim<F> {
+	/// The number of variables of the composite polynomial the claim is about.
 	pub fn n_vars(&self) -> usize {
 		self.poly.n_vars()
 	}

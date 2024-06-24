@@ -43,15 +43,15 @@ use binius_field::{
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
-use binius_utils::{examples::get_log_trace_size, rayon::adjust_thread_pool};
+use binius_utils::{
+	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
+};
 use bytesize::ByteSize;
 use itertools::chain;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
-use std::{array, env, fmt::Debug, iter, iter::Step, slice};
+use std::{array, fmt::Debug, iter, iter::Step, slice};
 use tracing::instrument;
-use tracing_profile::{CsvLayer, PrintTreeConfig, PrintTreeLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Number of rounds in a Grøstl-256 compression
 const N_ROUNDS: usize = 10;
@@ -83,25 +83,6 @@ const MIX_BYTES_VEC: [AESTowerField8b; 8] = [
 	AESTowerField8b::new(0x07),
 ];
 
-fn init_tracing() {
-	if let Ok(csv_path) = env::var("PROFILE_CSV_FILE") {
-		let _ = tracing_subscriber::registry()
-			.with(CsvLayer::new(csv_path))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	} else {
-		let _ = tracing_subscriber::registry()
-			.with(PrintTreeLayer::new(PrintTreeConfig {
-				attention_above_percent: 25.0,
-				relevant_above_percent: 2.5,
-				hide_below_percent: 1.0,
-				display_unaccounted: false,
-			}))
-			.with(tracing_subscriber::fmt::layer())
-			.try_init();
-	}
-}
-
 fn p_round_consts() -> [Vec<PackedBinaryField16x8b>; 8] {
 	let mut p_round_consts = [PackedBinaryField16x8b::zero(); 8];
 	for i in 0..8 {
@@ -116,6 +97,8 @@ fn p_round_consts() -> [Vec<PackedBinaryField16x8b>; 8] {
 
 #[derive(Debug)]
 struct TraceOracle {
+	/// Base-2 log of the number of trace rows
+	log_size: usize,
 	// Transparent columns
 	/// Single-bit selector of whether a round should link its output to the next input.
 	round_selector: OracleId,
@@ -213,6 +196,7 @@ impl TraceOracle {
 			p_in.try_map(|p_in_i| oracles.add_shifted(p_in_i, 1, 4, ShiftVariant::LogicalRight))?;
 
 		Ok(TraceOracle {
+			log_size,
 			round_selector,
 			p_default_round_const,
 			p_round_consts,
@@ -228,7 +212,7 @@ impl TraceOracle {
 		})
 	}
 
-	fn iter_oracles(&self) -> impl Iterator<Item = OracleId> + '_ {
+	fn iter_oracle_ids(&self) -> impl Iterator<Item = OracleId> + '_ {
 		chain!(
 			iter::once(self.round_selector),
 			iter::once(self.p_default_round_const),
@@ -322,7 +306,7 @@ where
 	F8b: TowerField + From<AESTowerField8b>,
 	FW: TowerField + ExtensionField<F8b>,
 {
-	let zerocheck_column_ids = trace_oracle.iter_oracles().collect::<Vec<_>>();
+	let zerocheck_column_ids = trace_oracle.iter_oracle_ids().collect::<Vec<_>>();
 
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
@@ -419,7 +403,7 @@ impl<P1b: PackedField, P8b: PackedField> TraceWitness<P1b, P8b> {
 		F: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
 	{
 		let mut index = MultilinearWitnessIndex::new();
-		for (oracle, witness) in iter::zip(trace_oracle.iter_oracles(), self.all_polys()?) {
+		for (oracle, witness) in iter::zip(trace_oracle.iter_oracle_ids(), self.all_polys()?) {
 			index.set(oracle, witness);
 		}
 		Ok(index)
@@ -727,17 +711,12 @@ where
 		make_constraints::<AESTowerField8b, _>(trace_oracle, FW::from(mixing_challenge))?;
 
 	let zerocheck_column_oracles = trace_oracle
-		.iter_oracles()
+		.iter_oracle_ids()
 		.map(|id| oracles.oracle(id))
 		.collect::<Vec<_>>();
-	let max_n_vars = zerocheck_column_oracles
-		.iter()
-		.map(|oracle| oracle.n_vars())
-		.max()
-		.unwrap_or(0);
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(
-			max_n_vars,
+			trace_oracle.log_size,
 			zerocheck_column_oracles,
 			mix_composition_verifier,
 		)?,
@@ -852,16 +831,15 @@ where
 
 	// Zerocheck
 	let zerocheck_column_oracles = trace_oracle
-		.iter_oracles()
+		.iter_oracle_ids()
 		.map(|id| oracles.oracle(id))
 		.collect::<Vec<_>>();
-	let max_n_vars = zerocheck_column_oracles
-		.iter()
-		.map(|oracle| oracle.n_vars())
-		.max()
-		.unwrap_or(0);
 	let zerocheck_claim = ZerocheckClaim {
-		poly: CompositePolyOracle::new(max_n_vars, zerocheck_column_oracles, mix_composition)?,
+		poly: CompositePolyOracle::new(
+			trace_oracle.log_size,
+			zerocheck_column_oracles,
+			mix_composition,
+		)?,
 	};
 
 	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;

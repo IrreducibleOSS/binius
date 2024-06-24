@@ -1,4 +1,14 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Ulvetanna Inc.
+
+//! Binary tower field implementations for use in Binius.
+//!
+//! This library implements binary tower field arithmetic. The canonical binary field tower
+//! construction is specified in [DP23], section 2.3. This is a family of binary fields with
+//! extension degree $2^{\iota}$ for any tower height $\iota$. Mathematically, we label these sets
+//! $T_{\iota}$.
+//!
+//! [DP23]: https://eprint.iacr.org/2023/1784
+
 #![feature(step_trait)]
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
 

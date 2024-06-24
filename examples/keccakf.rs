@@ -479,7 +479,6 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-// FsStep is a type with trait `Step` from which `FS` domain is created.
 fn prove<P, F, PW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,

@@ -24,7 +24,15 @@ pub trait BinaryField: ExtensionField<BinaryField1b> {
 	const MULTIPLICATIVE_GENERATOR: Self;
 }
 
+/// A binary field *isomorphic* to a binary tower field.
+///
+/// The canonical binary field tower construction is specified in [DP23], section 2.3. This is a
+/// family of binary fields with extension degree $2^{\iota}$ for any tower height $\iota$. This
+/// trait can be implemented on any binary field *isomorphic* to the canonical tower field.
+///
+/// [DP23]: https://eprint.iacr.org/2023/1784
 pub trait TowerField: BinaryField {
+	/// The level $\iota$ in the tower, where this field is isomorphic to $T_{\iota}$.
 	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;
 
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {

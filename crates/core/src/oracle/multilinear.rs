@@ -462,6 +462,26 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	}
 }
 
+/// A multilinear polynomial oracle in the polynomial IOP model.
+///
+/// In the multilinear polynomial IOP model, a prover sends multilinear polynomials to an oracle,
+/// and the verifier may at the end of the protocol query their evaluations at chosen points. An
+/// oracle is a verifier and prover's shared view of a polynomial that can be queried for
+/// evaluations by the verifier.
+///
+/// There are three fundamental categories of oracles:
+///
+/// 1. *Transparent oracles*. These are multilinear polynomials with a succinct description and
+///    evaluation algorithm that are known to the verifier. When the verifier queries a transparent
+///    oracle, it evaluates the polynomial itself.
+/// 2. *Committed oracles*. These are polynomials actually sent by the prover. When the polynomial
+///    IOP is compiled to an interactive protocol, these polynomial are committed with a polynomial
+///    commitment scheme.
+/// 3. *Virtual oracles*. A virtual multilinear oracle is not actually sent by the prover, but
+///    instead admits an interactive reduction for evaluation queries to evaluation queries to
+///    other oracles. This is formalized in [DP23] Section 4.
+///
+/// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MultilinearPolyOracle<F: Field> {
 	Transparent(OracleId, TransparentPolyOracle<F>),
@@ -484,6 +504,9 @@ pub enum MultilinearPolyOracle<F: Field> {
 	LinearCombination(OracleId, LinearCombination<F>),
 }
 
+/// A transparent multilinear polynomial oracle.
+///
+/// See the [`MultilinearPolyOracle`] documentation for context.
 #[derive(Debug, Clone, Getters, CopyGetters)]
 pub struct TransparentPolyOracle<F: Field> {
 	#[get = "pub"]
