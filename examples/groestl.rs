@@ -459,7 +459,7 @@ impl<P1b: PackedField, P8b: PackedField> TraceWitness<P1b, P8b> {
 		chain!(fixed_polys_1b, fixed_polys_8b, trace_polys_1b, trace_polys_8b).collect()
 	}
 
-	fn commit_polys_1b(&self) -> impl Iterator<Item = MultilinearExtension<P1b>> {
+	fn commit_polys_1b(&self) -> impl Iterator<Item = MultilinearExtension<P1b, &[P1b]>> {
 		self.p_sub_bytes_inv_bits
 			.iter()
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
@@ -471,7 +471,7 @@ where
 	P1b: PackedField,
 	P8b: PackedField<Scalar = AESTowerField8b>,
 {
-	fn commit_polys_8b<PT8b>(&self) -> impl Iterator<Item = MultilinearExtension<PT8b>>
+	fn commit_polys_8b<PT8b>(&self) -> impl Iterator<Item = MultilinearExtension<PT8b>> + '_
 	where
 		P8b: PackedTransformationFactory<PT8b>,
 		PT8b: PackedField<Scalar = BinaryField8b>,

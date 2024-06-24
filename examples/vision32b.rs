@@ -510,7 +510,7 @@ impl<P32b: PackedField> TraceWitness<P32b> {
 		index
 	}
 
-	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P32b>> {
+	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P32b, &[P32b]>> {
 		chain!(
 			self.state_in.iter(),
 			self.inv_0.iter(),

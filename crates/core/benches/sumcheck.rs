@@ -157,7 +157,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 				multilinears
 					.iter()
 					.map(|multilin| {
-						transform_poly::<_, FPolyval>(multilin.to_ref())
+						transform_poly::<_, FPolyval, _>(multilin.to_ref())
 							.unwrap()
 							.specialize()
 					})
@@ -225,7 +225,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 				multilinears
 					.iter()
 					.map(|multilin| {
-						transform_poly::<_, FPolyval>(multilin.to_ref())
+						transform_poly::<_, FPolyval, _>(multilin.to_ref())
 							.unwrap()
 							.specialize()
 					})

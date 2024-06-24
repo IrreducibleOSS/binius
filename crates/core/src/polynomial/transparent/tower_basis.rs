@@ -40,7 +40,7 @@ impl<F: TowerField> TowerBasis<F> {
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
-	) -> Result<MultilinearExtension<'static, P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error> {
 		let n_values = (1 << self.k) / P::WIDTH;
 		let values = (0..n_values)
 			.map(|i| {

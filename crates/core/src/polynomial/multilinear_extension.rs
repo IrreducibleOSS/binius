@@ -10,7 +10,7 @@ use binius_field::{
 use itertools::Either;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{borrow::Cow, fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -19,14 +19,14 @@ use std::{borrow::Cow, fmt::Debug, marker::PhantomData, sync::Arc};
 ///
 /// The packed field width must be a power of two.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultilinearExtension<'a, P: PackedField> {
+pub struct MultilinearExtension<P: PackedField, Data: Deref<Target = [P]> = Vec<P>> {
 	// The number of variables
 	mu: usize,
 	// The evaluations of the polynomial over the boolean hypercube, in lexicographic order
-	evals: Cow<'a, [P]>,
+	evals: Data,
 }
 
-impl<P: PackedField> MultilinearExtension<'static, P> {
+impl<P: PackedField> MultilinearExtension<P> {
 	pub fn zeros(n_vars: usize) -> Result<Self, Error> {
 		assert!(P::WIDTH.is_power_of_two());
 		if n_vars < log2_strict_usize(P::WIDTH) {
@@ -38,7 +38,7 @@ impl<P: PackedField> MultilinearExtension<'static, P> {
 
 		Ok(MultilinearExtension {
 			mu: n_vars,
-			evals: Cow::Owned(vec![P::default(); 1 << (n_vars - log2(P::WIDTH))]),
+			evals: vec![P::default(); 1 << (n_vars - log2(P::WIDTH))],
 		})
 	}
 
@@ -47,25 +47,21 @@ impl<P: PackedField> MultilinearExtension<'static, P> {
 			return Err(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
-		Ok(Self {
-			mu,
-			evals: Cow::Owned(v),
-		})
+		Ok(Self { mu, evals: v })
 	}
 }
 
-impl<'a, P: PackedField> MultilinearExtension<'a, P> {
+impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
 	pub fn from_values_slice(v: &'a [P]) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
 			return Err(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
-		Ok(Self {
-			mu,
-			evals: Cow::Borrowed(v),
-		})
+		Ok(Self { mu, evals: v })
 	}
+}
 
+impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 	pub fn n_vars(&self) -> usize {
 		self.mu
 	}
@@ -78,10 +74,10 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		self.evals.as_ref()
 	}
 
-	pub fn to_ref(&self) -> MultilinearExtension<P> {
+	pub fn to_ref(&self) -> MultilinearExtension<P, &[P]> {
 		MultilinearExtension {
 			mu: self.mu,
-			evals: Cow::Borrowed(self.evals()),
+			evals: self.evals(),
 		}
 	}
 
@@ -102,7 +98,13 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
 		Ok(subcube_eval.get(index % P::WIDTH))
 	}
+}
 
+impl<P, Data> MultilinearExtension<P, Data>
+where
+	P: PackedField,
+	Data: Deref<Target = [P]> + Send + Sync,
+{
 	pub fn evaluate<FE, PE>(&self, query: &MultilinearQuery<PE>) -> Result<FE, Error>
 	where
 		FE: ExtensionField<P::Scalar>,
@@ -126,7 +128,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	pub fn evaluate_partial_high<PE>(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtension<'static, PE>, Error>
+	) -> Result<MultilinearExtension<PE>, Error>
 	where
 		PE: PackedField,
 		PE::Scalar: ExtensionField<P::Scalar>,
@@ -183,7 +185,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	pub fn evaluate_partial_low<PE>(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtension<'static, PE>, Error>
+	) -> Result<MultilinearExtension<PE>, Error>
 	where
 		PE: PackedField,
 		PE::Scalar: ExtensionField<P::Scalar>,
@@ -191,9 +193,12 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		let mut result = MultilinearExtension::zeros(self.mu - query.n_vars())?;
+		if self.mu - query.n_vars() < PE::WIDTH {
+			return Err(Error::InvalidPackedValuesLength);
+		}
+		let mut result = vec![PE::zero(); 1 << (self.mu - query.n_vars() - PE::LOG_WIDTH)];
 		self.evaluate_partial_low_into(query, &mut result)?;
-		Ok(result)
+		MultilinearExtension::from_values(result)
 	}
 
 	/// Partially evaluate the polynomial with assignment to the low-indexed variables.
@@ -208,7 +213,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	pub fn evaluate_partial_low_into<PE>(
 		&self,
 		query: &MultilinearQuery<PE>,
-		out: &mut MultilinearExtension<'static, PE>,
+		out: &mut [PE],
 	) -> Result<(), Error>
 	where
 		PE: PackedField,
@@ -217,7 +222,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		if out.n_vars() != self.mu - query.n_vars() {
+		if out.len() * PE::WIDTH != 1 << (self.mu - query.n_vars()) {
 			return Err(Error::IncorrectOutputPolynomialSize {
 				expected: self.mu - query.n_vars(),
 			});
@@ -226,7 +231,7 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		let n_vars = query.n_vars();
 		let query_expansion = query.expansion();
 		let query_length = PE::WIDTH * query_expansion.len();
-		let packed_result_evals = out.evals.to_mut();
+		let packed_result_evals = out;
 		packed_result_evals
 			.par_iter_mut()
 			.enumerate()
@@ -284,8 +289,14 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 		};
 		Ok(iter)
 	}
+}
 
-	pub fn specialize<PE>(self) -> MultilinearExtensionSpecialized<'a, P, PE>
+impl<'a, P, Data> MultilinearExtension<P, Data>
+where
+	P: PackedField,
+	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
+{
+	pub fn specialize<PE>(self) -> MultilinearExtensionSpecialized<P, PE, Data>
 	where
 		PE: PackedField,
 		PE::Scalar: ExtensionField<P::Scalar>,
@@ -302,17 +313,17 @@ impl<'a, P: PackedField> MultilinearExtension<'a, P> {
 	}
 }
 
-impl<'a, F: Field + AsSinglePacked> MultilinearExtension<'a, F> {
+impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<F, Data> {
 	/// Convert MultilinearExtension over a scalar to a MultilinearExtension over a packed field with single element.
-	pub fn to_single_packed(self) -> MultilinearExtension<'static, F::Packed> {
-		let evals = self.evals.into_owned();
-		let packed_evals = evals
-			.into_iter()
+	pub fn to_single_packed(self) -> MultilinearExtension<F::Packed> {
+		let packed_evals = self
+			.evals
+			.iter()
 			.map(|eval| eval.to_single_packed())
 			.collect();
 		MultilinearExtension {
 			mu: self.mu,
-			evals: Cow::Owned(packed_evals),
+			evals: packed_evals,
 		}
 	}
 }
@@ -322,50 +333,60 @@ impl<'a, F: Field + AsSinglePacked> MultilinearExtension<'a, F> {
 /// This struct implements `MultilinearPoly` for an extension field of the base field that the
 /// multilinear extension is defined over.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultilinearExtensionSpecialized<'a, P, PE>(MultilinearExtension<'a, P>, PhantomData<PE>)
-where
-	P: PackedField,
-	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>;
-
-impl<'a, P, PE> MultilinearExtensionSpecialized<'a, P, PE>
+pub struct MultilinearExtensionSpecialized<P, PE, Data = Vec<P>>(
+	MultilinearExtension<P, Data>,
+	PhantomData<PE>,
+)
 where
 	P: PackedField,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
+	Data: Deref<Target = [P]>;
+
+impl<'a, P, PE, Data> MultilinearExtensionSpecialized<P, PE, Data>
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
+	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
 {
 	pub fn upcast_arc_dyn(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a> {
 		Arc::new(self)
 	}
 }
 
-impl<'a, P, PE> From<MultilinearExtension<'a, P>> for MultilinearExtensionSpecialized<'a, P, PE>
+impl<P, PE, Data> From<MultilinearExtension<P, Data>>
+	for MultilinearExtensionSpecialized<P, PE, Data>
 where
 	P: PackedField,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
+	Data: Deref<Target = [P]>,
 {
-	fn from(inner: MultilinearExtension<'a, P>) -> Self {
+	fn from(inner: MultilinearExtension<P, Data>) -> Self {
 		Self(inner, PhantomData)
 	}
 }
 
-impl<'a, P, PE> AsRef<MultilinearExtension<'a, P>> for MultilinearExtensionSpecialized<'a, P, PE>
+impl<P, PE, Data> AsRef<MultilinearExtension<P, Data>>
+	for MultilinearExtensionSpecialized<P, PE, Data>
 where
 	P: PackedField,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
+	Data: Deref<Target = [P]>,
 {
-	fn as_ref(&self) -> &MultilinearExtension<'a, P> {
+	fn as_ref(&self) -> &MultilinearExtension<P, Data> {
 		&self.0
 	}
 }
 
-impl<'a, P, PE> MultilinearPoly<PE> for MultilinearExtensionSpecialized<'a, P, PE>
+impl<P, PE, Data> MultilinearPoly<PE> for MultilinearExtensionSpecialized<P, PE, Data>
 where
 	P: PackedField + Debug,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
+	Data: Deref<Target = [P]> + Send + Sync + Debug,
 {
 	fn n_vars(&self) -> usize {
 		self.0.n_vars()
@@ -396,7 +417,7 @@ where
 	fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtensionSpecialized<'static, PE, PE>, Error> {
+	) -> Result<MultilinearExtensionSpecialized<PE, PE>, Error> {
 		self.0
 			.evaluate_partial_low(query)
 			.map(MultilinearExtensionSpecialized::from)
@@ -405,7 +426,7 @@ where
 	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<PE>,
-	) -> Result<MultilinearExtensionSpecialized<'static, PE, PE>, Error> {
+	) -> Result<MultilinearExtensionSpecialized<PE, PE>, Error> {
 		self.0
 			.evaluate_partial_high(query)
 			.map(MultilinearExtensionSpecialized::from)
@@ -537,7 +558,7 @@ mod tests {
 	{
 		assert_eq!(splits.iter().sum::<usize>(), poly.n_vars());
 
-		let mut partial_result = poly.to_ref();
+		let mut partial_result = poly;
 		let mut index = q.len();
 		for split_vars in splits[0..splits.len() - 1].iter() {
 			partial_result = partial_result

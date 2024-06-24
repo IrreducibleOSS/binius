@@ -5,6 +5,7 @@ mod composition_poly;
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
+use std::collections::BTreeSet;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 use crate::composition_poly::CompositionPolyItem;
@@ -132,8 +133,6 @@ pub fn iter_witness_derive(input: TokenStream) -> TokenStream {
 	};
 
 	let name = &input.ident;
-	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
-
 	let witnesses = fields
 		.named
 		.iter()
@@ -146,13 +145,55 @@ pub fn iter_witness_derive(input: TokenStream) -> TokenStream {
 		})
 		.collect::<Vec<_>>();
 
+	let packed_field_vars = generic_vars_with_trait(&input.generics, "PackedField");
+	assert_eq!(packed_field_vars.len(), 1, "Only a single packed field is supported for now");
+	let p = packed_field_vars.first();
+	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
 	quote! {
 		impl #impl_generics #name #ty_generics #where_clause {
-			pub fn iter_polys(&self) -> impl Iterator<Item = binius_core::polynomial::MultilinearExtension #ty_generics> {
+			pub fn iter_polys(&self) -> impl Iterator<Item = binius_core::polynomial::MultilinearExtension<#p, &[#p]>> {
 				std::iter::empty()
 					#(.chain(#witnesses))*
 					.map(|values| binius_core::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 			}
 		}
 	}.into()
+}
+
+/// This will accept the generics definition of a struct (relevant for derive macros),
+/// and return all the generic vars that are constrained by a specific trait identifier.
+/// ```
+/// use binius_field::{PackedField, Field};
+/// struct Example<A: PackedField, B: PackedField + Field, C: Field>(A, B, C);
+/// ```
+/// In the above example, when matching against the trait_name "PackedField",
+/// the identifiers A and B will be returned, but not C
+pub(crate) fn generic_vars_with_trait(
+	vars: &syn::Generics,
+	trait_name: &str,
+) -> BTreeSet<syn::Ident> {
+	vars.params
+		.iter()
+		.filter_map(|param| match param {
+			syn::GenericParam::Type(type_param) => {
+				let is_bounded_by_trait_name = type_param.bounds.iter().any(|bound| match bound {
+					syn::TypeParamBound::Trait(trait_bound) => {
+						if let Some(last_segment) = trait_bound.path.segments.last() {
+							last_segment.ident == trait_name
+						} else {
+							false
+						}
+					}
+					_ => false,
+				});
+				if is_bounded_by_trait_name {
+					Some(type_param.ident.clone())
+				} else {
+					None
+				}
+			}
+			syn::GenericParam::Const(_) => None,
+			syn::GenericParam::Lifetime(_) => None,
+		})
+		.collect()
 }

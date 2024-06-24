@@ -107,7 +107,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		})
 	}
 
-	fn multilinear_extension_circular<P>(&self) -> Result<MultilinearExtension<'static, P>, Error>
+	fn multilinear_extension_circular<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
 		P: PackedFieldIndexable<Scalar = F>,
 	{
@@ -121,9 +121,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		MultilinearExtension::from_values(values)
 	}
 
-	fn multilinear_extension_logical_left<P>(
-		&self,
-	) -> Result<MultilinearExtension<'static, P>, Error>
+	fn multilinear_extension_logical_left<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
 		P: PackedFieldIndexable<Scalar = F>,
 	{
@@ -132,9 +130,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		MultilinearExtension::from_values(ps)
 	}
 
-	fn multilinear_extension_logical_right<P>(
-		&self,
-	) -> Result<MultilinearExtension<'static, P>, Error>
+	fn multilinear_extension_logical_right<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
 		P: PackedFieldIndexable<Scalar = F>,
 	{
@@ -146,7 +142,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 
 	/// Evaluates this partially evaluated circular shift indicator MLE $f(X, r)$
 	/// over the entire $b$-variate hypercube
-	pub fn multilinear_extension<P>(&self) -> Result<MultilinearExtension<'static, P>, Error>
+	pub fn multilinear_extension<P>(&self) -> Result<MultilinearExtension<P>, Error>
 	where
 		P: PackedFieldIndexable<Scalar = F>,
 	{

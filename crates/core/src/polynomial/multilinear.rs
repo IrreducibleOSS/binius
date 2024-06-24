@@ -48,12 +48,12 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error>;
+	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
 	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error>;
+	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
 	/// Evaluate the multilinear extension of a subcube of the multilinear.
 	///
@@ -106,14 +106,14 @@ where
 	fn evaluate_partial_low(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error> {
+	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_low(query)
 	}
 
 	fn evaluate_partial_high(
 		&self,
 		query: &MultilinearQuery<P>,
-	) -> Result<MultilinearExtensionSpecialized<'static, P, P>, Error> {
+	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_high(query)
 	}
 

@@ -24,6 +24,7 @@ use crate::{
 use binius_field::{
 	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField, TowerField,
 };
+use std::ops::Deref;
 use tracing::instrument;
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
@@ -133,19 +134,15 @@ where
 	}
 }
 
-pub fn transform_poly<F, OF>(
-	multilin: MultilinearExtension<F>,
-) -> Result<MultilinearExtension<'static, OF>, PolynomialError>
+pub fn transform_poly<F, OF, Data>(
+	multilin: MultilinearExtension<F, Data>,
+) -> Result<MultilinearExtension<OF>, PolynomialError>
 where
 	F: Field,
 	OF: Field + From<F> + Into<F>,
+	Data: Deref<Target = [F]>,
 {
-	let values = multilin
-		.evals()
-		.iter()
-		.cloned()
-		.map(OF::from)
-		.collect::<Vec<_>>();
+	let values = multilin.evals().iter().cloned().map(OF::from).collect();
 
 	MultilinearExtension::from_values(values)
 }

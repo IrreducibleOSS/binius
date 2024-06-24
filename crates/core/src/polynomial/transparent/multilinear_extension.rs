@@ -6,15 +6,13 @@ use crate::polynomial::{
 use binius_field::{ExtensionField, PackedField, TowerField};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultilinearExtensionTransparent<'a, P, PE>(
-	pub MultilinearExtensionSpecialized<'a, P, PE>,
-)
+pub struct MultilinearExtensionTransparent<P, PE>(pub MultilinearExtensionSpecialized<P, PE>)
 where
 	P: PackedField,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>;
 
-impl<'a, F, P, PE> MultivariatePoly<F> for MultilinearExtensionTransparent<'a, P, PE>
+impl<F, P, PE> MultivariatePoly<F> for MultilinearExtensionTransparent<P, PE>
 where
 	F: TowerField + ExtensionField<P::Scalar>,
 	P: PackedField,

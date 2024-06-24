@@ -31,7 +31,7 @@ fn generate_poly_helper<F>(
 	rng: &mut StdRng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<MultilinearExtension<'static, F>>
+) -> Vec<MultilinearExtension<F>>
 where
 	F: Field,
 {

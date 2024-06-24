@@ -139,7 +139,7 @@ composition_poly!(ChiIotaComposition[a, b0, b1, b2, rc] = a - (rc + b0 + (1 - b1
 composition_poly!(RoundConsistency[state_out, next_state_in, select] = (state_out - next_state_in) * select);
 
 #[derive(Debug)]
-struct RoundConstant<P: PackedField<Scalar = BinaryField1b>>(MultilinearExtension<'static, P>);
+struct RoundConstant<P: PackedField<Scalar = BinaryField1b>>(MultilinearExtension<P>);
 
 impl<P: PackedField<Scalar = BinaryField1b> + Pod> RoundConstant<P> {
 	fn new() -> Result<Self> {
@@ -316,7 +316,7 @@ impl<P: PackedField> TraceWitness<P> {
 		index
 	}
 
-	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
+	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P, &[P]>> {
 		chain!(self.state_in.iter(), self.state_out.iter(), self.c.iter(), self.d.iter())
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 	}

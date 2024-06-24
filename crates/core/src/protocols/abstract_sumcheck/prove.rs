@@ -23,7 +23,7 @@ enum SumcheckMultilinear<P: PackedField, M> {
 	},
 	/// Large field polynomial - halved in size each round
 	Folded {
-		large_field_folded_multilin: MultilinearExtensionSpecialized<'static, P, P>,
+		large_field_folded_multilin: MultilinearExtensionSpecialized<P, P>,
 	},
 }
 
@@ -421,7 +421,7 @@ where
 
 	fn only_folded(
 		sc_multilin: &SumcheckMultilinear<PW, M>,
-	) -> &MultilinearExtensionSpecialized<'static, PW, PW> {
+	) -> &MultilinearExtensionSpecialized<PW, PW> {
 		match sc_multilin {
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilin,

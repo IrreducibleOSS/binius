@@ -25,7 +25,7 @@ pub struct ReducedProductCheckClaims<F: Field> {
 pub struct ProdcheckProveOutput<'a, F: Field, FW: Field> {
 	pub reduced_product_check_claims: ReducedProductCheckClaims<F>,
 	pub t_prime_witness: ZerocheckWitness<'a, FW, SimpleMultGateComposition>,
-	pub f_prime_commit: MultilinearExtension<'a, F>,
+	pub f_prime_commit: MultilinearExtension<F>,
 }
 
 #[derive(Debug, Clone)]

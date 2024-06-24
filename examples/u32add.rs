@@ -109,7 +109,7 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> U32AddTrace<P> {
 		index
 	}
 
-	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
+	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P, &[P]>> {
 		[&self.x_in, &self.y_in, &self.z_out, &self.c_out]
 			.into_iter()
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())

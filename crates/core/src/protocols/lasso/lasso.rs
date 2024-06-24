@@ -208,7 +208,7 @@ pub struct LassoProveOutput<'a, F: Field, FW: TowerField, PB: PackedField> {
 	pub reduced_lasso_claims: ReducedLassoClaims<F>,
 	pub zerocheck_witness: ZerocheckWitness<'a, FW, UnaryCarryConstraint>,
 	pub msetcheck_witness: MsetcheckWitness<'a, FW>,
-	pub committed_polys: [MultilinearExtension<'a, PB>; 3],
+	pub committed_polys: [MultilinearExtension<PB>; 3],
 }
 
 pub(super) struct LassoReducedClaimOracleIds {

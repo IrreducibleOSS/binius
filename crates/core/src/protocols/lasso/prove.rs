@@ -45,10 +45,10 @@ fn construct_large_field_merged_witness<F: Field>(
 }
 
 // Returns merge(x, y) where x, y are MLEs over packed fields
-fn construct_packed_merged_witness<'a, P: PackedField>(
-	x: &MultilinearExtension<'a, P>,
-	y: &MultilinearExtension<'a, P>,
-) -> Result<MultilinearExtension<'static, P>, Error> {
+fn construct_packed_merged_witness<P: PackedField>(
+	x: &MultilinearExtension<P>,
+	y: &MultilinearExtension<P>,
+) -> Result<MultilinearExtension<P>, Error> {
 	let n_vars = x.n_vars();
 	if y.n_vars() != n_vars || n_vars < P::LOG_WIDTH {
 		return Err(Error::MergedWitnessNumVariablesMismatch);

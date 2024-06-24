@@ -61,7 +61,7 @@ fn make_multilinears<P: PackedField>(
 	rng: &mut ThreadRng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<MultilinearExtension<'static, P>> {
+) -> Vec<MultilinearExtension<P>> {
 	if (1 << n_vars) % P::WIDTH != 0 {
 		panic!("(1 << n_vars) must be divisible by P::WIDTH");
 	}
@@ -172,7 +172,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 				multilinears
 					.iter()
 					.map(|multilin| {
-						transform_poly::<_, FPolyval>(multilin.to_ref())
+						transform_poly::<_, FPolyval, _>(multilin.to_ref())
 							.unwrap()
 							.specialize_arc_dyn()
 					})
@@ -233,7 +233,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 				multilinears
 					.iter()
 					.map(|multilin| {
-						transform_poly::<_, FPolyval>(multilin.to_ref())
+						transform_poly::<_, FPolyval, _>(multilin.to_ref())
 							.unwrap()
 							.specialize()
 					})

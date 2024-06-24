@@ -123,7 +123,7 @@ impl<P: PackedField<Scalar = BinaryField1b> + Pod> U32FibTrace<P> {
 		self
 	}
 
-	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P>> {
+	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P, &[P]>> {
 		[&self.fib_out, &self.c_out]
 			.into_iter()
 			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())

@@ -26,7 +26,7 @@ impl<F: Field> EqIndPartialEval<F> {
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
 		&self,
-	) -> Result<MultilinearExtension<'static, P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r)?.into_expansion();
 		MultilinearExtension::from_values(multilin_query)
 	}

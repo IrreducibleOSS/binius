@@ -209,7 +209,7 @@ mod tests {
 	use binius_field::BinaryField32b;
 
 	// Creates T(x), a multilinear with evaluations {1, 2, 3, 4} over the boolean hypercube on 2 vars
-	fn create_numerator() -> MultilinearExtension<'static, BinaryField32b> {
+	fn create_numerator() -> MultilinearExtension<BinaryField32b> {
 		type F = BinaryField32b;
 		let n_vars = 2;
 		let values: Vec<F> = (0..1 << n_vars).map(|i| F::new(i + 1)).collect::<Vec<_>>();
@@ -218,7 +218,7 @@ mod tests {
 	}
 
 	// Creates U(x), a multilinear with evaluations {3, 2, 4, 1} over the boolean hypercube on 2 vars
-	fn create_denominator() -> MultilinearExtension<'static, BinaryField32b> {
+	fn create_denominator() -> MultilinearExtension<BinaryField32b> {
 		type F = BinaryField32b;
 		let n_vars = 2;
 		let values = vec![F::new(3), F::new(2), F::new(4), F::new(1)];

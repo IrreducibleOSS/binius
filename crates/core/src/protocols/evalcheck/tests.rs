@@ -593,8 +593,7 @@ fn test_evalcheck_merged() {
 		x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
 		y.subcube_evals(y.n_vars(), 0, y_values).unwrap();
 		let merge_poly = MultilinearExtension::from_values(values).unwrap();
-		let res = merge_poly.specialize();
-		res
+		merge_poly.specialize()
 	};
 
 	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();
@@ -690,8 +689,7 @@ fn test_evalcheck_interleaved() {
 			set_packed_slice(&mut values2, i * 2 + 1, get_packed_slice(y_values, i));
 		}
 		let poly = MultilinearExtension::from_values(values2).unwrap();
-		let res = poly.specialize();
-		res
+		poly.specialize()
 	};
 
 	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();

@@ -97,7 +97,7 @@ where
 	state: ProverState<PW, MultilinearWitness<'a, PW>>,
 
 	zerocheck_challenges: &'a [F],
-	round_eq_ind: MultilinearExtension<'static, PW>,
+	round_eq_ind: MultilinearExtension<PW>,
 
 	// Junk (scratch space) at the start of each round
 	// After prover computes ith round polynomial, represents evaluations of
@@ -111,7 +111,7 @@ where
 	// None initially
 	// After ith round, represents the $\bar{Q}_i$ multilinear polynomial partially evaluated
 	// at lowest $i$ variables with the $i$ verifier challenges received so far.
-	round_q_bar: Option<MultilinearExtension<'static, PW::Scalar>>,
+	round_q_bar: Option<MultilinearExtension<PW::Scalar>>,
 	// inverse of domain[i] * domain[i] - 1 for i in 0, ..., d-2
 	smaller_denom_inv: Vec<FS>,
 	// Subdomain of domain, but without 0 and 1 (can be used for degree d-2 polynomials)
@@ -345,7 +345,8 @@ where
 				round_q_bar: self
 					.round_q_bar
 					.as_ref()
-					.expect("round_q_bar is Some after round 0"),
+					.expect("round_q_bar is Some after round 0")
+					.to_ref(),
 			};
 			self.state.calculate_round_coeffs(
 				evaluator,
@@ -475,7 +476,7 @@ where
 	pub domain_points: &'a [FS],
 	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
-	pub eq_ind: MultilinearExtension<'a, P>,
+	pub eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub denom_inv: &'a [FS],
 }
 
@@ -567,10 +568,10 @@ where
 	pub domain_points: &'a [FS],
 	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
-	pub eq_ind: MultilinearExtension<'a, P>,
+	pub eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub round_zerocheck_challenge: P::Scalar,
 	pub denom_inv: &'a [FS],
-	pub round_q_bar: &'a MultilinearExtension<'a, P::Scalar>,
+	pub round_q_bar: MultilinearExtension<P::Scalar, &'a [P::Scalar]>,
 }
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>

@@ -28,11 +28,7 @@ fn generate_poly_and_sum_helper<F, FE>(
 	n_vars: usize,
 	n_multilinears: usize,
 ) -> (
-	MultilinearComposite<
-		FE,
-		TestProductComposition,
-		MultilinearExtensionSpecialized<'static, F, FE>,
-	>,
+	MultilinearComposite<FE, TestProductComposition, MultilinearExtensionSpecialized<F, FE>>,
 	F,
 )
 where
@@ -150,7 +146,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 		poly.multilinears
 			.iter()
 			.map(|multilin| {
-				transform_poly::<_, OF>(multilin.as_ref().to_ref())
+				transform_poly::<_, OF, _>(multilin.as_ref().to_ref())
 					.unwrap()
 					.specialize::<OF>()
 			})

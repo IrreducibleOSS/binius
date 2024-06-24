@@ -141,7 +141,7 @@ fn build_trace_column<P: PackedField>(log_size: usize) -> Vec<P> {
 }
 
 #[allow(clippy::ptr_arg)]
-fn ref_mle_column<P: PackedField>(raw_vec: &Vec<P>) -> MultilinearExtension<P> {
+fn ref_mle_column<P: PackedField>(raw_vec: &Vec<P>) -> MultilinearExtension<P, &[P]> {
 	MultilinearExtension::from_values_slice(raw_vec).expect("infallible")
 }
 

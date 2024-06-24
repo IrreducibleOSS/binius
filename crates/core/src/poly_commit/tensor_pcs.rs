@@ -26,7 +26,7 @@ use binius_hash::{
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
-use std::{iter::repeat_with, marker::PhantomData, mem};
+use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 use tracing::instrument;
 
 /// Creates a new multilinear from a batch of multilinears and a mixing challenge
@@ -40,9 +40,9 @@ use tracing::instrument;
 ///     $\forall v \in \{0, 1\}^{\mu}$, $t(v) = \sum_{i=0}^{n-1} c_i * t_i(v)$
 fn mix_t_primes<F, P>(
 	n_vars: usize,
-	t_primes: &[MultilinearExtension<'_, P>],
+	t_primes: &[MultilinearExtension<P>],
 	mixing_coeffs: &[F],
-) -> Result<MultilinearExtension<'static, P>, Error>
+) -> Result<MultilinearExtension<P>, Error>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
@@ -80,7 +80,7 @@ pub type VCSProofs<P, VCSProof> = Vec<(Vec<Vec<P>>, VCSProof)>;
 /// * `PE`: The packed extension field type.
 /// * `VCSProof`: The vector commitment scheme proof type.
 #[derive(Debug)]
-pub struct Proof<'a, U, FI, FE, VCSProof>
+pub struct Proof<U, FI, FE, VCSProof>
 where
 	U: PackScalar<FI> + PackScalar<FE>,
 	FI: Field,
@@ -97,7 +97,7 @@ where
 	/// Let $t'_i$ denote the $t'$ for the $i$-th polynomial in the batch opening proof.
 	/// This value represents the multilinear polynomial such that $\forall v \in \{0, 1\}^{\mu}$,
 	/// $v \rightarrow \sum_{i=0}^{n-1} c_i * t'_i(v)$
-	pub mixed_t_prime: MultilinearExtension<'a, PackedType<U, FE>>,
+	pub mixed_t_prime: MultilinearExtension<PackedType<U, FE>>,
 	/// Opening proofs for chosen columns of the encoded matrices
 	///
 	/// Let $j_1, \ldots, j_k$ be the indices of the columns that are opened.
@@ -208,7 +208,7 @@ where
 {
 	type Commitment = VCS::Commitment;
 	type Committed = (Vec<RowMajorMatrix<PackedType<U, FI>>>, VCS::Committed);
-	type Proof = Proof<'static, U, FI, FE, VCS::Proof>;
+	type Proof = Proof<U, FI, FE, VCS::Proof>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -216,10 +216,13 @@ where
 	}
 
 	#[instrument(skip_all, name = "tensor_pcs::commit")]
-	fn commit(
+	fn commit<Data>(
 		&self,
-		polys: &[MultilinearExtension<PackedType<U, F>>],
-	) -> Result<(Self::Commitment, Self::Committed), Error> {
+		polys: &[MultilinearExtension<PackedType<U, F>, Data>],
+	) -> Result<(Self::Commitment, Self::Committed), Error>
+	where
+		Data: Deref<Target = [PackedType<U, F>]> + Send + Sync,
+	{
 		for poly in polys {
 			if poly.n_vars() != self.n_vars() {
 				return Err(Error::IncorrectPolynomialSize {
@@ -285,14 +288,15 @@ where
 	///
 	/// [DP23]: https://eprint.iacr.org/2023/630
 	#[instrument(skip_all, name = "tensor_pcs::prove_evaluation")]
-	fn prove_evaluation<CH>(
+	fn prove_evaluation<Data, CH>(
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
-		polys: &[MultilinearExtension<PackedType<U, F>>],
+		polys: &[MultilinearExtension<PackedType<U, F>, Data>],
 		query: &[FE],
 	) -> Result<Self::Proof, Error>
 	where
+		Data: Deref<Target = [PackedType<U, F>]> + Send + Sync,
 		CH: CanObserve<FE> + CanSample<FE> + CanSampleBits<usize>,
 	{
 		let n_polys = polys.len();
