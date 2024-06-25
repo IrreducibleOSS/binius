@@ -4,7 +4,11 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtensionSpecialized,
 };
 use binius_field::PackedField;
-use std::{fmt::Debug, ops::Deref};
+use binius_utils::array_2d::Array2D;
+use std::{
+	fmt::Debug,
+	ops::{Deref, Range},
+};
 
 /// Represents a multilinear polynomial.
 ///
@@ -57,14 +61,20 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 
 	/// Evaluate the multilinear extension of a subcube of the multilinear.
 	///
-	/// Index is a subcube index in the range 0..2^(n - q) where n is `self.n_vars()` and q is `query.n_vars()`.
+	/// Indices is a range of subcube indices, a subrange of 0..2^(n - q - 1) where n is `self.n_vars()` and q is `query.n_vars()`.
 	/// This is equivalent to the evaluation of the polynomial at the point given by the query in the low q variables
 	/// and the bit-decomposition of index in the high (n - q) variables.
+	/// For every `(i, index)` in `indices.enumerate()` the two values are written:
+	/// * `evals_0[i, col_index]` is the evaluation at the point with index equal to `2 * index`
+	/// * `evals_1[i, col_index]` is the evaluation at the point with index equal to `2 * index + 1`
 	fn evaluate_subcube(
 		&self,
-		index: usize,
+		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-	) -> Result<P::Scalar, Error>;
+		evals_0: &mut Array2D<P::Scalar>,
+		evals_1: &mut Array2D<P::Scalar>,
+		col_index: usize,
+	) -> Result<(), Error>;
 
 	/// Get a subcube of the boolean hypercube of a given size.
 	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error>;
@@ -119,10 +129,13 @@ where
 
 	fn evaluate_subcube(
 		&self,
-		index: usize,
+		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-	) -> Result<P::Scalar, Error> {
-		(**self).evaluate_subcube(index, query)
+		evals_0: &mut Array2D<P::Scalar>,
+		evals_1: &mut Array2D<P::Scalar>,
+		col_index: usize,
+	) -> Result<(), Error> {
+		(**self).evaluate_subcube(indices, query, evals_0, evals_1, col_index)
 	}
 
 	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error> {

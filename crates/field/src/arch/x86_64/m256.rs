@@ -350,7 +350,6 @@ impl UnderlierWithBitOps for M256 {
 					}
 				};
 				T::num_cast_from(Self(unsafe { _mm256_set_m128i(_mm_setzero_si128(), chunk_128) }))
-					.into()
 			}
 			_ => panic!("unsupported bit count"),
 		}

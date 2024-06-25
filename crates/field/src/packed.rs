@@ -59,11 +59,37 @@ pub trait PackedField:
 	/// WIDTH is guaranteed to equal 2^LOG_WIDTH.
 	const WIDTH: usize = 1 << Self::LOG_WIDTH;
 
+	/// Get the scalar at a given index without bounds checking.
+	/// # Safety
+	/// The caller must ensure that `i` is less than `WIDTH`.
+	unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar;
+
+	/// Set the scalar at a given index without bounds checking.
+	/// # Safety
+	/// The caller must ensure that `i` is less than `WIDTH`.
+	unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar);
+
 	/// Get the scalar at a given index.
-	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error>;
+	#[inline]
+	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
+		(i < Self::WIDTH)
+			.then_some(unsafe { self.get_unchecked(i) })
+			.ok_or(Error::IndexOutOfRange {
+				index: i,
+				max: Self::WIDTH,
+			})
+	}
 
 	/// Set the scalar at a given index.
-	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error>;
+	#[inline]
+	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error> {
+		(i < Self::WIDTH)
+			.then(|| unsafe { self.set_unchecked(i, scalar) })
+			.ok_or(Error::IndexOutOfRange {
+				index: i,
+				max: Self::WIDTH,
+			})
+	}
 
 	/// Get the scalar at a given index.
 	#[inline]
@@ -77,12 +103,18 @@ pub trait PackedField:
 		self.set_checked(i, scalar).expect("index must be less than width")
 	}
 
+	#[inline]
 	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> {
-		(0..Self::WIDTH).map_skippable(move |i| self.get(i))
+		(0..Self::WIDTH).map_skippable(move |i|
+			// Safety: `i` is always less than `WIDTH`
+			unsafe { self.get_unchecked(i) })
 	}
 
+	#[inline]
 	fn iter(&self) -> impl Iterator<Item=Self::Scalar> {
-		(0..Self::WIDTH).map_skippable(move |i| self.get(i))
+		(0..Self::WIDTH).map_skippable(move |i|
+			// Safety: `i` is always less than `WIDTH`
+			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
@@ -150,7 +182,8 @@ pub fn iter_packed_slice<P: PackedField>(packed: &[P]) -> impl Iterator<Item = P
 }
 
 pub fn get_packed_slice<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
-	packed[i / P::WIDTH].get(i % P::WIDTH)
+	// Safety: `i % P::WIDTH` is always less than `P::WIDTH
+	unsafe { packed[i / P::WIDTH].get_unchecked(i % P::WIDTH) }
 }
 
 pub fn get_packed_slice_checked<P: PackedField>(
@@ -167,7 +200,8 @@ pub fn get_packed_slice_checked<P: PackedField>(
 }
 
 pub fn set_packed_slice<P: PackedField>(packed: &mut [P], i: usize, scalar: P::Scalar) {
-	packed[i / P::WIDTH].set(i % P::WIDTH, scalar)
+	// Safety: `i % P::WIDTH` is always less than `P::WIDTH
+	unsafe { packed[i / P::WIDTH].set_unchecked(i % P::WIDTH, scalar) }
 }
 
 pub fn set_packed_slice_checked<P: PackedField>(
@@ -206,16 +240,14 @@ impl<F: Field> PackedField for F {
 
 	const LOG_WIDTH: usize = 0;
 
-	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
-		(i == 0)
-			.then_some(*self)
-			.ok_or(Error::IndexOutOfRange { index: i, max: 1 })
+	#[inline]
+	unsafe fn get_unchecked(&self, _i: usize) -> Self::Scalar {
+		*self
 	}
 
-	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error> {
-		(i == 0)
-			.then(|| *self = scalar)
-			.ok_or(Error::IndexOutOfRange { index: i, max: 1 })
+	#[inline]
+	unsafe fn set_unchecked(&mut self, _i: usize, scalar: Self::Scalar) {
+		*self = scalar;
 	}
 
 	fn iter(&self) -> impl Iterator<Item = Self::Scalar> {

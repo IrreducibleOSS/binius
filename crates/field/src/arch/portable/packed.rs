@@ -10,7 +10,7 @@ use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
-	BinaryField, Error, PackedField,
+	BinaryField, PackedField,
 };
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
@@ -273,24 +273,18 @@ where
 	const LOG_WIDTH: usize = (U::BITS / Scalar::N_BITS).ilog2() as usize;
 
 	#[inline]
-	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
-		(i < Self::WIDTH)
-			.then(|| self.0.get_subvalue(i))
-			.ok_or(Error::IndexOutOfRange {
-				index: i,
-				max: Self::WIDTH,
-			})
-			.map(Scalar::from_underlier)
+	unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
+		Scalar::from_underlier(self.0.get_subvalue(i))
 	}
 
 	#[inline]
-	fn set_checked(&mut self, i: usize, scalar: Scalar) -> Result<(), Error> {
-		(i < Self::WIDTH)
-			.then(|| self.0.set_subvalue(i, scalar.to_underlier()))
-			.ok_or(Error::IndexOutOfRange {
-				index: i,
-				max: Self::WIDTH,
-			})
+	unsafe fn set_unchecked(&mut self, i: usize, scalar: Scalar) {
+		self.0.set_subvalue(i, scalar.to_underlier());
+	}
+
+	#[inline]
+	fn zero() -> Self {
+		Self::from_underlier(U::ZERO)
 	}
 
 	fn random(rng: impl RngCore) -> Self {

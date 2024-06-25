@@ -8,7 +8,7 @@ use crate::{
 	as_packed_field::PackScalar,
 	packed::PackedBinaryField,
 	underlier::{ScaledUnderlier, UnderlierType, WithUnderlier},
-	Error, Field, PackedField,
+	Field, PackedField,
 };
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
@@ -190,29 +190,24 @@ where
 	const LOG_WIDTH: usize = PT::LOG_WIDTH + checked_log_2(N);
 
 	#[inline]
-	fn get_checked(&self, i: usize) -> Result<Self::Scalar, Error> {
+	unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 		let outer_i = i / PT::WIDTH;
 		let inner_i = i % PT::WIDTH;
-		self.0
-			.get(outer_i)
-			.ok_or(Error::IndexOutOfRange {
-				index: i,
-				max: Self::WIDTH,
-			})
-			.and_then(|inner| inner.get_checked(inner_i))
+		self.0.get_unchecked(outer_i).get_unchecked(inner_i)
 	}
 
 	#[inline]
-	fn set_checked(&mut self, i: usize, scalar: Self::Scalar) -> Result<(), Error> {
+	unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 		let outer_i = i / PT::WIDTH;
 		let inner_i = i % PT::WIDTH;
 		self.0
-			.get_mut(outer_i)
-			.ok_or(Error::IndexOutOfRange {
-				index: i,
-				max: Self::WIDTH,
-			})
-			.and_then(|inner| inner.set_checked(inner_i, scalar))
+			.get_unchecked_mut(outer_i)
+			.set_unchecked(inner_i, scalar);
+	}
+
+	#[inline]
+	fn zero() -> Self {
+		Self(array::from_fn(|_| PT::zero()))
 	}
 
 	fn random(mut rng: impl RngCore) -> Self {
