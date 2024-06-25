@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "zerocheck"
 harness = false
+
+
+[features]
+debug_validate_sumcheck = []

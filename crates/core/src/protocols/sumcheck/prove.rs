@@ -30,6 +30,9 @@ use rayon::prelude::*;
 use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
+#[cfg(feature = "debug_validate_sumcheck")]
+use super::sumcheck::validate_witness;
+
 /// Prove a sumcheck to evalcheck reduction.
 #[instrument(skip_all, name = "sumcheck::prove")]
 pub fn prove<F, PW, DomainField, CW, M, CH>(
@@ -119,6 +122,9 @@ where
 		sumcheck_witness: SumcheckWitness<PW, CW, M>,
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
+		#[cfg(feature = "debug_validate_sumcheck")]
+		validate_witness(&sumcheck_claim, &sumcheck_witness)?;
+
 		let n_vars = sumcheck_claim.n_vars();
 
 		if sumcheck_claim.poly.max_individual_degree() == 0 {

@@ -17,4 +17,6 @@ pub use batch::*;
 pub use error::*;
 pub use prove::prove;
 pub use verify::verify;
-pub use zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness};
+pub use zerocheck::{
+	validate_witness, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
+};

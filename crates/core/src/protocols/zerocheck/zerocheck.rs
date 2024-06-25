@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::CompositePolyOracle,
-	polynomial::{evaluate_univariate, MultilinearComposite},
+	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
@@ -12,7 +12,7 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::Field;
+use binius_field::{Field, PackedField};
 use std::fmt::Debug;
 
 use super::{Error, VerificationError};
@@ -169,4 +169,19 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		partial_point,
 		current_round_sum: new_round_sum,
 	})
+}
+
+pub fn validate_witness<P, C>(witness: &ZerocheckWitness<P, C>) -> Result<(), Error>
+where
+	P: PackedField,
+	C: CompositionPoly<P>,
+{
+	let log_size = witness.n_vars();
+
+	for index in 0..(1 << log_size) {
+		if witness.evaluate_on_hypercube(index)? != P::Scalar::zero() {
+			return Err(Error::NaiveValidation { index });
+		}
+	}
+	Ok(())
 }

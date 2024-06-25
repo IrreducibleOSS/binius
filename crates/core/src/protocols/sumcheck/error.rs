@@ -25,6 +25,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("abstract sumcheck failure: {0}")]
 	AbstractSumcheck(#[from] AbstractSumcheckError),
+	#[error("sumcheck naive validation failure")]
+	NaiveValidation,
 }
 
 #[derive(Debug, thiserror::Error)]

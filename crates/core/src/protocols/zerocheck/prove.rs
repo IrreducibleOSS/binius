@@ -29,6 +29,9 @@ use getset::Getters;
 use rayon::prelude::*;
 use tracing::instrument;
 
+#[cfg(feature = "debug_validate_sumcheck")]
+use super::zerocheck::validate_witness;
+
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
 #[instrument(skip_all, name = "zerocheck::prove")]
@@ -137,6 +140,9 @@ where
 		zerocheck_challenges: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
+		#[cfg(feature = "debug_validate_sumcheck")]
+		validate_witness(&witness)?;
+
 		let n_vars = claim.poly.n_vars();
 		let degree = claim.poly.max_individual_degree();
 

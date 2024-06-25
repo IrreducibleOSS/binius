@@ -18,7 +18,7 @@ pub use batch::*;
 pub use error::*;
 pub use prove::*;
 pub use sumcheck::{
-	SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound, SumcheckRoundClaim,
-	SumcheckWitness,
+	validate_witness, SumcheckClaim, SumcheckProof, SumcheckProveOutput, SumcheckRound,
+	SumcheckRoundClaim, SumcheckWitness,
 };
 pub use verify::*;

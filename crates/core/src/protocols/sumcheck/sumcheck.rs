@@ -2,7 +2,7 @@
 
 use super::{Error, VerificationError};
 use crate::{
-	polynomial::{evaluate_univariate, MultilinearComposite},
+	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
@@ -11,7 +11,7 @@ use crate::{
 		evalcheck::EvalcheckClaim,
 	},
 };
-use binius_field::Field;
+use binius_field::{Field, PackedField};
 
 pub type SumcheckRound<F> = AbstractSumcheckRound<F>;
 pub type SumcheckProof<F> = AbstractSumcheckProof<F>;
@@ -88,4 +88,26 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		partial_point,
 		current_round_sum: new_round_sum,
 	})
+}
+
+pub fn validate_witness<F, PW, CW, M>(
+	claim: &SumcheckClaim<F>,
+	witness: &SumcheckWitness<PW, CW, M>,
+) -> Result<(), Error>
+where
+	F: Field + From<PW::Scalar>,
+	PW: PackedField<Scalar: From<F>>,
+	CW: CompositionPoly<PW>,
+	M: MultilinearPoly<PW> + Sync,
+{
+	let log_size = witness.n_vars();
+
+	let sum = (0..(1 << log_size))
+		.try_fold(PW::Scalar::ZERO, |acc, i| witness.evaluate_on_hypercube(i).map(|res| res + acc));
+
+	if sum? == claim.sum.into() {
+		Ok(())
+	} else {
+		Err(Error::NaiveValidation)
+	}
 }
