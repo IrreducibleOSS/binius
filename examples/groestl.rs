@@ -30,15 +30,17 @@ use binius_core::{
 		zerocheck,
 		zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	affine_transformation::{PackedTransformationFactory, Transformation},
 	arch::OptimalUnderlier128b,
+	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
+	underlier::{UnderlierType, WithUnderlier},
 	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField16b, BinaryField1b,
-	BinaryField8b, ExtensionField, Field, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b,
-	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField8b, ExtensionField, Field, PackedAESBinaryField64x8b, PackedBinaryField16x8b,
+	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, TowerField,
 	AES_TO_BINARY_AFFINE_TRANSFORMATION,
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
@@ -298,13 +300,13 @@ where
 	}
 }
 
-fn make_constraints<F8b, FW>(
+fn make_constraints<F8b, PW>(
 	trace_oracle: &TraceOracle,
-	challenge: FW,
-) -> Result<impl CompositionPoly<FW>>
+	challenge: PW::Scalar,
+) -> Result<impl CompositionPoly<PW>>
 where
 	F8b: TowerField + From<AESTowerField8b>,
-	FW: TowerField + ExtensionField<F8b>,
+	PW: PackedField<Scalar: TowerField + ExtensionField<F8b>>,
 {
 	let zerocheck_column_ids = trace_oracle.iter_oracle_ids().collect::<Vec<_>>();
 
@@ -381,99 +383,91 @@ where
 	Ok(mix)
 }
 
-struct TraceWitness<P1b: PackedField, P8b: PackedField> {
+struct TraceWitness<U, F1b, F8b>
+where
+	U: UnderlierType + PackScalar<F1b> + PackScalar<F8b>,
+	F1b: Field,
+	F8b: Field,
+{
 	/// Single-bit selector of whether a round should link its output to the next input.
-	round_selector: Vec<P1b>,
+	round_selector: Vec<PackedType<U, F1b>>,
 	/// Default round constant for P permutation
-	p_default_round_const: Vec<P8b>,
+	p_default_round_const: Vec<PackedType<U, F8b>>,
 	/// Round constants for P permutation, aside from the default
-	p_round_consts: [Vec<P8b>; 8],
-	p_in: [Vec<P8b>; 64],
-	p_out: [Vec<P8b>; 64],
-	p_sub_bytes_inv_bits: [Vec<P1b>; 64 * 8],
-	p_sub_bytes_prod: [Vec<P8b>; 64],
-	p_sub_bytes_inv: [Vec<P8b>; 64],
-	p_sub_bytes_out: [Vec<P8b>; 64],
-	p_next_in: [Vec<P8b>; 64],
+	p_round_consts: [Vec<PackedType<U, F8b>>; 8],
+	p_in: [Vec<PackedType<U, F8b>>; 64],
+	p_out: [Vec<PackedType<U, F8b>>; 64],
+	p_sub_bytes_inv_bits: [Vec<PackedType<U, F1b>>; 64 * 8],
+	p_sub_bytes_prod: [Vec<PackedType<U, F8b>>; 64],
+	p_sub_bytes_inv: [Vec<PackedType<U, F8b>>; 64],
+	p_sub_bytes_out: [Vec<PackedType<U, F8b>>; 64],
+	p_next_in: [Vec<PackedType<U, F8b>>; 64],
 }
 
-impl<P1b: PackedField, P8b: PackedField> TraceWitness<P1b, P8b> {
-	fn to_index<F>(&self, trace_oracle: &TraceOracle) -> Result<MultilinearWitnessIndex<F>>
+impl<U, F1b, F8b> TraceWitness<U, F1b, F8b>
+where
+	U: UnderlierType + PackScalar<F1b> + PackScalar<F8b>,
+	F1b: TowerField,
+	F8b: TowerField,
+{
+	fn to_index<F>(&self, trace_oracle: &TraceOracle) -> Result<MultilinearExtensionIndex<U, F>>
 	where
-		F: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
+		U: PackScalar<F>,
+		F: ExtensionField<F1b> + ExtensionField<F8b>,
 	{
-		let mut index = MultilinearWitnessIndex::new();
-		for (oracle, witness) in iter::zip(trace_oracle.iter_oracle_ids(), self.all_polys()?) {
-			index.set(oracle, witness);
-		}
+		let index = MultilinearExtensionIndex::new()
+			.update_packed::<F1b>(iter::zip(
+				chain!(iter::once(trace_oracle.round_selector), trace_oracle.p_sub_bytes_inv_bits),
+				chain!(iter::once(&self.round_selector), self.p_sub_bytes_inv_bits.each_ref())
+					.map(Vec::as_slice),
+			))?
+			.update_packed::<F8b>(iter::zip(
+				chain!(
+					iter::once(trace_oracle.p_default_round_const),
+					trace_oracle.p_round_consts,
+					trace_oracle.p_in,
+					trace_oracle.p_out,
+					trace_oracle.p_sub_bytes_prod,
+					trace_oracle.p_sub_bytes_inv,
+					trace_oracle.p_sub_bytes_out,
+					trace_oracle.p_next_in,
+				),
+				chain!(
+					iter::once(&self.p_default_round_const),
+					self.p_round_consts.each_ref(),
+					self.p_in.each_ref(),
+					self.p_out.each_ref(),
+					self.p_sub_bytes_prod.each_ref(),
+					self.p_sub_bytes_inv.each_ref(),
+					self.p_sub_bytes_out.each_ref(),
+					self.p_next_in.each_ref(),
+				)
+				.map(Vec::as_slice),
+			))?;
 		Ok(index)
 	}
-
-	fn all_polys<F>(&self) -> Result<Vec<MultilinearWitness<F>>>
-	where
-		F: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
-	{
-		let fixed_polys_1b = iter::once(&self.round_selector).map(|values| {
-			let mle = MultilinearExtension::from_values_slice(values.as_slice())?;
-			Ok(mle.specialize_arc_dyn())
-		});
-		let fixed_polys_8b =
-			chain!(iter::once(&self.p_default_round_const), self.p_round_consts.iter()).map(
-				|values| {
-					let mle = MultilinearExtension::from_values_slice(values.as_slice())?;
-					Ok(mle.specialize_arc_dyn())
-				},
-			);
-		let trace_polys_1b = self.p_sub_bytes_inv_bits.iter().map(|values| {
-			let mle = MultilinearExtension::from_values_slice(values.as_slice())?;
-			Ok(mle.specialize_arc_dyn())
-		});
-		let trace_polys_8b = chain!(
-			self.p_in.iter(),
-			self.p_out.iter(),
-			self.p_sub_bytes_prod.iter(),
-			self.p_sub_bytes_inv.iter(),
-			self.p_sub_bytes_out.iter(),
-			self.p_next_in.iter(),
-		)
-		.map(|values| {
-			let mle = MultilinearExtension::from_values_slice(values.as_slice())?;
-			Ok(mle.specialize_arc_dyn())
-		});
-		chain!(fixed_polys_1b, fixed_polys_8b, trace_polys_1b, trace_polys_8b).collect()
-	}
-
-	fn commit_polys_1b(&self) -> impl Iterator<Item = MultilinearExtension<P1b, &[P1b]>> {
-		self.p_sub_bytes_inv_bits
-			.iter()
-			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-	}
 }
 
-impl<P1b, P8b> TraceWitness<P1b, P8b>
+/// Convert a witness polynomial to the 8-bit verifier field from the isomorphic 8-bit prover
+/// field.
+fn convert_poly_witness_to_tower<P8b, PW8b>(
+	poly: MultilinearExtension<PW8b, &[PW8b]>,
+) -> Result<MultilinearExtension<P8b>>
 where
-	P1b: PackedField,
-	P8b: PackedField<Scalar = AESTowerField8b>,
+	P8b: PackedField<Scalar = BinaryField8b>,
+	PW8b: PackedField<Scalar = AESTowerField8b> + PackedTransformationFactory<P8b>,
 {
-	fn commit_polys_8b<PT8b>(&self) -> impl Iterator<Item = MultilinearExtension<PT8b>> + '_
-	where
-		P8b: PackedTransformationFactory<PT8b>,
-		PT8b: PackedField<Scalar = BinaryField8b>,
-	{
-		let transform = <P8b as PackedTransformationFactory<PT8b>>::make_packed_transformation(
-			AES_TO_BINARY_AFFINE_TRANSFORMATION,
-		);
+	let transform = <PW8b as PackedTransformationFactory<P8b>>::make_packed_transformation(
+		AES_TO_BINARY_AFFINE_TRANSFORMATION,
+	);
 
-		chain!(self.p_in.iter(), self.p_out.iter(), self.p_sub_bytes_prod.iter()).map(
-			move |aes_values| {
-				let values = aes_values
-					.iter()
-					.map(|val| transform.transform(val))
-					.collect();
-				MultilinearExtension::from_values(values).unwrap()
-			},
-		)
-	}
+	let values = poly
+		.evals()
+		.iter()
+		.map(|val| transform.transform(val))
+		.collect();
+	let result = MultilinearExtension::from_values(values)?;
+	Ok(result)
 }
 
 fn s_box(x: AESTowerField8b) -> AESTowerField8b {
@@ -517,13 +511,23 @@ fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 }
 
 #[instrument]
-fn generate_trace<P1b, P8b>(log_size: usize) -> TraceWitness<P1b, P8b>
+fn generate_trace<U>(log_size: usize) -> TraceWitness<U, BinaryField1b, AESTowerField8b>
 where
-	P1b: PackedField<Scalar = BinaryField1b>,
-	P8b: PackedFieldIndexable<Scalar = AESTowerField8b>,
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b>,
+	PackedType<U, AESTowerField8b>: PackedFieldIndexable,
 {
-	let build_trace_column_1b = || vec![P1b::default(); 1 << (log_size - P1b::LOG_WIDTH)];
-	let build_trace_column_8b = || vec![P8b::default(); 1 << (log_size - P8b::LOG_WIDTH)];
+	let build_trace_column_1b = || {
+		vec![
+			<PackedType<U, BinaryField1b>>::default();
+			1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)
+		]
+	};
+	let build_trace_column_8b = || {
+		vec![
+			<PackedType<U, AESTowerField8b>>::default();
+			1 << (log_size - <PackedType<U, AESTowerField8b>>::LOG_WIDTH)
+		]
+	};
 	let mut witness = TraceWitness {
 		round_selector: build_trace_column_1b(),
 		p_default_round_const: build_trace_column_8b(),
@@ -645,16 +649,24 @@ where
 }
 
 #[allow(dead_code)]
-fn check_witness<FW, P1b: PackedField, P8b: PackedField>(
+fn check_witness<U, FW>(
 	log_size: usize,
-	constraint: impl CompositionPoly<FW>,
-	trace_witness: &TraceWitness<P1b, P8b>,
+	constraint: impl CompositionPoly<PackedType<U, FW>>,
+	trace_oracle: &TraceOracle,
+	witness_index: &MultilinearExtensionIndex<U, FW>,
 ) -> Result<()>
 where
-	FW: ExtensionField<P1b::Scalar> + ExtensionField<P8b::Scalar>,
+	U: UnderlierType + PackScalar<FW>,
+	FW: Field,
 {
-	let composite =
-		MultilinearComposite::new(log_size, constraint, trace_witness.all_polys::<FW>()?)?;
+	let composite = MultilinearComposite::new(
+		log_size,
+		constraint,
+		trace_oracle
+			.iter_oracle_ids()
+			.map(|oracle_id| witness_index.get_multilin_poly(oracle_id))
+			.collect::<Result<_, _>>()?,
+	)?;
 	for z in 0..1 << log_size {
 		let constraint_eval = composite.evaluate_on_hypercube(z)?;
 		ensure!(constraint_eval == FW::ZERO);
@@ -672,33 +684,61 @@ struct Proof<F: Field, PCSComm, PCS1bProof, PCS8bProof> {
 }
 
 #[instrument(skip_all)]
-fn prove<F, FW, P1b, P8b, PW8b, PCS1b, PCS8b, Comm, Challenger>(
+fn prove<U, F, FW, PCS1b, PCS8b, Comm, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
 	pcs1b: &PCS1b,
 	pcs8b: &PCS8b,
 	mut challenger: Challenger,
-	witness: &TraceWitness<P1b, PW8b>,
+	trace_witness: &TraceWitness<U, BinaryField1b, AESTowerField8b>,
 	domain_factory: impl EvaluationDomainFactory<AESTowerField8b>,
 ) -> Result<Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>>
 where
+	U: UnderlierType
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<BinaryField8b>
+		+ PackScalar<AESTowerField8b>
+		+ PackScalar<FW>,
 	F: TowerField + ExtensionField<BinaryField8b> + From<FW> + Step,
 	FW: TowerField + ExtensionField<AESTowerField8b> + From<F>,
-	P1b: PackedField<Scalar = BinaryField1b>,
-	P8b: PackedField<Scalar = BinaryField8b>,
-	PW8b: PackedField<Scalar = AESTowerField8b> + PackedTransformationFactory<P8b>,
-	PCS1b: PolyCommitScheme<P1b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
-	PCS8b: PolyCommitScheme<P8b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
+	PackedType<U, AESTowerField8b>: PackedTransformationFactory<PackedType<U, BinaryField8b>>,
+	PackedType<U, FW>: PackedFieldIndexable,
+	PCS1b: PolyCommitScheme<
+		PackedType<U, BinaryField1b>,
+		F,
+		Error: Debug,
+		Proof: 'static,
+		Commitment = Comm,
+	>,
+	PCS8b: PolyCommitScheme<
+		PackedType<U, BinaryField8b>,
+		F,
+		Error: Debug,
+		Proof: 'static,
+		Commitment = Comm,
+	>,
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.to_index::<FW>(trace_oracle)?;
+	let ext_index = trace_witness.to_index::<FW>(trace_oracle)?;
+	let mut witness_index = ext_index.witness_index();
 
 	// Round 1
-	let trace1b_commit_polys = witness.commit_polys_1b().collect::<Vec<_>>();
+	let trace1b_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.trace1b_batch_id)
+		.map(|oracle_id| ext_index.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let (trace1b_comm, trace1b_committed) = pcs1b.commit(&trace1b_commit_polys)?;
-	let trace8b_commit_polys = witness.commit_polys_8b().collect::<Vec<_>>();
+
+	let trace8b_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.trace8b_batch_id)
+		.map(|oracle_id| {
+			let witness_poly = ext_index.get::<AESTowerField8b>(oracle_id)?;
+			convert_poly_witness_to_tower(witness_poly)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
 	let (trace8b_comm, trace8b_committed) = pcs8b.commit(&trace8b_commit_polys)?;
+
 	challenger.observe(trace1b_comm.clone());
 	challenger.observe(trace8b_comm.clone());
 
@@ -725,7 +765,10 @@ where
 	let zerocheck_witness = MultilinearComposite::new(
 		zerocheck_claim.n_vars(),
 		mix_composition_prover,
-		witness.all_polys::<FW>()?,
+		trace_oracle
+			.iter_oracle_ids()
+			.map(|oracle_id| ext_index.get_multilin_poly(oracle_id))
+			.collect::<Result<_, _>>()?,
 	)?;
 
 	// Zerocheck
@@ -752,9 +795,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, AESTowerField8b, _>(
+	} = greedy_evalcheck::prove(
 		oracles,
-		&mut trace_witness,
+		&mut witness_index,
 		[evalcheck_claim],
 		switchover_fn,
 		&mut challenger,
@@ -884,6 +927,8 @@ fn main() {
 		.expect("failed to init thread pool");
 	init_tracing();
 
+	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
+
 	let log_size = get_log_trace_size().unwrap_or(16);
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
@@ -893,7 +938,7 @@ fn main() {
 	let trace1b_batch = oracles.committed_batch(trace_oracle.trace1b_batch_id);
 	let trace8b_batch = oracles.committed_batch(trace_oracle.trace8b_batch_id);
 
-	let witness = generate_trace::<PackedBinaryField128x1b, PackedAESBinaryField16x8b>(log_size);
+	let witness = generate_trace::<U>(log_size);
 
 	// Generate and verify proof
 	let pcs1b = tensor_pcs::find_proof_size_optimal_pcs::<
@@ -922,12 +967,12 @@ fn main() {
 		pcs1b.proof_size(trace1b_batch.n_polys) + pcs8b.proof_size(trace8b_batch.n_polys);
 	let tensorpcs_size = ByteSize::b(tensorpcs_size as u64);
 	tracing::info!("Size of hashable Groestl256 data: {}", hashable_data);
-	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
+	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
-	let proof = prove::<_, AESTowerField128b, _, _, _, _, _, _, _>(
+	let proof = prove::<_, _, AESTowerField128b, _, _, _, _>(
 		&mut oracles,
 		&trace_oracle,
 		&pcs1b,

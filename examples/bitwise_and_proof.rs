@@ -3,7 +3,7 @@
 use anyhow::Result;
 use binius_core::{
 	challenger::HashChallenger,
-	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
+	oracle::{BatchId, CommittedId, CompositePolyOracle, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearComposite,
@@ -12,38 +12,42 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
-	BinaryField1b, ExtensionField, PackedBinaryField128x1b, PackedField, TowerField,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
+	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
+	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_macros::{composition_poly, IterPolys};
+use binius_macros::{composition_poly, IterOracles};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
-use bytemuck::{must_cast, must_cast_mut};
+use bytemuck::{must_cast, must_cast_mut, Pod};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
-use std::fmt::Debug;
+use std::{fmt::Debug, iter};
 use tracing::instrument;
 
 composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
 #[instrument(skip_all)]
-fn prove<PCS, CH>(
-	log_size: usize,
+fn prove<U, PCS, CH>(
 	pcs: &PCS,
-	trace: &mut MultilinearOracleSet<BinaryField128b>,
+	oracles: &mut MultilinearOracleSet<BinaryField128b>,
+	trace: &TraceOracle,
 	constraints: &[CompositePolyOracle<BinaryField128b>],
-	witness: &TraceWitness<PackedBinaryField128x1b>,
+	witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof>>
 where
-	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<BinaryField128bPolyval>,
+	PackedType<U, BinaryField128bPolyval>: PackedFieldIndexable,
+	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, BinaryField128b>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
 	CH: CanObserve<BinaryField128b>
@@ -51,18 +55,21 @@ where
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>,
 {
+	let log_size = trace.log_size;
 	let commit_span = tracing::debug_span!("commit").entered();
 	assert_eq!(pcs.n_vars(), log_size);
 
-	let mut witness_index = witness.to_index::<_, BinaryField128bPolyval>(trace);
+	let mut witness_index = witness.witness_index();
 
 	assert_eq!(constraints.len(), 1);
 	let constraint = constraints[0].clone();
 
 	// Round 1
-	let (abc_comm, abc_committed) = pcs
-		.commit(&witness.iter_polys().collect::<Vec<_>>())
-		.unwrap();
+	let commit_polys = oracles
+		.committed_oracle_ids(trace.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
+	let (abc_comm, abc_committed) = pcs.commit(&commit_polys).unwrap();
 	challenger.observe(abc_comm.clone());
 
 	drop(commit_span);
@@ -70,13 +77,13 @@ where
 	// Round 2
 
 	tracing::debug!("Proving zerocheck");
-	let zerocheck_witness = MultilinearComposite::<BinaryField128bPolyval, _, _>::new(
+	let zerocheck_witness = MultilinearComposite::new(
 		log_size,
 		BitwiseAndConstraint,
-		witness
-			.iter_polys()
-			.map(|mle| mle.specialize_arc_dyn())
-			.collect::<Vec<_>>(),
+		trace
+			.iter_oracles()
+			.map(|oracle_id| witness.get_multilin_poly(oracle_id))
+			.collect::<Result<_, _>>()?,
 	)?;
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 
@@ -91,7 +98,7 @@ where
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
+	} = zerocheck::prove(
 		&zerocheck_claim,
 		zerocheck_witness,
 		&zerocheck_domain,
@@ -103,8 +110,8 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, BinaryField128bPolyval, _>(
-		trace,
+	} = greedy_evalcheck::prove(
+		oracles,
 		&mut witness_index,
 		[evalcheck_claim],
 		switchover_fn,
@@ -122,7 +129,7 @@ where
 	let abc_eval_proof = pcs.prove_evaluation(
 		&mut challenger,
 		&abc_committed,
-		&witness.iter_polys().collect::<Vec<_>>(),
+		&commit_polys,
 		&same_query_pcs_claim.eval_point,
 	)?;
 
@@ -200,50 +207,68 @@ where
 	Ok(())
 }
 
-#[derive(Debug, IterPolys)]
-struct TraceWitness<P: PackedField> {
-	a_in: Vec<P>,
-	b_in: Vec<P>,
-	c_out: Vec<P>,
+#[derive(Debug, IterOracles)]
+struct TraceOracle {
+	log_size: usize,
+	batch_id: BatchId,
+
+	a_in: OracleId,
+	b_in: OracleId,
+	c_out: OracleId,
 }
 
-impl<P: PackedField> TraceWitness<P> {
-	fn to_index<F, PE>(&self, trace: &MultilinearOracleSet<F>) -> MultilinearWitnessIndex<PE>
-	where
-		F: TowerField + ExtensionField<P::Scalar>,
-		PE: PackedField,
-		PE::Scalar: ExtensionField<P::Scalar>,
-	{
-		let mut index = MultilinearWitnessIndex::new();
-		for (i, witness) in self.iter_polys().enumerate() {
-			let id = CommittedId {
-				index: i,
-				batch_id: 0,
-			};
-			index.set(trace.committed_oracle_id(id), witness.specialize_arc_dyn());
+impl TraceOracle {
+	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
+		let mut batch_scope = oracles.build_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
+		let a_in = batch_scope.add_one();
+		let b_in = batch_scope.add_one();
+		let c_out = batch_scope.add_one();
+		let batch_id = batch_scope.build();
+
+		Self {
+			log_size,
+			batch_id,
+
+			a_in,
+			b_in,
+			c_out,
 		}
-		index
 	}
 }
 
 #[instrument(skip_all)]
-fn generate_trace(log_size: usize) -> TraceWitness<PackedBinaryField128x1b> {
-	let len = (1 << log_size) >> PackedBinaryField128x1b::LOG_WIDTH;
-	let mut a_in = vec![PackedBinaryField128x1b::default(); len];
-	let mut b_in = vec![PackedBinaryField128x1b::default(); len];
-	let mut c_out = vec![PackedBinaryField128x1b::default(); len];
+fn generate_trace<U, FW>(
+	log_size: usize,
+	trace_oracle: &TraceOracle,
+) -> Result<MultilinearExtensionIndex<'static, U, FW>>
+where
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + Pod,
+	FW: BinaryField,
+{
+	assert!(log_size >= <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let mut a_in = vec![U::default(); len];
+	let mut b_in = vec![U::default(); len];
+	let mut c_out = vec![U::default(); len];
+
 	a_in.par_iter_mut()
 		.zip(b_in.par_iter_mut())
 		.zip(c_out.par_iter_mut())
 		.for_each_init(thread_rng, |rng, ((a_i, b_i), c_i)| {
-			*a_i = PackedBinaryField128x1b::random(&mut *rng);
-			*b_i = PackedBinaryField128x1b::random(&mut *rng);
+			*a_i = U::random(&mut *rng);
+			*b_i = U::random(&mut *rng);
 			let a_i_uint128 = must_cast::<_, u128>(*a_i);
 			let b_i_uint128 = must_cast::<_, u128>(*b_i);
 			let c_i_uint128 = must_cast_mut::<_, u128>(c_i);
 			*c_i_uint128 = a_i_uint128 & b_i_uint128;
 		});
-	TraceWitness { a_in, b_in, c_out }
+
+	MultilinearExtensionIndex::new()
+		.update_owned::<BinaryField1b, _>(iter::zip(
+			[trace_oracle.a_in, trace_oracle.b_in, trace_oracle.c_out],
+			[a_in, b_in, c_out],
+		))
+		.map_err(Into::into)
 }
 
 fn make_constraints<F: TowerField>(
@@ -285,14 +310,20 @@ fn main() {
 	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
 
+	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
+
+	let mut oracles = MultilinearOracleSet::new();
+	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
+	let batch = oracles.committed_batch(trace_oracle.batch_id);
+
 	// Set up the public parameters
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
-		<PackedBinaryField128x1b as WithUnderlier>::Underlier,
+		U,
 		BinaryField1b,
 		BinaryField16b,
 		BinaryField16b,
 		BinaryField128b,
-	>(SECURITY_BITS, log_size, 3, log_inv_rate, false)
+	>(SECURITY_BITS, batch.n_vars, batch.n_polys, log_inv_rate, false)
 	.unwrap();
 
 	tracing::debug!(
@@ -302,34 +333,22 @@ fn main() {
 		pcs.proof_size(3),
 	);
 
-	let mut trace_oracle = MultilinearOracleSet::new();
+	let constraints = make_constraints(log_size, &oracles);
 
-	trace_oracle.add_committed_batch(CommittedBatchSpec {
-		n_vars: log_size,
-		n_polys: 3,
-		tower_level: 0,
-	});
-
-	let constraints = make_constraints(log_size, &trace_oracle);
-
-	tracing::info!("Generating the trace");
-	let witness = generate_trace(log_size);
+	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace_oracle).unwrap();
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 
-	tracing::info!("Proving");
 	let proof = prove(
-		log_size,
 		&pcs,
-		&mut trace_oracle.clone(),
+		&mut oracles.clone(),
+		&trace_oracle,
 		&constraints,
-		&witness,
+		witness,
 		challenger.clone(),
 		domain_factory,
 	)
 	.unwrap();
 
-	tracing::info!("Verifying");
-	verify(log_size, &pcs, &mut trace_oracle.clone(), &constraints, proof, challenger.clone())
-		.unwrap();
+	verify(log_size, &pcs, &mut oracles.clone(), &constraints, proof, challenger.clone()).unwrap();
 }

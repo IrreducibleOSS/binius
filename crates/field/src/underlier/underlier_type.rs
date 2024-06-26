@@ -5,12 +5,24 @@ use rand::{
 	distributions::{Distribution, Standard},
 	Rng, RngCore,
 };
+use std::fmt::Debug;
 use subtle::ConstantTimeEq;
 
 /// Primitive integer underlying a binary field or packed binary field implementation.
 /// Note that this type is not guaranteed to be POD, U1, U2 and U4 have some unused bits.
 pub trait UnderlierType:
-	Default + PartialEq + Eq + ConstantTimeEq + Copy + Random + NoUninit
+	Debug
+	+ Default
+	+ PartialEq
+	+ Eq
+	+ ConstantTimeEq
+	+ Copy
+	+ Random
+	+ NoUninit
+	+ Sized
+	+ Send
+	+ Sync
+	+ 'static
 {
 	/// Number of bits in value
 	const LOG_BITS: usize;

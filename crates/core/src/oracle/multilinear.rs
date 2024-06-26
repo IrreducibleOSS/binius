@@ -323,6 +323,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		batch.first_oracle_id + index
 	}
 
+	pub fn committed_oracle_ids(&self, batch_id: BatchId) -> impl Iterator<Item = OracleId> {
+		let batch = self.batches[batch_id].clone();
+		(0..batch.spec.n_polys).map(move |index| batch.first_oracle_id + index)
+	}
+
 	pub fn committed_oracle(&self, id: CommittedId) -> MultilinearPolyOracle<F> {
 		self.oracle(self.committed_oracle_id(id))
 	}

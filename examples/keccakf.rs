@@ -22,14 +22,16 @@ use binius_core::{
 		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
 	},
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	underlier::WithUnderlier, BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
-	BinaryField1b, ExtensionField, Field, PackedBinaryField128x1b, PackedField, TowerField,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
+	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
+	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_macros::{composition_poly, IterOracles, IterPolys};
+use binius_macros::{composition_poly, IterOracles};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -283,76 +285,6 @@ impl TraceOracle {
 	}
 }
 
-#[derive(IterPolys)]
-struct TraceWitness<P: PackedField> {
-	state_in: [Vec<P>; 25],
-	state_out: [Vec<P>; 25],
-	c: [Vec<P>; 5],
-	d: [Vec<P>; 5],
-	c_shift: [Vec<P>; 5],
-	a_theta: [Vec<P>; 25],
-	b: [Vec<P>; 25],
-	next_state_in: [Vec<P>; 25],
-	round_consts: Vec<P>,
-	selector: Vec<P>,
-}
-
-impl<P: PackedField> TraceWitness<P> {
-	fn to_index<PE>(
-		&self,
-		fixed_oracle: &FixedOracle,
-		trace_oracle: &TraceOracle,
-	) -> MultilinearWitnessIndex<PE>
-	where
-		PE: PackedField,
-		PE::Scalar: ExtensionField<P::Scalar>,
-	{
-		let mut index = MultilinearWitnessIndex::new();
-		index.set_many(iter::zip(
-			all_oracles(fixed_oracle, trace_oracle),
-			self.iter_polys()
-				.map(|witness| witness.specialize_arc_dyn()),
-		));
-		index
-	}
-
-	fn commit_polys(&self) -> impl Iterator<Item = MultilinearExtension<P, &[P]>> {
-		chain!(self.state_in.iter(), self.state_out.iter(), self.c.iter(), self.d.iter())
-			.map(|values| MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
-	}
-
-	fn constrained_polys<PE>(&self) -> impl Iterator<Item = MultilinearWitness<PE>>
-	where
-		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
-	{
-		chain!(
-			iter::once(&self.round_consts),
-			iter::once(&self.selector),
-			self.state_in.iter(),
-			self.state_out.iter(),
-			self.c.iter(),
-			self.c_shift.iter(),
-			self.d.iter(),
-			self.b.iter(),
-			self.next_state_in.iter(),
-		)
-		.map(|values| {
-			MultilinearExtension::from_values_slice(values.as_slice())
-				.unwrap()
-				.specialize_arc_dyn()
-		})
-	}
-}
-
-fn all_oracles(
-	fixed_oracle: &FixedOracle,
-	trace_oracle: &TraceOracle,
-) -> impl Iterator<Item = OracleId> {
-	trace_oracle
-		.iter_oracles()
-		.chain(fixed_oracle.iter_oracles())
-}
-
 fn constrained_oracles(
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
@@ -369,40 +301,46 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_open_proof: PCSProof,
 }
 
-#[instrument]
-#[allow(clippy::needless_range_loop)]
-fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
-	let build_trace_column = || vec![P::default(); 1 << (log_size - P::LOG_WIDTH)];
-	let mut witness = TraceWitness {
-		state_in: array::from_fn(|_xy| build_trace_column()),
-		state_out: array::from_fn(|_xy| build_trace_column()),
-		c: array::from_fn(|_x| build_trace_column()),
-		d: array::from_fn(|_x| build_trace_column()),
-		c_shift: array::from_fn(|_x| build_trace_column()),
-		a_theta: array::from_fn(|_xy| build_trace_column()),
-		b: array::from_fn(|_xy| build_trace_column()),
-		next_state_in: array::from_fn(|_xy| build_trace_column()),
-		round_consts: build_trace_column(),
-		selector: build_trace_column(),
-	};
+#[instrument(skip_all)]
+fn generate_trace<U, FW>(
+	log_size: usize,
+	fixed_oracle: &FixedOracle,
+	trace_oracle: &TraceOracle,
+) -> Result<MultilinearExtensionIndex<'static, U, FW>>
+where
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + Pod,
+	FW: BinaryField,
+{
+	assert!(log_size >= <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let build_trace_column = || vec![U::default(); len].into_boxed_slice();
 
-	fn cast_u64_cols<P: PackedField + Pod, const N: usize>(
-		cols: &mut [Vec<P>; N],
-	) -> [&mut [u64]; N] {
+	let mut state_in = array::from_fn::<_, 25, _>(|_xy| build_trace_column());
+	let mut state_out = array::from_fn::<_, 25, _>(|_xy| build_trace_column());
+	let mut c = array::from_fn::<_, 5, _>(|_x| build_trace_column());
+	let mut d = array::from_fn::<_, 5, _>(|_x| build_trace_column());
+	let mut c_shift = array::from_fn::<_, 5, _>(|_x| build_trace_column());
+	let mut a_theta = array::from_fn::<_, 25, _>(|_xy| build_trace_column());
+	let mut b = array::from_fn::<_, 25, _>(|_xy| build_trace_column());
+	let mut next_state_in = array::from_fn::<_, 25, _>(|_xy| build_trace_column());
+	let mut round_consts = build_trace_column();
+	let mut selector = build_trace_column();
+
+	fn cast_u64_cols<U: Pod, const N: usize>(cols: &mut [Box<[U]>; N]) -> [&mut [u64]; N] {
 		cols.each_mut()
-			.map(|col| must_cast_slice_mut::<_, u64>(col.as_mut_slice()))
+			.map(|col| must_cast_slice_mut::<_, u64>(&mut *col))
 	}
 
-	let state_in_u64 = cast_u64_cols(&mut witness.state_in);
-	let state_out_u64 = cast_u64_cols(&mut witness.state_out);
-	let c_u64 = cast_u64_cols(&mut witness.c);
-	let d_u64 = cast_u64_cols(&mut witness.d);
-	let c_shift_u64 = cast_u64_cols(&mut witness.c_shift);
-	let a_theta_u64 = cast_u64_cols(&mut witness.a_theta);
-	let b_u64 = cast_u64_cols(&mut witness.b);
-	let next_state_in_u64 = cast_u64_cols(&mut witness.next_state_in);
-	let round_consts_u64 = must_cast_slice_mut(witness.round_consts.as_mut_slice());
-	let selector_u64 = must_cast_slice_mut(witness.selector.as_mut_slice());
+	let state_in_u64 = cast_u64_cols(&mut state_in);
+	let state_out_u64 = cast_u64_cols(&mut state_out);
+	let c_u64 = cast_u64_cols(&mut c);
+	let d_u64 = cast_u64_cols(&mut d);
+	let c_shift_u64 = cast_u64_cols(&mut c_shift);
+	let a_theta_u64 = cast_u64_cols(&mut a_theta);
+	let b_u64 = cast_u64_cols(&mut b);
+	let next_state_in_u64 = cast_u64_cols(&mut next_state_in);
+	let round_consts_u64 = must_cast_slice_mut(&mut round_consts);
+	let selector_u64 = must_cast_slice_mut(&mut selector);
 
 	let mut rng = thread_rng();
 
@@ -474,33 +412,62 @@ fn generate_trace<P: PackedField + Pod>(log_size: usize) -> TraceWitness<P> {
 		}
 	}
 
-	witness
+	let index = MultilinearExtensionIndex::new().update_owned::<BinaryField1b, _>(iter::zip(
+		chain!(
+			[fixed_oracle.round_consts, fixed_oracle.selector],
+			trace_oracle.state_in,
+			trace_oracle.state_out,
+			trace_oracle.c,
+			trace_oracle.d,
+			trace_oracle.c_shift,
+			trace_oracle.a_theta,
+			trace_oracle.b,
+			trace_oracle.next_state_in,
+		),
+		chain!(
+			[round_consts, selector],
+			state_in,
+			state_out,
+			c,
+			d,
+			c_shift,
+			a_theta,
+			b,
+			next_state_in,
+		),
+	))?;
+
+	Ok(index)
 }
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn prove<P, F, PW, DomainField, PCS, CH>(
+fn prove<U, F, FW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut challenger: CH,
-	witness: &TraceWitness<P>,
+	witness: MultilinearExtensionIndex<U, FW>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
-	P: PackedField<Scalar = BinaryField1b> + Pod,
-	F: TowerField + From<PW>,
-	PW: TowerField + From<F> + ExtensionField<DomainField>,
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW>,
+	PackedType<U, FW>: PackedFieldIndexable,
+	F: TowerField + From<FW>,
+	FW: TowerField + From<F> + ExtensionField<DomainField>,
 	DomainField: TowerField,
-	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
-	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,
+	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
+	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.to_index::<PW>(fixed_oracle, trace_oracle);
+	let mut trace_witness = witness.witness_index();
 
 	// Round 1
-	let trace_commit_polys = witness.commit_polys().collect::<Vec<_>>();
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys)?;
 	challenger.observe(trace_comm.clone());
 
@@ -509,7 +476,7 @@ where
 
 	let mix_composition_verifier = make_constraints(fixed_oracle, trace_oracle, mixing_challenge)?;
 	let mix_composition_prover =
-		make_constraints(fixed_oracle, trace_oracle, PW::from(mixing_challenge))?;
+		make_constraints(fixed_oracle, trace_oracle, FW::from(mixing_challenge))?;
 
 	let zerocheck_column_oracles = constrained_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
@@ -522,10 +489,12 @@ where
 		)?,
 	};
 
-	let zerocheck_witness = MultilinearComposite::<PW, _, _>::new(
+	let zerocheck_witness = MultilinearComposite::new(
 		log_size,
 		mix_composition_prover,
-		witness.constrained_polys().collect(),
+		constrained_oracles(fixed_oracle, trace_oracle)
+			.map(|oracle_id| witness.get_multilin_poly(oracle_id))
+			.collect::<Result<_, _>>()?,
 	)?;
 
 	// Zerocheck
@@ -539,7 +508,7 @@ where
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<F, PW, DomainField, _, _>(
+	} = zerocheck::prove(
 		&zerocheck_claim,
 		zerocheck_witness,
 		&zerocheck_domain,
@@ -551,7 +520,7 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, DomainField, _>(
+	} = greedy_evalcheck::prove(
 		oracles,
 		&mut trace_witness,
 		[evalcheck_claim],
@@ -646,11 +615,11 @@ where
 }
 
 #[allow(clippy::identity_op, clippy::erasing_op)]
-fn make_constraints<FI: TowerField>(
+fn make_constraints<P: PackedField<Scalar: TowerField>>(
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
-	challenge: FI,
-) -> Result<impl CompositionPoly<FI> + Clone + 'static> {
+	challenge: P::Scalar,
+) -> Result<impl CompositionPoly<P> + Clone + 'static> {
 	let zerocheck_column_ids = constrained_oracles(fixed_oracle, trace_oracle).collect::<Vec<_>>();
 	let mix = empty_mix_composition(zerocheck_column_ids.len(), challenge);
 
@@ -699,7 +668,7 @@ fn make_constraints<FI: TowerField>(
 				trace_oracle.b[(x + 2) % 5 + 5 * y],
 				fixed_oracle.round_consts,
 			],
-			ChiIotaComposition,
+			composition_poly!([a, b0, b1, b2, rc] = a - (rc + b0 + (1 - b1) * b2)), //ChiIotaComposition,
 		)
 		.unwrap()
 	};
@@ -753,6 +722,8 @@ fn main() {
 	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
 
+	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
+
 	let mut oracles = MultilinearOracleSet::new();
 	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
@@ -761,7 +732,7 @@ fn main() {
 
 	// Set up the public parameters
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
-		<PackedBinaryField128x1b as WithUnderlier>::Underlier,
+		U,
 		BinaryField1b,
 		BinaryField16b,
 		BinaryField16b,
@@ -778,7 +749,9 @@ fn main() {
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let witness = generate_trace(log_size);
+	let witness =
+		generate_trace::<U, BinaryField128bPolyval>(log_size, &fixed_oracle, &trace_oracle)
+			.unwrap();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 	// TODO: Ideally DomainField should be considerably smaller than F, something like BinaryField8b.
 	//       However, BinaryField128bPolyval doesn't support any conversions other than to/from 1 and 128 bits.
@@ -789,7 +762,7 @@ fn main() {
 		&trace_oracle,
 		&pcs,
 		challenger.clone(),
-		&witness,
+		witness,
 		domain_factory,
 	)
 	.unwrap();

@@ -1,9 +1,11 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
+use crate::polynomial::util::PackingDeref;
 use binius_field::{
-	as_packed_field::AsSinglePacked,
+	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
+	underlier::UnderlierType,
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
 };
@@ -48,11 +50,28 @@ impl<P: PackedField> MultilinearExtension<P> {
 	}
 
 	pub fn from_values(v: Vec<P>) -> Result<Self, Error> {
+		MultilinearExtension::from_values_generic(v)
+	}
+}
+
+impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
+	pub fn from_values_generic(v: Data) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
 			return Err(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
 		Ok(Self { mu, evals: v })
+	}
+}
+
+impl<U, F, Data> MultilinearExtension<PackedType<U, F>, PackingDeref<U, F, Data>>
+where
+	U: UnderlierType + PackScalar<F>,
+	F: Field,
+	Data: Deref<Target = [U]>,
+{
+	pub fn from_underliers(v: Data) -> Result<Self, Error> {
+		MultilinearExtension::from_values_generic(PackingDeref::new(v))
 	}
 }
 
@@ -597,6 +616,9 @@ fn eval_basis<F: Field>(query: &[F], i: usize) -> F {
 fn log2(v: usize) -> usize {
 	63 - (v as u64).leading_zeros() as usize
 }
+
+/// Type alias for the common pattern of a [`MultilinearExtension`] backed by borrowed data.
+pub type MultilinearExtensionBorrowed<'a, P> = MultilinearExtension<P, &'a [P]>;
 
 #[cfg(test)]
 mod tests {
