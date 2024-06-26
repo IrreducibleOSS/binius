@@ -77,7 +77,15 @@ pub struct AdditiveNTTWithOTFCompute<F: BinaryField> {
 
 impl<F: BinaryField> AdditiveNTTWithOTFCompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		let s_evals = precompute_subspace_evals(log_domain_size)?
+		Self::with_domain_field::<F>(log_domain_size)
+	}
+
+	/// Creates an instance of `AdditiveNTTWithPrecompute` where we generate the basis from `DomainField`
+	/// then converts the elements to `F` field followed by subspace evaluations.
+	pub fn with_domain_field<DomainField: BinaryField + Into<F>>(
+		log_domain_size: usize,
+	) -> Result<Self, Error> {
+		let s_evals = precompute_subspace_evals::<F, DomainField>(log_domain_size)?
 			.into_iter()
 			.enumerate()
 			.map(|(i, s_evals_i)| OnTheFlyTwiddleAccess {
@@ -279,7 +287,15 @@ pub struct AdditiveNTTWithPrecompute<F: BinaryField> {
 
 impl<F: BinaryField> AdditiveNTTWithPrecompute<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		let s_evals = precompute_subspace_evals::<F>(log_domain_size)?;
+		Self::with_domain_field::<F>(log_domain_size)
+	}
+
+	/// Creates an instance of `AdditiveNTTWithPrecompute` where we generate the basis from `DomainField`
+	/// then converts the elements to `F` field followed by subspace evaluations.
+	pub fn with_domain_field<DomainField: BinaryField + Into<F>>(
+		log_domain_size: usize,
+	) -> Result<Self, Error> {
+		let s_evals = precompute_subspace_evals::<F, DomainField>(log_domain_size)?;
 		let s_evals_expanded = s_evals
 			.iter()
 			.enumerate()
@@ -339,8 +355,10 @@ where
 	}
 }
 
-fn precompute_subspace_evals<F: BinaryField>(log_domain_size: usize) -> Result<Vec<Vec<F>>, Error> {
-	if F::N_BITS < log_domain_size {
+fn precompute_subspace_evals<F: BinaryField, DomainField: BinaryField + Into<F>>(
+	log_domain_size: usize,
+) -> Result<Vec<Vec<F>>, Error> {
+	if DomainField::N_BITS < log_domain_size {
 		return Err(Error::FieldTooSmall { log_domain_size });
 	}
 
@@ -351,8 +369,13 @@ fn precompute_subspace_evals<F: BinaryField>(log_domain_size: usize) -> Result<V
 	normalization_consts.push(F::ONE);
 
 	let s0_evals = (1..log_domain_size)
-		.map(|i| F::basis(i).expect("basis vector must exist because of FieldTooSmall check above"))
-		.collect::<Vec<_>>();
+		.map(|i| {
+			DomainField::basis(i)
+				.expect("basis vector must exist because of FieldTooSmall check above")
+				.into()
+		})
+		.collect::<Vec<F>>();
+
 	s_evals.push(s0_evals);
 
 	for _ in 1..log_domain_size {
@@ -539,10 +562,10 @@ mod tests {
 	use binius_field::{
 		arch::packed_32::PackedBinaryField1x32b,
 		packed_binary_field::{PackedBinaryField16x8b, PackedBinaryField4x32b},
-		BinaryField32b, BinaryField8b, PackedBinaryField8x16b, PackedExtension,
+		AESTowerField8b, BinaryField32b, BinaryField8b, PackedBinaryField8x16b, PackedExtension,
 	};
-	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+	use rand::{rngs::StdRng, thread_rng, SeedableRng};
+	use std::{array, iter::repeat_with};
 
 	/// Simple implementation of forward transform on non-packed field elements for testing.
 	fn forward_transform_simple<F, FF>(
@@ -710,6 +733,55 @@ mod tests {
 				.forward_transform_simple(&mut result2, coset)
 				.unwrap();
 			assert_eq!(result1, result2);
+		}
+	}
+
+	#[test]
+	fn test_additive_ntt_with_transform() {
+		let ntt_binary8b = <AdditiveNTTWithPrecompute<BinaryField8b>>::new(8).unwrap();
+		let ntt_aes8b = <AdditiveNTTWithPrecompute<AESTowerField8b>>::new(8).unwrap();
+		let ntt_aes8b_change_of_bases =
+			<AdditiveNTTWithPrecompute<AESTowerField8b>>::with_domain_field::<BinaryField8b>(8)
+				.unwrap();
+
+		let mut rng = thread_rng();
+
+		let data: [BinaryField8b; 64] =
+			array::from_fn(|_| <BinaryField8b as Field>::random(&mut rng));
+		let data_as_aes: [AESTowerField8b; 64] = array::from_fn(|i| data[i].into());
+
+		for coset in 0..4 {
+			let mut result_bin = data;
+			let mut result_aes = data_as_aes;
+			let mut result_aes_cob = data_as_aes;
+			ntt_binary8b
+				.forward_transform_simple(&mut result_bin, coset)
+				.unwrap();
+			ntt_aes8b
+				.forward_transform_simple(&mut result_aes, coset)
+				.unwrap();
+			ntt_aes8b_change_of_bases
+				.forward_transform_simple(&mut result_aes_cob, coset)
+				.unwrap();
+
+			let result_bin_to_aes = result_bin.map(AESTowerField8b::from);
+
+			assert_eq!(result_bin_to_aes, result_aes_cob);
+			assert_ne!(result_bin_to_aes, result_aes);
+
+			ntt_binary8b
+				.inverse_transform_simple(&mut result_bin, coset)
+				.unwrap();
+			ntt_aes8b
+				.inverse_transform_simple(&mut result_aes, coset)
+				.unwrap();
+			ntt_aes8b_change_of_bases
+				.inverse_transform_simple(&mut result_aes_cob, coset)
+				.unwrap();
+
+			let result_bin_to_aes = result_bin.map(AESTowerField8b::from);
+
+			assert_eq!(result_bin_to_aes, result_aes_cob);
 		}
 	}
 
