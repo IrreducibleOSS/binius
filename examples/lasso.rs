@@ -12,7 +12,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatch, LassoClaim, LassoWitness},
 		msetcheck, prodcheck,
-		zerocheck::{self, ZerocheckProof},
+		zerocheck::{self, ZerocheckBatchProof, ZerocheckProver},
 	},
 	witness::MultilinearWitnessIndex,
 };
@@ -218,8 +218,7 @@ where
 	lookup_t_proof: PCS32::Proof,
 	grand_prod_comm: PCS128::Commitment,
 	grand_prod_proof: PCS128::Proof,
-	lasso_zerocheck_proof: ZerocheckProof<B128>,
-	prodcheck_zerocheck_proof: ZerocheckProof<B128>,
+	zerocheck_proof: ZerocheckBatchProof<B128>,
 	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
 }
 
@@ -334,27 +333,6 @@ where
 		_ => 1,
 	};
 
-	let prodcheck_zerocheck_domain = domain_factory.create(
-		prodcheck_prove_output
-			.reduced_product_check_claims
-			.t_prime_claim
-			.poly
-			.max_individual_degree()
-			+ 1,
-	)?;
-
-	let prodcheck_zerocheck_prove_output = zerocheck::prove(
-		&prodcheck_prove_output
-			.reduced_product_check_claims
-			.t_prime_claim,
-		prodcheck_prove_output.t_prime_witness,
-		&prodcheck_zerocheck_domain,
-		&mut challenger,
-		switchover_fn,
-	)?;
-
-	// Prove Lasso counts zerocheck
-
 	let lasso_zerocheck_domain = domain_factory.create(
 		lasso_prove_output
 			.reduced_lasso_claims
@@ -364,23 +342,54 @@ where
 			+ 1,
 	)?;
 
-	let lasso_zerocheck_prove_output = zerocheck::prove(
-		&lasso_prove_output.reduced_lasso_claims.zerocheck_claim,
-		lasso_prove_output.zerocheck_witness,
+	let lasso_zerocheck_claim = lasso_prove_output.reduced_lasso_claims.zerocheck_claim;
+	let lasso_zerocheck_witness = lasso_prove_output.zerocheck_witness;
+
+	let zc_challenges = challenger.sample_vec(lasso_zerocheck_witness.n_vars() - 1);
+
+	let lasso_zerocheck_prover = ZerocheckProver::new(
 		&lasso_zerocheck_domain,
-		&mut challenger,
+		lasso_zerocheck_claim,
+		lasso_zerocheck_witness,
+		&zc_challenges,
 		switchover_fn,
 	)?;
+
+	let prodcheck_zerocheck_domain = domain_factory.create(
+		prodcheck_prove_output
+			.reduced_product_check_claims
+			.t_prime_claim
+			.poly
+			.max_individual_degree()
+			+ 1,
+	)?;
+
+	let prodcheck_zerocheck_claim = prodcheck_prove_output
+		.reduced_product_check_claims
+		.t_prime_claim;
+	let prodcheck_zerocheck_witness = prodcheck_prove_output.t_prime_witness;
+
+	let prodcheck_zerocheck_prover = ZerocheckProver::new(
+		&prodcheck_zerocheck_domain,
+		prodcheck_zerocheck_claim,
+		prodcheck_zerocheck_witness,
+		&zc_challenges,
+		switchover_fn,
+	)?;
+
+	let provers = [
+		prodcheck_zerocheck_prover.to_arc_dyn(),
+		lasso_zerocheck_prover.to_arc_dyn(),
+	];
+
+	let zerocheck_prove_output = zerocheck::batch_prove(provers, &mut challenger)?;
 
 	// Greedy Evalcheck
 
 	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, _>(
 		oracles,
 		&mut witness_index,
-		[
-			lasso_zerocheck_prove_output.evalcheck_claim,
-			prodcheck_zerocheck_prove_output.evalcheck_claim,
-		],
+		zerocheck_prove_output.evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
@@ -443,8 +452,7 @@ where
 		lookup_t_proof,
 		grand_prod_comm,
 		grand_prod_proof,
-		lasso_zerocheck_proof: lasso_zerocheck_prove_output.zerocheck_proof,
-		prodcheck_zerocheck_proof: prodcheck_zerocheck_prove_output.zerocheck_proof,
+		zerocheck_proof: zerocheck_prove_output.proof,
 		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
 	})
 }
@@ -510,24 +518,20 @@ where
 
 	challenger.observe(proof.grand_prod_comm.clone());
 
-	// Verify prodcheck originating zerocheck
-	let prodcheck_evalcheck_claim = zerocheck::verify(
-		&reduced_prodcheck_claims.t_prime_claim,
-		proof.prodcheck_zerocheck_proof,
+	let evalcheck_claims = zerocheck::batch_verify(
+		[
+			reduced_prodcheck_claims.t_prime_claim,
+			reduced_lasso_claims.zerocheck_claim,
+		],
+		proof.zerocheck_proof,
 		&mut challenger,
-	)?;
-
-	// Verify Lasso originating zerocheck
-	let lasso_evalcheck_claim = zerocheck::verify(
-		&reduced_lasso_claims.zerocheck_claim,
-		proof.lasso_zerocheck_proof,
-		&mut challenger,
-	)?;
+	)
+	.unwrap();
 
 	// Greedy evalcheck
 	let same_query_pcs_claims = greedy_evalcheck::verify(
 		oracles,
-		[lasso_evalcheck_claim, prodcheck_evalcheck_claim],
+		evalcheck_claims,
 		proof.greedy_evalcheck_proof,
 		&mut challenger,
 	)?;

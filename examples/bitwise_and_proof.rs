@@ -10,7 +10,9 @@ use binius_core::{
 	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
+		zerocheck::{
+			self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim, ZerocheckProver,
+		},
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -95,16 +97,20 @@ where
 		_ => 1,
 	};
 
-	let ZerocheckProveOutput {
-		evalcheck_claim,
-		zerocheck_proof,
-	} = zerocheck::prove(
-		&zerocheck_claim,
-		zerocheck_witness,
+	let zc_challenges = challenger.sample_vec(zerocheck_witness.n_vars() - 1);
+
+	let zerocheck_prover = ZerocheckProver::new(
 		&zerocheck_domain,
-		&mut challenger,
+		zerocheck_claim,
+		zerocheck_witness,
+		&zc_challenges,
 		switchover_fn,
-	)?;
+	);
+
+	let ZerocheckBatchProveOutput {
+		evalcheck_claims,
+		proof: zerocheck_proof,
+	} = zerocheck::batch_prove(zerocheck_prover, &mut challenger)?;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -113,7 +119,7 @@ where
 	} = greedy_evalcheck::prove(
 		oracles,
 		&mut witness_index,
-		[evalcheck_claim],
+		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
@@ -144,7 +150,7 @@ where
 struct Proof<C, P> {
 	abc_comm: C,
 	abc_eval_proof: P,
-	zerocheck_proof: ZerocheckProof<BinaryField128b>,
+	zerocheck_proof: ZerocheckBatchProof<BinaryField128b>,
 	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
@@ -183,11 +189,13 @@ where
 
 	// Run zerocheck protocol
 	let zerocheck_claim = ZerocheckClaim { poly: constraint };
-	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;
+
+	let evalcheck_claims =
+		zerocheck::batch_verify([zerocheck_claim], zerocheck_proof, &mut challenger)?;
 
 	// Verify evaluation claims
 	let same_query_claims =
-		greedy_evalcheck::verify(trace, [evalcheck_claim], evalcheck_proof, &mut challenger)?;
+		greedy_evalcheck::verify(trace, evalcheck_claims, evalcheck_proof, &mut challenger)?;
 
 	assert_eq!(same_query_claims.len(), 1);
 	let (_, same_query_pcs_claim) = same_query_claims

@@ -27,6 +27,7 @@ use crate::{
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField, TowerField};
 use getset::Getters;
 use rayon::prelude::*;
+use std::sync::Arc;
 use tracing::instrument;
 
 #[cfg(feature = "debug_validate_sumcheck")]
@@ -132,7 +133,7 @@ where
 	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
 	/// switchover round number per multilinear polynomial as a function of its
-	/// [`MultilinearPoly::extension_degree`] value.
+	/// [`crate::polynomial::MultilinearPoly::extension_degree`] value.
 	pub fn new(
 		domain: &'a EvaluationDomain<FS>,
 		claim: ZerocheckClaim<F>,
@@ -429,6 +430,28 @@ where
 		self.round_claim = new_round_claim;
 
 		Ok(())
+	}
+
+	pub fn to_arc_dyn(self) -> ZerocheckProver<'a, F, PW, FS, Arc<dyn CompositionPoly<PW>>>
+	where
+		CW: 'static,
+	{
+		//https://github.com/rust-lang/rust/issues/86555
+		ZerocheckProver::<'a, F, PW, FS, Arc<dyn CompositionPoly<PW>>> {
+			oracle: self.oracle,
+			composition: Arc::new(self.composition),
+			domain: self.domain,
+			round_claim: self.round_claim,
+			round: self.round,
+			last_round_proof: self.last_round_proof,
+			state: self.state,
+			zerocheck_challenges: self.zerocheck_challenges,
+			round_eq_ind: self.round_eq_ind,
+			round_q: self.round_q,
+			round_q_bar: self.round_q_bar,
+			smaller_denom_inv: self.smaller_denom_inv,
+			smaller_domain: self.smaller_domain,
+		}
 	}
 }
 

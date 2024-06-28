@@ -18,9 +18,10 @@ use binius_core::{
 		MultivariatePoly,
 	},
 	protocols::{
-		greedy_evalcheck,
-		greedy_evalcheck::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		zerocheck::{self, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput},
+		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
+		zerocheck::{
+			self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim, ZerocheckProver,
+		},
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -296,7 +297,7 @@ fn constrained_oracles(
 
 struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
-	zerocheck_proof: ZerocheckProof<F>,
+	zerocheck_proof: ZerocheckBatchProof<F>,
 	evalcheck_proof: GreedyEvalcheckProof<F>,
 	trace_open_proof: PCSProof,
 }
@@ -505,16 +506,20 @@ where
 		_ => 1,
 	};
 
-	let ZerocheckProveOutput {
-		evalcheck_claim,
-		zerocheck_proof,
-	} = zerocheck::prove(
-		&zerocheck_claim,
-		zerocheck_witness,
+	let zc_challenges = challenger.sample_vec(zerocheck_witness.n_vars() - 1);
+
+	let zerocheck_prover = ZerocheckProver::new(
 		&zerocheck_domain,
-		&mut challenger,
+		zerocheck_claim,
+		zerocheck_witness,
+		&zc_challenges,
 		switchover_fn,
-	)?;
+	);
+
+	let ZerocheckBatchProveOutput {
+		evalcheck_claims,
+		proof: zerocheck_proof,
+	} = zerocheck::batch_prove(zerocheck_prover, &mut challenger)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
@@ -523,7 +528,7 @@ where
 	} = greedy_evalcheck::prove(
 		oracles,
 		&mut trace_witness,
-		[evalcheck_claim],
+		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
@@ -590,11 +595,12 @@ where
 		poly: CompositePolyOracle::new(log_size, zerocheck_column_oracles, mix_composition)?,
 	};
 
-	let evalcheck_claim = zerocheck::verify(&zerocheck_claim, zerocheck_proof, &mut challenger)?;
+	let evalcheck_claims =
+		zerocheck::batch_verify([zerocheck_claim], zerocheck_proof, &mut challenger)?;
 
 	// Evalcheck
 	let same_query_claims =
-		greedy_evalcheck::verify(oracles, [evalcheck_claim], evalcheck_proof, &mut challenger)?;
+		greedy_evalcheck::verify(oracles, evalcheck_claims, evalcheck_proof, &mut challenger)?;
 
 	assert_eq!(same_query_claims.len(), 1);
 	let (batch_id, same_query_claim) = same_query_claims
