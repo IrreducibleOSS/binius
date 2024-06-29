@@ -186,6 +186,15 @@ pub fn get_packed_slice<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
 	unsafe { packed[i / P::WIDTH].get_unchecked(i % P::WIDTH) }
 }
 
+/// Returns the scalar at the given index without bounds checking.
+/// # Safety
+/// The caller must ensure that `i` is less than `P::WIDTH * packed.len()`.
+pub unsafe fn get_packed_slice_unchecked<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
+	packed
+		.get_unchecked(i / P::WIDTH)
+		.get_unchecked(i % P::WIDTH)
+}
+
 pub fn get_packed_slice_checked<P: PackedField>(
 	packed: &[P],
 	i: usize,
@@ -197,6 +206,21 @@ pub fn get_packed_slice_checked<P: PackedField>(
 			index: i,
 			max: packed.len() * P::WIDTH,
 		})
+}
+
+/// Sets the scalar at the given index without bounds checking.
+/// # Safety
+/// The caller must ensure that `i` is less than `P::WIDTH * packed.len()`.
+pub unsafe fn set_packed_slice_unchecked<P: PackedField>(
+	packed: &mut [P],
+	i: usize,
+	scalar: P::Scalar,
+) {
+	unsafe {
+		packed
+			.get_unchecked_mut(i / P::WIDTH)
+			.set_unchecked(i % P::WIDTH, scalar)
+	}
 }
 
 pub fn set_packed_slice<P: PackedField>(packed: &mut [P], i: usize, scalar: P::Scalar) {

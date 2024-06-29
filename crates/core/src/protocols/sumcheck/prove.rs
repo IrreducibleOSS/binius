@@ -48,7 +48,7 @@ where
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Clone + Sync,
+	M: MultilinearPoly<PW> + Clone + Sync + Send,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let sumcheck_prover = SumcheckProver::<_, _, DomainField, _, _>::new(
@@ -90,7 +90,7 @@ where
 	PW::Scalar: From<F>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
+	M: MultilinearPoly<PW> + Sync + Send,
 {
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
@@ -110,7 +110,7 @@ where
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
+	M: MultilinearPoly<PW> + Sync + Send,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
@@ -253,7 +253,7 @@ where
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
+	M: MultilinearPoly<PW> + Sync + Send,
 {
 	type Error = Error;
 

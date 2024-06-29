@@ -136,10 +136,10 @@ where
 
 	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
 		let current_evals = self.round_eq_ind.evals();
-		let mut new_evals = vec![PW::Scalar::default(); current_evals.len() >> 1];
-		new_evals.par_iter_mut().enumerate().for_each(|(i, e)| {
-			*e = current_evals[i << 1] + current_evals[(i << 1) + 1];
-		});
+		let new_evals = (0..current_evals.len() >> 1)
+			.into_par_iter()
+			.map(|i| current_evals[i << 1] + current_evals[(i << 1) + 1])
+			.collect();
 		let new_multilin = MultilinearExtension::from_values(new_evals)?;
 		self.round_eq_ind = new_multilin;
 

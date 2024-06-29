@@ -36,7 +36,7 @@ where
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
+	M: MultilinearPoly<PW> + Sync + Send,
 	CH: CanObserve<F> + CanSample<F>,
 {
 	abstract_sumcheck::batch_prove(provers, challenger)

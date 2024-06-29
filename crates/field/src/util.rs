@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{packed::get_packed_slice, ExtensionField, Field, PackedField};
+use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
 use rayon::prelude::*;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
@@ -18,7 +18,7 @@ where
 	PY: PackedField,
 	FX: ExtensionField<PY::Scalar>,
 {
-	debug_assert_eq!(
+	assert_eq!(
 		PX::WIDTH * xs.len(),
 		PY::WIDTH * ys.len(),
 		"Both arguments must contain the same number of field elements"
@@ -26,7 +26,11 @@ where
 	(0..PX::WIDTH * xs.len())
 		.into_par_iter()
 		.with_min_len(256)
-		.map(|i| get_packed_slice(xs, i) * get_packed_slice(ys, i))
+		.map(|i|
+			// Safety: `i` is less than PX::WIDTH * xs.len() = PY::WIDTH * ys.len()
+			unsafe {
+				get_packed_slice_unchecked(xs, i) * get_packed_slice_unchecked(ys, i)
+		})
 		.sum()
 }
 

@@ -127,14 +127,13 @@ mod tests {
 		let multilin_query =
 			MultilinearQuery::<F>::with_full_query(&challenge[..log_n_values]).unwrap();
 		let eval_mle = if packed_evals.len() == 1 {
-			let mut scalar_evals = vec![F::default(); 1 << log_n_values];
-			(0..(1 << log_n_values)).for_each(|i| {
-				scalar_evals[i] = packed_evals[0].get(i);
-			});
+			let scalar_evals = (0..(1 << log_n_values))
+				.map(|i| packed_evals[0].get(i))
+				.collect();
 			let mle = MultilinearExtension::from_values(scalar_evals).unwrap();
 			mle.evaluate(&multilin_query).unwrap()
 		} else {
-			let mle = MultilinearExtension::from_values(packed_evals.clone()).unwrap();
+			let mle = MultilinearExtension::from_values(packed_evals).unwrap();
 			mle.evaluate(&multilin_query).unwrap()
 		};
 		eval_mle * eval_eq_ind
@@ -157,10 +156,9 @@ mod tests {
 		let multilin_query = MultilinearQuery::<F>::with_full_query(&challenge).unwrap();
 
 		if new_len == 1 {
-			let mut scalar_evals = vec![F::default(); 1 << (log_n_values + k)];
-			(0..(1 << (log_n_values + k))).for_each(|i| {
-				scalar_evals[i] = packed_evals[0].get(i);
-			});
+			let scalar_evals = (0..(1 << (log_n_values + k)))
+				.map(|i| packed_evals[0].get(i))
+				.collect();
 			let extended_mle = MultilinearExtension::from_values(scalar_evals).unwrap();
 			extended_mle.evaluate(&multilin_query).unwrap()
 		} else {

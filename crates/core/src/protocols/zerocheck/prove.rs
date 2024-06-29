@@ -244,15 +244,18 @@ where
 	// hypercube evaluations of $eq_2(X, \alpha_1, \alpha_2)$.
 	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
 		let current_evals = self.round_eq_ind.evals();
-		let mut new_evals = vec![PW::default(); current_evals.len() >> 1];
-		new_evals.par_iter_mut().enumerate().for_each(|(i, e)| {
-			for j in 0..PW::WIDTH {
-				let index = i * PW::WIDTH + j;
-				let eval0 = get_packed_slice(current_evals, index << 1);
-				let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
-				e.set(j, eval0 + eval1);
-			}
-		});
+		let new_evals = (0..current_evals.len() >> 1)
+			.into_par_iter()
+			.map(|i| {
+				PW::from_fn(|j| {
+					let index = i * PW::WIDTH + j;
+					let eval0 = get_packed_slice(current_evals, index << 1);
+					let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
+
+					eval0 + eval1
+				})
+			})
+			.collect();
 		let new_multilin = MultilinearExtension::from_values(new_evals)?;
 		self.round_eq_ind = new_multilin;
 
@@ -302,11 +305,15 @@ where
 			let specialized_prev_q_bar = prev_q_bar.evaluate_partial_low(&query)?;
 			let specialized_prev_q_bar_evals = specialized_prev_q_bar.evals();
 
+			const CHUNK_SIZE: usize = 64;
+
 			new_q_bar_values
-				.par_iter_mut()
+				.par_chunks_mut(CHUNK_SIZE)
 				.enumerate()
-				.for_each(|(i, e)| {
-					*e += specialized_prev_q_bar_evals[i];
+				.for_each(|(chunk_index, chunks)| {
+					for (k, e) in chunks.iter_mut().enumerate() {
+						*e += specialized_prev_q_bar_evals[chunk_index * CHUNK_SIZE + k];
+					}
 				});
 		}
 		self.round_q_bar = Some(MultilinearExtension::from_values(new_q_bar_values)?);

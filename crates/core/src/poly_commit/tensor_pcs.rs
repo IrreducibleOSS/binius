@@ -201,10 +201,10 @@ where
 	FA: Field,
 	FI: ExtensionField<F> + ExtensionField<FA>,
 	FE: ExtensionField<F> + ExtensionField<FI>,
-	LC: LinearCode<P = PackedType<U, FA>>,
-	H: HashDigest<PackedType<U, FI>>,
+	LC: LinearCode<P = PackedType<U, FA>> + Sync,
+	H: HashDigest<PackedType<U, FI>> + Sync,
 	H::Digest: Copy + Default + Send,
-	VCS: VectorCommitScheme<H::Digest>,
+	VCS: VectorCommitScheme<H::Digest> + Sync,
 {
 	type Commitment = VCS::Commitment;
 	type Committed = (Vec<RowMajorMatrix<PackedType<U, FI>>>, VCS::Committed);
@@ -239,37 +239,47 @@ where
 		let n_rows = 1 << self.log_rows;
 		let n_cols_enc = self.code.len();
 
+		let results = polys
+			.par_iter()
+			.map(|poly| -> Result<_, Error> {
+				let mut encoded =
+					vec![PackedType::<U, FI>::default(); n_rows * n_cols_enc / pi_width];
+				let poly_vals_packed =
+					<PackedType<U, FI> as PackedExtension<F>>::cast_exts(poly.evals());
+
+				transpose::transpose(
+					PackedType::<U, FI>::unpack_scalars(poly_vals_packed),
+					PackedType::<U, FI>::unpack_scalars_mut(
+						&mut encoded[..n_rows * self.code.dim() / pi_width],
+					),
+					1 << self.code.dim_bits(),
+					1 << self.log_rows,
+				);
+
+				self.code
+					.encode_batch_inplace(
+						<PackedType<U, FI> as PackedExtension<FA>>::cast_bases_mut(&mut encoded),
+						self.log_rows + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
+					)
+					.map_err(|err| Error::EncodeError(Box::new(err)))?;
+
+				let mut digests = vec![H::Digest::default(); n_cols_enc];
+				encoded
+					.par_chunks_exact(n_rows / pi_width)
+					.map(H::hash)
+					.collect_into_vec(&mut digests);
+
+				let encoded_mat = RowMajorMatrix::new(encoded, n_rows / pi_width);
+
+				Ok((digests, encoded_mat))
+			})
+			.collect::<Vec<_>>();
+
 		let mut encoded_mats = Vec::with_capacity(polys.len());
 		let mut all_digests = Vec::with_capacity(polys.len());
-		for poly in polys {
-			let mut encoded = vec![PackedType::<U, FI>::default(); n_rows * n_cols_enc / pi_width];
-			let poly_vals_packed =
-				<PackedType<U, FI> as PackedExtension<F>>::cast_exts(poly.evals());
-
-			transpose::transpose(
-				PackedType::<U, FI>::unpack_scalars(poly_vals_packed),
-				PackedType::<U, FI>::unpack_scalars_mut(
-					&mut encoded[..n_rows * self.code.dim() / pi_width],
-				),
-				1 << self.code.dim_bits(),
-				1 << self.log_rows,
-			);
-
-			self.code
-				.encode_batch_inplace(
-					<PackedType<U, FI> as PackedExtension<FA>>::cast_bases_mut(&mut encoded),
-					self.log_rows + log2_strict_usize(<FI as ExtensionField<FA>>::DEGREE),
-				)
-				.map_err(|err| Error::EncodeError(Box::new(err)))?;
-
-			let mut digests = vec![H::Digest::default(); n_cols_enc];
-			encoded
-				.par_chunks_exact(n_rows / pi_width)
-				.map(H::hash)
-				.collect_into_vec(&mut digests);
+		for result in results {
+			let (digests, encoded_mat) = result?;
 			all_digests.push(digests);
-
-			let encoded_mat = RowMajorMatrix::new(encoded, n_rows / pi_width);
 			encoded_mats.push(encoded_mat);
 		}
 

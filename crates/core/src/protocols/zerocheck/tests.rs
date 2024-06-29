@@ -37,12 +37,15 @@ where
 {
 	let multilinears = (0..n_multilinears)
 		.map(|j| {
-			let mut values = vec![F::ZERO; 1 << n_vars];
-			(0..(1 << n_vars)).for_each(|i| {
-				if i % n_multilinears != j {
-					values[i] = Field::random(&mut *rng);
-				}
-			});
+			let values = (0..(1 << n_vars))
+				.map(|i| {
+					if i % n_multilinears != j {
+						Field::random(&mut *rng)
+					} else {
+						Field::ZERO
+					}
+				})
+				.collect();
 			MultilinearExtension::from_values(values).unwrap()
 		})
 		.collect::<Vec<_>>();

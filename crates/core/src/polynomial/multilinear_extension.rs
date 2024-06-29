@@ -4,7 +4,7 @@ use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::Multi
 use crate::polynomial::util::PackingDeref;
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
-	packed::{get_packed_slice, set_packed_slice},
+	packed::{get_packed_slice, iter_packed_slice, set_packed_slice_unchecked},
 	underlier::UnderlierType,
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
@@ -252,27 +252,29 @@ where
 			});
 		}
 
+		const CHUNK_SIZE: usize = 64;
 		let n_vars = query.n_vars();
 		let query_expansion = query.expansion();
-		let query_length = PE::WIDTH * query_expansion.len();
 		let packed_result_evals = out;
 		packed_result_evals
-			.par_iter_mut()
+			.par_chunks_mut(CHUNK_SIZE)
 			.enumerate()
-			.for_each(|(i, packed_result_eval)| {
-				(0..PE::WIDTH).for_each(|j| {
-					let index = (i << PE::LOG_WIDTH) | j;
-					let result_eval = (0..query_length)
-						.into_par_iter()
-						.zip(((index << n_vars)..((index + 1) << n_vars)).into_par_iter())
-						.with_min_len(256)
-						.map(|(query_index, eval_index)| {
-							get_packed_slice(query_expansion, query_index)
-								* get_packed_slice(&self.evals, eval_index)
-						})
-						.sum();
-					packed_result_eval.set(j, result_eval);
-				});
+			.for_each(|(i, packed_result_evals)| {
+				for (k, packed_result_eval) in packed_result_evals.iter_mut().enumerate() {
+					let offset = i * CHUNK_SIZE;
+					for j in 0..PE::WIDTH {
+						let index = ((offset + k) << PE::LOG_WIDTH) | j;
+
+						let offset = index << n_vars;
+						let mut result_eval = PE::Scalar::ZERO;
+						for (t, query_expansion) in iter_packed_slice(query_expansion).enumerate() {
+							result_eval +=
+								query_expansion * get_packed_slice(&self.evals, t + offset);
+						}
+
+						packed_result_eval.set(j, result_eval);
+					}
+				}
 			});
 		Ok(())
 	}
@@ -578,7 +580,12 @@ where
 
 		let evals = &self.0.evals()[(index << vars) / P::WIDTH..((index + 1) << vars) / P::WIDTH];
 		for i in 0..1 << vars {
-			set_packed_slice(dst, i, get_packed_slice(evals, i).into());
+			let scalar = get_packed_slice(evals, i).into();
+
+			// Safety: 'i < 1 << vars' and 'dst.len() * PE::WIDTH == 1 << vars'
+			unsafe {
+				set_packed_slice_unchecked(dst, i, scalar);
+			}
 		}
 		Ok(())
 	}
@@ -628,8 +635,8 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		packed::iter_packed_slice, BinaryField128b, BinaryField16b as F, BinaryField32b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b as P,
+		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
+		PackedBinaryField8x16b as P,
 	};
 
 	#[test]

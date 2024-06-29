@@ -16,7 +16,7 @@ use std::{borrow::Borrow, cmp, ops::Range};
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug)]
-enum SumcheckMultilinear<P: PackedField, M> {
+enum SumcheckMultilinear<P: PackedField, M: Send> {
 	/// Small field polynomial - to be folded into large field at `switchover` round
 	Transparent {
 		switchover: usize,
@@ -120,7 +120,7 @@ pub trait AbstractSumcheckEvaluator<P: PackedField>: Sync {
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub struct ProverState<PW, M>
+pub struct ProverState<PW, M: Send>
 where
 	PW: PackedField,
 	M: MultilinearPoly<PW> + Sync,
@@ -133,7 +133,7 @@ where
 impl<PW, M> ProverState<PW, M>
 where
 	PW: PackedField,
-	M: MultilinearPoly<PW> + Sync,
+	M: MultilinearPoly<PW> + Sync + Send,
 {
 	pub fn new(
 		n_rounds: usize,
@@ -196,42 +196,46 @@ where
 		let partial_query = MultilinearQuery::with_full_query(&[prev_rd_challenge])?;
 
 		// Perform switchover and/or folding
-		let mut any_transparent_left = false;
-
-		for multilin in multilinears.iter_mut() {
-			match *multilin {
-				SumcheckMultilinear::Transparent {
-					switchover,
-					ref small_field_multilin,
-				} => {
-					if switchover <= *round {
-						let query_ref = query.as_ref().expect(
-							"query is guaranteed to be Some while there are transparent \
+		let any_transparent_left = multilinears
+			.par_iter_mut()
+			.map(|multilin| -> Result<bool, PolynomialError> {
+				let mut any_transparent_left = false;
+				match *multilin {
+					SumcheckMultilinear::Transparent {
+						switchover,
+						ref small_field_multilin,
+					} => {
+						if switchover <= *round {
+							let query_ref = query.as_ref().expect(
+								"query is guaranteed to be Some while there are transparent \
 								multilinears remaining",
-						);
-						// At switchover, perform inner products in large field and save them
-						// in a newly created MLE.
-						let large_field_folded_multilin = small_field_multilin
-							.borrow()
-							.evaluate_partial_low(query_ref)?;
+							);
+							// At switchover, perform inner products in large field and save them
+							// in a newly created MLE.
+							let large_field_folded_multilin = small_field_multilin
+								.borrow()
+								.evaluate_partial_low(query_ref)?;
 
-						*multilin = SumcheckMultilinear::Folded {
-							large_field_folded_multilin,
-						};
-					} else {
-						any_transparent_left = true;
+							*multilin = SumcheckMultilinear::Folded {
+								large_field_folded_multilin,
+							};
+						} else {
+							any_transparent_left = true;
+						}
+					}
+
+					SumcheckMultilinear::Folded {
+						ref mut large_field_folded_multilin,
+					} => {
+						// Post-switchover, simply halve large field MLE.
+						*large_field_folded_multilin =
+							large_field_folded_multilin.evaluate_partial_low(&partial_query)?;
 					}
 				}
 
-				SumcheckMultilinear::Folded {
-					ref mut large_field_folded_multilin,
-				} => {
-					// Post-switchover, simply halve large field MLE.
-					*large_field_folded_multilin =
-						large_field_folded_multilin.evaluate_partial_low(&partial_query)?;
-				}
-			}
-		}
+				Ok(any_transparent_left)
+			})
+			.reduce(|| Ok(false), |lhs, rhs| Ok(lhs? || rhs?))?;
 
 		// All folded large field - tensor is no more needed.
 		if !any_transparent_left {
@@ -356,7 +360,7 @@ where
 		let precomps = self.multilinears.iter().map(precomp).collect::<Vec<_>>();
 
 		/// Process batches of vertices in parallel, accumulating the round evaluations.
-		const BATCH_SIZE: usize = 256;
+		const BATCH_SIZE: usize = 64;
 
 		let evals = vertex_state_iterator
 			.chunks(BATCH_SIZE)
