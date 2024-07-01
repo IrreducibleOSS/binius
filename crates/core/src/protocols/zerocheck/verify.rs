@@ -1,12 +1,15 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use super::{
-	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckReductor, ZerocheckRoundClaim},
+	zerocheck::{ZerocheckClaim, ZerocheckProof, ZerocheckReductor},
 	Error, VerificationError,
 };
 use crate::{
 	challenger::{CanObserve, CanSample},
-	protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim},
+	protocols::{
+		abstract_sumcheck::{self, finalize_evalcheck_claim},
+		evalcheck::EvalcheckClaim,
+	},
 };
 use binius_field::TowerField;
 use tracing::instrument;
@@ -34,19 +37,11 @@ where
 	}
 
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);
-	let first_round_claim = setup_first_round_claim();
 	let reductor = ZerocheckReductor {
 		alphas: &zerocheck_challenges,
 	};
-	let evalcheck_claim =
-		abstract_sumcheck::verify(&claim.poly, first_round_claim, proof, reductor, challenger)?;
+	let reduced_claim =
+		abstract_sumcheck::verify(claim.clone().into(), proof, reductor, challenger)?;
 
-	Ok(evalcheck_claim)
-}
-
-fn setup_first_round_claim<F: TowerField>() -> ZerocheckRoundClaim<F> {
-	ZerocheckRoundClaim {
-		partial_point: vec![],
-		current_round_sum: F::ZERO,
-	}
+	finalize_evalcheck_claim(&claim.poly, reduced_claim).map_err(Into::into)
 }

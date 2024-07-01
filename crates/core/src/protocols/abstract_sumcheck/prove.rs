@@ -1,13 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{AbstractSumcheckProver, AbstractSumcheckRound};
+use super::{AbstractSumcheckProver, AbstractSumcheckRound, ReducedClaim};
 use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::{
 		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
 		MultilinearQuery,
 	},
-	protocols::evalcheck::EvalcheckClaim,
 };
 use binius_field::{Field, PackedField};
 use binius_utils::array_2d::Array2D;
@@ -474,7 +473,7 @@ pub fn prove<F, CH, E>(
 	n_vars: usize,
 	mut sumcheck_prover: impl AbstractSumcheckProver<F, Error = E>,
 	mut challenger: CH,
-) -> Result<(EvalcheckClaim<F>, Vec<AbstractSumcheckRound<F>>), E>
+) -> Result<(ReducedClaim<F>, Vec<AbstractSumcheckRound<F>>), E>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
@@ -490,7 +489,7 @@ where
 		rd_proofs.push(sumcheck_round);
 	}
 
-	let evalcheck_claim = sumcheck_prover.finalize(prev_rd_challenge)?;
+	let reduced_claim = sumcheck_prover.finalize(prev_rd_challenge)?;
 
-	Ok((evalcheck_claim, rd_proofs))
+	Ok((reduced_claim, rd_proofs))
 }

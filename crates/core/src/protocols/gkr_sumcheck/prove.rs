@@ -8,18 +8,13 @@ use super::{
 	Error,
 };
 use crate::{
-	oracle::CompositePolyOracle,
 	polynomial::{
 		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly,
 		Error as PolynomialError, EvaluationDomain, MultilinearExtension,
 	},
-	protocols::{
-		abstract_sumcheck::{
-			check_evaluation_domain, reduce_final_round_claim, validate_rd_challenge,
-			AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
-			ProverState,
-		},
-		evalcheck::EvalcheckClaim,
+	protocols::abstract_sumcheck::{
+		check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
+		AbstractSumcheckProver, AbstractSumcheckReductor, ProverState, ReducedClaim,
 	},
 	witness::MultilinearWitness,
 };
@@ -38,7 +33,8 @@ where
 	FS: Field,
 	CW: CompositionPoly<PW::Scalar>,
 {
-	oracle: CompositePolyOracle<F>,
+	n_vars: usize,
+	degree: usize,
 	composition: CW,
 	domain: &'a EvaluationDomain<FS>,
 	#[getset(get = "pub")]
@@ -69,8 +65,8 @@ where
 		gkr_round_challenge: &[F],
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
-		let n_vars = claim.poly.n_vars();
-		let degree = claim.poly.max_individual_degree();
+		let n_vars = claim.n_vars;
+		let degree = claim.degree;
 
 		if degree == 0 {
 			return Err(Error::PolynomialDegreeIsZero);
@@ -101,7 +97,8 @@ where
 		let gkr_round_challenge = gkr_round_challenge.to_vec();
 
 		let gkr_sumcheck_prover = GkrSumcheckProver {
-			oracle: claim.poly,
+			n_vars,
+			degree,
 			composition,
 			domain,
 			round_claim,
@@ -117,7 +114,7 @@ where
 	}
 
 	#[instrument(skip_all, name = "gkr_sumcheck::finalize")]
-	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
+	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -130,8 +127,7 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let evalcheck_claim = reduce_final_round_claim(&self.oracle, self.round_claim)?;
-		Ok(evalcheck_claim)
+		Ok(self.round_claim.into())
 	}
 
 	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
@@ -147,18 +143,17 @@ where
 	}
 
 	fn compute_round_coeffs(&mut self) -> Result<Vec<PW::Scalar>, Error> {
-		let degree = self.oracle.max_individual_degree();
-		if degree == 1 {
+		if self.degree == 1 {
 			return Ok(vec![PW::Scalar::default()]);
 		}
 
-		let rd_vars = self.oracle.n_vars() - self.round;
+		let rd_vars = self.n_vars - self.round;
 		let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
 
 		let round_coeffs = if self.round == 0 {
 			let poly_mle = self.poly_mle.take().expect("poly_mle is initialized");
 			let evaluator = GkrSumcheckFirstRoundEvaluator {
-				degree,
+				degree: self.degree,
 				eq_ind: &self.round_eq_ind,
 				evaluation_domain: self.domain,
 				domain_points: self.domain.points(),
@@ -173,7 +168,7 @@ where
 			)
 		} else {
 			let evaluator = GkrSumcheckLaterRoundEvaluator {
-				degree,
+				degree: self.degree,
 				eq_ind: &self.round_eq_ind,
 				evaluation_domain: self.domain,
 				domain_points: self.domain.points(),
@@ -198,7 +193,7 @@ where
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
-		if self.round >= self.oracle.n_vars() {
+		if self.round >= self.n_vars {
 			return Err(Error::TooManyExecuteRoundCalls);
 		}
 
@@ -276,7 +271,7 @@ where
 		GkrSumcheckProver::execute_round(self, prev_rd_challenge)
 	}
 
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Self::Error> {
 		GkrSumcheckProver::finalize(self, prev_rd_challenge)
 	}
 
@@ -285,7 +280,7 @@ where
 	}
 
 	fn n_vars(&self) -> usize {
-		self.oracle.n_vars()
+		self.n_vars
 	}
 }
 

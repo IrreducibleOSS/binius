@@ -26,13 +26,13 @@ pub struct AbstractSumcheckProof<F> {
 
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckClaim<F: Field> {
-	pub poly: CompositePolyOracle<F>,
+	pub n_vars: usize,
 	pub sum: F,
 }
 
 impl<F: Field> AbstractSumcheckClaim<F> {
 	pub fn n_vars(&self) -> usize {
-		self.poly.n_vars()
+		self.n_vars
 	}
 }
 
@@ -40,6 +40,21 @@ impl<F: Field> AbstractSumcheckClaim<F> {
 pub struct AbstractSumcheckRoundClaim<F: Field> {
 	pub partial_point: Vec<F>,
 	pub current_round_sum: F,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReducedClaim<F: Field> {
+	pub eval_point: Vec<F>,
+	pub eval: F,
+}
+
+impl<F: Field> From<AbstractSumcheckRoundClaim<F>> for ReducedClaim<F> {
+	fn from(claim: AbstractSumcheckRoundClaim<F>) -> Self {
+		Self {
+			eval_point: claim.partial_point,
+			eval: claim.current_round_sum,
+		}
+	}
 }
 
 pub trait AbstractSumcheckReductor<F: Field> {
@@ -69,7 +84,7 @@ pub trait AbstractSumcheckProver<F: Field> {
 		prev_rd_challenge: Option<F>,
 	) -> Result<AbstractSumcheckRound<F>, Self::Error>;
 
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error>;
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Self::Error>;
 
 	/// Returns whether two provers may be used together in a batch proof
 	///
@@ -79,28 +94,6 @@ pub trait AbstractSumcheckProver<F: Field> {
 	fn batch_proving_consistent(&self, other: &Self) -> bool;
 
 	fn n_vars(&self) -> usize;
-}
-
-pub fn reduce_final_round_claim<F: Field>(
-	poly_oracle: &CompositePolyOracle<F>,
-	round_claim: AbstractSumcheckRoundClaim<F>,
-) -> Result<EvalcheckClaim<F>, Error> {
-	let AbstractSumcheckRoundClaim {
-		partial_point: eval_point,
-		current_round_sum: eval,
-	} = round_claim;
-
-	if eval_point.len() != poly_oracle.n_vars() {
-		return Err(VerificationError::NumberOfRounds.into());
-	}
-
-	let evalcheck_claim = EvalcheckClaim {
-		poly: poly_oracle.clone(),
-		eval_point,
-		eval,
-		is_random_point: true,
-	};
-	Ok(evalcheck_claim)
 }
 
 /// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
@@ -131,4 +124,23 @@ pub fn validate_rd_challenge<F: Field>(
 	}
 
 	Ok(())
+}
+
+pub fn finalize_evalcheck_claim<F: Field>(
+	poly_oracle: &CompositePolyOracle<F>,
+	reduced_claim: ReducedClaim<F>,
+) -> Result<EvalcheckClaim<F>, Error> {
+	let ReducedClaim { eval_point, eval } = reduced_claim;
+
+	if eval_point.len() != poly_oracle.n_vars() {
+		return Err(VerificationError::NumberOfRounds.into());
+	}
+
+	let evalcheck_claim = EvalcheckClaim {
+		poly: poly_oracle.clone(),
+		eval_point,
+		eval,
+		is_random_point: true,
+	};
+	Ok(evalcheck_claim)
 }

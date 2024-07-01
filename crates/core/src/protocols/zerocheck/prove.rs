@@ -14,13 +14,10 @@ use crate::{
 		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly,
 		Error as PolynomialError, EvaluationDomain, MultilinearExtension, MultilinearQuery,
 	},
-	protocols::{
-		abstract_sumcheck::{
-			self, check_evaluation_domain, reduce_final_round_claim, validate_rd_challenge,
-			AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
-			ProverState,
-		},
-		evalcheck::EvalcheckClaim,
+	protocols::abstract_sumcheck::{
+		self, check_evaluation_domain, finalize_evalcheck_claim, validate_rd_challenge,
+		AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor, ProverState,
+		ReducedClaim,
 	},
 	witness::MultilinearWitness,
 };
@@ -57,8 +54,10 @@ where
 	let zerocheck_prover: ZerocheckProver<F, PW, FS, _> =
 		ZerocheckProver::new(domain, claim.clone(), witness, &zerocheck_challenges, switchover_fn)?;
 
-	let (evalcheck_claim, rounds) =
+	let (reduced_claim, rounds) =
 		abstract_sumcheck::prove(claim.poly.n_vars(), zerocheck_prover, challenger)?;
+
+	let evalcheck_claim = finalize_evalcheck_claim(&claim.poly, reduced_claim)?;
 
 	let zerocheck_proof = ZerocheckProof { rounds };
 	let output = ZerocheckProveOutput {
@@ -90,6 +89,7 @@ where
 	FS: Field,
 	CW: CompositionPoly<PW>,
 {
+	#[getset(get = "pub")]
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
 	domain: &'a EvaluationDomain<FS>,
@@ -207,7 +207,7 @@ where
 	}
 
 	#[instrument(skip_all, name = "zerocheck::finalize")]
-	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
+	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -220,8 +220,7 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let evalcheck_claim = reduce_final_round_claim(&self.oracle, self.round_claim)?;
-		Ok(evalcheck_claim)
+		Ok(self.round_claim.into())
 	}
 
 	// Update the round_eq_ind for the next zerocheck round
@@ -479,7 +478,7 @@ where
 		ZerocheckProver::execute_round(self, prev_rd_challenge)
 	}
 
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Self::Error> {
 		ZerocheckProver::finalize(self, prev_rd_challenge)
 	}
 

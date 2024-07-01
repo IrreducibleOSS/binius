@@ -8,19 +8,14 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
 	challenger::HashChallenger,
-	oracle::{
-		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultilinearPolyOracle,
-	},
 	polynomial::{
 		transparent::eq_ind::EqIndPartialEval, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension,
+		MultilinearExtension, MultilinearQuery,
 	},
 	protocols::{
 		gkr_sumcheck::{batch_prove, batch_verify, GkrSumcheckProver},
 		test_utils::TestProductComposition,
 	},
-	witness::MultilinearWitnessIndex,
 };
 
 use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
@@ -28,20 +23,16 @@ use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
 	new_claims: Vec<GkrSumcheckClaim<F>>,
 	new_witnesses: Vec<GkrSumcheckWitness<'a, F, TestProductComposition>>,
-	oracle_set: MultilinearOracleSet<F>,
-	witness_index: MultilinearWitnessIndex<'a, F>,
 	rng: StdRng,
 }
 
 fn create_claims_witnesses_helper<F, FE>(
 	mut rng: StdRng,
-	mut oracle_set: MultilinearOracleSet<FE>,
-	mut witness_index: MultilinearWitnessIndex<'_, FE>,
 	n_vars: usize,
 	n_shared_multilins: usize,
 	n_composites: usize,
 	r: Vec<FE>,
-) -> CreateClaimsWitnessesOutput<'_, FE>
+) -> CreateClaimsWitnessesOutput<'static, FE>
 where
 	F: TowerField,
 	FE: TowerField + ExtensionField<F>,
@@ -56,16 +47,6 @@ where
 		.unwrap();
 
 	let n_total_multilins = n_shared_multilins + n_composites - 1;
-	let batch_id = oracle_set.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: n_total_multilins,
-		tower_level: F::TOWER_LEVEL,
-	});
-
-	let multilin_oracles = (0..n_total_multilins)
-		.map(|index| oracle_set.committed_oracle(CommittedId { batch_id, index }))
-		.collect::<Vec<MultilinearPolyOracle<FE>>>();
-
 	let mut multilins = Vec::with_capacity(n_total_multilins);
 	for _ in 0..n_total_multilins {
 		let random_multilin = MultilinearExtension::from_values(
@@ -77,30 +58,17 @@ where
 		multilins.push(random_multilin);
 	}
 
-	(0..n_total_multilins).for_each(|i| {
-		witness_index.set(multilin_oracles[i].id(), multilins[i].clone().specialize_arc_dyn());
-	});
-
 	let mut new_claims = Vec::with_capacity(n_composites);
 	let mut new_witnesses = Vec::with_capacity(n_composites);
 	(0..n_composites).for_each(|i| {
 		let n_composite_multilins = n_shared_multilins + i;
-		let composite_oracle = CompositePolyOracle::new(
-			n_vars,
-			(0..n_composite_multilins)
-				.map(|j| multilin_oracles[j].clone())
-				.collect(),
-			TestProductComposition::new(n_composite_multilins),
-		)
-		.unwrap();
+		let multilinears = (0..n_composite_multilins)
+			.map(|j| multilins[j].clone().specialize_arc_dyn())
+			.collect::<Vec<_>>();
 		let witness_poly = MultilinearComposite::new(
 			n_vars,
 			TestProductComposition::new(n_composite_multilins),
-			composite_oracle
-				.inner_polys()
-				.into_iter()
-				.map(|multilin_oracle| witness_index.get(multilin_oracle.id()).unwrap().clone())
-				.collect(),
+			multilinears,
 		)
 		.unwrap();
 
@@ -120,7 +88,8 @@ where
 		};
 
 		let claim = GkrSumcheckClaim {
-			poly: composite_oracle,
+			n_vars,
+			degree: n_composite_multilins,
 			r: r.clone(),
 			sum,
 		};
@@ -131,8 +100,6 @@ where
 	CreateClaimsWitnessesOutput {
 		new_claims,
 		new_witnesses,
-		oracle_set,
-		witness_index,
 		rng,
 	}
 }
@@ -142,8 +109,6 @@ fn test_prove_verify_batch() {
 	type F = BinaryField32b;
 	type FE = BinaryField128b;
 	let mut rng = StdRng::seed_from_u64(0);
-	let oracle_set = MultilinearOracleSet::<FE>::new();
-	let witness_index = MultilinearWitnessIndex::<FE>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
 	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -161,13 +126,9 @@ fn test_prove_verify_batch() {
 	let CreateClaimsWitnessesOutput {
 		new_claims,
 		new_witnesses,
-		oracle_set,
-		witness_index,
 		rng,
 	} = create_claims_witnesses_helper::<F, FE>(
 		rng,
-		oracle_set,
-		witness_index,
 		n_vars,
 		n_shared_multilins,
 		n_composites,
@@ -179,16 +140,17 @@ fn test_prove_verify_batch() {
 	witnesses.extend(new_witnesses);
 
 	// Create the gkr sumcheck provers
-	let _ = (oracle_set, witness_index, rng);
-	assert_eq!(claims.len(), witnesses.len());
+	let _ = rng;
+	let n_claims = claims.len();
+	assert_eq!(witnesses.len(), n_claims);
 	let domains = (2..=max_degree + 1)
 		.map(|size| EvaluationDomain::<FE>::new(size).unwrap())
 		.collect::<Vec<_>>();
 
-	let witness_claim_iter = witnesses.into_iter().zip(claims.clone());
+	let witness_claim_iter = witnesses.clone().into_iter().zip(claims.clone());
 	let provers = witness_claim_iter
 		.map(|(witness, claim)| {
-			let degree = claim.poly.inner_polys().len();
+			let degree = claim.degree;
 			let domain = &domains[degree - 1];
 			GkrSumcheckProver::<_, FE, _, _>::new(domain, claim, witness, &r, |_| 1).unwrap()
 		})
@@ -198,6 +160,21 @@ fn test_prove_verify_batch() {
 	let proof = prove_output.proof;
 	assert_eq!(proof.rounds.len(), n_vars);
 
-	let _evalcheck_claims =
-		batch_verify(claims.iter().cloned(), proof, verifier_challenger).unwrap();
+	let reduced_claims = batch_verify(claims.iter().cloned(), proof, verifier_challenger).unwrap();
+	assert_eq!(reduced_claims.len(), n_claims);
+
+	// Sanity check all reduced claims have the same evaluation point
+	let evaluation_point = &reduced_claims[0].eval_point;
+	assert!(reduced_claims
+		.iter()
+		.all(|claim| claim.eval_point == *evaluation_point));
+
+	// Sanity check correctness of these reduced claims
+	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point).unwrap();
+
+	for (reduced_claim, witness) in reduced_claims.into_iter().zip(witnesses) {
+		let actual_eval = witness.poly.evaluate(&multilinear_query).unwrap();
+		let expected_eval = reduced_claim.eval;
+		assert_eq!(actual_eval, expected_eval);
+	}
 }

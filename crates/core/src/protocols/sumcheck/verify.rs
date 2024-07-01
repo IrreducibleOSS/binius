@@ -2,12 +2,15 @@
 
 use super::{
 	error::Error,
-	sumcheck::{SumcheckClaim, SumcheckReductor, SumcheckRoundClaim},
+	sumcheck::{SumcheckClaim, SumcheckReductor},
 	SumcheckProof, VerificationError,
 };
 use crate::{
 	challenger::{CanObserve, CanSample},
-	protocols::{abstract_sumcheck, evalcheck::EvalcheckClaim},
+	protocols::{
+		abstract_sumcheck::{self, finalize_evalcheck_claim},
+		evalcheck::EvalcheckClaim,
+	},
 };
 use binius_field::Field;
 use tracing::instrument;
@@ -29,16 +32,10 @@ where
 		return Err(VerificationError::NumberOfRounds.into());
 	}
 
-	let first_round_claim = setup_first_round_claim(claim);
 	let reductor = SumcheckReductor;
-	let evalcheck_claim =
-		abstract_sumcheck::verify(&claim.poly, first_round_claim, proof, reductor, challenger)?;
-	Ok(evalcheck_claim)
-}
+	let abstract_sumcheck_claim = claim.clone().into();
+	let reduced_claim =
+		abstract_sumcheck::verify(abstract_sumcheck_claim, proof, reductor, challenger)?;
 
-fn setup_first_round_claim<F: Field>(claim: &SumcheckClaim<F>) -> SumcheckRoundClaim<F> {
-	SumcheckRoundClaim {
-		partial_point: vec![],
-		current_round_sum: claim.sum,
-	}
+	finalize_evalcheck_claim(&claim.poly, reduced_claim).map_err(Into::into)
 }

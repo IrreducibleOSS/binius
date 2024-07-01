@@ -3,7 +3,7 @@
 use binius_field::Field;
 use p3_challenger::{CanObserve, CanSample};
 
-use crate::protocols::evalcheck::EvalcheckClaim;
+use crate::protocols::abstract_sumcheck::ReducedClaim;
 
 use super::{
 	AbstractSumcheckClaim, AbstractSumcheckProver, AbstractSumcheckReductor, AbstractSumcheckRound,
@@ -14,13 +14,38 @@ use super::{
 pub struct AbstractSumcheckBatchProof<F> {
 	pub rounds: Vec<AbstractSumcheckRound<F>>,
 	/// Evaluations of each multivariate in the batch at the challenge point.
-	pub evals: Vec<F>,
+	/// NB: These evaluations may not be in the same order as the original claims
+	/// as internally the batch proving protocol will stable sort the claims.
+	pub sorted_evals: Vec<F>,
 }
 
 #[derive(Debug)]
 pub struct AbstractSumcheckBatchProveOutput<F: Field> {
-	pub evalcheck_claims: Vec<EvalcheckClaim<F>>,
+	pub reduced_claims: Vec<ReducedClaim<F>>,
 	pub proof: AbstractSumcheckBatchProof<F>,
+}
+
+struct BatchedAbstractSumcheckRoundClaim<F: Field> {
+	pub partial_point: Vec<F>,
+	pub current_batched_round_sum: F,
+}
+
+impl<F: Field> From<AbstractSumcheckRoundClaim<F>> for BatchedAbstractSumcheckRoundClaim<F> {
+	fn from(claim: AbstractSumcheckRoundClaim<F>) -> Self {
+		Self {
+			partial_point: claim.partial_point,
+			current_batched_round_sum: claim.current_round_sum,
+		}
+	}
+}
+
+impl<F: Field> From<BatchedAbstractSumcheckRoundClaim<F>> for AbstractSumcheckRoundClaim<F> {
+	fn from(claim: BatchedAbstractSumcheckRoundClaim<F>) -> Self {
+		Self {
+			partial_point: claim.partial_point,
+			current_round_sum: claim.current_batched_round_sum,
+		}
+	}
 }
 
 /// Prove a batched abstract sumcheck instance.
@@ -35,27 +60,24 @@ where
 	ASP: AbstractSumcheckProver<F>,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let mut provers_vec = provers.into_iter().collect::<Vec<_>>();
-	// NOTE: Important to use stable sorting for prover-verifier consistency!
-	provers_vec.sort_by_key(|prover| prover.n_vars());
-	provers_vec.reverse();
+	let (original_indices, mut sorted_provers) = stable_sort(provers, |prover| prover.n_vars());
 
-	if provers_vec.is_empty() {
+	if sorted_provers.is_empty() {
 		return Err(Error::EmptyBatch.into());
 	}
 
-	let first_prover = &provers_vec[0];
-	let is_batch_elligible = provers_vec
+	let first_prover = &sorted_provers[0];
+	let is_batch_elligible = sorted_provers
 		.iter()
 		.all(|prover| first_prover.batch_proving_consistent(prover));
 	if !is_batch_elligible {
 		return Err(Error::InelligibleBatch.into());
 	}
 
-	let n_rounds = provers_vec.first().map(|claim| claim.n_vars()).unwrap_or(0);
+	let n_rounds = first_prover.n_vars();
 
 	let mut first_batch_coeff = Some(F::ONE);
-	let mut batch_coeffs = Vec::with_capacity(provers_vec.len());
+	let mut batch_coeffs = Vec::with_capacity(sorted_provers.len());
 	let mut round_proofs = Vec::with_capacity(n_rounds);
 
 	let mut prev_rd_challenge = None;
@@ -65,13 +87,13 @@ where
 		let mut batch_round_proof = AbstractSumcheckRound { coeffs: Vec::new() };
 
 		// Process the reduced sumcheck instances
-		for (prover, &coeff) in provers_vec.iter_mut().zip(batch_coeffs.iter()) {
+		for (prover, &coeff) in sorted_provers.iter_mut().zip(batch_coeffs.iter()) {
 			let proof = prover.execute_round(prev_rd_challenge)?;
 			mix_round_proofs(&mut batch_round_proof, &proof, coeff);
 		}
 
 		// Mix in the new sumcheck instances with number of variables matching the current round.
-		while let Some(next_prover) = provers_vec.get_mut(batch_coeffs.len()) {
+		while let Some(next_prover) = sorted_provers.get_mut(batch_coeffs.len()) {
 			if next_prover.n_vars() != n_vars {
 				break;
 			}
@@ -88,7 +110,7 @@ where
 		prev_rd_challenge = Some(challenger.sample());
 	}
 
-	let evalcheck_claims = provers_vec
+	let sorted_reduced_claims = sorted_provers
 		.into_iter()
 		.map(|prover| {
 			if prover.n_vars() == 0 {
@@ -99,16 +121,21 @@ where
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let evals = evalcheck_claims.iter().map(|claim| claim.eval).collect();
+	let sorted_evals = sorted_reduced_claims
+		.iter()
+		.map(|claim| claim.eval)
+		.collect();
 
 	let sumcheck_batch_proof = AbstractSumcheckBatchProof {
 		rounds: round_proofs,
-		evals,
+		sorted_evals,
 	};
+
+	let reduced_claims = unsort(original_indices, sorted_reduced_claims);
 
 	Ok(AbstractSumcheckBatchProveOutput {
 		proof: sumcheck_batch_proof,
-		evalcheck_claims,
+		reduced_claims,
 	})
 }
 
@@ -120,130 +147,116 @@ pub fn batch_verify<F, ASR, CH>(
 	proof: AbstractSumcheckBatchProof<F>,
 	reductor: ASR,
 	mut challenger: CH,
-) -> Result<Vec<EvalcheckClaim<F>>, ASR::Error>
+) -> Result<Vec<ReducedClaim<F>>, ASR::Error>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
 	ASR: AbstractSumcheckReductor<F>,
 {
-	let mut claims_vec = claims.into_iter().collect::<Vec<_>>();
-	// NOTE: Important to use stable sorting for prover-verifier consistency!
-	claims_vec.sort_by_key(|claim| claim.poly.n_vars());
-	claims_vec.reverse();
-
-	if claims_vec.is_empty() {
+	let (original_indices, sorted_claims) = stable_sort(claims, |claim| claim.n_vars());
+	if sorted_claims.is_empty() {
 		return Err(Error::EmptyBatch.into());
 	}
 
-	let n_rounds = claims_vec
-		.first()
-		.map(|claim| claim.poly.n_vars())
-		.unwrap_or(0);
+	let n_rounds = sorted_claims[0].n_vars();
 
 	if proof.rounds.len() != n_rounds {
 		return Err(Error::Verification(VerificationError::NumberOfRounds).into());
 	}
 
 	let mut first_batch_coeff = Some(F::ONE);
-	let mut batch_coeffs = Vec::with_capacity(claims_vec.len());
-	let mut rd_claim = AbstractSumcheckRoundClaim {
+	let mut batch_coeffs = Vec::with_capacity(sorted_claims.len());
+	let mut rd_claim = BatchedAbstractSumcheckRoundClaim {
 		partial_point: Vec::with_capacity(n_rounds),
-		current_round_sum: F::ZERO,
+		current_batched_round_sum: F::ZERO,
 	};
 
 	for (round_no, round_proof) in proof.rounds.iter().enumerate() {
 		let n_vars = n_rounds - round_no;
 
 		// Mix in new sumcheck claims with the appropriate number of variables
-		while let Some(next_claim) = claims_vec.get(batch_coeffs.len()) {
-			if next_claim.poly.n_vars() != n_vars {
+		while let Some(next_claim) = sorted_claims.get(batch_coeffs.len()) {
+			if next_claim.n_vars() != n_vars {
 				break;
 			}
 
 			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
 			batch_coeffs.push(batching_coeff);
 
-			rd_claim.current_round_sum += next_claim.sum * batching_coeff;
+			rd_claim.current_batched_round_sum += next_claim.sum * batching_coeff;
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
-		rd_claim = reductor.reduce_round_claim(
-			round_no,
-			rd_claim,
-			challenger.sample(),
-			round_proof.clone(),
-		)?;
+		rd_claim = reductor
+			.reduce_round_claim(
+				round_no,
+				rd_claim.into(),
+				challenger.sample(),
+				round_proof.clone(),
+			)?
+			.into();
 	}
 
 	// Mix in remaining sumcheck claims with 0 variables
-	for claim in claims_vec[batch_coeffs.len()..].iter() {
-		debug_assert_eq!(claim.poly.n_vars(), 0);
+	for claim in sorted_claims[batch_coeffs.len()..].iter() {
+		debug_assert_eq!(claim.n_vars(), 0);
 
 		let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
 		batch_coeffs.push(batching_coeff);
 
-		rd_claim.current_round_sum += claim.sum * batching_coeff;
+		rd_claim.current_batched_round_sum += claim.sum * batching_coeff;
 	}
 
-	batch_verify_final::<F, ASR::Error>(&claims_vec, &batch_coeffs, &proof.evals, rd_claim)
-}
-
-/// Verifies a batch sumcheck proof final step, reducing the final claim to evaluation claims.
-fn batch_verify_final<F, E>(
-	claims: &[AbstractSumcheckClaim<F>],
-	batch_coeffs: &[F],
-	evals: &[F],
-	final_claim: AbstractSumcheckRoundClaim<F>,
-) -> Result<Vec<EvalcheckClaim<F>>, E>
-where
-	F: Field,
-	E: From<Error>,
-{
-	let AbstractSumcheckRoundClaim {
+	let BatchedAbstractSumcheckRoundClaim {
 		partial_point: eval_point,
-		current_round_sum: final_eval,
-	} = final_claim;
+		current_batched_round_sum: final_eval,
+	} = rd_claim;
 
 	// Check that oracles are in descending order by n_vars
-	if claims
+	if sorted_claims
 		.windows(2)
-		.any(|pair| pair[0].poly.n_vars() < pair[1].poly.n_vars())
+		.any(|pair| pair[0].n_vars() < pair[1].n_vars())
 	{
 		return Err(Error::OraclesOutOfOrder.into());
 	}
 
-	let n_rounds = claims.first().map(|claim| claim.poly.n_vars()).unwrap_or(0);
+	let n_rounds = sorted_claims
+		.first()
+		.map(|claim| claim.n_vars())
+		.unwrap_or(0);
 
 	if eval_point.len() != n_rounds {
 		return Err(Error::Verification(VerificationError::NumberOfRounds).into());
 	}
-	if claims.len() != batch_coeffs.len() {
+	if sorted_claims.len() != batch_coeffs.len() {
 		return Err(Error::Verification(VerificationError::NumberOfBatchCoeffs).into());
 	}
-	if evals.len() != claims.len() {
+	if proof.sorted_evals.len() != sorted_claims.len() {
 		return Err(Error::Verification(VerificationError::NumberOfFinalEvaluations).into());
 	}
 
-	let batched_eval = evals
+	let batched_eval = proof
+		.sorted_evals
 		.iter()
 		.zip(batch_coeffs)
-		.map(|(eval, coeff)| *eval * *coeff)
+		.map(|(eval, coeff)| *eval * coeff)
 		.sum::<F>();
 
 	assert_eq!(batched_eval, final_eval);
 
-	let eval_claims = evals
-		.iter()
-		.zip(claims)
-		.map(|(eval, claim)| EvalcheckClaim {
-			poly: claim.poly.clone(),
-			eval_point: eval_point[n_rounds - claim.poly.n_vars()..].to_vec(),
-			eval: *eval,
-			is_random_point: true,
-		})
-		.collect();
+	let sorted_reduced_claims =
+		proof
+			.sorted_evals
+			.iter()
+			.zip(sorted_claims)
+			.map(|(eval, claim)| ReducedClaim {
+				eval_point: eval_point[n_rounds - claim.n_vars()..].to_vec(),
+				eval: *eval,
+			});
 
-	Ok(eval_claims)
+	let reduced_claims = unsort(original_indices, sorted_reduced_claims);
+
+	Ok(reduced_claims)
 }
 
 fn mix_round_proofs<F: Field>(
@@ -270,4 +283,28 @@ where
 	} else {
 		challenger.sample()
 	}
+}
+
+fn stable_sort<T>(
+	objs: impl IntoIterator<Item = T>,
+	key: impl Fn(&T) -> usize,
+) -> (Vec<usize>, Vec<T>) {
+	let mut indexed_objs = objs.into_iter().enumerate().collect::<Vec<_>>();
+	// NOTE: Important to use stable sorting for prover-verifier consistency!
+	indexed_objs.sort_by_key(|(_, obj)| key(obj));
+	indexed_objs.reverse();
+	let (original_indices, sorted_objs) = indexed_objs.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
+	(original_indices, sorted_objs)
+}
+
+fn unsort<T>(
+	original_indices: impl IntoIterator<Item = usize>,
+	sorted_objs: impl IntoIterator<Item = T>,
+) -> Vec<T> {
+	let mut temp = original_indices
+		.into_iter()
+		.zip(sorted_objs)
+		.collect::<Vec<_>>();
+	temp.sort_by_key(|(i, _)| *i);
+	temp.into_iter().map(|(_, obj)| obj).collect()
 }

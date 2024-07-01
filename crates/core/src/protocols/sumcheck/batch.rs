@@ -14,14 +14,22 @@ use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::{CompositionPoly, MultilinearPoly},
 	protocols::{
-		abstract_sumcheck::{self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput},
+		abstract_sumcheck::{
+			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
+			AbstractSumcheckBatchProveOutput,
+		},
 		evalcheck::EvalcheckClaim,
 	},
 };
 use binius_field::{ExtensionField, Field, PackedField};
 
 pub type SumcheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
-pub type SumcheckBatchProveOutput<F> = AbstractSumcheckBatchProveOutput<F>;
+
+#[derive(Debug)]
+pub struct SumcheckBatchProveOutput<F: Field> {
+	pub evalcheck_claims: Vec<EvalcheckClaim<F>>,
+	pub proof: SumcheckBatchProof<F>,
+}
 
 /// Prove a batched sumcheck instance.
 ///
@@ -39,7 +47,27 @@ where
 	M: MultilinearPoly<PW> + Sync + Send,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	abstract_sumcheck::batch_prove(provers, challenger)
+	let provers_vec = provers.into_iter().collect::<Vec<_>>();
+	let oracles = provers_vec
+		.iter()
+		.map(|p| p.oracle().clone())
+		.collect::<Vec<_>>();
+
+	let AbstractSumcheckBatchProveOutput {
+		proof,
+		reduced_claims,
+	} = abstract_sumcheck::batch_prove(provers_vec, challenger)?;
+
+	let evalcheck_claims = reduced_claims
+		.into_iter()
+		.zip(oracles.into_iter())
+		.map(|(rc, o)| finalize_evalcheck_claim(&o, rc))
+		.collect::<Result<_, _>>()?;
+
+	Ok(SumcheckBatchProveOutput {
+		evalcheck_claims,
+		proof,
+	})
 }
 
 /// Verify a batched sumcheck instance.
@@ -55,5 +83,21 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let sumcheck_reductor = SumcheckReductor;
-	abstract_sumcheck::batch_verify(claims, proof, sumcheck_reductor, challenger)
+
+	let claims_vec = claims.into_iter().collect::<Vec<_>>();
+
+	let reduced_claims = abstract_sumcheck::batch_verify(
+		claims_vec.clone().into_iter().map(|c| c.into()),
+		proof,
+		sumcheck_reductor,
+		challenger,
+	)?;
+
+	let evalcheck_claims = reduced_claims
+		.into_iter()
+		.zip(claims_vec.into_iter())
+		.map(|(rc, c)| finalize_evalcheck_claim(&c.poly, rc))
+		.collect::<Result<_, _>>()?;
+
+	Ok(evalcheck_claims)
 }

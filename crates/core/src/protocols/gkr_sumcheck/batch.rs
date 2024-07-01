@@ -5,9 +5,8 @@ use p3_challenger::{CanObserve, CanSample};
 
 use crate::{
 	polynomial::CompositionPoly,
-	protocols::{
-		abstract_sumcheck::{self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput},
-		evalcheck::EvalcheckClaim,
+	protocols::abstract_sumcheck::{
+		self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput, ReducedClaim,
 	},
 };
 
@@ -44,7 +43,7 @@ pub fn batch_verify<F, CH>(
 	claims: impl IntoIterator<Item = GkrSumcheckClaim<F>>,
 	proof: GkrSumcheckBatchProof<F>,
 	challenger: CH,
-) -> Result<Vec<EvalcheckClaim<F>>, Error>
+) -> Result<Vec<ReducedClaim<F>>, Error>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,

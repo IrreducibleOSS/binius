@@ -2,6 +2,7 @@
 
 use super::{Error, VerificationError};
 use crate::{
+	oracle::CompositePolyOracle,
 	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
 	protocols::{
 		abstract_sumcheck::{
@@ -22,7 +23,26 @@ pub struct SumcheckProveOutput<F: Field> {
 	pub sumcheck_proof: SumcheckProof<F>,
 }
 
-pub type SumcheckClaim<F> = AbstractSumcheckClaim<F>;
+#[derive(Debug, Clone)]
+pub struct SumcheckClaim<F: Field> {
+	pub poly: CompositePolyOracle<F>,
+	pub sum: F,
+}
+
+impl<F: Field> SumcheckClaim<F> {
+	pub fn n_vars(&self) -> usize {
+		self.poly.n_vars()
+	}
+}
+
+impl<F: Field> From<SumcheckClaim<F>> for AbstractSumcheckClaim<F> {
+	fn from(value: SumcheckClaim<F>) -> Self {
+		Self {
+			n_vars: value.poly.n_vars(),
+			sum: value.sum,
+		}
+	}
+}
 
 /// Polynomial must be representable as a composition of multilinear polynomials
 pub type SumcheckWitness<P, C, M> = MultilinearComposite<P, C, M>;

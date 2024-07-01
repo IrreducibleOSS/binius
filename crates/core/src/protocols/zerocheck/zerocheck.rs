@@ -30,7 +30,7 @@ pub struct ZerocheckClaim<F: Field> {
 impl<F: Field> From<ZerocheckClaim<F>> for AbstractSumcheckClaim<F> {
 	fn from(value: ZerocheckClaim<F>) -> Self {
 		Self {
-			poly: value.poly,
+			n_vars: value.poly.n_vars(),
 			sum: F::ZERO,
 		}
 	}

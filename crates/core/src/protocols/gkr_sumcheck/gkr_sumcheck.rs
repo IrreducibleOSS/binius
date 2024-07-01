@@ -3,7 +3,6 @@
 use binius_field::{Field, PackedField};
 
 use crate::{
-	oracle::CompositePolyOracle,
 	polynomial::{evaluate_univariate, MultilinearComposite, MultilinearExtension},
 	protocols::abstract_sumcheck::{
 		AbstractSumcheckClaim, AbstractSumcheckReductor, AbstractSumcheckRound,
@@ -27,7 +26,8 @@ use super::{Error, VerificationError};
 /// at $r$.
 #[derive(Debug, Clone)]
 pub struct GkrSumcheckClaim<F: Field> {
-	pub poly: CompositePolyOracle<F>,
+	pub n_vars: usize,
+	pub degree: usize,
 	pub sum: F,
 	pub r: Vec<F>,
 }
@@ -56,16 +56,10 @@ where
 pub type GkrSumcheckRound<F> = AbstractSumcheckRound<F>;
 pub type GkrSumcheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
 
-impl<F: Field> GkrSumcheckClaim<F> {
-	pub fn n_vars(&self) -> usize {
-		self.poly.n_vars()
-	}
-}
-
 impl<F: Field> From<GkrSumcheckClaim<F>> for AbstractSumcheckClaim<F> {
 	fn from(value: GkrSumcheckClaim<F>) -> Self {
 		Self {
-			poly: value.poly,
+			n_vars: value.n_vars,
 			sum: value.sum,
 		}
 	}
@@ -99,7 +93,7 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for GkrSumcheckReductor<'a, F> {
 /// * `challenge`: The random challenge sampled by the verifier at the beginning of the round.
 /// * `alpha_i`: The Gkr Challenge for round i
 fn reduce_round_claim_helper<F: Field>(
-	claim: GkrSumcheckRoundClaim<F>,
+	round_claim: GkrSumcheckRoundClaim<F>,
 	challenge: F,
 	proof: GkrSumcheckRound<F>,
 	alpha_i: F,
@@ -107,7 +101,7 @@ fn reduce_round_claim_helper<F: Field>(
 	let GkrSumcheckRoundClaim {
 		mut partial_point,
 		current_round_sum,
-	} = claim;
+	} = round_claim;
 
 	let GkrSumcheckRound { mut coeffs } = proof;
 

@@ -14,14 +14,22 @@ use crate::{
 	challenger::{CanObserve, CanSample},
 	polynomial::CompositionPoly,
 	protocols::{
-		abstract_sumcheck::{self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput},
+		abstract_sumcheck::{
+			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
+			AbstractSumcheckBatchProveOutput,
+		},
 		evalcheck::EvalcheckClaim,
 	},
 };
 use binius_field::{ExtensionField, Field, PackedField};
 
 pub type ZerocheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
-pub type ZerocheckBatchProveOutput<F> = AbstractSumcheckBatchProveOutput<F>;
+
+#[derive(Debug)]
+pub struct ZerocheckBatchProveOutput<F: Field> {
+	pub evalcheck_claims: Vec<EvalcheckClaim<F>>,
+	pub proof: ZerocheckBatchProof<F>,
+}
 
 /// Prove a batched zerocheck instance.
 ///
@@ -38,7 +46,27 @@ where
 	CW: CompositionPoly<PW> + 'static,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	abstract_sumcheck::batch_prove(provers, challenger)
+	let provers_vec = provers.into_iter().collect::<Vec<_>>();
+	let oracles = provers_vec
+		.iter()
+		.map(|p| p.oracle().clone())
+		.collect::<Vec<_>>();
+
+	let AbstractSumcheckBatchProveOutput {
+		proof,
+		reduced_claims,
+	} = abstract_sumcheck::batch_prove(provers_vec, challenger)?;
+
+	let evalcheck_claims = reduced_claims
+		.into_iter()
+		.zip(oracles.into_iter())
+		.map(|(rc, o)| finalize_evalcheck_claim(&o, rc))
+		.collect::<Result<_, _>>()?;
+
+	Ok(ZerocheckBatchProveOutput {
+		evalcheck_claims,
+		proof,
+	})
 }
 
 /// Verify a batched zerocheck instance.
@@ -54,6 +82,10 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
+	let poly_oracles = claims_vec
+		.iter()
+		.map(|c| c.poly.clone())
+		.collect::<Vec<_>>();
 
 	// Ensure all claims have at least one variable
 	claims_vec
@@ -73,10 +105,18 @@ where
 	let alphas = challenger.sample_vec(max_n_vars - 1);
 
 	let reductor = ZerocheckReductor { alphas: &alphas };
-	abstract_sumcheck::batch_verify(
+	let reduced_claims = abstract_sumcheck::batch_verify(
 		claims_vec.into_iter().map(|c| c.into()),
 		proof,
 		reductor,
 		challenger,
-	)
+	)?;
+
+	let evalcheck_claims = reduced_claims
+		.into_iter()
+		.zip(poly_oracles)
+		.map(|(reduced_claim, poly_oracle)| finalize_evalcheck_claim(&poly_oracle, reduced_claim))
+		.collect::<Result<_, _>>()?;
+
+	Ok(evalcheck_claims)
 }

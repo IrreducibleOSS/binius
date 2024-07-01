@@ -16,11 +16,10 @@ use crate::{
 	},
 	protocols::{
 		abstract_sumcheck::{
-			self, check_evaluation_domain, reduce_final_round_claim, validate_rd_challenge,
+			self, check_evaluation_domain, finalize_evalcheck_claim, validate_rd_challenge,
 			AbstractSumcheckEvaluator, AbstractSumcheckProver, AbstractSumcheckReductor,
-			ProverState,
+			ProverState, ReducedClaim,
 		},
-		evalcheck::EvalcheckClaim,
 		sumcheck::SumcheckProof,
 	},
 };
@@ -58,8 +57,10 @@ where
 		switchover_fn,
 	)?;
 
-	let (evalcheck_claim, rounds) =
+	let (reduced_claim, rounds) =
 		abstract_sumcheck::prove(claim.n_vars(), sumcheck_prover, challenger)?;
+
+	let evalcheck_claim = finalize_evalcheck_claim(&claim.poly, reduced_claim)?;
 
 	let sumcheck_proof = SumcheckProof { rounds };
 	let output = SumcheckProveOutput {
@@ -92,6 +93,7 @@ where
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Sync + Send,
 {
+	#[getset(get = "pub")]
 	oracle: CompositePolyOracle<F>,
 	composition: CW,
 	domain: &'a EvaluationDomain<DomainField>,
@@ -161,7 +163,7 @@ where
 
 	/// Generic parameters allow to pass a different witness type to the inner Evalcheck claim.
 	#[instrument(skip_all, name = "sumcheck::finalize")]
-	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Error> {
+	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -174,8 +176,7 @@ where
 			self.reduce_claim(prev_rd_challenge)?;
 		}
 
-		let evalcheck_claim = reduce_final_round_claim(&self.oracle, self.round_claim)?;
-		Ok(evalcheck_claim)
+		Ok(self.round_claim.into())
 	}
 
 	#[instrument(skip_all, name = "sumcheck::execute_round")]
@@ -264,7 +265,7 @@ where
 		SumcheckProver::execute_round(self, prev_rd_challenge)
 	}
 
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<EvalcheckClaim<F>, Self::Error> {
+	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Self::Error> {
 		SumcheckProver::finalize(self, prev_rd_challenge)
 	}
 
