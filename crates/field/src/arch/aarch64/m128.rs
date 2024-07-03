@@ -284,7 +284,7 @@ impl UnderlierWithBitOps for M128 {
 			64 => T::Underlier::num_cast_from(as_array_ref::<_, u64, 2, _>(self, |a| {
 				Self::from(a[i])
 			})),
-			128 => T::Underlier::num_cast_from(*self).into(),
+			128 => T::Underlier::num_cast_from(*self),
 			_ => panic!("unsupported bit count"),
 		};
 

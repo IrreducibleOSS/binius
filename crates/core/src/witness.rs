@@ -59,14 +59,19 @@ where
 }
 
 #[derive(Debug)]
+struct MultilinearExtensionBacking<'a, U: UnderlierType> {
+	underliers: ArcOrRef<'a, [U]>,
+	tower_level: usize,
+}
+
+#[derive(Debug)]
 struct MultilinearExtensionIndexEntry<'a, U: UnderlierType, F>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: Field,
 {
 	type_erased: MultilinearWitness<'a, PackedType<U, F>>,
-	underliers: ArcOrRef<'a, [U]>,
-	tower_level: usize,
+	backing: Option<MultilinearExtensionBacking<'a, U>>,
 }
 
 /// Data structure that indexes multilinear extensions by oracle ID.
@@ -95,6 +100,8 @@ where
 pub enum Error {
 	#[error("witness not found for oracle {id}")]
 	MissingWitness { id: OracleId },
+	#[error("witness for oracle id {id} does not have an explicit backing multilinear")]
+	NoExplicitBackingMultilinearExtension { id: OracleId },
 	#[error("oracle tower height does not match field parameter")]
 	OracleTowerHeightMismatch {
 		oracle_id: OracleId,
@@ -129,16 +136,24 @@ where
 			.ok_or(Error::MissingWitness { id })?
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
-		if entry.tower_level != FS::TOWER_LEVEL {
+
+		let backing = entry
+			.backing
+			.as_ref()
+			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
+
+		if backing.tower_level != FS::TOWER_LEVEL {
 			return Err(Error::OracleTowerHeightMismatch {
 				oracle_id: id,
-				oracle_level: entry.tower_level,
+				oracle_level: backing.tower_level,
 				field_level: FS::TOWER_LEVEL,
 			});
 		}
 
+		let underliers_ref = backing.underliers.as_ref();
+
 		let mle = MultilinearExtension::from_values_slice(
-			PackedType::<U, FS>::from_underliers_ref(entry.underliers.as_ref()),
+			PackedType::<U, FS>::from_underliers_ref(underliers_ref),
 		)?;
 		Ok(mle)
 	}
@@ -176,10 +191,13 @@ where
 			let mle = MultilinearExtension::<_, PackingDeref<U, FS, _>>::from_underliers(
 				witness.clone(),
 			)?;
-			entries[id] = Some(MultilinearExtensionIndexEntry {
-				type_erased: mle.specialize_arc_dyn(),
+			let backing = MultilinearExtensionBacking {
 				underliers: ArcOrRef::Arc(witness),
 				tower_level: FS::TOWER_LEVEL,
+			};
+			entries[id] = Some(MultilinearExtensionIndexEntry {
+				type_erased: mle.specialize_arc_dyn(),
+				backing: Some(backing),
 			});
 		}
 		Ok(MultilinearExtensionIndex { entries })
@@ -204,10 +222,31 @@ where
 			let mle = MultilinearExtension::from_values_slice(
 				PackedType::<U, FS>::from_underliers_ref(witness),
 			)?;
-			entries[id] = Some(MultilinearExtensionIndexEntry {
-				type_erased: mle.specialize_arc_dyn(),
+			let backing = MultilinearExtensionBacking {
 				underliers: ArcOrRef::Ref(witness),
 				tower_level: FS::TOWER_LEVEL,
+			};
+			entries[id] = Some(MultilinearExtensionIndexEntry {
+				type_erased: mle.specialize_arc_dyn(),
+				backing: Some(backing),
+			});
+		}
+		Ok(MultilinearExtensionIndex { entries })
+	}
+
+	pub fn update_multilin_poly(
+		self,
+		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>)>,
+	) -> Result<MultilinearExtensionIndex<'a, U, FW>, Error> {
+		let MultilinearExtensionIndex { mut entries } = self;
+		for (id, witness) in witnesses {
+			if id >= entries.len() {
+				entries.resize_with(id + 1, || None);
+			}
+
+			entries[id] = Some(MultilinearExtensionIndexEntry {
+				type_erased: witness,
+				backing: None,
 			});
 		}
 		Ok(MultilinearExtensionIndex { entries })
