@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::Field;
+use binius_utils::sorting::{stable_sort, unsort};
 use p3_challenger::{CanObserve, CanSample};
 
 use crate::protocols::abstract_sumcheck::ReducedClaim;
@@ -60,7 +61,8 @@ where
 	ASP: AbstractSumcheckProver<F>,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let (original_indices, mut sorted_provers) = stable_sort(provers, |prover| prover.n_vars());
+	let (original_indices, mut sorted_provers) =
+		stable_sort(provers, |prover| prover.n_vars(), true);
 
 	if sorted_provers.is_empty() {
 		return Err(Error::EmptyBatch.into());
@@ -153,7 +155,7 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 	ASR: AbstractSumcheckReductor<F>,
 {
-	let (original_indices, sorted_claims) = stable_sort(claims, |claim| claim.n_vars());
+	let (original_indices, sorted_claims) = stable_sort(claims, |claim| claim.n_vars(), true);
 	if sorted_claims.is_empty() {
 		return Err(Error::EmptyBatch.into());
 	}
@@ -283,28 +285,4 @@ where
 	} else {
 		challenger.sample()
 	}
-}
-
-fn stable_sort<T>(
-	objs: impl IntoIterator<Item = T>,
-	key: impl Fn(&T) -> usize,
-) -> (Vec<usize>, Vec<T>) {
-	let mut indexed_objs = objs.into_iter().enumerate().collect::<Vec<_>>();
-	// NOTE: Important to use stable sorting for prover-verifier consistency!
-	indexed_objs.sort_by_key(|(_, obj)| key(obj));
-	indexed_objs.reverse();
-	let (original_indices, sorted_objs) = indexed_objs.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
-	(original_indices, sorted_objs)
-}
-
-fn unsort<T>(
-	original_indices: impl IntoIterator<Item = usize>,
-	sorted_objs: impl IntoIterator<Item = T>,
-) -> Vec<T> {
-	let mut temp = original_indices
-		.into_iter()
-		.zip(sorted_objs)
-		.collect::<Vec<_>>();
-	temp.sort_by_key(|(i, _)| *i);
-	temp.into_iter().map(|(_, obj)| obj).collect()
 }

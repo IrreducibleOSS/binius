@@ -5,4 +5,5 @@ pub mod checked_arithmetics;
 pub mod examples;
 pub mod iter;
 pub mod rayon;
+pub mod sorting;
 pub mod tracing;
