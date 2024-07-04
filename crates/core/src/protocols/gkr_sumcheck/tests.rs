@@ -81,7 +81,9 @@ where
 			sum += poly_mle_evals[i] * eq_r.evaluate_on_hypercube(i).unwrap();
 		});
 
-		let poly_mle = MultilinearExtension::from_values(poly_mle_evals).unwrap();
+		let poly_mle = MultilinearExtension::from_values(poly_mle_evals)
+			.unwrap()
+			.specialize_arc_dyn();
 		let witness = GkrSumcheckWitness {
 			poly: witness_poly,
 			current_layer: poly_mle,
@@ -152,7 +154,7 @@ fn test_prove_verify_batch() {
 		.map(|(witness, claim)| {
 			let degree = claim.degree;
 			let domain = &domains[degree - 1];
-			GkrSumcheckProver::<_, FE, _, _>::new(domain, claim, witness, &r, |_| 1).unwrap()
+			GkrSumcheckProver::<_, FE, _, _>::new(domain, claim, witness, |_| 1).unwrap()
 		})
 		.collect::<Vec<_>>();
 

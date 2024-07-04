@@ -25,4 +25,5 @@ mod tests;
 
 pub use batch::*;
 pub use error::*;
+pub use gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 pub use prove::*;

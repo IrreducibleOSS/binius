@@ -3,7 +3,7 @@
 use binius_field::{Field, PackedField};
 
 use crate::{
-	polynomial::{evaluate_univariate, MultilinearComposite, MultilinearExtension},
+	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::abstract_sumcheck::{
 		AbstractSumcheckClaim, AbstractSumcheckReductor, AbstractSumcheckRound,
 		AbstractSumcheckRoundClaim,
@@ -43,14 +43,14 @@ where
 {
 	/// The $n$-variate multilinear composite polynomial $f(x)$
 	pub poly: MultilinearComposite<P, C, MultilinearWitness<'a, P>>,
-	/// The $n$-variate multilinear extension $R_0(x)$ of the values
+	/// The $n$-variate multilinear witness $R_0(x)$ of the values
 	/// of the evaluated GKR circuit at the current layer.
 	/// This is useful advice to the honest prover as it will equal the
-	/// multilinear extension of the boolean hypercube evaluations of $f(x)$
+	/// multilinear witness of the boolean hypercube evaluations of $f(x)$
 	/// This fact allows for less computation in round 0.
 	///
 	/// Specifically $\forall x \in \{0, 1\}^n, f(x) = R_0(x)$
-	pub current_layer: MultilinearExtension<P::Scalar>,
+	pub current_layer: MultilinearWitness<'a, P::Scalar>,
 }
 
 pub type GkrSumcheckRound<F> = AbstractSumcheckRound<F>;

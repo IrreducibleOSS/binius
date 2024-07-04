@@ -47,7 +47,7 @@ where
 	gkr_challenge_point: Vec<F>,
 	round_eq_ind: MultilinearExtension<PW::Scalar>,
 
-	poly_mle: Option<MultilinearExtension<PW::Scalar>>,
+	poly_mle: Option<MultilinearWitness<'a, PW::Scalar>>,
 }
 
 impl<'a, F, PW, FS, CW> GkrSumcheckProver<'a, F, PW, FS, CW>
@@ -62,11 +62,11 @@ where
 		domain: &'a EvaluationDomain<FS>,
 		claim: GkrSumcheckClaim<F>,
 		witness: GkrSumcheckWitness<'a, PW, CW>,
-		gkr_round_challenge: &[F],
 		switchover_fn: impl Fn(usize) -> usize,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars;
 		let degree = claim.degree;
+		let gkr_round_challenge = &claim.r;
 
 		if degree == 0 {
 			return Err(Error::PolynomialDegreeIsZero);
@@ -295,7 +295,7 @@ where
 	pub evaluation_domain: &'a EvaluationDomain<FS>,
 	pub degree: usize,
 	pub eq_ind: &'a MultilinearExtension<F>,
-	pub poly_mle: MultilinearExtension<F>,
+	pub poly_mle: MultilinearWitness<'a, F>,
 	pub gkr_challenge: F,
 }
 
