@@ -6,12 +6,17 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearOracleSet,
-	polynomial::{Error as PolynomialError, MultilinearExtension},
+	polynomial::Error as PolynomialError,
 	protocols::prodcheck::ProdcheckWitness,
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::TowerField;
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
+	PackedField, PackedFieldIndexable, TowerField,
+};
 use rayon::prelude::*;
+use std::sync::Arc;
 use tracing::instrument;
 
 /// Prove a multiset check instance reduction.
@@ -28,17 +33,19 @@ use tracing::instrument;
 /// where $\gamma$ and $\alpha$ are some large field challenges sampled via Fiat-Shamir
 /// (`alpha` is non-`None` if $n \ge 2$).
 #[instrument(skip_all, name = "msetcheck::prove")]
-pub fn prove<'a, F, FW>(
+pub fn prove<'a, U, F, FW>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearWitnessIndex<'a, FW>,
+	witness_index: MultilinearExtensionIndex<'a, U, FW>,
 	msetcheck_claim: &MsetcheckClaim<F>,
-	msetcheck_witness: MsetcheckWitness<'a, FW>,
+	msetcheck_witness: MsetcheckWitness<'a, PackedType<U, FW>>,
 	gamma: F,
 	alpha: Option<F>,
-) -> Result<MsetcheckProveOutput<'a, F, FW>, Error>
+) -> Result<MsetcheckProveOutput<'a, U, F, FW>, Error>
 where
+	U: UnderlierType + PackScalar<FW>,
 	F: TowerField + From<FW>,
 	FW: TowerField + From<F>,
+	PackedType<U, FW>: PackedFieldIndexable,
 {
 	let prodcheck_claim = reduce_msetcheck_claim(oracles, msetcheck_claim, gamma, alpha)?;
 
@@ -53,10 +60,16 @@ where
 		return Err(Error::WitnessNumVariablesMismatch);
 	}
 
-	let lincom_witness = |relation_witnesses: &[MultilinearWitness<'a, FW>]| -> Result<_, Error> {
+	let packing_log_width = PackedType::<U, FW>::LOG_WIDTH;
+
+	let lincom_witness = |relation_witnesses: &[MultilinearWitness<'a, PackedType<U, FW>>]| -> Result<Arc<[U]>, Error> {
 		// TODO: preallocate values
 		// Populate the accumulator vector with additive challenge term
-		let mut values = vec![FW::from(gamma); 1 << n_vars];
+        let mut underliers = vec![U::default(); 1 << (n_vars - packing_log_width)];
+        let values = PackedType::<U, FW>::unpack_scalars_mut(
+            PackedType::<U, FW>::from_underliers_ref_mut(underliers.as_mut_slice()));
+
+        values.fill(FW::from(gamma));
 
 		let (first_witness, rest_witnesses) = relation_witnesses
 			.split_first()
@@ -85,22 +98,26 @@ where
 			fw_coeff *= fw_alpha;
 		}
 
-		Ok(MultilinearExtension::from_values(values)?.specialize_arc_dyn())
+		Ok(underliers.into())
 	};
+
+	let t_oracle_id = prodcheck_claim.t_oracle.id();
+	let u_oracle_id = prodcheck_claim.u_oracle.id();
 
 	let t_polynomial = lincom_witness(msetcheck_witness.t_polynomials())?;
 	let u_polynomial = lincom_witness(msetcheck_witness.u_polynomials())?;
 
-	witness_index.set(prodcheck_claim.t_oracle.id(), t_polynomial.clone());
-	witness_index.set(prodcheck_claim.u_oracle.id(), u_polynomial.clone());
+	let witness_index = witness_index
+		.update_owned::<FW, _>([(t_oracle_id, t_polynomial), (u_oracle_id, u_polynomial)])?;
 
 	let prodcheck_witness = ProdcheckWitness {
-		t_polynomial,
-		u_polynomial,
+		t_polynomial: witness_index.get_multilin_poly(t_oracle_id)?,
+		u_polynomial: witness_index.get_multilin_poly(u_oracle_id)?,
 	};
 
 	Ok(MsetcheckProveOutput {
 		prodcheck_claim,
 		prodcheck_witness,
+		witness_index,
 	})
 }

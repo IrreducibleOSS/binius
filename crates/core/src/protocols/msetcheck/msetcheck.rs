@@ -4,9 +4,13 @@ use super::error::Error;
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
 	protocols::prodcheck::{ProdcheckClaim, ProdcheckWitness},
-	witness::MultilinearWitness,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{Field, TowerField};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	Field, PackedField, TowerField,
+};
 use getset::Getters;
 use std::iter;
 
@@ -49,20 +53,20 @@ impl<F: Field> MsetcheckClaim<F> {
 }
 
 #[derive(Debug, Getters)]
-pub struct MsetcheckWitness<'a, FW: TowerField> {
+pub struct MsetcheckWitness<'a, PW: PackedField> {
 	/// Witnesses to the T polynomials
 	#[get = "pub"]
-	t_polynomials: Vec<MultilinearWitness<'a, FW>>,
+	t_polynomials: Vec<MultilinearWitness<'a, PW>>,
 	/// Witnesses to the U polynomials
 	#[get = "pub"]
-	u_polynomials: Vec<MultilinearWitness<'a, FW>>,
+	u_polynomials: Vec<MultilinearWitness<'a, PW>>,
 }
 
-impl<'a, FW: TowerField> MsetcheckWitness<'a, FW> {
+impl<'a, PW: PackedField> MsetcheckWitness<'a, PW> {
 	/// Witness constructor
 	pub fn new(
-		t_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, FW>>,
-		u_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, FW>>,
+		t_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, PW>>,
+		u_polynomials: impl IntoIterator<Item = MultilinearWitness<'a, PW>>,
 	) -> Result<Self, Error> {
 		let t_polynomials = t_polynomials.into_iter().collect::<Vec<_>>();
 		let u_polynomials = u_polynomials.into_iter().collect::<Vec<_>>();
@@ -87,9 +91,10 @@ impl<'a, FW: TowerField> MsetcheckWitness<'a, FW> {
 }
 
 #[derive(Debug)]
-pub struct MsetcheckProveOutput<'a, F: Field, FW: TowerField> {
+pub struct MsetcheckProveOutput<'a, U: UnderlierType + PackScalar<FW>, F: Field, FW: Field> {
 	pub prodcheck_claim: ProdcheckClaim<F>,
-	pub prodcheck_witness: ProdcheckWitness<'a, FW>,
+	pub prodcheck_witness: ProdcheckWitness<'a, PackedType<U, FW>>,
+	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
 }
 
 pub fn reduce_msetcheck_claim<F: TowerField>(

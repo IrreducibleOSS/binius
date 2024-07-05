@@ -6,14 +6,18 @@ use crate::{
 		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
 		ProjectionVariant,
 	},
-	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearExtension},
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		evalcheck::EvalcheckClaim,
 		zerocheck::{ZerocheckClaim, ZerocheckWitness},
 	},
-	witness::MultilinearWitness,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	Field, PackedField, TowerField,
+};
 
 #[derive(Debug)]
 pub struct ReducedProductCheckClaims<F: Field> {
@@ -22,10 +26,10 @@ pub struct ReducedProductCheckClaims<F: Field> {
 }
 
 #[derive(Debug)]
-pub struct ProdcheckProveOutput<'a, F: Field, FW: Field> {
+pub struct ProdcheckProveOutput<'a, U: UnderlierType + PackScalar<F>, F: Field> {
 	pub reduced_product_check_claims: ReducedProductCheckClaims<F>,
-	pub t_prime_witness: ZerocheckWitness<'a, FW, SimpleMultGateComposition>,
-	pub f_prime_commit: MultilinearExtension<F>,
+	pub t_prime_witness: ZerocheckWitness<'a, PackedType<U, F>, SimpleMultGateComposition>,
+	pub witness_index: MultilinearExtensionIndex<'a, U, F>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,9 +51,9 @@ impl<F: Field> ProdcheckClaim<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProdcheckWitness<'a, FW: Field> {
-	pub t_polynomial: MultilinearWitness<'a, FW>,
-	pub u_polynomial: MultilinearWitness<'a, FW>,
+pub struct ProdcheckWitness<'a, PW: PackedField> {
+	pub t_polynomial: MultilinearWitness<'a, PW>,
+	pub u_polynomial: MultilinearWitness<'a, PW>,
 }
 
 pub(super) struct ProdcheckReducedClaimOracleIds {

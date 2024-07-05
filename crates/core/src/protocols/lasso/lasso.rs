@@ -6,17 +6,18 @@ use crate::{
 		BatchId, CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
 		MultilinearPolyOracle, OracleId, ShiftVariant,
 	},
-	polynomial::{
-		transparent::step_down::StepDown, CompositionPoly, Error as PolynomialError,
-		MultilinearExtension,
-	},
+	polynomial::{transparent::step_down::StepDown, CompositionPoly, Error as PolynomialError},
 	protocols::{
 		msetcheck::{MsetcheckClaim, MsetcheckWitness},
 		zerocheck::{ZerocheckClaim, ZerocheckWitness},
 	},
-	witness::MultilinearWitness,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{BinaryField16b, BinaryField32b, Field, PackedField, TowerField};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	BinaryField16b, BinaryField32b, Field, PackedField, TowerField,
+};
 use getset::{CopyGetters, Getters};
 
 pub trait LassoCount: TowerField {
@@ -66,34 +67,25 @@ impl LassoBatch {
 		Self { batch_id }
 	}
 
-	pub(super) fn counts_oracle<F: TowerField>(
-		&self,
-		oracles: &MultilinearOracleSet<F>,
-	) -> MultilinearPolyOracle<F> {
-		oracles.committed_oracle(CommittedId {
+	pub fn counts_committed_id(&self) -> CommittedId {
+		CommittedId {
 			batch_id: self.batch_id,
 			index: 0,
-		})
+		}
 	}
 
-	pub(super) fn carry_out_oracle<F: TowerField>(
-		&self,
-		oracles: &MultilinearOracleSet<F>,
-	) -> MultilinearPolyOracle<F> {
-		oracles.committed_oracle(CommittedId {
+	pub fn carry_out_committed_id(&self) -> CommittedId {
+		CommittedId {
 			batch_id: self.batch_id,
 			index: 1,
-		})
+		}
 	}
 
-	pub(super) fn final_counts_oracle<F: TowerField>(
-		&self,
-		oracles: &MultilinearOracleSet<F>,
-	) -> MultilinearPolyOracle<F> {
-		oracles.committed_oracle(CommittedId {
+	pub fn final_counts_committed_id(&self) -> CommittedId {
+		CommittedId {
 			batch_id: self.batch_id,
 			index: 2,
-		})
+		}
 	}
 }
 
@@ -125,19 +117,19 @@ impl<F: Field> LassoClaim<F> {
 }
 
 #[derive(Debug, Getters)]
-pub struct LassoWitness<'a, FW: TowerField, L: AsRef<[usize]>> {
+pub struct LassoWitness<'a, PW: PackedField, L: AsRef<[usize]>> {
 	#[get = "pub"]
-	t_polynomial: MultilinearWitness<'a, FW>,
+	t_polynomial: MultilinearWitness<'a, PW>,
 	#[get = "pub"]
-	u_polynomial: MultilinearWitness<'a, FW>,
+	u_polynomial: MultilinearWitness<'a, PW>,
 	#[get = "pub"]
 	u_to_t_mapping: L,
 }
 
-impl<'a, FW: TowerField, L: AsRef<[usize]>> LassoWitness<'a, FW, L> {
+impl<'a, PW: PackedField, L: AsRef<[usize]>> LassoWitness<'a, PW, L> {
 	pub fn new(
-		t_polynomial: MultilinearWitness<'a, FW>,
-		u_polynomial: MultilinearWitness<'a, FW>,
+		t_polynomial: MultilinearWitness<'a, PW>,
+		u_polynomial: MultilinearWitness<'a, PW>,
 		u_to_t_mapping: L,
 	) -> Result<Self, Error> {
 		if t_polynomial.n_vars() != u_polynomial.n_vars() {
@@ -204,11 +196,11 @@ pub struct ReducedLassoClaims<F: Field> {
 	pub msetcheck_claim: MsetcheckClaim<F>,
 }
 
-pub struct LassoProveOutput<'a, F: Field, FW: TowerField, PB: PackedField> {
+pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<FW>, F: Field, FW: TowerField> {
 	pub reduced_lasso_claims: ReducedLassoClaims<F>,
-	pub zerocheck_witness: ZerocheckWitness<'a, FW, UnaryCarryConstraint>,
-	pub msetcheck_witness: MsetcheckWitness<'a, FW>,
-	pub committed_polys: [MultilinearExtension<PB>; 3],
+	pub zerocheck_witness: ZerocheckWitness<'a, PackedType<U, FW>, UnaryCarryConstraint>,
+	pub msetcheck_witness: MsetcheckWitness<'a, PackedType<U, FW>>,
+	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
 }
 
 pub(super) struct LassoReducedClaimOracleIds {
@@ -234,9 +226,9 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 	let n_vars_gf2 = n_vars + C::TOWER_LEVEL;
 
 	// Extract Lasso committed column oracles
-	let counts_oracle = lasso_batch.counts_oracle(oracles);
-	let carry_out_oracle = lasso_batch.carry_out_oracle(oracles);
-	let final_counts_oracle = lasso_batch.final_counts_oracle(oracles);
+	let counts_oracle = oracles.committed_oracle(lasso_batch.counts_committed_id());
+	let carry_out_oracle = oracles.committed_oracle(lasso_batch.carry_out_committed_id());
+	let final_counts_oracle = oracles.committed_oracle(lasso_batch.final_counts_committed_id());
 
 	if counts_oracle.n_vars() != n_vars_gf2
 		|| carry_out_oracle.n_vars() != n_vars_gf2

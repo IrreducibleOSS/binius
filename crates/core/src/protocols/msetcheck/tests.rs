@@ -4,21 +4,21 @@ use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
 	polynomial::MultilinearExtension,
 	protocols::msetcheck::{prove, verify, MsetcheckClaim, MsetcheckWitness},
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	TowerField,
+	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b,
+	ExtensionField, Field, PackedBinaryField1x128b, PackedField, TowerField,
 };
 use std::iter::{successors, Step};
 
-fn create_polynomial<F: Field + Step, FW>(
+fn create_polynomial<F: Field + Step, PW>(
 	n_vars: usize,
 	stride: usize,
 	reversed: bool,
-) -> MultilinearWitness<'static, FW>
+) -> MultilinearWitness<'static, PW>
 where
-	FW: ExtensionField<F>,
+	PW: PackedField<Scalar: ExtensionField<F>>,
 {
 	let mut values = successors(Some(F::ZERO), |&pred| F::forward_checked(pred, stride))
 		.take(1 << n_vars)
@@ -35,21 +35,24 @@ where
 
 #[test]
 fn test_prove_verify_interaction() {
+	type P = PackedBinaryField1x128b;
 	type F = BinaryField128b;
+	type U = <P as WithUnderlier>::Underlier;
+
 	type F1 = BinaryField16b;
 	type F2 = BinaryField32b;
 	type F3 = BinaryField64b;
 	let n_vars = 10;
 
 	// Setup witness
-	let t1_polynomial = create_polynomial::<F1, F>(n_vars, 13, false);
-	let u1_polynomial = create_polynomial::<F1, F>(n_vars, 13, true);
+	let t1_polynomial = create_polynomial::<F1, P>(n_vars, 13, false);
+	let u1_polynomial = create_polynomial::<F1, P>(n_vars, 13, true);
 
-	let t2_polynomial = create_polynomial::<F2, F>(n_vars, 19, false);
-	let u2_polynomial = create_polynomial::<F2, F>(n_vars, 19, true);
+	let t2_polynomial = create_polynomial::<F2, P>(n_vars, 19, false);
+	let u2_polynomial = create_polynomial::<F2, P>(n_vars, 19, true);
 
-	let t3_polynomial = create_polynomial::<F3, F>(n_vars, 29, false);
-	let u3_polynomial = create_polynomial::<F3, F>(n_vars, 29, true);
+	let t3_polynomial = create_polynomial::<F3, P>(n_vars, 29, false);
+	let u3_polynomial = create_polynomial::<F3, P>(n_vars, 29, true);
 
 	let t_polynomials = [
 		t1_polynomial.clone(),
@@ -122,11 +125,10 @@ fn test_prove_verify_interaction() {
 	let alpha = F::new(0x346);
 
 	// PROVER
-	let mut witness_index = MultilinearWitnessIndex::new();
+	let witness_index = MultilinearExtensionIndex::<U, F>::new();
 
 	let prove_output =
-		prove(&mut oracles.clone(), &mut witness_index, &claim, witness, gamma, Some(alpha))
-			.unwrap();
+		prove(&mut oracles.clone(), witness_index, &claim, witness, gamma, Some(alpha)).unwrap();
 
 	// VERIFIER
 	let verified_reduced_claim = verify(&mut oracles.clone(), &claim, gamma, Some(alpha)).unwrap();

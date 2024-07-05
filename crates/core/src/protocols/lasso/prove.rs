@@ -9,70 +9,25 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearOracleSet,
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly},
+	polynomial::{MultilinearComposite, MultilinearPoly},
 	protocols::msetcheck::MsetcheckWitness,
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	BinaryField, BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
+	BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::izip;
-use std::{array, borrow::Borrow, fmt::Debug};
+use std::{array, sync::Arc};
 use tracing::instrument;
 
-/// Returns merge(x, y) where x, y are multilinear polynomials
-fn construct_large_field_merged_witness<F: Field>(
-	x: impl MultilinearPoly<F>,
-	y: impl MultilinearPoly<F>,
-) -> Result<MultilinearWitness<'static, F>, Error> {
-	let x = x.borrow();
-	let y = y.borrow();
-
-	let n_vars = x.n_vars();
-	if y.n_vars() != n_vars {
-		return Err(Error::MergedWitnessNumVariablesMismatch);
-	}
-
-	// TODO: Find a way to avoid these copies
-	let mut values = vec![F::ZERO; 1 << (n_vars + 1)];
-	let (x_values, y_values) = values.split_at_mut(1 << n_vars);
-	x.subcube_evals(x.n_vars(), 0, x_values)?;
-	y.subcube_evals(y.n_vars(), 0, y_values)?;
-	let merge_poly = MultilinearExtension::from_values(values)?;
-	Ok(merge_poly.specialize_arc_dyn())
-}
-
-// Returns merge(x, y) where x, y are MLEs over packed fields
-fn construct_packed_merged_witness<P: PackedField>(
-	x: &MultilinearExtension<P>,
-	y: &MultilinearExtension<P>,
-) -> Result<MultilinearExtension<P>, Error> {
-	let n_vars = x.n_vars();
-	if y.n_vars() != n_vars || n_vars < P::LOG_WIDTH {
-		return Err(Error::MergedWitnessNumVariablesMismatch);
-	}
-
-	// TODO: Find a way to avoid these copies
-	// (will be achieved once the MultilinearPoly wrapper impl for merged polynomials lands)
-	let mut values = vec![P::default(); 1 << (n_vars + 1 - P::LOG_WIDTH)];
-	let (x_values, y_values) = values.split_at_mut(1 << (n_vars - P::LOG_WIDTH));
-	x_values.copy_from_slice(x.evals());
-	y_values.copy_from_slice(y.evals());
-	Ok(MultilinearExtension::from_values(values)?)
-}
-
-// one day array::try_map would be a thing
-fn array_try_map<T, U: Debug, const N: usize>(
-	arr: [T; N],
-	closure: impl FnMut(T) -> Result<U, Error>,
-) -> Result<[U; N], Error> {
-	let vec = arr
-		.into_iter()
-		.map(closure)
-		.collect::<Result<Vec<_>, Error>>()?;
-	Ok(<[U; N]>::try_from(vec).expect("infallible by construction"))
+fn multilin_poly_to_underliers_ref_mut<U: UnderlierType + PackScalar<F>, F: Field>(
+	poly: impl MultilinearPoly<PackedType<U, F>>,
+	dest: &mut [U],
+) -> Result<(), Error> {
+	let packed_dest = PackedType::<U, F>::from_underliers_ref_mut(dest);
+	Ok(poly.subcube_evals(poly.n_vars(), 0, packed_dest)?)
 }
 
 /// Prove a Lasso instance reduction.
@@ -106,26 +61,27 @@ fn array_try_map<T, U: Debug, const N: usize>(
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[instrument(skip_all, name = "lasso::prove")]
-pub fn prove<'a, PC, PB, F, FW, L>(
+pub fn prove<'a, FC, U, F, FW, L>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearWitnessIndex<'a, FW>,
+	witness_index: MultilinearExtensionIndex<'a, U, FW>,
 	lasso_claim: &LassoClaim<F>,
-	lasso_witness: LassoWitness<'a, FW, L>,
+	lasso_witness: LassoWitness<'a, PackedType<U, FW>, L>,
 	lasso_batch: &LassoBatch,
-) -> Result<LassoProveOutput<'a, F, FW, PB>, Error>
+) -> Result<LassoProveOutput<'a, U, F, FW>, Error>
 where
-	PC: RepackedExtension<PB, Scalar: LassoCount> + PackedFieldIndexable + Pod,
-	PB: PackedField<Scalar = BinaryField1b> + Pod,
+	U: UnderlierType + PackScalar<FW> + PackScalar<FC> + PackScalar<BinaryField1b>,
+	FC: LassoCount,
+	PackedType<U, FC>: PackedFieldIndexable,
 	F: TowerField,
-	FW: TowerField + ExtensionField<PC::Scalar>,
+	FW: TowerField + ExtensionField<FC>,
 	L: AsRef<[usize]>,
 {
 	let n_vars = lasso_claim.n_vars();
-	let n_vars_gf2 = n_vars + PC::Scalar::TOWER_LEVEL;
+	let n_vars_gf2 = n_vars + FC::TOWER_LEVEL;
 
 	// Check that counts actually fit into the chosen data type
 	// NB. Need one more bit because 1 << n_vars is a valid count.
-	if n_vars >= <PC::Scalar as BinaryField>::N_BITS {
+	if n_vars >= FC::N_BITS {
 		return Err(Error::LassoCountTypeTooSmall);
 	}
 
@@ -133,19 +89,22 @@ where
 		return Err(Error::WitnessNumVariablesMismatch);
 	}
 
-	// GF(2) vectors for read counts, a total of seven
-	let mut gf2_vectors: [_; 7] =
-		array::from_fn(|_| vec![PB::default(); 1 << (n_vars_gf2 - PB::LOG_WIDTH)]);
+	let bit_packing_log_width = PackedType::<U, BinaryField1b>::LOG_WIDTH;
+	if n_vars_gf2 < bit_packing_log_width {
+		return Err(Error::WitnessSmallerThanUnderlier);
+	}
 
-	// recast GF(2) vectors into Lasso counts for addition gadget computations
+	// underliers for read counts vectors, a total of seven
+	let mut underlier_vecs: [_; 7] =
+		array::from_fn(|_| vec![U::default(); 1 << (n_vars_gf2 - bit_packing_log_width)]);
+
+	// cast underliers into Lasso counts for addition gadget computations
 	let [counts, counts_plus_one, carry_in, carry_out, carry_out_shifted, ones, final_counts] =
-		gf2_vectors
-			.each_mut()
-			// FIXME this is a hack that should be factored out when PackedDivisible lands
-			.map(|values_gf2| {
-				let counts_slice = must_cast_slice_mut::<PB, PC>(values_gf2.as_mut_slice());
-				PC::unpack_scalars_mut(counts_slice)
-			});
+		underlier_vecs.each_mut().map(|underliers| {
+			let packed_slice =
+				PackedType::<U, FC>::from_underliers_ref_mut(underliers.as_mut_slice());
+			PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
+		});
 
 	// addition gadget computing count+1 via a carry_in XORed with 1 at the lowest bit
 	let t_indice = lasso_witness.u_to_t_mapping().as_ref();
@@ -153,7 +112,7 @@ where
 		izip!(t_indice, counts, counts_plus_one, carry_in, carry_out, carry_out_shifted, ones)
 	{
 		let count = final_counts[t_index];
-		let (count_plus_one, overflow) = count.overflowing_add(PC::Scalar::ONE);
+		let (count_plus_one, overflow) = count.overflowing_add(FC::ONE);
 		assert!(!overflow, "Lasso count overflowed!");
 
 		final_counts[t_index] = count_plus_one;
@@ -162,46 +121,15 @@ where
 		*counts = count;
 		*counts_plus_one = count_plus_one;
 		*carry_in = count + count_plus_one;
-		*ones = PC::Scalar::ONE;
+		*ones = FC::ONE;
 		*carry_out_shifted = *carry_in + *ones;
 		*carry_out = (*carry_in).shr1();
 	}
 
-	// create Lasso count witnesses for packed columns: counts, counts+1, and final counts
-	// (TODO: actually share evals with corresponding GF(2) witnesses once a better field vec  is available)
-	let [counts, counts_plus_one, _carry_in, _carry_out, _carry_out_shifted, _ones, final_counts] =
-		gf2_vectors.each_mut();
-	let witnesses_to_pack = [counts, counts_plus_one, final_counts];
-
-	let [counts, counts_plus_one, final_counts] = array_try_map(witnesses_to_pack, |values_gf2| {
-		// TODO this is a hack that should be factored out when PackedDivisible lands
-		let counts_slice = must_cast_slice_mut::<PB, PC>(values_gf2.as_mut_slice());
-		Ok(MultilinearExtension::from_values(counts_slice.to_vec())?)
-	})?;
-
-	// All five GF(2) columns are needed in the witness index
-	// TODO once better field vec lands and we get rid of Cow within MultilinearExtension this
-	// can be greatly simplified.
-	let [(counts_gf2_arc_dyn, counts_gf2), (counts_plus_one_gf2_arc_dyn, _counts_plus_one_gf2), (carry_in_gf2_arc_dyn, _carry_in_gf2), (carry_out_gf2_arc_dyn, carry_out_gf2), (carry_out_shifted_gf2_arc_dyn, _carry_out_shifted_gf2), (ones_gf2_arc_dyn, _ones_gf2), (final_counts_gf2_arc_dyn, final_counts_gf2)] =
-		array_try_map(gf2_vectors, |values_gf2| {
-			let mle = MultilinearExtension::from_values(values_gf2)?;
-			let mle_borrowed = mle.clone();
-			let mle_arc_dyn = mle.specialize_arc_dyn();
-			Ok((mle_arc_dyn, mle_borrowed))
-		})?;
-
-	let counts_oracle = lasso_batch.counts_oracle(oracles);
-	let carry_out_oracle = lasso_batch.carry_out_oracle(oracles);
-	let final_counts_oracle = lasso_batch.final_counts_oracle(oracles);
-
-	witness_index.set_many([
-		(counts_oracle.id(), counts_gf2_arc_dyn.clone()),
-		(carry_out_oracle.id(), carry_out_gf2_arc_dyn.clone()),
-		(final_counts_oracle.id(), final_counts_gf2_arc_dyn.clone()),
-	]);
+	// construct virtual polynomial oracles
 
 	let (reduced_lasso_claims, reduced_claim_oracle_ids) =
-		reduce_lasso_claim::<PC::Scalar, _>(oracles, lasso_claim, lasso_batch)?;
+		reduce_lasso_claim::<FC, _>(oracles, lasso_claim, lasso_batch)?;
 
 	let LassoReducedClaimOracleIds {
 		tu_merged_oracle_id,
@@ -217,56 +145,88 @@ where
 		ones_repeating_oracle_id,
 	} = reduced_claim_oracle_ids;
 
-	witness_index.set_many([
-		(carry_in_oracle_id, carry_in_gf2_arc_dyn.clone()),
-		(carry_out_shifted_oracle_id, carry_out_shifted_gf2_arc_dyn),
-		(ones_repeating_oracle_id, ones_gf2_arc_dyn),
-		(counts_plus_one_oracle_id, counts_plus_one_gf2_arc_dyn),
-	]);
+	// generate msetcheck witness
+	let [counts, counts_plus_one, carry_in, carry_out, carry_out_shifted, ones, final_counts] =
+		underlier_vecs;
+
+	let fw_packing_log_width = PackedType::<U, FW>::LOG_WIDTH;
+	let fc_packing_log_width = PackedType::<U, FC>::LOG_WIDTH;
+
+	// [t, u]
+	let mut tu_merged = vec![U::default(); 1 << (n_vars + 1 - fw_packing_log_width)];
+	let half_tu_merged = tu_merged.len() / 2;
+	let (t_half, u_half) = tu_merged.split_at_mut(half_tu_merged);
+	multilin_poly_to_underliers_ref_mut::<U, FW>(lasso_witness.t_polynomial(), t_half)?;
+	multilin_poly_to_underliers_ref_mut::<U, FW>(lasso_witness.u_polynomial(), u_half)?;
+
+	// [final_counts, counts]
+	let mut final_counts_and_counts = final_counts.clone();
+	final_counts_and_counts.extend(counts.as_slice());
+
+	// [0, counts+1]
+	let zeros = vec![U::default(); 1 << (n_vars - fc_packing_log_width)];
+	let mut zeros_counts_plus_one = zeros.clone();
+	zeros_counts_plus_one.extend(counts_plus_one.as_slice());
+	debug_assert!(zeros.len() * 2 == zeros_counts_plus_one.len());
+
+	// add 1-bit witnesses to the index
+	let counts_oracle_id = oracles.committed_oracle_id(lasso_batch.counts_committed_id());
+	let carry_out_oracle_id = oracles.committed_oracle_id(lasso_batch.carry_out_committed_id());
+	let final_counts_oracle_id =
+		oracles.committed_oracle_id(lasso_batch.final_counts_committed_id());
+
+	let counts = Arc::<[U]>::from(counts);
+	let counts_plus_one = Arc::<[U]>::from(counts_plus_one);
+	let final_counts = Arc::<[U]>::from(final_counts);
+
+	let witness_index = witness_index.update_owned::<BinaryField1b, _>([
+		(counts_oracle_id, counts.clone()),
+		(counts_plus_one_oracle_id, counts_plus_one.clone()),
+		(carry_in_oracle_id, carry_in.into()),
+		(carry_out_oracle_id, carry_out.into()),
+		(carry_out_shifted_oracle_id, carry_out_shifted.into()),
+		(ones_repeating_oracle_id, ones.into()),
+		(final_counts_oracle_id, final_counts.clone()),
+	])?;
+
+	// add FC witnesses to the index
+	let witness_index = witness_index.update_owned::<FC, _>([
+		(packed_counts_oracle_id, counts),
+		(packed_counts_plus_one_oracle_id, counts_plus_one),
+		(packed_final_counts_oracle_id, final_counts),
+		(final_counts_and_counts_oracle_id, final_counts_and_counts.into()),
+		(zeros_counts_plus_one_oracle_id, zeros_counts_plus_one.into()),
+		(zeros_oracle_id, zeros.into()),
+	])?;
+
+	// ...and concatenated [t, u] one
+	let witness_index = witness_index.update_owned::<FW, _>([(tu_merged_oracle_id, tu_merged)])?;
+
+	// reduced witnesses
+	let counts = witness_index.get_multilin_poly(counts_oracle_id)?;
+	let carry_in = witness_index.get_multilin_poly(carry_in_oracle_id)?;
+	let carry_out = witness_index.get_multilin_poly(carry_out_oracle_id)?;
 
 	let zerocheck_witness = MultilinearComposite::new(
 		n_vars_gf2,
 		UnaryCarryConstraint,
-		vec![
-			counts_gf2_arc_dyn,
-			carry_in_gf2_arc_dyn,
-			carry_out_gf2_arc_dyn,
-		],
+		vec![counts, carry_in, carry_out],
 	)?;
 
-	let tu_merged = construct_large_field_merged_witness(
-		lasso_witness.t_polynomial(),
-		lasso_witness.u_polynomial(),
-	)?;
-
+	let tu_merged = witness_index.get_multilin_poly(tu_merged_oracle_id)?;
 	let final_counts_and_counts =
-		construct_packed_merged_witness(&final_counts, &counts)?.specialize_arc_dyn();
-
-	let zeros = MultilinearExtension::<PC>::zeros(n_vars)?;
-	let zeros_counts_plus_one =
-		construct_packed_merged_witness(&zeros, &counts_plus_one)?.specialize_arc_dyn();
-
-	witness_index.set_many([
-		(tu_merged_oracle_id, tu_merged.clone()),
-		(final_counts_and_counts_oracle_id, final_counts_and_counts.clone()),
-		(zeros_counts_plus_one_oracle_id, zeros_counts_plus_one.clone()),
-		(zeros_oracle_id, zeros.specialize_arc_dyn()),
-		(packed_counts_oracle_id, counts.specialize_arc_dyn()),
-		(packed_counts_plus_one_oracle_id, counts_plus_one.specialize_arc_dyn()),
-		(packed_final_counts_oracle_id, final_counts.specialize_arc_dyn()),
-	]);
+		witness_index.get_multilin_poly(final_counts_and_counts_oracle_id)?;
+	let zeros_counts_plus_one = witness_index.get_multilin_poly(zeros_counts_plus_one_oracle_id)?;
 
 	let msetcheck_witness = MsetcheckWitness::new(
 		[tu_merged.clone(), final_counts_and_counts],
 		[tu_merged, zeros_counts_plus_one],
 	)?;
 
-	let committed_polys = [counts_gf2, carry_out_gf2, final_counts_gf2];
-
 	Ok(LassoProveOutput {
 		reduced_lasso_claims,
 		zerocheck_witness,
 		msetcheck_witness,
-		committed_polys,
+		witness_index,
 	})
 }

@@ -1,6 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{oracle::Error as OracleError, polynomial::Error as PolynomialError};
+use crate::{
+	oracle::Error as OracleError, polynomial::Error as PolynomialError,
+	witness::Error as WitnessError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -10,6 +13,8 @@ pub enum Error {
 	EvaluationDomainMismatch,
 	#[error("the number of variables of the two input polynomials do not match")]
 	NumVariablesMismatch,
+	#[error("witnesses smaller than the underlier are not supported")]
+	WitnessSmallerThanUnderlier,
 	#[error("numerator and denominator of the grand product are of different size")]
 	NumeratorDenominatorSizeMismatch,
 	#[error("the number of variables of the grand product oracle is incorrect")]
@@ -18,6 +23,8 @@ pub enum Error {
 	ImproperInput(String),
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
+	#[error("witness error: {0}")]
+	Witness(#[from] WitnessError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 }

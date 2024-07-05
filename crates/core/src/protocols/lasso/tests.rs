@@ -4,11 +4,11 @@ use crate::{
 	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
 	polynomial::MultilinearExtension,
 	protocols::lasso::{prove, verify, LassoBatch, LassoClaim, LassoWitness},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	BinaryField128b, BinaryField16b, BinaryField64b, PackedBinaryField128x1b,
-	PackedBinaryField8x16b, TowerField,
+	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField128b, BinaryField16b,
+	BinaryField64b, PackedBinaryField128x1b, PackedFieldIndexable, TowerField,
 };
 
 #[test]
@@ -16,21 +16,31 @@ fn test_prove_verify_interaction() {
 	type F = BinaryField128b;
 	type E = BinaryField64b;
 	type C = BinaryField16b;
-	type PC = PackedBinaryField8x16b;
-	type PB = PackedBinaryField128x1b;
+	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
 	let n_vars = 10;
 
 	// Setup witness
 
-	let t_values = (0..)
-		.map(|x| E::new(x % 137))
-		.take(1 << n_vars)
-		.collect::<Vec<_>>();
-	let u_values = (0..)
-		.map(|x| E::new((x >> 4) % 137))
-		.take(1 << n_vars)
-		.collect::<Vec<_>>();
+	let e_log_width = <PackedType<U, E>>::LOG_WIDTH;
+	assert!(n_vars > e_log_width);
+	let mut t_values = vec![PackedType::<U, E>::default(); 1 << (n_vars - e_log_width)];
+	let mut u_values = vec![PackedType::<U, E>::default(); 1 << (n_vars - e_log_width)];
+
+	for (i, t) in PackedType::<U, E>::unpack_scalars_mut(t_values.as_mut_slice())
+		.iter_mut()
+		.enumerate()
+	{
+		*t = E::new((i % 137) as u64);
+	}
+
+	for (i, u) in PackedType::<U, E>::unpack_scalars_mut(u_values.as_mut_slice())
+		.iter_mut()
+		.enumerate()
+	{
+		*u = E::new(((i >> 4) % 137) as u64);
+	}
+
 	let u_to_t_mapping = (0..)
 		.map(|x| (x >> 4) % 137)
 		.take(1 << n_vars)
@@ -43,7 +53,9 @@ fn test_prove_verify_interaction() {
 		.unwrap()
 		.specialize_arc_dyn();
 
-	let witness = LassoWitness::<F, _>::new(t_polynomial, u_polynomial, u_to_t_mapping).unwrap();
+	let witness =
+		LassoWitness::<PackedType<U, F>, _>::new(t_polynomial, u_polynomial, u_to_t_mapping)
+			.unwrap();
 
 	// Setup claim
 	let mut oracles = MultilinearOracleSet::<F>::new();
@@ -69,16 +81,11 @@ fn test_prove_verify_interaction() {
 	let claim = LassoClaim::new(t_oracle, u_oracle).unwrap();
 
 	// PROVER
-	let mut witness_index = MultilinearWitnessIndex::new();
+	let witness_index = MultilinearExtensionIndex::new();
 
-	let _prove_output = prove::<PC, PB, F, F, _>(
-		&mut oracles.clone(),
-		&mut witness_index,
-		&claim,
-		witness,
-		&lasso_batch,
-	)
-	.unwrap();
+	let _prove_output =
+		prove::<C, U, F, F, _>(&mut oracles.clone(), witness_index, &claim, witness, &lasso_batch)
+			.unwrap();
 
 	// VERIFIER
 	let _verified_reduced_claim =

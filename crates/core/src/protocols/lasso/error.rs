@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::Error as OracleError, polynomial::Error as PolynomialError,
-	protocols::msetcheck::Error as MsetcheckError,
+	protocols::msetcheck::Error as MsetcheckError, witness::Error as WitnessError,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -11,6 +11,8 @@ pub enum Error {
 	CountsNumVariablesMismatch,
 	#[error("the number of variables in multilinear oracles does not match")]
 	NumVariablesMismatch,
+	#[error("witnesses smaller than the underlier are not supported")]
+	WitnessSmallerThanUnderlier,
 	#[error("provided mapping length does not conform to multilinear witnesses size")]
 	MappingSizeMismatch,
 	#[error("provided mapping indexes out of T bounds")]
@@ -25,6 +27,8 @@ pub enum Error {
 	Oracle(#[from] OracleError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+	#[error("witness error: {0}")]
+	Witness(#[from] WitnessError),
 	#[error("multiset check error: {0}")]
 	Msetcheck(#[from] MsetcheckError),
 }

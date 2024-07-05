@@ -6,7 +6,7 @@ use binius_core::{
 	oracle::{BatchId, CommittedBatchSpec, CommittedId, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
-		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtension,
+		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtensionBorrowed,
 	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
@@ -14,13 +14,13 @@ use binius_core::{
 		msetcheck, prodcheck,
 		zerocheck::{self, ZerocheckBatchProof, ZerocheckProver},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
-	BinaryField8b, ExtensionField, PackedBinaryField128x1b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedField,
-	PackedFieldIndexable, TowerField,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b,
+	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::GroestlHasher;
 use binius_utils::{
@@ -28,7 +28,7 @@ use binius_utils::{
 };
 use itertools::izip;
 use rand::thread_rng;
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
 type B1 = BinaryField1b;
@@ -36,12 +36,6 @@ type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 type B128 = BinaryField128b;
-
-type P1 = PackedBinaryField128x1b;
-type P8 = PackedBinaryField16x8b;
-type P16 = PackedBinaryField8x16b;
-type P32 = PackedBinaryField4x32b;
-type P128 = PackedBinaryField1x128b;
 
 type Underlier = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
@@ -107,77 +101,70 @@ impl TraceOracle {
 	}
 }
 
-struct TraceWitness {
-	mult_a: Vec<P8>,
-	mult_b: Vec<P8>,
-	product: Vec<P16>,
-	lookup_u: Vec<P32>,
-	lookup_t: Vec<P32>,
+struct TraceWitness<U: UnderlierType + PackScalar<FW>, FW: BinaryField> {
+	index: MultilinearExtensionIndex<'static, U, FW>,
 	u_to_t_mapping: Vec<usize>,
 }
 
-impl TraceWitness {
-	fn to_index<PE>(&self, trace_oracle: &TraceOracle) -> MultilinearWitnessIndex<PE>
-	where
-		PE: PackedField,
-		PE::Scalar: ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-	{
-		let mut index = MultilinearWitnessIndex::new();
-
-		index.set_many([
-			(trace_oracle.mult_a, ref_mle_column(&self.mult_a).specialize_arc_dyn()),
-			(trace_oracle.mult_b, ref_mle_column(&self.mult_b).specialize_arc_dyn()),
-			(trace_oracle.product, ref_mle_column(&self.product).specialize_arc_dyn()),
-			(trace_oracle.lookup_u, ref_mle_column(&self.lookup_u).specialize_arc_dyn()),
-			(trace_oracle.lookup_t, ref_mle_column(&self.lookup_t).specialize_arc_dyn()),
-		]);
-
-		index
-	}
+fn underliers_unpack_scalars<U: UnderlierType + PackScalar<F>, F: Field>(underliers: &[U]) -> &[F]
+where
+	PackedType<U, F>: PackedFieldIndexable,
+{
+	PackedType::<U, F>::unpack_scalars(PackedType::<U, F>::from_underliers_ref(underliers))
 }
 
-fn build_trace_column<P: PackedField>(log_size: usize) -> Vec<P> {
-	vec![P::default(); 1 << (log_size - P::LOG_WIDTH)]
-}
-
-#[allow(clippy::ptr_arg)]
-fn ref_mle_column<P: PackedField>(raw_vec: &Vec<P>) -> MultilinearExtension<P, &[P]> {
-	MultilinearExtension::from_values_slice(raw_vec).expect("infallible")
+fn underliers_unpack_scalars_mut<U: UnderlierType + PackScalar<F>, F: Field>(
+	underliers: &mut [U],
+) -> &mut [F]
+where
+	PackedType<U, F>: PackedFieldIndexable,
+{
+	PackedType::<U, F>::unpack_scalars_mut(PackedType::<U, F>::from_underliers_ref_mut(underliers))
 }
 
 #[instrument(skip_all)]
-fn generate_trace(log_size: usize) -> TraceWitness {
-	let mut witness = TraceWitness {
-		mult_a: build_trace_column(log_size),
-		mult_b: build_trace_column(log_size),
-		product: build_trace_column(log_size),
-		lookup_u: build_trace_column(log_size),
-		lookup_t: build_trace_column(log_size),
-		u_to_t_mapping: vec![0; 1 << log_size],
-	};
+fn generate_trace<U, FW>(log_size: usize, trace_oracle: &TraceOracle) -> Result<TraceWitness<U, FW>>
+where
+	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<FW>,
+	PackedType<U, B8>: PackedFieldIndexable,
+	PackedType<U, B16>: PackedFieldIndexable,
+	PackedType<U, B32>: PackedFieldIndexable,
+	FW: BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
+{
+	let b8_packing_log_width = PackedType::<U, B8>::LOG_WIDTH;
+	assert!(log_size >= b8_packing_log_width);
+
+	let make_underliers =
+		|log_size: usize| vec![U::default(); 1 << (log_size - b8_packing_log_width)];
+
+	let mut mult_a = make_underliers(log_size);
+	let mut mult_b = make_underliers(log_size);
+	let mut product = make_underliers(log_size + 1);
+	let mut lookup_u = make_underliers(log_size + 2);
+	let mut lookup_t = make_underliers(log_size + 2);
+	let mut u_to_t_mapping = vec![0; 1 << log_size];
 
 	let mut rng = thread_rng();
-	witness
-		.mult_a
-		.iter_mut()
-		.for_each(|a| *a = P8::random(&mut rng));
-	witness
-		.mult_b
-		.iter_mut()
-		.for_each(|a| *a = P8::random(&mut rng));
 
-	let mult_a = P8::unpack_scalars_mut(&mut witness.mult_a);
-	let mult_b = P8::unpack_scalars_mut(&mut witness.mult_b);
-	let product = P16::unpack_scalars_mut(&mut witness.product);
-	let lookup_u = P32::unpack_scalars_mut(&mut witness.lookup_u);
-	let lookup_t = P32::unpack_scalars_mut(&mut witness.lookup_t);
+	PackedType::<U, B8>::from_underliers_ref_mut(mult_a.as_mut_slice())
+		.iter_mut()
+		.for_each(|a| *a = PackedType::<U, B8>::random(&mut rng));
+	PackedType::<U, B8>::from_underliers_ref_mut(mult_b.as_mut_slice())
+		.iter_mut()
+		.for_each(|b| *b = PackedType::<U, B8>::random(&mut rng));
+
+	let mult_a_scalars = underliers_unpack_scalars::<_, B8>(mult_a.as_slice());
+	let mult_b_scalars = underliers_unpack_scalars::<_, B8>(mult_b.as_slice());
+	let product_scalars = underliers_unpack_scalars_mut::<_, B16>(product.as_mut_slice());
+	let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_u.as_mut_slice());
+	let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_t.as_mut_slice());
 
 	for (a, b, lookup_u, product, u_to_t) in izip!(
-		mult_a,
-		mult_b,
-		lookup_u.iter_mut(),
-		product.iter_mut(),
-		witness.u_to_t_mapping.iter_mut()
+		mult_a_scalars,
+		mult_b_scalars,
+		lookup_u_scalars.iter_mut(),
+		product_scalars.iter_mut(),
+		u_to_t_mapping.iter_mut()
 	) {
 		let a_int = u8::from(*a) as usize;
 		let b_int = u8::from(*b) as usize;
@@ -189,7 +176,7 @@ fn generate_trace(log_size: usize) -> TraceWitness {
 	}
 
 	// the real table size is 2^16, but we repeat it up to log_size to meet Lasso requirements
-	for (i, lookup_t) in lookup_t.iter_mut().enumerate() {
+	for (i, lookup_t) in lookup_t_scalars.iter_mut().enumerate() {
 		let a_int = (i >> 8) & 0xff;
 		let b_int = i & 0xff;
 		let ab_product = a_int * b_int;
@@ -197,16 +184,33 @@ fn generate_trace(log_size: usize) -> TraceWitness {
 		*lookup_t = BinaryField32b::new((lookup_index << 16 | ab_product) as u32);
 	}
 
-	witness
+	let index = MultilinearExtensionIndex::new()
+		.update_owned::<B8, _>([(trace_oracle.mult_a, mult_a), (trace_oracle.mult_b, mult_b)])?
+		.update_owned::<B16, _>([(trace_oracle.product, product)])?
+		.update_owned::<B32, _>([
+			(trace_oracle.lookup_u, lookup_u),
+			(trace_oracle.lookup_t, lookup_t),
+		])?;
+
+	Ok(TraceWitness {
+		index,
+		u_to_t_mapping,
+	})
 }
 
-struct Proof<PCS1, PCS8, PCS16, PCS32, PCS128>
+struct Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>
 where
-	PCS1: PolyCommitScheme<P1, B128, Error: Debug, Proof: 'static>,
-	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
-	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
-	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType
+		+ PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B128>,
+	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
+	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
+	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 {
 	lasso_comm: PCS1::Commitment,
 	lasso_proof: PCS1::Proof,
@@ -220,14 +224,86 @@ where
 	grand_prod_proof: PCS128::Proof,
 	zerocheck_proof: ZerocheckBatchProof<B128>,
 	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
+	_u_marker: PhantomData<U>,
+}
+
+// witness column extractors
+
+fn lasso_committed_polys<'a, U, F, FW>(
+	oracles: &MultilinearOracleSet<F>,
+	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	lasso_batch: &LassoBatch,
+) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B1>>; 3]>
+where
+	F: TowerField,
+	U: UnderlierType + PackScalar<FW> + PackScalar<B1>,
+	FW: BinaryField + ExtensionField<B1>,
+{
+	let counts =
+		witness_index.get::<B1>(oracles.committed_oracle_id(lasso_batch.counts_committed_id()))?;
+	let carry_out = witness_index
+		.get::<B1>(oracles.committed_oracle_id(lasso_batch.carry_out_committed_id()))?;
+	let final_counts = witness_index
+		.get::<B1>(oracles.committed_oracle_id(lasso_batch.final_counts_committed_id()))?;
+
+	Ok([counts, carry_out, final_counts])
+}
+
+fn mults_committed_polys<'a, U, FW>(
+	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	trace_oracle: &TraceOracle,
+) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B8>>; 2]>
+where
+	U: UnderlierType + PackScalar<FW> + PackScalar<B8>,
+	FW: BinaryField + ExtensionField<B8>,
+{
+	Ok([
+		witness_index.get::<B8>(trace_oracle.mult_a)?,
+		witness_index.get::<B8>(trace_oracle.mult_b)?,
+	])
+}
+
+fn product_committed_polys<'a, U, FW>(
+	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	trace_oracle: &TraceOracle,
+) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B16>>; 1]>
+where
+	U: UnderlierType + PackScalar<FW> + PackScalar<B16>,
+	FW: BinaryField + ExtensionField<B16>,
+{
+	Ok([witness_index.get::<B16>(trace_oracle.product)?])
+}
+
+fn lookup_t_committed_polys<'a, U, FW>(
+	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	trace_oracle: &TraceOracle,
+) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B32>>; 1]>
+where
+	U: UnderlierType + PackScalar<FW> + PackScalar<B32>,
+	FW: BinaryField + ExtensionField<B32>,
+{
+	Ok([witness_index.get::<B32>(trace_oracle.lookup_t)?])
+}
+
+fn grand_prod_committed_polys<'a, U, F, FW>(
+	oracles: &MultilinearOracleSet<F>,
+	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	f_prime_committed_id: CommittedId,
+) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B128>>; 1]>
+where
+	F: TowerField,
+	U: UnderlierType + PackScalar<FW> + PackScalar<B128>,
+	FW: BinaryField + ExtensionField<B128>,
+{
+	Ok([witness_index.get::<B128>(oracles.committed_oracle_id(f_prime_committed_id))?])
 }
 
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
-fn prove<PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
+fn prove<U, PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
-	witness: &TraceWitness,
+	witness: TraceWitness<U, B128>,
 	pcs1: &PCS1,
 	pcs8: &PCS8,
 	pcs16: &PCS16,
@@ -235,13 +311,19 @@ fn prove<PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	pcs128: &PCS128,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<B128>,
-) -> Result<Proof<PCS1, PCS8, PCS16, PCS32, PCS128>>
+) -> Result<Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>>
 where
-	PCS1: PolyCommitScheme<P1, B128, Error: Debug, Proof: 'static>,
-	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
-	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
-	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType
+		+ PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B128>,
+	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
+	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
+	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -251,44 +333,44 @@ where
 		+ CanObserve<PCS16::Commitment>
 		+ CanObserve<PCS32::Commitment>
 		+ CanObserve<PCS128::Commitment>,
+	PackedType<U, B32>: PackedFieldIndexable,
+	PackedType<U, B128>: PackedFieldIndexable,
 {
-	let mut witness_index = witness.to_index::<B128>(trace_oracle);
-
 	// Round 1 - trace commitments & Lasso deterministic reduction
-	let mults_polys = [&witness.mult_a, &witness.mult_b].map(ref_mle_column);
-	let (mults_comm, mults_committed) = pcs8.commit(&mults_polys)?;
+	let (mults_comm, mults_committed) =
+		pcs8.commit(&mults_committed_polys(&witness.index, trace_oracle)?)?;
 
-	let product_polys = [&witness.product].map(ref_mle_column);
-	let (product_comm, product_committed) = pcs16.commit(&product_polys)?;
+	let (product_comm, product_committed) =
+		pcs16.commit(&product_committed_polys(&witness.index, trace_oracle)?)?;
 
-	let lookup_t_polys = [&witness.lookup_t].map(ref_mle_column);
-	let (lookup_t_comm, lookup_t_committed) = pcs32.commit(&lookup_t_polys)?;
+	let (lookup_t_comm, lookup_t_committed) =
+		pcs32.commit(&lookup_t_committed_polys(&witness.index, trace_oracle)?)?;
 
 	let lookup_t_oracle = oracles.oracle(trace_oracle.lookup_t);
 	let lookup_u_oracle = oracles.oracle(trace_oracle.lookup_u);
 
-	let lookup_t = witness_index
-		.get(trace_oracle.lookup_t)
-		.expect("present by construction")
-		.clone();
-	let lookup_u = witness_index
-		.get(trace_oracle.lookup_u)
-		.expect("present by construction")
-		.clone();
+	let lookup_t = witness.index.get_multilin_poly(trace_oracle.lookup_t)?;
+
+	let lookup_u = witness.index.get_multilin_poly(trace_oracle.lookup_u)?;
 
 	let lasso_claim = LassoClaim::new(lookup_t_oracle, lookup_u_oracle)?;
 
 	let lasso_witness = LassoWitness::new(lookup_t, lookup_u, &witness.u_to_t_mapping)?;
 
-	let lasso_prove_output = lasso::prove::<P32, P1, _, _, _>(
+	let lasso_batch = &trace_oracle.lasso_batch;
+
+	let lasso_prove_output = lasso::prove::<B32, U, _, _, _>(
 		oracles,
-		&mut witness_index,
+		witness.index,
 		&lasso_claim,
 		lasso_witness,
-		&trace_oracle.lasso_batch,
+		lasso_batch,
 	)?;
 
-	let (lasso_comm, lasso_committed) = pcs1.commit(&lasso_prove_output.committed_polys)?;
+	let witness_index = lasso_prove_output.witness_index;
+
+	let (lasso_comm, lasso_committed) =
+		pcs1.commit(&lasso_committed_polys(oracles, &witness_index, lasso_batch)?)?;
 
 	challenger.observe(lasso_comm.clone());
 	challenger.observe(mults_comm.clone());
@@ -301,7 +383,7 @@ where
 
 	let msetcheck_prove_output = msetcheck::prove(
 		oracles,
-		&mut witness_index,
+		witness_index,
 		&lasso_prove_output.reduced_lasso_claims.msetcheck_claim,
 		lasso_prove_output.msetcheck_witness,
 		gamma,
@@ -313,16 +395,21 @@ where
 		index: 0,
 	};
 
+	let witness_index = msetcheck_prove_output.witness_index;
 	let prodcheck_prove_output = prodcheck::prove(
 		oracles,
-		&mut witness_index,
+		witness_index,
 		&msetcheck_prove_output.prodcheck_claim,
 		msetcheck_prove_output.prodcheck_witness,
 		f_prime_committed_id,
 	)?;
 
-	let grand_prod_polys = [prodcheck_prove_output.f_prime_commit.to_single_packed()];
-	let (grand_prod_comm, grand_prod_committed) = pcs128.commit(&grand_prod_polys)?;
+	let witness_index = prodcheck_prove_output.witness_index;
+	let (grand_prod_comm, grand_prod_committed) = pcs128.commit(&grand_prod_committed_polys(
+		oracles,
+		&witness_index,
+		f_prime_committed_id,
+	)?)?;
 
 	challenger.observe(grand_prod_comm.clone());
 
@@ -386,9 +473,10 @@ where
 
 	// Greedy Evalcheck
 
+	let mut legacy_witness_index = witness_index.witness_index();
 	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, _>(
 		oracles,
-		&mut witness_index,
+		&mut legacy_witness_index,
 		zerocheck_prove_output.evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -409,35 +497,35 @@ where
 	let lasso_proof = pcs1.prove_evaluation(
 		&mut challenger,
 		&lasso_committed,
-		&lasso_prove_output.committed_polys,
+		&lasso_committed_polys(oracles, &witness_index, lasso_batch)?,
 		batch_id_to_eval_point(trace_oracle.lasso_batch.batch_id()),
 	)?;
 
 	let mults_proof = pcs8.prove_evaluation(
 		&mut challenger,
 		&mults_committed,
-		&mults_polys,
+		&mults_committed_polys(&witness_index, trace_oracle)?,
 		batch_id_to_eval_point(trace_oracle.mults_batch),
 	)?;
 
 	let product_proof = pcs16.prove_evaluation(
 		&mut challenger,
 		&product_committed,
-		&product_polys,
+		&product_committed_polys(&witness_index, trace_oracle)?,
 		batch_id_to_eval_point(trace_oracle.product_batch),
 	)?;
 
 	let lookup_t_proof = pcs32.prove_evaluation(
 		&mut challenger,
 		&lookup_t_committed,
-		&lookup_t_polys,
+		&lookup_t_committed_polys(&witness_index, trace_oracle)?,
 		batch_id_to_eval_point(trace_oracle.lookup_t_batch),
 	)?;
 
 	let grand_prod_proof = pcs128.prove_evaluation(
 		&mut challenger,
 		&grand_prod_committed,
-		&grand_prod_polys,
+		&grand_prod_committed_polys(oracles, &witness_index, f_prime_committed_id)?,
 		batch_id_to_eval_point(trace_oracle.grand_prod_batch),
 	)?;
 
@@ -454,12 +542,13 @@ where
 		grand_prod_proof,
 		zerocheck_proof: zerocheck_prove_output.proof,
 		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
+		_u_marker: PhantomData,
 	})
 }
 
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
-fn verify<PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
+fn verify<U, PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	pcs1: &PCS1,
@@ -468,14 +557,20 @@ fn verify<PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	pcs32: &PCS32,
 	pcs128: &PCS128,
 	mut challenger: CH,
-	proof: Proof<PCS1, PCS8, PCS16, PCS32, PCS128>,
+	proof: Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>,
 ) -> Result<()>
 where
-	PCS1: PolyCommitScheme<P1, B128, Error: Debug, Proof: 'static>,
-	PCS8: PolyCommitScheme<P8, B128, Error: Debug, Proof: 'static>,
-	PCS16: PolyCommitScheme<P16, B128, Error: Debug, Proof: 'static>,
-	PCS32: PolyCommitScheme<P32, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<P128, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType
+		+ PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B128>,
+	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
+	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
+	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
+	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -641,13 +736,13 @@ fn main() -> Result<()> {
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-	let witness = generate_trace(log_size);
+	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
 
 	let proof = prove(
 		&mut oracles.clone(),
 		&trace_oracle,
-		&witness,
+		trace_witness,
 		&pcs1,
 		&pcs8,
 		&pcs16,
