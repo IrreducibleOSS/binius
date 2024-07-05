@@ -1,5 +1,20 @@
 // Copyright 2024 Ulvetanna Inc.
 
+//! This an example SNARK for proving the SHA-256 compression function.
+//!
+//! The Keccak-f permutation is the core of the SHA-256 hash function. This example proves and
+//! verifies a commit-and-prove SNARK for many independent compressions. That means there are no
+//! boundary constraints, this simple proves a relation between the data committed by the input and
+//! output columns.
+//!
+//! The arithmetization uses 1-bit committed columns. Each column treats chunks of 32 contiguous
+//! bits as a 32-bit state element of the 8 x 32-bit SHA-256 state. Every row of 32-bit chunks
+//! attests to the validity of one full SHA-256 compression (64 rounds).
+//!
+//! For SHA-256 specification and pseudocode, see
+//! [FIPS 180-4](https://csrc.nist.gov/pubs/fips/180-4/upd1/final) or the
+//! [SHA-2 Wikipedia page](https://en.wikipedia.org/wiki/SHA-2).
+
 use anyhow::Result;
 use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},

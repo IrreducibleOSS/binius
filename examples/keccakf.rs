@@ -1,8 +1,20 @@
 // Copyright 2024 Ulvetanna Inc.
 
-#![feature(step_trait)]
+//! Example of a Binius SNARK that proves execution of Keccak-f[1600] permutations.
+//!
+//! The Keccak-f permutation is the core of the SHA-3 and Keccak-256 hash functions. This example
+//! proves and verifies a commit-and-prove SNARK for many independent Keccak-f permutations. That
+//! means there are not boundary constraints, this simple proves a relation between the data
+//! committed by the input and output columns.
+//!
+//! The arithmetization uses 1-bit committed columns. Each column treats chunks of 64 contiguous
+//! bits as a 64-bit state element of the 25 x 64-bit Keccak-f state. Every row of 64-bit chunks
+//! attests to the validity of one Keccak-f round. Each permutation consists of 24 chained rounds.
+//!
+//! For Keccak-f specification and pseudocode, see
+//! [Keccak specifications summary](https://keccak.team/keccak_specs_summary.html).
 
-extern crate core;
+#![feature(step_trait)]
 
 use anyhow::Result;
 use binius_core::{
@@ -11,11 +23,11 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
-		multilinear_query::MultilinearQuery,
-		transparent::step_down::StepDown,
+		transparent::{
+			multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown,
+		},
 		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
-		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
-		MultivariatePoly,
+		IsomorphicEvaluationDomainFactory, MultilinearComposite,
 	},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -26,6 +38,7 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
+	arch::packed_64::PackedBinaryField64x1b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
@@ -36,13 +49,18 @@ use binius_macros::{composition_poly, IterOracles};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
-use bytemuck::{must_cast_slice_mut, Pod};
+use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use bytesize::ByteSize;
 use itertools::chain;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
 use tracing::instrument;
+
+const LOG_ROWS_PER_ROUND: usize = 6;
+const LOG_ROUNDS_PER_PERMUTATION: usize = 5;
+const LOG_ROWS_PER_PERMUTATION: usize = LOG_ROWS_PER_ROUND + LOG_ROUNDS_PER_PERMUTATION;
+const ROUNDS_PER_PERMUTATION: usize = 24;
 
 const KECCAKF_RC: [u64; 32] = [
 	0x0000000000000001,
@@ -137,45 +155,7 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 	}
 }
 
-composition_poly!(ChiComposition[a, b0, b1, b2] = a - (b0 + (1 - b1) * b2));
-composition_poly!(ChiIotaComposition[a, b0, b1, b2, rc] = a - (rc + b0 + (1 - b1) * b2));
-composition_poly!(RoundConsistency[state_out, next_state_in, select] = (state_out - next_state_in) * select);
-
-#[derive(Debug)]
-struct RoundConstant<P: PackedField<Scalar = BinaryField1b>>(MultilinearExtension<P>);
-
-impl<P: PackedField<Scalar = BinaryField1b> + Pod> RoundConstant<P> {
-	fn new() -> Result<Self> {
-		let mut values = vec![P::default(); 1 << (11 - P::LOG_WIDTH)];
-		must_cast_slice_mut::<_, u64>(&mut values).copy_from_slice(KECCAKF_RC.as_slice());
-		let mle = MultilinearExtension::from_values(values)?;
-		Ok(Self(mle))
-	}
-}
-
-impl<P, FE> MultivariatePoly<FE> for RoundConstant<P>
-where
-	P: PackedField<Scalar = BinaryField1b> + Debug,
-	FE: BinaryField,
-{
-	fn n_vars(&self) -> usize {
-		self.0.n_vars()
-	}
-
-	fn degree(&self) -> usize {
-		self.0.n_vars()
-	}
-
-	fn evaluate(&self, query: &[FE]) -> Result<FE, PolynomialError> {
-		self.0
-			.evaluate(&MultilinearQuery::<FE>::with_full_query(query)?)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
-	}
-}
-
+/// Fixed (ie. statement independent) trace columns.
 #[derive(Debug, IterOracles)]
 struct FixedOracle {
 	round_consts: OracleId,
@@ -187,12 +167,20 @@ impl FixedOracle {
 		oracles: &mut MultilinearOracleSet<F>,
 		log_size: usize,
 	) -> Result<Self> {
+		let round_const_values = must_cast_slice::<_, PackedBinaryField64x1b>(&KECCAKF_RC);
 		let round_consts_single =
-			oracles.add_transparent(RoundConstant::<PackedBinaryField128x1b>::new()?)?;
-		let round_consts = oracles.add_repeating(round_consts_single, log_size - 11)?;
+			oracles.add_transparent(MultilinearExtensionTransparent::<_, F, _>::from_values(
+				round_const_values,
+			)?)?;
+		let round_consts =
+			oracles.add_repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
-		let selector_single = oracles.add_transparent(StepDown::new(11, 24 * 64)?)?;
-		let selector = oracles.add_repeating(selector_single, log_size - 11)?;
+		let selector_single = oracles.add_transparent(StepDown::new(
+			LOG_ROWS_PER_PERMUTATION,
+			ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
+		)?)?;
+		let selector =
+			oracles.add_repeating(selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
 		Ok(Self {
 			round_consts,
@@ -201,6 +189,7 @@ impl FixedOracle {
 	}
 }
 
+/// Instance and witness trace columns.
 #[derive(IterOracles)]
 struct TraceOracle {
 	batch_id: BatchId,
@@ -347,8 +336,8 @@ where
 
 	// Each round state is 64 rows
 	// Each permutation is 24 round states
-	for perm_i in 0..1 << (log_size - 11) {
-		let i = perm_i << 5;
+	for perm_i in 0..1 << (log_size - LOG_ROWS_PER_PERMUTATION) {
+		let i = perm_i << LOG_ROUNDS_PER_PERMUTATION;
 
 		// Randomly generate the initial permutation input
 		let input: [u64; 25] = rng.gen();
@@ -364,7 +353,7 @@ where
 		}
 
 		// Expand trace columns for each round
-		for round_i in 0..32 {
+		for round_i in 0..(1 << LOG_ROUNDS_PER_PERMUTATION) {
 			let i = i | round_i;
 
 			for x in 0..5 {
@@ -674,7 +663,7 @@ fn make_constraints<P: PackedField<Scalar: TowerField>>(
 				trace_oracle.b[(x + 2) % 5 + 5 * y],
 				fixed_oracle.round_consts,
 			],
-			composition_poly!([a, b0, b1, b2, rc] = a - (rc + b0 + (1 - b1) * b2)), //ChiIotaComposition,
+			composition_poly!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2)),
 		)
 		.unwrap()
 	};
@@ -694,7 +683,7 @@ fn make_constraints<P: PackedField<Scalar: TowerField>>(
 				trace_oracle.b[(x + 1) % 5 + 5 * y],
 				trace_oracle.b[(x + 2) % 5 + 5 * y],
 			],
-			ChiComposition,
+			composition_poly!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2)),
 		)
 		.unwrap()
 	}))?;
@@ -708,7 +697,9 @@ fn make_constraints<P: PackedField<Scalar: TowerField>>(
 				trace_oracle.next_state_in[xy],
 				fixed_oracle.selector,
 			],
-			RoundConsistency,
+			composition_poly!(
+				[state_out, next_state_in, select] = (state_out - next_state_in) * select
+			),
 		)
 		.unwrap()
 	}))?;
@@ -751,16 +742,14 @@ fn main() {
 	let data_hashed_256 = ByteSize::b(num_of_perms * KECCAK_256_RATE_BYTES);
 	let tensorpcs_size = ByteSize::b(pcs.proof_size(trace_batch.n_polys) as u64);
 	tracing::info!("Size of hashable Keccak-256 data: {}", data_hashed_256);
-	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
-
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
 	let witness =
 		generate_trace::<U, BinaryField128bPolyval>(log_size, &fixed_oracle, &trace_oracle)
 			.unwrap();
+
+	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
-	// TODO: Ideally DomainField should be considerably smaller than F, something like BinaryField8b.
-	//       However, BinaryField128bPolyval doesn't support any conversions other than to/from 1 and 128 bits.
 	let proof = prove::<_, BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _>(
 		log_size,
 		&mut oracles.clone(),

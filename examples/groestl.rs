@@ -97,6 +97,72 @@ fn p_round_consts() -> [Vec<PackedBinaryField16x8b>; 8] {
 	p_round_consts.map(|p_round_consts_i| vec![p_round_consts_i])
 }
 
+#[derive(Debug, Default, Clone)]
+struct SBoxTraceGadget {
+	// Imported oracles
+	input: OracleId,
+	round_const: OracleId,
+
+	// Exported oracles
+	/// The S-box output, defined as a linear combination of `p_sub_bytes_inv_bits`.
+	output: OracleId,
+
+	// Internal oracles
+	/// Bits of the S-box inverse in the SubBytes step, decomposed using the AES field basis.
+	inv_bits: [OracleId; 8],
+	/// The product of the input and its inverse. The value is either one or zero in a valid
+	/// witness.
+	product: OracleId,
+	/// The S-box inverse in the SubBytes step, defined as a linear combination of
+	/// `p_sub_bytes_inv_bits`.
+	inverse: OracleId,
+}
+
+impl SBoxTraceGadget {
+	// TODO: Refactor so that gadget constructor is responsible for adding committed inv_bits and
+	// product columns.
+	pub fn new<F>(
+		log_size: usize,
+		oracles: &mut MultilinearOracleSet<F>,
+		input: OracleId,
+		round_const: OracleId,
+		inv_bits: [OracleId; 8],
+		product: OracleId,
+	) -> Result<Self>
+	where
+		F: TowerField + ExtensionField<BinaryField8b>,
+	{
+		let inverse = oracles.add_linear_combination(
+			log_size,
+			(0..8).map(|b| {
+				let basis = BinaryField8b::from(
+					<AESTowerField8b as ExtensionField<BinaryField1b>>::basis(b)
+						.expect("index is less than extension degree"),
+				);
+				(inv_bits[b], basis.into())
+			}),
+		)?;
+		let output = oracles.add_linear_combination_with_offset(
+			log_size,
+			BinaryField8b::from(SBOX_VEC).into(),
+			(0..8).map(|b| (inv_bits[b], BinaryField8b::from(SBOX_MATRIX[b]).into())),
+		)?;
+
+		Ok(Self {
+			input,
+			output,
+			round_const,
+			inv_bits,
+			product,
+			inverse,
+		})
+	}
+
+	pub fn iter_internal_and_exported_oracle_ids(&self) -> impl Iterator<Item = OracleId> + '_ {
+		chain!([self.output], self.inv_bits, [self.product], [self.inverse],)
+	}
+}
+
 #[derive(Debug)]
 struct TraceOracle {
 	/// Base-2 log of the number of trace rows
@@ -114,20 +180,10 @@ struct TraceOracle {
 	p_in: [OracleId; 64],
 	/// Round output state
 	p_out: [OracleId; 64],
-	// Committed witness columns
-	/// Bits of the S-box inverse in the SubBytes step, decomposed using the AES field basis.
-	p_sub_bytes_inv_bits: [OracleId; 64 * 8],
-	/// The product of the input and its inverse. The value is either one or zero in a valid
-	/// witness.
-	p_sub_bytes_prod: [OracleId; 64],
-	// Virtual witness columns
-	/// The S-box inverse in the SubBytes step, defined as a linear combination of
-	/// `p_sub_bytes_inv_bits`.
-	p_sub_bytes_inv: [OracleId; 64],
-	/// The S-box output, defined as a linear combination of `p_sub_bytes_inv_bits`.
-	p_sub_bytes_out: [OracleId; 64],
 	/// The next round input, defined as a shift of `p_in`.
 	p_next_in: [OracleId; 64],
+	/// S-box gadgets for AddRoundConstant & SubBytes
+	p_sub_bytes: [SBoxTraceGadget; 64],
 
 	// Batch IDs
 	trace1b_batch_id: BatchId,
@@ -172,25 +228,25 @@ impl TraceOracle {
 		let trace8b_batch_id = batch_scope_8b.build();
 
 		// Virtual witness columns
-		let p_sub_bytes_inv = array::try_from_fn(|ij| {
-			oracles.add_linear_combination(
+		let p_sub_bytes = array::try_from_fn(|ij| {
+			let i = ij / 8;
+			let j = ij % 8;
+			let round_const = if j == 0 {
+				p_round_consts[i]
+			} else {
+				p_default_round_const
+			};
+
+			let inv_bits = p_sub_bytes_inv_bits[ij * 8..(ij + 1) * 8]
+				.try_into()
+				.expect("the slice size is 8");
+			SBoxTraceGadget::new(
 				log_size,
-				(0..8).map(|b| {
-					let basis = BinaryField8b::from(
-						<AESTowerField8b as ExtensionField<BinaryField1b>>::basis(b)
-							.expect("index is less than extension degree"),
-					);
-					(p_sub_bytes_inv_bits[ij * 8 + b], basis.into())
-				}),
-			)
-		})?;
-		let p_sub_bytes_out = array::try_from_fn(|ij| {
-			oracles.add_linear_combination_with_offset(
-				log_size,
-				BinaryField8b::from(SBOX_VEC).into(),
-				(0..8).map(|b| {
-					(p_sub_bytes_inv_bits[ij * 8 + b], BinaryField8b::from(SBOX_MATRIX[b]).into())
-				}),
+				oracles,
+				p_in[ij],
+				round_const,
+				inv_bits,
+				p_sub_bytes_prod[ij],
 			)
 		})?;
 
@@ -204,11 +260,8 @@ impl TraceOracle {
 			p_round_consts,
 			p_in,
 			p_out,
-			p_sub_bytes_inv_bits,
-			p_sub_bytes_prod,
-			p_sub_bytes_inv,
-			p_sub_bytes_out,
 			p_next_in,
+			p_sub_bytes,
 			trace1b_batch_id,
 			trace8b_batch_id,
 		})
@@ -219,24 +272,13 @@ impl TraceOracle {
 			iter::once(self.round_selector),
 			iter::once(self.p_default_round_const),
 			self.p_round_consts,
-			self.p_sub_bytes_inv_bits,
 			self.p_in,
 			self.p_out,
-			self.p_sub_bytes_prod,
-			self.p_sub_bytes_inv,
-			self.p_sub_bytes_out,
 			self.p_next_in,
+			self.p_sub_bytes
+				.iter()
+				.flat_map(|sub_bytes| sub_bytes.iter_internal_and_exported_oracle_ids())
 		)
-	}
-
-	fn p_round_const(&self, ij: usize) -> OracleId {
-		let i = ij / 8;
-		let j = ij % 8;
-		if j == 0 {
-			self.p_round_consts[i]
-		} else {
-			self.p_default_round_const
-		}
 	}
 }
 
@@ -317,10 +359,10 @@ where
 		index_composition(
 			&zerocheck_column_ids,
 			[
-				trace_oracle.p_in[ij],
-				trace_oracle.p_sub_bytes_inv[ij],
-				trace_oracle.p_sub_bytes_prod[ij],
-				trace_oracle.p_round_const(ij),
+				trace_oracle.p_sub_bytes[ij].input,
+				trace_oracle.p_sub_bytes[ij].inverse,
+				trace_oracle.p_sub_bytes[ij].product,
+				trace_oracle.p_sub_bytes[ij].round_const,
 			],
 			SubBytesProductCheck,
 		)
@@ -331,9 +373,9 @@ where
 		index_composition(
 			&zerocheck_column_ids,
 			[
-				trace_oracle.p_in[ij],
-				trace_oracle.p_sub_bytes_prod[ij],
-				trace_oracle.p_round_const(ij),
+				trace_oracle.p_sub_bytes[ij].input,
+				trace_oracle.p_sub_bytes[ij].product,
+				trace_oracle.p_sub_bytes[ij].round_const,
 			],
 			ProductImpliesInputZero,
 		)
@@ -344,8 +386,8 @@ where
 		index_composition(
 			&zerocheck_column_ids,
 			[
-				trace_oracle.p_sub_bytes_inv[ij],
-				trace_oracle.p_sub_bytes_prod[ij],
+				trace_oracle.p_sub_bytes[ij].inverse,
+				trace_oracle.p_sub_bytes[ij].product,
 			],
 			ProductImpliesInverseZero,
 		)
@@ -361,7 +403,7 @@ where
 		for k in 0..8 {
 			let j_prime = (j + k) % 8;
 			let i_prime = (i + j_prime) % 8;
-			oracle_ids[k + 1] = trace_oracle.p_sub_bytes_out[i_prime * 8 + j_prime];
+			oracle_ids[k + 1] = trace_oracle.p_sub_bytes[i_prime * 8 + j_prime].output;
 		}
 
 		index_composition(&zerocheck_column_ids, oracle_ids, MixColumn::<F8b>::default())
@@ -383,6 +425,47 @@ where
 	Ok(mix)
 }
 
+struct SBoxGadgetWitness<U, F1b, F8b>
+where
+	U: UnderlierType + PackScalar<F1b> + PackScalar<F8b>,
+	F1b: Field,
+	F8b: Field,
+{
+	output: Vec<PackedType<U, F8b>>,
+	inv_bits: [Vec<PackedType<U, F1b>>; 8],
+	product: Vec<PackedType<U, F8b>>,
+	inverse: Vec<PackedType<U, F8b>>,
+}
+
+impl<U, F1b, F8b> SBoxGadgetWitness<U, F1b, F8b>
+where
+	U: UnderlierType + PackScalar<F1b> + PackScalar<F8b>,
+	F1b: TowerField,
+	F8b: TowerField,
+{
+	fn update_index<'a, 'b, F>(
+		&'a self,
+		index: MultilinearExtensionIndex<'b, U, F>,
+		gadget: &SBoxTraceGadget,
+	) -> Result<MultilinearExtensionIndex<'a, U, F>>
+	where
+		'b: 'a,
+		U: PackScalar<F>,
+		F: ExtensionField<F1b> + ExtensionField<F8b>,
+	{
+		let index = index
+			.update_packed::<F1b>(iter::zip(
+				gadget.inv_bits,
+				self.inv_bits.each_ref().map(Vec::as_slice),
+			))?
+			.update_packed::<F8b>(iter::zip(
+				[gadget.product, gadget.inverse, gadget.output],
+				[&self.product, &self.inverse, &self.output].map(Vec::as_slice),
+			))?;
+		Ok(index)
+	}
+}
+
 struct TraceWitness<U, F1b, F8b>
 where
 	U: UnderlierType + PackScalar<F1b> + PackScalar<F8b>,
@@ -397,10 +480,7 @@ where
 	p_round_consts: [Vec<PackedType<U, F8b>>; 8],
 	p_in: [Vec<PackedType<U, F8b>>; 64],
 	p_out: [Vec<PackedType<U, F8b>>; 64],
-	p_sub_bytes_inv_bits: [Vec<PackedType<U, F1b>>; 64 * 8],
-	p_sub_bytes_prod: [Vec<PackedType<U, F8b>>; 64],
-	p_sub_bytes_inv: [Vec<PackedType<U, F8b>>; 64],
-	p_sub_bytes_out: [Vec<PackedType<U, F8b>>; 64],
+	p_sub_bytes: [SBoxGadgetWitness<U, F1b, F8b>; 64],
 	p_next_in: [Vec<PackedType<U, F8b>>; 64],
 }
 
@@ -417,9 +497,8 @@ where
 	{
 		let index = MultilinearExtensionIndex::new()
 			.update_packed::<F1b>(iter::zip(
-				chain!(iter::once(trace_oracle.round_selector), trace_oracle.p_sub_bytes_inv_bits),
-				chain!(iter::once(&self.round_selector), self.p_sub_bytes_inv_bits.each_ref())
-					.map(Vec::as_slice),
+				[trace_oracle.round_selector],
+				[self.round_selector.as_slice()],
 			))?
 			.update_packed::<F8b>(iter::zip(
 				chain!(
@@ -427,9 +506,6 @@ where
 					trace_oracle.p_round_consts,
 					trace_oracle.p_in,
 					trace_oracle.p_out,
-					trace_oracle.p_sub_bytes_prod,
-					trace_oracle.p_sub_bytes_inv,
-					trace_oracle.p_sub_bytes_out,
 					trace_oracle.p_next_in,
 				),
 				chain!(
@@ -437,13 +513,16 @@ where
 					self.p_round_consts.each_ref(),
 					self.p_in.each_ref(),
 					self.p_out.each_ref(),
-					self.p_sub_bytes_prod.each_ref(),
-					self.p_sub_bytes_inv.each_ref(),
-					self.p_sub_bytes_out.each_ref(),
 					self.p_next_in.each_ref(),
 				)
 				.map(Vec::as_slice),
 			))?;
+		let index = iter::zip(trace_oracle.p_sub_bytes.clone(), self.p_sub_bytes.iter()).try_fold(
+			index,
+			|index, (sub_bytes, sub_bytes_witness)| {
+				sub_bytes_witness.update_index(index, &sub_bytes)
+			},
+		)?;
 		Ok(index)
 	}
 }
@@ -534,26 +613,30 @@ where
 		p_round_consts: array::from_fn(|_xy| build_trace_column_8b()),
 		p_in: array::from_fn(|_xy| build_trace_column_8b()),
 		p_out: array::from_fn(|_xy| build_trace_column_8b()),
-		p_sub_bytes_inv_bits: array::from_fn(|_xy| build_trace_column_1b()),
-		p_sub_bytes_prod: array::from_fn(|_xy| build_trace_column_8b()),
-		p_sub_bytes_inv: array::from_fn(|_xy| build_trace_column_8b()),
-		p_sub_bytes_out: array::from_fn(|_xy| build_trace_column_8b()),
 		p_next_in: array::from_fn(|_xy| build_trace_column_8b()),
+		p_sub_bytes: array::from_fn(|_xy| SBoxGadgetWitness {
+			output: build_trace_column_8b(),
+			inv_bits: array::from_fn(|_b| build_trace_column_1b()),
+			product: build_trace_column_8b(),
+			inverse: build_trace_column_8b(),
+		}),
 	};
+
+	fn cast_8b_col<P8b: PackedFieldIndexable<Scalar = AESTowerField8b>>(
+		col: &mut Vec<P8b>,
+	) -> &mut [AESTowerField8b] {
+		PackedFieldIndexable::unpack_scalars_mut(col.as_mut_slice())
+	}
 
 	fn cast_8b_cols<P8b: PackedFieldIndexable<Scalar = AESTowerField8b>, const N: usize>(
 		cols: &mut [Vec<P8b>; N],
 	) -> [&mut [AESTowerField8b]; N] {
-		cols.each_mut()
-			.map(|col| PackedFieldIndexable::unpack_scalars_mut(col.as_mut_slice()))
+		cols.each_mut().map(cast_8b_col) // |col| PackedFieldIndexable::unpack_scalars_mut(col.as_mut_slice()))
 	}
 
 	let p_round_consts = cast_8b_cols(&mut witness.p_round_consts);
 	let p_in = cast_8b_cols(&mut witness.p_in);
 	let p_out = cast_8b_cols(&mut witness.p_out);
-	let p_sub_bytes_inv = cast_8b_cols(&mut witness.p_sub_bytes_inv);
-	let p_sub_bytes_prod = cast_8b_cols(&mut witness.p_sub_bytes_prod);
-	let p_sub_bytes_out = cast_8b_cols(&mut witness.p_sub_bytes_out);
 	let p_next_in = cast_8b_cols(&mut witness.p_next_in);
 
 	let mut rng = thread_rng();
@@ -582,6 +665,10 @@ where
 				for j in 0..8 {
 					let ij = i * 8 + j;
 
+					let p_sub_bytes_inv = cast_8b_col(&mut witness.p_sub_bytes[ij].inverse);
+					let p_sub_bytes_prod = cast_8b_col(&mut witness.p_sub_bytes[ij].product);
+					let p_sub_bytes_out = cast_8b_col(&mut witness.p_sub_bytes[ij].output);
+
 					let p_sbox_in = if j == 0 {
 						p_round_consts[i][z] = AESTowerField8b::new(((i * 0x10) ^ r) as u8);
 						p_in[ij][z] + p_round_consts[i][z]
@@ -589,21 +676,21 @@ where
 						p_in[ij][z]
 					};
 
-					p_sub_bytes_inv[ij][z] = p_sbox_in.invert_or_zero();
-					p_sub_bytes_prod[ij][z] = if p_sbox_in == AESTowerField8b::ZERO {
+					p_sub_bytes_inv[z] = p_sbox_in.invert_or_zero();
+					p_sub_bytes_prod[z] = if p_sbox_in == AESTowerField8b::ZERO {
 						AESTowerField8b::ZERO
 					} else {
 						AESTowerField8b::ONE
 					};
 
 					let inv_bits = <AESTowerField8b as ExtensionField<BinaryField1b>>::iter_bases(
-						&p_sub_bytes_inv[ij][z],
+						&p_sub_bytes_inv[z],
 					);
 					for (b, bit) in inv_bits.enumerate() {
-						set_packed_slice(&mut witness.p_sub_bytes_inv_bits[ij * 8 + b], z, bit);
+						set_packed_slice(&mut witness.p_sub_bytes[ij].inv_bits[b], z, bit);
 					}
 
-					p_sub_bytes_out[ij][z] = s_box(p_sbox_in);
+					p_sub_bytes_out[z] = s_box(p_sbox_in);
 				}
 			}
 
@@ -617,7 +704,10 @@ where
 							// i is the column index into the input matrix _after_ MixBytes
 							// i_prime is the column index into the input matrix _before_ MixBytes
 							let i_prime = (i + k) % 8;
-							p_sub_bytes_out[i_prime * 8 + k][z] * MIX_BYTES_VEC[(8 - j + k) % 8]
+
+							let p_sub_bytes_out =
+								cast_8b_col(&mut witness.p_sub_bytes[i_prime * 8 + k].output);
+							p_sub_bytes_out[z] * MIX_BYTES_VEC[(8 - j + k) % 8]
 						})
 						.sum();
 				}

@@ -1,8 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
-#![feature(step_trait)]
+//! Example of a Binius SNARK that proves execution of [Vision Mark-32] permutations.
+//!
+//! The arithmetization uses committed columns of 32-bit binary tower field elements. Every row of
+//! the trace attests to the validity of 2 Vision rounds. Each permutation consists of 16 rounds.
+//!
+//! [Vision Mark-32]: https://eprint.iacr.org/2024/633
 
-extern crate core;
+#![feature(step_trait)]
 
 use anyhow::Result;
 use binius_core::{
@@ -11,7 +16,9 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition},
-		transparent::multilinear_extension::MultilinearExtensionTransparent,
+		transparent::{
+			multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown,
+		},
 		CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
 		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
 	},
@@ -183,7 +190,6 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 composition_poly!(ProdComposition[x, inv, prod] = x * inv - prod);
 composition_poly!(ProductImpliesInputZero[x, prod] = x * (prod - 1));
 composition_poly!(ProductImpliesInverseZero[inv, prod] = inv * (prod - 1));
-composition_poly!(ConditionalEquality[x, y, is_equal] = (x - y) * is_equal);
 
 #[derive(Clone, Debug)]
 struct SquareComposition;
@@ -325,11 +331,12 @@ impl TraceOracle {
 	{
 		let even_round_consts = array::from_fn(|i| {
 			let even_rc_single = oracles
-				.add_transparent(MultilinearExtensionTransparent(
-					MultilinearExtension::from_values(round_consts(&VISION_RC_EVEN[i]))
-						.unwrap()
-						.specialize::<F>(),
-				))
+				.add_transparent(
+					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+						&VISION_RC_EVEN[i],
+					))
+					.unwrap(),
+				)
 				.unwrap();
 			oracles
 				.add_repeating(even_rc_single, log_size - LOG_COMPRESSION_BLOCK)
@@ -337,44 +344,35 @@ impl TraceOracle {
 		});
 		let odd_round_consts = array::from_fn(|i| {
 			let odd_rc_single = oracles
-				.add_transparent(MultilinearExtensionTransparent(
-					MultilinearExtension::from_values(round_consts(&VISION_RC_ODD[i]))
-						.unwrap()
-						.specialize::<F>(),
-				))
+				.add_transparent(
+					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+						&VISION_RC_ODD[i],
+					))
+					.unwrap(),
+				)
 				.unwrap();
 			oracles
 				.add_repeating(odd_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
-		let round_0_constant = array::from_fn(|i| {
-			let round_0_constant_single = oracles
-				.add_transparent(MultilinearExtensionTransparent(
-					MultilinearExtension::from_values(round_consts(&[
-						VISION_ROUND_0[i],
-						0,
-						0,
-						0,
-						0,
-						0,
-						0,
-						0,
-					]))
+		let round_0_constant =
+			array::from_fn(|i| {
+				let round_0_constant_single =
+					oracles
+						.add_transparent(
+							MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+								&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0],
+							))
+							.unwrap(),
+						)
+						.unwrap();
+				oracles
+					.add_repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
 					.unwrap()
-					.specialize::<F>(),
-				))
-				.unwrap();
-			oracles
-				.add_repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
-				.unwrap()
-		});
+			});
 
 		let round_selector_single = oracles
-			.add_transparent(MultilinearExtensionTransparent(
-				MultilinearExtension::from_values(round_consts(&[1, 1, 1, 1, 1, 1, 1, 0]))
-					.unwrap()
-					.specialize::<F>(),
-			))
+			.add_transparent(StepDown::new(LOG_COMPRESSION_BLOCK, 7).unwrap())
 			.unwrap();
 		let round_selector = oracles
 			.add_repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)
@@ -891,7 +889,7 @@ where
 				trace_oracle.state_out[x],
 				trace_oracle.round_selector,
 			],
-			ConditionalEquality,
+			composition_poly!([x, y, is_equal] = (x - y) * is_equal),
 		)
 		.unwrap()
 	}))?;
@@ -1113,7 +1111,7 @@ fn main() {
 	);
 	let tensorpcs_size = ByteSize::b(pcs.proof_size(trace_batch.n_polys) as u64);
 	tracing::info!("Size of hashable vision32b data: {}", data_hashed);
-	tracing::info!("Size of tensorpcs: {}", tensorpcs_size);
+	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let witness = TraceWitness::<PackedBinaryField4x32b>::generate_trace(log_size);

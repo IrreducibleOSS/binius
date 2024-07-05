@@ -280,10 +280,10 @@ where
 	}
 }
 
-impl<'a, P, Data> MultilinearExtension<P, Data>
+impl<P, Data> MultilinearExtension<P, Data>
 where
 	P: PackedField,
-	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
+	Data: Deref<Target = [P]>,
 {
 	pub fn specialize<PE>(self) -> MultilinearExtensionSpecialized<P, PE, Data>
 	where
@@ -292,7 +292,13 @@ where
 	{
 		MultilinearExtensionSpecialized::from(self)
 	}
+}
 
+impl<'a, P, Data> MultilinearExtension<P, Data>
+where
+	P: PackedField,
+	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
+{
 	pub fn specialize_arc_dyn<PE>(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a>
 	where
 		PE: PackedField,
