@@ -1,9 +1,7 @@
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/toolchains/cargo"
   RUSTUP_HOME: "$CI_PROJECT_DIR/toolchains"
-  # from https://gitlab.com/gitlab-org/gitlab-runner/-/issues/1797
-  FF_USE_FASTZIP: "true"
-  CACHE_COMPRESSION_LEVEL: "fast"
+  GIT_CLEAN_FLAGS: "-ffdx --exclude toolchains"
 
 stages:
   - lint
@@ -16,6 +14,9 @@ stages:
   image: rustlang/rust:nightly
   variables:
     KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-c6i-large"
+    KUBERNETES_CPU_REQUEST: "1"
+    KUBERNETES_MEMORY_REQUEST: "4Gi"
+    GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_amd"
   tags:
     - k8s
 
@@ -25,6 +26,9 @@ stages:
   variables:
     KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-t4g-xlarge"
     KUBERNETES_NODE_SELECTOR_ARCH: 'kubernetes.io/arch=arm64'
+    KUBERNETES_CPU_REQUEST: "2"
+    KUBERNETES_MEMORY_REQUEST: "4Gi"
+    GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_arm"
   before_script:
     - if [ "$(uname -m)" != "aarch64" ]; then echo "This job is intended to run on ARM architecture only."; exit 1; fi
   tags:
@@ -49,25 +53,9 @@ clippy:
   script:
     - cargo clippy --all --all-features --tests --benches --examples -- -D warnings
 
-.cached_job_template_amd:
-  extends: .job_template_amd
-  cache:
-    key: "biniusOSS-amd-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - target
-      - toolchains
-
-.cached_job_template_arm:
-  extends: .job_template_arm
-  cache:
-    key: "biniusOSS-arm-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - target
-      - toolchains
-
 # Building jobs
 build-debug-amd:
-  extends: .cached_job_template_amd
+  extends: .job_template_amd
   stage: build
   script:
     - cargo build --tests --benches --examples
@@ -77,7 +65,7 @@ build-debug-amd:
     expire_in: 1 day
 
 build-debug-arm:
-  extends: .cached_job_template_arm
+  extends: .job_template_arm
   stage: build
   script:
     - cargo build --tests --benches --examples
@@ -88,23 +76,11 @@ build-debug-arm:
 
 .test_job_template_amd:
   extends: .job_template_amd
-  cache:
-    key: "biniusOSS-amd-${CI_COMMIT_REF_SLUG}"
-    policy: pull # do not push cache at the end to save time
-    paths:
-      - target
-      - cargo
   dependencies:
     - build-debug-amd
 
 .test_job_template_arm:
   extends: .job_template_arm
-  cache:
-    key: "biniusOSS-arm-${CI_COMMIT_REF_SLUG}"
-    policy: pull # do not push cache at the end to save time
-    paths:
-      - target
-      - cargo
   dependencies:
     - build-debug-arm
 
