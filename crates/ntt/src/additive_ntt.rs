@@ -148,7 +148,7 @@ fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = coset_twiddle.get(j);
+			let twiddle = P::broadcast(coset_twiddle.get(j));
 			for k in 0..1 << (i + log_b - log_w) {
 				let idx0 = j << (i + log_b - log_w + 1) | k;
 				let idx1 = idx0 | 1 << (i + log_b - log_w);
@@ -161,15 +161,19 @@ fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 	for i in (0..cutoff).rev() {
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
+		// A block is a block of butterfly units that all have the same twiddle factor. Since we
+		// are below the cutoff round, the block length is less than the packing width, and
+		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
+		// polynomials are linear, we can calculate an additive factor that can be added to the
+		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
-		let log_blocks_count = cutoff - i - 1;
-		for j in 0..1 << (log_n - 1 - cutoff) {
-			let twiddle = calculate_twiddle::<P>(
-				coset_twiddle.coset(log_n - 1 - cutoff, j),
-				log_blocks_count,
-				log_block_len,
-			);
+		let block_twiddle = calculate_twiddle::<P>(
+			s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
+			log_block_len,
+		);
 
+		for j in 0..1 << (log_n - 1 - cutoff) {
+			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
 			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 			u += v * twiddle;
 			v += u;
@@ -217,15 +221,19 @@ fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 	for i in 0..cutoff {
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
-		let log_block_count = cutoff - i - 1;
+		// A block is a block of butterfly units that all have the same twiddle factor. Since we
+		// are below the cutoff round, the block length is less than the packing width, and
+		// therefore each packed multiplication is with a non-uniform twiddle. Since the subspace
+		// polynomials are linear, we can calculate an additive factor that can be added to the
+		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
-		for j in 0..1 << (log_n - 1 - cutoff) {
-			let twiddle = calculate_twiddle::<P>(
-				coset_twiddle.coset(log_n - 1 - cutoff, j),
-				log_block_count,
-				log_block_len,
-			);
+		let block_twiddle = calculate_twiddle::<P>(
+			s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
+			log_block_len,
+		);
 
+		for j in 0..1 << (log_n - 1 - cutoff) {
+			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
 			let (mut u, mut v) = data[j << 1].interleave(data[j << 1 | 1], log_block_len);
 			v += u;
 			u += v * twiddle;
@@ -238,7 +246,7 @@ fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = coset_twiddle.get(j);
+			let twiddle = P::broadcast(coset_twiddle.get(j));
 			for k in 0..1 << (i + log_b - log_w) {
 				let idx0 = j << (i + log_b - log_w + 1) | k;
 				let idx1 = idx0 | 1 << (i + log_b - log_w);
@@ -533,14 +541,12 @@ where
 }
 
 #[inline]
-fn calculate_twiddle<P>(
-	s_evals: impl TwiddleAccess<P::Scalar>,
-	log_blocks_count: usize,
-	log_block_len: usize,
-) -> P
+fn calculate_twiddle<P>(s_evals: impl TwiddleAccess<P::Scalar>, log_block_len: usize) -> P
 where
 	P: PackedField<Scalar: BinaryField>,
 {
+	let log_blocks_count = P::LOG_WIDTH - log_block_len - 1;
+
 	let mut twiddle = P::default();
 	for k in 0..1 << log_blocks_count {
 		let (subblock_twiddle_0, subblock_twiddle_1) = s_evals.get_pair(log_blocks_count, k);
