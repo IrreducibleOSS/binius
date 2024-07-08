@@ -401,7 +401,7 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	init_tracing();
+	init_tracing().expect("failed to initialize tracing");
 
 	// Note that values below 14 are rejected by `find_proof_size_optimal_pcs()`.
 	let log_size = get_log_trace_size().unwrap_or(14);

@@ -61,3 +61,4 @@ needless_range_loop = "allow"
 
 [features]
 aes-tower = []
+tracy = ["binius_utils/tracy"]

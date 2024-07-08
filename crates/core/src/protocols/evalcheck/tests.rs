@@ -65,8 +65,6 @@ impl CompositionPoly<EF> for QuadProduct {
 
 #[test]
 fn test_evaluation_point_batching() {
-	binius_utils::tracing::init_tracing();
-
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let log_size = 8;

@@ -311,7 +311,7 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	init_tracing();
+	init_tracing().expect("failed to initialize tracing");
 
 	const SECURITY_BITS: usize = 100;
 

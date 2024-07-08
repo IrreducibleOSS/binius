@@ -700,7 +700,7 @@ fn main() -> Result<()> {
 	adjust_thread_pool()
 		.as_ref()
 		.expect("failed to init thread pool");
-	init_tracing();
+	init_tracing().expect("failed to initialize tracing");
 
 	let log_size = get_log_trace_size().unwrap_or(16);
 	let log_inv_rate = 1;
