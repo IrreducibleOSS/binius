@@ -2,16 +2,22 @@
 
 All performance numbers were collected from GCP's `c3-standard-44` machines, which has 22 cores of Intel Sapphire Rapids
 generation. They are compiled and run in release mode with the environment variable `RUSTFLAGS="-C target-cpu=native"`.
-Note that the proving time includes the witness trace generation as well.
+Plonky3 examples are also run with the parallel feature `--features parallel`. Note that the proving time includes the
+witness trace generation as well. For all the keccakf functions, the hashed data is actually the rate of SHA3-256(136
+bytes) per permutation
 
 | SNARKS                           | Project        | Number of Permutations | Proving time (s) | Verification time (ms) | Hashed Data (MB) | MB / Proving time(s) | Mb / Verification time(s) |
 |----------------------------------|----------------|------------------------|------------------|------------------------|------------------|----------------------|---------------------------|
 | Keccakf                          | Binius         | 2^13 (logsize 24)      | 3.598            | 103                    | 1.1              | 0.305                | 10.67                     |
-| Keccakf (Keccak Merkle trees)    | Plonky3 / BB31 | 1365                   | 11.84            | 235                    | 0.186            | 0.015                | 0.79                      |
-| Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 1365                   | 21.85            | 237                    | 0.186            | 0.008                | 0.78                      |
-| Groestl                          | Binius         | 2^14 (logsize 19)      | 5.67             | 348                    | 1.049            | 0.185                | 3.01                      |
+| Keccakf (Keccak Merkle trees)    | Plonky3 / BB31 | 2^13                   | 8.66             | 241                    | 1.1              | 0.127                | 4.56                      |
+| Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 2^13                   | 11.62            | 283                    | 1.1              | 0.094                | 3.88                      |
+| Groestl (*)                      | Binius         | 2^14 (logsize 19)      | 5.67             | 348                    | 1.049            | 0.185                | 3.01                      |
 | Vision32b                        | Binius         | 2^14 (logsize 17)      | 2.51             | 65                     | 1.049            | 0.417                | 16.13                     |
 | SHA-256                          | Binius         | 2^14 (logsize 19)      | 7.49             | 816                    | 1.049            | 0.14                 | 1.28                      |
+
+(*) Our Current Groestl SNARK only has the P permutation as opposed to the compression function which has both P and Q
+permutations, the number of permutations for groestl in the table assumes that both P and Q permutations would take the
+same amount of proving and verification time.
 
 # Appendix
 
@@ -159,65 +165,65 @@ verify [ 815.76ms | 100.00% ]
 ### Keccak over BabyBear31 with Keccak Merkle trees
 
 ```
-INFO     generate Keccak trace [ 1.55s | 100.00% ]
-INFO     prove [ 10.3s | 0.03% / 100.00% ]
-INFO     ┝━ infer log of constraint degree [ 6.06ms | 0.06% ]
-INFO     ┝━ commit to trace data [ 4.63s | 30.73% / 45.05% ]
-INFO     │  ┕━ coset_lde_batch [ 1.47s | 14.32% ] dims: 2633x32768
-INFO     ┝━ compute quotient polynomial [ 4.37s | 42.51% ]
-INFO     ┝━ commit to quotient poly chunks [ 71.5ms | 0.58% / 0.70% ]
-INFO     │  ┝━ coset_lde_batch [ 6.03ms | 0.06% ] dims: 4x32768
-INFO     │  ┕━ coset_lde_batch [ 6.10ms | 0.06% ] dims: 4x32768
-INFO     ┝━ compute_inverse_denominators [ 11.7ms | 0.11% ]
-INFO     ┝━ reduce matrix quotient [ 513ms | 0.00% / 4.99% ] dims: 2633x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 195ms | 1.90% ]
-INFO     │  ┕━ reduce rows [ 317ms | 3.09% ]
-INFO     ┝━ reduce matrix quotient [ 512ms | 0.00% / 4.99% ] dims: 2633x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 195ms | 1.90% ]
-INFO     │  ┕━ reduce rows [ 317ms | 3.09% ]
-INFO     ┝━ reduce matrix quotient [ 12.0ms | 0.00% / 0.12% ] dims: 4x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 3.49ms | 0.03% ]
-INFO     │  ┕━ reduce rows [ 8.48ms | 0.08% ]
-INFO     ┝━ reduce matrix quotient [ 12.0ms | 0.00% / 0.12% ] dims: 4x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 3.47ms | 0.03% ]
-INFO     │  ┕━ reduce rows [ 8.49ms | 0.08% ]
-INFO     ┕━ FRI prover [ 136ms | 0.00% / 1.32% ]
-INFO        ┝━ commit phase [ 67.9ms | 0.66% ]
-INFO        ┝━ grind for proof-of-work witness [ 66.9ms | 0.65% ]
-INFO        ┕━ query phase [ 1.21ms | 0.01% ]
-INFO     verify [ 237ms | 98.46% / 100.00% ]
-INFO     ┕━ infer log of constraint degree [ 3.64ms | 1.54% ]
+INFO     generate Keccak trace [ 916ms | 100.00% ]
+INFO     prove [ 7.74s | 0.26% / 100.00% ]
+INFO     ┝━ infer log of constraint degree [ 7.29ms | 0.09% ]
+INFO     ┝━ commit to trace data [ 5.52s | 14.50% / 71.31% ]
+INFO     │  ┕━ coset_lde_batch [ 4.40s | 56.80% ] dims: 2633x262144
+INFO     ┝━ compute quotient polynomial [ 1.47s | 19.01% ]
+INFO     ┝━ commit to quotient poly chunks [ 55.4ms | 0.38% / 0.72% ]
+INFO     │  ┝━ coset_lde_batch [ 12.9ms | 0.17% ] dims: 4x262144
+INFO     │  ┕━ coset_lde_batch [ 12.9ms | 0.17% ] dims: 4x262144
+INFO     ┝━ compute_inverse_denominators [ 92.7ms | 1.20% ]
+INFO     ┝━ reduce matrix quotient [ 223ms | 0.00% / 2.88% ] dims: 2633x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 114ms | 1.47% ]
+INFO     │  ┕━ reduce rows [ 109ms | 1.41% ]
+INFO     ┝━ reduce matrix quotient [ 219ms | 0.00% / 2.83% ] dims: 2633x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 110ms | 1.42% ]
+INFO     │  ┕━ reduce rows [ 109ms | 1.41% ]
+INFO     ┝━ reduce matrix quotient [ 25.7ms | 0.00% / 0.33% ] dims: 4x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 23.5ms | 0.30% ]
+INFO     │  ┕━ reduce rows [ 2.24ms | 0.03% ]
+INFO     ┝━ reduce matrix quotient [ 27.9ms | 0.00% / 0.36% ] dims: 4x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 25.7ms | 0.33% ]
+INFO     │  ┕━ reduce rows [ 2.18ms | 0.03% ]
+INFO     ┕━ FRI prover [ 78.3ms | 0.00% / 1.01% ]
+INFO        ┝━ commit phase [ 67.8ms | 0.88% ]
+INFO        ┝━ grind for proof-of-work witness [ 8.93ms | 0.12% ]
+INFO        ┕━ query phase [ 1.50ms | 0.02% ]
+INFO     verify [ 241ms | 97.93% / 100.00% ]
+INFO     ┕━ infer log of constraint degree [ 5.00ms | 2.07% ]
 ```
 
 ### Keccak over BabyBear31 with Poseidon2 Merkle trees
 
 ```
-INFO     generate Keccak trace [ 1.55s | 100.00% ]
-INFO     prove [ 20.3s | 0.02% / 100.00% ]
-INFO     ┝━ infer log of constraint degree [ 6.13ms | 0.03% ]
-INFO     ┝━ commit to trace data [ 14.6s | 65.01% / 72.28% ]
-INFO     │  ┕━ coset_lde_batch [ 1.47s | 7.27% ] dims: 2633x32768
-INFO     ┝━ compute quotient polynomial [ 4.34s | 21.40% ]
-INFO     ┝━ commit to quotient poly chunks [ 93.5ms | 0.40% / 0.46% ]
-INFO     │  ┝━ coset_lde_batch [ 5.97ms | 0.03% ] dims: 4x32768
-INFO     │  ┕━ coset_lde_batch [ 6.12ms | 0.03% ] dims: 4x32768
-INFO     ┝━ compute_inverse_denominators [ 11.6ms | 0.06% ]
-INFO     ┝━ reduce matrix quotient [ 507ms | 0.00% / 2.50% ] dims: 2633x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 195ms | 0.96% ]
-INFO     │  ┕━ reduce rows [ 312ms | 1.54% ]
-INFO     ┝━ reduce matrix quotient [ 509ms | 0.00% / 2.51% ] dims: 2633x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 195ms | 0.96% ]
-INFO     │  ┕━ reduce rows [ 314ms | 1.55% ]
-INFO     ┝━ reduce matrix quotient [ 11.7ms | 0.00% / 0.06% ] dims: 4x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 3.49ms | 0.02% ]
-INFO     │  ┕━ reduce rows [ 8.22ms | 0.04% ]
-INFO     ┝━ reduce matrix quotient [ 11.7ms | 0.00% / 0.06% ] dims: 4x65536
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 3.48ms | 0.02% ]
-INFO     │  ┕━ reduce rows [ 8.22ms | 0.04% ]
-INFO     ┕━ FRI prover [ 127ms | 0.00% / 0.63% ]
-INFO        ┝━ commit phase [ 90.9ms | 0.45% ]
-INFO        ┝━ grind for proof-of-work witness [ 34.7ms | 0.17% ]
-INFO        ┕━ query phase [ 1.21ms | 0.01% ]
-INFO     verify [ 281ms | 98.73% / 100.00% ]
-INFO     ┕━ infer log of constraint degree [ 3.58ms | 1.27% ]
+INFO     generate Keccak trace [ 924ms | 100.00% ]
+INFO     prove [ 10.7s | 0.19% / 100.00% ]
+INFO     ┝━ infer log of constraint degree [ 7.61ms | 0.07% ]
+INFO     ┝━ commit to trace data [ 8.46s | 37.93% / 79.14% ]
+INFO     │  ┕━ coset_lde_batch [ 4.41s | 41.21% ] dims: 2633x262144
+INFO     ┝━ compute quotient polynomial [ 1.47s | 13.78% ]
+INFO     ┝━ commit to quotient poly chunks [ 59.5ms | 0.31% / 0.56% ]
+INFO     │  ┝━ coset_lde_batch [ 12.9ms | 0.12% ] dims: 4x262144
+INFO     │  ┕━ coset_lde_batch [ 12.9ms | 0.12% ] dims: 4x262144
+INFO     ┝━ compute_inverse_denominators [ 93.5ms | 0.87% ]
+INFO     ┝━ reduce matrix quotient [ 227ms | 0.00% / 2.13% ] dims: 2633x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 118ms | 1.11% ]
+INFO     │  ┕━ reduce rows [ 109ms | 1.02% ]
+INFO     ┝━ reduce matrix quotient [ 219ms | 0.00% / 2.05% ] dims: 2633x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 109ms | 1.02% ]
+INFO     │  ┕━ reduce rows [ 110ms | 1.03% ]
+INFO     ┝━ reduce matrix quotient [ 26.0ms | 0.00% / 0.24% ] dims: 4x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 23.6ms | 0.22% ]
+INFO     │  ┕━ reduce rows [ 2.38ms | 0.02% ]
+INFO     ┝━ reduce matrix quotient [ 27.8ms | 0.00% / 0.26% ] dims: 4x524288
+INFO     │  ┝━ compute opened values with Lagrange interpolation [ 25.6ms | 0.24% ]
+INFO     │  ┕━ reduce rows [ 2.26ms | 0.02% ]
+INFO     ┕━ FRI prover [ 76.7ms | 0.00% / 0.72% ]
+INFO        ┝━ commit phase [ 72.2ms | 0.68% ]
+INFO        ┝━ grind for proof-of-work witness [ 2.95ms | 0.03% ]
+INFO        ┕━ query phase [ 1.50ms | 0.01% ]
+INFO     verify [ 290ms | 98.34% / 100.00% ]
+INFO     ┕━ infer log of constraint degree [ 4.82ms | 1.66% ]
 ```
