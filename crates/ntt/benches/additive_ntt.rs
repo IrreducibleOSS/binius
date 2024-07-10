@@ -1,10 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{
-	packed_binary_field::{PackedBinaryField2x64b, PackedBinaryField8x16b},
-	BinaryField16b, ExtensionField, PackedExtension, PackedFieldIndexable,
+	BinaryField, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedFieldIndexable,
 };
-use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, AdditiveNTTWithPrecompute};
+use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 	Throughput,
@@ -12,64 +11,46 @@ use criterion::{
 use rand::thread_rng;
 use std::{iter::repeat_with, mem};
 
-fn tower_ntt_16b(c: &mut Criterion) {
-	fn bench_helper<PE>(group: &mut BenchmarkGroup<WallTime>, id: &str, log_n: usize)
-	where
-		PE: PackedExtension<BinaryField16b, PackedSubfield: PackedFieldIndexable>,
-		PE::Scalar: ExtensionField<BinaryField16b>,
+fn bench_forward_transform(c: &mut Criterion) {
+	fn bench_helper<P>(
+		group: &mut BenchmarkGroup<WallTime>,
+		id: &str,
+		log_n: usize,
+		log_batch_size: usize,
+	) where
+		P: PackedFieldIndexable<Scalar: BinaryField>,
 	{
-		let n = 1 << log_n;
-		let ntt = AdditiveNTTWithOTFCompute::<BinaryField16b>::new(log_n).unwrap();
+		let data_len = 1 << (log_n + log_batch_size - P::LOG_WIDTH);
 		let mut rng = thread_rng();
+		let mut data = repeat_with(|| P::random(&mut rng))
+			.take(data_len)
+			.collect::<Vec<_>>();
 
-		let bench_id = BenchmarkId::new(id, log_n);
-		group.throughput(Throughput::Bytes((n / PE::WIDTH * mem::size_of::<PE>()) as u64));
-		group.bench_with_input(bench_id, &log_n, |b, _| {
-			let mut data = repeat_with(|| PE::random(&mut rng))
-				.take(n / PE::WIDTH)
-				.collect::<Vec<_>>();
+		let params = format!("field={id}/log_n={log_n}/log_b={log_batch_size}");
+		group.throughput(Throughput::Bytes((data_len * mem::size_of::<P>()) as u64));
 
-			b.iter(|| ntt.forward_transform_ext(&mut data, 0));
+		group.bench_function(BenchmarkId::new("on-the-fly", &params), |b| {
+			let ntt = SingleThreadedNTT::<P::Scalar>::new(log_n).unwrap();
+			b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
+		});
+
+		group.bench_function(BenchmarkId::new("precompute", &params), |b| {
+			let ntt = SingleThreadedNTT::<P::Scalar>::new(log_n)
+				.unwrap()
+				.precompute_twiddles();
+			b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
 		});
 	}
 
-	let mut group = c.benchmark_group("AdditiveNTT<BinaryField16b>::forward_transform_packed");
-	for &log_n in [13, 14, 15, 16].iter() {
-		bench_helper::<PackedBinaryField8x16b>(&mut group, "8x16b", log_n);
-		bench_helper::<PackedBinaryField2x64b>(&mut group, "2x64b", log_n);
+	let mut group = c.benchmark_group("forward_transform");
+	for &log_n in [16].iter() {
+		for &log_batch_size in [0, 4].iter() {
+			bench_helper::<PackedBinaryField8x16b>(&mut group, "8x16b", log_n, log_batch_size);
+			bench_helper::<PackedBinaryField4x32b>(&mut group, "4x32b", log_n, log_batch_size);
+		}
 	}
 	group.finish();
 }
 
-fn tower_ntt_with_precompute_16b(c: &mut Criterion) {
-	fn bench_helper<PE>(group: &mut BenchmarkGroup<WallTime>, id: &str, log_n: usize)
-	where
-		PE: PackedExtension<BinaryField16b, PackedSubfield: PackedFieldIndexable>,
-		PE::Scalar: ExtensionField<BinaryField16b>,
-	{
-		let n = 1 << log_n;
-		let ntt = AdditiveNTTWithPrecompute::<BinaryField16b>::new(log_n).unwrap();
-		let mut rng = thread_rng();
-
-		let bench_id = BenchmarkId::new(id, log_n);
-		group.throughput(Throughput::Bytes((n / PE::WIDTH * mem::size_of::<PE>()) as u64));
-		group.bench_with_input(bench_id, &log_n, |b, _| {
-			let mut data = repeat_with(|| PE::random(&mut rng))
-				.take(n / PE::WIDTH)
-				.collect::<Vec<_>>();
-
-			b.iter(|| ntt.forward_transform_ext(&mut data, 0));
-		});
-	}
-
-	let mut group =
-		c.benchmark_group("AdditiveNTTWithPrecompute<BinaryField16b>::forward_transform_packed");
-	for &log_n in [13, 14, 15, 16].iter() {
-		bench_helper::<PackedBinaryField8x16b>(&mut group, "8x16b", log_n);
-		bench_helper::<PackedBinaryField2x64b>(&mut group, "2x64b", log_n);
-	}
-	group.finish();
-}
-
-criterion_group!(ntt, tower_ntt_16b, tower_ntt_with_precompute_16b);
+criterion_group!(ntt, bench_forward_transform);
 criterion_main!(ntt);

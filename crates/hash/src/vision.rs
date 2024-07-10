@@ -10,7 +10,7 @@ use binius_field::{
 	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedDivisible, PackedExtension,
 	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
-use binius_ntt::{AdditiveNTT, AdditiveNTTWithPrecompute};
+use binius_ntt::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, SingleThreadedNTT};
 use lazy_static::lazy_static;
 use p3_symmetric::{CryptographicPermutation, Permutation};
 use std::{cmp, marker::PhantomData};
@@ -210,11 +210,12 @@ type PackedTransformationType8x32b = <PackedBinaryField8x32b as PackedTransforma
 >>::PackedTransformation<&'static [BinaryField32b]>;
 
 lazy_static! {
-	static ref ADDITIVE_NTT: AdditiveNTTWithPrecompute<BinaryField8b> = {
+	static ref ADDITIVE_NTT: SingleThreadedNTT<BinaryField8b, PrecomputedTwiddleAccess<BinaryField8b>> = {
 		let log_h = 3;
 		let log_rate = 1;
-		AdditiveNTTWithPrecompute::<BinaryField8b>::new(log_h + 2 + log_rate)
+		SingleThreadedNTT::<BinaryField8b>::new(log_h + 2 + log_rate)
 			.expect("log_domain_size is less than 32")
+		.precompute_twiddles()
 	};
 	pub static ref FWD_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
 		PackedBinaryField8x32b,

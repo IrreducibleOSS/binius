@@ -5,13 +5,13 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-assert_matches.workspace = true
 binius_field = { path = "../field" }
 p3-util.workspace = true
 rand.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+assert_matches.workspace = true
 criterion.workspace = true
 
 [lib]

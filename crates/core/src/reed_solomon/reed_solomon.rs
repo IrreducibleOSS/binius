@@ -15,7 +15,7 @@ use binius_field::{
 	BinaryField, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension,
 };
-use binius_ntt::{AdditiveNTT, AdditiveNTTWithOTFCompute, Error};
+use binius_ntt::{AdditiveNTT, Error, SingleThreadedNTT};
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
@@ -25,8 +25,9 @@ where
 	P: PackedField,
 	P::Scalar: BinaryField,
 {
-	// TODO: Genericize whether to use AdditiveNTT or AdditiveNTTWithPrecompute
-	ntt: AdditiveNTTWithOTFCompute<P::Scalar>,
+	// TODO: Dynamic option to precompute twiddles or not. In order for this to be dynamic, the NTT
+	// will have to be wrapped as a trait object.
+	ntt: SingleThreadedNTT<P::Scalar>,
 	log_dimension: usize,
 	log_inv_rate: usize,
 	_p_marker: PhantomData<P>,
@@ -38,7 +39,7 @@ where
 	P::Scalar: BinaryField,
 {
 	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
-		let ntt = AdditiveNTTWithOTFCompute::new(log_dimension + log_inv_rate)?;
+		let ntt = SingleThreadedNTT::new(log_dimension + log_inv_rate)?;
 		Ok(Self {
 			ntt,
 			log_dimension,
