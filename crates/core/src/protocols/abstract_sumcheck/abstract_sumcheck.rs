@@ -144,3 +144,12 @@ pub fn finalize_evalcheck_claim<F: Field>(
 	};
 	Ok(evalcheck_claim)
 }
+
+/// Constructs a switchover function thaw returns the round number where folded multilinear is at
+/// least 2^k times smaller (in bytes) than the original, or 1 when not applicable.
+pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize {
+	move |extension_degree: usize| {
+		let switchover_round = extension_degree.ilog2() as isize + k;
+		switchover_round.max(1) as usize
+	}
+}

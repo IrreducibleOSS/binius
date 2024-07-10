@@ -9,6 +9,7 @@ use binius_core::{
 		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtensionBorrowed,
 	},
 	protocols::{
+		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatch, LassoClaim, LassoWitness},
 		msetcheck, prodcheck,
@@ -415,10 +416,7 @@ where
 
 	// Prove reduced zerocheck originating from prodcheck
 
-	let switchover_fn = |extension_degree| match extension_degree {
-		128 => 5,
-		_ => 1,
-	};
+	let switchover_fn = standard_switchover_heuristic(-2);
 
 	let lasso_zerocheck_domain = domain_factory.create(
 		lasso_prove_output
@@ -439,7 +437,7 @@ where
 		lasso_zerocheck_claim,
 		lasso_zerocheck_witness,
 		&zc_challenges,
-		switchover_fn,
+		&switchover_fn,
 	)?;
 
 	let prodcheck_zerocheck_domain = domain_factory.create(
@@ -461,7 +459,7 @@ where
 		prodcheck_zerocheck_claim,
 		prodcheck_zerocheck_witness,
 		&zc_challenges,
-		switchover_fn,
+		&switchover_fn,
 	)?;
 
 	let provers = [
@@ -478,7 +476,7 @@ where
 		oracles,
 		&mut legacy_witness_index,
 		zerocheck_prove_output.evalcheck_claims,
-		switchover_fn,
+		&switchover_fn,
 		&mut challenger,
 		domain_factory,
 	)?;

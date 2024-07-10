@@ -16,6 +16,7 @@ use binius_core::{
 		MultilinearComposite, MultilinearExtension,
 	},
 	protocols::{
+		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{
 			self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim, ZerocheckProver,
@@ -270,10 +271,7 @@ where
 	// zerocheck::prove is instrumented
 	let zerocheck_domain =
 		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
-	let switchover_fn = |extension_degree| match extension_degree {
-		128 => 5,
-		_ => 1,
-	};
+	let switchover_fn = standard_switchover_heuristic(-2);
 
 	let zc_challenges = challenger.sample_vec(zerocheck_witness.n_vars() - 1);
 
@@ -282,7 +280,7 @@ where
 		zerocheck_claim,
 		zerocheck_witness,
 		&zc_challenges,
-		switchover_fn,
+		&switchover_fn,
 	);
 
 	let ZerocheckBatchProveOutput {
@@ -298,7 +296,7 @@ where
 		oracles,
 		&mut witness_index,
 		evalcheck_claims,
-		switchover_fn,
+		&switchover_fn,
 		&mut challenger,
 		domain_factory,
 	)?;
