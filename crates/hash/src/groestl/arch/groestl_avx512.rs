@@ -6,10 +6,9 @@ use binius_field::{
 };
 use std::{arch::x86_64::*, convert::TryInto, mem::transmute_copy};
 
-const HASH_SIZE: usize = 256 / 8;
-
 const ROUND_SIZE: usize = 10;
 
+/// Helper struct for converting between Aligned bytes and `__m512` register
 #[repr(align(64))]
 struct AlignedArray([u8; 64]);
 
@@ -86,6 +85,9 @@ const INDEX: AlignedArray = AlignedArray([
 	0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]);
 
+/// An implementation of Grøstl256 that uses AVX512 vector extensions to perform P and Q
+/// permutation functions. Some of the steps in a round of the permutation gets simplified to a
+/// single instruction.
 #[derive(Clone, Default)]
 pub struct Groestl256Core;
 
@@ -189,6 +191,8 @@ impl Groestl256Core {
 		(q_block, p_block)
 	}
 
+	/// This function is simply the P permutation from Grøstl256 that is intended to be used in the
+	/// output transformation stage of hash function at finalization
 	#[inline]
 	pub fn permutation_p(&self, p: PackedAESBinaryField64x8b) -> PackedAESBinaryField64x8b {
 		let p = [p];
@@ -199,6 +203,8 @@ impl Groestl256Core {
 		from_u8_slice(&out.0)
 	}
 
+	/// This function can be used to create the compression function of Grøstl256 hash efficiently
+	/// from the P and Q permutations.
 	#[inline]
 	pub fn permutation_pq(
 		&self,

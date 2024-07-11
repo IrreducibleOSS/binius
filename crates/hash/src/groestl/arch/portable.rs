@@ -12,6 +12,7 @@ use std::array;
 
 const ROUND_SIZE: usize = 10;
 
+/// The shift of a given index of the state of P permutation as per the `ShiftBytes` step
 #[inline(always)]
 fn shift_p_func(row: usize, col: usize) -> usize {
 	let new_row = row;
@@ -19,6 +20,7 @@ fn shift_p_func(row: usize, col: usize) -> usize {
 	new_col * 8 + new_row
 }
 
+/// The shift of a given index of the state of Q permutation as per the `ShiftBytes` step
 #[inline(always)]
 fn shift_q_func(row: usize, col: usize) -> usize {
 	let new_row = row;
@@ -67,6 +69,8 @@ lazy_static! {
 		});
 }
 
+/// Portable version of the Grøstl256 hash function's P and Q permutations that uses the
+/// implementation of section `8.1.2` from [Grøstl](https://www.groestl.info/Groestl.pdf)
 #[derive(Debug, Clone, Default)]
 pub struct Groestl256Core;
 
@@ -117,6 +121,8 @@ impl Groestl256Core {
 		state_arr[0]
 	}
 
+	/// This function can be used to create the compression function of Grøstl256 hash efficiently
+	/// from the P and Q permutations
 	pub fn permutation_pq(
 		&self,
 		p: PackedAESBinaryField64x8b,
@@ -134,6 +140,8 @@ impl Groestl256Core {
 		(p, q)
 	}
 
+	/// This function is simply the P permutation from Grøstl256 that is intended to be used in the
+	/// output transformation stage of hash function at finalization
 	pub fn permutation_p(&self, p: PackedAESBinaryField64x8b) -> PackedAESBinaryField64x8b {
 		let mut p = p;
 		for r in 0..ROUND_SIZE {

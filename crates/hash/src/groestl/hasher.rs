@@ -13,14 +13,24 @@ use binius_field::{
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 use std::{cmp, marker::PhantomData};
 
+/// This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
+
+/// The type of the output digest for `Grøstl256` over `BinaryField8b`
 pub type GroestlDigest = PackedBinaryField32x8b;
+
+/// The type of the output digest for `Grøstl256` over `AESTowerField8b`
 pub type GroestlDigestAES = PackedAESBinaryField32x8b;
+
+/// An alias for `Grøstl256` defined over `BinaryField8b`
 pub type GroestlHasher<P> = Groestl256<P, BinaryField8b>;
 
 const BLOCK_LEN_U8: usize = 64;
 
 const GROESTL_CORE_PERMUTATION: Groestl256Core = Groestl256Core;
 
+/// The Grøstl256 hash function which can be thought of as natively defined over `AESTowerField8b`
+/// and isomorphically maps to `BinaryField8b`. The type `P` is the input to the update
+/// function which has to be over a packed extension field of `BinaryField8b` or `AESTowerField8b`
 #[derive(Debug, Clone)]
 pub struct Groestl256<P, F> {
 	state: PackedAESBinaryField64x8b,
@@ -33,7 +43,7 @@ pub struct Groestl256<P, F> {
 impl<P, F> Default for Groestl256<P, F> {
 	fn default() -> Self {
 		let mut iv = PackedAESBinaryField64x8b::default();
-		// IV for Groestl256
+		// IV for Grøstl256
 		iv.set(62, AESTowerField8b::new(0x01));
 		Self {
 			state: iv,
@@ -45,6 +55,7 @@ impl<P, F> Default for Groestl256<P, F> {
 	}
 }
 
+/// Compression function as defined for Grøstl256
 fn compression_func(
 	h: PackedAESBinaryField64x8b,
 	m: PackedAESBinaryField64x8b,
@@ -222,6 +233,8 @@ macro_rules! impl_hasher_groestl {
 impl_hasher_groestl!(BinaryField8b, GroestlDigest);
 impl_hasher_groestl!(AESTowerField8b, GroestlDigestAES);
 
+/// Helper struct that's used to create MerkleTree over Grøstl hash function using the
+/// `PseudoCompressionFunction` and `CompressionFunction` traits
 #[derive(Debug, Default, Clone)]
 pub struct GroestlDigestCompression;
 
