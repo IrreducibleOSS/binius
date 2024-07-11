@@ -1,8 +1,9 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{iter::repeat_with, marker::PhantomData, mem, slice};
+use std::{iter::repeat_with, marker::PhantomData, mem, ops::Range, slice};
 
 use p3_symmetric::PseudoCompressionFunction;
+use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 
 use super::{
@@ -74,15 +75,31 @@ where
 	///
 	/// Throws if the index is out of range
 	pub fn branch(&self, index: usize) -> Result<Vec<D>, Error> {
-		if index >= 1 << self.log_len {
+		self.truncated_branch(index..index + 1)
+	}
+
+	/// Get a truncated Merkle branch for the given range corresponding to the subtree
+	///
+	/// Throws if the index is out of range
+	pub fn truncated_branch(&self, indices: Range<usize>) -> Result<Vec<D>, Error> {
+		let range_size = indices.end - indices.start;
+
+		if !range_size.is_power_of_two() || indices.start & (range_size - 1) != 0 {
+			return Err(Error::IncorrectSubTreeRange);
+		}
+
+		if indices.end > 1 << self.log_len {
 			return Err(Error::IndexOutOfRange {
 				max: 1 << self.log_len,
 			});
 		}
 
-		let branch = (0..self.log_len)
+		let range_size_log = log2_strict_usize(range_size);
+
+		let branch = (range_size_log..self.log_len)
 			.map(|j| {
-				let node_index = (((1 << j) - 1) << (self.log_len + 1 - j)) | (index >> j) ^ 1;
+				let node_index =
+					(((1 << j) - 1) << (self.log_len + 1 - j)) | (indices.start >> j) ^ 1;
 				self.inner_nodes[node_index]
 			})
 			.collect();
@@ -194,38 +211,78 @@ where
 		committed: &Self::Committed,
 		index: usize,
 	) -> Result<Self::Proof, Self::Error> {
-		if committed.log_len != self.log_len {
-			return Err(Error::IncorrectVectorLen {
-				expected: 1 << self.log_len,
-			});
-		}
-		committed.branch(index)
+		self.prove_range_batch_opening(committed, index..index + 1)
 	}
 
 	fn verify_batch_opening(
 		&self,
 		commitment: &Self::Commitment,
-		mut index: usize,
+		index: usize,
 		proof: Self::Proof,
 		values: impl Iterator<Item = P>,
 	) -> Result<(), Self::Error> {
-		if proof.len() != self.log_len {
+		let values = values.map(|x| [x]).collect::<Vec<_>>();
+
+		self.verify_range_batch_opening(
+			commitment,
+			index..index + 1,
+			proof,
+			values.iter().map(|x| x.as_slice()),
+		)
+	}
+
+	fn proof_size(&self, _n_vecs: usize) -> usize {
+		self.log_len * mem::size_of::<D>()
+	}
+
+	fn prove_range_batch_opening(
+		&self,
+		committed: &Self::Committed,
+		indices: Range<usize>,
+	) -> Result<Self::Proof, Self::Error> {
+		if committed.log_len != self.log_len {
+			return Err(Error::IncorrectVectorLen {
+				expected: 1 << self.log_len,
+			});
+		}
+		committed.truncated_branch(indices)
+	}
+
+	fn verify_range_batch_opening<'a>(
+		&self,
+		commitment: &Self::Commitment,
+		indices: Range<usize>,
+		proof: Self::Proof,
+		values: impl Iterator<Item = &'a [P]>,
+	) -> Result<(), Self::Error> {
+		let range_size = indices.end - indices.start;
+
+		if !range_size.is_power_of_two() || indices.start & (range_size - 1) != 0 {
+			return Err(Error::IncorrectSubTreeRange);
+		}
+
+		let range_size_log = log2_strict_usize(range_size);
+
+		if proof.len() != self.log_len - range_size_log {
 			return Err(VerificationError::IncorrectBranchLength {
-				expected: self.log_len,
+				expected: self.log_len - range_size_log,
 			}
 			.into());
 		}
-		if index >= 1 << self.log_len {
+
+		if indices.end > 1 << self.log_len {
 			return Err(Error::IndexOutOfRange {
 				max: 1 << self.log_len,
 			});
 		}
 
-		let leaf_digest = values
-			.fold(H::new(), |hasher, value| hasher.chain_update(slice::from_ref(&value)))
-			.finalize();
+		let subtree = MerkleTree::build::<P, H, C>(&self.compression, range_size_log, values)?;
 
-		let root = proof.into_iter().fold(leaf_digest, |node, branch_node| {
+		let subtree_root = subtree.root();
+
+		let mut index = indices.start >> range_size_log;
+
+		let root = proof.into_iter().fold(subtree_root, |node, branch_node| {
 			let next_node = if index & 1 == 0 {
 				self.compression.compress([node, branch_node])
 			} else {
@@ -240,10 +297,6 @@ where
 		} else {
 			Err(VerificationError::MerkleRootMismatch.into())
 		}
-	}
-
-	fn proof_size(&self, _n_vecs: usize) -> usize {
-		self.log_len * mem::size_of::<D>()
 	}
 }
 
@@ -295,6 +348,89 @@ mod tests {
 			vcs.verify_batch_opening(&commitment, i, proof, values)
 				.unwrap();
 		}
+	}
+
+	#[test]
+	fn test_merkle_vcs_commit_prove_range_open_correctly() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+
+		let vecs = repeat_with(|| {
+			repeat_with(|| Field::random(&mut rng))
+				.take(16)
+				.collect::<Vec<BinaryField16b>>()
+		})
+		.take(3)
+		.collect::<Vec<_>>();
+
+		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		assert_eq!(commitment, tree.root());
+
+		for i in 0..4 {
+			let size = 1 << i;
+			for j in 0..(16 >> i) {
+				let range = size * j..size * (j + 1);
+				let proof = vcs.prove_range_batch_opening(&tree, range.clone()).unwrap();
+				let values = vecs.iter().map(|vec| &vec[size * j..size * (j + 1)]);
+
+				vcs.verify_range_batch_opening(&commitment, range, proof, values)
+					.unwrap();
+			}
+		}
+	}
+
+	#[test]
+	fn test_equality_prove_range_prove() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+
+		let vecs = repeat_with(|| {
+			repeat_with(|| Field::random(&mut rng))
+				.take(16)
+				.collect::<Vec<BinaryField16b>>()
+		})
+		.take(3)
+		.collect::<Vec<_>>();
+
+		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		assert_eq!(commitment, tree.root());
+
+		for j in 0..16 {
+			let proof_range = vcs.prove_range_batch_opening(&tree, j..(j + 1)).unwrap();
+			let proof = vcs.prove_batch_opening(&tree, j).unwrap();
+			assert_eq!(proof_range, proof)
+		}
+	}
+
+	#[test]
+	fn test_merkle_vcs_commit_incorrect_range() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+
+		let vecs = repeat_with(|| {
+			repeat_with(|| Field::random(&mut rng))
+				.take(16)
+				.collect::<Vec<BinaryField16b>>()
+		})
+		.take(3)
+		.collect::<Vec<_>>();
+
+		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		assert_eq!(commitment, tree.root());
+
+		assert!(vcs.prove_range_batch_opening(&tree, 0..2).is_ok());
+
+		assert_matches!(
+			vcs.prove_range_batch_opening(&tree, 0..3),
+			Err(Error::IncorrectSubTreeRange)
+		);
+		assert_matches!(
+			vcs.prove_range_batch_opening(&tree, 1..3),
+			Err(Error::IncorrectSubTreeRange)
+		);
 	}
 
 	#[test]

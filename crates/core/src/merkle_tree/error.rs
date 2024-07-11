@@ -8,6 +8,8 @@ pub enum Error {
 	IndexOutOfRange { max: usize },
 	#[error("Verification error: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("The range must correspond to the subtree, and it size must be the power of two")]
+	IncorrectSubTreeRange,
 }
 
 #[derive(Debug, thiserror::Error)]

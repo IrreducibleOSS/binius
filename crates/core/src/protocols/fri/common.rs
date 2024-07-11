@@ -36,7 +36,6 @@ pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 pub struct QueryRoundProof<F, VCSProof> {
 	/// Values of the committed vector at the queried coset.
 	pub values: Vec<F>,
-	// TODO: make VCS able to verify a range
 	/// Vector commitment opening proof for the coset.
-	pub vcs_proof: Vec<VCSProof>,
+	pub vcs_proof: VCSProof,
 }

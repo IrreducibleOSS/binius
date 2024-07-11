@@ -212,17 +212,12 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 		.into());
 	}
 
-	assert_eq!(values.len(), vcs_proof.len());
+	let start_index = coset_index << log_coset_size;
 
-	for (i, (&value, vcs_proof)) in values.iter().zip(vcs_proof).enumerate() {
-		vcs.verify_batch_opening(
-			commitment,
-			(coset_index << log_coset_size) | i,
-			vcs_proof,
-			iter::once(value),
-		)
+	let range = start_index..start_index + (1 << log_coset_size);
+
+	vcs.verify_range_batch_opening(commitment, range, vcs_proof, iter::once(values.as_slice()))
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-	}
 
 	Ok(values)
 }

@@ -276,18 +276,16 @@ fn prove_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	coset_index: usize,
 	log_coset_size: usize,
 ) -> Result<QueryRoundProof<F, VCS::Proof>, Error> {
-	let (values, vcs_proof) = (0..1 << log_coset_size)
-		.map(|i| {
-			let index = (coset_index << log_coset_size) | i;
-			let value = codeword[index];
-			let vcs_proof = vcs
-				.prove_batch_opening(committed, index)
-				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-			Ok((value, vcs_proof))
-		})
-		.collect::<Result<Vec<_>, Error>>()?
-		.into_iter()
-		.unzip();
+	let start_index = coset_index << log_coset_size;
 
-	Ok(QueryRoundProof { values, vcs_proof })
+	let range = start_index..start_index + (1 << log_coset_size);
+
+	let vcs_proof = vcs
+		.prove_range_batch_opening(committed, range.clone())
+		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+
+	Ok(QueryRoundProof {
+		values: codeword[range].to_vec(),
+		vcs_proof,
+	})
 }

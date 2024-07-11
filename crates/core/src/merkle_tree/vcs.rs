@@ -1,5 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use std::ops::Range;
+
 /// Trait interface for batch vector commitment schemes.
 ///
 /// The main implementation is [`crate::merkle_tree::MerkleTreeVCS`].
@@ -36,4 +38,23 @@ pub trait VectorCommitScheme<T> {
 
 	/// Returns the byte-size of a proof.
 	fn proof_size(&self, n_vecs: usize) -> usize;
+
+	/// Generate an opening proof for all vectors in a batch commitment at the given range of
+	/// indices.
+	fn prove_range_batch_opening(
+		&self,
+		committed: &Self::Committed,
+		indices: Range<usize>,
+	) -> Result<Self::Proof, Self::Error>;
+
+	/// Verify an opening proof for all vectors in a batch commitment at the given range of indices.
+	fn verify_range_batch_opening<'a>(
+		&self,
+		commitment: &Self::Commitment,
+		indices: Range<usize>,
+		proof: Self::Proof,
+		values: impl Iterator<Item = &'a [T]>,
+	) -> Result<(), Self::Error>
+	where
+		T: 'a;
 }
