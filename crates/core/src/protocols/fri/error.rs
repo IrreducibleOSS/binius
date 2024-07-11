@@ -1,0 +1,31 @@
+// Copyright 2024 Ulvetanna Inc.
+
+use binius_ntt::Error as NttError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+	#[error("conflicting or incorrect constructor argument: {0}")]
+	InvalidArgs(String),
+	#[error("FRI does not support messages with dimension 1")]
+	MessageDimensionIsOne,
+	#[error("attempted to fold more than maximum of {max_rounds} times")]
+	TooManyRoundExecutions { max_rounds: usize },
+	#[error("attempted to finish prover before executing all fold rounds")]
+	EarlyProverFinish,
+	#[error("Reed-Solomon encoding error: {0}")]
+	EncodeError(#[from] NttError),
+	#[error("vector commit error: {0}")]
+	VectorCommit(#[source] Box<dyn std::error::Error + Send + Sync>),
+	#[error("verification error: {0}")]
+	Verification(#[from] VerificationError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum VerificationError {
+	#[error("incorrect codeword folding in round {round} at index {index}")]
+	IncorrectFold { round: usize, index: usize },
+	#[error("the size of the query proof is incorrect, expected {expected}")]
+	IncorrectQueryProofLength { expected: usize },
+	#[error("the number of values in round {round} of the query proof is incorrect, expected {coset_size}")]
+	IncorrectQueryProofValuesLength { round: usize, coset_size: usize },
+}

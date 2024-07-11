@@ -12,14 +12,14 @@
 
 use crate::linear_code::{LinearCode, LinearCodeWithExtensionEncoding};
 use binius_field::{
-	BinaryField, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension,
+	BinaryField, ExtensionField, PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_ntt::{AdditiveNTT, Error, SingleThreadedNTT};
+use getset::CopyGetters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
 
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
 pub struct ReedSolomonCode<P>
 where
 	P: PackedField,
@@ -29,14 +29,14 @@ where
 	// will have to be wrapped as a trait object.
 	ntt: SingleThreadedNTT<P::Scalar>,
 	log_dimension: usize,
+	#[getset(get_copy = "pub")]
 	log_inv_rate: usize,
 	_p_marker: PhantomData<P>,
 }
 
 impl<P> ReedSolomonCode<P>
 where
-	P: PackedField,
-	P::Scalar: BinaryField,
+	P: PackedFieldIndexable<Scalar: BinaryField>,
 {
 	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
 		let ntt = SingleThreadedNTT::new(log_dimension + log_inv_rate)?;
@@ -47,11 +47,23 @@ where
 			_p_marker: PhantomData,
 		})
 	}
+
+	pub fn get_ntt(&self) -> &impl AdditiveNTT<P> {
+		&self.ntt
+	}
+
+	pub fn log_dim(&self) -> usize {
+		self.log_dimension
+	}
+
+	pub fn log_len(&self) -> usize {
+		self.log_dimension + self.log_inv_rate
+	}
 }
 
 impl<P, F> LinearCode for ReedSolomonCode<P>
 where
-	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
+	P: PackedFieldIndexable<Scalar = F>,
 	F: BinaryField,
 {
 	type P = P;
@@ -101,7 +113,7 @@ where
 
 impl<P, F> LinearCodeWithExtensionEncoding for ReedSolomonCode<P>
 where
-	P: PackedField<Scalar = F> + PackedExtension<F> + PackedFieldIndexable,
+	P: PackedFieldIndexable<Scalar = F>,
 	F: BinaryField,
 {
 	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
