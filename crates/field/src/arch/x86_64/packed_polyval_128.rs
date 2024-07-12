@@ -36,7 +36,7 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 	}
 }
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, SimdStrategy);
 
 /// A type that can be used in SIMD polyval field multiplication

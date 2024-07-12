@@ -1,11 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	affine_transformation::{
-		FieldAffineTransformation, PackedTransformationFactory, Transformation,
-	},
 	arithmetic_traits::MulAlpha,
 	as_packed_field::PackScalar,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
+	},
 	packed::PackedBinaryField,
 	underlier::{ScaledUnderlier, UnderlierType, WithUnderlier},
 	Field, PackedField,
@@ -301,7 +301,7 @@ where
 		ScaledTransformation<IP::PackedTransformation<Data>>;
 
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<
+		transformation: FieldLinearTransformation<
 			<ScaledPackedField<OP, N> as PackedField>::Scalar,
 			Data,
 		>,

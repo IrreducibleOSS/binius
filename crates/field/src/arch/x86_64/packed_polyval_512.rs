@@ -47,7 +47,7 @@ impl_square_with!(PackedBinaryPolyval4x128b @ ReuseMultiplyStrategy);
 // Define invert
 impl_invert_with!(PackedBinaryPolyval4x128b @ PairwiseStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryPolyval4x128b, SimdStrategy);
 
 impl PolyvalSimdType for __m512i {

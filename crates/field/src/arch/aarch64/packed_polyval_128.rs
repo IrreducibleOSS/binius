@@ -50,7 +50,7 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 	}
 }
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, PairwiseStrategy);
 
 #[inline]

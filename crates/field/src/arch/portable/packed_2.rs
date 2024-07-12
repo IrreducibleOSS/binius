@@ -53,6 +53,6 @@ impl Alpha for PackedBinaryField1x2b {
 	}
 }
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryField2x1b, PackedStrategy);
 impl_transformation_with_strategy!(PackedBinaryField1x2b, PairwiseStrategy);

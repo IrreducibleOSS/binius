@@ -28,5 +28,5 @@ impl_invert_with!(PackedAESBinaryField1x8b @ PairwiseTableStrategy);
 // Define multiply by alpha
 impl_mul_alpha_with!(PackedAESBinaryField1x8b @ PairwiseTableStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedAESBinaryField1x8b, PairwiseStrategy);

@@ -60,7 +60,7 @@ impl_mul_alpha_with!(PackedBinaryField4x4b @ PackedStrategy);
 impl_mul_alpha_with!(PackedBinaryField2x8b @ PackedStrategy);
 impl_mul_alpha_with!(PackedBinaryField1x16b @ PairwiseRecursiveStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryField16x1b, PackedStrategy);
 impl_transformation_with_strategy!(PackedBinaryField8x2b, PackedStrategy);
 impl_transformation_with_strategy!(PackedBinaryField4x4b, PackedStrategy);

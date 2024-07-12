@@ -3,12 +3,12 @@
 use std::ops::Deref;
 
 use crate::{
-	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::PairwiseStrategy,
 	arithmetic_traits::{
 		InvertOrZero, MulAlpha, Square, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha,
 		TaggedPackedTransformationFactory, TaggedSquare,
 	},
+	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::{PackedBinaryField, PackedField},
 };
 
@@ -97,10 +97,10 @@ where
 	OP: PackedBinaryField,
 {
 	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>> =
-		PairwiseTransformation<FieldAffineTransformation<OP::Scalar, Data>>;
+		PairwiseTransformation<FieldLinearTransformation<OP::Scalar, Data>>;
 
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		PairwiseTransformation::new(transformation)
 	}

@@ -10,12 +10,12 @@ use super::{
 	underlier::WithUnderlier,
 };
 use crate::{
-	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b,
 	arithmetic_traits::Square,
 	binary_field_arithmetic::{
 		invert_or_zero_using_packed, multiple_using_packed, square_using_packed,
 	},
+	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::UnderlierWithBitOps,
 	Field,
 };
@@ -412,8 +412,8 @@ impl TowerField for BinaryField128bPolyval {
 	}
 }
 
-pub const BINARY_TO_POLYVAL_TRANSFORMATION: FieldAffineTransformation<BinaryField128bPolyval> =
-	FieldAffineTransformation::new_const(&[
+pub const BINARY_TO_POLYVAL_TRANSFORMATION: FieldLinearTransformation<BinaryField128bPolyval> =
+	FieldLinearTransformation::new_const(&[
 		BinaryField128bPolyval(0xc2000000000000000000000000000001),
 		BinaryField128bPolyval(0x21a09a4bf26aadcd3eb19c5f1a06b528),
 		BinaryField128bPolyval(0xe62f1a804db43b94852cef0e61d7353d),
@@ -550,8 +550,8 @@ impl From<BinaryField128b> for BinaryField128bPolyval {
 	}
 }
 
-pub const POLYVAL_TO_BINARY_TRANSFORMATION: FieldAffineTransformation<BinaryField128b> =
-	FieldAffineTransformation::new_const(&[
+pub const POLYVAL_TO_BINARY_TRANSFORMATION: FieldLinearTransformation<BinaryField128b> =
+	FieldLinearTransformation::new_const(&[
 		BinaryField128b(0x66e1d645d7eb87dca8fc4d30a32dadcc),
 		BinaryField128b(0x53ca87ba77172fd8c5675d78c59c1901),
 		BinaryField128b(0x1a9cf63d31827dcda15acb755a948567),
@@ -692,12 +692,12 @@ impl From<BinaryField128bPolyval> for BinaryField128b {
 mod tests {
 	use super::*;
 	use crate::{
-		affine_transformation::PackedTransformationFactory,
 		arch::{
 			packed_polyval_256::PackedBinaryPolyval2x128b,
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
 		binary_field::tests::is_binary_field_valid_generator,
+		linear_transformation::PackedTransformationFactory,
 		PackedBinaryField1x128b, PackedBinaryField2x128b, PackedBinaryField4x128b, PackedField,
 	};
 	use proptest::prelude::*;
@@ -749,7 +749,7 @@ mod tests {
 		PT2: PackedField<Scalar: BinaryField>,
 	>(
 		val: PT1,
-		transformation: FieldAffineTransformation<PT2::Scalar>,
+		transformation: FieldLinearTransformation<PT2::Scalar>,
 	) {
 		let expected = PT2::from_fn(|i| transformation.transform(&val.get(i)));
 		let transformed =

@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use crate::{
-	affine_transformation::{FieldAffineTransformation, Transformation},
+	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 };
 
@@ -139,7 +139,7 @@ macro_rules! impl_mul_alpha_with {
 
 pub(crate) use impl_mul_alpha_with;
 
-/// Affine transformation factory that is parameterized with some strategy.
+/// Linear transformation factory that is parameterized with some strategy.
 #[allow(private_bounds)]
 pub trait TaggedPackedTransformationFactory<Strategy, OP>: PackedBinaryField
 where
@@ -148,13 +148,13 @@ where
 	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
 
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data>;
 }
 
 macro_rules! impl_transformation_with_strategy {
 	($name:ty, $strategy:ty) => {
-		impl<OP> $crate::affine_transformation::PackedTransformationFactory<OP> for $name
+		impl<OP> $crate::linear_transformation::PackedTransformationFactory<OP> for $name
 		where
 			OP: $crate::packed::PackedBinaryField
 				+ $crate::underlier::WithUnderlier<
@@ -168,7 +168,7 @@ macro_rules! impl_transformation_with_strategy {
 				>>::PackedTransformation<Data>;
 
 			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
-				transformation: $crate::affine_transformation::FieldAffineTransformation<
+				transformation: $crate::linear_transformation::FieldLinearTransformation<
 					OP::Scalar,
 					Data,
 				>,

@@ -31,7 +31,7 @@ name = "binary_field"
 harness = false
 
 [[bench]]
-name = "packed_field_affine_transform"
+name = "packed_field_linear_transform"
 harness = false
 
 [[bench]]

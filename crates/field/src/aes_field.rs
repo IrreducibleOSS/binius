@@ -7,12 +7,12 @@ use super::{
 	mul_by_binary_field_1b, BinaryField8b, Error,
 };
 use crate::{
-	affine_transformation::{
-		FieldAffineTransformation, PackedTransformationFactory, Transformation,
-	},
 	as_packed_field::{AsPackedField, PackScalar, PackedType},
 	binary_field_arithmetic::{impl_arithmetic_using_packed, impl_mul_primitive},
 	binary_tower,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
+	},
 	packed::PackedField,
 	underlier::{WithUnderlier, U1},
 	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
@@ -83,8 +83,8 @@ impl TowerField for AESTowerField8b {
 	}
 }
 
-pub const AES_TO_BINARY_AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryField8b> =
-	FieldAffineTransformation::new_const(&[
+pub const AES_TO_BINARY_LINEAR_TRANSFORMATION: FieldLinearTransformation<BinaryField8b> =
+	FieldLinearTransformation::new_const(&[
 		BinaryField8b(0x01),
 		BinaryField8b(0x3c),
 		BinaryField8b(0x8c),
@@ -97,12 +97,12 @@ pub const AES_TO_BINARY_AFFINE_TRANSFORMATION: FieldAffineTransformation<BinaryF
 
 impl From<AESTowerField8b> for BinaryField8b {
 	fn from(value: AESTowerField8b) -> Self {
-		AES_TO_BINARY_AFFINE_TRANSFORMATION.transform(&value)
+		AES_TO_BINARY_LINEAR_TRANSFORMATION.transform(&value)
 	}
 }
 
-pub const BINARY_TO_AES_AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowerField8b> =
-	FieldAffineTransformation::new_const(&[
+pub const BINARY_TO_AES_LINEAR_TRANSFORMATION: FieldLinearTransformation<AESTowerField8b> =
+	FieldLinearTransformation::new_const(&[
 		AESTowerField8b(0x01),
 		AESTowerField8b(0xbc),
 		AESTowerField8b(0xb0),
@@ -115,13 +115,13 @@ pub const BINARY_TO_AES_AFFINE_TRANSFORMATION: FieldAffineTransformation<AESTowe
 
 impl From<BinaryField8b> for AESTowerField8b {
 	fn from(value: BinaryField8b) -> Self {
-		BINARY_TO_AES_AFFINE_TRANSFORMATION.transform(&value)
+		BINARY_TO_AES_LINEAR_TRANSFORMATION.transform(&value)
 	}
 }
 
 /// A 3- step transformation :
 /// 1. Cast to base b-bit packed field
-/// 2. Apply affine transformation between aes and binary b8 tower fields
+/// 2. Apply linear transformation between aes and binary b8 tower fields
 /// 3. Cast back to the target field
 struct SubfieldTransformer<IP, OP, T> {
 	inner_transform: T,
@@ -175,7 +175,7 @@ where
 		PackedType<IP::Underlier, BinaryField8b>,
 		_,
 	>::new(PackedType::<IP::Underlier, AESTowerField8b>::make_packed_transformation(
-		AES_TO_BINARY_AFFINE_TRANSFORMATION,
+		AES_TO_BINARY_LINEAR_TRANSFORMATION,
 	))
 }
 
@@ -196,7 +196,7 @@ where
 		PackedType<IP::Underlier, AESTowerField8b>,
 		_,
 	>::new(PackedType::<IP::Underlier, BinaryField8b>::make_packed_transformation(
-		BINARY_TO_AES_AFFINE_TRANSFORMATION,
+		BINARY_TO_AES_LINEAR_TRANSFORMATION,
 	))
 }
 

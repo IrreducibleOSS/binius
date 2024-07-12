@@ -412,11 +412,11 @@ mod tests {
 		*,
 	};
 	use crate::{
-		affine_transformation::PackedTransformationFactory,
 		arch::{
 			packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
 			packed_8::*, packed_aes_16::*, packed_aes_32::*, packed_aes_64::*, packed_aes_8::*,
 		},
+		linear_transformation::PackedTransformationFactory,
 		test_utils::implements_transformation_factory,
 		PackedField,
 	};

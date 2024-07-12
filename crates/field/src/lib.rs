@@ -13,7 +13,6 @@
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
 
 pub mod aes_field;
-pub mod affine_transformation;
 pub mod arch;
 pub mod arithmetic_traits;
 pub mod as_packed_field;
@@ -22,6 +21,7 @@ mod binary_field_arithmetic;
 pub mod error;
 pub mod extension;
 pub mod field;
+pub mod linear_transformation;
 mod macros;
 pub mod packed;
 pub mod packed_aes_field;

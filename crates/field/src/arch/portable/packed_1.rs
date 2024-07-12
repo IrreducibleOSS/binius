@@ -15,5 +15,5 @@ impl_broadcast!(U1, BinaryField1b);
 // Define operations for height 0
 impl_ops_for_zero_height!(PackedBinaryField1x1b);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryField1x1b, PairwiseStrategy);

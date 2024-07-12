@@ -31,8 +31,8 @@ use binius_core::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	affine_transformation::Transformation,
 	arithmetic_traits::{InvertOrZero, Square},
+	linear_transformation::Transformation,
 	packed::get_packed_slice,
 	underlier::WithUnderlier,
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,

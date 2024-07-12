@@ -2,8 +2,8 @@
 
 use crate::hasher::{FixedLenHasher, HashError};
 use binius_field::{
-	affine_transformation::{
-		FieldAffineTransformation, PackedTransformationFactory, Transformation,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::set_packed_slice,
 	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField32x8b,
@@ -20,7 +20,7 @@ const NUM_ROUNDS: usize = 8;
 
 const RATE_AS_U32: usize = 16;
 
-const AFFINE_FWD: [BinaryField32b; 32] = [
+const LINEAR_FWD: [BinaryField32b; 32] = [
 	BinaryField32b::new(0x7d8a35b9),
 	BinaryField32b::new(0xafd394ec),
 	BinaryField32b::new(0x0a5e7f50),
@@ -55,9 +55,9 @@ const AFFINE_FWD: [BinaryField32b; 32] = [
 	BinaryField32b::new(0xa2e6ae06),
 ];
 
-const AFFINE_FWD_CONST: BinaryField32b = BinaryField32b::new(0x7cf0bc6c);
+const LINEAR_FWD_CONST: BinaryField32b = BinaryField32b::new(0x7cf0bc6c);
 
-const AFFINE_INV: [BinaryField32b; 32] = [
+const LINEAR_INV: [BinaryField32b; 32] = [
 	BinaryField32b::new(0xef6bbaea),
 	BinaryField32b::new(0x4db1dec6),
 	BinaryField32b::new(0x90d25937),
@@ -92,7 +92,7 @@ const AFFINE_INV: [BinaryField32b; 32] = [
 	BinaryField32b::new(0x1d472bf1),
 ];
 
-const AFFINE_INV_CONST: BinaryField32b = BinaryField32b::new(0x9fa712f2);
+const LINEAR_INV_CONST: BinaryField32b = BinaryField32b::new(0x9fa712f2);
 
 #[rustfmt::skip]
 const ROUND_KEYS: [[BinaryField32b; 24]; 2 * NUM_ROUNDS + 1] = [
@@ -200,10 +200,10 @@ const ROUND_KEYS: [[BinaryField32b; 24]; 2 * NUM_ROUNDS + 1] = [
 	],
 ];
 
-const SCALAR_FWD_TRANS: FieldAffineTransformation<BinaryField32b> =
-	FieldAffineTransformation::new_const(&AFFINE_FWD);
-const SCALAR_INV_TRANS: FieldAffineTransformation<BinaryField32b> =
-	FieldAffineTransformation::new_const(&AFFINE_INV);
+const SCALAR_FWD_TRANS: FieldLinearTransformation<BinaryField32b> =
+	FieldLinearTransformation::new_const(&LINEAR_FWD);
+const SCALAR_INV_TRANS: FieldLinearTransformation<BinaryField32b> =
+	FieldLinearTransformation::new_const(&LINEAR_INV);
 
 type PackedTransformationType8x32b = <PackedBinaryField8x32b as PackedTransformationFactory<
 	PackedBinaryField8x32b,
@@ -298,7 +298,7 @@ pub struct Vision32bPermutation {
 	// MDS structure basically a wrapper around additive ntt
 	mds: Vision32bMDS,
 	// The following variables are used internally for the sbox
-	// The constants used for the forward and inverse affine transformation
+	// The constants used for the forward and inverse linear transformation
 	fwd_const: PackedBinaryField8x32b,
 	inv_const: PackedBinaryField8x32b,
 	// Round constants
@@ -318,30 +318,30 @@ impl Vision32bPermutation {
 		});
 		Self {
 			mds: Vision32bMDS::default(),
-			fwd_const: PackedBinaryField8x32b::broadcast(AFFINE_FWD_CONST),
-			inv_const: PackedBinaryField8x32b::broadcast(AFFINE_INV_CONST),
+			fwd_const: PackedBinaryField8x32b::broadcast(LINEAR_FWD_CONST),
+			inv_const: PackedBinaryField8x32b::broadcast(LINEAR_INV_CONST),
 			round_keys,
 		}
 	}
 
-	fn sbox_packed_affine(
+	fn sbox_packed_linear(
 		&self,
 		chunk: &PackedBinaryField8x32b,
-		packed_affine_trans: &PackedTransformationType8x32b,
+		packed_linear_trans: &PackedTransformationType8x32b,
 		constant: PackedBinaryField8x32b,
 	) -> PackedBinaryField8x32b {
 		let x_inv_eval = chunk.invert_or_zero();
-		let result = packed_affine_trans.transform(&x_inv_eval);
+		let result = packed_linear_trans.transform(&x_inv_eval);
 		result + constant
 	}
 
 	fn sbox_step(
 		&self,
 		d: [PackedBinaryField8x32b; 3],
-		packed_affine_trans: &PackedTransformationType8x32b,
+		packed_linear_trans: &PackedTransformationType8x32b,
 		constant: PackedBinaryField8x32b,
 	) -> [PackedBinaryField8x32b; 3] {
-		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_affine_trans, constant))
+		d.map(move |chunk| self.sbox_packed_linear(&chunk, packed_linear_trans, constant))
 	}
 
 	// Actually do the rounds of the encryption
@@ -709,8 +709,8 @@ mod tests {
 					.unwrap(),
 			);
 
-			let got1 = vs.sbox_packed_affine(&chunk, &INV_PACKED_TRANS, vs.inv_const);
-			let got2 = vs.sbox_packed_affine(&chunk, &FWD_PACKED_TRANS, vs.fwd_const);
+			let got1 = vs.sbox_packed_linear(&chunk, &INV_PACKED_TRANS, vs.inv_const);
+			let got2 = vs.sbox_packed_linear(&chunk, &FWD_PACKED_TRANS, vs.fwd_const);
 
 			assert_eq!(expected1, got1);
 			assert_eq!(expected2, got2);

@@ -106,7 +106,7 @@ impl MulAlpha for PackedBinaryField16x8b {
 	}
 }
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryField128x1b, PackedStrategy);
 impl_transformation_with_strategy!(PackedBinaryField64x2b, PackedStrategy);
 impl_transformation_with_strategy!(PackedBinaryField32x4b, PackedStrategy);

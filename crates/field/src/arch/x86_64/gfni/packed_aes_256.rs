@@ -53,7 +53,7 @@ impl_mul_alpha_with!(PackedAESBinaryField8x32b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField4x64b @ SimdStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField2x128b @ SimdStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_gfni!(PackedAESBinaryField32x8b, GfniBinaryTowerStrategy);
 impl_transformation_with_gfni_nxn!(PackedAESBinaryField16x16b, 2);
 impl_transformation_with_gfni_nxn!(PackedAESBinaryField8x32b, 4);

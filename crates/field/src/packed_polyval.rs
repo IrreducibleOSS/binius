@@ -133,12 +133,12 @@ mod tests {
 		define_transformation_tests,
 	};
 	use crate::{
-		affine_transformation::PackedTransformationFactory,
 		arch::{
 			packed_polyval_128::PackedBinaryPolyval1x128b,
 			packed_polyval_256::PackedBinaryPolyval2x128b,
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
+		linear_transformation::PackedTransformationFactory,
 		test_utils::implements_transformation_factory,
 		underlier::WithUnderlier,
 		BinaryField128bPolyval, PackedBinaryField1x128b, PackedBinaryField2x128b,

@@ -40,6 +40,6 @@ impl_invert_with!(PackedAESBinaryField1x16b @ PairwiseRecursiveStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField2x8b @ PairwiseTableStrategy);
 impl_mul_alpha_with!(PackedAESBinaryField1x16b @ PackedStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedAESBinaryField2x8b, PackedStrategy);
 impl_transformation_with_strategy!(PackedAESBinaryField1x16b, PairwiseStrategy);

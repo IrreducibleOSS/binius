@@ -1,9 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{
-	affine_transformation::{
-		FieldAffineTransformation, PackedTransformationFactory, Transformation,
-	},
 	arch::{
 		packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
 		packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
@@ -12,6 +9,9 @@ use binius_field::{
 		SimdStrategy,
 	},
 	arithmetic_traits::TaggedPackedTransformationFactory,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
+	},
 	ExtensionField, PackedField,
 };
 use criterion::criterion_main;
@@ -29,7 +29,7 @@ fn create_transformation_main<PT: TransformToSelfFactory>() -> impl Transformati
 	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 		.map(|_| PT::Scalar::random(&mut rng))
 		.collect();
-	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+	let transformation = FieldLinearTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
 
 	PT::make_packed_transformation(transformation)
 }
@@ -50,7 +50,7 @@ fn create_transformation_pairwise<PT: TaggedTransformToSelfFactory<PairwiseStrat
 	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 		.map(|_| PT::Scalar::random(&mut rng))
 		.collect();
-	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+	let transformation = FieldLinearTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
 
 	PT::make_packed_transformation(transformation)
 }
@@ -61,7 +61,7 @@ fn create_transformation_packed<PT: TaggedTransformToSelfFactory<PackedStrategy>
 	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 		.map(|_| PT::Scalar::random(&mut rng))
 		.collect();
-	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+	let transformation = FieldLinearTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
 
 	PT::make_packed_transformation(transformation)
 }
@@ -72,13 +72,13 @@ fn create_transformation_simd<PT: TaggedTransformToSelfFactory<SimdStrategy>>(
 	let bases: Vec<_> = (0..PT::Scalar::DEGREE)
 		.map(|_| PT::Scalar::random(&mut rng))
 		.collect();
-	let transformation = FieldAffineTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
+	let transformation = FieldLinearTransformation::<PT::Scalar, Vec<PT::Scalar>>::new(bases);
 
 	PT::make_packed_transformation(transformation)
 }
 
 benchmark_packed_operation!(
-	op_name @ affine_transform,
+	op_name @ linear_transform,
 	bench_type @ transformation,
 	strategies @ (
 		(main, TransformToSelfFactory, create_transformation_main),
@@ -88,4 +88,4 @@ benchmark_packed_operation!(
 	)
 );
 
-criterion_main!(affine_transform);
+criterion_main!(linear_transform);

@@ -47,7 +47,7 @@ impl_square_with!(PackedBinaryPolyval2x128b @ ReuseMultiplyStrategy);
 // TODO: possible we can use some better strategy using SIMD for some of the operations
 impl_invert_with!(PackedBinaryPolyval2x128b @ PairwiseStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryPolyval2x128b, SimdStrategy);
 
 impl PolyvalSimdType for __m256i {

@@ -2,7 +2,6 @@
 
 use crate::{
 	aes_field::AESTowerField8b,
-	affine_transformation::{FieldAffineTransformation, Transformation},
 	arch::{
 		portable::{
 			packed::PackedPrimitiveType, packed_arithmetic::PackedTowerField,
@@ -14,6 +13,7 @@ use crate::{
 		MulAlpha, TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedPackedTransformationFactory,
 		TaggedSquare,
 	},
+	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	BinaryField, BinaryField8b, PackedField, TowerField,
@@ -301,7 +301,7 @@ where
 	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType + UnderlierWithBitOps>,
 {
 	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		Self {
 			bases: transformation
@@ -351,7 +351,7 @@ where
 	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = SimdTransformation<OP>;
 
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		SimdTransformation::new(transformation)
 	}

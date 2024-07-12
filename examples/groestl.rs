@@ -33,15 +33,15 @@ use binius_core::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	affine_transformation::{PackedTransformationFactory, Transformation},
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
+	linear_transformation::{PackedTransformationFactory, Transformation},
 	packed::set_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
 	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField16b, BinaryField1b,
 	BinaryField8b, ExtensionField, Field, PackedAESBinaryField64x8b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, TowerField,
-	AES_TO_BINARY_AFFINE_TRANSFORMATION,
+	AES_TO_BINARY_LINEAR_TRANSFORMATION,
 };
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
@@ -537,7 +537,7 @@ where
 	PW8b: PackedField<Scalar = AESTowerField8b> + PackedTransformationFactory<P8b>,
 {
 	let transform = <PW8b as PackedTransformationFactory<P8b>>::make_packed_transformation(
-		AES_TO_BINARY_AFFINE_TRANSFORMATION,
+		AES_TO_BINARY_LINEAR_TRANSFORMATION,
 	);
 
 	let values = poly

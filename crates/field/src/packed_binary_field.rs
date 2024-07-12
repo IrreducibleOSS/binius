@@ -6,7 +6,7 @@ pub use crate::arch::{packed_128::*, packed_256::*, packed_512::*};
 #[cfg(test)]
 pub mod test_utils {
 	use crate::{
-		affine_transformation::PackedTransformationFactory,
+		linear_transformation::PackedTransformationFactory,
 		underlier::{U1, U2, U4},
 		BinaryField, PackedField,
 	};
@@ -211,15 +211,15 @@ pub mod test_utils {
 				TestTransformation<T>
 			{
 				fn test_transformation(a: <T as $crate::underlier::WithUnderlier>::Underlier) {
-					use $crate::affine_transformation::{
-						FieldAffineTransformation, Transformation,
+					use $crate::linear_transformation::{
+						FieldLinearTransformation, Transformation,
 					};
 
 					let a = T::from_underlier(a);
 
 					// TODO: think how we can use random seed from proptests here
 					let field_transformation =
-						FieldAffineTransformation::<T::Scalar, _>::random(rand::thread_rng());
+						FieldLinearTransformation::<T::Scalar, _>::random(rand::thread_rng());
 					let packed_transformation =
 						T::make_packed_transformation(field_transformation.clone());
 
@@ -787,13 +787,13 @@ mod tests {
 		*,
 	};
 	use crate::{
-		affine_transformation::PackedTransformationFactory,
 		arch::{
 			packed_1::*, packed_16::*, packed_2::*, packed_32::*, packed_4::*, packed_64::*,
 			packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
 			packed_aes_512::*, packed_aes_64::*,
 		},
 		arithmetic_traits::MulAlpha,
+		linear_transformation::PackedTransformationFactory,
 		BinaryField8b, Field, PackedField, PackedFieldIndexable,
 	};
 	use proptest::prelude::*;

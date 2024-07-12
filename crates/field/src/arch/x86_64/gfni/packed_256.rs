@@ -81,7 +81,7 @@ impl_mul_alpha_with!(PackedBinaryField8x32b @ SimdStrategy);
 impl_mul_alpha_with!(PackedBinaryField4x64b @ SimdStrategy);
 impl_mul_alpha_with!(PackedBinaryField2x128b @ SimdStrategy);
 
-// Define affine transformations
+// Define linear transformations
 impl_transformation_with_strategy!(PackedBinaryField256x1b, SimdStrategy);
 impl_transformation_with_strategy!(PackedBinaryField128x2b, SimdStrategy);
 impl_transformation_with_strategy!(PackedBinaryField64x4b, SimdStrategy);

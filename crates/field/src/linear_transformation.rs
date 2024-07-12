@@ -9,16 +9,16 @@ pub trait Transformation<Input, Output> {
 	fn transform(&self, data: &Input) -> Output;
 }
 
-/// Field affine transformation. Stores transposed transformation matrix as a collection
+/// Field linear transformation. Stores transposed transformation matrix as a collection
 /// of field elements.
 /// `Data` is a generic parameter because we want to be able both to have const instances that
 /// reference static arrays and owning vector elements.
 #[derive(Debug, Clone)]
-pub struct FieldAffineTransformation<OF: BinaryField, Data: Deref<Target = [OF]> = &'static [OF]> {
+pub struct FieldLinearTransformation<OF: BinaryField, Data: Deref<Target = [OF]> = &'static [OF]> {
 	bases: Data,
 }
 
-impl<OF: BinaryField> FieldAffineTransformation<OF, &'static [OF]> {
+impl<OF: BinaryField> FieldLinearTransformation<OF, &'static [OF]> {
 	pub const fn new_const(bases: &'static [OF]) -> Self {
 		assert!(bases.len() == OF::DEGREE);
 
@@ -26,7 +26,7 @@ impl<OF: BinaryField> FieldAffineTransformation<OF, &'static [OF]> {
 	}
 }
 
-impl<OF: BinaryField, Data: Deref<Target = [OF]>> FieldAffineTransformation<OF, Data> {
+impl<OF: BinaryField, Data: Deref<Target = [OF]>> FieldLinearTransformation<OF, Data> {
 	pub fn new(bases: Data) -> Self {
 		debug_assert_eq!(bases.deref().len(), OF::DEGREE);
 
@@ -39,7 +39,7 @@ impl<OF: BinaryField, Data: Deref<Target = [OF]>> FieldAffineTransformation<OF, 
 }
 
 impl<IF: BinaryField, OF: BinaryField, Data: Deref<Target = [OF]>> Transformation<IF, OF>
-	for FieldAffineTransformation<OF, Data>
+	for FieldLinearTransformation<OF, Data>
 {
 	fn transform(&self, data: &IF) -> OF {
 		assert_eq!(IF::DEGREE, OF::DEGREE);
@@ -50,7 +50,7 @@ impl<IF: BinaryField, OF: BinaryField, Data: Deref<Target = [OF]>> Transformatio
 	}
 }
 
-impl<OF: BinaryField> FieldAffineTransformation<OF, Vec<OF>> {
+impl<OF: BinaryField> FieldLinearTransformation<OF, Vec<OF>> {
 	pub fn random(mut rng: impl RngCore) -> Self {
 		Self {
 			bases: (0..OF::DEGREE).map(|_| OF::random(&mut rng)).collect(),
@@ -68,6 +68,6 @@ where
 	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
 
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
-		transformation: FieldAffineTransformation<OP::Scalar, Data>,
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data>;
 }
