@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
 pub struct SingleThreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F>> {
-	s_evals: Vec<TA>,
+	pub(super) s_evals: Vec<TA>,
 	_marker: PhantomData<F>,
 }
 
@@ -175,7 +175,7 @@ pub fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 	Ok(())
 }
 
-fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
+pub fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut [P],
@@ -305,42 +305,8 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::reference::{forward_transform_simple, inverse_transform_simple};
 	use assert_matches::assert_matches;
-	use binius_field::{
-		arch::packed_32::PackedBinaryField1x32b,
-		packed_binary_field::{PackedBinaryField16x8b, PackedBinaryField4x32b},
-		AESTowerField8b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField8x16b, PackedExtension,
-	};
-	use rand::{rngs::StdRng, thread_rng, SeedableRng};
-	use std::{array, iter::repeat_with};
-
-	trait SimpleAdditiveNTT<F: BinaryField> {
-		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-		where
-			FF: ExtensionField<F>;
-
-		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-		where
-			FF: ExtensionField<F>;
-	}
-
-	impl<F: BinaryField, TA: TwiddleAccess<F>> SimpleAdditiveNTT<F> for SingleThreadedNTT<F, TA> {
-		fn forward_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-		where
-			FF: ExtensionField<F>,
-		{
-			forward_transform_simple(self.log_domain_size(), &self.s_evals, data, coset)
-		}
-
-		fn inverse_transform_simple<FF>(&self, data: &mut [FF], coset: u32) -> Result<(), Error>
-		where
-			FF: ExtensionField<F>,
-		{
-			inverse_transform_simple(self.log_domain_size(), &self.s_evals, data, coset)
-		}
-	}
+	use binius_field::BinaryField8b;
 
 	#[test]
 	fn test_additive_ntt_fails_with_field_too_small() {
@@ -350,235 +316,6 @@ mod tests {
 				log_domain_size: 10
 			})
 		);
-	}
-
-	#[test]
-	fn test_additive_ntt_transform() {
-		let ntt = SingleThreadedNTT::<BinaryField8b>::new(8).unwrap();
-		let data = (0..1 << 6)
-			.map(|i| BinaryField8b::new(i as u8))
-			.collect::<Vec<_>>();
-
-		let mut result = data.clone();
-		for coset in 0..4 {
-			ntt.inverse_transform_simple(&mut result, coset).unwrap();
-			ntt.forward_transform_simple(&mut result, coset).unwrap();
-			assert_eq!(result, data);
-		}
-	}
-
-	#[test]
-	fn test_additive_ntt_with_precompute_matches() {
-		let ntt = SingleThreadedNTT::<BinaryField8b>::new(8).unwrap();
-		let ntt_with_precompute = ntt.precompute_twiddles();
-		let data = (0..1 << 6)
-			.map(|i| BinaryField8b::new(i as u8))
-			.collect::<Vec<_>>();
-
-		let mut result1 = data.clone();
-		let mut result2 = data;
-		for coset in 0..4 {
-			ntt.inverse_transform_simple(&mut result1, coset).unwrap();
-			ntt_with_precompute
-				.inverse_transform_simple(&mut result2, coset)
-				.unwrap();
-			assert_eq!(result1, result2);
-
-			ntt.forward_transform_simple(&mut result1, coset).unwrap();
-			ntt_with_precompute
-				.forward_transform_simple(&mut result2, coset)
-				.unwrap();
-			assert_eq!(result1, result2);
-		}
-	}
-
-	#[test]
-	fn test_additive_ntt_with_transform() {
-		let ntt_binary8b = <SingleThreadedNTT<BinaryField8b>>::new(8).unwrap();
-		let ntt_aes8b = <SingleThreadedNTT<AESTowerField8b>>::new(8).unwrap();
-		let ntt_aes8b_change_of_bases =
-			<SingleThreadedNTT<AESTowerField8b, _>>::with_domain_field::<BinaryField8b>(8).unwrap();
-
-		let mut rng = thread_rng();
-
-		let data: [BinaryField8b; 64] =
-			array::from_fn(|_| <BinaryField8b as Field>::random(&mut rng));
-		let data_as_aes: [AESTowerField8b; 64] = array::from_fn(|i| data[i].into());
-
-		for coset in 0..4 {
-			let mut result_bin = data;
-			let mut result_aes = data_as_aes;
-			let mut result_aes_cob = data_as_aes;
-			ntt_binary8b
-				.forward_transform_simple(&mut result_bin, coset)
-				.unwrap();
-			ntt_aes8b
-				.forward_transform_simple(&mut result_aes, coset)
-				.unwrap();
-			ntt_aes8b_change_of_bases
-				.forward_transform_simple(&mut result_aes_cob, coset)
-				.unwrap();
-
-			let result_bin_to_aes = result_bin.map(AESTowerField8b::from);
-
-			assert_eq!(result_bin_to_aes, result_aes_cob);
-			assert_ne!(result_bin_to_aes, result_aes);
-
-			ntt_binary8b
-				.inverse_transform_simple(&mut result_bin, coset)
-				.unwrap();
-			ntt_aes8b
-				.inverse_transform_simple(&mut result_aes, coset)
-				.unwrap();
-			ntt_aes8b_change_of_bases
-				.inverse_transform_simple(&mut result_aes_cob, coset)
-				.unwrap();
-
-			let result_bin_to_aes = result_bin.map(AESTowerField8b::from);
-
-			assert_eq!(result_bin_to_aes, result_aes_cob);
-		}
-	}
-
-	#[test]
-	fn test_additive_ntt_transform_over_larger_field() {
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let ntt = <SingleThreadedNTT<BinaryField8b, _>>::new(8).unwrap();
-		let data = repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
-			.take(1 << 6)
-			.collect::<Vec<_>>();
-
-		let mut result = data.clone();
-		for coset in 0..4 {
-			ntt.inverse_transform_simple(&mut result, coset).unwrap();
-			ntt.forward_transform_simple(&mut result, coset).unwrap();
-			assert_eq!(result, data);
-		}
-	}
-
-	#[test]
-	fn test_packed_ntt_on_scalars() {
-		type Packed = PackedBinaryField16x8b;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let ntt = <SingleThreadedNTT<BinaryField8b, _>>::new(8).unwrap();
-		let mut data = repeat_with(|| Packed::random(&mut rng))
-			.take(1 << 2)
-			.collect::<Vec<_>>();
-		let mut data_copy = data.clone();
-
-		ntt.inverse_transform_simple(Packed::unpack_scalars_mut(&mut data), 2)
-			.unwrap();
-		AdditiveNTT::<Packed>::inverse_transform_ext(&ntt, &mut data_copy, 2).unwrap();
-		assert_eq!(data, data_copy);
-
-		ntt.forward_transform_simple(Packed::unpack_scalars_mut(&mut data), 3)
-			.unwrap();
-		AdditiveNTT::<Packed>::forward_transform_ext(&ntt, &mut data_copy, 3).unwrap();
-		assert_eq!(data, data_copy);
-	}
-
-	fn check_packed_ntt_on_scalars_with_message_size_one<P, S, NTT>(ntt: NTT)
-	where
-		S: Field,
-		P: PackedFieldIndexable<Scalar = S> + PackedExtension<S, PackedSubfield = P>,
-		P::Scalar: BinaryField + ExtensionField<S>,
-		NTT: AdditiveNTT<P> + SimpleAdditiveNTT<P::Scalar>,
-	{
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let mut data = repeat_with(|| <P as PackedField>::random(&mut rng))
-			.take(1 << 0)
-			.collect::<Vec<_>>();
-		let mut data_copy = data.clone();
-
-		ntt.inverse_transform_simple(P::unpack_scalars_mut(&mut data), 2)
-			.unwrap();
-		AdditiveNTT::<P>::inverse_transform_ext::<P>(&ntt, &mut data_copy, 2).unwrap();
-		assert_eq!(data, data_copy);
-
-		ntt.forward_transform_simple(P::unpack_scalars_mut(&mut data), 3)
-			.unwrap();
-		AdditiveNTT::<P>::forward_transform_ext::<P>(&ntt, &mut data_copy, 3).unwrap();
-		assert_eq!(data, data_copy);
-	}
-
-	#[test]
-	fn test_packed_ntt_with_otf_compute_on_scalars_with_message_size_one() {
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField4x32b, _, _>(
-			SingleThreadedNTT::new(8).unwrap(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField8x16b, _, _>(
-			SingleThreadedNTT::new(8).unwrap(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField16x8b, _, _>(
-			SingleThreadedNTT::new(8).unwrap(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField1x32b, _, _>(
-			SingleThreadedNTT::new(8).unwrap(),
-		);
-	}
-
-	#[test]
-	fn test_packed_ntt_with_precompute_on_scalars_with_message_size_one() {
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField4x32b, _, _>(
-			SingleThreadedNTT::new(8).unwrap().precompute_twiddles(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField8x16b, _, _>(
-			SingleThreadedNTT::new(8).unwrap().precompute_twiddles(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField16x8b, _, _>(
-			SingleThreadedNTT::new(8).unwrap().precompute_twiddles(),
-		);
-		check_packed_ntt_on_scalars_with_message_size_one::<PackedBinaryField1x32b, _, _>(
-			SingleThreadedNTT::new(8).unwrap().precompute_twiddles(),
-		);
-	}
-
-	#[test]
-	fn test_packed_ntt_over_larger_field() {
-		type Packed = PackedBinaryField4x32b;
-
-		let mut rng = StdRng::seed_from_u64(0);
-
-		let ntt = <SingleThreadedNTT<BinaryField8b>>::new(8).unwrap();
-		let ntt_with_precompute = <SingleThreadedNTT<BinaryField8b>>::new(8)
-			.unwrap()
-			.precompute_twiddles();
-		let mut data = repeat_with(|| Packed::random(&mut rng))
-			.take(1 << 4)
-			.collect::<Vec<_>>();
-
-		let mut data_copy = data.clone();
-		let mut data_copy_2 = data.clone();
-
-		ntt.inverse_transform_simple(PackedFieldIndexable::unpack_scalars_mut(&mut data), 2)
-			.unwrap();
-		AdditiveNTT::<PackedBinaryField16x8b>::inverse_transform_ext(&ntt, &mut data_copy, 2)
-			.unwrap();
-		AdditiveNTT::<PackedBinaryField16x8b>::inverse_transform_ext(
-			&ntt_with_precompute,
-			&mut data_copy_2,
-			2,
-		)
-		.unwrap();
-		assert_eq!(data, data_copy);
-		assert_eq!(data, data_copy_2);
-
-		ntt.forward_transform_simple(PackedFieldIndexable::unpack_scalars_mut(&mut data), 3)
-			.unwrap();
-		AdditiveNTT::<PackedBinaryField16x8b>::forward_transform_ext(&ntt, &mut data_copy, 3)
-			.unwrap();
-		AdditiveNTT::<PackedBinaryField16x8b>::forward_transform_ext(
-			&ntt_with_precompute,
-			&mut data_copy_2,
-			3,
-		)
-		.unwrap();
-		assert_eq!(data, data_copy);
-		assert_eq!(data, data_copy_2);
 	}
 
 	// TODO: Write test that compares polynomial evaluation via additive NTT with naive Lagrange

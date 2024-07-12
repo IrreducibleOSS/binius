@@ -6,8 +6,10 @@ authors.workspace = true
 
 [dependencies]
 binius_field = { path = "../field" }
+binius_utils = { path = "../utils" }
 p3-util.workspace = true
 rand.workspace = true
+rayon.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -9,9 +9,11 @@
 
 mod additive_ntt;
 mod error;
-#[cfg(test)]
-mod reference;
+mod multithreaded;
 mod single_threaded;
+mod strided_array;
+#[cfg(test)]
+mod tests;
 pub mod twiddle;
 
 pub use additive_ntt::AdditiveNTT;
