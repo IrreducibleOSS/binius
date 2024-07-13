@@ -9,7 +9,7 @@ use crate::{
 	polynomial::{transparent::step_down::StepDown, CompositionPoly, Error as PolynomialError},
 	protocols::{
 		msetcheck::{MsetcheckClaim, MsetcheckWitness},
-		zerocheck::{ZerocheckClaim, ZerocheckWitness},
+		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -198,7 +198,7 @@ pub struct ReducedLassoClaims<F: Field> {
 
 pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<FW>, F: Field, FW: TowerField> {
 	pub reduced_lasso_claims: ReducedLassoClaims<F>,
-	pub zerocheck_witness: ZerocheckWitness<'a, PackedType<U, FW>, UnaryCarryConstraint>,
+	pub zerocheck_witness: ZerocheckWitnessTypeErased<'a, PackedType<U, FW>, UnaryCarryConstraint>,
 	pub msetcheck_witness: MsetcheckWitness<'a, PackedType<U, FW>>,
 	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
 }

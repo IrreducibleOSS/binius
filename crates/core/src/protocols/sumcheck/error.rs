@@ -15,8 +15,6 @@ pub enum Error {
 	TooManyExecuteRoundCalls,
 	#[error("oracles must be sorted in descending order by number of variables")]
 	OraclesOutOfOrder,
-	#[error("prover has mismatch between claim and witness")]
-	ProverClaimWitnessMismatch,
 	#[error("IOPolynomial error: {0}")]
 	IOPolynomial(#[from] IOPolynomialError),
 	#[error("polynomial error: {0}")]

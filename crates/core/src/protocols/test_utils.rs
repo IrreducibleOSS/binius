@@ -17,7 +17,7 @@ use crate::{
 		},
 		sumcheck::{
 			batch_prove, Error as SumcheckError, SumcheckBatchProof, SumcheckBatchProveOutput,
-			SumcheckClaim, SumcheckProver,
+			SumcheckClaim,
 		},
 	},
 };
@@ -154,7 +154,7 @@ where
 pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
-	switchover_fn: impl Fn(usize) -> usize + Clone,
+	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
@@ -164,27 +164,10 @@ where
 	DomainField: Field,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let bivariate_domain = domain_factory.create(3).unwrap();
-
-	let (claims, witnesses) = sumchecks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
-
-	let prover_states = witnesses
-		.into_iter()
-		.zip(&claims)
-		.map(|(witness, claim)| {
-			SumcheckProver::<_, _, DomainField, _, _>::new(
-				&bivariate_domain,
-				claim.clone(),
-				witness,
-				switchover_fn.clone(),
-			)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-
 	let SumcheckBatchProveOutput {
 		proof,
 		evalcheck_claims,
-	} = batch_prove(prover_states, challenger)?;
+	} = batch_prove(sumchecks, domain_factory, switchover_fn, challenger)?;
 
 	Ok((proof, evalcheck_claims))
 }

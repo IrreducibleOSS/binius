@@ -15,8 +15,9 @@ mod zerocheck;
 
 pub use batch::*;
 pub use error::*;
-pub use prove::{prove, ZerocheckProver};
-pub use verify::verify;
+pub use prove::*;
+pub use verify::*;
 pub use zerocheck::{
 	validate_witness, ZerocheckClaim, ZerocheckProof, ZerocheckProveOutput, ZerocheckWitness,
+	ZerocheckWitnessTypeErased,
 };

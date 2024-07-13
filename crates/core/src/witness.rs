@@ -37,6 +37,11 @@ where
 		Self::default()
 	}
 
+	#[allow(clippy::len_without_is_empty)]
+	pub fn len(&self) -> usize {
+		self.multilinears.len()
+	}
+
 	pub fn get(&self, id: OracleId) -> Option<&MultilinearWitness<'a, P>> {
 		self.multilinears.get(id)?.as_ref()
 	}

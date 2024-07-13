@@ -9,7 +9,7 @@ use crate::{
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		evalcheck::EvalcheckClaim,
-		zerocheck::{ZerocheckClaim, ZerocheckWitness},
+		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -28,7 +28,8 @@ pub struct ReducedProductCheckClaims<F: Field> {
 #[derive(Debug)]
 pub struct ProdcheckProveOutput<'a, U: UnderlierType + PackScalar<F>, F: Field> {
 	pub reduced_product_check_claims: ReducedProductCheckClaims<F>,
-	pub t_prime_witness: ZerocheckWitness<'a, PackedType<U, F>, SimpleMultGateComposition>,
+	pub t_prime_witness:
+		ZerocheckWitnessTypeErased<'a, PackedType<U, F>, SimpleMultGateComposition>,
 	pub witness_index: MultilinearExtensionIndex<'a, U, F>,
 }
 

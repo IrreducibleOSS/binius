@@ -7,35 +7,36 @@ use super::{
 use crate::{
 	oracle::MultilinearPolyOracle,
 	polynomial::{
-		composition::BivariateProduct, extrapolate_line, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearPoly, MultilinearQuery,
+		composition::BivariateProduct, extrapolate_line, IsomorphicEvaluationDomainFactory,
+		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 	},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_gpa::gkr_gpa::BatchLayerProof,
 		gkr_sumcheck::{
 			self, GkrSumcheckBatchProof, GkrSumcheckBatchProveOutput, GkrSumcheckClaim,
-			GkrSumcheckProver, GkrSumcheckWitness,
+			GkrSumcheckWitness,
 		},
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{ExtensionField, Field, PackedField, TowerField};
+use binius_field::{
+	packed::{get_packed_slice, set_packed_slice},
+	ExtensionField, Field, PackedField, TowerField,
+};
 use binius_utils::sorting::{stable_sort, unsort};
 use p3_challenger::{CanObserve, CanSample};
-use std::sync::Arc;
+use std::{iter::Step, sync::Arc};
 
-type CW = BivariateProduct;
 type MultilinWitnessPair<'a, P> = (MultilinearWitness<'a, P>, MultilinearWitness<'a, P>);
 
 pub fn batch_prove<'a, F, PW, FS, CH>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
-	sumcheck_domain: &'a EvaluationDomain<FS>,
 	mut challenger: CH,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
-	FS: Field,
+	FS: Field + Step,
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: Field + From<F> + ExtensionField<FS>,
@@ -58,7 +59,7 @@ where
 	let provers_vec = witness_vec
 		.into_iter()
 		.zip(claim_vec.into_iter())
-		.map(|(witness, claim)| GrandProductProverState::new(sumcheck_domain, &claim, witness))
+		.map(|(witness, claim)| GrandProductProverState::new(&claim, witness))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let (original_indices, mut sorted_provers) =
@@ -98,14 +99,20 @@ where
 			let sumcheck_challenge = vec![];
 			(proof, sumcheck_challenge)
 		} else {
-			let sumcheck_provers = sorted_provers
+			let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
+			let sumcheck_claims_and_witnesses = sorted_provers
 				.iter_mut()
-				.map(|p| p.stage_gkr_sumcheck_prover())
+				.map(|p| p.stage_gkr_sumcheck_claims_and_witnesses())
 				.collect::<Result<Vec<_>, _>>()?;
 			let GkrSumcheckBatchProveOutput {
 				proof,
 				reduced_claims,
-			} = gkr_sumcheck::batch_prove(sumcheck_provers, &mut challenger)?;
+			} = gkr_sumcheck::batch_prove(
+				sumcheck_claims_and_witnesses,
+				domain_factory,
+				|_| 1, // TODO better switchover fn
+				&mut challenger,
+			)?;
 			let sumcheck_challenge = reduced_claims[0].eval_point.clone();
 			(proof, sumcheck_challenge)
 		};
@@ -167,17 +174,16 @@ where
 	})
 }
 
-fn process_finished_provers<F, PW, FS>(
+fn process_finished_provers<F, PW>(
 	n_claims: usize,
 	layer_no: usize,
-	sorted_provers: &mut Vec<GrandProductProverState<'_, F, PW, FS>>,
+	sorted_provers: &mut Vec<GrandProductProverState<'_, F, PW>>,
 	reverse_sorted_evalcheck_multilinear_claims: &mut Vec<EvalcheckMultilinearClaim<F>>,
 ) -> Result<(), Error>
 where
-	FS: Field,
 	PW: PackedField,
 	F: Field + From<PW::Scalar>,
-	PW::Scalar: Field + From<F> + ExtensionField<FS>,
+	PW::Scalar: Field + From<F>,
 {
 	while !sorted_provers.is_empty() && sorted_provers.last().unwrap().input_vars() == layer_no {
 		debug_assert!(layer_no > 0);
@@ -197,37 +203,32 @@ where
 /// Coordinates the proving of a grand product claim before and after
 /// the sumcheck-based layer reductions.
 #[derive(Debug)]
-struct GrandProductProverState<'a, F, PW, FS>
+struct GrandProductProverState<'a, F, PW>
 where
 	F: Field + From<PW::Scalar>,
-	FS: Field,
 	PW: PackedField,
-	PW::Scalar: Field + From<F> + ExtensionField<FS>,
+	PW::Scalar: Field + From<F>,
 {
 	// Input polynomial oracle
 	poly: MultilinearPolyOracle<F>,
 	// Layers of the product circuit as multilinear polynomials
 	// The ith element is the ith layer of the product circuit
-	layers: Vec<MultilinearWitness<'a, PW::Scalar>>,
+	layers: Vec<MultilinearWitness<'a, PW>>,
 	// The ith element consists of a tuple of the
 	// first and second halves of the (i+1)th layer of the product circuit
 	next_layer_halves: Vec<MultilinWitnessPair<'a, PW>>,
 	// The current claim about a layer multilinear of the product circuit
 	current_layer_claim: LayerClaim<F>,
-	// The domain for the sumcheck protocol
-	sumcheck_domain: &'a EvaluationDomain<FS>,
 }
 
-impl<'a, F, PW, FS> GrandProductProverState<'a, F, PW, FS>
+impl<'a, F, PW> GrandProductProverState<'a, F, PW>
 where
-	FS: Field,
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: Field + From<F> + ExtensionField<FS>,
+	PW::Scalar: Field + From<F>,
 {
 	/// Create a new GrandProductProverState
 	fn new(
-		sumcheck_domain: &'a EvaluationDomain<FS>,
 		claim: &GrandProductClaim<F>,
 		witness: GrandProductWitness<'a, PW>,
 	) -> Result<Self, Error> {
@@ -277,7 +278,6 @@ where
 			next_layer_halves,
 			layers,
 			current_layer_claim: layer_claim,
-			sumcheck_domain,
 		})
 	}
 
@@ -290,7 +290,16 @@ where
 	}
 
 	// Create GKR sumcheck prover
-	fn stage_gkr_sumcheck_prover(&self) -> Result<GkrSumcheckProver<'a, F, PW, FS, CW>, Error> {
+	#[allow(clippy::type_complexity)]
+	fn stage_gkr_sumcheck_claims_and_witnesses(
+		&self,
+	) -> Result<
+		(
+			GkrSumcheckClaim<F>,
+			GkrSumcheckWitness<PW, BivariateProduct, MultilinearWitness<'a, PW>>,
+		),
+		Error,
+	> {
 		if self.current_layer_no() >= self.input_vars() {
 			return Err(Error::TooManyRounds);
 		}
@@ -316,11 +325,7 @@ where
 			r: self.current_layer_claim.eval_point.clone(),
 		};
 
-		// GKR Sumcheck Prover
-		let switchover_fn = |_| 1;
-		let prover = GkrSumcheckProver::new(self.sumcheck_domain, claim, witness, switchover_fn)?;
-
-		Ok(prover)
+		Ok((claim, witness))
 	}
 
 	// Give the (k+1)th layer evaluations at the evaluation points (r'_k, 0) and (r'_k, 1)
@@ -387,21 +392,21 @@ where
 // The result is a vector of vectors, where the outer vector is indexed by the layer number
 fn compute_product_circuit_evals<P: PackedField>(
 	poly: GrandProductWitness<'_, P>,
-) -> Result<Vec<Vec<P::Scalar>>, Error> {
-	// Compute the circuit layers from bottom to top
-	let input_layer = (0..1 << poly.n_vars())
-		.map(|i| poly.evaluate_on_hypercube(i))
-		.collect::<Result<Vec<_>, _>>()?;
+) -> Result<Vec<Vec<P>>, Error> {
+	let mut input_layer = vec![P::zero(); (1 << poly.n_vars()) / P::WIDTH];
+	for (i, packed_field) in input_layer.iter_mut().enumerate() {
+		poly.subcube_evals(P::LOG_WIDTH, i, std::slice::from_mut(packed_field))?;
+	}
+
 	let mut all_layers = vec![input_layer];
 	for curr_n_vars in (0..poly.n_vars()).rev() {
 		let layer_below = all_layers.last().expect("layers is not empty by invariant");
-		let new_layer = (0..1 << curr_n_vars)
-			.map(|i| {
-				let left = layer_below[i];
-				let right = layer_below[i + (1 << curr_n_vars)];
-				left * right
-			})
-			.collect();
+		let mut new_layer = vec![P::zero(); (1 << curr_n_vars) / P::WIDTH];
+		for i in 0..1 << curr_n_vars {
+			let left = get_packed_slice(layer_below, i);
+			let right = get_packed_slice(layer_below, i + (1 << curr_n_vars));
+			set_packed_slice(new_layer.as_mut_slice(), i, left * right);
+		}
 		all_layers.push(new_layer);
 	}
 

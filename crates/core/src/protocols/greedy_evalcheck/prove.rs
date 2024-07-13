@@ -22,7 +22,7 @@ pub fn prove<F, PW, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearWitnessIndex<PW>,
 	claims: impl IntoIterator<Item = EvalcheckClaim<F>>,
-	switchover_fn: impl Fn(usize) -> usize + Clone,
+	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	mut challenger: Challenger,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>

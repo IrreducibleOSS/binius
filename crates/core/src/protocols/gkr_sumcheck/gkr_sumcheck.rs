@@ -3,12 +3,11 @@
 use binius_field::{Field, PackedField};
 
 use crate::{
-	polynomial::{evaluate_univariate, MultilinearComposite},
+	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
 	protocols::abstract_sumcheck::{
 		AbstractSumcheckClaim, AbstractSumcheckReductor, AbstractSumcheckRound,
-		AbstractSumcheckRoundClaim,
+		AbstractSumcheckRoundClaim, AbstractSumcheckWitness, Error as AbstractSumcheckError,
 	},
-	witness::MultilinearWitness,
 };
 
 use super::{Error, VerificationError};
@@ -32,17 +31,29 @@ pub struct GkrSumcheckClaim<F: Field> {
 	pub r: Vec<F>,
 }
 
+impl<F: Field> AbstractSumcheckClaim<F> for GkrSumcheckClaim<F> {
+	fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	fn sum(&self) -> F {
+		self.sum
+	}
+}
+
 /// Witness for the GKR Sumcheck protocol
 ///
 /// The prover will prove a claim of the following flavor
 /// * $\sum_{x \in \{0, 1\}^n} f(x) * \mathsf{eq}(x, r) = s$.
 #[derive(Debug, Clone)]
-pub struct GkrSumcheckWitness<'a, P, C>
+pub struct GkrSumcheckWitness<P, C, M>
 where
 	P: PackedField,
+	C: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Clone + Send + Sync,
 {
 	/// The $n$-variate multilinear composite polynomial $f(x)$
-	pub poly: MultilinearComposite<P, C, MultilinearWitness<'a, P>>,
+	pub poly: MultilinearComposite<P, C, M>,
 	/// The $n$-variate multilinear witness $R_0(x)$ of the values
 	/// of the evaluated GKR circuit at the current layer.
 	/// This is useful advice to the honest prover as it will equal the
@@ -50,20 +61,40 @@ where
 	/// This fact allows for less computation in round 0.
 	///
 	/// Specifically $\forall x \in \{0, 1\}^n, f(x) = R_0(x)$
-	pub current_layer: MultilinearWitness<'a, P::Scalar>,
+	pub current_layer: M,
+}
+
+impl<P, C, M> AbstractSumcheckWitness<P> for GkrSumcheckWitness<P, C, M>
+where
+	P: PackedField,
+	C: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Clone + Send + Sync,
+{
+	type MultilinearId = (usize, usize);
+	type Composition = C;
+	type Multilinear = M;
+
+	fn composition(&self) -> &C {
+		&self.poly.composition
+	}
+
+	fn multilinears(
+		&self,
+		seq_id: usize,
+		_claim_multilinear_ids: &[(usize, usize)],
+	) -> Result<impl IntoIterator<Item = ((usize, usize), M)>, AbstractSumcheckError> {
+		Ok(self
+			.poly
+			.multilinears
+			.iter()
+			.cloned()
+			.enumerate()
+			.map(move |(multilin_seq_id, multilinear)| ((seq_id, multilin_seq_id), multilinear)))
+	}
 }
 
 pub type GkrSumcheckRound<F> = AbstractSumcheckRound<F>;
 pub type GkrSumcheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
-
-impl<F: Field> From<GkrSumcheckClaim<F>> for AbstractSumcheckClaim<F> {
-	fn from(value: GkrSumcheckClaim<F>) -> Self {
-		Self {
-			n_vars: value.n_vars,
-			sum: value.sum,
-		}
-	}
-}
 
 pub struct GkrSumcheckReductor<'a, F> {
 	pub gkr_challenge_point: &'a [F],

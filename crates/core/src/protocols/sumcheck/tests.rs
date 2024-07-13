@@ -4,11 +4,12 @@ use crate::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearQuery,
+		CompositionPoly, Error as PolynomialError, IsomorphicEvaluationDomainFactory,
+		MultilinearComposite, MultilinearExtension, MultilinearExtensionSpecialized,
+		MultilinearQuery,
 	},
 	protocols::{
-		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim, SumcheckProver},
+		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
 	},
 	witness::MultilinearWitnessIndex,
@@ -100,16 +101,15 @@ fn test_prove_verify_interaction_helper(
 	};
 
 	// Setup evaluation domain
-	let domain = EvaluationDomain::<FE>::new(n_multilinears + 1).unwrap();
-
+	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let final_prove_output = prove::<_, _, FE, _, _, _>(
+	let final_prove_output = prove::<_, _, BinaryField32b, _>(
 		&sumcheck_claim,
 		sumcheck_witness,
-		&domain,
+		domain_factory,
+		move |_| switchover_rd,
 		challenger.clone(),
-		|_| switchover_rd,
 	)
 	.expect("failed to prove sumcheck");
 
@@ -176,16 +176,16 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	};
 
 	// Setup evaluation domain
-	let domain = EvaluationDomain::<OF>::new_isomorphic::<F>(n_multilinears + 1).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
 
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let switchover_fn = |_| 3;
-	let final_prove_output = prove::<_, _, OF, _, _, _>(
+	let final_prove_output = prove::<_, OF, OF, _>(
 		&sumcheck_claim,
 		operating_witness,
-		&domain,
-		challenger.clone(),
+		domain_factory,
 		switchover_fn,
+		challenger.clone(),
 	)
 	.expect("failed to prove sumcheck");
 
@@ -352,35 +352,18 @@ fn test_prove_verify_batch() {
 		.map(|(poly, sum)| SumcheckClaim { poly, sum })
 		.collect::<Vec<_>>();
 
-	let domain = EvaluationDomain::<FE>::new(3).unwrap();
-
-	let mut witness_iter = witnesses.into_iter();
-	let prover0 = SumcheckProver::<_, _, FE, _, _>::new(
-		&domain,
-		sumcheck_claims[0].clone(),
-		witness_iter.next().unwrap(),
-		|_| 3,
-	)
-	.unwrap();
-	let prover1 = SumcheckProver::new(
-		&domain,
-		sumcheck_claims[1].clone(),
-		witness_iter.next().unwrap(),
-		|_| 4,
-	)
-	.unwrap();
-	let prover2 = SumcheckProver::new(
-		&domain,
-		sumcheck_claims[2].clone(),
-		witness_iter.next().unwrap(),
-		|_| 5,
-	)
-	.unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 
 	// Setup evaluation domain
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
-	let prove_output = batch_prove([prover0, prover1, prover2], challenger.clone()).unwrap();
+	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
+		sumcheck_claims.clone().into_iter().zip(witnesses),
+		domain_factory,
+		|_| 5,
+		challenger.clone(),
+	)
+	.unwrap();
 	let proof = prove_output.proof;
 	assert_eq!(proof.rounds.len(), 8);
 

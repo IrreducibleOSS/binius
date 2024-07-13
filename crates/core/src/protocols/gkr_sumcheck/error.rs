@@ -13,6 +13,8 @@ pub enum Error {
 	PolynomialDegreeIsZero,
 	#[error("gkr_sumcheck claims may not be empty")]
 	EmptyClaimsArray,
+	#[error("gkr_sumcheck was not given enough challenges for its claim")]
+	NotEnoughGkrRoundChallenges,
 	#[error("finalize was called on gkr_sumcheck prover before all rounds were completed")]
 	PrematureFinalizeCall,
 	#[error("execute round was called on gkr_sumcheck prover too many times")]

@@ -9,20 +9,21 @@ use rand::{rngs::StdRng, SeedableRng};
 use crate::{
 	challenger::HashChallenger,
 	polynomial::{
-		transparent::eq_ind::EqIndPartialEval, EvaluationDomain, MultilinearComposite,
-		MultilinearExtension, MultilinearQuery,
+		transparent::eq_ind::EqIndPartialEval, IsomorphicEvaluationDomainFactory,
+		MultilinearComposite, MultilinearExtension, MultilinearQuery,
 	},
 	protocols::{
-		gkr_sumcheck::{batch_prove, batch_verify, GkrSumcheckProver},
+		gkr_sumcheck::{batch_prove, batch_verify},
 		test_utils::TestProductComposition,
 	},
+	witness::MultilinearWitness,
 };
 
 use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 
 struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
 	new_claims: Vec<GkrSumcheckClaim<F>>,
-	new_witnesses: Vec<GkrSumcheckWitness<'a, F, TestProductComposition>>,
+	new_witnesses: Vec<GkrSumcheckWitness<F, TestProductComposition, MultilinearWitness<'a, F>>>,
 	rng: StdRng,
 }
 
@@ -116,11 +117,9 @@ fn test_prove_verify_batch() {
 	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let verifier_challenger = prover_challenger.clone();
 	let n_vars = 4;
-	let mut max_degree = 0;
 
 	let (n_shared_multilins, n_composites) = (2, 2);
-	let max_new_degree = n_shared_multilins + n_composites - 1;
-	max_degree = std::cmp::max(max_degree, max_new_degree);
+
 	let r = (0..n_vars)
 		.map(|_| FE::random(&mut rng))
 		.collect::<Vec<_>>();
@@ -145,20 +144,15 @@ fn test_prove_verify_batch() {
 	let _ = rng;
 	let n_claims = claims.len();
 	assert_eq!(witnesses.len(), n_claims);
-	let domains = (2..=max_degree + 1)
-		.map(|size| EvaluationDomain::<FE>::new(size).unwrap())
-		.collect::<Vec<_>>();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 
-	let witness_claim_iter = witnesses.clone().into_iter().zip(claims.clone());
-	let provers = witness_claim_iter
-		.map(|(witness, claim)| {
-			let degree = claim.degree;
-			let domain = &domains[degree - 1];
-			GkrSumcheckProver::<_, FE, _, _>::new(domain, claim, witness, |_| 1).unwrap()
-		})
-		.collect::<Vec<_>>();
-
-	let prove_output = batch_prove(provers, prover_challenger).unwrap();
+	let prove_output = batch_prove::<_, _, BinaryField32b, _, _, _>(
+		claims.iter().cloned().zip(witnesses.clone()),
+		domain_factory,
+		|_| 2,
+		prover_challenger,
+	)
+	.unwrap();
 	let proof = prove_output.proof;
 	assert_eq!(proof.rounds.len(), n_vars);
 

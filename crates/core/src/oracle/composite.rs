@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{Error, MultilinearPolyOracle},
+	oracle::{Error, MultilinearPolyOracle, OracleId},
 	polynomial::CompositionPoly,
 };
 use binius_field::Field;
@@ -56,6 +56,10 @@ impl<F: Field> CompositePolyOracle<F> {
 
 	pub fn n_vars(&self) -> usize {
 		self.n_vars
+	}
+
+	pub fn inner_polys_oracle_ids(&self) -> impl Iterator<Item = OracleId> + '_ {
+		self.inner.iter().map(|oracle| oracle.id())
 	}
 
 	pub fn inner_polys(&self) -> Vec<MultilinearPolyOracle<F>> {

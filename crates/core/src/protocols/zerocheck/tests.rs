@@ -8,24 +8,26 @@ use crate::{
 		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
 		MultilinearPolyOracle,
 	},
-	polynomial::{EvaluationDomain, MultilinearComposite, MultilinearExtension, MultilinearQuery},
+	polynomial::{
+		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
+		MultilinearQuery,
+	},
 	protocols::{
 		test_utils::TestProductComposition,
 		zerocheck::{
-			self, batch_prove, batch_verify, prove::ZerocheckProver, verify,
-			zerocheck::ZerocheckProveOutput, ZerocheckClaim,
+			self, batch_prove, batch_verify, verify, zerocheck::ZerocheckProveOutput,
+			ZerocheckClaim,
 		},
 	},
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{BinaryField128b, BinaryField32b, ExtensionField, Field, TowerField};
 use binius_hash::GroestlHasher;
-use p3_challenger::CanSample;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
 
-use super::ZerocheckWitness;
+use super::ZerocheckWitnessTypeErased;
 
 fn generate_poly_helper<F>(
 	rng: &mut StdRng,
@@ -109,20 +111,20 @@ fn test_prove_verify_interaction_helper(
 	};
 
 	// Zerocheck
-	let domain: EvaluationDomain<F> = EvaluationDomain::new(n_multilinears + 1).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 	let mut prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let mut verifier_challenger = prover_challenger.clone();
-	let switchover_fn = |_| switchover_rd;
+	let switchover_fn = move |_| switchover_rd;
 
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<FE, FE, F, _, _>(
+	} = zerocheck::prove::<_, _, BinaryField32b, _>(
 		&zc_claim,
 		zc_witness.clone(),
-		&domain,
-		&mut prover_challenger,
+		domain_factory,
 		switchover_fn,
+		&mut prover_challenger,
 	)
 	.expect("failed to prove zerocheck");
 
@@ -167,7 +169,7 @@ fn test_zerocheck_prove_verify_interaction_pigeonhole_cores() {
 
 struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
 	new_claims: Vec<ZerocheckClaim<F>>,
-	new_witnesses: Vec<ZerocheckWitness<'a, F, TestProductComposition>>,
+	new_witnesses: Vec<ZerocheckWitnessTypeErased<'a, F, TestProductComposition>>,
 	oracle_set: MultilinearOracleSet<F>,
 	witness_index: MultilinearWitnessIndex<'a, F>,
 	rng: StdRng,
@@ -275,17 +277,14 @@ fn test_prove_verify_batch() {
 	let witness_index = MultilinearWitnessIndex::<FE>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
-	let mut max_degree = 0;
 	let mut max_n_vars = 0;
-	let mut prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let verifier_challenger = prover_challenger.clone();
 
 	// Create zerocheck witnesses and claims on 4 variables
 	// One claim is that the product of two multilinear polynomials is zero (degree 2)
 	// The other claim is that the product of three multilinear polynomials is zero (degree 3)
 	let (n_vars, n_shared_multilins, n_composites) = (4, 2, 2);
-	let max_new_degree = n_shared_multilins + n_composites - 1;
-	max_degree = max(max_degree, max_new_degree);
 	max_n_vars = max(max_n_vars, n_vars);
 	let CreateClaimsWitnessesOutput {
 		new_claims,
@@ -309,8 +308,6 @@ fn test_prove_verify_batch() {
 	// Create a zerocheck witness and claim on 6 variables
 	// The claim is that the product of four multilinear polynomials is zero (degree 4)
 	let (n_vars, n_shared_multilins, n_composites) = (6, 4, 1);
-	let max_new_degree = n_shared_multilins + n_composites - 1;
-	max_degree = max(max_degree, max_new_degree);
 	max_n_vars = max(max_n_vars, n_vars);
 	let CreateClaimsWitnessesOutput {
 		new_claims,
@@ -334,22 +331,15 @@ fn test_prove_verify_batch() {
 	// Create the zerocheck provers
 	let _ = (oracle_set, witness_index, rng);
 	assert_eq!(claims.len(), witnesses.len());
-	let domains = (2..=max_degree + 1)
-		.map(|size| EvaluationDomain::<FE>::new(size).unwrap())
-		.collect::<Vec<_>>();
-	let zc_challenges = prover_challenger.sample_vec(max_n_vars - 1);
-
-	let witness_claim_iter = witnesses.into_iter().zip(claims.clone());
-	let provers = witness_claim_iter
-		.map(|(witness, claim)| {
-			let degree = claim.poly.inner_polys().len();
-			let domain = &domains[degree - 1];
-			ZerocheckProver::<_, FE, _, _>::new(domain, claim, witness, &zc_challenges, |_| 1)
-				.unwrap()
-		})
-		.collect::<Vec<_>>();
-
-	let prove_output = batch_prove(provers, prover_challenger).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
+	let claim_witness_iter = claims.clone().into_iter().zip(witnesses);
+	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
+		claim_witness_iter,
+		domain_factory,
+		|_| 3,
+		prover_challenger,
+	)
+	.unwrap();
 	let proof = prove_output.proof;
 	assert_eq!(proof.rounds.len(), max_n_vars);
 

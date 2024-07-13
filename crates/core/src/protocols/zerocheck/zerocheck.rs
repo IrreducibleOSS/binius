@@ -1,12 +1,12 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	oracle::CompositePolyOracle,
-	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite},
+	oracle::{CompositePolyOracle, OracleId},
+	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
-			AbstractSumcheckRound, AbstractSumcheckRoundClaim,
+			AbstractSumcheckRound, AbstractSumcheckRoundClaim, AbstractSumcheckWitness,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -27,12 +27,13 @@ pub struct ZerocheckClaim<F: Field> {
 	pub poly: CompositePolyOracle<F>,
 }
 
-impl<F: Field> From<ZerocheckClaim<F>> for AbstractSumcheckClaim<F> {
-	fn from(value: ZerocheckClaim<F>) -> Self {
-		Self {
-			n_vars: value.poly.n_vars(),
-			sum: F::ZERO,
-		}
+impl<F: Field> AbstractSumcheckClaim<F> for ZerocheckClaim<F> {
+	fn n_vars(&self) -> usize {
+		self.poly.n_vars()
+	}
+
+	fn sum(&self) -> F {
+		F::ZERO
 	}
 }
 
@@ -43,12 +44,14 @@ impl<F: Field> ZerocheckClaim<F> {
 	}
 }
 
-/// Polynomial must be representable as a composition of multilinear polynomials
-pub type ZerocheckWitness<'a, P, C> = MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
-
 pub type ZerocheckRound<F> = AbstractSumcheckRound<F>;
 pub type ZerocheckProof<F> = AbstractSumcheckProof<F>;
 pub type ZerocheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
+
+// Default zerocheck witness is just multilinear composite
+pub type ZerocheckWitness<P, C, M> = MultilinearComposite<P, C, M>;
+pub type ZerocheckWitnessTypeErased<'a, P, C> =
+	MultilinearComposite<P, C, MultilinearWitness<'a, P>>;
 
 #[derive(Debug)]
 pub struct ZerocheckProveOutput<F: Field> {
@@ -171,15 +174,25 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	})
 }
 
-pub fn validate_witness<P, C>(witness: &ZerocheckWitness<P, C>) -> Result<(), Error>
+pub fn validate_witness<F, PW, W>(claim: &ZerocheckClaim<F>, witness: W) -> Result<(), Error>
 where
-	P: PackedField,
-	C: CompositionPoly<P>,
+	F: Field,
+	PW: PackedField,
+	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 {
-	let log_size = witness.n_vars();
+	let log_size = claim.n_vars();
+
+	let oracle_ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
+	let multilinears = witness
+		.multilinears(0, oracle_ids.as_slice())?
+		.into_iter()
+		.map(|(_, multilinear)| multilinear)
+		.collect::<Vec<_>>();
+
+	let witness = MultilinearComposite::new(log_size, witness.composition(), multilinears)?;
 
 	for index in 0..(1 << log_size) {
-		if witness.evaluate_on_hypercube(index)? != P::Scalar::zero() {
+		if witness.evaluate_on_hypercube(index)? != PW::Scalar::zero() {
 			return Err(Error::NaiveValidation { index });
 		}
 	}

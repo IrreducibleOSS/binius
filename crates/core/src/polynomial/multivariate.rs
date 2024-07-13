@@ -26,7 +26,7 @@ pub trait MultivariatePoly<P>: Debug + Send + Sync {
 }
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-#[auto_impl(Arc)]
+#[auto_impl(Arc, &)]
 pub trait CompositionPoly<P>: Debug + Send + Sync
 where
 	P: PackedField,
@@ -171,6 +171,22 @@ where
 
 	pub fn n_multilinears(&self) -> usize {
 		self.composition.n_vars()
+	}
+}
+
+impl<P, C, M> MultilinearComposite<P, C, M>
+where
+	P: PackedField,
+	C: CompositionPoly<P> + 'static,
+	M: MultilinearPoly<P>,
+{
+	pub fn to_arc_dyn_composition(self) -> MultilinearComposite<P, Arc<dyn CompositionPoly<P>>, M> {
+		MultilinearComposite {
+			n_vars: self.n_vars,
+			composition: Arc::new(self.composition),
+			multilinears: self.multilinears,
+			_p_marker: PhantomData,
+		}
 	}
 }
 

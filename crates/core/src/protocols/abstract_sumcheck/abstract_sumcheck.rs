@@ -1,12 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_field::Field;
-
-use crate::{
-	oracle::CompositePolyOracle, polynomial::EvaluationDomain, protocols::evalcheck::EvalcheckClaim,
-};
-
 use super::{Error, VerificationError};
+use crate::{
+	oracle::{CompositePolyOracle, OracleId},
+	polynomial::{CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearPoly},
+	protocols::evalcheck::EvalcheckClaim,
+};
+use auto_impl::auto_impl;
+use binius_field::{Field, PackedField};
+use std::hash::Hash;
 
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckRound<F> {
@@ -22,18 +24,6 @@ pub struct AbstractSumcheckRound<F> {
 #[derive(Debug, Clone)]
 pub struct AbstractSumcheckProof<F> {
 	pub rounds: Vec<AbstractSumcheckRound<F>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AbstractSumcheckClaim<F: Field> {
-	pub n_vars: usize,
-	pub sum: F,
-}
-
-impl<F: Field> AbstractSumcheckClaim<F> {
-	pub fn n_vars(&self) -> usize {
-		self.n_vars
-	}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,24 +66,102 @@ pub trait AbstractSumcheckReductor<F: Field> {
 	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error>;
 }
 
-pub trait AbstractSumcheckProver<F: Field> {
+#[auto_impl(&)]
+pub trait AbstractSumcheckClaim<F: Field> {
+	fn n_vars(&self) -> usize;
+	fn sum(&self) -> F;
+}
+
+/// Polynomial must be representable as a composition of multilinear polynomials
+#[auto_impl(&)]
+pub trait AbstractSumcheckWitness<PW: PackedField> {
+	/// Some identifier of a multilinear witness that is used to deduplicate the witness index when folding.
+	type MultilinearId: Clone + Hash + Eq + Sync;
+	type Composition: CompositionPoly<PW>;
+	type Multilinear: MultilinearPoly<PW> + Send + Sync;
+
+	fn composition(&self) -> &Self::Composition;
+
+	/// Extract multilinear witnesses out of composite sumcheck witness.
+	///
+	/// Arguments:
+	/// * `seq_id`: Sequential id of the sumcheck instance in a batch (treat as if assigned arbitrarily)
+	/// * `claim_multilinear_ids`: Multilinear identifiers extracted from a claim.
+	fn multilinears(
+		&self,
+		seq_id: usize,
+		claim_multilinear_ids: &[Self::MultilinearId],
+	) -> Result<impl IntoIterator<Item = (Self::MultilinearId, Self::Multilinear)>, Error>;
+}
+
+/// A trait that oversees the batched sumcheck execution
+///
+/// Implementations are expected to be used to:
+/// * Manage common witness state (typically by perusing [`super::CommonProversState`])
+/// * Create new prover instances at the beginning of a each round (via `new_prover`)
+/// * Perform common pre-round update steps (via `pre_execute_rounds`)
+/// * Advance the state of individual prover instances (via `prover_execute_round` and `prover_finalize`)
+///
+/// See the implementation [`super::batch_prove`] for more details.
+pub trait AbstractSumcheckProversState<F: Field> {
 	type Error: std::error::Error + From<Error>;
 
-	fn execute_round(
+	type PackedWitnessField: PackedField<Scalar: From<F> + Into<F>>;
+
+	type Claim: AbstractSumcheckClaim<F>;
+	type Witness: AbstractSumcheckWitness<Self::PackedWitnessField>;
+
+	type Prover;
+
+	fn pre_execute_rounds(&mut self, prev_rd_challenge: Option<F>) -> Result<(), Self::Error>;
+
+	fn new_prover(
 		&mut self,
+		claim: Self::Claim,
+		witness: Self::Witness,
+		seq_id: usize,
+	) -> Result<Self::Prover, Self::Error>;
+
+	fn prover_execute_round(
+		&self,
+		prover: &mut Self::Prover,
 		prev_rd_challenge: Option<F>,
 	) -> Result<AbstractSumcheckRound<F>, Self::Error>;
 
-	fn finalize(self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Self::Error>;
+	fn prover_finalize(
+		prover: Self::Prover,
+		prev_rd_challenge: Option<F>,
+	) -> Result<ReducedClaim<F>, Self::Error>;
+}
 
-	/// Returns whether two provers may be used together in a batch proof
-	///
-	/// REQUIRES:
-	/// * The relation between batch-consistent provers is an equivalence relation
-	/// * self.n_vars() >= other.n_vars()
-	fn batch_proving_consistent(&self, other: &Self) -> bool;
+impl<P, C, M> AbstractSumcheckWitness<P> for MultilinearComposite<P, C, M>
+where
+	P: PackedField,
+	C: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Clone + Send + Sync,
+{
+	type MultilinearId = OracleId;
+	type Composition = C;
+	type Multilinear = M;
 
-	fn n_vars(&self) -> usize;
+	fn composition(&self) -> &C {
+		&self.composition
+	}
+
+	fn multilinears(
+		&self,
+		_seq_id: usize,
+		claim_multilinear_ids: &[OracleId],
+	) -> Result<impl IntoIterator<Item = (OracleId, M)>, Error> {
+		if claim_multilinear_ids.len() != self.multilinears.len() {
+			return Err(Error::ProverClaimWitnessMismatch);
+		}
+
+		Ok(claim_multilinear_ids
+			.iter()
+			.copied()
+			.zip(self.multilinears.iter().cloned()))
+	}
 }
 
 /// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
@@ -147,7 +215,7 @@ pub fn finalize_evalcheck_claim<F: Field>(
 
 /// Constructs a switchover function thaw returns the round number where folded multilinear is at
 /// least 2^k times smaller (in bytes) than the original, or 1 when not applicable.
-pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize {
+pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize + Copy {
 	move |extension_degree: usize| {
 		let switchover_round = extension_degree.ilog2() as isize + k;
 		switchover_round.max(1) as usize

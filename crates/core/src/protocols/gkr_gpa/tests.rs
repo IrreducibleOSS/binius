@@ -4,11 +4,11 @@ use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
-	polynomial::{EvaluationDomain, MultilinearExtension},
+	polynomial::MultilinearExtension,
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
 	witness::MultilinearWitnessIndex,
 };
-use binius_field::{BinaryField128b, Field, TowerField};
+use binius_field::{BinaryField128b, BinaryField32b, Field, TowerField};
 use binius_hash::GroestlHasher;
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
@@ -96,6 +96,7 @@ fn create_claims_witnesses_helper<F: TowerField>(
 #[test]
 fn test_prove_verify_batch() {
 	type F = BinaryField128b;
+	type FS = BinaryField32b;
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<F>::new();
 	let witness_index = MultilinearWitnessIndex::<F>::new();
@@ -146,11 +147,10 @@ fn test_prove_verify_batch() {
 
 	// Prove and Verify
 	let _ = (oracle_set, witness_index, rng);
-	let sumcheck_domain = EvaluationDomain::<F>::new(3).unwrap();
 	let GrandProductBatchProveOutput {
 		evalcheck_multilinear_claims,
 		proof,
-	} = batch_prove(witnesses, claims.clone(), &sumcheck_domain, prover_challenger).unwrap();
+	} = batch_prove::<_, _, FS, _>(witnesses, claims.clone(), prover_challenger).unwrap();
 
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(claims.clone(), proof, verifier_challenger).unwrap();

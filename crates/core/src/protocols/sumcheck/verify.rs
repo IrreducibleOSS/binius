@@ -33,9 +33,7 @@ where
 	}
 
 	let reductor = SumcheckReductor;
-	let abstract_sumcheck_claim = claim.clone().into();
-	let reduced_claim =
-		abstract_sumcheck::verify(abstract_sumcheck_claim, proof, reductor, challenger)?;
+	let reduced_claim = abstract_sumcheck::verify(claim, proof, reductor, challenger)?;
 
 	finalize_evalcheck_claim(&claim.poly, reduced_claim).map_err(Into::into)
 }

@@ -5,8 +5,8 @@ use binius_core::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
-		CompositionPoly, EvaluationDomain, MultilinearComposite, MultilinearExtension,
-		MultilinearPoly,
+		CompositionPoly, IsomorphicEvaluationDomainFactory, MultilinearComposite,
+		MultilinearExtension, MultilinearPoly,
 	},
 	protocols::{
 		sumcheck::{prove, Error as SumcheckError, SumcheckClaim},
@@ -70,7 +70,7 @@ where
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain = EvaluationDomain::<DomainField>::new(n_multilinears + 1).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<DomainField>::default();
 
 	let mut rng = thread_rng();
 
@@ -100,12 +100,12 @@ where
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FTower, DomainField, _, _, _>(
+				prove::<FTower, FTower, DomainField, _>(
 					&sumcheck_claim,
 					sumcheck_witness.clone(),
-					&domain,
+					domain_factory.clone(),
+					move |_| switchover,
 					prove_challenger.clone(),
-					|_| switchover,
 				)
 			});
 		});
@@ -119,8 +119,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain =
-		EvaluationDomain::<FPolyval>::new_isomorphic::<FTower>(n_multilinears + 1).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
 
 	let mut rng = thread_rng();
 
@@ -169,12 +168,12 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<FTower, FPolyval, FPolyval, _, _, _>(
+				prove::<FTower, FPolyval, FPolyval, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
-					&domain,
-					prove_challenger.clone(),
+					domain_factory.clone(),
 					|_| 1,
+					prove_challenger.clone(),
 				)
 			});
 		});
@@ -188,8 +187,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	let n_multilinears = 3;
 	let composition = TestProductComposition::new(n_multilinears);
 
-	let domain =
-		EvaluationDomain::<FPolyval>::new_isomorphic::<FTower>(n_multilinears + 1).unwrap();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
 
 	let mut rng = thread_rng();
 
@@ -249,12 +247,12 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 
 			b.iter(|| {
-				prove::<_, _, FPolyval, _, _, _>(
+				prove::<_, FPolyval, FPolyval, _>(
 					&sumcheck_claim,
 					prover_poly.clone(),
-					&domain,
-					prove_challenger.clone(),
+					domain_factory.clone(),
 					|_| 1,
+					prove_challenger.clone(),
 				)
 			});
 		});

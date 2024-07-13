@@ -9,19 +9,23 @@
 //! That is, the verifier samples mixing challenges for new zerocheck claims over n variables only
 //! after the last zerocheck round message has been sent by the prover.
 
-use super::{error::Error, prove::ZerocheckProver, zerocheck::ZerocheckReductor, ZerocheckClaim};
+use super::{
+	error::Error, prove::ZerocheckProversState, zerocheck::ZerocheckReductor, ZerocheckClaim,
+};
 use crate::{
 	challenger::{CanObserve, CanSample},
-	polynomial::CompositionPoly,
+	oracle::OracleId,
+	polynomial::EvaluationDomainFactory,
 	protocols::{
 		abstract_sumcheck::{
 			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
-			AbstractSumcheckBatchProveOutput,
+			AbstractSumcheckBatchProveOutput, AbstractSumcheckWitness,
 		},
 		evalcheck::EvalcheckClaim,
 	},
 };
 use binius_field::{ExtensionField, Field, PackedField};
+use std::cmp;
 
 pub type ZerocheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
 
@@ -34,28 +38,45 @@ pub struct ZerocheckBatchProveOutput<F: Field> {
 /// Prove a batched zerocheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<'a, F, PW, DomainField, CW, CH>(
-	provers: impl IntoIterator<Item = ZerocheckProver<'a, F, PW, DomainField, CW>>,
-	challenger: CH,
+pub fn batch_prove<F, PW, DomainField, CH>(
+	zerochecks: impl IntoIterator<
+		Item = (ZerocheckClaim<F>, impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>),
+	>,
+	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
+	switchover_fn: impl Fn(usize) -> usize + 'static,
+	mut challenger: CH,
 ) -> Result<ZerocheckBatchProveOutput<F>, Error>
 where
-	F: Field + From<PW::Scalar>,
-	PW: PackedField,
-	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	F: Field,
 	DomainField: Field,
-	CW: CompositionPoly<PW> + 'static,
-	CH: CanObserve<F> + CanSample<F>,
+	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	CH: CanSample<F> + CanObserve<F>,
 {
-	let provers_vec = provers.into_iter().collect::<Vec<_>>();
-	let oracles = provers_vec
+	let zerochecks = zerochecks.into_iter().collect::<Vec<_>>();
+	let n_vars = zerochecks
 		.iter()
-		.map(|p| p.oracle().clone())
+		.map(|(claim, _)| claim.n_vars())
+		.max()
+		.unwrap_or(0);
+
+	let zerocheck_challenges = challenger.sample_vec(cmp::max(n_vars, 1) - 1);
+
+	let mut provers_state = ZerocheckProversState::<F, PW, DomainField, _, _>::new(
+		n_vars,
+		evaluation_domain_factory,
+		zerocheck_challenges.as_slice(),
+		switchover_fn,
+	)?;
+
+	let oracles = zerochecks
+		.iter()
+		.map(|(claim, _)| claim.poly.clone())
 		.collect::<Vec<_>>();
 
 	let AbstractSumcheckBatchProveOutput {
 		proof,
 		reduced_claims,
-	} = abstract_sumcheck::batch_prove(provers_vec, challenger)?;
+	} = abstract_sumcheck::batch_prove(zerochecks, &mut provers_state, challenger)?;
 
 	let evalcheck_claims = reduced_claims
 		.into_iter()
@@ -105,12 +126,7 @@ where
 	let alphas = challenger.sample_vec(max_n_vars - 1);
 
 	let reductor = ZerocheckReductor { alphas: &alphas };
-	let reduced_claims = abstract_sumcheck::batch_verify(
-		claims_vec.into_iter().map(|c| c.into()),
-		proof,
-		reductor,
-		challenger,
-	)?;
+	let reduced_claims = abstract_sumcheck::batch_verify(claims_vec, proof, reductor, challenger)?;
 
 	let evalcheck_claims = reduced_claims
 		.into_iter()

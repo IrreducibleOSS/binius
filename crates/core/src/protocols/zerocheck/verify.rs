@@ -40,8 +40,7 @@ where
 	let reductor = ZerocheckReductor {
 		alphas: &zerocheck_challenges,
 	};
-	let reduced_claim =
-		abstract_sumcheck::verify(claim.clone().into(), proof, reductor, challenger)?;
+	let reduced_claim = abstract_sumcheck::verify(claim.clone(), proof, reductor, challenger)?;
 
 	finalize_evalcheck_claim(&claim.poly, reduced_claim).map_err(Into::into)
 }

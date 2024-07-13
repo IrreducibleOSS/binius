@@ -24,9 +24,9 @@ use crate::{
 		transparent::{
 			eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
 		},
-		MultilinearQuery, MultivariatePoly,
+		MultilinearComposite, MultilinearQuery, MultivariatePoly,
 	},
-	protocols::sumcheck::{SumcheckClaim, SumcheckWitness},
+	protocols::sumcheck::SumcheckClaim,
 	witness::{MultilinearWitness, MultilinearWitnessIndex},
 };
 use binius_field::{Field, PackedField, PackedFieldIndexable, TowerField};
@@ -34,7 +34,7 @@ use binius_field::{Field, PackedField, PackedFieldIndexable, TowerField};
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
 pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
 pub type BivariateSumcheckWitness<'a, PW> =
-	SumcheckWitness<PW, BivariateProduct, MultilinearWitness<'a, PW>>;
+	MultilinearComposite<PW, BivariateProduct, MultilinearWitness<'a, PW>>;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///
@@ -371,7 +371,7 @@ fn projected_bivariate_witness<'a, PW: PackedField>(
 	let multiplier_multilin = multiplier_witness_ctr(projected_eval_point)?;
 	witness_index.set(multiplier_id, multiplier_multilin.clone());
 
-	let witness = SumcheckWitness::new(
+	let witness = MultilinearComposite::new(
 		multiplier_multilin.n_vars(),
 		BivariateProduct,
 		vec![projected_inner_multilin, multiplier_multilin],

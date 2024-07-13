@@ -9,14 +9,15 @@
 //! That is, the verifier samples mixing challenges for new sumcheck claims over n variables only
 //! after the last sumcheck round message has been sent by the prover.
 
-use super::{error::Error, prove::SumcheckProver, sumcheck::SumcheckReductor, SumcheckClaim};
+use super::{error::Error, prove::SumcheckProversState, sumcheck::SumcheckReductor, SumcheckClaim};
 use crate::{
 	challenger::{CanObserve, CanSample},
-	polynomial::{CompositionPoly, MultilinearPoly},
+	oracle::OracleId,
+	polynomial::EvaluationDomainFactory,
 	protocols::{
 		abstract_sumcheck::{
 			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
-			AbstractSumcheckBatchProveOutput,
+			AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim, AbstractSumcheckWitness,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -34,33 +35,47 @@ pub struct SumcheckBatchProveOutput<F: Field> {
 /// Prove a batched sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<'a, F, PW, DomainField, CW, M, CH>(
-	provers: impl IntoIterator<Item = SumcheckProver<'a, F, PW, DomainField, CW, M>>,
+pub fn batch_prove<F, PW, DomainField, CH>(
+	sumchecks: impl IntoIterator<
+		Item = (SumcheckClaim<F>, impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>),
+	>,
+	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
+	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
 ) -> Result<SumcheckBatchProveOutput<F>, Error>
 where
-	F: Field + From<PW::Scalar>,
-	PW: PackedField,
-	PW::Scalar: From<F> + ExtensionField<DomainField>,
+	F: Field,
 	DomainField: Field,
-	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync + Send,
-	CH: CanObserve<F> + CanSample<F>,
+	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+
+	CH: CanSample<F> + CanObserve<F>,
 {
-	let provers_vec = provers.into_iter().collect::<Vec<_>>();
-	let oracles = provers_vec
+	let sumchecks = sumchecks.into_iter().collect::<Vec<_>>();
+	let n_vars = sumchecks
 		.iter()
-		.map(|p| p.oracle().clone())
+		.map(|(claim, _)| claim.n_vars())
+		.max()
+		.unwrap_or(0);
+
+	let mut provers_state = SumcheckProversState::<F, PW, DomainField, _, _>::new(
+		n_vars,
+		evaluation_domain_factory,
+		switchover_fn,
+	);
+
+	let oracles = sumchecks
+		.iter()
+		.map(|(claim, _)| claim.poly.clone())
 		.collect::<Vec<_>>();
 
 	let AbstractSumcheckBatchProveOutput {
 		proof,
 		reduced_claims,
-	} = abstract_sumcheck::batch_prove(provers_vec, challenger)?;
+	} = abstract_sumcheck::batch_prove(sumchecks, &mut provers_state, challenger)?;
 
 	let evalcheck_claims = reduced_claims
 		.into_iter()
-		.zip(oracles.into_iter())
+		.zip(oracles)
 		.map(|(rc, o)| finalize_evalcheck_claim(&o, rc))
 		.collect::<Result<_, _>>()?;
 
@@ -86,16 +101,12 @@ where
 
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
 
-	let reduced_claims = abstract_sumcheck::batch_verify(
-		claims_vec.clone().into_iter().map(|c| c.into()),
-		proof,
-		sumcheck_reductor,
-		challenger,
-	)?;
+	let reduced_claims =
+		abstract_sumcheck::batch_verify(claims_vec.clone(), proof, sumcheck_reductor, challenger)?;
 
 	let evalcheck_claims = reduced_claims
 		.into_iter()
-		.zip(claims_vec.into_iter())
+		.zip(claims_vec)
 		.map(|(rc, c)| finalize_evalcheck_claim(&c.poly, rc))
 		.collect::<Result<_, _>>()?;
 

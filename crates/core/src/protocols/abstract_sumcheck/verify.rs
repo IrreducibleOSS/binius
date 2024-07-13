@@ -11,7 +11,7 @@ use super::{
 };
 
 pub fn verify<F, CH, E>(
-	claim: AbstractSumcheckClaim<F>,
+	claim: impl AbstractSumcheckClaim<F>,
 	proof: AbstractSumcheckProof<F>,
 	reductor: impl AbstractSumcheckReductor<F, Error = E>,
 	mut challenger: CH,
@@ -21,7 +21,7 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 	E: From<PolynomialError> + From<Error> + Sync,
 {
-	let mut rd_claim = setup_initial_round_claim(&claim);
+	let mut rd_claim = setup_initial_round_claim(claim);
 	for (which_round, round_proof) in proof.rounds.into_iter().enumerate() {
 		challenger.observe_slice(round_proof.coeffs.as_slice());
 		let sumcheck_round_challenge = challenger.sample();
@@ -43,10 +43,10 @@ where
 }
 
 fn setup_initial_round_claim<F: Field>(
-	claim: &AbstractSumcheckClaim<F>,
+	claim: impl AbstractSumcheckClaim<F>,
 ) -> AbstractSumcheckRoundClaim<F> {
 	AbstractSumcheckRoundClaim {
 		partial_point: vec![],
-		current_round_sum: claim.sum,
+		current_round_sum: claim.sum(),
 	}
 }

@@ -2,12 +2,12 @@
 
 use super::{Error, VerificationError};
 use crate::{
-	oracle::CompositePolyOracle,
-	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
+	oracle::{CompositePolyOracle, OracleId},
+	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
-			AbstractSumcheckRound, AbstractSumcheckRoundClaim,
+			AbstractSumcheckRound, AbstractSumcheckRoundClaim, AbstractSumcheckWitness,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -29,22 +29,17 @@ pub struct SumcheckClaim<F: Field> {
 	pub sum: F,
 }
 
-impl<F: Field> SumcheckClaim<F> {
-	pub fn n_vars(&self) -> usize {
+impl<F: Field> AbstractSumcheckClaim<F> for SumcheckClaim<F> {
+	fn n_vars(&self) -> usize {
 		self.poly.n_vars()
 	}
-}
 
-impl<F: Field> From<SumcheckClaim<F>> for AbstractSumcheckClaim<F> {
-	fn from(value: SumcheckClaim<F>) -> Self {
-		Self {
-			n_vars: value.poly.n_vars(),
-			sum: value.sum,
-		}
+	fn sum(&self) -> F {
+		self.sum
 	}
 }
 
-/// Polynomial must be representable as a composition of multilinear polynomials
+// Default sumcheck witness type is just multilinear composite
 pub type SumcheckWitness<P, C, M> = MultilinearComposite<P, C, M>;
 
 pub type SumcheckRoundClaim<F> = AbstractSumcheckRoundClaim<F>;
@@ -110,22 +105,26 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	})
 }
 
-pub fn validate_witness<F, PW, CW, M>(
-	claim: &SumcheckClaim<F>,
-	witness: &SumcheckWitness<PW, CW, M>,
-) -> Result<(), Error>
+pub fn validate_witness<F, PW, W>(claim: &SumcheckClaim<F>, witness: W) -> Result<(), Error>
 where
-	F: Field + From<PW::Scalar>,
-	PW: PackedField<Scalar: From<F>>,
-	CW: CompositionPoly<PW>,
-	M: MultilinearPoly<PW> + Sync,
+	F: Field,
+	PW: PackedField<Scalar: From<F> + Into<F>>,
+	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 {
-	let log_size = witness.n_vars();
+	let log_size = claim.n_vars();
+	let oracle_ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
+	let multilinears = witness
+		.multilinears(0, oracle_ids.as_slice())?
+		.into_iter()
+		.map(|(_, multilinear)| multilinear)
+		.collect::<Vec<_>>();
+
+	let witness = MultilinearComposite::new(log_size, witness.composition(), multilinears)?;
 
 	let sum = (0..(1 << log_size))
 		.try_fold(PW::Scalar::ZERO, |acc, i| witness.evaluate_on_hypercube(i).map(|res| res + acc));
 
-	if sum? == claim.sum.into() {
+	if sum? == claim.sum().into() {
 		Ok(())
 	} else {
 		Err(Error::NaiveValidation)

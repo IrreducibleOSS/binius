@@ -7,8 +7,8 @@ use p3_challenger::{CanObserve, CanSample};
 use crate::protocols::abstract_sumcheck::ReducedClaim;
 
 use super::{
-	AbstractSumcheckClaim, AbstractSumcheckProver, AbstractSumcheckReductor, AbstractSumcheckRound,
-	AbstractSumcheckRoundClaim, Error, VerificationError,
+	AbstractSumcheckClaim, AbstractSumcheckProversState, AbstractSumcheckReductor,
+	AbstractSumcheckRound, AbstractSumcheckRoundClaim, Error, VerificationError,
 };
 
 #[derive(Debug, Clone)]
@@ -52,59 +52,62 @@ impl<F: Field> From<BatchedAbstractSumcheckRoundClaim<F>> for AbstractSumcheckRo
 /// Prove a batched abstract sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<F, ASP, CH>(
-	provers: impl IntoIterator<Item = ASP>,
+pub fn batch_prove<F, PS, CH>(
+	sumchecks: impl IntoIterator<Item = (PS::Claim, PS::Witness)>,
+	provers_state: &mut PS,
 	mut challenger: CH,
-) -> Result<AbstractSumcheckBatchProveOutput<F>, ASP::Error>
+) -> Result<AbstractSumcheckBatchProveOutput<F>, PS::Error>
 where
 	F: Field,
-	ASP: AbstractSumcheckProver<F>,
+	PS: AbstractSumcheckProversState<F>,
 	CH: CanObserve<F> + CanSample<F>,
 {
-	let (original_indices, mut sorted_provers) =
-		stable_sort(provers, |prover| prover.n_vars(), true);
+	let (original_indices, sorted_sumchecks) =
+		stable_sort(sumchecks, |(claim, _)| claim.n_vars(), true);
 
-	if sorted_provers.is_empty() {
-		return Err(Error::EmptyBatch.into());
-	}
-
-	let first_prover = &sorted_provers[0];
-	let is_batch_elligible = sorted_provers
-		.iter()
-		.all(|prover| first_prover.batch_proving_consistent(prover));
-	if !is_batch_elligible {
-		return Err(Error::InelligibleBatch.into());
-	}
-
-	let n_rounds = first_prover.n_vars();
+	let (first_claim, _) = sorted_sumchecks.first().ok_or(Error::EmptyBatch)?;
+	let n_rounds = first_claim.n_vars();
 
 	let mut first_batch_coeff = Some(F::ONE);
-	let mut batch_coeffs = Vec::with_capacity(sorted_provers.len());
+	let mut provers_with_batch_coeffs =
+		Vec::<(PS::Prover, F, usize)>::with_capacity(sorted_sumchecks.len());
 	let mut round_proofs = Vec::with_capacity(n_rounds);
+
+	let mut sorted_sumchecks_iter = sorted_sumchecks.into_iter().enumerate().peekable();
 
 	let mut prev_rd_challenge = None;
 	for round_no in 0..n_rounds {
 		let n_vars = n_rounds - round_no;
 
-		let mut batch_round_proof = AbstractSumcheckRound { coeffs: Vec::new() };
-
-		// Process the reduced sumcheck instances
-		for (prover, &coeff) in sorted_provers.iter_mut().zip(batch_coeffs.iter()) {
-			let proof = prover.execute_round(prev_rd_challenge)?;
-			mix_round_proofs(&mut batch_round_proof, &proof, coeff);
-		}
-
 		// Mix in the new sumcheck instances with number of variables matching the current round.
-		while let Some(next_prover) = sorted_provers.get_mut(batch_coeffs.len()) {
-			if next_prover.n_vars() != n_vars {
+		while let Some((_, (claim, _))) = sorted_sumchecks_iter.peek() {
+			let claim_n_vars = claim.n_vars();
+			if claim_n_vars != n_vars {
 				break;
 			}
 
-			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
-			batch_coeffs.push(batching_coeff);
+			let (seq_id, (claim, witness)) = sorted_sumchecks_iter
+				.next()
+				.expect("cannot be None after peek()");
 
-			let proof = next_prover.execute_round(None)?;
-			mix_round_proofs(&mut batch_round_proof, &proof, batching_coeff);
+			let next_prover = provers_state.new_prover(claim, witness, seq_id)?;
+			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
+			provers_with_batch_coeffs.push((next_prover, batching_coeff, claim_n_vars));
+		}
+
+		// Perform common update steps over all batched instances
+		provers_state.pre_execute_rounds(prev_rd_challenge.map(Into::into))?;
+
+		// Process the older, reduced sumcheck instances
+		let mut batch_round_proof = AbstractSumcheckRound { coeffs: Vec::new() };
+		for (prover, coeff, prover_n_vars) in provers_with_batch_coeffs.iter_mut() {
+			let proof = if *prover_n_vars != n_vars {
+				provers_state.prover_execute_round(prover, prev_rd_challenge)?
+			} else {
+				provers_state.prover_execute_round(prover, None)?
+			};
+
+			mix_round_proofs(&mut batch_round_proof, &proof, *coeff);
 		}
 
 		challenger.observe_slice(&batch_round_proof.coeffs);
@@ -112,13 +115,13 @@ where
 		prev_rd_challenge = Some(challenger.sample());
 	}
 
-	let sorted_reduced_claims = sorted_provers
+	let sorted_reduced_claims = provers_with_batch_coeffs
 		.into_iter()
-		.map(|prover| {
-			if prover.n_vars() == 0 {
-				prover.finalize(None)
+		.map(|(prover, _, prover_n_vars)| {
+			if prover_n_vars == 0 {
+				PS::prover_finalize(prover, None)
 			} else {
-				prover.finalize(prev_rd_challenge)
+				PS::prover_finalize(prover, prev_rd_challenge)
 			}
 		})
 		.collect::<Result<Vec<_>, _>>()?;
@@ -145,7 +148,7 @@ where
 ///
 /// See module documentation for details.
 pub fn batch_verify<F, ASR, CH>(
-	claims: impl IntoIterator<Item = AbstractSumcheckClaim<F>>,
+	claims: impl IntoIterator<Item = impl AbstractSumcheckClaim<F>>,
 	proof: AbstractSumcheckBatchProof<F>,
 	reductor: ASR,
 	mut challenger: CH,
@@ -185,7 +188,7 @@ where
 			let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
 			batch_coeffs.push(batching_coeff);
 
-			rd_claim.current_batched_round_sum += next_claim.sum * batching_coeff;
+			rd_claim.current_batched_round_sum += next_claim.sum() * batching_coeff;
 		}
 
 		challenger.observe_slice(round_proof.coeffs.as_slice());
@@ -206,7 +209,7 @@ where
 		let batching_coeff = make_batching_coeff(&mut first_batch_coeff, &mut challenger);
 		batch_coeffs.push(batching_coeff);
 
-		rd_claim.current_batched_round_sum += claim.sum * batching_coeff;
+		rd_claim.current_batched_round_sum += claim.sum() * batching_coeff;
 	}
 
 	let BatchedAbstractSumcheckRoundClaim {

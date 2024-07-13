@@ -32,9 +32,7 @@ use binius_core::{
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		zerocheck::{
-			self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim, ZerocheckProver,
-		},
+		zerocheck::{self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim},
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -472,6 +470,8 @@ where
 	let zerocheck_column_oracles = constrained_oracles(fixed_oracle, trace_oracle)
 		.map(|id| oracles.oracle(id))
 		.collect();
+
+	// Zerocheck
 	let zerocheck_claim = ZerocheckClaim {
 		poly: CompositePolyOracle::new(
 			log_size,
@@ -488,25 +488,17 @@ where
 			.collect::<Result<_, _>>()?,
 	)?;
 
-	// Zerocheck
-	let zerocheck_domain =
-		domain_factory.create(zerocheck_claim.poly.max_individual_degree() + 1)?;
 	let switchover_fn = standard_switchover_heuristic(-2);
-
-	let zc_challenges = challenger.sample_vec(zerocheck_witness.n_vars() - 1);
-
-	let zerocheck_prover = ZerocheckProver::new(
-		&zerocheck_domain,
-		zerocheck_claim,
-		zerocheck_witness,
-		&zc_challenges,
-		&switchover_fn,
-	);
 
 	let ZerocheckBatchProveOutput {
 		evalcheck_claims,
 		proof: zerocheck_proof,
-	} = zerocheck::batch_prove(zerocheck_prover, &mut challenger)?;
+	} = zerocheck::batch_prove(
+		[(zerocheck_claim, zerocheck_witness)],
+		domain_factory.clone(),
+		switchover_fn,
+		&mut challenger,
+	)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
@@ -516,7 +508,7 @@ where
 		oracles,
 		&mut trace_witness,
 		evalcheck_claims,
-		&switchover_fn,
+		switchover_fn,
 		&mut challenger,
 		domain_factory,
 	)?;

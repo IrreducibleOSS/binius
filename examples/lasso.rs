@@ -13,7 +13,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatch, LassoClaim, LassoWitness},
 		msetcheck, prodcheck,
-		zerocheck::{self, ZerocheckBatchProof, ZerocheckProver},
+		zerocheck::{self, ZerocheckBatchProof},
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -418,56 +418,27 @@ where
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
-	let lasso_zerocheck_domain = domain_factory.create(
-		lasso_prove_output
-			.reduced_lasso_claims
-			.zerocheck_claim
-			.poly
-			.max_individual_degree()
-			+ 1,
-	)?;
-
 	let lasso_zerocheck_claim = lasso_prove_output.reduced_lasso_claims.zerocheck_claim;
-	let lasso_zerocheck_witness = lasso_prove_output.zerocheck_witness;
-
-	let zc_challenges = challenger.sample_vec(lasso_zerocheck_witness.n_vars() - 1);
-
-	let lasso_zerocheck_prover = ZerocheckProver::new(
-		&lasso_zerocheck_domain,
-		lasso_zerocheck_claim,
-		lasso_zerocheck_witness,
-		&zc_challenges,
-		&switchover_fn,
-	)?;
-
-	let prodcheck_zerocheck_domain = domain_factory.create(
-		prodcheck_prove_output
-			.reduced_product_check_claims
-			.t_prime_claim
-			.poly
-			.max_individual_degree()
-			+ 1,
-	)?;
+	let lasso_zerocheck_witness = lasso_prove_output
+		.zerocheck_witness
+		.to_arc_dyn_composition();
 
 	let prodcheck_zerocheck_claim = prodcheck_prove_output
 		.reduced_product_check_claims
 		.t_prime_claim;
-	let prodcheck_zerocheck_witness = prodcheck_prove_output.t_prime_witness;
+	let prodcheck_zerocheck_witness = prodcheck_prove_output
+		.t_prime_witness
+		.to_arc_dyn_composition();
 
-	let prodcheck_zerocheck_prover = ZerocheckProver::new(
-		&prodcheck_zerocheck_domain,
-		prodcheck_zerocheck_claim,
-		prodcheck_zerocheck_witness,
-		&zc_challenges,
-		&switchover_fn,
+	let zerocheck_prove_output = zerocheck::batch_prove(
+		[
+			(prodcheck_zerocheck_claim, prodcheck_zerocheck_witness),
+			(lasso_zerocheck_claim, lasso_zerocheck_witness),
+		],
+		domain_factory.clone(),
+		switchover_fn,
+		&mut challenger,
 	)?;
-
-	let provers = [
-		prodcheck_zerocheck_prover.to_arc_dyn(),
-		lasso_zerocheck_prover.to_arc_dyn(),
-	];
-
-	let zerocheck_prove_output = zerocheck::batch_prove(provers, &mut challenger)?;
 
 	// Greedy Evalcheck
 
@@ -476,7 +447,7 @@ where
 		oracles,
 		&mut legacy_witness_index,
 		zerocheck_prove_output.evalcheck_claims,
-		&switchover_fn,
+		switchover_fn,
 		&mut challenger,
 		domain_factory,
 	)?;
