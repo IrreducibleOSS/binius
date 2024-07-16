@@ -1,12 +1,15 @@
 // Copyright 2024 Ulvetanna Inc.
 use binius_field::{
-	BinaryField32b, PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
+	AESTowerField32b, BinaryField32b, PackedAESBinaryField32x8b, PackedBinaryField32x8b,
+	PackedField,
 };
-use binius_hash::{FixedLenHasherDigest, Groestl256, HashDigest, HasherDigest, Vision32b};
+use binius_hash::{
+	FixedLenHasherDigest, Groestl256, HashDigest, HasherDigest, Vision32b, VisionHasher,
+};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
 use rand::{thread_rng, RngCore};
-use std::{any::type_name, array};
+use std::array;
 
 fn bench_groestl(c: &mut Criterion) {
 	let mut group = c.benchmark_group("groestl");
@@ -54,13 +57,21 @@ fn bench_vision32(c: &mut Criterion) {
 	let mut rng = thread_rng();
 
 	const N: usize = 1 << 14;
-	let data = (0..N)
+	let data_bin = (0..N)
 		.map(|_| BinaryField32b::random(&mut rng))
+		.collect::<Vec<_>>();
+	let data_aes = (0..N)
+		.map(|_| AESTowerField32b::random(&mut rng))
 		.collect::<Vec<_>>();
 
 	group.throughput(Throughput::Bytes((N * 4) as u64));
-	group.bench_function(type_name::<Vision32b<BinaryField32b>>(), |bench| {
-		bench.iter(|| FixedLenHasherDigest::<_, Vision32b<_>>::hash(data.as_slice()))
+	group.bench_function("Vision over BinaryField32b", |bench| {
+		bench.iter(|| FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_bin.as_slice()))
+	});
+	group.bench_function("Vision over AESTowerField32b", |bench| {
+		bench.iter(|| {
+			FixedLenHasherDigest::<_, VisionHasher<AESTowerField32b, _>>::hash(data_aes.as_slice())
+		})
 	});
 
 	group.finish()

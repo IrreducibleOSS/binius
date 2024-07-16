@@ -32,12 +32,16 @@ use binius_field::{
 	arithmetic_traits::{InvertOrZero, Square},
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::Transformation,
+	make_aes_to_binary_packed_transformer,
 	packed::get_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
-	PackedBinaryField8x32b, PackedField, PackedFieldIndexable, TowerField,
+	AESTowerField32b, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
+	PackedAESBinaryField8x32b, PackedBinaryField1x128b, PackedBinaryField8x32b, PackedField,
+	PackedFieldIndexable, TowerField,
 };
-use binius_hash::{GroestlHasher, Vision32bMDS, Vision32bPermutation, INV_PACKED_TRANS};
+use binius_hash::{
+	GroestlHasher, Vision32MDSTransform, Vision32bPermutation, INV_PACKED_TRANS_AES,
+};
 use binius_macros::{composition_poly, IterOracles};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
@@ -616,11 +620,15 @@ where
 		// Helper structs
 		let mut rng = thread_rng();
 		let vision_instance = Vision32bPermutation::default();
-		let mds_trans = Vision32bMDS::default();
+		let mds_trans = Vision32MDSTransform::default();
 		let inv_const_packed = PackedBinaryField8x32b::broadcast(SBOX_INV_CONST);
 		let sbox_fwd_const_packed = PackedBinaryField8x32b::broadcast(SBOX_FWD_CONST);
 		let sbox_trans_packed: [PackedBinaryField8x32b; 3] =
 			array::from_fn(|i| PackedBinaryField8x32b::broadcast(SBOX_FWD_TRANS[i]));
+		let aes_to_bin_packed = make_aes_to_binary_packed_transformer::<
+			PackedAESBinaryField8x32b,
+			PackedBinaryField8x32b,
+		>();
 
 		// Each permutation is 8 round states
 		for perm_i in 0..1 << (log_size - LOG_COMPRESSION_BLOCK) {
@@ -658,10 +666,11 @@ where
 					odd_round_consts[j][i] = BinaryField32b::new(VISION_RC_ODD[j][round_i]);
 				}
 				let sbox_out_packed: [PackedBinaryField8x32b; 3] = array::from_fn(|arr_idx| {
-					let inp = PackedBinaryField8x32b::from_fn(|pack_idx| {
-						x_inverses[pack_idx + arr_idx * 8]
+					let inp = PackedAESBinaryField8x32b::from_fn(|pack_idx| {
+						AESTowerField32b::from(x_inverses[pack_idx + arr_idx * 8])
 					});
-					INV_PACKED_TRANS.transform(&inp) + inv_const_packed
+					aes_to_bin_packed.transform(&INV_PACKED_TRANS_AES.transform(&inp))
+						+ inv_const_packed
 				});
 				for j in 0..24 {
 					let sbox_out: BinaryField32b = get_packed_slice(&sbox_out_packed, j);
@@ -671,12 +680,16 @@ where
 					s_box_pow2_0[j][i] = sbox_pow2;
 					s_box_pow4_0[j][i] = sbox_pow4;
 				}
-				let mut inp_as_packed: [PackedBinaryField8x32b; 3] = array::from_fn(|arr_idx| {
-					PackedBinaryField8x32b::from_fn(|pack_idx| {
-						s_box_out_0[pack_idx + arr_idx * 8][i]
-					})
+				let mut inp_as_packed_aes: [PackedAESBinaryField8x32b; 3] =
+					array::from_fn(|arr_idx| {
+						PackedAESBinaryField8x32b::from_fn(|pack_idx| {
+							AESTowerField32b::from(s_box_out_0[pack_idx + arr_idx * 8][i])
+						})
+					});
+				mds_trans.transform(&mut inp_as_packed_aes);
+				let inp_as_packed: [PackedBinaryField8x32b; 3] = array::from_fn(|arr_idx| {
+					aes_to_bin_packed.transform(&inp_as_packed_aes[arr_idx])
 				});
-				mds_trans.transform(&mut inp_as_packed);
 				for j in 0..24 {
 					let mds_out = get_packed_slice(&inp_as_packed, j);
 					mds_out_0[j][i] = mds_out;
@@ -709,12 +722,16 @@ where
 					s_box_out_1[j][i] = get_packed_slice(&sbox_out, j);
 				}
 
-				let mut inp_as_packed: [PackedBinaryField8x32b; 3] = array::from_fn(|arr_idx| {
-					PackedBinaryField8x32b::from_fn(|pack_idx| {
-						s_box_out_1[pack_idx + arr_idx * 8][i]
-					})
+				let mut inp_as_packed_aes: [PackedAESBinaryField8x32b; 3] =
+					array::from_fn(|arr_idx| {
+						PackedAESBinaryField8x32b::from_fn(|pack_idx| {
+							AESTowerField32b::from(s_box_out_1[pack_idx + arr_idx * 8][i])
+						})
+					});
+				mds_trans.transform(&mut inp_as_packed_aes);
+				let inp_as_packed: [PackedBinaryField8x32b; 3] = array::from_fn(|arr_idx| {
+					aes_to_bin_packed.transform(&inp_as_packed_aes[arr_idx])
 				});
-				mds_trans.transform(&mut inp_as_packed);
 				for j in 0..24 {
 					mds_out_1[j][i] = get_packed_slice(&inp_as_packed, j);
 				}

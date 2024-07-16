@@ -1,262 +1,118 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::hasher::{FixedLenHasher, HashError};
+use crate::{
+	hasher::{FixedLenHasher, HashError},
+	vision_constants::{
+		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
+		ROUND_KEYS,
+	},
+};
 use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::set_packed_slice,
-	BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField32x8b,
-	PackedBinaryField4x32b, PackedBinaryField8x32b, PackedDivisible, PackedExtension,
+	underlier::{Divisible, WithUnderlier},
+	AESTowerField32b, AESTowerField8b, BinaryField, BinaryField32b, BinaryField8b, ExtensionField,
+	Field, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedDivisible, PackedExtension,
 	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, SingleThreadedNTT};
+use cfg_if::cfg_if;
 use lazy_static::lazy_static;
 use p3_symmetric::{CryptographicPermutation, Permutation};
-use std::{cmp, marker::PhantomData};
-
-// The actual number of loops is twice as many because of the 2 sboxes
-const NUM_ROUNDS: usize = 8;
+use std::marker::PhantomData;
 
 const RATE_AS_U32: usize = 16;
 
-const LINEAR_FWD: [BinaryField32b; 32] = [
-	BinaryField32b::new(0x7d8a35b9),
-	BinaryField32b::new(0xafd394ec),
-	BinaryField32b::new(0x0a5e7f50),
-	BinaryField32b::new(0x79326ede),
-	BinaryField32b::new(0x54dd7312),
-	BinaryField32b::new(0x4d9e11ed),
-	BinaryField32b::new(0x8360fa18),
-	BinaryField32b::new(0x729faf77),
-	BinaryField32b::new(0x6943d917),
-	BinaryField32b::new(0xe3ce8313),
-	BinaryField32b::new(0xaacc8bbf),
-	BinaryField32b::new(0xc3e671a4),
-	BinaryField32b::new(0xbfa620f6),
-	BinaryField32b::new(0x85ad527d),
-	BinaryField32b::new(0x5a12cb53),
-	BinaryField32b::new(0x9f170345),
-	BinaryField32b::new(0x6feef5fa),
-	BinaryField32b::new(0xebaa9b54),
-	BinaryField32b::new(0xd17de56f),
-	BinaryField32b::new(0x595a23bd),
-	BinaryField32b::new(0x64a204bd),
-	BinaryField32b::new(0x2bdddefd),
-	BinaryField32b::new(0x881e595a),
-	BinaryField32b::new(0xabcc6a47),
-	BinaryField32b::new(0x2c0d1240),
-	BinaryField32b::new(0x14ee84e7),
-	BinaryField32b::new(0x8c04ad9c),
-	BinaryField32b::new(0x24b7eba9),
-	BinaryField32b::new(0x8069fd1a),
-	BinaryField32b::new(0x0809b759),
-	BinaryField32b::new(0xabd63eb1),
-	BinaryField32b::new(0xa2e6ae06),
-];
+const SCALAR_FWD_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
+	FieldLinearTransformation::new_const(&AFFINE_FWD_AES);
+const SCALAR_INV_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
+	FieldLinearTransformation::new_const(&AFFINE_INV_AES);
 
-const LINEAR_FWD_CONST: BinaryField32b = BinaryField32b::new(0x7cf0bc6c);
+type PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
+	PackedAESBinaryField8x32b,
+>>::PackedTransformation<&'static [AESTowerField32b]>;
 
-const LINEAR_INV: [BinaryField32b; 32] = [
-	BinaryField32b::new(0xef6bbaea),
-	BinaryField32b::new(0x4db1dec6),
-	BinaryField32b::new(0x90d25937),
-	BinaryField32b::new(0x9f94bac7),
-	BinaryField32b::new(0x6b98e587),
-	BinaryField32b::new(0x60682489),
-	BinaryField32b::new(0xef03f140),
-	BinaryField32b::new(0x22975eaa),
-	BinaryField32b::new(0x8ab8c3ee),
-	BinaryField32b::new(0x029af7e4),
-	BinaryField32b::new(0xf657c0bd),
-	BinaryField32b::new(0x5275cd96),
-	BinaryField32b::new(0xd4704891),
-	BinaryField32b::new(0x511ff074),
-	BinaryField32b::new(0xe789c4f2),
-	BinaryField32b::new(0x2efd322b),
-	BinaryField32b::new(0xb79dbde2),
-	BinaryField32b::new(0x969a22d9),
-	BinaryField32b::new(0x8cf40b41),
-	BinaryField32b::new(0x044ea0d7),
-	BinaryField32b::new(0x0cfd27c5),
-	BinaryField32b::new(0xd4ec9d06),
-	BinaryField32b::new(0xb144aabd),
-	BinaryField32b::new(0xb8408461),
-	BinaryField32b::new(0x4ba31560),
-	BinaryField32b::new(0xdbb42264),
-	BinaryField32b::new(0x30d20351),
-	BinaryField32b::new(0xb25077a6),
-	BinaryField32b::new(0xb6447d2a),
-	BinaryField32b::new(0x854c2cb6),
-	BinaryField32b::new(0x70a5125a),
-	BinaryField32b::new(0x1d472bf1),
-];
-
-const LINEAR_INV_CONST: BinaryField32b = BinaryField32b::new(0x9fa712f2);
-
-#[rustfmt::skip]
-const ROUND_KEYS: [[BinaryField32b; 24]; 2 * NUM_ROUNDS + 1] = [
-	[
-		BinaryField32b::new(0x545e66a7), BinaryField32b::new(0x073fdd58), BinaryField32b::new(0x84362677), BinaryField32b::new(0x95fe8565), BinaryField32b::new(0x06269cd8), BinaryField32b::new(0x9c17909e), BinaryField32b::new(0xf1f0adee),
-		BinaryField32b::new(0x2694c698), BinaryField32b::new(0x94b2788f), BinaryField32b::new(0x5eac14ad), BinaryField32b::new(0x21677a78), BinaryField32b::new(0x5755730b), BinaryField32b::new(0x37cef9cf), BinaryField32b::new(0x2fb31ffe),
-		BinaryField32b::new(0xfc0082ec), BinaryField32b::new(0x609c12f0), BinaryField32b::new(0x102769ee), BinaryField32b::new(0x4732860d), BinaryField32b::new(0xf97935e0), BinaryField32b::new(0x36e77c02), BinaryField32b::new(0xba9e70df),
-		BinaryField32b::new(0x67b701d7), BinaryField32b::new(0x829d77a4), BinaryField32b::new(0xf6ec454d),
-	],
-	[
-		BinaryField32b::new(0x73fa03e1), BinaryField32b::new(0x2551a651), BinaryField32b::new(0x0541031f), BinaryField32b::new(0xec1d59dc), BinaryField32b::new(0x780f0b43), BinaryField32b::new(0x04843f97), BinaryField32b::new(0xd379e20b),
-		BinaryField32b::new(0xbe4d1f58), BinaryField32b::new(0xe4c2f8bb), BinaryField32b::new(0xf29aee17), BinaryField32b::new(0x228e51f2), BinaryField32b::new(0x840ee72b), BinaryField32b::new(0x0cb3b70e), BinaryField32b::new(0xbacc914a),
-		BinaryField32b::new(0x490bfa7e), BinaryField32b::new(0xc2c3018e), BinaryField32b::new(0xf6d13bd2), BinaryField32b::new(0x6a4d1fe1), BinaryField32b::new(0x4c2bc742), BinaryField32b::new(0x4508cb46), BinaryField32b::new(0xed63a2f1),
-		BinaryField32b::new(0x1802f859), BinaryField32b::new(0xa00483b5), BinaryField32b::new(0x56e12e78),
-	],
-	[
-		BinaryField32b::new(0xbace7a4a), BinaryField32b::new(0xc3a71400), BinaryField32b::new(0x5a29b316), BinaryField32b::new(0xeedc8d26), BinaryField32b::new(0x51c14d7e), BinaryField32b::new(0x2add9be8), BinaryField32b::new(0xfec386f3),
-		BinaryField32b::new(0x630765dc), BinaryField32b::new(0xaef6c21b), BinaryField32b::new(0x8c98fc1a), BinaryField32b::new(0x3f9c4f9d), BinaryField32b::new(0x399e7231), BinaryField32b::new(0xba238b04), BinaryField32b::new(0x787d67ec),
-		BinaryField32b::new(0x313ad8af), BinaryField32b::new(0xdd622ac3), BinaryField32b::new(0xe0a8d9b8), BinaryField32b::new(0xaa0e6306), BinaryField32b::new(0x29864574), BinaryField32b::new(0x67ee41da), BinaryField32b::new(0x5502278d),
-		BinaryField32b::new(0xa92e20b1), BinaryField32b::new(0x0fdc5328), BinaryField32b::new(0x74dbee7a),
-	],
-	[
-		BinaryField32b::new(0x8bd2f341), BinaryField32b::new(0x59dc2758), BinaryField32b::new(0x5146c720), BinaryField32b::new(0x9df43021), BinaryField32b::new(0x0d1c49ea), BinaryField32b::new(0x81d4b0a5), BinaryField32b::new(0xdbfae4d1),
-		BinaryField32b::new(0xc3153118), BinaryField32b::new(0x8a3aec81), BinaryField32b::new(0xeacd8854), BinaryField32b::new(0xdd4b2576), BinaryField32b::new(0x7dd5cee9), BinaryField32b::new(0x5e9e77b7), BinaryField32b::new(0x6b6efd8d),
-		BinaryField32b::new(0xf11db400), BinaryField32b::new(0x0e6258b7), BinaryField32b::new(0x37b3b6e3), BinaryField32b::new(0xed884c61), BinaryField32b::new(0xb948717c), BinaryField32b::new(0x3d7554cf), BinaryField32b::new(0x42419311),
-		BinaryField32b::new(0x422d11d3), BinaryField32b::new(0x5392b2e7), BinaryField32b::new(0x79c1591d),
-	],
-	[
-		BinaryField32b::new(0x27df48ae), BinaryField32b::new(0x948bc10e), BinaryField32b::new(0xcb079dc1), BinaryField32b::new(0xed183a37), BinaryField32b::new(0x81dcc076), BinaryField32b::new(0x24cb0490), BinaryField32b::new(0x52d69fb8),
-		BinaryField32b::new(0x8b576666), BinaryField32b::new(0x7499fe4d), BinaryField32b::new(0x8f879e34), BinaryField32b::new(0xcb11780a), BinaryField32b::new(0x5e876b29), BinaryField32b::new(0xb72d96ab), BinaryField32b::new(0xac28e621),
-		BinaryField32b::new(0x18aeca7e), BinaryField32b::new(0xf3d30baf), BinaryField32b::new(0xc7fca53f), BinaryField32b::new(0xf7b3281a), BinaryField32b::new(0xdaf5559f), BinaryField32b::new(0x27aca0b3), BinaryField32b::new(0x9515d3ee),
-		BinaryField32b::new(0xa39fd2e1), BinaryField32b::new(0xf61b52c2), BinaryField32b::new(0x83ec5a0f),
-	],
-	[
-		BinaryField32b::new(0x89841f23), BinaryField32b::new(0x8bd0c3e1), BinaryField32b::new(0xde2dd62b), BinaryField32b::new(0x37799416), BinaryField32b::new(0x558834c7), BinaryField32b::new(0x939df560), BinaryField32b::new(0xb1a9f457),
-		BinaryField32b::new(0xcb24dadb), BinaryField32b::new(0x4f702a2a), BinaryField32b::new(0x65ad5822), BinaryField32b::new(0x7ecf577d), BinaryField32b::new(0x728b4092), BinaryField32b::new(0x89e4fa7d), BinaryField32b::new(0x10cd7556),
-		BinaryField32b::new(0x1de77ab7), BinaryField32b::new(0x2374c530), BinaryField32b::new(0x95b289d4), BinaryField32b::new(0xa6ad3862), BinaryField32b::new(0xc6b1a233), BinaryField32b::new(0xac501639), BinaryField32b::new(0x3f6072a3),
-		BinaryField32b::new(0xf8ae7cc4), BinaryField32b::new(0x622f4cf3), BinaryField32b::new(0xf7ccf75b),
-	],
-	[
-		BinaryField32b::new(0xaedf6aac), BinaryField32b::new(0xd64356b2), BinaryField32b::new(0x1cbba169), BinaryField32b::new(0x688602ae), BinaryField32b::new(0x6231b358), BinaryField32b::new(0x1fba8b86), BinaryField32b::new(0xf7b83f1c),
-		BinaryField32b::new(0x465c4050), BinaryField32b::new(0x4403e74c), BinaryField32b::new(0x5f51c2f3), BinaryField32b::new(0x1b114a4d), BinaryField32b::new(0x8f32bf48), BinaryField32b::new(0x87990cfc), BinaryField32b::new(0x71b55cb1),
-		BinaryField32b::new(0x73083164), BinaryField32b::new(0x2fbd58ae), BinaryField32b::new(0x59bbcbbf), BinaryField32b::new(0xb0dc1eba), BinaryField32b::new(0xf2f169ff), BinaryField32b::new(0x54cc93e8), BinaryField32b::new(0x975cfc83),
-		BinaryField32b::new(0xbefc67cf), BinaryField32b::new(0xb841429b), BinaryField32b::new(0xff127d64),
-	],
-	[
-		BinaryField32b::new(0xd6561783), BinaryField32b::new(0x88153c99), BinaryField32b::new(0x1a04e141), BinaryField32b::new(0x62631076), BinaryField32b::new(0xb20b52a2), BinaryField32b::new(0x1df18264), BinaryField32b::new(0x05176f17),
-		BinaryField32b::new(0x505b2752), BinaryField32b::new(0x914a71aa), BinaryField32b::new(0x1b6cf96d), BinaryField32b::new(0x5a8b3b59), BinaryField32b::new(0x3ab885cc), BinaryField32b::new(0xed662f24), BinaryField32b::new(0xa859f626),
-		BinaryField32b::new(0xd91136bb), BinaryField32b::new(0x6da2d95b), BinaryField32b::new(0x043fd679), BinaryField32b::new(0xb9e685e8), BinaryField32b::new(0xdf796fa5), BinaryField32b::new(0x53fc28a3), BinaryField32b::new(0x0c15dc77),
-		BinaryField32b::new(0x079255d2), BinaryField32b::new(0x3373a2a0), BinaryField32b::new(0xfc6b012e),
-	],
-	[
-		BinaryField32b::new(0xb3359ff0), BinaryField32b::new(0xa471acdc), BinaryField32b::new(0x6ad3e18a), BinaryField32b::new(0x4f012f65), BinaryField32b::new(0xebd4392f), BinaryField32b::new(0x25d3af23), BinaryField32b::new(0x7a68469c),
-		BinaryField32b::new(0xd479ea57), BinaryField32b::new(0xb55b6450), BinaryField32b::new(0x86ef0a15), BinaryField32b::new(0xeefd412f), BinaryField32b::new(0xc8e98f30), BinaryField32b::new(0x61e0c12d), BinaryField32b::new(0x36c4680c),
-		BinaryField32b::new(0xe818ab96), BinaryField32b::new(0xfcb765f2), BinaryField32b::new(0xcbb47fea), BinaryField32b::new(0xc9e202a8), BinaryField32b::new(0xc762caec), BinaryField32b::new(0x366f08fd), BinaryField32b::new(0x5e2f3a19),
-		BinaryField32b::new(0x242c8397), BinaryField32b::new(0x638a0042), BinaryField32b::new(0x63f1c9c5),
-	],
-	[
-		BinaryField32b::new(0x4e28a23c), BinaryField32b::new(0xdbe6f0db), BinaryField32b::new(0x9cf4faeb), BinaryField32b::new(0x2fde2616), BinaryField32b::new(0x22dedea1), BinaryField32b::new(0x08ef118e), BinaryField32b::new(0xd7f16ae2),
-		BinaryField32b::new(0xa13b30a8), BinaryField32b::new(0x2ceb58c1), BinaryField32b::new(0xca587d86), BinaryField32b::new(0xf6d54fcd), BinaryField32b::new(0x9cd9f3f5), BinaryField32b::new(0x9b0f94a2), BinaryField32b::new(0xdede0863),
-		BinaryField32b::new(0xa608eb2d), BinaryField32b::new(0x4d3c4469), BinaryField32b::new(0x53784235), BinaryField32b::new(0x4cf6aa1e), BinaryField32b::new(0xcb6ec0d5), BinaryField32b::new(0xf334b49e), BinaryField32b::new(0xe5f7a67a),
-		BinaryField32b::new(0x989658a2), BinaryField32b::new(0xa1a672ca), BinaryField32b::new(0x6fb7eced),
-	],
-	[
-		BinaryField32b::new(0x2bbdf7b8), BinaryField32b::new(0xa8626256), BinaryField32b::new(0xd95bf688), BinaryField32b::new(0x43245a87), BinaryField32b::new(0xc14af030), BinaryField32b::new(0x28e5933a), BinaryField32b::new(0x3aeb3e0d),
-		BinaryField32b::new(0x169f7dea), BinaryField32b::new(0x4cd4d1e4), BinaryField32b::new(0x8db556b5), BinaryField32b::new(0xdd1a49ea), BinaryField32b::new(0xe64eff5d), BinaryField32b::new(0x8bd56648), BinaryField32b::new(0x2c3422be),
-		BinaryField32b::new(0x5cffb53f), BinaryField32b::new(0x6b7aaa6e), BinaryField32b::new(0xc2a8d1af), BinaryField32b::new(0x7e79bed4), BinaryField32b::new(0xd0b08e51), BinaryField32b::new(0x1861ba54), BinaryField32b::new(0xb7d3c6b4),
-		BinaryField32b::new(0x6a9bd7ca), BinaryField32b::new(0x129d3aa5), BinaryField32b::new(0x809e9413),
-	],
-	[
-		BinaryField32b::new(0x52538d7d), BinaryField32b::new(0xdd441420), BinaryField32b::new(0x38a2e2d5), BinaryField32b::new(0xccd05f31), BinaryField32b::new(0x2a49f3a6), BinaryField32b::new(0xe533cc9b), BinaryField32b::new(0xa18de92e),
-		BinaryField32b::new(0x495f684a), BinaryField32b::new(0x0028e3ae), BinaryField32b::new(0xd4072861), BinaryField32b::new(0x370fd7a3), BinaryField32b::new(0x728224bc), BinaryField32b::new(0xa8b6b3d7), BinaryField32b::new(0xdada7046),
-		BinaryField32b::new(0xea9e71df), BinaryField32b::new(0x914f7d53), BinaryField32b::new(0x9b796ac9), BinaryField32b::new(0xe7f61a69), BinaryField32b::new(0x67a68f71), BinaryField32b::new(0x7eb15ce6), BinaryField32b::new(0xeb9af9e1),
-		BinaryField32b::new(0xa75f54b1), BinaryField32b::new(0x59210427), BinaryField32b::new(0x75093378),
-	],
-	[
-		BinaryField32b::new(0x27866fea), BinaryField32b::new(0x3bd84dca), BinaryField32b::new(0x681d1d3a), BinaryField32b::new(0xe7fb7496), BinaryField32b::new(0x86fd9bf8), BinaryField32b::new(0xc1f28786), BinaryField32b::new(0xb3f17a06),
-		BinaryField32b::new(0x60c43dbe), BinaryField32b::new(0x16fee1be), BinaryField32b::new(0xa8407554), BinaryField32b::new(0xca909e3b), BinaryField32b::new(0xb1fc461c), BinaryField32b::new(0xd84d663e), BinaryField32b::new(0x2e7d669b),
-		BinaryField32b::new(0x5b5b5a56), BinaryField32b::new(0x6c53d090), BinaryField32b::new(0x236707a6), BinaryField32b::new(0x7f1f4e97), BinaryField32b::new(0xe95b23f3), BinaryField32b::new(0x8cd1e3dd), BinaryField32b::new(0x928f3212),
-		BinaryField32b::new(0x9c7c1c20), BinaryField32b::new(0x00eeebe3), BinaryField32b::new(0xc0572f52),
-	],
-	[
-		BinaryField32b::new(0xd1504060), BinaryField32b::new(0x005d8a96), BinaryField32b::new(0x058e317a), BinaryField32b::new(0x30d9d3c6), BinaryField32b::new(0xa585af56), BinaryField32b::new(0x084c5111), BinaryField32b::new(0x498da85e),
-		BinaryField32b::new(0x0149987d), BinaryField32b::new(0xe130153b), BinaryField32b::new(0x817cc725), BinaryField32b::new(0x75f726b1), BinaryField32b::new(0x23941339), BinaryField32b::new(0x1f26e9dd), BinaryField32b::new(0xdb013723),
-		BinaryField32b::new(0x81f36069), BinaryField32b::new(0xe4167ba1), BinaryField32b::new(0x50d59f82), BinaryField32b::new(0xbf011350), BinaryField32b::new(0x3ae71f42), BinaryField32b::new(0x9966d041), BinaryField32b::new(0xdbe09577),
-		BinaryField32b::new(0xa830b8f0), BinaryField32b::new(0x0c018c2d), BinaryField32b::new(0x08beab4f),
-	],
-	[
-		BinaryField32b::new(0x20898252), BinaryField32b::new(0xac8aa337), BinaryField32b::new(0x5c5bbcad), BinaryField32b::new(0x2fa58f41), BinaryField32b::new(0xf2446068), BinaryField32b::new(0xfff46a79), BinaryField32b::new(0x0b1980d8),
-		BinaryField32b::new(0x01b14c53), BinaryField32b::new(0x4e432072), BinaryField32b::new(0xfc610a31), BinaryField32b::new(0x80ba5531), BinaryField32b::new(0xc14507a5), BinaryField32b::new(0x2433c5d2), BinaryField32b::new(0x8a461cf3),
-		BinaryField32b::new(0x187849cd), BinaryField32b::new(0x3d4f51e8), BinaryField32b::new(0x3d9cd125), BinaryField32b::new(0xe15e09ca), BinaryField32b::new(0x8c6287c6), BinaryField32b::new(0xfa0ec2f4), BinaryField32b::new(0x65435f29),
-		BinaryField32b::new(0xd33a4f3d), BinaryField32b::new(0xd61bb963), BinaryField32b::new(0x991005f9),
-	],
-	[
-		BinaryField32b::new(0x00d80bd4), BinaryField32b::new(0x3d8b3d56), BinaryField32b::new(0xcc18a7a9), BinaryField32b::new(0x0105e9bb), BinaryField32b::new(0x71f0e736), BinaryField32b::new(0x4cc71fa4), BinaryField32b::new(0x1a2ec96b),
-		BinaryField32b::new(0xe1b8b093), BinaryField32b::new(0x329232ab), BinaryField32b::new(0xb4285526), BinaryField32b::new(0x02326fe9), BinaryField32b::new(0xe79accab), BinaryField32b::new(0xd893b618), BinaryField32b::new(0x9bd74bd5),
-		BinaryField32b::new(0x2062577c), BinaryField32b::new(0x94f82da9), BinaryField32b::new(0xb551d97a), BinaryField32b::new(0x862483f0), BinaryField32b::new(0x5f8e4e3e), BinaryField32b::new(0x098d5e44), BinaryField32b::new(0xbe326102),
-		BinaryField32b::new(0x4f5f050e), BinaryField32b::new(0x1bd571d5), BinaryField32b::new(0xcdd8e583),
-	],
-	[
-		BinaryField32b::new(0x1b525e1b), BinaryField32b::new(0x1cccb851), BinaryField32b::new(0x45b3c777), BinaryField32b::new(0x63cc9153), BinaryField32b::new(0xdfa0fd4a), BinaryField32b::new(0x0cf20c06), BinaryField32b::new(0x72fdd2f3),
-		BinaryField32b::new(0xf9b6f564), BinaryField32b::new(0x9552a62b), BinaryField32b::new(0x1e848099), BinaryField32b::new(0x3ba1a5a6), BinaryField32b::new(0x17ff06e0), BinaryField32b::new(0x8cae82ed), BinaryField32b::new(0xb5b29fbc),
-		BinaryField32b::new(0x9322d5a6), BinaryField32b::new(0x77f40c4c), BinaryField32b::new(0x0843ce60), BinaryField32b::new(0x86ddb97f), BinaryField32b::new(0xe5a12a04), BinaryField32b::new(0x9bd65cd6), BinaryField32b::new(0x1b16bea6),
-		BinaryField32b::new(0xf4066cee), BinaryField32b::new(0xdcb3c788), BinaryField32b::new(0x499b6483),
-	],
-];
-
-const SCALAR_FWD_TRANS: FieldLinearTransformation<BinaryField32b> =
-	FieldLinearTransformation::new_const(&LINEAR_FWD);
-const SCALAR_INV_TRANS: FieldLinearTransformation<BinaryField32b> =
-	FieldLinearTransformation::new_const(&LINEAR_INV);
-
-type PackedTransformationType8x32b = <PackedBinaryField8x32b as PackedTransformationFactory<
-	PackedBinaryField8x32b,
->>::PackedTransformation<&'static [BinaryField32b]>;
+/// The vision specialization over `BinaryField32b` as per [Vision Mark-32](https://eprint.iacr.org/2024/633)
+pub type Vision32b<P> = VisionHasher<BinaryField32b, P>;
 
 lazy_static! {
-	static ref ADDITIVE_NTT: SingleThreadedNTT<BinaryField8b, PrecomputedTwiddleAccess<BinaryField8b>> = {
+	static ref ADDITIVE_NTT_AES: SingleThreadedNTT<AESTowerField8b, PrecomputedTwiddleAccess<AESTowerField8b>> = {
 		let log_h = 3;
 		let log_rate = 1;
-		SingleThreadedNTT::<BinaryField8b>::new(log_h + 2 + log_rate)
-			.expect("log_domain_size is less than 32")
-		.precompute_twiddles()
+		SingleThreadedNTT::<AESTowerField8b>::with_domain_field::<BinaryField8b>(log_h + 2 + log_rate)
+			.expect("log_domain_size is less than 32").precompute_twiddles()
 	};
-	pub static ref FWD_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
-		PackedBinaryField8x32b,
-	>>::make_packed_transformation(SCALAR_FWD_TRANS);
-	pub static ref INV_PACKED_TRANS: PackedTransformationType8x32b  = <PackedBinaryField8x32b as PackedTransformationFactory<
-		PackedBinaryField8x32b,
-	>>::make_packed_transformation(SCALAR_INV_TRANS);
+
+	pub static ref FWD_PACKED_TRANS_AES: PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
+		PackedAESBinaryField8x32b,
+	>>::make_packed_transformation(SCALAR_FWD_TRANS_AES);
+	pub static ref INV_PACKED_TRANS_AES: PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
+		PackedAESBinaryField8x32b,
+	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
+
+	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_INV_CONST_AES);
+
+	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS.map(|key| {
+			let arr: [PackedAESBinaryField8x32b; 3] = key
+				.chunks_exact(8)
+				.map(|x| PackedAESBinaryField8x32b::from_fn(|i| AESTowerField32b::from(x[i])))
+				.collect::<Vec<_>>()
+				.try_into()
+				.unwrap();
+			arr
+		});
+
+	static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
 }
 
 #[inline]
-fn add_packed_768(a: &mut [PackedBinaryField8x32b; 3], b: &[PackedBinaryField8x32b; 3]) {
+fn add_packed_768<P: PackedField>(a: &mut [P; 3], b: &[P; 3]) {
 	for i in 0..3 {
 		a[i] += b[i];
 	}
 }
 
+/// The MDS step in the Vision Permutation which uses AdditiveNTT to compute matrix multiplication
+/// of the state vector 24x32b
 #[derive(Debug, Clone)]
-pub struct Vision32bMDS {
-	x: PackedBinaryField32x8b,
-	y: PackedBinaryField32x8b,
-	z: PackedBinaryField32x8b,
+pub struct Vision32MDSTransform {
+	x: PackedAESBinaryField32x8b,
+	y: PackedAESBinaryField32x8b,
+	z: PackedAESBinaryField32x8b,
 }
 
-impl Default for Vision32bMDS {
+impl Default for Vision32MDSTransform {
 	fn default() -> Self {
-		let x = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 1));
-		let y = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(3, 2));
-		let z = PackedBinaryField32x8b::broadcast(ADDITIVE_NTT.get_subspace_eval(4, 1));
+		let x = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1));
+		let y = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2));
+		let z = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1));
+
 		Self { x, y, z }
 	}
 }
 
-impl Vision32bMDS {
-	pub fn transform(&self, data: &mut [PackedBinaryField8x32b; 3]) {
+impl Vision32MDSTransform {
+	pub fn transform(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
+		//! We have observed noticeable performance improvements based on the size of the Packed elements
+		//! you pass onto the transformations which generally seem to vary by platform, although it
+		//! maybe related to the register size and the vector extension if any the code gets compiled to.
+		cfg_if! {
+			if #[cfg(target_arch = "x86_64")] {
+				type NTTDivisible = binius_field::arch::packed_aes_64::PackedAESBinaryField2x32b;
+			} else {
+				type NTTDivisible = binius_field::PackedAESBinaryField4x32b;
+			}
+		}
+
 		for coset in 0..3 {
-			ADDITIVE_NTT
+			ADDITIVE_NTT_AES
 				.inverse_transform_ext(
 					// Divide into 128-bit packed elements to utilize SIMD NTT operations
-					PackedDivisible::<PackedBinaryField4x32b>::divide_mut(
-						&mut data[coset..(coset + 1)],
-					),
+					PackedDivisible::<NTTDivisible>::divide_mut(&mut data[coset..(coset + 1)]),
 					coset as u32,
 				)
 				.unwrap();
@@ -280,12 +136,10 @@ impl Vision32bMDS {
 		}
 
 		for coset in 0..3 {
-			ADDITIVE_NTT
+			ADDITIVE_NTT_AES
 				.forward_transform_ext(
 					// Divide into 128-bit packed elements to utilize SIMD NTT operations
-					PackedDivisible::<PackedBinaryField4x32b>::divide_mut(
-						&mut data[coset..(coset + 1)],
-					),
+					PackedDivisible::<NTTDivisible>::divide_mut(&mut data[coset..(coset + 1)]),
 					(coset + 3) as u32,
 				)
 				.unwrap();
@@ -293,43 +147,38 @@ impl Vision32bMDS {
 	}
 }
 
-#[derive(Clone)]
+/// This is the complete permutation function for the Vision hash which implements `Permutation`
+/// and `CryptographicPermutation` traits over `PackedAESBinary8x32b` as well as `BinaryField32b`
+#[derive(Clone, Default)]
 pub struct Vision32bPermutation {
-	// MDS structure basically a wrapper around additive ntt
-	mds: Vision32bMDS,
-	// The following variables are used internally for the sbox
-	// The constants used for the forward and inverse linear transformation
-	fwd_const: PackedBinaryField8x32b,
-	inv_const: PackedBinaryField8x32b,
-	// Round constants
-	round_keys: [[PackedBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1],
+	mds: Vision32MDSTransform,
+}
+
+impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
+	fn permute_mut(&self, input: &mut [PackedAESBinaryField8x32b; 3]) {
+		add_packed_768(input, &ROUND_KEYS_PACKED_AES[0]);
+		for r in 0..NUM_ROUNDS {
+			*input = self.sbox_step(*input, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
+			self.mds.transform(input);
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES[1 + 2 * r]);
+			*input = self.sbox_step(*input, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
+			self.mds.transform(input);
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES[2 + 2 * r]);
+		}
+	}
 }
 
 impl Vision32bPermutation {
 	pub fn new() -> Self {
-		let round_keys = ROUND_KEYS.map(|key| {
-			let arr: [PackedBinaryField8x32b; 3] = key
-				.chunks_exact(8)
-				.map(|x| PackedBinaryField8x32b::from_fn(|i| x[i]))
-				.collect::<Vec<_>>()
-				.try_into()
-				.unwrap();
-			arr
-		});
-		Self {
-			mds: Vision32bMDS::default(),
-			fwd_const: PackedBinaryField8x32b::broadcast(LINEAR_FWD_CONST),
-			inv_const: PackedBinaryField8x32b::broadcast(LINEAR_INV_CONST),
-			round_keys,
-		}
+		Self::default()
 	}
 
-	fn sbox_packed_linear(
+	fn sbox_packed_affine(
 		&self,
-		chunk: &PackedBinaryField8x32b,
-		packed_linear_trans: &PackedTransformationType8x32b,
-		constant: PackedBinaryField8x32b,
-	) -> PackedBinaryField8x32b {
+		chunk: &PackedAESBinaryField8x32b,
+		packed_linear_trans: &PackedTransformationType8x32bAES,
+		constant: PackedAESBinaryField8x32b,
+	) -> PackedAESBinaryField8x32b {
 		let x_inv_eval = chunk.invert_or_zero();
 		let result = packed_linear_trans.transform(&x_inv_eval);
 		result + constant
@@ -337,110 +186,67 @@ impl Vision32bPermutation {
 
 	fn sbox_step(
 		&self,
-		d: [PackedBinaryField8x32b; 3],
-		packed_linear_trans: &PackedTransformationType8x32b,
-		constant: PackedBinaryField8x32b,
-	) -> [PackedBinaryField8x32b; 3] {
-		d.map(move |chunk| self.sbox_packed_linear(&chunk, packed_linear_trans, constant))
-	}
-
-	// Actually do the rounds of the encryption
-	fn permute_mut_packed(&self, input: &mut [PackedBinaryField8x32b; 3]) {
-		add_packed_768(input, &self.round_keys[0]);
-		for r in 0..NUM_ROUNDS {
-			// R mod 2 == 0
-			// SBOX step
-			*input = self.sbox_step(*input, &INV_PACKED_TRANS, self.inv_const);
-			// MDS step
-			self.mds.transform(input);
-			// Round key step
-			add_packed_768(input, &self.round_keys[1 + 2 * r]);
-			// R mod 2 == 1
-			// SBOX step
-			*input = self.sbox_step(*input, &FWD_PACKED_TRANS, self.fwd_const);
-			// MDS step
-			self.mds.transform(input);
-			// Round key step
-			add_packed_768(input, &self.round_keys[2 + 2 * r]);
-		}
-	}
-
-	fn permute_packed(
-		&self,
-		mut input: [PackedBinaryField8x32b; 3],
-	) -> [PackedBinaryField8x32b; 3] {
-		self.permute_mut_packed(&mut input);
-		input
-	}
-}
-
-impl Default for Vision32bPermutation {
-	fn default() -> Self {
-		Self::new()
+		d: [PackedAESBinaryField8x32b; 3],
+		packed_linear_trans: &PackedTransformationType8x32bAES,
+		constant: PackedAESBinaryField8x32b,
+	) -> [PackedAESBinaryField8x32b; 3] {
+		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_linear_trans, constant))
 	}
 }
 
 impl Permutation<[BinaryField32b; 24]> for Vision32bPermutation {
 	fn permute_mut(&self, input: &mut [BinaryField32b; 24]) {
-		let mut input_packed = [PackedBinaryField8x32b::default(); 3];
-		PackedFieldIndexable::unpack_scalars_mut(&mut input_packed[..]).copy_from_slice(&input[..]);
-		self.permute_mut_packed(&mut input_packed);
-		input.copy_from_slice(PackedBinaryField8x32b::unpack_scalars(&input_packed));
+		let mut input_packed = [PackedAESBinaryField8x32b::default(); 3];
+		let input_unpacked = PackedFieldIndexable::unpack_scalars_mut(&mut input_packed[..]);
+		for (aes_in, &bin_in) in input_unpacked.iter_mut().zip(input.iter()) {
+			*aes_in = AESTowerField32b::from(bin_in);
+		}
+
+		self.permute_mut(&mut input_packed);
+
+		let output_as_bin = PackedAESBinaryField8x32b::unpack_scalars(&input_packed);
+		for (bin_out, &aes_out) in input.iter_mut().zip(output_as_bin.iter()) {
+			*bin_out = BinaryField32b::from(aes_out);
+		}
 	}
 }
 
 impl CryptographicPermutation<[BinaryField32b; 24]> for Vision32bPermutation {}
 
+/// This is the struct that implements the Vision hash over `AESTowerField32b` and `BinaryField32b`
+/// isomorphically. Here the generic `P` represents the input type to the `update` function
 #[derive(Clone)]
-pub struct Vision32b<P> {
-	permutation: Vision32bPermutation,
+pub struct VisionHasher<F, P> {
 	// The hashed state
-	state: [PackedBinaryField8x32b; 3],
+	state: [PackedAESBinaryField8x32b; 3],
 	// The length that are committing to hash
 	committed_len: u64,
 	// Current length we have hashed so far
 	current_len: u64,
-	_marker: PhantomData<P>,
+	_p_marker: PhantomData<P>,
+	_f_marker: PhantomData<F>,
 }
 
-impl<P> FixedLenHasher<P> for Vision32b<P>
+impl<U, F, P> FixedLenHasher<P> for VisionHasher<F, P>
 where
-	P: PackedExtension<BinaryField32b, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<BinaryField32b>,
+	U: PackScalar<F> + Divisible<u32>,
+	F: BinaryField + From<AESTowerField32b> + Into<AESTowerField32b>,
+	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
+	P::Scalar: ExtensionField<F>,
+	PackedAESBinaryField8x32b: WithUnderlier<Underlier = U>,
 {
-	type Digest = PackedBinaryField8x32b;
+	type Digest = PackedType<U, F>;
 
-	/// Create new instance of vision32b
-	/// `msg_len` is expected to be the number of `P` elements you wish to hash or zero.
 	fn new(msg_len: u64) -> Self {
-		let mut state = [PackedBinaryField8x32b::zero(); 3];
-
-		// Write the byte-length of the message into the initial state
-		let bytes_per_elem = P::WIDTH
-			* P::Scalar::DEGREE
-			* <BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE;
-		let msg_len_bytes = msg_len
-			.checked_mul(bytes_per_elem as u64)
-			.expect("Overflow on message length");
-		let msg_len_bytes_enc = msg_len_bytes.to_le_bytes();
-		set_packed_slice(
-			&mut state,
-			RATE_AS_U32,
-			BinaryField32b::new(u32::from_le_bytes(msg_len_bytes_enc[0..4].try_into().unwrap())),
-		);
-		set_packed_slice(
-			&mut state,
-			RATE_AS_U32 + 1,
-			BinaryField32b::new(u32::from_le_bytes(msg_len_bytes_enc[4..8].try_into().unwrap())),
-		);
-
-		Self {
-			permutation: Vision32bPermutation::new(),
-			state,
+		let mut this = VisionHasher {
+			state: [PackedAESBinaryField8x32b::zero(); 3],
 			committed_len: msg_len,
 			current_len: 0,
-			_marker: PhantomData,
-		}
+			_p_marker: PhantomData,
+			_f_marker: PhantomData,
+		};
+		this.reset();
+		this
 	}
 
 	fn update(&mut self, msg: impl AsRef<[P]>) {
@@ -449,25 +255,16 @@ where
 			return;
 		}
 
-		let mut msg_remaining = P::unpack_base_scalars(msg);
-		let mut cur_block =
-			(self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
+		let msg_scalars = P::unpack_base_scalars(msg).iter().copied().map(Into::into);
 
-		while !msg_remaining.is_empty() {
-			let to_process = cmp::min(RATE_AS_U32 - cur_block, msg_remaining.len());
-
-			// Firstly copy data into next block
-			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
-			next_block[cur_block..cur_block + to_process]
-				.copy_from_slice(&msg_remaining[..to_process]);
-
-			// absorb if ready
-			if cur_block + to_process == RATE_AS_U32 {
-				self.state = self.permutation.permute_packed(self.state);
-				cur_block = 0;
+		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
+		for (i, x) in msg_scalars.enumerate() {
+			let block_idx = (cur_block + i) % RATE_AS_U32;
+			let next_block = PackedAESBinaryField8x32b::unpack_scalars_mut(&mut self.state);
+			next_block[block_idx] = x;
+			if block_idx == RATE_AS_U32 - 1 {
+				self.state = PERMUTATION.permute(self.state);
 			}
-
-			msg_remaining = &msg_remaining[to_process..];
 		}
 
 		self.current_len = self
@@ -476,12 +273,12 @@ where
 			.expect("Overflow on message length");
 	}
 
-	fn chain_update(mut self, data: impl AsRef<[P]>) -> Self {
-		self.update(data);
+	fn chain_update(mut self, msg: impl AsRef<[P]>) -> Self {
+		self.update(msg);
 		self
 	}
 
-	fn finalize(mut self) -> Result<PackedBinaryField8x32b, HashError> {
+	fn finalize(mut self) -> Result<Self::Digest, HashError> {
 		// Pad here and output the hash
 		if self.current_len < self.committed_len {
 			return Err(HashError::NotEnoughData {
@@ -501,16 +298,40 @@ where
 		if cur_block != 0 {
 			// Pad and absorb
 			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
-			next_block[cur_block..].fill(BinaryField32b::ZERO);
-			self.state = self.permutation.permute_packed(self.state);
+			next_block[cur_block..].fill(AESTowerField32b::ZERO);
+			self.state = PERMUTATION.permute(self.state);
 		}
 
-		Ok(self.state[0])
+		let out_native = self.state[0];
+		Ok(Self::Digest::from_fn(|i| F::from(out_native.get(i))))
 	}
 
 	fn reset(&mut self) {
-		let msg_len = self.committed_len;
-		*self = Vision32b::new(msg_len);
+		self.state.fill(PackedAESBinaryField8x32b::zero());
+
+		// Write the byte-length of the message into the initial state
+		let bytes_per_elem = P::WIDTH
+			* P::Scalar::DEGREE
+			* <BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE;
+		let msg_len_bytes = self
+			.committed_len
+			.checked_mul(bytes_per_elem as u64)
+			.expect("Overflow on message length");
+		let msg_len_bytes_enc = msg_len_bytes.to_le_bytes();
+		set_packed_slice(
+			&mut self.state,
+			RATE_AS_U32,
+			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
+				msg_len_bytes_enc[0..4].try_into().unwrap(),
+			))),
+		);
+		set_packed_slice(
+			&mut self.state,
+			RATE_AS_U32 + 1,
+			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
+				msg_len_bytes_enc[4..8].try_into().unwrap(),
+			))),
+		);
 	}
 }
 
@@ -518,19 +339,22 @@ where
 mod tests {
 	use super::*;
 	use crate::{FixedLenHasherDigest, HashDigest};
-	use binius_field::{BinaryField64b, PackedBinaryField4x64b};
+	use binius_field::{
+		make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
+		BinaryField64b, PackedAESBinaryField4x64b, PackedBinaryField4x64b, PackedBinaryField8x32b,
+	};
 	use hex_literal::hex;
 	use rand::thread_rng;
 	use std::array;
 
-	fn mds_transform(data: &mut [PackedBinaryField8x32b; 3]) {
-		let vision = Vision32bMDS::default();
+	fn mds_transform(data: &mut [PackedAESBinaryField8x32b; 3]) {
+		let vision = Vision32MDSTransform::default();
 		vision.transform(data);
 	}
 
 	#[inline]
-	fn from_u32_to_packed_256(elements: &[BinaryField32b; 8]) -> PackedBinaryField8x32b {
-		PackedBinaryField8x32b::from_fn(|i| elements[i])
+	fn from_u32_to_packed_256(elements: &[AESTowerField32b; 8]) -> PackedAESBinaryField8x32b {
+		PackedAESBinaryField8x32b::from_fn(|i| elements[i])
 	}
 
 	fn from_bytes_to_packed_256(elements: &[u8; 32]) -> PackedBinaryField8x32b {
@@ -538,8 +362,9 @@ mod tests {
 			BinaryField32b::new(u32::from_le_bytes(elements[i * 4..i * 4 + 4].try_into().unwrap()))
 		})
 	}
+
 	#[inline]
-	fn from_u32_to_packed_768(elements: &[BinaryField32b; 24]) -> [PackedBinaryField8x32b; 3] {
+	fn from_u32_to_packed_768(elements: &[AESTowerField32b; 24]) -> [PackedAESBinaryField8x32b; 3] {
 		[
 			from_u32_to_packed_256(elements[0..8].try_into().unwrap()),
 			from_u32_to_packed_256(elements[8..16].try_into().unwrap()),
@@ -648,18 +473,18 @@ mod tests {
 			],
 		];
 
-		let mds_trans: Vec<Vec<BinaryField32b>> = (0..mds[0].len())
+		let mds_trans: Vec<Vec<AESTowerField32b>> = (0..mds[0].len())
 			.map(|j| {
 				(0..mds.len())
-					.map(|i| BinaryField32b::new(mds[i][j]))
+					.map(|i| AESTowerField32b::from(BinaryField32b::new(mds[i][j])))
 					.collect()
 			})
 			.collect();
 
 		for (i, col) in mds_trans.iter().enumerate() {
 			// Transform the data 0, ..., 0,  1, 0, ..., 0 where the ith position is the unit element through the mds and check that you get ith column as the output.
-			let mut data = [PackedBinaryField8x32b::zero(); 3];
-			set_packed_slice(&mut data, i, BinaryField32b::one());
+			let mut data = [PackedAESBinaryField8x32b::zero(); 3];
+			set_packed_slice(&mut data, i, AESTowerField32b::one());
 
 			mds_transform(&mut data);
 
@@ -683,7 +508,7 @@ mod tests {
 			let chunk = from_u32_to_packed_256(
 				inputs[d_in * 8..(d_in + 1) * 8]
 					.iter()
-					.map(|x| BinaryField32b::new(*x))
+					.map(|x| AESTowerField32b::from(BinaryField32b::new(*x)))
 					.collect::<Vec<_>>()
 					.as_slice()
 					.try_into()
@@ -693,7 +518,7 @@ mod tests {
 			let expected1 = from_u32_to_packed_256(
 				sbox1[d_in * 8..(d_in + 1) * 8]
 					.iter()
-					.map(|x| BinaryField32b::new(*x))
+					.map(|x| AESTowerField32b::from(BinaryField32b::new(*x)))
 					.collect::<Vec<_>>()
 					.as_slice()
 					.try_into()
@@ -702,18 +527,18 @@ mod tests {
 			let expected2 = from_u32_to_packed_256(
 				sbox2[d_in * 8..(d_in + 1) * 8]
 					.iter()
-					.map(|x| BinaryField32b::new(*x))
+					.map(|x| AESTowerField32b::from(BinaryField32b::new(*x)))
 					.collect::<Vec<_>>()
 					.as_slice()
 					.try_into()
 					.unwrap(),
 			);
 
-			let got1 = vs.sbox_packed_linear(&chunk, &INV_PACKED_TRANS, vs.inv_const);
-			let got2 = vs.sbox_packed_linear(&chunk, &FWD_PACKED_TRANS, vs.fwd_const);
+			let got1 = vs.sbox_packed_affine(&chunk, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
+			let got2 = vs.sbox_packed_affine(&chunk, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
 
 			assert_eq!(expected1, got1);
-			assert_eq!(expected2, got2);
+			assert_eq!(expected2, got2)
 		}
 	}
 
@@ -846,5 +671,26 @@ mod tests {
 		));
 		let out = hasher.finalize().unwrap();
 		assert_eq!(expected, out);
+	}
+
+	#[test]
+	fn test_aes_to_binary_hash() {
+		let mut rng = thread_rng();
+
+		let aes_transformer_1 = make_binary_to_aes_packed_transformer();
+		let aes_transformer_2 = make_aes_to_binary_packed_transformer();
+
+		let data_bin: [PackedBinaryField4x64b; 100] =
+			array::from_fn(|_| PackedBinaryField4x64b::random(&mut rng));
+		let data_aes: [PackedAESBinaryField4x64b; 100] =
+			array::from_fn(|i| aes_transformer_1.transform(&data_bin[i]));
+
+		let hasher_32b = Vision32b::new(100);
+		let hasher_aes32b = VisionHasher::<AESTowerField32b, _>::new(100);
+
+		let digest_as_bin = hasher_32b.chain_update(data_bin).finalize().unwrap();
+		let digest_as_aes = hasher_aes32b.chain_update(data_aes).finalize().unwrap();
+
+		assert_eq!(digest_as_bin, aes_transformer_2.transform(&digest_as_aes));
 	}
 }
