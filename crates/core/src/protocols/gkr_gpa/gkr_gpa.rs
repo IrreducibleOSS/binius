@@ -35,6 +35,7 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 	pub fn new(poly: MultilinearWitness<'a, PW>) -> Result<Self, Error> {
 		// Compute the circuit layers from bottom to top
 		let input_layer = (0..1 << poly.n_vars())
+			.into_par_iter()
 			.map(|i| poly.evaluate_on_hypercube(i))
 			.collect::<Result<Vec<_>, _>>()?;
 		let mut all_layers = vec![input_layer];
