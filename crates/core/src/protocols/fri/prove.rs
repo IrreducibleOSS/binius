@@ -45,7 +45,7 @@ where
 	rs_code.encode_extension_inplace(&mut encoded)?;
 
 	let (commitment, vcs_committed) = vcs
-		.commit_batch(iter::once(P::unpack_scalars(&encoded)))
+		.commit_batch(&[P::unpack_scalars(&encoded)])
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 	Ok(CommitOutput {
@@ -168,7 +168,7 @@ where
 			.collect::<Vec<_>>();
 
 		let (commitment, committed) = round_vcs
-			.commit_batch(iter::once(&folded))
+			.commit_batch(&[&folded])
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 		self.round_committed.push((folded, committed));

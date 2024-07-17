@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::{iter::repeat_with, marker::PhantomData, mem, ops::Range, slice};
+use std::{marker::PhantomData, mem, ops::Range, slice};
 
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
@@ -35,7 +35,7 @@ where
 	pub fn build<P, H, C>(
 		compression: &C,
 		log_len: usize,
-		leaves: impl Iterator<Item = impl AsRef<[P]>>,
+		leaves: &[impl AsRef<[P]>],
 	) -> Result<Self, Error>
 	where
 		P: PackedField + Sync,
@@ -44,8 +44,9 @@ where
 	{
 		let len = 1 << log_len;
 
+		let batch_size = leaves.len();
 		let mut inner_nodes = vec![H::Digest::default(); 2 * len - 1];
-		let batch_size = Self::hash_leaves::<_, H>(leaves, &mut inner_nodes[..len])?;
+		Self::hash_leaves::<_, H>(leaves, &mut inner_nodes[..len])?;
 
 		{
 			let (mut prev_layer, mut remaining) = inner_nodes.split_at_mut(len);
@@ -107,40 +108,35 @@ where
 		Ok(branch)
 	}
 
-	fn hash_leaves<P, H>(
-		leaves: impl Iterator<Item = impl AsRef<[P]>>,
-		digests: &mut [D],
-	) -> Result<usize, Error>
+	fn hash_leaves<P, H>(leaves: &[impl AsRef<[P]>], digests: &mut [D]) -> Result<(), Error>
 	where
 		P: PackedField + Sync,
 		H: Hasher<P, Digest = D> + Send,
 	{
-		let mut hashers = repeat_with(H::new).take(digests.len()).collect::<Vec<_>>();
-
-		let mut batch_size = 0;
-		for elems in leaves {
-			let elems = elems.as_ref();
-
-			if elems.len() != digests.len() {
-				return Err(Error::IncorrectVectorLen {
-					expected: digests.len(),
-				});
-			}
-
-			hashers
-				.par_iter_mut()
-				.zip(elems.par_iter())
-				.for_each(|(hasher, elem)| hasher.update(slice::from_ref(elem)));
-
-			batch_size += 1;
-		}
+		let leaves = leaves
+			.iter()
+			.map(|elems| {
+				let elems = elems.as_ref();
+				if elems.len() != digests.len() {
+					return Err(Error::IncorrectVectorLen {
+						expected: digests.len(),
+					});
+				}
+				Ok(elems)
+			})
+			.collect::<Result<Vec<_>, _>>()?;
 
 		digests
 			.par_iter_mut()
-			.zip(hashers.into_par_iter())
-			.for_each(|(digest, hasher)| hasher.finalize_into(digest));
+			.enumerate()
+			.for_each_init(H::new, |hasher, (i, digest)| {
+				for elems in leaves.iter() {
+					hasher.update(slice::from_ref(&elems[i]))
+				}
+				hasher.finalize_into_reset(digest);
+			});
 
-		Ok(batch_size)
+		Ok(())
 	}
 
 	fn compress_layer<C>(compression: &C, prev_layer: &[D], next_layer: &mut [D])
@@ -200,7 +196,7 @@ where
 
 	fn commit_batch(
 		&self,
-		vecs: impl Iterator<Item = impl AsRef<[P]>>,
+		vecs: &[impl AsRef<[P]>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error> {
 		let tree = MerkleTree::build::<_, H, _>(&self.compression, self.log_len, vecs)?;
 		Ok((tree.root(), tree))
@@ -248,12 +244,12 @@ where
 		committed.truncated_branch(indices)
 	}
 
-	fn verify_range_batch_opening<'a>(
+	fn verify_range_batch_opening(
 		&self,
 		commitment: &Self::Commitment,
 		indices: Range<usize>,
 		proof: Self::Proof,
-		values: impl Iterator<Item = &'a [P]>,
+		values: impl Iterator<Item = impl AsRef<[P]>>,
 	) -> Result<(), Self::Error> {
 		let range_size = indices.end - indices.start;
 
@@ -276,7 +272,8 @@ where
 			});
 		}
 
-		let subtree = MerkleTree::build::<P, H, C>(&self.compression, range_size_log, values)?;
+		let values = values.collect::<Vec<_>>();
+		let subtree = MerkleTree::build::<P, H, C>(&self.compression, range_size_log, &values)?;
 
 		let subtree_root = subtree.root();
 
@@ -307,6 +304,7 @@ mod tests {
 	use binius_field::{BinaryField16b, Field};
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use rand::{rngs::StdRng, SeedableRng};
+	use std::iter::repeat_with;
 
 	#[test]
 	fn test_merkle_tree_counts_batch_size() {
@@ -317,10 +315,11 @@ mod tests {
 				.take(256)
 				.collect::<Vec<BinaryField16b>>()
 		})
-		.take(7);
+		.take(7)
+		.collect::<Vec<_>>();
 
 		let tree =
-			MerkleTree::build::<_, GroestlHasher<_>, _>(&GroestlDigestCompression, 8, leaves)
+			MerkleTree::build::<_, GroestlHasher<_>, _>(&GroestlDigestCompression, 8, &leaves)
 				.unwrap();
 		assert_eq!(tree.log_len, 8);
 	}
@@ -339,7 +338,7 @@ mod tests {
 		.take(3)
 		.collect::<Vec<_>>();
 
-		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
 		assert_eq!(commitment, tree.root());
 
 		for i in 0..16 {
@@ -364,7 +363,7 @@ mod tests {
 		.take(3)
 		.collect::<Vec<_>>();
 
-		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
 		assert_eq!(commitment, tree.root());
 
 		for i in 0..4 {
@@ -394,7 +393,7 @@ mod tests {
 		.take(3)
 		.collect::<Vec<_>>();
 
-		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
 		assert_eq!(commitment, tree.root());
 
 		for j in 0..16 {
@@ -418,7 +417,7 @@ mod tests {
 		.take(3)
 		.collect::<Vec<_>>();
 
-		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
 		assert_eq!(commitment, tree.root());
 
 		assert!(vcs.prove_range_batch_opening(&tree, 0..2).is_ok());
@@ -447,7 +446,7 @@ mod tests {
 		.take(3)
 		.collect::<Vec<_>>();
 
-		let (commitment, tree) = vcs.commit_batch(vecs.iter()).unwrap();
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
 		assert_eq!(commitment, tree.root());
 
 		let proof = vcs.prove_batch_opening(&tree, 6).unwrap();

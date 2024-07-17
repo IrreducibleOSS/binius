@@ -285,7 +285,7 @@ where
 
 		let (commitment, vcs_committed) = self
 			.vcs
-			.commit_batch(all_digests.into_iter())
+			.commit_batch(&all_digests)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 		Ok((commitment, (encoded_mats, vcs_committed)))
 	}

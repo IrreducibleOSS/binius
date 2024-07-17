@@ -17,7 +17,7 @@ pub trait VectorCommitScheme<T> {
 	/// Commit a batch of vectors.
 	fn commit_batch(
 		&self,
-		vecs: impl Iterator<Item = impl AsRef<[T]>>,
+		vecs: &[impl AsRef<[T]>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
 
 	/// Generate an opening proof for all vectors in a batch commitment at the given index.
@@ -48,13 +48,11 @@ pub trait VectorCommitScheme<T> {
 	) -> Result<Self::Proof, Self::Error>;
 
 	/// Verify an opening proof for all vectors in a batch commitment at the given range of indices.
-	fn verify_range_batch_opening<'a>(
+	fn verify_range_batch_opening(
 		&self,
 		commitment: &Self::Commitment,
 		indices: Range<usize>,
 		proof: Self::Proof,
-		values: impl Iterator<Item = &'a [T]>,
-	) -> Result<(), Self::Error>
-	where
-		T: 'a;
+		values: impl Iterator<Item = impl AsRef<[T]>>,
+	) -> Result<(), Self::Error>;
 }
