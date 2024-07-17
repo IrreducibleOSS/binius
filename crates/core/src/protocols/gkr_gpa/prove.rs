@@ -7,7 +7,7 @@ use super::{
 use crate::{
 	oracle::MultilinearPolyOracle,
 	polynomial::{
-		composition::BivariateProduct, extrapolate_line, IsomorphicEvaluationDomainFactory,
+		composition::BivariateProduct, extrapolate_line, EvaluationDomainFactory,
 		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 	},
 	protocols::{
@@ -20,27 +20,25 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{
-	packed::{get_packed_slice, set_packed_slice},
-	ExtensionField, Field, PackedField, TowerField,
-};
+use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::sorting::{stable_sort, unsort};
 use p3_challenger::{CanObserve, CanSample};
-use std::{iter::Step, sync::Arc};
+use std::sync::Arc;
 
 type MultilinWitnessPair<'a, P> = (MultilinearWitness<'a, P>, MultilinearWitness<'a, P>);
 
-pub fn batch_prove<'a, F, PW, FS, CH>(
+pub fn batch_prove<'a, F, PW, DomainField, Challenger>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
-	mut challenger: CH,
+	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
+	mut challenger: Challenger,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
-	FS: Field + Step,
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField,
-	PW::Scalar: Field + From<F> + ExtensionField<FS>,
-	CH: CanSample<F> + CanObserve<F>,
+	DomainField: Field,
+	PW::Scalar: Field + From<F> + ExtensionField<DomainField>,
+	Challenger: CanSample<F> + CanObserve<F>,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together
 	// 	For each witness-claim pair, create GrandProductProver
@@ -99,7 +97,6 @@ where
 			let sumcheck_challenge = vec![];
 			(proof, sumcheck_challenge)
 		} else {
-			let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
 			let sumcheck_claims_and_witnesses = sorted_provers
 				.iter_mut()
 				.map(|p| p.stage_gkr_sumcheck_claims_and_witnesses())
@@ -109,7 +106,7 @@ where
 				reduced_claims,
 			} = gkr_sumcheck::batch_prove(
 				sumcheck_claims_and_witnesses,
-				domain_factory,
+				evaluation_domain_factory.clone(),
 				|_| 1, // TODO better switchover fn
 				&mut challenger,
 			)?;
@@ -233,31 +230,28 @@ where
 		witness: GrandProductWitness<'a, PW>,
 	) -> Result<Self, Error> {
 		let n_vars = claim.poly.n_vars();
-		if n_vars != witness.n_vars() {
+		if n_vars != witness.n_vars() || witness.grand_product_evaluation() != claim.product.into()
+		{
 			return Err(Error::ProverClaimWitnessMismatch);
 		}
 
-		// Compute the layers of the product circuit, enforce output is the claimed product
-		let layer_evals = compute_product_circuit_evals(witness)?;
-		debug_assert_eq!(layer_evals.len(), n_vars + 1);
-
-		let next_layer_halves = (1..n_vars + 1)
+		// Build multilinear polynomials from circuit evaluations
+		let n_layers = n_vars + 1;
+		let next_layer_halves = (1..n_layers)
 			.map(|i| {
-				let k = 1 << (i - 1);
-				let first_half_evals = Arc::from(&layer_evals[i][..k]);
-				let second_half_evals = Arc::from(&layer_evals[i][k..]);
-				let left = MultilinearExtension::from_values_generic(first_half_evals)?
+				let (left_evals, right_evals) = witness.ith_layer_eval_halves(i)?;
+				let left = MultilinearExtension::from_values_generic(Arc::from(left_evals))?
 					.specialize_arc_dyn();
-				let right = MultilinearExtension::from_values_generic(second_half_evals)?
+				let right = MultilinearExtension::from_values_generic(Arc::from(right_evals))?
 					.specialize_arc_dyn();
 				Ok((left, right))
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		let layers = layer_evals
-			.iter()
-			.map(|evals| {
-				let mle = MultilinearExtension::from_values_generic(Arc::from(&evals[..]))?
+		let layers = (0..n_layers)
+			.map(|i| {
+				let ith_layer_evals = witness.ith_layer_evals(i)?;
+				let mle = MultilinearExtension::from_values_generic(Arc::from(ith_layer_evals))?
 					.specialize_arc_dyn();
 				Ok(mle)
 			})
@@ -386,31 +380,4 @@ where
 		};
 		Ok(evalcheck_multilinear_claim)
 	}
-}
-
-// Computes the product circuit layers for a given multilinear polynomial
-// The result is a vector of vectors, where the outer vector is indexed by the layer number
-fn compute_product_circuit_evals<P: PackedField>(
-	poly: GrandProductWitness<'_, P>,
-) -> Result<Vec<Vec<P>>, Error> {
-	let mut input_layer = vec![P::zero(); (1 << poly.n_vars()) / P::WIDTH];
-	for (i, packed_field) in input_layer.iter_mut().enumerate() {
-		poly.subcube_evals(P::LOG_WIDTH, i, std::slice::from_mut(packed_field))?;
-	}
-
-	let mut all_layers = vec![input_layer];
-	for curr_n_vars in (0..poly.n_vars()).rev() {
-		let layer_below = all_layers.last().expect("layers is not empty by invariant");
-		let mut new_layer = vec![P::zero(); (1 << curr_n_vars) / P::WIDTH];
-		for i in 0..1 << curr_n_vars {
-			let left = get_packed_slice(layer_below, i);
-			let right = get_packed_slice(layer_below, i + (1 << curr_n_vars));
-			set_packed_slice(new_layer.as_mut_slice(), i, left * right);
-		}
-		all_layers.push(new_layer);
-	}
-
-	// Reverse the layers
-	all_layers.reverse();
-	Ok(all_layers)
 }

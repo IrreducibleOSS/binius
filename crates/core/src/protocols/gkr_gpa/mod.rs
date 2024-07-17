@@ -32,6 +32,7 @@ mod verify;
 pub use error::*;
 pub use gkr_gpa::{
 	GrandProductBatchProof, GrandProductBatchProveOutput, GrandProductClaim, GrandProductWitness,
+	GKR_SUMCHECK_DEGREE,
 };
 pub use prove::*;
 pub use verify::*;

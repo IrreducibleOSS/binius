@@ -11,6 +11,10 @@ use crate::{
 pub enum Error {
 	#[error("prover has mismatch between claim and witness")]
 	ProverClaimWitnessMismatch,
+	#[error("circuit evals and claim disagree on final product")]
+	MismatchBetweenCircuitEvalsAndClaim,
+	#[error("advice circuit evals has incorrect structure")]
+	InvalidCircuitEvals,
 	#[error("number of batch layer proofs does not match maximum claim n_vars")]
 	MismatchedClaimsAndProofs,
 	#[error("witneses and claims have mismatched lengths")]
@@ -25,6 +29,10 @@ pub enum Error {
 	MismatchedEvalPointLength,
 	#[error("proof has invalid zero-one eval advice")]
 	InvalidZeroOneEvalAdvice,
+	#[error("the output layer cannot be split into halves")]
+	CannotSplitOutputLayerIntoHalves,
+	#[error("the inputted layer index was too high")]
+	InvalidLayerIndex,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("abstract sumcheck failure: {0}")]

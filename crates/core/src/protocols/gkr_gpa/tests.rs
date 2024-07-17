@@ -4,7 +4,7 @@ use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
 	challenger::HashChallenger,
 	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
-	polynomial::MultilinearExtension,
+	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
 	witness::MultilinearWitnessIndex,
 };
@@ -76,10 +76,11 @@ fn create_claims_witnesses_helper<F: TowerField>(
 			poly: multilin_oracles[index].clone(),
 			product: mles_with_product[index].1,
 		};
-		let witness = witness_index
+		let witness_poly = witness_index
 			.get(multilin_oracles[index].id())
 			.unwrap()
 			.clone();
+		let witness = GrandProductWitness::new(witness_poly).unwrap();
 		new_claims.push(claim);
 		new_witnesses.push(witness);
 	});
@@ -104,6 +105,7 @@ fn test_prove_verify_batch() {
 	let mut witnesses = Vec::new();
 	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	let verifier_challenger = prover_challenger.clone();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
 
 	// Setup
 	let (n_vars, n_multilins) = (5, 2);
@@ -150,7 +152,8 @@ fn test_prove_verify_batch() {
 	let GrandProductBatchProveOutput {
 		evalcheck_multilinear_claims,
 		proof,
-	} = batch_prove::<_, _, FS, _>(witnesses, claims.clone(), prover_challenger).unwrap();
+	} = batch_prove::<_, _, FS, _>(witnesses, claims.clone(), domain_factory, prover_challenger)
+		.unwrap();
 
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(claims.clone(), proof, verifier_challenger).unwrap();
