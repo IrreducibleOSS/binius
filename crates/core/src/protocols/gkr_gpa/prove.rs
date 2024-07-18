@@ -24,9 +24,16 @@ use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::sorting::{stable_sort, unsort};
 use p3_challenger::{CanObserve, CanSample};
 use std::sync::Arc;
+use tracing::instrument;
 
 type MultilinWitnessPair<'a, P> = (MultilinearWitness<'a, P>, MultilinearWitness<'a, P>);
 
+/// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
+///
+/// REQUIRES:
+/// * witnesses and claims are of the same length
+/// * The ith witness corresponds to the ith claim
+#[instrument(skip_all, name = "gkr_gpa::batch_prove")]
 pub fn batch_prove<'a, F, PW, DomainField, Challenger>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,

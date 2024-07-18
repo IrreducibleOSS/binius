@@ -16,15 +16,18 @@ use binius_field::{Field, TowerField};
 use binius_utils::sorting::{stable_sort, unsort};
 use itertools::izip;
 use p3_challenger::{CanObserve, CanSample};
+use tracing::instrument;
 
-pub fn batch_verify<F, CH>(
+/// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
+#[instrument(skip_all, name = "gkr_gpa::batch_verify")]
+pub fn batch_verify<F, Challenger>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	proof: GrandProductBatchProof<F>,
-	mut challenger: CH,
+	mut challenger: Challenger,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
 where
 	F: TowerField,
-	CH: CanSample<F> + CanObserve<F>,
+	Challenger: CanSample<F> + CanObserve<F>,
 {
 	let GrandProductBatchProof { batch_layer_proofs } = proof;
 

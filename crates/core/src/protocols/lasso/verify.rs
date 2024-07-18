@@ -6,8 +6,10 @@ use super::{
 };
 use crate::oracle::MultilinearOracleSet;
 use binius_field::{BinaryField, TowerField};
+use tracing::instrument;
 
 /// Verify a Lasso instance reduction.
+#[instrument(skip_all, name = "lasso::verify")]
 pub fn verify<C: LassoCount, F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claim: &LassoClaim<F>,

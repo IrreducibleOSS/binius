@@ -2,6 +2,7 @@
 
 use binius_field::{ExtensionField, Field, PackedField};
 use p3_challenger::{CanObserve, CanSample};
+use tracing::instrument;
 
 use crate::{
 	polynomial::{CompositionPoly, EvaluationDomainFactory, MultilinearPoly},
@@ -23,6 +24,7 @@ pub type GkrSumcheckBatchProveOutput<F> = AbstractSumcheckBatchProveOutput<F>;
 /// Prove a batched GkrSumcheck instance.
 ///
 /// See module documentation for details.
+#[instrument(skip_all, name = "gkr_sumcheck::batch_prove")]
 pub fn batch_prove<F, PW, DomainField, CW, M, CH>(
 	gkr_sumchecks: impl IntoIterator<Item = (GkrSumcheckClaim<F>, GkrSumcheckWitness<PW, CW, M>)>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
@@ -62,6 +64,7 @@ where
 /// Verify a batched GkrSumcheck instance.
 ///
 /// See module documentation for details.
+#[instrument(skip_all, name = "gkr_sumcheck::batch_verify")]
 pub fn batch_verify<F, CH>(
 	claims: impl IntoIterator<Item = GkrSumcheckClaim<F>>,
 	proof: GkrSumcheckBatchProof<F>,

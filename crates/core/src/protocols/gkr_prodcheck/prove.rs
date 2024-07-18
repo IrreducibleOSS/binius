@@ -5,12 +5,14 @@ use super::{
 };
 use crate::protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness};
 use binius_field::{Field, PackedField, TowerField};
+use tracing::instrument;
 
 /// Proves batch reduction splitting each ProductCheckClaim into two GrandProductClaims
 ///
 /// REQUIRES:
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
+#[instrument(skip_all, name = "gkr_prodcheck::batch_prove")]
 pub fn batch_prove<'a, F, PW>(
 	witnesses: impl IntoIterator<Item = ProdcheckWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = ProdcheckClaim<F>>,

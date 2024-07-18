@@ -3,8 +3,10 @@
 use super::{gkr_prodcheck::ProdcheckBatchProof, Error, ProdcheckClaim, VerificationError};
 use crate::protocols::gkr_gpa::GrandProductClaim;
 use binius_field::TowerField;
+use tracing::instrument;
 
 /// Batch Verify product check instance reductions to two grand product claims.
+#[instrument(skip_all, name = "gkr_prodcheck::batch_verify")]
 pub fn batch_verify<F: TowerField>(
 	claims: impl IntoIterator<Item = ProdcheckClaim<F>>,
 	batch_proof: ProdcheckBatchProof<F>,
