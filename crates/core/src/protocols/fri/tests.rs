@@ -18,6 +18,7 @@ use binius_field::{
 	PackedField, PackedFieldIndexable,
 };
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_ntt::NTTOptions;
 use rand::prelude::*;
 use std::iter::repeat_with;
 
@@ -33,7 +34,8 @@ where
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(8, 2).unwrap();
+	let rs_code_packed =
+		ReedSolomonCode::<PackedType<U, FA>>::new(8, 2, NTTOptions::default()).unwrap();
 	let n_test_queries = 1;
 
 	let make_merkle_vcs = |log_len| {
@@ -62,9 +64,12 @@ where
 	challenger.observe(codeword_commitment);
 
 	// Run the prover to generate the proximity proof
-	let rs_code =
-		ReedSolomonCode::<FA>::new(rs_code_packed.log_dim(), rs_code_packed.log_inv_rate())
-			.unwrap();
+	let rs_code = ReedSolomonCode::<FA>::new(
+		rs_code_packed.log_dim(),
+		rs_code_packed.log_inv_rate(),
+		NTTOptions::default(),
+	)
+	.unwrap();
 	let mut round_prover = FRIFolder::new(
 		&rs_code,
 		<PackedType<U, F>>::unpack_scalars(&codeword),

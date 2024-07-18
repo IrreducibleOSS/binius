@@ -23,6 +23,7 @@ use binius_field::{
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
 };
+use binius_ntt::NTTOptions;
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
@@ -911,7 +912,7 @@ where
 
 	for log_rows in 0..=(n_vars - log_degree) {
 		let log_dim = n_vars - log_rows - log_degree;
-		let rs_code = match ReedSolomonCode::new(log_dim, log_inv_rate) {
+		let rs_code = match ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default()) {
 			Ok(rs_code) => rs_code,
 			Err(_) => continue,
 		};
@@ -968,7 +969,7 @@ mod tests {
 	fn test_simple_commit_prove_verify_without_error() {
 		type Packed = PackedBinaryField16x8b;
 
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
 				.unwrap();
@@ -1016,7 +1017,7 @@ mod tests {
 	fn test_simple_commit_prove_verify_batch_without_error() {
 		type Packed = PackedBinaryField16x8b;
 
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
 				.unwrap();
@@ -1068,7 +1069,7 @@ mod tests {
 
 	#[test]
 	fn test_packed_1b_commit_prove_verify_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
@@ -1114,7 +1115,7 @@ mod tests {
 
 	#[test]
 	fn test_packed_1b_commit_prove_verify_batch_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
@@ -1165,7 +1166,7 @@ mod tests {
 
 	#[test]
 	fn test_packed_32b_commit_prove_verify_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
@@ -1211,7 +1212,7 @@ mod tests {
 
 	#[test]
 	fn test_packed_32b_commit_prove_verify_batch_without_error() {
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
@@ -1262,7 +1263,7 @@ mod tests {
 
 	#[test]
 	fn test_proof_size() {
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 8, &rs_code)
 				.unwrap();
@@ -1341,7 +1342,7 @@ mod tests {
 	fn test_commit_prove_verify_with_num_rows_below_packing_width() {
 		type Packed = PackedBinaryField128x1b;
 
-		let rs_code = ReedSolomonCode::new(5, 2).unwrap();
+		let rs_code = ReedSolomonCode::new(5, 2, NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries_reed_solomon::<_, BinaryField128b, _>(100, 4, &rs_code)
 				.unwrap();

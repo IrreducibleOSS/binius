@@ -9,6 +9,7 @@ use super::{
 };
 use crate::twiddle::OnTheFlyTwiddleAccess;
 use binius_field::{BinaryField, PackedFieldIndexable};
+use binius_utils::rayon::get_log_max_threads;
 use rayon::prelude::*;
 
 /// Implementation of `AdditiveNTT` that performs the computation multithreaded.
@@ -41,7 +42,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> MultithreadedNTT<F, TA> {
 impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	/// Returns multithreaded NTT implementation which uses default number of threads.
 	pub fn multithreaded(self) -> MultithreadedNTT<F, TA> {
-		let log_max_threads = (2 * rayon::current_num_threads() - 1).ilog2();
+		let log_max_threads = get_log_max_threads();
 		self.multithreaded_with_max_threads(log_max_threads as _)
 	}
 

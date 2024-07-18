@@ -14,7 +14,7 @@ use crate::linear_code::{LinearCode, LinearCodeWithExtensionEncoding};
 use binius_field::{
 	BinaryField, ExtensionField, PackedField, PackedFieldIndexable, RepackedExtension,
 };
-use binius_ntt::{AdditiveNTT, Error, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
 use getset::CopyGetters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -25,12 +25,11 @@ where
 	P: PackedField,
 	P::Scalar: BinaryField,
 {
-	// TODO: Dynamic option to precompute twiddles or not. In order for this to be dynamic, the NTT
-	// will have to be wrapped as a trait object.
-	ntt: SingleThreadedNTT<P::Scalar>,
+	ntt: DynamicDispatchNTT<P::Scalar>,
 	log_dimension: usize,
 	#[getset(get_copy = "pub")]
 	log_inv_rate: usize,
+	multithreaded: bool,
 	_p_marker: PhantomData<P>,
 }
 
@@ -38,12 +37,34 @@ impl<P> ReedSolomonCode<P>
 where
 	P: PackedFieldIndexable<Scalar: BinaryField>,
 {
-	pub fn new(log_dimension: usize, log_inv_rate: usize) -> Result<Self, Error> {
-		let ntt = SingleThreadedNTT::new(log_dimension + log_inv_rate)?;
+	pub fn new(
+		log_dimension: usize,
+		log_inv_rate: usize,
+		ntt_options: NTTOptions,
+	) -> Result<Self, Error> {
+		// Since we split work between log_inv_rate threads, we need to decrease the number of threads per each NTT transformation.
+		let ntt_log_threads = ntt_options
+			.thread_settings
+			.log_threads_count()
+			.saturating_sub(log_inv_rate);
+		let ntt = DynamicDispatchNTT::new(
+			log_dimension + log_inv_rate,
+			NTTOptions {
+				thread_settings: ThreadingSettings::ExplicitThreadsCount {
+					log_threads: ntt_log_threads,
+				},
+				..ntt_options
+			},
+		)?;
+
+		let multithreaded =
+			!matches!(ntt_options.thread_settings, ThreadingSettings::SingleThreaded);
+
 		Ok(Self {
 			ntt,
 			log_dimension,
 			log_inv_rate,
+			multithreaded,
 			_p_marker: PhantomData,
 		})
 	}
@@ -104,10 +125,16 @@ where
 			code.copy_within(0..msgs_len, i * msgs_len);
 		}
 
-		(0..(1 << self.log_inv_rate))
-			.into_par_iter()
-			.zip(code.par_chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
+		if self.multithreaded {
+			(0..(1 << self.log_inv_rate))
+				.into_par_iter()
+				.zip(code.par_chunks_exact_mut(msgs_len))
+				.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
+		} else {
+			(0..(1 << self.log_inv_rate))
+				.zip(code.chunks_exact_mut(msgs_len))
+				.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
+		}
 	}
 }
 
@@ -134,9 +161,16 @@ where
 		for i in 1..(1 << self.log_inv_rate) {
 			code.copy_within(0..dim, i * dim);
 		}
-		(0..(1 << self.log_inv_rate))
-			.into_par_iter()
-			.zip(code.par_chunks_exact_mut(dim))
-			.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
+
+		if self.multithreaded {
+			(0..(1 << self.log_inv_rate))
+				.into_par_iter()
+				.zip(code.par_chunks_exact_mut(dim))
+				.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
+		} else {
+			(0..(1 << self.log_inv_rate))
+				.zip(code.chunks_exact_mut(dim))
+				.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
+		}
 	}
 }

@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{AdditiveNTT, SingleThreadedNTT};
+use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT};
 use binius_field::{
 	arch::{
 		packed_16::{PackedBinaryField1x16b, PackedBinaryField2x8b},
@@ -68,6 +68,9 @@ fn check_roundtrip_all_ntts<P>(
 		.unwrap()
 		.precompute_twiddles()
 		.multithreaded();
+	let dynamic_dispatch_ntt = DynamicDispatchNTT::SingleThreaded(
+		SingleThreadedNTT::<P::Scalar>::new(log_domain_size).unwrap(),
+	);
 
 	let mut data = (0..1u128 << log_data_size)
 		.map(|i| P::from_underlier(NumCast::num_cast_from(i)))
@@ -99,6 +102,13 @@ fn check_roundtrip_all_ntts<P>(
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&multithreaded_precompute_ntt,
+			&mut data,
+			cosets.clone(),
+			log_batch_size,
+		);
+		check_roundtrip_with_reference(
+			&simple_ntt,
+			&dynamic_dispatch_ntt,
 			&mut data,
 			cosets.clone(),
 			log_batch_size,
@@ -180,6 +190,9 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 		.unwrap()
 		.precompute_twiddles()
 		.multithreaded();
+	let dynamic_dispatch_ntt = DynamicDispatchNTT::SingleThreaded(
+		SingleThreadedNTT::<P::Scalar>::new(log_domain_size).unwrap(),
+	);
 
 	let mut data = (0..1u128 << log_data_size)
 		.map(|i| PE::from_underlier(NumCast::num_cast_from(i)))
@@ -208,6 +221,12 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 	check_packed_extension_roundtrip_with_reference(
 		&simple_ntt,
 		&multithreaded_precompute_ntt,
+		&mut data,
+		cosets.clone(),
+	);
+	check_packed_extension_roundtrip_with_reference(
+		&simple_ntt,
+		&dynamic_dispatch_ntt,
 		&mut data,
 		cosets.clone(),
 	);
