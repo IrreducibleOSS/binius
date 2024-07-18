@@ -3,7 +3,7 @@
 use super::error::Error;
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-	protocols::prodcheck::{ProdcheckClaim, ProdcheckWitness},
+	protocols::gkr_prodcheck::{ProdcheckClaim, ProdcheckWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{

@@ -143,7 +143,7 @@ fn test_prove_verify_interaction() {
 		let actual_eval = gamma + vt1 + alpha * vt2 + alpha2 * vt3;
 		let witness_eval = prove_output
 			.prodcheck_witness
-			.t_polynomial
+			.t_poly
 			.evaluate_on_hypercube(i)
 			.unwrap();
 		assert_eq!(actual_eval, witness_eval);
@@ -156,7 +156,7 @@ fn test_prove_verify_interaction() {
 		let actual_eval = gamma + vt1 + alpha * vt2 + alpha2 * vt3;
 		let witness_eval = prove_output
 			.prodcheck_witness
-			.u_polynomial
+			.u_poly
 			.evaluate_on_hypercube(i)
 			.unwrap();
 		assert_eq!(actual_eval, witness_eval);

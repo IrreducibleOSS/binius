@@ -3,17 +3,19 @@
 use anyhow::{anyhow, Result};
 use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
-	oracle::{BatchId, CommittedBatchSpec, CommittedId, MultilinearOracleSet, OracleId},
+	oracle::{BatchId, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtensionBorrowed,
 	},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
+		evalcheck::EvalcheckClaim,
+		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
+		gkr_prodcheck::{self, ProdcheckBatchProof, ProdcheckBatchProveOutput},
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatch, LassoClaim, LassoWitness},
-		msetcheck, prodcheck,
-		zerocheck::{self, ZerocheckBatchProof},
+		msetcheck,
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -45,7 +47,6 @@ struct TraceOracle {
 	mults_batch: BatchId,
 	product_batch: BatchId,
 	lookup_t_batch: BatchId,
-	grand_prod_batch: BatchId,
 	mult_a: OracleId,
 	mult_b: OracleId,
 	product: OracleId,
@@ -72,12 +73,6 @@ impl TraceOracle {
 
 		let lasso_batch = LassoBatch::new_in::<B32, _>(oracles, log_size);
 
-		let grand_prod_batch = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars: log_size + 2,
-			n_polys: 1,
-			tower_level: 7,
-		});
-
 		let lookup_u = oracles.add_linear_combination(
 			log_size,
 			[
@@ -92,7 +87,6 @@ impl TraceOracle {
 			mults_batch,
 			product_batch,
 			lookup_t_batch,
-			grand_prod_batch,
 			mult_a,
 			mult_b,
 			product,
@@ -199,7 +193,7 @@ where
 	})
 }
 
-struct Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>
+struct Proof<U, PCS1, PCS8, PCS16, PCS32>
 where
 	U: UnderlierType
 		+ PackScalar<B1>
@@ -211,7 +205,6 @@ where
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 {
 	lasso_comm: PCS1::Commitment,
 	lasso_proof: PCS1::Proof,
@@ -221,9 +214,8 @@ where
 	product_proof: PCS16::Proof,
 	lookup_t_comm: PCS32::Commitment,
 	lookup_t_proof: PCS32::Proof,
-	grand_prod_comm: PCS128::Commitment,
-	grand_prod_proof: PCS128::Proof,
-	zerocheck_proof: ZerocheckBatchProof<B128>,
+	gkr_prodcheck_batch_proof: ProdcheckBatchProof<B128>,
+	gpa_proof: GrandProductBatchProof<B128>,
 	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
 	_u_marker: PhantomData<U>,
 }
@@ -286,22 +278,9 @@ where
 	Ok([witness_index.get::<B32>(trace_oracle.lookup_t)?])
 }
 
-fn grand_prod_committed_polys<'a, U, F, FW>(
-	oracles: &MultilinearOracleSet<F>,
-	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
-	f_prime_committed_id: CommittedId,
-) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B128>>; 1]>
-where
-	F: TowerField,
-	U: UnderlierType + PackScalar<FW> + PackScalar<B128>,
-	FW: BinaryField + ExtensionField<B128>,
-{
-	Ok([witness_index.get::<B128>(oracles.committed_oracle_id(f_prime_committed_id))?])
-}
-
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
-fn prove<U, PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
+fn prove<U, PCS1, PCS8, PCS16, PCS32, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	witness: TraceWitness<U, B128>,
@@ -309,10 +288,9 @@ fn prove<U, PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
-	pcs128: &PCS128,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<B128>,
-) -> Result<Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>>
+) -> Result<Proof<U, PCS1, PCS8, PCS16, PCS32>>
 where
 	U: UnderlierType
 		+ PackScalar<B1>
@@ -324,7 +302,6 @@ where
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -332,8 +309,7 @@ where
 		+ CanObserve<PCS1::Commitment>
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
-		+ CanObserve<PCS32::Commitment>
-		+ CanObserve<PCS128::Commitment>,
+		+ CanObserve<PCS32::Commitment>,
 	PackedType<U, B32>: PackedFieldIndexable,
 	PackedType<U, B128>: PackedFieldIndexable,
 {
@@ -378,7 +354,7 @@ where
 	challenger.observe(product_comm.clone());
 	challenger.observe(lookup_t_comm.clone());
 
-	// Round 2 - Msetcheck & Prodcheck
+	// Round 2 - Msetcheck & GKR-Based Prodcheck
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
@@ -391,62 +367,42 @@ where
 		Some(alpha),
 	)?;
 
-	let f_prime_committed_id = CommittedId {
-		batch_id: trace_oracle.grand_prod_batch,
-		index: 0,
-	};
-
 	let witness_index = msetcheck_prove_output.witness_index;
-	let prodcheck_prove_output = prodcheck::prove(
-		oracles,
-		witness_index,
-		&msetcheck_prove_output.prodcheck_claim,
-		msetcheck_prove_output.prodcheck_witness,
-		f_prime_committed_id,
+	let ProdcheckBatchProveOutput {
+		reduced_witnesses: reduced_gpa_witnesses,
+		reduced_claims: reduced_gpa_claims,
+		batch_proof: gkr_prodcheck_batch_proof,
+	} = gkr_prodcheck::batch_prove(
+		vec![msetcheck_prove_output.prodcheck_witness],
+		vec![msetcheck_prove_output.prodcheck_claim],
 	)?;
 
-	let witness_index = prodcheck_prove_output.witness_index;
-	let (grand_prod_comm, grand_prod_committed) = pcs128.commit(&grand_prod_committed_polys(
-		oracles,
-		&witness_index,
-		f_prime_committed_id,
-	)?)?;
-
-	challenger.observe(grand_prod_comm.clone());
-
-	// Prove reduced zerocheck originating from prodcheck
-
-	let switchover_fn = standard_switchover_heuristic(-2);
-
-	let lasso_zerocheck_claim = lasso_prove_output.reduced_lasso_claims.zerocheck_claim;
-	let lasso_zerocheck_witness = lasso_prove_output
-		.zerocheck_witness
-		.to_arc_dyn_composition();
-
-	let prodcheck_zerocheck_claim = prodcheck_prove_output
-		.reduced_product_check_claims
-		.t_prime_claim;
-	let prodcheck_zerocheck_witness = prodcheck_prove_output
-		.t_prime_witness
-		.to_arc_dyn_composition();
-
-	let zerocheck_prove_output = zerocheck::batch_prove(
-		[
-			(prodcheck_zerocheck_claim, prodcheck_zerocheck_witness),
-			(lasso_zerocheck_claim, lasso_zerocheck_witness),
-		],
+	let GrandProductBatchProveOutput {
+		evalcheck_multilinear_claims,
+		proof: gpa_proof,
+	} = gkr_gpa::batch_prove(
+		reduced_gpa_witnesses,
+		reduced_gpa_claims,
 		domain_factory.clone(),
-		switchover_fn,
 		&mut challenger,
 	)?;
 
 	// Greedy Evalcheck
+	let evalcheck_claims = evalcheck_multilinear_claims
+		.into_iter()
+		.map(|claim| EvalcheckClaim {
+			poly: claim.poly.into_composite(),
+			eval_point: claim.eval_point,
+			eval: claim.eval,
+			is_random_point: claim.is_random_point,
+		});
 
 	let mut legacy_witness_index = witness_index.witness_index();
+	let switchover_fn = standard_switchover_heuristic(-2);
 	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, _>(
 		oracles,
 		&mut legacy_witness_index,
-		zerocheck_prove_output.evalcheck_claims,
+		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
@@ -491,13 +447,6 @@ where
 		batch_id_to_eval_point(trace_oracle.lookup_t_batch),
 	)?;
 
-	let grand_prod_proof = pcs128.prove_evaluation(
-		&mut challenger,
-		&grand_prod_committed,
-		&grand_prod_committed_polys(oracles, &witness_index, f_prime_committed_id)?,
-		batch_id_to_eval_point(trace_oracle.grand_prod_batch),
-	)?;
-
 	Ok(Proof {
 		lasso_comm,
 		lasso_proof,
@@ -507,9 +456,8 @@ where
 		product_proof,
 		lookup_t_comm,
 		lookup_t_proof,
-		grand_prod_comm,
-		grand_prod_proof,
-		zerocheck_proof: zerocheck_prove_output.proof,
+		gkr_prodcheck_batch_proof,
+		gpa_proof,
 		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
 		_u_marker: PhantomData,
 	})
@@ -517,16 +465,15 @@ where
 
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
-fn verify<U, PCS1, PCS8, PCS16, PCS32, PCS128, CH>(
+fn verify<U, PCS1, PCS8, PCS16, PCS32, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	pcs1: &PCS1,
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
-	pcs128: &PCS128,
 	mut challenger: CH,
-	proof: Proof<U, PCS1, PCS8, PCS16, PCS32, PCS128>,
+	proof: Proof<U, PCS1, PCS8, PCS16, PCS32>,
 ) -> Result<()>
 where
 	U: UnderlierType
@@ -539,7 +486,6 @@ where
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
-	PCS128: PolyCommitScheme<PackedType<U, B128>, B128, Error: Debug, Proof: 'static>,
 	CH: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
@@ -547,9 +493,24 @@ where
 		+ CanObserve<PCS1::Commitment>
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
-		+ CanObserve<PCS32::Commitment>
-		+ CanObserve<PCS128::Commitment>,
+		+ CanObserve<PCS32::Commitment>,
 {
+	// Unpack the proof
+	let Proof {
+		lasso_comm,
+		lasso_proof,
+		mults_comm,
+		mults_proof,
+		product_comm,
+		product_proof,
+		lookup_t_comm,
+		lookup_t_proof,
+		gkr_prodcheck_batch_proof,
+		gpa_proof,
+		greedy_evalcheck_proof,
+		..
+	} = proof;
+
 	// Round 1 - Lasso deterministic reduction
 	let lookup_t_oracle = oracles.oracle(trace_oracle.lookup_t);
 	let lookup_u_oracle = oracles.oracle(trace_oracle.lookup_u);
@@ -559,44 +520,36 @@ where
 	let reduced_lasso_claims =
 		lasso::verify::<B32, _>(oracles, &lasso_claim, &trace_oracle.lasso_batch)?;
 
-	challenger.observe(proof.lasso_comm.clone());
-	challenger.observe(proof.mults_comm.clone());
-	challenger.observe(proof.product_comm.clone());
-	challenger.observe(proof.lookup_t_comm.clone());
+	challenger.observe(lasso_comm.clone());
+	challenger.observe(mults_comm.clone());
+	challenger.observe(product_comm.clone());
+	challenger.observe(lookup_t_comm.clone());
 
 	// Round 2 - Msetcheck & Prodcheck
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let prodcheck_claim =
+	let gkr_prodcheck_claim =
 		msetcheck::verify(oracles, &reduced_lasso_claims.msetcheck_claim, gamma, Some(alpha))?;
 
-	let f_prime_committed_id = CommittedId {
-		batch_id: trace_oracle.grand_prod_batch,
-		index: 0,
-	};
+	let reduced_prodcheck_claims =
+		gkr_prodcheck::batch_verify(vec![gkr_prodcheck_claim], gkr_prodcheck_batch_proof)?;
 
-	let grand_prod_oracle = oracles.committed_oracle(f_prime_committed_id);
+	let reduced_gpa_claims =
+		gkr_gpa::batch_verify(reduced_prodcheck_claims, gpa_proof, &mut challenger)?;
 
-	let reduced_prodcheck_claims = prodcheck::verify(oracles, &prodcheck_claim, grand_prod_oracle)?;
-
-	challenger.observe(proof.grand_prod_comm.clone());
-
-	let evalcheck_claims = zerocheck::batch_verify(
-		[
-			reduced_prodcheck_claims.t_prime_claim,
-			reduced_lasso_claims.zerocheck_claim,
-		],
-		proof.zerocheck_proof,
-		&mut challenger,
-	)
-	.unwrap();
+	let evalcheck_claims = reduced_gpa_claims.into_iter().map(|claim| EvalcheckClaim {
+		poly: claim.poly.into_composite(),
+		eval_point: claim.eval_point,
+		eval: claim.eval,
+		is_random_point: claim.is_random_point,
+	});
 
 	// Greedy evalcheck
 	let same_query_pcs_claims = greedy_evalcheck::verify(
 		oracles,
 		evalcheck_claims,
-		proof.greedy_evalcheck_proof,
+		greedy_evalcheck_proof,
 		&mut challenger,
 	)?;
 
@@ -613,9 +566,9 @@ where
 
 	pcs1.verify_evaluation(
 		&mut challenger,
-		&proof.lasso_comm,
+		&lasso_comm,
 		&lasso_eval_claim.eval_point,
-		proof.lasso_proof,
+		lasso_proof,
 		&lasso_eval_claim.evals,
 	)?;
 
@@ -623,9 +576,9 @@ where
 
 	pcs8.verify_evaluation(
 		&mut challenger,
-		&proof.mults_comm,
+		&mults_comm,
 		&mults_eval_claim.eval_point,
-		proof.mults_proof,
+		mults_proof,
 		&mults_eval_claim.evals,
 	)?;
 
@@ -633,9 +586,9 @@ where
 
 	pcs16.verify_evaluation(
 		&mut challenger,
-		&proof.product_comm,
+		&product_comm,
 		&product_eval_claim.eval_point,
-		proof.product_proof,
+		product_proof,
 		&product_eval_claim.evals,
 	)?;
 
@@ -643,20 +596,10 @@ where
 
 	pcs32.verify_evaluation(
 		&mut challenger,
-		&proof.lookup_t_comm,
+		&lookup_t_comm,
 		&lookup_t_eval_claim.eval_point,
-		proof.lookup_t_proof,
+		lookup_t_proof,
 		&lookup_t_eval_claim.evals,
-	)?;
-
-	let grand_prod_eval_claim = batch_id_to_eval_claim(trace_oracle.grand_prod_batch);
-
-	pcs128.verify_evaluation(
-		&mut challenger,
-		&proof.grand_prod_comm,
-		&grand_prod_eval_claim.eval_point,
-		proof.grand_prod_proof,
-		&grand_prod_eval_claim.evals,
 	)?;
 
 	Ok(())
@@ -699,9 +642,6 @@ fn main() -> Result<()> {
 	optimal_block_pcs!(pcs16 := 1 x [B16 > B16 > B16 > B128] ^ (log_size));
 	optimal_block_pcs!(pcs32 := 1 x [B32 > B16 > B32 > B128] ^ (log_size));
 
-	// relying on Field -> PackedField impl until prodcheck is aware of packed fields
-	optimal_block_pcs!(pcs128 := 1 x [B128 > B16 > B128 > B128] ^ (log_size + 2));
-
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
 	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
@@ -716,7 +656,6 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		&pcs128,
 		challenger.clone(),
 		domain_factory,
 	)?;
@@ -728,7 +667,6 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		&pcs128,
 		challenger.clone(),
 		proof,
 	)?;

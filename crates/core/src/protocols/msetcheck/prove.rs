@@ -7,7 +7,7 @@ use super::{
 use crate::{
 	oracle::MultilinearOracleSet,
 	polynomial::Error as PolynomialError,
-	protocols::prodcheck::ProdcheckWitness,
+	protocols::gkr_prodcheck::ProdcheckWitness,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -111,8 +111,8 @@ where
 		.update_owned::<FW, _>([(t_oracle_id, t_polynomial), (u_oracle_id, u_polynomial)])?;
 
 	let prodcheck_witness = ProdcheckWitness {
-		t_polynomial: witness_index.get_multilin_poly(t_oracle_id)?,
-		u_polynomial: witness_index.get_multilin_poly(u_oracle_id)?,
+		t_poly: witness_index.get_multilin_poly(t_oracle_id)?,
+		u_poly: witness_index.get_multilin_poly(u_oracle_id)?,
 	};
 
 	Ok(MsetcheckProveOutput {

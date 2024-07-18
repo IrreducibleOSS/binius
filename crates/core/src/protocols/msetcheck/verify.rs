@@ -4,7 +4,7 @@ use super::{
 	error::Error,
 	msetcheck::{reduce_msetcheck_claim, MsetcheckClaim},
 };
-use crate::{oracle::MultilinearOracleSet, protocols::prodcheck::ProdcheckClaim};
+use crate::{oracle::MultilinearOracleSet, protocols::gkr_prodcheck::ProdcheckClaim};
 use binius_field::TowerField;
 
 /// Verify a multiset check instance reduction.

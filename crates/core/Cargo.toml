@@ -50,6 +50,9 @@ harness = false
 name = "zerocheck"
 harness = false
 
+[[bench]]
+name = "gkr_prodcheck"
+harness = false
 
 [features]
 debug_validate_sumcheck = []
