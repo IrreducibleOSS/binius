@@ -13,6 +13,7 @@ use binius_utils::array_2d::Array2D;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use std::{
+	cmp::min,
 	fmt::Debug,
 	marker::PhantomData,
 	ops::{Deref, Range},
@@ -160,14 +161,11 @@ where
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		if self.mu - query.n_vars() < PE::LOG_WIDTH {
-			return Err(Error::IncorrectQuerySize { expected: self.mu });
-		}
 
 		let query_expansion = query.expansion();
-		let query_length = PE::WIDTH * query_expansion.len();
+		let query_length = 1 << query.n_vars();
 		let new_n_vars = self.mu - query.n_vars();
-		let result_evals_len = 1 << (new_n_vars - PE::LOG_WIDTH);
+		let result_evals_len = 1 << (new_n_vars.saturating_sub(PE::LOG_WIDTH));
 
 		// This operation is a left vector-Array2D product of the vector of tensor product-expanded
 		// query coefficients with the Array2D of multilinear coefficients.
@@ -175,7 +173,7 @@ where
 			.into_par_iter()
 			.map(|outer_index| {
 				let mut res = PE::default();
-				for inner_index in 0..PE::WIDTH {
+				for inner_index in 0..min(PE::WIDTH, 1 << (self.mu - query.n_vars())) {
 					res.set(
 						inner_index,
 						(0..query_length)
@@ -217,10 +215,9 @@ where
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		if self.mu - query.n_vars() < PE::WIDTH {
-			return Err(Error::InvalidPackedValuesLength);
-		}
-		let mut result = vec![PE::zero(); 1 << (self.mu - query.n_vars() - PE::LOG_WIDTH)];
+
+		let mut result =
+			vec![PE::zero(); 1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH))];
 		self.evaluate_partial_low_into(query, &mut result)?;
 		MultilinearExtension::from_values(result)
 	}
@@ -246,7 +243,7 @@ where
 		if self.mu < query.n_vars() {
 			return Err(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		if out.len() * PE::WIDTH != 1 << (self.mu - query.n_vars()) {
+		if out.len() != 1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH)) {
 			return Err(Error::IncorrectOutputPolynomialSize {
 				expected: self.mu - query.n_vars(),
 			});
@@ -262,12 +259,16 @@ where
 			.for_each(|(i, packed_result_evals)| {
 				for (k, packed_result_eval) in packed_result_evals.iter_mut().enumerate() {
 					let offset = i * CHUNK_SIZE;
-					for j in 0..PE::WIDTH {
+					for j in 0..min(PE::WIDTH, 1 << (self.mu - n_vars)) {
 						let index = ((offset + k) << PE::LOG_WIDTH) | j;
 
 						let offset = index << n_vars;
+
 						let mut result_eval = PE::Scalar::ZERO;
-						for (t, query_expansion) in iter_packed_slice(query_expansion).enumerate() {
+						for (t, query_expansion) in iter_packed_slice(query_expansion)
+							.take(1 << n_vars)
+							.enumerate()
+						{
 							result_eval +=
 								query_expansion * get_packed_slice(&self.evals, t + offset);
 						}
@@ -790,5 +791,42 @@ mod tests {
 
 		assert_eq!(m0[(0, 1)], BinaryField128b::new(2));
 		assert_eq!(m1[(0, 1)], BinaryField128b::new(9));
+	}
+
+	#[test]
+	fn test_evaluate_partial_high_low_evaluate_consistent() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values: Vec<_> = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+			.take(1 << 8)
+			.collect();
+
+		let me = MultilinearExtension::from_values(values).unwrap();
+
+		let q = repeat_with(|| <BinaryField32b as PackedField>::random(&mut rng))
+			.take(me.n_vars())
+			.collect::<Vec<_>>();
+
+		let query = MultilinearQuery::with_full_query(&q).unwrap();
+
+		let eval = me
+			.evaluate::<<PackedBinaryField4x32b as PackedField>::Scalar, PackedBinaryField4x32b>(
+				&query,
+			)
+			.unwrap();
+
+		assert_eq!(
+			me.evaluate_partial_low::<PackedBinaryField4x32b>(&query)
+				.unwrap()
+				.evals[0]
+				.get(0),
+			eval
+		);
+		assert_eq!(
+			me.evaluate_partial_high::<PackedBinaryField4x32b>(&query)
+				.unwrap()
+				.evals[0]
+				.get(0),
+			eval
+		);
 	}
 }
