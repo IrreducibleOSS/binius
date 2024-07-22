@@ -10,6 +10,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField,
 };
 use binius_utils::array_2d::Array2D;
+use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use std::{
@@ -163,7 +164,6 @@ where
 		}
 
 		let query_expansion = query.expansion();
-		let query_length = 1 << query.n_vars();
 		let new_n_vars = self.mu - query.n_vars();
 		let result_evals_len = 1 << (new_n_vars.saturating_sub(PE::LOG_WIDTH));
 
@@ -176,14 +176,12 @@ where
 				for inner_index in 0..min(PE::WIDTH, 1 << (self.mu - query.n_vars())) {
 					res.set(
 						inner_index,
-						(0..query_length)
-							.into_par_iter()
-							.with_min_len(256)
-							.map(|query_index| {
+						iter_packed_slice(query_expansion)
+							.enumerate()
+							.map(|(query_index, basis_eval)| {
 								let eval_index = (query_index << new_n_vars)
 									| (outer_index << PE::LOG_WIDTH) | inner_index;
 								let subpoly_eval_i = get_packed_slice(&self.evals, eval_index);
-								let basis_eval = get_packed_slice(query_expansion, query_index);
 								basis_eval * subpoly_eval_i
 							})
 							.sum(),
@@ -217,7 +215,7 @@ where
 		}
 
 		let mut result =
-			vec![PE::zero(); 1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH))];
+			zeroed_vec(1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH)));
 		self.evaluate_partial_low_into(query, &mut result)?;
 		MultilinearExtension::from_values(result)
 	}
@@ -273,10 +271,14 @@ where
 								query_expansion * get_packed_slice(&self.evals, t + offset);
 						}
 
-						packed_result_eval.set(j, result_eval);
+						// Safety: `j` < `PE::WIDTH`
+						unsafe {
+							packed_result_eval.set_unchecked(j, result_eval);
+						}
 					}
 				}
 			});
+
 		Ok(())
 	}
 }

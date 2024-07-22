@@ -12,6 +12,7 @@ use crate::{
 	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
 	BinaryField, PackedField,
 };
+use binius_utils::checked_arithmetics::checked_div;
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
 use std::{
@@ -104,13 +105,11 @@ unsafe impl<U: UnderlierType, Scalar: BinaryField> WithUnderlier
 
 impl<U: UnderlierWithBitOps, Scalar: BinaryField> Debug for PackedPrimitiveType<U, Scalar>
 where
-	Scalar::Underlier: NumCast<U>,
+	Self: PackedField,
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let width = U::BITS / Scalar::N_BITS;
-		let values: Vec<_> = (0..width)
-			.map(|i| Scalar::from_underlier(self.0.get_subvalue(i)))
-			.collect();
+		let width = checked_div(U::BITS, Scalar::N_BITS);
+		let values: Vec<_> = self.iter().collect();
 		write!(f, "Packed{}x{}({:?})", width, Scalar::N_BITS, values)
 	}
 }

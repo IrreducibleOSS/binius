@@ -56,14 +56,20 @@ pub fn tensor_prod_eq_ind<P: PackedField>(
 			let packed_r_i = P::broadcast(*r_i);
 			let (xs, ys) = packed_values.split_at_mut(prev_packed_length);
 			assert!(xs.len() <= ys.len());
-			xs.par_iter_mut().zip(ys.par_iter_mut()).for_each(|(x, y)| {
-				// x = x * (1 - packed_r_i) = x - x * packed_r_i
-				// y = x * packed_r_i
-				// Notice that we can reuse the multiplication: (x * packed_r_i)
-				let prod = (*x) * packed_r_i;
-				*x -= prod;
-				*y = prod;
-			});
+
+			// These magic numbers were chosen experimentally to have a reasonable performance
+			// for the calls with small number of elements.
+			xs.par_iter_mut()
+				.zip(ys.par_iter_mut())
+				.with_min_len(64)
+				.for_each(|(x, y): (&mut P, &mut P)| {
+					// x = x * (1 - packed_r_i) = x - x * packed_r_i
+					// y = x * packed_r_i
+					// Notice that we can reuse the multiplication: (x * packed_r_i)
+					let prod = (*x) * packed_r_i;
+					*x -= prod;
+					*y = prod;
+				});
 		}
 	}
 	Ok(())

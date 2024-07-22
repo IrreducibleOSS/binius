@@ -11,7 +11,7 @@ binius_field = { path = "../field" }
 binius_hash = { path = "../hash" }
 binius_ntt = { path = "../ntt" }
 binius_utils = { path = "../utils" }
-bytemuck.workspace = true
+bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more.workspace = true
 either.workspace = true
 getset.workspace = true
@@ -44,6 +44,10 @@ harness = false
 
 [[bench]]
 name = "multilinear_query"
+harness = false
+
+[[bench]]
+name = "util"
 harness = false
 
 [[bench]]

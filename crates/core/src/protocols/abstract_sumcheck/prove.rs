@@ -42,10 +42,10 @@ struct ParFoldStates<F: Field> {
 impl<F: Field> ParFoldStates<F> {
 	fn new(n_multilinears: usize, n_round_evals: usize, n_states: usize) -> Self {
 		Self {
-			evals_0: Array2D::new(n_states, n_multilinears),
-			evals_1: Array2D::new(n_states, n_multilinears),
-			evals_z: Array2D::new(n_states, n_multilinears),
-			round_evals: Array2D::new(n_states, n_round_evals),
+			evals_0: Array2D::zeroes(n_states, n_multilinears),
+			evals_1: Array2D::zeroes(n_states, n_multilinears),
+			evals_z: Array2D::zeroes(n_states, n_multilinears),
+			round_evals: Array2D::zeroes(n_states, n_round_evals),
 		}
 	}
 }

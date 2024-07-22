@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
+use binius_utils::checked_arithmetics::checked_div;
 use rayon::prelude::*;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
@@ -23,15 +24,36 @@ where
 		PY::WIDTH * ys.len(),
 		"Both arguments must contain the same number of field elements"
 	);
-	(0..PX::WIDTH * xs.len())
-		.into_par_iter()
-		.with_min_len(256)
-		.map(|i|
-			// Safety: `i` is less than PX::WIDTH * xs.len() = PY::WIDTH * ys.len()
-			unsafe {
-				get_packed_slice_unchecked(xs, i) * get_packed_slice_unchecked(ys, i)
-		})
-		.sum()
+
+	let calc_product_by_ys = |x_offset, ys: &[PY]| {
+		let mut result = FX::ZERO;
+		let xs = &xs[x_offset..];
+
+		for (j, y) in ys.iter().enumerate() {
+			for (k, y) in y.iter().enumerate() {
+				result += unsafe { get_packed_slice_unchecked(xs, j * PY::WIDTH + k) } * y
+			}
+		}
+
+		result
+	};
+
+	// These magic numbers were chosen experimentally to have a reasonable performance
+	// for the calls with small number of elements.
+	// For different field sizes, the numbers may need to be adjusted.
+	const CHUNK_SIZE: usize = 64;
+	if ys.len() < 16 * CHUNK_SIZE {
+		calc_product_by_ys(0, ys)
+	} else {
+		// According to benchmark results iterating by chunks here is more efficient than using `par_iter` with `min_length` directly.
+		ys.par_chunks(CHUNK_SIZE)
+			.enumerate()
+			.map(|(i, ys)| {
+				let offset = i * checked_div(CHUNK_SIZE * PY::WIDTH, PX::WIDTH);
+				calc_product_by_ys(offset, ys)
+			})
+			.sum()
+	}
 }
 
 /// Evaluation of the 2-variate multilinear which indicates the condition x == y

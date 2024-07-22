@@ -46,6 +46,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 pub struct BinaryField128bPolyval(pub(crate) u128);
 
 impl BinaryField128bPolyval {
+	#[inline]
 	pub fn new(value: u128) -> Self {
 		Self(value).to_montgomery()
 	}
@@ -98,6 +99,7 @@ unsafe impl WithUnderlier for BinaryField128bPolyval {
 impl Neg for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	fn neg(self) -> Self::Output {
 		self
 	}
@@ -151,84 +153,98 @@ impl Mul<Self> for BinaryField128bPolyval {
 impl Mul<&Self> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	fn mul(self, rhs: &Self) -> Self::Output {
 		self * *rhs
 	}
 }
 
 impl AddAssign<Self> for BinaryField128bPolyval {
+	#[inline]
 	fn add_assign(&mut self, rhs: Self) {
 		*self = *self + rhs;
 	}
 }
 
 impl AddAssign<&Self> for BinaryField128bPolyval {
+	#[inline]
 	fn add_assign(&mut self, rhs: &Self) {
 		*self = *self + rhs;
 	}
 }
 
 impl SubAssign<Self> for BinaryField128bPolyval {
+	#[inline]
 	fn sub_assign(&mut self, rhs: Self) {
 		*self = *self - rhs;
 	}
 }
 
 impl SubAssign<&Self> for BinaryField128bPolyval {
+	#[inline]
 	fn sub_assign(&mut self, rhs: &Self) {
 		*self = *self - rhs;
 	}
 }
 
 impl MulAssign<Self> for BinaryField128bPolyval {
+	#[inline]
 	fn mul_assign(&mut self, rhs: Self) {
 		*self = *self * rhs;
 	}
 }
 
 impl MulAssign<&Self> for BinaryField128bPolyval {
+	#[inline]
 	fn mul_assign(&mut self, rhs: &Self) {
 		*self = *self * rhs;
 	}
 }
 
 impl Sum<Self> for BinaryField128bPolyval {
+	#[inline]
 	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.fold(Self::ZERO, |acc, x| acc + x)
 	}
 }
 
 impl<'a> Sum<&'a Self> for BinaryField128bPolyval {
+	#[inline]
 	fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
 		iter.fold(Self::ZERO, |acc, x| acc + x)
 	}
 }
 
 impl Product<Self> for BinaryField128bPolyval {
+	#[inline]
 	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.fold(Self::ONE, |acc, x| acc * x)
 	}
 }
 
 impl<'a> Product<&'a Self> for BinaryField128bPolyval {
+	#[inline]
 	fn product<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
 		iter.fold(Self::ONE, |acc, x| acc * x)
 	}
 }
 
 impl ConstantTimeEq for BinaryField128bPolyval {
+	#[inline]
 	fn ct_eq(&self, other: &Self) -> Choice {
 		self.0.ct_eq(&other.0)
 	}
 }
 
 impl ConditionallySelectable for BinaryField128bPolyval {
+	#[inline]
 	fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
 		Self(ConditionallySelectable::conditional_select(&a.0, &b.0, choice))
 	}
 }
 
 impl Square for BinaryField128bPolyval {
+	#[inline]
 	fn square(self) -> Self {
 		square_using_packed::<PackedBinaryPolyval1x128b>(self)
 	}
@@ -248,18 +264,21 @@ impl Field for BinaryField128bPolyval {
 }
 
 impl InvertOrZero for BinaryField128bPolyval {
+	#[inline]
 	fn invert_or_zero(self) -> Self {
 		invert_or_zero_using_packed::<PackedBinaryPolyval1x128b>(self)
 	}
 }
 
 impl From<u128> for BinaryField128bPolyval {
+	#[inline]
 	fn from(value: u128) -> Self {
 		Self(value)
 	}
 }
 
 impl From<BinaryField128bPolyval> for u128 {
+	#[inline]
 	fn from(value: BinaryField128bPolyval) -> Self {
 		value.0
 	}
@@ -272,6 +291,7 @@ impl Display for BinaryField128bPolyval {
 }
 
 impl BinaryField128bPolyval {
+	#[inline]
 	pub(super) fn to_montgomery(self) -> Self {
 		self * Self(0x1e563df92ea7081b4563df92ea7081b5)
 	}
@@ -289,6 +309,7 @@ unsafe impl Pod for BinaryField128bPolyval {}
 impl TryInto<BinaryField1b> for BinaryField128bPolyval {
 	type Error = ();
 
+	#[inline]
 	fn try_into(self) -> Result<BinaryField1b, Self::Error> {
 		let result = CtOption::new(BinaryField1b::ZERO, self.ct_eq(&Self::ZERO))
 			.or_else(|| CtOption::new(BinaryField1b::ONE, self.ct_eq(&Self::ONE)));
@@ -297,6 +318,7 @@ impl TryInto<BinaryField1b> for BinaryField128bPolyval {
 }
 
 impl From<BinaryField1b> for BinaryField128bPolyval {
+	#[inline]
 	fn from(value: BinaryField1b) -> Self {
 		debug_assert_eq!(Self::ZERO, Self(0));
 
@@ -307,6 +329,7 @@ impl From<BinaryField1b> for BinaryField128bPolyval {
 impl Add<BinaryField1b> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	fn add(self, rhs: BinaryField1b) -> Self::Output {
 		self + Self::from(rhs)
 	}
@@ -315,6 +338,7 @@ impl Add<BinaryField1b> for BinaryField128bPolyval {
 impl Sub<BinaryField1b> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	fn sub(self, rhs: BinaryField1b) -> Self::Output {
 		self - Self::from(rhs)
 	}
@@ -323,6 +347,7 @@ impl Sub<BinaryField1b> for BinaryField128bPolyval {
 impl Mul<BinaryField1b> for BinaryField128bPolyval {
 	type Output = Self;
 
+	#[inline]
 	#[allow(clippy::suspicious_arithmetic_impl)]
 	fn mul(self, rhs: BinaryField1b) -> Self::Output {
 		Self(self.0 & u128::fill_with_bit(u8::from(rhs.0)))
@@ -330,18 +355,21 @@ impl Mul<BinaryField1b> for BinaryField128bPolyval {
 }
 
 impl AddAssign<BinaryField1b> for BinaryField128bPolyval {
+	#[inline]
 	fn add_assign(&mut self, rhs: BinaryField1b) {
 		*self = *self + rhs;
 	}
 }
 
 impl SubAssign<BinaryField1b> for BinaryField128bPolyval {
+	#[inline]
 	fn sub_assign(&mut self, rhs: BinaryField1b) {
 		*self = *self - rhs;
 	}
 }
 
 impl MulAssign<BinaryField1b> for BinaryField128bPolyval {
+	#[inline]
 	fn mul_assign(&mut self, rhs: BinaryField1b) {
 		*self = *self * rhs;
 	}
@@ -350,6 +378,7 @@ impl MulAssign<BinaryField1b> for BinaryField128bPolyval {
 impl Add<BinaryField128bPolyval> for BinaryField1b {
 	type Output = BinaryField128bPolyval;
 
+	#[inline]
 	fn add(self, rhs: BinaryField128bPolyval) -> Self::Output {
 		rhs + self
 	}
@@ -358,6 +387,7 @@ impl Add<BinaryField128bPolyval> for BinaryField1b {
 impl Sub<BinaryField128bPolyval> for BinaryField1b {
 	type Output = BinaryField128bPolyval;
 
+	#[inline]
 	fn sub(self, rhs: BinaryField128bPolyval) -> Self::Output {
 		rhs - self
 	}
@@ -366,6 +396,7 @@ impl Sub<BinaryField128bPolyval> for BinaryField1b {
 impl Mul<BinaryField128bPolyval> for BinaryField1b {
 	type Output = BinaryField128bPolyval;
 
+	#[inline]
 	fn mul(self, rhs: BinaryField128bPolyval) -> Self::Output {
 		rhs * self
 	}
@@ -375,6 +406,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	type Iterator = <[BinaryField1b; 128] as IntoIterator>::IntoIter;
 	const DEGREE: usize = 128;
 
+	#[inline]
 	fn basis(i: usize) -> Result<Self, Error> {
 		if i >= 128 {
 			return Err(Error::ExtensionDegreeMismatch);
@@ -382,6 +414,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 		Ok(Self::new(1 << i))
 	}
 
+	#[inline]
 	fn from_bases(base_elems: &[BinaryField1b]) -> Result<Self, Error> {
 		if base_elems.len() > 128 {
 			return Err(Error::ExtensionDegreeMismatch);
@@ -393,6 +426,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 		Ok(Self::new(value))
 	}
 
+	#[inline]
 	fn iter_bases(&self) -> Self::Iterator {
 		let base_elems = array::from_fn(|i| BinaryField1b::from((self.0 >> i) as u8));
 		base_elems.into_iter()

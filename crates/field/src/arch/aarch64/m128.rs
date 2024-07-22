@@ -257,7 +257,7 @@ impl UnderlierWithBitOps for M128 {
 	}
 
 	#[inline(always)]
-	fn get_subvalue<T>(&self, i: usize) -> T
+	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
 		T: WithUnderlier,
 		T::Underlier: NumCast<Self>,
@@ -292,7 +292,7 @@ impl UnderlierWithBitOps for M128 {
 	}
 
 	#[inline(always)]
-	fn set_subvalue<T>(&mut self, i: usize, val: T)
+	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
 		T: UnderlierWithBitOps,
 		Self: From<T>,

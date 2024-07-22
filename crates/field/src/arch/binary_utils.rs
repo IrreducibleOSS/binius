@@ -2,6 +2,8 @@
 
 use bytemuck::{must_cast_mut, must_cast_ref, AnyBitPattern, NoUninit};
 
+use crate::underlier::{NumCast, UnderlierType};
+
 /// Execute function `f` with a reference to an array of length `N` casted from `val`.
 #[allow(unused)]
 pub(super) fn as_array_ref<T, U, const N: usize, R>(val: &T, f: impl FnOnce(&[U; N]) -> R) -> R
@@ -22,4 +24,23 @@ where
 {
 	let array = must_cast_mut(val);
 	f(array);
+}
+
+/// Helper function to convert `f` closure that returns a value 1-4 bits wide to a function that returns i8.
+#[inline]
+pub(super) fn make_func_to_i8<T, U>(mut f: impl FnMut(usize) -> T) -> impl FnMut(usize) -> i8
+where
+	T: UnderlierType,
+	U: From<T>,
+	u8: NumCast<U>,
+{
+	move |i| {
+		let elements_in_8 = 8 / T::BITS;
+		let mut result = 0u8;
+		for j in 0..elements_in_8 {
+			result |= u8::num_cast_from(U::from(f(i * elements_in_8 + j))) << (j * T::BITS);
+		}
+
+		result as i8
+	}
 }

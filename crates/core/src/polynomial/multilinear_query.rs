@@ -3,6 +3,7 @@
 use super::util::tensor_prod_eq_ind;
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{Field, PackedField};
+use bytemuck::zeroed_vec;
 use std::cmp::max;
 
 /// Tensor product expansion of sumcheck round challenges.
@@ -15,6 +16,9 @@ use std::cmp::max;
 #[derive(Debug, Clone)]
 pub struct MultilinearQuery<P: PackedField> {
 	expanded_query: Vec<P>,
+	// We want to avoid initializing data at the moment when vector is growing,
+	// So we allocate zeroed vector and keep track of the length of the initialized part.
+	expanded_query_len: usize,
 	n_vars: usize,
 }
 
@@ -23,12 +27,12 @@ impl<P: PackedField> MultilinearQuery<P> {
 		if max_query_vars > 31 {
 			Err(PolynomialError::TooManyVariables)
 		} else {
-			let mut expanded_query = Vec::with_capacity((1 << max_query_vars) / P::WIDTH);
-			let mut initial = P::default();
-			initial.set(0, P::Scalar::ONE);
-			expanded_query.push(initial);
+			let len = max((1 << max_query_vars) / P::WIDTH, 1);
+			let mut expanded_query = zeroed_vec(len);
+			expanded_query[0] = P::set_single(P::Scalar::ONE);
 			Ok(Self {
 				expanded_query,
+				expanded_query_len: 1,
 				n_vars: 0,
 			})
 		}
@@ -46,28 +50,38 @@ impl<P: PackedField> MultilinearQuery<P> {
 	///
 	/// If the number of query variables is less than the packing width, return a single packed element.
 	pub fn expansion(&self) -> &[P] {
-		&self.expanded_query
+		&self.expanded_query[0..self.expanded_query_len]
 	}
 
-	pub fn into_expansion(self) -> Vec<P> {
+	pub fn into_expansion(mut self) -> Vec<P> {
+		// Trim query vector to the actual size
+		self.expanded_query
+			.resize(self.expanded_query_len, P::zero());
+
 		self.expanded_query
 	}
 
-	pub fn update(self, extra_query_coordinates: &[P::Scalar]) -> Result<Self, PolynomialError> {
+	pub fn update(
+		mut self,
+		extra_query_coordinates: &[P::Scalar],
+	) -> Result<Self, PolynomialError> {
 		let old_n_vars = self.n_vars;
 		let new_n_vars = old_n_vars + extra_query_coordinates.len();
 		let new_length = max((1 << new_n_vars) / P::WIDTH, 1);
-		if new_length > self.expanded_query.capacity() {
+		if new_length > self.expanded_query.len() {
 			return Err(PolynomialError::MultilinearQueryFull {
 				max_query_vars: old_n_vars,
 			});
 		}
-		let mut new_expanded_query = self.expanded_query;
-		new_expanded_query.resize(new_length, P::default());
-		tensor_prod_eq_ind(old_n_vars, &mut new_expanded_query[..], extra_query_coordinates)?;
+		tensor_prod_eq_ind(
+			old_n_vars,
+			&mut self.expanded_query[..new_length],
+			extra_query_coordinates,
+		)?;
 
 		Ok(Self {
-			expanded_query: new_expanded_query,
+			expanded_query: self.expanded_query,
+			expanded_query_len: new_length,
 			n_vars: new_n_vars,
 		})
 	}

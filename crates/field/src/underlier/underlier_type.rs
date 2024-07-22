@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use bytemuck::NoUninit;
+use bytemuck::{NoUninit, Zeroable};
 use rand::{
 	distributions::{Distribution, Standard},
 	Rng, RngCore,
@@ -19,6 +19,7 @@ pub trait UnderlierType:
 	+ Copy
 	+ Random
 	+ NoUninit
+	+ Zeroable
 	+ Sized
 	+ Send
 	+ Sync
@@ -38,7 +39,7 @@ pub trait UnderlierType:
 /// # Safety
 /// `WithUnderlier` can be implemented for a type only if it's representation is a transparent `Underlier`'s representation.
 /// That's allows us casting references of type and it's underlier in both directions.
-pub unsafe trait WithUnderlier: Sized {
+pub unsafe trait WithUnderlier: Sized + Zeroable + Copy + Send + Sync + 'static {
 	/// Underlier primitive type
 	type Underlier: UnderlierType;
 

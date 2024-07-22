@@ -25,7 +25,6 @@ pub trait UnderlierWithBitOps:
 	/// `val` must be 0 or 1.
 	fn fill_with_bit(val: u8) -> Self;
 
-	/// Works similar to std::array::from_fn, constructs the value by a given function producer.
 	#[inline]
 	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
 	where
@@ -64,24 +63,30 @@ pub trait UnderlierWithBitOps:
 
 	/// Gets the subvalue from the given position.
 	/// Function panics in case when index is out of range.
+	///
+	/// # Safety
+	/// `i` must be less than `Self::BITS/T::BITS`.
 	#[inline]
-	fn get_subvalue<T>(&self, i: usize) -> T
+	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
 		T: UnderlierType + NumCast<Self>,
 	{
-		assert!(i < checked_div(Self::BITS, T::BITS));
+		debug_assert!(i < checked_div(Self::BITS, T::BITS));
 		T::num_cast_from(*self >> (i * T::BITS))
 	}
 
 	/// Sets the subvalue in the given position.
 	/// Function panics in case when index is out of range.
+	///
+	/// # Safety
+	/// `i` must be less than `Self::BITS/T::BITS`.
 	#[inline]
-	fn set_subvalue<T>(&mut self, i: usize, val: T)
+	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
 		T: UnderlierWithBitOps,
 		Self: From<T>,
 	{
-		assert!(i < checked_div(Self::BITS, T::BITS));
+		debug_assert!(i < checked_div(Self::BITS, T::BITS));
 		let mask = Self::from(single_element_mask::<T>());
 
 		*self &= !(mask << (i * T::BITS));
@@ -170,50 +175,60 @@ mod tests {
 	fn test_get_subvalue() {
 		let value = 0xab12cd34u32;
 
-		assert_eq!(value.get_subvalue::<U1>(0), U1::new(0));
-		assert_eq!(value.get_subvalue::<U1>(1), U1::new(0));
-		assert_eq!(value.get_subvalue::<U1>(2), U1::new(1));
-		assert_eq!(value.get_subvalue::<U1>(31), U1::new(1));
+		unsafe {
+			assert_eq!(value.get_subvalue::<U1>(0), U1::new(0));
+			assert_eq!(value.get_subvalue::<U1>(1), U1::new(0));
+			assert_eq!(value.get_subvalue::<U1>(2), U1::new(1));
+			assert_eq!(value.get_subvalue::<U1>(31), U1::new(1));
 
-		assert_eq!(value.get_subvalue::<U2>(0), U2::new(0));
-		assert_eq!(value.get_subvalue::<U2>(1), U2::new(1));
-		assert_eq!(value.get_subvalue::<U2>(2), U2::new(3));
-		assert_eq!(value.get_subvalue::<U2>(15), U2::new(2));
+			assert_eq!(value.get_subvalue::<U2>(0), U2::new(0));
+			assert_eq!(value.get_subvalue::<U2>(1), U2::new(1));
+			assert_eq!(value.get_subvalue::<U2>(2), U2::new(3));
+			assert_eq!(value.get_subvalue::<U2>(15), U2::new(2));
 
-		assert_eq!(value.get_subvalue::<U4>(0), U4::new(4));
-		assert_eq!(value.get_subvalue::<U4>(1), U4::new(3));
-		assert_eq!(value.get_subvalue::<U4>(2), U4::new(13));
-		assert_eq!(value.get_subvalue::<U4>(7), U4::new(10));
+			assert_eq!(value.get_subvalue::<U4>(0), U4::new(4));
+			assert_eq!(value.get_subvalue::<U4>(1), U4::new(3));
+			assert_eq!(value.get_subvalue::<U4>(2), U4::new(13));
+			assert_eq!(value.get_subvalue::<U4>(7), U4::new(10));
 
-		assert_eq!(value.get_subvalue::<u8>(0), 0x34u8);
-		assert_eq!(value.get_subvalue::<u8>(1), 0xcdu8);
-		assert_eq!(value.get_subvalue::<u8>(2), 0x12u8);
-		assert_eq!(value.get_subvalue::<u8>(3), 0xabu8);
+			assert_eq!(value.get_subvalue::<u8>(0), 0x34u8);
+			assert_eq!(value.get_subvalue::<u8>(1), 0xcdu8);
+			assert_eq!(value.get_subvalue::<u8>(2), 0x12u8);
+			assert_eq!(value.get_subvalue::<u8>(3), 0xabu8);
+		}
 	}
 
 	proptest! {
 		#[test]
 		fn test_set_subvalue_1b(mut init_val in any::<u32>(), i in 0usize..31, val in bits::u8::masked(1)) {
-			init_val.set_subvalue(i, U1::new(val));
-			assert_eq!(init_val.get_subvalue::<U1>(i), U1::new(val));
+			unsafe {
+				init_val.set_subvalue(i, U1::new(val));
+				assert_eq!(init_val.get_subvalue::<U1>(i), U1::new(val));
+			}
 		}
 
 		#[test]
 		fn test_set_subvalue_2b(mut init_val in any::<u32>(), i in 0usize..15, val in bits::u8::masked(3)) {
-			init_val.set_subvalue(i, U2::new(val));
-			assert_eq!(init_val.get_subvalue::<U2>(i), U2::new(val));
+			unsafe {
+				init_val.set_subvalue(i, U2::new(val));
+				assert_eq!(init_val.get_subvalue::<U2>(i), U2::new(val));
+			}
 		}
 
 		#[test]
 		fn test_set_subvalue_4b(mut init_val in any::<u32>(), i in 0usize..7, val in bits::u8::masked(7)) {
-			init_val.set_subvalue(i, U4::new(val));
-			assert_eq!(init_val.get_subvalue::<U4>(i), U4::new(val));
+			unsafe {
+				init_val.set_subvalue(i, U4::new(val));
+				assert_eq!(init_val.get_subvalue::<U4>(i), U4::new(val));
+			}
 		}
 
 		#[test]
 		fn test_set_subvalue_8b(mut init_val in any::<u32>(), i in 0usize..3, val in bits::u8::masked(15)) {
-			init_val.set_subvalue(i, val);
-			assert_eq!(init_val.get_subvalue::<u8>(i), val);
+			unsafe {
+				init_val.set_subvalue(i, val);
+				assert_eq!(init_val.get_subvalue::<u8>(i), val);
+			}
 		}
 	}
 

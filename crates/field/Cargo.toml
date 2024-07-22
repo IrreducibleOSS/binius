@@ -31,7 +31,23 @@ name = "binary_field"
 harness = false
 
 [[bench]]
+name = "binary_field_util"
+harness = false
+
+[[bench]]
 name = "packed_field_linear_transform"
+harness = false
+
+[[bench]]
+name = "packed_field_element_access"
+harness = false
+
+[[bench]]
+name = "packed_field_init"
+harness = false
+
+[[bench]]
+name = "packed_field_iter"
 harness = false
 
 [[bench]]
@@ -44,8 +60,4 @@ harness = false
 
 [[bench]]
 name = "packed_field_square"
-harness = false
-
-[[bench]]
-name = "packed_binary_field_element_access"
 harness = false

@@ -2,6 +2,8 @@
 
 use std::ops::{AddAssign, Index, IndexMut};
 
+use bytemuck::{allocation::zeroed_vec, Zeroable};
+
 /// 2D array with row-major layout.
 pub struct Array2D<T> {
 	data: Vec<T>,
@@ -14,6 +16,18 @@ impl<T: Default + Clone> Array2D<T> {
 	pub fn new(rows: usize, cols: usize) -> Self {
 		Self {
 			data: vec![T::default(); rows * cols],
+			rows,
+			cols,
+		}
+	}
+
+	/// Create a new 2D array of the given size initialized with zeroes.
+	pub fn zeroes(rows: usize, cols: usize) -> Self
+	where
+		T: Zeroable,
+	{
+		Self {
+			data: zeroed_vec(rows * cols),
 			rows,
 			cols,
 		}

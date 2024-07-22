@@ -23,6 +23,7 @@ use crate::{
 	},
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
+use bytemuck::zeroed_vec;
 use getset::Getters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -315,7 +316,7 @@ where
 			current_round_sum: F::ZERO,
 		};
 
-		let round_q = vec![PW::Scalar::default(); (1 << (n_vars - 1)) * (degree - 1)];
+		let round_q = zeroed_vec::<PW::Scalar>((1 << (n_vars - 1)) * (degree - 1));
 		let smaller_domain_points = domain.points()[2..].to_vec();
 		let smaller_denom_inv = domain.points()[2..]
 			.iter()
@@ -367,10 +368,10 @@ where
 		// Let d be the degree of the polynomial in the zerocheck claim.
 		let specialized_q_values = if self.smaller_domain.size() == 0 {
 			// Special handling for the d = 1 (multilinear) case
-			vec![PW::Scalar::default(); 1 << rd_vars]
+			zeroed_vec(1 << rd_vars)
 		} else if self.smaller_domain.size() == 1 {
 			// We do not need to interpolate in this special d = 2 case
-			std::mem::replace(&mut self.round_q, vec![PW::Scalar::default(); new_q_len])
+			std::mem::replace(&mut self.round_q, zeroed_vec(new_q_len))
 		} else {
 			// This is for the d >= 3 case
 			//
@@ -508,8 +509,8 @@ where
 
 		// Convert round_coeffs to F
 		let coeffs = round_coeffs
-			.clone()
-			.into_iter()
+			.iter()
+			.cloned()
 			.map(Into::into)
 			.collect::<Vec<F>>();
 

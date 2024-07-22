@@ -11,6 +11,7 @@ use super::{
 };
 use crate::{arithmetic_traits::InvertOrZero, BinaryField, Field};
 use binius_utils::iter::IterExtensions;
+use bytemuck::Zeroable;
 use rand::RngCore;
 use std::{
 	fmt::Debug,
@@ -47,6 +48,7 @@ pub trait PackedField:
 	+ Product
 	+ Send
 	+ Sync
+	+ Zeroable
 	+ 'static
 {
 	type Scalar: Field;

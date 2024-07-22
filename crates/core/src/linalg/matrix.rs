@@ -2,10 +2,11 @@
 
 use super::error::Error;
 use binius_field::{ExtensionField, Field};
+use bytemuck::zeroed_slice_box;
 use getset::CopyGetters;
 use rand::RngCore;
 use std::{
-	iter::{repeat, repeat_with},
+	iter::repeat_with,
 	ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign},
 };
 
@@ -38,7 +39,7 @@ impl<F: Field> Matrix<F> {
 		Self {
 			m,
 			n,
-			elements: repeat(F::ZERO).take(m * n).collect(),
+			elements: zeroed_slice_box(m * n),
 		}
 	}
 
