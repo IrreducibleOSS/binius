@@ -799,6 +799,32 @@ unsafe fn interleave_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m5
 			let b_prime = _mm512_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
 		}
+		7 => {
+			let a_prime = _mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1101, 0b1100, 0b0101, 0b0100, 0b1001, 0b1000, 0b0001, 0b0000),
+				b,
+			);
+			let b_prime = _mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b0111, 0b0110, 0b1011, 0b1010, 0b0011, 0b0010),
+				b,
+			);
+			(a_prime, b_prime)
+		}
+		8 => {
+			let a_prime = _mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
+				b,
+			);
+			let b_prime = _mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
+				b,
+			);
+			(a_prime, b_prime)
+		}
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -923,7 +949,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_interleave_bits(a in any::<[u128; 4]>(), b in any::<[u128; 4]>(), height in 0usize..7) {
+		fn test_interleave_bits(a in any::<[u128; 4]>(), b in any::<[u128; 4]>(), height in 0usize..9) {
 			let a = M512::from(a);
 			let b = M512::from(b);
 			let (c, d) = unsafe {interleave_bits(a.0, b.0, height)};

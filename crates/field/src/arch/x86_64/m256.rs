@@ -650,6 +650,11 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 			let b_prime = _mm256_unpackhi_epi64(a, b);
 			(a_prime, b_prime)
 		}
+		7 => {
+			let a_prime = _mm256_permute2x128_si256(a, b, 0x20);
+			let b_prime = _mm256_permute2x128_si256(a, b, 0x31);
+			(a_prime, b_prime)
+		}
 		_ => panic!("unsupported block length"),
 	}
 }
@@ -774,7 +779,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_interleave_bits(a in any::<[u128; 2]>(), b in any::<[u128; 2]>(), height in 0usize..7) {
+		fn test_interleave_bits(a in any::<[u128; 2]>(), b in any::<[u128; 2]>(), height in 0usize..8) {
 			let a = M256::from(a);
 			let b = M256::from(b);
 			let (c, d) = unsafe {interleave_bits(a.0, b.0, height)};

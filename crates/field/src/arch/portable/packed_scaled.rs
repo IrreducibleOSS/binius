@@ -237,16 +237,14 @@ where
 				first[i + block_in_pts..i + 2 * block_in_pts]
 					.copy_from_slice(&other.0[i..i + block_in_pts]);
 
-				first[i..i + block_in_pts]
+				second[i..i + block_in_pts]
 					.copy_from_slice(&self.0[i + block_in_pts..i + 2 * block_in_pts]);
-				first[i + block_in_pts..i + 2 * block_in_pts]
+				second[i + block_in_pts..i + 2 * block_in_pts]
 					.copy_from_slice(&other.0[i + block_in_pts..i + 2 * block_in_pts]);
 			}
 		} else {
-			for i in (0..N).step_by(2) {
-				(first[i], first[i + 1]) = self.0[i].interleave(other.0[i], log_block_len);
-				(second[i], second[i + 1]) =
-					self.0[i + 1].interleave(other.0[i + 1], log_block_len);
+			for i in 0..N {
+				(first[i], second[i]) = self.0[i].interleave(other.0[i], log_block_len);
 			}
 		}
 

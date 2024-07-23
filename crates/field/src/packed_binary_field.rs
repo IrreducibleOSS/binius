@@ -7,7 +7,7 @@ pub use crate::arch::{packed_128::*, packed_256::*, packed_512::*};
 pub mod test_utils {
 	use crate::{
 		linear_transformation::PackedTransformationFactory,
-		underlier::{U1, U2, U4},
+		underlier::{WithUnderlier, U1, U2, U4},
 		BinaryField, PackedField,
 	};
 
@@ -775,6 +775,35 @@ pub mod test_utils {
 		P2: PackedTransformationFactory<P1>,
 	>() {
 	}
+
+	pub fn check_interleave<P: PackedField + WithUnderlier>(
+		lhs: P::Underlier,
+		rhs: P::Underlier,
+		log_block_len: usize,
+	) {
+		let lhs = P::from_underlier(lhs);
+		let rhs = P::from_underlier(rhs);
+		let (a, b) = lhs.interleave(rhs, log_block_len);
+		let block_len = 1 << log_block_len;
+		for i in (0..P::WIDTH).step_by(block_len * 2) {
+			for j in 0..block_len {
+				assert_eq!(a.get(i + j), lhs.get(i + j));
+				assert_eq!(a.get(i + j + block_len), rhs.get(i + j));
+
+				assert_eq!(b.get(i + j), lhs.get(i + j + block_len));
+				assert_eq!(b.get(i + j + block_len), rhs.get(i + j + block_len));
+			}
+		}
+	}
+
+	pub fn check_interleave_all_heights<P: PackedField + WithUnderlier>(
+		lhs: P::Underlier,
+		rhs: P::Underlier,
+	) {
+		for log_block_len in 0..P::LOG_WIDTH {
+			check_interleave::<P>(lhs, rhs, log_block_len);
+		}
+	}
 }
 
 #[cfg(test)]
@@ -794,12 +823,13 @@ mod tests {
 		},
 		arithmetic_traits::MulAlpha,
 		linear_transformation::PackedTransformationFactory,
-		BinaryField8b, Field, PackedField, PackedFieldIndexable,
+		underlier::{U2, U4},
+		Field, PackedField, PackedFieldIndexable,
 	};
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, thread_rng, SeedableRng};
 	use std::{iter::repeat_with, ops::Mul, slice};
-	use test_utils::implements_transformation_factory;
+	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
 		let a = P::from(a_val);
@@ -953,118 +983,6 @@ mod tests {
 	}
 
 	#[test]
-	#[rustfmt::skip]
-	fn test_interleave_8b() {
-		let a = PackedBinaryField16x8b::from_scalars(
-			[
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-			]
-				.map(BinaryField8b::new),
-		);
-		let b = PackedBinaryField16x8b::from_scalars(
-			[
-				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-				0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-			]
-				.map(BinaryField8b::new),
-		);
-
-		let (c, d) = a.interleave(b, 0);
-		let expected_c = PackedBinaryField16x8b::from_scalars(
-			[
-				0x00, 0x10, 0x02, 0x12, 0x04, 0x14, 0x06, 0x16,
-				0x08, 0x18, 0x0a, 0x1a, 0x0c, 0x1c, 0x0e, 0x1e,
-			]
-				.map(BinaryField8b::new),
-		);
-		let expected_d = PackedBinaryField16x8b::from_scalars(
-			[
-				0x01, 0x11, 0x03, 0x13, 0x05, 0x15, 0x07, 0x17,
-				0x09, 0x19, 0x0b, 0x1b, 0x0d, 0x1d, 0x0f, 0x1f,
-			]
-				.map(BinaryField8b::new),
-		);
-		assert_eq!(c, expected_c);
-		assert_eq!(d, expected_d);
-
-		let (c, d) = a.interleave(b, 1);
-		let expected_c = PackedBinaryField16x8b::from_scalars(
-			[
-				0x00, 0x01, 0x10, 0x11, 0x04, 0x05, 0x14, 0x15,
-				0x08, 0x09, 0x18, 0x19, 0x0c, 0x0d, 0x1c, 0x1d,
-			]
-				.map(BinaryField8b::new),
-		);
-		let expected_d = PackedBinaryField16x8b::from_scalars(
-			[
-				0x02, 0x03, 0x12, 0x13, 0x06, 0x07, 0x16, 0x17,
-				0x0a, 0x0b, 0x1a, 0x1b, 0x0e, 0x0f, 0x1e, 0x1f,
-			]
-				.map(BinaryField8b::new),
-		);
-		assert_eq!(c, expected_c);
-		assert_eq!(d, expected_d);
-
-		let (c, d) = a.interleave(b, 2);
-		let expected_c = PackedBinaryField16x8b::from_scalars(
-			[
-				0x00, 0x01, 0x02, 0x03, 0x10, 0x11, 0x12, 0x13,
-				0x08, 0x09, 0x0a, 0x0b, 0x18, 0x19, 0x1a, 0x1b,
-			]
-				.map(BinaryField8b::new),
-		);
-		let expected_d = PackedBinaryField16x8b::from_scalars(
-			[
-				0x04, 0x05, 0x06, 0x07, 0x14, 0x15, 0x16, 0x17,
-				0x0c, 0x0d, 0x0e, 0x0f, 0x1c, 0x1d, 0x1e, 0x1f,
-			]
-				.map(BinaryField8b::new),
-		);
-		assert_eq!(c, expected_c);
-		assert_eq!(d, expected_d);
-
-		let (c, d) = a.interleave(b, 3);
-		let expected_c = PackedBinaryField16x8b::from_scalars(
-			[
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-			]
-				.map(BinaryField8b::new),
-		);
-		let expected_d = PackedBinaryField16x8b::from_scalars(
-			[
-				0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-				0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-			]
-				.map(BinaryField8b::new),
-		);
-		assert_eq!(c, expected_c);
-		assert_eq!(d, expected_d);
-	}
-
-	#[test]
-	fn test_interleave_1b() {
-		let a = PackedBinaryField128x1b::from(0x0000000000000000ffffffffffffffffu128);
-		let b = PackedBinaryField128x1b::from(0xffffffffffffffff0000000000000000u128);
-
-		let c = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
-		let d = PackedBinaryField128x1b::from(0xaaaaaaaaaaaaaaaa5555555555555555u128);
-		assert_eq!(a.interleave(b, 0), (c, d));
-		assert_eq!(c.interleave(d, 0), (a, b));
-
-		let c = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
-		let d = PackedBinaryField128x1b::from(0xcccccccccccccccc3333333333333333u128);
-		assert_eq!(a.interleave(b, 1), (c, d));
-		assert_eq!(c.interleave(d, 1), (a, b));
-
-		let c = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
-		let d = PackedBinaryField128x1b::from(0xf0f0f0f0f0f0f0f00f0f0f0f0f0f0f0fu128);
-		assert_eq!(a.interleave(b, 2), (c, d));
-		assert_eq!(c.interleave(d, 2), (a, b));
-	}
-
-	#[test]
 	fn test_iter_size_hint() {
 		assert_valid_iterator_with_exact_size_hint::<crate::BinaryField128b>();
 		assert_valid_iterator_with_exact_size_hint::<crate::BinaryField32b>();
@@ -1197,5 +1115,95 @@ mod tests {
 		implements_transformation_factory::<PackedAESBinaryField8x64b, PackedBinaryField8x64b>();
 		implements_transformation_factory::<PackedBinaryField4x128b, PackedBinaryField4x128b>();
 		implements_transformation_factory::<PackedAESBinaryField4x128b, PackedBinaryField4x128b>();
+	}
+
+	proptest! {
+		#[test]
+		fn test_interleave_2b(a_val in 0u8..3, b_val in 0u8..3) {
+			check_interleave_all_heights::<PackedBinaryField2x1b>(U2::new(a_val), U2::new(b_val));
+			check_interleave_all_heights::<PackedBinaryField1x2b>(U2::new(a_val), U2::new(b_val));
+		}
+
+		#[test]
+		fn test_interleave_4b(a_val in 0u8..16, b_val in 0u8..16) {
+			check_interleave_all_heights::<PackedBinaryField4x1b>(U4::new(a_val), U4::new(b_val));
+			check_interleave_all_heights::<PackedBinaryField2x2b>(U4::new(a_val), U4::new(b_val));
+			check_interleave_all_heights::<PackedBinaryField1x4b>(U4::new(a_val), U4::new(b_val));
+		}
+
+		#[test]
+		fn test_interleave_8b(a_val in 0u8.., b_val in 0u8..) {
+			check_interleave_all_heights::<PackedBinaryField8x1b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField4x2b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField2x4b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField1x8b>(a_val, b_val);
+		}
+
+		#[test]
+		fn test_interleave_16b(a_val in 0u16.., b_val in 0u16..) {
+			check_interleave_all_heights::<PackedBinaryField16x1b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField8x2b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField4x4b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField2x8b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField1x16b>(a_val, b_val);
+		}
+
+		#[test]
+		fn test_interleave_32b(a_val in 0u32.., b_val in 0u32..) {
+			check_interleave_all_heights::<PackedBinaryField32x1b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField16x2b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField8x4b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField4x8b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField2x16b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField1x32b>(a_val, b_val);
+		}
+
+		#[test]
+		fn test_interleave_64b(a_val in 0u64.., b_val in 0u64..) {
+			check_interleave_all_heights::<PackedBinaryField64x1b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField32x2b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField16x4b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField8x8b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField4x16b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField2x32b>(a_val, b_val);
+			check_interleave_all_heights::<PackedBinaryField1x64b>(a_val, b_val);
+		}
+
+		#[test]
+		#[allow(clippy::useless_conversion)] // this warning depends on the target platform
+		fn test_interleave_128b(a_val in 0u128.., b_val in 0u128..) {
+			check_interleave_all_heights::<PackedBinaryField128x1b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField64x2b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField32x4b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField16x8b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField8x16b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField4x32b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField2x64b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField1x128b>(a_val.into(), b_val.into());
+		}
+
+		#[test]
+		fn test_interleave_256b(a_val in any::<[u128; 2]>(), b_val in any::<[u128; 2]>()) {
+			check_interleave_all_heights::<PackedBinaryField256x1b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField128x2b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField64x4b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField32x8b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField16x16b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField8x32b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField4x64b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField2x128b>(a_val.into(), b_val.into());
+		}
+
+		#[test]
+		fn test_interleave_512b(a_val in any::<[u128; 4]>(), b_val in any::<[u128; 4]>()) {
+			check_interleave_all_heights::<PackedBinaryField512x1b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField256x2b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField128x4b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField64x8b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField32x16b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField16x32b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField8x64b>(a_val.into(), b_val.into());
+			check_interleave_all_heights::<PackedBinaryField4x128b>(a_val.into(), b_val.into());
+		}
 	}
 }

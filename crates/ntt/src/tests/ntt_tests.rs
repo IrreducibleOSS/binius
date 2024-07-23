@@ -9,8 +9,8 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
-	RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedBinaryField16x32b,
+	PackedBinaryField8x32b, PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use std::ops::Range;
@@ -52,7 +52,7 @@ fn check_roundtrip_all_ntts<P>(
 	max_log_batch: usize,
 	max_log_coset: usize,
 ) where
-	P: PackedFieldIndexable<Scalar: BinaryField> + WithUnderlier<Underlier: NumCast<u128>>,
+	P: PackedFieldIndexable<Scalar: BinaryField>,
 {
 	let simple_ntt = SingleThreadedNTT::<P::Scalar>::new(log_domain_size)
 		.unwrap()
@@ -72,8 +72,9 @@ fn check_roundtrip_all_ntts<P>(
 		SingleThreadedNTT::<P::Scalar>::new(log_domain_size).unwrap(),
 	);
 
+	let mut rng = StdRng::seed_from_u64(0);
 	let mut data = (0..1u128 << log_data_size)
-		.map(|i| P::from_underlier(NumCast::num_cast_from(i)))
+		.map(|_| P::random(&mut rng))
 		.collect::<Vec<_>>();
 
 	let cosets = 0..1 << max_log_coset;
@@ -132,8 +133,13 @@ fn tests_roundtrip_packed_4() {
 }
 
 #[test]
-fn tests_bigger_field() {
-	check_roundtrip_all_ntts::<PackedBinaryField2x8b>(8, 6, 4, 0);
+fn tests_field_256_bits() {
+	check_roundtrip_all_ntts::<PackedBinaryField8x32b>(12, 8, 4, 1);
+}
+
+#[test]
+fn tests_field_512_bits() {
+	check_roundtrip_all_ntts::<PackedBinaryField16x32b>(12, 6, 4, 0);
 }
 
 fn check_packed_extension_roundtrip_with_reference<P, PE>(
