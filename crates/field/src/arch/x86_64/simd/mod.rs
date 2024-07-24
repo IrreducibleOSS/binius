@@ -1,6 +1,6 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2024 Ulvetanna Inc.
 
-pub mod gfni_arithmetics;
+pub mod simd_arithmetic;
 
 #[cfg(target_feature = "sse2")]
 mod m128;

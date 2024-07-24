@@ -1,8 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::simd_arithmetic::TowerSimdType;
 use crate::{
-	arch::{portable::packed::PackedPrimitiveType, GfniStrategy},
+	arch::{
+		portable::packed::PackedPrimitiveType, x86_64::simd::simd_arithmetic::TowerSimdType,
+		GfniStrategy,
+	},
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul},
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
@@ -146,7 +148,7 @@ where
 	OP: WithUnderlier<Underlier: GfniType>
 		+ PackedBinaryField<Scalar: WithUnderlier<Underlier = u8>>,
 {
-	pub(super) fn new<Data: Deref<Target = [OP::Scalar]>>(
+	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		debug_assert_eq!(OP::Scalar::N_BITS, 8);
@@ -203,7 +205,7 @@ macro_rules! impl_transformation_with_gfni {
 pub(crate) use impl_transformation_with_gfni;
 
 /// Value that can be converted to a little-endian byte array
-pub(super) trait ToLEBytes<const N: usize> {
+pub trait ToLEBytes<const N: usize> {
 	fn to_le_bytes(self) -> [u8; N];
 }
 
@@ -250,7 +252,7 @@ where
 		+ PackedBinaryField<Scalar: WithUnderlier<Underlier: ToLEBytes<BLOCKS>>>,
 	[[OP::Underlier; BLOCKS]; BLOCKS]: Default,
 {
-	pub(super) fn new<Data: Deref<Target = [OP::Scalar]>>(
+	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		debug_assert_eq!(OP::Scalar::N_BITS, BLOCKS * 8);
@@ -365,75 +367,3 @@ macro_rules! impl_transformation_with_gfni_nxn {
 }
 
 pub(crate) use impl_transformation_with_gfni_nxn;
-
-#[cfg(target_feature = "sse2")]
-mod impl_128 {
-	use super::*;
-	use crate::arch::x86_64::m128::M128;
-	use core::arch::x86_64::*;
-
-	impl GfniType for M128 {
-		#[inline(always)]
-		fn gf2p8affine_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm_gf2p8affine_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8mul_epi8(a: Self, b: Self) -> Self {
-			unsafe { _mm_gf2p8mul_epi8(a.0, b.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8affineinv_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm_gf2p8affineinv_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-	}
-}
-
-#[cfg(target_feature = "avx2")]
-mod impl_256 {
-	use super::*;
-	use crate::arch::x86_64::m256::M256;
-	use core::arch::x86_64::*;
-
-	impl GfniType for M256 {
-		#[inline(always)]
-		fn gf2p8affine_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm256_gf2p8affine_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8mul_epi8(a: Self, b: Self) -> Self {
-			unsafe { _mm256_gf2p8mul_epi8(a.0, b.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8affineinv_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm256_gf2p8affineinv_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-	}
-}
-
-#[cfg(target_feature = "avx512f")]
-mod impl_512 {
-	use super::*;
-	use crate::arch::x86_64::m512::M512;
-	use core::arch::x86_64::*;
-
-	impl GfniType for M512 {
-		#[inline(always)]
-		fn gf2p8affine_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm512_gf2p8affine_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8mul_epi8(a: Self, b: Self) -> Self {
-			unsafe { _mm512_gf2p8mul_epi8(a.0, b.0) }.into()
-		}
-
-		#[inline(always)]
-		fn gf2p8affineinv_epi64_epi8(x: Self, a: Self) -> Self {
-			unsafe { _mm512_gf2p8affineinv_epi64_epi8::<0>(x.0, a.0) }.into()
-		}
-	}
-}

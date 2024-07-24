@@ -20,7 +20,7 @@ use crate::{
 };
 use std::{any::TypeId, arch::x86_64::*, ops::Deref};
 
-pub(super) trait TowerSimdType: Sized + Copy {
+pub trait TowerSimdType: Sized + Copy {
 	/// Blend odd and even elements
 	fn blend_odd_even<Scalar: BinaryField>(a: Self, b: Self) -> Self;
 	/// Set alpha to even elements
