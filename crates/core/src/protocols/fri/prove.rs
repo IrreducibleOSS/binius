@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::error::Error;
+use super::{common::FinalMessage, error::Error};
 use crate::{
 	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
 	merkle_tree::VectorCommitScheme,
@@ -207,10 +207,13 @@ where
 	}
 
 	fn is_commitment_round(&self) -> bool {
-		(self.curr_round + 1) % self.folding_arity == 0
+		(self.curr_round + 1) % self.folding_arity == 0 && self.curr_round != self.n_rounds() - 1
 	}
 
 	/// Executes the next fold round and returns the folded codeword commitment.
+	///
+	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
+	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -246,32 +249,47 @@ where
 		Ok(FoldRoundOutput::Commitment(commitment))
 	}
 
-	/// Finishes the FRI folding process, folding with the final challenge.
+	/// Finalizes the FRI folding process.
+	///
+	/// This step will process any unprocessed folding challenges to produce the
+	/// final folded codeword. Then it will decode this final folded codeword
+	/// to get the final message. The result is the final message and a query prover instance.
 	///
 	/// This returns the final message and a query prover instance.
-	pub fn finish(mut self, challenge: F) -> Result<(F, FRIQueryProver<'a, F, VCS>), Error> {
-		if self.curr_round != self.n_rounds() - 1 {
+	pub fn finalize(mut self) -> Result<(FinalMessage<F>, FRIQueryProver<'a, F, VCS>), Error> {
+		if self.curr_round != self.n_rounds() {
 			return Err(Error::EarlyProverFinish);
 		}
-		self.unprocessed_challenges.push(challenge);
 
-		// Technically, each of these folded codewords are codewords for RS code with small dimension but
-		// the same rate as the original RS code. The final folded codeword would be a codeword for an RS
-		// code of dimension 1, meaning this RS code is simply a repetition code.
-		// At the end of FRI Folding, we only care about the final folded codeword's underlying
-		// message (also the codeword's first element).
-		//
-		// Here we do a trick where we treat the first $2^{\theta}$ elements of the previous codeword
-		// as a codeword for an RS code with dimension $2^{\theta}$ and rate $1$. We then fold this
-		// codeword with the final $\theta$ challenges to get the final message.
-		let prev_codeword = &self.prev_codeword()[..1 << self.folding_arity];
-		let final_codeword = fold_codeword(
-			self.rs_code,
-			prev_codeword,
-			self.curr_round,
-			&self.unprocessed_challenges,
-		);
-		let final_value = final_codeword[0];
+		// TODO: This code will need to be generalized in early FRI termination and handle appropriate decoding.
+		const FINAL_MESSAGE_DIM: usize = 0;
+
+		// NB: The idea behind the following is that we should do the minimal amount of work necessary to
+		// get the final message. Specifically, we do not need a final codeword with rate lower than 1.
+		let final_message = if self.unprocessed_challenges.is_empty() {
+			// In this case, final_codeword is interpreted as taking a prefix of the previous codeword and claiming
+			// this is a codeword for an RS code with rate 1 and dimension FINAL_MESSAGE_DIM.
+			let final_codeword = &self.prev_codeword()[..1 << FINAL_MESSAGE_DIM];
+			// We decode the final codeword to get the final message.
+			final_codeword[0]
+		} else {
+			// In this case, unfolded_codeword is interpreted as taking a prefix of the previous codeword and claiming
+			// this is a codeword for an RS code with dimension FINAL_MESSAGE_DIM + unprocessed_challenges.len()
+			// and rate 1.
+			let unfolded_codeword_len =
+				1 << (self.unprocessed_challenges.len() + FINAL_MESSAGE_DIM);
+			let unfolded_codeword = &self.prev_codeword()[..unfolded_codeword_len];
+			// We then fold this codeword with the unprocessed challenges to get a final codeword
+			// for an RS code with rate 1 and dimension FINAL_MESSAGE_DIM.
+			let final_codeword = fold_codeword(
+				self.rs_code,
+				unfolded_codeword,
+				self.curr_round - 1,
+				&self.unprocessed_challenges,
+			);
+			// We decode this final codeword to get the final message.
+			final_codeword[0]
+		};
 		self.unprocessed_challenges.clear();
 
 		let Self {
@@ -291,7 +309,7 @@ where
 			round_committed,
 			log_coset_size: self.folding_arity,
 		};
-		Ok((final_value, query_prover))
+		Ok((final_message, query_prover))
 	}
 }
 

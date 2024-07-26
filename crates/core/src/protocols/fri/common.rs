@@ -80,6 +80,10 @@ where
 /// A proof for a single FRI consistency query.
 pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 
+/// The type of the final message in the FRI protocol.
+/// TODO: This should be generalized to a Vec<F> when we support early FRI termination.
+pub type FinalMessage<F> = F;
+
 /// The values and vector commitment opening proofs for a coset.
 #[derive(Debug, Clone)]
 pub struct QueryRoundProof<F, VCSProof> {

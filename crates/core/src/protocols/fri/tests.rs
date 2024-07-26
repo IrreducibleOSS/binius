@@ -88,7 +88,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	let mut prover_challenger = challenger.clone();
 	let mut round_commitments = Vec::with_capacity(round_prover.n_rounds() - 1);
-	for _i in 0..round_prover.n_rounds() - 1 {
+	for _i in 0..round_prover.n_rounds() {
 		let challenge = prover_challenger.sample();
 		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
 		match fold_round_output {
@@ -100,8 +100,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		}
 	}
 
-	let challenge = prover_challenger.sample();
-	let (final_value, query_prover) = round_prover.finish(challenge).unwrap();
+	let (final_value, query_prover) = round_prover.finalize().unwrap();
 	prover_challenger.observe(final_value);
 
 	let query_proofs = repeat_with(|| {
