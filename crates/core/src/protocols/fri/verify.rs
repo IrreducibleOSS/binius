@@ -4,7 +4,7 @@ use super::{error::Error, QueryProof, VerificationError};
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
-	protocols::fri::common::{fold_pair, QueryRoundProof},
+	protocols::fri::common::{fold_chunk, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField};
@@ -37,6 +37,8 @@ where
 	/// The final message, which is a 1-element vector. Its encoding must be a vector of the final
 	/// value repeated up to the codeword length.
 	final_value: F,
+	/// The log of the coset size used in the query round proofs.
+	log_coset_size: usize,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -45,6 +47,7 @@ where
 	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		rs_code: &'a ReedSolomonCode<FA>,
 		codeword_vcs: &'a VCS,
@@ -53,6 +56,7 @@ where
 		round_commitments: &'a [VCS::Commitment],
 		challenges: &'a [F],
 		final_value: F,
+		log_coset_size: usize,
 	) -> Result<Self, Error> {
 		if rs_code.len() != codeword_vcs.vector_len() {
 			return Err(Error::InvalidArgs(
@@ -65,19 +69,30 @@ where
 		if rs_code.log_dim() == 0 {
 			return Err(Error::MessageDimensionIsOne);
 		}
-		if round_vcss.len() != rs_code.log_dim() - 1 {
+		let n_rounds = rs_code.log_dim();
+		if n_rounds % log_coset_size != 0 {
+			return Err(Error::InvalidArgs(format!(
+				"Reed–Solomon code dimension {} must be a multiple of the folding arity {}",
+				n_rounds, log_coset_size
+			)));
+		}
+		let n_round_commitments = (n_rounds / log_coset_size) - 1;
+		if round_vcss.len() != n_round_commitments {
 			return Err(Error::InvalidArgs(format!(
 				"got {} round vector commitment schemes, expected {}",
 				round_vcss.len(),
-				rs_code.log_dim() - 1
+				n_round_commitments,
 			)));
 		}
-		if round_commitments.len() != rs_code.log_dim() - 1 {
-			return Err(Error::InvalidArgs(format!(
-				"got {} round commitments, expected {}",
-				round_vcss.len(),
-				rs_code.log_dim() - 1
-			)));
+
+		for (round, round_vcs) in round_vcss.iter().enumerate() {
+			let expected_folded_dimension = rs_code.log_len() - (round + 1) * log_coset_size;
+			if round_vcs.vector_len() != 1 << expected_folded_dimension {
+				return Err(Error::InvalidArgs(format!(
+					"round {round} vector commitment length is incorrect, expected {}",
+					1 << expected_folded_dimension
+				)));
+			}
 		}
 		if challenges.len() != rs_code.log_dim() {
 			return Err(Error::InvalidArgs(format!(
@@ -85,15 +100,6 @@ where
 				challenges.len(),
 				rs_code.log_dim()
 			)));
-		}
-
-		for (round, round_vcs) in round_vcss.iter().enumerate() {
-			if round_vcs.vector_len() != 1 << (rs_code.log_len() - round - 1) {
-				return Err(Error::InvalidArgs(format!(
-					"round {round} vector commitment length is incorrect, expected {}",
-					1 << (rs_code.log_len() - round - 1)
-				)));
-			}
 		}
 
 		Ok(Self {
@@ -104,6 +110,7 @@ where
 			round_commitments,
 			challenges,
 			final_value,
+			log_coset_size,
 		})
 	}
 
@@ -123,8 +130,6 @@ where
 		mut index: usize,
 		proof: QueryProof<F, VCS::Proof>,
 	) -> Result<(), Error> {
-		const LOG_COSET_SIZE: usize = 1;
-
 		if proof.len() != self.n_rounds() {
 			return Err(VerificationError::IncorrectQueryProofLength {
 				expected: self.n_rounds(),
@@ -132,50 +137,69 @@ where
 			.into());
 		}
 
+		let max_buffer_size = 1 << self.log_coset_size;
+		let mut scratch_buffer = vec![F::default(); max_buffer_size];
 		let mut proof_iter = proof.into_iter();
+		let chunked_challenges = self
+			.challenges
+			.chunks(self.log_coset_size)
+			.collect::<Vec<_>>();
 
 		let round_proof = proof_iter
 			.next()
 			.expect("verified that proof is non-empty above");
 
-		let coset_index = index >> LOG_COSET_SIZE;
+		let coset_index = index >> self.log_coset_size;
 		let values = verify_coset_opening(
 			self.codeword_vcs,
 			self.codeword_commitment,
 			0,
 			coset_index,
-			LOG_COSET_SIZE,
+			self.log_coset_size,
 			round_proof,
 		)?;
 
-		let mut next_value =
-			fold_pair(self.rs_code, 0, coset_index, (values[0], values[1]), self.challenges[0]);
+		let mut next_value = fold_chunk(
+			self.rs_code,
+			0,
+			coset_index,
+			&values,
+			chunked_challenges[0],
+			&mut scratch_buffer,
+		);
 		index = coset_index;
 
-		for (round, (vcs, commitment, r_i, round_proof)) in izip!(
+		for (query_round, (vcs, commitment, folding_challenges, round_proof)) in izip!(
 			self.round_vcss.iter(),
 			self.round_commitments.iter(),
-			self.challenges[1..].iter().copied(),
+			chunked_challenges[1..].iter(),
 			proof_iter
 		)
 		.enumerate()
 		{
-			let coset_index = index >> LOG_COSET_SIZE;
+			let fold_start_round = (query_round + 1) * self.log_coset_size;
+			let coset_index = index >> self.log_coset_size;
 			let values = verify_coset_opening(
 				vcs,
 				commitment,
-				round + 1,
+				fold_start_round,
 				coset_index,
-				LOG_COSET_SIZE,
+				self.log_coset_size,
 				round_proof,
 			)?;
 
-			if next_value != values[index % (1 << LOG_COSET_SIZE)] {
-				return Err(VerificationError::IncorrectFold { round, index }.into());
+			if next_value != values[index % (1 << self.log_coset_size)] {
+				return Err(VerificationError::IncorrectFold { query_round, index }.into());
 			}
 
-			next_value =
-				fold_pair(self.rs_code, round + 1, coset_index, (values[0], values[1]), r_i);
+			next_value = fold_chunk(
+				self.rs_code,
+				fold_start_round,
+				coset_index,
+				&values,
+				folding_challenges,
+				&mut scratch_buffer,
+			);
 			index = coset_index;
 		}
 
@@ -184,7 +208,7 @@ where
 		// repeated up to the codeword length.
 		if next_value != self.final_value {
 			return Err(VerificationError::IncorrectFold {
-				round: self.n_rounds() - 1,
+				query_round: self.n_rounds() - 1,
 				index,
 			}
 			.into());
@@ -219,5 +243,6 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	vcs.verify_range_batch_opening(commitment, range, vcs_proof, iter::once(values.as_slice()))
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
+	debug_assert_eq!(values.len(), 1 << log_coset_size);
 	Ok(values)
 }

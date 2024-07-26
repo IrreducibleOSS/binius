@@ -4,10 +4,7 @@ use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
 	linear_code::LinearCode,
 	merkle_tree::MerkleTreeVCS,
-	protocols::{
-		fri,
-		fri::{CommitOutput, FRIFolder, FRIVerifier},
-	},
+	protocols::fri::{self, CommitOutput, FRIFolder, FRIVerifier, FoldRoundOutput},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
@@ -22,8 +19,11 @@ use binius_ntt::NTTOptions;
 use rand::prelude::*;
 use std::iter::repeat_with;
 
-fn test_commit_prove_verify_success<U, F, FA>()
-where
+fn test_commit_prove_verify_success<U, F, FA>(
+	folding_arity: usize,
+	n_round_commitments: usize,
+	log_inv_rate: usize,
+) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
 	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
 	F: PackedField<Scalar = F>
@@ -34,8 +34,13 @@ where
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let rs_code_packed =
-		ReedSolomonCode::<PackedType<U, FA>>::new(8, 2, NTTOptions::default()).unwrap();
+	let log_dimension = folding_arity * (n_round_commitments + 1);
+	let rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
+		log_dimension,
+		log_inv_rate,
+		NTTOptions::default(),
+	)
+	.unwrap();
 	let n_test_queries = 1;
 
 	let make_merkle_vcs = |log_len| {
@@ -43,10 +48,11 @@ where
 	};
 
 	let merkle_vcs = make_merkle_vcs(rs_code_packed.log_len());
-	let merkle_round_vcss = (rs_code_packed.log_inv_rate() + 1..rs_code_packed.log_len())
+	let merkle_round_vcss = (1..=n_round_commitments)
+		.map(|i| make_merkle_vcs(rs_code_packed.log_inv_rate() + i * folding_arity))
 		.rev()
-		.map(make_merkle_vcs)
 		.collect::<Vec<_>>();
+	assert_eq!(merkle_round_vcss.len(), n_round_commitments);
 
 	// Generate a random message
 	let msg = repeat_with(|| <PackedType<U, F>>::random(&mut rng))
@@ -76,6 +82,7 @@ where
 		&merkle_vcs,
 		&merkle_round_vcss,
 		&codeword_committed,
+		folding_arity,
 	)
 	.unwrap();
 
@@ -83,9 +90,14 @@ where
 	let mut round_commitments = Vec::with_capacity(round_prover.n_rounds() - 1);
 	for _i in 0..round_prover.n_rounds() - 1 {
 		let challenge = prover_challenger.sample();
-		let round_commitment = round_prover.execute_fold_round(challenge).unwrap();
-		prover_challenger.observe(round_commitment);
-		round_commitments.push(round_commitment);
+		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
+		match fold_round_output {
+			FoldRoundOutput::NoCommitment => {}
+			FoldRoundOutput::Commitment(round_commitment) => {
+				prover_challenger.observe(round_commitment);
+				round_commitments.push(round_commitment);
+			}
+		}
 	}
 
 	let challenge = prover_challenger.sample();
@@ -104,13 +116,13 @@ where
 	let mut verifier_challenger = challenger.clone();
 	let mut verifier_challenges = Vec::with_capacity(rs_code.log_dim());
 
-	assert_eq!(round_commitments.len(), rs_code.log_dim() - 1);
+	assert_eq!(round_commitments.len(), n_round_commitments);
 	for commitment in round_commitments.iter() {
-		verifier_challenges.push(verifier_challenger.sample());
+		verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arity));
 		verifier_challenger.observe(*commitment);
 	}
 
-	verifier_challenges.push(verifier_challenger.sample());
+	verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arity));
 	verifier_challenger.observe(final_value);
 
 	let verifier = FRIVerifier::new(
@@ -121,6 +133,7 @@ where
 		&round_commitments,
 		&verifier_challenges,
 		final_value,
+		folding_arity,
 	)
 	.unwrap();
 
@@ -133,5 +146,13 @@ where
 
 #[test]
 fn test_commit_prove_verify_success_128b() {
-	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>()
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
+		1, 7, 2,
+	);
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
+		2, 4, 2,
+	);
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
+		3, 3, 2,
+	);
 }
