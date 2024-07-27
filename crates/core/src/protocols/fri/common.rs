@@ -1,9 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{polynomial::extrapolate_line, reed_solomon::reed_solomon::ReedSolomonCode};
-use binius_field::{BinaryField, ExtensionField};
+use crate::{
+	linear_code::LinearCode, polynomial::extrapolate_line, protocols::fri::Error,
+	reed_solomon::reed_solomon::ReedSolomonCode,
+};
+use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
 use binius_ntt::AdditiveNTT;
 
+/// Calculate fold of `values` at `index` with `r` random coefficient.
+///
+/// See [DP24], Def. 3.6.
+///
+/// [DP24]: <https://eprint.iacr.org/2024/504>
 fn fold_pair<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	round: usize,
@@ -91,4 +99,77 @@ pub struct QueryRoundProof<F, VCSProof> {
 	pub values: Vec<F>,
 	/// Vector commitment opening proof for the coset.
 	pub vcs_proof: VCSProof,
+}
+
+/// Calculates the number of test queries required to achieve a target security level.
+///
+/// Throws [`Error::ParameterError`] if the security level is unattainable given the code
+/// parameters.
+pub fn calculate_n_test_queries<F, PS>(
+	security_bits: usize,
+	code: &ReedSolomonCode<PS>,
+) -> Result<usize, Error>
+where
+	F: BinaryField + ExtensionField<PS::Scalar>,
+	PS: PackedFieldIndexable<Scalar: BinaryField>,
+{
+	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
+	let mut n_queries = (-(security_bits as f64) / per_query_err.log2()).ceil() as usize;
+	for _ in 0..10 {
+		if calculate_error_bound::<F, _>(code, n_queries) >= security_bits {
+			return Ok(n_queries);
+		}
+		n_queries += 1;
+	}
+	Err(Error::ParameterError)
+}
+
+fn calculate_error_bound<F, PS>(code: &ReedSolomonCode<PS>, n_queries: usize) -> usize
+where
+	F: BinaryField + ExtensionField<PS::Scalar>,
+	PS: PackedFieldIndexable<Scalar: BinaryField>,
+{
+	let field_size = 2.0_f64.powi(F::N_BITS as i32);
+	// ℓ' / |T_{τ}|
+	let sumcheck_err = code.log_dim() as f64 / field_size;
+	// 2^{ℓ' + R} / |T_{τ}|
+	let folding_err = code.len() as f64 / field_size;
+	let per_query_err = 0.5 * (1.0 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
+	let query_err = per_query_err.powi(n_queries as i32);
+	let total_err = sumcheck_err + folding_err + query_err;
+	-total_err.log2() as usize
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use assert_matches::assert_matches;
+	use binius_field::{BinaryField128b, BinaryField32b};
+	use binius_ntt::NTTOptions;
+
+	#[test]
+	fn test_calculate_n_test_queries() {
+		let security_bits = 96;
+		let rs_code = ReedSolomonCode::new(28, 1, NTTOptions::default()).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
+				.unwrap();
+		assert_eq!(n_test_queries, 232);
+
+		let rs_code = ReedSolomonCode::new(28, 2, NTTOptions::default()).unwrap();
+		let n_test_queries =
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
+				.unwrap();
+		assert_eq!(n_test_queries, 143);
+	}
+
+	#[test]
+	fn test_calculate_n_test_queries_unsatisfiable() {
+		let security_bits = 128;
+		let rs_code = ReedSolomonCode::new(28, 1, NTTOptions::default()).unwrap();
+		assert_matches!(
+			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code),
+			Err(Error::ParameterError)
+		);
+	}
 }

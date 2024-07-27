@@ -4,6 +4,8 @@ use binius_ntt::Error as NttError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("cannot calculate parameters satisfying the security target")]
+	ParameterError,
 	#[error("conflicting or incorrect constructor argument: {0}")]
 	InvalidArgs(String),
 	#[error("FRI does not support messages with dimension 1")]
