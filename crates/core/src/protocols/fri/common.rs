@@ -1,11 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	linear_code::LinearCode, polynomial::extrapolate_line, protocols::fri::Error,
-	reed_solomon::reed_solomon::ReedSolomonCode,
+	linear_code::LinearCode, merkle_tree::VectorCommitScheme, polynomial::extrapolate_line,
+	protocols::fri::Error, reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
 use binius_ntt::AdditiveNTT;
+use itertools::Itertools;
+use p3_util::log2_strict_usize;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
 ///
@@ -83,6 +85,101 @@ where
 	}
 
 	scratch_buffer[0]
+}
+
+fn validate_round_vcss<F, FA, VCS>(
+	rs_code: &ReedSolomonCode<FA>,
+	round_vcss: &[VCS],
+) -> Result<(), Error>
+where
+	F: BinaryField,
+	FA: BinaryField,
+	VCS: VectorCommitScheme<F>,
+{
+	// check that base two log of each round_vcs vector_length is greater than
+	// the code's log_inv_rate and less than log_len.
+	// TODO: The lower-bound check will change when we support early FRI termination.
+	if round_vcss.iter().any(|vcs| {
+		let len = vcs.vector_len();
+		len <= 1 << rs_code.log_inv_rate() || len >= 1 << rs_code.log_len()
+	}) {
+		return Err(Error::RoundVCSLengthsOutOfRange);
+	}
+
+	// check that each round_vcs has power of two vector_length
+	if round_vcss
+		.iter()
+		.any(|vcs| !vcs.vector_len().is_power_of_two())
+	{
+		return Err(Error::RoundVCSLengthsNotPowerOfTwo);
+	}
+
+	// check that round_vcss vector is sorted in strictly descending order by vector_length
+	if round_vcss
+		.windows(2)
+		.any(|w| w[0].vector_len() <= w[1].vector_len())
+	{
+		return Err(Error::RoundVCSLengthsNotDescending);
+	}
+	Ok(())
+}
+
+/// Calculates the fold_rounds where folded codewords are committed by the FRIFolder.
+/// Also validates consistency of round vector commitment schemes with a Reed-Solomon code for FRI.
+///
+/// The validation checks that:
+/// - The vector lengths of the round vector commitment schemes are in the range (2^log_inv_rate, 2^log_len).
+/// - The vector lengths of the round vector commitment schemes are powers of two.
+/// - The vector lengths of the round vector commitment schemes are strictly decreasing.
+pub fn calculate_fold_commit_rounds<F, FA, VCS>(
+	rs_code: &ReedSolomonCode<FA>,
+	round_vcss: &[VCS],
+) -> Result<Vec<usize>, Error>
+where
+	F: BinaryField,
+	FA: BinaryField,
+	VCS: VectorCommitScheme<F>,
+{
+	validate_round_vcss(rs_code, round_vcss)?;
+
+	let log_len = rs_code.log_len();
+	let commit_rounds = round_vcss
+		.iter()
+		.map(|vcs| log_len - 1 - log2_strict_usize(vcs.vector_len()));
+	Ok(commit_rounds.collect())
+}
+
+/// Calculates the start rounds of each fold chunk call made by the FRIFolder.
+///
+/// REQUIRES:
+/// - fold_commit_rounds is the output of calculate_fold_commit_rounds.
+pub fn calculate_fold_chunk_start_rounds(fold_commit_rounds: &[usize]) -> Vec<usize> {
+	let mut fold_chunk_start_rounds = vec![0; fold_commit_rounds.len() + 1];
+	fold_chunk_start_rounds
+		.iter_mut()
+		.skip(1)
+		.zip(fold_commit_rounds.iter())
+		.for_each(|(fold_chunk_start_round, fold_commit_round)| {
+			*fold_chunk_start_round = fold_commit_round + 1;
+		});
+	fold_chunk_start_rounds
+}
+
+/// Calculates the arity of each fold chunk call made by the FRIFolder.
+///
+/// REQUIRES:
+/// - `fold_chunk_start_rounds` is the output of `calculate_fold_chunk_start_rounds`.
+pub fn calculate_folding_arities(
+	total_fold_rounds: usize,
+	fold_chunk_start_rounds: &[usize],
+) -> Vec<usize> {
+	fold_chunk_start_rounds
+		.iter()
+		.copied()
+		.chain(std::iter::once(total_fold_rounds))
+		.tuple_windows()
+		.map(|(prev_start_round, next_start_round)| next_start_round - prev_start_round)
+		.collect()
 }
 
 /// A proof for a single FRI consistency query.

@@ -1,6 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{common::FinalMessage, error::Error};
+use super::{
+	common::{
+		calculate_fold_chunk_start_rounds, calculate_fold_commit_rounds, calculate_folding_arities,
+		FinalMessage,
+	},
+	error::Error,
+};
 use crate::{
 	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
 	merkle_tree::VectorCommitScheme,
@@ -8,8 +14,9 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
+use itertools::izip;
 use rayon::prelude::*;
-use std::iter;
+use tracing::instrument;
 
 fn fold_codeword<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
@@ -112,9 +119,9 @@ where
 	round_vcss: &'a [VCS],
 	codeword_committed: &'a VCS::Committed,
 	round_committed: Vec<(Vec<F>, VCS::Committed)>,
-	folding_arity: usize,
 	curr_round: usize,
 	unprocessed_challenges: Vec<F>,
+	commitment_fold_rounds: Vec<usize>,
 }
 
 impl<'a, F, FA, VCS> FRIFolder<'a, F, FA, VCS>
@@ -131,7 +138,6 @@ where
 		codeword_vcs: &'a VCS,
 		round_vcss: &'a [VCS],
 		committed: &'a VCS::Committed,
-		folding_arity: usize,
 	) -> Result<Self, Error> {
 		if rs_code.len() != codeword_vcs.vector_len() {
 			return Err(Error::InvalidArgs(
@@ -149,32 +155,8 @@ where
 		if rs_code.log_dim() == 0 {
 			return Err(Error::MessageDimensionIsOne);
 		}
-		let n_rounds = rs_code.log_dim();
-		// TODO: Relax this condition when Early FRI Termination
-		if n_rounds % folding_arity != 0 {
-			return Err(Error::InvalidArgs(format!(
-				"Reed–Solomon code dimension {} must be a multiple of the folding arity {}",
-				n_rounds, folding_arity
-			)));
-		}
-		let n_round_commitments = (n_rounds / folding_arity) - 1;
-		if round_vcss.len() != n_round_commitments {
-			return Err(Error::InvalidArgs(format!(
-				"got {} round vector commitment schemes, expected {}",
-				round_vcss.len(),
-				n_round_commitments,
-			)));
-		}
 
-		for (round, round_vcs) in round_vcss.iter().enumerate() {
-			let expected_folded_dimension = rs_code.log_len() - (round + 1) * folding_arity;
-			if round_vcs.vector_len() != 1 << expected_folded_dimension {
-				return Err(Error::InvalidArgs(format!(
-					"round {round} vector commitment length is incorrect, expected {}",
-					1 << expected_folded_dimension
-				)));
-			}
-		}
+		let commitment_fold_rounds = calculate_fold_commit_rounds(rs_code, round_vcss)?;
 
 		Ok(Self {
 			rs_code,
@@ -183,9 +165,9 @@ where
 			round_vcss,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(round_vcss.len()),
-			folding_arity,
 			curr_round: 0,
-			unprocessed_challenges: Vec::with_capacity(folding_arity),
+			unprocessed_challenges: Vec::with_capacity(rs_code.log_dim()),
+			commitment_fold_rounds,
 		})
 	}
 
@@ -207,13 +189,16 @@ where
 	}
 
 	fn is_commitment_round(&self) -> bool {
-		(self.curr_round + 1) % self.folding_arity == 0 && self.curr_round != self.n_rounds() - 1
+		let n_commitments = self.round_committed.len();
+		n_commitments < self.round_vcss.len()
+			&& self.commitment_fold_rounds[n_commitments] == self.curr_round
 	}
 
 	/// Executes the next fold round and returns the folded codeword commitment.
 	///
 	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
 	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
+	#[instrument(skip_all, name = "fri::FRIFolder::execute_fold_round")]
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -256,6 +241,7 @@ where
 	/// to get the final message. The result is the final message and a query prover instance.
 	///
 	/// This returns the final message and a query prover instance.
+	#[instrument(skip_all, name = "fri::FRIFolder::finalize")]
 	pub fn finalize(mut self) -> Result<(FinalMessage<F>, FRIQueryProver<'a, F, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
 			return Err(Error::EarlyProverFinish);
@@ -298,6 +284,8 @@ where
 			round_vcss,
 			codeword_committed,
 			round_committed,
+			commitment_fold_rounds,
+			rs_code,
 			..
 		} = self;
 
@@ -307,7 +295,8 @@ where
 			round_vcss,
 			codeword_committed,
 			round_committed,
-			log_coset_size: self.folding_arity,
+			commitment_fold_rounds,
+			n_fold_rounds: rs_code.log_dim(),
 		};
 		Ok((final_message, query_prover))
 	}
@@ -320,7 +309,8 @@ pub struct FRIQueryProver<'a, F: BinaryField, VCS: VectorCommitScheme<F>> {
 	round_vcss: &'a [VCS],
 	codeword_committed: &'a VCS::Committed,
 	round_committed: Vec<(Vec<F>, VCS::Committed)>,
-	log_coset_size: usize,
+	commitment_fold_rounds: Vec<usize>,
+	n_fold_rounds: usize,
 }
 
 impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> {
@@ -334,28 +324,33 @@ impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> 
 	/// ## Arguments
 	///
 	/// * `index` - an index into the original codeword domain
+	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
 	pub fn prove_query(&self, index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
 		let mut round_proofs = Vec::with_capacity(self.n_rounds());
+		let fold_chunk_start_rounds =
+			calculate_fold_chunk_start_rounds(&self.commitment_fold_rounds);
+		let folding_arities =
+			calculate_folding_arities(self.n_fold_rounds, &fold_chunk_start_rounds);
 
-		let mut coset_index = index >> self.log_coset_size;
+		let mut coset_index = index >> folding_arities[0];
 		round_proofs.push(prove_coset_opening(
 			self.codeword_vcs,
 			self.codeword,
 			self.codeword_committed,
 			coset_index,
-			self.log_coset_size,
+			folding_arities[0],
 		)?);
 
-		for (vcs, (codeword, committed)) in
-			iter::zip(self.round_vcss.iter(), self.round_committed.iter())
+		for (query_rd, vcs, (codeword, committed)) in
+			izip!((1..=self.round_vcss.len()), self.round_vcss.iter(), self.round_committed.iter())
 		{
-			coset_index >>= self.log_coset_size;
+			coset_index >>= folding_arities[query_rd];
 			round_proofs.push(prove_coset_opening(
 				vcs,
 				codeword,
 				committed,
 				coset_index,
-				self.log_coset_size,
+				folding_arities[query_rd],
 			)?);
 		}
 

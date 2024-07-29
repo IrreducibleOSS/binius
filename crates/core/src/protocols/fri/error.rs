@@ -14,6 +14,12 @@ pub enum Error {
 	TooManyFoldExecutions { max_folds: usize },
 	#[error("attempted to finish prover before executing all fold rounds")]
 	EarlyProverFinish,
+	#[error("round VCS vector_length values must be strictly decreasing")]
+	RoundVCSLengthsNotDescending,
+	#[error("log round VCS vector_length must be in range between log_inv_rate and log_len")]
+	RoundVCSLengthsOutOfRange,
+	#[error("round VCS vector_length must be a power of two")]
+	RoundVCSLengthsNotPowerOfTwo,
 	#[error("Reed-Solomon encoding error: {0}")]
 	EncodeError(#[from] NttError),
 	#[error("vector commit error: {0}")]

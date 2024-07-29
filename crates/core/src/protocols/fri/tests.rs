@@ -17,12 +17,31 @@ use binius_field::{
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_ntt::NTTOptions;
 use rand::prelude::*;
-use std::iter::repeat_with;
+use std::{collections::HashSet, iter::repeat_with};
+
+fn make_folding_arities(
+	log_len: usize,
+	n_rounds: usize,
+	log_vcs_vector_lens: &[usize],
+) -> Vec<usize> {
+	let folding_rounds = log_vcs_vector_lens
+		.iter()
+		.map(|&log_vector_len| log_len - 1 - log_vector_len)
+		.chain(std::iter::once(n_rounds - 1))
+		.collect::<Vec<_>>();
+	(0..folding_rounds.len())
+		.map(|i| {
+			let prev = if i == 0 { 0 } else { folding_rounds[i - 1] + 1 };
+			let curr = folding_rounds[i] + 1;
+			curr - prev
+		})
+		.collect()
+}
 
 fn test_commit_prove_verify_success<U, F, FA>(
-	folding_arity: usize,
-	n_round_commitments: usize,
+	log_dimension: usize,
 	log_inv_rate: usize,
+	log_vcs_vector_lens: &[usize],
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
 	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
@@ -34,7 +53,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let log_dimension = folding_arity * (n_round_commitments + 1);
 	let rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
 		log_dimension,
 		log_inv_rate,
@@ -42,6 +60,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 	let n_test_queries = 1;
+	let n_round_commitments = log_vcs_vector_lens.len();
+	let folding_arities =
+		make_folding_arities(log_dimension + log_inv_rate, log_dimension, log_vcs_vector_lens);
 
 	let make_merkle_vcs = |log_len| {
 		MerkleTreeVCS::<F, _, GroestlHasher<_>, _>::new(
@@ -51,11 +72,10 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	};
 
 	let merkle_vcs = make_merkle_vcs(rs_code_packed.log_len());
-	let merkle_round_vcss = (1..=n_round_commitments)
-		.map(|i| make_merkle_vcs(rs_code_packed.log_inv_rate() + i * folding_arity))
-		.rev()
+	let merkle_round_vcss = log_vcs_vector_lens
+		.iter()
+		.map(|&log_len| make_merkle_vcs(log_len))
 		.collect::<Vec<_>>();
-	assert_eq!(merkle_round_vcss.len(), n_round_commitments);
 
 	// Generate a random message
 	let msg = repeat_with(|| <PackedType<U, F>>::random(&mut rng))
@@ -85,7 +105,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		&merkle_vcs,
 		&merkle_round_vcss,
 		&codeword_committed,
-		folding_arity,
 	)
 	.unwrap();
 
@@ -119,12 +138,13 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let mut verifier_challenges = Vec::with_capacity(rs_code.log_dim());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
-	for commitment in round_commitments.iter() {
-		verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arity));
+	for (query_rd, commitment) in round_commitments.iter().enumerate() {
+		verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arities[query_rd]));
 		verifier_challenger.observe(*commitment);
 	}
 
-	verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arity));
+	verifier_challenges
+		.append(&mut verifier_challenger.sample_vec(*folding_arities.last().unwrap()));
 	verifier_challenger.observe(final_value);
 
 	let verifier = FRIVerifier::new(
@@ -135,7 +155,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		&round_commitments,
 		&verifier_challenges,
 		final_value,
-		folding_arity,
 	)
 	.unwrap();
 
@@ -146,15 +165,56 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	}
 }
 
+fn generate_random_decreasing_sequence(
+	minimum: usize,
+	maximum: usize,
+	length: usize,
+) -> Vec<usize> {
+	assert!(maximum >= minimum + length);
+
+	let mut rng = thread_rng();
+	let mut numbers = HashSet::new();
+
+	while numbers.len() < length {
+		let num = rng.gen_range(minimum..=maximum);
+		numbers.insert(num);
+	}
+
+	let mut result: Vec<usize> = numbers.into_iter().collect();
+	result.sort_unstable_by(|a, b| b.cmp(a)); // Sort in descending order
+	result
+}
+
+#[test]
+fn test_commit_prove_verify_success_128b_simple() {
+	// This tests the case where we have a round commitment for every round
+	let log_dimension = 8;
+	let log_inv_rate = 2;
+	let log_vcs_vector_lens = (log_inv_rate + 1..log_inv_rate + log_dimension)
+		.rev()
+		.collect::<Vec<_>>();
+
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
+		log_dimension,
+		log_inv_rate,
+		&log_vcs_vector_lens,
+	);
+}
+
 #[test]
 fn test_commit_prove_verify_success_128b() {
-	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
-		1, 7, 2,
+	let log_dimension = 7;
+	let log_inv_rate = 2;
+	let n_commitments = 3;
+	let log_vcs_vector_lens = generate_random_decreasing_sequence(
+		log_inv_rate + 1,
+		log_inv_rate + log_dimension - 1,
+		n_commitments,
 	);
+
 	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
-		2, 4, 2,
-	);
-	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
-		3, 3, 2,
+		log_dimension,
+		log_inv_rate,
+		&log_vcs_vector_lens,
 	);
 }
