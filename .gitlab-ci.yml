@@ -119,7 +119,6 @@ build-docs:
   extends: .job_template_amd
   stage: build
   script:
-    - export RUSTDOCFLAGS="-Dwarnings --html-in-header doc/katex-header.html"
     - cargo doc --no-deps
   artifacts:
     paths:

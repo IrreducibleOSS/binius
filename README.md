@@ -45,6 +45,16 @@ The environment variable `PROFILE_CSV_FILE` can be set to an output filename to 
 
 By default all the examples are run on a relatively small data. The environment variable `BINIUS_LOG_TRACE` can be used to override the default log trace size value.
 
+### API Documentation
+
+Rust API documentation is hosted at <https://docs.binius.xyz/>. The generated HTML pages include [KaTeX](https://katex.org/) so that LaTeX in Rust docs is rendered correctly.
+
+To generate the documentation locally, run
+
+```bash
+cargo doc --no-deps
+```
+
 ## Support
 
 This project is under active development. The developers with make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.
