@@ -44,7 +44,10 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let n_test_queries = 1;
 
 	let make_merkle_vcs = |log_len| {
-		MerkleTreeVCS::<F, _, GroestlHasher<_>, _>::new(log_len, GroestlDigestCompression)
+		MerkleTreeVCS::<F, _, GroestlHasher<_>, _>::new(
+			log_len,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		)
 	};
 
 	let merkle_vcs = make_merkle_vcs(rs_code_packed.log_len());

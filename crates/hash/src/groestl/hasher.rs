@@ -1,25 +1,21 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	super::hasher::{HashDigest, Hasher},
-	arch::Groestl256Core,
-};
-use crate::HasherDigest;
+use super::{super::hasher::Hasher, arch::Groestl256Core};
 use binius_field::{
-	AESTowerField8b, BinaryField8b, ExtensionField, PackedAESBinaryField32x8b,
-	PackedAESBinaryField64x8b, PackedBinaryField32x8b, PackedExtension, PackedExtensionIndexable,
-	PackedField, PackedFieldIndexable, TowerField,
+	arch::OptimalUnderlier256b,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::Divisible,
+	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedAESBinaryField32x8b,
+	PackedAESBinaryField64x8b, PackedExtension, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable, TowerField,
 };
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
-use std::{cmp, marker::PhantomData};
+use std::{cmp, marker::PhantomData, slice};
 
 /// This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
 
-/// The type of the output digest for `Grøstl256` over `BinaryField8b`
-pub type GroestlDigest = PackedBinaryField32x8b;
-
-/// The type of the output digest for `Grøstl256` over `AESTowerField8b`
-pub type GroestlDigestAES = PackedAESBinaryField32x8b;
+/// The type of output digest for `Grøstl256` over `F` which should be isomorphic to `AESTowerField8b`
+pub type GroestlDigest<F> = PackedType<OptimalUnderlier256b, F>;
 
 /// An alias for `Grøstl256` defined over `BinaryField8b`
 pub type GroestlHasher<P> = Groestl256<P, BinaryField8b>;
@@ -230,42 +226,92 @@ macro_rules! impl_hasher_groestl {
 	};
 }
 
-impl_hasher_groestl!(BinaryField8b, GroestlDigest);
-impl_hasher_groestl!(AESTowerField8b, GroestlDigestAES);
+impl_hasher_groestl!(BinaryField8b, GroestlDigest<BinaryField8b>);
+impl_hasher_groestl!(AESTowerField8b, GroestlDigest<AESTowerField8b>);
 
-/// Helper struct that's used to create MerkleTree over Grøstl hash function using the
-/// `PseudoCompressionFunction` and `CompressionFunction` traits
+/// A compression function for Grøstl hash digests based on the Grøstl output transformation.
+///
+/// This is a 512-bit to 256-bit compression function. This does _not_ apply the full Grøstl hash
+/// algorithm to a 512-bit input. Instead, this compression function applies just the Grøstl output
+/// transformation, which is believed to be one-way and collision-resistant.
+///
+/// ## Security justification
+///
+/// The Grøstl output transformation in [Grøstl] Section 3.3 is argued to be one-way and
+/// collision-resistant in multiple ways. First, in Section 4.6, the authors argue that the output
+/// transformation is an instance of the Matyas-Meyer-Oseas construction followed by a truncation.
+/// Second, in Section 5.1, the authors show that the output transformation is a call to the
+/// 1024-to-512-bit compression function on a 0-padded input followed by an XOR with a constant and
+/// a truncation.
+///
+/// [Grøstl]: <https://www.groestl.info/Groestl.pdf>
 #[derive(Debug, Default, Clone)]
-pub struct GroestlDigestCompression;
+pub struct GroestlDigestCompression<F: BinaryField + From<AESTowerField8b> + Into<AESTowerField8b>>
+{
+	_f_marker: PhantomData<F>,
+}
 
-impl PseudoCompressionFunction<GroestlDigest, 2> for GroestlDigestCompression {
-	fn compress(&self, input: [GroestlDigest; 2]) -> GroestlDigest {
-		HasherDigest::<GroestlDigest, GroestlHasher<GroestlDigest>>::hash(&input[..])
+impl<F> PseudoCompressionFunction<GroestlDigest<F>, 2> for GroestlDigestCompression<F>
+where
+	OptimalUnderlier256b: PackScalar<F> + Divisible<F::Underlier>,
+	F: BinaryField + From<AESTowerField8b> + Into<AESTowerField8b>,
+{
+	fn compress(&self, input: [GroestlDigest<F>; 2]) -> GroestlDigest<F> {
+		let input_as_slice_bin: [F; 64] = PackedFieldIndexable::unpack_scalars(&input)
+			.try_into()
+			.unwrap();
+		let input_as_slice: [AESTowerField8b; 64] = input_as_slice_bin.map(Into::into);
+		let mut state = PackedAESBinaryField64x8b::default();
+		let state_as_slice = PackedFieldIndexable::unpack_scalars_mut(slice::from_mut(&mut state));
+		state_as_slice.copy_from_slice(&input_as_slice);
+		let new_state = GROESTL_CORE_PERMUTATION.permutation_p(state) + state;
+
+		let new_state_slice: [AESTowerField8b; 32] =
+			PackedFieldIndexable::unpack_scalars(slice::from_ref(&new_state))[32..]
+				.try_into()
+				.unwrap();
+		let new_state_slice_bin: [F; 32] = new_state_slice.map(F::from);
+		let mut out_bin = GroestlDigest::<F>::default();
+		let out_bin_slice = PackedFieldIndexable::unpack_scalars_mut(slice::from_mut(&mut out_bin));
+		out_bin_slice.copy_from_slice(&new_state_slice_bin);
+		out_bin
 	}
 }
 
-impl CompressionFunction<GroestlDigest, 2> for GroestlDigestCompression {}
+impl<F> CompressionFunction<GroestlDigest<F>, 2> for GroestlDigestCompression<F>
+where
+	OptimalUnderlier256b: PackScalar<F> + Divisible<F::Underlier>,
+	F: BinaryField + From<AESTowerField8b> + Into<AESTowerField8b>,
+{
+}
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use hex_literal::hex;
+	use crate::{HashDigest, HasherDigest};
+	use binius_field::{
+		linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
+		PackedBinaryField32x8b, PackedBinaryField64x8b,
+	};
 	use rand::thread_rng;
 	use std::array;
 
-	fn test_hash_eq(digest: PackedAESBinaryField32x8b, expected: [u8; 32]) {
-		let digest_as_u8: Vec<u8> = digest.iter().map(|x| x.val()).collect::<Vec<_>>();
-		assert_eq!(digest_as_u8[..], expected);
-	}
-
 	#[test]
-	fn test_groestl_hash() {
-		let expected = hex!("5bea5b2e398c903f0127a3467a961dd681069d06632502aa4297580b8ba50c75");
-		let digest =
-			GroestlDigestCompression.compress([GroestlDigest::default(), GroestlDigest::default()]);
-		let digest_as_aes =
-			PackedAESBinaryField32x8b::from_fn(|i| AESTowerField8b::from(digest.get(i)));
-		test_hash_eq(digest_as_aes, expected);
+	fn test_groestl_digest_compression() {
+		let zero_perm =
+			GROESTL_CORE_PERMUTATION.permutation_p(PackedAESBinaryField64x8b::default());
+		let aes_to_bin_transform = make_aes_to_binary_packed_transformer::<
+			PackedAESBinaryField64x8b,
+			PackedBinaryField64x8b,
+		>();
+		let zero_perm_bin = aes_to_bin_transform.transform(&zero_perm);
+		let digest = GroestlDigestCompression::<BinaryField8b>::default().compress([
+			GroestlDigest::<BinaryField8b>::default(),
+			GroestlDigest::<BinaryField8b>::default(),
+		]);
+		for (a, b) in digest.iter().zip(zero_perm_bin.iter().skip(32)) {
+			assert_eq!(a, b);
+		}
 	}
 
 	#[test]

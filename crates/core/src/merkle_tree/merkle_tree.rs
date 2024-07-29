@@ -301,7 +301,7 @@ where
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField16b, Field};
+	use binius_field::{BinaryField16b, BinaryField8b, Field};
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
@@ -318,9 +318,12 @@ mod tests {
 		.take(7)
 		.collect::<Vec<_>>();
 
-		let tree =
-			MerkleTree::build::<_, GroestlHasher<_>, _>(&GroestlDigestCompression, 8, &leaves)
-				.unwrap();
+		let tree = MerkleTree::build::<_, GroestlHasher<_>, _>(
+			&GroestlDigestCompression::<BinaryField8b>::default(),
+			8,
+			&leaves,
+		)
+		.unwrap();
 		assert_eq!(tree.log_len, 8);
 	}
 
@@ -328,7 +331,10 @@ mod tests {
 	fn test_merkle_vcs_commit_prove_open_correctly() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
@@ -353,7 +359,10 @@ mod tests {
 	fn test_merkle_vcs_commit_prove_range_open_correctly() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
@@ -383,7 +392,10 @@ mod tests {
 	fn test_equality_prove_range_prove() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
@@ -407,7 +419,10 @@ mod tests {
 	fn test_merkle_vcs_commit_incorrect_range() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
@@ -436,7 +451,10 @@ mod tests {
 	fn test_merkle_vcs_commit_incorrect_opening() {
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(4, GroestlDigestCompression);
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
@@ -496,7 +514,7 @@ mod tests {
 	fn test_proof_size() {
 		let vcs = <MerkleTreeVCS<BinaryField16b, _, GroestlHasher<_>, _>>::new(
 			4,
-			GroestlDigestCompression,
+			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 		assert_eq!(vcs.proof_size(1), 4 * 32);
 		assert_eq!(vcs.proof_size(2), 4 * 32);

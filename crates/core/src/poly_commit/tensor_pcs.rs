@@ -143,10 +143,10 @@ where
 }
 
 type GroestlMerkleTreeVCS = MerkleTreeVCS<
-	GroestlDigest,
-	GroestlDigest,
-	GroestlHasher<GroestlDigest>,
-	GroestlDigestCompression,
+	GroestlDigest<BinaryField8b>,
+	GroestlDigest<BinaryField8b>,
+	GroestlHasher<GroestlDigest<BinaryField8b>>,
+	GroestlDigestCompression<BinaryField8b>,
 >;
 
 impl<U, F, FA, FI, FE, LC>
@@ -186,7 +186,7 @@ impl<U, F, FA, FI, FE, LC>
 			log_rows,
 			code,
 			n_test_queries,
-			MerkleTreeVCS::new(log_len, GroestlDigestCompression),
+			MerkleTreeVCS::new(log_len, GroestlDigestCompression::<BinaryField8b>::default()),
 		)
 	}
 }
