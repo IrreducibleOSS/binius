@@ -186,7 +186,7 @@ impl<U, F, FA, FI, FE, LC>
 			log_rows,
 			code,
 			n_test_queries,
-			MerkleTreeVCS::new(log_len, GroestlDigestCompression::<BinaryField8b>::default()),
+			MerkleTreeVCS::new(log_len, 0, GroestlDigestCompression::<BinaryField8b>::default()),
 		)
 	}
 }

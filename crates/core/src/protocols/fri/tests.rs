@@ -67,6 +67,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let make_merkle_vcs = |log_len| {
 		MerkleTreeVCS::<F, _, GroestlHasher<_>, _>::new(
 			log_len,
+			0,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		)
 	};
@@ -90,7 +91,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	} = fri::commit_message(&rs_code_packed, &merkle_vcs, &msg).unwrap();
 
 	let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
-	challenger.observe(codeword_commitment);
+	challenger.observe(codeword_commitment.clone());
 
 	// Run the prover to generate the proximity proof
 	let rs_code = ReedSolomonCode::<FA>::new(
@@ -116,7 +117,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				prover_challenger.observe(round_commitment);
+				prover_challenger.observe(round_commitment.clone());
 				round_commitments.push(round_commitment);
 			}
 		}
@@ -140,7 +141,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	assert_eq!(round_commitments.len(), n_round_commitments);
 	for (query_rd, commitment) in round_commitments.iter().enumerate() {
 		verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arities[query_rd]));
-		verifier_challenger.observe(*commitment);
+		verifier_challenger.observe(commitment.clone());
 	}
 
 	verifier_challenges

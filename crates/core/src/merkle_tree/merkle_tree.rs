@@ -2,16 +2,23 @@
 
 use std::{marker::PhantomData, mem, ops::Range, slice};
 
+use p3_challenger::CanObserve;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
+
+use crate::challenger::HashChallenger;
 
 use super::{
 	error::{Error, VerificationError},
 	vcs::VectorCommitScheme,
 };
-use binius_field::PackedField;
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hash::Hasher;
+
+/// MerkleCap is cap_height-th layer of the tree
+#[derive(Debug, Clone)]
+pub struct MerkleCap<D>(pub Vec<D>);
 
 /// A binary Merkle tree that commits batches of vectors.
 ///
@@ -26,6 +33,8 @@ pub struct MerkleTree<D> {
 	pub batch_size: usize,
 	/// The inner nodes, arranged as a flattened array of layers with the root at the end
 	pub inner_nodes: Vec<D>,
+	/// cap_height-th layer of the tree
+	pub cap_height: usize,
 }
 
 impl<D> MerkleTree<D>
@@ -36,21 +45,26 @@ where
 		compression: &C,
 		log_len: usize,
 		leaves: &[impl AsRef<[P]>],
+		cap_height: usize,
 	) -> Result<Self, Error>
 	where
 		P: PackedField + Sync,
 		H: Hasher<P, Digest = D> + Send,
 		C: PseudoCompressionFunction<D, 2> + Sync,
 	{
+		if cap_height > log_len {
+			return Err(Error::IncorrectCapHeight);
+		}
+
 		let len = 1 << log_len;
-
+		let cap_length: usize = 1 << cap_height;
 		let batch_size = leaves.len();
-		let mut inner_nodes = vec![H::Digest::default(); 2 * len - 1];
+		let mut inner_nodes =
+			vec![H::Digest::default(); 2 * len - 1 - cap_length.saturating_sub(1)];
 		Self::hash_leaves::<_, H>(leaves, &mut inner_nodes[..len])?;
-
 		{
-			let (mut prev_layer, mut remaining) = inner_nodes.split_at_mut(len);
-			for i in 1..log_len + 1 {
+			let (mut prev_layer, mut remaining) = inner_nodes.split_at_mut(1 << log_len);
+			for i in 1..(log_len - cap_height + 1) {
 				let (next_layer, next_remaining) = remaining.split_at_mut(1 << (log_len - i));
 				Self::compress_layer(compression, prev_layer, next_layer);
 				(prev_layer, remaining) = (next_layer, next_remaining);
@@ -61,15 +75,14 @@ where
 			log_len,
 			batch_size,
 			inner_nodes,
+			cap_height,
 		})
 	}
 
-	/// Get the Merkle root
-	pub fn root(&self) -> D {
-		*self
-			.inner_nodes
-			.last()
-			.expect("Merkle tree length is at least 1")
+	/// Get the cap_height-th layer of the tree
+	pub fn get_cap(&self) -> &[D] {
+		let cap_elments = 1 << self.cap_height;
+		&self.inner_nodes[self.inner_nodes.len() - cap_elments..self.inner_nodes.len()]
 	}
 
 	/// Get a Merkle branch for the given index
@@ -97,7 +110,7 @@ where
 
 		let range_size_log = log2_strict_usize(range_size);
 
-		let branch = (range_size_log..self.log_len)
+		let branch = (range_size_log..(self.log_len - self.cap_height))
 			.map(|j| {
 				let node_index =
 					(((1 << j) - 1) << (self.log_len + 1 - j)) | (indices.start >> j) ^ 1;
@@ -161,16 +174,18 @@ where
 pub struct MerkleTreeVCS<P, D, H, C> {
 	log_len: usize,
 	compression: C,
+	cap_height: usize,
 	_p_marker: PhantomData<P>,
 	_d_marker: PhantomData<D>,
 	_h_marker: PhantomData<H>,
 }
 
 impl<P, D, H, C> MerkleTreeVCS<P, D, H, C> {
-	pub fn new(log_len: usize, compression: C) -> Self {
+	pub fn new(log_len: usize, cap_height: usize, compression: C) -> Self {
 		Self {
 			log_len,
 			compression,
+			cap_height,
 			_p_marker: PhantomData,
 			_d_marker: PhantomData,
 			_h_marker: PhantomData,
@@ -185,7 +200,7 @@ where
 	H: Hasher<P, Digest = D> + Send,
 	C: PseudoCompressionFunction<D, 2> + Sync,
 {
-	type Commitment = D;
+	type Commitment = MerkleCap<D>;
 	type Committed = MerkleTree<D>;
 	type Proof = Vec<D>;
 	type Error = Error;
@@ -198,8 +213,9 @@ where
 		&self,
 		vecs: &[impl AsRef<[P]>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error> {
-		let tree = MerkleTree::build::<_, H, _>(&self.compression, self.log_len, vecs)?;
-		Ok((tree.root(), tree))
+		let tree =
+			MerkleTree::build::<_, H, _>(&self.compression, self.log_len, vecs, self.cap_height)?;
+		Ok((MerkleCap(tree.get_cap().to_vec()), tree))
 	}
 
 	fn prove_batch_opening(
@@ -228,7 +244,7 @@ where
 	}
 
 	fn proof_size(&self, _n_vecs: usize) -> usize {
-		self.log_len * mem::size_of::<D>()
+		(self.log_len - self.cap_height) * mem::size_of::<D>()
 	}
 
 	fn prove_range_batch_opening(
@@ -259,9 +275,13 @@ where
 
 		let range_size_log = log2_strict_usize(range_size);
 
-		if proof.len() != self.log_len - range_size_log {
+		let expected_proof_len = self
+			.log_len
+			.saturating_sub(self.cap_height + range_size_log);
+
+		if proof.len() != expected_proof_len {
 			return Err(VerificationError::IncorrectBranchLength {
-				expected: self.log_len - range_size_log,
+				expected: expected_proof_len,
 			}
 			.into());
 		}
@@ -272,10 +292,33 @@ where
 			});
 		}
 
-		let values = values.collect::<Vec<_>>();
-		let subtree = MerkleTree::build::<P, H, C>(&self.compression, range_size_log, &values)?;
+		let diff_height = self.log_len - self.cap_height;
 
-		let subtree_root = subtree.root();
+		let values = values.collect::<Vec<_>>();
+
+		let subtree = MerkleTree::build::<P, H, C>(
+			&self.compression,
+			range_size_log,
+			&values,
+			// Allows to trim the cap of the subtree in case the root of the subtree is higher than the main tree cup layer.
+			range_size_log.saturating_sub(diff_height),
+		)?;
+
+		let cap = subtree.get_cap();
+
+		let commitment = &commitment.0;
+
+		// Checks multiple nodes when the root of a subtree is higher than the main tree cup layer.
+		if cap.len() != 1 {
+			let index = indices.start >> diff_height;
+			return if commitment[index..index + cap.len()] == *cap {
+				Ok(())
+			} else {
+				Err(VerificationError::MerkleRootMismatch.into())
+			};
+		}
+
+		let subtree_root = cap[0];
 
 		let mut index = indices.start >> range_size_log;
 
@@ -289,7 +332,7 @@ where
 			next_node
 		});
 
-		if root == *commitment {
+		if commitment[index] == root {
 			Ok(())
 		} else {
 			Err(VerificationError::MerkleRootMismatch.into())
@@ -297,11 +340,24 @@ where
 	}
 }
 
+impl<F: Field, H, PE> CanObserve<MerkleCap<PE>> for HashChallenger<F, H>
+where
+	F: Field,
+	H: Hasher<F>,
+	H::Digest: PackedField<Scalar = F>,
+	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
+	PE::Scalar: ExtensionField<F>,
+{
+	fn observe(&mut self, value: MerkleCap<PE>) {
+		self.observe_slice(&value.0)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField16b, BinaryField8b, Field};
+	use binius_field::{BinaryField16b, BinaryField8b};
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
@@ -322,6 +378,7 @@ mod tests {
 			&GroestlDigestCompression::<BinaryField8b>::default(),
 			8,
 			&leaves,
+			0,
 		)
 		.unwrap();
 		assert_eq!(tree.log_len, 8);
@@ -333,6 +390,7 @@ mod tests {
 
 		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
 			4,
+			2,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 
@@ -345,8 +403,7 @@ mod tests {
 		.collect::<Vec<_>>();
 
 		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
-		assert_eq!(commitment, tree.root());
-
+		assert_eq!(commitment.0, tree.get_cap());
 		for i in 0..16 {
 			let proof = vcs.prove_batch_opening(&tree, i).unwrap();
 			let values = vecs.iter().map(|vec| vec[i]);
@@ -360,24 +417,25 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			6,
 			4,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 
 		let vecs = repeat_with(|| {
 			repeat_with(|| Field::random(&mut rng))
-				.take(16)
+				.take(64)
 				.collect::<Vec<BinaryField16b>>()
 		})
 		.take(3)
 		.collect::<Vec<_>>();
 
 		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
-		assert_eq!(commitment, tree.root());
+		assert_eq!(commitment.0, tree.get_cap());
 
-		for i in 0..4 {
+		for i in 0..6 {
 			let size = 1 << i;
-			for j in 0..(16 >> i) {
+			for j in 0..(64 >> i) {
 				let range = size * j..size * (j + 1);
 				let proof = vcs.prove_range_batch_opening(&tree, range.clone()).unwrap();
 				let values = vecs.iter().map(|vec| &vec[size * j..size * (j + 1)]);
@@ -394,6 +452,7 @@ mod tests {
 
 		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
 			4,
+			3,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 
@@ -406,7 +465,7 @@ mod tests {
 		.collect::<Vec<_>>();
 
 		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
-		assert_eq!(commitment, tree.root());
+		assert_eq!(commitment.0, tree.get_cap());
 
 		for j in 0..16 {
 			let proof_range = vcs.prove_range_batch_opening(&tree, j..(j + 1)).unwrap();
@@ -421,6 +480,7 @@ mod tests {
 
 		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
 			4,
+			0,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 
@@ -433,7 +493,7 @@ mod tests {
 		.collect::<Vec<_>>();
 
 		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
-		assert_eq!(commitment, tree.root());
+		assert_eq!(commitment.0, tree.get_cap());
 
 		assert!(vcs.prove_range_batch_opening(&tree, 0..2).is_ok());
 
@@ -453,6 +513,7 @@ mod tests {
 
 		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
 			4,
+			0,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 
@@ -465,7 +526,7 @@ mod tests {
 		.collect::<Vec<_>>();
 
 		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
-		assert_eq!(commitment, tree.root());
+		assert_eq!(commitment.0, tree.get_cap());
 
 		let proof = vcs.prove_batch_opening(&tree, 6).unwrap();
 		let values = vecs.iter().map(|vec| vec[6]);
@@ -514,6 +575,7 @@ mod tests {
 	fn test_proof_size() {
 		let vcs = <MerkleTreeVCS<BinaryField16b, _, GroestlHasher<_>, _>>::new(
 			4,
+			0,
 			GroestlDigestCompression::<BinaryField8b>::default(),
 		);
 		assert_eq!(vcs.proof_size(1), 4 * 32);

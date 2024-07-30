@@ -10,6 +10,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("The range must correspond to the subtree, and it size must be the power of two")]
 	IncorrectSubTreeRange,
+	#[error("The height of the cap cannot be higher than the tree")]
+	IncorrectCapHeight,
 }
 
 #[derive(Debug, thiserror::Error)]
