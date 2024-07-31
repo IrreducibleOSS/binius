@@ -34,7 +34,7 @@ use binius_field::{
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	packed::set_packed_slice,
+	packed::{get_packed_slice, set_packed_slice},
 	underlier::{UnderlierType, WithUnderlier},
 	AESTowerField128b, AESTowerField8b, BinaryField128b, BinaryField16b, BinaryField1b,
 	BinaryField8b, ExtensionField, Field, PackedAESBinaryField64x8b, PackedBinaryField16x8b,
@@ -693,21 +693,39 @@ where
 			}
 
 			// ShiftBytes & MixBytes
-			for i in 0..8 {
-				for j in 0..8 {
-					let ij = i * 8 + j;
-					p_out[ij][z] = (0..8)
-						.map(|k| {
-							// k is the row index into the input matrix
-							// i is the column index into the input matrix _after_ MixBytes
-							// i_prime is the column index into the input matrix _before_ MixBytes
-							let i_prime = (i + k) % 8;
+			fn shift_p_func(j: usize, i: usize) -> usize {
+				let i_prime = (i + j) % 8;
+				i_prime * 8 + j
+			}
 
-							let p_sub_bytes_out =
-								cast_8b_col(&mut witness.p_sub_bytes[i_prime * 8 + k].output);
-							p_sub_bytes_out[z] * MIX_BYTES_VEC[(8 - j + k) % 8]
-						})
-						.sum();
+			fn get_a_j<U>(
+				p_sub_bytes: &[SBoxGadgetWitness<U, BinaryField1b, AESTowerField8b>; 64],
+				z: usize,
+				j: usize,
+			) -> [AESTowerField8b; 8]
+			where
+				U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b>,
+				PackedType<U, AESTowerField8b>: PackedFieldIndexable,
+			{
+				array::from_fn(|i| {
+					let x = p_sub_bytes[shift_p_func(i, j)].output.as_slice();
+					get_packed_slice(x, z)
+				})
+			}
+			let two = AESTowerField8b::new(2);
+			for j in 0..8 {
+				let a_j = get_a_j(&witness.p_sub_bytes, z, j);
+				for i in 0..8 {
+					let ij = j * 8 + i;
+					let a_i: [AESTowerField8b; 8] = array::from_fn(|k| a_j[(i + k) % 8]);
+					// Here we are using an optimized matrix multiplication, as documented in
+					// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
+					let b_ij = two
+						* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
+							+ a_i[0] + a_i[1] + a_i[2] + a_i[5]
+							+ a_i[7]) + a_i[2] + a_i[4]
+						+ a_i[5] + a_i[6] + a_i[7];
+					p_out[ij][z] = b_ij;
 				}
 			}
 
