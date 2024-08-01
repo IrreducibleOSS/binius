@@ -1,4 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
+// Copyright (c) 2019-2023 RustCrypto Developers
+// Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
+
+//! Constant-time software implementation of GF(2^128) operations for 64-bit architectures.
+//! Adapted from RustCrypto/universal-hashes, which is itself adapted from BearSSL's
+//! `ghash_ctmul64.c`:
+//!
+//! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul64.c;hb=4b6046412>
 
 use super::packed::{impl_broadcast, PackedPrimitiveType};
 use crate::{
