@@ -9,10 +9,11 @@ use super::{
 	subclaims::{
 		packed_sumcheck_meta, packed_sumcheck_witness, projected_bivariate_claim,
 		shifted_sumcheck_meta, shifted_sumcheck_witness, BivariateSumcheck, MemoizedQueries,
+		MemoizedTransparentPolynomials,
 	},
 };
 use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant, ShiftVariant},
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{PackedField, PackedFieldIndexable, TowerField};
@@ -33,6 +34,9 @@ pub struct EvalcheckProver<'a, 'b, F: TowerField, PW: PackedField> {
 	#[getset(get = "pub", get_mut = "pub")]
 	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 
+	pub(crate) memoized_eq_ind: MemoizedTransparentPolynomials<Vec<F>>,
+	pub(crate) memoized_shift_ind: MemoizedTransparentPolynomials<(usize, ShiftVariant, Vec<F>)>,
+
 	#[get = "pub"]
 	new_sumchecks: Vec<BivariateSumcheck<'b, F, PW>>,
 	memoized_queries: MemoizedQueries<PW>,
@@ -52,6 +56,8 @@ where
 		witness_index: &'a mut MultilinearWitnessIndex<'b, PW>,
 	) -> Self {
 		let memoized_queries = MemoizedQueries::new();
+		let memoized_eq_ind = MemoizedTransparentPolynomials::new();
+		let memoized_shift_ind = MemoizedTransparentPolynomials::new();
 		let new_sumchecks = Vec::new();
 		let batch_committed_eval_claims =
 			BatchCommittedEvalClaims::new(&oracles.committed_batches());
@@ -62,6 +68,8 @@ where
 			batch_committed_eval_claims,
 			new_sumchecks,
 			memoized_queries,
+			memoized_eq_ind,
+			memoized_shift_ind,
 		}
 	}
 
@@ -221,7 +229,12 @@ where
 			}
 
 			Shifted(_id, shifted) => {
-				let meta = shifted_sumcheck_meta(self.oracles, &shifted, eval_point.as_slice())?;
+				let meta = shifted_sumcheck_meta(
+					self.oracles,
+					&shifted,
+					eval_point.as_slice(),
+					Some(&mut self.memoized_shift_ind),
+				)?;
 				let sumcheck_claim = projected_bivariate_claim(self.oracles, meta, eval)?;
 				let sumcheck_witness = shifted_sumcheck_witness(
 					self.witness_index,

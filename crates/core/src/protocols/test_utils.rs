@@ -181,6 +181,7 @@ pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
 		verifier.oracles,
 		committed_eval_claims,
 		&mut verifier.batch_committed_eval_claims,
+		None,
 	)?;
 
 	let claims = metas
@@ -205,6 +206,7 @@ where
 		prover.oracles,
 		committed_eval_claims,
 		&mut prover.batch_committed_eval_claims,
+		Some(&mut prover.memoized_eq_ind),
 	)?;
 
 	let mut memoized_queries = MemoizedQueries::new();

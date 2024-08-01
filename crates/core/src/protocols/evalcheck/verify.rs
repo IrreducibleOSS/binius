@@ -256,7 +256,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let meta = shifted_sumcheck_meta(self.oracles, &shifted, eval_point.as_slice())?;
+				let meta =
+					shifted_sumcheck_meta(self.oracles, &shifted, eval_point.as_slice(), None)?;
 				let sumcheck_claim = projected_bivariate_claim(self.oracles, meta, eval)?;
 				self.new_sumcheck_claims.push(sumcheck_claim);
 			}

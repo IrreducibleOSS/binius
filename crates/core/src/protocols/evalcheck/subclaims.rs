@@ -17,7 +17,7 @@ use super::{
 use crate::{
 	oracle::{
 		CompositePolyOracle, Error as OracleError, MultilinearOracleSet, OracleId, Packed,
-		ProjectionVariant, Shifted,
+		ProjectionVariant, ShiftVariant, Shifted,
 	},
 	polynomial::{
 		composition::BivariateProduct,
@@ -36,6 +36,9 @@ pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitn
 pub type BivariateSumcheckWitness<'a, PW> =
 	MultilinearComposite<PW, BivariateProduct, MultilinearWitness<'a, PW>>;
 
+// type alias for the simple linear map used to deduplicate transparent polynomials
+pub type MemoizedTransparentPolynomials<K> = Vec<(K, OracleId)>;
+
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///
 /// Projects to first `block_size()` vars.
@@ -46,12 +49,17 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	shifted: &Shifted<F>,
 	eval_point: &[F],
+	shift_ind_memo: Option<&mut MemoizedTransparentPolynomials<(usize, ShiftVariant, Vec<F>)>>,
 ) -> Result<ProjectedBivariateMeta, Error> {
 	projected_bivariate_meta(
 		oracles,
 		shifted.inner().id(),
 		shifted.block_size(),
 		eval_point,
+		shift_ind_memo,
+		|projected_eval_point| {
+			(shifted.shift_offset(), shifted.shift_variant(), projected_eval_point.to_vec())
+		},
 		|projected_eval_point| {
 			Ok(ShiftIndPartialEval::new(
 				shifted.block_size(),
@@ -113,9 +121,15 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	}
 
 	// NB. projected_n_vars = 0 because eval_point length is log_degree less than inner n_vars
-	projected_bivariate_meta(oracles, packed.inner().id(), 0, eval_point, |_| {
-		Ok(TowerBasis::new(log_degree, binary_tower_level)?)
-	})
+	projected_bivariate_meta(
+		oracles,
+		packed.inner().id(),
+		0,
+		eval_point,
+		None,
+		|_| (),
+		|_| Ok(TowerBasis::new(log_degree, binary_tower_level)?),
+	)
 }
 
 /// Takes in metadata object and creates a witness for a bivariate claim on tower basis.
@@ -165,6 +179,7 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
 	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
+	mut eq_ind_memo: Option<&mut MemoizedTransparentPolynomials<Vec<F>>>,
 ) -> Result<Vec<NonSameQueryPcsClaimMeta<F>>, Error> {
 	let common_suffix_len = compute_common_suffix_len(
 		committed_eval_claims
@@ -188,6 +203,8 @@ pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
 			oracles.committed_oracle_id(claim.id),
 			eval_point.len() - common_suffix_len,
 			eval_point,
+			eq_ind_memo.as_deref_mut(),
+			|projected_eval_point| projected_eval_point.to_vec(),
 			|projected_eval_point| {
 				Ok(EqIndPartialEval::new(
 					projected_eval_point.len(),
@@ -273,11 +290,13 @@ pub struct ProjectedBivariateMeta {
 	projected_n_vars: usize,
 }
 
-fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
+fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static, K: PartialEq>(
 	oracles: &mut MultilinearOracleSet<F>,
 	inner_id: OracleId,
 	projected_n_vars: usize,
 	eval_point: &[F],
+	mut multiplier_memo: Option<&mut MemoizedTransparentPolynomials<K>>,
+	multiplier_memo_key: impl FnOnce(&[F]) -> K,
 	multiplier_transparent_ctr: impl FnOnce(&[F]) -> Result<T, Error>,
 ) -> Result<ProjectedBivariateMeta, Error> {
 	let inner = oracles.oracle(inner_id);
@@ -295,9 +314,27 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	};
 
 	let projected_n_vars = projected_eval_point.len();
+	let memo_key = multiplier_memo_key(projected_eval_point);
 
-	let multiplier_id =
-		oracles.add_transparent(multiplier_transparent_ctr(projected_eval_point)?)?;
+	let opt_multiplier_id = multiplier_memo
+		.as_ref()
+		.and_then(|memo| {
+			memo.iter()
+				.find(|(other_memo_key, _)| other_memo_key == &memo_key)
+		})
+		.map(|(_, oracle_id)| *oracle_id);
+
+	let multiplier_id = if let Some(multiplier_id) = opt_multiplier_id {
+		multiplier_id
+	} else {
+		let multiplier_id =
+			oracles.add_transparent(multiplier_transparent_ctr(projected_eval_point)?)?;
+
+		if let Some(memo) = multiplier_memo.as_mut() {
+			memo.push((memo_key, multiplier_id));
+		}
+		multiplier_id
+	};
 
 	let meta = ProjectedBivariateMeta {
 		inner_id,
@@ -368,8 +405,14 @@ fn projected_bivariate_witness<'a, PW: PackedField>(
 		(inner_multilin.clone(), wf_eval_point)
 	};
 
-	let multiplier_multilin = multiplier_witness_ctr(projected_eval_point)?;
-	witness_index.set(multiplier_id, multiplier_multilin.clone());
+	if witness_index.get(multiplier_id).is_none() {
+		witness_index.set(multiplier_id, multiplier_witness_ctr(projected_eval_point)?);
+	}
+
+	let multiplier_multilin = witness_index
+		.get(multiplier_id)
+		.expect("multilinear forcibly created if absent")
+		.clone();
 
 	let witness = MultilinearComposite::new(
 		multiplier_multilin.n_vars(),
