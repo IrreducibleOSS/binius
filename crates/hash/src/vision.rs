@@ -15,14 +15,16 @@ use binius_field::{
 	packed::set_packed_slice,
 	underlier::{Divisible, WithUnderlier},
 	AESTowerField32b, AESTowerField8b, BinaryField, BinaryField32b, BinaryField8b, ExtensionField,
-	Field, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedDivisible, PackedExtension,
+	Field, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension,
 	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
-use binius_ntt::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, SingleThreadedNTT};
-use cfg_if::cfg_if;
+use binius_ntt::{
+	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
+	SingleThreadedNTT,
+};
 use lazy_static::lazy_static;
 use p3_symmetric::{CryptographicPermutation, Permutation};
-use std::marker::PhantomData;
+use std::{iter::repeat, marker::PhantomData};
 
 const RATE_AS_U32: usize = 16;
 
@@ -34,17 +36,24 @@ const SCALAR_INV_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
 type PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
 	PackedAESBinaryField8x32b,
 >>::PackedTransformation<&'static [AESTowerField32b]>;
+type AdditiveNTT8b = SingleThreadedNTT<AESTowerField8b, OnTheFlyTwiddleAccess<AESTowerField8b>>;
 
 /// The vision specialization over `BinaryField32b` as per [Vision Mark-32](https://eprint.iacr.org/2024/633)
 pub type Vision32b<P> = VisionHasher<BinaryField32b, P>;
 
 lazy_static! {
-	static ref ADDITIVE_NTT_AES: SingleThreadedNTT<AESTowerField8b, PrecomputedTwiddleAccess<AESTowerField8b>> = {
+	/// We use this object only to calculate twiddles for the fast NTT.
+	static ref ADDITIVE_NTT_AES: AdditiveNTT8b = {
 		let log_h = 3;
 		let log_rate = 1;
 		SingleThreadedNTT::<AESTowerField8b>::with_domain_field::<BinaryField8b>(log_h + 2 + log_rate)
-			.expect("log_domain_size is less than 32").precompute_twiddles()
+			.expect("log_domain_size is less than 32")
 	};
+
+	/// Specialized fast additive NTT to transform 3 x PackAESBinaryField8x32b with cosets [0, 1, 2]
+	static ref INVERSE_FAST_TRANSFORM: FastNTT = FastNTT::new(&ADDITIVE_NTT_AES, [0, 1, 2]);
+	/// Specialized fast additive NTT to transform 3 x PackAESBinaryField8x32b with cosets [3, 4, 5]
+	static ref FORWARD_FAST_TRANSFORM: FastNTT = FastNTT::new(&ADDITIVE_NTT_AES, [3, 4, 5]);
 
 	pub static ref FWD_PACKED_TRANS_AES: PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
 		PackedAESBinaryField8x32b,
@@ -97,26 +106,7 @@ impl Default for Vision32MDSTransform {
 
 impl Vision32MDSTransform {
 	pub fn transform(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
-		//! We have observed noticeable performance improvements based on the size of the Packed elements
-		//! you pass onto the transformations which generally seem to vary by platform, although it
-		//! maybe related to the register size and the vector extension if any the code gets compiled to.
-		cfg_if! {
-			if #[cfg(target_arch = "x86_64")] {
-				type NTTDivisible = binius_field::arch::packed_aes_64::PackedAESBinaryField2x32b;
-			} else {
-				type NTTDivisible = binius_field::PackedAESBinaryField4x32b;
-			}
-		}
-
-		for coset in 0..3 {
-			ADDITIVE_NTT_AES
-				.inverse_transform_ext(
-					// Divide into 128-bit packed elements to utilize SIMD NTT operations
-					PackedDivisible::<NTTDivisible>::divide_mut(&mut data[coset..(coset + 1)]),
-					coset as u32,
-				)
-				.unwrap();
-		}
+		INVERSE_FAST_TRANSFORM.inverse(data);
 
 		{
 			let data = PackedExtension::cast_bases_mut(data);
@@ -135,15 +125,7 @@ impl Vision32MDSTransform {
 			data[2] = data[1] + stash_1;
 		}
 
-		for coset in 0..3 {
-			ADDITIVE_NTT_AES
-				.forward_transform_ext(
-					// Divide into 128-bit packed elements to utilize SIMD NTT operations
-					PackedDivisible::<NTTDivisible>::divide_mut(&mut data[coset..(coset + 1)]),
-					(coset + 3) as u32,
-				)
-				.unwrap();
-		}
+		FORWARD_FAST_TRANSFORM.forward(data);
 	}
 }
 
@@ -332,6 +314,177 @@ where
 				msg_len_bytes_enc[4..8].try_into().unwrap(),
 			))),
 		);
+	}
+}
+
+/// This structure represents fast additive NTT transformation that transforms
+/// 3 x `PackedAESBinaryField8x32b` with a different coset for each item in a single go.
+struct FastNTT {
+	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
+	round_0_twiddles: [PackedAESBinaryField32x8b; 2],
+	round_1_twiddles: [PackedAESBinaryField32x8b; 2],
+	round_2_twiddles: [PackedAESBinaryField32x8b; 2],
+}
+
+impl FastNTT {
+	fn new(ntt: &AdditiveNTT8b, cosets: [u32; 3]) -> Self {
+		let get_coset_twiddles_for_round =
+			|round: usize| cosets.map(|coset| ntt.twiddles()[round].coset(3, coset as _));
+
+		let cosets_twiddles_0 = get_coset_twiddles_for_round(0);
+		let cosets_twiddles_1 = get_coset_twiddles_for_round(1);
+		let cosets_twiddles_2 = get_coset_twiddles_for_round(2);
+
+		Self {
+			round_0_twiddles: [
+				PackedAESBinaryField32x8b::from_scalars(
+					repeat(cosets_twiddles_0[0].get(0))
+						.take(4)
+						.chain(repeat(cosets_twiddles_0[1].get(0)).take(4))
+						.chain(repeat(cosets_twiddles_0[0].get(1)).take(4))
+						.chain(repeat(cosets_twiddles_0[1].get(1)).take(4))
+						.chain(repeat(cosets_twiddles_0[0].get(2)).take(4))
+						.chain(repeat(cosets_twiddles_0[1].get(2)).take(4))
+						.chain(repeat(cosets_twiddles_0[0].get(3)).take(4))
+						.chain(repeat(cosets_twiddles_0[1].get(3)).take(4)),
+				),
+				PackedAESBinaryField32x8b::from_scalars(
+					repeat(cosets_twiddles_0[2].get(0))
+						.take(8)
+						.chain(repeat(cosets_twiddles_0[2].get(1)).take(8))
+						.chain(repeat(cosets_twiddles_0[2].get(2)).take(8))
+						.chain(repeat(cosets_twiddles_0[2].get(3)).take(8)),
+				),
+			],
+			round_1_twiddles: [
+				PackedAESBinaryField32x8b::from_scalars(
+					repeat(cosets_twiddles_1[0].get(0))
+						.take(8)
+						.chain(repeat(cosets_twiddles_1[1].get(0)).take(8))
+						.chain(repeat(cosets_twiddles_1[0].get(1)).take(8))
+						.chain(repeat(cosets_twiddles_1[1].get(1)).take(8)),
+				),
+				PackedAESBinaryField32x8b::from_scalars(
+					repeat(cosets_twiddles_1[2].get(0))
+						.take(16)
+						.chain(repeat(cosets_twiddles_1[2].get(1)).take(16)),
+				),
+			],
+			round_2_twiddles: [
+				PackedAESBinaryField32x8b::from_scalars(
+					repeat(cosets_twiddles_2[0].get(0))
+						.take(16)
+						.chain(repeat(cosets_twiddles_2[1].get(0)).take(16)),
+				),
+				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_2[2].get(0)),
+			],
+		}
+	}
+
+	/// This method does a single inverse NTT transformation round for two pairs '(data, coset)'.
+	/// `twiddles` must contain interleaved twiddles for the given round.
+	/// Given an input:
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1, ...].
+	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
+	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
+	/// returns
+	/// (
+	///   [data_0_0 + (data_0_0 + data_0_1) * coset_0_twiddles_0, (data_0_0 + data_0_1) * coset_0_twiddles_0, ...],
+	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, (data_1_0 + data_1_1) * coset_1_twiddles_0, ...],
+	/// )
+	///
+	/// This method allows us to perform inverse NTT transformation for two pieces of data using the same number of vector operations as for one piece.
+	fn transform_inverse_round_pair(
+		twiddles: PackedAESBinaryField32x8b,
+		data_0: PackedAESBinaryField32x8b,
+		data_1: PackedAESBinaryField32x8b,
+		log_block_size: usize,
+	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
+		let (odds, evens) = data_0.interleave(data_1, log_block_size);
+		let result_evens = odds + evens;
+		let result_odds = odds + twiddles * result_evens;
+		result_odds.interleave(result_evens, log_block_size)
+	}
+
+	/// This method executes the transformation equivalent to `AdditiveNTT::inverse_transform`.
+	/// Each `data` element is treated as 32 8-bit AES field elements.
+	#[inline]
+	fn inverse(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
+		let data: &mut [PackedAESBinaryField32x8b] =
+			PackedAESBinaryField8x32b::cast_bases_mut(data);
+
+		let mut inverse_round = |twiddles: &[PackedAESBinaryField32x8b; 2], block_size| {
+			(data[0], data[1]) =
+				Self::transform_inverse_round_pair(twiddles[0], data[0], data[1], block_size);
+			(data[2], _) = Self::transform_inverse_round_pair(
+				twiddles[1],
+				data[2],
+				PackedAESBinaryField32x8b::zero(),
+				block_size,
+			);
+		};
+
+		// round 0
+		inverse_round(&self.round_0_twiddles, 2);
+
+		// round 1
+		inverse_round(&self.round_1_twiddles, 3);
+
+		// round 2
+		inverse_round(&self.round_2_twiddles, 4);
+	}
+
+	/// This method does a single forward NTT transformation round for two pairs (data, coset).
+	/// `twiddles` must contain interleaved twiddles for the given round.
+	/// Given an input:
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1, ...].
+	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
+	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
+	/// returns
+	/// (
+	///   [data_0_0 + data_0_1 * coset_0_twiddles_0, data_0_1 + data_0_0 + data_0_1 * coset_0_twiddles_0, ...],
+	///   [data_1_0 + data_1_1 * coset_1_twiddles_0, data_1_1 + data_1_0 + data_1_1 * coset_1_twiddles_0, ...],
+	/// )
+	///
+	/// This method allows us to perform forward NTT transformation for two pieces of data using the same number of vector operations as for one piece.
+	fn transform_forward_round_pair(
+		twiddles: PackedAESBinaryField32x8b,
+		data_0: PackedAESBinaryField32x8b,
+		data_1: PackedAESBinaryField32x8b,
+		log_block_size: usize,
+	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
+		let (odds, evens) = data_0.interleave(data_1, log_block_size);
+		let result_odds = odds + evens * twiddles;
+		let result_evens = evens + result_odds;
+		result_odds.interleave(result_evens, log_block_size)
+	}
+
+	/// This method executes the transformation equivalent to `AdditiveNTT::forward_transform`.
+	/// Each `data` element is treated as 32 8-bit AES field elements.
+	#[inline]
+	fn forward(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
+		let data: &mut [PackedAESBinaryField32x8b] =
+			PackedAESBinaryField8x32b::cast_bases_mut(data);
+
+		let mut forward_round_simd = |twiddles: &[PackedAESBinaryField32x8b; 2], log_block_size| {
+			(data[0], data[1]) =
+				Self::transform_forward_round_pair(twiddles[0], data[0], data[1], log_block_size);
+			(data[2], _) = Self::transform_forward_round_pair(
+				twiddles[1],
+				data[2],
+				PackedAESBinaryField32x8b::zero(),
+				log_block_size,
+			);
+		};
+
+		// round 2
+		forward_round_simd(&self.round_2_twiddles, 4);
+
+		// round 1
+		forward_round_simd(&self.round_1_twiddles, 3);
+
+		// round 0
+		forward_round_simd(&self.round_0_twiddles, 2);
 	}
 }
 

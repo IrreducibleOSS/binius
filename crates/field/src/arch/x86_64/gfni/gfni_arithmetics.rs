@@ -280,6 +280,7 @@ where
 	IP: PackedField + WithUnderlier<Underlier = U>,
 	OP: PackedField + WithUnderlier<Underlier = U>,
 	U: GfniType + TowerSimdType + std::fmt::Debug,
+	BlendHeight<BLOCKS>: BlendValues<U>,
 {
 	fn transform(&self, data: &IP) -> OP {
 		let packed_values: [OP::Underlier; BLOCKS] = array::from_fn(|i| {
@@ -296,7 +297,7 @@ where
 		});
 
 		// Put `i`'s component of each value to the result
-		OP::from_underlier(blend_values(&packed_values))
+		OP::from_underlier(BlendHeight::<BLOCKS>::blend_values(&packed_values))
 	}
 }
 
@@ -326,29 +327,61 @@ fn shift_bytes<T: GfniType>(value: T, count: i32) -> T {
 	}
 }
 
-/// Creates a packed value where
-/// - components at index `0` are from `values[0]`
-/// - components at index `1` are from `values[1]`
-/// ...
-/// - components at index `values.len() - 1` are from `values[values.len() - 1]`
-#[inline(always)]
-fn blend_values<T: TowerSimdType>(values: &[T]) -> T {
-	match values.len() {
-		1 => values[0],
-		2 => T::blend_odd_even::<BinaryField8b>(values[1], values[0]),
-		4 => T::blend_odd_even::<BinaryField16b>(
-			blend_values(&values[2..4]),
-			blend_values(&values[0..2]),
-		),
-		8 => T::blend_odd_even::<BinaryField32b>(
-			blend_values(&values[4..8]),
-			blend_values(&values[0..4]),
-		),
-		16 => T::blend_odd_even::<BinaryField64b>(
-			blend_values(&values[8..16]),
-			blend_values(&values[0..8]),
-		),
-		_ => panic!("unsupported height"),
+/// Implementing `blend_values` for different sizes for different structures
+/// allows compiler efficiently inline all the codes.
+/// Version with a single function with a match statement is less efficient.
+struct BlendHeight<const LENGTH: usize>;
+
+trait BlendValues<T: TowerSimdType> {
+	/// Creates a packed value where
+	/// - components at index `0` are from `values[0]`
+	/// - components at index `1` are from `values[1]`
+	/// ...
+	/// - components at index `values.len() - 1` are from `values[values.len() - 1]`
+	fn blend_values(values: &[T]) -> T;
+}
+
+impl<T: TowerSimdType> BlendValues<T> for BlendHeight<1> {
+	#[inline(always)]
+	fn blend_values(values: &[T]) -> T {
+		values[0]
+	}
+}
+
+impl<T: TowerSimdType> BlendValues<T> for BlendHeight<2> {
+	#[inline(always)]
+	fn blend_values(values: &[T]) -> T {
+		T::blend_odd_even::<BinaryField8b>(values[1], values[0])
+	}
+}
+
+impl<T: TowerSimdType> BlendValues<T> for BlendHeight<4> {
+	#[inline(always)]
+	fn blend_values(values: &[T]) -> T {
+		T::blend_odd_even::<BinaryField16b>(
+			BlendHeight::<2>::blend_values(&values[2..4]),
+			BlendHeight::<2>::blend_values(&values[0..2]),
+		)
+	}
+}
+
+impl<T: TowerSimdType> BlendValues<T> for BlendHeight<8> {
+	#[inline(always)]
+	fn blend_values(values: &[T]) -> T {
+		T::blend_odd_even::<BinaryField32b>(
+			BlendHeight::<4>::blend_values(&values[4..8]),
+			BlendHeight::<4>::blend_values(&values[0..4]),
+		)
+	}
+}
+
+impl<T: TowerSimdType> BlendValues<T> for BlendHeight<16> {
+	#[inline(always)]
+	fn blend_values(values: &[T]) -> T {
+		T::blend_odd_even::<BinaryField64b>(
+			BlendHeight::<8>::blend_values(&values[8..16]),
+			BlendHeight::<8>::blend_values(&values[0..8]),
+		)
 	}
 }
 
