@@ -3,14 +3,6 @@
 /// Committed polynomial batches are identified by their index.
 pub type BatchId = usize;
 
-/// Metadata about a batch of committed multilinear polynomials.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommittedBatchSpec {
-	pub n_vars: usize,
-	pub n_polys: usize,
-	pub tower_level: usize,
-}
-
 /// A batch of committed multilinear polynomials with a unique batch ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommittedBatch {

@@ -213,17 +213,13 @@ impl TraceOracle {
 		})?;
 
 		// Committed public & witness columns
-		let mut batch_scope_1b =
-			oracles.build_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let p_sub_bytes_inv_bits = batch_scope_1b.add_multiple::<{ 64 * 8 }>();
-		let trace1b_batch_id = batch_scope_1b.build();
+		let trace1b_batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
+		let p_sub_bytes_inv_bits = oracles.add_committed_multiple::<{ 64 * 8 }>(trace1b_batch_id);
 
-		let mut batch_scope_8b =
-			oracles.build_committed_batch(log_size, BinaryField8b::TOWER_LEVEL);
-		let p_in = batch_scope_8b.add_multiple::<64>();
-		let p_out = batch_scope_8b.add_multiple::<64>();
-		let p_sub_bytes_prod = batch_scope_8b.add_multiple::<64>();
-		let trace8b_batch_id = batch_scope_8b.build();
+		let trace8b_batch_id = oracles.add_committed_batch(log_size, BinaryField8b::TOWER_LEVEL);
+		let p_in = oracles.add_committed_multiple::<64>(trace8b_batch_id);
+		let p_out = oracles.add_committed_multiple::<64>(trace8b_batch_id);
+		let p_sub_bytes_prod = oracles.add_committed_multiple::<64>(trace8b_batch_id);
 
 		// Virtual witness columns
 		let p_sub_bytes = array::try_from_fn(|ij| {

@@ -17,10 +17,7 @@
 use anyhow::Result;
 use binius_core::{
 	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
-	oracle::{
-		BatchId, CommittedBatchBuildScope, CompositePolyOracle, MultilinearOracleSet, OracleId,
-		ShiftVariant,
-	},
+	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		composition::{empty_mix_composition, index_composition, IndexComposition},
@@ -459,10 +456,14 @@ struct U32ArraySumSubOracle<const N: usize> {
 }
 
 impl<const N: usize> U32ArraySumSubOracle<N> {
-	pub fn new<F: TowerField>(batch_scope: &mut CommittedBatchBuildScope<F>) -> Self {
-		let z_out = batch_scope.add_multiple();
-		let cout = batch_scope.add_multiple();
-		let cin = [OracleId::MAX; N];
+	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, batch_id: BatchId) -> Self {
+		let z_out = oracles.add_committed_multiple(batch_id);
+		let cout = oracles.add_committed_multiple(batch_id);
+		let cin = cout.map(|x| {
+			oracles
+				.add_shifted(x, 1, 5, ShiftVariant::LogicalLeft)
+				.unwrap()
+		});
 		Self { z_out, cout, cin }
 	}
 
@@ -472,14 +473,6 @@ impl<const N: usize> U32ArraySumSubOracle<N> {
 
 	pub fn val(&self) -> OracleId {
 		self.z_out[N - 1]
-	}
-
-	pub fn fill_cin<F: TowerField>(&mut self, oracles: &mut MultilinearOracleSet<F>) {
-		for i in 0..N {
-			self.cin[i] = oracles
-				.add_shifted(self.cout[i], 1, 5, ShiftVariant::LogicalLeft)
-				.unwrap();
-		}
 	}
 }
 
@@ -569,47 +562,26 @@ impl TraceOracle {
 	}
 
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
-		let mut batch_scope = oracles.build_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let w = batch_scope.add_multiple::<16>();
+		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
+		let w = oracles.add_committed_multiple::<16>(batch_id);
 
-		let mut extended_w = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let extended_w = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let ch = batch_scope.add_multiple::<64>();
+		let ch = oracles.add_committed_multiple::<64>(batch_id);
 
-		let mut temp1 = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let temp1 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let maj = batch_scope.add_multiple::<64>();
+		let maj = oracles.add_committed_multiple::<64>(batch_id);
 
-		let mut temp2 = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let temp2 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let mut d_add_temp1 = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let d_add_temp1 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let mut temp1_add_temp2 = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let temp1_add_temp2 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let mut output_add = array::from_fn(|_| U32ArraySumSubOracle::new(&mut batch_scope));
+		let output_add = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let h_in = batch_scope.add_multiple();
-		let batch_id = batch_scope.build();
-
-		// Define carry in oracles for all U32ArraySumSubOracles
-		extended_w
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
-		temp1
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
-		temp2
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
-		d_add_temp1
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
-		temp1_add_temp2
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
-		output_add
-			.iter_mut()
-			.for_each(|u32_oracle| u32_oracle.fill_cin(oracles));
+		let h_in = oracles.add_committed_multiple(batch_id);
 
 		let get_w =
 			|extended_w: &[U32ArraySumSubOracle<3>], w: &[OracleId], i: OracleId| -> usize {

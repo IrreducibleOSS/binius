@@ -2,7 +2,7 @@
 
 use crate::{
 	challenger::HashChallenger,
-	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
+	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, IsomorphicEvaluationDomainFactory,
 		MultilinearComposite, MultilinearExtension, MultilinearExtensionSpecialized,
@@ -84,13 +84,12 @@ fn test_prove_verify_interaction_helper(
 
 	// Setup Claim
 	let mut oracles = MultilinearOracleSet::new();
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: n_multilinears,
-		tower_level: F::TOWER_LEVEL,
-	});
+	let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let h = (0..n_multilinears)
-		.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
+		.map(|_| {
+			let id = oracles.add_committed(batch_id);
+			oracles.oracle(id)
+		})
 		.collect();
 	let composite_poly =
 		CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears)).unwrap();
@@ -158,13 +157,12 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	// CLAIM
 	let mut oracles = MultilinearOracleSet::new();
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: n_multilinears,
-		tower_level: F::TOWER_LEVEL,
-	});
+	let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let h = (0..n_multilinears)
-		.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
+		.map(|_| {
+			let id = oracles.add_committed(batch_id);
+			oracles.oracle(id)
+		})
 		.collect();
 	let composite_poly =
 		CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears)).unwrap();
@@ -286,16 +284,11 @@ fn test_prove_verify_batch() {
 	let mut oracles = MultilinearOracleSet::<FE>::new();
 	let mut witness_index = MultilinearWitnessIndex::<FE>::new();
 
-	let batch_ids = [4, 6, 8].map(|n_vars| {
-		oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars,
-			n_polys: 1,
-			tower_level: F::TOWER_LEVEL,
-		})
+	let multilin_oracles = [4, 6, 8].map(|n_vars| {
+		let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
+		let id = oracles.add_committed(batch_id);
+		oracles.oracle(id)
 	});
-
-	let multilin_oracles =
-		batch_ids.map(|batch_id| oracles.committed_oracle(CommittedId { batch_id, index: 0 }));
 
 	let composites = multilin_oracles.clone().map(|poly| {
 		CompositePolyOracle::new(poly.n_vars(), vec![poly], SquareComposition).unwrap()

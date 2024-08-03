@@ -1,14 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{
-		BatchId, CommittedBatch, CommittedBatchSpec, CommittedId, CompositePolyOracle, Error,
-	},
+	oracle::{BatchId, CommittedBatch, CommittedId, CompositePolyOracle, Error},
 	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
 use binius_field::{Field, TowerField};
 use getset::{CopyGetters, Getters};
-use std::{array, fmt::Debug, mem::ManuallyDrop, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 /// Identifier for a multilinear oracle in a [`MultilinearOracleSet`].
 pub type OracleId = usize;
@@ -18,8 +16,9 @@ pub type OracleId = usize;
 /// This is kept internal to `MultilinearOracleVec`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CommittedBatchMeta {
-	first_oracle_id: OracleId,
-	spec: CommittedBatchSpec,
+	oracle_ids: Vec<OracleId>,
+	n_vars: usize,
+	tower_level: usize,
 }
 
 /// Metadata about multilinear oracles.
@@ -103,34 +102,26 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		Ok(id)
 	}
 
-	pub fn add_committed_batch(&mut self, committed_batch: CommittedBatchSpec) -> BatchId {
-		let batch_id = self.batches.len();
-		let first_oracle_id = self.oracles.len();
+	pub fn add_committed_batch(&mut self, n_vars: usize, tower_level: usize) -> BatchId {
 		self.batches.push(CommittedBatchMeta {
-			first_oracle_id,
-			spec: committed_batch,
-		});
-		let batch = self.batches.last().expect("batch was just pushed");
-		for index in 0..batch.spec.n_polys {
-			self.oracles
-				.push(MultilinearOracleMeta::Committed(CommittedId { batch_id, index }));
-		}
-		batch_id
-	}
-
-	pub fn build_committed_batch(
-		&mut self,
-		n_vars: usize,
-		tower_level: usize,
-	) -> CommittedBatchBuildScope<F> {
-		let first_oracle_id = self.oracles.len();
-		CommittedBatchBuildScope {
-			oracles: self,
-			first_oracle_id,
-			n_polys: 0,
+			oracle_ids: vec![],
 			n_vars,
 			tower_level,
-		}
+		});
+		self.batches.len() - 1
+	}
+
+	pub fn add_committed(&mut self, batch_id: BatchId) -> OracleId {
+		let oracle_id = self.oracles.len();
+		let index = self.batches[batch_id].oracle_ids.len();
+		self.batches[batch_id].oracle_ids.push(oracle_id);
+		self.oracles
+			.push(MultilinearOracleMeta::Committed(CommittedId { batch_id, index }));
+		oracle_id
+	}
+
+	pub fn add_committed_multiple<const N: usize>(&mut self, batch_id: BatchId) -> [OracleId; N] {
+		[0; N].map(|_| self.add_committed(batch_id))
 	}
 
 	pub fn add_repeating(&mut self, id: OracleId, log_count: usize) -> Result<OracleId, Error> {
@@ -313,11 +304,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 	}
 
 	pub fn committed_batch(&self, id: BatchId) -> CommittedBatch {
-		let batch = &self.batches[id].spec;
+		let batch = &self.batches[id];
 		CommittedBatch {
 			id,
 			n_vars: batch.n_vars,
-			n_polys: batch.n_polys,
+			n_polys: batch.oracle_ids.len(),
 			tower_level: batch.tower_level,
 		}
 	}
@@ -326,28 +317,22 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.batches
 			.iter()
 			.enumerate()
-			.map(|(id, batch)| {
-				let spec = &batch.spec;
-				CommittedBatch {
-					id,
-					n_vars: spec.n_vars,
-					n_polys: spec.n_polys,
-					tower_level: spec.tower_level,
-				}
+			.map(|(id, batch)| CommittedBatch {
+				id,
+				n_vars: batch.n_vars,
+				n_polys: batch.oracle_ids.len(),
+				tower_level: batch.tower_level,
 			})
 			.collect()
 	}
 
 	pub fn committed_oracle_id(&self, id: CommittedId) -> OracleId {
 		let CommittedId { batch_id, index } = id;
-		let batch = &self.batches[batch_id];
-		assert!(index < batch.spec.n_polys);
-		batch.first_oracle_id + index
+		self.batches[batch_id].oracle_ids[index]
 	}
 
 	pub fn committed_oracle_ids(&self, batch_id: BatchId) -> impl Iterator<Item = OracleId> {
-		let batch = self.batches[batch_id].clone();
-		(0..batch.spec.n_polys).map(move |index| batch.first_oracle_id + index)
+		self.batches[batch_id].clone().oracle_ids.into_iter()
 	}
 
 	pub fn committed_oracle(&self, id: CommittedId) -> MultilinearPolyOracle<F> {
@@ -362,7 +347,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 					.expect("polynomial validated by add_transparent"),
 			),
 			MultilinearOracleMeta::Committed(CommittedId { batch_id, index }) => {
-				let batch = &self.batches[*batch_id].spec;
+				let batch = &self.batches[*batch_id];
 				MultilinearPolyOracle::Committed {
 					id: CommittedId {
 						batch_id: *batch_id,
@@ -451,7 +436,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		use MultilinearOracleMeta::*;
 		match &self.oracles[id] {
 			Transparent(poly) => poly.n_vars(),
-			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].spec.n_vars,
+			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].n_vars,
 			Repeating {
 				inner_id,
 				log_count,
@@ -476,7 +461,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		use MultilinearOracleMeta::*;
 		match &self.oracles[id] {
 			Transparent(poly) => poly.binary_tower_level(),
-			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].spec.tower_level,
+			Committed(CommittedId { batch_id, .. }) => self.batches[*batch_id].tower_level,
 			Repeating { inner_id, .. } => self.tower_level(*inner_id),
 			Interleaved(inner_id_0, inner_id_1) => self
 				.tower_level(*inner_id_0)
@@ -795,47 +780,5 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		let composite =
 			CompositePolyOracle::new(self.n_vars(), vec![self], IdentityCompositionPoly);
 		composite.expect("Can always apply the identity composition to one variable")
-	}
-}
-
-pub struct CommittedBatchBuildScope<'a, F: TowerField> {
-	oracles: &'a mut MultilinearOracleSet<F>,
-	first_oracle_id: OracleId,
-	n_polys: usize,
-	n_vars: usize,
-	tower_level: usize,
-}
-
-impl<'a, F: TowerField> CommittedBatchBuildScope<'a, F> {
-	pub fn add_one(&mut self) -> OracleId {
-		let oracle_id = self.first_oracle_id + self.n_polys;
-		self.n_polys += 1;
-		oracle_id
-	}
-
-	pub fn add_multiple<const N: usize>(&mut self) -> [OracleId; N] {
-		let oracle_ids = array::from_fn::<_, N, _>(|i| self.first_oracle_id + self.n_polys + i);
-		self.n_polys += N;
-		oracle_ids
-	}
-
-	pub fn build(self) -> BatchId {
-		let batch_id = self.oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars: self.n_vars,
-			n_polys: self.n_polys,
-			tower_level: self.tower_level,
-		});
-		let _ = ManuallyDrop::new(self);
-		batch_id
-	}
-}
-
-impl<'a, F: TowerField> Drop for CommittedBatchBuildScope<'a, F> {
-	fn drop(&mut self) {
-		let _ = self.oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars: self.n_vars,
-			n_polys: self.n_polys,
-			tower_level: self.tower_level,
-		});
 	}
 }

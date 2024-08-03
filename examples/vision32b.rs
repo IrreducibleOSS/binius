@@ -381,20 +381,18 @@ impl TraceOracle {
 			.add_repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)
 			.unwrap();
 
-		let mut batch_scope = oracles.build_committed_batch(log_size, BinaryField32b::TOWER_LEVEL);
-
-		let state_in = batch_scope.add_multiple::<24>();
-		let inv_0 = batch_scope.add_multiple::<24>();
-		let prod_0 = batch_scope.add_multiple::<24>();
-		let s_box_out_0 = batch_scope.add_multiple::<24>();
-		let s_box_pow2_0 = batch_scope.add_multiple::<24>();
-		let s_box_pow4_0 = batch_scope.add_multiple::<24>();
-		let inv_1 = batch_scope.add_multiple::<24>();
-		let prod_1 = batch_scope.add_multiple::<24>();
-		let inv_pow2_1 = batch_scope.add_multiple::<24>();
-		let inv_pow4_1 = batch_scope.add_multiple::<24>();
-		let state_out = batch_scope.add_multiple::<24>();
-		let trace_batch = batch_scope.build();
+		let trace_batch = oracles.add_committed_batch(log_size, BinaryField32b::TOWER_LEVEL);
+		let state_in = oracles.add_committed_multiple::<24>(trace_batch);
+		let inv_0 = oracles.add_committed_multiple::<24>(trace_batch);
+		let prod_0 = oracles.add_committed_multiple::<24>(trace_batch);
+		let s_box_out_0 = oracles.add_committed_multiple::<24>(trace_batch);
+		let s_box_pow2_0 = oracles.add_committed_multiple::<24>(trace_batch);
+		let s_box_pow4_0 = oracles.add_committed_multiple::<24>(trace_batch);
+		let inv_1 = oracles.add_committed_multiple::<24>(trace_batch);
+		let prod_1 = oracles.add_committed_multiple::<24>(trace_batch);
+		let inv_pow2_1 = oracles.add_committed_multiple::<24>(trace_batch);
+		let inv_pow4_1 = oracles.add_committed_multiple::<24>(trace_batch);
+		let state_out = oracles.add_committed_multiple::<24>(trace_batch);
 
 		let round_begin = array::from_fn(|i| {
 			oracles

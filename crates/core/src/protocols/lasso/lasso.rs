@@ -3,8 +3,8 @@
 use super::error::Error;
 use crate::{
 	oracle::{
-		BatchId, CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultilinearPolyOracle, OracleId, ShiftVariant,
+		BatchId, CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
+		ShiftVariant,
 	},
 	polynomial::{transparent::step_down::StepDown, CompositionPoly, Error as PolynomialError},
 	protocols::{
@@ -51,6 +51,10 @@ impl LassoCount for BinaryField16b {
 pub struct LassoBatch {
 	#[get_copy = "pub"]
 	batch_id: BatchId,
+
+	pub counts: OracleId,
+	pub carry_out: OracleId,
+	pub final_counts: OracleId,
 }
 
 impl LassoBatch {
@@ -58,33 +62,12 @@ impl LassoBatch {
 		oracles: &mut MultilinearOracleSet<F>,
 		n_vars: usize,
 	) -> Self {
-		let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars: n_vars + C::TOWER_LEVEL,
-			n_polys: 3,
-			tower_level: 0,
-		});
-
-		Self { batch_id }
-	}
-
-	pub fn counts_committed_id(&self) -> CommittedId {
-		CommittedId {
-			batch_id: self.batch_id,
-			index: 0,
-		}
-	}
-
-	pub fn carry_out_committed_id(&self) -> CommittedId {
-		CommittedId {
-			batch_id: self.batch_id,
-			index: 1,
-		}
-	}
-
-	pub fn final_counts_committed_id(&self) -> CommittedId {
-		CommittedId {
-			batch_id: self.batch_id,
-			index: 2,
+		let batch_id = oracles.add_committed_batch(n_vars + C::TOWER_LEVEL, 0);
+		Self {
+			batch_id,
+			counts: oracles.add_committed(batch_id),
+			carry_out: oracles.add_committed(batch_id),
+			final_counts: oracles.add_committed(batch_id),
 		}
 	}
 }
@@ -225,9 +208,9 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 	let n_vars_gf2 = n_vars + C::TOWER_LEVEL;
 
 	// Extract Lasso committed column oracles
-	let counts_oracle = oracles.committed_oracle(lasso_batch.counts_committed_id());
-	let carry_out_oracle = oracles.committed_oracle(lasso_batch.carry_out_committed_id());
-	let final_counts_oracle = oracles.committed_oracle(lasso_batch.final_counts_committed_id());
+	let counts_oracle = oracles.oracle(lasso_batch.counts);
+	let carry_out_oracle = oracles.oracle(lasso_batch.carry_out);
+	let final_counts_oracle = oracles.oracle(lasso_batch.final_counts);
 
 	if counts_oracle.n_vars() != n_vars_gf2
 		|| carry_out_oracle.n_vars() != n_vars_gf2

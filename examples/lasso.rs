@@ -59,17 +59,14 @@ impl TraceOracle {
 		oracles: &mut MultilinearOracleSet<F>,
 		log_size: usize,
 	) -> Result<Self> {
-		let mut mults_batch = oracles.build_committed_batch(log_size, 3);
-		let [mult_a, mult_b] = mults_batch.add_multiple();
-		let mults_batch = mults_batch.build();
+		let mults_batch = oracles.add_committed_batch(log_size, 3);
+		let [mult_a, mult_b] = oracles.add_committed_multiple(mults_batch);
 
-		let mut product_batch = oracles.build_committed_batch(log_size, 4);
-		let product = product_batch.add_one();
-		let product_batch = product_batch.build();
+		let product_batch = oracles.add_committed_batch(log_size, 4);
+		let product = oracles.add_committed(product_batch);
 
-		let mut lookup_t_batch = oracles.build_committed_batch(log_size, 5);
-		let lookup_t = lookup_t_batch.add_one();
-		let lookup_t_batch = lookup_t_batch.build();
+		let lookup_t_batch = oracles.add_committed_batch(log_size, 5);
+		let lookup_t = oracles.add_committed(lookup_t_batch);
 
 		let lasso_batch = LassoBatch::new_in::<B32, _>(oracles, log_size);
 
@@ -222,22 +219,17 @@ where
 
 // witness column extractors
 
-fn lasso_committed_polys<'a, U, F, FW>(
-	oracles: &MultilinearOracleSet<F>,
+fn lasso_committed_polys<'a, U, FW>(
 	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
 	lasso_batch: &LassoBatch,
 ) -> Result<[MultilinearExtensionBorrowed<'a, PackedType<U, B1>>; 3]>
 where
-	F: TowerField,
 	U: UnderlierType + PackScalar<FW> + PackScalar<B1>,
 	FW: BinaryField + ExtensionField<B1>,
 {
-	let counts =
-		witness_index.get::<B1>(oracles.committed_oracle_id(lasso_batch.counts_committed_id()))?;
-	let carry_out = witness_index
-		.get::<B1>(oracles.committed_oracle_id(lasso_batch.carry_out_committed_id()))?;
-	let final_counts = witness_index
-		.get::<B1>(oracles.committed_oracle_id(lasso_batch.final_counts_committed_id()))?;
+	let counts = witness_index.get::<B1>(lasso_batch.counts)?;
+	let carry_out = witness_index.get::<B1>(lasso_batch.carry_out)?;
+	let final_counts = witness_index.get::<B1>(lasso_batch.final_counts)?;
 
 	Ok([counts, carry_out, final_counts])
 }
@@ -347,7 +339,7 @@ where
 	let witness_index = lasso_prove_output.witness_index;
 
 	let (lasso_comm, lasso_committed) =
-		pcs1.commit(&lasso_committed_polys(oracles, &witness_index, lasso_batch)?)?;
+		pcs1.commit(&lasso_committed_polys(&witness_index, lasso_batch)?)?;
 
 	challenger.observe(lasso_comm.clone());
 	challenger.observe(mults_comm.clone());
@@ -422,7 +414,7 @@ where
 	let lasso_proof = pcs1.prove_evaluation(
 		&mut challenger,
 		&lasso_committed,
-		&lasso_committed_polys(oracles, &witness_index, lasso_batch)?,
+		&lasso_committed_polys(&witness_index, lasso_batch)?,
 		batch_id_to_eval_point(trace_oracle.lasso_batch.batch_id()),
 	)?;
 

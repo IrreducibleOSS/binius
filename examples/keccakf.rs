@@ -204,12 +204,11 @@ struct TraceOracle {
 
 impl TraceOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
-		let mut batch_scope = oracles.build_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let state_in_oracle = batch_scope.add_multiple::<25>();
-		let state_out_oracle = batch_scope.add_multiple::<25>();
-		let c_oracle = batch_scope.add_multiple::<5>();
-		let d_oracle = batch_scope.add_multiple::<5>();
-		let batch_id = batch_scope.build();
+		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
+		let state_in_oracle = oracles.add_committed_multiple::<25>(batch_id);
+		let state_out_oracle = oracles.add_committed_multiple::<25>(batch_id);
+		let c_oracle = oracles.add_committed_multiple::<5>(batch_id);
+		let d_oracle = oracles.add_committed_multiple::<5>(batch_id);
 
 		let c_shift_oracle = c_oracle.map(|c_x| {
 			oracles

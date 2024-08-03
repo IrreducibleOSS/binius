@@ -2,7 +2,7 @@
 
 use binius_core::{
 	challenger::HashChallenger,
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::{
 		gkr_gpa::{self},
@@ -56,23 +56,12 @@ fn bench_polyval(c: &mut Criterion) {
 
 			// Setup claim
 			let mut oracles = MultilinearOracleSet::<F>::new();
-			let round_1_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-				n_vars: n,
-				n_polys: 2,
-				tower_level: F::TOWER_LEVEL,
-			});
+			let round_1_batch_id = oracles.add_committed_batch(n, F::TOWER_LEVEL);
+			let [numerator, denominator] = oracles.add_committed_multiple(round_1_batch_id);
 
-			let numerator_oracle = oracles.committed_oracle(CommittedId {
-				batch_id: round_1_batch_id,
-				index: 0,
-			});
-			let denominator_oracle = oracles.committed_oracle(CommittedId {
-				batch_id: round_1_batch_id,
-				index: 1,
-			});
 			let claim = ProdcheckClaim {
-				t_oracle: numerator_oracle,
-				u_oracle: denominator_oracle,
+				t_oracle: oracles.oracle(numerator),
+				u_oracle: oracles.oracle(denominator),
 			};
 
 			let witnesses = vec![witness];

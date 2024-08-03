@@ -2,8 +2,8 @@
 
 use crate::{
 	oracle::{
-		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultilinearPolyOracle, ProjectionVariant, ShiftVariant,
+		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant,
+		ShiftVariant,
 	},
 	polynomial::{
 		composition::BivariateProduct, extrapolate_line, transparent::select_row::SelectRow,
@@ -96,34 +96,18 @@ fn test_evaluation_point_batching() {
 	let eval = batch_evals.iter().fold(EF::ONE, |acc, cur| acc * cur);
 
 	let mut oracles = MultilinearOracleSet::new();
-	let batch_0_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars: log_size,
-		n_polys: 2,
-		tower_level,
-	});
-	let batch_1_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars: log_size,
-		n_polys: 2,
-		tower_level,
-	});
+
+	let batch_0_id = oracles.add_committed_batch(log_size, tower_level);
+	let [x0, x1] = oracles.add_committed_multiple::<2>(batch_0_id);
+
+	let batch_1_id = oracles.add_committed_batch(log_size, tower_level);
+	let [y0, y1] = oracles.add_committed_multiple::<2>(batch_1_id);
 
 	let suboracles = vec![
-		oracles.committed_oracle(CommittedId {
-			batch_id: batch_0_id,
-			index: 0,
-		}),
-		oracles.committed_oracle(CommittedId {
-			batch_id: batch_1_id,
-			index: 0,
-		}),
-		oracles.committed_oracle(CommittedId {
-			batch_id: batch_0_id,
-			index: 1,
-		}),
-		oracles.committed_oracle(CommittedId {
-			batch_id: batch_1_id,
-			index: 1,
-		}),
+		oracles.oracle(x0),
+		oracles.oracle(y0),
+		oracles.oracle(x1),
+		oracles.oracle(y1),
 	];
 
 	let mut witness_index = MultilinearWitnessIndex::new();
@@ -215,14 +199,9 @@ fn test_shifted_evaluation_whole_cube() {
 	let n_vars = 8;
 
 	let mut oracles = MultilinearOracleSet::<EF>::new();
+	let batch_id = oracles.add_committed_batch(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
+	let poly_id = oracles.add_committed(batch_id);
 
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 1,
-		tower_level: <P as PackedField>::Scalar::TOWER_LEVEL,
-	});
-
-	let poly_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 0 });
 	let shifted_id = oracles
 		.add_shifted(poly_id, 1, n_vars, ShiftVariant::CircularLeft)
 		.unwrap();
@@ -315,13 +294,9 @@ fn test_shifted_evaluation_subcube() {
 
 	let mut oracles = MultilinearOracleSet::<EF>::new();
 
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 1,
-		tower_level: <P as PackedField>::Scalar::TOWER_LEVEL,
-	});
+	let batch_id = oracles.add_committed_batch(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
+	let poly_id = oracles.add_committed(batch_id);
 
-	let poly_id = oracles.committed_oracle_id(CommittedId { batch_id, index: 0 });
 	let shifted_id = oracles
 		.add_shifted(poly_id, 3, 4, ShiftVariant::CircularLeft)
 		.unwrap();

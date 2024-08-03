@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	polynomial::MultilinearExtension,
 	protocols::msetcheck::{prove, verify, MsetcheckClaim, MsetcheckWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
@@ -69,54 +69,15 @@ fn test_prove_verify_interaction() {
 
 	// Setup claim
 	let mut oracles = MultilinearOracleSet::<F>::new();
+	let round_1_batch_1_id = oracles.add_committed_batch(n_vars, F1::TOWER_LEVEL);
+	let round_1_batch_2_id = oracles.add_committed_batch(n_vars, F2::TOWER_LEVEL);
+	let round_1_batch_3_id = oracles.add_committed_batch(n_vars, F3::TOWER_LEVEL);
+	let [t1, u1] = oracles.add_committed_multiple(round_1_batch_1_id);
+	let [t2, u2] = oracles.add_committed_multiple(round_1_batch_2_id);
+	let [t3, u3] = oracles.add_committed_multiple(round_1_batch_3_id);
 
-	let round_1_batch_1_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 2,
-		tower_level: F1::TOWER_LEVEL,
-	});
-
-	let round_1_batch_2_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 2,
-		tower_level: F2::TOWER_LEVEL,
-	});
-
-	let round_1_batch_3_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 2,
-		tower_level: F3::TOWER_LEVEL,
-	});
-
-	let t1_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_1_id,
-		index: 0,
-	});
-	let u1_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_1_id,
-		index: 1,
-	});
-
-	let t2_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_2_id,
-		index: 0,
-	});
-	let u2_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_2_id,
-		index: 1,
-	});
-
-	let t3_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_3_id,
-		index: 0,
-	});
-	let u3_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: round_1_batch_3_id,
-		index: 1,
-	});
-
-	let t_oracles = [t1_oracle, t2_oracle, t3_oracle];
-	let u_oracles = [u1_oracle, u2_oracle, u3_oracle];
+	let t_oracles = [t1, t2, t3].map(|id| oracles.oracle(id));
+	let u_oracles = [u1, u2, u3].map(|id| oracles.oracle(id));
 
 	let claim = MsetcheckClaim::new(t_oracles, u_oracles).unwrap();
 

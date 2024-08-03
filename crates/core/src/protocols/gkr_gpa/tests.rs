@@ -3,7 +3,7 @@
 use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
 	challenger::HashChallenger,
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
 	witness::MultilinearWitnessIndex,
@@ -50,15 +50,12 @@ fn create_claims_witnesses_helper<F: TowerField>(
 	if n_vars == 0 || n_multilins == 0 {
 		panic!("Require at least one variable and multilinear polynomial");
 	}
-
-	let batch_id = oracle_set.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: n_multilins,
-		tower_level: F::TOWER_LEVEL,
-	});
-
+	let batch_id = oracle_set.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let multilin_oracles = (0..n_multilins)
-		.map(|index| oracle_set.committed_oracle(CommittedId { batch_id, index }))
+		.map(|_| {
+			let id = oracle_set.add_committed(batch_id);
+			oracle_set.oracle(id)
+		})
 		.collect::<Vec<_>>();
 
 	let mles_with_product = generate_poly_helper::<F>(&mut rng, n_vars, n_multilins);

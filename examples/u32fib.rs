@@ -143,10 +143,8 @@ struct U32FibOracle {
 
 impl U32FibOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, n_vars: usize) -> Self {
-		let mut batch_scope = oracles.build_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
-		let fib_out = batch_scope.add_one();
-		let c_out = batch_scope.add_one();
-		let batch_id = batch_scope.build();
+		let batch_id = oracles.add_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
+		let [fib_out, c_out] = oracles.add_committed_multiple(batch_id);
 
 		let fib_prev1 = oracles
 			.add_shifted(fib_out, 32, n_vars, ShiftVariant::LogicalLeft)

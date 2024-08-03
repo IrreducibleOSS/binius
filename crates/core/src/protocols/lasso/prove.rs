@@ -169,10 +169,9 @@ where
 	debug_assert!(zeros.len() * 2 == zeros_counts_plus_one.len());
 
 	// add 1-bit witnesses to the index
-	let counts_oracle_id = oracles.committed_oracle_id(lasso_batch.counts_committed_id());
-	let carry_out_oracle_id = oracles.committed_oracle_id(lasso_batch.carry_out_committed_id());
-	let final_counts_oracle_id =
-		oracles.committed_oracle_id(lasso_batch.final_counts_committed_id());
+	let counts_oracle_id = lasso_batch.counts;
+	let carry_out_oracle_id = lasso_batch.carry_out;
+	let final_counts_oracle_id = lasso_batch.final_counts;
 
 	let counts = Arc::<[U]>::from(counts);
 	let counts_plus_one = Arc::<[U]>::from(counts_plus_one);

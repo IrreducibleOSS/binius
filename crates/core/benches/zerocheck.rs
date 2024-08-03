@@ -3,7 +3,7 @@
 
 use binius_core::{
 	challenger::HashChallenger,
-	oracle::{CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet},
+	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, IsomorphicEvaluationDomainFactory, MultilinearComposite,
 		MultilinearExtension, MultilinearPoly,
@@ -278,14 +278,13 @@ where
 {
 	// Setup poly_oracle
 	let mut oracles = MultilinearOracleSet::new();
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars: poly.n_vars(),
-		n_polys: poly.n_multilinears(),
-		tower_level: F::TOWER_LEVEL,
-	});
+	let batch_id = oracles.add_committed_batch(poly.n_vars(), F::TOWER_LEVEL);
 	let inner = (0..poly.n_multilinears())
-		.map(|index| oracles.committed_oracle(CommittedId { batch_id, index }))
-		.collect::<Vec<_>>();
+		.map(|_| {
+			let id = oracles.add_committed(batch_id);
+			oracles.oracle(id)
+		})
+		.collect();
 	let composite_poly =
 		CompositePolyOracle::new(poly.n_vars(), inner, poly.composition.clone()).unwrap();
 

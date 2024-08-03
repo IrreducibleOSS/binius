@@ -8,7 +8,7 @@ use super::{
 	},
 };
 use crate::{
-	oracle::{CommittedId, MultilinearOracleSet},
+	oracle::{MultilinearOracleSet, OracleId},
 	polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly},
 	witness::MultilinearExtensionIndex,
 };
@@ -61,7 +61,7 @@ pub fn prove<'a, U, F>(
 	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	prodcheck_claim: &ProdcheckClaim<F>,
 	prodcheck_witness: ProdcheckWitness<'a, PackedType<U, F>>,
-	f_prime_committed_id: CommittedId,
+	f_prime: OracleId,
 ) -> Result<ProdcheckProveOutput<'a, U, F>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -85,7 +85,7 @@ where
 		return Err(Error::WitnessSmallerThanUnderlier);
 	}
 
-	let f_prime_oracle = oracles.committed_oracle(f_prime_committed_id);
+	let f_prime_oracle = oracles.oracle(f_prime);
 	if f_prime_oracle.n_vars() != n_vars + 1 {
 		return Err(Error::NumGrandProductVariablesIncorrect);
 	}
@@ -192,10 +192,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		oracle::CommittedBatchSpec, polynomial::MultilinearExtension,
-		protocols::prodcheck::verify::verify,
-	};
+	use crate::{polynomial::MultilinearExtension, protocols::prodcheck::verify::verify};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
 
 	// Creates T(x), a multilinear with evaluations {1, 2, 3, 4} over the boolean hypercube on 2 vars
@@ -234,37 +231,18 @@ mod tests {
 
 		// Setup claim
 		let mut oracles = MultilinearOracleSet::<F>::new();
-		let round_1_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars,
-			n_polys: 2,
-			tower_level: F::TOWER_LEVEL,
-		});
-
-		let numerator_oracle = oracles.committed_oracle(CommittedId {
-			batch_id: round_1_batch_id,
-			index: 0,
-		});
-		let denominator_oracle = oracles.committed_oracle(CommittedId {
-			batch_id: round_1_batch_id,
-			index: 1,
-		});
+		let round_1_batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
+		let numerator = oracles.add_committed(round_1_batch_id);
+		let denominator = oracles.add_committed(round_1_batch_id);
 		let prodcheck_claim = ProdcheckClaim {
-			t_oracle: numerator_oracle,
-			u_oracle: denominator_oracle,
+			t_oracle: oracles.oracle(numerator),
+			u_oracle: oracles.oracle(denominator),
 		};
 
-		let round_2_batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars: n_vars + 1,
-			n_polys: 1,
-			tower_level: F::TOWER_LEVEL,
-		});
+		let round_2_batch_id = oracles.add_committed_batch(n_vars + 1, F::TOWER_LEVEL);
+		let f_prime_oracle_id = oracles.add_committed(round_2_batch_id);
 
-		let f_prime_oracle_committed_id = CommittedId {
-			batch_id: round_2_batch_id,
-			index: 0,
-		};
-
-		let f_prime_oracle = oracles.committed_oracle(f_prime_oracle_committed_id);
+		let f_prime_oracle = oracles.oracle(f_prime_oracle_id);
 
 		// PROVER
 		let witness_index = MultilinearExtensionIndex::<U, F>::new();
@@ -274,7 +252,7 @@ mod tests {
 			witness_index,
 			&prodcheck_claim,
 			prodcheck_witness,
-			f_prime_oracle_committed_id,
+			f_prime_oracle_id,
 		)
 		.unwrap();
 		let reduced_claims = prove_output.reduced_product_check_claims;

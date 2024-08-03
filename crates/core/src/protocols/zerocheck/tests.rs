@@ -4,10 +4,7 @@ use std::{cmp::max, iter::repeat_with};
 
 use crate::{
 	challenger::HashChallenger,
-	oracle::{
-		CommittedBatchSpec, CommittedId, CompositePolyOracle, MultilinearOracleSet,
-		MultilinearPolyOracle,
-	},
+	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
 		MultilinearQuery,
@@ -95,14 +92,15 @@ fn test_prove_verify_interaction_helper(
 
 	// Setup ZC Claim
 	let mut oracles = MultilinearOracleSet::new();
-	let batch_id = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: n_multilinears,
-		tower_level: F::TOWER_LEVEL,
-	});
+
+	let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let h = (0..n_multilinears)
-		.map(|i| oracles.committed_oracle(CommittedId { batch_id, index: i }))
+		.map(|_| {
+			let id = oracles.add_committed(batch_id);
+			oracles.oracle(id)
+		})
 		.collect();
+
 	let composite_poly =
 		CompositePolyOracle::new(n_vars, h, TestProductComposition::new(n_multilinears)).unwrap();
 
@@ -200,15 +198,13 @@ where
 	}
 
 	let n_polys = n_shared_multilins + n_composites - 1;
-	let batch_id = oracle_set.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys,
-		tower_level: F::TOWER_LEVEL,
-	});
-
+	let batch_id = oracle_set.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let multilin_oracles = (0..n_polys)
-		.map(|index| oracle_set.committed_oracle(CommittedId { batch_id, index }))
-		.collect::<Vec<MultilinearPolyOracle<FE>>>();
+		.map(|_| {
+			let oracle_id = oracle_set.add_committed(batch_id);
+			oracle_set.oracle(oracle_id)
+		})
+		.collect::<Vec<_>>();
 
 	let mut multilins = generate_poly_helper::<F>(&mut rng, n_vars, n_shared_multilins);
 	for _ in n_shared_multilins..n_polys {

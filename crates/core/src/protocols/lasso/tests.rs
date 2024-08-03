@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	polynomial::MultilinearExtension,
 	protocols::lasso::{prove, verify, LassoBatch, LassoClaim, LassoWitness},
 	witness::MultilinearExtensionIndex,
@@ -60,25 +60,12 @@ fn test_prove_verify_interaction() {
 	// Setup claim
 	let mut oracles = MultilinearOracleSet::<F>::new();
 
-	let lookup_batch = oracles.add_committed_batch(CommittedBatchSpec {
-		n_vars,
-		n_polys: 2,
-		tower_level: E::TOWER_LEVEL,
-	});
-
-	let t_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: lookup_batch,
-		index: 0,
-	});
-
-	let u_oracle = oracles.committed_oracle(CommittedId {
-		batch_id: lookup_batch,
-		index: 1,
-	});
+	let lookup_batch = oracles.add_committed_batch(n_vars, E::TOWER_LEVEL);
+	let [t, u] = oracles.add_committed_multiple(lookup_batch);
 
 	let lasso_batch = LassoBatch::new_in::<C, _>(&mut oracles, n_vars);
 
-	let claim = LassoClaim::new(t_oracle, u_oracle).unwrap();
+	let claim = LassoClaim::new(oracles.oracle(t), oracles.oracle(u)).unwrap();
 
 	// PROVER
 	let witness_index = MultilinearExtensionIndex::new();

@@ -74,10 +74,7 @@ impl<F: Field> CompositePolyOracle<F> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		oracle::{CommittedBatchSpec, CommittedId, MultilinearOracleSet},
-		polynomial::Error as PolynomialError,
-	};
+	use crate::{oracle::MultilinearOracleSet, polynomial::Error as PolynomialError};
 	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
 
 	#[derive(Clone, Debug)]
@@ -114,35 +111,14 @@ mod tests {
 		let n_vars = 5;
 
 		let mut oracles = MultilinearOracleSet::<F>::new();
-		let batch_id_2b = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars,
-			n_polys: 1,
-			tower_level: BinaryField2b::TOWER_LEVEL,
-		});
-		let poly_2b = oracles.committed_oracle_id(CommittedId {
-			batch_id: batch_id_2b,
-			index: 0,
-		});
+		let batch_id_2b = oracles.add_committed_batch(n_vars, BinaryField2b::TOWER_LEVEL);
+		let poly_2b = oracles.add_committed(batch_id_2b);
 
-		let batch_id_8b = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars,
-			n_polys: 1,
-			tower_level: BinaryField8b::TOWER_LEVEL,
-		});
-		let poly_8b = oracles.committed_oracle_id(CommittedId {
-			batch_id: batch_id_8b,
-			index: 0,
-		});
+		let batch_id_8b = oracles.add_committed_batch(n_vars, BinaryField8b::TOWER_LEVEL);
+		let poly_8b = oracles.add_committed(batch_id_8b);
 
-		let batch_id_32b = oracles.add_committed_batch(CommittedBatchSpec {
-			n_vars,
-			n_polys: 1,
-			tower_level: BinaryField32b::TOWER_LEVEL,
-		});
-		let poly_32b = oracles.committed_oracle_id(CommittedId {
-			batch_id: batch_id_32b,
-			index: 0,
-		});
+		let batch_id_32b = oracles.add_committed_batch(n_vars, BinaryField32b::TOWER_LEVEL);
+		let poly_32b = oracles.add_committed(batch_id_32b);
 
 		let composition = TestByteComposition;
 		let composite = CompositePolyOracle::new(
