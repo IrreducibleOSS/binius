@@ -207,7 +207,6 @@ pub(super) struct LassoReducedClaimOracleIds {
 	pub tu_merged_oracle_id: OracleId,
 	pub final_counts_and_counts_oracle_id: OracleId,
 	pub zeros_counts_plus_one_oracle_id: OracleId,
-	pub zeros_oracle_id: OracleId,
 	pub packed_counts_oracle_id: OracleId,
 	pub packed_counts_plus_one_oracle_id: OracleId,
 	pub packed_final_counts_oracle_id: OracleId,
@@ -289,12 +288,9 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 		oracles.add_merged(packed_final_counts_oracle_id, packed_counts_oracle_id)?;
 	let final_counts_and_counts_oracle = oracles.oracle(final_counts_and_counts_oracle_id);
 
-	// A column of zeros
-	let zeros_oracle_id = oracles.add_linear_combination_with_offset(n_vars, F::ZERO, [])?;
-
 	// merge(zeros, counts_plus_one)
 	let zeros_counts_plus_one_oracle_id =
-		oracles.add_merged(zeros_oracle_id, packed_counts_plus_one_oracle_id)?;
+		oracles.add_zero_padded(packed_counts_plus_one_oracle_id, n_vars + 1)?;
 	let zeros_counts_plus_one_oracle = oracles.oracle(zeros_counts_plus_one_oracle_id);
 
 	let msetcheck_claim = MsetcheckClaim::new(
@@ -311,7 +307,6 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 		tu_merged_oracle_id,
 		final_counts_and_counts_oracle_id,
 		zeros_counts_plus_one_oracle_id,
-		zeros_oracle_id,
 		packed_counts_oracle_id,
 		packed_counts_plus_one_oracle_id,
 		packed_final_counts_oracle_id,

@@ -737,3 +737,91 @@ fn test_evalcheck_interleaved() {
 	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
 	verifier_state.verify(claim, proof).unwrap();
 }
+
+#[test]
+/// Constructs a small ZeroPadded oracle, proves and verifies it.
+fn test_evalcheck_zero_padded() {
+	let inner_n_vars = 7;
+	let n_vars = 10;
+	let row_id = 9;
+
+	let mut oracles = MultilinearOracleSet::new();
+
+	let select_row = SelectRow::new(inner_n_vars, row_id).unwrap();
+
+	let select_row_subwitness = select_row
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let x = select_row_subwitness
+		.clone()
+		.specialize::<PackedBinaryField128x1b>();
+
+	assert!(x.n_vars() >= PackedBinaryField128x1b::LOG_WIDTH);
+
+	let mut values =
+		vec![PackedBinaryField128x1b::zero(); 1 << (n_vars - PackedBinaryField128x1b::LOG_WIDTH)];
+
+	let values_len = values.len();
+
+	let (_, x_values) =
+		values.split_at_mut(values_len - (1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH)));
+
+	x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
+
+	let zero_padded_poly = MultilinearExtension::from_values(values).unwrap();
+
+	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
+
+	let zero_padded_id = oracles
+		.add_zero_padded(select_row_oracle_id, n_vars)
+		.unwrap();
+
+	let zero_padded = oracles.oracle(zero_padded_id);
+
+	let mut witness_index = MultilinearWitnessIndex::<EF>::new();
+
+	let select_row_subwitness = select_row_subwitness.specialize_arc_dyn();
+
+	witness_index.set(select_row_oracle_id, select_row_subwitness);
+	witness_index.set(zero_padded_id, zero_padded_poly.specialize_arc_dyn());
+
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let eval_point = repeat_with(|| <EF as Field>::random(&mut rng))
+		.take(n_vars)
+		.collect::<Vec<_>>();
+
+	let inner_eval_point = &eval_point[..inner_n_vars];
+	let eval = select_row.evaluate(inner_eval_point).unwrap();
+
+	let mut inner_eval = eval;
+
+	for i in 0..n_vars - inner_n_vars {
+		inner_eval = extrapolate_line::<BinaryField128b, BinaryField128b>(
+			BinaryField128b::zero(),
+			inner_eval,
+			eval_point[inner_n_vars + i],
+		);
+	}
+
+	let claim = EvalcheckClaim {
+		poly: zero_padded.into_composite(),
+		eval_point: eval_point.clone(),
+		eval: inner_eval,
+		is_random_point: true,
+	};
+
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index);
+	let proof = prover_state.prove(claim.clone()).unwrap();
+
+	if let EvalcheckProof::Composite { ref subproofs } = proof {
+		assert_eq!(subproofs.len(), 1);
+		assert_matches!(subproofs[0].1, EvalcheckProof::ZeroPadded { .. });
+	} else {
+		panic!("Proof should be Composite.");
+	}
+
+	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
+	verifier_state.verify(claim, proof).unwrap();
+}

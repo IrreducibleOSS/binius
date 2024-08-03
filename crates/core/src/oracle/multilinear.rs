@@ -55,6 +55,10 @@ enum MultilinearOracleMeta<F: TowerField> {
 		offset: F,
 		inner: Vec<(OracleId, F)>,
 	},
+	ZeroPadded {
+		inner_id: OracleId,
+		n_vars: usize,
+	},
 }
 
 /// An ordered set of multilinear polynomial oracles.
@@ -290,6 +294,24 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		Ok(id)
 	}
 
+	pub fn add_zero_padded(&mut self, id: OracleId, n_vars: usize) -> Result<OracleId, Error> {
+		if id >= self.oracles.len() {
+			return Err(Error::InvalidOracleId(id));
+		}
+
+		if self.n_vars(id) > n_vars {
+			return Err(Error::IncorrectNumberOfVariables {
+				expected: self.n_vars(id),
+			});
+		};
+
+		let id = self.add(MultilinearOracleMeta::ZeroPadded {
+			inner_id: id,
+			n_vars,
+		});
+		Ok(id)
+	}
+
 	pub fn committed_batch(&self, id: BatchId) -> CommittedBatch {
 		let batch = &self.batches[id].spec;
 		CommittedBatch {
@@ -415,6 +437,13 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				)
 				.expect("linear combination parameters validated by add_linear_combination"),
 			),
+			MultilinearOracleMeta::ZeroPadded { inner_id, n_vars } => {
+				MultilinearPolyOracle::ZeroPadded {
+					id,
+					inner: Box::new(self.oracle(*inner_id)),
+					n_vars: *n_vars,
+				}
+			}
 		}
 	}
 
@@ -438,6 +467,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				inner_id, values, ..
 			} => self.n_vars(*inner_id) - values.len(),
 			LinearCombination { n_vars, .. } => *n_vars,
+			ZeroPadded { n_vars, .. } => *n_vars,
 		}
 	}
 
@@ -463,6 +493,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			// TODO: We can derive this more tightly by inspecting the coefficients and inner
 			// polynomials.
 			LinearCombination { .. } => F::TOWER_LEVEL,
+			ZeroPadded { .. } => F::TOWER_LEVEL,
 		}
 	}
 }
@@ -507,6 +538,11 @@ pub enum MultilinearPolyOracle<F: Field> {
 	Shifted(OracleId, Shifted<F>),
 	Packed(OracleId, Packed<F>),
 	LinearCombination(OracleId, LinearCombination<F>),
+	ZeroPadded {
+		id: OracleId,
+		inner: Box<MultilinearPolyOracle<F>>,
+		n_vars: usize,
+	},
 }
 
 /// A transparent multilinear polynomial oracle.
@@ -708,6 +744,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Shifted(id, _) => *id,
 			Packed(id, _) => *id,
 			LinearCombination(id, _) => *id,
+			ZeroPadded { id, .. } => *id,
 		}
 	}
 
@@ -725,6 +762,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Shifted(_, shifted) => shifted.inner().n_vars(),
 			Packed(_, packed) => packed.inner().n_vars() - packed.log_degree(),
 			LinearCombination(_, lin_com) => lin_com.n_vars,
+			ZeroPadded { n_vars, .. } => *n_vars,
 		}
 	}
 
@@ -749,6 +787,7 @@ impl<F: Field> MultilinearPolyOracle<F> {
 				.map(|(poly, _)| poly.binary_tower_level())
 				.max()
 				.unwrap_or(0),
+			ZeroPadded { inner, .. } => inner.binary_tower_level(),
 		}
 	}
 

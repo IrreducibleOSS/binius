@@ -306,6 +306,34 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					},
 				)?;
 			}
+			MultilinearPolyOracle::ZeroPadded { id, inner, .. } => {
+				let (inner_eval, subproof) = match evalcheck_proof {
+					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
+
+				let inner_n_vars = inner.n_vars();
+
+				let (subclaim_eval_point, zs) = eval_point.split_at(inner_n_vars);
+
+				let mut extrapolate_eval = inner_eval;
+
+				for z in zs {
+					extrapolate_eval = extrapolate_line::<F, F>(F::ZERO, extrapolate_eval, *z);
+				}
+
+				if extrapolate_eval != eval {
+					return Err(VerificationError::IncorrectEvaluation(id).into());
+				}
+
+				self.verify_multilinear_subclaim(
+					inner_eval,
+					*subproof,
+					*inner,
+					subclaim_eval_point,
+					is_random_point,
+				)?;
+			}
 		}
 
 		Ok(())

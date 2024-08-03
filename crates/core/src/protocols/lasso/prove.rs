@@ -135,7 +135,6 @@ where
 		tu_merged_oracle_id,
 		final_counts_and_counts_oracle_id,
 		zeros_counts_plus_one_oracle_id,
-		zeros_oracle_id,
 		packed_counts_oracle_id,
 		packed_counts_plus_one_oracle_id,
 		packed_final_counts_oracle_id,
@@ -196,7 +195,6 @@ where
 		(packed_final_counts_oracle_id, final_counts),
 		(final_counts_and_counts_oracle_id, final_counts_and_counts.into()),
 		(zeros_counts_plus_one_oracle_id, zeros_counts_plus_one.into()),
-		(zeros_oracle_id, zeros.into()),
 	])?;
 
 	// ...and concatenated [t, u] one

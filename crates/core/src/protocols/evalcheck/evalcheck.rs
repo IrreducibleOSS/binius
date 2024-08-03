@@ -53,6 +53,7 @@ pub enum EvalcheckProof<F: Field> {
 	Composite {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
+	ZeroPadded(F, Box<EvalcheckProof<F>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

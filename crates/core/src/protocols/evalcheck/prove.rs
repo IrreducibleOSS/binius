@@ -290,6 +290,21 @@ where
 			LinearCombination(_id, lin_com) => {
 				self.prove_composite(lin_com.polys().cloned(), eval_point, is_random_point)?
 			}
+
+			ZeroPadded { inner, .. } => {
+				let inner_n_vars = inner.n_vars();
+
+				let inner_eval_point = &eval_point[..inner_n_vars];
+				let wf_inner_eval_point = &wf_eval_point[..inner_n_vars];
+				let (eval, subproof) = self.eval_and_proof(
+					*inner,
+					inner_eval_point,
+					wf_inner_eval_point,
+					is_random_point,
+				)?;
+
+				EvalcheckProof::ZeroPadded(eval, Box::new(subproof))
+			}
 		};
 
 		Ok(proof)
