@@ -8,6 +8,14 @@
 //!
 //! [Plonky3]: <https://github.com/plonky3/plonky3>
 
+mod duplex;
+pub mod field_challenger;
+mod hasher;
+
+pub use duplex::new as new_duplex_challenger;
+pub use field_challenger::FieldChallenger;
+pub use hasher::new as new_hasher_challenger;
+
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedExtensionIndexable, PackedField,
 	PackedFieldIndexable,
