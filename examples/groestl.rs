@@ -797,8 +797,8 @@ struct Proof<F: Field, PCSComm, PCS1bProof, PCS8bProof> {
 	trace8b_open_proof: PCS8bProof,
 }
 
-#[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, F, FW, PCS1b, PCS8b, Comm, Challenger, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
@@ -901,6 +901,7 @@ where
 		[(zerocheck_claim, zerocheck_witness)],
 		domain_factory.clone(),
 		switchover_fn,
+		mixing_challenge,
 		&mut challenger,
 		backend.clone(),
 	)?;

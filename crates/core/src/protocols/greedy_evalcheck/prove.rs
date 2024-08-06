@@ -21,7 +21,9 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
+use tracing::instrument;
 
+#[instrument(skip_all, name = "greedy_evalcheck::prove")]
 pub fn prove<F, PW, DomainField, Challenger, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearExtensionIndex<PW::Underlier, PW::Scalar>,

@@ -74,6 +74,8 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		subcube_index: usize,
 		evals: &mut [P],
 	) -> Result<(), Error>;
+
+    fn underlier_data(&self) -> Option<Vec<u8>>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -140,5 +142,9 @@ where
 		evals: &mut [P],
 	) -> Result<(), Error> {
 		(**self).subcube_evals(subcube_vars, subcube_index, evals)
+	}
+
+	fn underlier_data(&self) -> Option<Vec<u8>> {
+		(**self).underlier_data()
 	}
 }

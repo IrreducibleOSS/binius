@@ -20,8 +20,8 @@ use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_hal::{ComputationBackend, VecOrImmutableSlice};
+use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
@@ -76,7 +76,7 @@ where
 	n_vars: usize,
 	state: ProverState<FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
-	partial_eq_ind_evals: Vec<P>,
+	partial_eq_ind_evals: VecOrImmutableSlice<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	compositions: Vec<Composition>,
 	domains: Vec<EvaluationDomain<FDomain>>,
@@ -189,7 +189,7 @@ where
 					})
 				})
 				.collect();
-			self.partial_eq_ind_evals = updated_evals;
+			self.partial_eq_ind_evals = VecOrImmutableSlice::V(updated_evals);
 		}
 	}
 }

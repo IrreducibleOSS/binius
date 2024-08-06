@@ -8,5 +8,11 @@ authors.workspace = true
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
 bytemuck.workspace = true
+itertools.workspace = true
+linerate = { workspace = true }
+linerate-binius-sumcheck = { workspace = true }
+linerate-binius-tensor-product = { workspace = true }
+once_cell.workspace = true
+rayon.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

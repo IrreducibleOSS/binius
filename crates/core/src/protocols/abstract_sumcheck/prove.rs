@@ -12,7 +12,8 @@ use binius_field::PackedField;
 use binius_hal::ComputationBackend;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
-use std::{cmp::max, collections::HashMap, hash::Hash};
+use std::{cmp::max, collections::HashMap, fmt::Debug, hash::Hash, ops::Range};
+use tracing::debug;
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug, Clone)]
@@ -157,7 +158,7 @@ where
 
 impl<MultilinearId, PW, M, Backend> CommonProversState<MultilinearId, PW, M, Backend>
 where
-	MultilinearId: Clone + Hash + Eq + Sync,
+	MultilinearId: Clone + Hash + Eq + Sync + Debug,
 	PW: PackedField,
 	M: MultilinearPoly<PW> + Sync + Send,
 	Backend: ComputationBackend,
@@ -551,6 +552,7 @@ where
 			.iter()
 			.map(|x| x.iter().sum())
 			.collect();
+		debug!(?current_round_sum, ?evals);
 
 		Ok(evaluator.round_evals_to_coeffs(current_round_sum, evals)?)
 	}

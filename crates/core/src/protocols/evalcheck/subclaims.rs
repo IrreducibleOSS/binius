@@ -34,6 +34,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_utils::bail;
 use std::sync::Arc;
+use tracing::instrument;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
 pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
@@ -465,6 +466,7 @@ impl<P: PackedField> MemoizedQueries<P> {
 		Self { memo: Vec::new() }
 	}
 
+	#[instrument(skip_all)]
 	pub fn full_query<Backend: ComputationBackend>(
 		&mut self,
 		eval_point: &[P::Scalar],

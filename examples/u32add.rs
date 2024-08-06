@@ -216,6 +216,7 @@ where
 		[(zerocheck_claim, zerocheck_witness)],
 		domain_factory.clone(),
 		switchover_fn,
+		mixing_challenge,
 		&mut challenger,
 		backend.clone(),
 	)?;

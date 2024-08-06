@@ -13,7 +13,16 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{cmp::min, fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
+use std::{
+	cmp::min,
+	fmt::Debug,
+	marker::PhantomData,
+	ops::{Deref, Range},
+	sync::Arc,
+};
+use std::mem::size_of_val;
+use std::slice::from_raw_parts;
+use tracing::instrument;
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -57,6 +66,12 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 		}
 		let mu = log2(v.len() * P::WIDTH);
 		Ok(Self { mu, evals: v })
+	}
+
+	#[instrument(skip_all)]
+	pub fn copy_underlier_data(&self) -> Vec<u8> {
+		let p_slice = self.evals();
+		unsafe { from_raw_parts(p_slice.as_ptr() as *const u8, size_of_val(p_slice)).to_vec() }
 	}
 }
 
@@ -514,6 +529,10 @@ where
 			}
 		}
 		Ok(())
+	}
+
+	fn underlier_data(&self) -> Option<Vec<u8>> {
+		Some(self.0.copy_underlier_data())
 	}
 }
 

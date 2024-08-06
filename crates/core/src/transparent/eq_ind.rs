@@ -4,8 +4,9 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, VecOrImmutableSlice};
 use binius_utils::bail;
+use tracing::debug;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -30,9 +31,10 @@ impl<F: Field> EqIndPartialEval<F> {
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
 		&self,
 		backend: Backend,
-	) -> Result<MultilinearExtension<P>, Error> {
+	) -> Result<MultilinearExtension<P, VecOrImmutableSlice<P>>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
-		MultilinearExtension::from_values(multilin_query)
+		debug!(?self.r);
+		MultilinearExtension::from_values_generic(multilin_query)
 	}
 }
 

@@ -1,2 +1,5 @@
 [build]
 rustdocflags = ["-Dwarnings", "--html-in-header", "doc/katex-header.html"]
+
+[net]
+git-fetch-with-cli = true

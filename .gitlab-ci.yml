@@ -17,6 +17,18 @@ stages:
     KUBERNETES_CPU_REQUEST: "1"
     KUBERNETES_MEMORY_REQUEST: "4Gi"
     GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_amd"
+  before_script:
+    - rustc --version
+    - cargo --version
+    # binius depends on linerate, which uses bindgen to generate Rust-C bindings using Clang.
+    - apt-get update && apt-get install -y clang cmake
+    # ensure private Gitlab repos can be cloned by CI
+    # https://oliverjumpertz.com/blog/how-to-handle-private-gitlab-dependencies-with-cargo/
+    - rm -f ~/.gitconfig
+    - rm -f ~/.git-credentials
+    - git config --global credential.helper store
+    - echo "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com" > ~/.git-credentials
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
   tags:
     - k8s
 
@@ -31,6 +43,17 @@ stages:
     GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_arm"
   before_script:
     - if [ "$(uname -m)" != "aarch64" ]; then echo "This job is intended to run on ARM architecture only."; exit 1; fi
+    - rustc --version
+    - cargo --version
+    # binius depends on linerate, which uses bindgen to generate Rust-C bindings using Clang.
+    - apt-get update && apt-get install -y clang cmake
+    # ensure private Gitlab repos can be cloned by CI
+    # https://oliverjumpertz.com/blog/how-to-handle-private-gitlab-dependencies-with-cargo/
+    - rm -f ~/.gitconfig
+    - rm -f ~/.git-credentials
+    - git config --global credential.helper store
+    - echo "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com" > ~/.git-credentials
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
   tags:
     - k8s
 
@@ -38,6 +61,14 @@ stages:
 copyright-check:
   extends: .job_template_amd
   stage: lint
+  before_script:
+    # ensure private Gitlab repos can be cloned by CI
+    # https://oliverjumpertz.com/blog/how-to-handle-private-gitlab-dependencies-with-cargo/
+    - rm -f ~/.gitconfig
+    - rm -f ~/.git-credentials
+    - git config --global credential.helper store
+    - echo "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com" > ~/.git-credentials
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
   script:
     - ./scripts/check_copyright_notice.sh
 
@@ -50,6 +81,18 @@ cargofmt:
 clippy:
   extends: .job_template_amd
   stage: lint
+  before_script:
+    - rustc --version
+    - cargo --version
+    # binius depends on linerate, which uses bindgen to generate Rust-C bindings using Clang.
+    - apt-get update && apt-get install -y clang cmake
+    # ensure private Gitlab repos can be cloned by CI
+    # https://oliverjumpertz.com/blog/how-to-handle-private-gitlab-dependencies-with-cargo/
+    - rm -f ~/.gitconfig
+    - rm -f ~/.git-credentials
+    - git config --global credential.helper store
+    - echo "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com" > ~/.git-credentials
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf ssh://git@gitlab.com
   script:
     - cargo clippy --all --all-features --tests --benches --examples -- -D warnings
 

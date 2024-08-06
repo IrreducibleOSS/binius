@@ -22,7 +22,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, VecOrImmutableSlice};
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
@@ -43,8 +43,8 @@ where
 	common: CommonProversState<(usize, usize), PW, M, Backend>,
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
-	round_eq_ind: MultilinearExtension<PW>,
-	_marker: PhantomData<(DomainField, CW)>,
+	round_eq_ind: MultilinearExtension<PW, VecOrImmutableSlice<PW>>,
+	_marker: PhantomData<(CW, DomainField)>,
 }
 
 impl<'a, F, PW, DomainField, EDF, CW, M, Backend>
@@ -99,7 +99,8 @@ where
 			})
 			.collect();
 
-		self.round_eq_ind = MultilinearExtension::from_values(new_evals)?;
+		self.round_eq_ind =
+			MultilinearExtension::from_values_generic(VecOrImmutableSlice::V(new_evals))?;
 		Ok(())
 	}
 }
@@ -414,7 +415,7 @@ where
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW>,
+	pub eq_ind: &'a MultilinearExtension<PW, VecOrImmutableSlice<PW>>,
 	pub poly_mle: &'a M,
 	pub gkr_challenge: PW::Scalar,
 }
@@ -516,7 +517,7 @@ where
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW>,
+	pub eq_ind: &'a MultilinearExtension<PW, VecOrImmutableSlice<PW>>,
 	pub gkr_challenge: PW::Scalar,
 }
 

@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{Field, PackedField};
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, VecOrImmutableSlice};
 use binius_math::tensor_prod_eq_ind;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -15,9 +15,9 @@ use std::cmp::max;
 /// The tensor product can be updated with a new round challenge in linear time.
 /// This is used in the first several rounds of the sumcheck prover for small-field polynomials,
 /// before it becomes more efficient to switch over to the method that store folded multilinears.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MultilinearQuery<P: PackedField> {
-	expanded_query: Vec<P>,
+	expanded_query: VecOrImmutableSlice<P>,
 	// We want to avoid initializing data at the moment when vector is growing,
 	// So we allocate zeroed vector and keep track of the length of the initialized part.
 	expanded_query_len: usize,
@@ -33,7 +33,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 			let mut expanded_query = zeroed_vec(len);
 			expanded_query[0] = P::set_single(P::Scalar::ONE);
 			Ok(Self {
-				expanded_query,
+				expanded_query: VecOrImmutableSlice::V(expanded_query),
 				expanded_query_len: 1,
 				n_vars: 0,
 			})
@@ -66,12 +66,8 @@ impl<P: PackedField> MultilinearQuery<P> {
 		&self.expanded_query[0..self.expanded_query_len]
 	}
 
-	pub fn into_expansion(mut self) -> Vec<P> {
-		// Trim query vector to the actual size
-		self.expanded_query
-			.resize(self.expanded_query_len, P::zero());
-
-		self.expanded_query
+	pub fn into_expansion(self) -> VecOrImmutableSlice<P> {
+		self.expanded_query.into_expansion(self.expanded_query_len)
 	}
 
 	pub fn update(

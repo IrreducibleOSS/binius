@@ -26,17 +26,17 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{
-	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
-	ComputationBackend,
-};
+use binius_hal::{zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters}, ComputationBackend, VecOrImmutableSlice};
 use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
 use rayon::prelude::*;
 use std::{cmp::max, marker::PhantomData};
-use tracing::instrument;
+use std::mem::size_of;
+use itertools::Itertools;
+use tracing::{instrument, trace};
+use crate::polynomial::MultilinearPoly;
 
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
@@ -46,6 +46,7 @@ pub fn prove<F, PW, DomainField, CH, Backend>(
 	witness: impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
+	mixing_challenge: F,
 	challenger: CH,
 	backend: Backend,
 ) -> Result<ZerocheckProveOutput<F>, Error>
@@ -60,6 +61,7 @@ where
 		[(claim.clone(), witness)],
 		evaluation_domain_factory,
 		switchover_fn,
+		mixing_challenge,
 		challenger,
 		backend,
 	)?;
@@ -88,7 +90,8 @@ where
 	pub(crate) common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
 	zerocheck_challenges: &'a [F],
-	pub(crate) round_eq_ind: MultilinearExtension<PW>,
+	pub(crate) round_eq_ind: MultilinearExtension<PW, VecOrImmutableSlice<PW>>,
+	mixing_challenge: F,
 	backend: Backend,
 	_marker: PhantomData<(F, DomainField, W)>,
 }
@@ -108,6 +111,7 @@ where
 		evaluation_domain_factory: EDF,
 		zerocheck_challenges: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize + 'static,
+		mixing_challenge: F,
 		backend: Backend,
 	) -> Result<Self, Error> {
 		let common = CommonProversState::new(n_vars, switchover_fn, backend.clone());
@@ -129,6 +133,7 @@ where
 			evaluation_domain_factory,
 			zerocheck_challenges,
 			round_eq_ind,
+			mixing_challenge,
 			backend: backend.clone(),
 			_marker: PhantomData,
 		})
@@ -177,7 +182,8 @@ where
 			})]
 		};
 
-		self.round_eq_ind = MultilinearExtension::from_values(new_evals)?;
+		self.round_eq_ind =
+			MultilinearExtension::from_values_generic(VecOrImmutableSlice::V(new_evals))?;
 		Ok(())
 	}
 }
@@ -207,13 +213,15 @@ where
 		seq_id: usize,
 	) -> Result<Self::Prover, Error> {
 		let ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
+		let degree = claim.poly.max_individual_degree();
 		self.common
 			.extend(witness.multilinears(seq_id, ids.as_slice())?)?;
 		let domain = self
 			.evaluation_domain_factory
-			.create(claim.poly.max_individual_degree() + 1)
+			.create(degree + 1)
 			.map_err(Error::MathError)?;
-		let prover = ZerocheckProver::new(claim, witness, domain, self.zerocheck_challenges)?;
+		let prover =
+			ZerocheckProver::new(claim, witness, domain, self.zerocheck_challenges, seq_id)?;
 		Ok(prover)
 	}
 
@@ -281,6 +289,8 @@ where
 	zerocheck_challenges: &'a [F],
 
 	smaller_domain_optimization: Option<SmallerDomainOptimization<PW, DomainField>>,
+
+	seq_id: usize,
 }
 
 #[derive(Debug)]
@@ -353,6 +363,7 @@ where
 		witness: W,
 		domain: EvaluationDomain<DomainField>,
 		zerocheck_challenges: &'a [F],
+		seq_id: usize,
 	) -> Result<Self, Error> {
 		#[cfg(feature = "debug_validate_sumcheck")]
 		validate_witness(&claim, &witness)?;
@@ -371,6 +382,7 @@ where
 			bail!(Error::NotEnoughZerocheckChallenges);
 		}
 		let zerocheck_challenges = &zerocheck_challenges[zerocheck_challenges.len() + 1 - n_vars..];
+		assert_eq!(zerocheck_challenges.len(), n_vars - 1);
 
 		let round_claim = ZerocheckRoundClaim {
 			partial_point: Vec::new(),
@@ -389,6 +401,7 @@ where
 			last_round_proof: None,
 			zerocheck_challenges,
 			smaller_domain_optimization: Some(smaller_domain_optimization),
+			seq_id,
 		};
 
 		Ok(zerocheck_prover)
@@ -485,6 +498,7 @@ where
 		Ok(())
 	}
 
+	#[instrument(skip_all)]
 	fn compute_round_coeffs<EDF, Backend>(
 		&mut self,
 		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
@@ -505,7 +519,7 @@ where
 		let (params, input) = self.descriptor(provers_state);
 		let result = provers_state
 			.backend
-			.zerocheck_compute_round_coeffs::<F, PW>(&params, &input, &mut wrapper)?;
+			.zerocheck_compute_round_coeffs::<F, PW, DomainField>(&params, &input, &mut wrapper)?;
 		// Take the `smaller_domain_optimization` back.
 		// Note that `smaller_domain_optimization` may get changed to None.
 		self.smaller_domain_optimization = wrapper.smaller_domain_optimization.take();
@@ -522,6 +536,7 @@ where
 		EDF: EvaluationDomainFactory<DomainField>,
 		Backend: ComputationBackend,
 	{
+		trace!(?self.round, "execute_round");
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
@@ -549,6 +564,7 @@ where
 
 		// Compute Round Coeffs using the appropriate evaluator
 		let round_coeffs = self.compute_round_coeffs(provers_state)?;
+		trace!(?round_coeffs);
 
 		// Convert round_coeffs to F
 		let coeffs = round_coeffs
@@ -565,6 +581,7 @@ where
 		Ok(proof_round)
 	}
 
+	#[instrument(skip_all)]
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
 		let reductor = ZerocheckReductor {
 			max_individual_degree: self.claim.max_individual_degree(),
@@ -594,16 +611,38 @@ where
 	fn descriptor<EDF, Backend>(
 		&'a self,
 		state: &'a ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
-	) -> (ZerocheckRoundParameters, ZerocheckRoundInput<F, PW>)
+	) -> (ZerocheckRoundParameters, ZerocheckRoundInput<F, PW, DomainField>)
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
 		Backend: ComputationBackend,
 	{
-		// query is expected to be present until the switchover round.
-		let query = state
-			.common
-			.get_subset_query(&self.oracle_ids)
-			.map(|query| query.1.expansion());
+        // query is expected to be present until the switchover round.
+		let (small_field_width, underlier_data, query) = if let Some(query) =
+			state.common.get_subset_query(&self.oracle_ids)
+		{
+			let query = query.1.expansion();
+
+			let oracle_ids = self.claim.poly.inner_polys_oracle_ids().collect_vec();
+			let multilinears = self.witness.multilinears(self.seq_id, &oracle_ids).unwrap();
+			let (small_field_width, underlier_data) = multilinears
+				.into_iter()
+				.map(|(_m_id, m)| {
+					assert_eq!(0, (size_of::<PW>() * 8) % m.extension_degree());
+					assert_eq!(0, ((size_of::<PW>() * 8) / m.extension_degree()) % PW::WIDTH);
+					((size_of::<PW>() * 8) / m.extension_degree() / PW::WIDTH, m.underlier_data())
+				})
+				.unzip::<_, _, Vec<_>, Vec<_>>();
+			assert!(small_field_width.iter().all_equal());
+			trace!(n_oracle_ids = oracle_ids.len(), tower_level = ?small_field_width[0]);
+
+			// Assume tower_level is the same for all multilinears.
+			// This holds true only for a small set of expressions.
+			(Some(small_field_width[0]), Some(underlier_data), Some(query))
+		} else {
+			(None, None, None)
+		};
+
+		let mixing_challenge = state.mixing_challenge;
 		let eq_ind = state.round_eq_ind.evals();
 		(
 			ZerocheckRoundParameters {
@@ -611,12 +650,16 @@ where
 				n_vars: self.claim.poly.n_vars(),
 				cols: self.claim.poly.n_multilinears(),
 				degree: self.claim.poly.max_individual_degree(),
+				small_field_width,
 			},
 			ZerocheckRoundInput {
 				zc_challenges: self.zerocheck_challenges,
 				eq_ind,
 				query,
 				current_round_sum: self.round_claim.current_round_sum,
+				mixing_challenge,
+				domain: &self.domain,
+				underlier_data,
 			},
 		)
 	}

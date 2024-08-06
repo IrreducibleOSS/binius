@@ -45,6 +45,7 @@ pub fn batch_prove<F, PW, DomainField, CH, Backend>(
 	>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
+	mixing_challenge: F,
 	mut challenger: CH,
 	backend: Backend,
 ) -> Result<ZerocheckBatchProveOutput<F>, Error>
@@ -69,6 +70,7 @@ where
 		evaluation_domain_factory,
 		zerocheck_challenges.as_slice(),
 		switchover_fn,
+		mixing_challenge,
 		backend.clone(),
 	)?;
 
