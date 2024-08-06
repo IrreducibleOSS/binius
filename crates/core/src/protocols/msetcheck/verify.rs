@@ -9,7 +9,7 @@ use binius_field::TowerField;
 use tracing::instrument;
 
 /// Verify a multiset check instance reduction.
-#[instrument(skip_all, name = "msetcheck::verify")]
+#[instrument(skip_all, name = "msetcheck::verify", level = "debug")]
 pub fn verify<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claim: &MsetcheckClaim<F>,

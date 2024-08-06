@@ -289,7 +289,7 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_open_proof: PCSProof,
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn generate_trace<U, FW>(
 	log_size: usize,
 	fixed_oracle: &FixedOracle,
@@ -429,7 +429,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, F, FW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
@@ -535,7 +535,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<P, F, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,

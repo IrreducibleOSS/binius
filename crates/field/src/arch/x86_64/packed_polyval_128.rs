@@ -18,6 +18,8 @@ cfg_if! {
 			type Output = Self;
 
 			fn mul(self, rhs: Self) -> Self::Output {
+				crate::tracing::trace_multiplication!(PackedBinaryPolyval1x128b);
+
 				unsafe { super::pclmul::montgomery_mul::simd_montgomery_multiply(self.0, rhs.0) }.into()
 			}
 		}
@@ -27,6 +29,8 @@ cfg_if! {
 
 			fn mul(self, rhs: Self) -> Self::Output {
 				use super::super::portable::packed_polyval_128::PackedBinaryPolyval1x128b;
+
+				crate::tracing::trace_multiplication!(PackedBinaryPolyval1x128b);
 
 				let portable_lhs = PackedBinaryPolyval1x128b::from(
 					u128::from(self.0),

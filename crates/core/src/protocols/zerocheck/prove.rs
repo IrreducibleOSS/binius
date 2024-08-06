@@ -34,7 +34,7 @@ use super::zerocheck::validate_witness;
 
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
-#[instrument(skip_all, name = "zerocheck::prove")]
+#[instrument(skip_all, name = "zerocheck::prove", level = "debug")]
 pub fn prove<F, PW, DomainField, CH>(
 	claim: &ZerocheckClaim<F>,
 	witness: impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
@@ -342,7 +342,7 @@ where
 		Ok(zerocheck_prover)
 	}
 
-	#[instrument(skip_all, name = "zerocheck::finalize")]
+	#[instrument(skip_all, name = "zerocheck::finalize", level = "debug")]
 	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
@@ -477,7 +477,7 @@ where
 		Ok(round_coeffs)
 	}
 
-	#[instrument(skip_all, name = "zerocheck::execute_round")]
+	#[instrument(skip_all, name = "zerocheck::execute_round", level = "debug")]
 	fn execute_round<EDF>(
 		&mut self,
 		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W>,

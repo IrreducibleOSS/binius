@@ -43,6 +43,8 @@ macro_rules! impl_mul_with {
 
 			#[inline]
 			fn mul(self, rhs: Self) -> Self {
+				$crate::tracing::trace_multiplication!($name);
+
 				$crate::arithmetic_traits::TaggedMul::<$strategy>::mul(self, rhs)
 			}
 		}

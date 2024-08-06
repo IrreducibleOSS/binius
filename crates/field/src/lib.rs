@@ -29,6 +29,7 @@ pub mod packed_binary_field;
 pub mod packed_extension;
 mod packed_polyval;
 pub mod polyval;
+mod tracing;
 pub mod transpose;
 pub mod underlier;
 pub mod util;

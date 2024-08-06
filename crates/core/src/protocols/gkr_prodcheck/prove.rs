@@ -12,7 +12,7 @@ use tracing::instrument;
 /// REQUIRES:
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
-#[instrument(skip_all, name = "gkr_prodcheck::batch_prove")]
+#[instrument(skip_all, name = "gkr_prodcheck::batch_prove", level = "debug")]
 pub fn batch_prove<'a, F, PW>(
 	witnesses: impl IntoIterator<Item = ProdcheckWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = ProdcheckClaim<F>>,

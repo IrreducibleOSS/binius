@@ -30,6 +30,8 @@ impl Mul for PackedBinaryPolyval1x128b {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self::Output {
+		crate::tracing::trace_multiplication!(PackedBinaryPolyval1x128b);
+
 		montgomery_multiply(self.0, rhs.0).into()
 	}
 }

@@ -180,6 +180,8 @@ macro_rules! binary_field {
 			type Output = Self;
 
 			fn mul(self, rhs: Self) -> Self::Output {
+				$crate::tracing::trace_multiplication!($name);
+
 				TowerFieldArithmetic::multiply(self, rhs)
 			}
 		}
@@ -352,6 +354,8 @@ macro_rules! binary_subfield_mul_packed_128b {
 					type Output = Self;
 
 					fn mul(self, rhs: $subfield_name) -> Self::Output {
+						$crate::tracing::trace_multiplication!(BinaryField128b, $subfield_name);
+
 						let (a, b) = self.into();
 						(a * rhs, b * rhs).into()
 					}
@@ -370,6 +374,8 @@ macro_rules! mul_by_binary_field_1b {
 			#[allow(clippy::suspicious_arithmetic_impl)]
 			fn mul(self, rhs: BinaryField1b) -> Self::Output {
 				use $crate::underlier::{UnderlierWithBitOps, WithUnderlier};
+
+				$crate::tracing::trace_multiplication!(BinaryField128b, BinaryField1b);
 
 				Self(self.0 & <$name as WithUnderlier>::Underlier::fill_with_bit(u8::from(rhs.0)))
 			}
@@ -405,6 +411,8 @@ macro_rules! binary_tower_subfield_mul {
 			type Output = Self;
 
 			fn mul(self, rhs: $subfield_name) -> Self::Output {
+				$crate::tracing::trace_multiplication!($name, $subfield_name);
+
 				let (a, b) = self.into();
 				(a * rhs, b * rhs).into()
 			}
@@ -419,6 +427,7 @@ macro_rules! impl_field_extension {
 		impl TryFrom<$name> for $subfield_name {
 			type Error = ();
 
+			#[inline]
 			fn try_from(elem: $name) -> Result<Self, Self::Error> {
 				use $crate::underlier::NumCast;
 
@@ -433,6 +442,7 @@ macro_rules! impl_field_extension {
 		}
 
 		impl From<$subfield_name> for $name {
+			#[inline]
 			fn from(elem: $subfield_name) -> Self {
 				$name::new(<$typ>::from(elem.val()))
 			}
@@ -441,6 +451,7 @@ macro_rules! impl_field_extension {
 		impl Add<$subfield_name> for $name {
 			type Output = Self;
 
+			#[inline]
 			fn add(self, rhs: $subfield_name) -> Self::Output {
 				self + Self::from(rhs)
 			}
@@ -449,24 +460,28 @@ macro_rules! impl_field_extension {
 		impl Sub<$subfield_name> for $name {
 			type Output = Self;
 
+			#[inline]
 			fn sub(self, rhs: $subfield_name) -> Self::Output {
 				self - Self::from(rhs)
 			}
 		}
 
 		impl AddAssign<$subfield_name> for $name {
+			#[inline]
 			fn add_assign(&mut self, rhs: $subfield_name) {
 				*self = *self + rhs;
 			}
 		}
 
 		impl SubAssign<$subfield_name> for $name {
+			#[inline]
 			fn sub_assign(&mut self, rhs: $subfield_name) {
 				*self = *self - rhs;
 			}
 		}
 
 		impl MulAssign<$subfield_name> for $name {
+			#[inline]
 			fn mul_assign(&mut self, rhs: $subfield_name) {
 				*self = *self * rhs;
 			}
@@ -475,6 +490,7 @@ macro_rules! impl_field_extension {
 		impl Add<$name> for $subfield_name {
 			type Output = $name;
 
+			#[inline]
 			fn add(self, rhs: $name) -> Self::Output {
 				rhs + self
 			}
@@ -484,6 +500,7 @@ macro_rules! impl_field_extension {
 			type Output = $name;
 
 			#[allow(clippy::suspicious_arithmetic_impl)]
+			#[inline]
 			fn sub(self, rhs: $name) -> Self::Output {
 				rhs + self
 			}
@@ -492,6 +509,7 @@ macro_rules! impl_field_extension {
 		impl Mul<$name> for $subfield_name {
 			type Output = $name;
 
+			#[inline]
 			fn mul(self, rhs: $name) -> Self::Output {
 				rhs * self
 			}
@@ -501,6 +519,7 @@ macro_rules! impl_field_extension {
 			type Iterator = <[$subfield_name; $degree] as IntoIterator>::IntoIter;
 			const DEGREE: usize = $degree;
 
+			#[inline]
 			fn basis(i: usize) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
@@ -510,6 +529,7 @@ macro_rules! impl_field_extension {
 				Ok(Self::new(<$typ>::ONE << (i * $subfield_name::N_BITS)))
 			}
 
+			#[inline]
 			fn from_bases(base_elems: &[$subfield_name]) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
@@ -522,6 +542,7 @@ macro_rules! impl_field_extension {
 				Ok(Self::new(value))
 			}
 
+			#[inline]
 			fn iter_bases(&self) -> Self::Iterator {
 				use $crate::underlier::NumCast;
 

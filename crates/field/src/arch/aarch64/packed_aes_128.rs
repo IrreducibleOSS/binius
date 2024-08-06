@@ -46,6 +46,8 @@ impl Mul for PackedAESBinaryField16x8b {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
+		crate::tracing::trace_multiplication!(PackedAESBinaryField16x8b);
+
 		self.mutate_underlier(|underlier| packed_aes_16x8b_multiply(underlier, rhs.to_underlier()))
 	}
 }

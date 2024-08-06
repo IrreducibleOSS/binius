@@ -214,7 +214,7 @@ where
 	index
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<P, F, PW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
@@ -321,7 +321,7 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<P, F, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,

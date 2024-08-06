@@ -149,7 +149,8 @@ where
 
 #[instrument(
 	skip_all,
-	name = "test_utils::prove_bivariate_sumchecks_with_switchover"
+	name = "test_utils::prove_bivariate_sumchecks_with_switchover",
+	level = "debug"
 )]
 pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
@@ -172,7 +173,11 @@ where
 	Ok((proof, evalcheck_claims))
 }
 
-#[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumcheck_claims")]
+#[instrument(
+	skip_all,
+	name = "test_utils::make_non_same_query_pcs_sumcheck_claims",
+	level = "debug"
+)]
 pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
 	verifier: &mut EvalcheckVerifier<'a, F>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
@@ -192,7 +197,11 @@ pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
 	Ok(claims)
 }
 
-#[instrument(skip_all, name = "test_utils::make_non_same_query_pcs_sumchecks")]
+#[instrument(
+	skip_all,
+	name = "test_utils::make_non_same_query_pcs_sumchecks",
+	level = "debug"
+)]
 pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW>(
 	prover: &mut EvalcheckProver<'a, 'b, F, PW>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],

@@ -350,6 +350,8 @@ impl Mul<BinaryField1b> for BinaryField128bPolyval {
 	#[inline]
 	#[allow(clippy::suspicious_arithmetic_impl)]
 	fn mul(self, rhs: BinaryField1b) -> Self::Output {
+		crate::tracing::trace_multiplication!(BinaryField128bPolyval, BinaryField1b);
+
 		Self(self.0 & u128::fill_with_bit(u8::from(rhs.0)))
 	}
 }

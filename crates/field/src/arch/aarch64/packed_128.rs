@@ -57,6 +57,8 @@ impl Mul for PackedBinaryField16x8b {
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self::Output {
+		crate::tracing::trace_multiplication!(PackedBinaryField16x8b);
+
 		self.mutate_underlier(|underlier| {
 			packed_tower_16x8b_multiply(underlier, rhs.to_underlier())
 		})

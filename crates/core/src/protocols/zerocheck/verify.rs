@@ -15,7 +15,7 @@ use binius_field::TowerField;
 use tracing::instrument;
 
 /// Verify a zerocheck to evalcheck reduction.
-#[instrument(skip_all, name = "zerocheck::verify")]
+#[instrument(skip_all, name = "zerocheck::verify", level = "debug")]
 pub fn verify<F, CH>(
 	claim: &ZerocheckClaim<F>,
 	proof: ZerocheckProof<F>,

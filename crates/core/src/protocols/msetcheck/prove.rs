@@ -32,7 +32,7 @@ use tracing::instrument;
 ///
 /// where $\gamma$ and $\alpha$ are some large field challenges sampled via Fiat-Shamir
 /// (`alpha` is non-`None` if $n \ge 2$).
-#[instrument(skip_all, name = "msetcheck::prove")]
+#[instrument(skip_all, name = "msetcheck::prove", level = "debug")]
 pub fn prove<'a, U, F, FW>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: MultilinearExtensionIndex<'a, U, FW>,

@@ -60,7 +60,7 @@ fn multilin_poly_to_underliers_ref_mut<U: UnderlierType + PackScalar<F>, F: Fiel
 /// paper (which uses multiplicative group to represent counts), as well as uses slightly different notation.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-#[instrument(skip_all, name = "lasso::prove")]
+#[instrument(skip_all, name = "lasso::prove", level = "debug")]
 pub fn prove<'a, FC, U, F, FW, L>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: MultilinearExtensionIndex<'a, U, FW>,

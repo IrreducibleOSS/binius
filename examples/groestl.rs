@@ -583,7 +583,7 @@ fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 	AESTowerField8b::from(S_BOX[idx])
 }
 
-#[instrument]
+#[instrument(level = "debug")]
 fn generate_trace<U>(log_size: usize) -> TraceWitness<U, BinaryField1b, AESTowerField8b>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b>,
@@ -785,7 +785,7 @@ struct Proof<F: Field, PCSComm, PCS1bProof, PCS8bProof> {
 	trace8b_open_proof: PCS8bProof,
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, F, FW, PCS1b, PCS8b, Comm, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
@@ -936,7 +936,7 @@ where
 	})
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<F, P1b, P8b, PCS1b, PCS8b, Comm, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,

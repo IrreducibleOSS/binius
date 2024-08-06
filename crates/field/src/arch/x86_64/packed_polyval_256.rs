@@ -28,6 +28,7 @@ cfg_if! {
 			type Output = Self;
 
 			fn mul(self, rhs: Self) -> Self::Output {
+				crate::tracing::trace_multiplication!(PackedBinaryPolyval2x128b);
 				unsafe { super::pclmul::montgomery_mul::simd_montgomery_multiply(self.0, rhs.0).into() }
 			}
 		}

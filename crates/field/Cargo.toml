@@ -16,12 +16,16 @@ seq-macro.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 transpose.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
 itertools.workspace = true
 paste.workspace = true
 proptest.workspace = true
+
+[features]
+trace_multiplications = []
 
 [lib]
 bench = false

@@ -53,7 +53,7 @@ mod field_types {
 	pub type DomainFieldWithStep = binius_field::BinaryField128b;
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn generate_trace<U, FW>(
 	log_size: usize,
 	trace: &U32AddOracle,
@@ -148,7 +148,7 @@ impl U32AddOracle {
 	}
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, F, FW, DomainField, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
@@ -260,7 +260,7 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<P, F, PCS, CH>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,

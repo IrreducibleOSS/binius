@@ -30,8 +30,8 @@ pub fn init_tracing() -> Result<(), TryInitError> {
 				relevant_above_percent: 2.5,
 				hide_below_percent: 1.0,
 				display_unaccounted: false,
+				accumulate_events: true,
 			}))
-			.with(tracing_subscriber::fmt::layer())
 			.try_init()
 	}
 }

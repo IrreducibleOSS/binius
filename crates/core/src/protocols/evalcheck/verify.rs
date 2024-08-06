@@ -57,7 +57,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	/// Verify an evalcheck claim.
 	///
 	/// See [`EvalcheckProver::prove`](`super::prove::EvalcheckProver::prove`) docs for comments.
-	#[instrument(skip_all, name = "EvalcheckVerifierState::verify")]
+	#[instrument(skip_all, name = "EvalcheckVerifierState::verify", level = "debug")]
 	pub fn verify(
 		&mut self,
 		evalcheck_claim: EvalcheckClaim<F>,

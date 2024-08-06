@@ -6,7 +6,7 @@ use binius_field::TowerField;
 use tracing::instrument;
 
 /// Batch Verify product check instance reductions to two grand product claims.
-#[instrument(skip_all, name = "gkr_prodcheck::batch_verify")]
+#[instrument(skip_all, name = "gkr_prodcheck::batch_verify", level = "debug")]
 pub fn batch_verify<F: TowerField>(
 	claims: impl IntoIterator<Item = ProdcheckClaim<F>>,
 	batch_proof: ProdcheckBatchProof<F>,

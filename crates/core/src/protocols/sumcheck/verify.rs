@@ -16,7 +16,7 @@ use binius_field::Field;
 use tracing::instrument;
 
 /// Verify a sumcheck to evalcheck reduction.
-#[instrument(skip_all, name = "sumcheck::verify")]
+#[instrument(skip_all, name = "sumcheck::verify", level = "debug")]
 pub fn verify<F, CH>(
 	claim: &SumcheckClaim<F>,
 	proof: SumcheckProof<F>,

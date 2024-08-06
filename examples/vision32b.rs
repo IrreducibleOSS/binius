@@ -554,7 +554,7 @@ where
 	U: UnderlierType + PackScalar<BinaryField32b>,
 	PackedType<U, BinaryField32b>: PackedFieldIndexable + Pod,
 {
-	#[instrument]
+	#[instrument(level = "debug")]
 	fn generate_trace(log_size: usize) -> TraceWitness<U, BinaryField32b> {
 		let build_trace_column = || {
 			vec![
@@ -932,7 +932,7 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_open_proof: PCSProof,
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, F, FW, PCS, Comm, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
@@ -1046,7 +1046,7 @@ where
 	})
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<F, P32b, PCS, Comm, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,

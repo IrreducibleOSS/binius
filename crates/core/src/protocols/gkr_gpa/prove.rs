@@ -33,7 +33,7 @@ type MultilinWitnessPair<'a, P> = (MultilinearWitness<'a, P>, MultilinearWitness
 /// REQUIRES:
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
-#[instrument(skip_all, name = "gkr_gpa::batch_prove")]
+#[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
 pub fn batch_prove<'a, F, PW, DomainField, Challenger>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,

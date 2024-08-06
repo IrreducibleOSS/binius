@@ -114,7 +114,7 @@ where
 	PackedType::<U, F>::unpack_scalars_mut(PackedType::<U, F>::from_underliers_ref_mut(underliers))
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn generate_trace<U, FW>(log_size: usize, trace_oracle: &TraceOracle) -> Result<TraceWitness<U, FW>>
 where
 	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<FW>,
@@ -270,7 +270,7 @@ where
 	Ok([witness_index.get::<B32>(trace_oracle.lookup_t)?])
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
 fn prove<U, PCS1, PCS8, PCS16, PCS32, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,
@@ -455,7 +455,7 @@ where
 	})
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
 fn verify<U, PCS1, PCS8, PCS16, PCS32, CH>(
 	oracles: &mut MultilinearOracleSet<B128>,

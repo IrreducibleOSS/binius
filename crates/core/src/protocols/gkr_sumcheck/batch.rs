@@ -24,7 +24,7 @@ pub type GkrSumcheckBatchProveOutput<F> = AbstractSumcheckBatchProveOutput<F>;
 /// Prove a batched GkrSumcheck instance.
 ///
 /// See module documentation for details.
-#[instrument(skip_all, name = "gkr_sumcheck::batch_prove")]
+#[instrument(skip_all, name = "gkr_sumcheck::batch_prove", level = "debug")]
 pub fn batch_prove<F, PW, DomainField, CW, M, CH>(
 	gkr_sumchecks: impl IntoIterator<Item = (GkrSumcheckClaim<F>, GkrSumcheckWitness<PW, CW, M>)>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
@@ -64,7 +64,7 @@ where
 /// Verify a batched GkrSumcheck instance.
 ///
 /// See module documentation for details.
-#[instrument(skip_all, name = "gkr_sumcheck::batch_verify")]
+#[instrument(skip_all, name = "gkr_sumcheck::batch_verify", level = "debug")]
 pub fn batch_verify<F, CH>(
 	claims: impl IntoIterator<Item = GkrSumcheckClaim<F>>,
 	proof: GkrSumcheckBatchProof<F>,

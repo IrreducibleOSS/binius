@@ -19,7 +19,7 @@ use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
-#[instrument(skip_all, name = "gkr_gpa::batch_verify")]
+#[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]
 pub fn batch_verify<F, Challenger>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	proof: GrandProductBatchProof<F>,

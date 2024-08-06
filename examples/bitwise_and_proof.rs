@@ -35,7 +35,7 @@ use tracing::instrument;
 
 composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn prove<U, PCS, CH>(
 	pcs: &PCS,
 	oracles: &mut MultilinearOracleSet<BinaryField128b>,
@@ -140,7 +140,7 @@ struct Proof<C, P> {
 	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
@@ -226,7 +226,7 @@ impl TraceOracle {
 	}
 }
 
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 fn generate_trace<U, FW>(
 	log_size: usize,
 	trace_oracle: &TraceOracle,

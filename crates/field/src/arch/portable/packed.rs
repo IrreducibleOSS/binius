@@ -363,6 +363,8 @@ macro_rules! impl_ops_for_zero_height {
 			#[allow(clippy::suspicious_arithmetic_impl)]
 			#[inline]
 			fn mul(self, b: Self) -> Self {
+				crate::tracing::trace_multiplication!($name);
+
 				(self.to_underlier() & b.to_underlier()).into()
 			}
 		}

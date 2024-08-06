@@ -256,7 +256,7 @@ where
 		Ok(gkr_sumcheck_prover)
 	}
 
-	#[instrument(skip_all, name = "gkr_sumcheck::finalize")]
+	#[instrument(skip_all, name = "gkr_sumcheck::finalize", level = "debug")]
 	fn finalize(mut self, prev_rd_challenge: Option<F>) -> Result<ReducedClaim<F>, Error> {
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
@@ -324,7 +324,7 @@ where
 		Ok(round_coeffs)
 	}
 
-	#[instrument(skip_all, name = "gkr_sumcheck::execute_round")]
+	#[instrument(skip_all, name = "gkr_sumcheck::execute_round", level = "debug")]
 	fn execute_round<EDF>(
 		&mut self,
 		provers_state: &GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>,
