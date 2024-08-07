@@ -97,9 +97,16 @@ where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let sumcheck_reductor = SumcheckReductor;
-
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
+	let max_individual_degree = claims_vec
+		.iter()
+		.map(|claim| claim.max_individual_degree())
+		.max()
+		.unwrap_or(0);
+
+	let sumcheck_reductor = SumcheckReductor {
+		max_individual_degree,
+	};
 
 	let reduced_claims =
 		abstract_sumcheck::batch_verify(claims_vec.clone(), proof, sumcheck_reductor, challenger)?;

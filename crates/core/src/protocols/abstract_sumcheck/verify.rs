@@ -1,17 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::challenger::{CanObserve, CanSample};
-use binius_field::Field;
-
-use crate::polynomial::Error as PolynomialError;
-
 use super::{
 	AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
 	AbstractSumcheckRoundClaim, Error, ReducedClaim,
 };
+use crate::{
+	challenger::{CanObserve, CanSample},
+	polynomial::Error as PolynomialError,
+};
+use binius_field::Field;
 
 pub fn verify<F, CH, E>(
-	claim: impl AbstractSumcheckClaim<F>,
+	claim: &impl AbstractSumcheckClaim<F>,
 	proof: AbstractSumcheckProof<F>,
 	reductor: impl AbstractSumcheckReductor<F, Error = E>,
 	mut challenger: CH,
@@ -23,6 +23,8 @@ where
 {
 	let mut rd_claim = setup_initial_round_claim(claim);
 	for (which_round, round_proof) in proof.rounds.into_iter().enumerate() {
+		reductor.validate_round_proof_shape(which_round, &round_proof)?;
+
 		challenger.observe_slice(round_proof.coeffs.as_slice());
 		let sumcheck_round_challenge = challenger.sample();
 
@@ -43,7 +45,7 @@ where
 }
 
 fn setup_initial_round_claim<F: Field>(
-	claim: impl AbstractSumcheckClaim<F>,
+	claim: &impl AbstractSumcheckClaim<F>,
 ) -> AbstractSumcheckRoundClaim<F> {
 	AbstractSumcheckRoundClaim {
 		partial_point: vec![],

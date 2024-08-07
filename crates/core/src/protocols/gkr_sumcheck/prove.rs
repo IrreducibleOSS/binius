@@ -366,6 +366,7 @@ where
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
 		let reductor = GkrSumcheckReductor {
+			max_individual_degree: self.composition.degree(),
 			gkr_challenge_point: self.gkr_round_challenge,
 		};
 		let round_claim = self.round_claim.clone();

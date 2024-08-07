@@ -12,8 +12,6 @@ use crate::{
 use binius_field::{Field, PackedField};
 use rayon::prelude::*;
 
-pub const GKR_SUMCHECK_DEGREE: usize = 2;
-
 type LayerEvals<'a, FW> = &'a [FW];
 type LayerHalfEvals<'a, FW> = (&'a [FW], &'a [FW]);
 

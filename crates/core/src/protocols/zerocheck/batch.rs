@@ -19,7 +19,7 @@ use crate::{
 	protocols::{
 		abstract_sumcheck::{
 			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
-			AbstractSumcheckBatchProveOutput, AbstractSumcheckWitness,
+			AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim, AbstractSumcheckWitness,
 		},
 		evalcheck::EvalcheckClaim,
 	},
@@ -123,9 +123,18 @@ where
 		.max()
 		.ok_or(Error::EmptyClaimsArray)?;
 
+	let max_individual_degree = claims_vec
+		.iter()
+		.map(|claim| claim.max_individual_degree())
+		.max()
+		.unwrap_or(0);
+
 	let alphas = challenger.sample_vec(max_n_vars - 1);
 
-	let reductor = ZerocheckReductor { alphas: &alphas };
+	let reductor = ZerocheckReductor {
+		max_individual_degree,
+		alphas: &alphas,
+	};
 	let reduced_claims = abstract_sumcheck::batch_verify(claims_vec, proof, reductor, challenger)?;
 
 	let evalcheck_claims = reduced_claims

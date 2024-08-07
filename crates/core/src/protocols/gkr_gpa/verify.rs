@@ -5,10 +5,9 @@ use super::{
 	Error, GrandProductClaim, VerificationError,
 };
 use crate::{
-	polynomial::extrapolate_line,
+	polynomial::{composition::BivariateProduct, extrapolate_line},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
-		gkr_gpa::gkr_gpa::GKR_SUMCHECK_DEGREE,
 		gkr_sumcheck::{self, GkrSumcheckClaim},
 	},
 };
@@ -153,7 +152,7 @@ where
 		sum: claim.eval,
 		r: claim.eval_point.clone(),
 		n_vars: claim.eval_point.len(),
-		degree: GKR_SUMCHECK_DEGREE,
+		degree: BivariateProduct.degree(),
 	});
 	let reduced_claims =
 		gkr_sumcheck::batch_verify(gkr_sumcheck_claims, gkr_sumcheck_batch_proof, &mut challenger)?;

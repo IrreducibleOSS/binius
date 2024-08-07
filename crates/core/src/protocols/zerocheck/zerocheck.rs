@@ -32,6 +32,10 @@ impl<F: Field> AbstractSumcheckClaim<F> for ZerocheckClaim<F> {
 		self.poly.n_vars()
 	}
 
+	fn max_individual_degree(&self) -> usize {
+		self.poly.max_individual_degree()
+	}
+
 	fn sum(&self) -> F {
 		F::ZERO
 	}
@@ -60,11 +64,26 @@ pub struct ZerocheckProveOutput<F: Field> {
 }
 
 pub struct ZerocheckReductor<'a, F> {
+	pub max_individual_degree: usize,
 	pub alphas: &'a [F],
 }
 
 impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 	type Error = Error;
+
+	fn validate_round_proof_shape(
+		&self,
+		_round: usize,
+		proof: &AbstractSumcheckRound<F>,
+	) -> Result<(), Self::Error> {
+		if proof.coeffs.len() != self.max_individual_degree {
+			return Err(VerificationError::NumberOfCoefficients {
+				expected: self.max_individual_degree,
+			}
+			.into());
+		}
+		Ok(())
+	}
 
 	fn reduce_round_claim(
 		&self,
@@ -82,7 +101,13 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 			Some(self.alphas[round - 1])
 		};
 
-		reduce_intermediate_round_claim_helper(claim, challenge, round_proof, alpha_i)
+		reduce_intermediate_round_claim_helper(
+			claim,
+			challenge,
+			round_proof,
+			alpha_i,
+			self.max_individual_degree,
+		)
 	}
 }
 
@@ -96,6 +121,7 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	challenge: F,
 	proof: ZerocheckRound<F>,
 	alpha_i: Option<F>,
+	degree_bound: usize,
 ) -> Result<ZerocheckRoundClaim<F>, Error> {
 	let ZerocheckRoundClaim {
 		mut partial_point,
@@ -127,7 +153,10 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	// For more information, see Section 3 of https://eprint.iacr.org/2024/108
 	if round == 0 {
 		if coeffs.is_empty() {
-			return Err(VerificationError::NumberOfCoefficients.into());
+			return Err(VerificationError::NumberOfCoefficients {
+				expected: degree_bound,
+			}
+			.into());
 		}
 		if alpha_i.is_some() {
 			return Err(VerificationError::UnexpectedZerocheckChallengeFound.into());
@@ -149,7 +178,10 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		coeffs.insert(0, constant_term);
 	} else {
 		if coeffs.is_empty() {
-			return Err(VerificationError::NumberOfCoefficients.into());
+			return Err(VerificationError::NumberOfCoefficients {
+				expected: degree_bound,
+			}
+			.into());
 		}
 		let alpha_i = alpha_i.ok_or(VerificationError::ExpectedZerocheckChallengeNotFound)?;
 

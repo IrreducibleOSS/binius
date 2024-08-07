@@ -7,7 +7,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	protocols::{
-		abstract_sumcheck::{self, finalize_evalcheck_claim},
+		abstract_sumcheck::{self, finalize_evalcheck_claim, AbstractSumcheckClaim},
 		evalcheck::EvalcheckClaim,
 	},
 };
@@ -38,9 +38,10 @@ where
 
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);
 	let reductor = ZerocheckReductor {
+		max_individual_degree: claim.max_individual_degree(),
 		alphas: &zerocheck_challenges,
 	};
-	let reduced_claim = abstract_sumcheck::verify(claim.clone(), proof, reductor, challenger)?;
+	let reduced_claim = abstract_sumcheck::verify(claim, proof, reductor, challenger)?;
 
 	finalize_evalcheck_claim(&claim.poly, reduced_claim).map_err(Into::into)
 }

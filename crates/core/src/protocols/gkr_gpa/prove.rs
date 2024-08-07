@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim, GKR_SUMCHECK_DEGREE},
+	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
 use crate::{
@@ -321,7 +321,7 @@ where
 		// Claim
 		let claim = GkrSumcheckClaim {
 			n_vars: self.current_layer_no(),
-			degree: GKR_SUMCHECK_DEGREE,
+			degree: BivariateProduct.degree(),
 			sum: self.current_layer_claim.eval,
 			r: self.current_layer_claim.eval_point.clone(),
 		};

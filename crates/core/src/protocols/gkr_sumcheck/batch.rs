@@ -89,7 +89,14 @@ where
 		return Err(Error::MismatchedGkrChallengeInClaimsBatch);
 	}
 
+	let max_individual_degree = claims_vec
+		.iter()
+		.map(|claim| claim.max_individual_degree())
+		.max()
+		.unwrap_or(0);
+
 	let reductor = GkrSumcheckReductor {
+		max_individual_degree,
 		gkr_challenge_point: &gkr_challenge_point,
 	};
 

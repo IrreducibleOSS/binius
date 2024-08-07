@@ -33,6 +33,6 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("round proof must have at least one coefficient")]
-	NumberOfCoefficients,
+	#[error("number of coefficients in round proof is incorrect, expected {expected}")]
+	NumberOfCoefficients { expected: usize },
 }

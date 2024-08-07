@@ -312,7 +312,10 @@ where
 	}
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
-		let sumcheck_reductor = SumcheckReductor;
+		let sumcheck_reductor = SumcheckReductor {
+			max_individual_degree: self.claim.max_individual_degree(),
+		};
+
 		let round_claim = self.round_claim.clone();
 		let round_proof = self
 			.last_round_proof

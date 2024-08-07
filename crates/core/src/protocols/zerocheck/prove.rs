@@ -17,9 +17,9 @@ use crate::{
 		MultilinearQuery,
 	},
 	protocols::abstract_sumcheck::{
-		check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
-		AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
-		CommonProversState, ReducedClaim,
+		check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
+		AbstractSumcheckEvaluator, AbstractSumcheckProversState, AbstractSumcheckReductor,
+		AbstractSumcheckWitness, CommonProversState, ReducedClaim,
 	},
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
@@ -524,6 +524,7 @@ where
 
 	fn reduce_claim(&mut self, prev_rd_challenge: F) -> Result<(), Error> {
 		let reductor = ZerocheckReductor {
+			max_individual_degree: self.claim.max_individual_degree(),
 			alphas: self.zerocheck_challenges,
 		};
 		let round_claim = self.round_claim.clone();

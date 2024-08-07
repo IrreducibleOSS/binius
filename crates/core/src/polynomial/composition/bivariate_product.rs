@@ -6,13 +6,23 @@ use binius_field::PackedField;
 #[derive(Debug, Copy, Clone)]
 pub struct BivariateProduct;
 
-impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
-	fn n_vars(&self) -> usize {
+impl BivariateProduct {
+	pub const fn n_vars(&self) -> usize {
 		2
 	}
 
-	fn degree(&self) -> usize {
+	pub const fn degree(&self) -> usize {
 		2
+	}
+}
+
+impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
+	fn n_vars(&self) -> usize {
+		self.n_vars()
+	}
+
+	fn degree(&self) -> usize {
+		self.degree()
 	}
 
 	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
