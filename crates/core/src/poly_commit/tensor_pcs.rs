@@ -27,7 +27,7 @@ use binius_ntt::NTTOptions;
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
-use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
+use std::{cmp::min, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 use tracing::instrument;
 
 /// Creates a new multilinear from a batch of multilinears and a mixing challenge
@@ -182,11 +182,17 @@ impl<U, F, FA, FI, FE, LC>
 			return Err(Error::CodeLengthPowerOfTwoRequired);
 		}
 		let log_len = log2_strict_usize(code.len());
+		// Compute optimal cap height
+		let cap_height = calculate_optimal_cap_height(log_len, n_test_queries);
 		Self::new(
 			log_rows,
 			code,
 			n_test_queries,
-			MerkleTreeVCS::new(log_len, 0, GroestlDigestCompression::<BinaryField8b>::default()),
+			MerkleTreeVCS::new(
+				log_len,
+				cap_height,
+				GroestlDigestCompression::<BinaryField8b>::default(),
+			),
 		)
 	}
 }
@@ -872,6 +878,18 @@ where
 	-total_err.log2() as usize
 }
 
+/// Calculate the optimal Merkle-cap height for a given log length and number of test queries.
+///
+/// It is explained in the concrete soundness subsection of section 5 of
+/// FRI-Binius that the optimal cap height is $\lceil \log_2(\gamma)\rceil$, where $\gamma$
+/// is the number of test queries. However, there is a maximal cap height of `log_len`, which
+/// corresponds to sending all of the leaves of the Merkle tree, so the optimal cap height
+/// is the minimum of the two.
+fn calculate_optimal_cap_height(log_len: usize, n_test_queries: usize) -> usize {
+	let cap_height = (n_test_queries as f64).log2().ceil() as usize;
+	min(cap_height, log_len)
+}
+
 /// Find the TensorPCS parameterization that optimizes proof size.
 ///
 /// This constructs a TensorPCS using a Reed-Solomon code and a Merkle tree using Groestl.
@@ -1278,8 +1296,8 @@ mod tests {
 		>>::new_using_groestl_merkle_tree(8, rs_code, n_test_queries)
 		.unwrap();
 
-		assert_eq!(pcs.proof_size(1), 182720);
-		assert_eq!(pcs.proof_size(2), 332224);
+		assert_eq!(pcs.proof_size(1), 150016);
+		assert_eq!(pcs.proof_size(2), 299520);
 	}
 
 	#[test]
