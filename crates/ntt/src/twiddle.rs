@@ -40,8 +40,8 @@ pub trait TwiddleAccess<F: BinaryField> {
 
 	/// Get the twiddle factor at the given index.
 	///
-	/// Evaluate $\hat{W}\_i(X)$ at the element `index`: write `index` in binary,
-	/// and evaluate at the element $index_0\beta_i \ldots + index_{d-i-1}\beta_{d-1}$.
+	/// Evaluate $\hat{W}\_i(X)$ at the element `index`: write `index` in binary
+	/// and evaluate at the element $index_0\beta_{i+1} \ldots + index_{d-i-2}\beta_{d-1}$.
 	///
 	/// Panics if `index` is not in the range 0 to `1 << self.log_n()`.
 	fn get(&self, index: usize) -> F;
@@ -151,8 +151,12 @@ fn subset_sum<F: Field>(values: &[F], n_bits: usize, index: usize) -> F {
 pub struct PrecomputedTwiddleAccess<F, SEvals = Vec<F>> {
 	log_n: usize,
 	/// If we are implicitly in NTT round i, then `s_evals` contains the evaluations of $\hat{W}\_i$
-	/// on the entire space $K/U_{i-1}$, where the order is the usual "binary counting order"
-	/// in the basis vectors $\beta_i,\ldots ,\beta_{d-1}$.
+	/// on the entire space $K/U_{i+1}$, where the order is the usual "binary counting order"
+	/// in the basis vectors $\beta_{i+1},\ldots ,\beta_{d-1}$.
+	///
+	/// While $\hat{W}\_i$ is indeed well-defined on $K/U_i$, we have the
+	/// normalization $\hat{W}\_{i}(\beta_i)=1$, hence to specify the function we need
+	/// only specify it on $K/U_{i+1}$, equivalently, the $\mathbb{F}_2$-span of $\beta_{i+1},\ldots ,\beta_{d-1}$.
 	s_evals: SEvals,
 	_marker: PhantomData<F>,
 }
@@ -227,7 +231,7 @@ fn precompute_subspace_evals<F: BinaryField, DomainField: BinaryField + Into<F>>
 		.collect::<Vec<F>>();
 
 	s_evals.push(s0_evals);
-	// let $W\_i(X)$ be the *unnormalized* subspace polynomial, i.e., $\prod_{u\in U_{i-1}}(X-u)$.
+	// let $W\_i(X)$ be the *unnormalized* subspace polynomial, i.e., $\prod_{u\in U_{i}}(X-u)$.
 	// Then $W\_{i+1}(X) = W\_i(X)(W\_i(X)+W\_i(\beta_i))$. This crucially uses the "linearity" of
 	// $W\_i(X)$. This fundamental relation allows us to iteratively compute `s_evals` layer by layer.
 	for _ in 1..log_domain_size {
@@ -276,9 +280,11 @@ fn subspace_map<F: Field>(elem: F, constant: F) -> F {
 /// Given `OnTheFlyTwiddleAccess` instances for each NTT round, returns a vector of `PrecomputedTwiddleAccess` objects,
 /// one for each NTT round.
 ///
-/// For each round $i$, the input contains the value of $\hat{W}\_i$ on the basis $\beta_i,\ldots ,\beta_{d-1}$.
-/// The ith element of the output contains the evaluations of $\hat{W}\_i$ on the entire space $K/U_{i-1}$,
-/// where the order is the usual "binary counting order" in the above basis.
+/// For each round $i$, the input contains the value of $\hat{W}\_i$ on the basis $\beta_{i+1},\ldots ,\beta_{d-1}$.
+/// The ith element of the output contains the evaluations of $\hat{W}\_i$ on the entire space $K/U_{i+1}$,
+/// where the order is the usual "binary counting order" in $\beta_{i+1},\ldots ,\beta_{d-1}$.
+/// While $\hat{W}\_i$ is well-defined on $K/U_i$, we have the normalization $\hat{W}\_{i}(\beta_i)=1$,
+/// hence to specify the function we need only specify it on $K/U_{i+1}$.
 pub fn expand_subspace_evals<F, SEvals>(
 	on_the_fly: &[OnTheFlyTwiddleAccess<F, SEvals>],
 ) -> Vec<PrecomputedTwiddleAccess<F>>
@@ -308,4 +314,184 @@ where
 			}
 		})
 		.collect()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess, TwiddleAccess};
+	use binius_field::{BinaryField, BinaryField16b, BinaryField32b, BinaryField8b};
+	use lazy_static::lazy_static;
+	use proptest::prelude::*;
+
+	lazy_static! {
+		// Precomputed and OnTheFlytwiddle access objects for various binary field sizes.
+		// We avoided doing the 32B precomputed twiddle access because the tests take too long.
+		static ref PRECOMPUTED_TWIDDLE_ACCESS_8B: Vec<PrecomputedTwiddleAccess<BinaryField8b>> =
+			PrecomputedTwiddleAccess::<BinaryField8b>::generate::<BinaryField8b>(8).unwrap();
+
+		static ref OTF_TWIDDLE_ACCESS_8B: Vec<OnTheFlyTwiddleAccess<BinaryField8b>> =
+			OnTheFlyTwiddleAccess::<BinaryField8b>::generate::<BinaryField8b>(8).unwrap();
+
+		static ref PRECOMPUTED_TWIDDLE_ACCESS_16B: Vec<PrecomputedTwiddleAccess<BinaryField16b>> =
+			PrecomputedTwiddleAccess::<BinaryField16b>::generate::<BinaryField16b>(16).unwrap();
+
+		static ref OTF_TWIDDLE_ACCESS_16B: Vec<OnTheFlyTwiddleAccess<BinaryField16b>> =
+			OnTheFlyTwiddleAccess::<BinaryField16b>::generate::<BinaryField16b>(16).unwrap();
+
+		static ref OTF_TWIDDLE_ACCESS_32B: Vec<OnTheFlyTwiddleAccess<BinaryField32b>> =
+			OnTheFlyTwiddleAccess::<BinaryField32b>::generate::<BinaryField32b>(32).unwrap();
+	}
+
+	// Tests that `PrecomputedTwiddleAccess` and `OnTheFlyTwiddleAccess`is linear.
+	// (This is more or less by design/construction for `PrecomputedTwiddleAccess`.)
+	// More concretely: picks a `layer`, $\ell$, and two valid indices,
+	// checks if the claimed equality holds: $\hat{W}_{\ell}(x) + \hat{W}_{\ell}(y) = \hat{W}_{\ell}(x + y).$
+	proptest! {
+		#[test]
+		fn test_linearity_precomputed_8b((x, y, layer) in generate_layer_and_indices(8)) {
+			let twiddle_access = &PRECOMPUTED_TWIDDLE_ACCESS_8B[layer];
+			test_linearity::<BinaryField8b, _>(twiddle_access, x, y);
+		}
+
+		#[test]
+		fn test_linearity_precomputed_16b((x, y, layer) in generate_layer_and_indices(16)) {
+			let twiddle_access = &PRECOMPUTED_TWIDDLE_ACCESS_16B[layer];
+			test_linearity::<BinaryField16b, _>(twiddle_access, x, y);
+		}
+
+		#[test]
+		fn test_linearity_otf_8b((x, y, layer) in generate_layer_and_indices(8)) {
+			let twiddle_access = &OTF_TWIDDLE_ACCESS_8B[layer];
+			test_linearity::<BinaryField8b, _>(twiddle_access, x, y);
+		}
+
+		#[test]
+		fn test_linearity_otf_16b((x, y, layer) in generate_layer_and_indices(16)) {
+			let twiddle_access = &OTF_TWIDDLE_ACCESS_16B[layer];
+			test_linearity::<BinaryField16b, _>(twiddle_access, x, y);
+		}
+
+		#[test]
+		fn test_linearity_otf_32b((x, y, layer) in generate_layer_and_indices(32)) {
+			let twiddle_access = &OTF_TWIDDLE_ACCESS_32B[layer];
+			test_linearity::<BinaryField32b, _>(twiddle_access, x, y);
+		}
+
+	}
+
+	// Test compatibility between layers for a `TwiddleAccess` object. More precisely,
+	// this checks that the values of $\hat{W}_{\ell}$ and $\hat{W}_{\ell+1}$ are compatible.
+	proptest! {
+		#[test]
+		fn test_compatibility_otf_8b((x, layer) in generate_layer_and_index(8)){
+			compatibility_between_layers::<BinaryField8b,_>(layer, &OTF_TWIDDLE_ACCESS_8B, x);
+		}
+
+		#[test]
+		fn test_compatibility_otf_16b((x, layer) in generate_layer_and_index(16)){
+			compatibility_between_layers::<BinaryField16b,_>(layer, &OTF_TWIDDLE_ACCESS_16B, x);
+		}
+
+		#[test]
+		fn test_compatibility_otf_32b((x, layer) in generate_layer_and_index(32)){
+			compatibility_between_layers::<BinaryField32b,_>(layer, &OTF_TWIDDLE_ACCESS_32B, x);
+		}
+
+		#[test]
+		fn test_compatibility_precomputed_8b((x, layer) in generate_layer_and_index(8)){
+			compatibility_between_layers::<BinaryField8b,_>(layer, &PRECOMPUTED_TWIDDLE_ACCESS_8B, x);
+		}
+
+		#[test]
+		fn test_compatibility_precomputed_16b((x, layer) in generate_layer_and_index(16)){
+			compatibility_between_layers::<BinaryField16b,_>(layer, &PRECOMPUTED_TWIDDLE_ACCESS_16B, x);
+		}
+
+	}
+
+	prop_compose! {
+		/// Given a `max_layer`, which is implicitly assumed to be the logarithm of the field size,
+		/// generate a layer (between 0 and `max_layer-2`) of the NTT instance,
+		/// such that `layer+1` is a valid layer, and furthermore generate
+		/// a valid index $x$ for `layer+1`.
+		///
+		/// Designed to test for compatibility between layers, hence `layer+1` must also be a valid layer.
+		fn generate_layer_and_index
+			(max_layer: usize)
+			(layer in 0usize..max_layer-1)
+			(x in 0usize..(1 << (max_layer-layer-2)), layer in Just(layer))
+				-> (usize, usize) {
+			(x, layer)
+		}
+	}
+
+	prop_compose! {
+		/// Given a `max_layer`, which is implicitly assumed to be the logarithm of the field size,
+		/// generate a layer (between 0 and `max_layer-1`) of the NTT instance a
+		/// pair of indices $(x, y)$ that are valid for that layer.
+		///
+		/// Designed for testing linearity.
+		fn generate_layer_and_indices
+			(max_layer: usize)
+			(layer in 0usize..max_layer)
+			(x in 0usize..(1 << (max_layer-layer-1)), y in 0usize..1<<(max_layer-layer-1), layer in Just(layer))
+				-> (usize, usize, usize) {
+			(x, y, layer)
+		}
+	}
+
+	/// Given a `TwiddleAccess` object, test linearity, i.e., that:
+	/// $\hat{W}\_{\ell}(x) + \hat{W}\_{\ell}(y) = \hat{W}\_{\ell}(x + y)$.
+	///
+	/// Here, it is important to note that although $x$ and $y$ are `usize`, we consider them
+	/// elements of the $F$ via the binary expansion encoding the coefficients of a basis
+	/// expansion. Then the expression $x+y$ in $F$ corresponds to the bitwise XOR of the
+	/// two `usize` values.
+
+	fn test_linearity<F: BinaryField + std::fmt::Display, T: TwiddleAccess<F>>(
+		twiddle_access: &T,
+		x: usize,
+		y: usize,
+	) {
+		let first_val = twiddle_access.get(x);
+		let second_val = twiddle_access.get(y);
+		assert_eq!(first_val + second_val, twiddle_access.get(x ^ y));
+	}
+
+	/// Test for compatibility between adjacent layers of a `TwiddleAccess` object.
+	///
+	/// This checks that the values of $\hat{W}\_{\ell}$ and $\hat{W}\_{\ell+1}$ are compatible.
+	/// Set $\tilde{W}\_{\ell+1}(X)=\hat{W}\_{\ell}(X)(\hat{W}\_{\ell}(X)+1)$.
+	/// Then $\hat{W}\_{\ell+1}(X)=\tilde{W}\_{\ell+1}(X)/\tilde{W}\_{\ell+1}(\beta_{\ell+1})$.
+	/// (The above ensures that $\hat{W}\_{\ell+1}$ has the right properties: vanishes in $U_{\ell}$ and
+	/// is 1 at $\beta_{\ell+1}$.) This means that knowing $\hat{W}\_{\ell}(x)$ and $\hat{W}\_{\ell}(\beta_{\ell+1}$,
+	/// we can compute $\hat{W}\_{\ell+1}(x)$.
+	fn compatibility_between_layers<F: BinaryField + std::fmt::Display, T: TwiddleAccess<F>>(
+		layer: usize,
+		twiddle_access: &[T],
+		// `index_next_layer` is a valid index for the layer `layer+1`,
+		// i.e., `twiddle_access_next_layer.get(index)` makes sense.
+		index_next_layer: usize,
+	) {
+		let twiddle_access_layer = &twiddle_access[layer];
+		let twiddle_access_next_layer = &twiddle_access[layer + 1];
+		// `index` corresponds to an element of $F/U_{i+1}$. This corresponds to elements
+		// of the space $F/U_i$ whose $\beta_i$ and $\beta_{i+1}$ coordinates are both 0.
+		let index = index_next_layer << 1;
+		// If index corresponds to an element $x$ in $F$.
+		// Claimed value of $\hat{W}_{\ell}(x)$.
+		let w_hat_layer_x = twiddle_access_layer.get(index);
+		// Claimed value of $\hat{W}_{\ell+1}(x)$.
+		let w_hat_next_layer_x = twiddle_access_next_layer.get(index_next_layer);
+		// In the below, `beta` refers to $\beta_{\ell+1}$.
+		// $\hat{W}_{\ell}(\beta_{\ell+1})$.
+		let w_hat_layer_beta = twiddle_access_layer.get(1);
+		// `normalizing_factor` is $\hat{W}_{\ell}(\beta) * (\hat{W}_{\ell}(\beta) + 1)$,
+		// i.e. $\tilde{W}_{\ell+1}(\beta)$.
+		let normalizing_factor = w_hat_layer_beta * w_hat_layer_beta + w_hat_layer_beta;
+		assert_eq!(
+			w_hat_next_layer_x * normalizing_factor,
+			w_hat_layer_x * w_hat_layer_x + w_hat_layer_x
+		);
+	}
 }
