@@ -3,6 +3,7 @@
 use super::{
 	common::{
 		calculate_fold_chunk_start_rounds, calculate_fold_commit_rounds, calculate_folding_arities,
+		FinalCodeword, FinalMessage,
 	},
 	error::Error,
 	QueryProof, VerificationError,
@@ -30,9 +31,9 @@ where
 	VCS: VectorCommitScheme<F>,
 {
 	/// The Reed-Solomon code the verifier is testing proximity to.
-	rs_code: &'a ReedSolomonCode<FA>,
+	committed_rs_code: &'a ReedSolomonCode<FA>,
 	/// Vector commitment scheme for the codeword oracle.
-	codeword_vcs: &'a VCS,
+	committed_codeword_vcs: &'a VCS,
 	/// Vector commitment scheme for the round oracles.
 	round_vcss: &'a [VCS],
 	/// Received commitment to the codeword.
@@ -41,9 +42,8 @@ where
 	round_commitments: &'a [VCS::Commitment],
 	/// The challenges for each round.
 	challenges: &'a [F],
-	/// The final message, which is a 1-element vector. Its encoding must be a vector of the final
-	/// value repeated up to the codeword length.
-	final_value: F,
+	/// The final message, which must be re-encoded to start fold consistency checks.
+	final_codeword: FinalCodeword<F>,
 	/// The start round of each fold chunk call made by the FRIFolder.
 	fold_chunk_start_rounds: Vec<usize>,
 	/// The arity of each fold chunk call made by the FRIFolder.
@@ -58,26 +58,18 @@ where
 	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
-		rs_code: &'a ReedSolomonCode<FA>,
-		codeword_vcs: &'a VCS,
+		committed_rs_code: &'a ReedSolomonCode<FA>,
+		final_rs_code: &'a ReedSolomonCode<F>,
+		committed_codeword_vcs: &'a VCS,
 		round_vcss: &'a [VCS],
 		codeword_commitment: &'a VCS::Commitment,
 		round_commitments: &'a [VCS::Commitment],
 		challenges: &'a [F],
-		final_value: F,
+		final_message: FinalMessage<F>,
 	) -> Result<Self, Error> {
-		if rs_code.len() != codeword_vcs.vector_len() {
-			return Err(Error::InvalidArgs(
-				"Reed–Solomon code length must match codeword vector commitment length".to_string(),
-			));
-		}
-
-		// This is a tricky case to handle well.
-		// TODO: Change interface to support dimension-1 messages.
-		if rs_code.log_dim() == 0 {
-			return Err(Error::MessageDimensionIsOne);
-		}
+		let final_codeword = final_rs_code.encode(final_message)?;
 
 		if round_commitments.len() != round_vcss.len() {
 			return Err(Error::InvalidArgs(format!(
@@ -87,29 +79,41 @@ where
 			)));
 		}
 
-		if challenges.len() != rs_code.log_dim() {
+		if challenges.len() != committed_rs_code.log_dim() {
 			return Err(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
-				rs_code.log_dim()
+				committed_rs_code.log_dim()
 			)));
 		}
 
-		let commitment_fold_rounds = calculate_fold_commit_rounds(rs_code, round_vcss)?;
+		// TODO: With future STIR-like optimizations, this check should be removed.
+		if final_rs_code.log_inv_rate() != committed_rs_code.log_inv_rate() {
+			return Err(Error::InvalidArgs(
+				"final RS code must have the same rate as the committed RS code".to_string(),
+			));
+		}
+
+		let commitment_fold_rounds = calculate_fold_commit_rounds(
+			committed_rs_code,
+			final_rs_code,
+			committed_codeword_vcs,
+			round_vcss,
+		)?;
 		let fold_chunk_start_rounds = calculate_fold_chunk_start_rounds(&commitment_fold_rounds);
 		let folding_arities =
-			calculate_folding_arities(rs_code.log_dim(), &fold_chunk_start_rounds);
+			calculate_folding_arities(committed_rs_code.log_dim(), &fold_chunk_start_rounds);
 		let challenge_ranges =
-			calculate_challenge_ranges(rs_code.log_dim(), &fold_chunk_start_rounds);
+			calculate_challenge_ranges(committed_rs_code.log_dim(), &fold_chunk_start_rounds);
 
 		Ok(Self {
-			rs_code,
-			codeword_vcs,
+			committed_rs_code,
+			committed_codeword_vcs,
 			round_vcss,
 			codeword_commitment,
 			round_commitments,
 			challenges,
-			final_value,
+			final_codeword,
 			fold_chunk_start_rounds,
 			folding_arities,
 			challenge_ranges,
@@ -151,7 +155,7 @@ where
 
 		let coset_index = index >> self.folding_arities[0];
 		let values = verify_coset_opening(
-			self.codeword_vcs,
+			self.committed_codeword_vcs,
 			self.codeword_commitment,
 			0,
 			coset_index,
@@ -160,7 +164,7 @@ where
 		)?;
 
 		let mut next_value = fold_chunk(
-			self.rs_code,
+			self.committed_rs_code,
 			0,
 			coset_index,
 			&values,
@@ -195,7 +199,7 @@ where
 			}
 
 			next_value = fold_chunk(
-				self.rs_code,
+				self.committed_rs_code,
 				fold_start_round,
 				coset_index,
 				&values,
@@ -208,7 +212,7 @@ where
 		// Since this implementation currently runs FRI until the final message is one element, we
 		// know that the Reed-Solomon encoding of this message is simply that final message element
 		// repeated up to the codeword length.
-		if next_value != self.final_value {
+		if next_value != self.final_codeword[index] {
 			return Err(VerificationError::IncorrectFold {
 				query_round: self.n_rounds() - 1,
 				index,

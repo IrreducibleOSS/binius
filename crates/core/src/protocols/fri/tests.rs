@@ -42,6 +42,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
 	log_inv_rate: usize,
 	log_vcs_vector_lens: &[usize],
+	final_message_dimension: usize,
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
 	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
@@ -53,12 +54,16 @@ fn test_commit_prove_verify_success<U, F, FA>(
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
+	let committed_rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
 		log_dimension,
 		log_inv_rate,
 		NTTOptions::default(),
 	)
 	.unwrap();
+	let final_rs_code =
+		ReedSolomonCode::<F>::new(final_message_dimension, log_inv_rate, NTTOptions::default())
+			.unwrap();
+
 	let n_test_queries = 1;
 	let n_round_commitments = log_vcs_vector_lens.len();
 	let folding_arities =
@@ -72,7 +77,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		)
 	};
 
-	let merkle_vcs = make_merkle_vcs(rs_code_packed.log_len());
+	let merkle_vcs = make_merkle_vcs(committed_rs_code_packed.log_len());
 	let merkle_round_vcss = log_vcs_vector_lens
 		.iter()
 		.map(|&log_len| make_merkle_vcs(log_len))
@@ -80,7 +85,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	// Generate a random message
 	let msg = repeat_with(|| <PackedType<U, F>>::random(&mut rng))
-		.take(rs_code_packed.dim() / <PackedType<U, F>>::WIDTH)
+		.take(committed_rs_code_packed.dim() / <PackedType<U, F>>::WIDTH)
 		.collect::<Vec<_>>();
 
 	// Prover commits the message
@@ -88,20 +93,22 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		commitment: codeword_commitment,
 		committed: codeword_committed,
 		codeword,
-	} = fri::commit_message(&rs_code_packed, &merkle_vcs, &msg).unwrap();
+	} = fri::commit_message(&committed_rs_code_packed, &merkle_vcs, &msg).unwrap();
 
 	let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
 	challenger.observe(codeword_commitment.clone());
 
 	// Run the prover to generate the proximity proof
-	let rs_code = ReedSolomonCode::<FA>::new(
-		rs_code_packed.log_dim(),
-		rs_code_packed.log_inv_rate(),
+	let committed_rs_code = ReedSolomonCode::<FA>::new(
+		committed_rs_code_packed.log_dim(),
+		committed_rs_code_packed.log_inv_rate(),
 		NTTOptions::default(),
 	)
 	.unwrap();
+
 	let mut round_prover = FRIFolder::new(
-		&rs_code,
+		&committed_rs_code,
+		&final_rs_code,
 		<PackedType<U, F>>::unpack_scalars(&codeword),
 		&merkle_vcs,
 		&merkle_round_vcss,
@@ -123,11 +130,11 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		}
 	}
 
-	let (final_value, query_prover) = round_prover.finalize().unwrap();
-	prover_challenger.observe(final_value);
+	let (final_message, query_prover) = round_prover.finalize().unwrap();
+	prover_challenger.observe_slice(&final_message);
 
 	let query_proofs = repeat_with(|| {
-		let index = prover_challenger.sample_bits(rs_code.log_len());
+		let index = prover_challenger.sample_bits(committed_rs_code.log_len());
 		query_prover.prove_query(index)
 	})
 	.take(n_test_queries)
@@ -136,7 +143,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	// Now run the verifier
 	let mut verifier_challenger = challenger.clone();
-	let mut verifier_challenges = Vec::with_capacity(rs_code.log_dim());
+	let mut verifier_challenges = Vec::with_capacity(committed_rs_code.log_dim());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
 	for (query_rd, commitment) in round_commitments.iter().enumerate() {
@@ -146,22 +153,23 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	verifier_challenges
 		.append(&mut verifier_challenger.sample_vec(*folding_arities.last().unwrap()));
-	verifier_challenger.observe(final_value);
+	verifier_challenger.observe_slice(&final_message);
 
 	let verifier = FRIVerifier::new(
-		&rs_code,
+		&committed_rs_code,
+		&final_rs_code,
 		&merkle_vcs,
 		&merkle_round_vcss,
 		&codeword_commitment,
 		&round_commitments,
 		&verifier_challenges,
-		final_value,
+		final_message,
 	)
 	.unwrap();
 
 	assert_eq!(query_proofs.len(), n_test_queries);
 	for query_proof in query_proofs {
-		let index = verifier_challenger.sample_bits(rs_code.log_len());
+		let index = verifier_challenger.sample_bits(committed_rs_code.log_len());
 		verifier.verify_query(index, query_proof).unwrap();
 	}
 }
@@ -191,14 +199,17 @@ fn test_commit_prove_verify_success_128b_simple() {
 	// This tests the case where we have a round commitment for every round
 	let log_dimension = 8;
 	let log_inv_rate = 2;
-	let log_vcs_vector_lens = (log_inv_rate + 1..log_inv_rate + log_dimension)
-		.rev()
-		.collect::<Vec<_>>();
+	let final_message_dimension = 0;
+	let minimum = log_inv_rate + final_message_dimension + 1;
+	let maximum = log_inv_rate + log_dimension - 1;
+
+	let log_vcs_vector_lens = (minimum..=maximum).rev().collect::<Vec<_>>();
 
 	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
 		log_dimension,
 		log_inv_rate,
 		&log_vcs_vector_lens,
+		final_message_dimension,
 	);
 }
 
@@ -207,8 +218,9 @@ fn test_commit_prove_verify_success_128b() {
 	let log_dimension = 7;
 	let log_inv_rate = 2;
 	let n_commitments = 3;
+	let final_message_dimension = 2;
 	let log_vcs_vector_lens = generate_random_decreasing_sequence(
-		log_inv_rate + 1,
+		log_inv_rate + final_message_dimension + 1,
 		log_inv_rate + log_dimension - 1,
 		n_commitments,
 	);
@@ -217,5 +229,6 @@ fn test_commit_prove_verify_success_128b() {
 		log_dimension,
 		log_inv_rate,
 		&log_vcs_vector_lens,
+		final_message_dimension,
 	);
 }

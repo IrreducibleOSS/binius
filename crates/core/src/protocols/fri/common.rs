@@ -87,8 +87,10 @@ where
 	scratch_buffer[0]
 }
 
-fn validate_round_vcss<F, FA, VCS>(
-	rs_code: &ReedSolomonCode<FA>,
+fn validate_common_fri_arguments<F, FA, VCS>(
+	committed_rs_code: &ReedSolomonCode<FA>,
+	final_rs_code: &ReedSolomonCode<F>,
+	committed_codeword_vcs: &VCS,
 	round_vcss: &[VCS],
 ) -> Result<(), Error>
 where
@@ -96,12 +98,27 @@ where
 	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
+	if committed_rs_code.len() != committed_codeword_vcs.vector_len() {
+		return Err(Error::InvalidArgs(
+			"Reed–Solomon code length must match codeword vector commitment length".to_string(),
+		));
+	}
+
+	// This is a tricky case to handle well.
+	// TODO: Change interfaces to support equality, which implies supporting parameters
+	// where the final codeword is the originally committed codeword.
+	if committed_rs_code.log_dim() <= final_rs_code.log_dim() {
+		return Err(Error::MessageDimensionIsTooSmall);
+	}
+
 	// check that base two log of each round_vcs vector_length is greater than
 	// the code's log_inv_rate and less than log_len.
-	// TODO: The lower-bound check will change when we support early FRI termination.
+	debug_assert!(committed_rs_code.log_dim() >= 1);
+	let upper_bound = 1 << (committed_rs_code.log_len() - 1);
+	let lower_bound = 1 << (committed_rs_code.log_inv_rate() + final_rs_code.log_dim() + 1);
 	if round_vcss.iter().any(|vcs| {
 		let len = vcs.vector_len();
-		len <= 1 << rs_code.log_inv_rate() || len >= 1 << rs_code.log_len()
+		len < lower_bound || len > upper_bound
 	}) {
 		return Err(Error::RoundVCSLengthsOutOfRange);
 	}
@@ -128,11 +145,15 @@ where
 /// Also validates consistency of round vector commitment schemes with a Reed-Solomon code for FRI.
 ///
 /// The validation checks that:
-/// - The vector lengths of the round vector commitment schemes are in the range (2^log_inv_rate, 2^log_len).
-/// - The vector lengths of the round vector commitment schemes are powers of two.
-/// - The vector lengths of the round vector commitment schemes are strictly decreasing.
+/// - The committed Reed-Solomon code length matches the committed codeword vector commitment length.
+/// - The committed Reed-Solomon code has dimension greater than the final Reed-Solomon code.
+/// - The vector lengths of the round vector commitment schemes (vcss) are powers of two.
+/// - The vector lengths of the round vcss are strictly decreasing.
+/// - The vector lengths of the round vcss are in the range (2^(log_inv_rate + final_msg_dim), 2^log_len).
 pub fn calculate_fold_commit_rounds<F, FA, VCS>(
-	rs_code: &ReedSolomonCode<FA>,
+	committed_rs_code: &ReedSolomonCode<FA>,
+	final_rs_code: &ReedSolomonCode<F>,
+	committed_codeword_vcs: &VCS,
 	round_vcss: &[VCS],
 ) -> Result<Vec<usize>, Error>
 where
@@ -140,9 +161,14 @@ where
 	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
-	validate_round_vcss(rs_code, round_vcss)?;
+	validate_common_fri_arguments(
+		committed_rs_code,
+		final_rs_code,
+		committed_codeword_vcs,
+		round_vcss,
+	)?;
 
-	let log_len = rs_code.log_len();
+	let log_len = committed_rs_code.log_len();
 	let commit_rounds = round_vcss
 		.iter()
 		.map(|vcs| log_len - 1 - log2_strict_usize(vcs.vector_len()));
@@ -186,8 +212,10 @@ pub fn calculate_folding_arities(
 pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 
 /// The type of the final message in the FRI protocol.
-/// TODO: This should be generalized to a Vec<F> when we support early FRI termination.
-pub type FinalMessage<F> = F;
+pub type FinalMessage<F> = Vec<F>;
+
+/// The type of the final codeword in the FRI protocol.
+pub type FinalCodeword<F> = Vec<F>;
 
 /// The values and vector commitment opening proofs for a coset.
 #[derive(Debug, Clone)]

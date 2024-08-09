@@ -14,6 +14,7 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
+use binius_ntt::AdditiveNTT;
 use itertools::izip;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -113,7 +114,8 @@ where
 	F: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
-	rs_code: &'a ReedSolomonCode<FA>,
+	committed_rs_code: &'a ReedSolomonCode<FA>,
+	final_rs_code: &'a ReedSolomonCode<F>,
 	codeword: &'a [F],
 	codeword_vcs: &'a VCS,
 	round_vcss: &'a [VCS],
@@ -133,47 +135,43 @@ where
 {
 	/// Constructs a new folder.
 	pub fn new(
-		rs_code: &'a ReedSolomonCode<FA>,
-		codeword: &'a [F],
-		codeword_vcs: &'a VCS,
+		committed_rs_code: &'a ReedSolomonCode<FA>,
+		final_rs_code: &'a ReedSolomonCode<F>,
+		committed_codeword: &'a [F],
+		committed_codeword_vcs: &'a VCS,
 		round_vcss: &'a [VCS],
 		committed: &'a VCS::Committed,
 	) -> Result<Self, Error> {
-		if rs_code.len() != codeword_vcs.vector_len() {
-			return Err(Error::InvalidArgs(
-				"Reed–Solomon code length must match codeword vector commitment length".to_string(),
-			));
-		}
-		if rs_code.len() != codeword.len() {
+		if committed_rs_code.len() != committed_codeword.len() {
 			return Err(Error::InvalidArgs(
 				"Reed–Solomon code length must match codeword length".to_string(),
 			));
 		}
 
-		// This is a tricky case to handle well.
-		// TODO: Change interface to support dimension-1 messages.
-		if rs_code.log_dim() == 0 {
-			return Err(Error::MessageDimensionIsOne);
-		}
-
-		let commitment_fold_rounds = calculate_fold_commit_rounds(rs_code, round_vcss)?;
+		let commitment_fold_rounds = calculate_fold_commit_rounds(
+			committed_rs_code,
+			final_rs_code,
+			committed_codeword_vcs,
+			round_vcss,
+		)?;
 
 		Ok(Self {
-			rs_code,
-			codeword,
-			codeword_vcs,
+			committed_rs_code,
+			codeword: committed_codeword,
+			codeword_vcs: committed_codeword_vcs,
 			round_vcss,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(round_vcss.len()),
 			curr_round: 0,
-			unprocessed_challenges: Vec::with_capacity(rs_code.log_dim()),
+			unprocessed_challenges: Vec::with_capacity(committed_rs_code.log_dim()),
 			commitment_fold_rounds,
+			final_rs_code,
 		})
 	}
 
 	/// Number of fold rounds, including the final fold.
 	pub fn n_rounds(&self) -> usize {
-		self.rs_code.log_dim()
+		self.committed_rs_code.log_dim()
 	}
 
 	/// Number of times `execute_fold_round` has been called
@@ -211,7 +209,7 @@ where
 
 		// Fold the last codeword with the accumulated folding challenges.
 		let folded_codeword = fold_codeword(
-			self.rs_code,
+			self.committed_rs_code,
 			self.prev_codeword(),
 			self.curr_round,
 			&self.unprocessed_challenges,
@@ -247,35 +245,35 @@ where
 			return Err(Error::EarlyProverFinish);
 		}
 
-		// TODO: This code will need to be generalized in early FRI termination and handle appropriate decoding.
-		const FINAL_MESSAGE_DIM: usize = 0;
-
 		// NB: The idea behind the following is that we should do the minimal amount of work necessary to
 		// get the final message. Specifically, we do not need a final codeword with rate lower than 1.
-		let final_message = if self.unprocessed_challenges.is_empty() {
+		let mut final_codeword = if self.unprocessed_challenges.is_empty() {
 			// In this case, final_codeword is interpreted as taking a prefix of the previous codeword and claiming
 			// this is a codeword for an RS code with rate 1 and dimension FINAL_MESSAGE_DIM.
-			let final_codeword = &self.prev_codeword()[..1 << FINAL_MESSAGE_DIM];
-			// We decode the final codeword to get the final message.
-			final_codeword[0]
+			self.prev_codeword()[..1 << self.final_rs_code.log_dim()].to_vec()
 		} else {
 			// In this case, unfolded_codeword is interpreted as taking a prefix of the previous codeword and claiming
 			// this is a codeword for an RS code with dimension FINAL_MESSAGE_DIM + unprocessed_challenges.len()
 			// and rate 1.
 			let unfolded_codeword_len =
-				1 << (self.unprocessed_challenges.len() + FINAL_MESSAGE_DIM);
+				1 << (self.unprocessed_challenges.len() + self.final_rs_code.log_dim());
 			let unfolded_codeword = &self.prev_codeword()[..unfolded_codeword_len];
 			// We then fold this codeword with the unprocessed challenges to get a final codeword
 			// for an RS code with rate 1 and dimension FINAL_MESSAGE_DIM.
-			let final_codeword = fold_codeword(
-				self.rs_code,
+			fold_codeword(
+				self.committed_rs_code,
 				unfolded_codeword,
 				self.curr_round - 1,
 				&self.unprocessed_challenges,
-			);
-			// We decode this final codeword to get the final message.
-			final_codeword[0]
+			)
 		};
+
+		// We decode this final codeword to get the final message.
+		self.final_rs_code
+			.get_ntt()
+			.inverse_transform(&mut final_codeword, 0, 0)?;
+		let final_message = final_codeword;
+
 		self.unprocessed_challenges.clear();
 
 		let Self {
@@ -285,7 +283,7 @@ where
 			codeword_committed,
 			round_committed,
 			commitment_fold_rounds,
-			rs_code,
+			committed_rs_code,
 			..
 		} = self;
 
@@ -296,7 +294,7 @@ where
 			codeword_committed,
 			round_committed,
 			commitment_fold_rounds,
-			n_fold_rounds: rs_code.log_dim(),
+			n_fold_rounds: committed_rs_code.log_dim(),
 		};
 		Ok((final_message, query_prover))
 	}

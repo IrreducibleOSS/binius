@@ -8,8 +8,8 @@ pub enum Error {
 	ParameterError,
 	#[error("conflicting or incorrect constructor argument: {0}")]
 	InvalidArgs(String),
-	#[error("FRI does not support messages with dimension 1")]
-	MessageDimensionIsOne,
+	#[error("FRI message dimension is too small")]
+	MessageDimensionIsTooSmall,
 	#[error("attempted to fold more than maximum of {max_folds} times")]
 	TooManyFoldExecutions { max_folds: usize },
 	#[error("attempted to finish prover before executing all fold rounds")]
