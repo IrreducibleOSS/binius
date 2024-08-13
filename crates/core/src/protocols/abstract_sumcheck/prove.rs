@@ -4,7 +4,7 @@ use super::Error;
 use crate::polynomial::{
 	Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
 };
-use binius_field::{Field, PackedField};
+use binius_field::PackedField;
 use binius_utils::array_2d::Array2D;
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, hash::Hash, ops::Range};
@@ -29,17 +29,17 @@ where
 }
 
 /// Parallel fold state, consisting of scratch area and result accumulator.
-struct ParFoldStates<F: Field> {
+struct ParFoldStates<P: PackedField> {
 	// Evaluations at 0, 1 and domain points, per MLE. Scratch space.
-	evals_0: Array2D<F>,
-	evals_1: Array2D<F>,
-	evals_z: Array2D<F>,
+	evals_0: Array2D<P>,
+	evals_1: Array2D<P>,
+	evals_z: Array2D<P>,
 
 	// Accumulated sums of evaluations over univariate domain.
-	round_evals: Array2D<F>,
+	round_evals: Array2D<P>,
 }
 
-impl<F: Field> ParFoldStates<F> {
+impl<P: PackedField> ParFoldStates<P> {
 	fn new(n_multilinears: usize, n_round_evals: usize, n_states: usize) -> Self {
 		Self {
 			evals_0: Array2D::zeroes(n_states, n_multilinears),
@@ -74,10 +74,10 @@ pub trait AbstractSumcheckEvaluator<P: PackedField>: Sync {
 		&self,
 		i: usize,
 		vertex_state: Self::VertexState,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[P],
+		evals_1: &[P],
+		evals_z: &mut [P],
+		round_evals: &mut [P],
 	);
 
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
@@ -440,8 +440,7 @@ where
 		&'b self,
 		multilinear_ids: &[MultilinearId],
 		precomp: impl Fn(&'b SumcheckMultilinear<PW, M>) -> T,
-		eval01: impl Fn(T, Range<usize>, &mut Array2D<PW::Scalar>, &mut Array2D<PW::Scalar>, usize)
-			+ Sync,
+		eval01: impl Fn(T, Range<usize>, &mut Array2D<PW>, &mut Array2D<PW>, usize) + Sync,
 		evaluator: impl AbstractSumcheckEvaluator<PW, VertexState = VS>,
 		vertex_state_iterator: impl IndexedParallelIterator<Item = VS>,
 		current_round_sum: PW::Scalar,
@@ -504,15 +503,18 @@ where
 			.map(|states| states.round_evals.sum_rows())
 			// Simply sum up the fold partitions.
 			.reduce(
-				|| vec![PW::Scalar::ZERO; n_round_evals],
+				|| vec![PW::zero(); n_round_evals],
 				|mut overall_round_evals, partial_round_evals| {
 					overall_round_evals
 						.iter_mut()
 						.zip(partial_round_evals.iter())
-						.for_each(|(f, s)| *f += s);
+						.for_each(|(f, s)| *f += *s);
 					overall_round_evals
 				},
-			);
+			)
+			.iter()
+			.map(|x| x.iter().sum())
+			.collect();
 
 		Ok(evaluator.round_evals_to_coeffs(current_round_sum, evals)?)
 	}
@@ -552,19 +554,23 @@ where
 	fn direct_sample<MD>(
 		multilin: MD,
 		indices: Range<usize>,
-		evals_0: &mut Array2D<PW::Scalar>,
-		evals_1: &mut Array2D<PW::Scalar>,
+		evals_0: &mut Array2D<PW>,
+		evals_1: &mut Array2D<PW>,
 		col_index: usize,
 	) where
 		MD: MultilinearPoly<PW>,
 	{
 		for (k, i) in indices.enumerate() {
-			evals_0[(k, col_index)] = multilin
-				.evaluate_on_hypercube(i << 1)
-				.expect("eval 0 within range");
-			evals_1[(k, col_index)] = multilin
-				.evaluate_on_hypercube((i << 1) + 1)
-				.expect("eval 1 within range");
+			evals_0[(k, col_index)] = PW::from_fn(|j| {
+				multilin
+					.evaluate_on_hypercube((i * PW::WIDTH + j) << 1)
+					.unwrap_or_default()
+			});
+			evals_1[(k, col_index)] = PW::from_fn(|j| {
+				multilin
+					.evaluate_on_hypercube(((i * PW::WIDTH + j) << 1) + 1)
+					.unwrap_or_default()
+			});
 		}
 	}
 
@@ -573,8 +579,8 @@ where
 		query: &MultilinearQuery<PW>,
 		multilin: &M,
 		indices: Range<usize>,
-		evals_0: &mut Array2D<PW::Scalar>,
-		evals_1: &mut Array2D<PW::Scalar>,
+		evals_0: &mut Array2D<PW>,
+		evals_1: &mut Array2D<PW>,
 		col_index: usize,
 	) {
 		multilin

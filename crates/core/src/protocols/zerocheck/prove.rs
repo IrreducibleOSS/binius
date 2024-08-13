@@ -16,17 +16,23 @@ use crate::{
 		Error as PolynomialError, EvaluationDomain, EvaluationDomainFactory, MultilinearExtension,
 		MultilinearQuery,
 	},
-	protocols::abstract_sumcheck::{
-		check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
-		AbstractSumcheckEvaluator, AbstractSumcheckProversState, AbstractSumcheckReductor,
-		AbstractSumcheckWitness, CommonProversState, ReducedClaim,
+	protocols::{
+		abstract_sumcheck::{
+			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
+			AbstractSumcheckEvaluator, AbstractSumcheckProversState, AbstractSumcheckReductor,
+			AbstractSumcheckWitness, CommonProversState, ReducedClaim,
+		},
+		utils::packed_from_fn_with_offset,
 	},
 };
-use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
+use binius_field::{
+	packed::{get_packed_slice, mul_by_subfield_scalar},
+	ExtensionField, Field, PackedField,
+};
 use bytemuck::zeroed_vec;
 use getset::Getters;
 use rayon::prelude::*;
-use std::marker::PhantomData;
+use std::{cmp::max, marker::PhantomData};
 use tracing::instrument;
 
 #[cfg(feature = "debug_validate_sumcheck")]
@@ -142,18 +148,28 @@ where
 	// hypercube evaluations of $eq_2(X, \alpha_1, \alpha_2)$.
 	fn update_round_eq_ind(&mut self) -> Result<(), Error> {
 		let current_evals = self.round_eq_ind.evals();
-		let new_evals = (0..current_evals.len() >> 1)
-			.into_par_iter()
-			.map(|i| {
-				PW::from_fn(|j| {
-					let index = i * PW::WIDTH + j;
-					let eval0 = get_packed_slice(current_evals, index << 1);
-					let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
 
-					eval0 + eval1
-				})
-			})
-			.collect();
+		let get_value_at = |index: usize| {
+			let eval0 = get_packed_slice(current_evals, index << 1);
+			let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
+
+			eval0 + eval1
+		};
+
+		let new_evals = if PW::LOG_WIDTH < self.round_eq_ind.n_vars() {
+			(0..current_evals.len() >> 1)
+				.into_par_iter()
+				.map(|i| packed_from_fn_with_offset(i, get_value_at))
+				.collect()
+		} else {
+			vec![PW::from_fn(|j| {
+				if 2 * j < self.round_eq_ind.size() {
+					get_value_at(j)
+				} else {
+					PW::Scalar::default()
+				}
+			})]
+		};
 
 		self.round_eq_ind = MultilinearExtension::from_values(new_evals)?;
 		Ok(())
@@ -264,11 +280,11 @@ where
 	// * $d$ is degree of polynomial in zerocheck claim
 	// * $r_i$ is the verifier challenge at the end of round $i$.
 	// with sorting that is lexicographically-inspired (lowest index = least significant).
-	round_q: Vec<PW::Scalar>,
+	round_q: Vec<PW>,
 	// None initially
 	// After ith round, represents the $\bar{Q}_i$ multilinear polynomial partially evaluated
 	// at lowest $i$ variables with the $i$ verifier challenges received so far.
-	round_q_bar: Option<MultilinearExtension<PW::Scalar>>,
+	round_q_bar: Option<MultilinearExtension<PW>>,
 	// inverse of domain[i] * domain[i] - 1 for i in 0, ..., d-2
 	smaller_denom_inv: Vec<DomainField>,
 	// Subdomain of domain, but without 0 and 1 (can be used for degree d-2 polynomials)
@@ -316,7 +332,7 @@ where
 			current_round_sum: F::ZERO,
 		};
 
-		let round_q = zeroed_vec::<PW::Scalar>((1 << (n_vars - 1)) * (degree - 1));
+		let round_q = zeroed_vec((1 << (n_vars - 1)) * (degree - 1) / PW::WIDTH);
 		let smaller_domain_points = domain.points()[2..].to_vec();
 		let smaller_denom_inv = domain.points()[2..]
 			.iter()
@@ -363,12 +379,12 @@ where
 	// [Gruen24]: https://eprint.iacr.org/2024/108
 	fn update_round_q(&mut self, prev_rd_challenge: PW::Scalar) -> Result<(), Error> {
 		let rd_vars = self.claim.n_vars() - self.round;
-		let new_q_len = self.round_q.len() / 2;
+		let new_q_len = max(self.round_q.len() / 2, self.smaller_domain.size());
 
 		// Let d be the degree of the polynomial in the zerocheck claim.
 		let specialized_q_values = if self.smaller_domain.size() == 0 {
 			// Special handling for the d = 1 (multilinear) case
-			zeroed_vec(1 << rd_vars)
+			zeroed_vec((1usize << rd_vars).div_ceil(PW::WIDTH))
 		} else if self.smaller_domain.size() == 1 {
 			// We do not need to interpolate in this special d = 2 case
 			std::mem::replace(&mut self.round_q, zeroed_vec(new_q_len))
@@ -409,7 +425,12 @@ where
 				.enumerate()
 				.for_each(|(chunk_index, chunks)| {
 					for (k, e) in chunks.iter_mut().enumerate() {
-						*e += specialized_prev_q_bar_evals[chunk_index * CHUNK_SIZE + k];
+						*e += packed_from_fn_with_offset::<PW>(chunk_index * CHUNK_SIZE + k, |i| {
+							specialized_prev_q_bar_evals
+								.get(i)
+								.copied()
+								.unwrap_or(PW::Scalar::ZERO)
+						});
 					}
 				});
 		}
@@ -575,7 +596,7 @@ where
 	FS: Field,
 	C: CompositionPoly<P>,
 {
-	type VertexState = &'a mut [P::Scalar];
+	type VertexState = &'a mut [P];
 	fn n_round_evals(&self) -> usize {
 		// In the first round of zerocheck we can uniquely determine the degree d
 		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
@@ -587,17 +608,18 @@ where
 		&self,
 		i: usize,
 		round_q_chunk: Self::VertexState,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[P],
+		evals_1: &[P],
+		evals_z: &mut [P],
+		round_evals: &mut [P],
 	) {
-		debug_assert!(i < self.eq_ind.size());
+		debug_assert!(i * P::WIDTH < self.eq_ind.size());
 
-		let eq_ind_factor = self
-			.eq_ind
-			.evaluate_on_hypercube(i)
-			.unwrap_or(P::Scalar::ZERO);
+		let eq_ind_factor = packed_from_fn_with_offset::<P>(i, |j| {
+			self.eq_ind
+				.evaluate_on_hypercube(j)
+				.unwrap_or(P::Scalar::ZERO)
+		});
 
 		// The rest require interpolation.
 		for d in 2..self.domain_points.len() {
@@ -606,20 +628,17 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line::<P::Scalar, FS>(
-						evals_0_j,
-						evals_1_j,
-						self.domain_points[d],
-					);
+					*evals_z_j =
+						extrapolate_line::<P, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			let composite_value = self
 				.composition
-				.evaluate_scalar(evals_z)
+				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 2] += composite_value * eq_ind_factor;
-			round_q_chunk[d - 2] = composite_value * self.denom_inv[d - 2];
+			round_q_chunk[d - 2] = mul_by_subfield_scalar(composite_value, self.denom_inv[d - 2]);
 		}
 	}
 
@@ -660,7 +679,7 @@ where
 	pub eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub round_zerocheck_challenge: P::Scalar,
 	pub denom_inv: &'a [FS],
-	pub round_q_bar: MultilinearExtension<P::Scalar, &'a [P::Scalar]>,
+	pub round_q_bar: MultilinearExtension<P, &'a [P]>,
 }
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>
@@ -669,7 +688,7 @@ where
 	FS: Field,
 	C: CompositionPoly<P>,
 {
-	type VertexState = &'a mut [P::Scalar];
+	type VertexState = &'a mut [P];
 	fn n_round_evals(&self) -> usize {
 		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
 		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
@@ -681,25 +700,29 @@ where
 		&self,
 		i: usize,
 		round_q_chunk: Self::VertexState,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[P],
+		evals_1: &[P],
+		evals_z: &mut [P],
+		round_evals: &mut [P],
 	) {
-		let q_bar_zero = self
-			.round_q_bar
-			.evaluate_on_hypercube(i << 1)
-			.unwrap_or(P::Scalar::ZERO);
-		let q_bar_one = self
-			.round_q_bar
-			.evaluate_on_hypercube((i << 1) + 1)
-			.unwrap_or(P::Scalar::ZERO);
-		debug_assert!(i < self.eq_ind.size());
+		debug_assert!(i * P::WIDTH < self.eq_ind.size());
 
-		let eq_ind_factor = self
-			.eq_ind
-			.evaluate_on_hypercube(i)
-			.unwrap_or(P::Scalar::ZERO);
+		let q_bar_zero = packed_from_fn_with_offset::<P>(i, |j| {
+			self.round_q_bar
+				.evaluate_on_hypercube(j << 1)
+				.unwrap_or(P::Scalar::ZERO)
+		});
+		let q_bar_one = packed_from_fn_with_offset::<P>(i, |j| {
+			self.round_q_bar
+				.evaluate_on_hypercube((j << 1) + 1)
+				.unwrap_or(P::Scalar::ZERO)
+		});
+
+		let eq_ind_factor = packed_from_fn_with_offset::<P>(i, |j| {
+			self.eq_ind
+				.evaluate_on_hypercube(j)
+				.unwrap_or(P::Scalar::ZERO)
+		});
 
 		// We can replace constraint polynomial evaluations at C(r, 1, x) with Q_i_bar(r, 1, x)
 		// See section 4 of [https://eprint.iacr.org/2024/108] for details
@@ -712,16 +735,13 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line::<P::Scalar, FS>(
-						evals_0_j,
-						evals_1_j,
-						self.domain_points[d],
-					);
+					*evals_z_j =
+						extrapolate_line::<P, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
 				});
 
 			let composite_value = self
 				.composition
-				.evaluate_scalar(evals_z)
+				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 1] += composite_value * eq_ind_factor;
@@ -731,9 +751,11 @@ where
 			// help us avoid next round's constraint polynomial evaluations at X = 1.
 			// For more details, see section 4 of [https://eprint.iacr.org/2024/108]
 			let specialized_qbar_eval =
-				extrapolate_line(q_bar_zero, q_bar_one, self.domain_points[d]);
-			round_q_chunk[d - 2] =
-				(composite_value - specialized_qbar_eval) * self.denom_inv[d - 2];
+				extrapolate_line::<P, FS>(q_bar_zero, q_bar_one, self.domain_points[d]);
+			round_q_chunk[d - 2] = mul_by_subfield_scalar(
+				composite_value - specialized_qbar_eval,
+				self.denom_inv[d - 2],
+			);
 		}
 	}
 

@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 /// Division implementation that fails in case when `a`` isn't divisible by `b`
-pub const fn checked_div(a: usize, b: usize) -> usize {
+pub const fn checked_int_div(a: usize, b: usize) -> usize {
 	let result = a / b;
 	assert!(b * result == a);
 
@@ -21,16 +21,16 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_checked_div_success() {
-		assert_eq!(checked_div(6, 1), 6);
-		assert_eq!(checked_div(6, 2), 3);
-		assert_eq!(checked_div(6, 6), 1);
+	fn test_checked_int_div_success() {
+		assert_eq!(checked_int_div(6, 1), 6);
+		assert_eq!(checked_int_div(6, 2), 3);
+		assert_eq!(checked_int_div(6, 6), 1);
 	}
 
 	#[test]
 	#[should_panic]
-	fn test_checked_div_fail() {
-		_ = checked_div(5, 2);
+	fn test_checked_int_div_fail() {
+		_ = checked_int_div(5, 2);
 	}
 
 	#[test]

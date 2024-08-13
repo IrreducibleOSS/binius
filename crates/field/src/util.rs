@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
-use binius_utils::checked_arithmetics::checked_div;
+use binius_utils::checked_arithmetics::checked_int_div;
 use rayon::prelude::*;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
@@ -49,7 +49,7 @@ where
 		ys.par_chunks(CHUNK_SIZE)
 			.enumerate()
 			.map(|(i, ys)| {
-				let offset = i * checked_div(CHUNK_SIZE * PY::WIDTH, PX::WIDTH);
+				let offset = i * checked_int_div(CHUNK_SIZE * PY::WIDTH, PX::WIDTH);
 				calc_product_by_ys(offset, ys)
 			})
 			.sum()

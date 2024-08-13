@@ -65,3 +65,7 @@ harness = false
 [[bench]]
 name = "packed_field_square"
 harness = false
+
+[[bench]]
+name = "packed_field_subfield_ops"
+harness = false

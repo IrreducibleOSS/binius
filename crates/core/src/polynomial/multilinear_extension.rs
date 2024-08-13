@@ -4,7 +4,9 @@ use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::Multi
 use crate::polynomial::util::PackingDeref;
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
-	packed::{get_packed_slice, iter_packed_slice, set_packed_slice_unchecked},
+	packed::{
+		get_packed_slice, get_packed_slice_unchecked, iter_packed_slice, set_packed_slice_unchecked,
+	},
 	underlier::UnderlierType,
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
@@ -434,8 +436,8 @@ where
 		&self,
 		indices: Range<usize>,
 		query: &MultilinearQuery<PE>,
-		evals_0: &mut Array2D<PE::Scalar>,
-		evals_1: &mut Array2D<PE::Scalar>,
+		evals_0: &mut Array2D<PE>,
+		evals_1: &mut Array2D<PE>,
 		col_index: usize,
 	) -> Result<(), Error> {
 		let n_vars = query.n_vars();
@@ -447,13 +449,13 @@ where
 		}
 
 		let max_index = 1 << (self.n_vars() - n_vars);
-		if indices.end >= max_index {
+		if indices.end * PE::WIDTH >= max_index + PE::WIDTH - 1 {
 			return Err(Error::ArgumentRangeError {
 				arg: "index".into(),
 				range: 0..max_index,
 			});
 		}
-		// Ths condition is implied by the previous check and the self state invariant, but we need imlicitly
+		// This condition is implied by the previous check and the self state invariant, but we need implicitly
 		// check it to make safe the unsafe operations below.
 		assert!(
 			((2 * indices.clone().last().unwrap_or_default() + 1) << n_vars)
@@ -501,65 +503,83 @@ where
 		// The first branch appears to be on a hot path, that's why all the unsafe operations are used there.
 		if n_vars < P::LOG_WIDTH {
 			for (i, k) in indices.enumerate() {
-				let mut eval0 = PE::Scalar::ZERO;
-				let mut eval1 = PE::Scalar::ZERO;
+				// TODO: It is really worth trying to make it operate with `PE` values.
+				// The problem is how to store array of indices and elements on the stack.
+				// Rust won't allow you to create a stack array of length that is a generic const parameter.
+				// Possibly `stackalloc` crate can be used, but it should be carefully profiled.
+				for scalar_index in 0..PE::WIDTH {
+					let mut eval0 = PE::Scalar::ZERO;
+					let mut eval1 = PE::Scalar::ZERO;
 
-				let odd_index = (2 * k) << n_vars;
-				let odd_offset = odd_index % P::WIDTH;
-				let even_index = (2 * k + 1) << n_vars;
-				// Safety:
-				// ((2 * indices.clone().last().unwrap_or_default() + 1 ) << n_vars) < self.0.evals().len() * P::WIDTH
-				let eval_odd = unsafe { self.0.evals.get_unchecked(odd_index / P::WIDTH) };
-				let eval_even = unsafe { self.0.evals.get_unchecked(even_index / P::WIDTH) };
-				let even_offset = even_index % P::WIDTH;
-				for j in 0..1 << n_vars {
-					// Safety: expansion.len() * PE::WIDTH >= 1 << n_vars
-					let query = unsafe {
-						expansion
-							.get_unchecked(j / PE::WIDTH)
-							.get_unchecked(j % PE::WIDTH)
-					};
+					let element_index = k * PE::WIDTH + scalar_index;
+					if element_index << 1 < max_index * PE::WIDTH {
+						let odd_index = (2 * element_index) << n_vars;
+						let odd_offset = odd_index % P::WIDTH;
+						let even_index = (2 * element_index + 1) << n_vars;
+						// Safety:
+						// ((2 * indices.clone().last().unwrap_or_default() + 1 ) << n_vars) < self.0.evals().len() * P::WIDTH
+						let eval_odd = unsafe { self.0.evals.get_unchecked(odd_index / P::WIDTH) };
+						let eval_even =
+							unsafe { self.0.evals.get_unchecked(even_index / P::WIDTH) };
+						let even_offset = even_index % P::WIDTH;
+						for j in 0..1 << n_vars {
+							// Safety: expansion.len() * PE::WIDTH >= 1 << n_vars
+							let query = unsafe { get_packed_slice_unchecked(expansion, j) };
+
+							// Safety:
+							// `n_vars` < `P::LOG_WIDTH` implies that all elements within the indices odd_index..(odd_index + 1 << n_vars)
+							// are contained within the same packed field element.
+							let eval_odd = unsafe { eval_odd.get_unchecked(odd_offset + j) };
+							// Safety:
+							// `n_vars` < `P::LOG_WIDTH` implies that all elements within the indices even_index..(even_index + 1 << n_vars)
+							// are contained within the same packed field element.
+							let eval_even = unsafe { eval_even.get_unchecked(even_offset + j) };
+
+							eval0 += query * eval_odd;
+							eval1 += query * eval_even;
+						}
+					}
 
 					// Safety:
-					// `n_vars` < `P::LOG_WIDTH` implies that all elements within the indices odd_index..(odd_index + 1 << n_vars)
-					// are contained within the same packed field element.
-					let eval_odd = unsafe { eval_odd.get_unchecked(odd_offset + j) };
-					// Safety:
-					// `n_vars` < `P::LOG_WIDTH` implies that all elements within the indices even_index..(even_index + 1 << n_vars)
-					// are contained within the same packed field element.
-					let eval_even = unsafe { eval_even.get_unchecked(even_offset + j) };
-
-					eval0 += query * eval_odd;
-					eval1 += query * eval_even;
-				}
-
-				// Safety:
-				// - `i` is within the range of `0..indices.len()`, which is the range of `0..evals_0.rows()` and `0..evals_1.rows()`
-				// - `col_index` is within the range of `0..evals_0.cols()` and `0..evals_1.cols()`
-				unsafe {
-					*evals_0.get_unchecked_mut(i, col_index) = eval0;
-					*evals_1.get_unchecked_mut(i, col_index) = eval1;
+					// - `i` is within the range of `0..indices.len()`, which is the range of `0..evals_0.rows()` and `0..evals_1.rows()`
+					// - `col_index` is within the range of `0..evals_0.cols()` and `0..evals_1.cols()`
+					unsafe {
+						evals_0
+							.get_unchecked_mut(i, col_index)
+							.set_unchecked(scalar_index, eval0);
+						evals_1
+							.get_unchecked_mut(i, col_index)
+							.set_unchecked(scalar_index, eval1);
+					}
 				}
 			}
 		} else {
 			for (i, k) in indices.enumerate() {
-				let mut eval0 = PE::Scalar::ZERO;
-				let mut eval1 = PE::Scalar::ZERO;
+				for scalar_index in 0..PE::WIDTH {
+					let mut eval0 = PE::Scalar::ZERO;
+					let mut eval1 = PE::Scalar::ZERO;
 
-				let evals_odd = &self.0.evals[(((2 * k) << n_vars) / P::WIDTH)..];
-				let evals_even = &self.0.evals[(((2 * k + 1) << n_vars) / P::WIDTH)..];
+					let element_index = k * PE::WIDTH + scalar_index;
 
-				for j in 0..1 << n_vars {
-					let query = expansion[j / PE::WIDTH].get(j % PE::WIDTH);
-					let eval_odd = evals_odd[j / P::WIDTH].get(j % P::WIDTH);
-					let eval_even = evals_even[j / P::WIDTH].get(j % P::WIDTH);
+					if element_index << 1 < max_index {
+						let evals_odd =
+							&self.0.evals[(((2 * element_index) << n_vars) / P::WIDTH)..];
+						let evals_even =
+							&self.0.evals[(((2 * element_index + 1) << n_vars) / P::WIDTH)..];
 
-					eval0 += query * eval_odd;
-					eval1 += query * eval_even;
+						for j in 0..1 << n_vars {
+							let query = get_packed_slice(expansion, j);
+							let eval_odd = get_packed_slice(evals_odd, j);
+							let eval_even = get_packed_slice(evals_even, j);
+
+							eval0 += query * eval_odd;
+							eval1 += query * eval_even;
+						}
+					}
+
+					evals_0[(i, col_index)].set(scalar_index, eval0);
+					evals_1[(i, col_index)].set(scalar_index, eval1);
 				}
-
-				evals_0[(i, col_index)] = eval0;
-				evals_1[(i, col_index)] = eval1;
 			}
 		}
 

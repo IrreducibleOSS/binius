@@ -9,7 +9,9 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic,
 	Error,
 };
-use crate::{arithmetic_traits::InvertOrZero, BinaryField, Field};
+use crate::{
+	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, ExtensionField, Field,
+};
 use binius_utils::iter::IterExtensions;
 use bytemuck::Zeroable;
 use rand::RngCore;
@@ -140,6 +142,8 @@ pub trait PackedField:
 
 	fn random(rng: impl RngCore) -> Self;
 	fn broadcast(scalar: Self::Scalar) -> Self;
+
+	/// Construct a packed field element from a function that returns scalar values by index.
 	fn from_fn(f: impl FnMut(usize) -> Self::Scalar) -> Self;
 
 	/// Construct a packed field element from a sequence of scalars.
@@ -183,6 +187,7 @@ pub fn iter_packed_slice<P: PackedField>(packed: &[P]) -> impl Iterator<Item = P
 	packed.iter().flat_map(|packed_i| packed_i.iter())
 }
 
+#[inline]
 pub fn get_packed_slice<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
 	// Safety: `i % P::WIDTH` is always less than `P::WIDTH
 	unsafe { packed[i / P::WIDTH].get_unchecked(i % P::WIDTH) }
@@ -191,6 +196,7 @@ pub fn get_packed_slice<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
 /// Returns the scalar at the given index without bounds checking.
 /// # Safety
 /// The caller must ensure that `i` is less than `P::WIDTH * packed.len()`.
+#[inline]
 pub unsafe fn get_packed_slice_unchecked<P: PackedField>(packed: &[P], i: usize) -> P::Scalar {
 	packed
 		.get_unchecked(i / P::WIDTH)
@@ -246,6 +252,27 @@ pub fn set_packed_slice_checked<P: PackedField>(
 
 pub fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 	packed.len() * P::WIDTH
+}
+
+/// Multiply packed field element by a subfield scalar.
+pub fn mul_by_subfield_scalar<P, FS>(val: P, multiplier: FS) -> P
+where
+	P: PackedField,
+	P::Scalar: ExtensionField<FS>,
+	FS: Field,
+{
+	use crate::underlier::UnderlierType;
+
+	// This is a workaround not to make the multiplication slower in certain cases.
+	// TODO: implement efficient strategy to multiply packed field by a subfield scalar.
+	let subfield_bits = FS::Underlier::BITS;
+	let extension_bits = <<P as PackedField>::Scalar as WithUnderlier>::Underlier::BITS;
+
+	if (subfield_bits == 1 && extension_bits > 8) || extension_bits >= 32 {
+		P::from_fn(|i| unsafe { val.get_unchecked(i) } * multiplier)
+	} else {
+		val * P::broadcast(multiplier.into())
+	}
 }
 
 impl<F: Field> Broadcast<F> for F {

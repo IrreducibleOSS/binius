@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::underlier_type::{NumCast, UnderlierType};
-use binius_utils::checked_arithmetics::{checked_div, checked_log_2};
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 
 /// Underlier type that supports bit arithmetic.
@@ -34,7 +34,7 @@ pub trait UnderlierWithBitOps:
 		// This implementation is optimal for the case when `Self` us u8..u128.
 		// For SIMD types/arrays specialization would be more performant.
 		let mut result = Self::default();
-		let width = checked_div(Self::BITS, T::BITS);
+		let width = checked_int_div(Self::BITS, T::BITS);
 		for i in 0..width {
 			result |= Self::from(f(i)) << (i * T::BITS);
 		}
@@ -52,7 +52,7 @@ pub trait UnderlierWithBitOps:
 	{
 		// This implementation is optimal for the case when `Self` us u8..u128.
 		// For SIMD types/arrays specialization would be more performant.
-		let height = checked_log_2(checked_div(Self::BITS, T::BITS));
+		let height = checked_log_2(checked_int_div(Self::BITS, T::BITS));
 		let mut result = Self::from(value);
 		for i in 0..height {
 			result |= result << ((1 << i) * T::BITS);
@@ -71,7 +71,7 @@ pub trait UnderlierWithBitOps:
 	where
 		T: UnderlierType + NumCast<Self>,
 	{
-		debug_assert!(i < checked_div(Self::BITS, T::BITS));
+		debug_assert!(i < checked_int_div(Self::BITS, T::BITS));
 		T::num_cast_from(*self >> (i * T::BITS))
 	}
 
@@ -86,7 +86,7 @@ pub trait UnderlierWithBitOps:
 		T: UnderlierWithBitOps,
 		Self: From<T>,
 	{
-		debug_assert!(i < checked_div(Self::BITS, T::BITS));
+		debug_assert!(i < checked_int_div(Self::BITS, T::BITS));
 		let mask = Self::from(single_element_mask::<T>());
 
 		*self &= !(mask << (i * T::BITS));

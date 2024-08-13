@@ -71,8 +71,8 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		&self,
 		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-		evals_0: &mut Array2D<P::Scalar>,
-		evals_1: &mut Array2D<P::Scalar>,
+		evals_0: &mut Array2D<P>,
+		evals_1: &mut Array2D<P>,
 		col_index: usize,
 	) -> Result<(), Error>;
 
@@ -131,8 +131,8 @@ where
 		&self,
 		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-		evals_0: &mut Array2D<P::Scalar>,
-		evals_1: &mut Array2D<P::Scalar>,
+		evals_0: &mut Array2D<P>,
+		evals_1: &mut Array2D<P>,
 		col_index: usize,
 	) -> Result<(), Error> {
 		(**self).evaluate_subcube(indices, query, evals_0, evals_1, col_index)

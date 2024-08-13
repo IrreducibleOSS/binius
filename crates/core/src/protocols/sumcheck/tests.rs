@@ -15,38 +15,40 @@ use crate::{
 	witness::MultilinearWitnessIndex,
 };
 use binius_field::{
-	BinaryField128b, BinaryField128bPolyval, BinaryField32b, ExtensionField, Field, PackedField,
-	TowerField,
+	BinaryField128b, BinaryField128bPolyval, BinaryField32b, ExtensionField, Field,
+	PackedBinaryField4x128b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
+use binius_utils::checked_arithmetics::checked_int_div;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
 use std::iter::repeat_with;
 
-fn generate_poly_and_sum_helper<F, FE>(
+fn generate_poly_and_sum_helper<P, PE>(
 	rng: &mut StdRng,
 	n_vars: usize,
 	n_multilinears: usize,
 ) -> (
-	MultilinearComposite<FE, TestProductComposition, MultilinearExtensionSpecialized<F, FE>>,
-	F,
+	MultilinearComposite<PE, TestProductComposition, MultilinearExtensionSpecialized<P, PE>>,
+	P::Scalar,
 )
 where
-	F: Field,
-	FE: ExtensionField<F>,
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	let composition = TestProductComposition::new(n_multilinears);
 	let multilinears = repeat_with(|| {
-		let values = repeat_with(|| Field::random(&mut *rng))
-			.take(1 << n_vars)
-			.collect::<Vec<F>>();
+		let values = repeat_with(|| PackedField::random(&mut *rng))
+			.take(checked_int_div(1 << n_vars, P::WIDTH))
+			.collect::<Vec<P>>();
 		MultilinearExtension::from_values(values).unwrap()
 	})
-	.take(<_ as CompositionPoly<FE>>::n_vars(&composition))
+	.take(<_ as CompositionPoly<PE>>::n_vars(&composition))
 	.collect::<Vec<_>>();
 
-	let poly = MultilinearComposite::<FE, _, _>::new(
+	let poly = MultilinearComposite::<PE, _, _>::new(
 		n_vars,
 		composition,
 		multilinears
@@ -59,13 +61,13 @@ where
 	// Get the sum
 	let sum = (0..1 << n_vars)
 		.map(|i| {
-			let mut prod = F::ONE;
+			let mut prod = P::Scalar::ONE;
 			(0..n_multilinears).for_each(|j| {
-				prod *= multilinears[j].packed_evaluate_on_hypercube(i).unwrap();
+				prod *= multilinears[j].evaluate_on_hypercube(i).unwrap();
 			});
 			prod
 		})
-		.sum::<F>();
+		.sum();
 
 	(poly, sum)
 }
@@ -351,6 +353,96 @@ fn test_prove_verify_batch() {
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
+		sumcheck_claims.clone().into_iter().zip(witnesses),
+		domain_factory,
+		|_| 5,
+		challenger.clone(),
+	)
+	.unwrap();
+	let proof = prove_output.proof;
+	assert_eq!(proof.rounds.len(), 8);
+
+	let _evalcheck_claims =
+		batch_verify(sumcheck_claims.iter().cloned(), proof, challenger.clone()).unwrap();
+}
+
+#[test]
+fn test_packed_sumcheck() {
+	type F = BinaryField32b;
+	type FE = BinaryField128b;
+	type PE = PackedBinaryField4x128b;
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let mut oracles = MultilinearOracleSet::<FE>::new();
+	let mut witness_index = MultilinearWitnessIndex::<PE>::new();
+
+	let multilin_oracles = [4, 6, 8].map(|n_vars| {
+		let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
+		let id = oracles.add_committed(batch_id);
+		oracles.oracle(id)
+	});
+
+	let composites = multilin_oracles.clone().map(|poly| {
+		CompositePolyOracle::new(poly.n_vars(), vec![poly], SquareComposition).unwrap()
+	});
+
+	let poly0 = MultilinearExtension::from_values(
+		repeat_with(|| <F as Field>::random(&mut rng))
+			.take(1 << 4)
+			.collect(),
+	)
+	.unwrap();
+	let poly1 = MultilinearExtension::from_values(
+		repeat_with(|| <F as Field>::random(&mut rng))
+			.take(1 << 6)
+			.collect(),
+	)
+	.unwrap();
+	let poly2 = MultilinearExtension::from_values(
+		repeat_with(|| <F as Field>::random(&mut rng))
+			.take(1 << 8)
+			.collect(),
+	)
+	.unwrap();
+
+	witness_index.set(multilin_oracles[0].id(), poly0.specialize_arc_dyn());
+	witness_index.set(multilin_oracles[1].id(), poly1.specialize_arc_dyn());
+	witness_index.set(multilin_oracles[2].id(), poly2.specialize_arc_dyn());
+
+	let witnesses = composites.clone().map(|oracle| {
+		MultilinearComposite::new(
+			oracle.n_vars(),
+			SquareComposition,
+			oracle
+				.inner_polys()
+				.into_iter()
+				.map(|multilin_oracle| witness_index.get(multilin_oracle.id()).unwrap())
+				.collect(),
+		)
+		.unwrap()
+	});
+
+	let composite_sums = witnesses
+		.iter()
+		.map(|composite_witness| {
+			(0..1 << composite_witness.n_vars())
+				.map(|i| composite_witness.evaluate_on_hypercube(i).unwrap())
+				.sum()
+		})
+		.collect::<Vec<_>>();
+
+	let sumcheck_claims = composites
+		.into_iter()
+		.zip(composite_sums)
+		.map(|(poly, sum)| SumcheckClaim { poly, sum })
+		.collect::<Vec<_>>();
+
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
+
+	// Setup evaluation domain
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+
+	let prove_output = batch_prove::<_, PE, BinaryField32b, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),
 		domain_factory,
 		|_| 5,

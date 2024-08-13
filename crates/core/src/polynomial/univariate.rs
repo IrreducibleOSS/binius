@@ -3,8 +3,11 @@
 
 use super::error::Error;
 use crate::linalg::Matrix;
-use binius_field::{ExtensionField, Field};
-use std::{iter, iter::Step, marker::PhantomData};
+use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedField};
+use std::{
+	iter::{self, Step},
+	marker::PhantomData,
+};
 
 /// A domain that univariate polynomials may be evaluated on.
 ///
@@ -112,7 +115,10 @@ impl<F: Field> EvaluationDomain<F> {
 		Ok(coeffs)
 	}
 
-	pub fn extrapolate<FE: ExtensionField<F>>(&self, values: &[FE], x: FE) -> Result<FE, Error> {
+	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
+	where
+		PE: PackedField<Scalar: ExtensionField<F>>,
+	{
 		let n = self.size();
 		if values.len() != n {
 			return Err(Error::ExtrapolateNumberOfEvaluations);
@@ -121,10 +127,10 @@ impl<F: Field> EvaluationDomain<F> {
 		let weighted_values = values
 			.iter()
 			.zip(self.weights.iter())
-			.map(|(&value, &weight)| value * weight);
+			.map(|(&value, &weight)| mul_by_subfield_scalar(value, weight));
 
 		let (result, _) = weighted_values.zip(self.points.iter()).fold(
-			(FE::ZERO, FE::ONE),
+			(PE::zero(), PE::Scalar::ONE),
 			|(eval, terms_partial_prod), (val, &x_i)| {
 				let term = x - x_i;
 				let next_eval = eval * term + val * terms_partial_prod;
@@ -140,12 +146,13 @@ impl<F: Field> EvaluationDomain<F> {
 #[inline]
 /// Uses arguments of two distinct types to make multiplication more efficient
 /// when extrapolating in a smaller field.
-pub fn extrapolate_line<F, FS>(x0: F, x1: F, z: FS) -> F
+pub fn extrapolate_line<P, FS>(x0: P, x1: P, z: FS) -> P
 where
-	F: ExtensionField<FS>,
+	P: PackedField,
+	P::Scalar: ExtensionField<FS>,
 	FS: Field,
 {
-	x0 + (x1 - x0) * z
+	x0 + mul_by_subfield_scalar(x1 - x0, z)
 }
 
 /// Evaluate a univariate polynomial specified by its monomial coefficients.
@@ -192,6 +199,7 @@ mod tests {
 	use binius_field::{
 		AESTowerField32b, BinaryField128b, BinaryField128bPolyval, BinaryField32b, BinaryField8b,
 	};
+	use proptest::proptest;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, slice};
 
@@ -321,5 +329,15 @@ mod tests {
 
 		let interpolated = domain.interpolate(&values).unwrap();
 		assert_eq!(interpolated, coeffs);
+	}
+
+	proptest! {
+		#[test]
+		fn test_extrapolate_line(x0 in 0u32.., x1 in 0u32.., z in 0u8..) {
+			let x0 = BinaryField32b::from(x0);
+			let x1 = BinaryField32b::from(x1);
+			let z = BinaryField8b::from(z);
+			assert_eq!(extrapolate_line(x0, x1, z), x0 + (x1 - x0) * z);
+		}
 	}
 }

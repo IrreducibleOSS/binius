@@ -292,8 +292,10 @@ where
 			_p: PhantomData,
 		};
 
-		let rd_vars = self.claim.n_vars() - self.round;
-		let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
+		let rd_vars = (self.claim.n_vars() - self.round).saturating_sub(PW::LOG_WIDTH);
+		let vertex_state_iterator = (0..1 << (rd_vars.saturating_sub(1)))
+			.into_par_iter()
+			.map(|_i| ());
 
 		let round_coeffs = provers_state.common.calculate_round_coeffs(
 			self.oracle_ids.as_slice(),
@@ -371,10 +373,10 @@ where
 		&self,
 		_i: usize,
 		_vertex_state: Self::VertexState,
-		evals_0: &[P::Scalar],
-		evals_1: &[P::Scalar],
-		evals_z: &mut [P::Scalar],
-		round_evals: &mut [P::Scalar],
+		evals_0: &[P],
+		evals_1: &[P],
+		evals_z: &mut [P],
+		round_evals: &mut [P],
 	) {
 		// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some
 		// index, use them to linearly interpolate each MLE value at domain point, and then
@@ -382,7 +384,7 @@ where
 
 		round_evals[0] += self
 			.composition
-			.evaluate_scalar(evals_1)
+			.evaluate(evals_1)
 			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
 
 		// The rest require interpolation.
@@ -392,8 +394,7 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					// TODO: Enable small field multiplication.
-					*evals_z_j = extrapolate_line::<P::Scalar, DomainField>(
+					*evals_z_j = extrapolate_line::<P, DomainField>(
 						evals_0_j,
 						evals_1_j,
 						self.domain_points[d],
@@ -402,7 +403,7 @@ where
 
 			round_evals[d - 1] += self
 				.composition
-				.evaluate_scalar(evals_z)
+				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 		}
 	}

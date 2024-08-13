@@ -13,10 +13,13 @@ use crate::{
 		Error as PolynomialError, EvaluationDomain, EvaluationDomainFactory, MultilinearExtension,
 		MultilinearPoly,
 	},
-	protocols::abstract_sumcheck::{
-		check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
-		AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
-		CommonProversState, ReducedClaim,
+	protocols::{
+		abstract_sumcheck::{
+			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
+			AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
+			CommonProversState, ReducedClaim,
+		},
+		utils::packed_from_fn_with_offset,
 	},
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
@@ -83,8 +86,7 @@ where
 		let new_evals = (0..current_evals.len() >> 1)
 			.into_par_iter()
 			.map(|i| {
-				PW::from_fn(|j| {
-					let index = i * PW::WIDTH + j;
+				packed_from_fn_with_offset::<PW>(i, |index| {
 					let eval0 = get_packed_slice(current_evals, index << 1);
 					let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
 
@@ -426,20 +428,22 @@ where
 		&self,
 		i: usize,
 		_vertex_state: Self::VertexState,
-		evals_0: &[PW::Scalar],
-		evals_1: &[PW::Scalar],
-		evals_z: &mut [PW::Scalar],
-		round_evals: &mut [PW::Scalar],
+		evals_0: &[PW],
+		evals_1: &[PW],
+		evals_z: &mut [PW],
+		round_evals: &mut [PW],
 	) {
-		debug_assert!(i < self.eq_ind.size());
-		let eq_ind_factor = self
-			.eq_ind
-			.evaluate_on_hypercube(i)
-			.unwrap_or(PW::Scalar::ZERO);
-		let poly_mle_one_eval = self
-			.poly_mle
-			.evaluate_on_hypercube(i << 1 | 1)
-			.unwrap_or(PW::Scalar::ZERO);
+		debug_assert!(i * PW::WIDTH < self.eq_ind.size());
+		let eq_ind_factor = packed_from_fn_with_offset::<PW>(i, |j| {
+			self.eq_ind
+				.evaluate_on_hypercube(j)
+				.unwrap_or(PW::Scalar::ZERO)
+		});
+		let poly_mle_one_eval = packed_from_fn_with_offset::<PW>(i, |j| {
+			self.poly_mle
+				.evaluate_on_hypercube(j << 1 | 1)
+				.unwrap_or(PW::Scalar::ZERO)
+		});
 
 		// For X = 1, we can replace evaluating poly(1, i) with evaluating poly_mle(1, i)
 		round_evals[0] += eq_ind_factor * poly_mle_one_eval;
@@ -451,7 +455,7 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line::<PW::Scalar, DomainField>(
+					*evals_z_j = extrapolate_line::<PW, DomainField>(
 						evals_0_j,
 						evals_1_j,
 						self.domain_points[d],
@@ -460,7 +464,7 @@ where
 
 			let composite_value = self
 				.composition
-				.evaluate_scalar(evals_z)
+				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 1] += composite_value * eq_ind_factor;
@@ -524,21 +528,22 @@ where
 		&self,
 		i: usize,
 		_vertex_state: Self::VertexState,
-		evals_0: &[PW::Scalar],
-		evals_1: &[PW::Scalar],
-		evals_z: &mut [PW::Scalar],
-		round_evals: &mut [PW::Scalar],
+		evals_0: &[PW],
+		evals_1: &[PW],
+		evals_z: &mut [PW],
+		round_evals: &mut [PW],
 	) {
-		debug_assert!(i < self.eq_ind.size());
-		let eq_ind_factor = self
-			.eq_ind
-			.evaluate_on_hypercube(i)
-			.unwrap_or(PW::Scalar::ZERO);
+		debug_assert!(i * PW::WIDTH < self.eq_ind.size());
+		let eq_ind_factor = packed_from_fn_with_offset::<PW>(i, |j| {
+			self.eq_ind
+				.evaluate_on_hypercube(j)
+				.unwrap_or(PW::Scalar::ZERO)
+		});
 
 		// Process X = 1
 		let composite_value = self
 			.composition
-			.evaluate_scalar(evals_1)
+			.evaluate(evals_1)
 			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
 
 		round_evals[0] += eq_ind_factor * composite_value;
@@ -550,7 +555,7 @@ where
 				.zip(evals_1.iter())
 				.zip(evals_z.iter_mut())
 				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line::<PW::Scalar, DomainField>(
+					*evals_z_j = extrapolate_line::<PW, DomainField>(
 						evals_0_j,
 						evals_1_j,
 						self.domain_points[d],
@@ -559,7 +564,7 @@ where
 
 			let composite_value = self
 				.composition
-				.evaluate_scalar(evals_z)
+				.evaluate(evals_z)
 				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
 
 			round_evals[d - 1] += composite_value * eq_ind_factor;
