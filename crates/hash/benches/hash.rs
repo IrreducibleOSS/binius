@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 use binius_field::{
-	AESTowerField32b, BinaryField32b, PackedAESBinaryField32x8b, PackedBinaryField32x8b,
-	PackedField,
+	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, PackedAESBinaryField32x8b,
+	PackedBinaryField32x8b, PackedField,
 };
 use binius_hash::{
 	FixedLenHasherDigest, Groestl256, HashDigest, HasherDigest, Vision32b, VisionHasher,
@@ -24,11 +24,11 @@ fn bench_groestl(c: &mut Criterion) {
 
 	group.throughput(Throughput::Bytes((N * PackedAESBinaryField32x8b::WIDTH) as u64));
 	group.bench_function("Groestl256-Binary", |bench| {
-		bench.iter(|| HasherDigest::<_, Groestl256<_, _>>::hash(data_bin));
+		bench.iter(|| HasherDigest::<_, Groestl256<_, BinaryField8b>>::hash(data_bin));
 	});
 
 	group.bench_function("Groestl256-AES", |bench| {
-		bench.iter(|| HasherDigest::<_, Groestl256<_, _>>::hash(data_aes));
+		bench.iter(|| HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(data_aes));
 	});
 
 	group.finish()

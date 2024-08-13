@@ -22,18 +22,69 @@ pub type GroestlHasher<P> = Groestl256<P, BinaryField8b>;
 
 const BLOCK_LEN_U8: usize = 64;
 
-const GROESTL_CORE_PERMUTATION: Groestl256Core = Groestl256Core;
-
 /// The Grøstl256 hash function which can be thought of as natively defined over `AESTowerField8b`
 /// and isomorphically maps to `BinaryField8b`. The type `P` is the input to the update
 /// function which has to be over a packed extension field of `BinaryField8b` or `AESTowerField8b`
 #[derive(Debug, Clone)]
 pub struct Groestl256<P, F> {
 	state: PackedAESBinaryField64x8b,
-	current_block: [PackedAESBinaryField64x8b; 1],
+	current_block: PackedAESBinaryField64x8b,
 	current_len: u64,
 	_p_marker: PhantomData<P>,
 	_f_marker: PhantomData<F>,
+}
+
+trait UpdateOverSlice {
+	type Elem;
+
+	fn update_slice(&mut self, msg: &[Self::Elem], cur_block: usize);
+}
+
+impl<P> UpdateOverSlice for Groestl256<P, BinaryField8b> {
+	type Elem = BinaryField8b;
+
+	fn update_slice(&mut self, msg: &[BinaryField8b], cur_block: usize) {
+		msg.iter()
+			.map(|x| AESTowerField8b::from(*x))
+			.enumerate()
+			.for_each(|(i, x)| {
+				let block_idx = (cur_block + i) % BLOCK_LEN_U8;
+				self.current_block.set(block_idx, x);
+				if block_idx == BLOCK_LEN_U8 - 1 {
+					self.state = compression_func(self.state, self.current_block);
+				}
+			});
+	}
+}
+
+impl<P> UpdateOverSlice for Groestl256<P, AESTowerField8b> {
+	type Elem = AESTowerField8b;
+
+	fn update_slice(&mut self, msg: &[Self::Elem], cur_block: usize) {
+		self.update_native(msg, cur_block);
+	}
+}
+
+impl<P, F> Groestl256<P, F> {
+	fn update_native(&mut self, mut msg: &[AESTowerField8b], mut cur_block: usize) {
+		while !msg.is_empty() {
+			let to_process = cmp::min(BLOCK_LEN_U8 - cur_block, msg.len());
+
+			// Firstly copy data into next block
+			let next_block = PackedAESBinaryField64x8b::unpack_scalars_mut(slice::from_mut(
+				&mut self.current_block,
+			));
+			next_block[cur_block..cur_block + to_process].copy_from_slice(&msg[..to_process]);
+
+			// absorb if ready
+			if cur_block + to_process == BLOCK_LEN_U8 {
+				self.state = compression_func(self.state, self.current_block);
+				cur_block = 0;
+			}
+
+			msg = &msg[to_process..];
+		}
+	}
 }
 
 impl<P, F> Default for Groestl256<P, F> {
@@ -43,7 +94,7 @@ impl<P, F> Default for Groestl256<P, F> {
 		iv.set(62, AESTowerField8b::new(0x01));
 		Self {
 			state: iv,
-			current_block: [PackedAESBinaryField64x8b::default()],
+			current_block: PackedAESBinaryField64x8b::default(),
 			current_len: 0,
 			_p_marker: PhantomData,
 			_f_marker: PhantomData,
@@ -56,45 +107,13 @@ fn compression_func(
 	h: PackedAESBinaryField64x8b,
 	m: PackedAESBinaryField64x8b,
 ) -> PackedAESBinaryField64x8b {
-	let (a, b) = GROESTL_CORE_PERMUTATION.permutation_pq(h + m, m);
+	let (a, b) = Groestl256Core.permutation_pq(h + m, m);
 	a + b + h
-}
-
-impl<P, F> Groestl256<P, F> {
-	fn update_native(&mut self, msg: impl Iterator<Item = AESTowerField8b>, cur_block: usize) {
-		msg.enumerate().for_each(|(i, x)| {
-			let block_idx = (cur_block + i) % BLOCK_LEN_U8;
-			let next_block = PackedAESBinaryField64x8b::unpack_scalars_mut(&mut self.current_block);
-			next_block[block_idx] = x;
-			if block_idx == BLOCK_LEN_U8 - 1 {
-				self.state = compression_func(self.state, self.current_block[0]);
-			}
-		});
-	}
-
-	fn update_native_slice(&mut self, mut msg_remaining: &[AESTowerField8b], mut cur_block: usize) {
-		while !msg_remaining.is_empty() {
-			let to_process = cmp::min(BLOCK_LEN_U8 - cur_block, msg_remaining.len());
-
-			// Firstly copy data into next block
-			let next_block = PackedAESBinaryField64x8b::unpack_scalars_mut(&mut self.current_block);
-			next_block[cur_block..cur_block + to_process]
-				.copy_from_slice(&msg_remaining[..to_process]);
-
-			// absorb if ready
-			if cur_block + to_process == BLOCK_LEN_U8 {
-				self.state = compression_func(self.state, self.current_block[0]);
-				cur_block = 0;
-			}
-
-			msg_remaining = &msg_remaining[to_process..];
-		}
-	}
 }
 
 impl<P, F> Groestl256<P, F>
 where
-	F: TowerField,
+	F: BinaryField,
 	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	P::Scalar: ExtensionField<F>,
 {
@@ -115,9 +134,9 @@ where
 			.copy_from_slice(&num_blocks.to_be_bytes().map(AESTowerField8b::new));
 
 		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % BLOCK_LEN_U8;
-		self.update_native_slice(&padding[..zero_pads + 9], cur_block);
+		self.update_native(&padding[..zero_pads + 9], cur_block);
 
-		let out_full = GROESTL_CORE_PERMUTATION.permutation_p(self.state) + self.state;
+		let out_full = Groestl256Core.permutation_p(self.state) + self.state;
 		let mut out = [PackedAESBinaryField32x8b::default()];
 		let out_as_slice = PackedFieldIndexable::unpack_scalars_mut(&mut out);
 		out_as_slice.copy_from_slice(&PackedFieldIndexable::unpack_scalars(&[out_full])[32..]);
@@ -126,108 +145,69 @@ where
 	}
 }
 
-impl<P> Groestl256<P, BinaryField8b>
+impl<P, F> Hasher<P> for Groestl256<P, F>
 where
-	P: PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<BinaryField8b>,
+	F: BinaryField + From<AESTowerField8b> + Into<AESTowerField8b>,
+	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
+	P::Scalar: ExtensionField<F>,
+	OptimalUnderlier256b: PackScalar<F> + Divisible<F::Underlier>,
+	Self: UpdateOverSlice<Elem = F>,
 {
-	fn update_native_packed(&mut self, msg: impl AsRef<[P]>) {
-		let msg = msg.as_ref();
+	type Digest = GroestlDigest<F>;
+
+	fn new() -> Self {
+		Self::default()
+	}
+
+	fn update(&mut self, data: impl AsRef<[P]>) {
+		let msg = data.as_ref();
 		if msg.is_empty() {
 			return;
 		}
 
 		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % BLOCK_LEN_U8;
-		let msg_remaining = P::unpack_base_scalars(msg)
-			.iter()
-			.map(|x| AESTowerField8b::from(*x));
+		let msg_remaining = P::unpack_base_scalars(msg);
 
-		self.update_native(msg_remaining, cur_block);
+		self.update_slice(msg_remaining, cur_block);
 
 		self.current_len = self
 			.current_len
 			.checked_add(msg.len() as u64)
 			.expect("Overflow on message length");
 	}
-}
 
-impl<P> Groestl256<P, AESTowerField8b>
-where
-	P: PackedExtension<AESTowerField8b, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<AESTowerField8b>,
-{
-	fn update_native_packed(&mut self, msg: impl AsRef<[P]>) {
-		let msg = msg.as_ref();
-		if msg.is_empty() {
-			return;
-		}
+	fn chain_update(mut self, data: impl AsRef<[P]>) -> Self {
+		self.update(data);
+		self
+	}
 
-		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % BLOCK_LEN_U8;
-		let msg_remaining: &[AESTowerField8b] = P::unpack_base_scalars(msg);
+	fn finalize(mut self) -> Self::Digest {
+		let out = self.finalize_packed();
+		Self::Digest::from_fn(|i| F::from(out.get(i)))
+	}
 
-		self.update_native_slice(msg_remaining, cur_block);
+	fn finalize_into(self, out: &mut Self::Digest) {
+		let finalized = self.finalize();
+		*out = finalized;
+	}
 
-		self.current_len = self
-			.current_len
-			.checked_add(msg.len() as u64)
-			.expect("Overflow on message length");
+	fn finalize_reset(&mut self) -> Self::Digest {
+		let out_native = self.finalize_packed();
+		let out = Self::Digest::from_fn(|i| F::from(out_native.get(i)));
+		self.reset();
+		out
+	}
+
+	fn finalize_into_reset(&mut self, out: &mut Self::Digest) {
+		let finalized = self.finalize_packed();
+		*out = Self::Digest::from_fn(|i| F::from(finalized.get(i)));
+		self.reset();
+	}
+
+	fn reset(&mut self) {
+		*self = Self::new();
 	}
 }
-
-macro_rules! impl_hasher_groestl {
-	($f:ty, $o:ty) => {
-		impl<P> Hasher<P> for Groestl256<P, $f>
-		where
-			P: PackedExtension<$f, PackedSubfield: PackedFieldIndexable>,
-			P::Scalar: ExtensionField<$f>,
-		{
-			type Digest = $o;
-
-			fn new() -> Self {
-				Self::default()
-			}
-
-			fn update(&mut self, data: impl AsRef<[P]>) {
-				self.update_native_packed(data);
-			}
-
-			fn chain_update(mut self, data: impl AsRef<[P]>) -> Self {
-				self.update(data);
-				self
-			}
-
-			fn finalize(mut self) -> Self::Digest {
-				let out = self.finalize_packed();
-				Self::Digest::from_fn(|i| <$f>::from(out.get(i)))
-			}
-
-			fn finalize_into(self, out: &mut Self::Digest) {
-				let finalized = self.finalize();
-				*out = finalized;
-			}
-
-			fn finalize_reset(&mut self) -> Self::Digest {
-				let out_native = self.finalize_packed();
-				let out = Self::Digest::from_fn(|i| <$f>::from(out_native.get(i)));
-				self.reset();
-				out
-			}
-
-			fn finalize_into_reset(&mut self, out: &mut Self::Digest) {
-				let finalized = self.finalize_packed();
-				*out = Self::Digest::from_fn(|i| <$f>::from(finalized.get(i)));
-				self.reset();
-			}
-
-			fn reset(&mut self) {
-				*self = Self::new();
-			}
-		}
-	};
-}
-
-impl_hasher_groestl!(BinaryField8b, GroestlDigest<BinaryField8b>);
-impl_hasher_groestl!(AESTowerField8b, GroestlDigest<AESTowerField8b>);
 
 /// A compression function for Grøstl hash digests based on the Grøstl output transformation.
 ///
@@ -264,7 +244,7 @@ where
 		let mut state = PackedAESBinaryField64x8b::default();
 		let state_as_slice = PackedFieldIndexable::unpack_scalars_mut(slice::from_mut(&mut state));
 		state_as_slice.copy_from_slice(&input_as_slice);
-		let new_state = GROESTL_CORE_PERMUTATION.permutation_p(state) + state;
+		let new_state = Groestl256Core.permutation_p(state) + state;
 
 		let new_state_slice: [AESTowerField8b; 32] =
 			PackedFieldIndexable::unpack_scalars(slice::from_ref(&new_state))[32..]
@@ -298,8 +278,7 @@ mod tests {
 
 	#[test]
 	fn test_groestl_digest_compression() {
-		let zero_perm =
-			GROESTL_CORE_PERMUTATION.permutation_p(PackedAESBinaryField64x8b::default());
+		let zero_perm = Groestl256Core.permutation_p(PackedAESBinaryField64x8b::default());
 		let aes_to_bin_transform = make_aes_to_binary_packed_transformer::<
 			PackedAESBinaryField64x8b,
 			PackedBinaryField64x8b,
@@ -327,8 +306,8 @@ mod tests {
 			PackedBinaryField32x8b::from_fn(|j| vec_bin[j])
 		});
 
-		let digest_aes = HasherDigest::<_, Groestl256<_, _>>::hash(input_aes);
-		let digest_bin = HasherDigest::<_, Groestl256<_, _>>::hash(input_bin);
+		let digest_aes = HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(input_aes);
+		let digest_bin = HasherDigest::<_, Groestl256<_, BinaryField8b>>::hash(input_bin);
 
 		let digest_aes_bin = digest_aes
 			.iter()

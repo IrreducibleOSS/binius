@@ -96,17 +96,20 @@ fn test_extensions_and_packings() {
 	let mut rng = thread_rng();
 	let data_to_hash: [AESTowerField8b; 256] =
 		array::from_fn(|_| <AESTowerField8b as Field>::random(&mut rng));
-	let expected = HasherDigest::<_, Groestl256<_, _>>::hash(data_to_hash);
+	let expected = HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(data_to_hash);
 
 	let data_as_b64 = data_to_hash
 		.chunks_exact(8)
 		.map(|x| AESTowerField64b::from_bases(x).unwrap())
 		.collect::<Vec<_>>();
-	assert_eq!(HasherDigest::<_, Groestl256<_, _>>::hash(&data_as_b64), expected);
+	assert_eq!(HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(&data_as_b64), expected);
 
 	let l = data_as_b64.len();
 	let data_as_packedu64 = (0..(l / 4))
 		.map(|j| PackedAESBinaryField4x64b::from_fn(|i| data_as_b64[j * 4 + i]))
 		.collect::<Vec<_>>();
-	assert_eq!(HasherDigest::<_, Groestl256<_, _>>::hash(data_as_packedu64), expected);
+	assert_eq!(
+		HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(data_as_packedu64),
+		expected
+	);
 }
