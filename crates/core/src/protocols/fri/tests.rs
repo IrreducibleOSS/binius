@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
+	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	linear_code::LinearCode,
 	merkle_tree::MerkleTreeVCS,
 	protocols::fri::{self, CommitOutput, FRIFolder, FRIVerifier, FoldRoundOutput},
@@ -95,7 +95,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		codeword,
 	} = fri::commit_message(&committed_rs_code_packed, &merkle_vcs, &msg).unwrap();
 
-	let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	challenger.observe(codeword_commitment.clone());
 
 	// Run the prover to generate the proximity proof

@@ -44,10 +44,10 @@ where
 }
 
 /// Construct a Fiat-Shamir challenger from a normal, collision-resistant hash function.
-pub fn new<F, H>() -> FieldChallenger<F, impl FieldChallengerHelper<F>>
+pub fn new<F, H>() -> FieldChallenger<F, impl FieldChallengerHelper<F> + Clone>
 where
 	F: Field,
-	H: Hasher<F>,
+	H: Hasher<F> + Clone,
 	H::Digest: PackedFieldIndexable<Scalar = F>,
 {
 	FieldChallenger::<F, HashChallenger<F, H>>::default()

@@ -6,7 +6,7 @@
 /// The example performs the computation, generates a proof and verifies it.
 use anyhow::Result;
 use binius_core::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -407,7 +407,7 @@ fn main() {
 
 	let mut oracles = MultilinearOracleSet::new();
 	let oracle = U32FibOracle::new(&mut oracles, log_size);
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let witness = U32FibTrace::<PackedBinaryField128x1b>::new(log_size).fill_trace();
 	let domain_factory =
 		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();

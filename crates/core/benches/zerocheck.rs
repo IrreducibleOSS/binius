@@ -2,7 +2,7 @@
 #![feature(step_trait)]
 
 use binius_core::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, IsomorphicEvaluationDomainFactory, MultilinearComposite,
@@ -119,7 +119,7 @@ where
 
 			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
 			let zerocheck_witness = poly;
-			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
 				prove::<FTower, FTower, FS, _>(
@@ -180,7 +180,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 			.unwrap();
 
 			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
-			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
 				prove::<FTower, FPolyval, FPolyval, _>(
@@ -252,7 +252,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			> = MultilinearComposite::new(n_vars, composition.clone(), multilinears).unwrap();
 
 			let zerocheck_claim = make_zerocheck_claim(&poly).unwrap();
-			let prove_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
 				prove::<_, FPolyval, FPolyval, _>(

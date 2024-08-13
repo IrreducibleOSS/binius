@@ -3,7 +3,7 @@
 use std::{cmp::max, iter::repeat_with};
 
 use crate::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
@@ -110,7 +110,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Zerocheck
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
-	let mut prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
 
@@ -274,7 +274,8 @@ fn test_prove_verify_batch() {
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
 	let mut max_n_vars = 0;
-	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+
+	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let verifier_challenger = prover_challenger.clone();
 
 	// Create zerocheck witnesses and claims on 4 variables

@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_core::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
 	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::{
@@ -45,7 +45,7 @@ fn bench_polyval(c: &mut Criterion) {
 			((1 << n) * std::mem::size_of::<BinaryField128b>()) as u64,
 		));
 		group.bench_function(format!("n_vars={n}"), |bench| {
-			let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+			let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			// Setup witness
 			let (numerator, denominator) = create_numerator_denominator::<FW>(n);

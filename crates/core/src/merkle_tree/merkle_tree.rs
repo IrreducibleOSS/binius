@@ -7,12 +7,13 @@ use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 
-use crate::challenger::HashChallenger;
+use crate::challenger::FieldChallenger;
 
 use super::{
 	error::{Error, VerificationError},
 	vcs::VectorCommitScheme,
 };
+use crate::challenger::field_challenger::FieldChallengerHelper;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hash::Hasher;
 
@@ -340,11 +341,10 @@ where
 	}
 }
 
-impl<F: Field, H, PE> CanObserve<MerkleCap<PE>> for HashChallenger<F, H>
+impl<F: Field, H, PE> CanObserve<MerkleCap<PE>> for FieldChallenger<F, H>
 where
 	F: Field,
-	H: Hasher<F>,
-	H::Digest: PackedField<Scalar = F>,
+	H: FieldChallengerHelper<F>,
 	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	PE::Scalar: ExtensionField<F>,
 {

@@ -12,7 +12,7 @@
 
 use anyhow::{ensure, Result};
 use binius_core::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -1069,7 +1069,7 @@ fn main() {
 	tracing::info!("Size of hashable Groestl256 data: {}", hashable_data);
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
 	let proof = prove::<_, _, AESTowerField128b, _, _, _, _>(

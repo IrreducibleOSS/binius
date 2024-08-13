@@ -7,7 +7,7 @@ use binius_hash::GroestlHasher;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	polynomial::{
 		transparent::eq_ind::EqIndPartialEval, IsomorphicEvaluationDomainFactory,
 		MultilinearComposite, MultilinearExtension, MultilinearQuery,
@@ -114,7 +114,7 @@ fn test_prove_verify_batch() {
 	let mut rng = StdRng::seed_from_u64(0);
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
-	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let verifier_challenger = prover_challenger.clone();
 	let n_vars = 4;
 

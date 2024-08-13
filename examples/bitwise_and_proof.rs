@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{BatchId, CommittedId, CompositePolyOracle, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -326,7 +326,7 @@ fn main() {
 	let constraints = make_constraints(log_size, &oracles);
 
 	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace_oracle).unwrap();
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 
 	let proof = prove(

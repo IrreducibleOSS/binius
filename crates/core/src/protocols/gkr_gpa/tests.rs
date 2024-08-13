@@ -2,7 +2,7 @@
 
 use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
 	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
@@ -100,7 +100,7 @@ fn test_prove_verify_batch() {
 	let witness_index = MultilinearWitnessIndex::<F>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
-	let prover_challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let verifier_challenger = prover_challenger.clone();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
 

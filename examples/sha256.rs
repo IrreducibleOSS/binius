@@ -16,7 +16,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
+	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -1075,7 +1075,7 @@ fn main() {
 	tracing::info!("Size of hashable SHA-256 data: {}", data_hashed_256);
 	tracing::info!("Size of PCS proof: {}", tensorpcs_size);
 
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace).unwrap();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();

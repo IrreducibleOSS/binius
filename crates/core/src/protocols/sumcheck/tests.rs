@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	challenger::HashChallenger,
+	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, IsomorphicEvaluationDomainFactory,
@@ -101,7 +101,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 	let final_prove_output = prove::<_, _, BinaryField32b, _>(
 		&sumcheck_claim,
@@ -176,7 +176,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
 
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let switchover_fn = |_| 3;
 	let final_prove_output = prove::<_, OF, OF, _>(
 		&sumcheck_claim,
@@ -348,7 +348,7 @@ fn test_prove_verify_batch() {
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 
 	// Setup evaluation domain
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),

@@ -975,7 +975,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::challenger::HashChallenger;
+	use crate::challenger::new_hasher_challenger;
 	use binius_field::{
 		arch::OptimalUnderlier128b, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
 		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
@@ -1011,7 +1011,7 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1063,7 +1063,7 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1111,7 +1111,7 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1160,7 +1160,7 @@ mod tests {
 		.collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1208,7 +1208,7 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1257,7 +1257,7 @@ mod tests {
 		.collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1384,7 +1384,7 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();

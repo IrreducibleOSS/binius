@@ -11,7 +11,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::{CanObserve, CanSample, CanSampleBits, HashChallenger},
+	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
@@ -1145,7 +1145,7 @@ fn main() {
 	tracing::info!("Size of hashable vision32b data: {}", data_hashed);
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
-	let challenger = <HashChallenger<_, GroestlHasher<_>>>::new();
+	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let witness = TraceWitness::<U, _>::generate_trace(log_size);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
