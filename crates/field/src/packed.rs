@@ -11,6 +11,7 @@ use super::{
 };
 use crate::{
 	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, ExtensionField, Field,
+	PackedExtension,
 };
 use binius_utils::iter::IterExtensions;
 use bytemuck::Zeroable;
@@ -257,8 +258,7 @@ pub fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 /// Multiply packed field element by a subfield scalar.
 pub fn mul_by_subfield_scalar<P, FS>(val: P, multiplier: FS) -> P
 where
-	P: PackedField,
-	P::Scalar: ExtensionField<FS>,
+	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
 	FS: Field,
 {
 	use crate::underlier::UnderlierType;
@@ -271,7 +271,7 @@ where
 	if (subfield_bits == 1 && extension_bits > 8) || extension_bits >= 32 {
 		P::from_fn(|i| unsafe { val.get_unchecked(i) } * multiplier)
 	} else {
-		val * P::broadcast(multiplier.into())
+		*P::cast_ext(&(*P::cast_base(&val) * P::PackedSubfield::broadcast(multiplier)))
 	}
 }
 

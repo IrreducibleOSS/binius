@@ -23,7 +23,7 @@ use crate::{
 		sumcheck::SumcheckProof,
 	},
 };
-use binius_field::{ExtensionField, Field, PackedField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use getset::Getters;
 use rayon::prelude::*;
 use std::{fmt::Debug, marker::PhantomData};
@@ -43,7 +43,7 @@ pub fn prove<F, PW, DomainField, CH>(
 where
 	F: Field,
 	DomainField: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let batch_proof = batch_prove::<F, PW, DomainField, CH>(
@@ -108,7 +108,7 @@ impl<F, PW, DomainField, EDF, W> AbstractSumcheckProversState<F>
 	for SumcheckProversState<F, PW, DomainField, EDF, W>
 where
 	F: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
@@ -201,7 +201,7 @@ impl<F, PW, DomainField, W> SumcheckProver<F, PW, DomainField, W>
 where
 	F: Field,
 	DomainField: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 {
 	/// Start a new sumcheck instance with claim in field `F`. Witness may be given in
@@ -357,7 +357,7 @@ where
 impl<'a, P, DomainField, C> AbstractSumcheckEvaluator<P>
 	for SumcheckEvaluator<'a, P, DomainField, C>
 where
-	P: PackedField<Scalar: ExtensionField<DomainField>>,
+	P: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
 	DomainField: Field,
 	C: CompositionPoly<P>,
 {

@@ -15,7 +15,7 @@ use binius_core::{
 };
 use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
-	ExtensionField, Field, PackedField, TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -63,7 +63,8 @@ fn sumcheck_128b_with_switchover<P, DomainField>(c: &mut Criterion, id: &str, sw
 where
 	P: PackedField + Debug,
 	DomainField: Field + Step + Debug,
-	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<DomainField>,
+	BinaryField128b:
+		ExtensionField<P::Scalar> + ExtensionField<DomainField> + PackedExtension<DomainField>,
 {
 	type FTower = BinaryField128b;
 

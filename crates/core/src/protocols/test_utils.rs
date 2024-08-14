@@ -22,7 +22,8 @@ use crate::{
 	},
 };
 use binius_field::{
-	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedField, TowerField,
+	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedExtension, PackedField,
+	TowerField,
 };
 use std::ops::Deref;
 use tracing::instrument;
@@ -160,7 +161,7 @@ pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH>(
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + From<PW::Scalar>,
-	PW: PackedField,
+	PW: PackedExtension<DomainField>,
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CH: CanObserve<F> + CanSample<F>,

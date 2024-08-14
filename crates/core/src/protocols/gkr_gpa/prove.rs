@@ -7,7 +7,7 @@ use super::{
 use crate::{
 	oracle::MultilinearPolyOracle,
 	polynomial::{
-		composition::BivariateProduct, extrapolate_line, EvaluationDomainFactory,
+		composition::BivariateProduct, extrapolate_line_scalar, EvaluationDomainFactory,
 		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 	},
 	protocols::{
@@ -20,7 +20,7 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{ExtensionField, Field, PackedField, TowerField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_utils::sorting::{stable_sort, unsort};
 use p3_challenger::{CanObserve, CanSample};
 use std::sync::Arc;
@@ -42,7 +42,7 @@ pub fn batch_prove<'a, F, PW, DomainField, Challenger>(
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedField,
+	PW: PackedExtension<DomainField>,
 	DomainField: Field,
 	PW::Scalar: Field + From<F> + ExtensionField<DomainField>,
 	Challenger: CanSample<F> + CanObserve<F>,
@@ -363,7 +363,7 @@ where
 			return Err(Error::TooManyRounds);
 		}
 
-		let new_eval = extrapolate_line(zero_eval, one_eval, gkr_challenge);
+		let new_eval = extrapolate_line_scalar(zero_eval, one_eval, gkr_challenge);
 		let mut layer_challenge = sumcheck_challenge;
 		layer_challenge.push(gkr_challenge);
 

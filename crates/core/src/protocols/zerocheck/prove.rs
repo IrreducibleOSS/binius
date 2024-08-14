@@ -27,7 +27,7 @@ use crate::{
 };
 use binius_field::{
 	packed::{get_packed_slice, mul_by_subfield_scalar},
-	ExtensionField, Field, PackedField,
+	ExtensionField, Field, PackedExtension, PackedField,
 };
 use bytemuck::zeroed_vec;
 use getset::Getters;
@@ -51,7 +51,7 @@ pub fn prove<F, PW, DomainField, CH>(
 where
 	F: Field,
 	DomainField: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let batch_proof = batch_prove::<F, PW, DomainField, CH>(
@@ -180,7 +180,7 @@ impl<'a, F, PW, DomainField, EDF, W> AbstractSumcheckProversState<F>
 	for ZerocheckProversState<'a, F, PW, DomainField, EDF, W>
 where
 	F: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
@@ -294,7 +294,7 @@ where
 impl<'a, F, PW, DomainField, W> ZerocheckProver<'a, F, PW, DomainField, W>
 where
 	F: Field,
-	PW: PackedField,
+	PW: PackedExtension<DomainField>,
 	PW::Scalar: From<F> + Into<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
@@ -592,7 +592,7 @@ where
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckFirstRoundEvaluator<'a, P, FS, C>
 where
-	P: PackedField<Scalar: ExtensionField<FS>>,
+	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
 	FS: Field,
 	C: CompositionPoly<P>,
 {
@@ -684,7 +684,7 @@ where
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>
 where
-	P: PackedField<Scalar: ExtensionField<FS>>,
+	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
 	FS: Field,
 	C: CompositionPoly<P>,
 {

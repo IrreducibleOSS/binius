@@ -3,7 +3,7 @@
 
 use super::error::Error;
 use crate::linalg::Matrix;
-use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedField};
+use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension};
 use std::{
 	iter::{self, Step},
 	marker::PhantomData,
@@ -117,7 +117,7 @@ impl<F: Field> EvaluationDomain<F> {
 
 	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
 	where
-		PE: PackedField<Scalar: ExtensionField<F>>,
+		PE: PackedExtension<F, Scalar: ExtensionField<F>>,
 	{
 		let n = self.size();
 		if values.len() != n {
@@ -143,16 +143,25 @@ impl<F: Field> EvaluationDomain<F> {
 	}
 }
 
-#[inline]
 /// Uses arguments of two distinct types to make multiplication more efficient
 /// when extrapolating in a smaller field.
+#[inline]
 pub fn extrapolate_line<P, FS>(x0: P, x1: P, z: FS) -> P
 where
-	P: PackedField,
-	P::Scalar: ExtensionField<FS>,
+	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
 	FS: Field,
 {
 	x0 + mul_by_subfield_scalar(x1 - x0, z)
+}
+
+/// Similar methods, but for scalar fields.
+#[inline]
+pub fn extrapolate_line_scalar<F, FS>(x0: F, x1: F, z: FS) -> F
+where
+	F: ExtensionField<FS>,
+	FS: Field,
+{
+	x0 + (x1 - x0) * z
 }
 
 /// Evaluate a univariate polynomial specified by its monomial coefficients.
@@ -338,6 +347,7 @@ mod tests {
 			let x1 = BinaryField32b::from(x1);
 			let z = BinaryField8b::from(z);
 			assert_eq!(extrapolate_line(x0, x1, z), x0 + (x1 - x0) * z);
+			assert_eq!(extrapolate_line_scalar(x0, x1, z), x0 + (x1 - x0) * z);
 		}
 	}
 }

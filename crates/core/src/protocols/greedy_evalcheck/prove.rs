@@ -16,7 +16,7 @@ use crate::{
 	},
 	witness::MultilinearWitnessIndex,
 };
-use binius_field::{ExtensionField, PackedFieldIndexable, TowerField};
+use binius_field::{ExtensionField, PackedExtension, PackedFieldIndexable, TowerField};
 
 pub fn prove<F, PW, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -28,7 +28,7 @@ pub fn prove<F, PW, DomainField, Challenger>(
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedFieldIndexable<Scalar: TowerField + From<F>>,
+	PW: PackedFieldIndexable<Scalar: TowerField + From<F>> + PackedExtension<DomainField>,
 	PW::Scalar: ExtensionField<DomainField>,
 	DomainField: TowerField,
 	Challenger: CanObserve<F> + CanSample<F>,

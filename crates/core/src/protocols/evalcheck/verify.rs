@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
-	polynomial::extrapolate_line,
+	polynomial::extrapolate_line_scalar,
 	protocols::sumcheck::SumcheckClaim,
 };
 use binius_field::{util::inner_product_unchecked, TowerField};
@@ -173,7 +173,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				// Verify the evaluation of the interleaved function over the claimed evaluations
 				let subclaim_eval_point = &eval_point[1..];
-				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[0]);
+				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[0]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
@@ -207,7 +207,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				// Verify the evaluation of the merged function over the claimed evaluations
 				let n_vars = poly1.n_vars();
 				let subclaim_eval_point = &eval_point[..n_vars];
-				let actual_eval = extrapolate_line::<F, F>(eval1, eval2, eval_point[n_vars]);
+				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[n_vars]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(id).into());
 				}
@@ -319,7 +319,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let mut extrapolate_eval = inner_eval;
 
 				for z in zs {
-					extrapolate_eval = extrapolate_line::<F, F>(F::ZERO, extrapolate_eval, *z);
+					extrapolate_eval =
+						extrapolate_line_scalar::<F, F>(F::ZERO, extrapolate_eval, *z);
 				}
 
 				if extrapolate_eval != eval {

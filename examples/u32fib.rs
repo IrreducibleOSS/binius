@@ -24,7 +24,8 @@ use binius_core::{
 };
 use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField,
-	Field, PackedBinaryField128x1b, PackedBinaryField1x128b, PackedField, TowerField,
+	Field, PackedBinaryField128x1b, PackedBinaryField1x128b, PackedExtension, PackedField,
+	TowerField,
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles, IterPolys};
@@ -227,7 +228,10 @@ fn prove<P, F, PW, DomainField, PCS, CH>(
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	F: TowerField + From<PW>,
-	PW: TowerField + From<F> + ExtensionField<DomainField>,
+	PW: TowerField
+		+ From<F>
+		+ ExtensionField<DomainField>
+		+ PackedExtension<DomainField, Scalar = PW>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + Clone,

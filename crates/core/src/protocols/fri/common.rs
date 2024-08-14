@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	linear_code::LinearCode, merkle_tree::VectorCommitScheme, polynomial::extrapolate_line,
+	linear_code::LinearCode, merkle_tree::VectorCommitScheme, polynomial::extrapolate_line_scalar,
 	protocols::fri::Error, reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
@@ -30,7 +30,7 @@ where
 	let (mut u, mut v) = values;
 	v += u;
 	u += v * t;
-	extrapolate_line(u, v, r)
+	extrapolate_line_scalar(u, v, r)
 }
 
 /// Calculate fold of `values` at a `chunk_index` with random folding challenges.

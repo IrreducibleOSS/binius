@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_field::{ExtensionField, Field, PackedField};
+use binius_field::{ExtensionField, Field, PackedExtension};
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
@@ -34,7 +34,7 @@ pub fn batch_prove<F, PW, DomainField, CW, M, CH>(
 where
 	F: Field,
 	DomainField: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
 	CH: CanObserve<F> + CanSample<F>,

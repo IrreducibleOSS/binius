@@ -22,7 +22,7 @@ use crate::{
 		utils::packed_from_fn_with_offset,
 	},
 };
-use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedField};
+use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
 use getset::Getters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -104,7 +104,7 @@ impl<'a, F, PW, DomainField, EDF, CW, M> AbstractSumcheckProversState<F>
 	for GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>
 where
 	F: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	CW: CompositionPoly<PW>,
@@ -205,8 +205,8 @@ where
 impl<'a, F, PW, DomainField, CW, M> GkrSumcheckProver<'a, F, PW, DomainField, CW, M>
 where
 	F: Field,
-	PW: PackedField,
-	PW::Scalar: From<F> + Into<F> + ExtensionField<DomainField>,
+	PW: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
+	PW::Scalar: From<F> + Into<F>,
 	DomainField: Field,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
@@ -413,7 +413,7 @@ impl<'a, PW, DomainField, C, M> AbstractSumcheckEvaluator<PW>
 	for GkrSumcheckFirstRoundEvaluator<'a, PW, DomainField, C, M>
 where
 	DomainField: Field,
-	PW: PackedField<Scalar: ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
 	C: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Send + Sync,
 {
@@ -514,7 +514,7 @@ impl<'a, PW, DomainField, C> AbstractSumcheckEvaluator<PW>
 	for GkrSumcheckLaterRoundEvaluator<'a, PW, DomainField, C>
 where
 	DomainField: Field,
-	PW: PackedField<Scalar: ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
 	C: CompositionPoly<PW>,
 {
 	type VertexState = ();

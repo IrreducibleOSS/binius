@@ -942,7 +942,7 @@ fn prove<U, F, FW, PCS, Comm, Challenger>(
 	domain_factory: impl EvaluationDomainFactory<BinaryField8b>,
 ) -> Result<Proof<F, Comm, PCS::Proof>>
 where
-	U: UnderlierType + PackScalar<BinaryField32b> + PackScalar<FW>,
+	U: UnderlierType + PackScalar<BinaryField32b> + PackScalar<FW> + PackScalar<BinaryField8b>,
 	F: TowerField + ExtensionField<BinaryField32b> + From<FW>,
 	FW: TowerField + ExtensionField<BinaryField32b> + From<F> + ExtensionField<BinaryField8b>,
 	PackedType<U, FW>: PackedFieldIndexable,

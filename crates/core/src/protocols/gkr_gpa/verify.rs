@@ -5,7 +5,7 @@ use super::{
 	Error, GrandProductClaim, VerificationError,
 };
 use crate::{
-	polynomial::{composition::BivariateProduct, extrapolate_line},
+	polynomial::{composition::BivariateProduct, extrapolate_line_scalar},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_sumcheck::{self, GkrSumcheckClaim},
@@ -181,7 +181,7 @@ where
 		.into_iter()
 		.zip(one_evals)
 		.map(|(zero_eval, one_eval)| {
-			let new_eval = extrapolate_line(zero_eval, one_eval, gkr_challenge);
+			let new_eval = extrapolate_line_scalar(zero_eval, one_eval, gkr_challenge);
 			LayerClaim {
 				eval_point: new_layer_challenge.clone(),
 				eval: new_eval,

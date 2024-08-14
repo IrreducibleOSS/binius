@@ -22,7 +22,7 @@ use crate::{
 		evalcheck::EvalcheckClaim,
 	},
 };
-use binius_field::{ExtensionField, Field, PackedField};
+use binius_field::{ExtensionField, Field, PackedExtension};
 
 pub type SumcheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
 
@@ -46,7 +46,7 @@ pub fn batch_prove<F, PW, DomainField, CH>(
 where
 	F: Field,
 	DomainField: Field,
-	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
+	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 
 	CH: CanSample<F> + CanObserve<F>,
 {

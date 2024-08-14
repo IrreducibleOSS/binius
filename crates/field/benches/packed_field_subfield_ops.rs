@@ -8,7 +8,7 @@ use binius_field::{
 	BinaryField1b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, ExtensionField,
 	Field, PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x128b,
 	PackedBinaryField32x8b, PackedBinaryField4x128b, PackedBinaryField4x32b,
-	PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField,
+	PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b, PackedExtension,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Throughput,
@@ -19,7 +19,7 @@ const BATCH_SIZE: usize = 32;
 
 fn bench_mul_subfield<PE, F>(group: &mut BenchmarkGroup<'_, WallTime>)
 where
-	PE: PackedField<Scalar: ExtensionField<F>>,
+	PE: PackedExtension<F, Scalar: ExtensionField<F>>,
 	F: Field,
 {
 	let mut rng = thread_rng();

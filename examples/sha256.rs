@@ -888,7 +888,7 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
-	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW>,
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
 	PackedType<U, FW>: PackedFieldIndexable,
 	F: TowerField + From<FW>,
 	FW: TowerField + From<F> + ExtensionField<DomainField>,

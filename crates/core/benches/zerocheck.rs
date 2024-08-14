@@ -16,7 +16,7 @@ use binius_core::{
 };
 use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
-	ExtensionField, Field, PackedField, TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -89,7 +89,7 @@ fn zerocheck_128b_with_switchover<P, FS>(c: &mut Criterion, id: &str, switchover
 where
 	P: PackedField + Debug,
 	FS: Field + Step + Debug,
-	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<FS>,
+	BinaryField128b: ExtensionField<P::Scalar> + ExtensionField<FS> + PackedExtension<FS>,
 {
 	type FTower = BinaryField128b;
 
