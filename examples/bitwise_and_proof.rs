@@ -41,7 +41,7 @@ fn prove<U, PCS, CH>(
 	oracles: &mut MultilinearOracleSet<BinaryField128b>,
 	trace: &TraceOracle,
 	constraints: &[CompositePolyOracle<BinaryField128b>],
-	witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
+	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof>>
@@ -59,8 +59,6 @@ where
 	let log_size = trace.log_size;
 	let commit_span = tracing::debug_span!("commit").entered();
 	assert_eq!(pcs.n_vars(), log_size);
-
-	let mut witness_index = witness.witness_index();
 
 	assert_eq!(constraints.len(), 1);
 	let constraint = constraints[0].clone();
@@ -102,9 +100,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, PackedType<U, BinaryField128bPolyval>, _, _>(
 		oracles,
-		&mut witness_index,
+		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -116,6 +114,11 @@ where
 		.into_iter()
 		.next()
 		.expect("length is asserted to be 1");
+
+	let commit_polys = oracles
+		.committed_oracle_ids(trace.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 
 	// Prove commitment openings
 	let abc_eval_proof = pcs.prove_evaluation(

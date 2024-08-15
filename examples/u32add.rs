@@ -154,7 +154,7 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	oracles: &mut MultilinearOracleSet<F>,
 	pcs: &PCS,
 	trace: &U32AddOracle,
-	witness: MultilinearExtensionIndex<U, FW>,
+	mut witness: MultilinearExtensionIndex<U, FW>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
@@ -168,8 +168,6 @@ where
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
 	assert_eq!(pcs.n_vars(), log_size);
-
-	let mut witness_index = witness.witness_index();
 
 	// Round 1
 	let trace_commit_polys = oracles
@@ -220,9 +218,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut witness_index,
+		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -236,6 +234,10 @@ where
 		.expect("length is asserted to be 1");
 	assert_eq!(batch_id, trace.batch_id);
 
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	// Prove commitment openings
 	let trace_open_proof = pcs.prove_evaluation(
 		&mut challenger,

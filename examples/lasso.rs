@@ -359,7 +359,7 @@ where
 		Some(alpha),
 	)?;
 
-	let witness_index = msetcheck_prove_output.witness_index;
+	let mut witness_index = msetcheck_prove_output.witness_index;
 	let ProdcheckBatchProveOutput {
 		reduced_witnesses: reduced_gpa_witnesses,
 		reduced_claims: reduced_gpa_claims,
@@ -389,11 +389,10 @@ where
 			is_random_point: claim.is_random_point,
 		});
 
-	let mut legacy_witness_index = witness_index.witness_index();
 	let switchover_fn = standard_switchover_heuristic(-2);
-	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, _, B128, _>(
+	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<_, PackedType<U, B128>, B128, _>(
 		oracles,
-		&mut legacy_witness_index,
+		&mut witness_index,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,

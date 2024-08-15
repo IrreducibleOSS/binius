@@ -24,12 +24,16 @@ use crate::{
 		transparent::{
 			eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
 		},
-		MultilinearComposite, MultilinearQuery, MultivariatePoly,
+		MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly,
 	},
 	protocols::sumcheck::SumcheckClaim,
-	witness::{MultilinearWitness, MultilinearWitnessIndex},
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{Field, PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{
+	as_packed_field::PackScalar, underlier::WithUnderlier, Field, PackedField,
+	PackedFieldIndexable, TowerField,
+};
+use std::sync::Arc;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
 pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
@@ -74,13 +78,19 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// Takes in metadata object and creates a witness for a bivariate claim on shift indicator.
 ///
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
-pub fn shifted_sumcheck_witness<'a, F: Field, PW: PackedFieldIndexable>(
-	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+pub fn shifted_sumcheck_witness<'a, F, PW>(
+	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
 	memoized_queries: &mut MemoizedQueries<PW>,
 	meta: ProjectedBivariateMeta,
 	shifted: &Shifted<F>,
 	wf_eval_point: &[PW::Scalar],
-) -> Result<BivariateSumcheckWitness<'a, PW>, Error> {
+) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
+where
+	F: Field,
+	PW: PackedFieldIndexable + WithUnderlier,
+	PW::Scalar: TowerField,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+{
 	projected_bivariate_witness(
 		witness_index,
 		memoized_queries,
@@ -135,15 +145,18 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 /// Takes in metadata object and creates a witness for a bivariate claim on tower basis.
 ///
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
-pub fn packed_sumcheck_witness<'a, F: Field, PW: PackedField>(
-	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+pub fn packed_sumcheck_witness<'a, F, PW>(
+	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
 	memoized_queries: &mut MemoizedQueries<PW>,
 	meta: ProjectedBivariateMeta,
 	packed: &Packed<F>,
 	wf_eval_point: &[PW::Scalar],
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
+	F: Field,
+	PW: PackedFieldIndexable + WithUnderlier,
 	PW::Scalar: TowerField,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
 {
 	let log_degree = packed.log_degree();
 	let binary_tower_level = packed.inner().binary_tower_level();
@@ -253,14 +266,15 @@ pub fn non_same_query_pcs_sumcheck_claim<F: TowerField>(
 }
 
 pub fn non_same_query_pcs_sumcheck_witness<'a, F, PW>(
-	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
 	memoized_queries: &mut MemoizedQueries<PW>,
 	meta: NonSameQueryPcsClaimMeta<F>,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
 	F: Field + From<PW::Scalar>,
-	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW: PackedField + WithUnderlier,
+	PW::Scalar: From<F> + TowerField,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
 {
 	let wf_eval_point = meta
 		.eval_point
@@ -373,13 +387,18 @@ pub fn projected_bivariate_claim<F: TowerField>(
 	Ok(sumcheck_claim)
 }
 
-fn projected_bivariate_witness<'a, PW: PackedField>(
-	witness_index: &mut MultilinearWitnessIndex<'a, PW>,
+fn projected_bivariate_witness<'a, PW>(
+	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
 	memoized_queries: &mut MemoizedQueries<PW>,
 	meta: ProjectedBivariateMeta,
 	wf_eval_point: &[PW::Scalar],
 	multiplier_witness_ctr: impl FnOnce(&[PW::Scalar]) -> Result<MultilinearWitness<'a, PW>, Error>,
-) -> Result<BivariateSumcheckWitness<'a, PW>, Error> {
+) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
+where
+	PW: PackedField + WithUnderlier,
+	PW::Scalar: TowerField,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+{
 	let ProjectedBivariateMeta {
 		inner_id,
 		projected_id,
@@ -387,30 +406,30 @@ fn projected_bivariate_witness<'a, PW: PackedField>(
 		projected_n_vars,
 	} = meta;
 
-	let inner_multilin = witness_index
-		.get(inner_id)
-		.ok_or(Error::InvalidWitness(inner_id))?;
+	let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
 
 	let (projected_inner_multilin, projected_eval_point) = if let Some(projected_id) = projected_id
 	{
 		let query = memoized_queries.full_query(&wf_eval_point[projected_n_vars..])?;
-
-		let projected = inner_multilin
-			.evaluate_partial_high(query)?
-			.upcast_arc_dyn();
-		witness_index.set(projected_id, projected.clone());
+		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
+		let projected: Arc<dyn MultilinearPoly<PW> + Send + Sync> =
+			Arc::new(inner_multilin.evaluate_partial_high(query)?);
+		witness_index.update_multilin_poly(vec![(projected_id, projected.clone())])?;
 
 		(projected, &wf_eval_point[..projected_n_vars])
 	} else {
-		(inner_multilin.clone(), wf_eval_point)
+		(inner_multilin, wf_eval_point)
 	};
 
-	if witness_index.get(multiplier_id).is_none() {
-		witness_index.set(multiplier_id, multiplier_witness_ctr(projected_eval_point)?);
+	if !witness_index.has(multiplier_id) {
+		witness_index.update_multilin_poly(vec![(
+			multiplier_id,
+			multiplier_witness_ctr(projected_eval_point)?,
+		)])?;
 	}
 
 	let multiplier_multilin = witness_index
-		.get(multiplier_id)
+		.get_multilin_poly(multiplier_id)
 		.expect("multilinear forcibly created if absent")
 		.clone();
 

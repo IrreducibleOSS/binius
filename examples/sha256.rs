@@ -884,7 +884,7 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut challenger: CH,
-	witness: &MultilinearExtensionIndex<U, FW>,
+	mut witness: MultilinearExtensionIndex<U, FW>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
@@ -896,8 +896,6 @@ where
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 {
-	let mut trace_witness = witness.witness_index();
-
 	// Round 1
 	let trace_commit_polys = oracles
 		.committed_oracle_ids(trace_oracle.batch_id)
@@ -948,9 +946,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut trace_witness,
+		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -963,6 +961,11 @@ where
 		.next()
 		.expect("length is asserted to be 1");
 	assert_eq!(batch_id, trace_oracle.batch_id);
+
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.batch_id)
+		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 
 	let trace_open_proof = pcs.prove_evaluation(
 		&mut challenger,
@@ -1086,7 +1089,7 @@ fn main() {
 		&trace,
 		&pcs,
 		challenger.clone(),
-		&witness,
+		witness,
 		domain_factory,
 	)
 	.unwrap();

@@ -47,7 +47,6 @@ where
 	F: Field,
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
-
 	CH: CanSample<F> + CanObserve<F>,
 {
 	let sumchecks = sumchecks.into_iter().collect::<Vec<_>>();

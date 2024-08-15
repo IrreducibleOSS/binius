@@ -14,9 +14,12 @@ use super::{
 };
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant, ShiftVariant},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
-use binius_field::{PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{
+	as_packed_field::PackScalar, underlier::WithUnderlier, PackedField, PackedFieldIndexable,
+	TowerField,
+};
 use getset::{Getters, MutGetters};
 use std::mem;
 use tracing::instrument;
@@ -27,9 +30,14 @@ use tracing::instrument;
 /// `new_sumchecks` bivariate sumcheck instances, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during proving)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckProver<'a, 'b, F: TowerField, PW: PackedField> {
+pub struct EvalcheckProver<'a, 'b, F, PW>
+where
+	F: TowerField,
+	PW: PackedField + WithUnderlier,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+{
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
-	pub(crate) witness_index: &'a mut MultilinearWitnessIndex<'b, PW>,
+	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, PW::Underlier, PW::Scalar>,
 
 	#[getset(get = "pub", get_mut = "pub")]
 	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
@@ -45,15 +53,16 @@ pub struct EvalcheckProver<'a, 'b, F: TowerField, PW: PackedField> {
 impl<'a, 'b, F, PW> EvalcheckProver<'a, 'b, F, PW>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedFieldIndexable,
+	PW: PackedFieldIndexable + WithUnderlier,
 	PW::Scalar: TowerField + From<F>,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and
 	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles & multilinears)
 	/// as well as committed eval claims accumulator.
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
-		witness_index: &'a mut MultilinearWitnessIndex<'b, PW>,
+		witness_index: &'a mut MultilinearExtensionIndex<'b, PW::Underlier, PW::Scalar>,
 	) -> Self {
 		let memoized_queries = MemoizedQueries::new();
 		let memoized_eq_ind = MemoizedTransparentPolynomials::new();
@@ -81,7 +90,7 @@ where
 	/// Prove an evalcheck claim.
 	///
 	/// Given a prover state containing [`MultilinearOracleSet`] indexing into given
-	/// [`MultilinearWitnessIndex`], we prove an [`EvalcheckClaim`] (stating that given composite
+	/// [`MultilinearExtensionIndex`], we prove an [`EvalcheckClaim`] (stating that given composite
 	/// `poly` equals `eval` at `eval_point`) by recursively processing each of the multilinears in
 	/// the composition. This way the evalcheck claim gets transformed into an [`EvalcheckProof`]
 	/// and a new set of claims on:
@@ -320,8 +329,8 @@ where
 		let eval_query = self.memoized_queries.full_query(wf_eval_point)?;
 		let witness_poly = self
 			.witness_index
-			.get(poly.id())
-			.ok_or(Error::InvalidWitness(poly.id()))?;
+			.get_multilin_poly(poly.id())
+			.map_err(Error::Witness)?;
 		let eval = witness_poly.evaluate(eval_query)?.into();
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,

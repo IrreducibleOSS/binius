@@ -956,8 +956,7 @@ where
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 {
-	let ext_index = witness.to_index::<FW>(trace_oracle)?;
-	let mut trace_witness = ext_index.witness_index();
+	let mut ext_index = witness.to_index::<FW>(trace_oracle)?;
 
 	// Round 1
 	let trace_commit_polys = oracles
@@ -1018,9 +1017,9 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, _, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
 		oracles,
-		&mut trace_witness,
+		&mut ext_index,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
@@ -1031,6 +1030,10 @@ where
 	let (batch_id, same_query_claim) = same_query_claims.into_iter().next().unwrap();
 	assert_eq!(batch_id, trace_oracle.trace_batch_id);
 
+	let trace_commit_polys = oracles
+		.committed_oracle_ids(trace_oracle.trace_batch_id)
+		.map(|oracle_id| ext_index.get::<BinaryField32b>(oracle_id))
+		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
 		&mut challenger,
 		&trace_committed,

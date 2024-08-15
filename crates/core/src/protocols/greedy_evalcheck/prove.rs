@@ -14,28 +14,32 @@ use crate::{
 			make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover,
 		},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
-use binius_field::{ExtensionField, PackedExtension, PackedFieldIndexable, TowerField};
+use binius_field::{
+	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, PackedExtension,
+	PackedFieldIndexable, TowerField,
+};
 
 pub fn prove<F, PW, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: &mut MultilinearWitnessIndex<PW>,
+	witness_index: &mut MultilinearExtensionIndex<PW::Underlier, PW::Scalar>,
 	claims: impl IntoIterator<Item = EvalcheckClaim<F>>,
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
-	mut challenger: Challenger,
+	challenger: &mut Challenger,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedFieldIndexable<Scalar: TowerField + From<F>> + PackedExtension<DomainField>,
-	PW::Scalar: ExtensionField<DomainField>,
+	PW: PackedFieldIndexable + PackedExtension<DomainField> + WithUnderlier,
+	PW::Scalar: TowerField + From<F> + ExtensionField<DomainField>,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
 	DomainField: TowerField,
 	Challenger: CanObserve<F> + CanSample<F>,
 {
 	let committed_batches = oracles.committed_batches();
 	let mut proof = GreedyEvalcheckProof::default();
-	let mut evalcheck_prover = EvalcheckProver::new(oracles, witness_index);
+	let mut evalcheck_prover = EvalcheckProver::<F, PW>::new(oracles, witness_index);
 
 	// Prove the initial evalcheck claims
 	proof.initial_evalcheck_proofs = claims
@@ -53,7 +57,7 @@ where
 		let (batch_sumcheck_proof, new_evalcheck_claims) =
 			prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _>(
 				new_sumchecks,
-				&mut challenger,
+				challenger,
 				switchover_fn.clone(),
 				domain_factory.clone(),
 			)?;
@@ -90,7 +94,7 @@ where
 				let (sumcheck_proof, new_evalcheck_claims) =
 					prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _>(
 						non_sqpcs_sumchecks,
-						&mut challenger,
+						challenger,
 						switchover_fn.clone(),
 						domain_factory.clone(),
 					)?;

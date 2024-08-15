@@ -110,7 +110,7 @@ where
 	n_vars: usize,
 	// The multilinear polynomials. The length of the vector matches `composition.n_vars()`.
 	pub multilinears: Vec<M>,
-	pub _p_marker: PhantomData<P>,
+	pub _marker: PhantomData<P>,
 }
 
 impl<P, C, M> MultilinearComposite<P, C, M>
@@ -142,7 +142,7 @@ where
 			n_vars,
 			composition,
 			multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 
@@ -185,7 +185,7 @@ where
 			n_vars: self.n_vars,
 			composition: Arc::new(self.composition),
 			multilinears: self.multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		}
 	}
 }
@@ -244,7 +244,7 @@ where
 			composition: self.composition.clone(),
 			n_vars: self.n_vars - query.n_vars(),
 			multilinears: new_multilinears,
-			_p_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 }

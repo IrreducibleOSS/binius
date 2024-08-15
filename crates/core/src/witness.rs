@@ -10,58 +10,11 @@ use crate::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	ExtensionField, Field, PackedField, TowerField,
+	ExtensionField, Field, TowerField,
 };
 use std::{fmt::Debug, sync::Arc};
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
-
-/// Data structure that indexes multilinear polynomial witnesses by oracle ID.
-///
-/// A [`crate::oracle::MultilinearOracleSet`] indexes multilinear polynomial oracles by assigning
-/// unique, sequential  oracle IDs. This index stores the corresponding witnesses, as
-/// [`MultilinearPoly`] trait objects. Not every oracle is required to have a stored witness -- in
-/// some cases, only a derived multilinear witness is required.
-///
-/// *DEPRECATED*: See the [`MultilinearExtensionIndex`] documentation.
-#[derive(Default, Debug)]
-pub struct MultilinearWitnessIndex<'a, P: PackedField> {
-	multilinears: Vec<Option<MultilinearWitness<'a, P>>>,
-}
-
-impl<'a, P> MultilinearWitnessIndex<'a, P>
-where
-	P: PackedField,
-{
-	pub fn new() -> Self {
-		Self::default()
-	}
-
-	#[allow(clippy::len_without_is_empty)]
-	pub fn len(&self) -> usize {
-		self.multilinears.len()
-	}
-
-	pub fn get(&self, id: OracleId) -> Option<&MultilinearWitness<'a, P>> {
-		self.multilinears.get(id)?.as_ref()
-	}
-
-	pub fn set(&mut self, id: OracleId, witness: MultilinearWitness<'a, P>) {
-		if id >= self.multilinears.len() {
-			self.multilinears.resize(id + 1, None);
-		}
-		self.multilinears[id] = Some(witness);
-	}
-
-	pub fn set_many(
-		&mut self,
-		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, P>)>,
-	) {
-		for (id, witness) in witnesses {
-			self.set(id, witness);
-		}
-	}
-}
 
 #[derive(Debug)]
 struct MultilinearExtensionBacking<'a, U: UnderlierType> {
@@ -82,16 +35,9 @@ where
 /// Data structure that indexes multilinear extensions by oracle ID.
 ///
 /// A [`crate::oracle::MultilinearOracleSet`] indexes multilinear polynomial oracles by assigning
-/// unique, sequential oracle IDs. This struct is similar to [`MultilinearWitnessIndex`] in that
-/// stores the corresponding multilinear extensions for each oracle. However, unlike
-/// [`MultilinearWitnessIndex`], with [`MultilinearExtensionIndex`], the caller can get the
-/// [`MultilinearExtension`] defined natively over a subfield. This is possible because the
-/// [`MultilinearExtensionIndex::get`] method is generic over the subfield type and the struct
-/// itself only stores the underlying data.
-///
-/// This does provide a superset of the functionality of [`MultilinearWitnessIndex`]. We plan to
-/// entirely replace [`MultilinearWitnessIndex`] eventually, but it is kept around for backwards
-/// compatibility.
+/// unique, sequential oracle IDs. The caller can get the [`MultilinearExtension`] defined natively
+/// over a subfield. This is possible because the [`MultilinearExtensionIndex::get`] method is
+/// generic over the subfield type and the struct itself only stores the underlying data.
 #[derive(Default, Debug)]
 pub struct MultilinearExtensionIndex<'a, U: UnderlierType, FW>
 where
@@ -176,6 +122,11 @@ where
 		Ok(entry.type_erased.clone())
 	}
 
+	/// Whether has data for the given oracle id.
+	pub fn has(&self, id: OracleId) -> bool {
+		self.entries.get(id).map_or(false, Option::is_some)
+	}
+
 	pub fn update_owned<FS, Data>(
 		self,
 		witnesses: impl IntoIterator<Item = (OracleId, Data)>,
@@ -240,21 +191,20 @@ where
 	}
 
 	pub fn update_multilin_poly(
-		self,
+		&mut self,
 		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>)>,
-	) -> Result<MultilinearExtensionIndex<'a, U, FW>, Error> {
-		let MultilinearExtensionIndex { mut entries } = self;
+	) -> Result<(), Error> {
 		for (id, witness) in witnesses {
-			if id >= entries.len() {
-				entries.resize_with(id + 1, || None);
+			if id >= self.entries.len() {
+				self.entries.resize_with(id + 1, || None);
 			}
 
-			entries[id] = Some(MultilinearExtensionIndexEntry {
+			self.entries[id] = Some(MultilinearExtensionIndexEntry {
 				type_erased: witness,
 				backing: None,
 			});
 		}
-		Ok(MultilinearExtensionIndex { entries })
+		Ok(())
 	}
 
 	pub fn update_packed<'new, FS>(
@@ -272,15 +222,6 @@ where
 				(oracle_id, <PackedType<U, FS>>::to_underliers_ref(packed))
 			}),
 		)
-	}
-
-	pub fn witness_index(&self) -> MultilinearWitnessIndex<'a, PackedType<U, FW>> {
-		let mut index = MultilinearWitnessIndex::new();
-		index.set_many(self.entries.iter().enumerate().flat_map(|(id, entry)| {
-			let entry = entry.as_ref()?;
-			Some((id, entry.type_erased.clone()))
-		}));
-		index
 	}
 }
 

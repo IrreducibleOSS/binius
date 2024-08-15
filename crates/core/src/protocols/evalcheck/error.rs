@@ -26,6 +26,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("witness error: {0}")]
+	Witness(#[from] crate::witness::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

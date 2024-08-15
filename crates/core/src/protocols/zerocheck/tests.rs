@@ -16,9 +16,11 @@ use crate::{
 			ZerocheckClaim,
 		},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::{UnderlierType, WithUnderlier},
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField4x128b, PackedField,
 	TowerField,
 };
@@ -168,11 +170,11 @@ fn test_zerocheck_prove_verify_interaction_pigeonhole_cores() {
 	}
 }
 
-struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
+struct CreateClaimsWitnessesOutput<'a, U: UnderlierType + PackScalar<F>, F: TowerField> {
 	new_claims: Vec<ZerocheckClaim<F>>,
-	new_witnesses: Vec<ZerocheckWitnessTypeErased<'a, F, TestProductComposition>>,
+	new_witnesses: Vec<ZerocheckWitnessTypeErased<'a, PackedType<U, F>, TestProductComposition>>,
 	oracle_set: MultilinearOracleSet<F>,
-	witness_index: MultilinearWitnessIndex<'a, F>,
+	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	rng: StdRng,
 }
 
@@ -184,17 +186,18 @@ struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
 // This function then creates n_composites multivariate polynomials where the ith polynomial is
 // the product of the first (n_shared_multilins + i) multilinear polynomials.
 // These are then used as the underlying polynomials for the zerocheck claims and witnesses.
-fn create_claims_witnesses_helper<F, FE>(
+fn create_claims_witnesses_helper<U, F, FE>(
 	mut rng: StdRng,
 	mut oracle_set: MultilinearOracleSet<FE>,
-	mut witness_index: MultilinearWitnessIndex<'_, FE>,
+	mut witness_index: MultilinearExtensionIndex<'_, U, FE>,
 	n_vars: usize,
 	n_shared_multilins: usize,
 	n_composites: usize,
-) -> CreateClaimsWitnessesOutput<'_, FE>
+) -> CreateClaimsWitnessesOutput<'_, U, FE>
 where
 	F: TowerField,
 	FE: TowerField + ExtensionField<F>,
+	U: UnderlierType + PackScalar<FE>,
 {
 	if n_shared_multilins == 0 || n_composites == 0 {
 		panic!("Require at least one multilinear and composite polynomial");
@@ -220,9 +223,9 @@ where
 		multilins.push(random_multilin);
 	}
 
-	(0..n_polys).for_each(|i| {
-		witness_index.set(multilin_oracles[i].id(), multilins[i].clone().specialize_arc_dyn());
-	});
+	let multilins =
+		(0..n_polys).map(|i| (multilin_oracles[i].id(), multilins[i].clone().specialize_arc_dyn()));
+	witness_index.update_multilin_poly(multilins).unwrap();
 
 	let mut new_claims = Vec::with_capacity(n_composites);
 	let mut new_witnesses = Vec::with_capacity(n_composites);
@@ -242,7 +245,12 @@ where
 			composite_oracle
 				.inner_polys()
 				.into_iter()
-				.map(|multilin_oracle| witness_index.get(multilin_oracle.id()).unwrap().clone())
+				.map(|multilin_oracle| {
+					witness_index
+						.get_multilin_poly(multilin_oracle.id())
+						.unwrap()
+						.clone()
+				})
 				.collect(),
 		)
 		.unwrap();
@@ -271,9 +279,11 @@ where
 fn test_prove_verify_batch() {
 	type F = BinaryField32b;
 	type FE = BinaryField128b;
+	type PE = PackedBinaryField4x128b;
+	type U = <PE as WithUnderlier>::Underlier;
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<FE>::new();
-	let witness_index = MultilinearWitnessIndex::<FE>::new();
+	let witness_index = MultilinearExtensionIndex::<U, FE>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
 	let mut max_n_vars = 0;
@@ -292,7 +302,7 @@ fn test_prove_verify_batch() {
 		oracle_set,
 		witness_index,
 		rng,
-	} = create_claims_witnesses_helper::<F, FE>(
+	} = create_claims_witnesses_helper::<U, F, FE>(
 		rng,
 		oracle_set,
 		witness_index,
@@ -315,7 +325,7 @@ fn test_prove_verify_batch() {
 		oracle_set,
 		witness_index,
 		rng,
-	} = create_claims_witnesses_helper::<F, FE>(
+	} = create_claims_witnesses_helper::<U, F, FE>(
 		rng,
 		oracle_set,
 		witness_index,

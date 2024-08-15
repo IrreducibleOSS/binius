@@ -22,8 +22,8 @@ use crate::{
 	},
 };
 use binius_field::{
-	packed::set_packed_slice, BinaryField1b, ExtensionField, Field, PackedExtension, PackedField,
-	TowerField,
+	as_packed_field::PackScalar, packed::set_packed_slice, underlier::WithUnderlier, BinaryField1b,
+	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use std::ops::Deref;
 use tracing::instrument;
@@ -209,8 +209,9 @@ pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW>(
 ) -> Result<Vec<BivariateSumcheck<'a, F, PW>>, EvalcheckError>
 where
 	F: TowerField + From<PW::Scalar>,
-	PW: PackedField,
-	PW::Scalar: From<F>,
+	PW: PackedField + WithUnderlier,
+	PW::Scalar: TowerField + From<F>,
+	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
 {
 	let metas = non_same_query_pcs_sumcheck_metas(
 		prover.oracles,

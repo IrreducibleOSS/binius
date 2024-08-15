@@ -12,11 +12,11 @@ use crate::{
 		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
 	},
-	witness::MultilinearWitnessIndex,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	BinaryField128b, BinaryField128bPolyval, BinaryField32b, ExtensionField, Field,
-	PackedBinaryField4x128b, PackedField, TowerField,
+	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
+	ExtensionField, Field, PackedBinaryField4x128b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
 use binius_utils::checked_arithmetics::checked_int_div;
@@ -280,11 +280,12 @@ impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 fn test_prove_verify_batch() {
 	type F = BinaryField32b;
 	type FE = BinaryField128b;
+	type U = <FE as WithUnderlier>::Underlier;
 
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mut oracles = MultilinearOracleSet::<FE>::new();
-	let mut witness_index = MultilinearWitnessIndex::<FE>::new();
+	let mut witness_index = MultilinearExtensionIndex::<U, FE>::new();
 
 	let multilin_oracles = [4, 6, 8].map(|n_vars| {
 		let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
@@ -315,9 +316,13 @@ fn test_prove_verify_batch() {
 	)
 	.unwrap();
 
-	witness_index.set(multilin_oracles[0].id(), poly0.specialize_arc_dyn());
-	witness_index.set(multilin_oracles[1].id(), poly1.specialize_arc_dyn());
-	witness_index.set(multilin_oracles[2].id(), poly2.specialize_arc_dyn());
+	witness_index
+		.update_multilin_poly(vec![
+			(multilin_oracles[0].id(), poly0.specialize_arc_dyn()),
+			(multilin_oracles[1].id(), poly1.specialize_arc_dyn()),
+			(multilin_oracles[2].id(), poly2.specialize_arc_dyn()),
+		])
+		.unwrap();
 
 	let witnesses = composites.clone().map(|oracle| {
 		MultilinearComposite::new(
@@ -326,7 +331,11 @@ fn test_prove_verify_batch() {
 			oracle
 				.inner_polys()
 				.into_iter()
-				.map(|multilin_oracle| witness_index.get(multilin_oracle.id()).unwrap())
+				.map(|multilin_oracle| {
+					witness_index
+						.get_multilin_poly(multilin_oracle.id())
+						.unwrap()
+				})
 				.collect(),
 		)
 		.unwrap()
@@ -371,10 +380,11 @@ fn test_packed_sumcheck() {
 	type F = BinaryField32b;
 	type FE = BinaryField128b;
 	type PE = PackedBinaryField4x128b;
+	type U = <PE as WithUnderlier>::Underlier;
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mut oracles = MultilinearOracleSet::<FE>::new();
-	let mut witness_index = MultilinearWitnessIndex::<PE>::new();
+	let mut witness_index = MultilinearExtensionIndex::<U, FE>::new();
 
 	let multilin_oracles = [4, 6, 8].map(|n_vars| {
 		let batch_id = oracles.add_committed_batch(n_vars, F::TOWER_LEVEL);
@@ -405,9 +415,13 @@ fn test_packed_sumcheck() {
 	)
 	.unwrap();
 
-	witness_index.set(multilin_oracles[0].id(), poly0.specialize_arc_dyn());
-	witness_index.set(multilin_oracles[1].id(), poly1.specialize_arc_dyn());
-	witness_index.set(multilin_oracles[2].id(), poly2.specialize_arc_dyn());
+	witness_index
+		.update_multilin_poly(vec![
+			(multilin_oracles[0].id(), poly0.specialize_arc_dyn()),
+			(multilin_oracles[1].id(), poly1.specialize_arc_dyn()),
+			(multilin_oracles[2].id(), poly2.specialize_arc_dyn()),
+		])
+		.unwrap();
 
 	let witnesses = composites.clone().map(|oracle| {
 		MultilinearComposite::new(
@@ -416,7 +430,11 @@ fn test_packed_sumcheck() {
 			oracle
 				.inner_polys()
 				.into_iter()
-				.map(|multilin_oracle| witness_index.get(multilin_oracle.id()).unwrap())
+				.map(|multilin_oracle| {
+					witness_index
+						.get_multilin_poly(multilin_oracle.id())
+						.unwrap()
+				})
 				.collect(),
 		)
 		.unwrap()
