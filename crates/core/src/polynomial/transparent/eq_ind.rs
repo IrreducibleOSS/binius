@@ -17,6 +17,7 @@ pub struct EqIndPartialEval<F: Field> {
 }
 
 impl<F: Field> EqIndPartialEval<F> {
+	// TODO: n_vars param here is unnecessary
 	pub fn new(n_vars: usize, r: Vec<F>) -> Result<Self, Error> {
 		if r.len() != n_vars {
 			return Err(Error::IncorrectQuerySize { expected: n_vars });

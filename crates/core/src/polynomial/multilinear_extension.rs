@@ -440,39 +440,41 @@ where
 		evals_1: &mut Array2D<PE>,
 		col_index: usize,
 	) -> Result<(), Error> {
+		// query n_vars must be strictly less than poly n_vars because we must perform at least two
+		// subcube evaluations.
 		let n_vars = query.n_vars();
-		if n_vars > self.n_vars() {
+		if n_vars >= self.n_vars() {
 			return Err(Error::ArgumentRangeError {
 				arg: "n_vars".into(),
-				range: 0..self.n_vars() + 1,
+				range: 0..self.n_vars(),
 			});
 		}
 
 		let max_index = 1 << (self.n_vars() - n_vars);
-		if indices.end * PE::WIDTH >= max_index + PE::WIDTH - 1 {
+		if indices.end >= max_index {
 			return Err(Error::ArgumentRangeError {
-				arg: "index".into(),
+				arg: "indices.end".into(),
 				range: 0..max_index,
 			});
 		}
-		// This condition is implied by the previous check and the self state invariant, but we need implicitly
-		// check it to make safe the unsafe operations below.
-		assert!(
-			((2 * indices.clone().last().unwrap_or_default() + 1) << n_vars)
-				< self.0.evals().len() * P::WIDTH
-		);
+		// Ths condition is implied by the previous check and the self state invariant, but we need
+		// to check it explicitly to make safe the unsafe operations below.
+		assert!((indices.end << (n_vars + 1)) <= self.0.evals().len() * P::WIDTH);
 
+		// TODO: This should require these to be exactly equal. The legacy sumcheck prover cannot
+		// handle that, however, so until we remove the legacy sumcheck prover, we need this to be
+		// an inequality.
 		if indices.len() > evals_0.rows() {
 			return Err(Error::ArgumentRangeError {
 				arg: "evals_0.rows()".into(),
-				range: 0..indices.len() + 1,
+				range: indices.len()..indices.len() + 1,
 			});
 		}
 
 		if indices.len() > evals_1.rows() {
 			return Err(Error::ArgumentRangeError {
 				arg: "evals_1.rows()".into(),
-				range: 0..indices.len() + 1,
+				range: indices.len()..indices.len() + 1,
 			});
 		}
 

@@ -38,6 +38,7 @@ pub mod lasso;
 pub mod msetcheck;
 pub mod prodcheck;
 pub mod sumcheck;
+pub mod sumcheck_v2;
 #[allow(dead_code)]
 #[doc(hidden)]
 pub mod test_utils;

@@ -3,6 +3,7 @@
 use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
 use binius_utils::checked_arithmetics::checked_int_div;
 use rayon::prelude::*;
+use std::iter;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
 pub fn inner_product_unchecked<F, FE>(a: impl Iterator<Item = FE>, b: impl Iterator<Item = F>) -> FE
@@ -60,4 +61,9 @@ where
 #[inline(always)]
 pub fn eq<F: Field>(x: F, y: F) -> F {
 	x * y + (F::ONE - x) * (F::ONE - y)
+}
+
+/// Iterate the powers of a given value, beginning with 1 (the 0'th power).
+pub fn powers<F: Field>(val: F) -> impl Iterator<Item = F> {
+	iter::successors(Some(F::ONE), move |&power| Some(power * val))
 }

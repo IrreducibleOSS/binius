@@ -1,5 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use itertools::Itertools;
+
+/// Returns whether the given values are sorted in ascending order.
+pub fn is_sorted_ascending<T: PartialOrd + Clone>(values: impl Iterator<Item = T>) -> bool {
+	!values.tuple_windows().any(|(a, b)| a > b)
+}
+
 /// Stable sorts a collection of objects based on a key function and an optional descending flag.
 ///
 /// This function takes a collection of objects, sorts them stably based on the value returned by a

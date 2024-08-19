@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
+itertools.workspace = true
 rayon.workspace = true
 tracing.workspace = true
 tracing-profile.workspace = true

@@ -5,6 +5,7 @@ use std::ops::{AddAssign, Index, IndexMut};
 use bytemuck::{allocation::zeroed_vec, Zeroable};
 
 /// 2D array with row-major layout.
+#[derive(Debug)]
 pub struct Array2D<T> {
 	data: Vec<T>,
 	rows: usize,
