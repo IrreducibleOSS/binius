@@ -55,10 +55,10 @@ where
 
 /// Construct a Fiat-Shamir challenger based on a duplex sponge construction.
 pub fn new<F, Perm, const RATE: usize, const STATE_SIZE: usize>(
-) -> FieldChallenger<F, impl FieldChallengerHelper<F>>
+) -> FieldChallenger<F, impl FieldChallengerHelper<F> + Clone>
 where
 	F: Field,
-	Perm: CryptographicPermutation<[F; STATE_SIZE]> + Default,
+	Perm: CryptographicPermutation<[F; STATE_SIZE]> + Default + Clone,
 {
 	FieldChallenger::<F, DuplexSpongeChallenger<F, Perm, RATE, STATE_SIZE>>::default()
 }

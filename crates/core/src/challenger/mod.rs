@@ -11,8 +11,10 @@
 mod duplex;
 pub mod field_challenger;
 mod hasher;
+mod isomorphic_challenger;
 
 pub use duplex::new as new_duplex_challenger;
 pub use field_challenger::FieldChallenger;
 pub use hasher::new as new_hasher_challenger;
+pub use isomorphic_challenger::IsomorphicChallenger;
 pub use p3_challenger::{CanObserve, CanSample, CanSampleBits};
