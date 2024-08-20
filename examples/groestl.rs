@@ -307,18 +307,6 @@ where
 		1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 9 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 9 });
-		}
-
-		// This is unfortunate that it needs to unpack and repack...
-		let result = iter::zip(query[1..].iter(), self.mix_bytes)
-			.map(|(x_i, coeff)| *x_i * coeff)
-			.sum::<P::Scalar>();
-		Ok(result - query[0])
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 9 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 9 });

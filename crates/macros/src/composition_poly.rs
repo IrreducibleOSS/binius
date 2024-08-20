@@ -9,7 +9,6 @@ pub(crate) struct CompositionPolyItem {
 	pub name: syn::Ident,
 	pub vars: Vec<syn::Ident>,
 	pub poly_packed: syn::Expr,
-	pub poly_scalar: syn::Expr,
 	pub degree: usize,
 }
 
@@ -20,7 +19,6 @@ impl ToTokens for CompositionPolyItem {
 			name,
 			vars,
 			poly_packed,
-			poly_scalar,
 			degree,
 		} = self;
 		let n_vars = vars.len();
@@ -37,14 +35,6 @@ impl ToTokens for CompositionPolyItem {
 
 				fn degree(&self) -> usize {
 					#degree
-				}
-
-				fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, binius_core::polynomial::Error> {
-					if query.len() != #n_vars {
-						return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
-					}
-					#( let #vars = query[#i]; )*
-					Ok(#poly_scalar)
 				}
 
 				fn evaluate(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
@@ -90,15 +80,12 @@ impl Parse for CompositionPolyItem {
 		input.parse::<Token![=]>()?;
 		let mut poly_packed = input.parse::<syn::Expr>()?;
 		let degree = poly_degree(&poly_packed)?;
-		let mut poly_scalar = poly_packed.clone();
-		rewrite_literals(&mut poly_packed, true)?;
-		rewrite_literals(&mut poly_scalar, false)?;
+		rewrite_literals(&mut poly_packed)?;
 		Ok(Self {
 			is_anonymous,
 			name,
 			vars,
 			poly_packed,
-			poly_scalar,
 			degree,
 		})
 	}
@@ -128,35 +115,27 @@ fn poly_degree(expr: &syn::Expr) -> Result<usize, syn::Error> {
 }
 
 /// Rewrites 0 => P::zero(), 1 => P::one()
-fn rewrite_literals(expr: &mut syn::Expr, is_packed: bool) -> Result<(), syn::Error> {
+fn rewrite_literals(expr: &mut syn::Expr) -> Result<(), syn::Error> {
 	match expr {
 		syn::Expr::Lit(exprlit) => {
 			if let syn::Lit::Int(int) = &exprlit.lit {
 				*expr = match &*int.to_string() {
 					"0" => {
-						if is_packed {
-							parse_quote!(P::zero())
-						} else {
-							parse_quote!(P::Scalar::ZERO)
-						}
+						parse_quote!(P::zero())
 					}
 					"1" => {
-						if is_packed {
-							parse_quote!(P::one())
-						} else {
-							parse_quote!(P::Scalar::ONE)
-						}
+						parse_quote!(P::one())
 					}
 					_ => return Err(syn::Error::new(expr.span(), "Unsupported integer")),
 				};
 			}
 		}
 		syn::Expr::Paren(paren) => {
-			rewrite_literals(&mut paren.expr, is_packed)?;
+			rewrite_literals(&mut paren.expr)?;
 		}
 		syn::Expr::Binary(binary) => {
-			rewrite_literals(&mut binary.left, is_packed)?;
-			rewrite_literals(&mut binary.right, is_packed)?;
+			rewrite_literals(&mut binary.left)?;
+			rewrite_literals(&mut binary.right)?;
 		}
 		_ => {}
 	}

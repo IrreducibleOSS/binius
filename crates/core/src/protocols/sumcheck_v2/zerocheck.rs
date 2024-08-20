@@ -159,16 +159,6 @@ where
 		self.inner.degree() + 1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		let n_vars = self.n_vars();
-		if query.len() != n_vars {
-			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
-		}
-
-		let inner_eval = self.inner.evaluate_scalar(&query[..n_vars - 1])?;
-		Ok(inner_eval * query[n_vars - 1])
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {

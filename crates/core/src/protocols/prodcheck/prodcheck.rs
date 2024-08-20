@@ -85,14 +85,6 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 		2
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 3 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
-		}
-
-		Ok(query[0] - query[1] * query[2])
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });

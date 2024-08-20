@@ -167,15 +167,6 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 		1
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != self.n_vars {
-			return Err(PolynomialError::IncorrectQuerySize {
-				expected: self.n_vars,
-			});
-		}
-		Ok(query.iter().copied().sum())
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != self.n_vars {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -204,15 +195,6 @@ impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 
 	fn degree(&self) -> usize {
 		2
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 2 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
-		}
-		let x = query[0];
-		let y = query[1];
-		Ok(PackedField::square(x) + y)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
@@ -259,19 +241,6 @@ where
 
 	fn degree(&self) -> usize {
 		1
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, PolynomialError> {
-		if query.len() != 4 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
-		}
-
-		let result = iter::zip(query[..3].iter(), self.coefficients[1..].iter())
-			.map(|(y_i, coeff)| *y_i * (*coeff))
-			.sum::<P::Scalar>()
-			+ P::Scalar::from(self.coefficients[0]);
-
-		Ok(result - query[3])
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {

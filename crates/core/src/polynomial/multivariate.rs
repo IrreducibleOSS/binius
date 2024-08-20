@@ -37,9 +37,6 @@ where
 	/// Total degree of the polynomial.
 	fn degree(&self) -> usize;
 
-	/// Evaluates the polynomial over scalars, returning a scalar.
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error>;
-
 	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
 	/// The evaluation follows SIMD semantics, meaning that operations are performed
 	/// element-wise across corresponding scalar values in the packed values.
@@ -65,13 +62,6 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn degree(&self) -> usize {
 		1
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		if query.len() != 1 {
-			return Err(Error::IncorrectQuerySize { expected: 1 });
-		}
-		Ok(query[0])
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
@@ -150,18 +140,19 @@ where
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate(query))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query)?)))
 			.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate_scalar(&evals)
+		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
 
 	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate_on_hypercube(index))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate_on_hypercube(index)?)))
 			.collect::<Result<Vec<_>, _>>()?;
-		self.composition.evaluate_scalar(&evals)
+
+		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
 
 	pub fn max_individual_degree(&self) -> usize {

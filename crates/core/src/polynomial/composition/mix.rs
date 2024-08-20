@@ -29,12 +29,6 @@ pub struct MixComposition<P: PackedField, IC> {
 pub trait HornerCompositions<P: PackedField> {
 	fn evaluate(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error>;
 
-	fn evaluate_scalar(
-		&self,
-		challenge: P::Scalar,
-		query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error>;
-
 	fn evaluate_with_inner_evals(
 		&self,
 		challenge: P::Scalar,
@@ -44,14 +38,6 @@ pub trait HornerCompositions<P: PackedField> {
 
 impl<P: PackedField> HornerCompositions<P> for () {
 	fn evaluate(&self, _challenge: P::Scalar, _query: &[P]) -> Result<Option<P>, Error> {
-		Ok(None)
-	}
-
-	fn evaluate_scalar(
-		&self,
-		_challenge: P::Scalar,
-		_query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error> {
 		Ok(None)
 	}
 
@@ -79,23 +65,6 @@ where
 		for inner_poly in &self.0 {
 			acc =
 				Some(inner_poly.evaluate(query)? + acc.map_or(P::zero(), |tail| tail * challenge));
-		}
-
-		Ok(acc)
-	}
-
-	fn evaluate_scalar(
-		&self,
-		challenge: P::Scalar,
-		query: &[P::Scalar],
-	) -> Result<Option<P::Scalar>, Error> {
-		let mut acc = self.1.evaluate_scalar(challenge, query)?;
-
-		for inner_poly in &self.0 {
-			acc = Some(
-				inner_poly.evaluate_scalar(query)?
-					+ acc.map_or(P::Scalar::ZERO, |tail| tail * challenge),
-			);
 		}
 
 		Ok(acc)
@@ -133,13 +102,6 @@ where
 
 	fn degree(&self) -> usize {
 		self.max_individual_degree
-	}
-
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		Ok(self
-			.inner_compositions
-			.evaluate_scalar(self.challenge, query)?
-			.unwrap_or(P::Scalar::zero()))
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {

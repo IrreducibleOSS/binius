@@ -25,13 +25,6 @@ impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
 		self.degree()
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		if query.len() != 2 {
-			return Err(Error::IncorrectQuerySize { expected: 2 });
-		}
-		Ok(query[0] * query[1])
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != 2 {
 			return Err(Error::IncorrectQuerySize { expected: 2 });

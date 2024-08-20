@@ -45,14 +45,6 @@ impl CompositionPoly<FExtension> for QuadProduct {
 		4
 	}
 
-	fn evaluate_scalar(&self, query: &[FExtension]) -> Result<FExtension, PolynomialError> {
-		if query.len() != 4 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
-		}
-		let (a, b, c, d) = (query[0], query[1], query[2], query[3]);
-		Ok(a * b * c * d)
-	}
-
 	fn evaluate(&self, query: &[FExtension]) -> Result<FExtension, PolynomialError> {
 		if query.len() != 4 {
 			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });

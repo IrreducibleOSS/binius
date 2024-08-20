@@ -27,17 +27,6 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		self.composition.degree()
 	}
 
-	fn evaluate_scalar(&self, query: &[P::Scalar]) -> Result<P::Scalar, Error> {
-		if query.len() != self.n_vars {
-			return Err(Error::IncorrectQuerySize {
-				expected: self.n_vars,
-			});
-		}
-
-		let subquery = self.indices.map(|index| query[index]);
-		self.composition.evaluate_scalar(&subquery)
-	}
-
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {

@@ -88,13 +88,6 @@ mod tests {
 			1
 		}
 
-		fn evaluate_scalar(
-			&self,
-			query: &[BinaryField128b],
-		) -> Result<BinaryField128b, PolynomialError> {
-			self.evaluate(query)
-		}
-
 		fn evaluate(&self, query: &[BinaryField128b]) -> Result<BinaryField128b, PolynomialError> {
 			Ok(query[0] * query[1] + query[2] * BinaryField128b::new(125))
 		}
