@@ -15,6 +15,7 @@ use binius_field::{
 	BinaryField, ExtensionField, PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
+use binius_utils::bail;
 use getset::CopyGetters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -112,12 +113,12 @@ where
 		log_batch_size: usize,
 	) -> Result<(), Self::EncodeError> {
 		if (code.len() << log_batch_size) < self.len() {
-			return Err(Error::BufferTooSmall {
+			bail!(Error::BufferTooSmall {
 				log_code_len: self.len(),
 			});
 		}
 		if self.dim() % P::WIDTH != 0 {
-			return Err(Error::PackingWidthMustDivideDimension);
+			bail!(Error::PackingWidthMustDivideDimension);
 		}
 
 		let msgs_len = (self.dim() / P::WIDTH) << log_batch_size;
@@ -149,12 +150,12 @@ where
 		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
 	{
 		if code.len() * PE::WIDTH < self.len() {
-			return Err(Error::BufferTooSmall {
+			bail!(Error::BufferTooSmall {
 				log_code_len: self.len(),
 			});
 		}
 		if self.dim() % PE::WIDTH != 0 {
-			return Err(Error::PackingWidthMustDivideDimension);
+			bail!(Error::PackingWidthMustDivideDimension);
 		}
 
 		let dim = self.dim() / PE::WIDTH;

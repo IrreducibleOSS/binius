@@ -23,6 +23,7 @@ use crate::{
 	},
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
+use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -125,7 +126,7 @@ where
 		seq_id: usize,
 	) -> Result<Self::Prover, Error> {
 		if claim.r != self.gkr_round_challenge {
-			return Err(Error::MismatchedGkrChallengeInClaimsBatch);
+			bail!(Error::MismatchedGkrChallengeInClaimsBatch);
 		}
 		let multilinears = witness
 			.multilinears(seq_id, &[])?
@@ -222,16 +223,16 @@ where
 		let degree = claim.degree;
 
 		if degree == 0 {
-			return Err(Error::PolynomialDegreeIsZero);
+			bail!(Error::PolynomialDegreeIsZero);
 		}
 		check_evaluation_domain(degree, &domain)?;
 
 		if gkr_round_challenge.len() + 1 < n_vars {
-			return Err(Error::NotEnoughGkrRoundChallenges);
+			bail!(Error::NotEnoughGkrRoundChallenges);
 		}
 
 		if witness.poly.n_vars() != n_vars || n_vars != gkr_round_challenge.len() {
-			return Err(Error::ProverClaimWitnessMismatch);
+			bail!(Error::ProverClaimWitnessMismatch);
 		}
 
 		let composition = witness.poly.composition;
@@ -264,7 +265,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round != self.n_vars {
-			return Err(Error::PrematureFinalizeCall);
+			bail!(Error::PrematureFinalizeCall);
 		}
 
 		// Last reduction to obtain eval value at eval_point
@@ -339,7 +340,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round >= self.n_vars {
-			return Err(Error::TooManyExecuteRoundCalls);
+			bail!(Error::TooManyExecuteRoundCalls);
 		}
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given

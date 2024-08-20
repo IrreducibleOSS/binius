@@ -11,6 +11,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	Field, PackedField, TowerField,
 };
+use binius_utils::bail;
 use getset::Getters;
 use std::iter;
 
@@ -108,7 +109,7 @@ pub fn reduce_msetcheck_claim<F: TowerField>(
 	let n_vars = msetcheck_claim.n_vars();
 
 	if alpha.is_some() != (dimensions > 1) {
-		return Err(Error::IncorrectAlpha);
+		bail!(Error::IncorrectAlpha);
 	}
 
 	// for a relation represented by the polynomials (T1, .., Tn) and challenges (gamma, alpha),
@@ -137,12 +138,12 @@ fn relation_sanity_checks<Column>(
 ) -> Result<(), Error> {
 	// same dimensionality
 	if t.len() != u.len() {
-		return Err(Error::IncorrectDimensions);
+		bail!(Error::IncorrectDimensions);
 	}
 
 	// non-nullary
 	if t.is_empty() {
-		return Err(Error::NullaryRelation);
+		bail!(Error::NullaryRelation);
 	}
 
 	// same n_vars
@@ -153,7 +154,7 @@ fn relation_sanity_checks<Column>(
 		.all(|column| n_vars(column) == first_n_vars);
 
 	if !equal_n_vars {
-		return Err(Error::NumVariablesMismatch);
+		bail!(Error::NumVariablesMismatch);
 	}
 
 	Ok(())

@@ -2,6 +2,7 @@
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::Field;
+use binius_utils::bail;
 
 /// Represents a product of two multilinear polynomials over disjoint variables.
 #[derive(Debug)]
@@ -26,7 +27,7 @@ where
 		let n_vars = p0_vars + p1_vars;
 
 		if query.len() != n_vars {
-			return Err(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 
 		let eval0 = self.0.evaluate(&query[..p0_vars])?;

@@ -17,6 +17,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	Field, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_utils::bail;
 use rayon::prelude::*;
 use tracing::instrument;
 
@@ -77,17 +78,17 @@ where
 	} = prodcheck_witness;
 
 	if t_polynomial.n_vars() != u_polynomial.n_vars() {
-		return Err(Error::NumVariablesMismatch);
+		bail!(Error::NumVariablesMismatch);
 	}
 	let n_vars = t_polynomial.n_vars();
 	let packing_log_width = PackedType::<U, F>::LOG_WIDTH;
 	if n_vars < packing_log_width {
-		return Err(Error::WitnessSmallerThanUnderlier);
+		bail!(Error::WitnessSmallerThanUnderlier);
 	}
 
 	let f_prime_oracle = oracles.oracle(f_prime);
 	if f_prime_oracle.n_vars() != n_vars + 1 {
-		return Err(Error::NumGrandProductVariablesIncorrect);
+		bail!(Error::NumGrandProductVariablesIncorrect);
 	}
 
 	// Step 1: Prover constructs f' polynomial, and sends oracle to verifier

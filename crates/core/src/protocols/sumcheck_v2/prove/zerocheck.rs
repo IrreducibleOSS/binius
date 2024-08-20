@@ -20,6 +20,7 @@ use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
+use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
 
@@ -39,7 +40,7 @@ where
 		.unwrap_or_default();
 	for multilinear in multilinears.iter() {
 		if multilinear.n_vars() != n_vars {
-			return Err(Error::NumberOfVariablesMismatch);
+			bail!(Error::NumberOfVariablesMismatch);
 		}
 	}
 
@@ -94,7 +95,7 @@ where
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
 		for composition in compositions.iter() {
 			if composition.n_vars() != multilinears.len() {
-				return Err(Error::InvalidComposition {
+				bail!(Error::InvalidComposition {
 					expected_n_vars: multilinears.len(),
 				});
 			}

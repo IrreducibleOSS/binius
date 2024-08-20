@@ -6,7 +6,7 @@ use crate::{
 	protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim},
 };
 use binius_field::{Field, PackedField, TowerField};
-use binius_utils::sorting::is_sorted_ascending;
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 use std::marker::PhantomData;
 
@@ -31,7 +31,7 @@ where
 	) -> Result<Self, Error> {
 		for composition in composite_zeros.iter() {
 			if composition.n_vars() != n_multilinears {
-				return Err(Error::InvalidComposition {
+				bail!(Error::InvalidComposition {
 					expected_n_vars: n_multilinears,
 				});
 			}
@@ -55,7 +55,7 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		return Err(Error::ClaimsOutOfOrder);
+		bail!(Error::ClaimsOutOfOrder);
 	}
 
 	let sumcheck_claims = claims
@@ -103,7 +103,7 @@ pub fn verify_sumcheck_outputs<F: TowerField, Composition: CompositionPoly<F>>(
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		return Err(Error::ClaimsOutOfOrder);
+		bail!(Error::ClaimsOutOfOrder);
 	}
 
 	let max_n_vars = claims
@@ -131,7 +131,7 @@ pub fn verify_sumcheck_outputs<F: TowerField, Composition: CompositionPoly<F>>(
 			.pop()
 			.expect("checked above that multilinear_evals length is at least 1");
 		if eq_ind_eval != multilinear_evals_last {
-			return Err(VerificationError::IncorrectZerocheckEqIndEvaluation.into());
+			bail!(VerificationError::IncorrectZerocheckEqIndEvaluation);
 		}
 	}
 
@@ -162,7 +162,7 @@ where
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
-			return Err(PolynomialError::IncorrectQuerySize { expected: n_vars });
+			bail!(PolynomialError::IncorrectQuerySize { expected: n_vars });
 		}
 
 		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;

@@ -12,6 +12,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, Field, TowerField,
 };
+use binius_utils::bail;
 use std::{fmt::Debug, sync::Arc};
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
@@ -94,7 +95,7 @@ where
 			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
 
 		if backing.tower_level != FS::TOWER_LEVEL {
-			return Err(Error::OracleTowerHeightMismatch {
+			bail!(Error::OracleTowerHeightMismatch {
 				oracle_id: id,
 				oracle_level: backing.tower_level,
 				field_level: FS::TOWER_LEVEL,

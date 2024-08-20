@@ -13,6 +13,7 @@ use crate::{
 	},
 };
 use binius_field::{Field, PackedField};
+use binius_utils::bail;
 
 pub type SumcheckRound<F> = AbstractSumcheckRound<F>;
 pub type SumcheckProof<F> = AbstractSumcheckProof<F>;
@@ -61,10 +62,9 @@ impl<F: Field> AbstractSumcheckReductor<F> for SumcheckReductor {
 		proof: &AbstractSumcheckRound<F>,
 	) -> Result<(), Self::Error> {
 		if proof.coeffs.len() != self.max_individual_degree {
-			return Err(VerificationError::NumberOfCoefficients {
+			bail!(VerificationError::NumberOfCoefficients {
 				expected: self.max_individual_degree,
-			}
-			.into());
+			});
 		}
 		Ok(())
 	}
@@ -145,6 +145,6 @@ where
 	if sum? == claim.sum().into() {
 		Ok(())
 	} else {
-		Err(Error::NaiveValidation)
+		bail!(Error::NaiveValidation)
 	}
 }

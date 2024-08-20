@@ -23,6 +23,7 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
+use binius_utils::bail;
 use bytemuck::cast_slice_mut;
 use itertools::{Either, Itertools};
 use rand::{rngs::StdRng, SeedableRng};
@@ -47,7 +48,7 @@ impl CompositionPoly<FExtension> for QuadProduct {
 
 	fn evaluate(&self, query: &[FExtension]) -> Result<FExtension, PolynomialError> {
 		if query.len() != 4 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 4 });
+			bail!(PolynomialError::IncorrectQuerySize { expected: 4 });
 		}
 		let (a, b, c, d) = (query[0], query[1], query[2], query[3]);
 		Ok(a * b * c * d)

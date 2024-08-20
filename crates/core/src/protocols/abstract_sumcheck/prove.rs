@@ -5,7 +5,7 @@ use crate::polynomial::{
 	Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
 };
 use binius_field::PackedField;
-use binius_utils::array_2d::Array2D;
+use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, hash::Hash, ops::Range};
 
@@ -164,11 +164,10 @@ where
 			self.max_query_vars = Some(max(self.max_query_vars.unwrap_or(1), switchover_round));
 
 			if introduction_round + multilinear.n_vars() != self.n_vars {
-				return Err(PolynomialError::IncorrectNumberOfVariables {
+				bail!(PolynomialError::IncorrectNumberOfVariables {
 					expected: self.n_vars - introduction_round,
 					actual: multilinear.n_vars(),
-				}
-				.into());
+				});
 			}
 
 			// TODO Consider bailing out on non-idempotent rewrites?

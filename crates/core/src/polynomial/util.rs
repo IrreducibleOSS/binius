@@ -6,6 +6,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	Field, PackedField,
 };
+use binius_utils::bail;
 use rayon::prelude::*;
 use std::{cmp::max, marker::PhantomData, ops::Deref};
 
@@ -38,7 +39,7 @@ pub fn tensor_prod_eq_ind<P: PackedField>(
 ) -> Result<(), Error> {
 	let new_n_vars = log_n_values + extra_query_coordinates.len();
 	if packed_values.len() != max(1, (1 << new_n_vars) / P::WIDTH) {
-		return Err(Error::InvalidPackedValuesLength);
+		bail!(Error::InvalidPackedValuesLength);
 	}
 
 	for (i, r_i) in extra_query_coordinates.iter().enumerate() {

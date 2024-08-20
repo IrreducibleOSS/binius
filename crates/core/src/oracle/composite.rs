@@ -5,6 +5,7 @@ use crate::{
 	polynomial::CompositionPoly,
 };
 use binius_field::Field;
+use binius_utils::bail;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -21,11 +22,11 @@ impl<F: Field> CompositePolyOracle<F> {
 		composition: C,
 	) -> Result<Self, Error> {
 		if inner.len() != composition.n_vars() {
-			return Err(Error::CompositionMismatch);
+			bail!(Error::CompositionMismatch);
 		}
 		for poly in inner.iter() {
 			if poly.n_vars() != n_vars {
-				return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+				bail!(Error::IncorrectNumberOfVariables { expected: n_vars });
 			}
 		}
 		Ok(Self {

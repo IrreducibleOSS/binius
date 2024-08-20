@@ -5,6 +5,7 @@ use crate::{
 	polynomial::{Error, MultilinearExtension, MultivariatePoly},
 };
 use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
+use binius_utils::bail;
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
 /// partially evaluated at $Y = r$
@@ -156,7 +157,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 	/// Evaluates this partial circular shift indicator MLE $f(X, r)$ with $X=x$
 	fn evaluate_at_point(&self, x: &[F]) -> Result<F, Error> {
 		if x.len() != self.block_size {
-			return Err(Error::IncorrectQuerySize {
+			bail!(Error::IncorrectQuerySize {
 				expected: self.block_size,
 			});
 		}
@@ -208,12 +209,12 @@ fn assert_valid_shift_ind_args<F: Field>(
 	partial_query_point: &[F],
 ) -> Result<(), Error> {
 	if partial_query_point.len() != block_size {
-		return Err(Error::IncorrectQuerySize {
+		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
 		});
 	}
 	if shift_offset == 0 || shift_offset >= 1 << block_size {
-		return Err(Error::InvalidShiftOffset {
+		bail!(Error::InvalidShiftOffset {
 			max_shift_offset: (1 << block_size) - 1,
 			shift_offset,
 		});
@@ -233,7 +234,7 @@ fn evaluate_shift_ind_help<F: Field>(
 	y: &[F],
 ) -> Result<(F, F), Error> {
 	if x.len() != block_size {
-		return Err(Error::IncorrectQuerySize {
+		bail!(Error::IncorrectQuerySize {
 			expected: block_size,
 		});
 	}

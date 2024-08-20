@@ -12,7 +12,10 @@ use crate::{
 	},
 };
 use binius_field::{Field, TowerField};
-use binius_utils::sorting::{stable_sort, unsort};
+use binius_utils::{
+	bail,
+	sorting::{stable_sort, unsort},
+};
 use itertools::izip;
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
@@ -38,7 +41,7 @@ where
 		.ok_or(Error::EmptyClaimsArray)?;
 
 	if max_n_vars != batch_layer_proofs.len() {
-		return Err(Error::MismatchedClaimsAndProofs);
+		bail!(Error::MismatchedClaimsAndProofs);
 	}
 
 	// Create LayerClaims for each of the claims
@@ -134,9 +137,9 @@ where
 	if claims.is_empty() {
 		return Ok(vec![]);
 	} else if zero_evals.len() != claims.len() {
-		return Err(VerificationError::MismatchedZeroEvals.into());
+		bail!(VerificationError::MismatchedZeroEvals);
 	} else if one_evals.len() != claims.len() {
-		return Err(VerificationError::MismatchedOneEvals.into());
+		bail!(VerificationError::MismatchedOneEvals);
 	}
 
 	let curr_layer_challenge = &claims[0].eval_point[..];
@@ -144,7 +147,7 @@ where
 		.iter()
 		.all(|claim| claim.eval_point == curr_layer_challenge)
 	{
-		return Err(Error::MismatchedEvalPointLength);
+		bail!(Error::MismatchedEvalPointLength);
 	}
 
 	// Verify the gkr sumcheck batch proof and receive the corresponding reduced claims
@@ -167,7 +170,7 @@ where
 		.all(|(&zero_eval, &one_eval, eval)| zero_eval * one_eval == eval);
 
 	if !is_zero_one_eval_advice_valid {
-		return Err(Error::InvalidZeroOneEvalAdvice);
+		bail!(Error::InvalidZeroOneEvalAdvice);
 	}
 
 	// Create the new (k+1)th layer LayerClaims for each grand product circuit

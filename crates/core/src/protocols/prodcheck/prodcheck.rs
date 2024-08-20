@@ -18,6 +18,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	Field, PackedField, TowerField,
 };
+use binius_utils::bail;
 
 #[derive(Debug)]
 pub struct ReducedProductCheckClaims<F: Field> {
@@ -87,7 +88,7 @@ impl<P: PackedField> CompositionPoly<P> for SimpleMultGateComposition {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
+			bail!(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}
 
 		Ok(query[0] - query[1] * query[2])

@@ -11,7 +11,7 @@ use crate::{
 	},
 };
 use binius_field::{util::powers, Field, PackedField};
-use binius_utils::array_2d::Array2D;
+use binius_utils::{array_2d::Array2D, bail};
 use bytemuck::zeroed_vec;
 use getset::CopyGetters;
 use itertools::izip;
@@ -147,7 +147,7 @@ where
 			.unwrap_or(0);
 		for multilinear in multilinears.iter() {
 			if multilinear.n_vars() != n_vars {
-				return Err(Error::NumberOfVariablesMismatch);
+				bail!(Error::NumberOfVariablesMismatch);
 			}
 		}
 
@@ -176,7 +176,7 @@ where
 
 	pub fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		if self.n_vars == 0 {
-			return Err(Error::ExpectedFinish);
+			bail!(Error::ExpectedFinish);
 		}
 
 		// Update the stored multilinear sums.
@@ -189,7 +189,7 @@ where
 				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);
 			}
 			ProverStateCoeffsOrSums::Sums(_) => {
-				return Err(Error::ExpectedExecution);
+				bail!(Error::ExpectedExecution);
 			}
 		}
 
@@ -249,11 +249,11 @@ where
 	pub fn finish(self) -> Result<Vec<F>, Error> {
 		match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
-				return Err(Error::ExpectedFold);
+				bail!(Error::ExpectedFold);
 			}
 			ProverStateCoeffsOrSums::Sums(_) => match self.n_vars {
 				0 => {}
-				_ => return Err(Error::ExpectedExecution),
+				_ => bail!(Error::ExpectedExecution),
 			},
 		};
 
@@ -290,11 +290,11 @@ where
 
 		let coeffs = match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
-				return Err(Error::ExpectedFold);
+				bail!(Error::ExpectedFold);
 			}
 			ProverStateCoeffsOrSums::Sums(ref sums) => {
 				if evaluators.len() != sums.len() {
-					return Err(Error::IncorrectNumberOfEvaluators {
+					bail!(Error::IncorrectNumberOfEvaluators {
 						expected: sums.len(),
 					});
 				}

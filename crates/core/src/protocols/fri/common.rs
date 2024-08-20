@@ -6,6 +6,7 @@ use crate::{
 };
 use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
 use binius_ntt::AdditiveNTT;
+use binius_utils::bail;
 use itertools::Itertools;
 use p3_util::log2_strict_usize;
 
@@ -99,7 +100,7 @@ where
 	VCS: VectorCommitScheme<F>,
 {
 	if committed_rs_code.len() != committed_codeword_vcs.vector_len() {
-		return Err(Error::InvalidArgs(
+		bail!(Error::InvalidArgs(
 			"Reed–Solomon code length must match codeword vector commitment length".to_string(),
 		));
 	}
@@ -108,7 +109,7 @@ where
 	// TODO: Change interfaces to support equality, which implies supporting parameters
 	// where the final codeword is the originally committed codeword.
 	if committed_rs_code.log_dim() <= final_rs_code.log_dim() {
-		return Err(Error::MessageDimensionIsTooSmall);
+		bail!(Error::MessageDimensionIsTooSmall);
 	}
 
 	// check that base two log of each round_vcs vector_length is greater than
@@ -120,7 +121,7 @@ where
 		let len = vcs.vector_len();
 		len < lower_bound || len > upper_bound
 	}) {
-		return Err(Error::RoundVCSLengthsOutOfRange);
+		bail!(Error::RoundVCSLengthsOutOfRange);
 	}
 
 	// check that each round_vcs has power of two vector_length
@@ -128,7 +129,7 @@ where
 		.iter()
 		.any(|vcs| !vcs.vector_len().is_power_of_two())
 	{
-		return Err(Error::RoundVCSLengthsNotPowerOfTwo);
+		bail!(Error::RoundVCSLengthsNotPowerOfTwo);
 	}
 
 	// check that round_vcss vector is sorted in strictly descending order by vector_length
@@ -136,7 +137,7 @@ where
 		.windows(2)
 		.any(|w| w[0].vector_len() <= w[1].vector_len())
 	{
-		return Err(Error::RoundVCSLengthsNotDescending);
+		bail!(Error::RoundVCSLengthsNotDescending);
 	}
 	Ok(())
 }

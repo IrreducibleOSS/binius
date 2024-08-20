@@ -2,6 +2,7 @@
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_field::{BinaryField1b, Field, PackedField};
+use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
 /// specified index where they change to 0.
@@ -24,7 +25,7 @@ pub struct StepDown {
 impl StepDown {
 	pub fn new(n_vars: usize, index: usize) -> Result<Self, Error> {
 		if index < 1 || index >= (1 << n_vars) {
-			Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "index".into(),
 				range: 1..(1 << n_vars),
 			})
@@ -37,7 +38,7 @@ impl StepDown {
 		&self,
 	) -> Result<MultilinearExtension<P>, Error> {
 		if self.n_vars < P::LOG_WIDTH {
-			return Err(Error::PackedFieldNotFilled {
+			bail!(Error::PackedFieldNotFilled {
 				length: 1 << self.n_vars,
 				packed_width: 1 << P::LOG_WIDTH,
 			});
@@ -65,7 +66,7 @@ impl<F: Field> MultivariatePoly<F> for StepDown {
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		let n_vars = MultivariatePoly::<F>::n_vars(self);
 		if query.len() != n_vars {
-			return Err(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		let mut k = self.index;
 

@@ -24,6 +24,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
 use std::{fmt::Debug, marker::PhantomData};
@@ -217,7 +218,7 @@ where
 		validate_witness(&claim, &witness)?;
 
 		if claim.poly.max_individual_degree() == 0 {
-			return Err(Error::PolynomialDegreeIsZero);
+			bail!(Error::PolynomialDegreeIsZero);
 		}
 
 		check_evaluation_domain(claim.poly.max_individual_degree(), &domain)?;
@@ -250,7 +251,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round != self.claim.n_vars() {
-			return Err(Error::PrematureFinalizeCall);
+			bail!(Error::PrematureFinalizeCall);
 		}
 
 		// Last reduction to obtain eval value at eval_point
@@ -274,7 +275,7 @@ where
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
 
 		if self.round >= self.claim.n_vars() {
-			return Err(Error::TooManyExecuteRoundCalls);
+			bail!(Error::TooManyExecuteRoundCalls);
 		}
 
 		// Rounds 1..n_vars-1 - Some(..) challenge is given

@@ -2,6 +2,7 @@
 
 use super::error::Error;
 use binius_field::{ExtensionField, Field};
+use binius_utils::bail;
 use bytemuck::zeroed_slice_box;
 use getset::CopyGetters;
 use rand::RngCore;
@@ -23,7 +24,7 @@ pub struct Matrix<F: Field> {
 impl<F: Field> Matrix<F> {
 	pub fn new(m: usize, n: usize, elements: &[F]) -> Result<Self, Error> {
 		if elements.len() != m * n {
-			return Err(Error::IncorrectArgumentLength {
+			bail!(Error::IncorrectArgumentLength {
 				arg: "elements".into(),
 				expected: m * n,
 			});
@@ -115,7 +116,7 @@ impl<F: Field> Matrix<F> {
 		assert_eq!(self.dim(), out.dim());
 
 		if self.m != self.n {
-			return Err(Error::MatrixNotSquare);
+			bail!(Error::MatrixNotSquare);
 		}
 
 		let n = self.n;

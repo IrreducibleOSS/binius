@@ -11,7 +11,7 @@ use binius_field::{
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
 };
-use binius_utils::array_2d::Array2D;
+use binius_utils::{array_2d::Array2D, bail};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
@@ -41,7 +41,7 @@ impl<P: PackedField> MultilinearExtension<P> {
 	pub fn zeros(n_vars: usize) -> Result<Self, Error> {
 		assert!(P::WIDTH.is_power_of_two());
 		if n_vars < log2_strict_usize(P::WIDTH) {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "n_vars".to_string(),
 				range: log2_strict_usize(P::WIDTH)..32,
 			});
@@ -61,7 +61,7 @@ impl<P: PackedField> MultilinearExtension<P> {
 impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 	pub fn from_values_generic(v: Data) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
-			return Err(Error::PowerOfTwoLengthRequired);
+			bail!(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
 		Ok(Self { mu, evals: v })
@@ -82,7 +82,7 @@ where
 impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
 	pub fn from_values_slice(v: &'a [P]) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
-			return Err(Error::PowerOfTwoLengthRequired);
+			bail!(Error::PowerOfTwoLengthRequired);
 		}
 		let mu = log2(v.len() * P::WIDTH);
 		Ok(Self { mu, evals: v })
@@ -139,7 +139,7 @@ where
 		PE: PackedField<Scalar = FE>,
 	{
 		if self.mu != query.n_vars() {
-			return Err(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
 		Ok(inner_product_par(query.expansion(), &self.evals))
 	}
@@ -162,7 +162,7 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		if self.mu < query.n_vars() {
-			return Err(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
 
 		let query_expansion = query.expansion();
@@ -213,7 +213,7 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		if self.mu < query.n_vars() {
-			return Err(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
 
 		let mut result =
@@ -241,10 +241,10 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		if self.mu < query.n_vars() {
-			return Err(Error::IncorrectQuerySize { expected: self.mu });
+			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
 		if out.len() != 1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH)) {
-			return Err(Error::IncorrectOutputPolynomialSize {
+			bail!(Error::IncorrectOutputPolynomialSize {
 				expected: self.mu - query.n_vars(),
 			});
 		}
@@ -444,7 +444,7 @@ where
 		// subcube evaluations.
 		let n_vars = query.n_vars();
 		if n_vars >= self.n_vars() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "n_vars".into(),
 				range: 0..self.n_vars(),
 			});
@@ -452,7 +452,7 @@ where
 
 		let max_index = 1 << (self.n_vars() - n_vars);
 		if indices.end >= max_index {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "indices.end".into(),
 				range: 0..max_index,
 			});
@@ -465,28 +465,28 @@ where
 		// handle that, however, so until we remove the legacy sumcheck prover, we need this to be
 		// an inequality.
 		if indices.len() > evals_0.rows() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "evals_0.rows()".into(),
 				range: indices.len()..indices.len() + 1,
 			});
 		}
 
 		if indices.len() > evals_1.rows() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "evals_1.rows()".into(),
 				range: indices.len()..indices.len() + 1,
 			});
 		}
 
 		if col_index >= evals_0.cols() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "col_index".into(),
 				range: 0..evals_0.cols(),
 			});
 		}
 
 		if col_index >= evals_1.cols() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "col_index".into(),
 				range: 0..evals_1.cols(),
 			});
@@ -494,7 +494,7 @@ where
 
 		let expansion = query.expansion();
 		if expansion.len() * PE::WIDTH < 1 << n_vars {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "query.len()".into(),
 				range: (1 << n_vars) / PE::WIDTH..usize::MAX,
 			});
@@ -590,20 +590,20 @@ where
 
 	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [PE]) -> Result<(), Error> {
 		if vars > self.n_vars() {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "vars".to_string(),
 				range: 0..self.n_vars() + 1,
 			});
 		}
 		// TODO: Handle the case when 1 << vars < PE::WIDTH
 		if dst.len() * PE::WIDTH != 1 << vars {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "dst.len()".to_string(),
 				range: (1 << vars) / PE::WIDTH..(1 << vars) / PE::WIDTH + 1,
 			});
 		}
 		if index >= 1 << (self.n_vars() - vars) {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "index".to_string(),
 				range: 0..(1 << (self.n_vars() - vars)),
 			});

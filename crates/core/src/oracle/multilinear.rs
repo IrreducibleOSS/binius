@@ -5,6 +5,7 @@ use crate::{
 	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
 use binius_field::{Field, TowerField};
+use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::{fmt::Debug, sync::Arc};
 
@@ -94,7 +95,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		poly: impl MultivariatePoly<F> + 'static,
 	) -> Result<OracleId, Error> {
 		if poly.binary_tower_level() > F::TOWER_LEVEL {
-			return Err(Error::TowerLevelTooHigh {
+			bail!(Error::TowerLevelTooHigh {
 				tower_level: poly.binary_tower_level(),
 			});
 		}
@@ -126,7 +127,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_repeating(&mut self, id: OracleId, log_count: usize) -> Result<OracleId, Error> {
 		if id >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id));
+			bail!(Error::InvalidOracleId(id));
 		}
 		let id = self.add(MultilinearOracleMeta::Repeating {
 			inner_id: id,
@@ -137,16 +138,16 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_interleaved(&mut self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
 		if id0 >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id0));
+			bail!(Error::InvalidOracleId(id0));
 		}
 		if id1 >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id1));
+			bail!(Error::InvalidOracleId(id1));
 		}
 
 		let n_vars_0 = self.n_vars(id0);
 		let n_vars_1 = self.n_vars(id1);
 		if n_vars_0 != n_vars_1 {
-			return Err(Error::NumberOfVariablesMismatch);
+			bail!(Error::NumberOfVariablesMismatch);
 		}
 
 		let id = self.add(MultilinearOracleMeta::Interleaved(id0, id1));
@@ -155,16 +156,16 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_merged(&mut self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
 		if id0 >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id0));
+			bail!(Error::InvalidOracleId(id0));
 		}
 		if id1 >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id1));
+			bail!(Error::InvalidOracleId(id1));
 		}
 
 		let n_vars_0 = self.n_vars(id0);
 		let n_vars_1 = self.n_vars(id1);
 		if n_vars_0 != n_vars_1 {
-			return Err(Error::NumberOfVariablesMismatch);
+			bail!(Error::NumberOfVariablesMismatch);
 		}
 
 		let id = self.add(MultilinearOracleMeta::Merged(id0, id1));
@@ -179,23 +180,21 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		variant: ShiftVariant,
 	) -> Result<OracleId, Error> {
 		if id >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id));
+			bail!(Error::InvalidOracleId(id));
 		}
 
 		let inner_n_vars = self.n_vars(id);
 		if block_bits > inner_n_vars {
-			return Err(PolynomialError::InvalidBlockSize {
+			bail!(PolynomialError::InvalidBlockSize {
 				n_vars: inner_n_vars,
-			}
-			.into());
+			});
 		}
 
 		if offset == 0 || offset >= 1 << block_bits {
-			return Err(PolynomialError::InvalidShiftOffset {
+			bail!(PolynomialError::InvalidShiftOffset {
 				max_shift_offset: (1 << block_bits) - 1,
 				shift_offset: offset,
-			}
-			.into());
+			});
 		}
 
 		let id = self.add(MultilinearOracleMeta::Shifted {
@@ -209,12 +208,12 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_packed(&mut self, id: OracleId, log_degree: usize) -> Result<OracleId, Error> {
 		if id >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id));
+			bail!(Error::InvalidOracleId(id));
 		}
 
 		let inner_n_vars = self.n_vars(id);
 		if log_degree > inner_n_vars {
-			return Err(Error::NotEnoughVarsForPacking {
+			bail!(Error::NotEnoughVarsForPacking {
 				n_vars: inner_n_vars,
 				log_degree,
 			});
@@ -237,7 +236,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		let inner_n_vars = self.n_vars(id);
 		let values_len = values.len();
 		if values_len >= inner_n_vars {
-			return Err(Error::InvalidProjection {
+			bail!(Error::InvalidProjection {
 				n_vars: inner_n_vars,
 				values_len,
 			});
@@ -287,11 +286,11 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 
 	pub fn add_zero_padded(&mut self, id: OracleId, n_vars: usize) -> Result<OracleId, Error> {
 		if id >= self.oracles.len() {
-			return Err(Error::InvalidOracleId(id));
+			bail!(Error::InvalidOracleId(id));
 		}
 
 		if self.n_vars(id) > n_vars {
-			return Err(Error::IncorrectNumberOfVariables {
+			bail!(Error::IncorrectNumberOfVariables {
 				expected: self.n_vars(id),
 			});
 		};
@@ -542,7 +541,7 @@ pub struct TransparentPolyOracle<F: Field> {
 impl<F: TowerField> TransparentPolyOracle<F> {
 	fn new(poly: Arc<dyn MultivariatePoly<F>>) -> Result<Self, Error> {
 		if poly.binary_tower_level() > F::TOWER_LEVEL {
-			return Err(Error::TowerLevelTooHigh {
+			bail!(Error::TowerLevelTooHigh {
 				tower_level: poly.binary_tower_level(),
 			});
 		}
@@ -590,7 +589,7 @@ impl<F: Field> Projected<F> {
 		let n_vars = inner.n_vars();
 		let values_len = values.len();
 		if values_len >= n_vars {
-			return Err(Error::InvalidProjection { n_vars, values_len });
+			bail!(Error::InvalidProjection { n_vars, values_len });
 		}
 		Ok(Self {
 			inner: inner.into(),
@@ -630,18 +629,16 @@ impl<F: Field> Shifted<F> {
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
 		if block_size > inner.n_vars() {
-			return Err(crate::polynomial::error::Error::InvalidBlockSize {
+			bail!(crate::polynomial::error::Error::InvalidBlockSize {
 				n_vars: inner.n_vars(),
-			}
-			.into());
+			});
 		}
 
 		if shift_offset == 0 || shift_offset >= 1 << block_size {
-			return Err(crate::polynomial::error::Error::InvalidShiftOffset {
+			bail!(crate::polynomial::error::Error::InvalidShiftOffset {
 				max_shift_offset: (1 << block_size) - 1,
 				shift_offset,
-			}
-			.into());
+			});
 		}
 
 		Ok(Self {

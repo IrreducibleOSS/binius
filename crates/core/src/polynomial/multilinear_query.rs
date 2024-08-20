@@ -3,6 +3,7 @@
 use super::util::tensor_prod_eq_ind;
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{Field, PackedField};
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use std::cmp::max;
 
@@ -25,7 +26,7 @@ pub struct MultilinearQuery<P: PackedField> {
 impl<P: PackedField> MultilinearQuery<P> {
 	pub fn new(max_query_vars: usize) -> Result<Self, PolynomialError> {
 		if max_query_vars > 31 {
-			Err(PolynomialError::TooManyVariables)
+			bail!(PolynomialError::TooManyVariables)
 		} else {
 			let len = max((1 << max_query_vars) / P::WIDTH, 1);
 			let mut expanded_query = zeroed_vec(len);
@@ -69,7 +70,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 		let new_n_vars = old_n_vars + extra_query_coordinates.len();
 		let new_length = max((1 << new_n_vars) / P::WIDTH, 1);
 		if new_length > self.expanded_query.len() {
-			return Err(PolynomialError::MultilinearQueryFull {
+			bail!(PolynomialError::MultilinearQueryFull {
 				max_query_vars: old_n_vars,
 			});
 		}

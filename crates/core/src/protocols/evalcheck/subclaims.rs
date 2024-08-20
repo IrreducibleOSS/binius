@@ -33,6 +33,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, Field, PackedField,
 	PackedFieldIndexable, TowerField,
 };
+use binius_utils::bail;
 use std::sync::Arc;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
@@ -127,7 +128,7 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	let binary_tower_level = packed.inner().binary_tower_level();
 
 	if log_degree > n_vars {
-		return Err(OracleError::NotEnoughVarsForPacking { n_vars, log_degree }.into());
+		bail!(OracleError::NotEnoughVarsForPacking { n_vars, log_degree });
 	}
 
 	// NB. projected_n_vars = 0 because eval_point length is log_degree less than inner n_vars

@@ -21,7 +21,10 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_utils::sorting::{stable_sort, unsort};
+use binius_utils::{
+	bail,
+	sorting::{stable_sort, unsort},
+};
 use p3_challenger::{CanObserve, CanSample};
 use std::sync::Arc;
 use tracing::instrument;
@@ -57,7 +60,7 @@ where
 		return Ok(GrandProductBatchProveOutput::default());
 	}
 	if witness_vec.len() != n_claims {
-		return Err(Error::MismatchedWitnessClaimLength);
+		bail!(Error::MismatchedWitnessClaimLength);
 	}
 
 	// Create a vector of GrandProductProverStates
@@ -239,7 +242,7 @@ where
 		let n_vars = claim.poly.n_vars();
 		if n_vars != witness.n_vars() || witness.grand_product_evaluation() != claim.product.into()
 		{
-			return Err(Error::ProverClaimWitnessMismatch);
+			bail!(Error::ProverClaimWitnessMismatch);
 		}
 
 		// Build multilinear polynomials from circuit evaluations
@@ -302,7 +305,7 @@ where
 		Error,
 	> {
 		if self.current_layer_no() >= self.input_vars() {
-			return Err(Error::TooManyRounds);
+			bail!(Error::TooManyRounds);
 		}
 
 		// Witness
@@ -332,7 +335,7 @@ where
 	// Give the (k+1)th layer evaluations at the evaluation points (r'_k, 0) and (r'_k, 1)
 	fn advise_sumcheck_prove(&self, sumcheck_eval_point: &[F]) -> Result<(F, F), Error> {
 		if self.current_layer_no() >= self.input_vars() {
-			return Err(Error::TooManyRounds);
+			bail!(Error::TooManyRounds);
 		}
 
 		let query = sumcheck_eval_point
@@ -360,7 +363,7 @@ where
 		gkr_challenge: F,
 	) -> Result<(), Error> {
 		if self.current_layer_no() >= self.input_vars() {
-			return Err(Error::TooManyRounds);
+			bail!(Error::TooManyRounds);
 		}
 
 		let new_eval = extrapolate_line_scalar(zero_eval, one_eval, gkr_challenge);
@@ -376,7 +379,7 @@ where
 
 	fn finalize(self) -> Result<EvalcheckMultilinearClaim<F>, Error> {
 		if self.current_layer_no() != self.input_vars() {
-			return Err(Error::PrematureFinalize);
+			bail!(Error::PrematureFinalize);
 		}
 
 		let evalcheck_multilinear_claim = EvalcheckMultilinearClaim {

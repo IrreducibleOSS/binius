@@ -6,6 +6,7 @@ use super::{
 };
 use crate::oracle::MultilinearOracleSet;
 use binius_field::{BinaryField, TowerField};
+use binius_utils::bail;
 use tracing::instrument;
 
 /// Verify a Lasso instance reduction.
@@ -18,7 +19,7 @@ pub fn verify<C: LassoCount, F: TowerField>(
 	// Check that counts actually fit into the chosen data type
 	// NB. Need one more bit because 1 << n_vars is a valid count.
 	if claim.n_vars() >= <C as BinaryField>::N_BITS {
-		return Err(Error::LassoCountTypeTooSmall);
+		bail!(Error::LassoCountTypeTooSmall);
 	}
 
 	let (reduced, _) = reduce_lasso_claim::<C, _>(oracles, claim, batch)?;

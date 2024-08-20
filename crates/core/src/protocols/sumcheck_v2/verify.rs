@@ -12,7 +12,7 @@ use binius_field::{
 	util::{inner_product_unchecked, powers},
 	Field,
 };
-use binius_utils::sorting::is_sorted_ascending;
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 
 /// Verify a batched sumcheck protocol execution.
@@ -44,12 +44,12 @@ where
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		return Err(Error::ClaimsOutOfOrder);
+		bail!(Error::ClaimsOutOfOrder);
 	}
 
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);
 	if round_proofs.len() != n_rounds {
-		return Err(VerificationError::NumberOfRounds.into());
+		bail!(VerificationError::NumberOfRounds);
 	}
 
 	// active_index is an index into the claims slice. Claims before the active index have already
@@ -83,11 +83,10 @@ where
 		}
 
 		if round_proof.coeffs().len() != max_degree {
-			return Err(VerificationError::NumberOfCoefficients {
+			bail!(VerificationError::NumberOfCoefficients {
 				round: round_no,
 				expected: max_degree,
-			}
-			.into());
+			});
 		}
 
 		challenger.observe_slice(round_proof.coeffs());
@@ -116,11 +115,11 @@ where
 	}
 
 	if multilinear_evals.len() != claims.len() {
-		return Err(VerificationError::NumberOfFinalEvaluations.into());
+		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter()) {
 		if claim.n_multilinears() != multilinear_evals.len() {
-			return Err(VerificationError::NumberOfFinalEvaluations.into());
+			bail!(VerificationError::NumberOfFinalEvaluations);
 		}
 		challenger.observe_slice(multilinear_evals);
 	}
@@ -128,7 +127,7 @@ where
 	let expected_sum =
 		compute_expected_batch_composite_evaluation(batch_coeffs, claims, &multilinear_evals)?;
 	if sum != expected_sum {
-		return Err(VerificationError::IncorrectBatchEvaluation.into());
+		bail!(VerificationError::IncorrectBatchEvaluation);
 	}
 
 	Ok(BatchSumcheckOutput {

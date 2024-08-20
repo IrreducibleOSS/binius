@@ -5,6 +5,7 @@ use super::{
 };
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_utils::bail;
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
 
 /// A multivariate polynomial over a binary tower field.
@@ -66,7 +67,7 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != 1 {
-			return Err(Error::IncorrectQuerySize { expected: 1 });
+			bail!(Error::IncorrectQuerySize { expected: 1 });
 		}
 		Ok(query[0])
 	}
@@ -116,7 +117,7 @@ where
 				composition.n_vars(),
 				multilinears.len()
 			);
-			return Err(Error::MultilinearCompositeValidation(err_str));
+			bail!(Error::MultilinearCompositeValidation(err_str));
 		}
 		for multilin in multilinears.iter().map(Borrow::borrow) {
 			if multilin.n_vars() != n_vars {
@@ -125,7 +126,7 @@ where
 					multilin.n_vars(),
 					n_vars
 				);
-				return Err(Error::MultilinearCompositeValidation(err_str));
+				bail!(Error::MultilinearCompositeValidation(err_str));
 			}
 		}
 		Ok(Self {

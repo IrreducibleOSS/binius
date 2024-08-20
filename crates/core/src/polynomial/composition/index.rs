@@ -2,6 +2,7 @@
 
 use crate::polynomial::{CompositionPoly, Error};
 use binius_field::PackedField;
+use binius_utils::bail;
 use std::fmt::Debug;
 
 /// An adapter which allows evaluating a composition over a larger query by indexing into it.
@@ -29,7 +30,7 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
-			return Err(Error::IncorrectQuerySize {
+			bail!(Error::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}
@@ -66,7 +67,7 @@ where
 	});
 
 	if !proper_subset {
-		return Err(Error::MixedMultilinearNotFound);
+		bail!(Error::MixedMultilinearNotFound);
 	}
 
 	let indices = subset.map(|subset_item| {

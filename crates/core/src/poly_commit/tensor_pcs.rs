@@ -24,6 +24,7 @@ use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
 };
 use binius_ntt::NTTOptions;
+use binius_utils::bail;
 use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
@@ -50,7 +51,7 @@ where
 {
 	for t_prime_i in t_primes {
 		if t_prime_i.n_vars() != n_vars {
-			return Err(Error::IncorrectPolynomialSize { expected: n_vars });
+			bail!(Error::IncorrectPolynomialSize { expected: n_vars });
 		}
 	}
 
@@ -232,7 +233,7 @@ where
 	{
 		for poly in polys {
 			if poly.n_vars() != self.n_vars() {
-				return Err(Error::IncorrectPolynomialSize {
+				bail!(Error::IncorrectPolynomialSize {
 					expected: self.n_vars(),
 				});
 			}
@@ -324,16 +325,15 @@ where
 
 		let (col_major_mats, ref vcs_committed) = committed;
 		if col_major_mats.len() != n_polys {
-			return Err(Error::NumBatchedMismatchError {
+			bail!(Error::NumBatchedMismatchError {
 				err_str: format!("In prove_evaluation: number of polynomials {} must match number of committed matrices {}", n_polys, col_major_mats.len()),
 			});
 		}
 
 		if query.len() != self.n_vars() {
-			return Err(PolynomialError::IncorrectQuerySize {
+			bail!(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars(),
-			}
-			.into());
+			});
 		}
 
 		let code_len_bits = log2_strict_usize(self.code.len());
@@ -403,7 +403,7 @@ where
 		debug_assert_eq!(self.code.dim() % pe_width, 0);
 
 		if values.len() != proof.n_polys {
-			return Err(Error::NumBatchedMismatchError {
+			bail!(Error::NumBatchedMismatchError {
 				err_str:
 					format!("In verify_evaluation: proof number of polynomials {} must match number of opened values {}", proof.n_polys, values.len()),
 			});
@@ -418,10 +418,9 @@ where
 			inner_product_unchecked(values.iter().copied(), iter_packed_slice(mixing_coefficients));
 
 		if query.len() != self.n_vars() {
-			return Err(PolynomialError::IncorrectQuerySize {
+			bail!(PolynomialError::IncorrectQuerySize {
 				expected: self.n_vars(),
-			}
-			.into());
+			});
 		}
 
 		self.check_proof_shape(&proof)?;
@@ -444,7 +443,7 @@ where
 			.evaluate(&multilin_query)
 			.expect("query is the correct size by check_proof_shape checks");
 		if computed_value != value {
-			return Err(VerificationError::IncorrectEvaluation.into());
+			bail!(VerificationError::IncorrectEvaluation);
 		}
 
 		// Encode t' into u'
@@ -546,7 +545,7 @@ where
 			});
 
 		if incorrect_evaluation {
-			Err(VerificationError::IncorrectPartialEvaluation.into())
+			bail!(VerificationError::IncorrectPartialEvaluation)
 		} else {
 			Ok(())
 		}
@@ -604,28 +603,28 @@ where
 		if !code.len().is_power_of_two() {
 			// This requirement is just to make sampling indices easier. With a little work it
 			// could be relaxed, but power-of-two code lengths are more convenient to work with.
-			return Err(Error::CodeLengthPowerOfTwoRequired);
+			bail!(Error::CodeLengthPowerOfTwoRequired);
 		}
 
 		let fi_degree = <FI as ExtensionField<F>>::DEGREE;
 		let fe_degree = <FE as ExtensionField<F>>::DEGREE;
 		if !fi_degree.is_power_of_two() {
-			return Err(Error::ExtensionDegreePowerOfTwoRequired);
+			bail!(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 		if !fe_degree.is_power_of_two() {
-			return Err(Error::ExtensionDegreePowerOfTwoRequired);
+			bail!(Error::ExtensionDegreePowerOfTwoRequired);
 		}
 
 		let pi_width = PackedType::<U, FI>::WIDTH;
 		let pe_width = PackedType::<U, FE>::WIDTH;
 		if (1 << log_rows) % pi_width != 0 {
-			return Err(Error::PackingWidthMustDivideNumberOfRows);
+			bail!(Error::PackingWidthMustDivideNumberOfRows);
 		}
 		if code.dim() % pi_width != 0 {
-			return Err(Error::PackingWidthMustDivideCodeDimension);
+			bail!(Error::PackingWidthMustDivideCodeDimension);
 		}
 		if code.dim() % pe_width != 0 {
-			return Err(Error::PackingWidthMustDivideCodeDimension);
+			bail!(Error::PackingWidthMustDivideCodeDimension);
 		}
 
 		Ok(Self {
@@ -666,14 +665,13 @@ where
 		let n_queries = self.n_test_queries;
 
 		if proof.vcs_proofs.len() != n_queries {
-			return Err(VerificationError::NumberOfOpeningProofs {
+			bail!(VerificationError::NumberOfOpeningProofs {
 				expected: n_queries,
-			}
-			.into());
+			});
 		}
 		for (col_idx, (polys_col, _)) in proof.vcs_proofs.iter().enumerate() {
 			if polys_col.len() != proof.n_polys {
-				return Err(Error::NumBatchedMismatchError {
+				bail!(Error::NumBatchedMismatchError {
 					err_str: format!(
 						"Expected {} polynomials, but VCS proof at col_idx {} found {} polynomials instead",
 						proof.n_polys,
@@ -686,19 +684,18 @@ where
 			for (poly_idx, poly_col) in polys_col.iter().enumerate() {
 				let pi_width = PackedType::<U, FI>::WIDTH;
 				if poly_col.len() * pi_width != n_rows {
-					return Err(VerificationError::OpenedColumnSize {
+					bail!(VerificationError::OpenedColumnSize {
 						col_index: col_idx,
 						poly_index: poly_idx,
 						expected: n_rows,
 						actual: poly_col.len() * pi_width,
-					}
-					.into());
+					});
 				}
 			}
 		}
 
 		if proof.mixed_t_prime.n_vars() != log_n_cols {
-			return Err(VerificationError::PartialEvaluationSize.into());
+			bail!(VerificationError::PartialEvaluationSize);
 		}
 
 		Ok(())
@@ -1301,6 +1298,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_proof_size_optimal_block_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
 			OptimalUnderlier128b,
@@ -1329,6 +1327,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_proof_size_optimal_basic_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
 			OptimalUnderlier128b,

@@ -16,6 +16,7 @@ use super::{
 use crate::challenger::field_challenger::FieldChallengerHelper;
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hash::Hasher;
+use binius_utils::bail;
 
 /// MerkleCap is cap_height-th layer of the tree
 #[derive(Debug, Clone)]
@@ -54,7 +55,7 @@ where
 		C: PseudoCompressionFunction<D, 2> + Sync,
 	{
 		if cap_height > log_len {
-			return Err(Error::IncorrectCapHeight);
+			bail!(Error::IncorrectCapHeight);
 		}
 
 		let len = 1 << log_len;
@@ -100,11 +101,11 @@ where
 		let range_size = indices.end - indices.start;
 
 		if !range_size.is_power_of_two() || indices.start & (range_size - 1) != 0 {
-			return Err(Error::IncorrectSubTreeRange);
+			bail!(Error::IncorrectSubTreeRange);
 		}
 
 		if indices.end > 1 << self.log_len {
-			return Err(Error::IndexOutOfRange {
+			bail!(Error::IndexOutOfRange {
 				max: 1 << self.log_len,
 			});
 		}
@@ -254,7 +255,7 @@ where
 		indices: Range<usize>,
 	) -> Result<Self::Proof, Self::Error> {
 		if committed.log_len != self.log_len {
-			return Err(Error::IncorrectVectorLen {
+			bail!(Error::IncorrectVectorLen {
 				expected: 1 << self.log_len,
 			});
 		}
@@ -271,7 +272,7 @@ where
 		let range_size = indices.end - indices.start;
 
 		if !range_size.is_power_of_two() || indices.start & (range_size - 1) != 0 {
-			return Err(Error::IncorrectSubTreeRange);
+			bail!(Error::IncorrectSubTreeRange);
 		}
 
 		let range_size_log = log2_strict_usize(range_size);
@@ -281,14 +282,15 @@ where
 			.saturating_sub(self.cap_height + range_size_log);
 
 		if proof.len() != expected_proof_len {
-			return Err(VerificationError::IncorrectBranchLength {
-				expected: expected_proof_len,
-			}
-			.into());
+			bail!(
+				(VerificationError::IncorrectBranchLength {
+					expected: expected_proof_len,
+				})
+			);
 		}
 
 		if indices.end > 1 << self.log_len {
-			return Err(Error::IndexOutOfRange {
+			bail!(Error::IndexOutOfRange {
 				max: 1 << self.log_len,
 			});
 		}
@@ -315,7 +317,7 @@ where
 			return if commitment[index..index + cap.len()] == *cap {
 				Ok(())
 			} else {
-				Err(VerificationError::MerkleRootMismatch.into())
+				bail!(VerificationError::MerkleRootMismatch)
 			};
 		}
 
@@ -336,7 +338,7 @@ where
 		if commitment[index] == root {
 			Ok(())
 		} else {
-			Err(VerificationError::MerkleRootMismatch.into())
+			bail!(VerificationError::MerkleRootMismatch)
 		}
 	}
 }
@@ -475,6 +477,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_merkle_vcs_commit_incorrect_range() {
 		let mut rng = StdRng::seed_from_u64(0);
 
@@ -508,6 +511,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_merkle_vcs_commit_incorrect_opening() {
 		let mut rng = StdRng::seed_from_u64(0);
 

@@ -18,6 +18,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_utils::bail;
 use itertools::izip;
 use std::{array, sync::Arc};
 use tracing::instrument;
@@ -82,16 +83,16 @@ where
 	// Check that counts actually fit into the chosen data type
 	// NB. Need one more bit because 1 << n_vars is a valid count.
 	if n_vars >= FC::N_BITS {
-		return Err(Error::LassoCountTypeTooSmall);
+		bail!(Error::LassoCountTypeTooSmall);
 	}
 
 	if n_vars != lasso_witness.n_vars() {
-		return Err(Error::WitnessNumVariablesMismatch);
+		bail!(Error::WitnessNumVariablesMismatch);
 	}
 
 	let bit_packing_log_width = PackedType::<U, BinaryField1b>::LOG_WIDTH;
 	if n_vars_gf2 < bit_packing_log_width {
-		return Err(Error::WitnessSmallerThanUnderlier);
+		bail!(Error::WitnessSmallerThanUnderlier);
 	}
 
 	// underliers for read counts vectors, a total of seven

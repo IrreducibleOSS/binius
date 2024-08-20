@@ -2,6 +2,7 @@
 
 use crate::polynomial::{CompositionPoly, Error};
 use binius_field::PackedField;
+use binius_utils::bail;
 
 #[derive(Debug, Copy, Clone)]
 pub struct BivariateProduct;
@@ -27,7 +28,7 @@ impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != 2 {
-			return Err(Error::IncorrectQuerySize { expected: 2 });
+			bail!(Error::IncorrectQuerySize { expected: 2 });
 		}
 		Ok(query[0] * query[1])
 	}

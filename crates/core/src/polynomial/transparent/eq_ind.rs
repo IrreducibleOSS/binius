@@ -4,6 +4,7 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
 use binius_field::{Field, PackedField, TowerField};
+use binius_utils::bail;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -20,7 +21,7 @@ impl<F: Field> EqIndPartialEval<F> {
 	// TODO: n_vars param here is unnecessary
 	pub fn new(n_vars: usize, r: Vec<F>) -> Result<Self, Error> {
 		if r.len() != n_vars {
-			return Err(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		Ok(Self { n_vars, r })
 	}
@@ -45,7 +46,7 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPar
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		let n_vars = MultivariatePoly::<P>::n_vars(self);
 		if query.len() != n_vars {
-			return Err(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 
 		let mut result = P::one();

@@ -2,6 +2,7 @@
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::TowerField;
+use binius_utils::bail;
 
 /// A constant polynomial.
 #[derive(Debug, Copy, Clone)]
@@ -21,7 +22,7 @@ impl<F: TowerField> MultivariatePoly<F> for Constant<F> {
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != self.n_vars {
-			return Err(Error::IncorrectQuerySize {
+			bail!(Error::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}

@@ -11,6 +11,7 @@ use crate::{
 	},
 };
 use binius_field::TowerField;
+use binius_utils::bail;
 use std::iter;
 
 pub fn verify<F, Challenger>(
@@ -29,10 +30,10 @@ where
 	// Verify the initial evalcheck claims
 	let claims = claims.into_iter().collect::<Vec<_>>();
 	if claims.len() < proof.initial_evalcheck_proofs.len() {
-		return Err(Error::ExtraInitialEvalcheckProof);
+		bail!(Error::ExtraInitialEvalcheckProof);
 	}
 	if claims.len() > proof.initial_evalcheck_proofs.len() {
-		return Err(Error::MissingInitialEvalcheckProof);
+		bail!(Error::MissingInitialEvalcheckProof);
 	}
 	for (claim, proof) in iter::zip(claims, proof.initial_evalcheck_proofs) {
 		evalcheck_verifier.verify(claim, proof)?;
@@ -41,7 +42,7 @@ where
 	for (sumcheck_batch_proof, evalcheck_proofs) in proof.virtual_opening_proofs {
 		let new_sumchecks = evalcheck_verifier.take_new_sumchecks();
 		if new_sumchecks.is_empty() {
-			return Err(Error::ExtraVirtualOpeningProof);
+			bail!(Error::ExtraVirtualOpeningProof);
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
@@ -49,10 +50,10 @@ where
 			batch_verify(new_sumchecks, sumcheck_batch_proof, &mut challenger)?;
 
 		if new_evalcheck_claims.len() < evalcheck_proofs.len() {
-			return Err(Error::ExtraVirtualOpeningProof);
+			bail!(Error::ExtraVirtualOpeningProof);
 		}
 		if new_evalcheck_claims.len() > evalcheck_proofs.len() {
-			return Err(Error::MissingVirtualOpeningProof);
+			bail!(Error::MissingVirtualOpeningProof);
 		}
 		for (claim, proof) in iter::zip(new_evalcheck_claims, evalcheck_proofs) {
 			evalcheck_verifier.verify(claim, proof)?;
@@ -61,16 +62,16 @@ where
 
 	let new_sumchecks = evalcheck_verifier.take_new_sumchecks();
 	if !new_sumchecks.is_empty() {
-		return Err(Error::MissingVirtualOpeningProof);
+		bail!(Error::MissingVirtualOpeningProof);
 	}
 
 	// Now all remaining evalcheck claims are for committed polynomials.
 	// Batch together all committed polynomial evaluation claims to one point per batch.
 	if committed_batches.len() < proof.batch_opening_proof.len() {
-		return Err(Error::ExtraBatchOpeningProof);
+		bail!(Error::ExtraBatchOpeningProof);
 	}
 	if committed_batches.len() > proof.batch_opening_proof.len() {
-		return Err(Error::MissingBatchOpeningProof);
+		bail!(Error::MissingBatchOpeningProof);
 	}
 	let same_query_claims = iter::zip(committed_batches, proof.batch_opening_proof)
 		.map(|(batch, proof)| {

@@ -3,6 +3,7 @@
 use super::{gkr_prodcheck::ProdcheckBatchProof, Error, ProdcheckClaim, VerificationError};
 use crate::protocols::gkr_gpa::GrandProductClaim;
 use binius_field::TowerField;
+use binius_utils::bail;
 use tracing::instrument;
 
 /// Batch Verify product check instance reductions to two grand product claims.
@@ -16,7 +17,7 @@ pub fn batch_verify<F: TowerField>(
 
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
 	if claims_vec.len() != n_common_products {
-		return Err(VerificationError::MismatchedClaimsAndBatchProof.into());
+		bail!(VerificationError::MismatchedClaimsAndBatchProof);
 	}
 
 	let mut grand_product_claims = Vec::with_capacity(2 * n_common_products);
@@ -36,7 +37,7 @@ fn reduce_to_grand_product_claims<F: TowerField>(
 ) -> Result<(GrandProductClaim<F>, GrandProductClaim<F>), Error> {
 	// Sanity check the claim is well-structured
 	if claim.t_oracle.n_vars() != claim.u_oracle.n_vars() {
-		return Err(Error::InconsistentClaim);
+		bail!(Error::InconsistentClaim);
 	}
 	// Create the two GrandProductClaims
 	let t_gpa_claim = GrandProductClaim {

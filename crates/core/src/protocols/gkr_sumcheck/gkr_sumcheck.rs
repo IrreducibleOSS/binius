@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{Field, PackedField};
+use binius_utils::bail;
 
 use crate::{
 	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
@@ -114,10 +115,9 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for GkrSumcheckReductor<'a, F> {
 		proof: &AbstractSumcheckRound<F>,
 	) -> Result<(), Self::Error> {
 		if proof.coeffs.len() != self.max_individual_degree {
-			return Err(VerificationError::NumberOfCoefficients {
+			bail!(VerificationError::NumberOfCoefficients {
 				expected: self.max_individual_degree,
-			}
-			.into());
+			});
 		}
 		Ok(())
 	}
@@ -130,7 +130,7 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for GkrSumcheckReductor<'a, F> {
 		round_proof: AbstractSumcheckRound<F>,
 	) -> Result<AbstractSumcheckRoundClaim<F>, Self::Error> {
 		if round != claim.partial_point.len() {
-			return Err(Error::RoundArgumentRoundClaimMismatch);
+			bail!(Error::RoundArgumentRoundClaimMismatch);
 		}
 		let alpha_i = self.gkr_challenge_point[round];
 		reduce_round_claim_helper(claim, challenge, round_proof, alpha_i)

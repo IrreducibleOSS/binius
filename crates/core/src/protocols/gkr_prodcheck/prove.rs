@@ -5,6 +5,7 @@ use super::{
 };
 use crate::protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness};
 use binius_field::{Field, PackedField, TowerField};
+use binius_utils::bail;
 use tracing::instrument;
 
 /// Proves batch reduction splitting each ProductCheckClaim into two GrandProductClaims
@@ -29,7 +30,7 @@ where
 
 	let n_claims = claim_vec.len();
 	if witness_vec.len() != n_claims {
-		return Err(Error::MismatchedWitnessClaimLength);
+		bail!(Error::MismatchedWitnessClaimLength);
 	}
 	if n_claims == 0 {
 		return Ok(ProdcheckBatchProveOutput::default());
@@ -45,20 +46,20 @@ where
 
 		// Sanity check the claims, witnesses, and consistency between them
 		if t_oracle.n_vars() != u_oracle.n_vars() {
-			return Err(Error::InconsistentClaim);
+			bail!(Error::InconsistentClaim);
 		}
 		if t_poly.n_vars() != u_poly.n_vars() {
-			return Err(Error::InconsistentWitness);
+			bail!(Error::InconsistentWitness);
 		}
 		if t_oracle.n_vars() != t_poly.n_vars() {
-			return Err(Error::InconsistentClaimWitness);
+			bail!(Error::InconsistentClaimWitness);
 		}
 
 		// Calculate the products of both T, U polynomials and enforce equal
 		let t_witness = GrandProductWitness::new(t_poly)?;
 		let u_witness = GrandProductWitness::new(u_poly)?;
 		if t_witness.grand_product_evaluation() != u_witness.grand_product_evaluation() {
-			return Err(Error::ProductsDiffer);
+			bail!(Error::ProductsDiffer);
 		}
 
 		// Create the two GrandProductClaims and the proof

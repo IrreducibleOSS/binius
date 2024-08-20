@@ -15,6 +15,7 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField};
+use binius_utils::bail;
 use itertools::{izip, Itertools};
 use std::{iter, ops::Range};
 use tracing::instrument;
@@ -72,7 +73,7 @@ where
 		let final_codeword = final_rs_code.encode(final_message)?;
 
 		if round_commitments.len() != round_vcss.len() {
-			return Err(Error::InvalidArgs(format!(
+			bail!(Error::InvalidArgs(format!(
 				"got {} round commitments, expected {}",
 				round_commitments.len(),
 				round_vcss.len(),
@@ -80,7 +81,7 @@ where
 		}
 
 		if challenges.len() != committed_rs_code.log_dim() {
-			return Err(Error::InvalidArgs(format!(
+			bail!(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
 				committed_rs_code.log_dim()
@@ -89,7 +90,7 @@ where
 
 		// TODO: With future STIR-like optimizations, this check should be removed.
 		if final_rs_code.log_inv_rate() != committed_rs_code.log_inv_rate() {
-			return Err(Error::InvalidArgs(
+			bail!(Error::InvalidArgs(
 				"final RS code must have the same rate as the committed RS code".to_string(),
 			));
 		}
@@ -138,10 +139,9 @@ where
 		proof: QueryProof<F, VCS::Proof>,
 	) -> Result<(), Error> {
 		if proof.len() != self.n_rounds() {
-			return Err(VerificationError::IncorrectQueryProofLength {
+			bail!(VerificationError::IncorrectQueryProofLength {
 				expected: self.n_rounds(),
-			}
-			.into());
+			});
 		}
 
 		let max_arity = self.folding_arities.iter().max().copied().unwrap();
@@ -195,7 +195,7 @@ where
 			)?;
 
 			if next_value != values[index % (1 << folding_arity)] {
-				return Err(VerificationError::IncorrectFold { query_round, index }.into());
+				bail!(VerificationError::IncorrectFold { query_round, index });
 			}
 
 			next_value = fold_chunk(
@@ -213,11 +213,10 @@ where
 		// know that the Reed-Solomon encoding of this message is simply that final message element
 		// repeated up to the codeword length.
 		if next_value != self.final_codeword[index] {
-			return Err(VerificationError::IncorrectFold {
+			bail!(VerificationError::IncorrectFold {
 				query_round: self.n_rounds() - 1,
 				index,
-			}
-			.into());
+			});
 		}
 
 		Ok(())
@@ -235,11 +234,10 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	let QueryRoundProof { values, vcs_proof } = proof;
 
 	if values.len() != 1 << log_coset_size {
-		return Err(VerificationError::IncorrectQueryProofValuesLength {
+		bail!(VerificationError::IncorrectQueryProofValuesLength {
 			round,
 			coset_size: 1 << log_coset_size,
-		}
-		.into());
+		});
 	}
 
 	let start_index = coset_index << log_coset_size;

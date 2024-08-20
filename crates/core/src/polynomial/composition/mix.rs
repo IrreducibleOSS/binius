@@ -2,6 +2,7 @@
 
 use crate::polynomial::{CompositionPoly, Error};
 use binius_field::{Field, PackedField, TowerField};
+use binius_utils::bail;
 use std::fmt::Debug;
 
 /// A composition polynomial that securely batches several underlying multivariate polynomials.
@@ -47,7 +48,7 @@ impl<P: PackedField> HornerCompositions<P> for () {
 		inner_evals: &[P::Scalar],
 	) -> Result<P::Scalar, Error> {
 		if !inner_evals.is_empty() {
-			return Err(Error::IncorrectInnerEvalsLength);
+			bail!(Error::IncorrectInnerEvalsLength);
 		}
 
 		Ok(P::Scalar::ZERO)
@@ -76,7 +77,7 @@ where
 		inner_evals: &[P::Scalar],
 	) -> Result<P::Scalar, Error> {
 		if self.0.len() > inner_evals.len() {
-			return Err(Error::IncorrectInnerEvalsLength);
+			bail!(Error::IncorrectInnerEvalsLength);
 		}
 
 		let (tail, head) = inner_evals.split_at(inner_evals.len() - self.0.len());
@@ -143,7 +144,7 @@ impl<P: PackedField, IC> MixComposition<P, IC> {
 			.all(|poly| poly.n_vars() == self.n_vars);
 
 		if !same_nvars {
-			return Err(Error::IncorrectArityInMixedComposition {
+			bail!(Error::IncorrectArityInMixedComposition {
 				expected: self.n_vars,
 			});
 		}

@@ -1,7 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::Field;
-use binius_utils::sorting::{stable_sort, unsort};
+use binius_utils::{
+	bail,
+	sorting::{stable_sort, unsort},
+};
 use p3_challenger::{CanObserve, CanSample};
 
 use crate::protocols::abstract_sumcheck::ReducedClaim;
@@ -160,13 +163,13 @@ where
 {
 	let (original_indices, sorted_claims) = stable_sort(claims, |claim| claim.n_vars(), true);
 	if sorted_claims.is_empty() {
-		return Err(Error::EmptyBatch.into());
+		bail!(Error::EmptyBatch);
 	}
 
 	let n_rounds = sorted_claims[0].n_vars();
 
 	if proof.rounds.len() != n_rounds {
-		return Err(Error::Verification(VerificationError::NumberOfRounds).into());
+		bail!(Error::Verification(VerificationError::NumberOfRounds));
 	}
 
 	let mut first_batch_coeff = Some(F::ONE);
@@ -222,7 +225,7 @@ where
 		.windows(2)
 		.any(|pair| pair[0].n_vars() < pair[1].n_vars())
 	{
-		return Err(Error::OraclesOutOfOrder.into());
+		bail!(Error::OraclesOutOfOrder);
 	}
 
 	let n_rounds = sorted_claims
@@ -231,13 +234,13 @@ where
 		.unwrap_or(0);
 
 	if eval_point.len() != n_rounds {
-		return Err(Error::Verification(VerificationError::NumberOfRounds).into());
+		bail!(Error::Verification(VerificationError::NumberOfRounds));
 	}
 	if sorted_claims.len() != batch_coeffs.len() {
-		return Err(Error::Verification(VerificationError::NumberOfBatchCoeffs).into());
+		bail!(Error::Verification(VerificationError::NumberOfBatchCoeffs));
 	}
 	if proof.sorted_evals.len() != sorted_claims.len() {
-		return Err(Error::Verification(VerificationError::NumberOfFinalEvaluations).into());
+		bail!(Error::Verification(VerificationError::NumberOfFinalEvaluations));
 	}
 
 	let batched_eval = proof

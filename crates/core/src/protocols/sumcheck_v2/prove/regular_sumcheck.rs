@@ -15,6 +15,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -35,7 +36,7 @@ where
 		.unwrap_or_default();
 	for multilinear in multilinears.iter() {
 		if multilinear.n_vars() != n_vars {
-			return Err(Error::NumberOfVariablesMismatch);
+			bail!(Error::NumberOfVariablesMismatch);
 		}
 	}
 
@@ -53,7 +54,7 @@ where
 			.try_reduce(|| F::ZERO, |a, b| Ok(a + b))?;
 
 		if sum != expected_sum {
-			return Err(Error::SumcheckNaiveValidationFailure {
+			bail!(Error::SumcheckNaiveValidationFailure {
 				composition_index: i,
 			});
 		}
@@ -90,7 +91,7 @@ where
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
 		for claim in composite_claims.iter() {
 			if claim.composition.n_vars() != multilinears.len() {
-				return Err(Error::InvalidComposition {
+				bail!(Error::InvalidComposition {
 					expected_n_vars: multilinears.len(),
 				});
 			}

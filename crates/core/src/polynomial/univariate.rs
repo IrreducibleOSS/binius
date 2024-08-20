@@ -4,6 +4,7 @@
 use super::error::Error;
 use crate::linalg::Matrix;
 use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension};
+use binius_utils::bail;
 use std::{
 	iter::{self, Step},
 	marker::PhantomData,
@@ -51,7 +52,7 @@ fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error>
 		.take(size)
 		.collect::<Vec<F>>();
 	if points.len() != size {
-		return Err(Error::DomainSizeTooLarge);
+		bail!(Error::DomainSizeTooLarge);
 	}
 	Ok(points)
 }
@@ -107,7 +108,7 @@ impl<F: Field> EvaluationDomain<F> {
 	pub fn interpolate<FE: ExtensionField<F>>(&self, values: &[FE]) -> Result<Vec<FE>, Error> {
 		let n = self.size();
 		if values.len() != n {
-			return Err(Error::ExtrapolateNumberOfEvaluations);
+			bail!(Error::ExtrapolateNumberOfEvaluations);
 		}
 
 		let mut coeffs = vec![FE::ZERO; values.len()];
@@ -121,7 +122,7 @@ impl<F: Field> EvaluationDomain<F> {
 	{
 		let n = self.size();
 		if values.len() != n {
-			return Err(Error::ExtrapolateNumberOfEvaluations);
+			bail!(Error::ExtrapolateNumberOfEvaluations);
 		}
 
 		let weighted_values = values
@@ -263,6 +264,7 @@ mod tests {
 	}
 
 	#[test]
+	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_new_oversized_domain() {
 		assert_matches!(
 			<EvaluationDomain<BinaryField8b>>::new(300),

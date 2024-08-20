@@ -2,6 +2,7 @@
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
+use binius_utils::bail;
 use std::marker::PhantomData;
 
 /// Represents the $\mathcal{T}_{\iota}$-basis of $\mathcal{T}_{\iota+k}$
@@ -26,7 +27,7 @@ pub struct TowerBasis<F: Field> {
 impl<F: TowerField> TowerBasis<F> {
 	pub fn new(k: usize, iota: usize) -> Result<Self, Error> {
 		if iota + k > F::TOWER_LEVEL {
-			return Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "iota + k".into(),
 				range: 0..F::TOWER_LEVEL + 1,
 			});
@@ -72,7 +73,7 @@ where
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		if query.len() != self.k {
-			return Err(Error::IncorrectQuerySize { expected: self.k });
+			bail!(Error::IncorrectQuerySize { expected: self.k });
 		}
 
 		let mut result = F::ONE;

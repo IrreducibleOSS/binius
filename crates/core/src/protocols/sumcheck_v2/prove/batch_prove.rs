@@ -8,7 +8,7 @@ use crate::{
 	},
 };
 use binius_field::Field;
-use binius_utils::sorting::is_sorted_ascending;
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use p3_challenger::CanObserve;
 use std::iter;
 
@@ -88,7 +88,7 @@ where
 
 	// Check that the provers are in descending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars()).rev()) {
-		return Err(Error::ClaimsOutOfOrder);
+		bail!(Error::ClaimsOutOfOrder);
 	}
 
 	let n_rounds = provers

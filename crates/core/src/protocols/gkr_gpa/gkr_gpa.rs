@@ -10,6 +10,7 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{Field, PackedField};
+use binius_utils::bail;
 use rayon::prelude::*;
 
 type LayerEvals<'a, FW> = &'a [FW];
@@ -73,7 +74,7 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 	pub fn ith_layer_evals(&self, i: usize) -> Result<LayerEvals<'_, PW::Scalar>, Error> {
 		let max_layer_idx = self.n_vars();
 		if i > max_layer_idx {
-			return Err(Error::InvalidLayerIndex);
+			bail!(Error::InvalidLayerIndex);
 		}
 		Ok(&self.circuit_evals[i])
 	}
@@ -82,7 +83,7 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 	/// REQUIRES: 0 <= i < n_vars
 	pub fn ith_layer_eval_halves(&self, i: usize) -> Result<LayerHalfEvals<'_, PW::Scalar>, Error> {
 		if i == 0 {
-			return Err(Error::CannotSplitOutputLayerIntoHalves);
+			bail!(Error::CannotSplitOutputLayerIntoHalves);
 		}
 		let layer = self.ith_layer_evals(i)?;
 		let half = layer.len() / 2;

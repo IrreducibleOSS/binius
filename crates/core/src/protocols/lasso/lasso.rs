@@ -18,6 +18,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	BinaryField16b, BinaryField32b, Field, PackedField, TowerField,
 };
+use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 
 pub trait LassoCount: TowerField {
@@ -88,7 +89,7 @@ impl<F: Field> LassoClaim<F> {
 		u_oracle: MultilinearPolyOracle<F>,
 	) -> Result<Self, Error> {
 		if t_oracle.n_vars() != u_oracle.n_vars() {
-			return Err(Error::NumVariablesMismatch);
+			bail!(Error::NumVariablesMismatch);
 		}
 
 		Ok(Self { t_oracle, u_oracle })
@@ -116,16 +117,16 @@ impl<'a, PW: PackedField, L: AsRef<[usize]>> LassoWitness<'a, PW, L> {
 		u_to_t_mapping: L,
 	) -> Result<Self, Error> {
 		if t_polynomial.n_vars() != u_polynomial.n_vars() {
-			return Err(Error::NumVariablesMismatch);
+			bail!(Error::NumVariablesMismatch);
 		}
 
 		let size = t_polynomial.size();
 		if size != u_to_t_mapping.as_ref().len() {
-			return Err(Error::MappingSizeMismatch);
+			bail!(Error::MappingSizeMismatch);
 		}
 
 		if u_to_t_mapping.as_ref().iter().any(|&index| index >= size) {
-			return Err(Error::MappingIndexOutOfBounds);
+			bail!(Error::MappingIndexOutOfBounds);
 		}
 
 		Ok(Self {
@@ -155,7 +156,7 @@ impl<P: PackedField> CompositionPoly<P> for UnaryCarryConstraint {
 
 	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
 		if query.len() != 3 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 3 });
+			bail!(PolynomialError::IncorrectQuerySize { expected: 3 });
 		}
 
 		Ok(query[0] * query[1] - query[2])
@@ -208,7 +209,7 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 		|| carry_out_oracle.n_vars() != n_vars_gf2
 		|| final_counts_oracle.n_vars() != n_vars_gf2
 	{
-		return Err(Error::CountsNumVariablesMismatch);
+		bail!(Error::CountsNumVariablesMismatch);
 	}
 
 	// Representing a column of ones as a repeating oracle of 10...0

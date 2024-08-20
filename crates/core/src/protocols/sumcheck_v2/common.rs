@@ -3,6 +3,7 @@
 use super::error::Error;
 use crate::polynomial::CompositionPoly;
 use binius_field::Field;
+use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
@@ -56,7 +57,7 @@ where
 		} in composite_sums.iter()
 		{
 			if composition.n_vars() != n_multilinears {
-				return Err(Error::InvalidComposition {
+				bail!(Error::InvalidComposition {
 					expected_n_vars: n_multilinears,
 				});
 			}

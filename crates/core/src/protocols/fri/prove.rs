@@ -15,6 +15,7 @@ use crate::{
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
 use binius_ntt::AdditiveNTT;
+use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -79,12 +80,10 @@ where
 	VCS: VectorCommitScheme<F>,
 {
 	if message.len() * P::WIDTH != rs_code.dim() {
-		return Err(Error::InvalidArgs("message length does not match code dimension".to_string()));
+		bail!(Error::InvalidArgs("message length does not match code dimension".to_string()));
 	}
 	if vcs.vector_len() != rs_code.len() {
-		return Err(Error::InvalidArgs(
-			"code length does not vector commitment length".to_string(),
-		));
+		bail!(Error::InvalidArgs("code length does not vector commitment length".to_string(),));
 	}
 
 	let mut encoded = vec![P::zero(); message.len() << rs_code.log_inv_rate()];
@@ -143,7 +142,7 @@ where
 		committed: &'a VCS::Committed,
 	) -> Result<Self, Error> {
 		if committed_rs_code.len() != committed_codeword.len() {
-			return Err(Error::InvalidArgs(
+			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match codeword length".to_string(),
 			));
 		}
@@ -242,7 +241,7 @@ where
 	#[instrument(skip_all, name = "fri::FRIFolder::finalize")]
 	pub fn finalize(mut self) -> Result<(FinalMessage<F>, FRIQueryProver<'a, F, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
-			return Err(Error::EarlyProverFinish);
+			bail!(Error::EarlyProverFinish);
 		}
 
 		// NB: The idea behind the following is that we should do the minimal amount of work necessary to

@@ -60,3 +60,4 @@ harness = false
 
 [features]
 debug_validate_sumcheck = []
+bail_panic = []

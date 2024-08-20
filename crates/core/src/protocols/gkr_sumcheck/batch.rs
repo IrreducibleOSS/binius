@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
@@ -76,7 +77,7 @@ where
 {
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
 	if claims_vec.is_empty() {
-		return Err(Error::EmptyClaimsArray);
+		bail!(Error::EmptyClaimsArray);
 	}
 
 	let gkr_challenge_point = claims_vec[0].r.clone();
@@ -86,7 +87,7 @@ where
 		.iter()
 		.all(|claim| claim.r == gkr_challenge_point)
 	{
-		return Err(Error::MismatchedGkrChallengeInClaimsBatch);
+		bail!(Error::MismatchedGkrChallengeInClaimsBatch);
 	}
 
 	let max_individual_degree = claims_vec

@@ -12,6 +12,7 @@ use crate::{
 	},
 };
 use binius_field::TowerField;
+use binius_utils::bail;
 use tracing::instrument;
 
 /// Verify a zerocheck to evalcheck reduction.
@@ -26,14 +27,14 @@ where
 	CH: CanSample<F> + CanObserve<F>,
 {
 	if claim.poly.max_individual_degree() == 0 {
-		return Err(Error::PolynomialDegreeIsZero);
+		bail!(Error::PolynomialDegreeIsZero);
 	}
 
 	// Reduction
 	let n_vars = claim.poly.n_vars();
 	let n_rounds = proof.rounds.len();
 	if n_rounds != n_vars {
-		return Err(VerificationError::NumberOfRounds.into());
+		bail!(VerificationError::NumberOfRounds);
 	}
 
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);

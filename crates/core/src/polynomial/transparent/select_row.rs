@@ -2,6 +2,7 @@
 
 use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube is 1 at
 /// a specific hypercube index, and 0 everywhere else.
@@ -24,7 +25,7 @@ pub struct SelectRow {
 impl SelectRow {
 	pub fn new(n_vars: usize, index: usize) -> Result<Self, Error> {
 		if index >= (1 << n_vars) {
-			Err(Error::ArgumentRangeError {
+			bail!(Error::ArgumentRangeError {
 				arg: "index".into(),
 				range: 0..(1 << n_vars),
 			})
@@ -37,7 +38,7 @@ impl SelectRow {
 		&self,
 	) -> Result<MultilinearExtension<P>, Error> {
 		if self.n_vars < P::LOG_WIDTH {
-			return Err(Error::PackedFieldNotFilled {
+			bail!(Error::PackedFieldNotFilled {
 				length: 1 << self.n_vars,
 				packed_width: 1 << P::LOG_WIDTH,
 			});
@@ -60,7 +61,7 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
 		let n_vars = MultivariatePoly::<F>::n_vars(self);
 		if query.len() != n_vars {
-			return Err(Error::IncorrectQuerySize { expected: n_vars });
+			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		let mut k = self.index;
 		let mut result = F::ONE;

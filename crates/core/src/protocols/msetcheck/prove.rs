@@ -15,6 +15,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_utils::bail;
 use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::instrument;
@@ -53,11 +54,11 @@ where
 	let n_vars = msetcheck_claim.n_vars();
 
 	if msetcheck_witness.dimensions() != dimensions {
-		return Err(Error::WitnessDimensionalityMismatch);
+		bail!(Error::WitnessDimensionalityMismatch);
 	}
 
 	if msetcheck_witness.n_vars() != n_vars {
-		return Err(Error::WitnessNumVariablesMismatch);
+		bail!(Error::WitnessNumVariablesMismatch);
 	}
 
 	let packing_log_width = PackedType::<U, FW>::LOG_WIDTH;
