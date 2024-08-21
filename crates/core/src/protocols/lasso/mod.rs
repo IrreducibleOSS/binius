@@ -19,6 +19,6 @@ mod tests;
 mod verify;
 
 pub use error::*;
-pub use lasso::{LassoBatch, LassoClaim, LassoProveOutput, LassoWitness};
+pub use lasso::{LassoBatches, LassoClaim, LassoProveOutput, LassoWitness};
 pub use prove::*;
 pub use verify::*;

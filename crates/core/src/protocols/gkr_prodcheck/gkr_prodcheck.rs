@@ -23,7 +23,7 @@ pub struct ProdcheckWitness<'a, PW: PackedField> {
 
 #[derive(Debug, Default)]
 pub struct ProdcheckBatchProof<F: Field> {
-	pub common_products: Vec<F>,
+	pub products: Vec<F>,
 }
 
 #[derive(Debug, Default)]

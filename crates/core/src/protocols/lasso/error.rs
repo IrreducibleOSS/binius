@@ -19,8 +19,6 @@ pub enum Error {
 	MappingIndexOutOfBounds,
 	#[error("the number of variables in some witness multilinear does not match the claim")]
 	WitnessNumVariablesMismatch,
-	#[error("the number of variables in one of the merged polynomials does not match the other")]
-	MergedWitnessNumVariablesMismatch,
 	#[error("actual Lasso counts may not fit into the chosen count integer type")]
 	LassoCountTypeTooSmall,
 	#[error("oracle error: {0}")]
@@ -31,4 +29,8 @@ pub enum Error {
 	Witness(#[from] WitnessError),
 	#[error("multiset check error: {0}")]
 	Msetcheck(#[from] MsetcheckError),
+	#[error("vectors of looker tables and u_to_t_mappings must have the same size")]
+	MappingsLookerTablesLenMismatch,
+	#[error("claim and witness must have the same amount of u_oracles and u_polynomials")]
+	ClaimWitnessTablesLenMismatch,
 }

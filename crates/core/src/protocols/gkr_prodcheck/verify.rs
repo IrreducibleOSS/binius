@@ -12,42 +12,45 @@ pub fn batch_verify<F: TowerField>(
 	claims: impl IntoIterator<Item = ProdcheckClaim<F>>,
 	batch_proof: ProdcheckBatchProof<F>,
 ) -> Result<Vec<GrandProductClaim<F>>, Error> {
-	let ProdcheckBatchProof { common_products } = batch_proof;
-	let n_common_products = common_products.len();
+	let ProdcheckBatchProof { products } = batch_proof;
+	let n_products = products.len();
 
 	let claims_vec = claims.into_iter().collect::<Vec<_>>();
-	if claims_vec.len() != n_common_products {
+	if claims_vec.len() * 2 != n_products {
 		bail!(VerificationError::MismatchedClaimsAndBatchProof);
 	}
 
-	let mut grand_product_claims = Vec::with_capacity(2 * n_common_products);
-	for (claim, common_product) in claims_vec.into_iter().zip(common_products) {
-		let (t_gpa_claim, u_gpa_claim) = reduce_to_grand_product_claims(claim, common_product)?;
+	let mut grand_product_claims = Vec::with_capacity(n_products);
+
+	let mut t_product = F::ONE;
+	let mut u_product = F::ONE;
+
+	for (claim, products) in claims_vec.into_iter().zip(products.chunks(2)) {
+		// Sanity check the claim is well-structured
+		if claim.t_oracle.n_vars() != claim.u_oracle.n_vars() {
+			bail!(Error::InconsistentClaim);
+		}
+
+		let t_gpa_claim = GrandProductClaim {
+			poly: claim.t_oracle,
+			product: products[0],
+		};
+		let u_gpa_claim = GrandProductClaim {
+			poly: claim.u_oracle,
+			product: products[1],
+		};
+
+		t_product *= products[0];
+		u_product *= products[1];
+
 		grand_product_claims.push(t_gpa_claim);
 		grand_product_claims.push(u_gpa_claim);
 	}
 
-	debug_assert_eq!(grand_product_claims.len(), 2 * n_common_products);
-	Ok(grand_product_claims)
-}
-
-fn reduce_to_grand_product_claims<F: TowerField>(
-	claim: ProdcheckClaim<F>,
-	common_product: F,
-) -> Result<(GrandProductClaim<F>, GrandProductClaim<F>), Error> {
-	// Sanity check the claim is well-structured
-	if claim.t_oracle.n_vars() != claim.u_oracle.n_vars() {
-		bail!(Error::InconsistentClaim);
+	if t_product != u_product {
+		return Err(Error::ProductsDiffer);
 	}
-	// Create the two GrandProductClaims
-	let t_gpa_claim = GrandProductClaim {
-		poly: claim.t_oracle.clone(),
-		product: common_product,
-	};
-	let u_gpa_claim = GrandProductClaim {
-		poly: claim.u_oracle.clone(),
-		product: common_product,
-	};
 
-	Ok((t_gpa_claim, u_gpa_claim))
+	debug_assert_eq!(grand_product_claims.len(), n_products);
+	Ok(grand_product_claims)
 }

@@ -3,12 +3,12 @@
 use crate::{
 	oracle::MultilinearOracleSet,
 	polynomial::MultilinearExtension,
-	protocols::lasso::{prove, verify, LassoBatch, LassoClaim, LassoWitness},
+	protocols::lasso::{prove, verify, LassoBatches, LassoClaim, LassoWitness},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField128b, BinaryField16b,
-	BinaryField64b, PackedBinaryField128x1b, PackedFieldIndexable, TowerField,
+	BinaryField64b, Field, PackedBinaryField128x1b, PackedFieldIndexable, TowerField,
 };
 
 #[test]
@@ -53,9 +53,17 @@ fn test_prove_verify_interaction() {
 		.unwrap()
 		.specialize_arc_dyn();
 
-	let witness =
-		LassoWitness::<PackedType<U, F>, _>::new(t_polynomial, u_polynomial, u_to_t_mapping)
-			.unwrap();
+	let witness = LassoWitness::<PackedType<U, F>, _>::new(
+		t_polynomial,
+		[
+			u_polynomial.clone(),
+			u_polynomial.clone(),
+			u_polynomial.clone(),
+		]
+		.to_vec(),
+		[&u_to_t_mapping, &u_to_t_mapping, &u_to_t_mapping].to_vec(),
+	)
+	.unwrap();
 
 	// Setup claim
 	let mut oracles = MultilinearOracleSet::<F>::new();
@@ -63,18 +71,33 @@ fn test_prove_verify_interaction() {
 	let lookup_batch = oracles.add_committed_batch(n_vars, E::TOWER_LEVEL);
 	let [t, u] = oracles.add_committed_multiple(lookup_batch);
 
-	let lasso_batch = LassoBatch::new_in::<C, _>(&mut oracles, n_vars);
+	let lasso_batches = LassoBatches::new_in::<C, _>(&mut oracles, n_vars, n_vars, 3);
 
-	let claim = LassoClaim::new(oracles.oracle(t), oracles.oracle(u)).unwrap();
+	let claim = LassoClaim::new(
+		oracles.oracle(t),
+		[oracles.oracle(u), oracles.oracle(u), oracles.oracle(u)].to_vec(),
+	)
+	.unwrap();
 
 	// PROVER
 	let witness_index = MultilinearExtensionIndex::new();
 
-	let _prove_output =
-		prove::<C, U, F, F, _>(&mut oracles.clone(), witness_index, &claim, witness, &lasso_batch)
-			.unwrap();
+	let gamma = F::new(137_u128);
+
+	let alpha = F::ONE;
+
+	let _prove_output = prove::<C, U, F, F, _>(
+		&mut oracles.clone(),
+		witness_index,
+		&claim,
+		witness,
+		&lasso_batches,
+		gamma,
+		alpha,
+	)
+	.unwrap();
 
 	// VERIFIER
 	let _verified_reduced_claim =
-		verify::<C, _>(&mut oracles.clone(), &claim, &lasso_batch).unwrap();
+		verify::<C, _>(&mut oracles.clone(), &claim, &lasso_batches, gamma, alpha).unwrap();
 }

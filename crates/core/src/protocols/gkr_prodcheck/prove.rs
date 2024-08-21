@@ -39,7 +39,11 @@ where
 	// Iterate over the claims and witnesses
 	let mut reduced_witnesses = Vec::with_capacity(2 * n_claims);
 	let mut reduced_claims = Vec::with_capacity(2 * n_claims);
-	let mut common_products = Vec::with_capacity(n_claims);
+	let mut products = Vec::with_capacity(2 * n_claims);
+
+	let mut t_common_product = F::ONE;
+	let mut u_common_product = F::ONE;
+
 	for (witness, claim) in witness_vec.into_iter().zip(claim_vec) {
 		let ProdcheckWitness { t_poly, u_poly } = witness;
 		let ProdcheckClaim { t_oracle, u_oracle } = claim;
@@ -58,19 +62,18 @@ where
 		// Calculate the products of both T, U polynomials and enforce equal
 		let t_witness = GrandProductWitness::new(t_poly)?;
 		let u_witness = GrandProductWitness::new(u_poly)?;
-		if t_witness.grand_product_evaluation() != u_witness.grand_product_evaluation() {
-			bail!(Error::ProductsDiffer);
-		}
 
 		// Create the two GrandProductClaims and the proof
-		let common_product = t_witness.grand_product_evaluation().into();
+		let t_product = t_witness.grand_product_evaluation().into();
 		let t_gpa_claim = GrandProductClaim {
 			poly: t_oracle,
-			product: common_product,
+			product: t_product,
 		};
+
+		let u_product = u_witness.grand_product_evaluation().into();
 		let u_gpa_claim = GrandProductClaim {
 			poly: u_oracle,
-			product: common_product,
+			product: u_product,
 		};
 
 		// Push the results to the output vectors
@@ -78,10 +81,18 @@ where
 		reduced_witnesses.push(u_witness);
 		reduced_claims.push(t_gpa_claim);
 		reduced_claims.push(u_gpa_claim);
-		common_products.push(common_product);
+		products.push(t_product);
+		products.push(u_product);
+
+		t_common_product *= t_product;
+		u_common_product *= u_product;
 	}
 
-	let batch_proof = ProdcheckBatchProof { common_products };
+	if t_common_product != u_common_product {
+		return Err(Error::ProductsDiffer);
+	}
+
+	let batch_proof = ProdcheckBatchProof { products };
 	Ok(ProdcheckBatchProveOutput {
 		reduced_witnesses,
 		reduced_claims,
