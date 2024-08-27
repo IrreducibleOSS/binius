@@ -4,7 +4,6 @@ use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
-	polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension},
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
 	witness::MultilinearExtensionIndex,
 };
@@ -14,6 +13,7 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, Field, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
+use binius_math::polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 

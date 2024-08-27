@@ -5,11 +5,8 @@ use super::{
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
 use crate::{
+	composition::BivariateProduct,
 	oracle::MultilinearPolyOracle,
-	polynomial::{
-		composition::BivariateProduct, extrapolate_line_scalar, EvaluationDomainFactory,
-		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
-	},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_gpa::gkr_gpa::BatchLayerProof,
@@ -21,6 +18,10 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
+use binius_math::polynomial::{
+	extrapolate_line_scalar, EvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery,
+};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},

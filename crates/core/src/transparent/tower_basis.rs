@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
+use binius_math::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_utils::bail;
 use std::marker::PhantomData;
 
@@ -93,8 +93,8 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::polynomial::multilinear_query::MultilinearQuery;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
+	use binius_math::polynomial::multilinear_query::MultilinearQuery;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 

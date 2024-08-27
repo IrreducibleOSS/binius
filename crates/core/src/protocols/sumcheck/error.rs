@@ -1,9 +1,10 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
 use crate::{
-	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
+	oracle::Error as IOPolynomialError,
 	protocols::abstract_sumcheck::Error as AbstractSumcheckError,
 };
+use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

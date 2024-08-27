@@ -8,15 +8,15 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
 	challenger::new_hasher_challenger,
-	polynomial::{
-		transparent::eq_ind::EqIndPartialEval, IsomorphicEvaluationDomainFactory,
-		MultilinearComposite, MultilinearExtension, MultilinearQuery,
-	},
 	protocols::{
 		gkr_sumcheck::{batch_prove, batch_verify},
 		test_utils::TestProductComposition,
 	},
+	transparent::eq_ind::EqIndPartialEval,
 	witness::MultilinearWitness,
+};
+use binius_math::polynomial::{
+	IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension, MultilinearQuery,
 };
 
 use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};

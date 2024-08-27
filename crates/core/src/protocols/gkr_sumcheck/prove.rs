@@ -8,11 +8,6 @@ use super::{
 	Error,
 };
 use crate::{
-	polynomial::{
-		extrapolate_line, transparent::eq_ind::EqIndPartialEval, CompositionPoly,
-		Error as PolynomialError, EvaluationDomain, EvaluationDomainFactory, MultilinearExtension,
-		MultilinearPoly,
-	},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
@@ -21,8 +16,13 @@ use crate::{
 		},
 		utils::packed_from_fn_with_offset,
 	},
+	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
+use binius_math::polynomial::{
+	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
+	EvaluationDomainFactory, MultilinearExtension, MultilinearPoly,
+};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;

@@ -15,7 +15,6 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::EvaluationDomainFactory,
 	protocols::{
 		abstract_sumcheck::{
 			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
@@ -25,6 +24,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_math::polynomial::EvaluationDomainFactory;
 use std::cmp;
 
 pub type ZerocheckBatchProof<F> = AbstractSumcheckBatchProof<F>;

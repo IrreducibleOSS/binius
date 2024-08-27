@@ -6,9 +6,6 @@ use crate::{
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
-	polynomial::{
-		multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
-	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
@@ -22,6 +19,9 @@ use binius_field::{
 };
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
+};
+use binius_math::polynomial::{
+	multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
 };
 use binius_ntt::NTTOptions;
 use binius_utils::bail;

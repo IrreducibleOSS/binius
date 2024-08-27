@@ -1,14 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::{Field, PackedField};
+use binius_math::polynomial::{
+	evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly,
+};
 use binius_utils::bail;
 
-use crate::{
-	polynomial::{evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly},
-	protocols::abstract_sumcheck::{
-		AbstractSumcheckClaim, AbstractSumcheckReductor, AbstractSumcheckRound,
-		AbstractSumcheckRoundClaim, AbstractSumcheckWitness, Error as AbstractSumcheckError,
-	},
+use crate::protocols::abstract_sumcheck::{
+	AbstractSumcheckClaim, AbstractSumcheckReductor, AbstractSumcheckRound,
+	AbstractSumcheckRoundClaim, AbstractSumcheckWitness, Error as AbstractSumcheckError,
 };
 
 use super::{Error, VerificationError};

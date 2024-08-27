@@ -5,13 +5,14 @@ use super::{
 	Error, GrandProductClaim, VerificationError,
 };
 use crate::{
-	polynomial::{composition::BivariateProduct, extrapolate_line_scalar},
+	composition::BivariateProduct,
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_sumcheck::{self, GkrSumcheckClaim},
 	},
 };
 use binius_field::{Field, TowerField};
+use binius_math::polynomial::extrapolate_line_scalar;
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},

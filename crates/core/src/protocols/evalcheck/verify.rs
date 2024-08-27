@@ -10,10 +10,10 @@ use super::{
 };
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant},
-	polynomial::extrapolate_line_scalar,
 	protocols::sumcheck::SumcheckClaim,
 };
 use binius_field::{util::inner_product_unchecked, TowerField};
+use binius_math::polynomial::extrapolate_line_scalar;
 use binius_utils::bail;
 use getset::{Getters, MutGetters};
 use tracing::instrument;

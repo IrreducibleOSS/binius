@@ -1,0 +1,30 @@
+[package]
+name = "binius_math"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_field = { path = "../field" }
+binius_utils = { path = "../utils" }
+auto_impl.workspace = true
+bytemuck.workspace = true
+getset.workspace = true
+p3-util.workspace = true
+rand.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+assert_matches.workspace = true
+criterion.workspace = true
+itertools.workspace = true
+proptest.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "tensor_prod_eq_ind"
+harness = false

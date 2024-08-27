@@ -5,13 +5,11 @@ use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
-use crate::{
-	polynomial::{CompositionPoly, EvaluationDomainFactory, MultilinearPoly},
-	protocols::abstract_sumcheck::{
-		self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim,
-		ReducedClaim,
-	},
+use crate::protocols::abstract_sumcheck::{
+	self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim,
+	ReducedClaim,
 };
+use binius_math::polynomial::{CompositionPoly, EvaluationDomainFactory, MultilinearPoly};
 
 use super::{
 	gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckReductor, GkrSumcheckWitness},

@@ -7,7 +7,6 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::MultilinearOracleSet,
-	polynomial::EvaluationDomainFactory,
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProver},
 		test_utils::{
@@ -20,6 +19,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, PackedExtension,
 	PackedFieldIndexable, TowerField,
 };
+use binius_math::polynomial::EvaluationDomainFactory;
 
 pub fn prove<F, PW, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,

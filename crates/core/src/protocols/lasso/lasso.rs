@@ -6,11 +6,11 @@ use crate::{
 		BatchId, CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
 		ShiftVariant,
 	},
-	polynomial::{transparent::step_down::StepDown, CompositionPoly, Error as PolynomialError},
 	protocols::{
 		gkr_prodcheck::{ProdcheckClaim, ProdcheckWitness},
 		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
 	},
+	transparent::step_down::StepDown,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -18,6 +18,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	BinaryField16b, BinaryField32b, Field, PackedField, TowerField,
 };
+use binius_math::polynomial::{CompositionPoly, Error as PolynomialError};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use itertools::izip;

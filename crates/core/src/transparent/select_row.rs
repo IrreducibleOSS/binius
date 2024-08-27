@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_math::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube is 1 at
@@ -85,9 +85,11 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 
 #[cfg(test)]
 mod tests {
-	use crate::protocols::test_utils::{hypercube_evals_from_oracle, macros::felts, packed_slice};
 	use binius_field::{
 		BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b, PackedField,
+	};
+	use binius_math::polynomial::test_utils::{
+		hypercube_evals_from_oracle, macros::felts, packed_slice,
 	};
 
 	use super::SelectRow;

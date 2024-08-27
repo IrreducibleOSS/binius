@@ -1,10 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	oracle::{BatchId, CommittedId, CompositePolyOracle, Error as OracleError, OracleId},
-	polynomial::Error as PolynomialError,
-};
+use crate::oracle::{BatchId, CommittedId, CompositePolyOracle, Error as OracleError, OracleId};
 use binius_field::Field;
+use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

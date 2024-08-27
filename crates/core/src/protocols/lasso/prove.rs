@@ -9,7 +9,6 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearOracleSet,
-	polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly},
 	protocols::gkr_prodcheck::ProdcheckWitness,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -18,6 +17,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_math::polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};

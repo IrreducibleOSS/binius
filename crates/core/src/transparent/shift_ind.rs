@@ -1,10 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	oracle::ShiftVariant,
-	polynomial::{Error, MultilinearExtension, MultivariatePoly},
-};
+use crate::oracle::ShiftVariant;
 use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
+use binius_math::polynomial::{Error, MultilinearExtension, MultivariatePoly};
 use binius_utils::bail;
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
@@ -342,11 +340,10 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		polynomial::multilinear_query::MultilinearQuery,
-		protocols::test_utils::decompose_index_to_hypercube_point,
-	};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
+	use binius_math::polynomial::{
+		multilinear_query::MultilinearQuery, test_utils::decompose_index_to_hypercube_point,
+	};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 

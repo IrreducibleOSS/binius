@@ -1,24 +1,22 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	polynomial::{
-		extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-		EvaluationDomainFactory, MultilinearComposite, MultilinearPoly, MultilinearQuery,
-	},
-	protocols::{
-		sumcheck_v2::{
-			prove::{
-				prover_state::{ProverState, SumcheckEvaluator},
-				SumcheckProver,
-			},
-			Error, RoundCoeffs,
+use crate::protocols::{
+	sumcheck_v2::{
+		prove::{
+			prover_state::{ProverState, SumcheckEvaluator},
+			SumcheckProver,
 		},
-		utils::packed_from_fn_with_offset,
+		Error, RoundCoeffs,
 	},
+	utils::packed_from_fn_with_offset,
 };
 use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
+};
+use binius_math::polynomial::{
+	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
+	EvaluationDomainFactory, MultilinearComposite, MultilinearPoly, MultilinearQuery,
 };
 use binius_utils::bail;
 use itertools::izip;

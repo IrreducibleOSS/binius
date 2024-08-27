@@ -17,19 +17,15 @@
 use anyhow::Result;
 use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
+	composition::{empty_mix_composition, index_composition, IndexComposition},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{
-		composition::{empty_mix_composition, index_composition, IndexComposition},
-		transparent::multilinear_extension::MultilinearExtensionTransparent,
-		CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-		MultilinearComposite, MultilinearExtension,
-	},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		zerocheck::{self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim},
 	},
+	transparent::multilinear_extension::MultilinearExtensionTransparent,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -41,6 +37,10 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
+use binius_math::polynomial::{
+	CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	MultilinearComposite, MultilinearExtension,
+};
 use binius_utils::{
 	checked_arithmetics::checked_log_2, examples::get_log_trace_size, rayon::adjust_thread_pool,
 	tracing::init_tracing,

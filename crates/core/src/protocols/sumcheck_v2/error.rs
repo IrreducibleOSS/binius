@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::Error as PolynomialError;
+use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -28,7 +28,7 @@ impl ToTokens for CompositionPolyItem {
 			#[derive(Debug, Clone, Copy)]
 			struct #name;
 
-			impl<P: binius_field::PackedField> binius_core::polynomial::multivariate::CompositionPoly<P> for #name {
+			impl<P: binius_field::PackedField> binius_math::polynomial::multivariate::CompositionPoly<P> for #name {
 				fn n_vars(&self) -> usize {
 					#n_vars
 				}
@@ -37,9 +37,9 @@ impl ToTokens for CompositionPolyItem {
 					#degree
 				}
 
-				fn evaluate(&self, query: &[P]) -> Result<P, binius_core::polynomial::Error> {
+				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::polynomial::Error> {
 					if query.len() != #n_vars {
-						return Err(binius_core::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
+						return Err(binius_math::polynomial::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 					#( let #vars = query[#i]; )*
 					Ok(#poly_packed)

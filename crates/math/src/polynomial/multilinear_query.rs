@@ -1,7 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::util::tensor_prod_eq_ind;
-use crate::polynomial::Error as PolynomialError;
+use crate::polynomial::{tensor_prod_eq_ind, Error as PolynomialError};
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -91,7 +90,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 #[cfg(test)]
 mod tests {
 	use super::MultilinearQuery;
-	use crate::protocols::test_utils::macros::felts;
+	use crate::polynomial::test_utils::macros::felts;
 
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident) => {

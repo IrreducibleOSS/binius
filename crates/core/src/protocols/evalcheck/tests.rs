@@ -1,19 +1,16 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
+	composition::BivariateProduct,
 	oracle::{
 		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant,
 		ShiftVariant,
-	},
-	polynomial::{
-		composition::BivariateProduct, extrapolate_line, transparent::select_row::SelectRow,
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearPoly, MultilinearQuery, MultivariatePoly,
 	},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::SumcheckClaim,
 	},
+	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
 };
 use assert_matches::assert_matches;
@@ -22,6 +19,10 @@ use binius_field::{
 	underlier::WithUnderlier,
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
+};
+use binius_math::polynomial::{
+	extrapolate_line, CompositionPoly, Error as PolynomialError, MultilinearComposite,
+	MultilinearExtension, MultilinearPoly, MultilinearQuery, MultivariatePoly,
 };
 use binius_utils::bail;
 use bytemuck::cast_slice_mut;

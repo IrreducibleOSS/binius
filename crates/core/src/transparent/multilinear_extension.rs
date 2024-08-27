@@ -1,10 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{
+use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_math::polynomial::{
 	Error, MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly,
 	MultilinearQuery, MultivariatePoly,
 };
-use binius_field::{ExtensionField, PackedField, TowerField};
 use std::{fmt::Debug, ops::Deref};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

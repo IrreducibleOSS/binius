@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::polynomial;
+use binius_math::polynomial;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

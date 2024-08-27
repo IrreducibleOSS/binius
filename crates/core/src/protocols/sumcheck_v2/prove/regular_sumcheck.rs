@@ -4,17 +4,15 @@ use super::{
 	batch_prove::SumcheckProver,
 	prover_state::{ProverState, SumcheckEvaluator},
 };
-use crate::{
-	polynomial::{
-		extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-		EvaluationDomainFactory, MultilinearComposite, MultilinearPoly,
-	},
-	protocols::sumcheck_v2::{
-		common::{CompositeSumClaim, RoundCoeffs},
-		error::Error,
-	},
+use crate::protocols::sumcheck_v2::{
+	common::{CompositeSumClaim, RoundCoeffs},
+	error::Error,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_math::polynomial::{
+	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
+	EvaluationDomainFactory, MultilinearComposite, MultilinearPoly,
+};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;

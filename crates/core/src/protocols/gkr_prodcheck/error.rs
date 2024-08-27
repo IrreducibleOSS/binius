@@ -1,9 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	oracle::Error as OracleError, polynomial::Error as PolynomialError,
-	protocols::gkr_gpa::Error as GrandProductError,
-};
+use crate::{oracle::Error as OracleError, protocols::gkr_gpa::Error as GrandProductError};
+use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

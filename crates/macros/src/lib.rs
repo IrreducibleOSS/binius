@@ -3,19 +3,18 @@
 extern crate proc_macro;
 mod composition_poly;
 
+use crate::composition_poly::CompositionPolyItem;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use std::collections::BTreeSet;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
-
-use crate::composition_poly::CompositionPolyItem;
 
 /// Useful for concisely creating structs that implement CompositionPoly.
 /// This currently only supports creating composition polynomials of tower level 0.
 ///
 /// ```
 /// use binius_macros::composition_poly;
-/// use binius_core::polynomial::CompositionPoly;
+/// use binius_math::polynomial::CompositionPoly;
 /// use binius_field::{Field, BinaryField1b as F};
 ///
 /// // Defines named struct without any fields that implements CompositionPoly
@@ -151,10 +150,10 @@ pub fn iter_witness_derive(input: TokenStream) -> TokenStream {
 	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
 	quote! {
 		impl #impl_generics #name #ty_generics #where_clause {
-			pub fn iter_polys(&self) -> impl Iterator<Item = binius_core::polynomial::MultilinearExtension<#p, &[#p]>> {
+			pub fn iter_polys(&self) -> impl Iterator<Item = binius_math::polynomial::MultilinearExtension<#p, &[#p]>> {
 				std::iter::empty()
 					#(.chain(#witnesses))*
-					.map(|values| binius_core::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+					.map(|values| binius_math::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 			}
 		}
 	}.into()

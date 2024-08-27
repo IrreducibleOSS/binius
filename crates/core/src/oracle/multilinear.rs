@@ -1,10 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	oracle::{BatchId, CommittedBatch, CommittedId, CompositePolyOracle, Error},
-	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
-};
+use crate::oracle::{BatchId, CommittedBatch, CommittedId, CompositePolyOracle, Error};
 use binius_field::{Field, TowerField};
+use binius_math::polynomial::{
+	Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
+};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::{fmt::Debug, sync::Arc};
@@ -629,13 +629,13 @@ impl<F: Field> Shifted<F> {
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
 		if block_size > inner.n_vars() {
-			bail!(crate::polynomial::error::Error::InvalidBlockSize {
+			bail!(binius_math::polynomial::error::Error::InvalidBlockSize {
 				n_vars: inner.n_vars(),
 			});
 		}
 
 		if shift_offset == 0 || shift_offset >= 1 << block_size {
-			bail!(crate::polynomial::error::Error::InvalidShiftOffset {
+			bail!(binius_math::polynomial::error::Error::InvalidShiftOffset {
 				max_shift_offset: (1 << block_size) - 1,
 				shift_offset,
 			});

@@ -2,10 +2,10 @@
 
 use std::iter::repeat_with;
 
-use binius_core::polynomial::util::tensor_prod_eq_ind;
 use binius_field::{
 	arch::packed_64::PackedBinaryField32x2b, BinaryField128b, PackedBinaryField128x1b, PackedField,
 };
+use binius_math::polynomial::tensor_prod_eq_ind;
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
 };

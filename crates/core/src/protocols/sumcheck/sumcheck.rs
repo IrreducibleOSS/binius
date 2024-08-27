@@ -3,7 +3,6 @@
 use super::{Error, VerificationError};
 use crate::{
 	oracle::{CompositePolyOracle, OracleId},
-	polynomial::{evaluate_univariate, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
@@ -13,6 +12,7 @@ use crate::{
 	},
 };
 use binius_field::{Field, PackedField};
+use binius_math::polynomial::{evaluate_univariate, MultilinearComposite};
 use binius_utils::bail;
 
 pub type SumcheckRound<F> = AbstractSumcheckRound<F>;

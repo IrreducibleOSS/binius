@@ -1,10 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	linear_code::LinearCode, merkle_tree::VectorCommitScheme, polynomial::extrapolate_line_scalar,
-	protocols::fri::Error, reed_solomon::reed_solomon::ReedSolomonCode,
+	linear_code::LinearCode, merkle_tree::VectorCommitScheme, protocols::fri::Error,
+	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
+use binius_math::polynomial::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;

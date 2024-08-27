@@ -10,6 +10,7 @@ binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
 binius_hash = { path = "../crates/hash" }
 binius_macros = { path = "../crates/macros" }
+binius_math = { path = "../crates/math" }
 binius_utils = { path = "../crates/utils" }
 bytemuck.workspace = true
 bytesize.workspace =  true

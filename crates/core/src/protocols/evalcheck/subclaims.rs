@@ -15,23 +15,23 @@ use super::{
 	evalcheck::{BatchCommittedEvalClaims, CommittedEvalClaim},
 };
 use crate::{
+	composition::BivariateProduct,
 	oracle::{
 		CompositePolyOracle, Error as OracleError, MultilinearOracleSet, OracleId, Packed,
 		ProjectionVariant, ShiftVariant, Shifted,
 	},
-	polynomial::{
-		composition::BivariateProduct,
-		transparent::{
-			eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
-		},
-		MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly,
-	},
 	protocols::sumcheck::SumcheckClaim,
+	transparent::{
+		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
+	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, Field, PackedField,
 	PackedFieldIndexable, TowerField,
+};
+use binius_math::polynomial::{
+	MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly,
 };
 use binius_utils::bail;
 use std::sync::Arc;

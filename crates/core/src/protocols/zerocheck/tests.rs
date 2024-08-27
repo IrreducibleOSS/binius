@@ -1,14 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::{cmp::max, iter::repeat_with};
-
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
-	polynomial::{
-		IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
-		MultilinearQuery,
-	},
 	protocols::{
 		test_utils::TestProductComposition,
 		zerocheck::{
@@ -25,9 +19,13 @@ use binius_field::{
 	TowerField,
 };
 use binius_hash::GroestlHasher;
+use binius_math::polynomial::{
+	IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension, MultilinearQuery,
+};
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
+use std::{cmp::max, iter::repeat_with};
 
 use super::ZerocheckWitnessTypeErased;
 

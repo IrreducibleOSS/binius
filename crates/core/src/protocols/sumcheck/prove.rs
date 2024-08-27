@@ -10,10 +10,6 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::{
-		extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-		EvaluationDomainFactory,
-	},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -24,6 +20,10 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_math::polynomial::{
+	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
+	EvaluationDomainFactory,
+};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;

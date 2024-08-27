@@ -13,7 +13,6 @@ use super::{error::Error, prove::SumcheckProversState, sumcheck::SumcheckReducto
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::EvaluationDomainFactory,
 	protocols::{
 		abstract_sumcheck::{
 			self, finalize_evalcheck_claim, AbstractSumcheckBatchProof,
@@ -23,6 +22,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_math::polynomial::EvaluationDomainFactory;
 
 pub type SumcheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
 

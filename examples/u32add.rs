@@ -5,13 +5,9 @@
 use anyhow::Result;
 use binius_core::{
 	challenger::new_hasher_challenger,
+	composition::{empty_mix_composition, index_composition},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{
-		composition::{empty_mix_composition, index_composition},
-		CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-		MultilinearComposite,
-	},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -27,6 +23,10 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
+use binius_math::polynomial::{
+	CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	MultilinearComposite,
+};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
