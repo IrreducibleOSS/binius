@@ -1,5 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::{oracle::Error as OracleError, witness::Error as WitnessError};
 use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
@@ -29,6 +30,22 @@ pub enum Error {
 		composition_index: usize,
 		vertex_index: usize,
 	},
+	#[error("constraint set is empty")]
+	EmptyConstraintSet,
+	#[error("constraint set containts multilinears of different heights")]
+	ConstraintSetNumberOfVariablesMismatch,
+	#[error("batching sumchecks and zerochecks is not supported yet")]
+	MixedBatchingNotSupported,
+	#[error("no zerocheck challenges provided to oraclized zerocheck")]
+	NoZerocheckChallenges,
+	#[error("zerocheck challenges number does not equal number of variables")]
+	IncorrectZerocheckChallengesLength,
+	#[error("batch proof shape does not conform to the provided indexed claims")]
+	ClaimProofMismatch,
+	#[error("oracle error: {0}")]
+	Oracle(#[from] OracleError),
+	#[error("witness error: {0}")]
+	Witness(#[from] WitnessError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]

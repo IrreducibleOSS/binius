@@ -84,6 +84,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		}
 	}
 
+	pub fn is_valid_oracle_id(&self, id: OracleId) -> bool {
+		id < self.oracles.len()
+	}
+
 	fn add(&mut self, oracle: MultilinearOracleMeta<F>) -> OracleId {
 		let id = self.oracles.len();
 		self.oracles.push(oracle);

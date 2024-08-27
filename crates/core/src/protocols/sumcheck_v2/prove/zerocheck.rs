@@ -103,6 +103,10 @@ where
 		let state = ProverState::new(multilinears, claimed_sums, switchover_fn)?;
 		let n_vars = state.n_vars();
 
+		if challenges.len() != n_vars {
+			return Err(Error::IncorrectZerocheckChallengesLength);
+		}
+
 		let domains = compositions
 			.iter()
 			.map(|composition| {

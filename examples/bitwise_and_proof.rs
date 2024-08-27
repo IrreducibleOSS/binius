@@ -2,13 +2,16 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::new_hasher_challenger,
-	oracle::{BatchId, CommittedId, CompositePolyOracle, MultilinearOracleSet, OracleId},
+	challenger::{new_hasher_challenger, IsomorphicChallenger},
+	oracle::{
+		BatchId, CommittedId, ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, OracleId,
+	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		zerocheck::{self, ZerocheckBatchProof, ZerocheckBatchProveOutput, ZerocheckClaim},
+		sumcheck_v2::{self, Proof as ZerocheckProof},
+		test_utils::conflate_multilinear_evalchecks,
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -20,9 +23,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::polynomial::{
-	EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearComposite,
-};
+use binius_math::polynomial::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -35,12 +36,13 @@ use tracing::instrument;
 
 composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
 fn prove<U, PCS, CH>(
 	pcs: &PCS,
 	oracles: &mut MultilinearOracleSet<BinaryField128b>,
 	trace: &TraceOracle,
-	constraints: &[CompositePolyOracle<BinaryField128b>],
+	constraint_set: ConstraintSet<PackedType<U, BinaryField128bPolyval>>,
 	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
@@ -54,14 +56,12 @@ where
 	CH: CanObserve<BinaryField128b>
 		+ CanObserve<PCS::Commitment>
 		+ CanSample<BinaryField128b>
-		+ CanSampleBits<usize>,
+		+ CanSampleBits<usize>
+		+ Clone,
 {
 	let log_size = trace.log_size;
 	let commit_span = tracing::debug_span!("commit").entered();
 	assert_eq!(pcs.n_vars(), log_size);
-
-	assert_eq!(constraints.len(), 1);
-	let constraint = constraints[0].clone();
 
 	// Round 1
 	let commit_polys = oracles
@@ -73,28 +73,41 @@ where
 
 	drop(commit_span);
 
+	let mut challenger = IsomorphicChallenger::<_, _, BinaryField128bPolyval>::new(challenger);
+
+	let zerocheck_challenges = challenger.sample_vec(log_size);
+
 	// Round 2
 	tracing::debug!("Proving zerocheck");
-	let zerocheck_witness = MultilinearComposite::new(
-		log_size,
-		BitwiseAndConstraint,
-		trace
-			.iter_oracles()
-			.map(|oracle_id| witness.get_multilin_poly(oracle_id))
-			.collect::<Result<_, _>>()?,
-	)?;
-	let zerocheck_claim = ZerocheckClaim { poly: constraint };
 	let switchover_fn = standard_switchover_heuristic(-2);
 
-	let ZerocheckBatchProveOutput {
-		evalcheck_claims,
-		proof: zerocheck_proof,
-	} = zerocheck::batch_prove(
-		[(zerocheck_claim, zerocheck_witness)],
+	let (zerocheck_claim, meta) =
+		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
+
+	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover(
+		constraint_set,
+		&witness,
 		domain_factory.clone(),
 		switchover_fn,
-		&mut challenger,
+		zerocheck_challenges.as_slice(),
 	)?;
+
+	let (sumcheck_output, zerocheck_proof) =
+		sumcheck_v2::prove::batch_prove(vec![prover], &mut challenger)?;
+
+	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
+		&[zerocheck_claim],
+		&zerocheck_challenges,
+		sumcheck_output,
+	)?;
+
+	let evalcheck_multilinear_claims =
+		sumcheck_v2::make_eval_claims(oracles, [meta], zerocheck_output.isomorphic())?;
+
+	let evalcheck_claims = conflate_multilinear_evalchecks(evalcheck_multilinear_claims)?;
+
+	let mut tower_challenger =
+		IsomorphicChallenger::<BinaryField128bPolyval, _, BinaryField128b>::new(challenger);
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -105,7 +118,7 @@ where
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
-		&mut challenger,
+		&mut tower_challenger,
 		domain_factory,
 	)?;
 
@@ -122,7 +135,7 @@ where
 
 	// Prove commitment openings
 	let abc_eval_proof = pcs.prove_evaluation(
-		&mut challenger,
+		&mut tower_challenger,
 		&abc_committed,
 		&commit_polys,
 		&same_query_pcs_claim.eval_point,
@@ -131,7 +144,7 @@ where
 	Ok(Proof {
 		abc_comm,
 		abc_eval_proof,
-		zerocheck_proof,
+		zerocheck_proof: zerocheck_proof.isomorphic(),
 		evalcheck_proof,
 	})
 }
@@ -139,7 +152,7 @@ where
 struct Proof<C, P> {
 	abc_comm: C,
 	abc_eval_proof: P,
-	zerocheck_proof: ZerocheckBatchProof<BinaryField128b>,
+	zerocheck_proof: ZerocheckProof<BinaryField128b>,
 	evalcheck_proof: GreedyEvalcheckProof<BinaryField128b>,
 }
 
@@ -148,7 +161,7 @@ fn verify<PCS, CH>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
-	constraints: &[CompositePolyOracle<BinaryField128b>],
+	constraint_set: ConstraintSet<BinaryField128b>,
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
 ) -> Result<()>
@@ -163,9 +176,6 @@ where
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
-	assert_eq!(constraints.len(), 1);
-	let constraint = constraints[0].clone();
-
 	let Proof {
 		abc_comm,
 		abc_eval_proof,
@@ -177,10 +187,27 @@ where
 	challenger.observe(abc_comm.clone());
 
 	// Run zerocheck protocol
-	let zerocheck_claim = ZerocheckClaim { poly: constraint };
+	let zerocheck_challenges = challenger.sample_vec(log_size);
 
-	let evalcheck_claims =
-		zerocheck::batch_verify([zerocheck_claim], zerocheck_proof, &mut challenger)?;
+	let (zerocheck_claim, meta) =
+		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, trace)?;
+	let zerocheck_claims = [zerocheck_claim];
+
+	let sumcheck_claims = sumcheck_v2::reduce_to_sumchecks(&zerocheck_claims)?;
+
+	let sumcheck_output =
+		sumcheck_v2::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+
+	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
+		&zerocheck_claims,
+		&zerocheck_challenges,
+		sumcheck_output,
+	)?;
+
+	let evalcheck_multilinear_claims =
+		sumcheck_v2::make_eval_claims(trace, [meta], zerocheck_output)?;
+
+	let evalcheck_claims = conflate_multilinear_evalchecks(evalcheck_multilinear_claims)?;
 
 	// Verify evaluation claims
 	let same_query_claims =
@@ -264,31 +291,25 @@ where
 		.map_err(Into::into)
 }
 
-fn make_constraints<F: TowerField>(
-	log_size: usize,
+fn make_constraints<P: PackedField, F: TowerField>(
 	trace_oracle: &MultilinearOracleSet<F>,
-) -> Vec<CompositePolyOracle<F>> {
-	let a_in_oracle = trace_oracle.committed_oracle(CommittedId {
+) -> ConstraintSet<P> {
+	let a_in_oracle = trace_oracle.committed_oracle_id(CommittedId {
 		batch_id: 0,
 		index: 0,
 	});
-	let b_in_oracle = trace_oracle.committed_oracle(CommittedId {
+	let b_in_oracle = trace_oracle.committed_oracle_id(CommittedId {
 		batch_id: 0,
 		index: 1,
 	});
-	let c_out_oracle = trace_oracle.committed_oracle(CommittedId {
+	let c_out_oracle = trace_oracle.committed_oracle_id(CommittedId {
 		batch_id: 0,
 		index: 2,
 	});
 
-	let constraint = CompositePolyOracle::new(
-		log_size,
-		vec![a_in_oracle, b_in_oracle, c_out_oracle],
-		BitwiseAndConstraint,
-	)
-	.unwrap();
-
-	vec![constraint]
+	let mut builder = ConstraintSetBuilder::new();
+	builder.add_zerocheck([a_in_oracle, b_in_oracle, c_out_oracle], BitwiseAndConstraint);
+	builder.build()
 }
 
 fn main() {
@@ -326,7 +347,8 @@ fn main() {
 		pcs.proof_size(3),
 	);
 
-	let constraints = make_constraints(log_size, &oracles);
+	let prover_constraints = make_constraints::<PackedType<U, BinaryField128bPolyval>, _>(&oracles);
+	let verifier_constraints = make_constraints::<BinaryField128b, _>(&oracles);
 
 	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace_oracle).unwrap();
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
@@ -336,12 +358,13 @@ fn main() {
 		&pcs,
 		&mut oracles.clone(),
 		&trace_oracle,
-		&constraints,
+		prover_constraints,
 		witness,
 		challenger.clone(),
 		domain_factory,
 	)
 	.unwrap();
 
-	verify(log_size, &pcs, &mut oracles.clone(), &constraints, proof, challenger.clone()).unwrap();
+	verify(log_size, &pcs, &mut oracles.clone(), verifier_constraints, proof, challenger.clone())
+		.unwrap();
 }

@@ -73,7 +73,7 @@ where
 	pub fn max_individual_degree(&self) -> usize {
 		self.composite_sums
 			.iter()
-			.map(|composite_sum| composite_sum.composition.n_vars())
+			.map(|composite_sum| composite_sum.composition.degree())
 			.max()
 			.unwrap_or(0)
 	}
@@ -90,6 +90,11 @@ where
 pub struct RoundCoeffs<F: Field>(pub Vec<F>);
 
 impl<F: Field> RoundCoeffs<F> {
+	/// Representation in an isomorphic field
+	pub fn isomorphic<FI: Field + From<F>>(self) -> RoundCoeffs<FI> {
+		RoundCoeffs(self.0.into_iter().map(Into::into).collect())
+	}
+
 	/// Truncate one coefficient from the polynomial to a more compact round proof.
 	pub fn truncate(mut self) -> RoundProof<F> {
 		let new_len = self.0.len().saturating_sub(1);
@@ -178,6 +183,11 @@ impl<F: Field> RoundProof<F> {
 	pub fn coeffs(&self) -> &[F] {
 		&self.0 .0
 	}
+
+	/// Representation in an isomorphic field
+	pub fn isomorphic<FI: Field + From<F>>(self) -> RoundProof<FI> {
+		RoundProof(self.0.isomorphic())
+	}
 }
 
 /// A sumcheck batch proof.
@@ -194,8 +204,38 @@ pub struct Proof<F: Field> {
 	pub multilinear_evals: Vec<Vec<F>>,
 }
 
+impl<F: Field> Proof<F> {
+	pub fn isomorphic<FI: Field + From<F>>(self) -> Proof<FI> {
+		Proof {
+			rounds: self
+				.rounds
+				.into_iter()
+				.map(|round| round.isomorphic())
+				.collect(),
+			multilinear_evals: self
+				.multilinear_evals
+				.into_iter()
+				.map(|prover_evals| prover_evals.into_iter().map(Into::into).collect())
+				.collect(),
+		}
+	}
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct BatchSumcheckOutput<F: Field> {
 	pub challenges: Vec<F>,
 	pub multilinear_evals: Vec<Vec<F>>,
+}
+
+impl<F: Field> BatchSumcheckOutput<F> {
+	pub fn isomorphic<FI: Field + From<F>>(self) -> BatchSumcheckOutput<FI> {
+		BatchSumcheckOutput {
+			challenges: self.challenges.into_iter().map(Into::into).collect(),
+			multilinear_evals: self
+				.multilinear_evals
+				.into_iter()
+				.map(|prover_evals| prover_evals.into_iter().map(Into::into).collect())
+				.collect(),
+		}
+	}
 }

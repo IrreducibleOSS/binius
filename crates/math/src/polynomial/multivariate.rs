@@ -4,7 +4,7 @@ use super::{
 	error::Error, multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearPoly,
 };
 use auto_impl::auto_impl;
-use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::bail;
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
 
@@ -74,6 +74,54 @@ impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 
 	fn binary_tower_level(&self) -> usize {
 		0
+	}
+}
+
+/// An adapter that constructs a [`CompositionPoly`] for a field from a [`CompositionPoly`] for a
+/// packing of that field.
+///
+/// This is not intended for use in performance-critical code sections.
+#[derive(Debug, Clone)]
+pub struct CompositionScalarAdapter<P, Composition> {
+	composition: Composition,
+	_marker: PhantomData<P>,
+}
+
+impl<P, Composition> CompositionScalarAdapter<P, Composition>
+where
+	P: PackedField,
+	Composition: CompositionPoly<P>,
+{
+	pub fn new(composition: Composition) -> Self {
+		Self {
+			composition,
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<F, P, Composition> CompositionPoly<F> for CompositionScalarAdapter<P, Composition>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	Composition: CompositionPoly<P>,
+{
+	fn n_vars(&self) -> usize {
+		self.composition.n_vars()
+	}
+
+	fn degree(&self) -> usize {
+		self.composition.degree()
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
+		let packed_query = query.iter().cloned().map(P::set_single).collect::<Vec<_>>();
+		let packed_result = self.composition.evaluate(&packed_query)?;
+		Ok(packed_result.get(0))
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.composition.binary_tower_level()
 	}
 }
 

@@ -2,6 +2,7 @@
 
 use crate::{
 	arithmetic_traits::{InvertOrZero, Square},
+	as_packed_field::PackScalar,
 	underlier::WithUnderlier,
 };
 use rand::RngCore;
@@ -41,7 +42,8 @@ pub trait Field:
 	+ for<'a> MulAssign<&'a Self>
 	+ Square
 	+ InvertOrZero
-	+ WithUnderlier
+	// `Underlier: PackScalar<Self>` is an obvious property but it can't be deduced by the compiler so we are id here.
+	+ WithUnderlier<Underlier: PackScalar<Self>>
 {
 	/// The zero element of the field, the additive identity.
 	const ZERO: Self;

@@ -38,6 +38,10 @@ name = "keccakf"
 path = "keccakf.rs"
 
 [[example]]
+name = "keccakf_v2"
+path = "keccakf_v2.rs"
+
+[[example]]
 name = "lasso"
 path = "lasso.rs"
 

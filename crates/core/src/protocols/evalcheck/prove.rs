@@ -137,7 +137,12 @@ where
 		Ok(EvalcheckProof::Composite { subproofs })
 	}
 
-	fn prove_multilinear(
+	#[instrument(
+		skip_all,
+		name = "EvalcheckProverState::prove_multilinear",
+		level = "debug"
+	)]
+	pub fn prove_multilinear(
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 	) -> Result<EvalcheckProof<F>, Error> {

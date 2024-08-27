@@ -2,7 +2,7 @@
 
 use super::error::{Error, VerificationError};
 use crate::protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{util::eq, Field, PackedField, TowerField};
 use binius_math::polynomial::{CompositionPoly, Error as PolynomialError};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
@@ -87,7 +87,7 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 /// This takes in the output of the reduced sumcheck protocol and returns the output for the
 /// zerocheck instance. This simply strips off the multilinear evaluation of the eq indicator
 /// polynomial and verifies that the value is correct.
-pub fn verify_sumcheck_outputs<F: TowerField, Composition: CompositionPoly<F>>(
+pub fn verify_sumcheck_outputs<F: TowerField, Composition>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	zerocheck_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
@@ -120,8 +120,7 @@ pub fn verify_sumcheck_outputs<F: TowerField, Composition: CompositionPoly<F>>(
 		while last_n_vars < claim.n_vars() {
 			let sumcheck_challenge = sumcheck_challenges[last_n_vars];
 			let zerocheck_challenge = zerocheck_challenges[last_n_vars];
-			eq_ind_eval *= sumcheck_challenge * zerocheck_challenge
-				+ (F::ONE - sumcheck_challenge) * (F::ONE - zerocheck_challenge);
+			eq_ind_eval *= eq(sumcheck_challenge, zerocheck_challenge);
 			last_n_vars += 1;
 		}
 

@@ -36,6 +36,8 @@ pub enum Error {
 	TooManyVariables,
 	#[error("indexed point on hypercube is out of range: index={index}")]
 	HypercubeIndexOutOfRange { index: usize },
+	#[error("indices provided to IndexComposition constructor do not match number of variables")]
+	IndexCompositionIndicesOutOfBounds,
 	#[error("MultilinearQuery is full, cannot update further. Has {max_query_vars} variables")]
 	MultilinearQueryFull { max_query_vars: usize },
 	#[error("mixed polynomial was not provided")]

@@ -8,10 +8,12 @@
 
 mod committed;
 mod composite;
+mod constraint;
 mod error;
 mod multilinear;
 
 pub use committed::*;
 pub use composite::*;
+pub use constraint::*;
 pub use error::Error;
 pub use multilinear::*;
