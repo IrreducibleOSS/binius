@@ -7,17 +7,30 @@ use std::{iter::repeat_with, marker::PhantomData, slice};
 /// A wrapper over the challenger api that [`CanSample`] and [`CanObserve`] over the [`BinaryField`]
 /// `F2` where the internal challenger needs to sample and observe over the BinaryField `F1` which
 /// must be isomorphic to `F2`
-#[derive(Debug, Clone)]
-pub struct IsomorphicChallenger<F1: BinaryField, Challenger: Clone, F2: BinaryField> {
+#[derive(Debug)]
+pub struct IsomorphicChallenger<F1: BinaryField, Challenger, F2: BinaryField> {
 	challenger: Challenger,
 	_marker: PhantomData<(F1, F2)>,
+}
+
+impl<F1, Challenger, F2> Clone for IsomorphicChallenger<F1, Challenger, F2>
+where
+	F1: BinaryField,
+	Challenger: Clone,
+	F2: BinaryField,
+{
+	fn clone(&self) -> Self {
+		Self {
+			challenger: self.challenger.clone(),
+			_marker: PhantomData,
+		}
+	}
 }
 
 impl<F1, Challenger, F2> IsomorphicChallenger<F1, Challenger, F2>
 where
 	F1: BinaryField + From<F2> + Into<F2>,
 	F2: BinaryField,
-	Challenger: Clone,
 {
 	pub fn new(challenger: Challenger) -> Self {
 		Self {
@@ -33,7 +46,7 @@ where
 	F2: BinaryField,
 	PF2: PackedExtension<F2>,
 	PF2::Scalar: ExtensionField<F2>,
-	Challenger: CanObserve<F1> + Clone,
+	Challenger: CanObserve<F1>,
 {
 	fn observe(&mut self, value: PF2) {
 		self.observe_slice(slice::from_ref(&value));
@@ -55,7 +68,7 @@ where
 	F1: BinaryField + From<F2> + Into<F2>,
 	F2: BinaryField,
 	F2E: ExtensionField<F2>,
-	Challenger: CanSample<F1> + Clone,
+	Challenger: CanSample<F1>,
 {
 	fn sample(&mut self) -> F2E {
 		let bases = repeat_with(|| self.challenger.sample().into())
@@ -70,7 +83,7 @@ impl<F1, Challenger, F2> CanSampleBits<usize> for IsomorphicChallenger<F1, Chall
 where
 	F1: BinaryField,
 	F2: BinaryField,
-	Challenger: CanSampleBits<usize> + Clone,
+	Challenger: CanSampleBits<usize>,
 {
 	fn sample_bits(&mut self, bits: usize) -> usize {
 		self.challenger.sample_bits(bits)

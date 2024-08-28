@@ -1,8 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::ops::{AddAssign, Index, IndexMut};
-
 use bytemuck::{allocation::zeroed_vec, Zeroable};
+use std::ops::{AddAssign, Index, IndexMut};
 
 /// 2D array with row-major layout.
 #[derive(Debug)]

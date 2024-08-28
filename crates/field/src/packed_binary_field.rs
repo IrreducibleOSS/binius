@@ -871,9 +871,6 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let packed = P::random(&mut rng);
 		let scalars = P::unpack_scalars(slice::from_ref(&packed));
-
-		eprintln!("scalars: {:?}", scalars);
-		eprintln!("packed {:?}", packed);
 		for (i, val) in scalars.iter().enumerate() {
 			assert_eq!(packed.get(i), *val, "index: {i}");
 		}

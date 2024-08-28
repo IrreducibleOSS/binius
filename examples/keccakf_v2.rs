@@ -509,9 +509,9 @@ where
 	challenger.observe(trace_comm.clone());
 
 	// Zerocheck
-	let mut challenger = IsomorphicChallenger::<_, _, FW>::new(challenger);
+	let mut iso_challenger = IsomorphicChallenger::<_, _, FW>::new(&mut challenger);
 
-	let zerocheck_challenges = challenger.sample_vec(log_size);
+	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
@@ -527,7 +527,7 @@ where
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck_v2::prove::batch_prove(vec![prover], &mut challenger)?;
+		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;
 
 	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
 		&[zerocheck_claim],
@@ -540,8 +540,6 @@ where
 
 	let evalcheck_claims = conflate_multilinear_evalchecks(evalcheck_multilinear_claims)?;
 
-	let mut tower_challenger = IsomorphicChallenger::<FW, _, F>::new(challenger);
-
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
@@ -551,7 +549,7 @@ where
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
-		&mut tower_challenger,
+		&mut challenger,
 		domain_factory,
 	)?;
 
@@ -567,7 +565,7 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
-		&mut tower_challenger,
+		&mut challenger,
 		&trace_committed,
 		&trace_commit_polys,
 		&same_query_claim.eval_point,

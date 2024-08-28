@@ -35,7 +35,7 @@ where
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		CH: CanObserve<FE> + CanSample<FE> + CanSampleBits<usize>;
+		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>;
 
 	/// Verify an evaluation proof at a *random* challenge point.
 	fn verify_evaluation<CH>(
@@ -47,7 +47,7 @@ where
 		values: &[FE],
 	) -> Result<(), Self::Error>
 	where
-		CH: CanObserve<FE> + CanSample<FE> + CanSampleBits<usize>;
+		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>;
 
 	/// Return the byte-size of a proof.
 	fn proof_size(&self, n_polys: usize) -> usize;

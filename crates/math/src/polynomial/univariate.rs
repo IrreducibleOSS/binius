@@ -3,6 +3,7 @@
 
 use super::error::Error;
 use crate::linalg::Matrix;
+use auto_impl::auto_impl;
 use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension};
 use binius_utils::bail;
 use std::{
@@ -22,6 +23,7 @@ pub struct EvaluationDomain<F: Field> {
 }
 
 /// Wraps type information to enable instantiating EvaluationDomains.
+#[auto_impl(&)]
 pub trait EvaluationDomainFactory<DomainField: Field>: Clone {
 	/// Instantiates an EvaluationDomain with the given number of points.
 	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error>;

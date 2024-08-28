@@ -73,9 +73,11 @@ where
 
 	drop(commit_span);
 
-	let mut challenger = IsomorphicChallenger::<_, _, BinaryField128bPolyval>::new(challenger);
+	// Challenger over the isomorphic POLYVAL field
+	let mut iso_challenger =
+		IsomorphicChallenger::<_, _, BinaryField128bPolyval>::new(&mut challenger);
 
-	let zerocheck_challenges = challenger.sample_vec(log_size);
+	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
 
 	// Round 2
 	tracing::debug!("Proving zerocheck");
@@ -93,7 +95,7 @@ where
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck_v2::prove::batch_prove(vec![prover], &mut challenger)?;
+		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;
 
 	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
 		&[zerocheck_claim],
@@ -106,9 +108,6 @@ where
 
 	let evalcheck_claims = conflate_multilinear_evalchecks(evalcheck_multilinear_claims)?;
 
-	let mut tower_challenger =
-		IsomorphicChallenger::<BinaryField128bPolyval, _, BinaryField128b>::new(challenger);
-
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
@@ -118,7 +117,7 @@ where
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
-		&mut tower_challenger,
+		&mut challenger,
 		domain_factory,
 	)?;
 
@@ -135,7 +134,7 @@ where
 
 	// Prove commitment openings
 	let abc_eval_proof = pcs.prove_evaluation(
-		&mut tower_challenger,
+		&mut challenger,
 		&abc_committed,
 		&commit_polys,
 		&same_query_pcs_claim.eval_point,

@@ -1,9 +1,9 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Ulvetanna Inc.
 
-mod error;
 mod pcs;
+pub mod ring_switch;
 pub mod tensor_pcs;
 
-pub use error::*;
 pub use pcs::*;
+pub use ring_switch::RingSwitchPCS;
 pub use tensor_pcs::{BasicTensorPCS, BlockTensorPCS, TensorPCS};

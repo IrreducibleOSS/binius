@@ -1,5 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+//! Utility modules used in Binius.
+
 pub mod array_2d;
 pub mod checked_arithmetics;
 pub mod env;
