@@ -14,20 +14,19 @@ use crate::{
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
-			AbstractSumcheckEvaluator, AbstractSumcheckProversState, AbstractSumcheckReductor,
-			AbstractSumcheckWitness, CommonProversState, ReducedClaim,
+			AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
+			CommonProversState, ReducedClaim,
 		},
 		utils::packed_from_fn_with_offset,
+		zerocheck::evaluator::{
+			ZerocheckFirstRoundEvaluator, ZerocheckLaterRoundEvaluator, ZerocheckSimpleEvaluator,
+		},
 	},
 	transparent::eq_ind::EqIndPartialEval,
 };
-use binius_field::{
-	packed::{get_packed_slice, mul_by_subfield_scalar},
-	ExtensionField, Field, PackedExtension, PackedField,
-};
+use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
 use binius_math::polynomial::{
-	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-	EvaluationDomainFactory, MultilinearExtension, MultilinearQuery,
+	EvaluationDomain, EvaluationDomainFactory, MultilinearExtension, MultilinearQuery,
 };
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -86,9 +85,7 @@ where
 	evaluation_domain_factory: EDF,
 	zerocheck_challenges: &'a [F],
 	round_eq_ind: MultilinearExtension<PW>,
-	_f_marker: PhantomData<F>,
-	_domain_field_marker: PhantomData<DomainField>,
-	_w_marker: PhantomData<W>,
+	_marker: PhantomData<(F, W, DomainField)>,
 }
 
 impl<'a, F, PW, DomainField, EDF, W> ZerocheckProversState<'a, F, PW, DomainField, EDF, W>
@@ -123,9 +120,7 @@ where
 			evaluation_domain_factory,
 			zerocheck_challenges,
 			round_eq_ind,
-			_f_marker: PhantomData,
-			_domain_field_marker: PhantomData,
-			_w_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 
@@ -273,6 +268,16 @@ where
 
 	zerocheck_challenges: &'a [F],
 
+	smaller_domain_optimization: Option<SmallerDomainOptimization<PW, DomainField>>,
+}
+
+#[derive(Debug)]
+struct SmallerDomainOptimization<PW, DomainField>
+where
+	PW: PackedField,
+	PW::Scalar: ExtensionField<DomainField>,
+	DomainField: Field,
+{
 	// Junk (scratch space) at the start of each round
 	// After prover computes ith round polynomial, represents evaluations of
 	// * $Q_i(r_0, \ldots, r_{i-1}, X, x_{i+1}, \ldots, x_{n-1})$
@@ -290,6 +295,33 @@ where
 	smaller_denom_inv: Vec<DomainField>,
 	// Subdomain of domain, but without 0 and 1 (can be used for degree d-2 polynomials)
 	smaller_domain: EvaluationDomain<DomainField>,
+}
+
+impl<PW, DomainField> SmallerDomainOptimization<PW, DomainField>
+where
+	PW: PackedField,
+	PW::Scalar: ExtensionField<DomainField>,
+	DomainField: Field,
+{
+	fn new(
+		n_vars: usize,
+		degree: usize,
+		domain: &EvaluationDomain<DomainField>,
+	) -> Result<Self, Error> {
+		let round_q = zeroed_vec((1 << (n_vars - 1)) * (degree - 1) / PW::WIDTH);
+		let smaller_domain_points = domain.points()[2..].to_vec();
+		let smaller_denom_inv = domain.points()[2..]
+			.iter()
+			.map(|&x| (x * (x - DomainField::ONE)).invert().unwrap())
+			.collect::<Vec<_>>();
+		let smaller_domain = EvaluationDomain::from_points(smaller_domain_points)?;
+		Ok(Self {
+			round_q,
+			round_q_bar: None,
+			smaller_denom_inv,
+			smaller_domain,
+		})
+	}
 }
 
 impl<'a, F, PW, DomainField, W> ZerocheckProver<'a, F, PW, DomainField, W>
@@ -333,13 +365,7 @@ where
 			current_round_sum: F::ZERO,
 		};
 
-		let round_q = zeroed_vec((1 << (n_vars - 1)) * (degree - 1) / PW::WIDTH);
-		let smaller_domain_points = domain.points()[2..].to_vec();
-		let smaller_denom_inv = domain.points()[2..]
-			.iter()
-			.map(|&x| (x * (x - DomainField::ONE)).invert().unwrap())
-			.collect::<Vec<_>>();
-		let smaller_domain = EvaluationDomain::from_points(smaller_domain_points)?;
+		let smaller_domain_optimization = SmallerDomainOptimization::new(n_vars, degree, &domain)?;
 
 		let zerocheck_prover = ZerocheckProver {
 			claim,
@@ -350,10 +376,7 @@ where
 			round: 0,
 			last_round_proof: None,
 			zerocheck_challenges,
-			round_q,
-			round_q_bar: None,
-			smaller_denom_inv,
-			smaller_domain,
+			smaller_domain_optimization: Some(smaller_domain_optimization),
 		};
 
 		Ok(zerocheck_prover)
@@ -378,17 +401,21 @@ where
 
 	// Updates auxiliary state that we store corresponding to Section 4 Optimizations in [Gruen24].
 	// [Gruen24]: https://eprint.iacr.org/2024/108
-	fn update_round_q(&mut self, prev_rd_challenge: PW::Scalar) -> Result<(), Error> {
+	fn update_round_q(
+		&mut self,
+		prev_rd_challenge: PW::Scalar,
+		p: &mut SmallerDomainOptimization<PW, DomainField>,
+	) -> Result<(), Error> {
 		let rd_vars = self.claim.n_vars() - self.round;
-		let new_q_len = max(self.round_q.len() / 2, self.smaller_domain.size());
+		let new_q_len = max(p.round_q.len() / 2, p.smaller_domain.size());
 
 		// Let d be the degree of the polynomial in the zerocheck claim.
-		let specialized_q_values = if self.smaller_domain.size() == 0 {
+		let specialized_q_values = if p.smaller_domain.size() == 0 {
 			// Special handling for the d = 1 (multilinear) case
 			zeroed_vec((1usize << rd_vars).div_ceil(PW::WIDTH))
-		} else if self.smaller_domain.size() == 1 {
+		} else if p.smaller_domain.size() == 1 {
 			// We do not need to interpolate in this special d = 2 case
-			std::mem::replace(&mut self.round_q, zeroed_vec(new_q_len))
+			std::mem::replace(&mut p.round_q, zeroed_vec(new_q_len))
 		} else {
 			// This is for the d >= 3 case
 			//
@@ -397,9 +424,9 @@ where
 			// Q_i(r_0, ..., r_{i-1}, X, x_{i+1}, ..., x_{n-1}) at X = 2, ..., d
 			// * Q_i is degree d-2 in X, so we can extrapolate each chunk into the evaluation
 			// of Q_i(r_0, ..., r_{i-1}, X, x_{i+1}, ..., x_{n-1}) at X = r_i
-			self.round_q
-				.chunks(self.smaller_domain.size())
-				.map(|chunk| self.smaller_domain.extrapolate(chunk, prev_rd_challenge))
+			p.round_q
+				.chunks(p.smaller_domain.size())
+				.map(|chunk| p.smaller_domain.extrapolate(chunk, prev_rd_challenge))
 				.collect::<Result<Vec<_>, _>>()?
 		};
 
@@ -414,7 +441,7 @@ where
 		let mut new_q_bar_values = specialized_q_values;
 		new_q_bar_values.par_iter_mut().for_each(|e| *e *= coeff);
 
-		if let Some(prev_q_bar) = self.round_q_bar.as_mut() {
+		if let Some(prev_q_bar) = p.round_q_bar.as_mut() {
 			let query = MultilinearQuery::<PW::Scalar>::with_full_query(&[prev_rd_challenge])?;
 			let specialized_prev_q_bar = prev_q_bar.evaluate_partial_low(&query)?;
 			let specialized_prev_q_bar_evals = specialized_prev_q_bar.evals();
@@ -435,11 +462,11 @@ where
 					}
 				});
 		}
-		self.round_q_bar = Some(MultilinearExtension::from_values(new_q_bar_values)?);
+		p.round_q_bar = Some(MultilinearExtension::from_values(new_q_bar_values)?);
 
 		// Step 3:
 		// Truncate round_q
-		self.round_q.truncate(new_q_len);
+		p.round_q.truncate(new_q_len);
 
 		Ok(())
 	}
@@ -456,37 +483,60 @@ where
 			return Ok(vec![PW::Scalar::default()]);
 		}
 
-		let vertex_state_iterator = self.round_q.par_chunks_exact_mut(degree - 1);
+		let round_coeffs = if let Some(p) = self.smaller_domain_optimization.as_mut() {
+			let vertex_state_iterator = p.round_q.par_chunks_exact_mut(degree - 1);
 
-		let round_coeffs = if self.round == 0 {
-			let evaluator = ZerocheckFirstRoundEvaluator {
-				degree,
-				eq_ind: provers_state.round_eq_ind.to_ref(),
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: self.witness.composition(),
-				denom_inv: &self.smaller_denom_inv,
-			};
-			provers_state.common.calculate_round_coeffs(
-				self.oracle_ids.as_slice(),
-				evaluator,
-				self.round_claim.current_round_sum.into(),
-				vertex_state_iterator,
-			)
+			if self.round == 0 {
+				let evaluator = ZerocheckFirstRoundEvaluator {
+					degree,
+					eq_ind: provers_state.round_eq_ind.to_ref(),
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: self.witness.composition(),
+					denom_inv: &p.smaller_denom_inv,
+				};
+				provers_state.common.calculate_round_coeffs(
+					self.oracle_ids.as_slice(),
+					evaluator,
+					self.round_claim.current_round_sum.into(),
+					vertex_state_iterator,
+				)
+			} else {
+				let evaluator = ZerocheckLaterRoundEvaluator {
+					degree,
+					eq_ind: provers_state.round_eq_ind.to_ref(),
+					round_zerocheck_challenge: self.zerocheck_challenges[self.round - 1].into(),
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: self.witness.composition(),
+					denom_inv: &p.smaller_denom_inv,
+					round_q_bar: p
+						.round_q_bar
+						.as_ref()
+						.expect("round_q_bar is Some after round 0")
+						.to_ref(),
+				};
+				provers_state.common.calculate_round_coeffs(
+					self.oracle_ids.as_slice(),
+					evaluator,
+					self.round_claim.current_round_sum.into(),
+					vertex_state_iterator,
+				)
+			}
 		} else {
-			let evaluator = ZerocheckLaterRoundEvaluator {
+			assert!(self.round < self.claim.n_vars());
+			let rd_vars = self.claim.n_vars() - self.round;
+			let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
+			let evaluator = ZerocheckSimpleEvaluator {
 				degree,
 				eq_ind: provers_state.round_eq_ind.to_ref(),
-				round_zerocheck_challenge: self.zerocheck_challenges[self.round - 1].into(),
 				evaluation_domain: &self.domain,
 				domain_points: self.domain.points(),
 				composition: self.witness.composition(),
-				denom_inv: &self.smaller_denom_inv,
-				round_q_bar: self
-					.round_q_bar
-					.as_ref()
-					.expect("round_q_bar is Some after round 0")
-					.to_ref(),
+				round_zerocheck_challenge: self
+					.zerocheck_challenges
+					.get(self.round - 1)
+					.map(|x| PW::Scalar::from(*x)),
 			};
 			provers_state.common.calculate_round_coeffs(
 				self.oracle_ids.as_slice(),
@@ -520,7 +570,10 @@ where
 			let isomorphic_prev_rd_challenge = PW::Scalar::from(prev_rd_challenge);
 
 			// update round_q and round_q_bar
-			self.update_round_q(isomorphic_prev_rd_challenge)?;
+			if let Some(mut p) = self.smaller_domain_optimization.take() {
+				self.update_round_q(isomorphic_prev_rd_challenge, &mut p)?;
+				self.smaller_domain_optimization = Some(p);
+			}
 
 			// Reduce Evalcheck claim
 			self.reduce_claim(prev_rd_challenge)?;
@@ -566,223 +619,5 @@ where
 		self.round_claim = new_round_claim;
 
 		Ok(())
-	}
-}
-
-/// Evaluator for the first round of the zerocheck protocol.
-///
-/// In the first round, we do not need to evaluate at the point F::ONE, because the value is known
-/// to be zero. This version of the zerocheck protocol uses the optimizations from section 3 of
-/// [Gruen24].
-///
-/// [Gruen24]: https://eprint.iacr.org/2024/108
-#[derive(Debug)]
-pub struct ZerocheckFirstRoundEvaluator<'a, P, FS, C>
-where
-	P: PackedField<Scalar: ExtensionField<FS>>,
-	FS: Field,
-	C: CompositionPoly<P>,
-{
-	pub composition: &'a C,
-	pub domain_points: &'a [FS],
-	pub evaluation_domain: &'a EvaluationDomain<FS>,
-	pub degree: usize,
-	pub eq_ind: MultilinearExtension<P, &'a [P]>,
-	pub denom_inv: &'a [FS],
-}
-
-impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckFirstRoundEvaluator<'a, P, FS, C>
-where
-	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
-	FS: Field,
-	C: CompositionPoly<P>,
-{
-	type VertexState = &'a mut [P];
-	fn n_round_evals(&self) -> usize {
-		// In the first round of zerocheck we can uniquely determine the degree d
-		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
-		// because we know r(0) = r(1) = 0
-		self.degree - 1
-	}
-
-	fn process_vertex(
-		&self,
-		i: usize,
-		round_q_chunk: Self::VertexState,
-		evals_0: &[P],
-		evals_1: &[P],
-		evals_z: &mut [P],
-		round_evals: &mut [P],
-	) {
-		debug_assert!(i * P::WIDTH < self.eq_ind.size());
-
-		let eq_ind_factor = packed_from_fn_with_offset::<P>(i, |j| {
-			self.eq_ind
-				.evaluate_on_hypercube(j)
-				.unwrap_or(P::Scalar::ZERO)
-		});
-
-		// The rest require interpolation.
-		for d in 2..self.domain_points.len() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j =
-						extrapolate_line::<P, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
-				});
-
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-
-			round_evals[d - 2] += composite_value * eq_ind_factor;
-			round_q_chunk[d - 2] = mul_by_subfield_scalar(composite_value, self.denom_inv[d - 2]);
-		}
-	}
-
-	fn round_evals_to_coeffs(
-		&self,
-		current_round_sum: P::Scalar,
-		mut round_evals: Vec<P::Scalar>,
-	) -> Result<Vec<P::Scalar>, PolynomialError> {
-		debug_assert_eq!(current_round_sum, P::Scalar::ZERO);
-		// We are given $r(2), \ldots, r(d)$.
-		// From context, we infer that $r(0) = r(1) = 0$.
-		round_evals.insert(0, P::Scalar::ZERO);
-		round_evals.insert(0, P::Scalar::ZERO);
-
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
-		// We can omit the constant term safely
-		let coeffs = coeffs[1..].to_vec();
-		Ok(coeffs)
-	}
-}
-
-/// Evaluator for the later rounds of the zerocheck protocol.
-///
-/// This version of the zerocheck protocol uses the optimizations from section 3 and 4 of [Gruen24].
-///
-/// [Gruen24]: https://eprint.iacr.org/2024/108
-#[derive(Debug)]
-pub struct ZerocheckLaterRoundEvaluator<'a, P, FS, C>
-where
-	P: PackedField<Scalar: ExtensionField<FS>>,
-	FS: Field,
-	C: CompositionPoly<P>,
-{
-	pub composition: &'a C,
-	pub domain_points: &'a [FS],
-	pub evaluation_domain: &'a EvaluationDomain<FS>,
-	pub degree: usize,
-	pub eq_ind: MultilinearExtension<P, &'a [P]>,
-	pub round_zerocheck_challenge: P::Scalar,
-	pub denom_inv: &'a [FS],
-	pub round_q_bar: MultilinearExtension<P, &'a [P]>,
-}
-
-impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>
-where
-	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
-	FS: Field,
-	C: CompositionPoly<P>,
-{
-	type VertexState = &'a mut [P];
-	fn n_round_evals(&self) -> usize {
-		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
-		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
-		// round's claimed sum
-		self.degree
-	}
-
-	fn process_vertex(
-		&self,
-		i: usize,
-		round_q_chunk: Self::VertexState,
-		evals_0: &[P],
-		evals_1: &[P],
-		evals_z: &mut [P],
-		round_evals: &mut [P],
-	) {
-		debug_assert!(i * P::WIDTH < self.eq_ind.size());
-
-		let q_bar_zero = packed_from_fn_with_offset::<P>(i, |j| {
-			self.round_q_bar
-				.evaluate_on_hypercube(j << 1)
-				.unwrap_or(P::Scalar::ZERO)
-		});
-		let q_bar_one = packed_from_fn_with_offset::<P>(i, |j| {
-			self.round_q_bar
-				.evaluate_on_hypercube((j << 1) + 1)
-				.unwrap_or(P::Scalar::ZERO)
-		});
-
-		let eq_ind_factor = packed_from_fn_with_offset::<P>(i, |j| {
-			self.eq_ind
-				.evaluate_on_hypercube(j)
-				.unwrap_or(P::Scalar::ZERO)
-		});
-
-		// We can replace constraint polynomial evaluations at C(r, 1, x) with Q_i_bar(r, 1, x)
-		// See section 4 of [https://eprint.iacr.org/2024/108] for details
-		round_evals[0] += q_bar_one * eq_ind_factor;
-
-		// The rest require interpolation.
-		for d in 2..self.domain_points.len() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j =
-						extrapolate_line::<P, FS>(evals_0_j, evals_1_j, self.domain_points[d]);
-				});
-
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-
-			round_evals[d - 1] += composite_value * eq_ind_factor;
-
-			// We compute Q_i(r, domain[d], x) values with minimal additional work (linear extrapolation, multiplication, and inversion)
-			// and cache these values for later use. These values will help us update Q_i_bar into Q_{i+1}_bar, which will in turn
-			// help us avoid next round's constraint polynomial evaluations at X = 1.
-			// For more details, see section 4 of [https://eprint.iacr.org/2024/108]
-			let specialized_qbar_eval =
-				extrapolate_line::<P, FS>(q_bar_zero, q_bar_one, self.domain_points[d]);
-			round_q_chunk[d - 2] = mul_by_subfield_scalar(
-				composite_value - specialized_qbar_eval,
-				self.denom_inv[d - 2],
-			);
-		}
-	}
-
-	fn round_evals_to_coeffs(
-		&self,
-		current_round_sum: P::Scalar,
-		mut round_evals: Vec<P::Scalar>,
-	) -> Result<Vec<P::Scalar>, PolynomialError> {
-		// This is a subsequent round of a sumcheck that came from zerocheck, given $r(1), \ldots, r(d)$
-		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith zerocheck challenge
-		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
-		// which allows us to compute the value of $r(0)$
-
-		let alpha = self.round_zerocheck_challenge;
-		let alpha_bar = P::Scalar::ONE - alpha;
-		let one_evaluation = round_evals[0];
-		let zero_evaluation_numerator = current_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap();
-		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
-
-		round_evals.insert(0, zero_evaluation);
-
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
-		// We can omit the constant term safely
-		let coeffs = coeffs[1..].to_vec();
-
-		Ok(coeffs)
 	}
 }

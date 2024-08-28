@@ -6,6 +6,7 @@
 
 mod batch;
 mod error;
+mod evaluator;
 mod prove;
 #[cfg(test)]
 mod tests;

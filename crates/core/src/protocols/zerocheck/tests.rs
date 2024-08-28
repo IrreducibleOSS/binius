@@ -1,5 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::ZerocheckWitnessTypeErased;
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
@@ -26,8 +27,6 @@ use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
 use std::{cmp::max, iter::repeat_with};
-
-use super::ZerocheckWitnessTypeErased;
 
 fn generate_poly_helper<P>(
 	rng: &mut StdRng,
