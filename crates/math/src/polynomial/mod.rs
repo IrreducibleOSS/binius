@@ -1,5 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
+pub mod arith_circuit;
 pub mod error;
 pub mod multilinear;
 pub mod multilinear_extension;
@@ -12,6 +13,7 @@ pub mod test_utils;
 pub mod univariate;
 pub mod util;
 
+pub use arith_circuit::*;
 pub use error::*;
 pub use multilinear::*;
 pub use multilinear_extension::*;
