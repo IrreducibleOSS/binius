@@ -11,7 +11,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedFieldIndexable,
 };
-use binius_math::polynomial::{EvaluationDomainFactory, MultilinearPoly};
+use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use itertools::Itertools;
 

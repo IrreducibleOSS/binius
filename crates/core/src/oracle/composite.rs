@@ -1,8 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::oracle::{Error, MultilinearPolyOracle, OracleId};
+use crate::{
+	oracle::{Error, MultilinearPolyOracle, OracleId},
+	polynomial::CompositionPoly,
+};
 use binius_field::Field;
-use binius_math::polynomial::CompositionPoly;
 use binius_utils::bail;
 use std::sync::Arc;
 
@@ -73,9 +75,8 @@ impl<F: Field> CompositePolyOracle<F> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::oracle::MultilinearOracleSet;
+	use crate::{oracle::MultilinearOracleSet, polynomial::Error as PolynomialError};
 	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
-	use binius_math::polynomial::Error as PolynomialError;
 
 	#[derive(Clone, Debug)]
 	struct TestByteComposition;

@@ -1,7 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::protocols::abstract_sumcheck::Error as AbstractSumcheckError;
-use binius_math::polynomial::Error as PolynomialError;
+use crate::{
+	polynomial::Error as PolynomialError,
+	protocols::abstract_sumcheck::Error as AbstractSumcheckError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -27,6 +29,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("abstract sumcheck failure: {0}")]
 	AbstractSumcheck(#[from] AbstractSumcheckError),
+	#[error("{0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

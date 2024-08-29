@@ -7,6 +7,7 @@ use super::{
 use crate::{
 	composition::BivariateProduct,
 	oracle::MultilinearPolyOracle,
+	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_gpa::gkr_gpa::BatchLayerProof,
@@ -18,10 +19,7 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_math::polynomial::{
-	extrapolate_line_scalar, EvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
-	MultilinearPoly, MultilinearQuery,
-};
+use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},

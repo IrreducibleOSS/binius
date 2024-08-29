@@ -3,6 +3,7 @@
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
+	polynomial::MultilinearExtension,
 	protocols::{
 		gkr_gpa::{self},
 		gkr_prodcheck::{self, ProdcheckClaim, ProdcheckWitness},
@@ -10,7 +11,7 @@ use binius_core::{
 };
 use binius_field::{BinaryField128b, BinaryField128bPolyval, Field, TowerField};
 use binius_hash::GroestlHasher;
-use binius_math::polynomial::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;

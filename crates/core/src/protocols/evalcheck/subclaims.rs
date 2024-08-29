@@ -20,6 +20,7 @@ use crate::{
 		CompositePolyOracle, Error as OracleError, MultilinearOracleSet, OracleId, Packed,
 		ProjectionVariant, ShiftVariant, Shifted,
 	},
+	polynomial::{MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly},
 	protocols::sumcheck::SumcheckClaim,
 	transparent::{
 		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
@@ -29,9 +30,6 @@ use crate::{
 use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, Field, PackedField,
 	PackedFieldIndexable, TowerField,
-};
-use binius_math::polynomial::{
-	MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly,
 };
 use binius_utils::bail;
 use std::sync::Arc;

@@ -12,11 +12,13 @@ pub mod linear_code;
 pub mod merkle_tree;
 pub mod oracle;
 pub mod poly_commit;
+pub mod polynomial;
 pub mod protocols;
 #[allow(clippy::module_inception)]
 pub mod reed_solomon;
 pub mod tensor_algebra;
 pub mod transparent;
+pub mod util;
 pub mod witness;
 
 pub use core::iter::Step;

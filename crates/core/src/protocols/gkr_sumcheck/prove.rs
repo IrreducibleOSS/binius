@@ -8,6 +8,9 @@ use super::{
 	Error,
 };
 use crate::{
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, MultilinearExtension, MultilinearPoly,
+	},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
@@ -19,10 +22,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_math::polynomial::{
-	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-	EvaluationDomainFactory, MultilinearExtension, MultilinearPoly,
-};
+use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
@@ -133,7 +133,10 @@ where
 			.into_iter()
 			.collect::<Vec<_>>();
 		self.common.extend(multilinears.clone())?;
-		let domain = self.evaluation_domain_factory.create(claim.degree + 1)?;
+		let domain = self
+			.evaluation_domain_factory
+			.create(claim.degree + 1)
+			.map_err(Error::MathError)?;
 		let multilinear_ids = multilinears
 			.into_iter()
 			.map(|(id, _)| id)

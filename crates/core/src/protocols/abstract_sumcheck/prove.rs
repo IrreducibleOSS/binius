@@ -1,10 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::Error;
-use binius_field::PackedField;
-use binius_math::polynomial::{
+use crate::polynomial::{
 	Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
 };
+use binius_field::PackedField;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, hash::Hash, ops::Range};

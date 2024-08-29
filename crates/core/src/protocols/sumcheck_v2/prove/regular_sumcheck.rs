@@ -4,15 +4,17 @@ use super::{
 	batch_prove::SumcheckProver,
 	prover_state::{ProverState, SumcheckEvaluator},
 };
-use crate::protocols::sumcheck_v2::{
-	common::{CompositeSumClaim, RoundCoeffs},
-	error::Error,
+use crate::{
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
+	},
+	protocols::sumcheck_v2::{
+		common::{CompositeSumClaim, RoundCoeffs},
+		error::Error,
+	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use binius_math::polynomial::{
-	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-	EvaluationDomainFactory, MultilinearComposite, MultilinearPoly,
-};
+use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
@@ -108,7 +110,8 @@ where
 				let degree = composite_claim.composition.degree();
 				evaluation_domain_factory.create(degree + 1)
 			})
-			.collect::<Result<_, _>>()?;
+			.collect::<Result<_, _>>()
+			.map_err(Error::MathError)?;
 
 		let compositions = composite_claims
 			.into_iter()

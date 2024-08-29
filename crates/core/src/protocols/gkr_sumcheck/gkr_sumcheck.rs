@@ -1,9 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly};
 use binius_field::{Field, PackedField};
-use binius_math::polynomial::{
-	evaluate_univariate, CompositionPoly, MultilinearComposite, MultilinearPoly,
-};
+use binius_math::evaluate_univariate;
 use binius_utils::bail;
 
 use crate::protocols::abstract_sumcheck::{

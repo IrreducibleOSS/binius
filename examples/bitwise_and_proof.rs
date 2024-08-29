@@ -23,7 +23,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::polynomial::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };

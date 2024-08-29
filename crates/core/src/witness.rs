@@ -1,14 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::oracle::OracleId;
+use crate::{
+	oracle::OracleId,
+	polynomial::{
+		Error as PolynomialError, MultilinearExtension, MultilinearExtensionBorrowed,
+		MultilinearPoly,
+	},
+	util::PackingDeref,
+};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, Field, TowerField,
-};
-use binius_math::polynomial::{
-	util::PackingDeref, Error as PolynomialError, MultilinearExtension,
-	MultilinearExtensionBorrowed, MultilinearPoly,
 };
 use binius_utils::bail;
 use std::{fmt::Debug, sync::Arc};

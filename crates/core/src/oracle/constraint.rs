@@ -1,9 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::OracleId;
-use crate::composition::index_composition;
+use crate::{composition::index_composition, polynomial::CompositionPoly};
 use binius_field::{Field, PackedField};
-use binius_math::polynomial::CompositionPoly;
 use std::sync::Arc;
 
 /// Composition trait object that can be used to create lists of compositions of differing

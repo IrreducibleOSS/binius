@@ -13,7 +13,7 @@ pub enum Error {
 	#[error("invalid polynomial index in committed batch")]
 	InvalidPolynomialIndex,
 	#[error("polynomial error")]
-	Polynomial(#[from] binius_math::polynomial::Error),
+	Polynomial(#[from] crate::polynomial::Error),
 	#[error("number of variables in merged or interleaved multilinear do not match")]
 	NumberOfVariablesMismatch,
 	#[error(

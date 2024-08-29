@@ -1,9 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
+use crate::{
+	polynomial::{CompositionPoly, Error as PolynomialError},
+	protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim},
+};
 use binius_field::{util::eq, Field, PackedField, TowerField};
-use binius_math::polynomial::{CompositionPoly, Error as PolynomialError};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 use std::marker::PhantomData;
@@ -176,6 +178,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample},
+		polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
 		protocols::{
 			sumcheck_v2::{
 				batch_verify,
@@ -190,10 +193,7 @@ mod tests {
 		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedFieldIndexable,
 	};
 	use binius_hash::GroestlHasher;
-	use binius_math::polynomial::{
-		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtension,
-		MultilinearPoly, MultilinearQuery,
-	};
+	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 	use rand::{prelude::StdRng, Rng, SeedableRng};
 	use std::{iter, sync::Arc};
 

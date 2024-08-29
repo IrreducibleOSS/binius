@@ -5,7 +5,7 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
-use binius_math::polynomial::extrapolate_line_scalar;
+use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;

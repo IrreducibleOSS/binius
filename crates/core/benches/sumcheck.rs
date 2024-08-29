@@ -4,6 +4,7 @@
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
+	polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension, MultilinearPoly},
 	protocols::{
 		sumcheck::{prove, Error as SumcheckError, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
@@ -14,10 +15,7 @@ use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_math::polynomial::{
-	CompositionPoly, IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
-	MultilinearPoly,
-};
+use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
 use std::{

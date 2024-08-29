@@ -20,6 +20,7 @@ use binius_core::{
 	composition::{empty_mix_composition, index_composition, IndexComposition},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
+	polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -37,10 +38,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
-use binius_math::polynomial::{
-	CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	MultilinearComposite, MultilinearExtension,
-};
+use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	checked_arithmetics::checked_log_2, examples::get_log_trace_size, rayon::adjust_thread_pool,
 	tracing::init_tracing,

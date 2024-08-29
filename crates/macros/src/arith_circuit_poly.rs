@@ -19,7 +19,7 @@ impl ToTokens for ArithCircuitPolyItem {
 			..
 		} = self;
 		let result = quote! {
-			let #name = std::sync::Arc::new(binius_math::polynomial::ArithCircuitPoly::new(vec![ #( #poly ),* ]));
+			let #name = std::sync::Arc::new(binius_core::polynomial::ArithCircuitPoly::new(vec![ #( #poly ),* ]));
 		};
 
 		if *is_anonymous {
@@ -52,7 +52,7 @@ impl Parse for ArithCircuitPolyItem {
 		let poly_packed = input.parse::<syn::Expr>()?;
 		let mut poly = vec![];
 		for i in 0usize..vars.len() {
-			poly.push(parse_quote!(binius_math::polynomial::Expr::Var(#i)));
+			poly.push(parse_quote!(binius_core::polynomial::Expr::Var(#i)));
 		}
 		flatten_expr(&poly_packed, &vars, &mut poly)?;
 		Ok(Self {
@@ -86,11 +86,11 @@ fn flatten_expr(
 			let right = flatten_expr(&binary.right, vars, result)?;
 			match binary.op {
 				syn::BinOp::Add(_) | syn::BinOp::Sub(_) => {
-					result.push(parse_quote!(binius_math::polynomial::Expr::Add(#left, #right)));
+					result.push(parse_quote!(binius_core::polynomial::Expr::Add(#left, #right)));
 					Ok(result.len() - 1)
 				}
 				syn::BinOp::Mul(_) => {
-					result.push(parse_quote!(binius_math::polynomial::Expr::Mul(#left, #right)));
+					result.push(parse_quote!(binius_core::polynomial::Expr::Mul(#left, #right)));
 					Ok(result.len() - 1)
 				}
 				expr => Err(syn::Error::new(expr.span(), "Unsupported binop")),

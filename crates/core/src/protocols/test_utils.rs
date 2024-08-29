@@ -3,6 +3,9 @@
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::{CompositePolyOracle, Error as OracleError},
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearExtension,
+	},
 	protocols::{
 		evalcheck::{
 			subclaims::{
@@ -22,10 +25,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, Field, PackedExtension,
 	PackedField, TowerField,
 };
-use binius_math::polynomial::{
-	CompositionPoly, Error as PolynomialError, EvaluationDomainFactory, IdentityCompositionPoly,
-	MultilinearExtension,
-};
+use binius_math::EvaluationDomainFactory;
 use std::ops::Deref;
 use tracing::instrument;
 

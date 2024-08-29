@@ -1,15 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::{
+	polynomial::{CompositionPoly, MultilinearPoly},
+	protocols::abstract_sumcheck::{
+		self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim,
+		ReducedClaim,
+	},
+};
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
-
-use crate::protocols::abstract_sumcheck::{
-	self, AbstractSumcheckBatchProof, AbstractSumcheckBatchProveOutput, AbstractSumcheckClaim,
-	ReducedClaim,
-};
-use binius_math::polynomial::{CompositionPoly, EvaluationDomainFactory, MultilinearPoly};
 
 use super::{
 	gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckReductor, GkrSumcheckWitness},

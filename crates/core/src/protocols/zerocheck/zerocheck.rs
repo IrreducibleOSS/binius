@@ -1,7 +1,9 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use super::{Error, VerificationError};
 use crate::{
 	oracle::{CompositePolyOracle, OracleId},
+	polynomial::MultilinearComposite,
 	protocols::{
 		abstract_sumcheck::{
 			AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
@@ -12,11 +14,9 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{Field, PackedField};
-use binius_math::polynomial::{evaluate_univariate, MultilinearComposite};
+use binius_math::evaluate_univariate;
 use binius_utils::bail;
 use std::fmt::Debug;
-
-use super::{Error, VerificationError};
 
 /// A claim for the zerocheck interactive reduction.
 ///

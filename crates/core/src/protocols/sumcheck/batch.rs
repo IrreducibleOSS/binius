@@ -22,7 +22,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
-use binius_math::polynomial::EvaluationDomainFactory;
+use binius_math::EvaluationDomainFactory;
 
 pub type SumcheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
 

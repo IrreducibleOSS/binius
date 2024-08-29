@@ -1,7 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{oracle::Error as OracleError, witness::Error as WitnessError};
-use binius_math::polynomial::Error as PolynomialError;
+use crate::{
+	oracle::Error as OracleError, polynomial::Error as PolynomialError,
+	witness::Error as WitnessError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

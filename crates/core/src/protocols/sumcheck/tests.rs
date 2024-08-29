@@ -3,6 +3,10 @@
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
+		MultilinearExtensionSpecialized, MultilinearQuery,
+	},
 	protocols::{
 		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
@@ -14,10 +18,7 @@ use binius_field::{
 	ExtensionField, Field, PackedBinaryField4x128b, PackedField, TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_math::polynomial::{
-	CompositionPoly, Error as PolynomialError, IsomorphicEvaluationDomainFactory,
-	MultilinearComposite, MultilinearExtension, MultilinearExtensionSpecialized, MultilinearQuery,
-};
+use binius_math::IsomorphicEvaluationDomainFactory;
 use binius_utils::checked_arithmetics::checked_int_div;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};

@@ -15,12 +15,6 @@ pub enum Error {
 	IncorrectOutputPolynomialSize { expected: usize },
 	#[error("the polynomial is expected to have {expected} variables, and instead has {actual}")]
 	IncorrectNumberOfVariables { expected: usize, actual: usize },
-	#[error("expected the number of evaluations to match the domain size")]
-	ExtrapolateNumberOfEvaluations,
-	#[error("domain size is larger than the field")]
-	DomainSizeTooLarge,
-	#[error("the inputted packed values slice had an unexpected length")]
-	InvalidPackedValuesLength,
 	#[error("block size must between 1 and {n_vars} (inclusive)")]
 	InvalidBlockSize { n_vars: usize },
 	#[error("shift offset must be between 1 and {max_shift_offset} inclusive, got {shift_offset}")]
@@ -28,8 +22,6 @@ pub enum Error {
 		max_shift_offset: usize,
 		shift_offset: usize,
 	},
-	#[error("duplicate point in domain")]
-	DuplicateDomainPoint,
 	#[error("argument length must be a power of two")]
 	PowerOfTwoLengthRequired,
 	#[error("cannot operate on polynomials with more than 31 variables")]
@@ -51,4 +43,6 @@ pub enum Error {
 	FieldError(#[from] FieldError),
 	#[error("not enough field elements to fill a single packed field element ({length} / {packed_width})")]
 	PackedFieldNotFilled { length: usize, packed_width: usize },
+	#[error("{0}")]
+	MathError(#[from] binius_math::Error),
 }

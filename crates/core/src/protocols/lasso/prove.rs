@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearOracleSet,
+	polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly},
 	protocols::gkr_prodcheck::ProdcheckWitness,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -17,7 +18,6 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_math::polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -229,11 +229,14 @@ where
 			let carry_in_poly = witness_index.get_multilin_poly(carry_in_oracle_id[i])?;
 			let carry_out_poly = witness_index.get_multilin_poly(carry_out_oracle_id[i])?;
 
-			zerocheck_witnesses.push(MultilinearComposite::new(
-				u_n_vars_gf2,
-				UnaryCarryConstraint,
-				vec![counts_poly, carry_in_poly, carry_out_poly],
-			)?);
+			zerocheck_witnesses.push(
+				MultilinearComposite::new(
+					u_n_vars_gf2,
+					UnaryCarryConstraint,
+					vec![counts_poly, carry_in_poly, carry_out_poly],
+				)
+				.map_err(Error::Polynomial)?,
+			);
 		}
 
 		let mut ones_underlier_vecs =
@@ -318,22 +321,26 @@ where
 	values.fill(FW::from(gamma));
 
 	// first dimension of the relation is not weighted
-	values.par_iter_mut().enumerate().try_for_each(
-		|(i, values_i)| -> Result<_, PolynomialError> {
+	values
+		.par_iter_mut()
+		.enumerate()
+		.try_for_each(|(i, values_i)| -> Result<_, PolynomialError> {
 			*values_i += trace.evaluate_on_hypercube(i)?;
 			Ok(())
-		},
-	)?;
+		})
+		.map_err(Error::Polynomial)?;
 
 	let alpha = FW::from(alpha);
 
 	if let Some(counts) = counts {
-		values.par_iter_mut().enumerate().try_for_each(
-			|(i, values_i)| -> Result<_, PolynomialError> {
+		values
+			.par_iter_mut()
+			.enumerate()
+			.try_for_each(|(i, values_i)| -> Result<_, PolynomialError> {
 				*values_i += counts.evaluate_on_hypercube_and_scale(i, alpha)?;
 				Ok(())
-			},
-		)?;
+			})
+			.map_err(Error::Polynomial)?;
 	}
 
 	Ok(underliers.into())

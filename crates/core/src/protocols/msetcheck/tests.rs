@@ -2,6 +2,7 @@
 
 use crate::{
 	oracle::MultilinearOracleSet,
+	polynomial::MultilinearExtension,
 	protocols::msetcheck::{prove, verify, MsetcheckClaim, MsetcheckWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -9,7 +10,6 @@ use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b,
 	ExtensionField, Field, PackedBinaryField1x128b, PackedField, TowerField,
 };
-use binius_math::polynomial::MultilinearExtension;
 use std::iter::{successors, Step};
 
 fn create_polynomial<F: Field + Step, PW>(

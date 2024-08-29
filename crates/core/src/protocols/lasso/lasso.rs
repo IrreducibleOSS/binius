@@ -6,6 +6,7 @@ use crate::{
 		BatchId, CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
 		ShiftVariant,
 	},
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		gkr_prodcheck::{ProdcheckClaim, ProdcheckWitness},
 		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
@@ -18,7 +19,6 @@ use binius_field::{
 	underlier::UnderlierType,
 	BinaryField16b, BinaryField32b, Field, PackedField, TowerField,
 };
-use binius_math::polynomial::{CompositionPoly, Error as PolynomialError};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use itertools::izip;
@@ -269,7 +269,7 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 		}
 
 		// Representing a column of ones as a repeating oracle of 10...0
-		let one = StepDown::new(C::TOWER_LEVEL, 1)?;
+		let one = StepDown::new(C::TOWER_LEVEL, 1).map_err(Error::Polynomial)?;
 		let one_oracle_id = oracles.add_transparent(one)?;
 		ones_repeating_oracle_id = Some(oracles.add_repeating(one_oracle_id, u_n_vars)?);
 

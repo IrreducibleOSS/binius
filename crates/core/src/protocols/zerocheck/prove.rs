@@ -1,5 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
+#[cfg(feature = "debug_validate_sumcheck")]
+use super::zerocheck::validate_witness;
 use super::{
 	batch::batch_prove,
 	error::Error,
@@ -11,6 +13,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
+	polynomial::{MultilinearExtension, MultilinearQuery},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -25,18 +28,13 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_math::polynomial::{
-	EvaluationDomain, EvaluationDomainFactory, MultilinearExtension, MultilinearQuery,
-};
+use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
 use rayon::prelude::*;
 use std::{cmp::max, marker::PhantomData};
 use tracing::instrument;
-
-#[cfg(feature = "debug_validate_sumcheck")]
-use super::zerocheck::validate_witness;
 
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
@@ -314,7 +312,8 @@ where
 			.iter()
 			.map(|&x| (x * (x - DomainField::ONE)).invert().unwrap())
 			.collect::<Vec<_>>();
-		let smaller_domain = EvaluationDomain::from_points(smaller_domain_points)?;
+		let smaller_domain =
+			EvaluationDomain::from_points(smaller_domain_points).map_err(Error::MathError)?;
 		Ok(Self {
 			round_q,
 			round_q_bar: None,
@@ -335,7 +334,7 @@ where
 	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
 	/// switchover round number per multilinear polynomial as a function of its
-	/// [`binius_math::polynomial::MultilinearPoly::extension_degree`] value.
+	/// [`crate::polynomial::MultilinearPoly::extension_degree`] value.
 	pub fn new(
 		claim: ZerocheckClaim<F>,
 		witness: W,

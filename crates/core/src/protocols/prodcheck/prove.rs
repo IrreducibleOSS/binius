@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
+	polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -16,7 +17,6 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_math::polynomial::{Error as PolynomialError, MultilinearComposite, MultilinearPoly};
 use binius_utils::bail;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -193,9 +193,8 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::protocols::prodcheck::verify::verify;
+	use crate::{polynomial::MultilinearExtension, protocols::prodcheck::verify::verify};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_math::polynomial::MultilinearExtension;
 
 	// Creates T(x), a multilinear with evaluations {1, 2, 3, 4} over the boolean hypercube on 2 vars
 	fn create_numerator() -> MultilinearExtension<BinaryField32b> {

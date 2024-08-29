@@ -1,14 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::protocols::{
-	sumcheck_v2::{common::RoundCoeffs, error::Error},
-	utils::packed_from_fn_with_offset,
+use crate::{
+	polynomial::{
+		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
+		MultilinearQuery,
+	},
+	protocols::{
+		sumcheck_v2::{common::RoundCoeffs, error::Error},
+		utils::packed_from_fn_with_offset,
+	},
 };
 use binius_field::{util::powers, Field, PackedField};
-use binius_math::polynomial::{
-	evaluate_univariate, Error as PolynomialError, MultilinearExtensionSpecialized,
-	MultilinearPoly, MultilinearQuery,
-};
+use binius_math::evaluate_univariate;
 use binius_utils::{array_2d::Array2D, bail};
 use bytemuck::zeroed_vec;
 use getset::CopyGetters;

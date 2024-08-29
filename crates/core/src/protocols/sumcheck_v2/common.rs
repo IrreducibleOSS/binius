@@ -1,8 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::error::Error;
+use crate::polynomial::CompositionPoly;
 use binius_field::Field;
-use binius_math::polynomial::CompositionPoly;
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::ops::{Add, AddAssign, Mul, MulAssign};

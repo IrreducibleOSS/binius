@@ -1,5 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+#[cfg(feature = "debug_validate_sumcheck")]
+use super::sumcheck::validate_witness;
 use super::{
 	batch::batch_prove,
 	error::Error,
@@ -10,6 +12,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -20,18 +23,12 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use binius_math::polynomial::{
-	extrapolate_line, CompositionPoly, Error as PolynomialError, EvaluationDomain,
-	EvaluationDomainFactory,
-};
+use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
 use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
-
-#[cfg(feature = "debug_validate_sumcheck")]
-use super::sumcheck::validate_witness;
 
 /// Prove a sumcheck to evalcheck reduction.
 pub fn prove<F, PW, DomainField, CH>(
@@ -133,7 +130,8 @@ where
 			.extend(witness.multilinears(seq_id, ids.as_slice())?)?;
 		let domain = self
 			.evaluation_domain_factory
-			.create(claim.poly.max_individual_degree() + 1)?;
+			.create(claim.poly.max_individual_degree() + 1)
+			.map_err(Error::MathError)?;
 		let prover = SumcheckProver::new(claim, witness, domain)?;
 		Ok(prover)
 	}

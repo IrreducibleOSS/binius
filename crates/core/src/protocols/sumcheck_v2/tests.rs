@@ -9,17 +9,17 @@ use super::{
 use crate::{
 	challenger::{new_hasher_challenger, CanSample},
 	composition::index_composition,
+	polynomial::{
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearComposite,
+		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
+	},
 	protocols::test_utils::TestProductComposition,
 };
 use binius_field::{
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 };
 use binius_hash::GroestlHasher;
-use binius_math::polynomial::{
-	CompositionPoly, Error as PolynomialError, IdentityCompositionPoly,
-	IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension,
-	MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
-};
+use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};

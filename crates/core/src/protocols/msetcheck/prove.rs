@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearOracleSet,
+	polynomial::Error as PolynomialError,
 	protocols::gkr_prodcheck::ProdcheckWitness,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -14,7 +15,6 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_math::polynomial::Error as PolynomialError;
 use binius_utils::bail;
 use rayon::prelude::*;
 use std::sync::Arc;

@@ -1,10 +1,9 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use crate::{
-	oracle::Error as IOPolynomialError,
+	oracle::Error as IOPolynomialError, polynomial::Error as PolynomialError,
 	protocols::abstract_sumcheck::Error as AbstractSumcheckError,
 };
-use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -36,6 +35,8 @@ pub enum Error {
 	AbstractSumcheck(#[from] AbstractSumcheckError),
 	#[error("zerocheck naive validation failure: {index}")]
 	NaiveValidation { index: usize },
+	#[error("{0})")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

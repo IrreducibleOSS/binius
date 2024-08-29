@@ -1,9 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_field::{Field, PackedField, TowerField};
-use binius_math::polynomial::{
+use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
+use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
@@ -69,8 +69,8 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::EqIndPartialEval;
+	use crate::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
-	use binius_math::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {

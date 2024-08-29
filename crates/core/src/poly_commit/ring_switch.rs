@@ -4,6 +4,7 @@ use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
 	poly_commit::PolyCommitScheme,
+	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
 	protocols::{
 		abstract_sumcheck::ReducedClaim,
 		sumcheck_v2::{
@@ -17,9 +18,7 @@ use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
-use binius_math::polynomial::{
-	Error as PolynomialError, EvaluationDomainFactory, MultilinearExtension, MultilinearQuery,
-};
+use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
 use std::{iter, marker::PhantomData, ops::Deref};
 
@@ -442,7 +441,7 @@ mod tests {
 		BinaryField, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
 	use binius_hash::GroestlHasher;
-	use binius_math::polynomial::IsomorphicEvaluationDomainFactory;
+	use binius_math::IsomorphicEvaluationDomainFactory;
 	use binius_utils::checked_arithmetics::checked_log_2;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::iter::repeat_with;

@@ -19,7 +19,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, PackedExtension,
 	PackedFieldIndexable, TowerField,
 };
-use binius_math::polynomial::EvaluationDomainFactory;
+use binius_math::EvaluationDomainFactory;
 
 pub fn prove<F, PW, DomainField, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,

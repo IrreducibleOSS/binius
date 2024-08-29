@@ -25,6 +25,7 @@ use binius_core::{
 		BatchId, ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant,
 	},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -43,10 +44,7 @@ use binius_field::{
 };
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::polynomial::{
-	CompositionPoly, Error as PolynomialError, EvaluationDomainFactory,
-	IsomorphicEvaluationDomainFactory,
-};
+use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };

@@ -12,7 +12,7 @@ use crate::{
 	},
 };
 use binius_field::{Field, TowerField};
-use binius_math::polynomial::extrapolate_line_scalar;
+use binius_math::extrapolate_line_scalar;
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},

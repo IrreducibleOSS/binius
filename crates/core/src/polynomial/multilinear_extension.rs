@@ -1,7 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
 use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
-use crate::polynomial::util::PackingDeref;
+use crate::util::PackingDeref;
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	packed::{

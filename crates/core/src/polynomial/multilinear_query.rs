@@ -1,7 +1,8 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::polynomial::{tensor_prod_eq_ind, Error as PolynomialError};
+use crate::polynomial::Error as PolynomialError;
 use binius_field::{Field, PackedField};
+use binius_math::tensor_prod_eq_ind;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use std::cmp::max;
@@ -77,7 +78,8 @@ impl<P: PackedField> MultilinearQuery<P> {
 			old_n_vars,
 			&mut self.expanded_query[..new_length],
 			extra_query_coordinates,
-		)?;
+		)
+		.map_err(PolynomialError::MathError)?;
 
 		Ok(Self {
 			expanded_query: self.expanded_query,

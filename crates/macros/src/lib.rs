@@ -16,7 +16,7 @@ use crate::{arith_circuit_poly::ArithCircuitPolyItem, composition_poly::Composit
 ///
 /// ```
 /// use binius_macros::composition_poly;
-/// use binius_math::polynomial::CompositionPoly;
+/// use binius_core::polynomial::CompositionPoly;
 /// use binius_field::{Field, BinaryField1b as F};
 ///
 /// // Defines named struct without any fields that implements CompositionPoly
@@ -159,10 +159,10 @@ pub fn iter_witness_derive(input: TokenStream) -> TokenStream {
 	let (impl_generics, ty_generics, where_clause) = &input.generics.split_for_impl();
 	quote! {
 		impl #impl_generics #name #ty_generics #where_clause {
-			pub fn iter_polys(&self) -> impl Iterator<Item = binius_math::polynomial::MultilinearExtension<#p, &[#p]>> {
+			pub fn iter_polys(&self) -> impl Iterator<Item = binius_core::polynomial::MultilinearExtension<#p, &[#p]>> {
 				std::iter::empty()
 					#(.chain(#witnesses))*
-					.map(|values| binius_math::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
+					.map(|values| binius_core::polynomial::MultilinearExtension::from_values_slice(values.as_slice()).unwrap())
 			}
 		}
 	}.into()

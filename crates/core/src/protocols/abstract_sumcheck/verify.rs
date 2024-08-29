@@ -4,9 +4,11 @@ use super::{
 	AbstractSumcheckClaim, AbstractSumcheckProof, AbstractSumcheckReductor,
 	AbstractSumcheckRoundClaim, Error, ReducedClaim,
 };
-use crate::challenger::{CanObserve, CanSample};
+use crate::{
+	challenger::{CanObserve, CanSample},
+	polynomial::Error as PolynomialError,
+};
 use binius_field::Field;
-use binius_math::polynomial::Error as PolynomialError;
 
 pub fn verify<F, CH, E>(
 	claim: &impl AbstractSumcheckClaim<F>,

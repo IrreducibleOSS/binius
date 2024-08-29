@@ -24,7 +24,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
-use binius_math::polynomial::EvaluationDomainFactory;
+use binius_math::EvaluationDomainFactory;
 use std::cmp;
 
 pub type ZerocheckBatchProof<F> = AbstractSumcheckBatchProof<F>;

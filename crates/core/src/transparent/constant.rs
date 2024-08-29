@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::TowerField;
-use binius_math::polynomial::{Error, MultivariatePoly};
 use binius_utils::bail;
 
 /// A constant polynomial.

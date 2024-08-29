@@ -4,12 +4,15 @@ use super::{
 	common::{BatchSumcheckOutput, Proof, RoundProof, SumcheckClaim},
 	error::{Error, VerificationError},
 };
-use crate::challenger::{CanObserve, CanSample};
+use crate::{
+	challenger::{CanObserve, CanSample},
+	polynomial::CompositionPoly,
+};
 use binius_field::{
 	util::{inner_product_unchecked, powers},
 	Field,
 };
-use binius_math::polynomial::{evaluate_univariate, CompositionPoly};
+use binius_math::evaluate_univariate;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 

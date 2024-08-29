@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use binius_core::polynomial::{multilinear_query::MultilinearQuery, MultilinearExtension};
 use binius_field::{BinaryField128b, PackedBinaryField1x128b, PackedField};
-use binius_math::polynomial::{multilinear_query::MultilinearQuery, MultilinearExtension};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use itertools::Itertools;
 use rand::thread_rng;

@@ -1,9 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{batch_prove::SumcheckProver, RegularSumcheckProver, ZerocheckProver};
-use crate::protocols::sumcheck_v2::{common::RoundCoeffs, error::Error};
+use crate::{
+	polynomial::{CompositionPoly, MultilinearPoly},
+	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
+};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
-use binius_math::polynomial::{CompositionPoly, MultilinearPoly};
 
 /// A sum type that is used to put both regular sumchecks and zerochecks into the same `batch_prove` call.
 pub enum ConcreteProver<FDomain, P, Composition, M>

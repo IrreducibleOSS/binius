@@ -2,12 +2,9 @@
 
 use std::iter::repeat_with;
 
-use binius_field::{BinaryField128b, BinaryField32b, ExtensionField, Field, TowerField};
-use binius_hash::GroestlHasher;
-use rand::{rngs::StdRng, SeedableRng};
-
 use crate::{
 	challenger::new_hasher_challenger,
+	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
 	protocols::{
 		gkr_sumcheck::{batch_prove, batch_verify},
 		test_utils::TestProductComposition,
@@ -15,9 +12,10 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 	witness::MultilinearWitness,
 };
-use binius_math::polynomial::{
-	IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension, MultilinearQuery,
-};
+use binius_field::{BinaryField128b, BinaryField32b, ExtensionField, Field, TowerField};
+use binius_hash::GroestlHasher;
+use binius_math::IsomorphicEvaluationDomainFactory;
+use rand::{rngs::StdRng, SeedableRng};
 
 use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 

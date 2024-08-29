@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::Error;
+use crate::Error;
 use binius_field::PackedField;
 use binius_utils::bail;
 use rayon::prelude::*;

@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use crate::polynomial::{CompositionPoly, Error};
 use binius_field::PackedField;
-use binius_math::polynomial::{CompositionPoly, Error};
 use binius_utils::bail;
 use std::fmt::Debug;
 

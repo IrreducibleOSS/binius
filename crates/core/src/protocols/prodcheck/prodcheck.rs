@@ -6,6 +6,7 @@ use crate::{
 		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, OracleId,
 		ProjectionVariant,
 	},
+	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		evalcheck::EvalcheckClaim,
 		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
@@ -17,7 +18,6 @@ use binius_field::{
 	underlier::UnderlierType,
 	Field, PackedField, TowerField,
 };
-use binius_math::polynomial::{CompositionPoly, Error as PolynomialError};
 use binius_utils::bail;
 
 #[derive(Debug)]

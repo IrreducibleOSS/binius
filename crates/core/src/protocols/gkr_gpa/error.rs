@@ -1,9 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::protocols::{
-	abstract_sumcheck::Error as AbstractSumcheckError, gkr_sumcheck::Error as GkrSumcheckError,
+use crate::{
+	polynomial::Error as PolynomialError,
+	protocols::{
+		abstract_sumcheck::Error as AbstractSumcheckError, gkr_sumcheck::Error as GkrSumcheckError,
+	},
 };
-use binius_math::polynomial::Error as PolynomialError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

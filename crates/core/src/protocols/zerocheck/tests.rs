@@ -4,6 +4,7 @@ use super::ZerocheckWitnessTypeErased;
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
+	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
 	protocols::{
 		test_utils::TestProductComposition,
 		zerocheck::{
@@ -20,9 +21,7 @@ use binius_field::{
 	TowerField,
 };
 use binius_hash::GroestlHasher;
-use binius_math::polynomial::{
-	IsomorphicEvaluationDomainFactory, MultilinearComposite, MultilinearExtension, MultilinearQuery,
-};
+use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
 use rayon::current_num_threads;
