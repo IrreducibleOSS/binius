@@ -21,13 +21,15 @@ use crate::{
 			CommonProversState, ReducedClaim,
 		},
 		utils::packed_from_fn_with_offset,
-		zerocheck::evaluator::{
-			ZerocheckFirstRoundEvaluator, ZerocheckLaterRoundEvaluator, ZerocheckSimpleEvaluator,
-		},
+		zerocheck::backend::ZerocheckProverBackendWrapper,
 	},
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
+use binius_hal::{
+	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
+	ComputationBackend,
+};
 use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -39,24 +41,27 @@ use tracing::instrument;
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
 #[instrument(skip_all, name = "zerocheck::prove", level = "debug")]
-pub fn prove<F, PW, DomainField, CH>(
+pub fn prove<F, PW, DomainField, CH, Backend>(
 	claim: &ZerocheckClaim<F>,
 	witness: impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
+	backend: Backend,
 ) -> Result<ZerocheckProveOutput<F>, Error>
 where
 	F: Field,
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
+	Backend: ComputationBackend,
 {
-	let batch_proof = batch_prove::<F, PW, DomainField, CH>(
+	let batch_proof = batch_prove::<F, PW, DomainField, CH, Backend>(
 		[(claim.clone(), witness)],
 		evaluation_domain_factory,
 		switchover_fn,
 		challenger,
+		backend,
 	)?;
 
 	Ok(ZerocheckProveOutput {
@@ -71,36 +76,41 @@ where
 	})
 }
 
-pub struct ZerocheckProversState<'a, F, PW, DomainField, EDF, W>
+pub struct ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW>,
+	Backend: ComputationBackend,
 {
-	common: CommonProversState<OracleId, PW, W::Multilinear>,
+	pub(crate) common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
 	zerocheck_challenges: &'a [F],
-	round_eq_ind: MultilinearExtension<PW>,
-	_marker: PhantomData<(F, W, DomainField)>,
+	pub(crate) round_eq_ind: MultilinearExtension<PW>,
+	backend: Backend,
+	_marker: PhantomData<(F, DomainField, W)>,
 }
 
-impl<'a, F, PW, DomainField, EDF, W> ZerocheckProversState<'a, F, PW, DomainField, EDF, W>
+impl<'a, F, PW, DomainField, EDF, W, Backend>
+	ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW>,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		n_vars: usize,
 		evaluation_domain_factory: EDF,
 		zerocheck_challenges: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize + 'static,
+		backend: Backend,
 	) -> Result<Self, Error> {
-		let common = CommonProversState::new(n_vars, switchover_fn);
+		let common = CommonProversState::new(n_vars, switchover_fn, backend.clone());
 
 		if zerocheck_challenges.len() + 1 < n_vars {
 			bail!(Error::NotEnoughZerocheckChallenges);
@@ -110,14 +120,16 @@ where
 			.iter()
 			.map(|&f| f.into())
 			.collect::<Vec<PW::Scalar>>();
-		let round_eq_ind =
-			EqIndPartialEval::new(n_vars - 1, pw_scalar_challenges)?.multilinear_extension()?;
+		assert_eq!(zerocheck_challenges.len(), n_vars - 1);
+		let round_eq_ind = EqIndPartialEval::new(n_vars - 1, pw_scalar_challenges)?
+			.multilinear_extension(backend.clone())?;
 
 		Ok(Self {
 			common,
 			evaluation_domain_factory,
 			zerocheck_challenges,
 			round_eq_ind,
+			backend: backend.clone(),
 			_marker: PhantomData,
 		})
 	}
@@ -170,14 +182,15 @@ where
 	}
 }
 
-impl<'a, F, PW, DomainField, EDF, W> AbstractSumcheckProversState<F>
-	for ZerocheckProversState<'a, F, PW, DomainField, EDF, W>
+impl<'a, F, PW, DomainField, EDF, W, Backend> AbstractSumcheckProversState<F>
+	for ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
+	Backend: ComputationBackend,
 {
 	type Error = Error;
 
@@ -198,7 +211,8 @@ where
 			.extend(witness.multilinears(seq_id, ids.as_slice())?)?;
 		let domain = self
 			.evaluation_domain_factory
-			.create(claim.poly.max_individual_degree() + 1)?;
+			.create(claim.poly.max_individual_degree() + 1)
+			.map_err(Error::MathError)?;
 		let prover = ZerocheckProver::new(claim, witness, domain, self.zerocheck_challenges)?;
 		Ok(prover)
 	}
@@ -270,7 +284,7 @@ where
 }
 
 #[derive(Debug)]
-struct SmallerDomainOptimization<PW, DomainField>
+pub(crate) struct SmallerDomainOptimization<PW, DomainField>
 where
 	PW: PackedField,
 	PW::Scalar: ExtensionField<DomainField>,
@@ -284,13 +298,13 @@ where
 	// * $d$ is degree of polynomial in zerocheck claim
 	// * $r_i$ is the verifier challenge at the end of round $i$.
 	// with sorting that is lexicographically-inspired (lowest index = least significant).
-	round_q: Vec<PW>,
+	pub(crate) round_q: Vec<PW>,
 	// None initially
 	// After ith round, represents the $\bar{Q}_i$ multilinear polynomial partially evaluated
 	// at lowest $i$ variables with the $i$ verifier challenges received so far.
-	round_q_bar: Option<MultilinearExtension<PW>>,
+	pub(crate) round_q_bar: Option<MultilinearExtension<PW>>,
 	// inverse of domain[i] * domain[i] - 1 for i in 0, ..., d-2
-	smaller_denom_inv: Vec<DomainField>,
+	pub(crate) smaller_denom_inv: Vec<DomainField>,
 	// Subdomain of domain, but without 0 and 1 (can be used for degree d-2 polynomials)
 	smaller_domain: EvaluationDomain<DomainField>,
 }
@@ -312,8 +326,7 @@ where
 			.iter()
 			.map(|&x| (x * (x - DomainField::ONE)).invert().unwrap())
 			.collect::<Vec<_>>();
-		let smaller_domain =
-			EvaluationDomain::from_points(smaller_domain_points).map_err(Error::MathError)?;
+		let smaller_domain = EvaluationDomain::from_points(smaller_domain_points)?;
 		Ok(Self {
 			round_q,
 			round_q_bar: None,
@@ -400,10 +413,11 @@ where
 
 	// Updates auxiliary state that we store corresponding to Section 4 Optimizations in [Gruen24].
 	// [Gruen24]: https://eprint.iacr.org/2024/108
-	fn update_round_q(
+	fn update_round_q<Backend: ComputationBackend>(
 		&mut self,
 		prev_rd_challenge: PW::Scalar,
 		p: &mut SmallerDomainOptimization<PW, DomainField>,
+		backend: Backend,
 	) -> Result<(), Error> {
 		let rd_vars = self.claim.n_vars() - self.round;
 		let new_q_len = max(p.round_q.len() / 2, p.smaller_domain.size());
@@ -441,7 +455,8 @@ where
 		new_q_bar_values.par_iter_mut().for_each(|e| *e *= coeff);
 
 		if let Some(prev_q_bar) = p.round_q_bar.as_mut() {
-			let query = MultilinearQuery::<PW::Scalar>::with_full_query(&[prev_rd_challenge])?;
+			let query =
+				MultilinearQuery::<PW::Scalar>::with_full_query(&[prev_rd_challenge], backend)?;
 			let specialized_prev_q_bar = prev_q_bar.evaluate_partial_low(&query)?;
 			let specialized_prev_q_bar_evals = specialized_prev_q_bar.evals();
 
@@ -470,92 +485,42 @@ where
 		Ok(())
 	}
 
-	fn compute_round_coeffs<EDF>(
+	fn compute_round_coeffs<EDF, Backend>(
 		&mut self,
-		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W>,
+		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
 	) -> Result<Vec<PW::Scalar>, Error>
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
 	{
-		let degree = self.claim.poly.max_individual_degree();
-		if degree == 1 {
-			return Ok(vec![PW::Scalar::default()]);
-		}
-
-		let round_coeffs = if let Some(p) = self.smaller_domain_optimization.as_mut() {
-			let vertex_state_iterator = p.round_q.par_chunks_exact_mut(degree - 1);
-
-			if self.round == 0 {
-				let evaluator = ZerocheckFirstRoundEvaluator {
-					degree,
-					eq_ind: provers_state.round_eq_ind.to_ref(),
-					evaluation_domain: &self.domain,
-					domain_points: self.domain.points(),
-					composition: self.witness.composition(),
-					denom_inv: &p.smaller_denom_inv,
-				};
-				provers_state.common.calculate_round_coeffs(
-					self.oracle_ids.as_slice(),
-					evaluator,
-					self.round_claim.current_round_sum.into(),
-					vertex_state_iterator,
-				)
-			} else {
-				let evaluator = ZerocheckLaterRoundEvaluator {
-					degree,
-					eq_ind: provers_state.round_eq_ind.to_ref(),
-					round_zerocheck_challenge: self.zerocheck_challenges[self.round - 1].into(),
-					evaluation_domain: &self.domain,
-					domain_points: self.domain.points(),
-					composition: self.witness.composition(),
-					denom_inv: &p.smaller_denom_inv,
-					round_q_bar: p
-						.round_q_bar
-						.as_ref()
-						.expect("round_q_bar is Some after round 0")
-						.to_ref(),
-				};
-				provers_state.common.calculate_round_coeffs(
-					self.oracle_ids.as_slice(),
-					evaluator,
-					self.round_claim.current_round_sum.into(),
-					vertex_state_iterator,
-				)
-			}
-		} else {
-			assert!(self.round < self.claim.n_vars());
-			let rd_vars = self.claim.n_vars() - self.round;
-			let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
-			let evaluator = ZerocheckSimpleEvaluator {
-				degree,
-				eq_ind: provers_state.round_eq_ind.to_ref(),
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: self.witness.composition(),
-				round_zerocheck_challenge: self
-					.zerocheck_challenges
-					.get(self.round - 1)
-					.map(|x| PW::Scalar::from(*x)),
-			};
-			provers_state.common.calculate_round_coeffs(
-				self.oracle_ids.as_slice(),
-				evaluator,
-				self.round_claim.current_round_sum.into(),
-				vertex_state_iterator,
-			)
-		}?;
-
-		Ok(round_coeffs)
+		let mut wrapper = ZerocheckProverBackendWrapper {
+			claim: &self.claim,
+			// Pass `smaller_domain_optimization` to the wrapper.
+			smaller_domain_optimization: self.smaller_domain_optimization.take(),
+			provers_state,
+			domain: &self.domain,
+			oracle_ids: &self.oracle_ids,
+			witness: &self.witness,
+		};
+		let (params, input) = self.descriptor(provers_state);
+		let result = provers_state
+			.backend
+			.zerocheck_compute_round_coeffs::<F, PW>(&params, &input, &mut wrapper)?;
+		// Take the `smaller_domain_optimization` back.
+		// Note that `smaller_domain_optimization` may get changed to None.
+		self.smaller_domain_optimization = wrapper.smaller_domain_optimization.take();
+		Ok(result)
 	}
 
 	#[instrument(skip_all, name = "zerocheck::execute_round", level = "debug")]
-	fn execute_round<EDF>(
+	fn execute_round<EDF, Backend>(
 		&mut self,
-		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W>,
+		provers_state: &ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
 		prev_rd_challenge: Option<F>,
 	) -> Result<ZerocheckRound<F>, Error>
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
 	{
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;
@@ -570,7 +535,11 @@ where
 
 			// update round_q and round_q_bar
 			if let Some(mut p) = self.smaller_domain_optimization.take() {
-				self.update_round_q(isomorphic_prev_rd_challenge, &mut p)?;
+				self.update_round_q(
+					isomorphic_prev_rd_challenge,
+					&mut p,
+					provers_state.backend.clone(),
+				)?;
 				self.smaller_domain_optimization = Some(p);
 			}
 
@@ -618,5 +587,37 @@ where
 		self.round_claim = new_round_claim;
 
 		Ok(())
+	}
+
+	/// Describes the shape of the computation and input data for the current zerocheck round.
+	#[instrument(skip_all)]
+	fn descriptor<EDF, Backend>(
+		&'a self,
+		state: &'a ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
+	) -> (ZerocheckRoundParameters, ZerocheckRoundInput<F, PW>)
+	where
+		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
+	{
+		// query is expected to be present until the switchover round.
+		let query = state
+			.common
+			.get_subset_query(&self.oracle_ids)
+			.map(|query| query.1.expansion());
+		let eq_ind = state.round_eq_ind.evals();
+		(
+			ZerocheckRoundParameters {
+				round: self.round,
+				n_vars: self.claim.poly.n_vars(),
+				cols: self.claim.poly.n_multilinears(),
+				degree: self.claim.poly.max_individual_degree(),
+			},
+			ZerocheckRoundInput {
+				zc_challenges: self.zerocheck_challenges,
+				eq_ind,
+				query,
+				current_round_sum: self.round_claim.current_round_sum,
+			},
+		)
 	}
 }

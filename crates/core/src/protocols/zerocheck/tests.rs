@@ -20,6 +20,7 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField4x128b, PackedField,
 	TowerField,
 };
+use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
@@ -114,16 +115,18 @@ fn test_prove_verify_interaction_helper(
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
+	let backend = make_backend();
 
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<_, _, BinaryField32b, _>(
+	} = zerocheck::prove::<_, _, BinaryField32b, _, _>(
 		&zc_claim,
 		zc_witness.clone(),
 		domain_factory,
 		switchover_fn,
 		&mut prover_challenger,
+		backend.clone(),
 	)
 	.expect("failed to prove zerocheck");
 
@@ -139,7 +142,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }
@@ -339,11 +342,13 @@ fn test_prove_verify_batch() {
 	assert_eq!(claims.len(), witnesses.len());
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 	let claim_witness_iter = claims.clone().into_iter().zip(witnesses);
-	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
+	let backend = make_backend();
+	let prove_output = batch_prove::<_, _, BinaryField32b, _, _>(
 		claim_witness_iter,
 		domain_factory,
 		|_| 3,
 		prover_challenger,
+		backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;
@@ -399,16 +404,18 @@ fn test_prove_verify_packed() {
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
+	let backend = make_backend();
 
 	let ZerocheckProveOutput {
 		evalcheck_claim,
 		zerocheck_proof,
-	} = zerocheck::prove::<_, PE, BinaryField32b, _>(
+	} = zerocheck::prove::<_, PE, BinaryField32b, _, _>(
 		&zc_claim,
 		zc_witness.clone(),
 		domain_factory,
 		switchover_fn,
 		&mut prover_challenger,
+		backend.clone(),
 	)
 	.expect("failed to prove zerocheck");
 
@@ -424,7 +431,7 @@ fn test_prove_verify_packed() {
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }

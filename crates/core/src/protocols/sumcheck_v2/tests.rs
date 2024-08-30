@@ -18,6 +18,7 @@ use crate::{
 use binius_field::{
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 };
+use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
@@ -112,8 +113,9 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	)
 	.unwrap();
 
+	let backend = make_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-	let prover = RegularSumcheckProver::<FDomain, _, _, _>::new(
+	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 		multilins.iter().collect(),
 		[CompositeSumClaim {
 			composition: &composition,
@@ -121,6 +123,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 		}],
 		domain_factory,
 		move |_| switchover_rd,
+		backend.clone(),
 	)
 	.unwrap();
 
@@ -152,7 +155,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	assert_eq!(multilinear_evals[0].len(), n_multilinears);
 
 	// Verify the reduced multilinear evaluations are correct
-	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
 	}
@@ -192,6 +195,7 @@ fn test_prove_verify_batch() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 
+	let backend = make_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let (claims, provers) = [8, 6, 4]
 		.map(|n_vars| {
@@ -231,11 +235,12 @@ fn test_prove_verify_batch() {
 			)
 			.unwrap();
 
-			let prover = RegularSumcheckProver::<FDomain, _, _, _>::new(
+			let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 				multilins,
 				claim.composite_sums().iter().cloned(),
 				domain_factory.clone(),
 				|_| (n_vars / 2).max(1),
+				backend.clone(),
 			)
 			.unwrap();
 

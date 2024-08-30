@@ -5,6 +5,7 @@ use crate::{
 	polynomial::MultilinearExtension,
 };
 use binius_field::{ExtensionField, PackedField};
+use binius_hal::ComputationBackend;
 use std::ops::Deref;
 
 pub trait PolyCommitScheme<P, FE>
@@ -28,28 +29,32 @@ where
 		Data: Deref<Target = [P]> + Send + Sync;
 
 	/// Generate an evaluation proof at a *random* challenge point.
-	fn prove_evaluation<Data, CH>(
+	fn prove_evaluation<Data, CH, Backend>(
 		&self,
 		challenger: &mut CH,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
+		backend: Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>;
+		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Backend: ComputationBackend;
 
 	/// Verify an evaluation proof at a *random* challenge point.
-	fn verify_evaluation<CH>(
+	fn verify_evaluation<CH, Backend>(
 		&self,
 		challenger: &mut CH,
 		commitment: &Self::Commitment,
 		query: &[FE],
 		proof: Self::Proof,
 		values: &[FE],
+		backend: Backend,
 	) -> Result<(), Self::Error>
 	where
-		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>;
+		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Backend: ComputationBackend;
 
 	/// Return the byte-size of a proof.
 	fn proof_size(&self, n_polys: usize) -> usize;

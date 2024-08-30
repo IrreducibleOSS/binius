@@ -17,18 +17,18 @@ use binius_math::{extrapolate_line, EvaluationDomain};
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub(crate) struct ZerocheckFirstRoundEvaluator<'a, P, FS, C>
+pub struct ZerocheckFirstRoundEvaluator<'a, P, FS, C>
 where
 	P: PackedField<Scalar: ExtensionField<FS>>,
 	FS: Field,
 	C: CompositionPoly<P>,
 {
-	pub(crate) composition: &'a C,
-	pub(crate) domain_points: &'a [FS],
-	pub(crate) evaluation_domain: &'a EvaluationDomain<FS>,
-	pub(crate) degree: usize,
-	pub(crate) eq_ind: MultilinearExtension<P, &'a [P]>,
-	pub(crate) denom_inv: &'a [FS],
+	pub composition: &'a C,
+	pub domain_points: &'a [FS],
+	pub evaluation_domain: &'a EvaluationDomain<FS>,
+	pub degree: usize,
+	pub eq_ind: MultilinearExtension<P, &'a [P]>,
+	pub denom_inv: &'a [FS],
 }
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckFirstRoundEvaluator<'a, P, FS, C>
@@ -107,20 +107,20 @@ where
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
 #[derive(Debug)]
-pub(crate) struct ZerocheckLaterRoundEvaluator<'a, P, FS, C>
+pub struct ZerocheckLaterRoundEvaluator<'a, P, FS, C>
 where
 	P: PackedField<Scalar: ExtensionField<FS>>,
 	FS: Field,
 	C: CompositionPoly<P>,
 {
-	pub(crate) composition: &'a C,
-	pub(crate) domain_points: &'a [FS],
-	pub(crate) evaluation_domain: &'a EvaluationDomain<FS>,
-	pub(crate) degree: usize,
-	pub(crate) eq_ind: MultilinearExtension<P, &'a [P]>,
-	pub(crate) round_zerocheck_challenge: P::Scalar,
-	pub(crate) denom_inv: &'a [FS],
-	pub(crate) round_q_bar: MultilinearExtension<P, &'a [P]>,
+	pub composition: &'a C,
+	pub domain_points: &'a [FS],
+	pub evaluation_domain: &'a EvaluationDomain<FS>,
+	pub degree: usize,
+	pub eq_ind: MultilinearExtension<P, &'a [P]>,
+	pub round_zerocheck_challenge: P::Scalar,
+	pub denom_inv: &'a [FS],
+	pub round_q_bar: MultilinearExtension<P, &'a [P]>,
 }
 
 impl<'a, P, FS, C> AbstractSumcheckEvaluator<P> for ZerocheckLaterRoundEvaluator<'a, P, FS, C>

@@ -34,6 +34,7 @@ use binius_field::{
 	PackedAESBinaryField8x32b, PackedBinaryField1x128b, PackedBinaryField8x32b, PackedField,
 	PackedFieldIndexable, TowerField,
 };
+use binius_hal::{make_backend, ComputationBackend};
 use binius_hash::{
 	GroestlHasher, Vision32MDSTransform, Vision32bPermutation, INV_PACKED_TRANS_AES,
 };
@@ -293,16 +294,21 @@ struct TraceOracle {
 }
 
 impl TraceOracle {
-	pub fn new<F>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Result<Self>
+	pub fn new<F, Backend: ComputationBackend + 'static>(
+		oracles: &mut MultilinearOracleSet<F>,
+		log_size: usize,
+		backend: Backend,
+	) -> Result<Self>
 	where
 		F: TowerField + ExtensionField<BinaryField32b> + From<BinaryField32b>,
 	{
 		let even_round_consts = array::from_fn(|i| {
 			let even_rc_single = oracles
 				.add_transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
-						&VISION_RC_EVEN[i],
-					))
+					MultilinearExtensionTransparent::<_, F, _>::from_values(
+						round_consts(&VISION_RC_EVEN[i]),
+						backend.clone(),
+					)
 					.unwrap(),
 				)
 				.unwrap();
@@ -313,9 +319,10 @@ impl TraceOracle {
 		let odd_round_consts = array::from_fn(|i| {
 			let odd_rc_single = oracles
 				.add_transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
-						&VISION_RC_ODD[i],
-					))
+					MultilinearExtensionTransparent::<_, F, _>::from_values(
+						round_consts(&VISION_RC_ODD[i]),
+						backend.clone(),
+					)
 					.unwrap(),
 				)
 				.unwrap();
@@ -323,21 +330,20 @@ impl TraceOracle {
 				.add_repeating(odd_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
-		let round_0_constant =
-			array::from_fn(|i| {
-				let round_0_constant_single =
-					oracles
-						.add_transparent(
-							MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
-								&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0],
-							))
-							.unwrap(),
-						)
-						.unwrap();
-				oracles
-					.add_repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
-					.unwrap()
-			});
+		let round_0_constant = array::from_fn(|i| {
+			let round_0_constant_single = oracles
+				.add_transparent(
+					MultilinearExtensionTransparent::<_, F, _>::from_values(
+						round_consts(&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0]),
+						backend.clone(),
+					)
+					.unwrap(),
+				)
+				.unwrap();
+			oracles
+				.add_repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
+				.unwrap()
+		});
 
 		let round_selector_single = oracles
 			.add_transparent(StepDown::new(LOG_COMPRESSION_BLOCK, 7).unwrap())
@@ -898,13 +904,14 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 }
 
 #[instrument(skip_all, level = "debug")]
-fn prove<U, F, FW, PCS, Comm, Challenger>(
+fn prove<U, F, FW, PCS, Comm, Challenger, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut challenger: Challenger,
 	witness: &TraceWitness<U, BinaryField32b>,
 	domain_factory: impl EvaluationDomainFactory<BinaryField8b>,
+	backend: Backend,
 ) -> Result<Proof<F, Comm, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField32b> + PackScalar<FW> + PackScalar<BinaryField8b>,
@@ -920,6 +927,7 @@ where
 	>,
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	let mut ext_index = witness.to_index::<FW>(trace_oracle)?;
 
@@ -976,19 +984,21 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		&mut challenger,
+		backend.clone(),
 	)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _, _>(
 		oracles,
 		&mut ext_index,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
+		backend.clone(),
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -1004,6 +1014,7 @@ where
 		&trace_committed,
 		&trace_commit_polys,
 		&same_query_claim.eval_point,
+		backend,
 	)?;
 
 	Ok(Proof {
@@ -1015,12 +1026,13 @@ where
 }
 
 #[instrument(skip_all, level = "debug")]
-fn verify<F, P32b, PCS, Comm, Challenger>(
+fn verify<F, P32b, PCS, Comm, Challenger, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut challenger: Challenger,
 	proof: Proof<F, Comm, PCS::Proof>,
+	backend: Backend,
 ) -> Result<()>
 where
 	F: TowerField + ExtensionField<BinaryField32b>,
@@ -1028,6 +1040,7 @@ where
 	PCS: PolyCommitScheme<P32b, F, Error: Debug, Proof: 'static, Commitment = Comm>,
 	Comm: Clone,
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	let Proof {
 		trace_comm,
@@ -1074,6 +1087,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
+		backend,
 	)?;
 
 	Ok(())
@@ -1088,7 +1102,8 @@ fn main() {
 	let log_size = get_log_trace_size().unwrap_or(14);
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
-	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();
+	let backend = make_backend();
+	let trace_oracle = TraceOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 
 	const SECURITY_BITS: usize = 100;
@@ -1117,15 +1132,16 @@ fn main() {
 	let witness = TraceWitness::<U, _>::generate_trace(log_size);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
-	let proof = prove::<U, _, BinaryField128b, _, _, _>(
+	let proof = prove::<U, _, BinaryField128b, _, _, _, _>(
 		&mut oracles,
 		&trace_oracle,
 		&pcs,
 		challenger.clone(),
 		&witness,
 		domain_factory,
+		backend.clone(),
 	)
 	.unwrap();
 
-	verify(&mut oracles, &trace_oracle, &pcs, challenger, proof).unwrap()
+	verify(&mut oracles, &trace_oracle, &pcs, challenger, proof, backend).unwrap()
 }

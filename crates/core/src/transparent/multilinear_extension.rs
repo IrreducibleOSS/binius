@@ -5,52 +5,72 @@ use crate::polynomial::{
 	MultilinearQuery, MultivariatePoly,
 };
 use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_hal::ComputationBackend;
 use std::{fmt::Debug, ops::Deref};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultilinearExtensionTransparent<P, PE, Data = Vec<P>>(
-	pub MultilinearExtensionSpecialized<P, PE, Data>,
-)
+pub struct MultilinearExtensionTransparent<P, PE, Backend, Data = Vec<P>>
 where
 	P: PackedField,
 	PE: PackedField,
 	PE::Scalar: ExtensionField<P::Scalar>,
-	Data: Deref<Target = [P]>;
-
-impl<P, PE, Data> MultilinearExtensionTransparent<P, PE, Data>
-where
-	P: PackedField,
-	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
+	Backend: ComputationBackend,
 	Data: Deref<Target = [P]>,
 {
-	pub fn from_values(values: Data) -> Result<Self, Error> {
+	data: MultilinearExtensionSpecialized<P, PE, Data>,
+	// Backend for performing computation-intensive operations, such as tensor_prod_eq_ind().
+	// Backend needs to be a field of this object to allow upcasting this struct to
+	// MultilinearPoly which is object-safe.
+	backend: Backend,
+}
+
+impl<P, PE, Backend, Data> MultilinearExtensionTransparent<P, PE, Backend, Data>
+where
+	P: PackedField,
+	PE: PackedField,
+	PE::Scalar: ExtensionField<P::Scalar>,
+	Backend: ComputationBackend,
+	Data: Deref<Target = [P]>,
+{
+	pub fn from_specialized(
+		data: MultilinearExtensionSpecialized<P, PE, Data>,
+		backend: Backend,
+	) -> Result<Self, Error> {
+		Ok(Self { data, backend })
+	}
+
+	pub fn from_values(values: Data, backend: Backend) -> Result<Self, Error> {
 		let mle = MultilinearExtension::from_values_generic(values)?;
-		Ok(Self(mle.specialize()))
+		Ok(Self {
+			data: mle.specialize(),
+			backend,
+		})
 	}
 }
 
-impl<F, P, PE, Data> MultivariatePoly<F> for MultilinearExtensionTransparent<P, PE, Data>
+impl<F, P, PE, Backend, Data> MultivariatePoly<F>
+	for MultilinearExtensionTransparent<P, PE, Backend, Data>
 where
 	F: TowerField + ExtensionField<P::Scalar>,
 	P: PackedField,
 	PE: PackedField<Scalar = F>,
+	Backend: ComputationBackend,
 	Data: Deref<Target = [P]> + Send + Sync + Debug,
 {
 	fn n_vars(&self) -> usize {
-		self.0.n_vars()
+		self.data.n_vars()
 	}
 
 	fn degree(&self) -> usize {
-		self.0.n_vars()
+		self.data.n_vars()
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let query = MultilinearQuery::<PE>::with_full_query(query)?;
-		self.0.evaluate(&query)
+		let query = MultilinearQuery::<PE>::with_full_query(query, self.backend.clone())?;
+		self.data.evaluate(&query)
 	}
 
 	fn binary_tower_level(&self) -> usize {
-		F::TOWER_LEVEL - self.0.extension_degree().ilog2() as usize
+		F::TOWER_LEVEL - self.data.extension_degree().ilog2() as usize
 	}
 }

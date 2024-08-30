@@ -25,6 +25,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, Field, PackedExtension,
 	PackedField, TowerField,
 };
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use std::ops::Deref;
 use tracing::instrument;
@@ -107,11 +108,12 @@ where
 	name = "test_utils::prove_bivariate_sumchecks_with_switchover",
 	level = "debug"
 )]
-pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH>(
+pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH, Backend>(
 	sumchecks: impl IntoIterator<Item = BivariateSumcheck<'a, F, PW>>,
 	challenger: &mut CH,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
+	backend: Backend,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + From<PW::Scalar>,
@@ -119,11 +121,12 @@ where
 	PW::Scalar: From<F> + ExtensionField<DomainField>,
 	DomainField: Field,
 	CH: CanObserve<F> + CanSample<F>,
+	Backend: ComputationBackend,
 {
 	let SumcheckBatchProveOutput {
 		proof,
 		evalcheck_claims,
-	} = batch_prove(sumchecks, domain_factory, switchover_fn, challenger)?;
+	} = batch_prove(sumchecks, domain_factory, switchover_fn, challenger, backend)?;
 
 	Ok((proof, evalcheck_claims))
 }
@@ -157,15 +160,17 @@ pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
 	name = "test_utils::make_non_same_query_pcs_sumchecks",
 	level = "debug"
 )]
-pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW>(
-	prover: &mut EvalcheckProver<'a, 'b, F, PW>,
+pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW, Backend>(
+	prover: &mut EvalcheckProver<'a, 'b, F, PW, Backend>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
+	backend: Backend,
 ) -> Result<Vec<BivariateSumcheck<'a, F, PW>>, EvalcheckError>
 where
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedField + WithUnderlier,
 	PW::Scalar: TowerField + From<F>,
 	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+	Backend: ComputationBackend,
 {
 	let metas = non_same_query_pcs_sumcheck_metas(
 		prover.oracles,
@@ -184,6 +189,7 @@ where
 				prover.witness_index,
 				&mut memoized_queries,
 				meta,
+				backend.clone(),
 			)?;
 			Ok((claim, witness))
 		})

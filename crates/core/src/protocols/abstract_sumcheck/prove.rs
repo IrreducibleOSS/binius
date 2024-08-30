@@ -5,6 +5,7 @@ use crate::polynomial::{
 	Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
 };
 use binius_field::PackedField;
+use binius_hal::ComputationBackend;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, hash::Hash, ops::Range};
@@ -122,11 +123,12 @@ pub trait AbstractSumcheckEvaluator<P: PackedField>: Sync {
 ///     switchover rounds are numbered relative introduction round.
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
-pub struct CommonProversState<MultilinearId, PW, M>
+pub struct CommonProversState<MultilinearId, PW, M, Backend>
 where
 	MultilinearId: Hash + Eq + Sync,
 	PW: PackedField,
 	M: MultilinearPoly<PW> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	n_vars: usize,
 	switchover_fn: Box<dyn Fn(usize) -> usize>,
@@ -134,15 +136,21 @@ where
 	multilinears: HashMap<MultilinearId, SumcheckMultilinear<PW, M>>,
 	max_query_vars: Option<usize>,
 	queries: Vec<Option<MultilinearQuery<PW>>>,
+	backend: Backend,
 }
 
-impl<MultilinearId, PW, M> CommonProversState<MultilinearId, PW, M>
+impl<MultilinearId, PW, M, Backend> CommonProversState<MultilinearId, PW, M, Backend>
 where
 	MultilinearId: Clone + Hash + Eq + Sync,
 	PW: PackedField,
 	M: MultilinearPoly<PW> + Sync + Send,
+	Backend: ComputationBackend,
 {
-	pub fn new(n_vars: usize, switchover_fn: impl Fn(usize) -> usize + 'static) -> Self {
+	pub fn new(
+		n_vars: usize,
+		switchover_fn: impl Fn(usize) -> usize + 'static,
+		backend: Backend,
+	) -> Self {
 		Self {
 			n_vars,
 			switchover_fn: Box::new(switchover_fn),
@@ -150,6 +158,7 @@ where
 			multilinears: HashMap::new(),
 			max_query_vars: None,
 			queries: Vec::new(),
+			backend,
 		}
 	}
 
@@ -235,7 +244,7 @@ where
 
 		// Partial query for folding
 		let single_variable_partial_query =
-			MultilinearQuery::with_full_query(&[prev_rd_challenge])?;
+			MultilinearQuery::with_full_query(&[prev_rd_challenge], self.backend.clone())?;
 
 		// Perform switchover and/or folding
 		let any_transparent_left = multilinears
@@ -519,7 +528,7 @@ where
 	}
 
 	// Obtain the appropriate switchover multilinear query, relative introduction round.
-	fn get_subset_query(
+	pub(crate) fn get_subset_query(
 		&self,
 		oracle_ids: &[MultilinearId],
 	) -> Option<(usize, &MultilinearQuery<PW>)> {

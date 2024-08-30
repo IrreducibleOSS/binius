@@ -17,6 +17,7 @@ use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
 	ExtensionField, Field, PackedBinaryField4x128b, PackedField, TowerField,
 };
+use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use binius_utils::checked_arithmetics::checked_int_div;
@@ -104,13 +105,15 @@ fn test_prove_verify_interaction_helper(
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let backend = make_backend();
 
-	let final_prove_output = prove::<_, _, BinaryField32b, _>(
+	let final_prove_output = prove::<_, _, BinaryField32b, _, _>(
 		&sumcheck_claim,
 		sumcheck_witness,
 		domain_factory,
 		move |_| switchover_rd,
 		challenger.clone(),
+		backend.clone(),
 	)
 	.expect("failed to prove sumcheck");
 
@@ -126,7 +129,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend.clone()).unwrap();
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
@@ -177,15 +180,17 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
+	let backend = make_backend();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let switchover_fn = |_| 3;
-	let final_prove_output = prove::<_, OF, OF, _>(
+	let final_prove_output = prove::<_, OF, OF, _, _>(
 		&sumcheck_claim,
 		operating_witness,
 		domain_factory,
 		switchover_fn,
 		challenger.clone(),
+		backend.clone(),
 	)
 	.expect("failed to prove sumcheck");
 
@@ -201,7 +206,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
@@ -355,12 +360,14 @@ fn test_prove_verify_batch() {
 
 	// Setup evaluation domain
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let backend = make_backend();
 
-	let prove_output = batch_prove::<_, _, BinaryField32b, _>(
+	let prove_output = batch_prove::<_, _, BinaryField32b, _, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),
 		domain_factory,
 		|_| 5,
 		challenger.clone(),
+		backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;
@@ -455,11 +462,13 @@ fn test_packed_sumcheck() {
 	// Setup evaluation domain
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
-	let prove_output = batch_prove::<_, PE, BinaryField32b, _>(
+	let backend = make_backend();
+	let prove_output = batch_prove::<_, PE, BinaryField32b, _, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),
 		domain_factory,
 		|_| 5,
 		challenger.clone(),
+		backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;

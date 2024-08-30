@@ -8,6 +8,7 @@ authors.workspace = true
 assert_matches.workspace = true
 auto_impl.workspace = true
 binius_field = { path = "../field" }
+binius_hal = { path = "../hal" }
 binius_hash = { path = "../hash" }
 binius_math = { path = "../math" }
 binius_ntt = { path = "../ntt" }

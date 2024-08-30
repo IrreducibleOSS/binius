@@ -116,6 +116,7 @@ fn test_prove_verify_batch() {
 	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let verifier_challenger = prover_challenger.clone();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
+	let backend = binius_hal::make_backend();
 
 	// Setup
 	let (n_vars, n_multilins) = (5, 2);
@@ -162,8 +163,14 @@ fn test_prove_verify_batch() {
 	let GrandProductBatchProveOutput {
 		evalcheck_multilinear_claims,
 		proof,
-	} = batch_prove::<_, _, FS, _>(witnesses, claims.clone(), domain_factory, prover_challenger)
-		.unwrap();
+	} = batch_prove::<_, _, FS, _, _>(
+		witnesses,
+		claims.clone(),
+		domain_factory,
+		prover_challenger,
+		backend,
+	)
+	.unwrap();
 
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(claims.clone(), proof, verifier_challenger).unwrap();

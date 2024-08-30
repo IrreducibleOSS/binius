@@ -3,7 +3,7 @@
 use binius_field::Error as FieldError;
 use std::ops::Range;
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
@@ -45,4 +45,6 @@ pub enum Error {
 	PackedFieldNotFilled { length: usize, packed_width: usize },
 	#[error("{0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("{0}")]
+	HalError(#[from] binius_hal::Error),
 }

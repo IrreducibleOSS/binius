@@ -1,0 +1,12 @@
+[package]
+name = "binius_hal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_field = { path = "../field" }
+binius_math = { path = "../math" }
+bytemuck.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

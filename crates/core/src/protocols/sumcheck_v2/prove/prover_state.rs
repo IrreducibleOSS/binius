@@ -11,6 +11,7 @@ use crate::{
 	},
 };
 use binius_field::{util::powers, Field, PackedField};
+use binius_hal::ComputationBackend;
 use binius_math::evaluate_univariate;
 use binius_utils::{array_2d::Array2D, bail};
 use bytemuck::zeroed_vec;
@@ -117,10 +118,11 @@ enum ProverStateCoeffsOrSums<F: Field> {
 /// customize the sumcheck logic through different [`SumcheckEvaluator`] implementations passed to
 /// the common state object.
 #[derive(Debug, CopyGetters)]
-pub struct ProverState<P, M>
+pub struct ProverState<P, M, Backend>
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	/// The number of variables in the folded multilinears. This value decrements each round the
 	/// state is folded.
@@ -129,18 +131,21 @@ where
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	tensor_query: Option<MultilinearQuery<P>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
+	backend: Backend,
 }
 
-impl<F, P, M> ProverState<P, M>
+impl<F, P, M, Backend> ProverState<P, M, Backend>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		multilinears: Vec<M>,
 		claimed_sums: Vec<F>,
 		switchover_fn: impl Fn(usize) -> usize,
+		backend: Backend,
 	) -> Result<Self, Error> {
 		let n_vars = multilinears
 			.first()
@@ -172,6 +177,7 @@ where
 			multilinears,
 			tensor_query: Some(tensor_query),
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
+			backend,
 		})
 	}
 
@@ -200,7 +206,8 @@ where
 		}
 
 		// Partial query for folding
-		let single_variable_partial_query = MultilinearQuery::with_full_query(&[challenge])?;
+		let single_variable_partial_query =
+			MultilinearQuery::with_full_query(&[challenge], self.backend.clone())?;
 
 		let mut any_transparent_left = false;
 		for multilinear in self.multilinears.iter_mut() {

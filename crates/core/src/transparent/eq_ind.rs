@@ -4,6 +4,7 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
 use binius_field::{Field, PackedField, TowerField};
+use binius_hal::ComputationBackend;
 use binius_utils::bail;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
@@ -26,10 +27,11 @@ impl<F: Field> EqIndPartialEval<F> {
 		Ok(Self { n_vars, r })
 	}
 
-	pub fn multilinear_extension<P: PackedField<Scalar = F>>(
+	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
 		&self,
+		backend: Backend,
 	) -> Result<MultilinearExtension<P>, Error> {
-		let multilin_query = MultilinearQuery::with_full_query(&self.r)?.into_expansion();
+		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
 		MultilinearExtension::from_values(multilin_query)
 	}
 }
@@ -71,6 +73,7 @@ mod tests {
 	use super::EqIndPartialEval;
 	use crate::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
+	use binius_hal::make_backend;
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {
@@ -84,14 +87,17 @@ mod tests {
 		let eval_point = &repeat_with(|| F::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
+		let backend = make_backend();
 
 		// Get Multivariate Poly version of eq_r
 		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();
 		let eval_mvp = eq_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version of eq_r
-		let eq_r_mle = eq_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point).unwrap();
+		let eq_r_mle = eq_r_mvp
+			.multilinear_extension::<P, _>(backend.clone())
+			.unwrap();
+		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point, backend).unwrap();
 		let eval_mle = eq_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

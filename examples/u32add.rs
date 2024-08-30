@@ -22,6 +22,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField, Field,
 	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_hal::{make_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -147,7 +148,8 @@ impl U32AddOracle {
 }
 
 #[instrument(skip_all, level = "debug")]
-fn prove<U, F, FW, DomainField, PCS, CH>(
+#[allow(clippy::too_many_arguments)]
+fn prove<U, F, FW, DomainField, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	pcs: &PCS,
@@ -155,6 +157,7 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	mut witness: MultilinearExtensionIndex<U, FW>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
+	backend: Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
@@ -164,6 +167,7 @@ where
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
@@ -210,19 +214,21 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		&mut challenger,
+		backend.clone(),
 	)?;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _, _>(
 		oracles,
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
+		backend.clone(),
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -242,6 +248,7 @@ where
 		&trace_committed,
 		&trace_commit_polys,
 		&same_query_claim.eval_point,
+		backend,
 	)?;
 
 	Ok(Proof {
@@ -261,19 +268,21 @@ struct Proof<F: Field, PCSComm, PCSProof> {
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
-fn verify<P, F, PCS, CH>(
+fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle: &U32AddOracle,
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
+	backend: Backend,
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b> + Pod,
 	F: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	let Proof {
 		trace_comm,
@@ -315,6 +324,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
+		backend,
 	)?;
 
 	Ok(())
@@ -332,6 +342,7 @@ fn main() {
 	// Values below 14 are rejected by `find_proof_size_optimal_pcs()`.
 	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
+	let backend = make_backend();
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
@@ -358,7 +369,7 @@ fn main() {
 		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
 
 	info!("Proving");
-	let proof = prove::<_, BinaryField128b, field_types::Field, field_types::DomainField, _, _>(
+	let proof = prove::<_, BinaryField128b, field_types::Field, field_types::DomainField, _, _, _>(
 		log_size,
 		&mut oracles,
 		&pcs,
@@ -366,9 +377,11 @@ fn main() {
 		witness,
 		challenger.clone(),
 		domain_factory,
+		backend.clone(),
 	)
 	.unwrap();
 
 	info!("Verifying");
-	verify(log_size, &mut oracles.clone(), &trace, &pcs, challenger.clone(), proof).unwrap();
+	verify(log_size, &mut oracles.clone(), &trace, &pcs, challenger.clone(), proof, backend)
+		.unwrap();
 }

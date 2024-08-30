@@ -24,6 +24,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use std::cmp;
 
@@ -38,19 +39,21 @@ pub struct ZerocheckBatchProveOutput<F: Field> {
 /// Prove a batched zerocheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<F, PW, DomainField, CH>(
+pub fn batch_prove<F, PW, DomainField, CH, Backend>(
 	zerochecks: impl IntoIterator<
 		Item = (ZerocheckClaim<F>, impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>),
 	>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	mut challenger: CH,
+	backend: Backend,
 ) -> Result<ZerocheckBatchProveOutput<F>, Error>
 where
 	F: Field,
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
+	Backend: ComputationBackend,
 {
 	let zerochecks = zerochecks.into_iter().collect::<Vec<_>>();
 	let n_vars = zerochecks
@@ -61,11 +64,12 @@ where
 
 	let zerocheck_challenges = challenger.sample_vec(cmp::max(n_vars, 1) - 1);
 
-	let mut provers_state = ZerocheckProversState::<F, PW, DomainField, _, _>::new(
+	let mut provers_state = ZerocheckProversState::<F, PW, DomainField, _, _, _>::new(
 		n_vars,
 		evaluation_domain_factory,
 		zerocheck_challenges.as_slice(),
 		switchover_fn,
+		backend.clone(),
 	)?;
 
 	let oracles = zerochecks

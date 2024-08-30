@@ -20,6 +20,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, PackedField, PackedFieldIndexable,
 	TowerField,
 };
+use binius_hal::ComputationBackend;
 use getset::{Getters, MutGetters};
 use std::mem;
 use tracing::instrument;
@@ -30,11 +31,12 @@ use tracing::instrument;
 /// `new_sumchecks` bivariate sumcheck instances, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during proving)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckProver<'a, 'b, F, PW>
+pub struct EvalcheckProver<'a, 'b, F, PW, Backend>
 where
 	F: TowerField,
 	PW: PackedField + WithUnderlier,
 	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+	Backend: ComputationBackend,
 {
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, PW::Underlier, PW::Scalar>,
@@ -48,14 +50,17 @@ where
 	#[get = "pub"]
 	new_sumchecks: Vec<BivariateSumcheck<'b, F, PW>>,
 	memoized_queries: MemoizedQueries<PW>,
+
+	backend: Backend,
 }
 
-impl<'a, 'b, F, PW> EvalcheckProver<'a, 'b, F, PW>
+impl<'a, 'b, F, PW, Backend> EvalcheckProver<'a, 'b, F, PW, Backend>
 where
 	F: TowerField + From<PW::Scalar>,
 	PW: PackedFieldIndexable + WithUnderlier,
 	PW::Scalar: TowerField + From<F>,
 	PW::Underlier: PackScalar<PW::Scalar, Packed = PW>,
+	Backend: ComputationBackend,
 {
 	/// Create a new prover state by tying together the mutable references to the oracle set and
 	/// witness index (they need to be mutable because `new_sumcheck` reduction may add new oracles & multilinears)
@@ -63,6 +68,7 @@ where
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
 		witness_index: &'a mut MultilinearExtensionIndex<'b, PW::Underlier, PW::Scalar>,
+		backend: Backend,
 	) -> Self {
 		let memoized_queries = MemoizedQueries::new();
 		let memoized_eq_ind = MemoizedTransparentPolynomials::new();
@@ -79,6 +85,7 @@ where
 			memoized_queries,
 			memoized_eq_ind,
 			memoized_shift_ind,
+			backend,
 		}
 	}
 
@@ -256,6 +263,7 @@ where
 					meta,
 					&shifted,
 					&wf_eval_point,
+					self.backend.clone(),
 				)?;
 
 				self.new_sumchecks.push((sumcheck_claim, sumcheck_witness));
@@ -271,6 +279,7 @@ where
 					meta,
 					&packed,
 					&wf_eval_point,
+					self.backend.clone(),
 				)?;
 				self.new_sumchecks.push((sumcheck_claim, sumcheck_witness));
 				EvalcheckProof::Packed
@@ -331,7 +340,9 @@ where
 		wf_eval_point: &[PW::Scalar],
 		is_random_point: bool,
 	) -> Result<(F, EvalcheckProof<F>), Error> {
-		let eval_query = self.memoized_queries.full_query(wf_eval_point)?;
+		let eval_query = self
+			.memoized_queries
+			.full_query(wf_eval_point, self.backend.clone())?;
 		let witness_poly = self
 			.witness_index
 			.get_multilin_poly(poly.id())

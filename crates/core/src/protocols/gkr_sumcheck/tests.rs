@@ -1,7 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use std::iter::repeat_with;
-
+use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 use crate::{
 	challenger::new_hasher_challenger,
 	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
@@ -13,11 +12,11 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{BinaryField128b, BinaryField32b, ExtensionField, Field, TowerField};
+use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use rand::{rngs::StdRng, SeedableRng};
-
-use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
+use std::iter::repeat_with;
 
 struct CreateClaimsWitnessesOutput<'a, F: TowerField> {
 	new_claims: Vec<GkrSumcheckClaim<F>>,
@@ -39,10 +38,11 @@ where
 	if n_shared_multilins == 0 || n_composites == 0 {
 		panic!("Require at least one multilinear and composite polynomial");
 	}
+	let backend = make_backend();
 
 	let eq_r = EqIndPartialEval::new(n_vars, r.clone())
 		.unwrap()
-		.multilinear_extension::<FE>()
+		.multilinear_extension::<FE, _>(backend)
 		.unwrap();
 
 	let n_total_multilins = n_shared_multilins + n_composites - 1;
@@ -143,12 +143,14 @@ fn test_prove_verify_batch() {
 	let n_claims = claims.len();
 	assert_eq!(witnesses.len(), n_claims);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
+	let backend = make_backend();
 
-	let prove_output = batch_prove::<_, _, BinaryField32b, _, _, _>(
+	let prove_output = batch_prove::<_, _, BinaryField32b, _, _, _, _>(
 		claims.iter().cloned().zip(witnesses.clone()),
 		domain_factory,
 		|_| 2,
 		prover_challenger,
+		backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;
@@ -164,7 +166,8 @@ fn test_prove_verify_batch() {
 		.all(|claim| claim.eval_point == *evaluation_point));
 
 	// Sanity check correctness of these reduced claims
-	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point).unwrap();
+	let backend = make_backend();
+	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point, backend).unwrap();
 
 	for (reduced_claim, witness) in reduced_claims.into_iter().zip(witnesses) {
 		let actual_eval = witness.poly.evaluate(&multilinear_query).unwrap();

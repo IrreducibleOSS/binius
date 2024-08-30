@@ -20,6 +20,7 @@ use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
@@ -63,14 +64,15 @@ where
 }
 
 #[derive(Debug)]
-pub struct ZerocheckProver<FDomain, P, Composition, M>
+pub struct ZerocheckProver<FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<P, M>,
+	state: ProverState<P, M, Backend>,
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
@@ -78,13 +80,14 @@ where
 	domains: Vec<EvaluationDomain<FDomain>>,
 }
 
-impl<F, FDomain, P, Composition, M> ZerocheckProver<FDomain, P, Composition, M>
+impl<F, FDomain, P, Composition, M, Backend> ZerocheckProver<FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		multilinears: Vec<M>,
@@ -92,6 +95,7 @@ where
 		challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
+		backend: Backend,
 	) -> Result<Self, Error> {
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
 		for composition in compositions.iter() {
@@ -103,7 +107,7 @@ where
 		}
 
 		let claimed_sums = vec![F::ZERO; compositions.len()];
-		let state = ProverState::new(multilinears, claimed_sums, switchover_fn)?;
+		let state = ProverState::new(multilinears, claimed_sums, switchover_fn, backend.clone())?;
 		let n_vars = state.n_vars();
 
 		if challenges.len() != n_vars {
@@ -119,7 +123,7 @@ where
 			.collect::<Result<_, _>>()?;
 
 		let partial_eq_ind_evals =
-			MultilinearQuery::with_full_query(&challenges[1..])?.into_expansion();
+			MultilinearQuery::with_full_query(&challenges[1..], backend)?.into_expansion();
 
 		Ok(Self {
 			n_vars,
@@ -176,14 +180,15 @@ where
 	}
 }
 
-impl<F, FDomain, P, Composition, M> SumcheckProver<F>
-	for ZerocheckProver<FDomain, P, Composition, M>
+impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for ZerocheckProver<FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars

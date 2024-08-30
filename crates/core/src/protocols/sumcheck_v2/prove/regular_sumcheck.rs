@@ -14,6 +14,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
@@ -62,31 +63,35 @@ where
 	Ok(())
 }
 
-pub struct RegularSumcheckProver<FDomain, P, Composition, M>
+pub struct RegularSumcheckProver<FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<P, M>,
+	state: ProverState<P, M, Backend>,
 	compositions: Vec<Composition>,
 	domains: Vec<EvaluationDomain<FDomain>>,
 }
 
-impl<F, FDomain, P, Composition, M> RegularSumcheckProver<FDomain, P, Composition, M>
+impl<F, FDomain, P, Composition, M, Backend>
+	RegularSumcheckProver<FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedField<Scalar = F>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		multilinears: Vec<M>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
+		backend: Backend,
 	) -> Result<Self, Error> {
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
 		for claim in composite_claims.iter() {
@@ -101,7 +106,7 @@ where
 			.iter()
 			.map(|composite_claim| composite_claim.sum)
 			.collect();
-		let state = ProverState::new(multilinears, claimed_sums, switchover_fn)?;
+		let state = ProverState::new(multilinears, claimed_sums, switchover_fn, backend)?;
 		let n_vars = state.n_vars();
 
 		let domains = composite_claims
@@ -127,14 +132,15 @@ where
 	}
 }
 
-impl<F, FDomain, P, Composition, M> SumcheckProver<F>
-	for RegularSumcheckProver<FDomain, P, Composition, M>
+impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for RegularSumcheckProver<FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars

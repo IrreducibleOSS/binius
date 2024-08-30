@@ -52,13 +52,15 @@ fn bench_polyval(c: &mut Criterion) {
 				poly: oracles.oracle(numerator),
 				product,
 			};
+			let backend = binius_hal::make_backend();
 
 			bench.iter(|| {
-				gkr_gpa::batch_prove::<F, FW, FW, _>(
+				gkr_gpa::batch_prove::<F, FW, FW, _, _>(
 					[gpa_witness.clone()],
 					[gpa_claim.clone()],
 					domain_factory.clone(),
 					prover_challenger.clone(),
+					backend.clone(),
 				)
 			});
 		});

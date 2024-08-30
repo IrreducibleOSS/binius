@@ -3,6 +3,7 @@
 use super::{RegularSumcheckProver, ZerocheckProver};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
+	polynomial::MultilinearPoly,
 	protocols::sumcheck_v2::{CompositeSumClaim, Error},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -11,29 +12,32 @@ use binius_field::{
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedFieldIndexable,
 };
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use itertools::Itertools;
 
-pub type OracleZerocheckProver<'a, FDomain, P> =
-	ZerocheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>>;
+pub type OracleZerocheckProver<'a, FDomain, P, Backend> =
+	ZerocheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>, Backend>;
 
-pub type OracleSumcheckProver<'a, FDomain, P> =
-	RegularSumcheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>>;
+pub type OracleSumcheckProver<'a, FDomain, P, Backend> =
+	RegularSumcheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>, Backend>;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-pub fn constraint_set_zerocheck_prover<'a, U, FW, FDomain>(
+pub fn constraint_set_zerocheck_prover<'a, U, FW, FDomain, Backend>(
 	constraint_set: ConstraintSet<PackedType<U, FW>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	zerocheck_challenges: &[FW],
-) -> Result<OracleZerocheckProver<'a, FDomain, PackedType<U, FW>>, Error>
+	backend: Backend,
+) -> Result<OracleZerocheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
 	U: UnderlierType + PackScalar<FW>,
 	FW: ExtensionField<FDomain>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,
+	Backend: ComputationBackend,
 {
 	let (constraints, multilinears) = split_constraint_set(constraint_set, witness)?;
 
@@ -56,23 +60,26 @@ where
 		zerocheck_challenges,
 		evaluation_domain_factory,
 		switchover_fn,
+		backend,
 	)?;
 
 	Ok(prover)
 }
 
 /// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
-pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain>(
+pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
 	constraint_set: ConstraintSet<PackedType<U, FW>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
-) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>>, Error>
+	backend: Backend,
+) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
 	U: UnderlierType + PackScalar<FW>,
 	FW: ExtensionField<FDomain>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,
+	Backend: ComputationBackend,
 {
 	let (constraints, multilinears) = split_constraint_set(constraint_set, witness)?;
 
@@ -89,8 +96,13 @@ where
 		}
 	}
 
-	let prover =
-		RegularSumcheckProver::new(multilinears, sums, evaluation_domain_factory, switchover_fn)?;
+	let prover = RegularSumcheckProver::new(
+		multilinears,
+		sums,
+		evaluation_domain_factory,
+		switchover_fn,
+		backend,
+	)?;
 
 	Ok(prover)
 }

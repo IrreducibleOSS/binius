@@ -18,6 +18,7 @@ use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
 use std::{iter, marker::PhantomData, mem, ops::Deref};
@@ -112,12 +113,13 @@ where
 
 	// Clippy allow is due to bug: https://github.com/rust-lang/rust-clippy/pull/12892
 	#[allow(clippy::needless_borrows_for_generic_args)]
-	fn prove_evaluation<Data, CH>(
+	fn prove_evaluation<Data, CH, Backend>(
 		&self,
 		mut challenger: &mut CH,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
+		backend: Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
@@ -125,6 +127,7 @@ where
 			+ CanObserve<Self::Commitment>
 			+ CanSample<PE::Scalar>
 			+ CanSampleBits<usize>,
+		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -143,7 +146,8 @@ where
 
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
-		let expanded_query = MultilinearQuery::<PE>::with_full_query(query_from_kappa)?;
+		let expanded_query =
+			MultilinearQuery::<PE>::with_full_query(query_from_kappa, backend.clone())?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -153,13 +157,18 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim =
-			reduce_tensor_claim(self.n_vars(), sumcheck_eval.clone(), &tensor_mixing_challenges);
+		let sumcheck_claim = reduce_tensor_claim(
+			self.n_vars(),
+			sumcheck_eval.clone(),
+			&tensor_mixing_challenges,
+			backend.clone(),
+		);
 		let transparent = MultilinearExtension::from_values(ring_switch_eq_ind_partial_eval(
 			query_from_kappa,
 			&tensor_mixing_challenges,
+			backend.clone(),
 		)?)?;
-		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _>::new(
+		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _, _>::new(
 			vec![
 				MultilinearExtension::<PE, _>::specialize(packed_poly.to_ref()),
 				MultilinearExtension::<PE, _>::specialize(transparent.to_ref()),
@@ -167,17 +176,23 @@ where
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
 			|_| 1,
+			backend.clone(),
 		)?;
 		let (sumcheck_output, sumcheck_proof) =
 			sumcheck_v2::batch_prove(vec![sumcheck_prover], &mut challenger)?;
 		let ReducedClaim {
 			eval: _,
 			eval_point,
-		} = verify_sumcheck_output(sumcheck_output, query_from_kappa, &tensor_mixing_challenges)?;
+		} = verify_sumcheck_output(
+			sumcheck_output,
+			query_from_kappa,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		)?;
 
 		let inner_pcs_proof = self
 			.inner
-			.prove_evaluation(challenger, committed, &[packed_poly], &eval_point)
+			.prove_evaluation(challenger, committed, &[packed_poly], &eval_point, backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
 
 		Ok(Proof {
@@ -187,16 +202,18 @@ where
 		})
 	}
 
-	fn verify_evaluation<CH>(
+	fn verify_evaluation<CH, Backend>(
 		&self,
 		mut challenger: &mut CH,
 		commitment: &Self::Commitment,
 		query: &[FE],
 		proof: Self::Proof,
 		values: &[FE],
+		backend: Backend,
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
 			return Err(PolynomialError::IncorrectQuerySize {
@@ -220,7 +237,8 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query = MultilinearQuery::<FE>::with_full_query(query_to_kappa)?;
+		let expanded_query =
+			MultilinearQuery::<FE>::with_full_query(query_to_kappa, backend.clone())?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -231,15 +249,30 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim =
-			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges);
+		let sumcheck_claim = reduce_tensor_claim(
+			self.n_vars(),
+			sumcheck_eval,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		);
 		let output = sumcheck_v2::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
 
-		let ReducedClaim { eval, eval_point } =
-			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges)?;
+		let ReducedClaim { eval, eval_point } = verify_sumcheck_output(
+			output,
+			query_from_kappa,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		)?;
 
 		self.inner
-			.verify_evaluation(challenger, commitment, &eval_point, inner_pcs_proof, &[eval])
+			.verify_evaluation(
+				challenger,
+				commitment,
+				&eval_point,
+				inner_pcs_proof,
+				&[eval],
+				backend,
+			)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
@@ -288,22 +321,25 @@ pub enum VerificationError {
 	IncorrectRingSwitchIndEvaluation,
 }
 
-fn reduce_tensor_claim<F, FE>(
+fn reduce_tensor_claim<F, FE, Backend>(
 	n_vars: usize,
 	tensor_sum: TensorAlgebra<F, FE>,
 	tensor_mixing_challenges: &[FE],
+	backend: Backend,
 ) -> SumcheckClaim<FE, BivariateProduct>
 where
 	F: Field,
 	FE: ExtensionField<F> + PackedField<Scalar = FE> + PackedExtension<F>,
+	Backend: ComputationBackend,
 {
 	// Precondition
 	let kappa = <TensorAlgebra<F, FE>>::kappa();
 	assert_eq!(tensor_mixing_challenges.len(), kappa);
 
-	let expanded_mixing_coeffs = MultilinearQuery::<FE>::with_full_query(tensor_mixing_challenges)
-		.expect("FE extension degree is less than 2^31")
-		.into_expansion();
+	let expanded_mixing_coeffs =
+		MultilinearQuery::<FE>::with_full_query(tensor_mixing_challenges, backend)
+			.expect("FE extension degree is less than 2^31")
+			.into_expansion();
 	let mixed_sum = inner_product_unchecked::<FE, _>(
 		tensor_sum.transpose().vertical_elems().iter().copied(),
 		expanded_mixing_coeffs.into_iter(),
@@ -329,14 +365,16 @@ where
 /// * `output` - the sumcheck output
 /// * `eval_point` - the evaluation point of the packed polynomial
 /// * `tensor_mixing_challenges` - the mixing challenges used to mix the tensor algebra rows
-fn verify_sumcheck_output<F, FE>(
+fn verify_sumcheck_output<F, FE, Backend>(
 	output: BatchSumcheckOutput<FE>,
 	eval_point: &[FE],
 	tensor_mixing_challenges: &[FE],
+	backend: Backend,
 ) -> Result<ReducedClaim<FE>, VerificationError>
 where
 	F: Field,
 	FE: ExtensionField<F> + PackedField<Scalar = FE> + PackedExtension<F>,
+	Backend: ComputationBackend,
 {
 	// Precondition
 	let kappa = <TensorAlgebra<F, FE>>::kappa();
@@ -355,10 +393,11 @@ where
 		.expect("multilinear_evals has exactly one element");
 	assert_eq!(multilinear_evals.len(), 2);
 
-	let ring_switch_eq_ind_eval = evaluate_ring_switch_eq_ind::<F, _>(
+	let ring_switch_eq_ind_eval = evaluate_ring_switch_eq_ind::<F, _, _>(
 		eval_point,
 		&sumcheck_challenges,
 		tensor_mixing_challenges,
+		backend,
 	);
 	if multilinear_evals[1] != ring_switch_eq_ind_eval {
 		return Err(VerificationError::IncorrectRingSwitchIndEvaluation);
@@ -370,14 +409,16 @@ where
 	})
 }
 
-fn evaluate_ring_switch_eq_ind<FS, F>(
+fn evaluate_ring_switch_eq_ind<FS, F, Backend>(
 	eval_point: &[F],
 	sumcheck_challenges: &[F],
 	mixing_challenges: &[F],
+	backend: Backend,
 ) -> F
 where
 	FS: Field,
 	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS>,
+	Backend: ComputationBackend,
 {
 	assert_eq!(mixing_challenges.len(), <TensorAlgebra<FS, F>>::kappa());
 
@@ -390,7 +431,7 @@ where
 			eval + &vert_scaled + &hztl_scaled
 		});
 
-	let expanded_mixing_coeffs = MultilinearQuery::<F>::with_full_query(mixing_challenges)
+	let expanded_mixing_coeffs = MultilinearQuery::<F>::with_full_query(mixing_challenges, backend)
 		.expect("F extension degree is less than 2^31")
 		.into_expansion();
 	let folded_eval = inner_product_unchecked::<F, _>(
@@ -405,18 +446,21 @@ where
 /// See [DP24] Section 4.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
-fn ring_switch_eq_ind_partial_eval<FS, F, P>(
+fn ring_switch_eq_ind_partial_eval<FS, F, P, Backend>(
 	eval_point: &[F],
 	mixing_challenges: &[F],
+	backend: Backend,
 ) -> Result<Vec<P>, PolynomialError>
 where
 	FS: Field,
 	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS>,
 	P: PackedFieldIndexable<Scalar = F>,
+	Backend: ComputationBackend,
 {
 	assert_eq!(mixing_challenges.len(), <TensorAlgebra<FS, F>>::kappa());
-	let expanded_mixing_coeffs = MultilinearQuery::<F>::with_full_query(mixing_challenges)?;
-	let mut evals = MultilinearQuery::<P>::with_full_query(eval_point)?.into_expansion();
+	let expanded_mixing_coeffs =
+		MultilinearQuery::<F>::with_full_query(mixing_challenges, backend.clone())?;
+	let mut evals = MultilinearQuery::<P>::with_full_query(eval_point, backend)?.into_expansion();
 	P::unpack_scalars_mut(&mut evals)
 		.par_iter_mut()
 		.for_each(|val| {
@@ -442,6 +486,7 @@ mod tests {
 		underlier::{Divisible, UnderlierType},
 		BinaryField, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
+	use binius_hal::make_backend;
 	use binius_hash::GroestlHasher;
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use binius_utils::checked_arithmetics::checked_log_2;
@@ -479,7 +524,9 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let eval_query = MultilinearQuery::<FE>::with_full_query(&eval_point).unwrap();
+		let backend = make_backend();
+		let eval_query =
+			MultilinearQuery::<FE>::with_full_query(&eval_point, backend.clone()).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let rs_code = ReedSolomonCode::new(5, 2, Default::default()).unwrap();
@@ -492,6 +539,7 @@ mod tests {
 		.unwrap();
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
+		let backend = make_backend();
 		let pcs =
 			RingSwitchPCS::<F, BinaryField8b, _, _, _>::new(inner_pcs, domain_factory).unwrap();
 
@@ -502,12 +550,25 @@ mod tests {
 
 		let mut prover_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prover_challenger, &committed, &[multilin], &eval_point)
+			.prove_evaluation(
+				&mut prover_challenger,
+				&committed,
+				&[multilin],
+				&eval_point,
+				backend.clone(),
+			)
 			.unwrap();
 
 		let mut verifier_challenger = challenger.clone();
-		pcs.verify_evaluation(&mut verifier_challenger, &commitment, &eval_point, proof, &[eval])
-			.unwrap();
+		pcs.verify_evaluation(
+			&mut verifier_challenger,
+			&commitment,
+			&eval_point,
+			proof,
+			&[eval],
+			backend.clone(),
+		)
+		.unwrap();
 	}
 
 	#[test]
@@ -535,22 +596,30 @@ mod tests {
 		let mixing_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(4)
 			.collect::<Vec<_>>();
+		let backend = make_backend();
 
 		let sumcheck_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let val1 = evaluate_ring_switch_eq_ind::<F, _>(
+		let val1 = evaluate_ring_switch_eq_ind::<F, _, _>(
 			&eval_point,
 			&sumcheck_challenges,
 			&mixing_challenges,
+			backend.clone(),
 		);
 
-		let partial_evals =
-			ring_switch_eq_ind_partial_eval::<F, _, FE>(&eval_point, &mixing_challenges).unwrap();
+		let partial_evals = ring_switch_eq_ind_partial_eval::<F, _, FE, _>(
+			&eval_point,
+			&mixing_challenges,
+			backend.clone(),
+		)
+		.unwrap();
 		let val2 = MultilinearExtension::from_values(partial_evals)
 			.unwrap()
-			.evaluate(&MultilinearQuery::<FE>::with_full_query(&sumcheck_challenges).unwrap())
+			.evaluate(
+				&MultilinearQuery::<FE>::with_full_query(&sumcheck_challenges, backend).unwrap(),
+			)
 			.unwrap();
 		assert_eq!(val1, val2);
 	}

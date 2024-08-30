@@ -22,6 +22,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
@@ -29,7 +30,7 @@ use rayon::prelude::*;
 use std::marker::PhantomData;
 use tracing::instrument;
 
-pub struct GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>
+pub struct GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M, Backend>
 where
 	F: Field,
 	PW: PackedField,
@@ -37,16 +38,17 @@ where
 	EDF: EvaluationDomainFactory<DomainField>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
+	Backend: ComputationBackend,
 {
-	common: CommonProversState<(usize, usize), PW, M>,
+	common: CommonProversState<(usize, usize), PW, M, Backend>,
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
 	round_eq_ind: MultilinearExtension<PW>,
-	_domain_field_marker: PhantomData<DomainField>,
-	_cw_marker: PhantomData<CW>,
+	_marker: PhantomData<(DomainField, CW)>,
 }
 
-impl<'a, F, PW, DomainField, EDF, CW, M> GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>
+impl<'a, F, PW, DomainField, EDF, CW, M, Backend>
+	GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M, Backend>
 where
 	F: Field,
 	PW: PackedField<Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
@@ -54,14 +56,16 @@ where
 	EDF: EvaluationDomainFactory<DomainField>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		n_vars: usize,
 		evaluation_domain_factory: EDF,
 		gkr_round_challenge: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize + 'static,
+		backend: Backend,
 	) -> Result<Self, Error> {
-		let common = CommonProversState::new(n_vars, switchover_fn);
+		let common = CommonProversState::new(n_vars, switchover_fn, backend.clone());
 
 		let pw_scalar_challenges = gkr_round_challenge
 			.iter()
@@ -69,16 +73,15 @@ where
 			.map(|&f| f.into())
 			.collect::<Vec<PW::Scalar>>();
 
-		let round_eq_ind =
-			EqIndPartialEval::new(n_vars - 1, pw_scalar_challenges)?.multilinear_extension()?;
+		let round_eq_ind = EqIndPartialEval::new(n_vars - 1, pw_scalar_challenges)?
+			.multilinear_extension(backend)?;
 
 		Ok(Self {
 			common,
 			evaluation_domain_factory,
 			gkr_round_challenge,
 			round_eq_ind,
-			_domain_field_marker: PhantomData,
-			_cw_marker: PhantomData,
+			_marker: PhantomData,
 		})
 	}
 
@@ -101,8 +104,8 @@ where
 	}
 }
 
-impl<'a, F, PW, DomainField, EDF, CW, M> AbstractSumcheckProversState<F>
-	for GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>
+impl<'a, F, PW, DomainField, EDF, CW, M, Backend> AbstractSumcheckProversState<F>
+	for GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M, Backend>
 where
 	F: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
@@ -110,6 +113,7 @@ where
 	EDF: EvaluationDomainFactory<DomainField>,
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
+	Backend: ComputationBackend,
 {
 	type Error = Error;
 
@@ -279,12 +283,13 @@ where
 		Ok(self.round_claim.into())
 	}
 
-	fn compute_round_coeffs<EDF>(
+	fn compute_round_coeffs<EDF, Backend>(
 		&self,
-		provers_state: &GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>,
+		provers_state: &GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M, Backend>,
 	) -> Result<Vec<PW::Scalar>, Error>
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
 	{
 		if self.degree == 1 {
 			return Ok(vec![PW::Scalar::default()]);
@@ -331,13 +336,14 @@ where
 	}
 
 	#[instrument(skip_all, name = "gkr_sumcheck::execute_round", level = "debug")]
-	fn execute_round<EDF>(
+	fn execute_round<EDF, Backend>(
 		&mut self,
-		provers_state: &GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M>,
+		provers_state: &GkrSumcheckProversState<'a, F, PW, DomainField, EDF, CW, M, Backend>,
 		prev_rd_challenge: Option<F>,
 	) -> Result<GkrSumcheckRound<F>, Error>
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
 	{
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;

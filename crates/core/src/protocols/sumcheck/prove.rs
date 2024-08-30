@@ -23,6 +23,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
@@ -31,24 +32,27 @@ use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
 /// Prove a sumcheck to evalcheck reduction.
-pub fn prove<F, PW, DomainField, CH>(
+pub fn prove<F, PW, DomainField, CH, Backend>(
 	claim: &SumcheckClaim<F>,
 	witness: impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
+	backend: Backend,
 ) -> Result<SumcheckProveOutput<F>, Error>
 where
 	F: Field,
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
+	Backend: ComputationBackend,
 {
-	let batch_proof = batch_prove::<F, PW, DomainField, CH>(
+	let batch_proof = batch_prove::<F, PW, DomainField, CH, Backend>(
 		[(claim.clone(), witness)],
 		evaluation_domain_factory,
 		switchover_fn,
 		challenger,
+		backend,
 	)?;
 
 	Ok(SumcheckProveOutput {
@@ -63,53 +67,53 @@ where
 	})
 }
 
-pub struct SumcheckProversState<F, PW, DomainField, EDF, W>
+pub struct SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW>,
+	Backend: ComputationBackend,
 {
-	common: CommonProversState<OracleId, PW, W::Multilinear>,
+	common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
-	_f_marker: PhantomData<F>,
-	_domain_field_marker: PhantomData<DomainField>,
-	_w_marker: PhantomData<W>,
+	_marker: PhantomData<(F, DomainField, W)>,
 }
 
-impl<F, PW, DomainField, EDF, W> SumcheckProversState<F, PW, DomainField, EDF, W>
+impl<F, PW, DomainField, EDF, W, Backend> SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW>,
+	Backend: ComputationBackend,
 {
 	pub fn new(
 		n_vars: usize,
 		evaluation_domain_factory: EDF,
 		switchover_fn: impl Fn(usize) -> usize + 'static,
+		backend: Backend,
 	) -> Self {
-		let common = CommonProversState::new(n_vars, switchover_fn);
+		let common = CommonProversState::new(n_vars, switchover_fn, backend);
 		Self {
 			common,
 			evaluation_domain_factory,
-			_f_marker: PhantomData,
-			_domain_field_marker: PhantomData,
-			_w_marker: PhantomData,
+			_marker: PhantomData,
 		}
 	}
 }
 
-impl<F, PW, DomainField, EDF, W> AbstractSumcheckProversState<F>
-	for SumcheckProversState<F, PW, DomainField, EDF, W>
+impl<F, PW, DomainField, EDF, W, Backend> AbstractSumcheckProversState<F>
+	for SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	DomainField: Field,
 	EDF: EvaluationDomainFactory<DomainField>,
 	W: AbstractSumcheckWitness<PW, MultilinearId = OracleId>,
+	Backend: ComputationBackend,
 {
 	type Error = Error;
 
@@ -261,13 +265,14 @@ where
 	}
 
 	#[instrument(skip_all, name = "sumcheck::execute_round", level = "debug")]
-	fn execute_round<EDF>(
+	fn execute_round<EDF, Backend>(
 		&mut self,
-		provers_state: &SumcheckProversState<F, PW, DomainField, EDF, W>,
+		provers_state: &SumcheckProversState<F, PW, DomainField, EDF, W, Backend>,
 		prev_rd_challenge: Option<F>,
 	) -> Result<SumcheckRound<F>, Error>
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
+		Backend: ComputationBackend,
 	{
 		// First round has no challenge, other rounds should have it
 		validate_rd_challenge(prev_rd_challenge, self.round)?;

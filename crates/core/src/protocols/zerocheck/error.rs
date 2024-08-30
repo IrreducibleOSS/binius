@@ -35,8 +35,10 @@ pub enum Error {
 	AbstractSumcheck(#[from] AbstractSumcheckError),
 	#[error("zerocheck naive validation failure: {index}")]
 	NaiveValidation { index: usize },
-	#[error("{0})")]
+	#[error("{0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("{0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

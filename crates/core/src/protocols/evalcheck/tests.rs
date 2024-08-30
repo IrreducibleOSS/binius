@@ -24,6 +24,7 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
+use binius_hal::make_backend;
 use binius_math::extrapolate_line;
 use binius_utils::bail;
 use bytemuck::cast_slice_mut;
@@ -64,6 +65,7 @@ impl CompositionPoly<FExtension> for QuadProduct {
 #[test]
 fn test_evaluation_point_batching() {
 	let mut rng = StdRng::seed_from_u64(0);
+	let backend = make_backend();
 
 	let log_size = 8;
 	let tower_level = 5;
@@ -85,7 +87,7 @@ fn test_evaluation_point_batching() {
 		.take(log_size)
 		.collect::<Vec<_>>();
 
-	let query = MultilinearQuery::with_full_query(&eval_point).unwrap();
+	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let batch_evals = multilins
 		.iter()
 		.map(|multilin| multilin.evaluate(&query).unwrap())
@@ -126,8 +128,11 @@ fn test_evaluation_point_batching() {
 		is_random_point: true,
 	};
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	let prove_batch0 = prover_state
@@ -241,7 +246,8 @@ fn test_shifted_evaluation_whole_cube() {
 	)
 	.unwrap();
 
-	let query = MultilinearQuery::with_full_query(&eval_point).unwrap();
+	let backend = make_backend();
+	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {
@@ -259,8 +265,11 @@ fn test_shifted_evaluation_whole_cube() {
 		])
 		.unwrap();
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 	assert_eq!(
 		prover_state
@@ -342,7 +351,8 @@ fn test_shifted_evaluation_subcube() {
 	)
 	.unwrap();
 
-	let query = MultilinearQuery::with_full_query(&eval_point).unwrap();
+	let backend = make_backend();
+	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {
@@ -360,8 +370,11 @@ fn test_shifted_evaluation_subcube() {
 		])
 		.unwrap();
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 	assert_eq!(
 		prover_state
@@ -480,8 +493,12 @@ fn test_evalcheck_linear_combination() {
 		])
 		.unwrap();
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let backend = make_backend();
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	let mut verifier_state = EvalcheckVerifier::new(&mut oracles);
@@ -531,8 +548,12 @@ fn test_evalcheck_repeating() {
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let backend = make_backend();
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	if let EvalcheckProof::Composite { ref subproofs } = proof {
@@ -620,8 +641,12 @@ fn test_evalcheck_merged() {
 		is_random_point: true,
 	};
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let backend = make_backend();
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	if let EvalcheckProof::Composite { ref subproofs } = proof {
@@ -717,8 +742,12 @@ fn test_evalcheck_interleaved() {
 		is_random_point: true,
 	};
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let backend = make_backend();
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	if let EvalcheckProof::Composite { ref subproofs } = proof {
@@ -807,8 +836,12 @@ fn test_evalcheck_zero_padded() {
 		is_random_point: true,
 	};
 
-	let mut prover_state =
-		EvalcheckProver::<FExtension, PExtension>::new(&mut oracles, &mut witness_index);
+	let backend = make_backend();
+	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
+		&mut oracles,
+		&mut witness_index,
+		backend.clone(),
+	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
 	if let EvalcheckProof::Composite { ref subproofs } = proof {

@@ -22,6 +22,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 
 pub type SumcheckBatchProof<F> = AbstractSumcheckBatchProof<F>;
@@ -35,19 +36,21 @@ pub struct SumcheckBatchProveOutput<F: Field> {
 /// Prove a batched sumcheck instance.
 ///
 /// See module documentation for details.
-pub fn batch_prove<F, PW, DomainField, CH>(
+pub fn batch_prove<F, PW, DomainField, CH, Backend>(
 	sumchecks: impl IntoIterator<
 		Item = (SumcheckClaim<F>, impl AbstractSumcheckWitness<PW, MultilinearId = OracleId>),
 	>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
+	backend: Backend,
 ) -> Result<SumcheckBatchProveOutput<F>, Error>
 where
 	F: Field,
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,
 	CH: CanSample<F> + CanObserve<F>,
+	Backend: ComputationBackend,
 {
 	let sumchecks = sumchecks.into_iter().collect::<Vec<_>>();
 	let n_vars = sumchecks
@@ -56,10 +59,11 @@ where
 		.max()
 		.unwrap_or(0);
 
-	let mut provers_state = SumcheckProversState::<F, PW, DomainField, _, _>::new(
+	let mut provers_state = SumcheckProversState::<F, PW, DomainField, _, _, _>::new(
 		n_vars,
 		evaluation_domain_factory,
 		switchover_fn,
+		backend,
 	);
 
 	let oracles = sumchecks

@@ -38,6 +38,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_hal::{make_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -148,14 +149,16 @@ struct FixedOracle {
 }
 
 impl FixedOracle {
-	pub fn new<F: TowerField>(
+	pub fn new<F: TowerField, Backend: ComputationBackend + 'static>(
 		oracles: &mut MultilinearOracleSet<F>,
 		log_size: usize,
+		backend: Backend,
 	) -> Result<Self> {
 		let round_const_values = must_cast_slice::<_, PackedBinaryField64x1b>(&KECCAKF_RC);
 		let round_consts_single =
-			oracles.add_transparent(MultilinearExtensionTransparent::<_, F, _>::from_values(
+			oracles.add_transparent(MultilinearExtensionTransparent::<_, F, _, _>::from_values(
 				round_const_values,
+				backend,
 			)?)?;
 		let round_consts =
 			oracles.add_repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
@@ -416,7 +419,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
-fn prove<U, F, FW, DomainField, PCS, CH>(
+fn prove<U, F, FW, DomainField, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -425,6 +428,7 @@ fn prove<U, F, FW, DomainField, PCS, CH>(
 	mut challenger: CH,
 	mut witness: MultilinearExtensionIndex<U, FW>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
+	backend: Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
@@ -434,6 +438,7 @@ where
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	// Round 1
 	let trace_commit_polys = oracles
@@ -481,19 +486,21 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		&mut challenger,
+		backend.clone(),
 	)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, FW>, _, _, _>(
 		oracles,
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
+		backend.clone(),
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -512,6 +519,7 @@ where
 		&trace_committed,
 		&trace_commit_polys,
 		&same_query_claim.eval_point,
+		backend,
 	)?;
 
 	Ok(Proof {
@@ -524,7 +532,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
-fn verify<P, F, PCS, CH>(
+fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -532,12 +540,14 @@ fn verify<P, F, PCS, CH>(
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
+	backend: Backend,
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b>,
 	F: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	let Proof {
 		trace_comm,
@@ -581,6 +591,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
+		backend,
 	)?;
 
 	Ok(())
@@ -699,8 +710,10 @@ fn main() {
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 	type FW = BinaryField128bPolyval;
 
+	let backend = make_backend();
+
 	let mut oracles = MultilinearOracleSet::new();
-	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
 
 	let trace_batch = oracles.committed_batch(trace_oracle.batch_id);
@@ -726,7 +739,7 @@ fn main() {
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
-	let proof = prove::<_, BinaryField128b, FW, FW, _, _>(
+	let proof = prove::<_, BinaryField128b, FW, FW, _, _, _>(
 		log_size,
 		&mut oracles.clone(),
 		&fixed_oracle,
@@ -735,6 +748,7 @@ fn main() {
 		challenger.clone(),
 		witness,
 		domain_factory,
+		backend.clone(),
 	)
 	.unwrap();
 
@@ -746,6 +760,7 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		proof,
+		backend,
 	)
 	.unwrap();
 }

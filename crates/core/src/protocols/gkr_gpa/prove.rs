@@ -19,6 +19,7 @@ use crate::{
 	witness::MultilinearWitness,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory};
 use binius_utils::{
 	bail,
@@ -36,11 +37,12 @@ type MultilinWitnessPair<'a, P> = (MultilinearWitness<'a, P>, MultilinearWitness
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
-pub fn batch_prove<'a, F, PW, DomainField, Challenger>(
+pub fn batch_prove<'a, F, PW, DomainField, Challenger, Backend>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, PW>>,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	mut challenger: Challenger,
+	backend: Backend,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
@@ -48,6 +50,7 @@ where
 	DomainField: Field,
 	PW::Scalar: Field + From<F> + ExtensionField<DomainField>,
 	Challenger: CanSample<F> + CanObserve<F>,
+	Backend: ComputationBackend,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together
 	// 	For each witness-claim pair, create GrandProductProver
@@ -66,7 +69,7 @@ where
 	let provers_vec = witness_vec
 		.into_iter()
 		.zip(claim_vec.into_iter())
-		.map(|(witness, claim)| GrandProductProverState::new(&claim, witness))
+		.map(|(witness, claim)| GrandProductProverState::new(&claim, witness, backend.clone()))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let (original_indices, mut sorted_provers) =
@@ -118,6 +121,7 @@ where
 				evaluation_domain_factory.clone(),
 				|_| 1, // TODO better switchover fn
 				&mut challenger,
+				backend.clone(),
 			)?;
 			let sumcheck_challenge = reduced_claims[0].eval_point.clone();
 			(proof, sumcheck_challenge)
@@ -180,16 +184,17 @@ where
 	})
 }
 
-fn process_finished_provers<F, PW>(
+fn process_finished_provers<F, PW, Backend>(
 	n_claims: usize,
 	layer_no: usize,
-	sorted_provers: &mut Vec<GrandProductProverState<'_, F, PW>>,
+	sorted_provers: &mut Vec<GrandProductProverState<'_, F, PW, Backend>>,
 	reverse_sorted_evalcheck_multilinear_claims: &mut Vec<EvalcheckMultilinearClaim<F>>,
 ) -> Result<(), Error>
 where
 	PW: PackedField,
 	F: Field + From<PW::Scalar>,
 	PW::Scalar: Field + From<F>,
+	Backend: ComputationBackend,
 {
 	while !sorted_provers.is_empty() && sorted_provers.last().unwrap().input_vars() == layer_no {
 		debug_assert!(layer_no > 0);
@@ -209,11 +214,12 @@ where
 /// Coordinates the proving of a grand product claim before and after
 /// the sumcheck-based layer reductions.
 #[derive(Debug)]
-struct GrandProductProverState<'a, F, PW>
+struct GrandProductProverState<'a, F, PW, Backend>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: Field + From<F>,
+	Backend: ComputationBackend,
 {
 	// Input polynomial oracle
 	poly: MultilinearPolyOracle<F>,
@@ -225,18 +231,22 @@ where
 	next_layer_halves: Vec<MultilinWitnessPair<'a, PW>>,
 	// The current claim about a layer multilinear of the product circuit
 	current_layer_claim: LayerClaim<F>,
+
+	backend: Backend,
 }
 
-impl<'a, F, PW> GrandProductProverState<'a, F, PW>
+impl<'a, F, PW, Backend> GrandProductProverState<'a, F, PW, Backend>
 where
 	F: Field + From<PW::Scalar>,
 	PW: PackedField,
 	PW::Scalar: Field + From<F>,
+	Backend: ComputationBackend,
 {
 	/// Create a new GrandProductProverState
 	fn new(
 		claim: &GrandProductClaim<F>,
 		witness: GrandProductWitness<'a, PW>,
+		backend: Backend,
 	) -> Result<Self, Error> {
 		let n_vars = claim.poly.n_vars();
 		if n_vars != witness.n_vars() || witness.grand_product_evaluation() != claim.product.into()
@@ -281,6 +291,7 @@ where
 			next_layer_halves,
 			layers,
 			current_layer_claim: layer_claim,
+			backend,
 		})
 	}
 
@@ -342,7 +353,7 @@ where
 			.cloned()
 			.map(Into::into)
 			.collect::<Vec<_>>();
-		let multilinear_query = MultilinearQuery::with_full_query(&query)?;
+		let multilinear_query = MultilinearQuery::with_full_query(&query, self.backend.clone())?;
 
 		let zero_eval = self.next_layer_halves[self.current_layer_no()]
 			.0

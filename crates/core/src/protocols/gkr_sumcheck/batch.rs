@@ -8,6 +8,7 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension};
+use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
@@ -26,11 +27,12 @@ pub type GkrSumcheckBatchProveOutput<F> = AbstractSumcheckBatchProveOutput<F>;
 ///
 /// See module documentation for details.
 #[instrument(skip_all, name = "gkr_sumcheck::batch_prove", level = "debug")]
-pub fn batch_prove<F, PW, DomainField, CW, M, CH>(
+pub fn batch_prove<F, PW, DomainField, CW, M, CH, Backend>(
 	gkr_sumchecks: impl IntoIterator<Item = (GkrSumcheckClaim<F>, GkrSumcheckWitness<PW, CW, M>)>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
+	backend: Backend,
 ) -> Result<GkrSumcheckBatchProveOutput<F>, Error>
 where
 	F: Field,
@@ -39,6 +41,7 @@ where
 	CW: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
 	CH: CanObserve<F> + CanSample<F>,
+	Backend: ComputationBackend,
 {
 	let gkr_sumchecks = gkr_sumchecks.into_iter().collect::<Vec<_>>();
 	let n_vars = gkr_sumchecks
@@ -52,11 +55,12 @@ where
 		.map(|(claim, _)| claim.r.clone())
 		.ok_or(Error::EmptyClaimsArray)?;
 
-	let mut provers_state = GkrSumcheckProversState::<F, PW, DomainField, _, _, _>::new(
+	let mut provers_state = GkrSumcheckProversState::<F, PW, DomainField, _, _, _, _>::new(
 		n_vars,
 		evaluation_domain_factory,
 		gkr_round_challenge.as_slice(),
 		switchover_fn,
+		backend,
 	)?;
 
 	abstract_sumcheck::batch_prove(gkr_sumchecks, &mut provers_state, challenger)

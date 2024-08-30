@@ -15,6 +15,7 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
 	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
+use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -95,6 +96,7 @@ where
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 
@@ -120,12 +122,13 @@ where
 			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
-				prove::<FTower, FTower, FS, _>(
+				prove::<FTower, FTower, FS, _, _>(
 					&zerocheck_claim,
 					zerocheck_witness.clone(),
 					domain_factory.clone(),
 					move |_| switchover,
 					prove_challenger.clone(),
+					backend.clone(),
 				)
 			});
 		});
@@ -140,6 +143,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 
@@ -181,12 +185,13 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
-				prove::<FTower, FPolyval, FPolyval, _>(
+				prove::<FTower, FPolyval, FPolyval, _, _>(
 					&zerocheck_claim,
 					zerocheck_witness.clone(),
 					domain_factory.clone(),
 					|_| 1,
 					prove_challenger.clone(),
+					backend.clone(),
 				)
 			});
 		});
@@ -201,6 +206,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 
@@ -253,12 +259,13 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 			let prove_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 			b.iter(|| {
-				prove::<_, FPolyval, FPolyval, _>(
+				prove::<_, FPolyval, FPolyval, _, _>(
 					&zerocheck_claim,
 					prover_poly.clone(),
 					domain_factory.clone(),
 					|_| 1,
 					prove_challenger.clone(),
+					backend.clone(),
 				)
 			});
 		});

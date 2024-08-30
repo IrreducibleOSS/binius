@@ -6,25 +6,29 @@ use crate::{
 	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
+use binius_hal::ComputationBackend;
 
 /// A sum type that is used to put both regular sumchecks and zerochecks into the same `batch_prove` call.
-pub enum ConcreteProver<FDomain, P, Composition, M>
+pub enum ConcreteProver<FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
-	Sumcheck(RegularSumcheckProver<FDomain, P, Composition, M>),
-	Zerocheck(ZerocheckProver<FDomain, P, Composition, M>),
+	Sumcheck(RegularSumcheckProver<FDomain, P, Composition, M, Backend>),
+	Zerocheck(ZerocheckProver<FDomain, P, Composition, M, Backend>),
 }
 
-impl<F, FDomain, P, Composition, M> SumcheckProver<F> for ConcreteProver<FDomain, P, Composition, M>
+impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for ConcreteProver<FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedFieldIndexable,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	fn n_vars(&self) -> usize {
 		match self {

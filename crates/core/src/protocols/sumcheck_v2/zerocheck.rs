@@ -192,28 +192,37 @@ mod tests {
 	use binius_field::{
 		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedFieldIndexable,
 	};
+	use binius_hal::{make_backend, ComputationBackend};
 	use binius_hash::GroestlHasher;
 	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 	use rand::{prelude::StdRng, Rng, SeedableRng};
 	use std::{iter, sync::Arc};
 
-	fn make_regular_sumcheck_prover_for_zerocheck<F, FDomain, P, Composition, M>(
+	fn make_regular_sumcheck_prover_for_zerocheck<F, FDomain, P, Composition, M, Backend>(
 		multilinears: Vec<M>,
 		zero_claims: impl IntoIterator<Item = Composition>,
 		challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-	) -> RegularSumcheckProver<FDomain, P, ExtraProduct<Composition>, MultilinearWitness<'static, P>>
+		backend: Backend,
+	) -> RegularSumcheckProver<
+		FDomain,
+		P,
+		ExtraProduct<Composition>,
+		MultilinearWitness<'static, P>,
+		Backend,
+	>
 	where
 		F: Field + ExtensionField<FDomain>,
 		FDomain: Field,
 		P: PackedFieldIndexable<Scalar = F>,
 		Composition: CompositionPoly<P>,
 		M: MultilinearPoly<P> + Send + Sync + 'static,
+		Backend: ComputationBackend,
 	{
 		let eq_ind = EqIndPartialEval::new(challenges.len(), challenges.to_vec())
 			.unwrap()
-			.multilinear_extension::<P>()
+			.multilinear_extension::<P, _>(backend.clone())
 			.unwrap();
 
 		let multilinears = multilinears
@@ -233,6 +242,7 @@ mod tests {
 			composite_sum_claims,
 			evaluation_domain_factory,
 			switchover_fn,
+			backend,
 		)
 		.unwrap()
 	}
@@ -284,15 +294,17 @@ mod tests {
 			.unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+		let backend = make_backend();
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-		let reference_prover = make_regular_sumcheck_prover_for_zerocheck::<_, FDomain, _, _, _>(
+		let reference_prover = make_regular_sumcheck_prover_for_zerocheck::<_, FDomain, _, _, _, _>(
 			multilins.clone(),
 			[TestProductComposition::new(n_multilinears)],
 			&challenges,
 			domain_factory.clone(),
 			|_| switchover_rd,
+			backend.clone(),
 		);
 
 		let mut challenger1 = challenger.clone();
@@ -304,12 +316,13 @@ mod tests {
 			proof1,
 		) = batch_prove(vec![reference_prover], &mut challenger1).unwrap();
 
-		let optimized_prover = ZerocheckProver::<FDomain, _, _, _>::new(
+		let optimized_prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
 			multilins,
 			[TestProductComposition::new(n_multilinears)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
+			backend.clone(),
 		)
 		.unwrap();
 
@@ -349,13 +362,15 @@ mod tests {
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+		let backend = make_backend();
 
-		let prover = ZerocheckProver::<FDomain, _, _, _>::new(
+		let prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
 			multilins.clone(),
 			[TestProductComposition::new(n_multilinears)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
+			backend.clone(),
 		)
 		.unwrap();
 
@@ -405,7 +420,8 @@ mod tests {
 		assert_eq!(verifier_multilinear_evals[0].len(), n_multilinears);
 
 		// Verify the reduced multilinear evaluations are correct
-		let multilin_query = MultilinearQuery::with_full_query(&verifier_eval_point).unwrap();
+		let multilin_query =
+			MultilinearQuery::with_full_query(&verifier_eval_point, backend).unwrap();
 		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
 			assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
 		}

@@ -21,6 +21,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_hal::ComputationBackend;
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -38,7 +39,7 @@ composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
-fn prove<U, PCS, CH>(
+fn prove<U, PCS, CH, Backend>(
 	pcs: &PCS,
 	oracles: &mut MultilinearOracleSet<BinaryField128b>,
 	trace: &TraceOracle,
@@ -46,6 +47,7 @@ fn prove<U, PCS, CH>(
 	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
+	backend: Backend,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<BinaryField128bPolyval>,
@@ -58,6 +60,7 @@ where
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>
 		+ Clone,
+	Backend: ComputationBackend,
 {
 	let log_size = trace.log_size;
 	let commit_span = tracing::debug_span!("commit").entered();
@@ -92,6 +95,7 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
+		backend.clone(),
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
@@ -112,13 +116,14 @@ where
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck::prove::<_, PackedType<U, BinaryField128bPolyval>, _, _>(
+	} = greedy_evalcheck::prove::<_, PackedType<U, BinaryField128bPolyval>, _, _, _>(
 		oracles,
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
+		backend.clone(),
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -138,6 +143,7 @@ where
 		&abc_committed,
 		&commit_polys,
 		&same_query_pcs_claim.eval_point,
+		backend,
 	)?;
 
 	Ok(Proof {
@@ -156,13 +162,14 @@ struct Proof<C, P> {
 }
 
 #[instrument(skip_all, level = "debug")]
-fn verify<PCS, CH>(
+fn verify<PCS, CH, Backend>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
 	constraint_set: ConstraintSet<BinaryField128b>,
 	proof: Proof<PCS::Commitment, PCS::Proof>,
 	mut challenger: CH,
+	backend: Backend,
 ) -> Result<()>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
@@ -172,6 +179,7 @@ where
 		+ CanObserve<PCS::Commitment>
 		+ CanSample<BinaryField128b>
 		+ CanSampleBits<usize>,
+	Backend: ComputationBackend,
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
@@ -225,6 +233,7 @@ where
 		&same_query_pcs_claim.eval_point,
 		abc_eval_proof,
 		&same_query_pcs_claim.evals,
+		backend,
 	)?;
 
 	Ok(())
@@ -352,6 +361,7 @@ fn main() {
 	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace_oracle).unwrap();
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
+	let backend = binius_hal::make_backend();
 
 	let proof = prove(
 		&pcs,
@@ -361,9 +371,18 @@ fn main() {
 		witness,
 		challenger.clone(),
 		domain_factory,
+		backend.clone(),
 	)
 	.unwrap();
 
-	verify(log_size, &pcs, &mut oracles.clone(), verifier_constraints, proof, challenger.clone())
-		.unwrap();
+	verify(
+		log_size,
+		&pcs,
+		&mut oracles.clone(),
+		verifier_constraints,
+		proof,
+		challenger.clone(),
+		backend,
+	)
+	.unwrap();
 }
