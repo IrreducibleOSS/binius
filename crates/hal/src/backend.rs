@@ -1,17 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
+	immutable_slice::VecOrImmutableSlice,
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
 	Error,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use std::fmt::Debug;
-
-#[cfg(feature = "linerate-backend")]
-pub use binius_linerate_slice::VecOrImmutableSlice;
-
-#[cfg(not(feature = "linerate-backend"))]
-pub use crate::immutable_slice::VecOrImmutableSlice;
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
 pub trait ComputationBackend: Clone + Send + Sync + Debug {
