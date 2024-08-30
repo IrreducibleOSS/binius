@@ -20,7 +20,7 @@ use binius_field::{
 };
 use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
-use std::{iter, marker::PhantomData, ops::Deref};
+use std::{iter, marker::PhantomData, mem, ops::Deref};
 
 /// A polynomial commitment scheme constructed as a reduction to an inner PCS over a field
 /// extension.
@@ -247,10 +247,12 @@ where
 		if n_polys != 1 {
 			todo!("handle batches of size greater than 1");
 		}
-		todo!()
-		// let sumcheck_eval_size = <TensorAlgebra<F, FE>>::byte_size();
-		// let sumcheck_proof_size = algebra_sumcheck::proof_size::<F, FE>(self.inner.n_vars());
-		// sumcheck_eval_size + sumcheck_proof_size + self.inner.proof_size(n_polys)
+		let sumcheck_eval_size = <TensorAlgebra<F, FE>>::byte_size();
+		// We have a product of two multilinear polynomials. Each round of the sumcheck
+		// (of which there are self.inner.n_vars()) has 2 FE elements, due to an optimization.
+		// The final evaluations yield 2 FE elements.
+		let sumcheck_proof_size = mem::size_of::<FE>() * (2 * self.inner.n_vars() + 2);
+		sumcheck_eval_size + sumcheck_proof_size + self.inner.proof_size(n_polys)
 	}
 }
 
