@@ -52,7 +52,7 @@ name = "zerocheck"
 harness = false
 
 [[bench]]
-name = "gkr_prodcheck"
+name = "prodcheck"
 harness = false
 
 [features]

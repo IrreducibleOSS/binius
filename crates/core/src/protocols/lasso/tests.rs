@@ -86,7 +86,7 @@ fn test_prove_verify_interaction() {
 
 	let alpha = F::ONE;
 
-	let _prove_output = prove::<C, U, F, F, _>(
+	let prove_output = prove::<C, U, F, F, _>(
 		&mut oracles.clone(),
 		witness_index,
 		&claim,
@@ -98,6 +98,13 @@ fn test_prove_verify_interaction() {
 	.unwrap();
 
 	// VERIFIER
-	let _verified_reduced_claim =
-		verify::<C, _>(&mut oracles.clone(), &claim, &lasso_batches, gamma, alpha).unwrap();
+	let _verified_reduced_claim = verify::<C, _>(
+		&mut oracles.clone(),
+		&claim,
+		&lasso_batches,
+		gamma,
+		alpha,
+		prove_output.lasso_proof,
+	)
+	.unwrap();
 }

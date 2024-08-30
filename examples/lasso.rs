@@ -10,9 +10,8 @@ use binius_core::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		evalcheck::EvalcheckClaim,
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
-		gkr_prodcheck::{self, ProdcheckBatchProof, ProdcheckBatchProveOutput},
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
-		lasso::{self, LassoBatches, LassoClaim, LassoProveOutput, LassoWitness},
+		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
 		zerocheck::{self, ZerocheckBatchProof, ZerocheckBatchProveOutput},
 	},
 	witness::MultilinearExtensionIndex,
@@ -205,13 +204,13 @@ where
 	lasso_counts_proof: PCS1::Proof,
 	lasso_final_counts_comm: PCS1::Commitment,
 	lasso_final_counts_proof: PCS1::Proof,
+	lasso_proof: LassoProof<B128>,
 	mults_comm: PCS8::Commitment,
 	mults_proof: PCS8::Proof,
 	product_comm: PCS16::Commitment,
 	product_proof: PCS16::Proof,
 	lookup_t_comm: PCS32::Commitment,
 	lookup_t_proof: PCS32::Proof,
-	gkr_prodcheck_batch_proof: ProdcheckBatchProof<B128>,
 	gpa_proof: GrandProductBatchProof<B128>,
 	zerocheck_proof: ZerocheckBatchProof<B128>,
 	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
@@ -290,6 +289,8 @@ where
 		&extract_batch_id_polys::<_, _, B32>(trace_oracle.lookup_t_batch, &witness.index, oracles)?,
 	)?;
 
+	// Round 2 - Lasso prove
+
 	let lookup_t_oracle = oracles.oracle(trace_oracle.lookup_t);
 	let lookup_u_oracle = oracles.oracle(trace_oracle.lookup_u);
 
@@ -323,9 +324,10 @@ where
 
 	let LassoProveOutput {
 		reduced_lasso_claims,
-		prodcheck_witnesses,
+		reduced_gpa_witnesses,
 		zerocheck_witnesses,
 		witness_index,
+		lasso_proof,
 	} = lasso_prove_output;
 
 	let mut witness_index = witness_index;
@@ -347,20 +349,12 @@ where
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
-	// Round 2 - GKR-Based Prodcheck
-
-	let ProdcheckBatchProveOutput {
-		reduced_witnesses: reduced_gpa_witnesses,
-		reduced_claims: reduced_gpa_claims,
-		batch_proof: gkr_prodcheck_batch_proof,
-	} = gkr_prodcheck::batch_prove(prodcheck_witnesses, reduced_lasso_claims.prodcheck_claims)?;
-
 	let GrandProductBatchProveOutput {
 		evalcheck_multilinear_claims,
 		proof: gpa_proof,
 	} = gkr_gpa::batch_prove(
 		reduced_gpa_witnesses,
-		reduced_gpa_claims,
+		reduced_lasso_claims.reduced_gpa_claims,
 		domain_factory.clone(),
 		&mut challenger,
 	)?;
@@ -468,7 +462,7 @@ where
 		product_proof,
 		lookup_t_comm,
 		lookup_t_proof,
-		gkr_prodcheck_batch_proof,
+		lasso_proof,
 		gpa_proof,
 		zerocheck_proof,
 		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
@@ -521,14 +515,14 @@ where
 		product_proof,
 		lookup_t_comm,
 		lookup_t_proof,
-		gkr_prodcheck_batch_proof,
+		lasso_proof,
 		gpa_proof,
 		greedy_evalcheck_proof,
 		zerocheck_proof,
 		..
 	} = proof;
 
-	// Round 1 - Lasso deterministic reduction
+	// Round 1 - Lasso verify
 	let lookup_t_oracle = oracles.oracle(trace_oracle.lookup_t);
 	let lookup_u_oracle = oracles.oracle(trace_oracle.lookup_u);
 
@@ -541,22 +535,22 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let reduced_lasso_claims =
-		lasso::verify::<B32, _>(oracles, &lasso_claim, &trace_oracle.lasso_batches, gamma, alpha)?;
+	let reduced_lasso_claims = lasso::verify::<B32, _>(
+		oracles,
+		&lasso_claim,
+		&trace_oracle.lasso_batches,
+		gamma,
+		alpha,
+		lasso_proof,
+	)?;
 
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
-	// Round 2 - Prodcheck
-	let reduced_prodcheck_claims = gkr_prodcheck::batch_verify(
-		reduced_lasso_claims.prodcheck_claims,
-		gkr_prodcheck_batch_proof,
-	)?;
-
 	let reduced_gpa_claims =
-		gkr_gpa::batch_verify(reduced_prodcheck_claims, gpa_proof, &mut challenger)?;
+		gkr_gpa::batch_verify(reduced_lasso_claims.reduced_gpa_claims, gpa_proof, &mut challenger)?;
 
-	// Round 3 - Zerocheck
+	// Round 2 - Zerocheck
 	let evalcheck_claims = zerocheck::batch_verify(
 		reduced_lasso_claims.zerocheck_claims,
 		zerocheck_proof,

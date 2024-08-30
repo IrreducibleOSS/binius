@@ -2,8 +2,8 @@
 
 use super::error::Error;
 use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-	protocols::gkr_prodcheck::{ProdcheckClaim, ProdcheckWitness},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, OracleId},
+	protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -91,10 +91,16 @@ impl<'a, PW: PackedField> MsetcheckWitness<'a, PW> {
 	}
 }
 
+#[derive(Debug, Default)]
+pub struct MsetcheckProof<F: Field> {
+	pub grand_products: [F; 2],
+}
+
 #[derive(Debug)]
 pub struct MsetcheckProveOutput<'a, U: UnderlierType + PackScalar<FW>, F: Field, FW: Field> {
-	pub prodcheck_claim: ProdcheckClaim<F>,
-	pub prodcheck_witness: ProdcheckWitness<'a, PackedType<U, FW>>,
+	pub reduced_gpa_witnesses: [GrandProductWitness<'a, PackedType<U, FW>>; 2],
+	pub reduced_gpa_claims: [GrandProductClaim<F>; 2],
+	pub msetcheck_proof: MsetcheckProof<F>,
 	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
 }
 
@@ -103,7 +109,7 @@ pub fn reduce_msetcheck_claim<F: TowerField>(
 	msetcheck_claim: &MsetcheckClaim<F>,
 	gamma: F,
 	alpha: Option<F>,
-) -> Result<ProdcheckClaim<F>, Error> {
+) -> Result<[OracleId; 2], Error> {
 	// Claim sanity checks
 	let dimensions = msetcheck_claim.dimensions();
 	let n_vars = msetcheck_claim.n_vars();
@@ -112,23 +118,21 @@ pub fn reduce_msetcheck_claim<F: TowerField>(
 		bail!(Error::IncorrectAlpha);
 	}
 
-	// for a relation represented by the polynomials (T1, .., Tn) and challenges (gamma, alpha),
-	// construct a linear combination oracle for gamma + T1 + alpha * T2 + ... + alpha^(n-1) * Tn
-	let mut lincom_oracle = |relation_oracles: &[MultilinearPolyOracle<F>]| -> Result<_, Error> {
-		let inner_coeffs = iter::successors(Some(F::ONE), |coeff| alpha.map(|alpha| alpha * coeff));
-		let inner = inner_coeffs
-			.zip(relation_oracles)
-			.map(|(coeff, oracle)| (oracle.id(), coeff));
-		let oracle_id = oracles.add_linear_combination_with_offset(n_vars, gamma, inner)?;
-		Ok(oracles.oracle(oracle_id))
-	};
+	let mut lincom_oracle_prodcheck_claim =
+		|relation_oracles: &[MultilinearPolyOracle<F>]| -> Result<_, Error> {
+			let inner_coeffs =
+				iter::successors(Some(F::ONE), |coeff| alpha.map(|alpha| alpha * coeff));
+			let inner = inner_coeffs
+				.zip(relation_oracles)
+				.map(|(coeff, oracle)| (oracle.id(), coeff));
+			let oracle_id = oracles.add_linear_combination_with_offset(n_vars, gamma, inner)?;
+			Ok(oracle_id)
+		};
 
-	let t_oracle = lincom_oracle(&msetcheck_claim.t_oracles)?;
-	let u_oracle = lincom_oracle(&msetcheck_claim.u_oracles)?;
-
-	let prodcheck_claim = ProdcheckClaim { t_oracle, u_oracle };
-
-	Ok(prodcheck_claim)
+	Ok([
+		lincom_oracle_prodcheck_claim(&msetcheck_claim.t_oracles)?,
+		lincom_oracle_prodcheck_claim(&msetcheck_claim.u_oracles)?,
+	])
 }
 
 fn relation_sanity_checks<Column>(

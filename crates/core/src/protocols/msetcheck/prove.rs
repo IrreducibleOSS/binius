@@ -2,20 +2,24 @@
 
 use super::{
 	error::Error,
-	msetcheck::{reduce_msetcheck_claim, MsetcheckClaim, MsetcheckProveOutput, MsetcheckWitness},
+	msetcheck::{
+		reduce_msetcheck_claim, MsetcheckClaim, MsetcheckProof, MsetcheckProveOutput,
+		MsetcheckWitness,
+	},
 };
 use crate::{
-	oracle::MultilinearOracleSet,
+	oracle::{MultilinearOracleSet, OracleId},
 	polynomial::Error as PolynomialError,
-	protocols::gkr_prodcheck::ProdcheckWitness,
+	protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	PackedField, PackedFieldIndexable, TowerField,
+	Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_utils::bail;
+use itertools::multiunzip;
 use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::instrument;
@@ -48,7 +52,7 @@ where
 	FW: TowerField + From<F>,
 	PackedType<U, FW>: PackedFieldIndexable,
 {
-	let prodcheck_claim = reduce_msetcheck_claim(oracles, msetcheck_claim, gamma, alpha)?;
+	let gpa_claim_oracle_ids = reduce_msetcheck_claim(oracles, msetcheck_claim, gamma, alpha)?;
 
 	let dimensions = msetcheck_claim.dimensions();
 	let n_vars = msetcheck_claim.n_vars();
@@ -102,8 +106,7 @@ where
 		Ok(underliers.into())
 	};
 
-	let t_oracle_id = prodcheck_claim.t_oracle.id();
-	let u_oracle_id = prodcheck_claim.u_oracle.id();
+	let [t_oracle_id, u_oracle_id] = gpa_claim_oracle_ids;
 
 	let t_polynomial = lincom_witness(msetcheck_witness.t_polynomials())?;
 	let u_polynomial = lincom_witness(msetcheck_witness.u_polynomials())?;
@@ -111,14 +114,62 @@ where
 	let witness_index = witness_index
 		.update_owned::<FW, _>([(t_oracle_id, t_polynomial), (u_oracle_id, u_polynomial)])?;
 
-	let prodcheck_witness = ProdcheckWitness {
-		t_poly: witness_index.get_multilin_poly(t_oracle_id)?,
-		u_poly: witness_index.get_multilin_poly(u_oracle_id)?,
-	};
+	let (grand_products, reduced_gpa_witnesses, reduced_gpa_claims): (Vec<_>, Vec<_>, Vec<_>) =
+		multiunzip(gpa_claim_oracle_ids.map(|id| {
+			grand_product_witness_claim(id, &witness_index, oracles)
+				.expect("all elements have been added above")
+		}));
+
+	let [t_product, u_product] = grand_products[0..2]
+		.try_into()
+		.expect("The length must be 2");
+
+	if t_product != u_product {
+		bail!(Error::ProductsDiffer);
+	}
+
+	let reduced_gpa_witnesses = reduced_gpa_witnesses
+		.try_into()
+		.expect("The length must be 2 because the prodcheck_claims have a length of 2.");
+
+	let reduced_gpa_claims = reduced_gpa_claims
+		.try_into()
+		.expect("The length must be 2 because the prodcheck_claims have a length of 2.");
+
+	let grand_products = grand_products.try_into().expect("The length must be 2");
 
 	Ok(MsetcheckProveOutput {
-		prodcheck_claim,
-		prodcheck_witness,
+		reduced_gpa_witnesses,
+		reduced_gpa_claims,
+		msetcheck_proof: MsetcheckProof { grand_products },
 		witness_index,
 	})
+}
+
+type GrandProductWitnessClaimResult<'a, U, FW, F> =
+	Result<(F, GrandProductWitness<'a, PackedType<U, FW>>, GrandProductClaim<F>), Error>;
+
+fn grand_product_witness_claim<
+	'a,
+	U: UnderlierType + PackScalar<FW>,
+	F: TowerField + From<FW>,
+	FW: Field,
+>(
+	id: OracleId,
+	witness_index: &MultilinearExtensionIndex<'a, U, FW>,
+	oracles: &MultilinearOracleSet<F>,
+) -> GrandProductWitnessClaimResult<'a, U, FW, F> {
+	let poly = witness_index.get_multilin_poly(id)?;
+
+	let oracle = oracles.oracle(id);
+
+	let gpa_witness = GrandProductWitness::new(poly)?;
+
+	let product = gpa_witness.grand_product_evaluation().into();
+	let gpa_claim = GrandProductClaim {
+		poly: oracle,
+		product,
+	};
+
+	Ok((product, gpa_witness, gpa_claim))
 }

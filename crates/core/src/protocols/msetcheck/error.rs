@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::Error as OracleError, polynomial::Error as PolynomialError,
-	witness::Error as WitnessError,
+	protocols::gkr_gpa::Error as GrandProductError, witness::Error as WitnessError,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -27,4 +27,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("witness error: {0}")]
 	Witness(#[from] WitnessError),
+	#[error("gkr-based grand product failure: {0}")]
+	GrandProductError(#[from] GrandProductError),
+	#[error("invalid instance - the products of T and U polynomials differ")]
+	ProductsDiffer,
 }

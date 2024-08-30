@@ -8,7 +8,7 @@ use crate::{
 	},
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
-		gkr_prodcheck::{ProdcheckClaim, ProdcheckWitness},
+		gkr_gpa::{GrandProductClaim, GrandProductWitness},
 		zerocheck::{ZerocheckClaim, ZerocheckWitnessTypeErased},
 	},
 	transparent::step_down::StepDown,
@@ -199,30 +199,39 @@ impl<P: PackedField> CompositionPoly<P> for UnaryCarryConstraint {
 
 pub struct ReducedLassoClaims<F: Field> {
 	pub zerocheck_claims: Vec<ZerocheckClaim<F>>,
-	pub prodcheck_claims: Vec<ProdcheckClaim<F>>,
+	pub reduced_gpa_claims: Vec<GrandProductClaim<F>>,
+}
+
+#[derive(Debug, Default)]
+pub struct LassoProof<F: Field> {
+	pub grand_products: Vec<F>,
 }
 
 pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<FW>, FW: TowerField, F: Field> {
 	pub reduced_lasso_claims: ReducedLassoClaims<F>,
-	pub prodcheck_witnesses: Vec<ProdcheckWitness<'a, PackedType<U, FW>>>,
+	pub reduced_gpa_witnesses: Vec<GrandProductWitness<'a, PackedType<U, FW>>>,
 	pub zerocheck_witnesses:
 		Vec<ZerocheckWitnessTypeErased<'a, PackedType<U, FW>, UnaryCarryConstraint>>,
+	pub lasso_proof: LassoProof<F>,
 	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
 }
 
 pub(super) struct LassoReducedClaimOracleIds {
-	pub packed_counts_oracle_id: Vec<OracleId>,
-	pub packed_counts_plus_one_oracle_id: Vec<OracleId>,
+	pub packed_counts_oracle_ids: Vec<OracleId>,
+	pub packed_counts_plus_one_oracle_ids: Vec<OracleId>,
 	pub packed_final_counts_oracle_id: OracleId,
-	pub counts_plus_one_oracle_id: Vec<OracleId>,
+	pub counts_plus_one_oracle_ids: Vec<OracleId>,
 	pub carry_in_oracle_id: Vec<OracleId>,
-	pub carry_out_shifted_oracle_id: Vec<OracleId>,
+	pub carry_out_shifted_oracle_ids: Vec<OracleId>,
 	pub ones_repeating_oracle_id: Option<OracleId>,
 	pub mixed_t_final_counts_oracle_id: OracleId,
 	pub mixed_t_zero_oracle_id: OracleId,
-	pub mixed_u_counts_oracle_id: Vec<OracleId>,
-	pub mixed_u_counts_plus_one_oracle_id: Vec<OracleId>,
+	pub mixed_u_counts_oracle_ids: Vec<OracleId>,
+	pub mixed_u_counts_plus_one_oracle_ids: Vec<OracleId>,
 }
+
+type ReduceLassoClaimResult<F> =
+	Result<(Vec<OracleId>, Vec<ZerocheckClaim<F>>, LassoReducedClaimOracleIds), Error>;
 
 pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -230,28 +239,26 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 	lasso_batches: &LassoBatches,
 	gamma: F,
 	alpha: F,
-) -> Result<(ReducedLassoClaims<F>, LassoReducedClaimOracleIds), Error> {
+) -> ReduceLassoClaimResult<F> {
 	let t_n_vars = lasso_claim.t_oracle.n_vars();
 	let t_n_vars_gf2 = t_n_vars + C::TOWER_LEVEL;
 
-	// Extract Lasso committed column oracles
 	let final_counts_oracle = oracles.oracle(lasso_batches.final_counts);
 
 	if final_counts_oracle.n_vars() != t_n_vars_gf2 {
 		bail!(Error::CountsNumVariablesMismatch);
 	}
 
-	let mut packed_counts_oracle_id = Vec::new();
-	let mut packed_counts_plus_one_oracle_id = Vec::new();
-	let mut counts_plus_one_oracle_id = Vec::new();
+	let mut packed_counts_oracle_ids = Vec::new();
+	let mut packed_counts_plus_one_oracle_ids = Vec::new();
+	let mut counts_plus_one_oracle_ids = Vec::new();
 	let mut carry_in_oracle_id = Vec::new();
-	let mut carry_out_shifted_oracle_id = Vec::new();
-	let mut mixed_u_counts_oracle_id = Vec::new();
-	let mut mixed_u_counts_plus_one_oracle_id = Vec::new();
-
-	let mut prodcheck_claims = Vec::new();
+	let mut carry_out_shifted_oracle_ids = Vec::new();
+	let mut mixed_u_counts_oracle_ids = Vec::new();
+	let mut mixed_u_counts_plus_one_oracle_ids = Vec::new();
 
 	let mut zerocheck_claims = Vec::new();
+	let mut gpa_claim_oracle_ids = Vec::new();
 
 	let mut ones_repeating_oracle_id = None;
 
@@ -281,7 +288,7 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 		.enumerate()
 		{
 			// carry_in = ([carry_out] << 1) + 1
-			carry_out_shifted_oracle_id.push(oracles.add_shifted(
+			carry_out_shifted_oracle_ids.push(oracles.add_shifted(
 				*carry_out_oracle_id,
 				1,
 				C::TOWER_LEVEL,
@@ -292,7 +299,7 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 				oracles.add_linear_combination(
 					u_n_vars_gf2,
 					[
-						(carry_out_shifted_oracle_id[i], F::ONE),
+						(carry_out_shifted_oracle_ids[i], F::ONE),
 						(
 							ones_repeating_oracle_id
 								.expect("ones_repeating_oracle_id was created above"),
@@ -303,7 +310,7 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 			);
 
 			// counts_plus_one = [counts] + carry_in
-			counts_plus_one_oracle_id.push(oracles.add_linear_combination(
+			counts_plus_one_oracle_ids.push(oracles.add_linear_combination(
 				u_n_vars_gf2,
 				[(*counts_oracle_id, F::ONE), (carry_in_oracle_id[i], F::ONE)],
 			)?);
@@ -324,29 +331,29 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 			});
 
 			// Packed oracles for the multiset check
-			packed_counts_oracle_id.push(oracles.add_packed(*counts_oracle_id, C::TOWER_LEVEL)?);
-			packed_counts_plus_one_oracle_id
-				.push(oracles.add_packed(counts_plus_one_oracle_id[i], C::TOWER_LEVEL)?);
+			packed_counts_oracle_ids.push(oracles.add_packed(*counts_oracle_id, C::TOWER_LEVEL)?);
+			packed_counts_plus_one_oracle_ids
+				.push(oracles.add_packed(counts_plus_one_oracle_ids[i], C::TOWER_LEVEL)?);
 
-			mixed_u_counts_oracle_id.push(oracles.add_linear_combination_with_offset(
-				u_n_vars,
-				gamma,
-				[(u_oracle.id(), F::ONE), (packed_counts_oracle_id[i], alpha)],
-			)?);
-
-			mixed_u_counts_plus_one_oracle_id.push(oracles.add_linear_combination_with_offset(
+			mixed_u_counts_oracle_ids.push(oracles.add_linear_combination_with_offset(
 				u_n_vars,
 				gamma,
 				[
 					(u_oracle.id(), F::ONE),
-					(packed_counts_plus_one_oracle_id[i], alpha),
+					(packed_counts_oracle_ids[i], alpha),
 				],
 			)?);
 
-			prodcheck_claims.push(ProdcheckClaim {
-				t_oracle: oracles.oracle(mixed_u_counts_oracle_id[i]),
-				u_oracle: oracles.oracle(mixed_u_counts_plus_one_oracle_id[i]),
-			});
+			mixed_u_counts_plus_one_oracle_ids.push(oracles.add_linear_combination_with_offset(
+				u_n_vars,
+				gamma,
+				[
+					(u_oracle.id(), F::ONE),
+					(packed_counts_plus_one_oracle_ids[i], alpha),
+				],
+			)?);
+			gpa_claim_oracle_ids.push(mixed_u_counts_oracle_ids[i]);
+			gpa_claim_oracle_ids.push(mixed_u_counts_plus_one_oracle_ids[i]);
 		}
 	}
 
@@ -369,28 +376,20 @@ pub fn reduce_lasso_claim<C: LassoCount, F: TowerField>(
 	)?;
 
 	let lasso_claim_oracles = LassoReducedClaimOracleIds {
-		packed_counts_oracle_id,
-		packed_counts_plus_one_oracle_id,
+		packed_counts_oracle_ids,
+		packed_counts_plus_one_oracle_ids,
 		packed_final_counts_oracle_id,
-		counts_plus_one_oracle_id,
+		counts_plus_one_oracle_ids,
 		carry_in_oracle_id,
-		carry_out_shifted_oracle_id,
+		carry_out_shifted_oracle_ids,
 		ones_repeating_oracle_id,
 		mixed_t_final_counts_oracle_id,
 		mixed_t_zero_oracle_id,
-		mixed_u_counts_oracle_id,
-		mixed_u_counts_plus_one_oracle_id,
+		mixed_u_counts_oracle_ids,
+		mixed_u_counts_plus_one_oracle_ids,
 	};
+	gpa_claim_oracle_ids.push(mixed_t_final_counts_oracle_id);
+	gpa_claim_oracle_ids.push(mixed_t_zero_oracle_id);
 
-	prodcheck_claims.push(ProdcheckClaim {
-		t_oracle: oracles.oracle(mixed_t_final_counts_oracle_id),
-		u_oracle: oracles.oracle(mixed_t_zero_oracle_id),
-	});
-
-	let reduced_lasso_claims = ReducedLassoClaims {
-		zerocheck_claims,
-		prodcheck_claims,
-	};
-
-	Ok((reduced_lasso_claims, lasso_claim_oracles))
+	Ok((gpa_claim_oracle_ids, zerocheck_claims, lasso_claim_oracles))
 }

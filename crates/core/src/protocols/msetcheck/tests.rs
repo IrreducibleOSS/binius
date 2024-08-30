@@ -3,7 +3,7 @@
 use crate::{
 	oracle::MultilinearOracleSet,
 	polynomial::MultilinearExtension,
-	protocols::msetcheck::{prove, verify, MsetcheckClaim, MsetcheckWitness},
+	protocols::msetcheck::{prove, verify, MsetcheckClaim, MsetcheckProveOutput, MsetcheckWitness},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -91,38 +91,10 @@ fn test_prove_verify_interaction() {
 	let prove_output =
 		prove(&mut oracles.clone(), witness_index, &claim, witness, gamma, Some(alpha)).unwrap();
 
+	let MsetcheckProveOutput {
+		msetcheck_proof, ..
+	} = prove_output;
+
 	// VERIFIER
-	let verified_reduced_claim = verify(&mut oracles.clone(), &claim, gamma, Some(alpha)).unwrap();
-
-	// Consistency checks
-	let alpha2 = alpha * alpha;
-
-	for i in 0..1 << n_vars {
-		let vt1 = t1_polynomial.evaluate_on_hypercube(i).unwrap();
-		let vt2 = t2_polynomial.evaluate_on_hypercube(i).unwrap();
-		let vt3 = t3_polynomial.evaluate_on_hypercube(i).unwrap();
-		let actual_eval = gamma + vt1 + alpha * vt2 + alpha2 * vt3;
-		let witness_eval = prove_output
-			.prodcheck_witness
-			.t_poly
-			.evaluate_on_hypercube(i)
-			.unwrap();
-		assert_eq!(actual_eval, witness_eval);
-	}
-
-	for i in 0..1 << n_vars {
-		let vt1 = u1_polynomial.evaluate_on_hypercube(i).unwrap();
-		let vt2 = u2_polynomial.evaluate_on_hypercube(i).unwrap();
-		let vt3 = u3_polynomial.evaluate_on_hypercube(i).unwrap();
-		let actual_eval = gamma + vt1 + alpha * vt2 + alpha2 * vt3;
-		let witness_eval = prove_output
-			.prodcheck_witness
-			.u_poly
-			.evaluate_on_hypercube(i)
-			.unwrap();
-		assert_eq!(actual_eval, witness_eval);
-	}
-
-	assert_eq!(verified_reduced_claim.t_oracle.n_vars(), n_vars);
-	assert_eq!(verified_reduced_claim.u_oracle.n_vars(), n_vars);
+	verify(&mut oracles.clone(), &claim, gamma, Some(alpha), msetcheck_proof).unwrap();
 }

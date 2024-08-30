@@ -2,9 +2,11 @@
 
 use super::{
 	error::Error,
-	lasso::{reduce_lasso_claim, LassoBatches, LassoClaim, LassoCount, ReducedLassoClaims},
+	lasso::{
+		reduce_lasso_claim, LassoBatches, LassoClaim, LassoCount, LassoProof, ReducedLassoClaims,
+	},
 };
-use crate::oracle::MultilinearOracleSet;
+use crate::{oracle::MultilinearOracleSet, protocols::gkr_gpa::GrandProductClaim};
 use binius_field::TowerField;
 use binius_utils::bail;
 use tracing::instrument;
@@ -17,6 +19,7 @@ pub fn verify<C: LassoCount, F: TowerField>(
 	batch: &LassoBatches,
 	gamma: F,
 	alpha: F,
+	lasso_proof: LassoProof<F>,
 ) -> Result<ReducedLassoClaims<F>, Error> {
 	// Check that counts actually fit into the chosen data type
 	// NB. Need one more bit because 1 << n_vars is a valid count.
@@ -32,6 +35,31 @@ pub fn verify<C: LassoCount, F: TowerField>(
 		bail!(Error::LassoCountTypeTooSmall);
 	}
 
-	let (reduced, _) = reduce_lasso_claim::<C, _>(oracles, claim, batch, gamma, alpha)?;
-	Ok(reduced)
+	let (left_product, right_product) = lasso_proof
+		.grand_products
+		.chunks(2)
+		.fold((F::ONE, F::ONE), |(left_acc, right_acc), left_right| {
+			(left_acc * left_right[0], right_acc * left_right[1])
+		});
+
+	if left_product != right_product {
+		bail!(Error::ProductsDiffer);
+	}
+
+	let (gpa_claim_oracle_ids, zerocheck_claims, ..) =
+		reduce_lasso_claim::<C, _>(oracles, claim, batch, gamma, alpha)?;
+
+	let reduced_gpa_claims = gpa_claim_oracle_ids
+		.iter()
+		.zip(lasso_proof.grand_products)
+		.map(|(id, product)| GrandProductClaim {
+			poly: oracles.oracle(*id),
+			product,
+		})
+		.collect::<Vec<_>>();
+
+	Ok(ReducedLassoClaims {
+		reduced_gpa_claims,
+		zerocheck_claims,
+	})
 }
