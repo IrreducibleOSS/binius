@@ -15,6 +15,7 @@
 //! [SHA-2 Wikipedia page](https://en.wikipedia.org/wiki/SHA-2).
 
 use anyhow::Result;
+use binius_backend_provider::make_best_backend;
 use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	composition::{empty_mix_composition, index_composition, IndexComposition},
@@ -36,7 +37,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::ComputationBackend;
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -1075,7 +1076,7 @@ fn main() {
 
 	let log_size = get_log_trace_size().unwrap_or(10);
 	let log_inv_rate = 1;
-	let backend = make_backend();
+	let backend = make_best_backend();
 
 	let mut oracles = MultilinearOracleSet::new();
 	let trace = TraceOracle::new(&mut oracles, log_size, backend.clone());

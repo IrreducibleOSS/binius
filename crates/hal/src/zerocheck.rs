@@ -1,9 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use tracing::instrument;
+use crate::Error;
 use binius_field::{Field, PackedField};
 use binius_math::EvaluationDomain;
-use crate::Error;
+use tracing::instrument;
 
 /// Describes the shape of the zerocheck computation.
 #[derive(Clone, Debug)]

@@ -158,13 +158,18 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim =
-			reduce_tensor_claim(self.n_vars(), sumcheck_eval.clone(), &tensor_mixing_challenges, backend.clone());
-		let transparent = MultilinearExtension::from_values_generic(ring_switch_eq_ind_partial_eval(
-			query_from_kappa,
+		let sumcheck_claim = reduce_tensor_claim(
+			self.n_vars(),
+			sumcheck_eval.clone(),
 			&tensor_mixing_challenges,
 			backend.clone(),
-		)?)?;
+		);
+		let transparent =
+			MultilinearExtension::from_values_generic(ring_switch_eq_ind_partial_eval(
+				query_from_kappa,
+				&tensor_mixing_challenges,
+				backend.clone(),
+			)?)?;
 		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _, _>::new(
 			vec![
 				MultilinearExtension::<PE, _>::specialize(packed_poly.to_ref()),
@@ -479,13 +484,13 @@ mod tests {
 		challenger::new_hasher_challenger, poly_commit::BasicTensorPCS,
 		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
 		underlier::{Divisible, UnderlierType},
 		BinaryField, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
-	use binius_hal::make_backend;
 	use binius_hash::GroestlHasher;
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use binius_utils::checked_arithmetics::checked_log_2;
@@ -523,7 +528,7 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let eval_query =
 			MultilinearQuery::<FE>::with_full_query(&eval_point, backend.clone()).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
@@ -538,7 +543,7 @@ mod tests {
 		.unwrap();
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let pcs =
 			RingSwitchPCS::<F, BinaryField8b, _, _, _>::new(inner_pcs, domain_factory).unwrap();
 
@@ -595,7 +600,7 @@ mod tests {
 		let mixing_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(4)
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 
 		let sumcheck_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(n_vars)
@@ -615,7 +620,8 @@ mod tests {
 		)
 		.unwrap();
 		let val2 = MultilinearExtension::from_values_generic(partial_evals).unwrap();
-		let val2 = val2.evaluate(
+		let val2 = val2
+			.evaluate(
 				&MultilinearQuery::<FE>::with_full_query(&sumcheck_challenges, backend).unwrap(),
 			)
 			.unwrap();

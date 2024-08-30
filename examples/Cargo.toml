@@ -6,7 +6,8 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-binius_core = { path = "../crates/core"}
+binius_backend_provider = { path = "../crates/backend_provider" }
+binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
 binius_hal = { path = "../crates/hal" }
 binius_hash = { path = "../crates/hash" }
@@ -73,3 +74,4 @@ needless_range_loop = "allow"
 aes-tower = []
 fpt = []
 tracy = ["binius_utils/tracy"]
+linerate-backend = ["binius_backend_provider/linerate-backend"]

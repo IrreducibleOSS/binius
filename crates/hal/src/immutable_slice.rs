@@ -1,9 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_field::PackedField;
-use std::ops::{Deref, DerefMut};
 #[cfg(feature = "linerate-backend")]
 use linerate_binius_tensor_product::ImmutableSlice;
+use std::ops::{Deref, DerefMut};
 
 /// Wrapper for compatibility between Vec and ImmutableSlice.
 #[derive(Debug)]

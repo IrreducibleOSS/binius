@@ -17,11 +17,11 @@ use std::{
 	cmp::min,
 	fmt::Debug,
 	marker::PhantomData,
+	mem::size_of_val,
 	ops::{Deref, Range},
+	slice::from_raw_parts,
 	sync::Arc,
 };
-use std::mem::size_of_val;
-use std::slice::from_raw_parts;
 use tracing::instrument;
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
@@ -579,11 +579,11 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{
 		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
 		PackedBinaryField8x16b as P,
 	};
-	use binius_hal::make_backend;
 
 	#[test]
 	fn test_expand_query_impls_consistent() {
@@ -591,7 +591,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let result1 = MultilinearQuery::<P>::with_full_query(&q, backend).unwrap();
 		let result2 = expand_query_naive(&q).unwrap();
 		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
@@ -606,7 +606,7 @@ mod tests {
 			.for_each(|(i, val)| *val = F::new(i as u16));
 
 		let poly = MultilinearExtension::from_values(values).unwrap();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		for i in 0..64 {
 			let q = (0..6)
 				.map(|j| if (i >> j) & 1 != 0 { F::ONE } else { F::ZERO })
@@ -630,7 +630,7 @@ mod tests {
 
 		let mut partial_result = poly;
 		let mut index = q.len();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		for split_vars in splits[0..splits.len() - 1].iter() {
 			partial_result = partial_result
 				.evaluate_partial_high(
@@ -659,7 +659,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let multilin_query = MultilinearQuery::<P>::with_full_query(&q, backend).unwrap();
 		let result1 = poly.evaluate(&multilin_query).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
@@ -676,7 +676,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<BinaryField128b>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let multilin_query =
 			MultilinearQuery::<BinaryField128b>::with_full_query(&q, backend.clone()).unwrap();
 
@@ -708,7 +708,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 
 		let partial_low = poly.evaluate_partial_low(&query).unwrap();
@@ -734,7 +734,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 
 		let mut inner_products = vec![BinaryField128b::ZERO; 2];
@@ -758,7 +758,7 @@ mod tests {
 			.take(me.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 
 		let eval = me

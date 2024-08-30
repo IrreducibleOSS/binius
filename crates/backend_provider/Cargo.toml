@@ -1,0 +1,13 @@
+[package]
+name = "binius_backend_provider"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_hal = { path = "../hal" }
+binius_linerate = { path = "../../../binius_linerate", optional = true }
+# binius_linerate = { git = "ssh://git@gitlab.com/ulvetanna/binius_linerate.git" }
+
+[features]
+linerate-backend = ["binius_linerate"]

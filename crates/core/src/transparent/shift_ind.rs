@@ -345,8 +345,8 @@ mod tests {
 	use crate::polynomial::{
 		multilinear_query::MultilinearQuery, test_utils::decompose_index_to_hypercube_point,
 	};
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_backend;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -359,7 +359,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -390,7 +390,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -421,7 +421,7 @@ mod tests {
 		left_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();

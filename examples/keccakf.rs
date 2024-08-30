@@ -17,6 +17,7 @@
 #![feature(step_trait)]
 
 use anyhow::Result;
+use binius_backend_provider::make_best_backend;
 use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	composition::{empty_mix_composition, index_composition},
@@ -35,10 +36,10 @@ use binius_field::{
 	arch::packed_64::PackedBinaryField64x1b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b,
-	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField, Field,
+	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::ComputationBackend;
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -60,14 +61,14 @@ mod field_types {
 	pub type FDomain = BinaryField128b;
 }
 
-#[cfg(all(feature = "aes-tower",not(feature = "fpt")))]
+#[cfg(all(feature = "aes-tower", not(feature = "fpt")))]
 mod field_types {
 	use binius_field::AESTowerField128b;
 	pub type FW = AESTowerField128b;
 	pub type FDomain = AESTowerField128b;
 }
 
-#[cfg(all(not(feature = "fpt"), not(feature="aes-tower")))]
+#[cfg(all(not(feature = "fpt"), not(feature = "aes-tower")))]
 mod field_types {
 	use binius_field::BinaryField128bPolyval;
 	pub type FW = BinaryField128bPolyval;
@@ -749,7 +750,7 @@ fn main() {
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
-	let backend = make_backend();
+	let backend = make_best_backend();
 
 	let mut oracles = MultilinearOracleSet::new();
 	let fixed_oracle = FixedOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
@@ -774,7 +775,8 @@ fn main() {
 	tracing::info!("Size of hashable Keccak-256 data: {}", data_hashed_256);
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
-	let witness = generate_trace::<U, field_types::FW>(log_size, &fixed_oracle, &trace_oracle).unwrap();
+	let witness =
+		generate_trace::<U, field_types::FW>(log_size, &fixed_oracle, &trace_oracle).unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();

@@ -52,7 +52,7 @@ fn bench_polyval(c: &mut Criterion) {
 				poly: oracles.oracle(numerator),
 				product,
 			};
-			let backend = binius_hal::make_backend();
+			let backend = binius_backend_provider::make_best_backend();
 
 			bench.iter(|| {
 				gkr_gpa::batch_prove::<F, FW, FW, _, _>(

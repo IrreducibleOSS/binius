@@ -74,8 +74,8 @@ mod tests {
 
 	use super::EqIndPartialEval;
 	use crate::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
-	use binius_hal::make_backend;
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {
@@ -89,7 +89,7 @@ mod tests {
 		let eval_point = &repeat_with(|| F::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 
 		// Get Multivariate Poly version of eq_r
 		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();

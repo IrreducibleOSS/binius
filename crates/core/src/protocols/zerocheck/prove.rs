@@ -13,7 +13,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::{MultilinearExtension, MultilinearQuery},
+	polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
 	protocols::{
 		abstract_sumcheck::{
 			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -26,17 +26,18 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters}, ComputationBackend, VecOrImmutableSlice};
+use binius_hal::{
+	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
+	ComputationBackend, VecOrImmutableSlice,
+};
 use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
-use rayon::prelude::*;
-use std::{cmp::max, marker::PhantomData};
-use std::mem::size_of;
 use itertools::Itertools;
+use rayon::prelude::*;
+use std::{cmp::max, marker::PhantomData, mem::size_of};
 use tracing::{instrument, trace};
-use crate::polynomial::MultilinearPoly;
 
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
@@ -615,7 +616,7 @@ where
 		EDF: EvaluationDomainFactory<DomainField>,
 		Backend: ComputationBackend,
 	{
-        // query is expected to be present until the switchover round.
+		// query is expected to be present until the switchover round.
 		let (small_field_width, underlier_data, query) = if let Some(query) =
 			state.common.get_subset_query(&self.oracle_ids)
 		{

@@ -189,11 +189,12 @@ mod tests {
 		transparent::eq_ind::EqIndPartialEval,
 		witness::MultilinearWitness,
 	};
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{
 		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedExtension,
 		PackedFieldIndexable,
 	};
-	use binius_hal::{make_backend, ComputationBackend};
+	use binius_hal::ComputationBackend;
 	use binius_hash::GroestlHasher;
 	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 	use rand::{prelude::StdRng, Rng, SeedableRng};
@@ -295,7 +296,7 @@ mod tests {
 			.unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_backend();
+		let backend = make_best_backend();
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
@@ -363,7 +364,7 @@ mod tests {
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-		let backend = make_backend();
+		let backend = make_best_backend();
 
 		let prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
 			multilins.clone(),

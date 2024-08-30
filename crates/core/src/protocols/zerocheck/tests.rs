@@ -14,13 +14,13 @@ use crate::{
 	},
 	witness::MultilinearExtensionIndex,
 };
+use binius_backend_provider::make_best_backend;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField4x128b, PackedField,
 	TowerField,
 };
-use binius_hal::make_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
@@ -115,7 +115,7 @@ fn test_prove_verify_interaction_helper(
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
-	let backend = make_backend();
+	let backend = make_best_backend();
 	let mixing_challenge = <FE as Field>::random(&mut rng);
 
 	let ZerocheckProveOutput {
@@ -344,7 +344,7 @@ fn test_prove_verify_batch() {
 	assert_eq!(claims.len(), witnesses.len());
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 	let claim_witness_iter = claims.clone().into_iter().zip(witnesses);
-	let backend = make_backend();
+	let backend = make_best_backend();
 	let mixing_challenge = <FE as Field>::random(&mut rng);
 
 	let prove_output = batch_prove::<_, _, BinaryField32b, _, _>(
@@ -409,7 +409,7 @@ fn test_prove_verify_packed() {
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
-	let backend = make_backend();
+	let backend = make_best_backend();
 	let mixing_challenge = <<PE as PackedField>::Scalar as Field>::random(&mut rng);
 
 	let ZerocheckProveOutput {

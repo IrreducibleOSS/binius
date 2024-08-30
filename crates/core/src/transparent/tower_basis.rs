@@ -94,15 +94,15 @@ where
 mod tests {
 	use super::*;
 	use crate::polynomial::multilinear_query::MultilinearQuery;
+	use binius_backend_provider::make_best_backend;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_backend;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
 	fn test_consistency(iota: usize, k: usize) {
 		type F = BinaryField128b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_best_backend();
 
 		let basis = TowerBasis::<F>::new(k, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
@@ -125,7 +125,7 @@ mod tests {
 		type F = BinaryField32b;
 		type P = PackedBinaryField4x32b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_best_backend();
 
 		let basis = TowerBasis::<F>::new(kappa, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))

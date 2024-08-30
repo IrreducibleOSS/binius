@@ -11,6 +11,7 @@
 #![feature(step_trait)]
 
 use anyhow::{ensure, Result};
+use binius_backend_provider::make_best_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	composition::{empty_mix_composition, index_composition},
@@ -40,7 +41,7 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, TowerField,
 	AES_TO_BINARY_LINEAR_TRANSFORMATION,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::ComputationBackend;
 use binius_hash::{Groestl256Core, GroestlHasher};
 use binius_macros::composition_poly;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -1057,7 +1058,7 @@ fn main() {
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 
 	let log_size = get_log_trace_size().unwrap_or(12);
-	let backend = make_backend();
+	let backend = make_best_backend();
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size, backend.clone()).unwrap();

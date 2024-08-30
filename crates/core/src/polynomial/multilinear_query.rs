@@ -101,7 +101,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 mod tests {
 	use super::MultilinearQuery;
 	use crate::polynomial::test_utils::macros::felts;
-	use binius_hal::make_backend;
+	use binius_backend_provider::make_best_backend;
 
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident, $b:expr) => {
@@ -112,7 +112,7 @@ mod tests {
 	#[test]
 	fn test_query_no_packing_32b() {
 		use binius_field::BinaryField32b;
-		let backend = make_backend();
+		let backend = make_best_backend();
 		assert_eq!(
 			expand_query!(BinaryField32b[], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[1])
@@ -138,7 +138,7 @@ mod tests {
 	#[test]
 	fn test_query_packing_4x32b() {
 		use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-		let backend = make_backend();
+		let backend = make_best_backend();
 		assert_eq!(
 			expand_query!(BinaryField32b[], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[1, 0, 0, 0])
@@ -164,7 +164,7 @@ mod tests {
 	#[test]
 	fn test_query_packing_8x16b() {
 		use binius_field::{BinaryField16b, PackedBinaryField8x16b};
-		let backend = make_backend();
+		let backend = make_best_backend();
 		assert_eq!(
 			expand_query!(BinaryField16b[], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[1, 0, 0, 0, 0, 0, 0, 0])

@@ -1,6 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use anyhow::{anyhow, Result};
+use binius_backend_provider::make_best_backend;
 use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	oracle::{BatchId, MultilinearOracleSet, OracleId},
@@ -21,7 +22,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
 	Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::ComputationBackend;
 use binius_hash::GroestlHasher;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
@@ -660,6 +661,7 @@ fn main() -> Result<()> {
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
+	let backend = make_backend();
 
 	let proof = prove(
 		&mut oracles.clone(),
