@@ -66,7 +66,7 @@ where
 			(_, Some(_), 0) => self.compute_round_coeffs_first_round(input),
 			(_, Some(_), _) => self.compute_round_coeffs_later_round(params, input),
 		};
-		round_coeffs.map_err(|err| binius_hal::Error::CpuHandlerError(err.to_string()))
+		round_coeffs.map_err(|err| binius_hal::Error::ZerocheckCpuHandlerError(Box::new(err)))
 	}
 
 	#[instrument(skip_all)]

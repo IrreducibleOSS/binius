@@ -21,7 +21,7 @@ use binius_field::{
 use binius_hal::{ComputationBackend, VecOrImmutableSlice};
 use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
-use std::{iter, marker::PhantomData, ops::Deref};
+use std::{iter, marker::PhantomData, mem, ops::Deref};
 
 /// A polynomial commitment scheme constructed as a reduction to an inner PCS over a field
 /// extension.
@@ -180,7 +180,12 @@ where
 		let ReducedClaim {
 			eval: _,
 			eval_point,
-		} = verify_sumcheck_output(sumcheck_output, query_from_kappa, &tensor_mixing_challenges, backend.clone())?;
+		} = verify_sumcheck_output(
+			sumcheck_output,
+			query_from_kappa,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		)?;
 
 		let inner_pcs_proof = self
 			.inner
@@ -229,7 +234,8 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query = MultilinearQuery::<FE>::with_full_query(query_to_kappa, backend.clone())?;
+		let expanded_query =
+			MultilinearQuery::<FE>::with_full_query(query_to_kappa, backend.clone())?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -240,15 +246,30 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim =
-			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, backend.clone());
+		let sumcheck_claim = reduce_tensor_claim(
+			self.n_vars(),
+			sumcheck_eval,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		);
 		let output = sumcheck_v2::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
 
-		let ReducedClaim { eval, eval_point } =
-			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges, backend.clone())?;
+		let ReducedClaim { eval, eval_point } = verify_sumcheck_output(
+			output,
+			query_from_kappa,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		)?;
 
 		self.inner
-			.verify_evaluation(challenger, commitment, &eval_point, inner_pcs_proof, &[eval], backend)
+			.verify_evaluation(
+				challenger,
+				commitment,
+				&eval_point,
+				inner_pcs_proof,
+				&[eval],
+				backend,
+			)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
@@ -256,10 +277,12 @@ where
 		if n_polys != 1 {
 			todo!("handle batches of size greater than 1");
 		}
-		todo!()
-		// let sumcheck_eval_size = <TensorAlgebra<F, FE>>::byte_size();
-		// let sumcheck_proof_size = algebra_sumcheck::proof_size::<F, FE>(self.inner.n_vars());
-		// sumcheck_eval_size + sumcheck_proof_size + self.inner.proof_size(n_polys)
+		let sumcheck_eval_size = <TensorAlgebra<F, FE>>::byte_size();
+		// We have a product of two multilinear polynomials. Each round of the sumcheck
+		// (of which there are self.inner.n_vars()) has 2 FE elements, due to an optimization.
+		// The final evaluations yield 2 FE elements.
+		let sumcheck_proof_size = mem::size_of::<FE>() * (2 * self.inner.n_vars() + 2);
+		sumcheck_eval_size + sumcheck_proof_size + self.inner.proof_size(n_polys)
 	}
 }
 
@@ -434,7 +457,8 @@ where
 	Backend: ComputationBackend,
 {
 	assert_eq!(mixing_challenges.len(), <TensorAlgebra<FS, F>>::kappa());
-	let expanded_mixing_coeffs = MultilinearQuery::<F>::with_full_query(mixing_challenges, backend.clone())?;
+	let expanded_mixing_coeffs =
+		MultilinearQuery::<F>::with_full_query(mixing_challenges, backend.clone())?;
 	let mut evals = MultilinearQuery::<P>::with_full_query(eval_point, backend)?.into_expansion();
 	P::unpack_scalars_mut(&mut evals)
 		.par_iter_mut()

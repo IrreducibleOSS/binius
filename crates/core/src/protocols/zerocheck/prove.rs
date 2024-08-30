@@ -213,12 +213,11 @@ where
 		seq_id: usize,
 	) -> Result<Self::Prover, Error> {
 		let ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
-		let degree = claim.poly.max_individual_degree();
 		self.common
 			.extend(witness.multilinears(seq_id, ids.as_slice())?)?;
 		let domain = self
 			.evaluation_domain_factory
-			.create(degree + 1)
+			.create(claim.poly.max_individual_degree() + 1)
 			.map_err(Error::MathError)?;
 		let prover =
 			ZerocheckProver::new(claim, witness, domain, self.zerocheck_challenges, seq_id)?;

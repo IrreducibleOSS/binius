@@ -16,3 +16,6 @@ once_cell.workspace = true
 rayon.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[features]
+linerate-backend = []
