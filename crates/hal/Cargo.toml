@@ -7,6 +7,8 @@ authors.workspace = true
 [dependencies]
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
+binius_linerate_slice = { path = "../../../binius_linerate/slice", optional = true }
+# binius_linerate_slice = { git = "ssh://git@gitlab.com/ulvetanna/binius_linerate.git", optional = true }
 bytemuck.workspace = true
 itertools.workspace = true
 linerate = { workspace = true }
@@ -18,4 +20,4 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [features]
-linerate-backend = []
+linerate-backend = ["binius_linerate_slice"]

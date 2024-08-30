@@ -1,13 +1,18 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	immutable_slice::VecOrImmutableSlice,
 	utils::tensor_product,
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
 	ComputationBackend, Error,
 };
 use binius_field::{Field, PackedField};
 use tracing::instrument;
+
+#[cfg(feature = "linerate-backend")]
+pub use binius_linerate_slice::VecOrImmutableSlice;
+
+#[cfg(not(feature = "linerate-backend"))]
+pub use crate::immutable_slice::VecOrImmutableSlice;
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
 #[derive(Clone, Debug)]

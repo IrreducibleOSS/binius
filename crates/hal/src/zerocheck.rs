@@ -41,12 +41,15 @@ where
 	PW::Scalar: From<F> + Into<F>,
 	FDomain: Field,
 {
+	/// Perform the zerocheck evaluation for this round,
+	/// and convert them to coefficients.
 	fn handle_zerocheck_round(
 		&mut self,
 		params: &ZerocheckRoundParameters,
 		input: &ZerocheckRoundInput<F, PW, FDomain>,
 	) -> Result<Vec<PW::Scalar>, Error>;
 
+	/// Drop `smaller_domain_optimization`.
 	#[instrument(skip_all)]
 	fn remove_smaller_domain_optimization(&mut self);
 }
