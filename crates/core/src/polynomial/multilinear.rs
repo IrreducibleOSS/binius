@@ -4,11 +4,7 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtensionSpecialized,
 };
 use binius_field::PackedField;
-use binius_utils::array_2d::Array2D;
-use std::{
-	fmt::Debug,
-	ops::{Deref, Range},
-};
+use std::{fmt::Debug, ops::Deref};
 
 /// Represents a multilinear polynomial.
 ///
@@ -59,25 +55,25 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		query: &MultilinearQuery<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
-	/// Evaluate the multilinear extension of a subcube of the multilinear.
+	/// Compute inner products of a multilinear query inside a subcube.
 	///
-	/// Indices is a range of subcube indices, a subrange of 0..2^(n - q - 1) where n is `self.n_vars()` and q is `query.n_vars()`.
-	/// This is equivalent to the evaluation of the polynomial at the point given by the query in the low q variables
-	/// and the bit-decomposition of index in the high (n - q) variables.
-	/// For every `(i, index)` in `indices.enumerate()` the two values are written:
-	/// * `evals_0[i, col_index]` is the evaluation at the point with index equal to `2 * index`
-	/// * `evals_1[i, col_index]` is the evaluation at the point with index equal to `2 * index + 1`
-	fn evaluate_subcube(
+	/// Equivalent computation is `evaluate_partial_low(query)` followed by a `subcube_evals`
+	/// on a result. This method is more efficient due to handling it as a special case.
+	fn subcube_inner_products(
 		&self,
-		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-		evals_0: &mut Array2D<P>,
-		evals_1: &mut Array2D<P>,
-		col_index: usize,
+		subcube_vars: usize,
+		subcube_index: usize,
+		inner_products: &mut [P],
 	) -> Result<(), Error>;
 
 	/// Get a subcube of the boolean hypercube of a given size.
-	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error>;
+	fn subcube_evals(
+		&self,
+		subcube_vars: usize,
+		subcube_index: usize,
+		evals: &mut [P],
+	) -> Result<(), Error>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -127,18 +123,22 @@ where
 		(**self).evaluate_partial_high(query)
 	}
 
-	fn evaluate_subcube(
+	fn subcube_inner_products(
 		&self,
-		indices: Range<usize>,
 		query: &MultilinearQuery<P>,
-		evals_0: &mut Array2D<P>,
-		evals_1: &mut Array2D<P>,
-		col_index: usize,
+		subcube_vars: usize,
+		subcube_index: usize,
+		inner_products: &mut [P],
 	) -> Result<(), Error> {
-		(**self).evaluate_subcube(indices, query, evals_0, evals_1, col_index)
+		(**self).subcube_inner_products(query, subcube_vars, subcube_index, inner_products)
 	}
 
-	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error> {
-		(**self).subcube_evals(vars, index, dst)
+	fn subcube_evals(
+		&self,
+		subcube_vars: usize,
+		subcube_index: usize,
+		evals: &mut [P],
+	) -> Result<(), Error> {
+		(**self).subcube_evals(subcube_vars, subcube_index, evals)
 	}
 }

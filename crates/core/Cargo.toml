@@ -24,6 +24,7 @@ p3-symmetric.workspace = true
 p3-util.workspace = true
 rand.workspace = true
 rayon.workspace = true
+stackalloc.workspace = true
 thiserror.workspace = true
 thread_local.workspace = true
 tracing.workspace = true

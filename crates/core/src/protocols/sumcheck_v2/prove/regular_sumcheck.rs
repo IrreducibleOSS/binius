@@ -15,11 +15,12 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
-use std::marker::PhantomData;
+use stackalloc::stackalloc_with_default;
+use std::{marker::PhantomData, ops::Range};
 
 pub fn validate_witness<F, P, M, Composition>(
 	multilinears: &[M],
@@ -71,7 +72,7 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<P, M, Backend>,
+	state: ProverState<FDomain, P, M, Backend>,
 	compositions: Vec<Composition>,
 	domains: Vec<EvaluationDomain<FDomain>>,
 }
@@ -81,7 +82,7 @@ impl<F, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -106,8 +107,6 @@ where
 			.iter()
 			.map(|composite_claim| composite_claim.sum)
 			.collect();
-		let state = ProverState::new(multilinears, claimed_sums, switchover_fn, backend)?;
-		let n_vars = state.n_vars();
 
 		let domains = composite_claims
 			.iter()
@@ -115,13 +114,27 @@ where
 				let degree = composite_claim.composition.degree();
 				evaluation_domain_factory.create(degree + 1)
 			})
-			.collect::<Result<_, _>>()
+			.collect::<Result<Vec<_>, _>>()
 			.map_err(Error::MathError)?;
 
 		let compositions = composite_claims
 			.into_iter()
 			.map(|claim| claim.composition)
 			.collect();
+
+		let evaluation_points = domains
+			.iter()
+			.max_by_key(|domain| domain.points().len())
+			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
+
+		let state = ProverState::new(
+			multilinears,
+			claimed_sums,
+			evaluation_points,
+			switchover_fn,
+			backend,
+		)?;
+		let n_vars = state.n_vars();
 
 		Ok(Self {
 			n_vars,
@@ -156,7 +169,6 @@ where
 			.map(|(composition, evaluation_domain)| RegularSumcheckEvaluator {
 				composition,
 				evaluation_domain,
-				domain_points: evaluation_domain.points(),
 				_marker: PhantomData,
 			})
 			.collect::<Vec<_>>();
@@ -176,7 +188,6 @@ where
 {
 	composition: &'a Composition,
 	evaluation_domain: &'a EvaluationDomain<FDomain>,
-	domain_points: &'a [FDomain],
 	_marker: PhantomData<P>,
 }
 
@@ -188,44 +199,27 @@ where
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
-	fn n_round_evals(&self) -> usize {
+	fn eval_point_indices(&self) -> Range<usize> {
 		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the
 		// current_round_sum - $r(1)$.
-		self.composition.degree()
+		1..self.composition.degree() + 1
 	}
 
-	fn process_vertex(
+	fn process_subcube_at_eval_point(
 		&self,
-		_i: usize,
-		evals_0: &[P],
-		evals_1: &[P],
-		evals_z: &mut [P],
-		round_evals: &mut [P],
-	) {
-		// Sumcheck evaluation at a specific point - given an array of 0 & 1 evaluations at some
-		// index, use them to linearly interpolate each MLE value at domain point, and then
-		// evaluate multivariate composite over those.
+		_subcube_vars: usize,
+		_subcube_index: usize,
+		sparse_batch_query: &[&[P]],
+	) -> P {
+		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
-		round_evals[0] += self
-			.composition
-			.evaluate(evals_1)
-			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
+		stackalloc_with_default(row_len, |evals| {
+			self.composition
+				.sparse_batch_evaluate(sparse_batch_query, evals)
+				.expect("correct by query construction invariant");
 
-		// The rest require interpolation.
-		for d in 2..=self.composition.degree() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
-				});
-
-			round_evals[d - 1] += self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-		}
+			evals.iter().copied().sum()
+		})
 	}
 
 	fn round_evals_to_coeffs(

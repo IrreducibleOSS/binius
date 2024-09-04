@@ -42,6 +42,16 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 	fn binary_tower_level(&self) -> usize {
 		self.composition.binary_tower_level()
 	}
+
+	fn sparse_batch_evaluate(
+		&self,
+		sparse_batch_query: &[&[P]],
+		evals: &mut [P],
+	) -> Result<(), Error> {
+		let sparse_batch_subquery = self.indices.map(|index| sparse_batch_query[index]);
+		self.composition
+			.sparse_batch_evaluate(sparse_batch_subquery.as_slice(), evals)
+	}
 }
 
 /// A factory helper method to create an [`IndexComposition`] by looking at

@@ -36,6 +36,8 @@ pub enum Error {
 	MixedMultilinearNotFound,
 	#[error("MultilinearComposite constructed with incorrect arguments: {0}")]
 	MultilinearCompositeValidation(String),
+	#[error("sparse batch size mismatch - non-rectangular query shape or evals of wrong length")]
+	SparseBatchEvaluateSizeMismatch,
 	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>
 	#[error("argument {arg} must be in the range {range:?}")]
 	ArgumentRangeError { arg: String, range: Range<usize> },

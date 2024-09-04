@@ -190,7 +190,8 @@ mod tests {
 		witness::MultilinearWitness,
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedFieldIndexable,
+		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedExtension,
+		PackedFieldIndexable,
 	};
 	use binius_hal::{make_backend, ComputationBackend};
 	use binius_hash::GroestlHasher;
@@ -215,7 +216,7 @@ mod tests {
 	where
 		F: Field + ExtensionField<FDomain>,
 		FDomain: Field,
-		P: PackedFieldIndexable<Scalar = F>,
+		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 		Composition: CompositionPoly<P>,
 		M: MultilinearPoly<P> + Send + Sync + 'static,
 		Backend: ComputationBackend,

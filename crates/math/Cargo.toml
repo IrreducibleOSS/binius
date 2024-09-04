@@ -13,6 +13,7 @@ getset.workspace = true
 p3-util.workspace = true
 rand.workspace = true
 rayon.workspace = true
+stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

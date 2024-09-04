@@ -6,6 +6,7 @@ use super::{
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::bail;
+use stackalloc::stackalloc_with_default;
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
 
 /// A multivariate polynomial over a binary tower field.
@@ -50,6 +51,39 @@ where
 
 	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
 	fn binary_tower_level(&self) -> usize;
+
+	/// Batch evaluation that admits non-strided argument layout.
+	/// `sparse_batch_query` is a slice of slice references of equal length, which furthermore should equal
+	/// the length of `evals` parameter.
+	///
+	/// Evaluation follows SIMD semantics as in `evaluate`:
+	/// - `evals[j] := composition([sparse_batch_query[i][j] forall i]) forall j`
+	/// - no crosstalk between evaluations
+	///
+	/// This method has a default implementation.
+	fn sparse_batch_evaluate(
+		&self,
+		sparse_batch_query: &[&[P]],
+		evals: &mut [P],
+	) -> Result<(), Error> {
+		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
+
+		if evals.len() != row_len || sparse_batch_query.iter().any(|row| row.len() != row_len) {
+			return Err(Error::SparseBatchEvaluateSizeMismatch);
+		}
+
+		stackalloc_with_default(sparse_batch_query.len(), |query| {
+			for (column, eval) in evals.iter_mut().enumerate() {
+				for (query_elem, sparse_batch_query_row) in query.iter_mut().zip(sparse_batch_query)
+				{
+					*query_elem = sparse_batch_query_row[column];
+				}
+
+				*eval = self.evaluate(query)?;
+			}
+			Ok(())
+		})
+	}
 }
 
 /// Identity composition function $g(X) = X$.

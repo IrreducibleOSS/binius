@@ -33,7 +33,7 @@ pub fn constraint_set_zerocheck_prover<'a, U, FW, FDomain, Backend>(
 	backend: Backend,
 ) -> Result<OracleZerocheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
-	U: UnderlierType + PackScalar<FW>,
+	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
 	FW: ExtensionField<FDomain>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,
@@ -75,7 +75,7 @@ pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
 	backend: Backend,
 ) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
-	U: UnderlierType + PackScalar<FW>,
+	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
 	FW: ExtensionField<FDomain>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,

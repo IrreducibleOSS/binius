@@ -1,12 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use bytemuck::{allocation::zeroed_vec, Zeroable};
-use std::ops::{AddAssign, Index, IndexMut};
+use std::ops::{AddAssign, Deref, DerefMut, Index, IndexMut};
 
 /// 2D array with row-major layout.
 #[derive(Debug)]
-pub struct Array2D<T> {
-	data: Vec<T>,
+pub struct Array2D<T, Data: Deref<Target = [T]> = Vec<T>> {
+	data: Data,
 	rows: usize,
 	cols: usize,
 }
@@ -34,7 +34,7 @@ impl<T: Default + Clone> Array2D<T> {
 	}
 }
 
-impl<T> Array2D<T> {
+impl<T, Data: Deref<Target = [T]>> Array2D<T, Data> {
 	/// Returns the number of rows in the array.
 	pub fn rows(&self) -> usize {
 		self.data.len() / self.cols
@@ -51,10 +51,9 @@ impl<T> Array2D<T> {
 		&self.data[start..start + self.cols]
 	}
 
-	/// Returns the mutable row at the given index.
-	pub fn get_row_mut(&mut self, i: usize) -> &mut [T] {
-		let start = i * self.cols;
-		&mut self.data[start..start + self.cols]
+	/// Returns an iterator over the rows of the array.
+	pub fn iter_rows(&self) -> impl Iterator<Item = &[T]> {
+		(0..self.rows).map(move |i| self.get_row(i))
 	}
 
 	/// Return the element at the given row and column without bounds checking.
@@ -64,6 +63,27 @@ impl<T> Array2D<T> {
 		self.data.get_unchecked(i * self.cols + j)
 	}
 
+	/// View of the array in a different shape, underlying elements stay the same.
+	pub fn reshape(&self, rows: usize, cols: usize) -> Option<Array2D<T, &[T]>> {
+		if rows * cols != self.data.len() {
+			return None;
+		}
+
+		Some(Array2D {
+			data: self.data.deref(),
+			rows,
+			cols,
+		})
+	}
+}
+
+impl<T, Data: DerefMut<Target = [T]>> Array2D<T, Data> {
+	/// Returns the mutable row at the given index.
+	pub fn get_row_mut(&mut self, i: usize) -> &mut [T] {
+		let start = i * self.cols;
+		&mut self.data[start..start + self.cols]
+	}
+
 	/// Return the mutable element at the given row and column without bounds checking.
 	/// # Safety
 	/// The caller must ensure that `i` and `j` are less than the number of rows and columns respectively.
@@ -71,13 +91,21 @@ impl<T> Array2D<T> {
 		self.data.get_unchecked_mut(i * self.cols + j)
 	}
 
-	/// Returns an iterator over the rows of the array.
-	pub fn iter_rows(&self) -> impl Iterator<Item = &[T]> {
-		(0..self.rows).map(move |i| self.get_row(i))
+	/// Mutable view of the array in a different shape, underlying elements stay the same.
+	pub fn reshape_mut(&mut self, rows: usize, cols: usize) -> Option<Array2D<T, &mut [T]>> {
+		if rows * cols != self.data.len() {
+			return None;
+		}
+
+		Some(Array2D {
+			data: self.data.deref_mut(),
+			rows,
+			cols,
+		})
 	}
 }
 
-impl<T> Index<(usize, usize)> for Array2D<T> {
+impl<T, Data: Deref<Target = [T]>> Index<(usize, usize)> for Array2D<T, Data> {
 	type Output = T;
 
 	fn index(&self, (i, j): (usize, usize)) -> &Self::Output {
@@ -85,13 +113,13 @@ impl<T> Index<(usize, usize)> for Array2D<T> {
 	}
 }
 
-impl<T> IndexMut<(usize, usize)> for Array2D<T> {
+impl<T, Data: DerefMut<Target = [T]>> IndexMut<(usize, usize)> for Array2D<T, Data> {
 	fn index_mut(&mut self, (i, j): (usize, usize)) -> &mut Self::Output {
 		&mut self.data[i * self.cols + j]
 	}
 }
 
-impl<T: Default + Clone + AddAssign> Array2D<T> {
+impl<T: Default + Clone + AddAssign, Data: Deref<Target = [T]>> Array2D<T, Data> {
 	/// Returns the sum of the elements in each row.
 	pub fn sum_rows(&self) -> Vec<T> {
 		let mut sum = vec![T::default(); self.cols];

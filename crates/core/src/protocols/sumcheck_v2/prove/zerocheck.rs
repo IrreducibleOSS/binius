@@ -21,10 +21,12 @@ use binius_field::{
 	PackedFieldIndexable,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
+use stackalloc::stackalloc_with_default;
+use std::ops::Range;
 
 pub fn validate_witness<F, P, M, Composition>(
 	multilinears: &[M],
@@ -72,7 +74,7 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<P, M, Backend>,
+	state: ProverState<FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
@@ -84,7 +86,7 @@ impl<F, FDomain, P, Composition, M, Backend> ZerocheckProver<FDomain, P, Composi
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -107,12 +109,6 @@ where
 		}
 
 		let claimed_sums = vec![F::ZERO; compositions.len()];
-		let state = ProverState::new(multilinears, claimed_sums, switchover_fn, backend.clone())?;
-		let n_vars = state.n_vars();
-
-		if challenges.len() != n_vars {
-			return Err(Error::IncorrectZerocheckChallengesLength);
-		}
 
 		let domains = compositions
 			.iter()
@@ -120,7 +116,25 @@ where
 				let degree = composition.degree();
 				evaluation_domain_factory.create(degree + 1)
 			})
-			.collect::<Result<_, _>>()?;
+			.collect::<Result<Vec<_>, _>>()?;
+
+		let evaluation_points = domains
+			.iter()
+			.max_by_key(|domain| domain.points().len())
+			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
+
+		let state = ProverState::new(
+			multilinears,
+			claimed_sums,
+			evaluation_points,
+			switchover_fn,
+			backend.clone(),
+		)?;
+		let n_vars = state.n_vars();
+
+		if challenges.len() != n_vars {
+			return Err(Error::IncorrectZerocheckChallengesLength);
+		}
 
 		let partial_eq_ind_evals =
 			MultilinearQuery::with_full_query(&challenges[1..], backend)?.into_expansion();
@@ -211,7 +225,6 @@ where
 				.map(|(composition, evaluation_domain)| ZerocheckFirstRoundEvaluator {
 					composition,
 					evaluation_domain,
-					domain_points: evaluation_domain.points(),
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
 				})
 				.collect::<Vec<_>>();
@@ -222,7 +235,6 @@ where
 				.map(|(composition, evaluation_domain)| ZerocheckLaterRoundEvaluator {
 					composition,
 					evaluation_domain,
-					domain_points: evaluation_domain.points(),
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
 					round_zerocheck_challenge: self.zerocheck_challenges[round],
 				})
@@ -262,7 +274,6 @@ where
 {
 	composition: &'a Composition,
 	evaluation_domain: &'a EvaluationDomain<FDomain>,
-	domain_points: &'a [FDomain],
 	partial_eq_ind_evals: &'a [P],
 }
 
@@ -274,38 +285,33 @@ where
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
-	fn n_round_evals(&self) -> usize {
+	fn eval_point_indices(&self) -> Range<usize> {
 		// In the first round of zerocheck we can uniquely determine the degree d
 		// univariate round polynomial $R(X)$ with evaluations at X = 2, ..., d
 		// because we know r(0) = r(1) = 0
-		self.composition.degree() - 1
+		2..self.composition.degree() + 1
 	}
 
-	fn process_vertex(
+	fn process_subcube_at_eval_point(
 		&self,
-		i: usize,
-		evals_0: &[P],
-		evals_1: &[P],
-		evals_z: &mut [P],
-		round_evals: &mut [P],
-	) {
-		let eq_ind_factor = self.partial_eq_ind_evals[i];
+		subcube_vars: usize,
+		subcube_index: usize,
+		sparse_batch_query: &[&[P]],
+	) -> P {
+		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
-		for d in 2..=self.composition.degree() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
-				});
+		stackalloc_with_default(row_len, |evals| {
+			self.composition
+				.sparse_batch_evaluate(sparse_batch_query, evals)
+				.expect("correct by query construction invariant");
 
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-			round_evals[d - 2] += composite_value * eq_ind_factor;
-		}
+			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
+			for (i, eval) in evals.iter_mut().enumerate() {
+				*eval *= self.partial_eq_ind_evals[subcube_start + i];
+			}
+
+			evals.iter().copied().sum::<P>()
+		})
 	}
 
 	fn round_evals_to_coeffs(
@@ -332,7 +338,6 @@ where
 {
 	composition: &'a Composition,
 	evaluation_domain: &'a EvaluationDomain<FDomain>,
-	domain_points: &'a [FDomain],
 	partial_eq_ind_evals: &'a [P],
 	round_zerocheck_challenge: P::Scalar,
 }
@@ -345,45 +350,33 @@ where
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
-	fn n_round_evals(&self) -> usize {
+	fn eval_point_indices(&self) -> Range<usize> {
 		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
 		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
 		// round's claimed sum
-		self.composition.degree()
+		1..self.composition.degree() + 1
 	}
 
-	fn process_vertex(
+	fn process_subcube_at_eval_point(
 		&self,
-		i: usize,
-		evals_0: &[P],
-		evals_1: &[P],
-		evals_z: &mut [P],
-		round_evals: &mut [P],
-	) {
-		let eq_ind_factor = self.partial_eq_ind_evals[i];
+		subcube_vars: usize,
+		subcube_index: usize,
+		sparse_batch_query: &[&[P]],
+	) -> P {
+		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
-		let composite_value = self
-			.composition
-			.evaluate(evals_1)
-			.expect("evals_1 is initialized with a length of poly.composition.n_vars()");
-		round_evals[0] += composite_value * eq_ind_factor;
+		stackalloc_with_default(row_len, |evals| {
+			self.composition
+				.sparse_batch_evaluate(sparse_batch_query, evals)
+				.expect("correct by query construction invariant");
 
-		// The rest require interpolation.
-		for d in 2..=self.composition.degree() {
-			evals_0
-				.iter()
-				.zip(evals_1.iter())
-				.zip(evals_z.iter_mut())
-				.for_each(|((&evals_0_j, &evals_1_j), evals_z_j)| {
-					*evals_z_j = extrapolate_line(evals_0_j, evals_1_j, self.domain_points[d]);
-				});
+			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
+			for (i, eval) in evals.iter_mut().enumerate() {
+				*eval *= self.partial_eq_ind_evals[subcube_start + i];
+			}
 
-			let composite_value = self
-				.composition
-				.evaluate(evals_z)
-				.expect("evals_z is initialized with a length of poly.composition.n_vars()");
-			round_evals[d - 1] += composite_value * eq_ind_factor;
-		}
+			evals.iter().copied().sum::<P>()
+		})
 	}
 
 	fn round_evals_to_coeffs(
