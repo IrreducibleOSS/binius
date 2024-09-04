@@ -138,9 +138,9 @@ where
 	if claims.is_empty() {
 		return Ok(vec![]);
 	} else if zero_evals.len() != claims.len() {
-		bail!(VerificationError::MismatchedZeroEvals);
+		return Err(VerificationError::MismatchedZeroEvals.into());
 	} else if one_evals.len() != claims.len() {
-		bail!(VerificationError::MismatchedOneEvals);
+		return Err(VerificationError::MismatchedOneEvals.into());
 	}
 
 	let curr_layer_challenge = &claims[0].eval_point[..];

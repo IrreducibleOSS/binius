@@ -1,12 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
+#[cfg(feature = "bail_panic")]
 #[macro_export]
 macro_rules! bail {
-	($err:expr) => {{
-		if cfg!(feature = "bail_panic") {
-			panic!("{}", $err);
-		} else {
-			return Err($err.into());
-		}
-	}};
+	($err:expr) => {
+		panic!("{}", $err);
+	};
+}
+
+#[cfg(not(feature = "bail_panic"))]
+#[macro_export]
+macro_rules! bail {
+	($err:expr) => {
+		return Err($err.into());
+	};
 }

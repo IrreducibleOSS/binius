@@ -114,9 +114,10 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for GkrSumcheckReductor<'a, F> {
 		proof: &AbstractSumcheckRound<F>,
 	) -> Result<(), Self::Error> {
 		if proof.coeffs.len() != self.max_individual_degree {
-			bail!(VerificationError::NumberOfCoefficients {
+			return Err(VerificationError::NumberOfCoefficients {
 				expected: self.max_individual_degree,
-			});
+			}
+			.into());
 		}
 		Ok(())
 	}

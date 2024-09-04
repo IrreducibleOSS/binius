@@ -266,7 +266,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_new_oversized_domain() {
 		assert_matches!(
 			<EvaluationDomain<BinaryField8b>>::new(300),

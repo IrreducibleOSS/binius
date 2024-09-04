@@ -78,9 +78,10 @@ impl<'a, F: Field> AbstractSumcheckReductor<F> for ZerocheckReductor<'a, F> {
 		proof: &AbstractSumcheckRound<F>,
 	) -> Result<(), Self::Error> {
 		if proof.coeffs.len() != self.max_individual_degree {
-			bail!(VerificationError::NumberOfCoefficients {
+			return Err(VerificationError::NumberOfCoefficients {
 				expected: self.max_individual_degree,
-			});
+			}
+			.into());
 		}
 		Ok(())
 	}
@@ -153,12 +154,13 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 	// For more information, see Section 3 of https://eprint.iacr.org/2024/108
 	if round == 0 {
 		if coeffs.is_empty() {
-			bail!(VerificationError::NumberOfCoefficients {
+			return Err(VerificationError::NumberOfCoefficients {
 				expected: degree_bound,
-			});
+			}
+			.into());
 		}
 		if alpha_i.is_some() {
-			bail!(VerificationError::UnexpectedZerocheckChallengeFound);
+			return Err(VerificationError::UnexpectedZerocheckChallengeFound.into());
 		}
 		// In case 1, the verifier has not been given $a_0$
 		// However, the verifier knows that $f(0) = f(1) = 0$
@@ -177,9 +179,10 @@ fn reduce_intermediate_round_claim_helper<F: Field>(
 		coeffs.insert(0, constant_term);
 	} else {
 		if coeffs.is_empty() {
-			bail!(VerificationError::NumberOfCoefficients {
+			return Err(VerificationError::NumberOfCoefficients {
 				expected: degree_bound,
-			});
+			}
+			.into());
 		}
 		let alpha_i = alpha_i.ok_or(VerificationError::ExpectedZerocheckChallengeNotFound)?;
 

@@ -50,7 +50,7 @@ where
 
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);
 	if round_proofs.len() != n_rounds {
-		bail!(VerificationError::NumberOfRounds);
+		return Err(VerificationError::NumberOfRounds.into());
 	}
 
 	// active_index is an index into the claims slice. Claims before the active index have already
@@ -84,10 +84,11 @@ where
 		}
 
 		if round_proof.coeffs().len() != max_degree {
-			bail!(VerificationError::NumberOfCoefficients {
+			return Err(VerificationError::NumberOfCoefficients {
 				round: round_no,
 				expected: max_degree,
-			});
+			}
+			.into());
 		}
 
 		challenger.observe_slice(round_proof.coeffs());
@@ -116,11 +117,11 @@ where
 	}
 
 	if multilinear_evals.len() != claims.len() {
-		bail!(VerificationError::NumberOfFinalEvaluations);
+		return Err(VerificationError::NumberOfFinalEvaluations.into());
 	}
 	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter()) {
 		if claim.n_multilinears() != multilinear_evals.len() {
-			bail!(VerificationError::NumberOfFinalEvaluations);
+			return Err(VerificationError::NumberOfFinalEvaluations.into());
 		}
 		challenger.observe_slice(multilinear_evals);
 	}
@@ -128,7 +129,7 @@ where
 	let expected_sum =
 		compute_expected_batch_composite_evaluation(batch_coeffs, claims, &multilinear_evals)?;
 	if sum != expected_sum {
-		bail!(VerificationError::IncorrectBatchEvaluation);
+		return Err(VerificationError::IncorrectBatchEvaluation.into());
 	}
 
 	Ok(BatchSumcheckOutput {

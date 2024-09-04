@@ -452,7 +452,7 @@ where
 			.evaluate(&multilin_query)
 			.expect("query is the correct size by check_proof_shape checks");
 		if computed_value != value {
-			bail!(VerificationError::IncorrectEvaluation);
+			return Err(VerificationError::IncorrectEvaluation.into());
 		}
 
 		// Encode t' into u'
@@ -556,7 +556,7 @@ where
 			});
 
 		if incorrect_evaluation {
-			bail!(VerificationError::IncorrectPartialEvaluation)
+			return Err(VerificationError::IncorrectPartialEvaluation.into());
 		} else {
 			Ok(())
 		}
@@ -676,9 +676,10 @@ where
 		let n_queries = self.n_test_queries;
 
 		if proof.vcs_proofs.len() != n_queries {
-			bail!(VerificationError::NumberOfOpeningProofs {
+			return Err(VerificationError::NumberOfOpeningProofs {
 				expected: n_queries,
-			});
+			}
+			.into());
 		}
 		for (col_idx, (polys_col, _)) in proof.vcs_proofs.iter().enumerate() {
 			if polys_col.len() != proof.n_polys {
@@ -695,18 +696,19 @@ where
 			for (poly_idx, poly_col) in polys_col.iter().enumerate() {
 				let pi_width = PackedType::<U, FI>::WIDTH;
 				if poly_col.len() * pi_width != n_rows {
-					bail!(VerificationError::OpenedColumnSize {
+					return Err(VerificationError::OpenedColumnSize {
 						col_index: col_idx,
 						poly_index: poly_idx,
 						expected: n_rows,
 						actual: poly_col.len() * pi_width,
-					});
+					}
+					.into());
 				}
 			}
 		}
 
 		if proof.mixed_t_prime.n_vars() != log_n_cols {
-			bail!(VerificationError::PartialEvaluationSize);
+			return Err(VerificationError::PartialEvaluationSize.into());
 		}
 
 		Ok(())
@@ -1373,7 +1375,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_proof_size_optimal_block_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
 			OptimalUnderlier128b,
@@ -1402,7 +1403,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_proof_size_optimal_basic_pcs() {
 		let pcs = find_proof_size_optimal_pcs::<
 			OptimalUnderlier128b,

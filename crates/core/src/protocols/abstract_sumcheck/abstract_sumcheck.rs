@@ -220,7 +220,7 @@ pub fn finalize_evalcheck_claim<F: Field>(
 	let ReducedClaim { eval_point, eval } = reduced_claim;
 
 	if eval_point.len() != poly_oracle.n_vars() {
-		bail!(VerificationError::NumberOfRounds);
+		return Err(VerificationError::NumberOfRounds.into());
 	}
 
 	let evalcheck_claim = EvalcheckClaim {

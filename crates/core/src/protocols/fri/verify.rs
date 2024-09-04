@@ -139,9 +139,10 @@ where
 		proof: QueryProof<F, VCS::Proof>,
 	) -> Result<(), Error> {
 		if proof.len() != self.n_rounds() {
-			bail!(VerificationError::IncorrectQueryProofLength {
+			return Err(VerificationError::IncorrectQueryProofLength {
 				expected: self.n_rounds(),
-			});
+			}
+			.into());
 		}
 
 		let max_arity = self.folding_arities.iter().max().copied().unwrap();
@@ -195,7 +196,7 @@ where
 			)?;
 
 			if next_value != values[index % (1 << folding_arity)] {
-				bail!(VerificationError::IncorrectFold { query_round, index });
+				return Err(VerificationError::IncorrectFold { query_round, index }.into());
 			}
 
 			next_value = fold_chunk(
@@ -213,10 +214,11 @@ where
 		// know that the Reed-Solomon encoding of this message is simply that final message element
 		// repeated up to the codeword length.
 		if next_value != self.final_codeword[index] {
-			bail!(VerificationError::IncorrectFold {
+			return Err(VerificationError::IncorrectFold {
 				query_round: self.n_rounds() - 1,
 				index,
-			});
+			}
+			.into());
 		}
 
 		Ok(())
@@ -234,10 +236,11 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	let QueryRoundProof { values, vcs_proof } = proof;
 
 	if values.len() != 1 << log_coset_size {
-		bail!(VerificationError::IncorrectQueryProofValuesLength {
+		return Err(VerificationError::IncorrectQueryProofValuesLength {
 			round,
 			coset_size: 1 << log_coset_size,
-		});
+		}
+		.into());
 	}
 
 	let start_index = coset_index << log_coset_size;

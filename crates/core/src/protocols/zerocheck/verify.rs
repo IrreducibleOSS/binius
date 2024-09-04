@@ -34,7 +34,7 @@ where
 	let n_vars = claim.poly.n_vars();
 	let n_rounds = proof.rounds.len();
 	if n_rounds != n_vars {
-		bail!(VerificationError::NumberOfRounds);
+		return Err(VerificationError::NumberOfRounds.into());
 	}
 
 	let zerocheck_challenges = challenger.sample_vec(n_vars - 1);

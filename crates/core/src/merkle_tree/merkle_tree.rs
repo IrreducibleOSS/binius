@@ -282,11 +282,10 @@ where
 			.saturating_sub(self.cap_height + range_size_log);
 
 		if proof.len() != expected_proof_len {
-			bail!(
-				(VerificationError::IncorrectBranchLength {
-					expected: expected_proof_len,
-				})
-			);
+			return Err(VerificationError::IncorrectBranchLength {
+				expected: expected_proof_len,
+			}
+			.into());
 		}
 
 		if indices.end > 1 << self.log_len {
@@ -317,7 +316,7 @@ where
 			return if commitment[index..index + cap.len()] == *cap {
 				Ok(())
 			} else {
-				bail!(VerificationError::MerkleRootMismatch)
+				return Err(VerificationError::MerkleRootMismatch.into());
 			};
 		}
 
@@ -338,7 +337,7 @@ where
 		if commitment[index] == root {
 			Ok(())
 		} else {
-			bail!(VerificationError::MerkleRootMismatch)
+			Err(VerificationError::MerkleRootMismatch.into())
 		}
 	}
 }
@@ -477,7 +476,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_merkle_vcs_commit_incorrect_range() {
 		let mut rng = StdRng::seed_from_u64(0);
 
@@ -511,7 +509,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature = "bail_panic", should_panic)]
 	fn test_merkle_vcs_commit_incorrect_opening() {
 		let mut rng = StdRng::seed_from_u64(0);
 
