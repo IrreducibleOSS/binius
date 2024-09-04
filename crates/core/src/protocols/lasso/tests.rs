@@ -10,6 +10,7 @@ use binius_field::{
 	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField128b, BinaryField16b,
 	BinaryField64b, Field, PackedBinaryField128x1b, PackedFieldIndexable, TowerField,
 };
+use binius_hal::make_backend;
 
 #[test]
 fn test_prove_verify_interaction() {
@@ -19,6 +20,8 @@ fn test_prove_verify_interaction() {
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
 	let n_vars = 10;
+
+	let backend = make_backend();
 
 	// Setup witness
 
@@ -71,7 +74,8 @@ fn test_prove_verify_interaction() {
 	let lookup_batch = oracles.add_committed_batch(n_vars, E::TOWER_LEVEL);
 	let [t, u] = oracles.add_committed_multiple(lookup_batch);
 
-	let lasso_batches = LassoBatches::new_in::<C, _>(&mut oracles, n_vars, n_vars, 3);
+	let lasso_batches =
+		LassoBatches::new_in::<C, _>(&mut oracles, &[n_vars, n_vars, n_vars], n_vars);
 
 	let claim = LassoClaim::new(
 		oracles.oracle(t),
@@ -86,7 +90,7 @@ fn test_prove_verify_interaction() {
 
 	let alpha = F::ONE;
 
-	let prove_output = prove::<C, U, F, F, _>(
+	let prove_output = prove::<C, U, F, F, _, _>(
 		&mut oracles.clone(),
 		witness_index,
 		&claim,
@@ -94,17 +98,19 @@ fn test_prove_verify_interaction() {
 		&lasso_batches,
 		gamma,
 		alpha,
+		backend.clone(),
 	)
 	.unwrap();
 
-	// VERIFIER
-	let _verified_reduced_claim = verify::<C, _>(
+	// // VERIFIER
+	let _verified_reduced_claim = verify::<C, _, _>(
 		&mut oracles.clone(),
 		&claim,
 		&lasso_batches,
 		gamma,
 		alpha,
 		prove_output.lasso_proof,
+		backend.clone(),
 	)
 	.unwrap();
 }

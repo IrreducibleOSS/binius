@@ -1,65 +1,81 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	error::Error,
-	lasso::{
-		reduce_lasso_claim, LassoBatches, LassoClaim, LassoCount, LassoProof, LassoProveOutput,
-		LassoReducedClaimOracleIds, LassoWitness, ReducedLassoClaims, UnaryCarryConstraint,
+use super::lasso::{
+	reduce_lasso_claim, LassoBatches, LassoClaim, LassoProof, LassoProveOutput,
+	LassoReducedClaimOracleIds, LassoWitness,
+};
+
+use crate::{
+	oracle::OracleId,
+	polynomial::Error as PolynomialError,
+	protocols::{
+		gkr_gpa::{GrandProductClaim, GrandProductWitness},
+		lasso::Error,
 	},
 };
+
 use crate::{
-	oracle::{MultilinearOracleSet, OracleId},
-	polynomial::{Error as PolynomialError, MultilinearComposite},
-	protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness},
+	oracle::MultilinearOracleSet,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
+use binius_hal::ComputationBackend;
 use binius_utils::bail;
-use itertools::{izip, multiunzip};
+use itertools::izip;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{array, sync::Arc};
 use tracing::instrument;
 
 /// Prove a Lasso instance reduction.
 ///
-/// Given $\nu$-variate multilinears $T$ (the "table") and $U$ and a mapping $U \mapsto T$ from hypercube
+/// Given $\nu$-variate multilinear $T$ (the "lookup table") and array of $U$ (the "looker columns") and a array of mappings $U \mapsto T$ from hypercube
 /// vertices of $U$ to hypercube vertices of $T$, represented by an array `u_to_t_mapping` of vertex indices,
-/// we define GF(2) multilinears $C$ (for "counts") and $F$ (for "final counts"), initialize them with zero
-/// constant polynomials, and perform the following algorithm, treating consecutive bits as integers:
+/// we define multilinears $C$ (for "counts") as identically-0 polynomial and $F$ (for "final counts") as identically-1 polynomial and $g$ as the Multiplicative generator of subgroup,
+/// and perform the following algorithm:
+///
+///
 ///
 /// ```text
-///  for i in 0..2**n_vars
-///    j := u_to_t_mapping[i]
-///    C[i] = F[j]
-///    F[j] += 1
+///  for i in len(U)
+///    for j in len(U[i])
+/// 	   m := u_to_t_mappings[j]
+/// 	   C[i][j] := F[m]
+/// 	   F[m] *= g
 /// ```
 ///
-/// The number of bits in each "group" must be sufficient to represent $2^{n\\_vars}$, and is specified via
-/// `PC` type parameter. Prover then commits an additional GF(2) polynomial $O$ (for "carry Out"), which
-/// represents carry propagation in a simplified addition gadget that only supports increments. We obtain
-/// "carry in" as virtual oracle $I = (O << 1) + 1$ and zerocheck the following constraint:
+/// The order of multiplicative subgroup must be sufficient to represent $\sum len(U_{i})$ elements, and is specified via
+/// `FC` type parameter.
 ///
-/// $$C \times I - O = 0$$
+/// We then proceed by defining a virtual oracles $O$ as identically-1 polynomial and $P = g \times C$, and reduce tables to grand product claims:
 ///
-/// which is a simplified addition gadget constraint when second addend is zero, and "carry in" equals
-/// one in the lowest bit.
+/// $\prod_{v∈B}(\gamma + U_{0}(v) + \alpha * C_{0}(v)) = L_{0}$  
+/// $\dots$  
+/// $\prod_{v∈B}(\gamma + U_{n}(v) + \alpha * C_{n}(v)) = L_{n}$   
+/// $\prod_{v∈B}(\gamma + T(v) + \alpha * F(v)) = L_{n+1}$
 ///
-/// We then proceed by defining a virtual oracle $P = C + I$ (for "Plus one") and performing a gkr prodcheck
+
+/// $\prod_{v∈B}(\gamma + U_{0}(v) + \alpha * P_{0}(v)) = R_{0}$  
+/// $\dots$  
+/// $\prod_{v∈B}(\gamma + U_{n}(v) + \alpha * P_{n}(v)) = R_{n}$   
+/// $\prod_{v∈B}(\gamma + T(v)+\alpha * O(v)) = R_{n+1}$  
 ///
-/// $\prod_{v∈B_{l}}(\gamma + T(v) + \alpha * F(v))\prod_{v∈B_{l}}(\gamma + U_{0}(v) + \alpha * P_{0}(v)) \dots \prod_{v∈B_{l}}(\gamma + U_{n}(v) + \alpha * P_{n}(v)) =$   
-/// $\prod_{v∈B_{l}}(\gamma + T(v)+\alpha*0)\prod_{v∈B_{l}}(\gamma + U_{0}(v) + \alpha * C_{0}(v)) \dots \prod_{v∈B_{l}}(\gamma + U_{n}(v) + \alpha * C_{n}(v))$    
+/// $\prod_{v∈B} C_{0}(v) = Z_{0}$   
+/// $\dots$   
+/// $\prod_{v∈B} C_{n}(v) = Z_{n}$   
+/// $\prod_{v∈B} F(v) = Z_{n+1}$
 ///
+/// And check that $\prod_{i=0}^{n+1} L_{i} = \prod_{i=0}^{n+1} R_{i}$ and $\prod_{i=0}^{n+1} Z_{i}$ ≠ $0$    
 /// See Section 4.4 of [DP23] for the
-/// proofs. Please note that the implemented addition gadget approach differs from the one described in the
-/// paper (which uses multiplicative group to represent counts), as well as uses slightly different notation.
+/// proofs.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "lasso::prove", level = "debug")]
-pub fn prove<'a, FC, U, F, FW, L>(
+pub fn prove<'a, FC, U, F, FW, L, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: MultilinearExtensionIndex<'a, U, FW>,
 	lasso_claim: &LassoClaim<F>,
@@ -67,242 +83,184 @@ pub fn prove<'a, FC, U, F, FW, L>(
 	lasso_batches: &LassoBatches,
 	gamma: F,
 	alpha: F,
+	backend: Backend,
 ) -> Result<LassoProveOutput<'a, U, FW, F>, Error>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<FC> + PackScalar<BinaryField1b>,
-	FC: LassoCount,
+	U: UnderlierType + PackScalar<FW> + PackScalar<FC>,
+	FC: TowerField,
 	PackedType<U, FC>: PackedFieldIndexable,
 	PackedType<U, FW>: PackedFieldIndexable,
-	F: TowerField + From<FW>,
+	F: TowerField + From<FW> + ExtensionField<FC>,
 	FW: TowerField + ExtensionField<FC> + From<F>,
 	L: AsRef<[usize]>,
+	Backend: ComputationBackend + 'static,
 {
 	let t_n_vars = lasso_claim.t_oracle().n_vars();
-	let t_n_vars_gf2 = t_n_vars + FC::TOWER_LEVEL;
 
 	if lasso_claim.u_oracles().len() != lasso_witness.u_polynomials().len() {
 		bail!(Error::ClaimWitnessTablesLenMismatch);
 	}
 
-	let bit_packing_log_width = PackedType::<U, BinaryField1b>::LOG_WIDTH;
+	let bit_packing_log_width = PackedType::<U, FC>::LOG_WIDTH;
 
-	let mut final_counts_underlier_vecs =
-		vec![U::default(); 1 << (t_n_vars_gf2 - bit_packing_log_width)];
+	let mut final_counts_underlier_vecs: [_; 2] =
+		array::from_fn(|_| vec![U::default(); 1 << (t_n_vars - bit_packing_log_width)]);
 
-	let final_counts = {
-		let packed_slice = PackedType::<U, FC>::from_underliers_ref_mut(
-			final_counts_underlier_vecs.as_mut_slice(),
-		);
+	let [final_counts, ones_repeating] = final_counts_underlier_vecs.each_mut().map(|underliers| {
+		let packed_slice = PackedType::<U, FC>::from_underliers_ref_mut(underliers.as_mut_slice());
 		PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
-	};
+	});
 
-	// Check that counts actually fit into the chosen data type
-	// NB. Need one more bit because 1 << n_vars is a valid count.
-	if t_n_vars >= FC::N_BITS {
+	final_counts.fill(FC::ONE);
+	ones_repeating.fill(FC::ONE);
+
+	let common_counts_len = lasso_claim
+		.u_oracles()
+		.iter()
+		.map(|oracle| 1 << oracle.n_vars())
+		.sum::<usize>();
+
+	if common_counts_len >= 1 << FC::N_BITS {
 		bail!(Error::LassoCountTypeTooSmall);
 	}
 
-	if t_n_vars_gf2 < bit_packing_log_width {
-		bail!(Error::WitnessSmallerThanUnderlier);
-	}
-
-	let (gpa_claim_oracle_ids, zerocheck_claims, reduced_claim_oracle_ids) =
-		reduce_lasso_claim::<FC, _>(oracles, lasso_claim, lasso_batches, gamma, alpha)?;
+	let (gkr_claim_oracle_ids, reduced_claim_oracle_ids) =
+		reduce_lasso_claim::<FC, _, _>(oracles, lasso_claim, lasso_batches, gamma, alpha, backend)?;
 
 	let LassoReducedClaimOracleIds {
-		packed_counts_oracle_ids,
-		packed_counts_plus_one_oracle_ids,
-		packed_final_counts_oracle_id,
-		counts_plus_one_oracle_ids,
-		carry_in_oracle_id,
-		carry_out_shifted_oracle_ids,
 		ones_repeating_oracle_id,
 		mixed_t_final_counts_oracle_id,
-		mixed_t_zero_oracle_id,
+		mixed_t_one_oracle_id,
 		mixed_u_counts_oracle_ids,
 		mixed_u_counts_plus_one_oracle_ids,
 	} = reduced_claim_oracle_ids;
 
-	let mut zerocheck_witnesses = Vec::new();
-
 	let mut witness_index = witness_index;
 
-	if !lasso_claim.u_oracles().is_empty() {
-		let u_n_vars = lasso_claim.u_oracles()[0].n_vars();
-		let u_n_vars_gf2 = u_n_vars + FC::TOWER_LEVEL;
+	let alpha_gen = alpha * FC::MULTIPLICATIVE_GENERATOR;
 
-		if u_n_vars >= FC::N_BITS {
-			bail!(Error::LassoCountTypeTooSmall);
-		}
+	for (i, (u_polynomial, u_to_t_mapping)) in lasso_witness
+		.u_polynomials()
+		.iter()
+		.zip(lasso_witness.u_to_t_mappings())
+		.enumerate()
+	{
+		let u_n_vars = u_polynomial.n_vars();
 
-		if u_n_vars_gf2 < bit_packing_log_width {
-			bail!(Error::WitnessSmallerThanUnderlier);
-		}
+		let mut counts_underlier_vec = vec![U::default(); 1 << (u_n_vars - bit_packing_log_width)];
 
-		for (i, (u_polynomial, u_to_t_mapping)) in lasso_witness
-			.u_polynomials()
-			.iter()
-			.zip(lasso_witness.u_to_t_mappings())
-			.enumerate()
-		{
-			// underliers for read counts vectors, a total of seven
-			let mut underlier_vecs: [_; 5] =
-				array::from_fn(|_| vec![U::default(); 1 << (u_n_vars_gf2 - bit_packing_log_width)]);
-
-			// cast underliers into Lasso counts for addition gadget computations
-			let [counts, counts_plus_one, carry_in, carry_out, carry_out_shifted] =
-				underlier_vecs.each_mut().map(|underliers| {
-					let packed_slice =
-						PackedType::<U, FC>::from_underliers_ref_mut(underliers.as_mut_slice());
-					PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
-				});
-
-			let t_indice = u_to_t_mapping.as_ref();
-			// addition gadget computing count+1 via a carry_in XORed with 1 at the lowest bit
-			for (&t_index, counts, counts_plus_one, carry_in, carry_out, carry_out_shifted) in
-				izip!(t_indice, counts, counts_plus_one, carry_in, carry_out, carry_out_shifted)
-			{
-				let count = final_counts[t_index];
-				let (count_plus_one, overflow) = count.overflowing_add(FC::ONE);
-				assert!(!overflow, "Lasso count overflowed!");
-
-				final_counts[t_index] = count_plus_one;
-
-				// u32 addition gadget with y = 1
-				*counts = count;
-				*counts_plus_one = count_plus_one;
-				*carry_in = count + count_plus_one;
-				*carry_out_shifted = *carry_in + FC::ONE;
-				*carry_out = (*carry_in).shr1();
-			}
-
-			// construct virtual polynomial oracles
-
-			let [counts, counts_plus_one, carry_in, carry_out, carry_out_shifted] = underlier_vecs;
-
-			// add 1-bit witnesses to the index
-			let counts_oracle_id = &lasso_batches.counts;
-			let carry_out_oracle_id = &lasso_batches.carry_out;
-
-			let counts = Arc::<[U]>::from(counts);
-			let counts_plus_one = Arc::<[U]>::from(counts_plus_one);
-
-			witness_index = witness_index.update_owned::<BinaryField1b, _>([
-				(counts_oracle_id[i], counts.clone()),
-				(counts_plus_one_oracle_ids[i], counts_plus_one.clone()),
-				(carry_in_oracle_id[i], carry_in.into()),
-				(carry_out_oracle_id[i], carry_out.into()),
-				(carry_out_shifted_oracle_ids[i], carry_out_shifted.into()),
-			])?;
-
-			// add FC witnesses to the index
-			witness_index = witness_index.update_owned::<FC, _>([
-				(packed_counts_oracle_ids[i], counts),
-				(packed_counts_plus_one_oracle_ids[i], counts_plus_one),
-			])?;
-
-			let packed_counts_poly =
-				witness_index.get_multilin_poly(packed_counts_oracle_ids[i])?;
-			let packed_counts_plus_one_poly =
-				witness_index.get_multilin_poly(packed_counts_plus_one_oracle_ids[i])?;
-
-			let mixed_u_counts = lincom(u_polynomial, Some(&packed_counts_poly), gamma, alpha)?;
-			let mixed_u_counts_plus_one =
-				lincom(u_polynomial, Some(&packed_counts_plus_one_poly), gamma, alpha)?;
-
-			witness_index = witness_index.update_owned::<FW, _>([
-				(mixed_u_counts_oracle_ids[i], mixed_u_counts),
-				(mixed_u_counts_plus_one_oracle_ids[i], mixed_u_counts_plus_one),
-			])?;
-
-			let counts_poly = witness_index.get_multilin_poly(counts_oracle_id[i])?;
-			let carry_in_poly = witness_index.get_multilin_poly(carry_in_oracle_id[i])?;
-			let carry_out_poly = witness_index.get_multilin_poly(carry_out_oracle_id[i])?;
-
-			zerocheck_witnesses.push(
-				MultilinearComposite::new(
-					u_n_vars_gf2,
-					UnaryCarryConstraint,
-					vec![counts_poly, carry_in_poly, carry_out_poly],
-				)
-				.map_err(Error::Polynomial)?,
-			);
-		}
-
-		let mut ones_underlier_vecs =
-			vec![U::default(); 1 << (u_n_vars_gf2 - bit_packing_log_width)];
-
-		let ones = {
+		let counts = {
 			let packed_slice =
-				PackedType::<U, FC>::from_underliers_ref_mut(ones_underlier_vecs.as_mut_slice());
+				PackedType::<U, FC>::from_underliers_ref_mut(counts_underlier_vec.as_mut_slice());
 			PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
 		};
 
-		ones.fill(FC::ONE);
+		let t_indice = u_to_t_mapping.as_ref();
 
-		witness_index = witness_index.update_owned::<BinaryField1b, _>([(
-			ones_repeating_oracle_id.expect("ones_repeating_oracle_id must created "),
-			ones_underlier_vecs,
-		)])?;
+		for (&t_index, counts) in izip!(t_indice, counts) {
+			let count = final_counts[t_index];
+
+			final_counts[t_index] = count * FC::MULTIPLICATIVE_GENERATOR;
+
+			*counts = count;
+		}
+
+		let counts = {
+			let packed_slice =
+				PackedType::<U, FC>::from_underliers_ref_mut(counts_underlier_vec.as_mut_slice());
+			PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
+		};
+
+		let mixed_u_counts = lincom::<U, FC, FW, _, F>(u_polynomial, counts, gamma, alpha)?;
+
+		let mixed_u_counts_plus_one = lincom(u_polynomial, counts, gamma, alpha_gen)?;
+
+		witness_index = witness_index.update_owned::<FW, _>([
+			(mixed_u_counts_oracle_ids[i], mixed_u_counts),
+			(mixed_u_counts_plus_one_oracle_ids[i], mixed_u_counts_plus_one),
+		])?;
+
+		witness_index = witness_index
+			.update_owned::<FC, _>([(lasso_batches.counts[i], counts_underlier_vec)])?;
 	}
 
-	let final_counts_oracle_id = lasso_batches.final_counts;
+	let mixed_t_final_counts = lincom(lasso_witness.t_polynomial(), final_counts, gamma, alpha)?;
 
-	witness_index = witness_index.update_owned::<BinaryField1b, _>([(
-		final_counts_oracle_id,
-		final_counts_underlier_vecs.clone(),
-	)])?;
+	let mixed_t_ones = lincom(lasso_witness.t_polynomial(), ones_repeating, gamma, alpha)?;
 
-	witness_index = witness_index.update_owned::<FC, _>([(
-		packed_final_counts_oracle_id,
-		final_counts_underlier_vecs.clone(),
-	)])?;
+	let [final_counts_underlier_vecs, ones_repeating] = final_counts_underlier_vecs;
 
-	let packed_final_counts_poly =
-		witness_index.get_multilin_poly(packed_final_counts_oracle_id)?;
-
-	let mixed_t_final_counts =
-		lincom(lasso_witness.t_polynomial(), Some(&packed_final_counts_poly), gamma, alpha)?;
-	let mixed_t_zero = lincom(lasso_witness.t_polynomial(), None, gamma, alpha)?;
+	witness_index = witness_index.update_owned::<FC, _>([
+		(lasso_batches.final_counts, final_counts_underlier_vecs),
+		(ones_repeating_oracle_id, ones_repeating),
+	])?;
 
 	witness_index = witness_index.update_owned::<FW, _>([
 		(mixed_t_final_counts_oracle_id, mixed_t_final_counts),
-		(mixed_t_zero_oracle_id, mixed_t_zero),
+		(mixed_t_one_oracle_id, mixed_t_ones),
 	])?;
 
-	let (grand_products, reduced_gpa_witnesses, reduced_gpa_claims): (Vec<_>, Vec<_>, Vec<_>) =
-		multiunzip(gpa_claim_oracle_ids.iter().map(|id| {
-			grand_product_witness_claim(*id, &witness_index, oracles)
-				.expect("all elements have been added above")
-		}));
+	let left_grand_product_witness_claims =
+		gkr_product_witness_claims(&gkr_claim_oracle_ids.left, &witness_index, oracles)?;
 
-	let reduced_lasso_claims = ReducedLassoClaims {
-		zerocheck_claims,
-		reduced_gpa_claims,
-	};
+	let right_grand_product_witness_claims =
+		gkr_product_witness_claims(&gkr_claim_oracle_ids.right, &witness_index, oracles)?;
 
-	let (left_product, right_product) = grand_products
-		.chunks(2)
-		.fold((F::ONE, F::ONE), |(left_acc, right_acc), left_right| {
-			(left_acc * left_right[0], right_acc * left_right[1])
-		});
+	let counts_grand_product_witness_claims =
+		gkr_product_witness_claims(&gkr_claim_oracle_ids.counts, &witness_index, oracles)?;
+
+	let left_product: F = left_grand_product_witness_claims
+		.grand_products
+		.iter()
+		.product();
+	let right_product: F = right_grand_product_witness_claims
+		.grand_products
+		.iter()
+		.product();
 
 	if left_product != right_product {
 		bail!(Error::ProductsDiffer);
 	}
 
+	if counts_grand_product_witness_claims
+		.grand_products
+		.iter()
+		.any(|count| *count == F::ZERO)
+	{
+		bail!(Error::ZeroCounts);
+	}
+
+	let lasso_proof = LassoProof {
+		left_grand_products: left_grand_product_witness_claims.grand_products,
+		right_grand_products: right_grand_product_witness_claims.grand_products,
+		counts_grand_products: counts_grand_product_witness_claims.grand_products,
+	};
+
+	let reduced_gpa_claims = [
+		left_grand_product_witness_claims.gpa_claims,
+		right_grand_product_witness_claims.gpa_claims,
+		counts_grand_product_witness_claims.gpa_claims,
+	]
+	.concat();
+
+	let reduced_gpa_witnesses = [
+		left_grand_product_witness_claims.gpa_witnesses,
+		right_grand_product_witness_claims.gpa_witnesses,
+		counts_grand_product_witness_claims.gpa_witnesses,
+	]
+	.concat();
+
 	Ok(LassoProveOutput {
-		reduced_lasso_claims,
+		reduced_gpa_claims,
 		reduced_gpa_witnesses,
-		zerocheck_witnesses,
-		lasso_proof: LassoProof { grand_products },
+		lasso_proof,
 		witness_index,
 	})
 }
 
-fn lincom<'a, U, FW, PW, F>(
-	trace: &MultilinearWitness<'a, PW>,
-	counts: Option<&MultilinearWitness<'a, PW>>,
+fn lincom<U, FC, FW, PW, F>(
+	trace: &MultilinearWitness<PW>,
+	counts: &[FC],
 	gamma: F,
 	alpha: F,
 ) -> Result<Arc<[U]>, Error>
@@ -311,6 +269,8 @@ where
 	PackedType<U, FW>: PackedFieldIndexable,
 	PW: PackedField<Scalar = FW>,
 	FW: Field + From<F>,
+	F: Field + ExtensionField<FC>,
+	FC: Field,
 {
 	let n_vars = trace.n_vars();
 
@@ -321,58 +281,64 @@ where
 		PackedType::<U, FW>::from_underliers_ref_mut(underliers.as_mut_slice()),
 	);
 
-	values.fill(FW::from(gamma));
+	values.par_iter_mut().enumerate().for_each(|(i, values_i)| {
+		let res = alpha * counts[i] + gamma;
+		*values_i = FW::from(res);
+	});
 
-	// first dimension of the relation is not weighted
-	values
-		.par_iter_mut()
-		.enumerate()
-		.try_for_each(|(i, values_i)| -> Result<_, PolynomialError> {
+	values.par_iter_mut().enumerate().try_for_each(
+		|(i, values_i)| -> Result<_, PolynomialError> {
 			*values_i += trace.evaluate_on_hypercube(i)?;
 			Ok(())
-		})
-		.map_err(Error::Polynomial)?;
-
-	let alpha = FW::from(alpha);
-
-	if let Some(counts) = counts {
-		values
-			.par_iter_mut()
-			.enumerate()
-			.try_for_each(|(i, values_i)| -> Result<_, PolynomialError> {
-				*values_i += counts.evaluate_on_hypercube_and_scale(i, alpha)?;
-				Ok(())
-			})
-			.map_err(Error::Polynomial)?;
-	}
+		},
+	)?;
 
 	Ok(underliers.into())
 }
 
-type GrandProductWitnessClaimResult<'a, U, FW, F> =
-	Result<(F, GrandProductWitness<'a, PackedType<U, FW>>, GrandProductClaim<F>), Error>;
-
-fn grand_product_witness_claim<
-	'a,
+#[derive(Debug, Default)]
+struct GrandProductWitnessClaim<'a, U, FW, F>
+where
 	U: UnderlierType + PackScalar<FW>,
 	F: TowerField + From<FW>,
 	FW: Field,
->(
-	id: OracleId,
+{
+	grand_products: Vec<F>,
+	gpa_witnesses: Vec<GrandProductWitness<'a, PackedType<U, FW>>>,
+	gpa_claims: Vec<GrandProductClaim<F>>,
+}
+
+fn gkr_product_witness_claims<'a, U, F, FW>(
+	ids: &[OracleId],
 	witness_index: &MultilinearExtensionIndex<'a, U, FW>,
 	oracles: &MultilinearOracleSet<F>,
-) -> GrandProductWitnessClaimResult<'a, U, FW, F> {
-	let poly = witness_index.get_multilin_poly(id)?;
+) -> Result<GrandProductWitnessClaim<'a, U, FW, F>, Error>
+where
+	U: UnderlierType + PackScalar<FW>,
+	F: TowerField + From<FW>,
+	FW: Field,
+{
+	let mut grand_product_witness_claims = GrandProductWitnessClaim::default();
 
-	let oracle = oracles.oracle(id);
+	for id in ids {
+		let poly = witness_index.get_multilin_poly(*id)?;
 
-	let gpa_witness = GrandProductWitness::new(poly)?;
+		let oracle = oracles.oracle(*id);
 
-	let product = gpa_witness.grand_product_evaluation().into();
-	let gpa_claim = GrandProductClaim {
-		poly: oracle,
-		product,
-	};
+		let gpa_witness = GrandProductWitness::new(poly)?;
 
-	Ok((product, gpa_witness, gpa_claim))
+		let grand_product = gpa_witness.grand_product_evaluation().into();
+		let gpa_claim = GrandProductClaim {
+			poly: oracle,
+			product: grand_product,
+		};
+
+		grand_product_witness_claims
+			.grand_products
+			.push(grand_product);
+		grand_product_witness_claims.gpa_witnesses.push(gpa_witness);
+		grand_product_witness_claims.gpa_claims.push(gpa_claim);
+	}
+
+	Ok(grand_product_witness_claims)
 }

@@ -1,65 +1,93 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	error::Error,
-	lasso::{
-		reduce_lasso_claim, LassoBatches, LassoClaim, LassoCount, LassoProof, ReducedLassoClaims,
-	},
-};
-use crate::{oracle::MultilinearOracleSet, protocols::gkr_gpa::GrandProductClaim};
-use binius_field::TowerField;
+use super::lasso::{reduce_lasso_claim, LassoBatches, LassoClaim, LassoProof};
+use binius_hal::ComputationBackend;
+
+use crate::protocols::lasso::Error;
+
+use crate::oracle::MultilinearOracleSet;
+
+use crate::protocols::gkr_gpa::GrandProductClaim;
+
+use binius_field::{ExtensionField, TowerField};
 use binius_utils::bail;
+use itertools::chain;
 use tracing::instrument;
 
 /// Verify a Lasso instance reduction.
 #[instrument(skip_all, name = "lasso::verify", level = "debug")]
-pub fn verify<C: LassoCount, F: TowerField>(
+pub fn verify<C, F, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claim: &LassoClaim<F>,
 	batch: &LassoBatches,
 	gamma: F,
 	alpha: F,
 	lasso_proof: LassoProof<F>,
-) -> Result<ReducedLassoClaims<F>, Error> {
-	// Check that counts actually fit into the chosen data type
-	// NB. Need one more bit because 1 << n_vars is a valid count.
-	if !claim.u_oracles().is_empty() {
-		let u_n_vars = claim.u_oracles()[0].n_vars();
-		if u_n_vars >= C::N_BITS {
-			bail!(Error::LassoCountTypeTooSmall);
-		}
-	}
+	backend: Backend,
+) -> Result<Vec<GrandProductClaim<F>>, Error>
+where
+	C: TowerField,
+	F: TowerField + ExtensionField<C>,
+	Backend: ComputationBackend + 'static,
+{
+	let common_counts_len = claim
+		.u_oracles()
+		.iter()
+		.map(|oracle| 1 << oracle.n_vars())
+		.sum::<usize>();
 
-	let t_n_vars = claim.t_oracle().n_vars();
-	if t_n_vars >= C::N_BITS {
+	if common_counts_len >= 1 << C::N_BITS {
 		bail!(Error::LassoCountTypeTooSmall);
 	}
 
-	let (left_product, right_product) = lasso_proof
-		.grand_products
-		.chunks(2)
-		.fold((F::ONE, F::ONE), |(left_acc, right_acc), left_right| {
-			(left_acc * left_right[0], right_acc * left_right[1])
-		});
+	let LassoProof {
+		left_grand_products,
+		right_grand_products,
+		counts_grand_products,
+	} = lasso_proof;
+
+	let grand_product_arrays_len = left_grand_products.len();
+
+	if grand_product_arrays_len != right_grand_products.len()
+		|| grand_product_arrays_len != counts_grand_products.len()
+	{
+		bail!(Error::ProductsArraysLenMismatch);
+	}
+
+	let left_product: F = left_grand_products.iter().product();
+	let right_product: F = right_grand_products.iter().product();
 
 	if left_product != right_product {
 		bail!(Error::ProductsDiffer);
 	}
 
-	let (gpa_claim_oracle_ids, zerocheck_claims, ..) =
-		reduce_lasso_claim::<C, _>(oracles, claim, batch, gamma, alpha)?;
+	if counts_grand_products.iter().any(|count| *count == F::ZERO) {
+		bail!(Error::ZeroCounts);
+	}
 
-	let reduced_gpa_claims = gpa_claim_oracle_ids
-		.iter()
-		.zip(lasso_proof.grand_products)
-		.map(|(id, product)| GrandProductClaim {
-			poly: oracles.oracle(*id),
-			product,
-		})
-		.collect::<Vec<_>>();
+	let (gkr_claim_oracle_ids, ..) =
+		reduce_lasso_claim::<C, _, _>(oracles, claim, batch, gamma, alpha, backend)?;
 
-	Ok(ReducedLassoClaims {
-		reduced_gpa_claims,
-		zerocheck_claims,
+	if gkr_claim_oracle_ids.left.len() != grand_product_arrays_len
+		|| gkr_claim_oracle_ids.right.len() != grand_product_arrays_len
+		|| gkr_claim_oracle_ids.counts.len() != grand_product_arrays_len
+	{
+		bail!(Error::ProductsClaimsArraysLenMismatch);
+	}
+
+	let grand_product_claims = chain!(
+		gkr_claim_oracle_ids.left.iter().zip(left_grand_products),
+		gkr_claim_oracle_ids.right.iter().zip(right_grand_products),
+		gkr_claim_oracle_ids
+			.counts
+			.iter()
+			.zip(counts_grand_products)
+	)
+	.map(|(id, product)| GrandProductClaim {
+		poly: oracles.oracle(*id),
+		product,
 	})
+	.collect::<Vec<_>>();
+
+	Ok(grand_product_claims)
 }

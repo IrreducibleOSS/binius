@@ -35,4 +35,10 @@ pub enum Error {
 	GrandProductError(#[from] GrandProductError),
 	#[error("invalid instance - the products of T and U polynomials differ")]
 	ProductsDiffer,
+	#[error("lasso counts contain zeros")]
+	ZeroCounts,
+	#[error("grand_products arrays have different len")]
+	ProductsArraysLenMismatch,
+	#[error("grand_products and claims arrays have different len")]
+	ProductsClaimsArraysLenMismatch,
 }

@@ -4,9 +4,9 @@
 //!
 //! Lookup is a way to prove that all hypercube evaluations of a virtual polynomial $U$ are contained in the
 //! set of hypercube evaluations of the virtual polynomial $T$ (the "table"). The protocol itself is based on
-//! offline memory checking and described in the Section 4.4 of [DP23], with the important distinction that
-//! this implementation relies on addition gadget in place of multiplicative group for the "counts".
-//! See [`prove`](self::prove::prove()) for in-depth details.
+//! offline memory checking and described in the Section 4.4 of [DP23], with the important distinction that instead
+//! of committing counts inverse and doing a zerocheck to prove that counts do not reside in the singleton orbit of
+//! zero (with respect to multiplication by generator) we perform a series of GKR prodchecks over counts to prove those are nonzero.
 //!
 //! [DP23]: <https://eprint.iacr.org/2023/1784>
 

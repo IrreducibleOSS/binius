@@ -12,15 +12,14 @@ use binius_core::{
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
 		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
-		zerocheck::{self, ZerocheckBatchProof, ZerocheckBatchProveOutput},
 	},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b,
-	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
+	Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
@@ -33,7 +32,6 @@ use rand::thread_rng;
 use std::{fmt::Debug, marker::PhantomData};
 use tracing::instrument;
 
-type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
@@ -69,7 +67,7 @@ impl TraceOracle {
 		let lookup_t_batch = oracles.add_committed_batch(T_LOG_SIZE, 5);
 		let lookup_t = oracles.add_committed(lookup_t_batch);
 
-		let lasso_batches = LassoBatches::new_in::<B32, _>(oracles, log_size, T_LOG_SIZE, 1);
+		let lasso_batches = LassoBatches::new_in::<B32, _>(oracles, &[log_size], T_LOG_SIZE);
 
 		let lookup_u = oracles.add_linear_combination(
 			log_size,
@@ -188,23 +186,17 @@ where
 	})
 }
 
-struct Proof<U, PCS1, PCS8, PCS16, PCS32>
+struct Proof<U, PCS8, PCS16, PCS32>
 where
-	U: UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<B128>,
-	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<B128>,
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
 {
-	lasso_counts_comm: PCS1::Commitment,
-	lasso_counts_proof: PCS1::Proof,
-	lasso_final_counts_comm: PCS1::Commitment,
-	lasso_final_counts_proof: PCS1::Proof,
+	lasso_counts_comm: PCS32::Commitment,
+	lasso_counts_proof: PCS32::Proof,
+	lasso_final_counts_comm: PCS32::Commitment,
+	lasso_final_counts_proof: PCS32::Proof,
 	lasso_proof: LassoProof<B128>,
 	mults_comm: PCS8::Commitment,
 	mults_proof: PCS8::Proof,
@@ -213,7 +205,6 @@ where
 	lookup_t_comm: PCS32::Commitment,
 	lookup_t_proof: PCS32::Proof,
 	gpa_proof: GrandProductBatchProof<B128>,
-	zerocheck_proof: ZerocheckBatchProof<B128>,
 	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
 	_u_marker: PhantomData<U>,
 }
@@ -239,27 +230,20 @@ where
 
 #[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
-fn prove<U, PCS1, PCS8, PCS16, PCS32, CH, Backend>(
+fn prove<U, PCS8, PCS16, PCS32, CH, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	witness: TraceWitness<U, B128>,
-	lasso_final_counts_pcs: &PCS1,
-	lasso_counts_pcs: &PCS1,
+	lasso_counts_pcs: &PCS32,
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<B128>,
 	backend: Backend,
-) -> Result<Proof<U, PCS1, PCS8, PCS16, PCS32>>
+) -> Result<Proof<U, PCS8, PCS16, PCS32>>
 where
-	U: UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<B128>,
-	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<B128>,
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
@@ -267,13 +251,12 @@ where
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
 		+ Clone
-		+ CanObserve<PCS1::Commitment>
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
 		+ CanObserve<PCS32::Commitment>,
 	PackedType<U, B32>: PackedFieldIndexable,
 	PackedType<U, B128>: PackedFieldIndexable,
-	Backend: ComputationBackend,
+	Backend: ComputationBackend + 'static,
 {
 	// Round 1 - trace commitments & Lasso deterministic reduction
 	let (mults_comm, mults_committed) = pcs8.commit(&extract_batch_id_polys::<_, _, B8>(
@@ -315,7 +298,7 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let lasso_prove_output = lasso::prove::<B32, U, _, _, _>(
+	let lasso_prove_output = lasso::prove::<B32, U, _, _, _, _>(
 		oracles,
 		witness.index,
 		&lasso_claim,
@@ -323,12 +306,12 @@ where
 		lasso_batches,
 		gamma,
 		alpha,
+		backend.clone(),
 	)?;
 
 	let LassoProveOutput {
-		reduced_lasso_claims,
+		reduced_gpa_claims,
 		reduced_gpa_witnesses,
-		zerocheck_witnesses,
 		witness_index,
 		lasso_proof,
 	} = lasso_prove_output;
@@ -336,15 +319,15 @@ where
 	let mut witness_index = witness_index;
 
 	let (lasso_counts_comm, lasso_counts_committed) =
-		lasso_counts_pcs.commit(&extract_batch_id_polys::<_, _, B1>(
-			trace_oracle.lasso_batches.counts_batch_id(),
+		lasso_counts_pcs.commit(&extract_batch_id_polys::<_, _, B32>(
+			trace_oracle.lasso_batches.counts_batch_ids[0],
 			&witness_index,
 			oracles,
 		)?)?;
 
 	let (lasso_final_counts_comm, lasso_final_counts_committed) =
-		lasso_final_counts_pcs.commit(&extract_batch_id_polys::<_, _, B1>(
-			trace_oracle.lasso_batches.final_counts_batch_id(),
+		pcs32.commit(&extract_batch_id_polys::<_, _, B32>(
+			trace_oracle.lasso_batches.final_counts_batch_id,
 			&witness_index,
 			oracles,
 		)?)?;
@@ -357,27 +340,8 @@ where
 		proof: gpa_proof,
 	} = gkr_gpa::batch_prove(
 		reduced_gpa_witnesses,
-		reduced_lasso_claims.reduced_gpa_claims,
+		reduced_gpa_claims,
 		domain_factory.clone(),
-		&mut challenger,
-		backend.clone(),
-	)?;
-
-	let switchover_fn = standard_switchover_heuristic(-2);
-
-	// Round 3 - Zerocheck
-	let zerocheck_claim_witness_iter = reduced_lasso_claims
-		.zerocheck_claims
-		.into_iter()
-		.zip(zerocheck_witnesses);
-
-	let ZerocheckBatchProveOutput {
-		evalcheck_claims,
-		proof: zerocheck_proof,
-	} = zerocheck::batch_prove(
-		zerocheck_claim_witness_iter,
-		domain_factory.clone(),
-		switchover_fn,
 		&mut challenger,
 		backend.clone(),
 	)?;
@@ -390,8 +354,7 @@ where
 			eval_point: claim.eval_point,
 			eval: claim.eval,
 			is_random_point: claim.is_random_point,
-		})
-		.chain(evalcheck_claims);
+		});
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 	let greedy_evalcheck_prove_output =
@@ -418,24 +381,24 @@ where
 	let lasso_counts_proof = lasso_counts_pcs.prove_evaluation(
 		&mut challenger,
 		&lasso_counts_committed,
-		&extract_batch_id_polys::<_, _, B1>(
-			trace_oracle.lasso_batches.counts_batch_id(),
+		&extract_batch_id_polys::<_, _, B32>(
+			trace_oracle.lasso_batches.counts_batch_ids[0],
 			&witness_index,
 			oracles,
 		)?,
-		batch_id_to_eval_point(trace_oracle.lasso_batches.counts_batch_id()),
+		batch_id_to_eval_point(trace_oracle.lasso_batches.counts_batch_ids[0]),
 		backend.clone(),
 	)?;
 
-	let lasso_final_counts_proof = lasso_final_counts_pcs.prove_evaluation(
+	let lasso_final_counts_proof = pcs32.prove_evaluation(
 		&mut challenger,
 		&lasso_final_counts_committed,
-		&extract_batch_id_polys::<_, _, B1>(
-			trace_oracle.lasso_batches.final_counts_batch_id(),
+		&extract_batch_id_polys::<_, _, B32>(
+			trace_oracle.lasso_batches.final_counts_batch_id,
 			&witness_index,
 			oracles,
 		)?,
-		batch_id_to_eval_point(trace_oracle.lasso_batches.final_counts_batch_id()),
+		batch_id_to_eval_point(trace_oracle.lasso_batches.final_counts_batch_id),
 		backend.clone(),
 	)?;
 
@@ -476,7 +439,6 @@ where
 		lookup_t_proof,
 		lasso_proof,
 		gpa_proof,
-		zerocheck_proof,
 		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
 		_u_marker: PhantomData,
 	})
@@ -484,26 +446,19 @@ where
 
 #[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
-fn verify<U, PCS1, PCS8, PCS16, PCS32, CH, Backend>(
+fn verify<U, PCS8, PCS16, PCS32, CH, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
-	lasso_final_counts_pcs: &PCS1,
-	lasso_counts_pcs: &PCS1,
+	lasso_counts_pcs: &PCS32,
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
 	mut challenger: CH,
-	proof: Proof<U, PCS1, PCS8, PCS16, PCS32>,
+	proof: Proof<U, PCS8, PCS16, PCS32>,
 	backend: Backend,
 ) -> Result<()>
 where
-	U: UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<B128>,
-	PCS1: PolyCommitScheme<PackedType<U, B1>, B128, Error: Debug, Proof: 'static>,
+	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<B128>,
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
@@ -511,11 +466,10 @@ where
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
 		+ Clone
-		+ CanObserve<PCS1::Commitment>
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
 		+ CanObserve<PCS32::Commitment>,
-	Backend: ComputationBackend,
+	Backend: ComputationBackend + 'static,
 {
 	// Unpack the proof
 	let Proof {
@@ -532,7 +486,6 @@ where
 		lasso_proof,
 		gpa_proof,
 		greedy_evalcheck_proof,
-		zerocheck_proof,
 		..
 	} = proof;
 
@@ -549,37 +502,27 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let reduced_lasso_claims = lasso::verify::<B32, _>(
+	let reduced_gpa_claims = lasso::verify::<B32, _, _>(
 		oracles,
 		&lasso_claim,
 		&trace_oracle.lasso_batches,
 		gamma,
 		alpha,
 		lasso_proof,
+		backend.clone(),
 	)?;
 
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
-	let reduced_gpa_claims =
-		gkr_gpa::batch_verify(reduced_lasso_claims.reduced_gpa_claims, gpa_proof, &mut challenger)?;
+	let reduced_gpa_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut challenger)?;
 
-	// Round 2 - Zerocheck
-	let evalcheck_claims = zerocheck::batch_verify(
-		reduced_lasso_claims.zerocheck_claims,
-		zerocheck_proof,
-		&mut challenger,
-	)?;
-
-	let evalcheck_claims = reduced_gpa_claims
-		.into_iter()
-		.map(|claim| EvalcheckClaim {
-			poly: claim.poly.into_composite(),
-			eval_point: claim.eval_point,
-			eval: claim.eval,
-			is_random_point: claim.is_random_point,
-		})
-		.chain(evalcheck_claims);
+	let evalcheck_claims = reduced_gpa_claims.into_iter().map(|claim| EvalcheckClaim {
+		poly: claim.poly.into_composite(),
+		eval_point: claim.eval_point,
+		eval: claim.eval,
+		is_random_point: claim.is_random_point,
+	});
 
 	// Greedy evalcheck
 	let same_query_pcs_claims = greedy_evalcheck::verify(
@@ -599,7 +542,7 @@ where
 	};
 
 	let lasso_counts_eval_claim =
-		batch_id_to_eval_claim(trace_oracle.lasso_batches.counts_batch_id());
+		batch_id_to_eval_claim(trace_oracle.lasso_batches.counts_batch_ids[0]);
 
 	lasso_counts_pcs.verify_evaluation(
 		&mut challenger,
@@ -611,9 +554,9 @@ where
 	)?;
 
 	let lasso_final_counts_eval_claim =
-		batch_id_to_eval_claim(trace_oracle.lasso_batches.final_counts_batch_id());
+		batch_id_to_eval_claim(trace_oracle.lasso_batches.final_counts_batch_id);
 
-	lasso_final_counts_pcs.verify_evaluation(
+	pcs32.verify_evaluation(
 		&mut challenger,
 		&lasso_final_counts_comm,
 		&lasso_final_counts_eval_claim.eval_point,
@@ -652,7 +595,7 @@ where
 		&lookup_t_eval_claim.eval_point,
 		lookup_t_proof,
 		&lookup_t_eval_claim.evals,
-		backend,
+		backend.clone(),
 	)?;
 
 	Ok(())
@@ -667,8 +610,10 @@ fn main() -> Result<()> {
 		.expect("failed to init thread pool");
 	init_tracing().expect("failed to initialize tracing");
 
-	let log_size = get_log_trace_size().unwrap_or(10);
+	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
+
+	let backend = make_backend();
 
 	// Set up the public parameters
 
@@ -685,8 +630,7 @@ fn main() -> Result<()> {
 		};
 	}
 
-	optimal_block_pcs!(lasso_final_counts_pcs := 2 x [B1 > B16 > B16 > B128] ^ (T_LOG_SIZE + B32::TOWER_LEVEL));
-	optimal_block_pcs!(lasso_counts_pcs := 2 x [B1 > B16 > B16 > B128] ^ (log_size + B32::TOWER_LEVEL));
+	optimal_block_pcs!(lasso_counts_pcs := 2 x [B32 > B16 > B32 > B128] ^ (log_size));
 	optimal_block_pcs!(pcs8 := 2 x [B8 > B16 > B16 > B128] ^ (log_size));
 	optimal_block_pcs!(pcs16 := 1 x [B16 > B16 > B16 > B128] ^ (log_size));
 	optimal_block_pcs!(pcs32 := 1 x [B32 > B16 > B32 > B128] ^ (T_LOG_SIZE));
@@ -696,13 +640,11 @@ fn main() -> Result<()> {
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
-	let backend = make_backend();
 
 	let proof = prove(
 		&mut oracles.clone(),
 		&trace_oracle,
 		trace_witness,
-		&lasso_final_counts_pcs,
 		&lasso_counts_pcs,
 		&pcs8,
 		&pcs16,
@@ -715,14 +657,13 @@ fn main() -> Result<()> {
 	verify(
 		&mut oracles.clone(),
 		&trace_oracle,
-		&lasso_final_counts_pcs,
 		&lasso_counts_pcs,
 		&pcs8,
 		&pcs16,
 		&pcs32,
 		challenger.clone(),
 		proof,
-		backend,
+		backend.clone(),
 	)?;
 
 	Ok(())
