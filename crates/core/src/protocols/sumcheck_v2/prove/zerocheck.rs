@@ -20,11 +20,12 @@ use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, VecOrImmutableSlice};
+use binius_hal::{ComputationBackend, HalVecTrait};
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
+use binius_backend_provider::HalVec;
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;
 
@@ -76,7 +77,7 @@ where
 	n_vars: usize,
 	state: ProverState<FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
-	partial_eq_ind_evals: VecOrImmutableSlice<P>,
+	partial_eq_ind_evals: binius_backend_provider::HalVec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	compositions: Vec<Composition>,
 	domains: Vec<EvaluationDomain<FDomain>>,
@@ -136,8 +137,7 @@ where
 			return Err(Error::IncorrectZerocheckChallengesLength);
 		}
 
-		let partial_eq_ind_evals =
-			MultilinearQuery::with_full_query(&challenges[1..], backend)?.into_expansion();
+		let partial_eq_ind_evals = MultilinearQuery::with_full_query(&challenges[1..], backend)?.into_expansion();
 
 		Ok(Self {
 			n_vars,
@@ -189,7 +189,7 @@ where
 					})
 				})
 				.collect();
-			self.partial_eq_ind_evals = VecOrImmutableSlice::V(updated_evals);
+			self.partial_eq_ind_evals = HalVec::from_vec(updated_evals);
 		}
 	}
 }

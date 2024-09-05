@@ -18,7 +18,7 @@ use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, VecOrImmutableSlice};
+use binius_hal::{ComputationBackend, };
 use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
 use std::{iter, marker::PhantomData, mem, ops::Deref};
@@ -340,11 +340,10 @@ where
 
 	let expanded_mixing_coeffs =
 		MultilinearQuery::<FE>::with_full_query(tensor_mixing_challenges, backend)
-			.expect("FE extension degree is less than 2^31")
-			.into_expansion();
+			.expect("FE extension degree is less than 2^31");
+	let expanded_mixing_coeffs = expanded_mixing_coeffs.expansion();
 	let mixed_sum = inner_product_unchecked::<FE, _>(
 		tensor_sum.transpose().vertical_elems().iter().copied(),
-		// TODO: Avoid copying.
 		expanded_mixing_coeffs.iter().copied(),
 	);
 
@@ -435,11 +434,10 @@ where
 		});
 
 	let expanded_mixing_coeffs = MultilinearQuery::<F>::with_full_query(mixing_challenges, backend)
-		.expect("F extension degree is less than 2^31")
-		.into_expansion();
+		.expect("F extension degree is less than 2^31");
+	let expanded_mixing_coeffs = expanded_mixing_coeffs.expansion();
 	let folded_eval = inner_product_unchecked::<F, _>(
 		tensor_eval.transpose().vertical_elems().iter().copied(),
-		// TODO: Avoid copying.
 		expanded_mixing_coeffs.iter().copied(),
 	);
 	folded_eval
@@ -454,7 +452,7 @@ pub fn ring_switch_eq_ind_partial_eval<FS, F, P, Backend>(
 	eval_point: &[F],
 	mixing_challenges: &[F],
 	backend: Backend,
-) -> Result<VecOrImmutableSlice<P>, PolynomialError>
+) -> Result<binius_backend_provider::HalVec<P>, PolynomialError>
 where
 	FS: Field,
 	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS>,

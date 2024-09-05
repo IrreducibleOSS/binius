@@ -26,10 +26,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{
-	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
-	ComputationBackend, VecOrImmutableSlice,
-};
+use binius_hal::{zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters}, ComputationBackend, HalVecTrait};
 use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -38,6 +35,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::{cmp::max, marker::PhantomData, mem::size_of};
 use tracing::{instrument, trace};
+use binius_backend_provider::HalVec;
 
 /// Prove a zerocheck to evalcheck reduction.
 /// FS is the domain type.
@@ -91,7 +89,7 @@ where
 	pub(crate) common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
 	zerocheck_challenges: &'a [F],
-	pub(crate) round_eq_ind: MultilinearExtension<PW, VecOrImmutableSlice<PW>>,
+	pub(crate) round_eq_ind: MultilinearExtension<PW,HalVec<PW>>,
 	mixing_challenge: F,
 	backend: Backend,
 	_marker: PhantomData<(F, DomainField, W)>,
@@ -184,7 +182,7 @@ where
 		};
 
 		self.round_eq_ind =
-			MultilinearExtension::from_values_generic(VecOrImmutableSlice::V(new_evals))?;
+			MultilinearExtension::from_values_generic(HalVec::from_vec(new_evals))?;
 		Ok(())
 	}
 }

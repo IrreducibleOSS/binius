@@ -12,6 +12,7 @@ use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
+use binius_backend_provider::make_best_backend;
 
 // Creates T(x), a multilinear with evaluations over the n-dimensional boolean hypercube
 fn create_numerator<FW: Field>(n_vars: usize) -> MultilinearExtension<FW> {
@@ -52,7 +53,7 @@ fn bench_polyval(c: &mut Criterion) {
 				poly: oracles.oracle(numerator),
 				product,
 			};
-			let backend = binius_backend_provider::make_best_backend();
+			let backend = make_best_backend();
 
 			bench.iter(|| {
 				gkr_gpa::batch_prove::<F, FW, FW, _, _>(

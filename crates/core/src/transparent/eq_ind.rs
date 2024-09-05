@@ -4,7 +4,7 @@ use crate::polynomial::{
 	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
 };
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::{ComputationBackend, VecOrImmutableSlice};
+use binius_hal::ComputationBackend;
 use binius_utils::bail;
 use tracing::debug;
 
@@ -31,7 +31,7 @@ impl<F: Field> EqIndPartialEval<F> {
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
 		&self,
 		backend: Backend,
-	) -> Result<MultilinearExtension<P, VecOrImmutableSlice<P>>, Error> {
+	) -> Result<MultilinearExtension<P, binius_backend_provider::HalVec<P>>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
 		debug!(?self.r);
 		MultilinearExtension::from_values_generic(multilin_query)

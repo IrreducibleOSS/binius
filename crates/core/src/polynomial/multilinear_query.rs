@@ -2,11 +2,12 @@
 
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{Field, PackedField};
-use binius_hal::{ComputationBackend, VecOrImmutableSlice};
+use binius_hal::{ComputationBackend};
 use binius_math::tensor_prod_eq_ind;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use std::cmp::max;
+use binius_backend_provider::{HalVec, HalVecTrait};
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -17,7 +18,7 @@ use std::cmp::max;
 /// before it becomes more efficient to switch over to the method that store folded multilinears.
 #[derive(Debug)]
 pub struct MultilinearQuery<P: PackedField> {
-	expanded_query: VecOrImmutableSlice<P>,
+	expanded_query: HalVec<P>,
 	// We want to avoid initializing data at the moment when vector is growing,
 	// So we allocate zeroed vector and keep track of the length of the initialized part.
 	expanded_query_len: usize,
@@ -33,7 +34,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 			let mut expanded_query = zeroed_vec(len);
 			expanded_query[0] = P::set_single(P::Scalar::ONE);
 			Ok(Self {
-				expanded_query: VecOrImmutableSlice::V(expanded_query),
+				expanded_query: HalVec::from_vec(expanded_query),
 				expanded_query_len: 1,
 				n_vars: 0,
 			})
@@ -44,12 +45,12 @@ impl<P: PackedField> MultilinearQuery<P> {
 		query: &[P::Scalar],
 		backend: Backend,
 	) -> Result<Self, PolynomialError> {
-		let expanded_query = backend
+		let expanded_query:Backend::Vec<P> = backend
 			.tensor_product_full_query(query)
 			.map_err(PolynomialError::HalError)?;
 		let expanded_query_len = expanded_query.len();
 		Ok(Self {
-			expanded_query,
+			expanded_query: expanded_query,
 			expanded_query_len,
 			n_vars: query.len(),
 		})
@@ -66,8 +67,12 @@ impl<P: PackedField> MultilinearQuery<P> {
 		&self.expanded_query[0..self.expanded_query_len]
 	}
 
-	pub fn into_expansion(self) -> VecOrImmutableSlice<P> {
-		self.expanded_query.into_expansion(self.expanded_query_len)
+	pub fn expansion_mut(&mut self) -> &mut [P] {
+		&mut self.expanded_query[0..self.expanded_query_len]
+	}
+
+	pub fn into_expansion(self) -> HalVec<P> {
+		self.expanded_query
 	}
 
 	pub fn update(

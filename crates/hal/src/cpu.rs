@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use std::fmt::Debug;
 use crate::{
-	immutable_slice::VecOrImmutableSlice,
 	utils::tensor_product,
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
 	ComputationBackend, Error,
@@ -14,12 +14,14 @@ use tracing::instrument;
 pub struct CpuBackend;
 
 impl ComputationBackend for CpuBackend {
+	type Vec<P:Send+Sync+Debug> = Vec<P>;
+
 	#[instrument(skip_all)]
 	fn tensor_product_full_query<P: PackedField>(
 		&self,
 		query: &[P::Scalar],
-	) -> Result<VecOrImmutableSlice<P>, Error> {
-		Ok(VecOrImmutableSlice::V(tensor_product(query)?))
+	) -> Result<Self::Vec<P>, Error> {
+		Ok(tensor_product(query)?)
 	}
 
 	#[instrument(skip_all)]

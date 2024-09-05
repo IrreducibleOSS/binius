@@ -1,20 +1,32 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	immutable_slice::VecOrImmutableSlice,
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
 	Error,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
+
+pub trait HalVecTrait<P:Debug+Send+Sync> : Deref<Target=[P]> + DerefMut<Target=[P]> + Send + Sync{
+	fn from_vec(v: Vec<P>)->Self;
+}
+
+impl<P:Debug+Send+Sync> HalVecTrait<P> for Vec<P>{
+	fn from_vec(v: Vec<P>) -> Self {
+		v
+	}
+}
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
 pub trait ComputationBackend: Clone + Send + Sync + Debug {
+	type Vec<P:Debug+Send+Sync> : HalVecTrait<P>;
+
 	/// Computes tensor product expansion.
 	fn tensor_product_full_query<P: PackedField>(
 		&self,
 		query: &[P::Scalar],
-	) -> Result<VecOrImmutableSlice<P>, Error>;
+	) -> Result<Self::Vec<P>, Error>;
 
 	/// Computes round coefficients for zerocheck.
 	/// `cpu_handler` is a callback to handle the CpuBackend computation.

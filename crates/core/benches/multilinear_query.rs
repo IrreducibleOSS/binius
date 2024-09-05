@@ -33,6 +33,8 @@ fn bench_multilinear_query(c: &mut Criterion) {
 fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multilinear_extension");
 	let mut rng = thread_rng();
+	let backend = make_best_backend();
+
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
 			(1 << n) * std::mem::size_of::<BinaryField128b>() as u64,
@@ -48,7 +50,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(n)
 					.collect_vec(),
-				make_best_backend(),
+				backend.clone(),
 			)
 			.unwrap();
 			bench.iter(|| multilin.evaluate(&query));
@@ -64,7 +66,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(1)
 					.collect_vec(),
-				make_best_backend(),
+				backend.clone(),
 			)
 			.unwrap();
 			bench.iter(|| multilin.evaluate_partial_high(&query).unwrap());
@@ -83,7 +85,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 						&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 							.take(k)
 							.collect_vec(),
-						make_best_backend(),
+						backend.clone(),
 					)
 					.unwrap();
 					bench.iter(|| {

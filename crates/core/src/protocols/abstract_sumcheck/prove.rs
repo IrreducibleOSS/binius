@@ -13,7 +13,6 @@ use binius_hal::ComputationBackend;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, fmt::Debug, hash::Hash, ops::Range};
-use tracing::debug;
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug, Clone)]
@@ -552,7 +551,6 @@ where
 			.iter()
 			.map(|x| x.iter().sum())
 			.collect();
-		debug!(?current_round_sum, ?evals);
 
 		Ok(evaluator.round_evals_to_coeffs(current_round_sum, evals)?)
 	}
