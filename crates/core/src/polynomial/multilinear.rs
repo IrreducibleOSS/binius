@@ -2,7 +2,11 @@
 
 use crate::polynomial::{Error, MultilinearExtensionSpecialized, MultilinearQueryRef};
 use binius_field::PackedField;
-use std::{fmt::Debug, ops::Deref};
+use binius_utils::array_2d::Array2D;
+use std::{
+	fmt::Debug,
+	ops::{Deref, Range},
+};
 
 /// Represents a multilinear polynomial.
 ///
@@ -41,19 +45,19 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		scalar: P::Scalar,
 	) -> Result<P::Scalar, Error>;
 
-	fn evaluate<'a>(&self, query: &MultilinearQueryRef<'a, P>) -> Result<P::Scalar, Error>;
+	fn evaluate(&self, query: &MultilinearQueryRef<P>) -> Result<P::Scalar, Error>;
 
-	fn evaluate_partial_low<'a>(
+	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
-	fn evaluate_partial_high<'a>(
+	fn evaluate_partial_high(
 		&self,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
-	/// Compute inner products of a multilinear query inside a subcube.
+	/// Evaluate the multilinear extension of a subcube of the multilinear.
 	///
 	/// Indices is a range of subcube indices, a subrange of 0..2^(n - q - 1) where n is `self.n_vars()` and q is `query.n_vars()`.
 	/// This is equivalent to the evaluation of the polynomial at the point given by the query in the low q variables
@@ -61,24 +65,19 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// For every `(i, index)` in `indices.enumerate()` the two values are written:
 	/// * `evals_0[i, col_index]` is the evaluation at the point with index equal to `2 * index`
 	/// * `evals_1[i, col_index]` is the evaluation at the point with index equal to `2 * index + 1`
-	fn evaluate_subcube<'a>(
+	fn evaluate_subcube(
 		&self,
 		indices: Range<usize>,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 		evals_0: &mut Array2D<P>,
 		evals_1: &mut Array2D<P>,
 		col_index: usize,
 	) -> Result<(), Error>;
 
 	/// Get a subcube of the boolean hypercube of a given size.
-	fn subcube_evals(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		evals: &mut [P],
-	) -> Result<(), Error>;
+	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error>;
 
-    fn underlier_data(&self) -> Option<Vec<u8>>;
+	fn underlier_data(&self) -> Option<Vec<u8>>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -110,43 +109,37 @@ where
 		(**self).evaluate_on_hypercube_and_scale(index, scalar)
 	}
 
-	fn evaluate<'a>(&self, query: &MultilinearQueryRef<'a, P>) -> Result<P::Scalar, Error> {
+	fn evaluate(&self, query: &MultilinearQueryRef<P>) -> Result<P::Scalar, Error> {
 		(**self).evaluate(query)
 	}
 
-	fn evaluate_partial_low<'a>(
+	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_low(query)
 	}
 
-	fn evaluate_partial_high<'a>(
+	fn evaluate_partial_high(
 		&self,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_high(query)
 	}
 
-    fn subcube_inner_products(
-        &self,
-        query: &MultilinearQuery<P>,
-        subcube_vars: usize,
-        subcube_index: usize,
-        inner_products: &mut [P],
-    ) -> Result<(), Error> {
-        (**self).subcube_inner_products(query, subcube_vars, subcube_index, inner_products)
-    }
-
-    fn evaluate_subcube<'a>(
+	fn evaluate_subcube(
 		&self,
 		indices: Range<usize>,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 		evals_0: &mut Array2D<P>,
 		evals_1: &mut Array2D<P>,
 		col_index: usize,
 	) -> Result<(), Error> {
-		(**self).subcube_evals(subcube_vars, subcube_index, evals)
+		(**self).evaluate_subcube(indices, query, evals_0, evals_1, col_index)
+	}
+
+	fn subcube_evals(&self, vars: usize, index: usize, dst: &mut [P]) -> Result<(), Error> {
+		(**self).subcube_evals(vars, index, dst)
 	}
 
 	fn underlier_data(&self) -> Option<Vec<u8>> {

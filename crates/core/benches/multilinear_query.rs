@@ -1,7 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_backend_provider::make_best_backend;
-use binius_core::polynomial::{multilinear_query::MultilinearQuery, MultilinearExtension};
+use binius_backend_provider::{make_best_backend, BestBackend};
+use binius_core::polynomial::{
+	multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearQueryRef,
+};
 use binius_field::{BinaryField128b, PackedBinaryField1x128b, PackedField};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use itertools::Itertools;
@@ -20,7 +22,7 @@ fn bench_multilinear_query(c: &mut Criterion) {
 				.take(n)
 				.collect_vec();
 			bench.iter(|| {
-				MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+				MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
 					&query,
 					backend.clone(),
 				)
@@ -46,13 +48,14 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(n)
 					.collect_vec(),
 				backend.clone(),
 			)
 			.unwrap();
+			let query = MultilinearQueryRef::new(&query);
 			bench.iter(|| multilin.evaluate(&query));
 		});
 		group.bench_function(format!("evaluate_partial_high(n_vars={n}, query_len=1)"), |bench| {
@@ -62,13 +65,14 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(1)
 					.collect_vec(),
 				backend.clone(),
 			)
 			.unwrap();
+			let query = MultilinearQueryRef::new(&query);
 			bench.iter(|| multilin.evaluate_partial_high(&query).unwrap());
 		});
 		for k in [1, 2, 3, n / 2, n - 2, n - 1, n] {
@@ -81,13 +85,14 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 							.collect_vec(),
 					)
 					.unwrap();
-					let query = MultilinearQuery::<BinaryField128b>::with_full_query(
+					let query = MultilinearQuery::<BinaryField128b, BestBackend>::with_full_query(
 						&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 							.take(k)
 							.collect_vec(),
 						backend.clone(),
 					)
 					.unwrap();
+					let query = MultilinearQueryRef::new(&query);
 					bench.iter(|| {
 						multilin
 							.evaluate_partial_low::<BinaryField128b>(&query)

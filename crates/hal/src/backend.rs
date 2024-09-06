@@ -12,7 +12,9 @@ use std::{
 
 /// HAL-managed memory containing the result of its operations.
 pub trait HalSlice<P: Debug + Send + Sync>:
-	Deref<Target = [P]> + DerefMut<Target = [P]> + Send + Sync + Debug { }
+	Deref<Target = [P]> + DerefMut<Target = [P]> + Send + Sync + Debug
+{
+}
 
 impl<P: Send + Sync + Debug> HalSlice<P> for Vec<P> {}
 

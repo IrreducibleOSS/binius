@@ -217,7 +217,7 @@ where
 		})
 	}
 
-	pub fn evaluate<'a>(&self, query: &MultilinearQueryRef<'a, P>) -> Result<P::Scalar, Error> {
+	pub fn evaluate(&self, query: &MultilinearQueryRef<P>) -> Result<P::Scalar, Error> {
 		let evals = self
 			.multilinears
 			.iter()
@@ -303,9 +303,9 @@ where
 	C: Clone,
 	M: MultilinearPoly<P>,
 {
-	pub fn evaluate_partial_low<'a>(
+	pub fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQueryRef<'a, P>,
+		query: &MultilinearQueryRef<P>,
 	) -> Result<MultilinearComposite<P, C, impl MultilinearPoly<P>>, Error> {
 		let new_multilinears = self
 			.multilinears

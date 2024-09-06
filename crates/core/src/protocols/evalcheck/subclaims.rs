@@ -428,7 +428,7 @@ where
 	let (projected_inner_multilin, projected_eval_point) = if let Some(projected_id) = projected_id
 	{
 		let query = memoized_queries.full_query(&wf_eval_point[projected_n_vars..], backend)?;
-		let query = MultilinearQueryRef::new(&query);
+		let query = MultilinearQueryRef::new(query);
 		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
 		let projected: Arc<dyn MultilinearPoly<PW> + Send + Sync> =
 			Arc::new(inner_multilin.evaluate_partial_high(&query)?);
@@ -460,8 +460,13 @@ where
 	Ok(witness)
 }
 
+struct MemoizedQuery<P: PackedField, Backend: ComputationBackend> {
+	eval_point: Vec<P::Scalar>,
+	query: MultilinearQuery<P, Backend>,
+}
+
 pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
-	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend>)>,
+	memo: Vec<MemoizedQuery<P, Backend>>,
 }
 
 impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
@@ -479,16 +484,23 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		if let Some(index) = self
 			.memo
 			.iter()
-			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
+			.position(|memo_query| memo_query.eval_point.as_slice() == eval_point)
 		{
-			let (_, ref query) = &self.memo[index];
+			let query = &self.memo[index].query;
 			return Ok(query);
 		}
 
 		let wf_query = MultilinearQuery::with_full_query(eval_point, backend)?;
-		self.memo.push((eval_point.to_vec(), wf_query));
+		self.memo.push(MemoizedQuery {
+			eval_point: eval_point.to_vec(),
+			query: wf_query,
+		});
 
-		let (_, ref query) = self.memo.last().expect("pushed query immediately above");
+		let query = &self
+			.memo
+			.last()
+			.expect("pushed query immediately above")
+			.query;
 		Ok(query)
 	}
 }

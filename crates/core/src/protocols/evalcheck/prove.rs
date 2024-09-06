@@ -348,7 +348,7 @@ where
 		let eval_query = self
 			.memoized_queries
 			.full_query(wf_eval_point, self.backend.clone())?;
-		let eval_query = MultilinearQueryRef::new(&eval_query);
+		let eval_query = MultilinearQueryRef::new(eval_query);
 		let witness_poly = self
 			.witness_index
 			.get_multilin_poly(poly.id())
