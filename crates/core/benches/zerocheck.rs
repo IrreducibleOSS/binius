@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 #![feature(step_trait)]
 
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
@@ -96,7 +96,7 @@ where
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);
@@ -145,7 +145,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);
@@ -210,7 +210,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let mut rng = thread_rng();
 	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);

@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
@@ -53,7 +53,7 @@ fn bench_polyval(c: &mut Criterion) {
 				poly: oracles.oracle(numerator),
 				product,
 			};
-			let backend = make_best_backend();
+			let backend = make_backend();
 
 			bench.iter(|| {
 				gkr_gpa::batch_prove::<F, FW, FW, _, _>(

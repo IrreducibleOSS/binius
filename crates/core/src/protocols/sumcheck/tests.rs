@@ -13,7 +13,7 @@ use crate::{
 	},
 	witness::MultilinearExtensionIndex,
 };
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
 	ExtensionField, Field, PackedBinaryField4x128b, PackedField, TowerField,
@@ -105,7 +105,7 @@ fn test_prove_verify_interaction_helper(
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let final_prove_output = prove::<_, _, BinaryField32b, _, _>(
 		&sumcheck_claim,
@@ -181,7 +181,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	// Setup evaluation domain
 	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let switchover_fn = |_| 3;
@@ -362,7 +362,7 @@ fn test_prove_verify_batch() {
 
 	// Setup evaluation domain
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let prove_output = batch_prove::<_, _, BinaryField32b, _, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),
@@ -464,7 +464,7 @@ fn test_packed_sumcheck() {
 	// Setup evaluation domain
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let prove_output = batch_prove::<_, PE, BinaryField32b, _, _>(
 		sumcheck_claims.clone().into_iter().zip(witnesses),
 		domain_factory,

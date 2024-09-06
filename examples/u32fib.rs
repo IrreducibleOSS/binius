@@ -5,7 +5,7 @@
 /// An example computing the lowest 32 bits of consecutive fibonacci numbers.
 /// The example performs the computation, generates a proof and verifies it.
 use anyhow::Result;
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	composition::{empty_mix_composition, index_composition},
@@ -449,7 +449,7 @@ fn main() {
 		.expect("failed to init thread pool");
 
 	init_tracing().expect("failed to initialize tracing");
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	// Note that values below 14 are rejected by `find_proof_size_optimal_pcs()`.
 	let log_size = get_log_trace_size().unwrap_or(14);

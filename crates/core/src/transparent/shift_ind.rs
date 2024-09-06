@@ -346,6 +346,7 @@ mod tests {
 		multilinear_query::MultilinearQuery, test_utils::decompose_index_to_hypercube_point,
 		MultilinearQueryRef,
 	};
+	use binius_backend_provider::make_portable_backend;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
 	use binius_hal::cpu::CpuBackend;
 	use rand::{rngs::StdRng, SeedableRng};
@@ -360,7 +361,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -393,7 +394,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -426,7 +427,7 @@ mod tests {
 		left_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();

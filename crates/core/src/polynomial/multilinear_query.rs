@@ -134,10 +134,11 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 mod tests {
 	use super::MultilinearQuery;
 	use crate::polynomial::test_utils::macros::felts;
+	use binius_backend_provider::make_portable_backend;
 	use binius_hal::cpu::CpuBackend;
 
 	macro_rules! expand_query {
-		($f:ident[$($elem:expr),* $(,)?], $b:expr, Packing=$p:ident, $bv:expr) => {
+		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident, $bv:expr) => {
 			binius_field::packed::iter_packed_slice(MultilinearQuery::<$p,CpuBackend>::with_full_query(&[$($f::new($elem)),*], $bv).unwrap().expansion()).collect::<Vec<_>>()
 		};
 	}
@@ -145,25 +146,25 @@ mod tests {
 	#[test]
 	fn test_query_no_packing_32b() {
 		use binius_field::BinaryField32b;
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		assert_eq!(
-			expand_query!(BinaryField32b[], CpuBackend, Packing = BinaryField32b, backend.clone()),
+			expand_query!(BinaryField32b[], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[1])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2], CpuBackend, Packing = BinaryField32b, backend.clone()),
+			expand_query!(BinaryField32b[2], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[3, 2])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2], CpuBackend, Packing = BinaryField32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[2, 1, 1, 3])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2, 2], CpuBackend, Packing = BinaryField32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2, 2], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[1, 3, 3, 2, 3, 2, 2, 1])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2, 2, 2], CpuBackend, Packing = BinaryField32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2, 2, 2], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[3, 2, 2, 1, 2, 1, 1, 3, 2, 1, 1, 3, 1, 3, 3, 2])
 		);
 	}
@@ -171,30 +172,25 @@ mod tests {
 	#[test]
 	fn test_query_packing_4x32b() {
 		use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		assert_eq!(
-			expand_query!(BinaryField32b[], CpuBackend, Packing = PackedBinaryField4x32b, backend.clone()),
+			expand_query!(BinaryField32b[], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[1, 0, 0, 0])
 		);
 		assert_eq!(
-			expand_query!(
-				BinaryField32b[2],
-				CpuBackend,
-				Packing = PackedBinaryField4x32b,
-				backend.clone()
-			),
+			expand_query!(BinaryField32b[2], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[3, 2, 0, 0])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2], CpuBackend, Packing = PackedBinaryField4x32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[2, 1, 1, 3])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2, 2], CpuBackend, Packing = PackedBinaryField4x32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2, 2], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[1, 3, 3, 2, 3, 2, 2, 1])
 		);
 		assert_eq!(
-			expand_query!(BinaryField32b[2, 2, 2, 2], CpuBackend, Packing = PackedBinaryField4x32b, backend.clone()),
+			expand_query!(BinaryField32b[2, 2, 2, 2], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[3, 2, 2, 1, 2, 1, 1, 3, 2, 1, 1, 3, 1, 3, 3, 2])
 		);
 	}
@@ -204,30 +200,25 @@ mod tests {
 		use binius_field::{BinaryField16b, PackedBinaryField8x16b};
 		use binius_hal::cpu::CpuBackend;
 
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		assert_eq!(
-			expand_query!(BinaryField16b[], CpuBackend, Packing = PackedBinaryField8x16b, backend.clone()),
+			expand_query!(BinaryField16b[], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[1, 0, 0, 0, 0, 0, 0, 0])
 		);
 		assert_eq!(
-			expand_query!(
-				BinaryField16b[2],
-				CpuBackend,
-				Packing = PackedBinaryField8x16b,
-				backend.clone()
-			),
+			expand_query!(BinaryField16b[2], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[3, 2, 0, 0, 0, 0, 0, 0])
 		);
 		assert_eq!(
-			expand_query!(BinaryField16b[2, 2], CpuBackend, Packing = PackedBinaryField8x16b, backend.clone()),
+			expand_query!(BinaryField16b[2, 2], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[2, 1, 1, 3, 0, 0, 0, 0])
 		);
 		assert_eq!(
-			expand_query!(BinaryField16b[2, 2, 2], CpuBackend, Packing = PackedBinaryField8x16b, backend.clone()),
+			expand_query!(BinaryField16b[2, 2, 2], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[1, 3, 3, 2, 3, 2, 2, 1])
 		);
 		assert_eq!(
-			expand_query!(BinaryField16b[2, 2, 2, 2], CpuBackend, Packing = PackedBinaryField8x16b, backend.clone()),
+			expand_query!(BinaryField16b[2, 2, 2, 2], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[3, 2, 2, 1, 2, 1, 1, 3, 2, 1, 1, 3, 1, 3, 3, 2])
 		);
 	}

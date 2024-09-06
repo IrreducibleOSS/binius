@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use anyhow::{anyhow, Result};
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	oracle::{BatchId, MultilinearOracleSet, OracleId},

@@ -18,7 +18,7 @@ use crate::{
 	witness::MultilinearExtensionIndex,
 };
 use assert_matches::assert_matches;
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	underlier::WithUnderlier,
@@ -65,7 +65,7 @@ impl CompositionPoly<FExtension> for QuadProduct {
 #[test]
 fn test_evaluation_point_batching() {
 	let mut rng = StdRng::seed_from_u64(0);
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let log_size = 8;
 	let tower_level = 5;
@@ -247,7 +247,7 @@ fn test_shifted_evaluation_whole_cube() {
 	)
 	.unwrap();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let query = MultilinearQueryRef::new(&query);
 	let eval = composite_witness.evaluate(&query).unwrap();
@@ -353,7 +353,7 @@ fn test_shifted_evaluation_subcube() {
 	)
 	.unwrap();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let query = MultilinearQueryRef::new(&query);
 	let eval = composite_witness.evaluate(&query).unwrap();
@@ -496,7 +496,7 @@ fn test_evalcheck_linear_combination() {
 		])
 		.unwrap();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -551,7 +551,7 @@ fn test_evalcheck_repeating() {
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -644,7 +644,7 @@ fn test_evalcheck_merged() {
 		is_random_point: true,
 	};
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -745,7 +745,7 @@ fn test_evalcheck_interleaved() {
 		is_random_point: true,
 	};
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -839,7 +839,7 @@ fn test_evalcheck_zero_padded() {
 		is_random_point: true,
 	};
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,

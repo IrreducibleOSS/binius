@@ -94,6 +94,7 @@ where
 mod tests {
 	use super::*;
 	use crate::polynomial::{multilinear_query::MultilinearQuery, MultilinearQueryRef};
+	use binius_backend_provider::make_portable_backend;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
 	use binius_hal::cpu::CpuBackend;
 	use rand::{rngs::StdRng, SeedableRng};
@@ -102,7 +103,7 @@ mod tests {
 	fn test_consistency(iota: usize, k: usize) {
 		type F = BinaryField128b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let basis = TowerBasis::<F>::new(k, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
@@ -127,7 +128,7 @@ mod tests {
 		type F = BinaryField32b;
 		type P = PackedBinaryField4x32b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let basis = TowerBasis::<F>::new(kappa, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))

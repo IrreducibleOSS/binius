@@ -74,6 +74,7 @@ mod tests {
 	use crate::polynomial::{
 		multilinear_query::MultilinearQuery, MultilinearQueryRef, MultivariatePoly,
 	};
+	use binius_backend_provider::make_portable_backend;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
 	use binius_hal::cpu::CpuBackend;
 	use std::iter::repeat_with;
@@ -89,7 +90,7 @@ mod tests {
 		let eval_point = &repeat_with(|| F::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		// Get Multivariate Poly version of eq_r
 		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();

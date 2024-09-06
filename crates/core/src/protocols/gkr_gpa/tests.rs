@@ -116,7 +116,7 @@ fn test_prove_verify_batch() {
 	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let verifier_challenger = prover_challenger.clone();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
-	let backend = binius_backend_provider::make_best_backend();
+	let backend = binius_backend_provider::make_backend();
 
 	// Setup
 	let (n_vars, n_multilins) = (5, 2);

@@ -1041,6 +1041,7 @@ pub enum VerificationError {
 mod tests {
 	use super::*;
 	use crate::challenger::new_hasher_challenger;
+	use binius_backend_provider::make_portable_backend;
 	use binius_field::{
 		arch::OptimalUnderlier128b, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
 		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
@@ -1082,7 +1083,7 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let multilin_query =
 			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
 				&query,
@@ -1132,7 +1133,7 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1194,7 +1195,7 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let multilin_query =
 			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
 				&query,
@@ -1245,7 +1246,7 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1302,7 +1303,7 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let multilin_query =
 			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
@@ -1354,7 +1355,7 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
@@ -1490,7 +1491,7 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let multilin_query =
 			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(

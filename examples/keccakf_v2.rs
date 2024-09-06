@@ -17,7 +17,7 @@
 #![feature(step_trait)]
 
 use anyhow::Result;
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::{
 		new_hasher_challenger, CanObserve, CanSample, CanSampleBits, IsomorphicChallenger,
@@ -690,7 +690,7 @@ fn main() {
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let mut oracles = MultilinearOracleSet::new();
 	let fixed_oracle = FixedOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size);

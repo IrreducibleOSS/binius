@@ -675,16 +675,16 @@ pub type MultilinearExtensionBorrowed<'a, P> = MultilinearExtension<P, &'a [P]>;
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use itertools::Itertools;
-	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
-
 	use crate::polynomial::MultilinearQuery;
+	use binius_backend_provider::make_portable_backend;
 	use binius_field::{
 		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
 		PackedBinaryField8x16b as P,
 	};
 	use binius_hal::cpu::CpuBackend;
+	use itertools::Itertools;
+	use rand::{rngs::StdRng, SeedableRng};
+	use std::iter::repeat_with;
 
 	#[test]
 	fn test_expand_query_impls_consistent() {
@@ -692,7 +692,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let result1 = MultilinearQuery::<P, CpuBackend>::with_full_query(&q, backend).unwrap();
 		let result2 = expand_query_naive(&q).unwrap();
 		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
@@ -707,7 +707,7 @@ mod tests {
 			.for_each(|(i, val)| *val = F::new(i as u16));
 
 		let poly = MultilinearExtension::from_values(values).unwrap();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		for i in 0..64 {
 			let q = (0..6)
 				.map(|j| if (i >> j) & 1 != 0 { F::ONE } else { F::ZERO })
@@ -732,7 +732,7 @@ mod tests {
 
 		let mut partial_result = poly;
 		let mut index = q.len();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		for split_vars in splits[0..splits.len() - 1].iter() {
 			let query =
 				MultilinearQuery::with_full_query(&q[index - split_vars..index], backend.clone())
@@ -759,7 +759,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let multilin_query =
 			MultilinearQuery::<P, CpuBackend>::with_full_query(&q, backend).unwrap();
 		let multilin_query = MultilinearQueryRef::new(&multilin_query);
@@ -778,7 +778,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<BinaryField128b>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let multilin_query =
 			MultilinearQuery::<BinaryField128b, CpuBackend>::with_full_query(&q, backend.clone())
 				.unwrap();
@@ -818,7 +818,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 		let query = MultilinearQueryRef::new(&query);
 
@@ -847,7 +847,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 		let query = MultilinearQueryRef::new(&query);
 
@@ -873,7 +873,7 @@ mod tests {
 			.take(me.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
 		let query = MultilinearQueryRef::new(&query);
 

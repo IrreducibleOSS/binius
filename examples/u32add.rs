@@ -3,7 +3,7 @@
 #![feature(step_trait)]
 
 use anyhow::Result;
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	composition::{empty_mix_composition, index_composition},
@@ -347,7 +347,7 @@ fn main() {
 	// Values below 14 are rejected by `find_proof_size_optimal_pcs()`.
 	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 

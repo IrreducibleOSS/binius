@@ -13,7 +13,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 	witness::MultilinearWitness,
 };
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_field::{BinaryField128b, BinaryField32b, ExtensionField, Field, TowerField};
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
@@ -40,7 +40,7 @@ where
 	if n_shared_multilins == 0 || n_composites == 0 {
 		panic!("Require at least one multilinear and composite polynomial");
 	}
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let eq_r = EqIndPartialEval::new(n_vars, r.clone())
 		.unwrap()
@@ -145,7 +145,7 @@ fn test_prove_verify_batch() {
 	let n_claims = claims.len();
 	assert_eq!(witnesses.len(), n_claims);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	let prove_output = batch_prove::<_, _, BinaryField32b, _, _, _, _>(
 		claims.iter().cloned().zip(witnesses.clone()),
@@ -168,7 +168,7 @@ fn test_prove_verify_batch() {
 		.all(|claim| claim.eval_point == *evaluation_point));
 
 	// Sanity check correctness of these reduced claims
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point, backend).unwrap();
 	let multilinear_query = MultilinearQueryRef::new(&multilinear_query);
 

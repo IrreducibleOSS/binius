@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_backend_provider::{make_best_backend, BestBackend};
+use binius_backend_provider::{make_backend, Backend};
 use binius_core::polynomial::{
 	multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearQueryRef,
 };
@@ -12,7 +12,7 @@ use rand::thread_rng;
 fn bench_multilinear_query(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multilinear_query");
 	let mut rng = thread_rng();
-	let backend = make_best_backend();
+	let backend = make_backend();
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
 			((1 << n) * std::mem::size_of::<BinaryField128b>()) as u64,
@@ -22,7 +22,7 @@ fn bench_multilinear_query(c: &mut Criterion) {
 				.take(n)
 				.collect_vec();
 			bench.iter(|| {
-				MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
+				MultilinearQuery::<PackedBinaryField1x128b, Backend>::with_full_query(
 					&query,
 					backend.clone(),
 				)
@@ -35,7 +35,7 @@ fn bench_multilinear_query(c: &mut Criterion) {
 fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multilinear_extension");
 	let mut rng = thread_rng();
-	let backend = make_best_backend();
+	let backend = make_backend();
 
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
@@ -48,7 +48,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, Backend>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(n)
 					.collect_vec(),
@@ -65,7 +65,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b, BestBackend>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, Backend>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(1)
 					.collect_vec(),
@@ -85,7 +85,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 							.collect_vec(),
 					)
 					.unwrap();
-					let query = MultilinearQuery::<BinaryField128b, BestBackend>::with_full_query(
+					let query = MultilinearQuery::<BinaryField128b, Backend>::with_full_query(
 						&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 							.take(k)
 							.collect_vec(),

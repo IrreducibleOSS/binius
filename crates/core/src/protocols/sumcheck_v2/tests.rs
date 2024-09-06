@@ -16,7 +16,7 @@ use crate::{
 	},
 	protocols::test_utils::TestProductComposition,
 };
-use binius_backend_provider::make_best_backend;
+use binius_backend_provider::make_backend;
 use binius_field::{
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 };
@@ -114,7 +114,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	)
 	.unwrap();
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 		multilins.iter().collect(),
@@ -197,7 +197,7 @@ fn test_prove_verify_batch() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let backend = make_best_backend();
+	let backend = make_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let (claims, provers) = [8, 6, 4]
 		.map(|n_vars| {

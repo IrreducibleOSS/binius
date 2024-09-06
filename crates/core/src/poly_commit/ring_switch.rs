@@ -488,7 +488,7 @@ mod tests {
 		challenger::new_hasher_challenger, poly_commit::BasicTensorPCS,
 		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
-	use binius_backend_provider::make_best_backend;
+	use binius_backend_provider::{make_backend, make_portable_backend};
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
@@ -533,7 +533,7 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 		let eval_query =
 			MultilinearQuery::<FE, CpuBackend>::with_full_query(&eval_point, backend.clone())
 				.unwrap();
@@ -550,7 +550,7 @@ mod tests {
 		.unwrap();
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
-		let backend = make_best_backend();
+		let backend = make_backend();
 		let pcs =
 			RingSwitchPCS::<F, BinaryField8b, _, _, _>::new(inner_pcs, domain_factory).unwrap();
 
@@ -607,7 +607,7 @@ mod tests {
 		let mixing_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(4)
 			.collect::<Vec<_>>();
-		let backend = CpuBackend;
+		let backend = make_portable_backend();
 
 		let sumcheck_challenges = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(n_vars)
