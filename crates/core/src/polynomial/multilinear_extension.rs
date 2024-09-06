@@ -1,6 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{error::Error, multilinear::MultilinearPoly, multilinear_query::MultilinearQuery};
+use super::{error::Error, multilinear::MultilinearPoly, MultilinearQueryRef};
 use crate::util::PackingDeref;
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
@@ -141,7 +141,7 @@ where
 	P: PackedField,
 	Data: Deref<Target = [P]> + Send + Sync,
 {
-	pub fn evaluate<FE, PE>(&self, query: &MultilinearQuery<PE>) -> Result<FE, Error>
+	pub fn evaluate<'a, FE, PE>(&self, query: &MultilinearQueryRef<'a, PE>) -> Result<FE, Error>
 	where
 		FE: ExtensionField<P::Scalar>,
 		PE: PackedField<Scalar = FE>,
@@ -161,9 +161,9 @@ where
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
 	/// PE::WIDTH, i.e. 2^(\mu - k) \geq PE::WIDTH, since WIDTH is power of two
-	pub fn evaluate_partial_high<PE>(
+	pub fn evaluate_partial_high<'a, PE>(
 		&self,
-		query: &MultilinearQuery<PE>,
+		query: &MultilinearQueryRef<'a, PE>,
 	) -> Result<MultilinearExtension<PE>, Error>
 	where
 		PE: PackedField,
@@ -212,9 +212,9 @@ where
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
 	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
-	pub fn evaluate_partial_low<PE>(
+	pub fn evaluate_partial_low<'a, PE>(
 		&self,
-		query: &MultilinearQuery<PE>,
+		query: &MultilinearQueryRef<'a, PE>,
 	) -> Result<MultilinearExtension<PE>, Error>
 	where
 		PE: PackedField,
@@ -239,9 +239,9 @@ where
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
 	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
-	pub fn evaluate_partial_low_into<PE>(
+	pub fn evaluate_partial_low_into<'a, PE>(
 		&self,
-		query: &MultilinearQuery<PE>,
+		query: &MultilinearQueryRef<'a, PE>,
 		out: &mut [PE],
 	) -> Result<(), Error>
 	where
@@ -418,34 +418,83 @@ where
 		Ok(scalar * eval)
 	}
 
-	fn evaluate(&self, query: &MultilinearQuery<PE>) -> Result<PE::Scalar, Error> {
+	fn evaluate<'a>(&self, query: &MultilinearQueryRef<'a, PE>) -> Result<PE::Scalar, Error> {
 		self.0.evaluate(query)
 	}
 
-	fn evaluate_partial_low(
+	fn evaluate_partial_low<'a>(
 		&self,
-		query: &MultilinearQuery<PE>,
+		query: &MultilinearQueryRef<'a, PE>,
 	) -> Result<MultilinearExtensionSpecialized<PE, PE>, Error> {
 		self.0
 			.evaluate_partial_low(query)
 			.map(MultilinearExtensionSpecialized::from)
 	}
 
-	fn evaluate_partial_high(
+	fn evaluate_partial_high<'a>(
 		&self,
-		query: &MultilinearQuery<PE>,
+		query: &MultilinearQueryRef<'a, PE>,
 	) -> Result<MultilinearExtensionSpecialized<PE, PE>, Error> {
 		self.0
 			.evaluate_partial_high(query)
 			.map(MultilinearExtensionSpecialized::from)
 	}
 
-	fn subcube_inner_products(
-		&self,
-		query: &MultilinearQuery<PE>,
-		subcube_vars: usize,
-		subcube_index: usize,
-		inner_products: &mut [PE],
+    fn subcube_inner_products(
+        &self,
+        query: &MultilinearQuery<PE>,
+        subcube_vars: usize,
+        subcube_index: usize,
+        inner_products: &mut [PE],
+    ) -> Result<(), Error> {
+        let query_n_vars = query.n_vars();
+        if query_n_vars + subcube_vars > self.n_vars() {
+            bail!(Error::ArgumentRangeError {
+				arg: "query.n_vars() + subcube_vars".into(),
+				range: 0..self.n_vars(),
+			});
+        }
+
+        let max_index = 1 << (self.n_vars() - query_n_vars - subcube_vars);
+        if subcube_index >= max_index {
+            bail!(Error::ArgumentRangeError {
+				arg: "subcube_index".into(),
+				range: 0..max_index,
+			});
+        }
+
+        let correct_len = 1 << subcube_vars.saturating_sub(PE::LOG_WIDTH);
+        if inner_products.len() != correct_len {
+            bail!(Error::ArgumentRangeError {
+				arg: "evals.len()".to_string(),
+				range: correct_len..correct_len + 1,
+			});
+        }
+
+        // REVIEW: not spending effort to optimize this as the future of switchover
+        //         is somewhat unclear in light of univariate skip
+        let subcube_start = subcube_index << (query_n_vars + subcube_vars);
+        for scalar_index in 0..1 << subcube_vars {
+            let evals_start = subcube_start + (scalar_index << query_n_vars);
+            let mut inner_product = PE::Scalar::ZERO;
+            for i in 0..1 << query_n_vars {
+                inner_product += get_packed_slice(query.expansion(), i)
+                    * get_packed_slice(self.0.evals(), evals_start + i);
+            }
+
+            set_packed_slice(inner_products, scalar_index, inner_product);
+        }
+
+        Ok(())
+    }
+
+    fn evaluate_subcube<'a>(
+        &self,
+        indices: Range<usize>,
+        query: &MultilinearQueryRef<'a, PE>,
+        evals_0: &mut Array2D<PE>,
+        evals_1: &mut Array2D<PE>,
+        col_index: usize,
 	) -> Result<(), Error> {
 		let query_n_vars = query.n_vars();
 		if query_n_vars + subcube_vars > self.n_vars() {
@@ -579,11 +628,12 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
-	use binius_backend_provider::make_best_backend;
+	use crate::polynomial::MultilinearQuery;
 	use binius_field::{
 		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
 		PackedBinaryField8x16b as P,
 	};
+	use binius_hal::cpu::CpuBackend;
 
 	#[test]
 	fn test_expand_query_impls_consistent() {
@@ -591,8 +641,8 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_best_backend();
-		let result1 = MultilinearQuery::<P>::with_full_query(&q, backend).unwrap();
+		let backend = CpuBackend;
+		let result1 = MultilinearQuery::<P, CpuBackend>::with_full_query(&q, backend).unwrap();
 		let result2 = expand_query_naive(&q).unwrap();
 		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
 	}
@@ -606,13 +656,14 @@ mod tests {
 			.for_each(|(i, val)| *val = F::new(i as u16));
 
 		let poly = MultilinearExtension::from_values(values).unwrap();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		for i in 0..64 {
 			let q = (0..6)
 				.map(|j| if (i >> j) & 1 != 0 { F::ONE } else { F::ZERO })
 				.collect::<Vec<_>>();
 			let multilin_query =
-				MultilinearQuery::<P>::with_full_query(&q, backend.clone()).unwrap();
+				MultilinearQuery::<P, CpuBackend>::with_full_query(&q, backend.clone()).unwrap();
+			let multilin_query = MultilinearQueryRef::new(&multilin_query);
 			let result = poly.evaluate(&multilin_query).unwrap();
 			assert_eq!(result, F::new(i));
 		}
@@ -630,22 +681,20 @@ mod tests {
 
 		let mut partial_result = poly;
 		let mut index = q.len();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		for split_vars in splits[0..splits.len() - 1].iter() {
-			partial_result = partial_result
-				.evaluate_partial_high(
-					&MultilinearQuery::with_full_query(
-						&q[index - split_vars..index],
-						backend.clone(),
-					)
-					.unwrap(),
-				)
-				.unwrap();
+			let query =
+				MultilinearQuery::with_full_query(&q[index - split_vars..index], backend.clone())
+					.unwrap();
+			let query = MultilinearQueryRef::new(&query);
+			partial_result = partial_result.evaluate_partial_high(&query).unwrap();
 			index -= split_vars;
 		}
 
 		let multilin_query =
-			MultilinearQuery::<P>::with_full_query(&q[..index], backend.clone()).unwrap();
+			MultilinearQuery::<P, CpuBackend>::with_full_query(&q[..index], backend.clone())
+				.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		partial_result.evaluate(&multilin_query).unwrap()
 	}
 
@@ -659,8 +708,10 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_best_backend();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(&q, backend).unwrap();
+		let backend = CpuBackend;
+		let multilin_query =
+			MultilinearQuery::<P, CpuBackend>::with_full_query(&q, backend).unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let result1 = poly.evaluate(&multilin_query).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);
@@ -676,20 +727,28 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<BinaryField128b>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let multilin_query =
-			MultilinearQuery::<BinaryField128b>::with_full_query(&q, backend.clone()).unwrap();
+			MultilinearQuery::<BinaryField128b, CpuBackend>::with_full_query(&q, backend.clone())
+				.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 
 		let expected = poly.evaluate(&multilin_query).unwrap();
 
 		// The final split has a number of coefficients less than the packing width
-		let query_hi =
-			MultilinearQuery::<BinaryField128b>::with_full_query(&q[1..], backend.clone()).unwrap();
+		let query_hi = MultilinearQuery::<BinaryField128b, CpuBackend>::with_full_query(
+			&q[1..],
+			backend.clone(),
+		)
+		.unwrap();
+		let query_hi = MultilinearQueryRef::new(&query_hi);
 		let partial_eval = poly.evaluate_partial_high(&query_hi).unwrap();
 		assert!(partial_eval.n_vars() < P::LOG_WIDTH);
 
 		let query_lo =
-			MultilinearQuery::<BinaryField128b>::with_full_query(&q[..1], backend).unwrap();
+			MultilinearQuery::<BinaryField128b, CpuBackend>::with_full_query(&q[..1], backend)
+				.unwrap();
+		let query_lo = MultilinearQueryRef::new(&query_lo);
 		let eval = partial_eval.evaluate(&query_lo).unwrap();
 		assert_eq!(eval, expected);
 	}
@@ -708,8 +767,9 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
 			.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
+		let query = MultilinearQueryRef::new(&query);
 
 		let partial_low = poly.evaluate_partial_low(&query).unwrap();
 
@@ -734,8 +794,9 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
+		let query = MultilinearQueryRef::new(&query);
 
 		let mut inner_products = vec![BinaryField128b::ZERO; 2];
 		poly.subcube_inner_products(&query, 1, 0, inner_products.as_mut_slice())
@@ -758,8 +819,9 @@ mod tests {
 			.take(me.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let query = MultilinearQuery::with_full_query(&q, backend.clone()).unwrap();
+		let query = MultilinearQueryRef::new(&query);
 
 		let eval = me
 			.evaluate::<<PackedBinaryField4x32b as PackedField>::Scalar, PackedBinaryField4x32b>(

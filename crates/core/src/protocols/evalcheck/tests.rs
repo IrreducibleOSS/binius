@@ -8,7 +8,7 @@ use crate::{
 	},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearPoly, MultilinearQuery, MultivariatePoly,
+		MultilinearPoly, MultilinearQuery, MultilinearQueryRef, MultivariatePoly,
 	},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
@@ -88,6 +88,7 @@ fn test_evaluation_point_batching() {
 		.collect::<Vec<_>>();
 
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQueryRef::new(&query);
 	let batch_evals = multilins
 		.iter()
 		.map(|multilin| multilin.evaluate(&query).unwrap())
@@ -248,6 +249,7 @@ fn test_shifted_evaluation_whole_cube() {
 
 	let backend = make_best_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQueryRef::new(&query);
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {
@@ -353,6 +355,7 @@ fn test_shifted_evaluation_subcube() {
 
 	let backend = make_best_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQueryRef::new(&query);
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {

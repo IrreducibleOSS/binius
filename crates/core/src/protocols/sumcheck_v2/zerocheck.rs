@@ -178,7 +178,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample},
-		polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
+		polynomial::{
+			MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+		},
 		protocols::{
 			sumcheck_v2::{
 				batch_verify,
@@ -424,6 +426,7 @@ mod tests {
 		// Verify the reduced multilinear evaluations are correct
 		let multilin_query =
 			MultilinearQuery::with_full_query(&verifier_eval_point, backend).unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
 			assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
 		}

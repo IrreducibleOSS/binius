@@ -1,8 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{
-	error::Error, multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearPoly,
-};
+use super::{error::Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::bail;
@@ -219,7 +217,7 @@ where
 		})
 	}
 
-	pub fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
+	pub fn evaluate<'a>(&self, query: &MultilinearQueryRef<'a, P>) -> Result<P::Scalar, Error> {
 		let evals = self
 			.multilinears
 			.iter()
@@ -305,9 +303,9 @@ where
 	C: Clone,
 	M: MultilinearPoly<P>,
 {
-	pub fn evaluate_partial_low(
+	pub fn evaluate_partial_low<'a>(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: &MultilinearQueryRef<'a, P>,
 	) -> Result<MultilinearComposite<P, C, impl MultilinearPoly<P>>, Error> {
 		let new_multilinears = self
 			.multilinears

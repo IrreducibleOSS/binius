@@ -4,7 +4,9 @@ use super::ZerocheckWitnessTypeErased;
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
+	polynomial::{
+		MultilinearComposite, MultilinearExtension, MultilinearQuery, MultilinearQueryRef,
+	},
 	protocols::{
 		test_utils::TestProductComposition,
 		zerocheck::{
@@ -145,6 +147,7 @@ fn test_prove_verify_interaction_helper(
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQueryRef::new(&multilin_query);
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }
@@ -439,6 +442,7 @@ fn test_prove_verify_packed() {
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQueryRef::new(&multilin_query);
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }

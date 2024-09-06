@@ -2,7 +2,7 @@
 
 use crate::polynomial::{
 	Error, MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly,
-	MultilinearQuery, MultivariatePoly,
+	MultilinearQuery, MultilinearQueryRef, MultivariatePoly,
 };
 use binius_field::{ExtensionField, PackedField, TowerField};
 use binius_hal::ComputationBackend;
@@ -66,7 +66,8 @@ where
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let query = MultilinearQuery::<PE>::with_full_query(query, self.backend.clone())?;
+		let query = MultilinearQuery::<PE, Backend>::with_full_query(query, self.backend.clone())?;
+		let query = MultilinearQueryRef::<PE>::new(&query);
 		self.data.evaluate(&query)
 	}
 

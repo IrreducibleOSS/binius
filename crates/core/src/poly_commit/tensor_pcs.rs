@@ -7,6 +7,7 @@ use crate::{
 	poly_commit::PolyCommitScheme,
 	polynomial::{
 		multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
+		MultilinearQueryRef,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -343,11 +344,12 @@ where
 		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
 
-		let partial_query = &MultilinearQuery::with_full_query(&query[log_n_cols..], backend)?;
+		let partial_query = MultilinearQuery::with_full_query(&query[log_n_cols..], backend)?;
+		let partial_query = MultilinearQueryRef::new(&partial_query);
 		let ts = polys;
 		let t_primes = ts
 			.iter()
-			.map(|t| t.evaluate_partial_high(partial_query))
+			.map(|t| t.evaluate_partial_high(&partial_query))
 			.collect::<Result<Vec<_>, _>>()?;
 		let t_prime = mix_t_primes(log_n_cols, &t_primes, mixing_coefficients)?;
 
@@ -416,7 +418,7 @@ where
 
 		let n_challenges = log2_ceil_usize(proof.n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let mixing_coefficients = &MultilinearQuery::<PackedType<U, FE>, Backend>::with_full_query(
 			&mixing_challenges,
 			backend.clone(),
 		)?
@@ -443,10 +445,11 @@ where
 		challenger.observe_slice(<PackedType<U, FE>>::unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let multilin_query = MultilinearQuery::<PackedType<U, FE>, Backend>::with_full_query(
 			&query[..log_n_cols],
 			backend.clone(),
 		)?;
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let computed_value = proof
 			.mixed_t_prime
 			.evaluate(&multilin_query)
@@ -527,10 +530,11 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let multilin_query = MultilinearQuery::<PackedType<U, FE>, Backend>::with_full_query(
 			&query[log_n_cols..],
 			backend.clone(),
 		)?;
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let incorrect_evaluation = column_tests
 			.par_iter()
 			.map(|(expected, leaves)| {
@@ -1037,12 +1041,12 @@ pub enum VerificationError {
 mod tests {
 	use super::*;
 	use crate::challenger::new_hasher_challenger;
-	use binius_backend_provider::make_best_backend;
 	use binius_field::{
 		arch::OptimalUnderlier128b, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
 		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 		PackedBinaryField4x32b,
 	};
+	use binius_hal::cpu::CpuBackend;
 	use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 	#[test]
@@ -1078,10 +1082,14 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1124,7 +1132,7 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1133,8 +1141,12 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 
 		let values = polys
 			.iter()
@@ -1182,10 +1194,14 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1229,13 +1245,17 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilinear_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilinear_query = MultilinearQueryRef::new(&multilinear_query);
 
 		let values = polys
 			.iter()
@@ -1282,11 +1302,15 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1330,13 +1354,17 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 
 		let values = polys
 			.iter()
@@ -1462,11 +1490,15 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 
 		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+			MultilinearQuery::<PackedBinaryField1x128b, CpuBackend>::with_full_query(
+				&query,
+				backend.clone(),
+			)
+			.unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 

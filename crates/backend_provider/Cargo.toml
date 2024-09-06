@@ -6,8 +6,8 @@ authors.workspace = true
 
 [dependencies]
 binius_hal = { path = "../hal" }
-binius_linerate_backend = { path = "../../../binius_linerate/backend", optional = true }
-# binius_linerate_backend = { git = "ssh://git@gitlab.com/ulvetanna/binius_linerate.git", optional = true }
+binius_linerate = { path = "../../../binius_linerate", optional = true }
+# binius_linerate = { git = "ssh://git@gitlab.com/ulvetanna/binius_linerate.git", optional = true }
 
 [features]
-linerate-backend = ["binius_linerate_backend", "binius_hal/linerate-backend"]
+linerate-backend = ["binius_linerate"]

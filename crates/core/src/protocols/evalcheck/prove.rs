@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant, ShiftVariant},
+	polynomial::MultilinearQueryRef,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -49,7 +50,7 @@ where
 
 	#[get = "pub"]
 	new_sumchecks: Vec<BivariateSumcheck<'b, F, PW>>,
-	memoized_queries: MemoizedQueries<PW>,
+	memoized_queries: MemoizedQueries<PW, Backend>,
 
 	backend: Backend,
 }
@@ -347,11 +348,12 @@ where
 		let eval_query = self
 			.memoized_queries
 			.full_query(wf_eval_point, self.backend.clone())?;
+		let eval_query = MultilinearQueryRef::new(&eval_query);
 		let witness_poly = self
 			.witness_index
 			.get_multilin_poly(poly.id())
 			.map_err(Error::Witness)?;
-		let eval = witness_poly.evaluate(eval_query)?.into();
+		let eval = witness_poly.evaluate(&eval_query)?.into();
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,
 			eval_point: eval_point.to_vec(),

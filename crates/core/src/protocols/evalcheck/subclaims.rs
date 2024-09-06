@@ -20,7 +20,10 @@ use crate::{
 		CompositePolyOracle, Error as OracleError, MultilinearOracleSet, OracleId, Packed,
 		ProjectionVariant, ShiftVariant, Shifted,
 	},
-	polynomial::{MultilinearComposite, MultilinearPoly, MultilinearQuery, MultivariatePoly},
+	polynomial::{
+		MultilinearComposite, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+		MultivariatePoly,
+	},
 	protocols::sumcheck::SumcheckClaim,
 	transparent::{
 		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
@@ -81,7 +84,7 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
 pub fn shifted_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	shifted: &Shifted<F>,
 	wf_eval_point: &[PW::Scalar],
@@ -151,7 +154,7 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
 pub fn packed_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	packed: &Packed<F>,
 	wf_eval_point: &[PW::Scalar],
@@ -274,7 +277,7 @@ pub fn non_same_query_pcs_sumcheck_claim<F: TowerField>(
 
 pub fn non_same_query_pcs_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: NonSameQueryPcsClaimMeta<F>,
 	backend: Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
@@ -401,7 +404,7 @@ pub fn projected_bivariate_claim<F: TowerField>(
 
 fn projected_bivariate_witness<'a, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	wf_eval_point: &[PW::Scalar],
 	multiplier_witness_ctr: impl FnOnce(&[PW::Scalar]) -> Result<MultilinearWitness<'a, PW>, Error>,
@@ -425,9 +428,10 @@ where
 	let (projected_inner_multilin, projected_eval_point) = if let Some(projected_id) = projected_id
 	{
 		let query = memoized_queries.full_query(&wf_eval_point[projected_n_vars..], backend)?;
+		let query = MultilinearQueryRef::new(&query);
 		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
 		let projected: Arc<dyn MultilinearPoly<PW> + Send + Sync> =
-			Arc::new(inner_multilin.evaluate_partial_high(query)?);
+			Arc::new(inner_multilin.evaluate_partial_high(&query)?);
 		witness_index.update_multilin_poly(vec![(projected_id, projected.clone())])?;
 
 		(projected, &wf_eval_point[..projected_n_vars])
@@ -456,22 +460,22 @@ where
 	Ok(witness)
 }
 
-pub struct MemoizedQueries<P: PackedField> {
-	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P>)>,
+pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
+	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend>)>,
 }
 
-impl<P: PackedField> MemoizedQueries<P> {
+impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self { memo: Vec::new() }
 	}
 
 	#[instrument(skip_all)]
-	pub fn full_query<Backend: ComputationBackend>(
+	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
 		backend: Backend,
-	) -> Result<&MultilinearQuery<P>, Error> {
+	) -> Result<&MultilinearQuery<P, Backend>, Error> {
 		if let Some(index) = self
 			.memo
 			.iter()

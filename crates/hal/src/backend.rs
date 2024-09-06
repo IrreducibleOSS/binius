@@ -5,22 +5,23 @@ use crate::{
 	Error,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::{
+	fmt::Debug,
+	ops::{Deref, DerefMut},
+};
 
-pub trait HalVecTrait<P:Debug+Send+Sync> : Deref<Target=[P]> + DerefMut<Target=[P]> + Send + Sync{
-	fn from_vec(v: Vec<P>)->Self;
-}
+/// HAL-managed memory containing the result of its operations.
+pub trait HalSlice<P: Debug + Send + Sync>:
+	Deref<Target = [P]> + DerefMut<Target = [P]> + Send + Sync + Debug { }
 
-impl<P:Debug+Send+Sync> HalVecTrait<P> for Vec<P>{
-	fn from_vec(v: Vec<P>) -> Self {
-		v
-	}
-}
+impl<P: Send + Sync + Debug> HalSlice<P> for Vec<P> {}
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
-pub trait ComputationBackend: Clone + Send + Sync + Debug {
-	type Vec<P:Debug+Send+Sync> : HalVecTrait<P>;
+pub trait ComputationBackend: Clone + Send + Sync + Debug + 'static {
+	type Vec<P: Send + Sync + Debug>: HalSlice<P>;
+
+	/// Creates `Self::Vec<P>` from the given `Vec<P>`.
+	fn to_hal_slice<P: Debug + Send + Sync>(v: Vec<P>) -> Self::Vec<P>;
 
 	/// Computes tensor product expansion.
 	fn tensor_product_full_query<P: PackedField>(

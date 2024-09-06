@@ -3,7 +3,9 @@
 use super::gkr_sumcheck::{GkrSumcheckClaim, GkrSumcheckWitness};
 use crate::{
 	challenger::new_hasher_challenger,
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
+	polynomial::{
+		MultilinearComposite, MultilinearExtension, MultilinearQuery, MultilinearQueryRef,
+	},
 	protocols::{
 		gkr_sumcheck::{batch_prove, batch_verify},
 		test_utils::TestProductComposition,
@@ -168,6 +170,7 @@ fn test_prove_verify_batch() {
 	// Sanity check correctness of these reduced claims
 	let backend = make_best_backend();
 	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point, backend).unwrap();
+	let multilinear_query = MultilinearQueryRef::new(&multilinear_query);
 
 	for (reduced_claim, witness) in reduced_claims.into_iter().zip(witnesses) {
 		let actual_eval = witness.poly.evaluate(&multilinear_query).unwrap();

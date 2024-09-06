@@ -1,5 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use binius_backend_provider::make_best_backend;
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::MultilinearOracleSet,
@@ -12,7 +13,6 @@ use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
-use binius_backend_provider::make_best_backend;
 
 // Creates T(x), a multilinear with evaluations over the n-dimensional boolean hypercube
 fn create_numerator<FW: Field>(n_vars: usize) -> MultilinearExtension<FW> {

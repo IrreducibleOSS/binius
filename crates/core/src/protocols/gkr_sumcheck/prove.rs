@@ -22,7 +22,7 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{ComputationBackend, HalVecTrait};
+use binius_hal::ComputationBackend;
 use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use getset::Getters;
@@ -43,7 +43,7 @@ where
 	common: CommonProversState<(usize, usize), PW, M, Backend>,
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
-	round_eq_ind: MultilinearExtension<PW, binius_backend_provider::HalVec<PW>>,
+	round_eq_ind: MultilinearExtension<PW, Backend::Vec<PW>>,
 	_marker: PhantomData<(CW, DomainField)>,
 }
 
@@ -100,7 +100,7 @@ where
 			.collect();
 
 		self.round_eq_ind =
-			MultilinearExtension::from_values_generic(binius_backend_provider::HalVec::from_vec(new_evals))?;
+			MultilinearExtension::from_values_generic(Backend::to_hal_slice(new_evals))?;
 		Ok(())
 	}
 }
@@ -301,15 +301,16 @@ where
 
 		let round_coeffs = if self.round == 0 {
 			let poly_mle = self.poly_mle.as_ref().expect("poly_mle is initialized");
-			let evaluator = GkrSumcheckFirstRoundEvaluator {
-				degree: self.degree,
-				eq_ind: &provers_state.round_eq_ind,
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: &self.composition,
-				poly_mle,
-				gkr_challenge: self.gkr_round_challenge[0].into(),
-			};
+			let evaluator: GkrSumcheckFirstRoundEvaluator<'_, PW, DomainField, CW, M, Backend> =
+				GkrSumcheckFirstRoundEvaluator {
+					degree: self.degree,
+					eq_ind: &provers_state.round_eq_ind,
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
+					poly_mle,
+					gkr_challenge: self.gkr_round_challenge[0].into(),
+				};
 			provers_state.common.calculate_round_coeffs(
 				self.multilinear_ids.as_slice(),
 				evaluator,
@@ -317,14 +318,15 @@ where
 				vertex_state_iterator,
 			)
 		} else {
-			let evaluator = GkrSumcheckLaterRoundEvaluator {
-				degree: self.degree,
-				eq_ind: &provers_state.round_eq_ind,
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: &self.composition,
-				gkr_challenge: self.gkr_round_challenge[self.round].into(),
-			};
+			let evaluator: GkrSumcheckLaterRoundEvaluator<'_, PW, DomainField, CW, Backend> =
+				GkrSumcheckLaterRoundEvaluator {
+					degree: self.degree,
+					eq_ind: &provers_state.round_eq_ind,
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
+					gkr_challenge: self.gkr_round_challenge[self.round].into(),
+				};
 			provers_state.common.calculate_round_coeffs(
 				self.multilinear_ids.as_slice(),
 				evaluator,
@@ -404,29 +406,31 @@ where
 
 // eligibility - gkr challenge point
 
-pub struct GkrSumcheckFirstRoundEvaluator<'a, PW, DomainField, C, M>
+pub struct GkrSumcheckFirstRoundEvaluator<'a, PW, DomainField, C, M, Backend>
 where
 	PW: PackedField<Scalar: ExtensionField<DomainField>>,
 	DomainField: Field,
 	C: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW, binius_backend_provider::HalVec<PW>>,
+	pub eq_ind: &'a MultilinearExtension<PW, Backend::Vec<PW>>,
 	pub poly_mle: &'a M,
 	pub gkr_challenge: PW::Scalar,
 }
 
-impl<'a, PW, DomainField, C, M> AbstractSumcheckEvaluator<PW>
-	for GkrSumcheckFirstRoundEvaluator<'a, PW, DomainField, C, M>
+impl<'a, PW, DomainField, C, M, Backend> AbstractSumcheckEvaluator<PW>
+	for GkrSumcheckFirstRoundEvaluator<'a, PW, DomainField, C, M, Backend>
 where
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
 	C: CompositionPoly<PW>,
 	M: MultilinearPoly<PW> + Send + Sync,
+	Backend: ComputationBackend,
 {
 	type VertexState = ();
 
@@ -507,26 +511,28 @@ where
 		Ok(coeffs)
 	}
 }
-pub struct GkrSumcheckLaterRoundEvaluator<'a, PW, DomainField, C>
+pub struct GkrSumcheckLaterRoundEvaluator<'a, PW, DomainField, C, Backend>
 where
 	DomainField: Field,
 	PW: PackedField<Scalar: ExtensionField<DomainField>>,
 	C: CompositionPoly<PW>,
+	Backend: ComputationBackend,
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW, binius_backend_provider::HalVec<PW>>,
+	pub eq_ind: &'a MultilinearExtension<PW, Backend::Vec<PW>>,
 	pub gkr_challenge: PW::Scalar,
 }
 
-impl<'a, PW, DomainField, C> AbstractSumcheckEvaluator<PW>
-	for GkrSumcheckLaterRoundEvaluator<'a, PW, DomainField, C>
+impl<'a, PW, DomainField, C, Backend> AbstractSumcheckEvaluator<PW>
+	for GkrSumcheckLaterRoundEvaluator<'a, PW, DomainField, C, Backend>
 where
 	DomainField: Field,
 	PW: PackedExtension<DomainField, Scalar: ExtensionField<DomainField>>,
 	C: CompositionPoly<PW>,
+	Backend: ComputationBackend,
 {
 	type VertexState = ();
 

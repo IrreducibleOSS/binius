@@ -3,7 +3,7 @@
 use crate::{
 	polynomial::{
 		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
-		MultilinearQuery,
+		MultilinearQuery, MultilinearQueryRef,
 	},
 	protocols::{
 		sumcheck_v2::{common::RoundCoeffs, error::Error},
@@ -152,7 +152,7 @@ where
 	n_vars: usize,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	evaluation_points: Vec<FDomain>,
-	tensor_query: Option<MultilinearQuery<P>>,
+    tensor_query: Option<MultilinearQuery<P, Backend>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
 	backend: Backend,
 }
@@ -195,7 +195,7 @@ where
 			})
 			.collect();
 
-		let tensor_query = MultilinearQuery::new(max_switchover_round)?;
+		let tensor_query = MultilinearQuery::<_, Backend>::new(max_switchover_round)?;
 
 		Ok(Self {
 			n_vars,
@@ -234,6 +234,8 @@ where
 		// Partial query for folding
 		let single_variable_partial_query =
 			MultilinearQuery::with_full_query(&[challenge], self.backend.clone())?;
+		let single_variable_partial_query =
+			MultilinearQueryRef::new(&single_variable_partial_query);
 
 		let mut any_transparent_left = false;
 		for multilinear in self.multilinears.iter_mut() {
@@ -246,6 +248,7 @@ where
 						.expect(
 							"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
 						);
+					let tensor_query = MultilinearQueryRef::new(&tensor_query);
 
 					// TODO: would be nicer if switchover_round 0 meant to fold after the first round
 					*switchover_round -= 1;
@@ -253,7 +256,7 @@ where
 						// At switchover, perform inner products in large field and save them in a
 						// newly created MLE.
 						let large_field_folded_multilinear =
-							inner_multilinear.evaluate_partial_low(tensor_query)?;
+							inner_multilinear.evaluate_partial_low(&tensor_query)?;
 
 						*multilinear = SumcheckMultilinear::Folded {
 							large_field_folded_multilinear,
@@ -291,7 +294,9 @@ where
 			},
 		};
 
-		let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
+		let empty_query =
+			MultilinearQuery::<_, Backend>::new(0).expect("constructing an empty query");
+		let empty_query = MultilinearQueryRef::new(&empty_query);
 		self.multilinears
 			.into_iter()
 			.map(|multilinear| {
@@ -304,7 +309,8 @@ where
 							.expect(
 								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
 							);
-						inner_multilinear.evaluate(tensor_query)
+						let tensor_query = MultilinearQueryRef::new(&tensor_query);
+						inner_multilinear.evaluate(&tensor_query)
 					}
 					SumcheckMultilinear::Folded {
 						large_field_folded_multilinear,
@@ -362,8 +368,10 @@ where
 			.iter()
 			.map(|evaluator| evaluator.eval_point_indices().len());
 
-		let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
+		let empty_query =
+			MultilinearQuery::<_, Backend>::new(0).expect("constructing an empty query");
 		let query = self.tensor_query.as_ref().unwrap_or(&empty_query);
+		let query = MultilinearQueryRef::new(query);
 
 		/// Process batches of vertices in parallel, accumulating the round evaluations.
 		const MAX_SUBCUBE_VARS: usize = 5;
@@ -391,7 +399,7 @@ where
 						iter::zip(&self.multilinears, multilinear_evals.iter_mut())
 					{
 						Self::eval01(
-							query,
+							&query,
 							multilinear,
 							subcube_vars + 1,
 							subcube_index,

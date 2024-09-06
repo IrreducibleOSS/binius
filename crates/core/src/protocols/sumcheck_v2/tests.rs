@@ -12,6 +12,7 @@ use crate::{
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearComposite,
 		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
+		MultilinearQueryRef,
 	},
 	protocols::test_utils::TestProductComposition,
 };
@@ -156,6 +157,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 
 	// Verify the reduced multilinear evaluations are correct
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQueryRef::new(&multilin_query);
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
 	}

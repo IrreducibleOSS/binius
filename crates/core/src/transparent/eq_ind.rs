@@ -6,7 +6,6 @@ use crate::polynomial::{
 use binius_field::{Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_utils::bail;
-use tracing::debug;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -31,9 +30,8 @@ impl<F: Field> EqIndPartialEval<F> {
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
 		&self,
 		backend: Backend,
-	) -> Result<MultilinearExtension<P, binius_backend_provider::HalVec<P>>, Error> {
+	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
-		debug!(?self.r);
 		MultilinearExtension::from_values_generic(multilin_query)
 	}
 }
@@ -73,9 +71,11 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::EqIndPartialEval;
-	use crate::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
-	use binius_backend_provider::make_best_backend;
+	use crate::polynomial::{
+		multilinear_query::MultilinearQuery, MultilinearQueryRef, MultivariatePoly,
+	};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
+	use binius_hal::cpu::CpuBackend;
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {
@@ -89,7 +89,7 @@ mod tests {
 		let eval_point = &repeat_with(|| F::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
-		let backend = make_best_backend();
+		let backend = CpuBackend;
 
 		// Get Multivariate Poly version of eq_r
 		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();
@@ -99,7 +99,9 @@ mod tests {
 		let eq_r_mle = eq_r_mvp
 			.multilinear_extension::<P, _>(backend.clone())
 			.unwrap();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point, backend).unwrap();
+		let multilin_query =
+			MultilinearQuery::<P, CpuBackend>::with_full_query(eval_point, backend).unwrap();
+		let multilin_query = MultilinearQueryRef::new(&multilin_query);
 		let eval_mle = eq_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

@@ -7,7 +7,10 @@ use super::{
 use crate::{
 	composition::BivariateProduct,
 	oracle::MultilinearPolyOracle,
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery},
+	polynomial::{
+		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+		MultilinearQueryRef,
+	},
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
 		gkr_gpa::gkr_gpa::BatchLayerProof,
@@ -354,6 +357,7 @@ where
 			.map(Into::into)
 			.collect::<Vec<_>>();
 		let multilinear_query = MultilinearQuery::with_full_query(&query, self.backend.clone())?;
+		let multilinear_query = MultilinearQueryRef::new(&multilinear_query);
 
 		let zero_eval = self.next_layer_halves[self.current_layer_no()]
 			.0

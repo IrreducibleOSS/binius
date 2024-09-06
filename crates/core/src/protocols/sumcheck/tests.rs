@@ -5,7 +5,7 @@ use crate::{
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearExtensionSpecialized, MultilinearQuery,
+		MultilinearExtensionSpecialized, MultilinearQuery, MultilinearQueryRef,
 	},
 	protocols::{
 		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
@@ -130,6 +130,7 @@ fn test_prove_verify_interaction_helper(
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend.clone()).unwrap();
+	let multilin_query = MultilinearQueryRef::new(&multilin_query);
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
@@ -207,6 +208,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQueryRef::new(&multilin_query);
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
