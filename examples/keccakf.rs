@@ -155,20 +155,26 @@ impl FixedOracle {
 		backend: Backend,
 	) -> Result<Self> {
 		let round_const_values = must_cast_slice::<_, PackedBinaryField64x1b>(&KECCAKF_RC);
-		let round_consts_single =
-			oracles.add_transparent(MultilinearExtensionTransparent::<_, F, _, _>::from_values(
+		let round_consts_single = oracles.add_named("round_consts_single").transparent(
+			MultilinearExtensionTransparent::<_, F, _, _>::from_values(
 				round_const_values,
 				backend,
-			)?)?;
-		let round_consts =
-			oracles.add_repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
+			)?,
+		)?;
+		let round_consts = oracles
+			.add_named("round_consts")
+			.repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
-		let selector_single = oracles.add_transparent(StepDown::new(
-			LOG_ROWS_PER_PERMUTATION,
-			ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
-		)?)?;
-		let selector =
-			oracles.add_repeating(selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
+		let selector_single =
+			oracles
+				.add_named("single_round_selector")
+				.transparent(StepDown::new(
+					LOG_ROWS_PER_PERMUTATION,
+					ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
+				)?)?;
+		let selector = oracles
+			.add_named("round_selector")
+			.repeating(selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
 		Ok(Self {
 			round_consts,
@@ -194,21 +200,31 @@ struct TraceOracle {
 impl TraceOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
 		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let state_in_oracle = oracles.add_committed_multiple::<25>(batch_id);
-		let state_out_oracle = oracles.add_committed_multiple::<25>(batch_id);
-		let c_oracle = oracles.add_committed_multiple::<5>(batch_id);
-		let d_oracle = oracles.add_committed_multiple::<5>(batch_id);
+		let state_in_oracle = oracles
+			.add_named("state_in_oracle")
+			.committed_multiple::<25>(batch_id);
+		let state_out_oracle = oracles
+			.add_named("state_out_oracle")
+			.committed_multiple::<25>(batch_id);
+		let c_oracle = oracles
+			.add_named("c_oracle")
+			.committed_multiple::<5>(batch_id);
+		let d_oracle = oracles
+			.add_named("d_oracle")
+			.committed_multiple::<5>(batch_id);
 
-		let c_shift_oracle = c_oracle.map(|c_x| {
+		let c_shift_oracle = array::from_fn(|x| {
 			oracles
-				.add_shifted(c_x, 1, 6, ShiftVariant::CircularLeft)
+				.add_named(format!("c_shifted_{}", x))
+				.shifted(c_oracle[x], 1, 6, ShiftVariant::CircularLeft)
 				.unwrap()
 		});
 
 		let a_theta_oracle = array::from_fn(|xy| {
 			let x = xy % 5;
 			oracles
-				.add_linear_combination(
+				.add_named(format!("a_theta_{}", xy))
+				.linear_combination(
 					log_size,
 					[(state_in_oracle[xy], F::ONE), (d_oracle[x], F::ONE)],
 				)
@@ -220,7 +236,8 @@ impl TraceOracle {
 				a_theta_oracle[0]
 			} else {
 				oracles
-					.add_shifted(
+					.add_named(format!("b_oracle_{}", xy))
+					.shifted(
 						a_theta_oracle[PI[xy]],
 						RHO[xy] as usize,
 						6,
@@ -230,9 +247,10 @@ impl TraceOracle {
 			}
 		});
 
-		let next_state_in = state_in_oracle.map(|state_in_xy| {
+		let next_state_in = array::from_fn(|xy| {
 			oracles
-				.add_shifted(state_in_xy, 64, 11, ShiftVariant::LogicalRight)
+				.add_named(format!("next_state_in_{}", xy))
+				.shifted(state_in_oracle[xy], 64, 11, ShiftVariant::LogicalRight)
 				.unwrap()
 		});
 

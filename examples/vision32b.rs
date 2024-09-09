@@ -304,7 +304,8 @@ impl TraceOracle {
 	{
 		let even_round_consts = array::from_fn(|i| {
 			let even_rc_single = oracles
-				.add_transparent(
+				.add_named(format!("even_round_consts_single_{}", i))
+				.transparent(
 					MultilinearExtensionTransparent::<_, F, _>::from_values(
 						round_consts(&VISION_RC_EVEN[i]),
 						backend.clone(),
@@ -313,12 +314,14 @@ impl TraceOracle {
 				)
 				.unwrap();
 			oracles
-				.add_repeating(even_rc_single, log_size - LOG_COMPRESSION_BLOCK)
+				.add_named(format!("even_round_consts_{}", i))
+				.repeating(even_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
 		let odd_round_consts = array::from_fn(|i| {
 			let odd_rc_single = oracles
-				.add_transparent(
+				.add_named(format!("odd_round_consts_single_{}", i))
+				.transparent(
 					MultilinearExtensionTransparent::<_, F, _>::from_values(
 						round_consts(&VISION_RC_ODD[i]),
 						backend.clone(),
@@ -327,12 +330,14 @@ impl TraceOracle {
 				)
 				.unwrap();
 			oracles
-				.add_repeating(odd_rc_single, log_size - LOG_COMPRESSION_BLOCK)
+				.add_named(format!("odd_round_consts_{}", i))
+				.repeating(odd_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
 		let round_0_constant = array::from_fn(|i| {
 			let round_0_constant_single = oracles
-				.add_transparent(
+				.add_named(format!("round_0_const_single_{}", i))
+				.transparent(
 					MultilinearExtensionTransparent::<_, F, _>::from_values(
 						round_consts(&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0]),
 						backend.clone(),
@@ -341,33 +346,59 @@ impl TraceOracle {
 				)
 				.unwrap();
 			oracles
-				.add_repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
+				.add_named(format!("round_0_consts_{}", i))
+				.repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
 
 		let round_selector_single = oracles
-			.add_transparent(StepDown::new(LOG_COMPRESSION_BLOCK, 7).unwrap())
+			.add_named("round_selector_single")
+			.transparent(StepDown::new(LOG_COMPRESSION_BLOCK, 7).unwrap())
 			.unwrap();
 		let round_selector = oracles
-			.add_repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)
+			.add_named("round_selector")
+			.repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)
 			.unwrap();
 
 		let trace_batch = oracles.add_committed_batch(log_size, BinaryField32b::TOWER_LEVEL);
-		let state_in = oracles.add_committed_multiple::<24>(trace_batch);
-		let inv_0 = oracles.add_committed_multiple::<24>(trace_batch);
-		let prod_0 = oracles.add_committed_multiple::<24>(trace_batch);
-		let s_box_out_0 = oracles.add_committed_multiple::<24>(trace_batch);
-		let s_box_pow2_0 = oracles.add_committed_multiple::<24>(trace_batch);
-		let s_box_pow4_0 = oracles.add_committed_multiple::<24>(trace_batch);
-		let inv_1 = oracles.add_committed_multiple::<24>(trace_batch);
-		let prod_1 = oracles.add_committed_multiple::<24>(trace_batch);
-		let inv_pow2_1 = oracles.add_committed_multiple::<24>(trace_batch);
-		let inv_pow4_1 = oracles.add_committed_multiple::<24>(trace_batch);
-		let state_out = oracles.add_committed_multiple::<24>(trace_batch);
+		let state_in = oracles
+			.add_named("state_in")
+			.committed_multiple::<24>(trace_batch);
+		let inv_0 = oracles
+			.add_named("inv_evens")
+			.committed_multiple::<24>(trace_batch);
+		let prod_0 = oracles
+			.add_named("prod_evens")
+			.committed_multiple::<24>(trace_batch);
+		let s_box_out_0 = oracles
+			.add_named("sbox_out_evens")
+			.committed_multiple::<24>(trace_batch);
+		let s_box_pow2_0 = oracles
+			.add_named("sbox_out_pow2_evens")
+			.committed_multiple::<24>(trace_batch);
+		let s_box_pow4_0 = oracles
+			.add_named("sbox_out_pow4_evens")
+			.committed_multiple::<24>(trace_batch);
+		let inv_1 = oracles
+			.add_named("inv_odds")
+			.committed_multiple::<24>(trace_batch);
+		let prod_1 = oracles
+			.add_named("prod_odds")
+			.committed_multiple::<24>(trace_batch);
+		let inv_pow2_1 = oracles
+			.add_named("inv_pow2_odds")
+			.committed_multiple::<24>(trace_batch);
+		let inv_pow4_1 = oracles
+			.add_named("inv_pow4_odds")
+			.committed_multiple::<24>(trace_batch);
+		let state_out = oracles
+			.add_named("state_out")
+			.committed_multiple::<24>(trace_batch);
 
 		let round_begin = array::from_fn(|i| {
 			oracles
-				.add_linear_combination(
+				.add_named(format!("round_begin_{}", i))
+				.linear_combination(
 					log_size,
 					[(state_in[i], F::ONE), (round_0_constant[i], F::ONE)],
 				)
@@ -376,7 +407,8 @@ impl TraceOracle {
 
 		let s_box_out_1 = array::from_fn(|i| {
 			oracles
-				.add_linear_combination_with_offset(
+				.add_named(format!("sbox_out_odds_{}", i))
+				.linear_combination_with_offset(
 					log_size,
 					F::from(SBOX_FWD_CONST),
 					[
@@ -390,7 +422,8 @@ impl TraceOracle {
 
 		let mds_out_0 = array::from_fn(|row| {
 			oracles
-				.add_linear_combination(
+				.add_named(format!("mds_out_evens_{}", row))
+				.linear_combination(
 					log_size,
 					MDS_TRANS[row].iter().enumerate().map(|(i, &elem)| {
 						(s_box_out_0[i], F::from(BinaryField32b::new(elem as u32)))
@@ -400,7 +433,8 @@ impl TraceOracle {
 		});
 		let mds_out_1 = array::from_fn(|row| {
 			oracles
-				.add_linear_combination(
+				.add_named(format!("mds_out_odds_{}", row))
+				.linear_combination(
 					log_size,
 					MDS_TRANS[row].iter().enumerate().map(|(i, &elem)| {
 						(s_box_out_1[i], F::from(BinaryField32b::new(elem as u32)))
@@ -411,16 +445,18 @@ impl TraceOracle {
 
 		let round_out_0 = array::from_fn(|row| {
 			oracles
-				.add_linear_combination(
+				.add_named(format!("round_out_evens_{}", row))
+				.linear_combination(
 					log_size,
 					[(mds_out_0[row], F::ONE), (even_round_consts[row], F::ONE)],
 				)
 				.unwrap()
 		});
 
-		let next_state_in = state_in.map(|state_in_xy| {
+		let next_state_in = array::from_fn(|xy| {
 			oracles
-				.add_shifted(state_in_xy, 1, 3, ShiftVariant::LogicalRight)
+				.add_named(format!("next_state_in_{}", xy))
+				.shifted(state_in[xy], 1, 3, ShiftVariant::LogicalRight)
 				.unwrap()
 		});
 

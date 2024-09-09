@@ -131,7 +131,7 @@ impl SBoxTraceGadget {
 	where
 		F: TowerField + ExtensionField<BinaryField8b>,
 	{
-		let inverse = oracles.add_linear_combination(
+		let inverse = oracles.add_named("sbox_inverse").linear_combination(
 			log_size,
 			(0..8).map(|b| {
 				let basis = BinaryField8b::from(
@@ -141,11 +141,13 @@ impl SBoxTraceGadget {
 				(inv_bits[b], basis.into())
 			}),
 		)?;
-		let output = oracles.add_linear_combination_with_offset(
-			log_size,
-			BinaryField8b::from(SBOX_VEC).into(),
-			(0..8).map(|b| (inv_bits[b], BinaryField8b::from(SBOX_MATRIX[b]).into())),
-		)?;
+		let output = oracles
+			.add_named("sbox_output")
+			.linear_combination_with_offset(
+				log_size,
+				BinaryField8b::from(SBOX_VEC).into(),
+				(0..8).map(|b| (inv_bits[b], BinaryField8b::from(SBOX_MATRIX[b]).into())),
+			)?;
 
 		Ok(Self {
 			input,
@@ -200,12 +202,14 @@ impl TraceOracle {
 		Backend: ComputationBackend + 'static,
 	{
 		// Fixed transparent columns
-		let round_selector_single =
-			oracles.add_transparent(StepDown::new(LOG_COMPRESSION_BLOCK, N_ROUNDS - 1)?)?;
-		let round_selector =
-			oracles.add_repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)?;
+		let round_selector_single = oracles
+			.add_named("single_round_selector")
+			.transparent(StepDown::new(LOG_COMPRESSION_BLOCK, N_ROUNDS - 1)?)?;
+		let round_selector = oracles
+			.add_named("round_selector")
+			.repeating(round_selector_single, log_size - LOG_COMPRESSION_BLOCK)?;
 
-		let p_default_round_const = oracles.add_transparent(Constant {
+		let p_default_round_const = oracles.add_named("zero").transparent(Constant {
 			n_vars: log_size,
 			value: F::ZERO,
 		})?;
@@ -213,20 +217,30 @@ impl TraceOracle {
 			let specialized = MultilinearExtension::from_values(p_round_consts_i)
 				.unwrap()
 				.specialize::<F>();
-			let p_rc_single = oracles.add_transparent(
+			let p_rc_single = oracles.add_named("round_constants_single").transparent(
 				MultilinearExtensionTransparent::from_specialized(specialized, backend.clone())?,
 			)?;
-			oracles.add_repeating(p_rc_single, log_size - LOG_COMPRESSION_BLOCK)
+			oracles
+				.add_named("round_constants")
+				.repeating(p_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 		})?;
 
 		// Committed public & witness columns
 		let trace1b_batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let p_sub_bytes_inv_bits = oracles.add_committed_multiple::<{ 64 * 8 }>(trace1b_batch_id);
+		let p_sub_bytes_inv_bits = oracles
+			.add_named("sbox_inverse_bits")
+			.committed_multiple::<{ 64 * 8 }>(trace1b_batch_id);
 
 		let trace8b_batch_id = oracles.add_committed_batch(log_size, BinaryField8b::TOWER_LEVEL);
-		let p_in = oracles.add_committed_multiple::<64>(trace8b_batch_id);
-		let p_out = oracles.add_committed_multiple::<64>(trace8b_batch_id);
-		let p_sub_bytes_prod = oracles.add_committed_multiple::<64>(trace8b_batch_id);
+		let p_in = oracles
+			.add_named("round_in")
+			.committed_multiple::<64>(trace8b_batch_id);
+		let p_out = oracles
+			.add_named("p_out")
+			.committed_multiple::<64>(trace8b_batch_id);
+		let p_sub_bytes_prod = oracles
+			.add_named("p_sub_bytes_prod")
+			.committed_multiple::<64>(trace8b_batch_id);
 
 		// Virtual witness columns
 		let p_sub_bytes = array::try_from_fn(|ij| {
@@ -251,8 +265,11 @@ impl TraceOracle {
 			)
 		})?;
 
-		let p_next_in =
-			p_in.try_map(|p_in_i| oracles.add_shifted(p_in_i, 1, 4, ShiftVariant::LogicalRight))?;
+		let p_next_in = p_in.try_map(|p_in_i| {
+			oracles
+				.add_named("p_next_in")
+				.shifted(p_in_i, 1, 4, ShiftVariant::LogicalRight)
+		})?;
 
 		Ok(TraceOracle {
 			log_size,

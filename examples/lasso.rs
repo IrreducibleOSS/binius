@@ -59,17 +59,17 @@ impl TraceOracle {
 		log_size: usize,
 	) -> Result<Self> {
 		let mults_batch = oracles.add_committed_batch(log_size, 3);
-		let [mult_a, mult_b] = oracles.add_committed_multiple(mults_batch);
+		let [mult_a, mult_b] = oracles.add_named("mults").committed_multiple(mults_batch);
 
 		let product_batch = oracles.add_committed_batch(log_size, 4);
-		let product = oracles.add_committed(product_batch);
+		let product = oracles.add_named("product").committed(product_batch);
 
 		let lookup_t_batch = oracles.add_committed_batch(T_LOG_SIZE, 5);
-		let lookup_t = oracles.add_committed(lookup_t_batch);
+		let lookup_t = oracles.add_named("lookup_t").committed(lookup_t_batch);
 
 		let lasso_batches = LassoBatches::new_in::<B32, _>(oracles, &[log_size], T_LOG_SIZE);
 
-		let lookup_u = oracles.add_linear_combination(
+		let lookup_u = oracles.add_named("lookup_u").linear_combination(
 			log_size,
 			[
 				(mult_a, <F as TowerField>::basis(3, 3)?),

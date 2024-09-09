@@ -32,8 +32,8 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-	#[error("evaluation is incorrect for OracleId: {0:?}")]
-	IncorrectEvaluation(OracleId),
+	#[error("evaluation is incorrect for oracle: {0}")]
+	IncorrectEvaluation(String),
 	#[error("CompositePolyOracle verification failed: {0}")]
 	IncorrectCompositePolyEvaluation(String),
 	#[error("subproof type or shape does not match the claim")]
@@ -42,12 +42,12 @@ pub enum VerificationError {
 
 impl VerificationError {
 	pub fn incorrect_composite_poly_evaluation<F: Field>(oracle: CompositePolyOracle<F>) -> Self {
-		let ids = oracle
+		let names = oracle
 			.inner_polys()
 			.iter()
-			.map(|inner| inner.id())
+			.map(|inner| inner.label())
 			.collect::<Vec<_>>();
-		let s = format!("Composition: {:?} with inner: {:?}", oracle.composition(), ids);
+		let s = format!("Composition: {:?} with inner: {:?}", oracle.composition(), names);
 		Self::IncorrectCompositePolyEvaluation(s)
 	}
 }

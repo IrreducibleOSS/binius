@@ -197,20 +197,20 @@ where
 				EvalcheckProof::Repeating(Box::new(subproof))
 			}
 
-			Merged(_id, poly1, poly2) => {
-				let n_vars = poly1.n_vars();
-				assert_eq!(poly1.n_vars(), poly2.n_vars());
+			Merged { poly0, poly1, .. } => {
+				let n_vars = poly0.n_vars();
+				assert_eq!(poly0.n_vars(), poly1.n_vars());
 				let inner_eval_point = &eval_point[..n_vars];
 				let wf_inner_eval_point = &wf_eval_point[0..n_vars];
 
 				let (eval1, subproof1) = self.eval_and_proof(
-					*poly1,
+					*poly0,
 					inner_eval_point,
 					wf_inner_eval_point,
 					is_random_point,
 				)?;
 				let (eval2, subproof2) = self.eval_and_proof(
-					*poly2,
+					*poly1,
 					inner_eval_point,
 					wf_inner_eval_point,
 					is_random_point,
@@ -223,19 +223,19 @@ where
 					subproof2: Box::new(subproof2),
 				}
 			}
-			Interleaved(_id, poly1, poly2) => {
-				assert_eq!(poly1.n_vars(), poly2.n_vars());
+			Interleaved { poly0, poly1, .. } => {
+				assert_eq!(poly0.n_vars(), poly1.n_vars());
 				let inner_eval_point = &eval_point[1..];
 				let wf_inner_eval_point = &wf_eval_point[1..];
 
 				let (eval1, subproof1) = self.eval_and_proof(
-					*poly1,
+					*poly0,
 					inner_eval_point,
 					wf_inner_eval_point,
 					is_random_point,
 				)?;
 				let (eval2, subproof2) = self.eval_and_proof(
-					*poly2,
+					*poly1,
 					inner_eval_point,
 					wf_inner_eval_point,
 					is_random_point,
@@ -249,7 +249,7 @@ where
 				}
 			}
 
-			Shifted(_id, shifted) => {
+			Shifted { shifted, .. } => {
 				let meta = shifted_sumcheck_meta(
 					self.oracles,
 					&shifted,
@@ -270,7 +270,7 @@ where
 				EvalcheckProof::Shifted
 			}
 
-			Packed(_id, packed) => {
+			Packed { packed, .. } => {
 				let meta = packed_sumcheck_meta(self.oracles, &packed, eval_point.as_slice())?;
 				let sumcheck_claim = projected_bivariate_claim(self.oracles, meta, eval)?;
 				let sumcheck_witness = packed_sumcheck_witness(
@@ -285,7 +285,7 @@ where
 				EvalcheckProof::Packed
 			}
 
-			Projected(_id, projected) => {
+			Projected { projected, .. } => {
 				let (inner, values) = (projected.inner(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
@@ -310,9 +310,13 @@ where
 				self.prove_multilinear(subclaim)?
 			}
 
-			LinearCombination(_id, lin_com) => {
-				self.prove_composite(lin_com.polys().cloned(), eval_point, is_random_point)?
-			}
+			LinearCombination {
+				linear_combination, ..
+			} => self.prove_composite(
+				linear_combination.polys().cloned(),
+				eval_point,
+				is_random_point,
+			)?,
 
 			ZeroPadded { inner, .. } => {
 				let inner_n_vars = inner.n_vars();

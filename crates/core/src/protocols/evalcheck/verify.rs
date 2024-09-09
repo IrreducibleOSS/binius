@@ -115,15 +115,18 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		} = evalcheck_claim;
 
 		match multilinear {
-			MultilinearPolyOracle::Transparent(id, transparent) => {
+			MultilinearPolyOracle::Transparent { id, inner, name } => {
 				match evalcheck_proof {
 					EvalcheckProof::Transparent => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let actual_eval = transparent.poly().evaluate(&eval_point)?;
+				let actual_eval = inner.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(id).into());
+					return Err(VerificationError::IncorrectEvaluation(
+						name.unwrap_or(id.to_string()),
+					)
+					.into());
 				}
 			}
 
@@ -160,7 +163,12 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear(subclaim, *subproof)?;
 			}
 
-			MultilinearPolyOracle::Interleaved(id, poly1, poly2) => {
+			MultilinearPolyOracle::Interleaved {
+				id,
+				poly0,
+				poly1,
+				name,
+			} => {
 				let (eval1, eval2, subproof1, subproof2) = match evalcheck_proof {
 					EvalcheckProof::Interleaved {
 						eval1,
@@ -175,25 +183,33 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = &eval_point[1..];
 				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[0]);
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(id).into());
+					return Err(VerificationError::IncorrectEvaluation(
+						name.unwrap_or(id.to_string()),
+					)
+					.into());
 				}
 				self.verify_multilinear_subclaim(
 					eval1,
 					*subproof1,
-					*poly1,
+					*poly0,
 					subclaim_eval_point,
 					is_random_point,
 				)?;
 				self.verify_multilinear_subclaim(
 					eval2,
 					*subproof2,
-					*poly2,
+					*poly1,
 					subclaim_eval_point,
 					is_random_point,
 				)?;
 			}
 
-			MultilinearPolyOracle::Merged(id, poly1, poly2) => {
+			MultilinearPolyOracle::Merged {
+				id,
+				poly0,
+				poly1,
+				name,
+			} => {
 				let (eval1, eval2, subproof1, subproof2) = match evalcheck_proof {
 					EvalcheckProof::Merged {
 						eval1,
@@ -209,26 +225,29 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let subclaim_eval_point = &eval_point[..n_vars];
 				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[n_vars]);
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(id).into());
+					return Err(VerificationError::IncorrectEvaluation(
+						name.unwrap_or(id.to_string()),
+					)
+					.into());
 				}
 
 				self.verify_multilinear_subclaim(
 					eval1,
 					*subproof1,
-					*poly1,
+					*poly0,
 					subclaim_eval_point,
 					is_random_point,
 				)?;
 				self.verify_multilinear_subclaim(
 					eval2,
 					*subproof2,
-					*poly2,
+					*poly1,
 					subclaim_eval_point,
 					is_random_point,
 				)?;
 			}
 
-			MultilinearPolyOracle::Projected(_id, projected) => {
+			MultilinearPolyOracle::Projected { projected, .. } => {
 				let (inner, values) = (projected.inner(), projected.values());
 				let eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
@@ -250,7 +269,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear(new_claim, evalcheck_proof)?;
 			}
 
-			MultilinearPolyOracle::Shifted(_id, shifted) => {
+			MultilinearPolyOracle::Shifted { shifted, .. } => {
 				match evalcheck_proof {
 					EvalcheckProof::Shifted => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -262,7 +281,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.new_sumcheck_claims.push(sumcheck_claim);
 			}
 
-			MultilinearPolyOracle::Packed(_id, packed) => {
+			MultilinearPolyOracle::Packed { packed, .. } => {
 				match evalcheck_proof {
 					EvalcheckProof::Packed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -273,29 +292,38 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.new_sumcheck_claims.push(sumcheck_claim);
 			}
 
-			MultilinearPolyOracle::LinearCombination(id, lin_com) => {
+			MultilinearPolyOracle::LinearCombination {
+				id,
+				linear_combination,
+				name,
+			} => {
 				let subproofs = match evalcheck_proof {
 					EvalcheckProof::Composite { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				if subproofs.len() != lin_com.n_polys() {
+				if subproofs.len() != linear_combination.n_polys() {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
 				// Verify the evaluation of the linear combination over the claimed evaluations
-				let actual_eval = lin_com.offset()
+				let actual_eval = linear_combination.offset()
 					+ inner_product_unchecked::<F, F>(
 						subproofs.iter().map(|(eval, _)| *eval),
-						lin_com.coefficients(),
+						linear_combination.coefficients(),
 					);
 
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(id).into());
+					return Err(VerificationError::IncorrectEvaluation(
+						name.unwrap_or(id.to_string()),
+					)
+					.into());
 				}
 
-				subproofs.into_iter().zip(lin_com.polys()).try_for_each(
-					|((eval, subproof), suboracle)| {
+				subproofs
+					.into_iter()
+					.zip(linear_combination.polys())
+					.try_for_each(|((eval, subproof), suboracle)| {
 						self.verify_multilinear_subclaim(
 							eval,
 							subproof,
@@ -303,10 +331,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 							&eval_point,
 							is_random_point,
 						)
-					},
-				)?;
+					})?;
 			}
-			MultilinearPolyOracle::ZeroPadded { id, inner, .. } => {
+			MultilinearPolyOracle::ZeroPadded {
+				id, inner, name, ..
+			} => {
 				let (inner_eval, subproof) = match evalcheck_proof {
 					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -324,7 +353,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				}
 
 				if extrapolate_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(id).into());
+					return Err(VerificationError::IncorrectEvaluation(
+						name.unwrap_or(id.to_string()),
+					)
+					.into());
 				}
 
 				self.verify_multilinear_subclaim(

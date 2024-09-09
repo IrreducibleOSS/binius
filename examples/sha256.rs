@@ -456,11 +456,12 @@ struct U32ArraySumSubOracle<const N: usize> {
 
 impl<const N: usize> U32ArraySumSubOracle<N> {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, batch_id: BatchId) -> Self {
-		let z_out = oracles.add_committed_multiple(batch_id);
-		let cout = oracles.add_committed_multiple(batch_id);
+		let z_out = oracles.add_named("z_out").committed_multiple(batch_id);
+		let cout = oracles.add_named("cout").committed_multiple(batch_id);
 		let cin = cout.map(|x| {
 			oracles
-				.add_shifted(x, 1, 5, ShiftVariant::LogicalLeft)
+				.add_named("cin")
+				.shifted(x, 1, 5, ShiftVariant::LogicalLeft)
 				.unwrap()
 		});
 		Self { z_out, cout, cin }
@@ -569,15 +570,17 @@ impl TraceOracle {
 		backend: Backend,
 	) -> Self {
 		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
-		let w = oracles.add_committed_multiple::<16>(batch_id);
+		let w = oracles
+			.add_named("omega")
+			.committed_multiple::<16>(batch_id);
 
 		let extended_w = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let ch = oracles.add_committed_multiple::<64>(batch_id);
+		let ch = oracles.add_named("ch").committed_multiple::<64>(batch_id);
 
 		let temp1 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let maj = oracles.add_committed_multiple::<64>(batch_id);
+		let maj = oracles.add_named("maj").committed_multiple::<64>(batch_id);
 
 		let temp2 = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
@@ -587,7 +590,7 @@ impl TraceOracle {
 
 		let output_add = array::from_fn(|_| U32ArraySumSubOracle::new(oracles, batch_id));
 
-		let h_in = oracles.add_committed_multiple(batch_id);
+		let h_in = oracles.add_named("h_in").committed_multiple(batch_id);
 
 		let get_w =
 			|extended_w: &[U32ArraySumSubOracle<3>], w: &[OracleId], i: OracleId| -> usize {

@@ -403,7 +403,7 @@ fn test_shifted_evaluation_subcube() {
 	} = verifier_state.new_sumcheck_claims().first().unwrap();
 
 	match composite.inner_polys()[0] {
-		MultilinearPolyOracle::Projected(_, ref projected) => {
+		MultilinearPolyOracle::Projected { ref projected, .. } => {
 			assert_eq!(projected.inner().id(), poly_id);
 			assert_eq!(projected.values(), &eval_point[4..]);
 			assert_eq!(projected.projection_variant(), ProjectionVariant::LastVars);

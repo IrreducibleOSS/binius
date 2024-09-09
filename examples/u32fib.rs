@@ -173,16 +173,20 @@ impl U32FibOracle {
 		let [fib_out, c_out] = oracles.add_committed_multiple(batch_id);
 
 		let fib_prev1 = oracles
-			.add_shifted(fib_out, 32, n_vars, ShiftVariant::LogicalLeft)
+			.add_named("fib_prev_1")
+			.shifted(fib_out, 32, n_vars, ShiftVariant::LogicalLeft)
 			.unwrap();
 		let fib_prev2 = oracles
-			.add_shifted(fib_out, 64, n_vars, ShiftVariant::LogicalLeft)
+			.add_named("fib_prev_2")
+			.shifted(fib_out, 64, n_vars, ShiftVariant::LogicalLeft)
 			.unwrap();
 		let c_in = oracles
-			.add_shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
+			.add_named("cin")
+			.shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
 		let disabled = oracles
-			.add_transparent(StepDown::new(n_vars, 1).unwrap())
+			.add_named("diabled")
+			.transparent(StepDown::new(n_vars, 1).unwrap())
 			.unwrap();
 
 		Self {

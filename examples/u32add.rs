@@ -113,9 +113,12 @@ struct U32AddOracle {
 impl U32AddOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, n_vars: usize) -> Self {
 		let batch_id = oracles.add_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
-		let [x_in, y_in, z_out, c_out] = oracles.add_committed_multiple(batch_id);
+		let [x_in, y_in, z_out, c_out] = oracles
+			.add_named("add_oracles")
+			.committed_multiple(batch_id);
 		let c_in = oracles
-			.add_shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
+			.add_named("cin")
+			.shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
 		Self {
 			x_in,
