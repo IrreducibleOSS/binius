@@ -8,11 +8,11 @@ pub fn make_portable_backend() -> CpuBackend {
 pub fn make_backend() -> Backend {
 	let backend = make_portable_backend();
 	#[cfg(feature = "linerate-backend")]
-	let backend = binius_linerate::LinerateBackend::<CpuBackend>::new(backend);
+	let backend = linerate_binius_backend::LinerateBackend::<CpuBackend>::new(backend);
 	backend
 }
 
 #[cfg(feature = "linerate-backend")]
-pub type Backend = binius_linerate::LinerateBackend<CpuBackend>;
+pub type Backend = linerate_binius_backend::LinerateBackend<CpuBackend>;
 #[cfg(not(feature = "linerate-backend"))]
 pub type Backend = CpuBackend;

@@ -10,14 +10,20 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Ulvetanna Team <ulvt_dev@ulvetanna.io>"]
 
-[workspace.dependencies]
-# linerate = { git = "ssh://git@gitlab.com/ulvetanna/linerate.git", tag = "binius-friendly-v0.2" } # Private repo
-# linerate-binius-sumcheck = { git = "ssh://git@gitlab.com/ulvetanna/linerate.git", tag = "binius-friendly-v0.2" } # Private repo
-# linerate-binius-tensor-product = { git = "ssh://git@gitlab.com/ulvetanna/linerate.git", tag = "binius-friendly-v0.2" } # Private repo
-linerate = { path = "../linerate/linerate" }
-linerate-binius-sumcheck = { path = "../linerate/modules/binius/sumcheck" }
-linerate-binius-tensor-product = { path = "../linerate/modules/binius/tensor_product" }
+# Patch for the ease of local development.
+# Uncomment for developing locally.
+# [patch.'ssh://git@gitlab.com/ulvetanna/linerate.git']
+# linerate-binius-backend = { path = "../linerate/modules/binius/backend" }
 
+# Uncomment for developing locally.
+# [patch.'https://gitlab.com/IrreducibleOSS/binius.git']
+# binius_field = { path = "./crates/field" }
+# binius_hal = { path = "./crates/hal" }
+# binius_math = { path = "./crates/math" }
+
+[workspace.dependencies]
+# Private repo
+linerate-binius-backend = { git = "ssh://git@gitlab.com/ulvetanna/linerate.git", tag = "binius-friendly-v0.6" }
 anyhow = "1.0.81"
 assert_matches = "1.5.0"
 auto_impl = "1.2.0"
