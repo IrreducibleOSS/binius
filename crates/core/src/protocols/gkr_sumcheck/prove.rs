@@ -44,7 +44,7 @@ where
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
 	round_eq_ind: MultilinearExtension<PW, Backend::Vec<PW>>,
-	_marker: PhantomData<(CW, DomainField)>,
+	_marker: PhantomData<(DomainField, CW)>,
 }
 
 impl<'a, F, PW, DomainField, EDF, CW, M, Backend>

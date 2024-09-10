@@ -21,11 +21,10 @@ use binius_field::{
 	PackedFieldIndexable,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomain, EvaluationDomainFactory};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
-use binius_backend_provider::HalVec;
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;
 

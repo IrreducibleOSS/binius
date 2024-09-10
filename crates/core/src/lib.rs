@@ -5,7 +5,6 @@
 // over binary fields.
 #![allow(clippy::suspicious_arithmetic_impl)]
 #![allow(clippy::suspicious_op_assign_impl)]
-extern crate core;
 
 pub mod challenger;
 pub mod composition;

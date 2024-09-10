@@ -347,26 +347,6 @@ where
 		backend.clone(),
 	)?;
 
-	let switchover_fn = standard_switchover_heuristic(-2);
-
-	// Round 3 - Zerocheck
-	let zerocheck_claim_witness_iter = reduced_lasso_claims
-		.zerocheck_claims
-		.into_iter()
-		.zip(zerocheck_witnesses);
-
-	let ZerocheckBatchProveOutput {
-		evalcheck_claims,
-		proof: zerocheck_proof,
-	} = zerocheck::batch_prove(
-		zerocheck_claim_witness_iter,
-		domain_factory.clone(),
-		switchover_fn,
-		B128::ONE,
-		&mut challenger,
-		backend.clone(),
-	)?;
-
 	// Greedy Evalcheck
 	let evalcheck_claims = evalcheck_multilinear_claims
 		.into_iter()
@@ -633,8 +613,6 @@ fn main() -> Result<()> {
 
 	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
-
-	let backend = make_backend();
 
 	// Set up the public parameters
 

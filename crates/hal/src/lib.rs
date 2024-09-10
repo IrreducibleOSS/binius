@@ -6,4 +6,6 @@ mod error;
 mod utils;
 pub mod zerocheck;
 
-pub use crate::{backend::*, error::*, zerocheck::*};
+pub use backend::*;
+pub use error::*;
+pub use zerocheck::*;

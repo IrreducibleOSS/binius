@@ -6,11 +6,11 @@ use crate::{
 	protocols::lasso::{prove, verify, LassoBatches, LassoClaim, LassoWitness},
 	witness::MultilinearExtensionIndex,
 };
+use binius_backend_provider::make_backend;
 use binius_field::{
 	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField128b, BinaryField16b,
 	BinaryField64b, Field, PackedBinaryField128x1b, PackedFieldIndexable, TowerField,
 };
-use binius_hal::make_backend;
 
 #[test]
 fn test_prove_verify_interaction() {
