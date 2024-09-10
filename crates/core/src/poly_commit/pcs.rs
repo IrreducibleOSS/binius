@@ -32,6 +32,7 @@ where
 	fn prove_evaluation<Data, CH, Backend>(
 		&self,
 		challenger: &mut CH,
+		// TODO: this should probably consume committed
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],

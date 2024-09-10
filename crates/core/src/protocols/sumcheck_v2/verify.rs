@@ -163,7 +163,7 @@ fn batch_weighted_value<F: Field>(batch_coeff: F, values: impl Iterator<Item = F
 	batch_coeff * inner_product_unchecked(powers(batch_coeff), values)
 }
 
-fn interpolate_round_proof<F: Field>(round_proof: RoundProof<F>, sum: F, challenge: F) -> F {
+pub fn interpolate_round_proof<F: Field>(round_proof: RoundProof<F>, sum: F, challenge: F) -> F {
 	let coeffs = round_proof.recover(sum);
 	evaluate_univariate(&coeffs.0, challenge)
 }

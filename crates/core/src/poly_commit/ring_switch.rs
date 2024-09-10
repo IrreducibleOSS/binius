@@ -33,6 +33,7 @@ use std::{iter, marker::PhantomData, mem, ops::Deref};
 /// ## Type parameters
 ///
 /// * `F` - the coefficient subfield
+/// * `FDomain` - the field containing the sumcheck evaluation domains
 /// * `PE` - a packed extension field of `F` that is cryptographically big
 /// * `DomainFactory` - a domain factory for the sumcheck reduction
 /// * `Inner` - the inner polynomial commitment scheme over the extension field
@@ -321,7 +322,7 @@ pub enum VerificationError {
 	IncorrectRingSwitchIndEvaluation,
 }
 
-fn reduce_tensor_claim<F, FE, Backend>(
+pub(super) fn reduce_tensor_claim<F, FE, Backend>(
 	n_vars: usize,
 	tensor_sum: TensorAlgebra<F, FE>,
 	tensor_mixing_challenges: &[FE],
@@ -409,7 +410,7 @@ where
 	})
 }
 
-fn evaluate_ring_switch_eq_ind<FS, F, Backend>(
+pub fn evaluate_ring_switch_eq_ind<FS, F, Backend>(
 	eval_point: &[F],
 	sumcheck_challenges: &[F],
 	mixing_challenges: &[F],
@@ -446,7 +447,7 @@ where
 /// See [DP24] Section 4.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
-fn ring_switch_eq_ind_partial_eval<FS, F, P, Backend>(
+pub fn ring_switch_eq_ind_partial_eval<FS, F, P, Backend>(
 	eval_point: &[F],
 	mixing_challenges: &[F],
 	backend: Backend,

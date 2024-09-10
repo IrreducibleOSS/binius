@@ -16,12 +16,12 @@ mod oracles;
 pub mod prove;
 #[cfg(test)]
 mod tests;
-mod verify;
+pub mod verify;
 pub mod zerocheck;
 
 pub use common::*;
 pub use error::*;
 pub use oracles::*;
 pub use prove::batch_prove;
-pub use verify::*;
+pub use verify::batch_verify;
 pub use zerocheck::{reduce_to_sumchecks, verify_sumcheck_outputs, ZerocheckClaim};
