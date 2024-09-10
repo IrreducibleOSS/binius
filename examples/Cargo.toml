@@ -51,6 +51,10 @@ name = "u32add"
 path = "u32add.rs"
 
 [[example]]
+name = "u32add_lasso"
+path = "u32add_lasso.rs"
+
+[[example]]
 name = "u32fib"
 path = "u32fib.rs"
 
