@@ -1,3 +1,5 @@
+// Copyright 2024 Ulvetanna Inc.
+
 use binius_hal::cpu::CpuBackend;
 pub use binius_hal::HalSlice;
 
