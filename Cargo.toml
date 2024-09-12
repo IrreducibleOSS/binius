@@ -27,10 +27,10 @@ itertools = "0.13.0"
 lazy_static = "1.4.0"
 log = "0.4.20"
 paste = "1.0.15"
-p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
-p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
-p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
-p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "3f5fb24" }
+p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "2df15fd0" }
+p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "2df15fd0" }
+p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "2df15fd0" }
+p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "2df15fd0" }
 proptest = "1.2.0"
 rand = "0.8.5"
 rayon = "1.8.0"

@@ -25,7 +25,7 @@ use binius_hash::{
 };
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
-use p3_matrix::{dense::RowMajorMatrix, MatrixRowSlices};
+use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
 use rayon::prelude::*;
 use std::{cmp::min, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
