@@ -9,7 +9,8 @@ use super::{
 };
 use crate::{
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearExtension, MultilinearPoly,
+		CompositionPoly, Error as PolynomialError, MultilinearExtension,
+		MultilinearExtensionBorrowed, MultilinearPoly,
 	},
 	protocols::{
 		abstract_sumcheck::{
@@ -43,7 +44,7 @@ where
 	common: CommonProversState<(usize, usize), PW, M, Backend>,
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
-	round_eq_ind: MultilinearExtension<PW>,
+	round_eq_ind: MultilinearExtension<PW, Backend::Vec<PW>>,
 	_marker: PhantomData<(DomainField, CW)>,
 }
 
@@ -99,7 +100,7 @@ where
 			})
 			.collect();
 
-		self.round_eq_ind = MultilinearExtension::from_values(new_evals)?;
+		self.round_eq_ind = MultilinearExtension::from_values_generic(new_evals)?;
 		Ok(())
 	}
 }
@@ -300,15 +301,16 @@ where
 
 		let round_coeffs = if self.round == 0 {
 			let poly_mle = self.poly_mle.as_ref().expect("poly_mle is initialized");
-			let evaluator = GkrSumcheckFirstRoundEvaluator {
-				degree: self.degree,
-				eq_ind: &provers_state.round_eq_ind,
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: &self.composition,
-				poly_mle,
-				gkr_challenge: self.gkr_round_challenge[0].into(),
-			};
+			let evaluator: GkrSumcheckFirstRoundEvaluator<'_, PW, DomainField, CW, M> =
+				GkrSumcheckFirstRoundEvaluator {
+					degree: self.degree,
+					eq_ind: &provers_state.round_eq_ind.to_ref(),
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
+					poly_mle,
+					gkr_challenge: self.gkr_round_challenge[0].into(),
+				};
 			provers_state.common.calculate_round_coeffs(
 				self.multilinear_ids.as_slice(),
 				evaluator,
@@ -316,14 +318,15 @@ where
 				vertex_state_iterator,
 			)
 		} else {
-			let evaluator = GkrSumcheckLaterRoundEvaluator {
-				degree: self.degree,
-				eq_ind: &provers_state.round_eq_ind,
-				evaluation_domain: &self.domain,
-				domain_points: self.domain.points(),
-				composition: &self.composition,
-				gkr_challenge: self.gkr_round_challenge[self.round].into(),
-			};
+			let evaluator: GkrSumcheckLaterRoundEvaluator<'_, PW, DomainField, CW> =
+				GkrSumcheckLaterRoundEvaluator {
+					degree: self.degree,
+					eq_ind: &provers_state.round_eq_ind.to_ref(),
+					evaluation_domain: &self.domain,
+					domain_points: self.domain.points(),
+					composition: &self.composition,
+					gkr_challenge: self.gkr_round_challenge[self.round].into(),
+				};
 			provers_state.common.calculate_round_coeffs(
 				self.multilinear_ids.as_slice(),
 				evaluator,
@@ -414,7 +417,7 @@ where
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW>,
+	pub eq_ind: &'a MultilinearExtensionBorrowed<'a, PW>,
 	pub poly_mle: &'a M,
 	pub gkr_challenge: PW::Scalar,
 }
@@ -516,7 +519,7 @@ where
 	pub domain_points: &'a [DomainField],
 	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
 	pub degree: usize,
-	pub eq_ind: &'a MultilinearExtension<PW>,
+	pub eq_ind: &'a MultilinearExtensionBorrowed<'a, PW>,
 	pub gkr_challenge: PW::Scalar,
 }
 

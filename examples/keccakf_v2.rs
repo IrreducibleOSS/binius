@@ -42,7 +42,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -689,7 +689,7 @@ fn main() {
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut oracles = MultilinearOracleSet::new();
 	let fixed_oracle = FixedOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size);

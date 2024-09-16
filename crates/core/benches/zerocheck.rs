@@ -15,7 +15,7 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
 	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
-use binius_hal::make_backend;
+use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -96,9 +96,10 @@ where
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	let mut rng = thread_rng();
+	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);
 
 	let mut group = c.benchmark_group(id);
 	for &n_vars in [13, 14, 15, 16].iter() {
@@ -127,6 +128,7 @@ where
 					zerocheck_witness.clone(),
 					domain_factory.clone(),
 					move |_| switchover,
+					mixing_challenge,
 					prove_challenger.clone(),
 					backend.clone(),
 				)
@@ -143,9 +145,10 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	let mut rng = thread_rng();
+	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);
 
 	let mut group = c.benchmark_group("Zerocheck 128b monomial basis (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
@@ -190,6 +193,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 					zerocheck_witness.clone(),
 					domain_factory.clone(),
 					|_| 1,
+					mixing_challenge,
 					prove_challenger.clone(),
 					backend.clone(),
 				)
@@ -206,9 +210,10 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 	let composition = TestProductComposition::new(n_multilinears);
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FTower>::default();
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	let mut rng = thread_rng();
+	let mixing_challenge = <BinaryField128b as Field>::random(&mut rng);
 
 	let mut group = c.benchmark_group("Zerocheck 128b monomial basis with Arc (A * B * C)");
 	for &n_vars in [13, 14, 15, 16].iter() {
@@ -264,6 +269,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					prover_poly.clone(),
 					domain_factory.clone(),
 					|_| 1,
+					mixing_challenge,
 					prove_challenger.clone(),
 					backend.clone(),
 				)

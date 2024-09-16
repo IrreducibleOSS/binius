@@ -34,7 +34,7 @@ use binius_field::{
 	PackedAESBinaryField8x32b, PackedBinaryField1x128b, PackedBinaryField8x32b, PackedField,
 	PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::{
 	GroestlHasher, Vision32MDSTransform, Vision32bPermutation, INV_PACKED_TRANS_AES,
 };
@@ -1019,6 +1019,7 @@ where
 		[(zerocheck_claim, zerocheck_witness)],
 		domain_factory.clone(),
 		switchover_fn,
+		mixing_challenge,
 		&mut challenger,
 		backend.clone(),
 	)?;
@@ -1138,7 +1139,7 @@ fn main() {
 	let log_size = get_log_trace_size().unwrap_or(14);
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 

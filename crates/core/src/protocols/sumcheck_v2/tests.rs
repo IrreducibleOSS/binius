@@ -18,7 +18,7 @@ use crate::{
 use binius_field::{
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 };
-use binius_hal::make_backend;
+use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
@@ -113,7 +113,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	)
 	.unwrap();
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 		multilins.iter().collect(),
@@ -157,7 +157,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	// Verify the reduced multilinear evaluations are correct
 	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
-		assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
+		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 	}
 }
 
@@ -195,7 +195,7 @@ fn test_prove_verify_batch() {
 
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let (claims, provers) = [8, 6, 4]
 		.map(|n_vars| {

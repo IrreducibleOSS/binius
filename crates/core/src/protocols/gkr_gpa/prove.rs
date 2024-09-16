@@ -357,10 +357,10 @@ where
 
 		let zero_eval = self.next_layer_halves[self.current_layer_no()]
 			.0
-			.evaluate(&multilinear_query)?;
+			.evaluate(multilinear_query.to_ref())?;
 		let one_eval = self.next_layer_halves[self.current_layer_no()]
 			.1
-			.evaluate(&multilinear_query)?;
+			.evaluate(multilinear_query.to_ref())?;
 
 		Ok((zero_eval.into(), one_eval.into()))
 	}

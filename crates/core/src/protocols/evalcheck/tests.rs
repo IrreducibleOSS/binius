@@ -24,7 +24,7 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
-use binius_hal::make_backend;
+use binius_hal::make_portable_backend;
 use binius_math::extrapolate_line;
 use binius_utils::bail;
 use bytemuck::cast_slice_mut;
@@ -65,7 +65,7 @@ impl CompositionPoly<FExtension> for QuadProduct {
 #[test]
 fn test_evaluation_point_batching() {
 	let mut rng = StdRng::seed_from_u64(0);
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	let log_size = 8;
 	let tower_level = 5;
@@ -90,7 +90,7 @@ fn test_evaluation_point_batching() {
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let batch_evals = multilins
 		.iter()
-		.map(|multilin| multilin.evaluate(&query).unwrap())
+		.map(|multilin| multilin.evaluate(query.to_ref()).unwrap())
 		.collect::<Vec<_>>();
 
 	let eval = batch_evals
@@ -246,7 +246,7 @@ fn test_shifted_evaluation_whole_cube() {
 	)
 	.unwrap();
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
@@ -351,7 +351,7 @@ fn test_shifted_evaluation_subcube() {
 	)
 	.unwrap();
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
@@ -493,7 +493,7 @@ fn test_evalcheck_linear_combination() {
 		])
 		.unwrap();
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -548,7 +548,7 @@ fn test_evalcheck_repeating() {
 		.update_multilin_poly(vec![(repeating_id, select_row_witness)])
 		.unwrap();
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -641,7 +641,7 @@ fn test_evalcheck_merged() {
 		is_random_point: true,
 	};
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -742,7 +742,7 @@ fn test_evalcheck_interleaved() {
 		is_random_point: true,
 	};
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
@@ -836,7 +836,7 @@ fn test_evalcheck_zero_padded() {
 		is_random_point: true,
 	};
 
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,

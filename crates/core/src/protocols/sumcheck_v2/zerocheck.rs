@@ -193,7 +193,7 @@ mod tests {
 		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedExtension,
 		PackedFieldIndexable,
 	};
-	use binius_hal::{make_backend, ComputationBackend};
+	use binius_hal::{make_portable_backend, ComputationBackend};
 	use binius_hash::GroestlHasher;
 	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 	use rand::{prelude::StdRng, Rng, SeedableRng};
@@ -295,7 +295,7 @@ mod tests {
 			.unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
@@ -363,7 +363,7 @@ mod tests {
 		let challenges = challenger.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
 		let prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
 			multilins.clone(),
@@ -424,7 +424,7 @@ mod tests {
 		let multilin_query =
 			MultilinearQuery::with_full_query(&verifier_eval_point, backend).unwrap();
 		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
-			assert_eq!(multilinear.evaluate(&multilin_query).unwrap(), expected);
+			assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 		}
 	}
 

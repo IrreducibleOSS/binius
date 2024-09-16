@@ -1,8 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::polynomial::{
-	multilinear_query::MultilinearQuery, Error, MultilinearExtensionSpecialized,
-};
+use crate::polynomial::{Error, MultilinearExtensionSpecialized, MultilinearQueryRef};
 use binius_field::PackedField;
 use std::{fmt::Debug, ops::Deref};
 
@@ -43,16 +41,16 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		scalar: P::Scalar,
 	) -> Result<P::Scalar, Error>;
 
-	fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error>;
+	fn evaluate(&self, query: MultilinearQueryRef<P>) -> Result<P::Scalar, Error>;
 
 	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
 	fn evaluate_partial_high(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
 
 	/// Compute inner products of a multilinear query inside a subcube.
@@ -61,7 +59,7 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// on a result. This method is more efficient due to handling it as a special case.
 	fn subcube_inner_products(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 		subcube_vars: usize,
 		subcube_index: usize,
 		inner_products: &mut [P],
@@ -74,6 +72,9 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		subcube_index: usize,
 		evals: &mut [P],
 	) -> Result<(), Error>;
+
+	/// If available, returns underliers of the data of this multilinear as bytes.
+	fn underlier_data(&self) -> Option<Vec<u8>>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -105,27 +106,27 @@ where
 		(**self).evaluate_on_hypercube_and_scale(index, scalar)
 	}
 
-	fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
+	fn evaluate(&self, query: MultilinearQueryRef<P>) -> Result<P::Scalar, Error> {
 		(**self).evaluate(query)
 	}
 
 	fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_low(query)
 	}
 
 	fn evaluate_partial_high(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
 		(**self).evaluate_partial_high(query)
 	}
 
 	fn subcube_inner_products(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 		subcube_vars: usize,
 		subcube_index: usize,
 		inner_products: &mut [P],
@@ -140,5 +141,9 @@ where
 		evals: &mut [P],
 	) -> Result<(), Error> {
 		(**self).subcube_evals(subcube_vars, subcube_index, evals)
+	}
+
+	fn underlier_data(&self) -> Option<Vec<u8>> {
+		(**self).underlier_data()
 	}
 }

@@ -66,8 +66,8 @@ where
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, Error> {
-		let query = MultilinearQuery::<PE>::with_full_query(query, self.backend.clone())?;
-		self.data.evaluate(&query)
+		let query = MultilinearQuery::<PE, _>::with_full_query(query, self.backend.clone())?;
+		self.data.evaluate(query.to_ref())
 	}
 
 	fn binary_tower_level(&self) -> usize {

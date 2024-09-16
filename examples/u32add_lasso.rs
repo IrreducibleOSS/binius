@@ -22,7 +22,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
@@ -668,7 +668,7 @@ fn main() -> Result<()> {
 	// to match num_bits between u32add and u32add_lasso
 	let log_size = log_size - 5;
 	let log_inv_rate = 1;
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	debug!(num_bits = 1 << (log_size + 5), num_u32s = 1 << log_size, "U32 Addition");
 

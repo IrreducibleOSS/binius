@@ -40,7 +40,7 @@ where
 	pub(crate) witness: &'a W,
 }
 
-impl<'a, F, PW, DomainField, W, EDF, Backend> ZerocheckCpuBackendHelper<F, PW>
+impl<'a, F, PW, DomainField, W, EDF, Backend> ZerocheckCpuBackendHelper<F, PW, DomainField>
 	for ZerocheckProverBackendWrapper<'a, F, PW, DomainField, W, EDF, Backend>
 where
 	F: Field,
@@ -54,7 +54,7 @@ where
 	fn handle_zerocheck_round(
 		&mut self,
 		params: &ZerocheckRoundParameters,
-		input: &ZerocheckRoundInput<F, PW>,
+		input: &ZerocheckRoundInput<F, PW, DomainField>,
 	) -> Result<Vec<PW::Scalar>, binius_hal::Error> {
 		let round_coeffs = match (
 			self.claim.poly.max_individual_degree(),
@@ -66,7 +66,12 @@ where
 			(_, Some(_), 0) => self.compute_round_coeffs_first_round(input),
 			(_, Some(_), _) => self.compute_round_coeffs_later_round(params, input),
 		};
-		round_coeffs.map_err(|err| binius_hal::Error::ZerocheckCpuHandlerError(err.to_string()))
+		round_coeffs.map_err(|err| binius_hal::Error::ZerocheckCpuHandlerError(Box::new(err)))
+	}
+
+	#[instrument(skip_all)]
+	fn remove_smaller_domain_optimization(&mut self) {
+		self.smaller_domain_optimization = None;
 	}
 }
 
@@ -84,7 +89,7 @@ where
 	fn compute_round_coeffs_no_smaller_domain(
 		&mut self,
 		params: &ZerocheckRoundParameters,
-		input: &ZerocheckRoundInput<F, PW>,
+		input: &ZerocheckRoundInput<F, PW, DomainField>,
 	) -> Result<Vec<PW::Scalar>, Error> {
 		let rd_vars = self.claim.n_vars() - params.round;
 		let vertex_state_iterator = (0..1 << (rd_vars - 1)).into_par_iter().map(|_i| ());
@@ -112,7 +117,7 @@ where
 	#[instrument(skip_all)]
 	fn compute_round_coeffs_first_round(
 		&mut self,
-		input: &ZerocheckRoundInput<F, PW>,
+		input: &ZerocheckRoundInput<F, PW, DomainField>,
 	) -> Result<Vec<PW::Scalar>, Error> {
 		let degree = self.claim.poly.max_individual_degree();
 		let smaller_domain_optimization = self.smaller_domain_optimization.as_mut().unwrap();
@@ -139,7 +144,7 @@ where
 	fn compute_round_coeffs_later_round(
 		&mut self,
 		params: &ZerocheckRoundParameters,
-		input: &ZerocheckRoundInput<F, PW>,
+		input: &ZerocheckRoundInput<F, PW, DomainField>,
 	) -> Result<Vec<PW::Scalar>, Error> {
 		let degree = self.claim.poly.max_individual_degree();
 		let smaller_domain_optimization = self.smaller_domain_optimization.as_mut().unwrap();

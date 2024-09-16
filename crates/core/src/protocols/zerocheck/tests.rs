@@ -20,7 +20,7 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField4x128b, PackedField,
 	TowerField,
 };
-use binius_hal::make_backend;
+use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;
@@ -115,7 +115,8 @@ fn test_prove_verify_interaction_helper(
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
-	let backend = make_backend();
+	let backend = make_portable_backend();
+	let mixing_challenge = <FE as Field>::random(&mut rng);
 
 	let ZerocheckProveOutput {
 		evalcheck_claim,
@@ -125,6 +126,7 @@ fn test_prove_verify_interaction_helper(
 		zc_witness.clone(),
 		domain_factory,
 		switchover_fn,
+		mixing_challenge,
 		&mut prover_challenger,
 		backend.clone(),
 	)
@@ -323,7 +325,7 @@ fn test_prove_verify_batch() {
 		new_witnesses,
 		oracle_set,
 		witness_index,
-		rng,
+		mut rng,
 	} = create_claims_witnesses_helper::<U, F, FE>(
 		rng,
 		oracle_set,
@@ -338,15 +340,18 @@ fn test_prove_verify_batch() {
 	witnesses.extend(new_witnesses);
 
 	// Create the zerocheck provers
-	let _ = (oracle_set, witness_index, rng);
+	let _ = (oracle_set, witness_index);
 	assert_eq!(claims.len(), witnesses.len());
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 	let claim_witness_iter = claims.clone().into_iter().zip(witnesses);
-	let backend = make_backend();
+	let backend = make_portable_backend();
+	let mixing_challenge = <FE as Field>::random(&mut rng);
+
 	let prove_output = batch_prove::<_, _, BinaryField32b, _, _>(
 		claim_witness_iter,
 		domain_factory,
 		|_| 3,
+		mixing_challenge,
 		prover_challenger,
 		backend,
 	)
@@ -404,7 +409,8 @@ fn test_prove_verify_packed() {
 	let mut prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let mut verifier_challenger = prover_challenger.clone();
 	let switchover_fn = move |_| switchover_rd;
-	let backend = make_backend();
+	let backend = make_portable_backend();
+	let mixing_challenge = <<PE as PackedField>::Scalar as Field>::random(&mut rng);
 
 	let ZerocheckProveOutput {
 		evalcheck_claim,
@@ -414,6 +420,7 @@ fn test_prove_verify_packed() {
 		zc_witness.clone(),
 		domain_factory,
 		switchover_fn,
+		mixing_challenge,
 		&mut prover_challenger,
 		backend.clone(),
 	)

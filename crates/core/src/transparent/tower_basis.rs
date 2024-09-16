@@ -95,14 +95,14 @@ mod tests {
 	use super::*;
 	use crate::polynomial::multilinear_query::MultilinearQuery;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_backend;
+	use binius_hal::make_portable_backend;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
 	fn test_consistency(iota: usize, k: usize) {
 		type F = BinaryField128b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
 		let basis = TowerBasis::<F>::new(k, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
@@ -111,7 +111,7 @@ mod tests {
 
 		let eval1 = basis.evaluate(&challenge).unwrap();
 		let multilin_query =
-			MultilinearQuery::<F>::with_full_query(&challenge, backend.clone()).unwrap();
+			MultilinearQuery::<F, _>::with_full_query(&challenge, backend.clone()).unwrap();
 		let mle = basis.multilinear_extension::<F>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 
@@ -125,14 +125,15 @@ mod tests {
 		type F = BinaryField32b;
 		type P = PackedBinaryField4x32b;
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
 		let basis = TowerBasis::<F>::new(kappa, iota).unwrap();
 		let challenge = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(kappa)
 			.collect::<Vec<_>>();
 		let eval1 = basis.evaluate(&challenge).unwrap();
-		let multilin_query = MultilinearQuery::<F>::with_full_query(&challenge, backend).unwrap();
+		let multilin_query =
+			MultilinearQuery::<F, _>::with_full_query(&challenge, backend).unwrap();
 		let mle = basis.multilinear_extension::<P>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 		assert_eq!(eval1, eval2);

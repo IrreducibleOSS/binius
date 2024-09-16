@@ -76,7 +76,7 @@ where
 	n_vars: usize,
 	state: ProverState<FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
-	partial_eq_ind_evals: Vec<P>,
+	partial_eq_ind_evals: Backend::Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	compositions: Vec<Composition>,
 	domains: Vec<EvaluationDomain<FDomain>>,
@@ -189,7 +189,7 @@ where
 					})
 				})
 				.collect();
-			self.partial_eq_ind_evals = updated_evals;
+			self.partial_eq_ind_evals = Backend::to_hal_slice(updated_evals);
 		}
 	}
 }

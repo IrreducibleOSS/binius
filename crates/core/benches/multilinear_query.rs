@@ -2,7 +2,7 @@
 
 use binius_core::polynomial::{multilinear_query::MultilinearQuery, MultilinearExtension};
 use binius_field::{BinaryField128b, PackedBinaryField1x128b, PackedField};
-use binius_hal::make_backend;
+use binius_hal::make_portable_backend;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use itertools::Itertools;
 use rand::thread_rng;
@@ -10,7 +10,7 @@ use rand::thread_rng;
 fn bench_multilinear_query(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multilinear_query");
 	let mut rng = thread_rng();
-	let backend = make_backend();
+	let backend = make_portable_backend();
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
 			((1 << n) * std::mem::size_of::<BinaryField128b>()) as u64,
@@ -20,7 +20,7 @@ fn bench_multilinear_query(c: &mut Criterion) {
 				.take(n)
 				.collect_vec();
 			bench.iter(|| {
-				MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+				MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
 					&query,
 					backend.clone(),
 				)
@@ -33,6 +33,8 @@ fn bench_multilinear_query(c: &mut Criterion) {
 fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 	let mut group = c.benchmark_group("multilinear_extension");
 	let mut rng = thread_rng();
+	let backend = make_portable_backend();
+
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
 			(1 << n) * std::mem::size_of::<BinaryField128b>() as u64,
@@ -44,11 +46,11 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(n)
 					.collect_vec(),
-				make_backend(),
+				backend.clone(),
 			)
 			.unwrap();
 			bench.iter(|| multilin.evaluate(&query));
@@ -60,11 +62,11 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 					.collect_vec(),
 			)
 			.unwrap();
-			let query = MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(
+			let query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
 				&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 					.take(1)
 					.collect_vec(),
-				make_backend(),
+				backend.clone(),
 			)
 			.unwrap();
 			bench.iter(|| multilin.evaluate_partial_high(&query).unwrap());
@@ -79,11 +81,11 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 							.collect_vec(),
 					)
 					.unwrap();
-					let query = MultilinearQuery::<BinaryField128b>::with_full_query(
+					let query = MultilinearQuery::<BinaryField128b, _>::with_full_query(
 						&std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
 							.take(k)
 							.collect_vec(),
-						make_backend(),
+						backend.clone(),
 					)
 					.unwrap();
 					bench.iter(|| {

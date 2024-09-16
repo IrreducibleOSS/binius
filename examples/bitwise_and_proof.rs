@@ -361,7 +361,7 @@ fn main() {
 	let witness = generate_trace::<U, BinaryField128bPolyval>(log_size, &trace_oracle).unwrap();
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
-	let backend = binius_hal::make_backend();
+	let backend = binius_hal::make_portable_backend();
 
 	let proof = prove(
 		&pcs,

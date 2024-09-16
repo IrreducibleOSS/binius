@@ -21,7 +21,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
 	Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
@@ -613,8 +613,6 @@ fn main() -> Result<()> {
 	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
 
-	let backend = make_backend();
-
 	// Set up the public parameters
 
 	macro_rules! optimal_block_pcs {
@@ -640,6 +638,7 @@ fn main() -> Result<()> {
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
+	let backend = make_portable_backend();
 
 	let proof = prove(
 		&mut oracles.clone(),

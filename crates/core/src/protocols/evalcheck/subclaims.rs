@@ -34,6 +34,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_utils::bail;
 use std::sync::Arc;
+use tracing::instrument;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
 pub type BivariateSumcheck<'a, F, PW> = (SumcheckClaim<F>, BivariateSumcheckWitness<'a, PW>);
@@ -80,7 +81,7 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
 pub fn shifted_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	shifted: &Shifted<F>,
 	wf_eval_point: &[PW::Scalar],
@@ -150,7 +151,7 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 /// `wf_eval_point` should be isomorphic to `eval_point` in `shifted_sumcheck_meta`.
 pub fn packed_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	packed: &Packed<F>,
 	wf_eval_point: &[PW::Scalar],
@@ -273,7 +274,7 @@ pub fn non_same_query_pcs_sumcheck_claim<F: TowerField>(
 
 pub fn non_same_query_pcs_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: NonSameQueryPcsClaimMeta<F>,
 	backend: Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
@@ -400,7 +401,7 @@ pub fn projected_bivariate_claim<F: TowerField>(
 
 fn projected_bivariate_witness<'a, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
-	memoized_queries: &mut MemoizedQueries<PW>,
+	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: ProjectedBivariateMeta,
 	wf_eval_point: &[PW::Scalar],
 	multiplier_witness_ctr: impl FnOnce(&[PW::Scalar]) -> Result<MultilinearWitness<'a, PW>, Error>,
@@ -426,7 +427,7 @@ where
 		let query = memoized_queries.full_query(&wf_eval_point[projected_n_vars..], backend)?;
 		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
 		let projected: Arc<dyn MultilinearPoly<PW> + Send + Sync> =
-			Arc::new(inner_multilin.evaluate_partial_high(query)?);
+			Arc::new(inner_multilin.evaluate_partial_high(query.to_ref())?);
 		witness_index.update_multilin_poly(vec![(projected_id, projected.clone())])?;
 
 		(projected, &wf_eval_point[..projected_n_vars])
@@ -455,34 +456,47 @@ where
 	Ok(witness)
 }
 
-pub struct MemoizedQueries<P: PackedField> {
-	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P>)>,
+struct MemoizedQuery<P: PackedField, Backend: ComputationBackend> {
+	eval_point: Vec<P::Scalar>,
+	query: MultilinearQuery<P, Backend>,
 }
 
-impl<P: PackedField> MemoizedQueries<P> {
+pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
+	memo: Vec<MemoizedQuery<P, Backend>>,
+}
+
+impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self { memo: Vec::new() }
 	}
 
-	pub fn full_query<Backend: ComputationBackend>(
+	#[instrument(skip_all)]
+	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
 		backend: Backend,
-	) -> Result<&MultilinearQuery<P>, Error> {
+	) -> Result<&MultilinearQuery<P, Backend>, Error> {
 		if let Some(index) = self
 			.memo
 			.iter()
-			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
+			.position(|memo_query| memo_query.eval_point.as_slice() == eval_point)
 		{
-			let (_, ref query) = &self.memo[index];
+			let query = &self.memo[index].query;
 			return Ok(query);
 		}
 
 		let wf_query = MultilinearQuery::with_full_query(eval_point, backend)?;
-		self.memo.push((eval_point.to_vec(), wf_query));
+		self.memo.push(MemoizedQuery {
+			eval_point: eval_point.to_vec(),
+			query: wf_query,
+		});
 
-		let (_, ref query) = self.memo.last().expect("pushed query immediately above");
+		let query = &self
+			.memo
+			.last()
+			.expect("pushed query immediately above")
+			.query;
 		Ok(query)
 	}
 }

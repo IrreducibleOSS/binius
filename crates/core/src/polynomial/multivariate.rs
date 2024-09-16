@@ -1,8 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{
-	error::Error, multilinear_query::MultilinearQuery, MultilinearExtension, MultilinearPoly,
-};
+use super::{error::Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_utils::bail;
@@ -219,11 +217,15 @@ where
 		})
 	}
 
-	pub fn evaluate(&self, query: &MultilinearQuery<P>) -> Result<P::Scalar, Error> {
+	pub fn evaluate<'a>(
+		&self,
+		query: impl Into<MultilinearQueryRef<'a, P>>,
+	) -> Result<P::Scalar, Error> {
+		let query = query.into();
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query)?)))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query.clone())?)))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
@@ -307,12 +309,12 @@ where
 {
 	pub fn evaluate_partial_low(
 		&self,
-		query: &MultilinearQuery<P>,
+		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearComposite<P, C, impl MultilinearPoly<P>>, Error> {
 		let new_multilinears = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate_partial_low(query))
+			.map(|multilin| multilin.evaluate_partial_low(query.clone()))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(MultilinearComposite {
 			composition: self.composition.clone(),

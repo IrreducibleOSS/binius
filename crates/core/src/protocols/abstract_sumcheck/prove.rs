@@ -4,7 +4,7 @@ use super::Error;
 use crate::{
 	polynomial::{
 		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
-		MultilinearQuery,
+		MultilinearQuery, MultilinearQueryRef,
 	},
 	protocols::utils::deinterleave,
 };
@@ -12,7 +12,7 @@ use binius_field::PackedField;
 use binius_hal::ComputationBackend;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
-use std::{cmp::max, collections::HashMap, hash::Hash};
+use std::{cmp::max, collections::HashMap, fmt::Debug, hash::Hash};
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug, Clone)]
@@ -151,13 +151,13 @@ where
 	next_round: usize,
 	multilinears: HashMap<MultilinearId, SumcheckMultilinear<PW, M>>,
 	max_query_vars: Option<usize>,
-	queries: Vec<Option<MultilinearQuery<PW>>>,
+	queries: Vec<Option<MultilinearQuery<PW, Backend>>>,
 	backend: Backend,
 }
 
 impl<MultilinearId, PW, M, Backend> CommonProversState<MultilinearId, PW, M, Backend>
 where
-	MultilinearId: Clone + Hash + Eq + Sync,
+	MultilinearId: Clone + Hash + Eq + Sync + Debug,
 	PW: PackedField,
 	M: MultilinearPoly<PW> + Sync + Send,
 	Backend: ComputationBackend,
@@ -281,7 +281,7 @@ where
 							// At switchover, perform inner products in large field and save them
 							// in a newly created MLE.
 							let large_field_folded_multilinear =
-								multilinear.evaluate_partial_low(query_ref)?;
+								multilinear.evaluate_partial_low(query_ref.to_ref())?;
 
 							*sc_multilinear = SumcheckMultilinear::Folded {
 								large_field_folded_multilinear,
@@ -298,7 +298,7 @@ where
 					} => {
 						// Post-switchover, simply halve large field MLE.
 						*large_field_folded_multilinear = large_field_folded_multilinear
-							.evaluate_partial_low(&single_variable_partial_query)?;
+							.evaluate_partial_low(single_variable_partial_query.to_ref())?;
 
 						Ok(None)
 					}
@@ -404,7 +404,7 @@ where
 					|multilin, subcube_vars, subcube_index, evals| {
 						Self::subcube_inner_product(
 							multilin,
-							query,
+							query.to_ref(),
 							subcube_vars,
 							subcube_index,
 							evals,
@@ -434,7 +434,7 @@ where
 					SumcheckMultilinear::Transparent { multilinear, .. } => {
 						Self::subcube_inner_product(
 							multilinear,
-							query,
+							query.to_ref(),
 							subcube_vars,
 							subcube_index,
 							evals,
@@ -559,7 +559,7 @@ where
 	pub(crate) fn get_subset_query(
 		&self,
 		oracle_ids: &[MultilinearId],
-	) -> Option<(usize, &MultilinearQuery<PW>)> {
+	) -> Option<(usize, &MultilinearQuery<PW, Backend>)> {
 		let introduction_rounds = oracle_ids
 			.iter()
 			.flat_map(|oracle_id| match self.multilinears.get(oracle_id)? {
@@ -601,7 +601,7 @@ where
 	#[inline]
 	fn subcube_inner_product(
 		multilin: &M,
-		query: &MultilinearQuery<PW>,
+		query: MultilinearQueryRef<PW>,
 		subcube_vars: usize,
 		subcube_index: usize,
 		inner_products: &mut [PW],

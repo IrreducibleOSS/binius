@@ -15,16 +15,55 @@ use std::cmp::max;
 /// The tensor product can be updated with a new round challenge in linear time.
 /// This is used in the first several rounds of the sumcheck prover for small-field polynomials,
 /// before it becomes more efficient to switch over to the method that store folded multilinears.
-#[derive(Debug, Clone)]
-pub struct MultilinearQuery<P: PackedField> {
-	expanded_query: Vec<P>,
+#[derive(Debug)]
+pub struct MultilinearQuery<P: PackedField, Backend: ComputationBackend> {
+	expanded_query: Backend::Vec<P>,
 	// We want to avoid initializing data at the moment when vector is growing,
 	// So we allocate zeroed vector and keep track of the length of the initialized part.
 	expanded_query_len: usize,
 	n_vars: usize,
 }
 
-impl<P: PackedField> MultilinearQuery<P> {
+/// Wraps `MultilinearQuery` to hide `Backend` from the users.
+#[derive(Debug, Clone)]
+pub struct MultilinearQueryRef<'a, P: PackedField> {
+	expanded_query: &'a [P],
+	// We want to avoid initializing data at the moment when vector is growing,
+	// So we allocate zeroed vector and keep track of the length of the initialized part.
+	expanded_query_len: usize,
+	n_vars: usize,
+}
+
+impl<'a, P: PackedField, Backend: ComputationBackend> From<&'a MultilinearQuery<P, Backend>>
+	for MultilinearQueryRef<'a, P>
+{
+	fn from(query: &'a MultilinearQuery<P, Backend>) -> Self {
+		MultilinearQueryRef::new(query)
+	}
+}
+
+impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
+	pub fn new<Backend: ComputationBackend>(query: &'a MultilinearQuery<P, Backend>) -> Self {
+		Self {
+			expanded_query: &query.expanded_query,
+			expanded_query_len: query.expanded_query_len,
+			n_vars: query.n_vars,
+		}
+	}
+
+	pub fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	/// Returns the tensor product expansion of the query
+	///
+	/// If the number of query variables is less than the packing width, return a single packed element.
+	pub fn expansion(&self) -> &[P] {
+		&self.expanded_query[0..self.expanded_query_len]
+	}
+}
+
+impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 	pub fn new(max_query_vars: usize) -> Result<Self, PolynomialError> {
 		if max_query_vars > 31 {
 			bail!(PolynomialError::TooManyVariables)
@@ -33,17 +72,14 @@ impl<P: PackedField> MultilinearQuery<P> {
 			let mut expanded_query = zeroed_vec(len);
 			expanded_query[0] = P::set_single(P::Scalar::ONE);
 			Ok(Self {
-				expanded_query,
+				expanded_query: Backend::to_hal_slice(expanded_query),
 				expanded_query_len: 1,
 				n_vars: 0,
 			})
 		}
 	}
 
-	pub fn with_full_query<Backend: ComputationBackend>(
-		query: &[P::Scalar],
-		backend: Backend,
-	) -> Result<Self, PolynomialError> {
+	pub fn with_full_query(query: &[P::Scalar], backend: Backend) -> Result<Self, PolynomialError> {
 		let expanded_query = backend
 			.tensor_product_full_query(query)
 			.map_err(PolynomialError::HalError)?;
@@ -66,11 +102,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 		&self.expanded_query[0..self.expanded_query_len]
 	}
 
-	pub fn into_expansion(mut self) -> Vec<P> {
-		// Trim query vector to the actual size
-		self.expanded_query
-			.resize(self.expanded_query_len, P::zero());
-
+	pub fn into_expansion(self) -> Backend::Vec<P> {
 		self.expanded_query
 	}
 
@@ -88,6 +120,7 @@ impl<P: PackedField> MultilinearQuery<P> {
 		}
 		tensor_prod_eq_ind(
 			old_n_vars,
+			// This works only if `expanded_query` was initialized as a Vec<P>.
 			&mut self.expanded_query[..new_length],
 			extra_query_coordinates,
 		)
@@ -99,24 +132,28 @@ impl<P: PackedField> MultilinearQuery<P> {
 			n_vars: new_n_vars,
 		})
 	}
+
+	pub fn to_ref(&self) -> MultilinearQueryRef<P> {
+		self.into()
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::MultilinearQuery;
 	use crate::polynomial::test_utils::macros::felts;
-	use binius_hal::make_backend;
+	use binius_hal::make_portable_backend;
 
 	macro_rules! expand_query {
-		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident, $b:expr) => {
-			binius_field::packed::iter_packed_slice(MultilinearQuery::<$p>::with_full_query(&[$($f::new($elem)),*], $b).unwrap().expansion()).collect::<Vec<_>>()
+		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident, $bv:expr) => {
+			binius_field::packed::iter_packed_slice(MultilinearQuery::<$p, _>::with_full_query(&[$($f::new($elem)),*], $bv).unwrap().expansion()).collect::<Vec<_>>()
 		};
 	}
 
 	#[test]
 	fn test_query_no_packing_32b() {
 		use binius_field::BinaryField32b;
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		assert_eq!(
 			expand_query!(BinaryField32b[], Packing = BinaryField32b, backend.clone()),
 			felts!(BinaryField32b[1])
@@ -142,7 +179,7 @@ mod tests {
 	#[test]
 	fn test_query_packing_4x32b() {
 		use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		assert_eq!(
 			expand_query!(BinaryField32b[], Packing = PackedBinaryField4x32b, backend.clone()),
 			felts!(BinaryField32b[1, 0, 0, 0])
@@ -168,7 +205,7 @@ mod tests {
 	#[test]
 	fn test_query_packing_8x16b() {
 		use binius_field::{BinaryField16b, PackedBinaryField8x16b};
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		assert_eq!(
 			expand_query!(BinaryField16b[], Packing = PackedBinaryField8x16b, backend.clone()),
 			felts!(BinaryField16b[1, 0, 0, 0, 0, 0, 0, 0])

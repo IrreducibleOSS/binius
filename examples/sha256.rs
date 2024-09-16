@@ -36,7 +36,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_macros::composition_poly;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
@@ -951,6 +951,7 @@ where
 		[(zerocheck_claim, zerocheck_witness)],
 		domain_factory.clone(),
 		switchover_fn,
+		mixing_challenge,
 		&mut challenger,
 		backend.clone(),
 	)?;
@@ -1074,7 +1075,7 @@ fn main() {
 
 	let log_size = get_log_trace_size().unwrap_or(10);
 	let log_inv_rate = 1;
-	let backend = make_backend();
+	let backend = make_portable_backend();
 
 	let mut oracles = MultilinearOracleSet::new();
 	let trace = TraceOracle::new(&mut oracles, log_size, backend.clone());

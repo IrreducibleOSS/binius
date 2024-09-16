@@ -7,6 +7,7 @@ use binius_core::{
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
 };
 use binius_field::{BinaryField128b, BinaryField128bPolyval, Field, TowerField};
+use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
@@ -52,7 +53,7 @@ fn bench_polyval(c: &mut Criterion) {
 				poly: oracles.oracle(numerator),
 				product,
 			};
-			let backend = binius_hal::make_backend();
+			let backend = make_portable_backend();
 
 			bench.iter(|| {
 				gkr_gpa::batch_prove::<F, FW, FW, _, _>(

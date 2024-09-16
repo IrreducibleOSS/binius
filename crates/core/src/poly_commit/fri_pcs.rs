@@ -302,14 +302,13 @@ where
 
 		let final_message_mle =
 			MultilinearExtension::from_values_slice(&fri_final_message).expect("F::WIDTH is 1");
+		let query = MultilinearQuery::<PE, _>::with_full_query(
+			&challenges[n_rounds - fri_final_log_dim..],
+			backend.clone(),
+		)
+		.expect("n_rounds is in range 0..32");
 		let fri_eval = final_message_mle
-			.evaluate(
-				&MultilinearQuery::<PE>::with_full_query(
-					&challenges[n_rounds - fri_final_log_dim..],
-					backend.clone(),
-				)
-				.expect("n_rounds is in range 0..32"),
-			)
+			.evaluate(&query)
 			.expect("query size is guaranteed to match mle number of variables");
 
 		let ring_switch_eval = ring_switch_evaluator(&challenges);
@@ -437,7 +436,7 @@ where
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
 		let expanded_query =
-			MultilinearQuery::<PE>::with_full_query(query_from_kappa, backend.clone())?;
+			MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend.clone())?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -453,12 +452,12 @@ where
 			&tensor_mixing_challenges,
 			backend.clone(),
 		);
-		let transparent =
-			MultilinearExtension::from_values(ring_switch_eq_ind_partial_eval::<F, _, _, _>(
-				query_from_kappa,
-				&tensor_mixing_challenges,
-				backend.clone(),
-			)?)?;
+		let val = ring_switch_eq_ind_partial_eval::<F, _, _, _>(
+			query_from_kappa,
+			&tensor_mixing_challenges,
+			backend.clone(),
+		)?;
+		let transparent = MultilinearExtension::from_values_generic(val)?;
 		let sumcheck_prover = RegularSumcheckProver::new(
 			vec![
 				MultilinearExtension::<PE, _>::specialize::<PE>(packed_poly.to_ref()),
@@ -524,7 +523,7 @@ where
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
 		let expanded_query =
-			MultilinearQuery::<FExt>::with_full_query(query_to_kappa, backend.clone())?;
+			MultilinearQuery::<FExt, _>::with_full_query(query_to_kappa, backend.clone())?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -625,7 +624,7 @@ mod tests {
 		underlier::{Divisible, UnderlierType, WithUnderlier},
 		BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
-	use binius_hal::make_backend;
+	use binius_hal::make_portable_backend;
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -653,7 +652,7 @@ mod tests {
 	{
 		let mut rng = StdRng::seed_from_u64(0);
 		let n_vars = 8 + checked_log_2(<FE as ExtensionField<F>>::DEGREE);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
 		let multilin = MultilinearExtension::from_values(
 			repeat_with(|| <PackedType<U, F>>::random(&mut rng))
@@ -667,8 +666,11 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let eval_query =
-			MultilinearQuery::<FE>::with_full_query(&eval_point, backend.clone()).unwrap();
+		let eval_query = MultilinearQuery::<FE, binius_hal::CpuBackend>::with_full_query(
+			&eval_point,
+			backend.clone(),
+		)
+		.unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let make_merkle_vcs = |log_len| {

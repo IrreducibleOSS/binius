@@ -49,7 +49,7 @@ where
 
 	#[get = "pub"]
 	new_sumchecks: Vec<BivariateSumcheck<'b, F, PW>>,
-	memoized_queries: MemoizedQueries<PW>,
+	memoized_queries: MemoizedQueries<PW, Backend>,
 
 	backend: Backend,
 }
@@ -351,7 +351,7 @@ where
 			.witness_index
 			.get_multilin_poly(poly.id())
 			.map_err(Error::Witness)?;
-		let eval = witness_poly.evaluate(eval_query)?.into();
+		let eval = witness_poly.evaluate(eval_query.to_ref())?.into();
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,
 			eval_point: eval_point.to_vec(),

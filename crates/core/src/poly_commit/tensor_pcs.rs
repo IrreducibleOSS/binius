@@ -343,11 +343,11 @@ where
 		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
 
-		let partial_query = &MultilinearQuery::with_full_query(&query[log_n_cols..], backend)?;
+		let partial_query = MultilinearQuery::with_full_query(&query[log_n_cols..], backend)?;
 		let ts = polys;
 		let t_primes = ts
 			.iter()
-			.map(|t| t.evaluate_partial_high(partial_query))
+			.map(|t| t.evaluate_partial_high(&partial_query))
 			.collect::<Result<Vec<_>, _>>()?;
 		let t_prime = mix_t_primes(log_n_cols, &t_primes, mixing_coefficients)?;
 
@@ -416,7 +416,7 @@ where
 
 		let n_challenges = log2_ceil_usize(proof.n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let mixing_coefficients = &MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
 			&mixing_challenges,
 			backend.clone(),
 		)?
@@ -443,7 +443,7 @@ where
 		challenger.observe_slice(<PackedType<U, FE>>::unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let multilin_query = MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
 			&query[..log_n_cols],
 			backend.clone(),
 		)?;
@@ -527,7 +527,7 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>>::with_full_query(
+		let multilin_query = MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
 			&query[log_n_cols..],
 			backend.clone(),
 		)?;
@@ -1042,7 +1042,7 @@ mod tests {
 		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 		PackedBinaryField4x32b,
 	};
-	use binius_hal::make_backend;
+	use binius_hal::make_portable_backend;
 	use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 	#[test]
@@ -1078,10 +1078,12 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_backend();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let backend = make_portable_backend();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1124,7 +1126,7 @@ mod tests {
 		})
 		.take(batch_size)
 		.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
@@ -1132,13 +1134,15 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 
 		let values = polys
 			.iter()
-			.map(|poly| poly.evaluate(&multilin_query).unwrap())
+			.map(|poly| poly.evaluate(multilin_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
 		let mut prove_challenger = challenger.clone();
@@ -1182,10 +1186,12 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_backend();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let backend = make_portable_backend();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1229,17 +1235,19 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilinear_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let multilinear_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 
 		let values = polys
 			.iter()
-			.map(|poly| poly.evaluate(&multilinear_query).unwrap())
+			.map(|poly| poly.evaluate(multilinear_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
 		let mut prove_challenger = challenger.clone();
@@ -1282,11 +1290,13 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1330,17 +1340,19 @@ mod tests {
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 
 		let values = polys
 			.iter()
-			.map(|poly| poly.evaluate(&multilin_query).unwrap())
+			.map(|poly| poly.evaluate(multilin_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
 		let mut prove_challenger = challenger.clone();
@@ -1462,11 +1474,13 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let backend = make_backend();
+		let backend = make_portable_backend();
 
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b>::with_full_query(&query, backend.clone())
-				.unwrap();
+		let multilin_query = MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(
+			&query,
+			backend.clone(),
+		)
+		.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 

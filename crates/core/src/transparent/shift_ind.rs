@@ -346,7 +346,7 @@ mod tests {
 		multilinear_query::MultilinearQuery, test_utils::decompose_index_to_hypercube_point,
 	};
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_backend;
+	use binius_hal::make_portable_backend;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -359,7 +359,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -375,7 +375,8 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point, backend).unwrap();
+		let multilin_query =
+			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -390,7 +391,7 @@ mod tests {
 		right_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -406,7 +407,8 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point, backend).unwrap();
+		let multilin_query =
+			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -421,7 +423,7 @@ mod tests {
 		left_shift_offset: usize,
 	) {
 		let mut rng = StdRng::seed_from_u64(0);
-		let backend = make_backend();
+		let backend = make_portable_backend();
 		let r = repeat_with(|| F::random(&mut rng))
 			.take(block_size)
 			.collect::<Vec<_>>();
@@ -437,7 +439,8 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query = MultilinearQuery::<P>::with_full_query(eval_point, backend).unwrap();
+		let multilin_query =
+			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
