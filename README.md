@@ -2,7 +2,7 @@
 
 # Binius
 
-Binius is a Rust library implementing a cryptographic *succinct non-interactive argument of knowledge* (SNARK) over towers of binary fields. The techniques are described formally in the paper *[Succinct Arguments over Towers of Binary Fields](https://eprint.iacr.org/2023/1784)*.
+Binius is a Rust library implementing a cryptographic *succinct non-interactive argument of knowledge* (SNARK) over towers of binary fields. The techniques are described formally in the papers *[Succinct Arguments over Towers of Binary Fields](https://eprint.iacr.org/2023/1784)* and *[Polylogarithmic Proofs for Multilinears over Binary Towers](https://eprint.iacr.org/2024/504)*.
 
 This library is a work in progress. It is not yet ready for use, but may be of interest for experimentation. 
 
