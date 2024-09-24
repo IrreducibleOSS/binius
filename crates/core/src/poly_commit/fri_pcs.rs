@@ -28,7 +28,7 @@ use binius_hal::ComputationBackend;
 use binius_math::univariate::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::checked_arithmetics::checked_log_2;
-use std::{iter::repeat_with, marker::PhantomData, ops::Deref};
+use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
 ///
@@ -565,7 +565,34 @@ where
 		if n_polys != 1 {
 			todo!("handle batches of size greater than 1");
 		}
-		todo!()
+		let fe_size = mem::size_of::<FExt>();
+		let vc_size = mem::size_of::<VCS::Commitment>();
+
+		let sumcheck_eval_size = <TensorAlgebra<F, FExt>>::byte_size();
+		// The number of rounds of sumcheck is equal to the number of variables minus kappa.
+		// The function $h$ that we are sumchecking is multiquadratic, hence each round polynomial
+		// is quadratic. We only send two of the three coefficients of this polynomial in `RoundProof`.
+		let sumcheck_rounds_size = fe_size * 2 * (self.n_vars() - Self::kappa());
+		// The number of FRI-commitments is encoded in state as `self.round_vcss.len()`. Alternatively, it is simply
+		// `sumcheck_rounds_size - 1`.
+		let fri_commitments_size = vc_size * (sumcheck_rounds_size - 1);
+		// The length of `fri_final_message` just $2^{LOG_DIM}$ of the final RS code, as the final
+		// FRI-message is sent decoded.
+		let fri_final_message_size = fe_size * (1 << self.fri_final_rs_code.log_dim());
+		// fri_query_proofs consists of n_test_queries of `QueryProof`.
+		// each `QueryProof` consists of a number of `QueryRoundProof`s, This number is the number of
+		// FRI-folds the verifier "receives".
+		// for arity = 1, the number of FRI-folds the verifier receives is  which is `round_vcss.len()+1`
+		// and the size of the coset is 2.
+		let len_round_vcss = self.rs_code.log_len() - self.fri_final_rs_code.log_len();
+		let fri_query_proofs_size =
+			(vc_size + 2 * fe_size) * (len_round_vcss + 1) * self.n_test_queries;
+
+		sumcheck_eval_size
+			+ sumcheck_rounds_size
+			+ fri_commitments_size
+			+ fri_final_message_size
+			+ fri_query_proofs_size
 	}
 }
 
