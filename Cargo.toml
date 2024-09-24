@@ -42,7 +42,8 @@ thiserror = "1.0.47"
 thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 tracing = "0.1.38"
-tracing-profile = "0.6.0"
+# TODO: Use version "0.8.0" as soon as it's available
+tracing-profile = { git = "https://gitlab.com/IrreducibleOSS/tracing-profile.git", rev = "6e03ddc59348450fdc7f96259d206fbb634e2f51"}
 tracing-subscriber = "0.3.18"
 tracing-tracy = "0.11.0"
 transpose = "0.2.2"

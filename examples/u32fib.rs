@@ -447,7 +447,7 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	init_tracing().expect("failed to initialize tracing");
+	let _guard = init_tracing().expect("failed to initialize tracing");
 	let backend = make_portable_backend();
 
 	// Note that values below 14 are rejected by `find_proof_size_optimal_pcs()`.

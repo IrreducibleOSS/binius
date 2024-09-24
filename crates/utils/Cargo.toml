@@ -16,5 +16,8 @@ tracing-tracy = { workspace = true, optional = true}
 thread_local.workspace = true
 
 [features]
-tracy = ["tracing-tracy"]
 bail_panic = []
+ittapi = ["tracing-profile/ittapi"]
+perf_counters = ["tracing-profile/perf_counters"]
+perfetto = ["tracing-profile/perfetto"]
+tracy = ["tracing-tracy"]

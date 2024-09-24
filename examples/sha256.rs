@@ -1069,7 +1069,7 @@ fn main() {
 		.as_ref()
 		.expect("failed to init thread pool");
 
-	init_tracing().expect("failed to init tracing");
+	let _guard = init_tracing().expect("failed to init tracing");
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
 
