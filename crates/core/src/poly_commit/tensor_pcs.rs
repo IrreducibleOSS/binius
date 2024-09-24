@@ -23,7 +23,7 @@ use binius_hal::ComputationBackend;
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
 };
-use binius_ntt::NTTOptions;
+use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use p3_util::{log2_ceil_usize, log2_strict_usize};
@@ -934,12 +934,22 @@ where
 	FI: ExtensionField<F> + ExtensionField<FA> + ExtensionField<BinaryField8b>,
 	FE: BinaryField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
 {
-	let mut best_proof_size = None;
-	let mut best_pcs = None;
+	#[derive(Clone, Copy)]
+	struct Params {
+		log_rows: usize,
+		log_dim: usize,
+		n_test_queries: usize,
+		proof_size: usize,
+	}
+
+	let mut best = None;
 	let log_degree = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 
 	for log_rows in 0..=(n_vars - log_degree) {
 		let log_dim = n_vars - log_rows - log_degree;
+		// While we are brute-force checking various PCS instances for proof size, use the default
+		// NTTOptions, which makes the RS code the fastest to construct. Later when we return the
+		// best PCS, we will reconstruct with faster NTT options that use twiddle precomputation.
 		let rs_code = match ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default()) {
 			Ok(rs_code) => rs_code,
 			Err(_) => continue,
@@ -964,22 +974,39 @@ where
 			Err(_) => continue,
 		};
 
-		match best_proof_size {
-			None => {
-				best_proof_size = Some(pcs.proof_size(n_polys));
-				best_pcs = Some(pcs);
-			}
+		let new_params = Params {
+			log_rows,
+			log_dim,
+			n_test_queries,
+			proof_size: pcs.proof_size(n_polys),
+		};
+		match best {
+			None => best = Some(new_params),
 			Some(current_best) => {
-				let proof_size = pcs.proof_size(n_polys);
-				if proof_size < current_best {
-					best_proof_size = Some(proof_size);
-					best_pcs = Some(pcs);
+				if new_params.proof_size < current_best.proof_size {
+					best = Some(new_params);
 				}
 			}
 		}
 	}
 
-	best_pcs
+	let Params {
+		log_rows,
+		log_dim,
+		n_test_queries,
+		proof_size: _,
+	} = best?;
+
+	// New create the final PCS result. Instead of saving the PCS that we constructed above,
+	// create one with the fastest NTT parameters.
+	let ntt_opts = NTTOptions {
+		precompute_twiddles: true,
+		thread_settings: ThreadingSettings::MultithreadedDefault,
+	};
+	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_opts).ok()?;
+	let pcs = TensorPCS::new_using_groestl_merkle_tree(log_rows, rs_code, n_test_queries).ok()?;
+
+	Some(pcs)
 }
 
 #[derive(Debug, thiserror::Error)]
