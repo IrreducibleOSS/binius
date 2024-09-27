@@ -16,7 +16,7 @@ use crate::{
 	polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
 	protocols::{
 		abstract_sumcheck::{
-			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
+			check_interpolation_domain, validate_rd_challenge, AbstractSumcheckClaim,
 			AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
 			CommonProversState, ReducedClaim,
 		},
@@ -30,7 +30,7 @@ use binius_hal::{
 	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
 	ComputationBackend,
 };
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomain, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
@@ -218,7 +218,8 @@ where
 		let domain = self
 			.evaluation_domain_factory
 			.create(claim.poly.max_individual_degree() + 1)
-			.map_err(Error::MathError)?;
+			.map_err(Error::MathError)?
+			.into();
 		let prover =
 			ZerocheckProver::new(claim, witness, domain, self.zerocheck_challenges, seq_id)?;
 		Ok(prover)
@@ -276,7 +277,7 @@ where
 	#[getset(get = "pub")]
 	claim: ZerocheckClaim<F>,
 	witness: W,
-	domain: EvaluationDomain<DomainField>,
+	domain: InterpolationDomain<DomainField>,
 	oracle_ids: Vec<OracleId>,
 
 	#[getset(get = "pub")]
@@ -327,7 +328,7 @@ where
 	fn new(
 		n_vars: usize,
 		degree: usize,
-		domain: &EvaluationDomain<DomainField>,
+		domain: &InterpolationDomain<DomainField>,
 	) -> Result<Self, Error> {
 		let round_q = zeroed_vec((1 << (n_vars - 1)) * (degree - 1) / PW::WIDTH);
 		let smaller_domain_points = domain.points()[2..].to_vec();
@@ -360,7 +361,7 @@ where
 	pub fn new(
 		claim: ZerocheckClaim<F>,
 		witness: W,
-		domain: EvaluationDomain<DomainField>,
+		domain: InterpolationDomain<DomainField>,
 		zerocheck_challenges: &'a [F],
 		seq_id: usize,
 	) -> Result<Self, Error> {
@@ -373,7 +374,7 @@ where
 		if degree == 0 {
 			bail!(Error::PolynomialDegreeIsZero);
 		}
-		check_evaluation_domain(degree, &domain)?;
+		check_interpolation_domain(degree, &domain)?;
 
 		let oracle_ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
 

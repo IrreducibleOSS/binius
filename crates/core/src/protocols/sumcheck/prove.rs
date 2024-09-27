@@ -15,7 +15,7 @@ use crate::{
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		abstract_sumcheck::{
-			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckClaim,
+			check_interpolation_domain, validate_rd_challenge, AbstractSumcheckClaim,
 			AbstractSumcheckEvaluator, AbstractSumcheckProversState, AbstractSumcheckReductor,
 			AbstractSumcheckWitness, CommonProversState, ReducedClaim,
 		},
@@ -24,7 +24,7 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{extrapolate_line, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
@@ -135,7 +135,8 @@ where
 		let domain = self
 			.evaluation_domain_factory
 			.create(claim.poly.max_individual_degree() + 1)
-			.map_err(Error::MathError)?;
+			.map_err(Error::MathError)?
+			.into();
 		let prover = SumcheckProver::new(claim, witness, domain)?;
 		Ok(prover)
 	}
@@ -188,7 +189,7 @@ where
 	#[getset(get = "pub")]
 	claim: SumcheckClaim<F>,
 	witness: W,
-	domain: EvaluationDomain<DomainField>,
+	domain: InterpolationDomain<DomainField>,
 	oracle_ids: Vec<OracleId>,
 
 	#[getset(get = "pub")]
@@ -214,7 +215,7 @@ where
 	fn new(
 		claim: SumcheckClaim<F>,
 		witness: W,
-		domain: EvaluationDomain<DomainField>,
+		domain: InterpolationDomain<DomainField>,
 	) -> Result<Self, Error> {
 		#[cfg(feature = "debug_validate_sumcheck")]
 		validate_witness(&claim, &witness)?;
@@ -223,7 +224,7 @@ where
 			bail!(Error::PolynomialDegreeIsZero);
 		}
 
-		check_evaluation_domain(claim.poly.max_individual_degree(), &domain)?;
+		check_interpolation_domain(claim.poly.max_individual_degree(), &domain)?;
 
 		let oracle_ids = claim.poly.inner_polys_oracle_ids().collect::<Vec<_>>();
 
@@ -291,7 +292,7 @@ where
 		let evaluator = SumcheckEvaluator {
 			degree,
 			composition: self.witness.composition(),
-			evaluation_domain: &self.domain,
+			interpolation_domain: &self.domain,
 			domain_points: self.domain.points(),
 			_p: PhantomData,
 		};
@@ -352,7 +353,7 @@ where
 {
 	pub degree: usize,
 	composition: &'a C,
-	evaluation_domain: &'a EvaluationDomain<DomainField>,
+	interpolation_domain: &'a InterpolationDomain<DomainField>,
 	domain_points: &'a [DomainField],
 
 	_p: PhantomData<P>,
@@ -421,7 +422,7 @@ where
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, current_round_sum - round_evals[0]);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 
 		// Trimming highest degree coefficient as it can be recovered by the verifier
 		Ok(coeffs[..coeffs.len() - 1].to_vec())

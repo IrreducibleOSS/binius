@@ -14,7 +14,7 @@ use crate::{
 	},
 	protocols::{
 		abstract_sumcheck::{
-			check_evaluation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
+			check_interpolation_domain, validate_rd_challenge, AbstractSumcheckEvaluator,
 			AbstractSumcheckProversState, AbstractSumcheckReductor, AbstractSumcheckWitness,
 			CommonProversState, ReducedClaim,
 		},
@@ -24,7 +24,7 @@ use crate::{
 };
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{extrapolate_line, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;
@@ -141,7 +141,8 @@ where
 		let domain = self
 			.evaluation_domain_factory
 			.create(claim.degree + 1)
-			.map_err(Error::MathError)?;
+			.map_err(Error::MathError)?
+			.into();
 		let multilinear_ids = multilinears
 			.into_iter()
 			.map(|(id, _)| id)
@@ -196,7 +197,7 @@ where
 	n_vars: usize,
 	degree: usize,
 	composition: CW,
-	domain: EvaluationDomain<DomainField>,
+	domain: InterpolationDomain<DomainField>,
 	multilinear_ids: Vec<(usize, usize)>,
 
 	#[getset(get = "pub")]
@@ -223,7 +224,7 @@ where
 	pub fn new(
 		claim: GkrSumcheckClaim<F>,
 		witness: GkrSumcheckWitness<PW, CW, M>,
-		domain: EvaluationDomain<DomainField>,
+		domain: InterpolationDomain<DomainField>,
 		multilinear_ids: Vec<(usize, usize)>,
 		gkr_round_challenge: &'a [F],
 	) -> Result<Self, Error> {
@@ -233,7 +234,7 @@ where
 		if degree == 0 {
 			bail!(Error::PolynomialDegreeIsZero);
 		}
-		check_evaluation_domain(degree, &domain)?;
+		check_interpolation_domain(degree, &domain)?;
 
 		if gkr_round_challenge.len() + 1 < n_vars {
 			bail!(Error::NotEnoughGkrRoundChallenges);
@@ -305,7 +306,7 @@ where
 				GkrSumcheckFirstRoundEvaluator {
 					degree: self.degree,
 					eq_ind: &provers_state.round_eq_ind.to_ref(),
-					evaluation_domain: &self.domain,
+					interpolation_domain: &self.domain,
 					domain_points: self.domain.points(),
 					composition: &self.composition,
 					poly_mle,
@@ -415,7 +416,7 @@ where
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [DomainField],
-	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
+	pub interpolation_domain: &'a InterpolationDomain<DomainField>,
 	pub degree: usize,
 	pub eq_ind: &'a MultilinearExtensionBorrowed<'a, PW>,
 	pub poly_mle: &'a M,
@@ -502,7 +503,7 @@ where
 
 		round_evals.insert(0, zero_evaluation);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		// We can omit the constant term safely
 		let coeffs = coeffs[1..].to_vec();
 
@@ -517,7 +518,7 @@ where
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [DomainField],
-	pub evaluation_domain: &'a EvaluationDomain<DomainField>,
+	pub evaluation_domain: &'a InterpolationDomain<DomainField>,
 	pub degree: usize,
 	pub eq_ind: &'a MultilinearExtensionBorrowed<'a, PW>,
 	pub gkr_challenge: PW::Scalar,

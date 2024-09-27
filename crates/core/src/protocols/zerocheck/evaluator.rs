@@ -7,7 +7,7 @@ use crate::{
 use binius_field::{
 	packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension, PackedField,
 };
-use binius_math::{extrapolate_line, EvaluationDomain};
+use binius_math::{extrapolate_line, InterpolationDomain};
 
 /// Evaluator for the first round of the zerocheck protocol.
 ///
@@ -25,7 +25,7 @@ where
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [FS],
-	pub evaluation_domain: &'a EvaluationDomain<FS>,
+	pub interpolation_domain: &'a InterpolationDomain<FS>,
 	pub degree: usize,
 	pub eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub denom_inv: &'a [FS],
@@ -94,7 +94,7 @@ where
 		round_evals.insert(0, P::Scalar::ZERO);
 		round_evals.insert(0, P::Scalar::ZERO);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		// We can omit the constant term safely
 		let coeffs = coeffs[1..].to_vec();
 		Ok(coeffs)
@@ -115,7 +115,7 @@ where
 {
 	pub composition: &'a C,
 	pub domain_points: &'a [FS],
-	pub evaluation_domain: &'a EvaluationDomain<FS>,
+	pub interpolation_domain: &'a InterpolationDomain<FS>,
 	pub degree: usize,
 	pub eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub round_zerocheck_challenge: P::Scalar,
@@ -219,7 +219,7 @@ where
 
 		round_evals.insert(0, zero_evaluation);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		// We can omit the constant term safely
 		let coeffs = coeffs[1..].to_vec();
 
@@ -237,7 +237,7 @@ where
 {
 	pub(crate) composition: &'a C,
 	pub(crate) domain_points: &'a [FS],
-	pub(crate) evaluation_domain: &'a EvaluationDomain<FS>,
+	pub(crate) interpolation_domain: &'a InterpolationDomain<FS>,
 	pub(crate) degree: usize,
 	pub(crate) eq_ind: MultilinearExtension<P, &'a [P]>,
 	pub(crate) round_zerocheck_challenge: Option<P::Scalar>,
@@ -312,7 +312,7 @@ where
 
 		round_evals.insert(0, zero_evaluation);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals).unwrap();
+		let coeffs = self.interpolation_domain.interpolate(&round_evals).unwrap();
 		// We can omit the constant term safely
 		let coeffs = coeffs[1..].to_vec();
 

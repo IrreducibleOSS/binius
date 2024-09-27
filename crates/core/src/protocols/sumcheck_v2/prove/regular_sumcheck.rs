@@ -15,7 +15,7 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
@@ -74,7 +74,7 @@ where
 	n_vars: usize,
 	state: ProverState<FDomain, P, M, Backend>,
 	compositions: Vec<Composition>,
-	domains: Vec<EvaluationDomain<FDomain>>,
+	domains: Vec<InterpolationDomain<FDomain>>,
 }
 
 impl<F, FDomain, P, Composition, M, Backend>
@@ -112,9 +112,10 @@ where
 			.iter()
 			.map(|composite_claim| {
 				let degree = composite_claim.composition.degree();
-				evaluation_domain_factory.create(degree + 1)
+				let domain = evaluation_domain_factory.create(degree + 1)?;
+				Ok(domain.into())
 			})
-			.collect::<Result<Vec<_>, _>>()
+			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
 			.map_err(Error::MathError)?;
 
 		let compositions = composite_claims
@@ -166,9 +167,9 @@ where
 
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let evaluators = izip!(&self.compositions, &self.domains)
-			.map(|(composition, evaluation_domain)| RegularSumcheckEvaluator {
+			.map(|(composition, interpolation_domain)| RegularSumcheckEvaluator {
 				composition,
-				evaluation_domain,
+				interpolation_domain,
 				_marker: PhantomData,
 			})
 			.collect::<Vec<_>>();
@@ -187,7 +188,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	evaluation_domain: &'a EvaluationDomain<FDomain>,
+	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	_marker: PhantomData<P>,
 }
 
@@ -231,7 +232,7 @@ where
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, last_round_sum - round_evals[0]);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
 	}
 }

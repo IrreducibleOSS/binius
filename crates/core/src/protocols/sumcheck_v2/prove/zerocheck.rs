@@ -21,7 +21,7 @@ use binius_field::{
 	PackedFieldIndexable,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
@@ -79,7 +79,7 @@ where
 	partial_eq_ind_evals: Backend::Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	compositions: Vec<Composition>,
-	domains: Vec<EvaluationDomain<FDomain>>,
+	domains: Vec<InterpolationDomain<FDomain>>,
 }
 
 impl<F, FDomain, P, Composition, M, Backend> ZerocheckProver<FDomain, P, Composition, M, Backend>
@@ -114,9 +114,11 @@ where
 			.iter()
 			.map(|composition| {
 				let degree = composition.degree();
-				evaluation_domain_factory.create(degree + 1)
+				let domain = evaluation_domain_factory.create(degree + 1)?;
+				Ok(domain.into())
 			})
-			.collect::<Result<Vec<_>, _>>()?;
+			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
+			.map_err(Error::MathError)?;
 
 		let evaluation_points = domains
 			.iter()
@@ -222,9 +224,9 @@ where
 		let round = self.round();
 		let coeffs = if round == 0 {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, evaluation_domain)| ZerocheckFirstRoundEvaluator {
+				.map(|(composition, interpolation_domain)| ZerocheckFirstRoundEvaluator {
 					composition,
-					evaluation_domain,
+					interpolation_domain,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
 				})
 				.collect::<Vec<_>>();
@@ -232,9 +234,9 @@ where
 				.calculate_round_coeffs(&evaluators, batch_coeff)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, evaluation_domain)| ZerocheckLaterRoundEvaluator {
+				.map(|(composition, interpolation_domain)| ZerocheckLaterRoundEvaluator {
 					composition,
-					evaluation_domain,
+					interpolation_domain,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
 					round_zerocheck_challenge: self.zerocheck_challenges[round],
 				})
@@ -273,7 +275,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	evaluation_domain: &'a EvaluationDomain<FDomain>,
+	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 }
 
@@ -326,7 +328,7 @@ where
 		round_evals.insert(0, P::Scalar::ZERO);
 		round_evals.insert(0, P::Scalar::ZERO);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
 	}
 }
@@ -337,7 +339,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	evaluation_domain: &'a EvaluationDomain<FDomain>,
+	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 	round_zerocheck_challenge: P::Scalar,
 }
@@ -397,7 +399,7 @@ where
 
 		round_evals.insert(0, zero_evaluation);
 
-		let coeffs = self.evaluation_domain.interpolate(&round_evals)?;
+		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
 	}
 }

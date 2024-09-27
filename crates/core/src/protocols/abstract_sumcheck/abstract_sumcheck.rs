@@ -8,7 +8,7 @@ use crate::{
 };
 use auto_impl::auto_impl;
 use binius_field::{Field, PackedField};
-use binius_math::EvaluationDomain;
+use binius_math::InterpolationDomain;
 use binius_utils::bail;
 use std::hash::Hash;
 
@@ -185,9 +185,9 @@ where
 
 /// Validate that evaluation domain starts with 0 & 1 and the size is exactly one greater than the
 /// maximum individual degree of the polynomial.
-pub fn check_evaluation_domain<F: Field>(
+pub fn check_interpolation_domain<F: Field>(
 	max_individual_degree: usize,
-	domain: &EvaluationDomain<F>,
+	domain: &InterpolationDomain<F>,
 ) -> Result<(), Error> {
 	if max_individual_degree == 0
 		|| domain.size() != max_individual_degree + 1

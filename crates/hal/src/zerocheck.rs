@@ -2,7 +2,7 @@
 
 use crate::Error;
 use binius_field::{Field, PackedField};
-use binius_math::EvaluationDomain;
+use binius_math::InterpolationDomain;
 use tracing::instrument;
 
 /// Describes the shape of the zerocheck computation.
@@ -29,7 +29,7 @@ where
 	pub query: Option<&'a [PW]>,
 	pub current_round_sum: F,
 	pub mixing_challenge: F,
-	pub domain: &'a EvaluationDomain<FDomain>,
+	pub domain: &'a InterpolationDomain<FDomain>,
 	pub underlier_data: Option<Vec<Option<Vec<u8>>>>,
 }
 

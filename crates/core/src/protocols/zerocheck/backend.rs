@@ -18,7 +18,7 @@ use binius_hal::{
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
 	ComputationBackend,
 };
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{EvaluationDomainFactory, InterpolationDomain};
 use rayon::prelude::*;
 use tracing::instrument;
 
@@ -35,7 +35,7 @@ where
 	pub(crate) claim: &'a ZerocheckClaim<F>,
 	pub(crate) smaller_domain_optimization: Option<SmallerDomainOptimization<PW, DomainField>>,
 	pub(crate) provers_state: &'a ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
-	pub(crate) domain: &'a EvaluationDomain<DomainField>,
+	pub(crate) domain: &'a InterpolationDomain<DomainField>,
 	pub(crate) oracle_ids: &'a [OracleId],
 	pub(crate) witness: &'a W,
 }
@@ -97,7 +97,7 @@ where
 		let evaluator = ZerocheckSimpleEvaluator::<PW, DomainField, _> {
 			degree,
 			eq_ind: self.provers_state.round_eq_ind.to_ref(),
-			evaluation_domain: self.domain,
+			interpolation_domain: self.domain,
 			domain_points: self.domain.points(),
 			composition: self.witness.composition(),
 			round_zerocheck_challenge: Some(PW::Scalar::from(
@@ -127,7 +127,7 @@ where
 		let evaluator = ZerocheckFirstRoundEvaluator {
 			composition: self.witness.composition(),
 			domain_points: self.domain.points(),
-			evaluation_domain: self.domain,
+			interpolation_domain: self.domain,
 			degree,
 			eq_ind: self.provers_state.round_eq_ind.to_ref(),
 			denom_inv: &smaller_domain_optimization.smaller_denom_inv,
@@ -155,7 +155,7 @@ where
 		let evaluator = ZerocheckLaterRoundEvaluator::<PW, DomainField, _> {
 			composition: self.witness.composition(),
 			domain_points: self.domain.points(),
-			evaluation_domain: self.domain,
+			interpolation_domain: self.domain,
 			degree,
 			eq_ind: self.provers_state.round_eq_ind.to_ref(),
 			round_zerocheck_challenge: input.zc_challenges[params.round - 1].into(),
