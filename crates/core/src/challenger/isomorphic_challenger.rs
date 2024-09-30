@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_field::{packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension};
+use binius_field::{packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedField};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::{iter::repeat_with, marker::PhantomData, slice};
 
@@ -8,16 +8,16 @@ use std::{iter::repeat_with, marker::PhantomData, slice};
 /// `F2` where the internal challenger needs to sample and observe over the BinaryField `F1` which
 /// must be isomorphic to `F2`
 #[derive(Debug)]
-pub struct IsomorphicChallenger<F1: BinaryField, Challenger, F2: BinaryField> {
+pub struct IsomorphicChallenger<F1, Challenger, F2> {
 	challenger: Challenger,
 	_marker: PhantomData<(F1, F2)>,
 }
 
 impl<F1, Challenger, F2> Clone for IsomorphicChallenger<F1, Challenger, F2>
 where
-	F1: BinaryField,
+	F1: Field,
 	Challenger: Clone,
-	F2: BinaryField,
+	F2: Field,
 {
 	fn clone(&self) -> Self {
 		Self {
@@ -29,8 +29,8 @@ where
 
 impl<F1, Challenger, F2> IsomorphicChallenger<F1, Challenger, F2>
 where
-	F1: BinaryField + From<F2> + Into<F2>,
-	F2: BinaryField,
+	F1: Field + From<F2> + Into<F2>,
+	F2: Field,
 {
 	pub fn new(challenger: Challenger) -> Self {
 		Self {
@@ -42,10 +42,9 @@ where
 
 impl<F1, Challenger, F2, PF2> CanObserve<PF2> for IsomorphicChallenger<F1, Challenger, F2>
 where
-	F1: BinaryField + From<F2> + Into<F2>,
-	F2: BinaryField,
-	PF2: PackedExtension<F2>,
-	PF2::Scalar: ExtensionField<F2>,
+	F1: Field + From<F2> + Into<F2>,
+	F2: Field,
+	PF2: PackedField<Scalar: ExtensionField<F2>>,
 	Challenger: CanObserve<F1>,
 {
 	fn observe(&mut self, value: PF2) {
@@ -53,20 +52,18 @@ where
 	}
 
 	fn observe_slice(&mut self, values: &[PF2]) {
-		let repacked_size =
-			values.len() * PF2::WIDTH * PF2::Scalar::DEGREE * F2::N_BITS / F1::N_BITS;
-		let mut values_converted: Vec<F1> = Vec::with_capacity(repacked_size);
-		for e in iter_packed_slice(PF2::cast_bases(values)) {
-			values_converted.push(e.into());
+		for packed in iter_packed_slice(values) {
+			for base in packed.iter_bases() {
+				self.challenger.observe(base.into());
+			}
 		}
-		self.challenger.observe_slice(&values_converted);
 	}
 }
 
 impl<F1, Challenger, F2, F2E> CanSample<F2E> for IsomorphicChallenger<F1, Challenger, F2>
 where
-	F1: BinaryField + From<F2> + Into<F2>,
-	F2: BinaryField,
+	F1: Field + From<F2> + Into<F2>,
+	F2: Field,
 	F2E: ExtensionField<F2>,
 	Challenger: CanSample<F1>,
 {
@@ -96,7 +93,7 @@ mod test {
 	use crate::challenger::{new_duplex_challenger, new_hasher_challenger};
 	use binius_field::{
 		AESTowerField32b, AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
-		BinaryField8b, Field,
+		BinaryField8b,
 	};
 	use binius_hash::{Groestl256, GroestlHasher, Vision32bPermutation};
 	use rand::thread_rng;
