@@ -601,8 +601,8 @@ fn test_evalcheck_merged() {
 		];
 		let (x_values, y_values) =
 			values.split_at_mut(1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH));
-		x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
-		y.subcube_evals(y.n_vars(), 0, y_values).unwrap();
+		x.subcube_evals(x.n_vars(), 0, 0, x_values).unwrap();
+		y.subcube_evals(y.n_vars(), 0, 0, y_values).unwrap();
 		let merge_poly = MultilinearExtension::from_values(values).unwrap();
 		merge_poly.specialize()
 	};
@@ -694,8 +694,8 @@ fn test_evalcheck_interleaved() {
 		];
 		let (x_values, y_values) =
 			values.split_at_mut(1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH));
-		x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
-		y.subcube_evals(y.n_vars(), 0, y_values).unwrap();
+		x.subcube_evals(x.n_vars(), 0, 0, x_values).unwrap();
+		y.subcube_evals(y.n_vars(), 0, 0, y_values).unwrap();
 		let mut values2 = vec![
 			PackedBinaryField128x1b::zero();
 			1 << (x.n_vars() + 1 - PackedBinaryField128x1b::LOG_WIDTH)
@@ -790,7 +790,7 @@ fn test_evalcheck_zero_padded() {
 	let (_, x_values) =
 		values.split_at_mut(values_len - (1 << (x.n_vars() - PackedBinaryField128x1b::LOG_WIDTH)));
 
-	x.subcube_evals(x.n_vars(), 0, x_values).unwrap();
+	x.subcube_evals(x.n_vars(), 0, 0, x_values).unwrap();
 
 	let zero_padded_poly = MultilinearExtension::from_values(values).unwrap();
 

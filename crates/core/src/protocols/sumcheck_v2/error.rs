@@ -38,6 +38,10 @@ pub enum Error {
 	ConstraintSetNumberOfVariablesMismatch,
 	#[error("batching sumchecks and zerochecks is not supported yet")]
 	MixedBatchingNotSupported,
+	#[error("base field and extension field constraint sets don't match")]
+	BaseAndExtensionFieldConstraintSetsMismatch,
+	#[error("some multilinear evals cannot be embedded into base field in the first round")]
+	MultilinearEvalsCannotBeEmbeddedInBaseField,
 	#[error("no zerocheck challenges provided to oraclized zerocheck")]
 	NoZerocheckChallenges,
 	#[error("zerocheck challenges number does not equal number of variables")]

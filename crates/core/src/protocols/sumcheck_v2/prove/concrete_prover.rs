@@ -5,27 +5,32 @@ use crate::{
 	polynomial::{CompositionPoly, MultilinearPoly},
 	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
 };
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
+use binius_field::{
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+};
 use binius_hal::ComputationBackend;
 
 /// A sum type that is used to put both regular sumchecks and zerochecks into the same `batch_prove` call.
-pub enum ConcreteProver<FDomain, P, Composition, M, Backend>
+pub enum ConcreteProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	FDomain: Field,
+	PBase: PackedField,
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
 	Sumcheck(RegularSumcheckProver<FDomain, P, Composition, M, Backend>),
-	Zerocheck(ZerocheckProver<FDomain, P, Composition, M, Backend>),
+	Zerocheck(ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>),
 }
 
-impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for ConcreteProver<FDomain, P, Composition, M, Backend>
+impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ConcreteProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedFieldIndexable,
+	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+	CompositionBase: CompositionPoly<PBase>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,

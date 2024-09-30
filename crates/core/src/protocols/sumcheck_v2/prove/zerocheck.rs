@@ -8,7 +8,7 @@ use crate::{
 	protocols::{
 		sumcheck_v2::{
 			prove::{
-				prover_state::{ProverState, SumcheckEvaluator},
+				prover_state::{eval01_first_round, ProverState, SumcheckEvaluator},
 				SumcheckProver,
 			},
 			Error, RoundCoeffs,
@@ -17,16 +17,17 @@ use crate::{
 	},
 };
 use binius_field::{
-	packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable,
+	packed::{get_packed_slice, iter_packed_slice},
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use itertools::izip;
+use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
-use std::ops::Range;
+use std::{marker::PhantomData, ops::Range};
 
 pub fn validate_witness<F, P, M, Composition>(
 	multilinears: &[M],
@@ -66,9 +67,10 @@ where
 }
 
 #[derive(Debug)]
-pub struct ZerocheckProver<FDomain, P, Composition, M, Backend>
+pub struct ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	FDomain: Field,
+	PBase: PackedField,
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -78,33 +80,48 @@ where
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Backend::Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
-	compositions: Vec<Composition>,
+	compositions: Vec<(CompositionBase, Composition)>,
 	domains: Vec<InterpolationDomain<FDomain>>,
+	_p_base_marker: PhantomData<PBase>,
 }
 
-impl<F, FDomain, P, Composition, M, Backend> ZerocheckProver<FDomain, P, Composition, M, Backend>
+impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+	ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
+	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	CompositionBase: CompositionPoly<PBase>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
 	pub fn new(
 		multilinears: Vec<M>,
-		zero_claims: impl IntoIterator<Item = Composition>,
+		zero_claims: impl IntoIterator<Item = (CompositionBase, Composition)>,
 		challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
 		backend: Backend,
 	) -> Result<Self, Error> {
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
-		for composition in compositions.iter() {
-			if composition.n_vars() != multilinears.len() {
+		for (composition_base, composition) in compositions.iter() {
+			if composition_base.n_vars() != multilinears.len()
+				|| composition.n_vars() != multilinears.len()
+				|| composition_base.degree() != composition.degree()
+			{
 				bail!(Error::InvalidComposition {
 					expected_n_vars: multilinears.len(),
 				});
+			}
+		}
+
+		let min_log_extension_degree =
+			log2_strict_usize(P::Scalar::DEGREE) - log2_strict_usize(PBase::Scalar::DEGREE);
+		for multilinear in &multilinears {
+			if multilinear.log_extension_degree() < min_log_extension_degree {
+				bail!(Error::MultilinearEvalsCannotBeEmbeddedInBaseField);
 			}
 		}
 
@@ -112,7 +129,7 @@ where
 
 		let domains = compositions
 			.iter()
-			.map(|composition| {
+			.map(|(_, composition)| {
 				let degree = composition.degree();
 				let domain = evaluation_domain_factory.create(degree + 1)?;
 				Ok(domain.into())
@@ -149,6 +166,7 @@ where
 			zerocheck_challenges: challenges.to_vec(),
 			compositions,
 			domains,
+			_p_base_marker: PhantomData,
 		})
 	}
 
@@ -196,12 +214,14 @@ where
 	}
 }
 
-impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for ZerocheckProver<FDomain, P, Composition, M, Backend>
+impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+	CompositionBase: CompositionPoly<PBase>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -224,17 +244,21 @@ where
 		let round = self.round();
 		let coeffs = if round == 0 {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckFirstRoundEvaluator {
-					composition,
+				.map(|((composition_base, _), interpolation_domain)| ZerocheckFirstRoundEvaluator {
+					composition: composition_base,
 					interpolation_domain,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
+					_p_base_marker: PhantomData,
 				})
 				.collect::<Vec<_>>();
-			self.state
-				.calculate_round_coeffs(&evaluators, batch_coeff)?
+			self.state.calculate_round_coeffs_with_eval01::<PBase, _>(
+				eval01_first_round,
+				&evaluators,
+				batch_coeff,
+			)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckLaterRoundEvaluator {
+				.map(|((_, composition), interpolation_domain)| ZerocheckLaterRoundEvaluator {
 					composition,
 					interpolation_domain,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
@@ -269,23 +293,26 @@ where
 	}
 }
 
-struct ZerocheckFirstRoundEvaluator<'a, P, FDomain, Composition>
+struct ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
 where
+	PBase: PackedField,
 	P: PackedField,
 	FDomain: Field,
 {
 	composition: &'a Composition,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
+	_p_base_marker: PhantomData<PBase>,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P>
-	for ZerocheckFirstRoundEvaluator<'a, P, FDomain, Composition>
+impl<'a, F, PBase, P, FDomain, Composition> SumcheckEvaluator<PBase, P>
+	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
 where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	PBase: PackedField,
+	P: PackedField<Scalar = F>,
 	FDomain: Field,
-	Composition: CompositionPoly<P>,
+	Composition: CompositionPoly<PBase>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// In the first round of zerocheck we can uniquely determine the degree d
@@ -298,7 +325,7 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		sparse_batch_query: &[&[P]],
+		sparse_batch_query: &[&[PBase]],
 	) -> P {
 		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
@@ -308,11 +335,13 @@ where
 				.expect("correct by query construction invariant");
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
-			for (i, eval) in evals.iter_mut().enumerate() {
-				*eval *= self.partial_eq_ind_evals[subcube_start + i];
-			}
+			let partial_eq_ind_evals_slice = &self.partial_eq_ind_evals[subcube_start..];
+			let field_sum = iter_packed_slice(partial_eq_ind_evals_slice)
+				.zip(iter_packed_slice(evals))
+				.map(|(eq_ind_scalar, base_scalar)| eq_ind_scalar * base_scalar)
+				.sum();
 
-			evals.iter().copied().sum::<P>()
+			P::set_single(field_sum)
 		})
 	}
 
@@ -344,7 +373,7 @@ where
 	round_zerocheck_challenge: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P>
+impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P>
 	for ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,

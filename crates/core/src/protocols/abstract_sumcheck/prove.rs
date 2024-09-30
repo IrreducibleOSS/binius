@@ -594,7 +594,7 @@ where
 		evals: &mut [PW],
 	) {
 		multilin
-			.subcube_evals(subcube_vars, subcube_index, evals)
+			.subcube_evals(subcube_vars, subcube_index, 0, evals)
 			.expect("indices within range");
 	}
 

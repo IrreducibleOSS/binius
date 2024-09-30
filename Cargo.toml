@@ -46,7 +46,7 @@ tracing = "0.1.38"
 tracing-profile = { git = "https://gitlab.com/IrreducibleOSS/tracing-profile.git", rev = "6e03ddc59348450fdc7f96259d206fbb634e2f51"}
 tracing-subscriber = "0.3.18"
 tracing-tracy = "0.11.0"
-transpose = "0.2.2"
+transpose = "0.2.3"
 syn = { version = "2.0.60", features = ["full"] }
 quote = "1.0.36"
 proc-macro2 = "1.0.81"

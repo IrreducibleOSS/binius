@@ -192,7 +192,7 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P>
+impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P>
 	for RegularSumcheckEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,

@@ -38,6 +38,8 @@ pub enum Error {
 	MultilinearCompositeValidation(String),
 	#[error("sparse batch size mismatch - non-rectangular query shape or evals of wrong length")]
 	SparseBatchEvaluateSizeMismatch,
+	#[error("logarithm of embedding degree of {log_embedding_degree} is too large.")]
+	LogEmbeddingDegreeTooLarge { log_embedding_degree: usize },
 	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>
 	#[error("argument {arg} must be in the range {range:?}")]
 	ArgumentRangeError { arg: String, range: Range<usize> },

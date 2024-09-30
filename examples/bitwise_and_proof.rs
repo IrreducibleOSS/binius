@@ -89,14 +89,16 @@ where
 	let (zerocheck_claim, meta) =
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
 
-	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover(
-		constraint_set,
-		&witness,
-		domain_factory.clone(),
-		switchover_fn,
-		zerocheck_challenges.as_slice(),
-		backend.clone(),
-	)?;
+	let prover =
+		sumcheck_v2::prove::constraint_set_zerocheck_prover::<_, BinaryField128bPolyval, _, _, _>(
+			constraint_set.clone(),
+			constraint_set,
+			&witness,
+			domain_factory.clone(),
+			switchover_fn,
+			zerocheck_challenges.as_slice(),
+			backend.clone(),
+		)?;
 
 	let (sumcheck_output, zerocheck_proof) =
 		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;

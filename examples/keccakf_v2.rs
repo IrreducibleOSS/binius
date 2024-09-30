@@ -39,8 +39,9 @@ use binius_field::{
 	arch::packed_64::PackedBinaryField64x1b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
-	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
+	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField128b, BinaryField16b,
+	BinaryField1b, ExtensionField, Field, PackedBinaryField128x1b, PackedField,
+	PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
@@ -493,7 +494,7 @@ fn make_constraints<'a, P: PackedField>(
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn prove<U, F, FW, DomainField, PCS, CH, Backend>(
+fn prove<U, F, FBase, FW, DomainField, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -505,15 +506,21 @@ fn prove<U, F, FW, DomainField, PCS, CH, Backend>(
 	backend: Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
-	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
+	U: UnderlierType
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<FBase>
+		+ PackScalar<FW>
+		+ PackScalar<DomainField>,
 	PackedType<U, FW>: PackedFieldIndexable<Scalar = FW>,
+	FBase: TowerField + ExtensionField<DomainField>,
 	F: TowerField + From<FW>,
-	FW: TowerField + From<F> + ExtensionField<DomainField>,
+	FW: TowerField + From<F> + ExtensionField<FBase> + ExtensionField<DomainField>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
 	CH: Clone + CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
+	let constraint_set_base = make_constraints(fixed_oracle, trace_oracle);
 	let constraint_set = make_constraints(fixed_oracle, trace_oracle);
 
 	// Round 1
@@ -534,7 +541,8 @@ where
 	let (zerocheck_claim, meta) =
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
 
-	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover(
+	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
+		constraint_set_base,
 		constraint_set,
 		&witness,
 		domain_factory.clone(),
@@ -714,13 +722,12 @@ fn main() {
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
 	let witness =
-		generate_trace::<U, BinaryField128bPolyval>(log_size, &fixed_oracle, &trace_oracle)
-			.unwrap();
+		generate_trace::<U, AESTowerField128b>(log_size, &fixed_oracle, &trace_oracle).unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<AESTowerField8b>::default();
 	let proof =
-		prove::<_, BinaryField128b, BinaryField128bPolyval, BinaryField128bPolyval, _, _, _>(
+		prove::<_, BinaryField128b, AESTowerField8b, AESTowerField128b, AESTowerField8b, _, _, _>(
 			log_size,
 			&mut oracles.clone(),
 			&fixed_oracle,

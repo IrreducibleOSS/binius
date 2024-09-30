@@ -417,10 +417,11 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	}
 
 	#[inline]
-	fn from_bases(base_elems: &[BinaryField1b]) -> Result<Self, Error> {
-		if base_elems.len() > 128 {
+	fn from_bases_sparse(base_elems: &[BinaryField1b], log_stride: usize) -> Result<Self, Error> {
+		if base_elems.len() > 128 || log_stride != 7 {
 			return Err(Error::ExtensionDegreeMismatch);
 		}
+		// REVIEW: is this actually correct for a monomial field?
 		let value = base_elems
 			.iter()
 			.rev()

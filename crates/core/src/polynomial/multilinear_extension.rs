@@ -4,7 +4,10 @@ use super::{error::Error, multilinear::MultilinearPoly, MultilinearQueryRef};
 use crate::util::PackingDeref;
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
-	packed::{get_packed_slice, iter_packed_slice, set_packed_slice, set_packed_slice_unchecked},
+	packed::{
+		get_packed_slice, get_packed_slice_unchecked, iter_packed_slice, set_packed_slice,
+		set_packed_slice_unchecked,
+	},
 	underlier::UnderlierType,
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
@@ -493,8 +496,13 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		log_embedding_degree: usize,
 		evals: &mut [PE],
 	) -> Result<(), Error> {
+		// We exploit the fact that the extension degree is _de facto_ a power-of-two
+		// (though this isn't enforced yet)
+		let log_extension_degree = log2_strict_usize(PE::Scalar::DEGREE);
+
 		if subcube_vars > self.n_vars() {
 			bail!(Error::ArgumentRangeError {
 				arg: "subcube_vars".to_string(),
@@ -502,7 +510,17 @@ where
 			});
 		}
 
-		let correct_len = 1 << subcube_vars.saturating_sub(PE::LOG_WIDTH);
+		// Check that chosen embedding subfield is large enough.
+		// We also use a stack allocated array of bases, which imposes
+		// a maximum tower height restriction.
+		const MAX_TOWER_HEIGHT: usize = 7;
+		if log_embedding_degree > log_extension_degree.min(MAX_TOWER_HEIGHT) {
+			bail!(Error::LogEmbeddingDegreeTooLarge {
+				log_embedding_degree
+			});
+		}
+
+		let correct_len = 1 << subcube_vars.saturating_sub(log_embedding_degree + PE::LOG_WIDTH);
 		if evals.len() != correct_len {
 			bail!(Error::ArgumentRangeError {
 				arg: "evals.len()".to_string(),
@@ -518,17 +536,51 @@ where
 			});
 		}
 
-		// TODO: subcubes with subcube_vars greater or equal to P::LOG_WIDTH are always aligned,
-		//       no need to access individual scalars when we can copy entire packed fields.
 		let subcube_start = subcube_index << subcube_vars;
-		for i in 0..1 << subcube_vars {
-			let scalar = get_packed_slice(self.0.evals(), subcube_start + i).into();
 
-			// Safety: 'i < 1 << subcube_vars' and 'evals.len() == correct_len'
-			unsafe {
-				set_packed_slice_unchecked(evals, i, scalar);
+		if log_embedding_degree == 0 {
+			// One-to-one embedding can bypass the extension field construction overhead.
+			for i in 0..1 << subcube_vars {
+				// Safety: subcube_index < max_index check
+				let scalar =
+					unsafe { get_packed_slice_unchecked(self.0.evals(), subcube_start + i) };
+
+				let extension_scalar = scalar.into();
+
+				// Safety: i < 1 << min(0, subcube_vars) <= correct_len * PE::WIDTH
+				unsafe {
+					set_packed_slice_unchecked(evals, i, extension_scalar);
+				}
+			}
+		} else {
+			// For many-to-one embedding, use ExtensionField::from_bases_sparse
+			let mut bases = [P::Scalar::default(); 1 << MAX_TOWER_HEIGHT];
+			let bases = &mut bases[0..1 << log_embedding_degree];
+
+			let bases_count = 1 << log_embedding_degree.min(subcube_vars);
+			for i in 0..1 << subcube_vars.saturating_sub(log_embedding_degree) {
+				for (j, base) in bases[..bases_count].iter_mut().enumerate() {
+					// Safety: i > 0 iff log_embedding_degree < subcube_vars and subcube_index < max_index check
+					*base = unsafe {
+						get_packed_slice_unchecked(
+							self.0.evals(),
+							subcube_start + (i << log_embedding_degree) + j,
+						)
+					};
+				}
+
+				let extension_scalar = PE::Scalar::from_bases_sparse(
+					bases,
+					log_extension_degree - log_embedding_degree,
+				)?;
+
+				// Safety: i < 1 << min(0, subcube_vars - log_embedding_degree) <= correct_len * PE::WIDTH
+				unsafe {
+					set_packed_slice_unchecked(evals, i, extension_scalar);
+				}
 			}
 		}
+
 		Ok(())
 	}
 
@@ -578,8 +630,9 @@ mod tests {
 	use super::*;
 	use crate::polynomial::MultilinearQuery;
 	use binius_field::{
-		BinaryField128b, BinaryField16b as F, BinaryField32b, PackedBinaryField4x32b,
-		PackedBinaryField8x16b as P,
+		BinaryField128b, BinaryField16b as F, BinaryField32b, BinaryField8b,
+		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField4x32b,
+		PackedBinaryField8x16b as P, PackedExtension, PackedFieldIndexable,
 	};
 	use binius_hal::make_portable_backend;
 	use itertools::Itertools;
@@ -780,5 +833,87 @@ mod tests {
 				.get(0),
 			eval
 		);
+	}
+
+	#[test]
+	fn test_subcube_evals_embeds_correctly() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		type P = PackedBinaryField16x8b;
+		type PE = PackedBinaryField1x128b;
+
+		let packed_count = 4;
+		let values: Vec<_> = repeat_with(|| P::random(&mut rng))
+			.take(1 << packed_count)
+			.collect();
+
+		let mle = MultilinearExtension::from_values(values).unwrap();
+		let mles = MultilinearExtensionSpecialized::<P, PE, _>::from(mle);
+
+		let bytes_values = P::unpack_scalars(mles.0.evals());
+
+		let n_vars = packed_count + P::LOG_WIDTH;
+		let mut evals = vec![PE::zero(); 1 << n_vars];
+		for subcube_vars in 0..n_vars {
+			for subcube_index in 0..1 << (n_vars - subcube_vars) {
+				for log_embedding_degree in 0..=4 {
+					let evals_subcube = &mut evals
+						[0..1 << subcube_vars.saturating_sub(log_embedding_degree + PE::LOG_WIDTH)];
+
+					mles.subcube_evals(
+						subcube_vars,
+						subcube_index,
+						log_embedding_degree,
+						evals_subcube,
+					)
+					.unwrap();
+
+					let bytes_evals = P::unpack_scalars(
+						<PE as PackedExtension<BinaryField8b>>::cast_bases(evals_subcube),
+					);
+
+					let shift = 4 - log_embedding_degree;
+					let skip_mask = (1 << shift) - 1;
+					for (i, &b_evals) in bytes_evals.iter().enumerate() {
+						let b_values = if i & skip_mask == 0 && i < 1 << (subcube_vars + shift) {
+							bytes_values[(subcube_index << subcube_vars) + (i >> shift)]
+						} else {
+							BinaryField8b::ZERO
+						};
+						assert_eq!(b_evals, b_values);
+					}
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn test_subcube_inner_products_and_evaluate_partial_low_conform() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| Field::random(&mut rng))
+			.take(1 << 12)
+			.collect::<Vec<F>>();
+		let mle = MultilinearExtension::from_values(evals).unwrap();
+		let mles = MultilinearExtensionSpecialized::<F, P, _>::from(mle);
+		let q = repeat_with(|| Field::random(&mut rng))
+			.take(6)
+			.collect::<Vec<F>>();
+		let backend = make_portable_backend();
+		let query = MultilinearQuery::with_full_query(&q, backend).unwrap();
+		let partial_eval = mles.evaluate_partial_low(query.to_ref()).unwrap();
+
+		let mut evals = [P::default(); 2];
+		for subcube_index in 0..4 {
+			mles.subcube_inner_products(query.to_ref(), 4, subcube_index, evals.as_mut_slice())
+				.unwrap();
+			for hypercube_idx in 0..16 {
+				assert_eq!(
+					get_packed_slice(&evals, hypercube_idx),
+					partial_eval
+						.evaluate_on_hypercube(hypercube_idx + (subcube_index << 4))
+						.unwrap()
+				);
+			}
+		}
 	}
 }

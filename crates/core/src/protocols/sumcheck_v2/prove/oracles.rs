@@ -15,41 +15,71 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
+use std::sync::Arc;
 
-pub type OracleZerocheckProver<'a, FDomain, P, Backend> =
-	ZerocheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>, Backend>;
+pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = ZerocheckProver<
+	FDomain,
+	PBase,
+	P,
+	TypeErasedComposition<PBase>,
+	TypeErasedComposition<P>,
+	MultilinearWitness<'a, P>,
+	Backend,
+>;
 
 pub type OracleSumcheckProver<'a, FDomain, P, Backend> =
 	RegularSumcheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>, Backend>;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-pub fn constraint_set_zerocheck_prover<'a, U, FW, FDomain, Backend>(
+#[allow(clippy::type_complexity)]
+pub fn constraint_set_zerocheck_prover<'a, U, FBase, FW, FDomain, Backend>(
+	constraint_set_base: ConstraintSet<PackedType<U, FBase>>,
 	constraint_set: ConstraintSet<PackedType<U, FW>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	zerocheck_challenges: &[FW],
 	backend: Backend,
-) -> Result<OracleZerocheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
+) -> Result<
+	OracleZerocheckProver<'a, FDomain, PackedType<U, FBase>, PackedType<U, FW>, Backend>,
+	Error,
+>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
-	FW: ExtensionField<FDomain>,
+	U: UnderlierType + PackScalar<FBase> + PackScalar<FW> + PackScalar<FDomain>,
+	FBase: ExtensionField<FDomain>,
+	FW: ExtensionField<FDomain> + ExtensionField<FBase>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set(constraint_set, witness)?;
+	let (constraints_base, multilinears_base) =
+		split_constraint_set::<_, FBase, _>(constraint_set_base, witness)?;
+	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
+
+	if izip!(&multilinears, multilinears_base)
+		.any(|(multilinear, multilinear_base)| !Arc::ptr_eq(multilinear, &multilinear_base))
+	{
+		bail!(Error::BaseAndExtensionFieldConstraintSetsMismatch);
+	}
 
 	let mut zeros = Vec::new();
 
-	for Constraint {
-		composition,
-		predicate,
-	} in constraints
+	for (
+		Constraint {
+			composition,
+			predicate,
+		},
+		Constraint {
+			composition: composition_base,
+			predicate: predicate_base,
+		},
+	) in izip!(constraints, constraints_base)
 	{
-		match predicate {
-			ConstraintPredicate::Zero => zeros.push(composition),
+		match (predicate, predicate_base) {
+			(ConstraintPredicate::Zero, ConstraintPredicate::Zero) => {
+				zeros.push((composition_base, composition));
+			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
@@ -81,7 +111,7 @@ where
 	PackedType<U, FW>: PackedFieldIndexable,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set(constraint_set, witness)?;
+	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
 
 	let mut sums = Vec::new();
 
@@ -107,15 +137,17 @@ where
 	Ok(prover)
 }
 
-type ConstraintsAndMultilinears<'a, P> = (Vec<Constraint<P>>, Vec<MultilinearWitness<'a, P>>);
+type ConstraintsAndMultilinears<'a, P, PW> = (Vec<Constraint<P>>, Vec<MultilinearWitness<'a, PW>>);
 
-fn split_constraint_set<'a, U, FW>(
-	constraint_set: ConstraintSet<PackedType<U, FW>>,
+#[allow(clippy::type_complexity)]
+fn split_constraint_set<'a, U, F, FW>(
+	constraint_set: ConstraintSet<PackedType<U, F>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
-) -> Result<ConstraintsAndMultilinears<'a, PackedType<U, FW>>, Error>
+) -> Result<ConstraintsAndMultilinears<'a, PackedType<U, F>, PackedType<U, FW>>, Error>
 where
-	U: UnderlierType + PackScalar<FW>,
-	FW: Field,
+	U: UnderlierType + PackScalar<F> + PackScalar<FW>,
+	F: Field,
+	FW: ExtensionField<F>,
 {
 	let ConstraintSet {
 		oracle_ids,

@@ -10,20 +10,23 @@ use crate::{
 		utils::deinterleave,
 	},
 };
-use binius_field::{util::powers, ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{
+	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
+};
 use binius_hal::ComputationBackend;
 use binius_math::{evaluate_univariate, extrapolate_line};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::CopyGetters;
 use itertools::izip;
+use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 use std::{iter, ops::Range};
 
 /// An individual multilinear polynomial stored by the [`ProverState`].
 #[derive(Debug, Clone)]
-enum SumcheckMultilinear<P, M>
+pub(super) enum SumcheckMultilinear<P, M>
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
@@ -40,7 +43,7 @@ where
 	},
 }
 
-pub trait SumcheckEvaluator<P: PackedField> {
+pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField> {
 	/// The range of eval point indices over which composition evaluation and summation should happen.
 	/// Returned range must equal the result of `n_round_evals()` in length.
 	fn eval_point_indices(&self) -> Range<usize>;
@@ -55,7 +58,7 @@ pub trait SumcheckEvaluator<P: PackedField> {
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		sparse_batch_query: &[&[P]],
+		sparse_batch_query: &[&[PBase]],
 	) -> P;
 
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
@@ -79,25 +82,26 @@ struct MultilinearEvals<P: PackedField> {
 }
 
 impl<P: PackedField> MultilinearEvals<P> {
-	fn new(n_states: usize) -> Self {
+	fn new(n_vars: usize) -> Self {
+		let len = 1 << n_vars.saturating_sub(P::LOG_WIDTH);
 		Self {
-			evals_0: zeroed_vec(n_states),
-			evals_1: zeroed_vec(n_states),
-			evals_z: zeroed_vec(n_states),
+			evals_0: zeroed_vec(len),
+			evals_1: zeroed_vec(len),
+			evals_z: zeroed_vec(len),
 		}
 	}
 }
 
 /// Parallel fold state, consisting of scratch area and result accumulator.
 #[derive(Debug)]
-struct ParFoldStates<P: PackedField> {
+struct ParFoldStates<PBase: PackedField, P: PackedField> {
 	// Evaluations at 0, 1 and domain points, per MLE. Scratch space.
-	multilinear_evals: Vec<MultilinearEvals<P>>,
+	multilinear_evals: Vec<MultilinearEvals<PBase>>,
 
 	// Interleaved subcube evals/inner products as returned by eval01.
 	// Double size compared to query (due to having 0 & 1 evals interleaved).
 	// Scratch space.
-	interleaved_evals: Vec<P>,
+	interleaved_evals: Vec<PBase>,
 
 	// Accumulated sums of evaluations over univariate domain.
 	//
@@ -106,20 +110,20 @@ struct ParFoldStates<P: PackedField> {
 	round_evals: Vec<Vec<P>>,
 }
 
-impl<P: PackedField> ParFoldStates<P> {
+impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 	fn new(
 		n_multilinears: usize,
 		n_round_evals: impl Iterator<Item = usize>,
 		subcube_vars: usize,
 	) -> Self {
-		let n_states = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
-		let n_interleaved = 1 << (subcube_vars + 1).saturating_sub(P::LOG_WIDTH);
-
 		Self {
 			multilinear_evals: (0..n_multilinears)
-				.map(|_| MultilinearEvals::new(n_states))
+				.map(|_| MultilinearEvals::new(subcube_vars))
 				.collect(),
-			interleaved_evals: vec![P::default(); n_interleaved],
+			interleaved_evals: vec![
+				PBase::default();
+				1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)
+			],
 			round_evals: n_round_evals
 				.map(|n_round_evals| zeroed_vec(n_round_evals))
 				.collect(),
@@ -318,12 +322,27 @@ where
 			.collect()
 	}
 
-	pub fn calculate_round_coeffs<Evaluator: SumcheckEvaluator<P> + Sync>(
+	pub fn calculate_round_coeffs<Evaluator: SumcheckEvaluator<P, P> + Sync>(
 		&mut self,
 		evaluators: &[Evaluator],
 		batch_coeff: F,
 	) -> Result<RoundCoeffs<F>, Error> {
-		let evals = self.calculate_round_evals(evaluators)?;
+		self.calculate_round_coeffs_with_eval01::<P, _>(Self::eval01, evaluators, batch_coeff)
+	}
+
+	pub(super) fn calculate_round_coeffs_with_eval01<PBase, Evaluator>(
+		&mut self,
+		eval01: impl Fn(&SumcheckMultilinear<P, M>, MultilinearQueryRef<P>, usize, usize, &mut [PBase])
+			+ Sync,
+		evaluators: &[Evaluator],
+		batch_coeff: F,
+	) -> Result<RoundCoeffs<F>, Error>
+	where
+		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		Evaluator: SumcheckEvaluator<PBase, P> + Sync,
+		F: ExtensionField<P::Scalar>,
+	{
+		let evals = self.calculate_round_evals(eval01, evaluators)?;
 
 		let coeffs = match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
@@ -356,10 +375,17 @@ where
 		Ok(batched_coeffs)
 	}
 
-	fn calculate_round_evals<Evaluator: SumcheckEvaluator<P> + Sync>(
+	fn calculate_round_evals<PBase, Evaluator>(
 		&self,
+		eval01: impl Fn(&SumcheckMultilinear<P, M>, MultilinearQueryRef<P>, usize, usize, &mut [PBase])
+			+ Sync,
 		evaluators: &[Evaluator],
-	) -> Result<Vec<RoundCoeffs<F>>, Error> {
+	) -> Result<Vec<RoundCoeffs<F>>, Error>
+	where
+		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		Evaluator: SumcheckEvaluator<PBase, P> + Sync,
+		F: ExtensionField<P::Scalar>,
+	{
 		let n_multilinears = self.multilinears.len();
 		let n_round_evals = evaluators
 			.iter()
@@ -394,9 +420,9 @@ where
 					for (multilinear, evals) in
 						iter::zip(&self.multilinears, multilinear_evals.iter_mut())
 					{
-						Self::eval01(
-							query.to_ref(),
+						eval01(
 							multilinear,
+							query.to_ref(),
 							subcube_vars + 1,
 							subcube_index,
 							interleaved_evals.as_mut_slice(),
@@ -496,16 +522,16 @@ where
 	}
 
 	fn eval01(
+		multilinear: &SumcheckMultilinear<P, M>,
 		query: MultilinearQueryRef<P>,
-		multilin: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
 		evals: &mut [P],
 	) {
-		let result = match multilin {
+		let result = match multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
 				if query.n_vars() == 0 {
-					multilinear.subcube_evals(subcube_vars, subcube_index, evals)
+					multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals)
 				} else {
 					multilinear.subcube_inner_products(query, subcube_vars, subcube_index, evals)
 				}
@@ -513,9 +539,35 @@ where
 
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,
-			} => large_field_folded_multilinear.subcube_evals(subcube_vars, subcube_index, evals),
+			} => large_field_folded_multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals),
 		};
 
 		result.expect("correct indices");
 	}
+}
+
+pub(super) fn eval01_first_round<PBase, P, M>(
+	multilinear: &SumcheckMultilinear<P, M>,
+	_query: MultilinearQueryRef<P>,
+	subcube_vars: usize,
+	subcube_index: usize,
+	evals: &mut [PBase],
+) where
+	PBase: PackedField,
+	P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
+	M: MultilinearPoly<P> + Send + Sync,
+{
+	let result = if let SumcheckMultilinear::Transparent { multilinear, .. } = multilinear {
+		let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
+		multilinear.subcube_evals(
+			subcube_vars,
+			subcube_index,
+			log2_strict_usize(<P::Scalar as ExtensionField<PBase::Scalar>>::DEGREE),
+			evals,
+		)
+	} else {
+		panic!("no folded multilinears in the first round");
+	};
+
+	result.expect("correct indices")
 }

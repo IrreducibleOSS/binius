@@ -530,15 +530,21 @@ macro_rules! impl_field_extension {
 			}
 
 			#[inline]
-			fn from_bases(base_elems: &[$subfield_name]) -> Result<Self, Error> {
+			fn from_bases_sparse(
+				base_elems: &[$subfield_name],
+				log_stride: usize,
+			) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
-				if base_elems.len() > $degree {
+				if base_elems.len() << log_stride > $degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
-				let value = base_elems.iter().rev().fold(<$typ>::ZERO, |value, elem| {
-					value << $subfield_name::N_BITS | <$typ>::from(elem.val())
-				});
+				debug_assert!($name::N_BITS.is_power_of_two());
+				let shift = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
+				let value = base_elems
+					.iter()
+					.rev()
+					.fold(<$typ>::ZERO, |value, elem| value << shift | <$typ>::from(elem.val()));
 				Ok(Self::new(value))
 			}
 

@@ -23,7 +23,11 @@ pub trait ExtensionField<F: Field>:
 
 	fn basis(i: usize) -> Result<Self, Error>;
 
-	fn from_bases(base_elems: &[F]) -> Result<Self, Error>;
+	fn from_bases(base_elems: &[F]) -> Result<Self, Error> {
+		Self::from_bases_sparse(base_elems, 0)
+	}
+
+	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error>;
 
 	fn iter_bases(&self) -> Self::Iterator;
 }
@@ -40,7 +44,11 @@ impl<F: Field> ExtensionField<F> for F {
 		Ok(Self::ONE)
 	}
 
-	fn from_bases(base_elems: &[F]) -> Result<Self, Error> {
+	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error> {
+		if log_stride != 0 {
+			return Err(Error::ExtensionDegreeMismatch);
+		}
+
 		match base_elems.len() {
 			0 => Ok(F::ZERO),
 			1 => Ok(base_elems[0]),

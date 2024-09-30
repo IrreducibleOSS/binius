@@ -190,8 +190,8 @@ mod tests {
 		witness::MultilinearWitness,
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedExtension,
-		PackedFieldIndexable,
+		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
+		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend};
 	use binius_hash::GroestlHasher;
@@ -280,16 +280,17 @@ mod tests {
 		n_multilinears: usize,
 		switchover_rd: usize,
 	) {
-		type F = BinaryField32b;
+		type P = PackedBinaryField1x128b;
+		type PBase = PackedBinaryField4x32b;
 		type FDomain = BinaryField8b;
-		type FE = BinaryField128b;
 		let mut rng = StdRng::seed_from_u64(0);
 
 		// Setup ZC Witness
-		let multilins = generate_poly_helper::<F>(&mut rng, n_vars, n_multilinears)
-			.into_iter()
-			.map(|mle| mle.specialize::<FE>())
-			.collect::<Vec<_>>();
+		let multilins =
+			generate_poly_helper::<PBase>(&mut rng, n_vars - PBase::LOG_WIDTH, n_multilinears)
+				.into_iter()
+				.map(|mle| mle.specialize::<P>())
+				.collect::<Vec<_>>();
 
 		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
 			.unwrap();
@@ -317,9 +318,10 @@ mod tests {
 			proof1,
 		) = batch_prove(vec![reference_prover], &mut challenger1).unwrap();
 
-		let optimized_prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
+		let composition = TestProductComposition::new(n_multilinears);
+		let optimized_prover = ZerocheckProver::<FDomain, PBase, P, _, _, _, _>::new(
 			multilins,
-			[TestProductComposition::new(n_multilinears)],
+			[(composition.clone(), composition)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
@@ -346,15 +348,17 @@ mod tests {
 		n_multilinears: usize,
 		switchover_rd: usize,
 	) {
-		type F = BinaryField32b;
-		type FDomain = BinaryField8b;
+		type P = PackedBinaryField1x128b;
+		type PBase = PackedBinaryField4x32b;
 		type FE = BinaryField128b;
+		type FDomain = BinaryField8b;
 		let mut rng = StdRng::seed_from_u64(0);
 
-		let multilins = generate_poly_helper::<F>(&mut rng, n_vars, n_multilinears)
-			.into_iter()
-			.map(|mle| mle.specialize::<FE>())
-			.collect::<Vec<_>>();
+		let multilins =
+			generate_poly_helper::<PBase>(&mut rng, n_vars - PBase::LOG_WIDTH, n_multilinears)
+				.into_iter()
+				.map(|mle| mle.specialize::<P>())
+				.collect::<Vec<_>>();
 
 		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
 			.unwrap();
@@ -365,9 +369,10 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let backend = make_portable_backend();
 
-		let prover = ZerocheckProver::<FDomain, _, _, _, _>::new(
+		let composition = TestProductComposition::new(n_multilinears);
+		let prover = ZerocheckProver::<FDomain, PBase, P, _, _, _, _>::new(
 			multilins.clone(),
-			[TestProductComposition::new(n_multilinears)],
+			[(composition.clone(), composition)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
@@ -411,7 +416,7 @@ mod tests {
 		// Check that challengers are in the same state
 		assert_eq!(
 			CanSample::<FE>::sample(&mut prover_challenger),
-			CanSample::<FE>::sample(&mut verifier_challenger)
+			CanSample::<FE>::sample(&mut verifier_challenger),
 		);
 
 		assert_eq!(prover_eval_point, verifier_eval_point);
