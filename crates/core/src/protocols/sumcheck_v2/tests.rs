@@ -187,8 +187,7 @@ fn test_prove_verify_interaction_pigeonhole_cores() {
 	}
 }
 
-#[test]
-fn test_prove_verify_batch() {
+fn prove_verify_batch(n_vars: &[usize]) {
 	type F = BinaryField32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -197,10 +196,10 @@ fn test_prove_verify_batch() {
 
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-	let (claims, provers) = [8, 6, 4]
+	let (claims, provers) = n_vars
+		.iter()
 		.map(|n_vars| {
-			let multilins = generate_random_multilinears::<F, FE>(&mut rng, n_vars, 3);
-
+			let multilins = generate_random_multilinears::<F, FE>(&mut rng, *n_vars, 3);
 			let identity_composition =
 				Arc::new(index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap())
 					as Arc<dyn CompositionPoly<FE>>;
@@ -216,7 +215,7 @@ fn test_prove_verify_batch() {
 			let product_sum = compute_composite_sum(&multilins, &product_composition);
 
 			let claim = SumcheckClaim::new(
-				n_vars,
+				*n_vars,
 				3,
 				vec![
 					CompositeSumClaim {
@@ -246,7 +245,6 @@ fn test_prove_verify_batch() {
 
 			(claim, prover)
 		})
-		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
@@ -265,4 +263,14 @@ fn test_prove_verify_batch() {
 		CanSample::<FE>::sample(&mut prover_challenger),
 		CanSample::<FE>::sample(&mut verifier_challenger)
 	);
+}
+
+#[test]
+fn test_prove_verify_batch() {
+	prove_verify_batch(&[8, 6, 2])
+}
+
+#[test]
+fn test_prove_verify_batch_constant_polys() {
+	prove_verify_batch(&[2, 0])
 }

@@ -137,6 +137,14 @@ where
 		}
 	}
 
+	// sample next_batch_coeffs for 0-variate (ie. constant) provers to match with verify
+	while let Some(prover) = provers.get(active_index) {
+		debug_assert_eq!(prover.n_vars(), 0);
+
+		let _next_batch_coeff = challenger.sample();
+		active_index += 1;
+	}
+
 	let multilinear_evals = provers
 		.into_iter()
 		.map(|prover| prover.finish())
