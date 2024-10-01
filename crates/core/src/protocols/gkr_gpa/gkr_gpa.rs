@@ -96,7 +96,7 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 ///
 /// Notation:
 /// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate values of the kth
-/// layer of the evaluated product circuit.
+///   layer of the evaluated product circuit.
 pub type LayerClaim<F> = ReducedClaim<F>;
 
 /// BatchLayerProof is the proof that reduces the kth layer of a batch
@@ -104,7 +104,7 @@ pub type LayerClaim<F> = ReducedClaim<F>;
 ///
 /// Notation:
 /// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate values of the kth
-/// layer of the evaluated product circuit.
+///   layer of the evaluated product circuit.
 /// * $r'_k$ is challenge generated during the k-variate sumcheck reduction from layer k to layer k+1
 #[derive(Debug, Clone)]
 pub struct BatchLayerProof<F: Field> {

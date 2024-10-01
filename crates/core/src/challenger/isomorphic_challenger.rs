@@ -4,9 +4,11 @@ use binius_field::{packed::iter_packed_slice, BinaryField, ExtensionField, Field
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::{iter::repeat_with, marker::PhantomData, slice};
 
-/// A wrapper over the challenger api that [`CanSample`] and [`CanObserve`] over the [`BinaryField`]
-/// `F2` where the internal challenger needs to sample and observe over the BinaryField `F1` which
-/// must be isomorphic to `F2`
+/// A wrapper over a challenger that isomorphically converts field elements sampled and observed.
+///
+/// This implements [`CanSample`] and [`CanObserve`] over the [`Field`] `F2` where the internal
+/// challenger needs to sample and observe over the BinaryField `F1` which must be isomorphic to
+/// `F2`.
 #[derive(Debug)]
 pub struct IsomorphicChallenger<F1, Challenger, F2> {
 	challenger: Challenger,

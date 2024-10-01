@@ -447,7 +447,6 @@ mod tests {
 	/// elements of the $F$ via the binary expansion encoding the coefficients of a basis
 	/// expansion. Then the expression $x+y$ in $F$ corresponds to the bitwise XOR of the
 	/// two `usize` values.
-
 	fn test_linearity<F: BinaryField + std::fmt::Display, T: TwiddleAccess<F>>(
 		twiddle_access: &T,
 		x: usize,

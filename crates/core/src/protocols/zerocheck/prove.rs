@@ -613,7 +613,7 @@ where
 	fn descriptor<EDF, Backend>(
 		&'a self,
 		state: &'a ZerocheckProversState<'a, F, PW, DomainField, EDF, W, Backend>,
-	) -> (ZerocheckRoundParameters, ZerocheckRoundInput<F, PW, DomainField>)
+	) -> (ZerocheckRoundParameters, ZerocheckRoundInput<'a, F, PW, DomainField>)
 	where
 		EDF: EvaluationDomainFactory<DomainField>,
 		Backend: ComputationBackend,

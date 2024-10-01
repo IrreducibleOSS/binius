@@ -87,7 +87,7 @@ impl<'a, PW: PackedField> MsetcheckWitness<'a, PW> {
 
 	/// Number of variables in each of the witness multilinears.
 	pub fn n_vars(&self) -> usize {
-		return self.t_polynomials.first().expect("non nullary").n_vars();
+		self.t_polynomials.first().expect("non nullary").n_vars()
 	}
 }
 

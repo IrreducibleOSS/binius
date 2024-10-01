@@ -154,13 +154,13 @@ impl<F: Field> RoundProof<F> {
 	/// Recovers all univariate polynomial coefficients from the compressed round proof.
 	///
 	/// The prover has sent coefficients for the purported ith round polynomial
-	/// * $r_i(X) = \sum_{j=0}^d a_j * X^j$
+	/// $r_i(X) = \sum_{j=0}^d a_j * X^j$.
 	/// However, the prover has not sent the highest degree coefficient $a_d$.
 	/// The verifier will need to recover this missing coefficient.
 	///
 	/// Let $s$ denote the current round's claimed sum.
 	/// The verifier expects the round polynomial $r_i$ to satisfy the identity
-	/// * $s = r_i(0) + r_i(1)$
+	/// $s = r_i(0) + r_i(1)$.
 	/// Using
 	///     $r_i(0) = a_0$
 	///     $r_i(1) = \sum_{j=0}^d a_j$

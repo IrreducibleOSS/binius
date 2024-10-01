@@ -193,7 +193,8 @@ where
 							.enumerate()
 							.map(|(query_index, basis_eval)| {
 								let eval_index = (query_index << new_n_vars)
-									| (outer_index << PE::LOG_WIDTH) | inner_index;
+									| (outer_index << PE::LOG_WIDTH)
+									| inner_index;
 								let subpoly_eval_i = get_packed_slice(&self.evals, eval_index);
 								basis_eval * subpoly_eval_i
 							})

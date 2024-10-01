@@ -73,8 +73,10 @@ where
 	Ok(MultilinearExtension::from_values(packed_merged)?)
 }
 
-/// A block-box batching scheme for multilinear commitments, as explained in [Section 5.3, DP24]. In particular, the scheme
-/// allows us to open the evaluations of a collection of multilinear polynomials at a point $\vec{r}$.
+/// A block-box batching scheme for multilinear commitments, as explained in [Section 5.3, DP24].
+///
+/// In particular, the scheme allows us to open the evaluations of a collection of multilinear
+/// polynomials at a point $\vec{r}$.
 ///
 /// Given a collection of $2^m$ multilinear $n$-variate polynomials $t_u$, jointly commit to them with the following
 /// functionality: jointly open the evaluations of the polynomials at a point $\vec{r}=(r_0,\ldots,r_{n-1})$.

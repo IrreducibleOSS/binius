@@ -247,7 +247,8 @@ where
 
 		let result = iter::zip(query[..3].iter(), self.coefficients[1..].iter())
 			.map(|(y_i, coeff)| P::from_fn(|j| y_i.get(j) * (*coeff)))
-			.sum::<P>() + P::broadcast(P::Scalar::from(self.coefficients[0]));
+			.sum::<P>()
+			+ P::broadcast(P::Scalar::from(self.coefficients[0]));
 
 		Ok(result - query[3])
 	}

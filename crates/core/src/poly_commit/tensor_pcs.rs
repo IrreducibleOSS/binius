@@ -160,7 +160,8 @@ impl<U, F, FA, FI, FE, LC>
 		LC,
 		HasherDigest<PackedType<U, FI>, GroestlHasher<PackedType<U, FI>>>,
 		GroestlMerkleTreeVCS,
-	> where
+	>
+where
 	U: PackScalar<F>
 		+ PackScalar<FA>
 		+ PackScalar<FI>

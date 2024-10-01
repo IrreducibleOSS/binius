@@ -13,8 +13,9 @@ use crate::{
 	ExtensionField, Field, PackedField,
 };
 
-/// Trait that establishes correspondence between the scalar field
-/// and a packed field of the same bit size with a single element.
+/// Trait that establishes correspondence between the scalar field and a packed field of the same
+/// bit size with a single element.
+///
 /// E.g. `BinaryField64b` -> `PackedBinaryField1x64b`.
 /// Note that the underlier of the packed field may be different.
 /// E.g. `BinaryField128b` has u128 as underlier, while for x64 `PackedBinaryField1x128b`'s underlier

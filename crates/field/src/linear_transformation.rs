@@ -9,10 +9,11 @@ pub trait Transformation<Input, Output> {
 	fn transform(&self, data: &Input) -> Output;
 }
 
-/// Field linear transformation. Stores transposed transformation matrix as a collection
-/// of field elements.
-/// `Data` is a generic parameter because we want to be able both to have const instances that
-/// reference static arrays and owning vector elements.
+/// An $\mathbb{F}_2$-linear transformation on binary fields.
+///
+/// Stores transposed transformation matrix as a collection of field elements. `Data` is a generic
+/// parameter because we want to be able both to have const instances that reference static arrays
+/// and owning vector elements.
 #[derive(Debug, Clone)]
 pub struct FieldLinearTransformation<OF: BinaryField, Data: Deref<Target = [OF]> = &'static [OF]> {
 	bases: Data,

@@ -13,11 +13,12 @@ pub trait IterExtensions: Iterator + Sized {
 
 impl<T: Iterator + Sized> IterExtensions for T {}
 
-/// `std::iter::Map` guarantees that the function will be called
-/// for every value of the inner iterator. However it makes impossible
-/// to implement `nth` in efficient way.
-/// `SkippableMap` pretty much follows the interface of the `std::iter::Map`
-/// except that F is required to be `Fn` instead of `FnMut`.
+/// A map iterator that skips values when `nth` is called.
+///
+/// `std::iter::Map` guarantees that the function will be called for every value of the inner
+/// iterator. However, it makes it impossible to implement `nth` in efficient way. `SkippableMap`
+/// pretty much follows the interface of the `std::iter::Map` except that F is required to be `Fn`
+/// instead of `FnMut`.
 #[derive(Debug, Clone)]
 pub struct SkippableMap<I, F> {
 	iter: I,

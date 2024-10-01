@@ -57,8 +57,7 @@ use tracing::instrument;
 /// $\prod_{v∈B}(\gamma + U_{n}(v) + \alpha * C_{n}(v)) = L_{n}$   
 /// $\prod_{v∈B}(\gamma + T(v) + \alpha * F(v)) = L_{n+1}$
 ///
-
-/// $\prod_{v∈B}(\gamma + U_{0}(v) + \alpha * P_{0}(v)) = R_{0}$  
+/// $\prod_{v∈B}(\gamma + U_{0}(v) + \alpha * P_{0}(v)) = R_{0}$
 /// $\dots$  
 /// $\prod_{v∈B}(\gamma + U_{n}(v) + \alpha * P_{n}(v)) = R_{n}$   
 /// $\prod_{v∈B}(\gamma + T(v)+\alpha * O(v)) = R_{n+1}$  

@@ -55,11 +55,12 @@ where
 	assignments
 		.iter()
 		.for_each(|(r, _)| assert!(r.end > r.start, "Range must have positive size"));
-	let packed_len = (P::WIDTH - 1
-		+ (assignments.iter().map(|(range, _)| range.end))
-			.max()
-			.unwrap_or(0))
-		/ P::WIDTH;
+	let packed_len = assignments
+		.iter()
+		.map(|(range, _)| range.end)
+		.max()
+		.unwrap_or(0)
+		.div_ceil(P::WIDTH);
 	let mut result: Vec<P> = vec![P::default(); packed_len];
 	for (range, value) in assignments.iter() {
 		for i in range.clone() {

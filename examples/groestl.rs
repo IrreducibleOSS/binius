@@ -796,9 +796,10 @@ where
 						// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
 						let b_ij = two
 							* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
-								+ a_i[0] + a_i[1] + a_i[2] + a_i[5]
-								+ a_i[7]) + a_i[2] + a_i[4] + a_i[5]
-							+ a_i[6] + a_i[7];
+								+ a_i[0] + a_i[1] + a_i[2]
+								+ a_i[5] + a_i[7]) + a_i[2]
+							+ a_i[4] + a_i[5] + a_i[6]
+							+ a_i[7];
 						round_out[ij][z] = b_ij;
 						prev_round_out_slice[ij] = b_ij;
 					}

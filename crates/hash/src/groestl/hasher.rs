@@ -1,5 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
+//! This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
+
 use super::{super::hasher::Hasher, arch::Groestl256Core};
 use binius_field::{
 	arch::OptimalUnderlier256b,
@@ -12,8 +14,6 @@ use binius_field::{
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 use std::{cmp, marker::PhantomData, slice};
 
-/// This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
-
 /// The type of output digest for `Grøstl256` over `F` which should be isomorphic to `AESTowerField8b`
 pub type GroestlDigest<F> = PackedType<OptimalUnderlier256b, F>;
 
@@ -22,9 +22,11 @@ pub type GroestlHasher<P> = Groestl256<P, BinaryField8b>;
 
 const BLOCK_LEN_U8: usize = 64;
 
-/// The Grøstl256 hash function which can be thought of as natively defined over `AESTowerField8b`
+/// The Grøstl-256 hash function.
+///
+/// The Grøstl-256 hash function can be viewed as natively defined over `AESTowerField8b`
 /// and isomorphically maps to `BinaryField8b`. The type `P` is the input to the update
-/// function which has to be over a packed extension field of `BinaryField8b` or `AESTowerField8b`
+/// function which has to be over a packed extension field of `BinaryField8b` or `AESTowerField8b`.
 #[derive(Debug, Clone)]
 pub struct Groestl256<P, F> {
 	state: PackedAESBinaryField64x8b,
