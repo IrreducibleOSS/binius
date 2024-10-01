@@ -36,20 +36,25 @@ use rayon::prelude::*;
 use std::{fmt::Debug, iter};
 use tracing::{debug, info, instrument};
 
-// mod field_types is a selector of different sets of types which provide
-// equivalent functionality but may differ significantly in performance.
-#[cfg(feature = "aes-tower")]
+#[cfg(feature = "fp-tower")]
 mod field_types {
-	pub type Field = binius_field::AESTowerField128b;
-	pub type DomainField = binius_field::AESTowerField8b;
-	pub type DomainFieldWithStep = binius_field::AESTowerField8b;
+	use binius_field::BinaryField128b;
+	pub type FW = BinaryField128b;
+	pub type FDomain = BinaryField128b;
 }
 
-#[cfg(not(feature = "aes-tower"))]
+#[cfg(all(feature = "aes-tower", not(feature = "fp-tower")))]
 mod field_types {
-	pub type Field = binius_field::BinaryField128bPolyval;
-	pub type DomainField = binius_field::BinaryField128bPolyval;
-	pub type DomainFieldWithStep = binius_field::BinaryField128b;
+	use binius_field::AESTowerField128b;
+	pub type FW = AESTowerField128b;
+	pub type FDomain = AESTowerField128b;
+}
+
+#[cfg(all(not(feature = "fp-tower"), not(feature = "aes-tower")))]
+mod field_types {
+	use binius_field::BinaryField128bPolyval;
+	pub type FW = BinaryField128bPolyval;
+	pub type FDomain = BinaryField128bPolyval;
 }
 
 #[instrument(skip_all, level = "debug")]
@@ -366,14 +371,13 @@ fn main() {
 	>(SECURITY_BITS, trace_batch.n_vars, trace_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 
-	let witness = generate_trace::<U, field_types::Field>(log_size, &trace).unwrap();
+	let witness = generate_trace::<U, field_types::FW>(log_size, &trace).unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let domain_factory =
-		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 
 	info!("Proving");
-	let proof = prove::<_, BinaryField128b, field_types::Field, field_types::DomainField, _, _, _>(
+	let proof = prove::<_, BinaryField128b, field_types::FW, field_types::FDomain, _, _, _>(
 		log_size,
 		&mut oracles,
 		&pcs,

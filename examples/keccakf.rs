@@ -53,21 +53,21 @@ use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
 use tracing::instrument;
 
-#[cfg(feature = "fpt")]
+#[cfg(feature = "fp-tower")]
 mod field_types {
 	use binius_field::BinaryField128b;
 	pub type FW = BinaryField128b;
 	pub type FDomain = BinaryField128b;
 }
 
-#[cfg(all(feature = "aes-tower", not(feature = "fpt")))]
+#[cfg(all(feature = "aes-tower", not(feature = "fp-tower")))]
 mod field_types {
 	use binius_field::AESTowerField128b;
 	pub type FW = AESTowerField128b;
 	pub type FDomain = AESTowerField128b;
 }
 
-#[cfg(all(not(feature = "fpt"), not(feature = "aes-tower")))]
+#[cfg(all(not(feature = "fp-tower"), not(feature = "aes-tower")))]
 mod field_types {
 	use binius_field::BinaryField128bPolyval;
 	pub type FW = BinaryField128bPolyval;

@@ -1,8 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use std::env;
-
 use cfg_if::cfg_if;
+use std::env;
 use tracing_subscriber::{
 	layer::SubscriberExt,
 	registry::LookupSpan,

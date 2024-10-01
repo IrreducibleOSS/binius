@@ -271,8 +271,6 @@ where
 				.unwrap_or(P::Scalar::ZERO)
 		});
 
-		// We can replace constraint polynomial evaluations at C(r, 1, x) with Q_i_bar(r, 1, x)
-		// See section 4 of [https://eprint.iacr.org/2024/108] for details
 		round_evals[0] += self.composition.evaluate(evals_1).unwrap() * eq_ind_factor;
 
 		// The rest require interpolation.
