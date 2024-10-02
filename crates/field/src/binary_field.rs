@@ -12,7 +12,7 @@ use cfg_if::cfg_if;
 use rand::RngCore;
 use std::{
 	array,
-	fmt::{Display, Formatter},
+	fmt::{Debug, Display, Formatter},
 	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -74,7 +74,7 @@ pub(super) trait TowerExtensionField:
 /// Macro to generate an implementation of a BinaryField.
 macro_rules! binary_field {
 	($vis:vis $name:ident($typ:ty), $gen:expr) => {
-		#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, bytemuck::TransparentWrapper)]
+		#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, bytemuck::TransparentWrapper)]
 		#[repr(transparent)]
 		$vis struct $name(pub(crate) $typ);
 
@@ -288,6 +288,14 @@ macro_rules! binary_field {
 		impl Display for $name {
 			fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 				write!(f, "0x{repr:0>width$x}", repr=self.val(), width=Self::N_BITS.max(4) / 4)
+			}
+		}
+
+		impl Debug for $name {
+			fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+				let structure_name = std::any::type_name::<$name>().split("::").last().expect("exist");
+
+				write!(f, "{}({})",structure_name, self)
 			}
 		}
 

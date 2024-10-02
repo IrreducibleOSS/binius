@@ -23,14 +23,13 @@ use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use std::{
 	array,
-	fmt::{self, Display, Formatter},
+	fmt::{self, Debug, Display, Formatter},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[derive(
-	Debug,
 	Default,
 	Clone,
 	Copy,
@@ -287,6 +286,12 @@ impl From<BinaryField128bPolyval> for u128 {
 impl Display for BinaryField128bPolyval {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
 		write!(f, "0x{repr:0>32x}", repr = self.from_montgomery().0)
+	}
+}
+
+impl Debug for BinaryField128bPolyval {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		write!(f, "BinaryField128bPolyval({})", self)
 	}
 }
 

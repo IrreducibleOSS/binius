@@ -24,7 +24,7 @@ use crate::{
 use derive_more::Not;
 
 /// 128-bit value that is used for 128-bit SIMD operations
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable, Not)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable, Not)]
 #[repr(transparent)]
 pub struct M128(pub u128);
 
@@ -240,6 +240,12 @@ impl std::fmt::Display for M128 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let data: u128 = (*self).into();
 		write!(f, "{data:02X?}")
+	}
+}
+
+impl std::fmt::Debug for M128 {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "M128({})", self)
 	}
 }
 

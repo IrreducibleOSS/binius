@@ -27,7 +27,7 @@ use std::{
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 512-bit value that is used for 512-bit SIMD operations
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct M512(pub(super) __m512i);
 
@@ -328,6 +328,12 @@ impl std::fmt::Display for M512 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let data: [u128; 4] = (*self).into();
 		write!(f, "{data:02X?}")
+	}
+}
+
+impl std::fmt::Debug for M512 {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "M512({})", self)
 	}
 }
 

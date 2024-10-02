@@ -26,7 +26,7 @@ use std::{
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 256-bit value that is used for 256-bit SIMD operations
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct M256(pub(super) __m256i);
 
@@ -278,6 +278,12 @@ impl std::fmt::Display for M256 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let data: [u128; 2] = (*self).into();
 		write!(f, "{data:02X?}")
+	}
+}
+
+impl std::fmt::Debug for M256 {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "M256({})", self)
 	}
 }
 

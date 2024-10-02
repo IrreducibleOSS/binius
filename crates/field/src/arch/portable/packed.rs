@@ -109,8 +109,13 @@ where
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let width = checked_int_div(U::BITS, Scalar::N_BITS);
-		let values: Vec<_> = self.iter().collect();
-		write!(f, "Packed{}x{}({:?})", width, Scalar::N_BITS, values)
+		let values_str = self
+			.iter()
+			.map(|value| format!("{}", value))
+			.collect::<Vec<_>>()
+			.join(",");
+
+		write!(f, "Packed{}x{}([{}])", width, Scalar::N_BITS, values_str)
 	}
 }
 

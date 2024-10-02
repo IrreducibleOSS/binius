@@ -29,6 +29,8 @@ pub mod packed_binary_field;
 pub mod packed_extension;
 mod packed_polyval;
 pub mod polyval;
+#[cfg(test)]
+mod tests;
 mod tracing;
 pub mod transpose;
 pub mod underlier;
