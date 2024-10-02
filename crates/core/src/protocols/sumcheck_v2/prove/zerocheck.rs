@@ -327,6 +327,12 @@ where
 		subcube_index: usize,
 		sparse_batch_query: &[&[PBase]],
 	) -> P {
+		// If the composition is a linear polynomial, then the composite multivariate polynomial
+		// is multilinear. If the prover is honest, then this multilinear is identically zero,
+		// hence the sum over the subcube is zero.
+		if self.composition.degree() == 1 {
+			return P::zero();
+		}
 		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
@@ -394,6 +400,12 @@ where
 		subcube_index: usize,
 		sparse_batch_query: &[&[P]],
 	) -> P {
+		// If the composition is a linear polynomial, then the composite multivariate polynomial
+		// is multilinear. If the prover is honest, then this multilinear is identically zero,
+		// hence the sum over the subcube is zero.
+		if self.composition.degree() == 1 {
+			return P::zero();
+		}
 		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
