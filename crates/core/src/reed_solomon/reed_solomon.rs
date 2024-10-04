@@ -10,10 +10,8 @@
 //! [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
 //! [LCH14]: <https://arxiv.org/abs/1404.3458>
 
-use crate::linear_code::{LinearCode, LinearCodeWithExtensionEncoding};
-use binius_field::{
-	BinaryField, ExtensionField, PackedField, PackedFieldIndexable, RepackedExtension,
-};
+use crate::linear_code::LinearCode;
+use binius_field::{BinaryField, PackedField, PackedFieldIndexable};
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
@@ -112,6 +110,13 @@ where
 		code: &mut [Self::P],
 		log_batch_size: usize,
 	) -> Result<(), Self::EncodeError> {
+		let _scope = tracing::debug_span!(
+			"Reed–Solomon encode",
+			log_len = self.log_len(),
+			log_batch_size = log_batch_size,
+			symbol_bits = F::N_BITS,
+		)
+		.entered();
 		if (code.len() << log_batch_size) < self.len() {
 			bail!(Error::BufferTooSmall {
 				log_code_len: self.len(),
@@ -135,43 +140,6 @@ where
 			(0..(1 << self.log_inv_rate))
 				.zip(code.chunks_exact_mut(msgs_len))
 				.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
-		}
-	}
-}
-
-impl<P, F> LinearCodeWithExtensionEncoding for ReedSolomonCode<P>
-where
-	P: PackedFieldIndexable<Scalar = F>,
-	F: BinaryField,
-{
-	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
-	where
-		PE: RepackedExtension<P>,
-		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
-	{
-		if code.len() * PE::WIDTH < self.len() {
-			bail!(Error::BufferTooSmall {
-				log_code_len: self.len(),
-			});
-		}
-		if self.dim() % PE::WIDTH != 0 {
-			bail!(Error::PackingWidthMustDivideDimension);
-		}
-
-		let dim = self.dim() / PE::WIDTH;
-		for i in 1..(1 << self.log_inv_rate) {
-			code.copy_within(0..dim, i * dim);
-		}
-
-		if self.multithreaded {
-			(0..(1 << self.log_inv_rate))
-				.into_par_iter()
-				.zip(code.par_chunks_exact_mut(dim))
-				.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
-		} else {
-			(0..(1 << self.log_inv_rate))
-				.zip(code.chunks_exact_mut(dim))
-				.try_for_each(|(i, data)| self.ntt.forward_transform_ext(data, i))
 		}
 	}
 }

@@ -8,7 +8,7 @@ use super::{
 	error::Error,
 };
 use crate::{
-	linear_code::{LinearCode, LinearCodeWithExtensionEncoding},
+	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
 	protocols::fri::common::{fold_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
@@ -88,7 +88,7 @@ where
 
 	let mut encoded = vec![P::zero(); message.len() << rs_code.log_inv_rate()];
 	encoded[..message.len()].copy_from_slice(message);
-	rs_code.encode_extension_inplace(&mut encoded)?;
+	rs_code.encode_ext_inplace(&mut encoded)?;
 
 	let (commitment, vcs_committed) = vcs
 		.commit_batch(&[P::unpack_scalars(&encoded)])

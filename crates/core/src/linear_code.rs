@@ -3,6 +3,7 @@
 //! Linear error-correcting code traits.
 
 use binius_field::{ExtensionField, PackedField, RepackedExtension};
+use binius_utils::checked_arithmetics::checked_log_2;
 
 /// An encodable [linear error-correcting code](https://en.wikipedia.org/wiki/Linear_code) intended
 /// for use in a Brakedown-style polynomial commitment scheme.
@@ -38,21 +39,30 @@ pub trait LinearCode {
 	/// The reciprocal of the rate, ie. `self.len() / self.dim()`.
 	fn inv_rate(&self) -> usize;
 
-	/// Encode a message in-place in a provided buffer.
+	/// Encode a batch of interleaved messages in-place in a provided buffer.
 	///
-	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
-	fn encode_inplace(&self, code: &mut [Self::P]) -> Result<(), Self::EncodeError> {
-		self.encode_batch_inplace(code, 0)
-	}
-
-	/// Encode a message in-place in a provided buffer.
+	/// The message symbols are interleaved in the buffer, which improves the cache-efficiency of
+	/// the encoding procedure. The interleaved codeword is stored in the buffer when the method
+	/// completes.
 	///
-	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
+	///   elements.
 	fn encode_batch_inplace(
 		&self,
 		code: &mut [Self::P],
 		log_batch_size: usize,
 	) -> Result<(), Self::EncodeError>;
+
+	/// Encode a message in-place in a provided buffer.
+	///
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len()` field elements.
+	fn encode_inplace(&self, code: &mut [Self::P]) -> Result<(), Self::EncodeError> {
+		self.encode_batch_inplace(code, 0)
+	}
 
 	/// Encode a message provided as a vector of packed field elements.
 	fn encode(&self, mut msg: Vec<Self::P>) -> Result<Vec<Self::P>, Self::EncodeError> {
@@ -60,31 +70,58 @@ pub trait LinearCode {
 		self.encode_inplace(&mut msg)?;
 		Ok(msg)
 	}
-}
 
-/// A linear code the with additional ability to encode packed extension field elements.
-///
-/// A linear code can be naturally extended to a code over extension fields by encoding each
-/// dimension of the extension as a vector-space separately. However, a naive encoding procedure
-/// would not be able to access elements in the most memory-efficient manner, hence the separate
-/// trait.
-pub trait LinearCodeWithExtensionEncoding: LinearCode {
-	/// Encode a message of extension field elements in-place in a provided buffer.
+	/// Encode a batch of interleaved messages of extension field elements in-place in a provided
+	/// buffer.
 	///
-	/// Returns an error if the `code` buffer does not have capacity for `len()` field elements.
-	fn encode_extension_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
+	/// A linear code can be naturally extended to a code over extension fields by encoding each
+	/// dimension of the extension as a vector-space separately.
+	///
+	/// ## Preconditions
+	///
+	/// * `PE::Scalar::DEGREE` must be a power of two.
+	///
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
+	fn encode_ext_batch_inplace<PE>(
+		&self,
+		code: &mut [PE],
+		log_batch_size: usize,
+	) -> Result<(), Self::EncodeError>
 	where
 		PE: RepackedExtension<Self::P>,
-		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>;
+		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
+	{
+		let log_degree = checked_log_2(PE::Scalar::DEGREE);
+		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + log_degree)
+	}
+
+	/// Encode a message of extension field elements in-place in a provided buffer.
+	///
+	/// See [`Self::encode_ext_batch_inplace`] for more details.
+	///
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len()` field elements.
+	fn encode_ext_inplace<PE>(&self, code: &mut [PE]) -> Result<(), Self::EncodeError>
+	where
+		PE: RepackedExtension<Self::P>,
+		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
+	{
+		self.encode_ext_batch_inplace(code, 0)
+	}
 
 	/// Encode a message of extension field elements provided as a vector of packed field elements.
+	///
+	/// See [`Self::encode_extension_inplace`] for more details.
 	fn encode_extension<PE>(&self, mut msg: Vec<PE>) -> Result<Vec<PE>, Self::EncodeError>
 	where
 		PE: RepackedExtension<Self::P>,
 		PE::Scalar: ExtensionField<<Self::P as PackedField>::Scalar>,
 	{
 		msg.resize(msg.len() * self.inv_rate(), PE::default());
-		self.encode_extension_inplace(&mut msg)?;
+		self.encode_ext_inplace(&mut msg)?;
 		Ok(msg)
 	}
 }

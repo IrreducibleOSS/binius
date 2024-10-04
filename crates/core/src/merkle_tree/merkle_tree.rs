@@ -123,6 +123,7 @@ where
 		Ok(branch)
 	}
 
+	#[tracing::instrument("MerkleTree::hash_leaves", skip_all, level = "debug")]
 	fn hash_leaves<P, H>(leaves: &[impl AsRef<[P]>], digests: &mut [D]) -> Result<(), Error>
 	where
 		P: PackedField + Sync,
@@ -154,6 +155,7 @@ where
 		Ok(())
 	}
 
+	#[tracing::instrument("MerkleTree::compress_layer", skip_all, level = "debug")]
 	fn compress_layer<C>(compression: &C, prev_layer: &[D], next_layer: &mut [D])
 	where
 		C: PseudoCompressionFunction<D, 2> + Sync,
@@ -211,6 +213,7 @@ where
 		1 << self.log_len
 	}
 
+	#[tracing::instrument("MerkleTreeVCS::commit_batch", skip_all, level = "debug")]
 	fn commit_batch(
 		&self,
 		vecs: &[impl AsRef<[P]>],
