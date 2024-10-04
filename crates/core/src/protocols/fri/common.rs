@@ -10,6 +10,7 @@ use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;
 use p3_util::log2_strict_usize;
+use std::iter;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
 ///
@@ -63,8 +64,7 @@ where
 {
 	// Preconditions
 	debug_assert!(!folding_challenges.is_empty());
-	let final_round = start_round + folding_challenges.len() - 1;
-	debug_assert!(final_round < rs_code.log_dim());
+	debug_assert!(start_round + folding_challenges.len() <= rs_code.log_dim());
 	debug_assert!(values.len() == 1 << folding_challenges.len());
 	debug_assert_eq!(scratch_buffer.len(), values.len());
 
@@ -170,44 +170,26 @@ where
 		round_vcss,
 	)?;
 
-	let log_len = committed_rs_code.log_len();
-	let commit_rounds = round_vcss
-		.iter()
-		.map(|vcs| log_len - 1 - log2_strict_usize(vcs.vector_len()));
+	let log_code_len = committed_rs_code.log_len();
+	let commit_rounds = round_vcss.iter().map(|vcs| {
+		let log_folded_len = log2_strict_usize(vcs.vector_len());
+		log_code_len - log_folded_len
+	});
 	Ok(commit_rounds.collect())
 }
 
-/// Calculates the start rounds of each fold chunk call made by the FRIFolder.
+/// Returns an iterator over the number of rounds between folded codewords.
 ///
-/// REQUIRES:
-/// - fold_commit_rounds is the output of calculate_fold_commit_rounds.
-pub fn calculate_fold_chunk_start_rounds(fold_commit_rounds: &[usize]) -> Vec<usize> {
-	let mut fold_chunk_start_rounds = vec![0; fold_commit_rounds.len() + 1];
-	fold_chunk_start_rounds
-		.iter_mut()
-		.skip(1)
-		.zip(fold_commit_rounds.iter())
-		.for_each(|(fold_chunk_start_round, fold_commit_round)| {
-			*fold_chunk_start_round = fold_commit_round + 1;
-		});
-	fold_chunk_start_rounds
-}
-
-/// Calculates the arity of each fold chunk call made by the FRIFolder.
-///
-/// REQUIRES:
-/// - `fold_chunk_start_rounds` is the output of `calculate_fold_chunk_start_rounds`.
-pub fn calculate_folding_arities(
-	total_fold_rounds: usize,
-	fold_chunk_start_rounds: &[usize],
-) -> Vec<usize> {
-	fold_chunk_start_rounds
-		.iter()
-		.copied()
-		.chain(std::iter::once(total_fold_rounds))
+/// This is guaranteed to return a non-empty iterator.
+pub fn iter_fold_arities(
+	commit_rounds: &[usize],
+	final_round: usize,
+) -> impl Iterator<Item = usize> + Clone + '_ {
+	iter::once(0)
+		.chain(commit_rounds.iter().copied())
+		.chain([final_round])
 		.tuple_windows()
-		.map(|(prev_start_round, next_start_round)| next_start_round - prev_start_round)
-		.collect()
+		.map(|(round, next_round)| next_round - round)
 }
 
 /// A proof for a single FRI consistency query.

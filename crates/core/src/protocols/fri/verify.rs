@@ -1,23 +1,20 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	common::{
-		calculate_fold_chunk_start_rounds, calculate_fold_commit_rounds, calculate_folding_arities,
-		FinalCodeword, FinalMessage,
-	},
+	common::{calculate_fold_commit_rounds, FinalCodeword, FinalMessage},
 	error::Error,
 	QueryProof, VerificationError,
 };
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
-	protocols::fri::common::{fold_chunk, QueryRoundProof},
+	protocols::fri::common::{fold_chunk, iter_fold_arities, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField};
 use binius_utils::bail;
-use itertools::{izip, Itertools};
-use std::{iter, ops::Range};
+use itertools::izip;
+use std::iter;
 use tracing::instrument;
 
 /// A verifier for the FRI query phase.
@@ -45,12 +42,9 @@ where
 	challenges: &'a [F],
 	/// The final message, which must be re-encoded to start fold consistency checks.
 	final_codeword: FinalCodeword<F>,
-	/// The start round of each fold chunk call made by the FRIFolder.
-	fold_chunk_start_rounds: Vec<usize>,
-	/// The arity of each fold chunk call made by the FRIFolder.
-	folding_arities: Vec<usize>,
-	/// The range of challenges used in each fold chunk call made by the FRIFolder.
-	challenge_ranges: Vec<Range<usize>>,
+	/// Rounds during the fold phase when codewords are committed. Note that in each fold round a
+	/// new challenge is sampled, but a new codeword is not necessarily committed.
+	commit_rounds: Vec<usize>,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -80,32 +74,26 @@ where
 			)));
 		}
 
-		if challenges.len() != committed_rs_code.log_dim() {
+		if challenges.len() != committed_rs_code.log_dim() - final_rs_code.log_dim() {
 			bail!(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
-				committed_rs_code.log_dim()
+				committed_rs_code.log_dim() - final_rs_code.log_dim()
 			)));
 		}
 
-		// TODO: With future STIR-like optimizations, this check should be removed.
 		if final_rs_code.log_inv_rate() != committed_rs_code.log_inv_rate() {
 			bail!(Error::InvalidArgs(
 				"final RS code must have the same rate as the committed RS code".to_string(),
 			));
 		}
 
-		let commitment_fold_rounds = calculate_fold_commit_rounds(
+		let commit_rounds = calculate_fold_commit_rounds(
 			committed_rs_code,
 			final_rs_code,
 			committed_codeword_vcs,
 			round_vcss,
 		)?;
-		let fold_chunk_start_rounds = calculate_fold_chunk_start_rounds(&commitment_fold_rounds);
-		let folding_arities =
-			calculate_folding_arities(committed_rs_code.log_dim(), &fold_chunk_start_rounds);
-		let challenge_ranges =
-			calculate_challenge_ranges(committed_rs_code.log_dim(), &fold_chunk_start_rounds);
 
 		Ok(Self {
 			committed_rs_code,
@@ -115,9 +103,7 @@ where
 			round_commitments,
 			challenges,
 			final_codeword,
-			fold_chunk_start_rounds,
-			folding_arities,
-			challenge_ranges,
+			commit_rounds,
 		})
 	}
 
@@ -145,69 +131,80 @@ where
 			.into());
 		}
 
-		let max_arity = self.folding_arities.iter().max().copied().unwrap();
+		let mut proof_iter = proof.into_iter();
+		let mut arities = iter_fold_arities(&self.commit_rounds, self.challenges.len());
+
+		// Create scratch buffer used in `fold_chunk`.
+		let max_arity = arities
+			.clone()
+			.max()
+			.expect("iter_fold_arities returns non-empty iterator");
 		let max_buffer_size = 1 << max_arity;
 		let mut scratch_buffer = vec![F::default(); max_buffer_size];
 
-		let mut proof_iter = proof.into_iter();
+		// The number of fold rounds until the first folded codeword is committed or sent.
+		let arity = arities
+			.next()
+			.expect("iter_fold_arities returns non-empty iterator");
+
 		let round_proof = proof_iter
 			.next()
 			.expect("verified that proof is non-empty above");
 
-		let coset_index = index >> self.folding_arities[0];
+		// This is the round of the folding phase that the codeword to be folded is committed to.
+		let mut fold_round = 0;
+
+		let coset_index = index >> arity;
 		let values = verify_coset_opening(
 			self.committed_codeword_vcs,
 			self.codeword_commitment,
 			0,
 			coset_index,
-			self.folding_arities[0],
+			arity,
 			round_proof,
 		)?;
 
 		let mut next_value = fold_chunk(
 			self.committed_rs_code,
-			0,
+			fold_round,
 			coset_index,
 			&values,
-			&self.challenges[self.challenge_ranges[0].start..self.challenge_ranges[0].end],
+			&self.challenges[fold_round..fold_round + arity],
 			&mut scratch_buffer[..values.len()],
 		);
 		index = coset_index;
+		fold_round += arity;
 
-		for (query_round, vcs, commitment, round_proof) in izip!(
-			1..=self.round_vcss.len(),
-			self.round_vcss.iter(),
-			self.round_commitments.iter(),
-			proof_iter,
-		) {
-			let folding_arity = self.folding_arities[query_round];
-			let challenge_range = &self.challenge_ranges[query_round];
-			let folding_challenges = &self.challenges[challenge_range.start..challenge_range.end];
-			let fold_start_round = self.fold_chunk_start_rounds[query_round];
-			let coset_index = index >> folding_arity;
+		for (i, (vcs, commitment, round_proof, arity)) in
+			izip!(self.round_vcss.iter(), self.round_commitments.iter(), proof_iter, arities)
+				.enumerate()
+		{
+			let query_round = i + 1;
+			let coset_index = index >> arity;
 
 			let values = verify_coset_opening(
 				vcs,
 				commitment,
-				fold_start_round,
+				query_round,
 				coset_index,
-				folding_arity,
+				arity,
 				round_proof,
 			)?;
 
-			if next_value != values[index % (1 << folding_arity)] {
+			if next_value != values[index % (1 << arity)] {
 				return Err(VerificationError::IncorrectFold { query_round, index }.into());
 			}
 
 			next_value = fold_chunk(
 				self.committed_rs_code,
-				fold_start_round,
+				fold_round,
 				coset_index,
 				&values,
-				folding_challenges,
-				&mut scratch_buffer[..values.len()],
+				&self.challenges[fold_round..fold_round + arity],
+				&mut scratch_buffer[..1 << arity],
 			);
 			index = coset_index;
+			fold_round += arity;
 		}
 
 		// Since this implementation currently runs FRI until the final message is one element, we
@@ -225,6 +222,7 @@ where
 	}
 }
 
+/// Verifies that the coset opening provided in the proof is consistent with the VCS commitment.
 fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	vcs: &VCS,
 	commitment: &VCS::Commitment,
@@ -243,28 +241,12 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 		.into());
 	}
 
-	let start_index = coset_index << log_coset_size;
-
-	let range = start_index..start_index + (1 << log_coset_size);
-
+	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
 	vcs.verify_range_batch_opening(commitment, range, vcs_proof, iter::once(values.as_slice()))
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
+	// This condition should be guaranteed by the VCS verification.
 	debug_assert_eq!(values.len(), 1 << log_coset_size);
-	Ok(values)
-}
 
-fn calculate_challenge_ranges(
-	total_fold_rounds: usize,
-	fold_chunk_start_rounds: &[usize],
-) -> Vec<Range<usize>> {
-	fold_chunk_start_rounds
-		.iter()
-		.chain(std::iter::once(&total_fold_rounds))
-		.tuple_windows()
-		.map(|(prev_start_round, next_start_round)| Range {
-			start: *prev_start_round,
-			end: *next_start_round,
-		})
-		.collect()
+	Ok(values)
 }

@@ -42,7 +42,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
 	log_inv_rate: usize,
 	log_vcs_vector_lens: &[usize],
-	final_message_dimension: usize,
+	log_final_dimension: usize,
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
 	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
@@ -61,13 +61,16 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 	let final_rs_code =
-		ReedSolomonCode::<F>::new(final_message_dimension, log_inv_rate, NTTOptions::default())
+		ReedSolomonCode::<F>::new(log_final_dimension, log_inv_rate, NTTOptions::default())
 			.unwrap();
 
 	let n_test_queries = 1;
 	let n_round_commitments = log_vcs_vector_lens.len();
-	let folding_arities =
-		make_folding_arities(log_dimension + log_inv_rate, log_dimension, log_vcs_vector_lens);
+	let folding_arities = make_folding_arities(
+		log_dimension + log_inv_rate,
+		log_dimension - log_final_dimension,
+		log_vcs_vector_lens,
+	);
 
 	let make_merkle_vcs = |log_len| {
 		MerkleTreeVCS::<F, _, GroestlHasher<_>, _>::new(
@@ -218,7 +221,7 @@ fn test_commit_prove_verify_success_128b() {
 	let log_dimension = 7;
 	let log_inv_rate = 2;
 	let n_commitments = 3;
-	let final_message_dimension = 2;
+	let final_message_dimension = 0;
 	let log_vcs_vector_lens = generate_random_decreasing_sequence(
 		log_inv_rate + final_message_dimension + 1,
 		log_inv_rate + log_dimension - 1,
