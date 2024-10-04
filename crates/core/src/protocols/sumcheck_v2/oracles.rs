@@ -6,7 +6,7 @@ use crate::{
 		Constraint, ConstraintPredicate, ConstraintSet, Error as OracleError, MultilinearOracleSet,
 		OracleId, TypeErasedComposition,
 	},
-	protocols::evalcheck::EvalcheckMultilinearClaim,
+	protocols::evalcheck_v2::EvalcheckMultilinearClaim,
 };
 
 use crate::polynomial::{CompositionPoly, CompositionScalarAdapter};
@@ -21,8 +21,8 @@ pub enum ConcreteClaim<P: PackedField> {
 }
 
 pub struct OracleClaimMeta {
-	n_vars: usize,
-	oracle_ids: Vec<OracleId>,
+	pub n_vars: usize,
+	pub oracle_ids: Vec<OracleId>,
 }
 
 /// Create a sumcheck claim out of constraint set. Fails when the constraint set contains zerochecks.
@@ -146,4 +146,28 @@ pub fn make_eval_claims<F: TowerField>(
 	}
 
 	Ok(evalcheck_claims)
+}
+
+pub struct SumcheckClaimsWithMeta<F: TowerField, C> {
+	pub claims: Vec<SumcheckClaim<F, C>>,
+	pub metas: Vec<OracleClaimMeta>,
+}
+
+/// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
+pub fn constraint_set_sumcheck_claims<P>(
+	constraint_sets: Vec<ConstraintSet<P>>,
+	oracles: &MultilinearOracleSet<P::Scalar>,
+) -> Result<SumcheckClaimsWithMeta<P::Scalar, impl CompositionPoly<P::Scalar>>, Error>
+where
+	P: PackedField<Scalar: TowerField>,
+{
+	let mut claims = Vec::with_capacity(constraint_sets.len());
+	let mut metas = Vec::with_capacity(constraint_sets.len());
+
+	for constraint_set in constraint_sets {
+		let (claim, meta) = constraint_set_sumcheck_claim(constraint_set, oracles)?;
+		metas.push(meta);
+		claims.push(claim);
+	}
+	Ok(SumcheckClaimsWithMeta { claims, metas })
 }

@@ -2,15 +2,19 @@
 
 use super::{RegularSumcheckProver, ZerocheckProver};
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, TypeErasedComposition,
+	},
 	polynomial::MultilinearPoly,
-	protocols::sumcheck_v2::{CompositeSumClaim, Error},
+	protocols::sumcheck_v2::{
+		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
+	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedFieldIndexable,
+	ExtensionField, Field, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
@@ -108,7 +112,6 @@ where
 	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
 	FW: ExtensionField<FDomain>,
 	FDomain: Field,
-	PackedType<U, FW>: PackedFieldIndexable,
 	Backend: ComputationBackend,
 {
 	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
@@ -168,4 +171,48 @@ where
 	}
 
 	Ok((constraints, multilinears))
+}
+
+pub struct SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>
+where
+	U: UnderlierType + PackScalar<FW>,
+	FW: TowerField,
+	FDomain: Field,
+	Backend: ComputationBackend,
+{
+	pub provers: Vec<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>>,
+	pub metas: Vec<OracleClaimMeta>,
+}
+
+/// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
+pub fn constraint_sets_sumcheck_provers_metas<'a, U, FW, FDomain, Backend>(
+	constraint_sets: Vec<ConstraintSet<PackedType<U, FW>>>,
+	witness: &MultilinearExtensionIndex<'a, U, FW>,
+	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+	oracles: &MultilinearOracleSet<FW>,
+	switchover_fn: impl Fn(usize) -> usize,
+	backend: Backend,
+) -> Result<SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>, Error>
+where
+	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
+	FW: TowerField + ExtensionField<FDomain>,
+	FDomain: Field,
+	Backend: ComputationBackend,
+{
+	let mut provers = Vec::with_capacity(constraint_sets.len());
+	let mut metas = Vec::with_capacity(constraint_sets.len());
+
+	for constraint_set in constraint_sets {
+		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone(), oracles)?;
+		let prover = constraint_set_sumcheck_prover(
+			constraint_set,
+			witness,
+			evaluation_domain_factory.clone(),
+			&switchover_fn,
+			backend.clone(),
+		)?;
+		metas.push(meta);
+		provers.push(prover);
+	}
+	Ok(SumcheckProversWithMetas { provers, metas })
 }

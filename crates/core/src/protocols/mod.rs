@@ -41,4 +41,7 @@ pub mod sumcheck_v2;
 #[doc(hidden)]
 pub mod test_utils;
 mod utils;
+pub mod v2;
 pub mod zerocheck;
+
+pub use v2::*;

@@ -12,8 +12,8 @@ use crate::{
 				non_same_query_pcs_sumcheck_claim, non_same_query_pcs_sumcheck_metas,
 				non_same_query_pcs_sumcheck_witness, BivariateSumcheck, MemoizedQueries,
 			},
-			CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim, EvalcheckMultilinearClaim,
-			EvalcheckProver, EvalcheckVerifier,
+			CommittedEvalClaim, Error as EvalcheckError, EvalcheckClaim, EvalcheckProver,
+			EvalcheckVerifier,
 		},
 		sumcheck::{
 			batch_prove, Error as SumcheckError, SumcheckBatchProof, SumcheckBatchProveOutput,
@@ -29,6 +29,8 @@ use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use std::ops::Deref;
 use tracing::instrument;
+
+use super::evalcheck_v2::EvalcheckMultilinearClaim;
 
 #[derive(Clone, Debug)]
 pub struct TestProductComposition {
@@ -63,31 +65,6 @@ where
 	fn binary_tower_level(&self) -> usize {
 		0
 	}
-}
-
-// NB. This is a compatibility hack to bridge the gap between current evalcheck (which operates on composites)
-//     and sumcheck_v2 (which outputs multilinear claims). Each multilinear claim gets simply wrapped into an
-//     identity composition. Once evalcheck refactors land this should get removed.
-pub fn conflate_multilinear_evalchecks<F: Field>(
-	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
-) -> Result<Vec<EvalcheckClaim<F>>, OracleError> {
-	claims
-		.into_iter()
-		.map(|claim| {
-			let poly = CompositePolyOracle::new(
-				claim.poly.n_vars(),
-				vec![claim.poly],
-				IdentityCompositionPoly,
-			)?;
-
-			Ok(EvalcheckClaim {
-				poly,
-				eval_point: claim.eval_point,
-				eval: claim.eval,
-				is_random_point: claim.is_random_point,
-			})
-		})
-		.collect::<Result<Vec<_>, _>>()
 }
 
 pub fn transform_poly<F, OF, Data>(
@@ -129,6 +106,31 @@ where
 	} = batch_prove(sumchecks, domain_factory, switchover_fn, challenger, backend)?;
 
 	Ok((proof, evalcheck_claims))
+}
+
+// NB. This is a compatibility hack to bridge the gap between current evalcheck (which operates on composites)
+//     and sumcheck_v2 (which outputs multilinear claims). Each multilinear claim gets simply wrapped into an
+//     identity composition. Once evalcheck refactors land this should get removed.
+pub fn conflate_multilinear_evalchecks<F: Field>(
+	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
+) -> Result<Vec<EvalcheckClaim<F>>, OracleError> {
+	claims
+		.into_iter()
+		.map(|claim| {
+			let poly = CompositePolyOracle::new(
+				claim.poly.n_vars(),
+				vec![claim.poly],
+				IdentityCompositionPoly,
+			)?;
+
+			Ok(EvalcheckClaim {
+				poly,
+				eval_point: claim.eval_point,
+				eval: claim.eval,
+				is_random_point: claim.is_random_point,
+			})
+		})
+		.collect::<Result<Vec<_>, _>>()
 }
 
 #[instrument(

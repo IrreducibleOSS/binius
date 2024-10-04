@@ -50,13 +50,13 @@ struct ConstraintThunk<P: PackedField> {
 
 /// A builder struct that turns individual compositions over oraclized multilinears into a set of
 /// type erased `IndexComposition` instances operating over a superset of oracles of all constraints.
+#[derive(Default)]
 pub struct ConstraintSetBuilder<P: PackedField> {
 	oracle_ids: Vec<OracleId>,
 	constraint_thunks: Vec<ConstraintThunk<P>>,
 }
 
 impl<P: PackedField> ConstraintSetBuilder<P> {
-	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self {
 			oracle_ids: Vec::new(),
