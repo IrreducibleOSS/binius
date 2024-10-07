@@ -114,7 +114,7 @@ pub trait LinearCode {
 
 	/// Encode a message of extension field elements provided as a vector of packed field elements.
 	///
-	/// See [`Self::encode_extension_inplace`] for more details.
+	/// See [`Self::encode_ext_inplace`] for more details.
 	fn encode_extension<PE>(&self, mut msg: Vec<PE>) -> Result<Vec<PE>, Self::EncodeError>
 	where
 		PE: RepackedExtension<Self::P>,

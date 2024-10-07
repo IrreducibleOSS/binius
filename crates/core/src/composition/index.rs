@@ -17,6 +17,20 @@ pub struct IndexComposition<C, const N: usize> {
 	composition: C,
 }
 
+impl<C, const N: usize> IndexComposition<C, N> {
+	pub fn new(n_vars: usize, indices: [usize; N], composition: C) -> Result<Self, Error> {
+		if indices.iter().any(|&index| index >= n_vars) {
+			bail!(Error::IndexCompositionIndicesOutOfBounds);
+		}
+
+		Ok(Self {
+			n_vars,
+			indices,
+			composition,
+		})
+	}
+}
+
 impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 	for IndexComposition<C, N>
 {

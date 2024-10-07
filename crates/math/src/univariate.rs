@@ -120,6 +120,26 @@ impl<F: Field> EvaluationDomain<F> {
 		self.points.as_slice()
 	}
 
+	/// Compute a vector of Lagrange polynomial evaluations in $O(N^2)$ at a given point `x`.
+	///
+	/// For an evaluation domain consisting of points $\pi_i$ Lagrange polynomials $L_i(x)$
+	/// are defined by
+	/// $$L_i(x) = \sum_{j \neq i}\frac{x - \pi_j}{\pi_i - \pi_j}$$
+	pub fn lagrange_evals<FE: ExtensionField<F>>(&self, x: FE) -> Vec<FE> {
+		self.weights
+			.iter()
+			.enumerate()
+			.map(|(i, &weight)| {
+				let numerator = (0..self.size())
+					.filter(|&j| j != i)
+					.map(|j| x - self.points[j])
+					.product::<FE>();
+				numerator * weight
+			})
+			.collect()
+	}
+
+	/// Evaluate the unique interpolated polynomial at any point, for a given set of values, in $O(N)$.
 	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
 	where
 		PE: PackedExtension<F, Scalar: ExtensionField<F>>,
@@ -238,8 +258,10 @@ fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
-	use binius_field::{AESTowerField32b, BinaryField32b, BinaryField8b};
-	use proptest::proptest;
+	use binius_field::{
+		util::inner_product_unchecked, AESTowerField32b, BinaryField32b, BinaryField8b,
+	};
+	use proptest::{collection::vec, proptest};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::{iter::repeat_with, slice};
 
@@ -375,6 +397,20 @@ mod tests {
 			let z = BinaryField8b::from(z);
 			assert_eq!(extrapolate_line(x0, x1, z), x0 + (x1 - x0) * z);
 			assert_eq!(extrapolate_line_scalar(x0, x1, z), x0 + (x1 - x0) * z);
+		}
+
+		#[test]
+		fn test_lagrange_evals(values in vec(0u32.., 0..100), z in 0u32..) {
+			let field_values = values.into_iter().map(BinaryField32b::from).collect::<Vec<_>>();
+			let factory = DefaultEvaluationDomainFactory::<BinaryField32b>::default();
+			let evaluation_domain = factory.create(field_values.len()).unwrap();
+
+			let z = BinaryField32b::new(z);
+
+			let extrapolated = evaluation_domain.extrapolate(field_values.as_slice(), z).unwrap();
+			let lagrange_coeffs = evaluation_domain.lagrange_evals(z);
+			let lagrange_eval = inner_product_unchecked(lagrange_coeffs.into_iter(), field_values.into_iter());
+			assert_eq!(lagrange_eval, extrapolated);
 		}
 	}
 }

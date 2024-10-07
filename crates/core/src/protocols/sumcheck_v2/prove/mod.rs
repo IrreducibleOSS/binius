@@ -5,6 +5,7 @@ mod concrete_prover;
 pub mod oracles;
 mod prover_state;
 pub mod regular_sumcheck;
+pub mod univariate;
 pub mod zerocheck;
 
 pub use batch_prove::{batch_prove, SumcheckProver};

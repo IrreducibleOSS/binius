@@ -16,6 +16,7 @@ mod oracles;
 pub mod prove;
 #[cfg(test)]
 mod tests;
+pub mod univariate;
 pub mod verify;
 pub mod zerocheck;
 

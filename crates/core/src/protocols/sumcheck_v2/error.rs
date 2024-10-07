@@ -48,6 +48,8 @@ pub enum Error {
 	IncorrectZerocheckChallengesLength,
 	#[error("batch proof shape does not conform to the provided indexed claims")]
 	ClaimProofMismatch,
+	#[error("either too many or too few sumcheck challenges")]
+	IncorrectNumberOfChallenges,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]
@@ -56,7 +58,7 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
-	#[error("{0}")]
+	#[error("math error: {0}")]
 	MathError(#[from] binius_math::Error),
 }
 
@@ -72,4 +74,8 @@ pub enum VerificationError {
 	IncorrectBatchEvaluation,
 	#[error("the proof contains an incorrect evaluation of the eq indicator")]
 	IncorrectZerocheckEqIndEvaluation,
+	#[error(
+		"the proof contains an incorrect Lagrange coefficients multilinear extension evaluation"
+	)]
+	IncorrectLagrangeMultilinearEvaluation,
 }
