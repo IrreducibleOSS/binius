@@ -10,7 +10,7 @@ use binius_core::{
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, Proof as ZerocheckProof},
+		sumcheck_v2::{self, zerocheck, Proof as ZerocheckProof},
 		test_utils::conflate_multilinear_evalchecks,
 	},
 	witness::MultilinearExtensionIndex,
@@ -103,7 +103,7 @@ where
 	let (sumcheck_output, zerocheck_proof) =
 		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;
 
-	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
+	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&[zerocheck_claim],
 		&zerocheck_challenges,
 		sumcheck_output,
@@ -202,12 +202,12 @@ where
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, trace)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let sumcheck_claims = sumcheck_v2::reduce_to_sumchecks(&zerocheck_claims)?;
+	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output =
 		sumcheck_v2::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
 
-	let zerocheck_output = sumcheck_v2::verify_sumcheck_outputs(
+	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
