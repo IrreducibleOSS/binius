@@ -92,7 +92,7 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	) -> Result<(), Error>;
 
 	/// If available, returns underliers of the data of this multilinear as bytes.
-	fn underlier_data(&self) -> Option<Vec<u8>>;
+	fn underlier_data(&self) -> Option<&[u8]>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -162,7 +162,7 @@ where
 		(**self).subcube_evals(subcube_vars, subcube_index, log_embedding_degree, evals)
 	}
 
-	fn underlier_data(&self) -> Option<Vec<u8>> {
+	fn underlier_data(&self) -> Option<&[u8]> {
 		(**self).underlier_data()
 	}
 }

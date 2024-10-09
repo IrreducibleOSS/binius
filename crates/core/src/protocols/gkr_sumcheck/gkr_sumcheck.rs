@@ -95,6 +95,22 @@ where
 			.enumerate()
 			.map(move |(multilin_seq_id, multilinear)| ((seq_id, multilin_seq_id), multilinear)))
 	}
+
+	fn multilinears_ref(
+		&self,
+		seq_id: usize,
+		_claim_multilinear_ids: &[Self::MultilinearId],
+	) -> Result<
+		impl Iterator<Item = (Self::MultilinearId, &Self::Multilinear)>,
+		AbstractSumcheckError,
+	> {
+		Ok(self
+			.poly
+			.multilinears
+			.iter()
+			.enumerate()
+			.map(move |(multilin_seq_id, multilinear)| ((seq_id, multilin_seq_id), multilinear)))
+	}
 }
 
 pub type GkrSumcheckRound<F> = AbstractSumcheckRound<F>;

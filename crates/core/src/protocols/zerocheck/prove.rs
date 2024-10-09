@@ -625,9 +625,11 @@ where
 			let query = query.1.expansion();
 
 			let oracle_ids = self.claim.poly.inner_polys_oracle_ids().collect_vec();
-			let multilinears = self.witness.multilinears(self.seq_id, &oracle_ids).unwrap();
+			let multilinears = self
+				.witness
+				.multilinears_ref(self.seq_id, &oracle_ids)
+				.unwrap();
 			let (small_field_width, underlier_data) = multilinears
-				.into_iter()
 				.map(|(_m_id, m)| {
 					assert_eq!(0, (size_of::<PW>() * 8) % m.extension_degree());
 					assert_eq!(0, ((size_of::<PW>() * 8) / m.extension_degree()) % PW::WIDTH);

@@ -101,7 +101,7 @@ pub trait AbstractSumcheckWitness<PW: PackedField> {
 
 	fn composition(&self) -> &Self::Composition;
 
-	/// Extract multilinear witnesses out of composite sumcheck witness.
+	/// Returns a copy/clone of multilinear witnesses of the composite sumcheck witness.
 	///
 	/// Arguments:
 	/// * `seq_id`: Sequential id of the sumcheck instance in a batch (treat as if assigned arbitrarily)
@@ -111,6 +111,17 @@ pub trait AbstractSumcheckWitness<PW: PackedField> {
 		seq_id: usize,
 		claim_multilinear_ids: &[Self::MultilinearId],
 	) -> Result<impl IntoIterator<Item = (Self::MultilinearId, Self::Multilinear)>, Error>;
+
+	/// Reference to multilinear witnesses of the composite sumcheck witness.
+	///
+	/// Arguments:
+	/// * `seq_id`: Sequential id of the sumcheck instance in a batch (treat as if assigned arbitrarily)
+	/// * `claim_multilinear_ids`: Multilinear identifiers extracted from a claim.
+	fn multilinears_ref(
+		&self,
+		seq_id: usize,
+		claim_multilinear_ids: &[Self::MultilinearId],
+	) -> Result<impl Iterator<Item = (Self::MultilinearId, &Self::Multilinear)>, Error>;
 }
 
 /// A trait that oversees the batched sumcheck execution
@@ -180,6 +191,21 @@ where
 			.iter()
 			.copied()
 			.zip(self.multilinears.iter().cloned()))
+	}
+
+	fn multilinears_ref(
+		&self,
+		_seq_id: usize,
+		claim_multilinear_ids: &[Self::MultilinearId],
+	) -> Result<impl Iterator<Item = (Self::MultilinearId, &Self::Multilinear)>, Error> {
+		if claim_multilinear_ids.len() != self.multilinears.len() {
+			bail!(Error::ProverClaimWitnessMismatch);
+		}
+
+		Ok(claim_multilinear_ids
+			.iter()
+			.copied()
+			.zip(self.multilinears.iter()))
 	}
 }
 

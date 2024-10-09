@@ -20,7 +20,6 @@ use std::{
 	cmp::min, fmt::Debug, marker::PhantomData, mem::size_of_val, ops::Deref, slice::from_raw_parts,
 	sync::Arc,
 };
-use tracing::instrument;
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -66,10 +65,9 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 		Ok(Self { mu, evals: v })
 	}
 
-	#[instrument(skip_all)]
-	pub fn copy_underlier_data(&self) -> Vec<u8> {
+	pub fn ref_underlier_data(&self) -> &[u8] {
 		let p_slice = self.evals();
-		unsafe { from_raw_parts(p_slice.as_ptr() as *const u8, size_of_val(p_slice)).to_vec() }
+		unsafe { from_raw_parts(p_slice.as_ptr() as *const u8, size_of_val(p_slice)) }
 	}
 }
 
@@ -585,8 +583,8 @@ where
 		Ok(())
 	}
 
-	fn underlier_data(&self) -> Option<Vec<u8>> {
-		Some(self.0.copy_underlier_data())
+	fn underlier_data(&self) -> Option<&[u8]> {
+		Some(self.0.ref_underlier_data())
 	}
 }
 

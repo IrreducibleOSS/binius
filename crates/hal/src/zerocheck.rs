@@ -30,7 +30,7 @@ where
 	pub current_round_sum: F,
 	pub mixing_challenge: F,
 	pub domain: &'a InterpolationDomain<FDomain>,
-	pub underlier_data: Option<Vec<Option<Vec<u8>>>>,
+	pub underlier_data: Option<Vec<Option<&'a [u8]>>>,
 }
 
 /// A callback interface to handle the zerocheck computation on the CPU.
