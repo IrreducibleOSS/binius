@@ -1,19 +1,25 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	common::{calculate_fold_commit_rounds, FinalCodeword, FinalMessage},
+	common::{FinalCodeword, FinalMessage},
 	error::Error,
 	QueryProof, VerificationError,
 };
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
-	protocols::fri::common::{fold_chunk, iter_fold_arities, QueryRoundProof},
+	polynomial::MultilinearQuery,
+	protocols::fri::common::{
+		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
+		QueryRoundProof,
+	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField};
+use binius_hal::make_portable_backend;
 use binius_utils::bail;
 use itertools::izip;
+use p3_util::log2_strict_usize;
 use std::iter;
 use tracing::instrument;
 
@@ -32,6 +38,7 @@ where
 	committed_rs_code: &'a ReedSolomonCode<FA>,
 	/// Vector commitment scheme for the codeword oracle.
 	committed_codeword_vcs: &'a VCS,
+	log_batch_size: usize,
 	/// Vector commitment scheme for the round oracles.
 	round_vcss: &'a [VCS],
 	/// Received commitment to the codeword.
@@ -39,12 +46,13 @@ where
 	/// Received commitments to the round messages.
 	round_commitments: &'a [VCS::Commitment],
 	/// The challenges for each round.
-	challenges: &'a [F],
+	interleave_tensor: Vec<F>,
+	/// The challenges for each round.
+	fold_challenges: &'a [F],
 	/// The final message, which must be re-encoded to start fold consistency checks.
 	final_codeword: FinalCodeword<F>,
-	/// Rounds during the fold phase when codewords are committed. Note that in each fold round a
-	/// new challenge is sampled, but a new codeword is not necessarily committed.
-	commit_rounds: Vec<usize>,
+	/// The reduction arities between each query round.
+	fold_arities: Vec<usize>,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -57,6 +65,7 @@ where
 	pub fn new(
 		committed_rs_code: &'a ReedSolomonCode<FA>,
 		final_rs_code: &'a ReedSolomonCode<F>,
+		log_batch_size: usize,
 		committed_codeword_vcs: &'a VCS,
 		round_vcss: &'a [VCS],
 		codeword_commitment: &'a VCS::Commitment,
@@ -74,11 +83,12 @@ where
 			)));
 		}
 
-		if challenges.len() != committed_rs_code.log_dim() - final_rs_code.log_dim() {
+		let n_fold_rounds = log_batch_size + committed_rs_code.log_dim() - final_rs_code.log_dim();
+		if challenges.len() != n_fold_rounds {
 			bail!(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
-				committed_rs_code.log_dim() - final_rs_code.log_dim()
+				n_fold_rounds,
 			)));
 		}
 
@@ -88,11 +98,27 @@ where
 			));
 		}
 
-		let commit_rounds = calculate_fold_commit_rounds(
+		validate_common_fri_arguments(
 			committed_rs_code,
 			final_rs_code,
 			committed_codeword_vcs,
 			round_vcss,
+		)?;
+
+		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
+		let backend = make_portable_backend();
+		let interleave_tensor =
+			MultilinearQuery::<F, _>::with_full_query(interleave_challenges, &backend)
+				.expect("number of challenges is less than 32")
+				.into_expansion();
+
+		let fold_arities = calculate_fold_arities(
+			committed_rs_code.log_len(),
+			final_rs_code.log_len(),
+			round_vcss
+				.iter()
+				.map(|vcs| log2_strict_usize(vcs.vector_len())),
+			log_batch_size,
 		)?;
 
 		Ok(Self {
@@ -101,9 +127,11 @@ where
 			round_vcss,
 			codeword_commitment,
 			round_commitments,
-			challenges,
+			interleave_tensor,
+			fold_challenges,
 			final_codeword,
-			commit_rounds,
+			fold_arities,
+			log_batch_size,
 		})
 	}
 
@@ -132,14 +160,14 @@ where
 		}
 
 		let mut proof_iter = proof.into_iter();
-		let mut arities = iter_fold_arities(&self.commit_rounds, self.challenges.len());
+		let mut arities = self.fold_arities.iter().copied();
 
 		// Create scratch buffer used in `fold_chunk`.
 		let max_arity = arities
 			.clone()
 			.max()
 			.expect("iter_fold_arities returns non-empty iterator");
-		let max_buffer_size = 1 << max_arity;
+		let max_buffer_size = 2 * (1 << max_arity);
 		let mut scratch_buffer = vec![F::default(); max_buffer_size];
 
 		// The number of fold rounds until the first folded codeword is committed or sent.
@@ -155,25 +183,26 @@ where
 		let mut fold_round = 0;
 
 		let coset_index = index >> arity;
-		let values = verify_coset_opening(
+		let values = verify_interleaved_opening(
 			self.committed_codeword_vcs,
 			self.codeword_commitment,
-			0,
 			coset_index,
-			arity,
+			arity - self.log_batch_size,
+			self.log_batch_size,
 			round_proof,
 		)?;
 
-		let mut next_value = fold_chunk(
+		let mut next_value = fold_interleaved_chunk(
 			self.committed_rs_code,
-			fold_round,
+			self.log_batch_size,
 			coset_index,
 			&values,
-			&self.challenges[fold_round..fold_round + arity],
-			&mut scratch_buffer[..values.len()],
+			&self.interleave_tensor,
+			&self.fold_challenges[fold_round..fold_round + arity - self.log_batch_size],
+			&mut scratch_buffer,
 		);
 		index = coset_index;
-		fold_round += arity;
+		fold_round += arity - self.log_batch_size;
 
 		for (i, (vcs, commitment, round_proof, arity)) in
 			izip!(self.round_vcss.iter(), self.round_commitments.iter(), proof_iter, arities)
@@ -200,8 +229,8 @@ where
 				fold_round,
 				coset_index,
 				&values,
-				&self.challenges[fold_round..fold_round + arity],
-				&mut scratch_buffer[..1 << arity],
+				&self.fold_challenges[fold_round..fold_round + arity],
+				&mut scratch_buffer,
 			);
 			index = coset_index;
 			fold_round += arity;
@@ -247,6 +276,41 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 
 	// This condition should be guaranteed by the VCS verification.
 	debug_assert_eq!(values.len(), 1 << log_coset_size);
+
+	Ok(values)
+}
+
+/// Verifies that the coset opening provided in the proof is consistent with the VCS commitment.
+fn verify_interleaved_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
+	vcs: &VCS,
+	commitment: &VCS::Commitment,
+	coset_index: usize,
+	log_coset_size: usize,
+	log_batch_size: usize,
+	proof: QueryRoundProof<F, VCS::Proof>,
+) -> Result<Vec<F>, Error> {
+	let QueryRoundProof { values, vcs_proof } = proof;
+
+	if values.len() != 1 << (log_coset_size + log_batch_size) {
+		return Err(VerificationError::IncorrectQueryProofValuesLength {
+			round: 0,
+			coset_size: 1 << (log_coset_size + log_batch_size),
+		}
+		.into());
+	}
+
+	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
+	vcs.verify_range_batch_opening(
+		commitment,
+		range,
+		vcs_proof,
+		(0..1 << log_batch_size).map(|i| {
+			(0..1 << log_coset_size)
+				.map(|j| values[i + (j << log_batch_size)])
+				.collect::<Vec<_>>()
+		}),
+	)
+	.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 	Ok(values)
 }

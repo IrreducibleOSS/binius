@@ -20,6 +20,12 @@ pub trait VectorCommitScheme<T> {
 		vecs: &[impl AsRef<[T]>],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
 
+	/// Commit a batch of interleaved vectors.
+	fn commit_interleaved(
+		&self,
+		data: &[T],
+	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
+
 	/// Generate an opening proof for all vectors in a batch commitment at the given index.
 	fn prove_batch_opening(
 		&self,

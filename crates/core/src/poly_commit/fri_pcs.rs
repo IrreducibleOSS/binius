@@ -155,6 +155,7 @@ where
 		let mut fri_prover = Some(FRIFolder::new(
 			&self.rs_code,
 			&self.fri_final_rs_code,
+			0,
 			PE::unpack_scalars(codeword),
 			&self.poly_vcs,
 			&self.round_vcss,
@@ -318,6 +319,7 @@ where
 		let verifier = FRIVerifier::new(
 			&self.rs_code,
 			&self.fri_final_rs_code,
+			0,
 			&self.poly_vcs,
 			&self.round_vcss,
 			codeword_commitment,
@@ -390,11 +392,12 @@ where
 		}
 		let packed_evals = <PE as PackedExtension<F>>::cast_exts(poly.evals());
 
+		let log_batch_size = 0;
 		let fri::CommitOutput {
 			commitment,
 			committed,
 			codeword,
-		} = fri::commit_message(&self.rs_encoder, &self.poly_vcs, packed_evals)?;
+		} = fri::commit_interleaved(&self.rs_encoder, log_batch_size, &self.poly_vcs, packed_evals)?;
 
 		Ok((commitment, (codeword, committed)))
 	}

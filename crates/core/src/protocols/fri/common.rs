@@ -4,12 +4,13 @@ use crate::{
 	linear_code::LinearCode, merkle_tree::VectorCommitScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
-use binius_field::{BinaryField, ExtensionField, PackedFieldIndexable};
+use binius_field::{
+	util::inner_product_unchecked, BinaryField, ExtensionField, PackedFieldIndexable,
+};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;
-use p3_util::log2_strict_usize;
 use std::iter;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
@@ -36,7 +37,7 @@ where
 	extrapolate_line_scalar(u, v, r)
 }
 
-/// Calculate fold of `values` at a `chunk_index` with random folding challenges.
+/// Calculate FRI fold of `values` at a `chunk_index` with random folding challenges.
 ///
 /// REQUIRES:
 /// - `folding_challenges` is not empty.
@@ -50,6 +51,7 @@ where
 /// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
+#[inline]
 pub fn fold_chunk<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	start_round: usize,
@@ -65,10 +67,10 @@ where
 	// Preconditions
 	debug_assert!(!folding_challenges.is_empty());
 	debug_assert!(start_round + folding_challenges.len() <= rs_code.log_dim());
-	debug_assert!(values.len() == 1 << folding_challenges.len());
-	debug_assert_eq!(scratch_buffer.len(), values.len());
+	debug_assert_eq!(values.len(), 1 << folding_challenges.len());
+	debug_assert!(scratch_buffer.len() >= values.len());
 
-	scratch_buffer.copy_from_slice(values);
+	scratch_buffer[..values.len()].copy_from_slice(values);
 	// Fold the chunk with the folding challenges one by one
 	for n_challenges_processed in 0..folding_challenges.len() {
 		let n_remaining_challenges = folding_challenges.len() - n_challenges_processed;
@@ -89,7 +91,66 @@ where
 	scratch_buffer[0]
 }
 
-fn validate_common_fri_arguments<F, FA, VCS>(
+/// Calculate the fold of an interleaved chunk of values with random folding challenges.
+///
+/// The elements in the `values` vector are the interleaved cosets of a batch of codewords at the
+/// index `coset_index`. That is, the layout of elements in the values slice is
+///
+/// ```text
+/// [a0, b0, c0, d0, a1, b1, c1, d1, ...]
+/// ```
+///
+/// where `a0, a1, ...` form a coset of a codeword `a`, `b0, b1, ...` form a coset of a codeword
+/// `b`, and similarly for `c` and `d`.
+///
+/// The fold operation first folds the adjacent symbols in the slice using regular multilinear
+/// tensor folding for the symbols from different cosets and FRI folding for the cosets themselves
+/// using the remaining challenges.
+//
+/// NB: This method is on a hot path and does not perform any allocations or
+/// precondition checks.
+///
+/// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
+///
+/// [DP24]: <https://eprint.iacr.org/2024/504>
+pub fn fold_interleaved_chunk<F, FS>(
+	rs_code: &ReedSolomonCode<FS>,
+	log_batch_size: usize,
+	chunk_index: usize,
+	values: &[F],
+	tensor: &[F],
+	fold_challenges: &[F],
+	scratch_buffer: &mut [F],
+) -> F
+where
+	F: BinaryField + ExtensionField<FS>,
+	FS: BinaryField,
+{
+	// Preconditions
+	debug_assert!(fold_challenges.len() <= rs_code.log_dim());
+	debug_assert_eq!(values.len(), 1 << (log_batch_size + fold_challenges.len()));
+	debug_assert_eq!(tensor.len(), 1 << log_batch_size);
+	debug_assert!(scratch_buffer.len() >= 2 * (values.len() >> log_batch_size));
+
+	// There are two types of mixing we do in this loop. Buffer 1 is populated with the
+	// folding of symbols from the interleaved codewords into a single codeword. These
+	// values are mixed as a regular tensor product combination. Buffer 2 is then
+	// populated with `fold_chunk`, which folds a coset of a codeword using the FRI
+	// folding algorithm.
+	let (buffer1, buffer2) = scratch_buffer.split_at_mut(1 << fold_challenges.len());
+
+	for (interleave_chunk, val) in values.chunks(1 << log_batch_size).zip(buffer1.iter_mut()) {
+		*val = inner_product_unchecked(interleave_chunk.iter().copied(), tensor.iter().copied());
+	}
+
+	if fold_challenges.is_empty() {
+		buffer1[0]
+	} else {
+		fold_chunk(rs_code, 0, chunk_index, buffer1, fold_challenges, buffer2)
+	}
+}
+
+pub fn validate_common_fri_arguments<F, FA, VCS>(
 	committed_rs_code: &ReedSolomonCode<FA>,
 	final_rs_code: &ReedSolomonCode<F>,
 	committed_codeword_vcs: &VCS,
@@ -106,10 +167,7 @@ where
 		));
 	}
 
-	// This is a tricky case to handle well.
-	// TODO: Change interfaces to support equality, which implies supporting parameters
-	// where the final codeword is the originally committed codeword.
-	if committed_rs_code.log_dim() <= final_rs_code.log_dim() {
+	if committed_rs_code.log_dim() < final_rs_code.log_dim() {
 		bail!(Error::MessageDimensionIsTooSmall);
 	}
 
@@ -143,53 +201,41 @@ where
 	Ok(())
 }
 
-/// Calculates the fold_rounds where folded codewords are committed by the FRIFolder.
-/// Also validates consistency of round vector commitment schemes with a Reed-Solomon code for FRI.
+/// Calculates the folding arities between all rounds of the folding phase when the prover sends an
+/// oracle or codeword message.
 ///
-/// The validation checks that:
-/// - The committed Reed-Solomon code length matches the committed codeword vector commitment length.
-/// - The committed Reed-Solomon code has dimension greater than the final Reed-Solomon code.
-/// - The vector lengths of the round vector commitment schemes (vcss) are powers of two.
-/// - The vector lengths of the round vcss are strictly decreasing.
-/// - The vector lengths of the round vcss are in the range (2^(log_inv_rate + final_msg_dim), 2^log_len).
-pub fn calculate_fold_commit_rounds<F, FA, VCS>(
-	committed_rs_code: &ReedSolomonCode<FA>,
-	final_rs_code: &ReedSolomonCode<F>,
-	committed_codeword_vcs: &VCS,
-	round_vcss: &[VCS],
-) -> Result<Vec<usize>, Error>
-where
-	F: BinaryField,
-	FA: BinaryField,
-	VCS: VectorCommitScheme<F>,
-{
-	validate_common_fri_arguments(
-		committed_rs_code,
-		final_rs_code,
-		committed_codeword_vcs,
-		round_vcss,
-	)?;
+/// The vector returned has length at least 1, representing the number of fold rounds before the
+/// prover sends the final oracle. All entries must be non-zero except for the last one.
+pub fn calculate_fold_arities(
+	log_code_len: usize,
+	log_final_len: usize,
+	log_commit_lens: impl IntoIterator<Item = usize>,
+	log_batch_size: usize,
+) -> Result<Vec<usize>, Error> {
+	let oracle_log_lengths = log_commit_lens.into_iter().chain(iter::once(log_final_len));
+	let oracle_rounds = oracle_log_lengths
+		.map(|log_folded_len| {
+			let round_diff = log_code_len
+				.checked_sub(log_folded_len)
+				.ok_or_else(|| Error::RoundVCSLengthsNotDescending)?;
+			Ok(log_batch_size + round_diff)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
 
-	let log_code_len = committed_rs_code.log_len();
-	let commit_rounds = round_vcss.iter().map(|vcs| {
-		let log_folded_len = log2_strict_usize(vcs.vector_len());
-		log_code_len - log_folded_len
-	});
-	Ok(commit_rounds.collect())
-}
-
-/// Returns an iterator over the number of rounds between folded codewords.
-///
-/// This is guaranteed to return a non-empty iterator.
-pub fn iter_fold_arities(
-	commit_rounds: &[usize],
-	final_round: usize,
-) -> impl Iterator<Item = usize> + Clone + '_ {
-	iter::once(0)
-		.chain(commit_rounds.iter().copied())
-		.chain([final_round])
+	let fold_arities = iter::once(0)
+		.chain(oracle_rounds)
 		.tuple_windows()
 		.map(|(round, next_round)| next_round - round)
+		.collect::<Vec<_>>();
+
+	// Check that all entries are non-zero except for the last one.
+	for &arity in &fold_arities[..fold_arities.len() - 1] {
+		if arity == 0 {
+			return Err(Error::RoundVCSLengthsNotDescending);
+		}
+	}
+
+	Ok(fold_arities)
 }
 
 /// A proof for a single FRI consistency query.
