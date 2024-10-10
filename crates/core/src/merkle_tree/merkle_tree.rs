@@ -14,7 +14,9 @@ use super::{
 	vcs::VectorCommitScheme,
 };
 use crate::challenger::field_challenger::FieldChallengerHelper;
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
+use binius_field::{
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+};
 use binius_hash::Hasher;
 use binius_utils::bail;
 
@@ -435,7 +437,7 @@ where
 
 impl<F: Field, H, PE> CanObserve<MerkleCap<PE>> for FieldChallenger<F, H>
 where
-	F: Field,
+	F: BinaryField,
 	H: FieldChallengerHelper<F>,
 	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	PE::Scalar: ExtensionField<F>,

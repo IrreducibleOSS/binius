@@ -65,7 +65,32 @@ where
 		elems
 	}
 
-	fn observe_elems(&mut self, input: &[F]) {
+	fn observe_elems(&mut self, input: &[F])
+	where
+		F: BinaryField,
+	{
+		// Allow to avoid discrepancies when calls sample less than the buffer.len() times.
+		if self.index != 0 && self.index != Impl::RATE {
+			let mut index = self.index;
+			let mut index_1b = Vec::new();
+
+			while index > 0 {
+				if index & 1 == 1 {
+					index_1b.push(BinaryField1b::ONE)
+				} else {
+					index_1b.push(BinaryField1b::ZERO)
+				}
+				index >>= 1;
+			}
+
+			let index_fields = index_1b
+				.chunks(<F as ExtensionField<BinaryField1b>>::DEGREE)
+				.map(|base_elems| F::from_bases(base_elems).unwrap_or(F::ZERO))
+				.collect::<Vec<_>>();
+
+			self.helper.observe(&index_fields)
+		}
+
 		// Any buffered output is now invalid.
 		self.index = Impl::RATE;
 		self.bit_index = 0;
@@ -94,7 +119,7 @@ pub trait FieldChallengerHelper<F> {
 
 impl<F, PE, Impl> CanObserve<PE> for FieldChallenger<F, Impl>
 where
-	F: Field,
+	F: BinaryField,
 	PE: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 	PE::Scalar: ExtensionField<F>,
 	Impl: FieldChallengerHelper<F>,
@@ -198,14 +223,15 @@ mod tests {
 		assert_eq!(CanSample::<BinaryField8b>::sample(&mut challenger), BinaryField8b::new(1));
 		assert_eq!(CanSample::<BinaryField8b>::sample(&mut challenger), BinaryField8b::new(2));
 
-		// observe calls bump the index by 2
+		// bump the index by 2, becasue self.index ne 0 and ne RATE
 		challenger.observe(BinaryField8b::ZERO);
+		// bump the index by 1
 		challenger.observe(BinaryField8b::ZERO);
 
 		for i in 0..33 {
 			assert_eq!(
 				CanSample::<BinaryField8b>::sample(&mut challenger),
-				BinaryField8b::new(34 + i)
+				BinaryField8b::new(35 + i)
 			);
 		}
 	}
