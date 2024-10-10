@@ -1,0 +1,2 @@
+[build]
+rustdocflags = ["-Dwarnings", "--html-in-header", "doc/katex-header.html"]
