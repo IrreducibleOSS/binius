@@ -1,12 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use binius_core::{
-	challenger::new_hasher_challenger,
-	oracle::MultilinearOracleSet,
+	challenger::{new_hasher_challenger, IsomorphicChallenger},
 	polynomial::MultilinearExtension,
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
 };
-use binius_field::{BinaryField128b, BinaryField128bPolyval, Field, TowerField};
+use binius_field::{
+	arch::packed_polyval_128::PackedBinaryPolyval1x128b, BinaryField128b, BinaryField128bPolyval,
+	Field,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
@@ -25,10 +27,12 @@ fn create_numerator<FW: Field>(n_vars: usize) -> MultilinearExtension<FW> {
 }
 
 fn bench_polyval(c: &mut Criterion) {
-	type F = BinaryField128b;
+	type FDomain = BinaryField128b;
+
+	type P = PackedBinaryPolyval1x128b;
 	type FW = BinaryField128bPolyval;
 	let mut group = c.benchmark_group("prodcheck");
-	let domain_factory = IsomorphicEvaluationDomainFactory::<F>::default();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
 	for n in [12, 16, 20] {
 		group.throughput(Throughput::Bytes(
@@ -40,27 +44,22 @@ fn bench_polyval(c: &mut Criterion) {
 			// Setup witness
 			let numerator = create_numerator::<FW>(n);
 
-			let gpa_witness = GrandProductWitness::new(numerator.specialize_arc_dyn()).unwrap();
+			let gpa_witness =
+				GrandProductWitness::<P>::new(numerator.specialize_arc_dyn()).unwrap();
 
-			// Setup claim
-			let mut oracles = MultilinearOracleSet::<F>::new();
-			let round_1_batch_id = oracles.add_committed_batch(n, F::TOWER_LEVEL);
-			let [numerator] = oracles.add_committed_multiple(round_1_batch_id);
-
-			let product: BinaryField128b =
-				BinaryField128b::from(gpa_witness.grand_product_evaluation());
-			let gpa_claim = GrandProductClaim {
-				poly: oracles.oracle(numerator),
-				product,
-			};
+			let product: FW = FW::from(gpa_witness.grand_product_evaluation());
+			let gpa_claim = GrandProductClaim { n_vars: n, product };
 			let backend = make_portable_backend();
 
 			bench.iter(|| {
-				gkr_gpa::batch_prove::<F, FW, FW, _, _>(
+				let mut challenger_clone = prover_challenger.clone();
+				let mut iso_challenger =
+					IsomorphicChallenger::<BinaryField128b, _, FW>::new(&mut challenger_clone);
+				gkr_gpa::batch_prove::<FW, P, FW, _, _>(
 					[gpa_witness.clone()],
-					[gpa_claim.clone()],
+					&[gpa_claim.clone()],
 					domain_factory.clone(),
-					prover_challenger.clone(),
+					&mut iso_challenger,
 					backend.clone(),
 				)
 			});

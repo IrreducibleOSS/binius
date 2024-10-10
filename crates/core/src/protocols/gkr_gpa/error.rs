@@ -1,10 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
+use super::gpa_sumcheck::error::Error as GPASumcheckError;
 use crate::{
-	polynomial::Error as PolynomialError,
-	protocols::{
-		abstract_sumcheck::Error as AbstractSumcheckError, gkr_sumcheck::Error as GkrSumcheckError,
-	},
+	polynomial::Error as PolynomialError, protocols::sumcheck_v2::Error as SumcheckError,
+	witness::Error as WitnessErrror,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -27,26 +26,20 @@ pub enum Error {
 	PrematureFinalize,
 	#[error("all layer claims in a batch should be for the same layer")]
 	MismatchedEvalPointLength,
-	#[error("proof has invalid zero-one eval advice")]
-	InvalidZeroOneEvalAdvice,
 	#[error("the output layer cannot be split into halves")]
 	CannotSplitOutputLayerIntoHalves,
 	#[error("the inputted layer index was too high")]
 	InvalidLayerIndex,
+	#[error("metas length does not conform to the provided indexed claims")]
+	MetasClaimMismatch,
+	#[error("metas length does not conform to the provided indexed claims")]
+	MetasProductsMismatch,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
-	#[error("abstract sumcheck failure: {0}")]
-	AbstractSumcheck(#[from] AbstractSumcheckError),
-	#[error("gkr sumcheck failure: {0}")]
-	GkrSumcheckError(#[from] GkrSumcheckError),
-	#[error("verification error: {0}")]
-	Verification(#[from] VerificationError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum VerificationError {
-	#[error("number of zero evals in batch proof does not match number of claims")]
-	MismatchedZeroEvals,
-	#[error("number of one evals in batch proof does not match number of claims")]
-	MismatchedOneEvals,
+	#[error("gpa sumcheck failure: {0}")]
+	GPASumcheckError(#[from] GPASumcheckError),
+	#[error("sumcheck failure: {0}")]
+	SumcheckError(#[from] SumcheckError),
+	#[error("witness failure: {0}")]
+	WitnessErrror(#[from] WitnessErrror),
 }

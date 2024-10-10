@@ -129,11 +129,12 @@ pub struct LassoProof<F: Field> {
 	pub counts_grand_products: Vec<F>,
 }
 
-pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<FW>, FW: TowerField, F: Field> {
+pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<F>, F: Field> {
 	pub reduced_gpa_claims: Vec<GrandProductClaim<F>>,
-	pub reduced_gpa_witnesses: Vec<GrandProductWitness<'a, PackedType<U, FW>>>,
+	pub reduced_gpa_witnesses: Vec<GrandProductWitness<'a, PackedType<U, F>>>,
+	pub gpa_metas: Vec<OracleId>,
 	pub lasso_proof: LassoProof<F>,
-	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
+	pub witness_index: MultilinearExtensionIndex<'a, U, F>,
 }
 
 pub struct LassoReducedClaimOracleIds {

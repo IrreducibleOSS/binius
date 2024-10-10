@@ -130,7 +130,7 @@ pub fn verify_sumcheck_outputs<F: TowerField, Composition>(
 			.pop()
 			.expect("checked above that multilinear_evals length is at least 1");
 		if eq_ind_eval != multilinear_evals_last {
-			return Err(VerificationError::IncorrectZerocheckEqIndEvaluation.into());
+			return Err(VerificationError::IncorrectEqIndEvaluation.into());
 		}
 	}
 

@@ -153,7 +153,7 @@ fn add_bivariate_sumcheck_to_constraint_builder<P: PackedField>(
 	constraint_builder: &mut ConstraintSetBuilder<P>,
 	eval: P::Scalar,
 ) {
-	constraint_builder.add_sumcheck(meta.oracle_ids(), BivariateProduct, eval);
+	constraint_builder.add_sumcheck(meta.oracle_ids(), BivariateProduct {}, eval);
 }
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]

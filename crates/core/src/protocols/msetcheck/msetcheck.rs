@@ -97,11 +97,12 @@ pub struct MsetcheckProof<F: Field> {
 }
 
 #[derive(Debug)]
-pub struct MsetcheckProveOutput<'a, U: UnderlierType + PackScalar<FW>, F: Field, FW: Field> {
-	pub reduced_gpa_witnesses: [GrandProductWitness<'a, PackedType<U, FW>>; 2],
+pub struct MsetcheckProveOutput<'a, U: UnderlierType + PackScalar<F>, F: Field> {
+	pub reduced_gpa_witnesses: [GrandProductWitness<'a, PackedType<U, F>>; 2],
 	pub reduced_gpa_claims: [GrandProductClaim<F>; 2],
+	pub gpa_metas: [OracleId; 2],
 	pub msetcheck_proof: MsetcheckProof<F>,
-	pub witness_index: MultilinearExtensionIndex<'a, U, FW>,
+	pub witness_index: MultilinearExtensionIndex<'a, U, F>,
 }
 
 pub fn reduce_msetcheck_claim<F: TowerField>(

@@ -5,19 +5,19 @@ use binius_field::PackedField;
 use binius_utils::bail;
 
 #[derive(Debug, Copy, Clone)]
-pub struct BivariateProduct;
+pub struct ProductComposition<const N: usize>;
 
-impl BivariateProduct {
+impl<const N: usize> ProductComposition<N> {
 	pub const fn n_vars(&self) -> usize {
-		2
+		N
 	}
 
 	pub const fn degree(&self) -> usize {
-		2
+		N
 	}
 }
 
-impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
+impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N> {
 	fn n_vars(&self) -> usize {
 		self.n_vars()
 	}
@@ -27,13 +27,16 @@ impl<P: PackedField> CompositionPoly<P> for BivariateProduct {
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
-		if query.len() != 2 {
-			bail!(Error::IncorrectQuerySize { expected: 2 });
+		if query.len() != N {
+			bail!(Error::IncorrectQuerySize { expected: N });
 		}
-		Ok(query[0] * query[1])
+		Ok(query.iter().copied().product())
 	}
 
 	fn binary_tower_level(&self) -> usize {
 		0
 	}
 }
+
+pub type BivariateProduct = ProductComposition<2>;
+pub type TrivariateProduct = ProductComposition<3>;

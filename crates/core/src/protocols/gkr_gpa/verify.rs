@@ -1,23 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	gkr_gpa::{BatchLayerProof, GrandProductBatchProof, LayerClaim},
-	Error, GrandProductClaim, VerificationError,
+	gkr_gpa::{GrandProductBatchProof, LayerClaim},
+	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
+	Error, GrandProductClaim,
 };
-use crate::{
-	composition::BivariateProduct,
-	protocols::{
-		evalcheck::EvalcheckMultilinearClaim,
-		gkr_sumcheck::{self, GkrSumcheckClaim},
-	},
-};
+use crate::protocols::{sumcheck_v2, sumcheck_v2::Proof as SumcheckBatchProof};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
-use itertools::izip;
 use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
@@ -27,18 +21,17 @@ pub fn batch_verify<F, Challenger>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	proof: GrandProductBatchProof<F>,
 	mut challenger: Challenger,
-) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
+) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
 	Challenger: CanSample<F> + CanObserve<F>,
 {
 	let GrandProductBatchProof { batch_layer_proofs } = proof;
 
-	let (original_indices, mut sorted_claims) =
-		stable_sort(claims, |claim| claim.poly.n_vars(), true);
+	let (original_indices, mut sorted_claims) = stable_sort(claims, |claim| claim.n_vars, true);
 	let max_n_vars = sorted_claims
 		.first()
-		.map(|claim| claim.poly.n_vars())
+		.map(|claim| claim.n_vars)
 		.ok_or(Error::EmptyClaimsArray)?;
 
 	if max_n_vars != batch_layer_proofs.len() {
@@ -83,8 +76,8 @@ where
 	reverse_sorted_evalcheck_claims.reverse();
 	let sorted_evalcheck_claims = reverse_sorted_evalcheck_claims;
 
-	let evalcheck_multilinear_claims = unsort(original_indices, sorted_evalcheck_claims);
-	Ok(evalcheck_multilinear_claims)
+	let final_layer_claims = unsort(original_indices, sorted_evalcheck_claims);
+	Ok(final_layer_claims)
 }
 
 fn process_finished_claims<F: Field>(
@@ -92,24 +85,19 @@ fn process_finished_claims<F: Field>(
 	layer_no: usize,
 	layer_claims: &mut Vec<LayerClaim<F>>,
 	sorted_claims: &mut Vec<GrandProductClaim<F>>,
-	reverse_sorted_evalcheck_multilinear_claims: &mut Vec<EvalcheckMultilinearClaim<F>>,
+	reverse_sorted_final_layer_claims: &mut Vec<LayerClaim<F>>,
 ) {
-	while !sorted_claims.is_empty() && sorted_claims.last().unwrap().poly.n_vars() == layer_no {
+	while let Some(claim) = sorted_claims.last() {
+		if claim.n_vars != layer_no {
+			break;
+		}
+
 		debug_assert!(layer_no > 0);
 		debug_assert_eq!(sorted_claims.len(), layer_claims.len());
-		let finished_layer_claim = layer_claims.pop().unwrap();
-		let finished_original_claim = sorted_claims.pop().unwrap();
-		let evalcheck_multilinear_claim = EvalcheckMultilinearClaim {
-			poly: finished_original_claim.poly,
-			eval: finished_layer_claim.eval,
-			eval_point: finished_layer_claim.eval_point,
-			is_random_point: true,
-		};
-		reverse_sorted_evalcheck_multilinear_claims.push(evalcheck_multilinear_claim);
-		debug_assert_eq!(
-			sorted_claims.len() + reverse_sorted_evalcheck_multilinear_claims.len(),
-			n_claims
-		);
+		let finished_layer_claim = layer_claims.pop().expect("must exist");
+		let _ = sorted_claims.pop().expect("must exist");
+		reverse_sorted_final_layer_claims.push(finished_layer_claim);
+		debug_assert_eq!(sorted_claims.len() + reverse_sorted_final_layer_claims.len(), n_claims);
 	}
 }
 
@@ -121,26 +109,16 @@ fn process_finished_claims<F: Field>(
 /// * `challenger` - The verifier challenger
 fn reduce_layer_claim_batch<F, CH>(
 	claims: Vec<LayerClaim<F>>,
-	proof: BatchLayerProof<F>,
+	proof: SumcheckBatchProof<F>,
 	mut challenger: CH,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: Field,
 	CH: CanSample<F> + CanObserve<F>,
 {
-	let BatchLayerProof {
-		gkr_sumcheck_batch_proof,
-		zero_evals,
-		one_evals,
-	} = proof;
-
 	// Validation
 	if claims.is_empty() {
 		return Ok(vec![]);
-	} else if zero_evals.len() != claims.len() {
-		return Err(VerificationError::MismatchedZeroEvals.into());
-	} else if one_evals.len() != claims.len() {
-		return Err(VerificationError::MismatchedOneEvals.into());
 	}
 
 	let curr_layer_challenge = &claims[0].eval_point[..];
@@ -151,41 +129,32 @@ where
 		bail!(Error::MismatchedEvalPointLength);
 	}
 
-	// Verify the gkr sumcheck batch proof and receive the corresponding reduced claims
-	let gkr_sumcheck_claims = claims.iter().map(|claim| GkrSumcheckClaim {
-		sum: claim.eval,
-		r: claim.eval_point.clone(),
-		n_vars: claim.eval_point.len(),
-		degree: BivariateProduct.degree(),
-	});
-	let reduced_claims =
-		gkr_sumcheck::batch_verify(gkr_sumcheck_claims, gkr_sumcheck_batch_proof, &mut challenger)?;
+	// Verify the gpa sumcheck batch proof and receive the corresponding reduced claims
+	let gpa_sumcheck_claims = claims
+		.iter()
+		.map(|claim| GPASumcheckClaim::new(claim.eval_point.len(), claim.eval))
+		.collect::<Result<Vec<_>, _>>()?;
 
-	debug_assert_eq!(reduced_claims.len(), claims.len());
-	challenger.observe_slice(&zero_evals);
-	challenger.observe_slice(&one_evals);
+	let sumcheck_claims = reduce_to_sumchecks(&gpa_sumcheck_claims)?;
 
-	// Validate the relationship between zero_evals, one_evals, and evals
-	let evals = reduced_claims.iter().map(|claim| claim.eval);
-	let is_zero_one_eval_advice_valid = izip!(zero_evals.iter(), one_evals.iter(), evals)
-		.all(|(&zero_eval, &one_eval, eval)| zero_eval * one_eval == eval);
+	let batch_sumcheck_output =
+		sumcheck_v2::batch_verify(&sumcheck_claims, proof, &mut challenger)?;
 
-	if !is_zero_one_eval_advice_valid {
-		bail!(Error::InvalidZeroOneEvalAdvice);
-	}
+	let batch_sumcheck_output =
+		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;
 
 	// Create the new (k+1)th layer LayerClaims for each grand product circuit
-	let sumcheck_challenge = reduced_claims[0].eval_point.clone();
-	let gkr_challenge = challenger.sample();
+	let sumcheck_challenge = batch_sumcheck_output.challenges.clone();
+	let gpa_challenge = challenger.sample();
 	let new_layer_challenge = sumcheck_challenge
 		.into_iter()
-		.chain(Some(gkr_challenge))
+		.chain(Some(gpa_challenge))
 		.collect::<Vec<_>>();
-	let new_layer_claims = zero_evals
+	let new_layer_claims = batch_sumcheck_output
+		.multilinear_evals
 		.into_iter()
-		.zip(one_evals)
-		.map(|(zero_eval, one_eval)| {
-			let new_eval = extrapolate_line_scalar(zero_eval, one_eval, gkr_challenge);
+		.map(|evals| {
+			let new_eval = extrapolate_line_scalar(evals[0], evals[1], gpa_challenge);
 			LayerClaim {
 				eval_point: new_layer_challenge.clone(),
 				eval: new_eval,

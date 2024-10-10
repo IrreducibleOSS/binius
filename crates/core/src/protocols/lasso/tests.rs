@@ -90,7 +90,7 @@ fn test_prove_verify_interaction() {
 
 	let alpha = F::ONE;
 
-	let prove_output = prove::<C, U, F, F, _, _>(
+	let prove_output = prove::<C, U, F, _, _>(
 		&mut oracles.clone(),
 		witness_index,
 		&claim,

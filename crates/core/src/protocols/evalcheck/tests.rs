@@ -216,7 +216,7 @@ fn test_shifted_evaluation_whole_cube() {
 	let composite = CompositePolyOracle::new(
 		n_vars,
 		vec![oracles.oracle(poly_id), oracles.oracle(shifted_id)],
-		BivariateProduct,
+		BivariateProduct {},
 	)
 	.unwrap();
 
@@ -238,7 +238,7 @@ fn test_shifted_evaluation_whole_cube() {
 
 	let composite_witness = MultilinearComposite::new(
 		n_vars,
-		BivariateProduct,
+		BivariateProduct {},
 		vec![
 			poly_witness.to_ref().specialize::<PExtension>(),
 			shifted_witness.to_ref().specialize::<PExtension>(),
@@ -319,7 +319,7 @@ fn test_shifted_evaluation_subcube() {
 	let composite = CompositePolyOracle::new(
 		n_vars,
 		vec![oracles.oracle(poly_id), oracles.oracle(shifted_id)],
-		BivariateProduct,
+		BivariateProduct {},
 	)
 	.unwrap();
 
@@ -343,7 +343,7 @@ fn test_shifted_evaluation_subcube() {
 
 	let composite_witness = MultilinearComposite::new(
 		n_vars,
-		BivariateProduct,
+		BivariateProduct {},
 		vec![
 			poly_witness.to_ref().specialize::<FExtension>(),
 			shifted_witness.to_ref().specialize::<FExtension>(),

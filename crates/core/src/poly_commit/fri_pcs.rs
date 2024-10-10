@@ -8,8 +8,7 @@ use crate::{
 	poly_commit::{ring_switch::ring_switch_eq_ind_partial_eval, PolyCommitScheme},
 	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
 	protocols::{
-		fri,
-		fri::{FRIFolder, FRIVerifier, FoldRoundOutput},
+		fri::{self, FRIFolder, FRIVerifier, FoldRoundOutput},
 		sumcheck_v2::{
 			self,
 			prove::{RegularSumcheckProver, SumcheckProver},

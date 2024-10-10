@@ -107,7 +107,7 @@ pub(super) fn univariatizing_reduction_composite_sum_claims<F: Field>(
 		.enumerate()
 		.map(|(i, &univariatized_multilinear_eval)| {
 			let composition =
-				IndexComposition::new(n_multilinears + 1, [i, n_multilinears], BivariateProduct)
+				IndexComposition::new(n_multilinears + 1, [i, n_multilinears], BivariateProduct {})
 					.expect("index composition indice correct by construction");
 
 			CompositeSumClaim {

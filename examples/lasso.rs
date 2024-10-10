@@ -298,7 +298,7 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let lasso_prove_output = lasso::prove::<B32, U, _, _, _, _>(
+	let lasso_prove_output = lasso::prove::<B32, U, _, _, _>(
 		oracles,
 		witness.index,
 		&lasso_claim,
@@ -312,6 +312,7 @@ where
 	let LassoProveOutput {
 		reduced_gpa_claims,
 		reduced_gpa_witnesses,
+		gpa_metas,
 		witness_index,
 		lasso_proof,
 	} = lasso_prove_output;
@@ -332,19 +333,24 @@ where
 			oracles,
 		)?)?;
 
+	let switchover_fn = standard_switchover_heuristic(-2);
+
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
 	let GrandProductBatchProveOutput {
-		evalcheck_multilinear_claims,
+		final_layer_claims,
 		proof: gpa_proof,
 	} = gkr_gpa::batch_prove(
 		reduced_gpa_witnesses,
-		reduced_gpa_claims,
+		&reduced_gpa_claims,
 		domain_factory.clone(),
 		&mut challenger,
 		backend.clone(),
 	)?;
+
+	let evalcheck_multilinear_claims =
+		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
 
 	// Greedy Evalcheck
 	let evalcheck_claims = evalcheck_multilinear_claims
@@ -356,7 +362,6 @@ where
 			is_random_point: claim.is_random_point,
 		});
 
-	let switchover_fn = standard_switchover_heuristic(-2);
 	let greedy_evalcheck_prove_output =
 		greedy_evalcheck::prove::<_, PackedType<U, B128>, B128, _, _>(
 			oracles,
@@ -502,7 +507,7 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let reduced_gpa_claims = lasso::verify::<B32, _, _>(
+	let (reduced_gpa_claims, gpa_metas) = lasso::verify::<B32, _, _>(
 		oracles,
 		&lasso_claim,
 		&trace_oracle.lasso_batches,
@@ -515,14 +520,19 @@ where
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
-	let reduced_gpa_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut challenger)?;
+	let final_layer_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut challenger)?;
 
-	let evalcheck_claims = reduced_gpa_claims.into_iter().map(|claim| EvalcheckClaim {
-		poly: claim.poly.into_composite(),
-		eval_point: claim.eval_point,
-		eval: claim.eval,
-		is_random_point: claim.is_random_point,
-	});
+	let evalcheck_multilinear_claims =
+		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
+
+	let evalcheck_claims = evalcheck_multilinear_claims
+		.into_iter()
+		.map(|claim| EvalcheckClaim {
+			poly: claim.poly.into_composite(),
+			eval_point: claim.eval_point,
+			eval: claim.eval,
+			is_random_point: claim.is_random_point,
+		});
 
 	// Greedy evalcheck
 	let same_query_pcs_claims = greedy_evalcheck::verify(

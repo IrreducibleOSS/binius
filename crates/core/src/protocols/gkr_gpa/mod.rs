@@ -11,8 +11,8 @@
 //!
 //! Naming Convention for challenges:
 //! 1) Sumcheck challenge: $r'_k$
-//!     $k$-variate sumcheck challenge vector generated during the course of gkr_sumcheck
-//! 2) GKR Challenge $\mu_k$
+//!     $k$-variate sumcheck challenge vector generated during the course of gpa_sumcheck
+//! 2) GPA Challenge $\mu_k$
 //!     1-variate generated during layer proving after the sumcheck proof is created after the layer k to k+1 sumcheck
 //! 3) Layer Challenge $r_{k+1} := (r_k, \mu_k)$
 //!     $k+1$ variate, materialized as a combination of the above two, used in `LayerClaim`
@@ -24,6 +24,8 @@
 mod error;
 #[allow(clippy::module_inception)]
 mod gkr_gpa;
+mod gpa_sumcheck;
+mod oracles;
 mod prove;
 #[cfg(test)]
 mod tests;
@@ -33,5 +35,6 @@ pub use error::*;
 pub use gkr_gpa::{
 	GrandProductBatchProof, GrandProductBatchProveOutput, GrandProductClaim, GrandProductWitness,
 };
+pub use oracles::*;
 pub use prove::*;
 pub use verify::*;

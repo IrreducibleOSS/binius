@@ -4,7 +4,10 @@ use super::{
 	error::Error,
 	msetcheck::{reduce_msetcheck_claim, MsetcheckClaim, MsetcheckProof},
 };
-use crate::{oracle::MultilinearOracleSet, protocols::gkr_gpa::GrandProductClaim};
+use crate::{
+	oracle::{MultilinearOracleSet, OracleId},
+	protocols::gkr_gpa::{construct_grand_product_claims, GrandProductClaim},
+};
 use binius_field::TowerField;
 use binius_utils::bail;
 use tracing::instrument;
@@ -17,7 +20,7 @@ pub fn verify<F: TowerField>(
 	gamma: F,
 	alpha: Option<F>,
 	msetcheck_proof: MsetcheckProof<F>,
-) -> Result<Vec<GrandProductClaim<F>>, Error> {
+) -> Result<(Vec<GrandProductClaim<F>>, Vec<OracleId>), Error> {
 	let [t_product, u_product] = msetcheck_proof.grand_products[0..2]
 		.try_into()
 		.expect("must have a length of 2");
@@ -28,12 +31,10 @@ pub fn verify<F: TowerField>(
 
 	let gpa_claim_oracle_ids = reduce_msetcheck_claim(oracles, claim, gamma, alpha)?;
 
-	Ok(gpa_claim_oracle_ids
-		.iter()
-		.zip(msetcheck_proof.grand_products)
-		.map(|(id, product)| GrandProductClaim {
-			poly: oracles.oracle(*id),
-			product,
-		})
-		.collect::<Vec<_>>())
+	let claims = construct_grand_product_claims(
+		&gpa_claim_oracle_ids,
+		oracles,
+		&msetcheck_proof.grand_products,
+	)?;
+	Ok((claims, gpa_claim_oracle_ids.to_vec()))
 }

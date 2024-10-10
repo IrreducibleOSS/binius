@@ -6,10 +6,12 @@ use super::lasso::{
 };
 
 use crate::{
-	oracle::OracleId,
 	polynomial::Error as PolynomialError,
 	protocols::{
-		gkr_gpa::{GrandProductClaim, GrandProductWitness},
+		gkr_gpa::{
+			construct_grand_product_claims, construct_grand_product_witnesses,
+			get_grand_products_from_witnesses,
+		},
 		lasso::Error,
 	},
 };
@@ -74,23 +76,22 @@ use tracing::instrument;
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "lasso::prove", level = "debug")]
-pub fn prove<'a, FC, U, F, FW, L, Backend>(
+pub fn prove<'a, FC, U, F, L, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: MultilinearExtensionIndex<'a, U, FW>,
+	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	lasso_claim: &LassoClaim<F>,
-	lasso_witness: LassoWitness<'a, PackedType<U, FW>, L>,
+	lasso_witness: LassoWitness<'a, PackedType<U, F>, L>,
 	lasso_batches: &LassoBatches,
 	gamma: F,
 	alpha: F,
 	backend: Backend,
-) -> Result<LassoProveOutput<'a, U, FW, F>, Error>
+) -> Result<LassoProveOutput<'a, U, F>, Error>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<FC>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FC>,
 	FC: TowerField,
 	PackedType<U, FC>: PackedFieldIndexable,
-	PackedType<U, FW>: PackedFieldIndexable,
-	F: TowerField + From<FW> + ExtensionField<FC>,
-	FW: TowerField + ExtensionField<FC> + From<F>,
+	PackedType<U, F>: PackedFieldIndexable,
+	F: TowerField + ExtensionField<FC>,
 	L: AsRef<[usize]>,
 	Backend: ComputationBackend + 'static,
 {
@@ -170,11 +171,11 @@ where
 			PackedType::<U, FC>::unpack_scalars_mut(packed_slice)
 		};
 
-		let mixed_u_counts = lincom::<U, FC, FW, _, F>(u_polynomial, counts, gamma, alpha)?;
+		let mixed_u_counts = lincom::<U, FC, F>(u_polynomial, counts, gamma, alpha)?;
 
 		let mixed_u_counts_plus_one = lincom(u_polynomial, counts, gamma, alpha_gen)?;
 
-		witness_index = witness_index.update_owned::<FW, _>([
+		witness_index = witness_index.update_owned::<F, _>([
 			(mixed_u_counts_oracle_ids[i], mixed_u_counts),
 			(mixed_u_counts_plus_one_oracle_ids[i], mixed_u_counts_plus_one),
 		])?;
@@ -194,95 +195,95 @@ where
 		(ones_repeating_oracle_id, ones_repeating),
 	])?;
 
-	witness_index = witness_index.update_owned::<FW, _>([
+	witness_index = witness_index.update_owned::<F, _>([
 		(mixed_t_final_counts_oracle_id, mixed_t_final_counts),
 		(mixed_t_one_oracle_id, mixed_t_ones),
 	])?;
 
-	let left_grand_product_witness_claims =
-		gkr_product_witness_claims(&gkr_claim_oracle_ids.left, &witness_index, oracles)?;
+	let left_witnesses =
+		construct_grand_product_witnesses(&gkr_claim_oracle_ids.left, &witness_index)?;
+	let left_grand_products = get_grand_products_from_witnesses(&left_witnesses);
+	let left_claims =
+		construct_grand_product_claims(&gkr_claim_oracle_ids.left, oracles, &left_grand_products)?;
 
-	let right_grand_product_witness_claims =
-		gkr_product_witness_claims(&gkr_claim_oracle_ids.right, &witness_index, oracles)?;
+	let right_witnesses =
+		construct_grand_product_witnesses(&gkr_claim_oracle_ids.right, &witness_index)?;
+	let right_grand_products = get_grand_products_from_witnesses(&right_witnesses);
+	let right_claims = construct_grand_product_claims(
+		&gkr_claim_oracle_ids.right,
+		oracles,
+		&right_grand_products,
+	)?;
 
-	let counts_grand_product_witness_claims =
-		gkr_product_witness_claims(&gkr_claim_oracle_ids.counts, &witness_index, oracles)?;
+	let counts_witnesses =
+		construct_grand_product_witnesses(&gkr_claim_oracle_ids.counts, &witness_index)?;
+	let counts_grand_products = get_grand_products_from_witnesses(&counts_witnesses);
+	let counts_claims = construct_grand_product_claims(
+		&gkr_claim_oracle_ids.counts,
+		oracles,
+		&counts_grand_products,
+	)?;
 
-	let left_product: F = left_grand_product_witness_claims
-		.grand_products
-		.iter()
-		.product();
-	let right_product: F = right_grand_product_witness_claims
-		.grand_products
-		.iter()
-		.product();
+	let left_product: F = left_grand_products.iter().product();
+	let right_product: F = right_grand_products.iter().product();
 
 	if left_product != right_product {
 		bail!(Error::ProductsDiffer);
 	}
 
-	if counts_grand_product_witness_claims
-		.grand_products
-		.iter()
-		.any(|count| *count == F::ZERO)
-	{
+	if counts_grand_products.iter().any(|count| *count == F::ZERO) {
 		bail!(Error::ZeroCounts);
 	}
 
 	let lasso_proof = LassoProof {
-		left_grand_products: left_grand_product_witness_claims.grand_products,
-		right_grand_products: right_grand_product_witness_claims.grand_products,
-		counts_grand_products: counts_grand_product_witness_claims.grand_products,
+		left_grand_products,
+		right_grand_products,
+		counts_grand_products,
 	};
 
-	let reduced_gpa_claims = [
-		left_grand_product_witness_claims.gpa_claims,
-		right_grand_product_witness_claims.gpa_claims,
-		counts_grand_product_witness_claims.gpa_claims,
-	]
-	.concat();
+	let reduced_gpa_claims = [left_claims, right_claims, counts_claims].concat();
 
-	let reduced_gpa_witnesses = [
-		left_grand_product_witness_claims.gpa_witnesses,
-		right_grand_product_witness_claims.gpa_witnesses,
-		counts_grand_product_witness_claims.gpa_witnesses,
+	let reduced_gpa_witnesses = [left_witnesses, right_witnesses, counts_witnesses].concat();
+
+	let gpa_metas = [
+		gkr_claim_oracle_ids.left,
+		gkr_claim_oracle_ids.right,
+		gkr_claim_oracle_ids.counts,
 	]
 	.concat();
 
 	Ok(LassoProveOutput {
 		reduced_gpa_claims,
 		reduced_gpa_witnesses,
+		gpa_metas,
 		lasso_proof,
 		witness_index,
 	})
 }
 
-fn lincom<U, FC, FW, PW, F>(
-	trace: &MultilinearWitness<PW>,
+fn lincom<U, FC, F>(
+	trace: &MultilinearWitness<PackedType<U, F>>,
 	counts: &[FC],
 	gamma: F,
 	alpha: F,
 ) -> Result<Arc<[U]>, Error>
 where
-	U: UnderlierType + PackScalar<FW>,
-	PackedType<U, FW>: PackedFieldIndexable,
-	PW: PackedField<Scalar = FW>,
-	FW: Field + From<F>,
+	U: UnderlierType + PackScalar<F>,
+	PackedType<U, F>: PackedFieldIndexable,
 	F: Field + ExtensionField<FC>,
 	FC: Field,
 {
 	let n_vars = trace.n_vars();
 
-	let packing_log_width = PackedType::<U, FW>::LOG_WIDTH;
+	let packing_log_width = PackedType::<U, F>::LOG_WIDTH;
 
 	let mut underliers = vec![U::default(); 1 << (n_vars - packing_log_width)];
-	let values = PackedType::<U, FW>::unpack_scalars_mut(
-		PackedType::<U, FW>::from_underliers_ref_mut(underliers.as_mut_slice()),
+	let values = PackedType::<U, F>::unpack_scalars_mut(
+		PackedType::<U, F>::from_underliers_ref_mut(underliers.as_mut_slice()),
 	);
 
 	values.par_iter_mut().enumerate().for_each(|(i, values_i)| {
-		let res = alpha * counts[i] + gamma;
-		*values_i = FW::from(res);
+		*values_i = alpha * counts[i] + gamma;
 	});
 
 	values.par_iter_mut().enumerate().try_for_each(
@@ -293,51 +294,4 @@ where
 	)?;
 
 	Ok(underliers.into())
-}
-
-#[derive(Debug, Default)]
-struct GrandProductWitnessClaim<'a, U, FW, F>
-where
-	U: UnderlierType + PackScalar<FW>,
-	F: TowerField + From<FW>,
-	FW: Field,
-{
-	grand_products: Vec<F>,
-	gpa_witnesses: Vec<GrandProductWitness<'a, PackedType<U, FW>>>,
-	gpa_claims: Vec<GrandProductClaim<F>>,
-}
-
-fn gkr_product_witness_claims<'a, U, F, FW>(
-	ids: &[OracleId],
-	witness_index: &MultilinearExtensionIndex<'a, U, FW>,
-	oracles: &MultilinearOracleSet<F>,
-) -> Result<GrandProductWitnessClaim<'a, U, FW, F>, Error>
-where
-	U: UnderlierType + PackScalar<FW>,
-	F: TowerField + From<FW>,
-	FW: Field,
-{
-	let mut grand_product_witness_claims = GrandProductWitnessClaim::default();
-
-	for id in ids {
-		let poly = witness_index.get_multilin_poly(*id)?;
-
-		let oracle = oracles.oracle(*id);
-
-		let gpa_witness = GrandProductWitness::new(poly)?;
-
-		let grand_product = gpa_witness.grand_product_evaluation().into();
-		let gpa_claim = GrandProductClaim {
-			poly: oracle,
-			product: grand_product,
-		};
-
-		grand_product_witness_claims
-			.grand_products
-			.push(grand_product);
-		grand_product_witness_claims.gpa_witnesses.push(gpa_witness);
-		grand_product_witness_claims.gpa_claims.push(gpa_claim);
-	}
-
-	Ok(grand_product_witness_claims)
 }

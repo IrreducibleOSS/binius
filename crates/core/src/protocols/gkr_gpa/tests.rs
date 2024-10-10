@@ -82,7 +82,7 @@ fn create_claims_witnesses_helper<
 	let mut new_witnesses = Vec::with_capacity(n_multilins);
 	(0..n_multilins).for_each(|index| {
 		let claim = GrandProductClaim {
-			poly: multilin_oracles[index].clone(),
+			n_vars,
 			product: mles_with_product[index].1,
 		};
 		let witness_poly = witness_index
@@ -160,36 +160,24 @@ fn test_prove_verify_batch() {
 
 	// Prove and Verify
 	let _ = (oracle_set, witness_index, rng);
+
 	let GrandProductBatchProveOutput {
-		evalcheck_multilinear_claims,
+		final_layer_claims: final_layer_claim,
 		proof,
-	} = batch_prove::<_, _, FS, _, _>(
-		witnesses,
-		claims.clone(),
-		domain_factory,
-		prover_challenger,
-		backend,
-	)
-	.unwrap();
+	} = batch_prove::<_, _, FS, _, _>(witnesses, &claims, domain_factory, prover_challenger, backend)
+		.unwrap();
 
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(claims.clone(), proof, verifier_challenger).unwrap();
 
-	assert_eq!(evalcheck_multilinear_claims.len(), verified_evalcheck_multilinear_claims.len());
-	for ((proved_eval_claim, verified_eval_claim), gpa_claim) in evalcheck_multilinear_claims
+	assert_eq!(final_layer_claim.len(), verified_evalcheck_multilinear_claims.len());
+	for (proved_eval_claim, verified_layer_laim) in final_layer_claim
 		.iter()
 		.zip(verified_evalcheck_multilinear_claims.iter())
-		.zip(claims.into_iter())
 	{
 		// Evaluations match
-		assert_eq!(proved_eval_claim.eval, verified_eval_claim.eval);
+		assert_eq!(proved_eval_claim.eval, verified_layer_laim.eval);
 		// Evaluation Points match
-		assert_eq!(proved_eval_claim.eval_point, verified_eval_claim.eval_point);
-		// Polynomial matches
-		assert_eq!(proved_eval_claim.poly, gpa_claim.poly);
-		assert_eq!(verified_eval_claim.poly, gpa_claim.poly);
-		// Evaluation Points are random
-		assert!(proved_eval_claim.is_random_point);
-		assert!(verified_eval_claim.is_random_point);
+		assert_eq!(proved_eval_claim.eval_point, verified_layer_laim.eval_point);
 	}
 }

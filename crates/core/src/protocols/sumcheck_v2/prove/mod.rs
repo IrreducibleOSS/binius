@@ -3,7 +3,7 @@
 mod batch_prove;
 mod concrete_prover;
 pub mod oracles;
-mod prover_state;
+pub mod prover_state;
 pub mod regular_sumcheck;
 pub mod univariate;
 pub mod zerocheck;

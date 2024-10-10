@@ -73,7 +73,7 @@ pub enum VerificationError {
 	#[error("the final batch composite evaluation is incorrect")]
 	IncorrectBatchEvaluation,
 	#[error("the proof contains an incorrect evaluation of the eq indicator")]
-	IncorrectZerocheckEqIndEvaluation,
+	IncorrectEqIndEvaluation,
 	#[error(
 		"the proof contains an incorrect Lagrange coefficients multilinear extension evaluation"
 	)]

@@ -351,9 +351,9 @@ where
 		n_vars - kappa, // Number of variables in the packed polynomial
 		// First polynomial is the packed committed polynomial and the second is the ring-switching
 		// eq indicator
-		BivariateProduct.degree(),
+		BivariateProduct {}.degree(),
 		vec![CompositeSumClaim {
-			composition: BivariateProduct,
+			composition: BivariateProduct {},
 			sum: mixed_sum,
 		}],
 	)

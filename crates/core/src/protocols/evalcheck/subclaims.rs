@@ -388,8 +388,11 @@ pub fn projected_bivariate_claim<F: TowerField>(
 	let inner = oracles.oracle(projected_id.unwrap_or(inner_id));
 	let multiplier = oracles.oracle(multiplier_id);
 
-	let product =
-		CompositePolyOracle::new(multiplier.n_vars(), vec![inner, multiplier], BivariateProduct)?;
+	let product = CompositePolyOracle::new(
+		multiplier.n_vars(),
+		vec![inner, multiplier],
+		BivariateProduct {},
+	)?;
 
 	let sumcheck_claim = SumcheckClaim {
 		poly: product,
@@ -449,7 +452,7 @@ where
 
 	let witness = MultilinearComposite::new(
 		multiplier_multilin.n_vars(),
-		BivariateProduct,
+		BivariateProduct {},
 		vec![projected_inner_multilin, multiplier_multilin],
 	)?;
 

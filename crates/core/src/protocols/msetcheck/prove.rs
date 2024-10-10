@@ -8,18 +8,20 @@ use super::{
 	},
 };
 use crate::{
-	oracle::{MultilinearOracleSet, OracleId},
+	oracle::MultilinearOracleSet,
 	polynomial::Error as PolynomialError,
-	protocols::gkr_gpa::{GrandProductClaim, GrandProductWitness},
+	protocols::gkr_gpa::{
+		construct_grand_product_claims, construct_grand_product_witnesses,
+		get_grand_products_from_witnesses,
+	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	Field, PackedField, PackedFieldIndexable, TowerField,
+	PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_utils::bail;
-use itertools::multiunzip;
 use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::instrument;
@@ -38,19 +40,18 @@ use tracing::instrument;
 /// where $\gamma$ and $\alpha$ are some large field challenges sampled via Fiat-Shamir
 /// (`alpha` is non-`None` if $n \ge 2$).
 #[instrument(skip_all, name = "msetcheck::prove", level = "debug")]
-pub fn prove<'a, U, F, FW>(
+pub fn prove<'a, U, F>(
 	oracles: &mut MultilinearOracleSet<F>,
-	witness_index: MultilinearExtensionIndex<'a, U, FW>,
+	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	msetcheck_claim: &MsetcheckClaim<F>,
-	msetcheck_witness: MsetcheckWitness<'a, PackedType<U, FW>>,
+	msetcheck_witness: MsetcheckWitness<'a, PackedType<U, F>>,
 	gamma: F,
 	alpha: Option<F>,
-) -> Result<MsetcheckProveOutput<'a, U, F, FW>, Error>
+) -> Result<MsetcheckProveOutput<'a, U, F>, Error>
 where
-	U: UnderlierType + PackScalar<FW>,
-	F: TowerField + From<FW>,
-	FW: TowerField + From<F>,
-	PackedType<U, FW>: PackedFieldIndexable,
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+	PackedType<U, F>: PackedFieldIndexable,
 {
 	let gpa_claim_oracle_ids = reduce_msetcheck_claim(oracles, msetcheck_claim, gamma, alpha)?;
 
@@ -65,16 +66,16 @@ where
 		bail!(Error::WitnessNumVariablesMismatch);
 	}
 
-	let packing_log_width = PackedType::<U, FW>::LOG_WIDTH;
+	let packing_log_width = PackedType::<U, F>::LOG_WIDTH;
 
-	let lincom_witness = |relation_witnesses: &[MultilinearWitness<'a, PackedType<U, FW>>]| -> Result<Arc<[U]>, Error> {
+	let lincom_witness = |relation_witnesses: &[MultilinearWitness<'a, PackedType<U, F>>]| -> Result<Arc<[U]>, Error> {
 		// TODO: preallocate values
 		// Populate the accumulator vector with additive challenge term
         let mut underliers = vec![U::default(); 1 << (n_vars - packing_log_width)];
-        let values = PackedType::<U, FW>::unpack_scalars_mut(
-            PackedType::<U, FW>::from_underliers_ref_mut(underliers.as_mut_slice()));
+        let values = PackedType::<U, F>::unpack_scalars_mut(
+            PackedType::<U, F>::from_underliers_ref_mut(underliers.as_mut_slice()));
 
-        values.fill(FW::from(gamma));
+        values.fill(gamma);
 
 		let (first_witness, rest_witnesses) = relation_witnesses
 			.split_first()
@@ -88,19 +89,19 @@ where
 			},
 		)?;
 
-		let fw_alpha = FW::from(alpha.expect("dimensionality checked on reduction"));
-		let mut fw_coeff = fw_alpha;
+		let alpha = alpha.expect("dimensionality checked on reduction");
+		let mut coeff = alpha;
 
 		// the rest are weighted - apply small field optimization where possible
 		for rest_witness in rest_witnesses {
 			values.par_iter_mut().enumerate().try_for_each(
 				|(i, values_i)| -> Result<_, PolynomialError> {
-					*values_i += rest_witness.evaluate_on_hypercube_and_scale(i, fw_coeff)?;
+					*values_i += rest_witness.evaluate_on_hypercube_and_scale(i, coeff)?;
 					Ok(())
 				},
 			)?;
 
-			fw_coeff *= fw_alpha;
+			coeff *= alpha;
 		}
 
 		Ok(underliers.into())
@@ -112,64 +113,29 @@ where
 	let u_polynomial = lincom_witness(msetcheck_witness.u_polynomials())?;
 
 	let witness_index = witness_index
-		.update_owned::<FW, _>([(t_oracle_id, t_polynomial), (u_oracle_id, u_polynomial)])?;
+		.update_owned::<F, _>([(t_oracle_id, t_polynomial), (u_oracle_id, u_polynomial)])?;
 
-	let (grand_products, reduced_gpa_witnesses, reduced_gpa_claims): (Vec<_>, Vec<_>, Vec<_>) =
-		multiunzip(gpa_claim_oracle_ids.map(|id| {
-			grand_product_witness_claim(id, &witness_index, oracles)
-				.expect("all elements have been added above")
-		}));
-
-	let [t_product, u_product] = grand_products[0..2]
+	let reduced_gpa_witnesses: [_; 2] =
+		construct_grand_product_witnesses(&gpa_claim_oracle_ids, &witness_index)?
+			.try_into()
+			.expect("The length must be 2");
+	let grand_products: [_; 2] = get_grand_products_from_witnesses(&reduced_gpa_witnesses)
 		.try_into()
 		.expect("The length must be 2");
 
-	if t_product != u_product {
+	let claims = construct_grand_product_claims(&gpa_claim_oracle_ids, oracles, &grand_products)?;
+
+	let reduced_gpa_claims = claims.try_into().expect("The length must be 2");
+
+	if grand_products[0] != grand_products[1] {
 		bail!(Error::ProductsDiffer);
 	}
-
-	let reduced_gpa_witnesses = reduced_gpa_witnesses
-		.try_into()
-		.expect("The length must be 2 because the prodcheck_claims have a length of 2.");
-
-	let reduced_gpa_claims = reduced_gpa_claims
-		.try_into()
-		.expect("The length must be 2 because the prodcheck_claims have a length of 2.");
-
-	let grand_products = grand_products.try_into().expect("The length must be 2");
 
 	Ok(MsetcheckProveOutput {
 		reduced_gpa_witnesses,
 		reduced_gpa_claims,
+		gpa_metas: gpa_claim_oracle_ids,
 		msetcheck_proof: MsetcheckProof { grand_products },
 		witness_index,
 	})
-}
-
-type GrandProductWitnessClaimResult<'a, U, FW, F> =
-	Result<(F, GrandProductWitness<'a, PackedType<U, FW>>, GrandProductClaim<F>), Error>;
-
-fn grand_product_witness_claim<
-	'a,
-	U: UnderlierType + PackScalar<FW>,
-	F: TowerField + From<FW>,
-	FW: Field,
->(
-	id: OracleId,
-	witness_index: &MultilinearExtensionIndex<'a, U, FW>,
-	oracles: &MultilinearOracleSet<F>,
-) -> GrandProductWitnessClaimResult<'a, U, FW, F> {
-	let poly = witness_index.get_multilin_poly(id)?;
-
-	let oracle = oracles.oracle(id);
-
-	let gpa_witness = GrandProductWitness::new(poly)?;
-
-	let product = gpa_witness.grand_product_evaluation().into();
-	let gpa_claim = GrandProductClaim {
-		poly: oracle,
-		product,
-	};
-
-	Ok((product, gpa_witness, gpa_claim))
 }
