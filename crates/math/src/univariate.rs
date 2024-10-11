@@ -4,7 +4,9 @@
 use super::error::Error;
 use crate::Matrix;
 use auto_impl::auto_impl;
-use binius_field::{packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension};
+use binius_field::{
+	packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension, PackedField,
+};
 use binius_utils::bail;
 use std::{
 	iter::{self, Step},
@@ -120,49 +122,49 @@ impl<F: Field> EvaluationDomain<F> {
 		self.points.as_slice()
 	}
 
-	/// Compute a vector of Lagrange polynomial evaluations in $O(N^2)$ at a given point `x`.
+	/// Compute a vector of Lagrange polynomial evaluations in $O(N)$ at a given point `x`.
 	///
 	/// For an evaluation domain consisting of points $\pi_i$ Lagrange polynomials $L_i(x)$
 	/// are defined by
 	/// $$L_i(x) = \sum_{j \neq i}\frac{x - \pi_j}{\pi_i - \pi_j}$$
 	pub fn lagrange_evals<FE: ExtensionField<F>>(&self, x: FE) -> Vec<FE> {
-		self.weights
-			.iter()
-			.enumerate()
-			.map(|(i, &weight)| {
-				let numerator = (0..self.size())
-					.filter(|&j| j != i)
-					.map(|j| x - self.points[j])
-					.product::<FE>();
-				numerator * weight
-			})
-			.collect()
+		let num_evals = self.size();
+
+		let mut result: Vec<FE> = vec![FE::ONE; num_evals];
+
+		// Multiply the product suffixes
+		for i in (1..num_evals).rev() {
+			result[i - 1] = result[i] * (x - self.points[i]);
+		}
+
+		let mut prefix = FE::ONE;
+
+		// Multiply the product prefixes and weights
+		for ((r, &point), &weight) in result.iter_mut().zip(&self.points).zip(&self.weights) {
+			*r *= prefix * weight;
+			prefix *= x - point;
+		}
+
+		result
 	}
 
 	/// Evaluate the unique interpolated polynomial at any point, for a given set of values, in $O(N)$.
 	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
 	where
-		PE: PackedExtension<F, Scalar: ExtensionField<F>>,
+		PE: PackedField<Scalar: ExtensionField<F>>,
 	{
+		let lagrange_eval_results = self.lagrange_evals(x);
+
 		let n = self.size();
 		if values.len() != n {
 			bail!(Error::ExtrapolateNumberOfEvaluations);
 		}
 
-		let weighted_values = values
-			.iter()
-			.zip(self.weights.iter())
-			.map(|(&value, &weight)| mul_by_subfield_scalar(value, weight));
-
-		let (result, _) = weighted_values.zip(self.points.iter()).fold(
-			(PE::zero(), PE::Scalar::ONE),
-			|(eval, terms_partial_prod), (val, &x_i)| {
-				let term = x - x_i;
-				let next_eval = eval * term + val * terms_partial_prod;
-				let next_terms_partial_prod = terms_partial_prod * term;
-				(next_eval, next_terms_partial_prod)
-			},
-		);
+		let result = lagrange_eval_results
+			.into_iter()
+			.zip(values)
+			.map(|(evaluation, &value)| value * evaluation)
+			.sum::<PE>();
 
 		Ok(result)
 	}
