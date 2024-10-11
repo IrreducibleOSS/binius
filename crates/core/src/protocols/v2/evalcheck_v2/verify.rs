@@ -15,7 +15,7 @@ use crate::oracle::{
 	ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyOracle,
 	ProjectionVariant,
 };
-use binius_field::{util::inner_product_unchecked, Field, PackedField, TowerField};
+use binius_field::{util::inner_product_unchecked, TowerField};
 use binius_math::extrapolate_line_scalar;
 use getset::{Getters, MutGetters};
 use tracing::instrument;
@@ -26,24 +26,23 @@ use tracing::instrument;
 /// `new_sumchecks` bivariate sumcheck constraints, as well as holds mutable references to
 /// the trace (to which new oracles & multilinears may be added during verification)
 #[derive(Getters, MutGetters)]
-pub struct EvalcheckVerifier<'a, P>
+pub struct EvalcheckVerifier<'a, F>
 where
-	P: PackedField,
-	P::Scalar: TowerField,
+	F: TowerField,
 {
-	pub(crate) oracles: &'a mut MultilinearOracleSet<P::Scalar>,
+	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
 	#[getset(get = "pub", get_mut = "pub")]
-	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<P::Scalar>,
+	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
 
-	new_sumcheck_constraints: Vec<ConstraintSetBuilder<P>>,
+	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
 }
 
-impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
+impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	/// Create a new verifier state from a mutable reference to the oracle set
 	/// (it needs to be mutable because `new_sumcheck` reduction may add new
 	/// oracles & multilinears)
-	pub fn new(oracles: &'a mut MultilinearOracleSet<P::Scalar>) -> Self {
+	pub fn new(oracles: &'a mut MultilinearOracleSet<F>) -> Self {
 		let new_sumcheck_constraints = Vec::new();
 		let batch_committed_eval_claims =
 			BatchCommittedEvalClaims::new(&oracles.committed_batches());
@@ -56,7 +55,7 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 	}
 
 	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumcheck_constraints(&mut self) -> Vec<ConstraintSet<P>> {
+	pub fn take_new_sumcheck_constraints(&mut self) -> Vec<ConstraintSet<F>> {
 		self.new_sumcheck_constraints
 			.iter_mut()
 			.map(|builder| mem::take(builder).build())
@@ -71,8 +70,8 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 	#[instrument(skip_all, name = "EvalcheckVerifierState::verify", level = "debug")]
 	pub fn verify(
 		&mut self,
-		evalcheck_claims: Vec<EvalcheckMultilinearClaim<P::Scalar>>,
-		evalcheck_proofs: Vec<EvalcheckProof<P::Scalar>>,
+		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,
+		evalcheck_proofs: Vec<EvalcheckProof<F>>,
 	) -> Result<(), Error> {
 		for (claim, proof) in evalcheck_claims
 			.into_iter()
@@ -86,8 +85,8 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 
 	fn verify_multilinear(
 		&mut self,
-		evalcheck_claim: EvalcheckMultilinearClaim<P::Scalar>,
-		evalcheck_proof: EvalcheckProof<P::Scalar>,
+		evalcheck_claim: EvalcheckMultilinearClaim<F>,
+		evalcheck_proof: EvalcheckProof<F>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			poly: multilinear,
@@ -163,8 +162,7 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 
 				// Verify the evaluation of the interleaved function over the claimed evaluations
 				let subclaim_eval_point = &eval_point[1..];
-				let actual_eval =
-					extrapolate_line_scalar::<P::Scalar, P::Scalar>(eval1, eval2, eval_point[0]);
+				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[0]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(
 						name.unwrap_or(id.to_string()),
@@ -206,11 +204,7 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 				// Verify the evaluation of the merged function over the claimed evaluations
 				let n_vars = poly1.n_vars();
 				let subclaim_eval_point = &eval_point[..n_vars];
-				let actual_eval = extrapolate_line_scalar::<P::Scalar, P::Scalar>(
-					eval1,
-					eval2,
-					eval_point[n_vars],
-				);
+				let actual_eval = extrapolate_line_scalar::<F, F>(eval1, eval2, eval_point[n_vars]);
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(
 						name.unwrap_or(id.to_string()),
@@ -302,7 +296,7 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 
 				// Verify the evaluation of the linear combination over the claimed evaluations
 				let actual_eval = linear_combination.offset()
-					+ inner_product_unchecked::<P::Scalar, P::Scalar>(
+					+ inner_product_unchecked::<F, F>(
 						subproofs.iter().map(|(eval, _)| *eval),
 						linear_combination.coefficients(),
 					);
@@ -342,11 +336,8 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 				let mut extrapolate_eval = inner_eval;
 
 				for z in zs {
-					extrapolate_eval = extrapolate_line_scalar::<P::Scalar, P::Scalar>(
-						P::Scalar::ZERO,
-						extrapolate_eval,
-						*z,
-					);
+					extrapolate_eval =
+						extrapolate_line_scalar::<F, F>(F::ZERO, extrapolate_eval, *z);
 				}
 
 				if extrapolate_eval != eval {
@@ -371,10 +362,10 @@ impl<'a, P: PackedField<Scalar: TowerField>> EvalcheckVerifier<'a, P> {
 
 	fn verify_multilinear_subclaim(
 		&mut self,
-		eval: P::Scalar,
-		subproof: EvalcheckProof<P::Scalar>,
-		poly: MultilinearPolyOracle<P::Scalar>,
-		eval_point: &[P::Scalar],
+		eval: F,
+		subproof: EvalcheckProof<F>,
+		poly: MultilinearPolyOracle<F>,
+		eval_point: &[F],
 		is_random_point: bool,
 	) -> Result<(), Error> {
 		let subclaim = EvalcheckMultilinearClaim {

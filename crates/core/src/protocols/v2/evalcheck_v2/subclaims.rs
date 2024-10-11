@@ -466,13 +466,12 @@ where
 	Ok((proof, evalcheck_claims))
 }
 
-pub fn make_non_same_query_pcs_sumcheck_claims<P>(
-	verifier: &mut EvalcheckVerifier<P::Scalar>,
-	committed_eval_claims: &[CommittedEvalClaim<P::Scalar>],
-) -> Result<ConstraintSet<P>, Error>
+pub fn make_non_same_query_pcs_sumcheck_claims<F>(
+	verifier: &mut EvalcheckVerifier<F>,
+	committed_eval_claims: &[CommittedEvalClaim<F>],
+) -> Result<ConstraintSet<F>, Error>
 where
-	P: PackedField,
-	P::Scalar: TowerField,
+	F: TowerField,
 {
 	let metas = non_same_query_pcs_sumcheck_metas(
 		verifier.oracles,

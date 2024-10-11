@@ -12,17 +12,16 @@ use crate::{
 		sumcheck_v2::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
 };
-use binius_field::{PackedField, TowerField};
+use binius_field::TowerField;
 use binius_utils::bail;
 
-pub fn verify<F, P, Challenger>(
+pub fn verify<F, Challenger>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	proof: GreedyEvalcheckProof<F>,
 	mut challenger: Challenger,
 ) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
 where
-	P: PackedField<Scalar = F>,
 	F: TowerField,
 	Challenger: CanObserve<F> + CanSample<F>,
 {
@@ -65,7 +64,7 @@ where
 		bail!(Error::MissingVirtualOpeningProof);
 	}
 
-	let mut non_sqpcs_sumchecks = Vec::<ConstraintSet<P>>::new();
+	let mut non_sqpcs_sumchecks = Vec::<ConstraintSet<F>>::new();
 
 	for batch in &committed_batches {
 		let maybe_same_query_claim = evalcheck_verifier

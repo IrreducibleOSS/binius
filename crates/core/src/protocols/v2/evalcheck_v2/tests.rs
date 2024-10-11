@@ -108,7 +108,7 @@ fn test_evaluation_point_batching() {
 		.unwrap();
 
 	let mut verifier_oracles = oracles;
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut verifier_oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut verifier_oracles);
 	verifier_state.verify(claims, proof).unwrap();
 
 	let verify_batch0 = verifier_state
@@ -227,7 +227,7 @@ fn test_shifted_evaluation_whole_cube() {
 		1
 	);
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(claims.clone(), proof).unwrap();
 	assert_eq!(
 		verifier_state
@@ -309,7 +309,7 @@ fn test_shifted_evaluation_subcube() {
 		1
 	);
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(claims, proof).unwrap();
 	assert_eq!(
 		verifier_state
@@ -403,7 +403,7 @@ fn test_evalcheck_linear_combination() {
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, backend.clone());
 	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
 }
 
@@ -456,7 +456,7 @@ fn test_evalcheck_repeating() {
 
 	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim.clone()], proof).unwrap();
 }
 
@@ -540,7 +540,7 @@ fn test_evalcheck_merged() {
 
 	assert_matches!(proof[0], EvalcheckProof::Merged { .. });
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
 }
 
@@ -632,7 +632,7 @@ fn test_evalcheck_interleaved() {
 
 	assert_matches!(proof[0], EvalcheckProof::Interleaved { .. });
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
 }
 
@@ -717,6 +717,6 @@ fn test_evalcheck_zero_padded() {
 
 	assert_matches!(proof[0], EvalcheckProof::ZeroPadded { .. });
 
-	let mut verifier_state = EvalcheckVerifier::<PExtension>::new(&mut oracles);
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
 }

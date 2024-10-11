@@ -626,7 +626,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn verify<U, F, PCS, CH, Backend>(
+fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -637,9 +637,9 @@ fn verify<U, F, PCS, CH, Backend>(
 	backend: Backend,
 ) -> Result<()>
 where
-	U: PackScalar<BinaryField1b> + PackScalar<F>,
+	P: PackedField<Scalar = BinaryField1b>,
 	F: TowerField,
-	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, F, Error: Debug, Proof: 'static>,
+	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
@@ -677,7 +677,7 @@ where
 		sumcheck_v2::make_eval_claims(oracles, [meta], zerocheck_output)?;
 
 	// Evalcheck
-	let same_query_claims = greedy_evalcheck_v2::verify::<F, PackedType<U, F>, _>(
+	let same_query_claims = greedy_evalcheck_v2::verify::<F, _>(
 		oracles,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
@@ -766,7 +766,7 @@ fn main() {
 	let verifier_fixed_oracle =
 		FixedOracle::new(&mut verifier_oracles, log_size, backend.clone()).unwrap();
 	let verifier_trace_oracle = TraceOracle::new(&mut verifier_oracles, log_size);
-	verify::<U, BinaryField128b, _, _, _>(
+	verify(
 		log_size,
 		&mut verifier_oracles,
 		&verifier_fixed_oracle,
