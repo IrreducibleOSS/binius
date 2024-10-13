@@ -7,7 +7,6 @@ use crate::{
 		gkr_gpa::{GrandProductClaim, GrandProductWitness},
 		lasso::error::Error,
 	},
-	transparent::multilinear_extension::MultilinearExtensionTransparent,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -16,7 +15,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField, TowerField,
 };
 
-use binius_hal::ComputationBackend;
+use crate::transparent::constant::Constant;
 use binius_utils::bail;
 use getset::Getters;
 use itertools::izip;
@@ -138,7 +137,7 @@ pub struct LassoProveOutput<'a, U: UnderlierType + PackScalar<F>, F: Field> {
 }
 
 pub struct LassoReducedClaimOracleIds {
-	pub ones_repeating_oracle_id: OracleId,
+	pub ones_oracle_id: OracleId,
 	pub mixed_t_final_counts_oracle_id: OracleId,
 	pub mixed_t_one_oracle_id: OracleId,
 	pub mixed_u_counts_oracle_ids: Vec<OracleId>,
@@ -152,17 +151,12 @@ pub struct GkrClaimOracleIds {
 	pub counts: Vec<OracleId>,
 }
 
-pub fn reduce_lasso_claim<
-	C: TowerField,
-	F: TowerField + ExtensionField<C> + From<C>,
-	Backend: ComputationBackend + 'static,
->(
+pub fn reduce_lasso_claim<C: TowerField, F: TowerField + ExtensionField<C> + From<C>>(
 	oracles: &mut MultilinearOracleSet<F>,
 	lasso_claim: &LassoClaim<F>,
 	lasso_batches: &LassoBatches,
 	gamma: F,
 	alpha: F,
-	backend: Backend,
 ) -> Result<(GkrClaimOracleIds, LassoReducedClaimOracleIds), Error> {
 	let t_n_vars = lasso_claim.t_oracle.n_vars();
 
@@ -211,12 +205,10 @@ pub fn reduce_lasso_claim<
 		gkr_claim_oracle_ids.counts.push(*counts_oracle_id);
 	}
 
-	let ones_transparent: MultilinearExtensionTransparent<C, F, _> =
-		MultilinearExtensionTransparent::from_values([C::ONE].to_vec(), backend)?;
-
-	let one_oracle_id = oracles.add_transparent(ones_transparent)?;
-
-	let ones_repeating_oracle_id = oracles.add_repeating(one_oracle_id, t_n_vars - C::LOG_WIDTH)?;
+	let ones_oracle_id = oracles.add_transparent(Constant {
+		n_vars: t_n_vars,
+		value: F::ONE,
+	})?;
 
 	let mixed_t_final_counts_oracle_id = oracles.add_linear_combination_with_offset(
 		t_n_vars,
@@ -230,14 +222,11 @@ pub fn reduce_lasso_claim<
 	let mixed_t_one_oracle_id = oracles.add_linear_combination_with_offset(
 		t_n_vars,
 		gamma,
-		[
-			(lasso_claim.t_oracle.id(), F::ONE),
-			(ones_repeating_oracle_id, alpha),
-		],
+		[(lasso_claim.t_oracle.id(), F::ONE), (ones_oracle_id, alpha)],
 	)?;
 
 	let lasso_claim_oracles = LassoReducedClaimOracleIds {
-		ones_repeating_oracle_id,
+		ones_oracle_id,
 		mixed_t_final_counts_oracle_id,
 		mixed_t_one_oracle_id,
 		mixed_u_counts_oracle_ids,

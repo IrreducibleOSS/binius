@@ -20,7 +20,7 @@ use binius_core::{
 	composition::{empty_mix_composition, index_composition, IndexComposition},
 	oracle::{BatchId, CompositePolyOracle, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension},
+	polynomial::{CompositionPoly, MultilinearComposite},
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
@@ -541,21 +541,17 @@ impl TraceOracle {
 		oracles_arr
 	}
 
-	fn gen_u32const_oracle_id<F: TowerField, Backend: ComputationBackend + 'static>(
+	fn gen_u32const_oracle_id<F: TowerField>(
 		log_size: usize,
 		oracles: &mut MultilinearOracleSet<F>,
 		x: u32,
-		backend: Backend,
 	) -> OracleId {
 		let x_unpacked = must_cast::<_, PackedBinaryField32x1b>(x);
 
-		let specialized = MultilinearExtension::from_values_generic(vec![x_unpacked])
-			.unwrap()
-			.specialize::<F>();
 		let id = oracles
 			.add_transparent(
-				MultilinearExtensionTransparent::from_specialized(specialized, backend)
-					.expect("must be able to specialize"),
+				MultilinearExtensionTransparent::<_, F, _>::from_values(vec![x_unpacked])
+					.expect("provided data of 32x1b elements is a power of two"),
 			)
 			.unwrap();
 
@@ -564,11 +560,7 @@ impl TraceOracle {
 			.unwrap()
 	}
 
-	pub fn new<F: TowerField, Backend: ComputationBackend + 'static>(
-		oracles: &mut MultilinearOracleSet<F>,
-		log_size: usize,
-		backend: Backend,
-	) -> Self {
+	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
 		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
 		let w = oracles
 			.add_named("omega")
@@ -628,9 +620,8 @@ impl TraceOracle {
 		}
 
 		// Define round constant oracles
-		let k = array::from_fn(|i| {
-			Self::gen_u32const_oracle_id(log_size, oracles, ROUND_CONSTS_K[i], backend.clone())
-		});
+		let k =
+			array::from_fn(|i| Self::gen_u32const_oracle_id(log_size, oracles, ROUND_CONSTS_K[i]));
 
 		// Initialize state oracles
 		let mut h: [[OracleId; 8]; 65] = array::from_fn(|_| [OracleId::MAX; 8]);
@@ -1078,7 +1069,7 @@ fn main() {
 	let backend = make_portable_backend();
 
 	let mut oracles = MultilinearOracleSet::new();
-	let trace = TraceOracle::new(&mut oracles, log_size, backend.clone());
+	let trace = TraceOracle::new(&mut oracles, log_size);
 
 	let trace_batch = oracles.committed_batch(trace.batch_id);
 

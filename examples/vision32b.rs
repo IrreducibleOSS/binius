@@ -295,11 +295,7 @@ struct TraceOracle {
 }
 
 impl TraceOracle {
-	pub fn new<F, Backend: ComputationBackend + 'static>(
-		oracles: &mut MultilinearOracleSet<F>,
-		log_size: usize,
-		backend: Backend,
-	) -> Result<Self>
+	pub fn new<F>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Result<Self>
 	where
 		F: TowerField + ExtensionField<BinaryField32b> + From<BinaryField32b>,
 	{
@@ -307,10 +303,9 @@ impl TraceOracle {
 			let even_rc_single = oracles
 				.add_named(format!("even_round_consts_single_{}", i))
 				.transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(
-						round_consts(&VISION_RC_EVEN[i]),
-						backend.clone(),
-					)
+					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+						&VISION_RC_EVEN[i],
+					))
 					.unwrap(),
 				)
 				.unwrap();
@@ -323,10 +318,9 @@ impl TraceOracle {
 			let odd_rc_single = oracles
 				.add_named(format!("odd_round_consts_single_{}", i))
 				.transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(
-						round_consts(&VISION_RC_ODD[i]),
-						backend.clone(),
-					)
+					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+						&VISION_RC_ODD[i],
+					))
 					.unwrap(),
 				)
 				.unwrap();
@@ -335,22 +329,23 @@ impl TraceOracle {
 				.repeating(odd_rc_single, log_size - LOG_COMPRESSION_BLOCK)
 				.unwrap()
 		});
-		let round_0_constant = array::from_fn(|i| {
-			let round_0_constant_single = oracles
-				.add_named(format!("round_0_const_single_{}", i))
-				.transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(
-						round_consts(&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0]),
-						backend.clone(),
-					)
-					.unwrap(),
-				)
-				.unwrap();
-			oracles
-				.add_named(format!("round_0_consts_{}", i))
-				.repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
-				.unwrap()
-		});
+		let round_0_constant =
+			array::from_fn(|i| {
+				let round_0_constant_single =
+					oracles
+						.add_named(format!("round_0_const_single_{}", i))
+						.transparent(
+							MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+								&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0],
+							))
+							.unwrap(),
+						)
+						.unwrap();
+				oracles
+					.add_named(format!("round_0_consts_{}", i))
+					.repeating(round_0_constant_single, log_size - LOG_COMPRESSION_BLOCK)
+					.unwrap()
+			});
 
 		let round_selector_single = oracles
 			.add_named("round_selector_single")
@@ -1141,7 +1136,7 @@ fn main() {
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let backend = make_portable_backend();
-	let trace_oracle = TraceOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
+	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 
 	const SECURITY_BITS: usize = 100;

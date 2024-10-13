@@ -25,7 +25,6 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::ComputationBackend;
 use binius_utils::bail;
 use itertools::izip;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
@@ -76,7 +75,7 @@ use tracing::instrument;
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "lasso::prove", level = "debug")]
-pub fn prove<'a, FC, U, F, L, Backend>(
+pub fn prove<'a, FC, U, F, L>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	lasso_claim: &LassoClaim<F>,
@@ -84,7 +83,6 @@ pub fn prove<'a, FC, U, F, L, Backend>(
 	lasso_batches: &LassoBatches,
 	gamma: F,
 	alpha: F,
-	backend: Backend,
 ) -> Result<LassoProveOutput<'a, U, F>, Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<FC>,
@@ -93,7 +91,6 @@ where
 	PackedType<U, F>: PackedFieldIndexable,
 	F: TowerField + ExtensionField<FC>,
 	L: AsRef<[usize]>,
-	Backend: ComputationBackend + 'static,
 {
 	let t_n_vars = lasso_claim.t_oracle().n_vars();
 
@@ -125,10 +122,10 @@ where
 	}
 
 	let (gkr_claim_oracle_ids, reduced_claim_oracle_ids) =
-		reduce_lasso_claim::<FC, _, _>(oracles, lasso_claim, lasso_batches, gamma, alpha, backend)?;
+		reduce_lasso_claim::<FC, _>(oracles, lasso_claim, lasso_batches, gamma, alpha)?;
 
 	let LassoReducedClaimOracleIds {
-		ones_repeating_oracle_id,
+		ones_oracle_id,
 		mixed_t_final_counts_oracle_id,
 		mixed_t_one_oracle_id,
 		mixed_u_counts_oracle_ids,
@@ -192,7 +189,7 @@ where
 
 	witness_index = witness_index.update_owned::<FC, _>([
 		(lasso_batches.final_counts, final_counts_underlier_vecs),
-		(ones_repeating_oracle_id, ones_repeating),
+		(ones_oracle_id, ones_repeating),
 	])?;
 
 	witness_index = witness_index.update_owned::<F, _>([

@@ -170,17 +170,13 @@ struct FixedOracle {
 }
 
 impl FixedOracle {
-	pub fn new<F: TowerField, Backend: ComputationBackend + 'static>(
+	pub fn new<F: TowerField>(
 		oracles: &mut MultilinearOracleSet<F>,
 		log_size: usize,
-		backend: Backend,
 	) -> Result<Self> {
 		let round_const_values = must_cast_slice::<_, PackedBinaryField64x1b>(&KECCAKF_RC);
 		let round_consts_single = oracles.add_named("round_consts_single").transparent(
-			MultilinearExtensionTransparent::<_, F, _, _>::from_values(
-				round_const_values,
-				backend,
-			)?,
+			MultilinearExtensionTransparent::<_, F, _>::from_values(round_const_values)?,
 		)?;
 		let round_consts = oracles
 			.add_named("round_consts")
@@ -752,7 +748,7 @@ fn main() {
 	let backend = make_portable_backend();
 
 	let mut oracles = MultilinearOracleSet::new();
-	let fixed_oracle = FixedOracle::new(&mut oracles, log_size, backend.clone()).unwrap();
+	let fixed_oracle = FixedOracle::new(&mut oracles, log_size).unwrap();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size);
 
 	let trace_batch = oracles.committed_batch(trace_oracle.batch_id);

@@ -343,7 +343,7 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let lasso_prove_output = lasso::prove::<B32, U, _, _, _>(
+	let lasso_prove_output = lasso::prove::<B32, U, _, _>(
 		oracles,
 		witness.index,
 		&lasso_claim,
@@ -351,7 +351,6 @@ where
 		lasso_batch,
 		gamma,
 		alpha,
-		backend.clone(),
 	)?;
 
 	let LassoProveOutput {
@@ -558,14 +557,13 @@ where
 	let gamma = challenger.sample();
 	let alpha = challenger.sample();
 
-	let (reduced_gpa_claims, gpa_metas) = lasso::verify::<B32, _, _>(
+	let (reduced_gpa_claims, gpa_metas) = lasso::verify::<B32, _>(
 		oracles,
 		&lasso_claim,
 		&trace_oracle.lasso_batch,
 		gamma,
 		alpha,
 		lasso_proof,
-		backend.clone(),
 	)?;
 
 	challenger.observe(lasso_counts_comm.clone());

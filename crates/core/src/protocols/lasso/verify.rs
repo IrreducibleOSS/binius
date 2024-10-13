@@ -1,34 +1,30 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::lasso::{reduce_lasso_claim, LassoBatches, LassoClaim, LassoProof};
-use crate::{oracle::OracleId, protocols::gkr_gpa::construct_grand_product_claims};
-use binius_hal::ComputationBackend;
-
-use crate::protocols::lasso::Error;
-
-use crate::oracle::MultilinearOracleSet;
-
-use crate::protocols::gkr_gpa::GrandProductClaim;
-
+use crate::{
+	oracle::{MultilinearOracleSet, OracleId},
+	protocols::{
+		gkr_gpa::{construct_grand_product_claims, GrandProductClaim},
+		lasso::Error,
+	},
+};
 use binius_field::{ExtensionField, TowerField};
 use binius_utils::bail;
 use tracing::instrument;
 
 /// Verify a Lasso instance reduction.
 #[instrument(skip_all, name = "lasso::verify", level = "debug")]
-pub fn verify<C, F, Backend>(
+pub fn verify<C, F>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claim: &LassoClaim<F>,
 	batch: &LassoBatches,
 	gamma: F,
 	alpha: F,
 	lasso_proof: LassoProof<F>,
-	backend: Backend,
 ) -> Result<(Vec<GrandProductClaim<F>>, Vec<OracleId>), Error>
 where
 	C: TowerField,
 	F: TowerField + ExtensionField<C>,
-	Backend: ComputationBackend + 'static,
 {
 	let common_counts_len = claim
 		.u_oracles()
@@ -66,7 +62,7 @@ where
 	}
 
 	let (gkr_claim_oracle_ids, ..) =
-		reduce_lasso_claim::<C, _, _>(oracles, claim, batch, gamma, alpha, backend)?;
+		reduce_lasso_claim::<C, _>(oracles, claim, batch, gamma, alpha)?;
 
 	if gkr_claim_oracle_ids.left.len() != grand_product_arrays_len
 		|| gkr_claim_oracle_ids.right.len() != grand_product_arrays_len
