@@ -8,9 +8,8 @@ use binius_core::{
 	polynomial::MultilinearExtensionBorrowed,
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
-		evalcheck::EvalcheckClaim,
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
-		greedy_evalcheck::{self, GreedyEvalcheckProof},
+		greedy_evalcheck_v2::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
 	},
 	witness::MultilinearExtensionIndex,
@@ -92,8 +91,8 @@ impl TraceOracle {
 	}
 }
 
-struct TraceWitness<U: UnderlierType + PackScalar<FW>, FW: BinaryField> {
-	index: MultilinearExtensionIndex<'static, U, FW>,
+struct TraceWitness<U: UnderlierType + PackScalar<F>, F: BinaryField> {
+	index: MultilinearExtensionIndex<'static, U, F>,
 	u_to_t_mapping: Vec<usize>,
 }
 
@@ -118,13 +117,13 @@ fn make_underliers<U: UnderlierType + PackScalar<FS>, FS: Field>(log_size: usize
 	vec![U::default(); 1 << (log_size - packing_log_width)]
 }
 #[instrument(skip_all, level = "debug")]
-fn generate_trace<U, FW>(log_size: usize, trace_oracle: &TraceOracle) -> Result<TraceWitness<U, FW>>
+fn generate_trace<U, F>(log_size: usize, trace_oracle: &TraceOracle) -> Result<TraceWitness<U, F>>
 where
-	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<FW>,
+	U: UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	FW: BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
+	F: BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	let mut mult_a = make_underliers::<_, B8>(log_size);
 	let mut mult_b = make_underliers::<_, B8>(log_size);
@@ -205,25 +204,25 @@ where
 	lookup_t_comm: PCS32::Commitment,
 	lookup_t_proof: PCS32::Proof,
 	gpa_proof: GrandProductBatchProof<B128>,
-	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
+	greedy_evalcheck_v2_proof: GreedyEvalcheckProof<B128>,
 	_u_marker: PhantomData<U>,
 }
 
 // witness column extractors
 
-fn extract_batch_id_polys<'a, U, FW, F>(
+fn extract_batch_id_polys<'a, U, F, FS>(
 	batch_id: BatchId,
-	witness_index: &'a MultilinearExtensionIndex<'a, U, FW>,
+	witness_index: &'a MultilinearExtensionIndex<'a, U, F>,
 	oracles: &MultilinearOracleSet<B128>,
-) -> Result<Vec<MultilinearExtensionBorrowed<'a, PackedType<U, F>>>>
+) -> Result<Vec<MultilinearExtensionBorrowed<'a, PackedType<U, FS>>>>
 where
-	U: UnderlierType + PackScalar<FW> + PackScalar<F>,
-	F: TowerField,
-	FW: TowerField + ExtensionField<F>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FS>,
+	FS: TowerField,
+	F: TowerField + ExtensionField<FS>,
 {
 	let trace_commit_polys = oracles
 		.committed_oracle_ids(batch_id)
-		.map(|oracle_id| witness_index.get::<F>(oracle_id))
+		.map(|oracle_id| witness_index.get::<FS>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	Ok(trace_commit_polys)
 }
@@ -332,8 +331,6 @@ where
 			oracles,
 		)?)?;
 
-	let switchover_fn = standard_switchover_heuristic(-2);
-
 	challenger.observe(lasso_counts_comm.clone());
 	challenger.observe(lasso_final_counts_comm.clone());
 
@@ -352,34 +349,25 @@ where
 		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
 
 	// Greedy Evalcheck
-	let evalcheck_claims = evalcheck_multilinear_claims
-		.into_iter()
-		.map(|claim| EvalcheckClaim {
-			poly: claim.poly.into_composite(),
-			eval_point: claim.eval_point,
-			eval: claim.eval,
-			is_random_point: claim.is_random_point,
-		});
-
-	let greedy_evalcheck_prove_output =
-		greedy_evalcheck::prove::<_, PackedType<U, B128>, B128, _, _>(
-			oracles,
-			&mut witness_index,
-			evalcheck_claims,
-			switchover_fn,
-			&mut challenger,
-			domain_factory,
-			backend.clone(),
-		)?;
+	let switchover_fn = standard_switchover_heuristic(-2);
+	let greedy_evalcheck_v2_prove_output = greedy_evalcheck_v2::prove::<U, B128, B128, _, _>(
+		oracles,
+		&mut witness_index,
+		evalcheck_multilinear_claims,
+		switchover_fn,
+		&mut challenger,
+		domain_factory,
+		backend.clone(),
+	)?;
 
 	// PCS opening proofs
 	let batch_id_to_eval_point = |batch_id| {
-		greedy_evalcheck_prove_output
+		greedy_evalcheck_v2_prove_output
 			.same_query_claims
 			.iter()
 			.find(|(id, _)| *id == batch_id)
 			.map(|(_, same_query_claim)| same_query_claim.eval_point.as_slice())
-			.expect("present by greedy_evalcheck invariants")
+			.expect("present by greedy_evalcheck_v2 invariants")
 	};
 
 	let lasso_counts_proof = lasso_counts_pcs.prove_evaluation(
@@ -443,7 +431,7 @@ where
 		lookup_t_proof,
 		lasso_proof,
 		gpa_proof,
-		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
+		greedy_evalcheck_v2_proof: greedy_evalcheck_v2_prove_output.proof,
 		_u_marker: PhantomData,
 	})
 }
@@ -489,7 +477,7 @@ where
 		lookup_t_proof,
 		lasso_proof,
 		gpa_proof,
-		greedy_evalcheck_proof,
+		greedy_evalcheck_v2_proof,
 		..
 	} = proof;
 
@@ -523,20 +511,11 @@ where
 	let evalcheck_multilinear_claims =
 		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
 
-	let evalcheck_claims = evalcheck_multilinear_claims
-		.into_iter()
-		.map(|claim| EvalcheckClaim {
-			poly: claim.poly.into_composite(),
-			eval_point: claim.eval_point,
-			eval: claim.eval,
-			is_random_point: claim.is_random_point,
-		});
-
 	// Greedy evalcheck
-	let same_query_pcs_claims = greedy_evalcheck::verify(
+	let same_query_pcs_claims = greedy_evalcheck_v2::verify(
 		oracles,
-		evalcheck_claims,
-		greedy_evalcheck_proof,
+		evalcheck_multilinear_claims,
+		greedy_evalcheck_v2_proof,
 		&mut challenger,
 	)?;
 
@@ -546,7 +525,7 @@ where
 			.iter()
 			.find(|(id, _)| *id == batch_id)
 			.map(|(_, same_query_claim)| same_query_claim)
-			.expect("present by greedy_evalcheck invariants")
+			.expect("present by greedy_evalcheck_v2 invariants")
 	};
 
 	let lasso_counts_eval_claim =
@@ -621,6 +600,8 @@ fn main() -> Result<()> {
 	let log_size = get_log_trace_size().unwrap_or(20);
 	let log_inv_rate = 1;
 
+	let backend = make_portable_backend();
+
 	// Set up the public parameters
 
 	macro_rules! optimal_block_pcs {
@@ -646,7 +627,6 @@ fn main() -> Result<()> {
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
-	let backend = make_portable_backend();
 
 	let proof = prove(
 		&mut oracles.clone(),

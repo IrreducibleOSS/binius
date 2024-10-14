@@ -2,8 +2,6 @@
 
 #![feature(step_trait)]
 
-/// An example computing the lowest 32 bits of consecutive fibonacci numbers.
-/// The example performs the computation, generates a proof and verifies it.
 use anyhow::Result;
 use binius_core::{
 	challenger::{new_hasher_challenger, IsomorphicChallenger},
@@ -16,14 +14,13 @@ use binius_core::{
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck_v2::{self, Proof as ZerocheckProof},
 	},
-	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField, Field, PackedBinaryField128x1b,
-	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField, Field,
+	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
@@ -33,172 +30,113 @@ use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use bytemuck::{must_cast_slice_mut, Pod};
-use itertools::Itertools;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
-use std::fmt::Debug;
+use rand::{thread_rng, Rng};
+use rayon::prelude::*;
+use std::{fmt::Debug, iter};
 use tracing::{debug, info, instrument};
 
-/// mod field_types is a selector of different sets of types which provide
-/// equivalent functionality but may differ significantly in performance.
-#[cfg(feature = "aes-tower")]
+#[cfg(feature = "fp-tower")]
 mod field_types {
-	pub type Field = binius_field::AESTowerField128b;
-	pub type DomainField = binius_field::AESTowerField8b;
-	pub type DomainFieldWithStep = binius_field::AESTowerField8b;
-	pub type Fbase = binius_field::AESTowerField8b;
+	use binius_field::{BinaryField128b, BinaryField8b};
+	pub type FW = BinaryField128b;
+	pub type Fbase = BinaryField8b;
+	pub type DomainFieldWithStep = BinaryField8b;
+	pub type FDomain = BinaryField8b;
 }
 
-#[cfg(not(feature = "aes-tower"))]
+#[cfg(all(feature = "aes-tower", not(feature = "fp-tower")))]
 mod field_types {
-	pub type Field = binius_field::BinaryField128bPolyval;
-	pub type DomainField = binius_field::BinaryField128bPolyval;
-	pub type DomainFieldWithStep = binius_field::BinaryField128b;
-	pub type Fbase = binius_field::BinaryField128bPolyval;
+	use binius_field::{AESTowerField128b, AESTowerField8b};
+	pub type FW = AESTowerField128b;
+	pub type FBase = AESTowerField8b;
+	pub type DomainFieldWithStep = AESTowerField8b;
+	pub type FDomain = AESTowerField8b;
 }
 
-// The fields must be in exactly the same order as the fields in U32FibOracle.
-struct U32FibTrace<U>
+#[cfg(all(not(feature = "fp-tower"), not(feature = "aes-tower")))]
+mod field_types {
+	use binius_field::{BinaryField128b, BinaryField128bPolyval};
+	pub type FW = BinaryField128bPolyval;
+	pub type Fbase = BinaryField128bPolyval;
+	pub type DomainFieldWithStep = BinaryField128b;
+	pub type FDomain = BinaryField128bPolyval;
+}
+
+#[instrument(skip_all, level = "debug")]
+fn generate_trace<U, F>(
+	log_size: usize,
+	trace: &U32AddOracle,
+) -> Result<MultilinearExtensionIndex<'static, U, F>>
 where
-	U: UnderlierType + PackScalar<BinaryField1b>,
+	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<F> + Pod,
+	F: BinaryField,
 {
-	/// Fibonacci number computed in the current step.
-	fib_out: Vec<U>,
-	/// Fibonacci number computed one step ago.
-	fib_prev1: Vec<U>,
-	/// Fibonacci number computed two step ago.
-	fib_prev2: Vec<U>,
+	assert!(log_size >= <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
+	let build_trace_column = || vec![U::default(); len].into_boxed_slice();
 
-	/// U32 carry addition information.
-	c_out: Vec<U>,
-	c_in: Vec<U>,
+	let mut x_in = build_trace_column();
+	let mut y_in = build_trace_column();
+	let mut z_out = build_trace_column();
+	let mut c_out = build_trace_column();
+	let mut c_in = build_trace_column();
 
-	/// Shifting pads with zeros, which will mess with constraints
-	/// so we need a transparent StepDown to ignore the first row.
-	disabled: Vec<U>,
-}
-
-impl<U: UnderlierType + PackScalar<BinaryField1b> + Pod> U32FibTrace<U> {
-	fn new(log_size: usize) -> Self {
-		Self {
-			fib_out: vec![
-				U::default();
-				1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)
-			],
-			fib_prev1: vec![
-				U::default();
-				1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)
-			],
-			fib_prev2: vec![
-				U::default();
-				1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)
-			],
-			c_out: vec![U::default(); 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)],
-			c_in: vec![U::default(); 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)],
-			disabled: vec![
-				U::default();
-				1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)
-			],
-		}
-	}
-
-	fn fill_trace(mut self) -> Self {
-		let fib_out = must_cast_slice_mut::<_, u32>(&mut self.fib_out);
-		let fib_prev1 = must_cast_slice_mut::<_, u32>(&mut self.fib_prev1);
-		let fib_prev2 = must_cast_slice_mut::<_, u32>(&mut self.fib_prev2);
-		let cout = must_cast_slice_mut::<_, u32>(&mut self.c_out);
-		let cin = must_cast_slice_mut::<_, u32>(&mut self.c_in);
-		let disabled = must_cast_slice_mut::<_, u32>(&mut self.disabled);
-
-		// Initialize the first row in a special manner.
-		// It asserts that the initial fib number is 1, but doesn't represent a valid
-		// addition operation, therefore this row is disabled.
-		fib_prev2[0] = 0;
-		fib_prev1[0] = 0;
-		fib_out[0] = 1;
-
-		cin[0] = 0;
-		cout[0] = 0;
-
-		// The three initial fib values are 0,0,1 and therefore don't affect bits other than the 0-th bit.
-		// If we disable the constraints for that bit only, then we get a rather simple proof.
-		disabled[0] = 1;
-
-		// Every other row takes two previous fib numbers and adds them together.
-		for i in 1..fib_prev2.len() {
-			fib_prev1[i] = fib_out[i - 1];
-			fib_prev2[i] = fib_prev1[i - 1];
+	// Fill the trace
+	(
+		must_cast_slice_mut::<_, u32>(&mut x_in),
+		must_cast_slice_mut::<_, u32>(&mut y_in),
+		must_cast_slice_mut::<_, u32>(&mut z_out),
+		must_cast_slice_mut::<_, u32>(&mut c_out),
+		must_cast_slice_mut::<_, u32>(&mut c_in),
+	)
+		.into_par_iter()
+		.for_each_init(thread_rng, |rng, (x, y, z, cout, cin)| {
+			*x = rng.gen();
+			*y = rng.gen();
 			let carry;
-			(fib_out[i], carry) = (fib_prev2[i]).overflowing_add(fib_prev1[i]);
-			cin[i] = (fib_prev2[i]) ^ (fib_prev1[i]) ^ (fib_out[i]);
-			cout[i] = cin[i] >> 1;
+			(*z, carry) = (*x).overflowing_add(*y);
+			*cin = (*x) ^ (*y) ^ (*z);
+			*cout = *cin >> 1;
 			if carry {
-				cout[i] |= 1 << 31;
+				*cout |= 1 << 31;
 			}
-			disabled[i] = 0;
-		}
+		});
 
-		self
-	}
-
-	fn borrowed_data(&self) -> impl Iterator<Item = &[U]> {
-		vec![
-			&self.fib_out,
-			&self.fib_prev1,
-			&self.fib_prev2,
-			&self.c_out,
-			&self.c_in,
-			&self.disabled,
-		]
-		.into_iter()
-		.map(|x| {
-			let y: &[U] = x;
-			y
-		})
-	}
+	let index = MultilinearExtensionIndex::new().update_owned::<BinaryField1b, _>(iter::zip(
+		[trace.x_in, trace.y_in, trace.z_out, trace.c_out, trace.c_in],
+		[x_in, y_in, z_out, c_out, c_in],
+	))?;
+	Ok(index)
 }
 
 #[derive(IterOracles)]
-struct U32FibOracle {
-	fib_out: OracleId,
-	fib_prev1: OracleId,
-	fib_prev2: OracleId,
+struct U32AddOracle {
+	x_in: OracleId,
+	y_in: OracleId,
+	z_out: OracleId,
 	c_out: OracleId,
 	c_in: OracleId,
-	disabled: OracleId,
 
 	batch_id: BatchId,
 }
 
-impl U32FibOracle {
+impl U32AddOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, n_vars: usize) -> Self {
 		let batch_id = oracles.add_committed_batch(n_vars, BinaryField1b::TOWER_LEVEL);
-		let [fib_out, c_out] = oracles.add_committed_multiple(batch_id);
-
-		let fib_prev1 = oracles
-			.add_named("fib_prev_1")
-			.shifted(fib_out, 32, n_vars, ShiftVariant::LogicalLeft)
-			.unwrap();
-		let fib_prev2 = oracles
-			.add_named("fib_prev_2")
-			.shifted(fib_out, 64, n_vars, ShiftVariant::LogicalLeft)
-			.unwrap();
+		let [x_in, y_in, z_out, c_out] = oracles
+			.add_named("add_oracles")
+			.committed_multiple(batch_id);
 		let c_in = oracles
 			.add_named("cin")
 			.shifted(c_out, 1, 5, ShiftVariant::LogicalLeft)
 			.unwrap();
-		let disabled = oracles
-			.add_named("diabled")
-			.transparent(StepDown::new(n_vars, 1).unwrap())
-			.unwrap();
-
 		Self {
-			fib_out,
-			fib_prev1,
-			fib_prev2,
+			x_in,
+			y_in,
+			z_out,
 			c_out,
 			c_in,
-			disabled,
-
 			batch_id,
 		}
 	}
@@ -207,37 +145,15 @@ impl U32FibOracle {
 		let mut builder = ConstraintSetBuilder::new();
 
 		builder.add_zerocheck(
-			[
-				self.fib_prev2,
-				self.fib_prev1,
-				self.c_in,
-				self.fib_out,
-				self.disabled,
-			],
-			composition_poly!([x, y, cin, z, disabled] = (1 - disabled) * (x + y + cin - z)),
+			[self.x_in, self.y_in, self.c_in, self.z_out],
+			composition_poly!([x, y, cin, z] = x + y + cin - z),
 		);
 		builder.add_zerocheck(
-			[self.fib_prev2, self.fib_prev1, self.c_in, self.c_out],
+			[self.x_in, self.y_in, self.c_in, self.c_out],
 			composition_poly!([x, y, cin, cout] = (x + cin) * (y + cin) + cin - cout),
 		);
-
 		builder.build()
 	}
-}
-
-/// Joins U32FibOracle and U32FibTrace in a MultilinearExtensionIndex.
-fn to_index<'a, U, F>(
-	oracle: &'a U32FibOracle,
-	trace: &'a U32FibTrace<U>,
-) -> MultilinearExtensionIndex<'a, U, F>
-where
-	U: PackScalar<BinaryField1b> + PackScalar<F> + UnderlierType + Pod,
-	F: TowerField + ExtensionField<BinaryField1b>,
-{
-	let oracle_id_and_data = oracle.iter_oracles().zip_eq(trace.borrowed_data());
-	MultilinearExtensionIndex::new()
-		.update_borrowed(oracle_id_and_data)
-		.unwrap()
 }
 
 #[instrument(skip_all, level = "debug")]
@@ -246,9 +162,9 @@ fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	pcs: &PCS,
-	oracle: &U32FibOracle,
-	mut challenger: CH,
+	trace: &U32AddOracle,
 	mut witness: MultilinearExtensionIndex<U, F>,
+	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
@@ -258,27 +174,20 @@ where
 		+ PackScalar<F>
 		+ PackScalar<DomainField>
 		+ PackScalar<FBase>,
+	PackedType<U, F>: PackedFieldIndexable,
 	FEPCS: TowerField + From<F>,
+	F: TowerField + ExtensionField<FBase> + From<FEPCS> + ExtensionField<DomainField>,
 	FBase: TowerField + ExtensionField<DomainField>,
-	F: TowerField
-		+ From<FEPCS>
-		+ ExtensionField<FBase>
-		+ ExtensionField<DomainField>
-		+ PackedExtension<DomainField, Scalar = F>,
-	PackedType<U, F>: PackedFieldIndexable<Scalar = F>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, FEPCS, Error: Debug, Proof: 'static>,
-	CH: CanObserve<FEPCS>
-		+ CanObserve<PCS::Commitment>
-		+ CanSample<FEPCS>
-		+ CanSampleBits<usize>
-		+ Clone,
+	CH: CanObserve<FEPCS> + CanObserve<PCS::Commitment> + CanSample<FEPCS> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
 	assert_eq!(pcs.n_vars(), log_size);
 
+	// Round 1
 	let trace_commit_polys = oracles
-		.committed_oracle_ids(oracle.batch_id)
+		.committed_oracle_ids(trace.batch_id)
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys)?;
@@ -291,8 +200,8 @@ where
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
-	let constraint_set = oracle.mixed_constraints();
-	let constraint_set_base = oracle.mixed_constraints();
+	let constraint_set = trace.mixed_constraints();
+	let constraint_set_base = trace.mixed_constraints();
 
 	let (zerocheck_claim, meta) =
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
@@ -338,14 +247,15 @@ where
 		.into_iter()
 		.next()
 		.expect("length is asserted to be 1");
-	assert_eq!(batch_id, oracle.batch_id);
+	assert_eq!(batch_id, trace.batch_id);
 
 	let trace_commit_polys = oracles
-		.committed_oracle_ids(oracle.batch_id)
+		.committed_oracle_ids(trace.batch_id)
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	// Prove commitment openings
+
 	let eval_point: Vec<FEPCS> = same_query_claim
 		.eval_point
 		.into_iter()
@@ -390,7 +300,7 @@ impl<F: Field, PCSComm, PCSProof> Proof<F, PCSComm, PCSProof> {
 fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
-	oracle: &U32FibOracle,
+	oracle: &U32AddOracle,
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
@@ -471,42 +381,42 @@ fn main() {
 		.expect("failed to init thread pool");
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
-	let backend = make_portable_backend();
 
-	// Note that values below 14 are rejected by `find_proof_size_optimal_pcs()`.
+	// Values below 14 are rejected by `find_proof_size_optimal_pcs()`.
 	let log_size = get_log_trace_size().unwrap_or(14);
 	let log_inv_rate = 1;
+	let backend = make_portable_backend();
 
 	type U = <PackedBinaryField128x1b as WithUnderlier>::Underlier;
-	type F = field_types::Field;
 
-	debug!(num_bits = 1 << log_size, num_u32s = 1 << (log_size - 5), "U32 Fibonacci");
+	let mut prover_oracles = MultilinearOracleSet::new();
+	let prover_trace = U32AddOracle::new::<field_types::FW>(&mut prover_oracles, log_size);
+
+	let trace_batch = prover_oracles.committed_batch(prover_trace.batch_id);
+
+	debug!(num_bits = 1 << log_size, num_u32s = 1 << (log_size - 5), "U32 Addition");
 
 	let pcs = tensor_pcs::find_proof_size_optimal_pcs::<
-		U,
+		<PackedBinaryField128x1b as WithUnderlier>::Underlier,
 		BinaryField1b,
 		BinaryField16b,
 		BinaryField16b,
 		BinaryField128b,
-	>(SECURITY_BITS, log_size, 2, log_inv_rate, false)
+	>(SECURITY_BITS, trace_batch.n_vars, trace_batch.n_polys, log_inv_rate, false)
 	.unwrap();
 
-	let mut prover_oracles = MultilinearOracleSet::new();
-	let prover_oracle = U32FibOracle::new::<field_types::Field>(&mut prover_oracles, log_size);
+	let witness = generate_trace::<U, field_types::FW>(log_size, &prover_trace).unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let witness = U32FibTrace::<U>::new(log_size).fill_trace();
-	let witness = to_index::<U, F>(&prover_oracle, &witness);
-
 	let domain_factory =
 		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
 
 	info!("Proving");
 	let proof = prove::<
 		_,
-		field_types::Field,
+		field_types::FW,
 		field_types::Fbase,
-		field_types::DomainField,
+		field_types::FDomain,
 		BinaryField128b,
 		_,
 		_,
@@ -515,22 +425,22 @@ fn main() {
 		log_size,
 		&mut prover_oracles,
 		&pcs,
-		&prover_oracle,
-		challenger.clone(),
+		&prover_trace,
 		witness,
+		challenger.clone(),
 		domain_factory,
 		backend.clone(),
 	)
 	.unwrap();
 
 	let mut verifier_oracles = MultilinearOracleSet::new();
-	let verifier_oracle = U32FibOracle::new::<BinaryField128b>(&mut verifier_oracles, log_size);
+	let verifier_trace = U32AddOracle::new::<BinaryField128b>(&mut verifier_oracles, log_size);
 
 	info!("Verifying");
 	verify(
 		log_size,
-		&mut verifier_oracles,
-		&verifier_oracle,
+		&mut verifier_oracles.clone(),
+		&verifier_trace,
 		&pcs,
 		challenger.clone(),
 		proof.isomorphic(),

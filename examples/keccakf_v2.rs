@@ -29,7 +29,7 @@ use binius_core::{
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, zerocheck, Proof as ZerocheckProof},
+		sumcheck_v2::{self, Proof as ZerocheckBatchProof},
 	},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
@@ -38,9 +38,8 @@ use binius_field::{
 	arch::packed_64::PackedBinaryField64x1b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField128b, BinaryField16b,
-	BinaryField1b, ExtensionField, Field, PackedBinaryField128x1b, PackedField,
-	PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, ExtensionField, Field,
+	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
@@ -56,6 +55,33 @@ use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
 use tiny_keccak::keccakf;
 use tracing::instrument;
+
+#[cfg(feature = "fp-tower")]
+mod field_types {
+	use binius_field::{BinaryField128b, BinaryField8b};
+	pub type FW = BinaryField128b;
+	pub type FBase = BinaryField8b;
+	pub type FDomain = BinaryField8b;
+	pub type DomainFieldWithStep = BinaryField8b;
+}
+
+#[cfg(all(feature = "aes-tower", not(feature = "fp-tower")))]
+mod field_types {
+	use binius_field::{AESTowerField128b, AESTowerField8b};
+	pub type FW = AESTowerField128b;
+	pub type FBase = AESTowerField8b;
+	pub type FDomain = AESTowerField8b;
+	pub type DomainFieldWithStep = AESTowerField8b;
+}
+
+#[cfg(all(not(feature = "fp-tower"), not(feature = "aes-tower")))]
+mod field_types {
+	use binius_field::{BinaryField128b, BinaryField128bPolyval};
+	pub type FW = BinaryField128bPolyval;
+	pub type FBase = BinaryField128bPolyval;
+	pub type FDomain = BinaryField128bPolyval;
+	pub type DomainFieldWithStep = BinaryField128b;
+}
 
 const LOG_ROWS_PER_ROUND: usize = 6;
 const LOG_ROUNDS_PER_PERMUTATION: usize = 5;
@@ -165,14 +191,15 @@ impl FixedOracle {
 			.add_named("round_consts")
 			.repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
-		let selector_single = oracles
-			.add_named("selector_single")
-			.transparent(StepDown::new(
-				LOG_ROWS_PER_PERMUTATION,
-				ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
-			)?)?;
+		let selector_single =
+			oracles
+				.add_named("single_round_selector")
+				.transparent(StepDown::new(
+					LOG_ROWS_PER_PERMUTATION,
+					ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
+				)?)?;
 		let selector = oracles
-			.add_named("selector")
+			.add_named("round_selector")
 			.repeating(selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 
 		Ok(Self {
@@ -200,25 +227,29 @@ impl TraceOracle {
 	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
 		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
 		let state_in_oracle = oracles
-			.add_named("state_in")
+			.add_named("state_in_oracle")
 			.committed_multiple::<25>(batch_id);
 		let state_out_oracle = oracles
-			.add_named("state_out")
+			.add_named("state_out_oracle")
 			.committed_multiple::<25>(batch_id);
-		let c_oracle = oracles.add_named("c").committed_multiple::<5>(batch_id);
-		let d_oracle = oracles.add_named("d").committed_multiple::<5>(batch_id);
+		let c_oracle = oracles
+			.add_named("c_oracle")
+			.committed_multiple::<5>(batch_id);
+		let d_oracle = oracles
+			.add_named("d_oracle")
+			.committed_multiple::<5>(batch_id);
 
-		let c_shift_oracle = c_oracle.map(|c_x| {
+		let c_shift_oracle = array::from_fn(|x| {
 			oracles
-				.add_named("c_shift")
-				.shifted(c_x, 1, 6, ShiftVariant::CircularLeft)
+				.add_named(format!("c_shifted_{}", x))
+				.shifted(c_oracle[x], 1, 6, ShiftVariant::CircularLeft)
 				.unwrap()
 		});
 
 		let a_theta_oracle = array::from_fn(|xy| {
 			let x = xy % 5;
 			oracles
-				.add_named("a_theta")
+				.add_named(format!("a_theta_{}", xy))
 				.linear_combination(
 					log_size,
 					[(state_in_oracle[xy], F::ONE), (d_oracle[x], F::ONE)],
@@ -231,7 +262,7 @@ impl TraceOracle {
 				a_theta_oracle[0]
 			} else {
 				oracles
-					.add_named(format!("b_{xy}"))
+					.add_named(format!("b_oracle_{}", xy))
 					.shifted(
 						a_theta_oracle[PI[xy]],
 						RHO[xy] as usize,
@@ -244,7 +275,7 @@ impl TraceOracle {
 
 		let next_state_in = array::from_fn(|xy| {
 			oracles
-				.add_named(format!("next_state_in_{xy}"))
+				.add_named(format!("next_state_in_{}", xy))
 				.shifted(state_in_oracle[xy], 64, 11, ShiftVariant::LogicalRight)
 				.unwrap()
 		});
@@ -265,7 +296,7 @@ impl TraceOracle {
 
 struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
-	zerocheck_proof: ZerocheckProof<F>,
+	zerocheck_proof: ZerocheckBatchProof<F>,
 	evalcheck_proof: GreedyEvalcheckProof<F>,
 	trace_open_proof: PCSProof,
 }
@@ -500,7 +531,7 @@ fn make_constraints<'a, P: PackedField>(
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn prove<U, F, FBase, FEPCS, DomainField, PCS, CH, Backend>(
+fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -519,7 +550,7 @@ where
 		+ PackScalar<DomainField>,
 	PackedType<U, F>: PackedFieldIndexable<Scalar = F>,
 	FBase: TowerField + ExtensionField<DomainField>,
-	F: TowerField + From<F> + ExtensionField<FBase> + ExtensionField<DomainField>,
+	F: TowerField + ExtensionField<FBase> + ExtensionField<DomainField>,
 	FEPCS: TowerField + From<F> + Into<F>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, FEPCS, Error: Debug, Proof: 'static>,
@@ -564,7 +595,7 @@ where
 	let (sumcheck_output, zerocheck_proof) =
 		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
+	let zerocheck_output = sumcheck_v2::zerocheck::verify_sumcheck_outputs(
 		&[zerocheck_claim],
 		&zerocheck_challenges,
 		sumcheck_output,
@@ -658,12 +689,12 @@ where
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, oracles)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let sumcheck_claims = sumcheck_v2::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output =
 		sumcheck_v2::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
+	let zerocheck_output = sumcheck_v2::zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
@@ -673,7 +704,7 @@ where
 		sumcheck_v2::make_eval_claims(oracles, [meta], zerocheck_output)?;
 
 	// Evalcheck
-	let same_query_claims = greedy_evalcheck_v2::verify::<F, _>(
+	let same_query_claims = greedy_evalcheck_v2::verify(
 		oracles,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
@@ -738,24 +769,33 @@ fn main() {
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
 	let witness =
-		generate_trace::<U, AESTowerField128b>(log_size, &prove_fixed_oracle, &prove_trace_oracle)
+		generate_trace::<U, field_types::FW>(log_size, &prove_fixed_oracle, &prove_trace_oracle)
 			.unwrap();
 
 	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let domain_factory = IsomorphicEvaluationDomainFactory::<AESTowerField8b>::default();
-	let proof =
-		prove::<_, AESTowerField128b, AESTowerField8b, BinaryField128b, AESTowerField8b, _, _, _>(
-			log_size,
-			&mut prove_oracles,
-			&prove_fixed_oracle,
-			&prove_trace_oracle,
-			&pcs,
-			challenger.clone(),
-			witness,
-			domain_factory,
-			backend.clone(),
-		)
-		.unwrap();
+	let domain_factory =
+		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
+	let proof = prove::<
+		_,
+		field_types::FW,
+		field_types::FBase,
+		field_types::FDomain,
+		BinaryField128b,
+		_,
+		_,
+		_,
+	>(
+		log_size,
+		&mut prove_oracles,
+		&prove_fixed_oracle,
+		&prove_trace_oracle,
+		&pcs,
+		challenger.clone(),
+		witness,
+		domain_factory,
+		backend.clone(),
+	)
+	.unwrap();
 
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	let verifier_fixed_oracle = FixedOracle::new(&mut verifier_oracles, log_size).unwrap();
