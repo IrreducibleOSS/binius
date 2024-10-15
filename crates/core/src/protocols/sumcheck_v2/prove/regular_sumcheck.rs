@@ -21,6 +21,7 @@ use itertools::izip;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use std::{marker::PhantomData, ops::Range};
+use tracing::instrument;
 
 pub fn validate_witness<F, P, M, Composition>(
 	multilinears: &[M],
@@ -160,11 +161,13 @@ where
 		self.n_vars
 	}
 
+	#[instrument("RegularSumcheckProver::fold", skip_all, level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		self.state.fold(challenge)?;
 		Ok(())
 	}
 
+	#[instrument("RegularSumcheckProver::execute", skip_all, level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let evaluators = izip!(&self.compositions, &self.domains)
 			.map(|(composition, interpolation_domain)| RegularSumcheckEvaluator {

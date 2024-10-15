@@ -71,6 +71,7 @@ where
 	poly_vcs: VCS,
 	round_vcss: Vec<VCS>,
 	n_test_queries: usize,
+	log_batch_size: usize,
 	domain_factory: DomainFactory,
 	_marker: PhantomData<(F, FDomain, PE)>,
 }
@@ -94,6 +95,7 @@ where
 	pub fn new(
 		n_vars: usize,
 		log_inv_rate: usize,
+		log_batch_size: usize,
 		security_bits: usize,
 		vcs_factory: impl Fn(usize) -> VCS,
 		domain_factory: DomainFactory,
@@ -101,7 +103,7 @@ where
 	) -> Result<Self, Error> {
 		let kappa = checked_log_2(<FExt as ExtensionField<F>>::DEGREE);
 
-		let log_dim = n_vars.saturating_sub(kappa);
+		let log_dim = n_vars.saturating_sub(kappa + log_batch_size);
 		if log_dim == 0 {
 			return Err(fri::Error::MessageDimensionIsTooSmall.into());
 		}
@@ -127,6 +129,7 @@ where
 			poly_vcs,
 			round_vcss,
 			n_test_queries,
+			log_batch_size,
 			domain_factory,
 			_marker: PhantomData,
 		})
@@ -155,7 +158,7 @@ where
 		let mut fri_prover = Some(FRIFolder::new(
 			&self.rs_code,
 			&self.fri_final_rs_code,
-			0,
+			self.log_batch_size,
 			PE::unpack_scalars(codeword),
 			&self.poly_vcs,
 			&self.round_vcss,
@@ -319,7 +322,7 @@ where
 		let verifier = FRIVerifier::new(
 			&self.rs_code,
 			&self.fri_final_rs_code,
-			0,
+			self.log_batch_size,
 			&self.poly_vcs,
 			&self.round_vcss,
 			codeword_commitment,
@@ -370,7 +373,7 @@ where
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
-		self.rs_code.log_dim() + Self::kappa()
+		self.rs_code.log_dim() + self.log_batch_size + Self::kappa()
 	}
 
 	fn commit<Data>(
@@ -392,12 +395,16 @@ where
 		}
 		let packed_evals = <PE as PackedExtension<F>>::cast_exts(poly.evals());
 
-		let log_batch_size = 0;
 		let fri::CommitOutput {
 			commitment,
 			committed,
 			codeword,
-		} = fri::commit_interleaved(&self.rs_encoder, log_batch_size, &self.poly_vcs, packed_evals)?;
+		} = fri::commit_interleaved(
+			&self.rs_encoder,
+			self.log_batch_size,
+			&self.poly_vcs,
+			packed_evals,
+		)?;
 
 		Ok((commitment, (codeword, committed)))
 	}
@@ -714,6 +721,7 @@ mod tests {
 		let pcs = FRIPCS::<F, BinaryField8b, FA, PackedType<U, FE>, _, _>::new(
 			n_vars,
 			2,
+			1,
 			32,
 			make_merkle_vcs,
 			domain_factory,

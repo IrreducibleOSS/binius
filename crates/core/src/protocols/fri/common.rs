@@ -18,6 +18,7 @@ use std::iter;
 /// See [DP24], Def. 3.6.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
+#[inline]
 fn fold_pair<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	round: usize,
@@ -113,6 +114,7 @@ where
 /// See [DP24], Def. 3.6 and Lemma 3.9 for more details.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
+#[inline]
 pub fn fold_interleaved_chunk<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	log_batch_size: usize,

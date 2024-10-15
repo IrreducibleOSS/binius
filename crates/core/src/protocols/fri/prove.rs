@@ -20,6 +20,7 @@ use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use tracing::instrument;
 
+#[instrument(skip_all, level = "debug")]
 fn fold_codeword<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	codeword: &[F],
@@ -71,6 +72,7 @@ where
 /// * `codeword` - an interleaved codeword.
 /// * `challenges` - the folding challenges. The length must be at least `log_batch_size`.
 /// * `log_batch_size` - the base-2 logarithm of the batch size of the interleaved code.
+#[instrument(skip_all, level = "debug")]
 fn fold_interleaved<F, FS>(
 	rs_code: &ReedSolomonCode<FS>,
 	codeword: &[F],
@@ -153,7 +155,8 @@ where
 		bail!(Error::InvalidArgs("code length does not vector commitment length".to_string(),));
 	}
 
-	let mut encoded = zeroed_vec(message.len() << rs_code.log_inv_rate());
+	let mut encoded = tracing::debug_span!("allocate codeword")
+		.in_scope(|| zeroed_vec(message.len() << rs_code.log_inv_rate()));
 	encoded[..message.len()].copy_from_slice(message);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 

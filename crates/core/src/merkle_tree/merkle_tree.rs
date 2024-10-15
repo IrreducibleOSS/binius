@@ -1,5 +1,15 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use super::{
+	error::{Error, VerificationError},
+	vcs::VectorCommitScheme,
+};
+use crate::challenger::{field_challenger::FieldChallengerHelper, FieldChallenger};
+use binius_field::{
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+};
+use binius_hash::Hasher;
+use binius_utils::bail;
 use p3_challenger::CanObserve;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
@@ -10,19 +20,6 @@ use std::{
 	ops::Range,
 	slice,
 };
-
-use crate::challenger::FieldChallenger;
-
-use super::{
-	error::{Error, VerificationError},
-	vcs::VectorCommitScheme,
-};
-use crate::challenger::field_challenger::FieldChallengerHelper;
-use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-};
-use binius_hash::Hasher;
-use binius_utils::bail;
 
 /// MerkleCap is cap_height-th layer of the tree
 #[derive(Debug, Clone)]
