@@ -1,6 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::MaybeUninit};
 
 /// Trait representing the simplest and most straight forward use case of a hash function
 ///
@@ -53,10 +53,10 @@ pub trait Hasher<T> {
 	fn update(&mut self, data: impl AsRef<[T]>);
 	fn chain_update(self, data: impl AsRef<[T]>) -> Self;
 	fn finalize(self) -> Self::Digest;
-	fn finalize_into(self, out: &mut Self::Digest);
+	fn finalize_into(self, out: &mut MaybeUninit<Self::Digest>);
 
 	fn finalize_reset(&mut self) -> Self::Digest;
-	fn finalize_into_reset(&mut self, out: &mut Self::Digest);
+	fn finalize_into_reset(&mut self, out: &mut MaybeUninit<Self::Digest>);
 	fn reset(&mut self);
 }
 

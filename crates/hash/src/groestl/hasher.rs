@@ -12,7 +12,7 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
-use std::{cmp, marker::PhantomData, slice};
+use std::{cmp, marker::PhantomData, mem::MaybeUninit, slice};
 
 /// The type of output digest for `Grøstl256` over `F` which should be isomorphic to `AESTowerField8b`
 pub type GroestlDigest<F> = PackedType<OptimalUnderlier256b, F>;
@@ -188,9 +188,9 @@ where
 		Self::Digest::from_fn(|i| F::from(out.get(i)))
 	}
 
-	fn finalize_into(self, out: &mut Self::Digest) {
+	fn finalize_into(self, out: &mut MaybeUninit<Self::Digest>) {
 		let finalized = self.finalize();
-		*out = finalized;
+		out.write(finalized);
 	}
 
 	fn finalize_reset(&mut self) -> Self::Digest {
@@ -200,9 +200,9 @@ where
 		out
 	}
 
-	fn finalize_into_reset(&mut self, out: &mut Self::Digest) {
+	fn finalize_into_reset(&mut self, out: &mut MaybeUninit<Self::Digest>) {
 		let finalized = self.finalize_packed();
-		*out = Self::Digest::from_fn(|i| F::from(finalized.get(i)));
+		out.write(Self::Digest::from_fn(|i| F::from(finalized.get(i))));
 		self.reset();
 	}
 

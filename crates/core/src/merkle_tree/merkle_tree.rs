@@ -1,11 +1,15 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use bytemuck::{zeroed_vec, Zeroable};
 use p3_challenger::CanObserve;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{marker::PhantomData, mem, ops::Range, slice};
+use std::{
+	marker::PhantomData,
+	mem::{self, MaybeUninit},
+	ops::Range,
+	slice,
+};
 
 use crate::challenger::FieldChallenger;
 
@@ -43,7 +47,7 @@ pub struct MerkleTree<D> {
 
 impl<D> MerkleTree<D>
 where
-	D: Copy + Zeroable + Default + Send + Sync,
+	D: Copy + Default + Send + Sync,
 {
 	pub fn build_strided<T, H, C>(
 		compression: &C,
@@ -86,7 +90,8 @@ where
 	fn build<C>(
 		compression: &C,
 		log_len: usize,
-		hash_leaves: impl FnOnce(&mut [D]) -> Result<usize, Error>,
+		// Must either successfully initialize the passed in slice or return error
+		hash_leaves: impl FnOnce(&mut [MaybeUninit<D>]) -> Result<usize, Error>,
 		cap_height: usize,
 	) -> Result<Self, Error>
 	where
@@ -96,17 +101,37 @@ where
 			bail!(Error::IncorrectCapHeight);
 		}
 
-		let len = 1 << log_len;
 		let cap_length: usize = 1 << cap_height;
-		let mut inner_nodes = zeroed_vec(2 * len - 1 - cap_length.saturating_sub(1));
-		let batch_size = hash_leaves(&mut inner_nodes[..len])?;
+		let total_length = (1 << (log_len + 1)) - 1 - cap_length.saturating_sub(1);
+		let mut inner_nodes = Vec::with_capacity(total_length);
+
+		let batch_size = hash_leaves(&mut inner_nodes.spare_capacity_mut()[..(1 << log_len)])?;
 		{
-			let (mut prev_layer, mut remaining) = inner_nodes.split_at_mut(1 << log_len);
+			let (prev_layer, mut remaining) =
+				inner_nodes.spare_capacity_mut().split_at_mut(1 << log_len);
+
+			let mut prev_layer = unsafe {
+				// SAFETY: prev-layer was initialized by hash_leaves
+				slice_assume_init_mut(prev_layer)
+			};
 			for i in 1..(log_len - cap_height + 1) {
 				let (next_layer, next_remaining) = remaining.split_at_mut(1 << (log_len - i));
+				remaining = next_remaining;
+
 				Self::compress_layer(compression, prev_layer, next_layer);
-				(prev_layer, remaining) = (next_layer, next_remaining);
+
+				prev_layer = unsafe {
+					// SAFETY: next_layer was just initialized by compress_layer
+					slice_assume_init_mut(next_layer)
+				};
 			}
+		}
+
+		unsafe {
+			// SAFETY: inner_nodes should be entirely initialized by now
+			// Note that we don't incrementally update inner_nodes.len() since
+			// that doesn't play well with using split_at_mut on spare capacity.
+			inner_nodes.set_len(total_length);
 		}
 
 		Ok(Self {
@@ -160,7 +185,7 @@ where
 	}
 
 	#[tracing::instrument("MerkleTree::compress_layer", skip_all, level = "debug")]
-	fn compress_layer<C>(compression: &C, prev_layer: &[D], next_layer: &mut [D])
+	fn compress_layer<C>(compression: &C, prev_layer: &[D], next_layer: &mut [MaybeUninit<D>])
 	where
 		C: PseudoCompressionFunction<D, 2> + Sync,
 	{
@@ -168,10 +193,12 @@ where
 			.par_chunks_exact(2)
 			.zip(next_layer.par_iter_mut())
 			.for_each(|(prev_pair, next_digest)| {
-				*next_digest = compression.compress(
-					prev_pair
-						.try_into()
-						.expect("prev_pair is an chunk of exactly 2 elements"),
+				next_digest.write(
+					compression.compress(
+						prev_pair
+							.try_into()
+							.expect("prev_pair is an chunk of exactly 2 elements"),
+					),
 				);
 			})
 	}
@@ -184,7 +211,10 @@ where
 /// vector into the corresponding output digest. This returns the number of elements hashed into
 /// each digest.
 #[tracing::instrument("hash_strided", skip_all, level = "debug")]
-fn hash_strided<T, H>(leaves: &[impl AsRef<[T]>], digests: &mut [H::Digest]) -> Result<usize, Error>
+fn hash_strided<T, H>(
+	leaves: &[impl AsRef<[T]>],
+	digests: &mut [MaybeUninit<H::Digest>],
+) -> Result<usize, Error>
 where
 	T: Sync,
 	H: Hasher<T> + Send,
@@ -222,7 +252,10 @@ where
 /// into N equal-sized chunks and hashes each chunks into the corresponding output digest. This
 /// returns the number of elements hashed into each digest.
 #[tracing::instrument("hash_interleaved", skip_all, level = "debug")]
-fn hash_interleaved<T, H>(elems: &[T], digests: &mut [H::Digest]) -> Result<usize, Error>
+fn hash_interleaved<T, H>(
+	elems: &[T],
+	digests: &mut [MaybeUninit<H::Digest>],
+) -> Result<usize, Error>
 where
 	T: Sync,
 	H: Hasher<T> + Send,
@@ -445,6 +478,22 @@ where
 	fn observe(&mut self, value: MerkleCap<PE>) {
 		self.observe_slice(&value.0)
 	}
+}
+
+/// This can be removed when MaybeUninit::slice_assume_init_mut is stabilized
+/// <https://github.com/rust-lang/rust/issues/63569>
+///
+/// # Safety
+///
+/// It is up to the caller to guarantee that the `MaybeUninit<T>` elements
+/// really are in an initialized state.
+/// Calling this when the content is not yet fully initialized causes undefined behavior.
+///
+/// See [`assume_init_mut`] for more details and examples.
+///
+/// [`assume_init_mut`]: MaybeUninit::assume_init_mut
+pub const unsafe fn slice_assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
+	std::mem::transmute(slice)
 }
 
 #[cfg(test)]
