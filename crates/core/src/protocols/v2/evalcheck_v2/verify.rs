@@ -12,8 +12,8 @@ use super::{
 	},
 };
 use crate::oracle::{
-	ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyOracle,
-	ProjectionVariant,
+	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
+	MultilinearPolyOracle, ProjectionVariant,
 };
 use binius_field::{util::inner_product_unchecked, TowerField};
 use binius_math::extrapolate_line_scalar;
@@ -55,13 +55,13 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	}
 
 	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumcheck_constraints(&mut self) -> Vec<ConstraintSet<F>> {
+	pub fn take_new_sumcheck_constraints(&mut self) -> Result<Vec<ConstraintSet<F>>, OracleError> {
 		self.new_sumcheck_constraints
 			.iter_mut()
-			.map(|builder| mem::take(builder).build())
-			.filter(|constraint| !constraint.oracle_ids.is_empty())
+			.map(|builder| mem::take(builder).build(self.oracles))
+			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.rev()
-			.collect::<Vec<_>>()
+			.collect()
 	}
 
 	/// Verify an evalcheck claim.

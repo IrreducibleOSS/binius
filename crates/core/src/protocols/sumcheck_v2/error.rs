@@ -32,8 +32,6 @@ pub enum Error {
 		composition_index: usize,
 		vertex_index: usize,
 	},
-	#[error("constraint set is empty")]
-	EmptyConstraintSet,
 	#[error("constraint set containts multilinears of different heights")]
 	ConstraintSetNumberOfVariablesMismatch,
 	#[error("batching sumchecks and zerochecks is not supported yet")]

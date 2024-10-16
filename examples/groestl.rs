@@ -12,7 +12,7 @@
 use anyhow::{ensure, Result};
 use binius_core::{
 	challenger::{new_hasher_challenger, IsomorphicChallenger},
-	oracle::{BatchId, ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, OracleId},
+	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
@@ -444,7 +444,7 @@ where
 	}
 }
 
-fn make_constraints<F8b, PW>(trace_oracle: &TraceOracle) -> ConstraintSet<PW>
+fn make_constraints<F8b, PW>(trace_oracle: &TraceOracle) -> ConstraintSetBuilder<PW>
 where
 	F8b: TowerField + From<AESTowerField8b>,
 	PW: PackedField<Scalar: TowerField + ExtensionField<F8b>>,
@@ -453,7 +453,7 @@ where
 
 	trace_oracle.add_constraints::<F8b, PW>(&mut builder);
 
-	builder.build()
+	builder
 }
 
 struct PermutationRoundWitness<U, F1b, F8b>
@@ -963,9 +963,10 @@ where
 	Backend: ComputationBackend,
 {
 	let mut witness = trace_witness.to_index::<F>(trace_oracle)?;
-	let constraint_set = make_constraints::<AESTowerField8b, PackedType<U, F>>(trace_oracle);
+	let constraint_set =
+		make_constraints::<AESTowerField8b, PackedType<U, F>>(trace_oracle).build(oracles)?;
 	let constraint_set_base =
-		make_constraints::<AESTowerField8b, PackedType<U, FBase>>(trace_oracle);
+		make_constraints::<AESTowerField8b, PackedType<U, FBase>>(trace_oracle).build(oracles)?;
 
 	// Round 1
 	let trace1b_commit_polys = oracles
@@ -990,7 +991,7 @@ where
 	let mut iso_challenger = IsomorphicChallenger::<_, _, F>::new(&mut challenger);
 	let zerocheck_challenges = iso_challenger.sample_vec(trace_oracle.log_size);
 	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
+		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
 
 	let switchover_fn = |extension_degree| match extension_degree {
 		128 => 5,
@@ -1107,7 +1108,7 @@ where
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
-	let constraint_set = make_constraints::<BinaryField8b, F>(trace_oracle);
+	let constraint_set = make_constraints::<BinaryField8b, F>(trace_oracle).build(oracles)?;
 
 	let Proof {
 		trace1b_comm,
@@ -1125,8 +1126,7 @@ where
 	// Zerocheck
 	let zerocheck_challenges = challenger.sample_vec(trace_oracle.log_size);
 
-	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, oracles)?;
+	let (zerocheck_claim, meta) = sumcheck_v2::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
 	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;

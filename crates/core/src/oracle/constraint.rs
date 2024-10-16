@@ -1,8 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::OracleId;
+use super::{Error, MultilinearOracleSet, OracleId};
 use crate::{composition::index_composition, polynomial::CompositionPoly};
-use binius_field::{Field, PackedField};
+use binius_field::{Field, PackedField, TowerField};
+use binius_utils::bail;
 use std::sync::Arc;
 
 /// Composition trait object that can be used to create lists of compositions of differing
@@ -37,6 +38,7 @@ impl<F: Field> ConstraintPredicate<F> {
 /// Constraint set is a group of constraints that operate over the same set of oracle-identified multilinears
 #[derive(Clone)]
 pub struct ConstraintSet<P: PackedField> {
+	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,
 	pub constraints: Vec<Constraint<P>>,
 }
@@ -93,11 +95,35 @@ impl<P: PackedField> ConstraintSetBuilder<P> {
 		});
 	}
 
-	pub fn build(self) -> ConstraintSet<P> {
+	pub fn build(
+		self,
+		oracles: &MultilinearOracleSet<impl TowerField>,
+	) -> Result<ConstraintSet<P>, Error> {
 		let mut oracle_ids = self.oracle_ids;
-
+		if oracle_ids.is_empty() {
+			bail!(Error::EmptyConstraintSet);
+		}
+		for id in oracle_ids.iter() {
+			if !oracles.is_valid_oracle_id(*id) {
+				bail!(Error::InvalidOracleId(*id));
+			}
+		}
 		oracle_ids.sort();
 		oracle_ids.dedup();
+
+		let n_vars = oracle_ids
+			.first()
+			.map(|id| oracles.n_vars(*id))
+			.unwrap_or_default();
+
+		for id in oracle_ids.iter() {
+			if oracles.n_vars(*id) != n_vars {
+				bail!(Error::ConstraintSetNvarsMismatch {
+					expected: n_vars,
+					got: oracles.n_vars(*id)
+				});
+			}
+		}
 
 		// at this point the superset of oracles is known and index compositions
 		// may be finally instantiated
@@ -113,10 +139,11 @@ impl<P: PackedField> ConstraintSetBuilder<P> {
 			})
 			.collect();
 
-		ConstraintSet {
+		Ok(ConstraintSet {
+			n_vars,
 			oracle_ids,
 			constraints,
-		}
+		})
 	}
 }
 

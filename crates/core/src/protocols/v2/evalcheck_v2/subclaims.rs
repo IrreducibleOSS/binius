@@ -454,7 +454,6 @@ where
 		constraint_sets,
 		witness,
 		domain_factory.clone(),
-		oracles,
 		&switchover_fn,
 		backend.clone(),
 	)?;
@@ -487,7 +486,7 @@ where
 			meta.eval,
 		)
 	}
-	Ok(constraint_set_builder.build())
+	Ok(constraint_set_builder.build(verifier.oracles)?)
 }
 
 pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
@@ -523,7 +522,7 @@ where
 			backend.clone(),
 		)?;
 	}
-	Ok(constraint_set_builder.build())
+	Ok(constraint_set_builder.build(prover.oracles)?)
 }
 
 #[cfg(test)]

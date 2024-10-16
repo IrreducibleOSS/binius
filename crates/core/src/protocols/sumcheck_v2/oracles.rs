@@ -3,8 +3,8 @@
 use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
 use crate::{
 	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, Error as OracleError, MultilinearOracleSet,
-		OracleId, TypeErasedComposition,
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
+		TypeErasedComposition,
 	},
 	protocols::evalcheck_v2::EvalcheckMultilinearClaim,
 };
@@ -28,11 +28,10 @@ pub struct OracleClaimMeta {
 /// Create a sumcheck claim out of constraint set. Fails when the constraint set contains zerochecks.
 /// Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
-pub fn constraint_set_sumcheck_claim<F: TowerField, P: PackedField>(
+pub fn constraint_set_sumcheck_claim<P: PackedField>(
 	constraint_set: ConstraintSet<P>,
-	oracles: &MultilinearOracleSet<F>,
 ) -> Result<(SumcheckClaim<P::Scalar, impl CompositionPoly<P::Scalar>>, OracleClaimMeta), Error> {
-	let (constraints, meta) = split_constraint_set(constraint_set, oracles)?;
+	let (constraints, meta) = split_constraint_set(constraint_set);
 
 	let mut sums = Vec::new();
 	for Constraint {
@@ -56,11 +55,10 @@ pub fn constraint_set_sumcheck_claim<F: TowerField, P: PackedField>(
 /// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular sumchecks.
 /// Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
-pub fn constraint_set_zerocheck_claim<F: TowerField, P: PackedField>(
+pub fn constraint_set_zerocheck_claim<P: PackedField>(
 	constraint_set: ConstraintSet<P>,
-	oracles: &MultilinearOracleSet<F>,
 ) -> Result<(ZerocheckClaim<P::Scalar, impl CompositionPoly<P::Scalar>>, OracleClaimMeta), Error> {
-	let (constraints, meta) = split_constraint_set(constraint_set, oracles)?;
+	let (constraints, meta) = split_constraint_set(constraint_set);
 
 	let mut zeros = Vec::new();
 	for Constraint {
@@ -78,33 +76,16 @@ pub fn constraint_set_zerocheck_claim<F: TowerField, P: PackedField>(
 	Ok((claim, meta))
 }
 
-fn split_constraint_set<F: TowerField, P: PackedField>(
+fn split_constraint_set<P: PackedField>(
 	constraint_set: ConstraintSet<P>,
-	oracles: &MultilinearOracleSet<F>,
-) -> Result<(Vec<Constraint<P>>, OracleClaimMeta), Error> {
+) -> (Vec<Constraint<P>>, OracleClaimMeta) {
 	let ConstraintSet {
 		oracle_ids,
 		constraints,
+		n_vars,
 	} = constraint_set;
-
-	let all_n_vars = oracle_ids
-		.iter()
-		.map(|&oracle_id| {
-			if !oracles.is_valid_oracle_id(oracle_id) {
-				bail!(OracleError::InvalidOracleId(oracle_id));
-			}
-			Ok(oracles.n_vars(oracle_id))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	let n_vars = if let Some(&n_vars) = all_n_vars.first() {
-		n_vars
-	} else {
-		bail!(Error::EmptyConstraintSet);
-	};
-
 	let meta = OracleClaimMeta { n_vars, oracle_ids };
-	Ok((constraints, meta))
+	(constraints, meta)
 }
 
 /// Constructs evalcheck claims from metadata returned by constraint set claim constructors.
@@ -156,7 +137,6 @@ pub struct SumcheckClaimsWithMeta<F: TowerField, C> {
 /// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
 pub fn constraint_set_sumcheck_claims<P>(
 	constraint_sets: Vec<ConstraintSet<P>>,
-	oracles: &MultilinearOracleSet<P::Scalar>,
 ) -> Result<SumcheckClaimsWithMeta<P::Scalar, impl CompositionPoly<P::Scalar>>, Error>
 where
 	P: PackedField<Scalar: TowerField>,
@@ -165,7 +145,7 @@ where
 	let mut metas = Vec::with_capacity(constraint_sets.len());
 
 	for constraint_set in constraint_sets {
-		let (claim, meta) = constraint_set_sumcheck_claim(constraint_set, oracles)?;
+		let (claim, meta) = constraint_set_sumcheck_claim(constraint_set)?;
 		metas.push(meta);
 		claims.push(claim);
 	}

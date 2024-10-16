@@ -9,8 +9,8 @@ use super::{
 };
 use crate::{
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, MultilinearPolyOracle,
-		ProjectionVariant,
+		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
+		MultilinearPolyOracle, ProjectionVariant,
 	},
 	polynomial::MultilinearPoly,
 	protocols::evalcheck_v2::subclaims::{process_packed_sumcheck, process_shifted_sumcheck},
@@ -80,13 +80,15 @@ where
 	}
 
 	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumchecks_constraints(&mut self) -> Vec<ConstraintSet<PackedType<U, F>>> {
+	pub fn take_new_sumchecks_constraints(
+		&mut self,
+	) -> Result<Vec<ConstraintSet<PackedType<U, F>>>, OracleError> {
 		self.new_sumchecks_constraints
 			.iter_mut()
-			.map(|builder| std::mem::take(builder).build())
-			.filter(|constraint| !constraint.oracle_ids.is_empty())
+			.map(|builder| std::mem::take(builder).build(self.oracles))
+			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.rev()
-			.collect::<Vec<_>>()
+			.collect()
 	}
 
 	/// Prove an evalcheck claim.

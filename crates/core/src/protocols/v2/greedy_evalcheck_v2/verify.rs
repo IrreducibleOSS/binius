@@ -35,8 +35,7 @@ where
 
 	for (sumcheck_batch_proof, evalcheck_proofs) in proof.virtual_opening_proofs {
 		let SumcheckClaimsWithMeta { claims, metas } = constraint_set_sumcheck_claims(
-			evalcheck_verifier.take_new_sumcheck_constraints(),
-			evalcheck_verifier.oracles,
+			evalcheck_verifier.take_new_sumcheck_constraints().unwrap(),
 		)?;
 
 		if claims.is_empty() {
@@ -59,7 +58,7 @@ where
 		evalcheck_verifier.verify(new_evalcheck_claims, evalcheck_proofs)?;
 	}
 
-	let new_sumchecks = evalcheck_verifier.take_new_sumcheck_constraints();
+	let new_sumchecks = evalcheck_verifier.take_new_sumcheck_constraints().unwrap();
 	if !new_sumchecks.is_empty() {
 		bail!(Error::MissingVirtualOpeningProof);
 	}
@@ -84,7 +83,7 @@ where
 	}
 
 	let SumcheckClaimsWithMeta { claims, metas } =
-		constraint_set_sumcheck_claims(non_sqpcs_sumchecks, evalcheck_verifier.oracles)?;
+		constraint_set_sumcheck_claims(non_sqpcs_sumchecks)?;
 
 	let (sumcheck_proof, evalcheck_proofs) = proof.batch_opening_proof;
 
@@ -98,6 +97,7 @@ where
 	// The batch committed reduction must not result in any new sumcheck claims.
 	assert!(evalcheck_verifier
 		.take_new_sumcheck_constraints()
+		.unwrap()
 		.is_empty());
 
 	let same_query_claims = committed_batches

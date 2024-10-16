@@ -14,9 +14,7 @@ use binius_core::{
 	challenger::{
 		new_hasher_challenger, CanObserve, CanSample, CanSampleBits, IsomorphicChallenger,
 	},
-	oracle::{
-		BatchId, ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant,
-	},
+	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
@@ -767,7 +765,7 @@ where
 	}
 }
 
-fn make_constraints<F32b, P>(trace_oracle: &TraceOracle) -> ConstraintSet<P>
+fn make_constraints<F32b, P>(trace_oracle: &TraceOracle) -> ConstraintSetBuilder<P>
 where
 	F32b: TowerField + From<BinaryField32b>,
 	P: PackedField<Scalar: TowerField + ExtensionField<F32b>>,
@@ -878,7 +876,7 @@ where
 		);
 	}
 
-	builder.build()
+	builder
 }
 
 struct Proof<F: Field, PCSComm, PCSProof> {
@@ -953,11 +951,11 @@ where
 
 	let switchover_fn = |_| 1;
 
-	let constraint_set = make_constraints::<BinaryField32b, _>(trace_oracle);
-	let constraint_set_base = make_constraints::<BinaryField32b, _>(trace_oracle);
+	let constraint_set = make_constraints::<BinaryField32b, _>(trace_oracle).build(oracles)?;
+	let constraint_set_base = make_constraints::<BinaryField32b, _>(trace_oracle).build(oracles)?;
 
 	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
+		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
 
 	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
 		constraint_set_base,
@@ -1056,10 +1054,9 @@ where
 	// Zerocheck
 	let zerocheck_challenges = challenger.sample_vec(log_size);
 
-	let constraint_set = make_constraints::<BinaryField32b, F>(trace_oracle);
+	let constraint_set = make_constraints::<BinaryField32b, F>(trace_oracle).build(oracles)?;
 
-	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, oracles)?;
+	let (zerocheck_claim, meta) = sumcheck_v2::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
 	let sumcheck_claims = sumcheck_v2::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;

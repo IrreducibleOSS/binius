@@ -24,4 +24,8 @@ pub enum Error {
 	InvalidOracleId(OracleId),
 	#[error("tower_level ({tower_level}) exceeds maximum")]
 	TowerLevelTooHigh { tower_level: usize },
+	#[error("constraint set is empty")]
+	EmptyConstraintSet,
+	#[error("expected constraint set to contain only constraints with n_vars={expected}, but found n_vars={got}")]
+	ConstraintSetNvarsMismatch { got: usize, expected: usize },
 }

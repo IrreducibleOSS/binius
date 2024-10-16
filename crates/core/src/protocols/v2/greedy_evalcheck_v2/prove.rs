@@ -49,7 +49,7 @@ where
 	proof.initial_evalcheck_proofs = evalcheck_prover.prove(claims)?;
 
 	loop {
-		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints();
+		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints().unwrap();
 		if new_sumchecks.is_empty() {
 			break;
 		}
@@ -110,7 +110,10 @@ where
 	proof.batch_opening_proof = (sumcheck_proof, new_evalcheck_proofs);
 
 	// The batch committed reduction must not result in any new sumcheck claims.
-	assert!(evalcheck_prover.take_new_sumchecks_constraints().is_empty());
+	assert!(evalcheck_prover
+		.take_new_sumchecks_constraints()
+		.unwrap()
+		.is_empty());
 
 	let same_query_claims = committed_batches
 		.into_iter()

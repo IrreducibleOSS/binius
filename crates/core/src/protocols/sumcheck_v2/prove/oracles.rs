@@ -2,9 +2,7 @@
 
 use super::{RegularSumcheckProver, ZerocheckProver};
 use crate::{
-	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, TypeErasedComposition,
-	},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
 	polynomial::MultilinearPoly,
 	protocols::sumcheck_v2::{
 		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
@@ -19,7 +17,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
-use itertools::{izip, Itertools};
+use itertools::izip;
 use std::sync::Arc;
 
 pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = ZerocheckProver<
@@ -155,6 +153,7 @@ where
 	let ConstraintSet {
 		oracle_ids,
 		constraints,
+		n_vars,
 	} = constraint_set;
 
 	let multilinears = oracle_ids
@@ -164,8 +163,7 @@ where
 
 	if multilinears
 		.iter()
-		.tuple_windows()
-		.any(|(a, b)| a.n_vars() != b.n_vars())
+		.any(|multilin| multilin.n_vars() != n_vars)
 	{
 		bail!(Error::ConstraintSetNumberOfVariablesMismatch);
 	}
@@ -189,7 +187,6 @@ pub fn constraint_sets_sumcheck_provers_metas<'a, U, FW, FDomain, Backend>(
 	constraint_sets: Vec<ConstraintSet<PackedType<U, FW>>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	oracles: &MultilinearOracleSet<FW>,
 	switchover_fn: impl Fn(usize) -> usize,
 	backend: Backend,
 ) -> Result<SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>, Error>
@@ -203,7 +200,7 @@ where
 	let mut metas = Vec::with_capacity(constraint_sets.len());
 
 	for constraint_set in constraint_sets {
-		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone(), oracles)?;
+		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone())?;
 		let prover = constraint_set_sumcheck_prover(
 			constraint_set,
 			witness,

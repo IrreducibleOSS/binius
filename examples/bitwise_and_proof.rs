@@ -86,7 +86,7 @@ where
 	let switchover_fn = standard_switchover_heuristic(-2);
 
 	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone(), oracles)?;
+		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
 
 	let prover =
 		sumcheck_v2::prove::constraint_set_zerocheck_prover::<_, BinaryField128bPolyval, _, _, _>(
@@ -207,8 +207,7 @@ where
 	// Run zerocheck protocol
 	let zerocheck_challenges = challenger.sample_vec(log_size);
 
-	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set, trace)?;
+	let (zerocheck_claim, meta) = sumcheck_v2::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
 	let sumcheck_claims = sumcheck_v2::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
@@ -330,7 +329,7 @@ fn make_constraints<P: PackedField, F: TowerField>(
 
 	let mut builder = ConstraintSetBuilder::new();
 	builder.add_zerocheck([a_in_oracle, b_in_oracle, c_out_oracle], BitwiseAndConstraint);
-	builder.build()
+	builder.build(trace_oracle).unwrap()
 }
 
 fn main() {
