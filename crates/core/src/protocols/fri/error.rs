@@ -10,6 +10,12 @@ pub enum Error {
 	InvalidArgs(String),
 	#[error("FRI message dimension is too small")]
 	MessageDimensionIsTooSmall,
+	#[error("fold arities total exceeds the number of fold rounds")]
+	InvalidFoldAritySequence,
+	#[error("fold arity at index {index} in sequence is zero")]
+	FoldArityIsZero { index: usize },
+	#[error("the fold arity for the first fold be be at least the log batch size")]
+	FirstFoldArityTooSmall,
 	#[error("attempted to fold more than maximum of {max_folds} times")]
 	TooManyFoldExecutions { max_folds: usize },
 	#[error("attempted to finish prover before executing all fold rounds")]

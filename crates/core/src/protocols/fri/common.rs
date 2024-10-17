@@ -176,7 +176,7 @@ where
 	// check that base two log of each round_vcs vector_length is greater than
 	// the code's log_inv_rate and less than log_len.
 	debug_assert!(committed_rs_code.log_dim() >= 1);
-	let upper_bound = 1 << (committed_rs_code.log_len() - 1);
+	let upper_bound = 1 << committed_rs_code.log_len();
 	let lower_bound = 1 << (committed_rs_code.log_inv_rate() + final_rs_code.log_dim() + 1);
 	if round_vcss.iter().any(|vcs| {
 		let len = vcs.vector_len();

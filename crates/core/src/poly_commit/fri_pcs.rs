@@ -26,7 +26,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_math::univariate::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
@@ -95,7 +95,7 @@ where
 	pub fn new(
 		n_vars: usize,
 		log_inv_rate: usize,
-		log_batch_size: usize,
+		fold_arities: &[usize],
 		security_bits: usize,
 		vcs_factory: impl Fn(usize) -> VCS,
 		domain_factory: DomainFactory,
@@ -103,10 +103,25 @@ where
 	) -> Result<Self, Error> {
 		let kappa = checked_log_2(<FExt as ExtensionField<F>>::DEGREE);
 
-		let log_dim = n_vars.saturating_sub(kappa + log_batch_size);
-		if log_dim == 0 {
-			return Err(fri::Error::MessageDimensionIsTooSmall.into());
+		// The number of variables of the packed polynomial.
+		let n_packed_vars = n_vars
+			.checked_sub(kappa)
+			.ok_or(Error::IncorrectPolynomialSize { expected: kappa })?;
+
+		if fold_arities.iter().sum::<usize>() > n_packed_vars {
+			bail!(fri::Error::InvalidFoldAritySequence);
 		}
+		for &arity in fold_arities.iter() {
+			if arity == 0 {
+				bail!(fri::Error::FoldArityIsZero { index: 0 });
+			}
+		}
+
+		// Choose the interleaved code batch size to align with the first fold arity, which is
+		// optimal.
+		let log_batch_size = fold_arities.first().copied().unwrap_or(0);
+
+		let log_dim = n_packed_vars - log_batch_size;
 		let rs_encoder = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_options)?;
 		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
 		let fri_final_rs_code = ReedSolomonCode::new(0, log_inv_rate, NTTOptions::default())?;
@@ -114,10 +129,12 @@ where
 		// TODO: set merkle cap heights correctly
 		let poly_vcs = vcs_factory(rs_code.log_len());
 
-		// TODO: compute folding arities in a smarter way
-		let round_vcss = (fri_final_rs_code.log_len() + 1..rs_code.log_len())
-			.rev()
-			.map(vcs_factory)
+		let round_vcss = fold_arities
+			.iter()
+			.scan(rs_code.log_len() + log_batch_size, |len, arity| {
+				*len -= arity;
+				Some(vcs_factory(*len))
+			})
 			.collect();
 
 		let n_test_queries = fri::calculate_n_test_queries::<FExt, _>(security_bits, &rs_code)?;
@@ -665,8 +682,11 @@ mod tests {
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use rand::{prelude::StdRng, SeedableRng};
 
-	fn test_commit_prove_verify_success<U, F, FA, FE>()
-	where
+	fn test_commit_prove_verify_success<U, F, FA, FE>(
+		n_vars: usize,
+		log_inv_rate: usize,
+		fold_arities: &[usize],
+	) where
 		U: UnderlierType
 			+ PackScalar<F>
 			+ PackScalar<FA>
@@ -687,7 +707,6 @@ mod tests {
 		PackedType<U, FE>: PackedFieldIndexable,
 	{
 		let mut rng = StdRng::seed_from_u64(0);
-		let n_vars = 8 + checked_log_2(<FE as ExtensionField<F>>::DEGREE);
 		let backend = make_portable_backend();
 
 		let multilin = MultilinearExtension::from_values(
@@ -720,8 +739,8 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 		let pcs = FRIPCS::<F, BinaryField8b, FA, PackedType<U, FE>, _, _>::new(
 			n_vars,
-			2,
-			1,
+			log_inv_rate,
+			fold_arities,
 			32,
 			make_merkle_vcs,
 			domain_factory,
@@ -764,7 +783,7 @@ mod tests {
 			BinaryField1b,
 			BinaryField16b,
 			BinaryField128b,
-		>();
+		>(18, 2, &[3, 3, 3]);
 	}
 
 	#[test]
@@ -774,6 +793,6 @@ mod tests {
 			BinaryField32b,
 			BinaryField16b,
 			BinaryField128b,
-		>();
+		>(12, 2, &[3, 3, 3]);
 	}
 }
