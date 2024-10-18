@@ -31,9 +31,17 @@ pub trait BinaryField: ExtensionField<BinaryField1b> {
 /// trait can be implemented on any binary field *isomorphic* to the canonical tower field.
 ///
 /// [DP23]: https://eprint.iacr.org/2023/1784
-pub trait TowerField: BinaryField {
+pub trait TowerField: BinaryField
+where
+	Self: From<Self::Canonical>,
+	Self::Canonical: From<Self>,
+{
 	/// The level $\iota$ in the tower, where this field is isomorphic to $T_{\iota}$.
 	const TOWER_LEVEL: usize = Self::N_BITS.ilog2() as usize;
+
+	/// The canonical field isomorphic to this tower field.
+	/// Currently for every tower field, the canonical field is Fan-Paar's binary field of the same degree.
+	type Canonical: TowerField;
 
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
 		if iota > Self::TOWER_LEVEL {
@@ -581,7 +589,10 @@ pub(super) trait MulPrimitive: Sized {
 
 #[macro_export]
 macro_rules! binary_tower {
-	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty)) => {
+	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty)) => {
+		binary_tower!($subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ, $name));
+	};
+	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty, $canonical:ident)) => {
 		impl From<$name> for ($subfield_name, $subfield_name) {
 			#[inline]
 			fn from(src: $name) -> ($subfield_name, $subfield_name) {
@@ -603,20 +614,22 @@ macro_rules! binary_tower {
 		impl TowerField for $name {
 			const TOWER_LEVEL: usize = { $subfield_name::TOWER_LEVEL + 1 };
 
+			type Canonical = $canonical;
+
 			fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 				<Self as $crate::binary_field::MulPrimitive>::mul_primitive(self, iota)
 			}
 		}
 
-		impl TowerExtensionField for $name {
+		impl $crate::TowerExtensionField for $name {
 			type DirectSubfield = $subfield_name;
 		}
 
 		binary_tower!($subfield_name($subfield_typ) < @1 => $name($typ));
 	};
-	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
-		binary_tower!($subfield_name($subfield_typ) < $name($typ));
-		binary_tower!($name($typ) $(< $extfield_name($extfield_typ))+);
+	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty $(, $canonical:ident)?) $(< $extfield_name:ident($extfield_typ:ty $(, $canonical_ext:ident)?))+) => {
+		binary_tower!($subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ $(, $canonical)?));
+		binary_tower!($name($typ $(, $canonical)?) $(< $extfield_name($extfield_typ $(, $canonical_ext)?))+);
 		binary_tower!($subfield_name($subfield_typ) < @2 => $($extfield_name($extfield_typ))<+);
 	};
 	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty)) => {

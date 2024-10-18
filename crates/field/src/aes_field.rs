@@ -16,7 +16,7 @@ use crate::{
 	packed::PackedField,
 	underlier::{WithUnderlier, U1},
 	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	RepackedExtension, TowerExtensionField, TowerField,
+	RepackedExtension, TowerField,
 };
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
@@ -48,11 +48,11 @@ unsafe impl Pod for AESTowerField64b {}
 unsafe impl Pod for AESTowerField128b {}
 
 binary_tower!(
-	AESTowerField8b(u8)
-	< AESTowerField16b(u16)
-	< AESTowerField32b(u32)
-	< AESTowerField64b(u64)
-	< AESTowerField128b(u128)
+	AESTowerField8b(u8, BinaryField8b)
+	< AESTowerField16b(u16, BinaryField16b)
+	< AESTowerField32b(u32, BinaryField32b)
+	< AESTowerField64b(u64, BinaryField64b)
+	< AESTowerField128b(u128, BinaryField128b)
 );
 
 impl_field_extension!(BinaryField1b(U1) < @3 => AESTowerField8b(u8));
@@ -74,6 +74,8 @@ impl_arithmetic_using_packed!(AESTowerField64b);
 impl_arithmetic_using_packed!(AESTowerField128b);
 
 impl TowerField for AESTowerField8b {
+	type Canonical = BinaryField8b;
+
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		match iota {
 			0..=1 => Ok(self * ISOMORPHIC_ALPHAS[iota]),

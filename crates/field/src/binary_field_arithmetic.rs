@@ -60,6 +60,8 @@ pub(crate) use impl_arithmetic_using_packed;
 
 // TODO: try to get rid of `TowerFieldArithmetic` and use `impl_arithmetic_using_packed` here
 impl TowerField for BinaryField1b {
+	type Canonical = Self;
+
 	#[inline]
 	fn mul_primitive(self, _: usize) -> Result<Self, crate::Error> {
 		Err(crate::Error::ExtensionDegreeMismatch)
