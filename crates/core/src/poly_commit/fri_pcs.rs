@@ -27,6 +27,7 @@ use binius_hal::ComputationBackend;
 use binius_math::univariate::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
+use p3_util::log2_strict_usize;
 use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
@@ -65,9 +66,6 @@ where
 	// packed field for silly API-compliance reasons. We should refactor `fri_iopp` and possibly
 	// LinearCode to handle both the proving and verification cases with the same RS code.
 	rs_code: ReedSolomonCode<FEncode>,
-	/// Reed–Solomon code of the FRI termination round. This is used by the verifier to encode the
-	/// final FRI message.
-	fri_final_rs_code: ReedSolomonCode<PE::Scalar>,
 	poly_vcs: VCS,
 	round_vcss: Vec<VCS>,
 	n_test_queries: usize,
@@ -124,7 +122,6 @@ where
 		let log_dim = n_packed_vars - log_batch_size;
 		let rs_encoder = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_options)?;
 		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
-		let fri_final_rs_code = ReedSolomonCode::new(0, log_inv_rate, NTTOptions::default())?;
 
 		// TODO: set merkle cap heights correctly
 		let poly_vcs = vcs_factory(rs_code.log_len());
@@ -142,7 +139,6 @@ where
 		Ok(Self {
 			rs_encoder,
 			rs_code,
-			fri_final_rs_code,
 			poly_vcs,
 			round_vcss,
 			n_test_queries,
@@ -172,49 +168,30 @@ where
 	{
 		let n_rounds = sumcheck_prover.n_vars();
 
-		let mut fri_prover = Some(FRIFolder::new(
+		let mut fri_prover = FRIFolder::new(
 			&self.rs_code,
-			&self.fri_final_rs_code,
 			self.log_batch_size,
 			PE::unpack_scalars(codeword),
 			&self.poly_vcs,
 			&self.round_vcss,
 			committed,
-		)?);
-		let fri_final_log_dim = self.fri_final_rs_code.log_dim();
-
-		let mut challenges = Vec::with_capacity(n_rounds);
+		)?;
 		let mut rounds = Vec::with_capacity(n_rounds);
 		let mut fri_commitments = Vec::with_capacity(self.round_vcss.len());
-		let mut fri_final = None;
-		for round_no in 0..n_rounds {
-			let n_vars = n_rounds - round_no;
-
+		for _ in 0..n_rounds {
 			let round_coeffs = sumcheck_prover.execute(FExt::ONE)?;
 			let round_proof = round_coeffs.truncate();
 			challenger.observe_slice(round_proof.coeffs());
 			rounds.push(round_proof);
 
 			let challenge = challenger.sample();
-			challenges.push(challenge);
 
-			if let Some(ref mut fri_prover) = fri_prover {
-				match fri_prover.execute_fold_round(challenge)? {
-					FoldRoundOutput::NoCommitment => {}
-					FoldRoundOutput::Commitment(round_commitment) => {
-						challenger.observe(round_commitment.clone());
-						fri_commitments.push(round_commitment);
-					}
+			match fri_prover.execute_fold_round(challenge)? {
+				FoldRoundOutput::NoCommitment => {}
+				FoldRoundOutput::Commitment(round_commitment) => {
+					challenger.observe(round_commitment.clone());
+					fri_commitments.push(round_commitment);
 				}
-			}
-
-			if n_vars - 1 == fri_final_log_dim {
-				let fri_prover = fri_prover
-					.take()
-					.expect("fri_prover is initialized as Some is only taken once");
-				let (final_message, query_prover) = fri_prover.finalize()?;
-				challenger.observe_slice(&final_message);
-				fri_final = Some((final_message, query_prover));
 			}
 
 			sumcheck_prover.fold(challenge)?;
@@ -222,11 +199,7 @@ where
 
 		let _ = sumcheck_prover.finish()?;
 
-		let (final_message, query_prover) = fri_final.expect(
-			"the loop above iterates for all values of n_vars between 1 and n_rounds, inclusive. \
-			fri_final_log_dim is checked to be in the range [0, n_rounds), thus it must equal \
-			n_vars - 1 on one iteration loop. When it does, the fri_final value is set to Some",
-		);
+		let (terminate_codeword, query_prover) = fri_prover.finalize()?;
 
 		let fri_query_proofs = repeat_with(|| {
 			let index = challenger.sample_bits(self.rs_code.log_len());
@@ -239,28 +212,26 @@ where
 			sumcheck_eval,
 			sumcheck_rounds: rounds,
 			fri_commitments,
-			fri_final_message: final_message,
+			fri_terminate_codeword: terminate_codeword,
 			fri_query_proofs,
 		})
 	}
 
 	#[allow(clippy::too_many_arguments)]
-	fn verify_interleaved_fri_sumcheck<Challenger, Backend>(
+	fn verify_interleaved_fri_sumcheck<Challenger>(
 		&self,
 		claim: &SumcheckClaim<FExt, BivariateProduct>,
 		codeword_commitment: &VCS::Commitment,
 		sumcheck_round_proofs: Vec<RoundProof<FExt>>,
 		fri_commitments: Vec<VCS::Commitment>,
-		fri_final_message: fri::FinalMessage<FExt>,
+		fri_terminate_codeword: fri::TerminateCodeword<FExt>,
 		fri_query_proofs: Vec<fri::QueryProof<FExt, VCS::Proof>>,
 		ring_switch_evaluator: impl FnOnce(&[FExt]) -> FExt,
 		mut challenger: Challenger,
-		backend: Backend,
 	) -> Result<(), Error>
 	where
 		Challenger:
 			CanObserve<FExt> + CanObserve<VCS::Commitment> + CanSample<FExt> + CanSampleBits<usize>,
-		Backend: ComputationBackend,
 	{
 		let n_rounds = claim.n_vars();
 		if sumcheck_round_proofs.len() != n_rounds {
@@ -276,7 +247,6 @@ where
 
 		let mut round_vcs_iter = self.round_vcss.iter().peekable();
 		let mut fri_comm_iter = fri_commitments.iter().cloned();
-		let fri_final_log_dim = self.fri_final_rs_code.log_dim();
 		let log_inv_rate = self.rs_code.log_inv_rate();
 
 		assert_eq!(claim.composite_sums().len(), 1);
@@ -313,40 +283,24 @@ where
 				challenger.observe(comm);
 			}
 
-			if n_vars - 1 == fri_final_log_dim {
-				challenger.observe_slice(&fri_final_message);
-			}
-
 			sum = interpolate_round_proof(round_proof, sum, challenge);
 		}
-
-		let final_message_mle =
-			MultilinearExtension::from_values_slice(&fri_final_message).expect("F::WIDTH is 1");
-		let query = MultilinearQuery::<PE, _>::with_full_query(
-			&challenges[n_rounds - fri_final_log_dim..],
-			backend.clone(),
-		)
-		.expect("n_rounds is in range 0..32");
-		let fri_eval = final_message_mle
-			.evaluate(&query)
-			.expect("query size is guaranteed to match mle number of variables");
-
-		let ring_switch_eval = ring_switch_evaluator(&challenges);
-		if fri_eval * ring_switch_eval != sum {
-			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
-		}
-
 		let verifier = FRIVerifier::new(
 			&self.rs_code,
-			&self.fri_final_rs_code,
 			self.log_batch_size,
 			&self.poly_vcs,
 			&self.round_vcss,
 			codeword_commitment,
 			&fri_commitments,
 			&challenges,
-			fri_final_message,
+			fri_terminate_codeword,
 		)?;
+
+		let ring_switch_eval = ring_switch_evaluator(&challenges);
+
+		if verifier.final_message() * ring_switch_eval != sum {
+			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
+		}
 
 		if fri_query_proofs.len() != self.n_test_queries {
 			return Err(VerificationError::IncorrectNumberOfFRIQueries.into());
@@ -536,7 +490,7 @@ where
 			sumcheck_eval,
 			sumcheck_rounds,
 			fri_commitments,
-			fri_final_message,
+			fri_terminate_codeword,
 			fri_query_proofs,
 		} = proof;
 
@@ -572,7 +526,7 @@ where
 			commitment,
 			sumcheck_rounds,
 			fri_commitments,
-			fri_final_message,
+			fri_terminate_codeword,
 			fri_query_proofs,
 			|challenges| {
 				evaluate_ring_switch_eq_ind::<F, _, _>(
@@ -583,7 +537,6 @@ where
 				)
 			},
 			challenger,
-			backend.clone(),
 		)
 	}
 
@@ -594,6 +547,13 @@ where
 		let fe_size = mem::size_of::<FExt>();
 		let vc_size = mem::size_of::<VCS::Commitment>();
 
+		let fri_termination_log_len = log2_strict_usize(
+			self.round_vcss
+				.last()
+				.unwrap_or(&self.poly_vcs)
+				.vector_len(),
+		);
+
 		let sumcheck_eval_size = <TensorAlgebra<F, FExt>>::byte_size();
 		// The number of rounds of sumcheck is equal to the number of variables minus kappa.
 		// The function $h$ that we are sumchecking is multiquadratic, hence each round polynomial
@@ -602,22 +562,21 @@ where
 		// The number of FRI-commitments is encoded in state as `self.round_vcss.len()`. Alternatively, it is simply
 		// `sumcheck_rounds_size - 1`.
 		let fri_commitments_size = vc_size * (sumcheck_rounds_size - 1);
-		// The length of `fri_final_message` just $2^{LOG_DIM}$ of the final RS code, as the final
-		// FRI-message is sent decoded.
-		let fri_final_message_size = fe_size * (1 << self.fri_final_rs_code.log_dim());
+		// The length of the fri_terminate_codeword_size is just vector length of the last VCS .
+		let fri_terminate_codeword_size = fe_size * (1 << fri_termination_log_len);
 		// fri_query_proofs consists of n_test_queries of `QueryProof`.
 		// each `QueryProof` consists of a number of `QueryRoundProof`s, This number is the number of
 		// FRI-folds the verifier "receives".
 		// for arity = 1, the number of FRI-folds the verifier receives is  which is `round_vcss.len()+1`
 		// and the size of the coset is 2.
-		let len_round_vcss = self.rs_code.log_len() - self.fri_final_rs_code.log_len();
+		let len_round_vcss = self.rs_code.log_len() - fri_termination_log_len;
 		let fri_query_proofs_size =
 			(vc_size + 2 * fe_size) * (len_round_vcss + 1) * self.n_test_queries;
 
 		sumcheck_eval_size
 			+ sumcheck_rounds_size
 			+ fri_commitments_size
-			+ fri_final_message_size
+			+ fri_terminate_codeword_size
 			+ fri_query_proofs_size
 	}
 }
@@ -633,7 +592,7 @@ where
 	sumcheck_eval: TensorAlgebra<F, FExt>,
 	sumcheck_rounds: Vec<RoundProof<FExt>>,
 	fri_commitments: Vec<VCS::Commitment>,
-	fri_final_message: fri::FinalMessage<FExt>,
+	fri_terminate_codeword: fri::TerminateCodeword<FExt>,
 	fri_query_proofs: Vec<fri::QueryProof<FExt, VCS::Proof>>,
 }
 

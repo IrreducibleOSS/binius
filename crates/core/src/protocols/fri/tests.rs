@@ -28,7 +28,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	log_inv_rate: usize,
 	log_batch_size: usize,
 	log_vcs_vector_lens: &[usize],
-	log_final_dimension: usize,
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
 	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
@@ -46,15 +45,12 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		NTTOptions::default(),
 	)
 	.unwrap();
-	let final_rs_code =
-		ReedSolomonCode::<F>::new(log_final_dimension, log_inv_rate, NTTOptions::default())
-			.unwrap();
 
 	let n_test_queries = 3;
 	let n_round_commitments = log_vcs_vector_lens.len();
 	let folding_arities = calculate_fold_arities(
 		log_dimension + log_inv_rate,
-		log_final_dimension + log_inv_rate,
+		log_inv_rate,
 		log_vcs_vector_lens.iter().copied(),
 		log_batch_size,
 	)
@@ -99,7 +95,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	let mut round_prover = FRIFolder::new(
 		&committed_rs_code,
-		&final_rs_code,
 		log_batch_size,
 		<PackedType<U, F>>::unpack_scalars(&codeword),
 		&merkle_vcs,
@@ -122,8 +117,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		}
 	}
 
-	let (final_message, query_prover) = round_prover.finalize().unwrap();
-	prover_challenger.observe_slice(&final_message);
+	let (terminate_codeword, query_prover) = round_prover.finalize().unwrap();
 
 	let query_proofs = repeat_with(|| {
 		let index = prover_challenger.sample_bits(committed_rs_code.log_len());
@@ -145,7 +139,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	verifier_challenges
 		.append(&mut verifier_challenger.sample_vec(*folding_arities.last().unwrap()));
-	verifier_challenger.observe_slice(&final_message);
 
 	// check c == t(r'_0, ..., r'_{\ell-1})
 	// note that the prover is claiming that the final_message is [c]
@@ -158,22 +151,20 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();
-	// under the current implementation, final_message is a vector of length 1.
-	assert_eq!(final_message.len(), 1);
-	assert_eq!(computed_eval, final_message[0]);
 
 	let verifier = FRIVerifier::new(
 		&committed_rs_code,
-		&final_rs_code,
 		log_batch_size,
 		&merkle_vcs,
 		&merkle_round_vcss,
 		&codeword_commitment,
 		&round_commitments,
 		&verifier_challenges,
-		final_message,
+		terminate_codeword,
 	)
 	.unwrap();
+
+	assert_eq!(computed_eval, verifier.final_message());
 
 	assert_eq!(query_proofs.len(), n_test_queries);
 	for query_proof in query_proofs {
@@ -189,7 +180,7 @@ fn test_commit_prove_verify_success_128b_full() {
 	// This tests the case where we have a round commitment for every round
 	let log_dimension = 8;
 	let log_inv_rate = 2;
-	let log_final_dim = 0;
+	let log_final_dim = 1;
 	let minimum = log_inv_rate + log_final_dim + 1;
 	let maximum = log_inv_rate + log_dimension - 1;
 
@@ -200,29 +191,6 @@ fn test_commit_prove_verify_success_128b_full() {
 		log_inv_rate,
 		0,
 		&log_vcs_vector_lens,
-		log_final_dim,
-	);
-}
-
-#[test]
-#[ignore]
-fn test_commit_prove_verify_success_128b_nontrivial_final_dim() {
-	binius_utils::rayon::adjust_thread_pool();
-
-	let log_dimension = 8;
-	let log_inv_rate = 2;
-	let log_final_dim = 2;
-	let minimum = log_inv_rate + log_final_dim + 1;
-	let maximum = log_inv_rate + log_dimension - 1;
-
-	let log_vcs_vector_lens = (minimum..=maximum).rev().collect::<Vec<_>>();
-
-	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
-		log_dimension,
-		log_inv_rate,
-		0,
-		&log_vcs_vector_lens,
-		log_final_dim,
 	);
 }
 
@@ -231,7 +199,6 @@ fn test_commit_prove_verify_success_128b_higher_arity() {
 	let log_dimension = 8;
 	let log_inv_rate = 2;
 	let log_commit_dims = [5, 3, 2];
-	let log_final_dim = 0;
 	let log_vcs_vector_lens = log_commit_dims.map(|dim| dim + log_inv_rate);
 
 	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
@@ -239,7 +206,6 @@ fn test_commit_prove_verify_success_128b_higher_arity() {
 		log_inv_rate,
 		0,
 		&log_vcs_vector_lens,
-		log_final_dim,
 	);
 }
 
@@ -248,8 +214,7 @@ fn test_commit_prove_verify_success_128b_interleaved() {
 	let log_dimension = 6;
 	let log_inv_rate = 2;
 	let log_batch_size = 2;
-	let log_commit_dims = [5, 3, 1];
-	let log_final_message_dimension = 0;
+	let log_commit_dims = [5, 3, 2];
 	let log_vcs_vector_lens = log_commit_dims.map(|dim| dim + log_inv_rate);
 
 	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
@@ -257,6 +222,5 @@ fn test_commit_prove_verify_success_128b_interleaved() {
 		log_inv_rate,
 		log_batch_size,
 		&log_vcs_vector_lens,
-		log_final_message_dimension,
 	);
 }

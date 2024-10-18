@@ -30,7 +30,7 @@ mod prove;
 mod tests;
 mod verify;
 
-pub use common::{calculate_n_test_queries, FinalMessage, QueryProof, QueryRoundProof};
+pub use common::{calculate_n_test_queries, QueryProof, QueryRoundProof, TerminateCodeword};
 pub use error::*;
 pub use prove::*;
 pub use verify::*;

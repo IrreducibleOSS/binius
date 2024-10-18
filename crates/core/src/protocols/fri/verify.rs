@@ -1,17 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	common::{FinalCodeword, FinalMessage},
-	error::Error,
-	QueryProof, VerificationError,
-};
+use super::{common::TerminateCodeword, error::Error, QueryProof, VerificationError};
 use crate::{
-	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
 	polynomial::MultilinearQuery,
 	protocols::fri::common::{
-		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
-		QueryRoundProof,
+		calculate_fold_arities, fold_chunk, fold_codeword, fold_interleaved_chunk,
+		validate_common_fri_arguments, QueryRoundProof,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -49,10 +44,13 @@ where
 	interleave_tensor: Vec<F>,
 	/// The challenges for each round.
 	fold_challenges: &'a [F],
-	/// The final message, which must be re-encoded to start fold consistency checks.
-	final_codeword: FinalCodeword<F>,
+	/// The termination codeword, up to which the prover has performed the folding before sending it to the verifier,
+	/// must be folded to a dimension-1 codeword to check the protocol's correctness.
+	terminate_codeword: TerminateCodeword<F>,
 	/// The reduction arities between each query round.
 	fold_arities: Vec<usize>,
+	/// The constant value of the dimension-1 codeword
+	final_message: F,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -64,17 +62,14 @@ where
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		committed_rs_code: &'a ReedSolomonCode<FA>,
-		final_rs_code: &'a ReedSolomonCode<F>,
 		log_batch_size: usize,
 		committed_codeword_vcs: &'a VCS,
 		round_vcss: &'a [VCS],
 		codeword_commitment: &'a VCS::Commitment,
 		round_commitments: &'a [VCS::Commitment],
 		challenges: &'a [F],
-		final_message: FinalMessage<F>,
+		terminate_codeword: TerminateCodeword<F>,
 	) -> Result<Self, Error> {
-		let final_codeword = final_rs_code.encode(final_message)?;
-
 		if round_commitments.len() != round_vcss.len() {
 			bail!(Error::InvalidArgs(format!(
 				"got {} round commitments, expected {}",
@@ -83,29 +78,40 @@ where
 			)));
 		}
 
-		let n_fold_rounds = log_batch_size + committed_rs_code.log_dim() - final_rs_code.log_dim();
-		if challenges.len() != n_fold_rounds {
+		let verify_fold_rounds = log_batch_size + committed_rs_code.log_dim();
+		if challenges.len() != verify_fold_rounds {
 			bail!(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
-				n_fold_rounds,
+				verify_fold_rounds,
 			)));
 		}
 
-		if final_rs_code.log_inv_rate() != committed_rs_code.log_inv_rate() {
-			bail!(Error::InvalidArgs(
-				"final RS code must have the same rate as the committed RS code".to_string(),
-			));
-		}
-
-		validate_common_fri_arguments(
-			committed_rs_code,
-			final_rs_code,
-			committed_codeword_vcs,
-			round_vcss,
-		)?;
+		validate_common_fri_arguments(committed_rs_code, committed_codeword_vcs, round_vcss)?;
 
 		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
+
+		let n_dim_one_fold_challenges = log2_strict_usize(
+			round_vcss
+				.last()
+				.unwrap_or(committed_codeword_vcs)
+				.vector_len(),
+		) - committed_rs_code.log_inv_rate();
+
+		let (fold_challenges, dim_one_fold_challenges) =
+			fold_challenges.split_at(fold_challenges.len() - n_dim_one_fold_challenges);
+
+		let dim_one_codeword = fold_codeword(
+			committed_rs_code,
+			&terminate_codeword,
+			committed_rs_code.log_dim(),
+			dim_one_fold_challenges,
+		);
+
+		if dim_one_codeword.iter().any(|e| *e != dim_one_codeword[0]) {
+			bail!(VerificationError::IncorrectDegree);
+		}
+
 		let backend = make_portable_backend();
 		let interleave_tensor =
 			MultilinearQuery::<F, _>::with_full_query(interleave_challenges, &backend)
@@ -114,7 +120,7 @@ where
 
 		let fold_arities = calculate_fold_arities(
 			committed_rs_code.log_len(),
-			final_rs_code.log_len(),
+			committed_rs_code.log_inv_rate(),
 			round_vcss
 				.iter()
 				.map(|vcs| log2_strict_usize(vcs.vector_len())),
@@ -129,15 +135,20 @@ where
 			round_commitments,
 			interleave_tensor,
 			fold_challenges,
-			final_codeword,
+			terminate_codeword,
 			fold_arities,
 			log_batch_size,
+			final_message: dim_one_codeword[0],
 		})
 	}
 
 	/// Number of fold rounds, including the final fold.
 	pub fn n_rounds(&self) -> usize {
-		self.round_vcss.len() + 1
+		self.round_vcss.len()
+	}
+
+	pub fn final_message(&self) -> F {
+		self.final_message
 	}
 
 	/// Verifies a FRI challenge query.
@@ -239,7 +250,7 @@ where
 		// Since this implementation currently runs FRI until the final message is one element, we
 		// know that the Reed-Solomon encoding of this message is simply that final message element
 		// repeated up to the codeword length.
-		if next_value != self.final_codeword[index] {
+		if next_value != self.terminate_codeword[index] {
 			return Err(VerificationError::IncorrectFold {
 				query_round: self.n_rounds() - 1,
 				index,

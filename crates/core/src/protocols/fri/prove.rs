@@ -1,13 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{common::FinalMessage, error::Error};
+use super::{common::TerminateCodeword, error::Error};
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
 	polynomial::MultilinearQuery,
 	protocols::fri::common::{
-		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
-		QueryProof, QueryRoundProof,
+		calculate_fold_arities, fold_codeword, fold_interleaved_chunk,
+		validate_common_fri_arguments, QueryProof, QueryRoundProof,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -19,50 +19,6 @@ use itertools::izip;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use tracing::instrument;
-
-#[instrument(skip_all, level = "debug")]
-fn fold_codeword<F, FS>(
-	rs_code: &ReedSolomonCode<FS>,
-	codeword: &[F],
-	// Round is the number of total folding challenges received so far.
-	round: usize,
-	folding_challenges: &[F],
-) -> Vec<F>
-where
-	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
-{
-	// Preconditions
-	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
-	assert!(round >= folding_challenges.len());
-	assert!(round <= rs_code.log_dim());
-
-	if folding_challenges.is_empty() {
-		return codeword.to_vec();
-	}
-
-	let start_round = round - folding_challenges.len();
-	let chunk_size = 1 << folding_challenges.len();
-
-	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
-	codeword
-		.par_chunks(chunk_size)
-		.enumerate()
-		.map_init(
-			|| vec![F::default(); chunk_size],
-			|scratch_buffer, (chunk_index, chunk)| {
-				fold_chunk(
-					rs_code,
-					start_round,
-					chunk_index,
-					chunk,
-					folding_challenges,
-					scratch_buffer,
-				)
-			},
-		)
-		.collect()
-}
 
 /// Fold the interleaved codeword into a single codeword with the same block length.
 ///
@@ -185,7 +141,6 @@ where
 {
 	committed_rs_code: &'a ReedSolomonCode<FA>,
 	log_batch_size: usize,
-	final_rs_code: &'a ReedSolomonCode<F>,
 	codeword: &'a [F],
 	codeword_vcs: &'a VCS,
 	round_vcss: &'a [VCS],
@@ -207,7 +162,6 @@ where
 	/// Constructs a new folder.
 	pub fn new(
 		committed_rs_code: &'a ReedSolomonCode<FA>,
-		final_rs_code: &'a ReedSolomonCode<F>,
 		log_batch_size: usize,
 		committed_codeword: &'a [F],
 		committed_codeword_vcs: &'a VCS,
@@ -220,16 +174,11 @@ where
 			));
 		}
 
-		validate_common_fri_arguments(
-			committed_rs_code,
-			final_rs_code,
-			committed_codeword_vcs,
-			round_vcss,
-		)?;
+		validate_common_fri_arguments(committed_rs_code, committed_codeword_vcs, round_vcss)?;
 
 		let fold_arities = calculate_fold_arities(
 			committed_rs_code.log_len(),
-			final_rs_code.log_len(),
+			committed_rs_code.log_inv_rate(),
 			round_vcss
 				.iter()
 				.map(|vcs| log2_strict_usize(vcs.vector_len())),
@@ -240,7 +189,6 @@ where
 		Ok(Self {
 			committed_rs_code,
 			log_batch_size,
-			final_rs_code,
 			codeword: committed_codeword,
 			codeword_vcs: committed_codeword_vcs,
 			round_vcss,
@@ -255,7 +203,7 @@ where
 
 	/// Number of fold rounds, including the final fold.
 	pub fn n_rounds(&self) -> usize {
-		self.committed_rs_code.log_dim() + self.log_batch_size - self.final_rs_code.log_dim()
+		self.committed_rs_code.log_dim() + self.log_batch_size
 	}
 
 	/// Number of times `execute_fold_round` has been called.
@@ -341,49 +289,16 @@ where
 	///
 	/// This returns the final message and a query prover instance.
 	#[instrument(skip_all, name = "fri::FRIFolder::finalize")]
-	pub fn finalize(mut self) -> Result<(FinalMessage<F>, FRIQueryProver<'a, F, VCS>), Error> {
+	pub fn finalize(mut self) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
 			bail!(Error::EarlyProverFinish);
 		}
 
-		if self.final_rs_code.log_dim() != 0 {
-			todo!("handle the case when the FRI protocol terminates before folding to a length-1 message");
-		}
-
-		// NB: The idea behind the following is that we should do the minimal amount of work
-		// necessary to get the final message. We fold the final codeword, but first truncate it
-		// so that the rate is 1. Since the prover is honest, we can decode to the final message
-		// with an iNTT.
-		let log_inv_rate = self.committed_rs_code.log_inv_rate();
-		let final_codeword = match self.round_committed.last() {
-			Some((prev_codeword, _)) => {
-				// Fold a full codeword committed in the previous FRI round into a codeword with
-				// reduced dimension and rate.
-				let truncated_len = prev_codeword.len() >> log_inv_rate;
-				fold_codeword(
-					self.committed_rs_code,
-					&prev_codeword[..truncated_len],
-					self.curr_round - self.log_batch_size,
-					&self.unprocessed_challenges,
-				)
-			}
-			None => {
-				// Fold the interleaved codeword that was originally committed into a single
-				// codeword with the same or reduced block length, depending on the sequence of
-				// fold rounds.
-				let truncated_len = self.codeword.len() >> log_inv_rate;
-				fold_interleaved(
-					self.committed_rs_code,
-					&self.codeword[..truncated_len],
-					&self.unprocessed_challenges,
-					self.log_batch_size,
-				)
-			}
-		};
-
-		// Because the final codeword has dimension 1 and rate 1, the decoding procedure is the
-		// trival identity map.
-		let final_message = final_codeword;
+		let terminate_codeword = self
+			.round_committed
+			.last()
+			.map(|(codeword, _)| codeword.to_vec())
+			.unwrap_or(self.codeword.to_vec());
 
 		self.unprocessed_challenges.clear();
 
@@ -407,7 +322,7 @@ where
 			log_batch_size,
 			fold_arities,
 		};
-		Ok((final_message, query_prover))
+		Ok((terminate_codeword, query_prover))
 	}
 }
 
@@ -454,6 +369,7 @@ impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> 
 
 		for (vcs, (codeword, committed), arity) in
 			izip!(self.round_vcss.iter(), self.round_committed.iter(), arities)
+				.take(self.round_vcss.len() - 1)
 		{
 			coset_index >>= arity;
 			round_proofs.push(prove_coset_opening(vcs, codeword, committed, coset_index, arity)?);

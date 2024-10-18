@@ -11,6 +11,7 @@ use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::iter;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
@@ -154,7 +155,6 @@ where
 
 pub fn validate_common_fri_arguments<F, FA, VCS>(
 	committed_rs_code: &ReedSolomonCode<FA>,
-	final_rs_code: &ReedSolomonCode<F>,
 	committed_codeword_vcs: &VCS,
 	round_vcss: &[VCS],
 ) -> Result<(), Error>
@@ -169,15 +169,11 @@ where
 		));
 	}
 
-	if committed_rs_code.log_dim() < final_rs_code.log_dim() {
-		bail!(Error::MessageDimensionIsTooSmall);
-	}
-
 	// check that base two log of each round_vcs vector_length is greater than
 	// the code's log_inv_rate and less than log_len.
 	debug_assert!(committed_rs_code.log_dim() >= 1);
 	let upper_bound = 1 << committed_rs_code.log_len();
-	let lower_bound = 1 << (committed_rs_code.log_inv_rate() + final_rs_code.log_dim() + 1);
+	let lower_bound = 1 << (committed_rs_code.log_inv_rate() + 1);
 	if round_vcss.iter().any(|vcs| {
 		let len = vcs.vector_len();
 		len < lower_bound || len > upper_bound
@@ -201,6 +197,49 @@ where
 		bail!(Error::RoundVCSLengthsNotDescending);
 	}
 	Ok(())
+}
+
+pub fn fold_codeword<F, FS>(
+	rs_code: &ReedSolomonCode<FS>,
+	codeword: &[F],
+	// Round is the number of total folding challenges received so far.
+	round: usize,
+	folding_challenges: &[F],
+) -> Vec<F>
+where
+	F: BinaryField + ExtensionField<FS>,
+	FS: BinaryField,
+{
+	// Preconditions
+	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
+	assert!(round >= folding_challenges.len());
+	assert!(round <= rs_code.log_dim());
+
+	if folding_challenges.is_empty() {
+		return codeword.to_vec();
+	}
+
+	let start_round = round - folding_challenges.len();
+	let chunk_size = 1 << folding_challenges.len();
+
+	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
+	codeword
+		.par_chunks(chunk_size)
+		.enumerate()
+		.map_init(
+			|| vec![F::default(); chunk_size],
+			|scratch_buffer, (chunk_index, chunk)| {
+				fold_chunk(
+					rs_code,
+					start_round,
+					chunk_index,
+					chunk,
+					folding_challenges,
+					scratch_buffer,
+				)
+			},
+		)
+		.collect()
 }
 
 /// Calculates the folding arities between all rounds of the folding phase when the prover sends an
@@ -243,11 +282,8 @@ pub fn calculate_fold_arities(
 /// A proof for a single FRI consistency query.
 pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 
-/// The type of the final message in the FRI protocol.
-pub type FinalMessage<F> = Vec<F>;
-
-/// The type of the final codeword in the FRI protocol.
-pub type FinalCodeword<F> = Vec<F>;
+/// The type of the termination round codeword in the FRI protocol.
+pub type TerminateCodeword<F> = Vec<F>;
 
 /// The values and vector commitment opening proofs for a coset.
 #[derive(Debug, Clone)]

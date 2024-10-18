@@ -42,4 +42,6 @@ pub enum VerificationError {
 	IncorrectQueryProofLength { expected: usize },
 	#[error("the number of values in round {round} of the query proof is incorrect, expected {coset_size}")]
 	IncorrectQueryProofValuesLength { round: usize, coset_size: usize },
+	#[error("The dimension-1 codeword must contain the same values")]
+	IncorrectDegree,
 }
