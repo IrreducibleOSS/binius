@@ -345,6 +345,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		}
 	}
 
+	pub fn iter(&self) -> impl Iterator<Item = MultilinearPolyOracle<F>> + '_ {
+		(0..self.oracles.len()).map(|id| self.oracle(id))
+	}
+
 	pub fn add(&mut self) -> MultilinearOracleSetAddition<F> {
 		MultilinearOracleSetAddition {
 			name: None,

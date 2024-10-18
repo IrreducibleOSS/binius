@@ -8,6 +8,7 @@
 
 pub mod challenger;
 pub mod composition;
+pub mod constraint_system;
 pub mod linear_code;
 pub mod merkle_tree;
 pub mod oracle;
