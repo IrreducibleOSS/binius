@@ -10,7 +10,7 @@ use crate::{
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
-	ExtensionField, PackedExtension, PackedField, TowerField,
+	PackedExtension, PackedField, TowerField,
 };
 use std::ops::Deref;
 
@@ -91,7 +91,6 @@ macro_rules! impl_tower_constants {
 	};
 }
 
-use binius_utils::checked_arithmetics::checked_log_2;
 pub(crate) use impl_tower_constants;
 
 impl<PT> TaggedMul<PackedStrategy> for PT
@@ -103,7 +102,6 @@ where
 	/// Optimized packed field multiplication algorithm
 	#[inline]
 	fn mul(self, b: Self) -> Self {
-		assert_ne!(PT::DirectSubfield::DEGREE, 0);
 		let a = self;
 
 		// a and b can be interpreted as packed subfield elements:
@@ -369,7 +367,7 @@ where
 		for base in self.bases.iter() {
 			let base_component = input & ones;
 			// contains ones at positions which correspond to non-zero components
-			let mask = broadcast_lowest_bit(base_component, checked_log_2(OF::DEGREE));
+			let mask = broadcast_lowest_bit(base_component, OF::LOG_DEGREE);
 			result += OP::from_underlier(mask & base.to_underlier());
 			input = input >> 1;
 		}

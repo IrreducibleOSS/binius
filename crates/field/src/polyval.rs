@@ -411,7 +411,7 @@ impl Mul<BinaryField128bPolyval> for BinaryField1b {
 
 impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	type Iterator = <[BinaryField1b; 128] as IntoIterator>::IntoIter;
-	const DEGREE: usize = 128;
+	const LOG_DEGREE: usize = 7;
 
 	#[inline]
 	fn basis(i: usize) -> Result<Self, Error> {

@@ -188,7 +188,7 @@ where
 
 		let switchover_rounds = multilinears
 			.iter()
-			.map(|multilinear| switchover_fn(multilinear.extension_degree()))
+			.map(|multilinear| switchover_fn(1 << multilinear.log_extension_degree()))
 			.collect::<Vec<_>>();
 		let max_switchover_round = switchover_rounds.iter().copied().max().unwrap_or_default();
 

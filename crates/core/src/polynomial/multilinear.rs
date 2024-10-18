@@ -2,7 +2,6 @@
 
 use crate::polynomial::{Error, MultilinearExtensionSpecialized, MultilinearQueryRef};
 use binius_field::PackedField;
-use p3_util::log2_strict_usize;
 use std::{fmt::Debug, ops::Deref};
 
 /// Represents a multilinear polynomial.
@@ -17,13 +16,8 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		1 << self.n_vars()
 	}
 
-	/// Degree of `P::Scalar` as a field extension over the smallest subfield containing the polynomial's coefficients.
-	fn extension_degree(&self) -> usize;
-
 	/// Binary logarithm of the extension degree (always exists because we only support power-of-two extension degrees)
-	fn log_extension_degree(&self) -> usize {
-		log2_strict_usize(self.extension_degree())
-	}
+	fn log_extension_degree(&self) -> usize;
 
 	/// Get the evaluations of the polynomial at a vertex of the hypercube.
 	///
@@ -108,8 +102,8 @@ where
 		(**self).size()
 	}
 
-	fn extension_degree(&self) -> usize {
-		(**self).extension_degree()
+	fn log_extension_degree(&self) -> usize {
+		(**self).log_extension_degree()
 	}
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {

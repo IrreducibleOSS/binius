@@ -6,8 +6,6 @@ use p3_util::log2_strict_usize;
 /// Error thrown when a transpose operation fails.
 #[derive(Clone, thiserror::Error, Debug)]
 pub enum Error {
-	#[error("power of two size required for the field extension degree")]
-	PowerOfTwoExtensionDegreeRequired,
 	#[error("the \"{param}\" argument's size is invalid: {msg}")]
 	InvalidBufferSize { param: &'static str, msg: String },
 	#[error("dimension n of square blocks must divide packing width")]
@@ -93,12 +91,9 @@ where
 			msg: "must have equal length to src buffer".to_string(),
 		});
 	}
-	if !PE::Scalar::DEGREE.is_power_of_two() {
-		return Err(Error::PowerOfTwoExtensionDegreeRequired);
-	}
 
-	let log_d = log2_strict_usize(FE::DEGREE);
-	let log_n = log2_strict_usize(src.len()) + log2_strict_usize(PE::WIDTH);
+	let log_d = FE::LOG_DEGREE;
+	let log_n = log2_strict_usize(src.len()) + PE::LOG_WIDTH;
 
 	if log_n < log_d {
 		return Err(Error::InvalidBufferSize {

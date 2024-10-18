@@ -431,7 +431,7 @@ macro_rules! binary_tower_subfield_mul {
 pub(crate) use binary_tower_subfield_mul;
 
 macro_rules! impl_field_extension {
-	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty)) => {
+	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty)) => {
 		impl TryFrom<$name> for $subfield_name {
 			type Error = ();
 
@@ -524,14 +524,14 @@ macro_rules! impl_field_extension {
 		}
 
 		impl ExtensionField<$subfield_name> for $name {
-			type Iterator = <[$subfield_name; $degree] as IntoIterator>::IntoIter;
-			const DEGREE: usize = $degree;
+			type Iterator = <[$subfield_name; 1 << $log_degree] as IntoIterator>::IntoIter;
+			const LOG_DEGREE: usize = $log_degree;
 
 			#[inline]
 			fn basis(i: usize) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
-				if i >= $degree {
+				if i >= 1 << $log_degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
 				Ok(Self::new(<$typ>::ONE << (i * $subfield_name::N_BITS)))
@@ -544,7 +544,7 @@ macro_rules! impl_field_extension {
 			) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
 
-				if base_elems.len() << log_stride > $degree {
+				if base_elems.len() << log_stride > 1 << $log_degree {
 					return Err(Error::ExtensionDegreeMismatch);
 				}
 				debug_assert!($name::N_BITS.is_power_of_two());
@@ -612,21 +612,21 @@ macro_rules! binary_tower {
 			type DirectSubfield = $subfield_name;
 		}
 
-		binary_tower!($subfield_name($subfield_typ) < @2 => $name($typ));
+		binary_tower!($subfield_name($subfield_typ) < @1 => $name($typ));
 	};
 	($subfield_name:ident($subfield_typ:ty) < $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
 		binary_tower!($subfield_name($subfield_typ) < $name($typ));
 		binary_tower!($name($typ) $(< $extfield_name($extfield_typ))+);
-		binary_tower!($subfield_name($subfield_typ) < @4 => $($extfield_name($extfield_typ))<+);
+		binary_tower!($subfield_name($subfield_typ) < @2 => $($extfield_name($extfield_typ))<+);
 	};
-	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty)) => {
-		$crate::binary_field::impl_field_extension!($subfield_name($subfield_typ) < @$degree => $name($typ));
+	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty)) => {
+		$crate::binary_field::impl_field_extension!($subfield_name($subfield_typ) < @$log_degree => $name($typ));
 
 		$crate::binary_field::binary_tower_subfield_mul!($subfield_name, $name);
 	};
-	($subfield_name:ident($subfield_typ:ty) < @$degree:expr => $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
-		binary_tower!($subfield_name($subfield_typ) < @$degree => $name($typ));
-		binary_tower!($subfield_name($subfield_typ) < @$degree * 2 => $($extfield_name($extfield_typ))<+);
+	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
+		binary_tower!($subfield_name($subfield_typ) < @$log_degree => $name($typ));
+		binary_tower!($subfield_name($subfield_typ) < @$log_degree+1 => $($extfield_name($extfield_typ))<+);
 	};
 }
 

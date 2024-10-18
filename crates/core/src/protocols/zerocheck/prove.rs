@@ -357,7 +357,7 @@ where
 	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
 	/// switchover round number per multilinear polynomial as a function of its
-	/// [`crate::polynomial::MultilinearPoly::extension_degree`] value.
+	/// [`crate::polynomial::MultilinearPoly::log_extension_degree`] value.
 	pub fn new(
 		claim: ZerocheckClaim<F>,
 		witness: W,
@@ -631,9 +631,12 @@ where
 				.unwrap();
 			let (small_field_width, underlier_data) = multilinears
 				.map(|(_m_id, m)| {
-					assert_eq!(0, (size_of::<PW>() * 8) % m.extension_degree());
-					assert_eq!(0, ((size_of::<PW>() * 8) / m.extension_degree()) % PW::WIDTH);
-					((size_of::<PW>() * 8) / m.extension_degree() / PW::WIDTH, m.underlier_data())
+					assert_eq!(0, (size_of::<PW>() * 8) & ((1 << m.log_extension_degree()) - 1));
+					assert_eq!(0, ((size_of::<PW>() * 8) >> m.log_extension_degree()) % PW::WIDTH);
+					(
+						((size_of::<PW>() * 8) >> m.log_extension_degree()) / PW::WIDTH,
+						m.underlier_data(),
+					)
 				})
 				.unzip::<_, _, Vec<_>, Vec<_>>();
 			if !small_field_width.iter().all_equal() {

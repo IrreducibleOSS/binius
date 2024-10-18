@@ -403,8 +403,8 @@ where
 		self.0.n_vars()
 	}
 
-	fn extension_degree(&self) -> usize {
-		PE::Scalar::DEGREE
+	fn log_extension_degree(&self) -> usize {
+		PE::Scalar::LOG_DEGREE
 	}
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<PE::Scalar, Error> {
@@ -498,9 +498,7 @@ where
 		log_embedding_degree: usize,
 		evals: &mut [PE],
 	) -> Result<(), Error> {
-		// We exploit the fact that the extension degree is _de facto_ a power-of-two
-		// (though this isn't enforced yet)
-		let log_extension_degree = log2_strict_usize(PE::Scalar::DEGREE);
+		let log_extension_degree = PE::Scalar::LOG_DEGREE;
 
 		if subcube_vars > self.n_vars() {
 			bail!(Error::ArgumentRangeError {

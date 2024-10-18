@@ -65,6 +65,6 @@ where
 	}
 
 	fn binary_tower_level(&self) -> usize {
-		F::TOWER_LEVEL - self.data.extension_degree().ilog2() as usize
+		F::TOWER_LEVEL - self.data.log_extension_degree()
 	}
 }

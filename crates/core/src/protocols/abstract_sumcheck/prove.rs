@@ -185,7 +185,8 @@ where
 		let introduction_round = self.next_round;
 
 		for (multilinear_id, multilinear) in multilinears {
-			let switchover_round = max(1, (self.switchover_fn)(multilinear.extension_degree()));
+			let switchover_round =
+				max(1, (self.switchover_fn)(1 << multilinear.log_extension_degree()));
 			self.max_query_vars = Some(max(self.max_query_vars.unwrap_or(1), switchover_round));
 
 			if introduction_round + multilinear.n_vars() != self.n_vars {

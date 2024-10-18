@@ -55,11 +55,11 @@ binary_tower!(
 	< AESTowerField128b(u128)
 );
 
-impl_field_extension!(BinaryField1b(U1) < @8 => AESTowerField8b(u8));
-impl_field_extension!(BinaryField1b(U1) < @16 => AESTowerField16b(u16));
-impl_field_extension!(BinaryField1b(U1) < @32 => AESTowerField32b(u32));
-impl_field_extension!(BinaryField1b(U1) < @64 => AESTowerField64b(u64));
-impl_field_extension!(BinaryField1b(U1) < @128 => AESTowerField128b(u128));
+impl_field_extension!(BinaryField1b(U1) < @3 => AESTowerField8b(u8));
+impl_field_extension!(BinaryField1b(U1) < @4 => AESTowerField16b(u16));
+impl_field_extension!(BinaryField1b(U1) < @5 => AESTowerField32b(u32));
+impl_field_extension!(BinaryField1b(U1) < @6 => AESTowerField64b(u64));
+impl_field_extension!(BinaryField1b(U1) < @7 => AESTowerField128b(u128));
 
 mul_by_binary_field_1b!(AESTowerField8b);
 mul_by_binary_field_1b!(AESTowerField16b);
