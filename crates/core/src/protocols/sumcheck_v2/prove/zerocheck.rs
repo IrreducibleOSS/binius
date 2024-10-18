@@ -8,7 +8,7 @@ use crate::{
 	protocols::{
 		sumcheck_v2::{
 			prove::{
-				prover_state::{eval01_first_round, ProverState, SumcheckEvaluator},
+				prover_state::{ProverState, SumcheckEvaluator},
 				SumcheckProver,
 			},
 			Error, RoundCoeffs,
@@ -251,11 +251,8 @@ where
 					_p_base_marker: PhantomData,
 				})
 				.collect::<Vec<_>>();
-			self.state.calculate_round_coeffs_with_eval01::<PBase, _>(
-				eval01_first_round,
-				&evaluators,
-				batch_coeff,
-			)?
+			self.state
+				.calculate_first_round_coeffs::<PBase, _>(&evaluators, batch_coeff)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
 				.map(|((_, composition), interpolation_domain)| ZerocheckLaterRoundEvaluator {

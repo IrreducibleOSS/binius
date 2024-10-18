@@ -322,28 +322,48 @@ where
 			.collect()
 	}
 
-	pub fn calculate_round_coeffs<Evaluator: SumcheckEvaluator<P, P> + Sync>(
+	/// Calculate the batched round coefficients for the first sumcheck round.
+	pub fn calculate_first_round_coeffs<PBase, Evaluator>(
 		&mut self,
-		evaluators: &[Evaluator],
-		batch_coeff: F,
-	) -> Result<RoundCoeffs<F>, Error> {
-		self.calculate_round_coeffs_with_eval01::<P, _>(Self::eval01, evaluators, batch_coeff)
-	}
-
-	pub(super) fn calculate_round_coeffs_with_eval01<PBase, Evaluator>(
-		&mut self,
-		eval01: impl Fn(&SumcheckMultilinear<P, M>, MultilinearQueryRef<P>, usize, usize, &mut [PBase])
-			+ Sync,
 		evaluators: &[Evaluator],
 		batch_coeff: F,
 	) -> Result<RoundCoeffs<F>, Error>
 	where
 		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
 		Evaluator: SumcheckEvaluator<PBase, P> + Sync,
-		F: ExtensionField<P::Scalar>,
 	{
-		let evals = self.calculate_round_evals(eval01, evaluators)?;
+		let evals = self.calculate_round_evals(Self::eval01_first_round, evaluators)?;
+		self.calculate_round_coeffs_from_evals(evaluators, batch_coeff, evals)
+	}
 
+	/// Calculate the batched round coefficients for an arbitrary sumcheck round.
+	///
+	/// See [`ProverState::calculate_first_round_coeffs`] for an optimized version of this method
+	/// that works over small fields in the first round.
+	pub fn calculate_round_coeffs<Evaluator: SumcheckEvaluator<P, P> + Sync>(
+		&mut self,
+		evaluators: &[Evaluator],
+		batch_coeff: F,
+	) -> Result<RoundCoeffs<F>, Error> {
+		let evals = self.calculate_round_evals(Self::eval01, evaluators)?;
+		self.calculate_round_coeffs_from_evals(evaluators, batch_coeff, evals)
+	}
+
+	/// Calculate the batched round coefficients from the domain evaluations.
+	///
+	/// This both performs the polynomial interpolation over the evaluations and the mixing with
+	/// the batching coefficient.
+	fn calculate_round_coeffs_from_evals<PBase, Evaluator>(
+		&mut self,
+		evaluators: &[Evaluator],
+		batch_coeff: F,
+		evals: Vec<RoundCoeffs<F>>,
+	) -> Result<RoundCoeffs<F>, Error>
+	where
+		PBase: PackedField<Scalar: ExtensionField<FDomain>>,
+		Evaluator: SumcheckEvaluator<PBase, P>,
+	{
 		let coeffs = match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
 				bail!(Error::ExpectedFold);
@@ -521,6 +541,22 @@ where
 		Ok(evals)
 	}
 
+	/// Calculate the evaluations of a sumcheck multilinear over a subcube.
+	///
+	/// A sumcheck multilinear with $n$ variables is either expressed as folded $n$-variate
+	/// multilinear extension, given by $2^n$ evaluations, or as a transparent $n + r$-variate
+	/// multilinear, with its low $r$ variables projected onto $r$ round challenges.
+	///
+	/// This method computes the evaluations over a subcube with the given number of variables and
+	/// index.
+	///
+	/// ## Arguments
+	///
+	/// * `multilinear` - the sumcheck multilinear to evaluate
+	/// * `query` - the expanded multilinear query given by the previous sumcheck round challenges
+	/// * `subcube_vars` - the number of variables in the subcube to evaluate over
+	/// * `subcube_index` - the index of the subcube within the hypercube domain of the multilinear
+	/// * `evals` - the output buffer to write the evaluations into
 	fn eval01(
 		multilinear: &SumcheckMultilinear<P, M>,
 		query: MultilinearQueryRef<P>,
@@ -544,30 +580,30 @@ where
 
 		result.expect("correct indices");
 	}
-}
 
-pub(super) fn eval01_first_round<PBase, P, M>(
-	multilinear: &SumcheckMultilinear<P, M>,
-	_query: MultilinearQueryRef<P>,
-	subcube_vars: usize,
-	subcube_index: usize,
-	evals: &mut [PBase],
-) where
-	PBase: PackedField,
-	P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
-	M: MultilinearPoly<P> + Send + Sync,
-{
-	let result = if let SumcheckMultilinear::Transparent { multilinear, .. } = multilinear {
-		let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
-		multilinear.subcube_evals(
-			subcube_vars,
-			subcube_index,
-			log2_strict_usize(<P::Scalar as ExtensionField<PBase::Scalar>>::DEGREE),
-			evals,
-		)
-	} else {
-		panic!("no folded multilinears in the first round");
-	};
+	fn eval01_first_round<PBase>(
+		multilinear: &SumcheckMultilinear<P, M>,
+		_query: MultilinearQueryRef<P>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		evals: &mut [PBase],
+	) where
+		PBase: PackedField,
+		F: ExtensionField<PBase::Scalar>,
+		P: RepackedExtension<PBase>,
+	{
+		let result = if let SumcheckMultilinear::Transparent { multilinear, .. } = multilinear {
+			let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
+			multilinear.subcube_evals(
+				subcube_vars,
+				subcube_index,
+				log2_strict_usize(<P::Scalar as ExtensionField<PBase::Scalar>>::DEGREE),
+				evals,
+			)
+		} else {
+			panic!("no folded multilinears in the first round");
+		};
 
-	result.expect("correct indices")
+		result.expect("correct indices")
+	}
 }
