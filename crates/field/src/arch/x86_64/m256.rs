@@ -244,6 +244,18 @@ impl PartialEq for M256 {
 
 impl Eq for M256 {}
 
+impl PartialOrd for M256 {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for M256 {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		<[u128; 2]>::from(*self).cmp(&<[u128; 2]>::from(*other))
+	}
+}
+
 impl ConstantTimeEq for M256 {
 	#[inline(always)]
 	fn ct_eq(&self, other: &Self) -> Choice {

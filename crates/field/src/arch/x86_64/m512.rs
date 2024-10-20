@@ -295,6 +295,18 @@ impl PartialEq for M512 {
 
 impl Eq for M512 {}
 
+impl PartialOrd for M512 {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for M512 {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		<[u128; 4]>::from(*self).cmp(&<[u128; 4]>::from(*other))
+	}
+}
+
 impl ConstantTimeEq for M512 {
 	#[inline(always)]
 	fn ct_eq(&self, other: &Self) -> Choice {

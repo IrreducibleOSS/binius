@@ -15,6 +15,8 @@ pub trait UnderlierType:
 	+ Default
 	+ PartialEq
 	+ Eq
+	+ PartialOrd
+	+ Ord
 	+ ConstantTimeEq
 	+ Copy
 	+ Random

@@ -9,7 +9,7 @@ use subtle::{Choice, ConstantTimeEq};
 
 /// A type that represents a pair of elements of the same underlier type.
 /// We use it as an underlier for the `ScaledPAckedField` type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct ScaledUnderlier<U, const N: usize>(pub [U; N]);
 
