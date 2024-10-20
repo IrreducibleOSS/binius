@@ -8,8 +8,8 @@ use crate::{
 	protocols::{
 		abstract_sumcheck::ReducedClaim,
 		sumcheck_v2::{
-			self, prove::RegularSumcheckProver, BatchSumcheckOutput, CompositeSumClaim,
-			SumcheckClaim,
+			self, immediate_switchover_heuristic, prove::RegularSumcheckProver,
+			BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
 		},
 	},
 	tensor_algebra::TensorAlgebra,
@@ -177,7 +177,7 @@ where
 			],
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
-			|_| 1,
+			immediate_switchover_heuristic,
 			backend.clone(),
 		)?;
 		let (sumcheck_output, sumcheck_proof) =

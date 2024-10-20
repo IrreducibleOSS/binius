@@ -199,7 +199,7 @@ where
 			})
 			.collect();
 
-		let tensor_query = MultilinearQuery::<_, Backend>::new(max_switchover_round)?;
+		let tensor_query = MultilinearQuery::<_, Backend>::new(max_switchover_round + 1)?;
 
 		Ok(Self {
 			n_vars,
@@ -248,14 +248,12 @@ where
 					multilinear: inner_multilinear,
 					ref mut switchover_round,
 				} => {
-					let tensor_query = self.tensor_query.as_ref()
+					if *switchover_round == 0 {
+						let tensor_query = self.tensor_query.as_ref()
 						.expect(
 							"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
 						);
 
-					// TODO: would be nicer if switchover_round 0 meant to fold after the first round
-					*switchover_round -= 1;
-					if *switchover_round == 0 {
 						// At switchover, perform inner products in large field and save them in a
 						// newly created MLE.
 						let large_field_folded_multilinear =
@@ -265,6 +263,7 @@ where
 							large_field_folded_multilinear,
 						};
 					} else {
+						*switchover_round -= 1;
 						any_transparent_left = true;
 					}
 				}

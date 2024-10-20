@@ -25,9 +25,8 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
-		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, Proof as ZerocheckBatchProof},
+		sumcheck_v2::{self, standard_switchover_heuristic, Proof as ZerocheckBatchProof},
 	},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,

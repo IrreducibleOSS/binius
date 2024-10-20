@@ -6,6 +6,7 @@ use crate::{
 	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly, MultilinearQuery},
 	protocols::{
 		sumcheck_v2::{
+			immediate_switchover_heuristic,
 			prove::{
 				prover_state::{ProverState, SumcheckEvaluator},
 				SumcheckProver,
@@ -67,7 +68,7 @@ where
 			vec![layer_sum],
 			evaluation_point,
 			// We use GPA protocol only for big fields, which is why switchover is trivial
-			|_| 1,
+			immediate_switchover_heuristic,
 			backend.clone(),
 		)?;
 		let n_vars = state.n_vars();

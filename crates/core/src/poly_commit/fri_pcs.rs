@@ -10,7 +10,7 @@ use crate::{
 	protocols::{
 		fri::{self, FRIFolder, FRIVerifier, FoldRoundOutput},
 		sumcheck_v2::{
-			self,
+			self, immediate_switchover_heuristic,
 			prove::{RegularSumcheckProver, SumcheckProver},
 			verify::interpolate_round_proof,
 			RoundProof, SumcheckClaim,
@@ -445,7 +445,7 @@ where
 			],
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
-			|_| 1,
+			immediate_switchover_heuristic,
 			backend.clone(),
 		)?;
 

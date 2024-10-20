@@ -19,7 +19,7 @@ use binius_core::{
 	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, Proof as ZerocheckProof},
+		sumcheck_v2::{self, immediate_switchover_heuristic, Proof as ZerocheckProof},
 	},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
@@ -949,8 +949,6 @@ where
 
 	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
 
-	let switchover_fn = |_| 1;
-
 	let constraint_set = make_constraints::<BinaryField32b, _>(trace_oracle).build(oracles)?;
 	let constraint_set_base = make_constraints::<BinaryField32b, _>(trace_oracle).build(oracles)?;
 
@@ -962,7 +960,7 @@ where
 		constraint_set,
 		&ext_index,
 		domain_factory.clone(),
-		switchover_fn,
+		immediate_switchover_heuristic,
 		zerocheck_challenges.as_slice(),
 		backend.clone(),
 	)?;
@@ -987,7 +985,7 @@ where
 		oracles,
 		&mut ext_index,
 		evalcheck_multilinear_claims,
-		switchover_fn,
+		immediate_switchover_heuristic,
 		&mut iso_challenger,
 		domain_factory,
 		backend.clone(),

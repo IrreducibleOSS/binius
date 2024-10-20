@@ -4,6 +4,7 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	polynomial::{MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery},
 	protocols::sumcheck_v2::{
+		immediate_switchover_heuristic,
 		prove::RegularSumcheckProver,
 		univariate::{
 			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
@@ -89,7 +90,7 @@ where
 		reduced_multilinears,
 		composite_sum_claims,
 		evaluation_domain_factory,
-		|_| 1,
+		immediate_switchover_heuristic,
 		backend,
 	)?;
 

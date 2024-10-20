@@ -239,3 +239,16 @@ impl<F: Field> BatchSumcheckOutput<F> {
 		}
 	}
 }
+
+/// Constructs a switchover function thaw returns the round number where folded multilinear is at
+/// least 2^k times smaller (in bytes) than the original, or 1 when not applicable.
+pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize + Copy {
+	move |extension_degree: usize| {
+		((extension_degree.ilog2() as isize + k).max(0) as usize).saturating_sub(1)
+	}
+}
+
+/// Sumcheck switchover heuristic that begins folding immediately in the first round.
+pub fn immediate_switchover_heuristic(_extension_degree: usize) -> usize {
+	0
+}
