@@ -1,57 +1,58 @@
 // Copyright 2024 Ulvetanna Inc.
 
+//! A channel allows communication between tables.
+//!
+//! Note that the channel is unordered - meaning that rows are not
+//! constrained to be in the same order when being pushed and pulled.
+//!
+//! The number of columns per channel must be fixed, but can be any
+//! positive integer. Column order is guaranteed, and column values within
+//! the same row must always stay together.
+//!
+//! A channel only ensures that the inputs and outputs match, using a
+//! multiset check. If you want any kind of ordering, you have to
+//! use polynomial constraints to additionally constraint this.
+//!
+//! The example below shows a channel with width=2, with multiple inputs
+//! and outputs.
+//! ```txt
+//!                                       +-+-+
+//!                                       |C|D|
+//! +-+-+                           +---> +-+-+
+//! |A|B|                           |     |M|N|
+//! +-+-+                           |     +-+-+
+//! |C|D|                           |
+//! +-+-+  --+                      |     +-+-+
+//! |E|F|    |                      |     |I|J|
+//! +-+-+    |                      |     +-+-+
+//! |G|H|    |                      |     |W|X|
+//! +-+-+    |                      | +-> +-+-+
+//!          |                      | |   |A|B|
+//! +-+-+    +-> /¯\¯¯¯¯¯¯¯¯¯¯¯\  --+ |   +-+-+
+//! |I|J|       :   :           : ----+   |K|L|
+//! +-+-+  PUSH |   |  channel  |  PULL   +-+-+
+//! |K|L|       :   :           : ----+
+//! +-+-+    +-> \_/___________/  --+ |   +-+-+
+//! |M|N|    |                      | |   |U|V|
+//! +-+-+    |                      | |   +-+-+
+//! |O|P|    |                      | |   |G|H|
+//! +-+-+  --+                      | +-> +-+-+
+//! |Q|R|                           |     |E|F|
+//! +-+-+                           |     +-+-+
+//! |S|T|                           |     |Q|R|
+//! +-+-+                           |     +-+-+
+//! |U|V|                           |
+//! +-+-+                           |     +-+-+
+//! |W|X|                           |     |O|P|
+//! +-+-+                           +---> +-+-+
+//!                                       |S|T|
+//!                                       +-+-+
+//! ```
+
 use super::error::Error;
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
 
-/// A channel allows communication between tables.
-///
-/// Note that the channel is undordered - meaning that rows are not
-/// constrained to be in the same order when being pushed and pulled.
-///
-/// The number of columns per channel must be fixed, but can be any
-/// positive integer. Column order is guaranteed, and column values within
-/// the same row must always stay together.
-///
-/// A channel only ensures that the inputs and outputs match, using a
-/// multiset check. If you want any kind of ordering, you have to
-/// use polynomial constraints to additionally constraint this.
-///
-/// The example below shows a channel with width=2, with multiple inputs
-/// and outputs.
-/// ```txt
-///                                       +-+-+
-///                                       |C|D|
-/// +-+-+                           +---> +-+-+
-/// |A|B|                           |     |M|N|
-/// +-+-+                           |     +-+-+
-/// |C|D|                           |
-/// +-+-+  --+                      |     +-+-+
-/// |E|F|    |                      |     |I|J|
-/// +-+-+    |                      |     +-+-+
-/// |G|H|    |                      |     |W|X|
-/// +-+-+    |                      | +-> +-+-+
-///          |                      | |   |A|B|
-/// +-+-+    +-> /¯\¯¯¯¯¯¯¯¯¯¯¯\  --+ |   +-+-+
-/// |I|J|       :   :           : ----+   |K|L|
-/// +-+-+  PUSH |   |  channel  |  PULL   +-+-+
-/// |K|L|       :   :           : ----+
-/// +-+-+    +-> \_/___________/  --+ |   +-+-+
-/// |M|N|    |                      | |   |U|V|
-/// +-+-+    |                      | |   +-+-+
-/// |O|P|    |                      | |   |G|H|
-/// +-+-+  --+                      | +-> +-+-+
-/// |Q|R|                           |     |E|F|
-/// +-+-+                           |     +-+-+
-/// |S|T|                           |     |Q|R|
-/// +-+-+                           |     +-+-+
-/// |U|V|                           |
-/// +-+-+                           |     +-+-+
-/// |W|X|                           |     |O|P|
-/// +-+-+                           +---> +-+-+
-///                                       |S|T|
-///                                       +-+-+
-/// ```
 pub type ChannelId = usize;
 
 #[derive(Debug, Clone)]
