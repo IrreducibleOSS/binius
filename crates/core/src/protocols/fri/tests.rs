@@ -50,9 +50,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let n_round_commitments = log_vcs_vector_lens.len();
 	let folding_arities = calculate_fold_arities(
 		log_dimension + log_inv_rate,
-		log_inv_rate,
-		log_vcs_vector_lens.iter().copied(),
 		log_batch_size,
+		log_vcs_vector_lens.iter().copied(),
 	)
 	.unwrap();
 
@@ -104,8 +103,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	.unwrap();
 
 	let mut prover_challenger = challenger.clone();
-	let mut round_commitments = Vec::with_capacity(round_prover.n_rounds());
-	for _i in 0..round_prover.n_rounds() {
+	let n_fold_rounds = round_prover.n_rounds();
+	let mut round_commitments = Vec::with_capacity(n_fold_rounds);
+	for _i in 0..n_fold_rounds {
 		let challenge = prover_challenger.sample();
 		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
 		match fold_round_output {
@@ -132,13 +132,14 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let mut verifier_challenges = Vec::with_capacity(committed_rs_code.log_dim());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
+	assert_eq!(folding_arities.len(), n_round_commitments);
 	for (i, commitment) in round_commitments.iter().enumerate() {
 		verifier_challenges.append(&mut verifier_challenger.sample_vec(folding_arities[i]));
 		verifier_challenger.observe(commitment.clone());
 	}
 
-	verifier_challenges
-		.append(&mut verifier_challenger.sample_vec(*folding_arities.last().unwrap()));
+	let n_final_challenges = n_fold_rounds - folding_arities.iter().sum::<usize>();
+	verifier_challenges.append(&mut verifier_challenger.sample_vec(n_final_challenges));
 
 	// check c == t(r'_0, ..., r'_{\ell-1})
 	// note that the prover is claiming that the final_message is [c]
@@ -164,7 +165,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	assert_eq!(computed_eval, verifier.final_message());
+	let final_fri_value = verifier.verify_last_oracle().unwrap();
+	assert_eq!(computed_eval, final_fri_value);
 
 	assert_eq!(query_proofs.len(), n_test_queries);
 	for query_proof in query_proofs {
@@ -222,5 +224,19 @@ fn test_commit_prove_verify_success_128b_interleaved() {
 		log_inv_rate,
 		log_batch_size,
 		&log_vcs_vector_lens,
+	);
+}
+
+#[test]
+fn test_commit_prove_verify_success_without_folding() {
+	let log_dimension = 4;
+	let log_inv_rate = 2;
+	let log_batch_size = 2;
+
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField128b, BinaryField16b>(
+		log_dimension,
+		log_inv_rate,
+		log_batch_size,
+		&[],
 	);
 }

@@ -6,8 +6,8 @@ use crate::{
 	merkle_tree::VectorCommitScheme,
 	polynomial::MultilinearQuery,
 	protocols::fri::common::{
-		calculate_fold_arities, fold_codeword, fold_interleaved_chunk,
-		validate_common_fri_arguments, QueryProof, QueryRoundProof,
+		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
+		QueryProof, QueryRoundProof,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -19,6 +19,50 @@ use itertools::izip;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use tracing::instrument;
+
+#[instrument(skip_all, level = "debug")]
+pub fn fold_codeword<F, FS>(
+	rs_code: &ReedSolomonCode<FS>,
+	codeword: &[F],
+	// Round is the number of total folding challenges received so far.
+	round: usize,
+	folding_challenges: &[F],
+) -> Vec<F>
+where
+	F: BinaryField + ExtensionField<FS>,
+	FS: BinaryField,
+{
+	// Preconditions
+	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
+	assert!(round >= folding_challenges.len());
+	assert!(round <= rs_code.log_dim());
+
+	if folding_challenges.is_empty() {
+		return codeword.to_vec();
+	}
+
+	let start_round = round - folding_challenges.len();
+	let chunk_size = 1 << folding_challenges.len();
+
+	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
+	codeword
+		.par_chunks(chunk_size)
+		.enumerate()
+		.map_init(
+			|| vec![F::default(); chunk_size],
+			|scratch_buffer, (chunk_index, chunk)| {
+				fold_chunk(
+					rs_code,
+					start_round,
+					chunk_index,
+					chunk,
+					folding_challenges,
+					scratch_buffer,
+				)
+			},
+		)
+		.collect()
+}
 
 /// Fold the interleaved codeword into a single codeword with the same block length.
 ///
@@ -178,11 +222,10 @@ where
 
 		let fold_arities = calculate_fold_arities(
 			committed_rs_code.log_len(),
-			committed_rs_code.log_inv_rate(),
+			log_batch_size,
 			round_vcss
 				.iter()
 				.map(|vcs| log2_strict_usize(vcs.vector_len())),
-			log_batch_size,
 		)?;
 
 		let next_commit_round = fold_arities.first().copied();
@@ -271,12 +314,8 @@ where
 		self.round_committed.push((folded_codeword, committed));
 
 		self.next_commit_round = self.next_commit_round.take().and_then(|next_commit_round| {
-			let n_commitments = self.round_committed.len();
-			if n_commitments < self.fold_arities.len() - 1 {
-				Some(next_commit_round + self.fold_arities[n_commitments])
-			} else {
-				None
-			}
+			let arity = self.fold_arities.get(self.round_committed.len())?;
+			Some(next_commit_round + arity)
 		});
 		Ok(FoldRoundOutput::Commitment(commitment))
 	}
@@ -338,9 +377,9 @@ pub struct FRIQueryProver<'a, F: BinaryField, VCS: VectorCommitScheme<F>> {
 }
 
 impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> {
-	/// Number of fold rounds, including the final fold.
-	pub fn n_rounds(&self) -> usize {
-		self.round_vcss.len() + 1
+	/// Number of oracles sent during the fold rounds.
+	pub fn n_oracles(&self) -> usize {
+		self.round_vcss.len()
 	}
 
 	/// Proves a FRI challenge query.
@@ -350,20 +389,24 @@ impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> 
 	/// * `index` - an index into the original codeword domain
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
 	pub fn prove_query(&self, index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
-		let mut round_proofs = Vec::with_capacity(self.n_rounds());
+		let mut round_proofs = Vec::with_capacity(self.n_oracles());
 		let mut arities = self.fold_arities.iter().copied();
 
-		let arity = arities
-			.next()
-			.expect("iter_fold_arities returns non-empty iterator");
+		let Some(first_fold_arity) = arities.next() else {
+			// If there are no query proofs, that means that no oracles were sent during the FRI
+			// fold rounds. In that case, the original interleaved codeword is decommitted and
+			// the only checks that need to be performed are in `verify_last_oracle`.
+			return Ok(round_proofs);
+		};
 
-		let mut coset_index = index >> arity;
+		let log_coset_size = first_fold_arity - self.log_batch_size;
+		let mut coset_index = index >> log_coset_size;
 		round_proofs.push(prove_interleaved_opening(
 			self.codeword_vcs,
 			self.codeword,
 			self.codeword_committed,
 			coset_index,
-			arity - self.log_batch_size,
+			log_coset_size,
 			self.log_batch_size,
 		)?);
 

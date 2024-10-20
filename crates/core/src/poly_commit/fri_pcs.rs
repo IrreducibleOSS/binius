@@ -297,8 +297,8 @@ where
 		)?;
 
 		let ring_switch_eval = ring_switch_evaluator(&challenges);
-
-		if verifier.final_message() * ring_switch_eval != sum {
+		let final_fri_value = verifier.verify_last_oracle()?;
+		if final_fri_value * ring_switch_eval != sum {
 			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
 		}
 

@@ -11,7 +11,6 @@ use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use itertools::Itertools;
-use rayon::prelude::*;
 use std::iter;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
@@ -199,84 +198,23 @@ where
 	Ok(())
 }
 
-pub fn fold_codeword<F, FS>(
-	rs_code: &ReedSolomonCode<FS>,
-	codeword: &[F],
-	// Round is the number of total folding challenges received so far.
-	round: usize,
-	folding_challenges: &[F],
-) -> Vec<F>
-where
-	F: BinaryField + ExtensionField<FS>,
-	FS: BinaryField,
-{
-	// Preconditions
-	assert_eq!(codeword.len() % (1 << folding_challenges.len()), 0);
-	assert!(round >= folding_challenges.len());
-	assert!(round <= rs_code.log_dim());
-
-	if folding_challenges.is_empty() {
-		return codeword.to_vec();
-	}
-
-	let start_round = round - folding_challenges.len();
-	let chunk_size = 1 << folding_challenges.len();
-
-	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
-	codeword
-		.par_chunks(chunk_size)
-		.enumerate()
-		.map_init(
-			|| vec![F::default(); chunk_size],
-			|scratch_buffer, (chunk_index, chunk)| {
-				fold_chunk(
-					rs_code,
-					start_round,
-					chunk_index,
-					chunk,
-					folding_challenges,
-					scratch_buffer,
-				)
-			},
-		)
-		.collect()
-}
-
 /// Calculates the folding arities between all rounds of the folding phase when the prover sends an
-/// oracle or codeword message.
-///
-/// The vector returned has length at least 1, representing the number of fold rounds before the
-/// prover sends the final oracle. All entries must be non-zero except for the last one.
+/// oracle.
 pub fn calculate_fold_arities(
 	log_code_len: usize,
-	log_final_len: usize,
-	log_commit_lens: impl IntoIterator<Item = usize>,
 	log_batch_size: usize,
+	log_commit_lens: impl IntoIterator<Item = usize>,
 ) -> Result<Vec<usize>, Error> {
-	let oracle_log_lengths = log_commit_lens.into_iter().chain(iter::once(log_final_len));
-	let oracle_rounds = oracle_log_lengths
-		.map(|log_folded_len| {
-			let round_diff = log_code_len
-				.checked_sub(log_folded_len)
-				.ok_or_else(|| Error::RoundVCSLengthsNotDescending)?;
-			Ok(log_batch_size + round_diff)
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	let fold_arities = iter::once(0)
-		.chain(oracle_rounds)
+	iter::once(log_code_len + log_batch_size)
+		.chain(log_commit_lens)
 		.tuple_windows()
-		.map(|(round, next_round)| next_round - round)
-		.collect::<Vec<_>>();
-
-	// Check that all entries are non-zero except for the last one.
-	for &arity in &fold_arities[..fold_arities.len() - 1] {
-		if arity == 0 {
-			return Err(Error::RoundVCSLengthsNotDescending);
-		}
-	}
-
-	Ok(fold_arities)
+		.map(|(log_len, next_log_len)| {
+			if log_len <= next_log_len {
+				return Err(Error::RoundVCSLengthsNotDescending);
+			}
+			Ok(log_len - next_log_len)
+		})
+		.collect()
 }
 
 /// A proof for a single FRI consistency query.
