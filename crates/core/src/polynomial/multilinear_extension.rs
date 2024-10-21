@@ -868,7 +868,7 @@ mod tests {
 			.collect::<Vec<F>>();
 
 		let backend = make_portable_backend();
-		let query = MultilinearQuery::<P, _>::with_full_query(&q, backend.clone()).unwrap();
+		let query = MultilinearQuery::<P, _>::with_full_query(&q, &backend).unwrap();
 
 		let packed = P::from_scalars(values.clone());
 		let me = MultilinearExtension::new(n_vars, vec![packed]).unwrap();
@@ -876,9 +876,9 @@ mod tests {
 		let eval = me.evaluate(&query).unwrap();
 
 		let query_low =
-			MultilinearQuery::<P, _>::with_full_query(&q[..n_vars - 1], backend.clone()).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(&q[..n_vars - 1], &backend).unwrap();
 		let query_high =
-			MultilinearQuery::<P, _>::with_full_query(&q[n_vars - 1..], backend).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(&q[n_vars - 1..], &backend).unwrap();
 
 		let eval_l_h = me
 			.evaluate_partial_high(&query_high)

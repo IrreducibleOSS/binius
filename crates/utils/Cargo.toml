@@ -6,13 +6,15 @@ authors.workspace = true
 
 [dependencies]
 cfg-if.workspace = true
+bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 itertools.workspace = true
 rayon.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 tracing-profile.workspace = true
 tracing-subscriber.workspace = true
-tracing-tracy = { workspace = true, optional = true}
+tracing-tracy = { workspace = true, optional = true }
 thread_local.workspace = true
 
 [features]

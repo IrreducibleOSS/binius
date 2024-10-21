@@ -9,6 +9,7 @@ pub mod error_utils;
 pub mod examples;
 pub mod iter;
 pub mod rayon;
+pub mod serialization;
 pub mod sorting;
 pub mod thread_local_mut;
 pub mod tracing;
