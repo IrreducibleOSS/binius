@@ -22,7 +22,7 @@ use std::{
 };
 
 /// MerkleCap is cap_height-th layer of the tree
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MerkleCap<D>(pub Vec<D>);
 
 /// A binary Merkle tree that commits batches of vectors.
@@ -463,6 +463,28 @@ where
 			Err(VerificationError::MerkleRootMismatch.into())
 		}
 	}
+
+	fn verify_batch(
+		&self,
+		commitment: &Self::Commitment,
+		vecs: &[impl AsRef<[P]>],
+	) -> Result<(), Self::Error> {
+		match self.commit_batch(vecs) {
+			Ok((c, _)) if c == *commitment => Ok(()),
+			_ => Err(VerificationError::MerkleRootMismatch.into()),
+		}
+	}
+
+	fn verify_interleaved(
+		&self,
+		commitment: &Self::Commitment,
+		data: &[P],
+	) -> Result<(), Self::Error> {
+		match self.commit_interleaved(data) {
+			Ok((c, _)) if c == *commitment => Ok(()),
+			_ => Err(VerificationError::MerkleRootMismatch.into()),
+		}
+	}
 }
 
 impl<F: Field, H, PE> CanObserve<MerkleCap<PE>> for FieldChallenger<F, H>
@@ -632,6 +654,30 @@ mod tests {
 			let proof = vcs.prove_batch_opening(&tree, j).unwrap();
 			assert_eq!(proof_range, proof)
 		}
+	}
+
+	#[test]
+	fn test_verify() {
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let vcs = <MerkleTreeVCS<_, _, GroestlHasher<_>, _>>::new(
+			4,
+			3,
+			GroestlDigestCompression::<BinaryField8b>::default(),
+		);
+
+		let vecs = repeat_with(|| {
+			repeat_with(|| Field::random(&mut rng))
+				.take(16)
+				.collect::<Vec<BinaryField16b>>()
+		})
+		.take(3)
+		.collect::<Vec<_>>();
+
+		let (commitment, tree) = vcs.commit_batch(&vecs).unwrap();
+		assert_eq!(commitment.0, tree.get_cap());
+
+		vcs.verify_batch(&commitment, &vecs).unwrap();
 	}
 
 	#[test]

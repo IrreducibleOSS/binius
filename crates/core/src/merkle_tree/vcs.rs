@@ -61,4 +61,18 @@ pub trait VectorCommitScheme<T> {
 		proof: Self::Proof,
 		values: impl Iterator<Item = impl AsRef<[T]>>,
 	) -> Result<(), Self::Error>;
+
+	/// Verifies the full committed vector.
+	fn verify_batch(
+		&self,
+		commitment: &Self::Commitment,
+		vecs: &[impl AsRef<[T]>],
+	) -> Result<(), Self::Error>;
+
+	/// Verifies the full committed interleaved vector.
+	fn verify_interleaved(
+		&self,
+		commitment: &Self::Commitment,
+		data: &[T],
+	) -> Result<(), Self::Error>;
 }

@@ -127,7 +127,14 @@ where
 	/// Returns the fully-folded message value.
 	pub fn verify_last_oracle(&self) -> Result<F, Error> {
 		let repetition_codeword = if let Some(last_vcs) = self.round_vcss.last() {
-			// TODO: verify terminate_codeword against last_vcs
+			let commitment = self.round_commitments.last().expect(
+				"round_commitments and round_vcss are checked to have the same length in the constructor; 
+				when round_vcss is non-empty, round_commitments must be as well",
+			);
+
+			last_vcs
+				.verify_batch(commitment, &[&self.terminate_codeword])
+				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 			let n_final_challenges =
 				log2_strict_usize(last_vcs.vector_len()) - self.committed_rs_code.log_inv_rate();
@@ -153,8 +160,9 @@ where
 			// When the prover did not send any round oracles, fold the original interleaved
 			// codeword.
 
-			// TODO: verify terminate_codeword against last_vcs
-			let _last_vcs = self.committed_codeword_vcs;
+			self.committed_codeword_vcs
+				.verify_interleaved(self.codeword_commitment, &self.terminate_codeword)
+				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 			let fold_arity = self.committed_rs_code.log_dim() + self.log_batch_size;
 			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
