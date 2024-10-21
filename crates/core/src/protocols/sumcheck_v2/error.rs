@@ -48,6 +48,12 @@ pub enum Error {
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
 	IncorrectNumberOfChallenges,
+	#[error("cannot skip more rounds than the total number of variables")]
+	TooManySkippedRounds,
+	#[error(
+		"specified Lagrange evaluation domain is too small to uniquely recover round polynomial"
+	)]
+	LagrangeDomainTooSmall,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]
@@ -56,6 +62,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("ntt error: {0}")]
+	NttError(#[from] binius_ntt::Error),
 	#[error("math error: {0}")]
 	MathError(#[from] binius_math::Error),
 }

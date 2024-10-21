@@ -5,6 +5,7 @@ use crate::{
 	oracle::{CompositePolyOracle, Error as OracleError},
 	polynomial::{
 		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearExtension,
+		MultilinearExtensionSpecialized,
 	},
 	protocols::{
 		evalcheck::{
@@ -27,6 +28,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
+use rand::Rng;
 use std::ops::Deref;
 use tracing::instrument;
 
@@ -65,6 +67,38 @@ where
 	fn binary_tower_level(&self) -> usize {
 		0
 	}
+}
+
+pub fn generate_zero_product_multilinears<P, PE>(
+	mut rng: impl Rng,
+	n_vars: usize,
+	n_multilinears: usize,
+) -> Vec<MultilinearExtensionSpecialized<P, PE>>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	(0..n_multilinears)
+		.map(|j| {
+			let values = (0..(1 << n_vars.saturating_sub(P::LOG_WIDTH)))
+				// For every hypercube vertex, one of the multilinear values at that vertex
+				// is 0, thus the composite defined by their product must be 0 over the
+				// hypercube.
+				.map(|i| {
+					let mut packed = P::random(&mut rng);
+					for k in 0..P::WIDTH {
+						if (k + i * P::WIDTH) % n_multilinears == j {
+							packed.set(k, P::Scalar::ZERO);
+						}
+					}
+					packed
+				})
+				.collect();
+			MultilinearExtension::from_values(values)
+				.unwrap()
+				.specialize::<PE>()
+		})
+		.collect()
 }
 
 pub fn transform_poly<F, OF, Data>(

@@ -10,9 +10,9 @@ use crate::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
-use binius_field::{ExtensionField, Field, PackedFieldIndexable};
+use binius_field::{BinaryField, ExtensionField, Field, PackedFieldIndexable};
 use binius_hal::make_portable_backend;
-use binius_math::{EvaluationDomain, EvaluationDomainFactory};
+use binius_math::{make_ntt_domain_points, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use std::iter;
@@ -39,15 +39,14 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// that can be used to create multilinear evaluation claims. This simply strips off the evaluation of
 /// the multilinear extension of Lagrange polynomials evaluations at `univariate_challenge` (denoted by
 /// $\hat{u}_1$) and verifies that this value is correct.
-pub fn verify_sumcheck_outputs<F, FDomain>(
+pub fn verify_sumcheck_outputs<FDomain, F>(
 	claims: &[SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>],
 	univariate_challenge: F,
-	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
+	FDomain: BinaryField,
 	F: Field + ExtensionField<FDomain>,
-	FDomain: Field,
 {
 	let BatchSumcheckOutput {
 		challenges: sumcheck_challenges,
@@ -70,7 +69,8 @@ where
 
 	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
 		let skip_rounds = claim.n_vars();
-		let evaluation_domain = evaluation_domain_factory.create(1 << skip_rounds)?;
+		let evaluation_domain =
+			EvaluationDomain::<FDomain>::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
 		let lagrange_mle =
 			lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?;
 
@@ -142,46 +142,24 @@ where
 mod tests {
 	use crate::{
 		challenger::new_hasher_challenger,
-		polynomial::{
-			MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly,
-			MultilinearQuery,
-		},
-		protocols::sumcheck_v2::{
-			batch_verify,
-			prove::{batch_prove, univariate::univariatizing_reduction_prover},
-			univariate::{univariatizing_reduction_claim, verify_sumcheck_outputs},
+		polynomial::{MultilinearPoly, MultilinearQuery},
+		protocols::{
+			sumcheck_v2::{
+				batch_verify,
+				prove::{batch_prove, univariate::univariatizing_reduction_prover},
+				univariate::{univariatizing_reduction_claim, verify_sumcheck_outputs},
+			},
+			test_utils::generate_zero_product_multilinears,
 		},
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, ExtensionField, Field, PackedBinaryField1x128b,
-		PackedBinaryField8x32b, PackedField,
+		BinaryField128b, BinaryField16b, Field, PackedBinaryField1x128b, PackedBinaryField8x32b,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::GroestlHasher;
 	use binius_math::{DefaultEvaluationDomainFactory, EvaluationDomainFactory};
-	use rand::{prelude::StdRng, Rng, SeedableRng};
+	use rand::{prelude::StdRng, SeedableRng};
 	use std::iter;
-
-	fn generate_poly_helper<P, PE>(
-		mut rng: impl Rng,
-		n_vars: usize,
-		n_multilinears: usize,
-	) -> Vec<MultilinearExtensionSpecialized<P, PE>>
-	where
-		P: PackedField,
-		PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
-	{
-		(0..n_multilinears)
-			.map(|_| {
-				let values = (0..(1 << n_vars.saturating_sub(P::LOG_WIDTH)))
-					.map(|_| PackedField::random(&mut rng))
-					.collect();
-				MultilinearExtension::from_values(values)
-					.unwrap()
-					.specialize::<PE>()
-			})
-			.collect()
-	}
 
 	#[test]
 	fn test_univariatizing_reduction_end_to_end() {
@@ -211,7 +189,8 @@ mod tests {
 		for skip_rounds in (0..=max_skip_rounds).rev() {
 			let n_vars = skip_rounds + regular_vars;
 
-			let multilinears = generate_poly_helper::<P, PE>(&mut rng, n_vars, n_multilinears);
+			let multilinears =
+				generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, n_multilinears);
 			all_multilinears.push((skip_rounds, multilinears.clone()));
 
 			let domain = evaluation_domain_factory
@@ -295,10 +274,9 @@ mod tests {
 
 		let batch_sumcheck_output_verify =
 			batch_verify(claims.as_slice(), proof, &mut challenger.clone()).unwrap();
-		let batch_sumcheck_output_post = verify_sumcheck_outputs(
+		let batch_sumcheck_output_post = verify_sumcheck_outputs::<BinaryField16b, _>(
 			claims.as_slice(),
 			univariate_challenge,
-			evaluation_domain_factory.clone(),
 			batch_sumcheck_output_verify,
 		)
 		.unwrap();

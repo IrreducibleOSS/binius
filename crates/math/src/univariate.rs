@@ -5,9 +5,11 @@ use super::error::Error;
 use crate::Matrix;
 use auto_impl::auto_impl;
 use binius_field::{
-	packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension, PackedField,
+	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
+	PackedField,
 };
 use binius_utils::bail;
+use p3_util::log2_ceil_usize;
 use std::{
 	iter::{self, Step},
 	marker::PhantomData,
@@ -84,6 +86,19 @@ fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error>
 	if points.len() != size {
 		bail!(Error::DomainSizeTooLarge);
 	}
+	Ok(points)
+}
+
+pub fn make_ntt_domain_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {
+	let mut points = Vec::with_capacity(size);
+	points.push(F::ZERO);
+	for basis_idx in 0..log2_ceil_usize(size) {
+		let basis_eval = F::basis(basis_idx)?;
+		for i in 0..points.len().min(size - points.len()) {
+			points.push(points[i] + basis_eval);
+		}
+	}
+	debug_assert_eq!(points.len(), size);
 	Ok(points)
 }
 
@@ -261,7 +276,8 @@ mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
 	use binius_field::{
-		util::inner_product_unchecked, AESTowerField32b, BinaryField32b, BinaryField8b,
+		util::inner_product_unchecked, AESTowerField32b, BinaryField16b, BinaryField32b,
+		BinaryField8b,
 	};
 	use proptest::{collection::vec, proptest};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -389,6 +405,24 @@ mod tests {
 			.interpolate(&values)
 			.unwrap();
 		assert_eq!(interpolated, coeffs);
+	}
+
+	#[test]
+	fn test_make_ntt_domain_points() {
+		for size in 1..256 {
+			check_ntt_domain::<BinaryField8b>(size)
+		}
+
+		check_ntt_domain::<BinaryField16b>(513);
+		check_ntt_domain::<BinaryField16b>(997);
+		check_ntt_domain::<BinaryField16b>(65536);
+	}
+
+	fn check_ntt_domain<F: BinaryField + Step>(size: usize) {
+		let domain = make_ntt_domain_points(size).unwrap();
+		let expected =
+			iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1)).take(size);
+		assert!(expected.zip(domain).all(|(l, r)| l == r));
 	}
 
 	proptest! {

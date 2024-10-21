@@ -19,7 +19,6 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::CopyGetters;
 use itertools::izip;
-use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 use std::{iter, ops::Range};
@@ -596,7 +595,7 @@ where
 			multilinear.subcube_evals(
 				subcube_vars,
 				subcube_index,
-				log2_strict_usize(<P::Scalar as ExtensionField<PBase::Scalar>>::DEGREE),
+				<P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE,
 				evals,
 			)
 		} else {

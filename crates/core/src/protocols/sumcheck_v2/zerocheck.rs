@@ -178,13 +178,13 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample},
-		polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
+		polynomial::{MultilinearPoly, MultilinearQuery},
 		protocols::{
 			sumcheck_v2::{
 				batch_verify,
 				prove::{batch_prove, zerocheck, RegularSumcheckProver, ZerocheckProver},
 			},
-			test_utils::TestProductComposition,
+			test_utils::{generate_zero_product_multilinears, TestProductComposition},
 		},
 		transparent::eq_ind::EqIndPartialEval,
 		witness::MultilinearWitness,
@@ -196,7 +196,7 @@ mod tests {
 	use binius_hal::{make_portable_backend, ComputationBackend};
 	use binius_hash::GroestlHasher;
 	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
-	use rand::{prelude::StdRng, Rng, SeedableRng};
+	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
 
 	fn make_regular_sumcheck_prover_for_zerocheck<F, FDomain, P, Composition, M, Backend>(
@@ -248,33 +248,6 @@ mod tests {
 		.unwrap()
 	}
 
-	fn generate_poly_helper<P>(
-		mut rng: impl Rng,
-		n_vars: usize,
-		n_multilinears: usize,
-	) -> Vec<MultilinearExtension<P>>
-	where
-		P: PackedField,
-	{
-		(0..n_multilinears)
-			.map(|j| {
-				let values = (0..(1 << n_vars))
-					.map(|i| {
-						// For every hypercube vertex, one of the multilinear values at that vertex
-						// is 0, thus the composite defined by their product must be 0 over the
-						// hypercube.
-						if i % n_multilinears != j {
-							PackedField::random(&mut rng)
-						} else {
-							PackedField::zero()
-						}
-					})
-					.collect();
-				MultilinearExtension::from_values(values).unwrap()
-			})
-			.collect()
-	}
-
 	fn test_compare_prover_with_reference(
 		n_vars: usize,
 		n_multilinears: usize,
@@ -287,10 +260,7 @@ mod tests {
 
 		// Setup ZC Witness
 		let multilins =
-			generate_poly_helper::<PBase>(&mut rng, n_vars - PBase::LOG_WIDTH, n_multilinears)
-				.into_iter()
-				.map(|mle| mle.specialize::<P>())
-				.collect::<Vec<_>>();
+			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
 		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
 			.unwrap();
@@ -355,10 +325,7 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let multilins =
-			generate_poly_helper::<PBase>(&mut rng, n_vars - PBase::LOG_WIDTH, n_multilinears)
-				.into_iter()
-				.map(|mle| mle.specialize::<P>())
-				.collect::<Vec<_>>();
+			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
 		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
 			.unwrap();
