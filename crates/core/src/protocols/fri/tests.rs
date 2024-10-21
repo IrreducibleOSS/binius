@@ -140,7 +140,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let backend = make_portable_backend();
 	let eval_query = MultilinearQuery::<F, binius_hal::CpuBackend>::with_full_query(
 		&verifier_challenges,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.

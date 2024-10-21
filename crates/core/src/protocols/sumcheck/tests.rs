@@ -113,7 +113,7 @@ fn test_prove_verify_interaction_helper(
 		domain_factory,
 		move |_| switchover_rd,
 		challenger.clone(),
-		backend.clone(),
+		&backend,
 	)
 	.expect("failed to prove sumcheck");
 
@@ -129,7 +129,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend.clone()).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
@@ -190,7 +190,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 		domain_factory,
 		switchover_fn,
 		challenger.clone(),
-		backend.clone(),
+		&backend,
 	)
 	.expect("failed to prove sumcheck");
 
@@ -206,7 +206,7 @@ fn test_prove_verify_interaction_with_monomial_basis_conversion_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &final_verify_output.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
 	let actual = poly.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, final_verify_output.eval);
 }
@@ -367,7 +367,7 @@ fn test_prove_verify_batch() {
 		domain_factory,
 		|_| 5,
 		challenger.clone(),
-		backend,
+		&backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;
@@ -468,7 +468,7 @@ fn test_packed_sumcheck() {
 		domain_factory,
 		|_| 5,
 		challenger.clone(),
-		backend,
+		&backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;

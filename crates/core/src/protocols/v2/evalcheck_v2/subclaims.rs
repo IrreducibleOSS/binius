@@ -77,7 +77,7 @@ pub fn process_shifted_sumcheck<U, F, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<PackedType<U, F>>>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<(), Error>
 where
 	PackedType<U, F>: PackedFieldIndexable,
@@ -166,7 +166,7 @@ pub fn process_packed_sumcheck<U, F, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<PackedType<U, F>>>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -280,7 +280,7 @@ pub fn process_non_same_query_pcs_sumcheck_witness<U, F, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	meta: NonSameQueryPcsClaimMeta<F>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -297,10 +297,10 @@ where
 				EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
 
 			Ok(eq_ind
-				.multilinear_extension::<PackedType<U, F>, _>(backend.clone())?
+				.multilinear_extension::<PackedType<U, F>, _>(backend)?
 				.specialize_arc_dyn())
 		},
-		backend.clone(),
+		backend,
 	)
 }
 
@@ -363,7 +363,7 @@ fn process_projected_bivariate_witness<'a, U, F, Backend>(
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, PackedType<U, F>>, Error>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -413,7 +413,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<&MultilinearQuery<P, Backend>, Error> {
 		if let Some(index) = self
 			.memo
@@ -441,7 +441,7 @@ pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, CH, Backend>
 	challenger: &mut CH,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<SumcheckProofEvalcheckClaims<F>, SumcheckError>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
@@ -455,7 +455,7 @@ where
 		witness,
 		domain_factory.clone(),
 		&switchover_fn,
-		backend.clone(),
+		backend,
 	)?;
 
 	let (sumcheck_output, proof) = sumcheck_v2::batch_prove(provers, challenger)?;
@@ -492,7 +492,7 @@ where
 pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
 	prover: &mut EvalcheckProver<U, F, Backend>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<ConstraintSet<PackedType<U, F>>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
@@ -519,7 +519,7 @@ where
 			prover.witness_index,
 			&mut memoized_queries,
 			meta,
-			backend.clone(),
+			backend,
 		)?;
 	}
 	Ok(constraint_set_builder.build(prover.oracles)?)

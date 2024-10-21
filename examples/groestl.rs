@@ -930,7 +930,7 @@ fn prove<U, F, FBase, FEPCS, PCS1b, PCS8b, Comm, Challenger, Backend>(
 	mut challenger: Challenger,
 	trace_witness: &TraceWitness<U, BinaryField1b, AESTowerField8b>,
 	domain_factory: impl EvaluationDomainFactory<AESTowerField8b>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>>
 where
 	U: UnderlierType
@@ -1006,7 +1006,7 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
-		backend.clone(),
+		backend,
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
@@ -1032,7 +1032,7 @@ where
 		switchover_fn,
 		&mut iso_challenger,
 		domain_factory,
-		backend.clone(),
+		backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 2);
@@ -1061,7 +1061,7 @@ where
 		&trace1b_committed,
 		&trace1b_commit_polys,
 		&eval_point_1b,
-		backend.clone(),
+		&backend,
 	)?;
 
 	let eval_point_8b: Vec<FEPCS> = same_query_claim_8b
@@ -1075,7 +1075,7 @@ where
 		&trace8b_committed,
 		&trace8b_commit_polys,
 		&eval_point_8b,
-		backend.clone(),
+		&backend,
 	)?;
 
 	Ok(Proof {
@@ -1096,7 +1096,7 @@ fn verify<F, P1b, P8b, PCS1b, PCS8b, Comm, Challenger, Backend>(
 	pcs8b: &PCS8b,
 	mut challenger: Challenger,
 	proof: Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<()>
 where
 	F: TowerField + ExtensionField<BinaryField8b>,
@@ -1167,7 +1167,7 @@ where
 		&same_query_claim_1b.eval_point,
 		trace1b_open_proof,
 		&same_query_claim_1b.evals,
-		backend.clone(),
+		backend,
 	)?;
 	pcs8b.verify_evaluation(
 		&mut challenger,
@@ -1247,7 +1247,7 @@ fn main() {
 		challenger.clone(),
 		&witness,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 
@@ -1262,7 +1262,7 @@ fn main() {
 		&pcs8b,
 		challenger.clone(),
 		proof.isomorphic(),
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 }

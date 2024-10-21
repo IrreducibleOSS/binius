@@ -29,7 +29,7 @@ pub fn prove<F, PW, DomainField, Challenger, Backend>(
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	challenger: &mut Challenger,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
 where
 	F: TowerField + From<PW::Scalar>,
@@ -42,8 +42,7 @@ where
 {
 	let committed_batches = oracles.committed_batches();
 	let mut proof = GreedyEvalcheckProof::default();
-	let mut evalcheck_prover =
-		EvalcheckProver::<F, PW, _>::new(oracles, witness_index, backend.clone());
+	let mut evalcheck_prover = EvalcheckProver::<F, PW, _>::new(oracles, witness_index, backend);
 
 	// Prove the initial evalcheck claims
 	proof.initial_evalcheck_proofs = claims
@@ -64,7 +63,7 @@ where
 				challenger,
 				switchover_fn.clone(),
 				domain_factory.clone(),
-				backend.clone(),
+				backend,
 			)?;
 
 		let new_evalcheck_proofs = new_evalcheck_claims
@@ -96,7 +95,7 @@ where
 				let non_sqpcs_sumchecks = make_non_same_query_pcs_sumchecks(
 					&mut evalcheck_prover,
 					&non_sqpcs_claims,
-					backend.clone(),
+					&backend,
 				)?;
 
 				let (sumcheck_proof, new_evalcheck_claims) =
@@ -105,7 +104,7 @@ where
 						challenger,
 						switchover_fn.clone(),
 						domain_factory.clone(),
-						backend.clone(),
+						backend,
 					)?;
 
 				let new_evalcheck_proofs = new_evalcheck_claims

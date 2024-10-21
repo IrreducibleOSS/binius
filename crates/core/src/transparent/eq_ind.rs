@@ -29,7 +29,7 @@ impl<F: Field> EqIndPartialEval<F> {
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
 		&self,
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
 		MultilinearExtension::from_values_generic(multilin_query)
@@ -94,11 +94,9 @@ mod tests {
 		let eval_mvp = eq_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version of eq_r
-		let eq_r_mle = eq_r_mvp
-			.multilinear_extension::<P, _>(backend.clone())
-			.unwrap();
+		let eq_r_mle = eq_r_mvp.multilinear_extension::<P, _>(&backend).unwrap();
 		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
 		let eval_mle = eq_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

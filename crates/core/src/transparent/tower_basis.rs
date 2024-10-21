@@ -111,7 +111,7 @@ mod tests {
 
 		let eval1 = basis.evaluate(&challenge).unwrap();
 		let multilin_query =
-			MultilinearQuery::<F, _>::with_full_query(&challenge, backend.clone()).unwrap();
+			MultilinearQuery::<F, _>::with_full_query(&challenge, &backend).unwrap();
 		let mle = basis.multilinear_extension::<F>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 
@@ -133,7 +133,7 @@ mod tests {
 			.collect::<Vec<_>>();
 		let eval1 = basis.evaluate(&challenge).unwrap();
 		let multilin_query =
-			MultilinearQuery::<F, _>::with_full_query(&challenge, backend).unwrap();
+			MultilinearQuery::<F, _>::with_full_query(&challenge, &backend).unwrap();
 		let mle = basis.multilinear_extension::<P>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 		assert_eq!(eval1, eval2);

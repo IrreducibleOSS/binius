@@ -463,7 +463,7 @@ fn prove<U, F, FW, DomainField, PCS, CH, Backend>(
 	mut challenger: CH,
 	mut witness: MultilinearExtensionIndex<U, FW>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FW> + PackScalar<DomainField>,
@@ -522,7 +522,7 @@ where
 		switchover_fn,
 		mixing_challenge,
 		&mut challenger,
-		backend.clone(),
+		&backend,
 	)?;
 
 	// Evalcheck
@@ -536,7 +536,7 @@ where
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -576,7 +576,7 @@ fn verify<P, F, PCS, CH, Backend>(
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b>,
@@ -627,7 +627,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
-		backend,
+		&backend,
 	)?;
 
 	Ok(())
@@ -784,7 +784,7 @@ fn main() {
 		challenger.clone(),
 		witness,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 
@@ -796,7 +796,7 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		proof,
-		backend,
+		&backend,
 	)
 	.unwrap();
 }

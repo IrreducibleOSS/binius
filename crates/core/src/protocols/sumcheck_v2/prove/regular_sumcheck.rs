@@ -65,7 +65,7 @@ where
 	Ok(())
 }
 
-pub struct RegularSumcheckProver<FDomain, P, Composition, M, Backend>
+pub struct RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
@@ -73,13 +73,13 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<FDomain, P, M, Backend>,
+	state: ProverState<'a, FDomain, P, M, Backend>,
 	compositions: Vec<Composition>,
 	domains: Vec<InterpolationDomain<FDomain>>,
 }
 
-impl<F, FDomain, P, Composition, M, Backend>
-	RegularSumcheckProver<FDomain, P, Composition, M, Backend>
+impl<'a, F, FDomain, P, Composition, M, Backend>
+	RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -93,7 +93,7 @@ where
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
 		for claim in composite_claims.iter() {
@@ -147,8 +147,8 @@ where
 	}
 }
 
-impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for RegularSumcheckProver<FDomain, P, Composition, M, Backend>
+impl<'a, F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,

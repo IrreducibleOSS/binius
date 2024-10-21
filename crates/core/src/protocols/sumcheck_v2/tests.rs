@@ -123,7 +123,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 		}],
 		domain_factory,
 		move |_| switchover_rd,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 
@@ -155,7 +155,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	assert_eq!(multilinear_evals[0].len(), n_multilinears);
 
 	// Verify the reduced multilinear evaluations are correct
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 	}
@@ -239,7 +239,7 @@ fn prove_verify_batch(n_vars: &[usize]) {
 				claim.composite_sums().iter().cloned(),
 				domain_factory.clone(),
 				|_| (n_vars / 2).max(1),
-				backend.clone(),
+				&backend,
 			)
 			.unwrap();
 

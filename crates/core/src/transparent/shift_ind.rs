@@ -376,7 +376,7 @@ mod tests {
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
 		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -408,7 +408,7 @@ mod tests {
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
 		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -440,7 +440,7 @@ mod tests {
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
 		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, backend).unwrap();
+			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

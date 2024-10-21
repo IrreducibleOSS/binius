@@ -45,7 +45,7 @@ enum ProverStateCoeffsOrSums<F: Field> {
 /// customize the sumcheck logic through different [`SumcheckEvaluator`] implementations passed to
 /// the common state object.
 #[derive(Debug, CopyGetters)]
-pub struct ProverState<FDomain, P, M, Backend>
+pub struct ProverState<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
@@ -60,10 +60,10 @@ where
 	evaluation_points: Vec<FDomain>,
 	tensor_query: Option<MultilinearQuery<P, Backend>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
-	backend: Backend,
+	backend: &'a Backend,
 }
 
-impl<FDomain, F, P, M, Backend> ProverState<FDomain, P, M, Backend>
+impl<'a, FDomain, F, P, M, Backend> ProverState<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
@@ -76,7 +76,7 @@ where
 		claimed_sums: Vec<F>,
 		evaluation_points: Vec<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let n_vars = multilinears
 			.first()
@@ -139,7 +139,7 @@ where
 
 		// Partial query for folding
 		let single_variable_partial_query =
-			MultilinearQuery::with_full_query(&[challenge], self.backend.clone())?;
+			MultilinearQuery::with_full_query(&[challenge], &self.backend)?;
 		let single_variable_partial_query =
 			MultilinearQueryRef::new(&single_variable_partial_query);
 

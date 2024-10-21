@@ -120,7 +120,7 @@ where
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
@@ -147,8 +147,7 @@ where
 
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
-		let expanded_query =
-			MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend.clone())?;
+		let expanded_query = MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend)?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -162,14 +161,11 @@ where
 			self.n_vars(),
 			sumcheck_eval.clone(),
 			&tensor_mixing_challenges,
-			backend.clone(),
+			backend,
 		);
-		let transparent =
-			MultilinearExtension::from_values_generic(ring_switch_eq_ind_partial_eval(
-				query_from_kappa,
-				&tensor_mixing_challenges,
-				backend.clone(),
-			)?)?;
+		let transparent = MultilinearExtension::from_values_generic(
+			ring_switch_eq_ind_partial_eval(query_from_kappa, &tensor_mixing_challenges, backend)?,
+		)?;
 		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _, _>::new(
 			vec![
 				MultilinearExtension::<PE, _>::specialize(packed_poly.to_ref()),
@@ -178,7 +174,7 @@ where
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
 			immediate_switchover_heuristic,
-			backend.clone(),
+			backend,
 		)?;
 		let (sumcheck_output, sumcheck_proof) =
 			sumcheck_v2::batch_prove(vec![sumcheck_prover], &mut challenger)?;
@@ -189,7 +185,7 @@ where
 			sumcheck_output,
 			query_from_kappa,
 			&tensor_mixing_challenges,
-			backend.clone(),
+			backend,
 		)?;
 
 		let inner_pcs_proof = self
@@ -211,7 +207,7 @@ where
 		query: &[FE],
 		proof: Self::Proof,
 		values: &[FE],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
@@ -239,8 +235,7 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query =
-			MultilinearQuery::<FE, _>::with_full_query(query_to_kappa, backend.clone())?;
+		let expanded_query = MultilinearQuery::<FE, _>::with_full_query(query_to_kappa, backend)?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -251,20 +246,12 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim = reduce_tensor_claim(
-			self.n_vars(),
-			sumcheck_eval,
-			&tensor_mixing_challenges,
-			backend.clone(),
-		);
+		let sumcheck_claim =
+			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
 		let output = sumcheck_v2::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
 
-		let ReducedClaim { eval, eval_point } = verify_sumcheck_output(
-			output,
-			query_from_kappa,
-			&tensor_mixing_challenges,
-			backend.clone(),
-		)?;
+		let ReducedClaim { eval, eval_point } =
+			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges, backend)?;
 
 		self.inner
 			.verify_evaluation(
@@ -327,7 +314,7 @@ pub(super) fn reduce_tensor_claim<F, FE, Backend>(
 	n_vars: usize,
 	tensor_sum: TensorAlgebra<F, FE>,
 	tensor_mixing_challenges: &[FE],
-	backend: Backend,
+	backend: &Backend,
 ) -> SumcheckClaim<FE, BivariateProduct>
 where
 	F: Field,
@@ -399,7 +386,7 @@ where
 		eval_point,
 		&sumcheck_challenges,
 		tensor_mixing_challenges,
-		backend,
+		&backend,
 	);
 	if multilinear_evals[1] != ring_switch_eq_ind_eval {
 		return Err(VerificationError::IncorrectRingSwitchIndEvaluation);
@@ -415,7 +402,7 @@ pub fn evaluate_ring_switch_eq_ind<FS, F, Backend>(
 	eval_point: &[F],
 	sumcheck_challenges: &[F],
 	mixing_challenges: &[F],
-	backend: Backend,
+	backend: &Backend,
 ) -> F
 where
 	FS: Field,
@@ -452,7 +439,7 @@ where
 pub fn ring_switch_eq_ind_partial_eval<FS, F, P, Backend>(
 	eval_point: &[F],
 	mixing_challenges: &[F],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Backend::Vec<P>, PolynomialError>
 where
 	FS: Field,
@@ -462,9 +449,9 @@ where
 {
 	assert_eq!(mixing_challenges.len(), <TensorAlgebra<FS, F>>::kappa());
 	let expanded_mixing_coeffs =
-		MultilinearQuery::<F, _>::with_full_query(mixing_challenges, backend.clone())?;
+		MultilinearQuery::<F, _>::with_full_query(mixing_challenges, &backend)?;
 	let mut evals =
-		MultilinearQuery::<P, _>::with_full_query(eval_point, backend)?.into_expansion();
+		MultilinearQuery::<P, _>::with_full_query(eval_point, &backend)?.into_expansion();
 	P::unpack_scalars_mut(&mut evals)
 		.par_iter_mut()
 		.for_each(|val| {
@@ -529,8 +516,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query =
-			MultilinearQuery::<FE, _>::with_full_query(&eval_point, backend.clone()).unwrap();
+		let eval_query = MultilinearQuery::<FE, _>::with_full_query(&eval_point, &backend).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let rs_code = ReedSolomonCode::new(5, 2, Default::default()).unwrap();
@@ -559,7 +545,7 @@ mod tests {
 				&committed,
 				&[multilin],
 				&eval_point,
-				backend.clone(),
+				&backend,
 			)
 			.unwrap();
 
@@ -570,7 +556,7 @@ mod tests {
 			&eval_point,
 			proof,
 			&[eval],
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 	}
@@ -610,19 +596,20 @@ mod tests {
 			&eval_point,
 			&sumcheck_challenges,
 			&mixing_challenges,
-			backend.clone(),
+			&backend,
 		);
 
 		let partial_evals = ring_switch_eq_ind_partial_eval::<F, _, FE, _>(
 			&eval_point,
 			&mixing_challenges,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 		let val2 = MultilinearExtension::from_values(partial_evals)
 			.unwrap()
 			.evaluate(
-				&MultilinearQuery::<FE, _>::with_full_query(&sumcheck_challenges, backend).unwrap(),
+				&MultilinearQuery::<FE, _>::with_full_query(&sumcheck_challenges, &backend)
+					.unwrap(),
 			)
 			.unwrap();
 		assert_eq!(val1, val2);

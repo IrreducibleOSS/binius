@@ -60,7 +60,7 @@ where
 		// Use the portable CPU backend because the size of the hypercube is small by struct
 		// assumption.
 		let backend = make_portable_backend();
-		let query = MultilinearQuery::<PE, _>::with_full_query(query, backend)?;
+		let query = MultilinearQuery::<PE, _>::with_full_query(query, &backend)?;
 		self.data.evaluate(query.to_ref())
 	}
 

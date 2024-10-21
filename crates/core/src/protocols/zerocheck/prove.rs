@@ -49,7 +49,7 @@ pub fn prove<F, PW, DomainField, CH, Backend>(
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	mixing_challenge: F,
 	challenger: CH,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<ZerocheckProveOutput<F>, Error>
 where
 	F: Field,
@@ -88,12 +88,12 @@ where
 	W: AbstractSumcheckWitness<PW>,
 	Backend: ComputationBackend,
 {
-	pub(crate) common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
+	pub(crate) common: CommonProversState<'a, OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
 	zerocheck_challenges: &'a [F],
 	pub(crate) round_eq_ind: MultilinearExtension<PW, Backend::Vec<PW>>,
 	mixing_challenge: F,
-	backend: Backend,
+	backend: &'a Backend,
 	_marker: PhantomData<(F, DomainField, W)>,
 }
 
@@ -113,9 +113,9 @@ where
 		zerocheck_challenges: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize + 'static,
 		mixing_challenge: F,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let common = CommonProversState::new(n_vars, switchover_fn, backend.clone());
+		let common = CommonProversState::new(n_vars, switchover_fn, backend);
 
 		if zerocheck_challenges.len() + 1 < n_vars {
 			bail!(Error::NotEnoughZerocheckChallenges);
@@ -127,7 +127,7 @@ where
 			.collect::<Vec<PW::Scalar>>();
 		assert_eq!(zerocheck_challenges.len(), n_vars - 1);
 		let round_eq_ind = EqIndPartialEval::new(n_vars - 1, pw_scalar_challenges)?
-			.multilinear_extension(backend.clone())?;
+			.multilinear_extension(&backend)?;
 
 		Ok(Self {
 			common,
@@ -135,7 +135,7 @@ where
 			zerocheck_challenges,
 			round_eq_ind,
 			mixing_challenge,
-			backend: backend.clone(),
+			backend,
 			_marker: PhantomData,
 		})
 	}
@@ -470,7 +470,7 @@ where
 		if let Some(prev_q_bar) = p.round_q_bar.as_mut() {
 			let query = MultilinearQuery::<PW::Scalar, Backend>::with_full_query(
 				&[prev_rd_challenge],
-				backend,
+				&backend,
 			)?;
 			let specialized_prev_q_bar = prev_q_bar.evaluate_partial_low(&query)?;
 			let specialized_prev_q_bar_evals = specialized_prev_q_bar.evals();
@@ -552,11 +552,7 @@ where
 
 			// update round_q and round_q_bar
 			if let Some(mut p) = self.smaller_domain_optimization.take() {
-				self.update_round_q(
-					isomorphic_prev_rd_challenge,
-					&mut p,
-					provers_state.backend.clone(),
-				)?;
+				self.update_round_q(isomorphic_prev_rd_challenge, &mut p, provers_state.backend)?;
 				self.smaller_domain_optimization = Some(p);
 			}
 

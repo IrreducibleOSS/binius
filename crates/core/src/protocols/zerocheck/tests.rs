@@ -128,7 +128,7 @@ fn test_prove_verify_interaction_helper(
 		switchover_fn,
 		mixing_challenge,
 		&mut prover_challenger,
-		backend.clone(),
+		&backend,
 	)
 	.expect("failed to prove zerocheck");
 
@@ -144,7 +144,7 @@ fn test_prove_verify_interaction_helper(
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }
@@ -353,7 +353,7 @@ fn test_prove_verify_batch() {
 		|_| 3,
 		mixing_challenge,
 		prover_challenger,
-		backend,
+		&backend,
 	)
 	.unwrap();
 	let proof = prove_output.proof;
@@ -422,7 +422,7 @@ fn test_prove_verify_packed() {
 		switchover_fn,
 		mixing_challenge,
 		&mut prover_challenger,
-		backend.clone(),
+		&backend,
 	)
 	.expect("failed to prove zerocheck");
 
@@ -438,7 +438,7 @@ fn test_prove_verify_packed() {
 
 	// Verify that the evalcheck claim is correct
 	let eval_point = &verified_evalcheck_claim.eval_point;
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, backend).unwrap();
+	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
 	let actual = zc_witness.evaluate(&multilin_query).unwrap();
 	assert_eq!(actual, verified_evalcheck_claim.eval);
 }

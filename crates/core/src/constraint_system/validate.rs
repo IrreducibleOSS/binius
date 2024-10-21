@@ -216,7 +216,7 @@ where
 			use crate::oracle::ProjectionVariant::*;
 			let unprojected_poly = witness.get_multilin_poly(projected.inner().id())?;
 			let partial_query =
-				MultilinearQuery::with_full_query(projected.values(), binius_hal::CpuBackend)?;
+				MultilinearQuery::with_full_query(projected.values(), &binius_hal::CpuBackend)?;
 			let projected_poly = match projected.projection_variant() {
 				FirstVars => unprojected_poly.evaluate_partial_low(partial_query.to_ref())?,
 				LastVars => unprojected_poly.evaluate_partial_high(partial_query.to_ref())?,

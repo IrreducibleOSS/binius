@@ -42,7 +42,7 @@ where
 
 	let eq_r = EqIndPartialEval::new(n_vars, r.clone())
 		.unwrap()
-		.multilinear_extension::<FE, _>(backend)
+		.multilinear_extension::<FE, _>(&backend)
 		.unwrap();
 
 	let n_total_multilins = n_shared_multilins + n_composites - 1;
@@ -167,7 +167,7 @@ fn test_prove_verify_batch() {
 
 	// Sanity check correctness of these reduced claims
 	let backend = make_portable_backend();
-	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point, backend).unwrap();
+	let multilinear_query = MultilinearQuery::with_full_query(evaluation_point, &backend).unwrap();
 
 	for (reduced_claim, witness) in reduced_claims.into_iter().zip(witnesses) {
 		let actual_eval = witness.poly.evaluate(&multilinear_query).unwrap();

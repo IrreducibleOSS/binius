@@ -87,7 +87,7 @@ fn test_evaluation_point_batching() {
 		.take(log_size)
 		.collect::<Vec<_>>();
 
-	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
 	let batch_evals = multilins
 		.iter()
 		.map(|multilin| multilin.evaluate(query.to_ref()).unwrap())
@@ -131,7 +131,7 @@ fn test_evaluation_point_batching() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
@@ -247,7 +247,7 @@ fn test_shifted_evaluation_whole_cube() {
 	.unwrap();
 
 	let backend = make_portable_backend();
-	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {
@@ -268,7 +268,7 @@ fn test_shifted_evaluation_whole_cube() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 	assert_eq!(
@@ -352,7 +352,7 @@ fn test_shifted_evaluation_subcube() {
 	.unwrap();
 
 	let backend = make_portable_backend();
-	let query = MultilinearQuery::with_full_query(&eval_point, backend.clone()).unwrap();
+	let query = MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
 	let eval = composite_witness.evaluate(&query).unwrap();
 
 	let claim = EvalcheckClaim {
@@ -373,7 +373,7 @@ fn test_shifted_evaluation_subcube() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 	assert_eq!(
@@ -497,7 +497,7 @@ fn test_evalcheck_linear_combination() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
@@ -552,7 +552,7 @@ fn test_evalcheck_repeating() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
@@ -645,7 +645,7 @@ fn test_evalcheck_merged() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
@@ -746,7 +746,7 @@ fn test_evalcheck_interleaved() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 
@@ -840,7 +840,7 @@ fn test_evalcheck_zero_padded() {
 	let mut prover_state = EvalcheckProver::<FExtension, PExtension, _>::new(
 		&mut oracles,
 		&mut witness_index,
-		backend.clone(),
+		&backend,
 	);
 	let proof = prover_state.prove(claim.clone()).unwrap();
 

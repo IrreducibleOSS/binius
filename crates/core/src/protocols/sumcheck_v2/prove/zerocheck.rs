@@ -64,7 +64,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+pub struct ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	FDomain: Field,
 	PBase: PackedField,
@@ -73,7 +73,7 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<FDomain, P, M, Backend>,
+	state: ProverState<'a, FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Backend::Vec<P>,
 	zerocheck_challenges: Vec<P::Scalar>,
@@ -82,8 +82,8 @@ where
 	_p_base_marker: PhantomData<PBase>,
 }
 
-impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
-	ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+	ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -100,7 +100,7 @@ where
 		challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
 		for (composition_base, composition) in compositions.iter() {
@@ -144,7 +144,7 @@ where
 			claimed_sums,
 			evaluation_points,
 			switchover_fn,
-			backend.clone(),
+			backend,
 		)?;
 		let n_vars = state.n_vars();
 
@@ -211,8 +211,8 @@ where
 	}
 }
 
-impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
-	for ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,

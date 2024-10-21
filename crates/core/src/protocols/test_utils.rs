@@ -124,7 +124,7 @@ pub fn prove_bivariate_sumchecks_with_switchover<'a, F, PW, DomainField, CH, Bac
 	challenger: &mut CH,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<(SumcheckBatchProof<F>, impl IntoIterator<Item = EvalcheckClaim<F>>), SumcheckError>
 where
 	F: Field + From<PW::Scalar>,
@@ -199,7 +199,7 @@ pub fn make_non_same_query_pcs_sumcheck_claims<'a, F: TowerField>(
 pub fn make_non_same_query_pcs_sumchecks<'a, 'b, F, PW, Backend>(
 	prover: &mut EvalcheckProver<'a, 'b, F, PW, Backend>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Vec<BivariateSumcheck<'a, F, PW>>, EvalcheckError>
 where
 	F: TowerField + From<PW::Scalar>,
@@ -225,7 +225,7 @@ where
 				prover.witness_index,
 				&mut memoized_queries,
 				meta,
-				backend.clone(),
+				backend,
 			)?;
 			Ok((claim, witness))
 		})

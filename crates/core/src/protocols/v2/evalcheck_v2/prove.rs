@@ -46,7 +46,7 @@ where
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<PackedType<U, F>>>,
 	memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
 
-	backend: Backend,
+	backend: &'a Backend,
 }
 
 impl<'a, 'b, U, F, Backend> EvalcheckProver<'a, 'b, U, F, Backend>
@@ -62,7 +62,7 @@ where
 	pub fn new(
 		oracles: &'a mut MultilinearOracleSet<F>,
 		witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Self {
 		let memoized_queries = MemoizedQueries::new();
 		let new_sumchecks_constraints = Vec::new();
@@ -206,7 +206,7 @@ where
 					self.witness_index,
 					&mut self.memoized_queries,
 					&mut self.new_sumchecks_constraints,
-					self.backend.clone(),
+					self.backend,
 				)?;
 				EvalcheckProof::Shifted
 			}
@@ -220,7 +220,7 @@ where
 					self.witness_index,
 					&mut self.memoized_queries,
 					&mut self.new_sumchecks_constraints,
-					self.backend.clone(),
+					self.backend,
 				)?;
 
 				EvalcheckProof::Packed
@@ -283,9 +283,7 @@ where
 		eval_point: &[F],
 		is_random_point: bool,
 	) -> Result<(F, EvalcheckProof<F>), Error> {
-		let eval_query = self
-			.memoized_queries
-			.full_query(eval_point, self.backend.clone())?;
+		let eval_query = self.memoized_queries.full_query(eval_point, self.backend)?;
 		let witness_poly = self
 			.witness_index
 			.get_multilin_poly(poly.id())

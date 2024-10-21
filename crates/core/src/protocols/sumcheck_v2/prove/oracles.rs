@@ -21,6 +21,7 @@ use itertools::izip;
 use std::sync::Arc;
 
 pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = ZerocheckProver<
+	'a,
 	FDomain,
 	PBase,
 	P,
@@ -30,8 +31,14 @@ pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = ZerocheckProver
 	Backend,
 >;
 
-pub type OracleSumcheckProver<'a, FDomain, P, Backend> =
-	RegularSumcheckProver<FDomain, P, TypeErasedComposition<P>, MultilinearWitness<'a, P>, Backend>;
+pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
+	'a,
+	FDomain,
+	P,
+	TypeErasedComposition<P>,
+	MultilinearWitness<'a, P>,
+	Backend,
+>;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
 #[allow(clippy::type_complexity)]
@@ -42,7 +49,7 @@ pub fn constraint_set_zerocheck_prover<'a, U, FBase, FW, FDomain, Backend>(
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	zerocheck_challenges: &[FW],
-	backend: Backend,
+	backend: &'a Backend,
 ) -> Result<
 	OracleZerocheckProver<'a, FDomain, PackedType<U, FBase>, PackedType<U, FW>, Backend>,
 	Error,
@@ -104,7 +111,7 @@ pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
-	backend: Backend,
+	backend: &'a Backend,
 ) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
 	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
@@ -188,7 +195,7 @@ pub fn constraint_sets_sumcheck_provers_metas<'a, U, FW, FDomain, Backend>(
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,
-	backend: Backend,
+	backend: &'a Backend,
 ) -> Result<SumcheckProversWithMetas<'a, U, FW, FDomain, Backend>, Error>
 where
 	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
@@ -206,7 +213,7 @@ where
 			witness,
 			evaluation_domain_factory.clone(),
 			&switchover_fn,
-			backend.clone(),
+			backend,
 		)?;
 		metas.push(meta);
 		provers.push(prover);

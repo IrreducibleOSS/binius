@@ -23,7 +23,7 @@ use stackalloc::stackalloc_with_default;
 use std::ops::Range;
 
 #[derive(Debug)]
-pub struct GPAProver<FDomain, P, M, Backend>
+pub struct GPAProver<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
@@ -31,7 +31,7 @@ where
 	Backend: ComputationBackend,
 {
 	n_vars: usize,
-	state: ProverState<FDomain, P, M, Backend>,
+	state: ProverState<'a, FDomain, P, M, Backend>,
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Backend::Vec<P>,
 	gpa_round_challenges: Vec<P::Scalar>,
@@ -39,7 +39,7 @@ where
 	current_layer: M,
 }
 
-impl<F, FDomain, P, M, Backend> GPAProver<FDomain, P, M, Backend>
+impl<'a, F, FDomain, P, M, Backend> GPAProver<'a, FDomain, P, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -53,7 +53,7 @@ where
 		layer_sum: F,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		gpa_round_challenges: &[F],
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let domain: InterpolationDomain<FDomain> = evaluation_domain_factory
 			.create(BivariateProduct {}.degree() + 1)
@@ -68,7 +68,7 @@ where
 			evaluation_point,
 			// We use GPA protocol only for big fields, which is why switchover is trivial
 			immediate_switchover_heuristic,
-			backend.clone(),
+			backend,
 		)?;
 		let n_vars = state.n_vars();
 
@@ -126,7 +126,7 @@ where
 	}
 }
 
-impl<F, FDomain, P, M, Backend> SumcheckProver<F> for GPAProver<FDomain, P, M, Backend>
+impl<'a, F, FDomain, P, M, Backend> SumcheckProver<F> for GPAProver<'a, FDomain, P, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,

@@ -139,7 +139,7 @@ pub trait AbstractSumcheckEvaluator<P: PackedField>: Sync {
 ///     switchover rounds are numbered relative introduction round.
 ///
 /// [Gruen24]: https://eprint.iacr.org/2024/108
-pub struct CommonProversState<MultilinearId, PW, M, Backend>
+pub struct CommonProversState<'a, MultilinearId, PW, M, Backend>
 where
 	MultilinearId: Hash + Eq + Sync,
 	PW: PackedField,
@@ -152,10 +152,10 @@ where
 	multilinears: HashMap<MultilinearId, SumcheckMultilinear<PW, M>>,
 	max_query_vars: Option<usize>,
 	queries: Vec<Option<MultilinearQuery<PW, Backend>>>,
-	backend: Backend,
+	backend: &'a Backend,
 }
 
-impl<MultilinearId, PW, M, Backend> CommonProversState<MultilinearId, PW, M, Backend>
+impl<'a, MultilinearId, PW, M, Backend> CommonProversState<'a, MultilinearId, PW, M, Backend>
 where
 	MultilinearId: Clone + Hash + Eq + Sync + Debug,
 	PW: PackedField,
@@ -165,7 +165,7 @@ where
 	pub fn new(
 		n_vars: usize,
 		switchover_fn: impl Fn(usize) -> usize + 'static,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Self {
 		Self {
 			n_vars,
@@ -261,7 +261,7 @@ where
 
 		// Partial query for folding
 		let single_variable_partial_query =
-			MultilinearQuery::with_full_query(&[prev_rd_challenge], self.backend.clone())?;
+			MultilinearQuery::with_full_query(&[prev_rd_challenge], &self.backend)?;
 
 		// Perform switchover and/or folding
 		let any_transparent_left = multilinears

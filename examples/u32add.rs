@@ -223,7 +223,7 @@ where
 		switchover_fn,
 		mixing_challenge,
 		&mut challenger,
-		backend.clone(),
+		&backend,
 	)?;
 
 	// Prove evaluation claims
@@ -237,7 +237,7 @@ where
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -257,7 +257,7 @@ where
 		&trace_committed,
 		&trace_commit_polys,
 		&same_query_claim.eval_point,
-		backend,
+		&backend,
 	)?;
 
 	Ok(Proof {
@@ -333,7 +333,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
-		backend,
+		&backend,
 	)?;
 
 	Ok(())
@@ -385,7 +385,7 @@ fn main() {
 		witness,
 		challenger.clone(),
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 

@@ -43,7 +43,7 @@ pub fn batch_prove<F, PW, DomainField, CH, Backend>(
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<SumcheckBatchProveOutput<F>, Error>
 where
 	F: Field,

@@ -171,7 +171,7 @@ mod tests {
 
 		let eq_r = EqIndPartialEval::new(n_vars, challenges.clone())
 			.unwrap()
-			.multilinear_extension::<FE, _>(backend.clone())
+			.multilinear_extension::<FE, _>(&backend)
 			.unwrap();
 
 		let mut sum = FE::ZERO;
@@ -189,7 +189,7 @@ mod tests {
 			sum,
 			domain_factory.clone(),
 			&challenges,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 

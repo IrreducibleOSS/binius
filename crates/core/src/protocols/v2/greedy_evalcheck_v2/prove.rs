@@ -28,7 +28,7 @@ pub fn prove<U, F, DomainField, Challenger, Backend>(
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
 	challenger: &mut Challenger,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
@@ -41,7 +41,7 @@ where
 	let committed_batches = oracles.committed_batches();
 	let mut proof = GreedyEvalcheckProof::default();
 	let mut evalcheck_prover =
-		EvalcheckProver::<U, F, Backend>::new(oracles, witness_index, backend.clone());
+		EvalcheckProver::<U, F, Backend>::new(oracles, witness_index, backend);
 
 	let claims: Vec<_> = claims.into_iter().collect();
 
@@ -63,7 +63,7 @@ where
 				challenger,
 				switchover_fn.clone(),
 				domain_factory.clone(),
-				backend.clone(),
+				backend,
 			)?;
 
 		let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
@@ -89,7 +89,7 @@ where
 			non_sqpcs_sumchecks.push(make_non_same_query_pcs_sumchecks(
 				&mut evalcheck_prover,
 				&non_sqpcs_claims,
-				backend.clone(),
+				backend,
 			)?);
 		}
 	}
@@ -102,7 +102,7 @@ where
 			challenger,
 			switchover_fn.clone(),
 			domain_factory.clone(),
-			backend.clone(),
+			backend,
 		)?;
 
 	let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;

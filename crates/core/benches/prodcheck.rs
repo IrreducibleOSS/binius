@@ -60,7 +60,7 @@ fn bench_polyval(c: &mut Criterion) {
 					&[gpa_claim.clone()],
 					domain_factory.clone(),
 					&mut iso_challenger,
-					backend.clone(),
+					&backend,
 				)
 			});
 		});

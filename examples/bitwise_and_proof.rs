@@ -46,7 +46,7 @@ fn prove<U, PCS, CH, Backend>(
 	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof, BinaryField128bPolyval>>
 where
 	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<BinaryField128bPolyval>,
@@ -96,7 +96,7 @@ where
 			domain_factory.clone(),
 			switchover_fn,
 			zerocheck_challenges.as_slice(),
-			backend.clone(),
+			backend,
 		)?;
 
 	let (sumcheck_output, zerocheck_proof) =
@@ -122,7 +122,7 @@ where
 		switchover_fn,
 		&mut iso_challenger,
 		domain_factory,
-		backend.clone(),
+		backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -180,7 +180,7 @@ fn verify<PCS, CH, Backend>(
 	constraint_set: ConstraintSet<BinaryField128b>,
 	proof: Proof<PCS::Commitment, PCS::Proof, BinaryField128b>,
 	mut challenger: CH,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<()>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
@@ -245,7 +245,7 @@ where
 		&same_query_pcs_claim.eval_point,
 		abc_eval_proof,
 		&same_query_pcs_claim.evals,
-		backend,
+		&backend,
 	)?;
 
 	Ok(())
@@ -386,7 +386,7 @@ fn main() {
 		witness,
 		challenger.clone(),
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 
@@ -400,7 +400,7 @@ fn main() {
 		verifier_constraints,
 		proof.isomorphic(),
 		challenger.clone(),
-		backend,
+		&backend,
 	)
 	.unwrap();
 }

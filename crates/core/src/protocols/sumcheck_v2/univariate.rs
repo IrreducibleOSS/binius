@@ -76,7 +76,7 @@ where
 
 		let query = MultilinearQuery::<F, _>::with_full_query(
 			&sumcheck_challenges[max_n_vars - skip_rounds..],
-			make_portable_backend(),
+			&make_portable_backend(),
 		)?;
 		let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
 
@@ -168,6 +168,7 @@ mod tests {
 		type P = PackedBinaryField8x32b;
 		type PE = PackedBinaryField1x128b;
 
+		let backend = make_portable_backend();
 		let mut rng = StdRng::seed_from_u64(0);
 		let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
@@ -216,7 +217,7 @@ mod tests {
 
 						let query = MultilinearQuery::with_full_query(
 							query.as_slice(),
-							make_portable_backend(),
+							&make_portable_backend(),
 						)
 						.unwrap();
 						let mle_eval = multilinear.evaluate(query.to_ref()).unwrap();
@@ -237,7 +238,7 @@ mod tests {
 				univariate_challenge,
 				sumcheck_challenges.as_slice(),
 				evaluation_domain_factory.clone(),
-				make_portable_backend(),
+				&backend,
 			)
 			.unwrap();
 
@@ -256,9 +257,7 @@ mod tests {
 				batch_sumcheck_output_prove.challenges[max_skip_rounds - skip_rounds..].to_vec();
 			query.extend(sumcheck_challenges.as_slice());
 
-			let query =
-				MultilinearQuery::with_full_query(query.as_slice(), make_portable_backend())
-					.unwrap();
+			let query = MultilinearQuery::with_full_query(query.as_slice(), &backend).unwrap();
 
 			for (multilinear, eval) in iter::zip(multilinears, multilinear_evals) {
 				assert_eq!(multilinear.evaluate(query.to_ref()).unwrap(), eval);
@@ -288,9 +287,7 @@ mod tests {
 				batch_sumcheck_output_post.challenges[max_skip_rounds - skip_rounds..].to_vec();
 			query.extend(sumcheck_challenges.as_slice());
 
-			let query =
-				MultilinearQuery::with_full_query(query.as_slice(), make_portable_backend())
-					.unwrap();
+			let query = MultilinearQuery::with_full_query(query.as_slice(), &backend).unwrap();
 
 			for (multilinear, eval) in iter::zip(multilinears, evals) {
 				assert_eq!(multilinear.evaluate(query.to_ref()).unwrap(), eval);

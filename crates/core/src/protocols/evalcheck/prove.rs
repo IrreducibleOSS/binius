@@ -263,7 +263,7 @@ where
 					meta,
 					&shifted,
 					&wf_eval_point,
-					self.backend.clone(),
+					&self.backend,
 				)?;
 
 				self.new_sumchecks.push((sumcheck_claim, sumcheck_witness));
@@ -279,7 +279,7 @@ where
 					meta,
 					&packed,
 					&wf_eval_point,
-					self.backend.clone(),
+					&self.backend,
 				)?;
 				self.new_sumchecks.push((sumcheck_claim, sumcheck_witness));
 				EvalcheckProof::Packed
@@ -346,7 +346,7 @@ where
 	) -> Result<(F, EvalcheckProof<F>), Error> {
 		let eval_query = self
 			.memoized_queries
-			.full_query(wf_eval_point, self.backend.clone())?;
+			.full_query(wf_eval_point, &self.backend)?;
 		let witness_poly = self
 			.witness_index
 			.get_multilin_poly(poly.id())

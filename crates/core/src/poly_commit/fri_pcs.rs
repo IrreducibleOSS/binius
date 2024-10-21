@@ -371,7 +371,7 @@ where
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
@@ -398,8 +398,7 @@ where
 
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
-		let expanded_query =
-			MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend.clone())?;
+		let expanded_query = MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend)?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -413,12 +412,12 @@ where
 			self.n_vars(),
 			sumcheck_eval.clone(),
 			&tensor_mixing_challenges,
-			backend.clone(),
+			backend,
 		);
 		let val = ring_switch_eq_ind_partial_eval::<F, _, _, _>(
 			query_from_kappa,
 			&tensor_mixing_challenges,
-			backend.clone(),
+			backend,
 		)?;
 		let transparent = MultilinearExtension::from_values_generic(val)?;
 		let sumcheck_prover = RegularSumcheckProver::new(
@@ -429,7 +428,7 @@ where
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
 			immediate_switchover_heuristic,
-			backend.clone(),
+			backend,
 		)?;
 
 		let (codeword, vcs_committed) = committed;
@@ -449,7 +448,7 @@ where
 		query: &[FExt],
 		proof: Self::Proof,
 		values: &[FExt],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
 		Challenger: CanObserve<FExt>
@@ -485,8 +484,7 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query =
-			MultilinearQuery::<FExt, _>::with_full_query(query_to_kappa, backend.clone())?;
+		let expanded_query = MultilinearQuery::<FExt, _>::with_full_query(query_to_kappa, backend)?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -497,12 +495,8 @@ where
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
 
-		let sumcheck_claim = reduce_tensor_claim(
-			self.n_vars(),
-			sumcheck_eval,
-			&tensor_mixing_challenges,
-			backend.clone(),
-		);
+		let sumcheck_claim =
+			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, backend);
 
 		self.verify_interleaved_fri_sumcheck(
 			&sumcheck_claim,
@@ -516,7 +510,7 @@ where
 					query_from_kappa,
 					challenges,
 					&tensor_mixing_challenges,
-					backend.clone(),
+					backend,
 				)
 			},
 			challenger,
@@ -661,11 +655,9 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let eval_query = MultilinearQuery::<FE, binius_hal::CpuBackend>::with_full_query(
-			&eval_point,
-			backend.clone(),
-		)
-		.unwrap();
+		let eval_query =
+			MultilinearQuery::<FE, binius_hal::CpuBackend>::with_full_query(&eval_point, &backend)
+				.unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let make_merkle_vcs = |log_len| {
@@ -700,7 +692,7 @@ mod tests {
 				&committed,
 				&[multilin],
 				&eval_point,
-				backend.clone(),
+				&backend,
 			)
 			.unwrap();
 
@@ -711,7 +703,7 @@ mod tests {
 			&eval_point,
 			proof,
 			&[eval],
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 	}

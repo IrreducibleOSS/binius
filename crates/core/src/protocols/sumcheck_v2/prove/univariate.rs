@@ -32,7 +32,8 @@ use stackalloc::stackalloc_with_iter;
 use std::collections::HashMap;
 use transpose::transpose;
 
-pub type Prover<FDomain, P, Backend> = RegularSumcheckProver<
+pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
+	'a,
 	FDomain,
 	P,
 	IndexComposition<BivariateProduct, 2>,
@@ -48,14 +49,14 @@ pub type Prover<FDomain, P, Backend> = RegularSumcheckProver<
 /// Lagrange evaluation in the last witness column.
 ///
 /// Note that `univariatized_multilinear_evals` come from a previous sumcheck with a univariate first round.
-pub fn univariatizing_reduction_prover<F, FDomain, P, M, Backend>(
+pub fn univariatizing_reduction_prover<'a, F, FDomain, P, M, Backend>(
 	multilinears: Vec<M>,
 	univariatized_multilinear_evals: &[F],
 	univariate_challenge: F,
 	sumcheck_challenges: &[F],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	backend: Backend,
-) -> Result<Prover<FDomain, P, Backend>, Error>
+	backend: &'a Backend,
+) -> Result<Prover<'a, FDomain, P, Backend>, Error>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: BinaryField,
@@ -73,7 +74,7 @@ where
 		bail!(Error::IncorrectNumberOfChallenges);
 	}
 
-	let query = MultilinearQuery::with_full_query(sumcheck_challenges, backend.clone())?;
+	let query = MultilinearQuery::with_full_query(sumcheck_challenges, backend)?;
 
 	let mut reduced_multilinears = multilinears
 		.into_iter()
@@ -212,7 +213,7 @@ pub fn zerocheck_univariate_evals<F, FDomain, PBase, P, Composition, M, Backend>
 	zerocheck_challenges: &[F],
 	skip_rounds: usize,
 	max_domain_size: usize,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<ZerocheckUnivariateEvalsOutput<F, P, Backend>, Error>
 where
 	FDomain: BinaryField,
@@ -275,7 +276,7 @@ where
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
 	let partial_eq_ind_evals = MultilinearQuery::<P, Backend>::with_full_query(
 		&zerocheck_challenges[skip_rounds..],
-		backend.clone(),
+		backend,
 	)?
 	.into_expansion();
 	let partial_eq_ind_evals_scalars = P::unpack_scalars(&partial_eq_ind_evals[..]);
@@ -531,7 +532,7 @@ fn extrapolate_partial_eq_ind<F, FDomain, PBase, P, NTT, Backend>(
 	skip_rounds: usize,
 	max_domain_size: usize,
 	zerocheck_challenges: &[F],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Vec<P>, Error>
 where
 	FDomain: Field,
@@ -825,7 +826,7 @@ mod tests {
 			.collect::<Vec<_>>();
 		let zerocheck_eq_ind_mle = EqIndPartialEval::new(n_vars, zerocheck_challenges.clone())
 			.unwrap()
-			.multilinear_extension::<F, _>(backend.clone())
+			.multilinear_extension::<F, _>(&backend)
 			.unwrap();
 
 		for skip_rounds in 0usize..=5 {
@@ -836,7 +837,7 @@ mod tests {
 				zerocheck_challenges.as_slice(),
 				skip_rounds,
 				max_domain_size,
-				backend.clone(),
+				&backend,
 			)
 			.unwrap();
 

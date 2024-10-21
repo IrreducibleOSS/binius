@@ -283,7 +283,7 @@ fn prove<U, PCS1, PCS8, PCS32, CH, Backend>(
 	pcs_final_counts_lasso: &PCS32,
 	mut challenger: CH,
 	domain_factory: impl EvaluationDomainFactory<B128>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Proof<U, PCS1, PCS8, PCS32>>
 where
 	U: UnderlierType + PackScalar<B1> + PackScalar<B8> + PackScalar<B32> + PackScalar<B128>,
@@ -383,7 +383,7 @@ where
 		&reduced_gpa_claims,
 		domain_factory.clone(),
 		&mut challenger,
-		backend.clone(),
+		&backend,
 	)?;
 
 	let evalcheck_multilinear_claims =
@@ -399,7 +399,7 @@ where
 		switchover_fn,
 		&mut challenger,
 		domain_factory,
-		backend.clone(),
+		backend,
 	)?;
 
 	// PCS opening proofs
@@ -422,7 +422,7 @@ where
 			oracles,
 		)?,
 		batch_id_to_eval_point(trace_oracle.lasso_batch.counts_batch_ids[0]),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let lasso_final_counts_proof = pcs_final_counts_lasso.prove_evaluation(
@@ -434,7 +434,7 @@ where
 			oracles,
 		)?,
 		batch_id_to_eval_point(trace_oracle.lasso_batch.final_counts_batch_id),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let b8_proof = pcs8.prove_evaluation(
@@ -442,7 +442,7 @@ where
 		&b8_committed,
 		&extract_batch_id_polys::<_, _, B8>(trace_oracle.b8_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.b8_batch),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let b1_proof = pcs1.prove_evaluation(
@@ -450,7 +450,7 @@ where
 		&b1_committed,
 		&extract_batch_id_polys::<_, _, B1>(trace_oracle.b1_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.b1_batch),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let lookup_t_proof = pcs32.prove_evaluation(
@@ -458,7 +458,7 @@ where
 		&lookup_t_committed,
 		&extract_batch_id_polys::<_, _, B32>(trace_oracle.lookup_t_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.lookup_t_batch),
-		backend.clone(),
+		&backend,
 	)?;
 
 	Ok(Proof {
@@ -491,7 +491,7 @@ fn verify<U, PCS1, PCS8, PCS32, CH, Backend>(
 	pcs_final_counts_lasso: &PCS32,
 	mut challenger: CH,
 	proof: Proof<U, PCS1, PCS8, PCS32>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<()>
 where
 	U: UnderlierType + PackScalar<B1> + PackScalar<B8> + PackScalar<B32> + PackScalar<B128>,
@@ -581,7 +581,7 @@ where
 		&lasso_counts_eval_claim.eval_point,
 		lasso_counts_proof,
 		&lasso_counts_eval_claim.evals,
-		backend.clone(),
+		backend,
 	)?;
 
 	let lasso_final_counts_eval_claim =
@@ -593,7 +593,7 @@ where
 		&lasso_final_counts_eval_claim.eval_point,
 		lasso_final_counts_proof,
 		&lasso_final_counts_eval_claim.evals,
-		backend.clone(),
+		&backend,
 	)?;
 
 	let b8_eval_claim = batch_id_to_eval_claim(trace_oracle.b8_batch);
@@ -604,7 +604,7 @@ where
 		&b8_eval_claim.eval_point,
 		b8_proof,
 		&b8_eval_claim.evals,
-		backend.clone(),
+		&backend,
 	)?;
 
 	let b1_eval_claim = batch_id_to_eval_claim(trace_oracle.b1_batch);
@@ -615,7 +615,7 @@ where
 		&b1_eval_claim.eval_point,
 		b1_proof,
 		&b1_eval_claim.evals,
-		backend.clone(),
+		&backend,
 	)?;
 
 	let lookup_t_eval_claim = batch_id_to_eval_claim(trace_oracle.lookup_t_batch);
@@ -626,7 +626,7 @@ where
 		&lookup_t_eval_claim.eval_point,
 		lookup_t_proof,
 		&lookup_t_eval_claim.evals,
-		backend.clone(),
+		&backend,
 	)?;
 
 	Ok(())
@@ -686,7 +686,7 @@ fn main() -> Result<()> {
 		&pcs_final_counts_lasso,
 		challenger.clone(),
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)?;
 
 	verify(
@@ -699,7 +699,7 @@ fn main() -> Result<()> {
 		&pcs_final_counts_lasso,
 		challenger.clone(),
 		proof,
-		backend.clone(),
+		&backend,
 	)?;
 
 	Ok(())

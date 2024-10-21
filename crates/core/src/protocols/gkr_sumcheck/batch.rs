@@ -60,7 +60,7 @@ where
 		evaluation_domain_factory,
 		gkr_round_challenge.as_slice(),
 		switchover_fn,
-		backend,
+		&backend,
 	)?;
 
 	abstract_sumcheck::batch_prove(gkr_sumchecks, &mut provers_state, challenger)

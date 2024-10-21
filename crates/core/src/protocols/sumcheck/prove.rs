@@ -38,7 +38,7 @@ pub fn prove<F, PW, DomainField, CH, Backend>(
 	evaluation_domain_factory: impl EvaluationDomainFactory<DomainField>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	challenger: CH,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<SumcheckProveOutput<F>, Error>
 where
 	F: Field,
@@ -67,7 +67,7 @@ where
 	})
 }
 
-pub struct SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
+pub struct SumcheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField,
@@ -76,12 +76,13 @@ where
 	W: AbstractSumcheckWitness<PW>,
 	Backend: ComputationBackend,
 {
-	common: CommonProversState<OracleId, PW, W::Multilinear, Backend>,
+	common: CommonProversState<'a, OracleId, PW, W::Multilinear, Backend>,
 	evaluation_domain_factory: EDF,
 	_marker: PhantomData<(F, DomainField, W)>,
 }
 
-impl<F, PW, DomainField, EDF, W, Backend> SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
+impl<'a, F, PW, DomainField, EDF, W, Backend>
+	SumcheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedField,
@@ -94,7 +95,7 @@ where
 		n_vars: usize,
 		evaluation_domain_factory: EDF,
 		switchover_fn: impl Fn(usize) -> usize + 'static,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Self {
 		let common = CommonProversState::new(n_vars, switchover_fn, backend);
 		Self {
@@ -105,8 +106,8 @@ where
 	}
 }
 
-impl<F, PW, DomainField, EDF, W, Backend> AbstractSumcheckProversState<F>
-	for SumcheckProversState<F, PW, DomainField, EDF, W, Backend>
+impl<'a, F, PW, DomainField, EDF, W, Backend> AbstractSumcheckProversState<F>
+	for SumcheckProversState<'a, F, PW, DomainField, EDF, W, Backend>
 where
 	F: Field,
 	PW: PackedExtension<DomainField, Scalar: From<F> + Into<F> + ExtensionField<DomainField>>,

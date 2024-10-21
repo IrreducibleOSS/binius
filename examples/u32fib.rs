@@ -302,7 +302,7 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
@@ -328,7 +328,7 @@ where
 		switchover_fn,
 		&mut iso_challenger,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -354,7 +354,7 @@ where
 		&trace_committed,
 		&trace_commit_polys,
 		&eval_point,
-		backend,
+		&backend,
 	)?;
 
 	Ok(Proof {
@@ -454,7 +454,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
-		backend,
+		&backend,
 	)?;
 
 	Ok(())
@@ -516,7 +516,7 @@ fn main() {
 		challenger.clone(),
 		witness,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 

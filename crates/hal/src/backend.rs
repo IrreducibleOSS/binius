@@ -27,7 +27,7 @@ pub trait HalSlice<P: Debug + Send + Sync>:
 impl<P: Send + Sync + Debug + 'static> HalSlice<P> for Vec<P> {}
 
 /// An abstraction to interface with acceleration hardware to perform computation intensive operations.
-pub trait ComputationBackend: Clone + Send + Sync + Debug {
+pub trait ComputationBackend: Send + Sync + Debug {
 	type Vec<P: Send + Sync + Debug + 'static>: HalSlice<P>;
 
 	/// Creates `Self::Vec<P>` from the given `Vec<P>`.
@@ -56,10 +56,9 @@ pub trait ComputationBackend: Clone + Send + Sync + Debug {
 }
 
 /// Make it unnecessary to clone backends.
-/// TODO: Refactor the codebase to use `&backend` instead of `backend.clone()`.
 impl<'a, T: 'a + ComputationBackend> ComputationBackend for &'a T
 where
-	&'a T: Debug + Sync + Clone + Send,
+	&'a T: Debug + Sync + Send,
 {
 	type Vec<P: Send + Sync + Debug + 'static> = T::Vec<P>;
 

@@ -47,7 +47,7 @@ pub fn batch_prove<F, PW, DomainField, CH, Backend>(
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	mixing_challenge: F,
 	mut challenger: CH,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<ZerocheckBatchProveOutput<F>, Error>
 where
 	F: Field,
@@ -71,7 +71,7 @@ where
 		zerocheck_challenges.as_slice(),
 		switchover_fn,
 		mixing_challenge,
-		backend.clone(),
+		backend,
 	)?;
 
 	let oracles = zerochecks

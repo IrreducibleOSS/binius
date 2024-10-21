@@ -164,7 +164,7 @@ fn test_prove_verify_batch() {
 	let GrandProductBatchProveOutput {
 		final_layer_claims: final_layer_claim,
 		proof,
-	} = batch_prove::<_, _, FS, _, _>(witnesses, &claims, domain_factory, prover_challenger, backend)
+	} = batch_prove::<_, _, FS, _, _>(witnesses, &claims, domain_factory, prover_challenger, &backend)
 		.unwrap();
 
 	let verified_evalcheck_multilinear_claims =

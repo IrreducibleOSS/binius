@@ -199,14 +199,15 @@ mod tests {
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
 
-	fn make_regular_sumcheck_prover_for_zerocheck<F, FDomain, P, Composition, M, Backend>(
+	fn make_regular_sumcheck_prover_for_zerocheck<'a, F, FDomain, P, Composition, M, Backend>(
 		multilinears: Vec<M>,
 		zero_claims: impl IntoIterator<Item = Composition>,
 		challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> RegularSumcheckProver<
+		'a,
 		FDomain,
 		P,
 		ExtraProduct<Composition>,
@@ -223,7 +224,7 @@ mod tests {
 	{
 		let eq_ind = EqIndPartialEval::new(challenges.len(), challenges.to_vec())
 			.unwrap()
-			.multilinear_extension::<P, _>(backend.clone())
+			.multilinear_extension::<P, _>(backend)
 			.unwrap();
 
 		let multilinears = multilinears
@@ -276,7 +277,7 @@ mod tests {
 			&challenges,
 			domain_factory.clone(),
 			|_| switchover_rd,
-			backend.clone(),
+			&backend,
 		);
 
 		let mut challenger1 = challenger.clone();
@@ -295,7 +296,7 @@ mod tests {
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 
@@ -343,7 +344,7 @@ mod tests {
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 
@@ -394,7 +395,7 @@ mod tests {
 
 		// Verify the reduced multilinear evaluations are correct
 		let multilin_query =
-			MultilinearQuery::with_full_query(&verifier_eval_point, backend).unwrap();
+			MultilinearQuery::with_full_query(&verifier_eval_point, &backend).unwrap();
 		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
 			assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 		}

@@ -32,7 +32,7 @@ pub fn batch_prove<'a, F, P, FDomain, Challenger, Backend>(
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	mut challenger: Challenger,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField,
@@ -58,7 +58,7 @@ where
 	let provers_vec = witness_vec
 		.into_iter()
 		.zip(claims)
-		.map(|(witness, claim)| GrandProductProverState::new(claim, witness, backend.clone()))
+		.map(|(witness, claim)| GrandProductProverState::new(claim, witness, backend))
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let (original_indices, mut sorted_provers) =
@@ -271,7 +271,7 @@ where
 			self.current_layer_claim.eval,
 			evaluation_domain_factory,
 			&self.current_layer_claim.eval_point,
-			self.backend.clone(),
+			&self.backend,
 		)
 		.map_err(|e| e.into())
 	}

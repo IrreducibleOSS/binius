@@ -107,7 +107,7 @@ where
 					domain_factory.clone(),
 					move |_| switchover,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});
@@ -177,7 +177,7 @@ fn sumcheck_128b_monomial_basis(c: &mut Criterion) {
 					domain_factory.clone(),
 					|_| 1,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});
@@ -258,7 +258,7 @@ fn sumcheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					domain_factory.clone(),
 					|_| 1,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});

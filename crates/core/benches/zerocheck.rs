@@ -130,7 +130,7 @@ where
 					move |_| switchover,
 					mixing_challenge,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});
@@ -195,7 +195,7 @@ fn zerocheck_128b_monomial_basis(c: &mut Criterion) {
 					|_| 1,
 					mixing_challenge,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});
@@ -271,7 +271,7 @@ fn zerocheck_128b_monomial_basis_with_arc(c: &mut Criterion) {
 					|_| 1,
 					mixing_challenge,
 					prove_challenger.clone(),
-					backend.clone(),
+					&backend,
 				)
 			});
 		});

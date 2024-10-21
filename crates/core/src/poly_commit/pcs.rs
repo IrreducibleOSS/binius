@@ -36,7 +36,7 @@ where
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
@@ -51,7 +51,7 @@ where
 		query: &[FE],
 		proof: Self::Proof,
 		values: &[FE],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,

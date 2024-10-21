@@ -41,7 +41,7 @@ where
 	M: MultilinearPoly<PW> + Clone + Send + Sync,
 	Backend: ComputationBackend,
 {
-	common: CommonProversState<(usize, usize), PW, M, Backend>,
+	common: CommonProversState<'a, (usize, usize), PW, M, Backend>,
 	evaluation_domain_factory: EDF,
 	gkr_round_challenge: &'a [F],
 	round_eq_ind: MultilinearExtension<PW, Backend::Vec<PW>>,
@@ -64,9 +64,9 @@ where
 		evaluation_domain_factory: EDF,
 		gkr_round_challenge: &'a [F],
 		switchover_fn: impl Fn(usize) -> usize + 'static,
-		backend: Backend,
+		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let common = CommonProversState::new(n_vars, switchover_fn, backend.clone());
+		let common = CommonProversState::new(n_vars, switchover_fn, backend);
 
 		let pw_scalar_challenges = gkr_round_challenge
 			.iter()

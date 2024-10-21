@@ -181,7 +181,7 @@ where
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
@@ -219,7 +219,7 @@ where
 		query: &[FE],
 		proof: Self::Proof,
 		values: &[FE],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
 		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
@@ -231,9 +231,8 @@ where
 		let interpolate_from_evaluations = MultilinearExtension::from_values_slice(values)?;
 		// Then the mixed evaluation, i.e., (tensor expansion of r')\cdot (s_u), is just given by *evaluating*
 		// interpolate_from_evaluations on the mixing challenge.
-		let mixed_evaluation = interpolate_from_evaluations.evaluate(
-			&MultilinearQuery::<FE, _>::with_full_query(&mixing_challenges, backend.clone())?,
-		)?;
+		let mixed_evaluation = interpolate_from_evaluations
+			.evaluate(&MultilinearQuery::<FE, _>::with_full_query(&mixing_challenges, backend)?)?;
 		let mixed_value = &[mixed_evaluation];
 
 		// new_query := query || mixing_challenges.
@@ -301,8 +300,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query =
-			MultilinearQuery::<F, _>::with_full_query(&eval_point, backend.clone()).unwrap();
+		let eval_query = MultilinearQuery::<F, _>::with_full_query(&eval_point, &backend).unwrap();
 		let values = multilins
 			.iter()
 			.map(|x| x.evaluate(&eval_query).unwrap())
@@ -322,13 +320,7 @@ mod tests {
 
 		let mut prover_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(
-				&mut prover_challenger,
-				&committed,
-				&polys,
-				&eval_point,
-				backend.clone(),
-			)
+			.prove_evaluation(&mut prover_challenger, &committed, &polys, &eval_point, &backend)
 			.unwrap();
 
 		let mut verifier_challenger = challenger.clone();
@@ -338,7 +330,7 @@ mod tests {
 			&eval_point,
 			proof,
 			&values,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 	}
@@ -370,8 +362,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query =
-			MultilinearQuery::<FE, _>::with_full_query(&eval_point, backend.clone()).unwrap();
+		let eval_query = MultilinearQuery::<FE, _>::with_full_query(&eval_point, &backend).unwrap();
 		let values = multilins
 			.iter()
 			.map(|x| x.evaluate(&eval_query).unwrap())
@@ -392,13 +383,7 @@ mod tests {
 
 		let mut prover_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(
-				&mut prover_challenger,
-				&committed,
-				&polys,
-				&eval_point,
-				backend.clone(),
-			)
+			.prove_evaluation(&mut prover_challenger, &committed, &polys, &eval_point, &backend)
 			.unwrap();
 
 		let mut verifier_challenger = challenger.clone();
@@ -408,7 +393,7 @@ mod tests {
 			&eval_point,
 			proof,
 			&values,
-			backend.clone(),
+			&backend,
 		)
 		.unwrap();
 	}

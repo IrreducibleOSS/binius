@@ -85,7 +85,7 @@ pub fn shifted_sumcheck_witness<'a, F, PW, Backend>(
 	meta: ProjectedBivariateMeta,
 	shifted: &Shifted<F>,
 	wf_eval_point: &[PW::Scalar],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
 	F: Field,
@@ -155,7 +155,7 @@ pub fn packed_sumcheck_witness<'a, F, PW, Backend>(
 	meta: ProjectedBivariateMeta,
 	packed: &Packed<F>,
 	wf_eval_point: &[PW::Scalar],
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
 	F: Field,
@@ -276,7 +276,7 @@ pub fn non_same_query_pcs_sumcheck_witness<'a, F, PW, Backend>(
 	witness_index: &mut MultilinearExtensionIndex<'a, PW::Underlier, PW::Scalar>,
 	memoized_queries: &mut MemoizedQueries<PW, Backend>,
 	meta: NonSameQueryPcsClaimMeta<F>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
 	F: Field + From<PW::Scalar>,
@@ -301,10 +301,10 @@ where
 				EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
 
 			Ok(eq_ind
-				.multilinear_extension::<PW, _>(backend.clone())?
+				.multilinear_extension::<PW, _>(&backend)?
 				.specialize_arc_dyn())
 		},
-		backend.clone(),
+		backend,
 	)
 }
 
@@ -408,7 +408,7 @@ fn projected_bivariate_witness<'a, PW, Backend>(
 	meta: ProjectedBivariateMeta,
 	wf_eval_point: &[PW::Scalar],
 	multiplier_witness_ctr: impl FnOnce(&[PW::Scalar]) -> Result<MultilinearWitness<'a, PW>, Error>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<BivariateSumcheckWitness<'a, PW>, Error>
 where
 	PW: PackedField + WithUnderlier,
@@ -478,7 +478,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
-		backend: Backend,
+		backend: &Backend,
 	) -> Result<&MultilinearQuery<P, Backend>, Error> {
 		if let Some(index) = self
 			.memo

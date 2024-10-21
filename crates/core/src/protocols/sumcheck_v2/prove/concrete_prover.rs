@@ -11,7 +11,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 
 /// A sum type that is used to put both regular sumchecks and zerochecks into the same `batch_prove` call.
-pub enum ConcreteProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+pub enum ConcreteProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	FDomain: Field,
 	PBase: PackedField,
@@ -19,12 +19,12 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
-	Sumcheck(RegularSumcheckProver<FDomain, P, Composition, M, Backend>),
-	Zerocheck(ZerocheckProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>),
+	Sumcheck(RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>),
+	Zerocheck(ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>),
 }
 
-impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
-	for ConcreteProver<FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ConcreteProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,

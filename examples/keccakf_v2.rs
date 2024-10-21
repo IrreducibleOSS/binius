@@ -537,7 +537,7 @@ fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
 	mut challenger: CH,
 	mut witness: MultilinearExtensionIndex<U, F>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<Proof<F, PCS::Commitment, PCS::Proof>>
 where
 	U: UnderlierType
@@ -586,7 +586,7 @@ where
 		domain_factory.clone(),
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
-		backend.clone(),
+		&backend,
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
@@ -612,7 +612,7 @@ where
 		switchover_fn,
 		&mut iso_challenger,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -658,7 +658,7 @@ fn verify<P, F, PCS, CH, Backend>(
 	pcs: &PCS,
 	mut challenger: CH,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
-	backend: Backend,
+	backend: &Backend,
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b>,
@@ -720,7 +720,7 @@ where
 		&same_query_claim.eval_point,
 		trace_open_proof,
 		&same_query_claim.evals,
-		backend,
+		&backend,
 	)?;
 
 	Ok(())
@@ -789,7 +789,7 @@ fn main() {
 		challenger.clone(),
 		witness,
 		domain_factory,
-		backend.clone(),
+		&backend,
 	)
 	.unwrap();
 
@@ -804,7 +804,7 @@ fn main() {
 		&pcs,
 		challenger.clone(),
 		proof.isomorphic(),
-		backend,
+		&backend,
 	)
 	.unwrap();
 }
