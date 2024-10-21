@@ -7,10 +7,7 @@ use crate::{
 	},
 	protocols::{
 		sumcheck_v2::{
-			prove::{
-				prover_state::{ProverState, SumcheckEvaluator},
-				SumcheckProver,
-			},
+			prove::{ProverState, SumcheckEvaluator, SumcheckInterpolator, SumcheckProver},
 			Error, RoundCoeffs,
 		},
 		utils::packed_from_fn_with_offset,
@@ -251,8 +248,11 @@ where
 					_p_base_marker: PhantomData,
 				})
 				.collect::<Vec<_>>();
+			let evals = self
+				.state
+				.calculate_first_round_evals::<PBase, _>(&evaluators)?;
 			self.state
-				.calculate_first_round_coeffs::<PBase, _>(&evaluators, batch_coeff)?
+				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
 				.map(|((_, composition), interpolation_domain)| ZerocheckLaterRoundEvaluator {
@@ -262,8 +262,9 @@ where
 					round_zerocheck_challenge: self.zerocheck_challenges[round],
 				})
 				.collect::<Vec<_>>();
+			let evals = self.state.calculate_later_round_evals(&evaluators)?;
 			self.state
-				.calculate_round_coeffs(&evaluators, batch_coeff)?
+				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		};
 
 		// Convert v' polynomial into v polynomial
@@ -347,7 +348,16 @@ where
 			P::set_single(field_sum)
 		})
 	}
+}
 
+impl<'a, F, PBase, P, FDomain, Composition> SumcheckInterpolator<F>
+	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
+where
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	PBase: PackedField,
+	P: PackedField<Scalar = F>,
+	FDomain: Field,
+{
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,
@@ -418,7 +428,15 @@ where
 			evals.iter().copied().sum::<P>()
 		})
 	}
+}
 
+impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
+where
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	FDomain: Field,
+{
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,

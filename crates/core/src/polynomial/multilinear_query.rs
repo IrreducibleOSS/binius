@@ -25,7 +25,7 @@ pub struct MultilinearQuery<P: PackedField, Backend: ComputationBackend> {
 }
 
 /// Wraps `MultilinearQuery` to hide `Backend` from the users.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MultilinearQueryRef<'a, P: PackedField> {
 	expanded_query: &'a [P],
 	// We want to avoid initializing data at the moment when vector is growing,

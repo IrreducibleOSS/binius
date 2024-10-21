@@ -1,8 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{
-	batch_prove::SumcheckProver,
-	prover_state::{ProverState, SumcheckEvaluator},
+	batch_prove::SumcheckProver, prover_state::ProverState, round_calculator::SumcheckEvaluator,
 };
 use crate::{
 	polynomial::{
@@ -11,6 +10,7 @@ use crate::{
 	protocols::sumcheck_v2::{
 		common::{CompositeSumClaim, RoundCoeffs},
 		error::Error,
+		prove::prover_state::SumcheckInterpolator,
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
@@ -177,7 +177,9 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		self.state.calculate_round_coeffs(&evaluators, batch_coeff)
+		let evals = self.state.calculate_later_round_evals(&evaluators)?;
+		self.state
+			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}
 
 	fn finish(self) -> Result<Vec<F>, Error> {
@@ -225,7 +227,15 @@ where
 			evals.iter().copied().sum()
 		})
 	}
+}
 
+impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for RegularSumcheckEvaluator<'a, P, FDomain, Composition>
+where
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	FDomain: Field,
+{
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,

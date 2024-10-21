@@ -8,8 +8,7 @@ use crate::{
 		sumcheck_v2::{
 			immediate_switchover_heuristic,
 			prove::{
-				prover_state::{ProverState, SumcheckEvaluator},
-				SumcheckProver,
+				prover_state::ProverState, SumcheckEvaluator, SumcheckInterpolator, SumcheckProver,
 			},
 			Error as SumcheckError, RoundCoeffs,
 		},
@@ -142,22 +141,24 @@ where
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();
 		let coeffs = if round == 0 {
-			let evaluators = GPAFirstRoundEvaluator {
+			let evaluators = [GPAFirstRoundEvaluator {
 				interpolation_domain: &self.domain,
 				partial_eq_ind_evals: &self.partial_eq_ind_evals,
 				poly_mle: &self.current_layer,
 				gpa_round_challenges: self.gpa_round_challenges[round],
-			};
+			}];
+			let evals = self.state.calculate_later_round_evals(&evaluators)?;
 			self.state
-				.calculate_round_coeffs(&[evaluators], batch_coeff)?
+				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		} else {
-			let evaluators = GPALaterRoundEvaluator {
+			let evaluators = [GPALaterRoundEvaluator {
 				interpolation_domain: &self.domain,
 				partial_eq_ind_evals: &self.partial_eq_ind_evals,
 				gpa_round_challenges: self.gpa_round_challenges[round],
-			};
+			}];
+			let evals = self.state.calculate_later_round_evals(&evaluators)?;
 			self.state
-				.calculate_round_coeffs(&[evaluators], batch_coeff)?
+				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		};
 
 		// Convert v' polynomial into v polynomial
@@ -241,7 +242,15 @@ where
 			evals.iter().copied().sum::<P>()
 		})
 	}
+}
 
+impl<'a, F, P, FDomain, M> SumcheckInterpolator<F> for GPAFirstRoundEvaluator<'a, P, FDomain, M>
+where
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	FDomain: Field,
+	M: MultilinearPoly<P> + Send + Sync,
+{
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,
@@ -256,7 +265,7 @@ where
 					* packed_from_fn_with_offset::<P>(i, |j| {
 						self.poly_mle
 							.evaluate_on_hypercube(j << 1 | 1)
-							.unwrap_or(P::Scalar::ZERO)
+							.unwrap_or(F::ZERO)
 					}))
 				.iter()
 				.sum::<F>()
@@ -266,10 +275,10 @@ where
 		round_evals.insert(0, poly_mle_eval);
 
 		let alpha = self.gpa_round_challenges;
-		let alpha_bar = P::Scalar::ONE - alpha;
+		let alpha_bar = F::ONE - alpha;
 		let one_evaluation = round_evals[0];
 		let zero_evaluation_numerator = last_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap_or(P::Scalar::ZERO);
+		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap_or(F::ZERO);
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 
 		round_evals.insert(0, zero_evaluation);
@@ -323,7 +332,14 @@ where
 			evals.iter().copied().sum::<P>()
 		})
 	}
+}
 
+impl<'a, F, P, FDomain> SumcheckInterpolator<F> for GPALaterRoundEvaluator<'a, P, FDomain>
+where
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	FDomain: Field,
+{
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,

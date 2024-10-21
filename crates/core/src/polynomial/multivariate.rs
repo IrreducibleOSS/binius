@@ -225,7 +225,7 @@ where
 		let evals = self
 			.multilinears
 			.iter()
-			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query.clone())?)))
+			.map(|multilin| Ok::<P, Error>(P::set_single(multilin.evaluate(query)?)))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(self.composition.evaluate(&evals)?.get(0))
 	}
@@ -314,7 +314,7 @@ where
 		let new_multilinears = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate_partial_low(query.clone()))
+			.map(|multilin| multilin.evaluate_partial_low(query))
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(MultilinearComposite {
 			composition: self.composition.clone(),
