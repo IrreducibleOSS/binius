@@ -65,6 +65,42 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 		Ok(Self { mu, evals: v })
 	}
 
+	pub fn new(n_vars: usize, v: Data) -> Result<Self, Error> {
+		if !v.len().is_power_of_two() {
+			bail!(Error::PowerOfTwoLengthRequired);
+		}
+
+		if n_vars < P::LOG_WIDTH {
+			if v.len() != 1 {
+				bail!(Error::IncorrectNumberOfVariables {
+					expected: n_vars,
+					actual: P::LOG_WIDTH + log2(v.len())
+				});
+			}
+
+			for i in (1 << n_vars)..P::LOG_WIDTH {
+				unsafe {
+					if v[0].get_unchecked(i) != P::Scalar::ZERO {
+						bail!(Error::IncorrectNumberOfVariables {
+							expected: n_vars,
+							actual: i
+						});
+					};
+				}
+			}
+		} else if P::LOG_WIDTH + log2(v.len()) != n_vars {
+			bail!(Error::IncorrectNumberOfVariables {
+				expected: n_vars,
+				actual: P::LOG_WIDTH + log2(v.len())
+			});
+		}
+
+		Ok(Self {
+			mu: n_vars,
+			evals: v,
+		})
+	}
+
 	pub fn ref_underlier_data(&self) -> &[u8] {
 		let p_slice = self.evals();
 		unsafe { from_raw_parts(p_slice.as_ptr() as *const u8, size_of_val(p_slice)) }
@@ -127,6 +163,10 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 	}
 
 	pub fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
+		if self.size() <= index {
+			bail!(Error::HypercubeIndexOutOfRange { index })
+		}
+
 		let subcube_eval = self.packed_evaluate_on_hypercube(index / P::WIDTH)?;
 		Ok(subcube_eval.get(index % P::WIDTH))
 	}
@@ -184,10 +224,11 @@ where
 			.into_par_iter()
 			.map(|outer_index| {
 				let mut res = PE::default();
-				for inner_index in 0..min(PE::WIDTH, 1 << (self.mu - query.n_vars())) {
+				for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
 					res.set(
 						inner_index,
 						iter_packed_slice(query_expansion)
+							.take(1 << query.n_vars())
 							.enumerate()
 							.map(|(query_index, basis_eval)| {
 								let eval_index = (query_index << new_n_vars)
@@ -202,7 +243,7 @@ where
 				res
 			})
 			.collect();
-		MultilinearExtension::from_values(result_evals)
+		MultilinearExtension::new(new_n_vars, result_evals)
 	}
 
 	/// Partially evaluate the polynomial with assignment to the low-indexed variables.
@@ -227,10 +268,12 @@ where
 			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
 
+		let new_n_vars = self.mu - query.n_vars();
+
 		let mut result =
 			zeroed_vec(1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH)));
 		self.evaluate_partial_low_into(query, &mut result)?;
-		MultilinearExtension::from_values(result)
+		MultilinearExtension::new(new_n_vars, result)
 	}
 
 	/// Partially evaluate the polynomial with assignment to the low-indexed variables.
@@ -649,6 +692,18 @@ mod tests {
 	}
 
 	#[test]
+	fn test_new_from_values_correspondence() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| Field::random(&mut rng))
+			.take(256)
+			.collect::<Vec<F>>();
+		let poly1 = MultilinearExtension::from_values(evals.clone()).unwrap();
+		let poly2 = MultilinearExtension::new(8, evals).unwrap();
+
+		assert_eq!(poly1, poly2)
+	}
+
+	#[test]
 	fn test_evaluate_on_hypercube() {
 		let mut values = vec![F::ZERO; 64];
 		values
@@ -771,9 +826,12 @@ mod tests {
 	#[test]
 	fn test_evaluate_subcube_small_than_packed_width() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let poly = MultilinearExtension::from_values(vec![PackedBinaryField4x32b::from_scalars(
-			[2, 2, 9, 9].map(BinaryField32b::new),
-		)])
+		let poly = MultilinearExtension::new(
+			2,
+			vec![PackedBinaryField16x8b::from_scalars(
+				[2, 2, 9, 9].map(BinaryField8b::new),
+			)],
+		)
 		.unwrap()
 		.specialize::<BinaryField128b>();
 
@@ -789,6 +847,71 @@ mod tests {
 
 		assert_eq!(inner_products[0], BinaryField128b::new(2));
 		assert_eq!(inner_products[1], BinaryField128b::new(9));
+	}
+
+	#[test]
+	fn test_evaluate_partial_low_high_small_than_packed_width() {
+		type P = PackedBinaryField16x8b;
+
+		type F = BinaryField8b;
+
+		let n_vars = 3;
+
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let values = repeat_with(|| Field::random(&mut rng))
+			.take(1 << n_vars)
+			.collect::<Vec<F>>();
+
+		let q = repeat_with(|| Field::random(&mut rng))
+			.take(n_vars)
+			.collect::<Vec<F>>();
+
+		let backend = make_portable_backend();
+		let query = MultilinearQuery::<P, _>::with_full_query(&q, backend.clone()).unwrap();
+
+		let packed = P::from_scalars(values.clone());
+		let me = MultilinearExtension::new(n_vars, vec![packed]).unwrap();
+
+		let eval = me.evaluate(&query).unwrap();
+
+		let query_low =
+			MultilinearQuery::<P, _>::with_full_query(&q[..n_vars - 1], backend.clone()).unwrap();
+		let query_high =
+			MultilinearQuery::<P, _>::with_full_query(&q[n_vars - 1..], backend).unwrap();
+
+		let eval_l_h = me
+			.evaluate_partial_high(&query_high)
+			.unwrap()
+			.evaluate_partial_low(&query_low)
+			.unwrap()
+			.evals()[0]
+			.get(0);
+
+		assert_eq!(eval, eval_l_h);
+	}
+
+	#[test]
+	fn test_evaluate_on_hypercube_small_than_packed_width() {
+		type P = PackedBinaryField16x8b;
+
+		type F = BinaryField8b;
+
+		let n_vars = 3;
+
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let values = repeat_with(|| Field::random(&mut rng))
+			.take(1 << n_vars)
+			.collect::<Vec<F>>();
+
+		let packed = P::from_scalars(values.clone());
+
+		let me = MultilinearExtension::new(n_vars, vec![packed]).unwrap();
+
+		assert_eq!(me.evaluate_on_hypercube(1).unwrap(), values[1]);
+
+		assert!(me.evaluate_on_hypercube(1 << n_vars).is_err());
 	}
 
 	#[test]
