@@ -8,7 +8,7 @@ use crate::{
 	poly_commit::{ring_switch::ring_switch_eq_ind_partial_eval, PolyCommitScheme},
 	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
 	protocols::{
-		fri::{self, FRIFolder, FRIVerifier, FoldRoundOutput},
+		fri::{self, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
 		sumcheck_v2::{
 			self, immediate_switchover_heuristic,
 			prove::{RegularSumcheckProver, SumcheckProver},
@@ -27,7 +27,6 @@ use binius_hal::ComputationBackend;
 use binius_math::univariate::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
-use p3_util::log2_strict_usize;
 use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
@@ -59,17 +58,12 @@ where
 		+ ExtensionField<FDomain>
 		+ ExtensionField<FEncode>,
 {
+	fri_params: FRIParams<PE::Scalar, FEncode, VCS>,
 	/// Reed–Solomon code used for encoding during the commitment phase.
+	// NB: This is the same RS code as `params.rs_code()` but is parameterized over a field instead
+	// of a packed field for silly API-compliance reasons. We should refactor `fri_iopp` and
+	// possibly LinearCode to handle both the proving and verification cases with the same RS code.
 	rs_encoder: ReedSolomonCode<<PE as PackedExtension<FEncode>>::PackedSubfield>,
-	/// Reed–Solomon code used for the initial codeword.
-	// NB: This is the same RS code as `rs_encoder` but is parameterized over a field instead of a
-	// packed field for silly API-compliance reasons. We should refactor `fri_iopp` and possibly
-	// LinearCode to handle both the proving and verification cases with the same RS code.
-	rs_code: ReedSolomonCode<FEncode>,
-	poly_vcs: VCS,
-	round_vcss: Vec<VCS>,
-	n_test_queries: usize,
-	log_batch_size: usize,
 	domain_factory: DomainFactory,
 	_marker: PhantomData<(F, FDomain, PE)>,
 }
@@ -118,31 +112,29 @@ where
 		// Choose the interleaved code batch size to align with the first fold arity, which is
 		// optimal.
 		let log_batch_size = fold_arities.first().copied().unwrap_or(0);
-
 		let log_dim = n_packed_vars - log_batch_size;
-		let rs_encoder = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_options)?;
-		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
+		let log_len = log_dim + log_inv_rate;
 
 		// TODO: set merkle cap heights correctly
-		let poly_vcs = vcs_factory(rs_code.log_len());
+		let poly_vcs = vcs_factory(log_len);
 
 		let round_vcss = fold_arities
 			.iter()
-			.scan(rs_code.log_len() + log_batch_size, |len, arity| {
+			.scan(log_len + log_batch_size, |len, arity| {
 				*len -= arity;
 				Some(vcs_factory(*len))
 			})
 			.collect();
 
+		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
 		let n_test_queries = fri::calculate_n_test_queries::<FExt, _>(security_bits, &rs_code)?;
+		let fri_params =
+			FRIParams::new(rs_code, log_batch_size, poly_vcs, round_vcss, n_test_queries)?;
+		let rs_encoder = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_options)?;
 
 		Ok(Self {
+			fri_params,
 			rs_encoder,
-			rs_code,
-			poly_vcs,
-			round_vcss,
-			n_test_queries,
-			log_batch_size,
 			domain_factory,
 			_marker: PhantomData,
 		})
@@ -168,16 +160,10 @@ where
 	{
 		let n_rounds = sumcheck_prover.n_vars();
 
-		let mut fri_prover = FRIFolder::new(
-			&self.rs_code,
-			self.log_batch_size,
-			PE::unpack_scalars(codeword),
-			&self.poly_vcs,
-			&self.round_vcss,
-			committed,
-		)?;
+		let mut fri_prover =
+			FRIFolder::new(&self.fri_params, PE::unpack_scalars(codeword), committed)?;
 		let mut rounds = Vec::with_capacity(n_rounds);
-		let mut fri_commitments = Vec::with_capacity(self.round_vcss.len());
+		let mut fri_commitments = Vec::with_capacity(self.fri_params.n_oracles());
 		for _ in 0..n_rounds {
 			let round_coeffs = sumcheck_prover.execute(FExt::ONE)?;
 			let round_proof = round_coeffs.truncate();
@@ -202,10 +188,10 @@ where
 		let (terminate_codeword, query_prover) = fri_prover.finalize()?;
 
 		let fri_query_proofs = repeat_with(|| {
-			let index = challenger.sample_bits(self.rs_code.log_len());
+			let index = challenger.sample_bits(self.fri_params.rs_code().log_len());
 			query_prover.prove_query(index)
 		})
-		.take(self.n_test_queries)
+		.take(self.fri_params.n_test_queries())
 		.collect::<Result<Vec<_>, _>>()?;
 
 		Ok(Proof {
@@ -241,13 +227,13 @@ where
 			.into());
 		}
 
-		if fri_commitments.len() != self.round_vcss.len() {
+		if fri_commitments.len() != self.fri_params.n_oracles() {
 			return Err(VerificationError::IncorrectNumberOfFRICommitments.into());
 		}
 
-		let mut round_vcs_iter = self.round_vcss.iter().peekable();
+		let mut round_vcs_iter = self.fri_params.round_vcss().iter().peekable();
 		let mut fri_comm_iter = fri_commitments.iter().cloned();
-		let log_inv_rate = self.rs_code.log_inv_rate();
+		let log_inv_rate = self.fri_params.rs_code().log_inv_rate();
 
 		assert_eq!(claim.composite_sums().len(), 1);
 		let mut sum = claim.composite_sums()[0].sum;
@@ -286,10 +272,7 @@ where
 			sum = interpolate_round_proof(round_proof, sum, challenge);
 		}
 		let verifier = FRIVerifier::new(
-			&self.rs_code,
-			self.log_batch_size,
-			&self.poly_vcs,
-			&self.round_vcss,
+			&self.fri_params,
 			codeword_commitment,
 			&fri_commitments,
 			&challenges,
@@ -302,11 +285,11 @@ where
 			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
 		}
 
-		if fri_query_proofs.len() != self.n_test_queries {
+		if fri_query_proofs.len() != self.fri_params.n_test_queries() {
 			return Err(VerificationError::IncorrectNumberOfFRIQueries.into());
 		}
 		for query_proof in fri_query_proofs {
-			let index = challenger.sample_bits(self.rs_code.log_len());
+			let index = challenger.sample_bits(self.fri_params.rs_code().log_len());
 			verifier.verify_query(index, query_proof)?;
 		}
 
@@ -344,7 +327,7 @@ where
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
-		self.rs_code.log_dim() + self.log_batch_size + Self::kappa()
+		self.fri_params.n_fold_rounds() + Self::kappa()
 	}
 
 	fn commit<Data>(
@@ -372,8 +355,8 @@ where
 			codeword,
 		} = fri::commit_interleaved(
 			&self.rs_encoder,
-			self.log_batch_size,
-			&self.poly_vcs,
+			self.fri_params.log_batch_size(),
+			self.fri_params.codeword_vcs(),
 			packed_evals,
 		)?;
 
@@ -544,15 +527,13 @@ where
 		if n_polys != 1 {
 			todo!("handle batches of size greater than 1");
 		}
+
+		// TODO: This needs to get updated for higher-arity folding
 		let fe_size = mem::size_of::<FExt>();
 		let vc_size = mem::size_of::<VCS::Commitment>();
 
-		let fri_termination_log_len = log2_strict_usize(
-			self.round_vcss
-				.last()
-				.unwrap_or(&self.poly_vcs)
-				.vector_len(),
-		);
+		let fri_termination_log_len =
+			self.fri_params.n_final_challenges() + self.fri_params.rs_code().log_inv_rate();
 
 		let sumcheck_eval_size = <TensorAlgebra<F, FExt>>::byte_size();
 		// The number of rounds of sumcheck is equal to the number of variables minus kappa.
@@ -569,9 +550,9 @@ where
 		// FRI-folds the verifier "receives".
 		// for arity = 1, the number of FRI-folds the verifier receives is  which is `round_vcss.len()+1`
 		// and the size of the coset is 2.
-		let len_round_vcss = self.rs_code.log_len() - fri_termination_log_len;
+		let len_round_vcss = self.fri_params.rs_code().log_len() - fri_termination_log_len;
 		let fri_query_proofs_size =
-			(vc_size + 2 * fe_size) * (len_round_vcss + 1) * self.n_test_queries;
+			(vc_size + 2 * fe_size) * (len_round_vcss + 1) * self.fri_params.n_test_queries();
 
 		sumcheck_eval_size
 			+ sumcheck_rounds_size

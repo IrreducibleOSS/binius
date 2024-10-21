@@ -4,11 +4,7 @@ use super::{common::TerminateCodeword, error::Error, QueryProof, VerificationErr
 use crate::{
 	merkle_tree::VectorCommitScheme,
 	polynomial::MultilinearQuery,
-	protocols::fri::common::{
-		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
-		QueryRoundProof,
-	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
+	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 };
 use binius_field::{BinaryField, ExtensionField};
 use binius_hal::make_portable_backend;
@@ -25,17 +21,11 @@ use tracing::instrument;
 #[derive(Debug)]
 pub struct FRIVerifier<'a, F, FA, VCS>
 where
-	F: BinaryField,
+	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
-	/// The Reed-Solomon code the verifier is testing proximity to.
-	committed_rs_code: &'a ReedSolomonCode<FA>,
-	/// Vector commitment scheme for the codeword oracle.
-	committed_codeword_vcs: &'a VCS,
-	log_batch_size: usize,
-	/// Vector commitment scheme for the round oracles.
-	round_vcss: &'a [VCS],
+	params: &'a FRIParams<F, FA, VCS>,
 	/// Received commitment to the codeword.
 	codeword_commitment: &'a VCS::Commitment,
 	/// Received commitments to the round messages.
@@ -47,8 +37,6 @@ where
 	/// The termination codeword, up to which the prover has performed the folding before sending it to the verifier,
 	/// must be folded to a dimension-1 codeword to check the protocol's correctness.
 	terminate_codeword: TerminateCodeword<F>,
-	/// The reduction arities between each oracle sent to the verifier.
-	fold_arities: Vec<usize>,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -59,43 +47,29 @@ where
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
-		committed_rs_code: &'a ReedSolomonCode<FA>,
-		log_batch_size: usize,
-		committed_codeword_vcs: &'a VCS,
-		round_vcss: &'a [VCS],
+		params: &'a FRIParams<F, FA, VCS>,
 		codeword_commitment: &'a VCS::Commitment,
 		round_commitments: &'a [VCS::Commitment],
 		challenges: &'a [F],
 		terminate_codeword: TerminateCodeword<F>,
 	) -> Result<Self, Error> {
-		if round_commitments.len() != round_vcss.len() {
+		if round_commitments.len() != params.n_oracles() {
 			bail!(Error::InvalidArgs(format!(
 				"got {} round commitments, expected {}",
 				round_commitments.len(),
-				round_vcss.len(),
+				params.n_oracles(),
 			)));
 		}
 
-		let n_fold_rounds = log_batch_size + committed_rs_code.log_dim();
-		if challenges.len() != n_fold_rounds {
+		if challenges.len() != params.n_fold_rounds() {
 			bail!(Error::InvalidArgs(format!(
 				"got {} folding challenges, expected {}",
 				challenges.len(),
-				n_fold_rounds,
+				params.n_fold_rounds(),
 			)));
 		}
 
-		validate_common_fri_arguments(committed_rs_code, committed_codeword_vcs, round_vcss)?;
-
-		let fold_arities = calculate_fold_arities(
-			committed_rs_code.log_len(),
-			log_batch_size,
-			round_vcss
-				.iter()
-				.map(|vcs| log2_strict_usize(vcs.vector_len())),
-		)?;
-
-		let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
+		let (interleave_challenges, fold_challenges) = challenges.split_at(params.log_batch_size());
 
 		let backend = make_portable_backend();
 		let interleave_tensor =
@@ -104,31 +78,27 @@ where
 				.into_expansion();
 
 		Ok(Self {
-			committed_rs_code,
-			committed_codeword_vcs,
-			round_vcss,
+			params,
 			codeword_commitment,
 			round_commitments,
 			interleave_tensor,
 			fold_challenges,
 			terminate_codeword,
-			fold_arities,
-			log_batch_size,
 		})
 	}
 
 	/// Number of oracles sent during the fold rounds.
 	pub fn n_oracles(&self) -> usize {
-		self.round_vcss.len()
+		self.params.n_oracles()
 	}
 
 	/// Verifies that the last oracle sent is a codeword.
 	///
 	/// Returns the fully-folded message value.
 	pub fn verify_last_oracle(&self) -> Result<F, Error> {
-		let repetition_codeword = if let Some(last_vcs) = self.round_vcss.last() {
+		let repetition_codeword = if let Some(last_vcs) = self.params.round_vcss().last() {
 			let commitment = self.round_commitments.last().expect(
-				"round_commitments and round_vcss are checked to have the same length in the constructor; 
+				"round_commitments and round_vcss are checked to have the same length in the constructor;
 				when round_vcss is non-empty, round_commitments must be as well",
 			);
 
@@ -137,7 +107,7 @@ where
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 			let n_final_challenges =
-				log2_strict_usize(last_vcs.vector_len()) - self.committed_rs_code.log_inv_rate();
+				log2_strict_usize(last_vcs.vector_len()) - self.params.rs_code().log_inv_rate();
 			let n_prior_challenges = self.fold_challenges.len() - n_final_challenges;
 			let final_challenges = &self.fold_challenges[n_prior_challenges..];
 			let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
@@ -147,7 +117,7 @@ where
 				.enumerate()
 				.map(|(i, coset_values)| {
 					fold_chunk(
-						self.committed_rs_code,
+						self.params.rs_code(),
 						n_prior_challenges,
 						i,
 						coset_values,
@@ -160,19 +130,20 @@ where
 			// When the prover did not send any round oracles, fold the original interleaved
 			// codeword.
 
-			self.committed_codeword_vcs
+			self.params
+				.codeword_vcs()
 				.verify_interleaved(self.codeword_commitment, &self.terminate_codeword)
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
-			let fold_arity = self.committed_rs_code.log_dim() + self.log_batch_size;
+			let fold_arity = self.params.rs_code().log_dim() + self.params.log_batch_size();
 			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
 			self.terminate_codeword
 				.chunks(1 << fold_arity)
 				.enumerate()
 				.map(|(i, chunk)| {
 					fold_interleaved_chunk(
-						self.committed_rs_code,
-						self.log_batch_size,
+						self.params.rs_code(),
+						self.params.log_batch_size(),
 						i,
 						chunk,
 						&self.interleave_tensor,
@@ -219,7 +190,7 @@ where
 			.into());
 		}
 
-		let arities = self.fold_arities.iter().copied();
+		let arities = self.params.fold_arities().iter().copied();
 		let mut proof_and_arities_iter = iter::zip(proof, arities.clone());
 
 		let Some((first_query_proof, first_fold_arity)) = proof_and_arities_iter.next() else {
@@ -239,20 +210,20 @@ where
 
 		// Check the first fold round before the main loop. It is special because in the first
 		// round we need to fold as an interleaved chunk instead of a regular coset.
-		let log_coset_size = first_fold_arity - self.log_batch_size;
+		let log_coset_size = first_fold_arity - self.params.log_batch_size();
 		let coset_index = index >> log_coset_size;
 		let values = verify_interleaved_opening(
-			self.committed_codeword_vcs,
+			self.params.codeword_vcs(),
 			self.codeword_commitment,
 			coset_index,
 			log_coset_size,
-			self.log_batch_size,
+			self.params.log_batch_size(),
 			first_query_proof,
 		)?;
 
 		let mut next_value = fold_interleaved_chunk(
-			self.committed_rs_code,
-			self.log_batch_size,
+			self.params.rs_code(),
+			self.params.log_batch_size(),
 			coset_index,
 			&values,
 			&self.interleave_tensor,
@@ -262,9 +233,12 @@ where
 		index = coset_index;
 		fold_round += log_coset_size;
 
-		for (i, (vcs, commitment, (round_proof, arity))) in
-			izip!(self.round_vcss.iter(), self.round_commitments.iter(), proof_and_arities_iter)
-				.enumerate()
+		for (i, (vcs, commitment, (round_proof, arity))) in izip!(
+			self.params.round_vcss().iter(),
+			self.round_commitments.iter(),
+			proof_and_arities_iter
+		)
+		.enumerate()
 		{
 			let coset_index = index >> arity;
 			let values =
@@ -279,7 +253,7 @@ where
 			}
 
 			next_value = fold_chunk(
-				self.committed_rs_code,
+				self.params.rs_code(),
 				fold_round,
 				coset_index,
 				&values,

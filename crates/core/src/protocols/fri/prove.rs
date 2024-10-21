@@ -1,14 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{common::TerminateCodeword, error::Error};
+use super::{
+	common::{FRIParams, TerminateCodeword},
+	error::Error,
+};
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
 	polynomial::MultilinearQuery,
-	protocols::fri::common::{
-		calculate_fold_arities, fold_chunk, fold_interleaved_chunk, validate_common_fri_arguments,
-		QueryProof, QueryRoundProof,
-	},
+	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
@@ -16,7 +16,6 @@ use binius_hal::make_portable_backend;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use tracing::instrument;
 
@@ -183,14 +182,10 @@ where
 	F: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
-	committed_rs_code: &'a ReedSolomonCode<FA>,
-	log_batch_size: usize,
+	params: &'a FRIParams<F, FA, VCS>,
 	codeword: &'a [F],
-	codeword_vcs: &'a VCS,
-	round_vcss: &'a [VCS],
 	codeword_committed: &'a VCS::Committed,
 	round_committed: Vec<(Vec<F>, VCS::Committed)>,
-	fold_arities: Vec<usize>,
 	curr_round: usize,
 	next_commit_round: Option<usize>,
 	unprocessed_challenges: Vec<F>,
@@ -205,48 +200,31 @@ where
 {
 	/// Constructs a new folder.
 	pub fn new(
-		committed_rs_code: &'a ReedSolomonCode<FA>,
-		log_batch_size: usize,
+		params: &'a FRIParams<F, FA, VCS>,
 		committed_codeword: &'a [F],
-		committed_codeword_vcs: &'a VCS,
-		round_vcss: &'a [VCS],
 		committed: &'a VCS::Committed,
 	) -> Result<Self, Error> {
-		if committed_codeword.len() != committed_rs_code.len() << log_batch_size {
+		if committed_codeword.len() != 1 << (params.rs_code().log_len() + params.log_batch_size()) {
 			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match interleaved codeword length".to_string(),
 			));
 		}
 
-		validate_common_fri_arguments(committed_rs_code, committed_codeword_vcs, round_vcss)?;
-
-		let fold_arities = calculate_fold_arities(
-			committed_rs_code.log_len(),
-			log_batch_size,
-			round_vcss
-				.iter()
-				.map(|vcs| log2_strict_usize(vcs.vector_len())),
-		)?;
-
-		let next_commit_round = fold_arities.first().copied();
+		let next_commit_round = params.fold_arities().first().copied();
 		Ok(Self {
-			committed_rs_code,
-			log_batch_size,
+			params,
 			codeword: committed_codeword,
-			codeword_vcs: committed_codeword_vcs,
-			round_vcss,
 			codeword_committed: committed,
-			round_committed: Vec::with_capacity(round_vcss.len()),
-			fold_arities,
+			round_committed: Vec::with_capacity(params.n_oracles()),
 			curr_round: 0,
 			next_commit_round,
-			unprocessed_challenges: Vec::with_capacity(committed_rs_code.log_dim()),
+			unprocessed_challenges: Vec::with_capacity(params.rs_code().log_dim()),
 		})
 	}
 
 	/// Number of fold rounds, including the final fold.
 	pub fn n_rounds(&self) -> usize {
-		self.committed_rs_code.log_dim() + self.log_batch_size
+		self.params.n_fold_rounds()
 	}
 
 	/// Number of times `execute_fold_round` has been called.
@@ -281,9 +259,9 @@ where
 				// Fold a full codeword committed in the previous FRI round into a codeword with
 				// reduced dimension and rate.
 				fold_codeword(
-					self.committed_rs_code,
+					self.params.rs_code(),
 					prev_codeword,
-					self.curr_round - self.log_batch_size,
+					self.curr_round - self.params.log_batch_size(),
 					&self.unprocessed_challenges,
 				)
 			}
@@ -292,21 +270,16 @@ where
 				// codeword with the same or reduced block length, depending on the sequence of
 				// fold rounds.
 				fold_interleaved(
-					self.committed_rs_code,
+					self.params.rs_code(),
 					self.codeword,
 					&self.unprocessed_challenges,
-					self.log_batch_size,
+					self.params.log_batch_size(),
 				)
 			}
 		};
 		self.unprocessed_challenges.clear();
 
-		let round_vcs = self
-			.round_vcss
-			.get(self.round_committed.len())
-			.ok_or_else(|| Error::TooManyFoldExecutions {
-				max_folds: self.round_vcss.len() - 1,
-			})?;
+		let round_vcs = &self.params.round_vcss()[self.round_committed.len()];
 
 		let (commitment, committed) = round_vcs
 			.commit_batch(&[&folded_codeword])
@@ -314,7 +287,7 @@ where
 		self.round_committed.push((folded_codeword, committed));
 
 		self.next_commit_round = self.next_commit_round.take().and_then(|next_commit_round| {
-			let arity = self.fold_arities.get(self.round_committed.len())?;
+			let arity = self.params.fold_arities().get(self.round_committed.len())?;
 			Some(next_commit_round + arity)
 		});
 		Ok(FoldRoundOutput::Commitment(commitment))
@@ -328,7 +301,10 @@ where
 	///
 	/// This returns the final message and a query prover instance.
 	#[instrument(skip_all, name = "fri::FRIFolder::finalize")]
-	pub fn finalize(mut self) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, VCS>), Error> {
+	#[allow(clippy::type_complexity)]
+	pub fn finalize(
+		mut self,
+	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
 			bail!(Error::EarlyProverFinish);
 		}
@@ -342,44 +318,45 @@ where
 		self.unprocessed_challenges.clear();
 
 		let Self {
+			params,
 			codeword,
-			codeword_vcs,
-			round_vcss,
 			codeword_committed,
 			round_committed,
-			log_batch_size,
-			fold_arities,
 			..
 		} = self;
 
 		let query_prover = FRIQueryProver {
+			params,
 			codeword,
-			codeword_vcs,
-			round_vcss,
 			codeword_committed,
 			round_committed,
-			log_batch_size,
-			fold_arities,
 		};
 		Ok((terminate_codeword, query_prover))
 	}
 }
 
 /// A prover for the FRI query phase.
-pub struct FRIQueryProver<'a, F: BinaryField, VCS: VectorCommitScheme<F>> {
+pub struct FRIQueryProver<'a, F, FA, VCS>
+where
+	F: BinaryField,
+	FA: BinaryField,
+	VCS: VectorCommitScheme<F>,
+{
+	params: &'a FRIParams<F, FA, VCS>,
 	codeword: &'a [F],
-	codeword_vcs: &'a VCS,
-	round_vcss: &'a [VCS],
 	codeword_committed: &'a VCS::Committed,
 	round_committed: Vec<(Vec<F>, VCS::Committed)>,
-	log_batch_size: usize,
-	fold_arities: Vec<usize>,
 }
 
-impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> {
+impl<'a, F, FA, VCS> FRIQueryProver<'a, F, FA, VCS>
+where
+	F: BinaryField + ExtensionField<FA>,
+	FA: BinaryField,
+	VCS: VectorCommitScheme<F>,
+{
 	/// Number of oracles sent during the fold rounds.
 	pub fn n_oracles(&self) -> usize {
-		self.round_vcss.len()
+		self.params.n_oracles()
 	}
 
 	/// Proves a FRI challenge query.
@@ -390,7 +367,7 @@ impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> 
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
 	pub fn prove_query(&self, index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
 		let mut round_proofs = Vec::with_capacity(self.n_oracles());
-		let mut arities = self.fold_arities.iter().copied();
+		let mut arities = self.params.fold_arities().iter().copied();
 
 		let Some(first_fold_arity) = arities.next() else {
 			// If there are no query proofs, that means that no oracles were sent during the FRI
@@ -399,20 +376,20 @@ impl<'a, F: BinaryField, VCS: VectorCommitScheme<F>> FRIQueryProver<'a, F, VCS> 
 			return Ok(round_proofs);
 		};
 
-		let log_coset_size = first_fold_arity - self.log_batch_size;
+		let log_coset_size = first_fold_arity - self.params.log_batch_size();
 		let mut coset_index = index >> log_coset_size;
 		round_proofs.push(prove_interleaved_opening(
-			self.codeword_vcs,
+			self.params.codeword_vcs(),
 			self.codeword,
 			self.codeword_committed,
 			coset_index,
 			log_coset_size,
-			self.log_batch_size,
+			self.params.log_batch_size(),
 		)?);
 
 		for (vcs, (codeword, committed), arity) in
-			izip!(self.round_vcss.iter(), self.round_committed.iter(), arities)
-				.take(self.round_vcss.len() - 1)
+			izip!(self.params.round_vcss().iter(), self.round_committed.iter(), arities)
+				.take(self.params.round_vcss().len() - 1)
 		{
 			coset_index >>= arity;
 			round_proofs.push(prove_coset_opening(vcs, codeword, committed, coset_index, arity)?);

@@ -10,8 +10,10 @@ use binius_field::{
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
+use getset::{CopyGetters, Getters};
 use itertools::Itertools;
-use std::iter;
+use p3_util::log2_strict_usize;
+use std::{iter, marker::PhantomData};
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
 ///
@@ -152,55 +154,120 @@ where
 	}
 }
 
-pub fn validate_common_fri_arguments<F, FA, VCS>(
-	committed_rs_code: &ReedSolomonCode<FA>,
-	committed_codeword_vcs: &VCS,
-	round_vcss: &[VCS],
-) -> Result<(), Error>
+/// Parameters for an FRI interleaved code proximity protocol.
+#[derive(Debug, Getters, CopyGetters)]
+pub struct FRIParams<F, FA, VCS>
 where
 	F: BinaryField,
 	FA: BinaryField,
+{
+	/// The Reed-Solomon code the verifier is testing proximity to.
+	#[getset(get = "pub")]
+	rs_code: ReedSolomonCode<FA>,
+	/// Vector commitment scheme for the codeword oracle.
+	#[getset(get = "pub")]
+	codeword_vcs: VCS,
+	/// The base-2 logarithm of the batch size of the interleaved code.
+	#[getset(get_copy = "pub")]
+	log_batch_size: usize,
+	/// Vector commitment scheme for the round oracles.
+	round_vcss: Vec<VCS>,
+	/// The reduction arities between each query round.
+	fold_arities: Vec<usize>,
+	/// The number oracle consistency queries required during the query phase.
+	#[getset(get_copy = "pub")]
+	n_test_queries: usize,
+	_marker: PhantomData<F>,
+}
+
+impl<F, FA, VCS> FRIParams<F, FA, VCS>
+where
+	F: BinaryField + ExtensionField<FA>,
+	FA: BinaryField,
 	VCS: VectorCommitScheme<F>,
 {
-	if committed_rs_code.len() != committed_codeword_vcs.vector_len() {
-		bail!(Error::InvalidArgs(
-			"Reed–Solomon code length must match codeword vector commitment length".to_string(),
-		));
+	pub fn new(
+		rs_code: ReedSolomonCode<FA>,
+		log_batch_size: usize,
+		codeword_vcs: VCS,
+		round_vcss: Vec<VCS>,
+		n_test_queries: usize,
+	) -> Result<Self, Error> {
+		if rs_code.len() != codeword_vcs.vector_len() {
+			bail!(Error::InvalidArgs(
+				"Reed–Solomon code length must match codeword vector commitment length".to_string(),
+			));
+		}
+
+		// check that each round_vcs has power of two vector_length
+		if round_vcss
+			.iter()
+			.any(|vcs| !vcs.vector_len().is_power_of_two())
+		{
+			bail!(Error::RoundVCSLengthsNotPowerOfTwo);
+		}
+
+		// check that the last FRI oracle has length greater than that of the fully-folded,
+		// dimension-1 codeword.
+		if round_vcss
+			.last()
+			.is_some_and(|vcs| vcs.vector_len() <= rs_code.inv_rate())
+		{
+			bail!(Error::RoundVCSLengthsOutOfRange);
+		}
+
+		let fold_arities = calculate_fold_arities(
+			rs_code.log_len(),
+			log_batch_size,
+			round_vcss
+				.iter()
+				.map(|vcs| log2_strict_usize(vcs.vector_len())),
+		)?;
+
+		Ok(Self {
+			rs_code,
+			codeword_vcs,
+			log_batch_size,
+			round_vcss,
+			fold_arities,
+			n_test_queries,
+			_marker: PhantomData,
+		})
 	}
 
-	// check that base two log of each round_vcs vector_length is greater than
-	// the code's log_inv_rate and less than log_len.
-	debug_assert!(committed_rs_code.log_dim() >= 1);
-	let upper_bound = 1 << committed_rs_code.log_len();
-	let lower_bound = 1 << (committed_rs_code.log_inv_rate() + 1);
-	if round_vcss.iter().any(|vcs| {
-		let len = vcs.vector_len();
-		len < lower_bound || len > upper_bound
-	}) {
-		bail!(Error::RoundVCSLengthsOutOfRange);
+	pub fn n_fold_rounds(&self) -> usize {
+		self.rs_code.log_dim() + self.log_batch_size
 	}
 
-	// check that each round_vcs has power of two vector_length
-	if round_vcss
-		.iter()
-		.any(|vcs| !vcs.vector_len().is_power_of_two())
-	{
-		bail!(Error::RoundVCSLengthsNotPowerOfTwo);
+	/// Number of oracles sent during the fold rounds.
+	pub fn n_oracles(&self) -> usize {
+		self.round_vcss.len()
 	}
 
-	// check that round_vcss vector is sorted in strictly descending order by vector_length
-	if round_vcss
-		.windows(2)
-		.any(|w| w[0].vector_len() <= w[1].vector_len())
-	{
-		bail!(Error::RoundVCSLengthsNotDescending);
+	/// Number of folding challenges the verifier sends after receiving the last oracle.
+	pub fn n_final_challenges(&self) -> usize {
+		match self.round_vcss.last() {
+			Some(last_vcs) => {
+				log2_strict_usize(last_vcs.vector_len()) - self.rs_code.log_inv_rate()
+			}
+			None => self.n_fold_rounds(),
+		}
 	}
-	Ok(())
+
+	/// The vector commitment schemes for each of the FRI round oracles.
+	pub fn round_vcss(&self) -> &[VCS] {
+		&self.round_vcss
+	}
+
+	/// The reduction arities between each oracle sent to the verifier.
+	pub fn fold_arities(&self) -> &[usize] {
+		&self.fold_arities
+	}
 }
 
 /// Calculates the folding arities between all rounds of the folding phase when the prover sends an
 /// oracle.
-pub fn calculate_fold_arities(
+fn calculate_fold_arities(
 	log_code_len: usize,
 	log_batch_size: usize,
 	log_commit_lens: impl IntoIterator<Item = usize>,
