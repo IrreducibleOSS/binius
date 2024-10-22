@@ -4,8 +4,10 @@ use super::{error::Error, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef
 use auto_impl::auto_impl;
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
+use itertools::Itertools;
+use rand::{rngs::StdRng, SeedableRng};
 use stackalloc::stackalloc_with_default;
-use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
 
 /// A multivariate polynomial over a binary tower field.
 ///
@@ -301,5 +303,173 @@ where
 			multilinears: new_multilinears,
 			_marker: PhantomData,
 		})
+	}
+}
+
+/// Fingerprinting for composition polynomials done by evaluation at a deterministic random point.
+/// Outputs f(r_0,...,r_n-1) where f is a composite and the r_i are the components of the random point.
+///
+/// Probabilistic collision resistance comes from Schwartz-Zippel on the equation f(x_0,...,x_n-1) = g(x_0,...,x_n-1)
+/// for two distinct multivariate polynomials f and g.
+///
+/// NOTE: THIS IS NOT ADVERSARIALLY COLLISION RESISTANT, COLLISIONS CAN BE MANUFACTURED EASILY
+pub fn composition_hash<P: PackedField, C: CompositionPoly<P>>(composition: &C) -> P {
+	let mut rng = StdRng::from_seed([0; 32]);
+
+	let random_point = repeat_with(|| P::random(&mut rng))
+		.take(composition.n_vars())
+		.collect_vec();
+
+	composition
+		.evaluate(&random_point)
+		.expect("Failed to evaluate composition")
+}
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	fn test_fingerprint_same_32b() {
+		use binius_field::{BinaryField32b, PackedBinaryField8x32b};
+
+		//Complicated circuit for x0*x1
+		let circuit: Vec<crate::polynomial::Expr<BinaryField32b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+			crate::polynomial::Expr::Mul(0, 2),
+			crate::polynomial::Expr::Mul(0, 0),
+			crate::polynomial::Expr::Add(3, 4),
+		];
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField32b,
+			PackedBinaryField8x32b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_eq!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
+	}
+
+	#[test]
+	fn test_fingerprint_diff_32b() {
+		use binius_field::{BinaryField32b, PackedBinaryField8x32b};
+
+		let circuit: Vec<crate::polynomial::Expr<BinaryField32b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+		];
+
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField32b,
+			PackedBinaryField8x32b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_ne!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
+	}
+
+	#[test]
+	fn test_fingerprint_same_64b() {
+		use binius_field::{BinaryField64b, PackedBinaryField4x64b};
+
+		//Complicated circuit for x0*x1
+		let circuit: Vec<crate::polynomial::Expr<BinaryField64b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+			crate::polynomial::Expr::Mul(0, 2),
+			crate::polynomial::Expr::Mul(0, 0),
+			crate::polynomial::Expr::Add(3, 4),
+		];
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField64b,
+			PackedBinaryField4x64b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_eq!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
+	}
+
+	#[test]
+	fn test_fingerprint_diff_64b() {
+		use binius_field::{BinaryField64b, PackedBinaryField4x64b};
+
+		let circuit: Vec<crate::polynomial::Expr<BinaryField64b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+		];
+
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField64b,
+			PackedBinaryField4x64b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_ne!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
+	}
+
+	#[test]
+	fn test_fingerprint_same_128b() {
+		use binius_field::{BinaryField128b, PackedBinaryField2x128b};
+
+		//Complicated circuit for x0*x1
+		let circuit: Vec<crate::polynomial::Expr<BinaryField128b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+			crate::polynomial::Expr::Mul(0, 2),
+			crate::polynomial::Expr::Mul(0, 0),
+			crate::polynomial::Expr::Add(3, 4),
+		];
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField128b,
+			PackedBinaryField2x128b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_eq!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
+	}
+
+	#[test]
+	fn test_fingerprint_diff_128b() {
+		use binius_field::{BinaryField128b, PackedBinaryField2x128b};
+
+		let circuit: Vec<crate::polynomial::Expr<BinaryField128b>> = vec![
+			crate::polynomial::Expr::Var(0),
+			crate::polynomial::Expr::Var(1),
+			crate::polynomial::Expr::Add(0, 1),
+		];
+		let circuit_poly = crate::polynomial::ArithCircuitPoly::<
+			BinaryField128b,
+			PackedBinaryField2x128b,
+		>::new(circuit);
+
+		let product_composition = crate::composition::ProductComposition::<2> {};
+
+		assert_ne!(
+			crate::polynomial::composition_hash(&circuit_poly),
+			crate::polynomial::composition_hash(&product_composition)
+		);
 	}
 }
