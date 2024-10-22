@@ -1,5 +1,6 @@
 // Copyright 2023 Ulvetanna Inc.
 #![feature(step_trait)]
+#![feature(get_many_mut)]
 // This is to silence clippy errors around suspicious usage of XOR
 // in our arithmetic. This is safe to do becasue we're operating
 // over binary fields.

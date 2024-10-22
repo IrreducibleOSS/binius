@@ -37,12 +37,17 @@ proptest.workspace = true
 tiny-keccak.workspace = true
 tracing-profile.workspace = true
 tracing-subscriber.workspace = true
+binius_macros = { path = "../macros" }
 
 [lib]
 bench = false
 
 [[bench]]
 name = "sumcheck"
+harness = false
+
+[[bench]]
+name = "composition_poly"
 harness = false
 
 [[bench]]

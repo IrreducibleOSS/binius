@@ -5,43 +5,22 @@ use syn::{bracketed, parse::Parse, parse_quote, spanned::Spanned, Token};
 
 #[derive(Debug)]
 pub(crate) struct ArithCircuitPolyItem {
-	pub is_anonymous: bool,
-	pub name: syn::Ident,
 	pub poly: Vec<syn::Expr>,
 }
 
 impl ToTokens for ArithCircuitPolyItem {
 	fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-		let Self {
-			is_anonymous,
-			name,
-			poly,
-			..
-		} = self;
-		let result = quote! {
-			let #name = std::sync::Arc::new(binius_core::polynomial::ArithCircuitPoly::new(vec![ #( #poly ),* ]));
-		};
-
-		if *is_anonymous {
-			// In this case we return an instance of our struct rather
-			// than defining the struct within the current scope
-			tokens.extend(quote! {
-				{
-					#result
-					#name
-				}
-			});
-		} else {
-			tokens.extend(result);
-		}
+		let Self { poly, .. } = self;
+		tokens.extend(quote! {
+			{
+				std::sync::Arc::new(binius_core::polynomial::ArithCircuitPoly::new(vec![ #( #poly ),* ]))
+			}
+		});
 	}
 }
 
 impl Parse for ArithCircuitPolyItem {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-		let name = input.parse::<syn::Ident>();
-		let is_anonymous = name.is_err();
-		let name = name.unwrap_or(parse_quote!(UnnamedArithCircuitPoly));
 		let vars: Vec<syn::Ident> = {
 			let content;
 			bracketed!(content in input);
@@ -55,11 +34,7 @@ impl Parse for ArithCircuitPolyItem {
 			poly.push(parse_quote!(binius_core::polynomial::Expr::Var(#i)));
 		}
 		flatten_expr(&poly_packed, &vars, &mut poly)?;
-		Ok(Self {
-			is_anonymous,
-			name,
-			poly,
-		})
+		Ok(Self { poly })
 	}
 }
 
@@ -69,8 +44,26 @@ fn flatten_expr(
 	result: &mut Vec<syn::Expr>,
 ) -> Result<usize, syn::Error> {
 	match expr.clone() {
-		syn::Expr::Lit(_v) => {
-			todo!()
+		syn::Expr::Lit(exprlit) => {
+			if let syn::Lit::Int(int) = &exprlit.lit {
+				match &*int.to_string() {
+					"0" => {
+						result.push(parse_quote!(binius_core::polynomial::Expr::Const(unsafe {
+							binius_field::BinaryField1b::new_unchecked(0)
+						})));
+						Ok(result.len() - 1)
+					}
+					"1" => {
+						result.push(parse_quote!(binius_core::polynomial::Expr::Const(unsafe {
+							binius_field::BinaryField1b::new_unchecked(1)
+						})));
+						Ok(result.len() - 1)
+					}
+					_ => Err(syn::Error::new(expr.span(), "Unsupported integer")),
+				}
+			} else {
+				Err(syn::Error::new(expr.span(), "Unsupported literal"))
+			}
 		}
 		syn::Expr::Path(p) => {
 			for (i, var) in vars.iter().enumerate() {
