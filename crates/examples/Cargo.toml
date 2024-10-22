@@ -1,0 +1,27 @@
+[package]
+name = "binius_examples"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+binius_core = { path = "../core" }
+binius_field = { path = "../field" }
+binius_hal = { path = "../hal" }
+binius_hash = { path = "../hash" }
+binius_macros = { path = "../macros" }
+binius_math = { path = "../math" }
+binius_utils = { path = "../utils" }
+bytemuck.workspace = true
+bytesize.workspace =  true
+itertools.workspace = true
+p3-challenger.workspace = true
+rand.workspace = true
+rayon.workspace = true
+tiny-keccak.workspace = true
+tracing.workspace = true
+
+[features]
+aes-tower = []
+fp-tower = []
