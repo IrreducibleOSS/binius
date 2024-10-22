@@ -3,8 +3,8 @@
 use super::Error;
 use crate::{
 	polynomial::{
-		Error as PolynomialError, MultilinearExtensionSpecialized, MultilinearPoly,
-		MultilinearQuery, MultilinearQueryRef,
+		Error as PolynomialError, MLEEmbeddingAdapter, MultilinearPoly, MultilinearQuery,
+		MultilinearQueryRef,
 	},
 	protocols::utils::deinterleave,
 };
@@ -29,7 +29,7 @@ where
 	},
 	/// Large field polynomial - halved in size each round
 	Folded {
-		large_field_folded_multilinear: MultilinearExtensionSpecialized<P, P>,
+		large_field_folded_multilinear: MLEEmbeddingAdapter<P, P>,
 	},
 }
 
@@ -281,8 +281,9 @@ where
 							);
 							// At switchover, perform inner products in large field and save them
 							// in a newly created MLE.
-							let large_field_folded_multilinear =
-								multilinear.evaluate_partial_low(query_ref.to_ref())?;
+							let large_field_folded_multilinear = MLEEmbeddingAdapter::from(
+								multilinear.evaluate_partial_low(query_ref.to_ref())?,
+							);
 
 							*sc_multilinear = SumcheckMultilinear::Folded {
 								large_field_folded_multilinear,
@@ -298,8 +299,10 @@ where
 						ref mut large_field_folded_multilinear,
 					} => {
 						// Post-switchover, simply halve large field MLE.
-						*large_field_folded_multilinear = large_field_folded_multilinear
-							.evaluate_partial_low(single_variable_partial_query.to_ref())?;
+						*large_field_folded_multilinear = MLEEmbeddingAdapter::from(
+							large_field_folded_multilinear
+								.evaluate_partial_low(single_variable_partial_query.to_ref())?,
+						);
 
 						Ok(None)
 					}
@@ -619,9 +622,7 @@ where
 		}
 	}
 
-	fn only_folded(
-		sc_multilin: &SumcheckMultilinear<PW, M>,
-	) -> &MultilinearExtensionSpecialized<PW, PW> {
+	fn only_folded(sc_multilin: &SumcheckMultilinear<PW, M>) -> &MLEEmbeddingAdapter<PW, PW> {
 		match sc_multilin {
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,

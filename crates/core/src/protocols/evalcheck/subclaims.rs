@@ -33,7 +33,6 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_utils::bail;
-use std::sync::Arc;
 use tracing::instrument;
 
 // type aliases for bivariate claims/witnesses and their pairs to shorten type signatures
@@ -428,9 +427,9 @@ where
 	let (projected_inner_multilin, projected_eval_point) = if let Some(projected_id) = projected_id
 	{
 		let query = memoized_queries.full_query(&wf_eval_point[projected_n_vars..], backend)?;
-		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
-		let projected: Arc<dyn MultilinearPoly<PW> + Send + Sync> =
-			Arc::new(inner_multilin.evaluate_partial_high(query.to_ref())?);
+		let projected = inner_multilin
+			.evaluate_partial_high(query.to_ref())?
+			.specialize_arc_dyn();
 		witness_index.update_multilin_poly(vec![(projected_id, projected.clone())])?;
 
 		(projected, &wf_eval_point[..projected_n_vars])

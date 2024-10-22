@@ -21,7 +21,7 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
 		Packed, ProjectionVariant, Shifted,
 	},
-	polynomial::{MultilinearPoly, MultilinearQuery, MultivariatePoly},
+	polynomial::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultivariatePoly},
 	protocols::sumcheck_v2::{
 		self,
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
@@ -41,7 +41,6 @@ use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
-use std::sync::Arc;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///
@@ -100,9 +99,8 @@ where
 				projected_eval_point.to_vec(),
 			)?;
 
-			Ok(shift_ind
-				.multilinear_extension::<PackedType<U, F>>()?
-				.specialize_arc_dyn())
+			let shift_ind_mle = shift_ind.multilinear_extension::<PackedType<U, F>>()?;
+			Ok(MLEDirectAdapter::from(shift_ind_mle).upcast_arc_dyn())
 		},
 		backend,
 	)?;
@@ -185,9 +183,8 @@ where
 		eval_point,
 		|_projected_eval_point| {
 			let tower_basis = TowerBasis::new(log_degree, binary_tower_level)?;
-			Ok(tower_basis
-				.multilinear_extension::<PackedType<U, F>>()?
-				.specialize_arc_dyn())
+			let tower_basis_mle = tower_basis.multilinear_extension::<PackedType<U, F>>()?;
+			Ok(MLEDirectAdapter::from(tower_basis_mle).upcast_arc_dyn())
 		},
 		backend,
 	)?;
@@ -295,10 +292,8 @@ where
 		|projected_eval_point| {
 			let eq_ind =
 				EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
-
-			Ok(eq_ind
-				.multilinear_extension::<PackedType<U, F>, _>(backend)?
-				.specialize_arc_dyn())
+			let eq_ind_mle = eq_ind.multilinear_extension::<PackedType<U, F>, _>(backend)?;
+			Ok(MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn())
 		},
 		backend,
 	)
@@ -381,10 +376,11 @@ where
 
 	let projected_eval_point = if let Some(projected_id) = projected_id {
 		let query = memoized_queries.full_query(&eval_point[projected_n_vars..], backend)?;
-		// upcast_arc_dyn() doesn't compile, but an explicit Arc::new() does compile. Beats me.
-		let projected: MultilinearWitness<PackedType<U, F>> =
-			Arc::new(inner_multilin.evaluate_partial_high(query.to_ref())?);
-		witness_index.update_multilin_poly(vec![(projected_id, projected.clone())])?;
+		let projected = inner_multilin.evaluate_partial_high(query.to_ref())?;
+		witness_index.update_multilin_poly(vec![(
+			projected_id,
+			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
+		)])?;
 
 		&eval_point[..projected_n_vars]
 	} else {

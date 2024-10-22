@@ -1,8 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::polynomial::{
-	Error, MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly,
-	MultilinearQuery, MultivariatePoly,
+	Error, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	MultivariatePoly,
 };
 use binius_field::{ExtensionField, PackedField, TowerField};
 use binius_hal::make_portable_backend;
@@ -23,7 +23,7 @@ where
 	PE::Scalar: ExtensionField<P::Scalar>,
 	Data: Deref<Target = [P]>,
 {
-	data: MultilinearExtensionSpecialized<P, PE, Data>,
+	data: MLEEmbeddingAdapter<P, PE, Data>,
 }
 
 impl<P, PE, Data> MultilinearExtensionTransparent<P, PE, Data>

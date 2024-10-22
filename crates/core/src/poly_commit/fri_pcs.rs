@@ -6,7 +6,9 @@ use crate::{
 	composition::BivariateProduct,
 	merkle_tree::VectorCommitScheme,
 	poly_commit::{ring_switch::ring_switch_eq_ind_partial_eval, PolyCommitScheme},
-	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
+	polynomial::{
+		Error as PolynomialError, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+	},
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
 		sumcheck_v2::{
@@ -421,10 +423,9 @@ where
 		)?;
 		let transparent = MultilinearExtension::from_values_generic(val)?;
 		let sumcheck_prover = RegularSumcheckProver::new(
-			vec![
-				MultilinearExtension::<PE, _>::specialize::<PE>(packed_poly.to_ref()),
-				MultilinearExtension::<PE, _>::specialize::<PE>(transparent.to_ref()),
-			],
+			[packed_poly.to_ref(), transparent.to_ref()]
+				.map(MLEDirectAdapter::from)
+				.into(),
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
 			immediate_switchover_heuristic,

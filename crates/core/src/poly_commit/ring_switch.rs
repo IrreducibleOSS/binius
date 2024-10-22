@@ -4,7 +4,9 @@ use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
 	poly_commit::PolyCommitScheme,
-	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
+	polynomial::{
+		Error as PolynomialError, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+	},
 	protocols::{
 		abstract_sumcheck::ReducedClaim,
 		sumcheck_v2::{
@@ -167,10 +169,9 @@ where
 			ring_switch_eq_ind_partial_eval(query_from_kappa, &tensor_mixing_challenges, backend)?,
 		)?;
 		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _, _>::new(
-			vec![
-				MultilinearExtension::<PE, _>::specialize(packed_poly.to_ref()),
-				MultilinearExtension::<PE, _>::specialize(transparent.to_ref()),
-			],
+			[packed_poly.to_ref(), transparent.to_ref()]
+				.map(MLEDirectAdapter::from)
+				.into(),
 			sumcheck_claim.composite_sums().iter().cloned(),
 			&self.domain_factory,
 			immediate_switchover_heuristic,

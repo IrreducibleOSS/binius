@@ -5,9 +5,7 @@
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
 use crate::{
-	polynomial::{
-		MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
-	},
+	polynomial::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef},
 	protocols::{
 		sumcheck_v2::{common::RoundCoeffs, error::Error},
 		utils::deinterleave,
@@ -37,7 +35,7 @@ where
 	},
 	/// Large field polynomial - halved in size each round
 	Folded {
-		large_field_folded_multilinear: MultilinearExtensionSpecialized<P, P>,
+		large_field_folded_multilinear: MLEDirectAdapter<P>,
 	},
 }
 

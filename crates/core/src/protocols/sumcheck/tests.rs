@@ -4,8 +4,8 @@ use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearExtensionSpecialized, MultilinearQuery,
+		CompositionPoly, Error as PolynomialError, MLEEmbeddingAdapter, MultilinearComposite,
+		MultilinearExtension, MultilinearQuery,
 	},
 	protocols::{
 		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
@@ -30,10 +30,7 @@ fn generate_poly_and_sum_helper<P, PE>(
 	rng: &mut StdRng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> (
-	MultilinearComposite<PE, TestProductComposition, MultilinearExtensionSpecialized<P, PE>>,
-	P::Scalar,
-)
+) -> (MultilinearComposite<PE, TestProductComposition, MLEEmbeddingAdapter<P, PE>>, P::Scalar)
 where
 	P: PackedField,
 	PE: PackedField,

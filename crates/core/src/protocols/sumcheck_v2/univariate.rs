@@ -2,10 +2,7 @@
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	polynomial::{
-		Error as PolynomialError, MultilinearExtension, MultilinearExtensionSpecialized,
-		MultilinearPoly, MultilinearQuery,
-	},
+	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
 	protocols::sumcheck_v2::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
@@ -71,8 +68,10 @@ where
 		let skip_rounds = claim.n_vars();
 		let evaluation_domain =
 			EvaluationDomain::<FDomain>::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
-		let lagrange_mle =
-			lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?;
+		let lagrange_mle = lagrange_evals_multilinear_extension::<_, _, F>(
+			&evaluation_domain,
+			univariate_challenge,
+		)?;
 
 		let query = MultilinearQuery::<F, _>::with_full_query(
 			&sumcheck_challenges[max_n_vars - skip_rounds..],
@@ -123,7 +122,7 @@ pub(super) fn univariatizing_reduction_composite_sum_claims<F: Field>(
 pub(super) fn lagrange_evals_multilinear_extension<FDomain, F, P>(
 	evaluation_domain: &EvaluationDomain<FDomain>,
 	univariate_challenge: F,
-) -> Result<MultilinearExtensionSpecialized<P, P>, PolynomialError>
+) -> Result<MultilinearExtension<P>, PolynomialError>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
@@ -135,7 +134,7 @@ where
 	let scalars = P::unpack_scalars_mut(packed.as_mut_slice());
 	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());
 
-	Ok(MultilinearExtension::from_values(packed)?.specialize())
+	MultilinearExtension::from_values(packed)
 }
 
 #[cfg(test)]

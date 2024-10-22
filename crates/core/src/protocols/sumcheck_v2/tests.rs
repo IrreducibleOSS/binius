@@ -10,8 +10,8 @@ use crate::{
 	challenger::{new_hasher_challenger, CanSample},
 	composition::index_composition,
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearComposite,
-		MultilinearExtension, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MLEEmbeddingAdapter,
+		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 	},
 	protocols::test_utils::TestProductComposition,
 };
@@ -52,7 +52,7 @@ fn generate_random_multilinears<P, PE>(
 	mut rng: impl Rng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<MultilinearExtensionSpecialized<P, PE>>
+) -> Vec<MLEEmbeddingAdapter<P, PE>>
 where
 	P: PackedField,
 	PE: PackedField,

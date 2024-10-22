@@ -6,7 +6,8 @@ use super::round_calculator::{
 };
 use crate::{
 	polynomial::{
-		Error as PolynomialError, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+		Error as PolynomialError, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+		MultilinearQueryRef,
 	},
 	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
 };
@@ -158,8 +159,9 @@ where
 
 						// At switchover, perform inner products in large field and save them in a
 						// newly created MLE.
-						let large_field_folded_multilinear =
-							inner_multilinear.evaluate_partial_low(tensor_query.to_ref())?;
+						let large_field_folded_multilinear = MLEDirectAdapter::from(
+							inner_multilinear.evaluate_partial_low(tensor_query.to_ref())?,
+						);
 
 						*multilinear = SumcheckMultilinear::Folded {
 							large_field_folded_multilinear,
@@ -173,8 +175,10 @@ where
 					ref mut large_field_folded_multilinear,
 				} => {
 					// Post-switchover, simply halve large field MLE.
-					*large_field_folded_multilinear = large_field_folded_multilinear
-						.evaluate_partial_low(single_variable_partial_query)?;
+					*large_field_folded_multilinear = MLEDirectAdapter::from(
+						large_field_folded_multilinear
+							.evaluate_partial_low(single_variable_partial_query)?,
+					);
 				}
 			}
 		}

@@ -2,9 +2,7 @@
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	polynomial::{
-		CompositionPoly, MultilinearExtensionSpecialized, MultilinearPoly, MultilinearQuery,
-	},
+	polynomial::{CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery},
 	protocols::sumcheck_v2::{
 		immediate_switchover_heuristic,
 		prove::RegularSumcheckProver,
@@ -37,7 +35,7 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	FDomain,
 	P,
 	IndexComposition<BivariateProduct, 2>,
-	MultilinearExtensionSpecialized<P, P>,
+	MLEDirectAdapter<P>,
 	Backend,
 >;
 
@@ -82,6 +80,7 @@ where
 			multilinear
 				.evaluate_partial_high(query.to_ref())
 				.expect("0 <= tail_challenges.len() < n_vars")
+				.into()
 		})
 		.collect::<Vec<_>>();
 
@@ -89,8 +88,9 @@ where
 	let evaluation_domain =
 		EvaluationDomain::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
 
-	reduced_multilinears
-		.push(lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?);
+	reduced_multilinears.push(
+		lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?.into(),
+	);
 
 	let composite_sum_claims =
 		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);

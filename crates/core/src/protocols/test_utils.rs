@@ -4,8 +4,8 @@ use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::{CompositePolyOracle, Error as OracleError},
 	polynomial::{
-		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MultilinearExtension,
-		MultilinearExtensionSpecialized,
+		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MLEEmbeddingAdapter,
+		MultilinearExtension,
 	},
 	protocols::{
 		evalcheck::{
@@ -73,7 +73,7 @@ pub fn generate_zero_product_multilinears<P, PE>(
 	mut rng: impl Rng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<MultilinearExtensionSpecialized<P, PE>>
+) -> Vec<MLEEmbeddingAdapter<P, PE>>
 where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,

@@ -1,6 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtensionSpecialized, MultilinearQueryRef};
+use crate::polynomial::{Error, MultilinearExtension, MultilinearQueryRef};
 use binius_field::PackedField;
 use std::{fmt::Debug, ops::Deref};
 
@@ -46,12 +46,12 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	fn evaluate_partial_low(
 		&self,
 		query: MultilinearQueryRef<P>,
-	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
+	) -> Result<MultilinearExtension<P>, Error>;
 
 	fn evaluate_partial_high(
 		&self,
 		query: MultilinearQueryRef<P>,
-	) -> Result<MultilinearExtensionSpecialized<P, P>, Error>;
+	) -> Result<MultilinearExtension<P>, Error>;
 
 	/// Compute inner products of a multilinear query inside a subcube.
 	///
@@ -125,14 +125,14 @@ where
 	fn evaluate_partial_low(
 		&self,
 		query: MultilinearQueryRef<P>,
-	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error> {
 		(**self).evaluate_partial_low(query)
 	}
 
 	fn evaluate_partial_high(
 		&self,
 		query: MultilinearQueryRef<P>,
-	) -> Result<MultilinearExtensionSpecialized<P, P>, Error> {
+	) -> Result<MultilinearExtension<P>, Error> {
 		(**self).evaluate_partial_high(query)
 	}
 

@@ -1,8 +1,8 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use super::{error::Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
+use super::{error::Error, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef};
 use auto_impl::auto_impl;
-use binius_field::{ExtensionField, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use stackalloc::stackalloc_with_default;
 use std::{borrow::Borrow, fmt::Debug, marker::PhantomData, sync::Arc};
@@ -276,31 +276,6 @@ where
 	}
 }
 
-impl<'a, F, C> MultilinearComposite<F, C, Arc<dyn MultilinearPoly<F> + Send + Sync + 'a>>
-where
-	F: TowerField,
-	C: CompositionPoly<F>,
-{
-	pub fn from_columns<P>(
-		composition: C,
-		columns: impl IntoIterator<Item = &'a (impl AsRef<[P]> + 'a)>,
-	) -> Result<Self, Error>
-	where
-		P: PackedField,
-		F: ExtensionField<P::Scalar>,
-	{
-		let multilinears = columns
-			.into_iter()
-			.map(|v| {
-				let mle = MultilinearExtension::from_values_slice(v.as_ref())?;
-				Ok(mle.specialize_arc_dyn())
-			})
-			.collect::<Result<Vec<_>, Error>>()?;
-		let n_vars = multilinears[0].n_vars();
-		Self::new(n_vars, composition, multilinears)
-	}
-}
-
 impl<P, C, M> MultilinearComposite<P, C, M>
 where
 	P: PackedField,
@@ -314,7 +289,11 @@ where
 		let new_multilinears = self
 			.multilinears
 			.iter()
-			.map(|multilin| multilin.evaluate_partial_low(query))
+			.map(|multilin| {
+				multilin
+					.evaluate_partial_low(query)
+					.map(MLEDirectAdapter::from)
+			})
 			.collect::<Result<Vec<_>, _>>()?;
 		Ok(MultilinearComposite {
 			composition: self.composition.clone(),
