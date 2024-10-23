@@ -9,7 +9,6 @@ use binius_field::{BinaryField, ExtensionField};
 use binius_hal::{make_portable_backend, MultilinearQuery};
 use binius_utils::bail;
 use itertools::izip;
-use p3_util::log2_strict_usize;
 use std::iter;
 use tracing::instrument;
 
@@ -102,11 +101,10 @@ where
 			);
 
 			last_vcs
-				.verify_batch(commitment, &[&self.terminate_codeword])
+				.verify_interleaved(commitment, &self.terminate_codeword)
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
-			let n_final_challenges =
-				log2_strict_usize(last_vcs.vector_len()) - self.params.rs_code().log_inv_rate();
+			let n_final_challenges = self.params.n_final_challenges();
 			let n_prior_challenges = self.fold_challenges.len() - n_final_challenges;
 			let final_challenges = &self.fold_challenges[n_prior_challenges..];
 			let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
@@ -210,26 +208,24 @@ where
 		// Check the first fold round before the main loop. It is special because in the first
 		// round we need to fold as an interleaved chunk instead of a regular coset.
 		let log_coset_size = first_fold_arity - self.params.log_batch_size();
-		let coset_index = index >> log_coset_size;
-		let values = verify_interleaved_opening(
+		let values = verify_coset_opening(
 			self.params.codeword_vcs(),
 			self.codeword_commitment,
-			coset_index,
-			log_coset_size,
-			self.params.log_batch_size(),
+			0,
+			index,
+			first_fold_arity,
 			first_query_proof,
 		)?;
 
 		let mut next_value = fold_interleaved_chunk(
 			self.params.rs_code(),
 			self.params.log_batch_size(),
-			coset_index,
+			index,
 			&values,
 			&self.interleave_tensor,
 			&self.fold_challenges[fold_round..fold_round + log_coset_size],
 			&mut scratch_buffer,
 		);
-		index = coset_index;
 		fold_round += log_coset_size;
 
 		for (i, (vcs, commitment, (round_proof, arity))) in izip!(
@@ -294,47 +290,8 @@ fn verify_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 		.into());
 	}
 
-	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
-	vcs.verify_range_batch_opening(commitment, range, vcs_proof, iter::once(values.as_slice()))
+	vcs.verify_batch_opening(commitment, coset_index, vcs_proof, values.iter().copied())
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-
-	// This condition should be guaranteed by the VCS verification.
-	debug_assert_eq!(values.len(), 1 << log_coset_size);
-
-	Ok(values)
-}
-
-/// Verifies that the coset opening provided in the proof is consistent with the VCS commitment.
-fn verify_interleaved_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
-	vcs: &VCS,
-	commitment: &VCS::Commitment,
-	coset_index: usize,
-	log_coset_size: usize,
-	log_batch_size: usize,
-	proof: QueryRoundProof<F, VCS::Proof>,
-) -> Result<Vec<F>, Error> {
-	let QueryRoundProof { values, vcs_proof } = proof;
-
-	if values.len() != 1 << (log_coset_size + log_batch_size) {
-		return Err(VerificationError::IncorrectQueryProofValuesLength {
-			round: 0,
-			coset_size: 1 << (log_coset_size + log_batch_size),
-		}
-		.into());
-	}
-
-	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
-	vcs.verify_range_batch_opening(
-		commitment,
-		range,
-		vcs_proof,
-		(0..1 << log_batch_size).map(|i| {
-			(0..1 << log_coset_size)
-				.map(|j| values[i + (j << log_batch_size)])
-				.collect::<Vec<_>>()
-		}),
-	)
-	.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 	Ok(values)
 }

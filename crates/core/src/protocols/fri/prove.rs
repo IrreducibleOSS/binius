@@ -149,8 +149,14 @@ where
 			"interleaved message length does not match code parameters".to_string()
 		));
 	}
-	if vcs.vector_len() != rs_code.len() {
-		bail!(Error::InvalidArgs("code length does not vector commitment length".to_string(),));
+
+	if !vcs.vector_len().is_power_of_two() {
+		bail!(Error::InvalidArgs("vector commitment length is not a power of two".to_string()));
+	}
+	if rs_code.len() < vcs.vector_len() {
+		bail!(Error::InvalidArgs(
+			"Reed–Solomon code length must be at least the vector commitment length".to_string(),
+		));
 	}
 
 	let mut encoded = tracing::debug_span!("allocate codeword")
@@ -281,7 +287,7 @@ where
 		let round_vcs = &self.params.round_vcss()[self.round_committed.len()];
 
 		let (commitment, committed) = round_vcs
-			.commit_batch(&[&folded_codeword])
+			.commit_interleaved(&folded_codeword)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 		self.round_committed.push((folded_codeword, committed));
 
@@ -364,7 +370,7 @@ where
 	///
 	/// * `index` - an index into the original codeword domain
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
-	pub fn prove_query(&self, index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
+	pub fn prove_query(&self, mut index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
 		let mut round_proofs = Vec::with_capacity(self.n_oracles());
 		let mut arities = self.params.fold_arities().iter().copied();
 
@@ -375,48 +381,23 @@ where
 			return Ok(round_proofs);
 		};
 
-		let log_coset_size = first_fold_arity - self.params.log_batch_size();
-		let mut coset_index = index >> log_coset_size;
-		round_proofs.push(prove_interleaved_opening(
+		round_proofs.push(prove_coset_opening(
 			self.params.codeword_vcs(),
 			self.codeword,
 			self.codeword_committed,
-			coset_index,
-			log_coset_size,
-			self.params.log_batch_size(),
+			index,
+			first_fold_arity,
 		)?);
 
 		for (vcs, (codeword, committed), arity) in
 			izip!(self.params.round_vcss().iter(), self.round_committed.iter(), arities)
-				.take(self.params.round_vcss().len() - 1)
 		{
-			coset_index >>= arity;
-			round_proofs.push(prove_coset_opening(vcs, codeword, committed, coset_index, arity)?);
+			index >>= arity;
+			round_proofs.push(prove_coset_opening(vcs, codeword, committed, index, arity)?);
 		}
 
 		Ok(round_proofs)
 	}
-}
-
-fn prove_interleaved_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
-	vcs: &VCS,
-	codeword: &[F],
-	committed: &VCS::Committed,
-	coset_index: usize,
-	log_coset_size: usize,
-	log_batch_size: usize,
-) -> Result<QueryRoundProof<F, VCS::Proof>, Error> {
-	let vcs_range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
-	let vcs_proof = vcs
-		.prove_range_batch_opening(committed, vcs_range.clone())
-		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-
-	let code_range = (coset_index << (log_coset_size + log_batch_size))
-		..((coset_index + 1) << (log_coset_size + log_batch_size));
-	Ok(QueryRoundProof {
-		values: codeword[code_range].to_vec(),
-		vcs_proof,
-	})
 }
 
 fn prove_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
@@ -426,12 +407,11 @@ fn prove_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
 	coset_index: usize,
 	log_coset_size: usize,
 ) -> Result<QueryRoundProof<F, VCS::Proof>, Error> {
-	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
-
 	let vcs_proof = vcs
-		.prove_range_batch_opening(committed, range.clone())
+		.prove_batch_opening(committed, coset_index)
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
+	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
 	Ok(QueryRoundProof {
 		values: codeword[range].to_vec(),
 		vcs_proof,

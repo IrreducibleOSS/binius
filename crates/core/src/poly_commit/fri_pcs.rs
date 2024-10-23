@@ -27,7 +27,7 @@ use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, Mul
 use binius_math::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
-use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
+use std::{iter, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
 ///
@@ -108,6 +108,7 @@ where
 				bail!(fri::Error::FoldArityIsZero { index: 0 });
 			}
 		}
+		let final_arity = n_packed_vars - fold_arities.iter().sum::<usize>();
 
 		// Choose the interleaved code batch size to align with the first fold arity, which is
 		// optimal.
@@ -116,15 +117,16 @@ where
 		let log_len = log_dim + log_inv_rate;
 
 		// TODO: set merkle cap heights correctly
-		let poly_vcs = vcs_factory(log_len);
-
-		let round_vcss = fold_arities
+		let mut vcss = fold_arities
 			.iter()
+			.copied()
+			.chain(iter::once(final_arity))
 			.scan(log_len + log_batch_size, |len, arity| {
 				*len -= arity;
 				Some(vcs_factory(*len))
-			})
-			.collect();
+			});
+		let poly_vcs = vcss.next().expect("vcss is not empty");
+		let round_vcss = vcss.collect::<Vec<_>>();
 
 		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
 		let n_test_queries = fri::calculate_n_test_queries::<FExt, _>(security_bits, &rs_code)?;
@@ -231,16 +233,14 @@ where
 			return Err(VerificationError::IncorrectNumberOfFRICommitments.into());
 		}
 
-		let mut round_vcs_iter = self.fri_params.round_vcss().iter().peekable();
+		let mut arities_iter = self.fri_params.fold_arities().iter();
 		let mut fri_comm_iter = fri_commitments.iter().cloned();
-		let log_inv_rate = self.fri_params.rs_code().log_inv_rate();
+		let mut next_commit_round = arities_iter.next().copied();
 
 		assert_eq!(claim.composite_sums().len(), 1);
 		let mut sum = claim.composite_sums()[0].sum;
 		let mut challenges = Vec::with_capacity(n_rounds);
 		for (round_no, round_proof) in sumcheck_round_proofs.into_iter().enumerate() {
-			let n_vars = n_rounds - round_no;
-
 			if round_proof.coeffs().len() != claim.max_individual_degree() {
 				return Err(VerificationError::Sumcheck(
 					sumcheck_v2::VerificationError::NumberOfCoefficients {
@@ -256,17 +256,14 @@ where
 			let challenge = challenger.sample();
 			challenges.push(challenge);
 
-			let observe_fri_comm = round_vcs_iter
-				.peek()
-				.map(|next_vcs| next_vcs.vector_len() == 1 << (log_inv_rate + n_vars - 1))
-				.unwrap_or(false);
+			let observe_fri_comm = next_commit_round.is_some_and(|round| round == round_no + 1);
 			if observe_fri_comm {
-				let _ = round_vcs_iter.next();
 				let comm = fri_comm_iter.next().expect(
 					"round_vcss and fri_commitments lengths were checked to be equal; \
 					iterators are incremented in lockstep; thus value must be Some",
 				);
 				challenger.observe(comm);
+				next_commit_round = arities_iter.next().map(|arity| round_no + 1 + arity);
 			}
 
 			sum = interpolate_round_proof(round_proof, sum, challenge);

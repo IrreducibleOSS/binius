@@ -18,7 +18,7 @@ use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_ntt::NTTOptions;
 use rand::prelude::*;
-use std::iter::repeat_with;
+use std::{iter, iter::repeat_with};
 
 fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
@@ -51,11 +51,13 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		)
 	};
 
-	let merkle_vcs = make_merkle_vcs(committed_rs_code_packed.log_len());
-	let merkle_round_vcss = log_vcs_vector_lens
+	let mut merkle_vcss_iter = log_vcs_vector_lens
 		.iter()
-		.map(|&log_len| make_merkle_vcs(log_len))
-		.collect::<Vec<_>>();
+		.copied()
+		.chain(iter::once(log_inv_rate))
+		.map(make_merkle_vcs);
+	let merkle_vcs = merkle_vcss_iter.next().expect("non-empty");
+	let merkle_round_vcss = merkle_vcss_iter.collect::<Vec<_>>();
 
 	let committed_rs_code =
 		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, NTTOptions::default()).unwrap();
@@ -115,7 +117,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let (terminate_codeword, query_prover) = round_prover.finalize().unwrap();
 
 	let query_proofs = repeat_with(|| {
-		let index = prover_challenger.sample_bits(params.rs_code().log_len());
+		let index = prover_challenger.sample_bits(params.index_bits());
 		query_prover.prove_query(index)
 	})
 	.take(n_test_queries)
@@ -133,6 +135,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	}
 
 	verifier_challenges.append(&mut verifier_challenger.sample_vec(params.n_final_challenges()));
+
+	assert_eq!(verifier_challenges.len(), params.n_fold_rounds());
 
 	// check c == t(r'_0, ..., r'_{\ell-1})
 	// note that the prover is claiming that the final_message is [c]
@@ -160,7 +164,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	assert_eq!(query_proofs.len(), n_test_queries);
 	for query_proof in query_proofs {
-		let index = verifier_challenger.sample_bits(params.rs_code().log_len());
+		let index = verifier_challenger.sample_bits(params.index_bits());
 		verifier.verify_query(index, query_proof).unwrap();
 	}
 }
