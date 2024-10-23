@@ -283,12 +283,15 @@ impl_tower_field_conversion!(AESTowerField128b, BinaryField128b);
 mod tests {
 	use super::*;
 	use crate::{
-		binary_field::tests::is_binary_field_valid_generator, PackedAESBinaryField16x32b,
-		PackedAESBinaryField4x32b, PackedAESBinaryField8x32b, PackedBinaryField16x32b,
-		PackedBinaryField4x32b, PackedBinaryField8x32b,
+		binary_field::tests::is_binary_field_valid_generator, deserialize_canonical,
+		serialize_canonical, PackedAESBinaryField16x32b, PackedAESBinaryField4x32b,
+		PackedAESBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField4x32b,
+		PackedBinaryField8x32b,
 	};
+	use bytes::BytesMut;
 
 	use proptest::{arbitrary::any, proptest};
+	use rand::thread_rng;
 
 	fn check_square(f: impl Field) {
 		assert_eq!(f.square(), f * f);
@@ -574,5 +577,40 @@ mod tests {
 			let result = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
+	}
+
+	#[test]
+	fn test_canonical_serialization() {
+		let mut buffer = BytesMut::new();
+		let mut rng = thread_rng();
+		let aes8 = <AESTowerField8b as Field>::random(&mut rng);
+		let aes16 = <AESTowerField16b as Field>::random(&mut rng);
+		let aes32 = <AESTowerField32b as Field>::random(&mut rng);
+		let aes64 = <AESTowerField64b as Field>::random(&mut rng);
+		let aes128 = <AESTowerField128b as Field>::random(&mut rng);
+
+		serialize_canonical(aes8, &mut buffer).unwrap();
+		serialize_canonical(aes16, &mut buffer).unwrap();
+		serialize_canonical(aes32, &mut buffer).unwrap();
+		serialize_canonical(aes64, &mut buffer).unwrap();
+		serialize_canonical(aes128, &mut buffer).unwrap();
+
+		serialize_canonical(aes128, &mut buffer).unwrap();
+
+		let mut read_buffer = buffer.freeze();
+
+		assert_eq!(deserialize_canonical::<AESTowerField8b, _>(&mut read_buffer).unwrap(), aes8);
+		assert_eq!(deserialize_canonical::<AESTowerField16b, _>(&mut read_buffer).unwrap(), aes16);
+		assert_eq!(deserialize_canonical::<AESTowerField32b, _>(&mut read_buffer).unwrap(), aes32);
+		assert_eq!(deserialize_canonical::<AESTowerField64b, _>(&mut read_buffer).unwrap(), aes64);
+		assert_eq!(
+			deserialize_canonical::<AESTowerField128b, _>(&mut read_buffer).unwrap(),
+			aes128
+		);
+
+		assert_eq!(
+			deserialize_canonical::<BinaryField128b, _>(&mut read_buffer).unwrap(),
+			aes128.into()
+		)
 	}
 }

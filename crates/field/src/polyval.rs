@@ -741,10 +741,14 @@ mod tests {
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
 		binary_field::tests::is_binary_field_valid_generator,
+		deserialize_canonical,
 		linear_transformation::PackedTransformationFactory,
-		PackedBinaryField1x128b, PackedBinaryField2x128b, PackedBinaryField4x128b, PackedField,
+		serialize_canonical, PackedBinaryField1x128b, PackedBinaryField2x128b,
+		PackedBinaryField4x128b, PackedField,
 	};
+	use bytes::BytesMut;
 	use proptest::prelude::*;
+	use rand::thread_rng;
 
 	#[test]
 	fn test_display() {
@@ -868,6 +872,31 @@ mod tests {
 		assert_eq!(
 			BinaryField128bPolyval::from(BinaryField1b::from(1)),
 			BinaryField128bPolyval::ONE
+		);
+	}
+
+	#[test]
+	fn test_canonical_serialization() {
+		let mut buffer = BytesMut::new();
+		let mut rng = thread_rng();
+
+		let b128_poly1 = <BinaryField128bPolyval as Field>::random(&mut rng);
+		let b128_poly2 = <BinaryField128bPolyval as Field>::random(&mut rng);
+
+		serialize_canonical(b128_poly1, &mut buffer).unwrap();
+		serialize_canonical(b128_poly2, &mut buffer).unwrap();
+
+		let mut read_buffer = buffer.freeze();
+
+		assert_eq!(
+			deserialize_canonical::<BinaryField128bPolyval, _>(&mut read_buffer).unwrap(),
+			b128_poly1
+		);
+		assert_eq!(
+			BinaryField128bPolyval::from(
+				deserialize_canonical::<BinaryField128b, _>(&mut read_buffer).unwrap()
+			),
+			b128_poly2
 		);
 	}
 }
