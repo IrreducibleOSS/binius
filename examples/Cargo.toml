@@ -13,7 +13,7 @@ binius_hal = { path = "../crates/hal" }
 binius_hash = { path = "../crates/hash" }
 binius_macros = { path = "../crates/macros" }
 binius_math = { path = "../crates/math" }
-binius_utils = { path = "../crates/utils" }
+binius_utils = { path = "../crates/utils", features = ["tracing"] }
 bytemuck.workspace = true
 bytesize.workspace =  true
 itertools.workspace = true
