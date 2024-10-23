@@ -329,7 +329,7 @@ fn make_constraints<P: PackedField, F: TowerField>(
 
 	let mut builder = ConstraintSetBuilder::new();
 	builder.add_zerocheck([a_in_oracle, b_in_oracle, c_out_oracle], BitwiseAndConstraint);
-	builder.build(trace_oracle).unwrap()
+	builder.build_one(trace_oracle).unwrap()
 }
 
 fn main() {

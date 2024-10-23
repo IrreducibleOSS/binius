@@ -964,9 +964,10 @@ where
 {
 	let mut witness = trace_witness.to_index::<F>(trace_oracle)?;
 	let constraint_set =
-		make_constraints::<AESTowerField8b, PackedType<U, F>>(trace_oracle).build(oracles)?;
+		make_constraints::<AESTowerField8b, PackedType<U, F>>(trace_oracle).build_one(oracles)?;
 	let constraint_set_base =
-		make_constraints::<AESTowerField8b, PackedType<U, FBase>>(trace_oracle).build(oracles)?;
+		make_constraints::<AESTowerField8b, PackedType<U, FBase>>(trace_oracle)
+			.build_one(oracles)?;
 
 	// Round 1
 	let trace1b_commit_polys = oracles
@@ -1108,7 +1109,7 @@ where
 	Challenger: CanObserve<F> + CanObserve<Comm> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
-	let constraint_set = make_constraints::<BinaryField8b, F>(trace_oracle).build(oracles)?;
+	let constraint_set = make_constraints::<BinaryField8b, F>(trace_oracle).build_one(oracles)?;
 
 	let Proof {
 		trace1b_comm,

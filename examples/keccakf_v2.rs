@@ -558,8 +558,8 @@ where
 		+ CanObserve<FEPCS>,
 	Backend: ComputationBackend,
 {
-	let constraint_set_base = make_constraints(fixed_oracle, trace_oracle).build(oracles)?;
-	let constraint_set = make_constraints(fixed_oracle, trace_oracle).build(oracles)?;
+	let constraint_set_base = make_constraints(fixed_oracle, trace_oracle).build_one(oracles)?;
+	let constraint_set = make_constraints(fixed_oracle, trace_oracle).build_one(oracles)?;
 
 	// Round 1
 	let trace_commit_polys = oracles
@@ -667,7 +667,7 @@ where
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
 {
-	let constraint_set = make_constraints::<F>(fixed_oracle, trace_oracle).build(oracles)?;
+	let constraint_set = make_constraints::<F>(fixed_oracle, trace_oracle).build_one(oracles)?;
 
 	let Proof {
 		trace_comm,

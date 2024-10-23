@@ -85,7 +85,7 @@ where
 	) -> Result<Vec<ConstraintSet<PackedType<U, F>>>, OracleError> {
 		self.new_sumchecks_constraints
 			.iter_mut()
-			.map(|builder| std::mem::take(builder).build(self.oracles))
+			.map(|builder| std::mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.rev()
 			.collect()

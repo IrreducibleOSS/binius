@@ -198,8 +198,8 @@ where
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
-	let constraint_set = trace.mixed_constraints().build(oracles)?;
-	let constraint_set_base = trace.mixed_constraints().build(oracles)?;
+	let constraint_set = trace.mixed_constraints().build_one(oracles)?;
+	let constraint_set_base = trace.mixed_constraints().build_one(oracles)?;
 
 	let (zerocheck_claim, meta) =
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
@@ -324,7 +324,7 @@ where
 	// Zerocheck
 	let zerocheck_challenges = challenger.sample_vec(log_size);
 
-	let constraint_set = oracle.mixed_constraints::<F>().build(oracles)?;
+	let constraint_set = oracle.mixed_constraints::<F>().build_one(oracles)?;
 
 	let (zerocheck_claim, meta) = sumcheck_v2::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];

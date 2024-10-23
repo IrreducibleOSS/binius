@@ -881,8 +881,8 @@ where
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
-	let constraint_set = make_constraints(trace_oracle).build(oracles)?;
-	let constraint_set_base = make_constraints(trace_oracle).build(oracles)?;
+	let constraint_set = make_constraints(trace_oracle).build_one(oracles)?;
+	let constraint_set_base = make_constraints(trace_oracle).build_one(oracles)?;
 
 	let (zerocheck_claim, meta) =
 		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
@@ -986,7 +986,7 @@ where
 	challenger.observe(trace_comm.clone());
 
 	// Zerocheck
-	let constraint_set = make_constraints::<F>(trace_oracle).build(oracles)?;
+	let constraint_set = make_constraints::<F>(trace_oracle).build_one(oracles)?;
 
 	let zerocheck_challenges = challenger.sample_vec(log_size);
 

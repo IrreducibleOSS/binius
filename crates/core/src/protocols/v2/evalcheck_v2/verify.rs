@@ -58,7 +58,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	pub fn take_new_sumcheck_constraints(&mut self) -> Result<Vec<ConstraintSet<F>>, OracleError> {
 		self.new_sumcheck_constraints
 			.iter_mut()
-			.map(|builder| mem::take(builder).build(self.oracles))
+			.map(|builder| mem::take(builder).build_one(self.oracles))
 			.filter(|constraint| !matches!(constraint, Err(OracleError::EmptyConstraintSet)))
 			.rev()
 			.collect()

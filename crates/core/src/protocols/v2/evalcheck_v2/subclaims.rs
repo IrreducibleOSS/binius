@@ -482,7 +482,7 @@ where
 			meta.eval,
 		)
 	}
-	Ok(constraint_set_builder.build(verifier.oracles)?)
+	Ok(constraint_set_builder.build_one(verifier.oracles)?)
 }
 
 pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
@@ -518,7 +518,7 @@ where
 			backend,
 		)?;
 	}
-	Ok(constraint_set_builder.build(prover.oracles)?)
+	Ok(constraint_set_builder.build_one(prover.oracles)?)
 }
 
 #[cfg(test)]
