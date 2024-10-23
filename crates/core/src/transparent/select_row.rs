@@ -1,7 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_hal::MultilinearExtension;
 use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube is 1 at
@@ -45,7 +46,7 @@ impl SelectRow {
 		}
 		let mut result = vec![P::zero(); 1 << (self.n_vars - P::LOG_WIDTH)];
 		set_packed_slice(&mut result, self.index, P::Scalar::ONE);
-		MultilinearExtension::from_values(result)
+		Ok(MultilinearExtension::from_values(result)?)
 	}
 }
 
@@ -85,12 +86,12 @@ impl<F: Field> MultivariatePoly<F> for SelectRow {
 
 #[cfg(test)]
 mod tests {
-	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, macros::felts, packed_slice};
+	use super::SelectRow;
+	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, packed_slice};
 	use binius_field::{
 		BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b, PackedField,
 	};
-
-	use super::SelectRow;
+	use binius_utils::felts;
 
 	#[test]
 	fn test_select_row_evals_without_packing_simple_cases() {

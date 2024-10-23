@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
-use crate::polynomial::{CompositionPoly, Error};
 use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_math::CompositionPoly;
 use binius_utils::thread_local_mut::ThreadLocalMut;
 use std::sync::Arc;
 
@@ -87,9 +87,9 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> ArithCircuitPoly<
 impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>
 	for ArithCircuitPoly<F, P>
 {
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != self.n_vars {
-			return Err(Error::IncorrectQuerySize {
+			return Err(binius_math::Error::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}
@@ -123,10 +123,14 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		F::TOWER_LEVEL
 	}
 
-	fn sparse_batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
+	fn sparse_batch_evaluate(
+		&self,
+		batch_query: &[&[P]],
+		evals: &mut [P],
+	) -> Result<(), binius_math::Error> {
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
-			return Err(Error::SparseBatchEvaluateSizeMismatch);
+			return Err(binius_math::Error::SparseBatchEvaluateSizeMismatch);
 		}
 		self.batch_evals.with_mut(
 			|| vec![vec![P::zero(); row_len]; self.exprs.len()].into_boxed_slice(),
@@ -194,12 +198,13 @@ fn pow<P: PackedField>(value: P, exp: u64) -> P {
 #[cfg(test)]
 mod tests {
 	use super::{ArithCircuitPoly, Expr};
-	use crate::polynomial::{test_utils::macros::felts, CompositionPoly};
 	use binius_field::{
 		BinaryField128b, BinaryField16b, BinaryField1b, BinaryField8b, ExtensionField,
 		PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField,
 		TowerField,
 	};
+	use binius_math::CompositionPoly;
+	use binius_utils::felts;
 
 	#[test]
 	fn test_const() {

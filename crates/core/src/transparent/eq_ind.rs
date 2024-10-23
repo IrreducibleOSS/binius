@@ -1,10 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{
-	multilinear_query::MultilinearQuery, Error, MultilinearExtension, MultivariatePoly,
-};
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
@@ -32,7 +30,7 @@ impl<F: Field> EqIndPartialEval<F> {
 		backend: &Backend,
 	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error> {
 		let multilin_query = MultilinearQuery::with_full_query(&self.r, backend)?.into_expansion();
-		MultilinearExtension::from_values_generic(multilin_query)
+		Ok(MultilinearExtension::from_values_generic(multilin_query)?)
 	}
 }
 
@@ -71,9 +69,9 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::EqIndPartialEval;
-	use crate::polynomial::{multilinear_query::MultilinearQuery, MultivariatePoly};
+	use crate::polynomial::MultivariatePoly;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearQuery};
 	use std::iter::repeat_with;
 
 	fn test_eq_consistency_help(n_vars: usize) {

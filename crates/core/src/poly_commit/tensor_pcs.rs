@@ -5,9 +5,7 @@ use crate::{
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeVCS, VectorCommitScheme},
 	poly_commit::PolyCommitScheme,
-	polynomial::{
-		multilinear_query::MultilinearQuery, Error as PolynomialError, MultilinearExtension,
-	},
+	polynomial::Error as PolynomialError,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
@@ -19,7 +17,7 @@ use binius_field::{
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MultilinearExtension, MultilinearQuery};
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
 };
@@ -1039,6 +1037,8 @@ pub enum Error {
 	Transpose(#[from] binius_field::transpose::Error),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

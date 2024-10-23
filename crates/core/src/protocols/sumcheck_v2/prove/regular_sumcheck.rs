@@ -1,12 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::{
-	batch_prove::SumcheckProver, prover_state::ProverState, round_calculator::SumcheckEvaluator,
-};
+use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearPoly,
-	},
+	polynomial::{Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck_v2::{
 		common::{CompositeSumClaim, RoundCoeffs},
 		error::Error,
@@ -14,8 +10,8 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomainFactory, InterpolationDomain};
+use binius_hal::{ComputationBackend, MultilinearPoly, SumcheckEvaluator};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;

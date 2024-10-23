@@ -3,7 +3,6 @@
 use super::{RegularSumcheckProver, ZerocheckProver};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
-	polynomial::MultilinearPoly,
 	protocols::sumcheck_v2::{
 		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
 	},

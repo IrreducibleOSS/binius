@@ -1,6 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultilinearQueryRef};
+use crate::{Error, MultilinearExtension, MultilinearQueryRef};
 use binius_field::PackedField;
 use std::{fmt::Debug, ops::Deref};
 

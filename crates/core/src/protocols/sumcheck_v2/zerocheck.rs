@@ -1,11 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::error::{Error, VerificationError};
-use crate::{
-	polynomial::{CompositionPoly, Error as PolynomialError},
-	protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim},
-};
+use crate::protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
 use binius_field::{util::eq, Field, PackedField, TowerField};
+use binius_math::CompositionPoly;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 use std::marker::PhantomData;
@@ -158,10 +156,10 @@ where
 		self.inner.degree() + 1
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let n_vars = self.n_vars();
 		if query.len() != n_vars {
-			bail!(PolynomialError::IncorrectQuerySize { expected: n_vars });
+			bail!(binius_math::Error::IncorrectQuerySize { expected: n_vars });
 		}
 
 		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;
@@ -178,7 +176,6 @@ mod tests {
 	use super::*;
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample},
-		polynomial::{MultilinearPoly, MultilinearQuery},
 		protocols::{
 			sumcheck_v2::{
 				batch_verify,
@@ -193,7 +190,9 @@ mod tests {
 		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
 		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable,
 	};
-	use binius_hal::{make_portable_backend, ComputationBackend};
+	use binius_hal::{
+		make_portable_backend, ComputationBackend, MultilinearPoly, MultilinearQuery,
+	};
 	use binius_hash::GroestlHasher;
 	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 	use rand::{prelude::StdRng, SeedableRng};

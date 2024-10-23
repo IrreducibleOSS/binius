@@ -6,18 +6,15 @@ use super::{
 	ConstraintSystem,
 };
 use crate::{
-	oracle::MultilinearPolyOracle,
-	polynomial::{
-		test_utils::decompose_index_to_hypercube_point, MultilinearPoly, MultilinearQuery,
-	},
-	protocols::sumcheck_v2::prove::zerocheck,
-	witness::MultilinearExtensionIndex,
+	oracle::MultilinearPolyOracle, polynomial::test_utils::decompose_index_to_hypercube_point,
+	protocols::sumcheck_v2::prove::zerocheck, witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 	BinaryField1b, TowerField,
 };
+use binius_hal::{MultilinearPoly, MultilinearQuery};
 
 pub fn validate_witness<U, F>(
 	constraint_system: &ConstraintSystem<PackedType<U, F>>,

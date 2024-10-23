@@ -3,10 +3,7 @@
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, MLEEmbeddingAdapter, MultilinearComposite,
-		MultilinearExtension, MultilinearQuery,
-	},
+	polynomial::MultilinearComposite,
 	protocols::{
 		sumcheck::{batch_prove, batch_verify, prove, verify, SumcheckClaim},
 		test_utils::{transform_poly, TestProductComposition},
@@ -17,9 +14,11 @@ use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField128bPolyval, BinaryField32b,
 	ExtensionField, Field, PackedBinaryField4x128b, PackedField, TowerField,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{
+	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearQuery,
+};
 use binius_hash::GroestlHasher;
-use binius_math::IsomorphicEvaluationDomainFactory;
+use binius_math::{CompositionPoly, IsomorphicEvaluationDomainFactory};
 use binius_utils::checked_arithmetics::checked_int_div;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, SeedableRng};
@@ -263,7 +262,7 @@ impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 		2
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		// Square each scalar value in the given packed value.
 		Ok(query[0].square())
 	}

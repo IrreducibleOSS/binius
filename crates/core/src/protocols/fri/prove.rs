@@ -7,12 +7,11 @@ use super::{
 use crate::{
 	linear_code::LinearCode,
 	merkle_tree::VectorCommitScheme,
-	polynomial::MultilinearQuery,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearQuery};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;

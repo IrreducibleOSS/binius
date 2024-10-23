@@ -2,14 +2,13 @@
 
 use binius_core::{
 	challenger::{new_hasher_challenger, IsomorphicChallenger},
-	polynomial::MultilinearExtension,
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
 };
 use binius_field::{
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b, BinaryField128b, BinaryField128bPolyval,
 	Field,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension};
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};

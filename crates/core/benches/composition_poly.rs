@@ -1,10 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use binius_core::polynomial::CompositionPoly;
 use binius_field::{
 	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b, PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
+use binius_math::CompositionPoly;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::thread_rng;
 

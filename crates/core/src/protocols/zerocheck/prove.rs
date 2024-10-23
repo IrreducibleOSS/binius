@@ -13,7 +13,6 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery},
 	protocols::{
 		abstract_sumcheck::{
 			check_interpolation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -28,7 +27,7 @@ use crate::{
 use binius_field::{packed::get_packed_slice, ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::{
 	zerocheck::{ZerocheckRoundInput, ZerocheckRoundParameters},
-	ComputationBackend,
+	ComputationBackend, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use binius_math::{EvaluationDomain, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
@@ -357,7 +356,7 @@ where
 	/// Start a new zerocheck instance with claim in field `F`. Witness may be given in
 	/// a different (but isomorphic) packed field PW. `switchover_fn` closure specifies
 	/// switchover round number per multilinear polynomial as a function of its
-	/// [`crate::polynomial::MultilinearPoly::log_extension_degree`] value.
+	/// [`binius_hal::MultilinearPoly::log_extension_degree`] value.
 	pub fn new(
 		claim: ZerocheckClaim<F>,
 		witness: W,

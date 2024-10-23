@@ -1,8 +1,9 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{Error, MultilinearOracleSet, OracleId};
-use crate::{composition::index_composition, polynomial::CompositionPoly};
+use crate::composition::index_composition;
 use binius_field::{Field, PackedField, TowerField};
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 use itertools::Itertools;
 use std::sync::Arc;

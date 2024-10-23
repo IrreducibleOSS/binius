@@ -28,6 +28,10 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("witness error: {0}")]
 	Witness(#[from] crate::witness::Error),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
+	#[error("math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

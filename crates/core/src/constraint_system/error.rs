@@ -37,4 +37,7 @@ pub enum Error {
 
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),
+
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }

@@ -2,13 +2,13 @@
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
+	polynomial::Error as PolynomialError,
 	protocols::sumcheck_v2::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
 use binius_field::{BinaryField, ExtensionField, Field, PackedFieldIndexable};
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 use binius_math::{make_ntt_domain_points, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
@@ -134,14 +134,13 @@ where
 	let scalars = P::unpack_scalars_mut(packed.as_mut_slice());
 	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());
 
-	MultilinearExtension::from_values(packed)
+	Ok(MultilinearExtension::from_values(packed)?)
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::{
 		challenger::new_hasher_challenger,
-		polynomial::{MultilinearPoly, MultilinearQuery},
 		protocols::{
 			sumcheck_v2::{
 				batch_verify,
@@ -154,7 +153,7 @@ mod tests {
 	use binius_field::{
 		BinaryField128b, BinaryField16b, Field, PackedBinaryField1x128b, PackedBinaryField8x32b,
 	};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearPoly, MultilinearQuery};
 	use binius_hash::GroestlHasher;
 	use binius_math::{DefaultEvaluationDomainFactory, EvaluationDomainFactory};
 	use rand::{prelude::StdRng, SeedableRng};

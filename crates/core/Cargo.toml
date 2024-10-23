@@ -32,12 +32,12 @@ transpose.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+binius_macros = { path = "../macros" }
 criterion.workspace = true
 proptest.workspace = true
 tiny-keccak.workspace = true
 tracing-profile.workspace = true
 tracing-subscriber.workspace = true
-binius_macros = { path = "../macros" }
 
 [lib]
 bench = false

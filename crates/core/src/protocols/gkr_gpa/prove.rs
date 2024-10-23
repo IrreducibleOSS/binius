@@ -5,13 +5,11 @@ use super::{
 	gpa_sumcheck::prove::GPAProver,
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
-use crate::{
-	polynomial::MultilinearExtension, protocols::sumcheck_v2, witness::MultilinearWitness,
-};
+use crate::{protocols::sumcheck_v2, witness::MultilinearWitness};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MultilinearExtension};
 use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory};
 use binius_utils::{
 	bail,

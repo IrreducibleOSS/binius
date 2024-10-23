@@ -1,7 +1,6 @@
-// Copyright 2023-2024 Ulvetanna Inc.
+// Copyright 2023 Ulvetanna Inc.
 
-use super::{error::Error, MultilinearQueryRef};
-use crate::util::PackingDeref;
+use crate::{Error, MultilinearQueryRef, PackingDeref};
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	packed::{get_packed_slice, iter_packed_slice},
@@ -387,18 +386,14 @@ pub type MultilinearExtensionBorrowed<'a, P> = MultilinearExtension<P, &'a [P]>;
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::polynomial::MultilinearQuery;
+	use crate::{make_portable_backend, MultilinearQuery};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, PackedBinaryField16x8b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b,
+		BinaryField128b, BinaryField16b as F, BinaryField32b, BinaryField8b,
+		PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
-	use binius_hal::make_portable_backend;
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
-
-	type F = BinaryField16b;
-	type P = PackedBinaryField8x16b;
 
 	#[test]
 	fn test_expand_query_impls_consistent() {

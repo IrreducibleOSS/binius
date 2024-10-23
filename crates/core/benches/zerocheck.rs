@@ -4,7 +4,7 @@
 use binius_core::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
-	polynomial::{CompositionPoly, MultilinearComposite, MultilinearExtension, MultilinearPoly},
+	polynomial::MultilinearComposite,
 	protocols::{
 		test_utils::{transform_poly, TestProductComposition},
 		zerocheck::{prove, Error as ZerocheckError, ZerocheckClaim},
@@ -15,9 +15,9 @@ use binius_field::{
 	BinaryField128b, BinaryField128bPolyval, BinaryField1b, BinaryField32b, BinaryField8b,
 	ExtensionField, Field, PackedExtension, PackedField, TowerField,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearPoly};
 use binius_hash::GroestlHasher;
-use binius_math::IsomorphicEvaluationDomainFactory;
+use binius_math::{CompositionPoly, IsomorphicEvaluationDomainFactory};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::{rngs::ThreadRng, thread_rng};
 use std::{fmt::Debug, mem, sync::Arc};

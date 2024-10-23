@@ -45,7 +45,8 @@ impl ComputationBackend for CpuBackend {
 		PW::Scalar: From<F> + Into<F>,
 		FDomain: Field,
 	{
-		// Zerocheck involves too much complicated logic, and instead of moving that logic here, callback back to the zerocheck protocols crate.kj
+		// Zerocheck involves too much complicated logic, and instead of moving that logic here,
+		// callback back to the zerocheck protocols crate.
 		handler.handle_zerocheck_round(params, input)
 	}
 }

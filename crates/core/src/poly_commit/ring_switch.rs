@@ -4,9 +4,7 @@ use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
 	poly_commit::PolyCommitScheme,
-	polynomial::{
-		Error as PolynomialError, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
-	},
+	polynomial::Error as PolynomialError,
 	protocols::{
 		abstract_sumcheck::ReducedClaim,
 		sumcheck_v2::{
@@ -20,7 +18,7 @@ use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearQuery};
 use binius_math::EvaluationDomainFactory;
 use rayon::prelude::*;
 use std::{iter, marker::PhantomData, mem, ops::Deref};
@@ -301,6 +299,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

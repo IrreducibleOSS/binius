@@ -4,7 +4,7 @@ use super::ZerocheckWitnessTypeErased;
 use crate::{
 	challenger::new_hasher_challenger,
 	oracle::{CompositePolyOracle, MultilinearOracleSet},
-	polynomial::{MultilinearComposite, MultilinearExtension, MultilinearQuery},
+	polynomial::MultilinearComposite,
 	protocols::{
 		test_utils::TestProductComposition,
 		zerocheck::{
@@ -20,7 +20,7 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedBinaryField4x128b, PackedField,
 	TowerField,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 use binius_hash::GroestlHasher;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use p3_util::log2_ceil_usize;

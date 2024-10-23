@@ -1,7 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{CompositionPoly, Error};
+use crate::polynomial::Error;
 use binius_field::PackedField;
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -42,9 +43,9 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		self.composition.degree()
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != self.n_vars {
-			bail!(Error::IncorrectQuerySize {
+			bail!(binius_math::Error::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}
@@ -61,7 +62,7 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		&self,
 		sparse_batch_query: &[&[P]],
 		evals: &mut [P],
-	) -> Result<(), Error> {
+	) -> Result<(), binius_math::Error> {
 		let sparse_batch_subquery = self.indices.map(|index| sparse_batch_query[index]);
 		self.composition
 			.sparse_batch_evaluate(sparse_batch_subquery.as_slice(), evals)

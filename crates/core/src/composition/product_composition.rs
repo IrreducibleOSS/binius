@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{CompositionPoly, Error};
 use binius_field::PackedField;
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 
 #[derive(Debug, Copy, Clone)]
@@ -26,9 +26,9 @@ impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N
 		self.degree()
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != N {
-			bail!(Error::IncorrectQuerySize { expected: N });
+			bail!(binius_math::Error::IncorrectQuerySize { expected: N });
 		}
 		Ok(query.iter().copied().product())
 	}

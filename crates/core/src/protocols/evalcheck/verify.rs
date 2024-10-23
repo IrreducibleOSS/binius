@@ -81,7 +81,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 		// Verify the evaluation of the composition function over the claimed evaluations
 		let evals = subproofs.iter().map(|(eval, _)| *eval).collect::<Vec<_>>();
-		let actual_eval = composite.composition().evaluate(&evals)?;
+		let actual_eval = composite
+			.composition()
+			.evaluate(&evals)
+			.map_err(Error::MathError)?;
 		if actual_eval != eval {
 			return Err(VerificationError::incorrect_composite_poly_evaluation(composite).into());
 		}

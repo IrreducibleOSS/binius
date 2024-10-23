@@ -1,8 +1,7 @@
 // Copyright 2023 Ulvetanna Inc.
 
-use crate::polynomial::Error as PolynomialError;
+use crate::{ComputationBackend, Error};
 use binius_field::{Field, PackedField};
-use binius_hal::ComputationBackend;
 use binius_math::tensor_prod_eq_ind;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -64,9 +63,9 @@ impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
 }
 
 impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
-	pub fn new(max_query_vars: usize) -> Result<Self, PolynomialError> {
+	pub fn new(max_query_vars: usize) -> Result<Self, Error> {
 		if max_query_vars > 31 {
-			bail!(PolynomialError::TooManyVariables)
+			bail!(Error::TooManyVariables)
 		} else {
 			let len = max((1 << max_query_vars) / P::WIDTH, 1);
 			let mut expanded_query = zeroed_vec(len);
@@ -79,13 +78,8 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 		}
 	}
 
-	pub fn with_full_query(
-		query: &[P::Scalar],
-		backend: &Backend,
-	) -> Result<Self, PolynomialError> {
-		let expanded_query = backend
-			.tensor_product_full_query(query)
-			.map_err(PolynomialError::HalError)?;
+	pub fn with_full_query(query: &[P::Scalar], backend: &Backend) -> Result<Self, Error> {
+		let expanded_query = backend.tensor_product_full_query(query)?;
 		let expanded_query_len = expanded_query.len();
 		Ok(Self {
 			expanded_query,
@@ -109,15 +103,12 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 		self.expanded_query
 	}
 
-	pub fn update(
-		mut self,
-		extra_query_coordinates: &[P::Scalar],
-	) -> Result<Self, PolynomialError> {
+	pub fn update(mut self, extra_query_coordinates: &[P::Scalar]) -> Result<Self, Error> {
 		let old_n_vars = self.n_vars;
 		let new_n_vars = old_n_vars + extra_query_coordinates.len();
 		let new_length = max((1 << new_n_vars) / P::WIDTH, 1);
 		if new_length > self.expanded_query.len() {
-			bail!(PolynomialError::MultilinearQueryFull {
+			bail!(Error::MultilinearQueryFull {
 				max_query_vars: old_n_vars,
 			});
 		}
@@ -126,8 +117,7 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 			// This works only if `expanded_query` was initialized as a Vec<P>.
 			&mut self.expanded_query[..new_length],
 			extra_query_coordinates,
-		)
-		.map_err(PolynomialError::MathError)?;
+		)?;
 
 		Ok(Self {
 			expanded_query: self.expanded_query,
@@ -144,8 +134,8 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 #[cfg(test)]
 mod tests {
 	use super::MultilinearQuery;
-	use crate::polynomial::test_utils::macros::felts;
-	use binius_hal::make_portable_backend;
+	use crate::make_portable_backend;
+	use binius_utils::felts;
 
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident, $bv:expr) => {

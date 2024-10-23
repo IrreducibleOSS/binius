@@ -2,9 +2,10 @@
 
 use crate::{
 	oracle::ShiftVariant,
-	polynomial::{Error, MultilinearExtension, MultivariatePoly},
+	polynomial::{Error, MultivariatePoly},
 };
 use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
+use binius_hal::MultilinearExtension;
 use binius_utils::bail;
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
@@ -119,7 +120,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 			.zip(pps)
 			.map(|(p, pp)| *p + pp)
 			.collect::<Vec<_>>();
-		MultilinearExtension::from_values(values)
+		Ok(MultilinearExtension::from_values(values)?)
 	}
 
 	fn multilinear_extension_logical_left<P>(&self) -> Result<MultilinearExtension<P>, Error>
@@ -128,7 +129,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 	{
 		let (ps, _) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, self.shift_offset, &self.r)?;
-		MultilinearExtension::from_values(ps)
+		Ok(MultilinearExtension::from_values(ps)?)
 	}
 
 	fn multilinear_extension_logical_right<P>(&self) -> Result<MultilinearExtension<P>, Error>
@@ -138,7 +139,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		let right_shift_offset = get_left_shift_offset(self.block_size, self.shift_offset);
 		let (_, pps) =
 			partial_evaluate_hypercube_impl::<P>(self.block_size, right_shift_offset, &self.r)?;
-		MultilinearExtension::from_values(pps)
+		Ok(MultilinearExtension::from_values(pps)?)
 	}
 
 	/// Evaluates this partially evaluated circular shift indicator MLE $f(X, r)$
@@ -342,11 +343,9 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::polynomial::{
-		multilinear_query::MultilinearQuery, test_utils::decompose_index_to_hypercube_point,
-	};
+	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearQuery};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 

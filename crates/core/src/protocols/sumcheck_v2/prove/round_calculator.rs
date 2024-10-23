@@ -4,59 +4,18 @@
 //!
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
-use crate::{
-	polynomial::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef},
-	protocols::{
-		sumcheck_v2::{common::RoundCoeffs, error::Error},
-		utils::deinterleave,
-	},
-};
+use crate::{polynomial::error::Error as PolynomialError, protocols::sumcheck_v2::error::Error};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_hal::CpuBackend;
-use binius_math::extrapolate_line;
+use binius_hal::{
+	CpuBackend, MultilinearPoly, MultilinearQuery, MultilinearQueryRef, RoundEvals,
+	SumcheckEvaluator, SumcheckMultilinear,
+};
+use binius_math::{deinterleave, extrapolate_line};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
-use std::{iter, marker::PhantomData, ops::Range};
-
-/// An individual multilinear polynomial stored by the [`ProverState`].
-#[derive(Debug, Clone)]
-pub enum SumcheckMultilinear<P, M>
-where
-	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
-{
-	/// Small field polynomial - to be folded into large field in `switchover` rounds.
-	/// The switchover round decrements each round the multilinear is folded.
-	Transparent {
-		multilinear: M,
-		switchover_round: usize,
-	},
-	/// Large field polynomial - halved in size each round
-	Folded {
-		large_field_folded_multilinear: MLEDirectAdapter<P>,
-	},
-}
-
-pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField> {
-	/// The range of eval point indices over which composition evaluation and summation should happen.
-	/// Returned range must equal the result of `n_round_evals()` in length.
-	fn eval_point_indices(&self) -> Range<usize>;
-
-	/// Compute composition evals over a subcube.
-	///
-	/// `sparse_batch_query` should contain multilinears evals over a subcube represented
-	/// by `subcube_vars` and `subcube_index`.
-	///
-	/// Returns a packed sum (which may be spread across scalars).
-	fn process_subcube_at_eval_point(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		sparse_batch_query: &[&[PBase]],
-	) -> P;
-}
+use std::{iter, marker::PhantomData};
 
 trait SumcheckMultilinearAccess<P: PackedField> {
 	/// Calculate the evaluations of a sumcheck multilinear over a subcube.
@@ -87,7 +46,7 @@ pub fn calculate_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator>(
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
-) -> Result<Vec<RoundCoeffs<F>>, Error>
+) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
@@ -114,7 +73,7 @@ pub fn calculate_later_round_evals<FDomain, F, P, M, Evaluator>(
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
-) -> Result<Vec<RoundCoeffs<F>>, Error>
+) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
@@ -141,7 +100,7 @@ fn calculate_round_evals<FDomain, FBase, F, PBase, P, Evaluator, Access>(
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
-) -> Result<Vec<RoundCoeffs<F>>, Error>
+) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
@@ -269,7 +228,7 @@ where
 	let evals = packed_accumulators
 		.into_iter()
 		.map(|vals| {
-			RoundCoeffs(
+			RoundEvals(
 				vals.into_iter()
 					.map(|packed_val| packed_val.iter().sum())
 					.collect(),
@@ -373,15 +332,15 @@ where
 		subcube_vars: usize,
 		subcube_index: usize,
 		evals: &mut [PBase],
-	) -> Result<(), crate::polynomial::error::Error> {
+	) -> Result<(), PolynomialError> {
 		if let SumcheckMultilinear::Transparent { multilinear, .. } = self.multilinear {
 			let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
-			multilinear.subcube_evals(
+			Ok(multilinear.subcube_evals(
 				subcube_vars,
 				subcube_index,
 				<P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE,
 				evals,
-			)
+			)?)
 		} else {
 			panic!("precondition: no folded multilinears in the first round");
 		}
@@ -409,7 +368,7 @@ where
 		subcube_index: usize,
 		evals: &mut [P],
 	) -> Result<(), crate::polynomial::error::Error> {
-		match self.multilinear {
+		Ok(match self.multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
 				// TODO: Stop using LaterRoundAccess for first round in RegularSumcheckProver and
 				// GPASumcheckProver, then remove this conditional.
@@ -428,6 +387,6 @@ where
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,
 			} => large_field_folded_multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals),
-		}
+		}?)
 	}
 }

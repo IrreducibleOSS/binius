@@ -1,7 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{CompositionPoly, Error};
+use crate::polynomial::Error;
 use binius_field::{Field, PackedField, TowerField};
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -105,10 +106,11 @@ where
 		self.max_individual_degree
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		Ok(self
 			.inner_compositions
-			.evaluate(self.challenge, query)?
+			.evaluate(self.challenge, query)
+			.map_err(|err| binius_math::Error::PolynomialError(Box::new(err)))?
 			.unwrap_or(P::zero()))
 	}
 

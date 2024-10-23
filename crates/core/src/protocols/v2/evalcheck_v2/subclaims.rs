@@ -21,7 +21,7 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
 		Packed, ProjectionVariant, Shifted,
 	},
-	polynomial::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultivariatePoly},
+	polynomial::MultivariatePoly,
 	protocols::sumcheck_v2::{
 		self,
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
@@ -37,7 +37,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearQuery};
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};

@@ -1,20 +1,17 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::round_calculator::{
-	calculate_first_round_evals, calculate_later_round_evals, SumcheckEvaluator,
-	SumcheckMultilinear,
-};
+use super::round_calculator::{calculate_first_round_evals, calculate_later_round_evals};
 use crate::{
-	polynomial::{
-		Error as PolynomialError, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
-		MultilinearQueryRef,
-	},
+	polynomial::Error as PolynomialError,
 	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
 };
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{
+	ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+};
 use binius_math::evaluate_univariate;
 use binius_utils::bail;
 use getset::CopyGetters;
@@ -207,7 +204,7 @@ where
 		self.multilinears
 			.into_iter()
 			.map(|multilinear| {
-				let result = match multilinear {
+				match multilinear {
 					SumcheckMultilinear::Transparent {
 						multilinear: inner_multilinear,
 						..
@@ -221,8 +218,8 @@ where
 					SumcheckMultilinear::Folded {
 						large_field_folded_multilinear,
 					} => large_field_folded_multilinear.evaluate(empty_query.to_ref()),
-				};
-				result.map_err(Error::Polynomial)
+				}
+				.map_err(Error::HalError)
 			})
 			.collect()
 	}
@@ -231,7 +228,7 @@ where
 	pub fn calculate_first_round_evals<PBase, Evaluator>(
 		&self,
 		evaluators: &[Evaluator],
-	) -> Result<Vec<RoundCoeffs<F>>, Error>
+	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
 		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 		P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
@@ -252,7 +249,7 @@ where
 	pub fn calculate_later_round_evals<Evaluator: SumcheckEvaluator<P, P> + Sync>(
 		&self,
 		evaluators: &[Evaluator],
-	) -> Result<Vec<RoundCoeffs<F>>, Error> {
+	) -> Result<Vec<RoundEvals<F>>, Error> {
 		calculate_later_round_evals(
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
@@ -270,7 +267,7 @@ where
 		&mut self,
 		interpolators: &[Interpolator],
 		batch_coeff: F,
-		evals: Vec<RoundCoeffs<F>>,
+		evals: Vec<RoundEvals<F>>,
 	) -> Result<RoundCoeffs<F>, Error> {
 		let coeffs = match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
@@ -284,7 +281,7 @@ where
 				}
 
 				let coeffs = izip!(interpolators, sums, evals)
-					.map(|(evaluator, &sum, RoundCoeffs(evals))| {
+					.map(|(evaluator, &sum, RoundEvals(evals))| {
 						let coeffs = evaluator.round_evals_to_coeffs(sum, evals)?;
 						Ok::<_, Error>(RoundCoeffs(coeffs))
 					})

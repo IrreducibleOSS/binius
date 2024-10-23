@@ -1,9 +1,6 @@
 // Copyright 2023-2024 Ulvetanna Inc.
 
-use super::{
-	error::Error, multilinear::MultilinearPoly, multilinear_extension::MultilinearExtension,
-	multilinear_query::MultilinearQueryRef,
-};
+use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 use binius_field::{
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
@@ -477,13 +474,12 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::polynomial::MultilinearQuery;
+	use crate::{make_portable_backend, MultilinearQuery};
 	use binius_field::{
 		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x8b,
 		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension,
 		PackedField, PackedFieldIndexable,
 	};
-	use binius_hal::make_portable_backend;
 	use rand::prelude::*;
 	use std::iter::repeat_with;
 

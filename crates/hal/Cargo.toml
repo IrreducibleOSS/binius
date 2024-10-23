@@ -8,8 +8,12 @@ authors.workspace = true
 auto_impl.workspace = true
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
+binius_utils = { path = "../utils" }
 bytemuck.workspace = true
 itertools.workspace = true
+p3-util.workspace = true
+rand.workspace = true
 rayon.workspace = true
+stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

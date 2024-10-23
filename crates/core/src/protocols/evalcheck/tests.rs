@@ -6,10 +6,7 @@ use crate::{
 		CompositePolyOracle, MultilinearOracleSet, MultilinearPolyOracle, ProjectionVariant,
 		ShiftVariant,
 	},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-		MultilinearPoly, MultilinearQuery, MultivariatePoly,
-	},
+	polynomial::{MultilinearComposite, MultivariatePoly},
 	protocols::{
 		evalcheck::{EvalcheckClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier},
 		sumcheck::SumcheckClaim,
@@ -24,8 +21,8 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
-use binius_hal::make_portable_backend;
-use binius_math::extrapolate_line;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearPoly, MultilinearQuery};
+use binius_math::{extrapolate_line, CompositionPoly};
 use binius_utils::bail;
 use bytemuck::cast_slice_mut;
 use itertools::{Either, Itertools};
@@ -49,9 +46,9 @@ impl CompositionPoly<FExtension> for QuadProduct {
 		4
 	}
 
-	fn evaluate(&self, query: &[FExtension]) -> Result<FExtension, PolynomialError> {
+	fn evaluate(&self, query: &[FExtension]) -> Result<FExtension, binius_math::Error> {
 		if query.len() != 4 {
-			bail!(PolynomialError::IncorrectQuerySize { expected: 4 });
+			bail!(binius_math::Error::IncorrectQuerySize { expected: 4 });
 		}
 		let (a, b, c, d) = (query[0], query[1], query[2], query[3]);
 		Ok(a * b * c * d)

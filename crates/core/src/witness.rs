@@ -1,17 +1,13 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::{
-	oracle::OracleId,
-	polynomial::{
-		Error as PolynomialError, MultilinearExtension, MultilinearExtensionBorrowed,
-		MultilinearPoly,
-	},
-	util::PackingDeref,
-};
+use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, Field, TowerField,
+};
+use binius_hal::{
+	MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly, PackingDeref,
 };
 use binius_utils::bail;
 use std::{fmt::Debug, sync::Arc};
@@ -63,6 +59,8 @@ pub enum Error {
 	},
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 impl<'a, U, FW> MultilinearExtensionIndex<'a, U, FW>

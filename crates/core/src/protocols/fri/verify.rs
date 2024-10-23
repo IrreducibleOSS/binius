@@ -3,11 +3,10 @@
 use super::{common::TerminateCodeword, error::Error, QueryProof, VerificationError};
 use crate::{
 	merkle_tree::VectorCommitScheme,
-	polynomial::MultilinearQuery,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 };
 use binius_field::{BinaryField, ExtensionField};
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearQuery};
 use binius_utils::bail;
 use itertools::izip;
 use p3_util::log2_strict_usize;

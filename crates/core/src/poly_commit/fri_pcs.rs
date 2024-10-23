@@ -6,9 +6,7 @@ use crate::{
 	composition::BivariateProduct,
 	merkle_tree::VectorCommitScheme,
 	poly_commit::{ring_switch::ring_switch_eq_ind_partial_eval, PolyCommitScheme},
-	polynomial::{
-		Error as PolynomialError, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
-	},
+	polynomial::Error as PolynomialError,
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
 		sumcheck_v2::{
@@ -25,8 +23,8 @@ use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::ComputationBackend;
-use binius_math::univariate::EvaluationDomainFactory;
+use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearQuery};
+use binius_math::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use std::{iter::repeat_with, marker::PhantomData, mem, ops::Deref};
@@ -586,6 +584,8 @@ pub enum Error {
 	NTT(#[from] binius_ntt::Error),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -3,11 +3,11 @@
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	poly_commit::PolyCommitScheme,
-	polynomial::{Error as PolynomialError, MultilinearExtension, MultilinearQuery},
+	polynomial::Error as PolynomialError,
 };
 
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
@@ -29,6 +29,8 @@ pub enum Error {
 	InnerPCS(#[source] Box<dyn std::error::Error + Send + Sync>),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 /// Creates a new multilinear from a batch of multilinears via \emph{merging}.

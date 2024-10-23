@@ -20,7 +20,6 @@ pub mod protocols;
 pub mod reed_solomon;
 pub mod tensor_algebra;
 pub mod transparent;
-pub mod util;
 pub mod witness;
 
 pub use core::iter::Step;

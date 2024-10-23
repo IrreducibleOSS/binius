@@ -3,21 +3,19 @@
 use super::error::Error;
 use crate::{
 	composition::BivariateProduct,
-	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearPoly, MultilinearQuery},
+	polynomial::Error as PolynomialError,
 	protocols::{
 		sumcheck_v2::{
 			immediate_switchover_heuristic,
-			prove::{
-				prover_state::ProverState, SumcheckEvaluator, SumcheckInterpolator, SumcheckProver,
-			},
+			prove::{prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
 			Error as SumcheckError, RoundCoeffs,
 		},
 		utils::packed_from_fn_with_offset,
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
-use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomainFactory, InterpolationDomain};
+use binius_hal::{ComputationBackend, MultilinearPoly, MultilinearQuery, SumcheckEvaluator};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;

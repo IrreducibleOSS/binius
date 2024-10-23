@@ -1,12 +1,10 @@
 // Copyright 2023 Ulvetanna Inc.
 
+use super::evalcheck_v2::EvalcheckMultilinearClaim;
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::{CompositePolyOracle, Error as OracleError},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MLEEmbeddingAdapter,
-		MultilinearExtension,
-	},
+	polynomial::{Error as PolynomialError, IdentityCompositionPoly},
 	protocols::{
 		evalcheck::{
 			subclaims::{
@@ -26,13 +24,11 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::WithUnderlier, ExtensionField, Field, PackedExtension,
 	PackedField, TowerField,
 };
-use binius_hal::ComputationBackend;
-use binius_math::EvaluationDomainFactory;
+use binius_hal::{ComputationBackend, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{CompositionPoly, EvaluationDomainFactory};
 use rand::Rng;
 use std::ops::Deref;
 use tracing::instrument;
-
-use super::evalcheck_v2::EvalcheckMultilinearClaim;
 
 #[derive(Clone, Debug)]
 pub struct TestProductComposition {
@@ -57,7 +53,7 @@ where
 		self.arity
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		// Product of scalar values at the corresponding positions of the packed values.
@@ -111,7 +107,7 @@ where
 {
 	let values = multilin.evals().iter().cloned().map(OF::from).collect();
 
-	MultilinearExtension::from_values(values)
+	Ok(MultilinearExtension::from_values(values)?)
 }
 
 #[instrument(

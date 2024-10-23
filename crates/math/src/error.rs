@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("argument {arg} does not have expected length {expected}")]
 	IncorrectArgumentLength { arg: String, expected: usize },
@@ -18,4 +18,10 @@ pub enum Error {
 	ExtrapolateNumberOfEvaluations,
 	#[error("{0}")]
 	FieldError(#[from] binius_field::Error),
+	#[error("sparse batch size mismatch - non-rectangular query shape or evals of wrong length")]
+	SparseBatchEvaluateSizeMismatch,
+	#[error("the query must have size {expected}")]
+	IncorrectQuerySize { expected: usize },
+	#[error("Polynomial error: {0}")]
+	PolynomialError(Box<dyn std::error::Error + Send + Sync>),
 }

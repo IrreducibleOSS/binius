@@ -2,7 +2,6 @@
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	polynomial::{CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery},
 	protocols::sumcheck_v2::{
 		immediate_switchover_heuristic,
 		prove::RegularSumcheckProver,
@@ -16,9 +15,10 @@ use binius_field::{
 	util::inner_product_unchecked, BinaryField, ExtensionField, Field, PackedExtension,
 	PackedField, PackedFieldIndexable, RepackedExtension,
 };
-use binius_hal::ComputationBackend;
+use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_math::{
-	make_ntt_domain_points, Error as MathError, EvaluationDomain, EvaluationDomainFactory,
+	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
+	EvaluationDomainFactory,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use binius_utils::bail;
@@ -701,7 +701,7 @@ where
 mod tests {
 	use crate::{
 		composition::{IndexComposition, ProductComposition},
-		polynomial::{CompositionPoly, CompositionScalarAdapter, MultilinearPoly},
+		polynomial::CompositionScalarAdapter,
 		protocols::{
 			sumcheck_v2::prove::univariate::{domain_size, zerocheck_univariate_evals},
 			test_utils::generate_zero_product_multilinears,
@@ -713,9 +713,9 @@ mod tests {
 		PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField4x32b,
 		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
 	};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearPoly};
 	use binius_math::{
-		make_ntt_domain_points, DefaultEvaluationDomainFactory, EvaluationDomain,
+		make_ntt_domain_points, CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain,
 		EvaluationDomainFactory,
 	};
 	use binius_ntt::SingleThreadedNTT;

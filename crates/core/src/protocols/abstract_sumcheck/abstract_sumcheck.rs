@@ -3,12 +3,13 @@
 use super::{Error, VerificationError};
 use crate::{
 	oracle::{CompositePolyOracle, OracleId},
-	polynomial::{CompositionPoly, MultilinearComposite, MultilinearPoly},
+	polynomial::MultilinearComposite,
 	protocols::evalcheck::EvalcheckClaim,
 };
 use auto_impl::auto_impl;
 use binius_field::{Field, PackedField};
-use binius_math::InterpolationDomain;
+use binius_hal::MultilinearPoly;
+use binius_math::{CompositionPoly, InterpolationDomain};
 use binius_utils::bail;
 use std::hash::Hash;
 

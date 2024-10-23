@@ -2,7 +2,7 @@
 
 use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
-	polynomial::{MultilinearExtension, MultilinearPoly, MultilinearQuery, MultivariatePoly},
+	polynomial::MultivariatePoly,
 	protocols::evalcheck_v2::{
 		EvalcheckMultilinearClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
 	},
@@ -16,7 +16,7 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use binius_math::extrapolate_line;
 use bytemuck::cast_slice_mut;
 use itertools::{Either, Itertools};

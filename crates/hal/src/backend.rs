@@ -55,7 +55,8 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		FDomain: Field;
 }
 
-/// Make it unnecessary to clone backends.
+/// Makes it unnecessary to clone backends.
+/// Can't use `auto_impl` because of a complex associated type.
 impl<'a, T: 'a + ComputationBackend> ComputationBackend for &'a T
 where
 	&'a T: Debug + Sync + Send,

@@ -1,13 +1,14 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	polynomial::{CompositionPoly, Error as PolynomialError, MultilinearExtension},
+	polynomial::Error as PolynomialError,
 	protocols::{abstract_sumcheck::AbstractSumcheckEvaluator, utils::packed_from_fn_with_offset},
 };
 use binius_field::{
 	packed::mul_by_subfield_scalar, ExtensionField, Field, PackedExtension, PackedField,
 };
-use binius_math::{extrapolate_line, InterpolationDomain};
+use binius_hal::MultilinearExtension;
+use binius_math::{extrapolate_line, CompositionPoly, InterpolationDomain};
 
 /// Evaluator for the first round of the zerocheck protocol.
 ///

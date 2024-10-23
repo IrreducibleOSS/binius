@@ -12,7 +12,6 @@ use crate::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 		MultilinearPolyOracle, ProjectionVariant,
 	},
-	polynomial::MultilinearPoly,
 	protocols::evalcheck_v2::subclaims::{process_packed_sumcheck, process_shifted_sumcheck},
 	witness::MultilinearExtensionIndex,
 };

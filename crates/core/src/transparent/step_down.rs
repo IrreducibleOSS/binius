@@ -1,7 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{BinaryField1b, Field, PackedField};
+use binius_hal::MultilinearExtension;
 use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
@@ -50,7 +51,7 @@ impl StepDown {
 		for i in 0..self.index % P::WIDTH {
 			result[packed_index].set(i, P::Scalar::ONE);
 		}
-		MultilinearExtension::from_values(result)
+		Ok(MultilinearExtension::from_values(result)?)
 	}
 }
 
@@ -95,10 +96,11 @@ impl<F: Field> MultivariatePoly<F> for StepDown {
 #[cfg(test)]
 mod tests {
 	use super::StepDown;
-	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, macros::felts, packed_slice};
+	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, packed_slice};
 	use binius_field::{
 		BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b, PackedField,
 	};
+	use binius_utils::felts;
 
 	#[test]
 	fn test_step_down_trace_without_packing_simple_cases() {

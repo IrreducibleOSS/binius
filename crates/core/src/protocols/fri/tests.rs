@@ -4,7 +4,6 @@ use crate::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	linear_code::LinearCode,
 	merkle_tree::MerkleTreeVCS,
-	polynomial::{MultilinearExtension, MultilinearQuery},
 	protocols::fri::{self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -15,7 +14,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField8b, ExtensionField, PackedExtension,
 	PackedField, PackedFieldIndexable,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_ntt::NTTOptions;
 use rand::prelude::*;

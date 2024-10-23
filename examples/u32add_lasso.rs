@@ -5,7 +5,6 @@ use binius_core::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	oracle::{BatchId, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::MultilinearExtensionBorrowed,
 	protocols::{
 		abstract_sumcheck::standard_switchover_heuristic,
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
@@ -21,7 +20,7 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b,
 	ExtensionField, Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend, MultilinearExtensionBorrowed};
 use binius_hash::GroestlHasher;
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{

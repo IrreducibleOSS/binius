@@ -1,7 +1,8 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{Error, MultilinearExtension, MultivariatePoly};
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
+use binius_hal::MultilinearExtension;
 use binius_utils::bail;
 use std::marker::PhantomData;
 
@@ -55,7 +56,7 @@ impl<F: TowerField> TowerBasis<F> {
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		MultilinearExtension::from_values(values)
+		Ok(MultilinearExtension::from_values(values)?)
 	}
 }
 
@@ -93,9 +94,8 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::polynomial::multilinear_query::MultilinearQuery;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearQuery};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 

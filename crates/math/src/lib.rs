@@ -2,11 +2,15 @@
 
 #![feature(step_trait)]
 
-pub mod error;
-pub mod matrix;
-pub mod tensor_prod_eq_ind;
-pub mod univariate;
+mod composition_poly;
+mod deinterleave;
+mod error;
+mod matrix;
+mod tensor_prod_eq_ind;
+mod univariate;
 
+pub use composition_poly::*;
+pub use deinterleave::*;
 pub use error::*;
 pub use matrix::*;
 pub use tensor_prod_eq_ind::*;

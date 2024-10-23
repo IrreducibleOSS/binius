@@ -14,9 +14,7 @@ use binius_core::{
 	challenger::{new_hasher_challenger, IsomorphicChallenger},
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, MultilinearComposite, MultilinearExtension,
-	},
+	polynomial::MultilinearComposite,
 	protocols::{
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck_v2::{self, zerocheck, Proof as ZerocheckProof},
@@ -35,9 +33,9 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, TowerField,
 	AES_TO_BINARY_LINEAR_TRANSFORMATION,
 };
-use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_hal::{make_portable_backend, ComputationBackend, MultilinearExtension};
 use binius_hash::{Groestl256Core, GroestlHasher};
-use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -383,9 +381,9 @@ where
 		1
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != 9 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 9 });
+			return Err(binius_math::Error::IncorrectQuerySize { expected: 9 });
 		}
 
 		// This is unfortunate that it needs to unpack and repack...
@@ -416,9 +414,9 @@ where
 		3
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != 2 {
-			return Err(PolynomialError::IncorrectQuerySize { expected: 2 });
+			return Err(binius_math::Error::IncorrectQuerySize { expected: 2 });
 		}
 
 		let x = query[0];

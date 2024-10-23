@@ -1,11 +1,11 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::polynomial::{
-	Error, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
-	MultivariatePoly,
-};
+use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{ExtensionField, PackedField, TowerField};
-use binius_hal::make_portable_backend;
+use binius_hal::{
+	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
+};
 use std::{fmt::Debug, ops::Deref};
 
 /// A transparent multilinear polynomial defined as the multilinear extension over a small
@@ -61,7 +61,7 @@ where
 		// assumption.
 		let backend = make_portable_backend();
 		let query = MultilinearQuery::<PE, _>::with_full_query(query, &backend)?;
-		self.data.evaluate(query.to_ref())
+		Ok(self.data.evaluate(query.to_ref())?)
 	}
 
 	fn binary_tower_level(&self) -> usize {

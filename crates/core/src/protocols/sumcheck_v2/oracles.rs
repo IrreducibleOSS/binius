@@ -9,8 +9,9 @@ use crate::{
 	protocols::evalcheck_v2::EvalcheckMultilinearClaim,
 };
 
-use crate::polynomial::{CompositionPoly, CompositionScalarAdapter};
+use crate::polynomial::CompositionScalarAdapter;
 use binius_field::{PackedField, TowerField};
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 use std::iter;
 

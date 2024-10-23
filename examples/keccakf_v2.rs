@@ -23,7 +23,6 @@ use binius_core::{
 	},
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
-	polynomial::{CompositionPoly, Error as PolynomialError},
 	protocols::{
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck_v2::{self, standard_switchover_heuristic, Proof as ZerocheckBatchProof},
@@ -41,7 +40,7 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -153,9 +152,9 @@ impl<P: PackedField> CompositionPoly<P> for SumComposition {
 		1
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		if query.len() != self.n_vars {
-			return Err(PolynomialError::IncorrectQuerySize {
+			return Err(binius_math::Error::IncorrectQuerySize {
 				expected: self.n_vars,
 			});
 		}

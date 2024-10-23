@@ -9,18 +9,18 @@ use super::{
 use crate::{
 	challenger::{new_hasher_challenger, CanSample},
 	composition::index_composition,
-	polynomial::{
-		CompositionPoly, Error as PolynomialError, IdentityCompositionPoly, MLEEmbeddingAdapter,
-		MultilinearComposite, MultilinearExtension, MultilinearPoly, MultilinearQuery,
-	},
+	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::test_utils::TestProductComposition,
 };
 use binius_field::{
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 };
-use binius_hal::make_portable_backend;
+use binius_hal::{
+	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
+};
 use binius_hash::GroestlHasher;
-use binius_math::IsomorphicEvaluationDomainFactory;
+use binius_math::{CompositionPoly, IsomorphicEvaluationDomainFactory};
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
@@ -38,7 +38,7 @@ impl<P: PackedField> CompositionPoly<P> for SquareComposition {
 		2
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, PolynomialError> {
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		// Square each scalar value in the given packed value.
 		Ok(query[0].square())
 	}

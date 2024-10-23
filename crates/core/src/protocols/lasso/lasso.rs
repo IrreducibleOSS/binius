@@ -2,7 +2,6 @@
 
 use crate::{
 	oracle::{BatchId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
-	polynomial::MultilinearPoly,
 	protocols::{
 		gkr_gpa::{GrandProductClaim, GrandProductWitness},
 		lasso::error::Error,

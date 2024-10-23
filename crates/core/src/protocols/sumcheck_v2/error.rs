@@ -66,6 +66,8 @@ pub enum Error {
 	NttError(#[from] binius_ntt::Error),
 	#[error("math error: {0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -12,7 +12,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::OracleId,
-	polynomial::{CompositionPoly, Error as PolynomialError},
+	polynomial::Error as PolynomialError,
 	protocols::{
 		abstract_sumcheck::{
 			check_interpolation_domain, validate_rd_challenge, AbstractSumcheckClaim,
@@ -24,7 +24,9 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::ComputationBackend;
-use binius_math::{extrapolate_line, EvaluationDomainFactory, InterpolationDomain};
+use binius_math::{
+	extrapolate_line, CompositionPoly, EvaluationDomainFactory, InterpolationDomain,
+};
 use binius_utils::bail;
 use getset::Getters;
 use rayon::prelude::*;

@@ -110,7 +110,6 @@ pub fn verify_sumcheck_outputs<F: Field>(
 mod tests {
 	use crate::{
 		challenger::new_hasher_challenger,
-		polynomial::{MultilinearExtension, MultilinearPoly},
 		protocols::{
 			gkr_gpa::gpa_sumcheck::{
 				prove::GPAProver,
@@ -121,7 +120,7 @@ mod tests {
 		transparent::eq_ind::EqIndPartialEval,
 	};
 	use binius_field::{BinaryField128b, BinaryField32b, BinaryField8b, Field, PackedField};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, MultilinearExtension};
 	use binius_hash::GroestlHasher;
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use p3_challenger::CanSample;

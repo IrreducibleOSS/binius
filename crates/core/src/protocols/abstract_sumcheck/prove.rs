@@ -1,15 +1,12 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::Error;
-use crate::{
-	polynomial::{
-		Error as PolynomialError, MLEEmbeddingAdapter, MultilinearPoly, MultilinearQuery,
-		MultilinearQueryRef,
-	},
-	protocols::utils::deinterleave,
-};
+use crate::polynomial::Error as PolynomialError;
 use binius_field::PackedField;
-use binius_hal::ComputationBackend;
+use binius_hal::{
+	ComputationBackend, MLEEmbeddingAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+};
+use binius_math::deinterleave;
 use binius_utils::{array_2d::Array2D, bail};
 use rayon::prelude::*;
 use std::{cmp::max, collections::HashMap, fmt::Debug, hash::Hash};

@@ -42,4 +42,6 @@ pub enum Error {
 	SumcheckError(#[from] SumcheckError),
 	#[error("witness failure: {0}")]
 	WitnessErrror(#[from] WitnessErrror),
+	#[error("HAL error: {0}")]
+	HalError(#[from] binius_hal::Error),
 }

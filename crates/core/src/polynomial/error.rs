@@ -11,8 +11,6 @@ pub enum Error {
 	IncorrectArityInMixedComposition { expected: usize },
 	#[error("array of inner composition evaluations is of incorrect length")]
 	IncorrectInnerEvalsLength,
-	#[error("the output polynomial must have size {expected}")]
-	IncorrectOutputPolynomialSize { expected: usize },
 	#[error("the polynomial is expected to have {expected} variables, and instead has {actual}")]
 	IncorrectNumberOfVariables { expected: usize, actual: usize },
 	#[error("block size must between 1 and {n_vars} (inclusive)")]
@@ -22,25 +20,12 @@ pub enum Error {
 		max_shift_offset: usize,
 		shift_offset: usize,
 	},
-	#[error("argument length must be a power of two")]
-	PowerOfTwoLengthRequired,
-	#[error("cannot operate on polynomials with more than 31 variables")]
-	TooManyVariables,
-	#[error("indexed point on hypercube is out of range: index={index}")]
-	HypercubeIndexOutOfRange { index: usize },
 	#[error("indices provided to IndexComposition constructor do not match number of variables")]
 	IndexCompositionIndicesOutOfBounds,
-	#[error("MultilinearQuery is full, cannot update further. Has {max_query_vars} variables")]
-	MultilinearQueryFull { max_query_vars: usize },
 	#[error("mixed polynomial was not provided")]
 	MixedMultilinearNotFound,
 	#[error("MultilinearComposite constructed with incorrect arguments: {0}")]
 	MultilinearCompositeValidation(String),
-	#[error("sparse batch size mismatch - non-rectangular query shape or evals of wrong length")]
-	SparseBatchEvaluateSizeMismatch,
-	#[error("logarithm of embedding degree of {log_embedding_degree} is too large.")]
-	LogEmbeddingDegreeTooLarge { log_embedding_degree: usize },
-	// TODO: Change range to bounds: Box<dyn RangeBounds + Send + Sync + 'static>
 	#[error("argument {arg} must be in the range {range:?}")]
 	ArgumentRangeError { arg: String, range: Range<usize> },
 	#[error("{0}")]
