@@ -4,13 +4,12 @@
 //!
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
-use crate::{polynomial::error::Error as PolynomialError, protocols::sumcheck_v2::error::Error};
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_hal::{
-	CpuBackend, MultilinearPoly, MultilinearQuery, MultilinearQueryRef, RoundEvals,
+use crate::{
+	CpuBackend, Error, MultilinearPoly, MultilinearQuery, MultilinearQueryRef, RoundEvals,
 	SumcheckEvaluator, SumcheckMultilinear,
 };
-use binius_math::{deinterleave, extrapolate_line};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
+use binius_math::{deinterleave, extrapolate_line, CompositionPoly};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 use rayon::prelude::*;
@@ -37,11 +36,11 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 		subcube_vars: usize,
 		subcube_index: usize,
 		evals: &mut [P],
-	) -> Result<(), crate::polynomial::error::Error>;
+	) -> Result<(), Error>;
 }
 
 /// Calculate the accumulated evaluations for the first sumcheck round.
-pub fn calculate_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator>(
+pub(crate) fn calculate_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
 	n_vars: usize,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
@@ -54,7 +53,8 @@ where
 	PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<PBase, P> + Sync,
+	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+	Composition: CompositionPoly<P>,
 {
 	let accesses = multilinears
 		.iter()
@@ -67,7 +67,7 @@ where
 ///
 /// See [`calculate_first_round_evals`] for an optimized version of this method
 /// that works over small fields in the first round.
-pub fn calculate_later_round_evals<FDomain, F, P, M, Evaluator>(
+pub(crate) fn calculate_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	n_vars: usize,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
@@ -79,7 +79,8 @@ where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<P, P> + Sync,
+	Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+	Composition: CompositionPoly<P>,
 {
 	let empty_query =
 		MultilinearQuery::<_, CpuBackend>::new(0).expect("constructing an empty query");
@@ -95,7 +96,7 @@ where
 	calculate_round_evals(n_vars, &accesses, evaluators, evaluation_points)
 }
 
-fn calculate_round_evals<FDomain, FBase, F, PBase, P, Evaluator, Access>(
+fn calculate_round_evals<FDomain, FBase, F, PBase, P, Evaluator, Access, Composition>(
 	n_vars: usize,
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
@@ -107,8 +108,9 @@ where
 	F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
 	PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	Evaluator: SumcheckEvaluator<PBase, P> + Sync,
+	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
 	Access: SumcheckMultilinearAccess<PBase> + Sync,
+	Composition: CompositionPoly<P>,
 {
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators
@@ -332,7 +334,7 @@ where
 		subcube_vars: usize,
 		subcube_index: usize,
 		evals: &mut [PBase],
-	) -> Result<(), PolynomialError> {
+	) -> Result<(), Error> {
 		if let SumcheckMultilinear::Transparent { multilinear, .. } = self.multilinear {
 			let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
 			Ok(multilinear.subcube_evals(
@@ -367,8 +369,8 @@ where
 		subcube_vars: usize,
 		subcube_index: usize,
 		evals: &mut [P],
-	) -> Result<(), crate::polynomial::error::Error> {
-		Ok(match self.multilinear {
+	) -> Result<(), Error> {
+		match self.multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
 				// TODO: Stop using LaterRoundAccess for first round in RegularSumcheckProver and
 				// GPASumcheckProver, then remove this conditional.
@@ -387,6 +389,6 @@ where
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,
 			} => large_field_folded_multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals),
-		}?)
+		}
 	}
 }

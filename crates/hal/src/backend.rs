@@ -2,9 +2,11 @@
 
 use crate::{
 	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
-	Error,
+	Error, MultilinearPoly, MultilinearQueryRef, RoundEvals, SumcheckEvaluator,
+	SumcheckMultilinear,
 };
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
+use binius_math::CompositionPoly;
 use rayon::iter::FromParallelIterator;
 use std::{
 	fmt::Debug,
@@ -53,10 +55,45 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		PW: PackedField + PackedExtension<FDomain>,
 		PW::Scalar: From<F> + Into<F> + ExtensionField<FDomain>,
 		FDomain: Field;
+
+	/// Calculate the accumulated evaluations for the first round of zerocheck_v2.
+	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		FBase: ExtensionField<FDomain>,
+		F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
+		PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+		Composition: CompositionPoly<P>;
+
+	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck_v2.
+	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		F: Field + ExtensionField<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPoly<P>;
 }
 
 /// Makes it unnecessary to clone backends.
-/// Can't use `auto_impl` because of a complex associated type.
+/// Can't use `auto_impl` because of the complex associated type.
 impl<'a, T: 'a + ComputationBackend> ComputationBackend for &'a T
 where
 	&'a T: Debug + Sync + Send,
@@ -87,5 +124,57 @@ where
 		FDomain: Field,
 	{
 		T::zerocheck_compute_round_coeffs(self, params, input, cpu_handler)
+	}
+
+	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		FBase: ExtensionField<FDomain>,
+		F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
+		PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+		Composition: CompositionPoly<P>,
+	{
+		T::sumcheck_compute_first_round_evals(
+			self,
+			n_vars,
+			multilinears,
+			evaluators,
+			evaluation_points,
+		)
+	}
+
+	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		F: Field + ExtensionField<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPoly<P>,
+	{
+		T::sumcheck_compute_later_round_evals(
+			self,
+			n_vars,
+			tensor_query,
+			multilinears,
+			evaluators,
+			evaluation_points,
+		)
 	}
 }

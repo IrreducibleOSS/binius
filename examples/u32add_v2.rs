@@ -38,7 +38,7 @@ use tracing::{debug, info, instrument};
 mod field_types {
 	use binius_field::{BinaryField128b, BinaryField8b};
 	pub type FW = BinaryField128b;
-	pub type Fbase = BinaryField8b;
+	pub type FBase = BinaryField8b;
 	pub type DomainFieldWithStep = BinaryField8b;
 	pub type FDomain = BinaryField8b;
 }
@@ -56,7 +56,7 @@ mod field_types {
 mod field_types {
 	use binius_field::{BinaryField128b, BinaryField128bPolyval};
 	pub type FW = BinaryField128bPolyval;
-	pub type Fbase = BinaryField128bPolyval;
+	pub type FBase = BinaryField128bPolyval;
 	pub type DomainFieldWithStep = BinaryField128b;
 	pub type FDomain = BinaryField128bPolyval;
 }
@@ -412,7 +412,7 @@ fn main() {
 	let proof = prove::<
 		_,
 		field_types::FW,
-		field_types::Fbase,
+		field_types::FBase,
 		field_types::FDomain,
 		BinaryField128b,
 		_,

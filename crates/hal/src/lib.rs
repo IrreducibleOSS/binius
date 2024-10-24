@@ -10,6 +10,7 @@ mod multilinear_query;
 mod packing_deref;
 mod sumcheck_evaluator;
 mod sumcheck_multilinear;
+mod sumcheck_round_calculator;
 mod utils;
 pub mod zerocheck;
 

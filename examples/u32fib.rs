@@ -43,7 +43,7 @@ mod field_types {
 	pub type Field = binius_field::AESTowerField128b;
 	pub type DomainField = binius_field::AESTowerField8b;
 	pub type DomainFieldWithStep = binius_field::AESTowerField8b;
-	pub type Fbase = binius_field::AESTowerField8b;
+	pub type FBase = binius_field::AESTowerField8b;
 }
 
 #[cfg(not(feature = "aes-tower"))]
@@ -51,7 +51,7 @@ mod field_types {
 	pub type Field = binius_field::BinaryField128bPolyval;
 	pub type DomainField = binius_field::BinaryField128bPolyval;
 	pub type DomainFieldWithStep = binius_field::BinaryField128b;
-	pub type Fbase = binius_field::BinaryField128bPolyval;
+	pub type FBase = binius_field::BinaryField128bPolyval;
 }
 
 // The fields must be in exactly the same order as the fields in U32FibOracle.
@@ -502,7 +502,7 @@ fn main() {
 	let proof = prove::<
 		_,
 		field_types::Field,
-		field_types::Fbase,
+		field_types::FBase,
 		field_types::DomainField,
 		BinaryField128b,
 		_,

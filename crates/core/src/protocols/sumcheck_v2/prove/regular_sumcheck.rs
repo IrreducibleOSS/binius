@@ -193,7 +193,7 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P>
+impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
 	for RegularSumcheckEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
@@ -222,6 +222,14 @@ where
 
 			evals.iter().copied().sum()
 		})
+	}
+
+	fn composition(&self) -> &Composition {
+		self.composition
+	}
+
+	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
+		None
 	}
 }
 

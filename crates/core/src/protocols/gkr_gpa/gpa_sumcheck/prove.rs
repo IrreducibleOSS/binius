@@ -204,7 +204,8 @@ where
 	gpa_round_challenges: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, M> SumcheckEvaluator<P, P> for GPAFirstRoundEvaluator<'a, P, FDomain, M>
+impl<'a, F, P, FDomain, M> SumcheckEvaluator<P, P, BivariateProduct>
+	for GPAFirstRoundEvaluator<'a, P, FDomain, M>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
@@ -239,6 +240,14 @@ where
 
 			evals.iter().copied().sum::<P>()
 		})
+	}
+
+	fn composition(&self) -> &BivariateProduct {
+		&BivariateProduct {}
+	}
+
+	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
+		None
 	}
 }
 
@@ -296,7 +305,8 @@ where
 	gpa_round_challenges: P::Scalar,
 }
 
-impl<'a, F, P, FDomain> SumcheckEvaluator<P, P> for GPALaterRoundEvaluator<'a, P, FDomain>
+impl<'a, F, P, FDomain> SumcheckEvaluator<P, P, BivariateProduct>
+	for GPALaterRoundEvaluator<'a, P, FDomain>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
@@ -329,6 +339,14 @@ where
 
 			evals.iter().copied().sum::<P>()
 		})
+	}
+
+	fn composition(&self) -> &BivariateProduct {
+		&BivariateProduct {}
+	}
+
+	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
+		None
 	}
 }
 

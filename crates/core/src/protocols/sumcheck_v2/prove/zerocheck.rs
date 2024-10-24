@@ -238,16 +238,19 @@ where
 		let round = self.round();
 		let coeffs = if round == 0 {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|((composition_base, _), interpolation_domain)| ZerocheckFirstRoundEvaluator {
-					composition: composition_base,
-					interpolation_domain,
-					partial_eq_ind_evals: &self.partial_eq_ind_evals,
-					_p_base_marker: PhantomData,
+				.map(|((composition_base, composition), interpolation_domain)| {
+					ZerocheckFirstRoundEvaluator {
+						composition_base,
+						composition,
+						interpolation_domain,
+						partial_eq_ind_evals: &self.partial_eq_ind_evals,
+						_p_base_marker: PhantomData,
+					}
 				})
 				.collect::<Vec<_>>();
 			let evals = self
 				.state
-				.calculate_first_round_evals::<PBase, _>(&evaluators)?;
+				.calculate_first_round_evals::<PBase, _, Composition>(&evaluators)?;
 			self.state
 				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		} else {
@@ -288,26 +291,29 @@ where
 	}
 }
 
-struct ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
+struct ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, CompositionBase, Composition>
 where
 	PBase: PackedField,
 	P: PackedField,
 	FDomain: Field,
 {
+	composition_base: &'a CompositionBase,
 	composition: &'a Composition,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 	_p_base_marker: PhantomData<PBase>,
 }
 
-impl<'a, F, PBase, P, FDomain, Composition> SumcheckEvaluator<PBase, P>
-	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
+impl<'a, F, PBase, P, FDomain, CompositionBase, Composition>
+	SumcheckEvaluator<PBase, P, Composition>
+	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, CompositionBase, Composition>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	PBase: PackedField,
 	P: PackedField<Scalar = F>,
 	FDomain: Field,
-	Composition: CompositionPoly<PBase>,
+	CompositionBase: CompositionPoly<PBase>,
+	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// In the first round of zerocheck we can uniquely determine the degree d
@@ -331,7 +337,7 @@ where
 		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			self.composition
+			self.composition_base
 				.sparse_batch_evaluate(sparse_batch_query, evals)
 				.expect("correct by query construction invariant");
 
@@ -345,10 +351,18 @@ where
 			P::set_single(field_sum)
 		})
 	}
+
+	fn composition(&self) -> &Composition {
+		self.composition
+	}
+
+	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
+		Some(self.partial_eq_ind_evals)
+	}
 }
 
-impl<'a, F, PBase, P, FDomain, Composition> SumcheckInterpolator<F>
-	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, Composition>
+impl<'a, F, PBase, P, FDomain, CompositionBase, Composition> SumcheckInterpolator<F>
+	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, CompositionBase, Composition>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	PBase: PackedField,
@@ -383,7 +397,7 @@ where
 	round_zerocheck_challenge: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P>
+impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
 	for ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
@@ -424,6 +438,14 @@ where
 
 			evals.iter().copied().sum::<P>()
 		})
+	}
+
+	fn composition(&self) -> &Composition {
+		self.composition
+	}
+
+	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
+		Some(self.partial_eq_ind_evals)
 	}
 }
 

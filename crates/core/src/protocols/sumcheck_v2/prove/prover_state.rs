@@ -1,6 +1,5 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use super::round_calculator::{calculate_first_round_evals, calculate_later_round_evals};
 use crate::{
 	polynomial::Error as PolynomialError,
 	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
@@ -12,7 +11,7 @@ use binius_hal::{
 	ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 	RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
-use binius_math::evaluate_univariate;
+use binius_math::{evaluate_univariate, CompositionPoly};
 use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::izip;
@@ -225,38 +224,43 @@ where
 	}
 
 	/// Calculate the accumulated evaluations for the first sumcheck round.
-	pub fn calculate_first_round_evals<PBase, Evaluator>(
+	pub fn calculate_first_round_evals<PBase, Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
 		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 		P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
-		Evaluator: SumcheckEvaluator<PBase, P> + Sync,
+		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+		Composition: CompositionPoly<P>,
 	{
-		calculate_first_round_evals(
+		Ok(self.backend.sumcheck_compute_first_round_evals(
 			self.n_vars,
 			&self.multilinears,
 			evaluators,
 			&self.evaluation_points,
-		)
+		)?)
 	}
 
 	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
 	///
 	/// See [`Self::calculate_first_round_evals`] for an optimized version of this method that
 	/// operates over small fields in the first round.
-	pub fn calculate_later_round_evals<Evaluator: SumcheckEvaluator<P, P> + Sync>(
+	pub fn calculate_later_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
-	) -> Result<Vec<RoundEvals<F>>, Error> {
-		calculate_later_round_evals(
+	) -> Result<Vec<RoundEvals<F>>, Error>
+	where
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPoly<P>,
+	{
+		Ok(self.backend.sumcheck_compute_later_round_evals(
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
 			evaluators,
 			&self.evaluation_points,
-		)
+		)?)
 	}
 
 	/// Calculate the batched round coefficients from the domain evaluations.

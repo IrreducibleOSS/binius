@@ -5,7 +5,6 @@ mod concrete_prover;
 pub mod oracles;
 pub mod prover_state;
 pub mod regular_sumcheck;
-mod round_calculator;
 pub mod univariate;
 pub mod zerocheck;
 
