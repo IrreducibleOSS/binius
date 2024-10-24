@@ -5,7 +5,7 @@ use crate::{
 	composition::BivariateProduct,
 	poly_commit::PolyCommitScheme,
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		self, immediate_switchover_heuristic, prove::RegularSumcheckProver, BatchSumcheckOutput,
 		CompositeSumClaim, SumcheckClaim,
 	},
@@ -173,7 +173,7 @@ where
 			backend,
 		)?;
 		let (sumcheck_output, sumcheck_proof) =
-			sumcheck_v2::batch_prove(vec![sumcheck_prover], &mut challenger)?;
+			sumcheck::batch_prove(vec![sumcheck_prover], &mut challenger)?;
 		let (_, eval_point) = verify_sumcheck_output(
 			sumcheck_output,
 			query_from_kappa,
@@ -241,7 +241,7 @@ where
 
 		let sumcheck_claim =
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
-		let output = sumcheck_v2::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
+		let output = sumcheck::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
 
 		let (eval, eval_point) =
 			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges, backend)?;
@@ -279,7 +279,7 @@ where
 	FE: ExtensionField<F>,
 {
 	sumcheck_eval: TensorAlgebra<F, FE>,
-	sumcheck_proof: sumcheck_v2::Proof<FE>,
+	sumcheck_proof: sumcheck::Proof<FE>,
 	inner_pcs_proof: Inner,
 }
 
@@ -288,7 +288,7 @@ pub enum Error {
 	#[error("inner PCS error: {0}")]
 	InnerPCS(#[source] Box<dyn std::error::Error + Send + Sync>),
 	#[error("sumcheck error: {0}")]
-	Sumcheck(#[from] sumcheck_v2::Error),
+	Sumcheck(#[from] sumcheck::Error),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("verification failure: {0}")]

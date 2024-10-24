@@ -7,7 +7,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::MultilinearOracleSet,
-	protocols::evalcheck_v2::{
+	protocols::evalcheck::{
 		subclaims::{make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},

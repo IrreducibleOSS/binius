@@ -3,8 +3,8 @@
 use crate::{
 	oracle::BatchId,
 	protocols::{
-		evalcheck_v2::{EvalcheckProof, SameQueryPcsClaim},
-		sumcheck_v2::Proof,
+		evalcheck::{EvalcheckProof, SameQueryPcsClaim},
+		sumcheck::Proof,
 	},
 };
 use binius_field::Field;

@@ -2,7 +2,7 @@
 
 use crate::{
 	challenger::CanSample,
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		common::{BatchSumcheckOutput, Proof, RoundCoeffs},
 		error::Error,
 	},
@@ -63,10 +63,10 @@ pub trait SumcheckProver<F: Field> {
 ///
 /// The sumcheck protocol over can be batched over multiple instances by taking random linear
 /// combinations over the claimed sums and polynomials. See
-/// [`crate::protocols::sumcheck_v2::batch_verify`] for more details.
+/// [`crate::protocols::sumcheck::batch_verify`] for more details.
 ///
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
-/// provided to [`crate::protocols::sumcheck_v2::batch_verify`] during proof verification.
+/// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 pub fn batch_prove<F, Prover, Challenger>(
 	mut provers: Vec<Prover>,
 	mut challenger: Challenger,

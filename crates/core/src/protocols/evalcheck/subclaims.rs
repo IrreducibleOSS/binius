@@ -22,7 +22,7 @@ use crate::{
 		Packed, ProjectionVariant, Shifted,
 	},
 	polynomial::MultivariatePoly,
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		self,
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
 		Error as SumcheckError, Proof as SumcheckBatchProof,
@@ -454,9 +454,9 @@ where
 		backend,
 	)?;
 
-	let (sumcheck_output, proof) = sumcheck_v2::batch_prove(provers, challenger)?;
+	let (sumcheck_output, proof) = sumcheck::batch_prove(provers, challenger)?;
 
-	let evalcheck_claims = sumcheck_v2::make_eval_claims(oracles, metas, sumcheck_output)?;
+	let evalcheck_claims = sumcheck::make_eval_claims(oracles, metas, sumcheck_output)?;
 
 	Ok((proof, evalcheck_claims))
 }

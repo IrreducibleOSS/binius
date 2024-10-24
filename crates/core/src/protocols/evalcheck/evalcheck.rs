@@ -146,7 +146,7 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 	}
 
 	/// Extract a same query claim, if possible (hence the Option in happy path)
-	#[instrument(skip_all, name = "evalcheck_v2::extract_pcs_claim", level = "debug")]
+	#[instrument(skip_all, name = "evalcheck::extract_pcs_claim", level = "debug")]
 	pub fn try_extract_same_query_pcs_claim(
 		&self,
 		batch_id: BatchId,

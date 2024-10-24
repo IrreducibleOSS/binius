@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::{batch_prove::SumcheckProver, RegularSumcheckProver, ZerocheckProver};
-use crate::protocols::sumcheck_v2::{common::RoundCoeffs, error::Error};
+use crate::protocols::sumcheck::{common::RoundCoeffs, error::Error};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
 };

@@ -2,7 +2,7 @@
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		immediate_switchover_heuristic,
 		prove::RegularSumcheckProver,
 		univariate::{
@@ -40,7 +40,7 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 >;
 
 /// Create the sumcheck prover for the univariatizing reduction of multilinears
-/// (see [verifier side](crate::protocols::sumcheck_v2::univariate::univariatizing_reduction_claim))
+/// (see [verifier side](crate::protocols::sumcheck::univariate::univariatizing_reduction_claim))
 ///
 /// This method projects multilinears to first `skip_rounds` variables, constructs a multilinear extension
 /// of Lagrange evaluations at `univariate_challenge`, and creates a regular sumcheck prover, placing
@@ -703,7 +703,7 @@ mod tests {
 		composition::{IndexComposition, ProductComposition},
 		polynomial::CompositionScalarAdapter,
 		protocols::{
-			sumcheck_v2::prove::univariate::{domain_size, zerocheck_univariate_evals},
+			sumcheck::prove::univariate::{domain_size, zerocheck_univariate_evals},
 			test_utils::generate_zero_product_multilinears,
 		},
 		transparent::eq_ind::EqIndPartialEval,

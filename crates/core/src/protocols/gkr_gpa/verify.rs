@@ -5,7 +5,7 @@ use super::{
 	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
-use crate::protocols::{sumcheck_v2, sumcheck_v2::Proof as SumcheckBatchProof};
+use crate::protocols::{sumcheck, sumcheck::Proof as SumcheckBatchProof};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
@@ -137,8 +137,7 @@ where
 
 	let sumcheck_claims = reduce_to_sumchecks(&gpa_sumcheck_claims)?;
 
-	let batch_sumcheck_output =
-		sumcheck_v2::batch_verify(&sumcheck_claims, proof, &mut challenger)?;
+	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, proof, &mut challenger)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;

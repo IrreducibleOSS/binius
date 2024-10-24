@@ -9,7 +9,7 @@ use crate::{
 	polynomial::Error as PolynomialError,
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
-		sumcheck_v2::{
+		sumcheck::{
 			self, immediate_switchover_heuristic,
 			prove::{RegularSumcheckProver, SumcheckProver},
 			verify::interpolate_round_proof,
@@ -223,10 +223,9 @@ where
 	{
 		let n_rounds = claim.n_vars();
 		if sumcheck_round_proofs.len() != n_rounds {
-			return Err(VerificationError::Sumcheck(
-				sumcheck_v2::VerificationError::NumberOfRounds,
-			)
-			.into());
+			return Err(
+				VerificationError::Sumcheck(sumcheck::VerificationError::NumberOfRounds).into()
+			);
 		}
 
 		if fri_commitments.len() != self.fri_params.n_oracles() {
@@ -243,7 +242,7 @@ where
 		for (round_no, round_proof) in sumcheck_round_proofs.into_iter().enumerate() {
 			if round_proof.coeffs().len() != claim.max_individual_degree() {
 				return Err(VerificationError::Sumcheck(
-					sumcheck_v2::VerificationError::NumberOfCoefficients {
+					sumcheck::VerificationError::NumberOfCoefficients {
 						round: round_no,
 						expected: claim.max_individual_degree(),
 					},
@@ -572,7 +571,7 @@ pub enum Error {
 	#[error("the polynomial must have {expected} variables")]
 	IncorrectPolynomialSize { expected: usize },
 	#[error("sumcheck error: {0}")]
-	Sumcheck(#[from] sumcheck_v2::Error),
+	Sumcheck(#[from] sumcheck::Error),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("FRI error: {0}")]
@@ -588,7 +587,7 @@ pub enum Error {
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
 	#[error("sumcheck verification error: {0}")]
-	Sumcheck(#[from] sumcheck_v2::VerificationError),
+	Sumcheck(#[from] sumcheck::VerificationError),
 	#[error("evaluation value is inconsistent with the tensor evaluation")]
 	IncorrectEvaluation,
 	#[error("sumcheck final evaluation is incorrect")]

@@ -27,14 +27,13 @@
 //!
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
+pub mod evalcheck;
 pub mod fri;
 pub mod gkr_gpa;
+pub mod greedy_evalcheck;
 pub mod lasso;
-pub mod sumcheck_v2;
+pub mod sumcheck;
 #[allow(dead_code)]
 #[doc(hidden)]
 pub mod test_utils;
 mod utils;
-pub mod v2;
-
-pub use v2::*;

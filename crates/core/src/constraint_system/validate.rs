@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
 	oracle::MultilinearPolyOracle, polynomial::test_utils::decompose_index_to_hypercube_point,
-	protocols::sumcheck_v2::prove::zerocheck, witness::MultilinearExtensionIndex,
+	protocols::sumcheck::prove::zerocheck, witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},

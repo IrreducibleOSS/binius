@@ -33,7 +33,7 @@ pub enum Error {
 	Witness(#[from] witness::Error),
 
 	#[error("constraint error: {0}")]
-	Constraint(#[from] protocols::sumcheck_v2::Error),
+	Constraint(#[from] protocols::sumcheck::Error),
 
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] polynomial::Error),

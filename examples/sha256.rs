@@ -22,8 +22,8 @@ use binius_core::{
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
-		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
+		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
+		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 	witness::MultilinearExtensionIndex,
@@ -883,10 +883,9 @@ where
 	let constraint_set = make_constraints(trace_oracle).build_one(oracles)?;
 	let constraint_set_base = make_constraints(trace_oracle).build_one(oracles)?;
 
-	let (zerocheck_claim, meta) =
-		sumcheck_v2::constraint_set_zerocheck_claim(constraint_set.clone())?;
+	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set.clone())?;
 
-	let prover = sumcheck_v2::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
+	let prover = sumcheck::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
 		constraint_set_base,
 		constraint_set,
 		&witness,
@@ -897,22 +896,22 @@ where
 	)?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck_v2::prove::batch_prove(vec![prover], &mut iso_challenger)?;
+		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;
 
-	let zerocheck_output = sumcheck_v2::zerocheck::verify_sumcheck_outputs(
+	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&[zerocheck_claim],
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
 
 	let evalcheck_multilinear_claims =
-		sumcheck_v2::make_eval_claims(oracles, [meta], zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], zerocheck_output)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
 		same_query_claims,
 		proof: evalcheck_proof,
-	} = greedy_evalcheck_v2::prove::<U, F, _, _, _>(
+	} = greedy_evalcheck::prove::<U, F, _, _, _>(
 		oracles,
 		&mut witness,
 		evalcheck_multilinear_claims,
@@ -989,25 +988,25 @@ where
 
 	let zerocheck_challenges = challenger.sample_vec(log_size);
 
-	let (zerocheck_claim, meta) = sumcheck_v2::constraint_set_zerocheck_claim(constraint_set)?;
+	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let sumcheck_claims = sumcheck_v2::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let sumcheck_claims = sumcheck::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output =
-		sumcheck_v2::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
 
-	let zerocheck_output = sumcheck_v2::zerocheck::verify_sumcheck_outputs(
+	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
 
 	let evalcheck_multilinear_claims =
-		sumcheck_v2::make_eval_claims(oracles, [meta], zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], zerocheck_output)?;
 
 	// Evalcheck
-	let same_query_claims = greedy_evalcheck_v2::verify(
+	let same_query_claims = greedy_evalcheck::verify(
 		oracles,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,

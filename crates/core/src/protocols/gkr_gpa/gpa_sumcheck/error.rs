@@ -1,6 +1,6 @@
 // Copyright 2024 Ulvetanna Inc.
 
-use crate::protocols::sumcheck_v2::Error as SumcheckError;
+use crate::protocols::sumcheck::Error as SumcheckError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

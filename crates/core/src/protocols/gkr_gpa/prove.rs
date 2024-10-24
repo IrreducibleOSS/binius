@@ -5,7 +5,7 @@ use super::{
 	gpa_sumcheck::prove::GPAProver,
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
-use crate::{protocols::sumcheck_v2, witness::MultilinearWitness};
+use crate::{protocols::sumcheck, witness::MultilinearWitness};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -87,7 +87,7 @@ where
 				.map(|p| p.stage_gpa_sumcheck_prover(evaluation_domain_factory.clone()))
 				.collect::<Result<Vec<_>, _>>()?;
 			let (batch_sumcheck_output, proof) =
-				sumcheck_v2::batch_prove(stage_gpa_sumcheck_provers, &mut challenger)?;
+				sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut challenger)?;
 			let sumcheck_challenge = batch_sumcheck_output.challenges;
 
 			(proof, sumcheck_challenge)

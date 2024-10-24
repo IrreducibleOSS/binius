@@ -2,7 +2,7 @@
 
 use crate::{
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck_v2::{common::RoundCoeffs, error::Error},
+	protocols::sumcheck::{common::RoundCoeffs, error::Error},
 };
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,

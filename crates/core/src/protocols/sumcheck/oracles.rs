@@ -6,7 +6,7 @@ use crate::{
 		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
 		TypeErasedComposition,
 	},
-	protocols::evalcheck_v2::EvalcheckMultilinearClaim,
+	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 
 use crate::polynomial::CompositionScalarAdapter;

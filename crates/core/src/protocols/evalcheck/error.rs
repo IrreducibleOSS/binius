@@ -29,7 +29,7 @@ pub enum Error {
 	#[error("witness error: {0}")]
 	Witness(#[from] crate::witness::Error),
 	#[error("sumcheck error: {0}")]
-	Sumcheck(#[from] crate::protocols::sumcheck_v2::Error),
+	Sumcheck(#[from] crate::protocols::sumcheck::Error),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
 }

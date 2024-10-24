@@ -2,7 +2,7 @@
 
 use super::gpa_sumcheck::error::Error as GPASumcheckError;
 use crate::{
-	polynomial::Error as PolynomialError, protocols::sumcheck_v2::Error as SumcheckError,
+	polynomial::Error as PolynomialError, protocols::sumcheck::Error as SumcheckError,
 	witness::Error as WitnessErrror,
 };
 

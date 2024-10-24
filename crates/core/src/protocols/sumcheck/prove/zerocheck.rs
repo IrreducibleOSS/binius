@@ -3,7 +3,7 @@
 use crate::{
 	polynomial::{Error as PolynomialError, MultilinearComposite},
 	protocols::{
-		sumcheck_v2::{
+		sumcheck::{
 			prove::{ProverState, SumcheckInterpolator, SumcheckProver},
 			Error, RoundCoeffs,
 		},

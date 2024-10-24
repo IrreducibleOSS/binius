@@ -56,7 +56,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		PW::Scalar: From<F> + Into<F> + ExtensionField<FDomain>,
 		FDomain: Field;
 
-	/// Calculate the accumulated evaluations for the first round of zerocheck_v2.
+	/// Calculate the accumulated evaluations for the first round of zerocheck.
 	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,
@@ -74,7 +74,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
 		Composition: CompositionPoly<P>;
 
-	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck_v2.
+	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck.
 	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,

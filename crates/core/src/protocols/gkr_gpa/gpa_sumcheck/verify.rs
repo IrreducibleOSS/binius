@@ -2,7 +2,7 @@
 
 use crate::{
 	composition::TrivariateProduct,
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
@@ -115,7 +115,7 @@ mod tests {
 				prove::GPAProver,
 				verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
 			},
-			sumcheck_v2,
+			sumcheck,
 		},
 		transparent::eq_ind::EqIndPartialEval,
 	};
@@ -192,14 +192,14 @@ mod tests {
 		)
 		.unwrap();
 
-		let (_, proof) = sumcheck_v2::batch_prove(vec![prover], challenger.clone()).unwrap();
+		let (_, proof) = sumcheck::batch_prove(vec![prover], challenger.clone()).unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 
 		let sumcheck_claims = reduce_to_sumchecks(&[claim]).unwrap();
 
 		let batch_output =
-			sumcheck_v2::batch_verify(&sumcheck_claims, proof, challenger.clone()).unwrap();
+			sumcheck::batch_verify(&sumcheck_claims, proof, challenger.clone()).unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 		verify_sumcheck_outputs(&[claim], &challenges, batch_output).unwrap();

@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck_v2::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
+use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
 use binius_field::{util::eq, Field, PackedField, TowerField};
 use binius_math::CompositionPoly;
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -177,7 +177,7 @@ mod tests {
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample},
 		protocols::{
-			sumcheck_v2::{
+			sumcheck::{
 				batch_verify,
 				prove::{batch_prove, zerocheck, RegularSumcheckProver, ZerocheckProver},
 			},

@@ -5,7 +5,7 @@ use crate::{
 	composition::BivariateProduct,
 	polynomial::Error as PolynomialError,
 	protocols::{
-		sumcheck_v2::{
+		sumcheck::{
 			immediate_switchover_heuristic,
 			prove::{prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
 			Error as SumcheckError, RoundCoeffs,

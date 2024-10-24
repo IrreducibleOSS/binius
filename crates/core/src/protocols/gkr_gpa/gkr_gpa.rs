@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use super::Error;
-use crate::{protocols::sumcheck_v2::Proof as SumcheckBatchProof, witness::MultilinearWitness};
+use crate::{protocols::sumcheck::Proof as SumcheckBatchProof, witness::MultilinearWitness};
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use rayon::prelude::*;

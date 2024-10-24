@@ -3,7 +3,7 @@
 use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::MultivariatePoly,
-	protocols::evalcheck_v2::{
+	protocols::evalcheck::{
 		EvalcheckMultilinearClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
 	},
 	transparent::select_row::SelectRow,

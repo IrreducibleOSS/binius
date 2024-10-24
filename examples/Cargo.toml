@@ -35,16 +35,16 @@ name = "groestl"
 path = "groestl.rs"
 
 [[example]]
-name = "keccakf_v2"
-path = "keccakf_v2.rs"
+name = "keccakf"
+path = "keccakf.rs"
 
 [[example]]
 name = "lasso"
 path = "lasso.rs"
 
 [[example]]
-name = "u32add_v2"
-path = "u32add_v2.rs"
+name = "u32add"
+path = "u32add.rs"
 
 [[example]]
 name = "u32add_lasso"

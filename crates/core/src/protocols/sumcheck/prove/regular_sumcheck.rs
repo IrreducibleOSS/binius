@@ -3,7 +3,7 @@
 use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{
 	polynomial::{Error as PolynomialError, MultilinearComposite},
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		common::{CompositeSumClaim, RoundCoeffs},
 		error::Error,
 		prove::prover_state::SumcheckInterpolator,

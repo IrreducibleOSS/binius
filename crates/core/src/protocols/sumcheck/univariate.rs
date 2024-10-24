@@ -3,7 +3,7 @@
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
@@ -142,7 +142,7 @@ mod tests {
 	use crate::{
 		challenger::new_hasher_challenger,
 		protocols::{
-			sumcheck_v2::{
+			sumcheck::{
 				batch_verify,
 				prove::{batch_prove, univariate::univariatizing_reduction_prover},
 				univariate::{univariatizing_reduction_claim, verify_sumcheck_outputs},

@@ -3,7 +3,7 @@
 use super::{RegularSumcheckProver, ZerocheckProver};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
-	protocols::sumcheck_v2::{
+	protocols::sumcheck::{
 		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},

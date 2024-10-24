@@ -7,9 +7,9 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
-		greedy_evalcheck_v2::{self, GreedyEvalcheckProof},
+		greedy_evalcheck::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
-		sumcheck_v2::standard_switchover_heuristic,
+		sumcheck::standard_switchover_heuristic,
 	},
 	witness::MultilinearExtensionIndex,
 };
@@ -203,7 +203,7 @@ where
 	lookup_t_comm: PCS32::Commitment,
 	lookup_t_proof: PCS32::Proof,
 	gpa_proof: GrandProductBatchProof<B128>,
-	greedy_evalcheck_v2_proof: GreedyEvalcheckProof<B128>,
+	greedy_evalcheck_proof: GreedyEvalcheckProof<B128>,
 	_u_marker: PhantomData<U>,
 }
 
@@ -349,7 +349,7 @@ where
 
 	// Greedy Evalcheck
 	let switchover_fn = standard_switchover_heuristic(-2);
-	let greedy_evalcheck_v2_prove_output = greedy_evalcheck_v2::prove::<U, B128, B128, _, _>(
+	let greedy_evalcheck_prove_output = greedy_evalcheck::prove::<U, B128, B128, _, _>(
 		oracles,
 		&mut witness_index,
 		evalcheck_multilinear_claims,
@@ -361,12 +361,12 @@ where
 
 	// PCS opening proofs
 	let batch_id_to_eval_point = |batch_id| {
-		greedy_evalcheck_v2_prove_output
+		greedy_evalcheck_prove_output
 			.same_query_claims
 			.iter()
 			.find(|(id, _)| *id == batch_id)
 			.map(|(_, same_query_claim)| same_query_claim.eval_point.as_slice())
-			.expect("present by greedy_evalcheck_v2 invariants")
+			.expect("present by greedy_evalcheck invariants")
 	};
 
 	let lasso_counts_proof = lasso_counts_pcs.prove_evaluation(
@@ -430,7 +430,7 @@ where
 		lookup_t_proof,
 		lasso_proof,
 		gpa_proof,
-		greedy_evalcheck_v2_proof: greedy_evalcheck_v2_prove_output.proof,
+		greedy_evalcheck_proof: greedy_evalcheck_prove_output.proof,
 		_u_marker: PhantomData,
 	})
 }
@@ -476,7 +476,7 @@ where
 		lookup_t_proof,
 		lasso_proof,
 		gpa_proof,
-		greedy_evalcheck_v2_proof,
+		greedy_evalcheck_proof,
 		..
 	} = proof;
 
@@ -511,10 +511,10 @@ where
 		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
 
 	// Greedy evalcheck
-	let same_query_pcs_claims = greedy_evalcheck_v2::verify(
+	let same_query_pcs_claims = greedy_evalcheck::verify(
 		oracles,
 		evalcheck_multilinear_claims,
-		greedy_evalcheck_v2_proof,
+		greedy_evalcheck_proof,
 		&mut challenger,
 	)?;
 
@@ -524,7 +524,7 @@ where
 			.iter()
 			.find(|(id, _)| *id == batch_id)
 			.map(|(_, same_query_claim)| same_query_claim)
-			.expect("present by greedy_evalcheck_v2 invariants")
+			.expect("present by greedy_evalcheck invariants")
 	};
 
 	let lasso_counts_eval_claim =

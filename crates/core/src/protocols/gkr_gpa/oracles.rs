@@ -5,7 +5,7 @@ use std::iter;
 use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
-	protocols::evalcheck_v2::EvalcheckMultilinearClaim,
+	protocols::evalcheck::EvalcheckMultilinearClaim,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{

@@ -5,11 +5,11 @@ use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::{BatchId, ConstraintSet, MultilinearOracleSet},
 	protocols::{
-		evalcheck_v2::{
+		evalcheck::{
 			subclaims::make_non_same_query_pcs_sumcheck_claims, EvalcheckMultilinearClaim,
 			EvalcheckVerifier, SameQueryPcsClaim,
 		},
-		sumcheck_v2::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
+		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
 };
 use binius_field::TowerField;
@@ -46,7 +46,7 @@ where
 		let sumcheck_output = batch_verify(&claims, sumcheck_batch_proof, &mut challenger)?;
 
 		let new_evalcheck_claims =
-			sumcheck_v2::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
+			sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
 
 		if new_evalcheck_claims.len() < evalcheck_proofs.len() {
 			bail!(Error::ExtraVirtualOpeningProof);
@@ -90,7 +90,7 @@ where
 	let sumcheck_output = batch_verify(&claims, sumcheck_proof, &mut challenger)?;
 
 	let evalcheck_claims =
-		sumcheck_v2::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
+		sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
 
 	evalcheck_verifier.verify(evalcheck_claims, evalcheck_proofs)?;
 
