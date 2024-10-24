@@ -5,10 +5,6 @@
 //! Sumcheck supports an efficient prover algorithm when the virtual polynomial is a multilinear
 //! composite, so this module only handles that case, rather than the case of general multivariate
 //! polynomials.
-//!
-//! This is the V2 implementation of sumcheck. The legacy implementation is in the
-//! [`crate::protocols::abstract_sumcheck`], [`crate::protocols::sumcheck`], and
-//! [`crate::protocols::zerocheck`] modules.
 
 mod common;
 mod error;

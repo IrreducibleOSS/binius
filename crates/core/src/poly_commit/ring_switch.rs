@@ -5,12 +5,9 @@ use crate::{
 	composition::BivariateProduct,
 	poly_commit::PolyCommitScheme,
 	polynomial::Error as PolynomialError,
-	protocols::{
-		abstract_sumcheck::ReducedClaim,
-		sumcheck_v2::{
-			self, immediate_switchover_heuristic, prove::RegularSumcheckProver,
-			BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
-		},
+	protocols::sumcheck_v2::{
+		self, immediate_switchover_heuristic, prove::RegularSumcheckProver, BatchSumcheckOutput,
+		CompositeSumClaim, SumcheckClaim,
 	},
 	tensor_algebra::TensorAlgebra,
 };
@@ -177,10 +174,7 @@ where
 		)?;
 		let (sumcheck_output, sumcheck_proof) =
 			sumcheck_v2::batch_prove(vec![sumcheck_prover], &mut challenger)?;
-		let ReducedClaim {
-			eval: _,
-			eval_point,
-		} = verify_sumcheck_output(
+		let (_, eval_point) = verify_sumcheck_output(
 			sumcheck_output,
 			query_from_kappa,
 			&tensor_mixing_challenges,
@@ -249,7 +243,7 @@ where
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
 		let output = sumcheck_v2::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
 
-		let ReducedClaim { eval, eval_point } =
+		let (eval, eval_point) =
 			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges, backend)?;
 
 		self.inner
@@ -360,7 +354,7 @@ fn verify_sumcheck_output<F, FE, Backend>(
 	eval_point: &[FE],
 	tensor_mixing_challenges: &[FE],
 	backend: Backend,
-) -> Result<ReducedClaim<FE>, VerificationError>
+) -> Result<(FE, Vec<FE>), VerificationError>
 where
 	F: Field,
 	FE: ExtensionField<F> + PackedField<Scalar = FE> + PackedExtension<F>,
@@ -393,10 +387,7 @@ where
 		return Err(VerificationError::IncorrectRingSwitchIndEvaluation);
 	}
 
-	Ok(ReducedClaim {
-		eval: multilinear_evals[0],
-		eval_point: sumcheck_challenges,
-	})
+	Ok((multilinear_evals[0], sumcheck_challenges))
 }
 
 pub fn evaluate_ring_switch_eq_ind<FS, F, Backend>(

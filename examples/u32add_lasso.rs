@@ -6,10 +6,10 @@ use binius_core::{
 	oracle::{BatchId, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
-		abstract_sumcheck::standard_switchover_heuristic,
 		gkr_gpa::{self, GrandProductBatchProof, GrandProductBatchProveOutput},
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof},
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
+		sumcheck_v2::standard_switchover_heuristic,
 	},
 	witness::MultilinearExtensionIndex,
 };

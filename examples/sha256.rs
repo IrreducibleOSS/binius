@@ -22,9 +22,8 @@ use binius_core::{
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
-		abstract_sumcheck::standard_switchover_heuristic,
 		greedy_evalcheck_v2::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck_v2::{self, Proof as ZerocheckProof},
+		sumcheck_v2::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 	witness::MultilinearExtensionIndex,

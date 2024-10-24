@@ -43,19 +43,11 @@ tracing-subscriber.workspace = true
 bench = false
 
 [[bench]]
-name = "sumcheck"
-harness = false
-
-[[bench]]
 name = "composition_poly"
 harness = false
 
 [[bench]]
 name = "multilinear_query"
-harness = false
-
-[[bench]]
-name = "zerocheck"
 harness = false
 
 [[bench]]
