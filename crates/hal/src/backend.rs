@@ -1,9 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::{
-	zerocheck::{ZerocheckCpuBackendHelper, ZerocheckRoundInput, ZerocheckRoundParameters},
-	Error, MultilinearPoly, MultilinearQueryRef, RoundEvals, SumcheckEvaluator,
-	SumcheckMultilinear,
+	Error, MultilinearPoly, MultilinearQueryRef, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::CompositionPoly;
@@ -40,21 +38,6 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		&self,
 		query: &[P::Scalar],
 	) -> Result<Self::Vec<P>, Error>;
-
-	/// Computes round coefficients for zerocheck.
-	/// `cpu_handler` is a callback to handle the CpuBackend computation.
-	/// It's a leaky abstraction, but zerocheck is too complex to refactor for a clean abstraction separation just yet.
-	fn zerocheck_compute_round_coeffs<F, PW, FDomain>(
-		&self,
-		params: &ZerocheckRoundParameters,
-		input: &ZerocheckRoundInput<F, PW, FDomain>,
-		cpu_handler: &mut dyn ZerocheckCpuBackendHelper<F, PW, FDomain>,
-	) -> Result<Vec<PW::Scalar>, Error>
-	where
-		F: Field,
-		PW: PackedField + PackedExtension<FDomain>,
-		PW::Scalar: From<F> + Into<F> + ExtensionField<FDomain>,
-		FDomain: Field;
 
 	/// Calculate the accumulated evaluations for the first round of zerocheck.
 	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
@@ -109,21 +92,6 @@ where
 		query: &[P::Scalar],
 	) -> Result<Self::Vec<P>, Error> {
 		T::tensor_product_full_query(self, query)
-	}
-
-	fn zerocheck_compute_round_coeffs<F, PW, FDomain>(
-		&self,
-		params: &ZerocheckRoundParameters,
-		input: &ZerocheckRoundInput<F, PW, FDomain>,
-		cpu_handler: &mut dyn ZerocheckCpuBackendHelper<F, PW, FDomain>,
-	) -> Result<Vec<PW::Scalar>, Error>
-	where
-		F: Field,
-		PW: PackedField + PackedExtension<FDomain>,
-		PW::Scalar: From<F> + Into<F> + ExtensionField<FDomain>,
-		FDomain: Field,
-	{
-		T::zerocheck_compute_round_coeffs(self, params, input, cpu_handler)
 	}
 
 	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
