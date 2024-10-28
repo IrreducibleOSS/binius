@@ -57,6 +57,12 @@ pub enum Error {
 		oracle_level: usize,
 		field_level: usize,
 	},
+	#[error("expected_n_vars={expected_n_vars} for oracle({oracle_id}) does not match actual n_vars: {n_vars}")]
+	OracleNumVarsMismatch {
+		oracle_id: OracleId,
+		n_vars: usize,
+		expected_n_vars: usize,
+	},
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("HAL error: {0}")]
@@ -125,6 +131,44 @@ where
 	/// Whether has data for the given oracle id.
 	pub fn has(&self, id: OracleId) -> bool {
 		self.entries.get(id).map_or(false, Option::is_some)
+	}
+
+	pub fn get_underlier_slice(
+		&self,
+		id: OracleId,
+		expected_n_vars: usize,
+		expected_tower_level: usize,
+	) -> Result<&[U], Error> {
+		let entry = self
+			.entries
+			.get(id)
+			.ok_or(Error::MissingWitness { id })?
+			.as_ref()
+			.ok_or(Error::MissingWitness { id })?;
+
+		let backing = entry
+			.backing
+			.as_ref()
+			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
+
+		if backing.tower_level != expected_tower_level {
+			return Err(Error::OracleTowerHeightMismatch {
+				oracle_id: id,
+				oracle_level: backing.tower_level,
+				field_level: expected_tower_level,
+			});
+		}
+		let backing_n_vars =
+			U::LOG_BITS + backing.underliers.as_ref().len().ilog2() as usize - backing.tower_level;
+		if backing_n_vars != expected_n_vars {
+			return Err(Error::OracleNumVarsMismatch {
+				oracle_id: id,
+				n_vars: backing_n_vars,
+				expected_n_vars,
+			});
+		}
+
+		Ok(backing.underliers.as_ref())
 	}
 
 	pub fn update_owned<FS, Data>(

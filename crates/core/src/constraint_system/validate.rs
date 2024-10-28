@@ -68,6 +68,7 @@ where
 
 	let oracle_label = &oracle.label();
 	let n_vars = oracle.n_vars();
+	let tower_level = oracle.binary_tower_level();
 	let poly = witness.get_multilin_poly(oracle.id())?;
 
 	match oracle {
@@ -160,33 +161,14 @@ where
 								oracle_label,
 								block_start + offset_after,
 								unshifted_poly.evaluate_on_hypercube(
-									block_start + (offset_after + shift_offset) % block_len,
+									block_start
+										+ (offset_after + (block_len - shift_offset)) % block_len,
 								)?,
 								poly.evaluate_on_hypercube(block_start + offset_after)?,
 							)?;
 						}
 					}
 					LogicalLeft => {
-						for offset_after in 0..block_len - shift_offset {
-							check_eval(
-								oracle_label,
-								block_start + offset_after,
-								unshifted_poly.evaluate_on_hypercube(
-									block_start + offset_after + shift_offset,
-								)?,
-								poly.evaluate_on_hypercube(block_start + offset_after)?,
-							)?;
-						}
-						for offset_after in block_len - shift_offset..block_len {
-							check_eval(
-								oracle_label,
-								block_start + offset_after,
-								F::ZERO,
-								poly.evaluate_on_hypercube(block_start + offset_after)?,
-							)?;
-						}
-					}
-					LogicalRight => {
 						for offset_after in 0..shift_offset {
 							check_eval(
 								oracle_label,
@@ -202,6 +184,26 @@ where
 								unshifted_poly.evaluate_on_hypercube(
 									block_start + offset_after - shift_offset,
 								)?,
+								poly.evaluate_on_hypercube(block_start + offset_after)?,
+							)?;
+						}
+					}
+					LogicalRight => {
+						for offset_after in 0..block_len - shift_offset {
+							check_eval(
+								oracle_label,
+								block_start + offset_after,
+								unshifted_poly.evaluate_on_hypercube(
+									block_start + offset_after + shift_offset,
+								)?,
+								poly.evaluate_on_hypercube(block_start + offset_after)?,
+							)?;
+						}
+						for offset_after in block_len - shift_offset..block_len {
+							check_eval(
+								oracle_label,
+								block_start + offset_after,
+								F::ZERO,
 								poly.evaluate_on_hypercube(block_start + offset_after)?,
 							)?;
 						}
@@ -242,9 +244,14 @@ where
 			}
 		}
 		Packed { id, packed, .. } => {
-			let expected = witness.get(packed.inner().id())?;
-			let got = witness.get(id)?;
-			if expected.ref_underlier_data() != got.ref_underlier_data() {
+			let inner = packed.inner();
+			let expected = witness.get_underlier_slice(
+				inner.id(),
+				inner.n_vars(),
+				inner.binary_tower_level(),
+			)?;
+			let got = witness.get_underlier_slice(id, n_vars, tower_level)?;
+			if expected != got {
 				return Err(Error::PackedUnderlierMismatch {
 					oracle: oracle_label.into(),
 				});

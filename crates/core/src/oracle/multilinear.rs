@@ -330,14 +330,13 @@ enum MultilinearOracleMeta<F: TowerField> {
 ///
 /// The oracle set also tracks the committed polynomial in batches where each batch is committed
 /// together with a polynomial commitment scheme.
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct MultilinearOracleSet<F: TowerField> {
 	batches: Vec<CommittedBatchMeta>,
 	oracles: Vec<MultilinearOracleMeta<F>>,
 }
 
 impl<F: TowerField> MultilinearOracleSet<F> {
-	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self {
 			batches: Vec::new(),

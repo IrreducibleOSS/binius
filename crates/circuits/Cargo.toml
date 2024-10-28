@@ -1,0 +1,18 @@
+[package]
+name = "binius_circuits"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+binius_core = { path = "../core" }
+binius_field = { path = "../field" }
+binius_hash = { path = "../hash" }
+binius_macros = { path = "../macros" }
+binius_utils = { path = "../utils" }
+binius_math = { path = "../math" }
+anyhow.workspace = true
+bytemuck.workspace = true
+rand.workspace = true
+rayon.workspace = true
+
