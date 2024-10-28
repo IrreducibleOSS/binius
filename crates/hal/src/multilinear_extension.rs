@@ -54,7 +54,8 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 		if !v.len().is_power_of_two() {
 			bail!(Error::PowerOfTwoLengthRequired);
 		}
-		let mu = log2(v.len() * P::WIDTH);
+		let mu = log2(v.len()) + P::LOG_WIDTH;
+
 		Ok(Self { mu, evals: v })
 	}
 

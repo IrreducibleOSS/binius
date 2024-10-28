@@ -5,18 +5,17 @@ use super::{
 	gpa_sumcheck::prove::GPAProver,
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
-use crate::{protocols::sumcheck, witness::MultilinearWitness};
+use crate::protocols::sumcheck;
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{ComputationBackend, MultilinearExtension};
+use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
 use p3_challenger::{CanObserve, CanSample};
-use std::sync::Arc;
 use tracing::instrument;
 
 /// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
@@ -54,7 +53,7 @@ where
 
 	// Create a vector of GrandProductProverStates
 	let provers_vec = witness_vec
-		.into_iter()
+		.iter()
 		.zip(claims)
 		.map(|(witness, claim)| GrandProductProverState::new(claim, witness, backend))
 		.collect::<Result<Vec<_>, _>>()?;
@@ -167,10 +166,10 @@ where
 	n_vars: usize,
 	// Layers of the product circuit as multilinear polynomials
 	// The ith element is the ith layer of the product circuit
-	layers: Vec<MultilinearWitness<'a, P>>,
+	layers: Vec<MLEDirectAdapter<P, &'a [P]>>,
 	// The ith element consists of a tuple of the
 	// first and second halves of the (i+1)th layer of the product circuit
-	next_layer_halves: Vec<[MultilinearWitness<'a, P>; 2]>,
+	next_layer_halves: Vec<[MLEDirectAdapter<P, &'a [P]>; 2]>,
 	// The current claim about a layer multilinear of the product circuit
 	current_layer_claim: LayerClaim<F>,
 
@@ -187,7 +186,7 @@ where
 	/// Create a new GrandProductProverState
 	fn new(
 		claim: &GrandProductClaim<F>,
-		witness: GrandProductWitness<'a, P>,
+		witness: &'a GrandProductWitness<'a, P>,
 		backend: Backend,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars;
@@ -200,20 +199,17 @@ where
 		let next_layer_halves = (1..n_layers)
 			.map(|i| {
 				let (left_evals, right_evals) = witness.ith_layer_eval_halves(i)?;
-				let left = MultilinearExtension::from_values_generic(Arc::from(left_evals))?
-					.specialize_arc_dyn();
-				let right = MultilinearExtension::from_values_generic(Arc::from(right_evals))?
-					.specialize_arc_dyn();
-				Ok([left, right])
+				let left = MultilinearExtension::from_values_slice(left_evals)?;
+				let right = MultilinearExtension::from_values_slice(right_evals)?;
+				Ok([left, right].map(MLEDirectAdapter::from))
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
 		let layers = (0..n_layers)
 			.map(|i| {
 				let ith_layer_evals = witness.ith_layer_evals(i)?;
-				let mle = MultilinearExtension::from_values_generic(Arc::from(ith_layer_evals))?
-					.specialize_arc_dyn();
-				Ok(mle)
+				let mle = MultilinearExtension::from_values_slice(ith_layer_evals)?;
+				Ok(mle.into())
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
 
@@ -249,7 +245,7 @@ where
 	fn stage_gpa_sumcheck_prover<FDomain>(
 		&self,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	) -> Result<GPAProver<FDomain, P, MultilinearWitness<'a, P>, Backend>, Error>
+	) -> Result<GPAProver<FDomain, P, impl MultilinearPoly<P> + Send + Sync + 'a, Backend>, Error>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,

@@ -33,8 +33,8 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	AESTowerField128b, AESTowerField8b, BinaryField, BinaryField128b, BinaryField16b,
-	BinaryField1b, ExtensionField, Field, PackedBinaryField128x1b, PackedField,
-	PackedFieldIndexable, TowerField,
+	BinaryField1b, ExtensionField, Field, PackedAESBinaryField1x128b, PackedBinaryField128x1b,
+	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::GroestlHasher;
@@ -537,16 +537,18 @@ impl TraceOracle {
 		oracles_arr
 	}
 
-	fn gen_u32const_oracle_id<F: TowerField>(
+	fn gen_u32const_oracle_id<
+		P: PackedField<Scalar: TowerField> + RepackedExtension<PackedBinaryField128x1b>,
+	>(
 		log_size: usize,
-		oracles: &mut MultilinearOracleSet<F>,
+		oracles: &mut MultilinearOracleSet<P::Scalar>,
 		x: u32,
 	) -> OracleId {
-		let x_unpacked = must_cast::<_, PackedBinaryField32x1b>(x);
+		let x_unpacked = must_cast::<_, PackedBinaryField128x1b>(x as u128);
 
 		let id = oracles
 			.add_transparent(
-				MultilinearExtensionTransparent::<_, F, _>::from_values(vec![x_unpacked])
+				MultilinearExtensionTransparent::<_, P, _>::from_values_and_mu(vec![x_unpacked], 5)
 					.expect("provided data of 32x1b elements is a power of two"),
 			)
 			.unwrap();
@@ -556,7 +558,10 @@ impl TraceOracle {
 			.unwrap()
 	}
 
-	pub fn new<F: TowerField>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Self {
+	pub fn new<P: PackedField<Scalar: TowerField> + RepackedExtension<PackedBinaryField128x1b>>(
+		oracles: &mut MultilinearOracleSet<P::Scalar>,
+		log_size: usize,
+	) -> Self {
 		let batch_id = oracles.add_committed_batch(log_size, BinaryField1b::TOWER_LEVEL);
 		let w = oracles
 			.add_named("omega")
@@ -614,12 +619,13 @@ impl TraceOracle {
 		}
 
 		// Define round constant oracles
-		let k =
-			array::from_fn(|i| Self::gen_u32const_oracle_id(log_size, oracles, ROUND_CONSTS_K[i]));
+		let k = array::from_fn(|i| {
+			Self::gen_u32const_oracle_id::<P>(log_size, oracles, ROUND_CONSTS_K[i])
+		});
 
 		// Initialize state oracles
 		let mut h: [[OracleId; 8]; 65] = array::from_fn(|_| [OracleId::MAX; 8]);
-		h[0] = array::from_fn(|i| Self::gen_u32const_oracle_id(log_size, oracles, INIT[i]));
+		h[0] = array::from_fn(|i| Self::gen_u32const_oracle_id::<P>(log_size, oracles, INIT[i]));
 
 		// Define oracles for round constraints
 		let mut sigma1 = array::from_fn(|_| Default::default());
@@ -1048,10 +1054,12 @@ fn main() {
 	let backend = make_portable_backend();
 
 	let mut prover_oracles = MultilinearOracleSet::new();
-	let prover_trace = TraceOracle::new(&mut prover_oracles, log_size);
+	let prover_trace =
+		TraceOracle::new::<PackedAESBinaryField1x128b>(&mut prover_oracles, log_size);
 
 	let mut verifier_oracles = MultilinearOracleSet::new();
-	let verifier_trace = TraceOracle::new(&mut verifier_oracles, log_size);
+	let verifier_trace =
+		TraceOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size);
 
 	let trace_batch = prover_oracles.committed_batch(prover_trace.batch_id);
 

@@ -117,14 +117,17 @@ mod tests {
 			},
 			sumcheck,
 		},
-		transparent::eq_ind::EqIndPartialEval,
 	};
-	use binius_field::{BinaryField128b, BinaryField32b, BinaryField8b, Field, PackedField};
-	use binius_hal::{make_portable_backend, MultilinearExtension};
+	use binius_field::{
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
+		BinaryField8b, PackedField,
+	};
+	use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 	use binius_hash::GroestlHasher;
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use p3_challenger::CanSample;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use std::iter;
 
 	fn generate_poly_helper<P>(
 		mut rng: impl Rng,
@@ -136,7 +139,7 @@ mod tests {
 	{
 		(0..n_multilinears)
 			.map(|_| {
-				let values = (0..(1 << n_vars))
+				let values = (0..(1 << (n_vars - P::LOG_WIDTH)))
 					.map(|_| PackedField::random(&mut rng))
 					.collect();
 				MultilinearExtension::from_values(values).unwrap()
@@ -146,6 +149,7 @@ mod tests {
 
 	#[test]
 	fn test_prove_verify_gpa_sumcheck() {
+		type U = OptimalUnderlier128b;
 		type F = BinaryField32b;
 		type FDomain = BinaryField8b;
 		type FE = BinaryField128b;
@@ -154,37 +158,34 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let n_vars = 4;
 
-		let multilins = generate_poly_helper::<F>(&mut rng, n_vars, 2)
+		let mles = generate_poly_helper::<PackedType<U, F>>(&mut rng, n_vars, 2);
+		let prod_mle = MultilinearExtension::from_values(
+			iter::zip(mles[0].evals(), mles[1].evals())
+				.map(|(&a, &b)| a * b)
+				.collect(),
+		)
+		.unwrap();
+
+		let multilins = mles
 			.into_iter()
-			.map(|mle| mle.specialize_arc_dyn::<FE>())
+			.map(|mle| mle.specialize_arc_dyn::<PackedType<U, FE>>())
 			.collect::<Vec<_>>();
+		let prod_multilin = prod_mle.specialize_arc_dyn::<PackedType<U, FE>>();
+
 		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 		let challenges: Vec<FE> = challenger.sample_vec(n_vars);
 
-		let poly_mle_evals = (0..(1 << n_vars))
-			.map(|i| {
-				multilins[0].evaluate_on_hypercube(i).unwrap()
-					* multilins[1].evaluate_on_hypercube(i).unwrap()
-			})
-			.collect::<Vec<_>>();
-
-		let eq_r = EqIndPartialEval::new(n_vars, challenges.clone())
-			.unwrap()
-			.multilinear_extension::<FE, _>(&backend)
+		let sum = prod_multilin
+			.evaluate(
+				MultilinearQuery::with_full_query(&challenges, &backend)
+					.unwrap()
+					.to_ref(),
+			)
 			.unwrap();
-
-		let mut sum = FE::ZERO;
-		(0..(1 << n_vars)).for_each(|i| {
-			sum += poly_mle_evals[i] * eq_r.evaluate_on_hypercube(i).unwrap();
-		});
-
-		let poly_mle = MultilinearExtension::from_values(poly_mle_evals)
-			.unwrap()
-			.specialize_arc_dyn();
 
 		let prover = GPAProver::<FDomain, _, _, _>::new(
 			multilins.try_into().unwrap(),
-			poly_mle,
+			prod_multilin,
 			sum,
 			domain_factory.clone(),
 			&challenges,

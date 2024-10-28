@@ -1,7 +1,7 @@
 // Copyright 2024 Ulvetanna Inc.
 
 use crate::polynomial::{Error, MultivariatePoly};
-use binius_field::{ExtensionField, PackedField, TowerField};
+use binius_field::{ExtensionField, PackedField, RepackedExtension, TowerField};
 use binius_hal::{
 	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
@@ -39,13 +39,21 @@ where
 			data: mle.specialize(),
 		})
 	}
+
+	/// Create a new `MultilinearExtensionTransparent` from a set of values and a possibly smaller number of variables.
+	pub fn from_values_and_mu(values: Data, n_vars: usize) -> Result<Self, Error> {
+		let mle = MultilinearExtension::new(n_vars, values)?;
+		Ok(Self {
+			data: mle.specialize(),
+		})
+	}
 }
 
 impl<F, P, PE, Data> MultivariatePoly<F> for MultilinearExtensionTransparent<P, PE, Data>
 where
 	F: TowerField + ExtensionField<P::Scalar>,
 	P: PackedField,
-	PE: PackedField<Scalar = F>,
+	PE: PackedField<Scalar = F> + RepackedExtension<P>,
 	Data: Deref<Target = [P]> + Send + Sync + Debug,
 {
 	fn n_vars(&self) -> usize {

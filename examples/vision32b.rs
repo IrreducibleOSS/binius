@@ -31,8 +31,8 @@ use binius_field::{
 	packed::get_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
 	AESTowerField32b, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-	PackedAESBinaryField8x32b, PackedBinaryField1x128b, PackedBinaryField8x32b, PackedField,
-	PackedFieldIndexable, TowerField,
+	PackedAESBinaryField8x32b, PackedBinaryField1x128b, PackedBinaryField2x128b,
+	PackedBinaryField8x32b, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::{
@@ -295,15 +295,18 @@ struct TraceOracle {
 }
 
 impl TraceOracle {
-	pub fn new<F>(oracles: &mut MultilinearOracleSet<F>, log_size: usize) -> Result<Self>
-	where
-		F: TowerField + ExtensionField<BinaryField32b> + From<BinaryField32b>,
-	{
+	pub fn new<
+		P: PackedField<Scalar: TowerField + ExtensionField<BinaryField32b>>
+			+ RepackedExtension<PackedBinaryField8x32b>,
+	>(
+		oracles: &mut MultilinearOracleSet<P::Scalar>,
+		log_size: usize,
+	) -> Result<Self> {
 		let even_round_consts = array::from_fn(|i| {
 			let even_rc_single = oracles
 				.add_named(format!("even_round_consts_single_{}", i))
 				.transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+					MultilinearExtensionTransparent::<_, P, _>::from_values(round_consts(
 						&VISION_RC_EVEN[i],
 					))
 					.unwrap(),
@@ -318,7 +321,7 @@ impl TraceOracle {
 			let odd_rc_single = oracles
 				.add_named(format!("odd_round_consts_single_{}", i))
 				.transparent(
-					MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+					MultilinearExtensionTransparent::<_, P, _>::from_values(round_consts(
 						&VISION_RC_ODD[i],
 					))
 					.unwrap(),
@@ -335,7 +338,7 @@ impl TraceOracle {
 					oracles
 						.add_named(format!("round_0_const_single_{}", i))
 						.transparent(
-							MultilinearExtensionTransparent::<_, F, _>::from_values(round_consts(
+							MultilinearExtensionTransparent::<_, P, _>::from_values(round_consts(
 								&[VISION_ROUND_0[i], 0, 0, 0, 0, 0, 0, 0],
 							))
 							.unwrap(),
@@ -396,7 +399,10 @@ impl TraceOracle {
 				.add_named(format!("round_begin_{}", i))
 				.linear_combination(
 					log_size,
-					[(state_in[i], F::ONE), (round_0_constant[i], F::ONE)],
+					[
+						(state_in[i], P::Scalar::ONE),
+						(round_0_constant[i], P::Scalar::ONE),
+					],
 				)
 				.unwrap()
 		});
@@ -406,11 +412,11 @@ impl TraceOracle {
 				.add_named(format!("sbox_out_odds_{}", i))
 				.linear_combination_with_offset(
 					log_size,
-					F::from(SBOX_FWD_CONST),
+					P::Scalar::from(SBOX_FWD_CONST),
 					[
-						(inv_1[i], F::from(SBOX_FWD_TRANS[0])),
-						(inv_pow2_1[i], F::from(SBOX_FWD_TRANS[1])),
-						(inv_pow4_1[i], F::from(SBOX_FWD_TRANS[2])),
+						(inv_1[i], P::Scalar::from(SBOX_FWD_TRANS[0])),
+						(inv_pow2_1[i], P::Scalar::from(SBOX_FWD_TRANS[1])),
+						(inv_pow4_1[i], P::Scalar::from(SBOX_FWD_TRANS[2])),
 					],
 				)
 				.unwrap()
@@ -422,7 +428,7 @@ impl TraceOracle {
 				.linear_combination(
 					log_size,
 					MDS_TRANS[row].iter().enumerate().map(|(i, &elem)| {
-						(s_box_out_0[i], F::from(BinaryField32b::new(elem as u32)))
+						(s_box_out_0[i], P::Scalar::from(BinaryField32b::new(elem as u32)))
 					}),
 				)
 				.unwrap()
@@ -433,7 +439,7 @@ impl TraceOracle {
 				.linear_combination(
 					log_size,
 					MDS_TRANS[row].iter().enumerate().map(|(i, &elem)| {
-						(s_box_out_1[i], F::from(BinaryField32b::new(elem as u32)))
+						(s_box_out_1[i], P::Scalar::from(BinaryField32b::new(elem as u32)))
 					}),
 				)
 				.unwrap()
@@ -444,7 +450,10 @@ impl TraceOracle {
 				.add_named(format!("round_out_evens_{}", row))
 				.linear_combination(
 					log_size,
-					[(mds_out_0[row], F::ONE), (even_round_consts[row], F::ONE)],
+					[
+						(mds_out_0[row], P::Scalar::ONE),
+						(even_round_consts[row], P::Scalar::ONE),
+					],
 				)
 				.unwrap()
 		});
@@ -1104,7 +1113,7 @@ fn main() {
 
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let backend = make_portable_backend();
-	let trace_oracle = TraceOracle::new(&mut oracles, log_size).unwrap();
+	let trace_oracle = TraceOracle::new::<PackedBinaryField2x128b>(&mut oracles, log_size).unwrap();
 	type U = <PackedBinaryField1x128b as WithUnderlier>::Underlier;
 
 	const SECURITY_BITS: usize = 100;

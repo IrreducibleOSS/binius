@@ -1,5 +1,10 @@
 // Copyright 2024 Ulvetanna Inc.
 
+pub use crate::arch::{
+	packed_polyval_128::PackedBinaryPolyval1x128b, packed_polyval_256::PackedBinaryPolyval2x128b,
+	packed_polyval_512::PackedBinaryPolyval4x128b,
+};
+
 #[cfg(test)]
 mod test_utils {
 	/// Test if `mult_func` operation is a valid multiply operation on the given values for

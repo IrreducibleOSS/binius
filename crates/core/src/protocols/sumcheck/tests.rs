@@ -13,7 +13,8 @@ use crate::{
 	protocols::test_utils::TestProductComposition,
 };
 use binius_field::{
-	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
+	packed::set_packed_slice, BinaryField128b, BinaryField8b, ExtensionField, Field,
+	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField,
 };
 use binius_hal::{
 	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
@@ -59,10 +60,16 @@ where
 	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	repeat_with(|| {
-		let values = repeat_with(|| P::random(&mut rng))
-			.take(1 << (n_vars - P::LOG_WIDTH))
+		let mut values = repeat_with(|| P::random(&mut rng))
+			.take(1 << (n_vars.saturating_sub(P::LOG_WIDTH)))
 			.collect::<Vec<_>>();
-		MultilinearExtension::from_values(values)
+		if n_vars < P::WIDTH {
+			for i in n_vars..P::WIDTH {
+				set_packed_slice(&mut values, i, P::Scalar::ZERO);
+			}
+		}
+
+		MultilinearExtension::new(n_vars, values)
 			.unwrap()
 			.specialize()
 	})
@@ -70,10 +77,12 @@ where
 	.collect()
 }
 
-fn compute_composite_sum<F, P, M, Composition>(multilinears: &[M], composition: Composition) -> F
+fn compute_composite_sum<P, M, Composition>(
+	multilinears: &[M],
+	composition: Composition,
+) -> P::Scalar
 where
-	F: Field,
-	P: PackedField<Scalar = F>,
+	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
 	Composition: CompositionPoly<P>,
 {
@@ -94,12 +103,13 @@ where
 }
 
 fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switchover_rd: usize) {
-	type F = BinaryField32b;
+	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
+	type PE = PackedBinaryField1x128b;
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let multilins = generate_random_multilinears::<F, FE>(&mut rng, n_vars, n_multilinears);
+	let multilins = generate_random_multilinears::<P, PE>(&mut rng, n_vars, n_multilinears);
 	let composition = TestProductComposition::new(n_multilinears);
 	let sum = compute_composite_sum(&multilins, &composition);
 
@@ -188,9 +198,14 @@ fn test_prove_verify_interaction_pigeonhole_cores() {
 }
 
 fn prove_verify_batch(n_vars: &[usize]) {
-	type F = BinaryField32b;
+	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
+	type PE = PackedBinaryField1x128b;
+
+	trait UniversalComposition: CompositionPoly<FE> + CompositionPoly<PE> {}
+
+	impl<T: CompositionPoly<FE> + CompositionPoly<PE>> UniversalComposition for T {}
 
 	let mut rng = StdRng::seed_from_u64(0);
 
@@ -199,14 +214,12 @@ fn prove_verify_batch(n_vars: &[usize]) {
 	let (claims, provers) = n_vars
 		.iter()
 		.map(|n_vars| {
-			let multilins = generate_random_multilinears::<F, FE>(&mut rng, *n_vars, 3);
+			let multilins = generate_random_multilinears::<P, PE>(&mut rng, *n_vars, 3);
 			let identity_composition =
-				Arc::new(index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap())
-					as Arc<dyn CompositionPoly<FE>>;
+				Arc::new(index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap());
 
 			let square_composition =
-				Arc::new(index_composition(&[0, 1, 2], [1], SquareComposition).unwrap())
-					as Arc<dyn CompositionPoly<FE>>;
+				Arc::new(index_composition(&[0, 1, 2], [1], SquareComposition).unwrap());
 
 			let product_composition = Arc::new(TestProductComposition::new(3));
 
@@ -219,7 +232,7 @@ fn prove_verify_batch(n_vars: &[usize]) {
 				3,
 				vec![
 					CompositeSumClaim {
-						composition: identity_composition,
+						composition: identity_composition as Arc<dyn UniversalComposition>,
 						sum: identity_sum,
 					},
 					CompositeSumClaim {

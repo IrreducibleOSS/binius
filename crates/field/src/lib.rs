@@ -45,5 +45,6 @@ pub use packed::PackedField;
 pub use packed_aes_field::*;
 pub use packed_binary_field::*;
 pub use packed_extension::*;
+pub use packed_polyval::*;
 pub use polyval::*;
 pub use transpose::{square_transpose, transpose_scalars, Error as TransposeError};

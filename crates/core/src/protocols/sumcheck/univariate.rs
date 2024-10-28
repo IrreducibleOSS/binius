@@ -151,7 +151,7 @@ mod tests {
 		},
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, Field, PackedBinaryField1x128b, PackedBinaryField8x32b,
+		BinaryField128b, BinaryField16b, Field, PackedBinaryField1x128b, PackedBinaryField4x32b,
 	};
 	use binius_hal::{make_portable_backend, MultilinearPoly, MultilinearQuery};
 	use binius_hash::GroestlHasher;
@@ -163,7 +163,7 @@ mod tests {
 	fn test_univariatizing_reduction_end_to_end() {
 		type F = BinaryField128b;
 		type FDomain = BinaryField16b;
-		type P = PackedBinaryField8x32b;
+		type P = PackedBinaryField4x32b;
 		type PE = PackedBinaryField1x128b;
 
 		let backend = make_portable_backend();

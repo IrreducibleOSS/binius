@@ -10,7 +10,8 @@ use crate::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField32b, Field, PackedField, TowerField,
+	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedField, RepackedExtension,
+	TowerField,
 };
 use binius_hal::MultilinearExtension;
 use binius_hash::GroestlHasher;
@@ -18,20 +19,25 @@ use binius_math::IsomorphicEvaluationDomainFactory;
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 
-fn generate_poly_helper<F>(
+fn generate_poly_helper<P, F>(
 	rng: &mut StdRng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<(MultilinearExtension<F>, F)>
+) -> Vec<(MultilinearExtension<P>, F)>
 where
+	P: PackedField<Scalar: ExtensionField<F>>,
 	F: Field,
 {
 	repeat_with(|| {
-		let values = repeat_with(|| Field::random(&mut *rng))
+		let values = repeat_with(|| F::random(&mut *rng))
 			.take(1 << n_vars)
 			.collect::<Vec<F>>();
-		let product = values.iter().fold(F::ONE, |acc, x| acc * x);
-		(MultilinearExtension::from_values(values).unwrap(), product)
+		let product = values.iter().fold(F::ONE, |acc, x| acc * *x);
+		let packed_values = values
+			.iter()
+			.map(|x| P::set_single((*x).into()))
+			.collect::<Vec<_>>();
+		(MultilinearExtension::from_values(packed_values).unwrap(), product)
 	})
 	.take(n_multilinears)
 	.collect::<Vec<_>>()
@@ -52,7 +58,7 @@ struct CreateClaimsWitnessesOutput<
 
 fn create_claims_witnesses_helper<
 	U: UnderlierType + PackScalar<F, Packed = P>,
-	P: PackedField<Scalar = F>,
+	P: PackedField<Scalar = F> + RepackedExtension<P>,
 	F: TowerField,
 >(
 	mut rng: StdRng,
@@ -72,7 +78,7 @@ fn create_claims_witnesses_helper<
 		})
 		.collect::<Vec<_>>();
 
-	let mles_with_product = generate_poly_helper::<F>(&mut rng, n_vars, n_multilins);
+	let mles_with_product = generate_poly_helper::<P, F>(&mut rng, n_vars, n_multilins);
 	let update = (0..n_multilins).map(|index| {
 		(multilin_oracles[index].id(), mles_with_product[index].0.clone().specialize_arc_dyn())
 	});

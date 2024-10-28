@@ -188,7 +188,7 @@ mod tests {
 	};
 	use binius_field::{
 		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
-		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable,
+		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable, RepackedExtension,
 	};
 	use binius_hal::{
 		make_portable_backend, ComputationBackend, MultilinearPoly, MultilinearQuery,
@@ -216,7 +216,7 @@ mod tests {
 	where
 		F: Field + ExtensionField<FDomain>,
 		FDomain: Field,
-		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
 		Composition: CompositionPoly<P>,
 		M: MultilinearPoly<P> + Send + Sync + 'static,
 		Backend: ComputationBackend,

@@ -375,6 +375,7 @@ fn test_evalcheck_linear_combination() {
 				+ select_row3_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(4)
 				+ FExtension::new(1)
 		})
+		.map(PackedBinaryField1x128b::set_single)
 		.collect();
 	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
 

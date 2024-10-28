@@ -336,7 +336,7 @@ trait BlendValues<T: TowerSimdType> {
 	/// Creates a packed value where
 	/// - components at index `0` are from `values[0]`
 	/// - components at index `1` are from `values[1]`
-	/// ...
+	///   ...
 	/// - components at index `values.len() - 1` are from `values[values.len() - 1]`
 	fn blend_values(values: &[T]) -> T;
 }

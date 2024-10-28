@@ -5,7 +5,7 @@ use binius_field::{
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
 	},
-	ExtensionField, Field, PackedField,
+	ExtensionField, Field, PackedField, RepackedExtension,
 };
 use binius_utils::bail;
 use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
@@ -29,7 +29,7 @@ where
 impl<'a, P, PE, Data> MLEEmbeddingAdapter<P, PE, Data>
 where
 	P: PackedField,
-	PE: PackedField,
+	PE: PackedField + RepackedExtension<P>,
 	PE::Scalar: ExtensionField<P::Scalar>,
 	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
 {
@@ -65,7 +65,7 @@ where
 impl<P, PE, Data> MultilinearPoly<PE> for MLEEmbeddingAdapter<P, PE, Data>
 where
 	P: PackedField + Debug,
-	PE: PackedField,
+	PE: PackedField + RepackedExtension<P>,
 	PE::Scalar: ExtensionField<P::Scalar>,
 	Data: Deref<Target = [P]> + Send + Sync + Debug,
 {
@@ -273,7 +273,7 @@ where
 {
 	pub fn specialize_arc_dyn<PE>(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a>
 	where
-		PE: PackedField,
+		PE: PackedField + RepackedExtension<P>,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		self.specialize().upcast_arc_dyn()
@@ -384,7 +384,7 @@ where
 			});
 		}
 
-		let correct_len = 1 << subcube_vars;
+		let correct_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 		if inner_products.len() != correct_len {
 			bail!(Error::ArgumentRangeError {
 				arg: "evals.len()".to_string(),
@@ -476,9 +476,9 @@ mod tests {
 	use super::*;
 	use crate::{make_portable_backend, MultilinearQuery};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x8b,
-		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension,
-		PackedField, PackedFieldIndexable,
+		packed::iter_packed_slice, BinaryField128b, BinaryField16b, BinaryField8b,
+		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField4x32b,
+		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
 	};
 	use rand::prelude::*;
 	use std::iter::repeat_with;
@@ -495,7 +495,7 @@ mod tests {
 				.collect(),
 		)
 		.unwrap()
-		.specialize::<BinaryField128b>();
+		.specialize::<PackedBinaryField1x128b>();
 
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
@@ -505,11 +505,11 @@ mod tests {
 
 		let partial_low = poly.evaluate_partial_low(query.to_ref()).unwrap();
 
-		let mut inner_products = vec![BinaryField128b::ZERO; 16];
+		let mut inner_products = vec![PackedBinaryField1x128b::zero(); 16];
 		poly.subcube_inner_products(query.to_ref(), 4, 0, inner_products.as_mut_slice())
 			.unwrap();
 
-		for (idx, inner_product) in inner_products.into_iter().enumerate() {
+		for (idx, inner_product) in iter_packed_slice(&inner_products).enumerate() {
 			assert_eq!(inner_product, partial_low.evaluate_on_hypercube(idx).unwrap(),);
 		}
 	}
@@ -524,7 +524,7 @@ mod tests {
 			)],
 		)
 		.unwrap()
-		.specialize::<BinaryField128b>();
+		.specialize::<PackedBinaryField1x128b>();
 
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
@@ -532,12 +532,12 @@ mod tests {
 		let backend = make_portable_backend();
 		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
 
-		let mut inner_products = vec![BinaryField128b::ZERO; 2];
+		let mut inner_products = vec![PackedBinaryField1x128b::zero(); 2];
 		poly.subcube_inner_products(query.to_ref(), 1, 0, inner_products.as_mut_slice())
 			.unwrap();
 
-		assert_eq!(inner_products[0], BinaryField128b::new(2));
-		assert_eq!(inner_products[1], BinaryField128b::new(9));
+		assert_eq!(get_packed_slice(&inner_products, 0), BinaryField128b::new(2));
+		assert_eq!(get_packed_slice(&inner_products, 1), BinaryField128b::new(9));
 	}
 
 	#[test]
@@ -595,11 +595,12 @@ mod tests {
 	#[test]
 	fn test_subcube_inner_products_and_evaluate_partial_low_conform() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let evals = repeat_with(|| Field::random(&mut rng))
-			.take(1 << 12)
-			.collect::<Vec<F>>();
+		let n_vars = 12;
+		let evals = repeat_with(|| P::random(&mut rng))
+			.take(1 << (n_vars - P::LOG_WIDTH))
+			.collect::<Vec<_>>();
 		let mle = MultilinearExtension::from_values(evals).unwrap();
-		let mles = MLEEmbeddingAdapter::<F, P, _>::from(mle);
+		let mles = MLEDirectAdapter::from(mle);
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(6)
 			.collect::<Vec<F>>();
@@ -607,15 +608,21 @@ mod tests {
 		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
 		let partial_eval = mles.evaluate_partial_low(query.to_ref()).unwrap();
 
-		let mut evals = [P::default(); 2];
-		for subcube_index in 0..4 {
-			mles.subcube_inner_products(query.to_ref(), 4, subcube_index, evals.as_mut_slice())
-				.unwrap();
-			for hypercube_idx in 0..16 {
+		let subcube_vars = 4;
+		let mut evals = vec![P::default(); 1 << (subcube_vars - P::LOG_WIDTH)];
+		for subcube_index in 0..(n_vars - query.n_vars() - subcube_vars) {
+			mles.subcube_inner_products(
+				query.to_ref(),
+				subcube_vars,
+				subcube_index,
+				evals.as_mut_slice(),
+			)
+			.unwrap();
+			for hypercube_idx in 0..(1 << subcube_vars) {
 				assert_eq!(
 					get_packed_slice(&evals, hypercube_idx),
 					partial_eval
-						.evaluate_on_hypercube(hypercube_idx + (subcube_index << 4))
+						.evaluate_on_hypercube(hypercube_idx + (subcube_index << subcube_vars))
 						.unwrap()
 				);
 			}
