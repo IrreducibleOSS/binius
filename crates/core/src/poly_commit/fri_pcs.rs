@@ -566,6 +566,38 @@ where
 	fri_query_proofs: Vec<fri::QueryProof<FExt, VCS::Proof>>,
 }
 
+/// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
+///
+/// `log_block_length` is the log block length of the packed Reed-Solomon code, i.e., $\ell - \kappa + \mathcal R$.
+#[allow(dead_code)]
+fn estimate_optimal_arity(log_block_length: usize, digest_size: usize, field_size: usize) -> usize {
+	(1..=log_block_length)
+		.map(|arity| {
+			(
+				// for given arity, return a tuple (arity, estimate of query_proof_size).
+				// this estimate is basd on the following approximation of a single query_proof_size, where $\vartheta$ is the arity:
+				// $\big((n-\vartheta) + (n-2\vartheta) + \ldots\big)\text{digest_size} + \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
+				arity,
+				((log_block_length) / 2 * digest_size + (1 << arity) * field_size)
+					* (log_block_length - arity)
+					/ arity,
+			)
+		})
+		// now scan and terminate the iterator when query_proof_size increases.
+		.scan(None, |old: &mut Option<(usize, usize)>, new| {
+			let should_continue = !matches!(*old, Some(ref old) if new.1 > old.1);
+			*old = Some(new);
+			if should_continue {
+				Some(new)
+			} else {
+				None
+			}
+		})
+		.last()
+		.unwrap()
+		.0
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("the polynomial must have {expected} variables")]
@@ -723,5 +755,19 @@ mod tests {
 			BinaryField16b,
 			BinaryField128b,
 		>(12, 2, &[3, 3, 3]);
+	}
+
+	#[test]
+	fn test_estimate_optimal_arity() {
+		let field_size = 128;
+		for log_block_length in 22..35 {
+			let digest_size = 256;
+			assert_eq!(estimate_optimal_arity(log_block_length, digest_size, field_size), 4);
+		}
+
+		for log_block_length in 22..28 {
+			let digest_size = 1024;
+			assert_eq!(estimate_optimal_arity(log_block_length, digest_size, field_size), 6);
+		}
 	}
 }
