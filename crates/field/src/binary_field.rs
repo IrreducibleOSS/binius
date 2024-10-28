@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,

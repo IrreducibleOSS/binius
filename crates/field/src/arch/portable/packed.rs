@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 // This is because derive(bytemuck::TransparentWrapper) adds some type constraints to
 // PackedPrimitiveType in addition to the type constraints we define. Even more, annoying, the

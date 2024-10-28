@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 #[macro_export]
 macro_rules! impl_packed_field_display {

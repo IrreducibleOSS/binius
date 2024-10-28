@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
 use crate::{

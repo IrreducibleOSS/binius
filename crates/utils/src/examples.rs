@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 // Get log trace size from the environment variable.
 // Panics if the environment variable is not a valid integer.

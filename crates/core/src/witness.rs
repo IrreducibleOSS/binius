@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 use binius_field::{

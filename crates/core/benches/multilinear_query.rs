@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use binius_field::{BinaryField128b, PackedBinaryField1x128b, PackedField};
 use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};

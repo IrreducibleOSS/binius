@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 use crate::challenger::{CanObserve, CanSample, CanSampleBits};
 use binius_field::{ExtensionField, PackedField};

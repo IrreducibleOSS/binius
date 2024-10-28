@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! This module contains helpers to create bivariate sumcheck instances originating from:
 //!  * products with shift indicators (shifted virtual polynomials)

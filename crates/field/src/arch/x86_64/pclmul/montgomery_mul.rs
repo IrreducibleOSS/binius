@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 /// A type that can be used in SIMD polyval field multiplication
 pub trait PolyvalSimdType: Copy {

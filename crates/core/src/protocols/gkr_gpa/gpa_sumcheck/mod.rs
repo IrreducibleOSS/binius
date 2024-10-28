@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! The multivariate sumcheck polynomial protocol, special cased when the sumcheck is part of the GPA Protocol.
 //!

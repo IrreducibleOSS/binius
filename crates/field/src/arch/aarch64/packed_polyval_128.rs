@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 // Copyright (c) 2019-2023 RustCrypto Developers
 
 //! ARMv8 `PMULL`-accelerated implementation of POLYVAL.

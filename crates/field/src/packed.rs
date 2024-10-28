@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 //! Traits for packed field elements which support SIMD implementations.
 //!

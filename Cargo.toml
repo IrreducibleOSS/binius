@@ -8,7 +8,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Ulvetanna Team <ulvt_dev@ulvetanna.io>"]
+authors = ["Irreducible Team <ulvt_dev@ulvetanna.io>"]
 
 [workspace.dependencies]
 anyhow = "1.0.81"

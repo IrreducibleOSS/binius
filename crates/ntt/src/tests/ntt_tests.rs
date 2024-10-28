@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT};
 use binius_field::{

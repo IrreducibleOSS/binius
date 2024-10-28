@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 pub use crate::arch::{
 	packed_polyval_128::PackedBinaryPolyval1x128b, packed_polyval_256::PackedBinaryPolyval2x128b,

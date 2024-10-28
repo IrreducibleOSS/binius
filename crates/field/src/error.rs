@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 /// Error thrown when a field operation fails.
 #[derive(Clone, thiserror::Error, Debug)]

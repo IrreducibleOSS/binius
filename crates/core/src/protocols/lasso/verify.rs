@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::lasso::{reduce_lasso_claim, LassoBatches, LassoClaim, LassoProof};
 use crate::{

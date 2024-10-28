@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use bytemuck::{must_cast_mut, must_cast_ref, AnyBitPattern, NoUninit};
 

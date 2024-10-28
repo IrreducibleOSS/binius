@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};

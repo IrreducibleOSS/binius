@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 use binius_field::{ExtensionField, PackedField, TowerField};
 use binius_math::CompositionPoly;
 use binius_utils::thread_local_mut::ThreadLocalMut;

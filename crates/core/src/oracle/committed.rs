@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 /// Committed polynomial batches are identified by their index.
 pub type BatchId = usize;

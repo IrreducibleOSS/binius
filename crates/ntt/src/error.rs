@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {

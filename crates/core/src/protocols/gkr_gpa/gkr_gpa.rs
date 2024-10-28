@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::Error;
 use crate::{protocols::sumcheck::Proof as SumcheckBatchProof, witness::MultilinearWitness};

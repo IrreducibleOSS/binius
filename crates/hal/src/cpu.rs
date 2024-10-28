@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::{
 	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},

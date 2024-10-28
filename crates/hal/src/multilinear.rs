@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 use crate::{Error, MultilinearExtension, MultilinearQueryRef};
 use binius_field::PackedField;

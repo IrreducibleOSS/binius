@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 pub mod batch_pcs;
 pub mod fri_pcs;

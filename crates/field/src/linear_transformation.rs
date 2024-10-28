@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
 use rand::RngCore;

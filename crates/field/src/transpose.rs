@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 use super::{packed::PackedField, ExtensionField, PackedFieldIndexable, RepackedExtension};
 use p3_util::log2_strict_usize;

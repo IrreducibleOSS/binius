@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 // If the macro is not used in the same module, rustc thinks it is unused for some reason
 #[allow(unused_macros, unused_imports)]

@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;

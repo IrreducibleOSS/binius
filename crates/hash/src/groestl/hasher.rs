@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
 

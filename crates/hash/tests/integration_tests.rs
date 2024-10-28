@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 use binius_field::{
 	AESTowerField64b, AESTowerField8b, ExtensionField, Field, PackedAESBinaryField32x8b,
 	PackedAESBinaryField4x64b, PackedField,

@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use binius_field::{
 	BinaryField, BinaryField1b, ExtensionField, Field, PackedExtension, PackedFieldIndexable,

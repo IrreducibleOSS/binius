@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! Example of a Binius SNARK that proves execution of Keccak-f[1600] permutations.
 //!

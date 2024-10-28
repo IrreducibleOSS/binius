@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 #![feature(step_trait)]
 #![feature(get_many_mut)]
 // This is to silence clippy errors around suspicious usage of XOR

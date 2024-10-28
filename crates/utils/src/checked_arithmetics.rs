@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 /// Division implementation that fails in case when `a`` isn't divisible by `b`
 pub const fn checked_int_div(a: usize, b: usize) -> usize {

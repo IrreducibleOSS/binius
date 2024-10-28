@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! Polynomial oracles in the polynomial interactive oracle protocol (PIOP) model.
 //!

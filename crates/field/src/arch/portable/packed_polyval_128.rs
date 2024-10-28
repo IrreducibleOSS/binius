@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 // Copyright (c) 2019-2023 RustCrypto Developers
 // Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
 

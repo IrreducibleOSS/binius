@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::field_challenger::{FieldChallenger, FieldChallengerHelper};
 use binius_field::{Field, PackedField, PackedFieldIndexable};

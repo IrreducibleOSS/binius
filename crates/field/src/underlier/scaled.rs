@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::{Divisible, Random, UnderlierType};
 use binius_utils::checked_arithmetics::checked_log_2;

@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::Error;
 use binius_field::{packed::set_packed_slice, Field, PackedField};

@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 // Copyright (c) 2022 The Plonky2 Authors
 
 use super::error::Error;

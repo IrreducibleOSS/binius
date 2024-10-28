@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! An interactive protocol for proving/verifying evaluation claims on virtual polynomials.
 //!

@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::gpa_sumcheck::error::Error as GPASumcheckError;
 use crate::{

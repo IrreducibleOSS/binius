@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 use crate::builder::ConstraintSystemBuilder;
 use binius_core::oracle::OracleId;
 use binius_field::{

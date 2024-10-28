@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 /// Read boolean flag from the environment variable.
 pub fn boolean_env_flag_set(flag: &str) -> bool {

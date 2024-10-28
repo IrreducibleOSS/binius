@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use binius_field::{packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedField};
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};

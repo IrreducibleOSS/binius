@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 use binius_field::{AESTowerField32b, BinaryField32b};
 
 // The actual number of loops is twice as many because of the 2 sboxes

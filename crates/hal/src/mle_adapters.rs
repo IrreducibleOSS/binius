@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 use binius_field::{

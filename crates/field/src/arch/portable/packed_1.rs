@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType};
 use crate::{

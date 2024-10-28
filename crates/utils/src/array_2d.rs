@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use bytemuck::{allocation::zeroed_vec, Zeroable};
 use std::ops::{AddAssign, Deref, DerefMut, Index, IndexMut};

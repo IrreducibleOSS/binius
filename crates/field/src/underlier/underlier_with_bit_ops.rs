@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::underlier_type::{NumCast, UnderlierType};
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};

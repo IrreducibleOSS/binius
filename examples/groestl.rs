@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 //! This an example SNARK for proving the P permutation of the Grøstl-256 hash function.
 //!

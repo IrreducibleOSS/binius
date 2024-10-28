@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{

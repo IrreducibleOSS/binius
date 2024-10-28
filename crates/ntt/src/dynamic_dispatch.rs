@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use crate::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, MultithreadedNTT, SingleThreadedNTT};
 use binius_field::{BinaryField, PackedFieldIndexable};

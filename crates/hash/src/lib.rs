@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 #![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
 
 mod groestl;

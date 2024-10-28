@@ -1,4 +1,4 @@
-// Copyright 2023 Ulvetanna Inc.
+// Copyright 2023-2024 Irreducible Inc.
 
 pub use crate::arch::{packed_128::*, packed_256::*, packed_512::*};
 

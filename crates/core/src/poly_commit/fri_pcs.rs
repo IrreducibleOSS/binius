@@ -1,4 +1,4 @@
-// Copyright 2024 Ulvetanna Inc.
+// Copyright 2024 Irreducible Inc.
 
 use super::ring_switch::{evaluate_ring_switch_eq_ind, reduce_tensor_claim};
 use crate::{
