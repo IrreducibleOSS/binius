@@ -72,7 +72,6 @@ where
 	debug_assert_eq!(values.len(), 1 << folding_challenges.len());
 	debug_assert!(scratch_buffer.len() >= values.len());
 
-	scratch_buffer[..values.len()].copy_from_slice(values);
 	// Fold the chunk with the folding challenges one by one
 	for n_challenges_processed in 0..folding_challenges.len() {
 		let n_remaining_challenges = folding_challenges.len() - n_challenges_processed;
@@ -80,14 +79,24 @@ where
 		let new_scratch_buffer_len = scratch_buffer_len >> 1;
 		let round = start_round + n_challenges_processed;
 		let r = folding_challenges[n_challenges_processed];
+		let index_start = chunk_index << (n_remaining_challenges - 1);
 
 		// Fold the (2i) and (2i+1)th cells of the scratch buffer in-place into the i-th cell
-		(0..new_scratch_buffer_len).for_each(|index_offset| {
-			let index = (chunk_index << (n_remaining_challenges - 1)) + index_offset;
-			let values =
-				(scratch_buffer[index_offset << 1], scratch_buffer[(index_offset << 1) + 1]);
-			scratch_buffer[index_offset] = fold_pair(rs_code, round, index, values, r)
-		});
+		if n_challenges_processed > 0 {
+			(0..new_scratch_buffer_len).for_each(|index_offset| {
+				let values =
+					(scratch_buffer[index_offset << 1], scratch_buffer[(index_offset << 1) + 1]);
+				scratch_buffer[index_offset] =
+					fold_pair(rs_code, round, index_start + index_offset, values, r)
+			});
+		} else {
+			// For the first round, we read values directly from the `values` slice.
+			(0..new_scratch_buffer_len).for_each(|index_offset| {
+				let values = (values[index_offset << 1], values[(index_offset << 1) + 1]);
+				scratch_buffer[index_offset] =
+					fold_pair(rs_code, round, index_start + index_offset, values, r)
+			});
+		}
 	}
 
 	scratch_buffer[0]
