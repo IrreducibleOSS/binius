@@ -8,21 +8,21 @@ use std::{marker::PhantomData, ops::Deref};
 ///
 /// Twiddle factors in the additive NTT are subspace polynomial evaluations over linear subspaces,
 /// with an implicit NTT round $i$.
-/// Setup: let $K/\mathbb{F}\_2$ be a finite extension of degree $d$, and let $\beta_0,\ldots ,\beta_{d-1}$ be a
-/// linear basis. Let $U_i$ be the $\mathbb{F}\_2$-linear span of $\beta_0,\ldots ,\beta_{i-1}$. Let $\hat{W}_i(X)$
+/// Setup: let $K \mathbin{/} \mathbb{F}\_2$ be a finite extension of degree $d$, and let $\beta_0,\ldots ,\beta_{d-1}$ be an $\mathbb{F}_2$-basis.
+/// Let $U_i$ be the $\mathbb{F}\_2$-linear span of $\beta_0,\ldots ,\beta_{i-1}$. Let $\hat{W}_i(X)$
 /// be the normalized subspace polynomial of degree $2^i$ that vanishes on $U_i$ and is $1$ on $\beta_i$.
-/// Evaluating $\hat{W}_i(X)$ turns out to yield an $\mathbb{F}\_2$-linear function $K\rightarrow K$.
+/// Evaluating $\hat{W}_i(X)$ turns out to yield an $\mathbb{F}\_2$-linear function $K \rightarrow K$.
 ///
 /// This trait accesses the subspace polynomial evaluations for $\hat{W}\_i(X)$.
 /// The evaluations of the vanishing polynomial over all elements in any coset of the subspace
 /// are equal. Equivalently, the evaluations of $\hat{W}\_i(X)$ are well-defined on
-/// the $d-i$-dimensional vector space $K/U_{i-1}$. Note that $K/U_{i-1}$ has a natural induced basis.
+/// the $d-i$-dimensional vector space $K \mathbin{/} U_i$. Note that $K \mathbin{/} U_i$ has a natural induced basis.
 /// Write $\{j\}$ for the $j$th coset of the subspace, where $j$ is in $[0,2^{d-i})$, with respect
-/// to this natural basis. This means: write $j$ in binary: $j = j_0 + \ldots +j_{d-i-1}2^{d-i-1}$
-/// and consider the following element of $K$: $j_0\beta_i + \ldots  + j_{d-i-1}\beta_{d-1}$.
-/// This element of course specifies an element of $K/U_i$.
+/// to this natural basis. This means: write $j$ in binary: $j = j_0 + \cdots + j_{d-i-1} \cdot 2^{d-i-1}$
+/// and consider the following element of $K$: $j_0 \cdot \beta_i + \cdots  + j_{d-i-1} \cdot \beta_{d-1}$.
+/// This element determines an element of $K \mathbin{/} U_i$.
 /// The twiddle factor $t_{i,j}$ is then $\hat{W}\_i(\{j\})$, i.e., $\hat{W}\_j$ evaluated at the aforementioned element of
-/// the quotient $K/U_i$.
+/// the quotient $K \mathbin{/} U_i$.
 ///
 /// As explained, the evaluations of these polynomial yield linear functions, which allows for flexibility in how they are computed.
 /// Namely, for an evaluation domain of size $2^{i}$, there is a strategy for computing polynomial
