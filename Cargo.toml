@@ -20,6 +20,7 @@ bytesize = "1.3.0"
 cfg-if = "1.0.0"
 criterion = { version = "0.5.1", features = ["real_blackbox"] }
 derive_more = "0.99.17"
+digest = "0.10.7"
 either = "1.11.0"
 getset = "0.1.2"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
