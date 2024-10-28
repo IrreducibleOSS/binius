@@ -15,7 +15,7 @@ pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField, Composition: Com
 
 	/// Compute composition evals over a subcube.
 	///
-	/// `sparse_batch_query` should contain multilinears evals over a subcube represented
+	/// `batch_query` should contain multilinears evals over a subcube represented
 	/// by `subcube_vars` and `subcube_index`.
 	///
 	/// Returns a packed sum (which may be spread across scalars).
@@ -23,7 +23,7 @@ pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField, Composition: Com
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		sparse_batch_query: &[&[PBase]],
+		batch_query: &[&[PBase]],
 	) -> P;
 
 	/// Returns the composition evaluated by this object.

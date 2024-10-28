@@ -388,17 +388,11 @@ where
 						.iter()
 						.map(|evals| &evals[..pbase_prefix_len]);
 
-					stackalloc_with_iter(
-						n_multilinears,
-						extrapolated_evals_iter,
-						|sparse_batch_query| {
-							// Evaluate the small field composition
-							composition.sparse_batch_evaluate(
-								sparse_batch_query,
-								&mut composition_evals[..pbase_prefix_len],
-							)
-						},
-					)?;
+					stackalloc_with_iter(n_multilinears, extrapolated_evals_iter, |batch_query| {
+						// Evaluate the small field composition
+						composition
+							.batch_evaluate(batch_query, &mut composition_evals[..pbase_prefix_len])
+					})?;
 
 					// Accumulate round evals and multiply by the constant part of the
 					// zerocheck equality indicator

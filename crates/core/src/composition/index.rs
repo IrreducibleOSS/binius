@@ -58,14 +58,14 @@ impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 		self.composition.binary_tower_level()
 	}
 
-	fn sparse_batch_evaluate(
+	fn batch_evaluate(
 		&self,
-		sparse_batch_query: &[&[P]],
+		batch_query: &[&[P]],
 		evals: &mut [P],
 	) -> Result<(), binius_math::Error> {
-		let sparse_batch_subquery = self.indices.map(|index| sparse_batch_query[index]);
+		let batch_subquery = self.indices.map(|index| batch_query[index]);
 		self.composition
-			.sparse_batch_evaluate(sparse_batch_subquery.as_slice(), evals)
+			.batch_evaluate(batch_subquery.as_slice(), evals)
 	}
 }
 

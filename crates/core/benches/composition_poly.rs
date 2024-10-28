@@ -145,42 +145,40 @@ fn benchmark_evaluate(c: &mut Criterion) {
 	group.bench_function("arith_circuit_poly_128x1b", |bench| {
 		let poly = arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query128x1b, &mut results128x1b)
+			poly.batch_evaluate(&query128x1b, &mut results128x1b)
 				.unwrap();
 		});
 	});
 	group.bench_function("composition_poly_128x1b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query128x1b, &mut results128x1b)
+			poly.batch_evaluate(&query128x1b, &mut results128x1b)
 				.unwrap();
 		});
 	});
 	group.bench_function("arith_circuit_poly_16x8b", |bench| {
 		let poly = arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query16x8b, &mut results16x8b)
-				.unwrap();
+			poly.batch_evaluate(&query16x8b, &mut results16x8b).unwrap();
 		});
 	});
 	group.bench_function("composition_poly_16x8b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query16x8b, &mut results16x8b)
-				.unwrap();
+			poly.batch_evaluate(&query16x8b, &mut results16x8b).unwrap();
 		});
 	});
 	group.bench_function("arith_circuit_poly_1x128b", |bench| {
 		let poly = arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query1x128b, &mut results1x128b)
+			poly.batch_evaluate(&query1x128b, &mut results1x128b)
 				.unwrap();
 		});
 	});
 	group.bench_function("composition_poly_1x128b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			poly.sparse_batch_evaluate(&query1x128b, &mut results1x128b)
+			poly.batch_evaluate(&query1x128b, &mut results1x128b)
 				.unwrap();
 		});
 	});

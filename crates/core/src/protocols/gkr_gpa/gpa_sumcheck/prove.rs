@@ -224,13 +224,13 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		sparse_batch_query: &[&[P]],
+		batch_query: &[&[P]],
 	) -> P {
-		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
+		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
 			BivariateProduct {}
-				.sparse_batch_evaluate(sparse_batch_query, evals)
+				.batch_evaluate(batch_query, evals)
 				.expect("correct by query construction invariant");
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
@@ -323,13 +323,13 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		sparse_batch_query: &[&[P]],
+		batch_query: &[&[P]],
 	) -> P {
-		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
+		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
 			BivariateProduct {}
-				.sparse_batch_evaluate(sparse_batch_query, evals)
+				.batch_evaluate(batch_query, evals)
 				.expect("correct by query construction invariant");
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);

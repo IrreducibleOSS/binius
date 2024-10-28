@@ -123,14 +123,14 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		F::TOWER_LEVEL
 	}
 
-	fn sparse_batch_evaluate(
+	fn batch_evaluate(
 		&self,
 		batch_query: &[&[P]],
 		evals: &mut [P],
 	) -> Result<(), binius_math::Error> {
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
-			return Err(binius_math::Error::SparseBatchEvaluateSizeMismatch);
+			return Err(binius_math::Error::BatchEvaluateSizeMismatch);
 		}
 		self.batch_evals.with_mut(
 			|| vec![vec![P::zero(); row_len]; self.exprs.len()].into_boxed_slice(),
@@ -372,7 +372,7 @@ mod tests {
 
 		let mut batch_result = vec![P::zero(); 3];
 		circuit
-			.sparse_batch_evaluate(
+			.batch_evaluate(
 				&[
 					&[query1[0], query2[0], query3[0]],
 					&[query1[1], query2[1], query3[1]],

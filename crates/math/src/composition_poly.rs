@@ -32,30 +32,25 @@ where
 	fn binary_tower_level(&self) -> usize;
 
 	/// Batch evaluation that admits non-strided argument layout.
-	/// `sparse_batch_query` is a slice of slice references of equal length, which furthermore should equal
+	/// `batch_query` is a slice of slice references of equal length, which furthermore should equal
 	/// the length of `evals` parameter.
 	///
 	/// Evaluation follows SIMD semantics as in `evaluate`:
-	/// - `evals[j] := composition([sparse_batch_query[i][j] forall i]) forall j`
+	/// - `evals[j] := composition([batch_query[i][j] forall i]) forall j`
 	/// - no crosstalk between evaluations
 	///
 	/// This method has a default implementation.
-	fn sparse_batch_evaluate(
-		&self,
-		sparse_batch_query: &[&[P]],
-		evals: &mut [P],
-	) -> Result<(), Error> {
-		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
+	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
+		let row_len = batch_query.first().map_or(0, |row| row.len());
 
-		if evals.len() != row_len || sparse_batch_query.iter().any(|row| row.len() != row_len) {
-			return Err(Error::SparseBatchEvaluateSizeMismatch);
+		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
+			return Err(Error::BatchEvaluateSizeMismatch);
 		}
 
-		stackalloc_with_default(sparse_batch_query.len(), |query| {
+		stackalloc_with_default(batch_query.len(), |query| {
 			for (column, eval) in evals.iter_mut().enumerate() {
-				for (query_elem, sparse_batch_query_row) in query.iter_mut().zip(sparse_batch_query)
-				{
-					*query_elem = sparse_batch_query_row[column];
+				for (query_elem, batch_query_row) in query.iter_mut().zip(batch_query) {
+					*query_elem = batch_query_row[column];
 				}
 
 				*eval = self.evaluate(query)?;

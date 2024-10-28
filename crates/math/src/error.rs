@@ -18,8 +18,8 @@ pub enum Error {
 	ExtrapolateNumberOfEvaluations,
 	#[error("{0}")]
 	FieldError(#[from] binius_field::Error),
-	#[error("sparse batch size mismatch - non-rectangular query shape or evals of wrong length")]
-	SparseBatchEvaluateSizeMismatch,
+	#[error("batch size mismatch - non-rectangular query shape or evals of wrong length")]
+	BatchEvaluateSizeMismatch,
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
 	#[error("Polynomial error: {0}")]
