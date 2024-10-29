@@ -14,8 +14,9 @@ use binius_field::{
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField8b, ExtensionField, PackedExtension,
 	PackedField, PackedFieldIndexable,
 };
-use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
+use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_math::MultilinearExtension;
 use binius_ntt::NTTOptions;
 use rand::prelude::*;
 use std::{iter, iter::repeat_with};
@@ -141,11 +142,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	// check c == t(r'_0, ..., r'_{\ell-1})
 	// note that the prover is claiming that the final_message is [c]
 	let backend = make_portable_backend();
-	let eval_query = MultilinearQuery::<F, binius_hal::CpuBackend>::with_full_query(
-		&verifier_challenges,
-		&backend,
-	)
-	.unwrap();
+	let eval_query = backend
+		.multilinear_query::<F>(&verifier_challenges)
+		.unwrap();
 	// recall that msg, the message the prover commits to, is (the evaluations on the Boolean hypercube of) a multilinear polynomial.
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();

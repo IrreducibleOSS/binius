@@ -263,7 +263,7 @@ mod tests {
 	use super::*;
 	use binius_field::BinaryField32b;
 	use proptest::prelude::*;
-	use rand::{prelude::StdRng, SeedableRng};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	proptest! {
 		#[test]

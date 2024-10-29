@@ -17,10 +17,11 @@ use binius_field::{
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, MultilinearExtension, MultilinearQuery};
+use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_hash::{
 	GroestlDigest, GroestlDigestCompression, GroestlHasher, HashDigest, HasherDigest,
 };
+use binius_math::MultilinearExtension;
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -321,8 +322,8 @@ where
 		let n_polys = polys.len();
 		let n_challenges = log2_ceil_usize(n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::with_full_query(&mixing_challenges, backend)?
-			.into_expansion()[..n_polys];
+		let mixing_coefficients =
+			&backend.tensor_product_full_query(&mixing_challenges)?[..n_polys];
 
 		let (col_major_mats, ref vcs_committed) = committed;
 		if col_major_mats.len() != n_polys {
@@ -341,7 +342,7 @@ where
 		let log_block_size = log2_strict_usize(<FI as ExtensionField<F>>::DEGREE);
 		let log_n_cols = self.code.dim_bits() + log_block_size;
 
-		let partial_query = MultilinearQuery::with_full_query(&query[log_n_cols..], backend)?;
+		let partial_query = backend.multilinear_query(&query[log_n_cols..])?;
 		let ts = polys;
 		let t_primes = ts
 			.iter()
@@ -414,11 +415,8 @@ where
 
 		let n_challenges = log2_ceil_usize(proof.n_polys);
 		let mixing_challenges = challenger.sample_vec(n_challenges);
-		let mixing_coefficients = &MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
-			&mixing_challenges,
-			backend,
-		)?
-		.into_expansion()[..proof.n_polys];
+		let mixing_coefficients = &backend
+			.tensor_product_full_query::<PackedType<U, FE>>(&mixing_challenges)?[..proof.n_polys];
 		let value =
 			inner_product_unchecked(values.iter().copied(), iter_packed_slice(mixing_coefficients));
 
@@ -441,10 +439,8 @@ where
 		challenger.observe_slice(<PackedType<U, FE>>::unpack_scalars(proof.mixed_t_prime.evals()));
 
 		// Check evaluation of t' matches the claimed value
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
-			&query[..log_n_cols],
-			backend,
-		)?;
+		let multilin_query =
+			backend.multilinear_query::<PackedType<U, FE>>(&query[..log_n_cols])?;
 		let computed_value = proof
 			.mixed_t_prime
 			.evaluate(&multilin_query)
@@ -525,10 +521,8 @@ where
 			.collect::<Vec<_>>();
 
 		// Batch evaluate all opened columns
-		let multilin_query = MultilinearQuery::<PackedType<U, FE>, _>::with_full_query(
-			&query[log_n_cols..],
-			backend,
-		)?;
+		let multilin_query =
+			backend.multilinear_query::<PackedType<U, FE>>(&query[log_n_cols..])?;
 		let incorrect_evaluation = column_tests
 			.par_iter()
 			.map(|(expected, leaves)| {
@@ -1039,6 +1033,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1106,9 +1102,9 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1166,9 +1162,9 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 
 		let values = polys
 			.iter()
@@ -1224,9 +1220,9 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1281,9 +1277,9 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilinear_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilinear_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 
 		let values = polys
 			.iter()
@@ -1338,10 +1334,9 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let backend = make_portable_backend();
-
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
@@ -1396,9 +1391,9 @@ mod tests {
 		let query = repeat_with(|| challenger.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 
 		let values = polys
 			.iter()
@@ -1532,10 +1527,9 @@ mod tests {
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let backend = make_portable_backend();
-
-		let multilin_query =
-			MultilinearQuery::<PackedBinaryField1x128b, _>::with_full_query(&query, &backend)
-				.unwrap();
+		let multilin_query = backend
+			.multilinear_query::<PackedBinaryField1x128b>(&query)
+			.unwrap();
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 

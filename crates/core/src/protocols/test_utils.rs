@@ -2,8 +2,7 @@
 
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_hal::{MLEEmbeddingAdapter, MultilinearExtension};
-use binius_math::CompositionPoly;
+use binius_math::{CompositionPoly, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
 use std::ops::Deref;
 

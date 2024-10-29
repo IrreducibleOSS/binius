@@ -2,10 +2,8 @@
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{ExtensionField, PackedField, RepackedExtension, TowerField};
-use binius_hal::{
-	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
-};
+use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly};
 use std::{fmt::Debug, ops::Deref};
 
 /// A transparent multilinear polynomial defined as the multilinear extension over a small
@@ -68,7 +66,7 @@ where
 		// Use the portable CPU backend because the size of the hypercube is small by struct
 		// assumption.
 		let backend = make_portable_backend();
-		let query = MultilinearQuery::<PE, _>::with_full_query(query, &backend)?;
+		let query = backend.multilinear_query(query)?;
 		Ok(self.data.evaluate(query.to_ref())?)
 	}
 

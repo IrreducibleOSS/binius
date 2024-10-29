@@ -10,8 +10,8 @@ use crate::{
 	},
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{ComputationBackend, MultilinearPoly, SumcheckEvaluator};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain};
+use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;

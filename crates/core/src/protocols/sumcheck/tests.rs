@@ -16,12 +16,12 @@ use binius_field::{
 	packed::set_packed_slice, BinaryField128b, BinaryField8b, ExtensionField, Field,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField,
 };
-use binius_hal::{
-	make_portable_backend, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
-};
+use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::GroestlHasher;
-use binius_math::{CompositionPoly, IsomorphicEvaluationDomainFactory};
+use binius_math::{
+	CompositionPoly, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension,
+	MultilinearPoly,
+};
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
@@ -165,7 +165,7 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	assert_eq!(multilinear_evals[0].len(), n_multilinears);
 
 	// Verify the reduced multilinear evaluations are correct
-	let multilin_query = MultilinearQuery::with_full_query(eval_point, &backend).unwrap();
+	let multilin_query = backend.multilinear_query(eval_point).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 	}

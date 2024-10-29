@@ -5,8 +5,8 @@ use crate::protocols::utils::packed_from_fn_with_offset;
 use binius_field::{
 	packed::get_packed_slice, ExtensionField, Field, PackedField, PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, MultilinearPoly};
-use binius_math::CompositionPoly;
+use binius_hal::ComputationBackend;
+use binius_math::{CompositionPoly, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use rayon::prelude::*;

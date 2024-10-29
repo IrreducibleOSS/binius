@@ -33,9 +33,12 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedField, PackedFieldIndexable, TowerField,
 	AES_TO_BINARY_LINEAR_TRANSFORMATION,
 };
-use binius_hal::{make_portable_backend, ComputationBackend, MultilinearExtension};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::{Groestl256Core, GroestlHasher};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{
+	CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	MultilinearExtension,
+};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };

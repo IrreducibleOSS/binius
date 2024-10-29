@@ -6,7 +6,7 @@ use crate::{
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 };
 use binius_field::{BinaryField, ExtensionField};
-use binius_hal::{make_portable_backend, MultilinearQuery};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use itertools::izip;
 use std::iter;
@@ -70,10 +70,9 @@ where
 		let (interleave_challenges, fold_challenges) = challenges.split_at(params.log_batch_size());
 
 		let backend = make_portable_backend();
-		let interleave_tensor =
-			MultilinearQuery::<F, _>::with_full_query(interleave_challenges, &backend)
-				.expect("number of challenges is less than 32")
-				.into_expansion();
+		let interleave_tensor = backend
+			.tensor_product_full_query(interleave_challenges)
+			.expect("number of challenges is less than 32");
 
 		Ok(Self {
 			params,

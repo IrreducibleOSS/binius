@@ -8,8 +8,8 @@ use crate::{
 	},
 };
 use binius_field::{BinaryField, ExtensionField, Field, PackedFieldIndexable};
-use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
-use binius_math::{make_ntt_domain_points, EvaluationDomain};
+use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_math::{make_ntt_domain_points, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
@@ -88,10 +88,8 @@ where
 			univariate_challenge,
 		)?;
 
-		let query = MultilinearQuery::<F, _>::with_full_query(
-			&reduction_sumcheck_challenges[max_n_vars - skip_rounds..],
-			&make_portable_backend(),
-		)?;
+		let query = make_portable_backend()
+			.multilinear_query::<F>(&reduction_sumcheck_challenges[max_n_vars - skip_rounds..])?;
 		let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
 
 		let multilinear_evals_last = multilinear_evals
@@ -171,6 +169,7 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 
 #[cfg(test)]
 mod tests {
+	use super::*;
 	use crate::{
 		challenger::{new_hasher_challenger, CanSample, IsomorphicChallenger},
 		composition::{IndexComposition, ProductComposition},
@@ -183,9 +182,7 @@ mod tests {
 					univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover},
 					UnivariateZerocheck,
 				},
-				standard_switchover_heuristic,
-				univariate::{univariatizing_reduction_claim, verify_sumcheck_outputs},
-				ZerocheckClaim,
+				standard_switchover_heuristic, ZerocheckClaim,
 			},
 			test_utils::generate_zero_product_multilinears,
 		},
@@ -195,11 +192,10 @@ mod tests {
 		PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField8x16b,
 		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
 	};
-	use binius_hal::{make_portable_backend, MultilinearPoly, MultilinearQuery};
 	use binius_hash::GroestlHasher;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
-		IsomorphicEvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
@@ -242,11 +238,7 @@ mod tests {
 				.create(1 << skip_rounds)
 				.unwrap();
 
-			let query = MultilinearQuery::<PE, _>::with_full_query(
-				sumcheck_challenges.as_slice(),
-				&make_portable_backend(),
-			)
-			.unwrap();
+			let query = backend.multilinear_query(&sumcheck_challenges).unwrap();
 			let univariatized_multilinear_evals = multilinears
 				.iter()
 				.map(|multilinear| {
@@ -286,7 +278,7 @@ mod tests {
 				batch_sumcheck_output_prove.challenges[max_skip_rounds - skip_rounds..].to_vec();
 			query.extend(sumcheck_challenges.as_slice());
 
-			let query = MultilinearQuery::with_full_query(query.as_slice(), &backend).unwrap();
+			let query = backend.multilinear_query(&query).unwrap();
 
 			for (multilinear, eval) in iter::zip(multilinears, multilinear_evals) {
 				assert_eq!(multilinear.evaluate(query.to_ref()).unwrap(), eval);
@@ -318,7 +310,7 @@ mod tests {
 				.to_vec();
 			query.extend(sumcheck_challenges.as_slice());
 
-			let query = MultilinearQuery::with_full_query(&query, &backend).unwrap();
+			let query = backend.multilinear_query(&query).unwrap();
 
 			for (multilinear, eval) in iter::zip(multilinears, evals) {
 				assert_eq!(multilinear.evaluate(query.to_ref()).unwrap(), eval);

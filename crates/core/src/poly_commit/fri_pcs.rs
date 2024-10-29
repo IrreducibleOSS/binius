@@ -23,8 +23,8 @@ use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearQuery};
-use binius_math::EvaluationDomainFactory;
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use std::{iter, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
@@ -394,7 +394,7 @@ where
 
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
-		let expanded_query = MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend)?;
+		let expanded_query = backend.multilinear_query::<PE>(query_from_kappa)?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -479,7 +479,7 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query = MultilinearQuery::<FExt, _>::with_full_query(query_to_kappa, backend)?;
+		let expanded_query = backend.multilinear_query::<FExt>(query_to_kappa)?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -614,6 +614,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -684,9 +686,7 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let eval_query =
-			MultilinearQuery::<FE, binius_hal::CpuBackend>::with_full_query(&eval_point, &backend)
-				.unwrap();
+		let eval_query = backend.multilinear_query::<FE>(&eval_point).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let make_merkle_vcs = |log_len| {

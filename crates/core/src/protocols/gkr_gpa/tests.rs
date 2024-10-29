@@ -13,9 +13,8 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedField, RepackedExtension,
 	TowerField,
 };
-use binius_hal::MultilinearExtension;
 use binius_hash::GroestlHasher;
-use binius_math::IsomorphicEvaluationDomainFactory;
+use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 

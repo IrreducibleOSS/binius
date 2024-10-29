@@ -2,7 +2,8 @@
 
 use crate::challenger::{CanObserve, CanSample, CanSampleBits};
 use binius_field::{ExtensionField, PackedField};
-use binius_hal::{ComputationBackend, MultilinearExtension};
+use binius_hal::ComputationBackend;
+use binius_math::MultilinearExtension;
 use std::ops::Deref;
 
 pub trait PolyCommitScheme<P, FE>

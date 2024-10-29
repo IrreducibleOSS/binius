@@ -12,7 +12,6 @@ proc-macro2.workspace = true
 [dev-dependencies]
 binius_core = { path = "../core" }
 binius_field = { path = "../field" }
-binius_hal = { path = "../hal" }
 binius_math = { path = "../math" }
 
 [lib]

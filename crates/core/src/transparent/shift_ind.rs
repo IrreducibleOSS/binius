@@ -5,7 +5,7 @@ use crate::{
 	polynomial::{Error, MultivariatePoly},
 };
 use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
-use binius_hal::MultilinearExtension;
+use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
@@ -345,7 +345,7 @@ mod tests {
 	use super::*;
 	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, MultilinearQuery};
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -374,8 +374,7 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
+		let multilin_query = backend.multilinear_query::<P>(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -406,8 +405,7 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
+		let multilin_query = backend.multilinear_query::<P>(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality
@@ -438,8 +436,7 @@ mod tests {
 
 		// Get MultilinearExtension version
 		let shift_r_mle = shift_r_mvp.multilinear_extension::<P>().unwrap();
-		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(eval_point, &backend).unwrap();
+		let multilin_query = backend.multilinear_query::<P>(eval_point).unwrap();
 		let eval_mle = shift_r_mle.evaluate(&multilin_query).unwrap();
 
 		// Assert equality

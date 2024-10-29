@@ -7,7 +7,8 @@ use crate::{
 };
 
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_hal::{ComputationBackend, MultilinearExtension, MultilinearQuery};
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
@@ -31,6 +32,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 /// Creates a new multilinear from a batch of multilinears via \emph{merging}.
@@ -234,7 +237,7 @@ where
 		// Then the mixed evaluation, i.e., (tensor expansion of r')\cdot (s_u), is just given by *evaluating*
 		// interpolate_from_evaluations on the mixing challenge.
 		let mixed_evaluation = interpolate_from_evaluations
-			.evaluate(&MultilinearQuery::<FE, _>::with_full_query(&mixing_challenges, backend)?)?;
+			.evaluate(&backend.multilinear_query::<FE>(&mixing_challenges)?)?;
 		let mixed_value = &[mixed_evaluation];
 
 		// new_query := query || mixing_challenges.
@@ -302,7 +305,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query = MultilinearQuery::<F, _>::with_full_query(&eval_point, &backend).unwrap();
+		let eval_query = backend.multilinear_query::<F>(&eval_point).unwrap();
 		let values = multilins
 			.iter()
 			.map(|x| x.evaluate(&eval_query).unwrap())
@@ -364,7 +367,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query = MultilinearQuery::<FE, _>::with_full_query(&eval_point, &backend).unwrap();
+		let eval_query = backend.multilinear_query::<FE>(&eval_point).unwrap();
 		let values = multilins
 			.iter()
 			.map(|x| x.evaluate(&eval_query).unwrap())

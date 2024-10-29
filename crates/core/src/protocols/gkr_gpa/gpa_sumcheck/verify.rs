@@ -122,9 +122,9 @@ mod tests {
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
 		BinaryField8b, PackedField,
 	};
-	use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use binius_hash::GroestlHasher;
-	use binius_math::IsomorphicEvaluationDomainFactory;
+	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 	use p3_challenger::CanSample;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use std::iter;
@@ -176,11 +176,7 @@ mod tests {
 		let challenges: Vec<FE> = challenger.sample_vec(n_vars);
 
 		let sum = prod_multilin
-			.evaluate(
-				MultilinearQuery::with_full_query(&challenges, &backend)
-					.unwrap()
-					.to_ref(),
-			)
+			.evaluate(backend.multilinear_query(&challenges).unwrap().to_ref())
 			.unwrap();
 
 		let prover = GPAProver::<FDomain, _, _, _>::new(

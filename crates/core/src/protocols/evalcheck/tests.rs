@@ -16,8 +16,8 @@ use binius_field::{
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
 };
-use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearPoly, MultilinearQuery};
-use binius_math::extrapolate_line;
+use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_math::{extrapolate_line, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use bytemuck::cast_slice_mut;
 use itertools::{Either, Itertools};
 use rand::{rngs::StdRng, SeedableRng};
@@ -53,7 +53,7 @@ fn test_evaluation_point_batching() {
 		.take(log_size)
 		.collect::<Vec<_>>();
 
-	let query = MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
+	let query = backend.multilinear_query(&eval_point).unwrap();
 	let batch_evals = multilins
 		.iter()
 		.map(|multilin| multilin.evaluate(query.to_ref()).unwrap())
@@ -190,10 +190,8 @@ fn test_shifted_evaluation_whole_cube() {
 	let shifted_witness = MultilinearExtension::from_values(shifted_evals).unwrap();
 
 	let backend = make_portable_backend();
-
 	let query: MultilinearQuery<BinaryField128b, _> =
-		MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
-
+		backend.multilinear_query(&eval_point).unwrap();
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
 
@@ -273,9 +271,9 @@ fn test_shifted_evaluation_subcube() {
 	let shifted_witness = MultilinearExtension::from_values(shifted_evals).unwrap();
 
 	let backend = make_portable_backend();
-	let query: MultilinearQuery<BinaryField128b, _> =
-		MultilinearQuery::with_full_query(&eval_point, &backend).unwrap();
-
+	let query = backend
+		.multilinear_query::<BinaryField128b>(&eval_point)
+		.unwrap();
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
 

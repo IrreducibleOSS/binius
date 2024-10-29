@@ -32,6 +32,8 @@ pub enum Error {
 	Sumcheck(#[from] crate::protocols::sumcheck::Error),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

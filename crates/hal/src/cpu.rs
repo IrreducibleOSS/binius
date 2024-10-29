@@ -3,11 +3,10 @@
 use crate::{
 	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},
 	utils::tensor_product,
-	ComputationBackend, Error, MultilinearPoly, MultilinearQueryRef, RoundEvals, SumcheckEvaluator,
-	SumcheckMultilinear,
+	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::CompositionPoly;
+use binius_math::{CompositionPoly, MultilinearPoly, MultilinearQueryRef};
 use std::fmt::Debug;
 use tracing::instrument;
 

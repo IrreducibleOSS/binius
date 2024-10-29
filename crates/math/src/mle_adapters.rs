@@ -474,7 +474,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{make_portable_backend, MultilinearQuery};
+	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 	use binius_field::{
 		packed::iter_packed_slice, BinaryField128b, BinaryField16b, BinaryField8b,
 		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField4x32b,
@@ -485,6 +485,13 @@ mod tests {
 
 	type F = BinaryField16b;
 	type P = PackedBinaryField8x16b;
+
+	fn multilinear_query<P: PackedField>(p: &[P::Scalar]) -> MultilinearQuery<P, Vec<P>> {
+		let mut result = vec![P::default(); 1 << p.len().saturating_sub(P::LOG_WIDTH)];
+		result[0] = P::set_single(P::Scalar::ONE);
+		tensor_prod_eq_ind(0, &mut result, p).unwrap();
+		MultilinearQuery::with_expansion(p.len(), result).unwrap()
+	}
 
 	#[test]
 	fn test_evaluate_subcube_and_evaluate_partial_low_consistent() {
@@ -500,8 +507,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(6)
 			.collect::<Vec<_>>();
-		let backend = make_portable_backend();
-		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
+		let query = multilinear_query(&q);
 
 		let partial_low = poly.evaluate_partial_low(query.to_ref()).unwrap();
 
@@ -529,8 +535,7 @@ mod tests {
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
-		let backend = make_portable_backend();
-		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
+		let query = multilinear_query(&q);
 
 		let mut inner_products = vec![PackedBinaryField1x128b::zero(); 2];
 		poly.subcube_inner_products(query.to_ref(), 1, 0, inner_products.as_mut_slice())
@@ -604,8 +609,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(6)
 			.collect::<Vec<F>>();
-		let backend = make_portable_backend();
-		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
+		let query = multilinear_query(&q);
 		let partial_eval = mles.evaluate_partial_low(query.to_ref()).unwrap();
 
 		let subcube_vars = 4;

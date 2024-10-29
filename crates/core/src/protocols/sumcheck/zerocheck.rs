@@ -190,11 +190,11 @@ mod tests {
 		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
 		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable, RepackedExtension,
 	};
-	use binius_hal::{
-		make_portable_backend, ComputationBackend, MultilinearPoly, MultilinearQuery,
-	};
+	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 	use binius_hash::GroestlHasher;
-	use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+	use binius_math::{
+		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearPoly,
+	};
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
 
@@ -397,8 +397,7 @@ mod tests {
 		assert_eq!(verifier_multilinear_evals[0].len(), n_multilinears);
 
 		// Verify the reduced multilinear evaluations are correct
-		let multilin_query =
-			MultilinearQuery::with_full_query(&verifier_eval_point, &backend).unwrap();
+		let multilin_query = backend.multilinear_query(&verifier_eval_point).unwrap();
 		for (multilinear, &expected) in iter::zip(multilins, verifier_multilinear_evals[0].iter()) {
 			assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
 		}

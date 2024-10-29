@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{MLEDirectAdapter, MultilinearPoly};
 use binius_field::PackedField;
+use binius_math::{MLEDirectAdapter, MultilinearPoly};
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug, Clone)]

@@ -11,7 +11,7 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
-use binius_hal::{make_portable_backend, MultilinearQuery};
+use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;
@@ -87,9 +87,9 @@ where
 	let backend = make_portable_backend();
 
 	let (interleave_challenges, fold_challenges) = challenges.split_at(log_batch_size);
-	let tensor = MultilinearQuery::<F, _>::with_full_query(interleave_challenges, &backend)
-		.expect("number of challenges is less than 32")
-		.into_expansion();
+	let tensor = backend
+		.tensor_product_full_query(interleave_challenges)
+		.expect("number of challenges is less than 32");
 
 	// For each chunk of size `2^chunk_size` in the codeword, fold it with the folding challenges
 	let fold_chunk_size = 1 << fold_challenges.len();

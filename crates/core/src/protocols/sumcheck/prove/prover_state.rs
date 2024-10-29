@@ -11,10 +11,11 @@ use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
 };
 use binius_hal::{
-	ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
-	RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+	ComputationBackend, ComputationBackendExt, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
-use binius_math::{evaluate_univariate, CompositionPoly};
+use binius_math::{
+	evaluate_univariate, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+};
 use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::izip;
@@ -58,7 +59,7 @@ where
 	n_vars: usize,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	evaluation_points: Vec<FDomain>,
-	tensor_query: Option<MultilinearQuery<P, Backend>>,
+	tensor_query: Option<MultilinearQuery<P, Box<[P]>>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
 	backend: &'a Backend,
 }
@@ -110,7 +111,7 @@ where
 			})
 			.collect();
 
-		let tensor_query = MultilinearQuery::<_, Backend>::new(max_switchover_round + 1)?;
+		let tensor_query = MultilinearQuery::new(max_switchover_round + 1)?;
 
 		Ok(Self {
 			n_vars,
@@ -147,11 +148,7 @@ where
 		}
 
 		// Partial query for folding
-		let single_variable_partial_query =
-			MultilinearQuery::with_full_query(&[challenge], &self.backend)?;
-		let single_variable_partial_query =
-			MultilinearQueryRef::new(&single_variable_partial_query);
-
+		let single_variable_partial_query = self.backend.multilinear_query(&[challenge])?;
 		let mut any_transparent_left = false;
 		for multilinear in self.multilinears.iter_mut() {
 			match multilinear {
@@ -185,7 +182,7 @@ where
 					// Post-switchover, simply halve large field MLE.
 					*large_field_folded_multilinear = MLEDirectAdapter::from(
 						large_field_folded_multilinear
-							.evaluate_partial_low(single_variable_partial_query)?,
+							.evaluate_partial_low(single_variable_partial_query.to_ref())?,
 					);
 				}
 			}
@@ -210,8 +207,7 @@ where
 			},
 		};
 
-		let empty_query =
-			MultilinearQuery::<_, Backend>::new(0).expect("constructing an empty query");
+		let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
 		self.multilinears
 			.into_iter()
 			.map(|multilinear| {
@@ -230,7 +226,7 @@ where
 						large_field_folded_multilinear,
 					} => large_field_folded_multilinear.evaluate(empty_query.to_ref()),
 				}
-				.map_err(Error::HalError)
+				.map_err(Error::MathError)
 			})
 			.collect()
 	}

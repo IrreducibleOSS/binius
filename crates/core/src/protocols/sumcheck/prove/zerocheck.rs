@@ -23,10 +23,11 @@ use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension,
 };
-use binius_hal::{
-	ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, SumcheckEvaluator,
+use binius_hal::{ComputationBackend, ComputationBackendExt, SumcheckEvaluator};
+use binius_math::{
+	CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
+	MultilinearPoly,
 };
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
 use getset::Getters;
 use itertools::izip;
@@ -181,9 +182,9 @@ where
 
 		// Evaluate zerocheck partial indicator in variables 1..n_vars
 		let start = self.n_vars.min(1);
-		let partial_eq_ind_evals =
-			MultilinearQuery::with_full_query(&self.zerocheck_challenges[start..], self.backend)?
-				.into_expansion();
+		let partial_eq_ind_evals = self
+			.backend
+			.tensor_product_full_query(&self.zerocheck_challenges[start..])?;
 		let claimed_sums = vec![F::ZERO; self.compositions.len()];
 
 		// This is a regular multilinear zerocheck constructor, split over two creation stages.
@@ -322,10 +323,9 @@ where
 		//         of a MultilinearQuery and performing an evaluate_partial_low,
 		//         which accidentally does what's needed. There should obviously
 		//         be a dedicated method for this someday.
-		let mut lagrange_coeffs_query = MultilinearQuery::<P, _>::with_full_query(
+		let mut lagrange_coeffs_query = self.backend.multilinear_query(
 			// that's just fillers that will be overwritten
 			&self.zerocheck_challenges[..skip_rounds],
-			self.backend,
 		)?;
 		P::unpack_scalars_mut(lagrange_coeffs_query.expansion_mut())
 			.copy_from_slice(&subcube_lagrange_coeffs);

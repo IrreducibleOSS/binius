@@ -40,4 +40,7 @@ pub enum Error {
 
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+
+	#[error("HAL error: {0}")]
+	MathError(#[from] binius_math::Error),
 }

@@ -8,9 +8,9 @@ use binius_field::{
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b, BinaryField128b, BinaryField128bPolyval,
 	PackedField,
 };
-use binius_hal::{make_portable_backend, MultilinearExtension};
+use binius_hal::make_portable_backend;
 use binius_hash::GroestlHasher;
-use binius_math::IsomorphicEvaluationDomainFactory;
+use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;

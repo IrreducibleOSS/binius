@@ -387,7 +387,7 @@ pub type MultilinearExtensionBorrowed<'a, P> = MultilinearExtension<P, &'a [P]>;
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{make_portable_backend, MultilinearQuery};
+	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 	use binius_field::{
 		BinaryField128b, BinaryField16b as F, BinaryField32b, BinaryField8b,
 		PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
@@ -396,14 +396,20 @@ mod tests {
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
+	fn multilinear_query<P: PackedField>(p: &[P::Scalar]) -> MultilinearQuery<P, Vec<P>> {
+		let mut result = vec![P::default(); 1 << p.len().saturating_sub(P::LOG_WIDTH)];
+		result[0] = P::set_single(P::Scalar::ONE);
+		tensor_prod_eq_ind(0, &mut result, p).unwrap();
+		MultilinearQuery::with_expansion(p.len(), result).unwrap()
+	}
+
 	#[test]
 	fn test_expand_query_impls_consistent() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_portable_backend();
-		let result1 = MultilinearQuery::<P, _>::with_full_query(&q, &backend).unwrap();
+		let result1 = multilinear_query::<P>(&q);
 		let result2 = expand_query_naive(&q).unwrap();
 		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
 	}
@@ -429,12 +435,11 @@ mod tests {
 			.for_each(|(i, val)| *val = F::new(i as u16));
 
 		let poly = MultilinearExtension::from_values(values).unwrap();
-		let backend = make_portable_backend();
 		for i in 0..64 {
 			let q = (0..6)
 				.map(|j| if (i >> j) & 1 != 0 { F::ONE } else { F::ZERO })
 				.collect::<Vec<_>>();
-			let multilin_query = MultilinearQuery::<P, _>::with_full_query(&q, &backend).unwrap();
+			let multilin_query = multilinear_query::<P>(&q);
 			let result = poly.evaluate(multilin_query.to_ref()).unwrap();
 			assert_eq!(result, F::new(i));
 		}
@@ -452,18 +457,15 @@ mod tests {
 
 		let mut partial_result = poly;
 		let mut index = q.len();
-		let backend = make_portable_backend();
 		for split_vars in splits[0..splits.len() - 1].iter() {
-			let query =
-				MultilinearQuery::with_full_query(&q[index - split_vars..index], &backend).unwrap();
+			let split_vars = *split_vars;
+			let query = multilinear_query(&q[index - split_vars..index]);
 			partial_result = partial_result
 				.evaluate_partial_high(query.to_ref())
 				.unwrap();
 			index -= split_vars;
 		}
-
-		let multilin_query =
-			MultilinearQuery::<P, _>::with_full_query(&q[..index], &backend).unwrap();
+		let multilin_query = multilinear_query::<P>(&q[..index]);
 		partial_result.evaluate(multilin_query.to_ref()).unwrap()
 	}
 
@@ -477,8 +479,7 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<F>>();
-		let backend = make_portable_backend();
-		let multilin_query = MultilinearQuery::<P, _>::with_full_query(&q, &backend).unwrap();
+		let multilin_query = multilinear_query::<P>(&q);
 		let result1 = poly.evaluate(multilin_query.to_ref()).unwrap();
 		let result2 = evaluate_split(poly, &q, &[2, 3, 3]);
 		assert_eq!(result1, result2);
@@ -494,20 +495,16 @@ mod tests {
 		let q = repeat_with(|| Field::random(&mut rng))
 			.take(8)
 			.collect::<Vec<BinaryField128b>>();
-		let backend = make_portable_backend();
-		let multilin_query =
-			MultilinearQuery::<BinaryField128b, _>::with_full_query(&q, &backend).unwrap();
+		let multilin_query = multilinear_query::<BinaryField128b>(&q);
 
 		let expected = poly.evaluate(multilin_query.to_ref()).unwrap();
 
 		// The final split has a number of coefficients less than the packing width
-		let query_hi =
-			MultilinearQuery::<BinaryField128b, _>::with_full_query(&q[1..], &backend).unwrap();
+		let query_hi = multilinear_query::<BinaryField128b>(&q[1..]);
 		let partial_eval = poly.evaluate_partial_high(query_hi.to_ref()).unwrap();
 		assert!(partial_eval.n_vars() < P::LOG_WIDTH);
 
-		let query_lo =
-			MultilinearQuery::<BinaryField128b, _>::with_full_query(&q[..1], &backend).unwrap();
+		let query_lo = multilinear_query::<BinaryField128b>(&q[..1]);
 		let eval = partial_eval.evaluate(query_lo.to_ref()).unwrap();
 		assert_eq!(eval, expected);
 	}
@@ -530,18 +527,15 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<F>>();
 
-		let backend = make_portable_backend();
-		let query = MultilinearQuery::<P, _>::with_full_query(&q, &backend).unwrap();
+		let query = multilinear_query::<P>(&q);
 
 		let packed = P::from_scalars(values.clone());
 		let me = MultilinearExtension::new(n_vars, vec![packed]).unwrap();
 
 		let eval = me.evaluate(&query).unwrap();
 
-		let query_low =
-			MultilinearQuery::<P, _>::with_full_query(&q[..n_vars - 1], &backend).unwrap();
-		let query_high =
-			MultilinearQuery::<P, _>::with_full_query(&q[n_vars - 1..], &backend).unwrap();
+		let query_low = multilinear_query::<P>(&q[..n_vars - 1]);
+		let query_high = multilinear_query::<P>(&q[n_vars - 1..]);
 
 		let eval_l_h = me
 			.evaluate_partial_high(&query_high)
@@ -590,8 +584,7 @@ mod tests {
 			.take(me.n_vars())
 			.collect::<Vec<_>>();
 
-		let backend = make_portable_backend();
-		let query = MultilinearQuery::with_full_query(&q, &backend).unwrap();
+		let query = multilinear_query(&q);
 
 		let eval = me
 			.evaluate::<<PackedBinaryField4x32b as PackedField>::Scalar, PackedBinaryField4x32b>(

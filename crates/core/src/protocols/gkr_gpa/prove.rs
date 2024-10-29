@@ -9,8 +9,11 @@ use crate::protocols::sumcheck;
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
-use binius_math::{extrapolate_line_scalar, EvaluationDomainFactory};
+use binius_hal::ComputationBackend;
+use binius_math::{
+	extrapolate_line_scalar, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly,
+};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},

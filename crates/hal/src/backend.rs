@@ -1,10 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	Error, MultilinearPoly, MultilinearQueryRef, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
-};
+use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::CompositionPoly;
+use binius_math::{CompositionPoly, MultilinearPoly, MultilinearQuery, MultilinearQueryRef};
 use rayon::iter::FromParallelIterator;
 use std::{
 	fmt::Debug,
@@ -146,3 +144,16 @@ where
 		)
 	}
 }
+
+pub trait ComputationBackendExt: ComputationBackend {
+	/// Constructs a `MultilinearQuery` by performing tensor product expansion on the given `query`.
+	fn multilinear_query<P: PackedField>(
+		&self,
+		query: &[P::Scalar],
+	) -> Result<MultilinearQuery<P, Self::Vec<P>>, Error> {
+		let tensor_product = self.tensor_product_full_query(query)?;
+		Ok(MultilinearQuery::with_expansion(query.len(), tensor_product)?)
+	}
+}
+
+impl<Backend> ComputationBackendExt for Backend where Backend: ComputationBackend {}

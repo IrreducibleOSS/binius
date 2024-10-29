@@ -14,7 +14,8 @@ use binius_field::{
 	underlier::UnderlierType,
 	BinaryField1b, TowerField,
 };
-use binius_hal::{MultilinearPoly, MultilinearQuery};
+use binius_hal::ComputationBackendExt;
+use binius_math::MultilinearPoly;
 
 pub fn validate_witness<U, F>(
 	constraint_system: &ConstraintSystem<PackedType<U, F>>,
@@ -215,7 +216,7 @@ where
 			use crate::oracle::ProjectionVariant::*;
 			let unprojected_poly = witness.get_multilin_poly(projected.inner().id())?;
 			let partial_query =
-				MultilinearQuery::with_full_query(projected.values(), &binius_hal::CpuBackend)?;
+				binius_hal::make_portable_backend().multilinear_query(projected.values())?;
 			let projected_poly = match projected.projection_variant() {
 				FirstVars => unprojected_poly.evaluate_partial_low(partial_query.to_ref())?,
 				LastVars => unprojected_poly.evaluate_partial_high(partial_query.to_ref())?,

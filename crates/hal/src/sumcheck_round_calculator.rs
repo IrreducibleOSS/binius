@@ -4,12 +4,12 @@
 //!
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
-use crate::{
-	CpuBackend, Error, MultilinearPoly, MultilinearQuery, MultilinearQueryRef, RoundEvals,
-	SumcheckEvaluator, SumcheckMultilinear,
-};
+use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{deinterleave, extrapolate_line, CompositionPoly};
+use binius_math::{
+	deinterleave, extrapolate_line, CompositionPoly, MultilinearPoly, MultilinearQuery,
+	MultilinearQueryRef,
+};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 use rayon::prelude::*;
@@ -82,8 +82,7 @@ where
 	Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	let empty_query =
-		MultilinearQuery::<_, CpuBackend>::new(0).expect("constructing an empty query");
+	let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
 	let query = tensor_query.unwrap_or(empty_query.to_ref());
 
 	let accesses = multilinears
@@ -375,20 +374,25 @@ where
 				// TODO: Stop using LaterRoundAccess for first round in RegularSumcheckProver and
 				// GPASumcheckProver, then remove this conditional.
 				if self.tensor_query.n_vars() == 0 {
-					multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals)
+					Ok(multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals)?)
 				} else {
-					multilinear.subcube_inner_products(
+					Ok(multilinear.subcube_inner_products(
 						self.tensor_query,
 						subcube_vars,
 						subcube_index,
 						evals,
-					)
+					)?)
 				}
 			}
 
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,
-			} => large_field_folded_multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals),
+			} => Ok(large_field_folded_multilinear.subcube_evals(
+				subcube_vars,
+				subcube_index,
+				0,
+				evals,
+			)?),
 		}
 	}
 }

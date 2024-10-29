@@ -6,7 +6,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, Field, TowerField,
 };
-use binius_hal::{
+use binius_math::{
 	MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly, PackingDeref,
 };
 use binius_utils::bail;
@@ -67,6 +67,8 @@ pub enum Error {
 	Polynomial(#[from] PolynomialError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 impl<'a, U, FW> MultilinearExtensionIndex<'a, U, FW>

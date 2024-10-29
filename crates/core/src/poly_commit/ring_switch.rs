@@ -15,8 +15,8 @@ use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
-use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearQuery};
-use binius_math::EvaluationDomainFactory;
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
 use rayon::prelude::*;
 use std::{iter, marker::PhantomData, mem, ops::Deref};
 
@@ -144,7 +144,7 @@ where
 
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
-		let expanded_query = MultilinearQuery::<PE, _>::with_full_query(query_from_kappa, backend)?;
+		let expanded_query = backend.multilinear_query::<PE>(query_from_kappa)?;
 		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
@@ -228,7 +228,7 @@ where
 		challenger.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
-		let expanded_query = MultilinearQuery::<FE, _>::with_full_query(query_to_kappa, backend)?;
+		let expanded_query = backend.multilinear_query::<FE>(query_to_kappa)?;
 		let computed_eval =
 			MultilinearExtension::from_values_slice(sumcheck_eval.vertical_elems())?
 				.evaluate(&expanded_query)?;
@@ -295,6 +295,8 @@ pub enum Error {
 	Verification(#[from] VerificationError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
+	#[error("Math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -320,10 +322,9 @@ where
 	let kappa = <TensorAlgebra<F, FE>>::kappa();
 	assert_eq!(tensor_mixing_challenges.len(), kappa);
 
-	let expanded_mixing_coeffs =
-		MultilinearQuery::<FE, _>::with_full_query(tensor_mixing_challenges, backend)
-			.expect("FE extension degree is less than 2^31");
-	let expanded_mixing_coeffs = expanded_mixing_coeffs.expansion();
+	let expanded_mixing_coeffs = backend
+		.tensor_product_full_query(tensor_mixing_challenges)
+		.expect("FE extension degree is less than 2^31");
 	let mixed_sum = inner_product_unchecked::<FE, _>(
 		tensor_sum.transpose().vertical_elems().iter().copied(),
 		expanded_mixing_coeffs.iter().copied(),
@@ -412,10 +413,9 @@ where
 			eval + &vert_scaled + &hztl_scaled
 		});
 
-	let expanded_mixing_coeffs =
-		MultilinearQuery::<F, _>::with_full_query(mixing_challenges, backend)
-			.expect("F extension degree is less than 2^31");
-	let expanded_mixing_coeffs = expanded_mixing_coeffs.expansion();
+	let expanded_mixing_coeffs = &backend
+		.tensor_product_full_query(mixing_challenges)
+		.expect("FE extension degree is less than 2^31");
 	let folded_eval = inner_product_unchecked::<F, _>(
 		tensor_eval.transpose().vertical_elems().iter().copied(),
 		expanded_mixing_coeffs.iter().copied(),
@@ -440,10 +440,8 @@ where
 	Backend: ComputationBackend,
 {
 	assert_eq!(mixing_challenges.len(), <TensorAlgebra<FS, F>>::kappa());
-	let expanded_mixing_coeffs =
-		MultilinearQuery::<F, _>::with_full_query(mixing_challenges, &backend)?;
-	let mut evals =
-		MultilinearQuery::<P, _>::with_full_query(eval_point, &backend)?.into_expansion();
+	let expanded_mixing_coeffs = backend.multilinear_query(mixing_challenges)?;
+	let mut evals = backend.tensor_product_full_query(eval_point)?;
 	P::unpack_scalars_mut(&mut evals)
 		.par_iter_mut()
 		.for_each(|val| {
@@ -508,7 +506,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let backend = make_portable_backend();
-		let eval_query = MultilinearQuery::<FE, _>::with_full_query(&eval_point, &backend).unwrap();
+		let eval_query = backend.multilinear_query::<FE>(&eval_point).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
 		let rs_code = ReedSolomonCode::new(5, 2, Default::default()).unwrap();
@@ -600,7 +598,8 @@ mod tests {
 		let val2 = MultilinearExtension::from_values(partial_evals)
 			.unwrap()
 			.evaluate(
-				&MultilinearQuery::<FE, _>::with_full_query(&sumcheck_challenges, &backend)
+				&backend
+					.multilinear_query::<FE>(&sumcheck_challenges)
 					.unwrap(),
 			)
 			.unwrap();

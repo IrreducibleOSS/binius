@@ -2,7 +2,7 @@
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
-use binius_hal::MultilinearExtension;
+use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use std::marker::PhantomData;
 
@@ -95,7 +95,7 @@ where
 mod tests {
 	use super::*;
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
-	use binius_hal::{make_portable_backend, MultilinearQuery};
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -110,8 +110,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let eval1 = basis.evaluate(&challenge).unwrap();
-		let multilin_query =
-			MultilinearQuery::<F, _>::with_full_query(&challenge, &backend).unwrap();
+		let multilin_query = backend.multilinear_query::<F>(&challenge).unwrap();
 		let mle = basis.multilinear_extension::<F>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 
@@ -132,8 +131,7 @@ mod tests {
 			.take(kappa)
 			.collect::<Vec<_>>();
 		let eval1 = basis.evaluate(&challenge).unwrap();
-		let multilin_query =
-			MultilinearQuery::<F, _>::with_full_query(&challenge, &backend).unwrap();
+		let multilin_query = backend.multilinear_query::<F>(&challenge).unwrap();
 		let mle = basis.multilinear_extension::<P>().unwrap();
 		let eval2 = mle.evaluate(&multilin_query).unwrap();
 		assert_eq!(eval1, eval2);

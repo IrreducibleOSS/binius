@@ -20,12 +20,10 @@ use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension,
 };
-use binius_hal::{
-	ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
-};
+use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
-	EvaluationDomainFactory,
+	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use binius_utils::bail;
@@ -63,10 +61,9 @@ where
 	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
 
 	// Efficiently construct projection of the zerocheck equality indicator to skipped variables
-	let mut partial_eq_ind_eval =
-		MultilinearQuery::with_full_query(&zerocheck_challenges[..skip_rounds], backend)?
-			.into_expansion()
-			.to_vec();
+	let mut partial_eq_ind_eval = backend
+		.tensor_product_full_query(&zerocheck_challenges[..skip_rounds])?
+		.to_vec();
 
 	let eq_ind_factor = zerocheck_challenges[skip_rounds..]
 		.iter()
@@ -101,7 +98,7 @@ where
 		bail!(Error::IncorrectNumberOfChallenges);
 	}
 
-	let query = MultilinearQuery::with_full_query(sumcheck_challenges, backend)?;
+	let query = backend.multilinear_query(sumcheck_challenges)?;
 
 	let reduced_multilinears = multilinears
 		.into_iter()
@@ -420,11 +417,8 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
-	let partial_eq_ind_evals = MultilinearQuery::<P, Backend>::with_full_query(
-		&zerocheck_challenges[skip_rounds..],
-		backend,
-	)?
-	.into_expansion();
+	let partial_eq_ind_evals =
+		backend.tensor_product_full_query(&zerocheck_challenges[skip_rounds..])?;
 	let partial_eq_ind_evals_scalars = P::unpack_scalars(&partial_eq_ind_evals[..]);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -693,10 +687,9 @@ where
 
 	// Expand the first skip_rounds variables of the zerocheck equality indicator
 	// and extrapolate it to the full domain using additive NTT (Gruen 3.2 adaptation)
-	let partial_eq_ind_evals_skipped =
-		MultilinearQuery::<P, Backend>::with_full_query(zerocheck_challenges, backend)?
-			.into_expansion()
-			.to_vec();
+	let partial_eq_ind_evals_skipped = backend
+		.tensor_product_full_query(zerocheck_challenges)?
+		.to_vec();
 
 	// We extensively validate the sizes of slices within NTT interpolation routines,
 	// thus let's find the smallest composition_max_degree that covers the max_domain_size.
@@ -835,10 +828,10 @@ mod tests {
 		PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField4x32b,
 		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
 	};
-	use binius_hal::{make_portable_backend, MultilinearPoly};
+	use binius_hal::make_portable_backend;
 	use binius_math::{
 		make_ntt_domain_points, CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomain,
-		EvaluationDomainFactory,
+		EvaluationDomainFactory, MultilinearPoly,
 	};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};

@@ -37,8 +37,8 @@ use binius_field::{
 	underlier::UnderlierType,
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
-use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearQuery};
-use binius_math::EvaluationDomainFactory;
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
 
@@ -397,7 +397,7 @@ where
 
 #[allow(clippy::type_complexity)]
 pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
-	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend>)>,
+	memo: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
 }
 
 impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
@@ -410,7 +410,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		&mut self,
 		eval_point: &[P::Scalar],
 		backend: &Backend,
-	) -> Result<&MultilinearQuery<P, Backend>, Error> {
+	) -> Result<&MultilinearQuery<P, Backend::Vec<P>>, Error> {
 		if let Some(index) = self
 			.memo
 			.iter()
@@ -420,7 +420,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 			return Ok(query);
 		}
 
-		let query = MultilinearQuery::with_full_query(eval_point, backend)?;
+		let query = backend.multilinear_query(eval_point)?;
 		self.memo.push((eval_point.to_vec(), query));
 
 		let (_, ref query) = self.memo.last().expect("pushed query immediately above");

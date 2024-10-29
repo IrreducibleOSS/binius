@@ -2,7 +2,7 @@
 
 use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{BinaryField1b, Field, PackedField};
-use binius_hal::MultilinearExtension;
+use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
