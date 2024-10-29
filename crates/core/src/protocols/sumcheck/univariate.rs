@@ -12,6 +12,7 @@ use binius_hal::{make_portable_backend, MultilinearExtension, MultilinearQuery};
 use binius_math::{make_ntt_domain_points, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
+use p3_util::log2_strict_usize;
 use std::iter;
 
 /// Creates sumcheck claims for the reduction from evaluations of univariatized virtual multilinear oracles to
@@ -35,18 +36,24 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// This takes in the output of the batched univariatizing reduction sumcheck and returns the output
 /// that can be used to create multilinear evaluation claims. This simply strips off the evaluation of
 /// the multilinear extension of Lagrange polynomials evaluations at `univariate_challenge` (denoted by
-/// $\hat{u}_1$) and verifies that this value is correct.
+/// $\hat{u}_1$) and verifies that this value is correct. The argument `unskipped_sumcheck_challenges`
+/// holds the challenges of the sumcheck following the univariate round.
+///
+/// NB. `FDomain` is the domain used during univariate round evaluations - usage of NTT
+///     for subquadratic time interpolation assumes domains of specific structure that needs
+///     to be replicated in the verifier via an isomorphism.
 pub fn verify_sumcheck_outputs<FDomain, F>(
 	claims: &[SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>],
 	univariate_challenge: F,
+	unskipped_sumcheck_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	FDomain: BinaryField,
-	F: Field + ExtensionField<FDomain>,
+	F: Field + From<FDomain>,
 {
 	let BatchSumcheckOutput {
-		challenges: sumcheck_challenges,
+		challenges: reduction_sumcheck_challenges,
 		mut multilinear_evals,
 	} = sumcheck_output;
 
@@ -62,19 +69,27 @@ where
 		.map(|claim| claim.n_vars())
 		.unwrap_or_default();
 
-	assert_eq!(sumcheck_challenges.len(), max_n_vars);
+	assert_eq!(reduction_sumcheck_challenges.len(), max_n_vars);
 
 	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
 		let skip_rounds = claim.n_vars();
-		let evaluation_domain =
-			EvaluationDomain::<FDomain>::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
+
+		let domain_points = make_ntt_domain_points::<FDomain>(1 << skip_rounds)?;
+		let isomorphic_domain_points = domain_points
+			.clone()
+			.into_iter()
+			.map(Into::into)
+			.collect::<Vec<_>>();
+
+		let evaluation_domain = EvaluationDomain::<F>::from_points(isomorphic_domain_points)?;
+
 		let lagrange_mle = lagrange_evals_multilinear_extension::<_, _, F>(
 			&evaluation_domain,
 			univariate_challenge,
 		)?;
 
 		let query = MultilinearQuery::<F, _>::with_full_query(
-			&sumcheck_challenges[max_n_vars - skip_rounds..],
+			&reduction_sumcheck_challenges[max_n_vars - skip_rounds..],
 			&make_portable_backend(),
 		)?;
 		let expected_last_eval = lagrange_mle.evaluate(query.to_ref())?;
@@ -88,10 +103,16 @@ where
 		}
 	}
 
-	Ok(BatchSumcheckOutput {
-		challenges: sumcheck_challenges,
+	let mut challenges = Vec::new();
+	challenges.extend(reduction_sumcheck_challenges);
+	challenges.extend(unskipped_sumcheck_challenges);
+
+	let output = BatchSumcheckOutput {
+		challenges,
 		multilinear_evals,
-	})
+	};
+
+	Ok(output)
 }
 
 // Helper method to create univariatized multilinear oracle evaluation claims.
@@ -130,34 +151,58 @@ where
 {
 	let lagrange_evals = evaluation_domain.lagrange_evals(univariate_challenge);
 
+	let n_vars = log2_strict_usize(lagrange_evals.len());
 	let mut packed = zeroed_vec(lagrange_evals.len().div_ceil(P::WIDTH));
 	let scalars = P::unpack_scalars_mut(packed.as_mut_slice());
 	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());
 
-	Ok(MultilinearExtension::from_values(packed)?)
+	Ok(MultilinearExtension::new(n_vars, packed)?)
+}
+
+pub fn domain_size(composition_degree: usize, skip_rounds: usize) -> usize {
+	extrapolated_scalars_count(composition_degree, skip_rounds) + (1 << skip_rounds)
+}
+
+pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize) -> usize {
+	let non_zerocheck_evals_count = composition_degree * ((1 << skip_rounds) - 1) + 1;
+	// In zerocheck, we know the first 2^skip_rounds composition evals would be zero
+	non_zerocheck_evals_count.saturating_sub(1 << skip_rounds)
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::{
-		challenger::new_hasher_challenger,
+		challenger::{new_hasher_challenger, CanSample, IsomorphicChallenger},
+		composition::{IndexComposition, ProductComposition},
+		polynomial::CompositionScalarAdapter,
 		protocols::{
 			sumcheck::{
-				batch_verify,
-				prove::{batch_prove, univariate::univariatizing_reduction_prover},
+				batch_verify, batch_verify_zerocheck_univariate_round,
+				prove::{
+					batch_prove, batch_prove_zerocheck_univariate_round,
+					univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover},
+					UnivariateZerocheck,
+				},
+				standard_switchover_heuristic,
 				univariate::{univariatizing_reduction_claim, verify_sumcheck_outputs},
+				ZerocheckClaim,
 			},
 			test_utils::generate_zero_product_multilinears,
 		},
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, Field, PackedBinaryField1x128b, PackedBinaryField4x32b,
+		AESTowerField128b, AESTowerField16b, BinaryField128b, BinaryField16b, Field,
+		PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField8x16b,
+		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
 	};
 	use binius_hal::{make_portable_backend, MultilinearPoly, MultilinearQuery};
 	use binius_hash::GroestlHasher;
-	use binius_math::{DefaultEvaluationDomainFactory, EvaluationDomainFactory};
+	use binius_math::{
+		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory,
+	};
 	use rand::{prelude::StdRng, SeedableRng};
-	use std::iter;
+	use std::{iter, sync::Arc};
 
 	#[test]
 	fn test_univariatizing_reduction_end_to_end() {
@@ -197,44 +242,30 @@ mod tests {
 				.create(1 << skip_rounds)
 				.unwrap();
 
+			let query = MultilinearQuery::<PE, _>::with_full_query(
+				sumcheck_challenges.as_slice(),
+				&make_portable_backend(),
+			)
+			.unwrap();
 			let univariatized_multilinear_evals = multilinears
 				.iter()
 				.map(|multilinear| {
-					let mut values = Vec::new();
-					for hypercube_idx in 0..1 << skip_rounds {
-						let mut query = Vec::new();
-						for i in 0..skip_rounds {
-							query.push(if hypercube_idx & (1 << i) != 0 {
-								F::ONE
-							} else {
-								F::ZERO
-							});
-						}
-
-						query.extend(&sumcheck_challenges);
-
-						let query = MultilinearQuery::with_full_query(
-							query.as_slice(),
-							&make_portable_backend(),
-						)
-						.unwrap();
-						let mle_eval = multilinear.evaluate(query.to_ref()).unwrap();
-						values.push(mle_eval);
-					}
-
+					let partial_eval = multilinear.evaluate_partial_high(query.to_ref()).unwrap();
 					domain
-						.extrapolate(values.as_slice(), univariate_challenge)
+						.extrapolate(PE::unpack_scalars(partial_eval.evals()), univariate_challenge)
 						.unwrap()
 				})
 				.collect::<Vec<_>>();
 
 			all_univariatized_multilinear_evals.push(univariatized_multilinear_evals.clone());
 
+			let reduced_multilinears =
+				reduce_to_skipped_projection(multilinears, &sumcheck_challenges, &backend).unwrap();
+
 			let prover = univariatizing_reduction_prover(
-				multilinears,
-				univariatized_multilinear_evals.as_slice(),
+				reduced_multilinears,
+				&univariatized_multilinear_evals,
 				univariate_challenge,
-				sumcheck_challenges.as_slice(),
 				evaluation_domain_factory.clone(),
 				&backend,
 			)
@@ -274,6 +305,7 @@ mod tests {
 		let batch_sumcheck_output_post = verify_sumcheck_outputs::<BinaryField16b, _>(
 			claims.as_slice(),
 			univariate_challenge,
+			&sumcheck_challenges,
 			batch_sumcheck_output_verify,
 		)
 		.unwrap();
@@ -281,15 +313,146 @@ mod tests {
 		for ((skip_rounds, multilinears), evals) in
 			iter::zip(all_multilinears, batch_sumcheck_output_post.multilinear_evals)
 		{
-			let mut query =
-				batch_sumcheck_output_post.challenges[max_skip_rounds - skip_rounds..].to_vec();
+			let mut query = batch_sumcheck_output_post.challenges
+				[max_skip_rounds - skip_rounds..max_skip_rounds]
+				.to_vec();
 			query.extend(sumcheck_challenges.as_slice());
 
-			let query = MultilinearQuery::with_full_query(query.as_slice(), &backend).unwrap();
+			let query = MultilinearQuery::with_full_query(&query, &backend).unwrap();
 
 			for (multilinear, eval) in iter::zip(multilinears, evals) {
 				assert_eq!(multilinear.evaluate(query.to_ref()).unwrap(), eval);
 			}
 		}
+	}
+
+	#[test]
+	fn test_univariatized_zerocheck_end_to_end() {
+		type F = BinaryField128b;
+		type FI = AESTowerField128b;
+		type FDomain = AESTowerField16b;
+		type P = PackedAESBinaryField16x8b;
+		type PE = PackedAESBinaryField1x128b;
+		type PBase = PackedAESBinaryField8x16b;
+
+		let max_n_vars = 9;
+		let n_multilinears = 9;
+
+		let backend = make_portable_backend();
+		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+		let switchover_fn = standard_switchover_heuristic(-2);
+		let mut rng = StdRng::seed_from_u64(0);
+		let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+
+		let pair = Arc::new(IndexComposition::new(9, [0, 1], ProductComposition::<2> {}).unwrap());
+		let triple =
+			Arc::new(IndexComposition::new(9, [2, 3, 4], ProductComposition::<3> {}).unwrap());
+		let quad =
+			Arc::new(IndexComposition::new(9, [5, 6, 7, 8], ProductComposition::<4> {}).unwrap());
+
+		let prover_compositions = [
+			(
+				pair.clone() as Arc<dyn CompositionPoly<PBase>>,
+				pair.clone() as Arc<dyn CompositionPoly<PE>>,
+			),
+			(
+				triple.clone() as Arc<dyn CompositionPoly<PBase>>,
+				triple.clone() as Arc<dyn CompositionPoly<PE>>,
+			),
+			(
+				quad.clone() as Arc<dyn CompositionPoly<PBase>>,
+				quad.clone() as Arc<dyn CompositionPoly<PE>>,
+			),
+		];
+
+		let prover_adapter_compositions = [
+			CompositionScalarAdapter::new(pair.clone() as Arc<dyn CompositionPoly<FI>>),
+			CompositionScalarAdapter::new(triple.clone() as Arc<dyn CompositionPoly<FI>>),
+			CompositionScalarAdapter::new(quad.clone() as Arc<dyn CompositionPoly<FI>>),
+		];
+
+		let verifier_compositions = [
+			pair as Arc<dyn CompositionPoly<F>>,
+			triple as Arc<dyn CompositionPoly<F>>,
+			quad as Arc<dyn CompositionPoly<F>>,
+		];
+
+		let skip_rounds = 5;
+
+		let mut prover_challenger = IsomorphicChallenger::<F, _, FI>::new(challenger.clone());
+		let prover_zerocheck_challenges = prover_challenger.sample_vec(max_n_vars);
+
+		let mut zerocheck_claims = Vec::new();
+		let mut univariate_provers = Vec::new();
+		for n_vars in (1..=max_n_vars).rev() {
+			let mut multilinears = generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, 2);
+			multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 3));
+			multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 4));
+
+			let claim = ZerocheckClaim::<FI, _>::new(
+				n_vars,
+				n_multilinears,
+				prover_adapter_compositions.to_vec(),
+			)
+			.unwrap();
+
+			let prover = UnivariateZerocheck::<FDomain, PBase, PE, _, _, _, _>::new(
+				multilinears,
+				prover_compositions.to_vec(),
+				&prover_zerocheck_challenges[max_n_vars - n_vars..],
+				domain_factory.clone(),
+				switchover_fn,
+				&backend,
+			)
+			.unwrap();
+
+			zerocheck_claims.push(claim);
+			univariate_provers.push(prover);
+		}
+
+		let univariate_cnt =
+			zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
+		let tail_provers = univariate_provers.split_off(univariate_cnt);
+		let _tail_claims = zerocheck_claims.split_off(univariate_cnt);
+
+		let _regular_provers = tail_provers
+			.into_iter()
+			.map(|prover| prover.into_regular_zerocheck().unwrap())
+			.collect::<Vec<_>>();
+
+		let (prover_univariate_output, zerocheck_univariate_proof) =
+			batch_prove_zerocheck_univariate_round(
+				univariate_provers,
+				skip_rounds,
+				&mut prover_challenger,
+			)
+			.unwrap();
+
+		let (_sumcheck_output, zerocheck_proof) =
+			batch_prove(prover_univariate_output.reductions, &mut prover_challenger).unwrap();
+
+		let mut verifier_challenger = challenger.clone();
+		let _verifier_zerocheck_challenges: Vec<F> = verifier_challenger.sample_vec(max_n_vars);
+
+		let mut verifier_zerocheck_claims = Vec::new();
+		for n_vars in (1..=max_n_vars).rev() {
+			let claim =
+				ZerocheckClaim::<F, _>::new(n_vars, n_multilinears, verifier_compositions.to_vec())
+					.unwrap();
+
+			verifier_zerocheck_claims.push(claim);
+		}
+		let verifier_univariate_output = batch_verify_zerocheck_univariate_round::<FI, F, _, _>(
+			&verifier_zerocheck_claims[..univariate_cnt],
+			zerocheck_univariate_proof.isomorphic::<F>(),
+			&mut verifier_challenger,
+		)
+		.unwrap();
+		let _verifier_sumcheck_output = batch_verify(
+			&verifier_univariate_output.reductions,
+			zerocheck_proof.isomorphic(),
+			&mut verifier_challenger,
+		)
+		.unwrap();
 	}
 }

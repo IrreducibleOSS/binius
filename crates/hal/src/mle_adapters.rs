@@ -515,7 +515,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_evaluate_subcube_small_than_packed_width() {
+	fn test_evaluate_subcube_smaller_than_packed_width() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let poly = MultilinearExtension::new(
 			2,

@@ -210,7 +210,8 @@ where
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
 		&backend,
-	)?;
+	)?
+	.into_regular_zerocheck()?;
 
 	let (sumcheck_output, zerocheck_proof) =
 		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;

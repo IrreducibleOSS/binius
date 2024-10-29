@@ -3,19 +3,26 @@
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
-		immediate_switchover_heuristic,
+		common::{
+			equal_n_vars_check, fold_partial_eq_ind, immediate_switchover_heuristic,
+			small_field_embedding_degree_check,
+		},
 		prove::RegularSumcheckProver,
 		univariate::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
+			domain_size, extrapolated_scalars_count, lagrange_evals_multilinear_extension,
+			univariatizing_reduction_composite_sum_claims,
 		},
 		Error, VerificationError,
 	},
 };
 use binius_field::{
-	util::inner_product_unchecked, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, PackedFieldIndexable, RepackedExtension,
+	util::{eq, inner_product_unchecked},
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension,
 };
-use binius_hal::{ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
+use binius_hal::{
+	ComputationBackend, MLEDirectAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+};
 use binius_math::{
 	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
 	EvaluationDomainFactory,
@@ -30,6 +37,85 @@ use stackalloc::stackalloc_with_iter;
 use std::collections::HashMap;
 use transpose::transpose;
 
+/// Helper method to reduce zerocheck witness to skipped variables only via a partial high projection.
+///
+/// Resulting set of reduced multilinears has an additional column of the projected zerocheck equality
+/// indicator at the end, constructed in an efficient manner.
+pub fn reduce_to_skipped_zerocheck_projection<F, P, M, Backend>(
+	multilinears: Vec<M>,
+	sumcheck_challenges: &[F],
+	zerocheck_challenges: &[F],
+	backend: &'_ Backend,
+) -> Result<Vec<MLEDirectAdapter<P>>, Error>
+where
+	F: Field,
+	P: PackedFieldIndexable<Scalar = F>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	if sumcheck_challenges.len() > zerocheck_challenges.len() {
+		bail!(Error::IncorrectZerocheckChallengesLength);
+	}
+
+	// Reduce the witness proper
+	let mut reduced_multilinears =
+		reduce_to_skipped_projection(multilinears, sumcheck_challenges, backend)?;
+	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
+
+	// Efficiently construct projection of the zerocheck equality indicator to skipped variables
+	let mut partial_eq_ind_eval =
+		MultilinearQuery::with_full_query(&zerocheck_challenges[..skip_rounds], backend)?
+			.into_expansion()
+			.to_vec();
+
+	let eq_ind_factor = zerocheck_challenges[skip_rounds..]
+		.iter()
+		.zip(sumcheck_challenges)
+		.fold(F::ONE, |accum, (&zerocheck_challenge, &sumcheck_challenge)| {
+			accum * eq(sumcheck_challenge, zerocheck_challenge)
+		});
+
+	partial_eq_ind_eval
+		.iter_mut()
+		.for_each(|packed| *packed *= eq_ind_factor);
+
+	reduced_multilinears.push(MultilinearExtension::new(skip_rounds, partial_eq_ind_eval)?.into());
+	Ok(reduced_multilinears)
+}
+
+/// Helper method to reduce the witness to skipped variables via a partial high projection.
+pub fn reduce_to_skipped_projection<F, P, M, Backend>(
+	multilinears: Vec<M>,
+	sumcheck_challenges: &[F],
+	backend: &'_ Backend,
+) -> Result<Vec<MLEDirectAdapter<P>>, Error>
+where
+	F: Field,
+	P: PackedFieldIndexable<Scalar = F>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	let n_vars = equal_n_vars_check(&multilinears)?;
+
+	if sumcheck_challenges.len() > n_vars {
+		bail!(Error::IncorrectNumberOfChallenges);
+	}
+
+	let query = MultilinearQuery::with_full_query(sumcheck_challenges, backend)?;
+
+	let reduced_multilinears = multilinears
+		.into_iter()
+		.map(|multilinear| {
+			multilinear
+				.evaluate_partial_high(query.to_ref())
+				.expect("0 <= sumcheck_challenges.len() < n_vars")
+				.into()
+		})
+		.collect();
+
+	Ok(reduced_multilinears)
+}
+
 pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	'a,
 	FDomain,
@@ -42,16 +128,15 @@ pub type Prover<'a, FDomain, P, Backend> = RegularSumcheckProver<
 /// Create the sumcheck prover for the univariatizing reduction of multilinears
 /// (see [verifier side](crate::protocols::sumcheck::univariate::univariatizing_reduction_claim))
 ///
-/// This method projects multilinears to first `skip_rounds` variables, constructs a multilinear extension
-/// of Lagrange evaluations at `univariate_challenge`, and creates a regular sumcheck prover, placing
-/// Lagrange evaluation in the last witness column.
+/// This method takes multilinears projected to first `skip_rounds` variables, constructs a multilinear
+/// extension of Lagrange evaluations at `univariate_challenge`, and creates a regular sumcheck prover,
+/// placing Lagrange evaluation in the last witness column.
 ///
 /// Note that `univariatized_multilinear_evals` come from a previous sumcheck with a univariate first round.
-pub fn univariatizing_reduction_prover<'a, F, FDomain, P, M, Backend>(
-	multilinears: Vec<M>,
+pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
+	mut reduced_multilinears: Vec<MLEDirectAdapter<P>>,
 	univariatized_multilinear_evals: &[F],
 	univariate_challenge: F,
-	sumcheck_challenges: &[F],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	backend: &'a Backend,
 ) -> Result<Prover<'a, FDomain, P, Backend>, Error>
@@ -59,32 +144,14 @@ where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
-	let n_vars = equal_n_vars_check(multilinears.as_slice())?;
+	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
 
-	if univariatized_multilinear_evals.len() != multilinears.len() {
+	if univariatized_multilinear_evals.len() != reduced_multilinears.len() {
 		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 
-	if sumcheck_challenges.len() > n_vars {
-		bail!(Error::IncorrectNumberOfChallenges);
-	}
-
-	let query = MultilinearQuery::with_full_query(sumcheck_challenges, backend)?;
-
-	let mut reduced_multilinears = multilinears
-		.into_iter()
-		.map(|multilinear| {
-			multilinear
-				.evaluate_partial_high(query.to_ref())
-				.expect("0 <= tail_challenges.len() < n_vars")
-				.into()
-		})
-		.collect::<Vec<_>>();
-
-	let skip_rounds = n_vars - sumcheck_challenges.len();
 	let evaluation_domain =
 		EvaluationDomain::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
 
@@ -159,15 +226,99 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 	}
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct ZerocheckUnivariateEvalsOutput<F, P, Backend>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
-	round_evals: Vec<Vec<F>>,
+	pub round_evals: Vec<Vec<F>>,
+	skip_rounds: usize,
+	remaining_rounds: usize,
+	max_domain_size: usize,
 	partial_eq_ind_evals: Backend::Vec<P>,
+	partial_eq_ind_evals_skipped: Vec<P>,
+}
+
+pub struct ZerocheckUnivariateFoldResult<F, P, Backend>
+where
+	F: Field,
+	P: PackedField<Scalar = F>,
+	Backend: ComputationBackend,
+{
+	pub skip_rounds: usize,
+	pub eq_ind_eval: F,
+	pub subcube_lagrange_coeffs: Vec<F>,
+	pub claimed_sums: Vec<F>,
+	pub partial_eq_ind_evals: Backend::Vec<P>,
+}
+
+impl<F, P, Backend> ZerocheckUnivariateEvalsOutput<F, P, Backend>
+where
+	F: Field,
+	P: PackedFieldIndexable<Scalar = F>,
+	Backend: ComputationBackend,
+{
+	// Univariate round can be folded once the challenge has been sampled.
+	pub fn fold<FDomain>(
+		self,
+		challenge: F,
+	) -> Result<ZerocheckUnivariateFoldResult<F, P, Backend>, Error>
+	where
+		FDomain: BinaryField,
+		F: ExtensionField<FDomain>,
+	{
+		let Self {
+			round_evals,
+			skip_rounds,
+			remaining_rounds,
+			max_domain_size,
+			mut partial_eq_ind_evals,
+			partial_eq_ind_evals_skipped,
+		} = self;
+
+		// Zerocheck equality indicator over skipped variables
+		let partial_eq_ind_evals_skipped =
+			&P::unpack_scalars(&partial_eq_ind_evals_skipped)[..1 << skip_rounds];
+
+		let domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
+
+		// Lagrange extrapolation over skipped subcube
+		let subcube_evaluation_domain =
+			EvaluationDomain::from_points(domain_points[..1 << skip_rounds].to_vec())?;
+
+		let eq_ind_eval =
+			subcube_evaluation_domain.extrapolate(partial_eq_ind_evals_skipped, challenge)?;
+		let subcube_lagrange_coeffs = subcube_evaluation_domain.lagrange_evals(challenge);
+
+		// Zerocheck tensor expansion for the reduced zerocheck should be one variable less
+		fold_partial_eq_ind::<P, Backend>(remaining_rounds, &mut partial_eq_ind_evals);
+
+		// Lagrange extrapolation for the entire univariate domain
+		let round_evals_lagrange_coeffs =
+			EvaluationDomain::from_points(domain_points)?.lagrange_evals(challenge);
+
+		let claimed_sums = round_evals
+			.into_iter()
+			.map(|evals| {
+				inner_product_unchecked::<F, F>(
+					evals.into_iter(),
+					round_evals_lagrange_coeffs[1 << skip_rounds..]
+						.iter()
+						.copied(),
+				)
+			})
+			.collect();
+
+		Ok(ZerocheckUnivariateFoldResult {
+			skip_rounds,
+			eq_ind_eval,
+			subcube_lagrange_coeffs,
+			claimed_sums,
+			partial_eq_ind_evals,
+		})
+	}
 }
 
 /// Compute univariate skip round evaluations for zerocheck.
@@ -236,14 +387,9 @@ where
 		bail!(Error::IncorrectZerocheckChallengesLength);
 	}
 
+	small_field_embedding_degree_check::<PBase, P, _>(multilinears)?;
+
 	let log_embedding_degree = <P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE;
-
-	for multilinear in multilinears {
-		if multilinear.log_extension_degree() < log_embedding_degree {
-			bail!(Error::MultilinearEvalsCannotBeEmbeddedInBaseField);
-		}
-	}
-
 	let composition_degrees = compositions.iter().map(|composition| composition.degree());
 	let composition_max_degree = composition_degrees.clone().max().unwrap_or(0);
 
@@ -447,7 +593,7 @@ where
 
 	// We also extrapolate the tensor expansion of the first skip_rounds zerocheck challenges to the same
 	// max domain size and then pointwise multiply it by each of the round evals vectors.
-	let partial_eq_ind_evals_skipped_extrapolated =
+	let (partial_eq_ind_evals_skipped, partial_eq_ind_evals_skipped_extrapolated) =
 		extrapolate_partial_eq_ind::<F, FDomain, PBase, P, _, _>(
 			&fdomain_ntt,
 			skip_rounds,
@@ -462,9 +608,15 @@ where
 			[..max_domain_size.saturating_sub(1 << skip_rounds)],
 	);
 
+	let remaining_rounds = n_vars - skip_rounds;
+
 	Ok(ZerocheckUnivariateEvalsOutput {
 		round_evals,
+		skip_rounds,
+		remaining_rounds,
+		max_domain_size,
 		partial_eq_ind_evals,
+		partial_eq_ind_evals_skipped,
 	})
 }
 
@@ -527,7 +679,7 @@ fn extrapolate_partial_eq_ind<F, FDomain, PBase, P, NTT, Backend>(
 	max_domain_size: usize,
 	zerocheck_challenges: &[F],
 	backend: &Backend,
-) -> Result<Vec<P>, Error>
+) -> Result<(Vec<P>, Vec<P>), Error>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
@@ -541,7 +693,7 @@ where
 
 	// Expand the first skip_rounds variables of the zerocheck equality indicator
 	// and extrapolate it to the full domain using additive NTT (Gruen 3.2 adaptation)
-	let mut partial_eq_ind_evals_skipped =
+	let partial_eq_ind_evals_skipped =
 		MultilinearQuery::<P, Backend>::with_full_query(zerocheck_challenges, backend)?
 			.into_expansion()
 			.to_vec();
@@ -556,8 +708,11 @@ where
 		zeroed_vec::<P>(extrapolated_evals_packed_len::<P>(composition_max_degree, skip_rounds, 0));
 
 	// Strided NTT as a way to extrapolate over the large field P::Scalar.
-	let partial_eq_ind_evals_skipped_bases =
-		PBase::cast_bases_mut(P::cast_bases_mut(partial_eq_ind_evals_skipped.as_mut_slice()));
+	let mut partial_eq_ind_evals_skipped_scratch = partial_eq_ind_evals_skipped.clone();
+
+	let partial_eq_ind_evals_skipped_scratch_bases = PBase::cast_bases_mut(P::cast_bases_mut(
+		partial_eq_ind_evals_skipped_scratch.as_mut_slice(),
+	));
 
 	let partial_eq_ind_evals_skipped_extrapolated_bases = PBase::cast_bases_mut(P::cast_bases_mut(
 		partial_eq_ind_evals_skipped_extrapolated.as_mut_slice(),
@@ -570,11 +725,11 @@ where
 		skip_rounds,
 		log_extension_degree_p_domain,
 		composition_max_degree,
-		partial_eq_ind_evals_skipped_bases,
+		partial_eq_ind_evals_skipped_scratch_bases,
 		partial_eq_ind_evals_skipped_extrapolated_bases,
 	)?;
 
-	Ok(partial_eq_ind_evals_skipped_extrapolated)
+	Ok((partial_eq_ind_evals_skipped, partial_eq_ind_evals_skipped_extrapolated))
 }
 
 fn ntt_extrapolate<NTT, P>(
@@ -650,16 +805,6 @@ where
 	Ok(())
 }
 
-pub fn domain_size(composition_degree: usize, skip_rounds: usize) -> usize {
-	extrapolated_scalars_count(composition_degree, skip_rounds) + (1 << skip_rounds)
-}
-
-fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize) -> usize {
-	let non_zerocheck_evals_count = composition_degree * ((1 << skip_rounds) - 1) + 1;
-	// In zerocheck, we know the first 2^skip_rounds composition evals would be zero
-	non_zerocheck_evals_count.saturating_sub(1 << skip_rounds)
-}
-
 fn interleaved_evals_packed_len<P: PackedField>(skip_rounds: usize, log_batch: usize) -> usize {
 	1 << (skip_rounds + log_batch).saturating_sub(P::LOG_WIDTH)
 }
@@ -672,23 +817,6 @@ fn extrapolated_evals_packed_len<P: PackedField>(
 	let extrapolated_scalars_count = extrapolated_scalars_count(composition_degree, skip_rounds);
 	let single_ntt_packed_elems = interleaved_evals_packed_len::<P>(skip_rounds, log_batch);
 	extrapolated_scalars_count.div_ceil(1 << skip_rounds) * single_ntt_packed_elems
-}
-
-fn equal_n_vars_check<P, M>(multilinears: &[M]) -> Result<usize, Error>
-where
-	P: PackedField,
-	M: MultilinearPoly<P>,
-{
-	let n_vars = multilinears
-		.first()
-		.map(|multilinear| multilinear.n_vars())
-		.unwrap_or_default();
-	for multilinear in multilinears {
-		if multilinear.n_vars() != n_vars {
-			bail!(Error::NumberOfVariablesMismatch);
-		}
-	}
-	Ok(n_vars)
 }
 
 #[cfg(test)]

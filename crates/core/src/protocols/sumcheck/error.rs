@@ -40,10 +40,14 @@ pub enum Error {
 	BaseAndExtensionFieldConstraintSetsMismatch,
 	#[error("some multilinear evals cannot be embedded into base field in the first round")]
 	MultilinearEvalsCannotBeEmbeddedInBaseField,
-	#[error("no zerocheck challenges provided to oraclized zerocheck")]
-	NoZerocheckChallenges,
 	#[error("zerocheck challenges number does not equal number of variables")]
 	IncorrectZerocheckChallengesLength,
+	#[error("number of specified multilinears and switchover rounds does not match")]
+	MultilinearSwitchoverSizeMismatch,
+	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]
+	IncorrectZerocheckPartialEqIndSize,
+	#[error("zerocheck claimed sums number does not equal number of compositions")]
+	IncorrectClaimedSumsLength,
 	#[error("batch proof shape does not conform to the provided indexed claims")]
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
@@ -54,6 +58,10 @@ pub enum Error {
 		"specified Lagrange evaluation domain is too small to uniquely recover round polynomial"
 	)]
 	LagrangeDomainTooSmall,
+	#[error("adding together Lagrange basis evaluations over domains of different sizes")]
+	LagrangeRoundEvalsSizeMismatch,
+	#[error("length of the zero prefix does not match the expected value")]
+	IncorrectZerosPrefixLength,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]
@@ -86,4 +94,14 @@ pub enum VerificationError {
 		"the proof contains an incorrect Lagrange coefficients multilinear extension evaluation"
 	)]
 	IncorrectLagrangeMultilinearEvaluation,
+	#[error("skipped rounds count is more than the number of variables in a univariate claim")]
+	IncorrectSkippedRoundsCount,
+	#[error("zero eval prefix does not match the skipped variables of the smaller univariate multinears")]
+	IncorrectZerosPrefixLen,
+	#[error("non-zero Lagrange evals count does not match expected univariate domain size")]
+	IncorrectLagrangeRoundEvalsLen,
+	#[error("claimed sums shape does not match the batched compositions")]
+	IncorrectClaimedSumsShape,
+	#[error("claimed multilinear evaluations do not match univariate round at challenge point")]
+	ClaimedSumRoundEvalsMismatch,
 }

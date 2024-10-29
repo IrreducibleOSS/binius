@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{RegularSumcheckProver, ZerocheckProver};
+use super::{RegularSumcheckProver, UnivariateZerocheck};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
 	protocols::sumcheck::{
@@ -19,7 +19,7 @@ use binius_utils::bail;
 use itertools::izip;
 use std::sync::Arc;
 
-pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = ZerocheckProver<
+pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZerocheck<
 	'a,
 	FDomain,
 	PBase,
@@ -92,7 +92,7 @@ where
 		}
 	}
 
-	let prover = ZerocheckProver::new(
+	let prover = UnivariateZerocheck::new(
 		multilinears,
 		zeros,
 		zerocheck_challenges,

@@ -64,10 +64,15 @@ where
 							packed.set(k, P::Scalar::ZERO);
 						}
 					}
+					if n_vars < P::LOG_WIDTH {
+						for k in (1 << n_vars)..P::WIDTH {
+							packed.set(k, P::Scalar::ZERO);
+						}
+					}
 					packed
 				})
 				.collect();
-			MultilinearExtension::from_values(values)
+			MultilinearExtension::new(n_vars, values)
 				.unwrap()
 				.specialize::<PE>()
 		})

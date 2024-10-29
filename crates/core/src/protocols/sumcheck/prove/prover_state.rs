@@ -2,7 +2,10 @@
 
 use crate::{
 	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{common::RoundCoeffs, error::Error},
+	protocols::sumcheck::{
+		common::{determine_switchovers, equal_n_vars_check, RoundCoeffs},
+		error::Error,
+	},
 };
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
@@ -75,24 +78,33 @@ where
 		switchover_fn: impl Fn(usize) -> usize,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let n_vars = multilinears
-			.first()
-			.map(|multilin| multilin.n_vars())
-			.unwrap_or(0);
-		for multilinear in multilinears.iter() {
-			if multilinear.n_vars() != n_vars {
-				bail!(Error::NumberOfVariablesMismatch);
-			}
+		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
+		Self::new_with_switchover_rounds(
+			multilinears,
+			&switchover_rounds,
+			claimed_sums,
+			evaluation_points,
+			backend,
+		)
+	}
+
+	pub fn new_with_switchover_rounds(
+		multilinears: Vec<M>,
+		switchover_rounds: &[usize],
+		claimed_sums: Vec<F>,
+		evaluation_points: Vec<FDomain>,
+		backend: &'a Backend,
+	) -> Result<Self, Error> {
+		let n_vars = equal_n_vars_check(&multilinears)?;
+
+		if multilinears.len() != switchover_rounds.len() {
+			bail!(Error::MultilinearSwitchoverSizeMismatch);
 		}
 
-		let switchover_rounds = multilinears
-			.iter()
-			.map(|multilinear| switchover_fn(1 << multilinear.log_extension_degree()))
-			.collect::<Vec<_>>();
 		let max_switchover_round = switchover_rounds.iter().copied().max().unwrap_or_default();
 
 		let multilinears = iter::zip(multilinears, switchover_rounds)
-			.map(|(multilinear, switchover_round)| SumcheckMultilinear::Transparent {
+			.map(|(multilinear, &switchover_round)| SumcheckMultilinear::Transparent {
 				multilinear,
 				switchover_round,
 			})

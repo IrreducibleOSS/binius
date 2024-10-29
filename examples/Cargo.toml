@@ -39,6 +39,10 @@ name = "keccakf"
 path = "keccakf.rs"
 
 [[example]]
+name = "keccakf_small_field"
+path = "keccakf_small_field.rs"
+
+[[example]]
 name = "lasso"
 path = "lasso.rs"
 

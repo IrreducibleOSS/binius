@@ -99,6 +99,13 @@ impl<P: PackedField, Backend: ComputationBackend> MultilinearQuery<P, Backend> {
 		&self.expanded_query[0..self.expanded_query_len]
 	}
 
+	// REVIEW: this method is a temporary hack to allow the
+	// construction of a "multilinear query" which contains Lagrange
+	// coefficient evaluations in UnivariateZerocheck::fold_univariate_round
+	pub fn expansion_mut(&mut self) -> &mut [P] {
+		&mut self.expanded_query[0..self.expanded_query_len]
+	}
+
 	pub fn into_expansion(self) -> Backend::Vec<P> {
 		self.expanded_query
 	}

@@ -971,7 +971,8 @@ where
 		immediate_switchover_heuristic,
 		zerocheck_challenges.as_slice(),
 		&backend,
-	)?;
+	)?
+	.into_regular_zerocheck()?;
 
 	let (sumcheck_output, zerocheck_proof) =
 		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;

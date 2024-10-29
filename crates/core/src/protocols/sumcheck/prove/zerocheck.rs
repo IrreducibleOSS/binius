@@ -2,23 +2,34 @@
 
 use crate::{
 	polynomial::{Error as PolynomialError, MultilinearComposite},
-	protocols::{
-		sumcheck::{
-			prove::{ProverState, SumcheckInterpolator, SumcheckProver},
-			Error, RoundCoeffs,
+	protocols::sumcheck::{
+		common::{
+			determine_switchovers, equal_n_vars_check, fold_partial_eq_ind,
+			small_field_embedding_degree_check,
 		},
-		utils::packed_from_fn_with_offset,
+		prove::{
+			univariate::{
+				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
+				ZerocheckUnivariateFoldResult,
+			},
+			ProverState, SumcheckInterpolator, SumcheckProver, UnivariateZerocheckProver,
+		},
+		univariate, Error, LagrangeRoundEvals, RoundCoeffs,
 	},
 };
 use binius_field::{
-	packed::{get_packed_slice, iter_packed_slice},
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	packed::iter_packed_slice,
+	util::{eq, powers},
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension,
 };
-use binius_hal::{ComputationBackend, MultilinearPoly, MultilinearQuery, SumcheckEvaluator};
+use binius_hal::{
+	ComputationBackend, MLEDirectAdapter, MultilinearPoly, MultilinearQuery, SumcheckEvaluator,
+};
 use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain};
 use binius_utils::bail;
+use getset::Getters;
 use itertools::izip;
-use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use std::{marker::PhantomData, ops::Range};
@@ -60,6 +71,336 @@ where
 	Ok(())
 }
 
+/// A prover that is capable of performing univariate skip.
+///
+/// By recasting `skip_rounds` first variables in a multilinear sumcheck into a univariate domain,
+/// it becomes possible to compute all of these rounds in small fields, unlocking significant
+/// performance gains. See [`zerocheck_univariate_evals`] rustdoc for a more detailed explanation.
+///
+/// This struct is an entrypoint to proving all zerochecks instances, univariatized and regular.
+/// "Regular" multilinear case is covered by calling [`Self::into_regular_zerocheck`] right away,
+/// producing a [`ZerocheckProver`]. Univariatized case is handled by using methods from a
+/// [`UnivariateZerocheckProver`] trait, where folding results in a reduced multilinear zerocheck
+/// prover for the remaining rounds.
+#[derive(Debug, Getters)]
+pub struct UnivariateZerocheck<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+where
+	FDomain: Field,
+	PBase: PackedField,
+	P: PackedField,
+	Backend: ComputationBackend,
+{
+	n_vars: usize,
+	#[getset(get = "pub")]
+	multilinears: Vec<M>,
+	switchover_rounds: Vec<usize>,
+	compositions: Vec<(CompositionBase, Composition)>,
+	zerocheck_challenges: Vec<P::Scalar>,
+	domains: Vec<InterpolationDomain<FDomain>>,
+	backend: &'a Backend,
+	univariate_evals_output: Option<ZerocheckUnivariateEvalsOutput<P::Scalar, P, Backend>>,
+	_p_base_marker: PhantomData<PBase>,
+}
+
+impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+	UnivariateZerocheck<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+where
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	FDomain: Field,
+	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	CompositionBase: CompositionPoly<PBase>,
+	Composition: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	pub fn new(
+		multilinears: Vec<M>,
+		zero_claims: impl IntoIterator<Item = (CompositionBase, Composition)>,
+		zerocheck_challenges: &[F],
+		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+		switchover_fn: impl Fn(usize) -> usize,
+		backend: &'a Backend,
+	) -> Result<Self, Error> {
+		let n_vars = equal_n_vars_check(&multilinears)?;
+
+		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
+		for (composition_base, composition) in compositions.iter() {
+			if composition_base.n_vars() != multilinears.len()
+				|| composition.n_vars() != multilinears.len()
+				|| composition_base.degree() != composition.degree()
+			{
+				bail!(Error::InvalidComposition {
+					expected_n_vars: multilinears.len(),
+				});
+			}
+		}
+
+		small_field_embedding_degree_check::<PBase, P, _>(&multilinears)?;
+
+		if zerocheck_challenges.len() != n_vars {
+			return Err(Error::IncorrectZerocheckChallengesLength);
+		}
+
+		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
+		let zerocheck_challenges = zerocheck_challenges.to_vec();
+
+		let domains = compositions
+			.iter()
+			.map(|(_, composition)| {
+				let degree = composition.degree();
+				let domain = evaluation_domain_factory.create(degree + 1)?;
+				Ok(domain.into())
+			})
+			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
+			.map_err(Error::MathError)?;
+
+		Ok(Self {
+			n_vars,
+			multilinears,
+			switchover_rounds,
+			compositions,
+			zerocheck_challenges,
+			domains,
+			backend,
+			univariate_evals_output: None,
+			_p_base_marker: PhantomData,
+		})
+	}
+
+	#[allow(clippy::type_complexity)]
+	pub fn into_regular_zerocheck(
+		self,
+	) -> Result<
+		ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>,
+		Error,
+	> {
+		if self.univariate_evals_output.is_some() {
+			bail!(Error::ExpectedFold);
+		}
+
+		// Evaluate zerocheck partial indicator in variables 1..n_vars
+		let start = self.n_vars.min(1);
+		let partial_eq_ind_evals =
+			MultilinearQuery::with_full_query(&self.zerocheck_challenges[start..], self.backend)?
+				.into_expansion();
+		let claimed_sums = vec![F::ZERO; self.compositions.len()];
+
+		// This is a regular multilinear zerocheck constructor, split over two creation stages.
+		ZerocheckProver::new(
+			self.multilinears,
+			self.switchover_rounds,
+			self.compositions,
+			partial_eq_ind_evals,
+			F::ONE,
+			self.zerocheck_challenges,
+			claimed_sums,
+			self.domains,
+			RegularFirstRound::BaseField,
+			self.backend,
+		)
+	}
+}
+
+impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+	UnivariateZerocheckProver<F>
+	for UnivariateZerocheck<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+where
+	F: BinaryField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	FDomain: BinaryField,
+	PBase: PackedFieldIndexable<Scalar: ExtensionField<FDomain>>
+		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+	P: PackedFieldIndexable<Scalar = F> + RepackedExtension<PBase> + PackedExtension<FDomain>,
+	CompositionBase: CompositionPoly<PBase>,
+	Composition: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	type RegularZerocheckProver = ZerocheckProver<
+		'a,
+		FDomain,
+		PBase,
+		P,
+		CompositionBase,
+		Composition,
+		MLEDirectAdapter<P>,
+		Backend,
+	>;
+
+	fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	fn domain_size(&self, skip_rounds: usize) -> usize {
+		self.compositions
+			.iter()
+			.map(|(composition, _)| univariate::domain_size(composition.degree() + 1, skip_rounds))
+			.max()
+			.unwrap_or(0)
+	}
+
+	fn execute_univariate_round(
+		&mut self,
+		skip_rounds: usize,
+		max_domain_size: usize,
+		batch_coeff: F,
+	) -> Result<LagrangeRoundEvals<F>, Error> {
+		if self.univariate_evals_output.is_some() {
+			bail!(Error::ExpectedFold);
+		}
+
+		// Only use base compositions in the univariate round (it's the whole point)
+		let compositions_base = self
+			.compositions
+			.iter()
+			.map(|(composition_base, _)| composition_base)
+			.collect::<Vec<_>>();
+
+		// Output contains values that are needed for computations that happen after
+		// the round challenge has been sampled
+		let univariate_evals_output = zerocheck_univariate_evals(
+			&self.multilinears,
+			&compositions_base,
+			&self.zerocheck_challenges,
+			skip_rounds,
+			max_domain_size,
+			self.backend,
+		)?;
+
+		// Batch together Lagrange round evals using powers of batch_coeff
+		let zeros_prefix_len = 1 << skip_rounds;
+		let batched_round_evals = univariate_evals_output
+			.round_evals
+			.iter()
+			.zip(powers(batch_coeff))
+			.map(|(evals, scalar)| {
+				let round_evals = LagrangeRoundEvals {
+					zeros_prefix_len,
+					evals: evals.clone(),
+				};
+				round_evals * scalar
+			})
+			.try_fold(
+				LagrangeRoundEvals::zeros(max_domain_size),
+				|mut accum, evals| -> Result<_, Error> {
+					accum.add_assign_lagrange(&evals)?;
+					Ok(accum)
+				},
+			)?;
+
+		self.univariate_evals_output = Some(univariate_evals_output);
+
+		Ok(batched_round_evals)
+	}
+
+	fn fold_univariate_round(
+		self,
+		challenge: F,
+	) -> Result<(Vec<F>, Self::RegularZerocheckProver), Error> {
+		if self.univariate_evals_output.is_none() {
+			bail!(Error::ExpectedExecution);
+		}
+
+		// Once the challenge is known, values required for the instantiation of the
+		// multilinear prover for the remaining rounds become known.
+		let ZerocheckUnivariateFoldResult {
+			skip_rounds,
+			eq_ind_eval,
+			subcube_lagrange_coeffs,
+			claimed_sums,
+			partial_eq_ind_evals,
+		} = self
+			.univariate_evals_output
+			.expect("validated to be Some")
+			.fold::<FDomain>(challenge)?;
+
+		// For each subcube of size 2**skip_rounds, we need to compute its
+		// inner product with Lagrange coefficients at challenge point in order
+		// to obtain the witness for the remaining multilinear rounds.
+		// REVIEW: Currently MultilinearPoly lacks a method to do that, so we
+		//         hack the needed functionality by overwriting the inner content
+		//         of a MultilinearQuery and performing an evaluate_partial_low,
+		//         which accidentally does what's needed. There should obviously
+		//         be a dedicated method for this someday.
+		let mut lagrange_coeffs_query = MultilinearQuery::<P, _>::with_full_query(
+			// that's just fillers that will be overwritten
+			&self.zerocheck_challenges[..skip_rounds],
+			self.backend,
+		)?;
+		P::unpack_scalars_mut(lagrange_coeffs_query.expansion_mut())
+			.copy_from_slice(&subcube_lagrange_coeffs);
+
+		let partial_low_multilinears = self
+			.multilinears
+			.into_iter()
+			.map(|multilinear| -> Result<_, Error> {
+				let multilinear =
+					multilinear.evaluate_partial_low(lagrange_coeffs_query.to_ref())?;
+				Ok(MLEDirectAdapter::from(multilinear))
+			})
+			.collect::<Result<Vec<_>, _>>()?;
+
+		let switchover_rounds = self
+			.switchover_rounds
+			.into_iter()
+			.map(|switchover_round| switchover_round.saturating_sub(skip_rounds))
+			.collect();
+
+		let zerocheck_challenges = self.zerocheck_challenges[skip_rounds..].to_vec();
+
+		// Claimed sums for the next round are evaluations of the underlying composite round
+		// polynomials at challenge point, and for zerocheck that includes equality indicator as
+		// well. Due to the way ZerocheckProver is defined, its inner "prime" evaluations do not
+		// include the full equality indicator, but only its part from round `skip_rounds+1` till the
+		// end, without the `eq_ind_eval` prefix - we cancel it out by multiplying by its inverse.
+		let eq_ind_eval_inverse = eq_ind_eval.invert_or_zero();
+		let claimed_prime_sums = claimed_sums
+			.iter()
+			.map(|&claimed_sum_with_eq_ind_eval| claimed_sum_with_eq_ind_eval * eq_ind_eval_inverse)
+			.collect();
+
+		// This is also regular multilinear zerocheck constructor, but "jump started" in round
+		// `skip_rounds` while using witness with a projected univariate round.
+		// NB: first round evaluator has to be overriden due to issues proving
+		// `P: RepackedExtension<P>` relation in the generic context, as well as the need
+		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
+		let regular_prover = ZerocheckProver::new(
+			partial_low_multilinears,
+			switchover_rounds,
+			self.compositions,
+			partial_eq_ind_evals,
+			eq_ind_eval,
+			zerocheck_challenges,
+			claimed_prime_sums,
+			self.domains,
+			RegularFirstRound::LargeField,
+			self.backend,
+		)?;
+
+		Ok((claimed_sums, regular_prover))
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RegularFirstRound {
+	BaseField,
+	LargeField,
+}
+
+/// A "regular" multilinear zerocheck prover.
+///
+/// The main difference of this prover from a regular sumcheck prover is that it computes
+/// round evaluations of a much simpler "prime" polynomial multiplied by a "higher" portion
+/// of the equality indicator. This "prime" polynomial has the same degree as the underlying
+/// composition, reducing the number of would-be evaluation points by one, and the tensor
+/// expansion of the zerocheck indicator doesn't have to be interpolated. Round evaluations
+/// for the "full" assumed zerocheck composition are computed in monomial form, out of hot loop.
+/// See [Gruen24] Section 3.2 for details.
+///
+/// When "jump starting" a zerocheck prover in a middle of zerocheck, pay attention that
+/// `composite_prime_sums` are on "prime" polynomial, and not on full zerocheck polynomial.
+///
+/// [Gruen24]: <https://eprint.iacr.org/2024/108>
 #[derive(Debug)]
 pub struct ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
@@ -76,13 +417,14 @@ where
 	zerocheck_challenges: Vec<P::Scalar>,
 	compositions: Vec<(CompositionBase, Composition)>,
 	domains: Vec<InterpolationDomain<FDomain>>,
+	first_round: RegularFirstRound,
 	_p_base_marker: PhantomData<PBase>,
 }
 
 impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 	ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,
 	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
@@ -91,75 +433,56 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
-	pub fn new(
+	#[allow(clippy::too_many_arguments)]
+	fn new(
 		multilinears: Vec<M>,
-		zero_claims: impl IntoIterator<Item = (CompositionBase, Composition)>,
-		challenges: &[F],
-		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-		switchover_fn: impl Fn(usize) -> usize,
+		switchover_rounds: Vec<usize>,
+		compositions: Vec<(CompositionBase, Composition)>,
+		partial_eq_ind_evals: Backend::Vec<P>,
+		eq_ind_eval: F,
+		zerocheck_challenges: Vec<F>,
+		claimed_prime_sums: Vec<F>,
+		domains: Vec<InterpolationDomain<FDomain>>,
+		first_round: RegularFirstRound,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
-		for (composition_base, composition) in compositions.iter() {
-			if composition_base.n_vars() != multilinears.len()
-				|| composition.n_vars() != multilinears.len()
-				|| composition_base.degree() != composition.degree()
-			{
-				bail!(Error::InvalidComposition {
-					expected_n_vars: multilinears.len(),
-				});
-			}
-		}
-
-		let min_log_extension_degree =
-			log2_strict_usize(P::Scalar::DEGREE) - log2_strict_usize(PBase::Scalar::DEGREE);
-		for multilinear in &multilinears {
-			if multilinear.log_extension_degree() < min_log_extension_degree {
-				bail!(Error::MultilinearEvalsCannotBeEmbeddedInBaseField);
-			}
-		}
-
-		let claimed_sums = vec![F::ZERO; compositions.len()];
-
-		let domains = compositions
-			.iter()
-			.map(|(_, composition)| {
-				let degree = composition.degree();
-				let domain = evaluation_domain_factory.create(degree + 1)?;
-				Ok(domain.into())
-			})
-			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
-			.map_err(Error::MathError)?;
-
 		let evaluation_points = domains
 			.iter()
 			.max_by_key(|domain| domain.points().len())
 			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
 
-		let state = ProverState::new(
+		if claimed_prime_sums.len() != compositions.len() {
+			bail!(Error::IncorrectClaimedSumsLength);
+		}
+
+		let state = ProverState::new_with_switchover_rounds(
 			multilinears,
-			claimed_sums,
+			&switchover_rounds,
+			claimed_prime_sums,
 			evaluation_points,
-			switchover_fn,
 			backend,
 		)?;
 		let n_vars = state.n_vars();
 
-		if challenges.len() != n_vars {
-			return Err(Error::IncorrectZerocheckChallengesLength);
+		if zerocheck_challenges.len() != n_vars {
+			bail!(Error::IncorrectZerocheckChallengesLength);
 		}
 
-		let partial_eq_ind_evals =
-			MultilinearQuery::with_full_query(&challenges[1..], backend)?.into_expansion();
+		// Only one value of the expanded zerocheck equality indicator is used per each
+		// 1-variable subcube, thus it should be twice smaller.
+		if partial_eq_ind_evals.len() != 1 << n_vars.saturating_sub(1 + P::LOG_WIDTH) {
+			bail!(Error::IncorrectZerocheckPartialEqIndSize);
+		}
 
 		Ok(Self {
 			n_vars,
 			state,
-			eq_ind_eval: F::ONE,
+			eq_ind_eval,
 			partial_eq_ind_evals,
-			zerocheck_challenges: challenges.to_vec(),
+			zerocheck_challenges,
 			compositions,
 			domains,
+			first_round,
 			_p_base_marker: PhantomData,
 		})
 	}
@@ -178,33 +501,14 @@ where
 		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
 		// we opt to keep this prover generic over all fields. These two multiplications per round
 		// have negligible performance impact.
-		self.eq_ind_eval *= alpha * challenge + (F::ONE - alpha) * (F::ONE - challenge);
+		self.eq_ind_eval *= eq(alpha, challenge);
 	}
 
 	fn fold_partial_eq_ind(&mut self) {
-		let n_rounds_remaining = self.n_rounds_remaining();
-		if n_rounds_remaining == 0 {
-			return;
-		}
-		if self.partial_eq_ind_evals.len() == 1 {
-			let unpacked = P::unpack_scalars_mut(&mut self.partial_eq_ind_evals);
-			for i in 0..(1 << (n_rounds_remaining - 1)) {
-				unpacked[i] = unpacked[2 * i] + unpacked[2 * i + 1];
-			}
-		} else {
-			let current_evals = &self.partial_eq_ind_evals;
-			let updated_evals = (0..current_evals.len() / 2)
-				.into_par_iter()
-				.map(|i| {
-					packed_from_fn_with_offset(i, |index| {
-						let eval0 = get_packed_slice(current_evals, index << 1);
-						let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
-						eval0 + eval1
-					})
-				})
-				.collect();
-			self.partial_eq_ind_evals = Backend::to_hal_slice(updated_evals);
-		}
+		fold_partial_eq_ind::<P, Backend>(
+			self.n_rounds_remaining(),
+			&mut self.partial_eq_ind_evals,
+		);
 	}
 }
 
@@ -236,7 +540,9 @@ where
 
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let round = self.round();
-		let coeffs = if round == 0 {
+		let base_field_first_round =
+			round == 0 && matches!(self.first_round, RegularFirstRound::BaseField);
+		let coeffs = if base_field_first_round {
 			let evaluators = izip!(&self.compositions, &self.domains)
 				.map(|((composition_base, composition), interpolation_domain)| {
 					ZerocheckFirstRoundEvaluator {

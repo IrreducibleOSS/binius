@@ -513,7 +513,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_evaluate_partial_low_high_small_than_packed_width() {
+	fn test_evaluate_partial_low_high_smaller_than_packed_width() {
 		type P = PackedBinaryField16x8b;
 
 		type F = BinaryField8b;

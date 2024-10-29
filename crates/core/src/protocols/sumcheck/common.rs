@@ -1,11 +1,19 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::error::Error;
-use binius_field::Field;
+use crate::protocols::utils::packed_from_fn_with_offset;
+use binius_field::{
+	packed::get_packed_slice, ExtensionField, Field, PackedField, PackedFieldIndexable,
+};
+use binius_hal::{ComputationBackend, MultilinearPoly};
 use binius_math::CompositionPoly;
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use std::ops::{Add, AddAssign, Mul, MulAssign};
+use rayon::prelude::*;
+use std::{
+	iter::repeat_n,
+	ops::{Add, AddAssign, Mul, MulAssign},
+};
 
 /// A claim about the sum of the values of a multilinear composite polynomial over the boolean
 /// hypercube.
@@ -80,6 +88,79 @@ where
 
 	pub fn composite_sums(&self) -> &[CompositeSumClaim<F, Composition>] {
 		&self.composite_sums
+	}
+}
+
+/// A univariate polynomial in Lagrange basis.
+///
+/// The coefficient at position `i` in the `lagrange_coeffs` corresponds to evaluation
+/// at `i+zeros_prefix_len`-th field element of some agreed upon domain. Coefficients
+/// at positions `0..zeros_prefix_len` are zero. Addition of Lagrange basis representations
+/// only makes sense for the polynomials in the same domain.
+#[derive(Clone, Debug)]
+pub struct LagrangeRoundEvals<F: Field> {
+	pub zeros_prefix_len: usize,
+	pub evals: Vec<F>,
+}
+
+impl<F: Field> LagrangeRoundEvals<F> {
+	/// A Lagrange representation of a zero polynomial, on a given domain.
+	pub fn zeros(zeros_prefix_len: usize) -> Self {
+		LagrangeRoundEvals {
+			zeros_prefix_len,
+			evals: Vec::new(),
+		}
+	}
+
+	/// Representation in an isomorphic field.
+	pub fn isomorphic<FI: Field + From<F>>(self) -> LagrangeRoundEvals<FI> {
+		LagrangeRoundEvals {
+			zeros_prefix_len: self.zeros_prefix_len,
+			evals: self.evals.into_iter().map(Into::into).collect(),
+		}
+	}
+
+	/// An assigning addition of two polynomials in Lagrange basis. May fail,
+	/// thus it's not simply an `AddAssign` overload due to signature mismatch.
+	pub fn add_assign_lagrange(&mut self, rhs: &Self) -> Result<(), Error> {
+		let lhs_len = self.zeros_prefix_len + self.evals.len();
+		let rhs_len = rhs.zeros_prefix_len + rhs.evals.len();
+
+		if lhs_len != rhs_len {
+			bail!(Error::LagrangeRoundEvalsSizeMismatch);
+		}
+
+		let start_idx = if rhs.zeros_prefix_len < self.zeros_prefix_len {
+			self.evals
+				.splice(0..0, repeat_n(F::ZERO, self.zeros_prefix_len - rhs.zeros_prefix_len));
+			self.zeros_prefix_len = rhs.zeros_prefix_len;
+			0
+		} else {
+			rhs.zeros_prefix_len - self.zeros_prefix_len
+		};
+
+		for (lhs, rhs) in self.evals[start_idx..].iter_mut().zip(&rhs.evals) {
+			*lhs += rhs;
+		}
+
+		Ok(())
+	}
+}
+
+impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
+	type Output = LagrangeRoundEvals<F>;
+
+	fn mul(mut self, rhs: F) -> Self::Output {
+		self *= rhs;
+		self
+	}
+}
+
+impl<F: Field> MulAssign<F> for LagrangeRoundEvals<F> {
+	fn mul_assign(&mut self, rhs: F) {
+		for eval in self.evals.iter_mut() {
+			*eval *= rhs;
+		}
 	}
 }
 
@@ -240,6 +321,34 @@ impl<F: Field> BatchSumcheckOutput<F> {
 	}
 }
 
+/// Batched univariate zerocheck proof.
+#[derive(Clone, Debug)]
+pub struct ZerocheckUnivariateProof<F: Field> {
+	pub skip_rounds: usize,
+	pub round_evals: LagrangeRoundEvals<F>,
+	pub claimed_sums: Vec<Vec<F>>,
+}
+
+impl<F: Field> ZerocheckUnivariateProof<F> {
+	pub fn isomorphic<FI: Field + From<F>>(self) -> ZerocheckUnivariateProof<FI> {
+		ZerocheckUnivariateProof {
+			skip_rounds: self.skip_rounds,
+			round_evals: self.round_evals.isomorphic(),
+			claimed_sums: self
+				.claimed_sums
+				.into_iter()
+				.map(|inner_claimed_sums| inner_claimed_sums.into_iter().map(Into::into).collect())
+				.collect(),
+		}
+	}
+}
+
+#[derive(Debug)]
+pub struct BatchZerocheckUnivariateOutput<F: Field, Reduction> {
+	pub univariate_challenge: F,
+	pub reductions: Vec<Reduction>,
+}
+
 /// Constructs a switchover function thaw returns the round number where folded multilinear is at
 /// least 2^k times smaller (in bytes) than the original, or 1 when not applicable.
 pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize + Copy {
@@ -251,4 +360,93 @@ pub fn standard_switchover_heuristic(k: isize) -> impl Fn(usize) -> usize + Copy
 /// Sumcheck switchover heuristic that begins folding immediately in the first round.
 pub fn immediate_switchover_heuristic(_extension_degree: usize) -> usize {
 	0
+}
+
+/// Determine switchover rounds for a slice of multilinears.
+pub fn determine_switchovers<P, M>(
+	multilinears: &[M],
+	switchover_fn: impl Fn(usize) -> usize,
+) -> Vec<usize>
+where
+	P: PackedField,
+	M: MultilinearPoly<P>,
+{
+	multilinears
+		.iter()
+		.map(|multilinear| switchover_fn(1 << multilinear.log_extension_degree()))
+		.collect()
+}
+
+/// Check that all multilinears in a slice are of the same size.
+pub fn equal_n_vars_check<P, M>(multilinears: &[M]) -> Result<usize, Error>
+where
+	P: PackedField,
+	M: MultilinearPoly<P>,
+{
+	let n_vars = multilinears
+		.first()
+		.map(|multilinear| multilinear.n_vars())
+		.unwrap_or_default();
+	for multilinear in multilinears {
+		if multilinear.n_vars() != n_vars {
+			bail!(Error::NumberOfVariablesMismatch);
+		}
+	}
+	Ok(n_vars)
+}
+
+/// Check that evaluations of all multilinears can actually be embedded in the scalar
+/// type of small field `PBase`.
+///
+/// Returns binary logarithm of the embedding degree.
+pub fn small_field_embedding_degree_check<PBase, P, M>(multilinears: &[M]) -> Result<(), Error>
+where
+	PBase: PackedField,
+	P: PackedField<Scalar: ExtensionField<PBase::Scalar>>,
+	M: MultilinearPoly<P>,
+{
+	let log_embedding_degree = <P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE;
+
+	for multilinear in multilinears {
+		if multilinear.log_extension_degree() < log_embedding_degree {
+			bail!(Error::MultilinearEvalsCannotBeEmbeddedInBaseField);
+		}
+	}
+
+	Ok(())
+}
+
+pub(super) fn fold_partial_eq_ind<P, Backend>(
+	n_vars: usize,
+	partial_eq_ind_evals: &mut Backend::Vec<P>,
+) where
+	P: PackedFieldIndexable,
+	Backend: ComputationBackend,
+{
+	debug_assert_eq!(1 << n_vars.saturating_sub(P::LOG_WIDTH), partial_eq_ind_evals.len());
+
+	if n_vars == 0 {
+		return;
+	}
+
+	if partial_eq_ind_evals.len() == 1 {
+		let unpacked = P::unpack_scalars_mut(partial_eq_ind_evals);
+		for i in 0..1 << (n_vars - 1) {
+			unpacked[i] = unpacked[2 * i] + unpacked[2 * i + 1];
+		}
+	} else {
+		let current_evals = &*partial_eq_ind_evals;
+		let updated_evals = (0..current_evals.len() / 2)
+			.into_par_iter()
+			.map(|i| {
+				packed_from_fn_with_offset(i, |index| {
+					let eval0 = get_packed_slice(current_evals, index << 1);
+					let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
+					eval0 + eval1
+				})
+			})
+			.collect();
+
+		*partial_eq_ind_evals = Backend::to_hal_slice(updated_evals);
+	}
 }

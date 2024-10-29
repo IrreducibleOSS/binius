@@ -20,5 +20,5 @@ pub use common::*;
 pub use error::*;
 pub use oracles::*;
 pub use prove::batch_prove;
-pub use verify::batch_verify;
+pub use verify::{batch_verify, batch_verify_zerocheck_univariate_round};
 pub use zerocheck::ZerocheckClaim;

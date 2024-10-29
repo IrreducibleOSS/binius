@@ -13,6 +13,9 @@
 //!
 //! For Keccak-f specification and pseudocode, see
 //! [Keccak specifications summary](https://keccak.team/keccak_specs_summary.html).
+//!
+//! This example computes the SNARK using univariate skip small field zerocheck, which should be
+//! significantly more efficient for tower fields.
 
 #![feature(step_trait)]
 
@@ -25,7 +28,11 @@ use binius_core::{
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckBatchProof},
+		sumcheck::{
+			self, standard_switchover_heuristic, Proof as ZerocheckBatchProof,
+			Proof as UnivariatizingProof,
+			ZerocheckUnivariateProof as ZerocheckUnivariateBatchProof,
+		},
 	},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
@@ -55,6 +62,7 @@ use tracing::instrument;
 #[cfg(feature = "fp-tower")]
 mod field_types {
 	use binius_field::{BinaryField128b, BinaryField8b, PackedBinaryField1x128b};
+	pub const SKIP_ROUNDS: usize = 6;
 	pub type FW = BinaryField128b;
 	pub type PW = PackedBinaryField1x128b;
 	pub type FBase = BinaryField8b;
@@ -65,6 +73,7 @@ mod field_types {
 #[cfg(all(feature = "aes-tower", not(feature = "fp-tower")))]
 mod field_types {
 	use binius_field::{AESTowerField128b, AESTowerField8b, PackedAESBinaryField1x128b};
+	pub const SKIP_ROUNDS: usize = 6;
 	pub type FW = AESTowerField128b;
 	pub type PW = PackedAESBinaryField1x128b;
 	pub type FBase = AESTowerField8b;
@@ -75,6 +84,7 @@ mod field_types {
 #[cfg(all(not(feature = "fp-tower"), not(feature = "aes-tower")))]
 mod field_types {
 	use binius_field::{BinaryField128b, BinaryField128bPolyval, PackedBinaryPolyval1x128b};
+	pub const SKIP_ROUNDS: usize = 1;
 	pub type FW = BinaryField128bPolyval;
 	pub type PW = PackedBinaryPolyval1x128b;
 	pub type FBase = BinaryField128bPolyval;
@@ -295,7 +305,9 @@ impl TraceOracle {
 
 struct Proof<F: Field, PCSComm, PCSProof> {
 	trace_comm: PCSComm,
+	zerocheck_univariate_proof: ZerocheckUnivariateBatchProof<F>,
 	zerocheck_proof: ZerocheckBatchProof<F>,
+	univariatizing_proof: UnivariatizingProof<F>,
 	evalcheck_proof: GreedyEvalcheckProof<F>,
 	trace_open_proof: PCSProof,
 }
@@ -304,7 +316,9 @@ impl<F: Field, PCSComm, PCSProof> Proof<F, PCSComm, PCSProof> {
 	fn isomorphic<F2: Field + From<F>>(self) -> Proof<F2, PCSComm, PCSProof> {
 		Proof {
 			trace_comm: self.trace_comm,
+			zerocheck_univariate_proof: self.zerocheck_univariate_proof.isomorphic(),
 			zerocheck_proof: self.zerocheck_proof.isomorphic(),
+			univariatizing_proof: self.univariatizing_proof.isomorphic(),
 			evalcheck_proof: self.evalcheck_proof.isomorphic(),
 			trace_open_proof: self.trace_open_proof,
 		}
@@ -548,6 +562,8 @@ where
 		+ PackScalar<F>
 		+ PackScalar<DomainField>,
 	PackedType<U, F>: PackedFieldIndexable<Scalar = F>,
+	PackedType<U, FBase>: PackedFieldIndexable<Scalar = FBase>,
+	PackedType<U, DomainField>: PackedFieldIndexable<Scalar = DomainField>,
 	FBase: TowerField + ExtensionField<DomainField>,
 	F: TowerField + ExtensionField<FBase> + ExtensionField<DomainField>,
 	FEPCS: TowerField + From<F> + Into<F>,
@@ -580,7 +596,7 @@ where
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set.clone())?;
 
-	let prover = sumcheck::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
+	let univariate_prover = sumcheck::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
 		constraint_set_base,
 		constraint_set,
 		&witness,
@@ -588,20 +604,73 @@ where
 		switchover_fn,
 		zerocheck_challenges.as_slice(),
 		&backend,
-	)?
-	.into_regular_zerocheck()?;
-
-	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;
-
-	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
-		&[zerocheck_claim],
-		&zerocheck_challenges,
-		sumcheck_output,
 	)?;
 
+	let multilinears = univariate_prover.multilinears().clone();
+
+	// prove the univariate round, skipping over field_types::SKIP_ROUNDS variables
+	let (univariate_output, zerocheck_univariate_proof) =
+		sumcheck::prove::batch_prove_zerocheck_univariate_round(
+			vec![univariate_prover],
+			field_types::SKIP_ROUNDS,
+			&mut iso_challenger,
+		)?;
+
+	let univariate_challenge = univariate_output.univariate_challenge;
+
+	// prove the remainder of the zerocheck using "regular" protocol
+	let (sumcheck_output, zerocheck_proof) =
+		sumcheck::prove::batch_prove(univariate_output.reductions, &mut iso_challenger)?;
+
+	// univariatized multilinear evalcheck claims
+	let univariatized_multilinear_evals = zerocheck_proof.multilinear_evals[0].clone();
+
+	// a sumcheck to reduce univariatized claims to multilinear ones
+	let reduced_multilinears = sumcheck::prove::reduce_to_skipped_zerocheck_projection(
+		multilinears,
+		&sumcheck_output.challenges,
+		&zerocheck_challenges,
+		&backend,
+	)?;
+
+	let univariatizing_reduction_prover = sumcheck::prove::univariatizing_reduction_prover(
+		reduced_multilinears,
+		&univariatized_multilinear_evals,
+		univariate_challenge,
+		domain_factory.clone(),
+		&backend,
+	)?;
+
+	let univariatizing_claim = sumcheck::univariate::univariatizing_reduction_claim(
+		field_types::SKIP_ROUNDS,
+		&univariatized_multilinear_evals,
+	)?;
+	let univariatizing_claims = [univariatizing_claim];
+
+	let (univariatizing_output, univariatizing_proof) =
+		sumcheck::prove::batch_prove(vec![univariatizing_reduction_prover], &mut iso_challenger)?;
+
+	// check that the last column corresponds to the multilinear extension of Lagrange evaluations
+	// over skip domain
+	let multilinear_sumcheck_output =
+		sumcheck::univariate::verify_sumcheck_outputs::<DomainField, _>(
+			&univariatizing_claims,
+			univariate_challenge,
+			&sumcheck_output.challenges,
+			univariatizing_output,
+		)?;
+
+	// verify & strip zerocheck equality indicator
+	let zerocheck_claims = [zerocheck_claim];
+	let multilinear_zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
+		&zerocheck_claims,
+		&zerocheck_challenges,
+		multilinear_sumcheck_output,
+	)?;
+
+	// create "regular" evalcheck claims
 	let evalcheck_multilinear_claims =
-		sumcheck::make_eval_claims(oracles, [meta], zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], multilinear_zerocheck_output)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
@@ -644,7 +713,9 @@ where
 
 	Ok(Proof {
 		trace_comm,
+		zerocheck_univariate_proof: zerocheck_univariate_proof.isomorphic(),
 		zerocheck_proof: zerocheck_proof.isomorphic(),
+		univariatizing_proof: univariatizing_proof.isomorphic(),
 		evalcheck_proof,
 		trace_open_proof,
 	})
@@ -652,7 +723,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
-fn verify<P, F, PCS, CH, Backend>(
+fn verify<P, F, DomainField, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -664,7 +735,8 @@ fn verify<P, F, PCS, CH, Backend>(
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b>,
-	F: TowerField,
+	F: TowerField + From<DomainField>,
+	DomainField: BinaryField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
 	Backend: ComputationBackend,
@@ -673,7 +745,9 @@ where
 
 	let Proof {
 		trace_comm,
+		zerocheck_univariate_proof,
 		zerocheck_proof,
+		univariatizing_proof,
 		evalcheck_proof,
 		trace_open_proof,
 	} = proof;
@@ -687,19 +761,45 @@ where
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let sumcheck_claims = sumcheck::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round::<
+		DomainField,
+		_,
+		_,
+		_,
+	>(&zerocheck_claims, zerocheck_univariate_proof, &mut challenger)?;
+
+	let univariate_challenge = univariate_output.univariate_challenge;
 
 	let sumcheck_output =
-		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+		sumcheck::batch_verify(&univariate_output.reductions, zerocheck_proof, &mut challenger)?;
 
-	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
+	let univariatized_multilinear_evals = &sumcheck_output.multilinear_evals[0];
+
+	let univariatizing_claim = sumcheck::univariate::univariatizing_reduction_claim(
+		field_types::SKIP_ROUNDS,
+		univariatized_multilinear_evals,
+	)?;
+	let univariatizing_claims = [univariatizing_claim];
+
+	let univariatizing_output =
+		sumcheck::batch_verify(&univariatizing_claims, univariatizing_proof, &mut challenger)?;
+
+	let multilinear_sumcheck_output =
+		sumcheck::univariate::verify_sumcheck_outputs::<DomainField, _>(
+			&univariatizing_claims,
+			univariate_challenge,
+			&sumcheck_output.challenges,
+			univariatizing_output,
+		)?;
+
+	let multilinear_zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
 		&zerocheck_challenges,
-		sumcheck_output,
+		multilinear_sumcheck_output,
 	)?;
 
 	let evalcheck_multilinear_claims =
-		sumcheck::make_eval_claims(oracles, [meta], zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], multilinear_zerocheck_output)?;
 
 	// Evalcheck
 	let same_query_claims = greedy_evalcheck::verify(
@@ -800,7 +900,7 @@ fn main() {
 	let verifier_fixed_oracle =
 		FixedOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size).unwrap();
 	let verifier_trace_oracle = TraceOracle::new(&mut verifier_oracles, log_size);
-	verify(
+	verify::<_, _, field_types::FW, _, _, _>(
 		log_size,
 		&mut verifier_oracles,
 		&verifier_fixed_oracle,
