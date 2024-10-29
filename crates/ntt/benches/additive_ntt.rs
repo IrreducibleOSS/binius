@@ -1,8 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_field::{
-	BinaryField, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedFieldIndexable,
-};
+use binius_field::{BinaryField, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedField};
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -20,7 +18,7 @@ trait BenchTransformationFunc {
 		param: &str,
 		log_batch_size: usize,
 	) where
-		P: PackedFieldIndexable<Scalar: BinaryField>;
+		P: PackedField<Scalar: BinaryField>;
 }
 
 fn bench_helper<P, BT: BenchTransformationFunc>(
@@ -29,7 +27,7 @@ fn bench_helper<P, BT: BenchTransformationFunc>(
 	log_n: usize,
 	log_batch_size: usize,
 ) where
-	P: PackedFieldIndexable<Scalar: BinaryField>,
+	P: PackedField<Scalar: BinaryField>,
 {
 	let data_len = 1 << (log_n + log_batch_size - P::LOG_WIDTH);
 	let mut rng = thread_rng();
@@ -83,7 +81,7 @@ fn bench_forward_transform(c: &mut Criterion) {
 			param: &str,
 			log_batch_size: usize,
 		) where
-			P: PackedFieldIndexable<Scalar: BinaryField>,
+			P: PackedField<Scalar: BinaryField>,
 		{
 			group.bench_function(BenchmarkId::new(name, param), |b| {
 				b.iter(|| ntt.forward_transform(data, 0, log_batch_size));
@@ -106,7 +104,7 @@ fn bench_inverse_transform(c: &mut Criterion) {
 			param: &str,
 			log_batch_size: usize,
 		) where
-			P: PackedFieldIndexable<Scalar: BinaryField>,
+			P: PackedField<Scalar: BinaryField>,
 		{
 			group.bench_function(BenchmarkId::new(name, param), |b| {
 				b.iter(|| ntt.inverse_transform(data, 0, log_batch_size));

@@ -3,7 +3,7 @@
 use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, SingleThreadedNTT};
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
-	BinaryField, ExtensionField, PackedField, PackedFieldIndexable,
+	BinaryField, ExtensionField, PackedField,
 };
 use std::marker::PhantomData;
 
@@ -164,13 +164,13 @@ impl<F, TA: TwiddleAccess<F>, P> AdditiveNTT<P> for SimpleAdditiveNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
 		self.log_domain_size
 	}
 
-	fn get_subspace_eval(&self, _i: usize, _j: usize) -> <P as binius_field::PackedField>::Scalar {
+	fn get_subspace_eval(&self, _i: usize, _j: usize) -> <P as PackedField>::Scalar {
 		unimplemented!()
 	}
 

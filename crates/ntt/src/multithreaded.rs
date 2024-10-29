@@ -8,7 +8,7 @@ use super::{
 	AdditiveNTT, SingleThreadedNTT,
 };
 use crate::twiddle::OnTheFlyTwiddleAccess;
-use binius_field::{BinaryField, PackedFieldIndexable};
+use binius_field::{BinaryField, PackedField};
 use binius_utils::rayon::get_log_max_threads;
 use rayon::prelude::*;
 
@@ -59,7 +59,7 @@ impl<F, TA: TwiddleAccess<F> + Sync, P> AdditiveNTT<P> for MultithreadedNTT<F, T
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
 		self.log_domain_size()
@@ -102,7 +102,7 @@ where
 	}
 }
 
-fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
+fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
@@ -118,9 +118,10 @@ fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 				_ => single_threaded::forward_transform(
 					log_domain_size,
 					s_evals,
-					P::unpack_scalars_mut(data),
+					data,
 					coset,
 					log_batch_size,
+					0,
 				),
 			};
 		}
@@ -183,13 +184,14 @@ fn forward_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 				chunk,
 				coset << par_rounds | (inner_coset as u32),
 				log_batch_size,
+				0,
 			)
 		})?;
 
 	Ok(())
 }
 
-fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
+fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	log_domain_size: usize,
 	s_evals: &[impl TwiddleAccess<F> + Sync],
 	data: &mut [P],
@@ -205,9 +207,10 @@ fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 				_ => single_threaded::inverse_transform(
 					log_domain_size,
 					s_evals,
-					P::unpack_scalars_mut(data),
+					data,
 					coset,
 					log_batch_size,
+					0,
 				),
 			};
 		}
@@ -235,6 +238,7 @@ fn inverse_transform<F: BinaryField, P: PackedFieldIndexable<Scalar = F>>(
 				chunk,
 				coset << par_rounds | (inner_coset as u32),
 				log_batch_size,
+				0,
 			)
 		})?;
 

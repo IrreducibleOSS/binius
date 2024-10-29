@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, MultithreadedNTT, SingleThreadedNTT};
-use binius_field::{BinaryField, PackedFieldIndexable};
+use binius_field::{BinaryField, PackedField};
 use binius_utils::rayon::get_log_max_threads;
 
 /// How many threads to use (threads number is a power of 2).
@@ -80,7 +80,7 @@ impl<F: BinaryField> DynamicDispatchNTT<F> {
 impl<F, P> AdditiveNTT<P> for DynamicDispatchNTT<F>
 where
 	F: BinaryField,
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
 		match self {

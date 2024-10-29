@@ -11,7 +11,7 @@
 //! [LCH14]: <https://arxiv.org/abs/1404.3458>
 
 use crate::linear_code::LinearCode;
-use binius_field::{BinaryField, PackedField, PackedFieldIndexable};
+use binius_field::{BinaryField, PackedField};
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
@@ -34,7 +34,7 @@ where
 
 impl<P> ReedSolomonCode<P>
 where
-	P: PackedFieldIndexable<Scalar: BinaryField>,
+	P: PackedField<Scalar: BinaryField>,
 {
 	pub fn new(
 		log_dimension: usize,
@@ -83,7 +83,7 @@ where
 
 impl<P, F> LinearCode for ReedSolomonCode<P>
 where
-	P: PackedFieldIndexable<Scalar = F>,
+	P: PackedField<Scalar = F>,
 	F: BinaryField,
 {
 	type P = P;

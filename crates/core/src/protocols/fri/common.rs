@@ -4,9 +4,7 @@ use crate::{
 	linear_code::LinearCode, merkle_tree::VectorCommitScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
-use binius_field::{
-	util::inner_product_unchecked, BinaryField, ExtensionField, PackedFieldIndexable,
-};
+use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
@@ -322,7 +320,7 @@ pub fn calculate_n_test_queries<F, PS>(
 ) -> Result<usize, Error>
 where
 	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedFieldIndexable<Scalar: BinaryField>,
+	PS: PackedField<Scalar: BinaryField>,
 {
 	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
 	let mut n_queries = (-(security_bits as f64) / per_query_err.log2()).ceil() as usize;
@@ -338,7 +336,7 @@ where
 fn calculate_error_bound<F, PS>(code: &ReedSolomonCode<PS>, n_queries: usize) -> usize
 where
 	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedFieldIndexable<Scalar: BinaryField>,
+	PS: PackedField<Scalar: BinaryField>,
 {
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
 	// ℓ' / |T_{τ}|

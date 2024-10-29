@@ -10,7 +10,7 @@ use binius_field::{
 	},
 	underlier::{NumCast, WithUnderlier},
 	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedBinaryField16x32b,
-	PackedBinaryField8x32b, PackedField, PackedFieldIndexable, RepackedExtension,
+	PackedBinaryField8x32b, PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use std::ops::Range;
@@ -52,7 +52,7 @@ fn check_roundtrip_all_ntts<P>(
 	max_log_batch: usize,
 	max_log_coset: usize,
 ) where
-	P: PackedFieldIndexable<Scalar: BinaryField>,
+	P: PackedField<Scalar: BinaryField>,
 {
 	let simple_ntt = SingleThreadedNTT::<P::Scalar>::new(log_domain_size)
 		.unwrap()
@@ -178,7 +178,7 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 	log_data_size: usize,
 	max_log_coset: usize,
 ) where
-	P: PackedFieldIndexable<Scalar: BinaryField>,
+	P: PackedField<Scalar: BinaryField>,
 	PE: RepackedExtension<P> + WithUnderlier<Underlier: NumCast<u128>>,
 	PE::Scalar: ExtensionField<P::Scalar>,
 {
@@ -282,8 +282,8 @@ fn check_ntt_with_transform<P1, P2>(
 	ntt_aes_2: &impl AdditiveNTT<P2::Scalar>,
 	data_size: usize,
 ) where
-	P1: PackedFieldIndexable<Scalar: BinaryField>,
-	P2: PackedFieldIndexable<Scalar: BinaryField + From<P1::Scalar>> + From<P1>,
+	P1: PackedField<Scalar: BinaryField>,
+	P2: PackedField<Scalar: BinaryField + From<P1::Scalar>> + From<P1>,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
