@@ -13,6 +13,7 @@ binius_hash = { path = "../hash" }
 binius_math = { path = "../math" }
 binius_ntt = { path = "../ntt" }
 binius_utils = { path = "../utils" }
+bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more.workspace = true
 digest.workspace = true
