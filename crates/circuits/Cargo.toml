@@ -15,4 +15,5 @@ anyhow.workspace = true
 bytemuck.workspace = true
 rand.workspace = true
 rayon.workspace = true
-
+tiny-keccak.workspace = true
+itertools.workspace = true

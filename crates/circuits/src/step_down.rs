@@ -35,7 +35,7 @@ where
 				.for_each(|(i, stepdown)| {
 					*stepdown = match i.cmp(&byte_index) {
 						Ordering::Less => 0b11111111,
-						Ordering::Equal => 0b11111111 >> (8 - (index & 0b111)),
+						Ordering::Equal => (0b11111111u16 >> (8 - (index & 0b111))) as u8,
 						Ordering::Greater => 0b00000000,
 					}
 				});
