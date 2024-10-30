@@ -7,14 +7,18 @@ use super::{
 	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
-	challenger::{new_hasher_challenger, CanSample},
+	challenger::{new_hasher_challenger, CanSample, IsomorphicChallenger},
 	composition::index_composition,
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::test_utils::TestProductComposition,
 };
 use binius_field::{
-	packed::set_packed_slice, BinaryField128b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField,
+	arch::{OptimalUnderlier128b, OptimalUnderlier256b},
+	as_packed_field::{PackScalar, PackedType},
+	packed::set_packed_slice,
+	underlier::UnderlierType,
+	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
+	PackedBinaryField4x32b, PackedField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::GroestlHasher;
@@ -25,7 +29,10 @@ use binius_math::{
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
-use std::{iter, iter::repeat_with, sync::Arc};
+use std::{
+	iter::{self, repeat_with, Step},
+	sync::Arc,
+};
 
 #[derive(Debug, Clone)]
 struct SquareComposition;
@@ -102,14 +109,25 @@ where
 		.sum()
 }
 
-fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switchover_rd: usize) {
-	type P = PackedBinaryField4x32b;
-	type FDomain = BinaryField8b;
-	type FE = BinaryField128b;
-	type PE = PackedBinaryField1x128b;
+fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
+	n_vars: usize,
+	n_multilinears: usize,
+	switchover_rd: usize,
+) where
+	U: UnderlierType + PackScalar<F> + PackScalar<FDomain> + PackScalar<FExt>,
+	F: Field,
+	FDomain: Field + Step,
+	FExt: Field + ExtensionField<F> + ExtensionField<FDomain>,
+	BinaryField128b: From<FExt> + Into<FExt>,
+{
+	type FChallenge = BinaryField128b;
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let multilins = generate_random_multilinears::<P, PE>(&mut rng, n_vars, n_multilinears);
+	let multilins = generate_random_multilinears::<PackedType<U, F>, PackedType<U, FExt>>(
+		&mut rng,
+		n_vars,
+		n_multilinears,
+	);
 	let composition = TestProductComposition::new(n_multilinears);
 	let sum = compute_composite_sum(&multilins, &composition);
 
@@ -137,7 +155,10 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 	)
 	.unwrap();
 
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let challenger = IsomorphicChallenger::<FChallenge, _, _>::new(new_hasher_challenger::<
+		_,
+		GroestlHasher<_>,
+	>());
 
 	let mut prover_challenger = challenger.clone();
 	let (prover_reduced_claims, proof) =
@@ -148,8 +169,8 @@ fn test_prove_verify_product_helper(n_vars: usize, n_multilinears: usize, switch
 
 	// Check that challengers are in the same state
 	assert_eq!(
-		CanSample::<FE>::sample(&mut prover_challenger),
-		CanSample::<FE>::sample(&mut verifier_challenger)
+		CanSample::<FExt>::sample(&mut prover_challenger),
+		CanSample::<FExt>::sample(&mut verifier_challenger)
 	);
 
 	assert_eq!(verifier_reduced_claims, prover_reduced_claims);
@@ -176,7 +197,12 @@ fn test_sumcheck_prove_verify_interaction_basic() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			for switchover_rd in 0..=n_vars / 2 {
-				test_prove_verify_product_helper(n_vars, n_multilinears, switchover_rd);
+				test_prove_verify_product_helper::<
+					OptimalUnderlier128b,
+					BinaryField32b,
+					BinaryField8b,
+					BinaryField128b,
+				>(n_vars, n_multilinears, switchover_rd);
 			}
 		}
 	}
@@ -192,9 +218,30 @@ fn test_prove_verify_interaction_pigeonhole_cores() {
 	let n_vars = log2_ceil_usize(n_threads) + 1;
 	for n_multilinears in 1..4 {
 		for switchover_rd in 0..=n_vars / 2 {
-			test_prove_verify_product_helper(n_vars, n_multilinears, switchover_rd);
+			test_prove_verify_product_helper::<
+				OptimalUnderlier128b,
+				BinaryField32b,
+				BinaryField8b,
+				BinaryField128b,
+			>(n_vars, n_multilinears, switchover_rd);
 		}
 	}
+}
+
+#[test]
+fn test_sumcheck_prove_verify_with_nontrivial_packing() {
+	let n_vars = 8;
+	let n_multilinears = 3;
+	let switchover_rd = 3;
+
+	// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a
+	// non-trivial packing width of 2.
+	test_prove_verify_product_helper::<
+		OptimalUnderlier256b,
+		BinaryField32b,
+		BinaryField8b,
+		BinaryField128b,
+	>(n_vars, n_multilinears, switchover_rd);
 }
 
 fn prove_verify_batch(n_vars: &[usize]) {

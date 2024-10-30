@@ -429,7 +429,7 @@ where
 			});
 		}
 
-		let correct_len = 1 << subcube_vars;
+		let correct_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 		if evals.len() != correct_len {
 			bail!(Error::ArgumentRangeError {
 				arg: "evals.len()".to_string(),

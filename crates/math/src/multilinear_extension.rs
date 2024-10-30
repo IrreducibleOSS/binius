@@ -183,7 +183,18 @@ where
 		if self.mu != query.n_vars() {
 			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
-		Ok(inner_product_par(query.expansion(), &self.evals))
+
+		if self.mu < P::LOG_WIDTH || query.n_vars() < PE::LOG_WIDTH {
+			let evals = iter_packed_slice(self.evals())
+				.take(self.size())
+				.collect::<Vec<P::Scalar>>();
+			let querys = iter_packed_slice(query.expansion())
+				.take(1 << query.n_vars())
+				.collect::<Vec<PE::Scalar>>();
+			Ok(inner_product_par(&querys, &evals))
+		} else {
+			Ok(inner_product_par(query.expansion(), &self.evals))
+		}
 	}
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
