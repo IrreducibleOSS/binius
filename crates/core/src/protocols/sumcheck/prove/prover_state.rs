@@ -60,7 +60,7 @@ where
 	n_vars: usize,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	evaluation_points: Vec<FDomain>,
-	tensor_query: Option<MultilinearQuery<P, Box<[P]>>>,
+	tensor_query: Option<MultilinearQuery<P>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
 	backend: &'a Backend,
 }
@@ -112,8 +112,7 @@ where
 			})
 			.collect();
 
-		let tensor_query = MultilinearQuery::new(max_switchover_round + 1)?;
-
+		let tensor_query = MultilinearQuery::with_capacity(max_switchover_round + 1);
 		Ok(Self {
 			n_vars,
 			multilinears,
@@ -209,7 +208,7 @@ where
 			},
 		};
 
-		let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
+		let empty_query = MultilinearQuery::with_capacity(0);
 		self.multilinears
 			.into_iter()
 			.map(|multilinear| {

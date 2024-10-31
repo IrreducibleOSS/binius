@@ -2,11 +2,10 @@
 
 use crate::{
 	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},
-	utils::tensor_product,
 	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{CompositionPoly, MultilinearPoly, MultilinearQueryRef};
+use binius_math::{eq_ind_partial_eval, CompositionPoly, MultilinearPoly, MultilinearQueryRef};
 use std::fmt::Debug;
 use tracing::instrument;
 
@@ -30,7 +29,7 @@ impl ComputationBackend for CpuBackend {
 		&self,
 		query: &[P::Scalar],
 	) -> Result<Self::Vec<P>, Error> {
-		tensor_product(query)
+		Ok(eq_ind_partial_eval(query))
 	}
 
 	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(

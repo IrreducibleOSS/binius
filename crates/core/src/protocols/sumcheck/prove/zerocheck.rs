@@ -23,12 +23,13 @@ use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension,
 };
-use binius_hal::{ComputationBackend, ComputationBackendExt, SumcheckEvaluator};
+use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
-	MultilinearPoly,
+	MultilinearPoly, MultilinearQuery,
 };
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use getset::Getters;
 use itertools::izip;
 use rayon::prelude::*;
@@ -327,12 +328,12 @@ where
 		//         of a MultilinearQuery and performing an evaluate_partial_low,
 		//         which accidentally does what's needed. There should obviously
 		//         be a dedicated method for this someday.
-		let mut lagrange_coeffs_query = self.backend.multilinear_query(
-			// that's just fillers that will be overwritten
-			&self.zerocheck_challenges[..skip_rounds],
-		)?;
-		P::unpack_scalars_mut(lagrange_coeffs_query.expansion_mut())
+		let mut packed_subcube_lagrange_coeffs =
+			zeroed_vec::<P>(1 << skip_rounds.saturating_sub(P::LOG_WIDTH));
+		P::unpack_scalars_mut(&mut packed_subcube_lagrange_coeffs)
 			.copy_from_slice(&subcube_lagrange_coeffs);
+		let lagrange_coeffs_query =
+			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;
 
 		let partial_low_multilinears = self
 			.multilinears

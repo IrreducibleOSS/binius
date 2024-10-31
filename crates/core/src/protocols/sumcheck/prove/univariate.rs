@@ -308,7 +308,7 @@ where
 			.into_iter()
 			.map(|evals| {
 				inner_product_unchecked::<F, F>(
-					evals.into_iter(),
+					evals,
 					round_evals_lagrange_coeffs[1 << skip_rounds..]
 						.iter()
 						.copied(),

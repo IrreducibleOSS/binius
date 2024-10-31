@@ -249,7 +249,7 @@ where
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
 	let actual_sum = inner_product_unchecked::<F, F>(
-		round_evals.evals.into_iter(),
+		round_evals.evals,
 		lagrange_coeffs[zeros_prefix_len..].iter().copied(),
 	);
 

@@ -26,8 +26,6 @@ pub enum Error {
 	IncorrectQuerySize { expected: usize },
 	#[error("Polynomial error: {0}")]
 	PolynomialError(Box<dyn std::error::Error + Send + Sync>),
-	#[error("cannot operate on polynomials with more than 31 variables")]
-	TooManyVariables,
 	#[error("MultilinearQuery is full, cannot update further. Has {max_query_vars} variables")]
 	MultilinearQueryFull { max_query_vars: usize },
 	#[error("argument length must be a power of two")]

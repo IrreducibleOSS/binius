@@ -9,12 +9,15 @@ use rayon::prelude::*;
 use std::iter;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
-pub fn inner_product_unchecked<F, FE>(a: impl Iterator<Item = FE>, b: impl Iterator<Item = F>) -> FE
+pub fn inner_product_unchecked<F, FE>(
+	a: impl IntoIterator<Item = FE>,
+	b: impl IntoIterator<Item = F>,
+) -> FE
 where
 	F: Field,
 	FE: ExtensionField<F>,
 {
-	a.zip(b).map(|(a_i, b_i)| a_i * b_i).sum::<FE>()
+	iter::zip(a, b).map(|(a_i, b_i)| a_i * b_i).sum::<FE>()
 }
 
 /// Calculate inner product for potentially big slices of xs and ys.

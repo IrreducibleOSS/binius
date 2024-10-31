@@ -82,7 +82,7 @@ where
 	Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	let empty_query = MultilinearQuery::new(0).expect("constructing an empty query");
+	let empty_query = MultilinearQuery::with_capacity(0);
 	let query = tensor_query.unwrap_or(empty_query.to_ref());
 
 	let accesses = multilinears

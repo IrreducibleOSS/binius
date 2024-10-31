@@ -359,35 +359,6 @@ impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<
 	}
 }
 
-/// Expand the tensor product of the query values.
-///
-/// [`query`] is a sequence of field elements $z_0, ..., z_{k-1}$.
-///
-/// This naive implementation runs in O(k 2^k) time and O(1) space.
-#[allow(dead_code)]
-fn expand_query_naive<F: Field>(query: &[F]) -> Result<Vec<F>, Error> {
-	let query_len: u32 = query
-		.len()
-		.try_into()
-		.map_err(|_| Error::TooManyVariables)?;
-	let size = 2usize
-		.checked_pow(query_len)
-		.ok_or(Error::TooManyVariables)?;
-
-	let result = (0..size).map(|i| eval_basis(query, i)).collect();
-	Ok(result)
-}
-
-/// Evaluates the Lagrange basis polynomial over the boolean hypercube at a queried point.
-#[allow(dead_code)]
-fn eval_basis<F: Field>(query: &[F], i: usize) -> F {
-	query
-		.iter()
-		.enumerate()
-		.map(|(j, &v)| if i & (1 << j) == 0 { F::ONE - v } else { v })
-		.product()
-}
-
 fn log2(v: usize) -> usize {
 	63 - (v as u64).leading_zeros() as usize
 }
@@ -406,6 +377,27 @@ mod tests {
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
 	use std::iter::repeat_with;
+
+	/// Expand the tensor product of the query values.
+	///
+	/// [`query`] is a sequence of field elements $z_0, ..., z_{k-1}$.
+	///
+	/// This naive implementation runs in O(k 2^k) time and O(1) space.
+	fn expand_query_naive<F: Field>(query: &[F]) -> Result<Vec<F>, Error> {
+		let result = (0..1 << query.len())
+			.map(|i| eval_basis(query, i))
+			.collect();
+		Ok(result)
+	}
+
+	/// Evaluates the Lagrange basis polynomial over the boolean hypercube at a queried point.
+	fn eval_basis<F: Field>(query: &[F], i: usize) -> F {
+		query
+			.iter()
+			.enumerate()
+			.map(|(j, &v)| if i & (1 << j) == 0 { F::ONE - v } else { v })
+			.product()
+	}
 
 	fn multilinear_query<P: PackedField>(p: &[P::Scalar]) -> MultilinearQuery<P, Vec<P>> {
 		let mut result = vec![P::default(); 1 << p.len().saturating_sub(P::LOG_WIDTH)];

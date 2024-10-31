@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::Error;
-use binius_field::PackedField;
+use binius_field::{Field, PackedField};
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use rayon::prelude::*;
 use std::cmp::max;
 
@@ -70,6 +71,31 @@ pub fn tensor_prod_eq_ind<P: PackedField>(
 		}
 	}
 	Ok(())
+}
+
+/// Computes the partial evaluation of the equality indicator polynomial.
+///
+/// Given an $n$-coordinate point $r_0, ..., r_n$, this computes the partial evaluation of the
+/// equality indicator polynomial $\widetilde{eq}(X_0, ..., X_{n-1}, r_0, ..., r_{n-1})$ and
+/// returns its values over the $n$-dimensional hypercube.
+///
+/// The returned values are equal to the tensor product
+///
+/// $$
+/// (1 - r_0, r_0) \otimes ... \otimes (1 - r_{n-1}, r_{n-1}).
+/// $$
+///
+/// See [DP23], Section 2.1 for more information about the equality indicator polynomial.
+///
+/// [DP23]: <https://eprint.iacr.org/2023/1784>
+pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
+	let n = point.len();
+	let len = 1 << n.saturating_sub(P::LOG_WIDTH);
+	let mut buffer = zeroed_vec::<P>(len);
+	buffer[0].set(0, P::Scalar::ONE);
+	tensor_prod_eq_ind(0, &mut buffer[..], point)
+		.expect("buffer is allocated with the correct length");
+	buffer
 }
 
 #[cfg(test)]

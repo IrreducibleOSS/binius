@@ -1,6 +1,6 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::{tensor_prod_eq_ind, Error};
+use crate::{eq_ind_partial_eval, tensor_prod_eq_ind, Error};
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -14,26 +14,20 @@ use std::{cmp::max, ops::DerefMut};
 /// This is used in the first several rounds of the sumcheck prover for small-field polynomials,
 /// before it becomes more efficient to switch over to the method that store folded multilinears.
 #[derive(Debug)]
-pub struct MultilinearQuery<P, Data>
+pub struct MultilinearQuery<P, Data = Vec<P>>
 where
 	P: PackedField,
 	Data: DerefMut<Target = [P]>,
 {
-	expanded_query: Data,
-	// We want to avoid initializing data at the moment when vector is growing,
-	// So we allocate zeroed vector and keep track of the length of the initialized part.
-	expanded_query_len: usize,
 	n_vars: usize,
+	expanded_query: Data,
 }
 
 /// Wraps `MultilinearQuery` to hide `Data` from the users.
 #[derive(Debug, Clone, Copy)]
 pub struct MultilinearQueryRef<'a, P: PackedField> {
-	expanded_query: &'a [P],
-	// We want to avoid initializing data at the moment when vector is growing,
-	// So we allocate zeroed vector and keep track of the length of the initialized part.
-	expanded_query_len: usize,
 	n_vars: usize,
+	expanded_query: &'a [P],
 }
 
 impl<'a, P: PackedField, Data: DerefMut<Target = [P]>> From<&'a MultilinearQuery<P, Data>>
@@ -47,9 +41,8 @@ impl<'a, P: PackedField, Data: DerefMut<Target = [P]>> From<&'a MultilinearQuery
 impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
 	pub fn new<Data: DerefMut<Target = [P]>>(query: &'a MultilinearQuery<P, Data>) -> Self {
 		Self {
-			expanded_query: &query.expanded_query,
-			expanded_query_len: query.expanded_query_len,
 			n_vars: query.n_vars,
+			expanded_query: &query.expanded_query,
 		}
 	}
 
@@ -61,34 +54,43 @@ impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
 	///
 	/// If the number of query variables is less than the packing width, return a single packed element.
 	pub fn expansion(&self) -> &[P] {
-		&self.expanded_query[0..self.expanded_query_len]
+		let expanded_query_len = 1 << self.n_vars.saturating_sub(P::LOG_WIDTH);
+		&self.expanded_query[0..expanded_query_len]
 	}
 }
 
-impl<P: PackedField> MultilinearQuery<P, Box<[P]>> {
-	pub fn new(max_query_vars: usize) -> Result<Self, Error> {
-		if max_query_vars > 31 {
-			bail!(Error::TooManyVariables)
-		} else {
-			let len = max((1 << max_query_vars) / P::WIDTH, 1);
-			let mut expanded_query = zeroed_vec(len).into_boxed_slice();
-			expanded_query[0] = P::set_single(P::Scalar::ONE);
-			Ok(Self {
-				expanded_query,
-				expanded_query_len: 1,
-				n_vars: 0,
-			})
+impl<P: PackedField> MultilinearQuery<P, Vec<P>> {
+	pub fn with_capacity(max_query_vars: usize) -> Self {
+		let len = 1 << max_query_vars.saturating_sub(P::LOG_WIDTH);
+		let mut expanded_query = zeroed_vec::<P>(len);
+		expanded_query[0].set(0, P::Scalar::ONE);
+		Self {
+			expanded_query,
+			n_vars: 0,
+		}
+	}
+
+	pub fn expand(query: &[P::Scalar]) -> Self {
+		let expanded_query = eq_ind_partial_eval::<P>(query);
+		Self {
+			expanded_query,
+			n_vars: query.len(),
 		}
 	}
 }
 
 impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 	pub fn with_expansion(n_vars: usize, expanded_query: Data) -> Result<Self, Error> {
-		let expanded_query_len = expanded_query.len();
+		let expected_len = 1 << n_vars.saturating_sub(P::LOG_WIDTH);
+		if expanded_query.len() < expected_len {
+			bail!(Error::IncorrectArgumentLength {
+				arg: "expanded_query".to_string(),
+				expected: expected_len,
+			});
+		}
 		Ok(Self {
-			expanded_query,
-			expanded_query_len,
 			n_vars,
+			expanded_query,
 		})
 	}
 
@@ -100,14 +102,16 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 	///
 	/// If the number of query variables is less than the packing width, return a single packed element.
 	pub fn expansion(&self) -> &[P] {
-		&self.expanded_query[0..self.expanded_query_len]
+		let expanded_query_len = 1 << self.n_vars.saturating_sub(P::LOG_WIDTH);
+		&self.expanded_query[0..expanded_query_len]
 	}
 
 	// REVIEW: this method is a temporary hack to allow the
 	// construction of a "multilinear query" which contains Lagrange
 	// coefficient evaluations in UnivariateZerocheck::fold_univariate_round
 	pub fn expansion_mut(&mut self) -> &mut [P] {
-		&mut self.expanded_query[0..self.expanded_query_len]
+		let expanded_query_len = 1 << self.n_vars.saturating_sub(P::LOG_WIDTH);
+		&mut self.expanded_query[0..expanded_query_len]
 	}
 
 	pub fn into_expansion(self) -> Data {
@@ -130,9 +134,8 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 		)?;
 
 		Ok(Self {
-			expanded_query: self.expanded_query,
-			expanded_query_len: new_length,
 			n_vars: new_n_vars,
+			expanded_query: self.expanded_query,
 		})
 	}
 
