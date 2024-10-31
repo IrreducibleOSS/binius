@@ -308,7 +308,7 @@ where
 			});
 		}
 
-		const CHUNK_SIZE: usize = 64;
+		const CHUNK_SIZE: usize = 1 << 10;
 		let n_vars = query.n_vars();
 		let query_expansion = query.expansion();
 		let packed_result_evals = out;
