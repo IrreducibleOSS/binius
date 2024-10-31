@@ -247,6 +247,10 @@ where
 		Ok(())
 	}
 
+	fn packed_evals(&self) -> Option<&[PE]> {
+		Some(PE::cast_exts(self.0.evals()))
+	}
+
 	fn underlier_data(&self) -> Option<&[u8]> {
 		Some(self.0.ref_underlier_data())
 	}
@@ -466,6 +470,10 @@ where
 		Ok(())
 	}
 
+	fn packed_evals(&self) -> Option<&[P]> {
+		Some(self.0.evals())
+	}
+
 	fn underlier_data(&self) -> Option<&[u8]> {
 		Some(self.0.ref_underlier_data())
 	}
@@ -476,9 +484,10 @@ mod tests {
 	use super::*;
 	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 	use binius_field::{
-		packed::iter_packed_slice, BinaryField128b, BinaryField16b, BinaryField8b,
-		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField4x32b,
-		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
+		arch::OptimalUnderlier256b, as_packed_field::PackedType, packed::iter_packed_slice,
+		BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, PackedBinaryField16x8b,
+		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension,
+		PackedField, PackedFieldIndexable,
 	};
 	use rand::prelude::*;
 	use std::iter::repeat_with;
@@ -631,5 +640,28 @@ mod tests {
 				);
 			}
 		}
+	}
+
+	#[test]
+	fn test_packed_evals_against_subcube_evals() {
+		type U = OptimalUnderlier256b;
+		type P = PackedType<U, BinaryField32b>;
+		type PExt = PackedType<U, BinaryField128b>;
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let evals = repeat_with(|| P::random(&mut rng))
+			.take(2)
+			.collect::<Vec<_>>();
+		let mle = MultilinearExtension::from_values(evals.clone()).unwrap();
+		let poly = MLEEmbeddingAdapter::from(mle);
+		assert_eq!(
+			<PExt as PackedExtension<BinaryField32b>>::cast_bases(poly.packed_evals().unwrap()),
+			&evals
+		);
+
+		let mut evals_out = vec![PExt::zero(); 2];
+		poly.subcube_evals(poly.n_vars(), 0, poly.log_extension_degree(), evals_out.as_mut_slice())
+			.unwrap();
+		assert_eq!(evals_out, poly.packed_evals().unwrap());
 	}
 }

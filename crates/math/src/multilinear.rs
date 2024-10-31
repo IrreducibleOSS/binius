@@ -85,7 +85,26 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		evals: &mut [P],
 	) -> Result<(), Error>;
 
+	/// Returns the hypercube evaluations, embedded into packed extension field elements, if the
+	/// data is already available.
+	///
+	/// This method is primarily used to access the raw evaluation data underlying a
+	/// [`MultilinearExtension`] that is type-erased as a [`MultilinearPoly`] trait object. The
+	/// evaluation data is useful for cases where the caller needs to dynamically re-interpret it
+	/// as subfield coefficients while avoiding copying, like for the small-field polynomial
+	/// commitment scheme or to provide directly to a hardware accelerator.
+	///
+	/// If the data is not available, this method returns `None`. If the data is available, it
+	/// should be interpreted not actually as a list of evaluations points given by iterating the
+	/// packed slice, but rather by iterating coefficients from a subfield with an embedding degree
+	/// given by [`Self::log_extension_degree`].
+	///
+	/// The data returned, if `Some`, should be the same as the data that is written by
+	/// [`Self::subcube_evals`].
+	fn packed_evals(&self) -> Option<&[P]>;
+
 	/// If available, returns underliers of the data of this multilinear as bytes.
+	// TODO: Remove this and replace its uses with `packed_evals`
 	fn underlier_data(&self) -> Option<&[u8]>;
 }
 
@@ -154,6 +173,10 @@ where
 		evals: &mut [P],
 	) -> Result<(), Error> {
 		(**self).subcube_evals(subcube_vars, subcube_index, log_embedding_degree, evals)
+	}
+
+	fn packed_evals(&self) -> Option<&[P]> {
+		(**self).packed_evals()
 	}
 
 	fn underlier_data(&self) -> Option<&[u8]> {
