@@ -6,20 +6,19 @@ use crate::{
 	polynomial::Error as PolynomialError,
 };
 
-use binius_field::{ExtensionField, Field, PackedField};
-use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::MultilinearExtension;
+use binius_field::{util::inner_product_unchecked, ExtensionField, Field, PackedField};
+use binius_hal::ComputationBackend;
+use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use p3_util::log2_strict_usize;
 use std::{marker::PhantomData, ops::Deref};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("number of polynomials must be the correct positive power of 2")]
-	NumPolys,
-	#[error("number of variables in each the polynomials must be the same")]
-	NumVars,
+	#[error("number of polynomials must be less than {max}")]
+	NumPolys { max: usize },
+	#[error("expected all polynomials to have {expected} variables")]
+	NumVars { expected: usize },
 	#[error("number of variables in the inner PCS, {n_inner} is not what is expected, {n_vars} + {log_num_polys}")]
 	NumVarsInnerOuter {
 		n_inner: usize,
@@ -43,32 +42,35 @@ pub enum Error {
 /// $T(v||u):=t_u(v)$ for all $u\in \{0,1\}^m$ and $v\in \{0,1\}^n$. By abuse of notation
 /// we consider $T$ an $m+n$-variate multilinear polynomial.
 ///
+/// If the number of polynomials is not a power of 2, we pad the list up to the next power of two
+/// with constant zero polynomials.
+///
 /// In [Example 4.10, DP23], there is a *different* definition of `merge`: they take: $T(u||v): = t_u(v).$
 /// We choose our convention to make the actual process of merging slightly more efficient: indeed, it amounts
 /// to simply concatenating the evaluations of the individual multilinears (as opposed to a mildly
 /// more expensive interleaving process). This is all downstream of the fact that the underlying
 /// list of evaluations of a multilinear is in Little Endian order.
 fn merge_polynomials<P, Data>(
+	n_vars: usize,
+	log_n_polys: usize,
 	polys: &[MultilinearExtension<P, Data>],
 ) -> Result<MultilinearExtension<P>, Error>
 where
 	P: PackedField,
 	Data: Deref<Target = [P]> + Send + Sync,
 {
-	if polys.is_empty() || !polys.len().is_power_of_two() {
-		bail!(Error::NumPolys);
+	if polys.len() > 1 << log_n_polys {
+		bail!(Error::NumPolys {
+			max: 1 << log_n_polys
+		});
 	}
-
-	let n_vars = polys[0].n_vars();
-	let m = log2_strict_usize(polys.len());
-
 	if polys.iter().any(|poly| poly.n_vars() != n_vars) {
-		bail!(Error::NumVars);
+		bail!(Error::NumVars { expected: n_vars });
 	}
 
 	// $T(v||u):=t_{u}(v)$. Note that $v||u = 2^n * u + v$ as we are working with the little Endian binary expansion.
 	let poly_packed_size = 1 << (n_vars - P::LOG_WIDTH);
-	let mut packed_merged = zeroed_vec(poly_packed_size << m);
+	let mut packed_merged = zeroed_vec(poly_packed_size << log_n_polys);
 
 	for (u, poly) in polys.iter().enumerate() {
 		packed_merged[u * poly_packed_size..(u + 1) * poly_packed_size]
@@ -167,14 +169,7 @@ where
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
 	{
-		if polys.len() != 1 << self.log_num_polys {
-			bail!(Error::NumPolys);
-		}
-		if polys.iter().any(|poly| poly.n_vars() != self.n_vars) {
-			bail!(Error::NumVars);
-		}
-
-		let merged_poly = merge_polynomials(polys)?;
+		let merged_poly = merge_polynomials(self.n_vars, self.log_num_polys, polys)?;
 		self.inner
 			.commit(&[merged_poly])
 			.map_err(|err| Error::InnerPCS(Box::new(err)))
@@ -208,7 +203,7 @@ where
 			.chain(challenges.iter().copied())
 			.collect::<Vec<_>>();
 
-		let merged_poly = merge_polynomials(polys)?;
+		let merged_poly = merge_polynomials(self.n_vars, self.log_num_polys, polys)?;
 
 		let inner_pcs_proof = self
 			.inner
@@ -230,14 +225,17 @@ where
 		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
 		Backend: ComputationBackend,
 	{
+		if values.len() > 1 << self.log_num_polys {
+			bail!(Error::NumPolys {
+				max: 1 << self.log_num_polys
+			});
+		}
+
 		let mixing_challenges = challenger.sample_vec(self.log_num_polys);
-		// `interpolate_from_evaluations` is the multilinear polynomial
-		// whose values on u\in B_{m} is s_u.
-		let interpolate_from_evaluations = MultilinearExtension::from_values_slice(values)?;
-		// Then the mixed evaluation, i.e., (tensor expansion of r')\cdot (s_u), is just given by *evaluating*
-		// interpolate_from_evaluations on the mixing challenge.
-		let mixed_evaluation = interpolate_from_evaluations
-			.evaluate(&backend.multilinear_query::<FE>(&mixing_challenges)?)?;
+		let mixed_evaluation = inner_product_unchecked(
+			MultilinearQuery::expand(&mixing_challenges).into_expansion(),
+			values.iter().copied(),
+		);
 		let mixed_value = &[mixed_evaluation];
 
 		// new_query := query || mixing_challenges.
@@ -268,14 +266,17 @@ pub struct Proof<Inner>(Inner);
 mod tests {
 	use super::*;
 	use crate::{
-		challenger::new_hasher_challenger, poly_commit::tensor_pcs::find_proof_size_optimal_pcs,
+		challenger::new_hasher_challenger,
+		poly_commit::{tensor_pcs::find_proof_size_optimal_pcs, TensorPCS},
+		reed_solomon::reed_solomon::ReedSolomonCode,
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
-		PackedBinaryField4x32b,
 	};
-	use binius_hal::make_portable_backend;
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use binius_hash::GroestlHasher;
+	use binius_ntt::NTTOptions;
+	use p3_util::log2_ceil_usize;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -286,19 +287,20 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		// set the variables: n_vars is the number of variables in the polynomials and 2ˆm is the number of polynomials.
 		let n_vars = 7;
-		let m = 3;
+		let n_polys = 6;
+		let m = log2_ceil_usize(n_polys);
 		let total_new_vars = n_vars + m;
 
-		let multilins = (0..1 << m)
-			.map(|_| {
-				MultilinearExtension::from_values(
-					repeat_with(|| <PackedType<U, F>>::random(&mut rng))
-						.take(1 << (n_vars))
-						.collect(),
-				)
-				.unwrap()
-			})
-			.collect::<Vec<_>>();
+		let multilins = repeat_with(|| {
+			MultilinearExtension::from_values(
+				repeat_with(|| <PackedType<U, F>>::random(&mut rng))
+					.take(1 << (n_vars))
+					.collect(),
+			)
+			.unwrap()
+		})
+		.take(n_polys)
+		.collect::<Vec<_>>();
 
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)
@@ -344,23 +346,23 @@ mod tests {
 		type U = OptimalUnderlier128b;
 		type F = BinaryField32b;
 		type FE = BinaryField128b;
-		type Packed = PackedBinaryField4x32b;
+		type Packed = PackedType<U, F>;
 		let mut rng = StdRng::seed_from_u64(0);
 		// set the variables: n_vars is the number of variables in the polynomials and 2ˆm is the number of polynomials.
-		let n_vars = 3;
-		let m = 3;
-		let total_new_vars = n_vars + m;
+		let n_vars = 6;
+		let n_polys = 6;
+		let m = log2_ceil_usize(n_polys);
 
-		let multilins = (0..1 << m)
-			.map(|_| {
-				MultilinearExtension::from_values(
-					repeat_with(|| <PackedType<U, F>>::random(&mut rng))
-						.take(1 << (n_vars - Packed::LOG_WIDTH))
-						.collect(),
-				)
-				.unwrap()
-			})
-			.collect::<Vec<_>>();
+		let multilins = repeat_with(|| {
+			MultilinearExtension::from_values(
+				repeat_with(|| <PackedType<U, F>>::random(&mut rng))
+					.take(1 << (n_vars - Packed::LOG_WIDTH))
+					.collect(),
+			)
+			.unwrap()
+		})
+		.take(n_polys)
+		.collect::<Vec<_>>();
 
 		let eval_point = repeat_with(|| <FE as Field>::random(&mut rng))
 			.take(n_vars)
@@ -373,8 +375,9 @@ mod tests {
 			.map(|x| x.evaluate(&eval_query).unwrap())
 			.collect::<Vec<_>>();
 
+		let rs_code = ReedSolomonCode::<Packed>::new(4, 1, NTTOptions::default()).unwrap();
 		let inner_pcs =
-			find_proof_size_optimal_pcs::<U, F, F, F, FE>(100, total_new_vars, 1, 1, false)
+			TensorPCS::<U, F, F, F, FE, _, _, _>::new_using_groestl_merkle_tree(5, rs_code, 10)
 				.unwrap();
 
 		let backend = make_portable_backend();
