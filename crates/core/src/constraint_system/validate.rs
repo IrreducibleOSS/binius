@@ -97,7 +97,7 @@ where
 				let expected = linear_combination
 					.coefficients()
 					.zip(uncombined_polys.iter())
-					.try_fold(F::ZERO, |acc, (coeff, poly)| {
+					.try_fold(linear_combination.offset(), |acc, (coeff, poly)| {
 						Ok::<F, Error>(acc + poly.evaluate_on_hypercube_and_scale(i, coeff)?)
 					})?;
 				check_eval(oracle_label, i, expected, got)?;

@@ -13,7 +13,7 @@ binius_utils = { path = "../utils" }
 binius_math = { path = "../math" }
 anyhow.workspace = true
 bytemuck.workspace = true
+itertools.workspace = true
 rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
-itertools.workspace = true

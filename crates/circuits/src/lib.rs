@@ -2,6 +2,7 @@
 
 pub mod bitwise;
 pub mod builder;
+pub mod groestl;
 pub mod keccakf;
 pub mod step_down;
 pub mod u32add;
@@ -11,11 +12,11 @@ pub mod unconstrained;
 #[cfg(test)]
 mod tests {
 	use crate::{
-		bitwise, builder::ConstraintSystemBuilder, keccakf::keccakf, u32add::u32add,
-		u32fib::u32fib, unconstrained::unconstrained,
+		bitwise, builder::ConstraintSystemBuilder, groestl::groestl_p_permutation,
+		keccakf::keccakf, u32add::u32add, u32fib::u32fib, unconstrained::unconstrained,
 	};
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b};
+	use binius_field::{arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -67,6 +68,19 @@ mod tests {
 		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness();
 		let log_size = 12;
 		let _state_out = keccakf(&mut builder, log_size);
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_groestl() {
+		let mut builder =
+			ConstraintSystemBuilder::<OptimalUnderlier, AESTowerField16b>::new_with_witness();
+		let log_size = 9;
+		let _state_out = groestl_p_permutation(&mut builder, log_size).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
