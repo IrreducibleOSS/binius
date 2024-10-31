@@ -41,6 +41,7 @@ use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
 use binius_utils::bail;
 use p3_challenger::{CanObserve, CanSample};
+use tracing::instrument;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///
@@ -485,6 +486,7 @@ where
 	Ok(constraint_set_builder.build_one(verifier.oracles)?)
 }
 
+#[instrument(skip_all, level = "debug")]
 pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
 	prover: &mut EvalcheckProver<U, F, Backend>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],

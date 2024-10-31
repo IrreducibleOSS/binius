@@ -529,7 +529,7 @@ fn make_constraints<'a, P: PackedField>(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, name = "keccakf::prove")]
 fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
@@ -651,7 +651,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(skip_all)]
+#[instrument(skip_all, name = "keccakf::verify")]
 fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,

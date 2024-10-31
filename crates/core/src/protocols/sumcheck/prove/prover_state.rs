@@ -20,6 +20,7 @@ use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::izip;
 use std::iter;
+use tracing::instrument;
 
 pub trait SumcheckInterpolator<F: Field> {
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients
@@ -123,6 +124,7 @@ where
 		})
 	}
 
+	#[instrument(skip_all, name = "ProverState::fold", level = "debug")]
 	pub fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		if self.n_vars == 0 {
 			bail!(Error::ExpectedFinish);
@@ -232,6 +234,7 @@ where
 	}
 
 	/// Calculate the accumulated evaluations for the first sumcheck round.
+	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_first_round_evals<PBase, Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
@@ -254,6 +257,7 @@ where
 	///
 	/// See [`Self::calculate_first_round_evals`] for an optimized version of this method that
 	/// operates over small fields in the first round.
+	#[instrument(skip_all, level = "debug")]
 	pub fn calculate_later_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],

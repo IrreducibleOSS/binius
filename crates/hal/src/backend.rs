@@ -8,6 +8,7 @@ use std::{
 	fmt::Debug,
 	ops::{Deref, DerefMut},
 };
+use tracing::instrument;
 
 /// HAL-managed memory containing the result of its operations.
 pub trait HalSlice<P: Debug + Send + Sync>:
@@ -147,6 +148,7 @@ where
 
 pub trait ComputationBackendExt: ComputationBackend {
 	/// Constructs a `MultilinearQuery` by performing tensor product expansion on the given `query`.
+	#[instrument(skip_all, level = "debug")]
 	fn multilinear_query<P: PackedField>(
 		&self,
 		query: &[P::Scalar],

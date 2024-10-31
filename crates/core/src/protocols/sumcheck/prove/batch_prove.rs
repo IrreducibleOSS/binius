@@ -14,6 +14,7 @@ use binius_field::Field;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use p3_challenger::CanObserve;
 use std::iter;
+use tracing::instrument;
 
 /// A sumcheck prover with a round-by-round execution interface.
 ///
@@ -70,6 +71,7 @@ pub trait SumcheckProver<F: Field> {
 ///
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
 /// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
+#[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove<F, Prover, Challenger>(
 	mut provers: Vec<Prover>,
 	mut challenger: Challenger,
@@ -225,6 +227,7 @@ pub trait UnivariateZerocheckProver<F: Field> {
 /// provided to [`crate::protocols::sumcheck::batch_verify_zerocheck_univariate_round`] during proof
 /// verification.
 #[allow(clippy::type_complexity)]
+#[instrument(skip_all, level = "debug")]
 pub fn batch_prove_zerocheck_univariate_round<F, Prover, Challenger>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,

@@ -28,6 +28,7 @@ use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtensio
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use std::{iter, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
+use tracing::instrument;
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
 ///
@@ -361,6 +362,7 @@ where
 
 	// Clippy allow is due to bug: https://github.com/rust-lang/rust-clippy/pull/12892
 	#[allow(clippy::needless_borrows_for_generic_args)]
+	#[instrument(skip_all, level = "debug")]
 	fn prove_evaluation<Data, Challenger, Backend>(
 		&self,
 		challenger: &mut Challenger,

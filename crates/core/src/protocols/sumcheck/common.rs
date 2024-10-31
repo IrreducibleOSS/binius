@@ -14,6 +14,7 @@ use std::{
 	iter::repeat_n,
 	ops::{Add, AddAssign, Mul, MulAssign},
 };
+use tracing::instrument;
 
 /// A claim about the sum of the values of a multilinear composite polynomial over the boolean
 /// hypercube.
@@ -416,6 +417,7 @@ where
 	Ok(())
 }
 
+#[instrument(skip_all, level = "debug")]
 pub(super) fn fold_partial_eq_ind<P, Backend>(
 	n_vars: usize,
 	partial_eq_ind_evals: &mut Backend::Vec<P>,

@@ -34,6 +34,7 @@ use itertools::izip;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use std::{marker::PhantomData, ops::Range};
+use tracing::instrument;
 
 pub fn validate_witness<F, P, M, Composition>(
 	multilinears: &[M],
@@ -169,6 +170,7 @@ where
 		})
 	}
 
+	#[instrument(skip_all, level = "debug")]
 	#[allow(clippy::type_complexity)]
 	pub fn into_regular_zerocheck(
 		self,
@@ -240,6 +242,7 @@ where
 			.unwrap_or(0)
 	}
 
+	#[instrument(skip_all, level = "debug")]
 	fn execute_univariate_round(
 		&mut self,
 		skip_rounds: usize,
@@ -294,6 +297,7 @@ where
 		Ok(batched_round_evals)
 	}
 
+	#[instrument(skip_all, level = "debug")]
 	fn fold_univariate_round(
 		self,
 		challenge: F,
@@ -504,6 +508,7 @@ where
 		self.eq_ind_eval *= eq(alpha, challenge);
 	}
 
+	#[instrument(skip_all, level = "debug")]
 	fn fold_partial_eq_ind(&mut self) {
 		fold_partial_eq_ind::<P, Backend>(
 			self.n_rounds_remaining(),
@@ -528,6 +533,7 @@ where
 		self.n_vars
 	}
 
+	#[instrument(skip_all, name = "ZerocheckProver::fold", level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		self.update_eq_ind_eval(challenge);
 		self.state.fold(challenge)?;
@@ -538,6 +544,7 @@ where
 		Ok(())
 	}
 
+	#[instrument(skip_all, name = "ZerocheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let round = self.round();
 		let base_field_first_round =
@@ -590,6 +597,7 @@ where
 		Ok(sumcheck_coeffs * self.eq_ind_eval)
 	}
 
+	#[instrument(skip_all, name = "ZerocheckProver::finish", level = "debug")]
 	fn finish(self) -> Result<Vec<F>, Error> {
 		let mut evals = self.state.finish()?;
 		evals.push(self.eq_ind_eval);

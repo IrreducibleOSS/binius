@@ -706,6 +706,7 @@ where
 		Ok(())
 	}
 
+	#[instrument(skip_all, level = "debug")]
 	fn encode_ext(
 		&self,
 		t_prime: &[PackedType<U, FE>],

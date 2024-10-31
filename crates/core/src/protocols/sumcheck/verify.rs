@@ -17,6 +17,7 @@ use binius_field::{
 use binius_math::{evaluate_univariate, make_ntt_domain_points, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
+use tracing::instrument;
 
 /// Verify a batched sumcheck protocol execution.
 ///
@@ -30,6 +31,7 @@ use itertools::izip;
 /// For each sumcheck claim, we sample one random mixing coefficient. The multiple composite claims
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
 /// coefficient.
+#[instrument(skip_all)]
 pub fn batch_verify<F, Composition, Challenger>(
 	claims: &[SumcheckClaim<F, Composition>],
 	proof: Proof<F>,
@@ -150,6 +152,7 @@ where
 /// NB. `FDomain` is the domain used during univariate round evaluations - usage of NTT
 ///     for subquadratic time interpolation assumes domains of specific structure that needs
 ///     to be replicated in the verifier via an isomorphism.
+#[instrument(skip_all, level = "debug")]
 pub fn batch_verify_zerocheck_univariate_round<FDomain, F, Composition, Challenger>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	proof: ZerocheckUnivariateProof<F>,

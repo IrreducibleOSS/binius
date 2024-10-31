@@ -33,12 +33,14 @@ use p3_util::log2_ceil_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 use std::collections::HashMap;
+use tracing::instrument;
 use transpose::transpose;
 
 /// Helper method to reduce zerocheck witness to skipped variables only via a partial high projection.
 ///
 /// Resulting set of reduced multilinears has an additional column of the projected zerocheck equality
 /// indicator at the end, constructed in an efficient manner.
+#[instrument(skip_all, level = "debug")]
 pub fn reduce_to_skipped_zerocheck_projection<F, P, M, Backend>(
 	multilinears: Vec<M>,
 	sumcheck_challenges: &[F],
@@ -81,6 +83,7 @@ where
 }
 
 /// Helper method to reduce the witness to skipped variables via a partial high projection.
+#[instrument(skip_all, level = "debug")]
 pub fn reduce_to_skipped_projection<F, P, M, Backend>(
 	multilinears: Vec<M>,
 	sumcheck_challenges: &[F],
@@ -258,6 +261,11 @@ where
 	Backend: ComputationBackend,
 {
 	// Univariate round can be folded once the challenge has been sampled.
+	#[instrument(
+		skip_all,
+		name = "ZerocheckUnivariateEvalsOutput::fold",
+		level = "debug"
+	)]
 	pub fn fold<FDomain>(
 		self,
 		challenge: F,
@@ -355,6 +363,7 @@ where
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
+#[instrument(skip_all, level = "debug")]
 pub fn zerocheck_univariate_evals<F, FDomain, PBase, P, Composition, M, Backend>(
 	multilinears: &[M],
 	compositions: &[Composition],
@@ -616,6 +625,7 @@ where
 
 // Extrapolate round evaluations using Lagrange to the full domain.
 // REVIEW: find a better, subquadratic way; luckily this is not on the hot path
+#[instrument(skip_all, level = "debug")]
 fn extrapolate_round_evals<FDomain, F>(
 	mut round_evals: Vec<Vec<F>>,
 	skip_rounds: usize,
@@ -653,6 +663,7 @@ where
 	Ok(round_evals)
 }
 
+#[instrument(skip_all, level = "debug")]
 fn multiply_round_evals<F: Field>(
 	mut round_evals: Vec<Vec<F>>,
 	pointwise_multiplier: &[F],
