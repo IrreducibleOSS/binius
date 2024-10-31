@@ -2,11 +2,11 @@
 
 use binius_field::{
 	arch::{
-		packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
-		packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
-		packed_aes_512::*, packed_aes_64::*, packed_aes_8::*, packed_polyval_128::*,
-		packed_polyval_256::*, packed_polyval_512::*, PackedStrategy, PairwiseStrategy,
-		SimdStrategy,
+		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
+		packed_64::*, packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*,
+		packed_aes_32::*, packed_aes_512::*, packed_aes_64::*, packed_aes_8::*,
+		packed_polyval_128::*, packed_polyval_256::*, packed_polyval_512::*, PackedStrategy,
+		PairwiseStrategy, SimdStrategy,
 	},
 	arithmetic_traits::TaggedPackedTransformationFactory,
 	linear_transformation::{
