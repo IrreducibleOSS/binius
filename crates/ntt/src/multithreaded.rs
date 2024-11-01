@@ -121,7 +121,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					data,
 					coset,
 					log_batch_size,
-					0,
+					P::LOG_WIDTH - log_batch_size,
 				),
 			};
 		}
@@ -175,6 +175,8 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 			});
 	}
 
+	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
+
 	data.par_chunks_mut(1 << log_width)
 		.enumerate()
 		.try_for_each(|(inner_coset, chunk)| {
@@ -184,7 +186,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				chunk,
 				coset << par_rounds | (inner_coset as u32),
 				log_batch_size,
-				0,
+				single_thread_log_n,
 			)
 		})?;
 
@@ -210,7 +212,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					data,
 					coset,
 					log_batch_size,
-					0,
+					P::LOG_WIDTH - log_batch_size,
 				),
 			};
 		}
@@ -228,6 +230,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	let par_rounds = (log_n - cutoff).min(log_max_threads);
 	let log_height = par_rounds;
 	let log_width = log_n + log_b - log_w - log_height;
+	let single_thread_log_n = log_width + P::LOG_WIDTH - log_batch_size;
 
 	data.par_chunks_mut(1 << log_width)
 		.enumerate()
@@ -238,7 +241,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				chunk,
 				coset << par_rounds | (inner_coset as u32),
 				log_batch_size,
-				0,
+				single_thread_log_n,
 			)
 		})?;
 
