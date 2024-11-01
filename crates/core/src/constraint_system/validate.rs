@@ -69,7 +69,6 @@ where
 
 	let oracle_label = &oracle.label();
 	let n_vars = oracle.n_vars();
-	let tower_level = oracle.binary_tower_level();
 	let poly = witness.get_multilin_poly(oracle.id())?;
 
 	match oracle {
@@ -246,13 +245,9 @@ where
 		}
 		Packed { id, packed, .. } => {
 			let inner = packed.inner();
-			let expected = witness.get_underlier_slice(
-				inner.id(),
-				inner.n_vars(),
-				inner.binary_tower_level(),
-			)?;
-			let got = witness.get_underlier_slice(id, n_vars, tower_level)?;
-			if expected != got {
+			let expected = witness.get_multilin_poly(inner.id())?;
+			let got = witness.get_multilin_poly(id)?;
+			if expected.packed_evals() != got.packed_evals() {
 				return Err(Error::PackedUnderlierMismatch {
 					oracle: oracle_label.into(),
 				});

@@ -4,7 +4,7 @@ use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	ExtensionField, Field, TowerField,
+	ExtensionField, Field, PackedExtension, TowerField,
 };
 use binius_math::{
 	MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly, PackingDeref,
@@ -13,22 +13,6 @@ use binius_utils::bail;
 use std::{fmt::Debug, sync::Arc};
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
-
-#[derive(Debug)]
-struct MultilinearExtensionBacking<'a, U: UnderlierType> {
-	underliers: ArcOrRef<'a, [U]>,
-	tower_level: usize,
-}
-
-#[derive(Debug)]
-struct MultilinearExtensionIndexEntry<'a, U: UnderlierType, F>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: Field,
-{
-	type_erased: MultilinearWitness<'a, PackedType<U, F>>,
-	backing: Option<MultilinearExtensionBacking<'a, U>>,
-}
 
 /// Data structure that indexes multilinear extensions by oracle ID.
 ///
@@ -42,7 +26,7 @@ where
 	U: UnderlierType + PackScalar<FW>,
 	FW: Field,
 {
-	entries: Vec<Option<MultilinearExtensionIndexEntry<'a, U, FW>>>,
+	entries: Vec<Option<MultilinearWitness<'a, PackedType<U, FW>>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -51,17 +35,11 @@ pub enum Error {
 	MissingWitness { id: OracleId },
 	#[error("witness for oracle id {id} does not have an explicit backing multilinear")]
 	NoExplicitBackingMultilinearExtension { id: OracleId },
-	#[error("oracle tower height does not match field parameter")]
-	OracleTowerHeightMismatch {
+	#[error("log degree mismatch for oracle id {oracle_id}. field_log_extension_degree = {field_log_extension_degree} entry_log_extension_degree = {entry_log_extension_degree}")]
+	OracleExtensionDegreeMismatch {
 		oracle_id: OracleId,
-		oracle_level: usize,
-		field_level: usize,
-	},
-	#[error("expected_n_vars={expected_n_vars} for oracle({oracle_id}) does not match actual n_vars: {n_vars}")]
-	OracleNumVarsMismatch {
-		oracle_id: OracleId,
-		n_vars: usize,
-		expected_n_vars: usize,
+		field_log_extension_degree: usize,
+		entry_log_extension_degree: usize,
 	},
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
@@ -96,25 +74,20 @@ where
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
 
-		let backing = entry
-			.backing
-			.as_ref()
-			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
-
-		if backing.tower_level != FS::TOWER_LEVEL {
-			bail!(Error::OracleTowerHeightMismatch {
+		if entry.log_extension_degree() != FW::LOG_DEGREE {
+			bail!(Error::OracleExtensionDegreeMismatch {
 				oracle_id: id,
-				oracle_level: backing.tower_level,
-				field_level: FS::TOWER_LEVEL,
-			});
+				field_log_extension_degree: FW::LOG_DEGREE,
+				entry_log_extension_degree: entry.log_extension_degree()
+			})
 		}
 
-		let underliers_ref = backing.underliers.as_ref();
+		let evals = entry
+			.packed_evals()
+			.map(<PackedType<U, FW>>::cast_bases)
+			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
 
-		let mle = MultilinearExtension::from_values_slice(
-			PackedType::<U, FS>::from_underliers_ref(underliers_ref),
-		)?;
-		Ok(mle)
+		Ok(MultilinearExtension::from_values_slice(evals)?)
 	}
 
 	pub fn get_multilin_poly(
@@ -127,50 +100,12 @@ where
 			.ok_or(Error::MissingWitness { id })?
 			.as_ref()
 			.ok_or(Error::MissingWitness { id })?;
-		Ok(entry.type_erased.clone())
+		Ok(entry.clone())
 	}
 
 	/// Whether has data for the given oracle id.
 	pub fn has(&self, id: OracleId) -> bool {
 		self.entries.get(id).map_or(false, Option::is_some)
-	}
-
-	pub fn get_underlier_slice(
-		&self,
-		id: OracleId,
-		expected_n_vars: usize,
-		expected_tower_level: usize,
-	) -> Result<&[U], Error> {
-		let entry = self
-			.entries
-			.get(id)
-			.ok_or(Error::MissingWitness { id })?
-			.as_ref()
-			.ok_or(Error::MissingWitness { id })?;
-
-		let backing = entry
-			.backing
-			.as_ref()
-			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
-
-		if backing.tower_level != expected_tower_level {
-			return Err(Error::OracleTowerHeightMismatch {
-				oracle_id: id,
-				oracle_level: backing.tower_level,
-				field_level: expected_tower_level,
-			});
-		}
-		let backing_n_vars =
-			U::LOG_BITS + backing.underliers.as_ref().len().ilog2() as usize - backing.tower_level;
-		if backing_n_vars != expected_n_vars {
-			return Err(Error::OracleNumVarsMismatch {
-				oracle_id: id,
-				n_vars: backing_n_vars,
-				expected_n_vars,
-			});
-		}
-
-		Ok(backing.underliers.as_ref())
 	}
 
 	pub fn update_owned<FS, Data>(
@@ -193,14 +128,7 @@ where
 			let mle = MultilinearExtension::<_, PackingDeref<U, FS, _>>::from_underliers(
 				witness.clone(),
 			)?;
-			let backing = MultilinearExtensionBacking {
-				underliers: ArcOrRef::Arc(witness),
-				tower_level: FS::TOWER_LEVEL,
-			};
-			entries[id] = Some(MultilinearExtensionIndexEntry {
-				type_erased: mle.specialize_arc_dyn(),
-				backing: Some(backing),
-			});
+			entries[id] = Some(mle.specialize_arc_dyn());
 		}
 		Ok(MultilinearExtensionIndex { entries })
 	}
@@ -224,14 +152,7 @@ where
 			let mle = MultilinearExtension::from_values_slice(
 				PackedType::<U, FS>::from_underliers_ref(witness),
 			)?;
-			let backing = MultilinearExtensionBacking {
-				underliers: ArcOrRef::Ref(witness),
-				tower_level: FS::TOWER_LEVEL,
-			};
-			entries[id] = Some(MultilinearExtensionIndexEntry {
-				type_erased: mle.specialize_arc_dyn(),
-				backing: Some(backing),
-			});
+			entries[id] = Some(mle.specialize_arc_dyn());
 		}
 		Ok(MultilinearExtensionIndex { entries })
 	}
@@ -244,11 +165,7 @@ where
 			if id >= self.entries.len() {
 				self.entries.resize_with(id + 1, || None);
 			}
-
-			self.entries[id] = Some(MultilinearExtensionIndexEntry {
-				type_erased: witness,
-				backing: None,
-			});
+			self.entries[id] = Some(witness);
 		}
 		Ok(())
 	}
@@ -268,20 +185,5 @@ where
 				(oracle_id, <PackedType<U, FS>>::to_underliers_ref(packed))
 			}),
 		)
-	}
-}
-
-#[derive(Debug)]
-enum ArcOrRef<'a, T: ?Sized> {
-	Arc(Arc<T>),
-	Ref(&'a T),
-}
-
-impl<'a, T: ?Sized> AsRef<T> for ArcOrRef<'a, T> {
-	fn as_ref(&self) -> &T {
-		match self {
-			Self::Arc(owned) => owned,
-			Self::Ref(borrowed) => borrowed,
-		}
 	}
 }
