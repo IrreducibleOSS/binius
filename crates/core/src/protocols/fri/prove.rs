@@ -10,7 +10,9 @@ use crate::{
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
-use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedFieldIndexable};
+use binius_field::{
+	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
+};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -122,6 +124,38 @@ pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {
 	pub codeword: Vec<P>,
 }
 
+/// Creates a parallel iterator over scalars of subfield elementsAssumes chunk_size to be a power of two
+pub fn to_par_scalar_big_chunks<P>(
+	packed_slice: &[P],
+	chunk_size: usize,
+) -> impl IndexedParallelIterator<Item = impl Iterator<Item = P::Scalar> + Send + '_>
+where
+	P: PackedField,
+{
+	packed_slice
+		.par_chunks(chunk_size / P::WIDTH)
+		.map(|chunk| iter_packed_slice(chunk))
+}
+
+pub fn to_par_scalar_small_chunks<P>(
+	packed_slice: &[P],
+	chunk_size: usize,
+) -> impl IndexedParallelIterator<Item = impl Iterator<Item = P::Scalar> + Send + '_>
+where
+	P: PackedField,
+{
+	(0..packed_slice.len() * P::WIDTH)
+		.into_par_iter()
+		.step_by(chunk_size)
+		.map(move |start_index| {
+			let packed_item = &packed_slice[start_index / P::WIDTH];
+			packed_item
+				.iter()
+				.skip(start_index % P::WIDTH)
+				.take(chunk_size)
+		})
+}
+
 /// Encodes and commits the input message.
 ///
 /// ## Arguments
@@ -139,8 +173,8 @@ pub fn commit_interleaved<F, FA, P, PA, VCS>(
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
-	PA: PackedFieldIndexable<Scalar = FA>,
+	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
+	PA: PackedField<Scalar = FA>,
 	VCS: VectorCommitScheme<F>,
 {
 	let n_elems = message.len() * P::WIDTH;
@@ -164,9 +198,19 @@ where
 	encoded[..message.len()].copy_from_slice(message);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 
-	let (commitment, vcs_committed) = vcs
-		.commit_interleaved(P::unpack_scalars(&encoded))
-		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+	let batch_size = encoded.len() * P::WIDTH / vcs.vector_len();
+
+	let (commitment, vcs_committed) = if batch_size > P::WIDTH {
+		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, batch_size);
+
+		vcs.commit_iterated(iterated_big_chunks, batch_size)
+			.map_err(|err| Error::VectorCommit(Box::new(err)))?
+	} else {
+		let iterated_small_chunks = to_par_scalar_small_chunks(&encoded, batch_size);
+
+		vcs.commit_iterated(iterated_small_chunks, batch_size)
+			.map_err(|err| Error::VectorCommit(Box::new(err)))?
+	};
 
 	Ok(CommitOutput {
 		commitment,

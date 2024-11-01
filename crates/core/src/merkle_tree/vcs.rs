@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use rayon::prelude::IndexedParallelIterator;
+
 /// Trait interface for batch vector commitment schemes.
 ///
 /// The main implementation is [`crate::merkle_tree::MerkleTreeVCS`].
@@ -25,6 +27,15 @@ pub trait VectorCommitScheme<T> {
 		&self,
 		data: &[T],
 	) -> Result<(Self::Commitment, Self::Committed), Self::Error>;
+
+	/// Commit interleaved elements from iterator by val
+	fn commit_iterated<ParIter>(
+		&self,
+		iterated_chunks: ParIter,
+		batch_size: usize,
+	) -> Result<(Self::Commitment, Self::Committed), Self::Error>
+	where
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>;
 
 	/// Generate an opening proof for all vectors in a batch commitment at the given index.
 	fn prove_batch_opening(

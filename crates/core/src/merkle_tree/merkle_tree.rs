@@ -84,6 +84,26 @@ where
 		)
 	}
 
+	pub fn build_iterated<T, H, C, ParIter>(
+		compression: &C,
+		log_len: usize,
+		iterated_chunks: ParIter,
+		cap_height: usize,
+		batch_size: usize,
+	) -> Result<Self, Error>
+	where
+		H: Hasher<T, Digest = D> + Send,
+		C: PseudoCompressionFunction<D, 2> + Sync,
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>,
+	{
+		Self::build(
+			compression,
+			log_len,
+			|inner_nodes| hash_iterated::<_, H, _>(iterated_chunks, inner_nodes, batch_size),
+			cap_height,
+		)
+	}
+
 	fn build<C>(
 		compression: &C,
 		log_len: usize,
@@ -265,11 +285,35 @@ where
 	}
 
 	let batch_size = elems.len() / digests.len();
+
 	digests
 		.par_iter_mut()
 		.zip(elems.par_chunks(batch_size))
 		.for_each_init(H::new, |hasher, (digest, elems)| {
 			hasher.update(elems);
+			hasher.finalize_into_reset(digest);
+		});
+
+	Ok(batch_size)
+}
+
+fn hash_iterated<T, H, ParIter>(
+	iterated_chunks: ParIter,
+	digests: &mut [MaybeUninit<H::Digest>],
+	batch_size: usize,
+) -> Result<usize, Error>
+where
+	H: Hasher<T> + Send,
+	H::Digest: Send,
+	ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>,
+{
+	digests
+		.par_iter_mut()
+		.zip(iterated_chunks)
+		.for_each_init(H::new, |hasher, (digest, elems)| {
+			for elem in elems {
+				hasher.update(std::slice::from_ref(&elem));
+			}
 			hasher.finalize_into_reset(digest);
 		});
 
@@ -339,6 +383,24 @@ where
 			self.log_len,
 			elements,
 			self.cap_height,
+		)?;
+		Ok((MerkleCap(tree.get_cap().to_vec()), tree))
+	}
+
+	fn commit_iterated<ParIter>(
+		&self,
+		iterated_chunks: ParIter,
+		batch_size: usize,
+	) -> Result<(Self::Commitment, Self::Committed), Self::Error>
+	where
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = P>>,
+	{
+		let tree = MerkleTree::build_iterated::<_, H, _, _>(
+			&self.compression,
+			self.log_len,
+			iterated_chunks,
+			self.cap_height,
+			batch_size,
 		)?;
 		Ok((MerkleCap(tree.get_cap().to_vec()), tree))
 	}

@@ -4,22 +4,28 @@ use crate::{
 	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
 	linear_code::LinearCode,
 	merkle_tree::MerkleTreeVCS,
-	protocols::fri::{self, CommitOutput, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
+	protocols::fri::{
+		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
+		FoldRoundOutput,
+	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
-	arch::OptimalUnderlier128b,
+	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{Divisible, UnderlierType},
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField8b, ExtensionField, PackedExtension,
-	PackedField, PackedFieldIndexable,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
+	PackedBinaryField16x16b, PackedExtension, PackedField, PackedFieldIndexable,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::MultilinearExtension;
 use binius_ntt::NTTOptions;
 use rand::prelude::*;
-use std::{iter, iter::repeat_with};
+use rayon::prelude::ParallelIterator;
+use std::{iter, iter::repeat_with, vec};
+
+use super::to_par_scalar_big_chunks;
 
 fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
@@ -221,6 +227,22 @@ fn test_commit_prove_verify_success_128b_interleaved() {
 }
 
 #[test]
+fn test_commit_prove_verify_success_128b_interleaved_packed() {
+	let log_dimension = 6;
+	let log_inv_rate = 2;
+	let log_batch_size = 2;
+	let log_commit_dims = [5, 3, 2];
+	let log_vcs_vector_lens = log_commit_dims.map(|dim| dim + log_inv_rate);
+
+	test_commit_prove_verify_success::<OptimalUnderlier128b, BinaryField32b, BinaryField16b>(
+		log_dimension,
+		log_inv_rate,
+		log_batch_size,
+		&log_vcs_vector_lens,
+	);
+}
+
+#[test]
 fn test_commit_prove_verify_success_without_folding() {
 	let log_dimension = 4;
 	let log_inv_rate = 2;
@@ -232,4 +254,52 @@ fn test_commit_prove_verify_success_without_folding() {
 		log_batch_size,
 		&[],
 	);
+}
+
+#[test]
+fn test_parallel_iterator_for_commitments() {
+	// Compare results for small and large chunk sizes to ensure that theyre identical
+	let data: Vec<_> = (0..64).map(BinaryField16b::from).collect();
+
+	let mut data_packed_4 = vec![];
+
+	for i in 0..64 / 4 {
+		let mut scalars = vec![];
+		for j in 0..4 {
+			scalars.push(data[4 * i + j]);
+		}
+
+		data_packed_4.push(PackedBinaryField4x16b::from_scalars(scalars));
+	}
+
+	let mut data_packed_16 = vec![];
+
+	for i in 0..64 / 16 {
+		let mut scalars = vec![];
+		for j in 0..16 {
+			scalars.push(data[16 * i + j]);
+		}
+
+		data_packed_16.push(PackedBinaryField16x16b::from_scalars(scalars));
+	}
+
+	let packing_smaller_than_chunk = to_par_scalar_big_chunks(&data_packed_4, 8);
+
+	let packing_bigger_than_chunk = to_par_scalar_small_chunks(&data_packed_16, 8);
+
+	let collected_smaller: Vec<_> = packing_smaller_than_chunk
+		.map(|inner| {
+			let result: Vec<_> = inner.collect();
+			result
+		})
+		.collect();
+
+	let collected_bigger: Vec<_> = packing_bigger_than_chunk
+		.map(|inner| {
+			let result: Vec<_> = inner.collect();
+			result
+		})
+		.collect();
+
+	assert_eq!(collected_smaller, collected_bigger);
 }

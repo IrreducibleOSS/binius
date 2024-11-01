@@ -116,7 +116,7 @@ pub trait PackedField:
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item=Self::Scalar> {
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
@@ -184,7 +184,9 @@ pub trait PackedField:
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self);
 }
 
-pub fn iter_packed_slice<P: PackedField>(packed: &[P]) -> impl Iterator<Item = P::Scalar> + '_ {
+pub fn iter_packed_slice<P: PackedField>(
+	packed: &[P],
+) -> impl Iterator<Item = P::Scalar> + '_ + Send {
 	packed.iter().flat_map(|packed_i| packed_i.iter())
 }
 
