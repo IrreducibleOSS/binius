@@ -4,6 +4,7 @@ pub mod bitwise;
 pub mod builder;
 pub mod groestl;
 pub mod keccakf;
+pub mod lasso;
 pub mod step_down;
 pub mod u32add;
 pub mod u32fib;
@@ -13,20 +14,37 @@ pub mod unconstrained;
 mod tests {
 	use crate::{
 		bitwise, builder::ConstraintSystemBuilder, groestl::groestl_p_permutation,
-		keccakf::keccakf, u32add::u32add, u32fib::u32fib, unconstrained::unconstrained,
+		keccakf::keccakf, lasso, u32add::u32add, u32fib::u32fib, unconstrained::unconstrained,
 	};
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b};
+	use binius_field::{
+		arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField8b,
+	};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
 
 	#[test]
+	fn test_lasso() {
+		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness();
+		let log_size = 14;
+
+		let mult_a = unconstrained::<_, _, BinaryField8b>(&mut builder, log_size).unwrap();
+		let mult_b = unconstrained::<_, _, BinaryField8b>(&mut builder, log_size).unwrap();
+		let _product = lasso::u8mul(&mut builder, mult_a, mult_b, log_size).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
 	fn test_u32add() {
 		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness();
 		let log_size = 14;
-		let a = unconstrained(&mut builder, log_size).unwrap();
-		let b = unconstrained(&mut builder, log_size).unwrap();
+		let a = unconstrained::<_, _, BinaryField1b>(&mut builder, log_size).unwrap();
+		let b = unconstrained::<_, _, BinaryField1b>(&mut builder, log_size).unwrap();
 		let _c = u32add(&mut builder, log_size, a, b).unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -51,8 +69,8 @@ mod tests {
 	fn test_bitwise() {
 		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness();
 		let log_size = 14;
-		let a = unconstrained(&mut builder, log_size).unwrap();
-		let b = unconstrained(&mut builder, log_size).unwrap();
+		let a = unconstrained::<_, _, BinaryField1b>(&mut builder, log_size).unwrap();
+		let b = unconstrained::<_, _, BinaryField1b>(&mut builder, log_size).unwrap();
 		let _and = bitwise::and(&mut builder, log_size, a, b).unwrap();
 		let _xor = bitwise::xor(&mut builder, log_size, a, b).unwrap();
 		let _or = bitwise::or(&mut builder, log_size, a, b).unwrap();
