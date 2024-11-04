@@ -172,13 +172,13 @@ where
 		*lookup_t = BinaryField32b::new((lookup_index << 16 | ab_product) as u32);
 	}
 
-	let index = MultilinearExtensionIndex::new()
-		.update_owned::<B8, _>([(trace_oracle.mult_a, mult_a), (trace_oracle.mult_b, mult_b)])?
-		.update_owned::<B16, _>([(trace_oracle.product, product)])?
-		.update_owned::<B32, _>([
-			(trace_oracle.lookup_u, lookup_u),
-			(trace_oracle.lookup_t, lookup_t),
-		])?;
+	let mut index = MultilinearExtensionIndex::new();
+	index.set_owned::<B8, _>([(trace_oracle.mult_a, mult_a), (trace_oracle.mult_b, mult_b)])?;
+	index.set_owned::<B16, _>([(trace_oracle.product, product)])?;
+	index.set_owned::<B32, _>([
+		(trace_oracle.lookup_u, lookup_u),
+		(trace_oracle.lookup_t, lookup_t),
+	])?;
 
 	Ok(TraceWitness {
 		index,

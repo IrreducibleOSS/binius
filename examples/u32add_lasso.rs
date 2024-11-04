@@ -211,17 +211,17 @@ where
 		*lookup_t = BinaryField32b::new(lookup_t_u32);
 	}
 
-	let index = MultilinearExtensionIndex::new()
-		.update_owned::<B1, _>([(trace_oracle.cin, cin), (trace_oracle.cout, cout)])?
-		.update_owned::<B8, _>([
-			(trace_oracle.a, a),
-			(trace_oracle.b, b),
-			(trace_oracle.sum, sum),
-		])?
-		.update_owned::<B32, _>([
-			(trace_oracle.lookup_t, lookup_t),
-			(trace_oracle.lookup_u, lookup_u),
-		])?;
+	let mut index = MultilinearExtensionIndex::new();
+	index.set_owned::<B1, _>([(trace_oracle.cin, cin), (trace_oracle.cout, cout)])?;
+	index.set_owned::<B8, _>([
+		(trace_oracle.a, a),
+		(trace_oracle.b, b),
+		(trace_oracle.sum, sum),
+	])?;
+	index.set_owned::<B32, _>([
+		(trace_oracle.lookup_t, lookup_t),
+		(trace_oracle.lookup_u, lookup_u),
+	])?;
 
 	Ok(TraceWitness {
 		index,

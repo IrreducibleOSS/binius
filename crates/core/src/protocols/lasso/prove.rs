@@ -172,13 +172,11 @@ where
 
 		let mixed_u_counts_plus_one = lincom(u_polynomial, counts, gamma, alpha_gen)?;
 
-		witness_index = witness_index.update_owned::<F, _>([
+		witness_index.set_owned::<F, _>([
 			(mixed_u_counts_oracle_ids[i], mixed_u_counts),
 			(mixed_u_counts_plus_one_oracle_ids[i], mixed_u_counts_plus_one),
 		])?;
-
-		witness_index = witness_index
-			.update_owned::<FC, _>([(lasso_batches.counts[i], counts_underlier_vec)])?;
+		witness_index.set_owned::<FC, _>([(lasso_batches.counts[i], counts_underlier_vec)])?;
 	}
 
 	let mixed_t_final_counts = lincom(lasso_witness.t_polynomial(), final_counts, gamma, alpha)?;
@@ -187,12 +185,11 @@ where
 
 	let [final_counts_underlier_vecs, ones_repeating] = final_counts_underlier_vecs;
 
-	witness_index = witness_index.update_owned::<FC, _>([
+	witness_index.set_owned::<FC, _>([
 		(lasso_batches.final_counts, final_counts_underlier_vecs),
 		(ones_oracle_id, ones_repeating),
 	])?;
-
-	witness_index = witness_index.update_owned::<F, _>([
+	witness_index.set_owned::<F, _>([
 		(mixed_t_final_counts_oracle_id, mixed_t_final_counts),
 		(mixed_t_one_oracle_id, mixed_t_ones),
 	])?;

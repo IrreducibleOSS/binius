@@ -52,14 +52,11 @@ where
 					*next_next = *current;
 				});
 		}
-		*witness = std::mem::take(witness).update_owned::<BinaryField1b, Arc<[U]>>(
-			[
-				(current, current_witness.into()),
-				(next, next_witness.into()),
-				(next_next, next_next_witness.into()),
-			]
-			.into_iter(),
-		)?;
+		witness.set_owned::<BinaryField1b, _>([
+			(current, current_witness),
+			(next, next_witness),
+			(next_next, next_next_witness),
+		])?;
 	}
 
 	let packed_log_size = log_size - 5;
@@ -79,13 +76,10 @@ where
 				.iter()
 				.cloned()
 				.collect();
-		*witness = std::mem::take(witness).update_owned::<BinaryField32b, Arc<[U]>>(
-			[
-				(next_next_packed, next_next_packed_witness),
-				(sum_packed, sum_packed_witness),
-			]
-			.into_iter(),
-		)?;
+		witness.set_owned::<BinaryField32b, Arc<[U]>>([
+			(next_next_packed, next_next_packed_witness),
+			(sum_packed, sum_packed_witness),
+		])?;
 	}
 
 	builder.assert_zero(

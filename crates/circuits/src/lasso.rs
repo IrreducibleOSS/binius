@@ -181,13 +181,11 @@ where
 		*lookup_t = BinaryField32b::new((lookup_index << 16 | ab_product) as u32);
 	}
 
-	*witness = std::mem::take(witness)
-		.update_owned::<B16, _>([(trace_oracle.product, product)])?
-		.update_owned::<B32, _>([
-			(trace_oracle.lookup_u, lookup_u),
-			(trace_oracle.lookup_t, lookup_t),
-		])?;
-
+	witness.set_owned::<B16, _>([(trace_oracle.product, product)])?;
+	witness.set_owned::<B32, _>([
+		(trace_oracle.lookup_u, lookup_u),
+		(trace_oracle.lookup_t, lookup_t),
+	])?;
 	Ok(u_to_t_mapping)
 }
 
@@ -231,7 +229,7 @@ where
 		lookup_f_scalars[index] *= ALPHA;
 	}
 
-	*witness = std::mem::take(witness).update_owned::<B32, _>([
+	witness.set_owned::<B32, _>([
 		(trace_oracle.lookup_r, lookup_r),
 		(trace_oracle.lookup_s, lookup_s),
 		(trace_oracle.lookup_w, lookup_w),

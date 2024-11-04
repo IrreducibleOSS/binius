@@ -177,7 +177,7 @@ where
 			}
 		}
 
-		*witness = std::mem::take(witness).update_owned::<BinaryField1b, _>(std::iter::zip(
+		witness.set_owned::<BinaryField1b, _>(std::iter::zip(
 			chain!(
 				[round_consts_single, round_consts, selector],
 				state_in,

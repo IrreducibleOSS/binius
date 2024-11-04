@@ -51,14 +51,11 @@ where
 				*cin = (*xin) ^ (*yin) ^ (*zout);
 				*cout = ((carry as u32) << 31) | (*cin >> 1);
 			});
-		*witness = std::mem::take(witness).update_owned::<BinaryField1b, Box<[U]>>(
-			[
-				(zout, zout_witness),
-				(cout, cout_witness),
-				(cin, cin_witness),
-			]
-			.into_iter(),
-		)?;
+		witness.set_owned::<BinaryField1b, _>([
+			(zout, zout_witness),
+			(cout, cout_witness),
+			(cin, cin_witness),
+		])?;
 	}
 
 	builder.assert_zero(

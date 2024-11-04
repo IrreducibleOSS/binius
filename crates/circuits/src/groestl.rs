@@ -17,7 +17,7 @@ use binius_math::CompositionPoly;
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use rand::thread_rng;
-use std::{array, fmt::Debug, iter, mem::take, slice};
+use std::{array, fmt::Debug, iter, slice};
 
 /// Number of rounds in a Grøstl-256 compression
 const N_ROUNDS: usize = 10;
@@ -394,7 +394,7 @@ where
 		F: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
-		*index = std::mem::take(index).update_owned::<F8b, Box<[U]>>(iter::zip(
+		index.set_owned::<F8b, Box<[U]>>(iter::zip(
 			chain!(gadget
 				.with_round_consts
 				.iter()
@@ -416,8 +416,7 @@ where
 			p_sub_bytes_witness.update_index::<F, F8b>(index, &p_sub_bytes)?;
 		}
 
-		*index = std::mem::take(index)
-			.update_owned::<F8b, _>(iter::zip(gadget.output, self.output.clone()))?;
+		index.set_owned::<F8b, _>(iter::zip(gadget.output, self.output.clone()))?;
 		Ok(())
 	}
 }
@@ -445,12 +444,11 @@ where
 		F: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
-		*index = take(index)
-			.update_owned::<BinaryField1b, _>(iter::zip(gadget.inv_bits, self.inv_bits.clone()))?
-			.update_owned::<F8b, _>(iter::zip(
-				[gadget.inverse, gadget.output],
-				[self.inverse.clone(), self.output.clone()],
-			))?;
+		index.set_owned::<BinaryField1b, _>(iter::zip(gadget.inv_bits, self.inv_bits.clone()))?;
+		index.set_owned::<F8b, _>(iter::zip(
+			[gadget.inverse, gadget.output],
+			[self.inverse.clone(), self.output.clone()],
+		))?;
 		Ok(())
 	}
 }
@@ -480,7 +478,7 @@ where
 		F: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
-		*witness = take(witness).update_owned::<F8b, _>(iter::zip(
+		witness.set_owned::<F8b, _>(iter::zip(
 			chain!(
 				trace_oracle.p_in,
 				trace_oracle.round_idxs.clone(),

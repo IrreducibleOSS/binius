@@ -422,7 +422,8 @@ where
 		}
 	}
 
-	let index = MultilinearExtensionIndex::new().update_owned::<BinaryField1b, _>(iter::zip(
+	let mut index = MultilinearExtensionIndex::new();
+	index.set_owned::<BinaryField1b, _>(iter::zip(
 		chain!(
 			[fixed_oracle.round_consts, fixed_oracle.selector],
 			trace_oracle.state_in,

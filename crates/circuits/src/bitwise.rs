@@ -39,8 +39,7 @@ where
 			.for_each(|(xin, yin, zout)| {
 				*zout = (*xin) & (*yin);
 			});
-		*witness = std::mem::take(witness)
-			.update_owned::<BinaryField1b, Box<[U]>>([(zout, zout_witness)])?;
+		witness.set_owned::<BinaryField1b, _>([(zout, zout_witness)])?;
 	}
 	builder.assert_zero([xin, yin, zout], composition_poly!([x, y, z] = x * y - z));
 	Ok(zout)
@@ -73,8 +72,7 @@ where
 			.for_each(|(xin, yin, zout)| {
 				*zout = (*xin) ^ (*yin);
 			});
-		*witness = std::mem::take(witness)
-			.update_owned::<BinaryField1b, Box<[U]>>([(zout, zout_witness)])?;
+		witness.set_owned::<BinaryField1b, _>([(zout, zout_witness)])?;
 	}
 	Ok(zout)
 }
@@ -106,8 +104,7 @@ where
 			.for_each(|(xin, yin, zout)| {
 				*zout = (*xin) | (*yin);
 			});
-		*witness = std::mem::take(witness)
-			.update_owned::<BinaryField1b, Box<[U]>>([(zout, zout_witness)])?;
+		witness.set_owned::<BinaryField1b, _>([(zout, zout_witness)])?;
 	}
 	builder.assert_zero([xin, yin, zout], composition_poly!([x, y, z] = (x + y) + (x * y) - z));
 	Ok(zout)

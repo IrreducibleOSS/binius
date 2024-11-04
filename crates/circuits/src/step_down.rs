@@ -40,8 +40,8 @@ where
 					}
 				});
 		}
-		*witness = std::mem::take(witness)
-			.update_owned::<BinaryField1b, Box<[U]>>([(id, stepdown)].into_iter())?;
+
+		witness.set_owned::<BinaryField1b, _>([(id, stepdown)])?;
 	}
 
 	Ok(id)

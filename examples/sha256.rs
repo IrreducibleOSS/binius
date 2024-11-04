@@ -442,7 +442,8 @@ where
 		.chain(sigma0_iter)
 		.unique_by(|x| x.0);
 
-	let index = MultilinearExtensionIndex::new().update_owned::<BinaryField1b, _>(index_iter)?;
+	let mut index = MultilinearExtensionIndex::new();
+	index.set_owned::<BinaryField1b, _>(index_iter)?;
 
 	Ok(index)
 }

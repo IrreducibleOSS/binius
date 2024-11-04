@@ -29,8 +29,7 @@ where
 			.for_each_init(thread_rng, |rng, data| {
 				*data = rng.gen();
 			});
-		*witness =
-			std::mem::take(witness).update_owned::<FS, Box<[U]>>([(rng, data)].into_iter())?;
+		witness.set_owned::<FS, _>([(rng, data)])?;
 	}
 
 	Ok(rng)

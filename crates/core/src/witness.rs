@@ -108,29 +108,26 @@ where
 		self.entries.get(id).map_or(false, Option::is_some)
 	}
 
-	pub fn update_owned<FS, Data>(
-		self,
+	pub fn set_owned<FS, Data>(
+		&mut self,
 		witnesses: impl IntoIterator<Item = (OracleId, Data)>,
-	) -> Result<MultilinearExtensionIndex<'a, U, FW>, Error>
+	) -> Result<(), Error>
 	where
 		FS: TowerField,
 		FW: ExtensionField<FS>,
 		U: PackScalar<FS> + Debug,
 		Data: Into<Arc<[U]>>,
 	{
-		let MultilinearExtensionIndex { mut entries } = self;
 		for (id, witness) in witnesses {
-			if id >= entries.len() {
-				entries.resize_with(id + 1, || None);
+			if id >= self.entries.len() {
+				self.entries.resize_with(id + 1, || None);
 			}
 
-			let witness = witness.into();
-			let mle = MultilinearExtension::<_, PackingDeref<U, FS, _>>::from_underliers(
-				witness.clone(),
-			)?;
-			entries[id] = Some(mle.specialize_arc_dyn());
+			let mle =
+				MultilinearExtension::<_, PackingDeref<U, FS, _>>::from_underliers(witness.into())?;
+			self.entries[id] = Some(mle.specialize_arc_dyn());
 		}
-		Ok(MultilinearExtensionIndex { entries })
+		Ok(())
 	}
 
 	pub fn update_borrowed<'new, FS>(
