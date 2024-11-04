@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 
 /// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Constraint<P: PackedField> {
 	pub composition: TypeErasedComposition<P>,
 	pub predicate: ConstraintPredicate<P::Scalar>,
@@ -38,7 +38,7 @@ impl<F: Field> ConstraintPredicate<F> {
 }
 
 /// Constraint set is a group of constraints that operate over the same set of oracle-identified multilinears
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ConstraintSet<P: PackedField> {
 	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,
@@ -107,7 +107,8 @@ impl<P: PackedField> ConstraintSetBuilder<P> {
 			.flat_map(|thunk| thunk.oracle_ids.clone())
 			.collect::<Vec<_>>();
 		if oracle_ids.is_empty() {
-			bail!(Error::EmptyConstraintSet);
+			// Do not bail!, this error is handled in evalcheck.
+			return Err(Error::EmptyConstraintSet);
 		}
 		for id in oracle_ids.iter() {
 			if !oracles.is_valid_oracle_id(*id) {

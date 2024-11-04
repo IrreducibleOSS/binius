@@ -80,8 +80,7 @@ where
 		+ ExtensionField<F>
 		+ ExtensionField<FDomain>
 		+ ExtensionField<FEncode>,
-	PE: PackedFieldIndexable<Scalar = FExt>
-		+ PackedExtension<FEncode, PackedSubfield: PackedFieldIndexable>,
+	PE: PackedFieldIndexable<Scalar = FExt> + PackedExtension<FEncode>,
 	VCS: VectorCommitScheme<FExt> + Sync,
 	VCS::Committed: Send + Sync,
 {
@@ -101,12 +100,14 @@ where
 			.checked_sub(kappa)
 			.ok_or(Error::IncorrectPolynomialSize { expected: kappa })?;
 
-		if fold_arities.iter().sum::<usize>() > n_packed_vars {
-			bail!(fri::Error::InvalidFoldAritySequence);
-		}
-		for &arity in fold_arities.iter() {
-			if arity == 0 {
-				bail!(fri::Error::FoldArityIsZero { index: 0 });
+		if !fold_arities.is_empty() {
+			if fold_arities.iter().sum::<usize>() >= n_packed_vars {
+				bail!(fri::Error::InvalidFoldAritySequence);
+			}
+			for &arity in fold_arities.iter() {
+				if arity == 0 {
+					bail!(fri::Error::FoldArityIsZero { index: 0 });
+				}
 			}
 		}
 		let final_arity = n_packed_vars - fold_arities.iter().sum::<usize>();
@@ -141,6 +142,44 @@ where
 			domain_factory,
 			_marker: PhantomData,
 		})
+	}
+
+	pub fn with_optimal_arity(
+		n_vars: usize,
+		log_inv_rate: usize,
+		security_bits: usize,
+		vcs_factory: impl Fn(usize) -> VCS,
+		domain_factory: DomainFactory,
+		ntt_options: NTTOptions,
+	) -> Result<Self, Error> {
+		let kappa = checked_log_2(<FExt as ExtensionField<F>>::DEGREE);
+
+		// The number of variables of the packed polynomial.
+		let n_packed_vars = n_vars
+			.checked_sub(kappa)
+			.ok_or(Error::IncorrectPolynomialSize { expected: kappa })?;
+
+		let arity = estimate_optimal_arity(
+			n_packed_vars + log_inv_rate,
+			size_of::<VCS::Commitment>(),
+			size_of::<FExt>(),
+		);
+		assert!(arity > 0);
+
+		let fold_arities = iter::repeat(arity)
+			// The total arities must be strictly less than n_packed_vars, hence the -1
+			.take(n_packed_vars.saturating_sub(1) / arity)
+			.collect::<Vec<_>>();
+
+		Self::new(
+			n_vars,
+			log_inv_rate,
+			&fold_arities,
+			security_bits,
+			vcs_factory,
+			domain_factory,
+			ntt_options,
+		)
 	}
 
 	/// Returns $\kappa$, the base-2 logarithm of the extension degree.
@@ -311,7 +350,7 @@ where
 	PE: PackedFieldIndexable<Scalar = FExt>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>
-		+ PackedExtension<FEncode, PackedSubfield: PackedFieldIndexable>,
+		+ PackedExtension<FEncode>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	VCS: VectorCommitScheme<FExt> + Sync,
 	VCS::Committed: Send + Sync,
@@ -571,8 +610,11 @@ where
 /// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
 ///
 /// `log_block_length` is the log block length of the packed Reed-Solomon code, i.e., $\ell - \kappa + \mathcal R$.
-#[allow(dead_code)]
-fn estimate_optimal_arity(log_block_length: usize, digest_size: usize, field_size: usize) -> usize {
+pub fn estimate_optimal_arity(
+	log_block_length: usize,
+	digest_size: usize,
+	field_size: usize,
+) -> usize {
 	(1..=log_block_length)
 		.map(|arity| {
 			(

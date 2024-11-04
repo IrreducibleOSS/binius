@@ -1,4 +1,5 @@
 // Copyright 2024 Irreducible Inc.
+// Copyright (c) 2024 The Plonky3 Authors
 
 /// Division implementation that fails in case when `a`` isn't divisible by `b`
 pub const fn checked_int_div(a: usize, b: usize) -> usize {
@@ -14,6 +15,12 @@ pub const fn checked_log_2(val: usize) -> usize {
 	assert!(2usize.pow(result) == val);
 
 	result as _
+}
+
+/// Computes `ceil(log_2(n))`.
+#[must_use]
+pub const fn log2_ceil_usize(n: usize) -> usize {
+	(usize::BITS - n.saturating_sub(1).leading_zeros()) as usize
 }
 
 #[cfg(test)]

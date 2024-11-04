@@ -18,7 +18,7 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub is_random_point: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EvalcheckProof<F: Field> {
 	Transparent,
 	Committed,

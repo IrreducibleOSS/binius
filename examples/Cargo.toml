@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+binius_circuits = { path = "../crates/circuits" }
 binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
 binius_hal = { path = "../crates/hal" }
@@ -15,6 +16,7 @@ binius_math = { path = "../crates/math" }
 binius_utils = { path = "../crates/utils", features = ["tracing"] }
 bytemuck.workspace = true
 bytesize.workspace =  true
+clap = { version = "4.5.20", features = ["derive"] }
 itertools.workspace = true
 p3-challenger.workspace = true
 p3-symmetric.workspace = true
@@ -41,6 +43,10 @@ path = "keccakf.rs"
 [[example]]
 name = "keccakf_small_field"
 path = "keccakf_small_field.rs"
+
+[[example]]
+name = "keccakf_circuit"
+path = "keccakf_circuit.rs"
 
 [[example]]
 name = "lasso"

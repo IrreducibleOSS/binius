@@ -9,7 +9,7 @@ use crate::{
 };
 use binius_field::Field;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GreedyEvalcheckProof<F: Field> {
 	pub initial_evalcheck_proofs: Vec<EvalcheckProof<F>>,
 	pub virtual_opening_proofs: Vec<(Proof<F>, Vec<EvalcheckProof<F>>)>,
