@@ -250,10 +250,6 @@ where
 	fn packed_evals(&self) -> Option<&[PE]> {
 		Some(PE::cast_exts(self.0.evals()))
 	}
-
-	fn underlier_data(&self) -> Option<&[u8]> {
-		Some(self.0.ref_underlier_data())
-	}
 }
 
 impl<P, Data> MultilinearExtension<P, Data>
@@ -472,10 +468,6 @@ where
 
 	fn packed_evals(&self) -> Option<&[P]> {
 		Some(self.0.evals())
-	}
-
-	fn underlier_data(&self) -> Option<&[u8]> {
-		Some(self.0.ref_underlier_data())
 	}
 }
 

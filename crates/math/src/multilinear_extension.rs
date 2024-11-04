@@ -12,7 +12,7 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{cmp::min, fmt::Debug, mem::size_of_val, ops::Deref, slice::from_raw_parts};
+use std::{cmp::min, fmt::Debug, ops::Deref};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -93,11 +93,6 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 			mu: n_vars,
 			evals: v,
 		})
-	}
-
-	pub fn ref_underlier_data(&self) -> &[u8] {
-		let p_slice = self.evals();
-		unsafe { from_raw_parts(p_slice.as_ptr() as *const u8, size_of_val(p_slice)) }
 	}
 }
 

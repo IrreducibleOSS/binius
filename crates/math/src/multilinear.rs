@@ -102,10 +102,6 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// The data returned, if `Some`, should be the same as the data that is written by
 	/// [`Self::subcube_evals`].
 	fn packed_evals(&self) -> Option<&[P]>;
-
-	/// If available, returns underliers of the data of this multilinear as bytes.
-	// TODO: Remove this and replace its uses with `packed_evals`
-	fn underlier_data(&self) -> Option<&[u8]>;
 }
 
 impl<T, P: PackedField> MultilinearPoly<P> for T
@@ -177,9 +173,5 @@ where
 
 	fn packed_evals(&self) -> Option<&[P]> {
 		(**self).packed_evals()
-	}
-
-	fn underlier_data(&self) -> Option<&[u8]> {
-		(**self).underlier_data()
 	}
 }
