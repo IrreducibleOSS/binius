@@ -638,8 +638,8 @@ pub fn estimate_optimal_arity(
 			}
 		})
 		.last()
-		.unwrap()
-		.0
+		.map(|(arity, _)| arity)
+		.unwrap_or(1)
 }
 
 #[derive(Debug, thiserror::Error)]
