@@ -17,15 +17,18 @@ use crate::{builder::ConstraintSystemBuilder, step_down::step_down, u32add::u32a
 
 pub fn u32fib<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
 	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b>,
 	F: TowerField + ExtensionField<BinaryField32b>,
 {
-	let current = builder.add_committed(log_size, BinaryField1b::TOWER_LEVEL);
-	let next = builder.add_shifted(current, 32, log_size, ShiftVariant::LogicalRight)?;
-	let next_next = builder.add_shifted(current, 64, log_size, ShiftVariant::LogicalRight)?;
+	builder.push_namespace(name);
+	let current = builder.add_committed("current", log_size, BinaryField1b::TOWER_LEVEL);
+	let next = builder.add_shifted("next", current, 32, log_size, ShiftVariant::LogicalRight)?;
+	let next_next =
+		builder.add_shifted("next_next", current, 64, log_size, ShiftVariant::LogicalRight)?;
 
 	if let Some(witness) = builder.witness() {
 		let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
@@ -60,10 +63,10 @@ where
 	}
 
 	let packed_log_size = log_size - 5;
-	let enabled = step_down(builder, packed_log_size, (1 << packed_log_size) - 2)?;
-	let sum = u32add(builder, log_size, current, next)?;
-	let sum_packed = builder.add_packed(sum, 5)?;
-	let next_next_packed = builder.add_packed(next_next, 5)?;
+	let enabled = step_down(builder, "enabled", packed_log_size, (1 << packed_log_size) - 2)?;
+	let sum = u32add(builder, "sum", log_size, current, next)?;
+	let sum_packed = builder.add_packed("sum_packed", sum, 5)?;
+	let next_next_packed = builder.add_packed("next_next_packed", next_next, 5)?;
 
 	if let Some(witness) = builder.witness() {
 		let next_next_packed_witness =
@@ -87,5 +90,6 @@ where
 		composition_poly!([a, b, enabled] = (a - b) * enabled),
 	);
 
+	builder.pop_namespace();
 	Ok(current)
 }

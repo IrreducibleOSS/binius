@@ -12,6 +12,7 @@ use rayon::prelude::*;
 
 pub fn unconstrained<U, F, FS>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
 	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
@@ -19,7 +20,7 @@ where
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {
-	let rng = builder.add_committed(log_size, FS::TOWER_LEVEL);
+	let rng = builder.add_committed(name, log_size, FS::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
 		let len = 1 << (log_size - <PackedType<U, FS>>::LOG_WIDTH);

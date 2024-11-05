@@ -13,6 +13,7 @@ use rayon::prelude::*;
 
 pub fn u32add<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
 	log_size: usize,
 	xin: OracleId,
 	yin: OracleId,
@@ -21,9 +22,11 @@ where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
-	let cout = builder.add_committed(log_size, BinaryField1b::TOWER_LEVEL);
-	let cin = builder.add_shifted(cout, 1, 5, ShiftVariant::LogicalLeft)?;
+	builder.push_namespace(name);
+	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
+	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
 	let zout = builder.add_linear_combination(
+		"zout",
 		log_size,
 		[(xin, F::ONE), (yin, F::ONE), (cin, F::ONE)].into_iter(),
 	)?;
@@ -63,5 +66,6 @@ where
 		composition_poly!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout),
 	);
 
+	builder.pop_namespace();
 	Ok(zout)
 }

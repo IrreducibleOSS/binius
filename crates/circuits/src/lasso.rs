@@ -26,6 +26,7 @@ const T_LOG_SIZE: usize = 16;
 
 pub fn u8mul<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
 	mult_a: OracleId,
 	mult_b: OracleId,
 	log_size: usize,
@@ -37,6 +38,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
+	builder.push_namespace(name);
 	let trace_oracle = TraceOracle::new(builder, log_size, mult_a, mult_b).unwrap();
 
 	generate_constraints(builder, &trace_oracle).unwrap();
@@ -45,7 +47,7 @@ where
 		let u_to_t_mapping = generate_values::<U, F>(log_size, &trace_oracle, witness).unwrap();
 		generate_timestamps(log_size, &trace_oracle, &u_to_t_mapping, witness).unwrap();
 	}
-
+	builder.pop_namespace();
 	Ok(trace_oracle.product)
 }
 
@@ -75,9 +77,10 @@ impl TraceOracle {
 		F: TowerField + ExtensionField<B32>,
 		U: UnderlierType + Pod + PackScalar<F>,
 	{
-		let product = builder.add_committed(n_vars, B16::TOWER_LEVEL);
+		let product = builder.add_committed("product", n_vars, B16::TOWER_LEVEL);
 
 		let lookup_u = builder.add_linear_combination(
+			"lookup_u",
 			n_vars,
 			[
 				(mult_a, <F as TowerField>::basis(3, 3)?),
@@ -85,17 +88,19 @@ impl TraceOracle {
 				(product, <F as TowerField>::basis(3, 0)?),
 			],
 		)?;
-
-		let [lookup_t, lookup_f] = builder.add_committed_multiple(T_LOG_SIZE, B32::TOWER_LEVEL);
-
-		let lookup_o = builder.add_transparent(transparent::constant::Constant {
-			n_vars,
-			value: F::ONE,
-		})?;
-
-		let [lookup_r, lookup_s] = builder.add_committed_multiple(n_vars, B32::TOWER_LEVEL);
-
-		let lookup_w = builder.add_linear_combination(n_vars, [(lookup_r, F::ONE * ALPHA)])?;
+		let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE, B32::TOWER_LEVEL);
+		let lookup_f = builder.add_committed("lookup_f", T_LOG_SIZE, B32::TOWER_LEVEL);
+		let lookup_o = builder.add_transparent(
+			"lookup_o",
+			transparent::constant::Constant {
+				n_vars,
+				value: F::ONE,
+			},
+		)?;
+		let lookup_r = builder.add_committed("lookup_r", n_vars, B32::TOWER_LEVEL);
+		let lookup_s = builder.add_committed("lookup_s", n_vars, B32::TOWER_LEVEL);
+		let lookup_w =
+			builder.add_linear_combination("lookup_w", n_vars, [(lookup_r, F::ONE * ALPHA)])?;
 
 		Ok(TraceOracle {
 			channel: builder.add_channel(),

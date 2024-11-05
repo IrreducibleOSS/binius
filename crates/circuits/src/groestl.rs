@@ -81,6 +81,7 @@ impl PermutationRoundGadget {
 				let col_idx = i / 8;
 				builder
 					.add_linear_combination(
+						format!("with_round_consts[{i}]"),
 						log_size,
 						[
 							(input[i], F::ONE),
@@ -95,11 +96,17 @@ impl PermutationRoundGadget {
 		});
 
 		let p_sub_bytes = (0..STATE_SIZE)
-			.map(|i| SBoxTraceGadget::new::<U, F, F8b>(log_size, builder, with_round_consts[i]))
+			.map(|i| {
+				builder.push_namespace(format!("p_sub_bytes[{i}]"));
+				let sbox =
+					SBoxTraceGadget::new::<U, F, F8b>(log_size, builder, with_round_consts[i]);
+				builder.pop_namespace();
+				sbox
+			})
 			.collect::<Result<Vec<_>>>()?;
 
 		// Shift and mix bytes using committed columns
-		let output = builder.add_committed_multiple(log_size, BinaryField8b::TOWER_LEVEL);
+		let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
 
 		Ok(Self {
 			with_round_consts,
@@ -164,8 +171,10 @@ impl SBoxTraceGadget {
 		F: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
-		let inv_bits = builder.add_committed_multiple(log_size, BinaryField1b::TOWER_LEVEL);
+		let inv_bits =
+			builder.add_committed_multiple("inv_bits", log_size, BinaryField1b::TOWER_LEVEL);
 		let inverse = builder.add_linear_combination(
+			"inverse",
 			log_size,
 			(0..8).map(|b| {
 				let basis = F8b::from(
@@ -176,6 +185,7 @@ impl SBoxTraceGadget {
 			}),
 		)?;
 		let output = builder.add_linear_combination_with_offset(
+			"output",
 			log_size,
 			F8b::from(SBOX_VEC).into(),
 			(0..8).map(|b| (inv_bits[b], F8b::from(SBOX_MATRIX[b]).into())),
@@ -219,31 +229,41 @@ impl TraceOracle {
 		F: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
-		let p_in =
-			builder.add_committed_multiple::<STATE_SIZE>(log_size, BinaryField8b::TOWER_LEVEL);
+		let p_in = builder.add_committed_multiple::<STATE_SIZE>(
+			"p_in",
+			log_size,
+			BinaryField8b::TOWER_LEVEL,
+		);
 
 		let mut round_idxs = Vec::with_capacity(N_ROUNDS);
 		for i in 0..N_ROUNDS {
 			let val: F8b = AESTowerField8b::new(i as u8).into();
 			let val: F = val.into();
-			round_idxs.push(builder.add_transparent(Constant {
-				n_vars: log_size,
-				value: val,
-			})?);
+			round_idxs.push(builder.add_transparent(
+				format!("round_idxs[{i}]"),
+				Constant {
+					n_vars: log_size,
+					value: val,
+				},
+			)?);
 		}
 
 		let mut multiples_16 = Vec::with_capacity(8);
 		for i in 0..8 {
 			let val: F8b = AESTowerField8b::new(i as u8 * 0x10).into();
 			let val: F = val.into();
-			multiples_16.push(builder.add_transparent(Constant {
-				n_vars: log_size,
-				value: val,
-			})?);
+			multiples_16.push(builder.add_transparent(
+				format!("multiples_16[{i}]"),
+				Constant {
+					n_vars: log_size,
+					value: val,
+				},
+			)?);
 		}
 
 		let mut rounds: Vec<PermutationRoundGadget> = Vec::with_capacity(N_ROUNDS);
 
+		builder.push_namespace("rounds[0]");
 		rounds.push(PermutationRoundGadget::new::<U, F, F8b>(
 			log_size,
 			builder,
@@ -251,7 +271,10 @@ impl TraceOracle {
 			&multiples_16,
 			p_in,
 		)?);
+		builder.pop_namespace();
+
 		for round in 1..N_ROUNDS {
+			builder.push_namespace(format!("rounds[{round}]"));
 			rounds.push(PermutationRoundGadget::new::<U, F, F8b>(
 				log_size,
 				builder,
@@ -259,6 +282,7 @@ impl TraceOracle {
 				&multiples_16,
 				rounds[round - 1].output,
 			)?);
+			builder.pop_namespace();
 		}
 
 		let p_out = rounds[N_ROUNDS - 1].output;

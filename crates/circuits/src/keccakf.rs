@@ -23,33 +23,47 @@ where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
-	let round_consts_single =
-		builder.add_transparent(
-			MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(
-				into_packed_vec::<PackedType<U, BinaryField1b>>(&KECCAKF_RC),
-			)?,
-		)?;
+	let round_consts_single = builder.add_transparent(
+		"round_consts_single",
+		MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(into_packed_vec::<
+			PackedType<U, BinaryField1b>,
+		>(&KECCAKF_RC))?,
+	)?;
 
-	let round_consts =
-		builder.add_repeating(round_consts_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
-	let selector_single =
-		step_down(builder, LOG_ROWS_PER_PERMUTATION, ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND)?;
-	let selector = builder.add_repeating(selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
+	let round_consts = builder.add_repeating(
+		"round_consts",
+		round_consts_single,
+		log_size - LOG_ROWS_PER_PERMUTATION,
+	)?;
+	let selector_single = step_down(
+		builder,
+		"selector_single",
+		LOG_ROWS_PER_PERMUTATION,
+		ROUNDS_PER_PERMUTATION << LOG_ROWS_PER_ROUND,
+	)?;
+	let selector =
+		builder.add_repeating("selector", selector_single, log_size - LOG_ROWS_PER_PERMUTATION)?;
 	let state_in: [OracleId; 25] =
-		builder.add_committed_multiple(log_size, BinaryField1b::TOWER_LEVEL);
+		builder.add_committed_multiple("state_in", log_size, BinaryField1b::TOWER_LEVEL);
 	let state_out: [OracleId; 25] =
-		builder.add_committed_multiple(log_size, BinaryField1b::TOWER_LEVEL);
-	let c: [OracleId; 5] = builder.add_committed_multiple(log_size, BinaryField1b::TOWER_LEVEL);
-	let d: [OracleId; 5] = builder.add_committed_multiple(log_size, BinaryField1b::TOWER_LEVEL);
+		builder.add_committed_multiple("state_out", log_size, BinaryField1b::TOWER_LEVEL);
+	let c: [OracleId; 5] =
+		builder.add_committed_multiple("c", log_size, BinaryField1b::TOWER_LEVEL);
+	let d: [OracleId; 5] =
+		builder.add_committed_multiple("d", log_size, BinaryField1b::TOWER_LEVEL);
 	let c_shift: [OracleId; 5] = std::array::from_fn(|x| {
 		builder
-			.add_shifted(c[x], 1, 6, ShiftVariant::CircularLeft)
+			.add_shifted(format!("c[{x}]"), c[x], 1, 6, ShiftVariant::CircularLeft)
 			.unwrap()
 	});
 	let a_theta: [OracleId; 25] = std::array::from_fn(|xy| {
 		let x = xy % 5;
 		builder
-			.add_linear_combination(log_size, [(state_in[xy], F::ONE), (d[x], F::ONE)])
+			.add_linear_combination(
+				format!("a_theta[{xy}]"),
+				log_size,
+				[(state_in[xy], F::ONE), (d[x], F::ONE)],
+			)
 			.unwrap()
 	});
 	let b: [OracleId; 25] = std::array::from_fn(|xy| {
@@ -57,13 +71,25 @@ where
 			a_theta[0]
 		} else {
 			builder
-				.add_shifted(a_theta[PI[xy]], RHO[xy] as usize, 6, ShiftVariant::CircularLeft)
+				.add_shifted(
+					format!("b[{xy}]"),
+					a_theta[PI[xy]],
+					RHO[xy] as usize,
+					6,
+					ShiftVariant::CircularLeft,
+				)
 				.unwrap()
 		}
 	});
 	let next_state_in: [OracleId; 25] = std::array::from_fn(|xy| {
 		builder
-			.add_shifted(state_in[xy], 64, 11, ShiftVariant::LogicalRight)
+			.add_shifted(
+				format!("next_state_in[{xy}]"),
+				state_in[xy],
+				64,
+				11,
+				ShiftVariant::LogicalRight,
+			)
 			.unwrap()
 	});
 
