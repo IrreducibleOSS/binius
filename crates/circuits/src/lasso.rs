@@ -255,7 +255,7 @@ where
 {
 	builder.assert_zero(
 		[trace_oracle.lookup_r, trace_oracle.lookup_s],
-		composition_poly!([x, y] = x * y - P::Scalar::ONE),
+		composition_poly!([x, y] = x * y - 1),
 	);
 
 	// populate table using initial timestamps

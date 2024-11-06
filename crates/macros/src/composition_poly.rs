@@ -22,7 +22,18 @@ impl ToTokens for CompositionPolyItem {
 			degree,
 		} = self;
 		let n_vars = vars.len();
-		let i = (0..n_vars).collect::<Vec<_>>();
+
+		let mut eval_single = poly_packed.clone();
+		subst_vars(&mut eval_single, vars, &|i| parse_quote!(unsafe {*query.get_unchecked(#i)}))
+			.expect("Failed to substitute vars");
+
+		let mut eval_batch = poly_packed.clone();
+		subst_vars(
+			&mut eval_batch,
+			vars,
+			&|i| parse_quote!(unsafe {*sparse_batch_query.get_unchecked(#i).get_unchecked(row)}),
+		)
+		.expect("Failed to substitute vars");
 
 		let result = quote! {
 			#[derive(Debug, Clone, Copy)]
@@ -41,8 +52,29 @@ impl ToTokens for CompositionPolyItem {
 					if query.len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
-					#( let #vars = query[#i]; )*
-					Ok(#poly_packed)
+					Ok(#eval_single)
+				}
+
+				fn batch_evaluate(
+					&self,
+					sparse_batch_query: &[&[P]],
+					evals: &mut [P],
+				) -> Result<(), binius_math::Error> {
+					if sparse_batch_query.len() != #n_vars {
+						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
+					}
+
+					for col in 1..sparse_batch_query.len() {
+						if sparse_batch_query[col].len() != sparse_batch_query[0].len() {
+							return Err(binius_math::Error::BatchEvaluateSizeMismatch);
+						}
+					}
+
+					for row in 0..sparse_batch_query[0].len() {
+						evals[row] = #eval_batch;
+					}
+
+					Ok(())
 				}
 
 				fn binary_tower_level(&self) -> usize {
@@ -140,4 +172,28 @@ fn rewrite_literals(expr: &mut syn::Expr) -> Result<(), syn::Error> {
 		_ => {}
 	}
 	Ok(())
+}
+
+fn subst_vars(
+	expr: &mut syn::Expr,
+	vars: &[syn::Ident],
+	f: &impl Fn(usize) -> syn::Expr,
+) -> Result<(), syn::Error> {
+	match expr {
+		syn::Expr::Path(p) => {
+			for (i, var) in vars.iter().enumerate() {
+				if p.path.is_ident(var) {
+					*expr = f(i);
+					return Ok(());
+				}
+			}
+			Err(syn::Error::new(p.span(), "unknown variable"))
+		}
+		syn::Expr::Paren(paren) => subst_vars(&mut paren.expr, vars, f),
+		syn::Expr::Binary(binary) => {
+			subst_vars(&mut binary.left, vars, f)?;
+			subst_vars(&mut binary.right, vars, f)
+		}
+		_ => Ok(()),
+	}
 }
