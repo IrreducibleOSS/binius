@@ -52,6 +52,7 @@
 use super::error::Error;
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use std::{collections::HashMap, hash::Hash};
 
 pub type ChannelId = usize;
 
@@ -67,6 +68,7 @@ pub struct Boundary<F: TowerField> {
 	pub values: Vec<F>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
+	pub multiplicity: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,7 +85,7 @@ pub fn validate_witness<U, F>(
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
-	F: TowerField + Ord,
+	F: TowerField + Hash,
 {
 	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
 
@@ -92,6 +94,7 @@ where
 			channel_id,
 			values,
 			direction,
+			multiplicity,
 		} = boundary;
 		if channel_id > max_channel_id {
 			return Err(Error::ChannelIdOutOfRange {
@@ -99,7 +102,7 @@ where
 				got: channel_id,
 			});
 		}
-		channels[channel_id].flush(&direction, values.clone())?;
+		channels[channel_id].flush(&direction, multiplicity, values.clone())?;
 	}
 
 	for flush in flushes {
@@ -140,7 +143,7 @@ where
 					.iter()
 					.map(|poly| poly.evaluate_on_hypercube(i).unwrap())
 					.collect();
-				channel.flush(direction, values)?;
+				channel.flush(direction, 1, values)?;
 			}
 		}
 	}
@@ -154,29 +157,23 @@ where
 	Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 struct Channel<F: TowerField> {
 	width: Option<usize>,
-	pushes: Vec<Vec<F>>,
-	pulls: Vec<Vec<F>>,
+	multiplicities: HashMap<Vec<F>, i64>,
 }
 
-impl<F: TowerField> Default for Channel<F> {
-	fn default() -> Self {
-		Self {
-			width: None,
-			pushes: Vec::new(),
-			pulls: Vec::new(),
-		}
-	}
-}
-
-impl<F: TowerField + Ord> Channel<F> {
+impl<F: TowerField + Hash> Channel<F> {
 	fn new() -> Self {
 		Self::default()
 	}
 
-	fn flush(&mut self, direction: &FlushDirection, values: Vec<F>) -> Result<(), Error> {
+	fn flush(
+		&mut self,
+		direction: &FlushDirection,
+		multiplicity: u64,
+		values: Vec<F>,
+	) -> Result<(), Error> {
 		if self.width.is_none() {
 			self.width = Some(values.len());
 		} else if self.width.unwrap() != values.len() {
@@ -185,19 +182,15 @@ impl<F: TowerField + Ord> Channel<F> {
 				got: values.len(),
 			});
 		}
-
-		match direction {
-			FlushDirection::Pull => self.pulls.push(values),
-			FlushDirection::Push => self.pushes.push(values),
-		}
+		*self.multiplicities.entry(values).or_default() += (multiplicity as i64)
+			* (match direction {
+				FlushDirection::Pull => -1i64,
+				FlushDirection::Push => 1i64,
+			});
 		Ok(())
 	}
 
 	fn is_balanced(&self) -> bool {
-		let mut pushes = self.pushes.clone();
-		let mut pulls = self.pulls.clone();
-		pushes.sort();
-		pulls.sort();
-		pushes == pulls
+		self.multiplicities.iter().all(|(_, m)| *m == 0)
 	}
 }
