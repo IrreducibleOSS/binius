@@ -64,3 +64,10 @@ debug = true
 [profile.bench]
 inherits = "release"
 debug = true
+
+[profile.test]
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
