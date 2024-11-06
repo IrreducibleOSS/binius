@@ -1,12 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
 pub mod channel;
+mod common;
 pub mod error;
 mod prove;
 pub mod validate;
 mod verify;
 
-use binius_field::{BinaryField1b, PackedField, TowerField};
+use binius_field::{PackedField, TowerField};
 use channel::{ChannelId, Flush};
 pub use prove::prove;
 pub use verify::verify;
@@ -37,7 +38,7 @@ pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>> {
 pub type Proof<F, Digest, Hash, Compress> = ProofGenericPCS<
 	F,
 	MerkleCap<Digest>,
-	batch_pcs::Proof<fri_pcs::Proof<BinaryField1b, F, MerkleTreeVCS<F, Digest, Hash, Compress>>>,
+	batch_pcs::Proof<fri_pcs::Proof<F, MerkleTreeVCS<F, Digest, Hash, Compress>>>,
 >;
 
 /// Constraint system proof with a generic [`crate::poly_commit::PolyCommitScheme`].

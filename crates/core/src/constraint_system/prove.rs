@@ -3,8 +3,9 @@
 use super::{error::Error, verify::make_standard_pcss, ConstraintSystem, Proof, ProofGenericPCS};
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
+	constraint_system::common::{TowerPCS, TowerPCSFamily},
 	merkle_tree::MerkleCap,
-	oracle::CommittedId,
+	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle},
 	poly_commit::PolyCommitScheme,
 	protocols::{
 		greedy_evalcheck,
@@ -12,13 +13,13 @@ use crate::{
 		sumcheck,
 		sumcheck::{constraint_set_zerocheck_claim, standard_switchover_heuristic, zerocheck},
 	},
+	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField, BinaryField1b, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
-	TowerField,
+	ExtensionField, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::Hasher;
@@ -31,77 +32,73 @@ use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<
-	U,
-	FExt,
-	FDomain,
-	FEncode,
-	Digest,
-	DomainFactory,
-	Hash,
-	Compress,
-	Challenger,
-	Backend,
->(
-	constraint_system: &ConstraintSystem<PackedType<U, FExt>>,
+pub fn prove<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger, Backend>(
+	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
 	log_inv_rate: usize,
 	security_bits: usize,
-	witness: MultilinearExtensionIndex<U, FExt>,
+	witness: MultilinearExtensionIndex<U, Tower::B128>,
 	domain_factory: DomainFactory,
 	challenger: Challenger,
 	backend: &Backend,
-) -> Result<Proof<FExt, Digest, Hash, Compress>, Error>
+) -> Result<Proof<Tower::B128, Digest, Hash, Compress>, Error>
 where
-	U: UnderlierType
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<FDomain>
-		+ PackScalar<FEncode>
-		+ PackScalar<FExt>,
-	FExt: TowerField
-		+ PackedField<Scalar = FExt>
-		+ ExtensionField<FDomain>
-		+ ExtensionField<FEncode>
-		+ PackedExtension<BinaryField1b>
-		+ PackedExtension<FEncode>,
-	FDomain: TowerField,
-	FEncode: BinaryField,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
+	Tower::B128: PackedTop<Tower>,
+	DomainFactory: EvaluationDomainFactory<Tower::B8>,
 	Digest: PackedField,
-	Hash: Hasher<FExt, Digest = Digest> + Send + Sync,
+	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
-	Challenger:
-		CanObserve<MerkleCap<Digest>> + CanObserve<FExt> + CanSample<FExt> + CanSampleBits<usize>,
+	Challenger: CanObserve<MerkleCap<Digest>>
+		+ CanObserve<Tower::B128>
+		+ CanSample<Tower::B128>
+		+ CanSampleBits<usize>,
 	Backend: ComputationBackend,
-	PackedType<U, FExt>: PackedFieldIndexable,
+	PackedType<U, Tower::B128>:
+		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 {
-	let pcss = make_standard_pcss::<_, _, FEncode, PackedType<U, FExt>, _, _, _, _>(
+	let pcss = make_standard_pcss::<U, Tower, _, _, _, _>(
 		log_inv_rate,
 		security_bits,
 		&constraint_system.oracles,
 		domain_factory.clone(),
 	)?;
-	prove_with_pcs(constraint_system, witness, &pcss, domain_factory, challenger, backend)
+	prove_with_pcs::<U, Tower, Tower::B8, _, _, _, _>(
+		constraint_system,
+		witness,
+		&pcss,
+		domain_factory,
+		challenger,
+		backend,
+	)
 }
 
 /// Generates a proof that a witness satisfies a constraint system with provided PCSs.
-fn prove_with_pcs<U, FExt, FDomain, PCS, DomainFactory, Challenger, Backend>(
-	constraint_system: &ConstraintSystem<PackedType<U, FExt>>,
-	mut witness: MultilinearExtensionIndex<U, FExt>,
-	pcss: &[PCS],
+#[allow(clippy::type_complexity)]
+fn prove_with_pcs<U, Tower, FDomain, PCSFamily, DomainFactory, Challenger, Backend>(
+	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
+	mut witness: MultilinearExtensionIndex<U, Tower::B128>,
+	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
 	mut challenger: Challenger,
 	backend: &Backend,
-) -> Result<ProofGenericPCS<FExt, PCS::Commitment, PCS::Proof>, Error>
+) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment, PCSFamily::Proof>, Error>
 where
-	U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<FDomain> + PackScalar<FExt>,
-	FExt: TowerField + ExtensionField<FDomain>,
+	U: TowerUnderlier<Tower> + PackScalar<FDomain>,
+	Tower: TowerFamily,
+	Tower::B128: ExtensionField<FDomain>,
 	FDomain: TowerField,
-	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, FExt>,
+	PCSFamily: TowerPCSFamily<Tower, U>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	Challenger:
-		CanObserve<PCS::Commitment> + CanObserve<FExt> + CanSample<FExt> + CanSampleBits<usize>,
+	Challenger: CanObserve<PCSFamily::Commitment>
+		+ CanObserve<Tower::B128>
+		+ CanSample<Tower::B128>
+		+ CanSampleBits<usize>,
 	Backend: ComputationBackend,
-	PackedType<U, FExt>: PackedFieldIndexable,
+	PackedType<U, Tower::B128>: PackedTop<Tower>
+		+ PackedFieldIndexable
+		// Required for ZerocheckProver
+		+ RepackedExtension<PackedType<U, Tower::B128>>,
 {
 	let ConstraintSystem {
 		mut oracles,
@@ -118,29 +115,30 @@ where
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
 	// Commit polynomials
-	let batch_mles = constraint_system
+	let (commitments, committeds) = constraint_system
 		.oracles
 		.committed_batches()
 		.into_iter()
-		.map(|batch| {
-			(0..batch.n_polys)
-				.map(|i| {
-					let oracle_id = oracles.committed_oracle_id(CommittedId {
-						batch_id: batch.id,
-						index: i,
-					});
-					witness.get::<BinaryField1b>(oracle_id)
-				})
-				.collect::<Result<Vec<_>, _>>()
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-
-	let (commitments, committeds) = batch_mles
-		.iter()
 		.zip(pcss)
-		.map(|(mles, pcs)| {
-			pcs.commit(mles)
-				.map_err(|err| Error::PolyCommitError(Box::new(err)))
+		.map(|(batch, pcs)| match pcs {
+			TowerPCS::B1(pcs) => {
+				tower_pcs_commit::<_, Tower::B1, _, _>(pcs, batch, &oracles, &witness)
+			}
+			TowerPCS::B8(pcs) => {
+				tower_pcs_commit::<_, Tower::B8, _, _>(pcs, batch, &oracles, &witness)
+			}
+			TowerPCS::B16(pcs) => {
+				tower_pcs_commit::<_, Tower::B16, _, _>(pcs, batch, &oracles, &witness)
+			}
+			TowerPCS::B32(pcs) => {
+				tower_pcs_commit::<_, Tower::B32, _, _>(pcs, batch, &oracles, &witness)
+			}
+			TowerPCS::B64(pcs) => {
+				tower_pcs_commit::<_, Tower::B64, _, _>(pcs, batch, &oracles, &witness)
+			}
+			TowerPCS::B128(pcs) => {
+				tower_pcs_commit::<_, Tower::B128, _, _>(pcs, batch, &oracles, &witness)
+			}
 		})
 		.collect::<Result<Vec<_>, _>>()?
 		.into_iter()
@@ -170,7 +168,7 @@ where
 		.into_iter()
 		.map(|constraint_set| {
 			let skip_rounds = n_zerocheck_challenges - constraint_set.n_vars;
-			sumcheck::prove::constraint_set_zerocheck_prover::<_, FExt, FExt, _, _>(
+			sumcheck::prove::constraint_set_zerocheck_prover::<U, Tower::B128, Tower::B128, _, _>(
 				constraint_set.clone(),
 				constraint_set,
 				&witness,
@@ -223,27 +221,69 @@ where
 	}
 
 	// Verify PCS proofs
-	let batch_mles = constraint_system
-		.oracles
-		.committed_batches()
-		.into_iter()
-		.map(|batch| {
-			(0..batch.n_polys)
-				.map(|i| {
-					let oracle_id = oracles.committed_oracle_id(CommittedId {
-						batch_id: batch.id,
-						index: i,
-					});
-					witness.get::<BinaryField1b>(oracle_id)
-				})
-				.collect::<Result<Vec<_>, _>>()
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-
-	let pcs_proofs = izip!(pcs_claims, pcss, batch_mles, committeds)
-		.map(|((_batch_id, claim), pcs, mles, committed)| {
-			pcs.prove_evaluation(&mut challenger, &committed, &mles, &claim.eval_point, backend)
-				.map_err(|err| Error::PolyCommitError(Box::new(err)))
+	let batches = constraint_system.oracles.committed_batches();
+	let pcs_proofs = izip!(pcs_claims, pcss, batches, committeds)
+		.map(|((_batch_id, claim), pcs, batch, committed)| match pcs {
+			TowerPCS::B1(pcs) => tower_pcs_open::<_, Tower::B1, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
+			TowerPCS::B8(pcs) => tower_pcs_open::<_, Tower::B8, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
+			TowerPCS::B16(pcs) => tower_pcs_open::<_, Tower::B16, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
+			TowerPCS::B32(pcs) => tower_pcs_open::<_, Tower::B32, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
+			TowerPCS::B64(pcs) => tower_pcs_open::<_, Tower::B64, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
+			TowerPCS::B128(pcs) => tower_pcs_open::<_, Tower::B128, _, _, _, _>(
+				pcs,
+				batch,
+				&oracles,
+				&witness,
+				committed,
+				&claim.eval_point,
+				&mut challenger,
+				backend,
+			),
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
@@ -253,4 +293,74 @@ where
 		greedy_evalcheck_proof,
 		pcs_proofs,
 	})
+}
+
+fn tower_pcs_commit<U, F, FExt, PCS>(
+	pcs: &PCS,
+	batch: CommittedBatch,
+	oracles: &MultilinearOracleSet<FExt>,
+	witness: &MultilinearExtensionIndex<U, FExt>,
+) -> Result<(PCS::Commitment, PCS::Committed), Error>
+where
+	U: UnderlierType + PackScalar<F> + PackScalar<FExt>,
+	F: TowerField,
+	FExt: TowerField + ExtensionField<F>,
+	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
+{
+	// Precondition
+	assert_eq!(batch.tower_level, F::TOWER_LEVEL);
+
+	let mles = (0..batch.n_polys)
+		.map(|i| {
+			let oracle = oracles.committed_oracle(CommittedId {
+				batch_id: batch.id,
+				index: i,
+			});
+			let MultilinearPolyOracle::Committed { oracle_id, .. } = oracle else {
+				panic!("MultilinearOracleSet::committed_oracle returned a non-committed oracle");
+			};
+			witness.get::<F>(oracle_id)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	pcs.commit(&mles)
+		.map_err(|err| Error::PolyCommitError(Box::new(err)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tower_pcs_open<U, F, FExt, PCS, Challenger, Backend>(
+	pcs: &PCS,
+	batch: CommittedBatch,
+	oracles: &MultilinearOracleSet<FExt>,
+	witness: &MultilinearExtensionIndex<U, FExt>,
+	committed: PCS::Committed,
+	eval_point: &[FExt],
+	mut challenger: Challenger,
+	backend: &Backend,
+) -> Result<PCS::Proof, Error>
+where
+	U: UnderlierType + PackScalar<F> + PackScalar<FExt>,
+	F: TowerField,
+	FExt: TowerField + ExtensionField<F>,
+	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
+	Challenger:
+		CanObserve<PCS::Commitment> + CanObserve<FExt> + CanSample<FExt> + CanSampleBits<usize>,
+	Backend: ComputationBackend,
+{
+	// Precondition
+	assert_eq!(batch.tower_level, F::TOWER_LEVEL);
+
+	let mles = (0..batch.n_polys)
+		.map(|i| {
+			let oracle = oracles.committed_oracle(CommittedId {
+				batch_id: batch.id,
+				index: i,
+			});
+			let MultilinearPolyOracle::Committed { oracle_id, .. } = oracle else {
+				panic!("MultilinearOracleSet::committed_oracle returned a non-committed oracle");
+			};
+			witness.get::<F>(oracle_id)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	pcs.prove_evaluation(&mut challenger, &committed, &mles, eval_point, backend)
+		.map_err(|err| Error::PolyCommitError(Box::new(err)))
 }

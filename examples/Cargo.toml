@@ -37,6 +37,10 @@ name = "groestl"
 path = "groestl.rs"
 
 [[example]]
+name = "groestl_circuit"
+path = "groestl_circuit.rs"
+
+[[example]]
 name = "keccakf"
 path = "keccakf.rs"
 

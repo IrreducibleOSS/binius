@@ -21,6 +21,7 @@ pub mod protocols;
 #[allow(clippy::module_inception)]
 pub mod reed_solomon;
 pub mod tensor_algebra;
+pub mod tower;
 pub mod transcript;
 pub mod transparent;
 pub mod witness;

@@ -26,6 +26,9 @@ pub enum Error {
 		reason: String,
 	},
 
+	#[error("cannot commit tower level {tower_level}")]
+	CannotCommitTowerLevel { tower_level: usize },
+
 	#[error("unconstrained polynomial batch {0}")]
 	UnconstrainedBatch(BatchId),
 

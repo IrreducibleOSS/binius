@@ -194,7 +194,7 @@ where
 		committed: &VCS::Committed,
 		mut sumcheck_prover: Prover,
 		mut challenger: Challenger,
-	) -> Result<Proof<F, FExt, VCS>, Error>
+	) -> Result<Proof<FExt, VCS>, Error>
 	where
 		Prover: SumcheckProver<FExt>,
 		Challenger:
@@ -237,7 +237,7 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 
 		Ok(Proof {
-			sumcheck_eval,
+			sumcheck_eval: sumcheck_eval.vertical_elems().to_vec(),
 			sumcheck_rounds: rounds,
 			fri_commitments,
 			fri_terminate_codeword: terminate_codeword,
@@ -359,7 +359,7 @@ where
 	// Committed data is a tuple with the underlying codeword and the VCS committed data (ie.
 	// Merkle internal node hashes).
 	type Committed = (Vec<PE>, VCS::Committed);
-	type Proof = Proof<F, FExt, VCS>;
+	type Proof = Proof<FExt, VCS>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -517,7 +517,15 @@ where
 
 		let (query_to_kappa, query_from_kappa) = query.split_at(Self::kappa());
 
-		challenger.observe_slice(sumcheck_eval.vertical_elems());
+		if sumcheck_eval.len() != 1 << Self::kappa() {
+			return Err(VerificationError::IncorrectEvaluationShape {
+				expected: 1 << Self::kappa(),
+				actual: sumcheck_eval.len(),
+			}
+			.into());
+		}
+		challenger.observe_slice(&sumcheck_eval);
+		let sumcheck_eval = <TensorAlgebra<F, FExt>>::new(sumcheck_eval);
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
 		let expanded_query = backend.multilinear_query::<FExt>(query_to_kappa)?;
@@ -594,17 +602,17 @@ where
 
 /// A [`FRIPCS`] proof.
 #[derive(Debug, Clone)]
-pub struct Proof<F, FExt, VCS>
+pub struct Proof<F, VCS>
 where
 	F: Field,
-	FExt: ExtensionField<F>,
-	VCS: VectorCommitScheme<FExt>,
+	VCS: VectorCommitScheme<F>,
 {
-	sumcheck_eval: TensorAlgebra<F, FExt>,
-	sumcheck_rounds: Vec<RoundProof<FExt>>,
+	/// The vertical elements of the tensor algebra sum.
+	sumcheck_eval: Vec<F>,
+	sumcheck_rounds: Vec<RoundProof<F>>,
 	fri_commitments: Vec<VCS::Commitment>,
-	fri_terminate_codeword: fri::TerminateCodeword<FExt>,
-	fri_query_proofs: Vec<fri::QueryProof<FExt, VCS::Proof>>,
+	fri_terminate_codeword: fri::TerminateCodeword<F>,
+	fri_query_proofs: Vec<fri::QueryProof<F, VCS::Proof>>,
 }
 
 /// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
@@ -666,6 +674,11 @@ pub enum Error {
 pub enum VerificationError {
 	#[error("sumcheck verification error: {0}")]
 	Sumcheck(#[from] sumcheck::VerificationError),
+	#[error(
+		"tensor algebra evaluation shape is incorrect; \
+		expected {expected} field elements, got {actual}"
+	)]
+	IncorrectEvaluationShape { expected: usize, actual: usize },
 	#[error("evaluation value is inconsistent with the tensor evaluation")]
 	IncorrectEvaluation,
 	#[error("sumcheck final evaluation is incorrect")]
