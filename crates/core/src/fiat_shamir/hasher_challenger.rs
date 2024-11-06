@@ -1,14 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
+use super::Challenger;
 use bytes::{buf::UninitSlice, Buf, BufMut};
 use digest::{
 	core_api::{Block, BlockSizeUser},
 	Digest, FixedOutputReset, Output,
 };
-use std::cmp::min;
+use std::{cmp::min, mem};
 
 /// Challenger type which implements `[Buf]` that has similar functionality as `[CanSample]`
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct HasherSampler<H: Digest> {
 	index: usize,
 	buffer: Output<H>,
@@ -16,7 +17,7 @@ pub struct HasherSampler<H: Digest> {
 }
 
 /// Challenger type which implements `[BufMut]` that has similar functionality as `[CanObserve]`
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct HasherObserver<H: Digest + BlockSizeUser> {
 	index: usize,
 	buffer: Block<H>,
@@ -45,13 +46,13 @@ where
 	}
 }
 
-impl<H: Digest + BlockSizeUser + FixedOutputReset + Default> HasherChallenger<H> {
+impl<H: Digest + BlockSizeUser + FixedOutputReset + Default> Challenger for HasherChallenger<H> {
 	/// This returns the inner challenger which implements `[BufMut]`
-	pub fn observer(&mut self) -> &mut HasherObserver<H> {
+	fn observer(&mut self) -> &mut impl BufMut {
 		match self {
 			Self::Observer(observer) => observer,
 			Self::Sampler(sampler) => {
-				*self = Self::Observer(sampler.into_observer());
+				*self = Self::Observer(mem::take(sampler).into_observer());
 				match self {
 					Self::Observer(observer) => observer,
 					_ => unreachable!(),
@@ -61,11 +62,11 @@ impl<H: Digest + BlockSizeUser + FixedOutputReset + Default> HasherChallenger<H>
 	}
 
 	/// This returns the inner challenger which implements `[Buf]`
-	pub fn sampler(&mut self) -> &mut HasherSampler<H> {
+	fn sampler(&mut self) -> &mut impl Buf {
 		match self {
 			Self::Sampler(sampler) => sampler,
 			Self::Observer(observer) => {
-				*self = Self::Sampler(observer.into_sampler());
+				*self = Self::Sampler(mem::take(observer).into_sampler());
 				match self {
 					Self::Sampler(sampler) => sampler,
 					_ => unreachable!(),
@@ -79,12 +80,11 @@ impl<H> HasherSampler<H>
 where
 	H: Digest + Default + BlockSizeUser,
 {
-	#[allow(clippy::wrong_self_convention)]
-	fn into_observer(&mut self) -> HasherObserver<H> {
+	fn into_observer(mut self) -> HasherObserver<H> {
 		Digest::update(&mut self.hasher, self.index.to_le_bytes());
 
 		HasherObserver {
-			hasher: std::mem::take(&mut self.hasher),
+			hasher: self.hasher,
 			index: 0,
 			buffer: Block::<H>::default(),
 		}
@@ -110,11 +110,10 @@ impl<H> HasherObserver<H>
 where
 	H: Digest + BlockSizeUser + Default,
 {
-	#[allow(clippy::wrong_self_convention)]
-	fn into_sampler(&mut self) -> HasherSampler<H> {
+	fn into_sampler(mut self) -> HasherSampler<H> {
 		self.flush();
 		HasherSampler {
-			hasher: std::mem::take(&mut self.hasher),
+			hasher: self.hasher,
 			index: <H as Digest>::output_size(),
 			buffer: Output::<H>::default(),
 		}

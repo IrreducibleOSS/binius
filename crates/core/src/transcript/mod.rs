@@ -2,10 +2,9 @@
 
 mod error;
 
-use crate::fiat_shamir::HasherChallenger;
+use crate::fiat_shamir::Challenger;
 use binius_field::{deserialize_canonical, serialize_canonical, PackedField, TowerField};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
-use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset};
 use error::Error;
 use p3_challenger::{CanObserve, CanSample};
 use std::slice;
@@ -15,8 +14,8 @@ use std::slice;
 /// A Transcript is an abstraction over Fiat-Shamir so the prover and verifier can send and receive
 /// data, everything that gets written to or read from the transcript will be observed
 #[derive(Debug, Default)]
-pub struct TranscriptWriter<H: Digest + BlockSizeUser> {
-	combined: FiatShamirBuf<BytesMut, H>,
+pub struct TranscriptWriter<Challenger> {
+	combined: FiatShamirBuf<BytesMut, Challenger>,
 }
 
 /// Writable(Prover) advice that `CanWrite`
@@ -32,8 +31,8 @@ pub struct AdviceWriter {
 /// You must manually call the destructor with `finalize()` to check anything that's written is
 /// fully read out
 #[derive(Debug)]
-pub struct TranscriptReader<H: Digest + BlockSizeUser> {
-	combined: FiatShamirBuf<Bytes, H>,
+pub struct TranscriptReader<Challenger> {
+	combined: FiatShamirBuf<Bytes, Challenger>,
 }
 
 /// Readable(Verifier) advice that `CanRead`
@@ -52,14 +51,12 @@ pub struct Proof<Transcript, Advice> {
 }
 
 #[derive(Debug, Default)]
-struct FiatShamirBuf<Inner: Default, H: Digest + BlockSizeUser> {
+struct FiatShamirBuf<Inner, Challenger> {
 	buffer: Inner,
-	challenger: HasherChallenger<H>,
+	challenger: Challenger,
 }
 
-impl<Inner: Default + Buf, H: Digest + BlockSizeUser + FixedOutputReset + Default> Buf
-	for FiatShamirBuf<Inner, H>
-{
+impl<Inner: Buf, Challenger_: Challenger> Buf for FiatShamirBuf<Inner, Challenger_> {
 	fn remaining(&self) -> usize {
 		self.buffer.remaining()
 	}
@@ -79,9 +76,7 @@ impl<Inner: Default + Buf, H: Digest + BlockSizeUser + FixedOutputReset + Defaul
 	}
 }
 
-unsafe impl<Inner: Default + BufMut, H: Digest + BlockSizeUser + FixedOutputReset + Default> BufMut
-	for FiatShamirBuf<Inner, H>
-{
+unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inner, Challenger_> {
 	fn remaining_mut(&self) -> usize {
 		self.buffer.remaining_mut()
 	}
@@ -105,10 +100,7 @@ unsafe impl<Inner: Default + BufMut, H: Digest + BlockSizeUser + FixedOutputRese
 	}
 }
 
-impl<H> TranscriptWriter<H>
-where
-	H: Default + Digest + BlockSizeUser,
-{
+impl<Challenger: Default> TranscriptWriter<Challenger> {
 	pub fn new() -> Self {
 		Self::default()
 	}
@@ -117,7 +109,7 @@ where
 		self.combined.buffer.to_vec()
 	}
 
-	pub fn into_reader(self) -> TranscriptReader<H> {
+	pub fn into_reader(self) -> TranscriptReader<Challenger> {
 		TranscriptReader::new(self.finalize())
 	}
 }
@@ -136,14 +128,11 @@ impl AdviceWriter {
 	}
 }
 
-impl<H> TranscriptReader<H>
-where
-	H: Digest + BlockSizeUser,
-{
+impl<Challenger: Default> TranscriptReader<Challenger> {
 	pub fn new(vec: Vec<u8>) -> Self {
 		Self {
 			combined: FiatShamirBuf {
-				challenger: HasherChallenger::default(),
+				challenger: Challenger::default(),
 				buffer: Bytes::from(vec),
 			},
 		}
@@ -208,10 +197,7 @@ pub trait CanRead {
 	}
 }
 
-impl<H> CanRead for TranscriptReader<H>
-where
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
-{
+impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
 	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
 		if self.combined.buffer.remaining() < buf.len() {
 			return Err(Error::NotEnoughBytes);
@@ -263,10 +249,7 @@ pub trait CanWrite {
 }
 
 // impl CanWrite for {Advice/Transcript}Writer {
-impl<H> CanWrite for TranscriptWriter<H>
-where
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
-{
+impl<Challenger_: Challenger> CanWrite for TranscriptWriter<Challenger_> {
 	fn write_bytes(&mut self, data: &[u8]) {
 		self.combined.put_slice(data);
 	}
@@ -290,10 +273,10 @@ impl CanWrite for AdviceWriter {
 	}
 }
 
-impl<H, F> CanSample<F> for TranscriptReader<H>
+impl<F, Challenger_> CanSample<F> for TranscriptReader<Challenger_>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
+	Challenger_: Challenger,
 {
 	fn sample(&mut self) -> F {
 		deserialize_canonical(self.combined.challenger.sampler())
@@ -301,10 +284,10 @@ where
 	}
 }
 
-impl<H, F> CanSample<F> for TranscriptWriter<H>
+impl<F, Challenger_> CanSample<F> for TranscriptWriter<Challenger_>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
+	Challenger_: Challenger,
 {
 	fn sample(&mut self) -> F {
 		deserialize_canonical(self.combined.challenger.sampler())
@@ -313,10 +296,10 @@ where
 }
 
 // This is temporary until we can move the entire proof into read write interface
-impl<H, F> CanObserve<F> for TranscriptReader<H>
+impl<F, Challenger_> CanObserve<F> for TranscriptReader<Challenger_>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
+	Challenger_: Challenger,
 {
 	fn observe(&mut self, value: F) {
 		serialize_canonical(value, self.combined.challenger.observer())
@@ -324,10 +307,10 @@ where
 	}
 }
 
-impl<H, F> CanObserve<F> for TranscriptWriter<H>
+impl<F, Challenger_> CanObserve<F> for TranscriptWriter<Challenger_>
 where
 	F: TowerField,
-	H: Digest + BlockSizeUser + FixedOutputReset + Default,
+	Challenger_: Challenger,
 {
 	fn observe(&mut self, value: F) {
 		serialize_canonical(value, self.combined.challenger.observer())
@@ -348,7 +331,7 @@ mod tests {
 
 	#[test]
 	fn test_transcripting() {
-		let mut prover_transcript = TranscriptWriter::<Groestl256>::new();
+		let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
 
 		prover_transcript.write_scalar(BinaryField8b::new(0x96));
 		prover_transcript.write_scalar(BinaryField32b::new(0xDEADBEEF));
@@ -447,7 +430,7 @@ mod tests {
 
 	#[test]
 	fn test_challenger() {
-		let mut transcript = TranscriptWriter::<Groestl256>::new();
+		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
 		let mut challenger = HasherChallenger::<Groestl256>::default();
 
 		const NUM_SAMPLING: usize = 32;
