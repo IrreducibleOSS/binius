@@ -8,7 +8,7 @@ use std::{marker::PhantomData, ops::Deref};
 ///
 /// Twiddle factors in the additive NTT are subspace polynomial evaluations over linear subspaces,
 /// with an implicit NTT round $i$.
-/// Setup: let $K \mathbin{/} \mathbb{F}\_2$ be a finite extension of degree $d$, and let $\beta_0,\ldots ,\beta_{d-1}$ be an $\mathbb{F}_2$-basis.
+/// Setup: let $K \mathbin{/} \mathbb{F}\_2$ be a finite extension of degree $d$, and let $\beta_0,\ldots ,\beta_{d-1}$ be an $\mathbb{F}\_2$-basis.
 /// Let $U_i$ be the $\mathbb{F}\_2$-linear span of $\beta_0,\ldots ,\beta_{i-1}$. Let $\hat{W}_i(X)$
 /// be the normalized subspace polynomial of degree $2^i$ that vanishes on $U_i$ and is $1$ on $\beta_i$.
 /// Evaluating $\hat{W}_i(X)$ turns out to yield an $\mathbb{F}\_2$-linear function $K \rightarrow K$.
