@@ -11,6 +11,7 @@ mod additive_ntt;
 mod dynamic_dispatch;
 mod error;
 mod multithreaded;
+mod odd_interpolate;
 mod single_threaded;
 mod strided_array;
 #[cfg(test)]
@@ -21,4 +22,5 @@ pub use additive_ntt::AdditiveNTT;
 pub use dynamic_dispatch::{DynamicDispatchNTT, NTTOptions, ThreadingSettings};
 pub use error::Error;
 pub use multithreaded::MultithreadedNTT;
+pub use odd_interpolate::OddInterpolate;
 pub use single_threaded::SingleThreadedNTT;

@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("codeword buffer must be at least 2**{log_code_len} elements")]
 	BufferTooSmall { log_code_len: usize },
@@ -18,4 +18,8 @@ pub enum Error {
 	StrideGreaterThanPackedWidth,
 	#[error("the batch size is greater than the number of elements")]
 	BatchTooLarge,
+	#[error("odd interpolation length mismatch, expected to be exactly {expected_len}")]
+	OddInterpolateIncorrectLength { expected_len: usize },
+	#[error("math error: {0}")]
+	MathError(#[from] binius_math::Error),
 }

@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 binius_field = { path = "../field" }
+binius_math = { path = "../math"}
 binius_utils = { path = "../utils" }
 p3-util.workspace = true
 rand.workspace = true
@@ -24,4 +25,3 @@ bench = false
 [[bench]]
 name = "additive_ntt"
 harness = false
-
