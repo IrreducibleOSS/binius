@@ -28,6 +28,7 @@ where
 	oracles: MultilinearOracleSet<F>,
 	batch_ids: Vec<(usize, usize, BatchId)>,
 	constraints: ConstraintSetBuilder<PackedType<U, F>>,
+	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
 	witness: Option<MultilinearExtensionIndex<'static, U, F>>,
 	next_channel_id: ChannelId,
@@ -59,6 +60,7 @@ where
 				.max()
 				.unwrap_or(0),
 			table_constraints: self.constraints.build(&self.oracles)?,
+			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			oracles: self.oracles,
 			flushes: self.flushes,
 		})
@@ -98,6 +100,10 @@ where
 		composition: impl CompositionPoly<PackedType<U, F>> + 'static,
 	) {
 		self.constraints.add_zerocheck(oracle_ids, composition);
+	}
+
+	pub fn assert_not_zero(&mut self, oracle_id: OracleId) {
+		self.non_zero_oracle_ids.push(oracle_id);
 	}
 
 	pub fn add_channel(&mut self) -> ChannelId {

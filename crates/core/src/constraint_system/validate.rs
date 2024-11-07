@@ -8,8 +8,10 @@ use super::{
 	ConstraintSystem,
 };
 use crate::{
-	oracle::MultilinearPolyOracle, polynomial::test_utils::decompose_index_to_hypercube_point,
-	protocols::sumcheck::prove::zerocheck, witness::MultilinearExtensionIndex,
+	oracle::{ConstraintPredicate, MultilinearPolyOracle},
+	polynomial::test_utils::decompose_index_to_hypercube_point,
+	protocols::sumcheck::prove::zerocheck,
+	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -35,13 +37,23 @@ where
 			.iter()
 			.map(|id| witness.get_multilin_poly(*id))
 			.collect::<Result<Vec<_>, _>>()?;
-		let zero_claims = constraint_set
-			.constraints
-			.iter()
-			.map(|constraint| &constraint.composition)
-			.collect::<Vec<_>>();
+
+		let mut zero_claims = vec![];
+		for constraint in constraint_set.constraints.iter() {
+			match constraint.predicate {
+				ConstraintPredicate::Zero => zero_claims.push(&constraint.composition),
+				ConstraintPredicate::Sum(_) => unimplemented!(),
+			}
+		}
 		zerocheck::validate_witness(&multilinears, &zero_claims)?;
 	}
+
+	// Check that nonzero oracles are non-zero over the entire hypercube
+	nonzerocheck::validate_witness(
+		&witness,
+		&constraint_system.oracles,
+		&constraint_system.non_zero_oracle_ids,
+	)?;
 
 	// Check that the channels balance with flushes and boundaries
 	channel::validate_witness(
@@ -272,6 +284,43 @@ fn check_eval<F: TowerField>(
 			oracle: oracle_label.into(),
 			index,
 			reason: format!("Expected {expected}, got {got}"),
+		})
+	}
+}
+
+pub mod nonzerocheck {
+	use crate::{
+		oracle::{MultilinearOracleSet, OracleId},
+		protocols::sumcheck::Error,
+		witness::MultilinearExtensionIndex,
+	};
+	use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+	use binius_math::MultilinearPoly;
+	use binius_utils::bail;
+	use rayon::prelude::*;
+
+	pub fn validate_witness<U, F>(
+		witness: &MultilinearExtensionIndex<U, F>,
+		oracles: &MultilinearOracleSet<F>,
+		oracle_ids: &[OracleId],
+	) -> Result<(), Error>
+	where
+		U: UnderlierType + PackScalar<F>,
+		F: TowerField,
+	{
+		oracle_ids.into_par_iter().try_for_each(|id| {
+			let multilinear = witness.get_multilin_poly(*id)?;
+			(0..(1 << multilinear.n_vars()))
+				.into_par_iter()
+				.try_for_each(|hypercube_index| {
+					if multilinear.evaluate_on_hypercube(hypercube_index)? == F::ZERO {
+						bail!(Error::NonzerocheckNaiveValidationFailure {
+							hypercube_index,
+							oracle: oracles.oracle(*id).label()
+						})
+					}
+					Ok(())
+				})
 		})
 	}
 }

@@ -14,7 +14,7 @@ pub use verify::verify;
 
 use crate::{
 	merkle_tree::{MerkleCap, MerkleTreeVCS},
-	oracle::{ConstraintSet, MultilinearOracleSet},
+	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs, fri_pcs},
 	protocols::{greedy_evalcheck::GreedyEvalcheckProof, sumcheck},
 };
@@ -30,6 +30,7 @@ use crate::{
 pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>> {
 	pub oracles: MultilinearOracleSet<P::Scalar>,
 	pub table_constraints: Vec<ConstraintSet<P>>,
+	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush>,
 	pub max_channel_id: ChannelId,
 }
