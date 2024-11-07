@@ -36,8 +36,41 @@ where
 	}
 }
 
-/// The trait represents the relation between the packed fields of the same bit size
-/// where one scalar is the extension of the other one.
+/// Trait represents a relationship between a packed struct of field elements and a packed struct
+/// of elements from an extension field.
+///
+/// This trait guarantees that one packed type has the same
+/// memory representation as the other, differing only in the scalar type and preserving the order
+/// of smaller elements.
+///
+/// This trait relation guarantees that the following iterators yield the same sequence of scalar
+/// elements:
+///
+/// ```
+/// use binius_field::{ExtensionField, packed::iter_packed_slice, PackedExtension, PackedField, Field};
+///
+/// fn ext_then_bases<'a, F, PE>(packed: &'a PE) -> impl Iterator<Item=F> + 'a
+///     where
+///         PE: PackedField<Scalar: ExtensionField<F>>,
+///         F: Field,
+/// {
+///     packed.iter().flat_map(|ext| ext.iter_bases())
+/// }
+///
+/// fn cast_then_iter<'a, F, PE>(packed: &'a PE) -> impl Iterator<Item=F> + 'a
+///     where
+///         PE: PackedExtension<F, Scalar: ExtensionField<F>>,
+///         F: Field,
+/// {
+///     PE::cast_base(packed).into_iter()
+/// }
+/// ```
+///
+/// # Safety
+///
+/// In order for the above relation to be guaranteed, the memory representation of
+/// `PackedExtensionField` element must be the same as a slice of the underlying `PackedField`
+/// element.
 pub trait PackedExtension<FS: Field>: PackedField
 where
 	Self::Scalar: ExtensionField<FS>,
