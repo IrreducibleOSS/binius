@@ -16,7 +16,9 @@ use crate::{
 	merkle_tree::{MerkleCap, MerkleTreeVCS},
 	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs, fri_pcs},
-	protocols::{greedy_evalcheck::GreedyEvalcheckProof, sumcheck},
+	protocols::{
+		gkr_gpa::GrandProductBatchProof, greedy_evalcheck::GreedyEvalcheckProof, sumcheck,
+	},
 };
 
 /// Contains the 3 things that place constraints on witness data in Binius
@@ -46,6 +48,8 @@ pub type Proof<F, Digest, Hash, Compress> = ProofGenericPCS<
 #[derive(Debug, Clone)]
 pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
 	pub commitments: Vec<PCSComm>,
+	pub flush_products: Vec<F>,
+	pub prodcheck_proof: GrandProductBatchProof<F>,
 	pub zerocheck_proof: sumcheck::Proof<F>,
 	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,
 	pub pcs_proofs: Vec<PCSProof>,

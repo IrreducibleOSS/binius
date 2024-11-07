@@ -70,10 +70,11 @@ where
 pub fn make_eval_claims<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	metas: impl IntoIterator<Item = OracleId>,
-	final_layer_claims: &[LayerClaim<F>],
+	final_layer_claims: impl IntoIterator<IntoIter: ExactSizeIterator<Item = LayerClaim<F>>>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let metas = metas.into_iter().collect::<Vec<_>>();
 
+	let final_layer_claims = final_layer_claims.into_iter();
 	if metas.len() != final_layer_claims.len() {
 		bail!(Error::MetasClaimMismatch);
 	}
@@ -84,7 +85,7 @@ pub fn make_eval_claims<F: TowerField>(
 
 			EvalcheckMultilinearClaim {
 				poly,
-				eval_point: claim.eval_point.clone(),
+				eval_point: claim.eval_point,
 				eval: claim.eval,
 			}
 		})

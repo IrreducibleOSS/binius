@@ -1,20 +1,24 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::channel::ChannelId;
-use crate::{oracle::BatchId, polynomial, protocols, protocols::greedy_evalcheck, witness};
+use crate::{
+	oracle,
+	oracle::BatchId,
+	polynomial, protocols,
+	protocols::{gkr_gpa, greedy_evalcheck},
+	witness,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("flushes must have a non-empty list of oracles")]
+	EmptyFlushOracles,
+
 	#[error("All flushes within a channel must have the same width. Expected flushed values with length {expected}, got {got}")]
 	ChannelFlushWidthMismatch { expected: usize, got: usize },
 
 	#[error("All oracles within a single flush must have the same n_vars. Expected oracle with n_vars={expected} got {got}")]
 	ChannelFlushNvarsMismatch { expected: usize, got: usize },
-
-	#[error(
-		"Channel with id={id} is not balanced. Pushes and pulls does not contain the same elements"
-	)]
-	ChannelUnbalanced { id: ChannelId },
 
 	#[error("Channel id out of range. Got {got}, expected max={max}")]
 	ChannelIdOutOfRange { max: ChannelId, got: ChannelId },
@@ -54,6 +58,12 @@ pub enum Error {
 	#[error("greedy evalcheck error: {0}")]
 	Evalcheck(#[from] greedy_evalcheck::Error),
 
+	#[error("prodcheck error: {0}")]
+	Prodcheck(#[from] gkr_gpa::Error),
+
+	#[error("oracle error: {0}")]
+	Oracle(#[from] oracle::Error),
+
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
 
@@ -71,4 +81,10 @@ pub enum Error {
 pub enum VerificationError {
 	#[error("the number of commitments must equal the number of committed batches")]
 	IncorrectNumberOfCommitments,
+	#[error("the number of flush products must equal the number of flushes")]
+	IncorrectNumberOfFlushProducts,
+	#[error(
+		"Channel with id={id} is not balanced. Pushes and pulls do not contain the same elements"
+	)]
+	ChannelUnbalanced { id: ChannelId },
 }

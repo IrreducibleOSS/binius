@@ -347,7 +347,7 @@ where
 	)?;
 
 	let evalcheck_multilinear_claims =
-		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
+		gkr_gpa::make_eval_claims(oracles, gpa_metas, final_layer_claims)?;
 
 	// Greedy Evalcheck
 	let switchover_fn = standard_switchover_heuristic(-2);
@@ -510,7 +510,7 @@ where
 	let final_layer_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut challenger)?;
 
 	let evalcheck_multilinear_claims =
-		gkr_gpa::make_eval_claims(oracles, gpa_metas, &final_layer_claims)?;
+		gkr_gpa::make_eval_claims(oracles, gpa_metas, final_layer_claims)?;
 
 	// Greedy evalcheck
 	let same_query_pcs_claims = greedy_evalcheck::verify(

@@ -29,10 +29,7 @@ where
 	let GrandProductBatchProof { batch_layer_proofs } = proof;
 
 	let (original_indices, mut sorted_claims) = stable_sort(claims, |claim| claim.n_vars, true);
-	let max_n_vars = sorted_claims
-		.first()
-		.map(|claim| claim.n_vars)
-		.ok_or(Error::EmptyClaimsArray)?;
+	let max_n_vars = sorted_claims.first().map(|claim| claim.n_vars).unwrap_or(0);
 
 	if max_n_vars != batch_layer_proofs.len() {
 		bail!(Error::MismatchedClaimsAndProofs);

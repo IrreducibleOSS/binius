@@ -57,6 +57,10 @@ name = "lasso"
 path = "lasso.rs"
 
 [[example]]
+name = "u8mul"
+path = "u8mul.rs"
+
+[[example]]
 name = "u32add"
 path = "u32add.rs"
 

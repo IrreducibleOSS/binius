@@ -6,23 +6,26 @@ use super::{
 };
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
-	constraint_system::common::{
-		standard_pcs,
-		standard_pcs::{FRIMerklePCS, FRIMerkleTowerPCS},
-		FExt, TowerPCS, TowerPCSFamily,
+	constraint_system::{
+		channel::{Flush, FlushDirection},
+		common::{
+			standard_pcs,
+			standard_pcs::{FRIMerklePCS, FRIMerkleTowerPCS},
+			FExt, TowerPCS, TowerPCSFamily,
+		},
 	},
 	merkle_tree::{MerkleCap, MerkleTreeVCS},
-	oracle::{CommittedBatch, MultilinearOracleSet},
+	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
 	protocols::{
-		greedy_evalcheck,
+		gkr_gpa, greedy_evalcheck,
 		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	ExtensionField, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
 	TowerField,
 };
 use binius_hal::make_portable_backend;
@@ -30,7 +33,7 @@ use binius_hash::Hasher;
 use binius_math::EvaluationDomainFactory;
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_ceil_usize;
 use std::cmp::Reverse;
@@ -89,19 +92,25 @@ where
 	let ConstraintSystem {
 		mut oracles,
 		mut table_constraints,
+		mut flushes,
+		non_zero_oracle_ids,
 		max_channel_id,
-		..
 	} = constraint_system.clone();
 
-	if max_channel_id != 0 {
-		todo!("multiset matching using grand-product argument");
+	if !non_zero_oracle_ids.is_empty() {
+		todo!("non-zero oracles are not supported yet");
 	}
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
+	// Stable sort flushes by channel ID.
+	flushes.sort_by_key(|flush| flush.channel_id);
+
 	let ProofGenericPCS {
 		commitments,
+		flush_products,
+		prodcheck_proof,
 		zerocheck_proof,
 		greedy_evalcheck_proof,
 		pcs_proofs,
@@ -115,6 +124,23 @@ where
 
 	// Observe polynomial commitments
 	challenger.observe_slice(&commitments);
+
+	// Channel balancing argument
+	let mixing_challenge = challenger.sample();
+	// TODO(cryptographers): Find a way to sample less randomness
+	let permutation_challenges = challenger.sample_vec(max_channel_id + 1);
+
+	// Grand product arguments
+	let flush_oracles =
+		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
+	let prodcheck_claims =
+		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
+	let final_layer_claims =
+		gkr_gpa::batch_verify(prodcheck_claims, prodcheck_proof, &mut challenger)?;
+	let prodcheck_eval_claims =
+		gkr_gpa::make_eval_claims(&oracles, flush_oracles, final_layer_claims)?;
+
+	verify_channels_balance(&flushes, &flush_products)?;
 
 	// Zerocheck
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
@@ -142,13 +168,15 @@ where
 		sumcheck_output,
 	)?;
 
-	// Evalcheck
-	let evalcheck_claims =
+	let zerocheck_eval_claims =
 		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, zerocheck_output)?;
 
+	// Evalcheck
 	let mut pcs_claims = greedy_evalcheck::verify(
 		&mut oracles,
-		evalcheck_claims,
+		prodcheck_eval_claims
+			.into_iter()
+			.chain(zerocheck_eval_claims),
 		greedy_evalcheck_proof,
 		&mut challenger,
 	)?;
@@ -296,4 +324,85 @@ where
 	let batch_pcs = BatchPCS::new(fri_pcs, batch.n_vars, log_n_polys)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
 	Ok(batch_pcs)
+}
+
+fn verify_channels_balance<F: Field>(flushes: &[Flush], flush_products: &[F]) -> Result<(), Error> {
+	if flush_products.len() != flushes.len() {
+		return Err(VerificationError::IncorrectNumberOfFlushProducts.into());
+	}
+
+	let mut flush_iter = flushes
+		.iter()
+		.zip(flush_products.iter().copied())
+		.peekable();
+	while let Some((flush, _)) = flush_iter.peek() {
+		let channel_id = flush.channel_id;
+		let (pull_product, push_product) = flush_iter
+			.peeking_take_while(|(flush, _)| flush.channel_id == channel_id)
+			.fold((F::ONE, F::ONE), |(pull_product, push_product), (flush, flush_product)| {
+				match flush.direction {
+					FlushDirection::Pull => (pull_product * flush_product, push_product),
+					FlushDirection::Push => (pull_product, push_product * flush_product),
+				}
+			});
+		if pull_product != push_product {
+			return Err(VerificationError::ChannelUnbalanced { id: channel_id }.into());
+		}
+	}
+
+	Ok(())
+}
+
+pub fn make_flush_oracles<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	flushes: &[Flush],
+	mixing_challenge: F,
+	permutation_challenges: &[F],
+) -> Result<Vec<OracleId>, Error> {
+	let mut mixing_powers = vec![F::ONE];
+	let mut flush_iter = flushes.iter().peekable();
+	permutation_challenges
+		.iter()
+		.enumerate()
+		.flat_map(|(channel_id, permutation_challenge)| {
+			flush_iter
+				.peeking_take_while(|flush| flush.channel_id == channel_id)
+				.map(|flush| {
+					// Check that all flushed oracles have the same number of variables
+					let first_oracle = flush.oracles.first().ok_or(Error::EmptyFlushOracles)?;
+					let n_vars = oracles.n_vars(*first_oracle);
+					for &oracle_id in flush.oracles.iter().skip(1) {
+						let oracle_n_vars = oracles.n_vars(oracle_id);
+						if oracle_n_vars != n_vars {
+							return Err(Error::ChannelFlushNvarsMismatch {
+								expected: n_vars,
+								got: oracle_n_vars,
+							});
+						}
+					}
+
+					// Compute powers of the mixing challenge
+					while mixing_powers.len() < flush.oracles.len() {
+						let last_power = *mixing_powers.last().expect(
+							"mixing_powers is initialized with one element; \
+								mixing_powers never shrinks; \
+								thus, it must not be empty",
+						);
+						mixing_powers.push(last_power * mixing_challenge);
+					}
+
+					let id = oracles.add_linear_combination_with_offset(
+						n_vars,
+						*permutation_challenge,
+						flush
+							.oracles
+							.iter()
+							.copied()
+							.zip(mixing_powers.iter().copied()),
+					)?;
+					Ok(id)
+				})
+				.collect::<Vec<_>>()
+		})
+		.collect()
 }

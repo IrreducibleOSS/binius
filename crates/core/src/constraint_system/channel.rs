@@ -49,7 +49,7 @@
 //!                                       +-+-+
 //! ```
 
-use super::error::Error;
+use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
 use std::{collections::HashMap, hash::Hash};
@@ -150,7 +150,7 @@ where
 
 	for (id, channel) in channels.iter().enumerate() {
 		if !channel.is_balanced() {
-			return Err(Error::ChannelUnbalanced { id });
+			return Err(VerificationError::ChannelUnbalanced { id }.into());
 		}
 	}
 
