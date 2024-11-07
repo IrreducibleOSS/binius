@@ -4,14 +4,13 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	protocols::sumcheck::{
 		common::{
-			equal_n_vars_check, fold_partial_eq_ind, immediate_switchover_heuristic,
-			small_field_embedding_degree_check,
+			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
 		},
-		prove::RegularSumcheckProver,
+		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
 		univariate::{
-			domain_size, extrapolated_scalars_count, lagrange_evals_multilinear_extension,
-			univariatizing_reduction_composite_sum_claims,
+			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
 		},
+		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
 		Error, VerificationError,
 	},
 };

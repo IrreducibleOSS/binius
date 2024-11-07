@@ -29,9 +29,9 @@ use binius_core::{
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, standard_switchover_heuristic, Proof as ZerocheckBatchProof,
-			Proof as UnivariatizingProof,
-			ZerocheckUnivariateProof as ZerocheckUnivariateBatchProof,
+			self, standard_switchover_heuristic,
+			univariate_zerocheck::ZerocheckUnivariateProof as ZerocheckUnivariateBatchProof,
+			Proof as ZerocheckBatchProof, Proof as UnivariatizingProof,
 		},
 	},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},

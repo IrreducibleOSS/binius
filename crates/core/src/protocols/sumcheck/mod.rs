@@ -13,6 +13,7 @@ pub mod prove;
 #[cfg(test)]
 mod tests;
 pub mod univariate;
+pub mod univariate_zerocheck;
 pub mod verify;
 pub mod zerocheck;
 
@@ -20,5 +21,6 @@ pub use common::*;
 pub use error::*;
 pub use oracles::*;
 pub use prove::batch_prove;
-pub use verify::{batch_verify, batch_verify_zerocheck_univariate_round};
+pub use univariate_zerocheck::batch_verify_zerocheck_univariate_round;
+pub use verify::batch_verify;
 pub use zerocheck::ZerocheckClaim;

@@ -13,8 +13,83 @@ use binius_math::{make_ntt_domain_points, EvaluationDomain, MultilinearExtension
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
-use std::iter;
+use std::{
+	iter::{self, repeat_n},
+	ops::{Mul, MulAssign},
+};
 
+/// A univariate polynomial in Lagrange basis.
+///
+/// The coefficient at position `i` in the `lagrange_coeffs` corresponds to evaluation
+/// at `i+zeros_prefix_len`-th field element of some agreed upon domain. Coefficients
+/// at positions `0..zeros_prefix_len` are zero. Addition of Lagrange basis representations
+/// only makes sense for the polynomials in the same domain.
+#[derive(Clone, Debug)]
+pub struct LagrangeRoundEvals<F: Field> {
+	pub zeros_prefix_len: usize,
+	pub evals: Vec<F>,
+}
+
+impl<F: Field> LagrangeRoundEvals<F> {
+	/// A Lagrange representation of a zero polynomial, on a given domain.
+	pub fn zeros(zeros_prefix_len: usize) -> Self {
+		LagrangeRoundEvals {
+			zeros_prefix_len,
+			evals: Vec::new(),
+		}
+	}
+
+	/// Representation in an isomorphic field.
+	pub fn isomorphic<FI: Field + From<F>>(self) -> LagrangeRoundEvals<FI> {
+		LagrangeRoundEvals {
+			zeros_prefix_len: self.zeros_prefix_len,
+			evals: self.evals.into_iter().map(Into::into).collect(),
+		}
+	}
+
+	/// An assigning addition of two polynomials in Lagrange basis. May fail,
+	/// thus it's not simply an `AddAssign` overload due to signature mismatch.
+	pub fn add_assign_lagrange(&mut self, rhs: &Self) -> Result<(), Error> {
+		let lhs_len = self.zeros_prefix_len + self.evals.len();
+		let rhs_len = rhs.zeros_prefix_len + rhs.evals.len();
+
+		if lhs_len != rhs_len {
+			bail!(Error::LagrangeRoundEvalsSizeMismatch);
+		}
+
+		let start_idx = if rhs.zeros_prefix_len < self.zeros_prefix_len {
+			self.evals
+				.splice(0..0, repeat_n(F::ZERO, self.zeros_prefix_len - rhs.zeros_prefix_len));
+			self.zeros_prefix_len = rhs.zeros_prefix_len;
+			0
+		} else {
+			rhs.zeros_prefix_len - self.zeros_prefix_len
+		};
+
+		for (lhs, rhs) in self.evals[start_idx..].iter_mut().zip(&rhs.evals) {
+			*lhs += rhs;
+		}
+
+		Ok(())
+	}
+}
+
+impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
+	type Output = LagrangeRoundEvals<F>;
+
+	fn mul(mut self, rhs: F) -> Self::Output {
+		self *= rhs;
+		self
+	}
+}
+
+impl<F: Field> MulAssign<F> for LagrangeRoundEvals<F> {
+	fn mul_assign(&mut self, rhs: F) {
+		for eval in self.evals.iter_mut() {
+			*eval *= rhs;
+		}
+	}
+}
 /// Creates sumcheck claims for the reduction from evaluations of univariatized virtual multilinear oracles to
 /// "regular" multilinear evaluations.
 ///
@@ -155,16 +230,6 @@ where
 	scalars[..lagrange_evals.len()].copy_from_slice(lagrange_evals.as_slice());
 
 	Ok(MultilinearExtension::new(n_vars, packed)?)
-}
-
-pub fn domain_size(composition_degree: usize, skip_rounds: usize) -> usize {
-	extrapolated_scalars_count(composition_degree, skip_rounds) + (1 << skip_rounds)
-}
-
-pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize) -> usize {
-	let non_zerocheck_evals_count = composition_degree * ((1 << skip_rounds) - 1) + 1;
-	// In zerocheck, we know the first 2^skip_rounds composition evals would be zero
-	non_zerocheck_evals_count.saturating_sub(1 << skip_rounds)
 }
 
 #[cfg(test)]

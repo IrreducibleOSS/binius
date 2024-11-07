@@ -3,18 +3,18 @@
 use crate::{
 	polynomial::{Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
-		common::{
-			determine_switchovers, equal_n_vars_check, fold_partial_eq_ind,
-			small_field_embedding_degree_check,
-		},
+		common::{determine_switchovers, equal_n_vars_check, small_field_embedding_degree_check},
 		prove::{
+			common::fold_partial_eq_ind,
 			univariate::{
 				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
 				ZerocheckUnivariateFoldResult,
 			},
 			ProverState, SumcheckInterpolator, SumcheckProver, UnivariateZerocheckProver,
 		},
-		univariate, Error, LagrangeRoundEvals, RoundCoeffs,
+		univariate::LagrangeRoundEvals,
+		univariate_zerocheck::domain_size,
+		Error, RoundCoeffs,
 	},
 };
 use binius_field::{
@@ -238,7 +238,7 @@ where
 	fn domain_size(&self, skip_rounds: usize) -> usize {
 		self.compositions
 			.iter()
-			.map(|(composition, _)| univariate::domain_size(composition.degree() + 1, skip_rounds))
+			.map(|(composition, _)| domain_size(composition.degree() + 1, skip_rounds))
 			.max()
 			.unwrap_or(0)
 	}
