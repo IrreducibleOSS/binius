@@ -27,7 +27,7 @@ use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
-use std::{iter, iter::repeat_with, marker::PhantomData, mem, ops::Deref};
+use std::{iter, marker::PhantomData, mem, ops::Deref};
 use tracing::instrument;
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
@@ -227,21 +227,13 @@ where
 
 		let _ = sumcheck_prover.finish()?;
 
-		let (terminate_codeword, query_prover) = fri_prover.finalize()?;
-
-		let fri_query_proofs = repeat_with(|| {
-			let index = challenger.sample_bits(self.fri_params.rs_code().log_len());
-			query_prover.prove_query(index)
-		})
-		.take(self.fri_params.n_test_queries())
-		.collect::<Result<Vec<_>, _>>()?;
+		let fri_proof = fri_prover.finish_proof(challenger)?;
 
 		Ok(Proof {
 			sumcheck_eval: sumcheck_eval.vertical_elems().to_vec(),
 			sumcheck_rounds: rounds,
 			fri_commitments,
-			fri_terminate_codeword: terminate_codeword,
-			fri_query_proofs,
+			fri_proof,
 		})
 	}
 
@@ -252,8 +244,7 @@ where
 		codeword_commitment: &VCS::Commitment,
 		sumcheck_round_proofs: Vec<RoundProof<FExt>>,
 		fri_commitments: Vec<VCS::Commitment>,
-		fri_terminate_codeword: fri::TerminateCodeword<FExt>,
-		fri_query_proofs: Vec<fri::QueryProof<FExt, VCS::Proof>>,
+		fri_proof: fri::FRIProof<FExt, VCS::Proof>,
 		ring_switch_evaluator: impl FnOnce(&[FExt]) -> FExt,
 		mut challenger: Challenger,
 	) -> Result<(), Error>
@@ -307,28 +298,14 @@ where
 
 			sum = interpolate_round_proof(round_proof, sum, challenge);
 		}
-		let verifier = FRIVerifier::new(
-			&self.fri_params,
-			codeword_commitment,
-			&fri_commitments,
-			&challenges,
-			fri_terminate_codeword,
-		)?;
+		let verifier =
+			FRIVerifier::new(&self.fri_params, codeword_commitment, &fri_commitments, &challenges)?;
 
 		let ring_switch_eval = ring_switch_evaluator(&challenges);
-		let final_fri_value = verifier.verify_last_oracle()?;
+		let final_fri_value = verifier.verify(fri_proof, challenger)?;
 		if final_fri_value * ring_switch_eval != sum {
 			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
 		}
-
-		if fri_query_proofs.len() != self.fri_params.n_test_queries() {
-			return Err(VerificationError::IncorrectNumberOfFRIQueries.into());
-		}
-		for query_proof in fri_query_proofs {
-			let index = challenger.sample_bits(self.fri_params.rs_code().log_len());
-			verifier.verify_query(index, query_proof)?;
-		}
-
 		Ok(())
 	}
 }
@@ -508,8 +485,7 @@ where
 			sumcheck_eval,
 			sumcheck_rounds,
 			fri_commitments,
-			fri_terminate_codeword,
-			fri_query_proofs,
+			fri_proof,
 		} = proof;
 
 		let n_rounds = self.n_vars() - Self::kappa();
@@ -547,8 +523,7 @@ where
 			commitment,
 			sumcheck_rounds,
 			fri_commitments,
-			fri_terminate_codeword,
-			fri_query_proofs,
+			fri_proof,
 			|challenges| {
 				evaluate_ring_switch_eq_ind::<F, _, _>(
 					query_from_kappa,
@@ -611,8 +586,7 @@ where
 	sumcheck_eval: Vec<F>,
 	sumcheck_rounds: Vec<RoundProof<F>>,
 	fri_commitments: Vec<VCS::Commitment>,
-	fri_terminate_codeword: fri::TerminateCodeword<F>,
-	fri_query_proofs: Vec<fri::QueryProof<F, VCS::Proof>>,
+	fri_proof: fri::FRIProof<F, VCS::Proof>,
 }
 
 /// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
@@ -702,6 +676,7 @@ mod tests {
 	use binius_hal::make_portable_backend;
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use binius_math::IsomorphicEvaluationDomainFactory;
+	use iter::repeat_with;
 	use rand::{prelude::StdRng, SeedableRng};
 
 	fn test_commit_prove_verify_success<U, F, FA, FE>(

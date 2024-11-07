@@ -31,7 +31,7 @@ mod tests;
 mod verify;
 
 pub use common::{
-	calculate_n_test_queries, FRIParams, QueryProof, QueryRoundProof, TerminateCodeword,
+	calculate_n_test_queries, FRIParams, FRIProof, QueryProof, QueryRoundProof, TerminateCodeword,
 };
 pub use error::*;
 pub use prove::*;

@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
+	challenger::{new_hasher_challenger, CanObserve, CanSample},
 	linear_code::LinearCode,
 	merkle_tree::MerkleTreeVCS,
 	protocols::fri::{
@@ -121,15 +121,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		}
 	}
 
-	let (terminate_codeword, query_prover) = round_prover.finalize().unwrap();
-
-	let query_proofs = repeat_with(|| {
-		let index = prover_challenger.sample_bits(params.index_bits());
-		query_prover.prove_query(index)
-	})
-	.take(n_test_queries)
-	.collect::<Result<Vec<_>, _>>()
-	.unwrap();
+	let fri_proof = round_prover.finish_proof(prover_challenger).unwrap();
 
 	// Now run the verifier
 	let mut verifier_challenger = challenger.clone();
@@ -155,23 +147,12 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let multilin = MultilinearExtension::from_values_slice(&msg).unwrap();
 	let computed_eval = multilin.evaluate(&eval_query).unwrap();
 
-	let verifier = FRIVerifier::new(
-		&params,
-		&codeword_commitment,
-		&round_commitments,
-		&verifier_challenges,
-		terminate_codeword,
-	)
-	.unwrap();
+	let verifier =
+		FRIVerifier::new(&params, &codeword_commitment, &round_commitments, &verifier_challenges)
+			.unwrap();
 
-	let final_fri_value = verifier.verify_last_oracle().unwrap();
+	let final_fri_value = verifier.verify(fri_proof, verifier_challenger).unwrap();
 	assert_eq!(computed_eval, final_fri_value);
-
-	assert_eq!(query_proofs.len(), n_test_queries);
-	for query_proof in query_proofs {
-		let index = verifier_challenger.sample_bits(params.index_bits());
-		verifier.verify_query(index, query_proof).unwrap();
-	}
 }
 
 #[test]

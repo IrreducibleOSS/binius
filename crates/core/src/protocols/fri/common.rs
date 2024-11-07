@@ -301,6 +301,12 @@ pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 /// The type of the termination round codeword in the FRI protocol.
 pub type TerminateCodeword<F> = Vec<F>;
 
+#[derive(Debug, Clone)]
+pub struct FRIProof<F, VCSProof> {
+	pub terminate_codeword: TerminateCodeword<F>,
+	pub proofs: Vec<QueryProof<F, VCSProof>>,
+}
+
 /// The values and vector commitment opening proofs for a coset.
 #[derive(Debug, Clone)]
 pub struct QueryRoundProof<F, VCSProof> {

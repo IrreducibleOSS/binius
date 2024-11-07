@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{common::TerminateCodeword, error::Error, QueryProof, VerificationError};
+use super::{common::FRIProof, error::Error, QueryProof, VerificationError};
 use crate::{
 	merkle_tree::VectorCommitScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
@@ -9,6 +9,7 @@ use binius_field::{BinaryField, ExtensionField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use itertools::izip;
+use p3_challenger::CanSampleBits;
 use std::iter;
 use tracing::instrument;
 
@@ -32,9 +33,6 @@ where
 	interleave_tensor: Vec<F>,
 	/// The challenges for each round.
 	fold_challenges: &'a [F],
-	/// The termination codeword, up to which the prover has performed the folding before sending it to the verifier,
-	/// must be folded to a dimension-1 codeword to check the protocol's correctness.
-	terminate_codeword: TerminateCodeword<F>,
 }
 
 impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
@@ -49,7 +47,6 @@ where
 		codeword_commitment: &'a VCS::Commitment,
 		round_commitments: &'a [VCS::Commitment],
 		challenges: &'a [F],
-		terminate_codeword: TerminateCodeword<F>,
 	) -> Result<Self, Error> {
 		if round_commitments.len() != params.n_oracles() {
 			bail!(Error::InvalidArgs(format!(
@@ -80,7 +77,6 @@ where
 			round_commitments,
 			interleave_tensor,
 			fold_challenges,
-			terminate_codeword,
 		})
 	}
 
@@ -89,10 +85,35 @@ where
 		self.params.n_oracles()
 	}
 
+	pub fn verify<Challenger>(
+		&self,
+		fri_proof: FRIProof<F, VCS::Proof>,
+		mut challenger: Challenger,
+	) -> Result<F, Error>
+	where
+		Challenger: CanSampleBits<usize>,
+	{
+		let FRIProof {
+			terminate_codeword,
+			proofs,
+		} = fri_proof;
+
+		let final_value = self.verify_last_oracle(&terminate_codeword)?;
+
+		let indexes_iter =
+			std::iter::repeat_with(|| challenger.sample_bits(self.params.index_bits()))
+				.take(self.params.n_test_queries());
+
+		for (index, proof) in indexes_iter.zip(proofs) {
+			self.verify_query(index, proof, &terminate_codeword)?
+		}
+		Ok(final_value)
+	}
+
 	/// Verifies that the last oracle sent is a codeword.
 	///
 	/// Returns the fully-folded message value.
-	pub fn verify_last_oracle(&self) -> Result<F, Error> {
+	pub fn verify_last_oracle(&self, terminate_codeword: &[F]) -> Result<F, Error> {
 		let repetition_codeword = if let Some(last_vcs) = self.params.round_vcss().last() {
 			let commitment = self.round_commitments.last().expect(
 				"round_commitments and round_vcss are checked to have the same length in the constructor;
@@ -100,7 +121,7 @@ where
 			);
 
 			last_vcs
-				.verify_interleaved(commitment, &self.terminate_codeword)
+				.verify_interleaved(commitment, terminate_codeword)
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 			let n_final_challenges = self.params.n_final_challenges();
@@ -108,7 +129,7 @@ where
 			let final_challenges = &self.fold_challenges[n_prior_challenges..];
 			let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
 
-			self.terminate_codeword
+			terminate_codeword
 				.chunks(1 << n_final_challenges)
 				.enumerate()
 				.map(|(i, coset_values)| {
@@ -128,12 +149,12 @@ where
 
 			self.params
 				.codeword_vcs()
-				.verify_interleaved(self.codeword_commitment, &self.terminate_codeword)
+				.verify_interleaved(self.codeword_commitment, terminate_codeword)
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 
 			let fold_arity = self.params.rs_code().log_dim() + self.params.log_batch_size();
 			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
-			self.terminate_codeword
+			terminate_codeword
 				.chunks(1 << fold_arity)
 				.enumerate()
 				.map(|(i, chunk)| {
@@ -178,6 +199,7 @@ where
 		&self,
 		mut index: usize,
 		proof: QueryProof<F, VCS::Proof>,
+		terminate_codeword: &[F],
 	) -> Result<(), Error> {
 		if proof.len() != self.n_oracles() {
 			return Err(VerificationError::IncorrectQueryProofLength {
@@ -258,7 +280,7 @@ where
 			fold_round += arity;
 		}
 
-		if next_value != self.terminate_codeword[index] {
+		if next_value != terminate_codeword[index] {
 			return Err(VerificationError::IncorrectFold {
 				query_round: self.n_oracles() - 1,
 				index,

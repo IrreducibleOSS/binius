@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	common::{FRIParams, TerminateCodeword},
+	common::{FRIParams, FRIProof},
 	error::Error,
+	TerminateCodeword,
 };
 use crate::{
 	linear_code::LinearCode,
@@ -17,6 +18,7 @@ use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;
+use p3_challenger::CanSampleBits;
 use rayon::prelude::*;
 use tracing::instrument;
 
@@ -381,6 +383,30 @@ where
 			round_committed,
 		};
 		Ok((terminate_codeword, query_prover))
+	}
+
+	pub fn finish_proof<Challenger>(
+		self,
+		mut challenger: Challenger,
+	) -> Result<FRIProof<F, VCS::Proof>, Error>
+	where
+		Challenger: CanSampleBits<usize>,
+	{
+		let (terminate_codeword, query_prover) = self.finalize()?;
+
+		let params = query_prover.params;
+
+		let indexes_iter = std::iter::repeat_with(|| challenger.sample_bits(params.index_bits()))
+			.take(params.n_test_queries());
+
+		let proofs = indexes_iter
+			.map(|index| query_prover.prove_query(index))
+			.collect::<Result<Vec<_>, _>>()?;
+
+		Ok(FRIProof {
+			terminate_codeword,
+			proofs,
+		})
 	}
 }
 
