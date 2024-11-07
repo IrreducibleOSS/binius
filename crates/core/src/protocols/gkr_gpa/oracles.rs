@@ -86,7 +86,6 @@ pub fn make_eval_claims<F: TowerField>(
 				poly,
 				eval_point: claim.eval_point.clone(),
 				eval: claim.eval,
-				is_random_point: true,
 			}
 		})
 		.collect::<Vec<_>>())

@@ -14,8 +14,6 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
 	pub eval: F,
-	/// Whether the evaluation point is random
-	pub is_random_point: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -95,8 +93,6 @@ pub struct CommittedEvalClaim<F: Field> {
 	pub eval_point: Vec<F>,
 	/// Claimed Evaluation
 	pub eval: F,
-	/// Whether the evaluation point is random
-	pub is_random_point: bool,
 }
 
 /// A batched PCS claim where all member polynomials have the same query (can be verified directly)
@@ -164,11 +160,6 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 			.iter()
 			.any(|claim| claim.eval_point != first.eval_point)
 		{
-			return Ok(None);
-		}
-
-		// PCS requires random queries, thus abort when non-random one is found
-		if claims.iter().any(|claim| !claim.is_random_point) {
 			return Ok(None);
 		}
 

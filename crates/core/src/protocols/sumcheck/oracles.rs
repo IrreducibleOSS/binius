@@ -120,7 +120,6 @@ pub fn make_eval_claims<F: TowerField>(
 				poly,
 				eval_point,
 				eval,
-				is_random_point: true,
 			};
 
 			evalcheck_claims.push(claim);

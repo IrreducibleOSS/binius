@@ -88,7 +88,6 @@ fn test_evaluation_point_batching() {
 			poly,
 			eval_point: eval_point.clone(),
 			eval,
-			is_random_point: true,
 		})
 		.collect();
 
@@ -202,7 +201,6 @@ fn test_shifted_evaluation_whole_cube() {
 			poly,
 			eval_point: eval_point.clone(),
 			eval,
-			is_random_point: true,
 		})
 		.collect();
 
@@ -284,7 +282,6 @@ fn test_shifted_evaluation_subcube() {
 			poly,
 			eval_point: eval_point.clone(),
 			eval,
-			is_random_point: true,
 		})
 		.collect();
 
@@ -385,7 +382,6 @@ fn test_evalcheck_linear_combination() {
 		poly: claim_oracle,
 		eval_point,
 		eval,
-		is_random_point: true,
 	};
 
 	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
@@ -441,7 +437,6 @@ fn test_evalcheck_repeating() {
 		poly: repeating.clone(),
 		eval_point,
 		eval,
-		is_random_point: true,
 	};
 
 	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
@@ -530,7 +525,6 @@ fn test_evalcheck_merged() {
 		poly: merged,
 		eval_point,
 		eval,
-		is_random_point: true,
 	};
 
 	let backend = make_portable_backend();
@@ -622,7 +616,6 @@ fn test_evalcheck_interleaved() {
 		poly: interleaved,
 		eval_point,
 		eval,
-		is_random_point: true,
 	};
 
 	let backend = make_portable_backend();
@@ -707,7 +700,6 @@ fn test_evalcheck_zero_padded() {
 		poly: zero_padded,
 		eval_point: eval_point.clone(),
 		eval: inner_eval,
-		is_random_point: true,
 	};
 
 	let backend = make_portable_backend();

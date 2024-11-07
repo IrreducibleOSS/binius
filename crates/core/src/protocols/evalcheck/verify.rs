@@ -92,7 +92,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			poly: multilinear,
 			mut eval_point,
 			eval,
-			is_random_point,
 		} = evalcheck_claim;
 
 		match multilinear {
@@ -121,7 +120,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					id,
 					eval_point,
 					eval,
-					is_random_point,
 				};
 
 				self.batch_committed_eval_claims.insert(subclaim);
@@ -138,7 +136,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					poly: *inner,
 					eval_point: eval_point[..n_vars].to_vec(),
 					eval,
-					is_random_point,
 				};
 
 				self.verify_multilinear(subclaim, *subproof)?;
@@ -169,20 +166,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					)
 					.into());
 				}
-				self.verify_multilinear_subclaim(
-					eval1,
-					*subproof1,
-					*poly0,
-					subclaim_eval_point,
-					is_random_point,
-				)?;
-				self.verify_multilinear_subclaim(
-					eval2,
-					*subproof2,
-					*poly1,
-					subclaim_eval_point,
-					is_random_point,
-				)?;
+				self.verify_multilinear_subclaim(eval1, *subproof1, *poly0, subclaim_eval_point)?;
+				self.verify_multilinear_subclaim(eval2, *subproof2, *poly1, subclaim_eval_point)?;
 			}
 
 			MultilinearPolyOracle::Merged {
@@ -212,20 +197,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					.into());
 				}
 
-				self.verify_multilinear_subclaim(
-					eval1,
-					*subproof1,
-					*poly0,
-					subclaim_eval_point,
-					is_random_point,
-				)?;
-				self.verify_multilinear_subclaim(
-					eval2,
-					*subproof2,
-					*poly1,
-					subclaim_eval_point,
-					is_random_point,
-				)?;
+				self.verify_multilinear_subclaim(eval1, *subproof1, *poly0, subclaim_eval_point)?;
+				self.verify_multilinear_subclaim(eval2, *subproof2, *poly1, subclaim_eval_point)?;
 			}
 
 			MultilinearPolyOracle::Projected { projected, .. } => {
@@ -244,7 +217,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					poly: *inner.clone(),
 					eval_point,
 					eval,
-					is_random_point,
 				};
 
 				self.verify_multilinear(new_claim, evalcheck_proof)?;
@@ -317,7 +289,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 							subproof,
 							suboracle.clone(),
 							&eval_point,
-							is_random_point,
 						)
 					})?;
 			}
@@ -352,7 +323,6 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					*subproof,
 					*inner,
 					subclaim_eval_point,
-					is_random_point,
 				)?;
 			}
 		}
@@ -366,13 +336,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		subproof: EvalcheckProof<F>,
 		poly: MultilinearPolyOracle<F>,
 		eval_point: &[F],
-		is_random_point: bool,
 	) -> Result<(), Error> {
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,
 			eval_point: eval_point.to_vec(),
 			eval,
-			is_random_point,
 		};
 		self.verify_multilinear(subclaim, subproof)
 	}
