@@ -94,20 +94,26 @@ where
 	});
 
 	if let Some(witness) = builder.witness() {
-		let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
-		let build_trace_column = || vec![U::default(); len].into_boxed_slice();
+		let packed_log_width = <PackedType<U, BinaryField1b>>::LOG_WIDTH;
+		let build_trace_column = |log_size: usize| {
+			vec![U::default(); 1 << (log_size - packed_log_width)].into_boxed_slice()
+		};
 
-		let mut state_in_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column());
-		let mut state_out_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column());
-		let mut c_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column());
-		let mut d_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column());
-		let mut c_shift_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column());
-		let mut a_theta_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column());
-		let mut b_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column());
-		let mut next_state_in_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column());
-		let mut round_consts_single_witness = build_trace_column();
-		let mut round_consts_witness = build_trace_column();
-		let mut selector_witness = build_trace_column();
+		let mut state_in_witness =
+			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
+		let mut state_out_witness =
+			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
+		let mut c_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
+		let mut d_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
+		let mut c_shift_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
+		let mut a_theta_witness =
+			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
+		let mut b_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
+		let mut next_state_in_witness =
+			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
+		let mut round_consts_single_witness = build_trace_column(LOG_ROWS_PER_PERMUTATION);
+		let mut round_consts_witness = build_trace_column(log_size);
+		let mut selector_witness = build_trace_column(log_size);
 
 		fn cast_u64_cols<U: Pod, const N: usize>(cols: &mut [Box<[U]>; N]) -> [&mut [u64]; N] {
 			cols.each_mut()

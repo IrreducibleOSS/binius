@@ -93,7 +93,7 @@ impl TraceOracle {
 		let lookup_o = builder.add_transparent(
 			"lookup_o",
 			transparent::constant::Constant {
-				n_vars,
+				n_vars: T_LOG_SIZE,
 				value: F::ONE,
 			},
 		)?;

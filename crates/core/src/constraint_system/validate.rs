@@ -20,6 +20,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackendExt;
 use binius_math::MultilinearPoly;
+use binius_utils::bail;
 
 pub fn validate_witness<U, F>(
 	constraint_system: &ConstraintSystem<PackedType<U, F>>,
@@ -84,6 +85,14 @@ where
 	let oracle_label = &oracle.label();
 	let n_vars = oracle.n_vars();
 	let poly = witness.get_multilin_poly(oracle.id())?;
+
+	if poly.n_vars() != n_vars {
+		bail!(Error::VirtualOracleNvarsMismatch {
+			oracle: oracle_label.into(),
+			oracle_num_vars: n_vars,
+			witness_num_vars: poly.n_vars(),
+		})
+	}
 
 	match oracle {
 		Committed { .. } => {

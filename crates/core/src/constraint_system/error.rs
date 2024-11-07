@@ -26,6 +26,13 @@ pub enum Error {
 		reason: String,
 	},
 
+	#[error("{oracle} witness has unexpected n_vars={witness_num_vars}. Expected n_vars={oracle_num_vars}")]
+	VirtualOracleNvarsMismatch {
+		oracle: String,
+		oracle_num_vars: usize,
+		witness_num_vars: usize,
+	},
+
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
 
