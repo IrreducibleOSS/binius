@@ -1,12 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::ring_switch::{evaluate_ring_switch_eq_ind, reduce_tensor_claim};
+use super::ring_switch::reduce_tensor_claim;
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
 	merkle_tree::VectorCommitScheme,
-	poly_commit::{ring_switch::ring_switch_eq_ind_partial_eval, PolyCommitScheme},
-	polynomial::Error as PolynomialError,
+	poly_commit::PolyCommitScheme,
+	polynomial::{Error as PolynomialError, MultivariatePoly},
 	protocols::{
 		fri::{self, FRIFolder, FRIParams, FRIVerifier, FoldRoundOutput},
 		sumcheck::{
@@ -18,6 +18,7 @@ use crate::{
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	tensor_algebra::TensorAlgebra,
+	transparent::ring_switch::RingSwitchEqInd,
 };
 use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
@@ -245,7 +246,7 @@ where
 		sumcheck_round_proofs: Vec<RoundProof<FExt>>,
 		fri_commitments: Vec<VCS::Commitment>,
 		fri_proof: fri::FRIProof<FExt, VCS::Proof>,
-		ring_switch_evaluator: impl FnOnce(&[FExt]) -> FExt,
+		ring_switch_evaluator: impl FnOnce(&[FExt]) -> Result<FExt, PolynomialError>,
 		mut challenger: Challenger,
 	) -> Result<(), Error>
 	where
@@ -301,7 +302,7 @@ where
 		let verifier =
 			FRIVerifier::new(&self.fri_params, codeword_commitment, &fri_commitments, &challenges)?;
 
-		let ring_switch_eval = ring_switch_evaluator(&challenges);
+		let ring_switch_eval = ring_switch_evaluator(&challenges)?;
 		let final_fri_value = verifier.verify(fri_proof, challenger)?;
 		if final_fri_value * ring_switch_eval != sum {
 			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
@@ -313,7 +314,7 @@ where
 impl<F, FDomain, FEncode, FExt, P, PE, DomainFactory, VCS> PolyCommitScheme<P, FExt>
 	for FRIPCS<F, FDomain, FEncode, PE, DomainFactory, VCS>
 where
-	F: Field,
+	F: TowerField,
 	FDomain: Field,
 	FEncode: BinaryField,
 	FExt: TowerField
@@ -428,12 +429,12 @@ where
 			&tensor_mixing_challenges,
 			backend,
 		);
-		let val = ring_switch_eq_ind_partial_eval::<F, _, _, _>(
-			query_from_kappa,
-			&tensor_mixing_challenges,
-			backend,
+		let rs_eq = RingSwitchEqInd::<F, _, PE>::new(
+			query_from_kappa.to_vec(),
+			tensor_mixing_challenges.to_vec(),
 		)?;
-		let transparent = MultilinearExtension::from_values_generic(val)?;
+		let transparent = rs_eq.multilinear_extension(backend)?;
+
 		let sumcheck_prover = RegularSumcheckProver::new(
 			[packed_poly.to_ref(), transparent.to_ref()]
 				.map(MLEDirectAdapter::from)
@@ -525,12 +526,11 @@ where
 			fri_commitments,
 			fri_proof,
 			|challenges| {
-				evaluate_ring_switch_eq_ind::<F, _, _>(
-					query_from_kappa,
-					challenges,
-					&tensor_mixing_challenges,
-					backend,
-				)
+				let rs_eq = RingSwitchEqInd::<F, _, PE>::new(
+					query_from_kappa.to_vec(),
+					tensor_mixing_challenges.to_vec(),
+				)?;
+				rs_eq.evaluate(challenges)
 			},
 			challenger,
 		)
@@ -695,7 +695,7 @@ mod tests {
 			+ PackScalar<FE>
 			+ PackScalar<BinaryField8b>
 			+ Divisible<u8>,
-		F: Field,
+		F: TowerField,
 		FA: BinaryField,
 		FE: TowerField
 			+ ExtensionField<F>
