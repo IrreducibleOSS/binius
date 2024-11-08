@@ -14,8 +14,6 @@ pub enum Error {
 	InvalidPolynomialIndex,
 	#[error("polynomial error")]
 	Polynomial(#[from] crate::polynomial::Error),
-	#[error("number of variables in merged or interleaved multilinear do not match")]
-	NumberOfVariablesMismatch,
 	#[error(
 		"n_vars ({n_vars}) must be at least as big as the requested log_degree ({log_degree})"
 	)]

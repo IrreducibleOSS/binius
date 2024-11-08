@@ -70,50 +70,6 @@ impl<'a, F: TowerField> MultilinearOracleSetAddition<'a, F> {
 		Ok(id)
 	}
 
-	pub fn interleaved(self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
-		if id0 >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(id0));
-		}
-		if id1 >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(id1));
-		}
-
-		let n_vars_0 = self.mut_ref.n_vars(id0);
-		let n_vars_1 = self.mut_ref.n_vars(id1);
-		if n_vars_0 != n_vars_1 {
-			bail!(Error::NumberOfVariablesMismatch);
-		}
-
-		let id = self.mut_ref.add_to_set(MultilinearOracleMeta::Interleaved {
-			poly0: id0,
-			poly1: id1,
-			name: self.name,
-		});
-		Ok(id)
-	}
-
-	pub fn merged(self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
-		if id0 >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(id0));
-		}
-		if id1 >= self.mut_ref.oracles.len() {
-			bail!(Error::InvalidOracleId(id1));
-		}
-
-		let n_vars_0 = self.mut_ref.n_vars(id0);
-		let n_vars_1 = self.mut_ref.n_vars(id1);
-		if n_vars_0 != n_vars_1 {
-			bail!(Error::NumberOfVariablesMismatch);
-		}
-
-		let id = self.mut_ref.add_to_set(MultilinearOracleMeta::Merged {
-			poly0: id0,
-			poly1: id1,
-			name: self.name,
-		});
-		Ok(id)
-	}
-
 	pub fn shifted(
 		self,
 		id: OracleId,
@@ -281,16 +237,6 @@ enum MultilinearOracleMeta<F: TowerField> {
 		log_count: usize,
 		name: Option<String>,
 	},
-	Interleaved {
-		poly0: OracleId,
-		poly1: OracleId,
-		name: Option<String>,
-	},
-	Merged {
-		poly0: OracleId,
-		poly1: OracleId,
-		name: Option<String>,
-	},
 	Shifted {
 		inner_id: OracleId,
 		offset: usize,
@@ -404,14 +350,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().repeating(id, log_count)
 	}
 
-	pub fn add_interleaved(&mut self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
-		self.add().interleaved(id0, id1)
-	}
-
-	pub fn add_merged(&mut self, id0: OracleId, id1: OracleId) -> Result<OracleId, Error> {
-		self.add().merged(id0, id1)
-	}
-
 	pub fn add_shifted(
 		&mut self,
 		id: OracleId,
@@ -523,20 +461,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				log_count: *log_count,
 				name: name.clone(),
 			},
-			MultilinearOracleMeta::Interleaved { poly0, poly1, name } => {
-				MultilinearPolyOracle::Interleaved {
-					id,
-					poly0: Box::new(self.oracle(*poly0)),
-					poly1: Box::new(self.oracle(*poly1)),
-					name: name.clone(),
-				}
-			}
-			MultilinearOracleMeta::Merged { poly0, poly1, name } => MultilinearPolyOracle::Merged {
-				id,
-				poly0: Box::new(self.oracle(*poly0)),
-				poly1: Box::new(self.oracle(*poly1)),
-				name: name.clone(),
-			},
 			MultilinearOracleMeta::Shifted {
 				inner_id,
 				offset,
@@ -612,8 +536,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 				log_count,
 				..
 			} => self.n_vars(*inner_id) + log_count,
-			Interleaved { poly0, .. } => self.n_vars(*poly0) + 1,
-			Merged { poly0, .. } => self.n_vars(*poly0) + 1,
 			Shifted { inner_id, .. } => self.n_vars(*inner_id),
 			Packed {
 				inner_id,
@@ -635,10 +557,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 			Transparent { poly, .. } => poly.binary_tower_level(),
 			Committed { committed_id, .. } => self.batches[committed_id.batch_id].tower_level,
 			Repeating { inner_id, .. } => self.tower_level(*inner_id),
-			Interleaved { poly0, poly1, .. } => {
-				self.tower_level(*poly0).max(self.tower_level(*poly1))
-			}
-			Merged { poly0, poly1, .. } => self.tower_level(*poly0).max(self.tower_level(*poly1)),
 			Shifted { inner_id, .. } => self.tower_level(*inner_id),
 			Packed {
 				inner_id,
@@ -692,18 +610,6 @@ pub enum MultilinearPolyOracle<F: Field> {
 		id: OracleId,
 		inner: Box<MultilinearPolyOracle<F>>,
 		log_count: usize,
-		name: Option<String>,
-	},
-	Interleaved {
-		id: OracleId,
-		poly0: Box<MultilinearPolyOracle<F>>,
-		poly1: Box<MultilinearPolyOracle<F>>,
-		name: Option<String>,
-	},
-	Merged {
-		id: OracleId,
-		poly0: Box<MultilinearPolyOracle<F>>,
-		poly1: Box<MultilinearPolyOracle<F>>,
 		name: Option<String>,
 	},
 	Projected {
@@ -925,8 +831,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Transparent { id, .. } => *id,
 			Committed { oracle_id, .. } => *oracle_id,
 			Repeating { id, .. } => *id,
-			Interleaved { id, .. } => *id,
-			Merged { id, .. } => *id,
 			Projected { id, .. } => *id,
 			Shifted { id, .. } => *id,
 			Packed { id, .. } => *id,
@@ -948,8 +852,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Transparent { name, .. } => name.as_deref(),
 			Committed { name, .. } => name.as_deref(),
 			Repeating { name, .. } => name.as_deref(),
-			Interleaved { name, .. } => name.as_deref(),
-			Merged { name, .. } => name.as_deref(),
 			Projected { name, .. } => name.as_deref(),
 			Shifted { name, .. } => name.as_deref(),
 			Packed { name, .. } => name.as_deref(),
@@ -964,8 +866,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Transparent { .. } => "Transparent",
 			Committed { .. } => "Committed",
 			Repeating { .. } => "Repeating",
-			Interleaved { .. } => "Interleaved",
-			Merged { .. } => "Merged",
 			Projected { .. } => "Projected",
 			Shifted { .. } => "Shifted",
 			Packed { .. } => "Packed",
@@ -982,8 +882,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Repeating {
 				inner, log_count, ..
 			} => inner.n_vars() + log_count,
-			Interleaved { poly0, .. } => 1 + poly0.n_vars(),
-			Merged { poly0, .. } => 1 + poly0.n_vars(),
 			Projected { projected, .. } => projected.n_vars(),
 			Shifted { shifted, .. } => shifted.inner().n_vars(),
 			Packed { packed, .. } => packed.inner().n_vars() - packed.log_degree(),
@@ -1001,12 +899,6 @@ impl<F: Field> MultilinearPolyOracle<F> {
 			Transparent { inner, .. } => inner.binary_tower_level(),
 			Committed { tower_level, .. } => *tower_level,
 			Repeating { inner, .. } => inner.binary_tower_level(),
-			Interleaved { poly0, poly1, .. } => {
-				poly0.binary_tower_level().max(poly1.binary_tower_level())
-			}
-			Merged { poly0, poly1, .. } => {
-				poly0.binary_tower_level().max(poly1.binary_tower_level())
-			}
 			// TODO: This is wrong, should be F::TOWER_LEVEL
 			Projected { projected, .. } => projected.inner().binary_tower_level(),
 			Shifted { shifted, .. } => shifted.inner().binary_tower_level(),

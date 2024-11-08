@@ -135,42 +135,6 @@ where
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
-		Interleaved { poly0, poly1, .. } => {
-			let poly0 = witness.get_multilin_poly(poly0.id())?;
-			let poly1 = witness.get_multilin_poly(poly1.id())?;
-			for i in 0..1 << (n_vars - 1) {
-				check_eval(
-					oracle_label,
-					i,
-					poly0.evaluate_on_hypercube(i)?,
-					poly.evaluate_on_hypercube(2 * i)?,
-				)?;
-				check_eval(
-					oracle_label,
-					i,
-					poly1.evaluate_on_hypercube(i)?,
-					poly.evaluate_on_hypercube(2 * i + 1)?,
-				)?;
-			}
-		}
-		Merged { poly0, poly1, .. } => {
-			let poly0 = witness.get_multilin_poly(poly0.id())?;
-			let poly1 = witness.get_multilin_poly(poly1.id())?;
-			for i in 0..1 << (n_vars - 1) {
-				check_eval(
-					oracle_label,
-					i,
-					poly0.evaluate_on_hypercube(i)?,
-					poly.evaluate_on_hypercube(i)?,
-				)?;
-				check_eval(
-					oracle_label,
-					i,
-					poly1.evaluate_on_hypercube(i)?,
-					poly.evaluate_on_hypercube((1 << (n_vars - 1)) + i)?,
-				)?;
-			}
-		}
 		Shifted { shifted, .. } => {
 			let unshifted_poly = witness.get_multilin_poly(shifted.inner().id())?;
 			let block_len = 1 << shifted.block_size();

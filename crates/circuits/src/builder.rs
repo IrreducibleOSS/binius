@@ -152,28 +152,6 @@ where
 		}
 	}
 
-	pub fn add_interleaved(
-		&mut self,
-		name: impl ToString,
-		id0: OracleId,
-		id1: OracleId,
-	) -> Result<OracleId, OracleError> {
-		self.oracles
-			.add_named(self.scoped_name(name))
-			.interleaved(id0, id1)
-	}
-
-	pub fn add_merged(
-		&mut self,
-		name: impl ToString,
-		id0: OracleId,
-		id1: OracleId,
-	) -> Result<OracleId, OracleError> {
-		self.oracles
-			.add_named(self.scoped_name(name))
-			.merged(id0, id1)
-	}
-
 	pub fn add_linear_combination(
 		&mut self,
 		name: impl ToString,

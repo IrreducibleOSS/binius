@@ -23,18 +23,6 @@ pub enum EvalcheckProof<F: Field> {
 	Shifted,
 	Packed,
 	Repeating(Box<EvalcheckProof<F>>),
-	Interleaved {
-		eval1: F,
-		eval2: F,
-		subproof1: Box<EvalcheckProof<F>>,
-		subproof2: Box<EvalcheckProof<F>>,
-	},
-	Merged {
-		eval1: F,
-		eval2: F,
-		subproof1: Box<EvalcheckProof<F>>,
-		subproof2: Box<EvalcheckProof<F>>,
-	},
 	Composite {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
@@ -51,28 +39,6 @@ impl<F: Field> EvalcheckProof<F> {
 			EvalcheckProof::Repeating(proof) => {
 				EvalcheckProof::Repeating(Box::new(proof.isomorphic()))
 			}
-			EvalcheckProof::Interleaved {
-				eval1,
-				eval2,
-				subproof1,
-				subproof2,
-			} => EvalcheckProof::Interleaved {
-				eval1: eval1.into(),
-				eval2: eval2.into(),
-				subproof1: Box::new(subproof1.isomorphic()),
-				subproof2: Box::new(subproof2.isomorphic()),
-			},
-			EvalcheckProof::Merged {
-				eval1,
-				eval2,
-				subproof1,
-				subproof2,
-			} => EvalcheckProof::Merged {
-				eval1: eval1.into(),
-				eval2: eval2.into(),
-				subproof1: Box::new(subproof1.isomorphic()),
-				subproof2: Box::new(subproof2.isomorphic()),
-			},
 			EvalcheckProof::Composite { subproofs } => EvalcheckProof::Composite {
 				subproofs: subproofs
 					.into_iter()

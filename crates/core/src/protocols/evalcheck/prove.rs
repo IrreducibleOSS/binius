@@ -159,36 +159,6 @@ where
 				EvalcheckProof::Repeating(Box::new(subproof))
 			}
 
-			Merged { poly0, poly1, .. } => {
-				let n_vars = poly0.n_vars();
-				assert_eq!(poly0.n_vars(), poly1.n_vars());
-				let inner_eval_point = &eval_point[..n_vars];
-
-				let (eval1, subproof1) = self.eval_and_proof(*poly0, inner_eval_point)?;
-				let (eval2, subproof2) = self.eval_and_proof(*poly1, inner_eval_point)?;
-
-				EvalcheckProof::Merged {
-					eval1,
-					eval2,
-					subproof1: Box::new(subproof1),
-					subproof2: Box::new(subproof2),
-				}
-			}
-			Interleaved { poly0, poly1, .. } => {
-				assert_eq!(poly0.n_vars(), poly1.n_vars());
-				let inner_eval_point = &eval_point[1..];
-
-				let (eval1, subproof1) = self.eval_and_proof(*poly0, inner_eval_point)?;
-				let (eval2, subproof2) = self.eval_and_proof(*poly1, inner_eval_point)?;
-
-				EvalcheckProof::Interleaved {
-					eval1,
-					eval2,
-					subproof1: Box::new(subproof1),
-					subproof2: Box::new(subproof2),
-				}
-			}
-
 			Shifted { shifted, .. } => {
 				process_shifted_sumcheck(
 					self.oracles,
