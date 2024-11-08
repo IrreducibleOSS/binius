@@ -156,7 +156,7 @@ impl<F: Field> Matrix<F> {
 		Ok(())
 	}
 
-	fn row_ref(&mut self, i: usize) -> &[F] {
+	fn row_ref(&self, i: usize) -> &[F] {
 		assert!(i < self.m);
 		&self.elements[i * self.n..(i + 1) * self.n]
 	}

@@ -24,14 +24,14 @@ use binius_math::{
 	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
 	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
-use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
+use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;
 use p3_util::log2_ceil_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::repeat_n};
 use tracing::instrument;
 use transpose::transpose;
 
@@ -622,8 +622,11 @@ where
 	})
 }
 
-// Extrapolate round evaluations using Lagrange to the full domain.
-// REVIEW: find a better, subquadratic way; luckily this is not on the hot path
+// Extrapolate round evaluations to the full domain.
+// NB: this method relies on the fact that `round_evals` have specific lengths
+// (namely `d * 2^n`, where `n` is not less than the number of skipped rounds and thus d
+// is not larger than the composition degree), which enables additive-NTT based subquadratic
+// techniques.
 #[instrument(skip_all, level = "debug")]
 fn extrapolate_round_evals<FDomain, F>(
 	mut round_evals: Vec<Vec<F>>,
@@ -632,31 +635,47 @@ fn extrapolate_round_evals<FDomain, F>(
 ) -> Result<Vec<Vec<F>>, Error>
 where
 	FDomain: BinaryField,
-	F: Field + ExtensionField<FDomain>,
+	F: BinaryField + ExtensionField<FDomain>,
 {
-	let ntt_domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
+	// Instantiate a large enough NTT over F to be able to forward transform to full domain size.
+	// REVIEW: should be possible to use an existing FDomain NTT with striding.
+	let ntt = SingleThreadedNTT::new(log2_ceil_usize(max_domain_size))?;
 
-	let mut domains = HashMap::new();
+	// Cache OddInterpolate instances, which, albeit small in practice, take cubic time to create.
+	let mut odd_interpolates = HashMap::new();
+
 	for round_evals in &mut round_evals {
-		let points_prefix_len = (1 << skip_rounds) + round_evals.len();
-		let domain = domains.entry(points_prefix_len).or_insert_with(|| {
-			EvaluationDomain::from_points(ntt_domain_points[..points_prefix_len].to_vec())
-				.expect("basis induced domain is correct by construction")
+		// Re-add zero evaluations at the beginning.
+		round_evals.splice(0..0, repeat_n(F::ZERO, 1 << skip_rounds));
+
+		let n = round_evals.len();
+
+		// Get OddInterpolate instance of required size.
+		let odd_interpolate = odd_interpolates.entry(n).or_insert_with(|| {
+			let ell = n.trailing_zeros() as usize;
+			assert!(ell >= skip_rounds);
+
+			OddInterpolate::new(n >> ell, ell, ntt.twiddles())
+				.expect("domain large enough by construction")
 		});
 
-		let extrapolated_round_evals = ntt_domain_points[points_prefix_len..]
-			.into_par_iter()
-			.map(|&point| {
-				let coeffs = domain.lagrange_evals(point);
-				// skip first 2^skip_rounds coeffs, as they are multiplied by zeros anyway
-				inner_product_unchecked(
-					round_evals.iter().copied(),
-					coeffs[1 << skip_rounds..].iter().copied(),
-				)
-			})
-			.collect::<Vec<_>>();
+		// Obtain novel polynomial basis representation of round evaluations.
+		odd_interpolate.inverse_transform(&ntt, round_evals)?;
 
-		round_evals.extend(extrapolated_round_evals);
+		// Use forward NTT to extrapolate novel representation to the max domain size.
+		let next_power_of_two = 1 << log2_ceil_usize(max_domain_size);
+		round_evals.resize(next_power_of_two, F::ZERO);
+
+		ntt.forward_transform(round_evals, 0, 0)?;
+
+		// Sanity check: first 1 << skip_rounds evals are still zeros.
+		debug_assert!(round_evals[..1 << skip_rounds]
+			.iter()
+			.all(|&coeff| coeff == F::ZERO));
+
+		// Trim the result.
+		round_evals.resize(max_domain_size, F::ZERO);
+		round_evals.drain(..1 << skip_rounds);
 	}
 
 	Ok(round_evals)
@@ -749,7 +768,7 @@ where
 {
 	let subcube_vars = skip_rounds + log_batch;
 	debug_assert_eq!(
-		interleaved_evals_packed_len::<P>(skip_rounds, log_batch),
+		1 << (skip_rounds + log_batch).saturating_sub(P::LOG_WIDTH),
 		interleaved_evals.len()
 	);
 	debug_assert_eq!(
@@ -808,18 +827,12 @@ where
 	Ok(())
 }
 
-fn interleaved_evals_packed_len<P: PackedField>(skip_rounds: usize, log_batch: usize) -> usize {
-	1 << (skip_rounds + log_batch).saturating_sub(P::LOG_WIDTH)
-}
-
 fn extrapolated_evals_packed_len<P: PackedField>(
 	composition_degree: usize,
 	skip_rounds: usize,
 	log_batch: usize,
 ) -> usize {
-	let extrapolated_scalars_count = extrapolated_scalars_count(composition_degree, skip_rounds);
-	let single_ntt_packed_elems = interleaved_evals_packed_len::<P>(skip_rounds, log_batch);
-	extrapolated_scalars_count.div_ceil(1 << skip_rounds) * single_ntt_packed_elems
+	composition_degree.saturating_sub(1) << (skip_rounds + log_batch).saturating_sub(P::LOG_WIDTH)
 }
 
 #[cfg(test)]
@@ -868,10 +881,9 @@ mod tests {
 						.map(|_| P::random(&mut rng))
 						.collect::<Vec<_>>();
 
-					let extrapolated_scalars_cnt = (composition_degree * ((1 << skip_rounds) - 1)
-						+ 1)
-					.saturating_sub(1 << skip_rounds);
-					let extrapolated_ntts = extrapolated_scalars_cnt.div_ceil(1 << skip_rounds);
+					let extrapolated_scalars_cnt =
+						composition_degree.saturating_sub(1) << skip_rounds;
+					let extrapolated_ntts = composition_degree.saturating_sub(1);
 					let extrapolated_len = extrapolated_ntts * interleaved_len;
 					let mut extrapolated_evals = vec![P::zero(); extrapolated_len];
 
@@ -967,8 +979,7 @@ mod tests {
 			.unwrap();
 
 			// naive computation of the univariate skip output
-			let round_evals_len =
-				(5usize * ((1 << skip_rounds) - 1) + 1).saturating_sub(1 << skip_rounds);
+			let round_evals_len = 4usize << skip_rounds;
 			assert!(output
 				.round_evals
 				.iter()
