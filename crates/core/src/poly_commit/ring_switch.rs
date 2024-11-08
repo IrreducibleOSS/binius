@@ -10,10 +10,11 @@ use crate::{
 		CompositeSumClaim, SumcheckClaim,
 	},
 	tensor_algebra::TensorAlgebra,
+	transcript::{CanRead, CanWrite},
 };
 use binius_field::{
 	packed::iter_packed_slice, util::inner_product_unchecked, ExtensionField, Field,
-	PackedExtension, PackedField, PackedFieldIndexable,
+	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
@@ -47,7 +48,7 @@ impl<F, FDomain, PE, DomainFactory, Inner> RingSwitchPCS<F, FDomain, PE, DomainF
 where
 	F: Field,
 	PE: PackedField,
-	PE::Scalar: ExtensionField<F>,
+	PE::Scalar: ExtensionField<F> + TowerField,
 	Inner: PolyCommitScheme<PE, PE::Scalar>,
 {
 	pub fn new(inner: Inner, domain_factory: DomainFactory) -> Result<Self, Error> {
@@ -69,7 +70,11 @@ impl<F, FDomain, FE, P, PE, DomainFactory, Inner> PolyCommitScheme<P, FE>
 where
 	F: Field,
 	FDomain: Field,
-	FE: ExtensionField<F> + ExtensionField<FDomain> + PackedField<Scalar = FE> + PackedExtension<F>,
+	FE: ExtensionField<F>
+		+ ExtensionField<FDomain>
+		+ PackedField<Scalar = FE>
+		+ PackedExtension<F>
+		+ TowerField,
 	P: PackedField<Scalar = F>,
 	PE: PackedFieldIndexable<Scalar = FE>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -111,9 +116,9 @@ where
 
 	// Clippy allow is due to bug: https://github.com/rust-lang/rust-clippy/pull/12892
 	#[allow(clippy::needless_borrows_for_generic_args)]
-	fn prove_evaluation<Data, CH, Backend>(
+	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
-		mut challenger: &mut CH,
+		mut transcript: &mut Transcript,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
@@ -121,7 +126,8 @@ where
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		CH: CanObserve<PE::Scalar>
+		Transcript: CanObserve<PE::Scalar>
+			+ CanWrite
 			+ CanObserve<Self::Commitment>
 			+ CanSample<PE::Scalar>
 			+ CanSampleBits<usize>,
@@ -149,10 +155,10 @@ where
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
 
-		challenger.observe_slice(sumcheck_eval.vertical_elems());
+		transcript.observe_slice(sumcheck_eval.vertical_elems());
 
 		// The challenges used to mix the rows of the tensor algebra coefficients.
-		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
+		let tensor_mixing_challenges = transcript.sample_vec(Self::kappa());
 
 		let sumcheck_claim = reduce_tensor_claim(
 			self.n_vars(),
@@ -173,7 +179,7 @@ where
 			backend,
 		)?;
 		let (sumcheck_output, sumcheck_proof) =
-			sumcheck::batch_prove(vec![sumcheck_prover], &mut challenger)?;
+			sumcheck::batch_prove(vec![sumcheck_prover], &mut transcript)?;
 		let (_, eval_point) = verify_sumcheck_output(
 			sumcheck_output,
 			query_from_kappa,
@@ -183,7 +189,7 @@ where
 
 		let inner_pcs_proof = self
 			.inner
-			.prove_evaluation(challenger, committed, &[packed_poly], &eval_point, backend)
+			.prove_evaluation(transcript, committed, &[packed_poly], &eval_point, backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
 
 		Ok(Proof {
@@ -193,9 +199,9 @@ where
 		})
 	}
 
-	fn verify_evaluation<CH, Backend>(
+	fn verify_evaluation<Transcript, Backend>(
 		&self,
-		mut challenger: &mut CH,
+		mut transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FE],
 		proof: Self::Proof,
@@ -203,7 +209,11 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Transcript: CanObserve<FE>
+			+ CanObserve<Self::Commitment>
+			+ CanSample<FE>
+			+ CanSampleBits<usize>
+			+ CanRead,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -225,7 +235,7 @@ where
 
 		let (query_to_kappa, query_from_kappa) = query.split_at(Self::kappa());
 
-		challenger.observe_slice(sumcheck_eval.vertical_elems());
+		transcript.observe_slice(sumcheck_eval.vertical_elems());
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
 		let expanded_query = backend.multilinear_query::<FE>(query_to_kappa)?;
@@ -237,18 +247,18 @@ where
 		}
 
 		// The challenges used to mix the rows of the tensor algebra coefficients.
-		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
+		let tensor_mixing_challenges = transcript.sample_vec(Self::kappa());
 
 		let sumcheck_claim =
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
-		let output = sumcheck::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut challenger)?;
+		let output = sumcheck::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut transcript)?;
 
 		let (eval, eval_point) =
 			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges, backend)?;
 
 		self.inner
 			.verify_evaluation(
-				challenger,
+				transcript,
 				commitment,
 				&eval_point,
 				inner_pcs_proof,
@@ -458,19 +468,21 @@ where
 mod tests {
 	use super::*;
 	use crate::{
-		challenger::new_hasher_challenger, poly_commit::BasicTensorPCS,
+		fiat_shamir::HasherChallenger,
+		poly_commit::BasicTensorPCS,
 		reed_solomon::reed_solomon::ReedSolomonCode,
+		transcript::{AdviceWriter, TranscriptWriter},
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
 		underlier::{Divisible, UnderlierType},
-		BinaryField, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
+		BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
 	use binius_hal::make_portable_backend;
-	use binius_hash::GroestlHasher;
 	use binius_math::IsomorphicEvaluationDomainFactory;
 	use binius_utils::checked_arithmetics::checked_log_2;
+	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::iter::repeat_with;
 
@@ -482,7 +494,7 @@ mod tests {
 			+ PackScalar<BinaryField8b>
 			+ Divisible<u8>,
 		F: Field,
-		FE: BinaryField
+		FE: TowerField
 			+ ExtensionField<F>
 			+ ExtensionField<BinaryField8b>
 			+ PackedField<Scalar = FE>
@@ -525,13 +537,14 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		challenger.observe(commitment.clone());
-
-		let mut prover_challenger = challenger.clone();
+		let mut prover_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		prover_challenger.transcript.observe(commitment.clone());
 		let proof = pcs
 			.prove_evaluation(
-				&mut prover_challenger,
+				&mut prover_challenger.transcript,
 				&committed,
 				&[multilin],
 				&eval_point,
@@ -539,9 +552,10 @@ mod tests {
 			)
 			.unwrap();
 
-		let mut verifier_challenger = challenger.clone();
+		let mut verifier_challenger = prover_challenger.into_verifier();
+		verifier_challenger.transcript.observe(commitment.clone());
 		pcs.verify_evaluation(
-			&mut verifier_challenger,
+			&mut verifier_challenger.transcript,
 			&commitment,
 			&eval_point,
 			proof,

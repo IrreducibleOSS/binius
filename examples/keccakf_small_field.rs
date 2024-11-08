@@ -21,9 +21,8 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::{
-		new_hasher_challenger, CanObserve, CanSample, CanSampleBits, IsomorphicChallenger,
-	},
+	challenger::{CanObserve, CanSample, CanSampleBits},
+	fiat_shamir::HasherChallenger,
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
@@ -34,6 +33,7 @@ use binius_core::{
 			Proof as ZerocheckBatchProof, Proof as UnivariatizingProof,
 		},
 	},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
 };
@@ -45,7 +45,6 @@ use binius_field::{
 	RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
@@ -53,6 +52,7 @@ use binius_utils::{
 };
 use bytemuck::{cast_vec, must_cast_slice_mut, pod_collect_to_vec, Pod};
 use bytesize::ByteSize;
+use groestl_crypto::Groestl256;
 use itertools::chain;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
@@ -544,13 +544,13 @@ fn make_constraints<'a, P: PackedField>(
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "keccakf_small_field::prove")]
-fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
+fn prove<U, F, FBase, DomainField, FEPCS, PCS, Transcript, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
-	mut challenger: CH,
+	prover_proof: &mut binius_core::transcript::Proof<Transcript, AdviceWriter>,
 	mut witness: MultilinearExtensionIndex<U, F>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -569,11 +569,13 @@ where
 	FEPCS: TowerField + From<F> + Into<F>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, FEPCS, Error: Debug, Proof: 'static>,
-	CH: Clone
-		+ CanObserve<PCS::Commitment>
+	Transcript: CanObserve<PCS::Commitment>
 		+ CanSampleBits<usize>
+		+ CanSample<F>
+		+ CanObserve<F>
 		+ CanSample<FEPCS>
-		+ CanObserve<FEPCS>,
+		+ CanObserve<FEPCS>
+		+ CanWrite,
 	Backend: ComputationBackend,
 {
 	let constraint_set_base = make_constraints(fixed_oracle, trace_oracle).build_one(oracles)?;
@@ -585,12 +587,10 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys)?;
-	challenger.observe(trace_comm.clone());
+	prover_proof.transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let mut iso_challenger = IsomorphicChallenger::<_, _, F>::new(&mut challenger);
-
-	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
+	let zerocheck_challenges = prover_proof.transcript.sample_vec(log_size);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
@@ -613,14 +613,15 @@ where
 		sumcheck::prove::batch_prove_zerocheck_univariate_round(
 			vec![univariate_prover],
 			field_types::SKIP_ROUNDS,
-			&mut iso_challenger,
+			&mut prover_proof.transcript,
+			&mut prover_proof.advice,
 		)?;
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
 	// prove the remainder of the zerocheck using "regular" protocol
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(univariate_output.reductions, &mut iso_challenger)?;
+		sumcheck::prove::batch_prove(univariate_output.reductions, &mut prover_proof.transcript)?;
 
 	// univariatized multilinear evalcheck claims
 	let univariatized_multilinear_evals = zerocheck_proof.multilinear_evals[0].clone();
@@ -647,8 +648,10 @@ where
 	)?;
 	let univariatizing_claims = [univariatizing_claim];
 
-	let (univariatizing_output, univariatizing_proof) =
-		sumcheck::prove::batch_prove(vec![univariatizing_reduction_prover], &mut iso_challenger)?;
+	let (univariatizing_output, univariatizing_proof) = sumcheck::prove::batch_prove(
+		vec![univariatizing_reduction_prover],
+		&mut prover_proof.transcript,
+	)?;
 
 	// check that the last column corresponds to the multilinear extension of Lagrange evaluations
 	// over skip domain
@@ -681,7 +684,7 @@ where
 		&mut witness,
 		evalcheck_multilinear_claims,
 		switchover_fn,
-		&mut iso_challenger,
+		&mut prover_proof.transcript,
 		domain_factory,
 		&backend,
 	)?;
@@ -704,7 +707,7 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
-		&mut challenger,
+		&mut prover_proof.transcript,
 		&trace_committed,
 		&trace_commit_polys,
 		&eval_point,
@@ -729,7 +732,7 @@ fn verify<P, F, DomainField, PCS, CH, Backend>(
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
-	mut challenger: CH,
+	verifier_proof: &mut binius_core::transcript::Proof<CH, AdviceReader>,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
 	backend: &Backend,
 ) -> Result<()>
@@ -738,7 +741,7 @@ where
 	F: TowerField + From<DomainField>,
 	DomainField: BinaryField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
-	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + CanRead,
 	Backend: ComputationBackend,
 {
 	let constraint_set = make_constraints::<F>(fixed_oracle, trace_oracle).build_one(oracles)?;
@@ -753,25 +756,29 @@ where
 	} = proof;
 
 	// Round 1
-	challenger.observe(trace_comm.clone());
+	verifier_proof.transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let zerocheck_challenges = challenger.sample_vec(log_size);
+	let zerocheck_challenges = verifier_proof.transcript.sample_vec(log_size);
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round::<
-		DomainField,
-		_,
-		_,
-		_,
-	>(&zerocheck_claims, zerocheck_univariate_proof, &mut challenger)?;
+	let univariate_output =
+		sumcheck::batch_verify_zerocheck_univariate_round::<DomainField, _, _, _, _>(
+			&zerocheck_claims,
+			zerocheck_univariate_proof,
+			&mut verifier_proof.transcript,
+			&mut verifier_proof.advice,
+		)?;
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let sumcheck_output =
-		sumcheck::batch_verify(&univariate_output.reductions, zerocheck_proof, &mut challenger)?;
+	let sumcheck_output = sumcheck::batch_verify(
+		&univariate_output.reductions,
+		zerocheck_proof,
+		&mut verifier_proof.transcript,
+	)?;
 
 	let univariatized_multilinear_evals = &sumcheck_output.multilinear_evals[0];
 
@@ -781,8 +788,11 @@ where
 	)?;
 	let univariatizing_claims = [univariatizing_claim];
 
-	let univariatizing_output =
-		sumcheck::batch_verify(&univariatizing_claims, univariatizing_proof, &mut challenger)?;
+	let univariatizing_output = sumcheck::batch_verify(
+		&univariatizing_claims,
+		univariatizing_proof,
+		&mut verifier_proof.transcript,
+	)?;
 
 	let multilinear_sumcheck_output =
 		sumcheck::univariate::verify_sumcheck_outputs::<DomainField, _>(
@@ -806,7 +816,7 @@ where
 		oracles,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
-		&mut challenger,
+		&mut verifier_proof.transcript,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -817,7 +827,7 @@ where
 	assert_eq!(batch_id, trace_oracle.batch_id);
 
 	pcs.verify_evaluation(
-		&mut challenger,
+		&mut verifier_proof.transcript,
 		&trace_comm,
 		&same_query_claim.eval_point,
 		trace_open_proof,
@@ -871,7 +881,10 @@ fn main() {
 		generate_trace::<U, field_types::FW>(log_size, &prove_fixed_oracle, &prove_trace_oracle)
 			.unwrap();
 
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let mut prover_proof = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let domain_factory =
 		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
 	let proof = prove::<
@@ -889,13 +902,14 @@ fn main() {
 		&prove_fixed_oracle,
 		&prove_trace_oracle,
 		&pcs,
-		challenger.clone(),
+		&mut prover_proof,
 		witness,
 		domain_factory,
 		&backend,
 	)
 	.unwrap();
 
+	let mut verifier_proof = prover_proof.into_verifier();
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	let verifier_fixed_oracle =
 		FixedOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size).unwrap();
@@ -906,9 +920,11 @@ fn main() {
 		&verifier_fixed_oracle,
 		&verifier_trace_oracle,
 		&pcs,
-		challenger.clone(),
+		&mut verifier_proof,
 		proof.isomorphic(),
 		&backend,
 	)
 	.unwrap();
+
+	verifier_proof.transcript.finalize().unwrap()
 }

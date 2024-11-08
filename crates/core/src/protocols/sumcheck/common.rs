@@ -151,7 +151,7 @@ impl<F: Field> MulAssign<F> for RoundCoeffs<F> {
 /// high-degree term coefficient can be easily recovered. Truncating the coefficient off saves a
 /// small amount of proof data.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct RoundProof<F: Field>(RoundCoeffs<F>);
+pub struct RoundProof<F: Field>(pub RoundCoeffs<F>);
 
 impl<F: Field> RoundProof<F> {
 	/// Recovers all univariate polynomial coefficients from the compressed round proof.

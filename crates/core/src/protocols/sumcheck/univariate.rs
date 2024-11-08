@@ -236,8 +236,8 @@ where
 mod tests {
 	use super::*;
 	use crate::{
-		challenger::{new_hasher_challenger, CanSample, IsomorphicChallenger},
 		composition::{IndexComposition, ProductComposition},
+		fiat_shamir::HasherChallenger,
 		polynomial::CompositionScalarAdapter,
 		protocols::{
 			sumcheck::{
@@ -251,17 +251,19 @@ mod tests {
 			},
 			test_utils::generate_zero_product_multilinears,
 		},
+		transcript::{AdviceWriter, Proof, TranscriptWriter},
 	};
 	use binius_field::{
 		AESTowerField128b, AESTowerField16b, BinaryField128b, BinaryField16b, Field,
 		PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField8x16b,
 		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
 	};
-	use binius_hash::GroestlHasher;
 	use binius_math::{
 		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
+	use groestl_crypto::Groestl256;
+	use p3_challenger::CanSample;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
 
@@ -274,7 +276,6 @@ mod tests {
 
 		let backend = make_portable_backend();
 		let mut rng = StdRng::seed_from_u64(0);
-		let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 
 		let regular_vars = 3;
 		let max_skip_rounds = 3;
@@ -331,8 +332,12 @@ mod tests {
 			provers.push(prover);
 		}
 
+		let mut prove_challenger = Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
 		let (batch_sumcheck_output_prove, proof) =
-			batch_prove(provers, &mut challenger.clone()).unwrap();
+			batch_prove(provers, &mut prove_challenger.transcript).unwrap();
 
 		for ((skip_rounds, multilinears), multilinear_evals) in
 			iter::zip(&all_multilinears, batch_sumcheck_output_prove.multilinear_evals)
@@ -357,8 +362,9 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
+		let mut verify_challenger = prove_challenger.into_verifier();
 		let batch_sumcheck_output_verify =
-			batch_verify(claims.as_slice(), proof, &mut challenger.clone()).unwrap();
+			batch_verify(claims.as_slice(), proof, &mut verify_challenger.transcript).unwrap();
 		let batch_sumcheck_output_post = verify_sumcheck_outputs::<BinaryField16b, _>(
 			claims.as_slice(),
 			univariate_challenge,
@@ -399,7 +405,10 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let switchover_fn = standard_switchover_heuristic(-2);
 		let mut rng = StdRng::seed_from_u64(0);
-		let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+		let mut proof = Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::new(),
+			advice: AdviceWriter::new(),
+		};
 
 		let pair = Arc::new(IndexComposition::new(9, [0, 1], ProductComposition::<2> {}).unwrap());
 		let triple =
@@ -436,8 +445,7 @@ mod tests {
 
 		let skip_rounds = 5;
 
-		let mut prover_challenger = IsomorphicChallenger::<F, _, FI>::new(challenger.clone());
-		let prover_zerocheck_challenges = prover_challenger.sample_vec(max_n_vars);
+		let prover_zerocheck_challenges: Vec<FI> = proof.transcript.sample_vec(max_n_vars);
 
 		let mut zerocheck_claims = Vec::new();
 		let mut univariate_provers = Vec::new();
@@ -481,15 +489,17 @@ mod tests {
 			batch_prove_zerocheck_univariate_round(
 				univariate_provers,
 				skip_rounds,
-				&mut prover_challenger,
+				&mut proof.transcript,
+				&mut proof.advice,
 			)
 			.unwrap();
 
 		let (_sumcheck_output, zerocheck_proof) =
-			batch_prove(prover_univariate_output.reductions, &mut prover_challenger).unwrap();
+			batch_prove(prover_univariate_output.reductions, &mut proof.transcript).unwrap();
 
-		let mut verifier_challenger = challenger.clone();
-		let _verifier_zerocheck_challenges: Vec<F> = verifier_challenger.sample_vec(max_n_vars);
+		let mut verifier_proof = proof.into_verifier();
+		let _verifier_zerocheck_challenges: Vec<F> =
+			verifier_proof.transcript.sample_vec(max_n_vars);
 
 		let mut verifier_zerocheck_claims = Vec::new();
 		for n_vars in (1..=max_n_vars).rev() {
@@ -499,16 +509,17 @@ mod tests {
 
 			verifier_zerocheck_claims.push(claim);
 		}
-		let verifier_univariate_output = batch_verify_zerocheck_univariate_round::<FI, F, _, _>(
+		let verifier_univariate_output = batch_verify_zerocheck_univariate_round::<FI, F, _, _, _>(
 			&verifier_zerocheck_claims[..univariate_cnt],
 			zerocheck_univariate_proof.isomorphic::<F>(),
-			&mut verifier_challenger,
+			&mut verifier_proof.transcript,
+			&mut verifier_proof.advice,
 		)
 		.unwrap();
 		let _verifier_sumcheck_output = batch_verify(
 			&verifier_univariate_output.reductions,
 			zerocheck_proof.isomorphic(),
-			&mut verifier_challenger,
+			&mut verifier_proof.transcript,
 		)
 		.unwrap();
 	}

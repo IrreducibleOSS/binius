@@ -5,7 +5,10 @@ use super::{
 	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
-use crate::protocols::{sumcheck, sumcheck::Proof as SumcheckBatchProof};
+use crate::{
+	protocols::{sumcheck, sumcheck::Proof as SumcheckBatchProof},
+	transcript::CanRead,
+};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
@@ -17,14 +20,14 @@ use tracing::instrument;
 
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
 #[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]
-pub fn batch_verify<F, Challenger>(
+pub fn batch_verify<F, Transcript>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	proof: GrandProductBatchProof<F>,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
-	Challenger: CanSample<F> + CanObserve<F>,
+	Transcript: CanSample<F> + CanObserve<F> + CanRead,
 {
 	let GrandProductBatchProof { batch_layer_proofs } = proof;
 
@@ -57,7 +60,7 @@ where
 			&mut reverse_sorted_evalcheck_claims,
 		);
 
-		layer_claims = reduce_layer_claim_batch(layer_claims, batch_layer_proof, &mut challenger)?;
+		layer_claims = reduce_layer_claim_batch(layer_claims, batch_layer_proof, &mut transcript)?;
 	}
 	process_finished_claims(
 		n_claims,
@@ -103,15 +106,15 @@ fn process_finished_claims<F: Field>(
 /// Arguments
 /// * `claims` - The kth layer LayerClaims
 /// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
-/// * `challenger` - The verifier challenger
-fn reduce_layer_claim_batch<F, CH>(
+/// * `transcript` - The verifier transcript
+fn reduce_layer_claim_batch<F, Transcript>(
 	claims: Vec<LayerClaim<F>>,
 	proof: SumcheckBatchProof<F>,
-	mut challenger: CH,
+	mut transcript: Transcript,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
-	F: Field,
-	CH: CanSample<F> + CanObserve<F>,
+	F: TowerField,
+	Transcript: CanSample<F> + CanObserve<F> + CanRead,
 {
 	// Validation
 	if claims.is_empty() {
@@ -134,14 +137,14 @@ where
 
 	let sumcheck_claims = reduce_to_sumchecks(&gpa_sumcheck_claims)?;
 
-	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, proof, &mut challenger)?;
+	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, proof, &mut transcript)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;
 
 	// Create the new (k+1)th layer LayerClaims for each grand product circuit
 	let sumcheck_challenge = batch_sumcheck_output.challenges.clone();
-	let gpa_challenge = challenger.sample();
+	let gpa_challenge = transcript.sample();
 	let new_layer_challenge = sumcheck_challenge
 		.into_iter()
 		.chain(Some(gpa_challenge))
@@ -150,7 +153,7 @@ where
 		.multilinear_evals
 		.into_iter()
 		.map(|evals| {
-			let new_eval = extrapolate_line_scalar(evals[0], evals[1], gpa_challenge);
+			let new_eval = extrapolate_line_scalar::<_, F>(evals[0], evals[1], gpa_challenge);
 			LayerClaim {
 				eval_point: new_layer_challenge.clone(),
 				eval: new_eval,

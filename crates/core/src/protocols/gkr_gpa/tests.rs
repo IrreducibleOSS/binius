@@ -2,9 +2,10 @@
 
 use super::{GrandProductClaim, GrandProductWitness};
 use crate::{
-	challenger::new_hasher_challenger,
+	fiat_shamir::HasherChallenger,
 	oracle::MultilinearOracleSet,
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
+	transcript::TranscriptWriter,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -13,8 +14,8 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedField, RepackedExtension,
 	TowerField,
 };
-use binius_hash::GroestlHasher;
 use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 
@@ -118,8 +119,6 @@ fn test_prove_verify_batch() {
 	let witness_index = MultilinearExtensionIndex::<U, F>::new();
 	let mut claims = Vec::new();
 	let mut witnesses = Vec::new();
-	let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	let verifier_challenger = prover_challenger.clone();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FS>::default();
 	let backend = binius_hal::make_portable_backend();
 
@@ -166,14 +165,22 @@ fn test_prove_verify_batch() {
 	// Prove and Verify
 	let _ = (oracle_set, witness_index, rng);
 
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let GrandProductBatchProveOutput {
 		final_layer_claims: final_layer_claim,
 		proof,
-	} = batch_prove::<_, _, FS, _, _>(witnesses, &claims, domain_factory, prover_challenger, &backend)
-		.unwrap();
+	} = batch_prove::<_, _, FS, _, _>(
+		witnesses,
+		&claims,
+		domain_factory,
+		&mut prover_transcript,
+		&backend,
+	)
+	.unwrap();
 
+	let mut verify_transcript = prover_transcript.into_reader();
 	let verified_evalcheck_multilinear_claims =
-		batch_verify(claims.clone(), proof, verifier_challenger).unwrap();
+		batch_verify(claims.clone(), proof, &mut verify_transcript).unwrap();
 
 	assert_eq!(final_layer_claim.len(), verified_evalcheck_multilinear_claims.len());
 	for (proved_eval_claim, verified_layer_laim) in final_layer_claim

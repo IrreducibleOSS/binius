@@ -11,6 +11,7 @@ use crate::{
 		subclaims::{make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
+	transcript::CanWrite,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -37,7 +38,7 @@ where
 	F: TowerField + ExtensionField<DomainField>,
 	PackedType<U, F>: PackedFieldIndexable,
 	DomainField: TowerField,
-	Challenger: CanObserve<F> + CanSample<F>,
+	Challenger: CanObserve<F> + CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let committed_batches = oracles.committed_batches();

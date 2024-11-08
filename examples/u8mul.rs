@@ -2,9 +2,7 @@
 
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
-use binius_core::{
-	challenger::new_hasher_challenger, constraint_system, tower::CanonicalTowerFamily,
-};
+use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
@@ -13,6 +11,7 @@ use binius_utils::{
 	checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use clap::{value_parser, Parser};
+use groestl_crypto::Groestl256;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -60,7 +59,6 @@ fn main() -> Result<()> {
 	let constraint_system = builder.build()?;
 
 	let domain_factory = DefaultEvaluationDomainFactory::default();
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let backend = make_portable_backend();
 
 	let proof = constraint_system::prove::<
@@ -70,7 +68,7 @@ fn main() -> Result<()> {
 		_,
 		GroestlHasher<BinaryField128b>,
 		GroestlDigestCompression<BinaryField8b>,
-		_,
+		HasherChallenger<Groestl256>,
 		_,
 	>(
 		&constraint_system,
@@ -78,17 +76,15 @@ fn main() -> Result<()> {
 		SECURITY_BITS,
 		witness,
 		&domain_factory,
-		challenger.clone(),
 		&backend,
 	)?;
 
-	constraint_system::verify::<U, CanonicalTowerFamily, _, _, _, _, _>(
+	constraint_system::verify::<U, CanonicalTowerFamily, _, _, _, _, HasherChallenger<Groestl256>>(
 		&constraint_system,
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&domain_factory,
 		proof,
-		challenger.clone(),
 	)?;
 
 	Ok(())

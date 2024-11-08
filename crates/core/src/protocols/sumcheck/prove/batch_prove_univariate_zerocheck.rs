@@ -1,15 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	challenger::{CanObserve, CanSample},
+	challenger::CanSample,
 	protocols::sumcheck::{
 		prove::SumcheckProver,
 		univariate::LagrangeRoundEvals,
 		univariate_zerocheck::{BatchZerocheckUnivariateOutput, ZerocheckUnivariateProof},
 		Error,
 	},
+	transcript::{AdviceWriter, CanWrite},
 };
-use binius_field::Field;
+use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -70,10 +71,11 @@ pub trait UnivariateZerocheckProver<F: Field> {
 /// verification.
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-pub fn batch_prove_zerocheck_univariate_round<F, Prover, Challenger>(
+pub fn batch_prove_zerocheck_univariate_round<F, Prover, Transcript>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 ) -> Result<
 	(
 		BatchZerocheckUnivariateOutput<F, Prover::RegularZerocheckProver>,
@@ -82,9 +84,9 @@ pub fn batch_prove_zerocheck_univariate_round<F, Prover, Challenger>(
 	Error,
 >
 where
-	F: Field,
+	F: TowerField,
 	Prover: UnivariateZerocheckProver<F>,
-	Challenger: CanSample<F> + CanObserve<F>,
+	Transcript: CanSample<F> + CanWrite,
 {
 	// Check that the provers are in descending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars()).rev()) {
@@ -106,7 +108,7 @@ where
 
 	let mut round_evals = LagrangeRoundEvals::zeros(max_domain_size);
 	for prover in provers.iter_mut() {
-		let next_batch_coeff = challenger.sample();
+		let next_batch_coeff = transcript.sample();
 		let prover_round_evals = prover.execute_univariate_round(
 			skip_rounds + prover.n_vars() - max_n_vars,
 			max_domain_size,
@@ -122,8 +124,8 @@ where
 		bail!(Error::IncorrectZerosPrefixLength);
 	}
 
-	challenger.observe_slice(&round_evals.evals);
-	let univariate_challenge = challenger.sample();
+	transcript.write_scalar_slice(&round_evals.evals);
+	let univariate_challenge = transcript.sample();
 
 	let mut reductions = Vec::with_capacity(provers.len());
 	let mut claimed_sums = Vec::with_capacity(provers.len());
@@ -131,7 +133,7 @@ where
 		let (prover_claimed_sums, regular_prover) =
 			prover.fold_univariate_round(univariate_challenge)?;
 
-		challenger.observe_slice(&prover_claimed_sums);
+		transcript.write_scalar_slice(&prover_claimed_sums);
 
 		reductions.push(regular_prover);
 		claimed_sums.push(prover_claimed_sums);
@@ -147,6 +149,9 @@ where
 		round_evals,
 		claimed_sums,
 	};
+
+	let skip_rounds = skip_rounds as u32;
+	advice.write_bytes(&skip_rounds.to_le_bytes());
 
 	Ok((output, proof))
 }

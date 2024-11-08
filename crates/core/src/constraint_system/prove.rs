@@ -8,6 +8,7 @@ use super::{
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	constraint_system::common::{FExt, TowerPCS, TowerPCSFamily},
+	fiat_shamir::Challenger,
 	merkle_tree::MerkleCap,
 	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	poly_commit::PolyCommitScheme,
@@ -20,6 +21,7 @@ use crate::{
 		sumcheck::{constraint_set_zerocheck_claim, standard_switchover_heuristic, zerocheck},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
+	transcript::{AdviceWriter, CanWrite, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -41,13 +43,12 @@ use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger, Backend>(
+pub fn prove<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	witness: MultilinearExtensionIndex<U, Tower::B128>,
 	domain_factory: DomainFactory,
-	challenger: Challenger,
 	backend: &Backend,
 ) -> Result<Proof<Tower::B128, Digest, Hash, Compress>, Error>
 where
@@ -55,13 +56,10 @@ where
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField,
+	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
-	Challenger: CanObserve<MerkleCap<Digest>>
-		+ CanObserve<Tower::B128>
-		+ CanSample<Tower::B128>
-		+ CanSampleBits<usize>,
+	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
@@ -72,24 +70,22 @@ where
 		&constraint_system.oracles,
 		domain_factory.clone(),
 	)?;
-	prove_with_pcs::<U, Tower, Tower::B8, _, _, _, _>(
+	prove_with_pcs::<U, Tower, Tower::B8, _, _, Challenger_, Digest, _>(
 		constraint_system,
 		witness,
 		&pcss,
 		domain_factory,
-		challenger,
 		backend,
 	)
 }
 
 /// Generates a proof that a witness satisfies a constraint system with provided PCSs.
 #[allow(clippy::type_complexity)]
-fn prove_with_pcs<U, Tower, FDomain, PCSFamily, DomainFactory, Challenger, Backend>(
+fn prove_with_pcs<U, Tower, FDomain, PCSFamily, DomainFactory, Challenger_, Digest, Backend>(
 	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
 	mut witness: MultilinearExtensionIndex<U, Tower::B128>,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
-	mut challenger: Challenger,
 	backend: &Backend,
 ) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment, PCSFamily::Proof>, Error>
 where
@@ -97,18 +93,19 @@ where
 	Tower: TowerFamily,
 	Tower::B128: ExtensionField<FDomain>,
 	FDomain: TowerField,
-	PCSFamily: TowerPCSFamily<Tower, U>,
+	PCSFamily: TowerPCSFamily<Tower, U, Commitment = MerkleCap<Digest>>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	Challenger: CanObserve<PCSFamily::Commitment>
-		+ CanObserve<Tower::B128>
-		+ CanSample<Tower::B128>
-		+ CanSampleBits<usize>,
+	Challenger_: Challenger + Default,
+	Digest: PackedField<Scalar: TowerField>,
 	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>: PackedTop<Tower>
 		+ PackedFieldIndexable
 		// Required for ZerocheckProver
 		+ RepackedExtension<PackedType<U, Tower::B128>>,
 {
+	let mut transcript = TranscriptWriter::<Challenger_>::default();
+	let advice = AdviceWriter::default();
+
 	let ConstraintSystem {
 		mut oracles,
 		mut table_constraints,
@@ -158,11 +155,11 @@ where
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	// Observe polynomial commitments
-	challenger.observe_slice(&commitments);
+	transcript.observe_slice(&commitments);
 
 	// Channel balancing argument
-	let mixing_challenge = challenger.sample();
-	let permutation_challenges = challenger.sample_vec(max_channel_id + 1);
+	let mixing_challenge = transcript.sample();
+	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
 	// Grand product arguments
 	let flush_oracles =
@@ -178,7 +175,7 @@ where
 		prodcheck_witnesses,
 		&prodcheck_claims,
 		&domain_factory,
-		&mut challenger,
+		&mut transcript,
 		backend,
 	)?;
 	let prodcheck_eval_claims =
@@ -198,7 +195,7 @@ where
 		.map(|claim| claim.n_vars())
 		.max()
 		.unwrap_or(0);
-	let zerocheck_challenges = challenger.sample_vec(n_zerocheck_challenges);
+	let zerocheck_challenges = transcript.sample_vec(n_zerocheck_challenges);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 	let provers = table_constraints
@@ -219,7 +216,7 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(provers, &mut challenger)?;
+		sumcheck::prove::batch_prove(provers, &mut transcript)?;
 
 	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -241,7 +238,7 @@ where
 			.into_iter()
 			.chain(zerocheck_eval_claims),
 		switchover_fn,
-		&mut challenger,
+		&mut transcript,
 		domain_factory,
 		backend,
 	)?;
@@ -270,7 +267,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 			TowerPCS::B8(pcs) => tower_pcs_open::<_, Tower::B8, _, _, _, _>(
@@ -280,7 +277,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 			TowerPCS::B16(pcs) => tower_pcs_open::<_, Tower::B16, _, _, _, _>(
@@ -290,7 +287,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 			TowerPCS::B32(pcs) => tower_pcs_open::<_, Tower::B32, _, _, _, _>(
@@ -300,7 +297,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 			TowerPCS::B64(pcs) => tower_pcs_open::<_, Tower::B64, _, _, _, _>(
@@ -310,7 +307,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 			TowerPCS::B128(pcs) => tower_pcs_open::<_, Tower::B128, _, _, _, _>(
@@ -320,7 +317,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
-				&mut challenger,
+				&mut transcript,
 				backend,
 			),
 		})
@@ -333,6 +330,8 @@ where
 		zerocheck_proof,
 		greedy_evalcheck_proof,
 		pcs_proofs,
+		transcript: transcript.finalize(),
+		advice: advice.finalize(),
 	})
 }
 
@@ -423,14 +422,14 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn tower_pcs_open<U, F, FExt, PCS, Challenger, Backend>(
+fn tower_pcs_open<U, F, FExt, PCS, Transcript, Backend>(
 	pcs: &PCS,
 	batch: CommittedBatch,
 	oracles: &MultilinearOracleSet<FExt>,
 	witness: &MultilinearExtensionIndex<U, FExt>,
 	committed: PCS::Committed,
 	eval_point: &[FExt],
-	mut challenger: Challenger,
+	mut transcript: Transcript,
 	backend: &Backend,
 ) -> Result<PCS::Proof, Error>
 where
@@ -438,8 +437,11 @@ where
 	F: TowerField,
 	FExt: TowerField + ExtensionField<F>,
 	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
-	Challenger:
-		CanObserve<PCS::Commitment> + CanObserve<FExt> + CanSample<FExt> + CanSampleBits<usize>,
+	Transcript: CanObserve<PCS::Commitment>
+		+ CanObserve<FExt>
+		+ CanSample<FExt>
+		+ CanSampleBits<usize>
+		+ CanWrite,
 	Backend: ComputationBackend,
 {
 	// Precondition
@@ -457,6 +459,6 @@ where
 			witness.get::<F>(oracle_id)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
-	pcs.prove_evaluation(&mut challenger, &committed, &mles, eval_point, backend)
+	pcs.prove_evaluation(&mut transcript, &committed, &mles, eval_point, backend)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))
 }

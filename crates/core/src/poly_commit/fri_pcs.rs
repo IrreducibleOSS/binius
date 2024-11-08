@@ -21,7 +21,7 @@ use crate::{
 };
 use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable,
+	PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
@@ -316,7 +316,7 @@ where
 	F: Field,
 	FDomain: Field,
 	FEncode: BinaryField,
-	FExt: BinaryField
+	FExt: TowerField
 		+ PackedField<Scalar = FExt>
 		+ ExtensionField<F>
 		+ ExtensionField<FDomain>
@@ -666,7 +666,11 @@ pub enum VerificationError {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{challenger::new_hasher_challenger, merkle_tree::MerkleTreeVCS};
+	use crate::{
+		fiat_shamir::HasherChallenger,
+		merkle_tree::MerkleTreeVCS,
+		transcript::{AdviceWriter, TranscriptWriter},
+	};
 	use binius_field::{
 		arch::packed_polyval_128::PackedBinaryPolyval1x128b,
 		as_packed_field::{PackScalar, PackedType},
@@ -676,6 +680,7 @@ mod tests {
 	use binius_hal::make_portable_backend;
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use binius_math::IsomorphicEvaluationDomainFactory;
+	use groestl_crypto::Groestl256;
 	use iter::repeat_with;
 	use rand::{prelude::StdRng, SeedableRng};
 
@@ -692,7 +697,7 @@ mod tests {
 			+ Divisible<u8>,
 		F: Field,
 		FA: BinaryField,
-		FE: BinaryField
+		FE: TowerField
 			+ ExtensionField<F>
 			+ ExtensionField<FA>
 			+ ExtensionField<BinaryField8b>
@@ -743,13 +748,14 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		challenger.observe(commitment.clone());
-
-		let mut prover_challenger = challenger.clone();
+		let mut prover_proof = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		prover_proof.transcript.observe(commitment.clone());
 		let proof = pcs
 			.prove_evaluation(
-				&mut prover_challenger,
+				&mut prover_proof.transcript,
 				&committed,
 				&[multilin],
 				&eval_point,
@@ -757,9 +763,10 @@ mod tests {
 			)
 			.unwrap();
 
-		let mut verifier_challenger = challenger.clone();
+		let mut verifier_proof = prover_proof.into_verifier();
+		verifier_proof.transcript.observe(commitment.clone());
 		pcs.verify_evaluation(
-			&mut verifier_challenger,
+			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
 			proof,

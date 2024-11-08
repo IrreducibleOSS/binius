@@ -5,7 +5,7 @@ use super::{
 	gpa_sumcheck::prove::GPAProver,
 	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
 };
-use crate::protocols::sumcheck;
+use crate::{protocols::sumcheck, transcript::CanWrite};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -27,11 +27,11 @@ use tracing::instrument;
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
-pub fn batch_prove<'a, F, P, FDomain, Challenger, Backend>(
+pub fn batch_prove<'a, F, P, FDomain, Transcript, Backend>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, P>>,
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
 	backend: &Backend,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
@@ -39,7 +39,7 @@ where
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 	P::Scalar: Field + ExtensionField<FDomain>,
-	Challenger: CanSample<F> + CanObserve<F>,
+	Transcript: CanSample<F> + CanObserve<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together
@@ -89,14 +89,14 @@ where
 				.map(|p| p.stage_gpa_sumcheck_prover(evaluation_domain_factory.clone()))
 				.collect::<Result<Vec<_>, _>>()?;
 			let (batch_sumcheck_output, proof) =
-				sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut challenger)?;
+				sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut transcript)?;
 			let sumcheck_challenge = batch_sumcheck_output.challenges;
 
 			(proof, sumcheck_challenge)
 		};
 
 		// Step 3: Sample a challenge for the next layer
-		let gpa_challenge = challenger.sample();
+		let gpa_challenge = transcript.sample();
 
 		// Step 4: Finalize each prover to update its internal current_layer_claim
 		for (i, prover) in sorted_provers.iter_mut().enumerate() {

@@ -15,7 +15,7 @@ use binius_field::{
 	underlier::Divisible,
 	util::inner_product_unchecked,
 	BinaryField, BinaryField8b, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable,
+	PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_hash::{
@@ -208,7 +208,7 @@ where
 	F: Field,
 	FA: Field,
 	FI: ExtensionField<F> + ExtensionField<FA>,
-	FE: ExtensionField<F> + ExtensionField<FI>,
+	FE: ExtensionField<F> + ExtensionField<FI> + TowerField,
 	LC: LinearCode<P = PackedType<U, FA>> + Sync,
 	H: HashDigest<PackedType<U, FI>> + Sync,
 	H::Digest: Copy + Default + Send,
@@ -925,7 +925,7 @@ where
 	F: Field,
 	FA: BinaryField,
 	FI: ExtensionField<F> + ExtensionField<FA> + ExtensionField<BinaryField8b>,
-	FE: BinaryField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
+	FE: TowerField + ExtensionField<F> + ExtensionField<FA> + ExtensionField<FI>,
 {
 	#[derive(Clone, Copy)]
 	struct Params {
@@ -1060,13 +1060,17 @@ pub enum VerificationError {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::challenger::new_hasher_challenger;
+	use crate::{
+		fiat_shamir::HasherChallenger,
+		transcript::{AdviceWriter, TranscriptWriter},
+	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b,
 		PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 		PackedBinaryField4x32b,
 	};
 	use binius_hal::make_portable_backend;
+	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 	#[test]
@@ -1097,8 +1101,12 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let query = repeat_with(|| challenger.sample())
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
@@ -1109,14 +1117,20 @@ mod tests {
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1159,8 +1173,11 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let query = repeat_with(|| challenger.sample())
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilin_query = backend
@@ -1172,14 +1189,20 @@ mod tests {
 			.map(|poly| poly.evaluate(multilin_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1215,8 +1238,11 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let query = repeat_with(|| challenger.sample())
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 
@@ -1227,14 +1253,20 @@ mod tests {
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1273,9 +1305,12 @@ mod tests {
 		.collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
 		let backend = make_portable_backend();
-		let query = repeat_with(|| challenger.sample())
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilinear_query = backend
@@ -1287,14 +1322,20 @@ mod tests {
 			.map(|poly| poly.evaluate(multilinear_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1330,8 +1371,11 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let query = repeat_with(|| challenger.sample())
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let backend = make_portable_backend();
@@ -1341,14 +1385,20 @@ mod tests {
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1387,9 +1437,12 @@ mod tests {
 		.collect::<Vec<_>>();
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
 		let backend = make_portable_backend();
-		let query = repeat_with(|| challenger.sample())
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let multilin_query = backend
@@ -1401,14 +1454,20 @@ mod tests {
 			.map(|poly| poly.evaluate(multilin_query.to_ref()).unwrap())
 			.collect::<Vec<_>>();
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,
@@ -1523,8 +1582,11 @@ mod tests {
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let query = repeat_with(|| challenger.sample())
+		let mut prove_challenger = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		let query = repeat_with(|| prove_challenger.transcript.sample())
 			.take(pcs.n_vars())
 			.collect::<Vec<_>>();
 		let backend = make_portable_backend();
@@ -1534,14 +1596,20 @@ mod tests {
 		let value = poly.evaluate(&multilin_query).unwrap();
 		let values = vec![value];
 
-		let mut prove_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prove_challenger, &committed, &polys, &query, &backend)
+			.prove_evaluation(
+				&mut prove_challenger.transcript,
+				&committed,
+				&polys,
+				&query,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verify_challenger = challenger.clone();
+		let mut verify_challenger = prove_challenger.into_verifier();
+		let _: Vec<BinaryField128b> = verify_challenger.transcript.sample_vec(pcs.n_vars());
 		pcs.verify_evaluation(
-			&mut verify_challenger,
+			&mut verify_challenger.transcript,
 			&commitment,
 			&query,
 			proof,

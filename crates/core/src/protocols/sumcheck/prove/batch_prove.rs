@@ -6,10 +6,10 @@ use crate::{
 		common::{BatchSumcheckOutput, Proof, RoundCoeffs},
 		error::Error,
 	},
+	transcript::CanWrite,
 };
-use binius_field::Field;
+use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use p3_challenger::CanObserve;
 use std::iter;
 use tracing::instrument;
 
@@ -69,14 +69,14 @@ pub trait SumcheckProver<F: Field> {
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
 /// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
-pub fn batch_prove<F, Prover, Challenger>(
+pub fn batch_prove<F, Prover, Transcript>(
 	mut provers: Vec<Prover>,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
 ) -> Result<(BatchSumcheckOutput<F>, Proof<F>), Error>
 where
-	F: Field,
+	F: TowerField,
 	Prover: SumcheckProver<F>,
-	Challenger: CanSample<F> + CanObserve<F>,
+	Transcript: CanSample<F> + CanWrite,
 {
 	if provers.is_empty() {
 		return Ok((
@@ -113,7 +113,7 @@ where
 				break;
 			}
 
-			let next_batch_coeff = challenger.sample();
+			let next_batch_coeff = transcript.sample();
 			batch_coeffs.push(next_batch_coeff);
 			active_index += 1;
 		}
@@ -128,10 +128,10 @@ where
 		}
 
 		let round_proof = round_coeffs.truncate();
-		challenger.observe_slice(round_proof.coeffs());
+		transcript.write_scalar_slice(round_proof.coeffs());
 		rounds.push(round_proof);
 
-		let challenge = challenger.sample();
+		let challenge = transcript.sample();
 		challenges.push(challenge);
 
 		for prover in provers[..active_index].iter_mut() {
@@ -143,7 +143,7 @@ where
 	while let Some(prover) = provers.get(active_index) {
 		debug_assert_eq!(prover.n_vars(), 0);
 
-		let _next_batch_coeff = challenger.sample();
+		let _next_batch_coeff = transcript.sample();
 		active_index += 1;
 	}
 
@@ -153,7 +153,7 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for multilinear_evals in multilinear_evals.iter() {
-		challenger.observe_slice(multilinear_evals);
+		transcript.write_scalar_slice(multilinear_evals);
 	}
 
 	let output = BatchSumcheckOutput {

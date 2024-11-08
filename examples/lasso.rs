@@ -2,7 +2,8 @@
 
 use anyhow::{anyhow, Result};
 use binius_core::{
-	challenger::{new_hasher_challenger, CanObserve, CanSample, CanSampleBits},
+	challenger::{CanObserve, CanSample, CanSampleBits},
+	fiat_shamir::HasherChallenger,
 	oracle::{BatchId, MultilinearOracleSet, OracleId},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
@@ -11,6 +12,7 @@ use binius_core::{
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
 		sumcheck::standard_switchover_heuristic,
 	},
+	transcript::{CanRead, CanWrite, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -20,13 +22,13 @@ use binius_field::{
 	Field, PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_hash::GroestlHasher;
 use binius_math::{
 	EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearExtensionBorrowed,
 };
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
+use groestl_crypto::Groestl256;
 use itertools::izip;
 use rand::thread_rng;
 use std::{fmt::Debug, marker::PhantomData};
@@ -230,7 +232,7 @@ where
 
 #[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
-fn prove<U, PCS8, PCS16, PCS32, CH, Backend>(
+fn prove<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	witness: TraceWitness<U, B128>,
@@ -238,7 +240,7 @@ fn prove<U, PCS8, PCS16, PCS32, CH, Backend>(
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	domain_factory: impl EvaluationDomainFactory<B128>,
 	backend: &Backend,
 ) -> Result<Proof<U, PCS8, PCS16, PCS32>>
@@ -247,10 +249,10 @@ where
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
-	CH: CanObserve<B128>
+	Transcript: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
-		+ Clone
+		+ CanWrite
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
 		+ CanObserve<PCS32::Commitment>,
@@ -291,12 +293,12 @@ where
 
 	let lasso_batches = &trace_oracle.lasso_batches;
 
-	challenger.observe(mults_comm.clone());
-	challenger.observe(product_comm.clone());
-	challenger.observe(lookup_t_comm.clone());
+	transcript.observe(mults_comm.clone());
+	transcript.observe(product_comm.clone());
+	transcript.observe(lookup_t_comm.clone());
 
-	let gamma = challenger.sample();
-	let alpha = challenger.sample();
+	let gamma = transcript.sample();
+	let alpha = transcript.sample();
 
 	let lasso_prove_output = lasso::prove::<B32, U, _, _>(
 		oracles,
@@ -332,8 +334,8 @@ where
 			oracles,
 		)?)?;
 
-	challenger.observe(lasso_counts_comm.clone());
-	challenger.observe(lasso_final_counts_comm.clone());
+	transcript.observe(lasso_counts_comm.clone());
+	transcript.observe(lasso_final_counts_comm.clone());
 
 	let GrandProductBatchProveOutput {
 		final_layer_claims,
@@ -342,7 +344,7 @@ where
 		reduced_gpa_witnesses,
 		&reduced_gpa_claims,
 		domain_factory.clone(),
-		&mut challenger,
+		&mut transcript,
 		&backend,
 	)?;
 
@@ -356,7 +358,7 @@ where
 		&mut witness_index,
 		evalcheck_multilinear_claims,
 		switchover_fn,
-		&mut challenger,
+		&mut transcript,
 		domain_factory,
 		&backend,
 	)?;
@@ -372,7 +374,7 @@ where
 	};
 
 	let lasso_counts_proof = lasso_counts_pcs.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lasso_counts_committed,
 		&extract_batch_id_polys::<_, _, B32>(
 			trace_oracle.lasso_batches.counts_batch_ids[0],
@@ -384,7 +386,7 @@ where
 	)?;
 
 	let lasso_final_counts_proof = pcs32.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lasso_final_counts_committed,
 		&extract_batch_id_polys::<_, _, B32>(
 			trace_oracle.lasso_batches.final_counts_batch_id,
@@ -396,7 +398,7 @@ where
 	)?;
 
 	let mults_proof = pcs8.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&mults_committed,
 		&extract_batch_id_polys::<_, _, B8>(trace_oracle.mults_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.mults_batch),
@@ -404,7 +406,7 @@ where
 	)?;
 
 	let product_proof = pcs16.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&product_committed,
 		&extract_batch_id_polys::<_, _, B16>(trace_oracle.product_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.product_batch),
@@ -412,7 +414,7 @@ where
 	)?;
 
 	let lookup_t_proof = pcs32.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lookup_t_committed,
 		&extract_batch_id_polys::<_, _, B32>(trace_oracle.lookup_t_batch, &witness_index, oracles)?,
 		batch_id_to_eval_point(trace_oracle.lookup_t_batch),
@@ -439,14 +441,14 @@ where
 
 #[instrument(skip_all, level = "debug")]
 #[allow(clippy::too_many_arguments)]
-fn verify<U, PCS8, PCS16, PCS32, CH, Backend>(
+fn verify<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
 	trace_oracle: &TraceOracle,
 	lasso_counts_pcs: &PCS32,
 	pcs8: &PCS8,
 	pcs16: &PCS16,
 	pcs32: &PCS32,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	proof: Proof<U, PCS8, PCS16, PCS32>,
 	backend: &Backend,
 ) -> Result<()>
@@ -455,10 +457,10 @@ where
 	PCS8: PolyCommitScheme<PackedType<U, B8>, B128, Error: Debug, Proof: 'static>,
 	PCS16: PolyCommitScheme<PackedType<U, B16>, B128, Error: Debug, Proof: 'static>,
 	PCS32: PolyCommitScheme<PackedType<U, B32>, B128, Error: Debug, Proof: 'static>,
-	CH: CanObserve<B128>
+	Transcript: CanObserve<B128>
 		+ CanSample<B128>
 		+ CanSampleBits<usize>
-		+ Clone
+		+ CanRead
 		+ CanObserve<PCS8::Commitment>
 		+ CanObserve<PCS16::Commitment>
 		+ CanObserve<PCS32::Commitment>,
@@ -488,12 +490,12 @@ where
 
 	let lasso_claim = LassoClaim::new(lookup_t_oracle, [lookup_u_oracle].to_vec())?;
 
-	challenger.observe(mults_comm.clone());
-	challenger.observe(product_comm.clone());
-	challenger.observe(lookup_t_comm.clone());
+	transcript.observe(mults_comm.clone());
+	transcript.observe(product_comm.clone());
+	transcript.observe(lookup_t_comm.clone());
 
-	let gamma = challenger.sample();
-	let alpha = challenger.sample();
+	let gamma = transcript.sample();
+	let alpha = transcript.sample();
 
 	let (reduced_gpa_claims, gpa_metas) = lasso::verify::<B32, _>(
 		oracles,
@@ -504,10 +506,10 @@ where
 		lasso_proof,
 	)?;
 
-	challenger.observe(lasso_counts_comm.clone());
-	challenger.observe(lasso_final_counts_comm.clone());
+	transcript.observe(lasso_counts_comm.clone());
+	transcript.observe(lasso_final_counts_comm.clone());
 
-	let final_layer_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut challenger)?;
+	let final_layer_claims = gkr_gpa::batch_verify(reduced_gpa_claims, gpa_proof, &mut transcript)?;
 
 	let evalcheck_multilinear_claims =
 		gkr_gpa::make_eval_claims(oracles, gpa_metas, final_layer_claims)?;
@@ -517,7 +519,7 @@ where
 		oracles,
 		evalcheck_multilinear_claims,
 		greedy_evalcheck_proof,
-		&mut challenger,
+		&mut transcript,
 	)?;
 
 	// PCS opening proofs
@@ -533,7 +535,7 @@ where
 		batch_id_to_eval_claim(trace_oracle.lasso_batches.counts_batch_ids[0]);
 
 	lasso_counts_pcs.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lasso_counts_comm,
 		&lasso_counts_eval_claim.eval_point,
 		lasso_counts_proof,
@@ -545,7 +547,7 @@ where
 		batch_id_to_eval_claim(trace_oracle.lasso_batches.final_counts_batch_id);
 
 	pcs32.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lasso_final_counts_comm,
 		&lasso_final_counts_eval_claim.eval_point,
 		lasso_final_counts_proof,
@@ -556,7 +558,7 @@ where
 	let mults_eval_claim = batch_id_to_eval_claim(trace_oracle.mults_batch);
 
 	pcs8.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&mults_comm,
 		&mults_eval_claim.eval_point,
 		mults_proof,
@@ -567,7 +569,7 @@ where
 	let product_eval_claim = batch_id_to_eval_claim(trace_oracle.product_batch);
 
 	pcs16.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&product_comm,
 		&product_eval_claim.eval_point,
 		product_proof,
@@ -578,7 +580,7 @@ where
 	let lookup_t_eval_claim = batch_id_to_eval_claim(trace_oracle.lookup_t_batch);
 
 	pcs32.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&lookup_t_comm,
 		&lookup_t_eval_claim.eval_point,
 		lookup_t_proof,
@@ -625,7 +627,7 @@ fn main() -> Result<()> {
 
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
 
@@ -637,11 +639,12 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		challenger.clone(),
+		&mut prover_transcript,
 		domain_factory,
 		&backend,
 	)?;
 
+	let mut verifier_transcript = prover_transcript.into_reader();
 	verify(
 		&mut oracles.clone(),
 		&trace_oracle,
@@ -649,10 +652,11 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		challenger.clone(),
+		&mut verifier_transcript,
 		proof,
 		&backend,
 	)?;
 
+	verifier_transcript.finalize()?;
 	Ok(())
 }

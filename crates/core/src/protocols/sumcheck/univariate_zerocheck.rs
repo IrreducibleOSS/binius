@@ -6,8 +6,8 @@ use super::{
 	univariate::LagrangeRoundEvals,
 	zerocheck::{ExtraProduct, ZerocheckClaim},
 };
-use crate::challenger::{CanObserve, CanSample};
-use binius_field::{util::inner_product_unchecked, BinaryField, Field};
+use crate::{challenger::CanSample, transcript::CanRead};
+use binius_field::{util::inner_product_unchecked, BinaryField, Field, TowerField};
 use binius_math::{make_ntt_domain_points, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
@@ -62,22 +62,24 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 ///     for subquadratic time interpolation assumes domains of specific structure that needs
 ///     to be replicated in the verifier via an isomorphism.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_zerocheck_univariate_round<FDomain, F, Composition, Challenger>(
+pub fn batch_verify_zerocheck_univariate_round<FDomain, F, Composition, Transcript, Advice>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	proof: ZerocheckUnivariateProof<F>,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
+	mut advice: Advice,
 ) -> Result<BatchZerocheckUnivariateOutput<F, SumcheckClaim<F, ExtraProduct<&Composition>>>, Error>
 where
 	FDomain: BinaryField,
-	F: Field + From<FDomain>,
+	F: TowerField + From<FDomain>,
 	Composition: CompositionPoly<F>,
-	Challenger: CanObserve<F> + CanSample<F>,
+	Transcript: CanRead + CanSample<F>,
+	Advice: CanRead,
 {
-	let ZerocheckUnivariateProof {
-		skip_rounds,
-		round_evals,
-		claimed_sums,
-	} = proof;
+	drop(proof);
+
+	let mut skip_rnds_as_bytes = [0; size_of::<u32>()];
+	advice.read_bytes(&mut skip_rnds_as_bytes)?;
+	let skip_rounds = u32::from_le_bytes(skip_rnds_as_bytes) as usize;
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
@@ -101,35 +103,21 @@ where
 	let max_domain_size = domain_size(composition_max_degree + 1, skip_rounds);
 	let zeros_prefix_len = 1 << (skip_rounds + min_n_vars - max_n_vars);
 
-	if round_evals.zeros_prefix_len != zeros_prefix_len {
-		bail!(VerificationError::IncorrectZerosPrefixLen);
-	}
-
-	if round_evals.evals.len() != max_domain_size - zeros_prefix_len {
-		bail!(VerificationError::IncorrectLagrangeRoundEvalsLen);
-	}
-
-	if claimed_sums.len() != claims.len() {
-		bail!(VerificationError::IncorrectClaimedSumsShape);
-	}
-
 	let mut batch_coeffs = Vec::with_capacity(claims.len());
 	for _ in 0..claims.len() {
-		let batch_coeff = challenger.sample();
+		let batch_coeff = transcript.sample();
 		batch_coeffs.push(batch_coeff);
 	}
 
-	challenger.observe_slice(&round_evals.evals);
-	let univariate_challenge = challenger.sample();
+	let round_evals = transcript.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
+	let univariate_challenge = transcript.sample();
 
 	let mut expected_sum = F::ZERO;
 	let mut reductions = Vec::with_capacity(claims.len());
-	for (claim, batch_coeff, inner_claimed_sums) in izip!(claims, batch_coeffs, claimed_sums) {
-		if claim.composite_zeros().len() != inner_claimed_sums.len() {
-			bail!(VerificationError::IncorrectClaimedSumsShape);
-		}
-
-		challenger.observe_slice(&inner_claimed_sums);
+	// for (claim, batch_coeff, inner_claimed_sums) in izip!(claims, batch_coeffs, claimed_sums) {
+	for (claim, batch_coeff) in izip!(claims, batch_coeffs) {
+		let inner_claimed_sums =
+			transcript.read_scalar_slice::<F>(claim.composite_zeros().len())?;
 
 		expected_sum += batch_weighted_value(batch_coeff, inner_claimed_sums.iter().copied());
 
@@ -158,7 +146,7 @@ where
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
 	let actual_sum = inner_product_unchecked::<F, F>(
-		round_evals.evals,
+		round_evals,
 		lagrange_coeffs[zeros_prefix_len..].iter().copied(),
 	);
 

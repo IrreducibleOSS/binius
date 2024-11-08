@@ -53,4 +53,6 @@ pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
 	pub zerocheck_proof: sumcheck::Proof<F>,
 	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,
 	pub pcs_proofs: Vec<PCSProof>,
+	pub transcript: Vec<u8>,
+	pub advice: Vec<u8>,
 }

@@ -5,7 +5,7 @@ use super::{
 	ConstraintSystem, Proof, ProofGenericPCS,
 };
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
+	challenger::{CanObserve, CanSample},
 	constraint_system::{
 		channel::{Flush, FlushDirection},
 		common::{
@@ -14,6 +14,7 @@ use crate::{
 			FExt, TowerPCS, TowerPCSFamily,
 		},
 	},
+	fiat_shamir::Challenger,
 	merkle_tree::{MerkleCap, MerkleTreeVCS},
 	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
@@ -22,6 +23,7 @@ use crate::{
 		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
+	transcript::{AdviceReader, TranscriptReader},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -41,26 +43,22 @@ use tracing::instrument;
 
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]
-pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger>(
+pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	domain_factory: DomainFactory,
 	proof: Proof<FExt<Tower>, Digest, Hash, Compress>,
-	challenger: Challenger,
 ) -> Result<(), Error>
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField,
+	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
-	Challenger: CanObserve<MerkleCap<Digest>>
-		+ CanObserve<Tower::B128>
-		+ CanSample<Tower::B128>
-		+ CanSampleBits<usize>,
+	Challenger_: Challenger + Default,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 {
@@ -70,24 +68,21 @@ where
 		&constraint_system.oracles,
 		domain_factory,
 	)?;
-	verify_with_pcs(constraint_system, proof, &pcss, challenger)
+	verify_with_pcs::<_, _, _, Challenger_, Digest>(constraint_system, proof, &pcss)
 }
 
 /// Verifies a proof against a constraint system with provided PCSs.
-fn verify_with_pcs<U, Tower, PCSFamily, Challenger>(
+fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
 	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
 	proof: ProofGenericPCS<FExt<Tower>, PCSFamily::Commitment, PCSFamily::Proof>,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
-	mut challenger: Challenger,
 ) -> Result<(), Error>
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	PCSFamily: TowerPCSFamily<Tower, U>,
-	Challenger: CanObserve<PCSFamily::Commitment>
-		+ CanObserve<Tower::B128>
-		+ CanSample<Tower::B128>
-		+ CanSampleBits<usize>,
+	PCSFamily: TowerPCSFamily<Tower, U, Commitment = MerkleCap<Digest>>,
+	Challenger_: Challenger + Default,
+	Digest: PackedField<Scalar: TowerField>,
 {
 	let ConstraintSystem {
 		mut oracles,
@@ -114,7 +109,12 @@ where
 		zerocheck_proof,
 		greedy_evalcheck_proof,
 		pcs_proofs,
+		transcript,
+		advice,
 	} = proof;
+
+	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
+	let advice = AdviceReader::new(advice);
 
 	let backend = make_portable_backend();
 
@@ -123,12 +123,12 @@ where
 	}
 
 	// Observe polynomial commitments
-	challenger.observe_slice(&commitments);
+	transcript.observe_slice(&commitments);
 
 	// Channel balancing argument
-	let mixing_challenge = challenger.sample();
+	let mixing_challenge = transcript.sample();
 	// TODO(cryptographers): Find a way to sample less randomness
-	let permutation_challenges = challenger.sample_vec(max_channel_id + 1);
+	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
 	// Grand product arguments
 	let flush_oracles =
@@ -136,7 +136,7 @@ where
 	let prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
 	let final_layer_claims =
-		gkr_gpa::batch_verify(prodcheck_claims, prodcheck_proof, &mut challenger)?;
+		gkr_gpa::batch_verify(prodcheck_claims, prodcheck_proof, &mut transcript)?;
 	let prodcheck_eval_claims =
 		gkr_gpa::make_eval_claims(&oracles, flush_oracles, final_layer_claims)?;
 
@@ -156,11 +156,11 @@ where
 		.map(|claim| claim.n_vars())
 		.max()
 		.unwrap_or(0);
-	let zerocheck_challenges = challenger.sample_vec(n_zerocheck_challenges);
+	let zerocheck_challenges = transcript.sample_vec(n_zerocheck_challenges);
 
 	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 	let sumcheck_output =
-		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut transcript)?;
 
 	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -178,7 +178,7 @@ where
 			.into_iter()
 			.chain(zerocheck_eval_claims),
 		greedy_evalcheck_proof,
-		&mut challenger,
+		&mut transcript,
 	)?;
 
 	pcs_claims.sort_by_key(|(batch_id, _)| *batch_id);
@@ -199,7 +199,7 @@ where
 		izip!(pcs_claims, pcss, commitments, pcs_proofs)
 	{
 		pcs.verify_evaluation(
-			&mut challenger,
+			&mut transcript,
 			&commitment,
 			&claim.eval_point,
 			proof,
@@ -208,6 +208,9 @@ where
 		)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
 	}
+
+	transcript.finalize()?;
+	advice.finalize()?;
 
 	Ok(())
 }

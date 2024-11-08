@@ -1,17 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_core::{
-	challenger::{new_hasher_challenger, IsomorphicChallenger},
+	fiat_shamir::HasherChallenger,
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
+	transcript::TranscriptWriter,
 };
 use binius_field::{
 	arch::packed_polyval_128::PackedBinaryPolyval1x128b, BinaryField128b, BinaryField128bPolyval,
 	PackedField,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::GroestlHasher;
 use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 
@@ -38,8 +39,6 @@ fn bench_polyval(c: &mut Criterion) {
 			((1 << n) * std::mem::size_of::<BinaryField128b>()) as u64,
 		));
 		group.bench_function(format!("n_vars={n}"), |bench| {
-			let prover_challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-
 			// Setup witness
 			let numerator = create_numerator::<P>(n);
 
@@ -50,15 +49,13 @@ fn bench_polyval(c: &mut Criterion) {
 			let gpa_claim = GrandProductClaim { n_vars: n, product };
 			let backend = make_portable_backend();
 
+			let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 			bench.iter(|| {
-				let mut challenger_clone = prover_challenger.clone();
-				let mut iso_challenger =
-					IsomorphicChallenger::<BinaryField128b, _, FW>::new(&mut challenger_clone);
 				gkr_gpa::batch_prove::<FW, P, FW, _, _>(
 					[gpa_witness.clone()],
 					&[gpa_claim.clone()],
 					domain_factory.clone(),
-					&mut iso_challenger,
+					&mut prover_transcript,
 					&backend,
 				)
 			});

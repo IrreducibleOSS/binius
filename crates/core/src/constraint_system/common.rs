@@ -4,6 +4,7 @@ use crate::{
 	merkle_tree::VectorCommitScheme,
 	poly_commit::{batch_pcs, batch_pcs::BatchPCS, fri_pcs, PolyCommitScheme, FRIPCS},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
+	transcript::CanRead,
 };
 use binius_field::{as_packed_field::PackedType, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
@@ -103,7 +104,8 @@ where
 		CH: CanObserve<FExt<Tower>>
 			+ CanObserve<PCSFamily::Commitment>
 			+ CanSample<FExt<Tower>>
-			+ CanSampleBits<usize>,
+			+ CanSampleBits<usize>
+			+ CanRead,
 		Backend: ComputationBackend,
 	{
 		match self {

@@ -27,6 +27,7 @@ use crate::{
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
 		Error as SumcheckError, Proof as SumcheckBatchProof,
 	},
+	transcript::CanWrite,
 	transparent::{
 		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
 	},
@@ -444,7 +445,7 @@ where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
-	CH: CanObserve<F> + CanSample<F>,
+	CH: CanObserve<F> + CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(

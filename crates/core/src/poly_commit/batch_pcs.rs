@@ -6,7 +6,8 @@ use crate::{
 	polynomial::Error as PolynomialError,
 };
 
-use binius_field::{util::inner_product_unchecked, ExtensionField, Field, PackedField};
+use crate::transcript::{CanRead, CanWrite};
+use binius_field::{util::inner_product_unchecked, ExtensionField, Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
@@ -112,7 +113,7 @@ where
 pub struct BatchPCS<P, FE, InnerPCS>
 where
 	P: PackedField,
-	FE: ExtensionField<P::Scalar>,
+	FE: ExtensionField<P::Scalar> + TowerField,
 	InnerPCS: PolyCommitScheme<P, FE>,
 {
 	inner: InnerPCS,
@@ -125,7 +126,7 @@ impl<F, FE, P, Inner> BatchPCS<P, FE, Inner>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
-	FE: ExtensionField<F>,
+	FE: ExtensionField<F> + TowerField,
 	Inner: PolyCommitScheme<P, FE>,
 {
 	pub fn new(inner: Inner, n_vars: usize, log_num_polys: usize) -> Result<Self, Error> {
@@ -150,7 +151,7 @@ impl<F, FE, P, Inner> PolyCommitScheme<P, FE> for BatchPCS<P, FE, Inner>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
-	FE: ExtensionField<F>,
+	FE: ExtensionField<F> + TowerField,
 	Inner: PolyCommitScheme<P, FE>,
 {
 	type Commitment = Inner::Commitment;
@@ -175,9 +176,9 @@ where
 			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
-	fn prove_evaluation<Data, CH, Backend>(
+	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
-		challenger: &mut CH,
+		transcript: &mut Transcript,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
@@ -185,7 +186,11 @@ where
 	) -> Result<Self::Proof, Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Transcript: CanObserve<FE>
+			+ CanObserve<Self::Commitment>
+			+ CanSample<FE>
+			+ CanSampleBits<usize>
+			+ CanWrite,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars {
@@ -194,7 +199,7 @@ where
 			});
 		}
 		// r'_0,...,r'_{m-1} are drawn from FE.
-		let challenges = challenger.sample_vec(self.log_num_polys);
+		let challenges = transcript.sample_vec(self.log_num_polys);
 
 		// new_query := query || challenges.
 		let new_query = query
@@ -207,14 +212,14 @@ where
 
 		let inner_pcs_proof = self
 			.inner
-			.prove_evaluation(challenger, committed, &[merged_poly], &new_query, backend)
+			.prove_evaluation(transcript, committed, &[merged_poly], &new_query, backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
 		Ok(Proof(inner_pcs_proof))
 	}
 
-	fn verify_evaluation<CH, Backend>(
+	fn verify_evaluation<Transcript, Backend>(
 		&self,
-		challenger: &mut CH,
+		transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FE],
 		proof: Self::Proof,
@@ -222,7 +227,11 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		CH: CanObserve<FE> + CanObserve<Self::Commitment> + CanSample<FE> + CanSampleBits<usize>,
+		Transcript: CanObserve<FE>
+			+ CanObserve<Self::Commitment>
+			+ CanSample<FE>
+			+ CanSampleBits<usize>
+			+ CanRead,
 		Backend: ComputationBackend,
 	{
 		if values.len() > 1 << self.log_num_polys {
@@ -231,7 +240,7 @@ where
 			});
 		}
 
-		let mixing_challenges = challenger.sample_vec(self.log_num_polys);
+		let mixing_challenges = transcript.sample_vec(self.log_num_polys);
 		let mixed_evaluation = inner_product_unchecked(
 			MultilinearQuery::expand(&mixing_challenges).into_expansion(),
 			values.iter().copied(),
@@ -247,7 +256,7 @@ where
 
 		// check that the inner PCS proof verifies with the value mixed_evaluation
 		self.inner
-			.verify_evaluation(challenger, commitment, &new_query, proof.0, mixed_value, backend)
+			.verify_evaluation(transcript, commitment, &new_query, proof.0, mixed_value, backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
 		Ok(())
 	}
@@ -266,16 +275,17 @@ pub struct Proof<Inner>(Inner);
 mod tests {
 	use super::*;
 	use crate::{
-		challenger::new_hasher_challenger,
+		fiat_shamir::HasherChallenger,
 		poly_commit::{tensor_pcs::find_proof_size_optimal_pcs, TensorPCS},
 		reed_solomon::reed_solomon::ReedSolomonCode,
+		transcript::{AdviceWriter, TranscriptWriter},
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use binius_hash::GroestlHasher;
 	use binius_ntt::NTTOptions;
+	use groestl_crypto::Groestl256;
 	use p3_util::log2_ceil_usize;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::iter::repeat_with;
@@ -322,17 +332,26 @@ mod tests {
 		let polys = multilins.iter().map(|x| x.to_ref()).collect::<Vec<_>>();
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		challenger.observe(commitment.clone());
+		let mut prover_proof = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::new(),
+		};
+		prover_proof.transcript.observe(commitment.clone());
 
-		let mut prover_challenger = challenger.clone();
 		let proof = pcs
-			.prove_evaluation(&mut prover_challenger, &committed, &polys, &eval_point, &backend)
+			.prove_evaluation(
+				&mut prover_proof.transcript,
+				&committed,
+				&polys,
+				&eval_point,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verifier_challenger = challenger.clone();
+		let mut verifier_proof = prover_proof.into_verifier();
+		verifier_proof.transcript.observe(commitment.clone());
 		pcs.verify_evaluation(
-			&mut verifier_challenger,
+			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
 			proof,
@@ -386,17 +405,26 @@ mod tests {
 		let polys = multilins.iter().map(|x| x.to_ref()).collect::<Vec<_>>();
 
 		let (commitment, committed) = pcs.commit(&polys).unwrap();
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		challenger.observe(commitment.clone());
 
-		let mut prover_challenger = challenger.clone();
+		let mut prover_proof = crate::transcript::Proof {
+			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+			advice: AdviceWriter::default(),
+		};
+		prover_proof.transcript.observe(commitment.clone());
 		let proof = pcs
-			.prove_evaluation(&mut prover_challenger, &committed, &polys, &eval_point, &backend)
+			.prove_evaluation(
+				&mut prover_proof.transcript,
+				&committed,
+				&polys,
+				&eval_point,
+				&backend,
+			)
 			.unwrap();
 
-		let mut verifier_challenger = challenger.clone();
+		let mut verifier_proof = prover_proof.into_verifier();
+		verifier_proof.transcript.observe(commitment.clone());
 		pcs.verify_evaluation(
-			&mut verifier_challenger,
+			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
 			proof,

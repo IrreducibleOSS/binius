@@ -11,6 +11,7 @@ use crate::{
 		},
 		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
+	transcript::CanRead,
 };
 use binius_field::TowerField;
 use binius_utils::bail;
@@ -23,7 +24,7 @@ pub fn verify<F, Challenger>(
 ) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
 where
 	F: TowerField,
-	Challenger: CanObserve<F> + CanSample<F>,
+	Challenger: CanObserve<F> + CanSample<F> + CanRead,
 {
 	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);

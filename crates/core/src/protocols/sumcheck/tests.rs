@@ -7,10 +7,12 @@ use super::{
 	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
-	challenger::{new_hasher_challenger, CanSample, IsomorphicChallenger},
+	challenger::CanSample,
 	composition::index_composition,
+	fiat_shamir::HasherChallenger,
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::test_utils::TestProductComposition,
+	transcript::TranscriptWriter,
 };
 use binius_field::{
 	arch::{OptimalUnderlier128b, OptimalUnderlier256b},
@@ -18,14 +20,14 @@ use binius_field::{
 	packed::set_packed_slice,
 	underlier::UnderlierType,
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
-	PackedBinaryField4x32b, PackedField,
+	PackedBinaryField4x32b, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_hash::GroestlHasher;
 use binius_math::{
 	CompositionPoly, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension,
 	MultilinearPoly,
 };
+use groestl_crypto::Groestl256;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
@@ -117,10 +119,9 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	U: UnderlierType + PackScalar<F> + PackScalar<FDomain> + PackScalar<FExt>,
 	F: Field,
 	FDomain: Field + Step,
-	FExt: Field + ExtensionField<F> + ExtensionField<FDomain>,
+	FExt: TowerField + ExtensionField<F> + ExtensionField<FDomain>,
 	BinaryField128b: From<FExt> + Into<FExt>,
 {
-	type FChallenge = BinaryField128b;
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let multilins = generate_random_multilinears::<PackedType<U, F>, PackedType<U, FExt>>(
@@ -155,23 +156,16 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	)
 	.unwrap();
 
-	let challenger = IsomorphicChallenger::<FChallenge, _, _>::new(new_hasher_challenger::<
-		_,
-		GroestlHasher<_>,
-	>());
-
-	let mut prover_challenger = challenger.clone();
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let (prover_reduced_claims, proof) =
-		batch_prove(vec![prover], &mut prover_challenger).expect("failed to prove sumcheck");
+		batch_prove(vec![prover], &mut prover_transcript).expect("failed to prove sumcheck");
 
-	let mut verifier_challenger = challenger.clone();
-	let verifier_reduced_claims = batch_verify(&[claim], proof, &mut verifier_challenger).unwrap();
+	let prover_sample = CanSample::<FExt>::sample(&mut prover_transcript);
+	let mut verifier_transcript = prover_transcript.into_reader();
+	let verifier_reduced_claims = batch_verify(&[claim], proof, &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
-	assert_eq!(
-		CanSample::<FExt>::sample(&mut prover_challenger),
-		CanSample::<FExt>::sample(&mut verifier_challenger)
-	);
+	assert_eq!(prover_sample, CanSample::<FExt>::sample(&mut verifier_transcript));
 
 	assert_eq!(verifier_reduced_claims, prover_reduced_claims);
 
@@ -307,22 +301,19 @@ fn prove_verify_batch(n_vars: &[usize]) {
 		})
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-
-	let mut prover_challenger = challenger.clone();
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let (prover_output, proof) =
-		batch_prove(provers, &mut prover_challenger).expect("failed to prove sumcheck");
+		batch_prove(provers, &mut prover_transcript).expect("failed to prove sumcheck");
 
-	let mut verifier_challenger = challenger.clone();
-	let verifier_output = batch_verify(&claims, proof, &mut verifier_challenger).unwrap();
+	let prover_sample = CanSample::<FE>::sample(&mut prover_transcript);
+
+	let mut verifier_transcript = prover_transcript.into_reader();
+	let verifier_output = batch_verify(&claims, proof, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
 
 	// Check that challengers are in the same state
-	assert_eq!(
-		CanSample::<FE>::sample(&mut prover_challenger),
-		CanSample::<FE>::sample(&mut verifier_challenger)
-	);
+	assert_eq!(prover_sample, CanSample::<FE>::sample(&mut verifier_transcript));
 }
 
 #[test]

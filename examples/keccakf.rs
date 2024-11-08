@@ -18,15 +18,15 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::{
-		new_hasher_challenger, CanObserve, CanSample, CanSampleBits, IsomorphicChallenger,
-	},
+	challenger::{CanObserve, CanSample, CanSampleBits},
+	fiat_shamir::HasherChallenger,
 	oracle::{BatchId, ConstraintSetBuilder, MultilinearOracleSet, OracleId, ShiftVariant},
 	poly_commit::{tensor_pcs, PolyCommitScheme},
 	protocols::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckBatchProof},
 	},
+	transcript::{CanRead, CanWrite, TranscriptWriter},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
 };
@@ -38,7 +38,6 @@ use binius_field::{
 	RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
@@ -46,6 +45,7 @@ use binius_utils::{
 };
 use bytemuck::{cast_vec, must_cast_slice_mut, pod_collect_to_vec, Pod};
 use bytesize::ByteSize;
+use groestl_crypto::Groestl256;
 use itertools::chain;
 use rand::{thread_rng, Rng};
 use std::{array, fmt::Debug, iter};
@@ -531,13 +531,13 @@ fn make_constraints<'a, P: PackedField>(
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "keccakf::prove")]
-fn prove<U, F, FBase, DomainField, FEPCS, PCS, CH, Backend>(
+fn prove<U, F, FBase, DomainField, FEPCS, PCS, Transcript, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	mut witness: MultilinearExtensionIndex<U, F>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -554,11 +554,13 @@ where
 	FEPCS: TowerField + From<F> + Into<F>,
 	DomainField: TowerField,
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, FEPCS, Error: Debug, Proof: 'static>,
-	CH: Clone
-		+ CanObserve<PCS::Commitment>
+	Transcript: CanObserve<PCS::Commitment>
 		+ CanSampleBits<usize>
+		+ CanSample<F>
+		+ CanObserve<F>
 		+ CanSample<FEPCS>
-		+ CanObserve<FEPCS>,
+		+ CanObserve<FEPCS>
+		+ CanWrite,
 	Backend: ComputationBackend,
 {
 	let constraint_set_base = make_constraints(fixed_oracle, trace_oracle).build_one(oracles)?;
@@ -570,12 +572,10 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let (trace_comm, trace_committed) = pcs.commit(&trace_commit_polys)?;
-	challenger.observe(trace_comm.clone());
+	transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let mut iso_challenger = IsomorphicChallenger::<_, _, F>::new(&mut challenger);
-
-	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
+	let zerocheck_challenges = transcript.sample_vec(log_size);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
@@ -593,7 +593,7 @@ where
 	.into_regular_zerocheck()?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;
+		sumcheck::prove::batch_prove(vec![prover], &mut transcript)?;
 
 	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&[zerocheck_claim],
@@ -613,7 +613,7 @@ where
 		&mut witness,
 		evalcheck_multilinear_claims,
 		switchover_fn,
-		&mut iso_challenger,
+		&mut transcript,
 		domain_factory,
 		&backend,
 	)?;
@@ -636,7 +636,7 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let trace_open_proof = pcs.prove_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&trace_committed,
 		&trace_commit_polys,
 		&eval_point,
@@ -653,13 +653,13 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "keccakf::verify")]
-fn verify<P, F, PCS, CH, Backend>(
+fn verify<P, F, PCS, Transcript, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
 	backend: &Backend,
 ) -> Result<()>
@@ -667,7 +667,8 @@ where
 	P: PackedField<Scalar = BinaryField1b>,
 	F: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
-	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize>,
+	Transcript:
+		CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + CanRead,
 	Backend: ComputationBackend,
 {
 	let constraint_set = make_constraints::<F>(fixed_oracle, trace_oracle).build_one(oracles)?;
@@ -680,10 +681,10 @@ where
 	} = proof;
 
 	// Round 1
-	challenger.observe(trace_comm.clone());
+	transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let zerocheck_challenges = challenger.sample_vec(log_size);
+	let zerocheck_challenges = transcript.sample_vec(log_size);
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
@@ -691,7 +692,7 @@ where
 	let sumcheck_claims = sumcheck::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output =
-		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut transcript)?;
 
 	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -707,7 +708,7 @@ where
 		oracles,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
-		&mut challenger,
+		&mut transcript,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -718,7 +719,7 @@ where
 	assert_eq!(batch_id, trace_oracle.batch_id);
 
 	pcs.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&trace_comm,
 		&same_query_claim.eval_point,
 		trace_open_proof,
@@ -772,7 +773,7 @@ fn main() {
 		generate_trace::<U, field_types::FW>(log_size, &prove_fixed_oracle, &prove_trace_oracle)
 			.unwrap();
 
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let domain_factory =
 		IsomorphicEvaluationDomainFactory::<field_types::DomainFieldWithStep>::default();
 	let proof = prove::<
@@ -790,13 +791,14 @@ fn main() {
 		&prove_fixed_oracle,
 		&prove_trace_oracle,
 		&pcs,
-		challenger.clone(),
+		&mut prover_transcript,
 		witness,
 		domain_factory,
 		&backend,
 	)
 	.unwrap();
 
+	let mut verifier_transcript = prover_transcript.into_reader();
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	let verifier_fixed_oracle =
 		FixedOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size).unwrap();
@@ -807,9 +809,11 @@ fn main() {
 		&verifier_fixed_oracle,
 		&verifier_trace_oracle,
 		&pcs,
-		challenger.clone(),
+		&mut verifier_transcript,
 		proof.isomorphic(),
 		&backend,
 	)
 	.unwrap();
+
+	verifier_transcript.finalize().unwrap()
 }

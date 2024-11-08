@@ -3,9 +3,13 @@
 use super::{
 	common::{batch_weighted_value, BatchSumcheckOutput, Proof, RoundProof, SumcheckClaim},
 	error::{Error, VerificationError},
+	RoundCoeffs,
 };
-use crate::challenger::{CanObserve, CanSample};
-use binius_field::Field;
+use crate::{
+	challenger::{CanObserve, CanSample},
+	transcript::CanRead,
+};
+use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPoly};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
@@ -24,20 +28,17 @@ use tracing::instrument;
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
 /// coefficient.
 #[instrument(skip_all)]
-pub fn batch_verify<F, Composition, Challenger>(
+pub fn batch_verify<F, Composition, Transcript>(
 	claims: &[SumcheckClaim<F, Composition>],
 	proof: Proof<F>,
-	mut challenger: Challenger,
+	mut transcript: Transcript,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
-	F: Field,
+	F: TowerField,
 	Composition: CompositionPoly<F>,
-	Challenger: CanObserve<F> + CanSample<F>,
+	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
-	let Proof {
-		rounds: round_proofs,
-		multilinear_evals,
-	} = proof;
+	drop(proof);
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
@@ -45,9 +46,6 @@ where
 	}
 
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);
-	if round_proofs.len() != n_rounds {
-		return Err(VerificationError::NumberOfRounds.into());
-	}
 
 	// active_index is an index into the claims slice. Claims before the active index have already
 	// been batched into the instance and claims after the index have not.
@@ -56,7 +54,7 @@ where
 	let mut challenges = Vec::with_capacity(n_rounds);
 	let mut sum = F::ZERO;
 	let mut max_degree = 0; // Maximum individual degree of the active claims
-	for (round_no, round_proof) in round_proofs.into_iter().enumerate() {
+	for round_no in 0..n_rounds {
 		let n_vars = n_rounds - round_no;
 
 		while let Some(claim) = claims.get(active_index) {
@@ -64,7 +62,7 @@ where
 				break;
 			}
 
-			let next_batch_coeff = challenger.sample();
+			let next_batch_coeff = transcript.sample();
 			batch_coeffs.push(next_batch_coeff);
 
 			// Batch the next claimed sum into the batched sum.
@@ -79,16 +77,15 @@ where
 			active_index += 1;
 		}
 
-		if round_proof.coeffs().len() != max_degree {
-			return Err(VerificationError::NumberOfCoefficients {
+		let coeffs: Vec<F> = transcript.read_scalar_slice(max_degree).map_err(|_| {
+			VerificationError::NumberOfCoefficients {
 				round: round_no,
 				expected: max_degree,
 			}
-			.into());
-		}
+		})?;
+		let round_proof = RoundProof(RoundCoeffs(coeffs));
 
-		challenger.observe_slice(round_proof.coeffs());
-		let challenge = challenger.sample();
+		let challenge = transcript.sample();
 		challenges.push(challenge);
 
 		sum = interpolate_round_proof(round_proof, sum, challenge);
@@ -98,7 +95,7 @@ where
 	while let Some(claim) = claims.get(active_index) {
 		debug_assert_eq!(claim.n_vars(), 0);
 
-		let next_batch_coeff = challenger.sample();
+		let next_batch_coeff = transcript.sample();
 		batch_coeffs.push(next_batch_coeff);
 
 		// Batch the next claimed sum into the batched sum.
@@ -112,14 +109,12 @@ where
 		active_index += 1;
 	}
 
-	if multilinear_evals.len() != claims.len() {
-		return Err(VerificationError::NumberOfFinalEvaluations.into());
-	}
-	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter()) {
-		if claim.n_multilinears() != multilinear_evals.len() {
-			return Err(VerificationError::NumberOfFinalEvaluations.into());
-		}
-		challenger.observe_slice(multilinear_evals);
+	let mut multilinear_evals = Vec::with_capacity(claims.len());
+	for claim in claims.iter() {
+		let evals = transcript
+			.read_scalar_slice::<F>(claim.n_multilinears())
+			.map_err(|_| VerificationError::NumberOfFinalEvaluations)?;
+		multilinear_evals.push(evals);
 	}
 
 	let expected_sum =

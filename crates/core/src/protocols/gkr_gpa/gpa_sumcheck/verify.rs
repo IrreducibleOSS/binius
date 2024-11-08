@@ -109,7 +109,7 @@ pub fn verify_sumcheck_outputs<F: Field>(
 #[cfg(test)]
 mod tests {
 	use crate::{
-		challenger::new_hasher_challenger,
+		fiat_shamir::HasherChallenger,
 		protocols::{
 			gkr_gpa::gpa_sumcheck::{
 				prove::GPAProver,
@@ -117,14 +117,15 @@ mod tests {
 			},
 			sumcheck,
 		},
+		transcript::TranscriptWriter,
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
 		BinaryField8b, PackedField,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use binius_hash::GroestlHasher;
 	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+	use groestl_crypto::Groestl256;
 	use p3_challenger::CanSample;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use std::iter;
@@ -172,8 +173,8 @@ mod tests {
 			.collect::<Vec<_>>();
 		let prod_multilin = prod_mle.specialize_arc_dyn::<PackedType<U, FE>>();
 
-		let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-		let challenges: Vec<FE> = challenger.sample_vec(n_vars);
+		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let challenges: Vec<FE> = prove_transcript.sample_vec(n_vars);
 
 		let sum = prod_multilin
 			.evaluate(backend.multilinear_query(&challenges).unwrap().to_ref())
@@ -189,14 +190,16 @@ mod tests {
 		)
 		.unwrap();
 
-		let (_, proof) = sumcheck::batch_prove(vec![prover], challenger.clone()).unwrap();
+		let (_, proof) = sumcheck::batch_prove(vec![prover], &mut prove_transcript).unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 
 		let sumcheck_claims = reduce_to_sumchecks(&[claim]).unwrap();
 
+		let mut verify_challenger = prove_transcript.into_reader();
+		let _: Vec<FE> = verify_challenger.sample_vec(n_vars);
 		let batch_output =
-			sumcheck::batch_verify(&sumcheck_claims, proof, challenger.clone()).unwrap();
+			sumcheck::batch_verify(&sumcheck_claims, proof, &mut verify_challenger).unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 		verify_sumcheck_outputs(&[claim], &challenges, batch_output).unwrap();

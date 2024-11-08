@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_core::{
-	challenger::{new_hasher_challenger, IsomorphicChallenger},
+	fiat_shamir::HasherChallenger,
 	oracle::{
 		BatchId, CommittedId, ConstraintSet, ConstraintSetBuilder, MultilinearOracleSet, OracleId,
 	},
@@ -11,6 +11,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
+	transcript::{CanRead, CanWrite, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -20,13 +21,13 @@ use binius_field::{
 	PackedBinaryField128x1b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_hash::GroestlHasher;
 use binius_macros::{composition_poly, IterOracles};
 use binius_math::{EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
 use bytemuck::{must_cast, must_cast_mut, Pod};
+use groestl_crypto::Groestl256;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use rand::thread_rng;
 use rayon::prelude::*;
@@ -37,13 +38,13 @@ composition_poly!(BitwiseAndConstraint[a, b, c] = a * b - c);
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
-fn prove<U, PCS, CH, Backend>(
+fn prove<U, PCS, Transcript, Backend>(
 	pcs: &PCS,
 	oracles: &mut MultilinearOracleSet<BinaryField128bPolyval>,
 	trace: &TraceOracle,
 	constraint_set: ConstraintSet<PackedType<U, BinaryField128bPolyval>>,
 	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
 	backend: &Backend,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof, BinaryField128bPolyval>>
@@ -53,11 +54,13 @@ where
 	PCS: PolyCommitScheme<PackedType<U, BinaryField1b>, BinaryField128b>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
-	CH: CanObserve<BinaryField128b>
+	Transcript: CanObserve<BinaryField128b>
 		+ CanObserve<PCS::Commitment>
+		+ CanObserve<BinaryField128bPolyval>
 		+ CanSample<BinaryField128b>
+		+ CanSample<BinaryField128bPolyval>
 		+ CanSampleBits<usize>
-		+ Clone,
+		+ CanWrite,
 	Backend: ComputationBackend,
 {
 	let log_size = trace.log_size;
@@ -70,15 +73,11 @@ where
 		.map(|oracle_id| witness.get::<BinaryField1b>(oracle_id))
 		.collect::<Result<Vec<_>, _>>()?;
 	let (abc_comm, abc_committed) = pcs.commit(&commit_polys).unwrap();
-	challenger.observe(abc_comm.clone());
+	transcript.observe(abc_comm.clone());
 
 	drop(commit_span);
 
-	// Challenger over the isomorphic POLYVAL field
-	let mut iso_challenger =
-		IsomorphicChallenger::<_, _, BinaryField128bPolyval>::new(&mut challenger);
-
-	let zerocheck_challenges = iso_challenger.sample_vec(log_size);
+	let zerocheck_challenges: Vec<BinaryField128bPolyval> = transcript.sample_vec(log_size);
 
 	// Round 2
 	tracing::debug!("Proving zerocheck");
@@ -99,7 +98,7 @@ where
 		.into_regular_zerocheck()?;
 
 	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(vec![prover], &mut iso_challenger)?;
+		sumcheck::prove::batch_prove(vec![prover], &mut transcript)?;
 
 	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&[zerocheck_claim],
@@ -119,7 +118,7 @@ where
 		&mut witness,
 		evalcheck_claims,
 		switchover_fn,
-		&mut iso_challenger,
+		&mut transcript,
 		domain_factory,
 		backend,
 	)?;
@@ -143,7 +142,7 @@ where
 
 	// Prove commitment openings
 	let abc_eval_proof =
-		pcs.prove_evaluation(&mut challenger, &abc_committed, &commit_polys, &eval_point, backend)?;
+		pcs.prove_evaluation(&mut transcript, &abc_committed, &commit_polys, &eval_point, backend)?;
 
 	Ok(Proof {
 		abc_comm,
@@ -172,23 +171,24 @@ impl<C, P, F: Field> Proof<C, P, F> {
 }
 
 #[instrument(skip_all, level = "debug")]
-fn verify<PCS, CH, Backend>(
+fn verify<PCS, Transcript, Backend>(
 	log_size: usize,
 	pcs: &PCS,
 	trace: &mut MultilinearOracleSet<BinaryField128b>,
 	constraint_set: ConstraintSet<BinaryField128b>,
 	proof: Proof<PCS::Commitment, PCS::Proof, BinaryField128b>,
-	mut challenger: CH,
+	mut transcript: Transcript,
 	backend: &Backend,
 ) -> Result<()>
 where
 	PCS: PolyCommitScheme<PackedBinaryField128x1b, BinaryField128b>,
 	PCS::Error: Debug,
 	PCS::Proof: 'static,
-	CH: CanObserve<BinaryField128b>
+	Transcript: CanObserve<BinaryField128b>
 		+ CanObserve<PCS::Commitment>
 		+ CanSample<BinaryField128b>
-		+ CanSampleBits<usize>,
+		+ CanSampleBits<usize>
+		+ CanRead,
 	Backend: ComputationBackend,
 {
 	assert_eq!(pcs.n_vars(), log_size);
@@ -201,10 +201,10 @@ where
 	} = proof;
 
 	// Observe the trace commitments
-	challenger.observe(abc_comm.clone());
+	transcript.observe(abc_comm.clone());
 
 	// Run zerocheck protocol
-	let zerocheck_challenges = challenger.sample_vec(log_size);
+	let zerocheck_challenges = transcript.sample_vec(log_size);
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
@@ -212,7 +212,7 @@ where
 	let sumcheck_claims = sumcheck::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output =
-		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut challenger)?;
+		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut transcript)?;
 
 	let zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -227,7 +227,7 @@ where
 		trace,
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
-		&mut challenger,
+		&mut transcript,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -238,7 +238,7 @@ where
 
 	// Verify commitment openings
 	pcs.verify_evaluation(
-		&mut challenger,
+		&mut transcript,
 		&abc_comm,
 		&same_query_pcs_claim.eval_point,
 		abc_eval_proof,
@@ -372,17 +372,17 @@ fn main() {
 
 	let witness =
 		generate_trace::<U, BinaryField128bPolyval>(log_size, &prover_trace_oracle).unwrap();
-	let challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 	let backend = binius_hal::make_portable_backend();
 
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let proof = prove(
 		&pcs,
 		&mut prover_oracles.clone(),
 		&prover_trace_oracle,
 		prover_constraints,
 		witness,
-		challenger.clone(),
+		&mut prover_transcript,
 		domain_factory,
 		&backend,
 	)
@@ -391,14 +391,17 @@ fn main() {
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	TraceOracle::new(&mut verifier_oracles, log_size);
 
+	let mut verifier_transcript = prover_transcript.into_reader();
 	verify(
 		log_size,
 		&pcs,
 		&mut verifier_oracles.clone(),
 		verifier_constraints,
 		proof.isomorphic(),
-		challenger.clone(),
+		&mut verifier_transcript,
 		&backend,
 	)
 	.unwrap();
+
+	verifier_transcript.finalize().unwrap();
 }
