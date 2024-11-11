@@ -166,13 +166,13 @@ where
 			&tensor_mixing_challenges,
 			backend,
 		);
-		let rs_eq = RingSwitchEqInd::<F, _, PE>::new(
+		let rs_eq = RingSwitchEqInd::<F, _>::new(
 			query_from_kappa.to_vec(),
 			tensor_mixing_challenges.to_vec(),
 		)
 		.map_err(|_| Error::RingSwitchConstructionFailed)?;
 
-		let transparent = rs_eq.multilinear_extension(backend)?;
+		let transparent = rs_eq.multilinear_extension::<PE, _>(backend)?;
 
 		let sumcheck_prover = RegularSumcheckProver::<_, PE, _, _, _>::new(
 			[packed_poly.to_ref(), transparent.to_ref()]
@@ -392,7 +392,7 @@ where
 	assert_eq!(multilinear_evals.len(), 2);
 
 	let rs_eq =
-		RingSwitchEqInd::<F, _, FE>::new(eval_point.to_vec(), tensor_mixing_challenges.to_vec())
+		RingSwitchEqInd::<F, _>::new(eval_point.to_vec(), tensor_mixing_challenges.to_vec())
 			.map_err(|_| Error::RingSwitchConstructionFailed)?;
 	let ring_switch_eq_ind_eval = rs_eq
 		.evaluate(&sumcheck_challenges)

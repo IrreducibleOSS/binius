@@ -21,23 +21,21 @@ use std::{iter, marker::PhantomData};
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[derive(Debug)]
-pub struct RingSwitchEqInd<FS, F, P>
+pub struct RingSwitchEqInd<FS, F>
 where
 	FS: Field,
-	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS>,
-	P: PackedFieldIndexable<Scalar = F>,
+	F: ExtensionField<FS>,
 {
 	n_vars: usize,
 	r_evals: Vec<F>, // r_{\kappa}, \ldots, r_{\ell-1} (in particular, we forget about r_0, \ldots, r_{\kappa-1})
 	r_mixing_challenges: Vec<F>, // r''_0, \ldots, r''_{\kappa-1}
-	_phantom: PhantomData<(FS, P)>,
+	_phantom: PhantomData<FS>,
 }
 
-impl<FS, F, P> RingSwitchEqInd<FS, F, P>
+impl<FS, F> RingSwitchEqInd<FS, F>
 where
 	FS: Field,
 	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS>,
-	P: PackedFieldIndexable<Scalar = F>,
 {
 	pub fn new(r_evals: Vec<F>, r_mixing_challenges: Vec<F>) -> Result<Self, Error> {
 		let n_vars = r_evals.len();
@@ -56,10 +54,14 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<Backend: ComputationBackend>(
+	pub fn multilinear_extension<P, Backend>(
 		&self,
 		backend: &Backend,
-	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error> {
+	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error>
+	where
+		P: PackedFieldIndexable<Scalar = F>,
+		Backend: ComputationBackend,
+	{
 		let r_evals = &self.r_evals;
 		let r_mixing_challenges = &self.r_mixing_challenges;
 		let expanded_mixing_coeffs = backend.multilinear_query(r_mixing_challenges)?;
@@ -77,11 +79,10 @@ where
 	}
 }
 
-impl<FS, F, P> MultivariatePoly<F> for RingSwitchEqInd<FS, F, P>
+impl<FS, F> MultivariatePoly<F> for RingSwitchEqInd<FS, F>
 where
 	FS: TowerField,
 	F: ExtensionField<FS> + PackedField<Scalar = F> + PackedExtension<FS> + TowerField,
-	P: PackedFieldIndexable<Scalar = F>,
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars
@@ -157,12 +158,12 @@ mod tests {
 			.take(n_vars)
 			.collect::<Vec<_>>();
 
-		let rs_eq: RingSwitchEqInd<FS, F, F> =
-			RingSwitchEqInd::new(r_evals.clone(), r_mixing_challenges.clone()).unwrap();
+		let rs_eq =
+			RingSwitchEqInd::<FS, _>::new(r_evals.clone(), r_mixing_challenges.clone()).unwrap();
 
 		let val1 = rs_eq.evaluate(&r_sumcheck_challenges).unwrap();
 
-		let partial_evals = rs_eq.multilinear_extension(&backend).unwrap();
+		let partial_evals = rs_eq.multilinear_extension::<F, _>(&backend).unwrap();
 		let val2 = partial_evals
 			.evaluate(
 				&backend

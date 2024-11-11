@@ -429,11 +429,11 @@ where
 			&tensor_mixing_challenges,
 			backend,
 		);
-		let rs_eq = RingSwitchEqInd::<F, _, PE>::new(
+		let rs_eq = RingSwitchEqInd::<F, _>::new(
 			query_from_kappa.to_vec(),
 			tensor_mixing_challenges.to_vec(),
 		)?;
-		let transparent = rs_eq.multilinear_extension(backend)?;
+		let transparent = rs_eq.multilinear_extension::<PE, _>(backend)?;
 
 		let sumcheck_prover = RegularSumcheckProver::new(
 			[packed_poly.to_ref(), transparent.to_ref()]
@@ -526,7 +526,7 @@ where
 			fri_commitments,
 			fri_proof,
 			|challenges| {
-				let rs_eq = RingSwitchEqInd::<F, _, PE>::new(
+				let rs_eq = RingSwitchEqInd::<F, _>::new(
 					query_from_kappa.to_vec(),
 					tensor_mixing_challenges.to_vec(),
 				)?;
