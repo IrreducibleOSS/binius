@@ -1,16 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	common::{batch_weighted_value, CompositeSumClaim, SumcheckClaim},
 	error::{Error, VerificationError},
 	univariate::LagrangeRoundEvals,
-	zerocheck::{ExtraProduct, ZerocheckClaim},
+	verify::BatchVerifyStart,
+	zerocheck::ZerocheckClaim,
 };
 use crate::{challenger::CanSample, transcript::CanRead};
 use binius_field::{util::inner_product_unchecked, BinaryField, Field, TowerField};
 use binius_math::{make_ntt_domain_points, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use itertools::izip;
 use tracing::instrument;
 
 /// Batched univariate zerocheck proof.
@@ -18,7 +17,6 @@ use tracing::instrument;
 pub struct ZerocheckUnivariateProof<F: Field> {
 	pub skip_rounds: usize,
 	pub round_evals: LagrangeRoundEvals<F>,
-	pub claimed_sums: Vec<Vec<F>>,
 }
 
 impl<F: Field> ZerocheckUnivariateProof<F> {
@@ -26,19 +24,14 @@ impl<F: Field> ZerocheckUnivariateProof<F> {
 		ZerocheckUnivariateProof {
 			skip_rounds: self.skip_rounds,
 			round_evals: self.round_evals.isomorphic(),
-			claimed_sums: self
-				.claimed_sums
-				.into_iter()
-				.map(|inner_claimed_sums| inner_claimed_sums.into_iter().map(Into::into).collect())
-				.collect(),
 		}
 	}
 }
 
 #[derive(Debug)]
-pub struct BatchZerocheckUnivariateOutput<F: Field, Reduction> {
+pub struct BatchZerocheckUnivariateOutput<F: Field> {
 	pub univariate_challenge: F,
-	pub reductions: Vec<Reduction>,
+	pub batch_verify_start: BatchVerifyStart<F>,
 }
 
 /// Univariatized domain size.
@@ -72,7 +65,7 @@ pub fn batch_verify_zerocheck_univariate_round<FDomain, F, Composition, Transcri
 	proof: ZerocheckUnivariateProof<F>,
 	mut transcript: Transcript,
 	mut advice: Advice,
-) -> Result<BatchZerocheckUnivariateOutput<F, SumcheckClaim<F, ExtraProduct<&Composition>>>, Error>
+) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
 	FDomain: BinaryField,
 	F: TowerField + From<FDomain>,
@@ -105,40 +98,19 @@ where
 		.max()
 		.unwrap_or(0);
 
-	let max_domain_size = domain_size(composition_max_degree + 1, skip_rounds);
+	let max_domain_size = domain_size(composition_max_degree, skip_rounds);
 	let zeros_prefix_len = 1 << (skip_rounds + min_n_vars - max_n_vars);
 
 	let mut batch_coeffs = Vec::with_capacity(claims.len());
-	for _ in 0..claims.len() {
-		let batch_coeff = transcript.sample();
-		batch_coeffs.push(batch_coeff);
+	let mut max_degree = 0;
+	for claim in claims {
+		let next_batch_coeff = transcript.sample();
+		batch_coeffs.push(next_batch_coeff);
+		max_degree = max_degree.max(claim.max_individual_degree() + 1);
 	}
 
 	let round_evals = transcript.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
-
-	let mut expected_sum = F::ZERO;
-	let mut reductions = Vec::with_capacity(claims.len());
-	// for (claim, batch_coeff, inner_claimed_sums) in izip!(claims, batch_coeffs, claimed_sums) {
-	for (claim, batch_coeff) in izip!(claims, batch_coeffs) {
-		let inner_claimed_sums =
-			transcript.read_scalar_slice::<F>(claim.composite_zeros().len())?;
-
-		expected_sum += batch_weighted_value(batch_coeff, inner_claimed_sums.iter().copied());
-
-		let n_vars = max_n_vars - skip_rounds;
-		let n_multilinears = claim.n_multilinears() + 1;
-
-		let composite_sums = izip!(claim.composite_zeros(), inner_claimed_sums)
-			.map(|(composition, sum)| CompositeSumClaim {
-				composition: ExtraProduct { inner: composition },
-				sum,
-			})
-			.collect();
-
-		let reduction = SumcheckClaim::new(n_vars, n_multilinears, composite_sums)?;
-		reductions.push(reduction);
-	}
 
 	let domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
 	let isomorphic_domain_points = domain_points
@@ -150,18 +122,21 @@ where
 	let evaluation_domain = EvaluationDomain::<F>::from_points(isomorphic_domain_points)?;
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
-	let actual_sum = inner_product_unchecked::<F, F>(
+	let sum = inner_product_unchecked::<F, F>(
 		round_evals,
 		lagrange_coeffs[zeros_prefix_len..].iter().copied(),
 	);
 
-	if actual_sum != expected_sum {
-		bail!(VerificationError::ClaimedSumRoundEvalsMismatch);
-	}
+	let batch_verify_start = BatchVerifyStart {
+		batch_coeffs,
+		sum,
+		max_degree,
+		skip_rounds,
+	};
 
 	let output = BatchZerocheckUnivariateOutput {
 		univariate_challenge,
-		reductions,
+		batch_verify_start,
 	};
 
 	Ok(output)

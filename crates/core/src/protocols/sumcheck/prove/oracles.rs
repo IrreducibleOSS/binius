@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZerocheck<
 	'a,
+	'a,
 	FDomain,
 	PBase,
 	P,

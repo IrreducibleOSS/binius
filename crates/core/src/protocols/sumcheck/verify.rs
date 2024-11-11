@@ -27,8 +27,43 @@ use tracing::instrument;
 /// For each sumcheck claim, we sample one random mixing coefficient. The multiple composite claims
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
 /// coefficient.
-#[instrument(skip_all)]
 pub fn batch_verify<F, Composition, Transcript>(
+	claims: &[SumcheckClaim<F, Composition>],
+	proof: Proof<F>,
+	transcript: Transcript,
+) -> Result<BatchSumcheckOutput<F>, Error>
+where
+	F: TowerField,
+	Composition: CompositionPoly<F>,
+	Transcript: CanObserve<F> + CanSample<F> + CanRead,
+{
+	let start = BatchVerifyStart {
+		batch_coeffs: Vec::new(),
+		sum: F::ZERO,
+		max_degree: 0,
+		skip_rounds: 0,
+	};
+
+	batch_verify_with_start(start, claims, proof, transcript)
+}
+
+/// A struct describing the starting state of batched sumcheck verify invocation.
+#[derive(Debug)]
+pub struct BatchVerifyStart<F: Field> {
+	/// Batching coefficients for the already batched claims.
+	pub batch_coeffs: Vec<F>,
+	/// Batched sum claims.
+	pub sum: F,
+	/// Maximum individual degree of the already batched claims
+	pub max_degree: usize,
+	/// Number of multilinear rounds to skip during verification.
+	pub skip_rounds: usize,
+}
+
+/// Verify a batched sumcheck protocol execution, but after some rounds have been processed.
+#[instrument(skip_all)]
+pub fn batch_verify_with_start<F, Composition, Transcript>(
+	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],
 	proof: Proof<F>,
 	mut transcript: Transcript,
@@ -40,21 +75,33 @@ where
 {
 	drop(proof);
 
+	let BatchVerifyStart {
+		mut batch_coeffs,
+		mut sum,
+		mut max_degree,
+		skip_rounds,
+	} = start;
+
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
+	if batch_coeffs.len() > claims.len() {
+		bail!(Error::TooManyPrebatchedCoeffs);
+	}
+
 	let n_rounds = claims.iter().map(|claim| claim.n_vars()).max().unwrap_or(0);
+
+	if skip_rounds > n_rounds {
+		return Err(VerificationError::IncorrectSkippedRoundsCount.into());
+	}
 
 	// active_index is an index into the claims slice. Claims before the active index have already
 	// been batched into the instance and claims after the index have not.
-	let mut active_index = 0;
-	let mut batch_coeffs = Vec::with_capacity(claims.len());
-	let mut challenges = Vec::with_capacity(n_rounds);
-	let mut sum = F::ZERO;
-	let mut max_degree = 0; // Maximum individual degree of the active claims
-	for round_no in 0..n_rounds {
+	let mut active_index = batch_coeffs.len();
+	let mut challenges = Vec::with_capacity(n_rounds - skip_rounds);
+	for round_no in skip_rounds..n_rounds {
 		let n_vars = n_rounds - round_no;
 
 		while let Some(claim) = claims.get(active_index) {
@@ -119,6 +166,7 @@ where
 
 	let expected_sum =
 		compute_expected_batch_composite_evaluation(batch_coeffs, claims, &multilinear_evals)?;
+
 	if sum != expected_sum {
 		return Err(VerificationError::IncorrectBatchEvaluation.into());
 	}

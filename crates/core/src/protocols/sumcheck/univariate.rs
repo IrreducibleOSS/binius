@@ -241,13 +241,15 @@ mod tests {
 		polynomial::CompositionScalarAdapter,
 		protocols::{
 			sumcheck::{
-				batch_verify, batch_verify_zerocheck_univariate_round,
+				batch_verify, batch_verify_with_start, batch_verify_zerocheck_univariate_round,
 				prove::{
-					batch_prove, batch_prove_zerocheck_univariate_round,
+					batch_prove, batch_prove_with_start, batch_prove_zerocheck_univariate_round,
 					univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover},
 					UnivariateZerocheck,
 				},
-				standard_switchover_heuristic, ZerocheckClaim,
+				standard_switchover_heuristic,
+				zerocheck::reduce_to_sumchecks,
+				ZerocheckClaim,
 			},
 			test_utils::generate_zero_product_multilinears,
 		},
@@ -398,17 +400,13 @@ mod tests {
 		type PE = PackedAESBinaryField1x128b;
 		type PBase = PackedAESBinaryField8x16b;
 
-		let max_n_vars = 9;
+		let max_n_vars = 6;
 		let n_multilinears = 9;
 
 		let backend = make_portable_backend();
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let switchover_fn = standard_switchover_heuristic(-2);
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut proof = Proof {
-			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::new(),
-			advice: AdviceWriter::new(),
-		};
 
 		let pair = Arc::new(IndexComposition::new(9, [0, 1], ProductComposition::<2> {}).unwrap());
 		let triple =
@@ -443,84 +441,111 @@ mod tests {
 			quad as Arc<dyn CompositionPoly<F>>,
 		];
 
-		let skip_rounds = 5;
+		for skip_rounds in 1..=max_n_vars {
+			let mut proof = Proof {
+				transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::new(),
+				advice: AdviceWriter::new(),
+			};
 
-		let prover_zerocheck_challenges: Vec<FI> = proof.transcript.sample_vec(max_n_vars);
+			let prover_zerocheck_challenges: Vec<FI> =
+				proof.transcript.sample_vec(max_n_vars - skip_rounds);
 
-		let mut zerocheck_claims = Vec::new();
-		let mut univariate_provers = Vec::new();
-		for n_vars in (1..=max_n_vars).rev() {
-			let mut multilinears = generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, 2);
-			multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 3));
-			multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 4));
+			let mut prover_zerocheck_claims = Vec::new();
+			let mut univariate_provers = Vec::new();
+			for n_vars in (1..=max_n_vars).rev() {
+				let mut multilinears =
+					generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, 2);
+				multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 3));
+				multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 4));
 
-			let claim = ZerocheckClaim::<FI, _>::new(
-				n_vars,
-				n_multilinears,
-				prover_adapter_compositions.to_vec(),
-			)
-			.unwrap();
+				let claim = ZerocheckClaim::<FI, _>::new(
+					n_vars,
+					n_multilinears,
+					prover_adapter_compositions.to_vec(),
+				)
+				.unwrap();
 
-			let prover = UnivariateZerocheck::<FDomain, PBase, PE, _, _, _, _>::new(
-				multilinears,
-				prover_compositions.to_vec(),
-				&prover_zerocheck_challenges[max_n_vars - n_vars..],
-				domain_factory.clone(),
-				switchover_fn,
-				&backend,
-			)
-			.unwrap();
+				let prover = UnivariateZerocheck::<FDomain, PBase, PE, _, _, _, _>::new(
+					multilinears,
+					prover_compositions.to_vec(),
+					&prover_zerocheck_challenges
+						[(max_n_vars - n_vars).saturating_sub(skip_rounds)..],
+					domain_factory.clone(),
+					switchover_fn,
+					&backend,
+				)
+				.unwrap();
 
-			zerocheck_claims.push(claim);
-			univariate_provers.push(prover);
-		}
+				prover_zerocheck_claims.push(claim);
+				univariate_provers.push(prover);
+			}
 
-		let univariate_cnt =
-			zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
-		let tail_provers = univariate_provers.split_off(univariate_cnt);
-		let _tail_claims = zerocheck_claims.split_off(univariate_cnt);
+			let univariate_cnt = prover_zerocheck_claims
+				.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
+			let tail_provers = univariate_provers.split_off(univariate_cnt);
 
-		let _regular_provers = tail_provers
-			.into_iter()
-			.map(|prover| prover.into_regular_zerocheck().unwrap())
-			.collect::<Vec<_>>();
+			let tail_zerocheck_provers = tail_provers
+				.into_iter()
+				.map(|prover| prover.into_regular_zerocheck().unwrap())
+				.collect::<Vec<_>>();
 
-		let (prover_univariate_output, zerocheck_univariate_proof) =
-			batch_prove_zerocheck_univariate_round(
-				univariate_provers,
-				skip_rounds,
+			let (prover_univariate_output, zerocheck_univariate_proof) =
+				batch_prove_zerocheck_univariate_round(
+					univariate_provers,
+					skip_rounds,
+					&mut proof.transcript,
+					&mut proof.advice,
+				)
+				.unwrap();
+
+			let (_sumcheck_output, zerocheck_proof) = batch_prove_with_start(
+				prover_univariate_output.batch_prove_start,
+				tail_zerocheck_provers,
 				&mut proof.transcript,
-				&mut proof.advice,
 			)
 			.unwrap();
 
-		let (_sumcheck_output, zerocheck_proof) =
-			batch_prove(prover_univariate_output.reductions, &mut proof.transcript).unwrap();
+			let mut verifier_proof = proof.into_verifier();
 
-		let mut verifier_proof = proof.into_verifier();
-		let _verifier_zerocheck_challenges: Vec<F> =
-			verifier_proof.transcript.sample_vec(max_n_vars);
+			let verifier_zerocheck_challenges: Vec<F> = verifier_proof
+				.transcript
+				.sample_vec(max_n_vars - skip_rounds);
+			assert_eq!(
+				prover_zerocheck_challenges
+					.into_iter()
+					.map(F::from)
+					.collect::<Vec<_>>(),
+				verifier_zerocheck_challenges
+			);
 
-		let mut verifier_zerocheck_claims = Vec::new();
-		for n_vars in (1..=max_n_vars).rev() {
-			let claim =
-				ZerocheckClaim::<F, _>::new(n_vars, n_multilinears, verifier_compositions.to_vec())
-					.unwrap();
+			let mut verifier_zerocheck_claims = Vec::new();
+			for n_vars in (1..=max_n_vars).rev() {
+				let claim = ZerocheckClaim::<F, _>::new(
+					n_vars,
+					n_multilinears,
+					verifier_compositions.to_vec(),
+				)
+				.unwrap();
 
-			verifier_zerocheck_claims.push(claim);
+				verifier_zerocheck_claims.push(claim);
+			}
+			let verifier_univariate_output =
+				batch_verify_zerocheck_univariate_round::<FI, F, _, _, _>(
+					&verifier_zerocheck_claims[..univariate_cnt],
+					zerocheck_univariate_proof.isomorphic::<F>(),
+					&mut verifier_proof.transcript,
+					&mut verifier_proof.advice,
+				)
+				.unwrap();
+
+			let verifier_sumcheck_claims = reduce_to_sumchecks(&verifier_zerocheck_claims).unwrap();
+			let _verifier_sumcheck_output = batch_verify_with_start(
+				verifier_univariate_output.batch_verify_start,
+				&verifier_sumcheck_claims,
+				zerocheck_proof.isomorphic(),
+				&mut verifier_proof.transcript,
+			)
+			.unwrap();
 		}
-		let verifier_univariate_output = batch_verify_zerocheck_univariate_round::<FI, F, _, _, _>(
-			&verifier_zerocheck_claims[..univariate_cnt],
-			zerocheck_univariate_proof.isomorphic::<F>(),
-			&mut verifier_proof.transcript,
-			&mut verifier_proof.advice,
-		)
-		.unwrap();
-		let _verifier_sumcheck_output = batch_verify(
-			&verifier_univariate_output.reductions,
-			zerocheck_proof.isomorphic(),
-			&mut verifier_proof.transcript,
-		)
-		.unwrap();
 	}
 }

@@ -51,14 +51,18 @@ pub enum Error {
 	MultilinearSwitchoverSizeMismatch,
 	#[error("incorrect size of the partially evaluated zerocheck equality indicator")]
 	IncorrectZerocheckPartialEqIndSize,
-	#[error("zerocheck claimed sums number does not equal number of compositions")]
-	IncorrectClaimedSumsLength,
+	#[error(
+		"the number of prime polynomial sums does not match the number of zerocheck compositions"
+	)]
+	IncorrectClaimedPrimeSumsLength,
 	#[error("batch proof shape does not conform to the provided indexed claims")]
 	ClaimProofMismatch,
 	#[error("either too many or too few sumcheck challenges")]
 	IncorrectNumberOfChallenges,
 	#[error("cannot skip more rounds than the total number of variables")]
 	TooManySkippedRounds,
+	#[error("there are more prebatched coefficients than claims")]
+	TooManyPrebatchedCoeffs,
 	#[error(
 		"specified Lagrange evaluation domain is too small to uniquely recover round polynomial"
 	)]
@@ -66,7 +70,7 @@ pub enum Error {
 	#[error("adding together Lagrange basis evaluations over domains of different sizes")]
 	LagrangeRoundEvalsSizeMismatch,
 	#[error("length of the zero prefix does not match the expected value")]
-	IncorrectZerosPrefixLength,
+	IncorrectZerosPrefixLen,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("witness error: {0}")]
@@ -107,8 +111,6 @@ pub enum VerificationError {
 	IncorrectZerosPrefixLen,
 	#[error("non-zero Lagrange evals count does not match expected univariate domain size")]
 	IncorrectLagrangeRoundEvalsLen,
-	#[error("claimed sums shape does not match the batched compositions")]
-	IncorrectClaimedSumsShape,
 	#[error("claimed multilinear evaluations do not match univariate round at challenge point")]
 	ClaimedSumRoundEvalsMismatch,
 }

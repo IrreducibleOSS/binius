@@ -22,5 +22,5 @@ pub use error::*;
 pub use oracles::*;
 pub use prove::batch_prove;
 pub use univariate_zerocheck::batch_verify_zerocheck_univariate_round;
-pub use verify::batch_verify;
+pub use verify::{batch_verify, batch_verify_with_start};
 pub use zerocheck::ZerocheckClaim;

@@ -70,6 +70,35 @@ pub trait SumcheckProver<F: Field> {
 /// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
 pub fn batch_prove<F, Prover, Transcript>(
+	provers: Vec<Prover>,
+	transcript: Transcript,
+) -> Result<(BatchSumcheckOutput<F>, Proof<F>), Error>
+where
+	F: TowerField,
+	Prover: SumcheckProver<F>,
+	Transcript: CanSample<F> + CanWrite,
+{
+	let start = BatchProveStart {
+		batch_coeffs: Vec::new(),
+		reduction_provers: Vec::<Prover>::new(),
+	};
+
+	batch_prove_with_start(start, provers, transcript)
+}
+
+/// A struct describing the starting state of batched sumcheck prove invocation.
+#[derive(Debug)]
+pub struct BatchProveStart<F: Field, Prover> {
+	/// Batching coefficients for the already batched provers.
+	pub batch_coeffs: Vec<F>,
+	/// Reduced provers which can complete sumchecks from an intermediate state.
+	pub reduction_provers: Vec<Prover>,
+}
+
+/// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
+#[instrument(skip_all, name = "sumcheck::batch_prove")]
+pub fn batch_prove_with_start<F, Prover, Transcript>(
+	start: BatchProveStart<F, Prover>,
 	mut provers: Vec<Prover>,
 	mut transcript: Transcript,
 ) -> Result<(BatchSumcheckOutput<F>, Proof<F>), Error>
@@ -78,6 +107,13 @@ where
 	Prover: SumcheckProver<F>,
 	Transcript: CanSample<F> + CanWrite,
 {
+	let BatchProveStart {
+		mut batch_coeffs,
+		reduction_provers,
+	} = start;
+
+	provers.splice(0..0, reduction_provers);
+
 	if provers.is_empty() {
 		return Ok((
 			BatchSumcheckOutput {
@@ -93,6 +129,10 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
+	if batch_coeffs.len() > provers.len() {
+		bail!(Error::TooManyPrebatchedCoeffs);
+	}
+
 	let n_rounds = provers
 		.iter()
 		.map(|prover| prover.n_vars())
@@ -100,8 +140,7 @@ where
 		.unwrap_or(0);
 
 	// active_index is an index into the provers slice.
-	let mut active_index = 0;
-	let mut batch_coeffs = Vec::with_capacity(provers.len());
+	let mut active_index = batch_coeffs.len();
 	let mut challenges = Vec::with_capacity(n_rounds);
 	let mut rounds = Vec::with_capacity(n_rounds);
 	for round_no in 0..n_rounds {

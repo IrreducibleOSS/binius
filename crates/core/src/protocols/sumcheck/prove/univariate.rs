@@ -15,14 +15,13 @@ use crate::{
 	},
 };
 use binius_field::{
-	util::{eq, inner_product_unchecked},
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension,
+	util::inner_product_unchecked, BinaryField, ExtensionField, Field, PackedExtension,
+	PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	EvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
 use binius_utils::bail;
@@ -34,52 +33,6 @@ use stackalloc::stackalloc_with_iter;
 use std::{collections::HashMap, iter::repeat_n};
 use tracing::instrument;
 use transpose::transpose;
-
-/// Helper method to reduce zerocheck witness to skipped variables only via a partial high projection.
-///
-/// Resulting set of reduced multilinears has an additional column of the projected zerocheck equality
-/// indicator at the end, constructed in an efficient manner.
-#[instrument(skip_all, level = "debug")]
-pub fn reduce_to_skipped_zerocheck_projection<F, P, M, Backend>(
-	multilinears: Vec<M>,
-	sumcheck_challenges: &[F],
-	zerocheck_challenges: &[F],
-	backend: &'_ Backend,
-) -> Result<Vec<MLEDirectAdapter<P>>, Error>
-where
-	F: Field,
-	P: PackedFieldIndexable<Scalar = F>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Backend: ComputationBackend,
-{
-	if sumcheck_challenges.len() > zerocheck_challenges.len() {
-		bail!(Error::IncorrectZerocheckChallengesLength);
-	}
-
-	// Reduce the witness proper
-	let mut reduced_multilinears =
-		reduce_to_skipped_projection(multilinears, sumcheck_challenges, backend)?;
-	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
-
-	// Efficiently construct projection of the zerocheck equality indicator to skipped variables
-	let mut partial_eq_ind_eval = backend
-		.tensor_product_full_query(&zerocheck_challenges[..skip_rounds])?
-		.to_vec();
-
-	let eq_ind_factor = zerocheck_challenges[skip_rounds..]
-		.iter()
-		.zip(sumcheck_challenges)
-		.fold(F::ONE, |accum, (&zerocheck_challenge, &sumcheck_challenge)| {
-			accum * eq(sumcheck_challenge, zerocheck_challenge)
-		});
-
-	partial_eq_ind_eval
-		.iter_mut()
-		.for_each(|packed| *packed *= eq_ind_factor);
-
-	reduced_multilinears.push(MultilinearExtension::new(skip_rounds, partial_eq_ind_eval)?.into());
-	Ok(reduced_multilinears)
-}
 
 /// Helper method to reduce the witness to skipped variables via a partial high projection.
 #[instrument(skip_all, level = "debug")]
@@ -237,7 +190,6 @@ where
 	remaining_rounds: usize,
 	max_domain_size: usize,
 	partial_eq_ind_evals: Backend::Vec<P>,
-	partial_eq_ind_evals_skipped: Vec<P>,
 }
 
 pub struct ZerocheckUnivariateFoldResult<F, P, Backend>
@@ -247,9 +199,8 @@ where
 	Backend: ComputationBackend,
 {
 	pub skip_rounds: usize,
-	pub eq_ind_eval: F,
 	pub subcube_lagrange_coeffs: Vec<F>,
-	pub claimed_sums: Vec<F>,
+	pub claimed_prime_sums: Vec<F>,
 	pub partial_eq_ind_evals: Backend::Vec<P>,
 }
 
@@ -279,12 +230,7 @@ where
 			remaining_rounds,
 			max_domain_size,
 			mut partial_eq_ind_evals,
-			partial_eq_ind_evals_skipped,
 		} = self;
-
-		// Zerocheck equality indicator over skipped variables
-		let partial_eq_ind_evals_skipped =
-			&P::unpack_scalars(&partial_eq_ind_evals_skipped)[..1 << skip_rounds];
 
 		let domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
 
@@ -292,8 +238,6 @@ where
 		let subcube_evaluation_domain =
 			EvaluationDomain::from_points(domain_points[..1 << skip_rounds].to_vec())?;
 
-		let eq_ind_eval =
-			subcube_evaluation_domain.extrapolate(partial_eq_ind_evals_skipped, challenge)?;
 		let subcube_lagrange_coeffs = subcube_evaluation_domain.lagrange_evals(challenge);
 
 		// Zerocheck tensor expansion for the reduced zerocheck should be one variable less
@@ -303,7 +247,7 @@ where
 		let round_evals_lagrange_coeffs =
 			EvaluationDomain::from_points(domain_points)?.lagrange_evals(challenge);
 
-		let claimed_sums = round_evals
+		let claimed_prime_sums = round_evals
 			.into_iter()
 			.map(|evals| {
 				inner_product_unchecked::<F, F>(
@@ -317,9 +261,8 @@ where
 
 		Ok(ZerocheckUnivariateFoldResult {
 			skip_rounds,
-			eq_ind_eval,
 			subcube_lagrange_coeffs,
-			claimed_sums,
+			claimed_prime_sums,
 			partial_eq_ind_evals,
 		})
 	}
@@ -351,9 +294,6 @@ where
 ///  1. Honest prover evaluates to zero on $2^k$ domain points mapping to $\mathcal{B}_k$, reducing proof size
 ///  2. Avoiding monomial conversion saves prover time by skipping $O(N^3)$ inverse Vandermonde precomp
 ///  3. Evaluation in the verifier can be made linear time when barycentric weights are precomputed
-///
-/// The returned round polynomial is multiplied by zerocheck equality indicator and thus has a degree
-/// of $(d+1)(2^k - 1)$; this multiplication happens after summation and is not in the hot path.
 ///
 /// This implementation defines $\mathbb{M}$ to be the basis-induced mapping of the binary field `FDomain`;
 /// the main reason for that is to be able to use additive NTT from [LCH14] for extrapolation. The choice
@@ -388,7 +328,8 @@ where
 		bail!(Error::TooManySkippedRounds);
 	}
 
-	if zerocheck_challenges.len() != n_vars {
+	let remaining_rounds = n_vars - skip_rounds;
+	if zerocheck_challenges.len() != remaining_rounds {
 		bail!(Error::IncorrectZerocheckChallengesLength);
 	}
 
@@ -398,9 +339,7 @@ where
 	let composition_degrees = compositions.iter().map(|composition| composition.degree());
 	let composition_max_degree = composition_degrees.clone().max().unwrap_or(0);
 
-	// Consider equality indicator a factor on the composition, which increases
-	// the composition degree by one.
-	if max_domain_size < domain_size(composition_max_degree + 1, skip_rounds) {
+	if max_domain_size < domain_size(composition_max_degree, skip_rounds) {
 		bail!(Error::LagrangeDomainTooSmall);
 	}
 
@@ -425,8 +364,7 @@ where
 	// where each tensor expansion element serves as a constant factor of the whole
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
-	let partial_eq_ind_evals =
-		backend.tensor_product_full_query(&zerocheck_challenges[skip_rounds..])?;
+	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
 	let partial_eq_ind_evals_scalars = P::unpack_scalars(&partial_eq_ind_evals[..]);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
@@ -590,27 +528,8 @@ where
 	// So far evals of each composition are "staggered" in a sense that they are evaluated on the smallest
 	// domain which guarantees uniqueness of the round polynomial. We extrapolate them to max_domain_size to
 	// aid in Gruen section 3.2 optimization below and batch mixing.
-	let max_domain_size_round_evals =
+	let round_evals =
 		extrapolate_round_evals::<FDomain, _>(staggered_round_evals, skip_rounds, max_domain_size)?;
-
-	// We also extrapolate the tensor expansion of the first skip_rounds zerocheck challenges to the same
-	// max domain size and then pointwise multiply it by each of the round evals vectors.
-	let (partial_eq_ind_evals_skipped, partial_eq_ind_evals_skipped_extrapolated) =
-		extrapolate_partial_eq_ind::<F, FDomain, PBase, P, _, _>(
-			&fdomain_ntt,
-			skip_rounds,
-			max_domain_size,
-			&zerocheck_challenges[..skip_rounds],
-			backend,
-		)?;
-
-	let round_evals = multiply_round_evals(
-		max_domain_size_round_evals,
-		&P::unpack_scalars(partial_eq_ind_evals_skipped_extrapolated.as_slice())
-			[..max_domain_size.saturating_sub(1 << skip_rounds)],
-	);
-
-	let remaining_rounds = n_vars - skip_rounds;
 
 	Ok(ZerocheckUnivariateEvalsOutput {
 		round_evals,
@@ -618,7 +537,6 @@ where
 		remaining_rounds,
 		max_domain_size,
 		partial_eq_ind_evals,
-		partial_eq_ind_evals_skipped,
 	})
 }
 
@@ -679,79 +597,6 @@ where
 	}
 
 	Ok(round_evals)
-}
-
-#[instrument(skip_all, level = "debug")]
-fn multiply_round_evals<F: Field>(
-	mut round_evals: Vec<Vec<F>>,
-	pointwise_multiplier: &[F],
-) -> Vec<Vec<F>> {
-	for round_evals in &mut round_evals {
-		debug_assert_eq!(round_evals.len(), pointwise_multiplier.len());
-		for (round_eval, &multiplier) in izip!(round_evals, pointwise_multiplier) {
-			*round_eval *= multiplier;
-		}
-	}
-
-	round_evals
-}
-
-fn extrapolate_partial_eq_ind<F, FDomain, PBase, P, NTT, Backend>(
-	ntt: &NTT,
-	skip_rounds: usize,
-	max_domain_size: usize,
-	zerocheck_challenges: &[F],
-	backend: &Backend,
-) -> Result<(Vec<P>, Vec<P>), Error>
-where
-	FDomain: Field,
-	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + RepackedExtension<PBase>,
-	PBase: PackedField<Scalar: ExtensionField<FDomain>>
-		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-	NTT: AdditiveNTT<PBase::PackedSubfield> + AdditiveNTT<FDomain>,
-	Backend: ComputationBackend,
-{
-	debug_assert_eq!(zerocheck_challenges.len(), skip_rounds);
-
-	// Expand the first skip_rounds variables of the zerocheck equality indicator
-	// and extrapolate it to the full domain using additive NTT (Gruen 3.2 adaptation)
-	let partial_eq_ind_evals_skipped = backend
-		.tensor_product_full_query(zerocheck_challenges)?
-		.to_vec();
-
-	// We extensively validate the sizes of slices within NTT interpolation routines,
-	// thus let's find the smallest composition_max_degree that covers the max_domain_size.
-	let composition_max_degree = (0..)
-		.find(|&composition_degree| domain_size(composition_degree, skip_rounds) >= max_domain_size)
-		.expect("usize overflow");
-
-	let mut partial_eq_ind_evals_skipped_extrapolated =
-		zeroed_vec::<P>(extrapolated_evals_packed_len::<P>(composition_max_degree, skip_rounds, 0));
-
-	// Strided NTT as a way to extrapolate over the large field P::Scalar.
-	let mut partial_eq_ind_evals_skipped_scratch = partial_eq_ind_evals_skipped.clone();
-
-	let partial_eq_ind_evals_skipped_scratch_bases = PBase::cast_bases_mut(P::cast_bases_mut(
-		partial_eq_ind_evals_skipped_scratch.as_mut_slice(),
-	));
-
-	let partial_eq_ind_evals_skipped_extrapolated_bases = PBase::cast_bases_mut(P::cast_bases_mut(
-		partial_eq_ind_evals_skipped_extrapolated.as_mut_slice(),
-	));
-
-	let log_extension_degree_p_domain = <P::Scalar as ExtensionField<FDomain>>::LOG_DEGREE;
-
-	ntt_extrapolate(
-		ntt,
-		skip_rounds,
-		log_extension_degree_p_domain,
-		composition_max_degree,
-		partial_eq_ind_evals_skipped_scratch_bases,
-		partial_eq_ind_evals_skipped_extrapolated_bases,
-	)?;
-
-	Ok((partial_eq_ind_evals_skipped, partial_eq_ind_evals_skipped_extrapolated))
 }
 
 fn ntt_extrapolate<NTT, P>(
@@ -961,21 +806,25 @@ mod tests {
 		let zerocheck_challenges = (0..n_vars)
 			.map(|_| <F as Field>::random(&mut rng))
 			.collect::<Vec<_>>();
-		let zerocheck_eq_ind_mle = EqIndPartialEval::new(n_vars, zerocheck_challenges.clone())
-			.unwrap()
-			.multilinear_extension::<F, _>(&backend)
-			.unwrap();
 
 		for skip_rounds in 0usize..=5 {
 			let max_domain_size = domain_size(5, skip_rounds);
 			let output = zerocheck_univariate_evals::<F, FDomain, PBase, PE, _, _, _>(
-				multilinears.as_slice(),
-				compositions.as_slice(),
-				zerocheck_challenges.as_slice(),
+				&multilinears,
+				&compositions,
+				&zerocheck_challenges[skip_rounds..],
 				skip_rounds,
 				max_domain_size,
 				&backend,
 			)
+			.unwrap();
+
+			let zerocheck_eq_ind = EqIndPartialEval::new(
+				n_vars - skip_rounds,
+				zerocheck_challenges[skip_rounds..].to_vec(),
+			)
+			.unwrap()
+			.multilinear_extension::<F, _>(&backend)
 			.unwrap();
 
 			// naive computation of the univariate skip output
@@ -1015,12 +864,9 @@ mod tests {
 						let extrapolated = domain.extrapolate(evals_scalars, x.into()).unwrap();
 						*query = extrapolated;
 					}
-					let eq_ind_factor = domain
-						.extrapolate(
-							&zerocheck_eq_ind_mle.evals()[subcube_index << skip_rounds..]
-								[..1 << skip_rounds],
-							x.into(),
-						)
+
+					let eq_ind_factor = zerocheck_eq_ind
+						.evaluate_on_hypercube(subcube_index)
 						.unwrap();
 					for (composition, sum) in compositions.iter().zip(composition_sums.iter_mut()) {
 						*sum += eq_ind_factor * composition.evaluate(query.as_slice()).unwrap();

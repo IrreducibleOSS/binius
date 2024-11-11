@@ -3,9 +3,9 @@
 use crate::{
 	challenger::CanSample,
 	protocols::sumcheck::{
-		prove::SumcheckProver,
+		prove::{batch_prove::BatchProveStart, SumcheckProver},
 		univariate::LagrangeRoundEvals,
-		univariate_zerocheck::{BatchZerocheckUnivariateOutput, ZerocheckUnivariateProof},
+		univariate_zerocheck::ZerocheckUnivariateProof,
 		Error,
 	},
 	transcript::{AdviceWriter, CanWrite},
@@ -51,13 +51,14 @@ pub trait UnivariateZerocheckProver<F: Field> {
 		batch_coeff: F,
 	) -> Result<LagrangeRoundEvals<F>, Error>;
 
-	/// Folds into a regular multilinear prover for the remaining rounds. Also returns
-	/// univariatized sums of the underlying composite over multilinear hypercube at
-	/// the univariate challenge point.
-	fn fold_univariate_round(
-		self,
-		challenge: F,
-	) -> Result<(Vec<F>, Self::RegularZerocheckProver), Error>;
+	/// Folds into a regular multilinear prover for the remaining rounds.
+	fn fold_univariate_round(self, challenge: F) -> Result<Self::RegularZerocheckProver, Error>;
+}
+
+#[derive(Debug)]
+pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
+	pub univariate_challenge: F,
+	pub batch_prove_start: BatchProveStart<F, Prover>,
 }
 
 /// Prove a batched univariate zerocheck round.
@@ -78,7 +79,7 @@ pub fn batch_prove_zerocheck_univariate_round<F, Prover, Transcript>(
 	advice: &mut AdviceWriter,
 ) -> Result<
 	(
-		BatchZerocheckUnivariateOutput<F, Prover::RegularZerocheckProver>,
+		BatchZerocheckUnivariateProveOutput<F, Prover::RegularZerocheckProver>,
 		ZerocheckUnivariateProof<F>,
 	),
 	Error,
@@ -106,9 +107,12 @@ where
 		.max()
 		.unwrap_or(0);
 
+	let mut batch_coeffs = Vec::with_capacity(provers.len());
 	let mut round_evals = LagrangeRoundEvals::zeros(max_domain_size);
 	for prover in provers.iter_mut() {
 		let next_batch_coeff = transcript.sample();
+		batch_coeffs.push(next_batch_coeff);
+
 		let prover_round_evals = prover.execute_univariate_round(
 			skip_rounds + prover.n_vars() - max_n_vars,
 			max_domain_size,
@@ -119,35 +123,32 @@ where
 	}
 
 	let zeros_prefix_len = 1 << (skip_rounds + min_n_vars - max_n_vars);
-
 	if zeros_prefix_len != round_evals.zeros_prefix_len {
-		bail!(Error::IncorrectZerosPrefixLength);
+		bail!(Error::IncorrectZerosPrefixLen);
 	}
 
 	transcript.write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
-	let mut reductions = Vec::with_capacity(provers.len());
-	let mut claimed_sums = Vec::with_capacity(provers.len());
+	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
-		let (prover_claimed_sums, regular_prover) =
-			prover.fold_univariate_round(univariate_challenge)?;
-
-		transcript.write_scalar_slice(&prover_claimed_sums);
-
-		reductions.push(regular_prover);
-		claimed_sums.push(prover_claimed_sums);
+		let regular_prover = prover.fold_univariate_round(univariate_challenge)?;
+		reduction_provers.push(regular_prover);
 	}
 
-	let output = BatchZerocheckUnivariateOutput {
+	let batch_prove_start = BatchProveStart {
+		batch_coeffs,
+		reduction_provers,
+	};
+
+	let output = BatchZerocheckUnivariateProveOutput {
 		univariate_challenge,
-		reductions,
+		batch_prove_start,
 	};
 
 	let proof = ZerocheckUnivariateProof {
 		skip_rounds,
 		round_evals,
-		claimed_sums,
 	};
 
 	let skip_rounds = skip_rounds as u32;

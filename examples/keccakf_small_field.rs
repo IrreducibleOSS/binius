@@ -590,11 +590,14 @@ where
 	prover_proof.transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let zerocheck_challenges = prover_proof.transcript.sample_vec(log_size);
+	let zerocheck_challenges = prover_proof
+		.transcript
+		.sample_vec(log_size - field_types::SKIP_ROUNDS);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set.clone())?;
+	let zerocheck_claims = [zerocheck_claim];
 
 	let univariate_prover = sumcheck::prove::constraint_set_zerocheck_prover::<_, FBase, _, _, _>(
 		constraint_set_base,
@@ -620,17 +623,27 @@ where
 	let univariate_challenge = univariate_output.univariate_challenge;
 
 	// prove the remainder of the zerocheck using "regular" protocol
-	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(univariate_output.reductions, &mut prover_proof.transcript)?;
+	let no_tail_provers = Vec::new();
+	let (zerocheck_output, zerocheck_proof) = sumcheck::prove::batch_prove_with_start(
+		univariate_output.batch_prove_start,
+		no_tail_provers,
+		&mut prover_proof.transcript,
+	)?;
+
+	// pop off the non-univariatized zerocheck equality indicator
+	let sumcheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
+		&zerocheck_claims,
+		&zerocheck_challenges,
+		zerocheck_output,
+	)?;
 
 	// univariatized multilinear evalcheck claims
-	let univariatized_multilinear_evals = zerocheck_proof.multilinear_evals[0].clone();
+	let univariatized_multilinear_evals = sumcheck_output.multilinear_evals[0].clone();
 
 	// a sumcheck to reduce univariatized claims to multilinear ones
-	let reduced_multilinears = sumcheck::prove::reduce_to_skipped_zerocheck_projection(
+	let reduced_multilinears = sumcheck::prove::reduce_to_skipped_projection(
 		multilinears,
 		&sumcheck_output.challenges,
-		&zerocheck_challenges,
 		&backend,
 	)?;
 
@@ -663,17 +676,9 @@ where
 			univariatizing_output,
 		)?;
 
-	// verify & strip zerocheck equality indicator
-	let zerocheck_claims = [zerocheck_claim];
-	let multilinear_zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
-		&zerocheck_challenges,
-		multilinear_sumcheck_output,
-	)?;
-
 	// create "regular" evalcheck claims
 	let evalcheck_multilinear_claims =
-		sumcheck::make_eval_claims(oracles, [meta], multilinear_zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], multilinear_sumcheck_output)?;
 
 	// Evalcheck
 	let GreedyEvalcheckProveOutput {
@@ -759,7 +764,9 @@ where
 	verifier_proof.transcript.observe(trace_comm.clone());
 
 	// Zerocheck
-	let zerocheck_challenges = verifier_proof.transcript.sample_vec(log_size);
+	let zerocheck_challenges = verifier_proof
+		.transcript
+		.sample_vec(log_size - field_types::SKIP_ROUNDS);
 
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
@@ -774,10 +781,18 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let sumcheck_output = sumcheck::batch_verify(
-		&univariate_output.reductions,
+	let sumcheck_claims = sumcheck::zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let zerocheck_output = sumcheck::batch_verify_with_start(
+		univariate_output.batch_verify_start,
+		&sumcheck_claims,
 		zerocheck_proof,
 		&mut verifier_proof.transcript,
+	)?;
+
+	let sumcheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
+		&zerocheck_claims,
+		&zerocheck_challenges,
+		zerocheck_output,
 	)?;
 
 	let univariatized_multilinear_evals = &sumcheck_output.multilinear_evals[0];
@@ -802,14 +817,8 @@ where
 			univariatizing_output,
 		)?;
 
-	let multilinear_zerocheck_output = sumcheck::zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
-		&zerocheck_challenges,
-		multilinear_sumcheck_output,
-	)?;
-
 	let evalcheck_multilinear_claims =
-		sumcheck::make_eval_claims(oracles, [meta], multilinear_zerocheck_output)?;
+		sumcheck::make_eval_claims(oracles, [meta], multilinear_sumcheck_output)?;
 
 	// Evalcheck
 	let same_query_claims = greedy_evalcheck::verify(

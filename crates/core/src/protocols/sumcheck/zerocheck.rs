@@ -42,6 +42,15 @@ where
 		})
 	}
 
+	/// Returns the maximum individual degree of all composite polynomials.
+	pub fn max_individual_degree(&self) -> usize {
+		self.composite_zeros
+			.iter()
+			.map(|composite_zero| composite_zero.degree())
+			.max()
+			.unwrap_or(0)
+	}
+
 	pub fn composite_zeros(&self) -> &[Composition] {
 		&self.composite_zeros
 	}
@@ -87,6 +96,9 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 /// This takes in the output of the reduced sumcheck protocol and returns the output for the
 /// zerocheck instance. This simply strips off the multilinear evaluation of the eq indicator
 /// polynomial and verifies that the value is correct.
+///
+/// Note that due to univariatization of some rounds the number of challenges may be less than
+/// the maximum number of variables among claims.
 pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	zerocheck_challenges: &[F],
@@ -109,15 +121,15 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		.map(|claim| claim.n_vars())
 		.unwrap_or_default();
 
-	assert_eq!(zerocheck_challenges.len(), max_n_vars);
-	assert_eq!(sumcheck_challenges.len(), max_n_vars);
+	assert!(sumcheck_challenges.len() <= max_n_vars);
+	assert_eq!(zerocheck_challenges.len(), sumcheck_challenges.len());
 
 	let mut eq_ind_eval = F::ONE;
 	let mut last_n_vars = 0;
 	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
 		assert_eq!(claim.n_multilinears() + 1, multilinear_evals.len());
 
-		while last_n_vars < claim.n_vars() {
+		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
 			let sumcheck_challenge = sumcheck_challenges[last_n_vars];
 			let zerocheck_challenge = zerocheck_challenges[last_n_vars];
 			eq_ind_eval *= eq(sumcheck_challenge, zerocheck_challenge);
