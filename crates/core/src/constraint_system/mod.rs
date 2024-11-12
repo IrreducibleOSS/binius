@@ -13,7 +13,7 @@ pub use prove::prove;
 pub use verify::verify;
 
 use crate::{
-	merkle_tree::{MerkleCap, MerkleTreeVCS},
+	merkle_tree_vcs::BinaryMerkleTreeScheme,
 	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs, fri_pcs},
 	protocols::{
@@ -40,8 +40,8 @@ pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>> {
 /// Constraint system proof with the standard PCS.
 pub type Proof<F, Digest, Hash, Compress> = ProofGenericPCS<
 	F,
-	MerkleCap<Digest>,
-	batch_pcs::Proof<fri_pcs::Proof<F, MerkleTreeVCS<F, Digest, Hash, Compress>>>,
+	Digest,
+	batch_pcs::Proof<fri_pcs::Proof<F, BinaryMerkleTreeScheme<Digest, Hash, Compress>>>,
 >;
 
 /// Constraint system proof with a generic [`crate::poly_commit::PolyCommitScheme`].

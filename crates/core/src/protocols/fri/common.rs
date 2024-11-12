@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	linear_code::LinearCode, merkle_tree::VectorCommitScheme, protocols::fri::Error,
+	linear_code::LinearCode, merkle_tree_vcs::MerkleTreeScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
@@ -9,8 +9,7 @@ use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use itertools::Itertools;
-use std::{iter, marker::PhantomData};
+use std::marker::PhantomData;
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
 ///
@@ -162,7 +161,7 @@ where
 
 /// Parameters for an FRI interleaved code proximity protocol.
 #[derive(Debug, Getters, CopyGetters)]
-pub struct FRIParams<F, FA, VCS>
+pub struct FRIParams<F, FA>
 where
 	F: BinaryField,
 	FA: BinaryField,
@@ -171,14 +170,9 @@ where
 	#[getset(get = "pub")]
 	rs_code: ReedSolomonCode<FA>,
 	/// Vector commitment scheme for the codeword oracle.
-	#[getset(get = "pub")]
-	codeword_vcs: VCS,
-	/// The base-2 logarithm of the batch size of the interleaved code.
 	#[getset(get_copy = "pub")]
 	log_batch_size: usize,
-	/// Vector commitment scheme for the round oracles.
-	round_vcss: Vec<VCS>,
-	/// The reduction arities between each query round.
+	/// The reduction arities between each oracle sent to the verifier.
 	fold_arities: Vec<usize>,
 	/// The number oracle consistency queries required during the query phase.
 	#[getset(get_copy = "pub")]
@@ -186,53 +180,24 @@ where
 	_marker: PhantomData<F>,
 }
 
-impl<F, FA, VCS> FRIParams<F, FA, VCS>
+impl<F, FA> FRIParams<F, FA>
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: VectorCommitScheme<F>,
 {
 	pub fn new(
 		rs_code: ReedSolomonCode<FA>,
 		log_batch_size: usize,
-		codeword_vcs: VCS,
-		round_vcss: Vec<VCS>,
+		fold_arities: Vec<usize>,
 		n_test_queries: usize,
 	) -> Result<Self, Error> {
-		// check that each round_vcs has power of two vector_length
-		let vcss = iter::once(&codeword_vcs).chain(round_vcss.iter());
-		if vcss.clone().any(|vcs| !vcs.vector_len().is_power_of_two()) {
-			bail!(Error::RoundVCSLengthsNotPowerOfTwo);
+		if fold_arities.iter().sum::<usize>() >= rs_code.log_dim() + log_batch_size {
+			bail!(Error::InvalidFoldAritySequence)
 		}
-
-		if rs_code.len() < codeword_vcs.vector_len() {
-			bail!(Error::InvalidArgs(
-				"Reed–Solomon code length must be at least the vector commitment length"
-					.to_string(),
-			));
-		}
-
-		// check that the last FRI oracle has the same length as the fully-folded, dimension-1
-		// codeword.
-		let last_vcs = round_vcss.last().unwrap_or(&codeword_vcs);
-		if last_vcs.vector_len() != rs_code.inv_rate() {
-			bail!(Error::RoundVCSLengthsOutOfRange);
-		}
-
-		let fold_arities = calculate_fold_arities(
-			rs_code.log_len(),
-			log_batch_size,
-			codeword_vcs.vector_len().ilog2() as usize,
-			round_vcss
-				.iter()
-				.map(|vcs| vcs.vector_len().ilog2() as usize),
-		)?;
 
 		Ok(Self {
 			rs_code,
-			codeword_vcs,
 			log_batch_size,
-			round_vcss,
 			fold_arities,
 			n_test_queries,
 			_marker: PhantomData,
@@ -245,12 +210,16 @@ where
 
 	/// Number of oracles sent during the fold rounds.
 	pub fn n_oracles(&self) -> usize {
-		self.round_vcss.len()
+		self.fold_arities.len()
 	}
 
 	/// Number of bits in the query indices sampled during the query phase.
 	pub fn index_bits(&self) -> usize {
-		self.codeword_vcs.vector_len().ilog2() as usize
+		self.fold_arities
+			.first()
+			.map(|arity| self.log_len() - arity)
+			// If there is no folding, there are no random queries either
+			.unwrap_or(0)
 	}
 
 	/// Number of folding challenges the verifier sends after receiving the last oracle.
@@ -258,41 +227,34 @@ where
 		self.n_fold_rounds() - self.fold_arities.iter().sum::<usize>()
 	}
 
-	/// The vector commitment schemes for each of the FRI round oracles.
-	pub fn round_vcss(&self) -> &[VCS] {
-		&self.round_vcss
-	}
-
 	/// The reduction arities between each oracle sent to the verifier.
 	pub fn fold_arities(&self) -> &[usize] {
 		&self.fold_arities
 	}
+
+	/// The binary logarithm of the length of the initial oracle.
+	pub fn log_len(&self) -> usize {
+		self.rs_code().log_len() + self.log_batch_size()
+	}
 }
 
-/// Calculates the folding arities between all rounds of the folding phase when the prover sends an
-/// oracle.
-fn calculate_fold_arities(
-	log_code_len: usize,
-	log_batch_size: usize,
-	log_codeword_commit_len: usize,
-	log_round_commit_lens: impl IntoIterator<Item = usize>,
-) -> Result<Vec<usize>, Error> {
-	let first_fold_arity = log_code_len + log_batch_size - log_codeword_commit_len;
-	let round_fold_arities = iter::once(log_codeword_commit_len)
-		.chain(log_round_commit_lens)
-		.tuple_windows()
-		.map(|(log_len, next_log_len)| {
-			if log_len <= next_log_len {
-				return Err(Error::RoundVCSLengthsNotDescending);
-			}
-			Ok(log_len - next_log_len)
-		});
-
-	let mut fold_arities = iter::once(Ok(first_fold_arity))
-		.chain(round_fold_arities)
-		.collect::<Result<Vec<_>, _>>()?;
-	let _ = fold_arities.pop();
-	Ok(fold_arities)
+/// This layer allows minimizing the proof size.
+pub fn vcs_optimal_layers_depths_iter<'a, F, FA, VCS>(
+	fri_params: &'a FRIParams<F, FA>,
+	vcs: &'a VCS,
+) -> impl Iterator<Item = usize> + 'a
+where
+	VCS: MerkleTreeScheme<F>,
+	F: BinaryField + ExtensionField<FA>,
+	FA: BinaryField,
+{
+	fri_params
+		.fold_arities()
+		.iter()
+		.scan(fri_params.log_len(), |log_n_cosets, arity| {
+			*log_n_cosets -= arity;
+			Some(vcs.optimal_verify_layer(fri_params.n_test_queries(), *log_n_cosets))
+		})
 }
 
 /// A proof for a single FRI consistency query.
@@ -302,9 +264,10 @@ pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
 pub type TerminateCodeword<F> = Vec<F>;
 
 #[derive(Debug, Clone)]
-pub struct FRIProof<F, VCSProof> {
+pub struct FRIProof<F, VCS: MerkleTreeScheme<F>> {
 	pub terminate_codeword: TerminateCodeword<F>,
-	pub proofs: Vec<QueryProof<F, VCSProof>>,
+	pub proofs: Vec<QueryProof<F, VCS::Proof>>,
+	pub layers: Vec<Vec<VCS::Digest>>,
 }
 
 /// The values and vector commitment opening proofs for a coset.

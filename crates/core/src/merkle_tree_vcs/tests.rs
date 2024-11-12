@@ -3,6 +3,7 @@
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
 use binius_field::{BinaryField16b, BinaryField8b, Field};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use core::slice;
 use rand::{rngs::StdRng, SeedableRng};
 use std::iter::repeat_with;
 
@@ -11,14 +12,14 @@ fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mr_prover =
-		BinaryMerkleTreeProver::<_, _, GroestlHasher<_>>::new(GroestlDigestCompression::<
+		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
 			BinaryField8b,
 		>::default());
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(16)
 		.collect::<Vec<BinaryField16b>>();
-	let (commitment, tree) = mr_prover.commit(&data).unwrap();
+	let (commitment, tree) = mr_prover.commit(&data, 1).unwrap();
 
 	assert_eq!(commitment.root, tree.root());
 
@@ -26,7 +27,7 @@ fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 		let proof = mr_prover.prove_opening(&tree, 0, i).unwrap();
 		mr_prover
 			.scheme()
-			.verify_opening(i, *value, 0, 4, &[commitment.root], proof)
+			.verify_opening(i, slice::from_ref(value), 0, 4, &[commitment.root], proof)
 			.unwrap();
 	}
 }
@@ -36,14 +37,14 @@ fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mr_prover =
-		BinaryMerkleTreeProver::<_, _, GroestlHasher<_>>::new(GroestlDigestCompression::<
+		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
 			BinaryField8b,
 		>::default());
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(32)
 		.collect::<Vec<BinaryField16b>>();
-	let (commitment, tree) = mr_prover.commit(&data).unwrap();
+	let (commitment, tree) = mr_prover.commit(&data, 1).unwrap();
 
 	assert_eq!(commitment.root, tree.root());
 	for layer_depth in 0..5 {
@@ -56,7 +57,7 @@ fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 			let proof = mr_prover.prove_opening(&tree, layer_depth, i).unwrap();
 			mr_prover
 				.scheme()
-				.verify_opening(i, *value, layer_depth, 5, layer, proof)
+				.verify_opening(i, slice::from_ref(value), layer_depth, 5, layer, proof)
 				.unwrap();
 		}
 	}
@@ -67,17 +68,17 @@ fn test_binary_merkle_vcs_verify_vector() {
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let mr_prover =
-		BinaryMerkleTreeProver::<_, _, GroestlHasher<_>>::new(GroestlDigestCompression::<
+		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
 			BinaryField8b,
 		>::default());
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(4)
 		.collect::<Vec<BinaryField16b>>();
-	let (commitment, _) = mr_prover.commit(&data).unwrap();
+	let (commitment, _) = mr_prover.commit(&data, 1).unwrap();
 
 	mr_prover
 		.scheme()
-		.verify_vector(&commitment.root, &data)
+		.verify_vector(&commitment.root, &data, 1)
 		.unwrap();
 }

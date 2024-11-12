@@ -13,15 +13,14 @@ use std::{
 	fmt::Debug,
 	marker::PhantomData,
 	mem::{self},
-	slice,
 };
 
-pub struct BinaryMerkleTreeScheme<D, C, H> {
+pub struct BinaryMerkleTreeScheme<D, H, C> {
 	compression: C,
 	_phantom: PhantomData<(D, H)>,
 }
 
-impl<D, C, H> BinaryMerkleTreeScheme<D, C, H> {
+impl<D, H, C> BinaryMerkleTreeScheme<D, H, C> {
 	pub fn new(compression: C) -> Self {
 		BinaryMerkleTreeScheme {
 			compression,
@@ -30,7 +29,7 @@ impl<D, C, H> BinaryMerkleTreeScheme<D, C, H> {
 	}
 }
 
-impl<T, D, C, H> MerkleTreeScheme<T> for BinaryMerkleTreeScheme<D, C, H>
+impl<T, D, H, C> MerkleTreeScheme<T> for BinaryMerkleTreeScheme<D, H, C>
 where
 	T: Sync,
 	D: PackedField + Send + Sync,
@@ -60,12 +59,21 @@ where
 		Ok(((log_len - layer_depth - 1) * n_queries + (1 << layer_depth)) * mem::size_of::<D>())
 	}
 
-	fn verify_vector(&self, root: &Self::Digest, data: &[T]) -> Result<(), Error> {
+	fn verify_vector(
+		&self,
+		root: &Self::Digest,
+		data: &[T],
+		batch_size: usize,
+	) -> Result<(), Error> {
+		if data.len() % batch_size != 0 {
+			bail!(Error::IncorrectBatchSize);
+		}
+
 		let mut digests = data
-			.iter()
-			.map(|elem| {
+			.chunks(batch_size)
+			.map(|elems| {
 				let mut hasher = H::new();
-				hasher.update(slice::from_ref(elem));
+				hasher.update(elems);
 				hasher.finalize_reset()
 			})
 			.collect::<Vec<D>>();
@@ -100,7 +108,7 @@ where
 	fn verify_opening(
 		&self,
 		index: usize,
-		value: T,
+		values: &[T],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
@@ -120,7 +128,7 @@ where
 			});
 		}
 
-		let leaf_digest = H::new().chain_update(slice::from_ref(&value)).finalize();
+		let leaf_digest = H::new().chain_update(values).finalize();
 
 		let mut index = index;
 

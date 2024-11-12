@@ -1,7 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	merkle_tree::VectorCommitScheme,
 	poly_commit::{batch_pcs, batch_pcs::BatchPCS, fri_pcs, PolyCommitScheme, FRIPCS},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::CanRead,
@@ -10,7 +9,7 @@ use binius_field::{as_packed_field::PackedType, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use p3_challenger::{CanObserve, CanSample, CanSampleBits};
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 /// A trait that groups a family of PCSs for different fields in a tower as associated types.
 pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
@@ -136,7 +135,9 @@ pub type FExt<Tower> = <Tower as TowerFamily>::B128;
 
 pub mod standard_pcs {
 	use super::*;
-	use crate::merkle_tree::MerkleTreeVCS;
+	use crate::merkle_tree_vcs::{
+		BinaryMerkleTreeProver, BinaryMerkleTreeScheme, MerkleTreeProver, MerkleTreeScheme,
+	};
 	use binius_field::PackedExtension;
 
 	/// The evaluation domain used in sumcheck protocols.
@@ -152,42 +153,57 @@ pub mod standard_pcs {
 	/// of committed data.
 	pub type FEncode<Tower> = <Tower as TowerFamily>::B32;
 
-	pub type BatchFRIPCS<Tower, U, F, DomainFactory, VCS> = BatchPCS<
+	pub type BatchFRIPCS<Tower, U, F, DomainFactory, MerkleProver, VCS> = BatchPCS<
 		<PackedType<U, FExt<Tower>> as PackedExtension<F>>::PackedSubfield,
 		FExt<Tower>,
-		FRIPCS<F, FDomain<Tower>, FEncode<Tower>, PackedType<U, FExt<Tower>>, DomainFactory, VCS>,
+		FRIPCS<
+			F,
+			FDomain<Tower>,
+			FEncode<Tower>,
+			PackedType<U, FExt<Tower>>,
+			DomainFactory,
+			MerkleProver,
+			VCS,
+		>,
 	>;
 
 	#[derive(Debug)]
-	pub struct FRITowerPCSFamily<Tower, U, DomainFactory, VCS> {
-		_marker: PhantomData<(Tower, U, DomainFactory, VCS)>,
+	pub struct FRITowerPCSFamily<Tower, U, DomainFactory, MerkleProver, VCS> {
+		_marker: PhantomData<(Tower, U, DomainFactory, MerkleProver, VCS)>,
 	}
 
-	impl<Tower, U, DomainFactory, VCS> TowerPCSFamily<Tower, U>
-		for FRITowerPCSFamily<Tower, U, DomainFactory, VCS>
+	impl<Tower, U, DomainFactory, MerkleProver, VCS> TowerPCSFamily<Tower, U>
+		for FRITowerPCSFamily<Tower, U, DomainFactory, MerkleProver, VCS>
 	where
 		Tower: TowerFamily,
 		U: TowerUnderlier<Tower>,
 		Tower::B128: PackedTop<Tower>,
 		DomainFactory: EvaluationDomainFactory<Tower::B8>,
-		VCS: VectorCommitScheme<Tower::B128, Committed: Send + Sync> + Sync,
+		MerkleProver: MerkleTreeProver<Tower::B128, Committed: Send + Sync, Scheme = VCS> + Sync,
+		VCS: MerkleTreeScheme<Tower::B128, Digest: Clone + Debug, Proof: Clone + Debug>,
 		PackedType<U, Tower::B128>: PackedFieldIndexable,
 	{
-		type Commitment = VCS::Commitment;
-		type Committed = (Vec<PackedType<U, Tower::B128>>, VCS::Committed);
+		type Commitment = VCS::Digest;
+		type Committed = (Vec<PackedType<U, Tower::B128>>, MerkleProver::Committed);
 		type Proof = batch_pcs::Proof<fri_pcs::Proof<Tower::B128, VCS>>;
 		type Error = batch_pcs::Error;
 
-		type PCS1 = BatchFRIPCS<Tower, U, Tower::B1, DomainFactory, VCS>;
-		type PCS8 = BatchFRIPCS<Tower, U, Tower::B8, DomainFactory, VCS>;
-		type PCS16 = BatchFRIPCS<Tower, U, Tower::B16, DomainFactory, VCS>;
-		type PCS32 = BatchFRIPCS<Tower, U, Tower::B32, DomainFactory, VCS>;
-		type PCS64 = BatchFRIPCS<Tower, U, Tower::B64, DomainFactory, VCS>;
-		type PCS128 = BatchFRIPCS<Tower, U, Tower::B128, DomainFactory, VCS>;
+		type PCS1 = BatchFRIPCS<Tower, U, Tower::B1, DomainFactory, MerkleProver, VCS>;
+		type PCS8 = BatchFRIPCS<Tower, U, Tower::B8, DomainFactory, MerkleProver, VCS>;
+		type PCS16 = BatchFRIPCS<Tower, U, Tower::B16, DomainFactory, MerkleProver, VCS>;
+		type PCS32 = BatchFRIPCS<Tower, U, Tower::B32, DomainFactory, MerkleProver, VCS>;
+		type PCS64 = BatchFRIPCS<Tower, U, Tower::B64, DomainFactory, MerkleProver, VCS>;
+		type PCS128 = BatchFRIPCS<Tower, U, Tower::B128, DomainFactory, MerkleProver, VCS>;
 	}
 
-	pub type FRIMerklePCS<Tower, U, F, Digest, DomainFactory, Hash, Compress> =
-		BatchFRIPCS<Tower, U, F, DomainFactory, MerkleTreeVCS<FExt<Tower>, Digest, Hash, Compress>>;
+	pub type FRIMerklePCS<Tower, U, F, Digest, DomainFactory, Hash, Compress> = BatchFRIPCS<
+		Tower,
+		U,
+		F,
+		DomainFactory,
+		BinaryMerkleTreeProver<Digest, Hash, Compress>,
+		BinaryMerkleTreeScheme<Digest, Hash, Compress>,
+	>;
 
 	pub type FRIMerkleTowerPCS<Tower, U, Digest, DomainFactory, Hash, Compress> = TowerPCS<
 		Tower,
@@ -196,7 +212,8 @@ pub mod standard_pcs {
 			Tower,
 			U,
 			DomainFactory,
-			MerkleTreeVCS<FExt<Tower>, Digest, Hash, Compress>,
+			BinaryMerkleTreeProver<Digest, Hash, Compress>,
+			BinaryMerkleTreeScheme<Digest, Hash, Compress>,
 		>,
 	>;
 }

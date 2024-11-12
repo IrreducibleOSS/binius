@@ -9,13 +9,12 @@ use crate::{
 	constraint_system::{
 		channel::{Flush, FlushDirection},
 		common::{
-			standard_pcs,
-			standard_pcs::{FRIMerklePCS, FRIMerkleTowerPCS},
+			standard_pcs::{self, FRIMerklePCS, FRIMerkleTowerPCS},
 			FExt, TowerPCS, TowerPCSFamily,
 		},
 	},
 	fiat_shamir::Challenger,
-	merkle_tree::{MerkleCap, MerkleTreeVCS},
+	merkle_tree_vcs::BinaryMerkleTreeProver,
 	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
 	protocols::{
@@ -80,7 +79,7 @@ fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
 where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	PCSFamily: TowerPCSFamily<Tower, U, Commitment = MerkleCap<Digest>>,
+	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
 	Challenger_: Challenger + Default,
 	Digest: PackedField<Scalar: TowerField>,
 {
@@ -303,9 +302,7 @@ where
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	PackedType<U, Tower::B128>: PackedTop<Tower> + PackedFieldIndexable,
 {
-	// TODO: Set Merkle cap height
-	let make_merkle_vcs =
-		|log_len| MerkleTreeVCS::<Tower::B128, _, Hash, _>::new(log_len, 0, Compress::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
 	let log_n_polys = log2_ceil_usize(batch.n_polys);
 	let fri_n_vars = batch.n_vars + log_n_polys;
 	let fri_pcs = FRIPCS::<
@@ -315,11 +312,12 @@ where
 		PackedType<U, Tower::B128>,
 		_,
 		_,
+		_,
 	>::with_optimal_arity(
 		fri_n_vars,
 		log_inv_rate,
 		security_bits,
-		make_merkle_vcs,
+		merkle_prover,
 		domain_factory.clone(),
 		NTTOptions::default(),
 	)

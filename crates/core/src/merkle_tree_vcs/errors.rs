@@ -6,6 +6,8 @@ pub enum Error {
 	IncorrectVectorLen { expected: usize },
 	#[error("Index exceeds Merkle tree base size: {max}")]
 	IndexOutOfRange { max: usize },
+	#[error("values length must be a multiple of the batch size")]
+	IncorrectBatchSize,
 	#[error("The argument length must be a power of two.")]
 	PowerOfTwoLengthRequired,
 	#[error("The layer does not exist in the Merkle tree")]

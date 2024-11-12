@@ -25,25 +25,44 @@ impl<D> BinaryMerkleTree<D>
 where
 	D: Copy + Default + Send + Sync + Debug,
 {
-	pub fn build<T, H, C>(compression: &C, elements: &[T]) -> Result<Self, Error>
+	pub fn build<T, H, C>(compression: &C, elements: &[T], batch_size: usize) -> Result<Self, Error>
 	where
 		T: Sync,
 		H: Hasher<T, Digest = D> + Send,
 		C: PseudoCompressionFunction<D, 2> + Sync,
 	{
-		if !elements.len().is_power_of_two() {
+		if elements.len() % batch_size != 0 {
+			bail!(Error::IncorrectBatchSize);
+		}
+
+		let len = elements.len() / batch_size;
+
+		if !len.is_power_of_two() {
 			bail!(Error::PowerOfTwoLengthRequired);
 		}
 
-		let log_len = log2_strict_usize(elements.len());
+		let log_len = log2_strict_usize(len);
 
+		Self::internal_build(
+			compression,
+			|inner_nodes| hash_interleaved::<_, H>(elements, inner_nodes),
+			log_len,
+		)
+	}
+
+	fn internal_build<C>(
+		compression: &C,
+		// Must either successfully initialize the passed in slice or return error
+		hash_leaves: impl FnOnce(&mut [MaybeUninit<D>]) -> Result<(), Error>,
+		log_len: usize,
+	) -> Result<Self, Error>
+	where
+		C: PseudoCompressionFunction<D, 2> + Sync,
+	{
 		let total_length = (1 << (log_len + 1)) - 1;
 		let mut inner_nodes = Vec::with_capacity(total_length);
 
-		hash_interleaved::<T, H>(
-			elements,
-			&mut inner_nodes.spare_capacity_mut()[..(1 << log_len)],
-		)?;
+		hash_leaves(&mut inner_nodes.spare_capacity_mut()[..(1 << log_len)])?;
 
 		let (prev_layer, mut remaining) =
 			inner_nodes.spare_capacity_mut().split_at_mut(1 << log_len);
@@ -68,12 +87,29 @@ where
 			// SAFETY: inner_nodes should be entirely initialized by now
 			// Note that we don't incrementally update inner_nodes.len() since
 			// that doesn't play well with using split_at_mut on spare capacity.
-			inner_nodes.set_len((1 << (log_len + 1)) - 1);
+			inner_nodes.set_len(total_length);
 		}
 		Ok(Self {
 			log_len,
 			inner_nodes,
 		})
+	}
+
+	pub fn build_from_iterator<T, H, C, ParIter>(
+		compression: &C,
+		iterated_chunks: ParIter,
+		log_len: usize,
+	) -> Result<Self, Error>
+	where
+		H: Hasher<T, Digest = D> + Send,
+		C: PseudoCompressionFunction<D, 2> + Sync,
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>,
+	{
+		Self::internal_build(
+			compression,
+			|inner_nodes| hash_iterated::<_, H, _>(iterated_chunks, inner_nodes),
+			log_len,
+		)
 	}
 
 	pub fn root(&self) -> D {
@@ -87,8 +123,7 @@ where
 		if layer_depth > self.log_len {
 			bail!(Error::IncorrectLayerDepth);
 		}
-
-		let range_start = self.inner_nodes.len() - (1 << (layer_depth + 1)) + 1;
+		let range_start = self.inner_nodes.len() + 1 - (1 << (layer_depth + 1));
 
 		Ok(&self.inner_nodes[range_start..range_start + (1 << layer_depth)])
 	}
@@ -139,10 +174,7 @@ where
 /// into N equal-sized chunks and hashes each chunks into the corresponding output digest. This
 /// returns the number of elements hashed into each digest.
 #[tracing::instrument("hash_interleaved", skip_all, level = "debug")]
-fn hash_interleaved<T, H>(
-	elems: &[T],
-	digests: &mut [MaybeUninit<H::Digest>],
-) -> Result<usize, Error>
+fn hash_interleaved<T, H>(elems: &[T], digests: &mut [MaybeUninit<H::Digest>]) -> Result<(), Error>
 where
 	T: Sync,
 	H: Hasher<T> + Send,
@@ -161,7 +193,28 @@ where
 			hasher.update(elems);
 			hasher.finalize_into_reset(digest);
 		});
-	Ok(batch_size)
+	Ok(())
+}
+
+fn hash_iterated<T, H, ParIter>(
+	iterated_chunks: ParIter,
+	digests: &mut [MaybeUninit<H::Digest>],
+) -> Result<(), Error>
+where
+	H: Hasher<T> + Send,
+	H::Digest: Send,
+	ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>,
+{
+	digests
+		.par_iter_mut()
+		.zip(iterated_chunks)
+		.for_each_init(H::new, |hasher, (digest, elems)| {
+			for elem in elems {
+				hasher.update(std::slice::from_ref(&elem));
+			}
+			hasher.finalize_into_reset(digest);
+		});
+	Ok(())
 }
 
 /// This can be removed when MaybeUninit::slice_assume_init_mut is stabilized

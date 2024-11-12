@@ -4,6 +4,7 @@ use super::errors::Error;
 use crate::challenger::{field_challenger::FieldChallengerHelper, FieldChallenger};
 use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedFieldIndexable};
 use p3_challenger::CanObserve;
+use rayon::iter::IndexedParallelIterator;
 
 /// A Merkle tree commitment.
 ///
@@ -46,7 +47,12 @@ pub trait MerkleTreeScheme<T> {
 	fn proof_size(&self, len: usize, n_queries: usize, layer_depth: usize) -> Result<usize, Error>;
 
 	/// Verify the opening of the full vector.
-	fn verify_vector(&self, root: &Self::Digest, data: &[T]) -> Result<(), Error>;
+	fn verify_vector(
+		&self,
+		root: &Self::Digest,
+		data: &[T],
+		batch_size: usize,
+	) -> Result<(), Error>;
 
 	/// Verify a given layer of the Merkle tree.
 	///
@@ -64,7 +70,7 @@ pub trait MerkleTreeScheme<T> {
 	fn verify_opening(
 		&self,
 		index: usize,
-		value: T,
+		values: &[T],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
@@ -89,7 +95,18 @@ pub trait MerkleTreeProver<T> {
 	fn commit(
 		&self,
 		data: &[T],
+		batch_size: usize,
 	) -> Result<(Commitment<<Self::Scheme as MerkleTreeScheme<T>>::Digest>, Self::Committed), Error>;
+
+	/// Commit interleaved elements from iterator by val
+	#[allow(clippy::type_complexity)]
+	fn commit_iterated<ParIter>(
+		&self,
+		iterated_chunks: ParIter,
+		log_len: usize,
+	) -> Result<(Commitment<<Self::Scheme as MerkleTreeScheme<T>>::Digest>, Self::Committed), Error>
+	where
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>;
 
 	/// Returns the internal digest layer at the given depth.
 	fn layer<'a>(

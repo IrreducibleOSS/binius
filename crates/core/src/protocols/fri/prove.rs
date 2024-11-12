@@ -1,13 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	common::{FRIParams, FRIProof},
+	common::{vcs_optimal_layers_depths_iter, FRIParams, FRIProof},
 	error::Error,
 	TerminateCodeword,
 };
 use crate::{
 	linear_code::LinearCode,
-	merkle_tree::VectorCommitScheme,
+	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
@@ -163,35 +163,29 @@ where
 /// ## Arguments
 ///
 /// * `rs_code` - the Reed-Solomon code to use for encoding
-/// * `log_batch_size` - the base-2 logarithm of the batch size of the interleaved code.
-/// * `vcs` - the vector commitment scheme to use for committing
+/// * `params` - common FRI protocol parameters.
+/// * `merkle_prover` - the merke tree prover to use for committing
 /// * `message` - the interleaved message to encode and commit
-pub fn commit_interleaved<F, FA, P, PA, VCS>(
+pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
-	log_batch_size: usize,
-	vcs: &VCS,
+	params: &FRIParams<F, FA>,
+	merkle_prover: &MerkleProver,
 	message: &[P],
-) -> Result<CommitOutput<P, VCS::Commitment, VCS::Committed>, Error>
+) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
-	VCS: VectorCommitScheme<F>,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
 {
+	let log_batch_size = params.log_batch_size();
+
 	let n_elems = message.len() * P::WIDTH;
 	if n_elems != rs_code.dim() << log_batch_size {
 		bail!(Error::InvalidArgs(
 			"interleaved message length does not match code parameters".to_string()
-		));
-	}
-
-	if !vcs.vector_len().is_power_of_two() {
-		bail!(Error::InvalidArgs("vector commitment length is not a power of two".to_string()));
-	}
-	if rs_code.len() < vcs.vector_len() {
-		bail!(Error::InvalidArgs(
-			"Reed–Solomon code length must be at least the vector commitment length".to_string(),
 		));
 	}
 
@@ -200,22 +194,31 @@ where
 	encoded[..message.len()].copy_from_slice(message);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 
-	let batch_size = encoded.len() * P::WIDTH / vcs.vector_len();
+	// take the first arity as coset_log_len, or use log_inv_rate if arities are empty
+	let coset_log_len = params
+		.fold_arities()
+		.first()
+		.copied()
+		.unwrap_or(rs_code.log_inv_rate());
 
-	let (commitment, vcs_committed) = if batch_size > P::WIDTH {
-		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, batch_size);
+	let log_len = params.log_len() - coset_log_len;
 
-		vcs.commit_iterated(iterated_big_chunks, batch_size)
+	let (commitment, vcs_committed) = if coset_log_len > P::LOG_WIDTH {
+		let iterated_big_chunks = to_par_scalar_big_chunks(&encoded, 1 << coset_log_len);
+
+		merkle_prover
+			.commit_iterated(iterated_big_chunks, log_len)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?
 	} else {
-		let iterated_small_chunks = to_par_scalar_small_chunks(&encoded, batch_size);
+		let iterated_small_chunks = to_par_scalar_small_chunks(&encoded, 1 << coset_log_len);
 
-		vcs.commit_iterated(iterated_small_chunks, batch_size)
+		merkle_prover
+			.commit_iterated(iterated_small_chunks, log_len)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?
 	};
 
 	Ok(CommitOutput {
-		commitment,
+		commitment: commitment.root,
 		committed: vcs_committed,
 		codeword: encoded,
 	})
@@ -227,35 +230,38 @@ pub enum FoldRoundOutput<VCSCommitment> {
 }
 
 /// A stateful prover for the FRI fold phase.
-pub struct FRIFolder<'a, F, FA, VCS>
+pub struct FRIFolder<'a, F, FA, MerkleProver, VCS>
 where
 	FA: BinaryField,
 	F: BinaryField,
-	VCS: VectorCommitScheme<F>,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
 {
-	params: &'a FRIParams<F, FA, VCS>,
+	params: &'a FRIParams<F, FA>,
+	merkle_prover: &'a MerkleProver,
 	codeword: &'a [F],
-	codeword_committed: &'a VCS::Committed,
-	round_committed: Vec<(Vec<F>, VCS::Committed)>,
+	codeword_committed: &'a MerkleProver::Committed,
+	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
 	curr_round: usize,
 	next_commit_round: Option<usize>,
 	unprocessed_challenges: Vec<F>,
 }
 
-impl<'a, F, FA, VCS> FRIFolder<'a, F, FA, VCS>
+impl<'a, F, FA, MerkleProver, VCS> FRIFolder<'a, F, FA, MerkleProver, VCS>
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: VectorCommitScheme<F> + Sync,
-	VCS::Committed: Send + Sync,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
 {
 	/// Constructs a new folder.
 	pub fn new(
-		params: &'a FRIParams<F, FA, VCS>,
+		params: &'a FRIParams<F, FA>,
+		merkle_prover: &'a MerkleProver,
 		committed_codeword: &'a [F],
-		committed: &'a VCS::Committed,
+		committed: &'a MerkleProver::Committed,
 	) -> Result<Self, Error> {
-		if committed_codeword.len() != 1 << (params.rs_code().log_len() + params.log_batch_size()) {
+		if committed_codeword.len() != 1 << params.log_len() {
 			bail!(Error::InvalidArgs(
 				"Reed–Solomon code length must match interleaved codeword length".to_string(),
 			));
@@ -264,6 +270,7 @@ where
 		let next_commit_round = params.fold_arities().first().copied();
 		Ok(Self {
 			params,
+			merkle_prover,
 			codeword: committed_codeword,
 			codeword_committed: committed,
 			round_committed: Vec::with_capacity(params.n_oracles()),
@@ -296,7 +303,7 @@ where
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
-	) -> Result<FoldRoundOutput<VCS::Commitment>, Error> {
+	) -> Result<FoldRoundOutput<VCS::Digest>, Error> {
 		self.unprocessed_challenges.push(challenge);
 		self.curr_round += 1;
 
@@ -330,18 +337,26 @@ where
 		};
 		self.unprocessed_challenges.clear();
 
-		let round_vcs = &self.params.round_vcss()[self.round_committed.len()];
+		// take the first arity as coset_log_len, or use inv_rate if arities are empty
+		let coset_size = self
+			.params
+			.fold_arities()
+			.get(self.round_committed.len() + 1)
+			.map(|log| 1 << log)
+			.unwrap_or(self.params.rs_code().inv_rate());
 
-		let (commitment, committed) = round_vcs
-			.commit_interleaved(&folded_codeword)
+		let (commitment, committed) = self
+			.merkle_prover
+			.commit(&folded_codeword, coset_size)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+
 		self.round_committed.push((folded_codeword, committed));
 
 		self.next_commit_round = self.next_commit_round.take().and_then(|next_commit_round| {
 			let arity = self.params.fold_arities().get(self.round_committed.len())?;
 			Some(next_commit_round + arity)
 		});
-		Ok(FoldRoundOutput::Commitment(commitment))
+		Ok(FoldRoundOutput::Commitment(commitment.root))
 	}
 
 	/// Finalizes the FRI folding process.
@@ -355,7 +370,7 @@ where
 	#[allow(clippy::type_complexity)]
 	pub fn finalize(
 		mut self,
-	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, VCS>), Error> {
+	) -> Result<(TerminateCodeword<F>, FRIQueryProver<'a, F, FA, MerkleProver, VCS>), Error> {
 		if self.curr_round != self.n_rounds() {
 			bail!(Error::EarlyProverFinish);
 		}
@@ -373,6 +388,7 @@ where
 			codeword,
 			codeword_committed,
 			round_committed,
+			merkle_prover,
 			..
 		} = self;
 
@@ -381,6 +397,7 @@ where
 			codeword,
 			codeword_committed,
 			round_committed,
+			merkle_prover,
 		};
 		Ok((terminate_codeword, query_prover))
 	}
@@ -388,7 +405,7 @@ where
 	pub fn finish_proof<Challenger>(
 		self,
 		mut challenger: Challenger,
-	) -> Result<FRIProof<F, VCS::Proof>, Error>
+	) -> Result<FRIProof<F, VCS>, Error>
 	where
 		Challenger: CanSampleBits<usize>,
 	{
@@ -403,31 +420,37 @@ where
 			.map(|index| query_prover.prove_query(index))
 			.collect::<Result<Vec<_>, _>>()?;
 
+		let layers = query_prover.vcs_optimal_layers()?;
+
 		Ok(FRIProof {
 			terminate_codeword,
 			proofs,
+			layers,
 		})
 	}
 }
 
 /// A prover for the FRI query phase.
-pub struct FRIQueryProver<'a, F, FA, VCS>
+pub struct FRIQueryProver<'a, F, FA, MerkleProver, VCS>
 where
 	F: BinaryField,
 	FA: BinaryField,
-	VCS: VectorCommitScheme<F>,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
 {
-	params: &'a FRIParams<F, FA, VCS>,
+	params: &'a FRIParams<F, FA>,
 	codeword: &'a [F],
-	codeword_committed: &'a VCS::Committed,
-	round_committed: Vec<(Vec<F>, VCS::Committed)>,
+	codeword_committed: &'a MerkleProver::Committed,
+	round_committed: Vec<(Vec<F>, MerkleProver::Committed)>,
+	merkle_prover: &'a MerkleProver,
 }
 
-impl<'a, F, FA, VCS> FRIQueryProver<'a, F, FA, VCS>
+impl<'a, F, FA, MerkleProver, VCS> FRIQueryProver<'a, F, FA, MerkleProver, VCS>
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: VectorCommitScheme<F>,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
 {
 	/// Number of oracles sent during the fold rounds.
 	pub fn n_oracles(&self) -> usize {
@@ -442,9 +465,16 @@ where
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
 	pub fn prove_query(&self, mut index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
 		let mut round_proofs = Vec::with_capacity(self.n_oracles());
-		let mut arities = self.params.fold_arities().iter().copied();
+		let mut arities_and_optimal_layers_depths = self
+			.params
+			.fold_arities()
+			.iter()
+			.copied()
+			.zip(vcs_optimal_layers_depths_iter(self.params, self.merkle_prover.scheme()));
 
-		let Some(first_fold_arity) = arities.next() else {
+		let Some((first_fold_arity, first_optimal_layer_depth)) =
+			arities_and_optimal_layers_depths.next()
+		else {
 			// If there are no query proofs, that means that no oracles were sent during the FRI
 			// fold rounds. In that case, the original interleaved codeword is decommitted and
 			// the only checks that need to be performed are in `verify_last_oracle`.
@@ -452,35 +482,62 @@ where
 		};
 
 		round_proofs.push(prove_coset_opening(
-			self.params.codeword_vcs(),
+			self.merkle_prover,
 			self.codeword,
 			self.codeword_committed,
 			index,
 			first_fold_arity,
+			first_optimal_layer_depth,
 		)?);
 
-		for (vcs, (codeword, committed), arity) in
-			izip!(self.params.round_vcss().iter(), self.round_committed.iter(), arities)
+		for ((codeword, committed), (arity, optimal_layer_depth)) in
+			izip!(self.round_committed.iter(), arities_and_optimal_layers_depths)
 		{
 			index >>= arity;
-			round_proofs.push(prove_coset_opening(vcs, codeword, committed, index, arity)?);
+			round_proofs.push(prove_coset_opening(
+				self.merkle_prover,
+				codeword,
+				committed,
+				index,
+				arity,
+				optimal_layer_depth,
+			)?);
 		}
 
 		Ok(round_proofs)
 	}
+
+	pub fn vcs_optimal_layers(&self) -> Result<Vec<Vec<VCS::Digest>>, Error> {
+		let committed_iter = std::iter::once(self.codeword_committed)
+			.chain(self.round_committed.iter().map(|(_, committed)| committed));
+
+		committed_iter
+			.zip(vcs_optimal_layers_depths_iter(self.params, self.merkle_prover.scheme()))
+			.map(|(committed, optimal_layer_depth)| {
+				self.merkle_prover
+					.layer(committed, optimal_layer_depth)
+					.map(|layer| layer.to_vec())
+					.map_err(|err| Error::VectorCommit(Box::new(err)))
+			})
+			.collect::<Result<Vec<_>, _>>()
+	}
 }
 
-fn prove_coset_opening<F: BinaryField, VCS: VectorCommitScheme<F>>(
-	vcs: &VCS,
+fn prove_coset_opening<
+	F: BinaryField,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
+>(
+	merkle_prover: &MerkleProver,
 	codeword: &[F],
-	committed: &VCS::Committed,
+	committed: &MerkleProver::Committed,
 	coset_index: usize,
 	log_coset_size: usize,
+	optimal_layer_depth: usize,
 ) -> Result<QueryRoundProof<F, VCS::Proof>, Error> {
-	let vcs_proof = vcs
-		.prove_batch_opening(committed, coset_index)
+	let vcs_proof = merkle_prover
+		.prove_opening(committed, optimal_layer_depth, coset_index)
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-
 	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
 	Ok(QueryRoundProof {
 		values: codeword[range].to_vec(),

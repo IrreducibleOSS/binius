@@ -4,7 +4,7 @@ use super::ring_switch::reduce_tensor_claim;
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
-	merkle_tree::VectorCommitScheme,
+	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	poly_commit::PolyCommitScheme,
 	polynomial::{Error as PolynomialError, MultivariatePoly},
 	protocols::{
@@ -28,7 +28,7 @@ use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
-use std::{iter, marker::PhantomData, mem, ops::Deref};
+use std::{fmt::Debug, iter, marker::PhantomData, mem, ops::Deref};
 use tracing::instrument;
 
 /// The small-field FRI-based PCS from [DP24], also known as the FRI-Binius PCS.
@@ -44,11 +44,12 @@ use tracing::instrument;
 /// * `FEncode` - a small field that is the Reed–Solomon alphabet
 /// * `PE` - a packed extension field of `F` that is cryptographically big
 /// * `DomainFactory` - a domain factory for the sumcheck reduction
-/// * `VCS` - the vector commitment scheme used to commit the IOP oracles
+/// * `VCS` - the merkle tree vector commitment scheme
+/// * `MerkleProver` - the merkle tree prover used to commit the IOP oracles
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[derive(Debug)]
-pub struct FRIPCS<F, FDomain, FEncode, PE, DomainFactory, VCS>
+pub struct FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
 where
 	F: Field,
 	FDomain: Field,
@@ -60,18 +61,19 @@ where
 		+ ExtensionField<FDomain>
 		+ ExtensionField<FEncode>,
 {
-	fri_params: FRIParams<PE::Scalar, FEncode, VCS>,
+	fri_params: FRIParams<PE::Scalar, FEncode>,
+	merkle_prover: MerkleProver,
 	/// Reed–Solomon code used for encoding during the commitment phase.
-	// NB: This is the same RS code as `params.rs_code()` but is parameterized over a field instead
-	// of a packed field for silly API-compliance reasons. We should refactor `fri_iopp` and
+	// NB: This is the same RS code as `params.rs_code()` but is parameterized over a packed field instead
+	// of a field for silly API-compliance reasons. We should refactor `fri_iopp` and
 	// possibly LinearCode to handle both the proving and verification cases with the same RS code.
 	rs_encoder: ReedSolomonCode<<PE as PackedExtension<FEncode>>::PackedSubfield>,
 	domain_factory: DomainFactory,
-	_marker: PhantomData<(F, FDomain, PE)>,
+	_marker: PhantomData<(F, FDomain, PE, VCS)>,
 }
 
-impl<F, FDomain, FEncode, FExt, PE, DomainFactory, VCS>
-	FRIPCS<F, FDomain, FEncode, PE, DomainFactory, VCS>
+impl<F, FDomain, FEncode, FExt, PE, DomainFactory, MerkleProver, VCS>
+	FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
 where
 	F: Field,
 	FDomain: Field,
@@ -82,15 +84,15 @@ where
 		+ ExtensionField<FDomain>
 		+ ExtensionField<FEncode>,
 	PE: PackedFieldIndexable<Scalar = FExt> + PackedExtension<FEncode>,
-	VCS: VectorCommitScheme<FExt> + Sync,
-	VCS::Committed: Send + Sync,
+	MerkleProver: MerkleTreeProver<FExt, Scheme = VCS> + Sync,
+	VCS: MerkleTreeScheme<FExt, Digest: Clone + Debug, Proof: Clone + Debug>,
 {
 	pub fn new(
 		n_vars: usize,
 		log_inv_rate: usize,
-		fold_arities: &[usize],
+		fold_arities: Vec<usize>,
 		security_bits: usize,
-		vcs_factory: impl Fn(usize) -> VCS,
+		merkle_prover: MerkleProver,
 		domain_factory: DomainFactory,
 		ntt_options: NTTOptions,
 	) -> Result<Self, Error> {
@@ -111,34 +113,20 @@ where
 				}
 			}
 		}
-		let final_arity = n_packed_vars - fold_arities.iter().sum::<usize>();
 
 		// Choose the interleaved code batch size to align with the first fold arity, which is
 		// optimal.
 		let log_batch_size = fold_arities.first().copied().unwrap_or(0);
 		let log_dim = n_packed_vars - log_batch_size;
-		let log_len = log_dim + log_inv_rate;
-
-		// TODO: set merkle cap heights correctly
-		let mut vcss = fold_arities
-			.iter()
-			.copied()
-			.chain(iter::once(final_arity))
-			.scan(log_len + log_batch_size, |len, arity| {
-				*len -= arity;
-				Some(vcs_factory(*len))
-			});
-		let poly_vcs = vcss.next().expect("vcss is not empty");
-		let round_vcss = vcss.collect::<Vec<_>>();
 
 		let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
 		let n_test_queries = fri::calculate_n_test_queries::<FExt, _>(security_bits, &rs_code)?;
-		let fri_params =
-			FRIParams::new(rs_code, log_batch_size, poly_vcs, round_vcss, n_test_queries)?;
+		let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
 		let rs_encoder = ReedSolomonCode::new(log_dim, log_inv_rate, ntt_options)?;
 
 		Ok(Self {
 			fri_params,
+			merkle_prover,
 			rs_encoder,
 			domain_factory,
 			_marker: PhantomData,
@@ -149,7 +137,7 @@ where
 		n_vars: usize,
 		log_inv_rate: usize,
 		security_bits: usize,
-		vcs_factory: impl Fn(usize) -> VCS,
+		merkle_prover: MerkleProver,
 		domain_factory: DomainFactory,
 		ntt_options: NTTOptions,
 	) -> Result<Self, Error> {
@@ -162,7 +150,7 @@ where
 
 		let arity = estimate_optimal_arity(
 			n_packed_vars + log_inv_rate,
-			size_of::<VCS::Commitment>(),
+			size_of::<VCS::Digest>(),
 			size_of::<FExt>(),
 		);
 		assert!(arity > 0);
@@ -175,9 +163,9 @@ where
 		Self::new(
 			n_vars,
 			log_inv_rate,
-			&fold_arities,
+			fold_arities,
 			security_bits,
-			vcs_factory,
+			merkle_prover,
 			domain_factory,
 			ntt_options,
 		)
@@ -192,19 +180,23 @@ where
 		&self,
 		sumcheck_eval: TensorAlgebra<F, FExt>,
 		codeword: &[PE],
-		committed: &VCS::Committed,
+		committed: &MerkleProver::Committed,
 		mut sumcheck_prover: Prover,
 		mut challenger: Challenger,
 	) -> Result<Proof<FExt, VCS>, Error>
 	where
 		Prover: SumcheckProver<FExt>,
 		Challenger:
-			CanObserve<FExt> + CanObserve<VCS::Commitment> + CanSample<FExt> + CanSampleBits<usize>,
+			CanObserve<FExt> + CanObserve<VCS::Digest> + CanSample<FExt> + CanSampleBits<usize>,
 	{
 		let n_rounds = sumcheck_prover.n_vars();
 
-		let mut fri_prover =
-			FRIFolder::new(&self.fri_params, PE::unpack_scalars(codeword), committed)?;
+		let mut fri_prover = FRIFolder::new(
+			&self.fri_params,
+			&self.merkle_prover,
+			PE::unpack_scalars(codeword),
+			committed,
+		)?;
 		let mut rounds = Vec::with_capacity(n_rounds);
 		let mut fri_commitments = Vec::with_capacity(self.fri_params.n_oracles());
 		for _ in 0..n_rounds {
@@ -242,16 +234,16 @@ where
 	fn verify_interleaved_fri_sumcheck<Challenger>(
 		&self,
 		claim: &SumcheckClaim<FExt, BivariateProduct>,
-		codeword_commitment: &VCS::Commitment,
+		codeword_commitment: &VCS::Digest,
 		sumcheck_round_proofs: Vec<RoundProof<FExt>>,
-		fri_commitments: Vec<VCS::Commitment>,
-		fri_proof: fri::FRIProof<FExt, VCS::Proof>,
+		fri_commitments: Vec<VCS::Digest>,
+		fri_proof: fri::FRIProof<FExt, VCS>,
 		ring_switch_evaluator: impl FnOnce(&[FExt]) -> Result<FExt, PolynomialError>,
 		mut challenger: Challenger,
 	) -> Result<(), Error>
 	where
 		Challenger:
-			CanObserve<FExt> + CanObserve<VCS::Commitment> + CanSample<FExt> + CanSampleBits<usize>,
+			CanObserve<FExt> + CanObserve<VCS::Digest> + CanSample<FExt> + CanSampleBits<usize>,
 	{
 		let n_rounds = claim.n_vars();
 		if sumcheck_round_proofs.len() != n_rounds {
@@ -299,8 +291,13 @@ where
 
 			sum = interpolate_round_proof(round_proof, sum, challenge);
 		}
-		let verifier =
-			FRIVerifier::new(&self.fri_params, codeword_commitment, &fri_commitments, &challenges)?;
+		let verifier = FRIVerifier::new(
+			&self.fri_params,
+			self.merkle_prover.scheme(),
+			codeword_commitment,
+			&fri_commitments,
+			&challenges,
+		)?;
 
 		let ring_switch_eval = ring_switch_evaluator(&challenges)?;
 		let final_fri_value = verifier.verify(fri_proof, challenger)?;
@@ -311,8 +308,8 @@ where
 	}
 }
 
-impl<F, FDomain, FEncode, FExt, P, PE, DomainFactory, VCS> PolyCommitScheme<P, FExt>
-	for FRIPCS<F, FDomain, FEncode, PE, DomainFactory, VCS>
+impl<F, FDomain, FEncode, FExt, P, PE, DomainFactory, MerkleProver, VCS> PolyCommitScheme<P, FExt>
+	for FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
 where
 	F: TowerField,
 	FDomain: Field,
@@ -330,13 +327,13 @@ where
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	VCS: VectorCommitScheme<FExt> + Sync,
-	VCS::Committed: Send + Sync,
+	MerkleProver: MerkleTreeProver<FExt, Scheme = VCS> + Sync,
+	VCS: MerkleTreeScheme<FExt, Digest: Clone + Debug, Proof: Clone + Debug>,
 {
-	type Commitment = VCS::Commitment;
+	type Commitment = VCS::Digest;
 	// Committed data is a tuple with the underlying codeword and the VCS committed data (ie.
 	// Merkle internal node hashes).
-	type Committed = (Vec<PE>, VCS::Committed);
+	type Committed = (Vec<PE>, MerkleProver::Committed);
 	type Proof = Proof<FExt, VCS>;
 	type Error = Error;
 
@@ -369,8 +366,8 @@ where
 			codeword,
 		} = fri::commit_interleaved(
 			&self.rs_encoder,
-			self.fri_params.log_batch_size(),
-			self.fri_params.codeword_vcs(),
+			&self.fri_params,
+			&self.merkle_prover,
 			packed_evals,
 		)?;
 
@@ -543,7 +540,7 @@ where
 
 		// TODO: This needs to get updated for higher-arity folding
 		let fe_size = mem::size_of::<FExt>();
-		let vc_size = mem::size_of::<VCS::Commitment>();
+		let vc_size = mem::size_of::<VCS::Digest>();
 
 		let fri_termination_log_len =
 			self.fri_params.n_final_challenges() + self.fri_params.rs_code().log_inv_rate();
@@ -580,13 +577,15 @@ where
 pub struct Proof<F, VCS>
 where
 	F: Field,
-	VCS: VectorCommitScheme<F>,
+	VCS: MerkleTreeScheme<F>,
+	VCS::Digest: Clone + Debug,
+	VCS::Proof: Clone + Debug,
 {
 	/// The vertical elements of the tensor algebra sum.
 	sumcheck_eval: Vec<F>,
 	sumcheck_rounds: Vec<RoundProof<F>>,
-	fri_commitments: Vec<VCS::Commitment>,
-	fri_proof: fri::FRIProof<F, VCS::Proof>,
+	fri_commitments: Vec<VCS::Digest>,
+	fri_proof: fri::FRIProof<F, VCS>,
 }
 
 /// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
@@ -668,7 +667,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		fiat_shamir::HasherChallenger,
-		merkle_tree::MerkleTreeVCS,
+		merkle_tree_vcs::BinaryMerkleTreeProver,
 		transcript::{AdviceWriter, TranscriptWriter},
 	};
 	use binius_field::{
@@ -726,21 +725,17 @@ mod tests {
 		let eval_query = backend.multilinear_query::<FE>(&eval_point).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
-		let make_merkle_vcs = |log_len| {
-			MerkleTreeVCS::<FE, _, GroestlHasher<_>, _>::new(
-				log_len,
-				0,
-				GroestlDigestCompression::default(),
-			)
-		};
+		let merkle_prover = BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(
+			GroestlDigestCompression::default(),
+		);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
-		let pcs = FRIPCS::<F, BinaryField8b, FA, PackedType<U, FE>, _, _>::new(
+		let pcs = FRIPCS::<F, BinaryField8b, FA, PackedType<U, FE>, _, _, _>::new(
 			n_vars,
 			log_inv_rate,
-			fold_arities,
+			fold_arities.to_vec(),
 			32,
-			make_merkle_vcs,
+			merkle_prover,
 			domain_factory,
 			NTTOptions::default(),
 		)
@@ -752,7 +747,7 @@ mod tests {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_proof.transcript.observe(commitment.clone());
+		prover_proof.transcript.observe(commitment);
 		let proof = pcs
 			.prove_evaluation(
 				&mut prover_proof.transcript,
@@ -764,7 +759,7 @@ mod tests {
 			.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment.clone());
+		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
 			&mut verifier_proof.transcript,
 			&commitment,
