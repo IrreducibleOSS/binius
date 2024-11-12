@@ -29,7 +29,7 @@ use binius_utils::bail;
 use itertools::izip;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{array, sync::Arc};
-use tracing::instrument;
+use tracing::{debug_span, instrument};
 
 /// Prove a Lasso instance reduction.
 ///
@@ -237,7 +237,11 @@ where
 
 	let reduced_gpa_claims = [left_claims, right_claims, counts_claims].concat();
 
-	let reduced_gpa_witnesses = [left_witnesses, right_witnesses, counts_witnesses].concat();
+	let reduced_gpa_witnesses = {
+		// This operation takes a long time and deserves its own span.
+		let _span = debug_span!("concat_witnesses").entered();
+		[left_witnesses, right_witnesses, counts_witnesses].concat()
+	};
 
 	let gpa_metas = [
 		gkr_claim_oracle_ids.left,
@@ -255,6 +259,7 @@ where
 	})
 }
 
+#[instrument(skip_all, level = "debug")]
 fn lincom<U, FC, F>(
 	trace: &MultilinearWitness<PackedType<U, F>>,
 	counts: &[FC],

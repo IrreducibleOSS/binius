@@ -245,6 +245,7 @@ where
 
 	// Create GPA sumcheck prover
 	#[allow(clippy::type_complexity)]
+	#[instrument(skip_all, level = "debug")]
 	fn stage_gpa_sumcheck_prover<FDomain>(
 		&self,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,

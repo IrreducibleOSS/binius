@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::iter;
-
 use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
 use crate::{
 	oracle::{MultilinearOracleSet, OracleId},
@@ -14,7 +12,10 @@ use binius_field::{
 	Field, PackedField, TowerField,
 };
 use binius_utils::bail;
+use std::iter;
+use tracing::instrument;
 
+#[instrument(skip_all, level = "debug")]
 pub fn construct_grand_product_witnesses<'a, U, F>(
 	ids: &[OracleId],
 	witness_index: &MultilinearExtensionIndex<'a, U, F>,

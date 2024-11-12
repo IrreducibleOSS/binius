@@ -7,7 +7,7 @@ use crate::{
 	protocols::{
 		sumcheck::{
 			immediate_switchover_heuristic,
-			prove::{prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
+			prove::{common, prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
 			Error as SumcheckError, RoundCoeffs,
 		},
 		utils::packed_from_fn_with_offset,
@@ -19,6 +19,7 @@ use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain,
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct GPAProver<'a, FDomain, P, M, Backend>
@@ -101,15 +102,12 @@ where
 		self.eq_ind_eval *= alpha * challenge + (F::ONE - alpha) * (F::ONE - challenge);
 	}
 
+	#[instrument(skip_all, name = "GPAProver::fold_partial_eq_ind", level = "debug")]
 	fn fold_partial_eq_ind(&mut self) {
-		let n_rounds_remaining = self.n_rounds_remaining();
-		if n_rounds_remaining == 0 {
-			return;
-		}
-		let unpacked = P::unpack_scalars_mut(&mut self.partial_eq_ind_evals);
-		for i in 0..(1 << (n_rounds_remaining - 1)) {
-			unpacked[i] = unpacked[2 * i] + unpacked[2 * i + 1];
-		}
+		common::fold_partial_eq_ind::<P, Backend>(
+			self.n_rounds_remaining(),
+			&mut self.partial_eq_ind_evals,
+		);
 	}
 
 	fn round(&self) -> usize {
@@ -133,6 +131,7 @@ where
 		self.n_vars
 	}
 
+	#[instrument(skip_all, name = "GPAProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();
 		let coeffs = if round == 0 {
@@ -173,6 +172,7 @@ where
 		Ok(sumcheck_coeffs * self.eq_ind_eval)
 	}
 
+	#[instrument(skip_all, name = "GPAProver::fold", level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
 		self.update_eq_ind_eval(challenge);
 		self.state.fold(challenge)?;
@@ -244,7 +244,7 @@ where
 	}
 
 	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		None
+		Some(self.partial_eq_ind_evals)
 	}
 }
 
@@ -255,6 +255,11 @@ where
 	FDomain: Field,
 	M: MultilinearPoly<P> + Send + Sync,
 {
+	#[instrument(
+		skip_all,
+		name = "GPAFirstRoundEvaluator::round_evals_to_coeffs",
+		level = "debug"
+	)]
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,
@@ -343,7 +348,7 @@ where
 	}
 
 	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		None
+		Some(self.partial_eq_ind_evals)
 	}
 }
 
@@ -353,6 +358,11 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 {
+	#[instrument(
+		skip_all,
+		name = "GPALaterRoundEvaluator::round_evals_to_coeffs",
+		level = "debug"
+	)]
 	fn round_evals_to_coeffs(
 		&self,
 		last_round_sum: F,

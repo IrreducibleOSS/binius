@@ -2,7 +2,7 @@
 
 mod batch_prove;
 mod batch_prove_univariate_zerocheck;
-mod common;
+pub(crate) mod common;
 mod concrete_prover;
 pub mod oracles;
 pub mod prover_state;

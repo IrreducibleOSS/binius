@@ -230,7 +230,7 @@ where
 	Ok(trace_commit_polys)
 }
 
-#[instrument(skip_all, level = "debug")]
+#[instrument(skip_all, name = "lasso::prove", level = "debug")]
 #[allow(clippy::too_many_arguments)]
 fn prove<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
@@ -439,7 +439,7 @@ where
 	})
 }
 
-#[instrument(skip_all, level = "debug")]
+#[instrument(skip_all, name = "lasso::verify", level = "debug")]
 #[allow(clippy::too_many_arguments)]
 fn verify<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<B128>,
