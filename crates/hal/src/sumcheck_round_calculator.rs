@@ -120,7 +120,7 @@ where
 	const MAX_SUBCUBE_VARS: usize = 5;
 	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars) - 1;
 
-	// Compute the union of all evaluation point indice ranges.
+	// Compute the union of all evaluation point index ranges.
 	let eval_point_indices = evaluators
 		.iter()
 		.map(|evaluator| evaluator.eval_point_indices())

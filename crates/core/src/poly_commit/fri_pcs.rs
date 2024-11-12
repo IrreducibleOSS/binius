@@ -341,6 +341,7 @@ where
 		self.fri_params.n_fold_rounds() + Self::kappa()
 	}
 
+	#[instrument("FRIPCS::commit", skip_all, level = "debug")]
 	fn commit<Data>(
 		&self,
 		polys: &[MultilinearExtension<P, Data>],

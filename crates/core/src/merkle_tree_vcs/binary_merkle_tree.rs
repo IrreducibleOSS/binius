@@ -7,6 +7,7 @@ use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 use rayon::{prelude::*, slice::ParallelSlice};
 use std::{fmt::Debug, mem::MaybeUninit};
+use tracing::instrument;
 
 /// A binary Merkle tree that commits batches of vectors.
 ///
@@ -95,6 +96,7 @@ where
 		})
 	}
 
+	#[instrument("BinaryMerkleTree::build", skip_all, level = "debug")]
 	pub fn build_from_iterator<T, H, C, ParIter>(
 		compression: &C,
 		iterated_chunks: ParIter,

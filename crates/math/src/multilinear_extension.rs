@@ -13,6 +13,7 @@ use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use std::{cmp::min, fmt::Debug, ops::Deref};
+use tracing::instrument;
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -201,6 +202,11 @@ where
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
 	/// PE::WIDTH, i.e. 2^(\mu - k) \geq PE::WIDTH, since WIDTH is power of two
+	#[instrument(
+		"MultilinearExtension::evaluate_partial_high",
+		skip_all,
+		level = "debug"
+	)]
 	pub fn evaluate_partial_high<'a, PE>(
 		&self,
 		query: impl Into<MultilinearQueryRef<'a, PE>>,
@@ -218,8 +224,8 @@ where
 		let new_n_vars = self.mu - query.n_vars();
 		let result_evals_len = 1 << (new_n_vars.saturating_sub(PE::LOG_WIDTH));
 
-		// This operation is a left vector-Array2D product of the vector of tensor product-expanded
-		// query coefficients with the Array2D of multilinear coefficients.
+		// This operation is a left vector-matrix product of the vector of tensor product-expanded
+		// query coefficients with the matrix of multilinear coefficients.
 		let result_evals = (0..result_evals_len)
 			.into_par_iter()
 			.map(|outer_index| {
@@ -255,6 +261,11 @@ where
 	///
 	/// REQUIRES: the size of the resulting polynomial must have a length which is a multiple of
 	/// P::WIDTH, i.e. 2^(\mu - k) \geq P::WIDTH, since WIDTH is power of two
+	#[instrument(
+		"MultilinearExtension::evaluate_partial_low",
+		skip_all,
+		level = "debug"
+	)]
 	pub fn evaluate_partial_low<'a, PE>(
 		&self,
 		query: impl Into<MultilinearQueryRef<'a, PE>>,
@@ -303,6 +314,8 @@ where
 			});
 		}
 
+		// This operation is a matrix-vector product of the matrix of multilinear coefficients with
+		// the vector of tensor product-expanded query coefficients.
 		const CHUNK_SIZE: usize = 1 << 10;
 		let n_vars = query.n_vars();
 		let query_expansion = query.expansion();

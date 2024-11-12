@@ -56,7 +56,7 @@ where
 	let query = backend.multilinear_query(sumcheck_challenges)?;
 
 	let reduced_multilinears = multilinears
-		.into_iter()
+		.par_iter()
 		.map(|multilinear| {
 			multilinear
 				.evaluate_partial_high(query.to_ref())

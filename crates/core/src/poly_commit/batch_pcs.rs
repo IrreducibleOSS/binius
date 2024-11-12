@@ -13,6 +13,7 @@ use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use std::{marker::PhantomData, ops::Deref};
+use tracing::instrument;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -51,6 +52,7 @@ pub enum Error {
 /// to simply concatenating the evaluations of the individual multilinears (as opposed to a mildly
 /// more expensive interleaving process). This is all downstream of the fact that the underlying
 /// list of evaluations of a multilinear is in Little Endian order.
+#[instrument(skip_all, level = "trace")]
 fn merge_polynomials<P, Data>(
 	n_vars: usize,
 	log_n_polys: usize,

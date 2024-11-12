@@ -13,6 +13,7 @@ use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::{iter, marker::PhantomData};
+use tracing::instrument;
 
 /// This struct provides functionality for the multilinear function $A$ from [DP24] Section 5.
 ///
@@ -54,6 +55,7 @@ where
 		})
 	}
 
+	#[instrument("RingSwitchEqInd::multilinear_extension", skip_all, level = "trace")]
 	pub fn multilinear_extension<P, Backend>(
 		&self,
 		backend: &Backend,
