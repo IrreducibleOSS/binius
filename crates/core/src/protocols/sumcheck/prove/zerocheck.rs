@@ -21,8 +21,8 @@ use crate::{
 use binius_field::{
 	packed::iter_packed_slice,
 	util::{eq, powers},
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
 };
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
@@ -227,8 +227,8 @@ impl<'a, 'm, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 	UnivariateZerocheckProver<F>
 	for UnivariateZerocheck<'a, 'm, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: BinaryField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
-	FDomain: BinaryField,
+	F: TowerField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	FDomain: TowerField,
 	PBase: PackedFieldIndexable<Scalar: ExtensionField<FDomain>>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 	P: PackedFieldIndexable<Scalar = F> + RepackedExtension<PBase> + PackedExtension<FDomain>,

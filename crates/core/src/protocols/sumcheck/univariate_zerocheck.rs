@@ -7,8 +7,8 @@ use super::{
 	zerocheck::ZerocheckClaim,
 };
 use crate::{challenger::CanSample, transcript::CanRead};
-use binius_field::{util::inner_product_unchecked, BinaryField, Field, TowerField};
-use binius_math::{make_ntt_domain_points, CompositionPoly, EvaluationDomain};
+use binius_field::{util::inner_product_unchecked, Field, TowerField};
+use binius_math::{make_ntt_canonical_domain_points, CompositionPoly, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -55,20 +55,15 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 /// and batching happens over a single round. This method batches claimed univariatized evaluations
 /// of the underlying composites, checks that univariatized round polynomial agrees with them on
 /// challenge point, and outputs sumcheck claims for `batch_verify` on the remaining variables.
-///
-/// NB. `FDomain` is the domain used during univariate round evaluations - usage of NTT
-///     for subquadratic time interpolation assumes domains of specific structure that needs
-///     to be replicated in the verifier via an isomorphism.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_zerocheck_univariate_round<FDomain, F, Composition, Transcript, Advice>(
+pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript, Advice>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	proof: ZerocheckUnivariateProof<F>,
 	mut transcript: Transcript,
 	mut advice: Advice,
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
-	FDomain: BinaryField,
-	F: TowerField + From<FDomain>,
+	F: TowerField,
 	Composition: CompositionPoly<F>,
 	Transcript: CanRead + CanSample<F>,
 	Advice: CanRead,
@@ -112,14 +107,8 @@ where
 	let round_evals = transcript.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
 
-	let domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
-	let isomorphic_domain_points = domain_points
-		.clone()
-		.into_iter()
-		.map(Into::into)
-		.collect::<Vec<_>>();
-
-	let evaluation_domain = EvaluationDomain::<F>::from_points(isomorphic_domain_points)?;
+	let domain_points = make_ntt_canonical_domain_points::<F>(max_domain_size)?;
+	let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
 	let sum = inner_product_unchecked::<F, F>(

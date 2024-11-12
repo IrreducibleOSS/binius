@@ -15,12 +15,12 @@ use crate::{
 	},
 };
 use binius_field::{
-	util::inner_product_unchecked, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, PackedFieldIndexable, RepackedExtension,
+	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	make_ntt_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
+	make_ntt_canonical_domain_points, CompositionPoly, Error as MathError, EvaluationDomain,
 	EvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
@@ -93,8 +93,8 @@ pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
 	backend: &'a Backend,
 ) -> Result<Prover<'a, FDomain, P, Backend>, Error>
 where
-	F: Field + ExtensionField<FDomain>,
-	FDomain: BinaryField,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: TowerField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 {
@@ -104,8 +104,8 @@ where
 		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 
-	let evaluation_domain =
-		EvaluationDomain::from_points(make_ntt_domain_points(1 << skip_rounds)?)?;
+	let domain_points = make_ntt_canonical_domain_points::<FDomain>(1 << skip_rounds)?;
+	let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
 
 	reduced_multilinears.push(
 		lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?.into(),
@@ -221,7 +221,7 @@ where
 		challenge: F,
 	) -> Result<ZerocheckUnivariateFoldResult<F, P, Backend>, Error>
 	where
-		FDomain: BinaryField,
+		FDomain: TowerField,
 		F: ExtensionField<FDomain>,
 	{
 		let Self {
@@ -232,7 +232,7 @@ where
 			mut partial_eq_ind_evals,
 		} = self;
 
-		let domain_points = make_ntt_domain_points::<FDomain>(max_domain_size)?;
+		let domain_points = make_ntt_canonical_domain_points::<FDomain>(max_domain_size)?;
 
 		// Lagrange extrapolation over skipped subcube
 		let subcube_evaluation_domain =
@@ -312,8 +312,8 @@ pub fn zerocheck_univariate_evals<F, FDomain, PBase, P, Composition, M, Backend>
 	backend: &Backend,
 ) -> Result<ZerocheckUnivariateEvalsOutput<F, P, Backend>, Error>
 where
-	FDomain: BinaryField,
-	F: BinaryField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	FDomain: TowerField,
+	F: TowerField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	PBase: PackedFieldIndexable<Scalar: ExtensionField<FDomain>>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 	P: PackedFieldIndexable<Scalar = F> + RepackedExtension<PBase>,
@@ -352,7 +352,7 @@ where
 	let log_extension_degree_base_domain = <PBase::Scalar as ExtensionField<FDomain>>::LOG_DEGREE;
 
 	// Only a domain size NTT is needed.
-	let fdomain_ntt = SingleThreadedNTT::<FDomain>::new(min_domain_bits)
+	let fdomain_ntt = SingleThreadedNTT::<FDomain>::with_canonical_field(min_domain_bits)
 		.expect("FDomain cardinality checked before")
 		.precompute_twiddles();
 
@@ -528,8 +528,7 @@ where
 	// So far evals of each composition are "staggered" in a sense that they are evaluated on the smallest
 	// domain which guarantees uniqueness of the round polynomial. We extrapolate them to max_domain_size to
 	// aid in Gruen section 3.2 optimization below and batch mixing.
-	let round_evals =
-		extrapolate_round_evals::<FDomain, _>(staggered_round_evals, skip_rounds, max_domain_size)?;
+	let round_evals = extrapolate_round_evals(staggered_round_evals, skip_rounds, max_domain_size)?;
 
 	Ok(ZerocheckUnivariateEvalsOutput {
 		round_evals,
@@ -546,18 +545,14 @@ where
 // is not larger than the composition degree), which enables additive-NTT based subquadratic
 // techniques.
 #[instrument(skip_all, level = "debug")]
-fn extrapolate_round_evals<FDomain, F>(
+fn extrapolate_round_evals<F: TowerField>(
 	mut round_evals: Vec<Vec<F>>,
 	skip_rounds: usize,
 	max_domain_size: usize,
-) -> Result<Vec<Vec<F>>, Error>
-where
-	FDomain: BinaryField,
-	F: BinaryField + ExtensionField<FDomain>,
-{
+) -> Result<Vec<Vec<F>>, Error> {
 	// Instantiate a large enough NTT over F to be able to forward transform to full domain size.
 	// REVIEW: should be possible to use an existing FDomain NTT with striding.
-	let ntt = SingleThreadedNTT::new(log2_ceil_usize(max_domain_size))?;
+	let ntt = SingleThreadedNTT::with_canonical_field(log2_ceil_usize(max_domain_size))?;
 
 	// Cache OddInterpolate instances, which, albeit small in practice, take cubic time to create.
 	let mut odd_interpolates = HashMap::new();

@@ -6,7 +6,7 @@ use crate::Matrix;
 use auto_impl::auto_impl;
 use binius_field::{
 	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField,
+	PackedField, TowerField,
 };
 use binius_utils::bail;
 use p3_util::log2_ceil_usize;
@@ -87,6 +87,11 @@ fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error>
 		bail!(Error::DomainSizeTooLarge);
 	}
 	Ok(points)
+}
+
+pub fn make_ntt_canonical_domain_points<F: TowerField>(size: usize) -> Result<Vec<F>, Error> {
+	let canonical_domain = make_ntt_domain_points::<F::Canonical>(size)?;
+	Ok(canonical_domain.into_iter().map(Into::into).collect())
 }
 
 pub fn make_ntt_domain_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {

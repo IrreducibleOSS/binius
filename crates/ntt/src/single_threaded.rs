@@ -2,7 +2,7 @@
 
 use super::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess};
-use binius_field::{BinaryField, PackedField};
+use binius_field::{BinaryField, PackedField, TowerField};
 use std::{cmp, marker::PhantomData};
 
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
@@ -30,6 +30,13 @@ impl<F: BinaryField> SingleThreadedNTT<F> {
 
 	pub fn precompute_twiddles(&self) -> SingleThreadedNTT<F, PrecomputedTwiddleAccess<F>> {
 		SingleThreadedNTT::with_twiddle_access(expand_subspace_evals(&self.s_evals))
+	}
+}
+
+impl<F: TowerField> SingleThreadedNTT<F> {
+	/// A specialization of [`with_domain_field`](Self::with_domain_field) to the canonical tower field.
+	pub fn with_canonical_field(log_domain_size: usize) -> Result<Self, Error> {
+		Self::with_domain_field::<F::Canonical>(log_domain_size)
 	}
 }
 

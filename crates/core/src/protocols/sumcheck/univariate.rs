@@ -7,9 +7,9 @@ use crate::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
-use binius_field::{BinaryField, ExtensionField, Field, PackedFieldIndexable};
+use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_math::{make_ntt_domain_points, EvaluationDomain, MultilinearExtension};
+use binius_math::{make_ntt_canonical_domain_points, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
@@ -113,19 +113,14 @@ pub fn univariatizing_reduction_claim<F: Field>(
 /// the multilinear extension of Lagrange polynomials evaluations at `univariate_challenge` (denoted by
 /// $\hat{u}_1$) and verifies that this value is correct. The argument `unskipped_sumcheck_challenges`
 /// holds the challenges of the sumcheck following the univariate round.
-///
-/// NB. `FDomain` is the domain used during univariate round evaluations - usage of NTT
-///     for subquadratic time interpolation assumes domains of specific structure that needs
-///     to be replicated in the verifier via an isomorphism.
-pub fn verify_sumcheck_outputs<FDomain, F>(
+pub fn verify_sumcheck_outputs<F>(
 	claims: &[SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>],
 	univariate_challenge: F,
 	unskipped_sumcheck_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
-	FDomain: BinaryField,
-	F: Field + From<FDomain>,
+	F: TowerField,
 {
 	let BatchSumcheckOutput {
 		challenges: reduction_sumcheck_challenges,
@@ -149,16 +144,10 @@ where
 	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
 		let skip_rounds = claim.n_vars();
 
-		let domain_points = make_ntt_domain_points::<FDomain>(1 << skip_rounds)?;
-		let isomorphic_domain_points = domain_points
-			.clone()
-			.into_iter()
-			.map(Into::into)
-			.collect::<Vec<_>>();
+		let domain_points = make_ntt_canonical_domain_points(1 << skip_rounds)?;
+		let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
 
-		let evaluation_domain = EvaluationDomain::<F>::from_points(isomorphic_domain_points)?;
-
-		let lagrange_mle = lagrange_evals_multilinear_extension::<_, _, F>(
+		let lagrange_mle = lagrange_evals_multilinear_extension::<F, F, F>(
 			&evaluation_domain,
 			univariate_challenge,
 		)?;
@@ -367,7 +356,7 @@ mod tests {
 		let mut verify_challenger = prove_challenger.into_verifier();
 		let batch_sumcheck_output_verify =
 			batch_verify(claims.as_slice(), proof, &mut verify_challenger.transcript).unwrap();
-		let batch_sumcheck_output_post = verify_sumcheck_outputs::<BinaryField16b, _>(
+		let batch_sumcheck_output_post = verify_sumcheck_outputs(
 			claims.as_slice(),
 			univariate_challenge,
 			&sumcheck_challenges,
@@ -529,14 +518,13 @@ mod tests {
 
 				verifier_zerocheck_claims.push(claim);
 			}
-			let verifier_univariate_output =
-				batch_verify_zerocheck_univariate_round::<FI, F, _, _, _>(
-					&verifier_zerocheck_claims[..univariate_cnt],
-					zerocheck_univariate_proof.isomorphic::<F>(),
-					&mut verifier_proof.transcript,
-					&mut verifier_proof.advice,
-				)
-				.unwrap();
+			let verifier_univariate_output = batch_verify_zerocheck_univariate_round(
+				&verifier_zerocheck_claims[..univariate_cnt],
+				zerocheck_univariate_proof.isomorphic::<F>(),
+				&mut verifier_proof.transcript,
+				&mut verifier_proof.advice,
+			)
+			.unwrap();
 
 			let verifier_sumcheck_claims = reduce_to_sumchecks(&verifier_zerocheck_claims).unwrap();
 			let _verifier_sumcheck_output = batch_verify_with_start(

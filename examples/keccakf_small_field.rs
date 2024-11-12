@@ -668,13 +668,12 @@ where
 
 	// check that the last column corresponds to the multilinear extension of Lagrange evaluations
 	// over skip domain
-	let multilinear_sumcheck_output =
-		sumcheck::univariate::verify_sumcheck_outputs::<DomainField, _>(
-			&univariatizing_claims,
-			univariate_challenge,
-			&sumcheck_output.challenges,
-			univariatizing_output,
-		)?;
+	let multilinear_sumcheck_output = sumcheck::univariate::verify_sumcheck_outputs(
+		&univariatizing_claims,
+		univariate_challenge,
+		&sumcheck_output.challenges,
+		univariatizing_output,
+	)?;
 
 	// create "regular" evalcheck claims
 	let evalcheck_multilinear_claims =
@@ -731,7 +730,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "keccakf_small_field::verify")]
-fn verify<P, F, DomainField, PCS, CH, Backend>(
+fn verify<P, F, PCS, CH, Backend>(
 	log_size: usize,
 	oracles: &mut MultilinearOracleSet<F>,
 	fixed_oracle: &FixedOracle,
@@ -743,8 +742,7 @@ fn verify<P, F, DomainField, PCS, CH, Backend>(
 ) -> Result<()>
 where
 	P: PackedField<Scalar = BinaryField1b>,
-	F: TowerField + From<DomainField>,
-	DomainField: BinaryField,
+	F: TowerField,
 	PCS: PolyCommitScheme<P, F, Error: Debug, Proof: 'static>,
 	CH: CanObserve<F> + CanObserve<PCS::Commitment> + CanSample<F> + CanSampleBits<usize> + CanRead,
 	Backend: ComputationBackend,
@@ -771,13 +769,12 @@ where
 	let (zerocheck_claim, meta) = sumcheck::constraint_set_zerocheck_claim(constraint_set)?;
 	let zerocheck_claims = [zerocheck_claim];
 
-	let univariate_output =
-		sumcheck::batch_verify_zerocheck_univariate_round::<DomainField, _, _, _, _>(
-			&zerocheck_claims,
-			zerocheck_univariate_proof,
-			&mut verifier_proof.transcript,
-			&mut verifier_proof.advice,
-		)?;
+	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
+		&zerocheck_claims,
+		zerocheck_univariate_proof,
+		&mut verifier_proof.transcript,
+		&mut verifier_proof.advice,
+	)?;
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
@@ -809,13 +806,12 @@ where
 		&mut verifier_proof.transcript,
 	)?;
 
-	let multilinear_sumcheck_output =
-		sumcheck::univariate::verify_sumcheck_outputs::<DomainField, _>(
-			&univariatizing_claims,
-			univariate_challenge,
-			&sumcheck_output.challenges,
-			univariatizing_output,
-		)?;
+	let multilinear_sumcheck_output = sumcheck::univariate::verify_sumcheck_outputs(
+		&univariatizing_claims,
+		univariate_challenge,
+		&sumcheck_output.challenges,
+		univariatizing_output,
+	)?;
 
 	let evalcheck_multilinear_claims =
 		sumcheck::make_eval_claims(oracles, [meta], multilinear_sumcheck_output)?;
@@ -923,7 +919,7 @@ fn main() {
 	let verifier_fixed_oracle =
 		FixedOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size).unwrap();
 	let verifier_trace_oracle = TraceOracle::new(&mut verifier_oracles, log_size);
-	verify::<_, _, field_types::FW, _, _, _>(
+	verify(
 		log_size,
 		&mut verifier_oracles,
 		&verifier_fixed_oracle,
