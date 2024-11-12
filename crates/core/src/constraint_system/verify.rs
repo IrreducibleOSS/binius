@@ -91,10 +91,6 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	if !non_zero_oracle_ids.is_empty() {
-		todo!("non-zero oracles are not supported yet");
-	}
-
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
@@ -104,6 +100,7 @@ where
 	let ProofGenericPCS {
 		commitments,
 		flush_products,
+		non_zero_products,
 		prodcheck_proof,
 		zerocheck_proof,
 		greedy_evalcheck_proof,
@@ -113,6 +110,22 @@ where
 	} = proof;
 
 	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
+
+	if non_zero_products
+		.iter()
+		.any(|count| *count == Tower::B128::zero())
+	{
+		bail!(Error::Zeros);
+	}
+
+	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+		&non_zero_oracle_ids,
+		&oracles,
+		&non_zero_products,
+	)?;
+
+	transcript.observe_slice(&non_zero_products);
+
 	let advice = AdviceReader::new(advice);
 
 	let backend = make_portable_backend();
@@ -132,12 +145,18 @@ where
 	// Grand product arguments
 	let flush_oracles =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let prodcheck_claims =
+	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
-	let final_layer_claims =
-		gkr_gpa::batch_verify(prodcheck_claims, prodcheck_proof, &mut transcript)?;
-	let prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(&oracles, flush_oracles, final_layer_claims)?;
+	let final_layer_claims = gkr_gpa::batch_verify(
+		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
+		prodcheck_proof,
+		&mut transcript,
+	)?;
+	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
+		&oracles,
+		[flush_oracles, non_zero_oracle_ids].concat(),
+		final_layer_claims,
+	)?;
 
 	verify_channels_balance(&flushes, &flush_products)?;
 

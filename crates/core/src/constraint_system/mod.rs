@@ -49,6 +49,7 @@ pub type Proof<F, Digest, Hash, Compress> = ProofGenericPCS<
 pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
 	pub commitments: Vec<PCSComm>,
 	pub flush_products: Vec<F>,
+	pub non_zero_products: Vec<F>,
 	pub prodcheck_proof: GrandProductBatchProof<F>,
 	pub zerocheck_proof: sumcheck::Proof<F>,
 	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,

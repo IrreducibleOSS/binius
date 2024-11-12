@@ -11,7 +11,6 @@ use binius_field::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedField,
 	PackedFieldIndexable, TowerField,
 };
-use binius_macros::composition_poly;
 use bytemuck::{must_cast_slice, Pod};
 use itertools::izip;
 
@@ -60,7 +59,6 @@ pub struct TraceOracle {
 	lookup_u: OracleId,
 	// timestamp things below
 	lookup_r: OracleId,
-	lookup_s: OracleId, // the inverse of r
 	lookup_w: OracleId,
 	lookup_o: OracleId,
 	lookup_f: OracleId,
@@ -98,7 +96,6 @@ impl TraceOracle {
 			},
 		)?;
 		let lookup_r = builder.add_committed("lookup_r", n_vars, B32::TOWER_LEVEL);
-		let lookup_s = builder.add_committed("lookup_s", n_vars, B32::TOWER_LEVEL);
 		let lookup_w =
 			builder.add_linear_combination("lookup_w", n_vars, [(lookup_r, F::ONE * ALPHA)])?;
 
@@ -110,7 +107,6 @@ impl TraceOracle {
 			lookup_t,
 			lookup_u,
 			lookup_r,
-			lookup_s,
 			lookup_w,
 			lookup_f,
 			lookup_o,
@@ -208,13 +204,11 @@ where
 	F: BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	let mut lookup_r = make_underliers::<_, B32>(log_size);
-	let mut lookup_s = make_underliers::<_, B32>(log_size);
 	let mut lookup_w = make_underliers::<_, B32>(log_size);
 	let mut lookup_f = make_underliers::<_, B32>(T_LOG_SIZE);
 	let mut lookup_o = make_underliers::<_, B32>(T_LOG_SIZE);
 
 	let lookup_r_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_r.as_mut_slice());
-	let lookup_s_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_s.as_mut_slice());
 	let lookup_w_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_w.as_mut_slice());
 	let lookup_f_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_f.as_mut_slice());
 	let lookup_o_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_o.as_mut_slice());
@@ -222,21 +216,16 @@ where
 	lookup_f_scalars.fill(B32::ONE);
 	lookup_o_scalars.fill(B32::ONE);
 
-	for (j, (r, s, w)) in
-		izip!(lookup_r_scalars.iter_mut(), lookup_s_scalars.iter_mut(), lookup_w_scalars.iter_mut())
-			.enumerate()
-	{
+	for (j, (r, w)) in izip!(lookup_r_scalars.iter_mut(), lookup_w_scalars.iter_mut()).enumerate() {
 		let index = u_to_t_mapping[j];
 		let ts = lookup_f_scalars[index];
 		*r = ts;
-		*s = ts.pow([(1 << 32) - 2]);
 		*w = ts * ALPHA;
 		lookup_f_scalars[index] *= ALPHA;
 	}
 
 	witness.set_owned::<B32, _>([
 		(trace_oracle.lookup_r, lookup_r),
-		(trace_oracle.lookup_s, lookup_s),
 		(trace_oracle.lookup_w, lookup_w),
 		(trace_oracle.lookup_f, lookup_f),
 		(trace_oracle.lookup_o, lookup_o),
@@ -253,10 +242,9 @@ where
 	U: UnderlierType + Pod + PackScalar<F>,
 	F: TowerField,
 {
-	builder.assert_zero(
-		[trace_oracle.lookup_r, trace_oracle.lookup_s],
-		composition_poly!([x, y] = x * y - 1),
-	);
+	// check that timestamps are not equal to zero.
+	builder.assert_not_zero(trace_oracle.lookup_f);
+	builder.assert_not_zero(trace_oracle.lookup_r);
 
 	// populate table using initial timestamps
 	builder.send(trace_oracle.channel, [trace_oracle.lookup_t, trace_oracle.lookup_o]);

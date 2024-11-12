@@ -112,9 +112,24 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	if !non_zero_oracle_ids.is_empty() {
-		todo!("non-zero oracles are not supported yet");
+	let non_zero_prodcheck_witnesses =
+		gkr_gpa::construct_grand_product_witnesses(&non_zero_oracle_ids, &witness)?;
+	let non_zero_products =
+		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
+	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+		&non_zero_oracle_ids,
+		&oracles,
+		&non_zero_products,
+	)?;
+
+	if non_zero_products
+		.iter()
+		.any(|count| *count == Tower::B128::zero())
+	{
+		bail!(Error::Zeros);
 	}
+
+	transcript.observe_slice(&non_zero_products);
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -162,10 +177,14 @@ where
 	// Grand product arguments
 	let flush_oracles =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let prodcheck_witnesses = make_flush_witnesses(&oracles, &witness, &flush_oracles)?;
-	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&prodcheck_witnesses);
-	let prodcheck_claims =
+	let flush_prodcheck_witnesses = make_flush_witnesses(&oracles, &witness, &flush_oracles)?;
+	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
+	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
+
+	let prodcheck_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
+	let prodcheck_claims = [flush_prodcheck_claims, non_zero_prodcheck_claims].concat();
+
 	let GrandProductBatchProveOutput {
 		final_layer_claims,
 		proof: prodcheck_proof,
@@ -176,8 +195,11 @@ where
 		&mut transcript,
 		backend,
 	)?;
-	let prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(&oracles, flush_oracles, final_layer_claims)?;
+	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
+		&oracles,
+		[flush_oracles, non_zero_oracle_ids].concat(),
+		final_layer_claims,
+	)?;
 
 	// Zerocheck
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
@@ -324,6 +346,7 @@ where
 	Ok(ProofGenericPCS {
 		commitments,
 		flush_products,
+		non_zero_products,
 		prodcheck_proof,
 		zerocheck_proof,
 		greedy_evalcheck_proof,

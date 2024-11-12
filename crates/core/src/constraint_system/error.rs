@@ -37,6 +37,9 @@ pub enum Error {
 		witness_num_vars: usize,
 	},
 
+	#[error("Non-zero oracles contain zeros")]
+	Zeros,
+
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
 
