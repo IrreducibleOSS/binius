@@ -7,7 +7,7 @@
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::{
-	deinterleave, extrapolate_line, CompositionPoly, MultilinearPoly, MultilinearQuery,
+	deinterleave, extrapolate_lines, CompositionPoly, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
 };
 use bytemuck::zeroed_vec;
@@ -160,6 +160,8 @@ where
 				// Proceed by evaluation point first to share interpolation work between evaluators.
 				for eval_point_index in eval_point_indices.clone() {
 					let eval_point = evaluation_points[eval_point_index];
+					let eval_point_broadcast =
+						<PBase as PackedExtension<FDomain>>::PackedSubfield::broadcast(eval_point);
 
 					// Only points with indices two and above need to be interpolated.
 					if eval_point_index >= 2 {
@@ -169,7 +171,15 @@ where
 								evals.evals_1.as_slice(),
 								evals.evals_z.as_mut_slice(),
 							) {
-								*eval_z = extrapolate_line(eval_0, eval_1, eval_point);
+								// This is logically the same as calling
+								// `binius_math::univariate::extrapolate_line`, except that we do
+								// not repeat the broadcast of the subfield element to a packed
+								// subfield.
+								*eval_z = PBase::cast_ext(extrapolate_lines(
+									PBase::cast_base(eval_0),
+									PBase::cast_base(eval_1),
+									eval_point_broadcast,
+								));
 							}
 						}
 					}

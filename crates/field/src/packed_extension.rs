@@ -62,7 +62,7 @@ where
 ///         PE: PackedExtension<F, Scalar: ExtensionField<F>>,
 ///         F: Field,
 /// {
-///     PE::cast_base(packed).into_iter()
+///     PE::cast_base_ref(packed).into_iter()
 /// }
 /// ```
 ///
@@ -83,10 +83,12 @@ where
 	fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self];
 	fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self];
 
-	fn cast_base(&self) -> &Self::PackedSubfield;
+	fn cast_base(self) -> Self::PackedSubfield;
+	fn cast_base_ref(&self) -> &Self::PackedSubfield;
 	fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield;
 
-	fn cast_ext(base: &Self::PackedSubfield) -> &Self;
+	fn cast_ext(base: Self::PackedSubfield) -> Self;
+	fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self;
 	fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self;
 }
 
@@ -113,7 +115,11 @@ where
 		Self::from_underliers_ref_mut(Self::PackedSubfield::to_underliers_ref_mut(base))
 	}
 
-	fn cast_base(&self) -> &Self::PackedSubfield {
+	fn cast_base(self) -> Self::PackedSubfield {
+		Self::PackedSubfield::from_underlier(self.to_underlier())
+	}
+
+	fn cast_base_ref(&self) -> &Self::PackedSubfield {
 		Self::PackedSubfield::from_underlier_ref(self.to_underlier_ref())
 	}
 
@@ -121,7 +127,11 @@ where
 		Self::PackedSubfield::from_underlier_ref_mut(self.to_underlier_ref_mut())
 	}
 
-	fn cast_ext(base: &Self::PackedSubfield) -> &Self {
+	fn cast_ext(base: Self::PackedSubfield) -> Self {
+		Self::from_underlier(base.to_underlier())
+	}
+
+	fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
 		Self::from_underlier_ref(base.to_underlier_ref())
 	}
 

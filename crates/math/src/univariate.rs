@@ -213,8 +213,7 @@ impl<F: Field> InterpolationDomain<F> {
 	}
 }
 
-/// Uses arguments of two distinct types to make multiplication more efficient
-/// when extrapolating in a smaller field.
+/// Extrapolates lines through a pair of packed fields at a single point from a subfield.
 #[inline]
 pub fn extrapolate_line<P, FS>(x0: P, x1: P, z: FS) -> P
 where
@@ -222,6 +221,15 @@ where
 	FS: Field,
 {
 	x0 + mul_by_subfield_scalar(x1 - x0, z)
+}
+
+/// Extrapolates lines through a pair of packed fields at a packed vector of points.
+#[inline]
+pub fn extrapolate_lines<P>(x0: P, x1: P, z: P) -> P
+where
+	P: PackedField,
+{
+	x0 + (x1 - x0) * z
 }
 
 /// Similar methods, but for scalar fields.

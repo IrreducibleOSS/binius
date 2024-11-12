@@ -273,7 +273,7 @@ where
 	if (subfield_bits == 1 && extension_bits > 8) || extension_bits >= 32 {
 		P::from_fn(|i| unsafe { val.get_unchecked(i) } * multiplier)
 	} else {
-		*P::cast_ext(&(*P::cast_base(&val) * P::PackedSubfield::broadcast(multiplier)))
+		P::cast_ext(P::cast_base(val) * P::PackedSubfield::broadcast(multiplier))
 	}
 }
 

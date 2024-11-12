@@ -66,12 +66,12 @@ where
 
 	#[inline]
 	fn as_packed_subfield(self) -> Self::PackedDirectSubfield {
-		*P::cast_base(&self)
+		P::cast_base(self)
 	}
 
 	#[inline]
 	fn from_packed_subfield(value: Self::PackedDirectSubfield) -> Self {
-		*P::cast_ext(&value)
+		P::cast_ext(value)
 	}
 }
 
