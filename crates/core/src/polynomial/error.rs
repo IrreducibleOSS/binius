@@ -20,6 +20,8 @@ pub enum Error {
 		max_shift_offset: usize,
 		shift_offset: usize,
 	},
+	#[error("invalid tower height: {actual}. tower height must be 0, 3, 4, 5, 6, or 7")]
+	InvalidTowerHeight { actual: usize },
 	#[error("indices provided to IndexComposition constructor do not match number of variables")]
 	IndexCompositionIndicesOutOfBounds,
 	#[error("mixed polynomial was not provided")]
