@@ -126,7 +126,7 @@ where
 
 	transcript.observe_slice(&non_zero_products);
 
-	let advice = AdviceReader::new(advice);
+	let mut advice = AdviceReader::new(advice);
 
 	let backend = make_portable_backend();
 
@@ -197,6 +197,7 @@ where
 			.chain(zerocheck_eval_claims),
 		greedy_evalcheck_proof,
 		&mut transcript,
+		&mut advice,
 	)?;
 
 	pcs_claims.sort_by_key(|(batch_id, _)| *batch_id);

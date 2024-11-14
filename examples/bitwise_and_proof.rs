@@ -11,7 +11,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -45,6 +45,7 @@ fn prove<U, PCS, Transcript, Backend>(
 	constraint_set: ConstraintSet<PackedType<U, BinaryField128bPolyval>>,
 	mut witness: MultilinearExtensionIndex<U, BinaryField128bPolyval>,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	domain_factory: impl EvaluationDomainFactory<BinaryField128bPolyval>,
 	backend: &Backend,
 ) -> Result<Proof<PCS::Commitment, PCS::Proof, BinaryField128bPolyval>>
@@ -119,6 +120,7 @@ where
 		evalcheck_claims,
 		switchover_fn,
 		&mut transcript,
+		advice,
 		domain_factory,
 		backend,
 	)?;
@@ -170,6 +172,7 @@ impl<C, P, F: Field> Proof<C, P, F> {
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
 fn verify<PCS, Transcript, Backend>(
 	log_size: usize,
@@ -178,6 +181,7 @@ fn verify<PCS, Transcript, Backend>(
 	constraint_set: ConstraintSet<BinaryField128b>,
 	proof: Proof<PCS::Commitment, PCS::Proof, BinaryField128b>,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	backend: &Backend,
 ) -> Result<()>
 where
@@ -228,6 +232,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -375,14 +380,18 @@ fn main() {
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField128b>::default();
 	let backend = binius_hal::make_portable_backend();
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let proof = prove(
 		&pcs,
 		&mut prover_oracles.clone(),
 		&prover_trace_oracle,
 		prover_constraints,
 		witness,
-		&mut prover_transcript,
+		&mut prover_context.transcript,
+		&mut prover_context.advice,
 		domain_factory,
 		&backend,
 	)
@@ -391,17 +400,18 @@ fn main() {
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	TraceOracle::new(&mut verifier_oracles, log_size);
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	verify(
 		log_size,
 		&pcs,
 		&mut verifier_oracles.clone(),
 		verifier_constraints,
 		proof.isomorphic(),
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		&backend,
 	)
 	.unwrap();
 
-	verifier_transcript.finalize().unwrap();
+	verifier_context.finalize().unwrap();
 }

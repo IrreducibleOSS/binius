@@ -19,7 +19,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, immediate_switchover_heuristic, Proof as ZerocheckProof},
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	transparent::{multilinear_extension::MultilinearExtensionTransparent, step_down::StepDown},
 	witness::MultilinearExtensionIndex,
 };
@@ -912,6 +912,7 @@ fn prove<U, F, FBase, FEPCS, PCS, Comm, Transcript, Backend>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	witness: &TraceWitness<U, BinaryField32b>,
 	domain_factory: impl EvaluationDomainFactory<BinaryField8b>,
 	backend: Backend,
@@ -999,6 +1000,7 @@ where
 		evalcheck_multilinear_claims,
 		immediate_switchover_heuristic,
 		&mut transcript,
+		advice,
 		domain_factory,
 		&backend,
 	)?;
@@ -1033,6 +1035,7 @@ where
 	})
 }
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
 fn verify<F, P32b, PCS, Comm, Transcript, Backend>(
 	log_size: usize,
@@ -1040,6 +1043,7 @@ fn verify<F, P32b, PCS, Comm, Transcript, Backend>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	proof: Proof<F, Comm, PCS::Proof>,
 	backend: Backend,
 ) -> Result<()>
@@ -1089,6 +1093,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -1142,7 +1147,10 @@ fn main() {
 	tracing::info!("Size of hashable vision32b data: {}", data_hashed);
 	tracing::info!("Size of PCS opening proof: {}", tensorpcs_size);
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let witness = TraceWitness::<U, _>::generate_trace(log_size);
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
@@ -1151,24 +1159,26 @@ fn main() {
 		&mut oracles,
 		&trace_oracle,
 		&pcs,
-		&mut prover_transcript,
+		&mut prover_context.transcript,
+		&mut prover_context.advice,
 		&witness,
 		domain_factory,
 		&backend,
 	)
 	.unwrap();
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	verify(
 		log_size,
 		&mut oracles,
 		&trace_oracle,
 		&pcs,
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		proof.isomorphic(),
 		backend,
 	)
 	.unwrap();
 
-	verifier_transcript.finalize().unwrap();
+	verifier_context.finalize().unwrap();
 }

@@ -34,6 +34,10 @@ pub enum Error {
 	HalError(#[from] binius_hal::Error),
 	#[error("Math error: {0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("Evalcheck serialization error")]
+	EvalcheckSerializationError,
+	#[error("transcript error: {0}")]
+	TranscriptError(#[from] crate::transcript::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

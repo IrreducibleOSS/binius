@@ -198,7 +198,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				name,
 			} => {
 				let subproofs = match evalcheck_proof {
-					EvalcheckProof::Composite { subproofs } => subproofs,
+					EvalcheckProof::LinearCombination { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 

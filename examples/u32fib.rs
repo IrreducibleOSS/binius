@@ -13,7 +13,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
@@ -246,6 +246,7 @@ fn prove<U, F, FBase, DomainField, FEPCS, PCS, Transcript, Backend>(
 	pcs: &PCS,
 	oracle: &U32FibOracle,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	mut witness: MultilinearExtensionIndex<U, F>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: Backend,
@@ -327,6 +328,7 @@ where
 		evalcheck_multilinear_claims,
 		switchover_fn,
 		&mut transcript,
+		advice,
 		domain_factory,
 		&backend,
 	)?;
@@ -391,6 +393,7 @@ fn verify<P, F, PCS, Transcript, Backend>(
 	oracle: &U32FibOracle,
 	pcs: &PCS,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
 	backend: Backend,
 ) -> Result<()>
@@ -440,6 +443,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -492,7 +496,10 @@ fn main() {
 	let mut prover_oracles = MultilinearOracleSet::new();
 	let prover_oracle = U32FibOracle::new::<field_types::Field>(&mut prover_oracles, log_size);
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let witness = U32FibTrace::<U>::new(log_size).fill_trace();
 	let witness = to_index::<U, F>(&prover_oracle, &witness);
 
@@ -514,14 +521,15 @@ fn main() {
 		&mut prover_oracles,
 		&pcs,
 		&prover_oracle,
-		&mut prover_transcript,
+		&mut prover_context.transcript,
+		&mut prover_context.advice,
 		witness,
 		domain_factory,
 		&backend,
 	)
 	.unwrap();
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	let verifier_oracle = U32FibOracle::new::<BinaryField128b>(&mut verifier_oracles, log_size);
 
@@ -531,11 +539,12 @@ fn main() {
 		&mut verifier_oracles,
 		&verifier_oracle,
 		&pcs,
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		proof.isomorphic(),
 		backend,
 	)
 	.unwrap();
 
-	verifier_transcript.finalize().unwrap();
+	verifier_context.finalize().unwrap();
 }

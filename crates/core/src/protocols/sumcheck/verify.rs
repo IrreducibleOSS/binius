@@ -30,7 +30,7 @@ use tracing::instrument;
 pub fn batch_verify<F, Composition, Transcript>(
 	claims: &[SumcheckClaim<F, Composition>],
 	proof: Proof<F>,
-	transcript: Transcript,
+	transcript: &mut Transcript,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
@@ -66,7 +66,7 @@ pub fn batch_verify_with_start<F, Composition, Transcript>(
 	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],
 	proof: Proof<F>,
-	mut transcript: Transcript,
+	transcript: &mut Transcript,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,

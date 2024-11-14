@@ -12,7 +12,7 @@ use binius_core::{
 		lasso::{self, LassoBatches, LassoClaim, LassoProof, LassoProveOutput, LassoWitness},
 		sumcheck::standard_switchover_heuristic,
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -241,6 +241,7 @@ fn prove<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	pcs16: &PCS16,
 	pcs32: &PCS32,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	domain_factory: impl EvaluationDomainFactory<B128>,
 	backend: &Backend,
 ) -> Result<Proof<U, PCS8, PCS16, PCS32>>
@@ -359,6 +360,7 @@ where
 		evalcheck_multilinear_claims,
 		switchover_fn,
 		&mut transcript,
+		advice,
 		domain_factory,
 		&backend,
 	)?;
@@ -449,6 +451,7 @@ fn verify<U, PCS8, PCS16, PCS32, Transcript, Backend>(
 	pcs16: &PCS16,
 	pcs32: &PCS32,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	proof: Proof<U, PCS8, PCS16, PCS32>,
 	backend: &Backend,
 ) -> Result<()>
@@ -520,6 +523,7 @@ where
 		evalcheck_multilinear_claims,
 		greedy_evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	// PCS opening proofs
@@ -627,7 +631,10 @@ fn main() -> Result<()> {
 
 	let mut oracles = MultilinearOracleSet::<B128>::new();
 	let trace_oracle = TraceOracle::new(&mut oracles, log_size)?;
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let trace_witness = generate_trace::<Underlier, _>(log_size, &trace_oracle)?;
 	let domain_factory = IsomorphicEvaluationDomainFactory::<B128>::default();
 
@@ -639,12 +646,13 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		&mut prover_transcript,
+		&mut prover_context.transcript,
+		&mut prover_context.advice,
 		domain_factory,
 		&backend,
 	)?;
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	verify(
 		&mut oracles.clone(),
 		&trace_oracle,
@@ -652,11 +660,12 @@ fn main() -> Result<()> {
 		&pcs8,
 		&pcs16,
 		&pcs32,
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		proof,
 		&backend,
 	)?;
 
-	verifier_transcript.finalize()?;
+	verifier_context.finalize().unwrap();
 	Ok(())
 }

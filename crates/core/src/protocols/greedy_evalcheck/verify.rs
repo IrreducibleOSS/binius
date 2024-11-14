@@ -6,35 +6,47 @@ use crate::{
 	oracle::{BatchId, ConstraintSet, MultilinearOracleSet},
 	protocols::{
 		evalcheck::{
-			subclaims::make_non_same_query_pcs_sumcheck_claims, EvalcheckMultilinearClaim,
-			EvalcheckVerifier, SameQueryPcsClaim,
+			deserialize_evalcheck_proof, subclaims::make_non_same_query_pcs_sumcheck_claims,
+			EvalcheckMultilinearClaim, EvalcheckVerifier, SameQueryPcsClaim,
 		},
-		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
+		sumcheck::{
+			self, batch_verify, constraint_set_sumcheck_claims, Proof, SumcheckClaimsWithMeta,
+		},
 	},
-	transcript::CanRead,
+	transcript::{read_u64, AdviceReader, CanRead},
 };
 use binius_field::TowerField;
 use binius_utils::bail;
 
-pub fn verify<F, Challenger>(
+pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	proof: GreedyEvalcheckProof<F>,
-	mut challenger: Challenger,
+	transcript: &mut Transcript,
+	advice: &mut AdviceReader,
 ) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
 where
 	F: TowerField,
-	Challenger: CanObserve<F> + CanSample<F> + CanRead,
+	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
+	drop(proof);
 	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);
 
 	// Verify the initial evalcheck claims
 	let claims = claims.into_iter().collect::<Vec<_>>();
 
-	evalcheck_verifier.verify(claims, proof.initial_evalcheck_proofs)?;
+	let len_initial_evalcheck_proofs = read_u64(advice)? as usize;
+	let mut initial_evalcheck_proofs = Vec::with_capacity(len_initial_evalcheck_proofs);
+	for _ in 0..len_initial_evalcheck_proofs {
+		let eval_check_proof = deserialize_evalcheck_proof(transcript)?;
+		initial_evalcheck_proofs.push(eval_check_proof);
+	}
 
-	for (sumcheck_batch_proof, evalcheck_proofs) in proof.virtual_opening_proofs {
+	evalcheck_verifier.verify(claims, initial_evalcheck_proofs)?;
+
+	let len_virtual_opening_proofs = read_u64(advice)? as usize;
+	for _ in 0..len_virtual_opening_proofs {
 		let SumcheckClaimsWithMeta { claims, metas } = constraint_set_sumcheck_claims(
 			evalcheck_verifier.take_new_sumcheck_constraints().unwrap(),
 		)?;
@@ -44,16 +56,15 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let sumcheck_output = batch_verify(&claims, sumcheck_batch_proof, &mut challenger)?;
+		let sumcheck_output = batch_verify(&claims, Proof::default(), transcript)?;
 
 		let new_evalcheck_claims =
 			sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
 
-		if new_evalcheck_claims.len() < evalcheck_proofs.len() {
-			bail!(Error::ExtraVirtualOpeningProof);
-		}
-		if new_evalcheck_claims.len() > evalcheck_proofs.len() {
-			bail!(Error::MissingVirtualOpeningProof);
+		let mut evalcheck_proofs = Vec::with_capacity(new_evalcheck_claims.len());
+		for _ in 0..new_evalcheck_claims.len() {
+			let evalcheck_proof = deserialize_evalcheck_proof(transcript)?;
+			evalcheck_proofs.push(evalcheck_proof)
 		}
 
 		evalcheck_verifier.verify(new_evalcheck_claims, evalcheck_proofs)?;
@@ -86,12 +97,17 @@ where
 	let SumcheckClaimsWithMeta { claims, metas } =
 		constraint_set_sumcheck_claims(non_sqpcs_sumchecks)?;
 
-	let (sumcheck_proof, evalcheck_proofs) = proof.batch_opening_proof;
-
-	let sumcheck_output = batch_verify(&claims, sumcheck_proof, &mut challenger)?;
+	let sumcheck_output = batch_verify(&claims, Proof::default(), transcript)?;
 
 	let evalcheck_claims =
 		sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
+
+	let len_batch_opening_proofs = read_u64(advice)? as usize;
+	let mut evalcheck_proofs = Vec::with_capacity(len_batch_opening_proofs);
+	for _ in 0..len_batch_opening_proofs {
+		let evalcheck_proof = deserialize_evalcheck_proof(transcript)?;
+		evalcheck_proofs.push(evalcheck_proof);
+	}
 
 	evalcheck_verifier.verify(evalcheck_claims, evalcheck_proofs)?;
 

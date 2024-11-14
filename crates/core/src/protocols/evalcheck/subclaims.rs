@@ -432,11 +432,11 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 type SumcheckProofEvalcheckClaims<F> = (SumcheckBatchProof<F>, Vec<EvalcheckMultilinearClaim<F>>);
 
-pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, CH, Backend>(
+pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
 	oracles: &MultilinearOracleSet<F>,
 	witness: &MultilinearExtensionIndex<U, F>,
 	constraint_sets: Vec<ConstraintSet<PackedType<U, F>>>,
-	challenger: &mut CH,
+	transcript: &mut Transcript,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -445,7 +445,7 @@ where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
-	CH: CanObserve<F> + CanSample<F> + CanWrite,
+	Transcript: CanObserve<F> + CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(
@@ -456,7 +456,7 @@ where
 		backend,
 	)?;
 
-	let (sumcheck_output, proof) = sumcheck::batch_prove(provers, challenger)?;
+	let (sumcheck_output, proof) = sumcheck::batch_prove(provers, transcript)?;
 
 	let evalcheck_claims = sumcheck::make_eval_claims(oracles, metas, sumcheck_output)?;
 

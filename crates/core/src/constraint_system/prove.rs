@@ -102,7 +102,7 @@ where
 		+ RepackedExtension<PackedType<U, Tower::B128>>,
 {
 	let mut transcript = TranscriptWriter::<Challenger_>::default();
-	let advice = AdviceWriter::default();
+	let mut advice = AdviceWriter::default();
 
 	let ConstraintSystem {
 		mut oracles,
@@ -259,6 +259,7 @@ where
 			.chain(zerocheck_eval_claims),
 		switchover_fn,
 		&mut transcript,
+		&mut advice,
 		domain_factory,
 		backend,
 	)?;

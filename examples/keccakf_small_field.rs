@@ -689,6 +689,7 @@ where
 		evalcheck_multilinear_claims,
 		switchover_fn,
 		&mut prover_proof.transcript,
+		&mut prover_proof.advice,
 		domain_factory,
 		&backend,
 	)?;
@@ -822,6 +823,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut verifier_proof.transcript,
+		&mut verifier_proof.advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -886,7 +888,7 @@ fn main() {
 		generate_trace::<U, field_types::FW>(log_size, &prove_fixed_oracle, &prove_trace_oracle)
 			.unwrap();
 
-	let mut prover_proof = binius_core::transcript::Proof {
+	let mut prover_context = binius_core::transcript::Proof {
 		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 		advice: AdviceWriter::default(),
 	};
@@ -907,14 +909,14 @@ fn main() {
 		&prove_fixed_oracle,
 		&prove_trace_oracle,
 		&pcs,
-		&mut prover_proof,
+		&mut prover_context,
 		witness,
 		domain_factory,
 		&backend,
 	)
 	.unwrap();
 
-	let mut verifier_proof = prover_proof.into_verifier();
+	let mut verifier_context = prover_context.into_verifier();
 	let mut verifier_oracles = MultilinearOracleSet::new();
 	let verifier_fixed_oracle =
 		FixedOracle::new::<PackedBinaryField1x128b>(&mut verifier_oracles, log_size).unwrap();
@@ -925,11 +927,11 @@ fn main() {
 		&verifier_fixed_oracle,
 		&verifier_trace_oracle,
 		&pcs,
-		&mut verifier_proof,
+		&mut verifier_context,
 		proof.isomorphic(),
 		&backend,
 	)
 	.unwrap();
 
-	verifier_proof.transcript.finalize().unwrap()
+	verifier_context.finalize().unwrap();
 }

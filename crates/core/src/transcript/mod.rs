@@ -138,6 +138,13 @@ impl<Challenger: Default> Proof<TranscriptWriter<Challenger>, AdviceWriter> {
 	}
 }
 
+impl<Challenger: Default> Proof<TranscriptReader<Challenger>, AdviceReader> {
+	pub fn finalize(self) -> Result<(), Error> {
+		self.transcript.finalize()?;
+		self.advice.finalize()
+	}
+}
+
 impl<Challenger: Default> TranscriptReader<Challenger> {
 	pub fn new(vec: Vec<u8>) -> Self {
 		Self {
@@ -409,6 +416,17 @@ where
 				.expect("challenger has infinite buffer")
 		}
 	}
+}
+
+/// Helper functions for serializing native types
+pub fn read_u64<Transcript: CanRead>(transcript: &mut Transcript) -> Result<u64, Error> {
+	let mut as_bytes = [0; size_of::<u64>()];
+	transcript.read_bytes(&mut as_bytes)?;
+	Ok(u64::from_le_bytes(as_bytes))
+}
+
+pub fn write_u64<Transcript: CanWrite>(transcript: &mut Transcript, n: u64) {
+	transcript.write_bytes(&n.to_le_bytes());
 }
 
 #[cfg(test)]

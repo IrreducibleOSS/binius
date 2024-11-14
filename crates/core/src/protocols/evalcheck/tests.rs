@@ -4,7 +4,8 @@ use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
 	polynomial::MultivariatePoly,
 	protocols::evalcheck::{
-		EvalcheckMultilinearClaim, EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
+		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
 	},
 	transparent::select_row::SelectRow,
 	witness::MultilinearExtensionIndex,
@@ -20,8 +21,8 @@ use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{extrapolate_line, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use bytemuck::cast_slice_mut;
 use itertools::{Either, Itertools};
-use rand::{rngs::StdRng, SeedableRng};
-use std::iter::repeat_with;
+use rand::{rngs::StdRng, thread_rng, SeedableRng};
+use std::{array, iter::repeat_with, slice};
 
 type FExtension = BinaryField128b;
 type PExtension = PackedBinaryField1x128b;
@@ -536,4 +537,56 @@ fn test_evalcheck_zero_padded() {
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(vec![claim], proof).unwrap();
+}
+
+// Test evalcheck serialization
+#[test]
+fn test_evalcheck_serialization() {
+	fn rand_committed<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
+		array::from_fn(|_| EvalcheckProof::Committed)
+	}
+
+	fn rand_transparent<F: TowerField, const N: usize>() -> [EvalcheckProof<F>; N] {
+		array::from_fn(|_| EvalcheckProof::Transparent)
+	}
+
+	fn rand_composite<'a, F: TowerField>(
+		elems: impl Iterator<Item = &'a EvalcheckProof<F>>,
+	) -> EvalcheckProof<F> {
+		let mut rng = thread_rng();
+		EvalcheckProof::LinearCombination {
+			subproofs: elems
+				.map(|x| (F::random(&mut rng), x.clone()))
+				.collect::<Vec<_>>(),
+		}
+	}
+
+	fn rand_repeating<F: TowerField>(inner: &EvalcheckProof<F>) -> EvalcheckProof<F> {
+		EvalcheckProof::Repeating(Box::new(inner.clone()))
+	}
+
+	let committed = rand_committed::<BinaryField128b, 10>();
+	let transparent = rand_transparent::<_, 20>();
+	let repeating = transparent.clone().map(|x| rand_repeating(&x));
+	let first_linear_combination =
+		rand_composite(committed[..10].iter().chain(repeating[..2].iter()));
+	let second_linear_combination = rand_composite(
+		slice::from_ref(&first_linear_combination)
+			.iter()
+			.chain(transparent[..20].iter()),
+	);
+
+	let mut transcript = crate::transcript::TranscriptWriter::<
+		crate::fiat_shamir::HasherChallenger<groestl_crypto::Groestl256>,
+	>::default();
+
+	serialize_evalcheck_proof(&mut transcript, &second_linear_combination);
+	let mut transcript = transcript.into_reader();
+
+	let out_deserialized =
+		deserialize_evalcheck_proof::<_, BinaryField128b>(&mut transcript).unwrap();
+
+	assert_eq!(out_deserialized, second_linear_combination);
+
+	transcript.finalize().unwrap()
 }

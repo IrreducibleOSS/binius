@@ -8,10 +8,11 @@ use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
+		serialize_evalcheck_proof,
 		subclaims::{make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover},
 		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
-	transcript::CanWrite,
+	transcript::{write_u64, AdviceWriter, CanWrite},
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -23,13 +24,15 @@ use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use tracing::instrument;
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "greedy_evalcheck::prove")]
-pub fn prove<U, F, DomainField, Challenger, Backend>(
+pub fn prove<U, F, DomainField, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	switchover_fn: impl Fn(usize) -> usize + Clone + 'static,
-	challenger: &mut Challenger,
+	transcript: &mut Transcript,
+	advice: &mut AdviceWriter,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
 ) -> Result<GreedyEvalcheckProveOutput<F>, Error>
@@ -38,7 +41,7 @@ where
 	F: TowerField + ExtensionField<DomainField>,
 	PackedType<U, F>: PackedFieldIndexable,
 	DomainField: TowerField,
-	Challenger: CanObserve<F> + CanSample<F> + CanWrite,
+	Transcript: CanObserve<F> + CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let committed_batches = oracles.committed_batches();
@@ -49,7 +52,12 @@ where
 	let claims: Vec<_> = claims.into_iter().collect();
 
 	// Prove the initial evalcheck claims
-	proof.initial_evalcheck_proofs = evalcheck_prover.prove(claims)?;
+	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
+	write_u64(advice, evalcheck_proofs.len() as u64);
+	for evalcheck_proof in evalcheck_proofs.iter() {
+		serialize_evalcheck_proof(transcript, evalcheck_proof)
+	}
+	proof.initial_evalcheck_proofs = evalcheck_proofs;
 
 	loop {
 		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints().unwrap();
@@ -63,17 +71,23 @@ where
 				evalcheck_prover.oracles,
 				evalcheck_prover.witness_index,
 				new_sumchecks,
-				challenger,
+				transcript,
 				switchover_fn.clone(),
 				domain_factory.clone(),
 				backend,
 			)?;
 
 		let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
+
+		for evalcheck_proof in new_evalcheck_proofs.iter() {
+			serialize_evalcheck_proof(transcript, evalcheck_proof);
+		}
+
 		proof
 			.virtual_opening_proofs
 			.push((batch_sumcheck_proof, new_evalcheck_proofs));
 	}
+	write_u64(advice, proof.virtual_opening_proofs.len() as u64);
 
 	// Now all remaining evalcheck claims are for committed polynomials.
 	// Batch together all committed polynomial evaluation claims to one point per batch.
@@ -102,13 +116,17 @@ where
 			evalcheck_prover.oracles,
 			evalcheck_prover.witness_index,
 			non_sqpcs_sumchecks,
-			challenger,
+			transcript,
 			switchover_fn.clone(),
 			domain_factory.clone(),
 			backend,
 		)?;
 
 	let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
+	write_u64(advice, new_evalcheck_proofs.len() as u64);
+	for evalcheck_proof in new_evalcheck_proofs.iter() {
+		serialize_evalcheck_proof(transcript, evalcheck_proof);
+	}
 
 	proof.batch_opening_proof = (sumcheck_proof, new_evalcheck_proofs);
 

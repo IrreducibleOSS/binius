@@ -19,7 +19,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, zerocheck, Proof as ZerocheckProof},
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	transparent::constant::Constant,
 	witness::MultilinearExtensionIndex,
 };
@@ -931,6 +931,7 @@ fn prove<U, F, FBase, FEPCS, PCS1b, PCS8b, Comm, Transcript, Backend>(
 	pcs1b: &PCS1b,
 	pcs8b: &PCS8b,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	trace_witness: &TraceWitness<U, BinaryField1b, AESTowerField8b>,
 	domain_factory: impl EvaluationDomainFactory<AESTowerField8b>,
 	backend: &Backend,
@@ -1040,6 +1041,7 @@ where
 		evalcheck_multilinear_claims,
 		switchover_fn,
 		&mut transcript,
+		advice,
 		domain_factory,
 		backend,
 	)?;
@@ -1097,6 +1099,7 @@ where
 	})
 }
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, level = "debug")]
 fn verify<F, P1b, P8b, PCS1b, PCS8b, Comm, Transcript, Backend>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -1104,6 +1107,7 @@ fn verify<F, P1b, P8b, PCS1b, PCS8b, Comm, Transcript, Backend>(
 	pcs1b: &PCS1b,
 	pcs8b: &PCS8b,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	proof: Proof<F, Comm, PCS1b::Proof, PCS8b::Proof>,
 	backend: &Backend,
 ) -> Result<()>
@@ -1158,6 +1162,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 2);
@@ -1247,13 +1252,17 @@ fn main() {
 
 	let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let proof = prove::<_, AESTowerField128b, AESTowerField16b, BinaryField128b, _, _, _, _, _>(
 		&mut prover_oracles,
 		&prover_trace_oracle,
 		&pcs1b,
 		&pcs8b,
-		&mut prover_transcript,
+		&mut prover_context.transcript,
+		&mut prover_context.advice,
 		&witness,
 		domain_factory,
 		&backend,
@@ -1264,17 +1273,18 @@ fn main() {
 	let verifier_trace_oracle =
 		TraceOracle::new::<_, BinaryField8b>(&mut verifier_oracles, log_size).unwrap();
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	verify(
 		&mut verifier_oracles,
 		&verifier_trace_oracle,
 		&pcs1b,
 		&pcs8b,
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		proof.isomorphic(),
 		&backend,
 	)
 	.unwrap();
 
-	verifier_transcript.finalize().unwrap()
+	verifier_context.finalize().unwrap();
 }

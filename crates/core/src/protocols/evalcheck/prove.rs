@@ -227,7 +227,7 @@ where
 					.map(|suboracle| self.eval_and_proof(suboracle, &eval_point))
 					.collect::<Result<_, Error>>()?;
 
-				EvalcheckProof::Composite { subproofs }
+				EvalcheckProof::LinearCombination { subproofs }
 			}
 
 			ZeroPadded { inner, .. } => {

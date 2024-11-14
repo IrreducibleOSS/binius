@@ -24,7 +24,7 @@ use binius_core::{
 		greedy_evalcheck::{self, GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
 		sumcheck::{self, standard_switchover_heuristic, Proof as ZerocheckProof},
 	},
-	transcript::{CanRead, CanWrite, TranscriptWriter},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 	witness::MultilinearExtensionIndex,
 };
@@ -853,6 +853,7 @@ fn prove<U, F, FBase, DomainField, FEPCS, PCS, Transcript, Backend>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut transcript: Transcript,
+	advice: &mut AdviceWriter,
 	mut witness: MultilinearExtensionIndex<U, F>,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -930,6 +931,7 @@ where
 		evalcheck_multilinear_claims,
 		switchover_fn,
 		&mut transcript,
+		advice,
 		domain_factory,
 		&backend,
 	)?;
@@ -976,6 +978,7 @@ fn verify<P, F, PCS, Transcript, Backend>(
 	trace_oracle: &TraceOracle,
 	pcs: &PCS,
 	mut transcript: Transcript,
+	advice: &mut AdviceReader,
 	proof: Proof<F, PCS::Commitment, PCS::Proof>,
 	backend: &Backend,
 ) -> Result<()>
@@ -1025,6 +1028,7 @@ where
 		evalcheck_multilinear_claims,
 		evalcheck_proof,
 		&mut transcript,
+		advice,
 	)?;
 
 	assert_eq!(same_query_claims.len(), 1);
@@ -1090,31 +1094,36 @@ fn main() {
 	let witness = generate_trace::<U, AESTowerField128b>(log_size, &prover_trace).unwrap();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<AESTowerField8b>::default();
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_context = binius_core::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
 	let proof =
 		prove::<_, AESTowerField128b, AESTowerField8b, AESTowerField8b, BinaryField128b, _, _, _>(
 			log_size,
 			&mut prover_oracles,
 			&prover_trace,
 			&pcs,
-			&mut prover_transcript,
+			&mut prover_context.transcript,
+			&mut prover_context.advice,
 			witness,
 			domain_factory,
 			&backend,
 		)
 		.unwrap();
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_context = prover_context.into_verifier();
 	verify(
 		log_size,
 		&mut verifier_oracles,
 		&verifier_trace,
 		&pcs,
-		&mut verifier_transcript,
+		&mut verifier_context.transcript,
+		&mut verifier_context.advice,
 		proof.isomorphic(),
 		&backend,
 	)
 	.unwrap();
 
-	verifier_transcript.finalize().unwrap()
+	verifier_context.finalize().unwrap();
 }

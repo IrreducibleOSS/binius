@@ -20,4 +20,6 @@ pub enum Error {
 	Evalcheck(#[from] evalcheck::Error),
 	#[error("sumcheck error: {0}")]
 	Sumcheck(#[from] sumcheck::Error),
+	#[error("transcript error: {0}")]
+	TranscriptError(#[from] crate::transcript::Error),
 }
