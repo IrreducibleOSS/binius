@@ -8,6 +8,7 @@ use crate::{
 use rand::RngCore;
 use std::{
 	fmt::{Debug, Display},
+	hash::Hash,
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -23,6 +24,7 @@ pub trait Field:
 	+ Sync
 	+ Debug
 	+ Display
+	+ Hash
 	+ 'static
 	+ Neg<Output = Self>
 	+ Add<Output = Self>

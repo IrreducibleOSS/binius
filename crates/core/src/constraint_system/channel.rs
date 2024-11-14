@@ -52,7 +52,7 @@
 use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 
 pub type ChannelId = usize;
 
@@ -85,7 +85,7 @@ pub fn validate_witness<U, F>(
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
-	F: TowerField + Hash,
+	F: TowerField,
 {
 	let mut channels = vec![Channel::<F>::new(); max_channel_id + 1];
 
@@ -163,7 +163,7 @@ struct Channel<F: TowerField> {
 	multiplicities: HashMap<Vec<F>, i64>,
 }
 
-impl<F: TowerField + Hash> Channel<F> {
+impl<F: TowerField> Channel<F> {
 	fn new() -> Self {
 		Self::default()
 	}

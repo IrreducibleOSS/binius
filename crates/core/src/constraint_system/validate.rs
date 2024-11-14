@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::hash::Hash;
-
 use super::{
 	channel::{self, Boundary},
 	error::Error,
@@ -29,7 +27,7 @@ pub fn validate_witness<U, F>(
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b>,
-	F: TowerField + Hash,
+	F: TowerField,
 {
 	// Check the constraint sets
 	for constraint_set in constraint_system.table_constraints.iter() {

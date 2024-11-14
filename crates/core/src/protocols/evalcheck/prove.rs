@@ -10,7 +10,7 @@ use super::{
 use crate::{
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyOracle, ProjectionVariant,
+		MultilinearPolyOracle, OracleId, ProjectionVariant,
 	},
 	protocols::evalcheck::subclaims::{process_packed_sumcheck, process_shifted_sumcheck},
 	witness::MultilinearExtensionIndex,
@@ -22,6 +22,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use getset::{Getters, MutGetters};
+use std::collections::HashMap;
 use tracing::instrument;
 
 /// A mutable prover state.
@@ -41,6 +42,8 @@ where
 
 	#[getset(get = "pub", get_mut = "pub")]
 	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
+
+	eval_memoization: HashMap<(OracleId, Vec<F>), F>,
 
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<PackedType<U, F>>>,
 	memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
@@ -68,10 +71,13 @@ where
 		let batch_committed_eval_claims =
 			BatchCommittedEvalClaims::new(&oracles.committed_batches());
 
+		let claim_memoization = HashMap::new();
+
 		Self {
 			oracles,
 			witness_index,
 			batch_committed_eval_claims,
+			eval_memoization: claim_memoization,
 			new_sumchecks_constraints,
 			memoized_queries,
 			backend,
@@ -242,17 +248,31 @@ where
 		poly: MultilinearPolyOracle<F>,
 		eval_point: &[F],
 	) -> Result<(F, EvalcheckProof<F>), Error> {
-		let eval_query = self.memoized_queries.full_query(eval_point, self.backend)?;
-		let witness_poly = self
-			.witness_index
-			.get_multilin_poly(poly.id())
-			.map_err(Error::Witness)?;
-		let eval = witness_poly.evaluate(eval_query.to_ref())?;
+		let memoization_key = (poly.id(), eval_point.to_vec());
+
+		let eval = self
+			.eval_memoization
+			.get(&memoization_key)
+			.map(|eval| Result::<_, Error>::Ok(*eval))
+			.unwrap_or_else(|| {
+				let eval_query = self.memoized_queries.full_query(eval_point, self.backend)?;
+				let witness_poly = self
+					.witness_index
+					.get_multilin_poly(poly.id())
+					.map_err(Error::Witness)?;
+
+				let eval = witness_poly.evaluate(eval_query.to_ref())?;
+
+				self.eval_memoization.insert(memoization_key, eval);
+				Ok(eval)
+			})?;
+
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,
 			eval_point: eval_point.to_vec(),
 			eval,
 		};
+
 		let subproof = self.prove_multilinear(subclaim)?;
 		Ok((eval, subproof))
 	}
