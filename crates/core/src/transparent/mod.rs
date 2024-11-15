@@ -4,6 +4,7 @@ pub mod constant;
 pub mod disjoint_product;
 pub mod eq_ind;
 pub mod multilinear_extension;
+pub mod powers;
 pub mod ring_switch;
 pub mod select_row;
 pub mod shift_ind;
