@@ -64,16 +64,17 @@ struct PermutationRoundGadget {
 }
 
 impl PermutationRoundGadget {
-	pub fn new<U, F, F8b>(
+	pub fn new<U, F, FBase, F8b>(
 		log_size: usize,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 		round: OracleId,
 		multiples_16: &[OracleId],
 		input: [OracleId; STATE_SIZE],
 	) -> Result<Self>
 	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		let with_round_consts: [OracleId; STATE_SIZE] = array::from_fn(|i| {
@@ -98,8 +99,11 @@ impl PermutationRoundGadget {
 		let p_sub_bytes = (0..STATE_SIZE)
 			.map(|i| {
 				builder.push_namespace(format!("p_sub_bytes[{i}]"));
-				let sbox =
-					SBoxTraceGadget::new::<U, F, F8b>(log_size, builder, with_round_consts[i]);
+				let sbox = SBoxTraceGadget::new::<U, F, FBase, F8b>(
+					log_size,
+					builder,
+					with_round_consts[i],
+				);
 				builder.pop_namespace();
 				sbox
 			})
@@ -115,15 +119,18 @@ impl PermutationRoundGadget {
 		})
 	}
 
-	pub fn add_constraints<U, F, F8b>(&self, builder: &mut ConstraintSystemBuilder<U, F>)
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+	pub fn add_constraints<U, F, FBase, F8b>(
+		&self,
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	) where
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		self.p_sub_bytes
 			.iter()
-			.for_each(|sub_bytes| sub_bytes.add_constraints::<U, F, F8b>(builder));
+			.for_each(|sub_bytes| sub_bytes.add_constraints::<U, F, FBase, F8b>(builder));
 
 		self.p_sub_bytes.iter().enumerate().for_each(|(ij, _)| {
 			let i = ij / 8;
@@ -161,14 +168,15 @@ struct SBoxTraceGadget {
 }
 
 impl SBoxTraceGadget {
-	pub fn new<U, F, F8b>(
+	pub fn new<U, F, FBase, F8b>(
 		log_size: usize,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 		input: OracleId,
 	) -> Result<Self>
 	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		let inv_bits =
@@ -199,10 +207,13 @@ impl SBoxTraceGadget {
 		})
 	}
 
-	pub fn add_constraints<U, F, F8b>(&self, builder: &mut ConstraintSystemBuilder<U, F>)
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+	pub fn add_constraints<U, F, FBase, F8b>(
+		&self,
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	) where
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		builder.assert_zero([self.input, self.inverse], SBoxConstraint);
@@ -223,10 +234,14 @@ struct TraceOracle {
 }
 
 impl TraceOracle {
-	fn new<U, F, F8b>(builder: &mut ConstraintSystemBuilder<U, F>, log_size: usize) -> Result<Self>
+	fn new<U, F, FBase, F8b>(
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		log_size: usize,
+	) -> Result<Self>
 	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		let p_in = builder.add_committed_multiple::<STATE_SIZE>(
@@ -264,7 +279,7 @@ impl TraceOracle {
 		let mut rounds: Vec<PermutationRoundGadget> = Vec::with_capacity(N_ROUNDS);
 
 		builder.push_namespace("rounds[0]");
-		rounds.push(PermutationRoundGadget::new::<U, F, F8b>(
+		rounds.push(PermutationRoundGadget::new::<U, F, FBase, F8b>(
 			log_size,
 			builder,
 			round_idxs[0],
@@ -275,7 +290,7 @@ impl TraceOracle {
 
 		for round in 1..N_ROUNDS {
 			builder.push_namespace(format!("rounds[{round}]"));
-			rounds.push(PermutationRoundGadget::new::<U, F, F8b>(
+			rounds.push(PermutationRoundGadget::new::<U, F, FBase, F8b>(
 				log_size,
 				builder,
 				round_idxs[round],
@@ -296,15 +311,18 @@ impl TraceOracle {
 		})
 	}
 
-	pub fn add_constraints<U, F, F8b>(&self, builder: &mut ConstraintSystemBuilder<U, F>)
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<F8b>,
+	pub fn add_constraints<U, F, FBase, F8b>(
+		&self,
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	) where
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
+		FBase: TowerField + ExtensionField<F8b>,
 		F8b: TowerField + From<AESTowerField8b>,
 	{
 		self.rounds
 			.iter()
-			.for_each(|round| round.add_constraints::<U, F, F8b>(builder));
+			.for_each(|round| round.add_constraints::<U, F, FBase, F8b>(builder));
 	}
 }
 
@@ -767,27 +785,29 @@ where
 	}
 }
 
-pub fn groestl_p_permutation<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn groestl_p_permutation<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	log_size: usize,
 ) -> Result<[OracleId; STATE_SIZE]>
 where
 	U: UnderlierType
 		+ Pod
 		+ PackScalar<F>
+		+ PackScalar<FBase>
 		+ PackScalar<BinaryField1b>
 		+ PackScalar<AESTowerField8b>
 		+ Divisible<u8>,
-	F: TowerField + ExtensionField<AESTowerField8b>,
+	F: TowerField + ExtensionField<FBase> + ExtensionField<AESTowerField8b>,
+	FBase: TowerField + ExtensionField<AESTowerField8b>,
 {
-	let trace_oracle = TraceOracle::new::<U, F, AESTowerField8b>(builder, log_size)?;
+	let trace_oracle = TraceOracle::new::<U, F, FBase, AESTowerField8b>(builder, log_size)?;
 
 	if let Some(ext_index) = builder.witness() {
 		let trace_witness = TraceWitness::generate_trace(log_size);
 		trace_witness.update_index::<F, AESTowerField8b>(&trace_oracle, ext_index)?;
 	}
 
-	trace_oracle.add_constraints::<U, F, AESTowerField8b>(builder);
+	trace_oracle.add_constraints::<U, F, FBase, AESTowerField8b>(builder);
 
 	Ok(trace_oracle.p_out)
 }

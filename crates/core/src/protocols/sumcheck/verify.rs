@@ -61,7 +61,7 @@ pub struct BatchVerifyStart<F: Field> {
 }
 
 /// Verify a batched sumcheck protocol execution, but after some rounds have been processed.
-#[instrument(skip_all)]
+#[instrument(skip_all, level = "debug")]
 pub fn batch_verify_with_start<F, Composition, Transcript>(
 	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],

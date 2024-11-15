@@ -299,7 +299,7 @@ where
 	///
 	/// As a memory efficient optimization, this method may not actually do the folding, but instead accumulate the
 	/// folding challenge for processing at a later time. This saves us from storing intermediate folded codewords.
-	#[instrument(skip_all, name = "fri::FRIFolder::execute_fold_round")]
+	#[instrument(skip_all, name = "fri::FRIFolder::execute_fold_round", level = "debug")]
 	pub fn execute_fold_round(
 		&mut self,
 		challenge: F,
@@ -366,7 +366,7 @@ where
 	/// to get the final message. The result is the final message and a query prover instance.
 	///
 	/// This returns the final message and a query prover instance.
-	#[instrument(skip_all, name = "fri::FRIFolder::finalize")]
+	#[instrument(skip_all, name = "fri::FRIFolder::finalize", level = "debug")]
 	#[allow(clippy::type_complexity)]
 	pub fn finalize(
 		mut self,
@@ -462,7 +462,7 @@ where
 	/// ## Arguments
 	///
 	/// * `index` - an index into the original codeword domain
-	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query")]
+	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query", level = "debug")]
 	pub fn prove_query(&self, mut index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
 		let mut round_proofs = Vec::with_capacity(self.n_oracles());
 		let mut arities_and_optimal_layers_depths = self

@@ -19,19 +19,19 @@ use crate::{
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
 	protocols::{
 		gkr_gpa, greedy_evalcheck,
-		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck},
+		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck, ZerocheckClaim},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::{AdviceReader, TranscriptReader},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
-	TowerField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::Hasher;
-use binius_math::EvaluationDomainFactory;
+use binius_math::{CompositionPolyOS, EvaluationDomainFactory};
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
 use itertools::{izip, Itertools};
@@ -89,6 +89,7 @@ where
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
+		..
 	} = constraint_system.clone();
 
 	// Stable sort constraint sets in descending order by number of variables.
@@ -102,7 +103,9 @@ where
 		flush_products,
 		non_zero_products,
 		prodcheck_proof,
+		zerocheck_univariate_proof,
 		zerocheck_proof,
+		univariatizing_proof,
 		greedy_evalcheck_proof,
 		pcs_proofs,
 		transcript,
@@ -169,16 +172,27 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let n_zerocheck_challenges = zerocheck_claims
-		.iter()
-		.map(|claim| claim.n_vars())
-		.max()
-		.unwrap_or(0);
-	let zerocheck_challenges = transcript.sample_vec(n_zerocheck_challenges);
+	let (max_n_vars, skip_rounds) =
+		max_n_vars_and_skip_rounds(&zerocheck_claims, standard_pcs::FDomain::<Tower>::N_BITS);
+
+	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
+
+	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
+		&zerocheck_claims,
+		zerocheck_univariate_proof,
+		skip_rounds,
+		&mut transcript,
+	)?;
+
+	let univariate_challenge = univariate_output.univariate_challenge;
 
 	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
-	let sumcheck_output =
-		sumcheck::batch_verify(&sumcheck_claims, zerocheck_proof, &mut transcript)?;
+	let sumcheck_output = sumcheck::batch_verify_with_start(
+		univariate_output.batch_verify_start,
+		&sumcheck_claims,
+		zerocheck_proof,
+		&mut transcript,
+	)?;
 
 	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -186,8 +200,31 @@ where
 		sumcheck_output,
 	)?;
 
+	let univariate_cnt =
+		zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
+
+	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
+	for univariatized_multilinear_evals in &zerocheck_output.multilinear_evals {
+		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
+			skip_rounds,
+			univariatized_multilinear_evals,
+		)?;
+
+		reduction_claims.push(reduction_claim);
+	}
+
+	let univariatizing_output =
+		sumcheck::batch_verify(&reduction_claims, univariatizing_proof, &mut transcript)?;
+
+	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
+		&reduction_claims,
+		univariate_challenge,
+		&zerocheck_output.challenges,
+		univariatizing_output,
+	)?;
+
 	let zerocheck_eval_claims =
-		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, zerocheck_output)?;
+		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Evalcheck
 	let mut pcs_claims = greedy_evalcheck::verify(
@@ -345,6 +382,45 @@ where
 	let batch_pcs = BatchPCS::new(fri_pcs, batch.n_vars, log_n_polys)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
 	Ok(batch_pcs)
+}
+
+pub fn max_n_vars_and_skip_rounds<F, Composition>(
+	zerocheck_claims: &[ZerocheckClaim<F, Composition>],
+	domain_bits: usize,
+) -> (usize, usize)
+where
+	F: TowerField,
+	Composition: CompositionPolyOS<F>,
+{
+	let max_n_vars = max_n_vars(zerocheck_claims);
+
+	// Univariate skip zerocheck domain size is degree * 2^skip_rounds, which
+	// limits skip_rounds to ceil(log2(degree)) less than domain field bits.
+	// We also do back-loaded batching and need to align last skip rounds
+	// according to individual claim initial rounds.
+	let domain_max_skip_rounds = zerocheck_claims
+		.iter()
+		.map(|claim| {
+			let log_degree = log2_ceil_usize(claim.max_individual_degree());
+			max_n_vars - claim.n_vars() + domain_bits.saturating_sub(log_degree)
+		})
+		.min()
+		.unwrap_or(0);
+
+	let max_skip_rounds = domain_max_skip_rounds.min(max_n_vars);
+	(max_n_vars, max_skip_rounds)
+}
+
+fn max_n_vars<F, Composition>(zerocheck_claims: &[ZerocheckClaim<F, Composition>]) -> usize
+where
+	F: TowerField,
+	Composition: CompositionPolyOS<F>,
+{
+	zerocheck_claims
+		.iter()
+		.map(|claim| claim.n_vars())
+		.max()
+		.unwrap_or(0)
 }
 
 fn verify_channels_balance<F: Field>(flushes: &[Flush], flush_products: &[F]) -> Result<(), Error> {

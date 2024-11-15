@@ -41,7 +41,8 @@ fn main() -> Result<()> {
 
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
+	let mut builder =
+		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField8b>::new_with_witness();
 	let _state_out = binius_circuits::keccakf::keccakf(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
@@ -60,6 +61,7 @@ fn main() -> Result<()> {
 		CanonicalTowerFamily,
 		_,
 		_,
+		_,
 		GroestlHasher<BinaryField128b>,
 		GroestlDigestCompression<BinaryField8b>,
 		HasherChallenger<Groestl256>,
@@ -74,7 +76,7 @@ fn main() -> Result<()> {
 	)?;
 
 	constraint_system::verify::<U, CanonicalTowerFamily, _, _, _, _, HasherChallenger<Groestl256>>(
-		&constraint_system,
+		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&domain_factory,

@@ -2,12 +2,12 @@
 
 use super::{
 	error::Error,
-	verify::{make_flush_oracles, make_standard_pcss},
+	verify::{make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds},
 	ConstraintSystem, Proof, ProofGenericPCS,
 };
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
-	constraint_system::common::{FExt, TowerPCS, TowerPCSFamily},
+	constraint_system::common::{standard_pcs, FExt, TowerPCS, TowerPCSFamily},
 	fiat_shamir::Challenger,
 	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	poly_commit::PolyCommitScheme,
@@ -15,7 +15,8 @@ use crate::{
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, standard_switchover_heuristic, zerocheck,
+			self, constraint_set_zerocheck_claim, prove::UnivariateZerocheckProver,
+			standard_switchover_heuristic, zerocheck,
 		},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
@@ -25,7 +26,8 @@ use crate::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_hash::Hasher;
@@ -41,8 +43,8 @@ use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
-	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
+pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
+	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>, PackedType<U, FBase>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	witness: MultilinearExtensionIndex<U, Tower::B128>,
@@ -50,9 +52,10 @@ pub fn prove<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_, Backe
 	backend: &Backend,
 ) -> Result<Proof<Tower::B128, Digest, Hash, Compress>, Error>
 where
-	U: TowerUnderlier<Tower>,
+	U: TowerUnderlier<Tower> + PackScalar<FBase>,
 	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower>,
+	Tower::B128: PackedTop<Tower> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<Tower::B8>,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
 	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
@@ -61,6 +64,8 @@ where
 	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
+	PackedType<U, FBase>:
+		PackedFieldIndexable + PackedExtension<Tower::B8, PackedSubfield: PackedFieldIndexable>,
 {
 	let pcss = make_standard_pcss::<U, Tower, _, _, _, _>(
 		log_inv_rate,
@@ -68,7 +73,7 @@ where
 		&constraint_system.oracles,
 		domain_factory.clone(),
 	)?;
-	prove_with_pcs::<U, Tower, Tower::B8, _, _, Challenger_, Digest, _>(
+	prove_with_pcs::<U, Tower, FBase, Tower::B8, _, _, Challenger_, Digest, _>(
 		constraint_system,
 		witness,
 		&pcss,
@@ -79,17 +84,28 @@ where
 
 /// Generates a proof that a witness satisfies a constraint system with provided PCSs.
 #[allow(clippy::type_complexity)]
-fn prove_with_pcs<U, Tower, FDomain, PCSFamily, DomainFactory, Challenger_, Digest, Backend>(
-	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>>,
+fn prove_with_pcs<
+	U,
+	Tower,
+	FBase,
+	FDomain,
+	PCSFamily,
+	DomainFactory,
+	Challenger_,
+	Digest,
+	Backend,
+>(
+	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>, PackedType<U, FBase>>,
 	mut witness: MultilinearExtensionIndex<U, Tower::B128>,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
 	backend: &Backend,
 ) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment, PCSFamily::Proof>, Error>
 where
-	U: TowerUnderlier<Tower> + PackScalar<FDomain>,
+	U: TowerUnderlier<Tower> + PackScalar<FDomain> + PackScalar<FBase>,
 	Tower: TowerFamily,
-	Tower::B128: ExtensionField<FDomain>,
+	Tower::B128: ExtensionField<FBase> + ExtensionField<FDomain>,
+	FBase: TowerField + ExtensionField<FDomain>,
 	FDomain: TowerField,
 	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
@@ -100,6 +116,8 @@ where
 		+ PackedFieldIndexable
 		// Required for ZerocheckProver
 		+ RepackedExtension<PackedType<U, Tower::B128>>,
+	PackedType<U, FBase>:
+		PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 {
 	let mut transcript = TranscriptWriter::<Challenger_>::default();
 	let mut advice = AdviceWriter::default();
@@ -107,6 +125,7 @@ where
 	let ConstraintSystem {
 		mut oracles,
 		mut table_constraints,
+		mut table_constraints_base,
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
@@ -133,6 +152,7 @@ where
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
+	table_constraints_base.sort_by_key(|constraint_set_base| Reverse(constraint_set_base.n_vars));
 
 	// Stable sort flushes by channel ID.
 	flushes.sort_by_key(|flush| flush.channel_id);
@@ -210,33 +230,55 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
-	let n_zerocheck_challenges = zerocheck_claims
-		.iter()
-		.map(|claim| claim.n_vars())
-		.max()
-		.unwrap_or(0);
-	let zerocheck_challenges = transcript.sample_vec(n_zerocheck_challenges);
+	let (max_n_vars, skip_rounds) =
+		max_n_vars_and_skip_rounds(&zerocheck_claims, standard_pcs::FDomain::<Tower>::N_BITS);
+
+	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
-	let provers = table_constraints
-		.into_iter()
-		.map(|constraint_set| {
-			let skip_rounds = n_zerocheck_challenges - constraint_set.n_vars;
-			sumcheck::prove::constraint_set_zerocheck_prover::<U, Tower::B128, Tower::B128, _, _>(
-				constraint_set.clone(),
+	let mut univariate_provers = izip!(table_constraints_base, table_constraints)
+		.map(|(constraint_set_base, constraint_set)| {
+			let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
+			sumcheck::prove::constraint_set_zerocheck_prover::<U, FBase, Tower::B128, FDomain, _>(
+				constraint_set_base,
 				constraint_set,
 				&witness,
 				&domain_factory,
 				switchover_fn,
-				&zerocheck_challenges[skip_rounds..],
+				&zerocheck_challenges[skip_challenges..],
 				backend,
-			)?
-			.into_regular_zerocheck()
+			)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let (sumcheck_output, zerocheck_proof) =
-		sumcheck::prove::batch_prove(provers, &mut transcript)?;
+	let univariate_cnt = univariate_provers
+		.partition_point(|univariate_prover| univariate_prover.n_vars() > max_n_vars - skip_rounds);
+
+	let univariatized_multilinears = univariate_provers
+		.iter()
+		.map(|univariate_prover| univariate_prover.multilinears().clone())
+		.collect::<Vec<_>>();
+
+	let tail_provers = univariate_provers.split_off(univariate_cnt);
+	let tail_regular_zerocheck_provers = tail_provers
+		.into_iter()
+		.map(|univariate_prover| univariate_prover.into_regular_zerocheck())
+		.collect::<Result<Vec<_>, _>>()?;
+
+	let (univariate_output, zerocheck_univariate_proof) =
+		sumcheck::prove::batch_prove_zerocheck_univariate_round(
+			univariate_provers,
+			skip_rounds,
+			&mut transcript,
+		)?;
+
+	let univariate_challenge = univariate_output.univariate_challenge;
+
+	let (sumcheck_output, zerocheck_proof) = sumcheck::prove::batch_prove_with_start(
+		univariate_output.batch_prove_start,
+		tail_regular_zerocheck_provers,
+		&mut transcript,
+	)?;
 
 	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
 		&zerocheck_claims,
@@ -244,8 +286,46 @@ where
 		sumcheck_output,
 	)?;
 
+	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
+	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
+	for (univariatized_multilinear_evals, multilinears) in
+		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
+	{
+		let reduced_multilinears = sumcheck::prove::reduce_to_skipped_projection(
+			multilinears,
+			&zerocheck_output.challenges,
+			backend,
+		)?;
+
+		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
+			skip_rounds,
+			univariatized_multilinear_evals,
+		)?;
+
+		let reduction_prover = sumcheck::prove::univariatizing_reduction_prover(
+			reduced_multilinears,
+			univariatized_multilinear_evals,
+			univariate_challenge,
+			&domain_factory,
+			backend,
+		)?;
+
+		reduction_claims.push(reduction_claim);
+		reduction_provers.push(reduction_prover);
+	}
+
+	let (univariatizing_output, univariatizing_proof) =
+		sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
+
+	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
+		&reduction_claims,
+		univariate_challenge,
+		&zerocheck_output.challenges,
+		univariatizing_output,
+	)?;
+
 	let zerocheck_eval_claims =
-		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, zerocheck_output)?;
+		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
@@ -349,7 +429,9 @@ where
 		flush_products,
 		non_zero_products,
 		prodcheck_proof,
+		zerocheck_univariate_proof,
 		zerocheck_proof,
+		univariatizing_proof,
 		greedy_evalcheck_proof,
 		pcs_proofs,
 		transcript: transcript.finalize(),

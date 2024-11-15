@@ -56,23 +56,18 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 /// of the underlying composites, checks that univariatized round polynomial agrees with them on
 /// challenge point, and outputs sumcheck claims for `batch_verify` on the remaining variables.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript, Advice>(
+pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	proof: ZerocheckUnivariateProof<F>,
+	skip_rounds: usize,
 	mut transcript: Transcript,
-	mut advice: Advice,
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
 	Transcript: CanRead + CanSample<F>,
-	Advice: CanRead,
 {
 	drop(proof);
-
-	let mut skip_rnds_as_bytes = [0; size_of::<u32>()];
-	advice.read_bytes(&mut skip_rnds_as_bytes)?;
-	let skip_rounds = u32::from_le_bytes(skip_rnds_as_bytes) as usize;
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
@@ -94,7 +89,7 @@ where
 		.unwrap_or(0);
 
 	let max_domain_size = domain_size(composition_max_degree, skip_rounds);
-	let zeros_prefix_len = 1 << (skip_rounds + min_n_vars - max_n_vars);
+	let zeros_prefix_len = (1 << (skip_rounds + min_n_vars - max_n_vars)).min(max_domain_size);
 
 	let mut batch_coeffs = Vec::with_capacity(claims.len());
 	let mut max_degree = 0;

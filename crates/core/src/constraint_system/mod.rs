@@ -29,12 +29,26 @@ use crate::{
 /// As a result, a ConstraintSystem allows us to validate all of these
 /// constraints against a witness, as well as enabling generic prove/verify
 #[derive(Debug, Clone)]
-pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>> {
+pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>, PBase: PackedField = P> {
 	pub oracles: MultilinearOracleSet<P::Scalar>,
 	pub table_constraints: Vec<ConstraintSet<P>>,
+	pub table_constraints_base: Vec<ConstraintSet<PBase>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush>,
 	pub max_channel_id: ChannelId,
+}
+
+impl<P: PackedField<Scalar: TowerField>, PBase: PackedField> ConstraintSystem<P, PBase> {
+	pub fn no_base_constraints(self) -> ConstraintSystem<P> {
+		ConstraintSystem {
+			oracles: self.oracles,
+			table_constraints: self.table_constraints.clone(),
+			table_constraints_base: self.table_constraints,
+			non_zero_oracle_ids: self.non_zero_oracle_ids,
+			flushes: self.flushes,
+			max_channel_id: self.max_channel_id,
+		}
+	}
 }
 
 /// Constraint system proof with the standard PCS.
@@ -51,7 +65,9 @@ pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
 	pub flush_products: Vec<F>,
 	pub non_zero_products: Vec<F>,
 	pub prodcheck_proof: GrandProductBatchProof<F>,
+	pub zerocheck_univariate_proof: sumcheck::univariate_zerocheck::ZerocheckUnivariateProof<F>,
 	pub zerocheck_proof: sumcheck::Proof<F>,
+	pub univariatizing_proof: sumcheck::Proof<F>,
 	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,
 	pub pcs_proofs: Vec<PCSProof>,
 	pub transcript: Vec<u8>,

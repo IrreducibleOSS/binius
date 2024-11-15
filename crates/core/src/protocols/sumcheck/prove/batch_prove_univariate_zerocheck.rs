@@ -8,7 +8,7 @@ use crate::{
 		univariate_zerocheck::ZerocheckUnivariateProof,
 		Error,
 	},
-	transcript::{AdviceWriter, CanWrite},
+	transcript::CanWrite,
 };
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -76,7 +76,6 @@ pub fn batch_prove_zerocheck_univariate_round<F, Prover, Transcript>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
 	mut transcript: Transcript,
-	advice: &mut AdviceWriter,
 ) -> Result<
 	(
 		BatchZerocheckUnivariateProveOutput<F, Prover::RegularZerocheckProver>,
@@ -122,7 +121,7 @@ where
 		round_evals.add_assign_lagrange(&(prover_round_evals * next_batch_coeff))?;
 	}
 
-	let zeros_prefix_len = 1 << (skip_rounds + min_n_vars - max_n_vars);
+	let zeros_prefix_len = (1 << (skip_rounds + min_n_vars - max_n_vars)).min(max_domain_size);
 	if zeros_prefix_len != round_evals.zeros_prefix_len {
 		bail!(Error::IncorrectZerosPrefixLen);
 	}
@@ -150,9 +149,6 @@ where
 		skip_rounds,
 		round_evals,
 	};
-
-	let skip_rounds = skip_rounds as u32;
-	advice.write_bytes(&skip_rounds.to_le_bytes());
 
 	Ok((output, proof))
 }

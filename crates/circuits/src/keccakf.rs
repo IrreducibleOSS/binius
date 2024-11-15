@@ -8,20 +8,21 @@ use binius_core::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, PackedField, TowerField,
+	BinaryField1b, ExtensionField, PackedField, TowerField,
 };
 use binius_macros::composition_poly;
 use bytemuck::{must_cast_slice_mut, pod_collect_to_vec, Pod};
 use itertools::chain;
 use rand::{thread_rng, Rng};
 
-pub fn keccakf<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn keccakf<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	log_size: usize,
 ) -> Result<[OracleId; 25], anyhow::Error>
 where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-	F: TowerField,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
+	F: TowerField + ExtensionField<FBase>,
+	FBase: TowerField,
 {
 	let round_consts_single = builder.add_transparent(
 		"round_consts_single",

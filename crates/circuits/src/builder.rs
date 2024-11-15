@@ -15,19 +15,21 @@ use binius_core::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	TowerField,
+	ExtensionField, TowerField,
 };
 use binius_math::CompositionPolyOS;
 
 #[derive(Default)]
-pub struct ConstraintSystemBuilder<U, F>
+pub struct ConstraintSystemBuilder<U, F, FBase = F>
 where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
+	U: UnderlierType + PackScalar<F> + PackScalar<FBase>,
+	F: TowerField + ExtensionField<FBase>,
+	FBase: TowerField,
 {
 	oracles: MultilinearOracleSet<F>,
 	batch_ids: Vec<(usize, usize, BatchId)>,
 	constraints: ConstraintSetBuilder<PackedType<U, F>>,
+	constraints_base: ConstraintSetBuilder<PackedType<U, FBase>>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
 	witness: Option<MultilinearExtensionIndex<'static, U, F>>,
@@ -35,10 +37,11 @@ where
 	namespace_path: Vec<String>,
 }
 
-impl<U, F> ConstraintSystemBuilder<U, F>
+impl<U, F, FBase> ConstraintSystemBuilder<U, F, FBase>
 where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
+	U: UnderlierType + PackScalar<F> + PackScalar<FBase>,
+	F: TowerField + ExtensionField<FBase>,
+	FBase: TowerField,
 {
 	pub fn new() -> Self {
 		Self::default()
@@ -51,7 +54,10 @@ where
 		}
 	}
 
-	pub fn build(self) -> Result<ConstraintSystem<PackedType<U, F>>, anyhow::Error> {
+	#[allow(clippy::type_complexity)]
+	pub fn build(
+		self,
+	) -> Result<ConstraintSystem<PackedType<U, F>, PackedType<U, FBase>>, anyhow::Error> {
 		Ok(ConstraintSystem {
 			max_channel_id: self
 				.flushes
@@ -60,6 +66,7 @@ where
 				.max()
 				.unwrap_or(0),
 			table_constraints: self.constraints.build(&self.oracles)?,
+			table_constraints_base: self.constraints_base.build(&self.oracles)?,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			oracles: self.oracles,
 			flushes: self.flushes,
@@ -97,8 +104,13 @@ where
 	pub fn assert_zero<const N: usize>(
 		&mut self,
 		oracle_ids: [OracleId; N],
-		composition: impl CompositionPolyOS<PackedType<U, F>> + 'static,
+		composition: impl Clone
+			+ CompositionPolyOS<PackedType<U, F>>
+			+ CompositionPolyOS<PackedType<U, FBase>>
+			+ 'static,
 	) {
+		self.constraints_base
+			.add_zerocheck(oracle_ids, composition.clone());
 		self.constraints.add_zerocheck(oracle_ids, composition);
 	}
 

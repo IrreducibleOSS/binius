@@ -233,7 +233,7 @@ where
 		)
 	}
 
-	#[instrument(skip_all, name = "fri::FRIVerifier::verify_query")]
+	#[instrument(skip_all, name = "fri::FRIVerifier::verify_query", level = "debug")]
 	fn verify_query_internal(
 		&self,
 		mut index: usize,

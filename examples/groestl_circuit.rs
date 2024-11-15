@@ -3,7 +3,9 @@
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::AESTowerFamily};
-use binius_field::{arch::OptimalUnderlier128b, AESTowerField128b, AESTowerField8b, BinaryField8b};
+use binius_field::{
+	arch::OptimalUnderlier128b, AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField8b,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::{Groestl256, GroestlDigestCompression};
 use binius_math::IsomorphicEvaluationDomainFactory;
@@ -40,7 +42,8 @@ fn main() -> Result<()> {
 
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
-	let mut builder = ConstraintSystemBuilder::<U, AESTowerField128b>::new_with_witness();
+	let mut builder =
+		ConstraintSystemBuilder::<U, AESTowerField128b, AESTowerField16b>::new_with_witness();
 	let _state_out = binius_circuits::groestl::groestl_p_permutation(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
@@ -57,6 +60,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		AESTowerFamily,
+		_,
 		_,
 		_,
 		Groestl256<AESTowerField128b, _>,
@@ -80,7 +84,13 @@ fn main() -> Result<()> {
 		_,
 		_,
 		HasherChallenger<groestl_crypto::Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &domain_factory, proof)?;
+	>(
+		&constraint_system.no_base_constraints(),
+		args.log_inv_rate as usize,
+		SECURITY_BITS,
+		&domain_factory,
+		proof,
+	)?;
 
 	Ok(())
 }

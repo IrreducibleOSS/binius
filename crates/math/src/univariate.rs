@@ -96,6 +96,10 @@ pub fn make_ntt_canonical_domain_points<F: TowerField>(size: usize) -> Result<Ve
 
 pub fn make_ntt_domain_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {
 	let mut points = Vec::with_capacity(size);
+	if size == 0 {
+		return Ok(points);
+	}
+
 	points.push(F::ZERO);
 	for basis_idx in 0..log2_ceil_usize(size) {
 		let basis_eval = F::basis(basis_idx)?;
@@ -422,7 +426,7 @@ mod tests {
 
 	#[test]
 	fn test_make_ntt_domain_points() {
-		for size in 1..256 {
+		for size in 0..256 {
 			check_ntt_domain::<BinaryField8b>(size)
 		}
 

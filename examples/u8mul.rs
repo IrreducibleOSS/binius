@@ -3,7 +3,7 @@
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField8b};
+use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField32b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -39,13 +39,14 @@ fn main() -> Result<()> {
 
 	let log_n_multiplications = log2_ceil_usize(args.n_multiplications as usize);
 
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let mut builder =
+		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField32b>::new_with_witness();
+	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
 		&mut builder,
 		"in_a",
 		log_n_multiplications,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
 		&mut builder,
 		"in_b",
 		log_n_multiplications,
@@ -66,6 +67,7 @@ fn main() -> Result<()> {
 		CanonicalTowerFamily,
 		_,
 		_,
+		_,
 		GroestlHasher<BinaryField128b>,
 		GroestlDigestCompression<BinaryField8b>,
 		HasherChallenger<Groestl256>,
@@ -80,7 +82,7 @@ fn main() -> Result<()> {
 	)?;
 
 	constraint_system::verify::<U, CanonicalTowerFamily, _, _, _, _, HasherChallenger<Groestl256>>(
-		&constraint_system,
+		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&domain_factory,

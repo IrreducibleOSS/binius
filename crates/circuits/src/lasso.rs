@@ -23,19 +23,31 @@ type B32 = BinaryField32b;
 const ALPHA: B32 = B32::MULTIPLICATIVE_GENERATOR;
 const T_LOG_SIZE: usize = 16;
 
-pub fn u8mul<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u8mul<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	name: impl ToString,
 	mult_a: OracleId,
 	mult_b: OracleId,
 	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
+	U: Pod
+		+ UnderlierType
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<F>
+		+ PackScalar<FBase>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
+	F: TowerField
+		+ BinaryField
+		+ ExtensionField<B8>
+		+ ExtensionField<B16>
+		+ ExtensionField<B32>
+		+ ExtensionField<FBase>,
+	FBase: TowerField,
 {
 	builder.push_namespace(name);
 	let trace_oracle = TraceOracle::new(builder, log_size, mult_a, mult_b).unwrap();
@@ -65,15 +77,16 @@ pub struct TraceOracle {
 }
 
 impl TraceOracle {
-	pub fn new<F, U>(
-		builder: &mut ConstraintSystemBuilder<U, F>,
+	pub fn new<U, F, FBase>(
+		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 		n_vars: usize,
 		mult_a: OracleId,
 		mult_b: OracleId,
 	) -> Result<Self>
 	where
-		F: TowerField + ExtensionField<B32>,
-		U: UnderlierType + Pod + PackScalar<F>,
+		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase>,
+		F: TowerField + ExtensionField<FBase> + ExtensionField<B32>,
+		FBase: TowerField,
 	{
 		let product = builder.add_committed("product", n_vars, B16::TOWER_LEVEL);
 
@@ -234,13 +247,14 @@ where
 	Ok(())
 }
 
-pub fn generate_constraints<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn generate_constraints<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	trace_oracle: &TraceOracle,
 ) -> Result<()>
 where
-	U: UnderlierType + Pod + PackScalar<F>,
-	F: TowerField,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase>,
+	F: TowerField + ExtensionField<FBase>,
+	FBase: TowerField,
 {
 	// check that timestamps are not equal to zero.
 	builder.assert_not_zero(trace_oracle.lookup_f);

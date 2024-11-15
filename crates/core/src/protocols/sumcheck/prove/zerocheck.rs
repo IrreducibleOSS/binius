@@ -405,7 +405,7 @@ enum RegularFirstRound {
 /// See [Gruen24] Section 3.2 for details.
 ///
 /// When "jump starting" a zerocheck prover in a middle of zerocheck, pay attention that
-/// `composite_prime_sums` are on "prime" polynomial, and not on full zerocheck polynomial.
+/// `claimed_prime_sums` are on "prime" polynomial, and not on full zerocheck polynomial.
 ///
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
 #[derive(Debug)]

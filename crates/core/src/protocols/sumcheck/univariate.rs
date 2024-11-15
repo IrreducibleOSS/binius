@@ -430,7 +430,7 @@ mod tests {
 			quad as Arc<dyn CompositionPolyOS<F>>,
 		];
 
-		for skip_rounds in 1..=max_n_vars {
+		for skip_rounds in 0..=max_n_vars {
 			let mut proof = Proof {
 				transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::new(),
 				advice: AdviceWriter::new(),
@@ -483,7 +483,6 @@ mod tests {
 					univariate_provers,
 					skip_rounds,
 					&mut proof.transcript,
-					&mut proof.advice,
 				)
 				.unwrap();
 
@@ -521,8 +520,8 @@ mod tests {
 			let verifier_univariate_output = batch_verify_zerocheck_univariate_round(
 				&verifier_zerocheck_claims[..univariate_cnt],
 				zerocheck_univariate_proof.isomorphic::<F>(),
+				skip_rounds,
 				&mut verifier_proof.transcript,
-				&mut verifier_proof.advice,
 			)
 			.unwrap();
 

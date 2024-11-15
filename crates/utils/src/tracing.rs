@@ -3,7 +3,8 @@
 use cfg_if::cfg_if;
 use std::env;
 use tracing_subscriber::{
-	layer::SubscriberExt,
+	filter::{EnvFilter, LevelFilter},
+	layer::{Layer, SubscriberExt},
 	registry::LookupSpan,
 	util::{SubscriberInitExt, TryInitError},
 };
@@ -88,15 +89,22 @@ pub fn init_tracing() -> Result<TracingGuard, TryInitError> {
 
 		Ok(guard)
 	} else {
-		let (layer, guard) = with_perfetto(with_perf_counters(with_tracy(with_ittapi(
-			tracing_subscriber::registry().with(PrintTreeLayer::new(PrintTreeConfig {
-				attention_above_percent: 25.0,
-				relevant_above_percent: 2.5,
-				hide_below_percent: 1.0,
-				display_unaccounted: false,
-				accumulate_events: true,
-			})),
-		))));
+		let (layer, guard) = with_perfetto(with_perf_counters(with_tracy(with_ittapi({
+			let env_level_filter = EnvFilter::builder()
+				.with_default_directive(LevelFilter::DEBUG.into())
+				.from_env_lossy();
+
+			tracing_subscriber::registry().with(
+				PrintTreeLayer::new(PrintTreeConfig {
+					attention_above_percent: 25.0,
+					relevant_above_percent: 2.5,
+					hide_below_percent: 1.0,
+					display_unaccounted: false,
+					accumulate_events: true,
+				})
+				.with_filter(env_level_filter),
+			)
+		}))));
 		layer.try_init()?;
 
 		Ok(guard)
