@@ -1,6 +1,9 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-pub use crate::arch::{packed_128::*, packed_256::*, packed_512::*};
+pub use crate::arch::{
+	packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_256::*, packed_32::*,
+	packed_4::*, packed_512::*, packed_64::*, packed_8::*,
+};
 
 /// Common code to test different multiply, square and invert implementations
 #[cfg(test)]
@@ -817,8 +820,7 @@ mod tests {
 	};
 	use crate::{
 		arch::{
-			packed_1::*, packed_16::*, packed_2::*, packed_32::*, packed_4::*, packed_64::*,
-			packed_8::*, packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
+			packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*,
 			packed_aes_512::*, packed_aes_64::*,
 		},
 		arithmetic_traits::MulAlpha,

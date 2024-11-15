@@ -5,7 +5,7 @@ use binius_field::{
 	util::{inner_product_unchecked, powers},
 	ExtensionField, Field, PackedField,
 };
-use binius_math::{CompositionPoly, MultilinearPoly};
+use binius_math::{CompositionPolyOS, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::ops::{Add, AddAssign, Mul, MulAssign};
@@ -42,7 +42,7 @@ pub struct SumcheckClaim<F: Field, C> {
 
 impl<F: Field, Composition> SumcheckClaim<F, Composition>
 where
-	Composition: CompositionPoly<F>,
+	Composition: CompositionPolyOS<F>,
 {
 	/// Constructs a new sumcheck claim.
 	///

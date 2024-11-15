@@ -37,7 +37,7 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::{Vision32MDSTransform, Vision32bPermutation, INV_PACKED_TRANS_AES};
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -154,7 +154,7 @@ struct SumComposition {
 	n_vars: usize,
 }
 
-impl<P: PackedField> CompositionPoly<P> for SumComposition {
+impl<P: PackedField> CompositionPolyOS<P> for SumComposition {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -184,7 +184,7 @@ composition_poly!(ProductImpliesInverseZero[inv, prod] = inv * (prod - 1));
 #[derive(Clone, Debug)]
 struct SquareComposition;
 
-impl<P: PackedField> CompositionPoly<P> for SquareComposition {
+impl<P: PackedField> CompositionPolyOS<P> for SquareComposition {
 	fn n_vars(&self) -> usize {
 		2
 	}
@@ -226,7 +226,7 @@ impl<F32b: Clone + From<BinaryField32b>> Default for SBoxFwdComposition<F32b> {
 	}
 }
 
-impl<F32b, P> CompositionPoly<P> for SBoxFwdComposition<F32b>
+impl<F32b, P> CompositionPolyOS<P> for SBoxFwdComposition<F32b>
 where
 	F32b: Field,
 	P: PackedField<Scalar: ExtensionField<F32b>>,

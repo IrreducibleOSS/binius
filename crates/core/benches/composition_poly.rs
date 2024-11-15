@@ -1,14 +1,33 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_core::polynomial::{ArithCircuitPoly, Expr};
 use binius_field::{
-	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b, PackedField,
+	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+	PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::thread_rng;
 
 const BATCH_SIZE: usize = 256;
+
+fn evaluate_arith_circuit_poly<P: PackedField>(
+	query: &[&[P]],
+	arith_circuit_poly: &impl CompositionPolyOS<P>,
+) {
+	for i in 0..BATCH_SIZE {
+		let result = arith_circuit_poly
+			.evaluate(black_box(&[
+				black_box(query[0][i]),
+				black_box(query[1][i]),
+				black_box(query[2][i]),
+				black_box(query[3][i]),
+			]))
+			.unwrap();
+		let _ = black_box(result);
+	}
+}
 
 fn benchmark_evaluate(c: &mut Criterion) {
 	let mut rng = thread_rng();
@@ -40,101 +59,64 @@ fn benchmark_evaluate(c: &mut Criterion) {
 	let query1x128b = query1x128b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
 	let mut results1x128b = vec![PackedBinaryField1x128b::zero(); BATCH_SIZE];
 
-	let arith_circuit_poly = arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
+	let arith_circuit_poly = ArithCircuitPoly::new(
+		Expr::Var(0) * Expr::Var(1)
+			+ (Expr::Const(BinaryField1b::ONE) - Expr::Var(0)) * Expr::Var(2)
+			- Expr::Var(3),
+	);
+	let arith_circuit_poly_cached =
+		arith_circuit_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch, BinaryField1b);
 
 	let mut group = c.benchmark_group("evaluate");
 	group.throughput(Throughput::Elements(BATCH_SIZE as _));
 	group.bench_function("arith_circuit_poly_128x1b", |bench| {
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = arith_circuit_poly
-					.evaluate(black_box(&[
-						black_box(query128x1b[0][i]),
-						black_box(query128x1b[1][i]),
-						black_box(query128x1b[2][i]),
-						black_box(query128x1b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query128x1b, &arith_circuit_poly);
+		});
+	});
+	group.bench_function("arith_circuit_poly_cached_128x1b", |bench| {
+		bench.iter(|| {
+			evaluate_arith_circuit_poly(&query128x1b, &arith_circuit_poly_cached);
 		});
 	});
 	group.bench_function("composition_poly_128x1b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = poly
-					.evaluate(black_box(&[
-						black_box(query128x1b[0][i]),
-						black_box(query128x1b[1][i]),
-						black_box(query128x1b[2][i]),
-						black_box(query128x1b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query128x1b, &poly);
 		});
 	});
+
 	group.bench_function("arith_circuit_poly_16x8b", |bench| {
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = arith_circuit_poly
-					.evaluate(black_box(&[
-						black_box(query16x8b[0][i]),
-						black_box(query16x8b[1][i]),
-						black_box(query16x8b[2][i]),
-						black_box(query16x8b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query16x8b, &arith_circuit_poly);
+		});
+	});
+	group.bench_function("arith_circuit_poly_cached_16x8b", |bench| {
+		bench.iter(|| {
+			evaluate_arith_circuit_poly(&query16x8b, &arith_circuit_poly_cached);
 		});
 	});
 	group.bench_function("composition_poly_16x8b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = poly
-					.evaluate(black_box(&[
-						black_box(query16x8b[0][i]),
-						black_box(query16x8b[1][i]),
-						black_box(query16x8b[2][i]),
-						black_box(query16x8b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query16x8b, &poly);
 		});
 	});
+
 	group.bench_function("arith_circuit_poly_1x128b", |bench| {
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = arith_circuit_poly
-					.evaluate(black_box(&[
-						black_box(query1x128b[0][i]),
-						black_box(query1x128b[1][i]),
-						black_box(query1x128b[2][i]),
-						black_box(query1x128b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query1x128b, &arith_circuit_poly);
+		});
+	});
+	group.bench_function("arith_circuit_poly_cached_1x128b", |bench| {
+		bench.iter(|| {
+			evaluate_arith_circuit_poly(&query1x128b, &arith_circuit_poly_cached);
 		});
 	});
 	group.bench_function("composition_poly_1x128b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
-			for i in 0..BATCH_SIZE {
-				let result = poly
-					.evaluate(black_box(&[
-						black_box(query1x128b[0][i]),
-						black_box(query1x128b[1][i]),
-						black_box(query1x128b[2][i]),
-						black_box(query1x128b[3][i]),
-					]))
-					.unwrap();
-				let _ = black_box(result);
-			}
+			evaluate_arith_circuit_poly(&query1x128b, &poly);
 		});
 	});
 	group.finish();
@@ -148,6 +130,13 @@ fn benchmark_evaluate(c: &mut Criterion) {
 				.unwrap();
 		});
 	});
+	group.bench_function("arith_circuit_poly_cached_128x1b", |bench| {
+		bench.iter(|| {
+			arith_circuit_poly_cached
+				.batch_evaluate(&query128x1b, &mut results128x1b)
+				.unwrap();
+		});
+	});
 	group.bench_function("composition_poly_128x1b", |bench| {
 		let poly = composition_poly!([h4, h5, h6, ch] = (h4 * h5 + (1 - h4) * h6) - ch);
 		bench.iter(|| {
@@ -155,9 +144,17 @@ fn benchmark_evaluate(c: &mut Criterion) {
 				.unwrap();
 		});
 	});
+
 	group.bench_function("arith_circuit_poly_16x8b", |bench| {
 		bench.iter(|| {
 			arith_circuit_poly
+				.batch_evaluate(&query16x8b, &mut results16x8b)
+				.unwrap();
+		});
+	});
+	group.bench_function("arith_circuit_poly_cached_16x8b", |bench| {
+		bench.iter(|| {
+			arith_circuit_poly_cached
 				.batch_evaluate(&query16x8b, &mut results16x8b)
 				.unwrap();
 		});
@@ -168,9 +165,17 @@ fn benchmark_evaluate(c: &mut Criterion) {
 			poly.batch_evaluate(&query16x8b, &mut results16x8b).unwrap();
 		});
 	});
+
 	group.bench_function("arith_circuit_poly_1x128b", |bench| {
 		bench.iter(|| {
 			arith_circuit_poly
+				.batch_evaluate(&query1x128b, &mut results1x128b)
+				.unwrap();
+		});
+	});
+	group.bench_function("arith_circuit_poly_cached_1x128b", |bench| {
+		bench.iter(|| {
+			arith_circuit_poly_cached
 				.batch_evaluate(&query1x128b, &mut results1x128b)
 				.unwrap();
 		});

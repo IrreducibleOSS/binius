@@ -13,6 +13,8 @@ proc-macro2.workspace = true
 binius_core = { path = "../core" }
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
+paste.workspace = true
+rand.workspace = true
 
 [lib]
 proc-macro = true

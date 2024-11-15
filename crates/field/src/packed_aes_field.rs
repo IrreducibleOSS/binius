@@ -1,6 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-pub use crate::arch::{packed_aes_128::*, packed_aes_256::*, packed_aes_512::*};
+pub use crate::arch::{
+	packed_aes_128::*, packed_aes_16::*, packed_aes_256::*, packed_aes_32::*, packed_aes_512::*,
+	packed_aes_64::*, packed_aes_8::*,
+};
 
 #[cfg(test)]
 mod test_utils {
@@ -414,7 +417,7 @@ mod tests {
 	use crate::{
 		arch::{
 			packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*, packed_64::*,
-			packed_8::*, packed_aes_16::*, packed_aes_32::*, packed_aes_64::*, packed_aes_8::*,
+			packed_8::*,
 		},
 		linear_transformation::PackedTransformationFactory,
 		test_utils::implements_transformation_factory,

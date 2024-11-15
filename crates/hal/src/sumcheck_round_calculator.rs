@@ -7,7 +7,7 @@
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::{
-	deinterleave, extrapolate_lines, CompositionPoly, MultilinearPoly, MultilinearQuery,
+	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
 };
 use bytemuck::zeroed_vec;
@@ -54,7 +54,7 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-	Composition: CompositionPoly<P>,
+	Composition: CompositionPolyOS<P>,
 {
 	let accesses = multilinears
 		.iter()
@@ -80,7 +80,7 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
-	Composition: CompositionPoly<P>,
+	Composition: CompositionPolyOS<P>,
 {
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let query = tensor_query.unwrap_or(empty_query.to_ref());
@@ -109,7 +109,7 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
 	Access: SumcheckMultilinearAccess<PBase> + Sync,
-	Composition: CompositionPoly<P>,
+	Composition: CompositionPolyOS<P>,
 {
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators

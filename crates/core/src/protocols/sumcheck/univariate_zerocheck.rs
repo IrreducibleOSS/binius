@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{challenger::CanSample, transcript::CanRead};
 use binius_field::{util::inner_product_unchecked, Field, TowerField};
-use binius_math::{make_ntt_canonical_domain_points, CompositionPoly, EvaluationDomain};
+use binius_math::{make_ntt_canonical_domain_points, CompositionPolyOS, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -64,7 +64,7 @@ pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript, Advic
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPoly<F>,
+	Composition: CompositionPolyOS<F>,
 	Transcript: CanRead + CanSample<F>,
 	Advice: CanRead,
 {

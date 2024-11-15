@@ -250,7 +250,7 @@ mod tests {
 		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
 	};
 	use binius_math::{
-		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
@@ -405,29 +405,29 @@ mod tests {
 
 		let prover_compositions = [
 			(
-				pair.clone() as Arc<dyn CompositionPoly<PBase>>,
-				pair.clone() as Arc<dyn CompositionPoly<PE>>,
+				pair.clone() as Arc<dyn CompositionPolyOS<PBase>>,
+				pair.clone() as Arc<dyn CompositionPolyOS<PE>>,
 			),
 			(
-				triple.clone() as Arc<dyn CompositionPoly<PBase>>,
-				triple.clone() as Arc<dyn CompositionPoly<PE>>,
+				triple.clone() as Arc<dyn CompositionPolyOS<PBase>>,
+				triple.clone() as Arc<dyn CompositionPolyOS<PE>>,
 			),
 			(
-				quad.clone() as Arc<dyn CompositionPoly<PBase>>,
-				quad.clone() as Arc<dyn CompositionPoly<PE>>,
+				quad.clone() as Arc<dyn CompositionPolyOS<PBase>>,
+				quad.clone() as Arc<dyn CompositionPolyOS<PE>>,
 			),
 		];
 
 		let prover_adapter_compositions = [
-			CompositionScalarAdapter::new(pair.clone() as Arc<dyn CompositionPoly<FI>>),
-			CompositionScalarAdapter::new(triple.clone() as Arc<dyn CompositionPoly<FI>>),
-			CompositionScalarAdapter::new(quad.clone() as Arc<dyn CompositionPoly<FI>>),
+			CompositionScalarAdapter::new(pair.clone() as Arc<dyn CompositionPolyOS<FI>>),
+			CompositionScalarAdapter::new(triple.clone() as Arc<dyn CompositionPolyOS<FI>>),
+			CompositionScalarAdapter::new(quad.clone() as Arc<dyn CompositionPolyOS<FI>>),
 		];
 
 		let verifier_compositions = [
-			pair as Arc<dyn CompositionPoly<F>>,
-			triple as Arc<dyn CompositionPoly<F>>,
-			quad as Arc<dyn CompositionPoly<F>>,
+			pair as Arc<dyn CompositionPolyOS<F>>,
+			triple as Arc<dyn CompositionPolyOS<F>>,
+			quad as Arc<dyn CompositionPolyOS<F>>,
 		];
 
 		for skip_rounds in 1..=max_n_vars {

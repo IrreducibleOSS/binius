@@ -46,7 +46,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_macros::{composition_poly, IterOracles};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{
 	examples::get_log_trace_size, rayon::adjust_thread_pool, tracing::init_tracing,
 };
@@ -156,7 +156,7 @@ struct SumComposition {
 	n_vars: usize,
 }
 
-impl<P: PackedField> CompositionPoly<P> for SumComposition {
+impl<P: PackedField> CompositionPolyOS<P> for SumComposition {
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -465,7 +465,7 @@ where
 }
 
 #[allow(clippy::identity_op, clippy::erasing_op)]
-fn make_constraints<'a, P: PackedField>(
+fn make_constraints<'a, P: PackedField<Scalar: BinaryField>>(
 	fixed_oracle: &'a FixedOracle,
 	trace_oracle: &'a TraceOracle,
 ) -> ConstraintSetBuilder<P> {

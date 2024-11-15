@@ -15,7 +15,9 @@ use crate::{
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
+use binius_math::{
+	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
+};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;

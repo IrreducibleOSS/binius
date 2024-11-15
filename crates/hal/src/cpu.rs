@@ -5,7 +5,7 @@ use crate::{
 	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{eq_ind_partial_eval, CompositionPoly, MultilinearPoly, MultilinearQueryRef};
+use binius_math::{eq_ind_partial_eval, CompositionPolyOS, MultilinearPoly, MultilinearQueryRef};
 use std::fmt::Debug;
 use tracing::instrument;
 
@@ -47,7 +47,7 @@ impl ComputationBackend for CpuBackend {
 		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		calculate_first_round_evals(n_vars, multilinears, evaluators, evaluation_points)
 	}
@@ -66,7 +66,7 @@ impl ComputationBackend for CpuBackend {
 		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		calculate_later_round_evals(
 			n_vars,

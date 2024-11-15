@@ -14,7 +14,7 @@ use binius_hal::{
 	ComputationBackend, ComputationBackendExt, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_math::{
-	evaluate_univariate, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
 };
 use binius_utils::bail;
 use getset::CopyGetters;
@@ -252,7 +252,7 @@ where
 		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 		P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
 		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.sumcheck_compute_first_round_evals(
 			self.n_vars,
@@ -273,7 +273,7 @@ where
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.sumcheck_compute_later_round_evals(
 			self.n_vars,

@@ -2,13 +2,14 @@
 
 use crate::Error;
 use auto_impl::auto_impl;
-use binius_field::PackedField;
+use binius_field::{ExtensionField, Field, PackedField};
 use stackalloc::stackalloc_with_default;
 use std::fmt::Debug;
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
+/// This is an object-safe version of the trait.
 #[auto_impl(Arc, &)]
-pub trait CompositionPoly<P>: Debug + Send + Sync
+pub trait CompositionPolyOS<P>: Debug + Send + Sync
 where
 	P: PackedField,
 {
@@ -58,4 +59,22 @@ where
 			Ok(())
 		})
 	}
+}
+
+/// A generic version of the `CompositionPolyOS` trait that is not object-safe.
+#[auto_impl(&)]
+pub trait CompositionPoly<F: Field>: Debug + Send + Sync {
+	fn n_vars(&self) -> usize;
+
+	fn degree(&self) -> usize;
+
+	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error>;
+
+	fn binary_tower_level(&self) -> usize;
+
+	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
+		&self,
+		batch_query: &[&[P]],
+		evals: &mut [P],
+	) -> Result<(), Error>;
 }

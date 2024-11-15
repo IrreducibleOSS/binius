@@ -37,7 +37,7 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_hash::Groestl256Core;
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MultilinearExtension,
 };
 use binius_utils::{
@@ -373,7 +373,7 @@ impl<F8b: Clone + From<AESTowerField8b>> Default for MixColumn<F8b> {
 	}
 }
 
-impl<F8b, P> CompositionPoly<P> for MixColumn<F8b>
+impl<F8b, P> CompositionPolyOS<P> for MixColumn<F8b>
 where
 	F8b: Field,
 	P: PackedField<Scalar: ExtensionField<F8b>>,
@@ -406,7 +406,7 @@ where
 #[derive(Debug, Clone)]
 struct SBoxConstraint;
 
-impl<F, P> CompositionPoly<P> for SBoxConstraint
+impl<F, P> CompositionPolyOS<P> for SBoxConstraint
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,
@@ -878,7 +878,7 @@ where
 #[allow(dead_code)]
 fn check_witness<U, F>(
 	log_size: usize,
-	constraint: impl CompositionPoly<PackedType<U, F>>,
+	constraint: impl CompositionPolyOS<PackedType<U, F>>,
 	trace_oracle: &TraceOracle,
 	witness_index: &MultilinearExtensionIndex<U, F>,
 ) -> Result<()>

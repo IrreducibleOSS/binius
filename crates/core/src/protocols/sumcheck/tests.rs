@@ -24,8 +24,8 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{
-	CompositionPoly, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension,
-	MultilinearPoly,
+	CompositionPolyOS, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter,
+	MultilinearExtension, MultilinearPoly,
 };
 use groestl_crypto::Groestl256;
 use p3_util::log2_ceil_usize;
@@ -39,7 +39,7 @@ use std::{
 #[derive(Debug, Clone)]
 struct SquareComposition;
 
-impl<P: PackedField> CompositionPoly<P> for SquareComposition {
+impl<P: PackedField> CompositionPolyOS<P> for SquareComposition {
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -93,7 +93,7 @@ fn compute_composite_sum<P, M, Composition>(
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPoly<P>,
+	Composition: CompositionPolyOS<P>,
 {
 	let n_vars = multilinears
 		.first()
@@ -244,9 +244,9 @@ fn prove_verify_batch(n_vars: &[usize]) {
 	type FE = BinaryField128b;
 	type PE = PackedBinaryField1x128b;
 
-	trait UniversalComposition: CompositionPoly<FE> + CompositionPoly<PE> {}
+	trait UniversalComposition: CompositionPolyOS<FE> + CompositionPolyOS<PE> {}
 
-	impl<T: CompositionPoly<FE> + CompositionPoly<PE>> UniversalComposition for T {}
+	impl<T: CompositionPolyOS<FE> + CompositionPolyOS<PE>> UniversalComposition for T {}
 
 	let mut rng = StdRng::seed_from_u64(0);
 

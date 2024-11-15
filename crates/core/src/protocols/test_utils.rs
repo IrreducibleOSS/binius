@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{CompositionPoly, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{CompositionPolyOS, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
 use std::ops::Deref;
 
@@ -17,7 +17,7 @@ impl TestProductComposition {
 	}
 }
 
-impl<P> CompositionPoly<P> for TestProductComposition
+impl<P> CompositionPolyOS<P> for TestProductComposition
 where
 	P: PackedField,
 {

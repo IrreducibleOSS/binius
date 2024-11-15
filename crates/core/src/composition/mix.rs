@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error;
 use binius_field::{Field, PackedField, TowerField};
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -58,7 +58,7 @@ impl<P: PackedField> HornerCompositions<P> for () {
 
 impl<P: PackedField, C, IC> HornerCompositions<P> for (Vec<C>, IC)
 where
-	C: CompositionPoly<P>,
+	C: CompositionPolyOS<P>,
 	IC: HornerCompositions<P>,
 {
 	fn evaluate(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error> {
@@ -93,7 +93,7 @@ where
 	}
 }
 
-impl<P, IC> CompositionPoly<P> for MixComposition<P, IC>
+impl<P, IC> CompositionPolyOS<P> for MixComposition<P, IC>
 where
 	P: PackedField<Scalar: TowerField>,
 	IC: HornerCompositions<P> + Clone + Debug + Send + Sync,
@@ -137,7 +137,7 @@ impl<P: PackedField, IC> MixComposition<P, IC> {
 	pub fn include<Q>(self, compositions: Q) -> Result<MixComposition<P, (Vec<Q::Item>, IC)>, Error>
 	where
 		Q: IntoIterator,
-		Q::Item: CompositionPoly<P>,
+		Q::Item: CompositionPolyOS<P>,
 	{
 		let compositions_vec = compositions.into_iter().collect::<Vec<_>>();
 

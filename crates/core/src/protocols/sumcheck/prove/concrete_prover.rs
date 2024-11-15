@@ -6,7 +6,7 @@ use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{CompositionPoly, MultilinearPoly};
+use binius_math::{CompositionPolyOS, MultilinearPoly};
 
 /// A sum type that is used to put both regular sumchecks and zerochecks into the same `batch_prove` call.
 pub enum ConcreteProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
@@ -28,8 +28,8 @@ where
 	FDomain: Field,
 	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
-	CompositionBase: CompositionPoly<PBase>,
-	Composition: CompositionPoly<P>,
+	CompositionBase: CompositionPolyOS<PBase>,
+	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {

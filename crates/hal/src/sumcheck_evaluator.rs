@@ -1,14 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::{Field, PackedField};
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use std::ops::Range;
 
 /// Evaluations of a polynomial at a set of evaluation points.
 #[derive(Debug, Clone)]
 pub struct RoundEvals<F: Field>(pub Vec<F>);
 
-pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField, Composition: CompositionPoly<P>> {
+pub trait SumcheckEvaluator<PBase: PackedField, P: PackedField, Composition: CompositionPolyOS<P>> {
 	/// The range of eval point indices over which composition evaluation and summation should happen.
 	/// Returned range must equal the result of `n_round_evals()` in length.
 	fn eval_point_indices(&self) -> Range<usize>;

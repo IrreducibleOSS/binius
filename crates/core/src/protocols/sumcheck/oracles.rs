@@ -11,7 +11,7 @@ use crate::{
 
 use crate::polynomial::CompositionScalarAdapter;
 use binius_field::{PackedField, TowerField};
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 use std::iter;
 
@@ -31,7 +31,7 @@ pub struct OracleClaimMeta {
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_sumcheck_claim<P: PackedField>(
 	constraint_set: ConstraintSet<P>,
-) -> Result<(SumcheckClaim<P::Scalar, impl CompositionPoly<P::Scalar>>, OracleClaimMeta), Error> {
+) -> Result<(SumcheckClaim<P::Scalar, impl CompositionPolyOS<P::Scalar>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
 
 	let mut sums = Vec::new();
@@ -58,7 +58,8 @@ pub fn constraint_set_sumcheck_claim<P: PackedField>(
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_zerocheck_claim<P: PackedField>(
 	constraint_set: ConstraintSet<P>,
-) -> Result<(ZerocheckClaim<P::Scalar, impl CompositionPoly<P::Scalar>>, OracleClaimMeta), Error> {
+) -> Result<(ZerocheckClaim<P::Scalar, impl CompositionPolyOS<P::Scalar>>, OracleClaimMeta), Error>
+{
 	let (constraints, meta) = split_constraint_set(constraint_set);
 
 	let mut zeros = Vec::new();
@@ -137,7 +138,7 @@ pub struct SumcheckClaimsWithMeta<F: TowerField, C> {
 /// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
 pub fn constraint_set_sumcheck_claims<P>(
 	constraint_sets: Vec<ConstraintSet<P>>,
-) -> Result<SumcheckClaimsWithMeta<P::Scalar, impl CompositionPoly<P::Scalar>>, Error>
+) -> Result<SumcheckClaimsWithMeta<P::Scalar, impl CompositionPolyOS<P::Scalar>>, Error>
 where
 	P: PackedField<Scalar: TowerField>,
 {

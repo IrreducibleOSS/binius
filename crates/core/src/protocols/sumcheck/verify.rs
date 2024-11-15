@@ -10,7 +10,7 @@ use crate::{
 	transcript::CanRead,
 };
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPoly};
+use binius_math::{evaluate_univariate, CompositionPolyOS};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
@@ -34,7 +34,7 @@ pub fn batch_verify<F, Composition, Transcript>(
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPoly<F>,
+	Composition: CompositionPolyOS<F>,
 	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
 	let start = BatchVerifyStart {
@@ -70,7 +70,7 @@ pub fn batch_verify_with_start<F, Composition, Transcript>(
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPoly<F>,
+	Composition: CompositionPolyOS<F>,
 	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
 	drop(proof);
@@ -183,7 +183,7 @@ fn compute_expected_batch_composite_evaluation<F: Field, Composition>(
 	multilinear_evals: &[Vec<F>],
 ) -> Result<F, Error>
 where
-	Composition: CompositionPoly<F>,
+	Composition: CompositionPolyOS<F>,
 {
 	izip!(batch_coeffs, claims, multilinear_evals.iter())
 		.map(|(batch_coeff, claim, multilinear_evals)| {

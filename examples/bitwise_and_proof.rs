@@ -314,7 +314,7 @@ where
 	Ok(index)
 }
 
-fn make_constraints<P: PackedField, F: TowerField>(
+fn make_constraints<P: PackedField<Scalar: BinaryField>, F: TowerField>(
 	trace_oracle: &MultilinearOracleSet<F>,
 ) -> ConstraintSet<P> {
 	let a_in_oracle = trace_oracle.committed_oracle_id(CommittedId {

@@ -701,7 +701,7 @@ impl TraceOracle {
 composition_poly!(ZoutComposition[x, y, cin, z] = x + y + cin - z);
 composition_poly!(CoutComposition[x, y, cin, cout] = (x + cin) * (y + cin) + cin - cout);
 
-fn build_sum_compositions<const N: usize, P: PackedField>(
+fn build_sum_compositions<const N: usize, P: PackedField<Scalar: BinaryField>>(
 	x: &[OracleId],
 	sum_sub_oracle: &U32ArraySumSubOracle<N>,
 	builder: &mut ConstraintSetBuilder<P>,

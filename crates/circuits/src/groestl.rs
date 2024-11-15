@@ -13,7 +13,7 @@ use binius_field::{
 	PackedAESBinaryField64x8b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hash::Groestl256Core;
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use bytemuck::{must_cast_slice_mut, Pod};
 use itertools::chain;
 use rand::thread_rng;
@@ -321,7 +321,7 @@ impl<F8b: Clone + From<AESTowerField8b>> Default for MixColumn<F8b> {
 	}
 }
 
-impl<F8b, P> CompositionPoly<P> for MixColumn<F8b>
+impl<F8b, P> CompositionPolyOS<P> for MixColumn<F8b>
 where
 	F8b: Field,
 	P: PackedField<Scalar: ExtensionField<F8b>>,
@@ -354,7 +354,7 @@ where
 #[derive(Debug, Clone)]
 struct SBoxConstraint;
 
-impl<F, P> CompositionPoly<P> for SBoxConstraint
+impl<F, P> CompositionPolyOS<P> for SBoxConstraint
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,

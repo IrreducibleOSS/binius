@@ -3,14 +3,14 @@
 use super::{Error, MultilinearOracleSet, OracleId};
 use crate::composition::index_composition;
 use binius_field::{Field, PackedField, TowerField};
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 use itertools::Itertools;
 use std::sync::Arc;
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.
-pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
+pub type TypeErasedComposition<P> = Arc<dyn CompositionPolyOS<P>>;
 
 /// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
 #[derive(Debug, Clone)]
@@ -73,7 +73,7 @@ impl<P: PackedField> ConstraintSetBuilder<P> {
 		composition: Composition,
 		sum: P::Scalar,
 	) where
-		Composition: CompositionPoly<P> + 'static,
+		Composition: CompositionPolyOS<P> + 'static,
 	{
 		self.constraint_thunks.push(ConstraintThunk {
 			oracle_ids: oracle_ids.into(),
@@ -87,7 +87,7 @@ impl<P: PackedField> ConstraintSetBuilder<P> {
 		oracle_ids: [OracleId; N],
 		composition: Composition,
 	) where
-		Composition: CompositionPoly<P> + 'static,
+		Composition: CompositionPolyOS<P> + 'static,
 	{
 		self.constraint_thunks.push(ConstraintThunk {
 			oracle_ids: oracle_ids.into(),
@@ -237,7 +237,7 @@ fn thunk<P, Composition, const N: usize>(
 ) -> Box<dyn FnOnce(&[OracleId]) -> TypeErasedComposition<P>>
 where
 	P: PackedField,
-	Composition: CompositionPoly<P> + 'static,
+	Composition: CompositionPolyOS<P> + 'static,
 {
 	Box::new(move |all_oracle_ids| {
 		let indexed = index_composition(all_oracle_ids, oracle_ids, composition)

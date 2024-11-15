@@ -9,6 +9,7 @@ pub(crate) struct CompositionPolyItem {
 	pub name: syn::Ident,
 	pub vars: Vec<syn::Ident>,
 	pub poly_packed: syn::Expr,
+	pub scalar_type: syn::Type,
 	pub degree: usize,
 }
 
@@ -19,6 +20,7 @@ impl ToTokens for CompositionPolyItem {
 			name,
 			vars,
 			poly_packed,
+			scalar_type,
 			degree,
 		} = self;
 		let n_vars = vars.len();
@@ -31,7 +33,7 @@ impl ToTokens for CompositionPolyItem {
 		subst_vars(
 			&mut eval_batch,
 			vars,
-			&|i| parse_quote!(unsafe {*sparse_batch_query.get_unchecked(#i).get_unchecked(row)}),
+			&|i| parse_quote!(unsafe {*batch_query.get_unchecked(#i).get_unchecked(row)}),
 		)
 		.expect("Failed to substitute vars");
 
@@ -39,7 +41,7 @@ impl ToTokens for CompositionPolyItem {
 			#[derive(Debug, Clone, Copy)]
 			struct #name;
 
-			impl<P: binius_field::PackedField> binius_math::CompositionPoly<P> for #name {
+			impl binius_math::CompositionPoly<#scalar_type> for #name {
 				fn n_vars(&self) -> usize {
 					#n_vars
 				}
@@ -48,29 +50,29 @@ impl ToTokens for CompositionPolyItem {
 					#degree
 				}
 
-				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+				fn evaluate<P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>>(&self, query: &[P]) -> Result<P, binius_math::Error> {
 					if query.len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 					Ok(#eval_single)
 				}
 
-				fn batch_evaluate(
+				fn batch_evaluate<P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>>(
 					&self,
-					sparse_batch_query: &[&[P]],
+					batch_query: &[&[P]],
 					evals: &mut [P],
 				) -> Result<(), binius_math::Error> {
-					if sparse_batch_query.len() != #n_vars {
+					if batch_query.len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 
-					for col in 1..sparse_batch_query.len() {
-						if sparse_batch_query[col].len() != sparse_batch_query[0].len() {
+					for col in 1..batch_query.len() {
+						if batch_query[col].len() != batch_query[0].len() {
 							return Err(binius_math::Error::BatchEvaluateSizeMismatch);
 						}
 					}
 
-					for row in 0..sparse_batch_query[0].len() {
+					for row in 0..batch_query[0].len() {
 						evals[row] = #eval_batch;
 					}
 
@@ -81,6 +83,32 @@ impl ToTokens for CompositionPolyItem {
 					0
 				}
 			}
+
+			impl<P> binius_math::CompositionPolyOS<P> for #name
+			where
+				P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>,
+			{
+				fn n_vars(&self) -> usize {
+					<Self as binius_math::CompositionPoly<_>>::n_vars(self)
+				}
+
+				fn degree(&self) -> usize {
+					<Self as binius_math::CompositionPoly<_>>::degree(self)
+				}
+
+				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+					<Self as binius_math::CompositionPoly<_>>::evaluate(self, query)
+				}
+
+				fn binary_tower_level(&self) -> usize {
+					<Self as binius_math::CompositionPoly<_>>::binary_tower_level(self)
+				}
+
+				fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), binius_math::Error> {
+					<Self as binius_math::CompositionPoly<_>>::batch_evaluate(self, batch_query, evals)
+				}
+			}
+
 		};
 
 		if *is_anonymous {
@@ -113,11 +141,21 @@ impl Parse for CompositionPolyItem {
 		let mut poly_packed = input.parse::<syn::Expr>()?;
 		let degree = poly_degree(&poly_packed)?;
 		rewrite_literals(&mut poly_packed)?;
+
+		let scalar_type = if input.is_empty() {
+			parse_quote!(binius_field::BinaryField1b)
+		} else {
+			input.parse::<Token![,]>()?;
+
+			input.parse()?
+		};
+
 		Ok(Self {
 			is_anonymous,
 			name,
 			vars,
 			poly_packed,
+			scalar_type,
 			degree,
 		})
 	}

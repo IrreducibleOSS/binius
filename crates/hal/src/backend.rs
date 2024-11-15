@@ -2,7 +2,7 @@
 
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{CompositionPoly, MultilinearPoly, MultilinearQuery, MultilinearQueryRef};
+use binius_math::{CompositionPolyOS, MultilinearPoly, MultilinearQuery, MultilinearQueryRef};
 use rayon::iter::FromParallelIterator;
 use std::{
 	fmt::Debug,
@@ -54,7 +54,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-		Composition: CompositionPoly<P>;
+		Composition: CompositionPolyOS<P>;
 
 	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck.
 	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
@@ -71,7 +71,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
-		Composition: CompositionPoly<P>;
+		Composition: CompositionPolyOS<P>;
 }
 
 /// Makes it unnecessary to clone backends.
@@ -108,7 +108,7 @@ where
 		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		T::sumcheck_compute_first_round_evals(
 			self,
@@ -133,7 +133,7 @@ where
 		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
-		Composition: CompositionPoly<P>,
+		Composition: CompositionPolyOS<P>,
 	{
 		T::sumcheck_compute_later_round_evals(
 			self,

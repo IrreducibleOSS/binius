@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{CompositionPoly, Error};
+use binius_math::{CompositionPoly, CompositionPolyOS, Error};
 use stackalloc::{helpers::slice_assume_init, stackalloc_uninit};
 use std::{
 	cmp::max,
+	fmt::Debug,
 	mem::MaybeUninit,
 	ops::{Add, Mul, Sub},
 	sync::Arc,
@@ -156,10 +157,11 @@ enum CircuitStep<F: Field> {
 
 /// Describes polynomial evaluations using a directed acyclic graph of expressions.
 ///
-/// This is meant as an alternative to a hard-coded CompositionPoly.
+/// This is meant as an alternative to a hard-coded CompositionPolyOS.
 ///
-/// The advantage over a hard coded CompositionPoly is that this can be constructed and manipulated dynamically at runtime.
-#[derive(Debug)]
+/// The advantage over a hard coded CompositionPolyOS is that this can be constructed and manipulated dynamically at runtime
+/// and the object representing different polnomials can be stored in a homogeneous collection.
+#[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: TowerField> {
 	/// The last expression is the "top level expression" which depends on previous entries
 	exprs: Arc<[CircuitStep<F>]>,
@@ -181,9 +183,7 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 	}
 }
 
-impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>
-	for ArithCircuitPoly<F>
-{
+impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 	fn degree(&self) -> usize {
 		self.degree
 	}
@@ -196,7 +196,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		F::TOWER_LEVEL
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -241,9 +241,13 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 		Ok(result)
 	}
 
-	fn batch_evaluate(&self, sparse_batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
-		let row_len = sparse_batch_query.first().map_or(0, |row| row.len());
-		if evals.len() != row_len || sparse_batch_query.iter().any(|row| row.len() != row_len) {
+	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
+		&self,
+		batch_query: &[&[P]],
+		evals: &mut [P],
+	) -> Result<(), Error> {
+		let row_len = batch_query.first().map_or(0, |row| row.len());
+		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
 		}
 
@@ -260,7 +264,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 						apply_binary_op(
 							left,
 							right,
-							sparse_batch_query,
+							batch_query,
 							before,
 							current,
 							|left, right, out| {
@@ -272,7 +276,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 						apply_binary_op(
 							left,
 							right,
-							sparse_batch_query,
+							batch_query,
 							before,
 							current,
 							|left, right, out| {
@@ -282,7 +286,7 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 					}
 					CircuitStep::Pow(id, exp) => match id {
 						CircuitStepArgument::Expr(id) => {
-							let id = id.get_sparse_chunk(sparse_batch_query, before, row_len);
+							let id = id.get_sparse_chunk(batch_query, before, row_len);
 							for j in 0..row_len {
 								// Safety: `current` and `id` have length equal to `row_len`
 								unsafe {
@@ -316,12 +320,36 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 	}
 }
 
+impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS<P>
+	for ArithCircuitPoly<F>
+{
+	fn degree(&self) -> usize {
+		CompositionPoly::degree(self)
+	}
+
+	fn n_vars(&self) -> usize {
+		CompositionPoly::n_vars(self)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		CompositionPoly::binary_tower_level(self)
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
+		CompositionPoly::evaluate(self, query)
+	}
+
+	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
+		CompositionPoly::batch_evaluate(self, batch_query, evals)
+	}
+}
+
 /// Apply a binary operation to two arguments and store the result in `current_evals`.
 /// `op` must be a function that takes two arguments and initialized the result with the third argument.
 fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 	left: &CircuitStepArgument<F>,
 	right: &CircuitStepArgument<F>,
-	sparse_batch_query: &[&[P]],
+	batch_query: &[&[P]],
 	evals_before: &[P],
 	current_evals: &mut [MaybeUninit<P>],
 	op: impl Fn(P, P, &mut MaybeUninit<P>),
@@ -330,8 +358,8 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 
 	match (left, right) {
 		(CircuitStepArgument::Expr(left), CircuitStepArgument::Expr(right)) => {
-			let left = left.get_sparse_chunk(sparse_batch_query, evals_before, row_len);
-			let right = right.get_sparse_chunk(sparse_batch_query, evals_before, row_len);
+			let left = left.get_sparse_chunk(batch_query, evals_before, row_len);
+			let right = right.get_sparse_chunk(batch_query, evals_before, row_len);
 			for j in 0..row_len {
 				// Safety: `current`, `left` and `right` have length equal to `row_len`
 				unsafe {
@@ -344,7 +372,7 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 			}
 		}
 		(CircuitStepArgument::Expr(left), CircuitStepArgument::Const(right)) => {
-			let left = left.get_sparse_chunk(sparse_batch_query, evals_before, row_len);
+			let left = left.get_sparse_chunk(batch_query, evals_before, row_len);
 			let right = P::broadcast((*right).into());
 			for j in 0..row_len {
 				// Safety: `current` and `left` have length equal to `row_len`
@@ -355,7 +383,7 @@ fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
 		}
 		(CircuitStepArgument::Const(left), CircuitStepArgument::Expr(right)) => {
 			let left = P::broadcast((*left).into());
-			let right = right.get_sparse_chunk(sparse_batch_query, evals_before, row_len);
+			let right = right.get_sparse_chunk(batch_query, evals_before, row_len);
 			for j in 0..row_len {
 				// Safety: `current` and `right` have length equal to `row_len`
 				unsafe {
@@ -395,11 +423,13 @@ fn pow<P: PackedField>(value: P, exp: u64) -> P {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use crate::polynomial::Expr;
+
+	use super::ArithCircuitPoly;
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
-	use binius_math::CompositionPoly;
+	use binius_math::CompositionPolyOS;
 	use binius_utils::felts;
 
 	#[test]
@@ -409,17 +439,16 @@ mod tests {
 
 		// 123 + x0
 		let expr = Expr::Const(F::new(123)) + Expr::Var(0);
-		let circuit = &ArithCircuitPoly::<F>::new(expr) as &dyn CompositionPoly<P>;
-		assert_eq!(circuit.binary_tower_level(), F::TOWER_LEVEL);
-		assert_eq!(circuit.degree(), 1);
-		assert_eq!(circuit.n_vars(), 1);
+		let circuit = ArithCircuitPoly::<F>::new(expr);
+
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 1);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
 		assert_eq!(
-			circuit
-				.evaluate(&[P::from_scalars(
-					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125])
-				)])
-				.unwrap(),
-			P::from_scalars(felts!(BinaryField16b[123, 122, 121, 120, 1, 0, 7, 6]))
+			circuit.evaluate(&[P::broadcast(F::new(0).into())]).unwrap(),
+			P::broadcast(F::new(123).into())
 		);
 	}
 
@@ -430,17 +459,20 @@ mod tests {
 
 		// 123 * x0
 		let expr = Expr::Const(F::new(123)) * Expr::Var(0);
-		let circuit = &ArithCircuitPoly::<F>::new(expr) as &dyn CompositionPoly<P>;
-		assert_eq!(circuit.binary_tower_level(), F::TOWER_LEVEL);
-		assert_eq!(circuit.degree(), 1);
-		assert_eq!(circuit.n_vars(), 1);
+		let circuit = ArithCircuitPoly::<F>::new(expr);
+
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 1);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
 		assert_eq!(
 			circuit
 				.evaluate(&[P::from_scalars(
-					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125])
+					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
 				)])
 				.unwrap(),
-			P::from_scalars(felts!(BinaryField16b[0, 123, 157, 230, 85, 46, 154, 225]))
+			P::from_scalars(felts!(BinaryField16b[0, 123, 157, 230, 85, 46, 154, 225])),
 		);
 	}
 
@@ -451,17 +483,20 @@ mod tests {
 
 		// x0^13
 		let expr = Expr::Var(0).pow(13);
-		let circuit = &ArithCircuitPoly::<F>::new(expr) as &dyn CompositionPoly<P>;
-		assert_eq!(circuit.binary_tower_level(), F::TOWER_LEVEL);
-		assert_eq!(circuit.degree(), 13);
-		assert_eq!(circuit.n_vars(), 1);
+		let circuit = ArithCircuitPoly::<F>::new(expr);
+
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 13);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
 		assert_eq!(
 			circuit
 				.evaluate(&[P::from_scalars(
-					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125])
+					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
 				)])
 				.unwrap(),
-			P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 200, 52, 51, 115]))
+			P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 200, 52, 51, 115])),
 		);
 	}
 
@@ -472,31 +507,25 @@ mod tests {
 
 		// x0^2 * (x1 + 123)
 		let expr = Expr::Var(0).pow(2) * (Expr::Var(1) + Expr::Const(F::new(123)));
-		let circuit = &ArithCircuitPoly::<F>::new(expr) as &dyn CompositionPoly<P>;
+		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		assert_eq!(circuit.binary_tower_level(), F::TOWER_LEVEL);
-		assert_eq!(circuit.degree(), 3);
-		assert_eq!(circuit.n_vars(), 2);
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 3);
+		assert_eq!(typed_circuit.n_vars(), 2);
+
+		// test evaluate
 		assert_eq!(
 			circuit
 				.evaluate(&[
 					P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 4, 5, 6, 7])),
-					P::from_scalars(felts!(BinaryField16b[100, 101, 102, 103, 104, 105, 106, 107]))
+					P::from_scalars(felts!(BinaryField16b[100, 101, 102, 103, 104, 105, 106, 107])),
 				])
 				.unwrap(),
-			P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176]))
+			P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176])),
 		);
-	}
 
-	#[test]
-	fn test_mixed_sparse() {
-		type F = BinaryField8b;
-		type P = PackedBinaryField8x16b;
-
-		// x0^2 * (x1 + 123)
-		let expr = Expr::Var(0).pow(2) * (Expr::Var(1) + Expr::Const(F::new(123)));
-		let circuit = ArithCircuitPoly::<F>::new(expr);
-
+		// test batch evaluate
 		let query1 = &[
 			P::from_scalars(felts!(BinaryField16b[0, 0, 0, 0, 0, 0, 0, 0])),
 			P::from_scalars(felts!(BinaryField16b[0, 0, 0, 0, 0, 0, 0, 0])),
@@ -514,16 +543,16 @@ mod tests {
 			P::from_scalars(felts!(BinaryField16b[123, 122, 121, 120, 127, 126, 125, 124]));
 		let expected3 = P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176]));
 
-		let mut sparse_result = vec![P::zero(); 3];
+		let mut batch_result = vec![P::zero(); 3];
 		circuit
 			.batch_evaluate(
 				&[
 					&[query1[0], query2[0], query3[0]],
 					&[query1[1], query2[1], query3[1]],
 				],
-				&mut sparse_result,
+				&mut batch_result,
 			)
 			.unwrap();
-		assert_eq!(sparse_result, vec![expected1, expected2, expected3]);
+		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}
 }

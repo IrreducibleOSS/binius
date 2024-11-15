@@ -17,7 +17,7 @@ use binius_field::{
 	underlier::UnderlierType,
 	TowerField,
 };
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 
 #[derive(Default)]
 pub struct ConstraintSystemBuilder<U, F>
@@ -97,7 +97,7 @@ where
 	pub fn assert_zero<const N: usize>(
 		&mut self,
 		oracle_ids: [OracleId; N],
-		composition: impl CompositionPoly<PackedType<U, F>> + 'static,
+		composition: impl CompositionPolyOS<PackedType<U, F>> + 'static,
 	) {
 		self.constraints.add_zerocheck(oracle_ids, composition);
 	}

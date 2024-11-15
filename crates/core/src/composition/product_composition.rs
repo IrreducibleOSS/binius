@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::PackedField;
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 
 #[derive(Debug, Copy, Clone)]
@@ -17,7 +17,7 @@ impl<const N: usize> ProductComposition<N> {
 	}
 }
 
-impl<P: PackedField, const N: usize> CompositionPoly<P> for ProductComposition<N> {
+impl<P: PackedField, const N: usize> CompositionPolyOS<P> for ProductComposition<N> {
 	fn n_vars(&self) -> usize {
 		self.n_vars()
 	}

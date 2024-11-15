@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error;
 use binius_field::PackedField;
-use binius_math::CompositionPoly;
+use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -32,7 +32,7 @@ impl<C, const N: usize> IndexComposition<C, N> {
 	}
 }
 
-impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
+impl<P: PackedField, C: CompositionPolyOS<P>, const N: usize> CompositionPolyOS<P>
 	for IndexComposition<C, N>
 {
 	fn n_vars(&self) -> usize {
