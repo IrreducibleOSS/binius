@@ -1,19 +1,20 @@
 // Copyright 2024 Irreducible Inc.
 use super::{
 	multiply::{mul_alpha, mul_main},
-	tower_levels::{TowerLevel, TowerLevel16},
+	square::square_main,
+	tower_levels::TowerLevel,
 };
 use crate::{underlier::WithUnderlier, AESTowerField8b, PackedAESBinaryField32x8b, PackedField};
 
 #[inline(always)]
-pub fn invert_or_zero(
-	field_element: &[PackedAESBinaryField32x8b; 16],
-	destination: &mut [PackedAESBinaryField32x8b; 16],
+pub fn invert_or_zero<Level: TowerLevel>(
+	field_element: &Level::Data,
+	destination: &mut Level::Data,
 ) {
 	let base_alpha =
 		PackedAESBinaryField32x8b::from_scalars([AESTowerField8b::from_underlier(0xd3); 32]);
 
-	inv_main::<TowerLevel16>(field_element, destination, base_alpha);
+	inv_main::<Level>(field_element, destination, base_alpha);
 }
 
 #[inline(always)]
@@ -45,7 +46,7 @@ fn inv_main<Level: TowerLevel>(
 	mul_main::<true, Level::Base>(&intermediate, a0, &mut delta, base_alpha);
 
 	// delta = intermediate * a0 + a1^2
-	mul_main::<false, Level::Base>(a1, a1, &mut delta, base_alpha);
+	square_main::<false, Level::Base>(a1, &mut delta, base_alpha);
 
 	let mut delta_inv = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
 

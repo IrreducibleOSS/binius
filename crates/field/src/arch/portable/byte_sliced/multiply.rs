@@ -1,17 +1,16 @@
 // Copyright 2024 Irreducible Inc.
-use super::tower_levels::{TowerLevel, TowerLevel16};
+use super::tower_levels::TowerLevel;
 use crate::{underlier::WithUnderlier, AESTowerField8b, PackedAESBinaryField32x8b, PackedField};
 
 #[inline(always)]
-pub fn mul(
-	field_element_a: &[PackedAESBinaryField32x8b; 16],
-	field_element_b: &[PackedAESBinaryField32x8b; 16],
-	destination: &mut [PackedAESBinaryField32x8b; 16],
+pub fn mul<Level: TowerLevel>(
+	field_element_a: &Level::Data,
+	field_element_b: &Level::Data,
+	destination: &mut Level::Data,
 ) {
 	let base_alpha =
 		PackedAESBinaryField32x8b::from_scalars([AESTowerField8b::from_underlier(0xd3); 32]);
-
-	mul_main::<true, TowerLevel16>(field_element_a, field_element_b, destination, base_alpha);
+	mul_main::<true, Level>(field_element_a, field_element_b, destination, base_alpha);
 }
 
 #[inline(always)]

@@ -1,6 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_field::{BinaryField, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedField};
+use binius_field::{
+	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
+	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
+	PackedBinaryField8x32b, PackedField,
+};
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -62,8 +66,32 @@ fn run_benchmarks_on_packed_fields<BT: BenchTransformationFunc>(c: &mut Criterio
 	let mut group = c.benchmark_group(name);
 	for &log_n in [16].iter() {
 		for &log_batch_size in [0, 4].iter() {
+			// 128 bit registers
 			bench_helper::<PackedBinaryField8x16b, BT>(&mut group, "8x16b", log_n, log_batch_size);
 			bench_helper::<PackedBinaryField4x32b, BT>(&mut group, "4x32b", log_n, log_batch_size);
+
+			// 256 bit registers
+			bench_helper::<PackedBinaryField16x16b, BT>(
+				&mut group,
+				"16x16b",
+				log_n,
+				log_batch_size,
+			);
+			bench_helper::<PackedBinaryField8x32b, BT>(&mut group, "8x32b", log_n, log_batch_size);
+
+			// 256-bit registers with byte-slicing
+			bench_helper::<ByteSlicedAES32x16b, BT>(
+				&mut group,
+				"byte_sliced32x16",
+				log_n,
+				log_batch_size,
+			);
+			bench_helper::<ByteSlicedAES32x32b, BT>(
+				&mut group,
+				"byte_sliced32x32",
+				log_n,
+				log_batch_size,
+			);
 		}
 	}
 	group.finish();
