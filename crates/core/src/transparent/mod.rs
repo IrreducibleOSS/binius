@@ -10,3 +10,5 @@ pub mod select_row;
 pub mod shift_ind;
 pub mod step_down;
 pub mod tower_basis;
+
+pub use multilinear_extension::MultilinearExtensionTransparent as MultilinearExtension;

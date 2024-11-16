@@ -31,16 +31,16 @@ where
 	PE::Scalar: ExtensionField<P::Scalar>,
 	Data: Deref<Target = [P]>,
 {
-	pub fn from_values(values: Data) -> Result<Self, Error> {
-		let mle = MultilinearExtension::from_values_generic(values)?;
+	/// Create a new `MultilinearExtensionTransparent` from a set of values and a possibly smaller number of variables.
+	pub fn new(values: Data, n_vars: usize) -> Result<Self, Error> {
+		let mle = MultilinearExtension::new(n_vars, values)?;
 		Ok(Self {
 			data: mle.specialize(),
 		})
 	}
 
-	/// Create a new `MultilinearExtensionTransparent` from a set of values and a possibly smaller number of variables.
-	pub fn from_values_and_mu(values: Data, n_vars: usize) -> Result<Self, Error> {
-		let mle = MultilinearExtension::new(n_vars, values)?;
+	pub fn from_values(values: Data) -> Result<Self, Error> {
+		let mle = MultilinearExtension::from_values_generic(values)?;
 		Ok(Self {
 			data: mle.specialize(),
 		})

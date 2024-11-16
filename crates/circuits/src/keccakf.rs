@@ -152,15 +152,8 @@ where
 		for perm_i in 0..1 << (log_size - LOG_ROWS_PER_PERMUTATION) {
 			let i = perm_i << LOG_ROUNDS_PER_PERMUTATION;
 
-			// Randomly generate the initial permutation input
-			let KeccakfState(input) = input_state.get(perm_i).cloned().unwrap_or_default();
-			let output = {
-				let mut output = input;
-				tiny_keccak::keccakf(&mut output);
-				output
-			};
-
 			// Assign the permutation input
+			let KeccakfState(input) = input_state.get(perm_i).cloned().unwrap_or_default();
 			for xy in 0..25 {
 				state_in_u64[xy][i] = input[xy];
 			}
@@ -214,6 +207,11 @@ where
 			}
 
 			// Assert correct output
+			let output = {
+				let mut output = input;
+				tiny_keccak::keccakf(&mut output);
+				output
+			};
 			for xy in 0..25 {
 				assert_eq!(state_out_u64[xy][i + 23], output[xy]);
 			}

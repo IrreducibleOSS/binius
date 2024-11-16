@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 #![feature(array_try_from_fn)]
+#![feature(array_try_map)]
 
 pub mod bitwise;
 pub mod builder;

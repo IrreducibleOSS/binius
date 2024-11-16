@@ -549,7 +549,7 @@ impl TraceOracle {
 
 		let id = oracles
 			.add_transparent(
-				MultilinearExtensionTransparent::<_, P, _>::from_values_and_mu(vec![x_unpacked], 5)
+				MultilinearExtensionTransparent::<_, P, _>::new(vec![x_unpacked], 5)
 					.expect("provided data of 32x1b elements is a power of two"),
 			)
 			.unwrap();
