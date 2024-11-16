@@ -13,13 +13,21 @@ pub mod unconstrained;
 #[cfg(test)]
 mod tests {
 	use crate::{
-		bitwise, builder::ConstraintSystemBuilder, groestl::groestl_p_permutation,
-		keccakf::keccakf, lasso, u32add::u32add, u32fib::u32fib, unconstrained::unconstrained,
+		bitwise,
+		builder::ConstraintSystemBuilder,
+		groestl::groestl_p_permutation,
+		keccakf::{keccakf, KeccakfState},
+		lasso,
+		u32add::u32add,
+		u32fib::u32fib,
+		unconstrained::unconstrained,
 	};
 	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{
 		arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField8b,
 	};
+	use rand::{rngs::StdRng, Rng, SeedableRng};
+	use std::iter::repeat_with;
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -86,8 +94,14 @@ mod tests {
 	#[test]
 	fn test_keccakf() {
 		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness();
-		let log_size = 12;
-		let _state_out = keccakf(&mut builder, log_size);
+		let log_size = 13;
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let input_states = repeat_with(|| KeccakfState(rng.gen()))
+			.take(4)
+			.collect::<Vec<_>>();
+
+		let _state_out = keccakf(&mut builder, log_size, Some(input_states));
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -99,7 +113,7 @@ mod tests {
 	fn test_groestl() {
 		let mut builder =
 			ConstraintSystemBuilder::<OptimalUnderlier, AESTowerField16b>::new_with_witness();
-		let log_size = 9;
+		let log_size = 7;
 		let _state_out = groestl_p_permutation(&mut builder, log_size).unwrap();
 
 		let witness = builder.take_witness().unwrap();

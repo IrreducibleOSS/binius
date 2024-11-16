@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{builder::ConstraintSystemBuilder, step_down::step_down};
+use anyhow::{anyhow, ensure};
 use binius_core::{
 	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
@@ -13,11 +14,15 @@ use binius_field::{
 use binius_macros::composition_poly;
 use bytemuck::{must_cast_slice_mut, pod_collect_to_vec, Pod};
 use itertools::chain;
-use rand::{thread_rng, Rng};
+
+/// Keccakf 1600-bit permutation state
+#[derive(Debug, Default, Clone)]
+pub struct KeccakfState(pub [u64; 25]);
 
 pub fn keccakf<U, F, FBase>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	log_size: usize,
+	input_witness: Option<Vec<KeccakfState>>,
 ) -> Result<[OracleId; 25], anyhow::Error>
 where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
@@ -133,10 +138,14 @@ where
 		let round_consts_u64 = must_cast_slice_mut(&mut round_consts_witness);
 		let selector_u64 = must_cast_slice_mut(&mut selector_witness);
 
-		let mut rng = thread_rng();
-
 		round_consts_single_u64[0..(1 << LOG_ROUNDS_PER_PERMUTATION)]
 			.copy_from_slice(&KECCAKF_RC[0..(1 << LOG_ROUNDS_PER_PERMUTATION)]);
+
+		let input_state = input_witness
+			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?;
+
+		let n_permutations = 1 << (log_size - LOG_ROWS_PER_PERMUTATION);
+		ensure!(input_state.len() < 1 << n_permutations, "more input states than rows");
 
 		// Each round state is 64 rows
 		// Each permutation is 24 round states
@@ -144,7 +153,7 @@ where
 			let i = perm_i << LOG_ROUNDS_PER_PERMUTATION;
 
 			// Randomly generate the initial permutation input
-			let input: [u64; 25] = rng.gen();
+			let KeccakfState(input) = input_state.get(perm_i).cloned().unwrap_or_default();
 			let output = {
 				let mut output = input;
 				tiny_keccak::keccakf(&mut output);
