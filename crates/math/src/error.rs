@@ -40,4 +40,11 @@ pub enum Error {
 	HypercubeIndexOutOfRange { index: usize },
 	#[error("the output polynomial must have size {expected}")]
 	IncorrectOutputPolynomialSize { expected: usize },
+	#[error("the total number of coefficients, {total_length}, in the piecewise multilinear is too large: {total_length} > 2^{total_n_vars}")]
+	PiecewiseMultilinearTooLong {
+		total_length: usize,
+		total_n_vars: usize,
+	},
+	#[error("there are a total of {actual} polynomials, according to n_pieces_by_vars, while you have provided evaluations for {expected}")]
+	PiecewiseMultilinearIncompatibleEvals { actual: usize, expected: usize },
 }
