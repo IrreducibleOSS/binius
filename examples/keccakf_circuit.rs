@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::{builder::ConstraintSystemBuilder, keccakf::KeccakfState};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField8b};
 use binius_hal::make_portable_backend;
@@ -12,6 +12,8 @@ use binius_utils::{
 };
 use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
+use rand::{thread_rng, Rng};
+use std::iter::repeat_with;
 
 const LOG_ROWS_PER_PERMUTATION: usize = 11;
 
@@ -43,9 +45,16 @@ fn main() -> Result<()> {
 
 	let mut builder =
 		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField8b>::new_with_witness();
+
+	let mut rng = thread_rng();
+	let input_states = repeat_with(|| KeccakfState(rng.gen()))
+		.take(1 << log_n_permutations)
+		.collect::<Vec<_>>();
+
 	let _state_out = binius_circuits::keccakf::keccakf(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
+		Some(input_states),
 	);
 
 	let witness = builder

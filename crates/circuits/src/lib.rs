@@ -1,9 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
+#![feature(array_try_from_fn)]
+
 pub mod bitwise;
 pub mod builder;
 pub mod groestl;
 pub mod keccakf;
+pub mod keccakf_wide;
 pub mod lasso;
 pub mod step_down;
 pub mod u32add;
