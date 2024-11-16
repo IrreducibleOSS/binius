@@ -66,6 +66,10 @@ name = "u32add_lasso"
 path = "u32add_lasso.rs"
 
 [[example]]
+name = "u32add_with_lookup"
+path = "u32add_with_lookup.rs"
+
+[[example]]
 name = "u32fib"
 path = "u32fib.rs"
 
