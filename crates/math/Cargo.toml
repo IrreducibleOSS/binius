@@ -29,5 +29,10 @@ rand = { workspace = true, features = ["std_rng"] }
 bench = false
 
 [[bench]]
+name = "fold"
+harness = false
+
+
+[[bench]]
 name = "tensor_prod_eq_ind"
 harness = false

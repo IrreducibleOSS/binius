@@ -1,6 +1,6 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::{Error, MultilinearQueryRef, PackingDeref};
+use crate::{fold, Error, MultilinearQueryRef, PackingDeref};
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	packed::{get_packed_slice, iter_packed_slice},
@@ -316,39 +316,7 @@ where
 
 		// This operation is a matrix-vector product of the matrix of multilinear coefficients with
 		// the vector of tensor product-expanded query coefficients.
-		const CHUNK_SIZE: usize = 1 << 10;
-		let n_vars = query.n_vars();
-		let query_expansion = query.expansion();
-		let packed_result_evals = out;
-		packed_result_evals
-			.par_chunks_mut(CHUNK_SIZE)
-			.enumerate()
-			.for_each(|(i, packed_result_evals)| {
-				for (k, packed_result_eval) in packed_result_evals.iter_mut().enumerate() {
-					let offset = i * CHUNK_SIZE;
-					for j in 0..min(PE::WIDTH, 1 << (self.mu - n_vars)) {
-						let index = ((offset + k) << PE::LOG_WIDTH) | j;
-
-						let offset = index << n_vars;
-
-						let mut result_eval = PE::Scalar::ZERO;
-						for (t, query_expansion) in iter_packed_slice(query_expansion)
-							.take(1 << n_vars)
-							.enumerate()
-						{
-							result_eval +=
-								query_expansion * get_packed_slice(&self.evals, t + offset);
-						}
-
-						// Safety: `j` < `PE::WIDTH`
-						unsafe {
-							packed_result_eval.set_unchecked(j, result_eval);
-						}
-					}
-				}
-			});
-
-		Ok(())
+		fold(&self.evals, self.mu, query.expansion(), query.n_vars(), out)
 	}
 }
 

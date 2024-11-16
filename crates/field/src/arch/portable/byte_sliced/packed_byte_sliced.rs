@@ -33,6 +33,21 @@ macro_rules! define_byte_sliced {
 			pub(super) data: [PackedAESBinaryField32x8b; <$tower_level>::WIDTH],
 		}
 
+		impl $name {
+			pub const BYTES: usize = PackedAESBinaryField32x8b::WIDTH * <$tower_level>::WIDTH;
+
+			/// Get the byte at the given index.
+			///
+			/// # Safety
+			/// The caller must ensure that `byte_index` is less than `BYTES`.
+			#[allow(clippy::modulo_one)]
+			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
+				self.data[byte_index % <$tower_level>::WIDTH]
+					.get(byte_index / <$tower_level>::WIDTH)
+					.to_underlier()
+			}
+		}
+
 		impl PackedField for $name {
 			type Scalar = $scalar_type;
 

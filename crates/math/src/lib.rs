@@ -5,6 +5,7 @@
 mod composition_poly;
 mod deinterleave;
 mod error;
+mod fold;
 mod matrix;
 mod mle_adapters;
 mod multilinear;
@@ -18,6 +19,7 @@ mod univariate;
 pub use composition_poly::*;
 pub use deinterleave::*;
 pub use error::*;
+pub use fold::fold;
 pub use matrix::*;
 pub use mle_adapters::*;
 pub use multilinear::*;
