@@ -110,7 +110,7 @@ where
 		code: &mut [Self::P],
 		log_batch_size: usize,
 	) -> Result<(), Self::EncodeError> {
-		let _scope = tracing::debug_span!(
+		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
 			log_batch_size = log_batch_size,
