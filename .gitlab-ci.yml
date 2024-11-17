@@ -115,7 +115,7 @@ unit-test-single-threaded-amd:
 unit-test-single-threaded-arm:
   extends: .test_job_template_arm
   script:
-    - RAYON_NUM_THREADS=1 ./scripts/run_tests_and_examples.sh
+    - RAYON_NUM_THREADS=1 CARGO_PROFILE=release ./scripts/run_tests_and_examples.sh
 
 unit-test-native-amd:
   extends: .test_job_template_amd
