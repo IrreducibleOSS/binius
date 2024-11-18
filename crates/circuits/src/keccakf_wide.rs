@@ -10,12 +10,12 @@ use binius_core::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	square_transpose,
-	underlier::{UnderlierType, WithUnderlier},
+	underlier::{Divisible, UnderlierType, WithUnderlier},
 	BinaryField128b, BinaryField1b, BinaryField64b, ExtensionField, Field, PackedBinaryField64x1b,
-	PackedBinaryField8x1b, PackedField, TowerField,
+	PackedDivisible, PackedField, TowerField,
 };
 use binius_macros::composition_poly;
-use bytemuck::{must_cast, must_cast_slice, must_cast_slice_mut, Pod};
+use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use itertools::chain;
 use lazy_static::lazy_static;
 use std::{array, iter, slice};
@@ -60,28 +60,29 @@ lazy_static! {
 	/// B array entry at index xyz is an XOR accumulation of.
 	static ref B_INDICES: Vec<[usize; 11]> = (0..1600).map(b_combination_indices).collect();
 
-	/// An array of 64 x 3 packed 8x1b field elements, or 64 x 3 x 8 bits. Each of the strided
-	/// 3 x 8b sub-arrays represents a bit position for the rounds constants in all 24 rounds.
-	static ref ROUND_CONSTS: [PackedBinaryField8x1b; 64 * 3] = generate_round_consts();
+	/// An array of 64 x 3 packed 64x1b field elements, or 64 x 3 x 64 bits. Each of the strided
+	/// 3 x 64b sub-arrays represents a bit position for the rounds constants in all 24 rounds
+	/// repeated 8 times.
+	static ref ROUND_CONSTS: [PackedBinaryField64x1b; 64 * 3] = generate_round_consts();
 }
 
 /// Generates the round constants in the bit-sliced representation required.
-fn generate_round_consts() -> [PackedBinaryField8x1b; 64 * 3] {
+fn generate_round_consts() -> [PackedBinaryField64x1b; 64 * 3] {
 	// WARNING: Tricky transposes ahead! When n-dimensional matrices are specified, the dimensions
 	// are stated in order of nearest memory locality. For a 2D matrix in row-major order, this
 	// means the number of columns would be the size of the 0'th dimension (zero-indexed).
 
-	// First array is 8 bytes per const x 3 rounds per row x 8 rows per permutation
-	let mut bytes: [PackedBinaryField8x1b; 24 * 8] = must_cast(KECCAKF_RC);
+	// Repeat the row constants 8 times. Interpret as a 64 const x 3 round matrix. This shape will
+	// let us perform 3 parallel bitwise square transposes.
+	let mut consts_batch = [PackedBinaryField64x1b::default(); 24 * 8];
+	for i in 0..8 {
+		consts_batch[i * 24..(i + 1) * 24].copy_from_slice(must_cast_slice(&KECCAKF_RC));
+	}
 
 	// Interpret as an 24 x 8 byte matrix square transpose the bits in each column.
-	square_transpose(LOG_ROWS_PER_PERM, &mut bytes).expect("parameters are valid constants");
+	square_transpose(6, &mut consts_batch).expect("parameters are valid constants");
 
-	// Interpret as a 3 x 64 byte matrix and transpose byte-wise to 64 x 3 bytes.
-	let mut bytes_t: [PackedBinaryField8x1b; 64 * 3] = [Default::default(); 64 * 3];
-	transpose::transpose(&bytes, &mut bytes_t, 3, 64);
-
-	bytes_t
+	consts_batch
 }
 
 #[rustfmt::skip]
@@ -118,7 +119,8 @@ where
 		+ PackScalar<B128>
 		+ PackScalar<FBase>
 		+ PackScalar<B1>
-		+ PackScalar<B64>,
+		+ PackScalar<B64>
+		+ Divisible<u64>,
 	B128: ExtensionField<FBase>,
 	FBase: TowerField,
 {
@@ -275,9 +277,9 @@ where
 					tiny_keccak::keccakf(&mut output);
 					output
 				};
-				// for xy in 0..25 {
-				// 	assert_eq!(state[xy], output[xy]);
-				// }
+				for xy in 0..25 {
+					assert_eq!(state[xy], output[xy]);
+				}
 			}
 
 			// Bit-transpose the batches
@@ -397,41 +399,6 @@ where
 	})
 }
 
-/*
-fn generate_round_witness(
-	i: usize,
-	round: usize,
-	round_in: [&mut [u64]; 25 * 64],
-	b_cols: [&mut [u64]; 25 * 64],
-	round_out: [&mut [u64]; 25 * 64],
-	round_const: [&mut [u64]; 64],
-) {
-	// TODO: Optimize this by computing the intermediate C values
-	for xyz in 0..1600 {
-		// θ, ρ, and π steps
-		b_cols[xyz][i] = B_INDICES[xyz]
-			.into_iter()
-			.fold(0, |acc, j| acc ^ round_in[j][i]);
-	}
-
-	for z in 0..64 {
-		// χ step
-		for y in 0..5 {
-			for x in 0..5 {
-				let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
-				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
-				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
-				round_out[idx0][i] = b_cols[idx0][i] ^ ((!b_cols[idx1][i]) & b_cols[idx2][i]);
-			}
-		}
-
-		// ι step
-		round_const[z][i] = must_cast([ROUND_CONSTS[round * 64 + z]; 8]);
-		round_out[z][i] ^= round_const[z][i];
-	}
-}
- */
-
 fn keccakf_round<U, F, FBase>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	log_n_permutations: usize,
@@ -439,7 +406,7 @@ fn keccakf_round<U, F, FBase>(
 	state_in: [OracleId; 25 * 64],
 ) -> Result<[OracleId; 25 * 64]>
 where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<B1>,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<B1> + Divisible<u64>,
 	F: TowerField + ExtensionField<B64> + ExtensionField<FBase>,
 	FBase: TowerField,
 {
@@ -466,7 +433,7 @@ where
 	let n_single_vars = LOG_ROWS_PER_PERM.max(<PackedType<U, B1>>::LOG_WIDTH);
 	let round_const_single: [OracleId; 64] = array::from_fn(|z| {
 		let round_const_values =
-			<PackedType<U, B1>>::from_scalars(ROUND_CONSTS[round * 64 + z].into_iter().cycle());
+			repeat_divisible::<PackedType<U, B1>, _>(ROUND_CONSTS[round + 3 * z]);
 		builder
 			.add_transparent(
 				format!("round_const_single[{z}]"),
@@ -498,7 +465,7 @@ where
 				let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
 				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
 				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
-				if false && x == 0 && y == 0 {
+				if x == 0 && y == 0 {
 					builder.assert_zero(
 						[
 							state_out[idx0],
@@ -548,11 +515,7 @@ where
 		});
 
 		let round_const_1b = array::from_fn::<_, 64, _>(|z| {
-			let mut val = U::default();
-			for byte in must_cast_slice_mut::<_, PackedBinaryField8x1b>(slice::from_mut(&mut val)) {
-				*byte = ROUND_CONSTS[round * 64 + z];
-			}
-			<PackedType<U, B1>>::from_underlier(val)
+			repeat_divisible::<PackedType<U, B1>, _>(ROUND_CONSTS[round + 3 * z])
 		});
 		let round_const_single_wit = array::from_fn::<_, 64, _>(|z| {
 			vec![round_const_1b[z].to_underlier()].into_boxed_slice()
@@ -594,7 +557,7 @@ where
 				}
 
 				// ι step
-				// state_out_1b[z][i] += round_const_1b[z];
+				state_out_1b[z][i] += round_const_1b[z];
 			}
 		}
 
@@ -667,6 +630,18 @@ fn b_combination_indices(xyz: usize) -> [usize; 11] {
 	a_theta_indices(x_prime, y_prime, z_prime)
 }
 
+fn repeat_divisible<PBig, PDiv>(val: PDiv) -> PBig
+where
+	PBig: PackedField + PackedDivisible<PDiv>,
+	PDiv: PackedField<Scalar = PBig::Scalar>,
+{
+	let mut val_repeated = PBig::default();
+	for subval in <PBig as PackedDivisible<PDiv>>::divide_mut(slice::from_mut(&mut val_repeated)) {
+		*subval = val;
+	}
+	val_repeated
+}
+
 mod tinykeccak {
 	use super::KECCAKF_RC as RC;
 
@@ -726,7 +701,7 @@ mod tinykeccak {
 				}
 
 				// Iota
-				// a[0] ^= $rc[i];
+				a[0] ^= $rc[i];
 			}
 
 			#[doc = $doc]
