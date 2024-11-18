@@ -27,7 +27,8 @@ mod tests {
 	};
 	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{
-		arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField8b,
+		arch::{OptimalUnderlier, OptimalUnderlier128b},
+		AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField8b,
 	};
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use std::iter::repeat_with;
@@ -114,15 +115,16 @@ mod tests {
 
 	#[test]
 	fn test_keccakf_wide() {
+		type U = OptimalUnderlier128b;
 		let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
-		let log_size = 13;
+		let log_size = 4;
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let input_states = repeat_with(|| KeccakfState(rng.gen()))
 			.take(4)
 			.collect::<Vec<_>>();
 
-		let _state_out = keccakf_wide::keccakf(&mut builder, log_size, Some(input_states));
+		let _state_out = keccakf_wide::keccakf(&mut builder, log_size, Some(input_states)).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
