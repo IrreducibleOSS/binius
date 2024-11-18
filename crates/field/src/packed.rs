@@ -109,14 +109,14 @@ pub trait PackedField:
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> {
+	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Clone + Send {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send {
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Clone + Send {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
@@ -305,7 +305,7 @@ impl<F: Field> PackedField for F {
 		*self = scalar;
 	}
 
-	fn iter(&self) -> impl Iterator<Item = Self::Scalar> {
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Clone + Send {
 		iter::once(*self)
 	}
 

@@ -58,7 +58,7 @@ const KECCAKF_RC: [u64; 24] = [
 lazy_static! {
 	/// Precomputed indices representing the indices into the original bit-sliced A array that the
 	/// B array entry at index xyz is an XOR accumulation of.
-	static ref B_INDICES: [[usize; 11]; 1600] = array::from_fn(b_combination_indices);
+	static ref B_INDICES: Vec<[usize; 11]> = (0..1600).map(b_combination_indices).collect();
 
 	/// An array of 64 x 3 packed 8x1b field elements, or 64 x 3 x 8 bits. Each of the strided
 	/// 3 x 8b sub-arrays represents a bit position for the rounds constants in all 24 rounds.
@@ -490,8 +490,8 @@ where
 			}
 
 			// Bit-transpose the batches
-			let state_in_bits_as_64x1s = cast_64x1b_cols(&mut state_in_b64s_wit);
-			let state_in_b64s_as_64x1s = cast_64x1b_cols(&mut state_in_bits_wit);
+			let state_in_bits_as_64x1s = cast_64x1b_cols(&mut state_in_bits_wit);
+			let state_in_b64s_as_64x1s = cast_64x1b_cols(&mut state_in_b64s_wit);
 			for xy in 0..25 {
 				let mut vals = array::from_fn::<_, 64, _>(|i| {
 					state_in_b64s_as_64x1s[xy][(i_outer << LOG_ROWS_PER_PERM) + i]
@@ -572,24 +572,17 @@ where
 			array::from_fn::<_, 25, _>(|_xy| build_trace_column_64b(log_n_permutations));
 
 		let witness_ref = &witness;
-		let state_in_polys = state_in.try_map(|id| witness_ref.get::<B1>(id))?;
+		let state_in_polys = state_in.try_map(|id| witness_ref.get::<B64>(id))?;
 		let state_in_u64s = state_in_polys
 			.each_ref()
 			.map(|poly| must_cast_slice::<_, u64>(WithUnderlier::to_underliers_ref(poly.evals())));
-		let state_out_polys = state_in.try_map(|id| witness_ref.get::<B1>(id))?;
+		let state_out_polys = state_in.try_map(|id| witness_ref.get::<B64>(id))?;
 		let state_out_u64s = state_out_polys
 			.each_ref()
 			.map(|poly| must_cast_slice::<_, u64>(WithUnderlier::to_underliers_ref(poly.evals())));
-		// let state_out_u64s = state_in.try_map(|id| {
-		// 	let poly = witness_ref.get::<B1>(id)?;
-		// 	let u64s = must_cast_slice::<_, u64>(WithUnderlier::to_underliers_ref(poly.evals()));
-		// 	Ok::<_, anyhow::Error>(u64s)
-		// })?;
 
 		let input_state_u64s = cast_u64_cols(&mut input_state_wit);
 		let output_state_u64s = cast_u64_cols(&mut output_state_wit);
-		// let state_in_u64s = cast_u64_cols(&mut state_in);
-		// let state_out_u64s = cast_u64_cols(&mut state_out);
 
 		// Copy from row_state b64s to input/output states
 		for xy in 0..25 {
@@ -613,6 +606,7 @@ where
 	})
 }
 
+/*
 fn generate_round_witness(
 	i: usize,
 	round: usize,
@@ -645,6 +639,7 @@ fn generate_round_witness(
 		round_out[z][i] ^= round_const[z][i];
 	}
 }
+ */
 
 fn keccakf_round<U, F, FBase>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
@@ -657,7 +652,7 @@ where
 	F: TowerField + ExtensionField<B64> + ExtensionField<FBase>,
 	FBase: TowerField,
 {
-	builder.push_namespace("round {round}");
+	builder.push_namespace(format!("round {round}"));
 
 	// Oracles for the intermediate B values
 	let b_cols: [OracleId; 25 * 64] = array::try_from_fn(|xyz| {
@@ -676,15 +671,17 @@ where
 	);
 
 	// Oracles for the non-repeating round constants
+	// TODO: Bad that the oracle definition is based on packing width
+	let n_single_vars = LOG_ROWS_PER_PERM.max(<PackedType<U, B1>>::LOG_WIDTH);
 	let round_const_single: [OracleId; 64] = array::from_fn(|z| {
 		let round_const_values =
-			<PackedType<U, B1>>::from_scalars(ROUND_CONSTS[round * 64 + z].into_iter());
+			<PackedType<U, B1>>::from_scalars(ROUND_CONSTS[round * 64 + z].into_iter().cycle());
 		builder
 			.add_transparent(
-				"round_consts_single",
+				format!("round_const_single[{z}]"),
 				transparent::MultilinearExtension::<PackedType<U, B1>, PackedType<U, F>, _>::new(
 					vec![round_const_values],
-					LOG_ROWS_PER_PERM,
+					n_single_vars,
 				)
 				.expect("n_vars matches number of packed scalars"),
 			)
@@ -695,9 +692,9 @@ where
 	let round_const: [OracleId; 64] = array::from_fn(|z| {
 		let round_consts = builder
 			.add_repeating(
-				format!("round_consts_single[{round}]"),
+				format!("round_const[{z}]"),
 				round_const_single[z],
-				log_n_permutations,
+				log_n_permutations + LOG_ROWS_PER_PERM - n_single_vars,
 			)
 			.expect("oracle_id input is valid");
 		round_consts
