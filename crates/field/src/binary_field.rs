@@ -10,7 +10,6 @@ use crate::{
 use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut};
-use cfg_if::cfg_if;
 use rand::RngCore;
 use std::{
 	array,
@@ -351,12 +350,12 @@ macro_rules! binary_field {
 pub(crate) use binary_field;
 
 macro_rules! binary_subfield_mul_packed_128b {
-	($subfield_name:ident, $subfield_packed:ident) => {
-		cfg_if! {
+	($subfield_name:ident, $field_name:ident, $subfield_packed:ident) => {
+		cfg_if::cfg_if! {
 			// HACK: Carve-out for accelerated packed field arithmetic. This is temporary until the
 			// portable packed128b implementation is refactored to not rely on BinaryField mul.
 			if #[cfg(all(target_arch = "x86_64", target_feature = "gfni", target_feature = "sse2"))] {
-				impl Mul<$subfield_name> for BinaryField128b {
+				impl Mul<$subfield_name> for $field_name {
 					type Output = Self;
 
 					fn mul(self, rhs: $subfield_name) -> Self::Output {
@@ -368,11 +367,11 @@ macro_rules! binary_subfield_mul_packed_128b {
 					}
 				}
 			} else {
-				impl Mul<$subfield_name> for BinaryField128b {
+				impl Mul<$subfield_name> for $field_name {
 					type Output = Self;
 
 					fn mul(self, rhs: $subfield_name) -> Self::Output {
-						$crate::tracing::trace_multiplication!(BinaryField128b, $subfield_name);
+						$crate::tracing::trace_multiplication!($field_name, $subfield_name);
 
 						let (a, b) = self.into();
 						(a * rhs, b * rhs).into()
@@ -382,6 +381,8 @@ macro_rules! binary_subfield_mul_packed_128b {
 		}
 	};
 }
+
+pub(crate) use binary_subfield_mul_packed_128b;
 
 macro_rules! mul_by_binary_field_1b {
 	($name:ident) => {
@@ -410,19 +411,67 @@ macro_rules! binary_tower_subfield_mul {
 	};
 	// HACK: Special case when the field is GF(2^128)
 	(BinaryField8b, BinaryField128b) => {
-		binary_subfield_mul_packed_128b!(BinaryField8b, PackedBinaryField16x8b);
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			BinaryField8b,
+			BinaryField128b,
+			PackedBinaryField16x8b
+		);
 	};
 	// HACK: Special case when the field is GF(2^128)
 	(BinaryField16b, BinaryField128b) => {
-		binary_subfield_mul_packed_128b!(BinaryField16b, PackedBinaryField8x16b);
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			BinaryField16b,
+			BinaryField128b,
+			PackedBinaryField8x16b
+		);
 	};
 	// HACK: Special case when the field is GF(2^128)
 	(BinaryField32b, BinaryField128b) => {
-		binary_subfield_mul_packed_128b!(BinaryField32b, PackedBinaryField4x32b);
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			BinaryField32b,
+			BinaryField128b,
+			PackedBinaryField4x32b
+		);
 	};
 	// HACK: Special case when the field is GF(2^128)
 	(BinaryField64b, BinaryField128b) => {
-		binary_subfield_mul_packed_128b!(BinaryField64b, PackedBinaryField2x64b);
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			BinaryField64b,
+			BinaryField128b,
+			PackedBinaryField2x64b
+		);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(AESTowerField8b, AESTowerField128b) => {
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			AESTowerField8b,
+			AESTowerField128b,
+			PackedAESBinaryField16x8b
+		);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField16b, AESTowerField128b) => {
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			AESTowerField16b,
+			AESTowerField128b,
+			PackedAESBinaryField8x16b
+		);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField32b, AESTowerField128b) => {
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			AESTowerField32b,
+			AESTowerField128b,
+			PackedAESBinaryField4x32b
+		);
+	};
+	// HACK: Special case when the field is GF(2^128)
+	(BinaryField64b, AESTowerField128b) => {
+		$crate::binary_field::binary_subfield_mul_packed_128b!(
+			AESTowerField64b,
+			AESTowerField128b,
+			PackedAESBinaryField2x64b
+		);
 	};
 	($subfield_name:ident, $name:ident) => {
 		impl Mul<$subfield_name> for $name {
