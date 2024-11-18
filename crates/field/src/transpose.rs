@@ -46,7 +46,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 	for i in 0..log_n {
 		for j in 0..1 << (log_n - i - 1) {
 			for k in 0..w << i {
-				let idx0 = (j * w << (i + 1)) + k;
+				let idx0 = ((j * w) << (i + 1)) + k;
 				let idx1 = idx0 + (w << i);
 
 				let v0 = elems[idx0];

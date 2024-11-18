@@ -448,21 +448,21 @@ where
 
 	// Oracles for the repeating round constants
 	let round_const: [OracleId; 64] = array::from_fn(|z| {
-		let round_consts = builder
+		builder
 			.add_repeating(
 				format!("round_const[{z}]"),
 				round_const_single[z],
 				log_n_permutations + LOG_ROWS_PER_PERM - n_single_vars,
 			)
-			.expect("oracle_id input is valid");
-		round_consts
+			.expect("oracle_id input is valid")
 	});
 
 	// Constraints for χ and ι steps
+	#[allow(clippy::needless_range_loop)]
 	for z in 0..64 {
 		for y in 0..5 {
 			for x in 0..5 {
-				let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
+				let idx0 = (x + 5 * y) * 64 + z;
 				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
 				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
 				if x == 0 && y == 0 {
@@ -548,7 +548,7 @@ where
 				// χ step
 				for y in 0..5 {
 					for x in 0..5 {
-						let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
+						let idx0 = (x + 5 * y) * 64 + z;
 						let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
 						let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
 						state_out_1b[idx0][i] =
