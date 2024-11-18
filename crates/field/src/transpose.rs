@@ -16,44 +16,38 @@ pub enum Error {
 
 /// Transpose square blocks of elements within packed field elements in place.
 ///
-/// The input elements are interpreted as a rectangular matrix with height `n = 2^n` in row-major
-/// order. This matrix is interpreted as a vector of square matrices of field elements, and each
-/// square matrix is transposed in-place.
+/// The input elements are interpreted as a rectangular matrix with height `n = 2^log_n` in
+/// row-major order. This matrix is interpreted as a vector of square matrices of field elements,
+/// and each square matrix is transposed in-place.
 ///
 /// # Arguments
 ///
 /// * `log_n`: The base-2 logarithm of the dimension of the n x n square matrix. Must be less than
 ///   or equal to the base-2 logarithm of the packing width.
-/// * `elems`: The packed field elements, length is a power-of-two multiple of `1 << log_n`.
+/// * `elems`: The packed field elements, length is a multiple of n.
 pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result<(), Error> {
 	if P::LOG_WIDTH < log_n {
 		return Err(Error::SquareBlockDimensionMustDivideWidth);
 	}
 
 	let size = elems.len();
-	if !size.is_power_of_two() {
+	if size % (1 << log_n) != 0 {
 		return Err(Error::InvalidBufferSize {
 			param: "elems",
-			msg: "power of two size required".to_string(),
-		});
-	}
-	let log_size = log2_strict_usize(size);
-	if log_size < log_n {
-		return Err(Error::InvalidBufferSize {
-			param: "elems",
-			msg: "must have length at least 2^log_n".to_string(),
+			msg: "length must be a multiple of 2^log_n".to_string(),
 		});
 	}
 
-	let log_w = log_size - log_n;
+	// Matrix has height n, and width w P elements
+	let w = size >> log_n;
 
 	// See Hacker's Delight, Section 7-3.
 	// https://dl.acm.org/doi/10.5555/2462741
 	for i in 0..log_n {
 		for j in 0..1 << (log_n - i - 1) {
-			for k in 0..1 << (log_w + i) {
-				let idx0 = (j << (log_w + i + 1)) | k;
-				let idx1 = idx0 | (1 << (log_w + i));
+			for k in 0..w << i {
+				let idx0 = (j * w << (i + 1)) + k;
+				let idx1 = idx0 + (w << i);
 
 				let v0 = elems[idx0];
 				let v1 = elems[idx1];
@@ -177,6 +171,8 @@ mod tests {
 		];
 		assert_eq!(elems, expected);
 	}
+
+	// TODO: test rectangular metrix with odd width
 
 	#[test]
 	fn test_square_transpose_64x2b() {

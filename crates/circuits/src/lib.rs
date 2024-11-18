@@ -16,12 +16,11 @@ pub mod unconstrained;
 
 #[cfg(test)]
 mod tests {
+	use super::*;
 	use crate::{
-		bitwise,
 		builder::ConstraintSystemBuilder,
 		groestl::groestl_p_permutation,
 		keccakf::{keccakf, KeccakfState},
-		lasso,
 		u32add::u32add,
 		u32fib::u32fib,
 		unconstrained::unconstrained,
@@ -106,6 +105,24 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let _state_out = keccakf(&mut builder, log_size, Some(input_states));
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_keccakf_wide() {
+		let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
+		let log_size = 13;
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let input_states = repeat_with(|| KeccakfState(rng.gen()))
+			.take(4)
+			.collect::<Vec<_>>();
+
+		let _state_out = keccakf_wide::keccakf(&mut builder, log_size, Some(input_states));
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
