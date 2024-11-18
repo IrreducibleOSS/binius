@@ -50,6 +50,10 @@ name = "keccakf_circuit"
 path = "keccakf_circuit.rs"
 
 [[example]]
+name = "keccakf_wide"
+path = "keccakf_wide.rs"
+
+[[example]]
 name = "lasso"
 path = "lasso.rs"
 
