@@ -18,4 +18,4 @@ lazy_static.workspace = true
 rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
-transpose.workspace = true
+tracing.workspace = true
