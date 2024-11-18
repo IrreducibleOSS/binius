@@ -182,6 +182,49 @@ pub trait PackedField:
 	/// ## Preconditions
 	/// * `log_block_len` must be strictly less than `LOG_WIDTH`.
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self);
+
+	/// Spread takes a block of elements within a packed field and repeats them to the full packing
+	/// width.
+	///
+	/// Spread can be seen as an extension of the functionality of [`Self::broadcast`].
+	///
+	/// ## Examples
+	///
+	/// ```
+	/// use binius_field::{BinaryField16b, PackedField, PackedBinaryField8x16b};
+	///
+	/// let input =
+	///     PackedBinaryField8x16b::from_scalars([0, 1, 2, 3, 4, 5, 6, 7].map(BinaryField16b::new));
+	/// assert_eq!(
+	///     input.spread(0, 5),
+	///     PackedBinaryField8x16b::from_scalars([5, 5, 5, 5, 5, 5, 5, 5].map(BinaryField16b::new))
+	/// );
+	/// assert_eq!(
+	///     input.spread(1, 2),
+	///     PackedBinaryField8x16b::from_scalars([4, 4, 4, 4, 5, 5, 5, 5].map(BinaryField16b::new))
+	/// );
+	/// assert_eq!(
+	///     input.spread(2, 1),
+	///     PackedBinaryField8x16b::from_scalars([4, 4, 5, 5, 6, 6, 7, 7].map(BinaryField16b::new))
+	/// );
+	/// assert_eq!(input.spread(3, 0), input);
+	/// ```
+	///
+	/// ## Preconditions
+	///
+	/// * `log_block_len` must be less than or equal to `LOG_WIDTH`.
+	/// * `block_idx` must be less than `2^(Self::LOG_WIDTH - log_block_len)`.
+	fn spread(self, log_block_len: usize, block_idx: usize) -> Self {
+		assert!(log_block_len <= Self::LOG_WIDTH);
+
+		let block_len = 1 << log_block_len;
+		let repeat = 1 << (Self::LOG_WIDTH - log_block_len);
+		assert!(block_idx < repeat);
+
+		Self::from_scalars(
+			self.iter().skip(block_idx * block_len).take(block_len).flat_map(|elem| iter::repeat_n(elem, repeat))
+		)
+	}
 }
 
 pub fn iter_packed_slice<P: PackedField>(
@@ -332,6 +375,12 @@ impl<F: Field> PackedField for F {
 	#[inline]
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 		f(0)
+	}
+
+	fn spread(self, log_block_len: usize, block_idx: usize) -> Self {
+		debug_assert_eq!(log_block_len, 0);
+		debug_assert_eq!(block_idx, 0);
+		self
 	}
 }
 
