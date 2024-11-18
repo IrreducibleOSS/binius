@@ -6,25 +6,26 @@ use anyhow::{anyhow, ensure, Result};
 use binius_core::{
 	oracle::{OracleId, ProjectionVariant},
 	transparent,
-	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	square_transpose,
 	underlier::UnderlierType,
-	BinaryField128b, BinaryField1b, BinaryField64b, ExtensionField, Field, PackedBinaryField8x1b,
-	PackedField, TowerField,
+	BinaryField128b, BinaryField1b, BinaryField64b, ExtensionField, Field, PackedBinaryField64x1b,
+	PackedBinaryField8x1b, PackedField, TowerField,
 };
+use binius_macros::composition_poly;
 use bytemuck::{must_cast, must_cast_slice_mut, Pod};
+use itertools::chain;
 use lazy_static::lazy_static;
-use std::array;
+use std::{array, iter};
 
 type B1 = BinaryField1b;
 type B64 = BinaryField64b;
 type B128 = BinaryField128b;
 
 const N_ROUNDS_PER_ROW: usize = 3;
-const N_ROUNDS_PER_PERM: usize = 24;
+//const N_ROUNDS_PER_PERM: usize = 24;
 const LOG_ROWS_PER_PERM: usize = 3;
 
 const KECCAKF_RC: [u64; 24] = [
@@ -55,11 +56,16 @@ const KECCAKF_RC: [u64; 24] = [
 ];
 
 lazy_static! {
+	/// Precomputed indices representing the indices into the original bit-sliced A array that the
+	/// B array entry at index xyz is an XOR accumulation of.
 	static ref B_INDICES: [[usize; 11]; 1600] = array::from_fn(b_combination_indices);
+
+	/// An array of 64 x 3 packed 8x1b field elements, or 64 x 3 x 8 bits. Each of the strided
+	/// 3 x 8b sub-arrays represents a bit position for the rounds constants in all 24 rounds.
 	static ref ROUND_CONSTS: [PackedBinaryField8x1b; 64 * 3] = generate_round_consts();
 }
 
-/// Generates the round constants in the weird bit-representation required.
+/// Generates the round constants in the bit-sliced representation required.
 fn generate_round_consts() -> [PackedBinaryField8x1b; 64 * 3] {
 	// WARNING: Tricky transposes ahead! When n-dimensional matrices are specified, the dimensions
 	// are stated in order of nearest memory locality. For a 2D matrix in row-major order, this
@@ -69,10 +75,10 @@ fn generate_round_consts() -> [PackedBinaryField8x1b; 64 * 3] {
 	let mut bytes: [PackedBinaryField8x1b; 24 * 8] = must_cast(KECCAKF_RC);
 
 	// Interpret as an 24 x 8 byte matrix square transpose the bits in each column.
-	square_transpose(8.ilog2(), &mut bytes).expect("parameters are valid constants");
+	square_transpose(LOG_ROWS_PER_PERM, &mut bytes).expect("parameters are valid constants");
 
 	// Interpret as a 3 x 64 byte matrix and transpose byte-wise to 64 x 3 bytes.
-	let mut bytes_t: [PackedBinaryField8x1b; 64 * 3] = Default::default();
+	let mut bytes_t: [PackedBinaryField8x1b; 64 * 3] = [Default::default(); 64 * 3];
 	transpose::transpose(&bytes, &mut bytes_t, 3, 64);
 
 	bytes_t
@@ -107,7 +113,12 @@ pub fn keccakf<U, FBase>(
 	input_witness: Option<Vec<KeccakfState>>,
 ) -> Result<KeccakfColumns>
 where
-	U: UnderlierType + Pod + PackScalar<B128> + PackScalar<FBase> + PackScalar<B1>,
+	U: UnderlierType
+		+ Pod
+		+ PackScalar<B128>
+		+ PackScalar<FBase>
+		+ PackScalar<B1>
+		+ PackScalar<B64>,
 	B128: ExtensionField<FBase>,
 	FBase: TowerField,
 {
@@ -151,7 +162,7 @@ where
 		builder.add_projected(
 			format!("state_in[{xy}]"),
 			row_state_in_b64s[xy],
-			vec![B128::ZERO; 3],
+			vec![B128::ZERO; 3], // Index 0 in a size-8 hypercube
 			ProjectionVariant::FirstVars,
 		)
 	})?;
@@ -160,19 +171,27 @@ where
 		builder.add_projected(
 			format!("state_out[{xy}]"),
 			row_state_out_b64s[xy],
-			vec![B128::ONE; 3],
+			vec![B128::ONE; 3], // Index 7 in a size-8 hypercube
 			ProjectionVariant::FirstVars,
 		)
 	})?;
 
-	let round_consts: [[OracleId; 25 * 64]; N_ROUNDS_PER_ROW] = array::from_fn(|round| {
-		array::from_fn(|xyz| {
-			let round_consts_single = builder
-				.add_transparent(
-					format!("round_consts_single[{round}]"),
-					transparent::MultilinearExtension::new([ROUND_CONSTS[round * 64 + xyz]]),
-				)
-				.unwrap();
+	let round_consts: [[OracleId; 64]; N_ROUNDS_PER_ROW] = array::from_fn(|round| {
+		array::from_fn(|z| {
+			let round_const_values =
+				<PackedType<U, B1>>::from_scalars(ROUND_CONSTS[round * 64 + z].into_iter());
+			let round_consts_single =
+				builder
+					.add_transparent(
+						format!("round_consts_single[{round}]"),
+						transparent::MultilinearExtension::<
+							PackedType<U, B1>,
+							PackedType<U, B128>,
+							_,
+						>::new(vec![round_const_values], LOG_ROWS_PER_PERM)
+						.expect("n_vars matches number of packed scalars"),
+					)
+					.unwrap();
 			let round_consts = builder
 				.add_repeating(
 					format!("round_consts_single[{round}]"),
@@ -184,15 +203,27 @@ where
 		})
 	});
 
-	keccakf_round(builder, log_n_permutations, state_in_bits, round_out_bits[0], round_consts[0])?;
-	keccakf_round(
+	let KeccakfRoundCols { b_cols: b_cols_0 } = keccakf_round(
+		builder,
+		log_n_permutations,
+		state_in_bits,
+		round_out_bits[0],
+		round_consts[0],
+	)?;
+	let KeccakfRoundCols { b_cols: b_cols_1 } = keccakf_round(
 		builder,
 		log_n_permutations,
 		round_out_bits[0],
 		round_out_bits[1],
 		round_consts[1],
 	)?;
-	keccakf_round(builder, log_n_permutations, round_out_bits[1], state_out_bits, round_consts[2])?;
+	let KeccakfRoundCols { b_cols: b_cols_2 } = keccakf_round(
+		builder,
+		log_n_permutations,
+		round_out_bits[1],
+		round_out_bits[2],
+		round_consts[2],
+	)?;
 
 	if let Some(witness) = builder.witness() {
 		let build_trace_column_1b = |log_size: usize| {
@@ -209,22 +240,31 @@ where
 				.map(|col| must_cast_slice_mut::<_, u64>(&mut *col))
 		}
 
-		let mut row_state_in_b64s_witness =
-			array::from_fn::<_, 25, _>(|xyz| build_trace_column_64b(log_n_permutations));
-		let mut row_state_out_b64s_witness =
-			array::from_fn::<_, 25, _>(|xyz| build_trace_column_64b(log_n_permutations));
-		let mut input_state_witness =
-			array::from_fn::<_, 25, _>(|xyz| build_trace_column_1b(log_n_permutations));
-		let mut output_state_witness =
-			array::from_fn::<_, 25, _>(|xyz| build_trace_column_1b(log_n_permutations));
+		fn cast_64x1b_cols<U: Pod, const N: usize>(
+			cols: &mut [Box<[U]>; N],
+		) -> [&mut [PackedBinaryField64x1b]; N] {
+			cols.each_mut()
+				.map(|col| must_cast_slice_mut::<_, PackedBinaryField64x1b>(&mut *col))
+		}
 
-		let mut state_in_witness = array::from_fn::<_, { 25 * 64 }, _>(|xyz| {
+		let mut row_state_in_b64s_witness = array::from_fn::<_, 25, _>(|_xy| {
+			build_trace_column_64b(log_n_permutations + LOG_ROWS_PER_PERM)
+		});
+		let mut row_state_out_b64s_witness = array::from_fn::<_, 25, _>(|_xy| {
+			build_trace_column_64b(log_n_permutations + LOG_ROWS_PER_PERM)
+		});
+		let mut input_state_witness =
+			array::from_fn::<_, 25, _>(|_xyz| build_trace_column_64b(log_n_permutations));
+		let mut output_state_witness =
+			array::from_fn::<_, 25, _>(|_xyz| build_trace_column_64b(log_n_permutations));
+
+		let mut state_in_witness = array::from_fn::<_, { 25 * 64 }, _>(|_xyz| {
 			build_trace_column_1b(log_n_permutations + LOG_ROWS_PER_PERM)
 		});
 
-		let input_state = input_witness
+		let input_witness = input_witness
 			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?;
-		ensure!(input_state.len() < 1 << log_n_permutations);
+		ensure!(input_witness.len() < 1 << log_n_permutations);
 
 		// TODO: Parallelize this with unsafe memory accesses
 		const LOG_BATCH_SIZE: usize = 6 - LOG_ROWS_PER_PERM;
@@ -232,7 +272,7 @@ where
 			// Populate the initial permutation inputs in batches of 8 permutations at a time
 			for i_inner in 0..1 << LOG_BATCH_SIZE {
 				let perm_i = i_outer + i_inner;
-				let KeccakfState(input) = input_state
+				let KeccakfState(input) = input_witness
 					.get(i_outer + i_inner)
 					.cloned()
 					.unwrap_or_default();
@@ -271,54 +311,96 @@ where
 			}
 
 			// Bit-transpose the batches
-			let row_state_in_u64s = cast_u64_cols(&mut row_state_in_b64s_witness);
-			let mut state_in_u64s = cast_u64_cols(&mut state_in_witness);
+			let row_state_in_64x1s = cast_64x1b_cols(&mut row_state_in_b64s_witness);
+			let state_in_64x1s = cast_64x1b_cols(&mut state_in_witness);
 			for xy in 0..25 {
-				let state_in_refs =
-					array::from_fn::<_, 64, _>(|z| &mut state_in_u64s[xy * 64 + z][i_outer]);
-				for i in 0..64 {
-					*state_in_refs[i] = row_state_in_u64s[xy][i_outer * 64 + i];
+				let mut vals =
+					array::from_fn::<_, 64, _>(|i| row_state_in_64x1s[xy][i_outer * 64 + i]);
+				square_transpose(6, &mut vals)
+					.expect("vals has 64 elements, each with packing width 64");
+				for z in 0..64 {
+					state_in_64x1s[xy][i_outer] = vals[z];
 				}
-				bit_transpose_u64s(state_in_refs);
 			}
 		}
 
 		let mut b_cols_witness = array::from_fn::<_, N_ROUNDS_PER_ROW, _>(|_| {
-			array::from_fn::<_, { 25 * 64 }, _>(|xyz| {
+			array::from_fn::<_, { 25 * 64 }, _>(|_xyz| {
 				build_trace_column_1b(log_n_permutations + LOG_ROWS_PER_PERM)
 			})
 		});
-		let mut round_out_witness = array::from_fn::<_, N_ROUNDS_PER_ROW, _>(|_| {
-			array::from_fn::<_, { 25 * 64 }, _>(|xyz| {
+		let [mut round_0_witness, mut round_1_witness, mut round_2_witness] =
+			array::from_fn::<_, N_ROUNDS_PER_ROW, _>(|_| {
+				array::from_fn::<_, { 25 * 64 }, _>(|_xyz| {
+					build_trace_column_1b(log_n_permutations + LOG_ROWS_PER_PERM)
+				})
+			});
+		let mut round_const_witness = array::from_fn::<_, N_ROUNDS_PER_ROW, _>(|_| {
+			array::from_fn::<_, 64, _>(|_z| {
 				build_trace_column_1b(log_n_permutations + LOG_ROWS_PER_PERM)
 			})
 		});
 
 		// TODO: Parallelize
 		// Generate the B cols and round bits witnesses for each row
-		for perm_i in 0..1 << log_n_permutations {
+		for i in 0..1 << (log_n_permutations - LOG_BATCH_SIZE) {
 			generate_round_witness(
-				perm_i,
-				&state_in_witness,
-				&mut b_cols_witness[0],
-				&mut round_out_witness[0],
-				ROUND_CONSTS[0],
+				i,
+				0,
+				cast_u64_cols(&mut state_in_witness),
+				cast_u64_cols(&mut b_cols_witness[0]),
+				cast_u64_cols(&mut round_0_witness),
+				cast_u64_cols(&mut round_const_witness[0]),
 			);
 			generate_round_witness(
-				perm_i,
-				&round_out_witness[0],
-				&mut b_cols_witness[1],
-				&mut round_out_witness[1],
-				ROUND_CONSTS[1],
+				i,
+				1,
+				cast_u64_cols(&mut round_0_witness),
+				cast_u64_cols(&mut b_cols_witness[1]),
+				cast_u64_cols(&mut round_1_witness),
+				cast_u64_cols(&mut round_const_witness[1]),
 			);
 			generate_round_witness(
-				perm_i,
-				&round_out_witness[1],
-				&mut b_cols_witness[2],
-				&mut round_out_witness[2],
-				ROUND_CONSTS[2],
+				i,
+				2,
+				cast_u64_cols(&mut round_1_witness),
+				cast_u64_cols(&mut b_cols_witness[2]),
+				cast_u64_cols(&mut round_2_witness),
+				cast_u64_cols(&mut round_const_witness[2]),
 			);
 		}
+
+		let [round_0_bits, round_1_bits, round_2_bits] = round_out_bits;
+		let [b_cols_0_witness, b_cols_1_witness, b_cols_2_witness] = b_cols_witness;
+		witness.set_owned::<B1, _>(iter::zip(
+			chain!(
+				state_in_bits,
+				round_0_bits,
+				round_1_bits,
+				round_2_bits,
+				b_cols_0,
+				b_cols_1,
+				b_cols_2
+			),
+			chain!(
+				state_in_witness,
+				round_0_witness,
+				round_1_witness,
+				round_2_witness,
+				b_cols_0_witness,
+				b_cols_1_witness,
+				b_cols_2_witness
+			),
+		))?;
+		witness.set_owned::<B64, _>(iter::zip(
+			chain!(row_state_in_b64s, row_state_out_b64s, input_state, output_state),
+			chain!(
+				row_state_in_b64s_witness,
+				row_state_out_b64s_witness,
+				input_state_witness,
+				output_state_witness
+			),
+		))?;
 	}
 
 	// TODO: Selector and connecting rounds
@@ -329,22 +411,42 @@ where
 	})
 }
 
-fn generate_round_witness<U, F>(
+fn generate_round_witness(
 	i: usize,
-	round_in: &[Box<U>; 25 * 64],
-	b_cols: &mut [Box<U>; 25 * 64],
-	round_out: &mut [Box<U>; 25 * 64],
-	round_consts: PackedBinaryField8x1b,
-) where
-	U: UnderlierType + PackScalar<F> + PackScalar<B1>,
-	F: TowerField,
-{
+	round: usize,
+	round_in: [&mut [u64]; 25 * 64],
+	b_cols: [&mut [u64]; 25 * 64],
+	round_out: [&mut [u64]; 25 * 64],
+	round_const: [&mut [u64]; 64],
+) {
+	// TODO: Optimize this by computing the intermediate C values
+	for xyz in 0..1600 {
+		// θ, ρ, and π steps
+		b_cols[xyz][i] = B_INDICES[xyz]
+			.into_iter()
+			.fold(0, |acc, j| acc ^ round_in[j][i]);
+	}
+
+	for z in 0..64 {
+		// χ step
+		for y in 0..5 {
+			for x in 0..5 {
+				let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
+				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
+				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
+				round_out[idx0][i] = b_cols[idx0][i] ^ ((!b_cols[idx1][i]) & b_cols[idx2][i]);
+			}
+		}
+
+		// ι step
+		round_const[z][i] = must_cast([ROUND_CONSTS[round * 64 + z]; 8]);
+		round_out[z][i] ^= round_const[z][i];
+	}
 }
 
 #[derive(Debug)]
 struct KeccakfRoundCols {
 	b_cols: [OracleId; 25 * 64],
-	round_out: [OracleId; 25 * 64],
 }
 
 fn keccakf_round<U, F, FBase>(
@@ -352,7 +454,7 @@ fn keccakf_round<U, F, FBase>(
 	log_n_permutations: usize,
 	state_in: [OracleId; 25 * 64],
 	state_out: [OracleId; 25 * 64],
-	round_consts: [OracleId; 25 * 64],
+	round_consts: [OracleId; 64],
 ) -> Result<KeccakfRoundCols>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<FBase> + PackScalar<B1>,
@@ -363,9 +465,39 @@ where
 		builder.add_linear_combination(
 			format!("B[{xyz}]"),
 			log_n_permutations + LOG_ROWS_PER_PERM,
-			B_INDICES[xyz].map(|i| (state_in[i], B128::ONE)),
+			B_INDICES[xyz].map(|i| (state_in[i], F::ONE)),
 		)
 	})?;
+
+	// Constraints for χ and ι steps
+	for z in 0..64 {
+		for y in 0..5 {
+			for x in 0..5 {
+				let idx0 = ((x + 0) % 5 + 5 * y) * 64 + z;
+				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
+				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
+				if x == 0 && y == 0 {
+					builder.assert_zero(
+						[
+							state_out[idx0],
+							b_cols[idx0],
+							b_cols[idx1],
+							b_cols[idx2],
+							round_consts[z],
+						],
+						composition_poly!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2)),
+					);
+				} else {
+					builder.assert_zero(
+						[state_out[idx0], b_cols[idx0], b_cols[idx1], b_cols[idx2]],
+						composition_poly!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2)),
+					);
+				}
+			}
+		}
+	}
+
+	// TODO: shift constraint
 
 	Ok(KeccakfRoundCols { b_cols })
 }
@@ -413,7 +545,7 @@ fn a_theta_indices(x: usize, y: usize, z: usize) -> [usize; 11] {
 	}
 
 	indices.map(|(x, y, z)| {
-		let xy = x * 5 + y;
+		let xy = x + 5 * y;
 		xy * 64 + z
 	})
 }
@@ -424,13 +556,9 @@ fn b_combination_indices(xyz: usize) -> [usize; 11] {
 
 	let z_prime = (z + RHO[xy]) % 64;
 	let xy_prime = PI[xy];
-	let y_prime = xy_prime % 5;
-	let x_prime = xy_prime / 5;
+	let x_prime = xy_prime % 5;
+	let y_prime = xy_prime / 5;
 	a_theta_indices(x_prime, y_prime, z_prime)
-}
-
-fn bit_transpose_u64s(vals: [&mut u64; 64]) {
-	todo!()
 }
 
 mod tinykeccak {
@@ -498,6 +626,7 @@ mod tinykeccak {
 			#[doc = $doc]
 			#[allow(unused_assignments)]
 			#[allow(non_upper_case_globals)]
+			#[allow(dead_code)]
 			pub fn $name(a: &mut [u64; WORDS]) {
 				for i in 0..$rounds {
 					$name_round(a, i);
