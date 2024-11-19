@@ -239,7 +239,7 @@ where
 
 		let input_witness = input_witness
 			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?;
-		ensure!(input_witness.len() >= 1 << log_n_permutations);
+		ensure!(input_witness.len() <= (1 << log_n_permutations), "more input states than rows");
 
 		// TODO: Parallelize this with unsafe memory accesses
 		const LOG_BATCH_SIZE: usize = 6 - LOG_ROWS_PER_PERM;

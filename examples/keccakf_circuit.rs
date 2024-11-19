@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
 		Some(input_states),
-	);
+	)?;
 
 	let witness = builder
 		.take_witness()

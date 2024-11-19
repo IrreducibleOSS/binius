@@ -145,7 +145,7 @@ where
 			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?;
 
 		let n_permutations = 1 << (log_size - LOG_ROWS_PER_PERMUTATION);
-		ensure!(input_state.len() < 1 << n_permutations, "more input states than rows");
+		ensure!(input_state.len() <= n_permutations, "more input states than rows");
 
 		// Each round state is 64 rows
 		// Each permutation is 24 round states
