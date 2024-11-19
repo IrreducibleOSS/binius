@@ -5,6 +5,7 @@ pub mod builder;
 pub mod groestl;
 pub mod keccakf;
 pub mod lasso;
+pub mod sha256;
 pub mod step_down;
 pub mod u32add;
 pub mod u32fib;
@@ -16,12 +17,15 @@ mod helpers;
 mod tests {
 	use crate::{
 		bitwise, builder::ConstraintSystemBuilder, groestl::groestl_p_permutation,
-		keccakf::keccakf, lasso, u32add::u32add, u32fib::u32fib, unconstrained::unconstrained,
+		keccakf::keccakf, lasso, sha256::sha256, u32add::u32add_commited, u32fib::u32fib,
+		unconstrained::unconstrained,
 	};
-	use binius_core::constraint_system::validate::validate_witness;
+	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 	use binius_field::{
-		arch::OptimalUnderlier, AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField8b,
+		arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField16b, BinaryField128b,
+		BinaryField1b, BinaryField8b,
 	};
+	use std::array;
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -70,7 +74,7 @@ mod tests {
 		let log_size = 14;
 		let a = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
 		let b = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _c = u32add(&mut builder, "u32add", log_size, a, b).unwrap();
+		let _c = u32add_commited(&mut builder, "u32add", log_size, a, b).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -111,6 +115,21 @@ mod tests {
 		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness();
 		let log_size = 12;
 		let _state_out = keccakf(&mut builder, log_size);
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_sha256() {
+		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness();
+		let log_size = PackedType::<U, BinaryField1b>::LOG_WIDTH;
+		let input: [OracleId; 16] = array::from_fn(|i| {
+			unconstrained::<_, _, _, BinaryField1b>(&mut builder, i, log_size).unwrap()
+		});
+		let _state_out = sha256(&mut builder, input, log_size);
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();

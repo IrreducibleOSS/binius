@@ -11,26 +11,19 @@ use binius_macros::composition_poly;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use rayon::prelude::*;
 
-pub fn u32add<U, F>(
+fn u32add_common<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
-	name: impl ToString,
 	log_size: usize,
 	xin: OracleId,
 	yin: OracleId,
-) -> Result<OracleId, anyhow::Error>
+	zout: OracleId,
+	cin: OracleId,
+	cout: OracleId,
+) -> Result<(), anyhow::Error>
 where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
-	builder.push_namespace(name);
-	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
-	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
-	let zout = builder.add_linear_combination(
-		"zout",
-		log_size,
-		[(xin, F::ONE), (yin, F::ONE), (cin, F::ONE)].into_iter(),
-	)?;
-
 	if let Some(witness) = builder.witness() {
 		let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
 		let mut zout_witness = vec![U::default(); len].into_boxed_slice();
@@ -64,6 +57,58 @@ where
 	builder.assert_zero(
 		[xin, yin, cin, cout],
 		composition_poly!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout),
+	);
+	Ok(())
+}
+
+pub fn u32add<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
+	log_size: usize,
+	xin: OracleId,
+	yin: OracleId,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
+	F: TowerField,
+{
+	builder.push_namespace(name);
+	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
+	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
+
+	let zout = builder.add_linear_combination(
+		"zout",
+		log_size,
+		[(xin, F::ONE), (yin, F::ONE), (cin, F::ONE)].into_iter(),
+	)?;
+
+	u32add_common(builder, log_size, xin, yin, zout, cin, cout)?;
+
+	builder.pop_namespace();
+	Ok(zout)
+}
+
+pub fn u32add_commited<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
+	log_size: usize,
+	xin: OracleId,
+	yin: OracleId,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
+	F: TowerField,
+{
+	builder.push_namespace(name);
+	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
+	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
+	let zout = builder.add_committed("zout", log_size, BinaryField1b::TOWER_LEVEL);
+
+	u32add_common(builder, log_size, xin, yin, zout, cin, cout)?;
+
+	builder.assert_zero(
+		[xin, yin, cin, zout],
+		composition_poly!([xin, yin, cin, zout] = xin + yin + cin - zout),
 	);
 
 	builder.pop_namespace();

@@ -46,6 +46,10 @@ name = "u32add_with_lookup"
 path = "u32add_with_lookup.rs"
 
 
+[[example]]
+name = "sha256_circuit"
+path = "sha256_circuit.rs"
+
 [lints.clippy]
 needless_range_loop = "allow"
 
