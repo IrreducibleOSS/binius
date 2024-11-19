@@ -476,7 +476,7 @@ where
 						oracles[5 * i + 3] = b_cols[64 * idx2 + z + i];
 						oracles[5 * i + 4] = round_const[z + i]
 					}
-					builder.assert_zero(oracles.clone(), chi_iota.clone());
+					builder.assert_zero(oracles, chi_iota.clone());
 				}
 			} else {
 				let mut oracles = [OracleId::default(); 4 * 8];
@@ -487,7 +487,7 @@ where
 						oracles[4 * i + 2] = b_cols[64 * idx1 + z + i];
 						oracles[4 * i + 3] = b_cols[64 * idx2 + z + i];
 					}
-					builder.assert_zero(oracles.clone(), chi.clone());
+					builder.assert_zero(oracles, chi.clone());
 				}
 			}
 		}
