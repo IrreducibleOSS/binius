@@ -410,8 +410,8 @@ mod tests {
 	use super::*;
 	use crate::{
 		fiat_shamir::HasherChallenger,
-		poly_commit::BasicTensorPCS,
-		reed_solomon::reed_solomon::ReedSolomonCode,
+		merkle_tree_vcs::BinaryMerkleTreeProver,
+		poly_commit::FRIPCS,
 		transcript::{AdviceWriter, TranscriptWriter},
 	};
 	use binius_field::{
@@ -421,7 +421,9 @@ mod tests {
 		BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
 	};
 	use binius_hal::make_portable_backend;
+	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use binius_math::IsomorphicEvaluationDomainFactory;
+	use binius_ntt::NTTOptions;
 	use binius_utils::checked_arithmetics::checked_log_2;
 	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -462,12 +464,20 @@ mod tests {
 		let eval_query = backend.multilinear_query::<FE>(&eval_point).unwrap();
 		let eval = multilin.evaluate(&eval_query).unwrap();
 
-		let rs_code = ReedSolomonCode::new(5, 2, Default::default()).unwrap();
-		let n_test_queries = 10;
-		let inner_pcs = BasicTensorPCS::<U, FE, FE, FE, _, _, _>::new_using_groestl_merkle_tree(
-			3,
-			rs_code,
-			n_test_queries,
+		// let rs_code = ReedSolomonCode::new(5, 2, Default::default()).unwrap();
+		// let n_test_queries = 10;
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
+		let merkle_prover = BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(
+			GroestlDigestCompression::default(),
+		);
+		let inner_pcs = FRIPCS::<FE, FE, FE, PackedType<U, FE>, _, _, _>::new(
+			8,
+			2,
+			vec![2, 2, 2],
+			32,
+			merkle_prover,
+			domain_factory,
+			NTTOptions::default(),
 		)
 		.unwrap();
 
@@ -482,7 +492,7 @@ mod tests {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_challenger.transcript.observe(commitment.clone());
+		prover_challenger.transcript.observe(commitment);
 		let proof = pcs
 			.prove_evaluation(
 				&mut prover_challenger.transcript,
@@ -494,7 +504,7 @@ mod tests {
 			.unwrap();
 
 		let mut verifier_challenger = prover_challenger.into_verifier();
-		verifier_challenger.transcript.observe(commitment.clone());
+		verifier_challenger.transcript.observe(commitment);
 		pcs.verify_evaluation(
 			&mut verifier_challenger.transcript,
 			&commitment,

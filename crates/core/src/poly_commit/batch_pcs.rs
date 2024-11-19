@@ -278,14 +278,17 @@ mod tests {
 	use super::*;
 	use crate::{
 		fiat_shamir::HasherChallenger,
-		poly_commit::{tensor_pcs::find_proof_size_optimal_pcs, TensorPCS},
-		reed_solomon::reed_solomon::ReedSolomonCode,
+		merkle_tree_vcs::BinaryMerkleTreeProver,
+		poly_commit::FRIPCS,
 		transcript::{AdviceWriter, TranscriptWriter},
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
+		BinaryField8b,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
+	use binius_hash::{GroestlDigestCompression, GroestlHasher};
+	use binius_math::IsomorphicEvaluationDomainFactory;
 	use binius_ntt::NTTOptions;
 	use groestl_crypto::Groestl256;
 	use p3_util::log2_ceil_usize;
@@ -325,8 +328,20 @@ mod tests {
 			.map(|x| x.evaluate(&eval_query).unwrap())
 			.collect::<Vec<_>>();
 
-		let inner_pcs =
-			find_proof_size_optimal_pcs::<U, F, F, F, _>(100, total_new_vars, 1, 1, false).unwrap();
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
+		let merkle_prover = BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(
+			GroestlDigestCompression::default(),
+		);
+		let inner_pcs = FRIPCS::<F, BinaryField8b, F, PackedType<U, F>, _, _, _>::new(
+			total_new_vars,
+			2,
+			vec![3, 3, 3],
+			32,
+			merkle_prover,
+			domain_factory,
+			NTTOptions::default(),
+		)
+		.unwrap();
 
 		let backend = make_portable_backend();
 		let pcs = BatchPCS::new(inner_pcs, n_vars, m).unwrap();
@@ -338,7 +353,7 @@ mod tests {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::new(),
 		};
-		prover_proof.transcript.observe(commitment.clone());
+		prover_proof.transcript.observe(commitment);
 
 		let proof = pcs
 			.prove_evaluation(
@@ -351,7 +366,7 @@ mod tests {
 			.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment.clone());
+		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
 			&mut verifier_proof.transcript,
 			&commitment,
@@ -362,6 +377,7 @@ mod tests {
 		)
 		.unwrap();
 	}
+
 	#[test]
 	fn test_commit_prove_verify_success_32b() {
 		type U = OptimalUnderlier128b;
@@ -373,6 +389,7 @@ mod tests {
 		let n_vars = 6;
 		let n_polys = 6;
 		let m = log2_ceil_usize(n_polys);
+		let total_new_vars = n_vars + m;
 
 		let multilins = repeat_with(|| {
 			MultilinearExtension::from_values(
@@ -396,10 +413,20 @@ mod tests {
 			.map(|x| x.evaluate(&eval_query).unwrap())
 			.collect::<Vec<_>>();
 
-		let rs_code = ReedSolomonCode::<Packed>::new(4, 1, NTTOptions::default()).unwrap();
-		let inner_pcs =
-			TensorPCS::<U, F, F, F, FE, _, _, _>::new_using_groestl_merkle_tree(5, rs_code, 10)
-				.unwrap();
+		let domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField8b>::default();
+		let merkle_prover = BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(
+			GroestlDigestCompression::default(),
+		);
+		let inner_pcs = FRIPCS::<F, BinaryField8b, F, PackedType<U, FE>, _, _, _>::new(
+			total_new_vars,
+			2,
+			vec![2, 2, 2],
+			32,
+			merkle_prover,
+			domain_factory,
+			NTTOptions::default(),
+		)
+		.unwrap();
 
 		let backend = make_portable_backend();
 		let pcs = BatchPCS::new(inner_pcs, n_vars, m).unwrap();
@@ -412,7 +439,7 @@ mod tests {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_proof.transcript.observe(commitment.clone());
+		prover_proof.transcript.observe(commitment);
 		let proof = pcs
 			.prove_evaluation(
 				&mut prover_proof.transcript,
@@ -424,7 +451,7 @@ mod tests {
 			.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment.clone());
+		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
 			&mut verifier_proof.transcript,
 			&commitment,

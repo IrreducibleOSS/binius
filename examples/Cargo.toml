@@ -30,56 +30,21 @@ tracing.workspace = true
 sha2 = { version = "0.10.8", features = ["compress"] }
 
 [[example]]
-name = "bitwise_and_proof"
-path = "bitwise_and_proof.rs"
-
-[[example]]
-name = "groestl"
-path = "groestl.rs"
-
-[[example]]
 name = "groestl_circuit"
 path = "groestl_circuit.rs"
-
-[[example]]
-name = "keccakf"
-path = "keccakf.rs"
 
 [[example]]
 name = "keccakf_circuit"
 path = "keccakf_circuit.rs"
 
 [[example]]
-name = "lasso"
-path = "lasso.rs"
-
-[[example]]
 name = "u8mul"
 path = "u8mul.rs"
-
-[[example]]
-name = "u32add"
-path = "u32add.rs"
-
-[[example]]
-name = "u32add_lasso"
-path = "u32add_lasso.rs"
 
 [[example]]
 name = "u32add_with_lookup"
 path = "u32add_with_lookup.rs"
 
-[[example]]
-name = "u32fib"
-path = "u32fib.rs"
-
-[[example]]
-name = "vision32b"
-path = "vision32b.rs"
-
-[[example]]
-name = "sha256"
-path = "sha256.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"
