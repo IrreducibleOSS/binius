@@ -51,11 +51,13 @@ fn main() -> Result<()> {
 		.take(1 << log_n_permutations)
 		.collect::<Vec<_>>();
 
-	let _state_out = binius_circuits::keccakf::keccakf(
-		&mut builder,
-		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
-		Some(input_states),
-	)?;
+	let _state_out = tracing::info_span!("generating witness").in_scope(|| {
+		binius_circuits::keccakf::keccakf(
+			&mut builder,
+			log_n_permutations + LOG_ROWS_PER_PERMUTATION,
+			Some(input_states),
+		)
+	})?;
 
 	let witness = builder
 		.take_witness()

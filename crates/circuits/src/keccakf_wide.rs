@@ -12,9 +12,9 @@ use binius_field::{
 	square_transpose,
 	underlier::{Divisible, UnderlierType, WithUnderlier},
 	BinaryField128b, BinaryField1b, BinaryField64b, ExtensionField, Field, PackedBinaryField64x1b,
-	PackedDivisible, PackedField, TowerField,
+	PackedDivisible, PackedExtension, PackedField, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_math::{CompositionPolyOS, Error as MathError, Error};
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use itertools::chain;
 use lazy_static::lazy_static;
@@ -458,29 +458,36 @@ where
 	});
 
 	// Constraints for χ and ι steps
+	let chi = Chi::<U, FBase>::new()?;
+	let chi_iota = ChiIota::<U, FBase>::new()?;
 	#[allow(clippy::needless_range_loop)]
-	for z in 0..64 {
-		for y in 0..5 {
-			for x in 0..5 {
-				let idx0 = (x + 5 * y) * 64 + z;
-				let idx1 = ((x + 1) % 5 + 5 * y) * 64 + z;
-				let idx2 = ((x + 2) % 5 + 5 * y) * 64 + z;
-				if x == 0 && y == 0 {
-					builder.assert_zero(
-						[
-							state_out[idx0],
-							b_cols[idx0],
-							b_cols[idx1],
-							b_cols[idx2],
-							round_const[z],
-						],
-						composition_poly!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2)),
-					);
-				} else {
-					builder.assert_zero(
-						[state_out[idx0], b_cols[idx0], b_cols[idx1], b_cols[idx2]],
-						composition_poly!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2)),
-					);
+	for y in 0..5 {
+		for x in 0..5 {
+			let idx0 = x + 5 * y;
+			let idx1 = (x + 1) % 5 + 5 * y;
+			let idx2 = (x + 2) % 5 + 5 * y;
+			if x == 0 && y == 0 {
+				let mut oracles = [OracleId::default(); 5 * 8];
+				for z in (0..64).step_by(8) {
+					for i in 0..8 {
+						oracles[5 * i] = state_out[64 * idx0 + z + i];
+						oracles[5 * i + 1] = b_cols[64 * idx0 + z + i];
+						oracles[5 * i + 2] = b_cols[64 * idx1 + z + i];
+						oracles[5 * i + 3] = b_cols[64 * idx2 + z + i];
+						oracles[5 * i + 4] = round_const[z + i]
+					}
+					builder.assert_zero(oracles.clone(), chi_iota.clone());
+				}
+			} else {
+				let mut oracles = [OracleId::default(); 4 * 8];
+				for z in (0..64).step_by(8) {
+					for i in 0..8 {
+						oracles[4 * i] = state_out[64 * idx0 + z + i];
+						oracles[4 * i + 1] = b_cols[64 * idx0 + z + i];
+						oracles[4 * i + 2] = b_cols[64 * idx1 + z + i];
+						oracles[4 * i + 3] = b_cols[64 * idx2 + z + i];
+					}
+					builder.assert_zero(oracles.clone(), chi.clone());
 				}
 			}
 		}
@@ -640,6 +647,138 @@ where
 		*subval = val;
 	}
 	val_repeated
+}
+
+#[derive(Debug, Clone)]
+struct Chi<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+{
+	// Pack with 8 basis elements because FBase should be at least degree 8
+	bases: [PackedType<U, FBase>; 8],
+}
+
+impl<U, FBase> Chi<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+{
+	fn new() -> Result<Self> {
+		let bases = array::try_from_fn(|i| <FBase as ExtensionField<B1>>::basis(i))?;
+		Ok(Self {
+			bases: bases.map(PackedField::broadcast),
+		})
+	}
+}
+
+impl<U, FBase, F, P> CompositionPolyOS<P> for Chi<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+	F: TowerField + ExtensionField<FBase>,
+	P: PackedField<Scalar = F> + WithUnderlier<Underlier = U>,
+{
+	fn n_vars(&self) -> usize {
+		4 * 8
+	}
+
+	fn degree(&self) -> usize {
+		2
+	}
+
+	fn evaluate(&self, query: &[P]) -> std::result::Result<P, MathError> {
+		if query.len() != 4 * 8 {
+			return Err(Error::IncorrectQuerySize { expected: 4 * 64 });
+		}
+
+		let one = P::one();
+		let ret = self
+			.bases
+			.iter()
+			.copied()
+			.enumerate()
+			.map(|(z, basis)| {
+				let [s, b0, b1, b2] = query[z * 4..(z + 1) * 4]
+					.try_into()
+					.expect("query length is 4 * 8; z is less than 8");
+				let val = s - (b0 + (one - b1) * b2);
+				PackedExtension::cast_ext(PackedExtension::cast_base(val) * basis)
+			})
+			.sum();
+
+		Ok(ret)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		FBase::TOWER_LEVEL
+	}
+}
+
+#[derive(Debug, Clone)]
+struct ChiIota<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+{
+	// Pack with 8 basis elements because FBase should be at least degree 8
+	bases: [PackedType<U, FBase>; 8],
+}
+
+impl<U, FBase> ChiIota<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+{
+	fn new() -> Result<Self> {
+		let bases = array::try_from_fn(|i| <FBase as ExtensionField<B1>>::basis(i))?;
+		Ok(Self {
+			bases: bases.map(PackedField::broadcast),
+		})
+	}
+}
+
+impl<U, FBase, F, P> CompositionPolyOS<P> for ChiIota<U, FBase>
+where
+	U: UnderlierType + PackScalar<FBase>,
+	FBase: TowerField,
+	F: TowerField + ExtensionField<FBase>,
+	P: PackedField<Scalar = F> + WithUnderlier<Underlier = U>,
+{
+	fn n_vars(&self) -> usize {
+		5 * 8
+	}
+
+	fn degree(&self) -> usize {
+		2
+	}
+
+	fn evaluate(&self, query: &[P]) -> std::result::Result<P, MathError> {
+		if query.len() != 5 * 8 {
+			return Err(Error::IncorrectQuerySize { expected: 4 * 64 });
+		}
+
+		let one = P::one();
+		let ret = self
+			.bases
+			.iter()
+			.copied()
+			.enumerate()
+			.map(|(z, basis)| {
+				let [s, b0, b1, b2, rc] = query[z * 5..(z + 1) * 5]
+					.try_into()
+					.expect("query length is 5 * 8; z is less than 8");
+				let val = s - (rc + b0 + (one - b1) * b2);
+				PackedExtension::cast_ext(PackedExtension::cast_base(val) * basis)
+			})
+			.sum();
+
+		Ok(ret)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		FBase::TOWER_LEVEL
+	}
 }
 
 mod tinykeccak {
