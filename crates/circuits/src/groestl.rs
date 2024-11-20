@@ -1,23 +1,326 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::builder::ConstraintSystemBuilder;
-use anyhow::Result;
-use binius_core::{
-	oracle::OracleId, transparent::constant::Constant, witness::MultilinearExtensionIndex,
+use crate::{
+	builder::ConstraintSystemBuilder, helpers::make_underliers, transparent,
+	unconstrained::unconstrained,
 };
+use anyhow::Result;
+use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
-	underlier::{Divisible, UnderlierType, WithUnderlier},
-	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, Field,
-	PackedAESBinaryField64x8b, PackedField, PackedFieldIndexable, TowerField,
+	underlier::WithUnderlier,
+	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, Field, PackedField, TowerField,
 };
-use binius_hash::Groestl256Core;
 use binius_math::CompositionPolyOS;
-use bytemuck::{must_cast_slice_mut, Pod};
-use itertools::chain;
-use rand::thread_rng;
-use std::{array, fmt::Debug, iter, slice};
+use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
+use rayon::prelude::*;
+use std::{array, fmt::Debug, iter};
+
+pub fn groestl_p_permutation<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	log_size: usize,
+) -> Result<[OracleId; STATE_SIZE]>
+where
+	U: PackScalar<F>
+		+ PackScalar<FBase>
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<AESTowerField8b>
+		+ Pod,
+	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<AESTowerField8b>,
+	PackedType<U, F>: Pod,
+{
+	let p_in = array::try_from_fn(|i| {
+		unconstrained::<U, F, FBase, AESTowerField8b>(builder, format!("p_in[{i}]"), log_size)
+	})?;
+	let multiples_16: [_; 8] = array::from_fn(|i| {
+		transparent::constant(
+			builder,
+			format!("multiples_16[{i}]"),
+			log_size,
+			AESTowerField8b::new(i as u8 * 0x10),
+		)
+		.unwrap()
+	});
+
+	let round_consts = permutation_round_consts(builder, log_size, 0, multiples_16, p_in)?;
+	let mut output =
+		groestl_p_permutation_round(builder, "round[0]", log_size, round_consts, p_in)?;
+	for round_index in 1..N_ROUNDS {
+		let round_consts =
+			permutation_round_consts(builder, log_size, round_index, multiples_16, output)?;
+		output = groestl_p_permutation_round(
+			builder,
+			format!("rounds[{round_index}]"),
+			log_size,
+			round_consts,
+			output,
+		)?;
+	}
+	let p_out = output;
+
+	#[cfg(debug_assertions)]
+	if let Some(witness) = builder.witness() {
+		use binius_field::PackedAESBinaryField64x8b;
+		use binius_hash::Groestl256Core;
+
+		let input_polys = p_in.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+		let inputs = input_polys
+			.iter()
+			.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
+			.map(must_cast_slice::<_, AESTowerField8b>)
+			.collect::<Vec<_>>();
+
+		let output_polys = p_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+		let outputs = output_polys
+			.iter()
+			.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
+			.map(must_cast_slice::<_, AESTowerField8b>)
+			.collect::<Vec<_>>();
+
+		for z in 0..1 << log_size {
+			assert_eq!(
+				Groestl256Core.permutation_p(PackedAESBinaryField64x8b::from_fn(|i| inputs[i][z])),
+				PackedAESBinaryField64x8b::from_fn(|i| outputs[i][z])
+			);
+		}
+	}
+
+	Ok(p_out)
+}
+
+#[allow(clippy::needless_range_loop)]
+fn groestl_p_permutation_round<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	name: impl ToString,
+	log_size: usize,
+	round_consts: [OracleId; 8],
+	input: [OracleId; STATE_SIZE],
+) -> Result<[OracleId; STATE_SIZE]>
+where
+	U: PackScalar<F>
+		+ PackScalar<FBase>
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<AESTowerField8b>
+		+ Pod,
+	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<AESTowerField8b>,
+{
+	builder.push_namespace(name);
+
+	let p_sub_bytes_out: [OracleId; STATE_SIZE] = array::try_from_fn(|i| {
+		groestl_p_permutation_sbox(
+			builder,
+			format!("s_box[{i}]"),
+			log_size,
+			if i % 8 == 0 {
+				round_consts[i / 8]
+			} else {
+				input[i]
+			},
+		)
+	})?;
+
+	// Shift and mix bytes using committed columns
+	let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
+
+	if let Some(witness) = builder.witness() {
+		let mut output_witness = output.map(|_| make_underliers::<U, AESTowerField8b>(log_size));
+		{
+			let p_sub_bytes_out_poly =
+				p_sub_bytes_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+			let p_sub_bytes_out = p_sub_bytes_out_poly
+				.iter()
+				.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
+				.collect::<Vec<_>>();
+
+			let output = output_witness
+				.each_mut()
+				.map(|col| must_cast_slice_mut::<_, AESTowerField8b>(col));
+
+			let two = AESTowerField8b::new(2);
+			for z in 0..1 << log_size {
+				for j in 0..8 {
+					let a_j: [_; 8] = array::from_fn(|i| {
+						let shift_p = ((i + j) % 8) * 8 + i; // ShiftBytes & MixBytes
+						let x = p_sub_bytes_out[shift_p];
+						let x_as_packed = PackedType::<U, AESTowerField8b>::from_underliers_ref(x);
+						get_packed_slice(x_as_packed, z)
+					});
+					for i in 0..8 {
+						let ij = j * 8 + i;
+						let a_i: [AESTowerField8b; 8] = array::from_fn(|k| a_j[(i + k) % 8]);
+						// Here we are using an optimized matrix multiplication, as documented in
+						// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
+						let b_ij = two
+							* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
+								+ a_i[0] + a_i[1] + a_i[2]
+								+ a_i[5] + a_i[7]) + a_i[2]
+							+ a_i[4] + a_i[5] + a_i[6]
+							+ a_i[7];
+
+						output[ij][z] = b_ij;
+					}
+				}
+			}
+		}
+		witness.set_owned::<AESTowerField8b, _>(std::iter::zip(output, output_witness))?;
+	}
+
+	for ij in 0..STATE_SIZE {
+		let i = ij / 8;
+		let j = ij % 8;
+
+		let mut mix_shift_oracles = [OracleId::default(); 9];
+		mix_shift_oracles[0] = output[ij];
+		for k in 0..8 {
+			let j_prime = (j + k) % 8;
+			let i_prime = (i + j_prime) % 8;
+			mix_shift_oracles[k + 1] = p_sub_bytes_out[i_prime * 8 + j_prime];
+		}
+		// This is not required if the columns are virtual
+		builder.assert_zero(mix_shift_oracles, MixColumn::<AESTowerField8b>::default());
+	}
+
+	builder.pop_namespace();
+	Ok(output)
+}
+
+fn groestl_p_permutation_sbox<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	name: impl ToString,
+	log_size: usize,
+	input: OracleId,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: PackScalar<F>
+		+ PackScalar<FBase>
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<AESTowerField8b>
+		+ Pod,
+	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<AESTowerField8b>,
+{
+	builder.push_namespace(name);
+	let inv_bits: [OracleId; 8] =
+		builder.add_committed_multiple("inv_bits", log_size, BinaryField1b::TOWER_LEVEL);
+
+	let inv = builder.add_linear_combination(
+		"inv",
+		log_size,
+		(0..8).map(|b| {
+			let basis = <AESTowerField8b as ExtensionField<BinaryField1b>>::basis(b)
+				.expect("index is less than extension degree");
+			(inv_bits[b], basis.into())
+		}),
+	)?;
+
+	let output = builder.add_linear_combination_with_offset(
+		"output",
+		log_size,
+		SBOX_VEC.into(),
+		(0..8).map(|b| (inv_bits[b], SBOX_MATRIX[b].into())),
+	)?;
+
+	if let Some(witness) = builder.witness() {
+		let mut inv_bits_witness: [_; 8] =
+			inv_bits.map(|_| make_underliers::<U, BinaryField1b>(log_size));
+		let mut inv_witness = make_underliers::<U, AESTowerField8b>(log_size);
+		let mut output_witness = make_underliers::<U, AESTowerField8b>(log_size);
+		{
+			let input_poly = witness.get::<AESTowerField8b>(input)?;
+			let input = must_cast_slice::<_, AESTowerField8b>(WithUnderlier::to_underliers_ref(
+				input_poly.evals(),
+			));
+			let inv_bits = inv_bits_witness
+				.each_mut()
+				.map(|bit| PackedType::<U, BinaryField1b>::from_underliers_ref_mut(bit));
+			let inv = must_cast_slice_mut::<_, AESTowerField8b>(&mut inv_witness);
+			let output = must_cast_slice_mut::<_, AESTowerField8b>(&mut output_witness);
+
+			for z in 0..(1 << log_size) {
+				inv[z] = input[z].invert_or_zero();
+				output[z] = s_box(input[z]);
+				let inv_bits_bases = ExtensionField::<BinaryField1b>::iter_bases(&inv[z]);
+				for (b, bit) in inv_bits_bases.enumerate() {
+					set_packed_slice(inv_bits[b], z, bit);
+				}
+			}
+		}
+		witness.set_owned::<BinaryField1b, _>(std::iter::zip(inv_bits, inv_bits_witness))?;
+		witness.set_owned::<AESTowerField8b, _>([(inv, inv_witness), (output, output_witness)])?;
+	}
+
+	builder.assert_zero([input, inv], SBoxConstraint);
+	builder.pop_namespace();
+	Ok(output)
+}
+
+// TODO: Get rid of round constants and bake them into the constraints
+fn permutation_round_consts<U, F, FBase>(
+	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	log_size: usize,
+	round_index: usize,
+	multiples_16: [OracleId; 8],
+	input: [OracleId; STATE_SIZE],
+) -> Result<[OracleId; 8], anyhow::Error>
+where
+	U: PackScalar<F>
+		+ PackScalar<FBase>
+		+ PackScalar<BinaryField1b>
+		+ PackScalar<AESTowerField8b>
+		+ Pod,
+	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<AESTowerField8b>,
+{
+	let round = transparent::constant(
+		builder,
+		format!("round_index[{round_index}]"),
+		log_size,
+		AESTowerField8b::new(round_index as u8),
+	)?;
+
+	let round_consts: [OracleId; 8] = array::try_from_fn(|i| {
+		builder.add_linear_combination(
+			format!("round_consts[{i}]"),
+			log_size,
+			[
+				(input[8 * i], F::ONE),
+				(round, F::ONE),
+				(multiples_16[i], F::ONE),
+			],
+		)
+	})?;
+	if let Some(witness) = builder.witness() {
+		let mut round_consts_witness: [_; 8] =
+			round_consts.map(|_| make_underliers::<U, AESTowerField8b>(log_size));
+		{
+			let input = input.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+			let round = witness.get::<AESTowerField8b>(round)?;
+			let multiples_16 = multiples_16.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+
+			round_consts_witness
+				.par_iter_mut()
+				.enumerate()
+				.for_each(|(i, round_consts)| {
+					(
+						PackedType::<U, AESTowerField8b>::from_underliers_ref_mut(round_consts),
+						input[8 * i].evals(),
+						round.evals(),
+						multiples_16[i].evals(),
+					)
+						.into_par_iter()
+						.for_each(|(round_const, input, round, multiple16)| {
+							*round_const = (*input) + (*round) + (*multiple16);
+						});
+				});
+		}
+		witness
+			.set_owned::<AESTowerField8b, _>(std::iter::zip(round_consts, round_consts_witness))?;
+	}
+	Ok(round_consts)
+}
 
 /// Number of rounds in a Grøstl-256 compression
 const N_ROUNDS: usize = 10;
@@ -48,283 +351,6 @@ const MIX_BYTES_VEC: [AESTowerField8b; 8] = [
 	AESTowerField8b::new(0x05),
 	AESTowerField8b::new(0x07),
 ];
-
-// TODO: Get rid of round constants and bake them into the constraints
-#[derive(Debug, Clone)]
-struct PermutationRoundGadget {
-	// Internal oracles (some may be duplicated from input)
-	with_round_consts: [OracleId; STATE_SIZE],
-
-	// Internal gadgets is actually a Vec of fixed length STATE_SIZE
-	/// S-box gadgets for AddRoundConstant & SubBytes
-	p_sub_bytes: Vec<SBoxTraceGadget>,
-
-	// Exported oracles
-	output: [OracleId; STATE_SIZE],
-}
-
-impl PermutationRoundGadget {
-	pub fn new<U, F, FBase, F8b>(
-		log_size: usize,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-		round: OracleId,
-		multiples_16: &[OracleId],
-		input: [OracleId; STATE_SIZE],
-	) -> Result<Self>
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		let with_round_consts: [OracleId; STATE_SIZE] = array::from_fn(|i| {
-			if i % 8 == 0 {
-				let col_idx = i / 8;
-				builder
-					.add_linear_combination(
-						format!("with_round_consts[{i}]"),
-						log_size,
-						[
-							(input[i], F::ONE),
-							(round, F::ONE),
-							(multiples_16[col_idx], F::ONE),
-						],
-					)
-					.unwrap()
-			} else {
-				input[i]
-			}
-		});
-
-		let p_sub_bytes = (0..STATE_SIZE)
-			.map(|i| {
-				builder.push_namespace(format!("p_sub_bytes[{i}]"));
-				let sbox = SBoxTraceGadget::new::<U, F, FBase, F8b>(
-					log_size,
-					builder,
-					with_round_consts[i],
-				);
-				builder.pop_namespace();
-				sbox
-			})
-			.collect::<Result<Vec<_>>>()?;
-
-		// Shift and mix bytes using committed columns
-		let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
-
-		Ok(Self {
-			with_round_consts,
-			p_sub_bytes,
-			output,
-		})
-	}
-
-	pub fn add_constraints<U, F, FBase, F8b>(
-		&self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-	) where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		self.p_sub_bytes
-			.iter()
-			.for_each(|sub_bytes| sub_bytes.add_constraints::<U, F, FBase, F8b>(builder));
-
-		self.p_sub_bytes.iter().enumerate().for_each(|(ij, _)| {
-			let i = ij / 8;
-			let j = ij % 8;
-
-			let mut mix_shift_oracles = [OracleId::default(); 9];
-			mix_shift_oracles[0] = self.output[ij];
-			for k in 0..8 {
-				let j_prime = (j + k) % 8;
-				let i_prime = (i + j_prime) % 8;
-				mix_shift_oracles[k + 1] = self.p_sub_bytes[i_prime * 8 + j_prime].output;
-			}
-
-			// This is not required if the columns are virtual
-			builder.assert_zero(mix_shift_oracles, MixColumn::<F8b>::default());
-		});
-	}
-}
-
-#[derive(Debug, Default, Clone)]
-struct SBoxTraceGadget {
-	// Imported oracles
-	input: OracleId,
-
-	// Exported oracles
-	/// The S-box output, defined as a linear combination of `p_sub_bytes_inv_bits`.
-	output: OracleId,
-
-	// Internal oracles
-	/// Bits of the S-box inverse in the SubBytes step, decomposed using the AES field basis.
-	inv_bits: [OracleId; 8],
-	/// The S-box inverse in the SubBytes step, defined as a linear combination of
-	/// `p_sub_bytes_inv_bits`.
-	inverse: OracleId,
-}
-
-impl SBoxTraceGadget {
-	pub fn new<U, F, FBase, F8b>(
-		log_size: usize,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-		input: OracleId,
-	) -> Result<Self>
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		let inv_bits =
-			builder.add_committed_multiple("inv_bits", log_size, BinaryField1b::TOWER_LEVEL);
-		let inverse = builder.add_linear_combination(
-			"inverse",
-			log_size,
-			(0..8).map(|b| {
-				let basis = F8b::from(
-					<AESTowerField8b as ExtensionField<BinaryField1b>>::basis(b)
-						.expect("index is less than extension degree"),
-				);
-				(inv_bits[b], basis.into())
-			}),
-		)?;
-		let output = builder.add_linear_combination_with_offset(
-			"output",
-			log_size,
-			F8b::from(SBOX_VEC).into(),
-			(0..8).map(|b| (inv_bits[b], F8b::from(SBOX_MATRIX[b]).into())),
-		)?;
-
-		Ok(Self {
-			input,
-			output,
-			inv_bits,
-			inverse,
-		})
-	}
-
-	pub fn add_constraints<U, F, FBase, F8b>(
-		&self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-	) where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		builder.assert_zero([self.input, self.inverse], SBoxConstraint);
-	}
-}
-
-struct TraceOracle {
-	// Public columns
-	/// permutation input state
-	p_in: [OracleId; STATE_SIZE],
-	/// permutation output state copied from last rounds output for simplicity
-	p_out: [OracleId; STATE_SIZE],
-	// round indexes, is actually a vec of length N_ROUNDS
-	round_idxs: Vec<OracleId>,
-	// i * 0x10 from i = 0, ..., 7
-	multiples_16: Vec<OracleId>,
-	rounds: Vec<PermutationRoundGadget>,
-}
-
-impl TraceOracle {
-	fn new<U, F, FBase, F8b>(
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-		log_size: usize,
-	) -> Result<Self>
-	where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		let p_in = builder.add_committed_multiple::<STATE_SIZE>(
-			"p_in",
-			log_size,
-			BinaryField8b::TOWER_LEVEL,
-		);
-
-		let mut round_idxs = Vec::with_capacity(N_ROUNDS);
-		for i in 0..N_ROUNDS {
-			let val: F8b = AESTowerField8b::new(i as u8).into();
-			let val: F = val.into();
-			round_idxs.push(builder.add_transparent(
-				format!("round_idxs[{i}]"),
-				Constant {
-					n_vars: log_size,
-					value: val,
-				},
-			)?);
-		}
-
-		let mut multiples_16 = Vec::with_capacity(8);
-		for i in 0..8 {
-			let val: F8b = AESTowerField8b::new(i as u8 * 0x10).into();
-			let val: F = val.into();
-			multiples_16.push(builder.add_transparent(
-				format!("multiples_16[{i}]"),
-				Constant {
-					n_vars: log_size,
-					value: val,
-				},
-			)?);
-		}
-
-		let mut rounds: Vec<PermutationRoundGadget> = Vec::with_capacity(N_ROUNDS);
-
-		builder.push_namespace("rounds[0]");
-		rounds.push(PermutationRoundGadget::new::<U, F, FBase, F8b>(
-			log_size,
-			builder,
-			round_idxs[0],
-			&multiples_16,
-			p_in,
-		)?);
-		builder.pop_namespace();
-
-		for round in 1..N_ROUNDS {
-			builder.push_namespace(format!("rounds[{round}]"));
-			rounds.push(PermutationRoundGadget::new::<U, F, FBase, F8b>(
-				log_size,
-				builder,
-				round_idxs[round],
-				&multiples_16,
-				rounds[round - 1].output,
-			)?);
-			builder.pop_namespace();
-		}
-
-		let p_out = rounds[N_ROUNDS - 1].output;
-
-		Ok(TraceOracle {
-			p_in,
-			p_out,
-			round_idxs,
-			multiples_16,
-			rounds,
-		})
-	}
-
-	pub fn add_constraints<U, F, FBase, F8b>(
-		&self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-	) where
-		U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b>,
-		F: TowerField + ExtensionField<FBase> + ExtensionField<F8b>,
-		FBase: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		self.rounds
-			.iter()
-			.for_each(|round| round.add_constraints::<U, F, FBase, F8b>(builder));
-	}
-}
 
 #[derive(Debug, Clone)]
 struct MixColumn<F8b: Clone> {
@@ -413,130 +439,6 @@ where
 	}
 }
 
-struct PermutationRoundWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	with_round_consts: [Box<[U]>; STATE_SIZE],
-	p_sub_bytes: [SBoxGadgetWitness<U>; STATE_SIZE],
-	output: [Box<[U]>; STATE_SIZE],
-}
-
-impl<U> PermutationRoundWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	fn update_index<F, F8b>(
-		&self,
-		index: &mut MultilinearExtensionIndex<U, F>,
-		gadget: &PermutationRoundGadget,
-	) -> Result<()>
-	where
-		U: PackScalar<F> + PackScalar<F8b>,
-		F: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		index.set_owned::<F8b, Box<[U]>>(iter::zip(
-			chain!(gadget
-				.with_round_consts
-				.iter()
-				.enumerate()
-				.filter(|(i, _)| { i % 8 == 0 })
-				.map(|(_, &o)| o),),
-			chain!(self
-				.with_round_consts
-				.iter()
-				.enumerate()
-				.filter(|(i, _)| { i % 8 == 0 })
-				.map(|(_, o)| o.clone())),
-		))?;
-
-		// Update sbox here
-		for (p_sub_bytes, p_sub_bytes_witness) in
-			iter::zip(gadget.p_sub_bytes.clone(), self.p_sub_bytes.iter())
-		{
-			p_sub_bytes_witness.update_index::<F, F8b>(index, &p_sub_bytes)?;
-		}
-
-		index.set_owned::<F8b, _>(iter::zip(gadget.output, self.output.clone()))?;
-		Ok(())
-	}
-}
-
-struct SBoxGadgetWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	output: Box<[U]>,
-	inv_bits: [Box<[U]>; 8],
-	inverse: Box<[U]>,
-}
-
-impl<U> SBoxGadgetWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	fn update_index<F, F8b>(
-		&self,
-		index: &mut MultilinearExtensionIndex<U, F>,
-		gadget: &SBoxTraceGadget,
-	) -> Result<()>
-	where
-		U: PackScalar<F> + PackScalar<F8b>,
-		F: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		index.set_owned::<BinaryField1b, _>(iter::zip(gadget.inv_bits, self.inv_bits.clone()))?;
-		index.set_owned::<F8b, _>(iter::zip(
-			[gadget.inverse, gadget.output],
-			[self.inverse.clone(), self.output.clone()],
-		))?;
-		Ok(())
-	}
-}
-
-struct TraceWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	p_in: [Box<[U]>; STATE_SIZE],
-	_p_out: [Box<[U]>; STATE_SIZE],
-	round_idxs: [Box<[U]>; N_ROUNDS],
-	multiples_16: [Box<[U]>; 8],
-	rounds: [PermutationRoundWitness<U>; N_ROUNDS],
-}
-
-impl<U> TraceWitness<U>
-where
-	U: UnderlierType + PackScalar<BinaryField1b>,
-{
-	fn update_index<F, F8b>(
-		&self,
-		trace_oracle: &TraceOracle,
-		witness: &mut MultilinearExtensionIndex<U, F>,
-	) -> Result<()>
-	where
-		U: PackScalar<F> + PackScalar<F8b>,
-		F: TowerField + ExtensionField<F8b>,
-		F8b: TowerField + From<AESTowerField8b>,
-	{
-		witness.set_owned::<F8b, _>(iter::zip(
-			chain!(
-				trace_oracle.p_in,
-				trace_oracle.round_idxs.clone(),
-				trace_oracle.multiples_16.clone(),
-			),
-			chain!(self.p_in.clone(), self.round_idxs.clone(), self.multiples_16.clone(),),
-		))?;
-		for (permutation_round, permutation_round_witness) in
-			iter::zip(trace_oracle.rounds.clone(), self.rounds.iter())
-		{
-			permutation_round_witness.update_index::<F, F8b>(witness, &permutation_round)?;
-		}
-		Ok(())
-	}
-}
-
 fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 	#[rustfmt::skip]
 	const S_BOX: [u8; 256] = [
@@ -575,239 +477,4 @@ fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 	];
 	let idx = u8::from(x) as usize;
 	AESTowerField8b::from(S_BOX[idx])
-}
-
-impl<U> TraceWitness<U>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Divisible<u8>,
-{
-	pub fn generate_trace(log_size: usize) -> Self {
-		let build_trace_column_1b =
-			|| vec![U::default(); 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH)];
-		let build_trace_column_8b =
-			|| vec![U::default(); 1 << (log_size - <PackedType<U, AESTowerField8b>>::LOG_WIDTH)];
-
-		let mut p_in_vec: [Vec<U>; STATE_SIZE] = array::from_fn(|_| build_trace_column_8b());
-		let mut round_idxs_vec: [Vec<U>; N_ROUNDS] = array::from_fn(|_| build_trace_column_8b());
-		let mut multiples_16_vec: [Vec<U>; 8] = array::from_fn(|_| build_trace_column_8b());
-		let mut round_outs_vec: [[Vec<U>; STATE_SIZE]; N_ROUNDS] =
-			array::from_fn(|_| array::from_fn(|_| build_trace_column_8b()));
-		let mut sub_bytes_out_vec: [[Vec<U>; STATE_SIZE]; N_ROUNDS] =
-			array::from_fn(|_| array::from_fn(|_| build_trace_column_8b()));
-		let mut sub_bytes_inv_vec: [[Vec<U>; STATE_SIZE]; N_ROUNDS] =
-			array::from_fn(|_| array::from_fn(|_| build_trace_column_8b()));
-		let mut sub_bytes_inv_bits_vec: [[[Vec<U>; 8]; STATE_SIZE]; N_ROUNDS] =
-			array::from_fn(|_| array::from_fn(|_| array::from_fn(|_| build_trace_column_1b())));
-		let mut with_round_consts_vec: [[Vec<U>; STATE_SIZE]; N_ROUNDS] =
-			array::from_fn(|_| array::from_fn(|_| build_trace_column_8b()));
-
-		#[allow(clippy::ptr_arg)]
-		fn cast_8b_col<U: UnderlierType + Pod>(col: &mut Vec<U>) -> &mut [AESTowerField8b] {
-			must_cast_slice_mut::<_, AESTowerField8b>(col)
-		}
-
-		fn cast_8b_cols<U: UnderlierType + Pod, const N: usize>(
-			cols: &mut [Vec<U>; N],
-		) -> [&mut [AESTowerField8b]; N] {
-			cols.each_mut().map(cast_8b_col) // |col| PackedFieldIndexable::unpack_scalars_mut(col.as_mut_slice()))
-		}
-
-		let p_in = cast_8b_cols(&mut p_in_vec);
-		let round_idxs = cast_8b_cols(&mut round_idxs_vec);
-		let multiples_16 = cast_8b_cols(&mut multiples_16_vec);
-
-		let mut rng = thread_rng();
-		let groestl_core = Groestl256Core;
-
-		for z in 0..1 << log_size {
-			// Randomly generate the initial compression input
-			let input = PackedAESBinaryField64x8b::random(&mut rng);
-			let output = groestl_core.permutation_p(input);
-
-			#[allow(clippy::needless_range_loop)]
-			for i in 0..8 {
-				multiples_16[i][z] = AESTowerField8b::new(i as u8 * 0x10);
-			}
-
-			// Assign the compression input
-			for ij in 0..STATE_SIZE {
-				let input_elems = PackedFieldIndexable::unpack_scalars(slice::from_ref(&input));
-				p_in[ij][z] = input_elems[ij];
-			}
-
-			let mut prev_round_out = input;
-
-			for r in 0..N_ROUNDS {
-				let with_round_consts = cast_8b_cols(&mut with_round_consts_vec[r]);
-				let round_out = cast_8b_cols(&mut round_outs_vec[r]);
-
-				round_idxs[r][z] = AESTowerField8b::new(r as u8);
-
-				// AddRoundConstant & SubBytes
-				#[allow(clippy::needless_range_loop)]
-				for i in 0..8 {
-					for j in 0..8 {
-						let ij = i * 8 + j;
-						let p_sub_bytes_inv = cast_8b_col(&mut sub_bytes_inv_vec[r][ij]);
-						let p_sub_bytes_out = cast_8b_col(&mut sub_bytes_out_vec[r][ij]);
-
-						let round_in =
-							PackedFieldIndexable::unpack_scalars(slice::from_ref(&prev_round_out))
-								[ij];
-
-						let with_rc = if j == 0 {
-							round_in + round_idxs[r][z] + multiples_16[i][z]
-						} else {
-							round_in
-						};
-
-						with_round_consts[ij][z] = with_rc;
-
-						let p_sbox_in: AESTowerField8b = with_rc;
-
-						p_sub_bytes_inv[z] = p_sbox_in.invert_or_zero();
-
-						let inv_bits =
-							<AESTowerField8b as ExtensionField<BinaryField1b>>::iter_bases(
-								&p_sub_bytes_inv[z],
-							);
-						for (b, bit) in inv_bits.enumerate() {
-							let p_sub_bytes_inv_bit =
-								sub_bytes_inv_bits_vec[r][ij][b].as_mut_slice();
-
-							let as_packed = PackedType::<U, BinaryField1b>::from_underliers_ref_mut(
-								p_sub_bytes_inv_bit,
-							);
-							set_packed_slice(as_packed, z, bit);
-						}
-
-						p_sub_bytes_out[z] = s_box(p_sbox_in);
-					}
-				}
-
-				// ShiftBytes & MixBytes
-				fn shift_p_func(j: usize, i: usize) -> usize {
-					let i_prime = (i + j) % 8;
-					i_prime * 8 + j
-				}
-
-				fn get_a_j<U>(
-					p_sub_bytes: &[Vec<U>; STATE_SIZE],
-					z: usize,
-					j: usize,
-				) -> [AESTowerField8b; 8]
-				where
-					U: UnderlierType + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b>,
-					PackedType<U, AESTowerField8b>: PackedFieldIndexable,
-				{
-					array::from_fn(|i| {
-						let x = p_sub_bytes[shift_p_func(i, j)].as_slice();
-						let x_as_packed = PackedType::<U, AESTowerField8b>::from_underliers_ref(x);
-						get_packed_slice(x_as_packed, z)
-					})
-				}
-				let two = AESTowerField8b::new(2);
-				for j in 0..8 {
-					let a_j = get_a_j::<U>(&sub_bytes_out_vec[r], z, j);
-					for i in 0..8 {
-						let prev_round_out_slice = PackedFieldIndexable::unpack_scalars_mut(
-							slice::from_mut(&mut prev_round_out),
-						);
-						let ij = j * 8 + i;
-						let a_i: [AESTowerField8b; 8] = array::from_fn(|k| a_j[(i + k) % 8]);
-						// Here we are using an optimized matrix multiplication, as documented in
-						// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
-						let b_ij = two
-							* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
-								+ a_i[0] + a_i[1] + a_i[2]
-								+ a_i[5] + a_i[7]) + a_i[2]
-							+ a_i[4] + a_i[5] + a_i[6]
-							+ a_i[7];
-						round_out[ij][z] = b_ij;
-						prev_round_out_slice[ij] = b_ij;
-					}
-				}
-			}
-
-			// Assert correct output
-			for ij in 0..STATE_SIZE {
-				let output_elems = PackedFieldIndexable::unpack_scalars(slice::from_ref(&output));
-				let perm_out = cast_8b_cols(&mut round_outs_vec[N_ROUNDS - 1]);
-				assert_eq!(perm_out[ij][z], output_elems[ij]);
-			}
-		}
-
-		fn vec_to_arc<U: UnderlierType, const N: usize>(cols: [Vec<U>; N]) -> [Box<[U]>; N] {
-			cols.map(|x| x.into_boxed_slice())
-		}
-
-		let p_in_arc = vec_to_arc(p_in_vec);
-		let round_idxs_arc = vec_to_arc(round_idxs_vec);
-		let multiples_16_arc = vec_to_arc(multiples_16_vec);
-		let round_outs_arc: [[Box<[U]>; STATE_SIZE]; N_ROUNDS] =
-			round_outs_vec.map(|r| vec_to_arc(r));
-		let sub_bytes_out_arc: [[Box<[U]>; STATE_SIZE]; N_ROUNDS] =
-			sub_bytes_out_vec.map(|r| vec_to_arc(r));
-		let sub_bytes_inv_arc: [[Box<[U]>; STATE_SIZE]; N_ROUNDS] =
-			sub_bytes_inv_vec.map(|r| vec_to_arc(r));
-		let sub_bytes_inv_bits_arc: [[[Box<[U]>; 8]; STATE_SIZE]; N_ROUNDS] =
-			sub_bytes_inv_bits_vec.map(|r| r.map(|ij| vec_to_arc(ij)));
-		let with_round_consts_arc: [[Box<[U]>; STATE_SIZE]; N_ROUNDS] =
-			with_round_consts_vec.map(|r| vec_to_arc(r));
-
-		TraceWitness {
-			p_in: p_in_arc.clone(),
-			_p_out: array::from_fn(|ij| round_outs_arc[N_ROUNDS - 1][ij].clone()),
-			round_idxs: round_idxs_arc,
-			multiples_16: multiples_16_arc,
-			rounds: array::from_fn(|r| PermutationRoundWitness {
-				with_round_consts: array::from_fn(|ij| {
-					if ij % 8 == 0 {
-						with_round_consts_arc[r][ij].clone()
-					} else if r == 0 {
-						p_in_arc[ij].clone()
-					} else {
-						round_outs_arc[r][ij].clone()
-					}
-				}),
-				output: round_outs_arc[r].clone(),
-				p_sub_bytes: array::from_fn(|ij| SBoxGadgetWitness {
-					output: sub_bytes_out_arc[r][ij].clone(),
-					inv_bits: sub_bytes_inv_bits_arc[r][ij].clone(),
-					inverse: sub_bytes_inv_arc[r][ij].clone(),
-				}),
-			}),
-		}
-	}
-}
-
-pub fn groestl_p_permutation<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
-	log_size: usize,
-) -> Result<[OracleId; STATE_SIZE]>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Divisible<u8>,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<AESTowerField8b>,
-	FBase: TowerField + ExtensionField<AESTowerField8b>,
-{
-	let trace_oracle = TraceOracle::new::<U, F, FBase, AESTowerField8b>(builder, log_size)?;
-
-	if let Some(ext_index) = builder.witness() {
-		let trace_witness = TraceWitness::generate_trace(log_size);
-		trace_witness.update_index::<F, AESTowerField8b>(&trace_oracle, ext_index)?;
-	}
-
-	trace_oracle.add_constraints::<U, F, FBase, AESTowerField8b>(builder);
-
-	Ok(trace_oracle.p_out)
 }

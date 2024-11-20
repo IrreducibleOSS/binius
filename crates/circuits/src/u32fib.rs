@@ -13,7 +13,7 @@ use bytemuck::{must_cast_slice_mut, Pod};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
-use crate::{builder::ConstraintSystemBuilder, step_down::step_down, u32add::u32add};
+use crate::{builder::ConstraintSystemBuilder, transparent::step_down, u32add::u32add};
 
 pub fn u32fib<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,

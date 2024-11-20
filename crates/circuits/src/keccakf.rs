@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{builder::ConstraintSystemBuilder, step_down::step_down};
+use crate::{builder::ConstraintSystemBuilder, transparent::step_down};
 use binius_core::{
 	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
