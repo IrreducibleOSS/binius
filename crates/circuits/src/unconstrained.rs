@@ -2,11 +2,9 @@
 use crate::builder::ConstraintSystemBuilder;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, PackedField, TowerField,
+	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
 };
-use bytemuck::{must_cast_slice_mut, Pod};
+use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
@@ -24,14 +22,13 @@ where
 	let rng = builder.add_committed(name, log_size, FS::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
-		let len = 1 << (log_size - <PackedType<U, FS>>::LOG_WIDTH);
-		let mut data = vec![U::default(); len].into_boxed_slice();
-		must_cast_slice_mut::<_, u8>(&mut data)
+		witness
+			.new_column::<FS>(rng, log_size)
+			.as_mut_slice::<u8>()
 			.into_par_iter()
 			.for_each_init(thread_rng, |rng, data| {
 				*data = rng.gen();
 			});
-		witness.set_owned::<FS, _>([(rng, data)])?;
 	}
 
 	Ok(rng)

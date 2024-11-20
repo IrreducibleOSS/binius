@@ -1,9 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	builder::ConstraintSystemBuilder, helpers::make_underliers, transparent,
-	unconstrained::unconstrained,
-};
+use crate::{builder::ConstraintSystemBuilder, transparent, unconstrained::unconstrained};
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -13,7 +10,7 @@ use binius_field::{
 	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, Field, PackedField, TowerField,
 };
 use binius_math::CompositionPolyOS;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
+use bytemuck::{must_cast_slice, Pod};
 use rayon::prelude::*;
 use std::{array, fmt::Debug, iter};
 
@@ -65,19 +62,12 @@ where
 		use binius_field::PackedAESBinaryField64x8b;
 		use binius_hash::Groestl256Core;
 
-		let input_polys = p_in.try_map(|id| witness.get::<AESTowerField8b>(id))?;
-		let inputs = input_polys
-			.iter()
-			.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
-			.map(must_cast_slice::<_, AESTowerField8b>)
-			.collect::<Vec<_>>();
-
-		let output_polys = p_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
-		let outputs = output_polys
-			.iter()
-			.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
-			.map(must_cast_slice::<_, AESTowerField8b>)
-			.collect::<Vec<_>>();
+		let inputs = p_in
+			.try_map(|id| witness.get::<AESTowerField8b>(id))?
+			.map(must_cast_slice::<_, AESTowerField8b>);
+		let outputs = p_out
+			.try_map(|id| witness.get::<AESTowerField8b>(id))?
+			.map(must_cast_slice::<_, AESTowerField8b>);
 
 		for z in 0..1 << log_size {
 			assert_eq!(
@@ -126,18 +116,14 @@ where
 	let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
-		let mut output_witness = output.map(|_| make_underliers::<U, AESTowerField8b>(log_size));
 		{
-			let p_sub_bytes_out_poly =
+			let p_sub_bytes_out =
 				p_sub_bytes_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
-			let p_sub_bytes_out = p_sub_bytes_out_poly
-				.iter()
-				.map(|p| WithUnderlier::to_underliers_ref(p.evals()))
+			let mut output = output.map(|id| witness.new_column::<AESTowerField8b>(id, log_size));
+			let mut output = output
+				.iter_mut()
+				.map(|col| col.as_mut_slice::<AESTowerField8b>())
 				.collect::<Vec<_>>();
-
-			let output = output_witness
-				.each_mut()
-				.map(|col| must_cast_slice_mut::<_, AESTowerField8b>(col));
 
 			let two = AESTowerField8b::new(2);
 			for z in 0..1 << log_size {
@@ -165,7 +151,6 @@ where
 				}
 			}
 		}
-		witness.set_owned::<AESTowerField8b, _>(std::iter::zip(output, output_witness))?;
 	}
 
 	for ij in 0..STATE_SIZE {
@@ -225,19 +210,15 @@ where
 
 	if let Some(witness) = builder.witness() {
 		let mut inv_bits_witness: [_; 8] =
-			inv_bits.map(|_| make_underliers::<U, BinaryField1b>(log_size));
-		let mut inv_witness = make_underliers::<U, AESTowerField8b>(log_size);
-		let mut output_witness = make_underliers::<U, AESTowerField8b>(log_size);
+			inv_bits.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut inv_witness = witness.new_column::<AESTowerField8b>(inv, log_size);
+		let mut output_witness = witness.new_column::<AESTowerField8b>(output, log_size);
 		{
 			let input_poly = witness.get::<AESTowerField8b>(input)?;
-			let input = must_cast_slice::<_, AESTowerField8b>(WithUnderlier::to_underliers_ref(
-				input_poly.evals(),
-			));
-			let inv_bits = inv_bits_witness
-				.each_mut()
-				.map(|bit| PackedType::<U, BinaryField1b>::from_underliers_ref_mut(bit));
-			let inv = must_cast_slice_mut::<_, AESTowerField8b>(&mut inv_witness);
-			let output = must_cast_slice_mut::<_, AESTowerField8b>(&mut output_witness);
+			let input = must_cast_slice::<_, AESTowerField8b>(input_poly);
+			let inv_bits = inv_bits_witness.each_mut().map(|bit| bit.packed());
+			let inv = inv_witness.as_mut_slice::<AESTowerField8b>();
+			let output = output_witness.as_mut_slice::<AESTowerField8b>();
 
 			for z in 0..(1 << log_size) {
 				inv[z] = input[z].invert_or_zero();
@@ -248,8 +229,6 @@ where
 				}
 			}
 		}
-		witness.set_owned::<BinaryField1b, _>(std::iter::zip(inv_bits, inv_bits_witness))?;
-		witness.set_owned::<AESTowerField8b, _>([(inv, inv_witness), (output, output_witness)])?;
 	}
 
 	builder.assert_zero([input, inv], SBoxConstraint);
@@ -294,21 +273,23 @@ where
 	})?;
 	if let Some(witness) = builder.witness() {
 		let mut round_consts_witness: [_; 8] =
-			round_consts.map(|_| make_underliers::<U, AESTowerField8b>(log_size));
+			round_consts.map(|id| witness.new_column::<AESTowerField8b>(id, log_size));
 		{
 			let input = input.try_map(|id| witness.get::<AESTowerField8b>(id))?;
 			let round = witness.get::<AESTowerField8b>(round)?;
 			let multiples_16 = multiples_16.try_map(|id| witness.get::<AESTowerField8b>(id))?;
 
 			round_consts_witness
+				.each_mut()
+				.map(|col| col.data())
 				.par_iter_mut()
 				.enumerate()
 				.for_each(|(i, round_consts)| {
 					(
 						PackedType::<U, AESTowerField8b>::from_underliers_ref_mut(round_consts),
-						input[8 * i].evals(),
-						round.evals(),
-						multiples_16[i].evals(),
+						PackedType::<U, AESTowerField8b>::from_underliers_ref(input[8 * i]),
+						PackedType::<U, AESTowerField8b>::from_underliers_ref(round),
+						PackedType::<U, AESTowerField8b>::from_underliers_ref(multiples_16[i]),
 					)
 						.into_par_iter()
 						.for_each(|(round_const, input, round, multiple16)| {
@@ -316,8 +297,6 @@ where
 						});
 				});
 		}
-		witness
-			.set_owned::<AESTowerField8b, _>(std::iter::zip(round_consts, round_consts_witness))?;
 	}
 	Ok(round_consts)
 }

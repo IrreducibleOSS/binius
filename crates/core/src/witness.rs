@@ -3,12 +3,10 @@
 use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	underlier::{UnderlierType, WithUnderlier},
+	underlier::UnderlierType,
 	ExtensionField, Field, PackedExtension, TowerField,
 };
-use binius_math::{
-	MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly, PackingDeref,
-};
+use binius_math::{MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly};
 use binius_utils::bail;
 use std::{fmt::Debug, sync::Arc};
 
@@ -58,6 +56,38 @@ where
 		Self::default()
 	}
 
+	pub fn get_multilin_poly(
+		&self,
+		id: OracleId,
+	) -> Result<MultilinearWitness<'a, PackedType<U, FW>>, Error> {
+		let entry = self
+			.entries
+			.get(id)
+			.ok_or(Error::MissingWitness { id })?
+			.as_ref()
+			.ok_or(Error::MissingWitness { id })?;
+		Ok(entry.clone())
+	}
+
+	/// Whether has data for the given oracle id.
+	pub fn has(&self, id: OracleId) -> bool {
+		self.entries.get(id).map_or(false, Option::is_some)
+	}
+
+	pub fn update_multilin_poly(
+		&mut self,
+		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>)>,
+	) -> Result<(), Error> {
+		for (id, witness) in witnesses {
+			if id >= self.entries.len() {
+				self.entries.resize_with(id + 1, || None);
+			}
+			self.entries[id] = Some(witness);
+		}
+		Ok(())
+	}
+
+	/// TODO: Remove once PCS no longer needs this
 	pub fn get<FS>(
 		&self,
 		id: OracleId,
@@ -88,99 +118,5 @@ where
 			.ok_or(Error::NoExplicitBackingMultilinearExtension { id })?;
 
 		Ok(MultilinearExtension::from_values_slice(evals)?)
-	}
-
-	pub fn get_multilin_poly(
-		&self,
-		id: OracleId,
-	) -> Result<MultilinearWitness<'a, PackedType<U, FW>>, Error> {
-		let entry = self
-			.entries
-			.get(id)
-			.ok_or(Error::MissingWitness { id })?
-			.as_ref()
-			.ok_or(Error::MissingWitness { id })?;
-		Ok(entry.clone())
-	}
-
-	/// Whether has data for the given oracle id.
-	pub fn has(&self, id: OracleId) -> bool {
-		self.entries.get(id).map_or(false, Option::is_some)
-	}
-
-	pub fn set_owned<FS, Data>(
-		&mut self,
-		witnesses: impl IntoIterator<Item = (OracleId, Data)>,
-	) -> Result<(), Error>
-	where
-		FS: TowerField,
-		FW: ExtensionField<FS>,
-		U: PackScalar<FS> + Debug,
-		Data: Into<Arc<[U]>>,
-	{
-		for (id, witness) in witnesses {
-			if id >= self.entries.len() {
-				self.entries.resize_with(id + 1, || None);
-			}
-
-			let mle =
-				MultilinearExtension::<_, PackingDeref<U, FS, _>>::from_underliers(witness.into())?;
-			self.entries[id] = Some(mle.specialize_arc_dyn());
-		}
-		Ok(())
-	}
-
-	pub fn update_borrowed<'new, FS>(
-		self,
-		witnesses: impl IntoIterator<Item = (OracleId, &'new [U])>,
-	) -> Result<MultilinearExtensionIndex<'new, U, FW>, Error>
-	where
-		'a: 'new,
-		FS: TowerField,
-		FW: ExtensionField<FS>,
-		U: PackScalar<FS>,
-	{
-		let MultilinearExtensionIndex { mut entries } = self;
-		for (id, witness) in witnesses {
-			if id >= entries.len() {
-				entries.resize_with(id + 1, || None);
-			}
-
-			let mle = MultilinearExtension::from_values_slice(
-				PackedType::<U, FS>::from_underliers_ref(witness),
-			)?;
-			entries[id] = Some(mle.specialize_arc_dyn());
-		}
-		Ok(MultilinearExtensionIndex { entries })
-	}
-
-	pub fn update_multilin_poly(
-		&mut self,
-		witnesses: impl IntoIterator<Item = (OracleId, MultilinearWitness<'a, PackedType<U, FW>>)>,
-	) -> Result<(), Error> {
-		for (id, witness) in witnesses {
-			if id >= self.entries.len() {
-				self.entries.resize_with(id + 1, || None);
-			}
-			self.entries[id] = Some(witness);
-		}
-		Ok(())
-	}
-
-	pub fn update_packed<'new, FS>(
-		self,
-		witnesses: impl IntoIterator<Item = (OracleId, &'new [PackedType<U, FS>])>,
-	) -> Result<MultilinearExtensionIndex<'new, U, FW>, Error>
-	where
-		'a: 'new,
-		FS: TowerField,
-		FW: ExtensionField<FS>,
-		U: PackScalar<FS>,
-	{
-		self.update_borrowed(
-			witnesses.into_iter().map(|(oracle_id, packed)| {
-				(oracle_id, <PackedType<U, FS>>::to_underliers_ref(packed))
-			}),
-		)
 	}
 }

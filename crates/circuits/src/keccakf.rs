@@ -11,8 +11,7 @@ use binius_field::{
 	BinaryField1b, ExtensionField, PackedField, TowerField,
 };
 use binius_macros::composition_poly;
-use bytemuck::{must_cast_slice_mut, pod_collect_to_vec, Pod};
-use itertools::chain;
+use bytemuck::{pod_collect_to_vec, Pod};
 use rand::{thread_rng, Rng};
 
 pub fn keccakf<U, F, FBase>(
@@ -95,43 +94,33 @@ where
 	});
 
 	if let Some(witness) = builder.witness() {
-		let packed_log_width = <PackedType<U, BinaryField1b>>::LOG_WIDTH;
-		let build_trace_column = |log_size: usize| {
-			vec![U::default(); 1 << (log_size - packed_log_width)].into_boxed_slice()
-		};
+		let mut state_in = state_in.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut state_out = state_out.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut c = c.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut d = d.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut c_shift = c_shift.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut a_theta = a_theta.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut b = b.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut next_state_in =
+			next_state_in.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
+		let mut round_consts_single =
+			witness.new_column::<BinaryField1b>(round_consts_single, LOG_ROWS_PER_PERMUTATION);
+		let mut round_consts = witness.new_column::<BinaryField1b>(round_consts, log_size);
+		let mut selector = witness.new_column::<BinaryField1b>(selector, log_size);
 
-		let mut state_in_witness =
-			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
-		let mut state_out_witness =
-			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
-		let mut c_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
-		let mut d_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
-		let mut c_shift_witness = std::array::from_fn::<_, 5, _>(|_x| build_trace_column(log_size));
-		let mut a_theta_witness =
-			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
-		let mut b_witness = std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
-		let mut next_state_in_witness =
-			std::array::from_fn::<_, 25, _>(|_xy| build_trace_column(log_size));
-		let mut round_consts_single_witness = build_trace_column(LOG_ROWS_PER_PERMUTATION);
-		let mut round_consts_witness = build_trace_column(log_size);
-		let mut selector_witness = build_trace_column(log_size);
-
-		fn cast_u64_cols<U: Pod, const N: usize>(cols: &mut [Box<[U]>; N]) -> [&mut [u64]; N] {
-			cols.each_mut()
-				.map(|col| must_cast_slice_mut::<_, u64>(&mut *col))
-		}
-
-		let state_in_u64 = cast_u64_cols(&mut state_in_witness);
-		let state_out_u64 = cast_u64_cols(&mut state_out_witness);
-		let c_u64 = cast_u64_cols(&mut c_witness);
-		let d_u64 = cast_u64_cols(&mut d_witness);
-		let c_shift_u64 = cast_u64_cols(&mut c_shift_witness);
-		let a_theta_u64 = cast_u64_cols(&mut a_theta_witness);
-		let b_u64 = cast_u64_cols(&mut b_witness);
-		let next_state_in_u64 = cast_u64_cols(&mut next_state_in_witness);
-		let round_consts_single_u64 = must_cast_slice_mut(&mut round_consts_single_witness);
-		let round_consts_u64 = must_cast_slice_mut(&mut round_consts_witness);
-		let selector_u64 = must_cast_slice_mut(&mut selector_witness);
+		let state_in_u64 = state_in.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let state_out_u64 = state_out.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let c_u64 = c.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let d_u64 = d.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let c_shift_u64 = c_shift.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let a_theta_u64 = a_theta.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let b_u64 = b.each_mut().map(|col| col.as_mut_slice::<u64>());
+		let next_state_in_u64 = next_state_in
+			.each_mut()
+			.map(|col| col.as_mut_slice::<u64>());
+		let round_consts_single_u64 = round_consts_single.as_mut_slice();
+		let round_consts_u64 = round_consts.as_mut_slice();
+		let selector_u64 = selector.as_mut_slice();
 
 		let mut rng = thread_rng();
 
@@ -209,35 +198,6 @@ where
 				assert_eq!(state_out_u64[xy][i + 23], output[xy]);
 			}
 		}
-
-		witness.set_owned::<BinaryField1b, _>(std::iter::zip(
-			chain!(
-				[round_consts_single, round_consts, selector],
-				state_in,
-				state_out,
-				c,
-				d,
-				c_shift,
-				a_theta,
-				b,
-				next_state_in,
-			),
-			chain!(
-				[
-					round_consts_single_witness,
-					round_consts_witness,
-					selector_witness
-				],
-				state_in_witness,
-				state_out_witness,
-				c_witness,
-				d_witness,
-				c_shift_witness,
-				a_theta_witness,
-				b_witness,
-				next_state_in_witness,
-			),
-		))?;
 	}
 
 	let sum6 = composition_poly!([x0, x1, x2, x3, x4, x5] = x0 + x1 + x2 + x3 + x4 + x5);

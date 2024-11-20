@@ -3,12 +3,10 @@
 use crate::builder::ConstraintSystemBuilder;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, PackedField, TowerField,
+	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_macros::composition_poly;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
+use bytemuck::{must_cast_slice, Pod};
 use rayon::prelude::*;
 
 fn u32add_common<U, F>(
@@ -25,20 +23,18 @@ where
 	F: TowerField,
 {
 	if let Some(witness) = builder.witness() {
-		let len = 1 << (log_size - <PackedType<U, BinaryField1b>>::LOG_WIDTH);
-		let mut zout_witness = vec![U::default(); len].into_boxed_slice();
-		let mut cout_witness = vec![U::default(); len].into_boxed_slice();
-		let mut cin_witness = vec![U::default(); len].into_boxed_slice();
 		(
-			must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(
-				witness.get::<BinaryField1b>(xin)?.evals(),
-			)),
-			must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(
-				witness.get::<BinaryField1b>(yin)?.evals(),
-			)),
-			must_cast_slice_mut::<_, u32>(&mut zout_witness),
-			must_cast_slice_mut::<_, u32>(&mut cout_witness),
-			must_cast_slice_mut::<_, u32>(&mut cin_witness),
+			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(xin)?),
+			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(yin)?),
+			witness
+				.new_column::<BinaryField1b>(zout, log_size)
+				.as_mut_slice::<u32>(),
+			witness
+				.new_column::<BinaryField1b>(cout, log_size)
+				.as_mut_slice::<u32>(),
+			witness
+				.new_column::<BinaryField1b>(cin, log_size)
+				.as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
 			.for_each(|(xin, yin, zout, cout, cin)| {
@@ -47,11 +43,6 @@ where
 				*cin = (*xin) ^ (*yin) ^ (*zout);
 				*cout = ((carry as u32) << 31) | (*cin >> 1);
 			});
-		witness.set_owned::<BinaryField1b, _>([
-			(zout, zout_witness),
-			(cout, cout_witness),
-			(cin, cin_witness),
-		])?;
 	}
 
 	builder.assert_zero(
@@ -88,7 +79,7 @@ where
 	Ok(zout)
 }
 
-pub fn u32add_commited<U, F>(
+pub fn u32add_committed<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,

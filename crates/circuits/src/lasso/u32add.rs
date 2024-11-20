@@ -1,10 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::lasso::lasso;
-use crate::{
-	builder::ConstraintSystemBuilder,
-	helpers::{make_underliers, underliers_unpack_scalars_mut},
-};
+use crate::{builder::ConstraintSystemBuilder, helpers::underliers_unpack_scalars_mut};
 use anyhow::Result;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
@@ -74,24 +71,22 @@ where
 	let mut u_to_t_mapping = None;
 
 	if let Some(witness) = builder.witness() {
-		let mut sum_witness = make_underliers::<_, B32>(log_size);
-		let mut cin_witness = make_underliers::<_, B1>(log_size + 2);
-		let mut cout_witness = make_underliers::<_, B1>(log_size + 2);
-		let mut lookup_u_witness = make_underliers::<_, B32>(log_size + 2);
-		let mut lookup_t_witness = make_underliers::<_, B32>(ADD_T_LOG_SIZE);
+		let mut sum_witness = witness.new_column::<B8>(sum, log_size + 2);
+		let mut cin_witness = witness.new_column::<B1>(cin, log_size + 2);
+		let mut cout_witness = witness.new_column::<B1>(cout, log_size + 2);
+		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u, log_size + 2);
+		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t, ADD_T_LOG_SIZE);
+
 		let mut u_to_t_mapping_witness = vec![0; 1 << (log_size + 2)];
 
-		let x = witness.get::<B8>(xin_u8)?;
-		let x_ints = must_cast_slice::<_, u8>(WithUnderlier::to_underliers_ref(x.evals()));
+		let x_ints = must_cast_slice::<_, u8>(witness.get::<B8>(xin_u8)?);
+		let y_ints = must_cast_slice::<_, u8>(witness.get::<B8>(yin_u8)?);
 
-		let y = witness.get::<B8>(yin_u8)?;
-		let y_ints = must_cast_slice::<_, u8>(WithUnderlier::to_underliers_ref(y.evals()));
-
-		let sum_scalars = underliers_unpack_scalars_mut::<_, B8>(&mut sum_witness);
-		let packed_slice_cin = PackedType::<U, B1>::from_underliers_ref_mut(&mut cin_witness);
-		let packed_slice_cout = PackedType::<U, B1>::from_underliers_ref_mut(&mut cout_witness);
-		let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(&mut lookup_u_witness);
-		let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(&mut lookup_t_witness);
+		let sum_scalars = underliers_unpack_scalars_mut::<_, B8>(sum_witness.data());
+		let packed_slice_cin = PackedType::<U, B1>::from_underliers_ref_mut(cin_witness.data());
+		let packed_slice_cout = PackedType::<U, B1>::from_underliers_ref_mut(cout_witness.data());
+		let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_u_witness.data());
+		let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_t_witness.data());
 
 		let mut temp_cout = 0;
 
@@ -140,12 +135,6 @@ where
 
 			*lookup_t = BinaryField32b::new(lookup_t_u32);
 		}
-
-		witness.set_owned::<B1, _>([(cin, cin_witness), (cout, cout_witness)])?;
-		witness.set_owned::<B8, _>([(sum, sum_witness)])?;
-		witness
-			.set_owned::<B32, _>([(lookup_t, lookup_t_witness), (lookup_u, lookup_u_witness)])?;
-
 		u_to_t_mapping = Some(u_to_t_mapping_witness);
 	}
 

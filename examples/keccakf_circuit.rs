@@ -41,8 +41,9 @@ fn main() -> Result<()> {
 
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
+	let allocator = bumpalo::Bump::new();
 	let mut builder =
-		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField8b>::new_with_witness();
+		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField8b>::new_with_witness(&allocator);
 	let _state_out = binius_circuits::keccakf::keccakf(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,

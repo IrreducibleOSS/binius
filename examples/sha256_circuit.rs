@@ -44,7 +44,8 @@ fn main() -> Result<()> {
 
 	let log_n_compressions = log2_ceil_usize(args.n_compressions as usize);
 
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
+	let allocator = bumpalo::Bump::new();
+	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
 	let input: [OracleId; 16] = array::from_fn(|i| {
 		unconstrained::<_, _, _, BinaryField1b>(

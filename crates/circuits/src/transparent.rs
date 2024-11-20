@@ -8,10 +8,10 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField1b, ExtensionField, PackedField, TowerField,
 };
-use bytemuck::{must_cast_slice_mut, Pod};
+use bytemuck::Pod;
 use rayon::prelude::*;
 
-use crate::{builder::ConstraintSystemBuilder, helpers::make_underliers};
+use crate::builder::ConstraintSystemBuilder;
 
 pub fn step_down<U, F, FBase>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
@@ -27,9 +27,10 @@ where
 	let step_down = transparent::step_down::StepDown::new(log_size, index)?;
 	let id = builder.add_transparent(name, step_down.clone())?;
 	if let Some(witness) = builder.witness() {
-		let mut data = make_underliers::<U, BinaryField1b>(log_size);
 		let byte_index = index >> 3;
-		must_cast_slice_mut::<_, u8>(&mut data)
+		witness
+			.new_column::<BinaryField1b>(id, log_size)
+			.as_mut_slice::<u8>()
 			.into_par_iter()
 			.enumerate()
 			.for_each(|(i, stepdown)| {
@@ -39,7 +40,6 @@ where
 					Ordering::Greater => 0b00000000,
 				}
 			});
-		witness.set_owned::<BinaryField1b, _>([(id, data)])?;
 	}
 	Ok(id)
 }
@@ -66,9 +66,10 @@ where
 	};
 	let id = builder.add_transparent(name, poly)?;
 	if let Some(witness) = builder.witness() {
-		let mut data = make_underliers::<U, FS>(log_size);
-		data.fill(WithUnderlier::to_underlier(<PackedType<U, FS>>::broadcast(value)));
-		witness.set_owned::<FS, _>([(id, data)])?;
+		witness
+			.new_column::<FS>(id, log_size)
+			.data()
+			.fill(WithUnderlier::to_underlier(<PackedType<U, FS>>::broadcast(value)));
 	}
 	Ok(id)
 }

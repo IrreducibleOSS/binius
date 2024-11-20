@@ -17,3 +17,4 @@ itertools.workspace = true
 rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
+bumpalo.workspace = true

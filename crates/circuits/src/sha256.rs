@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{builder::ConstraintSystemBuilder, helpers::make_underliers, u32add::u32add_commited};
+use crate::{builder::ConstraintSystemBuilder, u32add::u32add_committed};
 use binius_core::{
 	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
@@ -12,7 +12,7 @@ use binius_field::{
 };
 use binius_macros::composition_poly;
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{must_cast_slice, must_cast_slice_mut, pod_collect_to_vec, Pod};
+use bytemuck::{must_cast_slice, pod_collect_to_vec, Pod};
 use itertools::izip;
 
 const LOG_U32_BITS: usize = checked_log_2(32);
@@ -79,18 +79,14 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut result_witness = make_underliers::<U, B1>(log_size);
-
-		let result_u32 = must_cast_slice_mut::<_, u32>(&mut result_witness);
+		let mut result_witness = witness.new_column::<B1>(result_oracle_id, log_size);
+		let result_u32 = result_witness.as_mut_slice::<u32>();
 
 		for ((oracle_id, shift, t), shifted_oracle_id) in r.iter().zip(&shifted_oracle_ids) {
-			let values_witness = witness.get::<B1>(*oracle_id)?;
-			let values_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(values_witness.evals()));
+			let values_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(*oracle_id)?);
 
-			let mut shifted_witness = make_underliers::<U, B1>(log_size);
-
-			let shifted_u32 = must_cast_slice_mut::<_, u32>(&mut shifted_witness);
+			let mut shifted_witness = witness.new_column::<B1>(*shifted_oracle_id, log_size);
+			let shifted_u32 = shifted_witness.as_mut_slice::<u32>();
 
 			izip!(shifted_u32.iter_mut(), values_u32, result_u32.iter_mut()).for_each(
 				|(shifted, val, res)| {
@@ -101,10 +97,7 @@ where
 					*res ^= *shifted;
 				},
 			);
-
-			witness.set_owned::<B1, _>([(*shifted_oracle_id, shifted_witness)])?;
 		}
-		witness.set_owned::<B1, _>([(result_oracle_id, result_witness)])?;
 	}
 
 	Ok(result_oracle_id)
@@ -148,16 +141,12 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut transparent_witness = make_underliers::<U, B1>(PackedType::<U, B1>::LOG_WIDTH);
-		let transparent_witness_u32 = must_cast_slice_mut::<_, u32>(&mut transparent_witness);
-		transparent_witness_u32.fill(x);
+		let mut transparent_witness =
+			witness.new_column::<B1>(transparent_id, PackedType::<U, B1>::LOG_WIDTH);
+		transparent_witness.as_mut_slice::<u32>().fill(x);
 
-		let mut repeating_witness = make_underliers::<U, B1>(log_size);
-		let repeating_witness_u32 = must_cast_slice_mut::<_, u32>(&mut repeating_witness);
-		repeating_witness_u32.fill(x);
-
-		witness.set_owned([(transparent_id, transparent_witness)])?;
-		witness.set_owned([(repeating_id, repeating_witness)])?;
+		let mut repeating_witness = witness.new_column::<B1>(repeating_id, log_size);
+		repeating_witness.as_mut_slice::<u32>().fill(x);
 	}
 
 	Ok(repeating_id)
@@ -199,10 +188,10 @@ where
 				(w[i - 2], 10, RotateRightType::Logical),
 			],
 		)?;
-		let w_addition = u32add_commited(builder, "w_addition", log_size, w[i - 16], w[i - 7])?;
-		let s_addition = u32add_commited(builder, "s_addition", log_size, s0, s1)?;
+		let w_addition = u32add_committed(builder, "w_addition", log_size, w[i - 16], w[i - 7])?;
+		let s_addition = u32add_committed(builder, "s_addition", log_size, s0, s1)?;
 
-		w[i] = u32add_commited(builder, format!("w[{}]", i), log_size, w_addition, s_addition)?;
+		w[i] = u32add_committed(builder, format!("w[{}]", i), log_size, w_addition, s_addition)?;
 	}
 
 	let init_oracles = INIT.map(|val| u32const_repeating(log_size, builder, val, "INIT").unwrap());
@@ -228,31 +217,20 @@ where
 		)?;
 
 		if let Some(witness) = builder.witness() {
-			let mut ch_witness = make_underliers::<U, B1>(log_size);
-			let ch_u32 = must_cast_slice_mut::<_, u32>(&mut ch_witness);
-
-			let e_witness = witness.get::<B1>(e)?;
-			let e_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(e_witness.evals()));
-
-			let f_witness = witness.get::<B1>(f)?;
-			let f_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(f_witness.evals()));
-
-			let g_witness = witness.get::<B1>(g)?;
-			let g_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(g_witness.evals()));
-
+			let mut ch_witness = witness.new_column::<B1>(ch[i], log_size);
+			let ch_u32 = ch_witness.as_mut_slice::<u32>();
+			let e_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(e)?);
+			let f_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(f)?);
+			let g_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(g)?);
 			izip!(ch_u32.iter_mut(), e_u32, f_u32, g_u32).for_each(|(ch, e, f, g)| {
 				*ch = (e & f) ^ ((!e) & g);
 			});
-			witness.set_owned([(ch[i], ch_witness)])?;
 		}
 
-		let h_sigma1 = u32add_commited(builder, "h_sigma1", log_size, h, sigma1)?;
-		let ch_ki = u32add_commited(builder, "ch_ki", log_size, ch[i], k[i])?;
-		let ch_ki_w_i = u32add_commited(builder, "ch_ki_w_i", log_size, ch_ki, w[i])?;
-		let temp1 = u32add_commited(builder, "temp1", log_size, h_sigma1, ch_ki_w_i)?;
+		let h_sigma1 = u32add_committed(builder, "h_sigma1", log_size, h, sigma1)?;
+		let ch_ki = u32add_committed(builder, "ch_ki", log_size, ch[i], k[i])?;
+		let ch_ki_w_i = u32add_committed(builder, "ch_ki_w_i", log_size, ch_ki, w[i])?;
+		let temp1 = u32add_committed(builder, "temp1", log_size, h_sigma1, ch_ki_w_i)?;
 
 		let sigma0 = rotate_and_xor(
 			log_size,
@@ -265,30 +243,17 @@ where
 		)?;
 
 		if let Some(witness) = builder.witness() {
-			let mut maj_witness = make_underliers::<_, B1>(log_size);
-
-			let maj_u32 = must_cast_slice_mut::<_, u32>(&mut maj_witness);
-
-			let a_witness = witness.get::<B1>(a)?;
-			let a_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(a_witness.evals()));
-
-			let b_witness = witness.get::<B1>(b)?;
-			let b_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(b_witness.evals()));
-
-			let c_witness = witness.get::<B1>(c)?;
-			let c_u32 =
-				must_cast_slice::<_, u32>(WithUnderlier::to_underliers_ref(c_witness.evals()));
-
+			let mut maj_witness = witness.new_column::<B1>(maj[i], log_size);
+			let maj_u32 = maj_witness.as_mut_slice::<u32>();
+			let a_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(a)?);
+			let b_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(b)?);
+			let c_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(c)?);
 			izip!(maj_u32.iter_mut(), a_u32, b_u32, c_u32).for_each(|(maj, a, b, c)| {
 				*maj = (a & b) ^ (a & c) ^ (b & c);
 			});
-
-			witness.set_owned([(maj[i], maj_witness)])?;
 		}
 
-		let temp2 = u32add_commited(builder, "temp2", log_size, sigma0, maj[i])?;
+		let temp2 = u32add_committed(builder, "temp2", log_size, sigma0, maj[i])?;
 
 		builder.assert_zero(
 			[e, f, g, ch[i]],
@@ -303,17 +268,17 @@ where
 		h = g;
 		g = f;
 		f = e;
-		e = u32add_commited(builder, "e", log_size, d, temp1)?;
+		e = u32add_committed(builder, "e", log_size, d, temp1)?;
 		d = c;
 		c = b;
 		b = a;
-		a = u32add_commited(builder, "a", log_size, temp1, temp2)?;
+		a = u32add_committed(builder, "a", log_size, temp1, temp2)?;
 	}
 
 	let abcdefgh = [a, b, c, d, e, f, g, h];
 
 	let output = std::array::from_fn(|i| {
-		u32add_commited(builder, "output", log_size, init_oracles[i], abcdefgh[i]).unwrap()
+		u32add_committed(builder, "output", log_size, init_oracles[i], abcdefgh[i]).unwrap()
 	});
 
 	Ok(output)

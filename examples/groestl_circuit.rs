@@ -42,8 +42,11 @@ fn main() -> Result<()> {
 
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
+	let allocator = bumpalo::Bump::new();
 	let mut builder =
-		ConstraintSystemBuilder::<U, AESTowerField128b, AESTowerField16b>::new_with_witness();
+		ConstraintSystemBuilder::<U, AESTowerField128b, AESTowerField16b>::new_with_witness(
+			&allocator,
+		);
 	let _state_out = binius_circuits::groestl::groestl_p_permutation(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,

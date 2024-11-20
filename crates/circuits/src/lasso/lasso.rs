@@ -11,7 +11,7 @@ use itertools::izip;
 
 use crate::builder::ConstraintSystemBuilder;
 
-use crate::helpers::{make_underliers, underliers_unpack_scalars_mut};
+use crate::helpers::underliers_unpack_scalars_mut;
 
 pub fn lasso<U, F, FBase, FS, FC, const T_LOG_SIZE: usize>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
@@ -48,15 +48,15 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut lookup_r_witness = make_underliers::<_, FC>(n_vars);
-		let mut lookup_w_witness = make_underliers::<_, FC>(n_vars);
-		let mut lookup_f_witness = make_underliers::<_, FC>(T_LOG_SIZE);
-		let mut lookup_o_witness = make_underliers::<_, FC>(T_LOG_SIZE);
+		let mut lookup_r_witness = witness.new_column::<FC>(lookup_r, n_vars);
+		let mut lookup_w_witness = witness.new_column::<FC>(lookup_w, n_vars);
+		let mut lookup_f_witness = witness.new_column::<FC>(lookup_f, T_LOG_SIZE);
+		let mut lookup_o_witness = witness.new_column::<FC>(lookup_o, T_LOG_SIZE);
 
-		let lookup_r_scalars = underliers_unpack_scalars_mut::<_, FC>(&mut lookup_r_witness);
-		let lookup_w_scalars = underliers_unpack_scalars_mut::<_, FC>(&mut lookup_w_witness);
-		let lookup_f_scalars = underliers_unpack_scalars_mut::<_, FC>(&mut lookup_f_witness);
-		let lookup_o_scalars = underliers_unpack_scalars_mut::<_, FC>(&mut lookup_o_witness);
+		let lookup_r_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_r_witness.data());
+		let lookup_w_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_w_witness.data());
+		let lookup_f_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_f_witness.data());
+		let lookup_o_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_o_witness.data());
 
 		lookup_f_scalars.fill(FC::ONE);
 		lookup_o_scalars.fill(FC::ONE);
@@ -75,13 +75,6 @@ where
 			*w = ts * alpha;
 			lookup_f_scalars[index] *= alpha;
 		}
-
-		witness.set_owned::<FC, _>([
-			(lookup_r, lookup_r_witness),
-			(lookup_w, lookup_w_witness),
-			(lookup_f, lookup_f_witness),
-			(lookup_o, lookup_o_witness),
-		])?;
 	}
 
 	builder.assert_not_zero(lookup_r);

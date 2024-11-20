@@ -53,6 +53,7 @@ tracing-profile = { git = "https://gitlab.com/IrreducibleOSS/tracing-profile.git
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-tracy = "0.11.0"
 transpose = "0.2.2"
+bumpalo = { version = "3.16.0", features = ["collections"] }
 
 [profile.release]
 lto = "fat"

@@ -39,7 +39,8 @@ fn main() -> Result<()> {
 
 	let log_n_additions = log2_ceil_usize(args.n_additions as usize);
 
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness();
+	let allocator = bumpalo::Bump::new();
+	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
 		&mut builder,
 		"in_a",

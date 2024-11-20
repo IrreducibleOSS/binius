@@ -14,6 +14,7 @@ binius_hash = { path = "../crates/hash" }
 binius_macros = { path = "../crates/macros" }
 binius_math = { path = "../crates/math" }
 binius_utils = { path = "../crates/utils", features = ["tracing"] }
+bumpalo.workspace = true
 bytemuck.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }

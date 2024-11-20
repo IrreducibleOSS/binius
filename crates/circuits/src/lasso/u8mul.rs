@@ -2,15 +2,12 @@
 
 use super::lasso::lasso;
 
-use crate::{
-	builder::ConstraintSystemBuilder,
-	helpers::{make_underliers, underliers_unpack_scalars_mut},
-};
+use crate::{builder::ConstraintSystemBuilder, helpers::underliers_unpack_scalars_mut};
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	underlier::{UnderlierType, WithUnderlier},
+	underlier::UnderlierType,
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
 	PackedFieldIndexable, TowerField,
 };
@@ -70,22 +67,17 @@ where
 	let mut u_to_t_mapping = None;
 
 	if let Some(witness) = builder.witness() {
-		let mut product_witness = make_underliers::<_, B16>(log_size);
-		let mut lookup_u_witness = make_underliers::<_, B32>(log_size);
-		let mut lookup_t_witness = make_underliers::<_, B32>(T_LOG_SIZE);
+		let mut product_witness = witness.new_column::<B16>(product, log_size);
+		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u, log_size);
+		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t, T_LOG_SIZE);
 		let mut u_to_t_mapping_witness = vec![0; 1 << log_size];
 
-		let mult_a_ext = witness.get::<B8>(mult_a)?;
-		let mult_a_ints =
-			must_cast_slice::<_, u8>(WithUnderlier::to_underliers_ref(mult_a_ext.evals()));
+		let mult_a_ints = must_cast_slice::<_, u8>(witness.get::<B8>(mult_a)?);
+		let mult_b_ints = must_cast_slice::<_, u8>(witness.get::<B8>(mult_b)?);
 
-		let mult_b_ext = witness.get::<B8>(mult_b)?;
-		let mult_b_ints =
-			must_cast_slice::<_, u8>(WithUnderlier::to_underliers_ref(mult_b_ext.evals()));
-
-		let product_scalars = underliers_unpack_scalars_mut::<_, B16>(&mut product_witness);
-		let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(&mut lookup_u_witness);
-		let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(&mut lookup_t_witness);
+		let product_scalars = underliers_unpack_scalars_mut::<_, B16>(product_witness.data());
+		let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_u_witness.data());
+		let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_t_witness.data());
 
 		for (a, b, lookup_u, product, u_to_t) in izip!(
 			mult_a_ints,
@@ -112,10 +104,6 @@ where
 			assert_eq!(lookup_index, i);
 			*lookup_t = B32::new((lookup_index << 16 | ab_product) as u32);
 		}
-
-		witness.set_owned::<B16, _>([(product, product_witness)])?;
-		witness
-			.set_owned::<B32, _>([(lookup_u, lookup_u_witness), (lookup_t, lookup_t_witness)])?;
 
 		u_to_t_mapping = Some(u_to_t_mapping_witness);
 	}
