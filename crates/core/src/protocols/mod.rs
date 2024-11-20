@@ -31,7 +31,6 @@ pub mod evalcheck;
 pub mod fri;
 pub mod gkr_gpa;
 pub mod greedy_evalcheck;
-pub mod lasso;
 pub mod sumcheck;
 #[allow(dead_code)]
 #[doc(hidden)]
