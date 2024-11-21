@@ -32,6 +32,8 @@ pub enum Error {
 	VectorCommit(#[source] Box<dyn std::error::Error + Send + Sync>),
 	#[error("verification error: {0}")]
 	Verification(#[from] VerificationError),
+	#[error("transcript error: {0}")]
+	TranscriptError(#[from] crate::transcript::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

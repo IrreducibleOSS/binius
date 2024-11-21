@@ -1,7 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use super::to_par_scalar_big_chunks;
 use crate::{
-	challenger::{new_hasher_challenger, CanObserve, CanSample},
+	challenger::{CanObserve, CanSample},
+	fiat_shamir::HasherChallenger,
 	linear_code::LinearCode,
 	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
@@ -9,23 +11,23 @@ use crate::{
 		FoldRoundOutput,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
+	transcript::{AdviceWriter, TranscriptWriter},
 };
 use binius_field::{
 	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{Divisible, UnderlierType},
 	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedBinaryField16x16b, PackedExtension, PackedField, PackedFieldIndexable,
+	PackedBinaryField16x16b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::MultilinearExtension;
 use binius_ntt::NTTOptions;
+use groestl_crypto::Groestl256;
 use rand::prelude::*;
 use rayon::prelude::ParallelIterator;
 use std::{iter::repeat_with, vec};
-
-use super::to_par_scalar_big_chunks;
 
 fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,
@@ -34,7 +36,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	arities: &[usize],
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
-	F: BinaryField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
+	F: TowerField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
 	F: PackedField<Scalar = F>
 		+ PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>,
 	FA: BinaryField,
@@ -77,9 +79,6 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		codeword,
 	} = fri::commit_interleaved(&committed_rs_code_packed, &params, &merkle_prover, &msg).unwrap();
 
-	let mut challenger = new_hasher_challenger::<_, GroestlHasher<_>>();
-	challenger.observe(codeword_commitment);
-
 	// Run the prover to generate the proximity proof
 	let mut round_prover = FRIFolder::new(
 		&params,
@@ -89,32 +88,47 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let mut prover_challenger = challenger.clone();
+	let mut prover_challenger = crate::transcript::Proof {
+		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
+		advice: AdviceWriter::default(),
+	};
+	prover_challenger.transcript.observe(codeword_commitment);
 	let mut round_commitments = Vec::with_capacity(params.n_oracles());
 	for _i in 0..params.n_fold_rounds() {
-		let challenge = prover_challenger.sample();
+		let challenge = prover_challenger.transcript.sample();
 		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				prover_challenger.observe(round_commitment);
+				prover_challenger.transcript.observe(round_commitment);
 				round_commitments.push(round_commitment);
 			}
 		}
 	}
 
-	let fri_proof = round_prover.finish_proof(prover_challenger).unwrap();
+	round_prover
+		.finish_proof(&mut prover_challenger.advice, &mut prover_challenger.transcript)
+		.unwrap();
 	// Now run the verifier
-	let mut verifier_challenger = challenger.clone();
+	let mut verifier_challenger = prover_challenger.into_verifier();
+	verifier_challenger.transcript.observe(codeword_commitment);
 	let mut verifier_challenges = Vec::with_capacity(params.n_fold_rounds());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
 	for (i, commitment) in round_commitments.iter().enumerate() {
-		verifier_challenges.append(&mut verifier_challenger.sample_vec(params.fold_arities()[i]));
-		verifier_challenger.observe(*commitment);
+		verifier_challenges.append(
+			&mut verifier_challenger
+				.transcript
+				.sample_vec(params.fold_arities()[i]),
+		);
+		verifier_challenger.transcript.observe(*commitment);
 	}
 
-	verifier_challenges.append(&mut verifier_challenger.sample_vec(params.n_final_challenges()));
+	verifier_challenges.append(
+		&mut verifier_challenger
+			.transcript
+			.sample_vec(params.n_final_challenges()),
+	);
 
 	assert_eq!(verifier_challenges.len(), params.n_fold_rounds());
 
@@ -137,7 +151,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let final_fri_value = verifier.verify(fri_proof, verifier_challenger).unwrap();
+	let final_fri_value = verifier
+		.verify(&mut verifier_challenger.advice, &mut verifier_challenger.transcript)
+		.unwrap();
 	assert_eq!(computed_eval, final_fri_value);
 }
 

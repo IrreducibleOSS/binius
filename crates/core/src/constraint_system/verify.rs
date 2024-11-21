@@ -47,7 +47,7 @@ pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
 	log_inv_rate: usize,
 	security_bits: usize,
 	domain_factory: DomainFactory,
-	proof: Proof<FExt<Tower>, Digest, Hash, Compress>,
+	proof: Proof<FExt<Tower>, Digest>,
 ) -> Result<(), Error>
 where
 	U: TowerUnderlier<Tower>,
@@ -61,7 +61,7 @@ where
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 {
-	let pcss = make_standard_pcss::<U, Tower, _, _, _, _>(
+	let pcss = make_standard_pcss::<U, Tower, _, _, Hash, Compress>(
 		log_inv_rate,
 		security_bits,
 		&constraint_system.oracles,
@@ -73,7 +73,7 @@ where
 /// Verifies a proof against a constraint system with provided PCSs.
 fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
 	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
-	proof: ProofGenericPCS<FExt<Tower>, PCSFamily::Commitment, PCSFamily::Proof>,
+	proof: ProofGenericPCS<FExt<Tower>, PCSFamily::Commitment>,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 ) -> Result<(), Error>
 where
@@ -107,7 +107,6 @@ where
 		zerocheck_proof,
 		univariatizing_proof,
 		greedy_evalcheck_proof,
-		pcs_proofs,
 		transcript,
 		advice,
 	} = proof;
@@ -254,14 +253,12 @@ where
 	}
 
 	// Verify PCS proofs
-	for ((_batch_id, claim), pcs, commitment, proof) in
-		izip!(pcs_claims, pcss, commitments, pcs_proofs)
-	{
+	for ((_batch_id, claim), pcs, commitment) in izip!(pcs_claims, pcss, commitments) {
 		pcs.verify_evaluation(
+			&mut advice,
 			&mut transcript,
 			&commitment,
 			&claim.eval_point,
-			proof,
 			&claim.evals,
 			&backend,
 		)
@@ -286,7 +283,7 @@ where
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField,
+	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	PackedType<U, Tower::B128>: PackedTop<Tower> + PackedFieldIndexable,
@@ -357,7 +354,7 @@ where
 	Tower::B128: PackedTop<Tower> + ExtensionField<F> + PackedExtension<F>,
 	F: TowerField,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField,
+	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	PackedType<U, Tower::B128>: PackedTop<Tower> + PackedFieldIndexable,

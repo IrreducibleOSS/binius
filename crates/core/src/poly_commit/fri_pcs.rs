@@ -13,11 +13,12 @@ use crate::{
 			self, immediate_switchover_heuristic,
 			prove::{RegularSumcheckProver, SumcheckProver},
 			verify::interpolate_round_proof,
-			RoundProof, SumcheckClaim,
+			RoundCoeffs, RoundProof, SumcheckClaim,
 		},
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	tensor_algebra::TensorAlgebra,
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite},
 	transparent::ring_switch::RingSwitchEqInd,
 };
 use binius_field::{
@@ -72,20 +73,21 @@ where
 	_marker: PhantomData<(F, FDomain, PE, VCS)>,
 }
 
-impl<F, FDomain, FEncode, FExt, PE, DomainFactory, MerkleProver, VCS>
+impl<F, FDomain, FEncode, FExt, PE, DomainFactory, MerkleProver, DigestType, VCS>
 	FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
 where
 	F: Field,
 	FDomain: Field,
 	FEncode: BinaryField,
-	FExt: BinaryField
+	FExt: TowerField
 		+ PackedField<Scalar = FExt>
 		+ ExtensionField<F>
 		+ ExtensionField<FDomain>
 		+ ExtensionField<FEncode>,
 	PE: PackedFieldIndexable<Scalar = FExt> + PackedExtension<FEncode>,
 	MerkleProver: MerkleTreeProver<FExt, Scheme = VCS> + Sync,
-	VCS: MerkleTreeScheme<FExt, Digest: Clone + Debug, Proof: Clone + Debug>,
+	DigestType: PackedField<Scalar: TowerField>,
+	VCS: MerkleTreeScheme<FExt, Digest = DigestType, Proof = Vec<DigestType>>,
 {
 	pub fn new(
 		n_vars: usize,
@@ -176,18 +178,21 @@ where
 		<TensorAlgebra<F, PE::Scalar>>::kappa()
 	}
 
-	fn prove_interleaved_fri_sumcheck<Prover, Challenger>(
+	fn prove_interleaved_fri_sumcheck<Prover, Transcript>(
 		&self,
-		sumcheck_eval: TensorAlgebra<F, FExt>,
 		codeword: &[PE],
 		committed: &MerkleProver::Committed,
 		mut sumcheck_prover: Prover,
-		mut challenger: Challenger,
-	) -> Result<Proof<FExt, VCS>, Error>
+		advice: &mut AdviceWriter,
+		mut transcript: Transcript,
+	) -> Result<(), Error>
 	where
 		Prover: SumcheckProver<FExt>,
-		Challenger:
-			CanObserve<FExt> + CanObserve<VCS::Digest> + CanSample<FExt> + CanSampleBits<usize>,
+		Transcript: CanObserve<FExt>
+			+ CanObserve<VCS::Digest>
+			+ CanSample<FExt>
+			+ CanSampleBits<usize>
+			+ CanWrite,
 	{
 		let n_rounds = sumcheck_prover.n_vars();
 
@@ -202,15 +207,15 @@ where
 		for _ in 0..n_rounds {
 			let round_coeffs = sumcheck_prover.execute(FExt::ONE)?;
 			let round_proof = round_coeffs.truncate();
-			challenger.observe_slice(round_proof.coeffs());
+			transcript.write_scalar_slice(round_proof.coeffs());
 			rounds.push(round_proof);
 
-			let challenge = challenger.sample();
+			let challenge = transcript.sample();
 
 			match fri_prover.execute_fold_round(challenge)? {
 				FoldRoundOutput::NoCommitment => {}
 				FoldRoundOutput::Commitment(round_commitment) => {
-					challenger.observe(round_commitment.clone());
+					transcript.write_packed(round_commitment);
 					fri_commitments.push(round_commitment);
 				}
 			}
@@ -220,77 +225,56 @@ where
 
 		let _ = sumcheck_prover.finish()?;
 
-		let fri_proof = fri_prover.finish_proof(challenger)?;
-
-		Ok(Proof {
-			sumcheck_eval: sumcheck_eval.vertical_elems().to_vec(),
-			sumcheck_rounds: rounds,
-			fri_commitments,
-			fri_proof,
-		})
+		fri_prover.finish_proof(advice, transcript)?;
+		Ok(())
 	}
 
 	#[allow(clippy::too_many_arguments)]
-	fn verify_interleaved_fri_sumcheck<Challenger>(
+	fn verify_interleaved_fri_sumcheck<Transcript>(
 		&self,
 		claim: &SumcheckClaim<FExt, BivariateProduct>,
 		codeword_commitment: &VCS::Digest,
-		sumcheck_round_proofs: Vec<RoundProof<FExt>>,
-		fri_commitments: Vec<VCS::Digest>,
-		fri_proof: fri::FRIProof<FExt, VCS>,
 		ring_switch_evaluator: impl FnOnce(&[FExt]) -> Result<FExt, PolynomialError>,
-		mut challenger: Challenger,
+		advice: &mut AdviceReader,
+		mut transcript: Transcript,
 	) -> Result<(), Error>
 	where
-		Challenger:
-			CanObserve<FExt> + CanObserve<VCS::Digest> + CanSample<FExt> + CanSampleBits<usize>,
+		Transcript: CanObserve<FExt>
+			+ CanObserve<VCS::Digest>
+			+ CanSample<FExt>
+			+ CanSampleBits<usize>
+			+ CanRead,
 	{
 		let n_rounds = claim.n_vars();
-		if sumcheck_round_proofs.len() != n_rounds {
-			return Err(
-				VerificationError::Sumcheck(sumcheck::VerificationError::NumberOfRounds).into()
-			);
-		}
-
-		if fri_commitments.len() != self.fri_params.n_oracles() {
-			return Err(VerificationError::IncorrectNumberOfFRICommitments.into());
-		}
 
 		let mut arities_iter = self.fri_params.fold_arities().iter();
-		let mut fri_comm_iter = fri_commitments.iter().cloned();
+		let mut fri_commitments = Vec::with_capacity(self.fri_params.n_oracles());
 		let mut next_commit_round = arities_iter.next().copied();
 
 		assert_eq!(claim.composite_sums().len(), 1);
 		let mut sum = claim.composite_sums()[0].sum;
 		let mut challenges = Vec::with_capacity(n_rounds);
-		for (round_no, round_proof) in sumcheck_round_proofs.into_iter().enumerate() {
-			if round_proof.coeffs().len() != claim.max_individual_degree() {
-				return Err(VerificationError::Sumcheck(
-					sumcheck::VerificationError::NumberOfCoefficients {
-						round: round_no,
-						expected: claim.max_individual_degree(),
-					},
-				)
-				.into());
-			}
+		for round_no in 0..n_rounds {
+			let round_proof = transcript
+				.read_scalar_slice::<FExt>(claim.max_individual_degree())
+				.map_err(Error::TranscriptError)?;
+			let round_proof = RoundProof(RoundCoeffs(round_proof));
 
-			challenger.observe_slice(round_proof.coeffs());
-
-			let challenge = challenger.sample();
+			let challenge = transcript.sample();
 			challenges.push(challenge);
 
 			let observe_fri_comm = next_commit_round.is_some_and(|round| round == round_no + 1);
 			if observe_fri_comm {
-				let comm = fri_comm_iter.next().expect(
-					"round_vcss and fri_commitments lengths were checked to be equal; \
-					iterators are incremented in lockstep; thus value must be Some",
-				);
-				challenger.observe(comm);
+				let comm = transcript
+					.read_packed::<VCS::Digest>()
+					.map_err(Error::TranscriptError)?;
+				fri_commitments.push(comm);
 				next_commit_round = arities_iter.next().map(|arity| round_no + 1 + arity);
 			}
 
 			sum = interpolate_round_proof(round_proof, sum, challenge);
 		}
+
 		let verifier = FRIVerifier::new(
 			&self.fri_params,
 			self.merkle_prover.scheme(),
@@ -300,7 +284,7 @@ where
 		)?;
 
 		let ring_switch_eval = ring_switch_evaluator(&challenges)?;
-		let final_fri_value = verifier.verify(fri_proof, challenger)?;
+		let final_fri_value = verifier.verify(advice, transcript)?;
 		if final_fri_value * ring_switch_eval != sum {
 			return Err(VerificationError::IncorrectSumcheckEvaluation.into());
 		}
@@ -308,8 +292,8 @@ where
 	}
 }
 
-impl<F, FDomain, FEncode, FExt, P, PE, DomainFactory, MerkleProver, VCS> PolyCommitScheme<P, FExt>
-	for FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
+impl<F, FDomain, FEncode, FExt, P, PE, DomainFactory, MerkleProver, DigestType, VCS>
+	PolyCommitScheme<P, FExt> for FRIPCS<F, FDomain, FEncode, PE, DomainFactory, MerkleProver, VCS>
 where
 	F: TowerField,
 	FDomain: Field,
@@ -328,13 +312,13 @@ where
 		+ PackedExtension<FEncode>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MerkleProver: MerkleTreeProver<FExt, Scheme = VCS> + Sync,
-	VCS: MerkleTreeScheme<FExt, Digest: Clone + Debug, Proof: Clone + Debug>,
+	DigestType: PackedField<Scalar: TowerField>,
+	VCS: MerkleTreeScheme<FExt, Digest = DigestType, Proof = Vec<DigestType>>,
 {
 	type Commitment = VCS::Digest;
 	// Committed data is a tuple with the underlying codeword and the VCS committed data (ie.
 	// Merkle internal node hashes).
 	type Committed = (Vec<PE>, MerkleProver::Committed);
-	type Proof = Proof<FExt, VCS>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -378,20 +362,22 @@ where
 	// Clippy allow is due to bug: https://github.com/rust-lang/rust-clippy/pull/12892
 	#[allow(clippy::needless_borrows_for_generic_args)]
 	#[instrument(skip_all, level = "debug")]
-	fn prove_evaluation<Data, Challenger, Backend>(
+	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
-		challenger: &mut Challenger,
+		advice: &mut AdviceWriter,
+		transcript: &mut Transcript,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
 		backend: &Backend,
-	) -> Result<Self::Proof, Self::Error>
+	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		Challenger: CanObserve<PE::Scalar>
+		Transcript: CanObserve<PE::Scalar>
 			+ CanObserve<Self::Commitment>
 			+ CanSample<PE::Scalar>
-			+ CanSampleBits<usize>,
+			+ CanSampleBits<usize>
+			+ CanWrite,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -416,17 +402,13 @@ where
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
 
-		challenger.observe_slice(sumcheck_eval.vertical_elems());
+		transcript.write_scalar_slice(sumcheck_eval.vertical_elems());
 
 		// The challenges used to mix the rows of the tensor algebra coefficients.
-		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
+		let tensor_mixing_challenges = transcript.sample_vec(Self::kappa());
 
-		let sumcheck_claim = reduce_tensor_claim(
-			self.n_vars(),
-			sumcheck_eval.clone(),
-			&tensor_mixing_challenges,
-			backend,
-		);
+		let sumcheck_claim =
+			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, backend);
 		let rs_eq = RingSwitchEqInd::<F, _>::new(
 			query_from_kappa.to_vec(),
 			tensor_mixing_challenges.to_vec(),
@@ -445,28 +427,29 @@ where
 
 		let (codeword, vcs_committed) = committed;
 		self.prove_interleaved_fri_sumcheck(
-			sumcheck_eval,
 			codeword,
 			vcs_committed,
 			sumcheck_prover,
-			challenger,
+			advice,
+			transcript,
 		)
 	}
 
-	fn verify_evaluation<Challenger, Backend>(
+	fn verify_evaluation<Transcript, Backend>(
 		&self,
-		challenger: &mut Challenger,
+		advice: &mut AdviceReader,
+		transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FExt],
-		proof: Self::Proof,
 		values: &[FExt],
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		Challenger: CanObserve<FExt>
+		Transcript: CanObserve<FExt>
 			+ CanObserve<Self::Commitment>
 			+ CanSample<FExt>
-			+ CanSampleBits<usize>,
+			+ CanSampleBits<usize>
+			+ CanRead,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -479,27 +462,16 @@ where
 			todo!("handle batches of size greater than 1");
 		}
 
-		let Proof {
-			// This is s₀ in Protocol 4.1
-			sumcheck_eval,
-			sumcheck_rounds,
-			fri_commitments,
-			fri_proof,
-		} = proof;
+		let sumcheck_eval = transcript
+			.read_scalar_slice::<FExt>(1 << Self::kappa())
+			.map_err(Error::TranscriptError)?;
 
 		let n_rounds = self.n_vars() - Self::kappa();
 		assert!(n_rounds > 0, "this is checked in the constructor");
 
 		let (query_to_kappa, query_from_kappa) = query.split_at(Self::kappa());
 
-		if sumcheck_eval.len() != 1 << Self::kappa() {
-			return Err(VerificationError::IncorrectEvaluationShape {
-				expected: 1 << Self::kappa(),
-				actual: sumcheck_eval.len(),
-			}
-			.into());
-		}
-		challenger.observe_slice(&sumcheck_eval);
+		// This is s₀ in Protocol 4.1
 		let sumcheck_eval = <TensorAlgebra<F, FExt>>::new(sumcheck_eval);
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
@@ -512,7 +484,7 @@ where
 		}
 
 		// The challenges used to mix the rows of the tensor algebra coefficients.
-		let tensor_mixing_challenges = challenger.sample_vec(Self::kappa());
+		let tensor_mixing_challenges = transcript.sample_vec(Self::kappa());
 
 		let sumcheck_claim =
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, backend);
@@ -520,9 +492,6 @@ where
 		self.verify_interleaved_fri_sumcheck(
 			&sumcheck_claim,
 			commitment,
-			sumcheck_rounds,
-			fri_commitments,
-			fri_proof,
 			|challenges| {
 				let rs_eq = RingSwitchEqInd::<F, _>::new(
 					query_from_kappa.to_vec(),
@@ -530,7 +499,8 @@ where
 				)?;
 				rs_eq.evaluate(challenges)
 			},
-			challenger,
+			advice,
+			transcript,
 		)
 	}
 
@@ -571,22 +541,6 @@ where
 			+ fri_terminate_codeword_size
 			+ fri_query_proofs_size
 	}
-}
-
-/// A [`FRIPCS`] proof.
-#[derive(Debug, Clone)]
-pub struct Proof<F, VCS>
-where
-	F: Field,
-	VCS: MerkleTreeScheme<F>,
-	VCS::Digest: Clone + Debug,
-	VCS::Proof: Clone + Debug,
-{
-	/// The vertical elements of the tensor algebra sum.
-	sumcheck_eval: Vec<F>,
-	sumcheck_rounds: Vec<RoundProof<F>>,
-	fri_commitments: Vec<VCS::Digest>,
-	fri_proof: fri::FRIProof<F, VCS>,
 }
 
 /// Heuristic for estimating the optimal arity (with respect to proof size) for the FRI-based PCS.
@@ -642,6 +596,8 @@ pub enum Error {
 	HalError(#[from] binius_hal::Error),
 	#[error("Math error: {0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("Transcript error: {0}")]
+	TranscriptError(#[from] crate::transcript::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -749,27 +705,29 @@ mod tests {
 			advice: AdviceWriter::default(),
 		};
 		prover_proof.transcript.observe(commitment);
-		let proof = pcs
-			.prove_evaluation(
-				&mut prover_proof.transcript,
-				&committed,
-				&[multilin],
-				&eval_point,
-				&backend,
-			)
-			.unwrap();
+		pcs.prove_evaluation(
+			&mut prover_proof.advice,
+			&mut prover_proof.transcript,
+			&committed,
+			&[multilin],
+			&eval_point,
+			&backend,
+		)
+		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
 		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
+			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
-			proof,
 			&[eval],
 			&backend,
 		)
 		.unwrap();
+
+		verifier_proof.finalize().unwrap()
 	}
 
 	#[test]

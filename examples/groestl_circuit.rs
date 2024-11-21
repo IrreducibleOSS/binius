@@ -84,8 +84,8 @@ fn main() -> Result<()> {
 		AESTowerFamily,
 		_,
 		_,
-		_,
-		_,
+		Groestl256<AESTowerField128b, _>,
+		GroestlDigestCompression<AESTowerField8b>,
 		HasherChallenger<groestl_crypto::Groestl256>,
 	>(
 		&constraint_system.no_base_constraints(),

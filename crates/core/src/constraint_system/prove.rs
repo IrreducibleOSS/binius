@@ -50,7 +50,7 @@ pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_
 	witness: MultilinearExtensionIndex<U, Tower::B128>,
 	domain_factory: DomainFactory,
 	backend: &Backend,
-) -> Result<Proof<Tower::B128, Digest, Hash, Compress>, Error>
+) -> Result<Proof<Tower::B128, Digest>, Error>
 where
 	U: TowerUnderlier<Tower> + PackScalar<FBase>,
 	Tower: TowerFamily,
@@ -67,7 +67,7 @@ where
 	PackedType<U, FBase>:
 		PackedFieldIndexable + PackedExtension<Tower::B8, PackedSubfield: PackedFieldIndexable>,
 {
-	let pcss = make_standard_pcss::<U, Tower, _, _, _, _>(
+	let pcss = make_standard_pcss::<U, Tower, _, _, Hash, Compress>(
 		log_inv_rate,
 		security_bits,
 		&constraint_system.oracles,
@@ -100,7 +100,7 @@ fn prove_with_pcs<
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
 	backend: &Backend,
-) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment, PCSFamily::Proof>, Error>
+) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment>, Error>
 where
 	U: TowerUnderlier<Tower> + PackScalar<FDomain> + PackScalar<FBase>,
 	Tower: TowerFamily,
@@ -361,8 +361,9 @@ where
 
 	// Verify PCS proofs
 	let batches = constraint_system.oracles.committed_batches();
-	let pcs_proofs = izip!(pcs_claims, pcss, batches, committeds)
-		.map(|((_batch_id, claim), pcs, batch, committed)| match pcs {
+	for ((_batch_id, claim), pcs, batch, committed) in izip!(pcs_claims, pcss, batches, committeds)
+	{
+		match pcs {
 			TowerPCS::B1(pcs) => tower_pcs_open::<_, Tower::B1, _, _, _, _>(
 				pcs,
 				batch,
@@ -370,6 +371,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
@@ -380,6 +382,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
@@ -390,6 +393,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
@@ -400,6 +404,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
@@ -410,6 +415,7 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
@@ -420,11 +426,12 @@ where
 				&witness,
 				committed,
 				&claim.eval_point,
+				&mut advice,
 				&mut transcript,
 				backend,
 			),
-		})
-		.collect::<Result<Vec<_>, _>>()?;
+		}?
+	}
 
 	Ok(ProofGenericPCS {
 		commitments,
@@ -435,7 +442,6 @@ where
 		zerocheck_proof,
 		univariatizing_proof,
 		greedy_evalcheck_proof,
-		pcs_proofs,
 		transcript: transcript.finalize(),
 		advice: advice.finalize(),
 	})
@@ -535,9 +541,10 @@ fn tower_pcs_open<U, F, FExt, PCS, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<U, FExt>,
 	committed: PCS::Committed,
 	eval_point: &[FExt],
+	advice: &mut AdviceWriter,
 	mut transcript: Transcript,
 	backend: &Backend,
-) -> Result<PCS::Proof, Error>
+) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<FExt>,
 	F: TowerField,
@@ -565,6 +572,6 @@ where
 			witness.get::<F>(oracle_id)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
-	pcs.prove_evaluation(&mut transcript, &committed, &mles, eval_point, backend)
+	pcs.prove_evaluation(advice, &mut transcript, &committed, &mles, eval_point, backend)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))
 }

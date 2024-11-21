@@ -90,13 +90,15 @@ fn main() -> Result<()> {
 		&backend,
 	)?;
 
-	constraint_system::verify::<U, CanonicalTowerFamily, _, _, _, _, HasherChallenger<Groestl256>>(
-		&constraint_system,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&domain_factory,
-		proof,
-	)?;
+	constraint_system::verify::<
+		U,
+		CanonicalTowerFamily,
+		_,
+		_,
+		GroestlHasher<BinaryField128b>,
+		GroestlDigestCompression<BinaryField8b>,
+		HasherChallenger<Groestl256>,
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, &domain_factory, proof)?;
 
 	Ok(())
 }

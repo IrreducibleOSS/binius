@@ -13,9 +13,7 @@ pub use prove::prove;
 pub use verify::verify;
 
 use crate::{
-	merkle_tree_vcs::BinaryMerkleTreeScheme,
 	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
-	poly_commit::{batch_pcs, fri_pcs},
 	protocols::{
 		gkr_gpa::GrandProductBatchProof, greedy_evalcheck::GreedyEvalcheckProof, sumcheck,
 	},
@@ -52,15 +50,11 @@ impl<P: PackedField<Scalar: TowerField>, PBase: PackedField> ConstraintSystem<P,
 }
 
 /// Constraint system proof with the standard PCS.
-pub type Proof<F, Digest, Hash, Compress> = ProofGenericPCS<
-	F,
-	Digest,
-	batch_pcs::Proof<fri_pcs::Proof<F, BinaryMerkleTreeScheme<Digest, Hash, Compress>>>,
->;
+pub type Proof<F, Digest> = ProofGenericPCS<F, Digest>;
 
 /// Constraint system proof with a generic [`crate::poly_commit::PolyCommitScheme`].
 #[derive(Debug, Clone)]
-pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
+pub struct ProofGenericPCS<F: TowerField, PCSComm> {
 	pub commitments: Vec<PCSComm>,
 	pub flush_products: Vec<F>,
 	pub non_zero_products: Vec<F>,
@@ -69,7 +63,6 @@ pub struct ProofGenericPCS<F: TowerField, PCSComm, PCSProof> {
 	pub zerocheck_proof: sumcheck::Proof<F>,
 	pub univariatizing_proof: sumcheck::Proof<F>,
 	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,
-	pub pcs_proofs: Vec<PCSProof>,
 	pub transcript: Vec<u8>,
 	pub advice: Vec<u8>,
 }

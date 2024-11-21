@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	common::{vcs_optimal_layers_depths_iter, FRIParams, FRIProof},
+	common::{vcs_optimal_layers_depths_iter, FRIParams},
 	error::Error,
 	TerminateCodeword,
 };
@@ -10,9 +10,11 @@ use crate::{
 	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
+	transcript::{write_u64, AdviceWriter, CanWrite},
 };
 use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
+	TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
@@ -20,6 +22,7 @@ use bytemuck::zeroed_vec;
 use itertools::izip;
 use p3_challenger::CanSampleBits;
 use rayon::prelude::*;
+use std::ops::Deref;
 use tracing::instrument;
 
 #[instrument(skip_all, level = "debug")]
@@ -249,10 +252,14 @@ where
 
 impl<'a, F, FA, MerkleProver, VCS> FRIFolder<'a, F, FA, MerkleProver, VCS>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<F>,
+	VCS: MerkleTreeScheme<
+		F,
+		Digest: PackedField<Scalar: TowerField>,
+		Proof: Deref<Target = [VCS::Digest]>,
+	>,
 {
 	/// Constructs a new folder.
 	pub fn new(
@@ -402,18 +409,21 @@ where
 		Ok((terminate_codeword, query_prover))
 	}
 
-	pub fn finish_proof<Challenger>(
+	pub fn finish_proof<Transcript>(
 		self,
-		mut challenger: Challenger,
-	) -> Result<FRIProof<F, VCS>, Error>
+		advice: &mut AdviceWriter,
+		mut transcript: Transcript,
+	) -> Result<(), Error>
 	where
-		Challenger: CanSampleBits<usize>,
+		Transcript: CanSampleBits<usize>,
 	{
 		let (terminate_codeword, query_prover) = self.finalize()?;
+		write_u64(advice, terminate_codeword.len() as u64);
+		advice.write_scalar_slice(&terminate_codeword);
 
 		let params = query_prover.params;
 
-		let indexes_iter = std::iter::repeat_with(|| challenger.sample_bits(params.index_bits()))
+		let indexes_iter = std::iter::repeat_with(|| transcript.sample_bits(params.index_bits()))
 			.take(params.n_test_queries());
 
 		let proofs = indexes_iter
@@ -422,11 +432,26 @@ where
 
 		let layers = query_prover.vcs_optimal_layers()?;
 
-		Ok(FRIProof {
-			terminate_codeword,
-			proofs,
-			layers,
-		})
+		write_u64(advice, layers.len() as u64);
+		for layer in layers.iter() {
+			write_u64(advice, layer.len() as u64);
+			advice.write_packed_slice(layer);
+		}
+
+		// TODO: After making vcs proof into byte objects, use that to serialize and deserialize.
+
+		write_u64(advice, proofs.len() as u64);
+		for proof in proofs.iter() {
+			write_u64(advice, proof.len() as u64);
+			for query_round in proof {
+				write_u64(advice, query_round.values.len() as u64);
+				advice.write_scalar_slice(&query_round.values);
+				write_u64(advice, query_round.vcs_proof.len() as u64);
+				advice.write_packed_slice(query_round.vcs_proof.deref());
+			}
+		}
+
+		Ok(())
 	}
 }
 

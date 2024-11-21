@@ -6,7 +6,7 @@ use crate::{
 	polynomial::Error as PolynomialError,
 };
 
-use crate::transcript::{CanRead, CanWrite};
+use crate::transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite};
 use binius_field::{util::inner_product_unchecked, ExtensionField, Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{MultilinearExtension, MultilinearQuery};
@@ -158,7 +158,6 @@ where
 {
 	type Commitment = Inner::Commitment;
 	type Committed = Inner::Committed;
-	type Proof = Proof<Inner::Proof>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -180,12 +179,13 @@ where
 
 	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
+		advice: &mut AdviceWriter,
 		transcript: &mut Transcript,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
 		backend: &Backend,
-	) -> Result<Self::Proof, Self::Error>
+	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
 		Transcript: CanObserve<FE>
@@ -212,19 +212,17 @@ where
 
 		let merged_poly = merge_polynomials(self.n_vars, self.log_num_polys, polys)?;
 
-		let inner_pcs_proof = self
-			.inner
-			.prove_evaluation(transcript, committed, &[merged_poly], &new_query, backend)
-			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
-		Ok(Proof(inner_pcs_proof))
+		self.inner
+			.prove_evaluation(advice, transcript, committed, &[merged_poly], &new_query, backend)
+			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
 	fn verify_evaluation<Transcript, Backend>(
 		&self,
+		advice: &mut AdviceReader,
 		transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FE],
-		proof: Self::Proof,
 		values: &[FE],
 		backend: &Backend,
 	) -> Result<(), Self::Error>
@@ -258,9 +256,8 @@ where
 
 		// check that the inner PCS proof verifies with the value mixed_evaluation
 		self.inner
-			.verify_evaluation(transcript, commitment, &new_query, proof.0, mixed_value, backend)
-			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
-		Ok(())
+			.verify_evaluation(advice, transcript, commitment, &new_query, mixed_value, backend)
+			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
 	fn proof_size(&self, _n_polys: usize) -> usize {
@@ -355,27 +352,29 @@ mod tests {
 		};
 		prover_proof.transcript.observe(commitment);
 
-		let proof = pcs
-			.prove_evaluation(
-				&mut prover_proof.transcript,
-				&committed,
-				&polys,
-				&eval_point,
-				&backend,
-			)
-			.unwrap();
+		pcs.prove_evaluation(
+			&mut prover_proof.advice,
+			&mut prover_proof.transcript,
+			&committed,
+			&polys,
+			&eval_point,
+			&backend,
+		)
+		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
 		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
+			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
-			proof,
 			&values,
 			&backend,
 		)
 		.unwrap();
+
+		verifier_proof.finalize().unwrap()
 	}
 
 	#[test]
@@ -440,26 +439,28 @@ mod tests {
 			advice: AdviceWriter::default(),
 		};
 		prover_proof.transcript.observe(commitment);
-		let proof = pcs
-			.prove_evaluation(
-				&mut prover_proof.transcript,
-				&committed,
-				&polys,
-				&eval_point,
-				&backend,
-			)
-			.unwrap();
+		pcs.prove_evaluation(
+			&mut prover_proof.advice,
+			&mut prover_proof.transcript,
+			&committed,
+			&polys,
+			&eval_point,
+			&backend,
+		)
+		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
 		verifier_proof.transcript.observe(commitment);
 		pcs.verify_evaluation(
+			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,
 			&commitment,
 			&eval_point,
-			proof,
 			&values,
 			&backend,
 		)
 		.unwrap();
+
+		verifier_proof.finalize().unwrap()
 	}
 }

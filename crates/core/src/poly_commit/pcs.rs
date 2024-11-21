@@ -2,7 +2,7 @@
 
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
-	transcript::{CanRead, CanWrite},
+	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite},
 };
 use binius_field::{ExtensionField, PackedField, TowerField};
 use binius_hal::ComputationBackend;
@@ -16,7 +16,6 @@ where
 {
 	type Commitment: Clone;
 	type Committed;
-	type Proof;
 	type Error: std::error::Error + Send + Sync + 'static;
 
 	fn n_vars(&self) -> usize;
@@ -32,13 +31,14 @@ where
 	/// Generate an evaluation proof at a *random* challenge point.
 	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
+		advice: &mut AdviceWriter,
 		transcript: &mut Transcript,
 		// TODO: this should probably consume committed
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[FE],
 		backend: &Backend,
-	) -> Result<Self::Proof, Self::Error>
+	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
 		Transcript: CanObserve<FE>
@@ -51,10 +51,10 @@ where
 	/// Verify an evaluation proof at a *random* challenge point.
 	fn verify_evaluation<Transcript, Backend>(
 		&self,
+		advice: &mut AdviceReader,
 		transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FE],
-		proof: Self::Proof,
 		values: &[FE],
 		backend: &Backend,
 	) -> Result<(), Self::Error>

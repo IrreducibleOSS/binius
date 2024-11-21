@@ -10,7 +10,7 @@ use crate::{
 		CompositeSumClaim, SumcheckClaim,
 	},
 	tensor_algebra::TensorAlgebra,
-	transcript::{CanRead, CanWrite},
+	transcript::{read_u64, write_u64, AdviceReader, AdviceWriter, CanRead, CanWrite},
 	transparent::ring_switch::RingSwitchEqInd,
 };
 use binius_field::{
@@ -84,7 +84,6 @@ where
 {
 	type Commitment = Inner::Commitment;
 	type Committed = Inner::Committed;
-	type Proof = Proof<F, FE, Inner::Proof>;
 	type Error = Error;
 
 	fn n_vars(&self) -> usize {
@@ -118,12 +117,13 @@ where
 	#[allow(clippy::needless_borrows_for_generic_args)]
 	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
+		advice: &mut AdviceWriter,
 		mut transcript: &mut Transcript,
 		committed: &Self::Committed,
 		polys: &[MultilinearExtension<P, Data>],
 		query: &[PE::Scalar],
 		backend: &Backend,
-	) -> Result<Self::Proof, Self::Error>
+	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
 		Transcript: CanObserve<PE::Scalar>
@@ -155,7 +155,9 @@ where
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
 
-		transcript.observe_slice(sumcheck_eval.vertical_elems());
+		let sumcheck_eval_elems = sumcheck_eval.vertical_elems();
+		write_u64(advice, sumcheck_eval_elems.len() as u64);
+		transcript.write_scalar_slice(sumcheck_eval.vertical_elems());
 
 		// The challenges used to mix the rows of the tensor algebra coefficients.
 		let tensor_mixing_challenges = transcript.sample_vec(Self::kappa());
@@ -183,29 +185,23 @@ where
 			immediate_switchover_heuristic,
 			backend,
 		)?;
-		let (sumcheck_output, sumcheck_proof) =
-			sumcheck::batch_prove(vec![sumcheck_prover], &mut transcript)?;
+		let (sumcheck_output, _) = sumcheck::batch_prove(vec![sumcheck_prover], &mut transcript)?;
 		let (_, eval_point) =
 			verify_sumcheck_output(sumcheck_output, query_from_kappa, &tensor_mixing_challenges)?;
 
-		let inner_pcs_proof = self
-			.inner
-			.prove_evaluation(transcript, committed, &[packed_poly], &eval_point, backend)
+		self.inner
+			.prove_evaluation(advice, transcript, committed, &[packed_poly], &eval_point, backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))?;
 
-		Ok(Proof {
-			sumcheck_eval,
-			sumcheck_proof,
-			inner_pcs_proof,
-		})
+		Ok(())
 	}
 
 	fn verify_evaluation<Transcript, Backend>(
 		&self,
+		advice: &mut AdviceReader,
 		mut transcript: &mut Transcript,
 		commitment: &Self::Commitment,
 		query: &[FE],
-		proof: Self::Proof,
 		values: &[FE],
 		backend: &Backend,
 	) -> Result<(), Self::Error>
@@ -227,16 +223,14 @@ where
 			todo!("handle batches of size greater than 1");
 		}
 
-		let Proof {
-			// This is s₀ in Protocol 4.1
-			sumcheck_eval,
-			sumcheck_proof,
-			inner_pcs_proof,
-		} = proof;
-
 		let (query_to_kappa, query_from_kappa) = query.split_at(Self::kappa());
 
-		transcript.observe_slice(sumcheck_eval.vertical_elems());
+		let sumcheck_eval_elems_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+		let sumcheck_eval = transcript
+			.read_scalar_slice(sumcheck_eval_elems_len)
+			.map_err(Error::TranscriptError)?;
+		// This is s₀ in Protocol 4.1
+		let sumcheck_eval = TensorAlgebra::new(sumcheck_eval);
 
 		// Check that the claimed sum is consistent with the tensor algebra element received.
 		let expanded_query = backend.multilinear_query::<FE>(query_to_kappa)?;
@@ -252,20 +246,17 @@ where
 
 		let sumcheck_claim =
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
-		let output = sumcheck::batch_verify(&[sumcheck_claim], sumcheck_proof, &mut transcript)?;
+		let output = sumcheck::batch_verify(
+			&[sumcheck_claim],
+			sumcheck::Proof::<FE>::default(),
+			&mut transcript,
+		)?;
 
 		let (eval, eval_point) =
 			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges)?;
 
 		self.inner
-			.verify_evaluation(
-				transcript,
-				commitment,
-				&eval_point,
-				inner_pcs_proof,
-				&[eval],
-				backend,
-			)
+			.verify_evaluation(advice, transcript, commitment, &eval_point, &[eval], backend)
 			.map_err(|err| Error::InnerPCS(Box::new(err)))
 	}
 
@@ -280,18 +271,6 @@ where
 		let sumcheck_proof_size = mem::size_of::<FE>() * (2 * self.inner.n_vars() + 2);
 		sumcheck_eval_size + sumcheck_proof_size + self.inner.proof_size(n_polys)
 	}
-}
-
-/// A [`RingSwitchPCS`] proof.
-#[derive(Debug, Clone)]
-pub struct Proof<F, FE, Inner>
-where
-	F: Field,
-	FE: ExtensionField<F>,
-{
-	sumcheck_eval: TensorAlgebra<F, FE>,
-	sumcheck_proof: sumcheck::Proof<FE>,
-	inner_pcs_proof: Inner,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -312,6 +291,8 @@ pub enum Error {
 	HalError(#[from] binius_hal::Error),
 	#[error("Math error: {0}")]
 	MathError(#[from] binius_math::Error),
+	#[error("Transcript error: {0}")]
+	TranscriptError(#[from] crate::transcript::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -493,27 +474,29 @@ mod tests {
 			advice: AdviceWriter::default(),
 		};
 		prover_challenger.transcript.observe(commitment);
-		let proof = pcs
-			.prove_evaluation(
-				&mut prover_challenger.transcript,
-				&committed,
-				&[multilin],
-				&eval_point,
-				&backend,
-			)
-			.unwrap();
+		pcs.prove_evaluation(
+			&mut prover_challenger.advice,
+			&mut prover_challenger.transcript,
+			&committed,
+			&[multilin],
+			&eval_point,
+			&backend,
+		)
+		.unwrap();
 
 		let mut verifier_challenger = prover_challenger.into_verifier();
 		verifier_challenger.transcript.observe(commitment);
 		pcs.verify_evaluation(
+			&mut verifier_challenger.advice,
 			&mut verifier_challenger.transcript,
 			&commitment,
 			&eval_point,
-			proof,
 			&[eval],
 			&backend,
 		)
 		.unwrap();
+
+		verifier_challenger.finalize().unwrap()
 	}
 
 	#[test]

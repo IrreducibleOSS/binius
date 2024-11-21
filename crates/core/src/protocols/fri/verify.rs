@@ -1,15 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	common::{vcs_optimal_layers_depths_iter, FRIProof},
-	error::Error,
-	QueryProof, VerificationError,
-};
+use super::{common::vcs_optimal_layers_depths_iter, error::Error, QueryProof, VerificationError};
 use crate::{
 	merkle_tree_vcs::MerkleTreeScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
+	transcript::{read_u64, AdviceReader, CanRead},
 };
-use binius_field::{BinaryField, ExtensionField};
+use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use itertools::izip;
@@ -40,11 +37,12 @@ where
 	fold_challenges: &'a [F],
 }
 
-impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
+impl<'a, F, FA, DigestType, VCS> FRIVerifier<'a, F, FA, VCS>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: MerkleTreeScheme<F>,
+	DigestType: PackedField<Scalar: TowerField>,
+	VCS: MerkleTreeScheme<F, Digest = DigestType, Proof = Vec<DigestType>>,
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
@@ -92,24 +90,34 @@ where
 		self.params.n_oracles()
 	}
 
-	pub fn verify<Challenger>(
+	pub fn verify<Transcript>(
 		&self,
-		fri_proof: FRIProof<F, VCS>,
-		mut challenger: Challenger,
+		advice: &mut AdviceReader,
+		mut transcript: Transcript,
 	) -> Result<F, Error>
 	where
-		Challenger: CanSampleBits<usize>,
+		Transcript: CanSampleBits<usize>,
 	{
-		let FRIProof {
-			terminate_codeword,
-			proofs,
-			layers,
-		} = fri_proof;
+		let terminate_codeword_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+		let terminate_codeword = advice
+			.read_scalar_slice(terminate_codeword_len)
+			.map_err(Error::TranscriptError)?;
+
+		let layers_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+		let mut layers = Vec::with_capacity(layers_len);
+		for _ in 0..layers_len {
+			let layer_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+			layers.push(
+				advice
+					.read_packed_slice(layer_len)
+					.map_err(Error::TranscriptError)?,
+			);
+		}
 
 		let final_value = self.verify_last_oracle(&terminate_codeword)?;
 
 		let indexes_iter =
-			std::iter::repeat_with(|| challenger.sample_bits(self.params.index_bits()))
+			std::iter::repeat_with(|| transcript.sample_bits(self.params.index_bits()))
 				.take(self.params.n_test_queries());
 
 		// Verify that the provided layers match the commitments.
@@ -125,7 +133,26 @@ where
 
 		let mut scratch_buffer = self.create_scratch_buffer();
 
-		for (index, proof) in indexes_iter.zip(proofs) {
+		let proofs_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+		for (index, _) in indexes_iter.zip(0..proofs_len) {
+			let proof_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+			let mut proof = QueryProof::with_capacity(proof_len);
+			for _ in 0..proof_len {
+				let query_round_values_len =
+					read_u64(advice).map_err(Error::TranscriptError)? as usize;
+				let query_round_values = advice
+					.read_scalar_slice::<F>(query_round_values_len)
+					.map_err(Error::TranscriptError)?;
+				let query_round_vcs_proof_len =
+					read_u64(advice).map_err(Error::TranscriptError)? as usize;
+				let query_round_vcs_proof = advice
+					.read_packed_slice(query_round_vcs_proof_len)
+					.map_err(Error::TranscriptError)?;
+				proof.push(QueryRoundProof {
+					values: query_round_values,
+					vcs_proof: query_round_vcs_proof,
+				});
+			}
 			self.verify_query_internal(
 				index,
 				proof,

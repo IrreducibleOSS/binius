@@ -233,6 +233,17 @@ pub trait CanRead {
 
 		Ok(pack)
 	}
+
+	fn read_packed_slice<P: PackedField<Scalar: TowerField>>(
+		&mut self,
+		len: usize,
+	) -> Result<Vec<P>, Error> {
+		let mut packed = Vec::with_capacity(len);
+		for _ in 0..len {
+			packed.push(self.read_packed()?);
+		}
+		Ok(packed)
+	}
 }
 
 impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
@@ -283,6 +294,12 @@ pub trait CanWrite {
 	fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
 		for scalar in packed.iter() {
 			self.write_scalar(scalar);
+		}
+	}
+
+	fn write_packed_slice<P: PackedField<Scalar: TowerField>>(&mut self, packed_slice: &[P]) {
+		for &packed in packed_slice {
+			self.write_packed(packed)
 		}
 	}
 }

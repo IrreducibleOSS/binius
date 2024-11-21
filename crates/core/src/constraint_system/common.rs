@@ -1,9 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	poly_commit::{batch_pcs, batch_pcs::BatchPCS, fri_pcs, PolyCommitScheme, FRIPCS},
+	poly_commit::{batch_pcs, batch_pcs::BatchPCS, PolyCommitScheme, FRIPCS},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
-	transcript::CanRead,
+	transcript::{AdviceReader, CanRead},
 };
 use binius_field::{as_packed_field::PackedType, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
@@ -13,7 +13,6 @@ use std::{fmt::Debug, marker::PhantomData};
 
 /// A trait that groups a family of PCSs for different fields in a tower as associated types.
 pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
-	type Proof;
 	type Committed;
 	type Commitment: Clone;
 	type Error: std::error::Error + Send + Sync + 'static;
@@ -23,7 +22,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 	type PCS8: PolyCommitScheme<
@@ -31,7 +29,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 	type PCS16: PolyCommitScheme<
@@ -39,7 +36,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 	type PCS32: PolyCommitScheme<
@@ -47,7 +43,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 	type PCS64: PolyCommitScheme<
@@ -55,7 +50,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 	type PCS128: PolyCommitScheme<
@@ -63,7 +57,6 @@ pub trait TowerPCSFamily<Tower: TowerFamily, U: TowerUnderlier<Tower>> {
 		Tower::B128,
 		Commitment = Self::Commitment,
 		Committed = Self::Committed,
-		Proof = Self::Proof,
 		Error = Self::Error,
 	>;
 }
@@ -92,10 +85,10 @@ where
 {
 	pub fn verify_evaluation<CH, Backend>(
 		&self,
+		advice: &mut AdviceReader,
 		challenger: &mut CH,
 		commitment: &PCSFamily::Commitment,
 		query: &[FExt<Tower>],
-		proof: PCSFamily::Proof,
 		values: &[FExt<Tower>],
 		backend: &Backend,
 	) -> Result<(), PCSFamily::Error>
@@ -109,22 +102,22 @@ where
 	{
 		match self {
 			Self::B1(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 			Self::B8(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 			Self::B16(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 			Self::B32(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 			Self::B64(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 			Self::B128(pcs) => {
-				pcs.verify_evaluation(challenger, commitment, query, proof, values, backend)
+				pcs.verify_evaluation(advice, challenger, commitment, query, values, backend)
 			}
 		}
 	}
@@ -138,7 +131,7 @@ pub mod standard_pcs {
 	use crate::merkle_tree_vcs::{
 		BinaryMerkleTreeProver, BinaryMerkleTreeScheme, MerkleTreeProver, MerkleTreeScheme,
 	};
-	use binius_field::PackedExtension;
+	use binius_field::{PackedExtension, PackedField, TowerField};
 
 	/// The evaluation domain used in sumcheck protocols.
 	///
@@ -172,7 +165,7 @@ pub mod standard_pcs {
 		_marker: PhantomData<(Tower, U, DomainFactory, MerkleProver, VCS)>,
 	}
 
-	impl<Tower, U, DomainFactory, MerkleProver, VCS> TowerPCSFamily<Tower, U>
+	impl<Tower, U, DomainFactory, MerkleProver, DigestType, VCS> TowerPCSFamily<Tower, U>
 		for FRITowerPCSFamily<Tower, U, DomainFactory, MerkleProver, VCS>
 	where
 		Tower: TowerFamily,
@@ -180,12 +173,12 @@ pub mod standard_pcs {
 		Tower::B128: PackedTop<Tower>,
 		DomainFactory: EvaluationDomainFactory<Tower::B8>,
 		MerkleProver: MerkleTreeProver<Tower::B128, Committed: Send + Sync, Scheme = VCS> + Sync,
-		VCS: MerkleTreeScheme<Tower::B128, Digest: Clone + Debug, Proof: Clone + Debug>,
+		DigestType: PackedField<Scalar: TowerField>,
+		VCS: MerkleTreeScheme<Tower::B128, Digest = DigestType, Proof = Vec<DigestType>>,
 		PackedType<U, Tower::B128>: PackedFieldIndexable,
 	{
 		type Commitment = VCS::Digest;
 		type Committed = (Vec<PackedType<U, Tower::B128>>, MerkleProver::Committed);
-		type Proof = batch_pcs::Proof<fri_pcs::Proof<Tower::B128, VCS>>;
 		type Error = batch_pcs::Error;
 
 		type PCS1 = BatchFRIPCS<Tower, U, Tower::B1, DomainFactory, MerkleProver, VCS>;
