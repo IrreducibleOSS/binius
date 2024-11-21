@@ -150,6 +150,9 @@ where
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
+
+	transcript.observe_slice(&flush_products);
+
 	let final_layer_claims = gkr_gpa::batch_verify(
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		prodcheck_proof,

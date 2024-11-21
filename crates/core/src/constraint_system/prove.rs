@@ -202,6 +202,8 @@ where
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
 
+	transcript.observe_slice(&flush_products);
+
 	let prodcheck_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
 	let prodcheck_claims = [flush_prodcheck_claims, non_zero_prodcheck_claims].concat();
 
