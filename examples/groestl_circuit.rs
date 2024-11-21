@@ -4,7 +4,7 @@ use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::AESTowerFamily};
 use binius_field::{
-	arch::OptimalUnderlier128b, AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField8b,
+	arch::OptimalUnderlier, AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField8b,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::{Groestl256, GroestlDigestCompression};
@@ -19,7 +19,7 @@ const LOG_ROWS_PER_PERMUTATION: usize = 0;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 128, value_parser = value_parser!(u32).range(1 << 7..))]
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(1 << 9..))]
 	n_permutations: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -27,7 +27,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
+	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()

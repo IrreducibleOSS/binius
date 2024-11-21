@@ -357,8 +357,8 @@ where
 		.precompute_twiddles();
 
 	// Smaller subcubes are batched together to reduce interpolation/evaluation overhead.
-	const MIN_SUBCUBE_VARS: usize = 8;
-	let log_batch = MIN_SUBCUBE_VARS.min(n_vars).saturating_sub(skip_rounds);
+	const MAX_SUBCUBE_VARS: usize = 12;
+	let log_batch = MAX_SUBCUBE_VARS.min(n_vars).saturating_sub(skip_rounds);
 
 	// Expand the multilinear query in all but the first `skip_rounds` variables,
 	// where each tensor expansion element serves as a constant factor of the whole

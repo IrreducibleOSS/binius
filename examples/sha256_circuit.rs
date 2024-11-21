@@ -5,7 +5,7 @@ use binius_circuits::{builder::ConstraintSystemBuilder, unconstrained::unconstra
 use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField1b, BinaryField8b};
+use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -29,7 +29,7 @@ struct Args {
 const COMPRESSION_LOG_LEN: usize = 5;
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
+	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
