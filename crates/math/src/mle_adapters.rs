@@ -8,6 +8,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField, RepackedExtension,
 };
 use binius_utils::bail;
+use rayon::prelude::*;
 use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
 
 /// An adapter for [`MultilinearExtension`] that implements [`MultilinearPoly`] over a packed
@@ -295,6 +296,44 @@ where
 {
 	pub fn upcast_arc_dyn(self) -> Arc<dyn MultilinearPoly<P> + Send + Sync + 'a> {
 		Arc::new(self)
+	}
+
+	/// Given a ($mu$-variate) multilinear function $f$ and an element $r$,
+	/// return the multilinear function $f(r, X_1, ..., X_{\mu - 1})$.
+	pub fn evaluate_zeroth_variable(&self, r: P::Scalar) -> Result<MultilinearExtension<P>, Error> {
+		let multilin = &self.0;
+		let mu = multilin.n_vars();
+		if mu == 0 {
+			bail!(Error::ConstantFold);
+		}
+		let packed_length = 1 << mu.saturating_sub(P::LOG_WIDTH + 1);
+		// in general, the formula is: f(r||w) = r * (f(1||w) - f(0||w)) + f(0||w).
+		let result = (0..packed_length)
+			.into_par_iter()
+			.map(|i| {
+				let eval0_minus_eval1 = P::from_fn(|j| {
+					let index = (i << P::LOG_WIDTH) | j;
+					// necessary if `mu_minus_one` < `P::LOG_WIDTH`
+					if index >= 1 << (mu - 1) {
+						return P::Scalar::ZERO;
+					}
+					let eval0 = get_packed_slice(multilin.evals(), index << 1);
+					let eval1 = get_packed_slice(multilin.evals(), (index << 1) | 1);
+					eval0 - eval1
+				});
+				let eval0 = P::from_fn(|j| {
+					let index = (i << P::LOG_WIDTH) | j;
+					// necessary if `mu_minus_one` < `P::LOG_WIDTH`
+					if index >= 1 << (mu - 1) {
+						return P::Scalar::ZERO;
+					}
+					get_packed_slice(multilin.evals(), index << 1)
+				});
+				eval0_minus_eval1 * r + eval0
+			})
+			.collect::<Vec<_>>();
+
+		MultilinearExtension::new(mu - 1, result)
 	}
 }
 
@@ -655,5 +694,24 @@ mod tests {
 		poly.subcube_evals(poly.n_vars(), 0, poly.log_extension_degree(), evals_out.as_mut_slice())
 			.unwrap();
 		assert_eq!(evals_out, poly.packed_evals().unwrap());
+	}
+
+	#[test]
+	fn test_evaluate_zeroth_evaluate_partial_low_consistent() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values: Vec<_> = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+			.take(1 << 8)
+			.collect();
+
+		let me = MultilinearExtension::from_values(values).unwrap();
+		let mled = MLEDirectAdapter::from(me);
+		let r = <BinaryField32b as PackedField>::random(&mut rng);
+
+		let eval_1: MultilinearExtension<PackedBinaryField4x32b> =
+			mled.evaluate_zeroth_variable(r).unwrap();
+		let eval_2 = mled
+			.evaluate_partial_low(multilinear_query(&[r]).to_ref())
+			.unwrap();
+		assert_eq!(eval_1, eval_2);
 	}
 }

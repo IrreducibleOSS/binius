@@ -47,4 +47,6 @@ pub enum Error {
 	},
 	#[error("there are a total of {actual} polynomials, according to n_pieces_by_vars, while you have provided evaluations for {expected}")]
 	PiecewiseMultilinearIncompatibleEvals { actual: usize, expected: usize },
+	#[error("cannot fold a constant multilinear")]
+	ConstantFold,
 }

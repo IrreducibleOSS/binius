@@ -10,9 +10,7 @@ use crate::{
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
 };
-use binius_hal::{
-	ComputationBackend, ComputationBackendExt, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
-};
+use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
 	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
 };
@@ -152,8 +150,6 @@ where
 			self.tensor_query = Some(tensor_query.update(&[challenge])?);
 		}
 
-		// Partial query for folding
-		let single_variable_partial_query = self.backend.multilinear_query(&[challenge])?;
 		// Use Relaxed ordering for writes and the read, because:
 		// * all writes can only update this value in the same direction of false->true
 		// * the barrier at the end of rayon "parallel for" is a big enough synchronization point to be Relaxed about memory ordering of accesses to this Atomic.
@@ -189,10 +185,9 @@ where
 					SumcheckMultilinear::Folded {
 						ref mut large_field_folded_multilinear,
 					} => {
-						// Post-switchover, simply halve large field MLE.
+						// Post-switchover, simply plug in challenge for the zeroth variable.
 						*large_field_folded_multilinear = MLEDirectAdapter::from(
-							large_field_folded_multilinear
-								.evaluate_partial_low(single_variable_partial_query.to_ref())?,
+							large_field_folded_multilinear.evaluate_zeroth_variable(challenge)?,
 						);
 					}
 				};
