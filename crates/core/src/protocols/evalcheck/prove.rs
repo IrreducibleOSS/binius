@@ -136,6 +136,9 @@ where
 			eval,
 		} = evalcheck_claim;
 
+		self.eval_memoization
+			.insert((multilinear.id(), eval_point.clone()), eval);
+
 		use MultilinearPolyOracle::*;
 
 		let proof = match multilinear {
@@ -248,11 +251,9 @@ where
 		poly: MultilinearPolyOracle<F>,
 		eval_point: &[F],
 	) -> Result<(F, EvalcheckProof<F>), Error> {
-		let memoization_key = (poly.id(), eval_point.to_vec());
-
 		let eval = self
 			.eval_memoization
-			.get(&memoization_key)
+			.get(&(poly.id(), eval_point.to_vec()))
 			.map(|eval| Result::<_, Error>::Ok(*eval))
 			.unwrap_or_else(|| {
 				let eval_query = self.memoized_queries.full_query(eval_point, self.backend)?;
@@ -261,10 +262,9 @@ where
 					.get_multilin_poly(poly.id())
 					.map_err(Error::Witness)?;
 
-				let eval = witness_poly.evaluate(eval_query.to_ref())?;
-
-				self.eval_memoization.insert(memoization_key, eval);
-				Ok(eval)
+				witness_poly
+					.evaluate(eval_query.to_ref())
+					.map_err(Error::from)
 			})?;
 
 		let subclaim = EvalcheckMultilinearClaim {
