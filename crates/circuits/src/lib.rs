@@ -13,8 +13,6 @@ pub mod u32add;
 pub mod u32fib;
 pub mod unconstrained;
 
-mod helpers;
-
 #[cfg(test)]
 mod tests {
 	use crate::{

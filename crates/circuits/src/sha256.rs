@@ -12,7 +12,7 @@ use binius_field::{
 };
 use binius_macros::composition_poly;
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{must_cast_slice, pod_collect_to_vec, Pod};
+use bytemuck::{pod_collect_to_vec, Pod};
 use itertools::izip;
 
 const LOG_U32_BITS: usize = checked_log_2(32);
@@ -79,13 +79,13 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut result_witness = witness.new_column::<B1>(result_oracle_id, log_size);
+		let mut result_witness = witness.new_column::<B1>(result_oracle_id);
 		let result_u32 = result_witness.as_mut_slice::<u32>();
 
 		for ((oracle_id, shift, t), shifted_oracle_id) in r.iter().zip(&shifted_oracle_ids) {
-			let values_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(*oracle_id)?);
+			let values_u32 = witness.get::<B1>(*oracle_id)?.as_slice::<u32>();
 
-			let mut shifted_witness = witness.new_column::<B1>(*shifted_oracle_id, log_size);
+			let mut shifted_witness = witness.new_column::<B1>(*shifted_oracle_id);
 			let shifted_u32 = shifted_witness.as_mut_slice::<u32>();
 
 			izip!(shifted_u32.iter_mut(), values_u32, result_u32.iter_mut()).for_each(
@@ -141,11 +141,10 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut transparent_witness =
-			witness.new_column::<B1>(transparent_id, PackedType::<U, B1>::LOG_WIDTH);
+		let mut transparent_witness = witness.new_column::<B1>(transparent_id);
 		transparent_witness.as_mut_slice::<u32>().fill(x);
 
-		let mut repeating_witness = witness.new_column::<B1>(repeating_id, log_size);
+		let mut repeating_witness = witness.new_column::<B1>(repeating_id);
 		repeating_witness.as_mut_slice::<u32>().fill(x);
 	}
 
@@ -217,11 +216,11 @@ where
 		)?;
 
 		if let Some(witness) = builder.witness() {
-			let mut ch_witness = witness.new_column::<B1>(ch[i], log_size);
+			let mut ch_witness = witness.new_column::<B1>(ch[i]);
 			let ch_u32 = ch_witness.as_mut_slice::<u32>();
-			let e_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(e)?);
-			let f_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(f)?);
-			let g_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(g)?);
+			let e_u32 = witness.get::<B1>(e)?.as_slice::<u32>();
+			let f_u32 = witness.get::<B1>(f)?.as_slice::<u32>();
+			let g_u32 = witness.get::<B1>(g)?.as_slice::<u32>();
 			izip!(ch_u32.iter_mut(), e_u32, f_u32, g_u32).for_each(|(ch, e, f, g)| {
 				*ch = (e & f) ^ ((!e) & g);
 			});
@@ -243,11 +242,11 @@ where
 		)?;
 
 		if let Some(witness) = builder.witness() {
-			let mut maj_witness = witness.new_column::<B1>(maj[i], log_size);
+			let mut maj_witness = witness.new_column::<B1>(maj[i]);
 			let maj_u32 = maj_witness.as_mut_slice::<u32>();
-			let a_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(a)?);
-			let b_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(b)?);
-			let c_u32 = must_cast_slice::<_, u32>(witness.get::<B1>(c)?);
+			let a_u32 = witness.get::<B1>(a)?.as_slice::<u32>();
+			let b_u32 = witness.get::<B1>(b)?.as_slice::<u32>();
+			let c_u32 = witness.get::<B1>(c)?.as_slice::<u32>();
 			izip!(maj_u32.iter_mut(), a_u32, b_u32, c_u32).for_each(|(maj, a, b, c)| {
 				*maj = (a & b) ^ (a & c) ^ (b & c);
 			});

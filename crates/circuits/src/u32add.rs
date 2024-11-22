@@ -6,12 +6,11 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_macros::composition_poly;
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::Pod;
 use rayon::prelude::*;
 
 fn u32add_common<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
-	log_size: usize,
 	xin: OracleId,
 	yin: OracleId,
 	zout: OracleId,
@@ -24,16 +23,16 @@ where
 {
 	if let Some(witness) = builder.witness() {
 		(
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(xin)?),
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(yin)?),
+			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
+			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(zout, log_size)
+				.new_column::<BinaryField1b>(zout)
 				.as_mut_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(cout, log_size)
+				.new_column::<BinaryField1b>(cout)
 				.as_mut_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(cin, log_size)
+				.new_column::<BinaryField1b>(cin)
 				.as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
@@ -73,7 +72,7 @@ where
 		[(xin, F::ONE), (yin, F::ONE), (cin, F::ONE)].into_iter(),
 	)?;
 
-	u32add_common(builder, log_size, xin, yin, zout, cin, cout)?;
+	u32add_common(builder, xin, yin, zout, cin, cout)?;
 
 	builder.pop_namespace();
 	Ok(zout)
@@ -95,7 +94,7 @@ where
 	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
 	let zout = builder.add_committed("zout", log_size, BinaryField1b::TOWER_LEVEL);
 
-	u32add_common(builder, log_size, xin, yin, zout, cin, cout)?;
+	u32add_common(builder, xin, yin, zout, cin, cout)?;
 
 	builder.assert_zero(
 		[xin, yin, cin, zout],

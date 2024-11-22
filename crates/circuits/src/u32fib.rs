@@ -28,9 +28,9 @@ where
 		builder.add_shifted("next_next", current, 64, log_size, ShiftVariant::LogicalRight)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut current = witness.new_column::<BinaryField1b>(current, log_size);
-		let mut next = witness.new_column::<BinaryField1b>(next, log_size);
-		let mut next_next = witness.new_column::<BinaryField1b>(next_next, log_size);
+		let mut current = witness.new_column::<BinaryField1b>(current);
+		let mut next = witness.new_column::<BinaryField1b>(next);
+		let mut next_next = witness.new_column::<BinaryField1b>(next_next);
 
 		let mut rng = thread_rng();
 		let current = current.as_mut_slice::<u32>();
@@ -60,13 +60,10 @@ where
 
 	if let Some(witness) = builder.witness() {
 		let next_next_packed_witness = witness.get::<BinaryField1b>(next_next)?;
-		witness.set_data::<BinaryField32b>(
-			next_next_packed,
-			packed_log_size,
-			next_next_packed_witness,
-		)?;
+		witness.set(next_next_packed, next_next_packed_witness.repacked::<BinaryField32b>())?;
+
 		let sum_packed_witness = witness.get::<BinaryField1b>(sum)?;
-		witness.set_data::<BinaryField32b>(sum_packed, packed_log_size, sum_packed_witness)?;
+		witness.set(sum_packed, sum_packed_witness.repacked::<BinaryField32b>())?;
 	}
 
 	builder.assert_zero(

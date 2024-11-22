@@ -94,19 +94,17 @@ where
 	});
 
 	if let Some(witness) = builder.witness() {
-		let mut state_in = state_in.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut state_out = state_out.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut c = c.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut d = d.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut c_shift = c_shift.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut a_theta = a_theta.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut b = b.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut next_state_in =
-			next_state_in.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut round_consts_single =
-			witness.new_column::<BinaryField1b>(round_consts_single, LOG_ROWS_PER_PERMUTATION);
-		let mut round_consts = witness.new_column::<BinaryField1b>(round_consts, log_size);
-		let mut selector = witness.new_column::<BinaryField1b>(selector, log_size);
+		let mut state_in = state_in.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut state_out = state_out.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut c = c.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut d = d.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut c_shift = c_shift.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut a_theta = a_theta.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut b = b.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut next_state_in = next_state_in.map(|id| witness.new_column::<BinaryField1b>(id));
+		let mut round_consts_single = witness.new_column::<BinaryField1b>(round_consts_single);
+		let mut round_consts = witness.new_column::<BinaryField1b>(round_consts);
+		let mut selector = witness.new_column::<BinaryField1b>(selector);
 
 		let state_in_u64 = state_in.each_mut().map(|col| col.as_mut_slice::<u64>());
 		let state_out_u64 = state_out.each_mut().map(|col| col.as_mut_slice::<u64>());

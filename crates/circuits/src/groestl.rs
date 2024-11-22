@@ -6,11 +6,10 @@ use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
-	underlier::WithUnderlier,
 	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, Field, PackedField, TowerField,
 };
 use binius_math::CompositionPolyOS;
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::Pod;
 use rayon::prelude::*;
 use std::{array, fmt::Debug, iter};
 
@@ -64,10 +63,10 @@ where
 
 		let inputs = p_in
 			.try_map(|id| witness.get::<AESTowerField8b>(id))?
-			.map(must_cast_slice::<_, AESTowerField8b>);
+			.map(|col| col.as_slice::<AESTowerField8b>());
 		let outputs = p_out
 			.try_map(|id| witness.get::<AESTowerField8b>(id))?
-			.map(must_cast_slice::<_, AESTowerField8b>);
+			.map(|col| col.as_slice::<AESTowerField8b>());
 
 		for z in 0..1 << log_size {
 			assert_eq!(
@@ -116,38 +115,33 @@ where
 	let output = builder.add_committed_multiple("output", log_size, BinaryField8b::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
-		{
-			let p_sub_bytes_out =
-				p_sub_bytes_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
-			let mut output = output.map(|id| witness.new_column::<AESTowerField8b>(id, log_size));
-			let mut output = output
-				.iter_mut()
-				.map(|col| col.as_mut_slice::<AESTowerField8b>())
-				.collect::<Vec<_>>();
+		let p_sub_bytes_out = p_sub_bytes_out.try_map(|id| witness.get::<AESTowerField8b>(id))?;
+		let mut output = output.map(|id| witness.new_column::<AESTowerField8b>(id));
+		let mut output = output
+			.iter_mut()
+			.map(|col| col.as_mut_slice::<AESTowerField8b>())
+			.collect::<Vec<_>>();
 
-			let two = AESTowerField8b::new(2);
-			for z in 0..1 << log_size {
-				for j in 0..8 {
-					let a_j: [_; 8] = array::from_fn(|i| {
-						let shift_p = ((i + j) % 8) * 8 + i; // ShiftBytes & MixBytes
-						let x = p_sub_bytes_out[shift_p];
-						let x_as_packed = PackedType::<U, AESTowerField8b>::from_underliers_ref(x);
-						get_packed_slice(x_as_packed, z)
-					});
-					for i in 0..8 {
-						let ij = j * 8 + i;
-						let a_i: [AESTowerField8b; 8] = array::from_fn(|k| a_j[(i + k) % 8]);
-						// Here we are using an optimized matrix multiplication, as documented in
-						// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
-						let b_ij = two
-							* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
-								+ a_i[0] + a_i[1] + a_i[2]
-								+ a_i[5] + a_i[7]) + a_i[2]
-							+ a_i[4] + a_i[5] + a_i[6]
-							+ a_i[7];
+		let two = AESTowerField8b::new(2);
+		for z in 0..1 << log_size {
+			for j in 0..8 {
+				let a_j: [_; 8] = array::from_fn(|i| {
+					let shift_p = ((i + j) % 8) * 8 + i; // ShiftBytes & MixBytes
+					get_packed_slice(p_sub_bytes_out[shift_p].packed(), z)
+				});
+				for i in 0..8 {
+					let ij = j * 8 + i;
+					let a_i: [AESTowerField8b; 8] = array::from_fn(|k| a_j[(i + k) % 8]);
+					// Here we are using an optimized matrix multiplication, as documented in
+					// section 4.4.2 of https://www.groestl.info/groestl-implementation-guide.pdf
+					let b_ij = two
+						* (two * (a_i[3] + a_i[4] + a_i[6] + a_i[7])
+							+ a_i[0] + a_i[1] + a_i[2]
+							+ a_i[5] + a_i[7])
+						+ a_i[2] + a_i[4] + a_i[5]
+						+ a_i[6] + a_i[7];
 
-						output[ij][z] = b_ij;
-					}
+					output[ij][z] = b_ij;
 				}
 			}
 		}
@@ -209,24 +203,26 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut inv_bits_witness: [_; 8] =
-			inv_bits.map(|id| witness.new_column::<BinaryField1b>(id, log_size));
-		let mut inv_witness = witness.new_column::<AESTowerField8b>(inv, log_size);
-		let mut output_witness = witness.new_column::<AESTowerField8b>(output, log_size);
-		{
-			let input_poly = witness.get::<AESTowerField8b>(input)?;
-			let input = must_cast_slice::<_, AESTowerField8b>(input_poly);
-			let inv_bits = inv_bits_witness.each_mut().map(|bit| bit.packed());
-			let inv = inv_witness.as_mut_slice::<AESTowerField8b>();
-			let output = output_witness.as_mut_slice::<AESTowerField8b>();
+		let input = witness
+			.get::<AESTowerField8b>(input)?
+			.as_slice::<AESTowerField8b>();
 
-			for z in 0..(1 << log_size) {
-				inv[z] = input[z].invert_or_zero();
-				output[z] = s_box(input[z]);
-				let inv_bits_bases = ExtensionField::<BinaryField1b>::iter_bases(&inv[z]);
-				for (b, bit) in inv_bits_bases.enumerate() {
-					set_packed_slice(inv_bits[b], z, bit);
-				}
+		let mut inv_bits_witness: [_; 8] =
+			inv_bits.map(|id| witness.new_column::<BinaryField1b>(id));
+		let inv_bits = inv_bits_witness.each_mut().map(|bit| bit.packed());
+
+		let mut inv = witness.new_column::<AESTowerField8b>(inv);
+		let inv = inv.as_mut_slice::<AESTowerField8b>();
+
+		let mut output = witness.new_column::<AESTowerField8b>(output);
+		let output = output.as_mut_slice::<AESTowerField8b>();
+
+		for z in 0..(1 << log_size) {
+			inv[z] = input[z].invert_or_zero();
+			output[z] = s_box(input[z]);
+			let inv_bits_bases = ExtensionField::<BinaryField1b>::iter_bases(&inv[z]);
+			for (b, bit) in inv_bits_bases.enumerate() {
+				set_packed_slice(inv_bits[b], z, bit);
 			}
 		}
 	}
@@ -273,7 +269,7 @@ where
 	})?;
 	if let Some(witness) = builder.witness() {
 		let mut round_consts_witness: [_; 8] =
-			round_consts.map(|id| witness.new_column::<AESTowerField8b>(id, log_size));
+			round_consts.map(|id| witness.new_column::<AESTowerField8b>(id));
 		{
 			let input = input.try_map(|id| witness.get::<AESTowerField8b>(id))?;
 			let round = witness.get::<AESTowerField8b>(round)?;
@@ -281,15 +277,15 @@ where
 
 			round_consts_witness
 				.each_mut()
-				.map(|col| col.data())
+				.map(|col| col.packed())
 				.par_iter_mut()
 				.enumerate()
 				.for_each(|(i, round_consts)| {
 					(
-						PackedType::<U, AESTowerField8b>::from_underliers_ref_mut(round_consts),
-						PackedType::<U, AESTowerField8b>::from_underliers_ref(input[8 * i]),
-						PackedType::<U, AESTowerField8b>::from_underliers_ref(round),
-						PackedType::<U, AESTowerField8b>::from_underliers_ref(multiples_16[i]),
+						&mut **round_consts,
+						input[8 * i].packed(),
+						round.packed(),
+						multiples_16[i].packed(),
 					)
 						.into_par_iter()
 						.for_each(|(round_const, input, round, multiple16)| {

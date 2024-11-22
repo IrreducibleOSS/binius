@@ -1,5 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cell::RefCell, rc::Rc};
+
+use crate::builder::witness;
+use anyhow::anyhow;
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection},
@@ -26,7 +30,7 @@ where
 	F: TowerField + ExtensionField<FBase>,
 	FBase: TowerField,
 {
-	oracles: MultilinearOracleSet<F>,
+	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	batch_ids: Vec<(usize, usize, BatchId)>,
 	constraints: ConstraintSetBuilder<PackedType<U, F>>,
 	constraints_base: ConstraintSetBuilder<PackedType<U, FBase>>,
@@ -48,8 +52,10 @@ where
 	}
 
 	pub fn new_with_witness(allocator: &'arena bumpalo::Bump) -> Self {
+		let oracles = Rc::new(RefCell::new(MultilinearOracleSet::new()));
 		Self {
-			witness: Some(witness::Builder::new(allocator)),
+			witness: Some(witness::Builder::new(allocator, oracles.clone())),
+			oracles,
 			..Default::default()
 		}
 	}
@@ -58,6 +64,8 @@ where
 	pub fn build(
 		self,
 	) -> Result<ConstraintSystem<PackedType<U, F>, PackedType<U, FBase>>, anyhow::Error> {
+		let table_constraints = self.constraints.build(&self.oracles.borrow())?;
+		let table_constraints_base = self.constraints_base.build(&self.oracles.borrow())?;
 		Ok(ConstraintSystem {
 			max_channel_id: self
 				.flushes
@@ -65,10 +73,14 @@ where
 				.map(|flush| flush.channel_id)
 				.max()
 				.unwrap_or(0),
-			table_constraints: self.constraints.build(&self.oracles)?,
-			table_constraints_base: self.constraints_base.build(&self.oracles)?,
+			table_constraints,
+			table_constraints_base,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
-			oracles: self.oracles,
+			oracles: Rc::into_inner(self.oracles)
+				.ok_or(anyhow!(
+					"Failed to build ConstraintSystem: references still exist to oracles"
+				))?
+				.into_inner(),
 			flushes: self.flushes,
 		})
 	}
@@ -77,11 +89,14 @@ where
 		self.witness.as_mut()
 	}
 
-	pub fn take_witness(&mut self) -> Option<MultilinearExtensionIndex<'arena, U, F>> {
+	pub fn take_witness(
+		&mut self,
+	) -> Result<MultilinearExtensionIndex<'arena, U, F>, anyhow::Error> {
 		Option::take(&mut self.witness)
-			.expect("Witness should exist")
+			.ok_or_else(|| {
+				anyhow!("Witness is missing. Are you in verifier mode, or have you already extraced the witness?")
+			})?
 			.build()
-			.ok()
 	}
 
 	pub fn send(&mut self, channel_id: ChannelId, oracle_ids: impl IntoIterator<Item = OracleId>) {
@@ -135,6 +150,7 @@ where
 	) -> OracleId {
 		let batch_id = self.get_or_create_batch_id(n_vars, tower_level);
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.committed(batch_id)
 	}
@@ -147,6 +163,7 @@ where
 	) -> [OracleId; N] {
 		let batch_id = self.get_or_create_batch_id(n_vars, tower_level);
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.committed_multiple(batch_id)
 	}
@@ -161,7 +178,10 @@ where
 				}) {
 			batch_id
 		} else {
-			let batch_id = self.oracles.add_committed_batch(n_vars, tower_level);
+			let batch_id = self
+				.oracles
+				.borrow_mut()
+				.add_committed_batch(n_vars, tower_level);
 			self.batch_ids.push((n_vars, tower_level, batch_id));
 			batch_id
 		}
@@ -174,6 +194,7 @@ where
 		inner: impl IntoIterator<Item = (OracleId, F)>,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.linear_combination(n_vars, inner)
 	}
@@ -186,6 +207,7 @@ where
 		inner: impl IntoIterator<Item = (OracleId, F)>,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.linear_combination_with_offset(n_vars, offset, inner)
 	}
@@ -197,6 +219,7 @@ where
 		log_degree: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.packed(id, log_degree)
 	}
@@ -209,6 +232,7 @@ where
 		variant: ProjectionVariant,
 	) -> Result<usize, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.projected(id, values, variant)
 	}
@@ -220,6 +244,7 @@ where
 		log_count: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.repeating(id, log_count)
 	}
@@ -233,6 +258,7 @@ where
 		variant: ShiftVariant,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.shifted(id, offset, block_bits, variant)
 	}
@@ -243,6 +269,7 @@ where
 		poly: impl MultivariatePoly<F> + 'static,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.transparent(poly)
 	}
@@ -254,6 +281,7 @@ where
 		n_vars: usize,
 	) -> Result<OracleId, OracleError> {
 		self.oracles
+			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.zero_padded(id, n_vars)
 	}
@@ -298,189 +326,5 @@ where
 
 	pub fn pop_namespace(&mut self) {
 		self.namespace_path.pop();
-	}
-}
-
-pub mod witness {
-	use binius_core::{
-		oracle::OracleId,
-		witness::{Error, MultilinearExtensionIndex, MultilinearWitness},
-	};
-	use binius_field::{
-		as_packed_field::{PackScalar, PackedType},
-		underlier::WithUnderlier,
-		ExtensionField, Field, PackedField, TowerField,
-	};
-	use binius_math::MultilinearExtension;
-	use bytemuck::{must_cast_slice_mut, Pod};
-	use std::{cell::RefCell, marker::PhantomData, rc::Rc};
-
-	pub struct Builder<'arena, U: PackScalar<FW>, FW: Field> {
-		bump: &'arena bumpalo::Bump,
-
-		#[allow(clippy::type_complexity)]
-		entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena, U, FW>>>>>,
-	}
-
-	struct WitnessBuilderEntry<'arena, U: PackScalar<FW>, FW: Field> {
-		witness: MultilinearWitness<'arena, PackedType<U, FW>>,
-		data: &'arena [U],
-	}
-
-	impl<'arena, U, FW> Builder<'arena, U, FW>
-	where
-		U: PackScalar<FW>,
-		FW: Field,
-	{
-		pub fn new(allocator: &'arena bumpalo::Bump) -> Self {
-			Self {
-				bump: allocator,
-				entries: Rc::new(RefCell::new(Vec::new())),
-			}
-		}
-
-		pub fn new_column<FS: Field>(
-			&self,
-			id: OracleId,
-			log_rows: usize,
-		) -> EntryBuilder<'arena, U, FW, FS>
-		where
-			FW: ExtensionField<FS>,
-			U: PackScalar<FS>,
-		{
-			let len = 1 << (log_rows - <PackedType<U, FS>>::LOG_WIDTH);
-			let data = bumpalo::vec![in self.bump; U::default(); len].into_bump_slice_mut();
-			EntryBuilder {
-				_marker: PhantomData,
-				log_rows,
-				id,
-				data: Some(data),
-				entries: self.entries.clone(),
-			}
-		}
-
-		pub fn get<FS: TowerField>(&self, id: OracleId) -> Result<&'arena [U], Error>
-		where
-			U: PackScalar<FS>,
-			FW: ExtensionField<FS>,
-		{
-			let entries = self.entries.borrow();
-
-			let entry = entries
-				.get(id)
-				.ok_or(Error::MissingWitness { id })?
-				.as_ref()
-				.ok_or(Error::MissingWitness { id })?;
-
-			if entry.witness.log_extension_degree() != FW::LOG_DEGREE {
-				return Err(Error::OracleExtensionDegreeMismatch {
-					oracle_id: id,
-					field_log_extension_degree: FW::LOG_DEGREE,
-					entry_log_extension_degree: entry.witness.log_extension_degree(),
-				});
-			}
-
-			Ok(entry.data)
-		}
-
-		pub fn set_data<FS: TowerField>(
-			&self,
-			id: OracleId,
-			log_rows: usize,
-			data: &'arena [U],
-		) -> Result<(), Error>
-		where
-			U: PackScalar<FS>,
-			FW: ExtensionField<FS>,
-		{
-			if id >= self.entries.borrow().len() {
-				self.entries.borrow_mut().resize_with(id + 1, || None);
-			}
-
-			let witness = MultilinearExtension::new(
-				log_rows,
-				PackedType::<U, FS>::from_underliers_ref(data),
-			)?
-			.specialize_arc_dyn();
-			self.entries.borrow_mut()[id] = Some(WitnessBuilderEntry { data, witness });
-			Ok(())
-		}
-
-		pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, U, FW>, Error> {
-			let mut result = MultilinearExtensionIndex::new();
-			let entries = Rc::into_inner(self.entries)
-				.unwrap()
-				.into_inner()
-				.into_iter()
-				.enumerate()
-				.filter(|(_i, e)| e.is_some())
-				.map(|(id, entry)| (id, entry.unwrap().witness.clone()));
-			result.update_multilin_poly(entries)?;
-			Ok(result)
-		}
-	}
-
-	pub struct EntryBuilder<'arena, U, FW, FS>
-	where
-		U: PackScalar<FW> + PackScalar<FS>,
-		FS: Field,
-		FW: Field + ExtensionField<FS>,
-	{
-		_marker: PhantomData<FS>,
-		#[allow(clippy::type_complexity)]
-		entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena, U, FW>>>>>,
-		id: OracleId,
-		log_rows: usize,
-		data: Option<&'arena mut [U]>,
-	}
-
-	impl<'arena, U, FW, FS> EntryBuilder<'arena, U, FW, FS>
-	where
-		U: PackScalar<FW> + PackScalar<FS>,
-		FS: Field,
-		FW: Field + ExtensionField<FS>,
-	{
-		pub fn data(&mut self) -> &mut [U] {
-			self.data.as_mut().unwrap()
-		}
-
-		#[inline]
-		pub fn packed(&mut self) -> &mut [PackedType<U, FS>] {
-			PackedType::<U, FS>::from_underliers_ref_mut(self.data())
-		}
-	}
-
-	impl<'arena, U, FW, FS> EntryBuilder<'arena, U, FW, FS>
-	where
-		U: PackScalar<FW> + PackScalar<FS> + Pod,
-		FS: Field,
-		FW: Field + ExtensionField<FS>,
-	{
-		pub fn as_mut_slice<T: Pod>(&mut self) -> &mut [T] {
-			must_cast_slice_mut(self.data())
-		}
-	}
-
-	impl<'arena, U, FW, FS> Drop for EntryBuilder<'arena, U, FW, FS>
-	where
-		U: PackScalar<FW> + PackScalar<FS>,
-		FS: Field,
-		FW: Field + ExtensionField<FS>,
-	{
-		fn drop(&mut self) {
-			let data = Option::take(&mut self.data).expect("data is always Some until this point");
-			let witness = MultilinearExtension::new(
-				self.log_rows,
-				PackedType::<U, FS>::from_underliers_ref(data),
-			)
-			.unwrap()
-			.specialize_arc_dyn();
-			let mut entries = self.entries.borrow_mut();
-			let id = self.id;
-			if id >= entries.len() {
-				entries.resize_with(id + 1, || None);
-			}
-			entries[id] = Some(WitnessBuilderEntry { witness, data })
-		}
 	}
 }

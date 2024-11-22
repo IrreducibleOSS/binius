@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use anyhow::Result;
-use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId, transparent};
+use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
@@ -9,9 +9,7 @@ use binius_field::{
 };
 use itertools::izip;
 
-use crate::builder::ConstraintSystemBuilder;
-
-use crate::helpers::underliers_unpack_scalars_mut;
+use crate::{builder::ConstraintSystemBuilder, transparent};
 
 pub fn lasso<U, F, FBase, FS, FC, const T_LOG_SIZE: usize>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
@@ -32,14 +30,8 @@ where
 {
 	builder.push_namespace(name);
 
+	let lookup_o = transparent::constant(builder, "lookup_o", T_LOG_SIZE, F::ONE)?;
 	let lookup_f = builder.add_committed("lookup_f", T_LOG_SIZE, FC::TOWER_LEVEL);
-	let lookup_o = builder.add_transparent(
-		"lookup_o",
-		transparent::constant::Constant {
-			n_vars: T_LOG_SIZE,
-			value: F::ONE,
-		},
-	)?;
 	let lookup_r = builder.add_committed("lookup_r", n_vars, FC::TOWER_LEVEL);
 	let lookup_w = builder.add_linear_combination(
 		"lookup_w",
@@ -48,18 +40,15 @@ where
 	)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut lookup_r_witness = witness.new_column::<FC>(lookup_r, n_vars);
-		let mut lookup_w_witness = witness.new_column::<FC>(lookup_w, n_vars);
-		let mut lookup_f_witness = witness.new_column::<FC>(lookup_f, T_LOG_SIZE);
-		let mut lookup_o_witness = witness.new_column::<FC>(lookup_o, T_LOG_SIZE);
+		let mut lookup_r_witness = witness.new_column::<FC>(lookup_r);
+		let mut lookup_w_witness = witness.new_column::<FC>(lookup_w);
+		let mut lookup_f_witness = witness.new_column::<FC>(lookup_f);
 
-		let lookup_r_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_r_witness.data());
-		let lookup_w_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_w_witness.data());
-		let lookup_f_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_f_witness.data());
-		let lookup_o_scalars = underliers_unpack_scalars_mut::<_, FC>(lookup_o_witness.data());
+		let lookup_r_scalars = PackedType::<U, FC>::unpack_scalars_mut(lookup_r_witness.packed());
+		let lookup_w_scalars = PackedType::<U, FC>::unpack_scalars_mut(lookup_w_witness.packed());
+		let lookup_f_scalars = PackedType::<U, FC>::unpack_scalars_mut(lookup_f_witness.packed());
 
 		lookup_f_scalars.fill(FC::ONE);
-		lookup_o_scalars.fill(FC::ONE);
 
 		let alpha = FC::MULTIPLICATIVE_GENERATOR;
 
@@ -89,5 +78,6 @@ where
 	// depopulate table using final timestamps
 	builder.receive(channel, [lookup_t, lookup_f]);
 
+	builder.pop_namespace();
 	Ok(())
 }

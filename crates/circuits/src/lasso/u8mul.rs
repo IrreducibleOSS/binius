@@ -2,7 +2,7 @@
 
 use super::lasso::lasso;
 
-use crate::{builder::ConstraintSystemBuilder, helpers::underliers_unpack_scalars_mut};
+use crate::builder::ConstraintSystemBuilder;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -11,7 +11,7 @@ use binius_field::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
 	PackedFieldIndexable, TowerField,
 };
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::Pod;
 use itertools::izip;
 
 type B8 = BinaryField8b;
@@ -67,17 +67,17 @@ where
 	let mut u_to_t_mapping = None;
 
 	if let Some(witness) = builder.witness() {
-		let mut product_witness = witness.new_column::<B16>(product, log_size);
-		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u, log_size);
-		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t, T_LOG_SIZE);
+		let mut product_witness = witness.new_column::<B16>(product);
+		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u);
+		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t);
 		let mut u_to_t_mapping_witness = vec![0; 1 << log_size];
 
-		let mult_a_ints = must_cast_slice::<_, u8>(witness.get::<B8>(mult_a)?);
-		let mult_b_ints = must_cast_slice::<_, u8>(witness.get::<B8>(mult_b)?);
+		let mult_a_ints = witness.get::<B8>(mult_a)?.as_slice::<u8>();
+		let mult_b_ints = witness.get::<B8>(mult_b)?.as_slice::<u8>();
 
-		let product_scalars = underliers_unpack_scalars_mut::<_, B16>(product_witness.data());
-		let lookup_u_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_u_witness.data());
-		let lookup_t_scalars = underliers_unpack_scalars_mut::<_, B32>(lookup_t_witness.data());
+		let product_scalars = PackedType::<U, B16>::unpack_scalars_mut(product_witness.packed());
+		let lookup_u_scalars = PackedType::<U, B32>::unpack_scalars_mut(lookup_u_witness.packed());
+		let lookup_t_scalars = PackedType::<U, B32>::unpack_scalars_mut(lookup_t_witness.packed());
 
 		for (a, b, lookup_u, product, u_to_t) in izip!(
 			mult_a_ints,

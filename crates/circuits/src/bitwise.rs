@@ -5,7 +5,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_macros::composition_poly;
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::Pod;
 use rayon::prelude::*;
 
 use crate::builder::ConstraintSystemBuilder;
@@ -25,10 +25,10 @@ where
 	let zout = builder.add_committed("out", log_size, BinaryField1b::TOWER_LEVEL);
 	if let Some(witness) = builder.witness() {
 		(
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(xin)?),
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(yin)?),
+			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
+			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(zout, log_size)
+				.new_column::<BinaryField1b>(zout)
 				.as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
@@ -56,10 +56,10 @@ where
 	let zout = builder.add_linear_combination("out", log_size, [(xin, F::ONE), (yin, F::ONE)])?;
 	if let Some(witness) = builder.witness() {
 		(
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(xin)?),
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(yin)?),
+			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
+			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(zout, log_size)
+				.new_column::<BinaryField1b>(zout)
 				.as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
@@ -86,10 +86,10 @@ where
 	let zout = builder.add_committed("out", log_size, BinaryField1b::TOWER_LEVEL);
 	if let Some(witness) = builder.witness() {
 		(
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(xin)?),
-			must_cast_slice::<_, u32>(witness.get::<BinaryField1b>(yin)?),
+			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
+			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
 			witness
-				.new_column::<BinaryField1b>(zout, log_size)
+				.new_column::<BinaryField1b>(zout)
 				.as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
