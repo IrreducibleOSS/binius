@@ -273,7 +273,11 @@ macro_rules! benchmark_packed_operation {
 				PackedBinaryPolyval2x128b
 				PackedBinaryPolyval4x128b
 
-				//Byte sliced AES field
+				// Byte sliced AES fields
+				ByteSlicedAES32x8b
+				ByteSlicedAES32x16b
+				ByteSlicedAES32x32b
+				ByteSlicedAES32x64b
 				ByteSlicedAES32x128b
 			]);
 	};
