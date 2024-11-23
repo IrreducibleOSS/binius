@@ -120,7 +120,11 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness(&allocator);
 		let log_size = 12;
-		let _state_out = keccakf(&mut builder, log_size);
+		let input = array::from_fn(|_| {
+			unconstrained::<_, _, _, BinaryField1b>(&mut builder, "input", log_size).unwrap()
+		});
+
+		let _state_out = keccakf(&mut builder, input, log_size);
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
