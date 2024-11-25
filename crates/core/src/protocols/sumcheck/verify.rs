@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	common::{batch_weighted_value, BatchSumcheckOutput, Proof, RoundProof, SumcheckClaim},
+	common::{batch_weighted_value, BatchSumcheckOutput, RoundProof, SumcheckClaim},
 	error::{Error, VerificationError},
 	RoundCoeffs,
 };
@@ -29,7 +29,6 @@ use tracing::instrument;
 /// coefficient.
 pub fn batch_verify<F, Composition, Transcript>(
 	claims: &[SumcheckClaim<F, Composition>],
-	proof: Proof<F>,
 	transcript: &mut Transcript,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
@@ -44,7 +43,7 @@ where
 		skip_rounds: 0,
 	};
 
-	batch_verify_with_start(start, claims, proof, transcript)
+	batch_verify_with_start(start, claims, transcript)
 }
 
 /// A struct describing the starting state of batched sumcheck verify invocation.
@@ -65,7 +64,6 @@ pub struct BatchVerifyStart<F: Field> {
 pub fn batch_verify_with_start<F, Composition, Transcript>(
 	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],
-	proof: Proof<F>,
 	transcript: &mut Transcript,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
@@ -73,8 +71,6 @@ where
 	Composition: CompositionPolyOS<F>,
 	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
-	drop(proof);
-
 	let BatchVerifyStart {
 		mut batch_coeffs,
 		mut sum,

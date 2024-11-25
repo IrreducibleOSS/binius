@@ -2,7 +2,6 @@
 
 use super::{
 	error::{Error, VerificationError},
-	univariate::LagrangeRoundEvals,
 	verify::BatchVerifyStart,
 	zerocheck::ZerocheckClaim,
 };
@@ -11,22 +10,6 @@ use binius_field::{util::inner_product_unchecked, Field, TowerField};
 use binius_math::{make_ntt_canonical_domain_points, CompositionPolyOS, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
-
-/// Batched univariate zerocheck proof.
-#[derive(Clone, Debug)]
-pub struct ZerocheckUnivariateProof<F: Field> {
-	pub skip_rounds: usize,
-	pub round_evals: LagrangeRoundEvals<F>,
-}
-
-impl<F: Field> ZerocheckUnivariateProof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> ZerocheckUnivariateProof<FI> {
-		ZerocheckUnivariateProof {
-			skip_rounds: self.skip_rounds,
-			round_evals: self.round_evals.isomorphic(),
-		}
-	}
-}
 
 #[derive(Debug)]
 pub struct BatchZerocheckUnivariateOutput<F: Field> {
@@ -58,7 +41,6 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 #[instrument(skip_all, level = "debug")]
 pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript>(
 	claims: &[ZerocheckClaim<F, Composition>],
-	proof: ZerocheckUnivariateProof<F>,
 	skip_rounds: usize,
 	mut transcript: Transcript,
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
@@ -67,8 +49,6 @@ where
 	Composition: CompositionPolyOS<F>,
 	Transcript: CanRead + CanSample<F>,
 {
-	drop(proof);
-
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);

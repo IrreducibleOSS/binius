@@ -1,9 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	common::{GreedyEvalcheckProof, GreedyEvalcheckProveOutput},
-	error::Error,
-};
+use super::{common::GreedyEvalcheckProveOutput, error::Error};
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::MultilinearOracleSet,
@@ -45,7 +42,6 @@ where
 	Backend: ComputationBackend,
 {
 	let committed_batches = oracles.committed_batches();
-	let mut proof = GreedyEvalcheckProof::default();
 	let mut evalcheck_prover =
 		EvalcheckProver::<U, F, Backend>::new(oracles, witness_index, backend);
 
@@ -57,8 +53,8 @@ where
 	for evalcheck_proof in evalcheck_proofs.iter() {
 		serialize_evalcheck_proof(transcript, evalcheck_proof)
 	}
-	proof.initial_evalcheck_proofs = evalcheck_proofs;
 
+	let mut virtual_opening_proofs_len = 0;
 	loop {
 		let new_sumchecks = evalcheck_prover.take_new_sumchecks_constraints().unwrap();
 		if new_sumchecks.is_empty() {
@@ -66,7 +62,7 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let (batch_sumcheck_proof, new_evalcheck_claims) =
+		let new_evalcheck_claims =
 			prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
 				evalcheck_prover.oracles,
 				evalcheck_prover.witness_index,
@@ -82,12 +78,9 @@ where
 		for evalcheck_proof in new_evalcheck_proofs.iter() {
 			serialize_evalcheck_proof(transcript, evalcheck_proof);
 		}
-
-		proof
-			.virtual_opening_proofs
-			.push((batch_sumcheck_proof, new_evalcheck_proofs));
+		virtual_opening_proofs_len += 1;
 	}
-	write_u64(advice, proof.virtual_opening_proofs.len() as u64);
+	write_u64(advice, virtual_opening_proofs_len);
 
 	// Now all remaining evalcheck claims are for committed polynomials.
 	// Batch together all committed polynomial evaluation claims to one point per batch.
@@ -111,24 +104,21 @@ where
 		}
 	}
 
-	let (sumcheck_proof, new_evalcheck_claims) =
-		prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
-			evalcheck_prover.oracles,
-			evalcheck_prover.witness_index,
-			non_sqpcs_sumchecks,
-			transcript,
-			switchover_fn.clone(),
-			domain_factory.clone(),
-			backend,
-		)?;
+	let new_evalcheck_claims = prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
+		evalcheck_prover.oracles,
+		evalcheck_prover.witness_index,
+		non_sqpcs_sumchecks,
+		transcript,
+		switchover_fn.clone(),
+		domain_factory.clone(),
+		backend,
+	)?;
 
 	let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
 	write_u64(advice, new_evalcheck_proofs.len() as u64);
 	for evalcheck_proof in new_evalcheck_proofs.iter() {
 		serialize_evalcheck_proof(transcript, evalcheck_proof);
 	}
-
-	proof.batch_opening_proof = (sumcheck_proof, new_evalcheck_proofs);
 
 	// The batch committed reduction must not result in any new sumcheck claims.
 	assert!(evalcheck_prover
@@ -149,8 +139,5 @@ where
 		})
 		.collect::<Result<_, _>>()?;
 
-	Ok(GreedyEvalcheckProveOutput {
-		proof,
-		same_query_claims,
-	})
+	Ok(GreedyEvalcheckProveOutput { same_query_claims })
 }

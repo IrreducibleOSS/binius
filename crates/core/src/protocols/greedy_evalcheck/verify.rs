@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{common::GreedyEvalcheckProof, error::Error};
+use super::error::Error;
 use crate::{
 	challenger::{CanObserve, CanSample},
 	oracle::{BatchId, ConstraintSet, MultilinearOracleSet},
@@ -9,9 +9,7 @@ use crate::{
 			deserialize_evalcheck_proof, subclaims::make_non_same_query_pcs_sumcheck_claims,
 			EvalcheckMultilinearClaim, EvalcheckVerifier, SameQueryPcsClaim,
 		},
-		sumcheck::{
-			self, batch_verify, constraint_set_sumcheck_claims, Proof, SumcheckClaimsWithMeta,
-		},
+		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
 	transcript::{read_u64, AdviceReader, CanRead},
 };
@@ -21,7 +19,6 @@ use binius_utils::bail;
 pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
-	proof: GreedyEvalcheckProof<F>,
 	transcript: &mut Transcript,
 	advice: &mut AdviceReader,
 ) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
@@ -29,7 +26,6 @@ where
 	F: TowerField,
 	Transcript: CanObserve<F> + CanSample<F> + CanRead,
 {
-	drop(proof);
 	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);
 
@@ -56,7 +52,7 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let sumcheck_output = batch_verify(&claims, Proof::default(), transcript)?;
+		let sumcheck_output = batch_verify(&claims, transcript)?;
 
 		let new_evalcheck_claims =
 			sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
@@ -97,7 +93,7 @@ where
 	let SumcheckClaimsWithMeta { claims, metas } =
 		constraint_set_sumcheck_claims(non_sqpcs_sumchecks)?;
 
-	let sumcheck_output = batch_verify(&claims, Proof::default(), transcript)?;
+	let sumcheck_output = batch_verify(&claims, transcript)?;
 
 	let evalcheck_claims =
 		sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;

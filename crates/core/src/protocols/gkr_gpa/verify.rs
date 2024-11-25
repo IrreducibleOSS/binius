@@ -1,14 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
-	gkr_gpa::{GrandProductBatchProof, LayerClaim},
+	gkr_gpa::LayerClaim,
 	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
-use crate::{
-	protocols::{sumcheck, sumcheck::Proof as SumcheckBatchProof},
-	transcript::CanRead,
-};
+use crate::{protocols::sumcheck, transcript::CanRead};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
@@ -22,21 +19,14 @@ use tracing::instrument;
 #[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]
 pub fn batch_verify<F, Transcript>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
-	proof: GrandProductBatchProof<F>,
 	mut transcript: Transcript,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
 	Transcript: CanSample<F> + CanObserve<F> + CanRead,
 {
-	let GrandProductBatchProof { batch_layer_proofs } = proof;
-
 	let (original_indices, mut sorted_claims) = stable_sort(claims, |claim| claim.n_vars, true);
 	let max_n_vars = sorted_claims.first().map(|claim| claim.n_vars).unwrap_or(0);
-
-	if max_n_vars != batch_layer_proofs.len() {
-		bail!(Error::MismatchedClaimsAndProofs);
-	}
 
 	// Create LayerClaims for each of the claims
 	let mut layer_claims = sorted_claims
@@ -51,7 +41,7 @@ where
 	let n_claims = sorted_claims.len();
 	let mut reverse_sorted_evalcheck_claims = Vec::with_capacity(n_claims);
 
-	for (layer_no, batch_layer_proof) in batch_layer_proofs.into_iter().enumerate() {
+	for layer_no in 0..max_n_vars {
 		process_finished_claims(
 			n_claims,
 			layer_no,
@@ -60,7 +50,7 @@ where
 			&mut reverse_sorted_evalcheck_claims,
 		);
 
-		layer_claims = reduce_layer_claim_batch(layer_claims, batch_layer_proof, &mut transcript)?;
+		layer_claims = reduce_layer_claim_batch(layer_claims, &mut transcript)?;
 	}
 	process_finished_claims(
 		n_claims,
@@ -109,7 +99,6 @@ fn process_finished_claims<F: Field>(
 /// * `transcript` - The verifier transcript
 fn reduce_layer_claim_batch<F, Transcript>(
 	claims: Vec<LayerClaim<F>>,
-	proof: SumcheckBatchProof<F>,
 	mut transcript: Transcript,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
@@ -137,7 +126,7 @@ where
 
 	let sumcheck_claims = reduce_to_sumchecks(&gpa_sumcheck_claims)?;
 
-	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, proof, &mut transcript)?;
+	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, &mut transcript)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;

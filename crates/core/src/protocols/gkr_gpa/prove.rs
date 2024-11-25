@@ -3,7 +3,7 @@
 use super::{
 	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
 	gpa_sumcheck::prove::GPAProver,
-	Error, GrandProductBatchProof, GrandProductClaim, GrandProductWitness,
+	Error, GrandProductClaim, GrandProductWitness,
 };
 use crate::{protocols::sumcheck, transcript::CanWrite};
 use binius_field::{
@@ -69,7 +69,6 @@ where
 		.expect("sorted_provers is not empty by invariant")
 		.input_vars();
 
-	let mut batch_layer_proofs = Vec::with_capacity(max_n_vars);
 	let mut reverse_sorted_final_layer_claims = Vec::with_capacity(n_claims);
 
 	for layer_no in 0..max_n_vars {
@@ -83,16 +82,13 @@ where
 		// Now we must create the batch layer proof for the kth to k+1th layer reduction
 
 		// Step 2: Create sumcheck batch proof
-		let (gpa_sumcheck_batch_proof, sumcheck_challenge) = {
+		let batch_sumcheck_output = {
 			let stage_gpa_sumcheck_provers = sorted_provers
 				.iter_mut()
 				.map(|p| p.stage_gpa_sumcheck_prover(evaluation_domain_factory.clone()))
 				.collect::<Result<Vec<_>, _>>()?;
-			let (batch_sumcheck_output, proof) =
-				sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut transcript)?;
-			let sumcheck_challenge = batch_sumcheck_output.challenges;
 
-			(proof, sumcheck_challenge)
+			sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut transcript)?
 		};
 
 		// Step 3: Sample a challenge for the next layer
@@ -101,14 +97,12 @@ where
 		// Step 4: Finalize each prover to update its internal current_layer_claim
 		for (i, prover) in sorted_provers.iter_mut().enumerate() {
 			prover.finalize_batch_layer_proof(
-				gpa_sumcheck_batch_proof.multilinear_evals[i][0],
-				gpa_sumcheck_batch_proof.multilinear_evals[i][1],
-				sumcheck_challenge.clone(),
+				batch_sumcheck_output.multilinear_evals[i][0],
+				batch_sumcheck_output.multilinear_evals[i][1],
+				batch_sumcheck_output.challenges.clone(),
 				gpa_challenge,
 			)?;
 		}
-
-		batch_layer_proofs.push(gpa_sumcheck_batch_proof);
 	}
 	process_finished_provers(
 		max_n_vars,
@@ -124,10 +118,7 @@ where
 
 	let final_layer_claims = unsort(original_indices, sorted_final_layer_claim);
 
-	Ok(GrandProductBatchProveOutput {
-		final_layer_claims,
-		proof: GrandProductBatchProof { batch_layer_proofs },
-	})
+	Ok(GrandProductBatchProveOutput { final_layer_claims })
 }
 
 fn process_finished_provers<F, P, Backend>(

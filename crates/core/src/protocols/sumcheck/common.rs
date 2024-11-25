@@ -207,23 +207,6 @@ pub struct Proof<F: Field> {
 	pub multilinear_evals: Vec<Vec<F>>,
 }
 
-impl<F: Field> Proof<F> {
-	pub fn isomorphic<FI: Field + From<F>>(self) -> Proof<FI> {
-		Proof {
-			rounds: self
-				.rounds
-				.into_iter()
-				.map(|round| round.isomorphic())
-				.collect(),
-			multilinear_evals: self
-				.multilinear_evals
-				.into_iter()
-				.map(|prover_evals| prover_evals.into_iter().map(Into::into).collect())
-				.collect(),
-		}
-	}
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct BatchSumcheckOutput<F: Field> {
 	pub challenges: Vec<F>,

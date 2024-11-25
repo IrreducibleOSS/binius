@@ -12,12 +12,7 @@ use channel::{ChannelId, Flush};
 pub use prove::prove;
 pub use verify::verify;
 
-use crate::{
-	oracle::{ConstraintSet, MultilinearOracleSet, OracleId},
-	protocols::{
-		gkr_gpa::GrandProductBatchProof, greedy_evalcheck::GreedyEvalcheckProof, sumcheck,
-	},
-};
+use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
 
 /// Contains the 3 things that place constraints on witness data in Binius
 /// - virtual oracles
@@ -49,20 +44,9 @@ impl<P: PackedField<Scalar: TowerField>, PBase: PackedField> ConstraintSystem<P,
 	}
 }
 
-/// Constraint system proof with the standard PCS.
-pub type Proof<F, Digest> = ProofGenericPCS<F, Digest>;
-
-/// Constraint system proof with a generic [`crate::poly_commit::PolyCommitScheme`].
+/// Constraint system proof that has been serialized into bytes
 #[derive(Debug, Clone)]
-pub struct ProofGenericPCS<F: TowerField, PCSComm> {
-	pub commitments: Vec<PCSComm>,
-	pub flush_products: Vec<F>,
-	pub non_zero_products: Vec<F>,
-	pub prodcheck_proof: GrandProductBatchProof<F>,
-	pub zerocheck_univariate_proof: sumcheck::univariate_zerocheck::ZerocheckUnivariateProof<F>,
-	pub zerocheck_proof: sumcheck::Proof<F>,
-	pub univariatizing_proof: sumcheck::Proof<F>,
-	pub greedy_evalcheck_proof: GreedyEvalcheckProof<F>,
+pub struct Proof {
 	pub transcript: Vec<u8>,
 	pub advice: Vec<u8>,
 }

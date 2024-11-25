@@ -39,14 +39,6 @@ impl<F: Field> LagrangeRoundEvals<F> {
 		}
 	}
 
-	/// Representation in an isomorphic field.
-	pub fn isomorphic<FI: Field + From<F>>(self) -> LagrangeRoundEvals<FI> {
-		LagrangeRoundEvals {
-			zeros_prefix_len: self.zeros_prefix_len,
-			evals: self.evals.into_iter().map(Into::into).collect(),
-		}
-	}
-
 	/// An assigning addition of two polynomials in Lagrange basis. May fail,
 	/// thus it's not simply an `AddAssign` overload due to signature mismatch.
 	pub fn add_assign_lagrange(&mut self, rhs: &Self) -> Result<(), Error> {
@@ -327,7 +319,7 @@ mod tests {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		let (batch_sumcheck_output_prove, proof) =
+		let batch_sumcheck_output_prove =
 			batch_prove(provers, &mut prove_challenger.transcript).unwrap();
 
 		for ((skip_rounds, multilinears), multilinear_evals) in
@@ -355,7 +347,7 @@ mod tests {
 
 		let mut verify_challenger = prove_challenger.into_verifier();
 		let batch_sumcheck_output_verify =
-			batch_verify(claims.as_slice(), proof, &mut verify_challenger.transcript).unwrap();
+			batch_verify(claims.as_slice(), &mut verify_challenger.transcript).unwrap();
 		let batch_sumcheck_output_post = verify_sumcheck_outputs(
 			claims.as_slice(),
 			univariate_challenge,
@@ -478,15 +470,14 @@ mod tests {
 				.map(|prover| prover.into_regular_zerocheck().unwrap())
 				.collect::<Vec<_>>();
 
-			let (prover_univariate_output, zerocheck_univariate_proof) =
-				batch_prove_zerocheck_univariate_round(
-					univariate_provers,
-					skip_rounds,
-					&mut proof.transcript,
-				)
-				.unwrap();
+			let prover_univariate_output = batch_prove_zerocheck_univariate_round(
+				univariate_provers,
+				skip_rounds,
+				&mut proof.transcript,
+			)
+			.unwrap();
 
-			let (_sumcheck_output, zerocheck_proof) = batch_prove_with_start(
+			let _ = batch_prove_with_start(
 				prover_univariate_output.batch_prove_start,
 				tail_zerocheck_provers,
 				&mut proof.transcript,
@@ -519,7 +510,6 @@ mod tests {
 			}
 			let verifier_univariate_output = batch_verify_zerocheck_univariate_round(
 				&verifier_zerocheck_claims[..univariate_cnt],
-				zerocheck_univariate_proof.isomorphic::<F>(),
 				skip_rounds,
 				&mut verifier_proof.transcript,
 			)
@@ -529,10 +519,11 @@ mod tests {
 			let _verifier_sumcheck_output = batch_verify_with_start(
 				verifier_univariate_output.batch_verify_start,
 				&verifier_sumcheck_claims,
-				zerocheck_proof.isomorphic(),
 				&mut verifier_proof.transcript,
 			)
 			.unwrap();
+
+			verifier_proof.finalize().unwrap()
 		}
 	}
 }

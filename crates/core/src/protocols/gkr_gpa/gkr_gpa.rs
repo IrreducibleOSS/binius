@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::Error;
-use crate::{protocols::sumcheck::Proof as SumcheckBatchProof, witness::MultilinearWitness};
+use crate::witness::MultilinearWitness;
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
@@ -111,15 +111,8 @@ pub struct LayerClaim<F: Field> {
 	pub eval: F,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct GrandProductBatchProof<F: Field> {
-	pub batch_layer_proofs: Vec<SumcheckBatchProof<F>>,
-}
-
 #[derive(Debug, Default)]
 pub struct GrandProductBatchProveOutput<F: Field> {
 	// Reduced evalcheck claims for all the initial grand product claims
 	pub final_layer_claims: Vec<LayerClaim<F>>,
-	// The batch proof
-	pub proof: GrandProductBatchProof<F>,
 }

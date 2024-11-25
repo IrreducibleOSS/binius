@@ -5,7 +5,6 @@ use crate::{
 	protocols::sumcheck::{
 		prove::{batch_prove::BatchProveStart, SumcheckProver},
 		univariate::LagrangeRoundEvals,
-		univariate_zerocheck::ZerocheckUnivariateProof,
 		Error,
 	},
 	transcript::CanWrite,
@@ -76,13 +75,7 @@ pub fn batch_prove_zerocheck_univariate_round<F, Prover, Transcript>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
 	mut transcript: Transcript,
-) -> Result<
-	(
-		BatchZerocheckUnivariateProveOutput<F, Prover::RegularZerocheckProver>,
-		ZerocheckUnivariateProof<F>,
-	),
-	Error,
->
+) -> Result<BatchZerocheckUnivariateProveOutput<F, Prover::RegularZerocheckProver>, Error>
 where
 	F: TowerField,
 	Prover: UnivariateZerocheckProver<F>,
@@ -145,10 +138,5 @@ where
 		batch_prove_start,
 	};
 
-	let proof = ZerocheckUnivariateProof {
-		skip_rounds,
-		round_evals,
-	};
-
-	Ok((output, proof))
+	Ok(output)
 }

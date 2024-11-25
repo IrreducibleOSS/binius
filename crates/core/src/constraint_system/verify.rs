@@ -2,10 +2,10 @@
 
 use super::{
 	error::{Error, VerificationError},
-	ConstraintSystem, Proof, ProofGenericPCS,
+	ConstraintSystem, Proof,
 };
 use crate::{
-	challenger::{CanObserve, CanSample},
+	challenger::CanSample,
 	constraint_system::{
 		channel::{Flush, FlushDirection},
 		common::{
@@ -22,7 +22,7 @@ use crate::{
 		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck, ZerocheckClaim},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
-	transcript::{AdviceReader, TranscriptReader},
+	transcript::{AdviceReader, CanRead, TranscriptReader},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -47,7 +47,7 @@ pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
 	log_inv_rate: usize,
 	security_bits: usize,
 	domain_factory: DomainFactory,
-	proof: Proof<FExt<Tower>, Digest>,
+	proof: Proof,
 ) -> Result<(), Error>
 where
 	U: TowerUnderlier<Tower>,
@@ -73,7 +73,7 @@ where
 /// Verifies a proof against a constraint system with provided PCSs.
 fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
 	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
-	proof: ProofGenericPCS<FExt<Tower>, PCSFamily::Commitment>,
+	proof: Proof,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 ) -> Result<(), Error>
 where
@@ -98,21 +98,12 @@ where
 	// Stable sort flushes by channel ID.
 	flushes.sort_by_key(|flush| flush.channel_id);
 
-	let ProofGenericPCS {
-		commitments,
-		flush_products,
-		non_zero_products,
-		prodcheck_proof,
-		zerocheck_univariate_proof,
-		zerocheck_proof,
-		univariatizing_proof,
-		greedy_evalcheck_proof,
-		transcript,
-		advice,
-	} = proof;
+	let Proof { transcript, advice } = proof;
 
 	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
+	let mut advice = AdviceReader::new(advice);
 
+	let non_zero_products = transcript.read_scalar_slice(non_zero_oracle_ids.len())?;
 	if non_zero_products
 		.iter()
 		.any(|count| *count == Tower::B128::zero())
@@ -126,18 +117,9 @@ where
 		&non_zero_products,
 	)?;
 
-	transcript.observe_slice(&non_zero_products);
-
-	let mut advice = AdviceReader::new(advice);
-
 	let backend = make_portable_backend();
 
-	if commitments.len() != oracles.n_batches() {
-		return Err(VerificationError::IncorrectNumberOfCommitments.into());
-	}
-
-	// Observe polynomial commitments
-	transcript.observe_slice(&commitments);
+	let commitments = transcript.read_packed_slice(oracles.n_batches())?;
 
 	// Channel balancing argument
 	let mixing_challenge = transcript.sample();
@@ -147,14 +129,12 @@ where
 	// Grand product arguments
 	let flush_oracles =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
+	let flush_products = transcript.read_scalar_slice(flush_oracles.len())?;
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
 
-	transcript.observe_slice(&flush_products);
-
 	let final_layer_claims = gkr_gpa::batch_verify(
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
-		prodcheck_proof,
 		&mut transcript,
 	)?;
 	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
@@ -181,7 +161,6 @@ where
 
 	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
 		&zerocheck_claims,
-		zerocheck_univariate_proof,
 		skip_rounds,
 		&mut transcript,
 	)?;
@@ -192,7 +171,6 @@ where
 	let sumcheck_output = sumcheck::batch_verify_with_start(
 		univariate_output.batch_verify_start,
 		&sumcheck_claims,
-		zerocheck_proof,
 		&mut transcript,
 	)?;
 
@@ -215,8 +193,7 @@ where
 		reduction_claims.push(reduction_claim);
 	}
 
-	let univariatizing_output =
-		sumcheck::batch_verify(&reduction_claims, univariatizing_proof, &mut transcript)?;
+	let univariatizing_output = sumcheck::batch_verify(&reduction_claims, &mut transcript)?;
 
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
@@ -234,7 +211,6 @@ where
 		prodcheck_eval_claims
 			.into_iter()
 			.chain(zerocheck_eval_claims),
-		greedy_evalcheck_proof,
 		&mut transcript,
 		&mut advice,
 	)?;

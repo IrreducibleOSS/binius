@@ -157,15 +157,16 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	.unwrap();
 
 	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
-	let (prover_reduced_claims, proof) =
+	let prover_reduced_claims =
 		batch_prove(vec![prover], &mut prover_transcript).expect("failed to prove sumcheck");
 
 	let prover_sample = CanSample::<FExt>::sample(&mut prover_transcript);
 	let mut verifier_transcript = prover_transcript.into_reader();
-	let verifier_reduced_claims = batch_verify(&[claim], proof, &mut verifier_transcript).unwrap();
+	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
 	assert_eq!(prover_sample, CanSample::<FExt>::sample(&mut verifier_transcript));
+	verifier_transcript.finalize().unwrap();
 
 	assert_eq!(verifier_reduced_claims, prover_reduced_claims);
 
@@ -343,13 +344,13 @@ fn prove_verify_batch(n_vars: &[usize]) {
 	}
 
 	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
-	let (prover_output, proof) =
+	let prover_output =
 		batch_prove(provers, &mut prover_transcript).expect("failed to prove sumcheck");
 
 	let prover_sample = CanSample::<FE>::sample(&mut prover_transcript);
 
 	let mut verifier_transcript = prover_transcript.into_reader();
-	let verifier_output = batch_verify(&claims, proof, &mut verifier_transcript).unwrap();
+	let verifier_output = batch_verify(&claims, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
 

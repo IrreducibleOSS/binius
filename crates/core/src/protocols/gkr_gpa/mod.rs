@@ -33,8 +33,7 @@ mod verify;
 
 pub use error::*;
 pub use gkr_gpa::{
-	GrandProductBatchProof, GrandProductBatchProveOutput, GrandProductClaim, GrandProductWitness,
-	LayerClaim,
+	GrandProductBatchProveOutput, GrandProductClaim, GrandProductWitness, LayerClaim,
 };
 pub use oracles::*;
 pub use prove::*;

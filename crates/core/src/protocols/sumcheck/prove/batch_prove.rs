@@ -3,7 +3,7 @@
 use crate::{
 	challenger::CanSample,
 	protocols::sumcheck::{
-		common::{BatchSumcheckOutput, Proof, RoundCoeffs},
+		common::{BatchSumcheckOutput, RoundCoeffs},
 		error::Error,
 	},
 	transcript::CanWrite,
@@ -72,7 +72,7 @@ pub trait SumcheckProver<F: Field> {
 pub fn batch_prove<F, Prover, Transcript>(
 	provers: Vec<Prover>,
 	transcript: Transcript,
-) -> Result<(BatchSumcheckOutput<F>, Proof<F>), Error>
+) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Prover: SumcheckProver<F>,
@@ -101,7 +101,7 @@ pub fn batch_prove_with_start<F, Prover, Transcript>(
 	start: BatchProveStart<F, Prover>,
 	mut provers: Vec<Prover>,
 	mut transcript: Transcript,
-) -> Result<(BatchSumcheckOutput<F>, Proof<F>), Error>
+) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Prover: SumcheckProver<F>,
@@ -115,13 +115,10 @@ where
 	provers.splice(0..0, reduction_provers);
 
 	if provers.is_empty() {
-		return Ok((
-			BatchSumcheckOutput {
-				challenges: Vec::new(),
-				multilinear_evals: Vec::new(),
-			},
-			Proof::default(),
-		));
+		return Ok(BatchSumcheckOutput {
+			challenges: Vec::new(),
+			multilinear_evals: Vec::new(),
+		});
 	}
 
 	// Check that the provers are in descending order by n_vars
@@ -142,7 +139,6 @@ where
 	// active_index is an index into the provers slice.
 	let mut active_index = batch_coeffs.len();
 	let mut challenges = Vec::with_capacity(n_rounds);
-	let mut rounds = Vec::with_capacity(n_rounds);
 	for round_no in 0..n_rounds {
 		let n_vars = n_rounds - round_no;
 
@@ -168,7 +164,6 @@ where
 
 		let round_proof = round_coeffs.truncate();
 		transcript.write_scalar_slice(round_proof.coeffs());
-		rounds.push(round_proof);
 
 		let challenge = transcript.sample();
 		challenges.push(challenge);
@@ -197,12 +192,8 @@ where
 
 	let output = BatchSumcheckOutput {
 		challenges,
-		multilinear_evals: multilinear_evals.clone(),
-	};
-	let proof = Proof {
 		multilinear_evals,
-		rounds,
 	};
 
-	Ok((output, proof))
+	Ok(output)
 }

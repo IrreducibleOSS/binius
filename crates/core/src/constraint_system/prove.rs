@@ -3,7 +3,7 @@
 use super::{
 	error::Error,
 	verify::{make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds},
-	ConstraintSystem, Proof, ProofGenericPCS,
+	ConstraintSystem, Proof,
 };
 use crate::{
 	challenger::{CanObserve, CanSample, CanSampleBits},
@@ -50,7 +50,7 @@ pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_
 	witness: MultilinearExtensionIndex<U, Tower::B128>,
 	domain_factory: DomainFactory,
 	backend: &Backend,
-) -> Result<Proof<Tower::B128, Digest>, Error>
+) -> Result<Proof, Error>
 where
 	U: TowerUnderlier<Tower> + PackScalar<FBase>,
 	Tower: TowerFamily,
@@ -100,7 +100,7 @@ fn prove_with_pcs<
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
 	backend: &Backend,
-) -> Result<ProofGenericPCS<Tower::B128, PCSFamily::Commitment>, Error>
+) -> Result<Proof, Error>
 where
 	U: TowerUnderlier<Tower> + PackScalar<FDomain> + PackScalar<FBase>,
 	Tower: TowerFamily,
@@ -148,7 +148,7 @@ where
 		bail!(Error::Zeros);
 	}
 
-	transcript.observe_slice(&non_zero_products);
+	transcript.write_scalar_slice(&non_zero_products);
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -188,7 +188,7 @@ where
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	// Observe polynomial commitments
-	transcript.observe_slice(&commitments);
+	transcript.write_packed_slice(&commitments);
 
 	// Channel balancing argument
 	let mixing_challenge = transcript.sample();
@@ -202,15 +202,12 @@ where
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
 
-	transcript.observe_slice(&flush_products);
+	transcript.write_scalar_slice(&flush_products);
 
 	let prodcheck_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
 	let prodcheck_claims = [flush_prodcheck_claims, non_zero_prodcheck_claims].concat();
 
-	let GrandProductBatchProveOutput {
-		final_layer_claims,
-		proof: prodcheck_proof,
-	} = gkr_gpa::batch_prove(
+	let GrandProductBatchProveOutput { final_layer_claims } = gkr_gpa::batch_prove(
 		prodcheck_witnesses,
 		&prodcheck_claims,
 		&domain_factory,
@@ -267,16 +264,15 @@ where
 		.map(|univariate_prover| univariate_prover.into_regular_zerocheck())
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let (univariate_output, zerocheck_univariate_proof) =
-		sumcheck::prove::batch_prove_zerocheck_univariate_round(
-			univariate_provers,
-			skip_rounds,
-			&mut transcript,
-		)?;
+	let univariate_output = sumcheck::prove::batch_prove_zerocheck_univariate_round(
+		univariate_provers,
+		skip_rounds,
+		&mut transcript,
+	)?;
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let (sumcheck_output, zerocheck_proof) = sumcheck::prove::batch_prove_with_start(
+	let sumcheck_output = sumcheck::prove::batch_prove_with_start(
 		univariate_output.batch_prove_start,
 		tail_regular_zerocheck_provers,
 		&mut transcript,
@@ -316,8 +312,7 @@ where
 		reduction_provers.push(reduction_prover);
 	}
 
-	let (univariatizing_output, univariatizing_proof) =
-		sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
+	let univariatizing_output = sumcheck::prove::batch_prove(reduction_provers, &mut transcript)?;
 
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,
@@ -332,7 +327,6 @@ where
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
 		same_query_claims: mut pcs_claims,
-		proof: greedy_evalcheck_proof,
 	} = greedy_evalcheck::prove(
 		&mut oracles,
 		&mut witness,
@@ -433,15 +427,7 @@ where
 		}?
 	}
 
-	Ok(ProofGenericPCS {
-		commitments,
-		flush_products,
-		non_zero_products,
-		prodcheck_proof,
-		zerocheck_univariate_proof,
-		zerocheck_proof,
-		univariatizing_proof,
-		greedy_evalcheck_proof,
+	Ok(Proof {
 		transcript: transcript.finalize(),
 		advice: advice.finalize(),
 	})

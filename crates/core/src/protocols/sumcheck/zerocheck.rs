@@ -279,9 +279,9 @@ mod tests {
 		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
 			.unwrap();
 
-		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let mut prove_transcript_1 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 		let backend = make_portable_backend();
-		let challenges = prove_transcript.sample_vec(n_vars);
+		let challenges = prove_transcript_1.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let reference_prover = make_regular_sumcheck_prover_for_zerocheck::<_, FDomain, _, _, _, _>(
@@ -293,13 +293,10 @@ mod tests {
 			&backend,
 		);
 
-		let (
-			BatchSumcheckOutput {
-				challenges: sumcheck_challenges_1,
-				multilinear_evals: multilinear_evals_1,
-			},
-			proof1,
-		) = batch_prove(vec![reference_prover], &mut prove_transcript).unwrap();
+		let BatchSumcheckOutput {
+			challenges: sumcheck_challenges_1,
+			multilinear_evals: multilinear_evals_1,
+		} = batch_prove(vec![reference_prover], &mut prove_transcript_1).unwrap();
 
 		let composition = TestProductComposition::new(n_multilinears);
 		let optimized_prover = UnivariateZerocheck::<FDomain, PBase, P, _, _, _, _>::new(
@@ -314,17 +311,14 @@ mod tests {
 		.into_regular_zerocheck()
 		.unwrap();
 
-		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
-		let _: Vec<BinaryField128b> = prove_transcript.sample_vec(n_vars);
-		let (
-			BatchSumcheckOutput {
-				challenges: sumcheck_challenges_2,
-				multilinear_evals: multilinear_evals_2,
-			},
-			proof2,
-		) = batch_prove(vec![optimized_prover], &mut prove_transcript).unwrap();
+		let mut prove_transcript_2 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let _: Vec<BinaryField128b> = prove_transcript_2.sample_vec(n_vars);
+		let BatchSumcheckOutput {
+			challenges: sumcheck_challenges_2,
+			multilinear_evals: multilinear_evals_2,
+		} = batch_prove(vec![optimized_prover], &mut prove_transcript_2).unwrap();
 
-		assert_eq!(proof1, proof2);
+		assert_eq!(prove_transcript_1.finalize(), prove_transcript_2.finalize());
 		assert_eq!(multilinear_evals_1, multilinear_evals_2);
 		assert_eq!(sumcheck_challenges_1, sumcheck_challenges_2);
 	}
@@ -365,7 +359,7 @@ mod tests {
 		.into_regular_zerocheck()
 		.unwrap();
 
-		let (prove_output, proof) = batch_prove(vec![prover], &mut prove_transcript).unwrap();
+		let prove_output = batch_prove(vec![prover], &mut prove_transcript).unwrap();
 
 		let claim = ZerocheckClaim::new(
 			n_vars,
@@ -391,8 +385,7 @@ mod tests {
 		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
 
 		let sumcheck_claims = reduce_to_sumchecks(&zerocheck_claims).unwrap();
-		let verifier_output =
-			batch_verify(&sumcheck_claims, proof, &mut verify_transcript).unwrap();
+		let verifier_output = batch_verify(&sumcheck_claims, &mut verify_transcript).unwrap();
 
 		let BatchSumcheckOutput {
 			challenges: verifier_eval_point,
@@ -400,7 +393,8 @@ mod tests {
 		} = verify_sumcheck_outputs(&zerocheck_claims, &challenges, verifier_output).unwrap();
 
 		// Check that challengers are in the same state
-		assert_eq!(prover_sample, CanSample::<FE>::sample(&mut verify_transcript),);
+		assert_eq!(prover_sample, CanSample::<FE>::sample(&mut verify_transcript));
+		verify_transcript.finalize().unwrap();
 
 		assert_eq!(prover_eval_point, verifier_eval_point);
 		assert_eq!(prover_multilinear_evals, verifier_multilinear_evals);

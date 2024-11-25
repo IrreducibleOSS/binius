@@ -25,7 +25,7 @@ use crate::{
 	protocols::sumcheck::{
 		self,
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
-		Error as SumcheckError, Proof as SumcheckBatchProof,
+		Error as SumcheckError,
 	},
 	transcript::CanWrite,
 	transparent::{
@@ -430,7 +430,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	}
 }
 
-type SumcheckProofEvalcheckClaims<F> = (SumcheckBatchProof<F>, Vec<EvalcheckMultilinearClaim<F>>);
+type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
 pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
 	oracles: &MultilinearOracleSet<F>,
@@ -456,11 +456,11 @@ where
 		backend,
 	)?;
 
-	let (sumcheck_output, proof) = sumcheck::batch_prove(provers, transcript)?;
+	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
 
 	let evalcheck_claims = sumcheck::make_eval_claims(oracles, metas, sumcheck_output)?;
 
-	Ok((proof, evalcheck_claims))
+	Ok(evalcheck_claims)
 }
 
 pub fn make_non_same_query_pcs_sumcheck_claims<F>(

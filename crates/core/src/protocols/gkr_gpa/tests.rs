@@ -168,7 +168,6 @@ fn test_prove_verify_batch() {
 	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let GrandProductBatchProveOutput {
 		final_layer_claims: final_layer_claim,
-		proof,
 	} = batch_prove::<_, _, FS, _, _>(
 		witnesses,
 		&claims,
@@ -180,7 +179,7 @@ fn test_prove_verify_batch() {
 
 	let mut verify_transcript = prover_transcript.into_reader();
 	let verified_evalcheck_multilinear_claims =
-		batch_verify(claims.clone(), proof, &mut verify_transcript).unwrap();
+		batch_verify(claims.clone(), &mut verify_transcript).unwrap();
 
 	assert_eq!(final_layer_claim.len(), verified_evalcheck_multilinear_claims.len());
 	for (proved_eval_claim, verified_layer_laim) in final_layer_claim

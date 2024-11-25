@@ -185,7 +185,7 @@ where
 			immediate_switchover_heuristic,
 			backend,
 		)?;
-		let (sumcheck_output, _) = sumcheck::batch_prove(vec![sumcheck_prover], &mut transcript)?;
+		let sumcheck_output = sumcheck::batch_prove(vec![sumcheck_prover], &mut transcript)?;
 		let (_, eval_point) =
 			verify_sumcheck_output(sumcheck_output, query_from_kappa, &tensor_mixing_challenges)?;
 
@@ -246,11 +246,7 @@ where
 
 		let sumcheck_claim =
 			reduce_tensor_claim(self.n_vars(), sumcheck_eval, &tensor_mixing_challenges, &backend);
-		let output = sumcheck::batch_verify(
-			&[sumcheck_claim],
-			sumcheck::Proof::<FE>::default(),
-			&mut transcript,
-		)?;
+		let output = sumcheck::batch_verify(&[sumcheck_claim], &mut transcript)?;
 
 		let (eval, eval_point) =
 			verify_sumcheck_output(output, query_from_kappa, &tensor_mixing_challenges)?;

@@ -190,7 +190,7 @@ mod tests {
 		)
 		.unwrap();
 
-		let (_, proof) = sumcheck::batch_prove(vec![prover], &mut prove_transcript).unwrap();
+		let _ = sumcheck::batch_prove(vec![prover], &mut prove_transcript).unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 
@@ -199,7 +199,8 @@ mod tests {
 		let mut verify_challenger = prove_transcript.into_reader();
 		let _: Vec<FE> = verify_challenger.sample_vec(n_vars);
 		let batch_output =
-			sumcheck::batch_verify(&sumcheck_claims, proof, &mut verify_challenger).unwrap();
+			sumcheck::batch_verify(&sumcheck_claims, &mut verify_challenger).unwrap();
+		verify_challenger.finalize().unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 		verify_sumcheck_outputs(&[claim], &challenges, batch_output).unwrap();
