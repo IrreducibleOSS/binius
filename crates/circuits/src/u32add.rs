@@ -54,7 +54,6 @@ where
 pub fn u32add<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
-	log_size: usize,
 	xin: OracleId,
 	yin: OracleId,
 ) -> Result<OracleId, anyhow::Error>
@@ -63,12 +62,13 @@ where
 	F: TowerField,
 {
 	builder.push_namespace(name);
-	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
+	let log_rows = builder.log_rows([xin, yin])?;
+	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
 	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
 
 	let zout = builder.add_linear_combination(
 		"zout",
-		log_size,
+		log_rows,
 		[(xin, F::ONE), (yin, F::ONE), (cin, F::ONE)].into_iter(),
 	)?;
 
@@ -81,7 +81,6 @@ where
 pub fn u32add_committed<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
-	log_size: usize,
 	xin: OracleId,
 	yin: OracleId,
 ) -> Result<OracleId, anyhow::Error>
@@ -90,9 +89,10 @@ where
 	F: TowerField,
 {
 	builder.push_namespace(name);
-	let cout = builder.add_committed("cout", log_size, BinaryField1b::TOWER_LEVEL);
+	let log_rows = builder.log_rows([xin, yin])?;
+	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
 	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
-	let zout = builder.add_committed("zout", log_size, BinaryField1b::TOWER_LEVEL);
+	let zout = builder.add_committed("zout", log_rows, BinaryField1b::TOWER_LEVEL);
 
 	u32add_common(builder, xin, yin, zout, cin, cout)?;
 

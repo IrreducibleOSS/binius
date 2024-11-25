@@ -11,10 +11,9 @@ use itertools::izip;
 
 use crate::{builder::ConstraintSystemBuilder, transparent};
 
-pub fn lasso<U, F, FBase, FS, FC, const T_LOG_SIZE: usize>(
+pub fn lasso<U, F, FBase, FS, FC>(
 	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
 	name: impl ToString,
-	n_vars: usize,
 	u_to_t_mapping: Option<Vec<usize>>,
 	lookup_u: OracleId,
 	lookup_t: OracleId,
@@ -30,12 +29,15 @@ where
 {
 	builder.push_namespace(name);
 
-	let lookup_o = transparent::constant(builder, "lookup_o", T_LOG_SIZE, F::ONE)?;
-	let lookup_f = builder.add_committed("lookup_f", T_LOG_SIZE, FC::TOWER_LEVEL);
-	let lookup_r = builder.add_committed("lookup_r", n_vars, FC::TOWER_LEVEL);
+	let u_log_rows = builder.log_rows([lookup_u])?;
+	let t_log_rows = builder.log_rows([lookup_t])?;
+
+	let lookup_o = transparent::constant(builder, "lookup_o", t_log_rows, F::ONE)?;
+	let lookup_f = builder.add_committed("lookup_f", t_log_rows, FC::TOWER_LEVEL);
+	let lookup_r = builder.add_committed("lookup_r", u_log_rows, FC::TOWER_LEVEL);
 	let lookup_w = builder.add_linear_combination(
 		"lookup_w",
-		n_vars,
+		u_log_rows,
 		[(lookup_r, FC::MULTIPLICATIVE_GENERATOR.into())],
 	)?;
 

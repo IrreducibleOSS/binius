@@ -51,8 +51,7 @@ fn main() -> Result<()> {
 		"in_b",
 		log_n_additions + 2,
 	)?;
-	let _product =
-		binius_circuits::lasso::u32add(&mut builder, "out_c", in_a, in_b, log_n_additions)?;
+	let _product = binius_circuits::lasso::u32add(&mut builder, "out_c", in_a, in_b)?;
 
 	let witness = builder
 		.take_witness()

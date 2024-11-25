@@ -54,7 +54,7 @@ where
 
 	let packed_log_size = log_size - 5;
 	let enabled = step_down(builder, "enabled", packed_log_size, (1 << packed_log_size) - 2)?;
-	let sum = u32add(builder, "sum", log_size, current, next)?;
+	let sum = u32add(builder, "sum", current, next)?;
 	let sum_packed = builder.add_packed("sum_packed", sum, 5)?;
 	let next_next_packed = builder.add_packed("next_next_packed", next_next, 5)?;
 

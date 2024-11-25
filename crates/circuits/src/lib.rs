@@ -41,7 +41,7 @@ mod tests {
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
 		let mult_b =
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
-		let _product = lasso::u8mul(&mut builder, "lasso_u8mul", mult_a, mult_b, log_size).unwrap();
+		let _product = lasso::u8mul(&mut builder, "lasso_u8mul", mult_a, mult_b).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -62,8 +62,7 @@ mod tests {
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "add_a", log_size_u8).unwrap();
 		let add_b_u8 =
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "add_b", log_size_u8).unwrap();
-		let _sum =
-			lasso::u32add(&mut builder, "lasso_u32add", add_a_u8, add_b_u8, log_size).unwrap();
+		let _sum = lasso::u32add(&mut builder, "lasso_u32add", add_a_u8, add_b_u8).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -78,7 +77,7 @@ mod tests {
 		let log_size = 14;
 		let a = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
 		let b = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _c = u32add_committed(&mut builder, "u32add", log_size, a, b).unwrap();
+		let _c = u32add_committed(&mut builder, "u32add", a, b).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -106,9 +105,9 @@ mod tests {
 		let log_size = 14;
 		let a = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
 		let b = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _and = bitwise::and(&mut builder, "and", log_size, a, b).unwrap();
-		let _xor = bitwise::xor(&mut builder, "xor", log_size, a, b).unwrap();
-		let _or = bitwise::or(&mut builder, "or", log_size, a, b).unwrap();
+		let _and = bitwise::and(&mut builder, "and", a, b).unwrap();
+		let _xor = bitwise::xor(&mut builder, "xor", a, b).unwrap();
+		let _or = bitwise::or(&mut builder, "or", a, b).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();

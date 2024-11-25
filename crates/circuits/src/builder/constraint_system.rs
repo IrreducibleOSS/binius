@@ -22,6 +22,7 @@ use binius_field::{
 	ExtensionField, TowerField,
 };
 use binius_math::CompositionPolyOS;
+use binius_utils::bail;
 
 #[derive(Default)]
 pub struct ConstraintSystemBuilder<'arena, U, F, FBase = F>
@@ -326,5 +327,26 @@ where
 
 	pub fn pop_namespace(&mut self) {
 		self.namespace_path.pop();
+	}
+
+	/// Returns the number of rows shared by a set of columns.
+	///
+	/// Fails if no columns are provided, or not all columns have the same number of rows.
+	///
+	/// This is useful for writing circuits with internal columns that depend on the height of input columns.
+	pub fn log_rows(
+		&self,
+		oracle_ids: impl IntoIterator<Item = OracleId>,
+	) -> Result<usize, anyhow::Error> {
+		let mut oracle_ids = oracle_ids.into_iter();
+		let oracles = self.oracles.borrow();
+		let Some(first_id) = oracle_ids.next() else {
+			bail!(anyhow!("log_rows: You need to specify at least one column"));
+		};
+		let log_rows = oracles.n_vars(first_id);
+		if oracle_ids.any(|id| oracles.n_vars(id) != log_rows) {
+			bail!(anyhow!("log_rows: All columns must have the same number of rows"))
+		}
+		Ok(log_rows)
 	}
 }

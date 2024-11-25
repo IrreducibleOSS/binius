@@ -25,7 +25,6 @@ pub fn u8mul_bytesliced<U, F, FBase>(
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
-	log_size: usize,
 ) -> Result<[OracleId; 2], anyhow::Error>
 where
 	U: Pod
@@ -47,14 +46,14 @@ where
 	FBase: TowerField,
 {
 	builder.push_namespace(name.clone());
-
-	let product = builder.add_committed_multiple("product", log_size, B8::TOWER_LEVEL);
+	let log_rows = builder.log_rows([mult_a, mult_b])?;
+	let product = builder.add_committed_multiple("product", log_rows, B8::TOWER_LEVEL);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE, B32::TOWER_LEVEL);
 
 	let lookup_u = builder.add_linear_combination(
 		"lookup_u",
-		log_size,
+		log_rows,
 		[
 			(mult_a, <F as TowerField>::basis(3, 3)?),
 			(mult_b, <F as TowerField>::basis(3, 2)?),
@@ -72,7 +71,7 @@ where
 		let mut product_high_witness = witness.new_column::<B8>(product[1]);
 		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u);
 		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t);
-		let mut u_to_t_mapping_witness = vec![0; 1 << log_size];
+		let mut u_to_t_mapping_witness = vec![0; 1 << log_rows];
 
 		let mult_a_ints = witness.get::<B8>(mult_a)?.as_slice::<u8>();
 		let mult_b_ints = witness.get::<B8>(mult_b)?.as_slice::<u8>();
@@ -114,10 +113,9 @@ where
 		u_to_t_mapping = Some(u_to_t_mapping_witness);
 	}
 
-	lasso::<_, _, _, B32, B32, T_LOG_SIZE>(
+	lasso::<_, _, _, B32, B32>(
 		builder,
 		format!("{} lasso", name.to_string()),
-		log_size,
 		u_to_t_mapping,
 		lookup_u,
 		lookup_t,
@@ -133,7 +131,6 @@ pub fn u8mul<U, F, FBase>(
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
-	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
 	U: Pod
@@ -156,11 +153,12 @@ where
 {
 	builder.push_namespace(name.clone());
 
-	let product_bytesliced = u8mul_bytesliced(builder, name, mult_a, mult_b, log_size)?;
+	let product_bytesliced = u8mul_bytesliced(builder, name, mult_a, mult_b)?;
 
+	let log_rows = builder.log_rows(product_bytesliced)?;
 	let product = builder.add_linear_combination(
 		"bytes summed",
-		log_size,
+		log_rows,
 		[
 			(product_bytesliced[0], <F as TowerField>::basis(3, 0)?),
 			(product_bytesliced[1], <F as TowerField>::basis(3, 1)?),

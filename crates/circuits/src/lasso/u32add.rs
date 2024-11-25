@@ -24,7 +24,6 @@ pub fn u32add<U, F, FBase>(
 	name: impl ToString + Clone,
 	xin_u8: OracleId,
 	yin_u8: OracleId,
-	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
 	U: UnderlierType
@@ -44,11 +43,11 @@ where
 	builder.push_namespace(name.clone());
 
 	// We use plus 2 because Lasso works with B8 instead of B32.
-	let n_vars_plus_log_limbs = log_size + 2;
+	let log_rows = builder.log_rows([xin_u8, yin_u8])?;
 
-	let sum = builder.add_committed("sum", n_vars_plus_log_limbs, B8::TOWER_LEVEL);
+	let sum = builder.add_committed("sum", log_rows, B8::TOWER_LEVEL);
 
-	let cout = builder.add_committed("cout", n_vars_plus_log_limbs, B1::TOWER_LEVEL);
+	let cout = builder.add_committed("cout", log_rows, B1::TOWER_LEVEL);
 
 	let cin = builder.add_shifted("cin", cout, 1, 2, ShiftVariant::LogicalLeft)?;
 
@@ -56,7 +55,7 @@ where
 
 	let lookup_u = builder.add_linear_combination(
 		"lookup_u",
-		n_vars_plus_log_limbs,
+		log_rows,
 		[
 			(cin, <F as TowerField>::basis(0, 25)?),
 			(cout, <F as TowerField>::basis(0, 24)?),
@@ -77,7 +76,7 @@ where
 		let mut lookup_u_witness = witness.new_column::<B32>(lookup_u);
 		let mut lookup_t_witness = witness.new_column::<B32>(lookup_t);
 
-		let mut u_to_t_mapping_witness = vec![0; 1 << (log_size + 2)];
+		let mut u_to_t_mapping_witness = vec![0; 1 << log_rows];
 
 		let x_ints = witness.get::<B8>(xin_u8)?.as_slice::<u8>();
 		let y_ints = witness.get::<B8>(yin_u8)?.as_slice::<u8>();
@@ -138,10 +137,9 @@ where
 		u_to_t_mapping = Some(u_to_t_mapping_witness);
 	}
 
-	lasso::<_, _, _, B32, B32, ADD_T_LOG_SIZE>(
+	lasso::<_, _, _, B32, B32>(
 		builder,
 		format!("{} lasso", name.to_string()),
-		n_vars_plus_log_limbs,
 		u_to_t_mapping,
 		lookup_u,
 		lookup_t,
