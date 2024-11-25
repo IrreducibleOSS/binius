@@ -214,12 +214,25 @@ pub trait PackedField:
 	///
 	/// * `log_block_len` must be less than or equal to `LOG_WIDTH`.
 	/// * `block_idx` must be less than `2^(Self::LOG_WIDTH - log_block_len)`.
+	#[inline]
 	fn spread(self, log_block_len: usize, block_idx: usize) -> Self {
 		assert!(log_block_len <= Self::LOG_WIDTH);
+		assert!(block_idx < 1 << (Self::LOG_WIDTH - log_block_len));
 
+		// Safety: is guaranteed by the preconditions.
+		unsafe {
+			self.spread_unchecked(log_block_len, block_idx)
+		}
+	}
+
+	/// Unsafe version of [`Self::spread`].
+	/// 
+	/// # Safety
+	/// The caller must ensure that `log_block_len` is less than or equal to `LOG_WIDTH` and `block_idx` is less than `2^(Self::LOG_WIDTH - log_block_len)`.
+	#[inline]
+	unsafe fn spread_unchecked(self, log_block_len: usize, block_idx: usize) -> Self {
 		let block_len = 1 << log_block_len;
 		let repeat = 1 << (Self::LOG_WIDTH - log_block_len);
-		assert!(block_idx < repeat);
 
 		Self::from_scalars(
 			self.iter().skip(block_idx * block_len).take(block_len).flat_map(|elem| iter::repeat_n(elem, repeat))
@@ -377,9 +390,8 @@ impl<F: Field> PackedField for F {
 		f(0)
 	}
 
-	fn spread(self, log_block_len: usize, block_idx: usize) -> Self {
-		debug_assert_eq!(log_block_len, 0);
-		debug_assert_eq!(block_idx, 0);
+	#[inline]
+	unsafe fn spread_unchecked(self, _log_block_len: usize, _block_idx: usize) -> Self {
 		self
 	}
 }

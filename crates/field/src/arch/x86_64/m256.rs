@@ -12,7 +12,8 @@ use crate::{
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+		get_block_values, get_spread_bytes, impl_divisible, spread_fallback, NumCast, Random,
+		SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -327,7 +328,7 @@ impl UnderlierWithBitOps for M256 {
 		Self(unsafe { _mm256_set1_epi8(val.wrapping_neg() as i8) })
 	}
 
-	#[inline]
+	#[inline(always)]
 	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
 	where
 		T: UnderlierType,
@@ -536,6 +537,192 @@ impl UnderlierWithBitOps for M256 {
 				array[i] = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
+		}
+	}
+
+	#[inline(always)]
+	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
+	where
+		T: UnderlierWithBitOps,
+		Self: From<T>,
+		T: NumCast<Self>,
+	{
+		match T::LOG_BITS {
+			0 => match log_block_len {
+				0 => {
+					let bits = get_block_values::<_, U1, 1>(self, block_idx)[0];
+					Self::fill_with_bit(bits.val())
+				}
+				1 => {
+					let bits = get_block_values::<_, U1, 2>(self, block_idx);
+					let values: [u64; 2] = bits.map(|b| u64::fill_with_bit(b.val()));
+					Self::from_fn::<u64>(|i| values[i / 2])
+				}
+				2 => {
+					let bits = get_block_values::<_, U1, 4>(self, block_idx);
+					Self::from_fn::<u64>(|i| u64::fill_with_bit(bits[i].val()))
+				}
+				3 => {
+					let bits = get_block_values::<_, U1, 8>(self, block_idx);
+					Self::from_fn::<u32>(|i| u32::fill_with_bit(bits[i].val()))
+				}
+				4 => {
+					let bits = get_block_values::<_, U1, 16>(self, block_idx);
+					Self::from_fn::<u16>(|i| u16::fill_with_bit(bits[i].val()))
+				}
+				5 => {
+					let bits = get_block_values::<_, U1, 32>(self, block_idx);
+					Self::from_fn::<u8>(|i| u8::fill_with_bit(bits[i].val()))
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			1 => match log_block_len {
+				0 => {
+					let byte = get_spread_bytes::<_, U2, 1>(self, block_idx)[0];
+
+					_mm256_set1_epi8(byte as _).into()
+				}
+				1 => {
+					let bytes = get_spread_bytes::<_, U2, 2>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 16])
+				}
+				2 => {
+					let bytes = get_spread_bytes::<_, U2, 4>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 8])
+				}
+				3 => {
+					let bytes = get_spread_bytes::<_, U2, 8>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 4])
+				}
+				4 => {
+					let bytes = get_spread_bytes::<_, U2, 16>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 2])
+				}
+				5 => {
+					let bytes = get_spread_bytes::<_, U2, 32>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i])
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			2 => match log_block_len {
+				0 => {
+					let byte = get_spread_bytes::<_, U4, 1>(self, block_idx)[0];
+
+					_mm256_set1_epi8(byte as _).into()
+				}
+				1 => {
+					let bytes = get_spread_bytes::<_, U4, 2>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 16])
+				}
+				2 => {
+					let bytes = get_spread_bytes::<_, U4, 4>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 8])
+				}
+				3 => {
+					let bytes = get_spread_bytes::<_, U4, 8>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 4])
+				}
+				4 => {
+					let bytes = get_spread_bytes::<_, U4, 16>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i / 2])
+				}
+				5 => {
+					let bytes = get_spread_bytes::<_, U4, 32>(self, block_idx);
+
+					Self::from_fn::<u8>(|i| bytes[i])
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			3 => match log_block_len {
+				0 => {
+					let byte = get_block_values::<_, u8, 1>(self, block_idx)[0];
+					_mm256_set1_epi8(byte as _).into()
+				}
+				1 => {
+					let bytes = get_block_values::<_, u8, 2>(self, block_idx);
+					Self::from_fn::<u8>(|i| bytes[i / 16])
+				}
+				2 => {
+					let bytes = get_block_values::<_, u8, 4>(self, block_idx);
+					Self::from_fn::<u8>(|i| bytes[i / 8])
+				}
+				3 => {
+					let bytes = get_block_values::<_, u8, 8>(self, block_idx);
+					Self::from_fn::<u8>(|i| bytes[i / 4])
+				}
+				4 => {
+					let bytes = get_block_values::<_, u8, 16>(self, block_idx);
+					Self::from_fn::<u8>(|i| bytes[i / 2])
+				}
+				5 => self,
+				_ => panic!("unsupported block length"),
+			},
+			4 => match log_block_len {
+				0 => {
+					let value = get_block_values::<_, u16, 1>(self, block_idx)[0];
+					_mm256_set1_epi16(value as _).into()
+				}
+				1 => {
+					let values = get_block_values::<_, u16, 2>(self, block_idx);
+					Self::from_fn::<u16>(|i| values[i / 8])
+				}
+				2 => {
+					let values = get_block_values::<_, u16, 4>(self, block_idx);
+					Self::from_fn::<u16>(|i| values[i / 4])
+				}
+				3 => {
+					let values = get_block_values::<_, u16, 8>(self, block_idx);
+					Self::from_fn::<u16>(|i| values[i / 2])
+				}
+				4 => self,
+				_ => panic!("unsupported block length"),
+			},
+			5 => match log_block_len {
+				0 => {
+					let value = get_block_values::<_, u32, 1>(self, block_idx)[0];
+					_mm256_set1_epi32(value as _).into()
+				}
+				1 => {
+					let values = get_block_values::<_, u32, 2>(self, block_idx);
+					Self::from_fn::<u32>(|i| values[i / 4])
+				}
+				2 => {
+					let values = get_block_values::<_, u32, 4>(self, block_idx);
+					Self::from_fn::<u32>(|i| values[i / 2])
+				}
+				3 => self,
+				_ => panic!("unsupported block length"),
+			},
+			6 => match log_block_len {
+				0 => {
+					let value = get_block_values::<_, u64, 1>(self, block_idx)[0];
+					_mm256_set1_epi64x(value as _).into()
+				}
+				1 => {
+					let values = get_block_values::<_, u64, 2>(self, block_idx);
+					Self::from_fn::<u64>(|i| values[i / 2])
+				}
+				2 => self,
+				_ => panic!("unsupported block length"),
+			},
+			7 => match log_block_len {
+				0 => {
+					let value = get_block_values::<_, u128, 1>(self, block_idx)[0];
+					Self::from_fn::<u128>(|_| value)
+				}
+				1 => self,
+				_ => panic!("unsupported block length"),
+			},
+			_ => spread_fallback(self, log_block_len, block_idx),
 		}
 	}
 }

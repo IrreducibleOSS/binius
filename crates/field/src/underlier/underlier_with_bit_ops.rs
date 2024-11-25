@@ -1,6 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::underlier_type::{NumCast, UnderlierType};
+use super::{
+	underlier_type::{NumCast, UnderlierType},
+	U1, U2, U4,
+};
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 
@@ -71,7 +74,13 @@ pub trait UnderlierWithBitOps:
 	where
 		T: UnderlierType + NumCast<Self>,
 	{
-		debug_assert!(i < checked_int_div(Self::BITS, T::BITS));
+		debug_assert!(
+			i < checked_int_div(Self::BITS, T::BITS),
+			"i: {} Self::BITS: {}, T::BITS: {}",
+			i,
+			Self::BITS,
+			T::BITS
+		);
 		T::num_cast_from(*self >> (i * T::BITS))
 	}
 
@@ -92,6 +101,21 @@ pub trait UnderlierWithBitOps:
 		*self &= !(mask << (i * T::BITS));
 		*self |= Self::from(val) << (i * T::BITS);
 	}
+
+	/// Spread takes a block of sub_elements of `T` type within the current value and
+	/// repeats them to the full underlier width.
+	///
+	/// # Safety
+	/// `log_block_len + T::LOG_BITS` must be less than or equal to `Self::LOG_BITS`.
+	/// `block_idx` must be less than `1 << (Self::LOG_BITS - log_block_len)`.
+	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
+	where
+		T: UnderlierWithBitOps,
+		Self: From<T>,
+		T: NumCast<Self>,
+	{
+		spread_fallback(self, log_block_len, block_idx)
+	}
 }
 
 /// Returns a bit mask for a single `T` element inside underlier type.
@@ -102,6 +126,49 @@ where
 	T: UnderlierWithBitOps,
 {
 	single_element_mask_bits(T::BITS)
+}
+
+/// Fallback implementation of `spread` method.
+///
+/// # Safety
+/// `log_block_len + T::LOG_BITS` must be less than or equal to `U::LOG_BITS`.
+/// `block_idx` must be less than `1 << (U::LOG_BITS - log_block_len)`.
+pub(crate) unsafe fn spread_fallback<U, T>(value: U, log_block_len: usize, block_idx: usize) -> U
+where
+	U: UnderlierWithBitOps,
+	T: UnderlierWithBitOps,
+	U: From<T>,
+	T: NumCast<U>,
+{
+	debug_assert!(
+		log_block_len + T::LOG_BITS <= U::LOG_BITS,
+		"log_block_len: {}, U::BITS: {}, T::BITS: {}",
+		log_block_len,
+		U::BITS,
+		T::BITS
+	);
+	debug_assert!(
+		block_idx < 1 << (U::LOG_BITS - log_block_len),
+		"block_idx: {}, U::BITS: {}, log_block_len: {}",
+		block_idx,
+		U::BITS,
+		log_block_len
+	);
+
+	let mut result = U::ZERO;
+	let block_offset = block_idx << log_block_len;
+	let log_repeat = U::LOG_BITS - T::LOG_BITS - log_block_len;
+	for i in 0..1 << log_block_len {
+		unsafe {
+			result.set_subvalue(i << log_repeat, value.get_subvalue(block_offset + i));
+		}
+	}
+
+	for i in 0..log_repeat {
+		result |= result << (1 << (T::LOG_BITS + i));
+	}
+
+	result
 }
 
 pub(crate) fn single_element_mask_bits<T: UnderlierWithBitOps>(bits_count: usize) -> T {
@@ -115,6 +182,73 @@ pub(crate) fn single_element_mask_bits<T: UnderlierWithBitOps>(bits_count: usize
 
 		result
 	}
+}
+
+/// Value that can be spread to a single u8
+pub(crate) trait SpreadToByte {
+	fn spread_to_byte(self) -> u8;
+}
+
+impl SpreadToByte for U1 {
+	#[inline(always)]
+	fn spread_to_byte(self) -> u8 {
+		u8::fill_with_bit(self.val())
+	}
+}
+
+impl SpreadToByte for U2 {
+	#[inline(always)]
+	fn spread_to_byte(self) -> u8 {
+		let mut result = self.val();
+		result |= result << 2;
+		result |= result << 4;
+
+		result
+	}
+}
+
+impl SpreadToByte for U4 {
+	#[inline(always)]
+	fn spread_to_byte(self) -> u8 {
+		let mut result = self.val();
+		result |= result << 4;
+
+		result
+	}
+}
+
+/// A helper functions for implementing `UnderlierWithBitOps::spread_unchecked` for SIMD types.
+///
+/// # Safety
+/// `log_block_len + T::LOG_BITS` must be less than or equal to `U::LOG_BITS`.
+#[allow(unused)]
+#[inline(always)]
+pub(crate) unsafe fn get_block_values<U, T, const BLOCK_LEN: usize>(
+	value: U,
+	block_idx: usize,
+) -> [T; BLOCK_LEN]
+where
+	U: UnderlierWithBitOps + From<T>,
+	T: UnderlierType + NumCast<U>,
+{
+	std::array::from_fn(|i| value.get_subvalue::<T>(block_idx * BLOCK_LEN + i))
+}
+
+/// A helper functions for implementing `UnderlierWithBitOps::spread_unchecked` for SIMD types.
+///
+/// # Safety
+/// `log_block_len + T::LOG_BITS` must be less than or equal to `U::LOG_BITS`.
+#[allow(unused)]
+#[inline(always)]
+pub(crate) unsafe fn get_spread_bytes<U, T, const BLOCK_LEN: usize>(
+	value: U,
+	block_idx: usize,
+) -> [u8; BLOCK_LEN]
+where
+	U: UnderlierWithBitOps + From<T>,
+	T: UnderlierType + SpreadToByte + NumCast<U>,
+{
+	get_block_values::<U, T, BLOCK_LEN>(value, block_idx).map(SpreadToByte::spread_to_byte)
 }
 
 #[cfg(test)]

@@ -12,7 +12,8 @@ use crate::{
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+		impl_divisible, spread_fallback, NumCast, Random, SmallU, SpreadToByte, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U2, U4,
 	},
 	BinaryField,
 };
@@ -21,6 +22,7 @@ use rand::{Rng, RngCore};
 use seq_macro::seq;
 use std::{
 	arch::x86_64::*,
+	array,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -340,7 +342,7 @@ impl UnderlierWithBitOps for M128 {
 		Self(unsafe { _mm_set1_epi8(val.wrapping_neg() as i8) })
 	}
 
-	#[inline]
+	#[inline(always)]
 	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
 	where
 		T: UnderlierType,
@@ -489,6 +491,236 @@ impl UnderlierWithBitOps for M128 {
 				*self = Self::from(val);
 			}
 			_ => panic!("unsupported bit count"),
+		}
+	}
+
+	#[inline(always)]
+	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
+	where
+		T: UnderlierWithBitOps,
+		Self: From<T>,
+		T: NumCast<Self>,
+	{
+		match T::LOG_BITS {
+			0 => match log_block_len {
+				0 => Self::fill_with_bit(((u128::from(self) >> block_idx) & 1) as _),
+				1 => {
+					let bits: [u8; 2] =
+						array::from_fn(|i| ((u128::from(self) >> (block_idx * 2 + i)) & 1) as _);
+
+					_mm_set_epi64x(
+						u64::fill_with_bit(bits[1]) as i64,
+						u64::fill_with_bit(bits[0]) as i64,
+					)
+					.into()
+				}
+				2 => {
+					let bits: [u8; 4] =
+						array::from_fn(|i| ((u128::from(self) >> (block_idx * 4 + i)) & 1) as _);
+
+					_mm_set_epi32(
+						u32::fill_with_bit(bits[3]) as i32,
+						u32::fill_with_bit(bits[2]) as i32,
+						u32::fill_with_bit(bits[1]) as i32,
+						u32::fill_with_bit(bits[0]) as i32,
+					)
+					.into()
+				}
+				3 => {
+					let bits: [u8; 8] =
+						array::from_fn(|i| ((u128::from(self) >> (block_idx * 8 + i)) & 1) as _);
+
+					_mm_set_epi16(
+						u16::fill_with_bit(bits[7]) as i16,
+						u16::fill_with_bit(bits[6]) as i16,
+						u16::fill_with_bit(bits[5]) as i16,
+						u16::fill_with_bit(bits[4]) as i16,
+						u16::fill_with_bit(bits[3]) as i16,
+						u16::fill_with_bit(bits[2]) as i16,
+						u16::fill_with_bit(bits[1]) as i16,
+						u16::fill_with_bit(bits[0]) as i16,
+					)
+					.into()
+				}
+				4 => {
+					let bits: [u8; 16] =
+						array::from_fn(|i| ((u128::from(self) >> (block_idx * 16 + i)) & 1) as _);
+
+					_mm_set_epi8(
+						u8::fill_with_bit(bits[15]) as i8,
+						u8::fill_with_bit(bits[14]) as i8,
+						u8::fill_with_bit(bits[13]) as i8,
+						u8::fill_with_bit(bits[12]) as i8,
+						u8::fill_with_bit(bits[11]) as i8,
+						u8::fill_with_bit(bits[10]) as i8,
+						u8::fill_with_bit(bits[9]) as i8,
+						u8::fill_with_bit(bits[8]) as i8,
+						u8::fill_with_bit(bits[7]) as i8,
+						u8::fill_with_bit(bits[6]) as i8,
+						u8::fill_with_bit(bits[5]) as i8,
+						u8::fill_with_bit(bits[4]) as i8,
+						u8::fill_with_bit(bits[3]) as i8,
+						u8::fill_with_bit(bits[2]) as i8,
+						u8::fill_with_bit(bits[1]) as i8,
+						u8::fill_with_bit(bits[0]) as i8,
+					)
+					.into()
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			1 => match log_block_len {
+				0 => {
+					let value =
+						U2::new((u128::from(self) >> (block_idx * 2)) as _).spread_to_byte();
+
+					_mm_set1_epi8(value as i8).into()
+				}
+				1 => {
+					let bytes: [u8; 2] = array::from_fn(|i| {
+						U2::new((u128::from(self) >> (block_idx * 4 + i * 2)) as _).spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| bytes[i / 8])
+				}
+				2 => {
+					let bytes: [u8; 4] = array::from_fn(|i| {
+						U2::new((u128::from(self) >> (block_idx * 8 + i * 2)) as _).spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| bytes[i / 4])
+				}
+				3 => {
+					let bytes: [u8; 8] = array::from_fn(|i| {
+						U2::new((u128::from(self) >> (block_idx * 16 + i * 2)) as _)
+							.spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| bytes[i / 2])
+				}
+				4 => {
+					let bytes: [u8; 16] = array::from_fn(|i| {
+						U2::new((u128::from(self) >> (block_idx * 32 + i * 2)) as _)
+							.spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| bytes[i])
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			2 => match log_block_len {
+				0 => {
+					let value =
+						U4::new((u128::from(self) >> (block_idx * 4)) as _).spread_to_byte();
+
+					_mm_set1_epi8(value as i8).into()
+				}
+				1 => {
+					let values: [u8; 2] = array::from_fn(|i| {
+						U4::new((u128::from(self) >> (block_idx * 8 + i * 4)) as _).spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| values[i / 8])
+				}
+				2 => {
+					let values: [u8; 4] = array::from_fn(|i| {
+						U4::new((u128::from(self) >> (block_idx * 16 + i * 4)) as _)
+							.spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| values[i / 4])
+				}
+				3 => {
+					let values: [u8; 8] = array::from_fn(|i| {
+						U4::new((u128::from(self) >> (block_idx * 32 + i * 4)) as _)
+							.spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| values[i / 2])
+				}
+				4 => {
+					let values: [u8; 16] = array::from_fn(|i| {
+						U4::new((u128::from(self) >> (block_idx * 64 + i * 4)) as _)
+							.spread_to_byte()
+					});
+
+					Self::from_fn::<u8>(|i| values[i])
+				}
+				_ => spread_fallback(self, log_block_len, block_idx),
+			},
+			3 => match log_block_len {
+				0 => {
+					let value = (u128::from(self) >> (block_idx * 8)) as u8;
+
+					_mm_set1_epi8(value as i8).into()
+				}
+				1 => {
+					let bytes: [u8; 2] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 16 + i * 8)) as u8);
+
+					Self::from_fn::<u8>(|i| bytes[i / 8])
+				}
+				2 => {
+					let bytes: [u8; 4] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 32 + i * 8)) as u8);
+
+					Self::from_fn::<u8>(|i| bytes[i / 4])
+				}
+				3 => {
+					let bytes: [u8; 8] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 64 + i * 8)) as u8);
+
+					Self::from_fn::<u8>(|i| bytes[i / 2])
+				}
+				4 => self,
+				_ => panic!("unsupported block length"),
+			},
+			4 => match log_block_len {
+				0 => {
+					let value = (u128::from(self) >> (block_idx * 16)) as u16;
+
+					_mm_set1_epi16(value as i16).into()
+				}
+				1 => {
+					let values: [u16; 2] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 32 + i * 16)) as u16);
+
+					Self::from_fn::<u16>(|i| values[i / 4])
+				}
+				2 => {
+					let values: [u16; 4] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 64 + i * 16)) as u16);
+
+					Self::from_fn::<u16>(|i| values[i / 2])
+				}
+				3 => self,
+				_ => panic!("unsupported block length"),
+			},
+			5 => match log_block_len {
+				0 => {
+					let value = (u128::from(self) >> (block_idx * 32)) as u32;
+
+					_mm_set1_epi32(value as i32).into()
+				}
+				1 => {
+					let values: [u32; 2] =
+						array::from_fn(|i| (u128::from(self) >> (block_idx * 64 + i * 32)) as u32);
+
+					Self::from_fn::<u32>(|i| values[i / 2])
+				}
+				2 => self,
+				_ => panic!("unsupported block length"),
+			},
+			6 => match log_block_len {
+				0 => {
+					let value = (u128::from(self) >> (block_idx * 64)) as u64;
+
+					_mm_set1_epi64x(value as i64).into()
+				}
+				1 => self,
+				_ => panic!("unsupported block length"),
+			},
+			7 => self,
+			_ => panic!("unsupported bit length"),
 		}
 	}
 }

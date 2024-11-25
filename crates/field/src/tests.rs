@@ -4,11 +4,16 @@ use crate::{
 	underlier::{SmallU, WithUnderlier},
 	AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
 	BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, Field,
-	PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField16x16b,
-	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField256x1b,
-	PackedBinaryField2x128b, PackedBinaryField2x64b, PackedBinaryField32x4b,
-	PackedBinaryField32x8b, PackedBinaryField4x32b, PackedBinaryField4x64b, PackedBinaryField64x2b,
-	PackedBinaryField64x4b, PackedBinaryField8x16b, PackedBinaryField8x32b, PackedField,
+	PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField128x4b,
+	PackedBinaryField16x16b, PackedBinaryField16x32b, PackedBinaryField16x4b,
+	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField1x64b,
+	PackedBinaryField256x1b, PackedBinaryField256x2b, PackedBinaryField2x128b,
+	PackedBinaryField2x32b, PackedBinaryField2x64b, PackedBinaryField32x16b,
+	PackedBinaryField32x2b, PackedBinaryField32x4b, PackedBinaryField32x8b,
+	PackedBinaryField4x128b, PackedBinaryField4x16b, PackedBinaryField4x32b,
+	PackedBinaryField4x64b, PackedBinaryField512x1b, PackedBinaryField64x1b,
+	PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField8x16b,
+	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedBinaryField8x8b, PackedField,
 };
 use proptest::prelude::*;
 use std::iter;
@@ -61,14 +66,16 @@ macro_rules! generate_spread_tests_small {
             $(
                 #[test]
                 #[allow(clippy::modulo_one)]
-                fn $name(x in any::<usize>(), y in any::<usize>(), z in any::<[u8; $width]>(), ) {
+                fn $name(z in any::<[u8; $width]>()) {
                     let indexed_packed_field = <$type>::from_fn(|i| <$scalar>::from_underlier(<$underlier>::new(z[i])));
-                    let log_block_len = x % (<$scalar>::LOG_WIDTH + 1);
-                    let block_idx = y % (1 << log_block_len);
-                    assert_eq!(
-                        basic_spread(indexed_packed_field, log_block_len, block_idx),
-                        indexed_packed_field.spread(log_block_len, block_idx)
-                    );
+                    for log_block_len in 0..=<$type>::LOG_WIDTH {
+						for block_idx in 0..(1 <<(<$type>::LOG_WIDTH - log_block_len)) {
+							assert_eq!(
+								basic_spread(indexed_packed_field, log_block_len, block_idx),
+								indexed_packed_field.spread(log_block_len, block_idx)
+							);
+						}
+					}
                 }
             )*
         }
@@ -81,15 +88,17 @@ macro_rules! generate_spread_tests {
             $(
                 #[test]
                 #[allow(clippy::modulo_one)]
-                fn $name(x in any::<usize>(), y in any::<usize>(), z in any::<[$underlier; $width]>(), ) {
+                fn $name(z in any::<[$underlier; $width]>()) {
                     let indexed_packed_field = <$type>::from_fn(|i| <$scalar>::from_underlier(z[i].into()));
-                    let log_block_len = x % (<$scalar>::LOG_WIDTH + 1);
-                    let block_idx = y % (1 << log_block_len);
-                    assert_eq!(
-                        basic_spread(indexed_packed_field, log_block_len, block_idx),
-                        indexed_packed_field.spread(log_block_len, block_idx)
-                    );
-                }
+                    for log_block_len in 0..=<$type>::LOG_WIDTH {
+						for block_idx in 0..(1 <<(<$type>::LOG_WIDTH - log_block_len)) {
+							assert_eq!(
+								basic_spread(indexed_packed_field, log_block_len, block_idx),
+								indexed_packed_field.spread(log_block_len, block_idx)
+							);
+						}
+					}
+				}
             )*
         }
     };
@@ -97,35 +106,51 @@ macro_rules! generate_spread_tests {
 
 generate_spread_tests! {
 	// 128-bit configurations
-	spread_equals_basic_spread_1x128, PackedBinaryField1x128b, BinaryField128b, u128, 1;
+	spread_equals_basic_spread_4x128, PackedBinaryField4x128b, BinaryField128b, u128, 4;
 	spread_equals_basic_spread_2x128, PackedBinaryField2x128b, BinaryField128b, u128, 2;
+	spread_equals_basic_spread_1x128, PackedBinaryField1x128b, BinaryField128b, u128, 1;
 
 	// 64-bit configurations
+	spread_equals_basic_spread_8x64, PackedBinaryField8x64b, BinaryField64b, u64, 8;
 	spread_equals_basic_spread_4x64, PackedBinaryField4x64b, BinaryField64b, u64, 4;
 	spread_equals_basic_spread_2x64, PackedBinaryField2x64b, BinaryField64b, u64, 2;
+	spread_equals_basic_spread_1x64, PackedBinaryField1x64b, BinaryField64b, u8, 1;
 
 	// 32-bit configurations
+	spread_equals_basic_spread_16x32, PackedBinaryField16x32b, BinaryField32b, u32, 16;
 	spread_equals_basic_spread_8x32, PackedBinaryField8x32b, BinaryField32b, u32, 8;
 	spread_equals_basic_spread_4x32, PackedBinaryField4x32b, BinaryField32b, u32, 4;
+	spread_equals_basic_spread_2x32, PackedBinaryField2x32b, BinaryField32b, u32, 2;
+
 	// 16-bit configurations
+	spread_equals_basic_spread_32x16, PackedBinaryField32x16b, BinaryField16b, u16, 32;
 	spread_equals_basic_spread_16x16, PackedBinaryField16x16b, BinaryField16b, u16, 16;
 	spread_equals_basic_spread_8x16, PackedBinaryField8x16b, BinaryField16b, u16, 8;
+	spread_equals_basic_spread_4x16, PackedBinaryField4x16b, BinaryField16b, u16, 4;
 
 	// 8-bit configurations
+	spread_equals_basic_spread_64x8, PackedBinaryField64x8b, BinaryField8b, u8, 64;
 	spread_equals_basic_spread_32x8, PackedBinaryField32x8b, BinaryField8b, u8, 32;
 	spread_equals_basic_spread_16x8, PackedBinaryField16x8b, BinaryField8b, u8, 16;
+	spread_equals_basic_spread_8x8, PackedBinaryField8x8b, BinaryField8b, u8, 8;
 }
 
 generate_spread_tests_small! {
 	// 4-bit configurations
+	spread_equals_basic_spread_128x4, PackedBinaryField128x4b, BinaryField4b, SmallU<4>, 128;
 	spread_equals_basic_spread_64x4, PackedBinaryField64x4b, BinaryField4b, SmallU<4>, 64;
 	spread_equals_basic_spread_32x4, PackedBinaryField32x4b, BinaryField4b, SmallU<4>, 32;
+	spread_equals_basic_spread_16x4, PackedBinaryField16x4b, BinaryField4b, SmallU<4>, 16;
 
 	// 2-bit configurations
+	spread_equals_basic_spread_256x2, PackedBinaryField256x2b, BinaryField2b, SmallU<2>, 256;
 	spread_equals_basic_spread_128x2, PackedBinaryField128x2b, BinaryField2b, SmallU<2>, 128;
 	spread_equals_basic_spread_64x2, PackedBinaryField64x2b, BinaryField2b, SmallU<2>, 64;
+	spread_equals_basic_spread_32x2, PackedBinaryField32x2b, BinaryField2b, SmallU<2>, 32;
 
 	// 1-bit configurations
+	spread_equals_basic_spread_512x1, PackedBinaryField512x1b, BinaryField1b, SmallU<1>, 512;
 	spread_equals_basic_spread_256x1, PackedBinaryField256x1b, BinaryField1b, SmallU<1>, 256;
 	spread_equals_basic_spread_128x1, PackedBinaryField128x1b, BinaryField1b, SmallU<1>, 128;
+	spread_equals_basic_spread_64x1, PackedBinaryField64x1b, BinaryField1b, SmallU<1>, 64;
 }
