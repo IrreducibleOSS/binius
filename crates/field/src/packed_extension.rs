@@ -3,7 +3,7 @@
 use crate::{
 	as_packed_field::PackScalar,
 	underlier::{Divisible, WithUnderlier},
-	ExtensionField, Field, PackedField,
+	Error, ExtensionField, Field, PackedField,
 };
 
 /// A [`PackedField`] that can be safely cast to indexable slices of scalars.
@@ -90,6 +90,39 @@ where
 	fn cast_ext(base: Self::PackedSubfield) -> Self;
 	fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self;
 	fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self;
+}
+
+pub fn ext_base_mul<PE, F>(
+	lhs: &[PE],
+	rhs: &[PE::PackedSubfield],
+	out: &mut [PE],
+) -> Result<(), Error>
+where
+	PE: PackedExtension<F>,
+	PE::Scalar: ExtensionField<F>,
+	F: Field,
+{
+	if lhs.len() != rhs.len() * PE::Scalar::DEGREE {
+		return Err(Error::MismatchedLengths);
+	}
+
+	for i in 0..lhs.len() {
+		let bottom_most_scalar_idx = i * PE::WIDTH;
+		let bottom_most_scalar_idx_in_subfield_arr =
+			bottom_most_scalar_idx / PE::PackedSubfield::WIDTH;
+		let bottom_most_scalar_idx_within_packed_subfield =
+			bottom_most_scalar_idx % PE::PackedSubfield::WIDTH;
+		let block_idx = bottom_most_scalar_idx_within_packed_subfield / PE::WIDTH;
+
+		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
+		let broadcasted_rhs = unsafe {
+			rhs[bottom_most_scalar_idx_in_subfield_arr].spread_unchecked(PE::LOG_WIDTH, block_idx)
+		};
+
+		let result_base = lhs[i].cast_base() * broadcasted_rhs;
+		out[i] = PE::cast_ext(result_base);
+	}
+	Ok(())
 }
 
 impl<PT, FS> PackedExtension<FS> for PT
@@ -212,5 +245,72 @@ where
 		let underliers = PT1::to_underliers_ref_mut(packed);
 		let underliers: &mut [PT2::Underlier] = PT1::Underlier::split_slice_mut(underliers);
 		PT2::from_underliers_ref_mut(underliers)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::{
+		ext_base_mul,
+		packed::{get_packed_slice, set_packed_slice},
+		underlier::WithUnderlier,
+		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x16b,
+		PackedBinaryField2x128b, PackedBinaryField32x8b, PackedField,
+	};
+	use proptest::prelude::*;
+
+	fn strategy_8b_scalars() -> impl Strategy<Value = [BinaryField8b; 32]> {
+		any::<[<BinaryField8b as WithUnderlier>::Underlier; 32]>()
+			.prop_map(|arr| arr.map(<BinaryField8b>::from_underlier))
+	}
+
+	fn strategy_16b_scalars() -> impl Strategy<Value = [BinaryField16b; 32]> {
+		any::<[<BinaryField16b as WithUnderlier>::Underlier; 32]>()
+			.prop_map(|arr| arr.map(<BinaryField16b>::from_underlier))
+	}
+
+	fn strategy_128b_scalars() -> impl Strategy<Value = [BinaryField128b; 32]> {
+		any::<[<BinaryField128b as WithUnderlier>::Underlier; 32]>()
+			.prop_map(|arr| arr.map(<BinaryField128b>::from_underlier))
+	}
+
+	fn pack_slice<P: PackedField>(scalar_slice: &[P::Scalar]) -> Vec<P> {
+		let mut packed_slice = vec![P::default(); scalar_slice.len() / P::WIDTH];
+
+		for (i, scalar) in scalar_slice.iter().enumerate() {
+			set_packed_slice(&mut packed_slice, i, *scalar);
+		}
+
+		packed_slice
+	}
+
+	proptest! {
+		#[test]
+		fn test_base_ext_mul_8(base_scalars in strategy_8b_scalars(), ext_scalars in strategy_128b_scalars()){
+			let base_packed = pack_slice::<PackedBinaryField32x8b>(&base_scalars);
+			let ext_packed = pack_slice::<PackedBinaryField2x128b>(&ext_scalars);
+
+			let mut result = vec![PackedBinaryField2x128b::default(); ext_packed.len()];
+
+			ext_base_mul(&ext_packed, &base_packed, &mut result).unwrap();
+
+			for (i, (base, ext)) in base_scalars.iter().zip(ext_scalars).enumerate(){
+				assert_eq!(ext * *base, get_packed_slice(&result, i));
+			}
+		}
+
+		#[test]
+		fn test_base_ext_mul_16(base_scalars in strategy_16b_scalars(), ext_scalars in strategy_128b_scalars()){
+			let base_packed = pack_slice::<PackedBinaryField16x16b>(&base_scalars);
+			let ext_packed = pack_slice::<PackedBinaryField2x128b>(&ext_scalars);
+
+			let mut result = vec![PackedBinaryField2x128b::default(); ext_packed.len()];
+
+			ext_base_mul(&ext_packed, &base_packed, &mut result).unwrap();
+
+			for (i, (base, ext)) in base_scalars.iter().zip(ext_scalars).enumerate(){
+				assert_eq!(ext * *base, get_packed_slice(&result, i));
+			}
+		}
 	}
 }

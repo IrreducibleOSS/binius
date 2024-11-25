@@ -40,6 +40,10 @@ name = "binary_field_util"
 harness = false
 
 [[bench]]
+name = "packed_extension_mul"
+harness = false
+
+[[bench]]
 name = "packed_field_linear_transform"
 harness = false
 
@@ -53,6 +57,10 @@ harness = false
 
 [[bench]]
 name = "packed_field_iter"
+harness = false
+
+[[bench]]
+name = "packed_field_invert"
 harness = false
 
 [[bench]]
