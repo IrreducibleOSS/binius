@@ -4,6 +4,7 @@ mod batch_prove;
 mod batch_prove_univariate_zerocheck;
 pub(crate) mod common;
 mod concrete_prover;
+pub mod front_loaded;
 pub mod oracles;
 pub mod prover_state;
 pub mod regular_sumcheck;

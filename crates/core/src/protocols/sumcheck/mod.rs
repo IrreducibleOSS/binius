@@ -8,6 +8,7 @@
 
 mod common;
 mod error;
+pub mod front_loaded;
 mod oracles;
 pub mod prove;
 #[cfg(test)]

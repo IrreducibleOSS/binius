@@ -124,12 +124,7 @@ where
 			active_index += 1;
 		}
 
-		let coeffs: Vec<F> = transcript.read_scalar_slice(max_degree).map_err(|_| {
-			VerificationError::NumberOfCoefficients {
-				round: round_no,
-				expected: max_degree,
-			}
-		})?;
+		let coeffs = transcript.read_scalar_slice(max_degree)?;
 		let round_proof = RoundProof(RoundCoeffs(coeffs));
 
 		let challenge = transcript.sample();
@@ -164,8 +159,11 @@ where
 		multilinear_evals.push(evals);
 	}
 
-	let expected_sum =
-		compute_expected_batch_composite_evaluation(batch_coeffs, claims, &multilinear_evals)?;
+	let expected_sum = compute_expected_batch_composite_evaluation_multi_claim(
+		batch_coeffs,
+		claims,
+		&multilinear_evals,
+	)?;
 
 	if sum != expected_sum {
 		return Err(VerificationError::IncorrectBatchEvaluation.into());
@@ -177,7 +175,23 @@ where
 	})
 }
 
-fn compute_expected_batch_composite_evaluation<F: Field, Composition>(
+pub fn compute_expected_batch_composite_evaluation_single_claim<F: Field, Composition>(
+	batch_coeff: F,
+	claim: &SumcheckClaim<F, Composition>,
+	multilinear_evals: &[F],
+) -> Result<F, Error>
+where
+	Composition: CompositionPolyOS<F>,
+{
+	let composite_evals = claim
+		.composite_sums()
+		.iter()
+		.map(|sum_claim| sum_claim.composition.evaluate(multilinear_evals))
+		.collect::<Result<Vec<_>, _>>()?;
+	Ok(batch_weighted_value(batch_coeff, composite_evals.into_iter()))
+}
+
+fn compute_expected_batch_composite_evaluation_multi_claim<F: Field, Composition>(
 	batch_coeffs: Vec<F>,
 	claims: &[SumcheckClaim<F, Composition>],
 	multilinear_evals: &[Vec<F>],
@@ -187,12 +201,11 @@ where
 {
 	izip!(batch_coeffs, claims, multilinear_evals.iter())
 		.map(|(batch_coeff, claim, multilinear_evals)| {
-			let composite_evals = claim
-				.composite_sums()
-				.iter()
-				.map(|sum_claim| sum_claim.composition.evaluate(multilinear_evals))
-				.collect::<Result<Vec<_>, _>>()?;
-			Ok::<_, Error>(batch_weighted_value(batch_coeff, composite_evals.into_iter()))
+			compute_expected_batch_composite_evaluation_single_claim(
+				batch_coeff,
+				claim,
+				multilinear_evals,
+			)
 		})
 		.try_fold(F::ZERO, |sum, term| Ok(sum + term?))
 }

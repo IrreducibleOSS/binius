@@ -2,7 +2,10 @@
 
 use super::{
 	common::CompositeSumClaim,
-	prove::{batch_prove, RegularSumcheckProver},
+	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
+	prove::{
+		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
+	},
 	verify::batch_verify,
 	BatchSumcheckOutput, SumcheckClaim,
 };
@@ -11,7 +14,7 @@ use crate::{
 	composition::index_composition,
 	fiat_shamir::HasherChallenger,
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
-	protocols::test_utils::TestProductComposition,
+	protocols::{sumcheck::prove::SumcheckProver, test_utils::TestProductComposition},
 	transcript::TranscriptWriter,
 };
 use binius_field::{
@@ -20,14 +23,15 @@ use binius_field::{
 	packed::set_packed_slice,
 	underlier::UnderlierType,
 	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
-	PackedBinaryField4x32b, PackedField, TowerField,
+	PackedBinaryField4x32b, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackendExt};
+use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	CompositionPolyOS, IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter,
-	MultilinearExtension, MultilinearPoly,
+	CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use groestl_crypto::Groestl256;
+use itertools::izip;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
@@ -58,15 +62,13 @@ impl<P: PackedField> CompositionPolyOS<P> for SquareComposition {
 	}
 }
 
-fn generate_random_multilinears<P, PE>(
+fn generate_random_multilinears<P>(
 	mut rng: impl Rng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<MLEEmbeddingAdapter<P, PE>>
+) -> Vec<MultilinearExtension<P>>
 where
 	P: PackedField,
-	PE: PackedField,
-	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	repeat_with(|| {
 		let mut values = repeat_with(|| P::random(&mut rng))
@@ -78,9 +80,7 @@ where
 			}
 		}
 
-		MultilinearExtension::new(n_vars, values)
-			.unwrap()
-			.specialize()
+		MultilinearExtension::new(n_vars, values).unwrap()
 	})
 	.take(n_multilinears)
 	.collect()
@@ -124,11 +124,11 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let multilins = generate_random_multilinears::<PackedType<U, F>, PackedType<U, FExt>>(
-		&mut rng,
-		n_vars,
-		n_multilinears,
-	);
+	let multilins =
+		generate_random_multilinears::<PackedType<U, F>>(&mut rng, n_vars, n_multilinears)
+			.into_iter()
+			.map(MLEEmbeddingAdapter::<_, PackedType<U, FExt>, _>::from)
+			.collect::<Vec<_>>();
 	let composition = TestProductComposition::new(n_multilinears);
 	let sum = compute_composite_sum(&multilins, &composition);
 
@@ -238,68 +238,109 @@ fn test_sumcheck_prove_verify_with_nontrivial_packing() {
 	>(n_vars, n_multilinears, switchover_rd);
 }
 
+fn make_test_sumcheck<F, FDomain, P, PExt, Backend>(
+	n_vars: usize,
+	mut rng: impl Rng,
+	domain_factory: impl EvaluationDomainFactory<FDomain>,
+	backend: &Backend,
+) -> (
+	Vec<MultilinearExtension<P>>,
+	SumcheckClaim<F, impl CompositionPolyOS<F> + Clone + 'static>,
+	impl SumcheckProver<F> + '_,
+)
+where
+	F: Field + ExtensionField<P::Scalar> + ExtensionField<FDomain>,
+	FDomain: Field,
+	P: PackedField,
+	PExt: PackedField<Scalar = F> + RepackedExtension<P> + PackedExtension<FDomain>,
+	Backend: ComputationBackend,
+{
+	let mles = generate_random_multilinears::<P>(&mut rng, n_vars, 3);
+	let multilins = mles
+		.clone()
+		.into_iter()
+		.map(MLEEmbeddingAdapter::<_, PExt, _>::from)
+		.collect::<Vec<_>>();
+
+	let identity_composition = index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap();
+	let square_composition = index_composition(&[0, 1, 2], [1], SquareComposition).unwrap();
+	let product_composition = TestProductComposition::new(3);
+
+	let identity_sum = compute_composite_sum(&multilins, &identity_composition);
+	let square_sum = compute_composite_sum(&multilins, &square_composition);
+	let product_sum = compute_composite_sum(&multilins, &product_composition);
+
+	let claim = SumcheckClaim::new(
+		n_vars,
+		3,
+		vec![
+			CompositeSumClaim {
+				composition: Arc::new(identity_composition.clone())
+					as Arc<dyn CompositionPolyOS<F>>,
+				sum: identity_sum,
+			},
+			CompositeSumClaim {
+				composition: Arc::new(square_composition.clone()),
+				sum: square_sum,
+			},
+			CompositeSumClaim {
+				composition: Arc::new(product_composition.clone()),
+				sum: product_sum,
+			},
+		],
+	)
+	.unwrap();
+
+	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
+		multilins,
+		[
+			CompositeSumClaim {
+				composition: Arc::new(identity_composition) as Arc<dyn CompositionPolyOS<PExt>>,
+				sum: identity_sum,
+			},
+			CompositeSumClaim {
+				composition: Arc::new(square_composition),
+				sum: square_sum,
+			},
+			CompositeSumClaim {
+				composition: Arc::new(product_composition),
+				sum: product_sum,
+			},
+		],
+		domain_factory.clone(),
+		|_| (n_vars / 2).max(1),
+		backend,
+	)
+	.unwrap();
+
+	(mles, claim, prover)
+}
+
 fn prove_verify_batch(n_vars: &[usize]) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
 	type PE = PackedBinaryField1x128b;
 
-	trait UniversalComposition: CompositionPolyOS<FE> + CompositionPolyOS<PE> {}
-
-	impl<T: CompositionPolyOS<FE> + CompositionPolyOS<PE>> UniversalComposition for T {}
-
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-	let (claims, provers) = n_vars
-		.iter()
-		.map(|n_vars| {
-			let multilins = generate_random_multilinears::<P, PE>(&mut rng, *n_vars, 3);
-			let identity_composition =
-				Arc::new(index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap());
 
-			let square_composition =
-				Arc::new(index_composition(&[0, 1, 2], [1], SquareComposition).unwrap());
-
-			let product_composition = Arc::new(TestProductComposition::new(3));
-
-			let identity_sum = compute_composite_sum(&multilins, &identity_composition);
-			let square_sum = compute_composite_sum(&multilins, &square_composition);
-			let product_sum = compute_composite_sum(&multilins, &product_composition);
-
-			let claim = SumcheckClaim::new(
-				*n_vars,
-				3,
-				vec![
-					CompositeSumClaim {
-						composition: identity_composition as Arc<dyn UniversalComposition>,
-						sum: identity_sum,
-					},
-					CompositeSumClaim {
-						composition: square_composition,
-						sum: square_sum,
-					},
-					CompositeSumClaim {
-						composition: product_composition,
-						sum: product_sum,
-					},
-				],
-			)
-			.unwrap();
-
-			let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
-				multilins,
-				claim.composite_sums().iter().cloned(),
-				domain_factory.clone(),
-				|_| (n_vars / 2).max(1),
-				&backend,
-			)
-			.unwrap();
-
-			(claim, prover)
-		})
-		.unzip::<_, _, Vec<_>, Vec<_>>();
+	let mut mles = Vec::with_capacity(n_vars.len());
+	let mut claims = Vec::with_capacity(n_vars.len());
+	let mut provers = Vec::with_capacity(n_vars.len());
+	for &n_vars in n_vars {
+		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			n_vars,
+			&mut rng,
+			&domain_factory,
+			&backend,
+		);
+		mles.push(mles_i);
+		claims.push(claim);
+		provers.push(prover);
+	}
 
 	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 	let (prover_output, proof) =
@@ -324,4 +365,80 @@ fn test_prove_verify_batch() {
 #[test]
 fn test_prove_verify_batch_constant_polys() {
 	prove_verify_batch(&[2, 0])
+}
+
+fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
+	type P = PackedBinaryField4x32b;
+	type FDomain = BinaryField8b;
+	type FE = BinaryField128b;
+	type PE = PackedBinaryField1x128b;
+
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let backend = make_portable_backend();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+
+	let mut mles = Vec::with_capacity(n_vars.len());
+	let mut claims = Vec::with_capacity(n_vars.len());
+	let mut provers = Vec::with_capacity(n_vars.len());
+	for &n_vars in n_vars {
+		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			n_vars,
+			&mut rng,
+			&domain_factory,
+			&backend,
+		);
+		mles.push(mles_i);
+		claims.push(claim);
+		provers.push(prover);
+	}
+
+	let n_rounds = n_vars.iter().copied().max().unwrap_or(0);
+
+	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+
+	let mut batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
+	for _ in 0..n_rounds {
+		batch_prover.send_round_proof(&mut transcript).unwrap();
+		let challenge = transcript.sample();
+		batch_prover.receive_challenge(challenge).unwrap();
+	}
+	batch_prover.finish(&mut transcript).unwrap();
+
+	let mut transcript = transcript.into_reader();
+	let mut challenges = Vec::with_capacity(n_rounds);
+	let mut multilinear_evals = Vec::with_capacity(claims.len());
+
+	let mut verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
+	for _ in 0..n_rounds {
+		while let Some(claim_multilinear_evals) =
+			verifier.try_finish_claim(&mut transcript).unwrap()
+		{
+			multilinear_evals.push(claim_multilinear_evals);
+		}
+		verifier.receive_round_proof(&mut transcript).unwrap();
+
+		let challenge = transcript.sample();
+		verifier.finish_round(challenge).unwrap();
+		challenges.push(challenge);
+	}
+
+	while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut transcript).unwrap() {
+		multilinear_evals.push(claim_multilinear_evals);
+	}
+	verifier.finish().unwrap();
+
+	assert_eq!(multilinear_evals.len(), claims.len());
+
+	for (&n_vars, mles_i, multilinear_evals_i) in izip!(n_vars, mles, multilinear_evals) {
+		let query = MultilinearQuery::<PE>::expand(&challenges[..n_vars]);
+		for (mle, eval) in iter::zip(mles_i, multilinear_evals_i) {
+			assert_eq!(mle.evaluate(&query).unwrap(), eval);
+		}
+	}
+}
+
+#[test]
+fn test_prove_verify_batch_front_loaded() {
+	prove_verify_batch_front_loaded(&[0, 2, 6, 8])
 }

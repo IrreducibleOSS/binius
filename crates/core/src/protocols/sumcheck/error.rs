@@ -11,9 +11,15 @@ pub enum Error {
 		"composition polynomial has an incorrect number of variables, expected {expected_n_vars}"
 	)]
 	InvalidComposition { expected_n_vars: usize },
-	#[error("claims must be sorted in descending order by number of variables")]
+	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
-	#[error("expected call to execute")]
+	#[error("expected a call to try_finish_claim")]
+	ExpectedFinishClaim,
+	#[error("expected a call to finish_round")]
+	ExpectedFinishRound,
+	#[error("expected a call to receive_coeffs")]
+	ExpectedReceiveCoeffs,
+	#[error("expected call to finish")]
 	ExpectedFinish,
 	#[error("expected call to execute")]
 	ExpectedExecution,

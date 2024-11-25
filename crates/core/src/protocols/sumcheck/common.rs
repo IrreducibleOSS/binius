@@ -31,7 +31,7 @@ pub struct CompositeSumClaim<F: Field, Composition> {
 /// efficient batch proving and verification and reduce to a set of multilinear evaluations of the
 /// same polynomials. In other words, this grouping deduplicates prover work and proof data that
 /// would be redundant in a more naive implementation.
-#[derive(Debug, CopyGetters)]
+#[derive(Debug, Clone, CopyGetters)]
 pub struct SumcheckClaim<F: Field, C> {
 	#[getset(get_copy = "pub")]
 	n_vars: usize,
