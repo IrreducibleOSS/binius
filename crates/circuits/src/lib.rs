@@ -12,18 +12,19 @@ pub mod transparent;
 pub mod u32add;
 pub mod u32fib;
 pub mod unconstrained;
+pub mod vision;
 
 #[cfg(test)]
 mod tests {
 	use crate::{
 		bitwise, builder::ConstraintSystemBuilder, groestl::groestl_p_permutation,
 		keccakf::keccakf, lasso, sha256::sha256, u32add::u32add_committed, u32fib::u32fib,
-		unconstrained::unconstrained,
+		unconstrained::unconstrained, vision::vision_permutation,
 	};
 	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 	use binius_field::{
 		arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField16b, BinaryField128b,
-		BinaryField1b, BinaryField8b,
+		BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
 	};
 	use std::array;
 
@@ -157,6 +158,26 @@ mod tests {
 			);
 		let log_size = 9;
 		let _state_out = groestl_p_permutation(&mut builder, log_size).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_vision32b() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder =
+			ConstraintSystemBuilder::<OptimalUnderlier, BinaryField64b>::new_with_witness(
+				&allocator,
+			);
+		let log_size = 8;
+		let state_in: [OracleId; 24] = array::from_fn(|i| {
+			unconstrained::<_, _, _, BinaryField32b>(&mut builder, format!("p_in[{i}]"), log_size)
+				.unwrap()
+		});
+		let _state_out = vision_permutation(&mut builder, log_size, state_in).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();

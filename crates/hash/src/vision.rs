@@ -174,6 +174,11 @@ impl Vision32bPermutation {
 	) -> [PackedAESBinaryField8x32b; 3] {
 		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_linear_trans, constant))
 	}
+
+	/// Simple function interface to do a permutation of vision
+	pub fn permute_elems(&self, input: &mut [BinaryField32b; 24]) {
+		self.permute_mut(input)
+	}
 }
 
 impl Permutation<[BinaryField32b; 24]> for Vision32bPermutation {

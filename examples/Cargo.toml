@@ -46,6 +46,10 @@ path = "u8mul.rs"
 name = "u32add_with_lookup"
 path = "u32add_with_lookup.rs"
 
+[[example]]
+name = "vision32b_circuit"
+path = "vision32b_circuit.rs"
+
 
 [[example]]
 name = "sha256_circuit"
