@@ -2,11 +2,10 @@
 
 mod error;
 
-use crate::{fiat_shamir::Challenger, merkle_tree::MerkleCap};
+use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
 use binius_field::{deserialize_canonical, serialize_canonical, PackedField, TowerField};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::slice;
 use tracing::warn;
 
@@ -386,55 +385,6 @@ where
 	}
 }
 
-// This is temporary until we can move the entire proof into read write interface
-impl<P, Challenger_> CanObserve<MerkleCap<P>> for TranscriptReader<Challenger_>
-where
-	Challenger_: Challenger,
-	P: Clone,
-	Self: CanObserve<P>,
-{
-	fn observe(&mut self, value: MerkleCap<P>) {
-		self.observe_slice(&value.0);
-	}
-}
-
-impl<P, Challenger_> CanObserve<P> for TranscriptReader<Challenger_>
-where
-	P: PackedField<Scalar: TowerField>,
-	Challenger_: Challenger,
-{
-	fn observe(&mut self, value: P) {
-		for scalar in value.iter() {
-			serialize_canonical(scalar, self.combined.challenger.observer())
-				.expect("challenger has infinite buffer")
-		}
-	}
-}
-
-impl<P, Challenger_> CanObserve<MerkleCap<P>> for TranscriptWriter<Challenger_>
-where
-	P: Clone,
-	Self: CanObserve<P>,
-	Challenger_: Challenger,
-{
-	fn observe(&mut self, value: MerkleCap<P>) {
-		self.observe_slice(&value.0);
-	}
-}
-
-impl<P, Challenger_> CanObserve<P> for TranscriptWriter<Challenger_>
-where
-	P: PackedField<Scalar: TowerField>,
-	Challenger_: Challenger,
-{
-	fn observe(&mut self, value: P) {
-		for scalar in value.iter() {
-			serialize_canonical(scalar, self.combined.challenger.observer())
-				.expect("challenger has infinite buffer")
-		}
-	}
-}
-
 /// Helper functions for serializing native types
 pub fn read_u64<Transcript: CanRead>(transcript: &mut Transcript) -> Result<u64, Error> {
 	let mut as_bytes = [0; size_of::<u64>()];
@@ -464,19 +414,16 @@ mod tests {
 		prover_transcript.write_scalar(BinaryField8b::new(0x96));
 		prover_transcript.write_scalar(BinaryField32b::new(0xDEADBEEF));
 		prover_transcript.write_scalar(BinaryField128b::new(0x55669900112233550000CCDDFFEEAABB));
-		prover_transcript.observe(BinaryField64b::new(0xAA11223344556677));
 		let sampled_fanpaar1: BinaryField128b = prover_transcript.sample();
 
 		prover_transcript.write_scalar(AESTowerField8b::new(0x52));
 		prover_transcript.write_scalar(AESTowerField32b::new(0x12345678));
 		prover_transcript.write_scalar(AESTowerField128b::new(0xDDDDBBBBCCCCAAAA2222999911117777));
-		prover_transcript.observe(AESTowerField8b::new(0x20));
 
 		let sampled_aes1: AESTowerField16b = prover_transcript.sample();
 
 		prover_transcript
 			.write_scalar(BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
-		prover_transcript.observe(BinaryField128bPolyval::new(0xEEEE87654321AAAAFFFF12345678DDDD));
 		let sampled_polyval1: BinaryField128bPolyval = prover_transcript.sample();
 
 		let mut verifier_transcript = prover_transcript.into_reader();
@@ -489,7 +436,6 @@ mod tests {
 		assert_eq!(fp_32.val(), 0xDEADBEEF);
 		assert_eq!(fp_128.val(), 0x55669900112233550000CCDDFFEEAABB);
 
-		verifier_transcript.observe(BinaryField64b::new(0xAA11223344556677));
 		let sampled_fanpaar1_res: BinaryField128b = verifier_transcript.sample();
 
 		assert_eq!(sampled_fanpaar1_res, sampled_fanpaar1);
@@ -502,7 +448,6 @@ mod tests {
 		assert_eq!(aes_32.val(), 0x12345678);
 		assert_eq!(aes_128.val(), 0xDDDDBBBBCCCCAAAA2222999911117777);
 
-		verifier_transcript.observe(AESTowerField8b::new(0x20));
 		let sampled_aes_res: AESTowerField16b = verifier_transcript.sample();
 
 		assert_eq!(sampled_aes_res, sampled_aes1);
@@ -510,8 +455,6 @@ mod tests {
 		let polyval_128: BinaryField128bPolyval = verifier_transcript.read_scalar().unwrap();
 		assert_eq!(polyval_128, BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
 
-		verifier_transcript
-			.observe(BinaryField128bPolyval::new(0xEEEE87654321AAAAFFFF12345678DDDD));
 		let sampled_polyval_res: BinaryField128bPolyval = verifier_transcript.sample();
 		assert_eq!(sampled_polyval_res, sampled_polyval1);
 

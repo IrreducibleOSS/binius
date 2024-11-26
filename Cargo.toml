@@ -29,8 +29,6 @@ itertools = "0.13.0"
 lazy_static = "1.5.0"
 log = "0.4.20"
 paste = "1.0.15"
-p3-challenger = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
-p3-matrix = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
 p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
 p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
 proc-macro2 = "1.0.81"

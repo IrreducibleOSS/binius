@@ -1,9 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::errors::Error;
-use crate::challenger::{field_challenger::FieldChallengerHelper, FieldChallenger};
-use binius_field::{BinaryField, ExtensionField, Field, PackedExtension, PackedFieldIndexable};
-use p3_challenger::CanObserve;
 use rayon::iter::IndexedParallelIterator;
 
 /// A Merkle tree commitment.
@@ -16,18 +13,6 @@ pub struct Commitment<Digest> {
 	pub root: Digest,
 	/// The depth of the Merkle tree.
 	pub depth: usize,
-}
-
-impl<F: Field, P, H> CanObserve<Commitment<P>> for FieldChallenger<F, H>
-where
-	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<F> + BinaryField,
-	F: BinaryField,
-	H: FieldChallengerHelper<F>,
-{
-	fn observe(&mut self, value: Commitment<P>) {
-		self.observe(value.root);
-	}
 }
 
 /// A Merkle tree scheme.

@@ -5,7 +5,7 @@ use super::{
 	gpa_sumcheck::prove::GPAProver,
 	Error, GrandProductClaim, GrandProductWitness,
 };
-use crate::{protocols::sumcheck, transcript::CanWrite};
+use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanWrite};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -18,7 +18,6 @@ use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
-use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
@@ -39,7 +38,7 @@ where
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 	P::Scalar: Field + ExtensionField<FDomain>,
-	Transcript: CanSample<F> + CanObserve<F> + CanWrite,
+	Transcript: CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together

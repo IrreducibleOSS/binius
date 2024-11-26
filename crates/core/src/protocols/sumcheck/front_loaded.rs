@@ -6,7 +6,7 @@ use super::{
 	verify::compute_expected_batch_composite_evaluation_single_claim,
 	RoundCoeffs, RoundProof,
 };
-use crate::{challenger::CanSample, protocols::sumcheck::SumcheckClaim, transcript::CanRead};
+use crate::{fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcript::CanRead};
 use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPolyOS};
 use binius_utils::sorting::is_sorted_ascending;

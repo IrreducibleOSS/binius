@@ -20,7 +20,6 @@ bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 groestl_crypto.workspace = true
 itertools.workspace = true
-p3-challenger.workspace = true
 p3-symmetric.workspace = true
 rand.workspace = true
 rayon.workspace = true

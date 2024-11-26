@@ -2,7 +2,7 @@
 
 use super::batch_prove::SumcheckProver;
 use crate::{
-	challenger::CanSample,
+	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},
 	transcript::CanWrite,
 };

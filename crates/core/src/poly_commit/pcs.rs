@@ -1,7 +1,7 @@
 // Copyright 2023-2024 Irreducible Inc.
 
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
+	fiat_shamir::{CanSample, CanSampleBits},
 	transcript::{AdviceReader, AdviceWriter, CanRead, CanWrite},
 };
 use binius_field::{ExtensionField, PackedField, TowerField};
@@ -41,11 +41,7 @@ where
 	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		Transcript: CanObserve<FE>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FE>
-			+ CanSampleBits<usize>
-			+ CanWrite,
+		Transcript: CanSample<FE> + CanSampleBits<usize> + CanWrite,
 		Backend: ComputationBackend;
 
 	/// Verify an evaluation proof at a *random* challenge point.
@@ -59,11 +55,7 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		Transcript: CanObserve<FE>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FE>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		Transcript: CanSample<FE> + CanSampleBits<usize> + CanRead,
 		Backend: ComputationBackend;
 
 	/// Return the byte-size of a proof.

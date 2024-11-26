@@ -5,14 +5,13 @@ use super::{
 	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
-use crate::{protocols::sumcheck, transcript::CanRead};
+use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanRead};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
 };
-use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
@@ -23,7 +22,7 @@ pub fn batch_verify<F, Transcript>(
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
-	Transcript: CanSample<F> + CanObserve<F> + CanRead,
+	Transcript: CanSample<F> + CanRead,
 {
 	let (original_indices, mut sorted_claims) = stable_sort(claims, |claim| claim.n_vars, true);
 	let max_n_vars = sorted_claims.first().map(|claim| claim.n_vars).unwrap_or(0);
@@ -103,7 +102,7 @@ fn reduce_layer_claim_batch<F, Transcript>(
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
-	Transcript: CanSample<F> + CanObserve<F> + CanRead,
+	Transcript: CanSample<F> + CanRead,
 {
 	// Validation
 	if claims.is_empty() {

@@ -17,6 +17,7 @@ use super::{
 };
 use crate::{
 	composition::BivariateProduct,
+	fiat_shamir::CanSample,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
 		Packed, ProjectionVariant, Shifted,
@@ -41,7 +42,6 @@ use binius_field::{
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
 use binius_utils::bail;
-use p3_challenger::{CanObserve, CanSample};
 use tracing::instrument;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
@@ -445,7 +445,7 @@ where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
-	Transcript: CanObserve<F> + CanSample<F> + CanWrite,
+	Transcript: CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(

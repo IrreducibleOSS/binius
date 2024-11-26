@@ -6,6 +6,7 @@ use super::{
 	TerminateCodeword,
 };
 use crate::{
+	fiat_shamir::CanSampleBits,
 	linear_code::LinearCode,
 	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
@@ -20,7 +21,6 @@ use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use p3_challenger::CanSampleBits;
 use rayon::prelude::*;
 use std::ops::Deref;
 use tracing::instrument;

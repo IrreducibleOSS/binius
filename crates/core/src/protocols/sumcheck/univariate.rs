@@ -218,7 +218,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		composition::{IndexComposition, ProductComposition},
-		fiat_shamir::HasherChallenger,
+		fiat_shamir::{CanSample, HasherChallenger},
 		polynomial::CompositionScalarAdapter,
 		protocols::{
 			sumcheck::{
@@ -246,7 +246,6 @@ mod tests {
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
-	use p3_challenger::CanSample;
 	use rand::{prelude::StdRng, SeedableRng};
 	use std::{iter, sync::Arc};
 

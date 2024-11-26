@@ -5,7 +5,7 @@ use super::{
 	verify::BatchVerifyStart,
 	zerocheck::ZerocheckClaim,
 };
-use crate::{challenger::CanSample, transcript::CanRead};
+use crate::{fiat_shamir::CanSample, transcript::CanRead};
 use binius_field::{util::inner_product_unchecked, Field, TowerField};
 use binius_math::{make_ntt_canonical_domain_points, CompositionPolyOS, EvaluationDomain};
 use binius_utils::{bail, sorting::is_sorted_ascending};

@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
+	fiat_shamir::{CanSample, CanSampleBits},
 	poly_commit::{batch_pcs, batch_pcs::BatchPCS, PolyCommitScheme, FRIPCS},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::{AdviceReader, CanRead},
@@ -8,7 +9,6 @@ use crate::{
 use binius_field::{as_packed_field::PackedType, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
-use p3_challenger::{CanObserve, CanSample, CanSampleBits};
 use std::{fmt::Debug, marker::PhantomData};
 
 /// A trait that groups a family of PCSs for different fields in a tower as associated types.
@@ -93,11 +93,7 @@ where
 		backend: &Backend,
 	) -> Result<(), PCSFamily::Error>
 	where
-		CH: CanObserve<FExt<Tower>>
-			+ CanObserve<PCSFamily::Commitment>
-			+ CanSample<FExt<Tower>>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		CH: CanSample<FExt<Tower>> + CanSampleBits<usize> + CanRead,
 		Backend: ComputationBackend,
 	{
 		match self {

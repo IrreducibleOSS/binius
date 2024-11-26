@@ -10,9 +10,8 @@ use super::{
 	BatchSumcheckOutput, SumcheckClaim,
 };
 use crate::{
-	challenger::CanSample,
 	composition::index_composition,
-	fiat_shamir::HasherChallenger,
+	fiat_shamir::{CanSample, HasherChallenger},
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::{sumcheck::prove::SumcheckProver, test_utils::TestProductComposition},
 	transcript::TranscriptWriter,

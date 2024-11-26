@@ -6,9 +6,8 @@ use super::{
 	ConstraintSystem, Proof,
 };
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
 	constraint_system::common::{standard_pcs, FExt, TowerPCS, TowerPCSFamily},
-	fiat_shamir::Challenger,
+	fiat_shamir::{CanSample, CanSampleBits, Challenger},
 	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	poly_commit::PolyCommitScheme,
 	protocols::{
@@ -536,11 +535,7 @@ where
 	F: TowerField,
 	FExt: TowerField + ExtensionField<F>,
 	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
-	Transcript: CanObserve<PCS::Commitment>
-		+ CanObserve<FExt>
-		+ CanSample<FExt>
-		+ CanSampleBits<usize>
-		+ CanWrite,
+	Transcript: CanSample<FExt> + CanSampleBits<usize> + CanWrite,
 	Backend: ComputationBackend,
 {
 	// Precondition

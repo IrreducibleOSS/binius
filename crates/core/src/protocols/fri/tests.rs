@@ -2,8 +2,7 @@
 
 use super::to_par_scalar_big_chunks;
 use crate::{
-	challenger::{CanObserve, CanSample},
-	fiat_shamir::HasherChallenger,
+	fiat_shamir::{CanSample, HasherChallenger},
 	linear_code::LinearCode,
 	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
@@ -11,7 +10,7 @@ use crate::{
 		FoldRoundOutput,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{AdviceWriter, TranscriptWriter},
+	transcript::{AdviceWriter, CanRead, CanWrite, TranscriptWriter},
 };
 use binius_field::{
 	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
@@ -74,7 +73,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 
 	// Prover commits the message
 	let CommitOutput {
-		commitment: codeword_commitment,
+		commitment: mut codeword_commitment,
 		committed: codeword_committed,
 		codeword,
 	} = fri::commit_interleaved(&committed_rs_code_packed, &params, &merkle_prover, &msg).unwrap();
@@ -92,7 +91,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 		advice: AdviceWriter::default(),
 	};
-	prover_challenger.transcript.observe(codeword_commitment);
+	prover_challenger
+		.transcript
+		.write_packed(codeword_commitment);
 	let mut round_commitments = Vec::with_capacity(params.n_oracles());
 	for _i in 0..params.n_fold_rounds() {
 		let challenge = prover_challenger.transcript.sample();
@@ -100,7 +101,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				prover_challenger.transcript.observe(round_commitment);
+				prover_challenger.transcript.write_packed(round_commitment);
 				round_commitments.push(round_commitment);
 			}
 		}
@@ -111,7 +112,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		.unwrap();
 	// Now run the verifier
 	let mut verifier_challenger = prover_challenger.into_verifier();
-	verifier_challenger.transcript.observe(codeword_commitment);
+	codeword_commitment = verifier_challenger.transcript.read_packed().unwrap();
 	let mut verifier_challenges = Vec::with_capacity(params.n_fold_rounds());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
@@ -121,7 +122,8 @@ fn test_commit_prove_verify_success<U, F, FA>(
 				.transcript
 				.sample_vec(params.fold_arities()[i]),
 		);
-		verifier_challenger.transcript.observe(*commitment);
+		let mut _commitment = *commitment;
+		_commitment = verifier_challenger.transcript.read_packed().unwrap();
 	}
 
 	verifier_challenges.append(

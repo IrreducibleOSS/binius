@@ -2,7 +2,7 @@
 
 use super::{common::GreedyEvalcheckProveOutput, error::Error};
 use crate::{
-	challenger::{CanObserve, CanSample},
+	fiat_shamir::CanSample,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
 		serialize_evalcheck_proof,
@@ -38,7 +38,7 @@ where
 	F: TowerField + ExtensionField<DomainField>,
 	PackedType<U, F>: PackedFieldIndexable,
 	DomainField: TowerField,
-	Transcript: CanObserve<F> + CanSample<F> + CanWrite,
+	Transcript: CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
 	let committed_batches = oracles.committed_batches();

@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	challenger::CanSample,
+	fiat_shamir::CanSample,
 	protocols::sumcheck::{
 		prove::{batch_prove::BatchProveStart, SumcheckProver},
 		univariate::LagrangeRoundEvals,

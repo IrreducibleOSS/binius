@@ -1,8 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
+	fiat_shamir::{CanSample, CanSampleBits},
 	poly_commit::PolyCommitScheme,
 	polynomial::{multivariate::MultivariatePoly, Error as PolynomialError},
 	protocols::sumcheck::{
@@ -126,11 +126,7 @@ where
 	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		Transcript: CanObserve<PE::Scalar>
-			+ CanWrite
-			+ CanObserve<Self::Commitment>
-			+ CanSample<PE::Scalar>
-			+ CanSampleBits<usize>,
+		Transcript: CanWrite + CanSample<PE::Scalar> + CanSampleBits<usize>,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -206,11 +202,7 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		Transcript: CanObserve<FE>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FE>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		Transcript: CanSample<FE> + CanSampleBits<usize> + CanRead,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -463,13 +455,13 @@ mod tests {
 		let pcs =
 			RingSwitchPCS::<F, BinaryField8b, _, _, _>::new(inner_pcs, domain_factory).unwrap();
 
-		let (commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
+		let (mut commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
 
 		let mut prover_challenger = crate::transcript::Proof {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_challenger.transcript.observe(commitment);
+		prover_challenger.transcript.write_packed(commitment);
 		pcs.prove_evaluation(
 			&mut prover_challenger.advice,
 			&mut prover_challenger.transcript,
@@ -481,7 +473,7 @@ mod tests {
 		.unwrap();
 
 		let mut verifier_challenger = prover_challenger.into_verifier();
-		verifier_challenger.transcript.observe(commitment);
+		commitment = verifier_challenger.transcript.read_packed().unwrap();
 		pcs.verify_evaluation(
 			&mut verifier_challenger.advice,
 			&mut verifier_challenger.transcript,

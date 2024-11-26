@@ -187,8 +187,7 @@ where
 mod tests {
 	use super::*;
 	use crate::{
-		challenger::CanSample,
-		fiat_shamir::HasherChallenger,
+		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			sumcheck::{
 				batch_verify,

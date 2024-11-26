@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
+	fiat_shamir::{CanSample, CanSampleBits},
 	poly_commit::PolyCommitScheme,
 	polynomial::Error as PolynomialError,
 };
@@ -188,11 +188,7 @@ where
 	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		Transcript: CanObserve<FE>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FE>
-			+ CanSampleBits<usize>
-			+ CanWrite,
+		Transcript: CanSample<FE> + CanSampleBits<usize> + CanWrite,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars {
@@ -227,11 +223,7 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		Transcript: CanObserve<FE>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FE>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		Transcript: CanSample<FE> + CanSampleBits<usize> + CanRead,
 		Backend: ComputationBackend,
 	{
 		if values.len() > 1 << self.log_num_polys {
@@ -345,12 +337,12 @@ mod tests {
 
 		let polys = multilins.iter().map(|x| x.to_ref()).collect::<Vec<_>>();
 
-		let (commitment, committed) = pcs.commit(&polys).unwrap();
+		let (mut commitment, committed) = pcs.commit(&polys).unwrap();
 		let mut prover_proof = crate::transcript::Proof {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::new(),
 		};
-		prover_proof.transcript.observe(commitment);
+		prover_proof.transcript.write_packed(commitment);
 
 		pcs.prove_evaluation(
 			&mut prover_proof.advice,
@@ -363,7 +355,7 @@ mod tests {
 		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment);
+		commitment = verifier_proof.transcript.read_packed().unwrap();
 		pcs.verify_evaluation(
 			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,
@@ -432,13 +424,13 @@ mod tests {
 
 		let polys = multilins.iter().map(|x| x.to_ref()).collect::<Vec<_>>();
 
-		let (commitment, committed) = pcs.commit(&polys).unwrap();
+		let (mut commitment, committed) = pcs.commit(&polys).unwrap();
 
 		let mut prover_proof = crate::transcript::Proof {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_proof.transcript.observe(commitment);
+		prover_proof.transcript.write_packed(commitment);
 		pcs.prove_evaluation(
 			&mut prover_proof.advice,
 			&mut prover_proof.transcript,
@@ -450,7 +442,7 @@ mod tests {
 		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment);
+		commitment = verifier_proof.transcript.read_packed().unwrap();
 		pcs.verify_evaluation(
 			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,

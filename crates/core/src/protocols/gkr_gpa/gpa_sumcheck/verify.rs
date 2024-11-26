@@ -109,7 +109,7 @@ pub fn verify_sumcheck_outputs<F: Field>(
 #[cfg(test)]
 mod tests {
 	use crate::{
-		fiat_shamir::HasherChallenger,
+		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			gkr_gpa::gpa_sumcheck::{
 				prove::GPAProver,
@@ -126,7 +126,6 @@ mod tests {
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 	use groestl_crypto::Groestl256;
-	use p3_challenger::CanSample;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use std::iter;
 

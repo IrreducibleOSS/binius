@@ -2,7 +2,7 @@
 
 use super::error::Error;
 use crate::{
-	challenger::{CanObserve, CanSample},
+	fiat_shamir::CanSample,
 	oracle::{BatchId, ConstraintSet, MultilinearOracleSet},
 	protocols::{
 		evalcheck::{
@@ -24,7 +24,7 @@ pub fn verify<F, Transcript>(
 ) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
 where
 	F: TowerField,
-	Transcript: CanObserve<F> + CanSample<F> + CanRead,
+	Transcript: CanSample<F> + CanRead,
 {
 	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);

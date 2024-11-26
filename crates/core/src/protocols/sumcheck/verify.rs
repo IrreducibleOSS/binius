@@ -5,10 +5,7 @@ use super::{
 	error::{Error, VerificationError},
 	RoundCoeffs,
 };
-use crate::{
-	challenger::{CanObserve, CanSample},
-	transcript::CanRead,
-};
+use crate::{fiat_shamir::CanSample, transcript::CanRead};
 use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPolyOS};
 use binius_utils::{bail, sorting::is_sorted_ascending};
@@ -34,7 +31,7 @@ pub fn batch_verify<F, Composition, Transcript>(
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanObserve<F> + CanSample<F> + CanRead,
+	Transcript: CanSample<F> + CanRead,
 {
 	let start = BatchVerifyStart {
 		batch_coeffs: Vec::new(),
@@ -69,7 +66,7 @@ pub fn batch_verify_with_start<F, Composition, Transcript>(
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanObserve<F> + CanSample<F> + CanRead,
+	Transcript: CanSample<F> + CanRead,
 {
 	let BatchVerifyStart {
 		mut batch_coeffs,

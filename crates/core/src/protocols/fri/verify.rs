@@ -2,6 +2,7 @@
 
 use super::{common::vcs_optimal_layers_depths_iter, error::Error, QueryProof, VerificationError};
 use crate::{
+	fiat_shamir::CanSampleBits,
 	merkle_tree_vcs::MerkleTreeScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 	transcript::{read_u64, AdviceReader, CanRead},
@@ -10,7 +11,6 @@ use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use itertools::izip;
-use p3_challenger::CanSampleBits;
 use std::iter;
 use tracing::instrument;
 

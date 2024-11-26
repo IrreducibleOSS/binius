@@ -5,7 +5,6 @@ use super::{
 	ConstraintSystem, Proof,
 };
 use crate::{
-	challenger::CanSample,
 	constraint_system::{
 		channel::{Flush, FlushDirection},
 		common::{
@@ -13,7 +12,7 @@ use crate::{
 			FExt, TowerPCS, TowerPCSFamily,
 		},
 	},
-	fiat_shamir::Challenger,
+	fiat_shamir::{CanSample, Challenger},
 	merkle_tree_vcs::BinaryMerkleTreeProver,
 	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},

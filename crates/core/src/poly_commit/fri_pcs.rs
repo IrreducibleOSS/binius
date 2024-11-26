@@ -2,8 +2,8 @@
 
 use super::ring_switch::reduce_tensor_claim;
 use crate::{
-	challenger::{CanObserve, CanSample, CanSampleBits},
 	composition::BivariateProduct,
+	fiat_shamir::{CanSample, CanSampleBits},
 	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	poly_commit::PolyCommitScheme,
 	polynomial::{Error as PolynomialError, MultivariatePoly},
@@ -188,11 +188,7 @@ where
 	) -> Result<(), Error>
 	where
 		Prover: SumcheckProver<FExt>,
-		Transcript: CanObserve<FExt>
-			+ CanObserve<VCS::Digest>
-			+ CanSample<FExt>
-			+ CanSampleBits<usize>
-			+ CanWrite,
+		Transcript: CanSample<FExt> + CanSampleBits<usize> + CanWrite,
 	{
 		let n_rounds = sumcheck_prover.n_vars();
 
@@ -239,11 +235,7 @@ where
 		mut transcript: Transcript,
 	) -> Result<(), Error>
 	where
-		Transcript: CanObserve<FExt>
-			+ CanObserve<VCS::Digest>
-			+ CanSample<FExt>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		Transcript: CanSample<FExt> + CanSampleBits<usize> + CanRead,
 	{
 		let n_rounds = claim.n_vars();
 
@@ -373,11 +365,7 @@ where
 	) -> Result<(), Self::Error>
 	where
 		Data: Deref<Target = [P]> + Send + Sync,
-		Transcript: CanObserve<PE::Scalar>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<PE::Scalar>
-			+ CanSampleBits<usize>
-			+ CanWrite,
+		Transcript: CanSample<PE::Scalar> + CanSampleBits<usize> + CanWrite,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -445,11 +433,7 @@ where
 		backend: &Backend,
 	) -> Result<(), Self::Error>
 	where
-		Transcript: CanObserve<FExt>
-			+ CanObserve<Self::Commitment>
-			+ CanSample<FExt>
-			+ CanSampleBits<usize>
-			+ CanRead,
+		Transcript: CanSample<FExt> + CanSampleBits<usize> + CanRead,
 		Backend: ComputationBackend,
 	{
 		if query.len() != self.n_vars() {
@@ -698,13 +682,13 @@ mod tests {
 		)
 		.unwrap();
 
-		let (commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
+		let (mut commitment, committed) = pcs.commit(&[multilin.to_ref()]).unwrap();
 
 		let mut prover_proof = crate::transcript::Proof {
 			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 			advice: AdviceWriter::default(),
 		};
-		prover_proof.transcript.observe(commitment);
+		prover_proof.transcript.write_packed(commitment);
 		pcs.prove_evaluation(
 			&mut prover_proof.advice,
 			&mut prover_proof.transcript,
@@ -716,7 +700,7 @@ mod tests {
 		.unwrap();
 
 		let mut verifier_proof = prover_proof.into_verifier();
-		verifier_proof.transcript.observe(commitment);
+		commitment = verifier_proof.transcript.read_packed().unwrap();
 		pcs.verify_evaluation(
 			&mut verifier_proof.advice,
 			&mut verifier_proof.transcript,
