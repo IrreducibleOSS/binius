@@ -16,7 +16,7 @@ use groestl_crypto::Groestl256;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 1024, value_parser = value_parser!(u32).range(1 << 10..))]
+	#[arg(short, long, default_value_t = 256, value_parser = value_parser!(u32).range(1 << 7..))]
 	n_additions: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]

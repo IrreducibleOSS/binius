@@ -61,6 +61,7 @@ pub struct Flush {
 	pub oracles: Vec<OracleId>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
+	pub count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +111,7 @@ where
 			oracles,
 			channel_id,
 			direction,
+			count,
 		} = flush;
 
 		if *channel_id > max_channel_id {
@@ -138,7 +140,16 @@ where
 				}
 			}
 
-			for i in 0..(1 << n_vars) {
+			// Check count is within range
+			if *count > 1 << n_vars {
+				let id = oracles.first().expect("polys is not empty");
+				return Err(Error::FlushCountExceedsOracleSize {
+					id: *id,
+					count: *count,
+				});
+			}
+
+			for i in 0..*count {
 				let values = polys
 					.iter()
 					.map(|poly| poly.evaluate_on_hypercube(i).unwrap())

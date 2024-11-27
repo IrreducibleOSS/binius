@@ -19,6 +19,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
+use std::cmp::Reverse;
 use tracing::instrument;
 
 #[allow(clippy::too_many_arguments)]
@@ -95,7 +96,6 @@ where
 			let non_sqpcs_claims = evalcheck_prover
 				.batch_committed_eval_claims_mut()
 				.take_claims(batch.id)?;
-
 			non_sqpcs_sumchecks.push(make_non_same_query_pcs_sumchecks(
 				&mut evalcheck_prover,
 				&non_sqpcs_claims,
@@ -103,6 +103,8 @@ where
 			)?);
 		}
 	}
+
+	non_sqpcs_sumchecks.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
 	let new_evalcheck_claims = prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
 		evalcheck_prover.oracles,

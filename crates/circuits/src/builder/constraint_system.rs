@@ -100,24 +100,37 @@ where
 			.build()
 	}
 
-	pub fn send(&mut self, channel_id: ChannelId, oracle_ids: impl IntoIterator<Item = OracleId>) {
+	pub fn flush(
+		&mut self,
+		direction: FlushDirection,
+		channel_id: ChannelId,
+		count: usize,
+		oracle_ids: impl IntoIterator<Item = OracleId>,
+	) {
 		self.flushes.push(Flush {
 			channel_id,
-			direction: FlushDirection::Push,
+			direction,
+			count,
 			oracles: oracle_ids.into_iter().collect(),
-		});
+		})
+	}
+
+	pub fn send(
+		&mut self,
+		channel_id: ChannelId,
+		count: usize,
+		oracle_ids: impl IntoIterator<Item = OracleId>,
+	) {
+		self.flush(FlushDirection::Push, channel_id, count, oracle_ids)
 	}
 
 	pub fn receive(
 		&mut self,
 		channel_id: ChannelId,
+		count: usize,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
 	) {
-		self.flushes.push(Flush {
-			channel_id,
-			direction: FlushDirection::Pull,
-			oracles: oracle_ids.into_iter().collect(),
-		});
+		self.flush(FlushDirection::Pull, channel_id, count, oracle_ids)
 	}
 
 	pub fn assert_zero<const N: usize>(

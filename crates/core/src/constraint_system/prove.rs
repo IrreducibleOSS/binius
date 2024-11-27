@@ -2,7 +2,11 @@
 
 use super::{
 	error::Error,
-	verify::{make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds},
+	verify::{
+		get_flush_sumcheck_composite_sum_claims, get_post_flush_sumcheck_eval_claims,
+		make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds,
+		reorder_for_flushing_by_n_vars, FlushSumcheckComposition,
+	},
 	ConstraintSystem, Proof,
 };
 use crate::{
@@ -11,16 +15,17 @@ use crate::{
 	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	poly_commit::PolyCommitScheme,
 	protocols::{
-		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness},
+		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, prove::UnivariateZerocheckProver,
+			self, constraint_set_zerocheck_claim,
+			prove::{RegularSumcheckProver, UnivariateZerocheckProver},
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::{AdviceWriter, CanWrite, TranscriptWriter},
-	witness::MultilinearExtensionIndex,
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -130,31 +135,9 @@ where
 		max_channel_id,
 	} = constraint_system.clone();
 
-	let non_zero_prodcheck_witnesses =
-		gkr_gpa::construct_grand_product_witnesses(&non_zero_oracle_ids, &witness)?;
-	let non_zero_products =
-		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
-	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
-		&non_zero_oracle_ids,
-		&oracles,
-		&non_zero_products,
-	)?;
-
-	if non_zero_products
-		.iter()
-		.any(|count| *count == Tower::B128::zero())
-	{
-		bail!(Error::Zeros);
-	}
-
-	transcript.write_scalar_slice(&non_zero_products);
-
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 	table_constraints_base.sort_by_key(|constraint_set_base| Reverse(constraint_set_base.n_vars));
-
-	// Stable sort flushes by channel ID.
-	flushes.sort_by_key(|flush| flush.channel_id);
 
 	// Commit polynomials
 	let (commitments, committeds) = constraint_system
@@ -189,34 +172,96 @@ where
 	// Observe polynomial commitments
 	transcript.write_packed_slice(&commitments);
 
-	// Channel balancing argument
+	// Grand product arguments
+	// Grand products for non-zero checking
+	let non_zero_prodcheck_witnesses =
+		gkr_gpa::construct_grand_product_witnesses(&non_zero_oracle_ids, &witness)?;
+	let non_zero_products =
+		gkr_gpa::get_grand_products_from_witnesses(&non_zero_prodcheck_witnesses);
+	if non_zero_products
+		.iter()
+		.any(|count| *count == Tower::B128::zero())
+	{
+		bail!(Error::Zeros);
+	}
+
+	transcript.write_scalar_slice(&non_zero_products);
+
+	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
+		&non_zero_oracle_ids,
+		&oracles,
+		&non_zero_products,
+	)?;
+
+	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
 	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
-	// Grand product arguments
-	let flush_oracles =
+	flushes.sort_by_key(|flush| flush.channel_id);
+	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let flush_prodcheck_witnesses = make_flush_witnesses(&oracles, &witness, &flush_oracles)?;
+	let flush_counts = flushes.iter().map(|flush| flush.count).collect::<Vec<_>>();
+
+	make_unmasked_flush_witnesses(&oracles, &mut witness, &flush_oracle_ids)?;
+	// there are no oracle ids associated with these flush_witnesses
+	let flush_witnesses =
+		make_masked_flush_witnesses(&oracles, &witness, &flush_oracle_ids, &flush_counts)?;
+
+	let flush_prodcheck_witnesses = flush_witnesses
+		.into_iter()
+		.map(GrandProductWitness::new)
+		.collect::<Result<Vec<_>, _>>()?;
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
-	let flush_prodcheck_claims =
-		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
 
 	transcript.write_scalar_slice(&flush_products);
 
-	let prodcheck_witnesses = [flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat();
-	let prodcheck_claims = [flush_prodcheck_claims, non_zero_prodcheck_claims].concat();
+	let flush_prodcheck_claims =
+		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
-	let GrandProductBatchProveOutput { final_layer_claims } = gkr_gpa::batch_prove(
-		prodcheck_witnesses,
-		&prodcheck_claims,
+	// Prove grand products
+	let GrandProductBatchProveOutput {
+		mut final_layer_claims,
+	} = gkr_gpa::batch_prove(
+		[flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat(),
+		&[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&domain_factory,
 		&mut transcript,
 		backend,
 	)?;
-	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
+
+	let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
+	let flush_final_layer_claims = final_layer_claims;
+
+	// Reduce non_zero_final_layer_claims to evalcheck claims
+	let non_zero_prodcheck_eval_claims =
+		gkr_gpa::make_eval_claims(&oracles, non_zero_oracle_ids, non_zero_final_layer_claims)?;
+
+	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
+	let (flush_oracle_ids, flush_counts, flush_final_layer_claims) = reorder_for_flushing_by_n_vars(
 		&oracles,
-		[flush_oracles, non_zero_oracle_ids].concat(),
-		final_layer_claims,
+		flush_oracle_ids,
+		flush_counts,
+		flush_final_layer_claims,
+	);
+
+	let (flush_sumcheck_provers, flush_transparents_ids) = get_flush_sumcheck_provers(
+		&mut oracles,
+		&flush_oracle_ids,
+		&flush_counts,
+		&flush_final_layer_claims,
+		&mut witness,
+		&domain_factory,
+		backend,
+	)?;
+
+	let flush_sumcheck_output =
+		sumcheck::prove::batch_prove(flush_sumcheck_provers, &mut transcript)?;
+
+	let flush_eval_claims = get_post_flush_sumcheck_eval_claims(
+		&oracles,
+		&flush_oracle_ids,
+		&flush_transparents_ids,
+		&flush_sumcheck_output,
 	)?;
 
 	// Zerocheck
@@ -329,7 +374,8 @@ where
 	} = greedy_evalcheck::prove(
 		&mut oracles,
 		&mut witness,
-		prodcheck_eval_claims
+		[non_zero_prodcheck_eval_claims, flush_eval_claims]
+			.concat()
 			.into_iter()
 			.chain(zerocheck_eval_claims),
 		switchover_fn,
@@ -432,61 +478,6 @@ where
 	})
 }
 
-#[allow(clippy::type_complexity)]
-fn make_flush_witnesses<'a, U, Tower>(
-	oracles: &MultilinearOracleSet<FExt<Tower>>,
-	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
-	flush_oracles: &[OracleId],
-) -> Result<Vec<GrandProductWitness<'a, PackedType<U, FExt<Tower>>>>, Error>
-where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
-{
-	flush_oracles
-		.par_iter()
-		.map(|&oracle_id| {
-			let MultilinearPolyOracle::LinearCombination {
-				linear_combination: lincom,
-				..
-			} = oracles.oracle(oracle_id)
-			else {
-				unreachable!("make_flush_oracles adds linear combination oracles");
-			};
-			let polys = lincom
-				.polys()
-				.map(|oracle| witness.get_multilin_poly(oracle.id()))
-				.collect::<Result<Vec<_>, _>>()?;
-
-			let packed_len = 1
-				<< lincom
-					.n_vars()
-					.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
-			let data = (0..packed_len)
-				.into_par_iter()
-				.map(|i| {
-					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
-						let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
-						polys.iter().zip(lincom.coefficients()).fold(
-							lincom.offset(),
-							|sum, (poly, coeff)| {
-								sum + poly
-									.evaluate_on_hypercube_and_scale(index, coeff)
-									.unwrap_or(<FExt<Tower>>::ZERO)
-							},
-						)
-					})
-				})
-				.collect::<Vec<_>>();
-			let lincom_poly = MultilinearExtension::new(lincom.n_vars(), data)
-				.expect("data is constructed with the correct length with respect to n_vars");
-
-			let witness =
-				GrandProductWitness::new(MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn())?;
-			Ok(witness)
-		})
-		.collect()
-}
-
 fn tower_pcs_commit<U, F, FExt, PCS>(
 	pcs: &PCS,
 	batch: CommittedBatch,
@@ -555,4 +546,181 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 	pcs.prove_evaluation(advice, &mut transcript, &committed, &mles, eval_point, backend)
 		.map_err(|err| Error::PolyCommitError(Box::new(err)))
+}
+
+#[allow(clippy::type_complexity)]
+fn make_unmasked_flush_witnesses<'a, U, Tower>(
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
+	flush_oracle_ids: &[OracleId],
+) -> Result<(), Error>
+where
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
+{
+	let flush_witnesses: Result<Vec<MultilinearWitness<'a, _>>, Error> = flush_oracle_ids
+		.iter()
+		.map(|&oracle_id| {
+			let MultilinearPolyOracle::LinearCombination {
+				linear_combination: lincom,
+				..
+			} = oracles.oracle(oracle_id)
+			else {
+				unreachable!("make_flush_oracles adds linear combination oracles");
+			};
+			let polys = lincom
+				.polys()
+				.map(|oracle| witness.get_multilin_poly(oracle.id()))
+				.collect::<Result<Vec<_>, _>>()?;
+
+			let packed_len = 1
+				<< lincom
+					.n_vars()
+					.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
+			let data = (0..packed_len)
+				.into_par_iter()
+				.map(|i| {
+					<PackedType<U, FExt<Tower>>>::from_fn(|j| {
+						let index = i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+						polys.iter().zip(lincom.coefficients()).fold(
+							lincom.offset(),
+							|sum, (poly, coeff)| {
+								sum + poly
+									.evaluate_on_hypercube_and_scale(index, coeff)
+									.unwrap_or(<FExt<Tower>>::ZERO)
+							},
+						)
+					})
+				})
+				.collect::<Vec<_>>();
+			let lincom_poly = MultilinearExtension::new(lincom.n_vars(), data)
+				.expect("data is constructed with the correct length with respect to n_vars");
+
+			Ok(MLEDirectAdapter::from(lincom_poly).upcast_arc_dyn())
+		})
+		.collect();
+
+	witness.update_multilin_poly(izip!(flush_oracle_ids.iter().copied(), flush_witnesses?))?;
+	Ok(())
+}
+
+#[allow(clippy::type_complexity)]
+fn make_masked_flush_witnesses<'a, U, Tower>(
+	oracles: &MultilinearOracleSet<FExt<Tower>>,
+	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
+	flush_oracles: &[OracleId],
+	flush_counts: &[usize],
+) -> Result<Vec<MultilinearWitness<'a, PackedType<U, FExt<Tower>>>>, Error>
+where
+	U: TowerUnderlier<Tower>,
+	Tower: TowerFamily,
+{
+	flush_oracles
+		.iter()
+		.zip(flush_counts.iter())
+		.map(|(&flush_oracle_id, &flush_count)| {
+			let n_vars = oracles.n_vars(flush_oracle_id);
+			let packed_len = 1 << n_vars.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
+			let mut result = vec![<PackedType<U, FExt<Tower>>>::one(); packed_len];
+
+			let poly = witness.get_multilin_poly(flush_oracle_id)?;
+			let width = <PackedType<U, FExt<Tower>>>::WIDTH;
+			let packed_index = flush_count / width;
+			for (i, result_val) in result.iter_mut().take(packed_index).enumerate() {
+				for j in 0..width {
+					let index = (i << <PackedType<U, FExt<Tower>>>::LOG_WIDTH) | j;
+					result_val.set(j, poly.evaluate_on_hypercube(index)?);
+				}
+			}
+			for j in 0..flush_count % width {
+				let index = packed_index << <PackedType<U, FExt<Tower>>>::LOG_WIDTH | j;
+				result[packed_index].set(j, poly.evaluate_on_hypercube(index)?);
+			}
+
+			let masked_poly = MultilinearExtension::new(n_vars, result)
+				.expect("data is constructed with the correct length with respect to n_vars");
+			Ok(MLEDirectAdapter::from(masked_poly).upcast_arc_dyn())
+		})
+		.collect()
+}
+
+type FlushSumcheckProver<'b, U, Tower, FDomain, Backend> = RegularSumcheckProver<
+	'b,
+	FDomain,
+	PackedType<U, <Tower as TowerFamily>::B128>,
+	FlushSumcheckComposition,
+	MultilinearWitness<'b, PackedType<U, <Tower as TowerFamily>::B128>>,
+	Backend,
+>;
+type FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend> =
+	(Vec<FlushSumcheckProver<'b, U, Tower, FDomain, Backend>>, Vec<(OracleId, OracleId)>);
+
+fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>(
+	oracles: &mut MultilinearOracleSet<Tower::B128>,
+	flush_oracle_ids: &[OracleId],
+	flush_counts: &[usize],
+	final_layer_claims: &[LayerClaim<Tower::B128>],
+	witness: &mut MultilinearExtensionIndex<'a, U, Tower::B128>,
+	domain_factory: DomainFactory,
+	backend: &'b Backend,
+) -> Result<FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend>, Error>
+where
+	U: TowerUnderlier<Tower> + PackScalar<FDomain>,
+	Tower: TowerFamily,
+	Tower::B128: ExtensionField<FDomain>,
+	FDomain: Field,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
+	Backend: ComputationBackend,
+	'a: 'b,
+{
+	let (composite_sum_claims, step_down_info, eq_ind_info) =
+		get_flush_sumcheck_composite_sum_claims::<Tower::B128>(
+			oracles,
+			flush_oracle_ids,
+			flush_counts,
+			final_layer_claims,
+		)?;
+
+	let results: Result<Vec<_>, Error> = izip!(
+		flush_oracle_ids.iter(),
+		composite_sum_claims.into_iter(),
+		step_down_info.into_iter(),
+		eq_ind_info.into_iter()
+	)
+	.map(
+		|(
+			&flush_oracle_id,
+			composite_sum_claim,
+			(step_down_id, step_down),
+			(eq_ind_id, eq_ind),
+		)| {
+			let step_down_multilinear =
+				MLEDirectAdapter::from(step_down.multilinear_extension()?).upcast_arc_dyn();
+
+			let eq_ind_multilinear =
+				MLEDirectAdapter::from(eq_ind.multilinear_extension(backend)?).upcast_arc_dyn();
+
+			witness.update_multilin_poly([
+				(step_down_id, step_down_multilinear),
+				(eq_ind_id, eq_ind_multilinear),
+			])?;
+
+			let prover = RegularSumcheckProver::new(
+				vec![
+					witness.get_multilin_poly(flush_oracle_id)?,
+					witness.get_multilin_poly(step_down_id)?,
+					witness.get_multilin_poly(eq_ind_id)?,
+				],
+				[composite_sum_claim],
+				domain_factory.clone(),
+				standard_switchover_heuristic(0), // what should this be?
+				backend,
+			)?;
+
+			Ok((prover, (step_down_id, eq_ind_id)))
+		},
+	)
+	.collect();
+
+	Ok(results?.into_iter().unzip())
 }

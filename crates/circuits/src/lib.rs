@@ -35,14 +35,15 @@ mod tests {
 	fn test_lasso_u8mul() {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::<U, F, F>::new_with_witness(&allocator);
-		let log_size = 14;
+		let log_size = 10;
 
 		let mult_a =
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
 		let mult_b =
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
-		let _product = lasso::u8mul(&mut builder, "lasso_u8mul", mult_a, mult_b).unwrap();
 
+		let _product =
+			lasso::u8mul(&mut builder, "lasso_u8mul", mult_a, mult_b, 1 << log_size).unwrap();
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];

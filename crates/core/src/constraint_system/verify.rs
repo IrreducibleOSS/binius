@@ -17,11 +17,18 @@ use crate::{
 	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
 	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
 	protocols::{
-		gkr_gpa, greedy_evalcheck,
-		sumcheck::{self, constraint_set_zerocheck_claim, zerocheck, ZerocheckClaim},
+		evalcheck::EvalcheckMultilinearClaim,
+		gkr_gpa,
+		gkr_gpa::LayerClaim,
+		greedy_evalcheck,
+		sumcheck::{
+			self, constraint_set_zerocheck_claim, zerocheck, BatchSumcheckOutput,
+			CompositeSumClaim, SumcheckClaim, ZerocheckClaim,
+		},
 	},
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
 	transcript::{AdviceReader, CanRead, TranscriptReader},
+	transparent::{eq_ind, step_down},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -33,7 +40,7 @@ use binius_hash::Hasher;
 use binius_math::{CompositionPolyOS, EvaluationDomainFactory};
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
-use itertools::{izip, Itertools};
+use itertools::{izip, multiunzip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_ceil_usize;
 use std::cmp::Reverse;
@@ -94,14 +101,17 @@ where
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
-	// Stable sort flushes by channel ID.
-	flushes.sort_by_key(|flush| flush.channel_id);
-
 	let Proof { transcript, advice } = proof;
 
 	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
 	let mut advice = AdviceReader::new(advice);
 
+	let backend = make_portable_backend();
+
+	let commitments = transcript.read_packed_slice(oracles.n_batches())?;
+
+	// Grand product arguments
+	// Grand products for non-zero checks
 	let non_zero_products = transcript.read_scalar_slice(non_zero_oracle_ids.len())?;
 	if non_zero_products
 		.iter()
@@ -116,33 +126,58 @@ where
 		&non_zero_products,
 	)?;
 
-	let backend = make_portable_backend();
-
-	let commitments = transcript.read_packed_slice(oracles.n_batches())?;
-
-	// Channel balancing argument
+	// Grand products for flushing
 	let mixing_challenge = transcript.sample();
 	// TODO(cryptographers): Find a way to sample less randomness
 	let permutation_challenges = transcript.sample_vec(max_channel_id + 1);
 
-	// Grand product arguments
-	let flush_oracles =
+	flushes.sort_by_key(|flush| flush.channel_id);
+	let flush_oracle_ids =
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
-	let flush_products = transcript.read_scalar_slice(flush_oracles.len())?;
-	let flush_prodcheck_claims =
-		gkr_gpa::construct_grand_product_claims(&flush_oracles, &oracles, &flush_products)?;
+	let flush_counts = flushes.iter().map(|flush| flush.count).collect::<Vec<_>>();
 
-	let final_layer_claims = gkr_gpa::batch_verify(
+	let flush_products = transcript.read_scalar_slice(flush_oracle_ids.len())?;
+	verify_channels_balance(&flushes, &flush_products)?;
+
+	let flush_prodcheck_claims =
+		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
+
+	// Verify grand products
+	let mut final_layer_claims = gkr_gpa::batch_verify(
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&mut transcript,
 	)?;
-	let prodcheck_eval_claims = gkr_gpa::make_eval_claims(
+
+	let non_zero_final_layer_claims = final_layer_claims.split_off(flush_oracle_ids.len());
+	let flush_final_layer_claims = final_layer_claims;
+
+	// Reduce non_zero_final_layer_claims to evalcheck claims
+	let non_zero_prodcheck_eval_claims =
+		gkr_gpa::make_eval_claims(&oracles, non_zero_oracle_ids, non_zero_final_layer_claims)?;
+
+	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
+	let (flush_oracle_ids, flush_counts, flush_final_layer_claims) = reorder_for_flushing_by_n_vars(
 		&oracles,
-		[flush_oracles, non_zero_oracle_ids].concat(),
-		final_layer_claims,
+		flush_oracle_ids,
+		flush_counts,
+		flush_final_layer_claims,
+	);
+
+	let (flush_sumcheck_claims, flush_transparents_ids) = get_flush_sumcheck_claims::<Tower>(
+		&mut oracles,
+		&flush_oracle_ids,
+		&flush_counts,
+		&flush_final_layer_claims,
 	)?;
 
-	verify_channels_balance(&flushes, &flush_products)?;
+	let flush_sumcheck_output = sumcheck::batch_verify(&flush_sumcheck_claims, &mut transcript)?;
+
+	let flush_eval_claims = get_post_flush_sumcheck_eval_claims(
+		&oracles,
+		&flush_oracle_ids,
+		&flush_transparents_ids,
+		&flush_sumcheck_output,
+	)?;
 
 	// Zerocheck
 	let (zerocheck_claims, zerocheck_oracle_metas) = table_constraints
@@ -207,7 +242,8 @@ where
 	// Evalcheck
 	let mut pcs_claims = greedy_evalcheck::verify(
 		&mut oracles,
-		prodcheck_eval_claims
+		[non_zero_prodcheck_eval_claims, flush_eval_claims]
+			.concat()
 			.into_iter()
 			.chain(zerocheck_eval_claims),
 		&mut transcript,
@@ -463,18 +499,186 @@ pub fn make_flush_oracles<F: TowerField>(
 						mixing_powers.push(last_power * mixing_challenge);
 					}
 
-					let id = oracles.add_linear_combination_with_offset(
-						n_vars,
-						*permutation_challenge,
-						flush
-							.oracles
-							.iter()
-							.copied()
-							.zip(mixing_powers.iter().copied()),
-					)?;
+					let id = oracles
+						.add_named(format!("flush channel_id={channel_id}"))
+						.linear_combination_with_offset(
+							n_vars,
+							*permutation_challenge,
+							flush
+								.oracles
+								.iter()
+								.copied()
+								.zip(mixing_powers.iter().copied()),
+						)?;
 					Ok(id)
 				})
 				.collect::<Vec<_>>()
 		})
 		.collect()
+}
+
+type StepDownInfo = (OracleId, step_down::StepDown);
+type EqIndInfo<F> = (OracleId, eq_ind::EqIndPartialEval<F>);
+type CompositeSumClaimsWithTransparentsInfo<F> = (
+	Vec<CompositeSumClaim<F, FlushSumcheckComposition>>,
+	Vec<StepDownInfo>,
+	Vec<EqIndInfo<F>>,
+);
+
+pub fn get_flush_sumcheck_composite_sum_claims<F>(
+	oracles: &mut MultilinearOracleSet<F>,
+	flush_oracles_ids: &[OracleId],
+	flush_counts: &[usize],
+	final_layer_claims: &[LayerClaim<F>],
+) -> Result<CompositeSumClaimsWithTransparentsInfo<F>, Error>
+where
+	F: TowerField,
+{
+	debug_assert_eq!(flush_oracles_ids.len(), flush_counts.len());
+	debug_assert_eq!(flush_oracles_ids.len(), final_layer_claims.len());
+
+	let results: Result<Vec<(_, _)>, Error> =
+		izip!(flush_oracles_ids.iter(), flush_counts.iter(), final_layer_claims.iter())
+			.map(|(flush_oracle_id, flush_count, final_layer_claim)| {
+				let n_vars = oracles.n_vars(*flush_oracle_id);
+
+				let step_down = step_down::StepDown::new(n_vars, *flush_count)?;
+				let step_down_id = oracles
+					.add_named("step_down")
+					.transparent(step_down.clone())?;
+
+				let eq_ind =
+					eq_ind::EqIndPartialEval::new(n_vars, final_layer_claim.eval_point.clone())?;
+				let eq_ind_id = oracles.add_named("eq_ind").transparent(eq_ind.clone())?;
+
+				let composite_sum_claim = CompositeSumClaim {
+					composition: FlushSumcheckComposition,
+					sum: final_layer_claim.eval,
+				};
+
+				Ok((composite_sum_claim, ((step_down_id, step_down), (eq_ind_id, eq_ind))))
+			})
+			.collect();
+
+	let (composite_sum_claims, transparents_info): (Vec<_>, Vec<_>) = results?.into_iter().unzip();
+	let (step_down_info, eq_ind_info) = transparents_info.into_iter().unzip();
+
+	Ok((composite_sum_claims, step_down_info, eq_ind_info))
+}
+
+#[derive(Debug)]
+pub struct FlushSumcheckComposition;
+
+impl<P: PackedField> CompositionPolyOS<P> for FlushSumcheckComposition {
+	fn n_vars(&self) -> usize {
+		3
+	}
+	fn degree(&self) -> usize {
+		3
+	}
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+		let unmasked_flush = query[0];
+		let step_down = query[1];
+		let eq_ind = query[2];
+
+		Ok((step_down * unmasked_flush + (P::one() - step_down)) * eq_ind)
+	}
+}
+
+type FlushSumcheckClaimsWithTransparentsIds<Tower> = (
+	Vec<SumcheckClaim<<Tower as TowerFamily>::B128, FlushSumcheckComposition>>,
+	Vec<(OracleId, OracleId)>,
+);
+
+fn get_flush_sumcheck_claims<Tower: TowerFamily>(
+	oracles: &mut MultilinearOracleSet<Tower::B128>,
+	flush_oracle_ids: &[OracleId],
+	flush_counts: &[usize],
+	flush_final_layer_claims: &[LayerClaim<Tower::B128>],
+) -> Result<FlushSumcheckClaimsWithTransparentsIds<Tower>, Error> {
+	debug_assert_eq!(flush_oracle_ids.len(), flush_counts.len());
+	debug_assert_eq!(flush_oracle_ids.len(), flush_final_layer_claims.len());
+
+	let (composite_sum_claims, step_down_info, eq_ind_info) =
+		get_flush_sumcheck_composite_sum_claims::<Tower::B128>(
+			oracles,
+			flush_oracle_ids,
+			flush_counts,
+			flush_final_layer_claims,
+		)?;
+
+	let results: Result<Vec<(_, _)>, Error> = izip!(
+		flush_oracle_ids.iter(),
+		composite_sum_claims.into_iter(),
+		step_down_info.into_iter(),
+		eq_ind_info.into_iter()
+	)
+	.map(|(&flush_oracle_id, composite_sum_claim, (step_down_id, _), (eq_ind_id, _))| {
+		let claim =
+			SumcheckClaim::new(oracles.n_vars(flush_oracle_id), 3, vec![composite_sum_claim])?;
+		Ok((claim, (step_down_id, eq_ind_id)))
+	})
+	.collect();
+
+	Ok(results?.into_iter().unzip())
+}
+
+pub fn get_post_flush_sumcheck_eval_claims<F: TowerField>(
+	oracles: &MultilinearOracleSet<F>,
+	flush_oracles: &[OracleId],
+	flush_transparents_ids: &[(OracleId, OracleId)],
+	sumcheck_output: &BatchSumcheckOutput<F>,
+) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
+	// should i replace all the debug_assert_eq with Error variants?
+	debug_assert_eq!(sumcheck_output.multilinear_evals.len(), flush_oracles.len());
+	let max_n_vars = sumcheck_output.challenges.len();
+
+	let mut evalcheck_claims = Vec::with_capacity(3 * flush_oracles.len());
+	izip!(
+		flush_oracles.iter(),
+		sumcheck_output.multilinear_evals.iter(),
+		flush_transparents_ids.iter(),
+	)
+	.for_each(|(&flush_oracle, evals, (step_down_id, eq_ind_id))| {
+		let n_vars = oracles.n_vars(flush_oracle);
+		let eval_point = sumcheck_output.challenges[max_n_vars - n_vars..].to_vec();
+		debug_assert_eq!(evals.len(), 3);
+		evalcheck_claims.extend([
+			EvalcheckMultilinearClaim {
+				poly: oracles.oracle(flush_oracle),
+				eval_point: eval_point.clone(),
+				eval: evals[0],
+			},
+			EvalcheckMultilinearClaim {
+				poly: oracles.oracle(*step_down_id),
+				eval_point: eval_point.clone(),
+				eval: evals[1],
+			},
+			EvalcheckMultilinearClaim {
+				poly: oracles.oracle(*eq_ind_id),
+				eval_point,
+				eval: evals[2],
+			},
+		]);
+	});
+	Ok(evalcheck_claims)
+}
+
+pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
+	oracles: &MultilinearOracleSet<F>,
+	flush_oracle_ids: Vec<OracleId>,
+	flush_counts: Vec<usize>,
+	flush_final_layer_claims: Vec<LayerClaim<F>>,
+) -> (Vec<OracleId>, Vec<usize>, Vec<LayerClaim<F>>) {
+	let mut zipped: Vec<_> = izip!(
+		flush_oracle_ids.into_iter(),
+		flush_counts.into_iter(),
+		flush_final_layer_claims.into_iter()
+	)
+	.collect();
+	zipped.sort_by_key(|(id, _, _)| Reverse(oracles.n_vars(*id)));
+	multiunzip(zipped)
 }

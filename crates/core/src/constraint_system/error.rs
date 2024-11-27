@@ -3,7 +3,7 @@
 use super::channel::ChannelId;
 use crate::{
 	oracle,
-	oracle::BatchId,
+	oracle::{BatchId, OracleId},
 	polynomial, protocols,
 	protocols::{gkr_gpa, greedy_evalcheck},
 	witness,
@@ -36,6 +36,9 @@ pub enum Error {
 		oracle_num_vars: usize,
 		witness_num_vars: usize,
 	},
+
+	#[error("cannot flush {count} rows of oracle {id}")]
+	FlushCountExceedsOracleSize { id: OracleId, count: usize },
 
 	#[error("Non-zero oracles contain zeros")]
 	Zeros,

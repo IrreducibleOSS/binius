@@ -11,7 +11,7 @@ use binius_utils::bail;
 /// Recall that the multilinear polynomial eq(X, Y) is defined s.t. $\forall x, y \in \{0, 1\}^{\mu}$,
 /// eq(x, y) = 1 iff x = y and eq(x, y) = 0 otherwise.
 /// Specifically, the function is defined like so $\prod_{i=0}^{\mu - 1} (X_i * Y_i + (1 - X_i)(1-Y_i))$
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EqIndPartialEval<F: Field> {
 	n_vars: usize,
 	r: Vec<F>,
@@ -24,6 +24,10 @@ impl<F: Field> EqIndPartialEval<F> {
 			bail!(Error::IncorrectQuerySize { expected: n_vars });
 		}
 		Ok(Self { n_vars, r })
+	}
+
+	pub fn n_vars(&self) -> usize {
+		self.n_vars
 	}
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(

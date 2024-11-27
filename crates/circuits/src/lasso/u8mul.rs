@@ -3,7 +3,7 @@
 use super::lasso::lasso;
 
 use crate::builder::ConstraintSystemBuilder;
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -25,6 +25,7 @@ pub fn u8mul_bytesliced<U, F, FBase>(
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
+	n_multiplications: usize,
 ) -> Result<[OracleId; 2], anyhow::Error>
 where
 	U: Pod
@@ -116,6 +117,7 @@ where
 	lasso::<_, _, _, B32, B32>(
 		builder,
 		format!("{} lasso", name.to_string()),
+		n_multiplications,
 		u_to_t_mapping,
 		lookup_u,
 		lookup_t,
@@ -131,6 +133,7 @@ pub fn u8mul<U, F, FBase>(
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
+	n_multiplications: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
 	U: Pod
@@ -153,9 +156,10 @@ where
 {
 	builder.push_namespace(name.clone());
 
-	let product_bytesliced = u8mul_bytesliced(builder, name, mult_a, mult_b)?;
-
+	let product_bytesliced = u8mul_bytesliced(builder, name, mult_a, mult_b, n_multiplications)?;
 	let log_rows = builder.log_rows(product_bytesliced)?;
+	ensure!(n_multiplications <= 1 << log_rows);
+
 	let product = builder.add_linear_combination(
 		"bytes summed",
 		log_rows,

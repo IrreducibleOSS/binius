@@ -140,6 +140,7 @@ where
 	lasso::<_, _, _, B32, B32>(
 		builder,
 		format!("{} lasso", name.to_string()),
+		1 << log_rows,
 		u_to_t_mapping,
 		lookup_u,
 		lookup_t,

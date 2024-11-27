@@ -15,6 +15,7 @@ use crate::{
 };
 use binius_field::TowerField;
 use binius_utils::bail;
+use std::cmp::Reverse;
 
 pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -89,6 +90,8 @@ where
 			)?);
 		}
 	}
+
+	non_sqpcs_sumchecks.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
 	let SumcheckClaimsWithMeta { claims, metas } =
 		constraint_set_sumcheck_claims(non_sqpcs_sumchecks)?;

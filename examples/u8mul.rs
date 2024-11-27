@@ -16,7 +16,7 @@ use groestl_crypto::Groestl256;
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 1024, value_parser = value_parser!(u32).range(1 << 10..))]
+	#[arg(short, long, default_value_t = 128, value_parser = value_parser!(u32).range(1 << 7..))]
 	n_multiplications: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -52,7 +52,14 @@ fn main() -> Result<()> {
 		"in_b",
 		log_n_multiplications,
 	)?;
-	let _product = binius_circuits::lasso::u8mul(&mut builder, "out_c", in_a, in_b)?;
+
+	let _product = binius_circuits::lasso::u8mul(
+		&mut builder,
+		"out_c",
+		in_a,
+		in_b,
+		args.n_multiplications as usize,
+	)?;
 
 	let witness = builder
 		.take_witness()

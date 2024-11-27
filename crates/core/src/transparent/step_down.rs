@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::polynomial::{Error, MultivariatePoly};
-use binius_field::{BinaryField1b, Field, PackedField};
+use binius_field::{Field, PackedField};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
-/// Represents a multilinear F2-polynomial whose evaluations over the hypercube are 1 until a
-/// specified index where they change to 0.
+/// Represents a multilinear F2-polynomial whose evaluations over the hypercube are
+/// 1 until a specified index where they change to 0.
+///
+/// If the index is the length of the multilinear, then all coefficients are 1.
 ///
 /// ```txt
 ///     (1 << n_vars)
@@ -25,19 +27,21 @@ pub struct StepDown {
 
 impl StepDown {
 	pub fn new(n_vars: usize, index: usize) -> Result<Self, Error> {
-		if index < 1 || index >= (1 << n_vars) {
+		if index > 1 << n_vars {
 			bail!(Error::ArgumentRangeError {
 				arg: "index".into(),
-				range: 1..(1 << n_vars),
+				range: 0..(1 << n_vars) + 1,
 			})
 		} else {
 			Ok(Self { n_vars, index })
 		}
 	}
 
-	pub fn multilinear_extension<P: PackedField<Scalar = BinaryField1b>>(
-		&self,
-	) -> Result<MultilinearExtension<P>, Error> {
+	pub fn n_vars(&self) -> usize {
+		self.n_vars
+	}
+
+	pub fn multilinear_extension<P: PackedField>(&self) -> Result<MultilinearExtension<P>, Error> {
 		if self.n_vars < P::LOG_WIDTH {
 			bail!(Error::PackedFieldNotFilled {
 				length: 1 << self.n_vars,
@@ -71,21 +75,22 @@ impl<F: Field> MultivariatePoly<F> for StepDown {
 		}
 		let mut k = self.index;
 
-		// `result` is the evaluation of the complimentary "step-up" function that is 0 at indices 0..self.index and 1
-		// at indices self.index..2^n. The "step-down" evaluation is then 1 - `result`.
-		let mut result = F::ONE;
+		if k == 1 << n_vars {
+			return Ok(F::ONE);
+		}
+		let mut result = F::ZERO;
 		for q in query {
 			if k & 1 == 1 {
-				// interpolate a line that is 0 at 0 and `result` at 1, at the point q
-				result *= q;
+				// interpolate a line that is 1 at 0 and `result` at 1, at the point q
+				result = (F::ONE - q) + result * q;
 			} else {
-				// interpolate a line that is `result` at 0 and 1 at 1, and evaluate at q
-				result = result * (F::ONE - q) + q;
+				// interpolate a line that is `result` at 0 and 0 at 1, and evaluate at q
+				result *= F::ONE - q;
 			}
 			k >>= 1;
 		}
 
-		Ok(F::ONE - result)
+		Ok(result)
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -104,9 +109,15 @@ mod tests {
 
 	#[test]
 	fn test_step_down_trace_without_packing_simple_cases() {
+		assert_eq!(stepdown_evals::<BinaryField1b>(2, 0), felts!(BinaryField1b[0, 0, 0, 0]));
 		assert_eq!(stepdown_evals::<BinaryField1b>(2, 1), felts!(BinaryField1b[1, 0, 0, 0]));
 		assert_eq!(stepdown_evals::<BinaryField1b>(2, 2), felts!(BinaryField1b[1, 1, 0, 0]));
 		assert_eq!(stepdown_evals::<BinaryField1b>(2, 3), felts!(BinaryField1b[1, 1, 1, 0]));
+		assert_eq!(stepdown_evals::<BinaryField1b>(2, 4), felts!(BinaryField1b[1, 1, 1, 1]));
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 0),
+			felts!(BinaryField1b[0, 0, 0, 0, 0, 0, 0, 0])
+		);
 		assert_eq!(
 			stepdown_evals::<BinaryField1b>(3, 1),
 			felts!(BinaryField1b[1, 0, 0, 0, 0, 0, 0, 0])
@@ -135,6 +146,10 @@ mod tests {
 			stepdown_evals::<BinaryField1b>(3, 7),
 			felts!(BinaryField1b[1, 1, 1, 1, 1, 1, 1, 0])
 		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(3, 8),
+			felts!(BinaryField1b[1, 1, 1, 1, 1, 1, 1, 1])
+		);
 	}
 
 	#[test]
@@ -148,8 +163,16 @@ mod tests {
 			packed_slice::<BinaryField1b>(&[(0..555, 1), (555..1024, 0)])
 		);
 		assert_eq!(
+			stepdown_evals::<BinaryField1b>(11, 0),
+			packed_slice::<BinaryField1b>(&[(0..2048, 0)])
+		);
+		assert_eq!(
 			stepdown_evals::<BinaryField1b>(11, 1),
 			packed_slice::<BinaryField1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<BinaryField1b>(11, 2048),
+			packed_slice::<BinaryField1b>(&[(0..2048, 1)])
 		);
 	}
 
@@ -164,8 +187,16 @@ mod tests {
 			packed_slice::<PackedBinaryField128x1b>(&[(0..555, 1), (555..1024, 0)])
 		);
 		assert_eq!(
+			stepdown_evals::<PackedBinaryField128x1b>(11, 0),
+			packed_slice::<PackedBinaryField128x1b>(&[(0..2048, 0)])
+		);
+		assert_eq!(
 			stepdown_evals::<PackedBinaryField128x1b>(11, 1),
 			packed_slice::<PackedBinaryField128x1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField128x1b>(11, 2048),
+			packed_slice::<PackedBinaryField128x1b>(&[(0..2048, 1)])
 		);
 	}
 
@@ -180,15 +211,23 @@ mod tests {
 			packed_slice::<PackedBinaryField256x1b>(&[(0..555, 1), (555..1024, 0)])
 		);
 		assert_eq!(
+			stepdown_evals::<PackedBinaryField256x1b>(11, 0),
+			packed_slice::<PackedBinaryField256x1b>(&[(0..2048, 0)])
+		);
+		assert_eq!(
 			stepdown_evals::<PackedBinaryField256x1b>(11, 1),
 			packed_slice::<PackedBinaryField256x1b>(&[(0..1, 1), (1..2048, 0)])
+		);
+		assert_eq!(
+			stepdown_evals::<PackedBinaryField256x1b>(11, 2048),
+			packed_slice::<PackedBinaryField256x1b>(&[(0..2048, 1)])
 		);
 	}
 
 	#[test]
 	fn test_consistency_between_multilinear_extension_and_multilinear_poly_oracle() {
-		for n_vars in 1..5 {
-			for index in 1..(1 << n_vars) {
+		for n_vars in 1..6 {
+			for index in 0..=(1 << n_vars) {
 				let step_down = StepDown::new(n_vars, index).unwrap();
 				assert_eq!(
 					hypercube_evals_from_oracle::<BinaryField1b>(&step_down),
