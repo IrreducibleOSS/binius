@@ -10,7 +10,7 @@ use crate::{fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcri
 use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPolyOS};
 use binius_utils::sorting::is_sorted_ascending;
-use std::{cmp::Ordering, collections::VecDeque, iter};
+use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
 
 #[derive(Debug)]
 enum CoeffsOrSums<F: Field> {
@@ -47,8 +47,7 @@ enum CoeffsOrSums<F: Field> {
 /// 5. repeat from step 2
 #[derive(Debug)]
 pub struct BatchVerifier<F: Field, C> {
-	claims: VecDeque<(SumcheckClaim<F, C>, F)>,
-	max_degree: usize,
+	claims: VecDeque<SumcheckClaimWithContext<F, C>>,
 	round: usize,
 	last_coeffs_or_sum: CoeffsOrSums<F>,
 }
@@ -76,18 +75,6 @@ where
 			return Err(Error::ClaimsOutOfOrder);
 		}
 
-		// Identify the maximum composition degree
-		let max_degree = claims
-			.iter()
-			.flat_map(|claim| {
-				claim
-					.composite_sums()
-					.iter()
-					.map(|composite_claim| composite_claim.composition.degree())
-			})
-			.max()
-			.unwrap_or(0);
-
 		// Sample batch mixing coefficients
 		let batch_coeffs = transcript.sample_vec(claims.len());
 
@@ -104,10 +91,30 @@ where
 			})
 			.sum();
 
-		let claims = iter::zip(claims.iter().cloned(), batch_coeffs).collect();
+		let mut claims = iter::zip(claims.iter().cloned(), batch_coeffs)
+			.map(|(claim, batch_coeff)| {
+				let degree = claim
+					.composite_sums()
+					.iter()
+					.map(|composite_claim| composite_claim.composition.degree())
+					.max()
+					.unwrap_or(0);
+				SumcheckClaimWithContext {
+					claim,
+					batch_coeff,
+					max_degree_remaining: degree,
+				}
+			})
+			.collect::<VecDeque<_>>();
+
+		// Identify the maximum composition degrees
+		for i in (0..claims.len()).rev().skip(1) {
+			claims[i].max_degree_remaining =
+				cmp::max(claims[i].max_degree_remaining, claims[i + 1].max_degree_remaining);
+		}
+
 		Ok(Self {
 			claims,
-			max_degree,
 			round: 0,
 			last_coeffs_or_sum: CoeffsOrSums::Sum(sum),
 		})
@@ -126,12 +133,14 @@ where
 	where
 		Transcript: CanRead,
 	{
-		let Some((claim, _)) = self.claims.front() else {
+		let Some(SumcheckClaimWithContext { claim, .. }) = self.claims.front() else {
 			return Ok(None);
 		};
 		let multilinear_evals = match claim.n_vars().cmp(&self.round) {
 			Ordering::Equal => {
-				let (claim, batch_coeff) = self.claims.pop_front().expect("front returned Some");
+				let SumcheckClaimWithContext {
+					claim, batch_coeff, ..
+				} = self.claims.pop_front().expect("front returned Some");
 				let multilinear_evals = transcript.read_scalar_slice(claim.n_multilinears())?;
 
 				match self.last_coeffs_or_sum {
@@ -173,17 +182,25 @@ where
 	where
 		Transcript: CanRead,
 	{
-		if let Some((claim, _)) = self.claims.front() {
-			// Must finish all claims that are ready this round before receiving the round proof.
-			if claim.n_vars() == self.round {
-				return Err(Error::ExpectedFinishClaim);
+		let degree = match self.claims.front() {
+			Some(SumcheckClaimWithContext {
+				claim,
+				max_degree_remaining,
+				..
+			}) => {
+				// Must finish all claims that are ready this round before receiving the round proof.
+				if claim.n_vars() == self.round {
+					return Err(Error::ExpectedFinishClaim);
+				}
+				*max_degree_remaining
 			}
-		}
+			None => 0,
+		};
 
 		match self.last_coeffs_or_sum {
 			CoeffsOrSums::Coeffs(_) => Err(Error::ExpectedFinishRound),
 			CoeffsOrSums::Sum(sum) => {
-				let proof_vals = transcript.read_scalar_slice(self.max_degree)?;
+				let proof_vals = transcript.read_scalar_slice(degree)?;
 				let round_proof = RoundProof(RoundCoeffs(proof_vals));
 				self.last_coeffs_or_sum = CoeffsOrSums::Coeffs(round_proof.recover(sum));
 				Ok(())
@@ -220,4 +237,11 @@ where
 			}
 		}
 	}
+}
+
+#[derive(Debug)]
+struct SumcheckClaimWithContext<F: Field, C> {
+	claim: SumcheckClaim<F, C>,
+	batch_coeff: F,
+	max_degree_remaining: usize,
 }

@@ -40,20 +40,21 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-struct SquareComposition;
+struct PowerComposition {
+	exponent: usize,
+}
 
-impl<P: PackedField> CompositionPolyOS<P> for SquareComposition {
+impl<P: PackedField> CompositionPolyOS<P> for PowerComposition {
 	fn n_vars(&self) -> usize {
 		1
 	}
 
 	fn degree(&self) -> usize {
-		2
+		self.exponent
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		// Square each scalar value in the given packed value.
-		Ok(query[0].square())
+		Ok(iter::repeat(query[0]).take(self.exponent).product())
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -238,15 +239,21 @@ fn test_sumcheck_prove_verify_with_nontrivial_packing() {
 	>(n_vars, n_multilinears, switchover_rd);
 }
 
-fn make_test_sumcheck<F, FDomain, P, PExt, Backend>(
+#[derive(Clone)]
+struct TestSumcheckClaimShape {
 	n_vars: usize,
+	degree: usize,
+}
+
+fn make_test_sumcheck<'a, F, FDomain, P, PExt, Backend>(
+	claim_shape: &TestSumcheckClaimShape,
 	mut rng: impl Rng,
 	domain_factory: impl EvaluationDomainFactory<FDomain>,
-	backend: &Backend,
+	backend: &'a Backend,
 ) -> (
 	Vec<MultilinearExtension<P>>,
 	SumcheckClaim<F, impl CompositionPolyOS<F> + Clone + 'static>,
-	impl SumcheckProver<F> + '_,
+	impl SumcheckProver<F> + 'a,
 )
 where
 	F: Field + ExtensionField<P::Scalar> + ExtensionField<FDomain>,
@@ -255,6 +262,10 @@ where
 	PExt: PackedField<Scalar = F> + RepackedExtension<P> + PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 {
+	let TestSumcheckClaimShape {
+		n_vars,
+		degree: max_degree,
+	} = claim_shape.clone();
 	let mles = generate_random_multilinears::<P>(&mut rng, n_vars, 3);
 	let multilins = mles
 		.clone()
@@ -262,51 +273,60 @@ where
 		.map(MLEEmbeddingAdapter::<_, PExt, _>::from)
 		.collect::<Vec<_>>();
 
-	let identity_composition = index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap();
-	let square_composition = index_composition(&[0, 1, 2], [1], SquareComposition).unwrap();
-	let product_composition = TestProductComposition::new(3);
+	let mut claim_composite_sums =
+		Vec::<CompositeSumClaim<F, Arc<dyn CompositionPolyOS<F>>>>::new();
+	let mut prover_composite_sums =
+		Vec::<CompositeSumClaim<F, Arc<dyn CompositionPolyOS<PExt>>>>::new();
 
-	let identity_sum = compute_composite_sum(&multilins, &identity_composition);
-	let square_sum = compute_composite_sum(&multilins, &square_composition);
-	let product_sum = compute_composite_sum(&multilins, &product_composition);
+	if max_degree >= 1 {
+		let identity_composition =
+			index_composition(&[0, 1, 2], [0], IdentityCompositionPoly).unwrap();
+		let identity_sum = compute_composite_sum(&multilins, &identity_composition);
+		claim_composite_sums.push(CompositeSumClaim {
+			composition: Arc::new(identity_composition.clone()),
+			sum: identity_sum,
+		});
+		prover_composite_sums.push(CompositeSumClaim {
+			composition: Arc::new(identity_composition),
+			sum: identity_sum,
+		});
+	}
+	if max_degree >= 3 {
+		let product_composition = TestProductComposition::new(3);
+		let product_sum = compute_composite_sum(&multilins, &product_composition);
+		claim_composite_sums.push(CompositeSumClaim {
+			composition: Arc::new(product_composition.clone()),
+			sum: product_sum,
+		});
+		prover_composite_sums.push(CompositeSumClaim {
+			composition: Arc::new(product_composition),
+			sum: product_sum,
+		});
+	}
 
-	let claim = SumcheckClaim::new(
-		n_vars,
-		3,
-		vec![
-			CompositeSumClaim {
-				composition: Arc::new(identity_composition.clone())
-					as Arc<dyn CompositionPolyOS<F>>,
-				sum: identity_sum,
-			},
-			CompositeSumClaim {
-				composition: Arc::new(square_composition.clone()),
-				sum: square_sum,
-			},
-			CompositeSumClaim {
-				composition: Arc::new(product_composition.clone()),
-				sum: product_sum,
-			},
-		],
+	let power_composition = index_composition(
+		&[0, 1, 2],
+		[1],
+		PowerComposition {
+			exponent: max_degree,
+		},
 	)
 	.unwrap();
+	let power_sum = compute_composite_sum(&multilins, &power_composition);
+	claim_composite_sums.push(CompositeSumClaim {
+		composition: Arc::new(power_composition.clone()),
+		sum: power_sum,
+	});
+	prover_composite_sums.push(CompositeSumClaim {
+		composition: Arc::new(power_composition),
+		sum: power_sum,
+	});
+
+	let claim = SumcheckClaim::new(n_vars, 3, claim_composite_sums).unwrap();
 
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 		multilins,
-		[
-			CompositeSumClaim {
-				composition: Arc::new(identity_composition) as Arc<dyn CompositionPolyOS<PExt>>,
-				sum: identity_sum,
-			},
-			CompositeSumClaim {
-				composition: Arc::new(square_composition),
-				sum: square_sum,
-			},
-			CompositeSumClaim {
-				composition: Arc::new(product_composition),
-				sum: product_sum,
-			},
-		],
+		prover_composite_sums,
 		domain_factory.clone(),
 		|_| (n_vars / 2).max(1),
 		backend,
@@ -316,7 +336,7 @@ where
 	(mles, claim, prover)
 }
 
-fn prove_verify_batch(n_vars: &[usize]) {
+fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -327,12 +347,12 @@ fn prove_verify_batch(n_vars: &[usize]) {
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
-	let mut mles = Vec::with_capacity(n_vars.len());
-	let mut claims = Vec::with_capacity(n_vars.len());
-	let mut provers = Vec::with_capacity(n_vars.len());
-	for &n_vars in n_vars {
+	let mut mles = Vec::with_capacity(claim_shapes.len());
+	let mut claims = Vec::with_capacity(claim_shapes.len());
+	let mut provers = Vec::with_capacity(claim_shapes.len());
+	for claim_shape in claim_shapes {
 		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
-			n_vars,
+			claim_shape,
 			&mut rng,
 			&domain_factory,
 			&backend,
@@ -359,15 +379,37 @@ fn prove_verify_batch(n_vars: &[usize]) {
 
 #[test]
 fn test_prove_verify_batch() {
-	prove_verify_batch(&[8, 6, 2])
+	prove_verify_batch(&[
+		TestSumcheckClaimShape {
+			n_vars: 8,
+			degree: 3,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 6,
+			degree: 3,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 2,
+			degree: 3,
+		},
+	]);
 }
 
 #[test]
 fn test_prove_verify_batch_constant_polys() {
-	prove_verify_batch(&[2, 0])
+	prove_verify_batch(&[
+		TestSumcheckClaimShape {
+			n_vars: 2,
+			degree: 3,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 0,
+			degree: 3,
+		},
+	]);
 }
 
-fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
+fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -378,12 +420,12 @@ fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
-	let mut mles = Vec::with_capacity(n_vars.len());
-	let mut claims = Vec::with_capacity(n_vars.len());
-	let mut provers = Vec::with_capacity(n_vars.len());
-	for &n_vars in n_vars {
+	let mut mles = Vec::with_capacity(claim_shapes.len());
+	let mut claims = Vec::with_capacity(claim_shapes.len());
+	let mut provers = Vec::with_capacity(claim_shapes.len());
+	for claim_shape in claim_shapes {
 		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
-			n_vars,
+			claim_shape,
 			&mut rng,
 			&domain_factory,
 			&backend,
@@ -393,7 +435,11 @@ fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
 		provers.push(prover);
 	}
 
-	let n_rounds = n_vars.iter().copied().max().unwrap_or(0);
+	let n_rounds = claim_shapes
+		.iter()
+		.map(|claim_shape| claim_shape.n_vars)
+		.max()
+		.unwrap_or(0);
 
 	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 
@@ -430,7 +476,8 @@ fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
 
 	assert_eq!(multilinear_evals.len(), claims.len());
 
-	for (&n_vars, mles_i, multilinear_evals_i) in izip!(n_vars, mles, multilinear_evals) {
+	for (claim_shape, mles_i, multilinear_evals_i) in izip!(claim_shapes, mles, multilinear_evals) {
+		let TestSumcheckClaimShape { n_vars, .. } = claim_shape.clone();
 		let query = MultilinearQuery::<PE>::expand(&challenges[..n_vars]);
 		for (mle, eval) in iter::zip(mles_i, multilinear_evals_i) {
 			assert_eq!(mle.evaluate(&query).unwrap(), eval);
@@ -440,5 +487,22 @@ fn prove_verify_batch_front_loaded(n_vars: &[usize]) {
 
 #[test]
 fn test_prove_verify_batch_front_loaded() {
-	prove_verify_batch_front_loaded(&[0, 2, 6, 8])
+	prove_verify_batch_front_loaded(&[
+		TestSumcheckClaimShape {
+			n_vars: 0,
+			degree: 2,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 2,
+			degree: 4,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 6,
+			degree: 3,
+		},
+		TestSumcheckClaimShape {
+			n_vars: 8,
+			degree: 1,
+		},
+	]);
 }
