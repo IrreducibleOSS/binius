@@ -9,15 +9,18 @@ use crate::{
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
+	arch::{OptimalUnderlier256b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
+	packed::set_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedField, RepackedExtension,
-	TowerField,
+	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+use bytemuck::zeroed_vec;
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
-use std::iter::repeat_with;
+use std::iter::{repeat_with, Step};
 
 fn generate_poly_helper<P, F>(
 	rng: &mut StdRng,
@@ -33,10 +36,12 @@ where
 			.take(1 << n_vars)
 			.collect::<Vec<F>>();
 		let product = values.iter().fold(F::ONE, |acc, x| acc * *x);
-		let packed_values = values
-			.iter()
-			.map(|x| P::set_single((*x).into()))
-			.collect::<Vec<_>>();
+
+		let mut packed_values = zeroed_vec(1 << n_vars.saturating_sub(P::LOG_WIDTH));
+		for (i, value) in values.iter().enumerate().take(1 << n_vars) {
+			set_packed_slice(&mut packed_values, i, (*value).into());
+		}
+
 		(MultilinearExtension::from_values(packed_values).unwrap(), product)
 	})
 	.take(n_multilinears)
@@ -108,12 +113,13 @@ fn create_claims_witnesses_helper<
 	}
 }
 
-#[test]
-fn test_prove_verify_batch() {
-	type F = BinaryField128b;
-	type U = <F as WithUnderlier>::Underlier;
-	type P = PackedType<U, F>;
-	type FS = BinaryField32b;
+fn run_prove_verify_batch_test<U, F, FS, P>()
+where
+	U: UnderlierType + PackScalar<F, Packed = P>,
+	P: PackedExtension<FS, Scalar = F> + RepackedExtension<P> + PackedFieldIndexable,
+	F: TowerField + ExtensionField<FS>,
+	FS: TowerField + Step,
+{
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<F>::new();
 	let witness_index = MultilinearExtensionIndex::<U, F>::new();
@@ -191,4 +197,34 @@ fn test_prove_verify_batch() {
 		// Evaluation Points match
 		assert_eq!(proved_eval_claim.eval_point, verified_layer_laim.eval_point);
 	}
+}
+
+#[test]
+fn test_prove_verify_batch_128b() {
+	type F = BinaryField128b;
+	type U = <F as WithUnderlier>::Underlier;
+	type P = PackedType<U, F>;
+	type FS = BinaryField32b;
+
+	run_prove_verify_batch_test::<U, F, FS, P>();
+}
+
+#[test]
+fn test_prove_verify_batch_256b() {
+	type F = BinaryField128b;
+	type U = OptimalUnderlier256b;
+	type P = PackedType<U, F>;
+	type FS = BinaryField32b;
+
+	run_prove_verify_batch_test::<U, F, FS, P>();
+}
+
+#[test]
+fn test_prove_verify_batch_512b() {
+	type F = BinaryField128b;
+	type U = OptimalUnderlier512b;
+	type P = PackedType<U, F>;
+	type FS = BinaryField32b;
+
+	run_prove_verify_batch_test::<U, F, FS, P>();
 }

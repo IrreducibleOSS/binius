@@ -26,6 +26,7 @@ mod error;
 mod gkr_gpa;
 mod gpa_sumcheck;
 mod oracles;
+mod packed_field_storage;
 mod prove;
 #[cfg(test)]
 mod tests;

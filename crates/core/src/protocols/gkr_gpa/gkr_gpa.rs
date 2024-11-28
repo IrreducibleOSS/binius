@@ -1,14 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::Error;
+use std::slice;
+
+use super::{packed_field_storage::PackedFieldStorage, Error};
 use crate::witness::MultilinearWitness;
-use binius_field::{Field, PackedField};
+use binius_field::{packed::get_packed_slice, Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use rayon::prelude::*;
 
-type LayerEvals<'a, FW> = &'a [FW];
-type LayerHalfEvals<'a, FW> = (&'a [FW], &'a [FW]);
+type LayerEvals<'a, PW> = &'a [PW];
+type LayerHalfEvals<'a, PW> = (PackedFieldStorage<'a, PW>, PackedFieldStorage<'a, PW>);
 
 #[derive(Debug, Clone)]
 pub struct GrandProductClaim<F: Field> {
@@ -25,37 +27,55 @@ pub struct GrandProductWitness<'a, PW: PackedField> {
 
 impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 	pub fn new(poly: MultilinearWitness<'a, PW>) -> Result<Self, Error> {
-		if PW::LOG_WIDTH != 0 {
-			todo!("currently only supports packed fields with width 1");
-		}
-
 		// Compute the circuit layers from bottom to top
 		// TODO: Why does this fully copy the input layer?
-		const LOG_CHUNK_SIZE: usize = 12;
-		let log_chunk_size = poly.n_vars().min(LOG_CHUNK_SIZE);
-		let mut input_layer = zeroed_vec(1 << poly.n_vars());
-		input_layer
-			.par_chunks_mut(1 << log_chunk_size)
-			.enumerate()
-			.for_each(|(i, chunk)| {
-				poly.subcube_evals(log_chunk_size, i, 0, chunk).expect(
-					"index is between 0 and 2^{n_vars - log_chunk_size}; \
-					log_embedding degree is 0",
-				)
-			});
+		let mut input_layer = zeroed_vec(1 << poly.n_vars().saturating_sub(PW::LOG_WIDTH));
+
+		if poly.n_vars() >= PW::LOG_WIDTH {
+			const LOG_CHUNK_SIZE: usize = 12;
+			let log_chunk_size = (poly.n_vars() - PW::LOG_WIDTH).min(LOG_CHUNK_SIZE);
+			input_layer
+				.par_chunks_mut(1 << (log_chunk_size - PW::LOG_WIDTH))
+				.enumerate()
+				.for_each(|(i, chunk)| {
+					poly.subcube_evals(log_chunk_size, i, 0, chunk).expect(
+						"index is between 0 and 2^{n_vars - log_chunk_size}; \
+						log_embedding degree is 0",
+					)
+				});
+		} else {
+			poly.subcube_evals(poly.n_vars(), 0, 0, slice::from_mut(&mut input_layer[0]))
+				.expect(
+					"index is between 0 and 2^{n_vars - log_chunk_size}; log_embedding degree is 0",
+				);
+		}
 
 		let mut all_layers = vec![input_layer];
 		for curr_n_vars in (0..poly.n_vars()).rev() {
 			let layer_below = all_layers.last().expect("layers is not empty by invariant");
-			let (left_half, right_half) = layer_below.split_at(1 << curr_n_vars);
+			let mut new_layer = zeroed_vec(1 << curr_n_vars.saturating_sub(PW::LOG_WIDTH));
 
-			let mut new_layer = zeroed_vec(1 << curr_n_vars);
-			new_layer
-				.par_iter_mut()
-				.zip(left_half.par_iter().zip(right_half.par_iter()))
-				.for_each(|(out_i, (left_i, right_i))| {
-					*out_i = *left_i * *right_i;
-				});
+			if curr_n_vars >= PW::LOG_WIDTH {
+				let (left_half, right_half) =
+					layer_below.split_at(1 << (curr_n_vars - PW::LOG_WIDTH));
+
+				new_layer
+					.par_iter_mut()
+					.zip(left_half.par_iter().zip(right_half.par_iter()))
+					.for_each(|(out_i, (left_i, right_i))| {
+						*out_i = *left_i * *right_i;
+					});
+			} else {
+				let new_layer = &mut new_layer[0];
+				let len = 1 << curr_n_vars;
+				for i in 0..len {
+					new_layer.set(
+						i,
+						get_packed_slice(layer_below, i) * get_packed_slice(layer_below, len + i),
+					);
+				}
+			}
+
 			all_layers.push(new_layer);
 		}
 
@@ -94,9 +114,21 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 			bail!(Error::CannotSplitOutputLayerIntoHalves);
 		}
 		let layer = self.ith_layer_evals(i)?;
-		let half = layer.len() / 2;
-		debug_assert_eq!(half, 1 << (i - 1));
-		Ok((&layer[..half], &layer[half..]))
+
+		if layer.len() > 1 {
+			let half = layer.len() / 2;
+			debug_assert_eq!(half << PW::LOG_WIDTH, 1 << (i - 1));
+
+			Ok((layer[..half].into(), layer[half..].into()))
+		} else {
+			let layer_size = 1 << (i - 1);
+
+			let first_half = PackedFieldStorage::new_inline(layer[0].iter().take(layer_size))?;
+			let second_half =
+				PackedFieldStorage::new_inline(layer[0].iter().skip(layer_size).take(layer_size))?;
+
+			Ok((first_half, second_half))
+		}
 	}
 }
 

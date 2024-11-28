@@ -3,6 +3,7 @@
 use super::{
 	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
 	gpa_sumcheck::prove::GPAProver,
+	packed_field_storage::PackedFieldStorage,
 	Error, GrandProductClaim, GrandProductWitness,
 };
 use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanWrite};
@@ -159,10 +160,10 @@ where
 	n_vars: usize,
 	// Layers of the product circuit as multilinear polynomials
 	// The ith element is the ith layer of the product circuit
-	layers: Vec<MLEDirectAdapter<P, &'a [P]>>,
+	layers: Vec<MLEDirectAdapter<P, PackedFieldStorage<'a, P>>>,
 	// The ith element consists of a tuple of the
 	// first and second halves of the (i+1)th layer of the product circuit
-	next_layer_halves: Vec<[MLEDirectAdapter<P, &'a [P]>; 2]>,
+	next_layer_halves: Vec<[MLEDirectAdapter<P, PackedFieldStorage<'a, P>>; 2]>,
 	// The current claim about a layer multilinear of the product circuit
 	current_layer_claim: LayerClaim<F>,
 
@@ -192,8 +193,8 @@ where
 		let next_layer_halves = (1..n_layers)
 			.map(|i| {
 				let (left_evals, right_evals) = witness.ith_layer_eval_halves(i)?;
-				let left = MultilinearExtension::from_values_slice(left_evals)?;
-				let right = MultilinearExtension::from_values_slice(right_evals)?;
+				let left = MultilinearExtension::try_from(left_evals)?;
+				let right = MultilinearExtension::try_from(right_evals)?;
 				Ok([left, right].map(MLEDirectAdapter::from))
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
@@ -201,7 +202,15 @@ where
 		let layers = (0..n_layers)
 			.map(|i| {
 				let ith_layer_evals = witness.ith_layer_evals(i)?;
-				let mle = MultilinearExtension::from_values_slice(ith_layer_evals)?;
+				let ith_layer_evals = if P::LOG_WIDTH < i {
+					PackedFieldStorage::from(ith_layer_evals)
+				} else {
+					debug_assert_eq!(ith_layer_evals.len(), 1);
+					PackedFieldStorage::new_inline(ith_layer_evals[0].iter().take(1 << i))
+						.expect("length is a power of 2")
+				};
+
+				let mle = MultilinearExtension::try_from(ith_layer_evals)?;
 				Ok(mle.into())
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
