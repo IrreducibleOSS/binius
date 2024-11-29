@@ -65,7 +65,7 @@ where
 
 	let channel = builder.add_channel();
 
-	let mut u_to_t_mapping = None;
+	let mut u_to_t_mapping = Vec::new();
 
 	if let Some(witness) = builder.witness() {
 		let mut product_low_witness = witness.new_column::<B8>(product[0]);
@@ -111,15 +111,15 @@ where
 			*lookup_t = (lookup_index << 16 | ab_product) as u32;
 		}
 
-		u_to_t_mapping = Some(u_to_t_mapping_witness);
+		u_to_t_mapping = u_to_t_mapping_witness;
 	}
 
 	lasso::<_, _, _, B32, B32>(
 		builder,
 		format!("{} lasso", name.to_string()),
-		n_multiplications,
-		u_to_t_mapping,
-		lookup_u,
+		&[n_multiplications],
+		&[u_to_t_mapping],
+		&[lookup_u],
 		lookup_t,
 		channel,
 	)?;

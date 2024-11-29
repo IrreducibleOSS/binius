@@ -24,7 +24,7 @@ impl ComputationBackend for CpuBackend {
 		v
 	}
 
-	#[instrument(skip_all, level = "debug")]
+	#[instrument(skip_all, level = "trace")]
 	fn tensor_product_full_query<P: PackedField>(
 		&self,
 		query: &[P::Scalar],

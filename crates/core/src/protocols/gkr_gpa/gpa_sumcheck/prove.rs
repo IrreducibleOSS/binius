@@ -104,7 +104,7 @@ where
 		self.eq_ind_eval *= alpha * challenge + (F::ONE - alpha) * (F::ONE - challenge);
 	}
 
-	#[instrument(skip_all, name = "GPAProver::fold_partial_eq_ind", level = "debug")]
+	#[instrument(skip_all, name = "GPAProver::fold_partial_eq_ind", level = "trace")]
 	fn fold_partial_eq_ind(&mut self) {
 		common::fold_partial_eq_ind::<P, Backend>(
 			self.n_rounds_remaining(),

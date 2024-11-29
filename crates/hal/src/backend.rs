@@ -148,7 +148,7 @@ where
 
 pub trait ComputationBackendExt: ComputationBackend {
 	/// Constructs a `MultilinearQuery` by performing tensor product expansion on the given `query`.
-	#[instrument(skip_all, level = "debug")]
+	#[instrument(skip_all, level = "trace")]
 	fn multilinear_query<P: PackedField>(
 		&self,
 		query: &[P::Scalar],
