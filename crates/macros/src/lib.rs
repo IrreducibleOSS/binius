@@ -2,6 +2,7 @@
 
 extern crate proc_macro;
 mod arith_circuit_poly;
+mod arith_expr;
 mod composition_poly;
 
 use proc_macro::TokenStream;
@@ -9,7 +10,10 @@ use quote::{quote, ToTokens};
 use std::collections::BTreeSet;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
-use crate::{arith_circuit_poly::ArithCircuitPolyItem, composition_poly::CompositionPolyItem};
+use crate::{
+	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
+	composition_poly::CompositionPolyItem,
+};
 
 /// Useful for concisely creating structs that implement CompositionPolyOS.
 /// This currently only supports creating composition polynomials of tower level 0.
@@ -36,6 +40,30 @@ use crate::{arith_circuit_poly::ArithCircuitPolyItem, composition_poly::Composit
 #[proc_macro]
 pub fn composition_poly(input: TokenStream) -> TokenStream {
 	parse_macro_input!(input as CompositionPolyItem)
+		.into_token_stream()
+		.into()
+}
+
+/// Define polynomial expressions compactly using named positional arguments
+///
+/// ```
+/// use binius_macros::arith_expr;
+/// use binius_field::{Field, BinaryField1b, BinaryField8b};
+/// use binius_core::polynomial::Expr;
+///
+/// assert_eq!(
+///     arith_expr!([x, y] = x + y + 1),
+///     Expr::Var(0) + Expr::Var(1) + Expr::Const(BinaryField1b::ONE)
+/// );
+///
+/// assert_eq!(
+///     arith_expr!(BinaryField8b[x] = 3*x + 15),
+///     Expr::Const(BinaryField8b::new(3)) * Expr::Var(0) + Expr::Const(BinaryField8b::new(15))
+/// );
+/// ```
+#[proc_macro]
+pub fn arith_expr(input: TokenStream) -> TokenStream {
+	parse_macro_input!(input as ArithExprItem)
 		.into_token_stream()
 		.into()
 }

@@ -5,19 +5,32 @@ use binius_math::{CompositionPoly, CompositionPolyOS, Error};
 use stackalloc::{helpers::slice_assume_init, stackalloc_uninit};
 use std::{
 	cmp::max,
-	fmt::Debug,
+	fmt::{Debug, Display},
 	mem::MaybeUninit,
 	ops::{Add, Mul, Sub},
 	sync::Arc,
 };
 
 /// Represents an arithmetic expression that can be evaluated symbolically.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expr<F: Field> {
 	Const(F),
 	Var(usize),
 	Add(Box<Expr<F>>, Box<Expr<F>>),
 	Mul(Box<Expr<F>>, Box<Expr<F>>),
 	Pow(Box<Expr<F>>, u64),
+}
+
+impl<F: Field + Display> std::fmt::Display for Expr<F> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Const(v) => write!(f, "{v}"),
+			Self::Var(i) => write!(f, "x{i}"),
+			Self::Add(x, y) => write!(f, "({} + {})", &**x, &**y),
+			Self::Mul(x, y) => write!(f, "({} * {})", &**x, &**y),
+			Self::Pow(x, p) => write!(f, "({})^{p}", &**x),
+		}
+	}
 }
 
 impl<F: Field> Expr<F> {
