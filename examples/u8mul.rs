@@ -1,7 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::{
+	builder::ConstraintSystemBuilder,
+	lasso::{batch::LookupBatch, lookups},
+};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField32b, BinaryField8b};
 use binius_hal::make_portable_backend;
@@ -53,13 +56,20 @@ fn main() -> Result<()> {
 		log_n_multiplications,
 	)?;
 
+	let mul_lookup_table = lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
+
+	let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+
 	let _product = binius_circuits::lasso::u8mul(
 		&mut builder,
+		&mut lookup_batch,
 		"out_c",
 		in_a,
 		in_b,
 		args.n_multiplications as usize,
 	)?;
+
+	lookup_batch.execute::<_, _, _, BinaryField32b, BinaryField32b>(&mut builder)?;
 
 	let witness = builder
 		.take_witness()

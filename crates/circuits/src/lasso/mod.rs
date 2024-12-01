@@ -1,7 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+pub mod batch;
 #[allow(clippy::module_inception)]
 pub mod lasso;
+pub mod lookups;
 pub mod sha256;
 pub mod u32add;
 pub mod u8mul;

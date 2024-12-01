@@ -22,7 +22,7 @@ mod tests {
 		builder::ConstraintSystemBuilder,
 		groestl::groestl_p_permutation,
 		keccakf::keccakf,
-		lasso::{self, u32add::SeveralU32add},
+		lasso::{self, batch::LookupBatch, lookups, u32add::SeveralU32add},
 		sha256::sha256,
 		u32add::u32add_committed,
 		u32fib::u32fib,
@@ -50,12 +50,107 @@ mod tests {
 		let mult_b =
 			unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
 
-		let _product =
-			lasso::u8mul(&mut builder, "lasso_u8mul", mult_a, mult_b, 1 << log_size).unwrap();
+		let mul_lookup_table =
+			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+
+		let _product = lasso::u8mul(
+			&mut builder,
+			&mut lookup_batch,
+			"lasso_u8mul",
+			mult_a,
+			mult_b,
+			1 << log_size,
+		)
+		.unwrap();
+
+		lookup_batch
+			.execute::<_, _, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.unwrap();
+
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
 		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_batched_u8mul() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::<U, F, F>::new_with_witness(&allocator);
+		let log_size = 10;
+		let mul_lookup_table =
+			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+
+		for _ in 0..10 {
+			let mult_a =
+				unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b =
+				unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+
+			let _product = lasso::u8mul(
+				&mut builder,
+				&mut lookup_batch,
+				"lasso_u8mul",
+				mult_a,
+				mult_b,
+				1 << log_size,
+			)
+			.unwrap();
+		}
+
+		lookup_batch
+			.execute::<_, _, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_batched_u8mul_rejects() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::<U, F, F>::new_with_witness(&allocator);
+		let log_size = 10;
+
+		// We try to feed in the add table instead
+		let mul_lookup_table =
+			lookups::u8_arithmetic::add_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+
+		// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
+		for _ in 0..10 {
+			let mult_a =
+				unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b =
+				unconstrained::<_, _, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+
+			let _product = lasso::u8mul(
+				&mut builder,
+				&mut lookup_batch,
+				"lasso_u8mul",
+				mult_a,
+				mult_b,
+				1 << log_size,
+			)
+			.unwrap();
+		}
+
+		lookup_batch
+			.execute::<_, _, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, boundaries, witness)
+			.expect_err("Channels should be unbalanced");
 	}
 
 	#[test]
