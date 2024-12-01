@@ -147,7 +147,7 @@ mod tests {
 	fn test_bitwise() {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::<U, F, F>::new_with_witness(&allocator);
-		let log_size = 14;
+		let log_size = 6;
 		let a = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
 		let b = unconstrained::<_, _, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
 		let _and = bitwise::and(&mut builder, "and", a, b).unwrap();

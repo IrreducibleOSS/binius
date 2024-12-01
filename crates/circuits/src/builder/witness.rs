@@ -53,9 +53,8 @@ where
 	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.oracle(id).n_vars();
-		let len = 1 << (log_rows - <PackedType<U, FS>>::LOG_WIDTH);
+		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let data = bumpalo::vec![in self.bump; U::default(); len].into_bump_slice_mut();
-
 		EntryBuilder {
 			_marker: PhantomData,
 			log_rows,
