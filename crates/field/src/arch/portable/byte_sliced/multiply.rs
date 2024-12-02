@@ -1,9 +1,12 @@
 // Copyright 2024 Irreducible Inc.
-use super::tower_levels::TowerLevel;
-use crate::{underlier::WithUnderlier, AESTowerField8b, PackedAESBinaryField32x8b, PackedField};
+use crate::{
+	tower_levels::{TowerLevel, TowerLevelWithArithOps},
+	underlier::WithUnderlier,
+	AESTowerField8b, PackedAESBinaryField32x8b, PackedField,
+};
 
 #[inline(always)]
-pub fn mul<Level: TowerLevel>(
+pub fn mul<Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element_a: &Level::Data,
 	field_element_b: &Level::Data,
 	destination: &mut Level::Data,
@@ -14,7 +17,7 @@ pub fn mul<Level: TowerLevel>(
 }
 
 #[inline(always)]
-pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
+pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
 	base_alpha: PackedAESBinaryField32x8b,
@@ -50,7 +53,7 @@ pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
 }
 
 #[inline(always)]
-pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
+pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element_a: &Level::Data,
 	field_element_b: &Level::Data,
 	destination: &mut Level::Data,
@@ -75,7 +78,9 @@ pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
 
 	let xored_halves_b = Level::Base::sum(b0, b1);
 
-	let mut z2_z0 = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
+	let mut z2_z0 = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
+		PackedAESBinaryField32x8b,
+	>>::default();
 
 	// z2_z0 = z2
 	mul_main::<true, Level::Base>(a1, b1, &mut z2_z0, base_alpha);

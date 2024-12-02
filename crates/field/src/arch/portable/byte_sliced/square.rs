@@ -1,16 +1,23 @@
 // Copyright 2024 Irreducible Inc.
-use super::{multiply::mul_alpha, tower_levels::TowerLevel};
-use crate::{underlier::WithUnderlier, AESTowerField8b, PackedAESBinaryField32x8b, PackedField};
+use super::multiply::mul_alpha;
+use crate::{
+	tower_levels::{TowerLevel, TowerLevelWithArithOps},
+	underlier::WithUnderlier,
+	AESTowerField8b, PackedAESBinaryField32x8b, PackedField,
+};
 
 #[inline(always)]
-pub fn square<Level: TowerLevel>(field_element: &Level::Data, destination: &mut Level::Data) {
+pub fn square<Level: TowerLevel<PackedAESBinaryField32x8b>>(
+	field_element: &Level::Data,
+	destination: &mut Level::Data,
+) {
 	let base_alpha =
 		PackedAESBinaryField32x8b::from_scalars([AESTowerField8b::from_underlier(0xd3); 32]);
 	square_main::<true, Level>(field_element, destination, base_alpha);
 }
 
 #[inline(always)]
-pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
+pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
 	base_alpha: PackedAESBinaryField32x8b,
@@ -27,7 +34,9 @@ pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel>(
 	let (a0, a1) = Level::split(field_element);
 
 	let (result0, result1) = Level::split_mut(destination);
-	let mut a1_squared = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
+	let mut a1_squared = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
+		PackedAESBinaryField32x8b,
+	>>::default();
 
 	square_main::<true, Level::Base>(a1, &mut a1_squared, base_alpha);
 

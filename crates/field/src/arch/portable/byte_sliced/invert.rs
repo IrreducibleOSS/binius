@@ -2,12 +2,15 @@
 use super::{
 	multiply::{mul_alpha, mul_main},
 	square::square_main,
-	tower_levels::TowerLevel,
 };
-use crate::{underlier::WithUnderlier, AESTowerField8b, PackedAESBinaryField32x8b, PackedField};
+use crate::{
+	tower_levels::{TowerLevel, TowerLevelWithArithOps},
+	underlier::WithUnderlier,
+	AESTowerField8b, PackedAESBinaryField32x8b, PackedField,
+};
 
 #[inline(always)]
-pub fn invert_or_zero<Level: TowerLevel>(
+pub fn invert_or_zero<Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
 ) {
@@ -18,7 +21,7 @@ pub fn invert_or_zero<Level: TowerLevel>(
 }
 
 #[inline(always)]
-fn inv_main<Level: TowerLevel>(
+fn inv_main<Level: TowerLevel<PackedAESBinaryField32x8b>>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
 	base_alpha: PackedAESBinaryField32x8b,
@@ -32,7 +35,9 @@ fn inv_main<Level: TowerLevel>(
 
 	let (result0, result1) = Level::split_mut(destination);
 
-	let mut intermediate = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
+	let mut intermediate = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
+		PackedAESBinaryField32x8b,
+	>>::default();
 
 	// intermediate = subfield_alpha*a1
 	mul_alpha::<true, Level::Base>(a1, &mut intermediate, base_alpha);
@@ -40,7 +45,9 @@ fn inv_main<Level: TowerLevel>(
 	// intermediate = a0 + subfield_alpha*a1
 	Level::Base::add_into(a0, &mut intermediate);
 
-	let mut delta = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
+	let mut delta = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
+		PackedAESBinaryField32x8b,
+	>>::default();
 
 	// delta = intermediate * a0
 	mul_main::<true, Level::Base>(&intermediate, a0, &mut delta, base_alpha);
@@ -48,7 +55,9 @@ fn inv_main<Level: TowerLevel>(
 	// delta = intermediate * a0 + a1^2
 	square_main::<false, Level::Base>(a1, &mut delta, base_alpha);
 
-	let mut delta_inv = <<Level as TowerLevel>::Base as TowerLevel>::Data::default();
+	let mut delta_inv = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
+		PackedAESBinaryField32x8b,
+	>>::default();
 
 	// delta_inv = 1/delta
 	inv_main::<Level::Base>(&delta, &mut delta_inv, base_alpha);
