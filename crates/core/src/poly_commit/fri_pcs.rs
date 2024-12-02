@@ -26,7 +26,9 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension};
+use binius_math::{
+	EvaluationDomainFactory, MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension,
+};
 use binius_ntt::NTTOptions;
 use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use std::{fmt::Debug, iter, marker::PhantomData, mem, ops::Deref};
@@ -353,7 +355,7 @@ where
 
 	// Clippy allow is due to bug: https://github.com/rust-lang/rust-clippy/pull/12892
 	#[allow(clippy::needless_borrows_for_generic_args)]
-	#[instrument(skip_all, level = "debug")]
+	#[instrument(skip_all, level = "debug", name = "fri_pcs::prove_evaluation")]
 	fn prove_evaluation<Data, Transcript, Backend>(
 		&self,
 		advice: &mut AdviceWriter,
@@ -386,7 +388,8 @@ where
 		let (_, query_from_kappa) = query.split_at(Self::kappa());
 
 		let expanded_query = backend.multilinear_query::<PE>(query_from_kappa)?;
-		let partial_eval = poly.evaluate_partial_high(&expanded_query)?;
+		let poly = MLEEmbeddingAdapter::from(poly.to_ref());
+		let partial_eval = backend.evaluate_partial_high(&poly, expanded_query.to_ref())?;
 		let sumcheck_eval =
 			TensorAlgebra::<F, _>::new(iter_packed_slice(partial_eval.evals()).collect());
 

@@ -241,6 +241,7 @@ mod tests {
 		PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField8x16b,
 		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
 	};
+	use binius_hal::ComputationBackend;
 	use binius_math::{
 		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
@@ -290,7 +291,9 @@ mod tests {
 			let univariatized_multilinear_evals = multilinears
 				.iter()
 				.map(|multilinear| {
-					let partial_eval = multilinear.evaluate_partial_high(query.to_ref()).unwrap();
+					let partial_eval = backend
+						.evaluate_partial_high(multilinear, query.to_ref())
+						.unwrap();
 					domain
 						.extrapolate(PE::unpack_scalars(partial_eval.evals()), univariate_challenge)
 						.unwrap()

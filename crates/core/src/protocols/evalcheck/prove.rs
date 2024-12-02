@@ -110,7 +110,7 @@ where
 	///  * they are always a product of two multilins (composition polynomial is `BivariateProduct`)
 	///  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 	///  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
-	#[instrument(skip_all, name = "EvalcheckProverState::prove", level = "debug")]
+	#[instrument(skip_all, name = "EvalcheckProver::prove", level = "debug")]
 	pub fn prove(
 		&mut self,
 		evalcheck_claims: Vec<EvalcheckMultilinearClaim<F>>,

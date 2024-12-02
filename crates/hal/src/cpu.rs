@@ -5,7 +5,10 @@ use crate::{
 	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{eq_ind_partial_eval, CompositionPolyOS, MultilinearPoly, MultilinearQueryRef};
+use binius_math::{
+	eq_ind_partial_eval, CompositionPolyOS, MultilinearExtension, MultilinearPoly,
+	MultilinearQueryRef,
+};
 use std::fmt::Debug;
 use tracing::instrument;
 
@@ -75,5 +78,14 @@ impl ComputationBackend for CpuBackend {
 			evaluators,
 			evaluation_points,
 		)
+	}
+
+	#[instrument(skip_all, name = "CpuBackend::evaluate_partial_high")]
+	fn evaluate_partial_high<P: PackedField>(
+		&self,
+		multilinear: &impl MultilinearPoly<P>,
+		query_expansion: MultilinearQueryRef<P>,
+	) -> Result<MultilinearExtension<P>, Error> {
+		Ok(multilinear.evaluate_partial_high(query_expansion)?)
 	}
 }

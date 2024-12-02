@@ -2,7 +2,7 @@
 
 use binius_field::{BinaryField128b, PackedBinaryField1x128b, PackedField};
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
-use binius_math::MultilinearExtension;
+use binius_math::{MLEDirectAdapter, MultilinearExtension};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use itertools::Itertools;
 use rand::thread_rng;
@@ -47,7 +47,7 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 		});
 		group.bench_function(format!("evaluate_partial_high(n_vars={n}, query_len=1)"), |bench| {
 			let multilin = MultilinearExtension::from_values(
-				std::iter::repeat_with(|| BinaryField128b::random(&mut rng))
+				std::iter::repeat_with(|| PackedBinaryField1x128b::random(&mut rng))
 					.take(1 << n)
 					.collect_vec(),
 			)
@@ -58,7 +58,9 @@ fn bench_multilinear_extension_evaluate(c: &mut Criterion) {
 			let query = backend
 				.multilinear_query::<PackedBinaryField1x128b>(&query)
 				.unwrap();
-			bench.iter(|| multilin.evaluate_partial_high(&query).unwrap());
+			let adapter = MLEDirectAdapter::from(multilin);
+			let query_ref = query.to_ref();
+			bench.iter(|| backend.evaluate_partial_high(&adapter, query_ref).unwrap());
 		});
 		for k in [1, 2, 3, n / 2, n - 2, n - 1, n] {
 			group.bench_function(

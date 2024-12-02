@@ -62,4 +62,5 @@ needless_range_loop = "allow"
 
 [features]
 aes-tower = []
+bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []

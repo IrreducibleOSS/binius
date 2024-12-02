@@ -58,8 +58,8 @@ where
 	let reduced_multilinears = multilinears
 		.par_iter()
 		.map(|multilinear| {
-			multilinear
-				.evaluate_partial_high(query.to_ref())
+			backend
+				.evaluate_partial_high(multilinear, query.to_ref())
 				.expect("0 <= sumcheck_challenges.len() < n_vars")
 				.into()
 		})

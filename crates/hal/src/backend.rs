@@ -2,7 +2,9 @@
 
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
-use binius_math::{CompositionPolyOS, MultilinearPoly, MultilinearQuery, MultilinearQueryRef};
+use binius_math::{
+	CompositionPolyOS, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+};
 use rayon::iter::FromParallelIterator;
 use std::{
 	fmt::Debug,
@@ -72,6 +74,13 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>;
+
+	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
+	fn evaluate_partial_high<P: PackedField>(
+		&self,
+		multilinear: &impl MultilinearPoly<P>,
+		query_expansion: MultilinearQueryRef<P>,
+	) -> Result<MultilinearExtension<P>, Error>;
 }
 
 /// Makes it unnecessary to clone backends.
@@ -143,6 +152,14 @@ where
 			evaluators,
 			evaluation_points,
 		)
+	}
+
+	fn evaluate_partial_high<P: PackedField>(
+		&self,
+		multilinear: &impl MultilinearPoly<P>,
+		query_expansion: MultilinearQueryRef<P>,
+	) -> Result<MultilinearExtension<P>, Error> {
+		T::evaluate_partial_high(self, multilinear, query_expansion)
 	}
 }
 

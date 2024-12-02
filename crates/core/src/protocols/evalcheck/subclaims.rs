@@ -378,7 +378,7 @@ where
 
 	let projected_eval_point = if let Some(projected_id) = projected_id {
 		let query = memoized_queries.full_query(&eval_point[projected_n_vars..], backend)?;
-		let projected = inner_multilin.evaluate_partial_high(query.to_ref())?;
+		let projected = backend.evaluate_partial_high(&inner_multilin, query.to_ref())?;
 		witness_index.update_multilin_poly(vec![(
 			projected_id,
 			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
