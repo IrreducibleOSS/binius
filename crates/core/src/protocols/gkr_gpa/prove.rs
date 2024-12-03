@@ -6,7 +6,12 @@ use super::{
 	packed_field_storage::PackedFieldStorage,
 	Error, GrandProductClaim, GrandProductWitness,
 };
-use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanWrite};
+use crate::{
+	composition::{BivariateProduct, IndexComposition},
+	fiat_shamir::CanSample,
+	protocols::sumcheck::{self, CompositeSumClaim},
+	transcript::CanWrite,
+};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -83,12 +88,12 @@ where
 
 		// Step 2: Create sumcheck batch proof
 		let batch_sumcheck_output = {
-			let stage_gpa_sumcheck_provers = sorted_provers
-				.iter_mut()
-				.map(|p| p.stage_gpa_sumcheck_prover(evaluation_domain_factory.clone()))
-				.collect::<Result<Vec<_>, _>>()?;
+			let gpa_sumcheck_prover = GrandProductProverState::stage_gpa_sumcheck_provers(
+				&sorted_provers,
+				evaluation_domain_factory.clone(),
+			)?;
 
-			sumcheck::batch_prove(stage_gpa_sumcheck_provers, &mut transcript)?
+			sumcheck::batch_prove(vec![gpa_sumcheck_prover], &mut transcript)?
 		};
 
 		// Step 3: Sample a challenge for the next layer
@@ -97,8 +102,8 @@ where
 		// Step 4: Finalize each prover to update its internal current_layer_claim
 		for (i, prover) in sorted_provers.iter_mut().enumerate() {
 			prover.finalize_batch_layer_proof(
-				batch_sumcheck_output.multilinear_evals[i][0],
-				batch_sumcheck_output.multilinear_evals[i][1],
+				batch_sumcheck_output.multilinear_evals[0][2 * i],
+				batch_sumcheck_output.multilinear_evals[0][2 * i + 1],
 				batch_sumcheck_output.challenges.clone(),
 				gpa_challenge,
 			)?;
@@ -242,35 +247,64 @@ where
 		self.current_layer_claim.eval_point.len()
 	}
 
-	// Create GPA sumcheck prover
 	#[allow(clippy::type_complexity)]
 	#[instrument(skip_all, level = "debug")]
-	fn stage_gpa_sumcheck_prover<FDomain>(
-		&self,
+	fn stage_gpa_sumcheck_provers<FDomain>(
+		provers: &[Self],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	) -> Result<GPAProver<FDomain, P, impl MultilinearPoly<P> + Send + Sync + 'a, Backend>, Error>
+	) -> Result<
+		GPAProver<
+			FDomain,
+			P,
+			IndexComposition<BivariateProduct, 2>,
+			impl MultilinearPoly<P> + Send + Sync + 'a,
+			Backend,
+		>,
+		Error,
+	>
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
 		F: ExtensionField<FDomain>,
 	{
-		if self.current_layer_no() >= self.input_vars() {
-			bail!(Error::TooManyRounds);
+		// test same layer
+		let Some(first_prover) = provers.first() else {
+			unreachable!();
+		};
+
+		// construct witness
+		let n_claims = provers.len();
+		let n_multilinears = provers.len() * 2;
+		let current_layer_no = first_prover.current_layer_no();
+
+		let mut composite_claims = Vec::with_capacity(n_claims);
+		let mut multilinears = Vec::with_capacity(n_multilinears);
+
+		for (i, prover) in provers.iter().enumerate() {
+			let indices = [2 * i, 2 * i + 1];
+
+			let composite_claim = CompositeSumClaim {
+				sum: prover.current_layer_claim.eval,
+				composition: IndexComposition::new(n_multilinears, indices, BivariateProduct {})?,
+			};
+
+			composite_claims.push(composite_claim);
+			multilinears.extend(prover.next_layer_halves[current_layer_no].clone());
 		}
 
-		// Witness
-		let current_layer = self.layers[self.current_layer_no()].clone();
-		let multilinears = self.next_layer_halves[self.current_layer_no()].clone();
+		let first_layer_mle_advice = provers
+			.iter()
+			.map(|prover| prover.layers[current_layer_no].clone())
+			.collect::<Vec<_>>();
 
-		GPAProver::new(
+		Ok(GPAProver::new(
 			multilinears,
-			current_layer,
-			self.current_layer_claim.eval,
+			first_layer_mle_advice,
+			composite_claims,
 			evaluation_domain_factory,
-			&self.current_layer_claim.eval_point,
-			&self.backend,
-		)
-		.map_err(|e| e.into())
+			&first_prover.current_layer_claim.eval_point,
+			&first_prover.backend,
+		)?)
 	}
 
 	fn finalize_batch_layer_proof(

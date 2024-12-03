@@ -2,29 +2,32 @@
 
 use super::error::Error;
 use crate::{
-	composition::BivariateProduct,
 	polynomial::Error as PolynomialError,
 	protocols::{
 		sumcheck::{
 			immediate_switchover_heuristic,
 			prove::{common, prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
-			Error as SumcheckError, RoundCoeffs,
+			CompositeSumClaim, Error as SumcheckError, RoundCoeffs,
 		},
 		utils::packed_from_fn_with_offset,
 	},
 };
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
+use binius_field::{
+	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
 };
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use binius_utils::bail;
+use itertools::izip;
+use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;
 use tracing::instrument;
 
 #[derive(Debug)]
-pub struct GPAProver<'a, FDomain, P, M, Backend>
+pub struct GPAProver<'a, FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
 	P: PackedField,
@@ -36,37 +39,71 @@ where
 	eq_ind_eval: P::Scalar,
 	partial_eq_ind_evals: Backend::Vec<P>,
 	gpa_round_challenges: Vec<P::Scalar>,
-	domain: InterpolationDomain<FDomain>,
-	current_layer: M,
+	compositions: Vec<Composition>,
+	domains: Vec<InterpolationDomain<FDomain>>,
+	first_round_eval_1s: Vec<P::Scalar>,
 }
 
-impl<'a, F, FDomain, P, M, Backend> GPAProver<'a, FDomain, P, M, Backend>
+impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
 	pub fn new(
-		multilinears: [M; 2],
-		current_layer: M,
-		layer_sum: F,
+		multilinears: Vec<M>,
+		first_layer_mle_advice: Vec<M>,
+		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		gpa_round_challenges: &[F],
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let domain: InterpolationDomain<FDomain> = evaluation_domain_factory
-			.create(BivariateProduct {}.degree() + 1)
-			.map_err(SumcheckError::from)?
-			.into();
+		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
 
-		let evaluation_point = domain.points().to_vec();
+		for claim in &composite_claims {
+			if claim.composition.n_vars() != multilinears.len() {
+				bail!(Error::InvalidComposition {
+					expected_n_vars: multilinears.len(),
+				});
+			}
+		}
+
+		if first_layer_mle_advice.len() != composite_claims.len() {
+			bail!(Error::IncorrectFirstLayerAdviceLength);
+		}
+
+		let claimed_sums = composite_claims
+			.iter()
+			.map(|composite_claim| composite_claim.sum)
+			.collect();
+
+		let domains = composite_claims
+			.iter()
+			.map(|composite_claim| {
+				let degree = composite_claim.composition.degree();
+				let domain = evaluation_domain_factory.create(degree + 1)?;
+				Ok(domain.into())
+			})
+			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
+			.map_err(Error::MathError)?;
+
+		let compositions = composite_claims
+			.into_iter()
+			.map(|claim| claim.composition)
+			.collect();
+
+		let evaluation_points = domains
+			.iter()
+			.max_by_key(|domain| domain.points().len())
+			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
 
 		let state = ProverState::new(
-			multilinears.into(),
-			vec![layer_sum],
-			evaluation_point,
+			multilinears,
+			claimed_sums,
+			evaluation_points,
 			// We use GPA protocol only for big fields, which is why switchover is trivial
 			immediate_switchover_heuristic,
 			backend,
@@ -84,14 +121,34 @@ where
 		}
 		.map_err(SumcheckError::from)?;
 
+		let first_round_eval_1s = first_layer_mle_advice
+			.into_iter()
+			.map(|poly_mle| {
+				let packed_sum = partial_eq_ind_evals
+					.par_iter()
+					.enumerate()
+					.map(|(i, &eq_ind)| {
+						eq_ind
+							* packed_from_fn_with_offset::<P>(i, |j| {
+								poly_mle
+									.evaluate_on_hypercube(j << 1 | 1)
+									.unwrap_or(F::ZERO)
+							})
+					})
+					.sum::<P>();
+				packed_sum.iter().sum()
+			})
+			.collect::<Vec<_>>();
+
 		Ok(Self {
 			n_vars,
 			state,
 			eq_ind_eval: F::ONE,
 			partial_eq_ind_evals,
 			gpa_round_challenges: gpa_round_challenges.to_vec(),
-			domain,
-			current_layer,
+			compositions,
+			domains,
+			first_round_eval_1s,
 		})
 	}
 
@@ -101,7 +158,7 @@ where
 		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
 		// we opt to keep this prover generic over all fields. These two multiplications per round
 		// have negligible performance impact.
-		self.eq_ind_eval *= alpha * challenge + (F::ONE - alpha) * (F::ONE - challenge);
+		self.eq_ind_eval *= eq(alpha, challenge);
 	}
 
 	#[instrument(skip_all, name = "GPAProver::fold_partial_eq_ind", level = "trace")]
@@ -121,11 +178,13 @@ where
 	}
 }
 
-impl<'a, F, FDomain, P, M, Backend> SumcheckProver<F> for GPAProver<'a, FDomain, P, M, Backend>
+impl<'a, F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for GPAProver<'a, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -136,26 +195,28 @@ where
 	#[instrument(skip_all, name = "GPAProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();
-		let coeffs = if round == 0 {
-			let evaluators = [GPAFirstRoundEvaluator {
-				interpolation_domain: &self.domain,
-				partial_eq_ind_evals: &self.partial_eq_ind_evals,
-				poly_mle: &self.current_layer,
-				gpa_round_challenges: self.gpa_round_challenges[round],
-			}];
-			let evals = self.state.calculate_later_round_evals(&evaluators)?;
+
+		let evaluators = izip!(&self.compositions, &self.domains, &self.first_round_eval_1s)
+			.map(|(composition, interpolation_domain, &first_round_eval_1)| {
+				let first_round_eval_1 = if round == 0 {
+					Some(first_round_eval_1)
+				} else {
+					None
+				};
+				GPAEvaluator {
+					composition,
+					interpolation_domain,
+					first_round_eval_1,
+					partial_eq_ind_evals: &self.partial_eq_ind_evals,
+					gpa_round_challenge: self.gpa_round_challenges[round],
+				}
+			})
+			.collect::<Vec<_>>();
+
+		let evals = self.state.calculate_later_round_evals(&evaluators)?;
+		let coeffs =
 			self.state
-				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
-		} else {
-			let evaluators = [GPALaterRoundEvaluator {
-				interpolation_domain: &self.domain,
-				partial_eq_ind_evals: &self.partial_eq_ind_evals,
-				gpa_round_challenges: self.gpa_round_challenges[round],
-			}];
-			let evals = self.state.calculate_later_round_evals(&evaluators)?;
-			self.state
-				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
-		};
+				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?;
 
 		// Convert v' polynomial into v polynomial
 		let alpha = self.gpa_round_challenges[round];
@@ -191,32 +252,39 @@ where
 	}
 }
 
-struct GPAFirstRoundEvaluator<'a, P, FDomain, M>
+struct GPAEvaluator<'a, P, FDomain, Composition>
 where
 	P: PackedField,
 	FDomain: Field,
-	M: MultilinearPoly<P> + Send + Sync,
 {
+	composition: &'a Composition,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
-	poly_mle: &'a M,
-	gpa_round_challenges: P::Scalar,
+	first_round_eval_1: Option<P::Scalar>,
+	gpa_round_challenge: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, M> SumcheckEvaluator<P, P, BivariateProduct>
-	for GPAFirstRoundEvaluator<'a, P, FDomain, M>
+impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+	for GPAEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
-	M: MultilinearPoly<P> + Send + Sync,
+	Composition: CompositionPolyOS<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
-		// In the first round we can replace evaluating r(1) with evaluating poly_mle(1),
-		// also we can uniquely derive the degree d univariate round polynomial r from evaluations at
+		// By definition of grand product GKR circuit, the composition evaluation is a multilinear
+		// extension representing the previous layer. Hence in first round we can use the previous
+		// layer as an advice instead of evaluating r(1).
+		// Also we can uniquely derive the degree d univariate round polynomial r from evaluations at
 		// X = 2, ..., d because we have an identity that relates r(0), r(1), and the current
 		// round's claimed sum.
-		2..BivariateProduct {}.degree() + 1
+		let start_index = if self.first_round_eval_1.is_some() {
+			2
+		} else {
+			1
+		};
+		start_index..self.composition.degree() + 1
 	}
 
 	fn process_subcube_at_eval_point(
@@ -228,7 +296,7 @@ where
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			BivariateProduct {}
+			self.composition
 				.batch_evaluate(batch_query, evals)
 				.expect("correct by query construction invariant");
 
@@ -241,8 +309,8 @@ where
 		})
 	}
 
-	fn composition(&self) -> &BivariateProduct {
-		&BivariateProduct {}
+	fn composition(&self) -> &Composition {
+		self.composition
 	}
 
 	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
@@ -250,12 +318,13 @@ where
 	}
 }
 
-impl<'a, F, P, FDomain, M> SumcheckInterpolator<F> for GPAFirstRoundEvaluator<'a, P, FDomain, M>
+impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for GPAEvaluator<'a, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
-	M: MultilinearPoly<P> + Send + Sync,
+	Composition: CompositionPolyOS<P>,
 {
 	#[instrument(
 		skip_all,
@@ -267,117 +336,15 @@ where
 		last_round_sum: F,
 		mut round_evals: Vec<F>,
 	) -> Result<Vec<F>, PolynomialError> {
-		let poly_mle_eval = self
-			.partial_eq_ind_evals
-			.par_iter()
-			.enumerate()
-			.map(|(i, eq_ind)| {
-				(*eq_ind
-					* packed_from_fn_with_offset::<P>(i, |j| {
-						self.poly_mle
-							.evaluate_on_hypercube(j << 1 | 1)
-							.unwrap_or(F::ZERO)
-					}))
-				.iter()
-				.sum::<F>()
-			})
-			.sum::<F>();
+		if let Some(first_round_eval_1) = self.first_round_eval_1 {
+			round_evals.insert(0, first_round_eval_1);
+		}
 
-		round_evals.insert(0, poly_mle_eval);
-
-		let alpha = self.gpa_round_challenges;
+		let alpha = self.gpa_round_challenge;
 		let alpha_bar = F::ONE - alpha;
 		let one_evaluation = round_evals[0];
 		let zero_evaluation_numerator = last_round_sum - one_evaluation * alpha;
 		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap_or(F::ZERO);
-		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
-
-		round_evals.insert(0, zero_evaluation);
-
-		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
-		Ok(coeffs)
-	}
-}
-
-struct GPALaterRoundEvaluator<'a, P, FDomain>
-where
-	P: PackedField,
-	FDomain: Field,
-{
-	interpolation_domain: &'a InterpolationDomain<FDomain>,
-	partial_eq_ind_evals: &'a [P],
-	gpa_round_challenges: P::Scalar,
-}
-
-impl<'a, F, P, FDomain> SumcheckEvaluator<P, P, BivariateProduct>
-	for GPALaterRoundEvaluator<'a, P, FDomain>
-where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	FDomain: Field,
-{
-	fn eval_point_indices(&self) -> Range<usize> {
-		// We can uniquely derive the degree d univariate round polynomial r from evaluations at
-		// X = 1, ..., d because we have an identity that relates r(0), r(1), and the current
-		// round's claimed sum
-		1..BivariateProduct {}.degree() + 1
-	}
-
-	fn process_subcube_at_eval_point(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		batch_query: &[&[P]],
-	) -> P {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-
-		stackalloc_with_default(row_len, |evals| {
-			BivariateProduct {}
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
-
-			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
-			for (i, eval) in evals.iter_mut().enumerate() {
-				*eval *= self.partial_eq_ind_evals[subcube_start + i];
-			}
-
-			evals.iter().copied().sum::<P>()
-		})
-	}
-
-	fn composition(&self) -> &BivariateProduct {
-		&BivariateProduct {}
-	}
-
-	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		Some(self.partial_eq_ind_evals)
-	}
-}
-
-impl<'a, F, P, FDomain> SumcheckInterpolator<F> for GPALaterRoundEvaluator<'a, P, FDomain>
-where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	FDomain: Field,
-{
-	#[instrument(
-		skip_all,
-		name = "GPALaterRoundEvaluator::round_evals_to_coeffs",
-		level = "debug"
-	)]
-	fn round_evals_to_coeffs(
-		&self,
-		last_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		// Letting $s$ be the current round's claimed sum, and $\alpha_i$ the ith gpa_challenge
-		// we have the identity $r(0) = \frac{1}{1 - \alpha_i} * (s - \alpha_i * r(1))$
-		// which allows us to compute the value of $r(0)$
-
-		let alpha = self.gpa_round_challenges;
-		let one_evaluation = round_evals[0]; // r(1)
-		let zero_evaluation_numerator = last_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = (F::ONE - alpha).invert_or_zero();
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 
 		round_evals.insert(0, zero_evaluation);

@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	composition::TrivariateProduct,
+	composition::{IndexComposition, TrivariateProduct},
 	protocols::sumcheck::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
@@ -9,6 +9,7 @@ use crate::{
 use binius_field::{util::eq, Field};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
+use std::iter;
 
 #[derive(Debug, CopyGetters)]
 pub struct GPASumcheckClaim<F: Field> {
@@ -23,33 +24,43 @@ impl<F: Field> GPASumcheckClaim<F> {
 	}
 }
 
-pub fn reduce_to_sumchecks<F: Field>(
+pub fn reduce_to_sumcheck<F: Field>(
 	claims: &[GPASumcheckClaim<F>],
-) -> Result<Vec<SumcheckClaim<F, TrivariateProduct>>, Error> {
+) -> Result<SumcheckClaim<F, IndexComposition<TrivariateProduct, 3>>, Error> {
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let sumcheck_claims = claims
+	let n_vars = claims.first().map_or(0, |claim| claim.n_vars);
+
+	if claims.iter().any(|claim| claim.n_vars != n_vars) {
+		bail!(Error::NumberOfVariablesMismatch);
+	}
+
+	let n_claims = claims.len();
+	let n_multilinears = 2 * n_claims + 1;
+
+	let composite_sums = claims
 		.iter()
-		.map(|claim| {
-			let GPASumcheckClaim { n_vars, sum, .. } = claim;
-
-			let composite_sum = CompositeSumClaim {
-				composition: TrivariateProduct {},
-				sum: *sum,
+		.enumerate()
+		.map(|(i, claim)| {
+			let composition = IndexComposition::new(
+				n_multilinears,
+				[2 * i, 2 * i + 1, n_multilinears - 1],
+				TrivariateProduct {},
+			)?;
+			let composite_sum_claim = CompositeSumClaim {
+				composition,
+				sum: claim.sum,
 			};
-
-			SumcheckClaim::<F, TrivariateProduct>::new(
-				*n_vars,
-				TrivariateProduct {}.n_vars(),
-				vec![composite_sum],
-			)
+			Ok(composite_sum_claim)
 		})
-		.collect::<Result<Vec<_>, _>>()?;
+		.collect::<Result<Vec<_>, Error>>()?;
 
-	Ok(sumcheck_claims)
+	let sumcheck_claim = SumcheckClaim::new(n_vars, n_multilinears, composite_sums)?;
+
+	Ok(sumcheck_claim)
 }
 
 /// Verify the validity of the sumcheck outputs for a reduced GPA sumcheck.
@@ -72,6 +83,10 @@ pub fn verify_sumcheck_outputs<F: Field>(
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
+	if multilinear_evals.len() != 1 || multilinear_evals[0].len() != 2 * claims.len() + 1 {
+		return Err(VerificationError::NumberOfFinalEvaluations.into());
+	}
+
 	let max_n_vars = claims
 		.first()
 		.map(|claim| claim.n_vars())
@@ -80,24 +95,16 @@ pub fn verify_sumcheck_outputs<F: Field>(
 	assert_eq!(gpa_challenges.len(), max_n_vars);
 	assert_eq!(sumcheck_challenges.len(), max_n_vars);
 
-	let mut eq_ind_eval = F::ONE;
-	let mut last_n_vars = 0;
-	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
-		assert_eq!(multilinear_evals.len(), 3);
+	let eq_ind_eval = iter::zip(gpa_challenges, &sumcheck_challenges)
+		.map(|(&gpa_challenge, &sumcheck_challenge)| eq(gpa_challenge, sumcheck_challenge))
+		.product::<F>();
 
-		while last_n_vars < claim.n_vars() {
-			let sumcheck_challenge = sumcheck_challenges[last_n_vars];
-			let gpa_challenge = gpa_challenges[last_n_vars];
-			eq_ind_eval *= eq(sumcheck_challenge, gpa_challenge);
-			last_n_vars += 1;
-		}
+	let multilinear_evals_last = multilinear_evals[0]
+		.pop()
+		.expect("checked above that multilinear_evals length is at least 1");
 
-		let multilinear_evals_last = multilinear_evals
-			.pop()
-			.expect("checked above that multilinear_evals length is at least 1");
-		if eq_ind_eval != multilinear_evals_last {
-			return Err(VerificationError::IncorrectEqIndEvaluation.into());
-		}
+	if eq_ind_eval != multilinear_evals_last {
+		return Err(VerificationError::IncorrectEqIndEvaluation.into());
 	}
 
 	Ok(BatchSumcheckOutput {
@@ -109,11 +116,12 @@ pub fn verify_sumcheck_outputs<F: Field>(
 #[cfg(test)]
 mod tests {
 	use crate::{
+		composition::BivariateProduct,
 		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
 			gkr_gpa::gpa_sumcheck::{
 				prove::GPAProver,
-				verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
+				verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
 			},
 			sumcheck,
 		},
@@ -179,10 +187,17 @@ mod tests {
 			.evaluate(backend.multilinear_query(&challenges).unwrap().to_ref())
 			.unwrap();
 
-		let prover = GPAProver::<FDomain, _, _, _>::new(
-			multilins.try_into().unwrap(),
-			prod_multilin,
+		let composite_claims = [sumcheck::CompositeSumClaim {
+			composition: BivariateProduct {},
 			sum,
+		}];
+
+		let prod_multilins = vec![prod_multilin];
+
+		let prover = GPAProver::<FDomain, _, _, _, _>::new(
+			multilins,
+			prod_multilins,
+			composite_claims,
 			domain_factory.clone(),
 			&challenges,
 			&backend,
@@ -193,7 +208,8 @@ mod tests {
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();
 
-		let sumcheck_claims = reduce_to_sumchecks(&[claim]).unwrap();
+		let sumcheck_claim = reduce_to_sumcheck(&[claim]).unwrap();
+		let sumcheck_claims = [sumcheck_claim];
 
 		let mut verify_challenger = prove_transcript.into_reader();
 		let _: Vec<FE> = verify_challenger.sample_vec(n_vars);

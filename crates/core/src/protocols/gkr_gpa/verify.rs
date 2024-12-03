@@ -2,7 +2,7 @@
 
 use super::{
 	gkr_gpa::LayerClaim,
-	gpa_sumcheck::verify::{reduce_to_sumchecks, verify_sumcheck_outputs, GPASumcheckClaim},
+	gpa_sumcheck::verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
 use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanRead};
@@ -123,7 +123,8 @@ where
 		.map(|claim| GPASumcheckClaim::new(claim.eval_point.len(), claim.eval))
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let sumcheck_claims = reduce_to_sumchecks(&gpa_sumcheck_claims)?;
+	let sumcheck_claim = reduce_to_sumcheck(&gpa_sumcheck_claims)?;
+	let sumcheck_claims = [sumcheck_claim];
 
 	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, &mut transcript)?;
 
@@ -137,9 +138,8 @@ where
 		.into_iter()
 		.chain(Some(gpa_challenge))
 		.collect::<Vec<_>>();
-	let new_layer_claims = batch_sumcheck_output
-		.multilinear_evals
-		.into_iter()
+	let new_layer_claims = batch_sumcheck_output.multilinear_evals[0]
+		.chunks_exact(2)
 		.map(|evals| {
 			let new_eval = extrapolate_line_scalar::<_, F>(evals[0], evals[1], gpa_challenge);
 			LayerClaim {
