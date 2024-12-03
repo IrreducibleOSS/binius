@@ -5,7 +5,7 @@ use crate::{
 	fiat_shamir::CanSampleBits,
 	merkle_tree_vcs::MerkleTreeScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
-	transcript::{read_u64, AdviceReader, CanRead},
+	transcript::{read_u64, CanRead},
 };
 use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
@@ -90,13 +90,14 @@ where
 		self.params.n_oracles()
 	}
 
-	pub fn verify<Transcript>(
+	pub fn verify<Transcript, Advice>(
 		&self,
-		advice: &mut AdviceReader,
-		mut transcript: Transcript,
+		advice: &mut Advice,
+		transcript: &mut Transcript,
 	) -> Result<F, Error>
 	where
 		Transcript: CanSampleBits<usize>,
+		Advice: CanRead,
 	{
 		let terminate_codeword_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
 		let terminate_codeword = advice

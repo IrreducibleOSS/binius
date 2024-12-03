@@ -11,7 +11,7 @@ use crate::{
 	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{write_u64, AdviceWriter, CanWrite},
+	transcript::{write_u64, CanWrite},
 };
 use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
@@ -183,18 +183,49 @@ where
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
 {
-	let log_batch_size = params.log_batch_size();
-
-	let n_elems = message.len() * P::WIDTH;
-	if n_elems != rs_code.dim() << log_batch_size {
+	let n_elems = rs_code.dim() << params.log_batch_size();
+	if message.len() * P::WIDTH != n_elems {
 		bail!(Error::InvalidArgs(
 			"interleaved message length does not match code parameters".to_string()
 		));
 	}
 
+	commit_interleaved_with(rs_code, params, merkle_prover, move |buffer| {
+		buffer.copy_from_slice(message)
+	})
+}
+
+/// Encodes and commits the input message with a closure for writing the message.
+///
+/// ## Arguments
+///
+/// * `rs_code` - the Reed-Solomon code to use for encoding
+/// * `params` - common FRI protocol parameters.
+/// * `merkle_prover` - the Merkle tree prover to use for committing
+/// * `message_writer` - a closure that writes the interleaved message to encode and commit
+pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
+	rs_code: &ReedSolomonCode<PA>,
+	params: &FRIParams<F, FA>,
+	merkle_prover: &MerkleProver,
+	message_writer: impl FnOnce(&mut [P]),
+) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
+where
+	F: BinaryField + ExtensionField<FA>,
+	FA: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
+	PA: PackedField<Scalar = FA>,
+	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
+	VCS: MerkleTreeScheme<F>,
+{
+	let log_batch_size = params.log_batch_size();
+	let log_elems = rs_code.log_dim() + log_batch_size;
+	if log_elems < P::LOG_WIDTH {
+		todo!("can't handle this case well");
+	}
+
 	let mut encoded = tracing::debug_span!("allocate codeword")
-		.in_scope(|| zeroed_vec(message.len() << rs_code.log_inv_rate()));
-	encoded[..message.len()].copy_from_slice(message);
+		.in_scope(|| zeroed_vec(1 << (log_elems - P::LOG_WIDTH + rs_code.log_inv_rate())));
+	message_writer(&mut encoded[..1 << (log_elems - P::LOG_WIDTH)]);
 	rs_code.encode_ext_batch_inplace(&mut encoded, log_batch_size)?;
 
 	// take the first arity as coset_log_len, or use log_inv_rate if arities are empty
@@ -409,13 +440,14 @@ where
 		Ok((terminate_codeword, query_prover))
 	}
 
-	pub fn finish_proof<Transcript>(
+	pub fn finish_proof<Transcript, Advice>(
 		self,
-		advice: &mut AdviceWriter,
-		mut transcript: Transcript,
+		advice: &mut Advice,
+		transcript: &mut Transcript,
 	) -> Result<(), Error>
 	where
 		Transcript: CanSampleBits<usize>,
+		Advice: CanWrite,
 	{
 		let (terminate_codeword, query_prover) = self.finalize()?;
 		write_u64(advice, terminate_codeword.len() as u64);

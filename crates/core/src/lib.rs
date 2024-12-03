@@ -14,6 +14,7 @@ pub mod linear_code;
 pub mod merkle_tree;
 pub mod merkle_tree_vcs;
 pub mod oracle;
+pub mod piop;
 pub mod poly_commit;
 pub mod polynomial;
 pub mod protocols;

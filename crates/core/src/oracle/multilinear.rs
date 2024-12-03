@@ -294,6 +294,10 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.batches.len()
 	}
 
+	pub fn size(&self) -> usize {
+		self.oracles.len()
+	}
+
 	pub fn iter(&self) -> impl Iterator<Item = MultilinearPolyOracle<F>> + '_ {
 		(0..self.oracles.len()).map(|id| self.oracle(id))
 	}

@@ -725,7 +725,7 @@ macro_rules! serialize_deserialize {
 		impl SerializeBytes for $bin_type {
 			fn serialize(&self, mut write_buf: impl BufMut) -> Result<(), SerializationError> {
 				if write_buf.remaining_mut() < 1 {
-					return Err(SerializationError::WriteBufferFull);
+					::binius_utils::bail!(SerializationError::WriteBufferFull);
 				}
 				let b = self.0.val();
 				write_buf.put_u8(b);
@@ -736,7 +736,7 @@ macro_rules! serialize_deserialize {
 		impl DeserializeBytes for $bin_type {
 			fn deserialize(mut read_buf: impl Buf) -> Result<Self, SerializationError> {
 				if read_buf.remaining() < 1 {
-					return Err(SerializationError::NotEnoughBytes);
+					::binius_utils::bail!(SerializationError::NotEnoughBytes);
 				}
 				let b: u8 = read_buf.get_u8();
 				Ok(Self(SmallU::<$U>::new(b)))
@@ -747,7 +747,7 @@ macro_rules! serialize_deserialize {
 		impl SerializeBytes for $bin_type {
 			fn serialize(&self, mut write_buf: impl BufMut) -> Result<(), SerializationError> {
 				if write_buf.remaining_mut() < (<$inner_type>::BITS / 8) as usize {
-					return Err(SerializationError::WriteBufferFull);
+					::binius_utils::bail!(SerializationError::WriteBufferFull);
 				}
 				write_buf.put_slice(&self.0.to_le_bytes());
 				Ok(())
@@ -758,7 +758,7 @@ macro_rules! serialize_deserialize {
 			fn deserialize(mut read_buf: impl Buf) -> Result<Self, SerializationError> {
 				let mut inner = <$inner_type>::default().to_le_bytes();
 				if read_buf.remaining() < inner.len() {
-					return Err(SerializationError::NotEnoughBytes);
+					::binius_utils::bail!(SerializationError::NotEnoughBytes);
 				}
 				read_buf.copy_to_slice(&mut inner);
 				Ok(Self(<$inner_type>::from_le_bytes(inner)))

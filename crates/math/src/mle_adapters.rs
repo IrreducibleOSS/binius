@@ -360,7 +360,7 @@ where
 impl<F, P, Data> MultilinearPoly<P> for MLEDirectAdapter<P, Data>
 where
 	F: Field,
-	P: PackedField<Scalar = F> + Debug,
+	P: PackedField<Scalar = F>,
 	Data: Deref<Target = [P]> + Send + Sync + Debug,
 {
 	#[inline]

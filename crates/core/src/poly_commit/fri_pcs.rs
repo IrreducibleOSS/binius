@@ -223,7 +223,7 @@ where
 
 		let _ = sumcheck_prover.finish()?;
 
-		fri_prover.finish_proof(advice, transcript)?;
+		fri_prover.finish_proof(advice, &mut transcript)?;
 		Ok(())
 	}
 
@@ -234,7 +234,7 @@ where
 		codeword_commitment: &VCS::Digest,
 		ring_switch_evaluator: impl FnOnce(&[FExt]) -> Result<FExt, PolynomialError>,
 		advice: &mut AdviceReader,
-		mut transcript: Transcript,
+		transcript: &mut Transcript,
 	) -> Result<(), Error>
 	where
 		Transcript: CanSample<FExt> + CanSampleBits<usize> + CanRead,

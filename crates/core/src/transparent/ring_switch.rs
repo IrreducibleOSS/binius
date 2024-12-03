@@ -9,8 +9,8 @@ use binius_field::{
 	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable, TowerField,
 };
-use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
-use binius_math::MultilinearExtension;
+use binius_hal::ComputationBackend;
+use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::bail;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::{fmt::Debug, iter, marker::PhantomData};
@@ -25,9 +25,8 @@ use tracing::instrument;
 /// The principal purpose of the below abstraction is for `fri_pcs` to not need to know about the small field.
 ///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
-#[allow(dead_code)]
 #[derive(Debug)]
-enum TowerRingSwitchEqInd<Tower>
+pub enum TowerRingSwitchEqInd<Tower>
 where
 	Tower: TowerFamily + Debug,
 	Tower::B128: PackedField<Scalar = Tower::B128>
@@ -68,7 +67,6 @@ where
 		}
 	}
 
-	#[allow(dead_code)]
 	pub fn new(
 		tower_height: usize,
 		r_evals: Vec<Tower::B128>,
@@ -106,7 +104,6 @@ where
 		Ok(tower_rs_eq_id)
 	}
 
-	#[allow(dead_code)]
 	pub fn multilinear_extension<
 		P: PackedFieldIndexable<Scalar = Tower::B128>,
 		Backend: ComputationBackend,
@@ -223,7 +220,7 @@ where
 	{
 		let r_evals = &self.r_evals;
 		let r_mixing_challenges = &self.r_mixing_challenges;
-		let expanded_mixing_coeffs = backend.multilinear_query(r_mixing_challenges)?;
+		let expanded_mixing_coeffs = MultilinearQuery::expand(r_mixing_challenges);
 		let mut evals = backend.tensor_product_full_query(r_evals)?;
 		P::unpack_scalars_mut(&mut evals)
 			.par_iter_mut()
@@ -270,14 +267,10 @@ where
 				eval + &vert_scaled + &hztl_scaled
 			},
 		);
-		// Use the portable CPU backend because the size of the hypercube is small.
-		let backend = make_portable_backend();
-		let expanded_mixing_coeffs = &backend
-			.tensor_product_full_query(r_mixing_challenges)
-			.expect("F extension degree is less than 2^31");
+		let expanded_mixing_coeffs = MultilinearQuery::expand(r_mixing_challenges);
 		let folded_eval = inner_product_unchecked::<F, _>(
 			tensor_eval.transpose().vertical_elems().iter().copied(),
-			expanded_mixing_coeffs.iter().copied(),
+			expanded_mixing_coeffs.into_expansion(),
 		);
 		Ok(folded_eval)
 	}
@@ -293,6 +286,7 @@ mod tests {
 	use super::*;
 	use crate::tower::{self, AESTowerFamily};
 	use binius_field::{BinaryField128b, BinaryField8b};
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use iter::repeat_with;
 	use rand::{prelude::StdRng, SeedableRng};
 

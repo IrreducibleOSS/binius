@@ -146,9 +146,7 @@ where
 
 	let mut multilinear_evals = Vec::with_capacity(claims.len());
 	for claim in claims.iter() {
-		let evals = transcript
-			.read_scalar_slice::<F>(claim.n_multilinears())
-			.map_err(|_| VerificationError::NumberOfFinalEvaluations)?;
+		let evals = transcript.read_scalar_slice::<F>(claim.n_multilinears())?;
 		multilinear_evals.push(evals);
 	}
 

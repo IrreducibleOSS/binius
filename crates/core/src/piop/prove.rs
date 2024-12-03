@@ -1,0 +1,270 @@
+// Copyright 2024 Irreducible, Inc
+
+use super::{
+	error::Error,
+	verify::{make_sumcheck_claim_descs, PIOPSumcheckClaim},
+};
+use crate::{
+	fiat_shamir::{CanSample, CanSampleBits},
+	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
+	piop::CommitMeta,
+	protocols::{
+		fri,
+		fri::{FRIFolder, FRIParams, FoldRoundOutput},
+		sumcheck::{
+			immediate_switchover_heuristic,
+			prove::{
+				front_loaded::BatchProver as SumcheckBatchProver, RegularSumcheckProver,
+				SumcheckProver,
+			},
+		},
+	},
+	reed_solomon::reed_solomon::ReedSolomonCode,
+	transcript::{CanWrite, Proof},
+};
+use binius_field::{
+	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_math::{EvaluationDomainFactory, MultilinearPoly};
+use binius_ntt::{NTTOptions, ThreadingSettings};
+use binius_utils::sorting::is_sorted_ascending;
+use itertools::{chain, Itertools};
+
+// ## Preconditions
+//
+// * all multilinears in `multilins` have at least log_extension_degree packed variables
+// * all multilinears in `multilins` have `packed_evals()` is Some
+// * multilinears are sorted in ascending order by number of packed variables
+// * `message_buffer` is initialized to all zeros
+// * `message_buffer` is larger than the total number of scalars in the multilinears
+fn merge_multilins<P, M>(multilins: &[M], message_buffer: &mut [P])
+where
+	P: PackedField,
+	M: MultilinearPoly<P>,
+{
+	// TODO: Parallelize the data copying
+	let mut packed_offset = 0;
+	let mut mle_iter = multilins.iter().rev().peekable();
+
+	// First copy all the polynomials where the number of elements is a multiple of the packing
+	// width.
+	let get_n_packed_vars = |mle: &M| mle.n_vars() - mle.log_extension_degree();
+	for mle in mle_iter.peeking_take_while(|mle| get_n_packed_vars(mle) >= P::LOG_WIDTH) {
+		let evals = mle
+			.packed_evals()
+			.expect("guaranteed by function precondition");
+		message_buffer[packed_offset..packed_offset + evals.len()].copy_from_slice(evals);
+		packed_offset += evals.len();
+	}
+
+	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
+	// packed elements.
+	let mut scalar_offset = packed_offset << P::LOG_WIDTH;
+	for mle in mle_iter {
+		let evals = mle
+			.packed_evals()
+			.expect("guaranteed by function precondition");
+		let packed_eval = evals[0];
+		for i in 0..1 << mle.n_vars() {
+			set_packed_slice(message_buffer, scalar_offset, packed_eval.get(i));
+			scalar_offset += 1;
+		}
+	}
+}
+
+/// Commits a batch of multilinear polynomials.
+///
+/// The multilinears this function accepts as arguments may be defined over subfields of `F`. In
+/// this case, we commit to these multilinears by instead committing to their "packed"
+/// multilinears. These are the multilinear extensions of their packed coefficients over subcubes
+/// of the size of the extension degree.
+///
+/// ## Arguments
+///
+/// * `fri_params` - the FRI parameters for the commitment opening protocol
+/// * `merkle_prover` - the Merkle tree prover used in FRI
+/// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
+///     defined over subfields of `F`. They must be in ascending order by the number of variables
+///     in the packed multilinear (ie. number of variables minus log extension degree).
+pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
+	fri_params: &FRIParams<F, FEncode>,
+	merkle_prover: &MTProver,
+	multilins: &[M],
+) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
+where
+	F: BinaryField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
+	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
+	M: MultilinearPoly<P>,
+	MTScheme: MerkleTreeScheme<F>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+{
+	for (i, multilin) in multilins.iter().enumerate() {
+		if multilin.n_vars() < multilin.log_extension_degree() {
+			return Err(Error::OracleTooSmall {
+				// i is not an OracleId, but whatever, that's a problem for whoever has to debug
+				// this
+				id: i,
+				min_vars: multilin.log_extension_degree(),
+			});
+		}
+		if multilin.packed_evals().is_none() {
+			return Err(Error::CommittedPackedEvaluationsMissing { id: i });
+		}
+	}
+
+	let n_packed_vars = multilins
+		.iter()
+		.map(|multilin| multilin.n_vars() - multilin.log_extension_degree());
+	if !is_sorted_ascending(n_packed_vars) {
+		return Err(Error::CommittedsNotSorted);
+	}
+
+	// TODO: this should be passed in to avoid recomputing twiddles
+	let rs_code = ReedSolomonCode::new(
+		fri_params.rs_code().log_dim(),
+		fri_params.rs_code().log_inv_rate(),
+		NTTOptions {
+			precompute_twiddles: true,
+			thread_settings: ThreadingSettings::MultithreadedDefault,
+		},
+	)?;
+	let output =
+		fri::commit_interleaved_with(&rs_code, fri_params, merkle_prover, |message_buffer| {
+			merge_multilins(multilins, message_buffer)
+		})?;
+
+	Ok(output)
+}
+
+/// Proves a batch of sumcheck claims that are products of committed polynomials from a committed
+/// batch and transparent polynomials.
+///
+/// The arguments corresponding to the committed multilinears must be the output of [`commit`].
+#[allow(clippy::too_many_arguments)]
+pub fn prove<
+	F,
+	FDomain,
+	FEncode,
+	P,
+	M,
+	DomainFactory,
+	MTScheme,
+	MTProver,
+	Digest,
+	Transcript,
+	Advice,
+	Backend,
+>(
+	fri_params: &FRIParams<F, FEncode>,
+	merkle_prover: &MTProver,
+	domain_factory: DomainFactory,
+	commit_meta: &CommitMeta,
+	committed: MTProver::Committed,
+	codeword: &[P],
+	committed_multilins: &[M],
+	transparent_multilins: &[M],
+	claims: &[PIOPSumcheckClaim<F>],
+	proof: &mut Proof<Transcript, Advice>,
+	backend: &Backend,
+) -> Result<(), Error>
+where
+	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
+	FDomain: Field,
+	FEncode: BinaryField,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FEncode>,
+	M: MultilinearPoly<P> + Send + Sync,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
+	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
+	Advice: CanWrite,
+	Digest: PackedField<Scalar: TowerField>,
+	Backend: ComputationBackend,
+{
+	// Map of n_vars to sumcheck claim descriptions
+	let sumcheck_claim_descs = make_sumcheck_claim_descs(
+		commit_meta,
+		transparent_multilins.iter().map(|poly| poly.n_vars()),
+		claims,
+	)?;
+
+	let non_empty_sumcheck_descs = sumcheck_claim_descs
+		.iter()
+		.enumerate()
+		.filter(|(_n_vars, desc)| !desc.composite_sums.is_empty());
+	let sumcheck_provers = non_empty_sumcheck_descs
+		.clone()
+		.map(|(_n_vars, desc)| {
+			let multilins = chain!(
+				committed_multilins[desc.committed_indices.clone()].iter(),
+				transparent_multilins[desc.transparent_indices.clone()].iter(),
+			)
+			.collect::<Vec<_>>();
+			RegularSumcheckProver::new(
+				multilins,
+				desc.composite_sums.iter().cloned(),
+				&domain_factory,
+				immediate_switchover_heuristic,
+				backend,
+			)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
+	prove_interleaved_fri_sumcheck(
+		commit_meta.total_vars(),
+		fri_params,
+		merkle_prover,
+		sumcheck_provers,
+		codeword,
+		committed,
+		proof,
+	)?;
+
+	Ok(())
+}
+
+fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Digest, Transcript, Advice>(
+	n_rounds: usize,
+	fri_params: &FRIParams<F, FEncode>,
+	merkle_prover: &MTProver,
+	sumcheck_provers: Vec<impl SumcheckProver<F>>,
+	codeword: &[P],
+	committed: MTProver::Committed,
+	proof: &mut Proof<Transcript, Advice>,
+) -> Result<(), Error>
+where
+	F: TowerField + ExtensionField<FEncode>,
+	FEncode: BinaryField,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
+	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
+	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
+	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
+	Advice: CanWrite,
+	Digest: PackedField<Scalar: TowerField>,
+{
+	let mut fri_prover =
+		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), &committed)?;
+
+	let mut sumcheck_batch_prover =
+		SumcheckBatchProver::new(sumcheck_provers, &mut proof.transcript)?;
+
+	for _ in 0..n_rounds {
+		sumcheck_batch_prover.send_round_proof(&mut proof.transcript)?;
+		let challenge = proof.transcript.sample();
+		sumcheck_batch_prover.receive_challenge(challenge)?;
+
+		match fri_prover.execute_fold_round(challenge)? {
+			FoldRoundOutput::NoCommitment => {}
+			FoldRoundOutput::Commitment(round_commitment) => {
+				proof.transcript.write_packed(round_commitment);
+			}
+		}
+	}
+
+	sumcheck_batch_prover.finish(&mut proof.transcript)?;
+	fri_prover.finish_proof(&mut proof.advice, &mut proof.transcript)?;
+	Ok(())
+}

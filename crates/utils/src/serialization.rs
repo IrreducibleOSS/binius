@@ -3,8 +3,6 @@ use bytes::{Buf, BufMut};
 
 #[derive(Clone, thiserror::Error, Debug)]
 pub enum Error {
-	#[error("Incorrect byte array length")]
-	IncorrectLengthByteSlice,
 	#[error("Write buffer is full")]
 	WriteBufferFull,
 	#[error("Not enough data in read buffer to deserialize")]

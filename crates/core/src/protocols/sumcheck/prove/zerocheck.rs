@@ -136,7 +136,8 @@ where
 				|| composition_base.degree() != composition.degree()
 			{
 				bail!(Error::InvalidComposition {
-					expected_n_vars: multilinears.len(),
+					actual: composition.n_vars(),
+					expected: multilinears.len(),
 				});
 			}
 		}

@@ -8,9 +8,9 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error(
-		"composition polynomial has an incorrect number of variables, expected {expected_n_vars}"
+		"composition polynomial has an incorrect number of variables; expected {expected}, got {actual}"
 	)]
-	InvalidComposition { expected_n_vars: usize },
+	InvalidComposition { actual: usize, expected: usize },
 	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
 	#[error("expected a call to try_finish_claim")]

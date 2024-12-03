@@ -4,7 +4,7 @@ use binius_field::PackedField;
 use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct ProductComposition<const N: usize>;
 
 impl<const N: usize> ProductComposition<N> {

@@ -30,7 +30,8 @@ where
 		for composition in composite_zeros.iter() {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
-					expected_n_vars: n_multilinears,
+					actual: composition.n_vars(),
+					expected: n_multilinears,
 				});
 			}
 		}

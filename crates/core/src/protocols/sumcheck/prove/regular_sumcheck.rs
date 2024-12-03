@@ -110,7 +110,8 @@ where
 		for claim in composite_claims.iter() {
 			if claim.composition.n_vars() != multilinears.len() {
 				bail!(Error::InvalidComposition {
-					expected_n_vars: multilinears.len(),
+					actual: claim.composition.n_vars(),
+					expected: multilinears.len(),
 				});
 			}
 		}
