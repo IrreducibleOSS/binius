@@ -72,7 +72,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -109,7 +109,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -149,7 +149,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness)
+		validate_witness(&constraint_system, &boundaries, &witness)
 			.expect_err("Channels should be unbalanced");
 	}
 
@@ -183,7 +183,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -207,7 +207,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -222,7 +222,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -235,7 +235,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -252,7 +252,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -269,7 +269,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -285,7 +285,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -302,7 +302,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -318,7 +318,7 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
@@ -338,6 +338,6 @@ mod tests {
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
-		validate_witness(&constraint_system, boundaries, witness).unwrap();
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 }

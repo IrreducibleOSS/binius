@@ -22,8 +22,8 @@ use binius_utils::bail;
 
 pub fn validate_witness<U, F>(
 	constraint_system: &ConstraintSystem<PackedType<U, F>>,
-	boundaries: Vec<Boundary<F>>,
-	witness: MultilinearExtensionIndex<'_, U, F>,
+	boundaries: &[Boundary<F>],
+	witness: &MultilinearExtensionIndex<'_, U, F>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b>,
@@ -49,22 +49,22 @@ where
 
 	// Check that nonzero oracles are non-zero over the entire hypercube
 	nonzerocheck::validate_witness(
-		&witness,
+		witness,
 		&constraint_system.oracles,
 		&constraint_system.non_zero_oracle_ids,
 	)?;
 
 	// Check that the channels balance with flushes and boundaries
 	channel::validate_witness(
-		&witness,
+		witness,
 		&constraint_system.flushes,
-		&boundaries,
+		boundaries,
 		constraint_system.max_channel_id,
 	)?;
 
 	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually shifts).
 	for oracle in constraint_system.oracles.iter() {
-		validate_virtual_oracle_witness(oracle, &witness)?;
+		validate_virtual_oracle_witness(oracle, witness)?;
 	}
 
 	Ok(())
