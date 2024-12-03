@@ -275,8 +275,8 @@ mod tests {
 		let multilins =
 			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
-		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
-			.unwrap();
+		let binding = [TestProductComposition::new(n_multilinears)];
+		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
 		let mut prove_transcript_1 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 		let backend = make_portable_backend();
@@ -285,7 +285,7 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let reference_prover = make_regular_sumcheck_prover_for_zerocheck::<_, FDomain, _, _, _, _>(
 			multilins.clone(),
-			[TestProductComposition::new(n_multilinears)],
+			binding,
 			&challenges,
 			domain_factory.clone(),
 			|_| switchover_rd,
@@ -336,8 +336,8 @@ mod tests {
 		let multilins =
 			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
-		zerocheck::validate_witness(&multilins, [TestProductComposition::new(n_multilinears)])
-			.unwrap();
+		let binding = [TestProductComposition::new(n_multilinears)];
+		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
 		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
 		let challenges = prove_transcript.sample_vec(n_vars);

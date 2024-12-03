@@ -38,15 +38,15 @@ use stackalloc::stackalloc_with_default;
 use std::{marker::PhantomData, ops::Range, sync::Arc};
 use tracing::instrument;
 
-pub fn validate_witness<F, P, M, Composition>(
+pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],
-	zero_claims: impl IntoIterator<Item = Composition>,
+	zero_claims: impl IntoIterator<Item = &'a Composition>,
 ) -> Result<(), Error>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPolyOS<P> + 'a,
 {
 	let n_vars = multilinears
 		.first()
@@ -140,6 +140,11 @@ where
 				});
 			}
 		}
+		#[cfg(feature = "debug_validate_sumcheck")]
+		{
+			let compositions = compositions.iter().map(|(_, a)| a);
+			validate_witness(&multilinears, compositions)?;
+		}
 
 		small_field_embedding_degree_check::<PBase, P, _>(&multilinears)?;
 
@@ -199,7 +204,13 @@ where
 			.multilinears
 			.into_iter()
 			.map(|multilinear| Arc::new(multilinear) as MultilinearWitness<'_, P>)
-			.collect();
+			.collect::<Vec<_>>();
+
+		#[cfg(feature = "debug_validate_sumcheck")]
+		{
+			let compositions = self.compositions.iter().map(|(_, a)| a);
+			validate_witness(&multilinears, compositions)?;
+		}
 
 		// Evaluate zerocheck partial indicator in variables 1..n_vars
 		let start = self.n_vars.min(1);

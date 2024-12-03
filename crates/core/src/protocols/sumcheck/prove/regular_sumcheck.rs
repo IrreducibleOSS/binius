@@ -21,15 +21,15 @@ use stackalloc::stackalloc_with_default;
 use std::{marker::PhantomData, ops::Range};
 use tracing::instrument;
 
-pub fn validate_witness<F, P, M, Composition>(
+pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],
-	sum_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
+	sum_claims: impl IntoIterator<Item = CompositeSumClaim<F, &'a Composition>>,
 ) -> Result<(), Error>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPolyOS<P> + 'a,
 {
 	let n_vars = multilinears
 		.first()
@@ -94,6 +94,19 @@ where
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
+
+		#[cfg(feature = "debug_validate_sumcheck")]
+		{
+			let composite_claims = composite_claims
+				.iter()
+				.map(|x| CompositeSumClaim {
+					sum: x.sum,
+					composition: &x.composition,
+				})
+				.collect::<Vec<_>>();
+			validate_witness(&multilinears, composite_claims)?;
+		}
+
 		for claim in composite_claims.iter() {
 			if claim.composition.n_vars() != multilinears.len() {
 				bail!(Error::InvalidComposition {
