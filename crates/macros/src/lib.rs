@@ -49,7 +49,7 @@ pub fn composition_poly(input: TokenStream) -> TokenStream {
 /// ```
 /// use binius_macros::arith_expr;
 /// use binius_field::{Field, BinaryField1b, BinaryField8b};
-/// use binius_core::polynomial::Expr;
+/// use binius_math::ArithExpr as Expr;
 ///
 /// assert_eq!(
 ///     arith_expr!([x, y] = x + y + 1),

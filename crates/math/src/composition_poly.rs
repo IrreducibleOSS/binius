@@ -42,9 +42,8 @@ where
 	///
 	/// This method has a default implementation.
 	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-
-		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
+		let row_len = evals.len();
+		if batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
 		}
 

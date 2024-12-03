@@ -2,6 +2,7 @@
 
 #![feature(step_trait)]
 
+mod arith_expr;
 mod composition_poly;
 mod deinterleave;
 mod error;
@@ -16,6 +17,7 @@ mod piecewise_multilinear;
 mod tensor_prod_eq_ind;
 mod univariate;
 
+pub use arith_expr::*;
 pub use composition_poly::*;
 pub use deinterleave::*;
 pub use error::*;

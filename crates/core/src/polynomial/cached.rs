@@ -163,9 +163,9 @@ mod tests {
 	use super::*;
 
 	use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField16x8b, PackedField};
-	use binius_math::CompositionPolyOS;
+	use binius_math::{ArithExpr, CompositionPolyOS};
 
-	use crate::polynomial::{cached::CachedPoly, ArithCircuitPoly, Expr};
+	use crate::polynomial::{cached::CachedPoly, ArithCircuitPoly};
 
 	fn ensure_equal_batch_eval_results<P: PackedField>(
 		circuit_1: &impl CompositionPolyOS<P>,
@@ -230,7 +230,7 @@ mod tests {
 
 	#[test]
 	fn test_cached_impl() {
-		let expr = Expr::Const(BinaryField8b::new(123)) + Expr::Var(0);
+		let expr = ArithExpr::Const(BinaryField8b::new(123)) + ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<BinaryField8b>::new(expr);
 
 		let composition = AddComposition;
@@ -245,7 +245,7 @@ mod tests {
 
 	#[test]
 	fn test_uncached_impl() {
-		let expr = Expr::Const(BinaryField8b::new(123)) + Expr::Var(0);
+		let expr = ArithExpr::Const(BinaryField8b::new(123)) + ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<BinaryField8b>::new(expr);
 
 		let composition = AddComposition;

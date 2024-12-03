@@ -1,129 +1,45 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{CompositionPoly, CompositionPolyOS, Error};
+use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 use stackalloc::{helpers::slice_assume_init, stackalloc_uninit};
-use std::{
-	cmp::max,
-	fmt::{Debug, Display},
-	mem::MaybeUninit,
-	ops::{Add, Mul, Sub},
-	sync::Arc,
-};
+use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
-/// Represents an arithmetic expression that can be evaluated symbolically.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Expr<F: Field> {
-	Const(F),
-	Var(usize),
-	Add(Box<Expr<F>>, Box<Expr<F>>),
-	Mul(Box<Expr<F>>, Box<Expr<F>>),
-	Pow(Box<Expr<F>>, u64),
-}
+/// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
+fn circuit_steps_for_expr<F: Field>(
+	expr: &ArithExpr<F>,
+) -> (Vec<CircuitStep<F>>, CircuitStepArgument<F>) {
+	let mut steps = Vec::new();
 
-impl<F: Field + Display> std::fmt::Display for Expr<F> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::Const(v) => write!(f, "{v}"),
-			Self::Var(i) => write!(f, "x{i}"),
-			Self::Add(x, y) => write!(f, "({} + {})", &**x, &**y),
-			Self::Mul(x, y) => write!(f, "({} * {})", &**x, &**y),
-			Self::Pow(x, p) => write!(f, "({})^{p}", &**x),
-		}
-	}
-}
-
-impl<F: Field> Expr<F> {
-	pub fn n_vars(&self) -> usize {
-		match self {
-			Expr::Const(_) => 0,
-			Expr::Var(index) => *index + 1,
-			Expr::Add(left, right) | Expr::Mul(left, right) => max(left.n_vars(), right.n_vars()),
-			Expr::Pow(id, _) => id.n_vars(),
-		}
-	}
-
-	pub fn degree(&self) -> usize {
-		match self {
-			Expr::Const(_) => 0,
-			Expr::Var(_) => 1,
-			Expr::Add(left, right) => max(left.degree(), right.degree()),
-			Expr::Mul(left, right) => left.degree() + right.degree(),
-			Expr::Pow(_, exp) => *exp as usize,
-		}
-	}
-
-	pub fn pow(self, exp: u64) -> Self {
-		Expr::Pow(Box::new(self), exp)
-	}
-
-	/// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
-	fn to_circuit(&self) -> Vec<CircuitStep<F>> {
-		let mut result = Vec::new();
-
-		fn to_circuit_inner<F: Field>(
-			expr: &Expr<F>,
-			result: &mut Vec<CircuitStep<F>>,
-		) -> CircuitStepArgument<F> {
-			match expr {
-				Expr::Const(value) => CircuitStepArgument::Const(*value),
-				Expr::Var(index) => CircuitStepArgument::Expr(CircuitNode::Var(*index)),
-				Expr::Add(left, right) => {
-					let left = to_circuit_inner(left, result);
-					let right = to_circuit_inner(right, result);
-					result.push(CircuitStep::Add(left, right));
-					CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
-				}
-				Expr::Mul(left, right) => {
-					let left = to_circuit_inner(left, result);
-					let right = to_circuit_inner(right, result);
-					result.push(CircuitStep::Mul(left, right));
-					CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
-				}
-				Expr::Pow(id, exp) => {
-					let id = to_circuit_inner(id, result);
-					result.push(CircuitStep::Pow(id, *exp));
-					CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
-				}
+	fn to_circuit_inner<F: Field>(
+		expr: &ArithExpr<F>,
+		result: &mut Vec<CircuitStep<F>>,
+	) -> CircuitStepArgument<F> {
+		match expr {
+			ArithExpr::Const(value) => CircuitStepArgument::Const(*value),
+			ArithExpr::Var(index) => CircuitStepArgument::Expr(CircuitNode::Var(*index)),
+			ArithExpr::Add(left, right) => {
+				let left = to_circuit_inner(left, result);
+				let right = to_circuit_inner(right, result);
+				result.push(CircuitStep::Add(left, right));
+				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
+			}
+			ArithExpr::Mul(left, right) => {
+				let left = to_circuit_inner(left, result);
+				let right = to_circuit_inner(right, result);
+				result.push(CircuitStep::Mul(left, right));
+				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
+			}
+			ArithExpr::Pow(id, exp) => {
+				let id = to_circuit_inner(id, result);
+				result.push(CircuitStep::Pow(id, *exp));
+				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 			}
 		}
-
-		to_circuit_inner(self, &mut result);
-		result
 	}
-}
 
-impl<F> Add for Expr<F>
-where
-	F: Field,
-{
-	type Output = Self;
-
-	fn add(self, rhs: Self) -> Self {
-		Expr::Add(Box::new(self), Box::new(rhs))
-	}
-}
-
-impl<F> Sub for Expr<F>
-where
-	F: Field,
-{
-	type Output = Self;
-
-	fn sub(self, rhs: Self) -> Self {
-		Expr::Add(Box::new(self), Box::new(rhs))
-	}
-}
-
-impl<F> Mul for Expr<F>
-where
-	F: Field,
-{
-	type Output = Self;
-
-	fn mul(self, rhs: Self) -> Self {
-		Expr::Mul(Box::new(self), Box::new(rhs))
-	}
+	let ret = to_circuit_inner(expr, &mut steps);
+	(steps, ret)
 }
 
 /// Input of the circuit calculation step
@@ -176,20 +92,22 @@ enum CircuitStep<F: Field> {
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: TowerField> {
-	/// The last expression is the "top level expression" which depends on previous entries
 	exprs: Arc<[CircuitStep<F>]>,
+	/// The "top level expression", which depends on circuit expression evaluations
+	retval: CircuitStepArgument<F>,
 	degree: usize,
 	n_vars: usize,
 }
 
 impl<F: TowerField> ArithCircuitPoly<F> {
-	pub fn new(expr: Expr<F>) -> Self {
+	pub fn new(expr: ArithExpr<F>) -> Self {
 		let degree = expr.degree();
 		let n_vars = expr.n_vars();
-		let exprs = expr.to_circuit().into();
+		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Self {
-			exprs,
+			exprs: exprs.into(),
+			retval,
 			degree,
 			n_vars,
 		}
@@ -215,7 +133,9 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 				expected: self.n_vars,
 			});
 		}
-		let result = stackalloc_uninit::<P, _, _>(self.exprs.len(), |evals| {
+
+		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
+		stackalloc_uninit::<P, _, _>(self.exprs.len().max(1), |evals| {
 			let get_argument_value = |input: CircuitStepArgument<F>, evals: &[P]| match input {
 				// Safety: The index is guaranteed to be within bounds by the construction of the circuit
 				CircuitStepArgument::Expr(CircuitNode::Var(index)) => unsafe {
@@ -248,10 +168,13 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 				}
 			}
 
-			// Safety: `evals.len()` == `self.exprs.len()`, which is guaranteed to be non-empty
-			unsafe { evals.last().unwrap().assume_init() }
-		});
-		Ok(result)
+			// Safety: `evals.len()` == `self.exprs.len()`, and all expression evaluations have
+			// been initialized
+			unsafe {
+				let evals = slice_assume_init(evals);
+				Ok(get_argument_value(self.retval, evals))
+			}
+		})
 	}
 
 	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
@@ -259,12 +182,13 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		batch_query: &[&[P]],
 		evals: &mut [P],
 	) -> Result<(), Error> {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-		if evals.len() != row_len || batch_query.iter().any(|row| row.len() != row_len) {
+		let row_len = evals.len();
+		if batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
 		}
 
-		stackalloc_uninit::<P, (), _>(self.exprs.len() * row_len, |sparse_evals| {
+		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
+		stackalloc_uninit::<P, (), _>((self.exprs.len() * row_len).max(1), |sparse_evals| {
 			for (i, expr) in self.exprs.iter().enumerate() {
 				let (before, current) = sparse_evals.split_at_mut(i * row_len);
 
@@ -323,10 +247,14 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 				}
 			}
 
-			// Safety: `sparse_evals` is fully initialized by the previous loop iterations
-			let sparse_evals = unsafe { slice_assume_init(sparse_evals) };
-
-			evals.copy_from_slice(&sparse_evals[row_len * (self.exprs.len() - 1)..]);
+			match self.retval {
+				CircuitStepArgument::Expr(node) => {
+					// Safety: `sparse_evals` is fully initialized by the previous loop iterations
+					let sparse_evals = unsafe { slice_assume_init(sparse_evals) };
+					evals.copy_from_slice(node.get_sparse_chunk(batch_query, sparse_evals, row_len))
+				}
+				CircuitStepArgument::Const(val) => evals.fill(P::broadcast(val.into())),
+			}
 		});
 
 		Ok(())
@@ -436,9 +364,7 @@ fn pow<P: PackedField>(value: P, exp: u64) -> P {
 
 #[cfg(test)]
 mod tests {
-	use crate::polynomial::Expr;
-
-	use super::ArithCircuitPoly;
+	use super::*;
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
@@ -446,12 +372,32 @@ mod tests {
 	use binius_utils::felts;
 
 	#[test]
-	fn test_add() {
+	fn test_constant() {
 		type F = BinaryField8b;
 		type P = PackedBinaryField8x16b;
 
-		// 123 + x0
-		let expr = Expr::Const(F::new(123)) + Expr::Var(0);
+		let expr = ArithExpr::Const(F::new(123));
+		let circuit = ArithCircuitPoly::<F>::new(expr);
+
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 0);
+		assert_eq!(typed_circuit.n_vars(), 0);
+
+		assert_eq!(typed_circuit.evaluate(&[]).unwrap(), P::broadcast(F::new(123).into()));
+
+		let mut evals = [P::default()];
+		typed_circuit.batch_evaluate(&[], &mut evals).unwrap();
+		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
+	}
+
+	#[test]
+	fn test_identity() {
+		type F = BinaryField8b;
+		type P = PackedBinaryField8x16b;
+
+		// x0
+		let expr = ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
@@ -460,7 +406,35 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			circuit.evaluate(&[P::broadcast(F::new(0).into())]).unwrap(),
+			typed_circuit
+				.evaluate(&[P::broadcast(F::new(123).into())])
+				.unwrap(),
+			P::broadcast(F::new(123).into())
+		);
+
+		let mut evals = [P::default()];
+		typed_circuit
+			.batch_evaluate(&[&[P::broadcast(F::new(123).into())]], &mut evals)
+			.unwrap();
+		assert_eq!(evals, [P::broadcast(F::new(123).into())]);
+	}
+
+	#[test]
+	fn test_add() {
+		type F = BinaryField8b;
+		type P = PackedBinaryField8x16b;
+
+		// 123 + x0
+		let expr = ArithExpr::Const(F::new(123)) + ArithExpr::Var(0);
+		let circuit = ArithCircuitPoly::<F>::new(expr);
+
+		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.degree(), 1);
+		assert_eq!(typed_circuit.n_vars(), 1);
+
+		assert_eq!(
+			CompositionPoly::evaluate(&circuit, &[P::broadcast(F::new(0).into())]).unwrap(),
 			P::broadcast(F::new(123).into())
 		);
 	}
@@ -471,7 +445,7 @@ mod tests {
 		type P = PackedBinaryField8x16b;
 
 		// 123 * x0
-		let expr = Expr::Const(F::new(123)) * Expr::Var(0);
+		let expr = ArithExpr::Const(F::new(123)) * ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
@@ -480,11 +454,13 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			circuit
-				.evaluate(&[P::from_scalars(
+			CompositionPoly::evaluate(
+				&circuit,
+				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
-				)])
-				.unwrap(),
+				)]
+			)
+			.unwrap(),
 			P::from_scalars(felts!(BinaryField16b[0, 123, 157, 230, 85, 46, 154, 225])),
 		);
 	}
@@ -495,7 +471,7 @@ mod tests {
 		type P = PackedBinaryField8x16b;
 
 		// x0^13
-		let expr = Expr::Var(0).pow(13);
+		let expr = ArithExpr::Var(0).pow(13);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
@@ -504,11 +480,13 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			circuit
-				.evaluate(&[P::from_scalars(
+			CompositionPoly::evaluate(
+				&circuit,
+				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
-				)])
-				.unwrap(),
+				)]
+			)
+			.unwrap(),
 			P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 200, 52, 51, 115])),
 		);
 	}
@@ -519,7 +497,7 @@ mod tests {
 		type P = PackedBinaryField8x16b;
 
 		// x0^2 * (x1 + 123)
-		let expr = Expr::Var(0).pow(2) * (Expr::Var(1) + Expr::Const(F::new(123)));
+		let expr = ArithExpr::Var(0).pow(2) * (ArithExpr::Var(1) + ArithExpr::Const(F::new(123)));
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
@@ -529,12 +507,14 @@ mod tests {
 
 		// test evaluate
 		assert_eq!(
-			circuit
-				.evaluate(&[
+			CompositionPoly::evaluate(
+				&circuit,
+				&[
 					P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 4, 5, 6, 7])),
 					P::from_scalars(felts!(BinaryField16b[100, 101, 102, 103, 104, 105, 106, 107])),
-				])
-				.unwrap(),
+				]
+			)
+			.unwrap(),
 			P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176])),
 		);
 
@@ -557,15 +537,15 @@ mod tests {
 		let expected3 = P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176]));
 
 		let mut batch_result = vec![P::zero(); 3];
-		circuit
-			.batch_evaluate(
-				&[
-					&[query1[0], query2[0], query3[0]],
-					&[query1[1], query2[1], query3[1]],
-				],
-				&mut batch_result,
-			)
-			.unwrap();
+		CompositionPoly::batch_evaluate(
+			&circuit,
+			&[
+				&[query1[0], query2[0], query3[0]],
+				&[query1[1], query2[1], query3[1]],
+			],
+			&mut batch_result,
+		)
+		.unwrap();
 		assert_eq!(&batch_result, &[expected1, expected2, expected3]);
 	}
 }

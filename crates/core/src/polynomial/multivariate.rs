@@ -269,16 +269,15 @@ pub fn composition_hash<P: PackedField, C: CompositionPolyOS<P>>(composition: &C
 
 #[cfg(test)]
 mod tests {
-	use binius_math::CompositionPolyOS;
-
-	use crate::polynomial::Expr;
+	use binius_math::{ArithExpr, CompositionPolyOS};
 
 	#[test]
 	fn test_fingerprint_same_32b() {
 		use binius_field::{BinaryField1b, PackedBinaryField8x32b};
 
 		//Complicated circuit for (x0 + x1) * x0 + x0^2
-		let expr = (Expr::Var(0) + Expr::Var(1)) * Expr::Var(0) + Expr::Var(0).pow(2);
+		let expr =
+			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField8x32b>;
 
@@ -294,7 +293,7 @@ mod tests {
 	fn test_fingerprint_diff_32b() {
 		use binius_field::{BinaryField1b, PackedBinaryField8x32b};
 
-		let expr = Expr::Var(0) + Expr::Var(1);
+		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField8x32b>;
@@ -312,7 +311,8 @@ mod tests {
 		use binius_field::{BinaryField1b, PackedBinaryField4x64b};
 
 		// Complicated circuit for (x0 + x1) * x0 + x0^2
-		let expr = (Expr::Var(0) + Expr::Var(1)) * Expr::Var(0) + Expr::Var(0).pow(2);
+		let expr =
+			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField4x64b>;
 
@@ -328,7 +328,7 @@ mod tests {
 	fn test_fingerprint_diff_64b() {
 		use binius_field::{BinaryField1b, PackedBinaryField4x64b};
 
-		let expr = Expr::Var(0) + Expr::Var(1);
+		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField4x64b>;
 
@@ -345,7 +345,8 @@ mod tests {
 		use binius_field::{BinaryField1b, PackedBinaryField2x128b};
 
 		// Complicated circuit for (x0 + x1) * x0 + x0^2
-		let expr = (Expr::Var(0) + Expr::Var(1)) * Expr::Var(0) + Expr::Var(0).pow(2);
+		let expr =
+			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField2x128b>;
 
@@ -361,7 +362,7 @@ mod tests {
 	fn test_fingerprint_diff_128b() {
 		use binius_field::{BinaryField1b, PackedBinaryField2x128b};
 
-		let expr = Expr::Var(0) + Expr::Var(1);
+		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
 			as &dyn CompositionPolyOS<PackedBinaryField2x128b>;
 

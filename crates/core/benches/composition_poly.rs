@@ -1,12 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_core::polynomial::{ArithCircuitPoly, Expr};
+use binius_core::polynomial::ArithCircuitPoly;
 use binius_field::{
 	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 	PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
-use binius_math::CompositionPolyOS;
+use binius_math::{ArithExpr as Expr, CompositionPolyOS};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::thread_rng;
 

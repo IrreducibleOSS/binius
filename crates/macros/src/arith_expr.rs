@@ -45,7 +45,7 @@ fn rewrite_expr(
 				}
 			}
 			if let Some(i) = var_index {
-				*expr = parse_quote!(binius_core::polynomial::Expr::<#field>::Var(#i));
+				*expr = parse_quote!(binius_math::ArithExpr::<#field>::Var(#i));
 			} else {
 				return Err(syn::Error::new(path.span(), "Unknown variable"));
 			}
@@ -60,7 +60,7 @@ fn rewrite_expr(
 						_ => return Err(syn::Error::new(expr.span(), "You need to specify an explicit field to use constants other than 0 or 1"))
 					}
 				};
-				*expr = parse_quote!(binius_core::polynomial::Expr::<#field>::Const(#value));
+				*expr = parse_quote!(binius_math::ArithExpr::<#field>::Const(#value));
 			}
 		}
 		syn::Expr::Paren(paren) => {

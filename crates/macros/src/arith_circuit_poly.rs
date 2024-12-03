@@ -46,7 +46,7 @@ impl ToTokens for ArithCircuitPolyItem {
 		tokens.extend(quote! {
 			{
 				use binius_field::Field;
-				use binius_core::polynomial::Expr;
+				use binius_math::ArithExpr as Expr;
 
 				let mut result = binius_core::polynomial::ArithCircuitPoly::<binius_field::#field_name>::new(#poly);
 				let composition = #composition_poly;
