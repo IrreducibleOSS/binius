@@ -4,7 +4,7 @@ use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_macros::arith_expr;
 use bytemuck::Pod;
 use rayon::prelude::*;
 
@@ -35,7 +35,7 @@ where
 				*zout = (*xin) & (*yin);
 			});
 	}
-	builder.assert_zero([xin, yin, zout], composition_poly!([x, y, z] = x * y - z));
+	builder.assert_zero([xin, yin, zout], arith_expr!([x, y, z] = x * y - z).convert_field());
 	Ok(zout)
 }
 
@@ -92,6 +92,9 @@ where
 				*zout = (*xin) | (*yin);
 			});
 	}
-	builder.assert_zero([xin, yin, zout], composition_poly!([x, y, z] = (x + y) + (x * y) - z));
+	builder.assert_zero(
+		[xin, yin, zout],
+		arith_expr!([x, y, z] = (x + y) + (x * y) - z).convert_field(),
+	);
 	Ok(zout)
 }

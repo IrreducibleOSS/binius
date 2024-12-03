@@ -91,7 +91,7 @@ enum CircuitStep<F: Field> {
 /// The advantage over a hard coded CompositionPolyOS is that this can be constructed and manipulated dynamically at runtime
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
-pub struct ArithCircuitPoly<F: TowerField> {
+pub struct ArithCircuitPoly<F: Field> {
 	exprs: Arc<[CircuitStep<F>]>,
 	/// The "top level expression", which depends on circuit expression evaluations
 	retval: CircuitStepArgument<F>,
@@ -99,7 +99,7 @@ pub struct ArithCircuitPoly<F: TowerField> {
 	n_vars: usize,
 }
 
-impl<F: TowerField> ArithCircuitPoly<F> {
+impl<F: Field> ArithCircuitPoly<F> {
 	pub fn new(expr: ArithExpr<F>) -> Self {
 		let degree = expr.degree();
 		let n_vars = expr.n_vars();
@@ -111,6 +111,28 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 			degree,
 			n_vars,
 		}
+	}
+
+	/// Constructs an [`ArithCircuitPoly`] with the given number of variables.
+	///
+	/// The number of variables may be greater than the number of variables actually read in the
+	/// arithmetic expression.
+	pub fn with_n_vars(n_vars: usize, expr: ArithExpr<F>) -> Result<Self, Error> {
+		let degree = expr.degree();
+		if n_vars < expr.n_vars() {
+			return Err(Error::IncorrectNumberOfVariables {
+				expected: expr.n_vars(),
+				actual: n_vars,
+			});
+		}
+		let (exprs, retval) = circuit_steps_for_expr(&expr);
+
+		Ok(Self {
+			exprs: exprs.into(),
+			retval,
+			n_vars,
+			degree,
+		})
 	}
 }
 

@@ -2,7 +2,8 @@
 
 use super::{RegularSumcheckProver, UnivariateZerocheck};
 use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, TypeErasedComposition},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
+	polynomial::ArithCircuitPoly,
 	protocols::sumcheck::{
 		constraint_set_sumcheck_claim, CompositeSumClaim, Error, OracleClaimMeta,
 	},
@@ -11,13 +12,11 @@ use crate::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedFieldIndexable, TowerField,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
 use binius_utils::bail;
-use itertools::izip;
-use std::sync::Arc;
 
 pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZerocheck<
 	'a,
@@ -25,8 +24,8 @@ pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZeroc
 	FDomain,
 	PBase,
 	P,
-	TypeErasedComposition<PBase>,
-	TypeErasedComposition<P>,
+	ArithCircuitPoly<<PBase as PackedField>::Scalar>,
+	ArithCircuitPoly<<P as PackedField>::Scalar>,
 	MultilinearWitness<'a, P>,
 	Backend,
 >;
@@ -35,7 +34,7 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 	'a,
 	FDomain,
 	P,
-	TypeErasedComposition<P>,
+	ArithCircuitPoly<<P as PackedField>::Scalar>,
 	MultilinearWitness<'a, P>,
 	Backend,
 >;
@@ -43,8 +42,7 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
 #[allow(clippy::type_complexity)]
 pub fn constraint_set_zerocheck_prover<'a, U, FBase, FW, FDomain, Backend>(
-	constraint_set_base: ConstraintSet<PackedType<U, FBase>>,
-	constraint_set: ConstraintSet<PackedType<U, FW>>,
+	constraint_set: ConstraintSet<FW>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
@@ -56,38 +54,31 @@ pub fn constraint_set_zerocheck_prover<'a, U, FBase, FW, FDomain, Backend>(
 >
 where
 	U: UnderlierType + PackScalar<FBase> + PackScalar<FW> + PackScalar<FDomain>,
-	FBase: ExtensionField<FDomain>,
-	FW: ExtensionField<FDomain> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<FDomain> + TryFrom<FW>,
+	FW: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
 	FDomain: Field,
 	PackedType<U, FW>: PackedFieldIndexable,
 	Backend: ComputationBackend,
 {
-	let (constraints_base, multilinears_base) =
-		split_constraint_set::<_, FBase, _>(constraint_set_base, witness)?;
 	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
-
-	if izip!(&multilinears, multilinears_base)
-		.any(|(multilinear, multilinear_base)| !Arc::ptr_eq(multilinear, &multilinear_base))
-	{
-		bail!(Error::BaseAndExtensionFieldConstraintSetsMismatch);
-	}
 
 	let mut zeros = Vec::new();
 
-	for (
-		Constraint {
-			composition,
-			predicate,
-		},
-		Constraint {
-			composition: composition_base,
-			predicate: predicate_base,
-		},
-	) in izip!(constraints, constraints_base)
+	for Constraint {
+		composition,
+		predicate,
+	} in constraints
 	{
-		match (predicate, predicate_base) {
-			(ConstraintPredicate::Zero, ConstraintPredicate::Zero) => {
-				zeros.push((composition_base, composition));
+		let composition_base = composition
+			.clone()
+			.try_convert_field()
+			.map_err(|_| Error::CircuitFieldDowncastFailed)?;
+		match predicate {
+			ConstraintPredicate::Zero => {
+				zeros.push((
+					ArithCircuitPoly::with_n_vars(multilinears.len(), composition_base)?,
+					ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
+				));
 			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
@@ -107,7 +98,7 @@ where
 
 /// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
 pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
-	constraint_set: ConstraintSet<PackedType<U, FW>>,
+	constraint_set: ConstraintSet<FW>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
@@ -115,7 +106,7 @@ pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
 ) -> Result<OracleSumcheckProver<'a, FDomain, PackedType<U, FW>, Backend>, Error>
 where
 	U: UnderlierType + PackScalar<FW> + PackScalar<FDomain>,
-	FW: ExtensionField<FDomain>,
+	FW: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
@@ -129,7 +120,10 @@ where
 	} in constraints
 	{
 		match predicate {
-			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim { composition, sum }),
+			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
+				composition: ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
+				sum,
+			}),
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
@@ -145,13 +139,13 @@ where
 	Ok(prover)
 }
 
-type ConstraintsAndMultilinears<'a, P, PW> = (Vec<Constraint<P>>, Vec<MultilinearWitness<'a, PW>>);
+type ConstraintsAndMultilinears<'a, F, PW> = (Vec<Constraint<F>>, Vec<MultilinearWitness<'a, PW>>);
 
 #[allow(clippy::type_complexity)]
 fn split_constraint_set<'a, U, F, FW>(
-	constraint_set: ConstraintSet<PackedType<U, F>>,
+	constraint_set: ConstraintSet<F>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
-) -> Result<ConstraintsAndMultilinears<'a, PackedType<U, F>, PackedType<U, FW>>, Error>
+) -> Result<ConstraintsAndMultilinears<'a, F, PackedType<U, FW>>, Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<FW>,
 	F: Field,
@@ -191,7 +185,7 @@ where
 
 /// Constructs sumcheck provers and metas from the vector of [`ConstraintSet`]
 pub fn constraint_sets_sumcheck_provers_metas<'a, U, FW, FDomain, Backend>(
-	constraint_sets: Vec<ConstraintSet<PackedType<U, FW>>>,
+	constraint_sets: Vec<ConstraintSet<FW>>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize,

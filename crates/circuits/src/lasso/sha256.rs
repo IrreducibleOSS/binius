@@ -28,36 +28,30 @@ type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-struct SeveralBitwise<U, F, FBase> {
+struct SeveralBitwise<U, F> {
 	n_lookups: Vec<usize>,
 	lookup_t: OracleId,
 	lookups_u: Vec<OracleId>,
 	u_to_t_mappings: Vec<Vec<usize>>,
 	f: fn(u32, u32, u32) -> u32,
-	_phantom: PhantomData<(U, F, FBase)>,
+	_phantom: PhantomData<(U, F)>,
 }
 
-impl<U, F, FBase> SeveralBitwise<U, F, FBase>
+impl<U, F> SeveralBitwise<U, F>
 where
 	U: UnderlierType
 		+ Pod
 		+ PackScalar<F>
-		+ PackScalar<FBase>
 		+ PackScalar<B1>
 		+ PackScalar<B4>
 		+ PackScalar<B16>
 		+ PackScalar<B32>,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ ExtensionField<FBase>
-		+ ExtensionField<B4>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>,
-	FBase: TowerField,
+	F: TowerField + ExtensionField<B4> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	pub fn new(
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 		f: fn(u32, u32, u32) -> u32,
 	) -> Result<Self> {
 		let lookup_t =
@@ -92,7 +86,7 @@ where
 
 	pub fn calculate(
 		&mut self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 		name: impl ToString,
 		params: [OracleId; 3],
 	) -> Result<OracleId> {
@@ -100,9 +94,9 @@ where
 
 		let log_size = builder.log_rows(params)?;
 
-		let xin_packed = pack::<U, F, FBase, B1, B4>(xin, builder, "xin_packed")?;
-		let yin_packed = pack::<U, F, FBase, B1, B4>(yin, builder, "yin_packed")?;
-		let zin_packed = pack::<U, F, FBase, B1, B4>(zin, builder, "zin_packed")?;
+		let xin_packed = pack::<U, F, B1, B4>(xin, builder, "xin_packed")?;
+		let yin_packed = pack::<U, F, B1, B4>(yin, builder, "yin_packed")?;
+		let zin_packed = pack::<U, F, B1, B4>(zin, builder, "zin_packed")?;
 
 		let res = builder.add_committed(name, log_size, B1::TOWER_LEVEL);
 
@@ -166,12 +160,12 @@ where
 
 	pub fn finalize(
 		self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 		name: impl ToString,
 	) -> Result<()> {
 		let channel = builder.add_channel();
 
-		lasso::<_, _, _, B16, B32>(
+		lasso::<_, _, B16, B32>(
 			builder,
 			name,
 			&self.n_lookups,

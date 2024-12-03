@@ -33,21 +33,20 @@ impl LookupBatch {
 		self.lookup_col_lens.push(lookup_u_col_len);
 	}
 
-	pub fn execute<U, F, FBase, FS, FC>(
+	pub fn execute<U, F, FS, FC>(
 		&mut self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 	) -> Result<(), anyhow::Error>
 	where
-		U: PackScalar<FC> + PackScalar<F> + PackScalar<FBase>,
+		U: PackScalar<FC> + PackScalar<F>,
 		PackedType<U, FC>: PackedFieldIndexable,
 		FC: TowerField,
 		FS: TowerField,
-		F: ExtensionField<FC> + ExtensionField<FBase> + TowerField,
-		FBase: TowerField,
+		F: ExtensionField<FC> + TowerField,
 	{
 		let channel = builder.add_channel();
 
-		lasso::<_, _, _, FS, FC>(
+		lasso::<_, _, FS, FC>(
 			builder,
 			"batched lasso",
 			&self.lookup_col_lens,

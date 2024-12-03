@@ -5,7 +5,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, BinaryField32b,
 	ExtensionField, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_macros::arith_expr;
 use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
@@ -68,7 +68,7 @@ where
 
 	builder.assert_zero(
 		[sum_packed, next_next_packed, enabled],
-		composition_poly!([a, b, enabled] = (a - b) * enabled),
+		arith_expr!(F[a, b, enabled] = (a - b) * enabled),
 	);
 
 	builder.pop_namespace();

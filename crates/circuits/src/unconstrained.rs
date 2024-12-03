@@ -8,15 +8,14 @@ use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
-pub fn unconstrained<U, F, FBase, FS>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn unconstrained<U, F, FS>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FBase> + PackScalar<FS>,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<FS>,
-	FBase: TowerField + ExtensionField<FS>,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FS>,
+	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {
 	let rng = builder.add_committed(name, log_size, FS::TOWER_LEVEL);

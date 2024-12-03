@@ -21,8 +21,8 @@ type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 type B32 = BinaryField32b;
 
-pub fn u32add<U, F, FBase, FInput, FOutput>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn u32add<U, F, FInput, FOutput>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
 	xin: OracleId,
 	yin: OracleId,
@@ -31,7 +31,6 @@ where
 	U: UnderlierType
 		+ Pod
 		+ PackScalar<F>
-		+ PackScalar<FBase>
 		+ PackScalar<B32>
 		+ PackScalar<BinaryField8b>
 		+ PackScalar<BinaryField1b>
@@ -42,14 +41,12 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	B8: ExtensionField<FInput> + ExtensionField<FOutput>,
 	F: TowerField
-		+ ExtensionField<FBase>
 		+ ExtensionField<B32>
 		+ ExtensionField<BinaryField8b>
 		+ ExtensionField<FInput>
 		+ ExtensionField<FOutput>,
 	FInput: TowerField,
 	FOutput: TowerField,
-	FBase: TowerField,
 	B32: TowerField,
 {
 	let mut several = SeveralU32add::new(builder)?;
@@ -58,30 +55,28 @@ where
 	Ok(sum)
 }
 
-pub struct SeveralU32add<U, F, FBase> {
+pub struct SeveralU32add<U, F> {
 	n_lookups: Vec<usize>,
 	lookup_t: OracleId,
 	lookups_u: Vec<OracleId>,
 	u_to_t_mappings: Vec<Vec<usize>>,
 	finalized: bool,
-	_phantom: PhantomData<(U, F, FBase)>,
+	_phantom: PhantomData<(U, F)>,
 }
 
-impl<U, F, FBase> SeveralU32add<U, F, FBase>
+impl<U, F> SeveralU32add<U, F>
 where
 	U: UnderlierType
 		+ Pod
 		+ PackScalar<F>
-		+ PackScalar<FBase>
 		+ PackScalar<B32>
 		+ PackScalar<BinaryField8b>
 		+ PackScalar<BinaryField1b>,
 	PackedType<U, B32>: PackedFieldIndexable,
 	PackedType<U, B8>: PackedFieldIndexable,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<B32> + ExtensionField<BinaryField8b>,
-	FBase: TowerField,
+	F: TowerField + ExtensionField<B32> + ExtensionField<BinaryField8b>,
 {
-	pub fn new(builder: &mut ConstraintSystemBuilder<U, F, FBase>) -> Result<Self> {
+	pub fn new(builder: &mut ConstraintSystemBuilder<U, F>) -> Result<Self> {
 		let lookup_t = builder.add_committed("lookup_t", ADD_T_LOG_SIZE, B32::TOWER_LEVEL);
 
 		if let Some(witness) = builder.witness() {
@@ -116,7 +111,7 @@ where
 
 	pub fn u32add<FInput, FOutput>(
 		&mut self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 		name: impl ToString,
 		xin: OracleId,
 		yin: OracleId,
@@ -148,8 +143,8 @@ where
 
 		let cin = builder.add_shifted("cin", cout, 1, 2, ShiftVariant::LogicalLeft)?;
 
-		let xin_u8 = pack::<_, _, _, FInput, B8>(xin, builder, "repacked xin")?;
-		let yin_u8 = pack::<_, _, _, FInput, B8>(yin, builder, "repacked yin")?;
+		let xin_u8 = pack::<_, _, FInput, B8>(xin, builder, "repacked xin")?;
+		let yin_u8 = pack::<_, _, FInput, B8>(yin, builder, "repacked yin")?;
 
 		let lookup_u = builder.add_linear_combination(
 			"lookup_u",
@@ -236,12 +231,12 @@ where
 
 	pub fn finalize(
 		mut self,
-		builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+		builder: &mut ConstraintSystemBuilder<U, F>,
 		name: impl ToString,
 	) -> Result<()> {
 		let channel = builder.add_channel();
 		self.finalized = true;
-		lasso::<_, _, _, B32, B32>(
+		lasso::<_, _, B32, B32>(
 			builder,
 			name,
 			&self.n_lookups,
@@ -253,7 +248,7 @@ where
 	}
 }
 
-impl<U, F, FBase> Drop for SeveralU32add<U, F, FBase> {
+impl<U, F> Drop for SeveralU32add<U, F> {
 	fn drop(&mut self) {
 		assert!(self.finalized)
 	}

@@ -2,16 +2,12 @@
 
 use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
 use crate::{
-	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
-		TypeErasedComposition,
-	},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 
-use crate::polynomial::CompositionScalarAdapter;
-use binius_field::{PackedField, TowerField};
-use binius_math::CompositionPolyOS;
+use crate::{oracle::TypeErasedComposition, polynomial::ArithCircuitPoly};
+use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
 use std::iter;
 
@@ -29,10 +25,11 @@ pub struct OracleClaimMeta {
 /// Create a sumcheck claim out of constraint set. Fails when the constraint set contains zerochecks.
 /// Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
-pub fn constraint_set_sumcheck_claim<P: PackedField>(
-	constraint_set: ConstraintSet<P>,
-) -> Result<(SumcheckClaim<P::Scalar, impl CompositionPolyOS<P::Scalar>>, OracleClaimMeta), Error> {
+pub fn constraint_set_sumcheck_claim<F: TowerField>(
+	constraint_set: ConstraintSet<F>,
+) -> Result<(SumcheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
+	let n_multilinears = meta.oracle_ids.len();
 
 	let mut sums = Vec::new();
 	for Constraint {
@@ -42,25 +39,25 @@ pub fn constraint_set_sumcheck_claim<P: PackedField>(
 	{
 		match predicate {
 			ConstraintPredicate::Sum(sum) => sums.push(CompositeSumClaim {
-				composition: CompositionScalarAdapter::new(composition),
+				composition: ArithCircuitPoly::with_n_vars(n_multilinears, composition)?,
 				sum,
 			}),
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
 
-	let claim = SumcheckClaim::new(meta.n_vars, meta.oracle_ids.len(), sums)?;
+	let claim = SumcheckClaim::new(meta.n_vars, n_multilinears, sums)?;
 	Ok((claim, meta))
 }
 
 /// Create a zerocheck claim from the constraint set. Fails when the constraint set contains regular sumchecks.
 /// Returns claim and metadata used for evalcheck claim construction.
 #[allow(clippy::type_complexity)]
-pub fn constraint_set_zerocheck_claim<P: PackedField>(
-	constraint_set: ConstraintSet<P>,
-) -> Result<(ZerocheckClaim<P::Scalar, impl CompositionPolyOS<P::Scalar>>, OracleClaimMeta), Error>
-{
+pub fn constraint_set_zerocheck_claim<F: TowerField>(
+	constraint_set: ConstraintSet<F>,
+) -> Result<(ZerocheckClaim<F, ArithCircuitPoly<F>>, OracleClaimMeta), Error> {
 	let (constraints, meta) = split_constraint_set(constraint_set);
+	let n_multilinears = meta.oracle_ids.len();
 
 	let mut zeros = Vec::new();
 	for Constraint {
@@ -69,18 +66,20 @@ pub fn constraint_set_zerocheck_claim<P: PackedField>(
 	} in constraints
 	{
 		match predicate {
-			ConstraintPredicate::Zero => zeros.push(CompositionScalarAdapter::new(composition)),
+			ConstraintPredicate::Zero => {
+				zeros.push(ArithCircuitPoly::with_n_vars(n_multilinears, composition)?)
+			}
 			_ => bail!(Error::MixedBatchingNotSupported),
 		}
 	}
 
-	let claim = ZerocheckClaim::new(meta.n_vars, meta.oracle_ids.len(), zeros)?;
+	let claim = ZerocheckClaim::new(meta.n_vars, n_multilinears, zeros)?;
 	Ok((claim, meta))
 }
 
-fn split_constraint_set<P: PackedField>(
-	constraint_set: ConstraintSet<P>,
-) -> (Vec<Constraint<P>>, OracleClaimMeta) {
+fn split_constraint_set<F: Field>(
+	constraint_set: ConstraintSet<F>,
+) -> (Vec<Constraint<F>>, OracleClaimMeta) {
 	let ConstraintSet {
 		oracle_ids,
 		constraints,
@@ -136,12 +135,9 @@ pub struct SumcheckClaimsWithMeta<F: TowerField, C> {
 }
 
 /// Constructs sumcheck claims and metas from the vector of [`ConstraintSet`]
-pub fn constraint_set_sumcheck_claims<P>(
-	constraint_sets: Vec<ConstraintSet<P>>,
-) -> Result<SumcheckClaimsWithMeta<P::Scalar, impl CompositionPolyOS<P::Scalar>>, Error>
-where
-	P: PackedField<Scalar: TowerField>,
-{
+pub fn constraint_set_sumcheck_claims<F: TowerField>(
+	constraint_sets: Vec<ConstraintSet<F>>,
+) -> Result<SumcheckClaimsWithMeta<F, ArithCircuitPoly<F>>, Error> {
 	let mut claims = Vec::with_capacity(constraint_sets.len());
 	let mut metas = Vec::with_capacity(constraint_sets.len());
 

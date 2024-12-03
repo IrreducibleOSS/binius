@@ -7,21 +7,19 @@ use super::{
 };
 use crate::{
 	oracle::{ConstraintPredicate, MultilinearPolyOracle},
-	polynomial::test_utils::decompose_index_to_hypercube_point,
+	polynomial::{test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField1b, TowerField,
+	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_hal::ComputationBackendExt;
 use binius_math::MultilinearPoly;
 use binius_utils::bail;
 
 pub fn validate_witness<U, F>(
-	constraint_system: &ConstraintSystem<PackedType<U, F>>,
+	constraint_system: &ConstraintSystem<F>,
 	boundaries: &[Boundary<F>],
 	witness: &MultilinearExtensionIndex<'_, U, F>,
 ) -> Result<(), Error>
@@ -40,7 +38,10 @@ where
 		let mut zero_claims = vec![];
 		for constraint in constraint_set.constraints.iter() {
 			match constraint.predicate {
-				ConstraintPredicate::Zero => zero_claims.push(&constraint.composition),
+				ConstraintPredicate::Zero => zero_claims.push(ArithCircuitPoly::with_n_vars(
+					multilinears.len(),
+					constraint.composition.clone(),
+				)?),
 				ConstraintPredicate::Sum(_) => unimplemented!(),
 			}
 		}

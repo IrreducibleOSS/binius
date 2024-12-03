@@ -14,6 +14,8 @@ pub enum Error {
 	DomainSizeTooLarge,
 	#[error("the inputted packed values slice had an unexpected length")]
 	InvalidPackedValuesLength,
+	#[error("remap index identifier not found in superset")]
+	RemapIdentifierNotFound,
 	#[error("duplicate point in domain")]
 	DuplicateDomainPoint,
 	#[error("expected the number of evaluations to match the domain size")]

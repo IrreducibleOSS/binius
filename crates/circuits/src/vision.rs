@@ -20,12 +20,13 @@ use binius_field::{
 	PackedBinaryField8x32b, PackedField, TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
-use binius_math::{CompositionPolyOS, Error};
+use binius_macros::arith_expr;
+use binius_math::ArithExpr;
 use bytemuck::{must_cast_slice, Pod};
-use std::{array, fmt::Debug};
+use std::array;
 
 pub fn vision_permutation<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F, BinaryField64b>,
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	log_size: usize,
 	p_in: [OracleId; STATE_SIZE],
 ) -> Result<[OracleId; STATE_SIZE]>
@@ -66,7 +67,8 @@ where
 	}
 
 	for s in 0..STATE_SIZE {
-		builder.assert_zero([p_in[s], round_0_input[s]], VisionRoundBeginComposition::for_state(s));
+		builder
+			.assert_zero([p_in[s], round_0_input[s]], vision_round_begin_expr(s).convert_field());
 	}
 
 	let perm_out = (0..N_ROUNDS).try_fold(round_0_input, |state, round_i| {
@@ -194,146 +196,44 @@ const MDS_TRANS: [[u8; STATE_SIZE]; STATE_SIZE] = [
 	[0xe2, 0x4c, 0x10, 0x2b, 0x2c, 0x78, 0x0f, 0xaf, 0xfc, 0x2a, 0xf3, 0x66, 0xc7, 0x63, 0xdc, 0x59, 0xf9, 0x06, 0x4e, 0xd6, 0xf4, 0x85, 0x8d, 0x99],
 ];
 
-#[derive(Clone, Debug)]
-struct VisionRoundBeginComposition {
-	constant: BinaryField32b,
+fn vision_round_begin_expr(state_idx: usize) -> ArithExpr<BinaryField32b> {
+	assert!(state_idx < STATE_SIZE);
+	arith_expr!(BinaryField32b[x, y] = x + y + ArithExpr::Const(BinaryField32b::new(VISION_ROUND_0[state_idx])))
 }
 
-impl VisionRoundBeginComposition {
-	fn for_state(state_idx: usize) -> Self {
-		assert!(state_idx < STATE_SIZE);
-		Self {
-			constant: BinaryField32b::new(VISION_ROUND_0[state_idx]),
-		}
-	}
+fn s_box_linearized_eval_expr() -> ArithExpr<BinaryField32b> {
+	let input = ArithExpr::Var(0);
+	let output = ArithExpr::Var(1);
+	// TODO: Square for ArithExpr
+	let input_pow2 = input.clone().pow(2);
+	let input_pow4 = input_pow2.clone().pow(2);
+
+	let result = ArithExpr::Const(SBOX_FWD_CONST)
+		+ input * ArithExpr::Const(SBOX_FWD_TRANS[0])
+		+ input_pow2 * ArithExpr::Const(SBOX_FWD_TRANS[1])
+		+ input_pow4 * ArithExpr::Const(SBOX_FWD_TRANS[2]);
+
+	result - output
 }
 
-impl<P, F> CompositionPolyOS<P> for VisionRoundBeginComposition
-where
-	P: PackedField<Scalar = F>,
-	F: ExtensionField<BinaryField64b> + ExtensionField<BinaryField32b>,
-{
-	fn n_vars(&self) -> usize {
-		2
-	}
+fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
+	let x = ArithExpr::Var(0);
+	let inv = ArithExpr::Var(1);
 
-	fn degree(&self) -> usize {
-		1
-	}
+	// x * inv == 1
+	let non_zero_case = x.clone() * inv.clone() - ArithExpr::one();
 
-	fn evaluate(&self, query: &[P]) -> std::result::Result<P, Error> {
-		let constant = P::broadcast(F::from(self.constant));
-		if query.len() != 2 {
-			return Err(Error::IncorrectQuerySize { expected: 2 });
-		}
-		let x = query[0];
-		let y = query[1];
-		Ok(x + y + constant)
-	}
+	// x == 0 AND inv == 0
+	// TODO: Implement `mul_primitive` expression for ArithExpr
+	let beta = <F as ExtensionField<BinaryField1b>>::basis(1 << 5)?;
+	let zero_case = x + inv * ArithExpr::Const(beta);
 
-	fn binary_tower_level(&self) -> usize {
-		BinaryField32b::TOWER_LEVEL
-	}
-}
-
-#[derive(Debug, Clone)]
-struct SBoxFwdDegree4Composition {
-	coefficients: [BinaryField32b; 4],
-}
-
-impl Default for SBoxFwdDegree4Composition {
-	fn default() -> Self {
-		Self {
-			coefficients: [
-				SBOX_FWD_CONST,
-				SBOX_FWD_TRANS[0],
-				SBOX_FWD_TRANS[1],
-				SBOX_FWD_TRANS[2],
-			],
-		}
-	}
-}
-
-impl<P> CompositionPolyOS<P> for SBoxFwdDegree4Composition
-where
-	P: PackedField<Scalar: ExtensionField<BinaryField64b> + ExtensionField<BinaryField32b>>,
-{
-	fn n_vars(&self) -> usize {
-		2
-	}
-
-	fn degree(&self) -> usize {
-		4
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		if query.len() != 2 {
-			return Err(binius_math::Error::IncorrectQuerySize { expected: 2 });
-		}
-
-		let pow4_mul = P::broadcast(P::Scalar::from(self.coefficients[3]));
-		let pow2_mul = P::broadcast(P::Scalar::from(self.coefficients[2]));
-		let pow0_mul = P::broadcast(P::Scalar::from(self.coefficients[1]));
-		let constant = P::broadcast(P::Scalar::from(self.coefficients[0]));
-		let input = query[0];
-		let input_pow2 = input.square();
-		let input_pow4 = input_pow2.square();
-
-		let result = constant + input * pow0_mul + input_pow2 * pow2_mul + input_pow4 * pow4_mul;
-
-		Ok(result - query[1])
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		BinaryField32b::TOWER_LEVEL
-	}
-}
-
-#[derive(Debug, Clone)]
-struct InvConstraint;
-
-impl<P, F> CompositionPolyOS<P> for InvConstraint
-where
-	F: TowerField + ExtensionField<BinaryField64b> + ExtensionField<BinaryField32b>,
-	P: PackedField<Scalar = F>,
-{
-	fn n_vars(&self) -> usize {
-		2
-	}
-
-	fn degree(&self) -> usize {
-		3
-	}
-
-	fn evaluate(&self, query: &[P]) -> std::result::Result<P, Error> {
-		if query.len() != 2 {
-			return Err(binius_math::Error::IncorrectQuerySize { expected: 2 });
-		}
-
-		let x = query[0];
-		let x_inv = query[1];
-
-		// x * x_inv = 1 case
-		let non_zero_case = x * x_inv - F::ONE;
-
-		// x == 0 and x_inv == 0 case
-		let zero_case = x + P::from_fn(|i| unsafe {
-			x_inv
-				.get_unchecked(i)
-				.mul_primitive(BinaryField32b::TOWER_LEVEL)
-				.expect("F must be tower height at least 6 for inverse constraint")
-		});
-
-		Ok(non_zero_case * zero_case)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		BinaryField64b::TOWER_LEVEL
-	}
+	// (x * inv == 1) OR (x == 0 AND inv == 0)
+	Ok(non_zero_case * zero_case)
 }
 
 fn vision_round<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F, BinaryField64b>,
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	log_size: usize,
 	round_i: usize,
 	perm_in: [OracleId; STATE_SIZE],
@@ -548,13 +448,15 @@ where
 	// zero check constraints
 	for s in 0..STATE_SIZE {
 		// Making sure inv_0 is the inverse of the permutation input
-		builder.assert_zero([perm_in[s], inv_0[s]], InvConstraint);
+		builder.assert_zero([perm_in[s], inv_0[s]], inv_constraint_expr()?);
 		// Making sure inv_1 is the inverse of round_out_0
-		builder.assert_zero([round_out_0[s], inv_1[s]], InvConstraint);
+		builder.assert_zero([round_out_0[s], inv_1[s]], inv_constraint_expr()?);
 
 		// Sbox composition checks
-		builder.assert_zero([s_box_out_0[s], inv_0[s]], SBoxFwdDegree4Composition::default());
-		builder.assert_zero([inv_1[s], s_box_out_1[s]], SBoxFwdDegree4Composition::default());
+		builder
+			.assert_zero([s_box_out_0[s], inv_0[s]], s_box_linearized_eval_expr().convert_field());
+		builder
+			.assert_zero([inv_1[s], s_box_out_1[s]], s_box_linearized_eval_expr().convert_field());
 	}
 
 	Ok(perm_out)

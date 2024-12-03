@@ -43,14 +43,13 @@ fn main() -> Result<()> {
 	let log_n_multiplications = log2_ceil_usize(args.n_multiplications as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder =
-		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField32b>::new_with_witness(&allocator);
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
+	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
 		&mut builder,
 		"in_a",
 		log_n_multiplications,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
 		&mut builder,
 		"in_b",
 		log_n_multiplications,
@@ -69,7 +68,7 @@ fn main() -> Result<()> {
 		args.n_multiplications as usize,
 	)?;
 
-	lookup_batch.execute::<_, _, _, BinaryField32b, BinaryField32b>(&mut builder)?;
+	lookup_batch.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)?;
 
 	let witness = builder
 		.take_witness()
@@ -82,7 +81,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
+		BinaryField8b,
 		_,
 		_,
 		GroestlHasher<BinaryField128b>,

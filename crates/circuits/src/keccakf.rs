@@ -10,28 +10,22 @@ use binius_core::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, BinaryField64b, ExtensionField, PackedField, TowerField,
+	BinaryField1b, BinaryField64b, PackedField, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_macros::arith_expr;
 use bytemuck::{pod_collect_to_vec, Pod};
 
 const STATE_SIZE: usize = 25;
 
-pub fn keccakf_round<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn keccakf_round<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	state_in: [OracleId; STATE_SIZE],
 	round_within_permutation: usize,
 	log_size: usize,
 ) -> Result<[OracleId; STATE_SIZE], anyhow::Error>
 where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<BinaryField64b>,
-	F: TowerField + ExtensionField<FBase>,
-	FBase: TowerField,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField64b>,
+	F: TowerField,
 	<U as PackScalar<BinaryField64b>>::Packed: Pod,
 {
 	let broadcasted_round_constant = <PackedType<U, BinaryField64b>>::broadcast(
@@ -206,8 +200,8 @@ where
 		}
 	}
 
-	let chi_iota = composition_poly!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2));
-	let chi = composition_poly!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2));
+	let chi_iota = arith_expr!([s, b0, b1, b2, rc] = s - (rc + b0 + (1 - b1) * b2));
+	let chi = arith_expr!([s, b0, b1, b2] = s - (b0 + (1 - b1) * b2));
 
 	for x in 0..5 {
 		for y in 0..5 {
@@ -220,7 +214,7 @@ where
 						b[(x + 2) % 5 + 5 * y],
 						round_consts,
 					],
-					chi_iota,
+					chi_iota.clone().convert_field(),
 				);
 			} else {
 				builder.assert_zero(
@@ -230,7 +224,7 @@ where
 						b[(x + 1) % 5 + 5 * y],
 						b[(x + 2) % 5 + 5 * y],
 					],
-					chi,
+					chi.clone().convert_field(),
 				)
 			}
 		}
@@ -239,20 +233,14 @@ where
 	Ok(state_out)
 }
 
-pub fn keccakf<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn keccakf<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	input: [OracleId; STATE_SIZE],
 	log_size: usize,
 ) -> Result<[OracleId; STATE_SIZE], anyhow::Error>
 where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<BinaryField64b>,
-	F: TowerField + ExtensionField<FBase>,
-	FBase: TowerField,
+	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField64b>,
+	F: TowerField,
 	<U as PackScalar<BinaryField64b>>::Packed: Pod,
 {
 	let mut state = input;

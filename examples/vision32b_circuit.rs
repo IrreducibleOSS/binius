@@ -53,10 +53,9 @@ fn main() -> Result<()> {
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder =
-		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField64b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 	let state_in: [OracleId; 24] = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField32b>(
+		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField32b>(
 			&mut builder,
 			format!("p_in_{i}"),
 			log_n_permutations + LOG_ROWS_PER_PERMUTATION,
@@ -80,7 +79,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
+		BinaryField64b,
 		_,
 		_,
 		GroestlHasher<BinaryField128b>,

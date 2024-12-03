@@ -49,7 +49,7 @@ use tracing::instrument;
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]
 pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
-	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	domain_factory: DomainFactory,
@@ -78,7 +78,7 @@ where
 
 /// Verifies a proof against a constraint system with provided PCSs.
 fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
-	constraint_system: &ConstraintSystem<PackedType<U, FExt<Tower>>>,
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	proof: Proof,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 ) -> Result<(), Error>

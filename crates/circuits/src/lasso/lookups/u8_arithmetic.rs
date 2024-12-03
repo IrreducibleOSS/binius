@@ -18,28 +18,16 @@ const T_LOG_SIZE_MUL: usize = 16;
 const T_LOG_SIZE_ADD: usize = 17;
 const T_LOG_SIZE_DCI: usize = 10;
 
-pub fn mul_lookup<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn mul_lookup<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 
@@ -64,28 +52,16 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_lookup<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn add_lookup<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 
@@ -118,28 +94,16 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_carryfree_lookup<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn add_carryfree_lookup<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 
@@ -174,28 +138,16 @@ where
 	Ok(lookup_t)
 }
 
-pub fn dci_lookup<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn dci_lookup<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 

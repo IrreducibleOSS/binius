@@ -7,7 +7,7 @@ mod prove;
 pub mod validate;
 mod verify;
 
-use binius_field::{PackedField, TowerField};
+use binius_field::TowerField;
 use channel::{ChannelId, Flush};
 pub use prove::prove;
 pub use verify::verify;
@@ -22,21 +22,19 @@ use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
 /// As a result, a ConstraintSystem allows us to validate all of these
 /// constraints against a witness, as well as enabling generic prove/verify
 #[derive(Debug, Clone)]
-pub struct ConstraintSystem<P: PackedField<Scalar: TowerField>, PBase: PackedField = P> {
-	pub oracles: MultilinearOracleSet<P::Scalar>,
-	pub table_constraints: Vec<ConstraintSet<P>>,
-	pub table_constraints_base: Vec<ConstraintSet<PBase>>,
+pub struct ConstraintSystem<F: TowerField> {
+	pub oracles: MultilinearOracleSet<F>,
+	pub table_constraints: Vec<ConstraintSet<F>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush>,
 	pub max_channel_id: ChannelId,
 }
 
-impl<P: PackedField<Scalar: TowerField>, PBase: PackedField> ConstraintSystem<P, PBase> {
-	pub fn no_base_constraints(self) -> ConstraintSystem<P> {
+impl<F: TowerField> ConstraintSystem<F> {
+	pub fn no_base_constraints(self) -> ConstraintSystem<F> {
 		ConstraintSystem {
 			oracles: self.oracles,
-			table_constraints: self.table_constraints.clone(),
-			table_constraints_base: self.table_constraints,
+			table_constraints: self.table_constraints,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			flushes: self.flushes,
 			max_channel_id: self.max_channel_id,

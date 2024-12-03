@@ -13,16 +13,15 @@ use rayon::prelude::*;
 
 use crate::builder::ConstraintSystemBuilder;
 
-pub fn step_down<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn step_down<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,
 	index: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FBase> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField + ExtensionField<FBase>,
-	FBase: TowerField,
+	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b> + Pod,
+	F: TowerField,
 {
 	let step_down = transparent::step_down::StepDown::new(log_size, index)?;
 	let id = builder.add_transparent(name, step_down)?;
@@ -44,17 +43,16 @@ where
 	Ok(id)
 }
 
-pub fn constant<U, F, FS, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn constant<U, F, FS>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,
 	value: FS,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FS> + PackScalar<FBase>,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<FS>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FS>,
+	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
-	FBase: TowerField,
 {
 	let poly = transparent::constant::Constant::new(log_size, value);
 	let id = builder.add_transparent(name, poly)?;

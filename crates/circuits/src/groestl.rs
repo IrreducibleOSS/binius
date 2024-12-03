@@ -6,29 +6,24 @@ use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, Field, PackedField, TowerField,
+	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, PackedField, TowerField,
 };
-use binius_math::CompositionPolyOS;
+use binius_math::ArithExpr;
 use bytemuck::Pod;
 use rayon::prelude::*;
-use std::{array, fmt::Debug, iter};
+use std::array;
 
-pub fn groestl_p_permutation<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn groestl_p_permutation<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	log_size: usize,
 ) -> Result<[OracleId; STATE_SIZE]>
 where
-	U: PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Pod,
-	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<AESTowerField8b>,
+	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b> + Pod,
+	F: TowerField + ExtensionField<AESTowerField8b>,
 	PackedType<U, F>: Pod,
 {
 	let p_in = array::try_from_fn(|i| {
-		unconstrained::<U, F, FBase, AESTowerField8b>(builder, format!("p_in[{i}]"), log_size)
+		unconstrained::<U, F, AESTowerField8b>(builder, format!("p_in[{i}]"), log_size)
 	})?;
 	let multiples_16: [_; 8] = array::from_fn(|i| {
 		transparent::constant(
@@ -80,21 +75,16 @@ where
 }
 
 #[allow(clippy::needless_range_loop)]
-fn groestl_p_permutation_round<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+fn groestl_p_permutation_round<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,
 	round_consts: [OracleId; 8],
 	input: [OracleId; STATE_SIZE],
 ) -> Result<[OracleId; STATE_SIZE]>
 where
-	U: PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Pod,
-	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<AESTowerField8b>,
+	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b> + Pod,
+	F: TowerField + ExtensionField<AESTowerField8b>,
 {
 	builder.push_namespace(name);
 
@@ -159,27 +149,22 @@ where
 			mix_shift_oracles[k + 1] = p_sub_bytes_out[i_prime * 8 + j_prime];
 		}
 		// This is not required if the columns are virtual
-		builder.assert_zero(mix_shift_oracles, MixColumn::<AESTowerField8b>::default());
+		builder.assert_zero(mix_shift_oracles, mix_column_expr().convert_field());
 	}
 
 	builder.pop_namespace();
 	Ok(output)
 }
 
-fn groestl_p_permutation_sbox<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+fn groestl_p_permutation_sbox<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	log_size: usize,
 	input: OracleId,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Pod,
-	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<AESTowerField8b>,
+	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b> + Pod,
+	F: TowerField + ExtensionField<AESTowerField8b>,
 {
 	builder.push_namespace(name);
 	let inv_bits: [OracleId; 8] =
@@ -227,27 +212,22 @@ where
 		}
 	}
 
-	builder.assert_zero([input, inv], SBoxConstraint);
+	builder.assert_zero([input, inv], s_box_expr()?);
 	builder.pop_namespace();
 	Ok(output)
 }
 
 // TODO: Get rid of round constants and bake them into the constraints
-fn permutation_round_consts<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+fn permutation_round_consts<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	log_size: usize,
 	round_index: usize,
 	multiples_16: [OracleId; 8],
 	input: [OracleId; STATE_SIZE],
 ) -> Result<[OracleId; 8], anyhow::Error>
 where
-	U: PackScalar<F>
-		+ PackScalar<FBase>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<AESTowerField8b>
-		+ Pod,
-	F: TowerField + ExtensionField<AESTowerField8b> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<AESTowerField8b>,
+	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<AESTowerField8b> + Pod,
+	F: TowerField + ExtensionField<AESTowerField8b>,
 {
 	let round = transparent::constant(
 		builder,
@@ -327,91 +307,30 @@ const MIX_BYTES_VEC: [AESTowerField8b; 8] = [
 	AESTowerField8b::new(0x07),
 ];
 
-#[derive(Debug, Clone)]
-struct MixColumn<F8b: Clone> {
-	mix_bytes: [F8b; 8],
+fn mix_column_expr() -> ArithExpr<AESTowerField8b> {
+	let output = ArithExpr::<AESTowerField8b>::Var(0);
+	let mixed = MIX_BYTES_VEC
+		.into_iter()
+		.enumerate()
+		.map(|(i, coeff)| ArithExpr::Var(i + 1) * ArithExpr::Const(coeff))
+		.sum::<ArithExpr<_>>();
+	mixed - output
 }
 
-impl<F8b: Clone + From<AESTowerField8b>> Default for MixColumn<F8b> {
-	fn default() -> Self {
-		Self {
-			mix_bytes: MIX_BYTES_VEC.map(F8b::from),
-		}
-	}
-}
+fn s_box_expr<F: TowerField>() -> Result<ArithExpr<F>> {
+	let x = ArithExpr::Var(0);
+	let inv = ArithExpr::Var(1);
 
-impl<F8b, P> CompositionPolyOS<P> for MixColumn<F8b>
-where
-	F8b: Field,
-	P: PackedField<Scalar: ExtensionField<F8b>>,
-{
-	fn n_vars(&self) -> usize {
-		9
-	}
+	// x * inv == 1
+	let non_zero_case = x.clone() * inv.clone() - ArithExpr::one();
 
-	fn degree(&self) -> usize {
-		1
-	}
+	// x == 0 AND inv == 0
+	// TODO: Implement `mul_primitive` expression for ArithExpr
+	let beta = <F as ExtensionField<BinaryField1b>>::basis(1 << 3)?;
+	let zero_case = x + inv * ArithExpr::Const(beta);
 
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		if query.len() != 9 {
-			return Err(binius_math::Error::IncorrectQuerySize { expected: 9 });
-		}
-
-		// This is unfortunate that it needs to unpack and repack...
-		let result = iter::zip(query[1..].iter(), self.mix_bytes)
-			.map(|(x_i, coeff)| P::from_fn(|j| x_i.get(j) * coeff))
-			.sum::<P>();
-		Ok(result - query[0])
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		AESTowerField8b::TOWER_LEVEL
-	}
-}
-
-#[derive(Debug, Clone)]
-struct SBoxConstraint;
-
-impl<F, P> CompositionPolyOS<P> for SBoxConstraint
-where
-	F: TowerField,
-	P: PackedField<Scalar = F>,
-{
-	fn n_vars(&self) -> usize {
-		2
-	}
-
-	fn degree(&self) -> usize {
-		3
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		if query.len() != 2 {
-			return Err(binius_math::Error::IncorrectQuerySize { expected: 2 });
-		}
-
-		let x = query[0];
-		let inv = query[1];
-
-		// x * inv == 1
-		let non_zero_case = x * inv - F::ONE;
-
-		// x == 0 AND inv == 0
-		// TODO: Implement `mul_primitive` on packed tower fields
-		let zero_case = x + P::from_fn(|i| {
-			unsafe { inv.get_unchecked(i) }
-				.mul_primitive(3)
-				.expect("F must be tower height at least 4 by struct invariant")
-		});
-
-		// (x * inv == 1) OR (x == 0 AND inv == 0)
-		Ok(non_zero_case * zero_case)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		4
-	}
+	// (x * inv == 1) OR (x == 0 AND inv == 0)
+	Ok(non_zero_case * zero_case)
 }
 
 fn s_box(x: AESTowerField8b) -> AESTowerField8b {

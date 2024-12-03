@@ -11,8 +11,8 @@ use itertools::{izip, Itertools};
 
 use crate::{builder::ConstraintSystemBuilder, transparent};
 
-pub fn lasso<U, F, FBase, FS, FC>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn lasso<U, F, FS, FC>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 	n_lookups: &[usize],
 	u_to_t_mappings: &[Vec<usize>],
@@ -21,10 +21,9 @@ pub fn lasso<U, F, FBase, FS, FC>(
 	channel: ChannelId,
 ) -> Result<()>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FBase> + PackScalar<FC>,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<FC> + From<FC>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FC>,
+	F: TowerField + ExtensionField<FC> + From<FC>,
 	PackedType<U, FC>: PackedFieldIndexable,
-	FBase: TowerField,
 	FC: TowerField,
 	FS: TowerField,
 {

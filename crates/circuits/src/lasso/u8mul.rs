@@ -18,8 +18,8 @@ type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-pub fn u8mul_bytesliced<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn u8mul_bytesliced<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	lookup_batch: &mut LookupBatch,
 	name: impl ToString + Clone,
 	mult_a: OracleId,
@@ -27,23 +27,11 @@ pub fn u8mul_bytesliced<U, F, FBase>(
 	n_multiplications: usize,
 ) -> Result<[OracleId; 2], anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 	let log_rows = builder.log_rows([mult_a, mult_b])?;
@@ -104,8 +92,8 @@ where
 	Ok(product)
 }
 
-pub fn u8mul<U, F, FBase>(
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+pub fn u8mul<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	lookup_batch: &mut LookupBatch,
 	name: impl ToString + Clone,
 	mult_a: OracleId,
@@ -113,23 +101,11 @@ pub fn u8mul<U, F, FBase>(
 	n_multiplications: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>
-		+ PackScalar<FBase>,
+	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
 	PackedType<U, B8>: PackedFieldIndexable,
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ BinaryField
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<FBase>,
-	FBase: TowerField,
+	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
 	builder.push_namespace(name.clone());
 

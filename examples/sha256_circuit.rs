@@ -48,7 +48,7 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
 	let input: [OracleId; 16] = array::from_fn(|i| {
-		unconstrained::<_, _, _, BinaryField1b>(
+		unconstrained::<_, _, BinaryField1b>(
 			&mut builder,
 			i,
 			log_n_compressions + COMPRESSION_LOG_LEN,
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
+		BinaryField8b,
 		_,
 		_,
 		GroestlHasher<BinaryField128b>,

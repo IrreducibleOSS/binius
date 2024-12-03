@@ -10,7 +10,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField1b, PackedField, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_macros::arith_expr;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{pod_collect_to_vec, Pod};
 use itertools::izip;
@@ -256,12 +256,12 @@ where
 
 		builder.assert_zero(
 			[e, f, g, ch[i]],
-			composition_poly!([e, f, g, ch] = (e * f + (1 - e) * g) - ch),
+			arith_expr!([e, f, g, ch] = (e * f + (1 - e) * g) - ch).convert_field(),
 		);
 
 		builder.assert_zero(
 			[a, b, c, maj[i]],
-			composition_poly!([a, b, c, maj] = maj - a * b + a * c + b * c),
+			arith_expr!([a, b, c, maj] = maj - a * b + a * c + b * c).convert_field(),
 		);
 
 		h = g;

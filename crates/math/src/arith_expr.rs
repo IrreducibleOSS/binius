@@ -5,6 +5,7 @@ use binius_field::Field;
 use std::{
 	cmp::max,
 	fmt::{self, Display},
+	iter::{Product, Sum},
 	ops::{Add, Mul, Sub},
 };
 
@@ -48,12 +49,20 @@ impl<F: Field> ArithExpr<F> {
 			ArithExpr::Var(_) => 1,
 			ArithExpr::Add(left, right) => max(left.degree(), right.degree()),
 			ArithExpr::Mul(left, right) => left.degree() + right.degree(),
-			ArithExpr::Pow(_, exp) => *exp as usize,
+			ArithExpr::Pow(base, exp) => base.degree() * *exp as usize,
 		}
 	}
 
 	pub fn pow(self, exp: u64) -> Self {
 		ArithExpr::Pow(Box::new(self), exp)
+	}
+
+	pub const fn zero() -> Self {
+		ArithExpr::Const(F::ZERO)
+	}
+
+	pub const fn one() -> Self {
+		ArithExpr::Const(F::ONE)
 	}
 
 	/// Creates a new expression with the variable indices remapped.
@@ -174,11 +183,35 @@ where
 	}
 }
 
+impl<F: Field> Sum for ArithExpr<F> {
+	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| acc + item).unwrap_or(Self::zero())
+	}
+}
+
+impl<F: Field> Product for ArithExpr<F> {
+	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+		iter.reduce(|acc, item| acc * item).unwrap_or(Self::one())
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField128b, BinaryField1b, BinaryField8b};
+
+	#[test]
+	fn test_degree_with_pow() {
+		let expr = ArithExpr::Const(BinaryField8b::new(6)).pow(7);
+		assert_eq!(expr.degree(), 0);
+
+		let expr: ArithExpr<BinaryField8b> = ArithExpr::Var(0).pow(7);
+		assert_eq!(expr.degree(), 7);
+
+		let expr: ArithExpr<BinaryField8b> = (ArithExpr::Var(0) * ArithExpr::Var(1)).pow(7);
+		assert_eq!(expr.degree(), 14);
+	}
 
 	#[test]
 	fn test_remap_vars_with_too_few_vars() {

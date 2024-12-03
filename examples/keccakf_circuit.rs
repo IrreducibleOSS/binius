@@ -44,13 +44,12 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 
-	let mut builder =
-		ConstraintSystemBuilder::<U, BinaryField128b, BinaryField8b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
 	let log_size = log_n_permutations + LOG_ROWS_PER_PERMUTATION;
 
 	let input = array::from_fn(|_| {
-		unconstrained::<_, _, _, BinaryField1b>(&mut builder, "input", log_size).unwrap()
+		unconstrained::<_, _, BinaryField1b>(&mut builder, "input", log_size).unwrap()
 	});
 
 	let _state_out = binius_circuits::keccakf::keccakf(&mut builder, input, log_size);
@@ -66,7 +65,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
+		BinaryField8b,
 		_,
 		_,
 		GroestlHasher<BinaryField128b>,

@@ -7,18 +7,17 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
 };
 
-pub fn pack<U, F, FBase, FInput, FOutput>(
+pub fn pack<U, F, FInput, FOutput>(
 	oracle_id: OracleId,
-	builder: &mut ConstraintSystemBuilder<U, F, FBase>,
+	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
 ) -> Result<OracleId>
 where
-	F: TowerField + ExtensionField<FInput> + ExtensionField<FOutput> + ExtensionField<FBase>,
+	F: TowerField + ExtensionField<FInput> + ExtensionField<FOutput>,
 	FInput: TowerField,
-	FBase: TowerField,
 	FOutput: TowerField,
 	FOutput: ExtensionField<FInput>,
-	U: UnderlierType + PackScalar<F> + PackScalar<FInput> + PackScalar<FOutput> + PackScalar<FBase>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FInput> + PackScalar<FOutput>,
 {
 	if FInput::TOWER_LEVEL == FOutput::TOWER_LEVEL {
 		return Ok(oracle_id);

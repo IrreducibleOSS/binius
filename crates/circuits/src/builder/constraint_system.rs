@@ -16,25 +16,19 @@ use binius_core::{
 	polynomial::MultivariatePoly,
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, TowerField,
-};
-use binius_math::CompositionPolyOS;
+use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use binius_math::ArithExpr;
 use binius_utils::bail;
 
 #[derive(Default)]
-pub struct ConstraintSystemBuilder<'arena, U, F, FBase = F>
+pub struct ConstraintSystemBuilder<'arena, U, F>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FBase>,
-	F: TowerField + ExtensionField<FBase>,
-	FBase: TowerField,
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
 {
 	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	batch_ids: Vec<(usize, usize, BatchId)>,
-	constraints: ConstraintSetBuilder<PackedType<U, F>>,
-	constraints_base: ConstraintSetBuilder<PackedType<U, FBase>>,
+	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
 	witness: Option<witness::Builder<'arena, U, F>>,
@@ -42,11 +36,10 @@ where
 	namespace_path: Vec<String>,
 }
 
-impl<'arena, U, F, FBase> ConstraintSystemBuilder<'arena, U, F, FBase>
+impl<'arena, U, F> ConstraintSystemBuilder<'arena, U, F>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FBase>,
-	F: TowerField + ExtensionField<FBase>,
-	FBase: TowerField,
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
 {
 	pub fn new() -> Self {
 		Self::default()
@@ -62,11 +55,8 @@ where
 	}
 
 	#[allow(clippy::type_complexity)]
-	pub fn build(
-		self,
-	) -> Result<ConstraintSystem<PackedType<U, F>, PackedType<U, FBase>>, anyhow::Error> {
+	pub fn build(self) -> Result<ConstraintSystem<F>, anyhow::Error> {
 		let table_constraints = self.constraints.build(&self.oracles.borrow())?;
-		let table_constraints_base = self.constraints_base.build(&self.oracles.borrow())?;
 		Ok(ConstraintSystem {
 			max_channel_id: self
 				.flushes
@@ -75,7 +65,6 @@ where
 				.max()
 				.unwrap_or(0),
 			table_constraints,
-			table_constraints_base,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			oracles: Rc::into_inner(self.oracles)
 				.ok_or(anyhow!(
@@ -136,13 +125,8 @@ where
 	pub fn assert_zero<const N: usize>(
 		&mut self,
 		oracle_ids: [OracleId; N],
-		composition: impl Clone
-			+ CompositionPolyOS<PackedType<U, F>>
-			+ CompositionPolyOS<PackedType<U, FBase>>
-			+ 'static,
+		composition: ArithExpr<F>,
 	) {
-		self.constraints_base
-			.add_zerocheck(oracle_ids, composition.clone());
 		self.constraints.add_zerocheck(oracle_ids, composition);
 	}
 

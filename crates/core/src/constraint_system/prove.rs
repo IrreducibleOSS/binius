@@ -48,7 +48,7 @@ use tracing::instrument;
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
-	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>, PackedType<U, FBase>>,
+	constraint_system: &ConstraintSystem<Tower::B128>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	witness: MultilinearExtensionIndex<U, Tower::B128>,
@@ -59,7 +59,7 @@ where
 	U: TowerUnderlier<Tower> + PackScalar<FBase>,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<Tower::B8>,
+	FBase: TowerField + ExtensionField<Tower::B8> + TryFrom<Tower::B128>,
 	DomainFactory: EvaluationDomainFactory<Tower::B8>,
 	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
@@ -99,7 +99,7 @@ fn prove_with_pcs<
 	Digest,
 	Backend,
 >(
-	constraint_system: &ConstraintSystem<PackedType<U, Tower::B128>, PackedType<U, FBase>>,
+	constraint_system: &ConstraintSystem<Tower::B128>,
 	mut witness: MultilinearExtensionIndex<U, Tower::B128>,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 	domain_factory: DomainFactory,
@@ -109,7 +109,7 @@ where
 	U: TowerUnderlier<Tower> + PackScalar<FDomain> + PackScalar<FBase>,
 	Tower: TowerFamily,
 	Tower::B128: ExtensionField<FBase> + ExtensionField<FDomain>,
-	FBase: TowerField + ExtensionField<FDomain>,
+	FBase: TowerField + ExtensionField<FDomain> + TryFrom<Tower::B128>,
 	FDomain: TowerField,
 	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
@@ -129,7 +129,6 @@ where
 	let ConstraintSystem {
 		mut oracles,
 		mut table_constraints,
-		mut table_constraints_base,
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
@@ -137,7 +136,6 @@ where
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
-	table_constraints_base.sort_by_key(|constraint_set_base| Reverse(constraint_set_base.n_vars));
 
 	// Commit polynomials
 	let (commitments, committeds) = constraint_system
@@ -279,11 +277,11 @@ where
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
-	let mut univariate_provers = izip!(table_constraints_base, table_constraints)
-		.map(|(constraint_set_base, constraint_set)| {
+	let mut univariate_provers = table_constraints
+		.into_iter()
+		.map(|constraint_set| {
 			let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
 			sumcheck::prove::constraint_set_zerocheck_prover::<U, FBase, Tower::B128, FDomain, _>(
-				constraint_set_base,
 				constraint_set,
 				&witness,
 				&domain_factory,

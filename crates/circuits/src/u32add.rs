@@ -5,7 +5,7 @@ use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
-use binius_macros::composition_poly;
+use binius_macros::arith_expr;
 use bytemuck::Pod;
 use rayon::prelude::*;
 
@@ -46,7 +46,7 @@ where
 
 	builder.assert_zero(
 		[xin, yin, cin, cout],
-		composition_poly!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout),
+		arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout).convert_field(),
 	);
 	Ok(())
 }
@@ -98,7 +98,7 @@ where
 
 	builder.assert_zero(
 		[xin, yin, cin, zout],
-		composition_poly!([xin, yin, cin, zout] = xin + yin + cin - zout),
+		arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
 	);
 
 	builder.pop_namespace();

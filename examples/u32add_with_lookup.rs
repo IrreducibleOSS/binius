@@ -41,17 +41,17 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
+	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
 		&mut builder,
 		"in_a",
 		log_n_additions + 2,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, _, BinaryField8b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
 		&mut builder,
 		"in_b",
 		log_n_additions + 2,
 	)?;
-	let _product = binius_circuits::lasso::u32add::<_, _, _, BinaryField8b, BinaryField8b>(
+	let _product = binius_circuits::lasso::u32add::<_, _, BinaryField8b, BinaryField8b>(
 		&mut builder,
 		"out_c",
 		in_a,
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		_,
+		BinaryField8b,
 		_,
 		_,
 		GroestlHasher<BinaryField128b>,

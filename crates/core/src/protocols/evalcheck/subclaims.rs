@@ -16,7 +16,6 @@ use super::{
 	EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
 };
 use crate::{
-	composition::BivariateProduct,
 	fiat_shamir::CanSample,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
@@ -40,7 +39,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::{EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
+use binius_math::{ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
 use binius_utils::bail;
 use tracing::instrument;
 
@@ -77,7 +76,7 @@ pub fn process_shifted_sumcheck<U, F, Backend>(
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<PackedType<U, F>>>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	backend: &Backend,
 ) -> Result<(), Error>
 where
@@ -135,11 +134,11 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	})
 }
 
-pub fn add_bivariate_sumcheck_to_constraints<P: PackedField>(
+pub fn add_bivariate_sumcheck_to_constraints<F: Field>(
 	meta: ProjectedBivariateMeta,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<P>>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	n_vars: usize,
-	eval: P::Scalar,
+	eval: F,
 ) {
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
@@ -148,12 +147,13 @@ pub fn add_bivariate_sumcheck_to_constraints<P: PackedField>(
 	add_bivariate_sumcheck_to_constraint_builder(meta, &mut constraint_builders[n_vars - 1], eval);
 }
 
-fn add_bivariate_sumcheck_to_constraint_builder<P: PackedField>(
+fn add_bivariate_sumcheck_to_constraint_builder<F: Field>(
 	meta: ProjectedBivariateMeta,
-	constraint_builder: &mut ConstraintSetBuilder<P>,
-	eval: P::Scalar,
+	constraint_builder: &mut ConstraintSetBuilder<F>,
+	eval: F,
 ) {
-	constraint_builder.add_sumcheck(meta.oracle_ids(), BivariateProduct {}, eval);
+	let bivariate_product = ArithExpr::Var(0) * ArithExpr::Var(1);
+	constraint_builder.add_sumcheck(meta.oracle_ids(), bivariate_product, eval);
 }
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
@@ -165,7 +165,7 @@ pub fn process_packed_sumcheck<U, F, Backend>(
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<PackedType<U, F>>>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	backend: &Backend,
 ) -> Result<(), Error>
 where
@@ -435,7 +435,7 @@ type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
 	oracles: &MultilinearOracleSet<F>,
 	witness: &MultilinearExtensionIndex<U, F>,
-	constraint_sets: Vec<ConstraintSet<PackedType<U, F>>>,
+	constraint_sets: Vec<ConstraintSet<F>>,
 	transcript: &mut Transcript,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
@@ -492,7 +492,7 @@ pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
 	prover: &mut EvalcheckProver<U, F, Backend>,
 	committed_eval_claims: &[CommittedEvalClaim<F>],
 	backend: &Backend,
-) -> Result<ConstraintSet<PackedType<U, F>>, Error>
+) -> Result<ConstraintSet<F>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,

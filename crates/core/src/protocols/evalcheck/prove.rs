@@ -45,7 +45,7 @@ where
 
 	eval_memoization: HashMap<(OracleId, Vec<F>), F>,
 
-	new_sumchecks_constraints: Vec<ConstraintSetBuilder<PackedType<U, F>>>,
+	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
 	memoized_queries: MemoizedQueries<PackedType<U, F>, Backend>,
 
 	backend: &'a Backend,
@@ -85,9 +85,7 @@ where
 	}
 
 	/// A helper method to move out sumcheck constraints
-	pub fn take_new_sumchecks_constraints(
-		&mut self,
-	) -> Result<Vec<ConstraintSet<PackedType<U, F>>>, OracleError> {
+	pub fn take_new_sumchecks_constraints(&mut self) -> Result<Vec<ConstraintSet<F>>, OracleError> {
 		self.new_sumchecks_constraints
 			.iter_mut()
 			.map(|builder| std::mem::take(builder).build_one(self.oracles))
