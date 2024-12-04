@@ -18,3 +18,7 @@ rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
 bumpalo.workspace = true
+
+[dev-dependencies]
+binius_hal = {path = "../hal"}
+groestl_crypto = { package = "groestl", version = "0.10.1" }

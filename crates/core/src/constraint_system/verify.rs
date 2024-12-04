@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::{
+	channel::Boundary,
 	error::{Error, VerificationError},
 	ConstraintSystem, Proof,
 };
@@ -32,7 +33,7 @@ use crate::{
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	BinaryField, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
 };
 use binius_hal::make_portable_backend;
@@ -53,6 +54,7 @@ pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
 	log_inv_rate: usize,
 	security_bits: usize,
 	domain_factory: DomainFactory,
+	boundaries: Vec<Boundary<FExt<Tower>>>,
 	proof: Proof,
 ) -> Result<(), Error>
 where
@@ -73,12 +75,13 @@ where
 		&constraint_system.oracles,
 		domain_factory,
 	)?;
-	verify_with_pcs::<_, _, _, Challenger_, Digest>(constraint_system, proof, &pcss)
+	verify_with_pcs::<_, _, _, Challenger_, Digest>(constraint_system, boundaries, proof, &pcss)
 }
 
 /// Verifies a proof against a constraint system with provided PCSs.
 fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
+	boundaries: Vec<Boundary<FExt<Tower>>>,
 	proof: Proof,
 	pcss: &[TowerPCS<Tower, U, PCSFamily>],
 ) -> Result<(), Error>
@@ -137,7 +140,13 @@ where
 	let flush_counts = flushes.iter().map(|flush| flush.count).collect::<Vec<_>>();
 
 	let flush_products = transcript.read_scalar_slice(flush_oracle_ids.len())?;
-	verify_channels_balance(&flushes, &flush_products)?;
+	verify_channels_balance(
+		&flushes,
+		&flush_products,
+		boundaries,
+		mixing_challenge,
+		&permutation_challenges,
+	)?;
 
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
@@ -434,7 +443,13 @@ where
 		.unwrap_or(0)
 }
 
-fn verify_channels_balance<F: Field>(flushes: &[Flush], flush_products: &[F]) -> Result<(), Error> {
+fn verify_channels_balance<F: TowerField>(
+	flushes: &[Flush],
+	flush_products: &[F],
+	boundaries: Vec<Boundary<F>>,
+	mixing_challenge: F,
+	permutation_challenges: &[F],
+) -> Result<(), Error> {
 	if flush_products.len() != flushes.len() {
 		return Err(VerificationError::IncorrectNumberOfFlushProducts.into());
 	}
@@ -445,9 +460,46 @@ fn verify_channels_balance<F: Field>(flushes: &[Flush], flush_products: &[F]) ->
 		.peekable();
 	while let Some((flush, _)) = flush_iter.peek() {
 		let channel_id = flush.channel_id;
+
+		let boundary_products =
+			boundaries
+				.iter()
+				.fold((F::ONE, F::ONE), |(pull_product, push_product), boundary| {
+					let Boundary {
+						channel_id: boundary_channel_id,
+						direction,
+						multiplicity,
+						values,
+						..
+					} = boundary;
+
+					if *boundary_channel_id == channel_id {
+						let (mixed_values, _) = values.iter().fold(
+							(permutation_challenges[channel_id], F::ONE),
+							|(sum, mixing), values| {
+								(sum + mixing * values, mixing * mixing_challenge)
+							},
+						);
+
+						let mixed_values_with_multiplicity =
+							mixed_values.pow_vartime([*multiplicity]);
+
+						return match direction {
+							FlushDirection::Pull => {
+								(pull_product * mixed_values_with_multiplicity, push_product)
+							}
+							FlushDirection::Push => {
+								(pull_product, push_product * mixed_values_with_multiplicity)
+							}
+						};
+					}
+
+					(pull_product, push_product)
+				});
+
 		let (pull_product, push_product) = flush_iter
 			.peeking_take_while(|(flush, _)| flush.channel_id == channel_id)
-			.fold((F::ONE, F::ONE), |(pull_product, push_product), (flush, flush_product)| {
+			.fold(boundary_products, |(pull_product, push_product), (flush, flush_product)| {
 				match flush.direction {
 					FlushDirection::Pull => (pull_product * flush_product, push_product),
 					FlushDirection::Push => (pull_product, push_product * flush_product),

@@ -29,11 +29,25 @@ mod tests {
 		unconstrained::unconstrained,
 		vision::vision_permutation,
 	};
-	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
-	use binius_field::{
-		arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField16b, BinaryField128b,
-		BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b, TowerField,
+	use binius_core::{
+		constraint_system::{
+			self,
+			channel::{Boundary, FlushDirection},
+			validate::validate_witness,
+		},
+		fiat_shamir::HasherChallenger,
+		oracle::OracleId,
+		tower::CanonicalTowerFamily,
 	};
+	use binius_field::{
+		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier,
+		AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField64b,
+		BinaryField8b, Field, TowerField,
+	};
+	use binius_hal::make_portable_backend;
+	use binius_hash::{GroestlDigestCompression, GroestlHasher};
+	use binius_math::DefaultEvaluationDomainFactory;
+	use groestl_crypto::Groestl256;
 	use std::array;
 
 	type U = OptimalUnderlier;
@@ -337,5 +351,121 @@ mod tests {
 		let constraint_system = builder.build().unwrap();
 		let boundaries = vec![];
 		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_boundaries() {
+		// Proving Collatz Orbits
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+
+		let log_size = PackedType::<U, BinaryField8b>::LOG_WIDTH + 2;
+
+		let channel_id = builder.add_channel();
+
+		let push_boundaries = Boundary {
+			values: vec![F::from_underlier(6)],
+			channel_id,
+			direction: FlushDirection::Push,
+			multiplicity: 1,
+		};
+
+		let pull_boundaries = Boundary {
+			values: vec![F::ONE],
+			channel_id,
+			direction: FlushDirection::Pull,
+			multiplicity: 1,
+		};
+
+		let even = builder.add_committed("even", log_size, 3);
+
+		let half = builder.add_committed("half", log_size, 3);
+
+		let odd = builder.add_committed("odd", log_size, 3);
+
+		let output = builder.add_committed("output", log_size, 3);
+
+		let mut even_counter = 0;
+
+		let mut odd_counter = 0;
+
+		if let Some(witness) = builder.witness() {
+			let mut current = 6;
+
+			let mut even = witness.new_column::<BinaryField8b>(even);
+
+			let even_u8 = even.as_mut_slice::<u8>();
+
+			let mut half = witness.new_column::<BinaryField8b>(half);
+
+			let half_u8 = half.as_mut_slice::<u8>();
+
+			let mut odd = witness.new_column::<BinaryField8b>(odd);
+
+			let odd_u8 = odd.as_mut_slice::<u8>();
+
+			let mut output = witness.new_column::<BinaryField8b>(output);
+
+			let output_u8 = output.as_mut_slice::<u8>();
+
+			while current != 1 {
+				if current & 1 == 0 {
+					even_u8[even_counter] = current;
+					half_u8[even_counter] = current / 2;
+					current = half_u8[even_counter];
+					even_counter += 1;
+				} else {
+					odd_u8[odd_counter] = current;
+					output_u8[odd_counter] = 3 * current + 1;
+					current = output_u8[odd_counter];
+					odd_counter += 1;
+				}
+			}
+		}
+
+		builder.flush(FlushDirection::Pull, channel_id, even_counter, [even]);
+		builder.flush(FlushDirection::Push, channel_id, even_counter, [half]);
+		builder.flush(FlushDirection::Pull, channel_id, odd_counter, [odd]);
+		builder.flush(FlushDirection::Push, channel_id, odd_counter, [output]);
+
+		let witness = builder
+			.take_witness()
+			.expect("builder created with witness");
+
+		let constraint_system = builder.build().unwrap();
+
+		let domain_factory = DefaultEvaluationDomainFactory::default();
+		let backend = make_portable_backend();
+
+		let proof = constraint_system::prove::<
+			U,
+			CanonicalTowerFamily,
+			BinaryField64b,
+			_,
+			_,
+			GroestlHasher<BinaryField128b>,
+			GroestlDigestCompression<BinaryField8b>,
+			HasherChallenger<groestl_crypto::Groestl256>,
+			_,
+		>(&constraint_system, 1, 10, witness, &domain_factory, &backend)
+		.unwrap();
+
+		constraint_system::verify::<
+			U,
+			CanonicalTowerFamily,
+			_,
+			_,
+			GroestlHasher<BinaryField128b>,
+			GroestlDigestCompression<BinaryField8b>,
+			HasherChallenger<Groestl256>,
+		>(
+			&constraint_system,
+			1,
+			10,
+			&domain_factory,
+			vec![pull_boundaries, push_boundaries],
+			proof,
+		)
+		.unwrap();
 	}
 }

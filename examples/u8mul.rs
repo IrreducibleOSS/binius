@@ -110,6 +110,7 @@ fn main() -> Result<()> {
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		&domain_factory,
+		vec![],
 		proof,
 	)?;
 
