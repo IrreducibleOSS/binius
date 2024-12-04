@@ -9,10 +9,9 @@ use binius_field::{
 use binius_hal::make_portable_backend;
 use binius_hash::{Groestl256, GroestlDigestCompression};
 use binius_math::IsomorphicEvaluationDomainFactory;
-use binius_utils::{
-	checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool, tracing::init_tracing,
-};
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use clap::{value_parser, Parser};
+use tracing_profile::init_tracing;
 
 const LOG_ROWS_PER_PERMUTATION: usize = 0;
 

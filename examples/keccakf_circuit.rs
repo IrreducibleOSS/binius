@@ -9,17 +9,17 @@ use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, Binar
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
-use binius_utils::{
-	checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool, tracing::init_tracing,
-};
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
+use tracing_profile::init_tracing;
+
 const LOG_ROWS_PER_PERMUTATION: usize = 6;
 
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 4096, value_parser = value_parser!(u32).range(1 << 3..))]
+	#[arg(short, long, default_value_t = 128, value_parser = value_parser!(u32).range(1 << 3..))]
 	n_permutations: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]

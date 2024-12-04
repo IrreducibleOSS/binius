@@ -13,5 +13,3 @@ pub mod rayon;
 pub mod serialization;
 pub mod sorting;
 pub mod thread_local_mut;
-#[cfg(feature = "tracing")]
-pub mod tracing;

@@ -205,7 +205,7 @@ where
 	#[instrument(
 		"MultilinearExtension::evaluate_partial_high",
 		skip_all,
-		level = "trace"
+		level = "debug"
 	)]
 	pub fn evaluate_partial_high<'a, PE>(
 		&self,

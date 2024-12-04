@@ -9,12 +9,11 @@ use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, Binar
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
-use binius_utils::{
-	checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool, tracing::init_tracing,
-};
+use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
 use std::array;
+use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
 struct Args {

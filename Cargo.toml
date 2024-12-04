@@ -41,15 +41,14 @@ stackalloc = "1.2.1"
 static_assertions = "1.1.0"
 subtle = "2.5.0"
 syn = { version = "2.0.60", features = ["full"] }
-thiserror = "1.0.47"
+thiserror = "2.0.3"
 thread_local = "1.1.7"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 trait-set = "0.3.0"
 tracing = "0.1.38"
-# TODO: Use version "0.8.0" as soon as it's available
-tracing-profile = { git = "https://gitlab.com/IrreducibleOSS/tracing-profile.git", branch = "main" }
+# TODO: Use version "0.9.0" as soon as it's available
+tracing-profile = { git = "https://gitlab.com/IrreducibleOSS/tracing-profile.git", rev = "36b52268bcc6b9dffbf50851df43256cf1d17ce2" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracing-tracy = "0.11.0"
 transpose = "0.2.2"
 bumpalo = { version = "3.16.0", features = ["collections"] }
 
