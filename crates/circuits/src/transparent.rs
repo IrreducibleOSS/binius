@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::cmp::Ordering;
-
 use binius_core::{oracle::OracleId, transparent};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -9,7 +7,6 @@ use binius_field::{
 	BinaryField1b, ExtensionField, PackedField, TowerField,
 };
 use bytemuck::Pod;
-use rayon::prelude::*;
 
 use crate::builder::ConstraintSystemBuilder;
 
@@ -24,21 +21,27 @@ where
 	F: TowerField,
 {
 	let step_down = transparent::step_down::StepDown::new(log_size, index)?;
-	let id = builder.add_transparent(name, step_down)?;
+	let id = builder.add_transparent(name, step_down.clone())?;
 	if let Some(witness) = builder.witness() {
-		let byte_index = index >> 3;
-		witness
-			.new_column::<BinaryField1b>(id)
-			.as_mut_slice::<u8>()
-			.into_par_iter()
-			.enumerate()
-			.for_each(|(i, stepdown)| {
-				*stepdown = match i.cmp(&byte_index) {
-					Ordering::Less => 0b11111111,
-					Ordering::Equal => (0b11111111u16 >> (8 - (index & 0b111))) as u8,
-					Ordering::Greater => 0b00000000,
-				}
-			});
+		step_down.populate(witness.new_column::<BinaryField1b>(id).packed());
+	}
+	Ok(id)
+}
+
+pub fn step_up<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
+	log_size: usize,
+	index: usize,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b> + Pod,
+	F: TowerField,
+{
+	let step_up = transparent::step_up::StepUp::new(log_size, index)?;
+	let id = builder.add_transparent(name, step_up.clone())?;
+	if let Some(witness) = builder.witness() {
+		step_up.populate(witness.new_column::<BinaryField1b>(id).packed());
 	}
 	Ok(id)
 }

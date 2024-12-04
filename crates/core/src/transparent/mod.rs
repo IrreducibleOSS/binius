@@ -9,6 +9,7 @@ pub mod ring_switch;
 pub mod select_row;
 pub mod shift_ind;
 pub mod step_down;
+pub mod step_up;
 pub mod tower_basis;
 
 pub use multilinear_extension::*;

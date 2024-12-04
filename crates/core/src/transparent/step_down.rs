@@ -49,13 +49,18 @@ impl StepDown {
 			});
 		}
 		let log_packed_length = self.n_vars - P::LOG_WIDTH;
+		let mut data = vec![P::one(); 1 << log_packed_length];
+		self.populate(&mut data);
+		Ok(MultilinearExtension::from_values(data)?)
+	}
+
+	pub fn populate<P: PackedField>(&self, data: &mut [P]) {
 		let packed_index = self.index / P::WIDTH;
-		let mut result = vec![P::zero(); 1 << log_packed_length];
-		result[..packed_index].fill(P::one());
-		for i in 0..self.index % P::WIDTH {
-			result[packed_index].set(i, P::Scalar::ONE);
+		data[..packed_index].fill(P::one());
+		data[packed_index..].fill(P::zero());
+		for i in 0..(self.index % P::WIDTH) {
+			data[packed_index].set(i, P::Scalar::ONE);
 		}
-		Ok(MultilinearExtension::from_values(result)?)
 	}
 }
 
