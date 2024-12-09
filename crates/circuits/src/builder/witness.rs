@@ -64,6 +64,29 @@ where
 		}
 	}
 
+	pub fn new_column_with_default<FS: TowerField>(
+		&self,
+		id: OracleId,
+		default: FS,
+	) -> EntryBuilder<'arena, U, FW, FS>
+	where
+		U: PackScalar<FS>,
+		FW: ExtensionField<FS>,
+	{
+		let oracles = self.oracles.borrow();
+		let log_rows = oracles.oracle(id).n_vars();
+		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
+		let default = WithUnderlier::to_underlier(PackedType::<U, FS>::broadcast(default));
+		let data = bumpalo::vec![in self.bump; default; len].into_bump_slice_mut();
+		EntryBuilder {
+			_marker: PhantomData,
+			log_rows,
+			id,
+			data: Some(data),
+			entries: self.entries.clone(),
+		}
+	}
+
 	pub fn get<FS: TowerField>(&self, id: OracleId) -> Result<WitnessEntry<'arena, U, FS>, Error>
 	where
 		U: PackScalar<FS>,
