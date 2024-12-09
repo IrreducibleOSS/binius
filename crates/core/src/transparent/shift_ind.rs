@@ -245,12 +245,13 @@ fn evaluate_shift_ind_help<F: Field>(
 	let (mut temp_p, mut temp_pp) = (F::default(), F::default());
 	(0..block_size).for_each(|k| {
 		let o_k = shift_offset >> k;
+		let product = x[k] * y[k];
 		if o_k % 2 == 1 {
-			temp_p = (F::ONE - x[k]) * y[k] * s_ind_p;
-			temp_pp = x[k] * (F::ONE - y[k]) * s_ind_p + eq(x[k], y[k]) * s_ind_pp;
+			temp_p = (y[k] - product) * s_ind_p;
+			temp_pp = (x[k] - product) * s_ind_p + eq(x[k], y[k]) * s_ind_pp;
 		} else {
-			temp_p = eq(x[k], y[k]) * s_ind_p + (F::ONE - x[k]) * y[k] * s_ind_pp;
-			temp_pp = x[k] * (F::ONE - y[k]) * s_ind_pp;
+			temp_p = eq(x[k], y[k]) * s_ind_p + (y[k] - product) * s_ind_pp;
+			temp_pp = (x[k] - product) * s_ind_pp;
 		}
 		// roll over results
 		s_ind_p = temp_p;
