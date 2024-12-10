@@ -41,7 +41,7 @@ where
 	gpa_round_challenges: Vec<P::Scalar>,
 	compositions: Vec<Composition>,
 	domains: Vec<InterpolationDomain<FDomain>>,
-	first_round_eval_1s: Vec<P::Scalar>,
+	first_round_eval_1s: Option<Vec<P::Scalar>>,
 }
 
 impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Composition, M, Backend>
@@ -55,7 +55,7 @@ where
 {
 	pub fn new(
 		multilinears: Vec<M>,
-		first_layer_mle_advice: Vec<M>,
+		first_layer_mle_advice: Option<Vec<M>>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		gpa_round_challenges: &[F],
@@ -71,8 +71,10 @@ where
 			}
 		}
 
-		if first_layer_mle_advice.len() != composite_claims.len() {
-			bail!(Error::IncorrectFirstLayerAdviceLength);
+		if let Some(first_layer_mle_advice) = &first_layer_mle_advice {
+			if first_layer_mle_advice.len() != composite_claims.len() {
+				bail!(Error::IncorrectFirstLayerAdviceLength);
+			}
 		}
 
 		let claimed_sums = composite_claims
@@ -121,24 +123,26 @@ where
 		}
 		.map_err(SumcheckError::from)?;
 
-		let first_round_eval_1s = first_layer_mle_advice
-			.into_iter()
-			.map(|poly_mle| {
-				let packed_sum = partial_eq_ind_evals
-					.par_iter()
-					.enumerate()
-					.map(|(i, &eq_ind)| {
-						eq_ind
-							* packed_from_fn_with_offset::<P>(i, |j| {
-								poly_mle
-									.evaluate_on_hypercube(j << 1 | 1)
-									.unwrap_or(F::ZERO)
-							})
-					})
-					.sum::<P>();
-				packed_sum.iter().sum()
-			})
-			.collect::<Vec<_>>();
+		let first_round_eval_1s = first_layer_mle_advice.map(|first_layer_mle_advice| {
+			first_layer_mle_advice
+				.into_iter()
+				.map(|poly_mle| {
+					let packed_sum = partial_eq_ind_evals
+						.par_iter()
+						.enumerate()
+						.map(|(i, &eq_ind)| {
+							eq_ind
+								* packed_from_fn_with_offset::<P>(i, |j| {
+									poly_mle
+										.evaluate_on_hypercube(j << 1 | 1)
+										.unwrap_or(F::ZERO)
+								})
+						})
+						.sum::<P>();
+					packed_sum.iter().sum()
+				})
+				.collect::<Vec<_>>()
+		});
 
 		Ok(Self {
 			n_vars,
@@ -196,13 +200,15 @@ where
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();
 
-		let evaluators = izip!(&self.compositions, &self.domains, &self.first_round_eval_1s)
-			.map(|(composition, interpolation_domain, &first_round_eval_1)| {
-				let first_round_eval_1 = if round == 0 {
-					Some(first_round_eval_1)
-				} else {
-					None
-				};
+		let evaluators = izip!(&self.compositions, &self.domains)
+			.enumerate()
+			.map(|(index, (composition, interpolation_domain))| {
+				let first_round_eval_1 = self
+					.first_round_eval_1s
+					.as_ref()
+					.map(|first_round_eval_1s| first_round_eval_1s[index])
+					.filter(|_| round == 0);
+
 				GPAEvaluator {
 					composition,
 					interpolation_domain,

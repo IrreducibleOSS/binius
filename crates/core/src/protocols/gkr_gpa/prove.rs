@@ -299,7 +299,7 @@ where
 
 		Ok(GPAProver::new(
 			multilinears,
-			first_layer_mle_advice,
+			Some(first_layer_mle_advice),
 			composite_claims,
 			evaluation_domain_factory,
 			&first_prover.current_layer_claim.eval_point,

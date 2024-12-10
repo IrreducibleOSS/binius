@@ -196,7 +196,7 @@ mod tests {
 
 		let prover = GPAProver::<FDomain, _, _, _, _>::new(
 			multilins,
-			prod_multilins,
+			Some(prod_multilins),
 			composite_claims,
 			domain_factory.clone(),
 			&challenges,
