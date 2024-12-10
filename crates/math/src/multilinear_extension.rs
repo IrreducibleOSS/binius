@@ -72,17 +72,6 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 					actual: P::LOG_WIDTH + log2(v.len())
 				});
 			}
-
-			for i in (1 << n_vars)..P::LOG_WIDTH {
-				unsafe {
-					if v[0].get_unchecked(i) != P::Scalar::ZERO {
-						bail!(Error::IncorrectNumberOfVariables {
-							expected: n_vars,
-							actual: i
-						});
-					};
-				}
-			}
 		} else if P::LOG_WIDTH + log2(v.len()) != n_vars {
 			bail!(Error::IncorrectNumberOfVariables {
 				expected: n_vars,
@@ -347,8 +336,8 @@ mod tests {
 	use super::*;
 	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 	use binius_field::{
-		BinaryField128b, BinaryField16b as F, BinaryField32b, BinaryField8b,
-		PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
+		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField32b,
+		BinaryField8b, PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
@@ -585,5 +574,14 @@ mod tests {
 				.get(0),
 			eval
 		);
+	}
+
+	#[test]
+	fn test_new_mle_with_tiny_nvars() {
+		MultilinearExtension::new(
+			1,
+			vec![PackedType::<OptimalUnderlier256b, BinaryField32b>::one()],
+		)
+		.unwrap();
 	}
 }
