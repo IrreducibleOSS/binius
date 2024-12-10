@@ -135,7 +135,7 @@ impl<'a, F: TowerField> MultilinearOracleSetAddition<'a, F> {
 	) -> Result<OracleId, Error> {
 		let inner_n_vars = self.mut_ref.n_vars(id);
 		let values_len = values.len();
-		if values_len >= inner_n_vars {
+		if values_len > inner_n_vars {
 			bail!(Error::InvalidProjection {
 				n_vars: inner_n_vars,
 				values_len,
@@ -703,7 +703,7 @@ impl<F: Field> Projected<F> {
 	) -> Result<Self, Error> {
 		let n_vars = inner.n_vars();
 		let values_len = values.len();
-		if values_len >= n_vars {
+		if values_len > n_vars {
 			bail!(Error::InvalidProjection { n_vars, values_len });
 		}
 		Ok(Self {
@@ -923,5 +923,28 @@ impl<F: Field> MultilinearPolyOracle<F> {
 		let composite =
 			CompositePolyOracle::new(self.n_vars(), vec![self], IdentityCompositionPoly);
 		composite.expect("Can always apply the identity composition to one variable")
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_field::{BinaryField128b, BinaryField1b, Field, TowerField};
+
+	use super::{MultilinearOracleSet, ProjectionVariant};
+
+	#[test]
+	fn add_projection_with_all_vars() {
+		type F = BinaryField128b;
+		let mut oracles = MultilinearOracleSet::<F>::new();
+		let batch_id = oracles.add_committed_batch(5, BinaryField1b::TOWER_LEVEL);
+		let data = oracles.add_committed(batch_id);
+		let projected = oracles
+			.add_projected(
+				data,
+				vec![F::ONE, F::ONE, F::ONE, F::ONE, F::ONE],
+				ProjectionVariant::FirstVars,
+			)
+			.unwrap();
+		let _ = oracles.oracle(projected);
 	}
 }
