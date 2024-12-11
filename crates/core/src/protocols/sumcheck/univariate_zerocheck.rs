@@ -61,14 +61,13 @@ where
 		bail!(VerificationError::IncorrectSkippedRoundsCount);
 	}
 
-	let composition_max_degree = claims
+	let max_domain_size = claims
 		.iter()
-		.flat_map(|claim| claim.composite_zeros())
-		.map(|composition| composition.degree())
+		.map(|claim| {
+			domain_size(claim.max_individual_degree(), skip_rounds + claim.n_vars() - max_n_vars)
+		})
 		.max()
 		.unwrap_or(0);
-
-	let max_domain_size = domain_size(composition_max_degree, skip_rounds);
 	let zeros_prefix_len = (1 << (skip_rounds + min_n_vars - max_n_vars)).min(max_domain_size);
 
 	let mut batch_coeffs = Vec::with_capacity(claims.len());

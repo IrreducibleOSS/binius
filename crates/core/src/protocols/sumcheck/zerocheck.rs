@@ -131,8 +131,10 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPolyOS<F>>(
 		assert_eq!(claim.n_multilinears() + 1, multilinear_evals.len());
 
 		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
-			let sumcheck_challenge = sumcheck_challenges[last_n_vars];
-			let zerocheck_challenge = zerocheck_challenges[last_n_vars];
+			let sumcheck_challenge =
+				sumcheck_challenges[sumcheck_challenges.len() - 1 - last_n_vars];
+			let zerocheck_challenge =
+				zerocheck_challenges[zerocheck_challenges.len() - 1 - last_n_vars];
 			eq_ind_eval *= eq(sumcheck_challenge, zerocheck_challenge);
 			last_n_vars += 1;
 		}

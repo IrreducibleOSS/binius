@@ -331,14 +331,18 @@ where
 	for (univariatized_multilinear_evals, multilinears) in
 		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
 	{
-		let reduced_multilinears = sumcheck::prove::reduce_to_skipped_projection(
-			multilinears,
-			&zerocheck_output.challenges,
-			backend,
-		)?;
+		let claim_n_vars = multilinears
+			.first()
+			.map_or(0, |multilinear| multilinear.n_vars());
 
+		let skip_challenges = (max_n_vars - claim_n_vars).saturating_sub(skip_rounds);
+		let challenges = &zerocheck_output.challenges[skip_challenges..];
+		let reduced_multilinears =
+			sumcheck::prove::reduce_to_skipped_projection(multilinears, challenges, backend)?;
+
+		let claim_skip_rounds = claim_n_vars - challenges.len();
 		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
-			skip_rounds,
+			claim_skip_rounds,
 			univariatized_multilinear_evals,
 		)?;
 

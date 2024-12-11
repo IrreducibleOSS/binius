@@ -44,7 +44,7 @@ use binius_utils::bail;
 use itertools::{izip, multiunzip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_ceil_usize;
-use std::cmp::Reverse;
+use std::{cmp::Reverse, iter};
 use tracing::instrument;
 
 /// Verifies a proof against a constraint system.
@@ -202,8 +202,11 @@ where
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
+	let univariate_cnt = zerocheck_claims
+		.partition_point(|zerocheck_claim| zerocheck_claim.n_vars() > max_n_vars - skip_rounds);
+
 	let univariate_output = sumcheck::batch_verify_zerocheck_univariate_round(
-		&zerocheck_claims,
+		&zerocheck_claims[..univariate_cnt],
 		skip_rounds,
 		&mut transcript,
 	)?;
@@ -211,6 +214,7 @@ where
 	let univariate_challenge = univariate_output.univariate_challenge;
 
 	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+
 	let sumcheck_output = sumcheck::batch_verify_with_start(
 		univariate_output.batch_verify_start,
 		&sumcheck_claims,
@@ -227,9 +231,13 @@ where
 		zerocheck_claims.partition_point(|claim| claim.n_vars() > max_n_vars - skip_rounds);
 
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
-	for univariatized_multilinear_evals in &zerocheck_output.multilinear_evals {
+	for (claim, univariatized_multilinear_evals) in
+		iter::zip(&zerocheck_claims, &zerocheck_output.multilinear_evals)
+	{
+		let claim_skip_rounds = claim.n_vars().saturating_sub(max_n_vars - skip_rounds);
+
 		let reduction_claim = sumcheck::univariate::univariatizing_reduction_claim(
-			skip_rounds,
+			claim_skip_rounds,
 			univariatized_multilinear_evals,
 		)?;
 
