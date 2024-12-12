@@ -13,11 +13,14 @@ use crate::{
 	composition::index_composition,
 	fiat_shamir::{CanSample, HasherChallenger},
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
-	protocols::{sumcheck::prove::SumcheckProver, test_utils::TestProductComposition},
+	protocols::{
+		sumcheck::prove::SumcheckProver,
+		test_utils::{AddOneComposition, TestProductComposition},
+	},
 	transcript::TranscriptWriter,
 };
 use binius_field::{
-	arch::{OptimalUnderlier128b, OptimalUnderlier256b},
+	arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::UnderlierType,
@@ -129,7 +132,8 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 			.into_iter()
 			.map(MLEEmbeddingAdapter::<_, PackedType<U, FExt>, _>::from)
 			.collect::<Vec<_>>();
-	let composition = TestProductComposition::new(n_multilinears);
+	let product_composition = TestProductComposition::new(n_multilinears);
+	let composition = AddOneComposition::new(product_composition);
 	let sum = compute_composite_sum(&multilins, &composition);
 
 	let claim = SumcheckClaim::new(
@@ -229,10 +233,10 @@ fn test_sumcheck_prove_verify_with_nontrivial_packing() {
 	let n_multilinears = 3;
 	let switchover_rd = 3;
 
-	// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a
-	// non-trivial packing width of 2.
+	// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
+	// non-trivial packing width of 4.
 	test_prove_verify_product_helper::<
-		OptimalUnderlier256b,
+		OptimalUnderlier512b,
 		BinaryField32b,
 		BinaryField8b,
 		BinaryField128b,

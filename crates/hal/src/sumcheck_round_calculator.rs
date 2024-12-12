@@ -241,7 +241,7 @@ where
 		.map(|vals| {
 			RoundEvals(
 				vals.into_iter()
-					.map(|packed_val| packed_val.iter().sum())
+					.map(|packed_val| packed_val.iter().take(1 << subcube_vars).sum())
 					.collect(),
 			)
 		})

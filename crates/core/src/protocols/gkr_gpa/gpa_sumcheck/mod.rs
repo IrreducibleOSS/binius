@@ -16,3 +16,6 @@
 pub mod error;
 pub mod prove;
 pub mod verify;
+
+#[cfg(test)]
+mod tests;

@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::protocols::utils::packed_from_fn_with_offset;
-use binius_field::{packed::get_packed_slice, PackedFieldIndexable};
+use binius_field::{packed::get_packed_slice, Field, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -20,9 +20,11 @@ where
 
 	if partial_eq_ind_evals.len() == 1 {
 		let unpacked = P::unpack_scalars_mut(partial_eq_ind_evals);
-		for i in 0..1 << (n_vars - 1) {
+		let last = 1 << (n_vars - 1);
+		for i in 0..last {
 			unpacked[i] = unpacked[2 * i] + unpacked[2 * i + 1];
 		}
+		unpacked[last..].fill(P::Scalar::ZERO);
 	} else {
 		let current_evals = &*partial_eq_ind_evals;
 		let updated_evals = (0..current_evals.len() / 2)

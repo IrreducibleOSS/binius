@@ -7,6 +7,39 @@ use rand::Rng;
 use std::ops::Deref;
 
 #[derive(Clone, Debug)]
+pub struct AddOneComposition<Inner> {
+	inner: Inner,
+}
+
+impl<Inner> AddOneComposition<Inner> {
+	pub fn new(inner: Inner) -> Self {
+		Self { inner }
+	}
+}
+
+impl<P, Inner> CompositionPolyOS<P> for AddOneComposition<Inner>
+where
+	P: PackedField,
+	Inner: CompositionPolyOS<P>,
+{
+	fn n_vars(&self) -> usize {
+		self.inner.n_vars()
+	}
+
+	fn degree(&self) -> usize {
+		self.inner.degree()
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+		Ok(self.inner.evaluate(query)? + P::one())
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		self.inner.binary_tower_level()
+	}
+}
+
+#[derive(Clone, Debug)]
 pub struct TestProductComposition {
 	arity: usize,
 }
