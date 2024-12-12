@@ -42,7 +42,7 @@ use binius_utils::bail;
 use itertools::izip;
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
-use std::cmp::Reverse;
+use std::{cmp::Reverse, env, fmt::Debug};
 use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
@@ -65,12 +65,18 @@ where
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
-	Backend: ComputationBackend,
+	Backend: ComputationBackend + Debug,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 	PackedType<U, FBase>:
 		PackedFieldIndexable + PackedExtension<Tower::B8, PackedSubfield: PackedFieldIndexable>,
 {
+	tracing::debug!(
+		arch = env::consts::ARCH,
+		rayon_threads = rayon::current_num_threads(),
+		"using computation backend: {backend:?}"
+	);
+
 	let pcss = make_standard_pcss::<U, Tower, _, _, Hash, Compress>(
 		log_inv_rate,
 		security_bits,
