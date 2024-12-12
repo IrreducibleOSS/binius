@@ -97,35 +97,30 @@ build-debug-arm:
   dependencies:
     - build-debug-arm
 
+unit-test-amd-portable:
+  extends: .test_job_template_amd
+  script:
+    - RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh
+
+unit-test-arm-portable:
+  extends: .test_job_template_arm
+  script:
+    - RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh
+
+unit-test-single-threaded:
+  extends: .test_job_template_amd
+  script:
+    - RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
+
 unit-test-amd:
   extends: .test_job_template_amd
   script:
-    - ./scripts/run_tests_and_examples.sh
+    - RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
 
 unit-test-arm:
   extends: .test_job_template_arm
   script:
-    - ./scripts/run_tests_and_examples.sh
-
-unit-test-single-threaded-amd:
-  extends: .test_job_template_amd
-  script:
-    - RAYON_NUM_THREADS=1  ./scripts/run_tests_and_examples.sh
-
-unit-test-single-threaded-arm:
-  extends: .test_job_template_arm
-  script:
-    - RAYON_NUM_THREADS=1 CARGO_PROFILE=release ./scripts/run_tests_and_examples.sh
-
-unit-test-native-amd:
-  extends: .test_job_template_amd
-  script:
-    - RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
-
-unit-test-native-arm:
-  extends: .test_job_template_arm
-  script:
-    - RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
+    - RUSTFLAGS="-C target-cpu=native -C target-feature=aes" ./scripts/run_tests_and_examples.sh
 
 # Documentation and pages jobs
 build-docs:
@@ -152,4 +147,3 @@ pages:
   only:
     refs:
       - main # Deploy for every push to the main branch, for now
-
