@@ -362,7 +362,7 @@ where
 
 		let partial_low_multilinears = self
 			.multilinears
-			.into_iter()
+			.into_par_iter()
 			.map(|multilinear| -> Result<_, Error> {
 				let multilinear =
 					multilinear.evaluate_partial_low(lagrange_coeffs_query.to_ref())?;
