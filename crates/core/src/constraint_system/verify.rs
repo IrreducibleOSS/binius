@@ -39,7 +39,7 @@ use binius_field::{
 use binius_hal::make_portable_backend;
 use binius_hash::Hasher;
 use binius_math::{CompositionPolyOS, EvaluationDomainFactory};
-use binius_ntt::NTTOptions;
+use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use itertools::{izip, multiunzip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
@@ -404,7 +404,10 @@ where
 		security_bits,
 		merkle_prover,
 		domain_factory.clone(),
-		NTTOptions::default(),
+		NTTOptions {
+			precompute_twiddles: true,
+			thread_settings: ThreadingSettings::MultithreadedDefault,
+		},
 	)
 	.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
 	let batch_pcs = BatchPCS::new(fri_pcs, batch.n_vars, log_n_polys)
@@ -585,6 +588,7 @@ type CompositeSumClaimsWithTransparentsInfo<F> = (
 	Vec<EqIndInfo<F>>,
 );
 
+#[instrument(skip_all, level = "debug")]
 pub fn get_flush_sumcheck_composite_sum_claims<F>(
 	oracles: &mut MultilinearOracleSet<F>,
 	flush_oracles_ids: &[OracleId],
@@ -727,6 +731,7 @@ pub fn get_post_flush_sumcheck_eval_claims<F: TowerField>(
 	Ok(evalcheck_claims)
 }
 
+#[instrument(skip_all, level = "debug")]
 pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: Vec<OracleId>,

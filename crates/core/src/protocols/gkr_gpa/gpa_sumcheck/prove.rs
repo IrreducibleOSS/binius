@@ -21,10 +21,10 @@ use binius_math::{
 };
 use binius_utils::bail;
 use itertools::izip;
-use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use std::ops::Range;
-use tracing::instrument;
+use tracing::{debug_span, instrument};
 
 #[derive(Debug)]
 pub struct GPAProver<'a, FDomain, P, Composition, M, Backend>
@@ -53,6 +53,7 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
+	#[instrument(skip_all, level = "debug", name = "GPAProver::new")]
 	pub fn new(
 		multilinears: Vec<M>,
 		first_layer_mle_advice: Option<Vec<M>>,
@@ -83,7 +84,7 @@ where
 			.collect();
 
 		let domains = composite_claims
-			.iter()
+			.par_iter()
 			.map(|composite_claim| {
 				let degree = composite_claim.composition.degree();
 				let domain = evaluation_domain_factory.create(degree + 1)?;
@@ -123,25 +124,28 @@ where
 		}
 		.map_err(SumcheckError::from)?;
 
-		let first_round_eval_1s = first_layer_mle_advice.map(|first_layer_mle_advice| {
-			first_layer_mle_advice
-				.into_iter()
-				.map(|poly_mle| {
-					let packed_sum = partial_eq_ind_evals
-						.par_iter()
-						.enumerate()
-						.map(|(i, &eq_ind)| {
-							eq_ind
-								* packed_from_fn_with_offset::<P>(i, |j| {
-									poly_mle
-										.evaluate_on_hypercube(j << 1 | 1)
-										.unwrap_or(F::ZERO)
-								})
-						})
-						.sum::<P>();
-					packed_sum.iter().sum()
-				})
-				.collect::<Vec<_>>()
+		let first_round_eval_1s = debug_span!("first_round_eval_1s").in_scope(|| {
+			// This block takes non-trivial amount of time, therefore, instrumenting it is needed.
+			first_layer_mle_advice.map(|first_layer_mle_advice| {
+				first_layer_mle_advice
+					.into_par_iter()
+					.map(|poly_mle| {
+						let packed_sum = partial_eq_ind_evals
+							.par_iter()
+							.enumerate()
+							.map(|(i, &eq_ind)| {
+								eq_ind
+									* packed_from_fn_with_offset::<P>(i, |j| {
+										poly_mle
+											.evaluate_on_hypercube(j << 1 | 1)
+											.unwrap_or(F::ZERO)
+									})
+							})
+							.sum::<P>();
+						packed_sum.iter().sum()
+					})
+					.collect::<Vec<_>>()
+			})
 		});
 
 		Ok(Self {

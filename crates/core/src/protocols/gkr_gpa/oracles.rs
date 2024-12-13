@@ -68,6 +68,7 @@ where
 		.collect::<Vec<_>>())
 }
 
+#[instrument(skip_all, level = "debug")]
 pub fn make_eval_claims<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	metas: impl IntoIterator<Item = OracleId>,

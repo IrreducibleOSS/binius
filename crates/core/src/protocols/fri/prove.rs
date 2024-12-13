@@ -169,6 +169,7 @@ where
 /// * `params` - common FRI protocol parameters.
 /// * `merkle_prover` - the merke tree prover to use for committing
 /// * `message` - the interleaved message to encode and commit
+#[instrument(skip_all, level = "debug")]
 pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
 	params: &FRIParams<F, FA>,
@@ -203,6 +204,7 @@ where
 /// * `params` - common FRI protocol parameters.
 /// * `merkle_prover` - the Merkle tree prover to use for committing
 /// * `message_writer` - a closure that writes the interleaved message to encode and commit
+#[instrument(skip_all, level = "debug")]
 pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	rs_code: &ReedSolomonCode<PA>,
 	params: &FRIParams<F, FA>,

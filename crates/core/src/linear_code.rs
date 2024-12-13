@@ -4,6 +4,7 @@
 
 use binius_field::{ExtensionField, PackedField, RepackedExtension};
 use binius_utils::checked_arithmetics::checked_log_2;
+use tracing::instrument;
 
 /// An encodable [linear error-correcting code](https://en.wikipedia.org/wiki/Linear_code) intended
 /// for use in a Brakedown-style polynomial commitment scheme.
@@ -84,6 +85,7 @@ pub trait LinearCode {
 	/// ## Throws
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
+	#[instrument(skip_all, level = "debug")]
 	fn encode_ext_batch_inplace<PE>(
 		&self,
 		code: &mut [PE],

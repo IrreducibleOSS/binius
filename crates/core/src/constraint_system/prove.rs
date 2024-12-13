@@ -94,6 +94,7 @@ where
 
 /// Generates a proof that a witness satisfies a constraint system with provided PCSs.
 #[allow(clippy::type_complexity)]
+#[instrument(skip_all, level = "debug")]
 fn prove_with_pcs<
 	U,
 	Tower,
@@ -118,6 +119,7 @@ where
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<Tower::B128>,
 	FDomain: TowerField,
 	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
+	PCSFamily::Committed: Send,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Challenger_: Challenger + Default,
 	Digest: PackedField<Scalar: TowerField>,
@@ -143,12 +145,12 @@ where
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
-	// Commit polynomials
+	// Commit polynomials in parallel.
 	let (commitments, committeds) = constraint_system
 		.oracles
 		.committed_batches()
-		.into_iter()
-		.zip(pcss)
+		.into_par_iter()
+		.zip(pcss.into_par_iter())
 		.map(|(batch, pcs)| match pcs {
 			TowerPCS::B1(pcs) => {
 				tower_pcs_commit::<_, Tower::B1, _, _>(pcs, batch, &oracles, &witness)
@@ -170,7 +172,7 @@ where
 			}
 		})
 		.collect::<Result<Vec<_>, _>>()?
-		.into_iter()
+		.into_par_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	// Observe polynomial commitments
@@ -211,8 +213,9 @@ where
 	let flush_witnesses =
 		make_masked_flush_witnesses(&oracles, &witness, &flush_oracle_ids, &flush_counts)?;
 
+	// This is important to do in parallel.
 	let flush_prodcheck_witnesses = flush_witnesses
-		.into_iter()
+		.into_par_iter()
 		.map(GrandProductWitness::new)
 		.collect::<Result<Vec<_>, _>>()?;
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
@@ -557,6 +560,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
+#[instrument(skip_all, level = "debug")]
 fn make_unmasked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
@@ -566,8 +570,9 @@ where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 {
+	// The function is on the critical path, parallelize.
 	let flush_witnesses: Result<Vec<MultilinearWitness<'a, _>>, Error> = flush_oracle_ids
-		.iter()
+		.par_iter()
 		.map(|&oracle_id| {
 			let MultilinearPolyOracle::LinearCombination {
 				linear_combination: lincom,
@@ -613,6 +618,7 @@ where
 }
 
 #[allow(clippy::type_complexity)]
+#[instrument(skip_all, level = "debug")]
 fn make_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
@@ -623,9 +629,10 @@ where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 {
+	// The function is on the critical path, parallelize.
 	flush_oracles
-		.iter()
-		.zip(flush_counts.iter())
+		.par_iter()
+		.zip(flush_counts.par_iter())
 		.map(|(&flush_oracle_id, &flush_count)| {
 			let n_vars = oracles.n_vars(flush_oracle_id);
 			let packed_len = 1 << n_vars.saturating_sub(<PackedType<U, FExt<Tower>>>::LOG_WIDTH);
@@ -663,6 +670,7 @@ type FlushSumcheckProver<'b, U, Tower, FDomain, Backend> = RegularSumcheckProver
 type FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend> =
 	(Vec<FlushSumcheckProver<'b, U, Tower, FDomain, Backend>>, Vec<(OracleId, OracleId)>);
 
+#[instrument(skip_all, level = "debug")]
 fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>(
 	oracles: &mut MultilinearOracleSet<Tower::B128>,
 	flush_oracle_ids: &[OracleId],
@@ -689,28 +697,35 @@ where
 			final_layer_claims,
 		)?;
 
+	// The function is on the critical path, parallelize.
+	let eq_ind_adapters = eq_ind_info
+		.into_par_iter()
+		.map(|(eq_ind_id, eq_ind)| -> Result<_, Error> {
+			let eq_ind_multilinear_extension = eq_ind.multilinear_extension(backend)?;
+			let eq_ind_adapter =
+				MLEDirectAdapter::from(eq_ind_multilinear_extension).upcast_arc_dyn();
+			Ok((eq_ind_id, eq_ind_adapter))
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
 	let results: Result<Vec<_>, Error> = izip!(
 		flush_oracle_ids.iter(),
 		composite_sum_claims.into_iter(),
 		step_down_info.into_iter(),
-		eq_ind_info.into_iter()
+		eq_ind_adapters.into_iter()
 	)
 	.map(
 		|(
 			&flush_oracle_id,
 			composite_sum_claim,
 			(step_down_id, step_down),
-			(eq_ind_id, eq_ind),
+			(eq_ind_id, eq_ind_adapter),
 		)| {
 			let step_down_multilinear =
 				MLEDirectAdapter::from(step_down.multilinear_extension()?).upcast_arc_dyn();
 
-			let eq_ind_multilinear =
-				MLEDirectAdapter::from(eq_ind.multilinear_extension(backend)?).upcast_arc_dyn();
-
 			witness.update_multilin_poly([
 				(step_down_id, step_down_multilinear),
-				(eq_ind_id, eq_ind_multilinear),
+				(eq_ind_id, eq_ind_adapter),
 			])?;
 
 			let prover = RegularSumcheckProver::new(

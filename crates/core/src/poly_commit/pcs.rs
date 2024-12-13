@@ -9,7 +9,7 @@ use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use std::ops::Deref;
 
-pub trait PolyCommitScheme<P, FE>
+pub trait PolyCommitScheme<P, FE>: Sync
 where
 	P: PackedField,
 	FE: ExtensionField<P::Scalar> + TowerField,

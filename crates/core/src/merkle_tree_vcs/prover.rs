@@ -11,6 +11,7 @@ use binius_hash::Hasher;
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::iter::IndexedParallelIterator;
 use std::marker::PhantomData;
+use tracing::instrument;
 
 pub struct BinaryMerkleTreeProver<D, H, C> {
 	compression: C,
@@ -73,6 +74,8 @@ where
 		committed.branch(index, layer_depth)
 	}
 
+	#[instrument(skip_all, level = "debug")]
+	#[allow(clippy::type_complexity)]
 	fn commit_iterated<ParIter>(
 		&self,
 		iterated_chunks: ParIter,

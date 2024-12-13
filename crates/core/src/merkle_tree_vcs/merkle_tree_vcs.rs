@@ -16,7 +16,7 @@ pub struct Commitment<Digest> {
 }
 
 /// A Merkle tree scheme.
-pub trait MerkleTreeScheme<T> {
+pub trait MerkleTreeScheme<T>: Sync {
 	type Digest: Clone + PartialEq + Eq;
 	type Proof;
 
@@ -67,7 +67,7 @@ pub trait MerkleTreeScheme<T> {
 ///
 /// This is separate from [`MerkleTreeScheme`] so that it may be implemented using a
 /// hardware-accelerated backend.
-pub trait MerkleTreeProver<T> {
+pub trait MerkleTreeProver<T>: Sync {
 	type Scheme: MerkleTreeScheme<T>;
 	/// Data generated during commitment required to generate opening proofs.
 	type Committed;

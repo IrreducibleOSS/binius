@@ -8,6 +8,7 @@ use binius_field::{packed::get_packed_slice, Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use rayon::prelude::*;
+use tracing::{debug_span, instrument};
 
 type LayerEvals<'a, PW> = &'a [PW];
 type LayerHalfEvals<'a, PW> = (PackedFieldStorage<'a, PW>, PackedFieldStorage<'a, PW>);
@@ -26,6 +27,7 @@ pub struct GrandProductWitness<'a, PW: PackedField> {
 }
 
 impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
+	#[instrument(skip_all, level = "debug", name = "GrandProductWitness::new")]
 	pub fn new(poly: MultilinearWitness<'a, PW>) -> Result<Self, Error> {
 		// Compute the circuit layers from bottom to top
 		// TODO: Why does this fully copy the input layer?
@@ -51,33 +53,36 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 		}
 
 		let mut all_layers = vec![input_layer];
-		for curr_n_vars in (0..poly.n_vars()).rev() {
-			let layer_below = all_layers.last().expect("layers is not empty by invariant");
-			let mut new_layer = zeroed_vec(1 << curr_n_vars.saturating_sub(PW::LOG_WIDTH));
+		debug_span!("constructing_layers").in_scope(|| {
+			for curr_n_vars in (0..poly.n_vars()).rev() {
+				let layer_below = all_layers.last().expect("layers is not empty by invariant");
+				let mut new_layer = zeroed_vec(1 << curr_n_vars.saturating_sub(PW::LOG_WIDTH));
 
-			if curr_n_vars >= PW::LOG_WIDTH {
-				let (left_half, right_half) =
-					layer_below.split_at(1 << (curr_n_vars - PW::LOG_WIDTH));
+				if curr_n_vars >= PW::LOG_WIDTH {
+					let (left_half, right_half) =
+						layer_below.split_at(1 << (curr_n_vars - PW::LOG_WIDTH));
 
-				new_layer
-					.par_iter_mut()
-					.zip(left_half.par_iter().zip(right_half.par_iter()))
-					.for_each(|(out_i, (left_i, right_i))| {
-						*out_i = *left_i * *right_i;
-					});
-			} else {
-				let new_layer = &mut new_layer[0];
-				let len = 1 << curr_n_vars;
-				for i in 0..len {
-					new_layer.set(
-						i,
-						get_packed_slice(layer_below, i) * get_packed_slice(layer_below, len + i),
-					);
+					new_layer
+						.par_iter_mut()
+						.zip(left_half.par_iter().zip(right_half.par_iter()))
+						.for_each(|(out_i, (left_i, right_i))| {
+							*out_i = *left_i * *right_i;
+						});
+				} else {
+					let new_layer = &mut new_layer[0];
+					let len = 1 << curr_n_vars;
+					for i in 0..len {
+						new_layer.set(
+							i,
+							get_packed_slice(layer_below, i)
+								* get_packed_slice(layer_below, len + i),
+						);
+					}
 				}
-			}
 
-			all_layers.push(new_layer);
-		}
+				all_layers.push(new_layer);
+			}
+		});
 
 		// Reverse the layers
 		all_layers.reverse();

@@ -92,6 +92,11 @@ where
 		)
 	}
 
+	#[instrument(
+		skip_all,
+		level = "debug",
+		name = "ProverState::new_with_switchover_rounds"
+	)]
 	pub fn new_with_switchover_rounds(
 		multilinears: Vec<M>,
 		switchover_rounds: &[usize],

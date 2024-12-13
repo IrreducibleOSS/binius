@@ -35,7 +35,7 @@ pub struct InterpolationDomain<F: Field> {
 
 /// Wraps type information to enable instantiating EvaluationDomains.
 #[auto_impl(&)]
-pub trait EvaluationDomainFactory<DomainField: Field>: Clone {
+pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
 	/// Instantiates an EvaluationDomain from a set of points isomorphic to direct
 	/// lexicographic successors of zero in Fan-Paar tower
 	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error>;

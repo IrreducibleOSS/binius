@@ -9,6 +9,7 @@ use binius_math::{CompositionPolyOS, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use std::ops::{Add, AddAssign, Mul, MulAssign};
+use tracing::instrument;
 
 /// A claim about the sum of the values of a multilinear composite polynomial over the boolean
 /// hypercube.
@@ -241,6 +242,7 @@ pub fn immediate_switchover_heuristic(_extension_degree: usize) -> usize {
 }
 
 /// Determine switchover rounds for a slice of multilinears.
+#[instrument(skip_all, level = "debug")]
 pub fn determine_switchovers<P, M>(
 	multilinears: &[M],
 	switchover_fn: impl Fn(usize) -> usize,
@@ -249,6 +251,7 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
+	// TODO: This can be computed in parallel.
 	multilinears
 		.iter()
 		.map(|multilinear| switchover_fn(1 << multilinear.log_extension_degree()))

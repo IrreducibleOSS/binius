@@ -86,6 +86,7 @@ where
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
+	#[instrument(skip_all, level = "debug", name = "RegularSumcheckProver::new")]
 	pub fn new(
 		multilinears: Vec<M>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
