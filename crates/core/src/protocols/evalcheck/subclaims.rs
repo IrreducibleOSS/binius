@@ -39,8 +39,11 @@ use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::{ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearQuery};
+use binius_math::{
+	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+};
 use binius_utils::bail;
+use rayon::prelude::*;
 use tracing::instrument;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
@@ -408,6 +411,16 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 		Self { memo: Vec::new() }
 	}
 
+	/// Constructs `MemoizedQueries` from a list of eval_points and corresponding MultilinearQueries.
+	/// Assumes that each `eval_point` is given at most once.
+	/// Does not check that the input is valid.
+	#[allow(clippy::type_complexity)]
+	pub fn new_from_known_queries(
+		data: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
+	) -> Self {
+		Self { memo: data }
+	}
+
 	pub fn full_query(
 		&mut self,
 		eval_point: &[P::Scalar],
@@ -427,6 +440,20 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 		let (_, ref query) = self.memo.last().expect("pushed query immediately above");
 		Ok(query)
+	}
+
+	/// Finds a `MultilinearQuery` corresponding to the given `eval_point`.
+	pub fn full_query_readonly(
+		&self,
+		eval_point: &[P::Scalar],
+	) -> Option<&MultilinearQuery<P, Backend::Vec<P>>> {
+		self.memo
+			.iter()
+			.position(|(memo_eval_point, _)| memo_eval_point.as_slice() == eval_point)
+			.map(|index| {
+				let (_, ref query) = &self.memo[index];
+				query
+			})
 	}
 }
 
@@ -504,22 +531,84 @@ where
 		&mut prover.batch_committed_eval_claims,
 	)?;
 
-	let mut memoized_queries = MemoizedQueries::new();
-
 	let mut constraint_set_builder = ConstraintSetBuilder::new();
 
-	for meta in metas {
+	for meta in &metas {
 		add_bivariate_sumcheck_to_constraint_builder(
 			meta.projected_bivariate_meta,
 			&mut constraint_set_builder,
 			meta.eval,
 		);
-		process_non_same_query_pcs_sumcheck_witness(
-			prover.witness_index,
-			&mut memoized_queries,
-			meta,
-			backend,
-		)?;
+	}
+
+	// For efficiency, we want to run all time-consuming operations in parallel.
+	// Preprocess the data to extract inputs for the following time-consuming operations:
+	// `tensor_product_full_query` and `evaluate_partial_high`.
+	let mut multiplier_eval_points = vec![];
+	let mut projected_points = vec![];
+	let mut evaluate_partial_high = vec![];
+	for meta in &metas {
+		let ProjectedBivariateMeta {
+			inner_id,
+			projected_id,
+			multiplier_id,
+			projected_n_vars,
+		} = meta.projected_bivariate_meta;
+		if let Some(projected_id) = projected_id {
+			let point = &meta.eval_point[projected_n_vars..];
+			evaluate_partial_high.push((projected_id, inner_id, point.to_vec()));
+			projected_points.push(point.to_vec());
+			multiplier_eval_points
+				.push((multiplier_id, meta.eval_point[..projected_n_vars].to_vec()));
+		} else {
+			multiplier_eval_points.push((multiplier_id, meta.eval_point.clone()))
+		}
+	}
+	let projected_queries = projected_points
+		.into_par_iter()
+		.map(|point| {
+			let query: MultilinearQuery<PackedType<U, F>, _> = backend.multilinear_query(&point)?;
+			Ok((point, query))
+		})
+		.collect::<Result<Vec<_>, binius_hal::Error>>()?;
+	let memoized_queries = MemoizedQueries::<_, Backend>::new_from_known_queries(projected_queries);
+
+	// Run computations for `evaluate_partial_high()` in parallel.
+	let projected_mles = evaluate_partial_high
+		.into_par_iter()
+		.map(|(projected_id, inner_id, point)| {
+			let query = memoized_queries.full_query_readonly(&point).expect(
+				"initialized MemoizedQueries from precomputed values for all expected queries",
+			);
+			let inner_multilin = prover.witness_index.get_multilin_poly(inner_id)?;
+			Ok((projected_id, backend.evaluate_partial_high(&inner_multilin, query.to_ref())?))
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	// And precompute multilinear extensions for EqInd.
+	let eq_ind_witnesses = multiplier_eval_points
+		.into_par_iter()
+		.map(|(multiplier_id, eval_point)| {
+			let eq_ind_multilin_query =
+				backend.tensor_product_full_query::<PackedType<U, F>>(&eval_point)?;
+			let eq_ind_mle = MultilinearExtension::from_values_generic(eq_ind_multilin_query)?;
+			Ok((multiplier_id, MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn()))
+		})
+		.collect::<Result<Vec<(OracleId, MultilinearWitness<PackedType<U, F>>)>, Error>>()?;
+
+	for (projected_id, mle) in projected_mles {
+		prover.witness_index.update_multilin_poly(vec![(
+			projected_id,
+			MLEDirectAdapter::from(mle).upcast_arc_dyn(),
+		)])?;
+	}
+
+	// Update the shared state of `prover.witness_index` with the precomputed `MultilinearWitness` data.
+	for witness in eq_ind_witnesses {
+		let multiplier_id = witness.0;
+		if !prover.witness_index.has(multiplier_id) {
+			prover.witness_index.update_multilin_poly(vec![witness])?;
+		}
 	}
 	Ok(constraint_set_builder.build_one(prover.oracles)?)
 }
