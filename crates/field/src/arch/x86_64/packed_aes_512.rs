@@ -25,7 +25,7 @@ pub type PackedAESBinaryField4x128b = PackedPrimitiveType<M512, AESTowerField128
 // Define multiplication
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		impl_mul_with!(PackedAESBinaryField64x8b @ super::gfni::gfni_arithmetics::GfniAESTowerStrategy);
+		impl_mul_with!(PackedAESBinaryField64x8b @ crate::arch::GfniStrategy);
 	} else {
 		impl_mul_with!(PackedAESBinaryField64x8b @ crate::arch::PairwiseTableStrategy);
 	}
@@ -51,7 +51,7 @@ impl_square_with!(PackedAESBinaryField4x128b @ SimdStrategy);
 // Define invert
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		impl_invert_with!(PackedAESBinaryField64x8b @ super::gfni::gfni_arithmetics::GfniAESTowerStrategy);
+		impl_invert_with!(PackedAESBinaryField64x8b @ crate::arch::GfniStrategy);
 	} else {
 		impl_invert_with!(PackedAESBinaryField64x8b @ crate::arch::PairwiseTableStrategy);
 	}
@@ -80,7 +80,7 @@ cfg_if! {
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni;
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 
-		impl_transformation_with_gfni!(PackedAESBinaryField64x8b, GfniBinaryTowerStrategy);
+		impl_transformation_with_gfni!(PackedAESBinaryField64x8b);
 		impl_transformation_with_gfni_nxn!(PackedAESBinaryField32x16b, 2);
 		impl_transformation_with_gfni_nxn!(PackedAESBinaryField16x32b, 4);
 		impl_transformation_with_gfni_nxn!(PackedAESBinaryField8x64b, 8);

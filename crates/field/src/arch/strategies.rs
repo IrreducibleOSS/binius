@@ -18,4 +18,9 @@ pub struct SimdStrategy;
 pub struct ReuseMultiplyStrategy;
 
 /// Use operations with GFNI instructions
-pub struct GfniStrategy<const TO_AES_MAP: i64, const FROM_AES_MAP: i64>;
+pub struct GfniStrategy;
+
+/// Strategy for packed canonical tower fields.
+/// Performs conversion to the packed isomorphic AES field, applies the operation and
+/// converts the result back to the canonical tower field.
+pub struct AESIsomorphicStrategy;

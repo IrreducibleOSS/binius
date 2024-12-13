@@ -12,6 +12,7 @@ use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut};
 use rand::RngCore;
 use std::{
+	any::TypeId,
 	array,
 	fmt::{Debug, Display, Formatter},
 	iter::{Product, Step, Sum},
@@ -719,6 +720,11 @@ binary_tower!(
 	< BinaryField64b(u64)
 	< BinaryField128b(u128)
 );
+
+#[inline(always)]
+pub fn is_canonical_tower<F: TowerField>() -> bool {
+	TypeId::of::<F::Canonical>() == TypeId::of::<F>()
+}
 
 macro_rules! serialize_deserialize {
 	($bin_type:ty, SmallU<$U:literal>) => {

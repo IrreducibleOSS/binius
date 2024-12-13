@@ -22,6 +22,7 @@ use crate::{
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use std::{
+	any::TypeId,
 	array,
 	fmt::{self, Debug, Display, Formatter},
 	iter::{Product, Sum},
@@ -730,6 +731,12 @@ impl From<BinaryField128bPolyval> for BinaryField128b {
 	fn from(value: BinaryField128bPolyval) -> BinaryField128b {
 		POLYVAL_TO_BINARY_TRANSFORMATION.transform(&value)
 	}
+}
+
+#[inline(always)]
+pub fn is_polyval_tower<F: TowerField>() -> bool {
+	TypeId::of::<F>() == TypeId::of::<BinaryField128bPolyval>()
+		|| TypeId::of::<F>() == TypeId::of::<BinaryField1b>()
 }
 
 #[cfg(test)]

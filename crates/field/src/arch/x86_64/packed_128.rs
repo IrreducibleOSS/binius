@@ -46,45 +46,58 @@ impl_mul_with!(PackedBinaryField64x2b @ PackedStrategy);
 impl_mul_with!(PackedBinaryField32x4b @ PackedStrategy);
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		impl_mul_with!(PackedBinaryField16x8b @ super::gfni::gfni_arithmetics::GfniBinaryTowerStrategy);
+		impl_mul_with!(PackedBinaryField16x8b @ crate::arch::AESIsomorphicStrategy);
+		impl_mul_with!(PackedBinaryField8x16b @ crate::arch::AESIsomorphicStrategy);
+		impl_mul_with!(PackedBinaryField4x32b @ crate::arch::AESIsomorphicStrategy);
+		impl_mul_with!(PackedBinaryField2x64b @ crate::arch::AESIsomorphicStrategy);
+		impl_mul_with!(PackedBinaryField1x128b @ crate::arch::AESIsomorphicStrategy);
 	} else {
 		impl_mul_with!(PackedBinaryField16x8b @ crate::arch::PairwiseTableStrategy);
+		impl_mul_with!(PackedBinaryField8x16b @ SimdStrategy);
+		impl_mul_with!(PackedBinaryField4x32b @ SimdStrategy);
+		impl_mul_with!(PackedBinaryField2x64b @ SimdStrategy);
+		impl_mul_with!(PackedBinaryField1x128b @ SimdStrategy);
+
 	}
 }
-impl_mul_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField4x32b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField2x64b @ SimdStrategy);
-impl_mul_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define square
 impl_square_with!(PackedBinaryField64x2b @ PackedStrategy);
 impl_square_with!(PackedBinaryField32x4b @ PackedStrategy);
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		impl_square_with!(PackedBinaryField16x8b @ crate::arch::ReuseMultiplyStrategy);
+		impl_square_with!(PackedBinaryField16x8b @ crate::arch::AESIsomorphicStrategy);
+		impl_square_with!(PackedBinaryField8x16b @ crate::arch::AESIsomorphicStrategy);
+		impl_square_with!(PackedBinaryField4x32b @ crate::arch::AESIsomorphicStrategy);
+		impl_square_with!(PackedBinaryField2x64b @ crate::arch::AESIsomorphicStrategy);
+		impl_square_with!(PackedBinaryField1x128b @ crate::arch::AESIsomorphicStrategy);
 	} else {
 		impl_square_with!(PackedBinaryField16x8b @ crate::arch::PairwiseTableStrategy);
+		impl_square_with!(PackedBinaryField8x16b @ SimdStrategy);
+		impl_square_with!(PackedBinaryField4x32b @ SimdStrategy);
+		impl_square_with!(PackedBinaryField2x64b @ SimdStrategy);
+		impl_square_with!(PackedBinaryField1x128b @ SimdStrategy);
 	}
 }
-impl_square_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_square_with!(PackedBinaryField4x32b @ SimdStrategy);
-impl_square_with!(PackedBinaryField2x64b @ SimdStrategy);
-impl_square_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define invert
 impl_invert_with!(PackedBinaryField64x2b @ PackedStrategy);
 impl_invert_with!(PackedBinaryField32x4b @ PackedStrategy);
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		impl_invert_with!(PackedBinaryField16x8b @ super::gfni::gfni_arithmetics::GfniBinaryTowerStrategy);
+		impl_invert_with!(PackedBinaryField16x8b @ crate::arch::GfniStrategy);
+		impl_invert_with!(PackedBinaryField8x16b @ crate::arch::AESIsomorphicStrategy);
+		impl_invert_with!(PackedBinaryField4x32b @ crate::arch::AESIsomorphicStrategy);
+		impl_invert_with!(PackedBinaryField2x64b @ crate::arch::AESIsomorphicStrategy);
+		impl_invert_with!(PackedBinaryField1x128b @ crate::arch::AESIsomorphicStrategy);
 	} else {
 		impl_invert_with!(PackedBinaryField16x8b @ crate::arch::PairwiseTableStrategy);
+		impl_invert_with!(PackedBinaryField8x16b @ SimdStrategy);
+		impl_invert_with!(PackedBinaryField4x32b @ SimdStrategy);
+		impl_invert_with!(PackedBinaryField2x64b @ SimdStrategy);
+		impl_invert_with!(PackedBinaryField1x128b @ SimdStrategy);
 	}
 }
-impl_invert_with!(PackedBinaryField8x16b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField4x32b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField2x64b @ SimdStrategy);
-impl_invert_with!(PackedBinaryField1x128b @ SimdStrategy);
 
 // Define multiply by alpha
 impl_mul_alpha_with!(PackedBinaryField64x2b @ PackedStrategy);
@@ -110,7 +123,7 @@ cfg_if! {
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni;
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 
-		impl_transformation_with_gfni!(PackedBinaryField16x8b, GfniBinaryTowerStrategy);
+		impl_transformation_with_gfni!(PackedBinaryField16x8b);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField8x16b, 2);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField4x32b, 4);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField2x64b, 8);

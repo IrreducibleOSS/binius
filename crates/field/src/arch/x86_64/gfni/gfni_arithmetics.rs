@@ -6,15 +6,17 @@ use crate::{
 		GfniStrategy,
 	},
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul},
+	is_aes_tower, is_canonical_tower,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
 	underlier::{UnderlierType, WithUnderlier},
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField8b, PackedField,
+	TowerField,
 };
 use std::{array, ops::Deref};
 
 #[rustfmt::skip]
-const TOWER_TO_AES_MAP: i64 = u64::from_le_bytes([
+pub(super) const TOWER_TO_AES_MAP: i64 = u64::from_le_bytes([
 	0b00111110,
 	0b10011000,
 	0b01001110,
@@ -26,7 +28,7 @@ const TOWER_TO_AES_MAP: i64 = u64::from_le_bytes([
 ]) as i64;
 
 #[rustfmt::skip]
-const AES_TO_TOWER_MAP: i64 = u64::from_le_bytes([
+pub(super) const AES_TO_TOWER_MAP: i64 = u64::from_le_bytes([
 	0b00001100,
 	0b01110000,
 	0b10100010,
@@ -49,9 +51,6 @@ pub const IDENTITY_MAP: i64 = u64::from_le_bytes([
 	0b00000001,
 ]) as i64;
 
-pub type GfniBinaryTowerStrategy = GfniStrategy<TOWER_TO_AES_MAP, AES_TO_TOWER_MAP>;
-pub type GfniAESTowerStrategy = GfniStrategy<IDENTITY_MAP, IDENTITY_MAP>;
-
 pub(super) trait GfniType: Copy + TowerSimdType {
 	fn gf2p8affine_epi64_epi8(x: Self, a: Self) -> Self;
 	fn gf2p8mul_epi8(a: Self, b: Self) -> Self;
@@ -59,57 +58,41 @@ pub(super) trait GfniType: Copy + TowerSimdType {
 }
 
 #[inline(always)]
-fn linear_transform<T: GfniType>(x: T, map: i64) -> T {
+pub(super) fn linear_transform<T: GfniType>(x: T, map: i64) -> T {
 	let map = T::set_epi_64(map);
 	T::gf2p8affine_epi64_epi8(x, map)
 }
 
-impl<
-		const TO_AES_MAP: i64,
-		const FROM_AES_MAP: i64,
-		U: GfniType + UnderlierType,
-		Scalar: BinaryField,
-	> TaggedMul<GfniStrategy<TO_AES_MAP, FROM_AES_MAP>> for PackedPrimitiveType<U, Scalar>
+impl<U: GfniType + UnderlierType, Scalar: BinaryField> TaggedMul<GfniStrategy>
+	for PackedPrimitiveType<U, Scalar>
 {
+	#[inline(always)]
 	fn mul(self, rhs: Self) -> Self {
-		let (lhs_gfni, rhs_gfni) = if TO_AES_MAP != IDENTITY_MAP {
-			(
-				linear_transform(self.to_underlier(), TO_AES_MAP),
-				linear_transform(rhs.to_underlier(), TO_AES_MAP),
-			)
-		} else {
-			(self.to_underlier(), rhs.to_underlier())
-		};
-
-		let prod_gfni = U::gf2p8mul_epi8(lhs_gfni, rhs_gfni);
-
-		let prod_gfni = if FROM_AES_MAP != IDENTITY_MAP {
-			linear_transform(prod_gfni, FROM_AES_MAP)
-		} else {
-			prod_gfni
-		};
-
-		prod_gfni.into()
+		U::gf2p8mul_epi8(self.0, rhs.0).into()
 	}
 }
 
-impl<
-		const TO_AES_MAP: i64,
-		const FROM_AES_MAP: i64,
-		U: GfniType + UnderlierType,
-		Scalar: BinaryField,
-	> TaggedInvertOrZero<GfniStrategy<TO_AES_MAP, FROM_AES_MAP>> for PackedPrimitiveType<U, Scalar>
+impl<U: GfniType + UnderlierType, Scalar: TowerField> TaggedInvertOrZero<GfniStrategy>
+	for PackedPrimitiveType<U, Scalar>
 {
+	#[inline(always)]
 	fn invert_or_zero(self) -> Self {
-		let val_gfni = if TO_AES_MAP != IDENTITY_MAP {
-			linear_transform(self.to_underlier(), TO_AES_MAP)
+		assert!(is_aes_tower::<Scalar>() || is_canonical_tower::<Scalar>());
+		assert!(Scalar::N_BITS == 8);
+
+		let val_gfni = if is_canonical_tower::<Scalar>() {
+			linear_transform(self.to_underlier(), TOWER_TO_AES_MAP)
 		} else {
 			self.to_underlier()
 		};
 
 		// Calculate inversion and linear transformation to the original field with a single instruction
-		let identity = U::set_epi_64(FROM_AES_MAP);
-		let inv_gfni = U::gf2p8affineinv_epi64_epi8(val_gfni, identity);
+		let transform_after = if is_canonical_tower::<Scalar>() {
+			U::set_epi_64(AES_TO_TOWER_MAP)
+		} else {
+			U::set_epi_64(IDENTITY_MAP)
+		};
+		let inv_gfni = U::gf2p8affineinv_epi64_epi8(val_gfni, transform_after);
 
 		inv_gfni.into()
 	}
@@ -175,7 +158,7 @@ where
 
 /// Implement packed transformation factory with GFNI instructions for 8-bit packed field
 macro_rules! impl_transformation_with_gfni {
-	($name:ty, $strategy:ty) => {
+	($name:ty) => {
 		impl<OP> $crate::linear_transformation::PackedTransformationFactory<OP> for $name
 		where
 			OP: $crate::packed::PackedBinaryField<

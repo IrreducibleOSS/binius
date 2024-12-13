@@ -21,6 +21,7 @@ use crate::{
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
 use std::{
+	any::TypeId,
 	array,
 	fmt::{Debug, Display, Formatter},
 	iter::{Product, Step, Sum},
@@ -83,6 +84,16 @@ impl TowerField for AESTowerField8b {
 			_ => Err(Error::ExtensionDegreeMismatch),
 		}
 	}
+}
+
+/// Returns true if `F`` is AES tower field.
+#[inline(always)]
+pub fn is_aes_tower<F: TowerField>() -> bool {
+	TypeId::of::<F>() == TypeId::of::<F>()
+		|| TypeId::of::<F>() == TypeId::of::<AESTowerField16b>()
+		|| TypeId::of::<F>() == TypeId::of::<AESTowerField32b>()
+		|| TypeId::of::<F>() == TypeId::of::<AESTowerField64b>()
+		|| TypeId::of::<F>() == TypeId::of::<AESTowerField128b>()
 }
 
 pub const AES_TO_BINARY_LINEAR_TRANSFORMATION: FieldLinearTransformation<BinaryField8b> =
