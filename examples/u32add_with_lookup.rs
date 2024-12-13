@@ -3,7 +3,10 @@
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField8b};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField128b, BinaryField1b,
+	BinaryField8b,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -12,10 +15,12 @@ use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
+const MIN_N_ADDITIONS: usize = 1 << (PackedType::<OptimalUnderlier, BinaryField1b>::LOG_WIDTH);
+
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 256, value_parser = value_parser!(u32).range(1 << 7..))]
+	#[arg(short, long, default_value_t = MIN_N_ADDITIONS as u32, value_parser = value_parser!(u32).range(MIN_N_ADDITIONS as i64..))]
 	n_additions: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -23,7 +28,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
+	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()

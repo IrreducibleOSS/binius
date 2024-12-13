@@ -5,7 +5,10 @@ use binius_circuits::{builder::ConstraintSystemBuilder, unconstrained::unconstra
 use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField1b, BinaryField8b};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField128b, BinaryField1b,
+	BinaryField8b,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -15,10 +18,14 @@ use groestl_crypto::Groestl256;
 use std::array;
 use tracing_profile::init_tracing;
 
+// P:LOG_WIDTH + BinaryField8b::TOWER_LEVEL - COMPRESSION_LOG_LEN
+const MIN_N_COMPRESSIONS: usize =
+	1 << (PackedType::<OptimalUnderlier, BinaryField1b>::LOG_WIDTH - 2);
+
 #[derive(Debug, Parser)]
 struct Args {
 	/// The number of compressions to verify.
-	#[arg(short, long, default_value_t = 32, value_parser = value_parser!(u32).range(1 << 3..))]
+	#[arg(short, long, default_value_t = MIN_N_COMPRESSIONS as u32, value_parser = value_parser!(u32).range((MIN_N_COMPRESSIONS) as i64 ..))]
 	n_compressions: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
@@ -28,7 +35,7 @@ struct Args {
 const COMPRESSION_LOG_LEN: usize = 5;
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
+	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()

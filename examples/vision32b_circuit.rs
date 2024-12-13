@@ -13,7 +13,7 @@ use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
 use binius_field::{
-	arch::OptimalUnderlier128b, BinaryField128b, BinaryField32b, BinaryField64b, BinaryField8b,
+	arch::OptimalUnderlier, BinaryField128b, BinaryField32b, BinaryField64b, BinaryField8b,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
@@ -22,8 +22,6 @@ use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_po
 use clap::{value_parser, Parser};
 use std::array;
 use tracing_profile::init_tracing;
-
-const LOG_ROWS_PER_PERMUTATION: usize = 0;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -36,7 +34,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
+	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -57,15 +55,12 @@ fn main() -> Result<()> {
 		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField32b>(
 			&mut builder,
 			format!("p_in_{i}"),
-			log_n_permutations + LOG_ROWS_PER_PERMUTATION,
+			log_n_permutations,
 		)
 		.unwrap()
 	});
-	let _state_out = binius_circuits::vision::vision_permutation(
-		&mut builder,
-		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
-		state_in,
-	)?;
+	let _state_out =
+		binius_circuits::vision::vision_permutation(&mut builder, log_n_permutations, state_in)?;
 
 	let witness = builder
 		.take_witness()
