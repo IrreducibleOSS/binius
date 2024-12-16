@@ -145,14 +145,6 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		self,
 		oracles: &MultilinearOracleSet<impl TowerField>,
 	) -> Result<Vec<ConstraintSet<F>>, Error> {
-		let groups = binius_utils::graph::connected_components(
-			&self
-				.constraint_thunks
-				.iter()
-				.map(|thunk| thunk.oracle_ids.as_slice())
-				.collect::<Vec<_>>(),
-		);
-
 		let n_vars_and_constraints = self
 			.constraint_thunks
 			.into_iter()
@@ -170,7 +162,6 @@ impl<F: Field> ConstraintSetBuilder<F> {
 					.first()
 					.map(|id| oracles.n_vars(*id))
 					.unwrap();
-
 				for id in thunk.oracle_ids.iter() {
 					if oracles.n_vars(*id) != n_vars {
 						bail!(Error::ConstraintSetNvarsMismatch {
@@ -183,20 +174,16 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		let grouped_constraints = n_vars_and_constraints
+		let constraints_grouped_by_nvars = n_vars_and_constraints
 			.into_iter()
-			.sorted_by_key(|(_, thunk)| groups[thunk.oracle_ids[0]])
-			.chunk_by(|(_, thunk)| groups[thunk.oracle_ids[0]]);
+			.sorted_by_key(|(n_vars, _)| *n_vars)
+			.chunk_by(|(n_vars, _)| *n_vars);
 
-		let constraint_sets = grouped_constraints
+		let constraint_sets = constraints_grouped_by_nvars
 			.into_iter()
-			.map(|(_, grouped_thunks)| {
+			.map(|(n_vars, grouped_thunks)| {
 				let mut thunks = vec![];
 				let mut oracle_ids = vec![];
-
-				let grouped_thunks = grouped_thunks.into_iter().collect::<Vec<_>>();
-				let (n_vars, _) = grouped_thunks[0];
-
 				for (_, thunk) in grouped_thunks {
 					oracle_ids.extend(&thunk.oracle_ids);
 					thunks.push(thunk);

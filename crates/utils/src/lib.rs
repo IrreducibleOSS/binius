@@ -8,7 +8,6 @@ pub mod env;
 pub mod error_utils;
 pub mod examples;
 pub mod felts;
-pub mod graph;
 pub mod iter;
 pub mod rayon;
 pub mod serialization;
