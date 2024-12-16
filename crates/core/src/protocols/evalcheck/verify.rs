@@ -133,7 +133,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 
 				let n_vars = inner.n_vars();
 				let subclaim = EvalcheckMultilinearClaim {
-					poly: *inner,
+					poly: (*inner).clone(),
 					eval_point: eval_point[..n_vars].to_vec(),
 					eval,
 				};
@@ -154,7 +154,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				};
 
 				let new_claim = EvalcheckMultilinearClaim {
-					poly: *inner.clone(),
+					poly: (**inner).clone(),
 					eval_point,
 					eval,
 				};
@@ -261,7 +261,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear_subclaim(
 					inner_eval,
 					*subproof,
-					*inner,
+					(*inner).clone(),
 					subclaim_eval_point,
 				)?;
 			}

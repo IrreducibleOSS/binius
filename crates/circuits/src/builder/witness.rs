@@ -52,7 +52,7 @@ where
 		FW: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
-		let log_rows = oracles.oracle(id).n_vars();
+		let log_rows = oracles.n_vars(id);
 		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let data = bumpalo::vec![in self.bump; U::default(); len].into_bump_slice_mut();
 		EntryBuilder {
@@ -74,7 +74,7 @@ where
 		FW: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
-		let log_rows = oracles.oracle(id).n_vars();
+		let log_rows = oracles.n_vars(id);
 		let len = 1 << log_rows.saturating_sub(<PackedType<U, FS>>::LOG_WIDTH);
 		let default = WithUnderlier::to_underlier(PackedType::<U, FS>::broadcast(default));
 		let data = bumpalo::vec![in self.bump; default; len].into_bump_slice_mut();
@@ -97,24 +97,23 @@ where
 		if !oracles.is_valid_oracle_id(id) {
 			bail!(anyhow!("OracleId {id} does not exist in MultilinearOracleSet"));
 		}
-		let oracle = oracles.oracle(id);
 		let entry = entries
 			.get(id)
 			.and_then(|entry| entry.as_ref())
-			.ok_or_else(|| anyhow!("Witness for {} is missing", oracle.label()))?;
+			.ok_or_else(|| anyhow!("Witness for {} is missing", oracles.label(id)))?;
 
 		if entry.tower_level != FS::TOWER_LEVEL {
 			bail!(anyhow!(
 				"Provided tower level ({}) for {} does not match stored tower level {}.",
 				FS::TOWER_LEVEL,
-				oracle.label(),
+				oracles.label(id),
 				entry.tower_level
 			));
 		}
 
 		Ok(WitnessEntry {
 			data: entry.data,
-			log_rows: oracle.n_vars(),
+			log_rows: oracles.n_vars(id),
 			_marker: PhantomData,
 		})
 	}

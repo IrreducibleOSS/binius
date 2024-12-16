@@ -157,7 +157,7 @@ where
 				let n_vars = inner.n_vars();
 				let inner_eval_point = eval_point[..n_vars].to_vec();
 				let subclaim = EvalcheckMultilinearClaim {
-					poly: *inner,
+					poly: (*inner).clone(),
 					eval_point: inner_eval_point,
 					eval,
 				};
@@ -208,7 +208,7 @@ where
 					}
 				};
 
-				let new_poly = *inner.clone();
+				let new_poly = (**inner).clone();
 
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: new_poly,
@@ -235,7 +235,7 @@ where
 				let inner_n_vars = inner.n_vars();
 
 				let inner_eval_point = &eval_point[..inner_n_vars];
-				let (eval, subproof) = self.eval_and_proof(*inner, inner_eval_point)?;
+				let (eval, subproof) = self.eval_and_proof((*inner).clone(), inner_eval_point)?;
 
 				EvalcheckProof::ZeroPadded(eval, Box::new(subproof))
 			}
