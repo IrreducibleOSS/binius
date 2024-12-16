@@ -43,6 +43,8 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
 		&mut builder,
 		"in_a",
@@ -68,6 +70,7 @@ fn main() -> Result<()> {
 	)?;
 
 	lookup_batch.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)?;
+	drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()

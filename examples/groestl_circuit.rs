@@ -43,10 +43,13 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, AESTowerField128b>::new_with_witness(&allocator);
+
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let _state_out = binius_circuits::groestl::groestl_p_permutation(
 		&mut builder,
 		log_n_permutations + LOG_ROWS_PER_PERMUTATION,
-	);
+	)?;
+	drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()

@@ -6,14 +6,14 @@ Plonky3 examples are also run with the parallel feature `--features parallel`. N
 witness trace generation as well. For all the keccakf functions, the hashed data is actually the rate of SHA3-256(136
 bytes) per permutation
 
-| SNARKS                           | Project        | Number of Permutations | Proving time (s) | Verification time (ms) | Hashed Data (MB) | MB / Proving time(s) | Mb / Verification time(s) |
-|----------------------------------|----------------|------------------------|------------------|------------------------|------------------|----------------------|---------------------------|
-| Keccakf                          | Binius         | 2^13 (logsize 24)      | 3.598            | 103                    | 1.1              | 0.305                | 10.67                     |
-| Keccakf (Keccak Merkle trees)    | Plonky3 / BB31 | 2^13                   | 8.66             | 241                    | 1.1              | 0.127                | 4.56                      |
-| Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 2^13                   | 11.62            | 283                    | 1.1              | 0.094                | 3.88                      |
-| Groestl (*)                      | Binius         | 2^14 (logsize 19)      | 5.67             | 348                    | 1.049            | 0.185                | 3.01                      |
-| Vision32b                        | Binius         | 2^14 (logsize 17)      | 2.51             | 65                     | 1.049            | 0.417                | 16.13                     |
-| SHA-256                          | Binius         | 2^14 (logsize 19)      | 7.49             | 816                    | 1.049            | 0.14                 | 1.28                      |
+| SNARKS                           | Project        | Number of Permutations | Proving time (s) | Verification time (ms) | Hashed Data (MB) | MB / Proving time(s) |
+|----------------------------------|----------------|------------------------|------------------|------------------------|------------------|----------------------|
+| Keccakf                          | Binius         | 2^13                   | 3.91             | 206                    | 1.1              | 0.281                |
+| Keccakf (SHA256 Merkle trees)    | Plonky3 / BB31 | 2^13                   | 4.19             | 216                    | 1.1              | 0.262                |
+| Keccakf (Poseidon2 Merkle trees) | Plonky3 / BB31 | 2^13                   | 5.38             | 260                    | 1.1              | 0.204                |
+| Groestl (*)                      | Binius         | 2^14                   | 1.45             | 116                    | 1.049            | 0.721                |
+| Vision32b                        | Binius         | 2^14                   | 4.63             | 162                    | 1.049            | 0.226                |
+| SHA-256                          | Binius         | 2^14                   | 4.51             | 40                     | 1.049            | 0.232                |
 
 (*) Our Current Groestl SNARK only has the P permutation as opposed to the compression function which has both P and Q
 permutations, the number of permutations for groestl in the table assumes that both P and Q permutations would take the
@@ -25,205 +25,285 @@ The above table is generated from the following runs of each of the SNARKS
 
 ### Keccakf
 
-with logsize 24
-
 ```
-2024-07-03T16:38:45.210786Z  INFO keccakf: Size of hashable Keccak-256 data: 1.1 MB
-2024-07-03T16:38:45.210810Z  INFO keccakf: Size of tensorpcs: 5.9 MB
-generate_trace [ 438.23ms | 100.00% ]
+Verifying 8192 Keccak-f permutations
+generating trace [ 267.78ms | 100.00% ]
 
-prove [ 3.16s | 100.00% ]
-├── tensor_pcs::commit [ 96.33ms | 3.05% ]
-├── zerocheck::execute_round [ 544.05ms | 17.22% ] { index = 1 }
-├── zerocheck::execute_round [ 347.29ms | 10.99% ] { index = 2 }
-├── zerocheck::execute_round [ 232.69ms | 7.37% ] { index = 3 }
-├── zerocheck::execute_round [ 156.04ms | 4.94% ] { index = 4 }
-├── zerocheck::execute_round [ 117.05ms | 3.71% ] { index = 5 }
-├── zerocheck::execute_round [ 177.41ms | 5.62% ] { index = 6 }
-├── zerocheck::execute_round [ 88.38ms | 2.80% ] (17 calls)
-├── [...] [ 1.18µs | 0.00% ]
-├── EvalcheckProverState::prove [ 421.71ms | 13.35% ]
-├── test_utils::prove_bivariate_sumchecks_with_switchover [ 36.45ms | 1.15% ]
-│  ├── sumcheck::execute_round [ 35.54ms | 1.13% ] (448 calls)
-│  └── [...] [ 35.74µs | 0.00% ] (53 calls)
-├── EvalcheckProverState::prove [ 180.21ms | 5.71% ] (53 calls)
-├── [...] [ 3.99µs | 0.00% ]
-├── test_utils::make_non_same_query_pcs_sumchecks [ 367.74ms | 11.64% ]
-├── test_utils::prove_bivariate_sumchecks_with_switchover [ 140.30ms | 4.44% ]
-│  ├── sumcheck::execute_round [ 138.26ms | 4.38% ] (1308 calls)
-│  └── [...] [ 58.48µs | 0.00% ] (118 calls)
-├── [...] [ 31.38ms | 0.99% ] (119 calls)
-└── tensor_pcs::prove_evaluation [ 160.01ms | 5.07% ]
+constraint_system::prove [ 3.64s | 100.00% ]
+Events:
+  event crates/core/src/constraint_system/prove.rs:74 { message: using computation backend: CpuBackend, arch: x86_64, rayon_threads: 20 }: 1
 
-verify [ 103.22ms | 100.00% ]
-├── EvalcheckVerifierState::verify [ 1.37ms | 1.33% ] (54 calls)
-├── [...] [ 486.20µs | 0.47% ] (121 calls)
-└── tensor_pcs::verify_evaluation [ 97.22ms | 94.18% ]
+└── prove_with_pcs [ 3.64s | 99.90% ]
+   ├── FRIPCS::commit [ 98.46ms | 2.70% ]
+   │  └── commit_interleaved [ 98.45ms | 2.70% ]
+   │     └── commit_interleaved_with [ 98.45ms | 2.70% ]
+   │        └── commit_iterated [ 45.38ms | 1.25% ]
+   │           └── BinaryMerkleTree::build [ 45.38ms | 1.25% ]
+   ├── [...] [ 32.82µs | 0.00% ] (127 calls)
+   ├── batch_prove_zerocheck_univariate_round [ 965.22ms | 26.49% ]
+   │  ├── execute_univariate_round [ 276.92ms | 7.60% ] (119 calls)
+   │  └── fold_univariate_round [ 679.09ms | 18.64% ] (119 calls)
+   ├── sumcheck::batch_prove [ 254.60ms | 6.99% ]
+   │  ├── ZerocheckProver::fold [ 55.10ms | 1.51% ] (119 calls)
+   │  └── [...] [ 176.72ms | 4.85% ] (2737 calls)
+   ├── [...] [ 314.26ms | 8.62% ] (240 calls)
+   ├── sumcheck::batch_prove [ 83.04ms | 2.28% ]
+   │  └── sumcheck::batch_prove [ 83.04ms | 2.28% ]
+   ├── greedy_evalcheck::prove [ 1.29s | 35.30% ]
+   │  ├── EvalcheckProver::prove [ 258.85ms | 7.10% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 257.62ms | 7.07% ] (1223 calls)
+   │  ├── [...] [ 14.79ms | 0.41% ] (2 calls)
+   │  ├── EvalcheckProver::prove [ 391.58ms | 10.75% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 390.61ms | 10.72% ] (1199 calls)
+   │  ├── [...] [ 13.88ms | 0.38% ] (2 calls)
+   │  ├── EvalcheckProver::prove [ 97.35ms | 2.67% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 96.55ms | 2.65% ] (1151 calls)
+   │  ├── [...] [ 25.41µs | 0.00% ]
+   │  ├── make_non_same_query_pcs_sumchecks [ 429.16ms | 11.78% ]
+   │  ├── [...] [ 756.67µs | 0.02% ]
+   │  ├── sumcheck::batch_prove [ 64.33ms | 1.77% ]
+   │  │  └── sumcheck::batch_prove [ 64.33ms | 1.77% ]
+   │  └── [...] [ 7.17ms | 0.20% ] (2 calls)
+   └── fri_pcs::prove_evaluation [ 422.00ms | 11.58% ]
+      ├── CpuBackend::evaluate_partial_high [ 207.85ms | 5.70% ]
+      │  └── MultilinearExtension::evaluate_partial_high [ 207.85ms | 5.70% ]
+      └── [...] [ 145.70ms | 4.00% ] (308 calls)
+
+constraint_system::verify [ 206.71ms | 100.00% ]
+├── batch_verify_zerocheck_univariate_round [ 5.37ms | 2.60% ]
+├── [...] [ 355.86µs | 0.17% ]
+├── EvalcheckVerifierState::verify [ 2.14ms | 1.04% ]
+├── [...] [ 323.63µs | 0.16% ]
+├── EvalcheckVerifierState::verify [ 7.30ms | 3.53% ]
+├── [...] [ 312.05µs | 0.15% ]
+├── EvalcheckVerifierState::verify [ 4.87ms | 2.35% ]
+├── [...] [ 964.61µs | 0.47% ] (2 calls)
+├── EvalcheckVerifierState::verify [ 3.16ms | 1.53% ]
+├── [...] [ 20.66µs | 0.01% ]
+└── fri::FRIVerifier::verify_query [ 5.22ms | 2.52% ] (240 calls)
 ```
 
 ### Groestl
 
-with logsize 19
-
 ```
-generate_trace [ 2.03s | 100.00% ] { log_size = 19 }
+Verifying 16384 Grøstl-256 P permutations
+generating trace [ 174.54ms | 100.00% ]
 
-2024-07-03T16:37:43.537320Z  INFO groestl: Size of hashable Groestl256 data: 1048.6 KB
-2024-07-03T16:37:43.537338Z  INFO groestl: Size of PCS opening proof: 5.0 MB
-prove [ 3.64s | 100.00% ]
-├── tensor_pcs::commit [ 246.55ms | 6.77% ] { index = 1 }
-├── tensor_pcs::commit [ 385.73ms | 10.59% ]
-├── zerocheck::execute_round [ 565.36ms | 15.52% ] { index = 1 }
-├── zerocheck::execute_round [ 455.69ms | 12.51% ] { index = 2 }
-├── zerocheck::execute_round [ 331.61ms | 9.10% ] { index = 3 }
-├── zerocheck::execute_round [ 249.79ms | 6.86% ] { index = 4 }
-├── zerocheck::execute_round [ 223.35ms | 6.13% ] { index = 5 }
-├── zerocheck::execute_round [ 215.20ms | 5.91% ] (13 calls)
-├── [...] [ 990.00ns | 0.00% ]
-├── EvalcheckProverState::prove [ 389.35ms | 10.69% ]
-├── [...] [ 7.61ms | 0.21% ] (65 calls)
-├── test_utils::make_non_same_query_pcs_sumchecks [ 166.19ms | 4.56% ]
-├── [...] [ 29.00ms | 0.80% ] (257 calls)
-├── tensor_pcs::prove_evaluation [ 238.70ms | 6.55% ] { index = 1 }
-└── tensor_pcs::prove_evaluation [ 87.54ms | 2.40% ]
+constraint_system::prove [ 1.28s | 100.00% ]
+Events:
+  event crates/core/src/constraint_system/prove.rs:74 { message: using computation backend: CpuBackend, arch: x86_64, rayon_threads: 20 }: 1
 
-verify [ 348.48ms | 100.00% ]
-├── tensor_pcs::verify_evaluation [ 283.84ms | 81.45% ] { index = 1 }
-└── tensor_pcs::verify_evaluation [ 50.14ms | 14.39% ]
+└── prove_with_pcs [ 1.28s | 99.92% ]
+   ├── batch_prove_zerocheck_univariate_round [ 478.20ms | 37.46% ]
+   │  ├── execute_univariate_round [ 352.93ms | 27.65% ] (215 calls)
+   │  └── fold_univariate_round [ 121.58ms | 9.52% ] (215 calls)
+   ├── sumcheck::batch_prove [ 170.20ms | 13.33% ]
+   │  ├── ZerocheckProver::execute [ 24.27ms | 1.90% ] (215 calls)
+   │  ├── ZerocheckProver::fold [ 23.73ms | 1.86% ] (215 calls)
+   │  ├── ZerocheckProver::execute [ 16.39ms | 1.28% ] (215 calls)
+   │  ├── [...] [ 20.43ms | 1.60% ] (430 calls)
+   │  ├── ZerocheckProver::fold [ 16.03ms | 1.26% ] (215 calls)
+   │  ├── [...] [ 4.19ms | 0.33% ] (215 calls)
+   │  ├── ZerocheckProver::fold [ 17.54ms | 1.37% ] (215 calls)
+   │  └── [...] [ 43.36ms | 3.40% ] (1935 calls)
+   ├── [...] [ 26.80ms | 2.10% ] (432 calls)
+   ├── sumcheck::batch_prove [ 88.51ms | 6.93% ]
+   │  └── sumcheck::batch_prove [ 88.51ms | 6.93% ]
+   ├── greedy_evalcheck::prove [ 206.94ms | 16.21% ]
+   │  ├── EvalcheckProver::prove [ 204.07ms | 15.99% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 202.59ms | 15.87% ] (2055 calls)
+   │  └── [...] [ 40.16µs | 0.00% ] (4 calls)
+   ├── fri_pcs::prove_evaluation [ 61.26ms | 4.80% ] { index = 1 }
+   └── fri_pcs::prove_evaluation [ 107.29ms | 8.40% ]
+      ├── CpuBackend::evaluate_partial_high [ 49.90ms | 3.91% ]
+      │  └── MultilinearExtension::evaluate_partial_high [ 49.90ms | 3.91% ]
+      └── [...] [ 37.31ms | 2.92% ] (302 calls)
+
+constraint_system::verify [ 116.39ms | 100.00% ]
+├── batch_verify_zerocheck_univariate_round [ 2.87ms | 2.47% ]
+├── [...] [ 1.10ms | 0.95% ]
+├── EvalcheckVerifierState::verify [ 20.15ms | 17.31% ]
+├── [...] [ 28.41µs | 0.02% ] (4 calls)
+└── fri::FRIVerifier::verify_query [ 5.54ms | 4.76% ] (481 calls)
 ```
 
 ### Vision
 
-with logsize 17
-
 ``` 
-2024-07-03T16:36:36.501119Z  INFO vision32b: Size of hashable vision32b data: 1048.6 KB
-2024-07-03T16:36:36.501144Z  INFO vision32b: Size of tensorpcs: 1.8 MB
-generate_trace [ 778.23ms | 100.00% ] { log_size = 17 }
+Verifying 16384 Vision-32b permutations
+generating trace [ 599.12ms | 100.00% ]
 
-prove [ 1.73s | 100.00% ]
-├── tensor_pcs::commit [ 604.17ms | 34.83% ]
-├── zerocheck::execute_round [ 143.24ms | 8.26% ] { index = 1 }
-├── zerocheck::execute_round [ 130.82ms | 7.54% ] { index = 2 }
-├── zerocheck::execute_round [ 129.82ms | 7.48% ] { index = 3 }
-├── zerocheck::execute_round [ 66.37ms | 3.83% ] { index = 4 }
-├── zerocheck::execute_round [ 94.99ms | 5.48% ] (12 calls)
-├── [...] [ 1.31µs | 0.00% ]
-├── EvalcheckProverState::prove [ 371.79ms | 21.43% ]
-├── [...] [ 2.14ms | 0.12% ] (25 calls)
-├── test_utils::make_non_same_query_pcs_sumchecks [ 47.84ms | 2.76% ]
-├── test_utils::prove_bivariate_sumchecks_with_switchover [ 21.19ms | 1.22% ]
-│  ├── sumcheck::execute_round [ 19.45ms | 1.12% ] (935 calls)
-│  └── [...] [ 140.62µs | 0.01% ] (311 calls)
-├── [...] [ 732.77µs | 0.04% ] (312 calls)
-└── tensor_pcs::prove_evaluation [ 107.25ms | 6.18% ]
+constraint_system::prove [ 4.03s | 100.00% ]
+Events:
+  event crates/core/src/constraint_system/prove.rs:74 { message: using computation backend: CpuBackend, arch: x86_64, rayon_threads: 20 }: 1
 
-verify [ 65.19ms | 100.00% ]
-├── EvalcheckVerifierState::verify [ 9.25ms | 14.19% ] { index = 1 }
-├── [...] [ 734.92µs | 1.13% ] (337 calls)
-└── tensor_pcs::verify_evaluation [ 53.81ms | 82.54% ]
+└── prove_with_pcs [ 4.03s | 99.97% ]
+   ├── FRIPCS::commit [ 97.38ms | 2.42% ]
+   │  └── commit_interleaved [ 97.38ms | 2.42% ]
+   │     └── commit_interleaved_with [ 97.37ms | 2.42% ]
+   │        └── commit_iterated [ 44.26ms | 1.10% ]
+   │           └── BinaryMerkleTree::build [ 44.26ms | 1.10% ]
+   ├── [...] [ 81.51µs | 0.00% ] (391 calls)
+   ├── batch_prove_zerocheck_univariate_round [ 2.52s | 62.49% ]
+   │  ├── execute_univariate_round [ 2.16s | 53.54% ] (383 calls)
+   │  └── fold_univariate_round [ 348.31ms | 8.64% ] (383 calls)
+   ├── sumcheck::batch_prove [ 438.85ms | 10.89% ]
+   │  ├── ZerocheckProver::execute [ 65.25ms | 1.62% ] (383 calls)
+   │  ├── ZerocheckProver::fold [ 50.87ms | 1.26% ] (383 calls)
+   │  ├── ZerocheckProver::execute [ 49.38ms | 1.23% ] (383 calls)
+   │  ├── [...] [ 107.33ms | 2.66% ] (1532 calls)
+   │  ├── ZerocheckProver::fold [ 40.39ms | 1.00% ] (383 calls)
+   │  └── [...] [ 118.69ms | 2.95% ] (3447 calls)
+   ├── [...] [ 58.54ms | 1.45% ] (768 calls)
+   ├── sumcheck::batch_prove [ 160.77ms | 3.99% ]
+   │  └── sumcheck::batch_prove [ 160.77ms | 3.99% ]
+   ├── greedy_evalcheck::prove [ 102.99ms | 2.56% ]
+   │  ├── EvalcheckProver::prove [ 101.25ms | 2.51% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 100.16ms | 2.49% ] (1175 calls)
+   │  └── [...] [ 41.45µs | 0.00% ] (4 calls)
+   └── fri_pcs::prove_evaluation [ 456.29ms | 11.32% ]
+      ├── CpuBackend::evaluate_partial_high [ 279.55ms | 6.94% ]
+      │  └── MultilinearExtension::evaluate_partial_high [ 279.55ms | 6.94% ]
+      └── [...] [ 136.52ms | 3.39% ] (308 calls)
+
+constraint_system::verify [ 162.18ms | 100.00% ]
+├── batch_verify_zerocheck_univariate_round [ 5.45ms | 3.36% ]
+├── batch_verify_with_start [ 2.39ms | 1.47% ]
+├── EvalcheckVerifierState::verify [ 4.90ms | 3.02% ]
+├── [...] [ 26.89µs | 0.02% ] (4 calls)
+└── fri::FRIVerifier::verify_query [ 5.16ms | 3.18% ] (240 calls)
+
 ```
 
 ### SHA-256
 
-with logsize 19
-
-```
-2024-07-03T16:40:39.963292Z  INFO sha256: Size of hashable SHA-256 data: 1048.6 KB
-2024-07-03T16:40:39.963317Z  INFO sha256: Size of PCS proof: 6.4 MB
-generate_trace [ 490.13ms | 100.00% ]
-
-prove [ 7.00s | 100.00% ]
-├── tensor_pcs::commit [ 664.50ms | 9.49% ]
-├── zerocheck::prove [ 3.63s | 51.83% ]
-│  ├── zerocheck::execute_round [ 1.61s | 22.93% ] { index = 1 }
-│  ├── zerocheck::execute_round [ 806.52ms | 11.52% ] { index = 2 }
-│  ├── zerocheck::execute_round [ 427.96ms | 6.11% ] { index = 3 }
-│  ├── zerocheck::execute_round [ 227.89ms | 3.25% ] { index = 4 }
-│  ├── zerocheck::execute_round [ 257.16ms | 3.67% ] { index = 6 }
-│  ├── zerocheck::execute_round [ 299.96ms | 4.28% ] (13 calls)
-│  └── [...] [ 1.10µs | 0.00% ]
-├── EvalcheckProverState::prove [ 644.76ms | 9.21% ]
-├── test_utils::prove_bivariate_sumchecks_with_switchover [ 241.85ms | 3.45% ]
-│  ├── sumcheck::execute_round [ 228.65ms | 3.27% ] (9719 calls)
-│  └── [...] [ 878.40µs | 0.01% ] (1943 calls)
-├── [...] [ 16.12ms | 0.23% ] (1944 calls)
-├── test_utils::make_non_same_query_pcs_sumchecks [ 804.40ms | 11.49% ]
-├── test_utils::prove_bivariate_sumchecks_with_switchover [ 276.31ms | 3.95% ]
-│  ├── sumcheck::execute_round [ 259.12ms | 3.70% ] (10704 calls)
-│  └── [...] [ 980.43µs | 0.01% ] (2140 calls)
-├── [...] [ 16.64ms | 0.24% ] (2141 calls)
-└── tensor_pcs::prove_evaluation [ 679.42ms | 9.70% ]
-
-verify [ 815.76ms | 100.00% ]
-├── EvalcheckVerifierState::verify [ 26.88ms | 3.30% ] { index = 1 }
-├── EvalcheckVerifierState::verify [ 9.14ms | 1.12% ] (1943 calls)
-├── [...] [ 6.96ms | 0.85% ] (2143 calls)
-└── tensor_pcs::verify_evaluation [ 724.27ms | 88.78% ]
 ```
 
-### Keccak over BabyBear31 with Keccak Merkle trees
+Verifying 16384 sha256 compressions
+generating trace [ 229.22ms | 100.00% ]
+
+constraint_system::prove [ 4.28s | 100.00% ]
+Events:
+  event crates/core/src/constraint_system/prove.rs:74 { message: using computation backend: CpuBackend, arch: x86_64, rayon_threads: 44 }: 1
+
+└── prove_with_pcs [ 4.27s | 99.83% ]
+   ├── FRIPCS::commit [ 204.05ms | 4.77% ]
+   │  └── commit_interleaved [ 204.04ms | 4.77% ]
+   │     └── commit_interleaved_with [ 204.04ms | 4.77% ]
+   │        ├── allocate codeword [ 45.34ms | 1.06% ]
+   │        ├── encode_ext_batch_inplace [ 77.74ms | 1.82% ]
+   │        └── commit_iterated [ 69.57ms | 1.63% ]
+   │           └── BinaryMerkleTree::build [ 69.57ms | 1.63% ]
+   ├── [...] [ 19.09µs | 0.00% ] (9 calls)
+   ├── batch_prove_zerocheck_univariate_round [ 1.37s | 32.00% ]
+   │  ├── execute_univariate_round [ 1.06s | 24.77% ]
+   │  │  └── zerocheck_univariate_evals [ 1.05s | 24.52% ]
+   │  │     └── extrapolate_round_evals [ 167.91ms | 3.92% ]
+   │  └── fold_univariate_round [ 309.27ms | 7.23% ]
+   ├── sumcheck::batch_prove [ 155.98ms | 3.64% ]
+   ├── reduce_to_skipped_projection [ 263.79ms | 6.16% ]
+   ├── [...] [ 35.96ms | 0.84% ] (2 calls)
+   ├── greedy_evalcheck::prove [ 1.52s | 35.49% ]
+   │  ├── EvalcheckProver::prove [ 1.11s | 25.84% ]
+   │  │  └── EvalcheckProverState::prove_multilinear [ 1.10s | 25.79% ] (2239 calls)
+   │  ├── [...] [ 37.24ms | 0.87% ] (4 calls)
+   │  ├── make_non_same_query_pcs_sumchecks [ 299.73ms | 7.00% ]
+   │  ├── [...] [ 783.31µs | 0.02% ]
+   │  ├── sumcheck::batch_prove [ 60.30ms | 1.41% ]
+   │  │  └── sumcheck::batch_prove [ 60.26ms | 1.41% ]
+   │  └── [...] [ 8.58ms | 0.20% ] (2 calls)
+   └── fri_pcs::prove_evaluation [ 647.25ms | 15.12% ]
+      ├── CpuBackend::evaluate_partial_high [ 267.60ms | 6.25% ]
+      │  └── MultilinearExtension::evaluate_partial_high [ 267.60ms | 6.25% ]
+      ├── [...] [ 13.41ms | 0.31% ] (3 calls)
+      ├── RegularSumcheckProver::fold [ 57.32ms | 1.34% ]
+      │  └── ProverState::fold [ 57.31ms | 1.34% ]
+      ├── [...] [ 30.23ms | 0.71% ] (7 calls)
+      ├── fri::FRIFolder::execute_fold_round [ 47.19ms | 1.10% ]
+      ├── [...] [ 43.49ms | 1.02% ] (58 calls)
+      ├── fri::FRIFolder::finalize [ 70.36ms | 1.64% ]
+      └── [...] [ 516.51µs | 0.01% ] (240 calls)
+
+constraint_system::verify [ 39.78ms | 100.00% ]
+├── batch_verify_zerocheck_univariate_round [ 5.33ms | 13.40% ]
+├── batch_verify_with_start [ 603.74µs | 1.52% ]
+├── EvalcheckVerifierState::verify [ 1.87ms | 4.69% ]
+├── batch_verify_with_start [ 668.50µs | 1.68% ]
+├── EvalcheckVerifierState::verify [ 4.23ms | 10.62% ]
+├── [...] [ 25.93µs | 0.07% ]
+├── batch_verify_with_start [ 1.13ms | 2.84% ]
+├── EvalcheckVerifierState::verify [ 3.68ms | 9.26% ]
+├── [...] [ 35.94µs | 0.09% ]
+└── fri::FRIVerifier::verify_query [ 5.54ms | 13.92% ] (240 calls)
 
 ```
-INFO     generate Keccak trace [ 916ms | 100.00% ]
-INFO     prove [ 7.74s | 0.26% / 100.00% ]
-INFO     ┝━ infer log of constraint degree [ 7.29ms | 0.09% ]
-INFO     ┝━ commit to trace data [ 5.52s | 14.50% / 71.31% ]
-INFO     │  ┕━ coset_lde_batch [ 4.40s | 56.80% ] dims: 2633x262144
-INFO     ┝━ compute quotient polynomial [ 1.47s | 19.01% ]
-INFO     ┝━ commit to quotient poly chunks [ 55.4ms | 0.38% / 0.72% ]
-INFO     │  ┝━ coset_lde_batch [ 12.9ms | 0.17% ] dims: 4x262144
-INFO     │  ┕━ coset_lde_batch [ 12.9ms | 0.17% ] dims: 4x262144
-INFO     ┝━ compute_inverse_denominators [ 92.7ms | 1.20% ]
-INFO     ┝━ reduce matrix quotient [ 223ms | 0.00% / 2.88% ] dims: 2633x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 114ms | 1.47% ]
-INFO     │  ┕━ reduce rows [ 109ms | 1.41% ]
-INFO     ┝━ reduce matrix quotient [ 219ms | 0.00% / 2.83% ] dims: 2633x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 110ms | 1.42% ]
-INFO     │  ┕━ reduce rows [ 109ms | 1.41% ]
-INFO     ┝━ reduce matrix quotient [ 25.7ms | 0.00% / 0.33% ] dims: 4x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 23.5ms | 0.30% ]
-INFO     │  ┕━ reduce rows [ 2.24ms | 0.03% ]
-INFO     ┝━ reduce matrix quotient [ 27.9ms | 0.00% / 0.36% ] dims: 4x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 25.7ms | 0.33% ]
-INFO     │  ┕━ reduce rows [ 2.18ms | 0.03% ]
-INFO     ┕━ FRI prover [ 78.3ms | 0.00% / 1.01% ]
-INFO        ┝━ commit phase [ 67.8ms | 0.88% ]
-INFO        ┝━ grind for proof-of-work witness [ 8.93ms | 0.12% ]
-INFO        ┕━ query phase [ 1.50ms | 0.02% ]
-INFO     verify [ 241ms | 97.93% / 100.00% ]
-INFO     ┕━ infer log of constraint degree [ 5.00ms | 2.07% ]
+
+### Keccak over BabyBear31 with SHA256 Merkle trees
+
+```
+
+Proving 8192 NUM_HASHES
+INFO     generate Keccak trace [ 257ms | 100.00% ]
+INFO     prove [ 3.93s | 1.35% / 100.00% ]
+INFO     ┝━ commit to trace data [ 3.08s | 10.91% / 78.35% ]
+INFO     │  ┕━ coset_lde_batch [ 2.65s | 67.44% ] dims: 2633x262144 | added_bits: 1
+INFO     ┝━ compute quotient polynomial [ 369ms | 9.39% ]
+INFO     ┝━ commit to quotient poly chunks [ 35.5ms | 0.37% / 0.90% ]
+INFO     │  ┝━ coset_lde_batch [ 11.4ms | 0.29% ] dims: 4x262144 | added_bits: 1
+INFO     │  ┕━ coset_lde_batch [ 9.62ms | 0.24% ] dims: 4x262144 | added_bits: 1
+INFO     ┕━ open [ 393ms | 0.02% / 10.00% ]
+INFO        ┝━ compute_inverse_denominators [ 14.7ms | 0.38% ]
+INFO        ┝━ reduce matrix quotient [ 167ms | 0.00% / 4.24% ] dims: 2633x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 86.1ms | 2.19% ]
+INFO        │  ┕━ reduce rows [ 80.3ms | 2.05% ]
+INFO        ┝━ reduce matrix quotient [ 140ms | 0.00% / 3.57% ] dims: 2633x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 59.8ms | 1.52% ]
+INFO        │  ┕━ reduce rows [ 80.3ms | 2.04% ]
+INFO        ┝━ reduce matrix quotient [ 8.26ms | 0.00% / 0.21% ] dims: 4x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 6.02ms | 0.15% ]
+INFO        │  ┕━ reduce rows [ 2.23ms | 0.06% ]
+INFO        ┝━ reduce matrix quotient [ 6.64ms | 0.00% / 0.17% ] dims: 4x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 4.49ms | 0.11% ]
+INFO        │  ┕━ reduce rows [ 2.14ms | 0.05% ]
+INFO        ┕━ FRI prover [ 55.7ms | 0.00% / 1.42% ]
+INFO           ┝━ commit phase [ 52.5ms | 1.34% ]
+INFO           ┝━ grind for proof-of-work witness [ 1.76ms | 0.04% ]
+INFO           ┕━ query phase [ 1.43ms | 0.04% ]
+INFO     verify [ 216ms | 97.70% / 100.00% ]
+INFO     ┕━ infer log of constraint degree [ 4.98ms | 2.30% ]
 ```
 
 ### Keccak over BabyBear31 with Poseidon2 Merkle trees
 
 ```
-INFO     generate Keccak trace [ 924ms | 100.00% ]
-INFO     prove [ 10.7s | 0.19% / 100.00% ]
-INFO     ┝━ infer log of constraint degree [ 7.61ms | 0.07% ]
-INFO     ┝━ commit to trace data [ 8.46s | 37.93% / 79.14% ]
-INFO     │  ┕━ coset_lde_batch [ 4.41s | 41.21% ] dims: 2633x262144
-INFO     ┝━ compute quotient polynomial [ 1.47s | 13.78% ]
-INFO     ┝━ commit to quotient poly chunks [ 59.5ms | 0.31% / 0.56% ]
-INFO     │  ┝━ coset_lde_batch [ 12.9ms | 0.12% ] dims: 4x262144
-INFO     │  ┕━ coset_lde_batch [ 12.9ms | 0.12% ] dims: 4x262144
-INFO     ┝━ compute_inverse_denominators [ 93.5ms | 0.87% ]
-INFO     ┝━ reduce matrix quotient [ 227ms | 0.00% / 2.13% ] dims: 2633x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 118ms | 1.11% ]
-INFO     │  ┕━ reduce rows [ 109ms | 1.02% ]
-INFO     ┝━ reduce matrix quotient [ 219ms | 0.00% / 2.05% ] dims: 2633x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 109ms | 1.02% ]
-INFO     │  ┕━ reduce rows [ 110ms | 1.03% ]
-INFO     ┝━ reduce matrix quotient [ 26.0ms | 0.00% / 0.24% ] dims: 4x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 23.6ms | 0.22% ]
-INFO     │  ┕━ reduce rows [ 2.38ms | 0.02% ]
-INFO     ┝━ reduce matrix quotient [ 27.8ms | 0.00% / 0.26% ] dims: 4x524288
-INFO     │  ┝━ compute opened values with Lagrange interpolation [ 25.6ms | 0.24% ]
-INFO     │  ┕━ reduce rows [ 2.26ms | 0.02% ]
-INFO     ┕━ FRI prover [ 76.7ms | 0.00% / 0.72% ]
-INFO        ┝━ commit phase [ 72.2ms | 0.68% ]
-INFO        ┝━ grind for proof-of-work witness [ 2.95ms | 0.03% ]
-INFO        ┕━ query phase [ 1.50ms | 0.01% ]
-INFO     verify [ 290ms | 98.34% / 100.00% ]
-INFO     ┕━ infer log of constraint degree [ 4.82ms | 1.66% ]
+
+Proving 8192 NUM_HASHES
+INFO     generate Keccak trace [ 256ms | 100.00% ]
+INFO     prove [ 5.12s | 1.04% / 100.00% ]
+INFO     ┝━ commit to trace data [ 4.23s | 30.81% / 82.58% ]
+INFO     │  ┕━ coset_lde_batch [ 2.65s | 51.77% ] dims: 2633x262144 | added_bits: 1
+INFO     ┝━ compute quotient polynomial [ 374ms | 7.30% ]
+INFO     ┝━ commit to quotient poly chunks [ 46.9ms | 0.51% / 0.92% ]
+INFO     │  ┝━ coset_lde_batch [ 11.7ms | 0.23% ] dims: 4x262144 | added_bits: 1
+INFO     │  ┕━ coset_lde_batch [ 9.32ms | 0.18% ] dims: 4x262144 | added_bits: 1
+INFO     ┕━ open [ 417ms | 0.01% / 8.15% ]
+INFO        ┝━ compute_inverse_denominators [ 14.9ms | 0.29% ]
+INFO        ┝━ reduce matrix quotient [ 172ms | 0.00% / 3.36% ] dims: 2633x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 89.8ms | 1.76% ]
+INFO        │  ┕━ reduce rows [ 81.8ms | 1.60% ]
+INFO        ┝━ reduce matrix quotient [ 141ms | 0.00% / 2.76% ] dims: 2633x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 59.7ms | 1.17% ]
+INFO        │  ┕━ reduce rows [ 81.6ms | 1.59% ]
+INFO        ┝━ reduce matrix quotient [ 8.04ms | 0.00% / 0.16% ] dims: 4x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 5.94ms | 0.12% ]
+INFO        │  ┕━ reduce rows [ 2.09ms | 0.04% ]
+INFO        ┝━ reduce matrix quotient [ 6.25ms | 0.00% / 0.12% ] dims: 4x524288
+INFO        │  ┝━ compute opened values with Lagrange interpolation [ 4.25ms | 0.08% ]
+INFO        │  ┕━ reduce rows [ 2.00ms | 0.04% ]
+INFO        ┕━ FRI prover [ 74.2ms | 0.00% / 1.45% ]
+INFO           ┝━ commit phase [ 59.7ms | 1.17% ]
+INFO           ┝━ grind for proof-of-work witness [ 13.1ms | 0.26% ]
+INFO           ┕━ query phase [ 1.42ms | 0.03% ]
+INFO     verify [ 260ms | 97.97% / 100.00% ]
+INFO     ┕━ infer log of constraint degree [ 5.26ms | 2.03% ]
 ```

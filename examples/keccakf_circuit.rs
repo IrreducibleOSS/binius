@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::array;
+#![feature(array_try_from_fn)]
 
 use anyhow::Result;
 use binius_circuits::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
@@ -12,6 +12,7 @@ use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
+use std::array;
 use tracing_profile::init_tracing;
 
 const LOG_ROWS_PER_PERMUTATION: usize = 6;
@@ -48,11 +49,12 @@ fn main() -> Result<()> {
 
 	let log_size = log_n_permutations + LOG_ROWS_PER_PERMUTATION;
 
-	let input = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField1b>(&mut builder, "input", log_size).unwrap()
-	});
-
-	let _state_out = binius_circuits::keccakf::keccakf(&mut builder, input, log_size);
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let input = array::try_from_fn(|_| {
+		unconstrained::<_, _, BinaryField1b>(&mut builder, "input", log_size)
+	})?;
+	let _state_out = binius_circuits::keccakf::keccakf(&mut builder, input, log_size)?;
+	drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()

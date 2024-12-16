@@ -51,6 +51,8 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+
+	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let state_in: [OracleId; 24] = array::from_fn(|i| {
 		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField32b>(
 			&mut builder,
@@ -61,6 +63,7 @@ fn main() -> Result<()> {
 	});
 	let _state_out =
 		binius_circuits::vision::vision_permutation(&mut builder, log_n_permutations, state_in)?;
+	drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()

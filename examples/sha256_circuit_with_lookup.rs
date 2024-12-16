@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+#![feature(array_try_from_fn)]
+
 use anyhow::Result;
 use binius_circuits::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
 use binius_core::{
@@ -53,20 +55,21 @@ fn main() -> Result<()> {
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
-	let input: [OracleId; 16] = array::from_fn(|i| {
+	let trace_gen_scope = tracing::info_span!("generating witness").entered();
+	let input: [OracleId; 16] = array::try_from_fn(|i| {
 		unconstrained::<_, _, BinaryField1b>(
 			&mut builder,
 			i,
 			log_n_compressions + COMPRESSION_LOG_LEN,
 		)
-		.unwrap()
-	});
+	})?;
 
 	let _state_out = binius_circuits::lasso::sha256(
 		&mut builder,
 		input,
 		log_n_compressions + COMPRESSION_LOG_LEN,
-	);
+	)?;
+	drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()
