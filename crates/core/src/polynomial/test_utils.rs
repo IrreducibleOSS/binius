@@ -15,14 +15,11 @@ pub fn hypercube_evals_from_oracle<F: Field>(oracle: &dyn MultivariatePoly<F>) -
 
 pub fn decompose_index_to_hypercube_point<F: Field>(n_vars: usize, index: usize) -> Vec<F> {
 	(0..n_vars)
-		.map(|k| {
-			if (index >> k) % 2 == 1 {
-				F::ONE
-			} else {
-				F::ZERO
-			}
+		.map(|k| match (index >> k) & 1 {
+			0 => F::ZERO,
+			_ => F::ONE,
 		})
-		.collect::<Vec<_>>()
+		.collect()
 }
 
 pub fn packed_slice<P>(assignments: &[(std::ops::Range<usize>, u8)]) -> Vec<P>

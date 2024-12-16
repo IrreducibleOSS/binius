@@ -56,6 +56,10 @@ path = "sha256_circuit.rs"
 name = "sha256_circuit_with_lookup"
 path = "sha256_circuit_with_lookup.rs"
 
+[[example]]
+name = "collatz"
+path = "collatz.rs"
+
 [lints.clippy]
 needless_range_loop = "allow"
 

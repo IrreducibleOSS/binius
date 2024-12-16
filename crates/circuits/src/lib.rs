@@ -2,8 +2,10 @@
 
 #![feature(array_try_map, array_try_from_fn)]
 
+pub mod arithmetic;
 pub mod bitwise;
 pub mod builder;
+pub mod collatz;
 pub mod groestl;
 pub mod keccakf;
 pub mod lasso;
