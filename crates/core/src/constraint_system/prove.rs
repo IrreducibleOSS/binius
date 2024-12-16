@@ -3,9 +3,9 @@
 use super::{
 	error::Error,
 	verify::{
-		get_flush_sumcheck_composite_sum_claims, get_post_flush_sumcheck_eval_claims,
-		make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds,
-		reorder_for_flushing_by_n_vars, FlushSumcheckComposition,
+		get_flush_sumcheck_composite_sum_claims_without_eq,
+		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles, make_standard_pcss,
+		max_n_vars_and_skip_rounds, reorder_for_flushing_by_n_vars, FlushSelectorComposition,
 	},
 	ConstraintSystem, Proof,
 };
@@ -15,11 +15,13 @@ use crate::{
 	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	poly_commit::PolyCommitScheme,
 	protocols::{
-		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
+		gkr_gpa::{
+			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
+			GrandProductWitness, LayerClaim,
+		},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			prove::{RegularSumcheckProver, UnivariateZerocheckProver},
+			self, constraint_set_zerocheck_claim, prove::UnivariateZerocheckProver,
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
@@ -42,7 +44,7 @@ use binius_utils::bail;
 use itertools::izip;
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
-use std::{cmp::Reverse, env, fmt::Debug};
+use std::{cmp::Reverse, env};
 use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
@@ -65,7 +67,7 @@ where
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
-	Backend: ComputationBackend + Debug,
+	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 	PackedType<U, FBase>:
@@ -251,7 +253,7 @@ where
 		flush_final_layer_claims,
 	);
 
-	let (flush_sumcheck_provers, flush_transparents_ids) = get_flush_sumcheck_provers(
+	let (flush_sumcheck_provers, step_down_ids) = get_flush_sumcheck_provers(
 		&mut oracles,
 		&flush_oracle_ids,
 		&flush_counts,
@@ -264,10 +266,10 @@ where
 	let flush_sumcheck_output =
 		sumcheck::prove::batch_prove(flush_sumcheck_provers, &mut transcript)?;
 
-	let flush_eval_claims = get_post_flush_sumcheck_eval_claims(
+	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
 		&oracles,
 		&flush_oracle_ids,
-		&flush_transparents_ids,
+		&step_down_ids,
 		&flush_sumcheck_output,
 	)?;
 
@@ -337,6 +339,7 @@ where
 
 	let mut reduction_claims = Vec::with_capacity(univariate_cnt);
 	let mut reduction_provers = Vec::with_capacity(univariate_cnt);
+
 	for (univariatized_multilinear_evals, multilinears) in
 		izip!(&zerocheck_output.multilinear_evals, univariatized_multilinears)
 	{
@@ -659,16 +662,17 @@ where
 		.collect()
 }
 
-type FlushSumcheckProver<'b, U, Tower, FDomain, Backend> = RegularSumcheckProver<
+type FlushSumcheckProver<'b, U, Tower, FDomain, Backend> = GPAProver<
 	'b,
 	FDomain,
 	PackedType<U, <Tower as TowerFamily>::B128>,
-	FlushSumcheckComposition,
+	FlushSelectorComposition,
 	MultilinearWitness<'b, PackedType<U, <Tower as TowerFamily>::B128>>,
 	Backend,
 >;
+
 type FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend> =
-	(Vec<FlushSumcheckProver<'b, U, Tower, FDomain, Backend>>, Vec<(OracleId, OracleId)>);
+	(Vec<FlushSumcheckProver<'b, U, Tower, FDomain, Backend>>, Vec<OracleId>);
 
 #[instrument(skip_all, level = "debug")]
 fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>(
@@ -687,60 +691,43 @@ where
 	FDomain: Field,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
+	<U as PackScalar<Tower::B128>>::Packed: PackedFieldIndexable,
 	'a: 'b,
 {
-	let (composite_sum_claims, step_down_info, eq_ind_info) =
-		get_flush_sumcheck_composite_sum_claims::<Tower::B128>(
+	let (composite_sum_claims, step_down_info) =
+		get_flush_sumcheck_composite_sum_claims_without_eq::<Tower::B128>(
 			oracles,
 			flush_oracle_ids,
 			flush_counts,
 			final_layer_claims,
 		)?;
 
-	// The function is on the critical path, parallelize.
-	let eq_ind_adapters = eq_ind_info
-		.into_par_iter()
-		.map(|(eq_ind_id, eq_ind)| -> Result<_, Error> {
-			let eq_ind_multilinear_extension = eq_ind.multilinear_extension(backend)?;
-			let eq_ind_adapter =
-				MLEDirectAdapter::from(eq_ind_multilinear_extension).upcast_arc_dyn();
-			Ok((eq_ind_id, eq_ind_adapter))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
 	let results: Result<Vec<_>, Error> = izip!(
 		flush_oracle_ids.iter(),
 		composite_sum_claims.into_iter(),
 		step_down_info.into_iter(),
-		eq_ind_adapters.into_iter()
+		final_layer_claims.iter()
 	)
 	.map(
-		|(
-			&flush_oracle_id,
-			composite_sum_claim,
-			(step_down_id, step_down),
-			(eq_ind_id, eq_ind_adapter),
-		)| {
+		|(&flush_oracle_id, composite_sum_claim, (step_down_id, step_down), final_layer_claim)| {
 			let step_down_multilinear =
 				MLEDirectAdapter::from(step_down.multilinear_extension()?).upcast_arc_dyn();
 
-			witness.update_multilin_poly([
-				(step_down_id, step_down_multilinear),
-				(eq_ind_id, eq_ind_adapter),
-			])?;
+			witness.update_multilin_poly([(step_down_id, step_down_multilinear)])?;
 
-			let prover = RegularSumcheckProver::new(
+			let prover = GPAProver::new(
 				vec![
 					witness.get_multilin_poly(flush_oracle_id)?,
 					witness.get_multilin_poly(step_down_id)?,
-					witness.get_multilin_poly(eq_ind_id)?,
 				],
+				None,
 				[composite_sum_claim],
 				domain_factory.clone(),
-				standard_switchover_heuristic(0), // what should this be?
+				&final_layer_claim.eval_point,
 				backend,
 			)?;
 
-			Ok((prover, (step_down_id, eq_ind_id)))
+			Ok((prover, step_down_id))
 		},
 	)
 	.collect();

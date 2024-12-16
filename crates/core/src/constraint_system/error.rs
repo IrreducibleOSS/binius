@@ -43,6 +43,9 @@ pub enum Error {
 	#[error("Non-zero oracles contain zeros")]
 	Zeros,
 
+	#[error("False eq evaluation claim")]
+	FalseEqEvaluationClaim,
+
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
 
@@ -66,6 +69,9 @@ pub enum Error {
 
 	#[error("prodcheck error: {0}")]
 	Prodcheck(#[from] gkr_gpa::Error),
+
+	#[error("eq-ind sumcheck error: {0}")]
+	EqSumcheck(#[from] gkr_gpa::gpa_sumcheck::error::Error),
 
 	#[error("oracle error: {0}")]
 	Oracle(#[from] oracle::Error),
