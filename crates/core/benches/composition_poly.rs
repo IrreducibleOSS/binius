@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter::repeat_with;
+
 use binius_core::polynomial::ArithCircuitPoly;
 use binius_field::{
 	BinaryField1b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
@@ -8,9 +10,21 @@ use binius_field::{
 use binius_macros::{arith_circuit_poly, composition_poly};
 use binius_math::{ArithExpr as Expr, CompositionPolyOS};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use rand::thread_rng;
+use rand::{thread_rng, RngCore};
 
 const BATCH_SIZE: usize = 256;
+
+fn generate_random_vec<P: PackedField>(mut rng: impl RngCore) -> Vec<P> {
+	repeat_with(|| P::random(&mut rng))
+		.take(BATCH_SIZE)
+		.collect()
+}
+
+fn generate_input_data<P: PackedField>(mut rng: impl RngCore) -> Vec<Vec<P>> {
+	repeat_with(|| generate_random_vec(&mut rng))
+		.take(4)
+		.collect()
+}
 
 fn evaluate_arith_circuit_poly<P: PackedField>(
 	query: &[&[P]],
@@ -32,30 +46,15 @@ fn evaluate_arith_circuit_poly<P: PackedField>(
 fn benchmark_evaluate(c: &mut Criterion) {
 	let mut rng = thread_rng();
 
-	let query128x1b = vec![
-		[PackedBinaryField128x1b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField128x1b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField128x1b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField128x1b::random(&mut rng); BATCH_SIZE],
-	];
+	let query128x1b = generate_input_data(&mut rng);
 	let query128x1b = query128x1b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
 	let mut results128x1b = vec![PackedBinaryField128x1b::zero(); BATCH_SIZE];
 
-	let query16x8b = vec![
-		[PackedBinaryField16x8b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField16x8b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField16x8b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField16x8b::random(&mut rng); BATCH_SIZE],
-	];
+	let query16x8b = generate_input_data(&mut rng);
 	let query16x8b = query16x8b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
 	let mut results16x8b = vec![PackedBinaryField16x8b::zero(); BATCH_SIZE];
 
-	let query1x128b = vec![
-		[PackedBinaryField1x128b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField1x128b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField1x128b::random(&mut rng); BATCH_SIZE],
-		[PackedBinaryField1x128b::random(&mut rng); BATCH_SIZE],
-	];
+	let query1x128b = generate_input_data(&mut rng);
 	let query1x128b = query1x128b.iter().map(|q| q.as_slice()).collect::<Vec<_>>();
 	let mut results1x128b = vec![PackedBinaryField1x128b::zero(); BATCH_SIZE];
 
