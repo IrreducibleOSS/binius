@@ -140,7 +140,7 @@ where
 		match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(ref round_coeffs) => {
 				let new_sums = round_coeffs
-					.iter()
+					.par_iter()
 					.map(|coeffs| evaluate_univariate(&coeffs.0, challenge))
 					.collect();
 				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);

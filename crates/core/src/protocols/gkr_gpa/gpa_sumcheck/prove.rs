@@ -248,10 +248,17 @@ where
 	#[instrument(skip_all, name = "GPAProver::fold", level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
 		self.update_eq_ind_eval(challenge);
-		self.state.fold(challenge)?;
-
-		// This must happen after state fold, which decrements n_rounds_remaining.
-		self.fold_partial_eq_ind();
+		let n_rounds_remaining = self.n_rounds_remaining();
+		rayon::join(
+			|| self.state.fold(challenge),
+			|| {
+				common::fold_partial_eq_ind::<P, Backend>(
+					n_rounds_remaining - 1,
+					&mut self.partial_eq_ind_evals,
+				)
+			},
+		)
+		.0?;
 		Ok(())
 	}
 
