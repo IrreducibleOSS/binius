@@ -1,13 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{common::GreedyEvalcheckProveOutput, error::Error};
+use super::error::Error;
 use crate::{
 	fiat_shamir::CanSample,
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
-		serialize_evalcheck_proof,
-		subclaims::{make_non_same_query_pcs_sumchecks, prove_bivariate_sumchecks_with_switchover},
-		EvalcheckMultilinearClaim, EvalcheckProver,
+		serialize_evalcheck_proof, subclaims::prove_bivariate_sumchecks_with_switchover,
+		CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, AdviceWriter, CanWrite},
 	witness::MultilinearExtensionIndex,
@@ -19,7 +18,7 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
-use std::cmp::Reverse;
+use itertools::Itertools;
 use tracing::instrument;
 
 #[allow(clippy::too_many_arguments)]
@@ -33,7 +32,7 @@ pub fn prove<U, F, DomainField, Transcript, Backend>(
 	advice: &mut AdviceWriter,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
-) -> Result<GreedyEvalcheckProveOutput<F>, Error>
+) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
@@ -83,63 +82,29 @@ where
 	}
 	write_u64(advice, virtual_opening_proofs_len);
 
-	// Now all remaining evalcheck claims are for committed polynomials.
-	// Batch together all committed polynomial evaluation claims to one point per batch.
-	let mut non_sqpcs_sumchecks = Vec::new();
-
-	for batch in &committed_batches {
-		let maybe_same_query_claim = evalcheck_prover
-			.batch_committed_eval_claims()
-			.try_extract_same_query_pcs_claim(batch.id)?;
-
-		if maybe_same_query_claim.is_none() {
-			let non_sqpcs_claims = evalcheck_prover
-				.batch_committed_eval_claims_mut()
-				.take_claims(batch.id)?;
-			non_sqpcs_sumchecks.push(make_non_same_query_pcs_sumchecks(
-				&mut evalcheck_prover,
-				&non_sqpcs_claims,
-				backend,
-			)?);
-		}
-	}
-
-	non_sqpcs_sumchecks.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
-
-	let new_evalcheck_claims = prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
-		evalcheck_prover.oracles,
-		evalcheck_prover.witness_index,
-		non_sqpcs_sumchecks,
-		transcript,
-		switchover_fn.clone(),
-		domain_factory.clone(),
-		backend,
-	)?;
-
-	let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
-	write_u64(advice, new_evalcheck_proofs.len() as u64);
-	for evalcheck_proof in new_evalcheck_proofs.iter() {
-		serialize_evalcheck_proof(transcript, evalcheck_proof);
-	}
-
-	// The batch committed reduction must not result in any new sumcheck claims.
-	assert!(evalcheck_prover
-		.take_new_sumchecks_constraints()
-		.unwrap()
-		.is_empty());
-
-	let same_query_claims = committed_batches
+	let oracles = evalcheck_prover.oracles.clone();
+	let committed_claims = committed_batches
 		.into_iter()
-		.map(|batch| -> Result<_, Error> {
-			let same_query_claim = evalcheck_prover
-				.batch_committed_eval_claims()
-				.try_extract_same_query_pcs_claim(batch.id)?
-				.expect(
-					"by construction, we must be left with a same query eval claim for the batch",
-				);
-			Ok((batch.id, same_query_claim))
+		.map(move |batch| {
+			evalcheck_prover
+				.batch_committed_eval_claims_mut()
+				.take_claims(batch.id)
 		})
-		.collect::<Result<_, _>>()?;
+		.flatten_ok()
+		.map_ok(
+			|CommittedEvalClaim {
+			     id,
+			     eval_point,
+			     eval,
+			 }| {
+				EvalcheckMultilinearClaim {
+					poly: oracles.committed_oracle(id),
+					eval_point,
+					eval,
+				}
+			},
+		)
+		.collect::<Result<Vec<_>, _>>()?;
 
-	Ok(GreedyEvalcheckProveOutput { same_query_claims })
+	Ok(committed_claims)
 }

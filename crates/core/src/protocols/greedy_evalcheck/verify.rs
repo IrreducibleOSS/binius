@@ -3,11 +3,11 @@
 use super::error::Error;
 use crate::{
 	fiat_shamir::CanSample,
-	oracle::{BatchId, ConstraintSet, MultilinearOracleSet},
+	oracle::MultilinearOracleSet,
 	protocols::{
 		evalcheck::{
-			deserialize_evalcheck_proof, subclaims::make_non_same_query_pcs_sumcheck_claims,
-			EvalcheckMultilinearClaim, EvalcheckVerifier, SameQueryPcsClaim,
+			deserialize_evalcheck_proof, CommittedEvalClaim, EvalcheckMultilinearClaim,
+			EvalcheckVerifier,
 		},
 		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
@@ -15,14 +15,14 @@ use crate::{
 };
 use binius_field::TowerField;
 use binius_utils::bail;
-use std::cmp::Reverse;
+use itertools::Itertools;
 
 pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,
 	claims: impl IntoIterator<Item = EvalcheckMultilinearClaim<F>>,
 	transcript: &mut Transcript,
 	advice: &mut AdviceReader,
-) -> Result<Vec<(BatchId, SameQueryPcsClaim<F>)>, Error>
+) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error>
 where
 	F: TowerField,
 	Transcript: CanSample<F> + CanRead,
@@ -72,62 +72,29 @@ where
 		bail!(Error::MissingVirtualOpeningProof);
 	}
 
-	let mut non_sqpcs_sumchecks = Vec::<ConstraintSet<F>>::new();
-
-	for batch in &committed_batches {
-		let maybe_same_query_claim = evalcheck_verifier
-			.batch_committed_eval_claims()
-			.try_extract_same_query_pcs_claim(batch.id)?;
-
-		if maybe_same_query_claim.is_none() {
-			let non_sqpcs_claims = evalcheck_verifier
-				.batch_committed_eval_claims_mut()
-				.take_claims(batch.id)?;
-
-			non_sqpcs_sumchecks.push(make_non_same_query_pcs_sumcheck_claims(
-				&mut evalcheck_verifier,
-				&non_sqpcs_claims,
-			)?);
-		}
-	}
-
-	non_sqpcs_sumchecks.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
-
-	let SumcheckClaimsWithMeta { claims, metas } =
-		constraint_set_sumcheck_claims(non_sqpcs_sumchecks)?;
-
-	let sumcheck_output = batch_verify(&claims, transcript)?;
-
-	let evalcheck_claims =
-		sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
-
-	let len_batch_opening_proofs = read_u64(advice)? as usize;
-	let mut evalcheck_proofs = Vec::with_capacity(len_batch_opening_proofs);
-	for _ in 0..len_batch_opening_proofs {
-		let evalcheck_proof = deserialize_evalcheck_proof(transcript)?;
-		evalcheck_proofs.push(evalcheck_proof);
-	}
-
-	evalcheck_verifier.verify(evalcheck_claims, evalcheck_proofs)?;
-
-	// The batch committed reduction must not result in any new sumcheck claims.
-	assert!(evalcheck_verifier
-		.take_new_sumcheck_constraints()
-		.unwrap()
-		.is_empty());
-
-	let same_query_claims = committed_batches
+	let oracles = evalcheck_verifier.oracles.clone();
+	let committed_claims = committed_batches
 		.into_iter()
-		.map(|batch| -> Result<_, _> {
-			let same_query_claim = evalcheck_verifier
-				.batch_committed_eval_claims()
-				.try_extract_same_query_pcs_claim(batch.id)?
-				.expect(
-					"by construction, we must be left with a same query eval claim for the batch",
-				);
-			Ok((batch.id, same_query_claim))
+		.map(move |batch| {
+			evalcheck_verifier
+				.batch_committed_eval_claims_mut()
+				.take_claims(batch.id)
 		})
-		.collect::<Result<_, Error>>()?;
+		.flatten_ok()
+		.map_ok(
+			|CommittedEvalClaim {
+			     id,
+			     eval_point,
+			     eval,
+			 }| {
+				EvalcheckMultilinearClaim {
+					poly: oracles.committed_oracle(id),
+					eval_point,
+					eval,
+				}
+			},
+		)
+		.collect::<Result<Vec<_>, _>>()?;
 
-	Ok(same_query_claims)
+	Ok(committed_claims)
 }

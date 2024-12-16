@@ -15,16 +15,15 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
-	oracle::{CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	piop,
 	protocols::{
-		evalcheck::{EvalcheckMultilinearClaim, SameQueryPcsClaim},
 		fri::CommitOutput,
 		gkr_gpa::{
 			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
 			GrandProductWitness, LayerClaim,
 		},
-		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
+		greedy_evalcheck,
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
 			prove::{SumcheckProver, UnivariateZerocheckProver},
@@ -337,9 +336,7 @@ where
 		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Prove evaluation claims
-	let GreedyEvalcheckProveOutput {
-		same_query_claims: pcs_claims,
-	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
+	let eval_claims = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
@@ -352,24 +349,6 @@ where
 		&domain_factory,
 		backend,
 	)?;
-
-	// Re-create evalcheck claims from SameQueryPcsClaims. This is super wasteful, and is a
-	// temporary measure until the new PIOP compiler is fully integrated. Then we will cut the
-	// many-to-one batching logic out of greedy evalcheck and rejoice.
-	let eval_claims = pcs_claims
-		.into_iter()
-		.flat_map(|(batch_id, SameQueryPcsClaim { eval_point, evals })| {
-			let oracles = &oracles;
-			evals.into_iter().enumerate().map(move |(index, eval)| {
-				let oracle = oracles.committed_oracle(CommittedId { batch_id, index });
-				EvalcheckMultilinearClaim {
-					poly: oracle,
-					eval_point: eval_point.clone(),
-					eval,
-				}
-			})
-		})
-		.collect::<Vec<_>>();
 
 	// Reduce committed evaluation claims to PIOP sumcheck claims
 	let system =

@@ -11,12 +11,10 @@
 //! The greedy evalcheck protocol runs the full sequence of alternating evalcheck and sumcheck
 //! protocols to reduce several evaluation claims to a single PCS opening per batch.
 
-mod common;
 mod error;
 mod prove;
 mod verify;
 
-pub use common::*;
 pub use error::*;
 pub use prove::*;
 pub use verify::*;
