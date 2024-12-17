@@ -2,11 +2,13 @@
 
 use crate::{Error, MultilinearExtension, MultilinearQueryRef};
 use binius_field::PackedField;
-use std::{fmt::Debug, ops::Deref};
+use either::Either;
+use std::fmt::Debug;
 
 /// Represents a multilinear polynomial.
 ///
 /// This interface includes no generic methods, in order to support the creation of trait objects.
+#[auto_impl::auto_impl(&, &mut, Box, Rc, Arc)]
 pub trait MultilinearPoly<P: PackedField>: Debug {
 	/// Number of variables.
 	fn n_vars(&self) -> usize;
@@ -104,25 +106,26 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	fn packed_evals(&self) -> Option<&[P]>;
 }
 
-impl<T, P: PackedField> MultilinearPoly<P> for T
+impl<P, L, R> MultilinearPoly<P> for Either<L, R>
 where
-	T: Deref + Debug,
-	T::Target: MultilinearPoly<P>,
+	P: PackedField,
+	L: MultilinearPoly<P>,
+	R: MultilinearPoly<P>,
 {
 	fn n_vars(&self) -> usize {
-		(**self).n_vars()
+		either::for_both!(self, inner => inner.n_vars())
 	}
 
 	fn size(&self) -> usize {
-		(**self).size()
+		either::for_both!(self, inner => inner.size())
 	}
 
 	fn log_extension_degree(&self) -> usize {
-		(**self).log_extension_degree()
+		either::for_both!(self, inner => inner.log_extension_degree())
 	}
 
 	fn evaluate_on_hypercube(&self, index: usize) -> Result<P::Scalar, Error> {
-		(**self).evaluate_on_hypercube(index)
+		either::for_both!(self, inner => inner.evaluate_on_hypercube(index))
 	}
 
 	fn evaluate_on_hypercube_and_scale(
@@ -130,25 +133,25 @@ where
 		index: usize,
 		scalar: P::Scalar,
 	) -> Result<P::Scalar, Error> {
-		(**self).evaluate_on_hypercube_and_scale(index, scalar)
+		either::for_both!(self, inner => inner.evaluate_on_hypercube_and_scale(index, scalar))
 	}
 
 	fn evaluate(&self, query: MultilinearQueryRef<P>) -> Result<P::Scalar, Error> {
-		(**self).evaluate(query)
+		either::for_both!(self, inner => inner.evaluate(query))
 	}
 
 	fn evaluate_partial_low(
 		&self,
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error> {
-		(**self).evaluate_partial_low(query)
+		either::for_both!(self, inner => inner.evaluate_partial_low(query))
 	}
 
 	fn evaluate_partial_high(
 		&self,
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error> {
-		(**self).evaluate_partial_high(query)
+		either::for_both!(self, inner => inner.evaluate_partial_high(query))
 	}
 
 	fn subcube_inner_products(
@@ -158,7 +161,12 @@ where
 		subcube_index: usize,
 		inner_products: &mut [P],
 	) -> Result<(), Error> {
-		(**self).subcube_inner_products(query, subcube_vars, subcube_index, inner_products)
+		either::for_both!(
+			self,
+			inner => {
+				inner.subcube_inner_products(query, subcube_vars, subcube_index, inner_products)
+			}
+		)
 	}
 
 	fn subcube_evals(
@@ -168,10 +176,13 @@ where
 		log_embedding_degree: usize,
 		evals: &mut [P],
 	) -> Result<(), Error> {
-		(**self).subcube_evals(subcube_vars, subcube_index, log_embedding_degree, evals)
+		either::for_both!(
+			self,
+			inner => inner.subcube_evals(subcube_vars, subcube_index, log_embedding_degree, evals)
+		)
 	}
 
 	fn packed_evals(&self) -> Option<&[P]> {
-		(**self).packed_evals()
+		either::for_both!(self, inner => inner.packed_evals())
 	}
 }

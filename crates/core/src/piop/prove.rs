@@ -11,6 +11,7 @@ use crate::{
 	protocols::{
 		fri,
 		fri::{FRIFolder, FRIParams, FoldRoundOutput},
+		sumcheck,
 		sumcheck::{
 			immediate_switchover_heuristic,
 			prove::{
@@ -27,10 +28,14 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomainFactory, MultilinearPoly};
+use binius_math::{
+	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::sorting::is_sorted_ascending;
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use either::Either;
 use itertools::{chain, Itertools};
+use rayon::{iter::IntoParallelIterator, prelude::*};
 
 // ## Preconditions
 //
@@ -88,6 +93,7 @@ where
 /// * `multilins` - a batch of multilinear polynomials to commit. The multilinears provided may be
 ///     defined over subfields of `F`. They must be in ascending order by the number of variables
 ///     in the packed multilinear (ie. number of variables minus log extension degree).
+#[tracing::instrument("piop::commit", skip_all)]
 pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
@@ -144,6 +150,7 @@ where
 ///
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument("piop::prove", skip_all)]
 pub fn prove<
 	F,
 	FDomain,
@@ -191,6 +198,21 @@ where
 		claims,
 	)?;
 
+	// The committed multilinears provided by argument are committed *small field* multilinears.
+	// Create multilinears representing the packed polynomials here. Eventually, we would like to
+	// refactor the calling code so that the PIOP only handles *big field* multilinear witnesses.
+	let packed_committed_multilins = committed_multilins
+		.iter()
+		.enumerate()
+		.map(|(i, committed_multilin)| {
+			let packed_evals = committed_multilin
+				.packed_evals()
+				.ok_or(Error::CommittedPackedEvaluationsMissing { id: i })?;
+			let packed_multilin = MultilinearExtension::from_values_slice(packed_evals)?;
+			Ok::<_, Error>(MLEDirectAdapter::from(packed_multilin))
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
 	let non_empty_sumcheck_descs = sumcheck_claim_descs
 		.iter()
 		.enumerate()
@@ -199,8 +221,12 @@ where
 		.clone()
 		.map(|(_n_vars, desc)| {
 			let multilins = chain!(
-				committed_multilins[desc.committed_indices.clone()].iter(),
-				transparent_multilins[desc.transparent_indices.clone()].iter(),
+				packed_committed_multilins[desc.committed_indices.clone()]
+					.iter()
+					.map(Either::Left),
+				transparent_multilins[desc.transparent_indices.clone()]
+					.iter()
+					.map(Either::Right),
 			)
 			.collect::<Vec<_>>();
 			RegularSumcheckProver::new(
@@ -266,5 +292,60 @@ where
 
 	sumcheck_batch_prover.finish(&mut proof.transcript)?;
 	fri_prover.finish_proof(&mut proof.advice, &mut proof.transcript)?;
+	Ok(())
+}
+
+pub fn validate_sumcheck_witness<F, P, M>(
+	committed_multilins: &[M],
+	transparent_multilins: &[M],
+	claims: &[PIOPSumcheckClaim<F>],
+) -> Result<(), Error>
+where
+	F: TowerField,
+	P: PackedField<Scalar = F>,
+	M: MultilinearPoly<P> + Send + Sync,
+{
+	let packed_committed = committed_multilins
+		.iter()
+		.enumerate()
+		.map(|(i, unpacked_committed)| {
+			let packed_evals = unpacked_committed
+				.packed_evals()
+				.ok_or(Error::CommittedPackedEvaluationsMissing { id: i })?;
+			let packed_committed = MultilinearExtension::from_values_slice(packed_evals)?;
+			Ok::<_, Error>(packed_committed)
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+
+	for (i, claim) in claims.iter().enumerate() {
+		let committed = &packed_committed[claim.committed];
+		if committed.n_vars() != claim.n_vars {
+			bail!(sumcheck::Error::NumberOfVariablesMismatch);
+		}
+
+		let transparent = &transparent_multilins[claim.transparent];
+		if transparent.n_vars() != claim.n_vars {
+			bail!(sumcheck::Error::NumberOfVariablesMismatch);
+		}
+
+		let sum = (0..(1 << claim.n_vars))
+			.into_par_iter()
+			.map(|j| {
+				let committed_eval = committed
+					.evaluate_on_hypercube(j)
+					.expect("j is less than 1 << n_vars; committed.n_vars is checked above");
+				let transparent_eval = transparent
+					.evaluate_on_hypercube(j)
+					.expect("j is less than 1 << n_vars; transparent.n_vars is checked above");
+				committed_eval * transparent_eval
+			})
+			.sum::<F>();
+
+		if sum != claim.sum {
+			bail!(sumcheck::Error::SumcheckNaiveValidationFailure {
+				composition_index: i,
+			});
+		}
+	}
 	Ok(())
 }
