@@ -24,6 +24,8 @@ use tracing::instrument;
 /// Recall that the "ring-switched eq indicator" is a transparent multilinear required for the ring-switching argument.
 /// The principal purpose of the below abstraction is for `fri_pcs` to not need to know about the small field.
 ///
+/// TODO: Deprecated: to be replaced by [`crate::ring_switch`].
+///
 /// [DP24]: <https://eprint.iacr.org/2024/504>
 #[derive(Debug)]
 pub enum TowerRingSwitchEqInd<Tower>

@@ -20,6 +20,7 @@ pub mod polynomial;
 pub mod protocols;
 #[allow(clippy::module_inception)]
 pub mod reed_solomon;
+pub mod ring_switch;
 pub mod tensor_algebra;
 pub mod tower;
 pub mod transcript;

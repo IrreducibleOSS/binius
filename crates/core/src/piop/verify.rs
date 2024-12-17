@@ -23,7 +23,7 @@ use binius_math::evaluate_piecewise_multilinear;
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
 use getset::CopyGetters;
-use std::{cmp::Ordering, iter, ops::Range};
+use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 use tracing::instrument;
 
 /// Metadata about a batch of committed multilinear polynomials.
@@ -36,6 +36,7 @@ use tracing::instrument;
 #[derive(Debug, CopyGetters)]
 pub struct CommitMeta {
 	n_multilins_by_vars: Vec<usize>,
+	offsets_by_vars: Vec<usize>,
 	/// The total number of variables of the interpolating multilinear.
 	#[getset(get_copy = "pub")]
 	total_vars: usize,
@@ -52,6 +53,16 @@ impl CommitMeta {
 	/// * `n_multilins_by_vars` - a vector index mapping numbers of variables to the number of
 	///     multilinears in the batch with that number of variables
 	pub fn new(n_multilins_by_vars: Vec<usize>) -> Self {
+		let offsets_by_vars = n_multilins_by_vars
+			.iter()
+			.copied()
+			.scan(0, |offset, n_multilins| {
+				let last_offset = *offset;
+				*offset += n_multilins;
+				Some(last_offset)
+			})
+			.collect();
+
 		let total_elems = n_multilins_by_vars
 			.iter()
 			.enumerate()
@@ -61,6 +72,7 @@ impl CommitMeta {
 		let total_multilins = n_multilins_by_vars.iter().copied().sum();
 
 		Self {
+			offsets_by_vars,
 			n_multilins_by_vars,
 			total_vars,
 			total_multilins,
@@ -87,13 +99,19 @@ impl CommitMeta {
 	pub fn n_multilins_by_vars(&self) -> &[usize] {
 		&self.n_multilins_by_vars
 	}
+
+	/// Returns the range of indices into the structure that have the given number of variables.
+	pub fn range_by_vars(&self, n_vars: usize) -> Range<usize> {
+		let start = self.offsets_by_vars[n_vars];
+		start..start + self.n_multilins_by_vars[n_vars]
+	}
 }
 
 /// A sumcheck claim that can be processed by the PIOP compiler.
 ///
 /// These are a specific form of sumcheck claims over products of a committed polynomial and a
 /// transparent polynomial, referencing by index into external vectors.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PIOPSumcheckClaim<F: Field> {
 	/// Number of variables of the multivariate polynomial the sumcheck claim is about.
 	pub n_vars: usize,
@@ -269,12 +287,12 @@ pub fn make_sumcheck_claim_descs<F: Field>(
 ///     described by `commit_meta` and the transparent polynomials in `transparents`
 /// * `proof` - the proof reader
 #[instrument(skip_all)]
-pub fn verify<F, FEncode, Transcript, Advice, MTScheme, Digest>(
+pub fn verify<'a, F, FEncode, Transcript, Advice, MTScheme, Digest>(
 	commit_meta: &CommitMeta,
 	merkle_scheme: &MTScheme,
 	fri_params: &FRIParams<F, FEncode>,
 	commitment: &MTScheme::Digest,
-	transparents: &[&dyn MultivariatePoly<F>],
+	transparents: &[impl Borrow<dyn MultivariatePoly<F> + 'a>],
 	claims: &[PIOPSumcheckClaim<F>],
 	proof: &mut Proof<Transcript, Advice>,
 ) -> Result<(), Error>
@@ -289,7 +307,7 @@ where
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
 		commit_meta,
-		transparents.iter().map(|poly| poly.n_vars()),
+		transparents.iter().map(|poly| poly.borrow().n_vars()),
 		claims,
 	)?;
 
@@ -337,7 +355,7 @@ where
 			iter::zip(transparent_evals, &transparents[desc.transparent_indices.clone()])
 				.enumerate()
 		{
-			let computed_eval = transparent.evaluate(&challenges[..n_vars])?;
+			let computed_eval = transparent.borrow().evaluate(&challenges[..n_vars])?;
 			if claimed_eval != computed_eval {
 				return Err(VerificationError::IncorrectTransparentEvaluation {
 					index: desc.transparent_indices.start + i,

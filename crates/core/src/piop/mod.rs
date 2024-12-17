@@ -31,6 +31,7 @@
 //!
 //! [DP24]: <https://eprint.iacr.org/2024/504>
 
+pub mod commit;
 mod error;
 mod prove;
 #[cfg(test)]
@@ -38,6 +39,7 @@ mod tests;
 mod util;
 mod verify;
 
+pub use commit::*;
 pub use error::*;
 pub use prove::*;
 pub use verify::{make_commit_params_with_optimal_arity, verify, CommitMeta, PIOPSumcheckClaim};

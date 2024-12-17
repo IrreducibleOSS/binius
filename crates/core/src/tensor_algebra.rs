@@ -1,6 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_field::{square_transpose, ExtensionField, Field, PackedExtension};
+use binius_field::{
+	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
+};
 use binius_utils::checked_arithmetics::checked_log_2;
 use std::{
 	iter::Sum,
@@ -143,6 +145,15 @@ where
 		square_transpose(Self::kappa(), FE::cast_bases_mut(&mut self.elems))
 			.expect("transpose dimensions are square by struct invariant");
 		self
+	}
+
+	/// Fold the tensor algebra element into a field element by scaling the rows and accumulating.
+	///
+	/// ## Preconditions
+	///
+	/// * `coeffs` must have length $2^\kappa$
+	pub fn fold_vertical(self, coeffs: &[FE]) -> FE {
+		inner_product_unchecked::<FE, _>(self.transpose().elems, coeffs.iter().copied())
 	}
 }
 

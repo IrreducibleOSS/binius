@@ -4,7 +4,7 @@ use crate::{
 	oracle::OracleId,
 	polynomial,
 	protocols::{fri, sumcheck},
-	transcript,
+	transcript, witness,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -33,6 +33,8 @@ pub enum Error {
 	FRI(#[from] fri::Error),
 	#[error("Sumcheck error: {0}")]
 	Sumcheck(#[from] sumcheck::Error),
+	#[error("witness error: {0}")]
+	Witness(#[from] witness::Error),
 	#[error("NTT error: {0}")]
 	NTT(#[from] binius_ntt::Error),
 	#[error("verification error: {0}")]
