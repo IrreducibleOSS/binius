@@ -25,48 +25,54 @@ fn benchmark_packed_extension_mul<F>(
 	// Compute base width based on extension width and field degree
 	let base_width: usize = EXT_WIDTH / <BinaryField128b as ExtensionField<F>>::DEGREE;
 
-	// Generate input arrays
-	let base_packed: Vec<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield> = (0
-		..base_width)
-		.map(|_| {
-			<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield>::random(&mut rng)
-		})
-		.collect();
-	let ext_packed: Vec<PackedBinaryField2x128b> = (0..EXT_WIDTH)
-		.map(|_| PackedBinaryField2x128b::random(&mut rng))
-		.collect();
-	let mut result = vec![PackedBinaryField2x128b::default(); EXT_WIDTH];
-
 	// SIMD benchmark
-	group.bench_with_input(
-		BenchmarkId::new(label, "spread"),
-		&(ext_packed.clone(), base_packed.clone()),
-		|b, (ext_packed, base_packed)| {
-			b.iter(|| {
-				ext_base_mul(ext_packed, base_packed, &mut result).unwrap();
-			});
-		},
-	);
+	group.bench_function(BenchmarkId::new(label, "spread"), |b| {
+		// Generate input arrays
+		let base_packed: Vec<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield> = (0
+			..base_width)
+			.map(|_| {
+				<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield>::random(&mut rng)
+			})
+			.collect();
+		let mut ext_packed: Vec<PackedBinaryField2x128b> = (0..EXT_WIDTH)
+			.map(|_| PackedBinaryField2x128b::random(&mut rng))
+			.collect();
 
-	black_box(result.clone());
+		b.iter(|| {
+			ext_base_mul(&mut ext_packed, &base_packed).unwrap();
+		});
+		black_box(ext_packed);
+	});
 
 	// Scalar-wise benchmark
-	group.bench_with_input(
-		BenchmarkId::new(label, "scalar-wise"),
-		&(ext_packed.clone(), base_packed.clone()),
-		|b, (ext_packed, base_packed)| {
-			b.iter(|| {
-				for (i, (ext, base)) in iter_packed_slice(ext_packed)
-					.zip(iter_packed_slice(base_packed))
-					.enumerate()
-				{
-					unsafe { set_packed_slice_unchecked(&mut result, i, ext * base) };
-				}
-			});
-		},
-	);
+	group.bench_function(BenchmarkId::new(label, "scalar-wise"), |b| {
+		// Generate input arrays
+		let base_packed: Vec<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield> = (0
+			..base_width)
+			.map(|_| {
+				<<PackedBinaryField2x128b as PackedExtension<F>>::PackedSubfield>::random(&mut rng)
+			})
+			.collect();
 
-	black_box(result.clone());
+		let ext_packed: Vec<PackedBinaryField2x128b> = (0..EXT_WIDTH)
+			.map(|_| PackedBinaryField2x128b::random(&mut rng))
+			.collect();
+
+		let mut result: Vec<PackedBinaryField2x128b> = (0..EXT_WIDTH)
+			.map(|_| PackedBinaryField2x128b::default())
+			.collect();
+
+		b.iter(|| {
+			for (i, (ext, base)) in iter_packed_slice(&ext_packed)
+				.zip(iter_packed_slice(&base_packed))
+				.enumerate()
+			{
+				unsafe { set_packed_slice_unchecked(&mut result, i, ext * base) };
+			}
+		});
+
+		black_box(ext_packed);
+	});
 }
 
 fn benchmark_mul(c: &mut Criterion) {
