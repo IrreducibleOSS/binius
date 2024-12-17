@@ -9,18 +9,15 @@ use crate::{
 	composition::IndexComposition,
 	constraint_system::{
 		channel::{Flush, FlushDirection},
-		common::{
-			standard_pcs::{self, FRIMerklePCS, FRIMerkleTowerPCS},
-			FExt, TowerPCS, TowerPCSFamily,
-		},
+		common::{FDomain, FEncode, FExt},
 	},
 	fiat_shamir::{CanSample, Challenger},
-	merkle_tree_vcs::BinaryMerkleTreeProver,
-	oracle::{CommittedBatch, MultilinearOracleSet, OracleId},
-	poly_commit::{batch_pcs::BatchPCS, FRIPCS},
+	merkle_tree_vcs::BinaryMerkleTreeScheme,
+	oracle::{CommittedId, MultilinearOracleSet, OracleId},
+	piop,
 	polynomial::MultivariatePoly,
 	protocols::{
-		evalcheck::EvalcheckMultilinearClaim,
+		evalcheck::{EvalcheckMultilinearClaim, SameQueryPcsClaim},
 		gkr_gpa,
 		gkr_gpa::LayerClaim,
 		greedy_evalcheck,
@@ -30,19 +27,17 @@ use crate::{
 			BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim, ZerocheckClaim,
 		},
 	},
+	ring_switch,
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
-	transcript::{AdviceReader, CanRead, TranscriptReader},
+	transcript::{AdviceReader, CanRead, Proof as ProofReader, TranscriptReader},
 	transparent::{eq_ind::EqIndPartialEval, step_down},
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	BinaryField, ExtensionField, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
+	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
 };
-use binius_hal::make_portable_backend;
 use binius_hash::Hasher;
-use binius_math::{ArithExpr, CompositionPolyOS, EvaluationDomainFactory};
-use binius_ntt::NTTOptions;
+use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
 use itertools::{izip, multiunzip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
@@ -52,11 +47,10 @@ use tracing::instrument;
 
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]
-pub fn verify<U, Tower, Digest, DomainFactory, Hash, Compress, Challenger_>(
+pub fn verify<U, Tower, Digest, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
-	domain_factory: DomainFactory,
 	boundaries: Vec<Boundary<FExt<Tower>>>,
 	proof: Proof,
 ) -> Result<(), Error>
@@ -64,36 +58,12 @@ where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	DomainFactory: EvaluationDomainFactory<Tower::B8>,
 	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
-{
-	let pcss = make_standard_pcss::<U, Tower, _, _, Hash, Compress>(
-		log_inv_rate,
-		security_bits,
-		&constraint_system.oracles,
-		domain_factory,
-	)?;
-	verify_with_pcs::<_, _, _, Challenger_, Digest>(constraint_system, boundaries, proof, &pcss)
-}
-
-/// Verifies a proof against a constraint system with provided PCSs.
-fn verify_with_pcs<U, Tower, PCSFamily, Challenger_, Digest>(
-	constraint_system: &ConstraintSystem<FExt<Tower>>,
-	boundaries: Vec<Boundary<FExt<Tower>>>,
-	proof: Proof,
-	pcss: &[TowerPCS<Tower, U, PCSFamily>],
-) -> Result<(), Error>
-where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
-	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
-	Challenger_: Challenger + Default,
-	Digest: PackedField<Scalar: TowerField>,
 {
 	let ConstraintSystem {
 		mut oracles,
@@ -112,9 +82,17 @@ where
 	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
 	let mut advice = AdviceReader::new(advice);
 
-	let backend = make_portable_backend();
+	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
+	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
+		&commit_meta,
+		&merkle_scheme,
+		security_bits,
+		log_inv_rate,
+	)?;
 
-	let commitments = transcript.read_packed_slice(oracles.n_batches())?;
+	// Read polynomial commitment polynomials
+	let commitment = transcript.read_packed::<Digest>()?;
 
 	// Grand product arguments
 	// Grand products for non-zero checks
@@ -223,7 +201,7 @@ where
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	let (max_n_vars, skip_rounds) =
-		max_n_vars_and_skip_rounds(&zerocheck_claims, standard_pcs::FDomain::<Tower>::N_BITS);
+		max_n_vars_and_skip_rounds(&zerocheck_claims, <FDomain<Tower>>::N_BITS);
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
@@ -282,7 +260,7 @@ where
 		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Evalcheck
-	let mut pcs_claims = greedy_evalcheck::verify(
+	let pcs_claims = greedy_evalcheck::verify(
 		&mut oracles,
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
 			.concat()
@@ -292,149 +270,52 @@ where
 		&mut advice,
 	)?;
 
-	pcs_claims.sort_by_key(|(batch_id, _)| *batch_id);
+	// Re-create evalcheck claims from SameQueryPcsClaims. This is super wasteful, and is a
+	// temporary measure until the new PIOP compiler is fully integrated. Then we will cut the
+	// many-to-one batching logic out of greedy evalcheck and rejoice.
+	let eval_claims = pcs_claims
+		.into_iter()
+		.flat_map(|(batch_id, SameQueryPcsClaim { eval_point, evals })| {
+			let oracles = &oracles;
+			evals.into_iter().enumerate().map(move |(index, eval)| {
+				let oracle = oracles.committed_oracle(CommittedId { batch_id, index });
+				EvalcheckMultilinearClaim {
+					poly: oracle,
+					eval_point: eval_point.clone(),
+					eval,
+				}
+			})
+		})
+		.collect::<Vec<_>>();
 
-	// Check that we have a PCS claim for each batch, otherwise the constraint system is
-	// under-constrained.
-	for (i, (batch_id, _)) in pcs_claims.iter().enumerate() {
-		if *batch_id != i {
-			bail!(Error::UnconstrainedBatch(i));
-		}
-	}
-	if pcs_claims.len() < oracles.n_batches() {
-		bail!(Error::UnconstrainedBatch(pcs_claims.len()));
-	}
+	// Reduce committed evaluation claims to PIOP sumcheck claims
+	let system =
+		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
 
-	// Verify PCS proofs
-	for ((_batch_id, claim), pcs, commitment) in izip!(pcs_claims, pcss, commitments) {
-		pcs.verify_evaluation(
-			&mut advice,
-			&mut transcript,
-			&commitment,
-			&claim.eval_point,
-			&claim.evals,
-			&backend,
-		)
-		.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
-	}
+	let mut proof_reader = ProofReader {
+		transcript: &mut transcript,
+		advice: &mut advice,
+	};
+	let ring_switch::ReducedClaim {
+		transparents,
+		sumcheck_claims: piop_sumcheck_claims,
+	} = ring_switch::verify::<_, Tower, _, _>(&system, &mut proof_reader)?;
+
+	// Prove evaluation claims using PIOP compiler
+	piop::verify(
+		&commit_meta,
+		&merkle_scheme,
+		&fri_params,
+		&commitment,
+		&transparents,
+		&piop_sumcheck_claims,
+		&mut proof_reader,
+	)?;
 
 	transcript.finalize()?;
 	advice.finalize()?;
 
 	Ok(())
-}
-
-#[allow(clippy::type_complexity)]
-pub fn make_standard_pcss<U, Tower, Digest, DomainFactory, Hash, Compress>(
-	log_inv_rate: usize,
-	security_bits: usize,
-	oracles: &MultilinearOracleSet<Tower::B128>,
-	domain_factory: DomainFactory,
-) -> Result<Vec<FRIMerkleTowerPCS<Tower, U, Digest, DomainFactory, Hash, Compress>>, Error>
-where
-	U: TowerUnderlier<Tower>,
-	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower>,
-	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField<Scalar: TowerField>,
-	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
-	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
-	PackedType<U, Tower::B128>: PackedTop<Tower> + PackedFieldIndexable,
-{
-	oracles
-		.committed_batches()
-		.into_iter()
-		.map(|batch| match batch.tower_level {
-			0 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B1),
-			3 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B8),
-			4 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B16),
-			5 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B32),
-			6 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B64),
-			7 => make_standard_pcs::<U, Tower, _, _, _, _, _>(
-				log_inv_rate,
-				security_bits,
-				domain_factory.clone(),
-				batch,
-			)
-			.map(TowerPCS::B128),
-			_ => Err(Error::CannotCommitTowerLevel {
-				tower_level: batch.tower_level,
-			}),
-		})
-		.collect()
-}
-
-#[allow(clippy::type_complexity)]
-fn make_standard_pcs<U, Tower, F, Digest, DomainFactory, Hash, Compress>(
-	log_inv_rate: usize,
-	security_bits: usize,
-	domain_factory: DomainFactory,
-	batch: CommittedBatch,
-) -> Result<FRIMerklePCS<Tower, U, F, Digest, DomainFactory, Hash, Compress>, Error>
-where
-	U: TowerUnderlier<Tower> + PackScalar<F>,
-	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower> + ExtensionField<F> + PackedExtension<F>,
-	F: TowerField,
-	DomainFactory: EvaluationDomainFactory<Tower::B8>,
-	Digest: PackedField<Scalar: TowerField>,
-	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
-	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
-	PackedType<U, Tower::B128>: PackedTop<Tower> + PackedFieldIndexable,
-{
-	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
-	let log_n_polys = log2_ceil_usize(batch.n_polys);
-	let fri_n_vars = batch.n_vars + log_n_polys;
-	let fri_pcs = FRIPCS::<
-		_,
-		standard_pcs::FDomain<Tower>,
-		standard_pcs::FEncode<Tower>,
-		PackedType<U, Tower::B128>,
-		_,
-		_,
-		_,
-	>::with_optimal_arity(
-		fri_n_vars,
-		log_inv_rate,
-		security_bits,
-		merkle_prover,
-		domain_factory.clone(),
-		NTTOptions::default(),
-	)
-	.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
-	let batch_pcs = BatchPCS::new(fri_pcs, batch.n_vars, log_n_polys)
-		.map_err(|err| Error::PolyCommitError(Box::new(err)))?;
-	Ok(batch_pcs)
 }
 
 pub fn max_n_vars_and_skip_rounds<F, Composition>(

@@ -545,18 +545,10 @@ mod tests {
 			U,
 			CanonicalTowerFamily,
 			_,
-			_,
 			GroestlHasher<BinaryField128b>,
 			GroestlDigestCompression<BinaryField8b>,
 			HasherChallenger<Groestl256>,
-		>(
-			&constraint_system,
-			1,
-			10,
-			&domain_factory,
-			vec![pull_boundaries, push_boundaries],
-			proof,
-		)
+		>(&constraint_system, 1, 10, vec![pull_boundaries, push_boundaries], proof)
 		.unwrap();
 	}
 }

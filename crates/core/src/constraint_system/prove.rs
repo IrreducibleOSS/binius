@@ -3,18 +3,23 @@
 use super::{
 	error::Error,
 	verify::{
-		get_flush_dedup_sumcheck_metas, get_post_flush_sumcheck_eval_claims_without_eq,
-		make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds,
-		reorder_for_flushing_by_n_vars, FlushSumcheckMeta, StepDownMeta,
+		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles,
+		max_n_vars_and_skip_rounds, reorder_for_flushing_by_n_vars,
 	},
 	ConstraintSystem, Proof,
 };
 use crate::{
-	constraint_system::common::{standard_pcs, FExt, TowerPCS, TowerPCSFamily},
-	fiat_shamir::{CanSample, CanSampleBits, Challenger},
-	oracle::{CommittedBatch, CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
-	poly_commit::PolyCommitScheme,
+	constraint_system::{
+		common::{FDomain, FEncode, FExt},
+		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta, StepDownMeta},
+	},
+	fiat_shamir::{CanSample, Challenger},
+	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
+	oracle::{CommittedId, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
+	piop,
 	protocols::{
+		evalcheck::{EvalcheckMultilinearClaim, SameQueryPcsClaim},
+		fri::CommitOutput,
 		gkr_gpa::{
 			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
 			GrandProductWitness, LayerClaim,
@@ -26,13 +31,13 @@ use crate::{
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
+	ring_switch,
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
-	transcript::{AdviceWriter, CanWrite, TranscriptWriter},
+	transcript::{AdviceWriter, CanWrite, Proof as ProofWriter, TranscriptWriter},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
 };
@@ -51,10 +56,10 @@ use tracing::instrument;
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
-	constraint_system: &ConstraintSystem<Tower::B128>,
+	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
-	witness: MultilinearExtensionIndex<U, Tower::B128>,
+	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
 	domain_factory: DomainFactory,
 	backend: &Backend,
 ) -> Result<Proof, Error>
@@ -62,8 +67,8 @@ where
 	U: TowerUnderlier<Tower> + PackScalar<FBase>,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<Tower::B8> + TryFrom<Tower::B128>,
-	DomainFactory: EvaluationDomainFactory<Tower::B8>,
+	FBase: TowerField + ExtensionField<FDomain<Tower>> + TryFrom<FExt<Tower>>,
+	DomainFactory: EvaluationDomainFactory<FDomain<Tower>>,
 	Digest: PackedField<Scalar: TowerField>,
 	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
 	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
@@ -71,8 +76,8 @@ where
 	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
-	PackedType<U, FBase>:
-		PackedFieldIndexable + PackedExtension<Tower::B8, PackedSubfield: PackedFieldIndexable>,
+	PackedType<U, FBase>: PackedFieldIndexable
+		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -80,60 +85,6 @@ where
 		"using computation backend: {backend:?}"
 	);
 
-	let pcss = make_standard_pcss::<U, Tower, _, _, Hash, Compress>(
-		log_inv_rate,
-		security_bits,
-		&constraint_system.oracles,
-		domain_factory.clone(),
-	)?;
-	prove_with_pcs::<U, Tower, FBase, Tower::B8, _, _, Challenger_, Digest, _>(
-		constraint_system,
-		witness,
-		&pcss,
-		domain_factory,
-		backend,
-	)
-}
-
-/// Generates a proof that a witness satisfies a constraint system with provided PCSs.
-#[allow(clippy::type_complexity)]
-#[instrument(skip_all, level = "debug")]
-fn prove_with_pcs<
-	U,
-	Tower,
-	FBase,
-	FDomain,
-	PCSFamily,
-	DomainFactory,
-	Challenger_,
-	Digest,
-	Backend,
->(
-	constraint_system: &ConstraintSystem<Tower::B128>,
-	mut witness: MultilinearExtensionIndex<U, Tower::B128>,
-	pcss: &[TowerPCS<Tower, U, PCSFamily>],
-	domain_factory: DomainFactory,
-	backend: &Backend,
-) -> Result<Proof, Error>
-where
-	U: TowerUnderlier<Tower> + PackScalar<FDomain> + PackScalar<FBase>,
-	Tower: TowerFamily,
-	Tower::B128: ExtensionField<FBase> + ExtensionField<FDomain>,
-	FBase: TowerField + ExtensionField<FDomain> + TryFrom<Tower::B128>,
-	FDomain: TowerField,
-	PCSFamily: TowerPCSFamily<Tower, U, Commitment = Digest>,
-	PCSFamily::Committed: Send,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
-	Challenger_: Challenger + Default,
-	Digest: PackedField<Scalar: TowerField>,
-	Backend: ComputationBackend,
-	PackedType<U, Tower::B128>: PackedTop<Tower>
-		+ PackedFieldIndexable
-		// Required for ZerocheckProver
-		+ RepackedExtension<PackedType<U, Tower::B128>>,
-	PackedType<U, FBase>:
-		PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-{
 	let mut transcript = TranscriptWriter::<Challenger_>::default();
 	let mut advice = AdviceWriter::default();
 
@@ -148,38 +99,32 @@ where
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
-	// Commit polynomials in parallel.
-	let (commitments, committeds) = constraint_system
-		.oracles
-		.committed_batches()
-		.into_par_iter()
-		.zip(pcss.into_par_iter())
-		.map(|(batch, pcs)| match pcs {
-			TowerPCS::B1(pcs) => {
-				tower_pcs_commit::<_, Tower::B1, _, _>(pcs, batch, &oracles, &witness)
-			}
-			TowerPCS::B8(pcs) => {
-				tower_pcs_commit::<_, Tower::B8, _, _>(pcs, batch, &oracles, &witness)
-			}
-			TowerPCS::B16(pcs) => {
-				tower_pcs_commit::<_, Tower::B16, _, _>(pcs, batch, &oracles, &witness)
-			}
-			TowerPCS::B32(pcs) => {
-				tower_pcs_commit::<_, Tower::B32, _, _>(pcs, batch, &oracles, &witness)
-			}
-			TowerPCS::B64(pcs) => {
-				tower_pcs_commit::<_, Tower::B64, _, _>(pcs, batch, &oracles, &witness)
-			}
-			TowerPCS::B128(pcs) => {
-				tower_pcs_commit::<_, Tower::B128, _, _>(pcs, batch, &oracles, &witness)
-			}
-		})
-		.collect::<Result<Vec<_>, _>>()?
-		.into_par_iter()
-		.unzip::<_, _, Vec<_>, Vec<_>>();
+	// Commit polynomials
+	let merkle_prover = BinaryMerkleTreeProver::<_, Hash, _>::new(Compress::default());
+	let merkle_scheme = merkle_prover.scheme();
 
-	// Observe polynomial commitments
-	transcript.write_packed_slice(&commitments);
+	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
+	let committed_multilins = piop::collect_committed_witnesses(
+		&commit_meta,
+		&oracle_to_commit_index,
+		&oracles,
+		&witness,
+	)?;
+
+	let fri_params = piop::make_commit_params_with_optimal_arity::<_, FEncode<Tower>, _>(
+		&commit_meta,
+		merkle_scheme,
+		security_bits,
+		log_inv_rate,
+	)?;
+	let CommitOutput {
+		commitment,
+		committed,
+		codeword,
+	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
+
+	// Observe polynomial commitment
+	transcript.write_packed(commitment);
 
 	// Grand product arguments
 	// Grand products for non-zero checking
@@ -231,7 +176,7 @@ where
 	// Prove grand products
 	let GrandProductBatchProveOutput {
 		mut final_layer_claims,
-	} = gkr_gpa::batch_prove(
+	} = gkr_gpa::batch_prove::<_, _, FDomain<Tower>, _, _>(
 		[flush_prodcheck_witnesses, non_zero_prodcheck_witnesses].concat(),
 		&[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&domain_factory,
@@ -255,7 +200,7 @@ where
 	);
 
 	let (flush_sumcheck_provers, all_step_down_metas, flush_oracles_by_claim) =
-		get_flush_sumcheck_provers(
+		get_flush_sumcheck_provers::<_, _, FDomain<Tower>, _, _>(
 			&mut oracles,
 			&flush_oracle_ids,
 			&flush_counts,
@@ -285,7 +230,7 @@ where
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
 	let (max_n_vars, skip_rounds) =
-		max_n_vars_and_skip_rounds(&zerocheck_claims, standard_pcs::FDomain::<Tower>::N_BITS);
+		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
 
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
@@ -294,7 +239,13 @@ where
 		.into_iter()
 		.map(|constraint_set| {
 			let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
-			sumcheck::prove::constraint_set_zerocheck_prover::<U, FBase, Tower::B128, FDomain, _>(
+			sumcheck::prove::constraint_set_zerocheck_prover::<
+				U,
+				FBase,
+				FExt<Tower>,
+				FDomain<Tower>,
+				_,
+			>(
 				constraint_set,
 				&witness,
 				&domain_factory,
@@ -360,13 +311,14 @@ where
 			univariatized_multilinear_evals,
 		)?;
 
-		let reduction_prover = sumcheck::prove::univariatizing_reduction_prover(
-			reduced_multilinears,
-			univariatized_multilinear_evals,
-			univariate_challenge,
-			&domain_factory,
-			backend,
-		)?;
+		let reduction_prover =
+			sumcheck::prove::univariatizing_reduction_prover::<_, FDomain<Tower>, _, _>(
+				reduced_multilinears,
+				univariatized_multilinear_evals,
+				univariate_challenge,
+				&domain_factory,
+				backend,
+			)?;
 
 		reduction_claims.push(reduction_claim);
 		reduction_provers.push(reduction_prover);
@@ -386,8 +338,8 @@ where
 
 	// Prove evaluation claims
 	let GreedyEvalcheckProveOutput {
-		same_query_claims: mut pcs_claims,
-	} = greedy_evalcheck::prove(
+		same_query_claims: pcs_claims,
+	} = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
 		&mut oracles,
 		&mut witness,
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
@@ -397,171 +349,65 @@ where
 		switchover_fn,
 		&mut transcript,
 		&mut advice,
-		domain_factory,
+		&domain_factory,
 		backend,
 	)?;
 
-	pcs_claims.sort_by_key(|(batch_id, _)| *batch_id);
+	// Re-create evalcheck claims from SameQueryPcsClaims. This is super wasteful, and is a
+	// temporary measure until the new PIOP compiler is fully integrated. Then we will cut the
+	// many-to-one batching logic out of greedy evalcheck and rejoice.
+	let eval_claims = pcs_claims
+		.into_iter()
+		.flat_map(|(batch_id, SameQueryPcsClaim { eval_point, evals })| {
+			let oracles = &oracles;
+			evals.into_iter().enumerate().map(move |(index, eval)| {
+				let oracle = oracles.committed_oracle(CommittedId { batch_id, index });
+				EvalcheckMultilinearClaim {
+					poly: oracle,
+					eval_point: eval_point.clone(),
+					eval,
+				}
+			})
+		})
+		.collect::<Vec<_>>();
 
-	// Check that we have a PCS claim for each batch, otherwise the constraint system is
-	// under-constrained.
-	for (i, (batch_id, _)) in pcs_claims.iter().enumerate() {
-		if *batch_id != i {
-			bail!(Error::UnconstrainedBatch(i));
-		}
-	}
-	if pcs_claims.len() < oracles.n_batches() {
-		bail!(Error::UnconstrainedBatch(pcs_claims.len()));
-	}
+	// Reduce committed evaluation claims to PIOP sumcheck claims
+	let system =
+		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
 
-	// Verify PCS proofs
-	let batches = constraint_system.oracles.committed_batches();
-	for ((_batch_id, claim), pcs, batch, committed) in izip!(pcs_claims, pcss, batches, committeds)
-	{
-		match pcs {
-			TowerPCS::B1(pcs) => tower_pcs_open::<_, Tower::B1, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-			TowerPCS::B8(pcs) => tower_pcs_open::<_, Tower::B8, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-			TowerPCS::B16(pcs) => tower_pcs_open::<_, Tower::B16, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-			TowerPCS::B32(pcs) => tower_pcs_open::<_, Tower::B32, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-			TowerPCS::B64(pcs) => tower_pcs_open::<_, Tower::B64, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-			TowerPCS::B128(pcs) => tower_pcs_open::<_, Tower::B128, _, _, _, _>(
-				pcs,
-				batch,
-				&oracles,
-				&witness,
-				committed,
-				&claim.eval_point,
-				&mut advice,
-				&mut transcript,
-				backend,
-			),
-		}?
-	}
+	let mut proof_writer = ProofWriter {
+		transcript: &mut transcript,
+		advice: &mut advice,
+	};
+	let ring_switch::ReducedWitness {
+		transparents: transparent_multilins,
+		sumcheck_claims: piop_sumcheck_claims,
+	} = ring_switch::prove::<_, _, _, Tower, _, _, _>(
+		&system,
+		&committed_multilins,
+		&mut proof_writer,
+		backend,
+	)?;
+
+	// Prove evaluation claims using PIOP compiler
+	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _, _>(
+		&fri_params,
+		&merkle_prover,
+		domain_factory,
+		&commit_meta,
+		committed,
+		&codeword,
+		&committed_multilins,
+		&transparent_multilins,
+		&piop_sumcheck_claims,
+		&mut proof_writer,
+		&backend,
+	)?;
 
 	Ok(Proof {
 		transcript: transcript.finalize(),
 		advice: advice.finalize(),
 	})
-}
-
-fn tower_pcs_commit<U, F, FExt, PCS>(
-	pcs: &PCS,
-	batch: CommittedBatch,
-	oracles: &MultilinearOracleSet<FExt>,
-	witness: &MultilinearExtensionIndex<U, FExt>,
-) -> Result<(PCS::Commitment, PCS::Committed), Error>
-where
-	U: UnderlierType + PackScalar<F> + PackScalar<FExt>,
-	F: TowerField,
-	FExt: TowerField + ExtensionField<F>,
-	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
-{
-	// Precondition
-	assert_eq!(batch.tower_level, F::TOWER_LEVEL);
-
-	let mles = (0..batch.n_polys)
-		.map(|i| {
-			let oracle = oracles.committed_oracle(CommittedId {
-				batch_id: batch.id,
-				index: i,
-			});
-			let MultilinearPolyOracle::Committed { oracle_id, .. } = oracle else {
-				panic!("MultilinearOracleSet::committed_oracle returned a non-committed oracle");
-			};
-			witness.get::<F>(oracle_id)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-	pcs.commit(&mles)
-		.map_err(|err| Error::PolyCommitError(Box::new(err)))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn tower_pcs_open<U, F, FExt, PCS, Transcript, Backend>(
-	pcs: &PCS,
-	batch: CommittedBatch,
-	oracles: &MultilinearOracleSet<FExt>,
-	witness: &MultilinearExtensionIndex<U, FExt>,
-	committed: PCS::Committed,
-	eval_point: &[FExt],
-	advice: &mut AdviceWriter,
-	mut transcript: Transcript,
-	backend: &Backend,
-) -> Result<(), Error>
-where
-	U: UnderlierType + PackScalar<F> + PackScalar<FExt>,
-	F: TowerField,
-	FExt: TowerField + ExtensionField<F>,
-	PCS: PolyCommitScheme<PackedType<U, F>, FExt>,
-	Transcript: CanSample<FExt> + CanSampleBits<usize> + CanWrite,
-	Backend: ComputationBackend,
-{
-	// Precondition
-	assert_eq!(batch.tower_level, F::TOWER_LEVEL);
-
-	let mles = (0..batch.n_polys)
-		.map(|i| {
-			let oracle = oracles.committed_oracle(CommittedId {
-				batch_id: batch.id,
-				index: i,
-			});
-			let MultilinearPolyOracle::Committed { oracle_id, .. } = oracle else {
-				panic!("MultilinearOracleSet::committed_oracle returned a non-committed oracle");
-			};
-			witness.get::<F>(oracle_id)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-	pcs.prove_evaluation(advice, &mut transcript, &committed, &mles, eval_point, backend)
-		.map_err(|err| Error::PolyCommitError(Box::new(err)))
 }
 
 #[allow(clippy::type_complexity)]

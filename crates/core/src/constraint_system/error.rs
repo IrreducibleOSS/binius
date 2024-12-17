@@ -4,9 +4,9 @@ use super::channel::ChannelId;
 use crate::{
 	oracle,
 	oracle::{BatchId, OracleId},
-	polynomial, protocols,
+	piop, polynomial, protocols,
 	protocols::{gkr_gpa, greedy_evalcheck},
-	witness,
+	ring_switch, witness,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +84,12 @@ pub enum Error {
 
 	#[error("polynomial commitment error: {0}")]
 	PolyCommitError(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+
+	#[error("PIOP compilation error: {0}")]
+	PIOPCompilerError(#[from] piop::Error),
+
+	#[error("ring switch reduction error: {0}")]
+	RingSwitch(#[from] ring_switch::Error),
 
 	#[error("verification error: {0}")]
 	Verification(#[from] VerificationError),

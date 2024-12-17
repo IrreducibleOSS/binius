@@ -96,18 +96,10 @@ fn main() -> Result<()> {
 		U,
 		CanonicalTowerFamily,
 		_,
-		_,
 		GroestlHasher<BinaryField128b>,
 		GroestlDigestCompression<BinaryField8b>,
 		HasherChallenger<Groestl256>,
-	>(
-		&constraint_system,
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		&domain_factory,
-		vec![],
-		proof,
-	)?;
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, vec![], proof)?;
 
 	Ok(())
 }

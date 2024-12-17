@@ -93,7 +93,6 @@ fn main() -> Result<()> {
 		U,
 		CanonicalTowerFamily,
 		_,
-		_,
 		GroestlHasher<_>,
 		GroestlDigestCompression<_>,
 		HasherChallenger<Groestl256>,
@@ -101,7 +100,6 @@ fn main() -> Result<()> {
 		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
-		&domain_factory,
 		boundaries,
 		proof,
 	)?;

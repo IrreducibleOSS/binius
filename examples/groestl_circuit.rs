@@ -82,7 +82,6 @@ fn main() -> Result<()> {
 		U,
 		AESTowerFamily,
 		_,
-		_,
 		Groestl256<AESTowerField128b, _>,
 		GroestlDigestCompression<AESTowerField8b>,
 		HasherChallenger<groestl_crypto::Groestl256>,
@@ -90,7 +89,6 @@ fn main() -> Result<()> {
 		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
-		&domain_factory,
 		vec![],
 		proof,
 	)?;
