@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{builder::ConstraintSystemBuilder, u32add::u32add_committed};
+use crate::{arithmetic, builder::ConstraintSystemBuilder};
 use binius_core::{
 	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
@@ -187,10 +187,23 @@ where
 				(w[i - 2], 10, RotateRightType::Logical),
 			],
 		)?;
-		let w_addition = u32add_committed(builder, "w_addition", w[i - 16], w[i - 7])?;
-		let s_addition = u32add_committed(builder, "s_addition", s0, s1)?;
+		let w_addition = arithmetic::u32::add(
+			builder,
+			"w_addition",
+			w[i - 16],
+			w[i - 7],
+			arithmetic::Flags::Unchecked,
+		)?;
+		let s_addition =
+			arithmetic::u32::add(builder, "s_addition", s0, s1, arithmetic::Flags::Unchecked)?;
 
-		w[i] = u32add_committed(builder, format!("w[{}]", i), w_addition, s_addition)?;
+		w[i] = arithmetic::u32::add(
+			builder,
+			format!("w[{}]", i),
+			w_addition,
+			s_addition,
+			arithmetic::Flags::Unchecked,
+		)?;
 	}
 
 	let init_oracles = INIT.map(|val| u32const_repeating(log_size, builder, val, "INIT").unwrap());
@@ -226,10 +239,19 @@ where
 			});
 		}
 
-		let h_sigma1 = u32add_committed(builder, "h_sigma1", h, sigma1)?;
-		let ch_ki = u32add_committed(builder, "ch_ki", ch[i], k[i])?;
-		let ch_ki_w_i = u32add_committed(builder, "ch_ki_w_i", ch_ki, w[i])?;
-		let temp1 = u32add_committed(builder, "temp1", h_sigma1, ch_ki_w_i)?;
+		let h_sigma1 =
+			arithmetic::u32::add(builder, "h_sigma1", h, sigma1, arithmetic::Flags::Unchecked)?;
+		let ch_ki =
+			arithmetic::u32::add(builder, "ch_ki", ch[i], k[i], arithmetic::Flags::Unchecked)?;
+		let ch_ki_w_i =
+			arithmetic::u32::add(builder, "ch_ki_w_i", ch_ki, w[i], arithmetic::Flags::Unchecked)?;
+		let temp1 = arithmetic::u32::add(
+			builder,
+			"temp1",
+			h_sigma1,
+			ch_ki_w_i,
+			arithmetic::Flags::Unchecked,
+		)?;
 
 		let sigma0 = rotate_and_xor(
 			log_size,
@@ -252,7 +274,8 @@ where
 			});
 		}
 
-		let temp2 = u32add_committed(builder, "temp2", sigma0, maj[i])?;
+		let temp2 =
+			arithmetic::u32::add(builder, "temp2", sigma0, maj[i], arithmetic::Flags::Unchecked)?;
 
 		builder.assert_zero(
 			[e, f, g, ch[i]],
@@ -267,17 +290,24 @@ where
 		h = g;
 		g = f;
 		f = e;
-		e = u32add_committed(builder, "e", d, temp1)?;
+		e = arithmetic::u32::add(builder, "e", d, temp1, arithmetic::Flags::Unchecked)?;
 		d = c;
 		c = b;
 		b = a;
-		a = u32add_committed(builder, "a", temp1, temp2)?;
+		a = arithmetic::u32::add(builder, "a", temp1, temp2, arithmetic::Flags::Unchecked)?;
 	}
 
 	let abcdefgh = [a, b, c, d, e, f, g, h];
 
 	let output = std::array::from_fn(|i| {
-		u32add_committed(builder, "output", init_oracles[i], abcdefgh[i]).unwrap()
+		arithmetic::u32::add(
+			builder,
+			"output",
+			init_oracles[i],
+			abcdefgh[i],
+			arithmetic::Flags::Unchecked,
+		)
+		.unwrap()
 	});
 
 	Ok(output)

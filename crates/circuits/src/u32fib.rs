@@ -10,7 +10,7 @@ use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
-use crate::{builder::ConstraintSystemBuilder, transparent::step_down, u32add::u32add};
+use crate::{arithmetic, builder::ConstraintSystemBuilder, transparent::step_down};
 
 pub fn u32fib<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
@@ -54,7 +54,7 @@ where
 
 	let packed_log_size = log_size - 5;
 	let enabled = step_down(builder, "enabled", packed_log_size, (1 << packed_log_size) - 2)?;
-	let sum = u32add(builder, "sum", current, next)?;
+	let sum = arithmetic::u32::add(builder, "sum", current, next, arithmetic::Flags::Unchecked)?;
 	let sum_packed = builder.add_packed("sum_packed", sum, 5)?;
 	let next_next_packed = builder.add_packed("next_next_packed", next_next, 5)?;
 

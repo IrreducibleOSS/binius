@@ -13,7 +13,6 @@ pub mod lasso;
 mod pack;
 pub mod sha256;
 pub mod transparent;
-pub mod u32add;
 pub mod u32fib;
 pub mod unconstrained;
 pub mod vision;
@@ -21,7 +20,7 @@ pub mod vision;
 #[cfg(test)]
 mod tests {
 	use crate::{
-		bitwise,
+		arithmetic, bitwise,
 		builder::ConstraintSystemBuilder,
 		groestl::groestl_p_permutation,
 		keccakf::{keccakf, KeccakfState},
@@ -37,7 +36,6 @@ mod tests {
 			u32add::SeveralU32add,
 		},
 		sha256::sha256,
-		u32add::u32add_committed,
 		u32fib::u32fib,
 		unconstrained::unconstrained,
 		vision::vision_permutation,
@@ -321,7 +319,8 @@ mod tests {
 		let log_size = 14;
 		let a = unconstrained::<_, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
 		let b = unconstrained::<_, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _c = u32add_committed(&mut builder, "u32add", a, b).unwrap();
+		let _c = arithmetic::u32::add(&mut builder, "u32add", a, b, arithmetic::Flags::Unchecked)
+			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
