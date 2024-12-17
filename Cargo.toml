@@ -13,6 +13,7 @@ authors = ["Irreducible Team <ulvt_dev@ulvetanna.io>"]
 [workspace.dependencies]
 anyhow = "1.0.81"
 assert_matches = "1.5.0"
+alloy-primitives = "0.8.14"
 auto_impl = "1.2.0"
 bytemuck = { version = "1.18.0", features = ["derive", "min_const_generics", "must_cast"] }
 bytes = "1.7.2"

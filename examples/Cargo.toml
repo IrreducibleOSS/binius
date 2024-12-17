@@ -6,6 +6,7 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+alloy-primitives.workspace = true
 binius_circuits = { path = "../crates/circuits" }
 binius_core = { path = "../crates/core" }
 binius_field = { path = "../crates/field" }
@@ -43,6 +44,10 @@ path = "u8mul.rs"
 [[example]]
 name = "u32add_with_lookup"
 path = "u32add_with_lookup.rs"
+
+[[example]]
+name = "modular_mul"
+path = "modular_mul.rs"
 
 [[example]]
 name = "vision32b_circuit"

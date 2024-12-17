@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 #![feature(array_try_map, array_try_from_fn)]
+#![allow(clippy::module_inception)]
 
 pub mod arithmetic;
 pub mod bitwise;
@@ -24,7 +25,17 @@ mod tests {
 		builder::ConstraintSystemBuilder,
 		groestl::groestl_p_permutation,
 		keccakf::keccakf,
-		lasso::{self, batch::LookupBatch, lookups, u32add::SeveralU32add},
+		lasso::{
+			self,
+			batch::LookupBatch,
+			big_integer_ops::byte_sliced_test_utils::{
+				test_bytesliced_add, test_bytesliced_add_carryfree,
+				test_bytesliced_double_conditional_increment, test_bytesliced_modular_mul,
+				test_bytesliced_mul,
+			},
+			lookups,
+			u32add::SeveralU32add,
+		},
 		sha256::sha256,
 		u32add::u32add_committed,
 		u32fib::u32fib,
@@ -42,7 +53,10 @@ mod tests {
 		tower::CanonicalTowerFamily,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier, as_packed_field::PackedType, underlier::WithUnderlier,
+		arch::OptimalUnderlier,
+		as_packed_field::PackedType,
+		tower_levels::{TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
+		underlier::WithUnderlier,
 		AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField64b,
 		BinaryField8b, Field, TowerField,
 	};
@@ -54,6 +68,81 @@ mod tests {
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
+
+	#[test]
+	fn test_lasso_u8add_carryfree_rejects_carry() {
+		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from randomness
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let log_size = 14;
+		let x_in = unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap();
+		let y_in = unconstrained::<_, _, BinaryField8b>(&mut builder, "y", log_size).unwrap();
+		let c_in = unconstrained::<_, _, BinaryField1b>(&mut builder, "c", log_size).unwrap();
+
+		let lookup_t =
+			lookups::u8_arithmetic::add_carryfree_lookup(&mut builder, "add cf table").unwrap();
+		let mut lookup_batch = LookupBatch::new(lookup_t);
+		let _sum_and_cout = lasso::u8add_carryfree(
+			&mut builder,
+			&mut lookup_batch,
+			"lasso_u8add",
+			x_in,
+			y_in,
+			c_in,
+			log_size,
+		)
+		.unwrap();
+
+		lookup_batch
+			.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness)
+			.expect_err("Rejected overflowing add");
+	}
+
+	#[test]
+	fn test_lasso_add_bytesliced() {
+		test_bytesliced_add::<1, TowerLevel1>();
+		test_bytesliced_add::<2, TowerLevel2>();
+		test_bytesliced_add::<4, TowerLevel4>();
+		test_bytesliced_add::<8, TowerLevel8>();
+	}
+
+	#[test]
+	fn test_lasso_mul_bytesliced() {
+		test_bytesliced_mul::<1, TowerLevel2>();
+		test_bytesliced_mul::<2, TowerLevel4>();
+		test_bytesliced_mul::<4, TowerLevel8>();
+		test_bytesliced_mul::<8, TowerLevel16>();
+	}
+
+	#[test]
+	fn test_lasso_modular_mul_bytesliced() {
+		test_bytesliced_modular_mul::<1, TowerLevel2>();
+		test_bytesliced_modular_mul::<2, TowerLevel4>();
+		test_bytesliced_modular_mul::<4, TowerLevel8>();
+		test_bytesliced_modular_mul::<8, TowerLevel16>();
+	}
+
+	#[test]
+	fn test_lasso_bytesliced_double_conditional_increment() {
+		test_bytesliced_double_conditional_increment::<1, TowerLevel1>();
+		test_bytesliced_double_conditional_increment::<2, TowerLevel2>();
+		test_bytesliced_double_conditional_increment::<4, TowerLevel4>();
+		test_bytesliced_double_conditional_increment::<8, TowerLevel8>();
+	}
+
+	#[test]
+	fn test_lasso_bytesliced_add_carryfree() {
+		test_bytesliced_add_carryfree::<1, TowerLevel1>();
+		test_bytesliced_add_carryfree::<2, TowerLevel2>();
+		test_bytesliced_add_carryfree::<4, TowerLevel4>();
+		test_bytesliced_add_carryfree::<8, TowerLevel8>();
+	}
 
 	#[test]
 	fn test_lasso_u8mul() {

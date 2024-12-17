@@ -12,6 +12,7 @@ binius_macros = { path = "../macros" }
 binius_utils = { path = "../utils" }
 binius_math = { path = "../math" }
 anyhow.workspace = true
+alloy-primitives.workspace = true
 bytemuck.workspace = true
 itertools.workspace = true
 rand.workspace = true
