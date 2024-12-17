@@ -3,9 +3,9 @@
 use super::{
 	error::Error,
 	verify::{
-		get_flush_sumcheck_composite_sum_claims_without_eq,
-		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles, make_standard_pcss,
-		max_n_vars_and_skip_rounds, reorder_for_flushing_by_n_vars, FlushSelectorComposition,
+		get_flush_dedup_sumcheck_metas, get_post_flush_sumcheck_eval_claims_without_eq,
+		make_flush_oracles, make_standard_pcss, max_n_vars_and_skip_rounds,
+		reorder_for_flushing_by_n_vars, FlushSumcheckMeta, StepDownMeta,
 	},
 	ConstraintSystem, Proof,
 };
@@ -21,7 +21,8 @@ use crate::{
 		},
 		greedy_evalcheck::{self, GreedyEvalcheckProveOutput},
 		sumcheck::{
-			self, constraint_set_zerocheck_claim, prove::UnivariateZerocheckProver,
+			self, constraint_set_zerocheck_claim,
+			prove::{SumcheckProver, UnivariateZerocheckProver},
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
@@ -253,23 +254,24 @@ where
 		flush_final_layer_claims,
 	);
 
-	let (flush_sumcheck_provers, step_down_ids) = get_flush_sumcheck_provers(
-		&mut oracles,
-		&flush_oracle_ids,
-		&flush_counts,
-		&flush_final_layer_claims,
-		&mut witness,
-		&domain_factory,
-		backend,
-	)?;
+	let (flush_sumcheck_provers, all_step_down_metas, flush_oracles_by_claim) =
+		get_flush_sumcheck_provers(
+			&mut oracles,
+			&flush_oracle_ids,
+			&flush_counts,
+			&flush_final_layer_claims,
+			&mut witness,
+			&domain_factory,
+			backend,
+		)?;
 
 	let flush_sumcheck_output =
 		sumcheck::prove::batch_prove(flush_sumcheck_provers, &mut transcript)?;
 
 	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
 		&oracles,
-		&flush_oracle_ids,
-		&step_down_ids,
+		&all_step_down_metas,
+		&flush_oracles_by_claim,
 		&flush_sumcheck_output,
 	)?;
 
@@ -662,18 +664,7 @@ where
 		.collect()
 }
 
-type FlushSumcheckProver<'b, U, Tower, FDomain, Backend> = GPAProver<
-	'b,
-	FDomain,
-	PackedType<U, <Tower as TowerFamily>::B128>,
-	FlushSelectorComposition,
-	MultilinearWitness<'b, PackedType<U, <Tower as TowerFamily>::B128>>,
-	Backend,
->;
-
-type FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend> =
-	(Vec<FlushSumcheckProver<'b, U, Tower, FDomain, Backend>>, Vec<OracleId>);
-
+#[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
 fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>(
 	oracles: &mut MultilinearOracleSet<Tower::B128>,
@@ -683,7 +674,10 @@ fn get_flush_sumcheck_provers<'a, 'b, U, Tower, FDomain, DomainFactory, Backend>
 	witness: &mut MultilinearExtensionIndex<'a, U, Tower::B128>,
 	domain_factory: DomainFactory,
 	backend: &'b Backend,
-) -> Result<FlushSumcheckProverWithTransparentsIds<'b, U, Tower, FDomain, Backend>, Error>
+) -> Result<
+	(Vec<impl SumcheckProver<Tower::B128> + 'b>, Vec<Vec<StepDownMeta>>, Vec<Vec<OracleId>>),
+	Error,
+>
 where
 	U: TowerUnderlier<Tower> + PackScalar<FDomain>,
 	Tower: TowerFamily,
@@ -691,46 +685,57 @@ where
 	FDomain: Field,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	Backend: ComputationBackend,
-	<U as PackScalar<Tower::B128>>::Packed: PackedFieldIndexable,
+	PackedType<U, Tower::B128>: PackedFieldIndexable,
 	'a: 'b,
 {
-	let (composite_sum_claims, step_down_info) =
-		get_flush_sumcheck_composite_sum_claims_without_eq::<Tower::B128>(
-			oracles,
+	let flush_sumcheck_metas = get_flush_dedup_sumcheck_metas(
+		oracles,
+		flush_oracle_ids,
+		flush_counts,
+		final_layer_claims,
+	)?;
+
+	let n_claims = flush_sumcheck_metas.len();
+	let mut provers = Vec::with_capacity(n_claims);
+	let mut flush_oracles_by_claim = Vec::with_capacity(n_claims);
+	let mut all_step_down_metas = Vec::with_capacity(n_claims);
+	for flush_sumcheck_meta in flush_sumcheck_metas {
+		let FlushSumcheckMeta {
+			composite_sum_claims,
+			step_down_metas,
 			flush_oracle_ids,
-			flush_counts,
-			final_layer_claims,
+			eval_point,
+		} = flush_sumcheck_meta;
+
+		let mut multilinears = Vec::with_capacity(step_down_metas.len() + flush_oracle_ids.len());
+
+		for meta in &step_down_metas {
+			let oracle_id = meta.step_down_oracle_id;
+
+			let step_down_multilinear =
+				MLEDirectAdapter::from(meta.step_down.multilinear_extension()?).upcast_arc_dyn();
+
+			witness.update_multilin_poly([(oracle_id, step_down_multilinear)])?;
+			multilinears.push(witness.get_multilin_poly(oracle_id)?);
+		}
+
+		for &oracle_id in &flush_oracle_ids {
+			multilinears.push(witness.get_multilin_poly(oracle_id)?);
+		}
+
+		let prover = GPAProver::new(
+			multilinears,
+			None,
+			composite_sum_claims,
+			domain_factory.clone(),
+			&eval_point,
+			backend,
 		)?;
 
-	let results: Result<Vec<_>, Error> = izip!(
-		flush_oracle_ids.iter(),
-		composite_sum_claims.into_iter(),
-		step_down_info.into_iter(),
-		final_layer_claims.iter()
-	)
-	.map(
-		|(&flush_oracle_id, composite_sum_claim, (step_down_id, step_down), final_layer_claim)| {
-			let step_down_multilinear =
-				MLEDirectAdapter::from(step_down.multilinear_extension()?).upcast_arc_dyn();
+		provers.push(prover);
+		flush_oracles_by_claim.push(flush_oracle_ids);
+		all_step_down_metas.push(step_down_metas);
+	}
 
-			witness.update_multilin_poly([(step_down_id, step_down_multilinear)])?;
-
-			let prover = GPAProver::new(
-				vec![
-					witness.get_multilin_poly(flush_oracle_id)?,
-					witness.get_multilin_poly(step_down_id)?,
-				],
-				None,
-				[composite_sum_claim],
-				domain_factory.clone(),
-				&final_layer_claim.eval_point,
-				backend,
-			)?;
-
-			Ok((prover, step_down_id))
-		},
-	)
-	.collect();
-
-	Ok(results?.into_iter().unzip())
+	Ok((provers, all_step_down_metas, flush_oracles_by_claim))
 }
