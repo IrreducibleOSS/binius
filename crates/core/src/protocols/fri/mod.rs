@@ -5,7 +5,7 @@
 //! FRI is an IOP of Proximity for Reed–Solomon codes. The original protocol was introduced in
 //! [BBHR17], and this implementation uses a special instantiation described in [DP24] Section 3.
 //!
-//! This protocol implement FRI for an interleaved Reed–Solomon code, rather than a regular
+//! This protocol implements FRI for an interleaved Reed–Solomon code, rather than a regular
 //! Reed–Solomon code. Codewords in an interleaved code have the form of being a batch of
 //! Reed–Solomon codewords, interleaved element-wise. For example, an interleaved codeword with a
 //! batch size of 4 would have the form `a0, b0, c0, d0, a1, b1, c1, d1, ...`, where `a0, a1, ...`
