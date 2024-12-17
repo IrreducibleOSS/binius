@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::Error;
+use crate::{ArithExpr, Error};
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, Field, PackedField};
 use stackalloc::stackalloc_with_default;
@@ -19,6 +19,12 @@ where
 	/// Total degree of the polynomial.
 	fn degree(&self) -> usize;
 
+	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
+	fn binary_tower_level(&self) -> usize;
+
+	/// Returns the arithmetic expression representing the polynomial.
+	fn expression(&self) -> ArithExpr<P::Scalar>;
+
 	/// Evaluates the polynomial using packed values, where each packed value may contain multiple scalar values.
 	/// The evaluation follows SIMD semantics, meaning that operations are performed
 	/// element-wise across corresponding scalar values in the packed values.
@@ -28,9 +34,6 @@ where
 	/// - Each scalar value in `query[0]` is added to the corresponding scalar value in `query[1]`.
 	/// - There are no operations performed between scalar values within the same packed value.
 	fn evaluate(&self, query: &[P]) -> Result<P, Error>;
-
-	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
-	fn binary_tower_level(&self) -> usize;
 
 	/// Batch evaluation that admits non-strided argument layout.
 	/// `batch_query` is a slice of slice references of equal length, which furthermore should equal
@@ -67,9 +70,11 @@ pub trait CompositionPoly<F: Field>: Debug + Send + Sync {
 
 	fn degree(&self) -> usize;
 
-	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error>;
-
 	fn binary_tower_level(&self) -> usize;
+
+	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE>;
+
+	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error>;
 
 	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
 		&self,

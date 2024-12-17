@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error as PolynomialError;
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{CompositionPolyOS, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{ArithExpr, CompositionPolyOS, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
 use std::ops::Deref;
 
@@ -30,12 +30,16 @@ where
 		self.inner.degree()
 	}
 
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		Ok(self.inner.evaluate(query)? + P::one())
-	}
-
 	fn binary_tower_level(&self) -> usize {
 		self.inner.binary_tower_level()
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		self.inner.expression() + ArithExpr::one()
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+		Ok(self.inner.evaluate(query)? + P::one())
 	}
 }
 
@@ -62,15 +66,19 @@ where
 		self.arity
 	}
 
+	fn binary_tower_level(&self) -> usize {
+		0
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		(0..self.arity).map(ArithExpr::Var).product()
+	}
+
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let n_vars = self.arity;
 		assert_eq!(query.len(), n_vars);
 		// Product of scalar values at the corresponding positions of the packed values.
 		Ok(query.iter().copied().product())
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		0
 	}
 }
 

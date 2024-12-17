@@ -2,7 +2,9 @@
 
 use super::error::Error;
 use binius_field::{Field, PackedField};
-use binius_math::{CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef};
+use binius_math::{
+	ArithExpr, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
+};
 use binius_utils::bail;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
@@ -37,6 +39,10 @@ impl<P: PackedField> CompositionPolyOS<P> for IdentityCompositionPoly {
 
 	fn degree(&self) -> usize {
 		1
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		binius_math::ArithExpr::Var(0)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -86,6 +92,10 @@ where
 
 	fn degree(&self) -> usize {
 		self.composition.degree()
+	}
+
+	fn expression(&self) -> ArithExpr<F> {
+		self.composition.expression()
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, binius_math::Error> {

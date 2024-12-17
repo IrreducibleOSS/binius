@@ -41,7 +41,7 @@ use binius_field::{
 };
 use binius_hal::make_portable_backend;
 use binius_hash::Hasher;
-use binius_math::{CompositionPolyOS, EvaluationDomainFactory};
+use binius_math::{ArithExpr, CompositionPolyOS, EvaluationDomainFactory};
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
 use itertools::{izip, multiunzip, Itertools};
@@ -724,12 +724,19 @@ impl<P: PackedField> CompositionPolyOS<P> for FlushSumcheckComposition {
 	fn n_vars(&self) -> usize {
 		2
 	}
+
 	fn degree(&self) -> usize {
 		2
 	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		ArithExpr::Var(0) * ArithExpr::Var(1) + ArithExpr::one() - ArithExpr::Var(1)
+	}
+
 	fn binary_tower_level(&self) -> usize {
 		0
 	}
+
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 		let unmasked_flush = query[0];
 		let step_down = query[1];

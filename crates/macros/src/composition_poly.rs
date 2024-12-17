@@ -9,6 +9,7 @@ pub(crate) struct CompositionPolyItem {
 	pub name: syn::Ident,
 	pub vars: Vec<syn::Ident>,
 	pub poly_packed: syn::Expr,
+	pub expr: syn::Expr,
 	pub scalar_type: syn::Type,
 	pub degree: usize,
 }
@@ -20,6 +21,7 @@ impl ToTokens for CompositionPolyItem {
 			name,
 			vars,
 			poly_packed,
+			expr,
 			scalar_type,
 			degree,
 		} = self;
@@ -50,6 +52,14 @@ impl ToTokens for CompositionPolyItem {
 					#degree
 				}
 
+				fn binary_tower_level(&self) -> usize {
+					0
+				}
+
+				fn expression<FE: binius_field::ExtensionField<#scalar_type>>(&self) -> binius_math::ArithExpr<FE> {
+					(#expr).convert_field()
+				}
+
 				fn evaluate<P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>>(&self, query: &[P]) -> Result<P, binius_math::Error> {
 					if query.len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
@@ -78,10 +88,6 @@ impl ToTokens for CompositionPolyItem {
 
 					Ok(())
 				}
-
-				fn binary_tower_level(&self) -> usize {
-					0
-				}
 			}
 
 			impl<P> binius_math::CompositionPolyOS<P> for #name
@@ -96,12 +102,16 @@ impl ToTokens for CompositionPolyItem {
 					<Self as binius_math::CompositionPoly<_>>::degree(self)
 				}
 
-				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-					<Self as binius_math::CompositionPoly<_>>::evaluate(self, query)
-				}
-
 				fn binary_tower_level(&self) -> usize {
 					<Self as binius_math::CompositionPoly<_>>::binary_tower_level(self)
+				}
+
+				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
+					<Self as binius_math::CompositionPoly<_>>::expression(self)
+				}
+
+				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+					<Self as binius_math::CompositionPoly<_>>::evaluate(self, query)
 				}
 
 				fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), binius_math::Error> {
@@ -135,12 +145,17 @@ impl Parse for CompositionPolyItem {
 			let content;
 			bracketed!(content in input);
 			let vars = content.parse_terminated(syn::Ident::parse, Token![,])?;
-			vars.into_iter().collect()
+			vars.into_iter().collect::<Vec<_>>()
 		};
 		input.parse::<Token![=]>()?;
 		let mut poly_packed = input.parse::<syn::Expr>()?;
+		let mut expr = poly_packed.clone();
+
 		let degree = poly_degree(&poly_packed)?;
-		rewrite_literals(&mut poly_packed)?;
+		rewrite_literals(&mut poly_packed, &replace_packed_literals)?;
+
+		subst_vars(&mut expr, &vars, &|i| parse_quote!(binius_math::ArithExpr::Var(#i)))?;
+		rewrite_literals(&mut expr, &replace_expr_literals)?;
 
 		let scalar_type = if input.is_empty() {
 			parse_quote!(binius_field::BinaryField1b)
@@ -155,6 +170,7 @@ impl Parse for CompositionPolyItem {
 			name,
 			vars,
 			poly_packed,
+			expr,
 			scalar_type,
 			degree,
 		})
@@ -184,34 +200,48 @@ fn poly_degree(expr: &syn::Expr) -> Result<usize, syn::Error> {
 	})
 }
 
-/// Rewrites 0 => P::zero(), 1 => P::one()
-fn rewrite_literals(expr: &mut syn::Expr) -> Result<(), syn::Error> {
+/// Replace literals to P::zero() and P::one() to be used in `evaluate` and `batch_evaluate`.
+fn replace_packed_literals(literal: &syn::LitInt) -> Result<syn::Expr, syn::Error> {
+	Ok(match &*literal.to_string() {
+		"0" => parse_quote!(P::zero()),
+		"1" => parse_quote!(P::one()),
+		_ => return Err(syn::Error::new(literal.span(), "Unsupported integer")),
+	})
+}
+
+/// Replace literals to Expr::zero() and Expr::one() to be used in `expression` method.
+fn replace_expr_literals(literal: &syn::LitInt) -> Result<syn::Expr, syn::Error> {
+	Ok(match &*literal.to_string() {
+		"0" => parse_quote!(binius_math::ArithExpr::zero()),
+		"1" => parse_quote!(binius_math::ArithExpr::one()),
+		_ => return Err(syn::Error::new(literal.span(), "Unsupported integer")),
+	})
+}
+
+/// Replace literals in an expression
+fn rewrite_literals(
+	expr: &mut syn::Expr,
+	f: &impl Fn(&syn::LitInt) -> Result<syn::Expr, syn::Error>,
+) -> Result<(), syn::Error> {
 	match expr {
 		syn::Expr::Lit(exprlit) => {
 			if let syn::Lit::Int(int) = &exprlit.lit {
-				*expr = match &*int.to_string() {
-					"0" => {
-						parse_quote!(P::zero())
-					}
-					"1" => {
-						parse_quote!(P::one())
-					}
-					_ => return Err(syn::Error::new(expr.span(), "Unsupported integer")),
-				};
+				*expr = f(int)?;
 			}
 		}
 		syn::Expr::Paren(paren) => {
-			rewrite_literals(&mut paren.expr)?;
+			rewrite_literals(&mut paren.expr, f)?;
 		}
 		syn::Expr::Binary(binary) => {
-			rewrite_literals(&mut binary.left)?;
-			rewrite_literals(&mut binary.right)?;
+			rewrite_literals(&mut binary.left, f)?;
+			rewrite_literals(&mut binary.right, f)?;
 		}
 		_ => {}
 	}
 	Ok(())
 }
 
+/// Substitutes variables in an expression with a slice access
 fn subst_vars(
 	expr: &mut syn::Expr,
 	vars: &[syn::Ident],

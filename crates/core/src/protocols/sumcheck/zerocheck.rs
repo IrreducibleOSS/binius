@@ -3,7 +3,7 @@
 use super::error::{Error, VerificationError};
 use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
 use binius_field::{util::eq, Field, PackedField};
-use binius_math::CompositionPolyOS;
+use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 use std::marker::PhantomData;
@@ -169,6 +169,10 @@ where
 
 	fn degree(&self) -> usize {
 		self.inner.degree() + 1
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		self.inner.expression() * ArithExpr::Var(self.inner.n_vars() - 1)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

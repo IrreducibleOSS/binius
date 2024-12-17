@@ -29,7 +29,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	ArithExpr, CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use groestl_crypto::Groestl256;
@@ -54,6 +54,10 @@ impl<P: PackedField> CompositionPolyOS<P> for PowerComposition {
 
 	fn degree(&self) -> usize {
 		self.exponent
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		ArithExpr::Var(0).pow(self.exponent as _)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {

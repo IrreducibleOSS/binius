@@ -6,7 +6,7 @@ use std::{
 	cmp::max,
 	fmt::{self, Display},
 	iter::{Product, Sum},
-	ops::{Add, Mul, Sub},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 /// Represents an arithmetic expression that can be evaluated symbolically.
@@ -105,10 +105,10 @@ impl<F: Field> ArithExpr<F> {
 		Ok(expr)
 	}
 
-	pub fn convert_field<FTgt: Field + From<F>>(self) -> ArithExpr<FTgt> {
+	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithExpr<FTgt> {
 		match self {
-			ArithExpr::Const(val) => ArithExpr::Const(val.into()),
-			ArithExpr::Var(index) => ArithExpr::Var(index),
+			ArithExpr::Const(val) => ArithExpr::Const((*val).into()),
+			ArithExpr::Var(index) => ArithExpr::Var(*index),
 			ArithExpr::Add(left, right) => {
 				let new_left = left.convert_field();
 				let new_right = right.convert_field();
@@ -121,17 +121,17 @@ impl<F: Field> ArithExpr<F> {
 			}
 			ArithExpr::Pow(base, exp) => {
 				let new_base = base.convert_field();
-				ArithExpr::Pow(Box::new(new_base), exp)
+				ArithExpr::Pow(Box::new(new_base), *exp)
 			}
 		}
 	}
 
 	pub fn try_convert_field<FTgt: Field + TryFrom<F>>(
-		self,
+		&self,
 	) -> Result<ArithExpr<FTgt>, <FTgt as TryFrom<F>>::Error> {
 		Ok(match self {
-			ArithExpr::Const(val) => ArithExpr::Const(val.try_into()?),
-			ArithExpr::Var(index) => ArithExpr::Var(index),
+			ArithExpr::Const(val) => ArithExpr::Const((*val).try_into()?),
+			ArithExpr::Var(index) => ArithExpr::Var(*index),
 			ArithExpr::Add(left, right) => {
 				let new_left = left.try_convert_field()?;
 				let new_right = right.try_convert_field()?;
@@ -144,9 +144,18 @@ impl<F: Field> ArithExpr<F> {
 			}
 			ArithExpr::Pow(base, exp) => {
 				let new_base = base.try_convert_field()?;
-				ArithExpr::Pow(Box::new(new_base), exp)
+				ArithExpr::Pow(Box::new(new_base), *exp)
 			}
 		})
+	}
+}
+
+impl<F> Default for ArithExpr<F>
+where
+	F: Field,
+{
+	fn default() -> Self {
+		Self::zero()
 	}
 }
 
@@ -161,6 +170,15 @@ where
 	}
 }
 
+impl<F> AddAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn add_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) + rhs;
+	}
+}
+
 impl<F> Sub for ArithExpr<F>
 where
 	F: Field,
@@ -172,6 +190,15 @@ where
 	}
 }
 
+impl<F> SubAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn sub_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) - rhs;
+	}
+}
+
 impl<F> Mul for ArithExpr<F>
 where
 	F: Field,
@@ -180,6 +207,15 @@ where
 
 	fn mul(self, rhs: Self) -> Self {
 		ArithExpr::Mul(Box::new(self), Box::new(rhs))
+	}
+}
+
+impl<F> MulAssign for ArithExpr<F>
+where
+	F: Field,
+{
+	fn mul_assign(&mut self, rhs: Self) {
+		*self = std::mem::take(self) * rhs;
 	}
 }
 

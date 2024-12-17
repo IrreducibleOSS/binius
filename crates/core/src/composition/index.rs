@@ -1,8 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::polynomial::Error;
-use binius_field::PackedField;
-use binius_math::CompositionPolyOS;
+use binius_field::{Field, PackedField};
+use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -41,6 +41,29 @@ impl<P: PackedField, C: CompositionPolyOS<P>, const N: usize> CompositionPolyOS<
 
 	fn degree(&self) -> usize {
 		self.composition.degree()
+	}
+
+	fn expression(&self) -> ArithExpr<<P as PackedField>::Scalar> {
+		fn map_variables<F: Field, const M: usize>(
+			index_map: &[usize; M],
+			expr: &ArithExpr<F>,
+		) -> ArithExpr<F> {
+			match expr {
+				ArithExpr::Var(i) => ArithExpr::Var(index_map[*i]),
+				ArithExpr::Const(c) => ArithExpr::Const(*c),
+				ArithExpr::Add(a, b) => ArithExpr::Add(
+					Box::new(map_variables(index_map, a)),
+					Box::new(map_variables(index_map, b)),
+				),
+				ArithExpr::Mul(a, b) => ArithExpr::Mul(
+					Box::new(map_variables(index_map, a)),
+					Box::new(map_variables(index_map, b)),
+				),
+				ArithExpr::Pow(a, n) => ArithExpr::Pow(Box::new(map_variables(index_map, a)), *n),
+			}
+		}
+
+		map_variables(&self.indices, &self.composition.expression())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -107,4 +130,40 @@ where
 		indices,
 		composition,
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::polynomial::ArithCircuitPoly;
+	use binius_field::BinaryField1b;
+
+	#[test]
+	fn tests_expr() {
+		let expr = ArithExpr::Add(
+			Box::new(ArithExpr::Var(0)),
+			Box::new(ArithExpr::Mul(
+				Box::new(ArithExpr::Var(1)),
+				Box::new(ArithExpr::Const(BinaryField1b::ONE)),
+			)),
+		);
+		let circuit = ArithCircuitPoly::new(expr);
+
+		let composition = IndexComposition {
+			n_vars: 3,
+			indices: [1, 2],
+			composition: circuit,
+		};
+
+		assert_eq!(
+			(&composition as &dyn CompositionPolyOS<BinaryField1b>).expression(),
+			ArithExpr::Add(
+				Box::new(ArithExpr::Var(1)),
+				Box::new(ArithExpr::Mul(
+					Box::new(ArithExpr::Var(2)),
+					Box::new(ArithExpr::Const(BinaryField1b::ONE)),
+				)),
+			)
+		);
+	}
 }

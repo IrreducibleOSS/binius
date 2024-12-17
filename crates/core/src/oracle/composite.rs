@@ -75,6 +75,7 @@ mod tests {
 	use super::*;
 	use crate::oracle::MultilinearOracleSet;
 	use binius_field::{BinaryField128b, BinaryField2b, BinaryField32b, BinaryField8b, TowerField};
+	use binius_math::ArithExpr;
 
 	#[derive(Clone, Debug)]
 	struct TestByteComposition;
@@ -85,6 +86,16 @@ mod tests {
 
 		fn degree(&self) -> usize {
 			1
+		}
+
+		fn expression(&self) -> ArithExpr<BinaryField128b> {
+			ArithExpr::Add(
+				Box::new(ArithExpr::Mul(Box::new(ArithExpr::Var(0)), Box::new(ArithExpr::Var(1)))),
+				Box::new(ArithExpr::Mul(
+					Box::new(ArithExpr::Var(2)),
+					Box::new(ArithExpr::Const(BinaryField128b::new(125))),
+				)),
+			)
 		}
 
 		fn evaluate(

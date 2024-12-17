@@ -92,7 +92,8 @@ enum CircuitStep<F: Field> {
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: Field> {
-	exprs: Arc<[CircuitStep<F>]>,
+	expr: ArithExpr<F>,
+	steps: Arc<[CircuitStep<F>]>,
 	/// The "top level expression", which depends on circuit expression evaluations
 	retval: CircuitStepArgument<F>,
 	degree: usize,
@@ -106,7 +107,8 @@ impl<F: Field> ArithCircuitPoly<F> {
 		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Self {
-			exprs: exprs.into(),
+			expr,
+			steps: exprs.into(),
 			retval,
 			degree,
 			n_vars,
@@ -128,7 +130,8 @@ impl<F: Field> ArithCircuitPoly<F> {
 		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Ok(Self {
-			exprs: exprs.into(),
+			expr,
+			steps: exprs.into(),
 			retval,
 			n_vars,
 			degree,
@@ -149,6 +152,10 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		F::TOWER_LEVEL
 	}
 
+	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
+		self.expr.convert_field()
+	}
+
 	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
@@ -157,7 +164,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		}
 
 		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
-		stackalloc_uninit::<P, _, _>(self.exprs.len().max(1), |evals| {
+		stackalloc_uninit::<P, _, _>(self.steps.len().max(1), |evals| {
 			let get_argument_value = |input: CircuitStepArgument<F>, evals: &[P]| match input {
 				// Safety: The index is guaranteed to be within bounds by the construction of the circuit
 				CircuitStepArgument::Expr(CircuitNode::Var(index)) => unsafe {
@@ -170,7 +177,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 				CircuitStepArgument::Const(value) => P::broadcast(value.into()),
 			};
 
-			for (i, expr) in self.exprs.iter().enumerate() {
+			for (i, expr) in self.steps.iter().enumerate() {
 				// Safety: previous evaluations are initialized by the previous loop iterations
 				let (before, after) = unsafe { evals.split_at_mut_unchecked(i) };
 				let before = unsafe { slice_assume_init(before) };
@@ -210,8 +217,8 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		}
 
 		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.
-		stackalloc_uninit::<P, (), _>((self.exprs.len() * row_len).max(1), |sparse_evals| {
-			for (i, expr) in self.exprs.iter().enumerate() {
+		stackalloc_uninit::<P, (), _>((self.steps.len() * row_len).max(1), |sparse_evals| {
+			for (i, expr) in self.steps.iter().enumerate() {
 				let (before, current) = sparse_evals.split_at_mut(i * row_len);
 
 				// Safety: `before` is guaranteed to be initialized by the previous loop iterations.
@@ -292,6 +299,10 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS
 
 	fn n_vars(&self) -> usize {
 		CompositionPoly::n_vars(self)
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		self.expr.convert_field()
 	}
 
 	fn binary_tower_level(&self) -> usize {

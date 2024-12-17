@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{CompositionPoly, CompositionPolyOS, Error};
+use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 use std::{
 	any::{Any, TypeId},
 	collections::HashMap,
@@ -50,6 +50,10 @@ impl<F: Field, Inner: CompositionPoly<F>> CompositionPoly<F> for CachedPoly<F, I
 		self.inner.binary_tower_level()
 	}
 
+	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
+		self.inner.expression()
+	}
+
 	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
 		if let Some(result) = self.cache.try_evaluate(query) {
 			result
@@ -84,6 +88,10 @@ impl<F: Field, Inner: CompositionPoly<F>, P: PackedField<Scalar: ExtensionField<
 
 	fn degree(&self) -> usize {
 		CompositionPoly::degree(&self)
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		CompositionPoly::expression(&self)
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
@@ -213,6 +221,10 @@ mod tests {
 
 		fn degree(&self) -> usize {
 			1
+		}
+
+		fn expression(&self) -> ArithExpr<P::Scalar> {
+			ArithExpr::Const(BinaryField8b::new(123).into()) + ArithExpr::Var(0)
 		}
 
 		fn evaluate(&self, query: &[P]) -> Result<P, Error> {

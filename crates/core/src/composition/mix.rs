@@ -2,7 +2,7 @@
 
 use crate::polynomial::Error;
 use binius_field::{Field, PackedField, TowerField};
-use binius_math::CompositionPolyOS;
+use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
 use std::fmt::Debug;
 
@@ -29,6 +29,8 @@ pub struct MixComposition<P: PackedField, IC> {
 }
 
 pub trait HornerCompositions<P: PackedField> {
+	fn expression(&self, challenge: P::Scalar) -> Option<ArithExpr<P::Scalar>>;
+
 	fn evaluate(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error>;
 
 	fn evaluate_with_inner_evals(
@@ -39,6 +41,10 @@ pub trait HornerCompositions<P: PackedField> {
 }
 
 impl<P: PackedField> HornerCompositions<P> for () {
+	fn expression(&self, _challenge: P::Scalar) -> Option<ArithExpr<P::Scalar>> {
+		None
+	}
+
 	fn evaluate(&self, _challenge: P::Scalar, _query: &[P]) -> Result<Option<P>, Error> {
 		Ok(None)
 	}
@@ -61,6 +67,21 @@ where
 	C: CompositionPolyOS<P>,
 	IC: HornerCompositions<P>,
 {
+	fn expression(&self, challenge: P::Scalar) -> Option<ArithExpr<P::Scalar>> {
+		let mut acc = self.1.expression(challenge);
+
+		for inner_poly in &self.0 {
+			if let Some(acc) = &mut acc {
+				*acc *= ArithExpr::Const(challenge);
+				*acc += inner_poly.expression();
+			} else {
+				acc = Some(inner_poly.expression());
+			}
+		}
+
+		acc
+	}
+
 	fn evaluate(&self, challenge: P::Scalar, query: &[P]) -> Result<Option<P>, Error> {
 		let mut acc = self.1.evaluate(challenge, query)?;
 
@@ -104,6 +125,12 @@ where
 
 	fn degree(&self) -> usize {
 		self.max_individual_degree
+	}
+
+	fn expression(&self) -> ArithExpr<<P as PackedField>::Scalar> {
+		self.inner_compositions
+			.expression(self.challenge)
+			.unwrap_or(ArithExpr::zero())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
@@ -170,5 +197,57 @@ impl<P: PackedField, IC: HornerCompositions<P>> MixComposition<P, IC> {
 	pub fn evaluate_with_inner_evals(&self, inner_evals: &[P::Scalar]) -> Result<P::Scalar, Error> {
 		self.inner_compositions
 			.evaluate_with_inner_evals(self.challenge, inner_evals)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::polynomial::ArithCircuitPoly;
+	use binius_field::BinaryField8b;
+
+	#[test]
+	fn test_expr() {
+		let challenge = BinaryField8b::new(3);
+		let mix = empty_mix_composition::<BinaryField8b>(2, challenge);
+
+		let inner_poly =
+			ArithCircuitPoly::<BinaryField8b>::new(ArithExpr::Var(0) + ArithExpr::Var(1));
+		let inner_poly_1 = MixComposition {
+			n_vars: 2,
+			max_individual_degree: 1,
+			challenge,
+			inner_compositions: (),
+		}
+		.include(vec![inner_poly])
+		.unwrap();
+
+		let expr = mix.expression();
+		assert_eq!(expr, ArithExpr::zero());
+
+		let expr = inner_poly_1.expression();
+		assert_eq!(expr, ArithExpr::Var(0) + ArithExpr::Var(1));
+
+		let mix = mix.include(vec![inner_poly_1.clone()]).unwrap();
+		let expr = mix.expression();
+		assert_eq!(expr, ArithExpr::Var(0) + ArithExpr::Var(1));
+
+		let inner_poly = ArithCircuitPoly::<BinaryField8b>::new(ArithExpr::Var(1));
+		let inner_poly_2 = MixComposition {
+			n_vars: 2,
+			max_individual_degree: 1,
+			challenge,
+			inner_compositions: (),
+		}
+		.include(vec![inner_poly])
+		.unwrap();
+
+		let mix = mix.include(vec![inner_poly_2]).unwrap();
+		let expr = mix.expression();
+		assert_eq!(
+			expr,
+			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Const(challenge)
+				+ ArithExpr::Var(1)
+		);
 	}
 }
