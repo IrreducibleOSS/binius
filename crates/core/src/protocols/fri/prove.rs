@@ -419,7 +419,7 @@ where
 			.round_committed
 			.last()
 			.map(|(codeword, _)| codeword.to_vec())
-			.unwrap_or(self.codeword.to_vec());
+			.unwrap_or_else(|| self.codeword.to_vec());
 
 		self.unprocessed_challenges.clear();
 
