@@ -30,6 +30,7 @@
 pub mod evalcheck;
 pub mod fri;
 pub mod gkr_gpa;
+pub mod gkr_int_mul;
 pub mod greedy_evalcheck;
 pub mod sumcheck;
 #[allow(dead_code)]
