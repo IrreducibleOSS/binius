@@ -24,7 +24,7 @@ mod tests {
 		bitwise,
 		builder::ConstraintSystemBuilder,
 		groestl::groestl_p_permutation,
-		keccakf::keccakf,
+		keccakf::{keccakf, KeccakfState},
 		lasso::{
 			self,
 			batch::LookupBatch,
@@ -64,6 +64,7 @@ mod tests {
 	use binius_hash::{GroestlDigestCompression, GroestlHasher};
 	use binius_math::DefaultEvaluationDomainFactory;
 	use groestl_crypto::Groestl256;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use std::array;
 
 	type U = OptimalUnderlier;
@@ -361,17 +362,19 @@ mod tests {
 	#[test]
 	fn test_keccakf() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness(&allocator);
-		let log_size = 12;
-		let input = array::from_fn(|_| {
-			unconstrained::<_, _, BinaryField1b>(&mut builder, "input", log_size).unwrap()
-		});
+		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let log_size = 5;
 
-		let _state_out = keccakf(&mut builder, input, log_size);
+		let mut rng = StdRng::seed_from_u64(0);
+		let input_states = vec![KeccakfState(rng.gen())];
+		let _state_out = keccakf(&mut builder, Some(input_states), log_size);
 
 		let witness = builder.take_witness().unwrap();
+
 		let constraint_system = builder.build().unwrap();
+
 		let boundaries = vec![];
+
 		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
