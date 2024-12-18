@@ -19,6 +19,8 @@ pub mod vision;
 
 #[cfg(test)]
 mod tests {
+	use std::array;
+
 	use crate::{
 		arithmetic, bitwise,
 		builder::ConstraintSystemBuilder,
@@ -63,7 +65,7 @@ mod tests {
 	use binius_math::DefaultEvaluationDomainFactory;
 	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
-	use std::array;
+	use sha2::{compress256, digest::generic_array::GenericArray};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -385,7 +387,34 @@ mod tests {
 		let input: [OracleId; 16] = array::from_fn(|i| {
 			unconstrained::<_, _, BinaryField1b>(&mut builder, i, log_size).unwrap()
 		});
-		let _state_out = sha256(&mut builder, input, log_size);
+		let state_output = sha256(&mut builder, input, log_size).unwrap();
+
+		let witness = builder.witness().unwrap();
+
+		let input_witneses: [_; 16] =
+			array::from_fn(|i| witness.get(input[i]).unwrap().as_slice::<u32>());
+
+		let output_witneses: [_; 8] =
+			array::from_fn(|i| witness.get(state_output[i]).unwrap().as_slice::<u32>());
+
+		let mut generic_array_input = GenericArray::<u8, _>::default();
+
+		let n_compressions = input_witneses[0].len();
+
+		for j in 0..n_compressions {
+			for i in 0..16 {
+				for z in 0..4 {
+					generic_array_input[i * 4 + z] = input_witneses[i][j].to_be_bytes()[z];
+				}
+			}
+
+			let mut output = crate::sha256::INIT;
+			compress256(&mut output, &[generic_array_input]);
+
+			for i in 0..8 {
+				assert_eq!(output[i], output_witneses[i][j]);
+			}
+		}
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
@@ -402,7 +431,42 @@ mod tests {
 		let input: [OracleId; 16] = array::from_fn(|i| {
 			unconstrained::<_, _, BinaryField1b>(&mut builder, i, log_size).unwrap()
 		});
-		let _state_out = lasso::sha256(&mut builder, input, log_size);
+		let state_output = lasso::sha256(&mut builder, input, log_size).unwrap();
+
+		let witness = builder.witness().unwrap();
+
+		let input_witneses: [_; 16] = array::from_fn(|i| {
+			witness
+				.get::<BinaryField1b>(input[i])
+				.unwrap()
+				.as_slice::<u32>()
+		});
+
+		let output_witneses: [_; 8] = array::from_fn(|i| {
+			witness
+				.get::<BinaryField1b>(state_output[i])
+				.unwrap()
+				.as_slice::<u32>()
+		});
+
+		let mut generic_array_input = GenericArray::<u8, _>::default();
+
+		let n_compressions = input_witneses[0].len();
+
+		for j in 0..n_compressions {
+			for i in 0..16 {
+				for z in 0..4 {
+					generic_array_input[i * 4 + z] = input_witneses[i][j].to_be_bytes()[z];
+				}
+			}
+
+			let mut output = crate::sha256::INIT;
+			compress256(&mut output, &[generic_array_input]);
+
+			for i in 0..8 {
+				assert_eq!(output[i], output_witneses[i][j]);
+			}
+		}
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();

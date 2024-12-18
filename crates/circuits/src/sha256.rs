@@ -235,7 +235,7 @@ where
 			let f_u32 = witness.get::<B1>(f)?.as_slice::<u32>();
 			let g_u32 = witness.get::<B1>(g)?.as_slice::<u32>();
 			izip!(ch_u32.iter_mut(), e_u32, f_u32, g_u32).for_each(|(ch, e, f, g)| {
-				*ch = (e & f) ^ ((!e) & g);
+				*ch = g ^ (e & (f ^ g));
 			});
 		}
 
@@ -270,21 +270,25 @@ where
 			let b_u32 = witness.get::<B1>(b)?.as_slice::<u32>();
 			let c_u32 = witness.get::<B1>(c)?.as_slice::<u32>();
 			izip!(maj_u32.iter_mut(), a_u32, b_u32, c_u32).for_each(|(maj, a, b, c)| {
-				*maj = (a & b) ^ (a & c) ^ (b & c);
+				*maj = (a & (b ^ c)) ^ (b & c);
 			});
 		}
 
 		let temp2 =
 			arithmetic::u32::add(builder, "temp2", sigma0, maj[i], arithmetic::Flags::Unchecked)?;
 
+		// Optimization:
+		// (e * f + (1 - e) * g) can be replaced with (g + e * (f + g))
+		// (a * b + a * c + b * c) can be replaced with (a * (b + c) + b * c)
+		// Reference: https://x.com/bartolomeo_diaz/status/1866788688799080922
 		builder.assert_zero(
 			[e, f, g, ch[i]],
-			arith_expr!([e, f, g, ch] = (e * f + (1 - e) * g) - ch).convert_field(),
+			arith_expr!([e, f, g, ch] = (g + e * (f + g)) - ch).convert_field(),
 		);
 
 		builder.assert_zero(
 			[a, b, c, maj[i]],
-			arith_expr!([a, b, c, maj] = maj - a * b + a * c + b * c).convert_field(),
+			arith_expr!([a, b, c, maj] = maj - (a * (b + c)) + b * c).convert_field(),
 		);
 
 		h = g;
