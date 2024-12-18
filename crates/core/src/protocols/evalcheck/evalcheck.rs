@@ -2,7 +2,7 @@
 
 use super::error::Error;
 use crate::{
-	oracle::{BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle},
+	oracle::{BatchId, CommittedBatch, CommittedId, MultilinearPolyOracle, OracleId},
 	transcript::{CanRead, CanWrite},
 };
 use binius_field::{Field, TowerField};
@@ -266,6 +266,52 @@ pub fn deserialize_evalcheck_proof<Transcript: CanRead, F: TowerField>(
 			let scalar = transcript.read_scalar()?;
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
+		}
+	}
+}
+
+pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
+	data: Vec<Vec<(Vec<F>, T)>>,
+}
+
+impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
+	pub fn new() -> Self {
+		Self {
+			data: Default::default(),
+		}
+	}
+
+	pub fn get(&self, id: OracleId, eval_point: &[F]) -> Option<&T> {
+		self.data
+			.get(id)?
+			.iter()
+			.find(|(ep, _)| **ep == *eval_point)
+			.map(|(_, val)| val)
+	}
+
+	pub fn insert(&mut self, id: OracleId, eval_point: Vec<F>, val: T) {
+		if id >= self.data.len() {
+			self.data.resize(id + 1, Vec::new());
+		}
+
+		self.data[id].push((eval_point, val))
+	}
+
+	pub fn flatten(mut self) -> Vec<T> {
+		self.data.reverse();
+
+		std::mem::take(&mut self.data)
+			.into_iter()
+			.flatten()
+			.map(|(_, val)| val)
+			.collect::<Vec<_>>()
+	}
+}
+
+impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
+	fn default() -> Self {
+		Self {
+			data: Default::default(),
 		}
 	}
 }

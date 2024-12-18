@@ -20,6 +20,8 @@ pub enum Error {
 	ConflictingEvals(BatchId),
 	#[error("missing evaluation in batch {0}")]
 	MissingEvals(BatchId),
+	#[error("missing query")]
+	MissingQuery,
 	#[error("oracle error: {0}")]
 	Oracle(#[from] OracleError),
 	#[error("polynomial error: {0}")]

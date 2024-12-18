@@ -44,6 +44,7 @@ use binius_math::{
 };
 use binius_utils::bail;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use tracing::instrument;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
@@ -72,27 +73,22 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_shifted_sumcheck<U, F, Backend>(
-	oracles: &mut MultilinearOracleSet<F>,
+pub fn process_shifted_sumcheck<U, F>(
 	shifted: &Shifted<F>,
+	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	backend: &Backend,
+	projected: MultilinearExtension<PackedType<U, F>>,
 ) -> Result<(), Error>
 where
 	PackedType<U, F>: PackedFieldIndexable,
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
-	let meta = shifted_sumcheck_meta(oracles, shifted, eval_point)?;
-
 	process_projected_bivariate_witness(
 		witness_index,
-		memoized_queries,
 		meta,
 		eval_point,
 		|projected_eval_point| {
@@ -106,9 +102,8 @@ where
 			let shift_ind_mle = shift_ind.multilinear_extension::<PackedType<U, F>>()?;
 			Ok(MLEDirectAdapter::from(shift_ind_mle).upcast_arc_dyn())
 		},
-		backend,
+		projected,
 	)?;
-
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, shifted.block_size(), eval);
 
 	Ok(())
@@ -161,29 +156,24 @@ fn add_bivariate_sumcheck_to_constraint_builder<F: Field>(
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
-pub fn process_packed_sumcheck<U, F, Backend>(
-	oracles: &mut MultilinearOracleSet<F>,
+pub fn process_packed_sumcheck<U, F>(
 	packed: &Packed<F>,
+	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	backend: &Backend,
+	projected: MultilinearExtension<PackedType<U, F>>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	let log_degree = packed.log_degree();
 	let binary_tower_level = packed.inner().binary_tower_level();
 
-	let meta = packed_sumcheck_meta(oracles, packed, eval_point)?;
-
 	process_projected_bivariate_witness(
 		witness_index,
-		memoized_queries,
 		meta,
 		eval_point,
 		|_projected_eval_point| {
@@ -191,11 +181,10 @@ where
 			let tower_basis_mle = tower_basis.multilinear_extension::<PackedType<U, F>>()?;
 			Ok(MLEDirectAdapter::from(tower_basis_mle).upcast_arc_dyn())
 		},
-		backend,
+		projected,
 	)?;
 
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, packed.log_degree(), eval);
-
 	Ok(())
 }
 
@@ -289,19 +278,36 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
-	process_projected_bivariate_witness(
-		witness_index,
-		memoized_queries,
-		meta.projected_bivariate_meta,
-		&meta.eval_point,
-		|projected_eval_point| {
-			let eq_ind =
-				EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
-			let eq_ind_mle = eq_ind.multilinear_extension::<PackedType<U, F>, _>(backend)?;
-			Ok(MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn())
-		},
-		backend,
-	)
+	let ProjectedBivariateMeta {
+		inner_id,
+		projected_id,
+		multiplier_id,
+		projected_n_vars,
+	} = meta.projected_bivariate_meta;
+
+	let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
+
+	let projected_eval_point = if let Some(projected_id) = projected_id {
+		let query = memoized_queries.full_query(&meta.eval_point[projected_n_vars..], backend)?;
+		let projected = backend.evaluate_partial_high(&inner_multilin, query.to_ref())?;
+		witness_index.update_multilin_poly(vec![(
+			projected_id,
+			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
+		)])?;
+
+		&meta.eval_point[..projected_n_vars]
+	} else {
+		&meta.eval_point
+	};
+
+	let eq_ind = EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
+	let eq_ind_mle = eq_ind.multilinear_extension::<PackedType<U, F>, _>(backend)?;
+	let m = MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn();
+
+	if !witness_index.has(multiplier_id) {
+		witness_index.update_multilin_poly(vec![(multiplier_id, m)])?;
+	}
+	Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -357,31 +363,25 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 	Ok(meta)
 }
 
-fn process_projected_bivariate_witness<'a, U, F, Backend>(
+fn process_projected_bivariate_witness<'a, U, F>(
 	witness_index: &mut MultilinearExtensionIndex<'a, U, F>,
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	multiplier_witness_ctr: impl FnOnce(&[F]) -> Result<MultilinearWitness<'a, PackedType<U, F>>, Error>,
-	backend: &Backend,
+	projected: MultilinearExtension<PackedType<U, F>>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
-	Backend: ComputationBackend,
 {
 	let ProjectedBivariateMeta {
-		inner_id,
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
+		..
 	} = meta;
 
-	let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
-
 	let projected_eval_point = if let Some(projected_id) = projected_id {
-		let query = memoized_queries.full_query(&eval_point[projected_n_vars..], backend)?;
-		let projected = backend.evaluate_partial_high(&inner_multilin, query.to_ref())?;
 		witness_index.update_multilin_poly(vec![(
 			projected_id,
 			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
@@ -398,6 +398,50 @@ where
 		witness_index.update_multilin_poly(vec![(multiplier_id, m)])?;
 	}
 	Ok(())
+}
+
+pub fn calculate_projected_mles<U, F, Backend>(
+	metas: &[ProjectedBivariateMeta],
+	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	witness_index: &MultilinearExtensionIndex<U, F>,
+	backend: &Backend,
+) -> Result<Vec<MultilinearExtension<PackedType<U, F>>>, Error>
+where
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+	Backend: ComputationBackend,
+{
+	let inner_multilins = metas
+		.iter()
+		.map(|meta| {
+			witness_index
+				.get_multilin_poly(meta.inner_id)
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	// Memoize queries for calculate_projected_mle
+	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
+		let eval_point = &claim.eval_point[meta.projected_n_vars..];
+		memoized_queries.full_query(eval_point, backend)?;
+	}
+
+	inner_multilins
+		.par_iter()
+		.zip(projected_bivariate_claims)
+		.zip(metas)
+		.map(|((inner_multilin, claim), meta)| {
+			let eval_point = &claim.eval_point[meta.projected_n_vars..];
+			let query = memoized_queries
+				.full_query_readonly(eval_point)
+				.ok_or(Error::MissingQuery)?;
+
+			backend
+				.evaluate_partial_high(&inner_multilin, query.to_ref())
+				.map_err(Error::from)
+		})
+		.collect::<Result<Vec<_>, Error>>()
 }
 
 #[allow(clippy::type_complexity)]
@@ -454,6 +498,29 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 				let (_, ref query) = &self.memo[index];
 				query
 			})
+	}
+
+	pub fn memoize_query_par(
+		&mut self,
+		eval_points: Vec<Vec<P::Scalar>>,
+		backend: &Backend,
+	) -> Result<(), Error> {
+		let deduplicated_eval_points = eval_points.into_iter().collect::<HashSet<_>>();
+
+		let new_queries = deduplicated_eval_points
+			.into_par_iter()
+			.filter(|ep| self.full_query_readonly(ep).is_none())
+			.map(|ep| {
+				backend
+					.multilinear_query::<P>(&ep)
+					.map(|res| (ep, res))
+					.map_err(Error::from)
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+
+		self.memo.extend(new_queries);
+
+		Ok(())
 	}
 }
 
@@ -544,9 +611,9 @@ where
 	// For efficiency, we want to run all time-consuming operations in parallel.
 	// Preprocess the data to extract inputs for the following time-consuming operations:
 	// `tensor_product_full_query` and `evaluate_partial_high`.
-	let mut multiplier_eval_points = vec![];
-	let mut projected_points = vec![];
-	let mut evaluate_partial_high = vec![];
+	let mut multiplier_eval_points = Vec::new();
+	let mut projected_points = HashSet::new();
+	let mut evaluate_partial_high = Vec::new();
 	for meta in &metas {
 		let ProjectedBivariateMeta {
 			inner_id,
@@ -557,13 +624,14 @@ where
 		if let Some(projected_id) = projected_id {
 			let point = &meta.eval_point[projected_n_vars..];
 			evaluate_partial_high.push((projected_id, inner_id, point.to_vec()));
-			projected_points.push(point.to_vec());
+			projected_points.insert(point.to_vec());
 			multiplier_eval_points
 				.push((multiplier_id, meta.eval_point[..projected_n_vars].to_vec()));
 		} else {
-			multiplier_eval_points.push((multiplier_id, meta.eval_point.clone()))
+			multiplier_eval_points.push((multiplier_id, meta.eval_point.clone()));
 		}
 	}
+
 	let projected_queries = projected_points
 		.into_par_iter()
 		.map(|point| {
