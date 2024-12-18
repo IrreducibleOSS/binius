@@ -533,8 +533,8 @@ where
 	}
 }
 
-impl<'a, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
-	for ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ZerocheckProver<'_, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -634,9 +634,8 @@ where
 	_p_base_marker: PhantomData<PBase>,
 }
 
-impl<'a, F, PBase, P, FDomain, CompositionBase, Composition>
-	SumcheckEvaluator<PBase, P, Composition>
-	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, CompositionBase, Composition>
+impl<F, PBase, P, FDomain, CompositionBase, Composition> SumcheckEvaluator<PBase, P, Composition>
+	for ZerocheckFirstRoundEvaluator<'_, PBase, P, FDomain, CompositionBase, Composition>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	PBase: PackedField,
@@ -691,8 +690,8 @@ where
 	}
 }
 
-impl<'a, F, PBase, P, FDomain, CompositionBase, Composition> SumcheckInterpolator<F>
-	for ZerocheckFirstRoundEvaluator<'a, PBase, P, FDomain, CompositionBase, Composition>
+impl<F, PBase, P, FDomain, CompositionBase, Composition> SumcheckInterpolator<F>
+	for ZerocheckFirstRoundEvaluator<'_, PBase, P, FDomain, CompositionBase, Composition>
 where
 	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
 	PBase: PackedField,
@@ -727,8 +726,8 @@ where
 	round_zerocheck_challenge: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
-	for ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
@@ -779,8 +778,8 @@ where
 	}
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for ZerocheckLaterRoundEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,

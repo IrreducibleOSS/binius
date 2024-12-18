@@ -504,7 +504,7 @@ where
 	merkle_prover: &'a MerkleProver,
 }
 
-impl<'a, F, FA, MerkleProver, VCS> FRIQueryProver<'a, F, FA, MerkleProver, VCS>
+impl<F, FA, MerkleProver, VCS> FRIQueryProver<'_, F, FA, MerkleProver, VCS>
 where
 	F: BinaryField + ExtensionField<FA>,
 	FA: BinaryField,

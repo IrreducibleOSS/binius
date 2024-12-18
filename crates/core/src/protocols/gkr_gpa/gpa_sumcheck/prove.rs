@@ -186,8 +186,8 @@ where
 	}
 }
 
-impl<'a, F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for GPAProver<'a, FDomain, P, Composition, M, Backend>
+impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for GPAProver<'_, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -281,8 +281,8 @@ where
 	gpa_round_challenge: P::Scalar,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
-	for GPAEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+	for GPAEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
@@ -335,8 +335,8 @@ where
 	}
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for GPAEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for GPAEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,

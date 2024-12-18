@@ -71,7 +71,7 @@ where
 
 	/// Whether has data for the given oracle id.
 	pub fn has(&self, id: OracleId) -> bool {
-		self.entries.get(id).map_or(false, Option::is_some)
+		self.entries.get(id).is_some_and(Option::is_some)
 	}
 
 	pub fn update_multilin_poly(

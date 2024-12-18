@@ -209,7 +209,7 @@ where
 	data: Option<&'arena mut [U]>,
 }
 
-impl<'arena, U, FW, FS> EntryBuilder<'arena, U, FW, FS>
+impl<U, FW, FS> EntryBuilder<'_, U, FW, FS>
 where
 	U: PackScalar<FW> + PackScalar<FS>,
 	FS: TowerField,
@@ -228,7 +228,7 @@ where
 	}
 }
 
-impl<'arena, U, FW, FS> EntryBuilder<'arena, U, FW, FS>
+impl<U, FW, FS> EntryBuilder<'_, U, FW, FS>
 where
 	U: PackScalar<FW> + PackScalar<FS> + Pod,
 	FS: TowerField,
@@ -240,7 +240,7 @@ where
 	}
 }
 
-impl<'arena, U, FW, FS> Drop for EntryBuilder<'arena, U, FW, FS>
+impl<U, FW, FS> Drop for EntryBuilder<'_, U, FW, FS>
 where
 	U: PackScalar<FW> + PackScalar<FS>,
 	FS: TowerField,

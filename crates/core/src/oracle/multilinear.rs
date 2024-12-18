@@ -29,7 +29,7 @@ pub struct MultilinearOracleSetAddition<'a, F: TowerField> {
 	mut_ref: &'a mut MultilinearOracleSet<F>,
 }
 
-impl<'a, F: TowerField> MultilinearOracleSetAddition<'a, F> {
+impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 	pub fn transparent(self, poly: impl MultivariatePoly<F> + 'static) -> Result<OracleId, Error> {
 		if poly.binary_tower_level() > F::TOWER_LEVEL {
 			bail!(Error::TowerLevelTooHigh {

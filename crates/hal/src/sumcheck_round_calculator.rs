@@ -331,7 +331,7 @@ where
 	}
 }
 
-impl<'a, PBase, P, M> SumcheckMultilinearAccess<PBase> for FirstRoundAccess<'a, PBase, P, M>
+impl<PBase, P, M> SumcheckMultilinearAccess<PBase> for FirstRoundAccess<'_, PBase, P, M>
 where
 	PBase: PackedField,
 	P: RepackedExtension<PBase>,
@@ -368,7 +368,7 @@ where
 	tensor_query: MultilinearQueryRef<'a, P>,
 }
 
-impl<'a, P, M> SumcheckMultilinearAccess<P> for LaterRoundAccess<'a, P, M>
+impl<P, M> SumcheckMultilinearAccess<P> for LaterRoundAccess<'_, P, M>
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,

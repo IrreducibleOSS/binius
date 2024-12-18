@@ -55,7 +55,7 @@ impl<'a, P: PackedField> From<&'a [P]> for PackedFieldStorage<'a, P> {
 	}
 }
 
-impl<'a, P: PackedField> Deref for PackedFieldStorage<'a, P> {
+impl<P: PackedField> Deref for PackedFieldStorage<'_, P> {
 	type Target = [P];
 
 	fn deref(&self) -> &Self::Target {

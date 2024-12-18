@@ -47,7 +47,7 @@ impl<'a, P> BatchedPackedFieldSlice<'a, P> {
 	}
 }
 
-impl<'a, P> DataAccess<P::Scalar> for BatchedPackedFieldSlice<'a, P>
+impl<P> DataAccess<P::Scalar> for BatchedPackedFieldSlice<'_, P>
 where
 	P: PackedField,
 {

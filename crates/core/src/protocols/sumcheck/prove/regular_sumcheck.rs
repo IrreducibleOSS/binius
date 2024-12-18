@@ -160,8 +160,8 @@ where
 	}
 }
 
-impl<'a, F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
-	for RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>
+impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
+	for RegularSumcheckProver<'_, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
@@ -210,8 +210,8 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
-	for RegularSumcheckEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
@@ -250,8 +250,8 @@ where
 	}
 }
 
-impl<'a, F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for RegularSumcheckEvaluator<'a, P, FDomain, Composition>
+impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
+	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,

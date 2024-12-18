@@ -314,9 +314,20 @@ macro_rules! binary_field {
 		}
 
 		impl Step for $name {
-			fn steps_between(start: &Self, end: &Self) -> Option<usize> {
-				let diff = end.val().checked_sub(start.val())?;
-				usize::try_from(diff).ok()
+			fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+				match end.val().checked_sub(start.val()) {
+					Some(diff) => {
+
+						match usize::try_from(diff) {
+							Ok(step) =>  (step, Some(step)),
+							_ => (usize::MAX, None)
+						}
+
+
+					},
+					None => (0, None)
+				}
+
 			}
 
 			fn forward_checked(start: Self, count: usize) -> Option<Self> {

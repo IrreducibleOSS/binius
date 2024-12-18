@@ -112,7 +112,7 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 	}
 }
 
-impl<'a, T> Index<(usize, usize)> for StridedArray2DViewMut<'a, T> {
+impl<T> Index<(usize, usize)> for StridedArray2DViewMut<'_, T> {
 	type Output = T;
 
 	fn index(&self, index: (usize, usize)) -> &T {
@@ -123,7 +123,7 @@ impl<'a, T> Index<(usize, usize)> for StridedArray2DViewMut<'a, T> {
 	}
 }
 
-impl<'a, T> IndexMut<(usize, usize)> for StridedArray2DViewMut<'a, T> {
+impl<T> IndexMut<(usize, usize)> for StridedArray2DViewMut<'_, T> {
 	fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
 		let (i, j) = index;
 		assert!(i < self.height());

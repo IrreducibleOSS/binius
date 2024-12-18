@@ -189,7 +189,7 @@ fn pow_2_2_n(value: BinaryField128bPolyval, n: usize) -> BinaryField128bPolyval 
 }
 
 /// Table where value[i][k][j] = BinaryField128bPolyval(j << 4 * k) ^ (2^(i+1))
-const POLYVAL_NIBBLE_POW_2_N_TABLE: [[[u128; 16]; 32]; 6] = [
+static POLYVAL_NIBBLE_POW_2_N_TABLE: [[[u128; 16]; 32]; 6] = [
 	[
 		[
 			0,

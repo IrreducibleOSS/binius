@@ -152,7 +152,7 @@ impl<F: Field> BatchCommittedEvalClaims<F> {
 			let opt_other_eval = evals[claim.id.index].replace(claim.eval);
 
 			// if two claims somehow end pointing into the same slot, check that they don't conflict
-			if opt_other_eval.map_or(false, |other_eval| other_eval != claim.eval) {
+			if opt_other_eval.is_some_and(|other_eval| other_eval != claim.eval) {
 				bail!(Error::ConflictingEvals(batch_id));
 			}
 		}
