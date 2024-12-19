@@ -4,13 +4,11 @@ use super::error::{Error, VerificationError};
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, CanSampleBits},
-	merkle_tree_vcs::MerkleTreeScheme,
+	merkle_tree::MerkleTreeScheme,
 	piop::util::ResizeableIndex,
-	poly_commit::fri_pcs::estimate_optimal_arity,
 	polynomial::MultivariatePoly,
 	protocols::{
-		fri,
-		fri::{FRIParams, FRIVerifier},
+		fri::{self, estimate_optimal_arity, FRIParams, FRIVerifier},
 		sumcheck::{
 			front_loaded::BatchVerifier as SumcheckBatchVerifier, CompositeSumClaim, SumcheckClaim,
 		},

@@ -2,9 +2,7 @@
 
 use super::{
 	error::Error,
-	evalcheck::{
-		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof,
-	},
+	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{calculate_projected_mles, MemoizedQueries, ProjectedBivariateMeta},
 	EvalPointOracleIdMap,
 };
@@ -48,7 +46,7 @@ where
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
 
 	#[getset(get = "pub", get_mut = "pub")]
-	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
+	committed_eval_claims: Vec<CommittedEvalClaim<F>>,
 
 	finalized_proofs: EvalPointOracleIdMap<(F, EvalcheckProof<F>), F>,
 
@@ -79,22 +77,17 @@ where
 		witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
 		backend: &'a Backend,
 	) -> Self {
-		let memoized_queries = MemoizedQueries::new();
-		let new_sumchecks_constraints = Vec::new();
-		let batch_committed_eval_claims =
-			BatchCommittedEvalClaims::new(&oracles.committed_batches());
-
 		Self {
 			oracles,
 			witness_index,
-			batch_committed_eval_claims,
-			new_sumchecks_constraints,
+			committed_eval_claims: Vec::new(),
+			new_sumchecks_constraints: Vec::new(),
 			finalized_proofs: EvalPointOracleIdMap::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
 			claims_without_evals_dedup: HashSet::new(),
 			projected_bivariate_claims: Vec::new(),
-			memoized_queries,
+			memoized_queries: MemoizedQueries::new(),
 			backend,
 			incomplete_proof_claims: EvalPointOracleIdMap::new(),
 		}
@@ -117,7 +110,7 @@ where
 	/// `poly` equals `eval` at `eval_point`) by recursively processing each of the multilinears.
 	/// This way the evalcheck claim gets transformed into an [`EvalcheckProof`]
 	/// and a new set of claims on:
-	///  * PCS openings (which get inserted into [`BatchCommittedEvalClaims`] accumulator)
+	///  * Committed polynomial evaluations
 	///  * New sumcheck constraints that need to be proven in subsequent rounds (those get appended to `new_sumchecks`)
 	///
 	/// All of the `new_sumchecks` constraints follow the same pattern:
@@ -501,7 +494,7 @@ where
 					eval,
 				};
 
-				self.batch_committed_eval_claims.insert(subclaim);
+				self.committed_eval_claims.push(subclaim);
 			}
 			Repeating { inner, .. } => {
 				let n_vars = inner.n_vars();

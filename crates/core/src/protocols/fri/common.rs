@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use crate::{
-	linear_code::LinearCode, merkle_tree_vcs::MerkleTreeScheme, protocols::fri::Error,
+	linear_code::LinearCode, merkle_tree::MerkleTreeScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
@@ -318,6 +318,41 @@ where
 	-total_err.log2() as usize
 }
 
+/// Heuristic for estimating the optimal FRI folding arity that minimizes proof size.
+///
+/// `log_block_length` is the binary logarithm of the  block length of the Reed–Solomon code.
+pub fn estimate_optimal_arity(
+	log_block_length: usize,
+	digest_size: usize,
+	field_size: usize,
+) -> usize {
+	(1..=log_block_length)
+		.map(|arity| {
+			(
+				// for given arity, return a tuple (arity, estimate of query_proof_size).
+				// this estimate is basd on the following approximation of a single query_proof_size, where $\vartheta$ is the arity:
+				// $\big((n-\vartheta) + (n-2\vartheta) + \ldots\big)\text{digest_size} + \frac{n-\vartheta}{\vartheta}2^{\vartheta}\text{field_size}.$
+				arity,
+				((log_block_length) / 2 * digest_size + (1 << arity) * field_size)
+					* (log_block_length - arity)
+					/ arity,
+			)
+		})
+		// now scan and terminate the iterator when query_proof_size increases.
+		.scan(None, |old: &mut Option<(usize, usize)>, new| {
+			let should_continue = !matches!(*old, Some(ref old) if new.1 > old.1);
+			*old = Some(new);
+			if should_continue {
+				Some(new)
+			} else {
+				None
+			}
+		})
+		.last()
+		.map(|(arity, _)| arity)
+		.unwrap_or(1)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -349,5 +384,19 @@ mod tests {
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code),
 			Err(Error::ParameterError)
 		);
+	}
+
+	#[test]
+	fn test_estimate_optimal_arity() {
+		let field_size = 128;
+		for log_block_length in 22..35 {
+			let digest_size = 256;
+			assert_eq!(estimate_optimal_arity(log_block_length, digest_size, field_size), 4);
+		}
+
+		for log_block_length in 22..28 {
+			let digest_size = 1024;
+			assert_eq!(estimate_optimal_arity(log_block_length, digest_size, field_size), 6);
+		}
 	}
 }

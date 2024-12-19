@@ -15,126 +15,18 @@ use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
 	underlier::WithUnderlier,
 	BinaryField128b, Field, PackedBinaryField128x1b, PackedBinaryField16x8b,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedField, TowerField,
+	PackedBinaryField1x128b, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{extrapolate_line, MultilinearExtension, MultilinearPoly, MultilinearQuery};
 use bytemuck::cast_slice_mut;
-use itertools::{Either, Itertools};
+use itertools::Either;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 use std::{array, iter::repeat_with, slice};
 
 type FExtension = BinaryField128b;
 type PExtension = PackedBinaryField1x128b;
 type U = <PExtension as WithUnderlier>::Underlier;
-type PF = PackedBinaryField4x32b;
-
-#[test]
-fn test_evaluation_point_batching() {
-	let mut rng = StdRng::seed_from_u64(0);
-	let backend = make_portable_backend();
-
-	let log_size = 8;
-	let tower_level = 5;
-
-	// random multilinear polys in BF32
-	let multilins = repeat_with(|| {
-		let evals = repeat_with(|| PF::random(&mut rng))
-			.take(1 << (log_size - 2))
-			.collect();
-		MultilinearExtension::from_values(evals)
-			.unwrap()
-			.specialize::<PExtension>()
-	})
-	.take(4)
-	.collect::<Vec<_>>();
-
-	// eval point & eval in BF128
-	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
-		.take(log_size)
-		.collect::<Vec<_>>();
-
-	let query = backend.multilinear_query(&eval_point).unwrap();
-	let batch_evals = multilins
-		.iter()
-		.map(|multilin| multilin.evaluate(query.to_ref()).unwrap())
-		.collect::<Vec<_>>();
-
-	let mut oracles = MultilinearOracleSet::new();
-
-	let batch_0_id = oracles.add_committed_batch(log_size, tower_level);
-	let [x0, x1] = oracles.add_committed_multiple::<2>(batch_0_id);
-
-	let batch_1_id = oracles.add_committed_batch(log_size, tower_level);
-	let [y0, y1] = oracles.add_committed_multiple::<2>(batch_1_id);
-
-	let suboracles = vec![
-		oracles.oracle(x0),
-		oracles.oracle(y0),
-		oracles.oracle(x1),
-		oracles.oracle(y1),
-	];
-
-	let multilins = suboracles
-		.iter()
-		.zip_eq(multilins)
-		.map(|(s, m)| (s.id(), m.upcast_arc_dyn()));
-	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
-	witness_index.update_multilin_poly(multilins).unwrap();
-
-	let claims: Vec<_> = suboracles
-		.into_iter()
-		.zip(batch_evals.clone())
-		.map(|(poly, eval)| EvalcheckMultilinearClaim {
-			poly,
-			eval_point: eval_point.clone(),
-			eval,
-		})
-		.collect();
-
-	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
-	let proof = prover_state.prove(claims.clone()).unwrap();
-
-	let prove_batch0 = prover_state
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(0)
-		.unwrap()
-		.unwrap();
-
-	let prove_batch1 = prover_state
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(1)
-		.unwrap()
-		.unwrap();
-
-	let mut verifier_oracles = oracles;
-	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut verifier_oracles);
-	verifier_state.verify(claims, proof).unwrap();
-
-	let verify_batch0 = verifier_state
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(0)
-		.unwrap()
-		.unwrap();
-
-	let verify_batch1 = verifier_state
-		.batch_committed_eval_claims()
-		.try_extract_same_query_pcs_claim(1)
-		.unwrap()
-		.unwrap();
-
-	assert_eq!(prove_batch0.eval_point, eval_point);
-	assert_eq!(verify_batch0.eval_point, eval_point);
-
-	assert_eq!(prove_batch0.evals, [batch_evals[0], batch_evals[2]]);
-	assert_eq!(verify_batch0.evals, [batch_evals[0], batch_evals[2]]);
-
-	assert_eq!(prove_batch1.eval_point, eval_point);
-	assert_eq!(verify_batch1.eval_point, eval_point);
-
-	assert_eq!(prove_batch1.evals, [batch_evals[1], batch_evals[3]]);
-	assert_eq!(verify_batch1.evals, [batch_evals[1], batch_evals[3]]);
-}
 
 fn shift_one<P: PackedField>(evals: &mut [P], bits: usize, variant: ShiftVariant) {
 	let len = len_packed_slice(evals);
@@ -215,25 +107,11 @@ fn test_shifted_evaluation_whole_cube() {
 
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
 	let proof = prover_state.prove(claims.clone()).unwrap();
-	assert_eq!(
-		prover_state
-			.batch_committed_eval_claims_mut()
-			.take_claims(batch_id)
-			.unwrap()
-			.len(),
-		1
-	);
+	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(claims.clone(), proof).unwrap();
-	assert_eq!(
-		verifier_state
-			.batch_committed_eval_claims_mut()
-			.take_claims(batch_id)
-			.unwrap()
-			.len(),
-		1
-	);
+	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
 #[test]
@@ -296,25 +174,11 @@ fn test_shifted_evaluation_subcube() {
 
 	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
 	let proof = prover_state.prove(claims.clone()).unwrap();
-	assert_eq!(
-		prover_state
-			.batch_committed_eval_claims_mut()
-			.take_claims(batch_id)
-			.unwrap()
-			.len(),
-		1
-	);
+	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
 	verifier_state.verify(claims, proof).unwrap();
-	assert_eq!(
-		verifier_state
-			.batch_committed_eval_claims_mut()
-			.take_claims(batch_id)
-			.unwrap()
-			.len(),
-		1
-	);
+	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
 #[test]

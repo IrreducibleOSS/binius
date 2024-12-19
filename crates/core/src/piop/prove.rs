@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
 	fiat_shamir::{CanSample, CanSampleBits},
-	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
+	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	piop::CommitMeta,
 	protocols::{
 		fri,

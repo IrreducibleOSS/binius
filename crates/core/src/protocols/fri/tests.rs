@@ -4,7 +4,7 @@ use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	linear_code::LinearCode,
-	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	protocols::fri::{
 		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
 		FoldRoundOutput,

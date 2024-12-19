@@ -3,7 +3,7 @@
 use super::{common::vcs_optimal_layers_depths_iter, error::Error, QueryProof, VerificationError};
 use crate::{
 	fiat_shamir::CanSampleBits,
-	merkle_tree_vcs::MerkleTreeScheme,
+	merkle_tree::MerkleTreeScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 	transcript::{read_u64, CanRead},
 };

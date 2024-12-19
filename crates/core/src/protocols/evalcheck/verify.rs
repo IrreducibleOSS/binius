@@ -1,12 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::mem;
-
 use super::{
 	error::{Error, VerificationError},
-	evalcheck::{
-		BatchCommittedEvalClaims, CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof,
-	},
+	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
@@ -18,6 +14,7 @@ use crate::oracle::{
 use binius_field::{util::inner_product_unchecked, TowerField};
 use binius_math::extrapolate_line_scalar;
 use getset::{Getters, MutGetters};
+use std::mem;
 use tracing::instrument;
 
 /// A mutable verifier state.
@@ -33,7 +30,7 @@ where
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
 	#[getset(get = "pub", get_mut = "pub")]
-	pub(crate) batch_committed_eval_claims: BatchCommittedEvalClaims<F>,
+	committed_eval_claims: Vec<CommittedEvalClaim<F>>,
 
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
 }
@@ -43,14 +40,10 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	/// (it needs to be mutable because `new_sumcheck` reduction may add new
 	/// oracles & multilinears)
 	pub fn new(oracles: &'a mut MultilinearOracleSet<F>) -> Self {
-		let new_sumcheck_constraints = Vec::new();
-		let batch_committed_eval_claims =
-			BatchCommittedEvalClaims::new(&oracles.committed_batches());
-
 		Self {
 			oracles,
-			batch_committed_eval_claims,
-			new_sumcheck_constraints,
+			committed_eval_claims: Vec::new(),
+			new_sumcheck_constraints: Vec::new(),
 		}
 	}
 
@@ -122,7 +115,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					eval,
 				};
 
-				self.batch_committed_eval_claims.insert(subclaim);
+				self.committed_eval_claims.push(subclaim);
 			}
 
 			MultilinearPolyOracle::Repeating { inner, .. } => {

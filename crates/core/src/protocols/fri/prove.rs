@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	fiat_shamir::CanSampleBits,
 	linear_code::LinearCode,
-	merkle_tree_vcs::{MerkleTreeProver, MerkleTreeScheme},
+	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{write_u64, CanWrite},

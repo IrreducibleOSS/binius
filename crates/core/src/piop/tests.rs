@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
 	fiat_shamir::HasherChallenger,
-	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
 	polynomial::MultivariatePoly,
 	protocols::fri::CommitOutput,
 	transcript::{AdviceWriter, CanRead, CanWrite, Proof, TranscriptWriter},

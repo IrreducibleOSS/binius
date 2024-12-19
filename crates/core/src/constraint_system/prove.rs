@@ -14,7 +14,7 @@ use crate::{
 		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta, StepDownMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
-	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver},
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	piop,
 	protocols::{

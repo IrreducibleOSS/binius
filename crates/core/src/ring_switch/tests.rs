@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
 	fiat_shamir::HasherChallenger,
-	merkle_tree_vcs::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
 	piop,
 	protocols::{evalcheck::EvalcheckMultilinearClaim, fri::CommitOutput},

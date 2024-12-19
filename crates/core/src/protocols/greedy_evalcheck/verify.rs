@@ -15,7 +15,6 @@ use crate::{
 };
 use binius_field::TowerField;
 use binius_utils::bail;
-use itertools::Itertools;
 
 pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,
@@ -27,7 +26,6 @@ where
 	F: TowerField,
 	Transcript: CanSample<F> + CanRead,
 {
-	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_verifier = EvalcheckVerifier::new(oracles);
 
 	// Verify the initial evalcheck claims
@@ -73,15 +71,10 @@ where
 	}
 
 	let oracles = evalcheck_verifier.oracles.clone();
-	let committed_claims = committed_batches
-		.into_iter()
-		.map(move |batch| {
-			evalcheck_verifier
-				.batch_committed_eval_claims_mut()
-				.take_claims(batch.id)
-		})
-		.flatten_ok()
-		.map_ok(
+	let committed_claims = evalcheck_verifier
+		.committed_eval_claims_mut()
+		.drain(..)
+		.map(
 			|CommittedEvalClaim {
 			     id,
 			     eval_point,
@@ -94,7 +87,7 @@ where
 				}
 			},
 		)
-		.collect::<Result<Vec<_>, _>>()?;
+		.collect::<Vec<_>>();
 
 	Ok(committed_claims)
 }

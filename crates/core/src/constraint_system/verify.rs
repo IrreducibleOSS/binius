@@ -12,7 +12,7 @@ use crate::{
 		common::{FDomain, FEncode, FExt},
 	},
 	fiat_shamir::{CanSample, Challenger},
-	merkle_tree_vcs::BinaryMerkleTreeScheme,
+	merkle_tree::BinaryMerkleTreeScheme,
 	oracle::{MultilinearOracleSet, OracleId},
 	piop,
 	polynomial::MultivariatePoly,

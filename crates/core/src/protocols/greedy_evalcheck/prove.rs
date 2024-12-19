@@ -18,7 +18,6 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
-use itertools::Itertools;
 use tracing::instrument;
 
 #[allow(clippy::too_many_arguments)]
@@ -41,7 +40,6 @@ where
 	Transcript: CanSample<F> + CanWrite,
 	Backend: ComputationBackend,
 {
-	let committed_batches = oracles.committed_batches();
 	let mut evalcheck_prover =
 		EvalcheckProver::<U, F, Backend>::new(oracles, witness_index, backend);
 
@@ -83,15 +81,10 @@ where
 	write_u64(advice, virtual_opening_proofs_len);
 
 	let oracles = evalcheck_prover.oracles.clone();
-	let committed_claims = committed_batches
-		.into_iter()
-		.map(move |batch| {
-			evalcheck_prover
-				.batch_committed_eval_claims_mut()
-				.take_claims(batch.id)
-		})
-		.flatten_ok()
-		.map_ok(
+	let committed_claims = evalcheck_prover
+		.committed_eval_claims_mut()
+		.drain(..)
+		.map(
 			|CommittedEvalClaim {
 			     id,
 			     eval_point,
@@ -104,7 +97,7 @@ where
 				}
 			},
 		)
-		.collect::<Result<Vec<_>, _>>()?;
+		.collect::<Vec<_>>();
 
 	Ok(committed_claims)
 }

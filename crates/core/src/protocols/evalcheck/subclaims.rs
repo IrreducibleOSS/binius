@@ -3,18 +3,13 @@
 //! This module contains helpers to create bivariate sumcheck instances originating from:
 //!  * products with shift indicators (shifted virtual polynomials)
 //!  * products with tower basis (packed virtual polynomials)
-//!  * products with equality indicator ([`CommittedEvalClaim`])
 //!
 //! All of them have common traits:
 //!  * they are always a product of two multilins (composition polynomial is `BivariateProduct`)
 //!  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 //!  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 
-use super::{
-	error::Error,
-	evalcheck::{BatchCommittedEvalClaims, CommittedEvalClaim},
-	EvalcheckMultilinearClaim, EvalcheckProver, EvalcheckVerifier,
-};
+use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::CanSample,
 	oracle::{
@@ -28,9 +23,7 @@ use crate::{
 		Error as SumcheckError,
 	},
 	transcript::CanWrite,
-	transparent::{
-		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
-	},
+	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
@@ -45,7 +38,6 @@ use binius_math::{
 use binius_utils::bail;
 use rayon::prelude::*;
 use std::collections::HashSet;
-use tracing::instrument;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///
@@ -185,128 +177,6 @@ where
 	)?;
 
 	add_bivariate_sumcheck_to_constraints(meta, constraint_builders, packed.log_degree(), eval);
-	Ok(())
-}
-
-#[derive(Clone)]
-pub struct NonSameQueryPcsClaimMeta<F> {
-	pub projected_bivariate_meta: ProjectedBivariateMeta,
-	eval_point: Vec<F>,
-	pub eval: F,
-}
-
-/// Create sumchecks for committed evalcheck claims on differing eval points.
-///
-/// Each sumcheck instance is bivariate product of a column projection and equality indicator.
-/// Common suffix is optimized out, degenerate zero variable sumchecks are not emitted, and
-/// PCS claims are inserted directly into [`BatchCommittedEvalClaims`] instead.
-pub fn non_same_query_pcs_sumcheck_metas<F: TowerField>(
-	oracles: &mut MultilinearOracleSet<F>,
-	committed_eval_claims: &[CommittedEvalClaim<F>],
-	new_batch_committed_eval_claims: &mut BatchCommittedEvalClaims<F>,
-) -> Result<Vec<NonSameQueryPcsClaimMeta<F>>, Error> {
-	let common_suffix_len = compute_common_suffix_len(
-		committed_eval_claims
-			.iter()
-			.map(|claim| claim.eval_point.as_slice()),
-	);
-
-	let mut metas = Vec::new();
-
-	for claim in committed_eval_claims {
-		let eval_point = &claim.eval_point;
-		debug_assert!(eval_point.len() >= common_suffix_len);
-
-		if eval_point.len() == common_suffix_len {
-			new_batch_committed_eval_claims.insert(claim.clone());
-			continue;
-		}
-
-		let projected_bivariate_meta = projected_bivariate_meta(
-			oracles,
-			oracles.committed_oracle_id(claim.id),
-			eval_point.len() - common_suffix_len,
-			eval_point,
-			|projected_eval_point| {
-				Ok(EqIndPartialEval::new(
-					projected_eval_point.len(),
-					projected_eval_point.to_vec(),
-				)?)
-			},
-		)?;
-
-		let meta = NonSameQueryPcsClaimMeta {
-			projected_bivariate_meta,
-			eval_point: eval_point.to_vec(),
-			eval: claim.eval,
-		};
-
-		metas.push(meta);
-	}
-
-	Ok(metas)
-}
-
-fn compute_common_suffix_len<'a, F: PartialEq + 'a>(
-	mut eval_points: impl Iterator<Item = &'a [F]>,
-) -> usize {
-	if let Some(first_eval_point) = eval_points.next() {
-		let common_suffix = first_eval_point.iter().rev().collect::<Vec<_>>();
-		let common_suffix = eval_points.fold(common_suffix, |common_suffix, eval_point| {
-			eval_point
-				.iter()
-				.rev()
-				.zip(common_suffix)
-				.take_while(|(a, b)| a == b)
-				.unzip::<_, _, Vec<_>, Vec<_>>()
-				.0
-		});
-		common_suffix.len()
-	} else {
-		0
-	}
-}
-
-pub fn process_non_same_query_pcs_sumcheck_witness<U, F, Backend>(
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
-	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
-	meta: NonSameQueryPcsClaimMeta<F>,
-	backend: &Backend,
-) -> Result<(), Error>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-	Backend: ComputationBackend,
-{
-	let ProjectedBivariateMeta {
-		inner_id,
-		projected_id,
-		multiplier_id,
-		projected_n_vars,
-	} = meta.projected_bivariate_meta;
-
-	let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
-
-	let projected_eval_point = if let Some(projected_id) = projected_id {
-		let query = memoized_queries.full_query(&meta.eval_point[projected_n_vars..], backend)?;
-		let projected = backend.evaluate_partial_high(&inner_multilin, query.to_ref())?;
-		witness_index.update_multilin_poly(vec![(
-			projected_id,
-			MLEDirectAdapter::from(projected).upcast_arc_dyn(),
-		)])?;
-
-		&meta.eval_point[..projected_n_vars]
-	} else {
-		&meta.eval_point
-	};
-
-	let eq_ind = EqIndPartialEval::new(projected_eval_point.len(), projected_eval_point.to_vec())?;
-	let eq_ind_mle = eq_ind.multilinear_extension::<PackedType<U, F>, _>(backend)?;
-	let m = MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn();
-
-	if !witness_index.has(multiplier_id) {
-		witness_index.update_multilin_poly(vec![(multiplier_id, m)])?;
-	}
 	Ok(())
 }
 
@@ -555,152 +425,4 @@ where
 	let evalcheck_claims = sumcheck::make_eval_claims(oracles, metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
-}
-
-pub fn make_non_same_query_pcs_sumcheck_claims<F>(
-	verifier: &mut EvalcheckVerifier<F>,
-	committed_eval_claims: &[CommittedEvalClaim<F>],
-) -> Result<ConstraintSet<F>, Error>
-where
-	F: TowerField,
-{
-	let metas = non_same_query_pcs_sumcheck_metas(
-		verifier.oracles,
-		committed_eval_claims,
-		&mut verifier.batch_committed_eval_claims,
-	)?;
-
-	let mut constraint_set_builder = ConstraintSetBuilder::new();
-	for meta in metas {
-		add_bivariate_sumcheck_to_constraint_builder(
-			meta.projected_bivariate_meta,
-			&mut constraint_set_builder,
-			meta.eval,
-		)
-	}
-	Ok(constraint_set_builder.build_one(verifier.oracles)?)
-}
-
-#[instrument(skip_all, level = "debug")]
-pub fn make_non_same_query_pcs_sumchecks<U, F, Backend>(
-	prover: &mut EvalcheckProver<U, F, Backend>,
-	committed_eval_claims: &[CommittedEvalClaim<F>],
-	backend: &Backend,
-) -> Result<ConstraintSet<F>, Error>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-	Backend: ComputationBackend,
-{
-	let metas = non_same_query_pcs_sumcheck_metas(
-		prover.oracles,
-		committed_eval_claims,
-		&mut prover.batch_committed_eval_claims,
-	)?;
-
-	let mut constraint_set_builder = ConstraintSetBuilder::new();
-
-	for meta in &metas {
-		add_bivariate_sumcheck_to_constraint_builder(
-			meta.projected_bivariate_meta,
-			&mut constraint_set_builder,
-			meta.eval,
-		);
-	}
-
-	// For efficiency, we want to run all time-consuming operations in parallel.
-	// Preprocess the data to extract inputs for the following time-consuming operations:
-	// `tensor_product_full_query` and `evaluate_partial_high`.
-	let mut multiplier_eval_points = Vec::new();
-	let mut projected_points = HashSet::new();
-	let mut evaluate_partial_high = Vec::new();
-	for meta in &metas {
-		let ProjectedBivariateMeta {
-			inner_id,
-			projected_id,
-			multiplier_id,
-			projected_n_vars,
-		} = meta.projected_bivariate_meta;
-		if let Some(projected_id) = projected_id {
-			let point = &meta.eval_point[projected_n_vars..];
-			evaluate_partial_high.push((projected_id, inner_id, point.to_vec()));
-			projected_points.insert(point.to_vec());
-			multiplier_eval_points
-				.push((multiplier_id, meta.eval_point[..projected_n_vars].to_vec()));
-		} else {
-			multiplier_eval_points.push((multiplier_id, meta.eval_point.clone()));
-		}
-	}
-
-	let projected_queries = projected_points
-		.into_par_iter()
-		.map(|point| {
-			let query: MultilinearQuery<PackedType<U, F>, _> = backend.multilinear_query(&point)?;
-			Ok((point, query))
-		})
-		.collect::<Result<Vec<_>, binius_hal::Error>>()?;
-	let memoized_queries = MemoizedQueries::<_, Backend>::new_from_known_queries(projected_queries);
-
-	// Run computations for `evaluate_partial_high()` in parallel.
-	let projected_mles = evaluate_partial_high
-		.into_par_iter()
-		.map(|(projected_id, inner_id, point)| {
-			let query = memoized_queries.full_query_readonly(&point).expect(
-				"initialized MemoizedQueries from precomputed values for all expected queries",
-			);
-			let inner_multilin = prover.witness_index.get_multilin_poly(inner_id)?;
-			Ok((projected_id, backend.evaluate_partial_high(&inner_multilin, query.to_ref())?))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	// And precompute multilinear extensions for EqInd.
-	let eq_ind_witnesses = multiplier_eval_points
-		.into_par_iter()
-		.map(|(multiplier_id, eval_point)| {
-			let eq_ind_multilin_query =
-				backend.tensor_product_full_query::<PackedType<U, F>>(&eval_point)?;
-			let eq_ind_mle = MultilinearExtension::from_values_generic(eq_ind_multilin_query)?;
-			Ok((multiplier_id, MLEDirectAdapter::from(eq_ind_mle).upcast_arc_dyn()))
-		})
-		.collect::<Result<Vec<(OracleId, MultilinearWitness<PackedType<U, F>>)>, Error>>()?;
-
-	for (projected_id, mle) in projected_mles {
-		prover.witness_index.update_multilin_poly(vec![(
-			projected_id,
-			MLEDirectAdapter::from(mle).upcast_arc_dyn(),
-		)])?;
-	}
-
-	// Update the shared state of `prover.witness_index` with the precomputed `MultilinearWitness` data.
-	for witness in eq_ind_witnesses {
-		let multiplier_id = witness.0;
-		if !prover.witness_index.has(multiplier_id) {
-			prover.witness_index.update_multilin_poly(vec![witness])?;
-		}
-	}
-	Ok(constraint_set_builder.build_one(prover.oracles)?)
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn test_compute_common_suffix_len() {
-		let tests = vec![
-			(vec![], 0),
-			(vec![vec![1, 2, 3]], 3),
-			(vec![vec![1, 2, 3], vec![2, 3]], 2),
-			(vec![vec![1, 2, 3], vec![2, 3], vec![3]], 1),
-			(vec![vec![1, 2, 3], vec![4, 2, 3], vec![6, 5, 3]], 1),
-			(vec![vec![1, 2, 3], vec![1, 2, 3], vec![1, 2, 3]], 3),
-			(vec![vec![1, 2, 3], vec![2, 3, 4], vec![3, 4, 5]], 0),
-		];
-		for test in tests {
-			let eval_points = test.0.iter().map(|x| x.as_slice());
-			let expected = test.1;
-			let got = compute_common_suffix_len(eval_points);
-			assert_eq!(got, expected);
-		}
-	}
 }
