@@ -356,10 +356,31 @@ where
 			LinearCombination {
 				linear_combination, ..
 			} => {
-				for suboracle in linear_combination.polys() {
-					self.claims_without_evals
-						.push(((*suboracle).clone(), eval_point.clone()));
-				}
+				let n_polys = linear_combination.n_polys();
+
+				match linear_combination
+					.polys()
+					.zip(linear_combination.coefficients())
+					.next()
+				{
+					Some((suboracle, coeff)) if n_polys == 1 && !coeff.is_zero() => {
+						let eval = (eval - linear_combination.offset())
+							* coeff.invert().expect("not zero");
+						let subclaim = EvalcheckMultilinearClaim {
+							poly: suboracle.clone(),
+							eval_point: eval_point.clone(),
+							eval,
+						};
+						self.claims_queue.push(subclaim);
+					}
+					_ => {
+						for suboracle in linear_combination.polys() {
+							self.claims_without_evals
+								.push(((*suboracle).clone(), eval_point.clone()));
+						}
+					}
+				};
+
 				self.incomplete_proof_claims
 					.insert(multilinear_id, eval_point, evalcheck_claim);
 			}

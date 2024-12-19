@@ -404,6 +404,66 @@ fn test_evalcheck_linear_combination() {
 }
 
 #[test]
+fn test_evalcheck_linear_combination_size_one() {
+	let n_vars = 8;
+
+	let select_row = SelectRow::new(n_vars, 0).unwrap();
+
+	let mut oracles = MultilinearOracleSet::new();
+
+	let select_row_oracle_id = oracles.add_transparent(select_row.clone()).unwrap();
+	let offset = FExtension::new(12345);
+	let coef = FExtension::new(67890);
+
+	let lin_com_id = oracles
+		.add_linear_combination_with_offset(n_vars, offset, [(select_row_oracle_id, coef)])
+		.unwrap();
+	let lin_com = oracles.oracle(lin_com_id);
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
+		.take(n_vars)
+		.collect::<Vec<_>>();
+
+	let eval = select_row.evaluate(&eval_point).unwrap() * coef + offset;
+
+	let select_row_witness = select_row
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let lin_com_values = (0..1 << n_vars)
+		.map(|i| select_row_witness.evaluate_on_hypercube(i).unwrap() * coef + offset)
+		.map(PackedBinaryField1x128b::set_single)
+		.collect();
+	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
+
+	// Make the claim a composite oracle over a linear combination, in order to test the case
+	// of requiring nested composite evalcheck proofs.
+	let claim_oracle = lin_com.clone();
+
+	let claim = EvalcheckMultilinearClaim {
+		poly: claim_oracle,
+		eval_point,
+		eval,
+	};
+
+	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	witness_index
+		.update_multilin_poly(vec![
+			(select_row_oracle_id, select_row_witness.specialize_arc_dyn()),
+			(lin_com_id, lin_com_witness.specialize_arc_dyn()),
+		])
+		.unwrap();
+
+	let backend = make_portable_backend();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state.verify(vec![claim], proof).unwrap();
+}
+
+#[test]
 fn test_evalcheck_repeating() {
 	let n_vars = 7;
 	let row_id = 11;
