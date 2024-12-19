@@ -15,13 +15,20 @@ use binius_field::{
 };
 use binius_macros::arith_expr;
 use bytemuck::{pod_collect_to_vec, Pod};
-pub struct KeccakfState(pub [u64; 25]);
+
+#[derive(Default, Clone, Copy)]
+pub struct KeccakfState(pub [u64; STATE_SIZE]);
+
+pub struct KeccakfOracles {
+	pub input: [OracleId; STATE_SIZE],
+	pub output: [OracleId; STATE_SIZE],
+}
 
 pub fn keccakf<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
-	input_witness: Option<Vec<KeccakfState>>,
+	input_witness: Option<impl AsRef<[KeccakfState]>>,
 	log_size: usize,
-) -> Result<[OracleId; STATE_SIZE], anyhow::Error>
+) -> Result<KeccakfOracles, anyhow::Error>
 where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField64b> + PackScalar<BinaryField1b>,
 	F: TowerField + ExtensionField<BinaryField64b>,
@@ -202,7 +209,9 @@ where
 
 	if let Some(witness) = builder.witness() {
 		let input_witness = input_witness
-			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?;
+			.as_ref()
+			.ok_or_else(|| anyhow!("builder witness available and input witness is not"))?
+			.as_ref();
 
 		let mut input = input.map(|id| witness.new_column::<BinaryField64b>(id));
 
@@ -280,12 +289,7 @@ where
 		for perm_i in 0..1 << (internal_log_size - LOG_BIT_ROWS_PER_PERMUTATION) {
 			let first_state_row_idx_in_perm = perm_i << LOG_STATE_ROWS_PER_PERMUTATION;
 
-			let input_this_perm =
-				if let Some(this_permutation_input_witness) = input_witness.get(perm_i) {
-					this_permutation_input_witness.0
-				} else {
-					[0; 25]
-				};
+			let input_this_perm = input_witness.get(perm_i).copied().unwrap_or_default().0;
 
 			for xy in 0..STATE_SIZE {
 				input_u64[xy][perm_i] = input_this_perm[xy];
@@ -426,7 +430,7 @@ where
 		)
 	}
 
-	Ok(output)
+	Ok(KeccakfOracles { input, output })
 }
 
 #[inline]
