@@ -237,9 +237,12 @@ mod tests {
 		transcript::{AdviceWriter, Proof, TranscriptWriter},
 	};
 	use binius_field::{
-		AESTowerField128b, AESTowerField16b, BinaryField128b, BinaryField16b, Field,
-		PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField8x16b,
-		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable,
+		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
+		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension,
+		PackedFieldIndexable, RepackedExtension, TowerField,
 	};
 	use binius_hal::ComputationBackend;
 	use binius_math::{
@@ -248,7 +251,10 @@ mod tests {
 	};
 	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
-	use std::{iter, sync::Arc};
+	use std::{
+		iter::{self, Step},
+		sync::Arc,
+	};
 
 	#[test]
 	fn test_univariatizing_reduction_end_to_end() {
@@ -375,14 +381,47 @@ mod tests {
 	}
 
 	#[test]
-	fn test_univariatized_zerocheck_end_to_end() {
-		type F = BinaryField128b;
-		type FI = AESTowerField128b;
-		type FDomain = AESTowerField16b;
-		type P = PackedAESBinaryField16x8b;
-		type PE = PackedAESBinaryField1x128b;
-		type PBase = PackedAESBinaryField8x16b;
+	fn test_univariatized_zerocheck_end_to_end_basic() {
+		test_univariatized_zerocheck_end_to_end_helper::<
+			OptimalUnderlier128b,
+			BinaryField128b,
+			AESTowerField128b,
+			AESTowerField16b,
+			AESTowerField16b,
+			AESTowerField8b,
+		>()
+	}
 
+	#[test]
+	fn test_univariatized_zerocheck_end_to_end_with_nontrivial_packing() {
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
+		// non-trivial packing width of 4.
+		test_univariatized_zerocheck_end_to_end_helper::<
+			OptimalUnderlier512b,
+			BinaryField128b,
+			AESTowerField128b,
+			AESTowerField16b,
+			AESTowerField16b,
+			AESTowerField8b,
+		>()
+	}
+
+	fn test_univariatized_zerocheck_end_to_end_helper<U, F, FI, FDomain, FBase, FWitness>()
+	where
+		U: UnderlierType
+			+ PackScalar<FI>
+			+ PackScalar<FBase>
+			+ PackScalar<FDomain>
+			+ PackScalar<FWitness>,
+		F: TowerField + From<FI>,
+		FI: TowerField + ExtensionField<FDomain> + ExtensionField<FBase> + ExtensionField<FWitness>,
+		FBase: TowerField + ExtensionField<FDomain>,
+		FDomain: TowerField + Step,
+		FWitness: Field,
+		PackedType<U, FBase>:
+			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+		PackedType<U, FI>: PackedFieldIndexable + RepackedExtension<PackedType<U, FBase>>,
+	{
 		let max_n_vars = 6;
 		let n_multilinears = 9;
 
@@ -399,16 +438,16 @@ mod tests {
 
 		let prover_compositions = [
 			(
-				pair.clone() as Arc<dyn CompositionPolyOS<PBase>>,
-				pair.clone() as Arc<dyn CompositionPolyOS<PE>>,
+				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),
 			(
-				triple.clone() as Arc<dyn CompositionPolyOS<PBase>>,
-				triple.clone() as Arc<dyn CompositionPolyOS<PE>>,
+				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),
 			(
-				quad.clone() as Arc<dyn CompositionPolyOS<PBase>>,
-				quad.clone() as Arc<dyn CompositionPolyOS<PE>>,
+				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),
 		];
 
@@ -436,8 +475,10 @@ mod tests {
 			let mut prover_zerocheck_claims = Vec::new();
 			let mut univariate_provers = Vec::new();
 			for n_vars in (1..=max_n_vars).rev() {
-				let mut multilinears =
-					generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, 2);
+				let mut multilinears = generate_zero_product_multilinears::<
+					PackedType<U, FWitness>,
+					PackedType<U, FI>,
+				>(&mut rng, n_vars, 2);
 				multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 3));
 				multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 4));
 
@@ -448,7 +489,15 @@ mod tests {
 				)
 				.unwrap();
 
-				let prover = UnivariateZerocheck::<FDomain, PBase, PE, _, _, _, _>::new(
+				let prover = UnivariateZerocheck::<
+					FDomain,
+					PackedType<U, FBase>,
+					PackedType<U, FI>,
+					_,
+					_,
+					_,
+					_,
+				>::new(
 					multilinears,
 					prover_compositions.to_vec(),
 					&prover_zerocheck_challenges

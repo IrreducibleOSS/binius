@@ -355,7 +355,7 @@ where
 		//         be a dedicated method for this someday.
 		let mut packed_subcube_lagrange_coeffs =
 			zeroed_vec::<P>(1 << skip_rounds.saturating_sub(P::LOG_WIDTH));
-		P::unpack_scalars_mut(&mut packed_subcube_lagrange_coeffs)
+		P::unpack_scalars_mut(&mut packed_subcube_lagrange_coeffs)[..1 << skip_rounds]
 			.copy_from_slice(&subcube_lagrange_coeffs);
 		let lagrange_coeffs_query =
 			MultilinearQuery::with_expansion(skip_rounds, packed_subcube_lagrange_coeffs)?;

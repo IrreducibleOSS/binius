@@ -687,9 +687,12 @@ mod tests {
 		transparent::eq_ind::EqIndPartialEval,
 	};
 	use binius_field::{
-		BinaryField128b, BinaryField16b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField4x32b,
-		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
+		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		BinaryField128b, BinaryField16b, BinaryField1b, BinaryField8b, ExtensionField, Field,
+		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable,
+		RepackedExtension, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{
@@ -698,7 +701,7 @@ mod tests {
 	};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};
-	use std::sync::Arc;
+	use std::{iter::Step, sync::Arc};
 
 	#[test]
 	fn ntt_extrapolate_correctness() {
@@ -771,30 +774,60 @@ mod tests {
 	}
 
 	#[test]
-	fn zerocheck_univariate_evals_invariants() {
-		type F = BinaryField128b;
-		type FDomain = BinaryField8b;
-		type FBase = BinaryField16b;
-		type P = PackedBinaryField128x1b;
-		type PE = PackedBinaryField1x128b;
-		type PBase = PackedBinaryField8x16b;
+	fn zerocheck_univariate_evals_invariants_basic() {
+		zerocheck_univariate_evals_invariants_helper::<
+			OptimalUnderlier128b,
+			BinaryField128b,
+			BinaryField8b,
+			BinaryField16b,
+		>()
+	}
 
+	#[test]
+	fn zerocheck_univariate_evals_with_nontrivial_packing() {
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
+		// non-trivial packing width of 4.
+		zerocheck_univariate_evals_invariants_helper::<
+			OptimalUnderlier512b,
+			BinaryField128b,
+			BinaryField8b,
+			BinaryField16b,
+		>()
+	}
+
+	fn zerocheck_univariate_evals_invariants_helper<U, F, FDomain, FBase>()
+	where
+		U: UnderlierType
+			+ PackScalar<F>
+			+ PackScalar<FBase>
+			+ PackScalar<FDomain>
+			+ PackScalar<BinaryField1b>,
+		F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
+		FBase: TowerField + ExtensionField<FDomain>,
+		FDomain: TowerField + Step + From<u8>,
+		PackedType<U, FBase>:
+			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+		PackedType<U, F>: PackedFieldIndexable + RepackedExtension<PackedType<U, FBase>>,
+	{
 		let mut rng = StdRng::seed_from_u64(0);
 
 		let n_vars = 7;
 		let log_embedding_degree = <F as ExtensionField<FBase>>::LOG_DEGREE;
 
-		let mut multilinears = generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, 2);
+		let mut multilinears = generate_zero_product_multilinears::<
+			PackedType<U, BinaryField1b>,
+			PackedType<U, F>,
+		>(&mut rng, n_vars, 2);
 		multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 3));
 		multilinears.extend(generate_zero_product_multilinears(&mut rng, n_vars, 4));
 
 		let compositions = [
 			Arc::new(IndexComposition::new(9, [0, 1], ProductComposition::<2> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PBase>>,
+				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 			Arc::new(IndexComposition::new(9, [2, 3, 4], ProductComposition::<3> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PBase>>,
+				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 			Arc::new(IndexComposition::new(9, [5, 6, 7, 8], ProductComposition::<4> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PBase>>,
+				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 		];
 
 		let backend = make_portable_backend();
@@ -804,7 +837,15 @@ mod tests {
 
 		for skip_rounds in 0usize..=5 {
 			let max_domain_size = domain_size(5, skip_rounds);
-			let output = zerocheck_univariate_evals::<F, FDomain, PBase, PE, _, _, _>(
+			let output = zerocheck_univariate_evals::<
+				F,
+				FDomain,
+				PackedType<U, FBase>,
+				PackedType<U, F>,
+				_,
+				_,
+				_,
+			>(
 				&multilinears,
 				&compositions,
 				&zerocheck_challenges[skip_rounds..],
@@ -836,12 +877,17 @@ mod tests {
 				.collect::<Vec<_>>();
 
 			let mut query = [FBase::ZERO; 9];
-			let mut evals = vec![PE::zero(); 1 << skip_rounds.saturating_sub(log_embedding_degree)];
+			let mut evals = vec![
+				PackedType::<U, F>::zero();
+				1 << skip_rounds.saturating_sub(
+					log_embedding_degree + PackedType::<U, F>::LOG_WIDTH
+				)
+			];
 			let domain = DefaultEvaluationDomainFactory::<FDomain>::default()
 				.create(1 << skip_rounds)
 				.unwrap();
 			for round_evals_index in 0..round_evals_len {
-				let x = FDomain::new(((1 << skip_rounds) + round_evals_index) as u8);
+				let x = FDomain::from(((1 << skip_rounds) + round_evals_index) as u8);
 				let mut composition_sums = vec![F::ZERO; compositions.len()];
 				for subcube_index in 0..1 << (n_vars - skip_rounds) {
 					for (query, multilinear) in query.iter_mut().zip(&multilinears) {
@@ -854,8 +900,9 @@ mod tests {
 							)
 							.unwrap();
 						let evals_scalars =
-							&PBase::unpack_scalars(PE::cast_bases(evals.as_slice()))
-								[..1 << skip_rounds];
+							&PackedType::<U, FBase>::unpack_scalars(
+								PackedType::<U, F>::cast_bases(evals.as_slice()),
+							)[..1 << skip_rounds];
 						let extrapolated = domain.extrapolate(evals_scalars, x.into()).unwrap();
 						*query = extrapolated;
 					}
