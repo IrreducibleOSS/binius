@@ -1,5 +1,19 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::collections::HashSet;
+
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	PackedFieldIndexable, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_math::MultilinearExtension;
+use getset::{Getters, MutGetters};
+use itertools::izip;
+use rayon::prelude::*;
+use tracing::instrument;
+
 use super::{
 	error::Error,
 	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
@@ -17,18 +31,6 @@ use crate::{
 	},
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	PackedFieldIndexable, TowerField,
-};
-use binius_hal::ComputationBackend;
-use binius_math::MultilinearExtension;
-use getset::{Getters, MutGetters};
-use itertools::izip;
-use rayon::prelude::*;
-use std::collections::HashSet;
-use tracing::instrument;
 
 /// A mutable prover state.
 ///

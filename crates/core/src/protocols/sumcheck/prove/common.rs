@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::protocols::utils::packed_from_fn_with_offset;
 use binius_field::{packed::get_packed_slice, Field, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
 use rayon::prelude::*;
 use tracing::instrument;
+
+use crate::protocols::utils::packed_from_fn_with_offset;
 
 #[instrument(skip_all, level = "debug")]
 pub fn fold_partial_eq_ind<P, Backend>(n_vars: usize, partial_eq_ind_evals: &mut Backend::Vec<P>)

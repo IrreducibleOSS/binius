@@ -1,13 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{array, fmt::Debug, sync::Arc};
+
+use binius_field::{Field, TowerField};
+use binius_utils::bail;
+use getset::{CopyGetters, Getters};
+
 use crate::{
 	oracle::{BatchId, CommittedBatch, CommittedId, CompositePolyOracle, Error},
 	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
 };
-use binius_field::{Field, TowerField};
-use binius_utils::bail;
-use getset::{CopyGetters, Getters};
-use std::{array, fmt::Debug, sync::Arc};
 
 /// Identifier for a multilinear oracle in a [`MultilinearOracleSet`].
 pub type OracleId = usize;

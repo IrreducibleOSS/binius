@@ -49,10 +49,12 @@
 //!                                       +-+-+
 //! ```
 
+use std::collections::HashMap;
+
+use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+
 use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
-use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
-use std::collections::HashMap;
 
 pub type ChannelId = usize;
 

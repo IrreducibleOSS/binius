@@ -1,10 +1,12 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::{eq_ind_partial_eval, tensor_prod_eq_ind, Error};
+use std::{cmp::max, ops::DerefMut};
+
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use std::{cmp::max, ops::DerefMut};
+
+use crate::{eq_ind_partial_eval, tensor_prod_eq_ind, Error};
 
 /// Tensor product expansion of sumcheck round challenges.
 ///
@@ -146,10 +148,11 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::tensor_prod_eq_ind;
 	use binius_field::{Field, PackedField};
 	use binius_utils::felts;
+
+	use super::*;
+	use crate::tensor_prod_eq_ind;
 
 	fn tensor_prod<P: PackedField>(p: &[P::Scalar]) -> Vec<P> {
 		let mut result = vec![P::default(); 1 << p.len().saturating_sub(P::LOG_WIDTH)];

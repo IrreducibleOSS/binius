@@ -1,5 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{
+	array,
+	iter::{Product, Sum},
+	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+};
+
+use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::{Pod, TransparentWrapper, Zeroable};
+use rand::RngCore;
+use subtle::ConstantTimeEq;
+
 use crate::{
 	arithmetic_traits::MulAlpha,
 	as_packed_field::PackScalar,
@@ -10,15 +21,6 @@ use crate::{
 	underlier::{ScaledUnderlier, UnderlierType, WithUnderlier},
 	Field, PackedField,
 };
-use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{Pod, TransparentWrapper, Zeroable};
-use rand::RngCore;
-use std::{
-	array,
-	iter::{Product, Sum},
-	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
-};
-use subtle::ConstantTimeEq;
 
 /// Packed field that just stores smaller packed field N times and performs all operations
 /// one by one.

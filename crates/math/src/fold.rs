@@ -1,5 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
+use core::slice;
+use std::{any::TypeId, cmp::min};
+
 use binius_field::{
 	arch::byte_sliced::ByteSlicedAES32x128b,
 	packed::{get_packed_slice, iter_packed_slice, set_packed_slice_unchecked},
@@ -10,13 +13,11 @@ use binius_field::{
 };
 use binius_utils::bail;
 use bytemuck::Pod;
-use core::slice;
 use itertools::max;
 use rayon::{
 	iter::{IndexedParallelIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
-use std::{any::TypeId, cmp::min};
 
 use crate::Error;
 

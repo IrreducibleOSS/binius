@@ -286,9 +286,7 @@ mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, TowerField};
 
-	use crate::builder::ConstraintSystemBuilder;
-
-	use crate::arithmetic;
+	use crate::{arithmetic, builder::ConstraintSystemBuilder};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;

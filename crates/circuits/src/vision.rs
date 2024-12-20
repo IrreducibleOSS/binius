@@ -7,7 +7,8 @@
 //!
 //! [Vision Mark-32]: https://eprint.iacr.org/2024/633
 
-use crate::builder::ConstraintSystemBuilder;
+use std::array;
+
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
@@ -23,7 +24,8 @@ use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
 use binius_math::ArithExpr;
 use bytemuck::{must_cast_slice, Pod};
-use std::array;
+
+use crate::builder::ConstraintSystemBuilder;
 
 pub fn vision_permutation<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,

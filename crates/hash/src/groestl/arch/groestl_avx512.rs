@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{arch::x86_64::*, convert::TryInto, mem::transmute_copy};
+
 use binius_field::{
 	underlier::WithUnderlier, AESTowerField8b, ExtensionField, PackedAESBinaryField64x8b,
 	PackedExtension, PackedField, PackedFieldIndexable,
 };
-use std::{arch::x86_64::*, convert::TryInto, mem::transmute_copy};
 
 const ROUND_SIZE: usize = 10;
 

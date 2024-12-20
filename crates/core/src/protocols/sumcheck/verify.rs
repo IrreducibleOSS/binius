@@ -1,16 +1,17 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{Field, TowerField};
+use binius_math::{evaluate_univariate, CompositionPolyOS};
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use itertools::izip;
+use tracing::instrument;
+
 use super::{
 	common::{batch_weighted_value, BatchSumcheckOutput, RoundProof, SumcheckClaim},
 	error::{Error, VerificationError},
 	RoundCoeffs,
 };
 use crate::{fiat_shamir::CanSample, transcript::CanRead};
-use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPolyOS};
-use binius_utils::{bail, sorting::is_sorted_ascending};
-use itertools::izip;
-use tracing::instrument;
 
 /// Verify a batched sumcheck protocol execution.
 ///

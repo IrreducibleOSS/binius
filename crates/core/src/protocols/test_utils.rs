@@ -1,10 +1,12 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::polynomial::Error as PolynomialError;
+use std::ops::Deref;
+
 use binius_field::{ExtensionField, Field, PackedField};
 use binius_math::{ArithExpr, CompositionPolyOS, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
-use std::ops::Deref;
+
+use crate::polynomial::Error as PolynomialError;
 
 #[derive(Clone, Debug)]
 pub struct AddOneComposition<Inner> {

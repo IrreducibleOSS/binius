@@ -1,10 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::Error;
+use std::fmt::Debug;
+
 use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
-use std::fmt::Debug;
+
+use crate::polynomial::Error;
 
 /// An adapter which allows evaluating a composition over a larger query by indexing into it.
 /// See [`index_composition`] for a factory method.
@@ -134,9 +136,10 @@ where
 
 #[cfg(test)]
 mod tests {
+	use binius_field::BinaryField1b;
+
 	use super::*;
 	use crate::polynomial::ArithCircuitPoly;
-	use binius_field::BinaryField1b;
 
 	#[test]
 	fn tests_expr() {

@@ -1,13 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
+use std::iter::successors;
+
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::{izip, Itertools};
 use rayon::prelude::*;
-use std::iter::successors;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// A transparent multilinear polynomial whose evaluation at index $i$ is $g^i$ for
 /// some field element $g$.
@@ -79,10 +81,11 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for Powers<F
 
 #[cfg(test)]
 mod tests {
-	use super::Powers;
-	use crate::polynomial::MultivariatePoly;
 	use binius_field::{BinaryField32b, Field, PackedBinaryField4x32b, PackedField, TowerField};
 	use rand::{prelude::StdRng, SeedableRng};
+
+	use super::Powers;
+	use crate::polynomial::MultivariatePoly;
 
 	fn test_consistency_helper<P: PackedField<Scalar: TowerField>>(n_vars: usize, base: P::Scalar) {
 		let powers = Powers::new(n_vars, base);

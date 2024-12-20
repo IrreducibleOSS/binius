@@ -1,8 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
-use rand::RngCore;
 use std::ops::Deref;
+
+use rand::RngCore;
+
+use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
 
 /// Generic transformation trait that is used both for scalars and packed fields
 pub trait Transformation<Input, Output> {

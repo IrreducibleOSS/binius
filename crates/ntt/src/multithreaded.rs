@@ -1,5 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{BinaryField, PackedField};
+use binius_utils::rayon::get_log_max_threads;
+use rayon::prelude::*;
+
 use super::{
 	error::Error,
 	single_threaded::{self, check_batch_transform_inputs, NTTParams},
@@ -8,9 +12,6 @@ use super::{
 	AdditiveNTT, SingleThreadedNTT,
 };
 use crate::twiddle::OnTheFlyTwiddleAccess;
-use binius_field::{BinaryField, PackedField};
-use binius_utils::rayon::get_log_max_threads;
-use rayon::prelude::*;
 
 /// Implementation of `AdditiveNTT` that performs the computation multithreaded.
 #[derive(Debug)]

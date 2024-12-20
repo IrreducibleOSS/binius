@@ -1,4 +1,6 @@
 // Copyright 2024 Irreducible Inc.
+use std::array;
+
 use binius_field::{
 	AESTowerField64b, AESTowerField8b, ExtensionField, Field, PackedAESBinaryField32x8b,
 	PackedAESBinaryField4x64b, PackedField,
@@ -6,7 +8,6 @@ use binius_field::{
 use binius_hash::{Groestl256, HashDigest, Hasher, HasherDigest};
 use hex_literal::hex;
 use rand::thread_rng;
-use std::array;
 
 fn str_to_aes(input: &'static str) -> Vec<AESTowerField8b> {
 	input

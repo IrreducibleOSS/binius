@@ -1,5 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Deref;
+
+use binius_field::{
+	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
+	TowerField,
+};
+use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_utils::bail;
+use bytemuck::zeroed_vec;
+use itertools::izip;
+use rayon::prelude::*;
+use tracing::instrument;
+
 use super::{
 	common::{vcs_optimal_layers_depths_iter, FRIParams},
 	error::Error,
@@ -13,17 +26,6 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{write_u64, CanWrite},
 };
-use binius_field::{
-	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
-	TowerField,
-};
-use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::bail;
-use bytemuck::zeroed_vec;
-use itertools::izip;
-use rayon::prelude::*;
-use std::ops::Deref;
-use tracing::instrument;
 
 #[instrument(skip_all, level = "debug")]
 pub fn fold_codeword<F, FS>(

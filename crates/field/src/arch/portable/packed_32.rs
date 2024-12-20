@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use cfg_if::cfg_if;
+
 use super::{
 	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},
 	packed_arithmetic::{alphas, impl_tower_constants},
@@ -12,7 +14,6 @@ use crate::{
 	},
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField8b,
 };
-use cfg_if::cfg_if;
 
 // Define 32 bit packed field types
 pub type PackedBinaryField32x1b = PackedPrimitiveType<u32, BinaryField1b>;

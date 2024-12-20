@@ -1,24 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	common::CompositeSumClaim,
-	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
-	prove::{
-		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
-	},
-	verify::batch_verify,
-	BatchSumcheckOutput, SumcheckClaim,
+use std::{
+	iter::{self, repeat_with, Step},
+	sync::Arc,
 };
-use crate::{
-	composition::index_composition,
-	fiat_shamir::{CanSample, HasherChallenger},
-	polynomial::{IdentityCompositionPoly, MultilinearComposite},
-	protocols::{
-		sumcheck::prove::SumcheckProver,
-		test_utils::{AddOneComposition, TestProductComposition},
-	},
-	transcript::TranscriptWriter,
-};
+
 use binius_field::{
 	arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
@@ -37,9 +23,25 @@ use itertools::izip;
 use p3_util::log2_ceil_usize;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rayon::{current_num_threads, prelude::*};
-use std::{
-	iter::{self, repeat_with, Step},
-	sync::Arc,
+
+use super::{
+	common::CompositeSumClaim,
+	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
+	prove::{
+		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
+	},
+	verify::batch_verify,
+	BatchSumcheckOutput, SumcheckClaim,
+};
+use crate::{
+	composition::index_composition,
+	fiat_shamir::{CanSample, HasherChallenger},
+	polynomial::{IdentityCompositionPoly, MultilinearComposite},
+	protocols::{
+		sumcheck::prove::SumcheckProver,
+		test_utils::{AddOneComposition, TestProductComposition},
+	},
+	transcript::TranscriptWriter,
 };
 
 #[derive(Debug, Clone)]

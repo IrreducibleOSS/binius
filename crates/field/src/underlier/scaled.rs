@@ -1,11 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{Divisible, Random, UnderlierType};
+use std::array;
+
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{must_cast_mut, must_cast_ref, NoUninit, Pod, Zeroable};
 use rand::RngCore;
-use std::array;
 use subtle::{Choice, ConstantTimeEq};
+
+use super::{Divisible, Random, UnderlierType};
 
 /// A type that represents a pair of elements of the same underlier type.
 /// We use it as an underlier for the `ScaledPAckedField` type.

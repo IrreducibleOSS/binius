@@ -1,10 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
+use std::marker::PhantomData;
+
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
-use std::marker::PhantomData;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// Represents the $\mathcal{T}_{\iota}$-basis of $\mathcal{T}_{\iota+k}$
 ///
@@ -93,11 +95,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use std::iter::repeat_with;
+
 	use binius_field::{BinaryField128b, BinaryField32b, PackedBinaryField4x32b};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::*;
 
 	fn test_consistency(iota: usize, k: usize) {
 		type F = BinaryField128b;

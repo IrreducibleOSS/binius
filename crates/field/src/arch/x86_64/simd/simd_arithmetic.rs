@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{any::TypeId, arch::x86_64::*, ops::Deref};
+
 use crate::{
 	aes_field::AESTowerField8b,
 	arch::{
@@ -18,7 +20,6 @@ use crate::{
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	BinaryField, BinaryField8b, PackedField, TowerField,
 };
-use std::{any::TypeId, arch::x86_64::*, ops::Deref};
 
 pub trait TowerSimdType: Sized + Copy {
 	/// Blend odd and even elements

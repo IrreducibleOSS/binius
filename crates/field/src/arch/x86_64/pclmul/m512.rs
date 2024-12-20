@@ -1,9 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::arch::x86_64::*;
+
+use seq_macro::seq;
+
 use super::montgomery_mul::PolyvalSimdType;
 use crate::arch::x86_64::m512::M512;
-use seq_macro::seq;
-use std::arch::x86_64::*;
 
 impl PolyvalSimdType for M512 {
 	#[inline(always)]

@@ -1,7 +1,8 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use binius_field::Error as FieldError;
 use std::ops::Range;
+
+use binius_field::Error as FieldError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

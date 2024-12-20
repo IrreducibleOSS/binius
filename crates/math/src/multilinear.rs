@@ -1,9 +1,11 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::{Error, MultilinearExtension, MultilinearQueryRef};
+use std::fmt::Debug;
+
 use binius_field::PackedField;
 use either::Either;
-use std::fmt::Debug;
+
+use crate::{Error, MultilinearExtension, MultilinearQueryRef};
 
 /// Represents a multilinear polynomial.
 ///

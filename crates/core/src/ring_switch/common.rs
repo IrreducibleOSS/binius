@@ -1,13 +1,15 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::sync::Arc;
+
+use binius_field::{Field, TowerField};
+use binius_utils::sparse_index::SparseIndex;
+
 use super::error::Error;
 use crate::{
 	oracle::MultilinearPolyOracle, piop::CommitMeta,
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
-use binius_field::{Field, TowerField};
-use binius_utils::sparse_index::SparseIndex;
-use std::sync::Arc;
 
 /// A prefix of an evaluation claim query.
 ///

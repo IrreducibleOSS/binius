@@ -1,5 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{Field, TowerField};
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use tracing::instrument;
+
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{
@@ -9,9 +13,6 @@ use crate::{
 	},
 	transcript::CanWrite,
 };
-use binius_field::{Field, TowerField};
-use binius_utils::{bail, sorting::is_sorted_ascending};
-use tracing::instrument;
 
 /// A univariate zerocheck prover interface.
 ///

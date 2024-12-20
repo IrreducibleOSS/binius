@@ -1,6 +1,7 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use crate::{fold, Error, MultilinearQueryRef, PackingDeref};
+use std::{cmp::min, fmt::Debug, ops::Deref};
+
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
 	packed::{get_packed_slice, iter_packed_slice},
@@ -12,8 +13,9 @@ use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
 use rayon::prelude::*;
-use std::{cmp::min, fmt::Debug, ops::Deref};
 use tracing::instrument;
+
+use crate::{fold, Error, MultilinearQueryRef, PackingDeref};
 
 /// A multilinear polynomial represented by its evaluations over the boolean hypercube.
 ///
@@ -333,15 +335,17 @@ pub type MultilinearExtensionBorrowed<'a, P> = MultilinearExtension<P, &'a [P]>;
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use std::iter::repeat_with;
+
 	use binius_field::{
 		arch::OptimalUnderlier256b, BinaryField128b, BinaryField16b as F, BinaryField32b,
 		BinaryField8b, PackedBinaryField16x8b, PackedBinaryField4x32b, PackedBinaryField8x16b as P,
 	};
 	use itertools::Itertools;
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::*;
+	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 
 	/// Expand the tensor product of the query values.
 	///

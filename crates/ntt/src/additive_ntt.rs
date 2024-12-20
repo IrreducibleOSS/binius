@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::error::Error;
 use binius_field::{ExtensionField, PackedField, RepackedExtension};
 use p3_util::log2_strict_usize;
+
+use super::error::Error;
 
 /// The additive NTT defined defined in [LCH14].
 ///

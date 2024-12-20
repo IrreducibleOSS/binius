@@ -1,19 +1,21 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
-use crate::{
-	oracle::{MultilinearOracleSet, OracleId},
-	protocols::evalcheck::EvalcheckMultilinearClaim,
-	witness::MultilinearExtensionIndex,
-};
+use std::iter;
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 	Field, PackedField, TowerField,
 };
 use binius_utils::bail;
-use std::iter;
 use tracing::instrument;
+
+use super::{gkr_gpa::LayerClaim, Error, GrandProductClaim, GrandProductWitness};
+use crate::{
+	oracle::{MultilinearOracleSet, OracleId},
+	protocols::evalcheck::EvalcheckMultilinearClaim,
+	witness::MultilinearExtensionIndex,
+};
 
 #[instrument(skip_all, level = "debug")]
 pub fn construct_grand_product_witnesses<'a, U, F>(

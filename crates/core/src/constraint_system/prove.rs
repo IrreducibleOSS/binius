@@ -1,5 +1,23 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cmp::Reverse, env};
+
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_hash::Hasher;
+use binius_math::{
+	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+};
+use binius_utils::bail;
+use itertools::izip;
+use p3_symmetric::PseudoCompressionFunction;
+use rayon::prelude::*;
+use tracing::instrument;
+
 use super::{
 	error::Error,
 	verify::{
@@ -35,22 +53,6 @@ use crate::{
 	transcript::{AdviceWriter, CanWrite, Proof as ProofWriter, TranscriptWriter},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-	RepackedExtension, TowerField,
-};
-use binius_hal::ComputationBackend;
-use binius_hash::Hasher;
-use binius_math::{
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-};
-use binius_utils::bail;
-use itertools::izip;
-use p3_symmetric::PseudoCompressionFunction;
-use rayon::prelude::*;
-use std::{cmp::Reverse, env};
-use tracing::instrument;
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]

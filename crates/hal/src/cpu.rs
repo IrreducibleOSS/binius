@@ -1,16 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},
-	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
-};
+use std::fmt::Debug;
+
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::{
 	eq_ind_partial_eval, CompositionPolyOS, MultilinearExtension, MultilinearPoly,
 	MultilinearQueryRef,
 };
-use std::fmt::Debug;
 use tracing::instrument;
+
+use crate::{
+	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},
+	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+};
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
 #[derive(Clone, Debug)]

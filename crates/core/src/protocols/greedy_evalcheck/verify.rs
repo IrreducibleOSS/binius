@@ -1,5 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::TowerField;
+use binius_utils::bail;
+
 use super::error::Error;
 use crate::{
 	fiat_shamir::CanSample,
@@ -13,8 +16,6 @@ use crate::{
 	},
 	transcript::{read_u64, AdviceReader, CanRead},
 };
-use binius_field::TowerField;
-use binius_utils::bail;
 
 pub fn verify<F, Transcript>(
 	oracles: &mut MultilinearOracleSet<F>,

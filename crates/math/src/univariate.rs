@@ -1,8 +1,11 @@
 // Copyright 2023-2024 Irreducible Inc.
 // Copyright (c) 2022 The Plonky2 Authors
 
-use super::error::Error;
-use crate::Matrix;
+use std::{
+	iter::{self, Step},
+	marker::PhantomData,
+};
+
 use auto_impl::auto_impl;
 use binius_field::{
 	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
@@ -10,10 +13,9 @@ use binius_field::{
 };
 use binius_utils::bail;
 use p3_util::log2_ceil_usize;
-use std::{
-	iter::{self, Step},
-	marker::PhantomData,
-};
+
+use super::error::Error;
+use crate::Matrix;
 
 /// A domain that univariate polynomials may be evaluated on.
 ///
@@ -290,7 +292,8 @@ fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use std::{iter::repeat_with, slice};
+
 	use assert_matches::assert_matches;
 	use binius_field::{
 		util::inner_product_unchecked, AESTowerField32b, BinaryField16b, BinaryField32b,
@@ -298,7 +301,8 @@ mod tests {
 	};
 	use proptest::{collection::vec, proptest};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::{iter::repeat_with, slice};
+
+	use super::*;
 
 	fn evaluate_univariate_naive<F: Field>(coeffs: &[F], x: F) -> F {
 		coeffs

@@ -1,10 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{ArithExpr, Error};
+use std::fmt::Debug;
+
 use auto_impl::auto_impl;
 use binius_field::{ExtensionField, Field, PackedField};
 use stackalloc::stackalloc_with_default;
-use std::fmt::Debug;
+
+use crate::{ArithExpr, Error};
 
 /// A multivariate polynomial that defines a composition of `MultilinearComposite`.
 /// This is an object-safe version of the trait.

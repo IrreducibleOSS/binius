@@ -1,15 +1,19 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
-use crate::{
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
-	protocols::evalcheck::EvalcheckMultilinearClaim,
-};
+use std::iter;
 
-use crate::{oracle::TypeErasedComposition, polynomial::ArithCircuitPoly};
 use binius_field::{Field, PackedField, TowerField};
 use binius_utils::bail;
-use std::iter;
+
+use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
+use crate::{
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
+		TypeErasedComposition,
+	},
+	polynomial::ArithCircuitPoly,
+	protocols::evalcheck::EvalcheckMultilinearClaim,
+};
 
 #[derive(Debug)]
 pub enum ConcreteClaim<P: PackedField> {

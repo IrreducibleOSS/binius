@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Mul;
+
 use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
 	arch::{cfg_if, ReuseMultiplyStrategy, SimdStrategy},
@@ -7,7 +9,6 @@ use crate::{
 	packed::PackedField,
 	BinaryField128bPolyval,
 };
-use std::ops::Mul;
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<M128, BinaryField128bPolyval>;
 

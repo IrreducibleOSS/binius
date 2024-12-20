@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter::repeat_with;
+
 use binius_field::{
 	arch::packed_64::PackedBinaryField32x2b, BinaryField128b, PackedBinaryField128x1b, PackedField,
 };
@@ -7,7 +9,6 @@ use binius_math::tensor_prod_eq_ind;
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
 };
-use std::iter::repeat_with;
 
 pub fn bench_tensor_prod_eq_ind<P: PackedField>(
 	group: &mut BenchmarkGroup<WallTime>,

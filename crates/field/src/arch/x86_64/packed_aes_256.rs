@@ -2,6 +2,7 @@
 
 use cfg_if::cfg_if;
 
+use super::m256::M256;
 use crate::{
 	aes_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
@@ -12,8 +13,6 @@ use crate::{
 		impl_transformation_with_strategy,
 	},
 };
-
-use super::m256::M256;
 
 // Define 128 bit packed field types
 pub type PackedAESBinaryField32x8b = PackedPrimitiveType<M256, AESTowerField8b>;

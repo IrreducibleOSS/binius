@@ -10,13 +10,15 @@
 //! [Reed–Solomon]: <https://en.wikipedia.org/wiki/Reed%E2%80%93Solomon_error_correction>
 //! [LCH14]: <https://arxiv.org/abs/1404.3458>
 
-use crate::linear_code::LinearCode;
+use std::marker::PhantomData;
+
 use binius_field::{BinaryField, PackedField};
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
 use rayon::prelude::*;
-use std::marker::PhantomData;
+
+use crate::linear_code::LinearCode;
 
 #[derive(Debug, CopyGetters)]
 pub struct ReedSolomonCode<P>

@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use std::cell::UnsafeCell;
+
 use thread_local::ThreadLocal;
 
 /// Creates a "scratch space" within each thread with mutable access.

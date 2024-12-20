@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::arch::x86_64::*;
+
 use super::montgomery_mul::PolyvalSimdType;
 use crate::arch::x86_64::m256::M256;
-use std::arch::x86_64::*;
 
 impl PolyvalSimdType for M256 {
 	#[inline(always)]

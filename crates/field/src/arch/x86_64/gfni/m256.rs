@@ -1,9 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use core::arch::x86_64::*;
+
+use gfni_arithmetics::GfniType;
+
 use super::*;
 use crate::arch::x86_64::m256::M256;
-use core::arch::x86_64::*;
-use gfni_arithmetics::GfniType;
 
 impl GfniType for M256 {
 	#[inline(always)]

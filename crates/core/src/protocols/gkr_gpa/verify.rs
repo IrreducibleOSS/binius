@@ -1,11 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	gkr_gpa::LayerClaim,
-	gpa_sumcheck::verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
-	Error, GrandProductClaim,
-};
-use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanRead};
 use binius_field::{Field, TowerField};
 use binius_math::extrapolate_line_scalar;
 use binius_utils::{
@@ -13,6 +7,13 @@ use binius_utils::{
 	sorting::{stable_sort, unsort},
 };
 use tracing::instrument;
+
+use super::{
+	gkr_gpa::LayerClaim,
+	gpa_sumcheck::verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
+	Error, GrandProductClaim,
+};
+use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanRead};
 
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
 #[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]

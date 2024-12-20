@@ -1,12 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	hasher::{FixedLenHasher, HashError},
-	vision_constants::{
-		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
-		ROUND_KEYS,
-	},
-};
+use std::{iter::repeat, marker::PhantomData};
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
@@ -24,7 +19,14 @@ use binius_ntt::{
 };
 use lazy_static::lazy_static;
 use p3_symmetric::{CryptographicPermutation, Permutation};
-use std::{iter::repeat, marker::PhantomData};
+
+use crate::{
+	hasher::{FixedLenHasher, HashError},
+	vision_constants::{
+		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
+		ROUND_KEYS,
+	},
+};
 
 const RATE_AS_U32: usize = 16;
 
@@ -495,15 +497,17 @@ impl FastNTT {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::{FixedLenHasherDigest, HashDigest};
+	use std::array;
+
 	use binius_field::{
 		make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
 		BinaryField64b, PackedAESBinaryField4x64b, PackedBinaryField4x64b, PackedBinaryField8x32b,
 	};
 	use hex_literal::hex;
 	use rand::thread_rng;
-	use std::array;
+
+	use super::*;
+	use crate::{FixedLenHasherDigest, HashDigest};
 
 	fn mds_transform(data: &mut [PackedAESBinaryField8x32b; 3]) {
 		let vision = Vision32MDSTransform::default();

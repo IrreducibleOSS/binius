@@ -2,6 +2,18 @@
 
 //! Binary field implementation of GF(2^128) with a modulus of X^128 + X^127 + X^126 + 1.
 
+use std::{
+	any::TypeId,
+	array,
+	fmt::{self, Debug, Display, Formatter},
+	iter::{Product, Sum},
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
+
+use bytemuck::{Pod, TransparentWrapper, Zeroable};
+use rand::{Rng, RngCore};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+
 use super::{
 	arithmetic_traits::InvertOrZero,
 	binary_field::{BinaryField, BinaryField128b, BinaryField1b, TowerField},
@@ -19,16 +31,6 @@ use crate::{
 	underlier::UnderlierWithBitOps,
 	Field,
 };
-use bytemuck::{Pod, TransparentWrapper, Zeroable};
-use rand::{Rng, RngCore};
-use std::{
-	any::TypeId,
-	array,
-	fmt::{self, Debug, Display, Formatter},
-	iter::{Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-};
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 #[derive(
 	Default,
@@ -741,6 +743,10 @@ pub fn is_polyval_tower<F: TowerField>() -> bool {
 
 #[cfg(test)]
 mod tests {
+	use bytes::BytesMut;
+	use proptest::prelude::*;
+	use rand::thread_rng;
+
 	use super::*;
 	use crate::{
 		arch::{
@@ -753,9 +759,6 @@ mod tests {
 		serialize_canonical, PackedBinaryField1x128b, PackedBinaryField2x128b,
 		PackedBinaryField4x128b, PackedField,
 	};
-	use bytes::BytesMut;
-	use proptest::prelude::*;
-	use rand::thread_rng;
 
 	#[test]
 	fn test_display() {

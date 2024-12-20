@@ -5,9 +5,10 @@ mod arith_circuit_poly;
 mod arith_expr;
 mod composition_poly;
 
+use std::collections::BTreeSet;
+
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use std::collections::BTreeSet;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 use crate::{

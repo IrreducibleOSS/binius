@@ -1,11 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, SingleThreadedNTT};
+use std::marker::PhantomData;
+
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
 	BinaryField, ExtensionField, PackedField,
 };
-use std::marker::PhantomData;
+
+use crate::{twiddle::TwiddleAccess, AdditiveNTT, Error, SingleThreadedNTT};
 
 /// This trait allows passing packed batches to the simple NTT implementation.
 trait DataAccess<T> {

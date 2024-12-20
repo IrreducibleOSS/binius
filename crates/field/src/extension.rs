@@ -1,10 +1,11 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use super::{error::Error, Field};
 use std::{
 	iter,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+
+use super::{error::Error, Field};
 
 pub trait ExtensionField<F: Field>:
 	Field

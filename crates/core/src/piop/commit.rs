@@ -1,16 +1,17 @@
 // Copyright 2024 Irreducible, Inc
 
-use super::{error::Error, util::ResizeableIndex, verify::CommitMeta};
-use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
-};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 	TowerField,
 };
 use binius_utils::sparse_index::SparseIndex;
+
+use super::{error::Error, util::ResizeableIndex, verify::CommitMeta};
+use crate::{
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
+	witness::{MultilinearExtensionIndex, MultilinearWitness},
+};
 
 /// Indexes the committed oracles in a [`MultilinearOracleSet`] and returns:
 ///
@@ -121,8 +122,9 @@ fn n_packed_vars_for_committed_oracle<F: TowerField>(
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::BinaryField128b;
+
+	use super::*;
 
 	#[test]
 	fn test_make_oracle_commit_meta() {

@@ -1,15 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_field::{
-	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
-};
-use binius_utils::checked_arithmetics::checked_log_2;
 use std::{
 	iter::Sum,
 	marker::PhantomData,
 	mem,
 	ops::{Add, AddAssign, Sub, SubAssign},
 };
+
+use binius_field::{
+	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
+};
+use binius_utils::checked_arithmetics::checked_log_2;
 
 /// An element of the tensor algebra defined as the tensor product of `FE` and `FE` as fields.
 ///
@@ -219,9 +220,10 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::{BinaryField128b, BinaryField8b};
 	use rand::{rngs::StdRng, SeedableRng};
+
+	use super::*;
 
 	#[test]
 	fn test_tensor_product() {

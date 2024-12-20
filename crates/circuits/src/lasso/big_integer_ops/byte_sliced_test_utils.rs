@@ -2,15 +2,6 @@
 
 use std::{array, fmt::Debug};
 
-use crate::{
-	builder::ConstraintSystemBuilder,
-	lasso::{
-		batch::LookupBatch,
-		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
-	},
-	transparent,
-	unconstrained::unconstrained,
-};
 use alloy_primitives::U512;
 use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 use binius_field::{
@@ -22,6 +13,15 @@ use rand::{rngs::ThreadRng, thread_rng, Rng};
 use super::{
 	byte_sliced_add, byte_sliced_add_carryfree, byte_sliced_double_conditional_increment,
 	byte_sliced_modular_mul, byte_sliced_mul,
+};
+use crate::{
+	builder::ConstraintSystemBuilder,
+	lasso::{
+		batch::LookupBatch,
+		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
+	},
+	transparent,
+	unconstrained::unconstrained,
 };
 
 type B8 = BinaryField8b;

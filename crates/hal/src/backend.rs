@@ -1,16 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
+use std::{
+	fmt::Debug,
+	ops::{Deref, DerefMut},
+};
+
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::{
 	CompositionPolyOS, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
 use rayon::iter::FromParallelIterator;
-use std::{
-	fmt::Debug,
-	ops::{Deref, DerefMut},
-};
 use tracing::instrument;
+
+use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 
 /// HAL-managed memory containing the result of its operations.
 pub trait HalSlice<P: Debug + Send + Sync>:

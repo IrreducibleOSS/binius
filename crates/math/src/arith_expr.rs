@@ -1,13 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::error::Error;
-use binius_field::Field;
 use std::{
 	cmp::max,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+
+use binius_field::Field;
+
+use super::error::Error;
 
 /// Represents an arithmetic expression that can be evaluated symbolically.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,9 +235,10 @@ impl<F: Field> Product for ArithExpr<F> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField128b, BinaryField1b, BinaryField8b};
+
+	use super::*;
 
 	#[test]
 	fn test_degree_with_pow() {

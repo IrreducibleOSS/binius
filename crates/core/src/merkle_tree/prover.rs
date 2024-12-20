@@ -1,17 +1,19 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::marker::PhantomData;
+
+use binius_field::PackedField;
+use binius_hash::Hasher;
+use p3_symmetric::PseudoCompressionFunction;
+use rayon::iter::IndexedParallelIterator;
+use tracing::instrument;
+
 use super::{
 	binary_merkle_tree::BinaryMerkleTree,
 	errors::Error,
 	merkle_tree_vcs::{Commitment, MerkleTreeProver},
 	scheme::BinaryMerkleTreeScheme,
 };
-use binius_field::PackedField;
-use binius_hash::Hasher;
-use p3_symmetric::PseudoCompressionFunction;
-use rayon::iter::IndexedParallelIterator;
-use std::marker::PhantomData;
-use tracing::instrument;
 
 pub struct BinaryMerkleTreeProver<D, H, C> {
 	compression: C,

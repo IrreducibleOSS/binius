@@ -1,12 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
+use binius_math::MultilinearExtension;
+use binius_utils::bail;
+
 use crate::{
 	oracle::ShiftVariant,
 	polynomial::{Error, MultivariatePoly},
 };
-use binius_field::{util::eq, Field, PackedFieldIndexable, TowerField};
-use binius_math::MultilinearExtension;
-use binius_utils::bail;
 
 /// Represents MLE of shift indicator $f_{b, o}(X, Y)$ on $2*b$ variables
 /// partially evaluated at $Y = r$
@@ -343,12 +344,14 @@ fn partial_evaluate_hypercube_with_buffers<P: PackedFieldIndexable>(
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;
+	use std::iter::repeat_with;
+
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::*;
+	use crate::polynomial::test_utils::decompose_index_to_hypercube_point;
 
 	// Consistency Tests for each shift variant
 	fn test_circular_left_shift_consistency_help<

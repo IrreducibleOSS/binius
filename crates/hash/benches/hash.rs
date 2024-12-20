@@ -1,4 +1,6 @@
 // Copyright 2024 Irreducible Inc.
+use std::array;
+
 use binius_field::{
 	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, PackedAESBinaryField32x8b,
 	PackedBinaryField32x8b, PackedField,
@@ -11,7 +13,6 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
 use p3_symmetric::PseudoCompressionFunction;
 use rand::{thread_rng, RngCore};
-use std::array;
 
 fn bench_groestl_compression(c: &mut Criterion) {
 	let mut group = c.benchmark_group("groestl-compression");

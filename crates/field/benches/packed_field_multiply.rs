@@ -2,6 +2,8 @@
 
 mod packed_field_utils;
 
+use std::ops::Mul;
+
 use binius_field::{
 	arch::{
 		byte_sliced::*, packed_128::*, packed_16::*, packed_256::*, packed_32::*, packed_512::*,
@@ -15,7 +17,6 @@ use binius_field::{
 };
 use criterion::criterion_main;
 use packed_field_utils::benchmark_packed_operation;
-use std::ops::Mul;
 
 /// This trait is needed to specify `Mul` constraint only
 trait SelfMul: Mul<Self, Output = Self> + Sized {}

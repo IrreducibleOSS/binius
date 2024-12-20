@@ -1,9 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
+
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 use stackalloc::{helpers::slice_assume_init, stackalloc_uninit};
-use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
@@ -397,12 +398,13 @@ fn pow<P: PackedField>(value: P, exp: u64) -> P {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
 	use binius_math::CompositionPolyOS;
 	use binius_utils::felts;
+
+	use super::*;
 
 	#[test]
 	fn test_constant() {

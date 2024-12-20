@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
 use binius_utils::bail;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// A constant polynomial.
 #[derive(Debug, Copy, Clone)]

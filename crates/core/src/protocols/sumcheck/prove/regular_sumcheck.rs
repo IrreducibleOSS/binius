@@ -1,14 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{batch_prove::SumcheckProver, prover_state::ProverState};
-use crate::{
-	polynomial::{Error as PolynomialError, MultilinearComposite},
-	protocols::sumcheck::{
-		common::{CompositeSumClaim, RoundCoeffs},
-		error::Error,
-		prove::prover_state::SumcheckInterpolator,
-	},
-};
+use std::{marker::PhantomData, ops::Range};
+
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
@@ -18,8 +11,17 @@ use binius_utils::bail;
 use itertools::izip;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
-use std::{marker::PhantomData, ops::Range};
 use tracing::instrument;
+
+use super::{batch_prove::SumcheckProver, prover_state::ProverState};
+use crate::{
+	polynomial::{Error as PolynomialError, MultilinearComposite},
+	protocols::sumcheck::{
+		common::{CompositeSumClaim, RoundCoeffs},
+		error::Error,
+		prove::prover_state::SumcheckInterpolator,
+	},
+};
 
 pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],

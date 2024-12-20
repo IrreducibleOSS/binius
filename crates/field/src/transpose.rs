@@ -1,7 +1,8 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use super::{packed::PackedField, ExtensionField, PackedFieldIndexable, RepackedExtension};
 use p3_util::log2_strict_usize;
+
+use super::{packed::PackedField, ExtensionField, PackedFieldIndexable, RepackedExtension};
 
 /// Error thrown when a transpose operation fails.
 #[derive(Clone, thiserror::Error, Debug)]

@@ -1,14 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{collections::VecDeque, iter};
+
+use binius_field::{Field, TowerField};
+use binius_utils::sorting::is_sorted_ascending;
+
 use super::batch_prove::SumcheckProver;
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},
 	transcript::CanWrite,
 };
-use binius_field::{Field, TowerField};
-use binius_utils::sorting::is_sorted_ascending;
-use std::{collections::VecDeque, iter};
 
 /// Prover for a front-loaded batch sumcheck protocol execution.
 ///

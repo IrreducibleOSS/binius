@@ -811,6 +811,12 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
+	use std::{iter::repeat_with, ops::Mul, slice};
+
+	use proptest::prelude::*;
+	use rand::{rngs::StdRng, thread_rng, SeedableRng};
+	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
+
 	use super::{
 		test_utils::{
 			define_invert_tests, define_mul_alpha_tests, define_multiply_tests,
@@ -828,10 +834,6 @@ mod tests {
 		underlier::{U2, U4},
 		Field, PackedField, PackedFieldIndexable,
 	};
-	use proptest::prelude::*;
-	use rand::{rngs::StdRng, thread_rng, SeedableRng};
-	use std::{iter::repeat_with, ops::Mul, slice};
-	use test_utils::{check_interleave_all_heights, implements_transformation_factory};
 
 	fn test_add_packed<P: PackedField + From<u128>>(a_val: u128, b_val: u128) {
 		let a = P::from(a_val);

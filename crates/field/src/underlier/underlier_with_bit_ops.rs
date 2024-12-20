@@ -1,11 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
+
+use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
+
 use super::{
 	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
 };
-use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr};
 
 /// Underlier type that supports bit arithmetic.
 pub trait UnderlierWithBitOps:
@@ -253,13 +255,15 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::iter::Step;
+
+	use proptest::{arbitrary::any, bits, proptest};
+
 	use super::{
 		super::small_uint::{U1, U2, U4},
 		*,
 	};
 	use crate::{BinaryField32b, Field};
-	use proptest::{arbitrary::any, bits, proptest};
-	use std::iter::Step;
 
 	#[test]
 	fn test_from_fn() {

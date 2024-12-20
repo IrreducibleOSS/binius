@@ -1,15 +1,17 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::error::Error;
+use std::{
+	iter::repeat_with,
+	ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign},
+};
+
 use binius_field::{ExtensionField, Field};
 use binius_utils::bail;
 use bytemuck::zeroed_slice_box;
 use getset::CopyGetters;
 use rand::RngCore;
-use std::{
-	iter::repeat_with,
-	ops::{Add, AddAssign, Index, IndexMut, Sub, SubAssign},
-};
+
+use super::error::Error;
 
 /// A matrix over a field.
 #[derive(Debug, Clone, PartialEq, Eq, CopyGetters)]
@@ -260,10 +262,11 @@ impl<F: Field> SubAssign<&Self> for Matrix<F> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::BinaryField32b;
 	use proptest::prelude::*;
 	use rand::{rngs::StdRng, SeedableRng};
+
+	use super::*;
 
 	proptest! {
 		#[test]

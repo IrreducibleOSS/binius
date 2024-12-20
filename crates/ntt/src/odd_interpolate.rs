@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 use binius_field::BinaryField;
 use binius_math::Matrix;
 use binius_utils::bail;
 use p3_util::log2_ceil_usize;
+
+use crate::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 
 pub struct OddInterpolate<F: BinaryField> {
 	vandermonde_inverse: Matrix<F>,
@@ -133,11 +134,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::single_threaded::SingleThreadedNTT;
+	use std::iter::repeat_with;
+
 	use binius_field::{BinaryField32b, Field};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::*;
+	use crate::single_threaded::SingleThreadedNTT;
 
 	#[test]
 	fn test_interpolate_odd() {

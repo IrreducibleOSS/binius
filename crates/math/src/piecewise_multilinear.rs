@@ -1,7 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{extrapolate_line_scalar, Error};
 use binius_field::Field;
+
+use crate::{extrapolate_line_scalar, Error};
 
 /// Evaluate a piecewise multilinear polynomial at a point, given the evaluations of the pieces.
 ///
@@ -115,12 +116,14 @@ fn fold_segment<F: Field>(segment: &mut [F], z: F) {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::{MultilinearExtension, MultilinearQuery};
+	use std::iter::repeat_with;
+
 	use binius_field::BinaryField32b;
 	use p3_util::{log2_ceil_usize, log2_strict_usize};
 	use rand::{prelude::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::*;
+	use crate::{MultilinearExtension, MultilinearQuery};
 
 	fn test_piecewise_multilinear(number_of_variables: &[usize]) {
 		type F = BinaryField32b;

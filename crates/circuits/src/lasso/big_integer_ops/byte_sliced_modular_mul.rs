@@ -1,13 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{byte_sliced_add_carryfree, byte_sliced_mul};
-use crate::{
-	builder::ConstraintSystemBuilder,
-	lasso::{
-		batch::LookupBatch,
-		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
-	},
-};
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
@@ -20,6 +12,15 @@ use binius_field::{
 };
 use binius_macros::arith_expr;
 use bytemuck::Pod;
+
+use super::{byte_sliced_add_carryfree, byte_sliced_mul};
+use crate::{
+	builder::ConstraintSystemBuilder,
+	lasso::{
+		batch::LookupBatch,
+		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
+	},
+};
 
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;

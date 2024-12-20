@@ -1,5 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
+use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
+use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_utils::bail;
+use itertools::izip;
+use tracing::instrument;
+
 use super::{common::vcs_optimal_layers_depths_iter, error::Error, QueryProof, VerificationError};
 use crate::{
 	fiat_shamir::CanSampleBits,
@@ -7,12 +15,6 @@ use crate::{
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
 	transcript::{read_u64, CanRead},
 };
-use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::bail;
-use itertools::izip;
-use std::iter;
-use tracing::instrument;
 
 /// A verifier for the FRI query phase.
 ///

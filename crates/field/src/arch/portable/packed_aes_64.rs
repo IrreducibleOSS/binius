@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use cfg_if::cfg_if;
+
 use super::{
 	packed::{impl_broadcast, PackedPrimitiveType},
 	packed_arithmetic::{alphas, impl_tower_constants},
@@ -12,7 +14,6 @@ use crate::{
 	},
 	AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 };
-use cfg_if::cfg_if;
 
 // Define 64 bit packed field types
 pub type PackedAESBinaryField8x8b = PackedPrimitiveType<u64, AESTowerField8b>;

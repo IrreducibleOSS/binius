@@ -1,5 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
+use binius_field::{Field, TowerField};
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use tracing::instrument;
+
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{
@@ -8,10 +14,6 @@ use crate::{
 	},
 	transcript::CanWrite,
 };
-use binius_field::{Field, TowerField};
-use binius_utils::{bail, sorting::is_sorted_ascending};
-use std::iter;
-use tracing::instrument;
 
 /// A sumcheck prover with a round-by-round execution interface.
 ///

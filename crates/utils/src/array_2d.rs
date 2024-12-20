@@ -1,7 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use bytemuck::{allocation::zeroed_vec, Zeroable};
 use std::ops::{AddAssign, Deref, DerefMut, Index, IndexMut};
+
+use bytemuck::{allocation::zeroed_vec, Zeroable};
 
 /// 2D array with row-major layout.
 #[derive(Debug)]

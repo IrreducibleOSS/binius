@@ -133,6 +133,10 @@ mod test_utils {
 
 #[cfg(test)]
 mod tests {
+	use std::ops::Mul;
+
+	use proptest::{arbitrary::any, proptest};
+
 	use super::test_utils::{
 		define_invert_tests, define_multiply_tests, define_square_tests,
 		define_transformation_tests,
@@ -149,8 +153,6 @@ mod tests {
 		BinaryField128bPolyval, PackedBinaryField1x128b, PackedBinaryField2x128b,
 		PackedBinaryField4x128b, PackedField,
 	};
-	use proptest::{arbitrary::any, proptest};
-	use std::ops::Mul;
 
 	fn check_get_set<const WIDTH: usize, PT>(a: [u128; WIDTH], b: [u128; WIDTH])
 	where

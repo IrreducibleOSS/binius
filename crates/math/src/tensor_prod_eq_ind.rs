@@ -1,11 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::Error;
+use std::cmp::max;
+
 use binius_field::{Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use rayon::prelude::*;
-use std::cmp::max;
+
+use crate::Error;
 
 /// Tensor Product expansion of values with partial eq indicator evaluated at extra_query_coordinates
 ///
@@ -100,12 +102,13 @@ pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::{
 		packed::{iter_packed_slice, set_packed_slice},
 		Field, PackedBinaryField4x32b,
 	};
 	use itertools::Itertools;
+
+	use super::*;
 
 	#[test]
 	fn test_tensor_prod_eq_ind() {

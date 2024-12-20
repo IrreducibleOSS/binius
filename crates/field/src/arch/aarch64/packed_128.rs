@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Mul;
+
 use super::{
 	super::portable::{
 		packed::{impl_ops_for_zero_height, PackedPrimitiveType},
@@ -21,7 +23,6 @@ use crate::{
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
 	BinaryField64b, BinaryField8b, PackedAESBinaryField16x8b,
 };
-use std::ops::Mul;
 
 // Define 128 bit packed field types
 pub type PackedBinaryField128x1b = PackedPrimitiveType<M128, BinaryField1b>;

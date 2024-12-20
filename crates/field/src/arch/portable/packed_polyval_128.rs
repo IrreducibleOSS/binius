@@ -8,16 +8,17 @@
 //!
 //! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul64.c;hb=4b6046412>
 
+use std::{
+	num::Wrapping,
+	ops::{BitXor, Mul},
+};
+
 use super::packed::{impl_broadcast, PackedPrimitiveType};
 use crate::{
 	arch::{PairwiseStrategy, ReuseMultiplyStrategy},
 	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
 	packed::PackedField,
 	BinaryField128bPolyval,
-};
-use std::{
-	num::Wrapping,
-	ops::{BitXor, Mul},
 };
 
 pub type PackedBinaryPolyval1x128b = PackedPrimitiveType<u128, BinaryField128bPolyval>;
@@ -3662,8 +3663,9 @@ static POLYVAL_NIBBLE_POW_2_N_TABLE: [[[u128; 16]; 32]; 6] = [
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use proptest::{arbitrary::any, proptest};
+
+	use super::*;
 
 	proptest! {
 		#[test]

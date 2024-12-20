@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{Field, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
 ///
@@ -71,12 +72,14 @@ impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPar
 
 #[cfg(test)]
 mod tests {
-	use super::EqIndPartialEval;
-	use crate::polynomial::MultivariatePoly;
+	use std::iter::repeat_with;
+
 	use binius_field::{BinaryField32b, PackedBinaryField4x32b, PackedField};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
 	use rand::{rngs::StdRng, SeedableRng};
-	use std::iter::repeat_with;
+
+	use super::EqIndPartialEval;
+	use crate::polynomial::MultivariatePoly;
 
 	fn test_eq_consistency_help(n_vars: usize) {
 		type F = BinaryField32b;

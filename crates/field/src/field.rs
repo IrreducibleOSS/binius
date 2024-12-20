@@ -1,16 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	arithmetic_traits::{InvertOrZero, Square},
-	as_packed_field::PackScalar,
-	underlier::WithUnderlier,
-};
-use rand::RngCore;
 use std::{
 	fmt::{Debug, Display},
 	hash::Hash,
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
+
+use rand::RngCore;
+
+use crate::{
+	arithmetic_traits::{InvertOrZero, Square},
+	as_packed_field::PackScalar,
+	underlier::WithUnderlier,
 };
 
 /// This trait is based on `ff::Field` with some unused functionality removed.

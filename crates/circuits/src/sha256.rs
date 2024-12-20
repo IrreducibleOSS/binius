@@ -1,6 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{arithmetic, builder::ConstraintSystemBuilder};
 use binius_core::{
 	oracle::{OracleId, ShiftVariant},
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
@@ -14,6 +13,8 @@ use binius_macros::arith_expr;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{pod_collect_to_vec, Pod};
 use itertools::izip;
+
+use crate::{arithmetic, builder::ConstraintSystemBuilder};
 
 const LOG_U32_BITS: usize = checked_log_2(32);
 

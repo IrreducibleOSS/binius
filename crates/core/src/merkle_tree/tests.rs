@@ -1,11 +1,13 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
+use core::slice;
+use std::iter::repeat_with;
+
 use binius_field::{BinaryField16b, BinaryField8b, Field};
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
-use core::slice;
 use rand::{rngs::StdRng, SeedableRng};
-use std::iter::repeat_with;
+
+use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
 
 #[test]
 fn test_binary_merkle_vcs_commit_prove_open_correctly() {

@@ -1,17 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
-	gpa_sumcheck::prove::GPAProver,
-	packed_field_storage::PackedFieldStorage,
-	Error, GrandProductClaim, GrandProductWitness,
-};
-use crate::{
-	composition::{BivariateProduct, IndexComposition},
-	fiat_shamir::CanSample,
-	protocols::sumcheck::{self, CompositeSumClaim},
-	transcript::CanWrite,
-};
 use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
@@ -25,6 +13,19 @@ use binius_utils::{
 	sorting::{stable_sort, unsort},
 };
 use tracing::instrument;
+
+use super::{
+	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
+	gpa_sumcheck::prove::GPAProver,
+	packed_field_storage::PackedFieldStorage,
+	Error, GrandProductClaim, GrandProductWitness,
+};
+use crate::{
+	composition::{BivariateProduct, IndexComposition},
+	fiat_shamir::CanSample,
+	protocols::sumcheck::{self, CompositeSumClaim},
+	transcript::CanWrite,
+};
 
 /// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
 ///

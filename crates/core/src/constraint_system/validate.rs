@@ -1,5 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{
+	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
+};
+use binius_hal::ComputationBackendExt;
+use binius_math::MultilinearPoly;
+use binius_utils::bail;
+
 use super::{
 	channel::{self, Boundary},
 	error::Error,
@@ -11,12 +18,6 @@ use crate::{
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
-};
-use binius_hal::ComputationBackendExt;
-use binius_math::MultilinearPoly;
-use binius_utils::bail;
 
 pub fn validate_witness<U, F>(
 	constraint_system: &ConstraintSystem<F>,
@@ -261,15 +262,16 @@ fn check_eval<F: TowerField>(
 }
 
 pub mod nonzerocheck {
+	use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+	use binius_math::MultilinearPoly;
+	use binius_utils::bail;
+	use rayon::prelude::*;
+
 	use crate::{
 		oracle::{MultilinearOracleSet, OracleId},
 		protocols::sumcheck::Error,
 		witness::MultilinearExtensionIndex,
 	};
-	use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
-	use binius_math::MultilinearPoly;
-	use binius_utils::bail;
-	use rayon::prelude::*;
 
 	pub fn validate_witness<U, F>(
 		witness: &MultilinearExtensionIndex<U, F>,

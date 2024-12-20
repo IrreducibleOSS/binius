@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
+use std::marker::PhantomData;
+
 use binius_field::{util::eq, Field, PackedField};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
-use std::marker::PhantomData;
+
+use super::error::{Error, VerificationError};
+use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {
@@ -192,6 +194,19 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::{iter, sync::Arc};
+
+	use binius_field::{
+		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
+		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable, RepackedExtension,
+	};
+	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
+	use binius_math::{
+		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearPoly,
+	};
+	use groestl_crypto::Groestl256;
+	use rand::{prelude::StdRng, SeedableRng};
+
 	use super::*;
 	use crate::{
 		fiat_shamir::{CanSample, HasherChallenger},
@@ -206,17 +221,6 @@ mod tests {
 		transparent::eq_ind::EqIndPartialEval,
 		witness::MultilinearWitness,
 	};
-	use binius_field::{
-		BinaryField128b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
-		PackedBinaryField4x32b, PackedExtension, PackedFieldIndexable, RepackedExtension,
-	};
-	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
-	use binius_math::{
-		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearPoly,
-	};
-	use groestl_crypto::Groestl256;
-	use rand::{prelude::StdRng, SeedableRng};
-	use std::{iter, sync::Arc};
 
 	fn make_regular_sumcheck_prover_for_zerocheck<'a, F, FDomain, P, Composition, M, Backend>(
 		multilinears: Vec<M>,

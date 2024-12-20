@@ -3,7 +3,6 @@
 use core::iter::IntoIterator;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::builder::witness;
 use anyhow::anyhow;
 use binius_core::{
 	constraint_system::{
@@ -20,6 +19,8 @@ use binius_core::{
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
 use binius_math::ArithExpr;
 use binius_utils::bail;
+
+use crate::builder::witness;
 
 #[derive(Default)]
 pub struct ConstraintSystemBuilder<'arena, U, F>

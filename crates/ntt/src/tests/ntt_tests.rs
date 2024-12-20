@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT};
+use std::ops::Range;
+
 use binius_field::{
 	arch::{
 		packed_16::{PackedBinaryField1x16b, PackedBinaryField2x8b},
@@ -13,7 +14,8 @@ use binius_field::{
 	PackedBinaryField8x32b, PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
-use std::ops::Range;
+
+use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT};
 
 /// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and inverse transformation of `reference_ntt` on `data`
 /// and that the result of the roundtrip is the same as the original data.

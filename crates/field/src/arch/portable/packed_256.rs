@@ -1,7 +1,6 @@
 // Copyright 2023-2024 Irreducible Inc.
 
 use super::packed_scaled::packed_scaled_field;
-
 use crate::{
 	PackedBinaryField128x1b, PackedBinaryField16x8b, PackedBinaryField1x128b,
 	PackedBinaryField2x64b, PackedBinaryField32x4b, PackedBinaryField4x32b, PackedBinaryField64x2b,

@@ -1,5 +1,18 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{
+	any::TypeId,
+	array,
+	fmt::{Debug, Display, Formatter},
+	iter::{Product, Step, Sum},
+	marker::PhantomData,
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
+
+use bytemuck::{Pod, Zeroable};
+use rand::RngCore;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+
 use super::{
 	arithmetic_traits::InvertOrZero,
 	binary_field::{binary_field, impl_field_extension, BinaryField, BinaryField1b},
@@ -18,17 +31,6 @@ use crate::{
 	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
 	RepackedExtension, TowerField,
 };
-use bytemuck::{Pod, Zeroable};
-use rand::RngCore;
-use std::{
-	any::TypeId,
-	array,
-	fmt::{Debug, Display, Formatter},
-	iter::{Product, Step, Sum},
-	marker::PhantomData,
-	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-};
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
 // that is isomorphically included into binary tower, i.e.:
@@ -292,6 +294,10 @@ impl_tower_field_conversion!(AESTowerField128b, BinaryField128b);
 
 #[cfg(test)]
 mod tests {
+	use bytes::BytesMut;
+	use proptest::{arbitrary::any, proptest};
+	use rand::thread_rng;
+
 	use super::*;
 	use crate::{
 		binary_field::tests::is_binary_field_valid_generator, deserialize_canonical,
@@ -299,10 +305,6 @@ mod tests {
 		PackedAESBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField4x32b,
 		PackedBinaryField8x32b,
 	};
-	use bytes::BytesMut;
-
-	use proptest::{arbitrary::any, proptest};
-	use rand::thread_rng;
 
 	fn check_square(f: impl Field) {
 		assert_eq!(f.square(), f * f);

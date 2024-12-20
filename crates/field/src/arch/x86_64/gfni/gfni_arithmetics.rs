@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{array, ops::Deref};
+
 use crate::{
 	arch::{
 		portable::packed::PackedPrimitiveType, x86_64::simd::simd_arithmetic::TowerSimdType,
@@ -13,7 +15,6 @@ use crate::{
 	BinaryField, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField8b, PackedField,
 	TowerField,
 };
-use std::{array, ops::Deref};
 
 #[rustfmt::skip]
 pub(super) const TOWER_TO_AES_MAP: i64 = u64::from_le_bytes([

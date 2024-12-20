@@ -6,22 +6,24 @@
 // definition.
 #![allow(clippy::multiple_bound_locations)]
 
-use super::packed_arithmetic::UnderlierWithBitConstants;
-use crate::{
-	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
-	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
-	BinaryField, PackedField,
-};
-use binius_utils::checked_arithmetics::checked_int_div;
-use bytemuck::{Pod, TransparentWrapper, Zeroable};
-use rand::RngCore;
 use std::{
 	fmt::Debug,
 	iter::{Product, Sum},
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
+
+use binius_utils::checked_arithmetics::checked_int_div;
+use bytemuck::{Pod, TransparentWrapper, Zeroable};
+use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
+
+use super::packed_arithmetic::UnderlierWithBitConstants;
+use crate::{
+	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
+	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
+	BinaryField, PackedField,
+};
 
 #[derive(PartialEq, Eq, Clone, Copy, Default, bytemuck::TransparentWrapper)]
 #[repr(transparent)]

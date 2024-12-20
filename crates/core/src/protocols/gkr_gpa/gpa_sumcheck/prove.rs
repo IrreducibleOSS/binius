@@ -1,5 +1,20 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Range;
+
+use binius_field::{
+	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+};
+use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_math::{
+	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
+};
+use binius_utils::bail;
+use itertools::izip;
+use rayon::prelude::*;
+use stackalloc::stackalloc_with_default;
+use tracing::{debug_span, instrument};
+
 use super::error::Error;
 use crate::{
 	polynomial::Error as PolynomialError,
@@ -12,19 +27,6 @@ use crate::{
 		utils::packed_from_fn_with_offset,
 	},
 };
-use binius_field::{
-	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
-};
-use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
-};
-use binius_utils::bail;
-use itertools::izip;
-use rayon::prelude::*;
-use stackalloc::stackalloc_with_default;
-use std::ops::Range;
-use tracing::{debug_span, instrument};
 
 #[derive(Debug)]
 pub struct GPAProver<'a, FDomain, P, Composition, M, Backend>

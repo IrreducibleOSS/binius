@@ -9,6 +9,20 @@
 //!  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 //!  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 
+use std::collections::HashSet;
+
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+};
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::{
+	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+};
+use binius_utils::bail;
+use rayon::prelude::*;
+
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::CanSample,
@@ -26,18 +40,6 @@ use crate::{
 	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
-};
-use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::{
-	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
-};
-use binius_utils::bail;
-use rayon::prelude::*;
-use std::collections::HashSet;
 
 /// Create oracles for the bivariate product of an inner oracle with shift indicator.
 ///

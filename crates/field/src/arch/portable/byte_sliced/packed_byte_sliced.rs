@@ -1,19 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::array;
-
 use std::{
+	array,
 	fmt::Debug,
-	iter::{Product, Sum},
+	iter::{zip, Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use bytemuck::Zeroable;
 
-use std::iter::zip;
-
 use super::{invert::invert_or_zero, multiply::mul, square::square};
-
 use crate::{
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::*,

@@ -2,13 +2,14 @@
 
 use std::slice;
 
-use super::{packed_field_storage::PackedFieldStorage, Error};
-use crate::witness::MultilinearWitness;
 use binius_field::{packed::get_packed_slice, Field, PackedField};
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use rayon::prelude::*;
 use tracing::{debug_span, instrument};
+
+use super::{packed_field_storage::PackedFieldStorage, Error};
+use crate::witness::MultilinearWitness;
 
 type LayerEvals<'a, PW> = &'a [PW];
 type LayerHalfEvals<'a, PW> = (PackedFieldStorage<'a, PW>, PackedFieldStorage<'a, PW>);

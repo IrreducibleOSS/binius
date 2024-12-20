@@ -1,21 +1,23 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	composition::{BivariateProduct, IndexComposition},
-	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{
-		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
-	},
+use std::{
+	iter::{self, repeat_n},
+	ops::{Mul, MulAssign},
 };
+
 use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{make_ntt_canonical_domain_points, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
-use std::{
-	iter::{self, repeat_n},
-	ops::{Mul, MulAssign},
+
+use crate::{
+	composition::{BivariateProduct, IndexComposition},
+	polynomial::Error as PolynomialError,
+	protocols::sumcheck::{
+		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
+	},
 };
 
 /// A univariate polynomial in Lagrange basis.
@@ -215,6 +217,27 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::{
+		iter::{self, Step},
+		sync::Arc,
+	};
+
+	use binius_field::{
+		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
+		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension,
+		PackedFieldIndexable, RepackedExtension, TowerField,
+	};
+	use binius_hal::ComputationBackend;
+	use binius_math::{
+		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+		IsomorphicEvaluationDomainFactory, MultilinearPoly,
+	};
+	use groestl_crypto::Groestl256;
+	use rand::{prelude::StdRng, SeedableRng};
+
 	use super::*;
 	use crate::{
 		composition::{IndexComposition, ProductComposition},
@@ -235,25 +258,6 @@ mod tests {
 			test_utils::generate_zero_product_multilinears,
 		},
 		transcript::{AdviceWriter, Proof, TranscriptWriter},
-	};
-	use binius_field::{
-		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
-		as_packed_field::{PackScalar, PackedType},
-		underlier::UnderlierType,
-		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
-		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension,
-		PackedFieldIndexable, RepackedExtension, TowerField,
-	};
-	use binius_hal::ComputationBackend;
-	use binius_math::{
-		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
-		IsomorphicEvaluationDomainFactory, MultilinearPoly,
-	};
-	use groestl_crypto::Groestl256;
-	use rand::{prelude::StdRng, SeedableRng};
-	use std::{
-		iter::{self, Step},
-		sync::Arc,
 	};
 
 	#[test]

@@ -1,5 +1,14 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
+
+use binius_field::{BinaryField, ExtensionField, Field, PackedField, TowerField};
+use binius_math::evaluate_piecewise_multilinear;
+use binius_ntt::NTTOptions;
+use binius_utils::bail;
+use getset::CopyGetters;
+use tracing::instrument;
+
 use super::error::{Error, VerificationError};
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
@@ -16,13 +25,6 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{CanRead, Proof},
 };
-use binius_field::{BinaryField, ExtensionField, Field, PackedField, TowerField};
-use binius_math::evaluate_piecewise_multilinear;
-use binius_ntt::NTTOptions;
-use binius_utils::bail;
-use getset::CopyGetters;
-use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
-use tracing::instrument;
 
 /// Metadata about a batch of committed multilinear polynomials.
 ///

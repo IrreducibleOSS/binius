@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::Challenger;
+use std::{cmp::min, mem};
+
 use bytes::{buf::UninitSlice, Buf, BufMut};
 use digest::{
 	core_api::{Block, BlockSizeUser},
 	Digest, FixedOutputReset, Output,
 };
-use std::{cmp::min, mem};
+
+use super::Challenger;
 
 /// Challenger type which implements `[Buf]` that has similar functionality as `[CanSample]`
 #[derive(Debug, Default)]
@@ -190,9 +192,10 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use groestl_crypto::Groestl256;
 	use rand::{thread_rng, RngCore};
+
+	use super::*;
 
 	#[test]
 	fn test_starting_sampler() {

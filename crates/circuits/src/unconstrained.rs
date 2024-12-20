@@ -1,5 +1,4 @@
 // Copyright 2024 Irreducible Inc.
-use crate::builder::ConstraintSystemBuilder;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
@@ -7,6 +6,8 @@ use binius_field::{
 use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
+
+use crate::builder::ConstraintSystemBuilder;
 
 pub fn unconstrained<U, F, FS>(
 	builder: &mut ConstraintSystemBuilder<U, F>,

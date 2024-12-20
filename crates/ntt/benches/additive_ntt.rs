@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{iter::repeat_with, mem};
+
 use binius_field::{
 	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
 	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
@@ -11,7 +13,6 @@ use criterion::{
 	Throughput,
 };
 use rand::thread_rng;
-use std::{iter::repeat_with, mem};
 
 trait BenchTransformationFunc {
 	fn run_bench<P>(

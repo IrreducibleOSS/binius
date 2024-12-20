@@ -1,5 +1,12 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::{iter, sync::Arc};
+
+use binius_field::{Field, TowerField};
+use binius_math::{MultilinearExtension, MultilinearQuery};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
+use itertools::izip;
+
 use crate::{
 	fiat_shamir::CanSample,
 	piop::PIOPSumcheckClaim,
@@ -11,11 +18,6 @@ use crate::{
 	tower::{PackedTop, TowerFamily},
 	transcript::{CanRead, Proof},
 };
-use binius_field::{Field, TowerField};
-use binius_math::{MultilinearExtension, MultilinearQuery};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
-use itertools::izip;
-use std::{iter, sync::Arc};
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;
 

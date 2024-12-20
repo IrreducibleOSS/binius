@@ -1,19 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	composition::{BivariateProduct, IndexComposition},
-	protocols::sumcheck::{
-		common::{
-			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
-		},
-		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
-		univariate::{
-			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
-		},
-		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
-		Error, VerificationError,
-	},
-};
+use std::{collections::HashMap, iter::repeat_n};
+
 use binius_field::{
 	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable, RepackedExtension, TowerField,
@@ -30,9 +18,23 @@ use itertools::izip;
 use p3_util::log2_ceil_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
-use std::{collections::HashMap, iter::repeat_n};
 use tracing::instrument;
 use transpose::transpose;
+
+use crate::{
+	composition::{BivariateProduct, IndexComposition},
+	protocols::sumcheck::{
+		common::{
+			equal_n_vars_check, immediate_switchover_heuristic, small_field_embedding_degree_check,
+		},
+		prove::{common::fold_partial_eq_ind, RegularSumcheckProver},
+		univariate::{
+			lagrange_evals_multilinear_extension, univariatizing_reduction_composite_sum_claims,
+		},
+		univariate_zerocheck::{domain_size, extrapolated_scalars_count},
+		Error, VerificationError,
+	},
+};
 
 /// Helper method to reduce the witness to skipped variables via a partial high projection.
 #[instrument(skip_all, level = "debug")]
@@ -677,15 +679,8 @@ fn extrapolated_evals_packed_len<P: PackedField>(
 
 #[cfg(test)]
 mod tests {
-	use crate::{
-		composition::{IndexComposition, ProductComposition},
-		polynomial::CompositionScalarAdapter,
-		protocols::{
-			sumcheck::prove::univariate::{domain_size, zerocheck_univariate_evals},
-			test_utils::generate_zero_product_multilinears,
-		},
-		transparent::eq_ind::EqIndPartialEval,
-	};
+	use std::{iter::Step, sync::Arc};
+
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
 		as_packed_field::{PackScalar, PackedType},
@@ -701,7 +696,16 @@ mod tests {
 	};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};
-	use std::{iter::Step, sync::Arc};
+
+	use crate::{
+		composition::{IndexComposition, ProductComposition},
+		polynomial::CompositionScalarAdapter,
+		protocols::{
+			sumcheck::prove::univariate::{domain_size, zerocheck_univariate_evals},
+			test_utils::generate_zero_product_multilinears,
+		},
+		transparent::eq_ind::EqIndPartialEval,
+	};
 
 	#[test]
 	fn ntt_extrapolate_correctness() {

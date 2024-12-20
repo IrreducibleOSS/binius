@@ -1,15 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	oracle::{MultilinearOracleSet, ShiftVariant},
-	polynomial::MultivariatePoly,
-	protocols::evalcheck::{
-		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
-		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
-	},
-	transparent::select_row::SelectRow,
-	witness::MultilinearExtensionIndex,
-};
+use std::{array, iter::repeat_with, slice};
+
 use assert_matches::assert_matches;
 use binius_field::{
 	packed::{get_packed_slice, len_packed_slice, set_packed_slice},
@@ -22,7 +14,17 @@ use binius_math::{extrapolate_line, MultilinearExtension, MultilinearPoly, Multi
 use bytemuck::cast_slice_mut;
 use itertools::Either;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
-use std::{array, iter::repeat_with, slice};
+
+use crate::{
+	oracle::{MultilinearOracleSet, ShiftVariant},
+	polynomial::MultivariatePoly,
+	protocols::evalcheck::{
+		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
+		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
+	},
+	transparent::select_row::SelectRow,
+	witness::MultilinearExtensionIndex,
+};
 
 type FExtension = BinaryField128b;
 type PExtension = PackedBinaryField1x128b;

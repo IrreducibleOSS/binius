@@ -1,10 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
+use std::{fmt::Debug, ops::Deref};
+
 use binius_field::{ExtensionField, PackedField, RepackedExtension, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly};
-use std::{fmt::Debug, ops::Deref};
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// A transparent multilinear polynomial defined as the multilinear extension over a small
 /// hypercube.

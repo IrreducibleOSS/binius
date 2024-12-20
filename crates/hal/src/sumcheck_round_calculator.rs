@@ -4,7 +4,8 @@
 //!
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
-use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
+use std::{iter, marker::PhantomData};
+
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
 use binius_math::{
 	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
@@ -14,7 +15,8 @@ use bytemuck::zeroed_vec;
 use itertools::izip;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
-use std::{iter, marker::PhantomData};
+
+use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 
 trait SumcheckMultilinearAccess<P: PackedField> {
 	/// Calculate the evaluations of a sumcheck multilinear over a subcube.

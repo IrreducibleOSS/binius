@@ -1,11 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{marker::PhantomData, ops::Deref};
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
 	Field,
 };
-use std::{marker::PhantomData, ops::Deref};
 
 /// A wrapper for containers of underlier types that dereferences as packed field slices.
 #[derive(Debug, Clone)]

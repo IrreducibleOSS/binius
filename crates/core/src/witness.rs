@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
+use std::{fmt::Debug, sync::Arc};
+
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
@@ -8,7 +9,8 @@ use binius_field::{
 };
 use binius_math::{MultilinearExtension, MultilinearExtensionBorrowed, MultilinearPoly};
 use binius_utils::bail;
-use std::{fmt::Debug, sync::Arc};
+
+use crate::{oracle::OracleId, polynomial::Error as PolynomialError};
 
 pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 'a>;
 

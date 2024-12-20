@@ -135,12 +135,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use crate::{builder::ConstraintSystemBuilder, collatz::collatz};
 	use binius_core::constraint_system::{
 		channel::{Boundary, FlushDirection},
 		validate::validate_witness,
 	};
 	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b};
+
+	use crate::{builder::ConstraintSystemBuilder, collatz::collatz};
 
 	#[test]
 	fn test_collatz() {

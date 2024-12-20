@@ -1,8 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::Error;
-use binius_field::{BinaryField, Field};
 use std::{marker::PhantomData, ops::Deref};
+
+use binius_field::{BinaryField, Field};
+
+use crate::Error;
 
 /// A trait for accessing twiddle factors in a single NTT round.
 ///
@@ -318,10 +320,11 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::{OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess, TwiddleAccess};
 	use binius_field::{BinaryField, BinaryField16b, BinaryField32b, BinaryField8b};
 	use lazy_static::lazy_static;
 	use proptest::prelude::*;
+
+	use super::{OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess, TwiddleAccess};
 
 	lazy_static! {
 		// Precomputed and OnTheFlytwiddle access objects for various binary field sizes.

@@ -1,9 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use core::arch::x86_64::*;
+
+use gfni_arithmetics::GfniType;
+
 use super::*;
 use crate::arch::x86_64::m512::M512;
-use core::arch::x86_64::*;
-use gfni_arithmetics::GfniType;
 
 impl GfniType for M512 {
 	#[inline(always)]

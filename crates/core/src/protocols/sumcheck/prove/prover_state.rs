@@ -1,12 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	polynomial::Error as PolynomialError,
-	protocols::sumcheck::{
-		common::{determine_switchovers, equal_n_vars_check, RoundCoeffs},
-		error::Error,
-	},
+use std::{
+	iter,
+	sync::atomic::{AtomicBool, Ordering},
 };
+
 use binius_field::{
 	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
 };
@@ -18,11 +16,15 @@ use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::izip;
 use rayon::prelude::*;
-use std::{
-	iter,
-	sync::atomic::{AtomicBool, Ordering},
-};
 use tracing::instrument;
+
+use crate::{
+	polynomial::Error as PolynomialError,
+	protocols::sumcheck::{
+		common::{determine_switchovers, equal_n_vars_check, RoundCoeffs},
+		error::Error,
+	},
+};
 
 pub trait SumcheckInterpolator<F: Field> {
 	/// Given evaluations of the round polynomial, interpolate and return monomial coefficients

@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+
 use anyhow::{anyhow, Error};
 use binius_core::{
 	oracle::{MultilinearOracleSet, OracleId},
@@ -13,7 +15,6 @@ use binius_field::{
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 pub struct Builder<'arena, U: PackScalar<FW>, FW: TowerField> {
 	bump: &'arena bumpalo::Bump,

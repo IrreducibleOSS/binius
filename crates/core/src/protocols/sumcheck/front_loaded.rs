@@ -1,5 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
+
+use binius_field::{Field, TowerField};
+use binius_math::{evaluate_univariate, CompositionPolyOS};
+use binius_utils::sorting::is_sorted_ascending;
+
 use super::{
 	common::batch_weighted_value,
 	error::{Error, VerificationError},
@@ -7,10 +13,6 @@ use super::{
 	RoundCoeffs, RoundProof,
 };
 use crate::{fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcript::CanRead};
-use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPolyOS};
-use binius_utils::sorting::is_sorted_ascending;
-use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
 
 #[derive(Debug)]
 enum CoeffsOrSums<F: Field> {

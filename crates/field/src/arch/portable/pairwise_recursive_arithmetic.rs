@@ -83,7 +83,6 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
-
 	use crate::test_utils::{
 		define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
 	};

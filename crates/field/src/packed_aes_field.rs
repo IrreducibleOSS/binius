@@ -407,6 +407,10 @@ mod test_utils {
 
 #[cfg(test)]
 mod tests {
+	use std::ops::Mul;
+
+	use proptest::prelude::*;
+
 	use super::{
 		test_utils::{
 			define_invert_tests, define_multiply_tests, define_square_tests,
@@ -423,8 +427,6 @@ mod tests {
 		test_utils::implements_transformation_factory,
 		PackedField,
 	};
-	use proptest::prelude::*;
-	use std::ops::Mul;
 
 	define_multiply_tests!(Mul::mul, PackedField);
 

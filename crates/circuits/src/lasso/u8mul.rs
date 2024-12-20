@@ -1,8 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::batch::LookupBatch;
-
-use crate::builder::ConstraintSystemBuilder;
 use anyhow::{ensure, Result};
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -13,6 +10,9 @@ use binius_field::{
 };
 use bytemuck::Pod;
 use itertools::izip;
+
+use super::batch::LookupBatch;
+use crate::builder::ConstraintSystemBuilder;
 
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;

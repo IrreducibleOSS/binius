@@ -1,5 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::arch::aarch64::*;
+
+use seq_macro::seq;
+
 use super::m128::M128;
 use crate::{
 	arch::{
@@ -14,8 +18,6 @@ use crate::{
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	BinaryField, TowerField,
 };
-use seq_macro::seq;
-use std::arch::aarch64::*;
 
 #[inline]
 pub fn packed_tower_16x8b_multiply(a: M128, b: M128) -> M128 {

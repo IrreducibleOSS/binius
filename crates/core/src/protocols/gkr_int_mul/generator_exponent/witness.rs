@@ -2,7 +2,6 @@
 
 use std::{array, cmp::min, slice};
 
-use crate::{protocols::gkr_gpa::Error, witness::MultilinearWitness};
 use binius_field::{
 	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, Field, PackedExtension,
 	PackedField, PackedFieldIndexable,
@@ -12,6 +11,8 @@ use rayon::{
 	prelude::{IndexedParallelIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
+
+use crate::{protocols::gkr_gpa::Error, witness::MultilinearWitness};
 
 #[allow(dead_code)]
 pub struct GeneratorExponentWitness<

@@ -1,13 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
-use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 use std::{
 	any::{Any, TypeId},
 	collections::HashMap,
 	fmt::Debug,
 	marker::PhantomData,
 };
+
+use binius_field::{ExtensionField, Field, PackedField};
+use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 
 /// Cached composition poly wrapper.
 ///
@@ -168,11 +169,10 @@ impl<F: Field> Debug for PackedFieldCache<F> {
 mod tests {
 	use std::iter::zip;
 
-	use super::*;
-
 	use binius_field::{BinaryField8b, ExtensionField, PackedBinaryField16x8b, PackedField};
 	use binius_math::{ArithExpr, CompositionPolyOS};
 
+	use super::*;
 	use crate::polynomial::{cached::CachedPoly, ArithCircuitPoly};
 
 	fn ensure_equal_batch_eval_results<P: PackedField>(

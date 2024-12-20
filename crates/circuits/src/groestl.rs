@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{builder::ConstraintSystemBuilder, transparent, unconstrained::unconstrained};
+use std::array;
+
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -11,7 +12,8 @@ use binius_field::{
 use binius_math::ArithExpr;
 use bytemuck::Pod;
 use rayon::prelude::*;
-use std::array;
+
+use crate::{builder::ConstraintSystemBuilder, transparent, unconstrained::unconstrained};
 
 pub fn groestl_p_permutation<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,

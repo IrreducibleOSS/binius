@@ -1,9 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cmp, marker::PhantomData};
+
+use binius_field::{BinaryField, PackedField, TowerField};
+
 use super::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess};
-use binius_field::{BinaryField, PackedField, TowerField};
-use std::{cmp, marker::PhantomData};
 
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
@@ -377,12 +379,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use assert_matches::assert_matches;
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedFieldIndexable,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
+
+	use super::*;
 
 	#[test]
 	fn test_additive_ntt_fails_with_field_too_small() {

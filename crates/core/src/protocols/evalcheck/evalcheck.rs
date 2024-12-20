@@ -1,12 +1,14 @@
 // Copyright 2023-2024 Irreducible Inc.
 
+use std::slice;
+
+use binius_field::{Field, TowerField};
+
 use super::error::Error;
 use crate::{
 	oracle::{CommittedId, MultilinearPolyOracle, OracleId},
 	transcript::{CanRead, CanWrite},
 };
-use binius_field::{Field, TowerField};
-use std::slice;
 
 #[derive(Debug, Clone)]
 pub struct EvalcheckMultilinearClaim<F: Field> {

@@ -1,5 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
+use proptest::prelude::*;
+
 use crate::{
 	underlier::{SmallU, WithUnderlier},
 	AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b,
@@ -15,8 +19,6 @@ use crate::{
 	PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField8x16b,
 	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedBinaryField8x8b, PackedField,
 };
-use proptest::prelude::*;
-use std::iter;
 
 #[test]
 fn test_field_text_debug() {

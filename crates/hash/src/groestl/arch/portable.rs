@@ -2,13 +2,15 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use super::groestl_table::TABLE;
+use std::array;
+
 use binius_field::{
 	arch::packed_aes_64::PackedAESBinaryField8x8b, AESTowerField8b, Field,
 	PackedAESBinaryField64x8b, PackedExtensionIndexable, PackedField,
 };
 use lazy_static::lazy_static;
-use std::array;
+
+use super::groestl_table::TABLE;
 
 const ROUND_SIZE: usize = 10;
 
@@ -154,8 +156,9 @@ impl Groestl256Core {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use std::array;
+
+	use super::*;
 
 	#[test]
 	fn test_permutation_peq() {

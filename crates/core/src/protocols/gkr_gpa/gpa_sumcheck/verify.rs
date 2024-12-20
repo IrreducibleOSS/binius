@@ -1,15 +1,17 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
+use binius_field::{util::eq, Field};
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use getset::CopyGetters;
+
 use crate::{
 	composition::{IndexComposition, TrivariateProduct},
 	protocols::sumcheck::{
 		BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, VerificationError,
 	},
 };
-use binius_field::{util::eq, Field};
-use binius_utils::{bail, sorting::is_sorted_ascending};
-use getset::CopyGetters;
-use std::iter;
 
 #[derive(Debug, CopyGetters)]
 pub struct GPASumcheckClaim<F: Field> {
@@ -115,6 +117,17 @@ pub fn verify_sumcheck_outputs<F: Field>(
 
 #[cfg(test)]
 mod tests {
+	use std::iter;
+
+	use binius_field::{
+		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
+		BinaryField8b, PackedField,
+	};
+	use binius_hal::{make_portable_backend, ComputationBackendExt};
+	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+	use groestl_crypto::Groestl256;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
+
 	use crate::{
 		composition::BivariateProduct,
 		fiat_shamir::{CanSample, HasherChallenger},
@@ -127,15 +140,6 @@ mod tests {
 		},
 		transcript::TranscriptWriter,
 	};
-	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackedType, BinaryField128b, BinaryField32b,
-		BinaryField8b, PackedField,
-	};
-	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
-	use groestl_crypto::Groestl256;
-	use rand::{rngs::StdRng, Rng, SeedableRng};
-	use std::iter;
 
 	fn generate_poly_helper<P>(
 		mut rng: impl Rng,

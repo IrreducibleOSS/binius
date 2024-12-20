@@ -1,15 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::prove::GPAProver;
-use crate::{
-	composition::BivariateProduct,
-	fiat_shamir::HasherChallenger,
-	protocols::{
-		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
-		test_utils::AddOneComposition,
-	},
-	transcript::TranscriptWriter,
-};
+use std::iter::{self, Step};
+
 use binius_field::{
 	arch::OptimalUnderlier512b,
 	as_packed_field::{PackScalar, PackedType},
@@ -24,7 +16,17 @@ use binius_math::{
 };
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
-use std::iter::{self, Step};
+
+use super::prove::GPAProver;
+use crate::{
+	composition::BivariateProduct,
+	fiat_shamir::HasherChallenger,
+	protocols::{
+		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
+		test_utils::AddOneComposition,
+	},
+	transcript::TranscriptWriter,
+};
 
 fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	n_vars: usize,

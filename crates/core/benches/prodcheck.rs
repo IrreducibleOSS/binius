@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter::repeat_with;
+
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
@@ -14,7 +16,6 @@ use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
-use std::iter::repeat_with;
 
 // Creates T(x), a multilinear with evaluations over the n-dimensional boolean hypercube
 fn create_numerator<P: PackedField>(n_vars: usize) -> MultilinearExtension<P> {

@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::Field;
+
 use crate::{
 	oracle::{BatchId, CommittedId, CompositePolyOracle, Error as OracleError, OracleId},
 	polynomial::Error as PolynomialError,
 };
-use binius_field::Field;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

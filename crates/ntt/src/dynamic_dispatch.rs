@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, MultithreadedNTT, SingleThreadedNTT};
 use binius_field::{BinaryField, PackedField};
 use binius_utils::rayon::get_log_max_threads;
+
+use crate::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, MultithreadedNTT, SingleThreadedNTT};
 
 /// How many threads to use (threads number is a power of 2).
 #[derive(Default, Debug, Clone, Copy)]
@@ -147,8 +148,9 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::BinaryField8b;
+
+	use super::*;
 
 	#[test]
 	fn test_creation() {

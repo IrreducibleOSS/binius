@@ -4,6 +4,16 @@
 //!
 //! Interfaces are derived from [`plonky2`](https://github.com/mir-protocol/plonky2).
 
+use std::{
+	fmt::Debug,
+	iter::{self, Product, Sum},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+};
+
+use binius_utils::iter::IterExtensions;
+use bytemuck::Zeroable;
+use rand::RngCore;
+
 use super::{
 	arithmetic_traits::{Broadcast, MulAlpha, Square},
 	binary_field_arithmetic::TowerFieldArithmetic,
@@ -12,14 +22,6 @@ use super::{
 use crate::{
 	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, ExtensionField, Field,
 	PackedExtension,
-};
-use binius_utils::iter::IterExtensions;
-use bytemuck::Zeroable;
-use rand::RngCore;
-use std::{
-	fmt::Debug,
-	iter::{self, Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 /// A packed field represents a vector of underlying field elements.

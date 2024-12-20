@@ -1,13 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{GrandProductClaim, GrandProductWitness};
-use crate::{
-	fiat_shamir::HasherChallenger,
-	oracle::MultilinearOracleSet,
-	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
-	transcript::TranscriptWriter,
-	witness::MultilinearExtensionIndex,
-};
+use std::iter::{repeat_with, Step};
+
 use binius_field::{
 	arch::{OptimalUnderlier256b, OptimalUnderlier512b},
 	as_packed_field::{PackScalar, PackedType},
@@ -20,7 +14,15 @@ use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::zeroed_vec;
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
-use std::iter::{repeat_with, Step};
+
+use super::{GrandProductClaim, GrandProductWitness};
+use crate::{
+	fiat_shamir::HasherChallenger,
+	oracle::MultilinearOracleSet,
+	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
+	transcript::TranscriptWriter,
+	witness::MultilinearExtensionIndex,
+};
 
 fn generate_poly_helper<P, F>(
 	rng: &mut StdRng,

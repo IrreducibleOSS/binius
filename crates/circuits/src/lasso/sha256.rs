@@ -2,11 +2,6 @@
 
 use std::marker::PhantomData;
 
-use crate::{
-	builder::ConstraintSystemBuilder,
-	pack::pack,
-	sha256::{rotate_and_xor, u32const_repeating, RotateRightType, INIT, ROUND_CONSTS_K},
-};
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -19,6 +14,11 @@ use bytemuck::Pod;
 use itertools::izip;
 
 use super::{lasso::lasso, u32add::SeveralU32add};
+use crate::{
+	builder::ConstraintSystemBuilder,
+	pack::pack,
+	sha256::{rotate_and_xor, u32const_repeating, RotateRightType, INIT, ROUND_CONSTS_K},
+};
 
 pub const CH_MAJ_T_LOG_SIZE: usize = 12;
 

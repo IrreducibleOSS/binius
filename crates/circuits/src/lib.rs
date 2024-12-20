@@ -21,27 +21,6 @@ pub mod vision;
 mod tests {
 	use std::array;
 
-	use crate::{
-		arithmetic, bitwise,
-		builder::ConstraintSystemBuilder,
-		groestl::groestl_p_permutation,
-		keccakf::{keccakf, KeccakfState},
-		lasso::{
-			self,
-			batch::LookupBatch,
-			big_integer_ops::byte_sliced_test_utils::{
-				test_bytesliced_add, test_bytesliced_add_carryfree,
-				test_bytesliced_double_conditional_increment, test_bytesliced_modular_mul,
-				test_bytesliced_mul,
-			},
-			lookups,
-			u32add::SeveralU32add,
-		},
-		sha256::sha256,
-		u32fib::u32fib,
-		unconstrained::unconstrained,
-		vision::vision_permutation,
-	};
 	use binius_core::{
 		constraint_system::{
 			self,
@@ -66,6 +45,28 @@ mod tests {
 	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 	use sha2::{compress256, digest::generic_array::GenericArray};
+
+	use crate::{
+		arithmetic, bitwise,
+		builder::ConstraintSystemBuilder,
+		groestl::groestl_p_permutation,
+		keccakf::{keccakf, KeccakfState},
+		lasso::{
+			self,
+			batch::LookupBatch,
+			big_integer_ops::byte_sliced_test_utils::{
+				test_bytesliced_add, test_bytesliced_add_carryfree,
+				test_bytesliced_double_conditional_increment, test_bytesliced_modular_mul,
+				test_bytesliced_mul,
+			},
+			lookups,
+			u32add::SeveralU32add,
+		},
+		sha256::sha256,
+		u32fib::u32fib,
+		unconstrained::unconstrained,
+		vision::vision_permutation,
+	};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;

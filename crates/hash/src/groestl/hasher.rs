@@ -2,7 +2,8 @@
 
 //! This module implements the 256-bit variant of [Grøstl](https://www.groestl.info/Groestl.pdf)
 
-use super::{super::hasher::Hasher, arch::Groestl256Core};
+use std::{cmp, marker::PhantomData, mem::MaybeUninit, slice};
+
 use binius_field::{
 	arch::OptimalUnderlier256b,
 	as_packed_field::{PackScalar, PackedType},
@@ -12,7 +13,8 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
-use std::{cmp, marker::PhantomData, mem::MaybeUninit, slice};
+
+use super::{super::hasher::Hasher, arch::Groestl256Core};
 
 /// The type of output digest for `Grøstl256` over `F` which should be isomorphic to `AESTowerField8b`
 pub type GroestlDigest<F> = PackedType<OptimalUnderlier256b, F>;
@@ -269,14 +271,16 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::{HashDigest, HasherDigest};
+	use std::array;
+
 	use binius_field::{
 		linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
 		PackedBinaryField32x8b, PackedBinaryField64x8b,
 	};
 	use rand::thread_rng;
-	use std::array;
+
+	use super::*;
+	use crate::{HashDigest, HasherDigest};
 
 	#[test]
 	fn test_groestl_digest_compression() {

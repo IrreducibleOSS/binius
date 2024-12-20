@@ -1,5 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
+use super::packed::PackedPrimitiveType;
 use crate::{
 	arch::PairwiseTableStrategy,
 	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedMulAlpha, TaggedSquare},
@@ -7,8 +8,6 @@ use crate::{
 	underlier::UnderlierType,
 	AESTowerField8b, BinaryField2b, BinaryField4b, BinaryField8b,
 };
-
-use super::packed::PackedPrimitiveType;
 
 impl<U: UnderlierType> TaggedMul<PairwiseTableStrategy> for PackedPrimitiveType<U, BinaryField2b>
 where
@@ -358,7 +357,6 @@ impl_unary_ops!(TaggedInvertOrZero, invert_or_zero, AES_TOWER_8B_INVERT_MAP, AES
 #[cfg(test)]
 mod tests {
 	use super::*;
-
 	use crate::test_utils::{
 		define_invert_tests, define_mul_alpha_tests, define_multiply_tests, define_square_tests,
 	};

@@ -1,5 +1,19 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::iter::{repeat_with, Step};
+
+use binius_field::{
+	BinaryField, BinaryField16b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b,
+	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+};
+use binius_hal::make_portable_backend;
+use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_math::{
+	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+};
+use groestl_crypto::Groestl256;
+use rand::{rngs::StdRng, Rng, SeedableRng};
+
 use super::{
 	prove,
 	prove::commit,
@@ -15,18 +29,6 @@ use crate::{
 	transcript::{AdviceWriter, CanRead, CanWrite, Proof, TranscriptWriter},
 	transparent,
 };
-use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b,
-	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
-use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
-use binius_math::{
-	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-};
-use groestl_crypto::Groestl256;
-use rand::{rngs::StdRng, Rng, SeedableRng};
-use std::iter::{repeat_with, Step};
 
 const SECURITY_BITS: usize = 32;
 

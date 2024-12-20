@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
+use binius_utils::checked_arithmetics::checked_int_div;
+use rayon::prelude::*;
+
 use crate::{
 	packed::{get_packed_slice_unchecked, iter_packed_slice},
 	ExtensionField, Field, PackedField,
 };
-use binius_utils::checked_arithmetics::checked_int_div;
-use rayon::prelude::*;
-use std::iter;
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
 pub fn inner_product_unchecked<F, FE>(

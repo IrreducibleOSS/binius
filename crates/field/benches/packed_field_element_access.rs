@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::array;
+
 use binius_field::{
 	PackedBinaryField128x1b, PackedBinaryField16x32b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField256x1b, PackedBinaryField2x128b,
@@ -14,7 +16,6 @@ use rand::{
 	distributions::{Distribution, Uniform},
 	thread_rng,
 };
-use std::array;
 
 const BATCH_SIZE: usize = 32;
 

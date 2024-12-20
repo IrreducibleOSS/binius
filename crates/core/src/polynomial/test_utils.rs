@@ -1,7 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::MultivariatePoly;
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+
+use crate::polynomial::MultivariatePoly;
 
 pub fn hypercube_evals_from_oracle<F: Field>(oracle: &dyn MultivariatePoly<F>) -> Vec<F> {
 	(0..(1 << oracle.n_vars()))

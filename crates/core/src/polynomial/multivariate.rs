@@ -1,6 +1,7 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use super::error::Error;
+use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
+
 use binius_field::{Field, PackedField};
 use binius_math::{
 	ArithExpr, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
@@ -8,7 +9,8 @@ use binius_math::{
 use binius_utils::bail;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
-use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
+
+use super::error::Error;
 
 /// A multivariate polynomial over a binary tower field.
 ///

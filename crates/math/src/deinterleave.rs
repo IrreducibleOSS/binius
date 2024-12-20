@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::iter;
+
 use binius_field::PackedField;
 use itertools::Either;
-use std::iter;
 
 /// Given a slice of packed fields representing `2^log_scalar_count` scalars, returns an iterator
 /// that yields pairs of packed fields that can be unzipped into a deinterleaved representation

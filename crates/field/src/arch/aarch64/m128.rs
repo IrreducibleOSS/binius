@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
-use bytemuck::{Pod, Zeroable};
-use rand::RngCore;
-use seq_macro::seq;
 use std::{
 	arch::aarch64::*,
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Shl, Shr},
 };
+
+use bytemuck::{Pod, Zeroable};
+use derive_more::Not;
+use rand::RngCore;
+use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use super::super::portable::{
@@ -21,7 +23,6 @@ use crate::{
 	},
 	BinaryField,
 };
-use derive_more::Not;
 
 /// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Pod, Zeroable, Not)]

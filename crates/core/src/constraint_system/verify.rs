@@ -1,5 +1,19 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{cmp::Reverse, iter};
+
+use binius_field::{
+	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
+};
+use binius_hash::Hasher;
+use binius_math::{ArithExpr, CompositionPolyOS};
+use binius_utils::bail;
+use itertools::{izip, multiunzip, Itertools};
+use p3_symmetric::PseudoCompressionFunction;
+use p3_util::log2_ceil_usize;
+use tracing::instrument;
+
 use super::{
 	channel::Boundary,
 	error::{Error, VerificationError},
@@ -32,18 +46,6 @@ use crate::{
 	transcript::{AdviceReader, CanRead, Proof as ProofReader, TranscriptReader},
 	transparent::{eq_ind::EqIndPartialEval, step_down},
 };
-use binius_field::{
-	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
-	TowerField,
-};
-use binius_hash::Hasher;
-use binius_math::{ArithExpr, CompositionPolyOS};
-use binius_utils::bail;
-use itertools::{izip, multiunzip, Itertools};
-use p3_symmetric::PseudoCompressionFunction;
-use p3_util::log2_ceil_usize;
-use std::{cmp::Reverse, iter};
-use tracing::instrument;
 
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]

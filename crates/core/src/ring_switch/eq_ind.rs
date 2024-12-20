@@ -1,10 +1,7 @@
 // Copyright 2024 Irreducible, Inc
 
-use super::error::Error;
-use crate::{
-	polynomial::{Error as PolynomialError, MultivariatePoly},
-	tensor_algebra::TensorAlgebra,
-};
+use std::{iter, marker::PhantomData, sync::Arc};
+
 use binius_field::{
 	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable, TowerField,
@@ -13,7 +10,12 @@ use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use rayon::prelude::*;
-use std::{iter, marker::PhantomData, sync::Arc};
+
+use super::error::Error;
+use crate::{
+	polynomial::{Error as PolynomialError, MultivariatePoly},
+	tensor_algebra::TensorAlgebra,
+};
 
 /// The multilinear function $A$ from [DP24] Section 5.
 ///
@@ -123,12 +125,13 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use binius_field::{BinaryField128b, BinaryField8b};
 	use binius_hal::make_portable_backend;
 	use binius_math::MultilinearQuery;
 	use iter::repeat_with;
 	use rand::{prelude::StdRng, SeedableRng};
+
+	use super::*;
 
 	#[test]
 	fn test_evaluation_consistency() {

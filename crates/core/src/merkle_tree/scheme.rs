@@ -1,18 +1,20 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{
-	errors::{Error, VerificationError},
-	merkle_tree_vcs::MerkleTreeScheme,
+use std::{
+	fmt::Debug,
+	marker::PhantomData,
+	mem::{self},
 };
+
 use binius_field::PackedField;
 use binius_hash::Hasher;
 use binius_utils::bail;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
-use std::{
-	fmt::Debug,
-	marker::PhantomData,
-	mem::{self},
+
+use super::{
+	errors::{Error, VerificationError},
+	merkle_tree_vcs::MerkleTreeScheme,
 };
 
 pub struct BinaryMerkleTreeScheme<D, H, C> {

@@ -2,8 +2,6 @@
 
 use std::marker::PhantomData;
 
-use super::lasso::lasso;
-use crate::{builder::ConstraintSystemBuilder, pack::pack};
 use anyhow::Result;
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
@@ -14,6 +12,9 @@ use binius_field::{
 };
 use bytemuck::Pod;
 use itertools::izip;
+
+use super::lasso::lasso;
+use crate::{builder::ConstraintSystemBuilder, pack::pack};
 
 const ADD_T_LOG_SIZE: usize = 17;
 

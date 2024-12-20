@@ -7,9 +7,8 @@ use binius_field::{
 	ExtensionField, PackedFieldIndexable, TowerField,
 };
 
-use crate::builder::ConstraintSystemBuilder;
-
 use super::lasso::lasso;
+use crate::builder::ConstraintSystemBuilder;
 pub struct LookupBatch {
 	lookup_us: Vec<OracleId>,
 	u_to_t_mappings: Vec<Vec<usize>>,

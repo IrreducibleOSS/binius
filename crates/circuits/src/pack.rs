@@ -1,11 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::builder::ConstraintSystemBuilder;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
 };
+
+use crate::builder::ConstraintSystemBuilder;
 
 pub fn pack<U, F, FInput, FOutput>(
 	oracle_id: OracleId,

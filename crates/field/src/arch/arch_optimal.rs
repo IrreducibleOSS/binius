@@ -1,10 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+use cfg_if::cfg_if;
+
 use crate::{
 	as_packed_field::{PackScalar, PackedType},
 	Field, PackedField,
 };
-use cfg_if::cfg_if;
 
 pub trait ArchOptimal: Field {
 	type OptimalThroughputPacked: PackedField<Scalar = Self>;

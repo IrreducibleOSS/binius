@@ -2,12 +2,14 @@
 
 mod error;
 
-use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
+use std::slice;
+
 use binius_field::{deserialize_canonical, serialize_canonical, PackedField, TowerField};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
-use std::slice;
 use tracing::warn;
+
+use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
 
 /// Writable(Prover) transcript over some Challenger that `CanWrite` and `CanSample<F: TowerField>`
 ///
@@ -398,14 +400,15 @@ pub fn write_u64<Transcript: CanWrite>(transcript: &mut Transcript, n: u64) {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::fiat_shamir::HasherChallenger;
 	use binius_field::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField8b, BinaryField128b,
 		BinaryField128bPolyval, BinaryField32b, BinaryField64b, BinaryField8b,
 	};
 	use groestl_crypto::Groestl256;
 	use rand::{thread_rng, RngCore};
+
+	use super::*;
+	use crate::fiat_shamir::HasherChallenger;
 
 	#[test]
 	fn test_transcripting() {

@@ -1,5 +1,13 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::{iter, sync::Arc};
+
+use binius_field::{packed::iter_packed_slice, PackedField, PackedFieldIndexable, TowerField};
+use binius_hal::{ComputationBackend, ComputationBackendExt};
+use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
+use rayon::prelude::*;
+
 use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
 	error::Error,
@@ -13,12 +21,6 @@ use crate::{
 	transcript::{CanWrite, Proof},
 	witness::MultilinearWitness,
 };
-use binius_field::{packed::iter_packed_slice, PackedField, PackedFieldIndexable, TowerField};
-use binius_hal::{ComputationBackend, ComputationBackendExt};
-use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
-use rayon::prelude::*;
-use std::{iter, sync::Arc};
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;
 

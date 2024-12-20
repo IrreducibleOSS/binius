@@ -1,7 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
 use super::packed_scaled::packed_scaled_field;
-
 use crate::{
 	PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField2x64b,
 	PackedAESBinaryField4x32b, PackedAESBinaryField8x16b,

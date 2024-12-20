@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use core::arch::x86_64::*;
+
 use super::simd_arithmetic::TowerSimdType;
 use crate::{arch::x86_64::m128::M128, BinaryField};
-use core::arch::x86_64::*;
 
 impl TowerSimdType for M128 {
 	#[inline(always)]

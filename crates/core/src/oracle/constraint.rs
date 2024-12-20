@@ -1,12 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{Error, MultilinearOracleSet, MultilinearPolyOracle, OracleId};
+use core::iter::IntoIterator;
+use std::sync::Arc;
+
 use binius_field::{Field, TowerField};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
-use core::iter::IntoIterator;
 use itertools::Itertools;
-use std::sync::Arc;
+
+use super::{Error, MultilinearOracleSet, MultilinearPolyOracle, OracleId};
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.

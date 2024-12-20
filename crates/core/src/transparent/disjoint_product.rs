@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::Field;
 use binius_utils::bail;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// Represents a product of two multilinear polynomials over disjoint variables.
 #[derive(Debug)]

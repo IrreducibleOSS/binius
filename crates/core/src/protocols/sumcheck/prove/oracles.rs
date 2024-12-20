@@ -1,5 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_math::EvaluationDomainFactory;
+use binius_utils::bail;
+
 use super::{RegularSumcheckProver, UnivariateZerocheck};
 use crate::{
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet},
@@ -9,14 +18,6 @@ use crate::{
 	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
-};
-use binius_hal::ComputationBackend;
-use binius_math::EvaluationDomainFactory;
-use binius_utils::bail;
 
 pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZerocheck<
 	'a,

@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
 use core::slice;
-use rayon::prelude::*;
 use std::ops::{Index, IndexMut, Range};
+
+use rayon::prelude::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -134,8 +135,9 @@ impl<T> IndexMut<(usize, usize)> for StridedArray2DViewMut<'_, T> {
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use std::array;
+
+	use super::*;
 
 	#[test]
 	fn test_indexing() {

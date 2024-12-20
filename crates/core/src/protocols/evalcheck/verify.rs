@@ -1,5 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::mem;
+
+use binius_field::{util::inner_product_unchecked, TowerField};
+use binius_math::extrapolate_line_scalar;
+use getset::{Getters, MutGetters};
+use tracing::instrument;
+
 use super::{
 	error::{Error, VerificationError},
 	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
@@ -11,11 +18,6 @@ use crate::oracle::{
 	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
 	MultilinearPolyOracle, ProjectionVariant,
 };
-use binius_field::{util::inner_product_unchecked, TowerField};
-use binius_math::extrapolate_line_scalar;
-use getset::{Getters, MutGetters};
-use std::mem;
-use tracing::instrument;
 
 /// A mutable verifier state.
 ///

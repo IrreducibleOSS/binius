@@ -1,5 +1,26 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{marker::PhantomData, ops::Range, sync::Arc};
+
+use binius_field::{
+	packed::iter_packed_slice,
+	util::{eq, powers},
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
+};
+use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_math::{
+	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
+	MultilinearPoly, MultilinearQuery,
+};
+use binius_utils::bail;
+use bytemuck::zeroed_vec;
+use getset::Getters;
+use itertools::izip;
+use rayon::prelude::*;
+use stackalloc::stackalloc_with_default;
+use tracing::instrument;
+
 use crate::{
 	polynomial::{Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
@@ -18,25 +39,6 @@ use crate::{
 	},
 	witness::MultilinearWitness,
 };
-use binius_field::{
-	packed::iter_packed_slice,
-	util::{eq, powers},
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
-	TowerField,
-};
-use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
-	MultilinearPoly, MultilinearQuery,
-};
-use binius_utils::bail;
-use bytemuck::zeroed_vec;
-use getset::Getters;
-use itertools::izip;
-use rayon::prelude::*;
-use stackalloc::stackalloc_with_default;
-use std::{marker::PhantomData, ops::Range, sync::Arc};
-use tracing::instrument;
 
 pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],

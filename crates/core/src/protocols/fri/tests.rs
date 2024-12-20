@@ -1,17 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::to_par_scalar_big_chunks;
-use crate::{
-	fiat_shamir::{CanSample, HasherChallenger},
-	linear_code::LinearCode,
-	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
-	protocols::fri::{
-		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
-		FoldRoundOutput,
-	},
-	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{AdviceWriter, CanRead, CanWrite, TranscriptWriter},
-};
+use std::{iter::repeat_with, vec};
+
 use binius_field::{
 	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
 	as_packed_field::{PackScalar, PackedType},
@@ -26,7 +16,19 @@ use binius_ntt::NTTOptions;
 use groestl_crypto::Groestl256;
 use rand::prelude::*;
 use rayon::prelude::ParallelIterator;
-use std::{iter::repeat_with, vec};
+
+use super::to_par_scalar_big_chunks;
+use crate::{
+	fiat_shamir::{CanSample, HasherChallenger},
+	linear_code::LinearCode,
+	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
+	protocols::fri::{
+		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
+		FoldRoundOutput,
+	},
+	reed_solomon::reed_solomon::ReedSolomonCode,
+	transcript::{AdviceWriter, CanRead, CanWrite, TranscriptWriter},
+};
 
 fn test_commit_prove_verify_success<U, F, FA>(
 	log_dimension: usize,

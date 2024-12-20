@@ -1,15 +1,17 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	linear_code::LinearCode, merkle_tree::MerkleTreeScheme, protocols::fri::Error,
-	reed_solomon::reed_solomon::ReedSolomonCode,
-};
+use std::marker::PhantomData;
+
 use binius_field::{util::inner_product_unchecked, BinaryField, ExtensionField, PackedField};
 use binius_math::extrapolate_line_scalar;
 use binius_ntt::AdditiveNTT;
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use std::marker::PhantomData;
+
+use crate::{
+	linear_code::LinearCode, merkle_tree::MerkleTreeScheme, protocols::fri::Error,
+	reed_solomon::reed_solomon::ReedSolomonCode,
+};
 
 /// Calculate fold of `values` at `index` with `r` random coefficient.
 ///
@@ -355,10 +357,11 @@ pub fn estimate_optimal_arity(
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 	use assert_matches::assert_matches;
 	use binius_field::{BinaryField128b, BinaryField32b};
 	use binius_ntt::NTTOptions;
+
+	use super::*;
 
 	#[test]
 	fn test_calculate_n_test_queries() {

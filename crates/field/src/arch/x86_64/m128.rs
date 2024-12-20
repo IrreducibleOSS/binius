@@ -1,5 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::{
+	arch::x86_64::*,
+	array,
+	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
+};
+
+use bytemuck::{must_cast, Pod, Zeroable};
+use rand::{Rng, RngCore};
+use seq_macro::seq;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+
 use crate::{
 	arch::{
 		binary_utils::{as_array_mut, make_func_to_i8},
@@ -17,15 +28,6 @@ use crate::{
 	},
 	BinaryField,
 };
-use bytemuck::{must_cast, Pod, Zeroable};
-use rand::{Rng, RngCore};
-use seq_macro::seq;
-use std::{
-	arch::x86_64::*,
-	array,
-	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, Shr},
-};
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 /// 128-bit value that is used for 128-bit SIMD operations
 #[derive(Copy, Clone)]
@@ -873,9 +875,10 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 
 #[cfg(test)]
 mod tests {
+	use proptest::{arbitrary::any, proptest};
+
 	use super::*;
 	use crate::underlier::single_element_mask_bits;
-	use proptest::{arbitrary::any, proptest};
 
 	fn check_roundtrip<T>(val: M128)
 	where

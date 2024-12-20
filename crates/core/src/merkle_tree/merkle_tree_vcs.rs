@@ -1,7 +1,8 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::errors::Error;
 use rayon::iter::IndexedParallelIterator;
+
+use super::errors::Error;
 
 /// A Merkle tree commitment.
 ///

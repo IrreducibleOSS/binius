@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::error::Error;
+use std::ops::{Add, AddAssign, Mul, MulAssign};
+
 use binius_field::{
 	util::{inner_product_unchecked, powers},
 	ExtensionField, Field, PackedField,
@@ -8,8 +9,9 @@ use binius_field::{
 use binius_math::{CompositionPolyOS, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
-use std::ops::{Add, AddAssign, Mul, MulAssign};
 use tracing::instrument;
+
+use super::error::Error;
 
 /// A claim about the sum of the values of a multilinear composite polynomial over the boolean
 /// hypercube.

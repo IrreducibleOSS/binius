@@ -103,6 +103,8 @@ where
 
 #[cfg(test)]
 mod tests {
+	use proptest::prelude::*;
+
 	use crate::{
 		ext_base_mul, ext_base_mul_par,
 		packed::{get_packed_slice, set_packed_slice},
@@ -110,7 +112,6 @@ mod tests {
 		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x16b,
 		PackedBinaryField2x128b, PackedBinaryField32x8b, PackedField,
 	};
-	use proptest::prelude::*;
 
 	fn strategy_8b_scalars() -> impl Strategy<Value = [BinaryField8b; 32]> {
 		any::<[<BinaryField8b as WithUnderlier>::Underlier; 32]>()

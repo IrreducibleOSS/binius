@@ -1,6 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::builder::ConstraintSystemBuilder;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
@@ -10,6 +9,8 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use bytemuck::Pod;
+
+use crate::builder::ConstraintSystemBuilder;
 
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;

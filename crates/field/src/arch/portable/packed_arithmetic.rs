@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Deref;
+
 use crate::{
 	arch::PackedStrategy,
 	arithmetic_traits::{
@@ -12,7 +14,6 @@ use crate::{
 	underlier::{UnderlierType, UnderlierWithBitOps, WithUnderlier},
 	PackedExtension, PackedField, TowerField,
 };
-use std::ops::Deref;
 
 pub trait UnderlierWithBitConstants: UnderlierWithBitOps
 where
@@ -392,11 +393,11 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-
-	use rand::thread_rng;
 	use std::fmt::Debug;
 
+	use rand::thread_rng;
+
+	use super::*;
 	use crate::{
 		arch::portable::packed_128::{
 			PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x64b,
@@ -407,9 +408,6 @@ mod tests {
 			define_invert_tests, define_mul_alpha_tests, define_multiply_tests,
 			define_square_tests, define_transformation_tests,
 		},
-	};
-
-	use crate::{
 		BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
 		BinaryField64b, BinaryField8b,
 	};

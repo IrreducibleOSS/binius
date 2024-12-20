@@ -1,6 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::{underlier_with_bit_ops::UnderlierWithBitOps, Random, UnderlierType};
+use std::{
+	fmt::{Debug, Display, LowerHex},
+	hash::{Hash, Hasher},
+	ops::{Not, Shl, Shr},
+};
+
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
@@ -8,12 +13,9 @@ use rand::{
 	distributions::{Distribution, Uniform},
 	RngCore,
 };
-use std::{
-	fmt::{Debug, Display, LowerHex},
-	hash::{Hash, Hasher},
-	ops::{Not, Shl, Shr},
-};
 use subtle::{ConditionallySelectable, ConstantTimeEq};
+
+use super::{underlier_with_bit_ops::UnderlierWithBitOps, Random, UnderlierType};
 
 /// Unsigned type with a size strictly less than 8 bits.
 #[derive(

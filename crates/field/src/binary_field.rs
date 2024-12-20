@@ -1,16 +1,5 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use super::{
-	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
-};
-use crate::{
-	underlier::{SmallU, U1, U2, U4},
-	Field,
-};
-use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
-use bytemuck::{Pod, Zeroable};
-use bytes::{Buf, BufMut};
-use rand::RngCore;
 use std::{
 	any::TypeId,
 	array,
@@ -18,7 +7,20 @@ use std::{
 	iter::{Product, Step, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
+
+use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
+use bytemuck::{Pod, Zeroable};
+use bytes::{Buf, BufMut};
+use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
+
+use super::{
+	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
+};
+use crate::{
+	underlier::{SmallU, U1, U2, U4},
+	Field,
+};
 
 /// A finite field with characteristic 2.
 pub trait BinaryField: ExtensionField<BinaryField1b> {
@@ -898,12 +900,13 @@ impl From<BinaryField4b> for u8 {
 
 #[cfg(test)]
 pub(crate) mod tests {
+	use bytes::BytesMut;
+	use proptest::prelude::*;
+
 	use super::{
 		BinaryField16b as BF16, BinaryField1b as BF1, BinaryField2b as BF2, BinaryField4b as BF4,
 		BinaryField64b as BF64, BinaryField8b as BF8, *,
 	};
-	use bytes::BytesMut;
-	use proptest::prelude::*;
 
 	#[test]
 	fn test_gf2_add() {

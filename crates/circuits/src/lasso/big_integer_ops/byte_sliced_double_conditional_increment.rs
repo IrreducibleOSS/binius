@@ -1,9 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::{
-	builder::ConstraintSystemBuilder,
-	lasso::{batch::LookupBatch, u8_double_conditional_increment},
-};
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
@@ -15,6 +11,11 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use bytemuck::Pod;
+
+use crate::{
+	builder::ConstraintSystemBuilder,
+	lasso::{batch::LookupBatch, u8_double_conditional_increment},
+};
 
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;

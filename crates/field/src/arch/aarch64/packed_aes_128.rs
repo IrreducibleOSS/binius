@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Mul;
+
 use super::{
 	m128::M128,
 	simd_arithmetic::{
@@ -25,7 +27,6 @@ use crate::{
 	underlier::WithUnderlier,
 	PackedBinaryField16x8b,
 };
-use std::ops::Mul;
 
 // Define 128 bit packed field types
 pub type PackedAESBinaryField16x8b = PackedPrimitiveType<M128, AESTowerField8b>;

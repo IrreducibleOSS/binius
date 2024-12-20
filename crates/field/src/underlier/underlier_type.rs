@@ -1,11 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::fmt::Debug;
+
 use bytemuck::{NoUninit, Zeroable};
 use rand::{
 	distributions::{Distribution, Standard},
 	Rng, RngCore,
 };
-use std::fmt::Debug;
 use subtle::ConstantTimeEq;
 
 /// Primitive integer underlying a binary field or packed binary field implementation.

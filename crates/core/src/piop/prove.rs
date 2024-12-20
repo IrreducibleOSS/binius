@@ -1,5 +1,19 @@
 // Copyright 2024 Irreducible, Inc
 
+use binius_field::{
+	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_math::{
+	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+};
+use binius_ntt::{NTTOptions, ThreadingSettings};
+use binius_utils::{bail, sorting::is_sorted_ascending};
+use either::Either;
+use itertools::{chain, Itertools};
+use rayon::{iter::IntoParallelIterator, prelude::*};
+
 use super::{
 	error::Error,
 	verify::{make_sumcheck_claim_descs, PIOPSumcheckClaim},
@@ -23,19 +37,6 @@ use crate::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 	transcript::{CanWrite, Proof},
 };
-use binius_field::{
-	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
-};
-use binius_hal::ComputationBackend;
-use binius_math::{
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-};
-use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, sorting::is_sorted_ascending};
-use either::Either;
-use itertools::{chain, Itertools};
-use rayon::{iter::IntoParallelIterator, prelude::*};
 
 // ## Preconditions
 //

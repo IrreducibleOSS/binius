@@ -2,7 +2,6 @@
 
 use std::array;
 
-use crate::{builder::ConstraintSystemBuilder, transparent::step_down};
 use anyhow::anyhow;
 use binius_core::{
 	oracle::{OracleId, ProjectionVariant, ShiftVariant},
@@ -15,6 +14,8 @@ use binius_field::{
 };
 use binius_macros::arith_expr;
 use bytemuck::{pod_collect_to_vec, Pod};
+
+use crate::{builder::ConstraintSystemBuilder, transparent::step_down};
 
 #[derive(Default, Clone, Copy)]
 pub struct KeccakfState(pub [u64; STATE_SIZE]);

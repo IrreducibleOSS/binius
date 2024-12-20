@@ -1,13 +1,15 @@
 // Copyright 2024 Irreducible Inc.
 
-use super::errors::Error;
+use std::{fmt::Debug, mem::MaybeUninit};
+
 use binius_hash::Hasher;
 use binius_utils::bail;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 use rayon::{prelude::*, slice::ParallelSlice};
-use std::{fmt::Debug, mem::MaybeUninit};
 use tracing::instrument;
+
+use super::errors::Error;
 
 /// A binary Merkle tree that commits batches of vectors.
 ///

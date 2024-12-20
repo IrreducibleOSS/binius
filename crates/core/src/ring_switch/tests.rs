@@ -1,5 +1,25 @@
 // Copyright 2024 Irreducible, Inc
 
+use std::{
+	cmp::Ordering,
+	iter::{repeat_with, Step},
+};
+
+use binius_field::{
+	arch::OptimalUnderlier128b,
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+};
+use binius_hal::make_portable_backend;
+use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_math::{
+	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
+};
+use groestl_crypto::Groestl256;
+use rand::prelude::*;
+
 use super::{
 	common::EvalClaimSystem,
 	prove,
@@ -15,24 +35,6 @@ use crate::{
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
 	transcript::{AdviceWriter, CanRead, CanWrite, Proof, TranscriptWriter},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
-};
-use binius_field::{
-	arch::OptimalUnderlier128b,
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
-};
-use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
-use binius_math::{
-	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
-};
-use groestl_crypto::Groestl256;
-use rand::prelude::*;
-use std::{
-	cmp::Ordering,
-	iter::{repeat_with, Step},
 };
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;

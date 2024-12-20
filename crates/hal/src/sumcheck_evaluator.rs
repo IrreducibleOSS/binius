@@ -1,8 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
+use std::ops::Range;
+
 use binius_field::{Field, PackedField};
 use binius_math::CompositionPolyOS;
-use std::ops::Range;
 
 /// Evaluations of a polynomial at a set of evaluation points.
 #[derive(Debug, Clone)]

@@ -1,6 +1,7 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
+use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
+
 use binius_field::{
 	packed::{
 		get_packed_slice, get_packed_slice_unchecked, set_packed_slice, set_packed_slice_unchecked,
@@ -9,7 +10,8 @@ use binius_field::{
 };
 use binius_utils::bail;
 use rayon::prelude::*;
-use std::{fmt::Debug, marker::PhantomData, ops::Deref, sync::Arc};
+
+use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 
 /// An adapter for [`MultilinearExtension`] that implements [`MultilinearPoly`] over a packed
 /// extension field.
@@ -512,8 +514,8 @@ where
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::{tensor_prod_eq_ind, MultilinearQuery};
+	use std::iter::repeat_with;
+
 	use binius_field::{
 		arch::OptimalUnderlier256b, as_packed_field::PackedType, packed::iter_packed_slice,
 		BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, PackedBinaryField16x8b,
@@ -521,7 +523,9 @@ mod tests {
 		PackedField, PackedFieldIndexable,
 	};
 	use rand::prelude::*;
-	use std::iter::repeat_with;
+
+	use super::*;
+	use crate::{tensor_prod_eq_ind, MultilinearQuery};
 
 	type F = BinaryField16b;
 	type P = PackedBinaryField8x16b;

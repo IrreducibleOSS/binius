@@ -1,5 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
+use super::m512::M512;
 use crate::{
 	arch::{
 		portable::{
@@ -15,8 +16,6 @@ use crate::{
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b,
 	BinaryField64b, BinaryField8b,
 };
-
-use super::m512::M512;
 
 // Define 128 bit packed field types
 pub type PackedBinaryField512x1b = PackedPrimitiveType<M512, BinaryField1b>;

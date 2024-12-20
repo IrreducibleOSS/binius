@@ -1,9 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::{Error, MultivariatePoly};
 use binius_field::{Field, PackedField};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
+
+use crate::polynomial::{Error, MultivariatePoly};
 
 /// Represents a multilinear F2-polynomial whose evaluations over the hypercube are
 /// 1 until a specified index where they change to 0.
@@ -105,12 +106,13 @@ impl<F: Field> MultivariatePoly<F> for StepDown {
 
 #[cfg(test)]
 mod tests {
-	use super::StepDown;
-	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, packed_slice};
 	use binius_field::{
 		BinaryField1b, PackedBinaryField128x1b, PackedBinaryField256x1b, PackedField,
 	};
 	use binius_utils::felts;
+
+	use super::StepDown;
+	use crate::polynomial::test_utils::{hypercube_evals_from_oracle, packed_slice};
 
 	#[test]
 	fn test_step_down_trace_without_packing_simple_cases() {

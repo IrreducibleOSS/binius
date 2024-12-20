@@ -1,5 +1,14 @@
 // Copyright 2024 Irreducible Inc.
 
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	ExtensionField, PackedFieldIndexable, TowerField,
+};
+use binius_hal::ComputationBackend;
+use binius_math::EvaluationDomainFactory;
+use tracing::instrument;
+
 use super::error::Error;
 use crate::{
 	fiat_shamir::CanSample,
@@ -11,14 +20,6 @@ use crate::{
 	transcript::{write_u64, AdviceWriter, CanWrite},
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	ExtensionField, PackedFieldIndexable, TowerField,
-};
-use binius_hal::ComputationBackend;
-use binius_math::EvaluationDomainFactory;
-use tracing::instrument;
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, name = "greedy_evalcheck::prove")]

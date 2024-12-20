@@ -1,10 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use crate::polynomial::Error;
+use std::fmt::Debug;
+
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
-use std::fmt::Debug;
+
+use crate::polynomial::Error;
 
 /// A composition polynomial that securely batches several underlying multivariate polynomials.
 ///
@@ -202,9 +204,10 @@ impl<P: PackedField, IC: HornerCompositions<P>> MixComposition<P, IC> {
 
 #[cfg(test)]
 mod tests {
+	use binius_field::BinaryField8b;
+
 	use super::*;
 	use crate::polynomial::ArithCircuitPoly;
-	use binius_field::BinaryField8b;
 
 	#[test]
 	fn test_expr() {
