@@ -143,7 +143,7 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 /// Notation:
 /// * The kth layer-multilinear is the multilinear polynomial whose evaluations are the intermediate values of the kth
 ///   layer of the evaluated product circuit.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LayerClaim<F: Field> {
 	pub eval_point: Vec<F>,
 	pub eval: F,

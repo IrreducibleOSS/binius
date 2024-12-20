@@ -13,18 +13,16 @@ use rayon::{
 };
 
 use crate::{protocols::gkr_gpa::Error, witness::MultilinearWitness};
-
-#[allow(dead_code)]
 pub struct GeneratorExponentWitness<
 	'a,
-	P: PackedField,
-	PE: PackedField,
+	PBits: PackedField,
+	PGenerator: PackedField,
 	PChallenge: PackedField,
 	const EXPONENT_BIT_WIDTH: usize,
 > {
 	pub exponent: [MultilinearWitness<'a, PChallenge>; EXPONENT_BIT_WIDTH],
-	pub exponent_data: [Vec<P>; EXPONENT_BIT_WIDTH],
-	pub single_bit_output_layers_data: [Vec<PE>; EXPONENT_BIT_WIDTH],
+	pub exponent_data: [Vec<PBits>; EXPONENT_BIT_WIDTH],
+	pub single_bit_output_layers_data: [Vec<PGenerator>; EXPONENT_BIT_WIDTH],
 }
 
 fn copy_witness_into_vec<P, PE>(poly: &MultilinearWitness<PE>) -> Vec<P>
@@ -64,71 +62,75 @@ where
 	input_layer
 }
 
-fn evaluate_single_bit_output_packed<P, PE>(
-	exponent_bit: &[P],
-	generator_power_constant: PE::Scalar,
-	previous_single_bit_output: &[PE],
-) -> Vec<PE>
+fn evaluate_single_bit_output_packed<PBits, PGenerator>(
+	exponent_bit: &[PBits],
+	generator_power_constant: PGenerator::Scalar,
+	previous_single_bit_output: &[PGenerator],
+) -> Vec<PGenerator>
 where
-	P: PackedField<Scalar = BinaryField1b>,
-	PE: PackedField,
-	PE: PackedFieldIndexable,
-	PE: PackedExtension<P::Scalar, PackedSubfield = P>,
-	PE::Scalar: ExtensionField<BinaryField1b>,
-	PE::Scalar: BinaryField,
+	PBits: PackedField<Scalar = BinaryField1b>,
+	PGenerator: PackedField,
+	PGenerator: PackedFieldIndexable,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: ExtensionField<BinaryField1b>,
+	PGenerator::Scalar: BinaryField,
 {
-	debug_assert_eq!(P::WIDTH * exponent_bit.len(), PE::WIDTH * previous_single_bit_output.len());
+	debug_assert_eq!(
+		PBits::WIDTH * exponent_bit.len(),
+		PGenerator::WIDTH * previous_single_bit_output.len()
+	);
 
 	let mut result = previous_single_bit_output.to_vec();
 
-	let packed_generator_power = PE::broadcast(generator_power_constant);
+	let packed_generator_power = PGenerator::broadcast(generator_power_constant);
 
 	let _ = ext_base_op_par(&mut result, exponent_bit, |prev_out, exp_bit_broadcasted| {
 		prev_out
-			* (PE::cast_ext(
-				PE::cast_base(packed_generator_power - PE::one()) * exp_bit_broadcasted,
-			) + PE::one())
+			* (PGenerator::cast_ext(
+				PGenerator::cast_base(packed_generator_power - PGenerator::one())
+					* exp_bit_broadcasted,
+			) + PGenerator::one())
 	});
 
 	result
 }
 
-fn evaluate_first_layer_output_packed<P, PE>(
-	exponent_bit: &[P],
-	generator_power_constant: PE::Scalar,
-) -> Vec<PE>
+fn evaluate_first_layer_output_packed<PBits, PGenerator>(
+	exponent_bit: &[PBits],
+	generator_power_constant: PGenerator::Scalar,
+) -> Vec<PGenerator>
 where
-	P: PackedField<Scalar = BinaryField1b>,
-	PE: PackedField,
-	PE: PackedFieldIndexable,
-	PE: PackedExtension<P::Scalar, PackedSubfield = P>,
-	PE::Scalar: ExtensionField<BinaryField1b>,
+	PBits: PackedField<Scalar = BinaryField1b>,
+	PGenerator: PackedField,
+	PGenerator: PackedFieldIndexable,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: ExtensionField<BinaryField1b>,
 {
-	let mut result = vec![PE::zero(); exponent_bit.len() * PE::Scalar::DEGREE];
+	let mut result = vec![PGenerator::zero(); exponent_bit.len() * PGenerator::Scalar::DEGREE];
 
-	let packed_generator_power = PE::broadcast(generator_power_constant);
+	let packed_generator_power = PGenerator::broadcast(generator_power_constant);
 
 	let _ = ext_base_op_par(&mut result, exponent_bit, |_, exp_bit_broadcasted| {
-		PE::cast_ext(PE::cast_base(packed_generator_power - PE::one()) * exp_bit_broadcasted)
-			+ PE::one()
+		PGenerator::cast_ext(
+			PGenerator::cast_base(packed_generator_power - PGenerator::one()) * exp_bit_broadcasted,
+		) + PGenerator::one()
 	});
 
 	result
 }
 
-impl<'a, P, PE, PChallenge, const EXPONENT_BIT_WIDTH: usize>
-	GeneratorExponentWitness<'a, P, PE, PChallenge, EXPONENT_BIT_WIDTH>
+impl<'a, PBits, PGenerator, PChallenge, const EXPONENT_BIT_WIDTH: usize>
+	GeneratorExponentWitness<'a, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>
 where
-	P: PackedField<Scalar = BinaryField1b>,
-	PE: PackedField,
-	PE: PackedFieldIndexable,
-	PE: PackedExtension<P::Scalar, PackedSubfield = P>,
-	PE::Scalar: ExtensionField<BinaryField1b> + BinaryField,
+	PBits: PackedField<Scalar = BinaryField1b>,
+	PGenerator: PackedField,
+	PGenerator: PackedFieldIndexable,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: ExtensionField<BinaryField1b> + BinaryField,
 	PChallenge: PackedField,
-	PChallenge: PackedExtension<P::Scalar, PackedSubfield = P>,
+	PChallenge: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 	PChallenge::Scalar: ExtensionField<BinaryField1b>,
 {
-	#[allow(dead_code)]
 	pub fn new(
 		exponent: [MultilinearWitness<'a, PChallenge>; EXPONENT_BIT_WIDTH],
 	) -> Result<Self, Error> {
@@ -137,17 +139,17 @@ where
 		let exponent_data = array::from_fn(|i| copy_witness_into_vec(&exponent[i]));
 
 		let mut single_bit_output_layers_data =
-			array::from_fn(|_| vec![PE::zero(); num_rows / PE::WIDTH]);
+			array::from_fn(|_| vec![PGenerator::zero(); num_rows / PGenerator::WIDTH]);
 
-		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<P, PE>(
+		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<PBits, PGenerator>(
 			&exponent_data[0],
-			PE::Scalar::MULTIPLICATIVE_GENERATOR,
+			PGenerator::Scalar::MULTIPLICATIVE_GENERATOR,
 		);
 
 		for layer_idx_from_left in 1..EXPONENT_BIT_WIDTH {
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&exponent_data[layer_idx_from_left],
-				PE::Scalar::MULTIPLICATIVE_GENERATOR.pow([1 << layer_idx_from_left]),
+				PGenerator::Scalar::MULTIPLICATIVE_GENERATOR.pow([1 << layer_idx_from_left]),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			)
 		}
