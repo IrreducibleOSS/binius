@@ -1,5 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
+use core::iter::IntoIterator;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::builder::witness;
@@ -122,9 +123,9 @@ where
 		self.flush(FlushDirection::Pull, channel_id, count, oracle_ids)
 	}
 
-	pub fn assert_zero<const N: usize>(
+	pub fn assert_zero(
 		&mut self,
-		oracle_ids: [OracleId; N],
+		oracle_ids: impl IntoIterator<Item = OracleId>,
 		composition: ArithExpr<F>,
 	) {
 		self.constraints.add_zerocheck(oracle_ids, composition);

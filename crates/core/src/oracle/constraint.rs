@@ -4,6 +4,7 @@ use super::{Error, MultilinearOracleSet, MultilinearPolyOracle, OracleId};
 use binius_field::{Field, TowerField};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
+use core::iter::IntoIterator;
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -36,9 +37,9 @@ pub struct ConstraintSet<F: Field> {
 
 // A deferred constraint constructor that instantiates index composition after the superset of oracles is known
 #[allow(clippy::type_complexity)]
-struct ConstraintThunk<F: Field> {
+struct UngroupedConstraint<F: Field> {
 	oracle_ids: Vec<OracleId>,
-	composition_thunk: Box<dyn FnOnce(&[OracleId]) -> ArithExpr<F>>,
+	composition: ArithExpr<F>,
 	predicate: ConstraintPredicate<F>,
 }
 
@@ -46,37 +47,37 @@ struct ConstraintThunk<F: Field> {
 /// type erased `IndexComposition` instances operating over a superset of oracles of all constraints.
 #[derive(Default)]
 pub struct ConstraintSetBuilder<F: Field> {
-	constraint_thunks: Vec<ConstraintThunk<F>>,
+	constraints: Vec<UngroupedConstraint<F>>,
 }
 
 impl<F: Field> ConstraintSetBuilder<F> {
 	pub fn new() -> Self {
 		Self {
-			constraint_thunks: Vec::new(),
+			constraints: Vec::new(),
 		}
 	}
 
-	pub fn add_sumcheck<const N: usize>(
+	pub fn add_sumcheck(
 		&mut self,
-		oracle_ids: [OracleId; N],
+		oracle_ids: impl IntoIterator<Item = OracleId>,
 		composition: ArithExpr<F>,
 		sum: F,
 	) {
-		self.constraint_thunks.push(ConstraintThunk {
-			oracle_ids: oracle_ids.into(),
-			composition_thunk: thunk(oracle_ids, composition),
+		self.constraints.push(UngroupedConstraint {
+			oracle_ids: oracle_ids.into_iter().collect(),
+			composition,
 			predicate: ConstraintPredicate::Sum(sum),
 		});
 	}
 
-	pub fn add_zerocheck<const N: usize>(
+	pub fn add_zerocheck(
 		&mut self,
-		oracle_ids: [OracleId; N],
+		oracle_ids: impl IntoIterator<Item = OracleId>,
 		composition: ArithExpr<F>,
 	) {
-		self.constraint_thunks.push(ConstraintThunk {
-			oracle_ids: oracle_ids.into(),
-			composition_thunk: thunk(oracle_ids, composition),
+		self.constraints.push(UngroupedConstraint {
+			oracle_ids: oracle_ids.into_iter().collect(),
+			composition,
 			predicate: ConstraintPredicate::Zero,
 		});
 	}
@@ -87,9 +88,9 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		oracles: &MultilinearOracleSet<impl TowerField>,
 	) -> Result<ConstraintSet<F>, Error> {
 		let mut oracle_ids = self
-			.constraint_thunks
+			.constraints
 			.iter()
-			.flat_map(|thunk| thunk.oracle_ids.clone())
+			.flat_map(|constraint| constraint.oracle_ids.clone())
 			.collect::<Vec<_>>();
 		if oracle_ids.is_empty() {
 			// Do not bail!, this error is handled in evalcheck.
@@ -119,17 +120,19 @@ impl<F: Field> ConstraintSetBuilder<F> {
 
 		// at this point the superset of oracles is known and index compositions
 		// may be finally instantiated
-		let constraints = self
-			.constraint_thunks
-			.into_iter()
-			.map(|constraint_thunk| {
-				let composition = (constraint_thunk.composition_thunk)(&oracle_ids);
-				Constraint {
-					composition,
-					predicate: constraint_thunk.predicate,
-				}
-			})
-			.collect();
+		let constraints =
+			self.constraints
+				.into_iter()
+				.map(|constraint| Constraint {
+					composition: constraint
+						.composition
+						.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
+							"precondition: oracle_ids is a superset of constraint.oracle_ids",
+						))
+						.expect("Infallible by ConstraintSetBuilder invariants."),
+					predicate: constraint.predicate,
+				})
+				.collect();
 
 		Ok(ConstraintSet {
 			n_vars,
@@ -146,9 +149,9 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		oracles: &MultilinearOracleSet<impl TowerField>,
 	) -> Result<Vec<ConstraintSet<F>>, Error> {
 		let connected_oracle_chunks = self
-			.constraint_thunks
+			.constraints
 			.iter()
-			.map(|thunk| thunk.oracle_ids.clone())
+			.map(|constraint| constraint.oracle_ids.clone())
 			.chain(oracles.iter().filter_map(|oracle| {
 				match oracle {
 					MultilinearPolyOracle::Shifted { id, shifted, .. } => {
@@ -178,24 +181,24 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		);
 
 		let n_vars_and_constraints = self
-			.constraint_thunks
+			.constraints
 			.into_iter()
-			.map(|thunk| {
-				if thunk.oracle_ids.is_empty() {
+			.map(|constraint| {
+				if constraint.oracle_ids.is_empty() {
 					bail!(Error::EmptyConstraintSet);
 				}
-				for id in thunk.oracle_ids.iter() {
+				for id in constraint.oracle_ids.iter() {
 					if !oracles.is_valid_oracle_id(*id) {
 						bail!(Error::InvalidOracleId(*id));
 					}
 				}
-				let n_vars = thunk
+				let n_vars = constraint
 					.oracle_ids
 					.first()
 					.map(|id| oracles.n_vars(*id))
 					.unwrap();
 
-				for id in thunk.oracle_ids.iter() {
+				for id in constraint.oracle_ids.iter() {
 					if oracles.n_vars(*id) != n_vars {
 						bail!(Error::ConstraintSetNvarsMismatch {
 							expected: n_vars,
@@ -203,37 +206,44 @@ impl<F: Field> ConstraintSetBuilder<F> {
 						});
 					}
 				}
-				Ok::<_, Error>((n_vars, thunk))
+				Ok::<_, Error>((n_vars, constraint))
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
 		let grouped_constraints = n_vars_and_constraints
 			.into_iter()
-			.sorted_by_key(|(_, thunk)| groups[thunk.oracle_ids[0]])
-			.chunk_by(|(_, thunk)| groups[thunk.oracle_ids[0]]);
+			.sorted_by_key(|(_, constraint)| groups[constraint.oracle_ids[0]])
+			.chunk_by(|(_, constraint)| groups[constraint.oracle_ids[0]]);
 
 		let constraint_sets = grouped_constraints
 			.into_iter()
-			.map(|(_, grouped_thunks)| {
-				let mut thunks = vec![];
+			.map(|(_, grouped_constraints)| {
+				let mut constraints = vec![];
 				let mut oracle_ids = vec![];
 
-				let grouped_thunks = grouped_thunks.into_iter().collect::<Vec<_>>();
-				let (n_vars, _) = grouped_thunks[0];
+				let grouped_constraints = grouped_constraints.into_iter().collect::<Vec<_>>();
+				let (n_vars, _) = grouped_constraints[0];
 
-				for (_, thunk) in grouped_thunks {
-					oracle_ids.extend(&thunk.oracle_ids);
-					thunks.push(thunk);
+				for (_, constraint) in grouped_constraints {
+					oracle_ids.extend(&constraint.oracle_ids);
+					constraints.push(constraint);
 				}
 				oracle_ids.sort();
 				oracle_ids.dedup();
-				let constraints = thunks
+
+				let constraints = constraints
 					.into_iter()
-					.map(|thunk| Constraint {
-						composition: (thunk.composition_thunk)(&oracle_ids),
-						predicate: thunk.predicate,
+					.map(|constraint| Constraint {
+						composition: constraint
+							.composition
+							.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
+								"precondition: oracle_ids is a superset of constraint.oracle_ids",
+							))
+							.expect("Infallible by ConstraintSetBuilder invariants."),
+						predicate: constraint.predicate,
 					})
 					.collect();
+
 				ConstraintSet {
 					constraints,
 					oracle_ids,
@@ -246,27 +256,17 @@ impl<F: Field> ConstraintSetBuilder<F> {
 	}
 }
 
-// Oracle superset is unknown until the very creation of the constraint set. We
-// type erase the index composition constructor to be able to store them in the builder.
-//
-// Wikipedia: thunk is a subroutine used to inject a calculation into another subroutine.
-// Thunks are primarily used to delay a calculation until its result is needed, or to insert
-// operations at the beginning or end of the other subroutine.
-#[allow(clippy::type_complexity)]
-fn thunk<F: Field, const N: usize>(
-	oracle_ids: [OracleId; N],
-	composition: ArithExpr<F>,
-) -> Box<dyn FnOnce(&[OracleId]) -> ArithExpr<F>> {
-	Box::new(move |all_oracle_ids| {
-		let indices = oracle_ids.map(|subset_item| {
-			all_oracle_ids
+/// Find index of every subset element within the superset.
+/// If the superset contains duplicate elements the index of the first match is used
+///
+/// Returns None if the subset contains elements that don't exist in the superset
+fn positions<T: Eq>(subset: &[T], superset: &[T]) -> Option<Vec<usize>> {
+	subset
+		.iter()
+		.map(|subset_item| {
+			superset
 				.iter()
-				.position(|superset_item| superset_item == &subset_item)
-				.expect("precondition: all_oracle_ids is a superset of oracle_ids")
-		});
-
-		composition
-			.remap_vars(&indices)
-			.expect("Infallible by ConstraintSetBuilder invariants.")
-	})
+				.position(|superset_item| superset_item == subset_item)
+		})
+		.collect()
 }
