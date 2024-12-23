@@ -286,7 +286,7 @@ pub fn make_sumcheck_claim_descs<F: Field>(
 /// * `claims` - a batch of sumcheck claims referencing committed polynomials in the batch
 ///     described by `commit_meta` and the transparent polynomials in `transparents`
 /// * `proof` - the proof reader
-#[instrument(skip_all)]
+#[instrument("piop::verify", skip_all)]
 pub fn verify<'a, F, FEncode, Transcript, Advice, MTScheme, Digest>(
 	commit_meta: &CommitMeta,
 	merkle_scheme: &MTScheme,
@@ -342,11 +342,40 @@ where
 		proof,
 	)?;
 
-	// Verify the transparent evals and collect the committed evals.
+	let mut piecewise_evals = verify_transparent_evals(
+		commit_meta,
+		non_empty_sumcheck_descs,
+		multilinear_evals,
+		transparents,
+		&challenges,
+	)?;
+
+	// Verify the committed evals against the FRI final value.
+	piecewise_evals.reverse();
+	let n_pieces_by_vars = sumcheck_claim_descs
+		.iter()
+		.map(|desc| desc.n_committed())
+		.collect::<Vec<_>>();
+	let piecewise_eval =
+		evaluate_piecewise_multilinear(&challenges, &n_pieces_by_vars, &mut piecewise_evals)?;
+	if piecewise_eval != fri_final {
+		return Err(VerificationError::IncorrectSumcheckEvaluation.into());
+	}
+
+	Ok(())
+}
+
+// Verify the transparent evals and collect the committed evals.
+#[instrument(skip_all, level = "debug")]
+fn verify_transparent_evals<'a, 'b, F: Field>(
+	commit_meta: &CommitMeta,
+	sumcheck_descs: impl Iterator<Item = (usize, &'a SumcheckClaimDesc<F>)>,
+	multilinear_evals: Vec<Vec<F>>,
+	transparents: &[impl Borrow<dyn MultivariatePoly<F> + 'b>],
+	challenges: &[F],
+) -> Result<Vec<F>, Error> {
 	let mut piecewise_evals = Vec::with_capacity(commit_meta.total_multilins());
-	for ((n_vars, desc), multilinear_evals) in
-		iter::zip(non_empty_sumcheck_descs, multilinear_evals)
-	{
+	for ((n_vars, desc), multilinear_evals) in iter::zip(sumcheck_descs, multilinear_evals) {
 		let (committed_evals, transparent_evals) = multilinear_evals.split_at(desc.n_committed());
 		piecewise_evals.extend_from_slice(committed_evals);
 
@@ -364,20 +393,7 @@ where
 			}
 		}
 	}
-
-	// Verify the committed evals against the FRI final value.
-	piecewise_evals.reverse();
-	let n_pieces_by_vars = sumcheck_claim_descs
-		.iter()
-		.map(|desc| desc.n_committed())
-		.collect::<Vec<_>>();
-	let piecewise_eval =
-		evaluate_piecewise_multilinear(&challenges, &n_pieces_by_vars, &mut piecewise_evals)?;
-	if piecewise_eval != fri_final {
-		return Err(VerificationError::IncorrectSumcheckEvaluation.into());
-	}
-
-	Ok(())
+	Ok(piecewise_evals)
 }
 
 #[derive(Debug)]
@@ -394,6 +410,7 @@ struct BatchInterleavedSumcheckFRIOutput<F> {
 ///
 /// * `n_rounds` is greater than or equal to the maximum number of variables of any claim
 /// * `claims` are sorted in ascending order by number of variables
+#[instrument(skip_all)]
 fn verify_interleaved_fri_sumcheck<F, FEncode, Transcript, Advice, MTScheme, Digest>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,

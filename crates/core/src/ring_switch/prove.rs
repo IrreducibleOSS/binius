@@ -7,6 +7,7 @@ use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use rayon::prelude::*;
+use tracing::instrument;
 
 use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
@@ -83,12 +84,11 @@ where
 	proof.transcript.write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
-	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower, _>(
+	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
 		row_batch_coeffs,
 		&mixing_coeffs,
-		backend,
 	)?;
 	let sumcheck_claims = iter::zip(&system.sumcheck_claim_descs, row_batched_evals)
 		.enumerate()
@@ -109,6 +109,7 @@ where
 	})
 }
 
+#[instrument(skip_all)]
 fn compute_partial_evals<F, P, M, Tower, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
@@ -197,6 +198,7 @@ where
 	Ok(batched_tensor_elems)
 }
 
+#[instrument(skip_all)]
 fn compute_row_batched_sumcheck_evals<F, Tower>(
 	tensor_elems: Vec<TowerTensorAlgebra<Tower>>,
 	row_batch_coeffs: &[F],
@@ -212,45 +214,37 @@ where
 		.collect()
 }
 
-fn make_ring_switch_eq_inds<F, P, Tower, Backend>(
+#[instrument(skip_all)]
+fn make_ring_switch_eq_inds<F, P, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
 	row_batch_coeffs: Arc<[F]>,
 	mixing_coeffs: &[F],
-	backend: &Backend,
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
 	F: TowerField,
 	P: PackedFieldIndexable<Scalar = F>,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
-	Backend: ComputationBackend,
 {
 	sumcheck_claim_descs
 		.par_iter()
 		.zip(mixing_coeffs)
 		.map(|(claim_desc, &mixing_coeff)| {
 			let suffix_desc = &suffix_descs[claim_desc.suffix_desc_idx];
-			make_ring_switch_eq_ind::<P, Tower, _>(
-				suffix_desc,
-				row_batch_coeffs.clone(),
-				mixing_coeff,
-				backend,
-			)
+			make_ring_switch_eq_ind::<P, Tower>(suffix_desc, row_batch_coeffs.clone(), mixing_coeff)
 		})
 		.collect()
 }
 
-fn make_ring_switch_eq_ind<P, Tower, Backend>(
+fn make_ring_switch_eq_ind<P, Tower>(
 	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
 	row_batch_coeffs: Arc<[FExt<Tower>]>,
 	mixing_coeff: FExt<Tower>,
-	backend: &Backend,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where
 	P: PackedFieldIndexable<Scalar = FExt<Tower>>,
 	Tower: TowerFamily,
-	Backend: ComputationBackend,
 {
 	let eq_ind = match suffix_desc.kappa {
 		7 => RingSwitchEqInd::<Tower::B1, _>::new(
@@ -258,37 +252,37 @@ where
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension::<P, _>(backend),
+		.multilinear_extension::<P>(),
 		4 => RingSwitchEqInd::<Tower::B8, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(backend),
+		.multilinear_extension(),
 		3 => RingSwitchEqInd::<Tower::B16, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(backend),
+		.multilinear_extension(),
 		2 => RingSwitchEqInd::<Tower::B32, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(backend),
+		.multilinear_extension(),
 		1 => RingSwitchEqInd::<Tower::B64, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(backend),
+		.multilinear_extension(),
 		0 => RingSwitchEqInd::<Tower::B128, _>::new(
 			suffix_desc.suffix.clone(),
 			row_batch_coeffs,
 			mixing_coeff,
 		)?
-		.multilinear_extension(backend),
+		.multilinear_extension(),
 		_ => Err(Error::PackingDegreeNotSupported {
 			kappa: suffix_desc.kappa,
 		}),

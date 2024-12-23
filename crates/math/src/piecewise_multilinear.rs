@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::Field;
+use tracing::instrument;
 
 use crate::{extrapolate_line_scalar, Error};
 
@@ -41,6 +42,7 @@ use crate::{extrapolate_line_scalar, Error};
 /// and we are given the evaluations of $v_0:=f_0(r_0,r_1)$, $v_1:=f_1(r_0,r_1)$, and
 /// $v_2:=f_2(r_0)$. In this situation, we have the following:
 /// `n_pieces_by_vars` is `[0, 1, 2]`, and `piece_evals` is `[v_0, v_1, v_2]`.
+#[instrument(skip_all)]
 pub fn evaluate_piecewise_multilinear<F: Field>(
 	point: &[F],
 	n_pieces_by_vars: &[usize],

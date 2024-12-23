@@ -6,9 +6,9 @@ use binius_field::{
 	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable, TowerField,
 };
-use binius_hal::ComputationBackend;
-use binius_math::MultilinearExtension;
+use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use rayon::prelude::*;
 
 use super::error::Error;
@@ -58,28 +58,22 @@ where
 		})
 	}
 
-	pub fn multilinear_extension<P, Backend>(
+	pub fn multilinear_extension<P: PackedFieldIndexable<Scalar = F>>(
 		&self,
-		backend: &Backend,
-	) -> Result<MultilinearExtension<P, Backend::Vec<P>>, Error>
-	where
-		P: PackedFieldIndexable<Scalar = F>,
-		Backend: ComputationBackend,
-	{
-		// TODO: Deduplicate the computation of this expansion operation across ring switch EQ INDs
-		// sharing `z_vals`. It's not dire, because each element is multiplied by a mixing
-		// coefficient, so it at must doubles the total number of multiplications.
-		let mut evals = backend.tensor_product_full_query(self.z_vals.as_ref())?;
+	) -> Result<MultilinearExtension<P>, Error> {
+		let mut evals = zeroed_vec::<P>(1 << self.z_vals.len().saturating_sub(P::LOG_WIDTH));
+		evals[0].set(0, self.mixing_coeff);
+		tensor_prod_eq_ind(0, &mut evals, &self.z_vals)?;
 		P::unpack_scalars_mut(&mut evals)
 			.par_iter_mut()
 			.for_each(|val| {
-				let vert = *val * self.mixing_coeff;
+				let vert = *val;
 				*val = inner_product_unchecked(
 					self.row_batch_coeffs.iter().copied(),
 					ExtensionField::<FSub>::iter_bases(&vert),
 				);
 			});
-		Ok(MultilinearExtension::from_values_generic(evals)?)
+		Ok(MultilinearExtension::from_values(evals)?)
 	}
 }
 
@@ -126,7 +120,6 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_field::{BinaryField128b, BinaryField8b};
-	use binius_hal::make_portable_backend;
 	use binius_math::MultilinearQuery;
 	use iter::repeat_with;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -150,8 +143,6 @@ mod tests {
 			.take(1 << kappa)
 			.collect::<Arc<[_]>>();
 
-		let backend = make_portable_backend();
-
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)
 			.collect::<Vec<_>>();
@@ -161,7 +152,7 @@ mod tests {
 
 		let rs_eq =
 			RingSwitchEqInd::<FS, _>::new(z_vals.clone(), row_batch_coeffs, mixing_coeff).unwrap();
-		let mle = rs_eq.multilinear_extension::<F, _>(&backend).unwrap();
+		let mle = rs_eq.multilinear_extension::<F>().unwrap();
 
 		let val1 = rs_eq.evaluate(&eval_point).unwrap();
 		let val2 = mle.evaluate(&eval_query).unwrap();

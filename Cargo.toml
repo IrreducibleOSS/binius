@@ -39,7 +39,6 @@ rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rayon = "1.8.0"
 seq-macro = "0.3.5"
 stackalloc = "1.2.1"
-static_assertions = "1.1.0"
 subtle = "2.5.0"
 syn = { version = "2.0.60", features = ["full"] }
 thiserror = "2.0.3"
