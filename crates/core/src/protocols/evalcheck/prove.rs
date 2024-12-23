@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::collections::HashSet;
-
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
@@ -18,12 +16,12 @@ use super::{
 	error::Error,
 	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{calculate_projected_mles, MemoizedQueries, ProjectedBivariateMeta},
-	EvalPointOracleIdMap,
+	EvalPoint, EvalPointOracleIdMap,
 };
 use crate::{
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-		MultilinearPolyOracle, OracleId, ProjectionVariant,
+		MultilinearPolyOracle, ProjectionVariant,
 	},
 	protocols::evalcheck::subclaims::{
 		packed_sumcheck_meta, process_packed_sumcheck, process_shifted_sumcheck,
@@ -55,8 +53,8 @@ where
 	claims_queue: Vec<EvalcheckMultilinearClaim<F>>,
 	incomplete_proof_claims: EvalPointOracleIdMap<EvalcheckMultilinearClaim<F>, F>,
 	#[allow(clippy::type_complexity)]
-	claims_without_evals: Vec<(MultilinearPolyOracle<F>, Vec<F>)>,
-	claims_without_evals_dedup: HashSet<(OracleId, Vec<F>)>,
+	claims_without_evals: Vec<(MultilinearPolyOracle<F>, EvalPoint<F>)>,
+	claims_without_evals_dedup: EvalPointOracleIdMap<(), F>,
 	projected_bivariate_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumchecks_constraints: Vec<ConstraintSetBuilder<F>>,
@@ -87,7 +85,7 @@ where
 			finalized_proofs: EvalPointOracleIdMap::new(),
 			claims_queue: Vec::new(),
 			claims_without_evals: Vec::new(),
-			claims_without_evals_dedup: HashSet::new(),
+			claims_without_evals_dedup: EvalPointOracleIdMap::new(),
 			projected_bivariate_claims: Vec::new(),
 			memoized_queries: MemoizedQueries::new(),
 			backend,
@@ -127,7 +125,7 @@ where
 		for claim in &evalcheck_claims {
 			let id = claim.poly.id();
 			self.claims_without_evals_dedup
-				.insert((id, claim.eval_point.clone()));
+				.insert(id, claim.eval_point.clone(), ());
 		}
 
 		// Step 1: Collect proofs
@@ -150,19 +148,23 @@ where
 				if self.finalized_proofs.get(poly.id(), &eval_point).is_some() {
 					continue;
 				}
-				if !self
+				if self
 					.claims_without_evals_dedup
-					.insert((poly.id(), eval_point.clone()))
+					.get(poly.id(), &eval_point)
+					.is_some()
 				{
 					continue;
 				}
+
+				self.claims_without_evals_dedup
+					.insert(poly.id(), eval_point.clone(), ());
 
 				deduplicated_claims_without_evals.push((poly, eval_point.clone()))
 			}
 
 			let deduplicated_eval_points = deduplicated_claims_without_evals
 				.iter()
-				.map(|(_, eval_point)| eval_point.to_vec())
+				.map(|(_, eval_point)| eval_point.as_ref())
 				.collect::<Vec<_>>();
 
 			self.memoized_queries
@@ -296,7 +298,7 @@ where
 
 			Repeating { inner, .. } => {
 				let n_vars = inner.n_vars();
-				let inner_eval_point = eval_point[..n_vars].to_vec();
+				let inner_eval_point = eval_point.slice(0..n_vars);
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: (*inner).clone(),
 					eval_point: inner_eval_point,
@@ -327,20 +329,18 @@ where
 				let (inner, values) = (projected.inner(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
-						let mut new_eval_point = (*eval_point).to_vec();
+						let mut new_eval_point = eval_point.to_vec();
 						new_eval_point.extend(values);
 						new_eval_point
 					}
-					ProjectionVariant::FirstVars => values
-						.iter()
-						.cloned()
-						.chain((*eval_point).to_vec())
-						.collect(),
+					ProjectionVariant::FirstVars => {
+						values.iter().cloned().chain(eval_point.to_vec()).collect()
+					}
 				};
 
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: (**inner).clone(),
-					eval_point: new_eval_point,
+					eval_point: new_eval_point.into(),
 					eval,
 				};
 				self.incomplete_proof_claims
@@ -383,7 +383,7 @@ where
 			ZeroPadded { inner, .. } => {
 				let inner_n_vars = inner.n_vars();
 
-				let inner_eval_point = eval_point[..inner_n_vars].to_vec();
+				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 				self.claims_without_evals
 					.push(((*inner).clone(), inner_eval_point));
 				self.incomplete_proof_claims
@@ -419,7 +419,7 @@ where
 				let (inner, values) = (projected.inner(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
-						let mut new_eval_point = (*eval_point).to_vec();
+						let mut new_eval_point = eval_point.to_vec();
 						new_eval_point.extend(values);
 						new_eval_point
 					}
@@ -492,7 +492,7 @@ where
 			Committed { id, .. } => {
 				let subclaim = CommittedEvalClaim {
 					id,
-					eval_point: eval_point.clone(),
+					eval_point,
 					eval,
 				};
 
@@ -500,7 +500,7 @@ where
 			}
 			Repeating { inner, .. } => {
 				let n_vars = inner.n_vars();
-				let inner_eval_point = eval_point[..n_vars].to_vec();
+				let inner_eval_point = eval_point.slice(0..n_vars);
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: (*inner).clone(),
 					eval_point: inner_eval_point,
@@ -513,12 +513,12 @@ where
 				let (inner, values) = (projected.inner(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
-						let mut new_eval_point = eval_point.clone();
+						let mut new_eval_point = eval_point.to_vec();
 						new_eval_point.extend(values);
 						new_eval_point
 					}
 					ProjectionVariant::FirstVars => {
-						values.iter().cloned().chain(eval_point.clone()).collect()
+						values.iter().cloned().chain(eval_point.to_vec()).collect()
 					}
 				};
 
@@ -526,7 +526,7 @@ where
 
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: new_poly,
-					eval_point: new_eval_point,
+					eval_point: new_eval_point.into(),
 					eval,
 				};
 				self.collect_projected_committed(subclaim);
@@ -551,7 +551,7 @@ where
 			}
 			ZeroPadded { inner, .. } => {
 				let inner_n_vars = inner.n_vars();
-				let inner_eval_point = eval_point[..inner_n_vars].to_vec();
+				let inner_eval_point = eval_point.slice(0..inner_n_vars);
 
 				let (eval, _) = self
 					.finalized_proofs
@@ -630,7 +630,7 @@ where
 
 	fn make_new_eval_claim(
 		poly: MultilinearPolyOracle<F>,
-		eval_point: Vec<F>,
+		eval_point: EvalPoint<F>,
 		witness_index: &MultilinearExtensionIndex<U, F>,
 		memoized_queries: &MemoizedQueries<PackedType<U, F>, Backend>,
 	) -> Result<EvalcheckMultilinearClaim<F>, Error> {

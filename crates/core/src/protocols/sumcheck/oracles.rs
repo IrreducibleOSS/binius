@@ -122,7 +122,7 @@ pub fn make_eval_claims<F: TowerField>(
 
 			let claim = EvalcheckMultilinearClaim {
 				poly,
-				eval_point,
+				eval_point: eval_point.into(),
 				eval,
 			};
 

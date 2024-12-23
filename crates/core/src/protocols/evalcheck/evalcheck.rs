@@ -1,6 +1,10 @@
 // Copyright 2023-2024 Irreducible Inc.
 
-use std::slice;
+use std::{
+	ops::{Deref, Range},
+	slice,
+	sync::Arc,
+};
 
 use binius_field::{Field, TowerField};
 
@@ -15,7 +19,7 @@ pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
 	pub poly: MultilinearPolyOracle<F>,
 	/// Evaluation Point
-	pub eval_point: Vec<F>,
+	pub eval_point: EvalPoint<F>,
 	/// Claimed Evaluation
 	pub eval: F,
 }
@@ -72,7 +76,7 @@ impl<F: Field> EvalcheckProof<F> {
 pub struct CommittedEvalClaim<F: Field> {
 	pub id: CommittedId,
 	/// Evaluation Point
-	pub eval_point: Vec<F>,
+	pub eval_point: EvalPoint<F>,
 	/// Claimed Evaluation
 	pub eval: F,
 }
@@ -168,7 +172,7 @@ pub fn deserialize_evalcheck_proof<Transcript: CanRead, F: TowerField>(
 }
 
 pub struct EvalPointOracleIdMap<T: Clone, F: Field> {
-	data: Vec<Vec<(Vec<F>, T)>>,
+	data: Vec<Vec<(EvalPoint<F>, T)>>,
 }
 
 impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
@@ -186,7 +190,7 @@ impl<T: Clone, F: Field> EvalPointOracleIdMap<T, F> {
 			.map(|(_, val)| val)
 	}
 
-	pub fn insert(&mut self, id: OracleId, eval_point: Vec<F>, val: T) {
+	pub fn insert(&mut self, id: OracleId, eval_point: EvalPoint<F>, val: T) {
 		if id >= self.data.len() {
 			self.data.resize(id + 1, Vec::new());
 		}
@@ -210,5 +214,62 @@ impl<T: Clone, F: Field> Default for EvalPointOracleIdMap<T, F> {
 		Self {
 			data: Default::default(),
 		}
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct EvalPoint<F> {
+	data: Arc<[F]>,
+	range: Range<usize>,
+}
+
+impl<F: Field> PartialEq for EvalPoint<F> {
+	fn eq(&self, other: &Self) -> bool {
+		self.data[self.range.clone()] == other.data[other.range.clone()]
+	}
+}
+
+impl<F: Clone> EvalPoint<F> {
+	pub fn slice(&self, range: Range<usize>) -> Self {
+		assert!(self.range.len() >= range.len());
+
+		let new_range = self.range.start + range.start..self.range.start + range.end;
+
+		Self {
+			data: self.data.clone(),
+			range: new_range,
+		}
+	}
+
+	pub fn to_vec(&self) -> Vec<F> {
+		self.data.to_vec()
+	}
+}
+
+impl<F> From<Vec<F>> for EvalPoint<F> {
+	fn from(data: Vec<F>) -> Self {
+		let range = 0..data.len();
+		Self {
+			data: data.into(),
+			range,
+		}
+	}
+}
+
+impl<F: Clone> From<&[F]> for EvalPoint<F> {
+	fn from(data: &[F]) -> Self {
+		let range = 0..data.len();
+		Self {
+			data: data.into(),
+			range,
+		}
+	}
+}
+
+impl<F> Deref for EvalPoint<F> {
+	type Target = [F];
+
+	fn deref(&self) -> &Self::Target {
+		&self.data[self.range.clone()]
 	}
 }

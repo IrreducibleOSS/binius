@@ -85,7 +85,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			poly: multilinear,
-			mut eval_point,
+			eval_point,
 			eval,
 		} = evalcheck_claim;
 
@@ -129,7 +129,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let n_vars = inner.n_vars();
 				let subclaim = EvalcheckMultilinearClaim {
 					poly: (*inner).clone(),
-					eval_point: eval_point[..n_vars].to_vec(),
+					eval_point: eval_point[..n_vars].into(),
 					eval,
 				};
 
@@ -140,17 +140,18 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let (inner, values) = (projected.inner(), projected.values());
 				let eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
+						let mut eval_point = eval_point.to_vec();
 						eval_point.extend(values);
 						eval_point
 					}
 					ProjectionVariant::FirstVars => {
-						values.iter().cloned().chain(eval_point).collect()
+						values.iter().cloned().chain(eval_point.to_vec()).collect()
 					}
 				};
 
 				let new_claim = EvalcheckMultilinearClaim {
 					poly: (**inner).clone(),
-					eval_point,
+					eval_point: eval_point.into(),
 					eval,
 				};
 
@@ -163,7 +164,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let meta = shifted_sumcheck_meta(self.oracles, &shifted, eval_point.as_slice())?;
+				let meta = shifted_sumcheck_meta(self.oracles, &shifted, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					meta,
 					&mut self.new_sumcheck_constraints,
@@ -178,7 +179,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let meta = packed_sumcheck_meta(self.oracles, &packed, eval_point.as_slice())?;
+				let meta = packed_sumcheck_meta(self.oracles, &packed, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
 					meta,
 					&mut self.new_sumcheck_constraints,
@@ -274,7 +275,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	) -> Result<(), Error> {
 		let subclaim = EvalcheckMultilinearClaim {
 			poly,
-			eval_point: eval_point.to_vec(),
+			eval_point: eval_point.into(),
 			eval,
 		};
 		self.verify_multilinear(subclaim, subproof)

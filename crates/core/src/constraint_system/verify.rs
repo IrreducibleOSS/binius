@@ -630,7 +630,7 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 		debug_assert_eq!(evals.len(), n_step_downs + flush_oracles.len() + 1);
 
 		for (meta, &eval) in izip!(step_down_metas, evals) {
-			let eval_point = sumcheck_output.challenges[max_n_vars - meta.n_vars..].to_vec();
+			let eval_point = sumcheck_output.challenges[max_n_vars - meta.n_vars..].into();
 
 			evalcheck_claims.push(EvalcheckMultilinearClaim {
 				poly: oracles.oracle(meta.step_down_oracle_id),
@@ -641,7 +641,7 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 
 		for (&flush_oracle, &eval) in izip!(flush_oracles, &evals[n_step_downs..]) {
 			let n_vars = oracles.n_vars(flush_oracle);
-			let eval_point = sumcheck_output.challenges[max_n_vars - n_vars..].to_vec();
+			let eval_point = sumcheck_output.challenges[max_n_vars - n_vars..].into();
 
 			evalcheck_claims.push(EvalcheckMultilinearClaim {
 				poly: oracles.oracle(flush_oracle),

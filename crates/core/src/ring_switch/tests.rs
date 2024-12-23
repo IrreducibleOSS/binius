@@ -109,7 +109,7 @@ where
 	let eval = witness.evaluate(query.to_ref()).unwrap();
 	EvalcheckMultilinearClaim {
 		poly: oracle.clone(),
-		eval_point,
+		eval_point: eval_point.into(),
 		eval,
 	}
 }
@@ -122,7 +122,10 @@ fn check_eval_point_consistency<F: Field>(system: &EvalClaimSystem<F>) {
 		assert_eq!(prefix_desc.kappa(), suffix_desc.kappa);
 		assert_eq!(
 			[prefix_desc.prefix.clone(), suffix_desc.suffix.to_vec()].concat(),
-			system.sumcheck_claim_descs[i].eval_claim.eval_point
+			system.sumcheck_claim_descs[i]
+				.eval_claim
+				.eval_point
+				.to_vec()
 		);
 	}
 }

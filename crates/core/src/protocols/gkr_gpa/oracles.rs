@@ -89,7 +89,7 @@ pub fn make_eval_claims<F: TowerField>(
 
 			EvalcheckMultilinearClaim {
 				poly,
-				eval_point: claim.eval_point,
+				eval_point: claim.eval_point.into(),
 				eval: claim.eval,
 			}
 		})

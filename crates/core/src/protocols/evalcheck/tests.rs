@@ -94,7 +94,7 @@ fn test_shifted_evaluation_whole_cube() {
 		.zip(evals)
 		.map(|(poly, eval)| EvalcheckMultilinearClaim {
 			poly,
-			eval_point: eval_point.clone(),
+			eval_point: eval_point.clone().into(),
 			eval,
 		})
 		.collect();
@@ -161,7 +161,7 @@ fn test_shifted_evaluation_subcube() {
 		.zip(evals)
 		.map(|(poly, eval)| EvalcheckMultilinearClaim {
 			poly,
-			eval_point: eval_point.clone(),
+			eval_point: eval_point.clone().into(),
 			eval,
 		})
 		.collect();
@@ -247,7 +247,7 @@ fn test_evalcheck_linear_combination() {
 
 	let claim = EvalcheckMultilinearClaim {
 		poly: claim_oracle,
-		eval_point,
+		eval_point: eval_point.into(),
 		eval,
 	};
 
@@ -309,7 +309,7 @@ fn test_evalcheck_linear_combination_size_one() {
 
 	let claim = EvalcheckMultilinearClaim {
 		poly: claim_oracle,
-		eval_point,
+		eval_point: eval_point.into(),
 		eval,
 	};
 
@@ -362,7 +362,7 @@ fn test_evalcheck_repeating() {
 
 	let claim = EvalcheckMultilinearClaim {
 		poly: repeating.clone(),
-		eval_point,
+		eval_point: eval_point.into(),
 		eval,
 	};
 
@@ -451,7 +451,7 @@ fn test_evalcheck_zero_padded() {
 
 	let claim = EvalcheckMultilinearClaim {
 		poly: zero_padded,
-		eval_point: eval_point.clone(),
+		eval_point: eval_point.into(),
 		eval: inner_eval,
 	};
 

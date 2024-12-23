@@ -374,7 +374,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 	pub fn memoize_query_par(
 		&mut self,
-		eval_points: Vec<Vec<P::Scalar>>,
+		eval_points: Vec<&[P::Scalar]>,
 		backend: &Backend,
 	) -> Result<(), Error> {
 		let deduplicated_eval_points = eval_points.into_iter().collect::<HashSet<_>>();
@@ -384,8 +384,8 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 			.filter(|ep| self.full_query_readonly(ep).is_none())
 			.map(|ep| {
 				backend
-					.multilinear_query::<P>(&ep)
-					.map(|res| (ep, res))
+					.multilinear_query::<P>(ep)
+					.map(|res| (ep.to_vec(), res))
 					.map_err(Error::from)
 			})
 			.collect::<Result<Vec<_>, Error>>()?;
