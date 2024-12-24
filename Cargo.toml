@@ -8,13 +8,14 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Irreducible Team <ulvt_dev@ulvetanna.io>"]
+authors = ["Irreducible Team <opensource@irreducible.com>"]
 
 [workspace.dependencies]
 anyhow = "1.0.81"
 assert_matches = "1.5.0"
 alloy-primitives = "0.8.14"
 auto_impl = "1.2.0"
+bumpalo = { version = "3.16.0", features = ["collections"] }
 bytemuck = { version = "1.18.0", features = ["derive", "min_const_generics", "must_cast"] }
 bytes = "1.7.2"
 bytesize = "1.3.0"
@@ -49,7 +50,6 @@ tracing = "0.1.38"
 tracing-profile = "0.9.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 transpose = "0.2.2"
-bumpalo = { version = "3.16.0", features = ["collections"] }
 
 [profile.release]
 lto = "fat"
