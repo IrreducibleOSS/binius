@@ -84,7 +84,7 @@ where
 
 	let packed_generator_power = PGenerator::broadcast(generator_power_constant);
 
-	let _ = ext_base_op_par(&mut result, exponent_bit, |prev_out, exp_bit_broadcasted| {
+	let _ = ext_base_op_par(&mut result, exponent_bit, |_, prev_out, exp_bit_broadcasted| {
 		prev_out
 			* (PGenerator::cast_ext(
 				PGenerator::cast_base(packed_generator_power - PGenerator::one())
@@ -110,7 +110,7 @@ where
 
 	let packed_generator_power = PGenerator::broadcast(generator_power_constant);
 
-	let _ = ext_base_op_par(&mut result, exponent_bit, |_, exp_bit_broadcasted| {
+	let _ = ext_base_op_par(&mut result, exponent_bit, |_, _, exp_bit_broadcasted| {
 		PGenerator::cast_ext(
 			PGenerator::cast_base(packed_generator_power - PGenerator::one()) * exp_bit_broadcasted,
 		) + PGenerator::one()

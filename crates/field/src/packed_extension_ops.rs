@@ -10,7 +10,7 @@ where
 	PE::Scalar: ExtensionField<F>,
 	F: Field,
 {
-	ext_base_op(lhs, rhs, |lhs, broadcasted_rhs| PE::cast_ext(lhs.cast_base() * broadcasted_rhs))
+	ext_base_op(lhs, rhs, |_, lhs, broadcasted_rhs| PE::cast_ext(lhs.cast_base() * broadcasted_rhs))
 }
 
 pub fn ext_base_mul_par<PE, F>(lhs: &mut [PE], rhs: &[PE::PackedSubfield]) -> Result<(), Error>
@@ -19,7 +19,7 @@ where
 	PE::Scalar: ExtensionField<F>,
 	F: Field,
 {
-	ext_base_op_par(lhs, rhs, |lhs, broadcasted_rhs| {
+	ext_base_op_par(lhs, rhs, |_, lhs, broadcasted_rhs| {
 		PE::cast_ext(lhs.cast_base() * broadcasted_rhs)
 	})
 }
@@ -59,7 +59,7 @@ where
 	PE: PackedExtension<F>,
 	PE::Scalar: ExtensionField<F>,
 	F: Field,
-	Func: Fn(PE, PE::PackedSubfield) -> PE,
+	Func: Fn(usize, PE, PE::PackedSubfield) -> PE,
 {
 	if lhs.len() != rhs.len() * PE::Scalar::DEGREE {
 		return Err(Error::MismatchedLengths);
@@ -69,7 +69,7 @@ where
 		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
 		let broadcasted_rhs = unsafe { get_rhs_at_pe_idx::<PE, F>(rhs, i) };
 
-		*lhs_elem = op(*lhs_elem, broadcasted_rhs);
+		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
 	});
 	Ok(())
 }
@@ -85,7 +85,7 @@ where
 	PE: PackedExtension<F>,
 	PE::Scalar: ExtensionField<F>,
 	F: Field,
-	Func: Fn(PE, PE::PackedSubfield) -> PE + std::marker::Sync,
+	Func: Fn(usize, PE, PE::PackedSubfield) -> PE + std::marker::Sync,
 {
 	if lhs.len() != rhs.len() * PE::Scalar::DEGREE {
 		return Err(Error::MismatchedLengths);
@@ -95,7 +95,7 @@ where
 		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
 		let broadcasted_rhs = unsafe { get_rhs_at_pe_idx::<PE, F>(rhs, i) };
 
-		*lhs_elem = op(*lhs_elem, broadcasted_rhs);
+		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
 	});
 
 	Ok(())
