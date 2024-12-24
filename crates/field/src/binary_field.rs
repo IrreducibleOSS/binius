@@ -4,7 +4,7 @@ use std::{
 	any::TypeId,
 	array,
 	fmt::{Debug, Display, Formatter},
-	iter::{Product, Step, Sum},
+	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -313,38 +313,6 @@ macro_rules! binary_field {
 
 		impl BinaryField for $name {
 			const MULTIPLICATIVE_GENERATOR: $name = $name($gen);
-		}
-
-		impl Step for $name {
-			fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-				match end.val().checked_sub(start.val()) {
-					Some(diff) => {
-
-						match usize::try_from(diff) {
-							Ok(step) =>  (step, Some(step)),
-							_ => (usize::MAX, None)
-						}
-
-
-					},
-					None => (0, None)
-				}
-
-			}
-
-			fn forward_checked(start: Self, count: usize) -> Option<Self> {
-				use crate::underlier::NumCast as _;
-
-				let val = start.val().checked_add(<$typ>::num_cast_from(count as u64))?;
-				Some(Self::new(val))
-			}
-
-			fn backward_checked(start: Self, count: usize) -> Option<Self> {
-				use crate::underlier::NumCast as _;
-
-				let val = start.val().checked_sub(<$typ>::num_cast_from(count as u64))?;
-				Some(Self::new(val))
-			}
 		}
 
 		impl From<$typ> for $name {

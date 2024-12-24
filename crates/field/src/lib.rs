@@ -9,8 +9,10 @@
 //!
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
-#![feature(step_trait)]
-#![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
+#![cfg_attr(
+	all(target_arch = "x86_64", not(feature = "stable_only")),
+	feature(stdarch_x86_avx512)
+)]
 
 pub mod aes_field;
 pub mod arch;

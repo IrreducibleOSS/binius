@@ -19,7 +19,7 @@ bytemuck = { version = "1.18.0", features = ["derive", "min_const_generics", "mu
 bytes = "1.7.2"
 bytesize = "1.3.0"
 cfg-if = "1.0.0"
-criterion = { version = "0.5.1", features = ["real_blackbox"] }
+criterion = { version = "0.5.1" }
 derive_more = "0.99.17"
 digest = "0.10.7"
 either = "1.11.0"

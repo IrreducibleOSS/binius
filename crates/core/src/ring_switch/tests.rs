@@ -1,9 +1,6 @@
 // Copyright 2024 Irreducible, Inc
 
-use std::{
-	cmp::Ordering,
-	iter::{repeat_with, Step},
-};
+use std::{cmp::Ordering, iter::repeat_with};
 
 use binius_field::{
 	arch::OptimalUnderlier128b,
@@ -278,7 +275,6 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
 ) where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	Tower::B8: Step,
 	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest = Digest, Proof = Vec<Digest>>,

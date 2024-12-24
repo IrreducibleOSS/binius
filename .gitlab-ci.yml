@@ -20,6 +20,16 @@ stages:
   tags:
     - k8s
 
+# AMD job configuration template with stable Rust
+.job_template_amd_stable:
+  extends: .test_job_template_amd
+  variables:
+    RUST_VERSION: "1.83.0"
+  before_script:
+    # workaround for https://github.com/rust-lang/rustup/issues/2886
+    - rustup set auto-self-update disable
+    - rustup toolchain install $RUST_VERSION
+
 # ARM job configuration template
 .job_template_arm:
   image: rustlang/rust:nightly
@@ -77,6 +87,16 @@ build-debug-amd:
       - Cargo.lock
     expire_in: 1 day
 
+build-debug-amd-stable:
+  extends: .job_template_amd_stable
+  stage: build
+  script:
+    - cargo +$RUST_VERSION build --tests --benches --examples -p binius_core --features stable_only
+  artifacts:
+    paths:
+      - Cargo.lock
+    expire_in: 1 day
+
 build-debug-arm:
   extends: .job_template_arm
   stage: build
@@ -91,6 +111,11 @@ build-debug-arm:
   extends: .job_template_amd
   dependencies:
     - build-debug-amd
+
+.test_job_template_amd_stable:
+  extends: .job_template_amd_stable
+  dependencies:
+    - build-debug-amd-stable
 
 .test_job_template_arm:
   extends: .job_template_arm
@@ -116,6 +141,11 @@ unit-test-amd:
   extends: .test_job_template_amd
   script:
     - RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
+
+unit-test-amd-stable:
+  extends: .test_job_template_amd_stable
+  script:
+    - RUSTFLAGS="-C target-cpu=native" CARGO_STABLE=true ./scripts/run_tests_and_examples.sh
 
 unit-test-arm:
   extends: .test_job_template_arm

@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-#![feature(step_trait)]
-
 mod arith_expr;
 mod composition_poly;
 mod deinterleave;

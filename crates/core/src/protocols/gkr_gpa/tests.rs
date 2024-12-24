@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::iter::{repeat_with, Step};
+use std::iter::repeat_with;
 
 use binius_field::{
 	arch::{OptimalUnderlier256b, OptimalUnderlier512b},
@@ -120,7 +120,7 @@ where
 	U: UnderlierType + PackScalar<F, Packed = P>,
 	P: PackedExtension<FS, Scalar = F> + RepackedExtension<P> + PackedFieldIndexable,
 	F: TowerField + ExtensionField<FS>,
-	FS: TowerField + Step,
+	FS: TowerField,
 {
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<F>::new();

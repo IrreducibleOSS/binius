@@ -255,15 +255,12 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::iter::Step;
-
 	use proptest::{arbitrary::any, bits, proptest};
 
 	use super::{
 		super::small_uint::{U1, U2, U4},
 		*,
 	};
-	use crate::{BinaryField32b, Field};
 
 	#[test]
 	fn test_from_fn() {
@@ -368,16 +365,5 @@ mod tests {
 				assert_eq!(init_val.get_subvalue::<u8>(i), val);
 			}
 		}
-	}
-
-	#[test]
-	fn test_step_32b() {
-		let step0 = BinaryField32b::ZERO;
-		let step1 = BinaryField32b::forward_checked(step0, 0x10000000);
-		assert_eq!(step1, Some(BinaryField32b::new(0x10000000)));
-		let step2 = BinaryField32b::forward_checked(step1.unwrap(), 0x01000000);
-		assert_eq!(step2, Some(BinaryField32b::new(0x11000000)));
-		let step3 = BinaryField32b::forward_checked(step2.unwrap(), 0xF0000000);
-		assert_eq!(step3, None);
 	}
 }

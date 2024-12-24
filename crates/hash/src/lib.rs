@@ -1,5 +1,8 @@
 // Copyright 2023-2024 Irreducible Inc.
-#![cfg_attr(target_arch = "x86_64", feature(stdarch_x86_avx512))]
+#![cfg_attr(
+	all(target_arch = "x86_64", not(feature = "stable_only")),
+	feature(stdarch_x86_avx512)
+)]
 
 mod groestl;
 pub mod hasher;

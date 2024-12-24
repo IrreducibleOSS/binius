@@ -1,12 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::iter::{self, Step};
+use std::iter;
 
 use binius_field::{
 	arch::OptimalUnderlier512b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField128b, BinaryField8b, ExtensionField, Field, PackedField, PackedFieldIndexable,
+	BinaryField, BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
 	TowerField,
 };
 use binius_hal::make_portable_backend;
@@ -34,7 +34,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
 	F: TowerField + ExtensionField<FDomain>,
-	FDomain: Field + Step,
+	FDomain: BinaryField,
 	PackedType<U, F>: PackedFieldIndexable,
 {
 	let mut rng = StdRng::seed_from_u64(0);

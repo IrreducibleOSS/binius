@@ -21,6 +21,9 @@ hex-literal.workspace = true
 rand.workspace = true
 groestl_crypto.workspace = true
 
+[features]
+stable_only = ["binius_utils/stable_only", "binius_field/stable_only"]
+
 [lib]
 bench = false
 

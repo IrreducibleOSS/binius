@@ -56,9 +56,16 @@ where
 		self.iter.fold(init, move |acc, elt| g(acc, func(elt)))
 	}
 
+	#[cfg(feature = "stable_only")]
 	#[inline]
 	fn nth(&mut self, n: usize) -> Option<Self::Item> {
 		self.iter.nth(n).map(&self.func)
+	}
+
+	#[cfg(not(feature = "stable_only"))]
+	#[inline]
+	fn advance_by(&mut self, n: usize) -> Result<(), std::num::NonZero<usize>> {
+		self.iter.advance_by(n)
 	}
 }
 

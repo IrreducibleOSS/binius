@@ -27,6 +27,7 @@ proptest.workspace = true
 
 [features]
 trace_multiplications = []
+stable_only = ["binius_utils/stable_only"]
 
 [lib]
 bench = false

@@ -1,6 +1,6 @@
 // Copyright 2024 Irreducible, Inc
 
-use std::iter::{repeat_with, Step};
+use std::iter::repeat_with;
 
 use binius_field::{
 	BinaryField, BinaryField16b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b,
@@ -104,7 +104,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
 	log_inv_rate: usize,
 ) where
 	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
-	FDomain: Field + Step,
+	FDomain: BinaryField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<FDomain>

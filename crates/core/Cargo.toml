@@ -58,3 +58,4 @@ harness = false
 
 [features]
 debug_validate_sumcheck = []
+stable_only = ["binius_utils/stable_only", "binius_field/stable_only", "binius_hash/stable_only"]

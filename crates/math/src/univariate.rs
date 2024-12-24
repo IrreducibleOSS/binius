@@ -1,15 +1,12 @@
 // Copyright 2023-2024 Irreducible Inc.
 // Copyright (c) 2022 The Plonky2 Authors
 
-use std::{
-	iter::{self, Step},
-	marker::PhantomData,
-};
+use std::marker::PhantomData;
 
 use auto_impl::auto_impl;
 use binius_field::{
-	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
-	PackedField, TowerField,
+	packed::mul_by_subfield_scalar, BinaryField, BinaryField1b, ExtensionField, Field,
+	PackedExtension, PackedField, TowerField,
 };
 use binius_utils::bail;
 use p3_util::log2_ceil_usize;
@@ -46,7 +43,7 @@ pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
 #[derive(Default, Clone)]
 pub struct DefaultEvaluationDomainFactory<DomainFieldWithStep>
 where
-	DomainFieldWithStep: Field + Step,
+	DomainFieldWithStep: BinaryField,
 {
 	_p: PhantomData<DomainFieldWithStep>,
 }
@@ -54,7 +51,7 @@ where
 #[derive(Default, Clone)]
 pub struct IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
 where
-	DomainFieldWithStep: Field + Step,
+	DomainFieldWithStep: BinaryField,
 {
 	_p: PhantomData<DomainFieldWithStep>,
 }
@@ -62,7 +59,7 @@ where
 impl<DomainField> EvaluationDomainFactory<DomainField>
 	for DefaultEvaluationDomainFactory<DomainField>
 where
-	DomainField: Field + Step,
+	DomainField: BinaryField,
 {
 	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
 		EvaluationDomain::from_points(make_evaluation_points(size)?)
@@ -73,7 +70,7 @@ impl<DomainField, DomainFieldWithStep> EvaluationDomainFactory<DomainField>
 	for IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
 where
 	DomainField: Field + From<DomainFieldWithStep>,
-	DomainFieldWithStep: Field + Step,
+	DomainFieldWithStep: BinaryField,
 {
 	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
 		let points = make_evaluation_points::<DomainFieldWithStep>(size)?;
@@ -81,13 +78,24 @@ where
 	}
 }
 
-fn make_evaluation_points<F: Field + Step>(size: usize) -> Result<Vec<F>, Error> {
-	let points = iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1))
-		.take(size)
-		.collect::<Vec<F>>();
-	if points.len() != size {
+fn make_evaluation_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {
+	if size > 1 << F::DEGREE {
 		bail!(Error::DomainSizeTooLarge);
 	}
+
+	let mut basis = vec![BinaryField1b::ZERO; F::DEGREE];
+	let points = (0..size)
+		.map(move |mut index| {
+			for basis in basis.iter_mut() {
+				*basis = BinaryField1b::from((index & 1) as u8);
+
+				index >>= 1;
+			}
+
+			F::from_bases(&basis).expect("basis is always valid")
+		})
+		.collect();
+
 	Ok(points)
 }
 
@@ -439,11 +447,18 @@ mod tests {
 		check_ntt_domain::<BinaryField16b>(65536);
 	}
 
-	fn check_ntt_domain<F: BinaryField + Step>(size: usize) {
-		let domain = make_ntt_domain_points(size).unwrap();
-		let expected =
-			iter::successors(Some(F::ZERO), |&pred| F::forward_checked(pred, 1)).take(size);
-		assert!(expected.zip(domain).all(|(l, r)| l == r));
+	fn check_ntt_domain<F: BinaryField>(size: usize) {
+		let domain = make_ntt_domain_points::<F>(size).unwrap();
+		assert_eq!(domain.len(), size);
+
+		for (i, val) in domain.iter().enumerate() {
+			let mut value_bin: usize = 0;
+			for (j, base) in val.iter_bases().enumerate() {
+				value_bin |= (u8::from(base) as usize) << j;
+			}
+
+			assert_eq!(i, value_bin);
+		}
 	}
 
 	proptest! {

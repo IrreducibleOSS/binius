@@ -4,7 +4,7 @@ use std::{
 	any::TypeId,
 	array,
 	fmt::{Debug, Display, Formatter},
-	iter::{Product, Step, Sum},
+	iter::{Product, Sum},
 	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };

@@ -679,7 +679,7 @@ fn extrapolated_evals_packed_len<P: PackedField>(
 
 #[cfg(test)]
 mod tests {
-	use std::{iter::Step, sync::Arc};
+	use std::sync::Arc;
 
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
@@ -808,7 +808,7 @@ mod tests {
 			+ PackScalar<BinaryField1b>,
 		F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
 		FBase: TowerField + ExtensionField<FDomain>,
-		FDomain: TowerField + Step + From<u8>,
+		FDomain: TowerField + From<u8>,
 		PackedType<U, FBase>:
 			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 		PackedType<U, F>: PackedFieldIndexable + RepackedExtension<PackedType<U, FBase>>,

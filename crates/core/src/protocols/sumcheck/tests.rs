@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use std::{
-	iter::{self, repeat_with, Step},
+	iter::{self, repeat_with},
 	sync::Arc,
 };
 
@@ -10,8 +10,9 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::UnderlierType,
-	BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field, PackedBinaryField1x128b,
-	PackedBinaryField4x32b, PackedExtension, PackedField, RepackedExtension, TowerField,
+	BinaryField, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
+	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
+	RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -127,7 +128,7 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FDomain> + PackScalar<FExt>,
 	F: Field,
-	FDomain: Field + Step,
+	FDomain: BinaryField,
 	FExt: TowerField + ExtensionField<F> + ExtensionField<FDomain>,
 	BinaryField128b: From<FExt> + Into<FExt>,
 {

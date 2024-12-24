@@ -217,10 +217,7 @@ where
 
 #[cfg(test)]
 mod tests {
-	use std::{
-		iter::{self, Step},
-		sync::Arc,
-	};
+	use std::{iter, sync::Arc};
 
 	use binius_field::{
 		arch::{OptimalUnderlier128b, OptimalUnderlier512b},
@@ -420,7 +417,7 @@ mod tests {
 		F: TowerField + From<FI>,
 		FI: TowerField + ExtensionField<FDomain> + ExtensionField<FBase> + ExtensionField<FWitness>,
 		FBase: TowerField + ExtensionField<FDomain>,
-		FDomain: TowerField + Step,
+		FDomain: TowerField,
 		FWitness: Field,
 		PackedType<U, FBase>:
 			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
