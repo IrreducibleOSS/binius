@@ -1,16 +1,16 @@
 // Copyright 2024 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::{
+	builder::ConstraintSystemBuilder,
+	collatz::{Advice, Collatz},
+};
 use binius_core::{
-	constraint_system::{
-		self,
-		channel::{Boundary, FlushDirection},
-	},
+	constraint_system::{self, Proof},
 	fiat_shamir::HasherChallenger,
 	tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier128b, BinaryField128b, BinaryField32b};
+use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -29,11 +29,12 @@ struct Args {
 	log_inv_rate: u32,
 }
 
-fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
-	type F = BinaryField128b;
-	const SECURITY_BITS: usize = 100;
+type U = OptimalUnderlier;
+type F = BinaryField128b;
 
+const SECURITY_BITS: usize = 100;
+
+fn main() -> Result<()> {
 	adjust_thread_pool()
 		.as_ref()
 		.expect("failed to init thread pool");
@@ -41,26 +42,26 @@ fn main() -> Result<()> {
 	let args = Args::parse();
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying collatz orbit over u32 with starting value {}", args.starting_value);
+	let x0 = args.starting_value; //9999999;
+	println!("Verifying collatz orbit over u32 with starting value {}", x0);
+
+	let log_inv_rate = args.log_inv_rate as usize;
+
+	let (advice, proof) = prove(x0, log_inv_rate)?;
+
+	verify(x0, advice, proof, log_inv_rate)?;
+
+	Ok(())
+}
+
+fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error> {
+	let mut collatz = Collatz::new(x0);
+	let advice = collatz.init_prover();
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 
-	let channel_id = binius_circuits::collatz::collatz(&mut builder, args.starting_value)?;
-	let boundaries = vec![
-		Boundary {
-			channel_id,
-			direction: FlushDirection::Pull,
-			values: vec![BinaryField32b::new(1).into()],
-			multiplicity: 1,
-		},
-		Boundary {
-			channel_id,
-			direction: FlushDirection::Push,
-			values: vec![BinaryField32b::new(args.starting_value).into()],
-			multiplicity: 1,
-		},
-	];
+	let boundaries = collatz.build(&mut builder, advice)?;
 
 	let witness = builder
 		.take_witness()
@@ -82,12 +83,24 @@ fn main() -> Result<()> {
 		_,
 	>(
 		&constraint_system,
-		args.log_inv_rate as usize,
+		log_inv_rate,
 		SECURITY_BITS,
 		witness,
 		&domain_factory,
 		&make_portable_backend(),
 	)?;
+
+	Ok((advice, proof))
+}
+
+fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<(), anyhow::Error> {
+	let collatz = Collatz::new(x0);
+
+	let mut builder = ConstraintSystemBuilder::<U, F>::new();
+
+	let boundaries = collatz.build(&mut builder, advice)?;
+
+	let constraint_system = builder.build()?;
 
 	constraint_system::verify::<
 		U,
@@ -96,13 +109,7 @@ fn main() -> Result<()> {
 		GroestlHasher<_>,
 		GroestlDigestCompression<_>,
 		HasherChallenger<Groestl256>,
-	>(
-		&constraint_system.no_base_constraints(),
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		boundaries,
-		proof,
-	)?;
+	>(&constraint_system, log_inv_rate, SECURITY_BITS, boundaries, proof)?;
 
 	Ok(())
 }
