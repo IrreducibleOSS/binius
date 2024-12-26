@@ -35,9 +35,8 @@ pub trait BinaryField: ExtensionField<BinaryField1b> {
 /// trait can be implemented on any binary field *isomorphic* to the canonical tower field.
 ///
 /// [DP23]: https://eprint.iacr.org/2023/1784
-pub trait TowerField: BinaryField
+pub trait TowerField: BinaryField + From<Self::Canonical>
 where
-	Self: From<Self::Canonical>,
 	Self::Canonical: From<Self>,
 {
 	/// The level $\iota$ in the tower, where this field is isomorphic to $T_{\iota}$.

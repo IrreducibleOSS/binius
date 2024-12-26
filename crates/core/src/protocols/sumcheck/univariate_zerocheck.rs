@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 use binius_field::{util::inner_product_unchecked, Field, TowerField};
-use binius_math::{make_ntt_canonical_domain_points, CompositionPolyOS, EvaluationDomain};
+use binius_math::{CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -82,8 +82,10 @@ where
 	let round_evals = transcript.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
 
-	let domain_points = make_ntt_canonical_domain_points::<F>(max_domain_size)?;
-	let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
+	let evaluation_domain = EvaluationDomainFactory::<F>::create(
+		&IsomorphicEvaluationDomainFactory::<F::Canonical>::default(),
+		max_domain_size,
+	)?;
 
 	let lagrange_coeffs = evaluation_domain.lagrange_evals(univariate_challenge);
 	let sum = inner_product_unchecked::<F, F>(

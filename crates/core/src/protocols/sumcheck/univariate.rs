@@ -7,7 +7,10 @@ use std::{
 
 use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_math::{make_ntt_canonical_domain_points, EvaluationDomain, MultilinearExtension};
+use binius_math::{
+	EvaluationDomain, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	MultilinearExtension,
+};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 use p3_util::log2_strict_usize;
@@ -138,8 +141,8 @@ where
 	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
 		let skip_rounds = claim.n_vars();
 
-		let domain_points = make_ntt_canonical_domain_points(1 << skip_rounds)?;
-		let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
+		let evaluation_domain = IsomorphicEvaluationDomainFactory::<F::Canonical>::default()
+			.create(1 << skip_rounds)?;
 
 		let lagrange_mle = lagrange_evals_multilinear_extension::<F, F, F>(
 			&evaluation_domain,

@@ -1,6 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 mod arith_expr;
+mod binary_subspace;
 mod composition_poly;
 mod deinterleave;
 mod error;
@@ -16,6 +17,7 @@ mod tensor_prod_eq_ind;
 mod univariate;
 
 pub use arith_expr::*;
+pub use binary_subspace::*;
 pub use composition_poly::*;
 pub use deinterleave::*;
 pub use error::*;

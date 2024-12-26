@@ -8,8 +8,8 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	make_ntt_canonical_domain_points, CompositionPolyOS, Error as MathError, EvaluationDomain,
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
+	CompositionPolyOS, Error as MathError, EvaluationDomainFactory,
+	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
 use binius_utils::bail;
@@ -106,8 +106,10 @@ where
 		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 
-	let domain_points = make_ntt_canonical_domain_points::<FDomain>(1 << skip_rounds)?;
-	let evaluation_domain = EvaluationDomain::from_points(domain_points)?;
+	let evaluation_domain = EvaluationDomainFactory::<FDomain>::create(
+		&IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
+		1 << skip_rounds,
+	)?;
 
 	reduced_multilinears.push(
 		lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?.into(),
@@ -234,11 +236,13 @@ where
 			mut partial_eq_ind_evals,
 		} = self;
 
-		let domain_points = make_ntt_canonical_domain_points::<FDomain>(max_domain_size)?;
+		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default();
+		let max_domain =
+			EvaluationDomainFactory::<FDomain>::create(&domain_factory, max_domain_size)?;
 
 		// Lagrange extrapolation over skipped subcube
 		let subcube_evaluation_domain =
-			EvaluationDomain::from_points(domain_points[..1 << skip_rounds].to_vec())?;
+			EvaluationDomainFactory::<FDomain>::create(&domain_factory, 1 << skip_rounds)?;
 
 		let subcube_lagrange_coeffs = subcube_evaluation_domain.lagrange_evals(challenge);
 
@@ -246,8 +250,7 @@ where
 		fold_partial_eq_ind::<P, Backend>(remaining_rounds, &mut partial_eq_ind_evals);
 
 		// Lagrange extrapolation for the entire univariate domain
-		let round_evals_lagrange_coeffs =
-			EvaluationDomain::from_points(domain_points)?.lagrange_evals(challenge);
+		let round_evals_lagrange_coeffs = max_domain.lagrange_evals(challenge);
 
 		let claimed_prime_sums = round_evals
 			.into_iter()
@@ -691,8 +694,7 @@ mod tests {
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{
-		make_ntt_domain_points, CompositionPolyOS, DefaultEvaluationDomainFactory,
-		EvaluationDomain, EvaluationDomainFactory, MultilinearPoly,
+		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory, MultilinearPoly,
 	};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -715,11 +717,11 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let ntt = SingleThreadedNTT::<FDomain>::new(10).unwrap();
-		let domain_points = make_ntt_domain_points::<FDomain>(1 << 10).unwrap();
+		let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
+		let max_domain = domain_factory.create(1 << 10).unwrap();
 
 		for skip_rounds in 0..5usize {
-			let domain =
-				EvaluationDomain::from_points(domain_points[..1 << skip_rounds].to_vec()).unwrap();
+			let domain = domain_factory.create(1 << skip_rounds).unwrap();
 			for log_batch in 0..3usize {
 				for composition_degree in 0..5usize {
 					let subcube_vars = skip_rounds + log_batch;
@@ -761,7 +763,7 @@ mod tests {
 							.map(|i| interleaved_scalars[(i << log_batch) + batch_idx])
 							.collect::<Vec<_>>();
 
-						for (i, &point) in domain_points[1 << skip_rounds..]
+						for (i, &point) in max_domain.points()[1 << skip_rounds..]
 							[..extrapolated_scalars_cnt]
 							.iter()
 							.enumerate()

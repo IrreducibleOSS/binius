@@ -1,17 +1,14 @@
 // Copyright 2023-2024 Irreducible Inc.
 // Copyright (c) 2022 The Plonky2 Authors
 
-use std::marker::PhantomData;
-
 use auto_impl::auto_impl;
 use binius_field::{
-	packed::mul_by_subfield_scalar, BinaryField, BinaryField1b, ExtensionField, Field,
-	PackedExtension, PackedField, TowerField,
+	packed::mul_by_subfield_scalar, BinaryField, ExtensionField, Field, PackedExtension,
+	PackedField,
 };
 use binius_utils::bail;
-use p3_util::log2_ceil_usize;
 
-use super::error::Error;
+use super::{binary_subspace::BinarySubspace, error::Error};
 use crate::Matrix;
 
 /// A domain that univariate polynomials may be evaluated on.
@@ -41,83 +38,41 @@ pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
 }
 
 #[derive(Default, Clone)]
-pub struct DefaultEvaluationDomainFactory<DomainFieldWithStep>
-where
-	DomainFieldWithStep: BinaryField,
-{
-	_p: PhantomData<DomainFieldWithStep>,
+pub struct DefaultEvaluationDomainFactory<F: BinaryField> {
+	subspace: BinarySubspace<F>,
 }
 
 #[derive(Default, Clone)]
-pub struct IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
-where
-	DomainFieldWithStep: BinaryField,
-{
-	_p: PhantomData<DomainFieldWithStep>,
+pub struct IsomorphicEvaluationDomainFactory<F: BinaryField> {
+	subspace: BinarySubspace<F>,
 }
 
-impl<DomainField> EvaluationDomainFactory<DomainField>
-	for DefaultEvaluationDomainFactory<DomainField>
-where
-	DomainField: BinaryField,
-{
-	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
-		EvaluationDomain::from_points(make_evaluation_points(size)?)
+impl<F: BinaryField> EvaluationDomainFactory<F> for DefaultEvaluationDomainFactory<F> {
+	fn create(&self, size: usize) -> Result<EvaluationDomain<F>, Error> {
+		EvaluationDomain::from_points(make_evaluation_points(&self.subspace, size)?)
 	}
 }
 
-impl<DomainField, DomainFieldWithStep> EvaluationDomainFactory<DomainField>
-	for IsomorphicEvaluationDomainFactory<DomainFieldWithStep>
+impl<FSrc: BinaryField, FTgt: BinaryField> EvaluationDomainFactory<FTgt>
+	for IsomorphicEvaluationDomainFactory<FSrc>
 where
-	DomainField: Field + From<DomainFieldWithStep>,
-	DomainFieldWithStep: BinaryField,
+	FSrc: BinaryField,
+	FTgt: Field + From<FSrc>,
 {
-	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
-		let points = make_evaluation_points::<DomainFieldWithStep>(size)?;
+	fn create(&self, size: usize) -> Result<EvaluationDomain<FTgt>, Error> {
+		let points = make_evaluation_points(&self.subspace, size)?;
 		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect())
 	}
 }
 
-fn make_evaluation_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {
-	if size > 1 << F::DEGREE {
+fn make_evaluation_points<F: BinaryField>(
+	subspace: &BinarySubspace<F>,
+	size: usize,
+) -> Result<Vec<F>, Error> {
+	let points = subspace.iter().take(size).collect::<Vec<F>>();
+	if points.len() != size {
 		bail!(Error::DomainSizeTooLarge);
 	}
-
-	let mut basis = vec![BinaryField1b::ZERO; F::DEGREE];
-	let points = (0..size)
-		.map(move |mut index| {
-			for basis in basis.iter_mut() {
-				*basis = BinaryField1b::from((index & 1) as u8);
-
-				index >>= 1;
-			}
-
-			F::from_bases(&basis).expect("basis is always valid")
-		})
-		.collect();
-
-	Ok(points)
-}
-
-pub fn make_ntt_canonical_domain_points<F: TowerField>(size: usize) -> Result<Vec<F>, Error> {
-	let canonical_domain = make_ntt_domain_points::<F::Canonical>(size)?;
-	Ok(canonical_domain.into_iter().map(Into::into).collect())
-}
-
-pub fn make_ntt_domain_points<F: BinaryField>(size: usize) -> Result<Vec<F>, Error> {
-	let mut points = Vec::with_capacity(size);
-	if size == 0 {
-		return Ok(points);
-	}
-
-	points.push(F::ZERO);
-	for basis_idx in 0..log2_ceil_usize(size) {
-		let basis_eval = F::basis(basis_idx)?;
-		for i in 0..points.len().min(size - points.len()) {
-			points.push(points[i] + basis_eval);
-		}
-	}
-	debug_assert_eq!(points.len(), size);
 	Ok(points)
 }
 
@@ -304,8 +259,7 @@ mod tests {
 
 	use assert_matches::assert_matches;
 	use binius_field::{
-		util::inner_product_unchecked, AESTowerField32b, BinaryField16b, BinaryField32b,
-		BinaryField8b,
+		util::inner_product_unchecked, AESTowerField32b, BinaryField32b, BinaryField8b,
 	};
 	use proptest::{collection::vec, proptest};
 	use rand::{rngs::StdRng, SeedableRng};
@@ -434,31 +388,6 @@ mod tests {
 			.interpolate(&values)
 			.unwrap();
 		assert_eq!(interpolated, coeffs);
-	}
-
-	#[test]
-	fn test_make_ntt_domain_points() {
-		for size in 0..256 {
-			check_ntt_domain::<BinaryField8b>(size)
-		}
-
-		check_ntt_domain::<BinaryField16b>(513);
-		check_ntt_domain::<BinaryField16b>(997);
-		check_ntt_domain::<BinaryField16b>(65536);
-	}
-
-	fn check_ntt_domain<F: BinaryField>(size: usize) {
-		let domain = make_ntt_domain_points::<F>(size).unwrap();
-		assert_eq!(domain.len(), size);
-
-		for (i, val) in domain.iter().enumerate() {
-			let mut value_bin: usize = 0;
-			for (j, base) in val.iter_bases().enumerate() {
-				value_bin |= (u8::from(base) as usize) << j;
-			}
-
-			assert_eq!(i, value_bin);
-		}
 	}
 
 	proptest! {
