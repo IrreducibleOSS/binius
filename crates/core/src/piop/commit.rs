@@ -130,25 +130,15 @@ mod tests {
 	fn test_make_oracle_commit_meta() {
 		let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 
-		let batch_0_0 = oracles.add_committed_batch(8, 0);
-		let batch_0_0_ids = oracles.add_committed_multiple::<2>(batch_0_0);
-
-		let batch_0_1 = oracles.add_committed_batch(10, 0);
-		let batch_0_1_ids = oracles.add_committed_multiple::<2>(batch_0_1);
-
-		let batch_0_2 = oracles.add_committed_batch(12, 0);
-		let batch_0_2_ids = oracles.add_committed_multiple::<2>(batch_0_2);
+		let batch_0_0_ids = oracles.add_committed_multiple::<2>(8, 0);
+		let batch_0_1_ids = oracles.add_committed_multiple::<2>(10, 0);
+		let batch_0_2_ids = oracles.add_committed_multiple::<2>(12, 0);
 
 		let repeat = oracles.add_repeating(batch_0_2_ids[0], 5).unwrap();
 
-		let batch_2_0 = oracles.add_committed_batch(8, 2);
-		let batch_2_0_ids = oracles.add_committed_multiple::<2>(batch_2_0);
-
-		let batch_2_1 = oracles.add_committed_batch(10, 2);
-		let batch_2_1_ids = oracles.add_committed_multiple::<2>(batch_2_1);
-
-		let batch_2_2 = oracles.add_committed_batch(12, 2);
-		let batch_2_2_ids = oracles.add_committed_multiple::<2>(batch_2_2);
+		let batch_2_0_ids = oracles.add_committed_multiple::<2>(8, 2);
+		let batch_2_1_ids = oracles.add_committed_multiple::<2>(10, 2);
+		let batch_2_2_ids = oracles.add_committed_multiple::<2>(12, 2);
 
 		let (commit_meta, index) = make_oracle_commit_meta(&oracles).unwrap();
 		assert_eq!(commit_meta.n_multilins_by_vars(), &[0, 2, 0, 4, 0, 4, 0, 2]);

@@ -8,10 +8,7 @@ use crate::{
 	fiat_shamir::CanSample,
 	oracle::MultilinearOracleSet,
 	protocols::{
-		evalcheck::{
-			deserialize_evalcheck_proof, CommittedEvalClaim, EvalcheckMultilinearClaim,
-			EvalcheckVerifier,
-		},
+		evalcheck::{deserialize_evalcheck_proof, EvalcheckMultilinearClaim, EvalcheckVerifier},
 		sumcheck::{self, batch_verify, constraint_set_sumcheck_claims, SumcheckClaimsWithMeta},
 	},
 	transcript::{read_u64, AdviceReader, CanRead},
@@ -71,24 +68,9 @@ where
 		bail!(Error::MissingVirtualOpeningProof);
 	}
 
-	let oracles = evalcheck_verifier.oracles.clone();
 	let committed_claims = evalcheck_verifier
 		.committed_eval_claims_mut()
 		.drain(..)
-		.map(
-			|CommittedEvalClaim {
-			     id,
-			     eval_point,
-			     eval,
-			 }| {
-				EvalcheckMultilinearClaim {
-					poly: oracles.committed_oracle(id),
-					eval_point,
-					eval,
-				}
-			},
-		)
 		.collect::<Vec<_>>();
-
 	Ok(committed_claims)
 }

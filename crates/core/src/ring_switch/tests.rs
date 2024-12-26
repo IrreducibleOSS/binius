@@ -216,18 +216,10 @@ fn make_test_oracle_set<F: TowerField>() -> MultilinearOracleSet<F> {
 
 	// This first one ensures that not all oracles are added in ascending order by number of packed
 	// coefficients.
-	let batch_3_0 = oracles.add_committed_batch(10, 3);
-	let _ = oracles.add_committed(batch_3_0);
-
-	let batch_3_1 = oracles.add_committed_batch(8, 3);
-	let _ = oracles.add_committed(batch_3_1);
-
-	let batch_5_0 = oracles.add_committed_batch(8, 5);
-	let _ = oracles.add_committed(batch_5_0);
-
-	let batch_5_1 = oracles.add_committed_batch(10, 5);
-	let _ = oracles.add_committed(batch_5_1);
-
+	oracles.add_committed(10, 3);
+	oracles.add_committed(8, 3);
+	oracles.add_committed(8, 5);
+	oracles.add_committed(10, 5);
 	oracles
 }
 

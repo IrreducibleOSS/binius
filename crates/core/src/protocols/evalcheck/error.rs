@@ -3,7 +3,7 @@
 use binius_field::Field;
 
 use crate::{
-	oracle::{BatchId, CommittedId, CompositePolyOracle, Error as OracleError, OracleId},
+	oracle::{CompositePolyOracle, Error as OracleError, OracleId},
 	polynomial::Error as PolynomialError,
 };
 
@@ -11,16 +11,6 @@ use crate::{
 pub enum Error {
 	#[error("witness is unable to evaluate multilinear with ID: {0}")]
 	InvalidWitness(OracleId),
-	#[error("unknown committed polynomial id {0}")]
-	UnknownCommittedId(CommittedId),
-	#[error("unknown batch {0}")]
-	UnknownBatchId(BatchId),
-	#[error("empty batch {0}")]
-	EmptyBatch(BatchId),
-	#[error("conflicting evaluations in batch {0}")]
-	ConflictingEvals(BatchId),
-	#[error("missing evaluation in batch {0}")]
-	MissingEvals(BatchId),
 	#[error("missing query")]
 	MissingQuery,
 	#[error("oracle error: {0}")]

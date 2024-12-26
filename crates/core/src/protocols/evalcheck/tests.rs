@@ -60,8 +60,7 @@ fn test_shifted_evaluation_whole_cube() {
 	let n_vars = 8;
 
 	let mut oracles = MultilinearOracleSet::<FExtension>::new();
-	let batch_id = oracles.add_committed_batch(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
-	let poly_id = oracles.add_committed(batch_id);
+	let poly_id = oracles.add_committed(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
 
 	let shifted_id = oracles
 		.add_shifted(poly_id, 1, n_vars, ShiftVariant::CircularLeft)
@@ -124,8 +123,7 @@ fn test_shifted_evaluation_subcube() {
 
 	let mut oracles = MultilinearOracleSet::<FExtension>::new();
 
-	let batch_id = oracles.add_committed_batch(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
-	let poly_id = oracles.add_committed(batch_id);
+	let poly_id = oracles.add_committed(n_vars, <P as PackedField>::Scalar::TOWER_LEVEL);
 
 	let shifted_id = oracles
 		.add_shifted(poly_id, 3, 4, ShiftVariant::CircularLeft)

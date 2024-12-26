@@ -120,14 +120,9 @@ mod tests {
 		let n_vars = 5;
 
 		let mut oracles = MultilinearOracleSet::<F>::new();
-		let batch_id_2b = oracles.add_committed_batch(n_vars, BinaryField2b::TOWER_LEVEL);
-		let poly_2b = oracles.add_committed(batch_id_2b);
-
-		let batch_id_8b = oracles.add_committed_batch(n_vars, BinaryField8b::TOWER_LEVEL);
-		let poly_8b = oracles.add_committed(batch_id_8b);
-
-		let batch_id_32b = oracles.add_committed_batch(n_vars, BinaryField32b::TOWER_LEVEL);
-		let poly_32b = oracles.add_committed(batch_id_32b);
+		let poly_2b = oracles.add_committed(n_vars, BinaryField2b::TOWER_LEVEL);
+		let poly_8b = oracles.add_committed(n_vars, BinaryField8b::TOWER_LEVEL);
+		let poly_32b = oracles.add_committed(n_vars, BinaryField32b::TOWER_LEVEL);
 
 		let composition = TestByteComposition;
 		let composite = CompositePolyOracle::new(

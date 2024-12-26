@@ -77,10 +77,9 @@ fn create_claims_witnesses_helper<
 	if n_vars == 0 || n_multilins == 0 {
 		panic!("Require at least one variable and multilinear polynomial");
 	}
-	let batch_id = oracle_set.add_committed_batch(n_vars, F::TOWER_LEVEL);
 	let multilin_oracles = (0..n_multilins)
 		.map(|_| {
-			let id = oracle_set.add_committed(batch_id);
+			let id = oracle_set.add_committed(n_vars, F::TOWER_LEVEL);
 			oracle_set.oracle(id)
 		})
 		.collect::<Vec<_>>();

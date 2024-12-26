@@ -9,7 +9,7 @@ use tracing::instrument;
 
 use super::{
 	error::{Error, VerificationError},
-	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
 		add_bivariate_sumcheck_to_constraints, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
@@ -32,7 +32,7 @@ where
 	pub(crate) oracles: &'a mut MultilinearOracleSet<F>,
 
 	#[getset(get = "pub", get_mut = "pub")]
-	committed_eval_claims: Vec<CommittedEvalClaim<F>>,
+	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	new_sumcheck_constraints: Vec<ConstraintSetBuilder<F>>,
 }
@@ -105,19 +105,19 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				}
 			}
 
-			MultilinearPolyOracle::Committed { id, .. } => {
+			MultilinearPolyOracle::Committed { .. } => {
 				match evalcheck_proof {
 					EvalcheckProof::Committed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				}
 
-				let subclaim = CommittedEvalClaim {
-					id,
+				let claim = EvalcheckMultilinearClaim {
+					poly: multilinear,
 					eval_point,
 					eval,
 				};
 
-				self.committed_eval_claims.push(subclaim);
+				self.committed_eval_claims.push(claim);
 			}
 
 			MultilinearPolyOracle::Repeating { inner, .. } => {

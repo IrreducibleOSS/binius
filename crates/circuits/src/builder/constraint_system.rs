@@ -10,7 +10,7 @@ use binius_core::{
 		ConstraintSystem,
 	},
 	oracle::{
-		BatchId, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
+		ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
 		ProjectionVariant, ShiftVariant,
 	},
 	polynomial::MultivariatePoly,
@@ -29,7 +29,6 @@ where
 	F: TowerField,
 {
 	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
-	batch_ids: Vec<(usize, usize, BatchId)>,
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
@@ -148,11 +147,10 @@ where
 		n_vars: usize,
 		tower_level: usize,
 	) -> OracleId {
-		let batch_id = self.get_or_create_batch_id(n_vars, tower_level);
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.committed(batch_id)
+			.committed(n_vars, tower_level)
 	}
 
 	pub fn add_committed_multiple<const N: usize>(
@@ -161,30 +159,10 @@ where
 		n_vars: usize,
 		tower_level: usize,
 	) -> [OracleId; N] {
-		let batch_id = self.get_or_create_batch_id(n_vars, tower_level);
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.committed_multiple(batch_id)
-	}
-
-	fn get_or_create_batch_id(&mut self, n_vars: usize, tower_level: usize) -> BatchId {
-		if let Some((_, _, batch_id)) =
-			self.batch_ids
-				.iter()
-				.copied()
-				.find(|(prev_n_vars, prev_tower_level, _)| {
-					*prev_n_vars == n_vars && *prev_tower_level == tower_level
-				}) {
-			batch_id
-		} else {
-			let batch_id = self
-				.oracles
-				.borrow_mut()
-				.add_committed_batch(n_vars, tower_level);
-			self.batch_ids.push((n_vars, tower_level, batch_id));
-			batch_id
-		}
+			.committed_multiple(n_vars, tower_level)
 	}
 
 	pub fn add_linear_combination(

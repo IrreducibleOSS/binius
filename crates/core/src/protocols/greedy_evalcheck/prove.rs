@@ -15,7 +15,7 @@ use crate::{
 	oracle::MultilinearOracleSet,
 	protocols::evalcheck::{
 		serialize_evalcheck_proof, subclaims::prove_bivariate_sumchecks_with_switchover,
-		CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProver,
+		EvalcheckMultilinearClaim, EvalcheckProver,
 	},
 	transcript::{write_u64, AdviceWriter, CanWrite},
 	witness::MultilinearExtensionIndex,
@@ -81,24 +81,9 @@ where
 	}
 	write_u64(advice, virtual_opening_proofs_len);
 
-	let oracles = evalcheck_prover.oracles.clone();
 	let committed_claims = evalcheck_prover
 		.committed_eval_claims_mut()
 		.drain(..)
-		.map(
-			|CommittedEvalClaim {
-			     id,
-			     eval_point,
-			     eval,
-			 }| {
-				EvalcheckMultilinearClaim {
-					poly: oracles.committed_oracle(id),
-					eval_point,
-					eval,
-				}
-			},
-		)
 		.collect::<Vec<_>>();
-
 	Ok(committed_claims)
 }

@@ -10,7 +10,7 @@ use binius_field::{Field, TowerField};
 
 use super::error::Error;
 use crate::{
-	oracle::{CommittedId, MultilinearPolyOracle, OracleId},
+	oracle::{MultilinearPolyOracle, OracleId},
 	transcript::{CanRead, CanWrite},
 };
 
@@ -70,15 +70,6 @@ impl<F: Field> EvalcheckProof<F> {
 			}
 		}
 	}
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CommittedEvalClaim<F: Field> {
-	pub id: CommittedId,
-	/// Evaluation Point
-	pub eval_point: EvalPoint<F>,
-	/// Claimed Evaluation
-	pub eval: F,
 }
 
 impl EvalcheckNumerics {

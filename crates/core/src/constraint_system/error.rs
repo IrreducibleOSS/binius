@@ -3,7 +3,7 @@
 use super::channel::ChannelId;
 use crate::{
 	oracle,
-	oracle::{BatchId, OracleId},
+	oracle::OracleId,
 	piop, polynomial, protocols,
 	protocols::{gkr_gpa, greedy_evalcheck},
 	ring_switch, witness,
@@ -48,9 +48,6 @@ pub enum Error {
 
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
-
-	#[error("unconstrained polynomial batch {0}")]
-	UnconstrainedBatch(BatchId),
 
 	#[error("{oracle} underlier witness data does not match")]
 	PackedUnderlierMismatch { oracle: String },

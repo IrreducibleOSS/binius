@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use super::{
 	error::Error,
-	evalcheck::{CommittedEvalClaim, EvalcheckMultilinearClaim, EvalcheckProof},
+	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{calculate_projected_mles, MemoizedQueries, ProjectedBivariateMeta},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -46,7 +46,7 @@ where
 	pub(crate) witness_index: &'a mut MultilinearExtensionIndex<'b, U, F>,
 
 	#[getset(get = "pub", get_mut = "pub")]
-	committed_eval_claims: Vec<CommittedEvalClaim<F>>,
+	committed_eval_claims: Vec<EvalcheckMultilinearClaim<F>>,
 
 	finalized_proofs: EvalPointOracleIdMap<(F, EvalcheckProof<F>), F>,
 
@@ -489,9 +489,9 @@ where
 		use MultilinearPolyOracle::*;
 
 		match multilinear {
-			Committed { id, .. } => {
-				let subclaim = CommittedEvalClaim {
-					id,
+			Committed { .. } => {
+				let subclaim = EvalcheckMultilinearClaim {
+					poly: multilinear,
 					eval_point,
 					eval,
 				};
