@@ -16,8 +16,10 @@ use super::error::Error;
 /// A matrix over a field.
 #[derive(Debug, Clone, PartialEq, Eq, CopyGetters)]
 pub struct Matrix<F: Field> {
+	/// The number of rows.
 	#[getset(get_copy = "pub")]
 	m: usize,
+	/// The number of columns.
 	#[getset(get_copy = "pub")]
 	n: usize,
 	elements: Box<[F]>,

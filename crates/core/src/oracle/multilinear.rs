@@ -560,13 +560,13 @@ impl<F: Field> Shifted<F> {
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
 		if block_size > inner.n_vars() {
-			bail!(crate::polynomial::error::Error::InvalidBlockSize {
+			bail!(PolynomialError::InvalidBlockSize {
 				n_vars: inner.n_vars(),
 			});
 		}
 
 		if shift_offset == 0 || shift_offset >= 1 << block_size {
-			bail!(crate::polynomial::error::Error::InvalidShiftOffset {
+			bail!(PolynomialError::InvalidShiftOffset {
 				max_shift_offset: (1 << block_size) - 1,
 				shift_offset,
 			});

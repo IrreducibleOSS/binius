@@ -1,7 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
 mod hasher_challenger;
-pub mod sampling;
+mod sampling;
 
 use bytes::{Buf, BufMut};
 pub use hasher_challenger::HasherChallenger;

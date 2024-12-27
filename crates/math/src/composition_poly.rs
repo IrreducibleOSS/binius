@@ -8,8 +8,9 @@ use stackalloc::stackalloc_with_default;
 
 use crate::{ArithExpr, Error};
 
-/// A multivariate polynomial that defines a composition of `MultilinearComposite`.
-/// This is an object-safe version of the trait.
+/// A multivariate polynomial that is used as a composition of several multilinear polynomials.
+///
+/// This is an object-safe version of the [`CompositionPoly`] trait.
 #[auto_impl(Arc, &)]
 pub trait CompositionPolyOS<P>: Debug + Send + Sync
 where

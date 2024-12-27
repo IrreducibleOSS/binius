@@ -1,9 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-pub mod arith_circuit;
-pub mod cached;
-pub mod error;
-pub mod multivariate;
+mod arith_circuit;
+mod cached;
+mod error;
+mod multivariate;
 #[allow(dead_code)]
 #[doc(hidden)]
 pub mod test_utils;

@@ -5,7 +5,7 @@ use p3_util::log2_strict_usize;
 
 use super::error::Error;
 
-/// The additive NTT defined defined in [LCH14].
+/// The additive NTT defined in [LCH14].
 ///
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 pub trait AdditiveNTT<P: PackedField> {

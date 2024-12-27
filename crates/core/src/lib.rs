@@ -1,4 +1,11 @@
 // Copyright 2023-2024 Irreducible Inc.
+
+//! The core implementation of the Binius cryptographic protocols.
+//!
+//! The core submodules expose cryptographic building blocks for the proof system. Each protocol
+//! has interfaces for both the prover and verifier sides. Prover-side functions are optimized for
+//! performance, while verifier-side functions are optimized for auditability and security.
+
 // This is to silence clippy errors around suspicious usage of XOR
 // in our arithmetic. This is safe to do becasue we're operating
 // over binary fields.

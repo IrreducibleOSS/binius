@@ -11,7 +11,11 @@ use binius_field::Field;
 
 use super::error::Error;
 
-/// Represents an arithmetic expression that can be evaluated symbolically.
+/// Arithmetic expressions that can be evaluated symbolically.
+///
+/// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
+/// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
+/// specific representations of multivariate polynomials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
@@ -34,6 +38,7 @@ impl<F: Field + Display> Display for ArithExpr<F> {
 }
 
 impl<F: Field> ArithExpr<F> {
+	/// The number of variables the expression contains.
 	pub fn n_vars(&self) -> usize {
 		match self {
 			ArithExpr::Const(_) => 0,
@@ -45,6 +50,7 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
+	/// The total degree of the polynomial the expression represents.
 	pub fn degree(&self) -> usize {
 		match self {
 			ArithExpr::Const(_) => 0,

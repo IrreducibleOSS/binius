@@ -1,5 +1,11 @@
 // Copyright 2024 Irreducible Inc.
 
+//! The Binius frontend library, along with useful gadgets and examples.
+//!
+//! The frontend library provides high-level interfaces for constructing constraint systems in the
+//! [`crate::builder`] module. Most other modules contain circuit gadgets that can be used to build
+//! more complex constraint systems.
+
 #![feature(array_try_map, array_try_from_fn)]
 #![allow(clippy::module_inception)]
 
