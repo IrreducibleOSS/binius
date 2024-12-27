@@ -3,15 +3,14 @@
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::AESTowerFamily};
-use binius_field::{
-	arch::OptimalUnderlier, AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField8b,
-};
+use binius_field::{arch::OptimalUnderlier, AESTowerField128b, AESTowerField16b, BinaryField8b};
 use binius_hal::make_portable_backend;
-use binius_hash::{Groestl256, GroestlDigestCompression};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::IsomorphicEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
 use clap::{value_parser, Parser};
+use groestl_crypto::Groestl256;
 use tracing_profile::init_tracing;
 
 const LOG_ROWS_PER_PERMUTATION: usize = 0;
@@ -65,10 +64,9 @@ fn main() -> Result<()> {
 		AESTowerFamily,
 		AESTowerField16b,
 		_,
-		_,
-		Groestl256<AESTowerField128b, _>,
-		GroestlDigestCompression<AESTowerField8b>,
-		HasherChallenger<groestl_crypto::Groestl256>,
+		Groestl256,
+		Groestl256ByteCompression,
+		HasherChallenger<Groestl256>,
 		_,
 	>(
 		&constraint_system,
@@ -84,10 +82,9 @@ fn main() -> Result<()> {
 	constraint_system::verify::<
 		U,
 		AESTowerFamily,
-		_,
-		Groestl256<AESTowerField128b, _>,
-		GroestlDigestCompression<AESTowerField8b>,
-		HasherChallenger<groestl_crypto::Groestl256>,
+		Groestl256,
+		Groestl256ByteCompression,
+		HasherChallenger<Groestl256>,
 	>(
 		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,

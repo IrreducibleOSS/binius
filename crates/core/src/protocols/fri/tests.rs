@@ -5,12 +5,12 @@ use std::{iter::repeat_with, vec};
 use binius_field::{
 	arch::{packed_64::PackedBinaryField4x16b, OptimalUnderlier128b},
 	as_packed_field::{PackScalar, PackedType},
-	underlier::{Divisible, UnderlierType},
-	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedBinaryField16x16b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	underlier::UnderlierType,
+	BinaryField, BinaryField128b, BinaryField16b, BinaryField32b, ExtensionField,
+	PackedBinaryField16x16b, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::MultilinearExtension;
 use binius_ntt::NTTOptions;
 use groestl_crypto::Groestl256;
@@ -21,7 +21,7 @@ use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	linear_code::LinearCode,
-	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
+	merkle_tree::BinaryMerkleTreeProver,
 	protocols::fri::{
 		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,
 		FoldRoundOutput,
@@ -36,10 +36,9 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	log_batch_size: usize,
 	arities: &[usize],
 ) where
-	U: UnderlierType + PackScalar<F> + PackScalar<FA> + PackScalar<BinaryField8b> + Divisible<u8>,
-	F: TowerField + ExtensionField<FA> + ExtensionField<BinaryField8b>,
-	F: PackedField<Scalar = F>
-		+ PackedExtension<BinaryField8b, PackedSubfield: PackedFieldIndexable>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FA>,
+	F: TowerField + ExtensionField<FA>,
+	F: PackedField<Scalar = F>,
 	FA: BinaryField,
 	PackedType<U, F>: PackedFieldIndexable,
 	PackedType<U, FA>: PackedFieldIndexable,
@@ -53,10 +52,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let merkle_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
-			BinaryField8b,
-		>::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let committed_rs_code =
 		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, NTTOptions::default()).unwrap();
@@ -93,9 +89,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 		advice: AdviceWriter::default(),
 	};
-	prover_challenger
-		.transcript
-		.write_packed(codeword_commitment);
+	prover_challenger.transcript.write(&codeword_commitment);
 	let mut round_commitments = Vec::with_capacity(params.n_oracles());
 	for _i in 0..params.n_fold_rounds() {
 		let challenge = prover_challenger.transcript.sample();
@@ -103,7 +97,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				prover_challenger.transcript.write_packed(round_commitment);
+				prover_challenger.transcript.write(&round_commitment);
 				round_commitments.push(round_commitment);
 			}
 		}
@@ -114,7 +108,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 		.unwrap();
 	// Now run the verifier
 	let mut verifier_challenger = prover_challenger.into_verifier();
-	codeword_commitment = verifier_challenger.transcript.read_packed().unwrap();
+	codeword_commitment = verifier_challenger.transcript.read().unwrap();
 	let mut verifier_challenges = Vec::with_capacity(params.n_fold_rounds());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
@@ -125,7 +119,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 				.sample_vec(params.fold_arities()[i]),
 		);
 		let mut _commitment = *commitment;
-		_commitment = verifier_challenger.transcript.read_packed().unwrap();
+		_commitment = verifier_challenger.transcript.read().unwrap();
 	}
 
 	verifier_challenges.append(

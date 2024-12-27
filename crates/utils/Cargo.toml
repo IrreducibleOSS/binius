@@ -5,14 +5,18 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-cfg-if.workspace = true
 bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
+generic-array.workspace = true
 itertools.workspace = true
 rayon.workspace = true
 thiserror.workspace = true
 thread_local.workspace = true
 
+[dev-dependencies]
+rand.workspace = true
+
 [features]
+default = []
 bail_panic = []
 stable_only = []

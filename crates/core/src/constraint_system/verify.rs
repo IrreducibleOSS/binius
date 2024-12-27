@@ -6,9 +6,9 @@ use binius_field::{
 	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
 	TowerField,
 };
-use binius_hash::Hasher;
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
+use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{izip, multiunzip, Itertools};
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_ceil_usize;
@@ -49,7 +49,7 @@ use crate::{
 
 /// Verifies a proof against a constraint system.
 #[instrument("constraint_system::verify", skip_all, level = "debug")]
-pub fn verify<U, Tower, Digest, Hash, Compress, Challenger_>(
+pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -60,9 +60,8 @@ where
 	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
 	Tower::B128: PackedTop<Tower>,
-	Digest: PackedField<Scalar: TowerField>,
-	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
-	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
+	Hash: Digest + BlockSizeUser,
+	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	PackedType<U, Tower::B128>:
 		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
@@ -94,7 +93,7 @@ where
 	)?;
 
 	// Read polynomial commitment polynomials
-	let commitment = transcript.read_packed::<Digest>()?;
+	let commitment = transcript.read::<Output<Hash>>()?;
 
 	// Grand product arguments
 	// Grand products for non-zero checks

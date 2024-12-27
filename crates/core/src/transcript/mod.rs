@@ -2,9 +2,10 @@
 
 mod error;
 
-use std::slice;
+use std::{iter::repeat_with, slice};
 
 use binius_field::{deserialize_canonical, serialize_canonical, PackedField, TowerField};
+use binius_utils::serialization::{DeserializeBytes, SerializeBytes};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
 use tracing::warn;
@@ -206,7 +207,27 @@ impl AdviceReader {
 /// Trait that is used to read bytes and field elements from transcript/advice
 #[auto_impl::auto_impl(&mut)]
 pub trait CanRead {
-	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error>;
+	fn buffer(&mut self) -> impl Buf + '_;
+
+	fn read<T: DeserializeBytes>(&mut self) -> Result<T, Error> {
+		T::deserialize(self.buffer()).map_err(Into::into)
+	}
+
+	fn read_vec<T: DeserializeBytes>(&mut self, n: usize) -> Result<Vec<T>, Error> {
+		let mut buffer = self.buffer();
+		repeat_with(move || T::deserialize(&mut buffer).map_err(Into::into))
+			.take(n)
+			.collect()
+	}
+
+	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
+		let mut buffer = self.buffer();
+		if buffer.remaining() < buf.len() {
+			return Err(Error::NotEnoughBytes);
+		}
+		buffer.copy_to_slice(buf);
+		Ok(())
+	}
 
 	fn read_scalar<F: TowerField>(&mut self) -> Result<F, Error> {
 		let mut out = F::default();
@@ -214,7 +235,13 @@ pub trait CanRead {
 		Ok(out)
 	}
 
-	fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error>;
+	fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
+		let mut buffer = self.buffer();
+		for elem in buf {
+			*elem = deserialize_canonical(&mut buffer)?;
+		}
+		Ok(())
+	}
 
 	fn read_scalar_slice<F: TowerField>(&mut self, len: usize) -> Result<Vec<F>, Error> {
 		let mut elems = vec![F::default(); len];
@@ -248,49 +275,49 @@ pub trait CanRead {
 }
 
 impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
-	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
-		if self.combined.buffer.remaining() < buf.len() {
-			return Err(Error::NotEnoughBytes);
-		}
-		self.combined.copy_to_slice(buf);
-		Ok(())
-	}
-
-	fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
-		for elem in buf {
-			*elem = deserialize_canonical(&mut self.combined)?;
-		}
-		Ok(())
+	fn buffer(&mut self) -> impl Buf + '_ {
+		&mut self.combined
 	}
 }
 
 impl CanRead for AdviceReader {
-	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
-		if self.buffer.remaining() < buf.len() {
-			return Err(Error::NotEnoughBytes);
-		}
-		self.buffer.copy_to_slice(buf);
-		Ok(())
-	}
-
-	fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
-		for elem in buf {
-			*elem = deserialize_canonical(&mut self.buffer)?;
-		}
-		Ok(())
+	fn buffer(&mut self) -> impl Buf + '_ {
+		&mut self.buffer
 	}
 }
 
 /// Trait that is used to write bytes and field elements to transcript/advice
 #[auto_impl::auto_impl(&mut)]
 pub trait CanWrite {
-	fn write_bytes(&mut self, data: &[u8]);
+	fn buffer(&mut self) -> impl BufMut + '_;
+
+	fn write<T: SerializeBytes>(&mut self, value: &T) {
+		value
+			.serialize(self.buffer())
+			.expect("TODO: propagate error")
+	}
+
+	fn write_slice<T: SerializeBytes>(&mut self, values: &[T]) {
+		let mut buffer = self.buffer();
+		for value in values {
+			value.serialize(&mut buffer).expect("TODO: propagate error")
+		}
+	}
+
+	fn write_bytes(&mut self, data: &[u8]) {
+		self.buffer().put_slice(data);
+	}
 
 	fn write_scalar<F: TowerField>(&mut self, f: F) {
 		self.write_scalar_slice(slice::from_ref(&f));
 	}
 
-	fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]);
+	fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
+		let mut buffer = self.buffer();
+		for elem in elems {
+			serialize_canonical(*elem, &mut buffer).expect("TODO: propagate error");
+		}
+	}
 
 	fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
 		for scalar in packed.iter() {
@@ -306,26 +333,14 @@ pub trait CanWrite {
 }
 
 impl<Challenger_: Challenger> CanWrite for TranscriptWriter<Challenger_> {
-	fn write_bytes(&mut self, data: &[u8]) {
-		self.combined.put_slice(data);
-	}
-
-	fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
-		for elem in elems {
-			serialize_canonical(*elem, &mut self.combined).unwrap();
-		}
+	fn buffer(&mut self) -> impl BufMut + '_ {
+		&mut self.combined
 	}
 }
 
 impl CanWrite for AdviceWriter {
-	fn write_bytes(&mut self, data: &[u8]) {
-		self.buffer.put_slice(data);
-	}
-
-	fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
-		for elem in elems {
-			serialize_canonical(*elem, &mut self.buffer).expect("Buffer full");
-		}
+	fn buffer(&mut self) -> impl BufMut + '_ {
+		&mut self.buffer
 	}
 }
 

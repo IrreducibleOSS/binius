@@ -8,11 +8,11 @@ use binius_field::{
 	RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_hash::Hasher;
 use binius_math::{
 	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_utils::bail;
+use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use itertools::izip;
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
@@ -32,7 +32,7 @@ use crate::{
 		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta, StepDownMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
-	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver},
+	merkle_tree::BinaryMerkleTreeProver,
 	oracle::{MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	piop,
 	protocols::{
@@ -56,7 +56,7 @@ use crate::{
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, FBase, Digest, DomainFactory, Hash, Compress, Challenger_, Backend>(
+pub fn prove<U, Tower, FBase, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -70,9 +70,8 @@ where
 	Tower::B128: PackedTop<Tower> + ExtensionField<FBase>,
 	FBase: TowerField + ExtensionField<FDomain<Tower>> + TryFrom<FExt<Tower>>,
 	DomainFactory: EvaluationDomainFactory<FDomain<Tower>>,
-	Digest: PackedField<Scalar: TowerField>,
-	Hash: Hasher<Tower::B128, Digest = Digest> + Send + Sync,
-	Compress: PseudoCompressionFunction<Digest, 2> + Default + Sync,
+	Hash: Digest + BlockSizeUser + FixedOutputReset,
+	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
 	PackedType<U, Tower::B128>:
@@ -125,7 +124,7 @@ where
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
 
 	// Observe polynomial commitment
-	transcript.write_packed(commitment);
+	transcript.write(&commitment);
 
 	// Grand product arguments
 	// Grand products for non-zero checking

@@ -2,10 +2,10 @@
 
 use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
-use binius_field::{BinaryField, ExtensionField, Field, PackedField, TowerField};
+use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
 use binius_ntt::NTTOptions;
-use binius_utils::bail;
+use binius_utils::{bail, serialization::DeserializeBytes};
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -302,7 +302,7 @@ where
 	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
 	Advice: CanRead,
 	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: DeserializeBytes,
 {
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -425,7 +425,7 @@ where
 	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
 	Advice: CanRead,
 	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: DeserializeBytes,
 {
 	let mut arities_iter = fri_params.fold_arities().iter();
 	let mut fri_commitments = Vec::with_capacity(fri_params.n_oracles());
@@ -451,7 +451,7 @@ where
 		if observe_fri_comm {
 			let comm = proof
 				.transcript
-				.read_packed::<MTScheme::Digest>()
+				.read()
 				.map_err(VerificationError::Transcript)?;
 			fri_commitments.push(comm);
 			next_commit_round = arities_iter.next().map(|arity| round_no + 1 + arity);

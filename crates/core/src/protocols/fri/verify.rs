@@ -1,10 +1,10 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::iter;
+use std::{iter, iter::repeat_with};
 
-use binius_field::{BinaryField, ExtensionField, PackedField, TowerField};
+use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::bail;
+use binius_utils::{bail, serialization::DeserializeBytes};
 use itertools::izip;
 use tracing::instrument;
 
@@ -39,12 +39,12 @@ where
 	fold_challenges: &'a [F],
 }
 
-impl<'a, F, FA, DigestType, VCS> FRIVerifier<'a, F, FA, VCS>
+impl<'a, F, FA, Digest, VCS> FRIVerifier<'a, F, FA, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
-	DigestType: PackedField<Scalar: TowerField>,
-	VCS: MerkleTreeScheme<F, Digest = DigestType, Proof = Vec<DigestType>>,
+	VCS: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
+	Digest: DeserializeBytes,
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
@@ -110,18 +110,13 @@ where
 		let mut layers = Vec::with_capacity(layers_len);
 		for _ in 0..layers_len {
 			let layer_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
-			layers.push(
-				advice
-					.read_packed_slice(layer_len)
-					.map_err(Error::TranscriptError)?,
-			);
+			layers.push(advice.read_vec(layer_len).map_err(Error::TranscriptError)?);
 		}
 
 		let final_value = self.verify_last_oracle(&terminate_codeword)?;
 
-		let indexes_iter =
-			std::iter::repeat_with(|| transcript.sample_bits(self.params.index_bits()))
-				.take(self.params.n_test_queries());
+		let indexes_iter = repeat_with(|| transcript.sample_bits(self.params.index_bits()))
+			.take(self.params.n_test_queries());
 
 		// Verify that the provided layers match the commitments.
 		for (commitment, layer_depth, layer) in izip!(
@@ -149,7 +144,7 @@ where
 				let query_round_vcs_proof_len =
 					read_u64(advice).map_err(Error::TranscriptError)? as usize;
 				let query_round_vcs_proof = advice
-					.read_packed_slice(query_round_vcs_proof_len)
+					.read_vec(query_round_vcs_proof_len)
 					.map_err(Error::TranscriptError)?;
 				proof.push(QueryRoundProof {
 					values: query_round_values,

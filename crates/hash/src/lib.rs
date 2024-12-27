@@ -7,9 +7,11 @@
 mod groestl;
 pub mod hasher;
 
+mod serialization;
 mod vision;
 mod vision_constants;
 
 pub use groestl::*;
 pub use hasher::*;
+pub use serialization::*;
 pub use vision::*;

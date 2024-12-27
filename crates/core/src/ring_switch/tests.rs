@@ -9,11 +9,12 @@ use binius_field::{
 	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
+use binius_utils::serialization::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::prelude::*;
 
@@ -271,7 +272,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
 	FExt<Tower>: PackedTop<Tower>,
 	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest = Digest, Proof = Vec<Digest>>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: SerializeBytes + DeserializeBytes,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -311,7 +312,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
 		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 		advice: AdviceWriter::default(),
 	};
-	proof.transcript.write_packed(commitment);
+	proof.transcript.write(&commitment);
 
 	let backend = make_portable_backend();
 	let ReducedWitness {
@@ -336,7 +337,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
 	.unwrap();
 
 	let mut proof = proof.into_verifier();
-	let commitment = proof.transcript.read_packed().unwrap();
+	let commitment = proof.transcript.read().unwrap();
 
 	let ReducedClaim {
 		transparents,
@@ -362,8 +363,7 @@ fn test_prove_verify_piop_integration() {
 
 	let oracles = make_test_oracle_set();
 	let log_inv_rate = 2;
-	let merkle_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	commit_prove_verify_piop::<U, Tower, _, _, _>(&merkle_prover, &oracles, log_inv_rate);
 }

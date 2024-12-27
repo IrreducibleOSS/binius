@@ -14,7 +14,7 @@ use binius_field::{
 	BinaryField8b,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
@@ -87,9 +87,8 @@ fn main() -> Result<()> {
 		CanonicalTowerFamily,
 		BinaryField8b,
 		_,
-		_,
-		GroestlHasher<BinaryField128b>,
-		GroestlDigestCompression<BinaryField8b>,
+		Groestl256,
+		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
 	>(
@@ -106,9 +105,8 @@ fn main() -> Result<()> {
 	constraint_system::verify::<
 		U,
 		CanonicalTowerFamily,
-		_,
-		GroestlHasher<BinaryField128b>,
-		GroestlDigestCompression<BinaryField8b>,
+		Groestl256,
+		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, vec![], proof)?;
 

@@ -24,12 +24,12 @@ criterion = { version = "0.5.1" }
 derive_more = "0.99.17"
 digest = "0.10.7"
 either = "1.11.0"
+generic-array = "0.14.7"
 getset = "0.1.2"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 hex-literal = "0.4.1"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
-log = "0.4.20"
 paste = "1.0.15"
 p3-symmetric = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
 p3-util = { version = "0.1.0", git = "https://github.com/Plonky3/Plonky3", rev = "72936761" }
@@ -39,6 +39,7 @@ quote = "1.0.36"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rayon = "1.8.0"
 seq-macro = "0.3.5"
+sha2 = "0.10.8"
 stackalloc = "1.2.1"
 subtle = "2.5.0"
 syn = { version = "2.0.60", features = ["full"] }

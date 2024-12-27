@@ -1,48 +1,41 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::marker::PhantomData;
-
-use binius_field::PackedField;
-use binius_hash::Hasher;
+use binius_field::TowerField;
+use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
+use getset::Getters;
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::iter::IndexedParallelIterator;
 use tracing::instrument;
 
 use super::{
-	binary_merkle_tree::BinaryMerkleTree,
+	binary_merkle_tree::{self, BinaryMerkleTree},
 	errors::Error,
 	merkle_tree_vcs::{Commitment, MerkleTreeProver},
 	scheme::BinaryMerkleTreeScheme,
 };
 
-pub struct BinaryMerkleTreeProver<D, H, C> {
-	compression: C,
-	scheme: BinaryMerkleTreeScheme<D, H, C>,
-	_phantom: PhantomData<(D, H)>,
+#[derive(Debug, Getters)]
+pub struct BinaryMerkleTreeProver<T, H, C> {
+	#[getset(get = "pub")]
+	scheme: BinaryMerkleTreeScheme<T, H, C>,
 }
 
-impl<D, C: Clone, H> BinaryMerkleTreeProver<D, H, C> {
+impl<T, C, H> BinaryMerkleTreeProver<T, H, C> {
 	pub fn new(compression: C) -> Self {
-		let scheme = BinaryMerkleTreeScheme::new(compression.clone());
-
 		Self {
-			compression,
-			scheme,
-			_phantom: PhantomData,
+			scheme: BinaryMerkleTreeScheme::new(compression),
 		}
 	}
 }
 
-impl<T, D, H, C> MerkleTreeProver<T> for BinaryMerkleTreeProver<D, H, C>
+impl<F, H, C> MerkleTreeProver<F> for BinaryMerkleTreeProver<F, H, C>
 where
-	D: PackedField,
-	T: Sync,
-	H: Hasher<T, Digest = D> + Send,
-	C: PseudoCompressionFunction<D, 2> + Sync,
+	F: TowerField,
+	H: Digest + BlockSizeUser + FixedOutputReset,
+	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
 {
-	type Scheme = BinaryMerkleTreeScheme<D, H, C>;
-
-	type Committed = BinaryMerkleTree<D>;
+	type Scheme = BinaryMerkleTreeScheme<F, H, C>;
+	type Committed = BinaryMerkleTree<Output<H>>;
 
 	fn scheme(&self) -> &Self::Scheme {
 		&self.scheme
@@ -50,20 +43,25 @@ where
 
 	fn commit(
 		&self,
-		data: &[T],
+		data: &[F],
 		batch_size: usize,
-	) -> Result<(Commitment<D>, Self::Committed), Error> {
-		let tree = BinaryMerkleTree::build::<_, H, _>(&self.compression, data, batch_size)?;
+	) -> Result<(Commitment<Output<H>>, Self::Committed), Error> {
+		let tree =
+			binary_merkle_tree::build::<_, H, _>(self.scheme.compression(), data, batch_size)?;
 
 		let commitment = Commitment {
-			root: tree.root(),
+			root: tree.root().clone(),
 			depth: tree.log_len,
 		};
 
 		Ok((commitment, tree))
 	}
 
-	fn layer<'a>(&self, committed: &'a Self::Committed, depth: usize) -> Result<&'a [D], Error> {
+	fn layer<'a>(
+		&self,
+		committed: &'a Self::Committed,
+		depth: usize,
+	) -> Result<&'a [Output<H>], Error> {
 		committed.layer(depth)
 	}
 
@@ -72,7 +70,7 @@ where
 		committed: &Self::Committed,
 		layer_depth: usize,
 		index: usize,
-	) -> Result<Vec<D>, Error> {
+	) -> Result<Vec<Output<H>>, Error> {
 		committed.branch(index, layer_depth)
 	}
 
@@ -83,20 +81,20 @@ where
 		iterated_chunks: ParIter,
 		log_len: usize,
 	) -> Result<
-		(Commitment<<Self::Scheme as super::MerkleTreeScheme<T>>::Digest>, Self::Committed),
+		(Commitment<<Self::Scheme as super::MerkleTreeScheme<F>>::Digest>, Self::Committed),
 		Error,
 	>
 	where
-		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = T>>,
+		ParIter: IndexedParallelIterator<Item: IntoIterator<Item = F>>,
 	{
-		let tree = BinaryMerkleTree::build_from_iterator::<T, H, C, ParIter>(
-			&self.compression,
+		let tree = binary_merkle_tree::build_from_iterator::<F, H, C, _>(
+			self.scheme.compression(),
 			iterated_chunks,
 			log_len,
 		)?;
 
 		let commitment = Commitment {
-			root: tree.root(),
+			root: tree.root().clone(),
 			depth: tree.log_len,
 		};
 

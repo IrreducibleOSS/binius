@@ -40,7 +40,7 @@ mod tests {
 		BinaryField8b, Field, TowerField,
 	};
 	use binius_hal::make_portable_backend;
-	use binius_hash::{GroestlDigestCompression, GroestlHasher};
+	use binius_hash::compress::Groestl256ByteCompression;
 	use binius_math::DefaultEvaluationDomainFactory;
 	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -600,10 +600,9 @@ mod tests {
 			CanonicalTowerFamily,
 			BinaryField64b,
 			_,
-			_,
-			GroestlHasher<BinaryField128b>,
-			GroestlDigestCompression<BinaryField8b>,
-			HasherChallenger<groestl_crypto::Groestl256>,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
 			_,
 		>(&constraint_system, 1, 10, witness, &domain_factory, &backend)
 		.unwrap();
@@ -611,9 +610,8 @@ mod tests {
 		constraint_system::verify::<
 			U,
 			CanonicalTowerFamily,
-			_,
-			GroestlHasher<BinaryField128b>,
-			GroestlDigestCompression<BinaryField8b>,
+			Groestl256,
+			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 		>(&constraint_system, 1, 10, vec![pull_boundaries, push_boundaries], proof)
 		.unwrap();

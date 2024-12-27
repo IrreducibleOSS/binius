@@ -3,8 +3,9 @@
 use core::slice;
 use std::iter::repeat_with;
 
-use binius_field::{BinaryField16b, BinaryField8b, Field};
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_field::{BinaryField16b, Field};
+use binius_hash::compress::Groestl256ByteCompression;
+use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
@@ -13,10 +14,7 @@ use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
 fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let mr_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
-			BinaryField8b,
-		>::default());
+	let mr_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(16)
@@ -38,10 +36,7 @@ fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let mr_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
-			BinaryField8b,
-		>::default());
+	let mr_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(32)
@@ -69,10 +64,7 @@ fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 fn test_binary_merkle_vcs_verify_vector() {
 	let mut rng = StdRng::seed_from_u64(0);
 
-	let mr_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::<
-			BinaryField8b,
-		>::default());
+	let mr_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let data = repeat_with(|| Field::random(&mut rng))
 		.take(4)

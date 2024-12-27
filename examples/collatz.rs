@@ -12,7 +12,7 @@ use binius_core::{
 };
 use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b};
 use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::rayon::adjust_thread_pool;
 use clap::{value_parser, Parser};
@@ -76,9 +76,8 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 		CanonicalTowerFamily,
 		BinaryField32b,
 		_,
-		_,
-		GroestlHasher<_>,
-		GroestlDigestCompression<_>,
+		Groestl256,
+		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 		_,
 	>(
@@ -105,9 +104,8 @@ fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<
 	constraint_system::verify::<
 		U,
 		CanonicalTowerFamily,
-		_,
-		GroestlHasher<_>,
-		GroestlDigestCompression<_>,
+		Groestl256,
+		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
 	>(&constraint_system, log_inv_rate, SECURITY_BITS, boundaries, proof)?;
 

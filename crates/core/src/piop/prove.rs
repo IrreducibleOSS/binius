@@ -9,7 +9,7 @@ use binius_math::{
 	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, sorting::is_sorted_ascending};
+use binius_utils::{bail, serialization::SerializeBytes, sorting::is_sorted_ascending};
 use either::Either;
 use itertools::{chain, Itertools};
 use rayon::{iter::IntoParallelIterator, prelude::*};
@@ -189,7 +189,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
 	Advice: CanWrite,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: SerializeBytes,
 	Backend: ComputationBackend,
 {
 	// Map of n_vars to sumcheck claim descriptions
@@ -270,7 +270,7 @@ where
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
 	Advice: CanWrite,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: SerializeBytes,
 {
 	let mut fri_prover =
 		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), &committed)?;
@@ -286,7 +286,7 @@ where
 		match fri_prover.execute_fold_round(challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				proof.transcript.write_packed(round_commitment);
+				proof.transcript.write(&round_commitment);
 			}
 		}
 	}

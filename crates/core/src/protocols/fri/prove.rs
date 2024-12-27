@@ -7,7 +7,7 @@ use binius_field::{
 	TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
-use binius_utils::bail;
+use binius_utils::{bail, serialization::SerializeBytes};
 use bytemuck::zeroed_vec;
 use itertools::izip;
 use rayon::prelude::*;
@@ -290,11 +290,8 @@ where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<
-		F,
-		Digest: PackedField<Scalar: TowerField>,
-		Proof: Deref<Target = [VCS::Digest]>,
-	>,
+	VCS: MerkleTreeScheme<F, Proof: Deref<Target = [VCS::Digest]>>,
+	VCS::Digest: SerializeBytes,
 {
 	/// Constructs a new folder.
 	pub fn new(
@@ -471,10 +468,8 @@ where
 		write_u64(advice, layers.len() as u64);
 		for layer in layers.iter() {
 			write_u64(advice, layer.len() as u64);
-			advice.write_packed_slice(layer);
+			advice.write_slice(layer);
 		}
-
-		// TODO: After making vcs proof into byte objects, use that to serialize and deserialize.
 
 		write_u64(advice, proofs.len() as u64);
 		for proof in proofs.iter() {
@@ -483,7 +478,7 @@ where
 				write_u64(advice, query_round.values.len() as u64);
 				advice.write_scalar_slice(&query_round.values);
 				write_u64(advice, query_round.vcs_proof.len() as u64);
-				advice.write_packed_slice(query_round.vcs_proof.deref());
+				advice.write_slice(&query_round.vcs_proof);
 			}
 		}
 

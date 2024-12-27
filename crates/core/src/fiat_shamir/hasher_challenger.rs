@@ -145,6 +145,7 @@ where
 	}
 
 	fn advance(&mut self, mut cnt: usize) {
+		// Must handle the case when `cnt` is 0
 		if self.index == <H as Digest>::output_size() {
 			self.fill_buffer();
 		}
@@ -170,15 +171,11 @@ where
 	}
 
 	unsafe fn advance_mut(&mut self, mut cnt: usize) {
-		if self.index == <H as BlockSizeUser>::block_size() {
-			self.flush();
-		}
-
 		while cnt > 0 {
 			let remaining = min(<H as BlockSizeUser>::block_size() - self.index, cnt);
 			cnt -= remaining;
 			self.index += remaining;
-			if remaining == <H as BlockSizeUser>::block_size() {
+			if self.index == <H as BlockSizeUser>::block_size() {
 				self.flush();
 			}
 		}

@@ -1,14 +1,12 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::{
-	fmt::Debug,
-	marker::PhantomData,
-	mem::{self},
-};
+use std::{array, fmt::Debug, marker::PhantomData};
 
-use binius_field::PackedField;
-use binius_hash::Hasher;
+use binius_field::{serialize_canonical, TowerField};
+use binius_hash::HashBuffer;
 use binius_utils::bail;
+use digest::{core_api::BlockSizeUser, Digest, Output};
+use getset::Getters;
 use p3_symmetric::PseudoCompressionFunction;
 use p3_util::log2_strict_usize;
 
@@ -17,12 +15,16 @@ use super::{
 	merkle_tree_vcs::MerkleTreeScheme,
 };
 
-pub struct BinaryMerkleTreeScheme<D, H, C> {
+#[derive(Debug, Getters)]
+pub struct BinaryMerkleTreeScheme<T, H, C> {
+	#[getset(get = "pub")]
 	compression: C,
-	_phantom: PhantomData<(D, H)>,
+	// This makes it so that `BinaryMerkleTreeScheme` remains Send + Sync
+	// See https://doc.rust-lang.org/nomicon/phantom-data.html#table-of-phantomdata-patterns
+	_phantom: PhantomData<fn() -> (T, H)>,
 }
 
-impl<D, H, C> BinaryMerkleTreeScheme<D, H, C> {
+impl<T, H, C> BinaryMerkleTreeScheme<T, H, C> {
 	pub fn new(compression: C) -> Self {
 		BinaryMerkleTreeScheme {
 			compression,
@@ -31,16 +33,14 @@ impl<D, H, C> BinaryMerkleTreeScheme<D, H, C> {
 	}
 }
 
-impl<T, D, H, C> MerkleTreeScheme<T> for BinaryMerkleTreeScheme<D, H, C>
+impl<F, H, C> MerkleTreeScheme<F> for BinaryMerkleTreeScheme<F, H, C>
 where
-	T: Sync,
-	D: PackedField + Send + Sync,
-	H: Hasher<T, Digest = D> + Send,
-	C: PseudoCompressionFunction<D, 2> + Sync,
+	F: TowerField,
+	H: Digest + BlockSizeUser,
+	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
 {
-	type Digest = D;
-
-	type Proof = Vec<D>;
+	type Digest = Output<H>;
+	type Proof = Vec<Self::Digest>;
 
 	/// This layer allows minimizing the proof size.
 	fn optimal_verify_layer(&self, n_queries: usize, tree_depth: usize) -> usize {
@@ -58,13 +58,14 @@ where
 			bail!(Error::IncorrectLayerDepth)
 		}
 
-		Ok(((log_len - layer_depth - 1) * n_queries + (1 << layer_depth)) * mem::size_of::<D>())
+		Ok(((log_len - layer_depth - 1) * n_queries + (1 << layer_depth))
+			* <H as Digest>::output_size())
 	}
 
 	fn verify_vector(
 		&self,
 		root: &Self::Digest,
-		data: &[T],
+		data: &[F],
 		batch_size: usize,
 	) -> Result<(), Error> {
 		if data.len() % batch_size != 0 {
@@ -73,12 +74,8 @@ where
 
 		let mut digests = data
 			.chunks(batch_size)
-			.map(|elems| {
-				let mut hasher = H::new();
-				hasher.update(elems);
-				hasher.finalize_reset()
-			})
-			.collect::<Vec<D>>();
+			.map(|chunk| hash_field_elems::<_, H>(chunk))
+			.collect::<Vec<_>>();
 
 		fold_digests_vector_inplace(&self.compression, &mut digests)?;
 		if digests[0] != *root {
@@ -110,7 +107,7 @@ where
 	fn verify_opening(
 		&self,
 		index: usize,
-		values: &[T],
+		values: &[F],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
@@ -130,7 +127,7 @@ where
 			});
 		}
 
-		let leaf_digest = H::new().chain_update(values).finalize();
+		let leaf_digest = hash_field_elems::<_, H>(values);
 
 		let mut index = index;
 
@@ -156,7 +153,7 @@ where
 fn fold_digests_vector_inplace<C, D>(compression: &C, digests: &mut [D]) -> Result<(), Error>
 where
 	C: PseudoCompressionFunction<D, 2> + Sync,
-	D: Copy + Default + Send + Sync + Debug,
+	D: Clone + Default + Send + Sync + Debug,
 {
 	if !digests.len().is_power_of_two() {
 		bail!(Error::PowerOfTwoLengthRequired);
@@ -166,14 +163,26 @@ where
 
 	while len != 0 {
 		for i in 0..len {
-			digests[i] = compression.compress(
-				digests[2 * i..2 * (i + 1)]
-					.try_into()
-					.expect("prev_pair is an chunk of exactly 2 elements"),
-			);
+			digests[i] = compression.compress(array::from_fn(|j| digests[2 * i + j].clone()));
 		}
 		len /= 2;
 	}
 
 	Ok(())
+}
+
+/// Hashes a slice of tower field elements.
+fn hash_field_elems<F, H>(elems: &[F]) -> Output<H>
+where
+	F: TowerField,
+	H: Digest + BlockSizeUser,
+{
+	let mut hasher = H::new();
+	{
+		let mut buffer = HashBuffer::new(&mut hasher);
+		for &elem in elems {
+			serialize_canonical(elem, &mut buffer).expect("HashBuffer has infinite capacity");
+		}
+	}
+	hasher.finalize()
 }

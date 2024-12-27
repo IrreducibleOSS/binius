@@ -7,10 +7,11 @@ use binius_field::{
 	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
-use binius_hash::{GroestlDigestCompression, GroestlHasher};
+use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
+use binius_utils::serialization::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -111,7 +112,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
 	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: PackedField<Scalar: TowerField>,
+	Digest: SerializeBytes + DeserializeBytes,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -154,7 +155,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
 		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
 		advice: AdviceWriter::default(),
 	};
-	proof.transcript.write_packed(commitment);
+	proof.transcript.write(&commitment);
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
 	prove(
@@ -189,7 +190,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
 		.map(|poly| poly as &dyn MultivariatePoly<F>)
 		.collect::<Vec<_>>();
 
-	let commitment = proof.transcript.read_packed().unwrap();
+	let commitment = proof.transcript.read().unwrap();
 	verify(
 		commit_meta,
 		merkle_scheme,
@@ -214,8 +215,7 @@ fn test_commit_meta_total_vars() {
 #[test]
 fn test_with_one_poly() {
 	let commit_meta = CommitMeta::with_vars([4]);
-	let merkle_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
@@ -230,8 +230,7 @@ fn test_with_one_poly() {
 #[test]
 fn test_with_one_n_vars() {
 	let commit_meta = CommitMeta::with_vars([4, 4]);
-	let merkle_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
@@ -246,8 +245,7 @@ fn test_with_one_n_vars() {
 #[test]
 fn test_commit_prove_verify() {
 	let commit_meta = CommitMeta::with_vars([4, 4, 6, 7]);
-	let merkle_prover =
-		BinaryMerkleTreeProver::<_, GroestlHasher<_>, _>::new(GroestlDigestCompression::default());
+	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
