@@ -1,13 +1,9 @@
 // Copyright 2024 Irreducible Inc.
 
-#![feature(array_try_from_fn)]
-
-use std::vec;
-
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::{arithmetic::Flags, builder::ConstraintSystemBuilder};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField8b};
+use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
@@ -19,9 +15,9 @@ use tracing_profile::init_tracing;
 
 #[derive(Debug, Parser)]
 struct Args {
-	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 128, value_parser = value_parser!(u32).range(1 << 3..))]
-	n_permutations: u32,
+	/// The number of additions to do.
+	#[arg(short, long, default_value_t = 512, value_parser = value_parser!(u32).range(512..))]
+	n_additions: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
@@ -39,20 +35,26 @@ fn main() -> Result<()> {
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} Keccak-f permutations", args.n_permutations);
+	println!("Verifying {} u32 additions", args.n_additions);
 
-	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
+	let log_n_additions = log2_ceil_usize(args.n_additions as usize);
 
 	let allocator = bumpalo::Bump::new();
-
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
-	let log_size = log_n_permutations;
-
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let input_witness = vec![];
-	let _state_out =
-		binius_circuits::keccakf::keccakf(&mut builder, Some(input_witness), log_size)?;
+	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
+		&mut builder,
+		"in_a",
+		log_n_additions + 5,
+	)?;
+	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
+		&mut builder,
+		"in_b",
+		log_n_additions + 5,
+	)?;
+	let _sum =
+		binius_circuits::arithmetic::u32::add(&mut builder, "sum", in_a, in_b, Flags::Unchecked)?;
 	drop(trace_gen_scope);
 
 	let witness = builder
@@ -91,13 +93,7 @@ fn main() -> Result<()> {
 		GroestlHasher<BinaryField128b>,
 		GroestlDigestCompression<BinaryField8b>,
 		HasherChallenger<Groestl256>,
-	>(
-		&constraint_system.no_base_constraints(),
-		args.log_inv_rate as usize,
-		SECURITY_BITS,
-		vec![],
-		proof,
-	)?;
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, vec![], proof)?;
 
 	Ok(())
 }

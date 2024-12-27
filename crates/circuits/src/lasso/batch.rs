@@ -14,6 +14,15 @@ pub struct LookupBatch {
 	u_to_t_mappings: Vec<Vec<usize>>,
 	lookup_col_lens: Vec<usize>,
 	lookup_t: OracleId,
+	executed: bool,
+}
+
+impl Drop for LookupBatch {
+	fn drop(&mut self) {
+		if !self.executed {
+			tracing::warn!("LookupBatch dropped before calling execute!");
+		}
+	}
 }
 
 impl LookupBatch {
@@ -23,6 +32,7 @@ impl LookupBatch {
 			lookup_us: vec![],
 			u_to_t_mappings: vec![],
 			lookup_col_lens: vec![],
+			executed: false,
 		}
 	}
 
@@ -33,7 +43,7 @@ impl LookupBatch {
 	}
 
 	pub fn execute<U, F, FS, FC>(
-		&mut self,
+		mut self,
 		builder: &mut ConstraintSystemBuilder<U, F>,
 	) -> Result<(), anyhow::Error>
 	where
@@ -54,6 +64,8 @@ impl LookupBatch {
 			self.lookup_t,
 			channel,
 		)?;
+
+		self.executed = true;
 
 		Ok(())
 	}

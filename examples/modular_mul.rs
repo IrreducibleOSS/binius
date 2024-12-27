@@ -19,6 +19,7 @@ use binius_hal::make_portable_backend;
 use binius_hash::{GroestlDigestCompression, GroestlHasher};
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
+use bytesize::ByteSize;
 use clap::{value_parser, Parser};
 use groestl_crypto::Groestl256;
 use rand::thread_rng;
@@ -132,6 +133,8 @@ fn main() -> Result<()> {
 		&domain_factory,
 		&backend,
 	)?;
+
+	println!("Proof size: {}", ByteSize::b(proof.get_proof_size() as u64));
 
 	constraint_system::verify::<
 		U,

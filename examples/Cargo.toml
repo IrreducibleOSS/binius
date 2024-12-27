@@ -16,18 +16,12 @@ binius_macros = { path = "../crates/macros" }
 binius_math = { path = "../crates/math" }
 binius_utils = { path = "../crates/utils" }
 bumpalo.workspace = true
-bytemuck.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 groestl_crypto.workspace = true
-itertools.workspace = true
-p3-symmetric.workspace = true
 rand.workspace = true
-rayon.workspace = true
-tiny-keccak.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
-sha2 = { version = "0.10.8", features = ["compress"] }
 
 [[example]]
 name = "groestl_circuit"
@@ -64,6 +58,18 @@ path = "sha256_circuit_with_lookup.rs"
 [[example]]
 name = "collatz"
 path = "collatz.rs"
+
+[[example]]
+name = "u32_add"
+path = "u32_add.rs"
+
+[[example]]
+name = "u32_mul"
+path = "u32_mul.rs"
+
+[[example]]
+name = "bitwise_ops"
+path = "bitwise_ops.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"

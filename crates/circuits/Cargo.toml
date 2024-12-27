@@ -18,9 +18,10 @@ itertools.workspace = true
 rand.workspace = true
 rayon.workspace = true
 tiny-keccak.workspace = true
+tracing.workspace = true
 bumpalo.workspace = true
 
 [dev-dependencies]
-binius_hal = {path = "../hal"}
+binius_hal = { path = "../hal" }
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 sha2 = { version = "0.10.8", features = ["compress"] }
