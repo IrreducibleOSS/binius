@@ -52,9 +52,10 @@
 use std::collections::HashMap;
 
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use binius_utils::bail;
 
 use super::error::{Error, VerificationError};
-use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use crate::{oracle::OracleId, transcript, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
@@ -72,6 +73,35 @@ pub struct Boundary<F: TowerField> {
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	pub multiplicity: u64,
+}
+
+impl<F: TowerField> Boundary<F> {
+	pub fn write_to(&self, writer: &mut impl transcript::CanWrite) {
+		writer.write_u64(self.values.len() as u64);
+		writer.write_scalar_slice(&self.values);
+		writer.write_u64(self.channel_id as u64);
+		writer.write_u64(self.multiplicity);
+		writer.write_u64(match self.direction {
+			FlushDirection::Pull => 0,
+			FlushDirection::Push => 1,
+		});
+	}
+
+	pub fn read_from(reader: &mut impl transcript::CanRead) -> Result<Self, transcript::Error> {
+		let values_len = reader.read_u64()? as usize;
+		Ok(Self {
+			values: reader.read_scalar_slice(values_len)?,
+			channel_id: reader.read_u64()? as ChannelId,
+			multiplicity: reader.read_u64()?,
+			direction: match reader.read_u64()? {
+				0 => FlushDirection::Pull,
+				1 => FlushDirection::Push,
+				other => bail!(transcript::Error::InvalidValue(format!(
+					"Boundary::direction can only be 0 or 1. Got {other}"
+				))),
+			},
+		})
+	}
 }
 
 #[derive(Debug, Clone, Copy)]

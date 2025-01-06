@@ -82,6 +82,7 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 		_,
 	>(
 		&constraint_system,
+		boundaries,
 		log_inv_rate,
 		SECURITY_BITS,
 		witness,
@@ -97,7 +98,7 @@ fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<
 
 	let mut builder = ConstraintSystemBuilder::<U, F>::new();
 
-	let boundaries = collatz.build(&mut builder, advice)?;
+	let _ = collatz.build(&mut builder, advice)?;
 
 	let constraint_system = builder.build()?;
 
@@ -107,7 +108,7 @@ fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, log_inv_rate, SECURITY_BITS, boundaries, proof)?;
+	>(&constraint_system, log_inv_rate, SECURITY_BITS, proof)?;
 
 	Ok(())
 }

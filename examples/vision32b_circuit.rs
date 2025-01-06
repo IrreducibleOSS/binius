@@ -87,6 +87,7 @@ fn main() -> Result<()> {
 		_,
 	>(
 		&constraint_system,
+		vec![],
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		witness,
@@ -106,7 +107,6 @@ fn main() -> Result<()> {
 		&constraint_system.no_base_constraints(),
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
-		vec![],
 		proof,
 	)?;
 

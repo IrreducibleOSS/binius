@@ -610,7 +610,15 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, witness, &domain_factory, &backend)
+		>(
+			&constraint_system,
+			vec![pull_boundaries, push_boundaries],
+			1,
+			10,
+			witness,
+			&domain_factory,
+			&backend,
+		)
 		.unwrap();
 
 		constraint_system::verify::<
@@ -619,7 +627,7 @@ mod tests {
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&constraint_system, 1, 10, vec![pull_boundaries, push_boundaries], proof)
+		>(&constraint_system, 1, 10, proof)
 		.unwrap();
 	}
 }
