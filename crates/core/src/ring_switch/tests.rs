@@ -261,7 +261,7 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	});
 }
 
-fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
+fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	merkle_prover: &MTProver,
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	log_inv_rate: usize,
@@ -270,9 +270,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver, Digest>(
 	Tower: TowerFamily,
 	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
 	FExt<Tower>: PackedTop<Tower>,
-	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest = Digest, Proof = Vec<Digest>>,
+	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
-	Digest: SerializeBytes + DeserializeBytes,
 {
 	let mut rng = StdRng::seed_from_u64(0);
 	let merkle_scheme = merkle_prover.scheme();
@@ -365,5 +364,5 @@ fn test_prove_verify_piop_integration() {
 	let log_inv_rate = 2;
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
-	commit_prove_verify_piop::<U, Tower, _, _, _>(&merkle_prover, &oracles, log_inv_rate);
+	commit_prove_verify_piop::<U, Tower, _, _>(&merkle_prover, &oracles, log_inv_rate);
 }

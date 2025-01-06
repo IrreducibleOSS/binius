@@ -8,12 +8,12 @@ use binius_utils::{bail, serialization::DeserializeBytes};
 use itertools::izip;
 use tracing::instrument;
 
-use super::{common::vcs_optimal_layers_depths_iter, error::Error, QueryProof, VerificationError};
+use super::{common::vcs_optimal_layers_depths_iter, error::Error, VerificationError};
 use crate::{
 	fiat_shamir::CanSampleBits,
 	merkle_tree::MerkleTreeScheme,
-	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams, QueryRoundProof},
-	transcript::{read_u64, CanRead},
+	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams},
+	transcript::CanRead,
 };
 
 /// A verifier for the FRI query phase.
@@ -39,12 +39,11 @@ where
 	fold_challenges: &'a [F],
 }
 
-impl<'a, F, FA, Digest, VCS> FRIVerifier<'a, F, FA, VCS>
+impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: DeserializeBytes,
+	VCS: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
@@ -101,24 +100,18 @@ where
 		Transcript: CanSampleBits<usize>,
 		Advice: CanRead,
 	{
-		let terminate_codeword_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
+		// Verify that the last oracle sent is a codeword.
+		let terminate_codeword_len =
+			1 << (self.params.n_final_challenges() + self.params.rs_code().log_inv_rate());
 		let terminate_codeword = advice
 			.read_scalar_slice(terminate_codeword_len)
 			.map_err(Error::TranscriptError)?;
-
-		let layers_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
-		let mut layers = Vec::with_capacity(layers_len);
-		for _ in 0..layers_len {
-			let layer_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
-			layers.push(advice.read_vec(layer_len).map_err(Error::TranscriptError)?);
-		}
-
 		let final_value = self.verify_last_oracle(&terminate_codeword)?;
 
-		let indexes_iter = repeat_with(|| transcript.sample_bits(self.params.index_bits()))
-			.take(self.params.n_test_queries());
-
 		// Verify that the provided layers match the commitments.
+		let layers = vcs_optimal_layers_depths_iter(self.params, self.vcs)
+			.map(|layer_depth| advice.read_vec(1 << layer_depth))
+			.collect::<Result<Vec<_>, _>>()?;
 		for (commitment, layer_depth, layer) in izip!(
 			iter::once(self.codeword_commitment).chain(self.round_commitments),
 			vcs_optimal_layers_depths_iter(self.params, self.vcs),
@@ -129,36 +122,21 @@ where
 				.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 		}
 
-		let mut scratch_buffer = self.create_scratch_buffer();
+		// Verify the random openings against the decommitted layers.
+		let indexes_iter = repeat_with(|| transcript.sample_bits(self.params.index_bits()))
+			.take(self.params.n_test_queries());
 
-		let proofs_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
-		for (index, _) in indexes_iter.zip(0..proofs_len) {
-			let proof_len = read_u64(advice).map_err(Error::TranscriptError)? as usize;
-			let mut proof = QueryProof::with_capacity(proof_len);
-			for _ in 0..proof_len {
-				let query_round_values_len =
-					read_u64(advice).map_err(Error::TranscriptError)? as usize;
-				let query_round_values = advice
-					.read_scalar_slice::<F>(query_round_values_len)
-					.map_err(Error::TranscriptError)?;
-				let query_round_vcs_proof_len =
-					read_u64(advice).map_err(Error::TranscriptError)? as usize;
-				let query_round_vcs_proof = advice
-					.read_vec(query_round_vcs_proof_len)
-					.map_err(Error::TranscriptError)?;
-				proof.push(QueryRoundProof {
-					values: query_round_values,
-					vcs_proof: query_round_vcs_proof,
-				});
-			}
+		let mut scratch_buffer = self.create_scratch_buffer();
+		for index in indexes_iter {
 			self.verify_query_internal(
 				index,
-				proof,
 				&terminate_codeword,
 				&layers,
+				advice,
 				&mut scratch_buffer,
 			)?
 		}
+
 		Ok(final_value)
 	}
 
@@ -242,45 +220,37 @@ where
 	///
 	/// * `index` - an index into the original codeword domain
 	/// * `proof` - a query proof
-	pub fn verify_query(
+	pub fn verify_query<Advice: CanRead>(
 		&self,
 		index: usize,
-		proof: QueryProof<F, VCS::Proof>,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
+		advice: &mut Advice,
 	) -> Result<(), Error> {
 		self.verify_query_internal(
 			index,
-			proof,
 			terminate_codeword,
 			layers,
+			advice,
 			&mut self.create_scratch_buffer(),
 		)
 	}
 
 	#[instrument(skip_all, name = "fri::FRIVerifier::verify_query", level = "debug")]
-	fn verify_query_internal(
+	fn verify_query_internal<Advice: CanRead>(
 		&self,
 		mut index: usize,
-		proof: QueryProof<F, VCS::Proof>,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
+		advice: &mut Advice,
 		scratch_buffer: &mut [F],
 	) -> Result<(), Error> {
-		if proof.len() != self.n_oracles() {
-			return Err(VerificationError::IncorrectQueryProofLength {
-				expected: self.n_oracles(),
-			}
-			.into());
-		}
-
-		let arities = self.params.fold_arities().iter().copied();
-		let mut proof_and_arities_iter = iter::zip(proof, arities.clone());
+		let mut arities_iter = self.params.fold_arities().iter().copied();
 
 		let mut layer_digest_and_optimal_layer_depth =
 			iter::zip(layers, vcs_optimal_layers_depths_iter(self.params, self.vcs));
 
-		let Some((first_query_proof, first_fold_arity)) = proof_and_arities_iter.next() else {
+		let Some(first_fold_arity) = arities_iter.next() else {
 			// If there are no query proofs, that means that no oracles were sent during the FRI
 			// fold rounds. In that case, the original interleaved codeword is decommitted and
 			// the only checks that need to be performed are in `verify_last_oracle`.
@@ -293,7 +263,6 @@ where
 
 		// This is the round of the folding phase that the codeword to be folded is committed to.
 		let mut fold_round = 0;
-
 		let mut log_n_cosets = self.params.index_bits();
 
 		// Check the first fold round before the main loop. It is special because in the first
@@ -301,13 +270,12 @@ where
 		let log_coset_size = first_fold_arity - self.params.log_batch_size();
 		let values = verify_coset_opening(
 			self.vcs,
-			0,
 			index,
 			first_fold_arity,
-			first_query_proof,
 			first_optimal_layer_depth,
 			log_n_cosets,
 			first_layer,
+			advice,
 		)?;
 		let mut next_value = fold_interleaved_chunk(
 			self.params.rs_code(),
@@ -320,8 +288,8 @@ where
 		);
 		fold_round += log_coset_size;
 
-		for (i, ((round_proof, arity), (layer, optimal_layer_depth))) in
-			izip!(proof_and_arities_iter, layer_digest_and_optimal_layer_depth).enumerate()
+		for (i, (arity, (layer, optimal_layer_depth))) in
+			izip!(arities_iter, layer_digest_and_optimal_layer_depth).enumerate()
 		{
 			let coset_index = index >> arity;
 
@@ -329,13 +297,12 @@ where
 
 			let values = verify_coset_opening(
 				self.vcs,
-				i + 1,
 				coset_index,
 				arity,
-				round_proof,
 				optimal_layer_depth,
 				log_n_cosets,
 				layer,
+				advice,
 			)?;
 
 			if next_value != values[index % (1 << arity)] {
@@ -385,32 +352,28 @@ where
 
 /// Verifies that the coset opening provided in the proof is consistent with the VCS commitment.
 #[allow(clippy::too_many_arguments)]
-fn verify_coset_opening<F: BinaryField, VCS: MerkleTreeScheme<F>>(
-	vcs: &VCS,
-	round: usize,
+fn verify_coset_opening<F, MTScheme, Advice>(
+	vcs: &MTScheme,
 	coset_index: usize,
 	log_coset_size: usize,
-	proof: QueryRoundProof<F, VCS::Proof>,
 	optimal_layer_depth: usize,
 	tree_depth: usize,
-	layer_digests: &[VCS::Digest],
-) -> Result<Vec<F>, Error> {
-	let QueryRoundProof { values, vcs_proof } = proof;
-
-	if values.len() != 1 << log_coset_size {
-		return Err(VerificationError::IncorrectQueryProofValuesLength {
-			round,
-			coset_size: 1 << log_coset_size,
-		}
-		.into());
-	}
+	layer_digests: &[MTScheme::Digest],
+	advice: &mut Advice,
+) -> Result<Vec<F>, Error>
+where
+	F: TowerField,
+	MTScheme: MerkleTreeScheme<F>,
+	Advice: CanRead,
+{
+	let values = advice.read_scalar_slice::<F>(1 << log_coset_size)?;
 	vcs.verify_opening(
 		coset_index,
 		&values,
 		optimal_layer_depth,
 		tree_depth,
 		layer_digests,
-		vcs_proof,
+		advice,
 	)
 	.map_err(|err| Error::VectorCommit(Box::new(err)))?;
 

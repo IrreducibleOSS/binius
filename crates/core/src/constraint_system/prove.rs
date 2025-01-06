@@ -370,7 +370,7 @@ where
 	)?;
 
 	// Prove evaluation claims using PIOP compiler
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _, _>(
+	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
 		domain_factory,

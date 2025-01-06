@@ -1,5 +1,7 @@
 // Copyright 2024 Irreducible Inc.
 
+use crate::transcript;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("Length of the input vector is incorrect, expected {expected}")]
@@ -12,6 +14,8 @@ pub enum Error {
 	PowerOfTwoLengthRequired,
 	#[error("The layer does not exist in the Merkle tree")]
 	IncorrectLayerDepth,
+	#[error("transcript error: {0}")]
+	Transcript(#[from] transcript::Error),
 	#[error("verification failure: {0}")]
 	Verification(#[from] VerificationError),
 }

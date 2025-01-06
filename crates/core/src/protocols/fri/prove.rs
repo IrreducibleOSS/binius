@@ -1,7 +1,5 @@
 // Copyright 2024 Irreducible Inc.
 
-use std::ops::Deref;
-
 use binius_field::{
 	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
 	TowerField,
@@ -22,9 +20,9 @@ use crate::{
 	fiat_shamir::CanSampleBits,
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
-	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, QueryProof, QueryRoundProof},
+	protocols::fri::common::{fold_chunk, fold_interleaved_chunk},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{write_u64, CanWrite},
+	transcript::CanWrite,
 };
 
 #[instrument(skip_all, level = "debug")]
@@ -290,8 +288,7 @@ where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<F, Proof: Deref<Target = [VCS::Digest]>>,
-	VCS::Digest: SerializeBytes,
+	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
 {
 	/// Constructs a new folder.
 	pub fn new(
@@ -451,35 +448,19 @@ where
 		Advice: CanWrite,
 	{
 		let (terminate_codeword, query_prover) = self.finalize()?;
-		write_u64(advice, terminate_codeword.len() as u64);
 		advice.write_scalar_slice(&terminate_codeword);
 
-		let params = query_prover.params;
+		let layers = query_prover.vcs_optimal_layers()?;
+		for layer in layers {
+			advice.write_slice(&layer);
+		}
 
+		let params = query_prover.params;
 		let indexes_iter = std::iter::repeat_with(|| transcript.sample_bits(params.index_bits()))
 			.take(params.n_test_queries());
 
-		let proofs = indexes_iter
-			.map(|index| query_prover.prove_query(index))
-			.collect::<Result<Vec<_>, _>>()?;
-
-		let layers = query_prover.vcs_optimal_layers()?;
-
-		write_u64(advice, layers.len() as u64);
-		for layer in layers.iter() {
-			write_u64(advice, layer.len() as u64);
-			advice.write_slice(layer);
-		}
-
-		write_u64(advice, proofs.len() as u64);
-		for proof in proofs.iter() {
-			write_u64(advice, proof.len() as u64);
-			for query_round in proof {
-				write_u64(advice, query_round.values.len() as u64);
-				advice.write_scalar_slice(&query_round.values);
-				write_u64(advice, query_round.vcs_proof.len() as u64);
-				advice.write_slice(&query_round.vcs_proof);
-			}
+		for index in indexes_iter {
+			query_prover.prove_query(index, advice)?;
 		}
 
 		Ok(())
@@ -503,7 +484,7 @@ where
 
 impl<F, FA, MerkleProver, VCS> FRIQueryProver<'_, F, FA, MerkleProver, VCS>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
 	VCS: MerkleTreeScheme<F>,
@@ -519,8 +500,10 @@ where
 	///
 	/// * `index` - an index into the original codeword domain
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query", level = "debug")]
-	pub fn prove_query(&self, mut index: usize) -> Result<QueryProof<F, VCS::Proof>, Error> {
-		let mut round_proofs = Vec::with_capacity(self.n_oracles());
+	pub fn prove_query<Advice>(&self, mut index: usize, advice: &mut Advice) -> Result<(), Error>
+	where
+		Advice: CanWrite,
+	{
 		let mut arities_and_optimal_layers_depths = self
 			.params
 			.fold_arities()
@@ -534,33 +517,35 @@ where
 			// If there are no query proofs, that means that no oracles were sent during the FRI
 			// fold rounds. In that case, the original interleaved codeword is decommitted and
 			// the only checks that need to be performed are in `verify_last_oracle`.
-			return Ok(round_proofs);
+			return Ok(());
 		};
 
-		round_proofs.push(prove_coset_opening(
+		prove_coset_opening(
 			self.merkle_prover,
 			self.codeword,
 			self.codeword_committed,
 			index,
 			first_fold_arity,
 			first_optimal_layer_depth,
-		)?);
+			advice,
+		)?;
 
 		for ((codeword, committed), (arity, optimal_layer_depth)) in
 			izip!(self.round_committed.iter(), arities_and_optimal_layers_depths)
 		{
 			index >>= arity;
-			round_proofs.push(prove_coset_opening(
+			prove_coset_opening(
 				self.merkle_prover,
 				codeword,
 				committed,
 				index,
 				arity,
 				optimal_layer_depth,
-			)?);
+				advice,
+			)?;
 		}
 
-		Ok(round_proofs)
+		Ok(())
 	}
 
 	pub fn vcs_optimal_layers(&self) -> Result<Vec<Vec<VCS::Digest>>, Error> {
@@ -579,24 +564,26 @@ where
 	}
 }
 
-fn prove_coset_opening<
-	F: BinaryField,
-	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<F>,
->(
-	merkle_prover: &MerkleProver,
+fn prove_coset_opening<F, MTProver, Advice>(
+	merkle_prover: &MTProver,
 	codeword: &[F],
-	committed: &MerkleProver::Committed,
+	committed: &MTProver::Committed,
 	coset_index: usize,
 	log_coset_size: usize,
 	optimal_layer_depth: usize,
-) -> Result<QueryRoundProof<F, VCS::Proof>, Error> {
-	let vcs_proof = merkle_prover
-		.prove_opening(committed, optimal_layer_depth, coset_index)
+	advice: &mut Advice,
+) -> Result<(), Error>
+where
+	F: TowerField,
+	MTProver: MerkleTreeProver<F>,
+	Advice: CanWrite,
+{
+	let values = &codeword[(coset_index << log_coset_size)..((coset_index + 1) << log_coset_size)];
+	advice.write_scalar_slice(values);
+
+	merkle_prover
+		.prove_opening(committed, optimal_layer_depth, coset_index, advice)
 		.map_err(|err| Error::VectorCommit(Box::new(err)))?;
-	let range = (coset_index << log_coset_size)..((coset_index + 1) << log_coset_size);
-	Ok(QueryRoundProof {
-		values: codeword[range].to_vec(),
-		vcs_proof,
-	})
+
+	Ok(())
 }

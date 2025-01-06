@@ -98,7 +98,7 @@ where
 	sumcheck_claims
 }
 
-fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
+fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	commit_meta: &CommitMeta,
 	n_transparents: usize,
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
@@ -111,8 +111,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme, Digest>(
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
-	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: SerializeBytes + DeserializeBytes,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 
@@ -219,7 +218,7 @@ fn test_with_one_poly() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -234,7 +233,7 @@ fn test_with_one_n_vars() {
 	let n_transparents = 1;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,
@@ -249,7 +248,7 @@ fn test_commit_prove_verify() {
 	let n_transparents = 2;
 	let log_inv_rate = 1;
 
-	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _, _>(
+	commit_prove_verify::<_, BinaryField8b, BinaryField16b, PackedBinaryField2x128b, _>(
 		&commit_meta,
 		n_transparents,
 		&merkle_prover,

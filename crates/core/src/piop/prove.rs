@@ -161,7 +161,6 @@ pub fn prove<
 	DomainFactory,
 	MTScheme,
 	MTProver,
-	Digest,
 	Transcript,
 	Advice,
 	Backend,
@@ -185,11 +184,10 @@ where
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
 	Advice: CanWrite,
-	Digest: SerializeBytes,
 	Backend: ComputationBackend,
 {
 	// Map of n_vars to sumcheck claim descriptions
@@ -253,7 +251,7 @@ where
 	Ok(())
 }
 
-fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Digest, Transcript, Advice>(
+fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Transcript, Advice>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
@@ -266,11 +264,10 @@ where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
-	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
 	Advice: CanWrite,
-	Digest: SerializeBytes,
 {
 	let mut fri_prover =
 		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), &committed)?;

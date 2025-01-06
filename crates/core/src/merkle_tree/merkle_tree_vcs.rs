@@ -3,6 +3,7 @@
 use rayon::iter::IndexedParallelIterator;
 
 use super::errors::Error;
+use crate::transcript::{CanRead, CanWrite};
 
 /// A Merkle tree commitment.
 ///
@@ -19,7 +20,6 @@ pub struct Commitment<Digest> {
 /// A Merkle tree scheme.
 pub trait MerkleTreeScheme<T>: Sync {
 	type Digest: Clone + PartialEq + Eq;
-	type Proof;
 
 	/// Returns the optimal layer that the verifier should verify only once.
 	fn optimal_verify_layer(&self, n_queries: usize, tree_depth: usize) -> usize;
@@ -53,14 +53,14 @@ pub trait MerkleTreeScheme<T>: Sync {
 	) -> Result<(), Error>;
 
 	/// Verify an opening proof for an entry in a committed vector at the given index.
-	fn verify_opening(
+	fn verify_opening<Proof: CanRead>(
 		&self,
 		index: usize,
 		values: &[T],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
-		proof: Self::Proof,
+		proof: Proof,
 	) -> Result<(), Error>;
 }
 
@@ -108,10 +108,11 @@ pub trait MerkleTreeProver<T>: Sync {
 	/// * `committed` - helper data generated during commitment
 	/// * `layer_depth` - depth of the layer to prove inclusion in
 	/// * `index` - the entry index
-	fn prove_opening(
+	fn prove_opening<Proof: CanWrite>(
 		&self,
 		committed: &Self::Committed,
 		layer_depth: usize,
 		index: usize,
-	) -> Result<<Self::Scheme as MerkleTreeScheme<T>>::Proof, Error>;
+		proof: Proof,
+	) -> Result<(), Error>;
 }

@@ -9,6 +9,7 @@ use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
+use crate::transcript::AdviceWriter;
 
 #[test]
 fn test_binary_merkle_vcs_commit_prove_open_correctly() {
@@ -24,10 +25,15 @@ fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 	assert_eq!(commitment.root, tree.root());
 
 	for (i, value) in data.iter().enumerate() {
-		let proof = mr_prover.prove_opening(&tree, 0, i).unwrap();
+		let mut proof_writer = AdviceWriter::new();
+		mr_prover
+			.prove_opening(&tree, 0, i, &mut proof_writer)
+			.unwrap();
+
+		let mut proof_reader = proof_writer.into_reader();
 		mr_prover
 			.scheme()
-			.verify_opening(i, slice::from_ref(value), 0, 4, &[commitment.root], proof)
+			.verify_opening(i, slice::from_ref(value), 0, 4, &[commitment.root], &mut proof_reader)
 			.unwrap();
 	}
 }
@@ -51,10 +57,15 @@ fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 			.verify_layer(&commitment.root, layer_depth, layer)
 			.unwrap();
 		for (i, value) in data.iter().enumerate() {
-			let proof = mr_prover.prove_opening(&tree, layer_depth, i).unwrap();
+			let mut proof_writer = AdviceWriter::new();
+			mr_prover
+				.prove_opening(&tree, layer_depth, i, &mut proof_writer)
+				.unwrap();
+
+			let mut proof_reader = proof_writer.into_reader();
 			mr_prover
 				.scheme()
-				.verify_opening(i, slice::from_ref(value), layer_depth, 5, layer, proof)
+				.verify_opening(i, slice::from_ref(value), layer_depth, 5, layer, &mut proof_reader)
 				.unwrap();
 		}
 	}

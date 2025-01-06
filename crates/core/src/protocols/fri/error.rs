@@ -2,6 +2,8 @@
 
 use binius_ntt::Error as NttError;
 
+use crate::transcript;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
 	#[error("cannot calculate parameters satisfying the security target")]
@@ -33,7 +35,7 @@ pub enum Error {
 	#[error("verification error: {0}")]
 	Verification(#[from] VerificationError),
 	#[error("transcript error: {0}")]
-	TranscriptError(#[from] crate::transcript::Error),
+	TranscriptError(#[from] transcript::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

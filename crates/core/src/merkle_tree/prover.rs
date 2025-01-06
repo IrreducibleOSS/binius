@@ -13,6 +13,7 @@ use super::{
 	merkle_tree_vcs::{Commitment, MerkleTreeProver},
 	scheme::BinaryMerkleTreeScheme,
 };
+use crate::transcript::CanWrite;
 
 #[derive(Debug, Getters)]
 pub struct BinaryMerkleTreeProver<T, H, C> {
@@ -65,13 +66,16 @@ where
 		committed.layer(depth)
 	}
 
-	fn prove_opening(
+	fn prove_opening<Proof: CanWrite>(
 		&self,
 		committed: &Self::Committed,
 		layer_depth: usize,
 		index: usize,
-	) -> Result<Vec<Output<H>>, Error> {
-		committed.branch(index, layer_depth)
+		mut proof: Proof,
+	) -> Result<(), Error> {
+		let branch = committed.branch(index, layer_depth)?;
+		proof.write_slice(&branch);
+		Ok(())
 	}
 
 	#[instrument(skip_all, level = "debug")]

@@ -287,7 +287,7 @@ pub fn make_sumcheck_claim_descs<F: Field>(
 ///     described by `commit_meta` and the transparent polynomials in `transparents`
 /// * `proof` - the proof reader
 #[instrument("piop::verify", skip_all)]
-pub fn verify<'a, F, FEncode, Transcript, Advice, MTScheme, Digest>(
+pub fn verify<'a, F, FEncode, Transcript, Advice, MTScheme>(
 	commit_meta: &CommitMeta,
 	merkle_scheme: &MTScheme,
 	fri_params: &FRIParams<F, FEncode>,
@@ -301,8 +301,7 @@ where
 	FEncode: BinaryField,
 	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
 	Advice: CanRead,
-	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: DeserializeBytes,
+	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -411,7 +410,7 @@ struct BatchInterleavedSumcheckFRIOutput<F> {
 /// * `n_rounds` is greater than or equal to the maximum number of variables of any claim
 /// * `claims` are sorted in ascending order by number of variables
 #[instrument(skip_all)]
-fn verify_interleaved_fri_sumcheck<F, FEncode, Transcript, Advice, MTScheme, Digest>(
+fn verify_interleaved_fri_sumcheck<F, FEncode, Transcript, Advice, MTScheme>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_scheme: &MTScheme,
@@ -424,8 +423,7 @@ where
 	FEncode: BinaryField,
 	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
 	Advice: CanRead,
-	MTScheme: MerkleTreeScheme<F, Digest = Digest, Proof = Vec<Digest>>,
-	Digest: DeserializeBytes,
+	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	let mut arities_iter = fri_params.fold_arities().iter();
 	let mut fri_commitments = Vec::with_capacity(fri_params.n_oracles());

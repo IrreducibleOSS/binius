@@ -259,27 +259,8 @@ where
 		})
 }
 
-/// A proof for a single FRI consistency query.
-pub type QueryProof<F, VCSProof> = Vec<QueryRoundProof<F, VCSProof>>;
-
 /// The type of the termination round codeword in the FRI protocol.
 pub type TerminateCodeword<F> = Vec<F>;
-
-#[derive(Debug, Clone)]
-pub struct FRIProof<F, VCS: MerkleTreeScheme<F>> {
-	pub terminate_codeword: TerminateCodeword<F>,
-	pub proofs: Vec<QueryProof<F, VCS::Proof>>,
-	pub layers: Vec<Vec<VCS::Digest>>,
-}
-
-/// The values and vector commitment opening proofs for a coset.
-#[derive(Debug, Clone)]
-pub struct QueryRoundProof<F, VCSProof> {
-	/// Values of the committed vector at the queried coset.
-	pub values: Vec<F>,
-	/// Vector commitment opening proof for the coset.
-	pub vcs_proof: VCSProof,
-}
 
 /// Calculates the number of test queries required to achieve a target security level.
 ///
