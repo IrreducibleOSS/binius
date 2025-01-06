@@ -8,12 +8,14 @@ authors.workspace = true
 binius_field = { path = "../field" }
 binius_utils = { path = "../utils" }
 binius_ntt = { path = "../ntt" }
+bytemuck.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 digest.workspace = true
 groestl_crypto.workspace = true
 lazy_static.workspace = true
 p3-symmetric.workspace = true
+sha2 = { workspace = true, features = ["compress"] }
 thiserror.workspace = true
 
 [dev-dependencies]

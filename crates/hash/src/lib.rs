@@ -20,8 +20,8 @@
 
 mod groestl;
 pub mod hasher;
-
 mod serialization;
+pub mod sha2;
 mod vision;
 mod vision_constants;
 
