@@ -32,7 +32,8 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
-		gkr_gpa::{self, LayerClaim},
+		gkr_gpa,
+		gkr_gpa::LayerClaim,
 		greedy_evalcheck,
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
@@ -52,6 +53,7 @@ pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
+	boundaries: Vec<Boundary<FExt<Tower>>>,
 	proof: Proof,
 ) -> Result<(), Error>
 where
@@ -92,23 +94,6 @@ where
 
 	// Read polynomial commitment polynomials
 	let commitment = transcript.read::<Output<Hash>>()?;
-
-	// Read and validate table heights
-	for constraint_set in table_constraints.iter() {
-		let log_size = transcript.read_u64()? as usize;
-		if constraint_set.n_vars != log_size {
-			bail!(Error::ConstraintSetNvarsMismatch {
-				transcript_log_size: log_size,
-				constraint_set_nvars: constraint_set.n_vars
-			});
-		}
-	}
-
-	// Read boundary values
-	let boundaries_len = transcript.read_u64()? as usize;
-	let boundaries = (0..boundaries_len)
-		.map(|_| Boundary::read_from(&mut transcript))
-		.collect::<Result<Vec<_>, _>>()?;
 
 	// Grand product arguments
 	// Grand products for non-zero checks

@@ -8,8 +8,6 @@ pub enum Error {
 	TranscriptNotEmpty { remaining: usize },
 	#[error("Not enough bytes in the buffer")]
 	NotEnoughBytes,
-	#[error("Invalid value encountered: {0}")]
-	InvalidValue(String),
 	#[error("Serialization error: {0}")]
 	Serialization(#[from] SerializationError),
 }

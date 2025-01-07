@@ -241,12 +241,6 @@ pub trait CanRead {
 		Ok(())
 	}
 
-	fn read_u64(&mut self) -> Result<u64, Error> {
-		let mut buf = [0u8; 8];
-		self.read_bytes(buf.as_mut_slice())?;
-		Ok(u64::from_le_bytes(buf))
-	}
-
 	fn read_scalar<F: TowerField>(&mut self) -> Result<F, Error> {
 		let mut out = F::default();
 		self.read_scalar_slice_into(slice::from_mut(&mut out))?;
@@ -324,10 +318,6 @@ pub trait CanWrite {
 
 	fn write_bytes(&mut self, data: &[u8]) {
 		self.buffer().put_slice(data);
-	}
-
-	fn write_u64(&mut self, data: u64) {
-		self.write_bytes(data.to_le_bytes().as_slice());
 	}
 
 	fn write_scalar<F: TowerField>(&mut self, f: F) {

@@ -37,12 +37,6 @@ pub enum Error {
 		witness_num_vars: usize,
 	},
 
-	#[error("transcript_log_size = {transcript_log_size} does not match constraint_set_nvars = {constraint_set_nvars}")]
-	ConstraintSetNvarsMismatch {
-		constraint_set_nvars: usize,
-		transcript_log_size: usize,
-	},
-
 	#[error("cannot flush {count} rows of oracle {id}")]
 	FlushCountExceedsOracleSize { id: OracleId, count: usize },
 

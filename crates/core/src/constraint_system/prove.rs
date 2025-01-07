@@ -19,7 +19,6 @@ use rayon::prelude::*;
 use tracing::instrument;
 
 use super::{
-	channel::Boundary,
 	error::Error,
 	verify::{
 		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles,
@@ -59,7 +58,6 @@ use crate::{
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
 pub fn prove<U, Tower, FBase, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
-	boundaries: Vec<Boundary<FExt<Tower>>>,
 	log_inv_rate: usize,
 	security_bits: usize,
 	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
@@ -127,17 +125,6 @@ where
 
 	// Observe polynomial commitment
 	transcript.write(&commitment);
-
-	// Observe table heights
-	for constraint_set in table_constraints.iter() {
-		transcript.write_u64(constraint_set.n_vars as u64);
-	}
-
-	// Observe boundary values
-	transcript.write_u64(boundaries.len() as u64);
-	for boundary in boundaries.iter() {
-		boundary.write_to(&mut transcript);
-	}
 
 	// Grand product arguments
 	// Grand products for non-zero checking

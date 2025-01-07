@@ -93,7 +93,6 @@ fn main() -> Result<()> {
 		_,
 	>(
 		&constraint_system,
-		vec![],
 		args.log_inv_rate as usize,
 		SECURITY_BITS,
 		witness,
@@ -109,7 +108,7 @@ fn main() -> Result<()> {
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, proof)?;
+	>(&constraint_system, args.log_inv_rate as usize, SECURITY_BITS, vec![], proof)?;
 
 	Ok(())
 }
