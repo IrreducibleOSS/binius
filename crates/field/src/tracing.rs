@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 /// Trace multiplication event
 macro_rules! trace_multiplication {

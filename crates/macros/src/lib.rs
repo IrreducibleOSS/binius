@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 extern crate proc_macro;
 mod arith_circuit_poly;

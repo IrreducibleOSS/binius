@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use quote::{quote, ToTokens};
 use syn::{bracketed, parse::Parse, parse_quote, spanned::Spanned, Token};

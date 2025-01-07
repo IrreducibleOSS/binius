@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use super::{
 	small_uint::{U1, U2, U4},

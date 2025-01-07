@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};

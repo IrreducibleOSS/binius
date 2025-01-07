@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use super::{
 	packed::{impl_broadcast, impl_ops_for_zero_height, PackedPrimitiveType},

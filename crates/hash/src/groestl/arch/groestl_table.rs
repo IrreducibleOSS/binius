@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2024 The RustCrypto Project Developers
+// Copyright (c) 2020-2025 The RustCrypto Project Developers
 
 #[rustfmt::skip]
 pub(crate) const TABLE: [[u64; 256]; 8] = [

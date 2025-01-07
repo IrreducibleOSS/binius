@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! Example of a Binius SNARK that proves execution of [Vision Mark-32] permutations.
 //!

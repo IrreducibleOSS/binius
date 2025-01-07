@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! The hardware abstraction layer (HAL) provides an interface for expensive computations that can
 //! be run with hardware acceleration.

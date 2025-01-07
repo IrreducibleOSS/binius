@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 // Copyright (c) 2024 The Plonky3 Authors
 
 /// Division implementation that fails in case when `a`` isn't divisible by `b`

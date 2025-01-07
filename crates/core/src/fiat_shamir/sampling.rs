@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 // Copyright (c) 2024 The Plonky3 authors
 
 //! Traits used to sample random values in a public-coin interactive protocol.

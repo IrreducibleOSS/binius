@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! The grand product argument protocol based on a GKR-instantiation.
 //!

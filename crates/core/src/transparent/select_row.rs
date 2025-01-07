@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
 use binius_math::MultilinearExtension;

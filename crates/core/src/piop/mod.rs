@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible, Inc
+// Copyright 2024-2025 Irreducible Inc.
 
 //! The compilation of a multilinear polynomial IOP to an IP using the techniques from [DP24]
 //! (FRI-Binius).

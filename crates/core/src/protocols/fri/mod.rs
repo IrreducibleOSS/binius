@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! Implementation of the Fast Reed–Solomon IOPP (FRI) over binary fields.
 //!

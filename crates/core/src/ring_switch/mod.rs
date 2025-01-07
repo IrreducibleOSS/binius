@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible, Inc
+// Copyright 2024-2025 Irreducible Inc.
 
 //! Interactive reduction from evaluation claims on committed small-field multilinear polynomials
 //! to sumcheck claims on products of committed packed multilinears and transparent polynomials.

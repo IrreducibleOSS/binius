@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! Mathematical primitives used in Binius, built atop the `binius_field` crate.
 //!

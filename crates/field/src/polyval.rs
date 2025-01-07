@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Irreducible Inc.
+// Copyright 2023-2025 Irreducible Inc.
 
 //! Binary field implementation of GF(2^128) with a modulus of X^128 + X^127 + X^126 + 1.
 

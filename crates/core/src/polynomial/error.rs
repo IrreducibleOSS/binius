@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Irreducible Inc.
+// Copyright 2023-2025 Irreducible Inc.
 
 use std::ops::Range;
 

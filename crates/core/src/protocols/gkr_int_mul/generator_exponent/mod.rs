@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 //! Exponentiation of a generator with a series of bit columns based on the data-parallel
 //! GKR circuit described here:

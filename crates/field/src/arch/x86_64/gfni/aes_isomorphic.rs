@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use super::gfni_arithmetics::{linear_transform, GfniType, AES_TO_TOWER_MAP, TOWER_TO_AES_MAP};
 use crate::{

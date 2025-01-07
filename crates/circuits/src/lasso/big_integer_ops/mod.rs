@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 pub mod byte_sliced_add;
 pub mod byte_sliced_add_carryfree;

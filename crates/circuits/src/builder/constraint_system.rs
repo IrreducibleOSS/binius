@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use core::iter::IntoIterator;
 use std::{cell::RefCell, rc::Rc};

@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 use super::{
 	multiply::{mul_alpha, mul_main},
 	square::square_main,

@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use super::packed_scaled::packed_scaled_field;
 use crate::arch::packed_aes_256::*;

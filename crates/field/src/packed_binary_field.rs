@@ -1,4 +1,4 @@
-// Copyright 2023-2024 Irreducible Inc.
+// Copyright 2023-2025 Irreducible Inc.
 
 pub use crate::arch::{
 	packed_1::*, packed_128::*, packed_16::*, packed_2::*, packed_256::*, packed_32::*,

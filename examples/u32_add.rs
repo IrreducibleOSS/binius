@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
 use binius_circuits::{arithmetic::Flags, builder::ConstraintSystemBuilder};

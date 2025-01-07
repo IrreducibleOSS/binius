@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible, Inc
+// Copyright 2024-2025 Irreducible Inc.
 
 /// An index mapping positive integer IDs to optional values.
 #[derive(Debug)]

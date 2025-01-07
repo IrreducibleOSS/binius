@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 mod batch_prove;
 mod batch_prove_univariate_zerocheck;
