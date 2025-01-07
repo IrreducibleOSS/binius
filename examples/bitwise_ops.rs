@@ -5,7 +5,10 @@ use std::{fmt::Display, str::FromStr};
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, BinaryField8b};
+use binius_field::{
+	arch::OptimalUnderlier, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b,
+	TowerField,
+};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_macros::arith_expr;
@@ -53,8 +56,8 @@ struct Args {
 	#[arg(long, default_value_t = BitwiseOp::And)]
 	op: BitwiseOp,
 	/// The number of permutations to verify.
-	#[arg(short, long, default_value_t = 1024, value_parser = value_parser!(u32).range(1024..))]
-	n_ops: u32,
+	#[arg(short, long, default_value_t = 32, value_parser = value_parser!(u32).range(32..))]
+	n_u32_ops: u32,
 	/// The negative binary logarithm of the Reed–Solomon code rate.
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
@@ -72,23 +75,25 @@ fn main() -> Result<()> {
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} bitwise {}'s", args.n_ops, args.op);
+	println!("Verifying {} bitwise u32 {}'s", args.n_u32_ops, args.op);
 
-	let log_n_operations = log2_ceil_usize(args.n_ops as usize);
+	let log_n_1b_operations =
+		log2_ceil_usize(args.n_u32_ops as usize) + BinaryField32b::TOWER_LEVEL;
 
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	// Assuming our 32bit values have been committed as bits
 	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
 		&mut builder,
 		"in_a",
-		log_n_operations,
+		log_n_1b_operations,
 	)?;
 	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
 		&mut builder,
 		"in_b",
-		log_n_operations,
+		log_n_1b_operations,
 	)?;
 	let _result = match args.op {
 		BitwiseOp::And => binius_circuits::bitwise::and(&mut builder, "a_and_b", in_a, in_b),
