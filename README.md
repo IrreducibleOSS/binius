@@ -4,7 +4,7 @@
 
 Binius is a Rust library implementing a cryptographic *succinct non-interactive argument of knowledge* (SNARK) over towers of binary fields. The techniques are described formally in the papers *[Succinct Arguments over Towers of Binary Fields](https://eprint.iacr.org/2023/1784)* and *[Polylogarithmic Proofs for Multilinears over Binary Towers](https://eprint.iacr.org/2024/504)*.
 
-This library is a work in progress. It is not yet ready for use, but may be of interest for experimentation. 
+Comprehensive documentation is available at <https://binius.xyz/>.
 
 ## Usage
 
@@ -38,12 +38,10 @@ lto = "fat"
 There are examples of simple commit-and-prove SNARKs in the `examples` directory. For example, you may run
 
 ```bash
-cargo run --release --example bitwise_and_proof
+cargo run --release --example sha256_circuit
 ```
 
-The environment variable `PROFILE_CSV_FILE` can be set to an output filename to dump profiling data to a CSV file for more detailed analysis.
-
-By default all the examples are run on a relatively small data. The environment variable `BINIUS_LOG_TRACE` can be used to override the default log trace size value.
+By default, all the examples are run on relatively small instance sizes. The examples accept command line arguments to specify the size of the data.
 
 ### API Documentation
 
@@ -57,11 +55,11 @@ cargo doc --no-deps
 
 ## Support
 
-This project is under active development. The developers with make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.
+This project is under active development. The developers will make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.
 
 We use GitLab's issue system for tracking bugs, features, and other development tasks.
 
-This codebase certainly contains many bugs at this point in its development. *We discourage the production use of this library until future notice.* Any bugs, including those affecting the security of the system, may be filed publicly as an issue.
+This codebase certainly contains bugs at this point in its development. *We discourage the use of this library for security-critical applications until future notice.* Any bugs, including those affecting the security of the system, may be filed publicly as an issue.
 
 ## Authors
 
