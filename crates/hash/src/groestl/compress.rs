@@ -2,7 +2,8 @@
 
 use digest::{Digest, Output};
 use groestl_crypto::Groestl256;
-use p3_symmetric::PseudoCompressionFunction;
+
+use crate::PseudoCompressionFunction;
 
 /// One-way compression function that compresses two 32-byte strings into a single 32-byte string.
 #[derive(Debug, Default, Clone)]

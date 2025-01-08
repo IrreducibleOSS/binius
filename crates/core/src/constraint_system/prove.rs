@@ -8,6 +8,7 @@ use binius_field::{
 	RepackedExtension, TowerField,
 };
 use binius_hal::ComputationBackend;
+use binius_hash::PseudoCompressionFunction;
 use binius_math::{
 	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
@@ -15,7 +16,6 @@ use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use either::Either;
 use itertools::{chain, izip};
-use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
 use tracing::instrument;
 

@@ -12,10 +12,9 @@ use binius_math::{
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use p3_util::log2_ceil_usize;
 use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 use tracing::instrument;

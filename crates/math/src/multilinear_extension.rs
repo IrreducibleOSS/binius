@@ -9,9 +9,8 @@ use binius_field::{
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
 };
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
-use p3_util::log2_strict_usize;
 use rayon::prelude::*;
 use tracing::instrument;
 

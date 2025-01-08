@@ -18,10 +18,10 @@ use binius_ntt::{
 	SingleThreadedNTT,
 };
 use lazy_static::lazy_static;
-use p3_symmetric::{CryptographicPermutation, Permutation};
 
 use crate::{
 	hasher::{FixedLenHasher, HashError},
+	permutation::{CryptographicPermutation, Permutation},
 	vision_constants::{
 		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
 		ROUND_KEYS,

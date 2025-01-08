@@ -7,11 +7,10 @@ use binius_field::{
 };
 use binius_hash::{
 	FixedLenHasherDigest, Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest,
-	HasherDigest, Vision32b, VisionHasher,
+	HasherDigest, PseudoCompressionFunction, Vision32b, VisionHasher,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
-use p3_symmetric::PseudoCompressionFunction;
 use rand::{thread_rng, RngCore};
 
 fn bench_groestl_compression(c: &mut Criterion) {

@@ -10,7 +10,6 @@ bytemuck.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 derive_more.workspace = true
-p3-util.workspace = true
 rand.workspace = true
 rayon.workspace = true
 seq-macro.workspace = true

@@ -20,8 +20,6 @@ digest.workspace = true
 either.workspace = true
 getset.workspace = true
 itertools.workspace = true
-p3-symmetric.workspace = true
-p3-util.workspace = true
 rand.workspace = true
 rayon.workspace = true
 stackalloc.workspace = true
@@ -34,6 +32,7 @@ transpose.workspace = true
 binius_macros = { path = "../macros" }
 criterion.workspace = true
 groestl_crypto.workspace = true
+rand = { workspace = true, features = ["std"] }
 
 [lib]
 bench = false

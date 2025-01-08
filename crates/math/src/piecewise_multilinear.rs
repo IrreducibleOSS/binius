@@ -121,7 +121,7 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::BinaryField32b;
-	use p3_util::{log2_ceil_usize, log2_strict_usize};
+	use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 	use rand::{prelude::StdRng, SeedableRng};
 
 	use super::*;

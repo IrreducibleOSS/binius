@@ -12,9 +12,9 @@ use binius_field::{
 	PackedAESBinaryField64x8b, PackedExtension, PackedExtensionIndexable, PackedField,
 	PackedFieldIndexable, TowerField,
 };
-use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 
 use super::{super::hasher::Hasher, arch::Groestl256Core};
+use crate::{CompressionFunction, PseudoCompressionFunction};
 
 /// The type of output digest for `Grøstl256` over `F` which should be isomorphic to `AESTowerField8b`
 pub type GroestlDigest<F> = PackedType<OptimalUnderlier256b, F>;

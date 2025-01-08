@@ -3,11 +3,9 @@
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
 use binius_field::{serialize_canonical, TowerField};
-use binius_hash::HashBuffer;
-use binius_utils::bail;
+use binius_hash::{HashBuffer, PseudoCompressionFunction};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
 use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
-use p3_symmetric::PseudoCompressionFunction;
-use p3_util::log2_strict_usize;
 use rayon::{prelude::*, slice::ParallelSlice};
 use tracing::instrument;
 

@@ -11,9 +11,8 @@ use binius_math::{
 	EvaluationDomain, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MultilinearExtension,
 };
-use binius_utils::{bail, sorting::is_sorted_ascending};
+use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
-use p3_util::log2_strict_usize;
 
 use crate::{
 	composition::{BivariateProduct, IndexComposition},

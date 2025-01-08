@@ -6,12 +6,11 @@ use binius_field::{
 	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
 	TowerField,
 };
+use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPolyOS};
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{izip, multiunzip, Itertools};
-use p3_symmetric::PseudoCompressionFunction;
-use p3_util::log2_ceil_usize;
 use tracing::instrument;
 
 use super::{

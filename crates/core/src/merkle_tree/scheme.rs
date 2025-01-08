@@ -3,12 +3,13 @@
 use std::{array, fmt::Debug, marker::PhantomData};
 
 use binius_field::{serialize_canonical, TowerField};
-use binius_hash::HashBuffer;
-use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
+use binius_hash::{HashBuffer, PseudoCompressionFunction};
+use binius_utils::{
+	bail,
+	checked_arithmetics::{log2_ceil_usize, log2_strict_usize},
+};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use getset::Getters;
-use p3_symmetric::PseudoCompressionFunction;
-use p3_util::log2_strict_usize;
 
 use super::{
 	errors::{Error, VerificationError},

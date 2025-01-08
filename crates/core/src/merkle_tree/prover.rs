@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::TowerField;
+use binius_hash::PseudoCompressionFunction;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use getset::Getters;
-use p3_symmetric::PseudoCompressionFunction;
 use rayon::iter::IndexedParallelIterator;
 use tracing::instrument;
 

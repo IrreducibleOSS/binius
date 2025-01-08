@@ -2,8 +2,7 @@
 
 use binius_field::BinaryField;
 use binius_math::Matrix;
-use binius_utils::bail;
-use p3_util::log2_ceil_usize;
+use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 
 use crate::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 

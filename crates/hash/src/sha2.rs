@@ -2,8 +2,9 @@
 
 use bytemuck::{bytes_of_mut, must_cast};
 use digest::{core_api::Block, Digest};
-use p3_symmetric::{CompressionFunction, PseudoCompressionFunction};
 use sha2::{compress256, digest::Output, Sha256};
+
+use crate::{CompressionFunction, PseudoCompressionFunction};
 
 /// A two-to-one compression function for SHA-256 digests.
 #[derive(Debug, Clone)]
