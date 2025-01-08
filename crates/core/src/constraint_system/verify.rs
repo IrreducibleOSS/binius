@@ -397,9 +397,15 @@ fn verify_channels_balance<F: TowerField>(
 		let (pull_product, push_product) = flush_iter
 			.peeking_take_while(|(flush, _)| flush.channel_id == channel_id)
 			.fold(boundary_products, |(pull_product, push_product), (flush, flush_product)| {
+				let flush_product_with_multiplicity =
+					flush_product.pow_vartime([flush.multiplicity]);
 				match flush.direction {
-					FlushDirection::Pull => (pull_product * flush_product, push_product),
-					FlushDirection::Push => (pull_product, push_product * flush_product),
+					FlushDirection::Pull => {
+						(pull_product * flush_product_with_multiplicity, push_product)
+					}
+					FlushDirection::Push => {
+						(pull_product, push_product * flush_product_with_multiplicity)
+					}
 				}
 			});
 		if pull_product != push_product {

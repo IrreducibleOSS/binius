@@ -64,6 +64,7 @@ pub struct Flush {
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 	pub count: usize,
+	pub multiplicity: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +115,7 @@ where
 			channel_id,
 			direction,
 			count,
+			multiplicity,
 		} = flush;
 
 		if *channel_id > max_channel_id {
@@ -156,7 +158,7 @@ where
 					.iter()
 					.map(|poly| poly.evaluate_on_hypercube(i).unwrap())
 					.collect();
-				channel.flush(direction, 1, values)?;
+				channel.flush(direction, *multiplicity, values)?;
 			}
 		}
 	}
@@ -179,6 +181,14 @@ struct Channel<F: TowerField> {
 impl<F: TowerField> Channel<F> {
 	fn new() -> Self {
 		Self::default()
+	}
+
+	fn _print_unbalanced_values(&self) {
+		for (key, val) in self.multiplicities.iter() {
+			if *val != 0 {
+				println!("{key:?}: {val}");
+			}
+		}
 	}
 
 	fn flush(

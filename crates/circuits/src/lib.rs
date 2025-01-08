@@ -17,6 +17,7 @@ pub mod groestl;
 pub mod keccakf;
 pub mod lasso;
 mod pack;
+pub mod plain_lookup;
 pub mod sha256;
 pub mod transparent;
 pub mod u32fib;
@@ -68,6 +69,7 @@ mod tests {
 			lookups,
 			u32add::SeveralU32add,
 		},
+		plain_lookup,
 		sha256::sha256,
 		u32fib::u32fib,
 		unconstrained::unconstrained,
@@ -621,5 +623,68 @@ mod tests {
 			HasherChallenger<Groestl256>,
 		>(&constraint_system, 1, 10, vec![pull_boundaries, push_boundaries], proof)
 		.unwrap();
+	}
+
+	#[test]
+	fn test_plain_u8_mul_lookup() {
+		const MAX_LOG_MULTIPLICITY: usize = 18;
+		let log_lookup_count = 19;
+
+		let log_inv_rate = 1;
+		let security_bits = 20;
+
+		let proof = {
+			let allocator = bumpalo::Bump::new();
+			let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+
+			let _boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
+				_,
+				_,
+				MAX_LOG_MULTIPLICITY,
+			>(&mut builder, log_lookup_count)
+			.unwrap();
+
+			let witness = builder.take_witness().unwrap();
+			let constraint_system = builder.build().unwrap();
+			// validating witness with `validate_witness` is too slow for large transparents like the `table`
+
+			let domain_factory = DefaultEvaluationDomainFactory::default();
+			let backend = make_portable_backend();
+
+			constraint_system::prove::<
+				U,
+				CanonicalTowerFamily,
+				BinaryField64b,
+				_,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+				_,
+			>(&constraint_system, log_inv_rate, security_bits, witness, &domain_factory, &backend)
+			.unwrap()
+		};
+
+		// verify
+		{
+			let mut builder = ConstraintSystemBuilder::<U, F>::new();
+
+			let boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
+				_,
+				_,
+				MAX_LOG_MULTIPLICITY,
+			>(&mut builder, log_lookup_count)
+			.unwrap();
+
+			let constraint_system = builder.build().unwrap();
+
+			constraint_system::verify::<
+				U,
+				CanonicalTowerFamily,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+			>(&constraint_system, log_inv_rate, security_bits, vec![boundary], proof)
+			.unwrap();
+		}
 	}
 }

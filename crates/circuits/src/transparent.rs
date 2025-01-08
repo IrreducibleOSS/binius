@@ -67,3 +67,34 @@ where
 	}
 	Ok(id)
 }
+
+pub fn make_transparent<U, F, FS>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
+	values: &[FS],
+) -> Result<OracleId, anyhow::Error>
+where
+	U: PackScalar<F> + PackScalar<FS>,
+	F: TowerField + ExtensionField<FS>,
+	FS: TowerField,
+{
+	let packed_length = values.len().div_ceil(PackedType::<U, FS>::WIDTH);
+	let mut packed_values = vec![PackedType::<U, FS>::default(); packed_length];
+	for (i, value) in values.iter().enumerate() {
+		binius_field::packed::set_packed_slice(&mut packed_values, i, *value);
+	}
+
+	use binius_core::transparent::multilinear_extension::MultilinearExtensionTransparent;
+	let mle = MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(
+		packed_values.clone(),
+	)?;
+
+	let oracle = builder.add_transparent(name, mle)?;
+
+	if let Some(witness) = builder.witness() {
+		let mut entry_builder = witness.new_column::<FS>(oracle);
+		entry_builder.packed().copy_from_slice(&packed_values);
+	}
+
+	Ok(oracle)
+}

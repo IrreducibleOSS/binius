@@ -102,6 +102,24 @@ where
 			direction,
 			count,
 			oracles: oracle_ids.into_iter().collect(),
+			multiplicity: 1,
+		})
+	}
+
+	pub fn flush_with_multiplicity(
+		&mut self,
+		direction: FlushDirection,
+		channel_id: ChannelId,
+		count: usize,
+		oracle_ids: impl IntoIterator<Item = OracleId>,
+		multiplicity: u64,
+	) {
+		self.flushes.push(Flush {
+			channel_id,
+			direction,
+			count,
+			oracles: oracle_ids.into_iter().collect(),
+			multiplicity,
 		})
 	}
 
