@@ -814,105 +814,42 @@ impl UnderlierWithBitOps for M512 {
 				_ => spread_fallback(self, log_block_len, block_idx),
 			},
 			3 => match log_block_len {
-				0 => {
-					let bytes = get_block_values::<_, u8, 1>(self, block_idx)[0];
-
-					_mm512_set1_epi8(bytes as _).into()
-				}
-				1 => {
-					let bytes = get_block_values::<_, u8, 2>(self, block_idx);
-					Self::from_fn::<u8>(|i| bytes[i / 32])
-				}
-				2 => {
-					let bytes = get_block_values::<_, u8, 4>(self, block_idx);
-					Self::from_fn::<u8>(|i| bytes[i / 16])
-				}
-				3 => {
-					let bytes = get_block_values::<_, u8, 8>(self, block_idx);
-					Self::from_fn::<u8>(|i| bytes[i / 8])
-				}
-				4 => {
-					let bytes = get_block_values::<_, u8, 16>(self, block_idx);
-					Self::from_fn::<u8>(|i| bytes[i / 4])
-				}
-				5 => {
-					let bytes = get_block_values::<_, u8, 32>(self, block_idx);
-					Self::from_fn::<u8>(|i| bytes[i / 2])
-				}
+				0 => _mm512_permutexvar_epi8(LOG_B8_0[block_idx], self.0).into(),
+				1 => _mm512_permutexvar_epi8(LOG_B8_1[block_idx], self.0).into(),
+				2 => _mm512_permutexvar_epi8(LOG_B8_2[block_idx], self.0).into(),
+				3 => _mm512_permutexvar_epi8(LOG_B8_3[block_idx], self.0).into(),
+				4 => _mm512_permutexvar_epi8(LOG_B8_4[block_idx], self.0).into(),
+				5 => _mm512_permutexvar_epi8(LOG_B8_5[block_idx], self.0).into(),
 				6 => self,
 				_ => panic!("unsupported block length"),
 			},
 			4 => match log_block_len {
-				0 => {
-					let values = get_block_values::<_, u16, 1>(self, block_idx)[0];
-
-					_mm512_set1_epi16(values as _).into()
-				}
-				1 => {
-					let values = get_block_values::<_, u16, 2>(self, block_idx);
-					Self::from_fn::<u16>(|i| values[i / 16])
-				}
-				2 => {
-					let values = get_block_values::<_, u16, 4>(self, block_idx);
-					Self::from_fn::<u16>(|i| values[i / 8])
-				}
-				3 => {
-					let values = get_block_values::<_, u16, 8>(self, block_idx);
-					Self::from_fn::<u16>(|i| values[i / 4])
-				}
-				4 => {
-					let values = get_block_values::<_, u16, 16>(self, block_idx);
-					Self::from_fn::<u16>(|i| values[i / 2])
-				}
+				0 => _mm512_permutexvar_epi8(LOG_B16_0[block_idx], self.0).into(),
+				1 => _mm512_permutexvar_epi8(LOG_B16_1[block_idx], self.0).into(),
+				2 => _mm512_permutexvar_epi8(LOG_B16_2[block_idx], self.0).into(),
+				3 => _mm512_permutexvar_epi8(LOG_B16_3[block_idx], self.0).into(),
+				4 => _mm512_permutexvar_epi8(LOG_B16_4[block_idx], self.0).into(),
 				5 => self,
 				_ => panic!("unsupported block length"),
 			},
 			5 => match log_block_len {
-				0 => {
-					let values = get_block_values::<_, u32, 1>(self, block_idx)[0];
-
-					_mm512_set1_epi32(values as _).into()
-				}
-				1 => {
-					let values = get_block_values::<_, u32, 2>(self, block_idx);
-					Self::from_fn::<u32>(|i| values[i / 8])
-				}
-				2 => {
-					let values = get_block_values::<_, u32, 4>(self, block_idx);
-					Self::from_fn::<u32>(|i| values[i / 4])
-				}
-				3 => {
-					let values = get_block_values::<_, u32, 8>(self, block_idx);
-					Self::from_fn::<u32>(|i| values[i / 2])
-				}
+				0 => _mm512_permutexvar_epi8(LOG_B32_0[block_idx], self.0).into(),
+				1 => _mm512_permutexvar_epi8(LOG_B32_1[block_idx], self.0).into(),
+				2 => _mm512_permutexvar_epi8(LOG_B32_2[block_idx], self.0).into(),
+				3 => _mm512_permutexvar_epi8(LOG_B32_3[block_idx], self.0).into(),
 				4 => self,
 				_ => panic!("unsupported block length"),
 			},
 			6 => match log_block_len {
-				0 => {
-					let values = get_block_values::<_, u64, 1>(self, block_idx)[0];
-					_mm512_set1_epi64(values as _).into()
-				}
-				1 => {
-					let values = get_block_values::<_, u64, 2>(self, block_idx);
-					Self::from_fn::<u64>(|i| values[i / 4])
-				}
-				2 => {
-					let values = get_block_values::<_, u64, 4>(self, block_idx);
-					Self::from_fn::<u64>(|i| values[i / 2])
-				}
+				0 => _mm512_permutexvar_epi8(LOG_B64_0[block_idx], self.0).into(),
+				1 => _mm512_permutexvar_epi8(LOG_B64_1[block_idx], self.0).into(),
+				2 => _mm512_permutexvar_epi8(LOG_B64_2[block_idx], self.0).into(),
 				3 => self,
 				_ => panic!("unsupported block length"),
 			},
 			7 => match log_block_len {
-				0 => {
-					let values = get_block_values::<_, u128, 1>(self, block_idx)[0];
-					Self::from_fn::<u128>(|_| values)
-				}
-				1 => {
-					let values = get_block_values::<_, u128, 2>(self, block_idx);
-					Self::from_fn::<u128>(|i| values[i / 2])
-				}
+				0 => _mm512_permutexvar_epi8(LOG_B128_0[block_idx], self.0).into(),
+				1 => _mm512_permutexvar_epi8(LOG_B128_1[block_idx], self.0).into(),
 				2 => self,
 				_ => panic!("unsupported block length"),
 			},
@@ -1094,6 +1031,77 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: u32>(
 	let a_prime = _mm512_xor_si512(a, _mm512_slli_epi64::<BLOCK_LEN>(t));
 	let b_prime = _mm512_xor_si512(b, t);
 	(a_prime, b_prime)
+}
+
+static LOG_B8_0: [__m512i; 64] = precompute_spread_mask::<64>(0, 3);
+static LOG_B8_1: [__m512i; 32] = precompute_spread_mask::<32>(1, 3);
+static LOG_B8_2: [__m512i; 16] = precompute_spread_mask::<16>(2, 3);
+static LOG_B8_3: [__m512i; 8] = precompute_spread_mask::<8>(3, 3);
+static LOG_B8_4: [__m512i; 4] = precompute_spread_mask::<4>(4, 3);
+static LOG_B8_5: [__m512i; 2] = precompute_spread_mask::<2>(5, 3);
+
+static LOG_B16_0: [__m512i; 32] = precompute_spread_mask::<32>(0, 4);
+static LOG_B16_1: [__m512i; 16] = precompute_spread_mask::<16>(1, 4);
+static LOG_B16_2: [__m512i; 8] = precompute_spread_mask::<8>(2, 4);
+static LOG_B16_3: [__m512i; 4] = precompute_spread_mask::<4>(3, 4);
+static LOG_B16_4: [__m512i; 2] = precompute_spread_mask::<2>(4, 4);
+
+static LOG_B32_0: [__m512i; 16] = precompute_spread_mask::<16>(0, 5);
+static LOG_B32_1: [__m512i; 8] = precompute_spread_mask::<8>(1, 5);
+static LOG_B32_2: [__m512i; 4] = precompute_spread_mask::<4>(2, 5);
+static LOG_B32_3: [__m512i; 2] = precompute_spread_mask::<2>(3, 5);
+
+static LOG_B64_0: [__m512i; 8] = precompute_spread_mask::<8>(0, 6);
+static LOG_B64_1: [__m512i; 4] = precompute_spread_mask::<4>(1, 6);
+static LOG_B64_2: [__m512i; 2] = precompute_spread_mask::<2>(2, 6);
+
+static LOG_B128_0: [__m512i; 4] = precompute_spread_mask::<4>(0, 7);
+static LOG_B128_1: [__m512i; 2] = precompute_spread_mask::<2>(1, 7);
+
+const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
+	log_block_len: usize,
+	t_log_bits: usize,
+) -> [__m512i; BLOCK_IDX_AMOUNT] {
+	let element_log_width = t_log_bits - 3;
+
+	let element_width = 1 << element_log_width;
+
+	let block_size = 1 << (log_block_len + element_log_width);
+	let repeat = 1 << (6 - element_log_width - log_block_len);
+	let mut masks = [[0u8; 64]; BLOCK_IDX_AMOUNT];
+
+	let mut block_idx = 0;
+
+	while block_idx < BLOCK_IDX_AMOUNT {
+		let base = block_idx * block_size;
+		let mut j = 0;
+		while j < 64 {
+			masks[block_idx][j] =
+				(base + ((j / element_width) / repeat) * element_width + j % element_width) as u8;
+			j += 1;
+		}
+		block_idx += 1;
+	}
+	let mut m512_masks = [m512_from_u128s!(0, 0, 0, 0,); BLOCK_IDX_AMOUNT];
+
+	let mut block_idx = 0;
+
+	while block_idx < BLOCK_IDX_AMOUNT {
+		let mut u128s = [0; 4];
+		let mut i = 0;
+		while i < 4 {
+			unsafe {
+				u128s[i] = u128::from_le_bytes(
+					*(masks[block_idx].as_ptr().add(16 * i) as *const [u8; 16]),
+				);
+			}
+			i += 1;
+		}
+		m512_masks[block_idx] = m512_from_u128s!(u128s[0], u128s[1], u128s[2], u128s[3],);
+		block_idx += 1;
+	}
+
+	m512_masks
 }
 
 #[cfg(test)]
