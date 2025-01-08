@@ -16,7 +16,9 @@ pub use batch_prove_univariate_zerocheck::{
 	batch_prove_zerocheck_univariate_round, UnivariateZerocheckProver,
 };
 pub use concrete_prover::ConcreteProver;
-pub use oracles::{constraint_set_sumcheck_prover, constraint_set_zerocheck_prover};
+pub use oracles::{
+	constraint_set_sumcheck_prover, constraint_set_zerocheck_prover, split_constraint_set,
+};
 pub use prover_state::{ProverState, SumcheckInterpolator};
 pub use regular_sumcheck::RegularSumcheckProver;
 pub use univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover};

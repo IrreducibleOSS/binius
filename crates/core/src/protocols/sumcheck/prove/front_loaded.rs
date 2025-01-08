@@ -70,7 +70,7 @@ where
 				break;
 			}
 			let (prover, _) = self.provers.pop_front().expect("front returned Some");
-			let multilinear_evals = prover.finish()?;
+			let multilinear_evals = Box::new(prover).finish()?;
 			transcript.write_scalar_slice(&multilinear_evals);
 		}
 		Ok(())

@@ -249,7 +249,7 @@ mod tests {
 				prove::{
 					batch_prove, batch_prove_with_start, batch_prove_zerocheck_univariate_round,
 					univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover},
-					UnivariateZerocheck,
+					SumcheckProver, UnivariateZerocheck,
 				},
 				standard_switchover_heuristic,
 				zerocheck::reduce_to_sumchecks,
@@ -522,7 +522,10 @@ mod tests {
 
 			let tail_zerocheck_provers = tail_provers
 				.into_iter()
-				.map(|prover| prover.into_regular_zerocheck().unwrap())
+				.map(|prover| {
+					let regular_zerocheck = prover.into_regular_zerocheck().unwrap();
+					Box::new(regular_zerocheck) as Box<dyn SumcheckProver<_>>
+				})
 				.collect::<Vec<_>>();
 
 			let prover_univariate_output = batch_prove_zerocheck_univariate_round(

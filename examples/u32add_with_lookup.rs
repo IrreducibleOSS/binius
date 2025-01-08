@@ -77,7 +77,6 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		BinaryField8b,
 		_,
 		Groestl256,
 		Groestl256ByteCompression,

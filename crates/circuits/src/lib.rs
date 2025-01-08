@@ -606,7 +606,6 @@ mod tests {
 		let proof = constraint_system::prove::<
 			U,
 			CanonicalTowerFamily,
-			BinaryField64b,
 			_,
 			Groestl256,
 			Groestl256ByteCompression,
@@ -654,7 +653,6 @@ mod tests {
 			constraint_system::prove::<
 				U,
 				CanonicalTowerFamily,
-				BinaryField64b,
 				_,
 				Groestl256,
 				Groestl256ByteCompression,

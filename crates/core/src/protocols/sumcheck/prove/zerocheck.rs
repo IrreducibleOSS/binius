@@ -238,7 +238,7 @@ where
 }
 
 impl<'a, 'm, F, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
-	UnivariateZerocheckProver<F>
+	UnivariateZerocheckProver<'a, F>
 	for UnivariateZerocheck<'a, 'm, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
 where
 	F: TowerField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
@@ -246,22 +246,11 @@ where
 	PBase: PackedFieldIndexable<Scalar: ExtensionField<FDomain>>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
 	P: PackedFieldIndexable<Scalar = F> + RepackedExtension<PBase> + PackedExtension<FDomain>,
-	CompositionBase: CompositionPolyOS<PBase>,
-	Composition: CompositionPolyOS<P>,
+	CompositionBase: CompositionPolyOS<PBase> + 'static,
+	Composition: CompositionPolyOS<P> + 'static,
 	M: MultilinearPoly<P> + Send + Sync + 'm,
 	Backend: ComputationBackend,
 {
-	type RegularZerocheckProver = ZerocheckProver<
-		'a,
-		FDomain,
-		PBase,
-		P,
-		CompositionBase,
-		Composition,
-		MultilinearWitness<'m, P>,
-		Backend,
-	>;
-
 	fn n_vars(&self) -> usize {
 		self.n_vars
 	}
@@ -330,7 +319,10 @@ where
 	}
 
 	#[instrument(skip_all, level = "debug")]
-	fn fold_univariate_round(self, challenge: F) -> Result<Self::RegularZerocheckProver, Error> {
+	fn fold_univariate_round(
+		self: Box<Self>,
+		challenge: F,
+	) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error> {
 		if self.univariate_evals_output.is_none() {
 			bail!(Error::ExpectedExecution);
 		}
@@ -398,7 +390,7 @@ where
 			self.backend,
 		)?;
 
-		Ok(regular_prover)
+		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
 }
 
@@ -616,7 +608,7 @@ where
 	}
 
 	#[instrument(skip_all, name = "ZerocheckProver::finish", level = "debug")]
-	fn finish(self) -> Result<Vec<F>, Error> {
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
 		let mut evals = self.state.finish()?;
 		evals.push(self.eq_ind_eval);
 		Ok(evals)

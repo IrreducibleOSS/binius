@@ -3,7 +3,7 @@
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::AESTowerFamily};
-use binius_field::{arch::OptimalUnderlier, AESTowerField128b, AESTowerField16b, BinaryField8b};
+use binius_field::{arch::OptimalUnderlier, AESTowerField128b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::IsomorphicEvaluationDomainFactory;
@@ -62,7 +62,6 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		AESTowerFamily,
-		AESTowerField16b,
 		_,
 		Groestl256,
 		Groestl256ByteCompression,

@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp::Reverse, env};
+use std::{cmp::Reverse, env, marker::PhantomData};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -9,11 +9,12 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
-use itertools::izip;
+use either::Either;
+use itertools::{chain, izip};
 use p3_symmetric::PseudoCompressionFunction;
 use rayon::prelude::*;
 use tracing::instrument;
@@ -33,7 +34,7 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle, OracleId},
+	oracle::{Constraint, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
 	piop,
 	protocols::{
 		fri::CommitOutput,
@@ -56,7 +57,7 @@ use crate::{
 
 /// Generates a proof that a witness satisfies a constraint system with the standard FRI PCS.
 #[instrument("constraint_system::prove", skip_all, level = "debug")]
-pub fn prove<U, Tower, FBase, DomainFactory, Hash, Compress, Challenger_, Backend>(
+pub fn prove<U, Tower, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
@@ -65,18 +66,29 @@ pub fn prove<U, Tower, FBase, DomainFactory, Hash, Compress, Challenger_, Backen
 	backend: &Backend,
 ) -> Result<Proof, Error>
 where
-	U: TowerUnderlier<Tower> + PackScalar<FBase>,
+	U: TowerUnderlier<Tower>,
 	Tower: TowerFamily,
-	Tower::B128: PackedTop<Tower> + ExtensionField<FBase>,
-	FBase: TowerField + ExtensionField<FDomain<Tower>> + TryFrom<FExt<Tower>>,
+	Tower::B128: PackedTop<Tower>,
 	DomainFactory: EvaluationDomainFactory<FDomain<Tower>>,
 	Hash: Digest + BlockSizeUser + FixedOutputReset,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
 	Backend: ComputationBackend,
-	PackedType<U, Tower::B128>:
-		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
-	PackedType<U, FBase>: PackedFieldIndexable
+	// REVIEW: Consider changing TowerFamily and associated traits to shorten/remove these bounds
+	PackedType<U, Tower::B128>: PackedTop<Tower>
+		+ PackedFieldIndexable
+		+ RepackedExtension<PackedType<U, Tower::B8>>
+		+ RepackedExtension<PackedType<U, Tower::B16>>
+		+ RepackedExtension<PackedType<U, Tower::B32>>
+		+ RepackedExtension<PackedType<U, Tower::B64>>
+		+ RepackedExtension<PackedType<U, Tower::B128>>,
+	PackedType<U, Tower::B8>: PackedFieldIndexable
+		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
+	PackedType<U, Tower::B16>: PackedFieldIndexable
+		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
+	PackedType<U, Tower::B32>: PackedFieldIndexable
+		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
+	PackedType<U, Tower::B64>: PackedFieldIndexable
 		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
 {
 	tracing::debug!(
@@ -235,40 +247,60 @@ where
 	let zerocheck_challenges = transcript.sample_vec(max_n_vars - skip_rounds);
 
 	let switchover_fn = standard_switchover_heuristic(-2);
-	let mut univariate_provers = table_constraints
-		.into_iter()
-		.map(|constraint_set| {
-			let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
-			sumcheck::prove::constraint_set_zerocheck_prover::<
-				U,
-				FBase,
-				FExt<Tower>,
-				FDomain<Tower>,
-				_,
-			>(
-				constraint_set,
-				&witness,
-				&domain_factory,
+
+	let mut univariate_provers = Vec::new();
+	let mut tail_regular_zerocheck_provers = Vec::new();
+	let mut univariatized_multilinears = Vec::new();
+
+	for constraint_set in table_constraints {
+		let skip_challenges = (max_n_vars - constraint_set.n_vars).saturating_sub(skip_rounds);
+		let univariate_decider = |n_vars| n_vars > max_n_vars - skip_rounds;
+
+		let (constraints, multilinears) =
+			sumcheck::prove::split_constraint_set(constraint_set, &witness)?;
+
+		let base_tower_level = chain!(
+			multilinears
+				.iter()
+				.map(|multilinear| 7 - multilinear.log_extension_degree()),
+			constraints
+				.iter()
+				.map(|constraint| arith_expr_base_tower_level::<Tower>(&constraint.composition))
+		)
+		.max()
+		.unwrap_or(0);
+
+		univariatized_multilinears.push(multilinears.clone());
+
+		let constructor =
+			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _, _> {
+				constraints,
+				multilinears,
+				domain_factory: &domain_factory,
 				switchover_fn,
-				&zerocheck_challenges[skip_challenges..],
+				zerocheck_challenges: &zerocheck_challenges[skip_challenges..],
 				backend,
-			)
-		})
-		.collect::<Result<Vec<_>, _>>()?;
+				_fdomain_marker: PhantomData,
+			};
 
-	let univariate_cnt = univariate_provers
-		.partition_point(|univariate_prover| univariate_prover.n_vars() > max_n_vars - skip_rounds);
+		let either_prover = match base_tower_level {
+			0..=3 => constructor.create::<PackedType<U, Tower::B8>>(univariate_decider)?,
+			4 => constructor.create::<PackedType<U, Tower::B16>>(univariate_decider)?,
+			5 => constructor.create::<PackedType<U, Tower::B32>>(univariate_decider)?,
+			6 => constructor.create::<PackedType<U, Tower::B64>>(univariate_decider)?,
+			7 => constructor.create::<PackedType<U, Tower::B128>>(univariate_decider)?,
+			_ => unreachable!(),
+		};
 
-	let univariatized_multilinears = univariate_provers
-		.iter()
-		.map(|univariate_prover| univariate_prover.multilinears().clone())
-		.collect::<Vec<_>>();
+		match either_prover {
+			Either::Left(univariate_prover) => univariate_provers.push(univariate_prover),
+			Either::Right(zerocheck_prover) => {
+				tail_regular_zerocheck_provers.push(zerocheck_prover)
+			}
+		}
+	}
 
-	let tail_provers = univariate_provers.split_off(univariate_cnt);
-	let tail_regular_zerocheck_provers = tail_provers
-		.into_iter()
-		.map(|univariate_prover| univariate_prover.into_regular_zerocheck())
-		.collect::<Result<Vec<_>, _>>()?;
+	let univariate_cnt = univariate_provers.len();
 
 	let univariate_output = sumcheck::prove::batch_prove_zerocheck_univariate_round(
 		univariate_provers,
@@ -388,6 +420,94 @@ where
 		transcript: transcript.finalize(),
 		advice: advice.finalize(),
 	})
+}
+
+fn arith_expr_base_tower_level<Tower: TowerFamily>(composition: &ArithExpr<FExt<Tower>>) -> usize {
+	if composition.try_convert_field::<Tower::B1>().is_ok() {
+		return 0;
+	}
+
+	if composition.try_convert_field::<Tower::B8>().is_ok() {
+		return 3;
+	}
+
+	if composition.try_convert_field::<Tower::B16>().is_ok() {
+		return 4;
+	}
+
+	if composition.try_convert_field::<Tower::B32>().is_ok() {
+		return 5;
+	}
+
+	if composition.try_convert_field::<Tower::B64>().is_ok() {
+		return 6;
+	}
+
+	7
+}
+
+type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;
+type TypeErasedSumcheck<'a, F> = Box<dyn SumcheckProver<F> + 'a>;
+type TypeErasedProver<'a, F> =
+	Either<TypeErasedUnivariateZerocheck<'a, F>, TypeErasedSumcheck<'a, F>>;
+
+struct ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+where
+	P: PackedField,
+{
+	constraints: Vec<Constraint<P::Scalar>>,
+	multilinears: Vec<MultilinearWitness<'a, P>>,
+	domain_factory: DomainFactory,
+	switchover_fn: SwitchoverFn,
+	zerocheck_challenges: &'a [P::Scalar],
+	backend: &'a Backend,
+	_fdomain_marker: PhantomData<FDomain>,
+}
+
+impl<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+where
+	P: PackedFieldIndexable,
+	FDomain: TowerField,
+	DomainFactory: EvaluationDomainFactory<FDomain>,
+	SwitchoverFn: Fn(usize) -> usize + Clone,
+	Backend: ComputationBackend,
+{
+	fn create<PBase>(
+		self,
+		is_univariate: impl FnOnce(usize) -> bool,
+	) -> Result<TypeErasedProver<'a, P::Scalar>, Error>
+	where
+		PBase:
+			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+		PBase::Scalar: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
+		P: PackedExtension<FDomain> + RepackedExtension<PBase>,
+		P::Scalar: TowerField + ExtensionField<FDomain> + ExtensionField<PBase::Scalar>,
+	{
+		let univariate_prover = sumcheck::prove::constraint_set_zerocheck_prover::<PBase, _, _, _>(
+			self.constraints,
+			self.multilinears,
+			self.domain_factory,
+			self.switchover_fn,
+			self.zerocheck_challenges,
+			self.backend,
+		)?;
+
+		let type_erased_prover = if is_univariate(univariate_prover.n_vars()) {
+			let type_erased_univariate_prover =
+				Box::new(univariate_prover) as TypeErasedUnivariateZerocheck<'a, P::Scalar>;
+
+			Either::Left(type_erased_univariate_prover)
+		} else {
+			let zerocheck_prover = univariate_prover.into_regular_zerocheck()?;
+			let type_erased_zerocheck_prover =
+				Box::new(zerocheck_prover) as TypeErasedSumcheck<'a, P::Scalar>;
+
+			Either::Right(type_erased_zerocheck_prover)
+		};
+
+		Ok(type_erased_prover)
+	}
 }
 
 #[allow(clippy::type_complexity)]

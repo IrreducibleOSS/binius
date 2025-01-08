@@ -59,7 +59,26 @@ pub trait SumcheckProver<F: Field> {
 
 	/// Finishes the sumcheck proving protocol and returns the evaluations of all multilinears at
 	/// the challenge point.
-	fn finish(self) -> Result<Vec<F>, Error>;
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error>;
+}
+
+// NB: auto_impl does not currently handle ?Sized bound on Box<Self> receivers correctly.
+impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Prover> {
+	fn n_vars(&self) -> usize {
+		(**self).n_vars()
+	}
+
+	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
+		(**self).execute(batch_coeff)
+	}
+
+	fn fold(&mut self, challenge: F) -> Result<(), Error> {
+		(**self).fold(challenge)
+	}
+
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
+		(*self).finish()
+	}
 }
 
 /// Prove a batched sumcheck protocol execution.
@@ -185,7 +204,7 @@ where
 
 	let multilinear_evals = provers
 		.into_iter()
-		.map(|prover| prover.finish())
+		.map(|prover| Box::new(prover).finish())
 		.collect::<Result<Vec<_>, _>>()?;
 
 	for multilinear_evals in multilinear_evals.iter() {

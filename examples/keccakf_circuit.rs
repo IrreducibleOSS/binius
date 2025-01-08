@@ -7,7 +7,7 @@ use std::vec;
 use anyhow::Result;
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField8b};
+use binius_field::{arch::OptimalUnderlier, BinaryField128b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -66,7 +66,6 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		BinaryField8b,
 		_,
 		Groestl256,
 		Groestl256ByteCompression,

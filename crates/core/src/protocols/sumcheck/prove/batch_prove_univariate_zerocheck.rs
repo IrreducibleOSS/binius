@@ -26,11 +26,8 @@ use crate::{
 /// of the univariate round polynomial. Folding univariate round results in a [`SumcheckProver`] instance
 /// that can be driven to completion to prove the remaining multilinear rounds.
 ///
-/// This trait is _not_ object safe.
-pub trait UnivariateZerocheckProver<F: Field> {
-	/// "Regular" prover for the multilinear rounds remaining after the univariate skip.
-	type RegularZerocheckProver: SumcheckProver<F>;
-
+/// This trait is object-safe.
+pub trait UnivariateZerocheckProver<'a, F: Field> {
 	/// The number of variables in the multivariate polynomial.
 	fn n_vars(&self) -> usize;
 
@@ -52,7 +49,39 @@ pub trait UnivariateZerocheckProver<F: Field> {
 	) -> Result<LagrangeRoundEvals<F>, Error>;
 
 	/// Folds into a regular multilinear prover for the remaining rounds.
-	fn fold_univariate_round(self, challenge: F) -> Result<Self::RegularZerocheckProver, Error>;
+	fn fold_univariate_round(
+		self: Box<Self>,
+		challenge: F,
+	) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error>;
+}
+
+// NB: auto_impl does not currently handle ?Sized bound on Box<Self> receivers correctly.
+impl<'a, F: Field, Prover: UnivariateZerocheckProver<'a, F> + ?Sized>
+	UnivariateZerocheckProver<'a, F> for Box<Prover>
+{
+	fn n_vars(&self) -> usize {
+		(**self).n_vars()
+	}
+
+	fn domain_size(&self, skip_rounds: usize) -> usize {
+		(**self).domain_size(skip_rounds)
+	}
+
+	fn execute_univariate_round(
+		&mut self,
+		skip_rounds: usize,
+		max_domain_size: usize,
+		batch_coeff: F,
+	) -> Result<LagrangeRoundEvals<F>, Error> {
+		(**self).execute_univariate_round(skip_rounds, max_domain_size, batch_coeff)
+	}
+
+	fn fold_univariate_round(
+		self: Box<Self>,
+		challenge: F,
+	) -> Result<Box<dyn SumcheckProver<F> + 'a>, Error> {
+		(*self).fold_univariate_round(challenge)
+	}
 }
 
 #[derive(Debug)]
@@ -72,14 +101,14 @@ pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
 /// verification.
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-pub fn batch_prove_zerocheck_univariate_round<F, Prover, Transcript>(
+pub fn batch_prove_zerocheck_univariate_round<'a, F, Prover, Transcript>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
 	mut transcript: Transcript,
-) -> Result<BatchZerocheckUnivariateProveOutput<F, Prover::RegularZerocheckProver>, Error>
+) -> Result<BatchZerocheckUnivariateProveOutput<F, Box<dyn SumcheckProver<F> + 'a>>, Error>
 where
 	F: TowerField,
-	Prover: UnivariateZerocheckProver<F>,
+	Prover: UnivariateZerocheckProver<'a, F>,
 	Transcript: CanSample<F> + CanWrite,
 {
 	// Check that the provers are in descending order by n_vars
@@ -125,7 +154,7 @@ where
 
 	let mut reduction_provers = Vec::with_capacity(provers.len());
 	for prover in provers {
-		let regular_prover = prover.fold_univariate_round(univariate_challenge)?;
+		let regular_prover = Box::new(prover).fold_univariate_round(univariate_challenge)?;
 		reduction_provers.push(regular_prover);
 	}
 

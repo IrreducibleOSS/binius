@@ -11,7 +11,6 @@ use binius_core::{
 };
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField128b, BinaryField1b,
-	BinaryField8b,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -85,7 +84,6 @@ fn main() -> Result<()> {
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		BinaryField8b,
 		_,
 		Groestl256,
 		Groestl256ByteCompression,

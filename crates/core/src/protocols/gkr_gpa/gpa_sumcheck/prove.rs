@@ -264,7 +264,7 @@ where
 		Ok(())
 	}
 
-	fn finish(self) -> Result<Vec<F>, SumcheckError> {
+	fn finish(self: Box<Self>) -> Result<Vec<F>, SumcheckError> {
 		let mut evals = self.state.finish()?;
 		evals.push(self.eq_ind_eval);
 		Ok(evals)

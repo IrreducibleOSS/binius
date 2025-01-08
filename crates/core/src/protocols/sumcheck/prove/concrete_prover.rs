@@ -55,10 +55,10 @@ where
 		}
 	}
 
-	fn finish(self) -> Result<Vec<F>, Error> {
-		match self {
-			ConcreteProver::Sumcheck(prover) => prover.finish(),
-			ConcreteProver::Zerocheck(prover) => prover.finish(),
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
+		match *self {
+			ConcreteProver::Sumcheck(prover) => Box::new(prover).finish(),
+			ConcreteProver::Zerocheck(prover) => Box::new(prover).finish(),
 		}
 	}
 }

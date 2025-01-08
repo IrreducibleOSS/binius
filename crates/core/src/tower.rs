@@ -12,11 +12,20 @@ use trait_set::trait_set;
 
 /// A trait that groups a family of related [`TowerField`]s as associated types.
 pub trait TowerFamily {
-	type B1: TowerField;
-	type B8: TowerField;
-	type B16: TowerField;
-	type B32: TowerField;
-	type B64: TowerField;
+	type B1: TowerField + TryFrom<Self::B128>;
+	type B8: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1>;
+	type B16: TowerField + TryFrom<Self::B128> + ExtensionField<Self::B1> + ExtensionField<Self::B8>;
+	type B32: TowerField
+		+ TryFrom<Self::B128>
+		+ ExtensionField<Self::B1>
+		+ ExtensionField<Self::B8>
+		+ ExtensionField<Self::B16>;
+	type B64: TowerField
+		+ TryFrom<Self::B128>
+		+ ExtensionField<Self::B1>
+		+ ExtensionField<Self::B8>
+		+ ExtensionField<Self::B16>
+		+ ExtensionField<Self::B32>;
 	type B128: TowerField
 		+ ExtensionField<Self::B1>
 		+ ExtensionField<Self::B8>

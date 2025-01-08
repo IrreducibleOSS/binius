@@ -1,4 +1,4 @@
-// Copyright 2024 Irreducible Inc.
+// Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::{
 	constraint_system::channel::{Boundary, FlushDirection},

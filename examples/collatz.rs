@@ -10,7 +10,7 @@ use binius_core::{
 	fiat_shamir::HasherChallenger,
 	tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b};
+use binius_field::{arch::OptimalUnderlier, BinaryField128b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -74,7 +74,6 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 	let proof = constraint_system::prove::<
 		U,
 		CanonicalTowerFamily,
-		BinaryField32b,
 		_,
 		Groestl256,
 		Groestl256ByteCompression,

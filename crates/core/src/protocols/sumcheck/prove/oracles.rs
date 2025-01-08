@@ -3,7 +3,8 @@
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
+	TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
@@ -19,7 +20,7 @@ use crate::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
-pub type OracleZerocheckProver<'a, FDomain, PBase, P, Backend> = UnivariateZerocheck<
+pub type OracleZerocheckProver<'a, PBase, P, FDomain, Backend> = UnivariateZerocheck<
 	'a,
 	'a,
 	FDomain,
@@ -41,29 +42,23 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 >;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-#[allow(clippy::type_complexity)]
-pub fn constraint_set_zerocheck_prover<'a, U, FBase, FW, FDomain, Backend>(
-	constraint_set: ConstraintSet<FW>,
-	witness: &MultilinearExtensionIndex<'a, U, FW>,
+pub fn constraint_set_zerocheck_prover<'a, PBase, P, FDomain, Backend>(
+	constraints: Vec<Constraint<P::Scalar>>,
+	multilinears: Vec<MultilinearWitness<'a, P>>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
-	zerocheck_challenges: &[FW],
+	zerocheck_challenges: &[P::Scalar],
 	backend: &'a Backend,
-) -> Result<
-	OracleZerocheckProver<'a, FDomain, PackedType<U, FBase>, PackedType<U, FW>, Backend>,
-	Error,
->
+) -> Result<OracleZerocheckProver<'a, PBase, P, FDomain, Backend>, Error>
 where
-	U: UnderlierType + PackScalar<FBase> + PackScalar<FW> + PackScalar<FDomain>,
-	FBase: TowerField + ExtensionField<FDomain> + TryFrom<FW>,
-	FW: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
+	PBase: PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
+	P: PackedFieldIndexable + PackedExtension<FDomain> + RepackedExtension<PBase>,
+	PBase::Scalar: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
+	P::Scalar: TowerField + ExtensionField<FDomain> + ExtensionField<PBase::Scalar>,
 	FDomain: Field,
-	PackedType<U, FW>: PackedFieldIndexable,
 	Backend: ComputationBackend,
 {
-	let (constraints, multilinears) = split_constraint_set::<_, FW, _>(constraint_set, witness)?;
-
-	let mut zeros = Vec::new();
+	let mut zeros = Vec::with_capacity(constraints.len());
 
 	for Constraint {
 		composition,
@@ -72,7 +67,7 @@ where
 	{
 		let composition_base = composition
 			.clone()
-			.try_convert_field()
+			.try_convert_field::<PBase::Scalar>()
 			.map_err(|_| Error::CircuitFieldDowncastFailed)?;
 		match predicate {
 			ConstraintPredicate::Zero => {
@@ -85,7 +80,7 @@ where
 		}
 	}
 
-	let prover = UnivariateZerocheck::new(
+	let prover = OracleZerocheckProver::<_, _, FDomain, _>::new(
 		multilinears,
 		zeros,
 		zerocheck_challenges,
@@ -143,7 +138,7 @@ where
 type ConstraintsAndMultilinears<'a, F, PW> = (Vec<Constraint<F>>, Vec<MultilinearWitness<'a, PW>>);
 
 #[allow(clippy::type_complexity)]
-fn split_constraint_set<'a, U, F, FW>(
+pub fn split_constraint_set<'a, U, F, FW>(
 	constraint_set: ConstraintSet<F>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 ) -> Result<ConstraintsAndMultilinears<'a, F, PackedType<U, FW>>, Error>

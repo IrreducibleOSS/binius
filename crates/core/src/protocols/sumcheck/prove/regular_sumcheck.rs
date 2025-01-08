@@ -197,7 +197,7 @@ where
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}
 
-	fn finish(self) -> Result<Vec<F>, Error> {
+	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
 		self.state.finish()
 	}
 }
