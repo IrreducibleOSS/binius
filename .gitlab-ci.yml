@@ -150,7 +150,7 @@ unit-test-amd-stable:
 unit-test-arm:
   extends: .test_job_template_arm
   script:
-    - RUSTFLAGS="-C target-cpu=native -C target-feature=aes" ./scripts/run_tests_and_examples.sh
+    - RUSTFLAGS="-C target-cpu=native -C target-feature=+aes" ./scripts/run_tests_and_examples.sh
 
 # Documentation and pages jobs
 build-docs:
