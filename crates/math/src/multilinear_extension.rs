@@ -4,7 +4,7 @@ use std::{cmp::min, fmt::Debug, ops::Deref};
 
 use binius_field::{
 	as_packed_field::{AsSinglePacked, PackScalar, PackedType},
-	packed::{get_packed_slice, iter_packed_slice},
+	packed::get_packed_slice,
 	underlier::UnderlierType,
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
@@ -171,10 +171,10 @@ where
 		}
 
 		if self.mu < P::LOG_WIDTH || query.n_vars() < PE::LOG_WIDTH {
-			let evals = iter_packed_slice(self.evals())
+			let evals = PackedField::iter_slice(self.evals())
 				.take(self.size())
 				.collect::<Vec<P::Scalar>>();
-			let querys = iter_packed_slice(query.expansion())
+			let querys = PackedField::iter_slice(query.expansion())
 				.take(1 << query.n_vars())
 				.collect::<Vec<PE::Scalar>>();
 			Ok(inner_product_par(&querys, &evals))
@@ -223,7 +223,7 @@ where
 				for inner_index in 0..min(PE::WIDTH, 1 << new_n_vars) {
 					res.set(
 						inner_index,
-						iter_packed_slice(query_expansion)
+						PackedField::iter_slice(query_expansion)
 							.take(1 << query.n_vars())
 							.enumerate()
 							.map(|(query_index, basis_eval)| {
@@ -382,7 +382,7 @@ mod tests {
 			.collect::<Vec<F>>();
 		let result1 = multilinear_query::<P>(&q);
 		let result2 = expand_query_naive(&q).unwrap();
-		assert_eq!(iter_packed_slice(result1.expansion()).collect_vec(), result2);
+		assert_eq!(PackedField::iter_slice(result1.expansion()).collect_vec(), result2);
 	}
 
 	#[test]

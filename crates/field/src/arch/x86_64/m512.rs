@@ -23,8 +23,8 @@ use crate::{
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		get_block_values, get_spread_bytes, impl_divisible, spread_fallback, NumCast, Random,
-		SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
+		NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -1103,6 +1103,12 @@ const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
 
 	m512_masks
 }
+
+impl_iteration!(M512,
+	@strategy BitIterationStrategy, U1,
+	@strategy FallbackStrategy, U2, U4,
+	@strategy DivisibleStrategy, u8, u16, u32, u64, u128, M128, M256, M512,
+);
 
 #[cfg(test)]
 mod tests {

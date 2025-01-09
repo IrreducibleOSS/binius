@@ -19,6 +19,11 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 		size_of::<Self>() / size_of::<U>()
 	};
 
+	/// This is actually `[U; Self::WIDTH]` but we can't use it as the default value in the trait definition
+	/// without `generic_const_exprs` feature enabled.
+	type Array: IntoIterator<Item = U, IntoIter: Send>;
+
+	fn split_val(self) -> Self::Array;
 	fn split_ref(&self) -> &[U];
 	fn split_mut(&mut self) -> &mut [U];
 
@@ -38,6 +43,12 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 }
 
 unsafe impl<U: UnderlierType> Divisible<U> for U {
+	type Array = [U; 1];
+
+	fn split_val(self) -> Self::Array {
+		[self]
+	}
+
 	fn split_ref(&self) -> &[U] {
 		slice::from_ref(self)
 	}
@@ -51,6 +62,12 @@ macro_rules! impl_divisible {
     (@pairs $name:ty,?) => {};
     (@pairs $bigger:ty, $smaller:ty) => {
         unsafe impl $crate::underlier::Divisible<$smaller> for $bigger {
+            type Array = [$smaller; {size_of::<Self>() / size_of::<$smaller>()}];
+
+            fn split_val(self) -> Self::Array {
+                bytemuck::must_cast::<_, Self::Array>(self)
+            }
+
             fn split_ref(&self) -> &[$smaller] {
                 bytemuck::must_cast_ref::<_, [$smaller;{(<$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(self)
             }
@@ -61,6 +78,12 @@ macro_rules! impl_divisible {
         }
 
 		unsafe impl $crate::underlier::Divisible<$smaller> for $crate::underlier::ScaledUnderlier<$bigger, 2> {
+            type Array = [$smaller; {2 * size_of::<$bigger>() / size_of::<$smaller>()}];
+
+            fn split_val(self) -> Self::Array {
+                bytemuck::must_cast::<_, Self::Array>(self)
+            }
+
             fn split_ref(&self) -> &[$smaller] {
                 bytemuck::must_cast_ref::<_, [$smaller;{(2 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&self.0)
             }
@@ -71,6 +94,12 @@ macro_rules! impl_divisible {
         }
 
 		unsafe impl $crate::underlier::Divisible<$smaller> for $crate::underlier::ScaledUnderlier<$crate::underlier::ScaledUnderlier<$bigger, 2>, 2> {
+            type Array = [$smaller; {4 * size_of::<$bigger>() / size_of::<$smaller>()}];
+
+            fn split_val(self) -> Self::Array {
+                bytemuck::must_cast::<_, Self::Array>(self)
+            }
+
             fn split_ref(&self) -> &[$smaller] {
                 bytemuck::must_cast_ref::<_, [$smaller;{(4 * <$bigger>::BITS as usize / <$smaller>::BITS as usize ) }]>(&self.0)
             }

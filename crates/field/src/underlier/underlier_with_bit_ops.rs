@@ -110,6 +110,7 @@ pub trait UnderlierWithBitOps:
 	/// # Safety
 	/// `log_block_len + T::LOG_BITS` must be less than or equal to `Self::LOG_BITS`.
 	/// `block_idx` must be less than `1 << (Self::LOG_BITS - log_block_len)`.
+	#[inline]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
 		T: UnderlierWithBitOps,

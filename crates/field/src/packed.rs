@@ -111,17 +111,22 @@ pub trait PackedField:
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> {
+	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Send {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send {
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
+	}
+
+	#[inline]
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
+		slice.iter().flat_map(Self::iter)
 	}
 
 	#[inline]
@@ -242,10 +247,20 @@ pub trait PackedField:
 	}
 }
 
-pub fn iter_packed_slice<P: PackedField>(
+/// Iterate over scalar values in a packed field slice.
+///
+/// The iterator skips the first `offset` elements. This is more efficient than skipping elements of the iterator returned.
+pub fn iter_packed_slice_with_offset<P: PackedField>(
 	packed: &[P],
+	offset: usize,
 ) -> impl Iterator<Item = P::Scalar> + '_ + Send {
-	packed.iter().flat_map(|packed_i| packed_i.iter())
+	let (packed, offset): (&[P], usize) = if offset < packed.len() * P::WIDTH {
+		(&packed[(offset / P::WIDTH)..], offset % P::WIDTH)
+	} else {
+		(&[], 0)
+	};
+
+	P::iter_slice(packed).skip(offset)
 }
 
 #[inline]
@@ -363,8 +378,19 @@ impl<F: Field> PackedField for F {
 		*self = scalar;
 	}
 
-	fn iter(&self) -> impl Iterator<Item = Self::Scalar> {
+	#[inline]
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
 		iter::once(*self)
+	}
+
+	#[inline]
+	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send {
+		iter::once(self)
+	}
+
+	#[inline]
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+		slice.iter().copied()
 	}
 
 	fn random(rng: impl RngCore) -> Self {
@@ -402,3 +428,217 @@ impl<F: Field> PackedField for F {
 pub trait PackedBinaryField: PackedField<Scalar: BinaryField> {}
 
 impl<PT> PackedBinaryField for PT where PT: PackedField<Scalar: BinaryField> {}
+
+#[cfg(test)]
+mod tests {
+	use rand::{
+		distributions::{Distribution, Uniform},
+		rngs::StdRng,
+		SeedableRng,
+	};
+
+	use super::*;
+	use crate::{
+		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
+		BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField2b,
+		BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, ByteSlicedAES32x128b,
+		ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b, ByteSlicedAES32x8b,
+		PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField128x4b,
+		PackedBinaryField16x16b, PackedBinaryField16x1b, PackedBinaryField16x2b,
+		PackedBinaryField16x32b, PackedBinaryField16x4b, PackedBinaryField16x8b,
+		PackedBinaryField1x128b, PackedBinaryField1x16b, PackedBinaryField1x1b,
+		PackedBinaryField1x2b, PackedBinaryField1x32b, PackedBinaryField1x4b,
+		PackedBinaryField1x64b, PackedBinaryField1x8b, PackedBinaryField256x1b,
+		PackedBinaryField256x2b, PackedBinaryField2x128b, PackedBinaryField2x16b,
+		PackedBinaryField2x1b, PackedBinaryField2x2b, PackedBinaryField2x32b,
+		PackedBinaryField2x4b, PackedBinaryField2x64b, PackedBinaryField2x8b,
+		PackedBinaryField32x16b, PackedBinaryField32x1b, PackedBinaryField32x2b,
+		PackedBinaryField32x4b, PackedBinaryField32x8b, PackedBinaryField4x128b,
+		PackedBinaryField4x16b, PackedBinaryField4x1b, PackedBinaryField4x2b,
+		PackedBinaryField4x32b, PackedBinaryField4x4b, PackedBinaryField4x64b,
+		PackedBinaryField4x8b, PackedBinaryField512x1b, PackedBinaryField64x1b,
+		PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b,
+		PackedBinaryField8x16b, PackedBinaryField8x1b, PackedBinaryField8x2b,
+		PackedBinaryField8x32b, PackedBinaryField8x4b, PackedBinaryField8x64b,
+		PackedBinaryField8x8b, PackedBinaryPolyval1x128b, PackedBinaryPolyval2x128b,
+		PackedBinaryPolyval4x128b, PackedField,
+	};
+
+	trait PackedFieldTest {
+		fn run<P: PackedField>(&self);
+	}
+
+	/// Run the test for all the packed fields defined in this crate.
+	fn run_for_all_packed_fields(test: impl PackedFieldTest) {
+		// canonical tower
+
+		test.run::<BinaryField1b>();
+		test.run::<BinaryField2b>();
+		test.run::<BinaryField4b>();
+		test.run::<BinaryField8b>();
+		test.run::<BinaryField16b>();
+		test.run::<BinaryField32b>();
+		test.run::<BinaryField64b>();
+		test.run::<BinaryField128b>();
+
+		// packed canonical tower
+		test.run::<PackedBinaryField1x1b>();
+		test.run::<PackedBinaryField2x1b>();
+		test.run::<PackedBinaryField1x2b>();
+		test.run::<PackedBinaryField4x1b>();
+		test.run::<PackedBinaryField2x2b>();
+		test.run::<PackedBinaryField1x4b>();
+		test.run::<PackedBinaryField8x1b>();
+		test.run::<PackedBinaryField4x2b>();
+		test.run::<PackedBinaryField2x4b>();
+		test.run::<PackedBinaryField1x8b>();
+		test.run::<PackedBinaryField16x1b>();
+		test.run::<PackedBinaryField8x2b>();
+		test.run::<PackedBinaryField4x4b>();
+		test.run::<PackedBinaryField2x8b>();
+		test.run::<PackedBinaryField1x16b>();
+		test.run::<PackedBinaryField32x1b>();
+		test.run::<PackedBinaryField16x2b>();
+		test.run::<PackedBinaryField8x4b>();
+		test.run::<PackedBinaryField4x8b>();
+		test.run::<PackedBinaryField2x16b>();
+		test.run::<PackedBinaryField1x32b>();
+		test.run::<PackedBinaryField64x1b>();
+		test.run::<PackedBinaryField32x2b>();
+		test.run::<PackedBinaryField16x4b>();
+		test.run::<PackedBinaryField8x8b>();
+		test.run::<PackedBinaryField4x16b>();
+		test.run::<PackedBinaryField2x32b>();
+		test.run::<PackedBinaryField1x64b>();
+		test.run::<PackedBinaryField128x1b>();
+		test.run::<PackedBinaryField64x2b>();
+		test.run::<PackedBinaryField32x4b>();
+		test.run::<PackedBinaryField16x8b>();
+		test.run::<PackedBinaryField8x16b>();
+		test.run::<PackedBinaryField4x32b>();
+		test.run::<PackedBinaryField2x64b>();
+		test.run::<PackedBinaryField1x128b>();
+		test.run::<PackedBinaryField256x1b>();
+		test.run::<PackedBinaryField128x2b>();
+		test.run::<PackedBinaryField64x4b>();
+		test.run::<PackedBinaryField32x8b>();
+		test.run::<PackedBinaryField16x16b>();
+		test.run::<PackedBinaryField8x32b>();
+		test.run::<PackedBinaryField4x64b>();
+		test.run::<PackedBinaryField2x128b>();
+		test.run::<PackedBinaryField512x1b>();
+		test.run::<PackedBinaryField256x2b>();
+		test.run::<PackedBinaryField128x4b>();
+		test.run::<PackedBinaryField64x8b>();
+		test.run::<PackedBinaryField32x16b>();
+		test.run::<PackedBinaryField16x32b>();
+		test.run::<PackedBinaryField8x64b>();
+		test.run::<PackedBinaryField4x128b>();
+
+		// AES tower
+		test.run::<AESTowerField8b>();
+		test.run::<AESTowerField16b>();
+		test.run::<AESTowerField32b>();
+		test.run::<AESTowerField64b>();
+		test.run::<AESTowerField128b>();
+
+		// packed AES tower
+		test.run::<PackedBinaryField1x8b>();
+		test.run::<PackedBinaryField2x8b>();
+		test.run::<PackedBinaryField1x16b>();
+		test.run::<PackedBinaryField4x8b>();
+		test.run::<PackedBinaryField2x16b>();
+		test.run::<PackedBinaryField1x32b>();
+		test.run::<PackedBinaryField8x8b>();
+		test.run::<PackedBinaryField4x16b>();
+		test.run::<PackedBinaryField2x32b>();
+		test.run::<PackedBinaryField1x64b>();
+		test.run::<PackedBinaryField16x8b>();
+		test.run::<PackedBinaryField8x16b>();
+		test.run::<PackedBinaryField4x32b>();
+		test.run::<PackedBinaryField2x64b>();
+		test.run::<PackedBinaryField1x128b>();
+		test.run::<PackedBinaryField32x8b>();
+		test.run::<PackedBinaryField16x16b>();
+		test.run::<PackedBinaryField8x32b>();
+		test.run::<PackedBinaryField4x64b>();
+		test.run::<PackedBinaryField2x128b>();
+		test.run::<PackedBinaryField64x8b>();
+		test.run::<PackedBinaryField32x16b>();
+		test.run::<PackedBinaryField16x32b>();
+		test.run::<PackedBinaryField8x64b>();
+		test.run::<PackedBinaryField4x128b>();
+		test.run::<ByteSlicedAES32x8b>();
+		test.run::<ByteSlicedAES32x64b>();
+		test.run::<ByteSlicedAES32x16b>();
+		test.run::<ByteSlicedAES32x32b>();
+		test.run::<ByteSlicedAES32x128b>();
+
+		// polyval tower
+		test.run::<BinaryField128bPolyval>();
+
+		// packed polyval tower
+		test.run::<PackedBinaryPolyval1x128b>();
+		test.run::<PackedBinaryPolyval2x128b>();
+		test.run::<PackedBinaryPolyval4x128b>();
+	}
+
+	fn check_value_iteration<P: PackedField>(mut rng: impl RngCore) {
+		let packed = P::random(&mut rng);
+		let mut iter = packed.iter();
+		for i in 0..P::WIDTH {
+			assert_eq!(packed.get(i), iter.next().unwrap());
+		}
+		assert!(iter.next().is_none());
+	}
+
+	fn check_ref_iteration<P: PackedField>(mut rng: impl RngCore) {
+		let packed = P::random(&mut rng);
+		let mut iter = packed.into_iter();
+		for i in 0..P::WIDTH {
+			assert_eq!(packed.get(i), iter.next().unwrap());
+		}
+		assert!(iter.next().is_none());
+	}
+
+	fn check_slice_iteration<P: PackedField>(mut rng: impl RngCore) {
+		for len in [0, 1, 5] {
+			let packed = std::iter::repeat_with(|| P::random(&mut rng))
+				.take(len)
+				.collect::<Vec<_>>();
+
+			let elements_count = len * P::WIDTH;
+			for offset in [
+				0,
+				1,
+				Uniform::new(0, elements_count.max(1)).sample(&mut rng),
+				elements_count.saturating_sub(1),
+				elements_count,
+			] {
+				let actual = iter_packed_slice_with_offset(&packed, offset).collect::<Vec<_>>();
+				let expected = (offset..elements_count)
+					.map(|i| get_packed_slice(&packed, i))
+					.collect::<Vec<_>>();
+
+				assert_eq!(actual, expected);
+			}
+		}
+	}
+
+	struct PackedFieldIterationTest;
+
+	impl PackedFieldTest for PackedFieldIterationTest {
+		fn run<P: PackedField>(&self) {
+			let mut rng = StdRng::seed_from_u64(0);
+
+			check_value_iteration::<P>(&mut rng);
+			check_ref_iteration::<P>(&mut rng);
+			check_slice_iteration::<P>(&mut rng);
+		}
+	}
+
+	#[test]
+	fn test_iteration() {
+		run_for_all_packed_fields(PackedFieldIterationTest);
+	}
+}

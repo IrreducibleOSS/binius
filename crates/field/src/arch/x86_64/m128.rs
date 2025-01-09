@@ -23,8 +23,8 @@ use crate::{
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		impl_divisible, spread_fallback, NumCast, Random, SmallU, SpreadToByte, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U2, U4,
+		impl_divisible, impl_iteration, spread_fallback, NumCast, Random, SmallU, SpreadToByte,
+		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -894,6 +894,12 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	let b_prime = _mm_xor_si128(b, t);
 	(a_prime, b_prime)
 }
+
+impl_iteration!(M128,
+	@strategy BitIterationStrategy, U1,
+	@strategy FallbackStrategy, U2, U4,
+	@strategy DivisibleStrategy, u8, u16, u32, u64, u128, M128,
+);
 
 #[cfg(test)]
 mod tests {

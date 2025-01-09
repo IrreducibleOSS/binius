@@ -5,10 +5,7 @@ use std::iter;
 use binius_utils::checked_arithmetics::checked_int_div;
 use rayon::prelude::*;
 
-use crate::{
-	packed::{get_packed_slice_unchecked, iter_packed_slice},
-	ExtensionField, Field, PackedField,
-};
+use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
 
 /// Computes the inner product of two vectors without checking that the lengths are equal
 pub fn inner_product_unchecked<F, FE>(
@@ -38,7 +35,7 @@ where
 	// If number of elements in xs is less than number of elements in ys this will be because due to packing
 	// so we can use single-threaded version of the function.
 	if PX::WIDTH * xs.len() < PY::WIDTH * ys.len() {
-		return inner_product_unchecked(iter_packed_slice(xs), iter_packed_slice(ys));
+		return inner_product_unchecked(PackedField::iter_slice(xs), PackedField::iter_slice(ys));
 	}
 
 	let calc_product_by_ys = |x_offset, ys: &[PY]| {

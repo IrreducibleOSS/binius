@@ -1,10 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	ext_base_mul,
-	packed::{iter_packed_slice, set_packed_slice_unchecked},
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField2x128b, PackedExtension, PackedField,
+	ext_base_mul, packed::set_packed_slice_unchecked, BinaryField128b, BinaryField16b,
+	BinaryField1b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b, PackedExtension,
+	PackedField,
 };
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
@@ -63,8 +62,8 @@ fn benchmark_packed_extension_mul<F>(
 			.collect();
 
 		b.iter(|| {
-			for (i, (ext, base)) in iter_packed_slice(&ext_packed)
-				.zip(iter_packed_slice(&base_packed))
+			for (i, (ext, base)) in PackedField::iter_slice(&ext_packed)
+				.zip(PackedField::iter_slice(&base_packed))
 				.enumerate()
 			{
 				unsafe { set_packed_slice_unchecked(&mut result, i, ext * base) };

@@ -286,6 +286,15 @@ where
 	fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 		Self(array::from_fn(|i| PT::from_fn(|j| f(i * PT::WIDTH + j))))
 	}
+
+	#[inline]
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+		// Safety: `Self` has the same layout as `[PT; N]` because it is a transparent wrapper.
+		let cast_slice =
+			unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const [PT; N], slice.len()) };
+
+		PT::iter_slice(cast_slice.as_flattened())
+	}
 }
 
 impl<PT: PackedField + MulAlpha, const N: usize> MulAlpha for ScaledPackedField<PT, N>

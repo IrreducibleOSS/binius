@@ -13,7 +13,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::checked_arithmetics::checked_int_div;
+use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
@@ -21,7 +21,10 @@ use subtle::{Choice, ConstantTimeEq};
 use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
-	underlier::{NumCast, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4},
+	underlier::{
+		IterationMethods, IterationStrategy, NumCast, UnderlierType, UnderlierWithBitOps,
+		WithUnderlier, U1, U2, U4,
+	},
 	BinaryField, PackedField,
 };
 
@@ -64,42 +67,52 @@ unsafe impl<U: UnderlierType, Scalar: BinaryField> WithUnderlier
 {
 	type Underlier = U;
 
+	#[inline(always)]
 	fn to_underlier(self) -> Self::Underlier {
 		TransparentWrapper::peel(self)
 	}
 
+	#[inline(always)]
 	fn to_underlier_ref(&self) -> &Self::Underlier {
 		TransparentWrapper::peel_ref(self)
 	}
 
+	#[inline(always)]
 	fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
 		TransparentWrapper::peel_mut(self)
 	}
 
+	#[inline(always)]
 	fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
 		TransparentWrapper::peel_slice(val)
 	}
 
+	#[inline(always)]
 	fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
 		TransparentWrapper::peel_slice_mut(val)
 	}
 
+	#[inline(always)]
 	fn from_underlier(val: Self::Underlier) -> Self {
 		TransparentWrapper::wrap(val)
 	}
 
+	#[inline(always)]
 	fn from_underlier_ref(val: &Self::Underlier) -> &Self {
 		TransparentWrapper::wrap_ref(val)
 	}
 
+	#[inline(always)]
 	fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
 		TransparentWrapper::wrap_mut(val)
 	}
 
+	#[inline(always)]
 	fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
 		TransparentWrapper::wrap_slice(val)
 	}
 
+	#[inline(always)]
 	fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
 		TransparentWrapper::wrap_slice_mut(val)
 	}
@@ -273,6 +286,7 @@ where
 	Scalar: WithUnderlier<Underlier: UnderlierWithBitOps>,
 	U: From<Scalar::Underlier>,
 	Scalar::Underlier: NumCast<U>,
+	IterationMethods<Scalar::Underlier, U>: IterationStrategy<Scalar::Underlier, U>,
 {
 	type Scalar = Scalar;
 
@@ -297,6 +311,25 @@ where
 		U::random(rng).into()
 	}
 
+	#[inline]
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+		IterationMethods::<Scalar::Underlier, U>::ref_iter(&self.0)
+			.map(|underlier| Scalar::from_underlier(underlier))
+	}
+
+	#[inline]
+	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send {
+		IterationMethods::<Scalar::Underlier, U>::value_iter(self.0)
+			.map(|underlier| Scalar::from_underlier(underlier))
+	}
+
+	#[inline]
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+		IterationMethods::<Scalar::Underlier, U>::slice_iter(Self::to_underliers_ref(slice))
+			.map_skippable(|underlier| Scalar::from_underlier(underlier))
+	}
+
+	#[inline]
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		assert!(log_block_len < Self::LOG_WIDTH);
 		let log_bit_len = Self::Scalar::N_BITS.ilog2() as usize;

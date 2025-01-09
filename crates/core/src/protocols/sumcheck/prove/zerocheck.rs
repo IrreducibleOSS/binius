@@ -3,7 +3,6 @@
 use std::{marker::PhantomData, ops::Range, sync::Arc};
 
 use binius_field::{
-	packed::iter_packed_slice,
 	util::{eq, powers},
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
 	TowerField,
@@ -666,8 +665,8 @@ where
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			let partial_eq_ind_evals_slice = &self.partial_eq_ind_evals[subcube_start..];
-			let field_sum = iter_packed_slice(partial_eq_ind_evals_slice)
-				.zip(iter_packed_slice(evals))
+			let field_sum = PackedField::iter_slice(partial_eq_ind_evals_slice)
+				.zip(PackedField::iter_slice(evals))
 				.map(|(eq_ind_scalar, base_scalar)| eq_ind_scalar * base_scalar)
 				.sum();
 

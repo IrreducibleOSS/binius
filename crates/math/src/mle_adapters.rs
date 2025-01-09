@@ -517,10 +517,10 @@ mod tests {
 	use std::iter::repeat_with;
 
 	use binius_field::{
-		arch::OptimalUnderlier256b, as_packed_field::PackedType, packed::iter_packed_slice,
-		BinaryField128b, BinaryField16b, BinaryField32b, BinaryField8b, PackedBinaryField16x8b,
-		PackedBinaryField1x128b, PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension,
-		PackedField, PackedFieldIndexable,
+		arch::OptimalUnderlier256b, as_packed_field::PackedType, BinaryField128b, BinaryField16b,
+		BinaryField32b, BinaryField8b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+		PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension, PackedField,
+		PackedFieldIndexable,
 	};
 	use rand::prelude::*;
 
@@ -559,7 +559,7 @@ mod tests {
 		poly.subcube_inner_products(query.to_ref(), 4, 0, inner_products.as_mut_slice())
 			.unwrap();
 
-		for (idx, inner_product) in iter_packed_slice(&inner_products).enumerate() {
+		for (idx, inner_product) in PackedField::iter_slice(&inner_products).enumerate() {
 			assert_eq!(inner_product, partial_low.evaluate_on_hypercube(idx).unwrap(),);
 		}
 	}

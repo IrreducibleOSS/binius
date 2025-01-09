@@ -1,9 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	packed::iter_packed_slice, BinaryField, ExtensionField, PackedExtension, PackedField,
-	TowerField,
-};
+use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::{bail, serialization::SerializeBytes};
 use bytemuck::zeroed_vec;
@@ -139,7 +136,7 @@ where
 {
 	packed_slice
 		.par_chunks(chunk_size / P::WIDTH)
-		.map(|chunk| iter_packed_slice(chunk))
+		.map(|chunk| PackedField::iter_slice(chunk))
 }
 
 pub fn to_par_scalar_small_chunks<P>(

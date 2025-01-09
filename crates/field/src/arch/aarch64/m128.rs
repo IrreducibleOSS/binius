@@ -19,7 +19,8 @@ use crate::{
 	arch::binary_utils::{as_array_mut, as_array_ref},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		impl_divisible, NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier,
+		impl_divisible, impl_iteration, NumCast, Random, SmallU, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -444,3 +445,9 @@ where
 		value.into()
 	}
 }
+
+impl_iteration!(M128,
+	@strategy BitIterationStrategy, U1,
+	@strategy FallbackStrategy, U2, U4,
+	@strategy DivisibleStrategy, u8, u16, u32, u64, u128, M128,
+);

@@ -5,7 +5,7 @@ use std::{any::TypeId, cmp::min};
 
 use binius_field::{
 	arch::byte_sliced::ByteSlicedAES32x128b,
-	packed::{get_packed_slice, iter_packed_slice, set_packed_slice_unchecked},
+	packed::{get_packed_slice, set_packed_slice_unchecked},
 	BinaryField1b, ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b,
 	ByteSlicedAES32x8b, ExtensionField, Field, PackedBinaryField128x1b, PackedBinaryField16x1b,
 	PackedBinaryField256x1b, PackedBinaryField32x1b, PackedBinaryField512x1b,
@@ -373,7 +373,7 @@ fn fold_fallback<P, PE>(
 					let offset = index << log_query_size;
 
 					let mut result_eval = PE::Scalar::ZERO;
-					for (t, query_expansion) in iter_packed_slice(query)
+					for (t, query_expansion) in PackedField::iter_slice(query)
 						.take(1 << log_query_size)
 						.enumerate()
 					{

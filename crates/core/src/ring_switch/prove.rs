@@ -2,7 +2,7 @@
 
 use std::{iter, sync::Arc};
 
-use binius_field::{packed::iter_packed_slice, PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{PackedField, PackedFieldIndexable, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -143,7 +143,7 @@ where
 					witnesses[*committed_idx].evaluate_partial_high(suffix_query.to_ref())?;
 				TowerTensorAlgebra::new(
 					suffix.kappa,
-					iter_packed_slice(partial_eval.evals())
+					PackedField::iter_slice(partial_eval.evals())
 						.take(1 << suffix.kappa)
 						.collect(),
 				)

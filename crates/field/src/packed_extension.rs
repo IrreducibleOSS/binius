@@ -47,7 +47,7 @@ where
 /// elements:
 ///
 /// ```
-/// use binius_field::{ExtensionField, packed::iter_packed_slice, PackedExtension, PackedField, Field};
+/// use binius_field::{ExtensionField, PackedExtension, PackedField, Field};
 ///
 /// fn ext_then_bases<'a, F, PE>(packed: &'a PE) -> impl Iterator<Item=F> + 'a
 ///     where

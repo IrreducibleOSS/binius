@@ -102,10 +102,7 @@ pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{
-		packed::{iter_packed_slice, set_packed_slice},
-		Field, PackedBinaryField4x32b,
-	};
+	use binius_field::{packed::set_packed_slice, Field, PackedBinaryField4x32b};
 	use itertools::Itertools;
 
 	use super::*;
@@ -120,7 +117,7 @@ mod tests {
 		let mut result = vec![P::default(); 1 << (query.len() - P::LOG_WIDTH)];
 		set_packed_slice(&mut result, 0, F::ONE);
 		tensor_prod_eq_ind(0, &mut result, &query).unwrap();
-		let result = iter_packed_slice(&result).collect_vec();
+		let result = PackedField::iter_slice(&result).collect_vec();
 		assert_eq!(
 			result,
 			vec![

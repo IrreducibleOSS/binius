@@ -64,10 +64,19 @@ where
 	ScaledUnderlier<U, N>: UnderlierType,
 	U: UnderlierType,
 {
+	type Array = [U; N];
+
+	#[inline]
+	fn split_val(self) -> Self::Array {
+		self.0
+	}
+
+	#[inline]
 	fn split_ref(&self) -> &[U] {
 		&self.0
 	}
 
+	#[inline]
 	fn split_mut(&mut self) -> &mut [U] {
 		&mut self.0
 	}
@@ -78,10 +87,19 @@ where
 	ScaledUnderlier<ScaledUnderlier<U, 2>, 2>: UnderlierType + NoUninit,
 	U: UnderlierType + Pod,
 {
+	type Array = [U; 4];
+
+	#[inline]
+	fn split_val(self) -> Self::Array {
+		bytemuck::must_cast(self)
+	}
+
+	#[inline]
 	fn split_ref(&self) -> &[U] {
 		must_cast_ref::<Self, [U; 4]>(self)
 	}
 
+	#[inline]
 	fn split_mut(&mut self) -> &mut [U] {
 		must_cast_mut::<Self, [U; 4]>(self)
 	}

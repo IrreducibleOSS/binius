@@ -163,16 +163,16 @@ mod tests {
 
 	macro_rules! expand_query {
 		($f:ident[$($elem:expr),* $(,)?], Packing=$p:ident) => {
-			binius_field::packed::iter_packed_slice(
-			MultilinearQuery::<$p, _>::with_expansion(
-				{
-					let elems: &[$f] = &[$($f::new($elem)),*];
-					elems.len()
-				},
-				tensor_prod(&[$($f::new($elem)),*])
-			)
-			.unwrap()
-			.expansion(),
+			binius_field::PackedField::iter_slice(
+				MultilinearQuery::<$p, _>::with_expansion(
+					{
+						let elems: &[$f] = &[$($f::new($elem)),*];
+						elems.len()
+					},
+					tensor_prod(&[$($f::new($elem)),*])
+				)
+				.unwrap()
+				.expansion(),
 			).collect::<Vec<_>>()
 		};
 	}
