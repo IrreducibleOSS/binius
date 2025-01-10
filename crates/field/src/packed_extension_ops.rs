@@ -24,7 +24,13 @@ where
 	})
 }
 
-unsafe fn get_rhs_at_pe_idx<PE, F>(rhs: &[PE::PackedSubfield], i: usize) -> PE::PackedSubfield
+/// # Safety
+///
+/// Width of PackedSubfield is >= the width of the field implementing PackedExtension.
+pub unsafe fn get_packed_subfields_at_pe_idx<PE, F>(
+	packed_subfields: &[PE::PackedSubfield],
+	i: usize,
+) -> PE::PackedSubfield
 where
 	PE: PackedExtension<F>,
 	PE::Scalar: ExtensionField<F>,
@@ -36,7 +42,9 @@ where
 		bottom_most_scalar_idx % PE::PackedSubfield::WIDTH;
 	let block_idx = bottom_most_scalar_idx_within_packed_subfield / PE::WIDTH;
 
-	rhs[bottom_most_scalar_idx_in_subfield_arr].spread_unchecked(PE::LOG_WIDTH, block_idx)
+	packed_subfields
+		.get_unchecked(bottom_most_scalar_idx_in_subfield_arr)
+		.spread_unchecked(PE::LOG_WIDTH, block_idx)
 }
 
 /// Refer to the functions above for examples of closures to pass
@@ -67,7 +75,7 @@ where
 
 	lhs.iter_mut().enumerate().for_each(|(i, lhs_elem)| {
 		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
-		let broadcasted_rhs = unsafe { get_rhs_at_pe_idx::<PE, F>(rhs, i) };
+		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
 	});
@@ -93,7 +101,7 @@ where
 
 	lhs.par_iter_mut().enumerate().for_each(|(i, lhs_elem)| {
 		// SAFETY: Width of PackedSubfield is always >= the width of the field implementing PackedExtension
-		let broadcasted_rhs = unsafe { get_rhs_at_pe_idx::<PE, F>(rhs, i) };
+		let broadcasted_rhs = unsafe { get_packed_subfields_at_pe_idx::<PE, F>(rhs, i) };
 
 		*lhs_elem = op(i, *lhs_elem, broadcasted_rhs);
 	});

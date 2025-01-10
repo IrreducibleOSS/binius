@@ -3,8 +3,8 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
-	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, RepackedExtension, TowerField,
+	get_packed_subfields_at_pe_idx, util::inner_product_unchecked, ExtensionField, Field,
+	PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -363,6 +363,7 @@ where
 	// Smaller subcubes are batched together to reduce interpolation/evaluation overhead.
 	const MAX_SUBCUBE_VARS: usize = 12;
 	let log_batch = MAX_SUBCUBE_VARS.min(n_vars).saturating_sub(skip_rounds);
+	let packed_log_batch = log_batch.saturating_sub(P::LOG_WIDTH);
 
 	// Expand the multilinear query in all but the first `skip_rounds` variables,
 	// where each tensor expansion element serves as a constant factor of the whole
@@ -465,6 +466,9 @@ where
 					)?
 				}
 
+				let partial_eq_ind_evals_subslice = &partial_eq_ind_evals
+					[subcube_index << packed_log_batch..][..1 << packed_log_batch];
+
 				// Obtain 1 << log_batch partial equality indicator constant factors for each
 				// of the subcubes of size 1 << skip_rounds.
 				let partial_eq_ind_evals_scalars_subslice =
@@ -486,19 +490,47 @@ where
 
 					// Accumulate round evals and multiply by the constant part of the
 					// zerocheck equality indicator
-					let composition_evals_scalars =
-						PBase::unpack_scalars_mut(composition_evals.as_mut_slice());
+					if log_batch < P::LOG_WIDTH {
+						let composition_evals_scalars =
+							PBase::unpack_scalars_mut(composition_evals.as_mut_slice());
 
-					for (round_eval, composition_evals) in izip!(
-						round_evals.iter_mut(),
-						composition_evals_scalars.chunks_exact(1 << log_batch),
-					) {
-						// Inner product is with the high n_vars - skip_rounds projection
-						// of the zerocheck equality indicator (one factor per subcube).
-						*round_eval += inner_product_unchecked(
-							partial_eq_ind_evals_scalars_subslice.iter().copied(),
-							composition_evals.iter().copied(),
-						);
+						for (round_eval, composition_evals) in izip!(
+							round_evals.iter_mut(),
+							composition_evals_scalars.chunks_exact(1 << log_batch),
+						) {
+							// Inner product is with the high n_vars - skip_rounds projection
+							// of the zerocheck equality indicator (one factor per subcube).
+							*round_eval += inner_product_unchecked(
+								partial_eq_ind_evals_scalars_subslice.iter().copied(),
+								composition_evals.iter().copied(),
+							);
+						}
+					} else {
+						#[allow(clippy::needless_range_loop)]
+						for i in 0..round_evals.len() {
+							let mut temp = PBase::zero();
+
+							for j in 0..1 << packed_log_batch {
+								let idx = i * (1 << packed_log_batch) + j;
+								let broadcasted_rhs = unsafe {
+									// SAFETY: Width of PBase is always >= the width of the PBase::Scalar
+									get_packed_subfields_at_pe_idx::<P, PBase::Scalar>(
+										composition_evals,
+										idx,
+									)
+								};
+								temp += partial_eq_ind_evals_subslice
+									[idx % partial_eq_ind_evals_subslice.len()]
+								.cast_base() * broadcasted_rhs;
+							}
+
+							let temp = &[P::cast_ext(temp)];
+
+							let unpacked = P::unpack_scalars(temp);
+							for scalar in unpacked {
+								round_evals[i] += scalar;
+							}
+						}
 					}
 				}
 
