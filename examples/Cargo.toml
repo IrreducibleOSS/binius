@@ -19,6 +19,7 @@ bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
 groestl_crypto.workspace = true
+itertools.workspace = true
 rand.workspace = true
 tracing-profile.workspace = true
 tracing.workspace = true
@@ -70,6 +71,10 @@ path = "u32_mul.rs"
 [[example]]
 name = "bitwise_ops"
 path = "bitwise_ops.rs"
+
+[[example]]
+name = "b32_mul"
+path = "b32_mul.rs"
 
 [lints.clippy]
 needless_range_loop = "allow"
