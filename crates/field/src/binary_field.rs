@@ -785,7 +785,7 @@ impl From<BinaryField1b> for Choice {
 }
 
 impl BinaryField1b {
-	/// Creates value without checking that it is 0 or 1
+	/// Creates value without checking that it is within valid range (0 or 1)
 	///
 	/// # Safety
 	/// Value should not exceed 1
@@ -812,7 +812,7 @@ impl From<BinaryField1b> for u8 {
 }
 
 impl BinaryField2b {
-	/// Creates value without checking that it is 0 or 1
+	/// Creates value without checking that it is within valid range (0 to 3)
 	///
 	/// # Safety
 	/// Value should not exceed 3
@@ -839,13 +839,13 @@ impl From<BinaryField2b> for u8 {
 }
 
 impl BinaryField4b {
-	/// Creates value without checking that it is 0 or 1
+	/// Creates value without checking that it is within valid range (0 to 15)
 	///
 	/// # Safety
 	/// Value should not exceed 15
 	#[inline]
 	pub unsafe fn new_unchecked(val: u8) -> Self {
-		debug_assert!(val < 8);
+		debug_assert!(val < 16);
 
 		Self::new(U4::new_unchecked(val))
 	}
@@ -1265,5 +1265,35 @@ pub(crate) mod tests {
 		assert_eq!(BinaryField4b::deserialize(&mut read_buffer).unwrap(), b4);
 		assert_eq!(BinaryField64b::deserialize(&mut read_buffer).unwrap(), b64);
 		assert_eq!(BinaryField128b::deserialize(&mut read_buffer).unwrap(), b128);
+	}
+
+	#[test]
+	fn test_gf2_new_unchecked() {
+		for i in 0..2 {
+			assert_eq!(unsafe { BF1::new_unchecked(i) }, BF1::from(i));
+		}
+		// Assert a panic for higher values
+		let result = std::panic::catch_unwind(|| unsafe { BF1::new_unchecked(2) });
+		assert!(result.is_err(), "Expected a panic for value > 1, but no panic occurred");
+	}
+
+	#[test]
+	fn test_bin2b_new_unchecked() {
+		for i in 0..4 {
+			assert_eq!(unsafe { BF2::new_unchecked(i) }, BF2::from(i));
+		}
+		// Assert a panic for higher values
+		let result = std::panic::catch_unwind(|| unsafe { BF2::new_unchecked(4) });
+		assert!(result.is_err(), "Expected a panic for value > 3, but no panic occurred");
+	}
+
+	#[test]
+	fn test_bin4b_new_unchecked() {
+		for i in 0..16 {
+			assert_eq!(unsafe { BF4::new_unchecked(i) }, BF4::from(i));
+		}
+		// Assert a panic for higher values
+		let result = std::panic::catch_unwind(|| unsafe { BF4::new_unchecked(16) });
+		assert!(result.is_err(), "Expected a panic for value > 15, but no panic occurred");
 	}
 }
