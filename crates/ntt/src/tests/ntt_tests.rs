@@ -10,8 +10,8 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, PackedBinaryField16x32b, PackedBinaryField8x32b,
-	PackedField, RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedBinaryField16x32b,
+	PackedBinaryField8x32b, PackedExtension, PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -19,13 +19,16 @@ use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT
 
 /// Check that forward and inverse transformation of `ntt` on `data` is the same as forward and inverse transformation of `reference_ntt` on `data`
 /// and that the result of the roundtrip is the same as the original data.
-fn check_roundtrip_with_reference<P: PackedField>(
-	reference_ntt: &impl AdditiveNTT<P>,
-	ntt: &impl AdditiveNTT<P>,
+fn check_roundtrip_with_reference<F, P>(
+	reference_ntt: &impl AdditiveNTT<F>,
+	ntt: &impl AdditiveNTT<F>,
 	data: &mut [P],
 	cosets: Range<u32>,
 	log_batch_size: usize,
-) {
+) where
+	F: BinaryField,
+	P: PackedField<Scalar = F>,
+{
 	let data_copy = data.to_vec();
 	let mut data_copy_2 = data.to_vec();
 
@@ -144,12 +147,15 @@ fn tests_field_512_bits() {
 	check_roundtrip_all_ntts::<PackedBinaryField16x32b>(12, 6, 4, 0);
 }
 
-fn check_packed_extension_roundtrip_with_reference<P: PackedField, PE: RepackedExtension<P>>(
-	reference_ntt: &impl AdditiveNTT<P>,
-	ntt: &impl AdditiveNTT<P>,
+fn check_packed_extension_roundtrip_with_reference<F, PE>(
+	reference_ntt: &impl AdditiveNTT<F>,
+	ntt: &impl AdditiveNTT<F>,
 	data: &mut [PE],
 	cosets: Range<u32>,
-) {
+) where
+	F: BinaryField,
+	PE: PackedExtension<F>,
+{
 	let data_copy = data.to_vec();
 	let mut data_copy_2 = data.to_vec();
 

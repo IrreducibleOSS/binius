@@ -15,15 +15,16 @@ use criterion::{
 use rand::thread_rng;
 
 trait BenchTransformationFunc {
-	fn run_bench<P>(
+	fn run_bench<F, P>(
 		group: &mut BenchmarkGroup<WallTime>,
-		ntt: &impl AdditiveNTT<P>,
+		ntt: &impl AdditiveNTT<F>,
 		data: &mut [P],
 		name: &str,
 		param: &str,
 		log_batch_size: usize,
 	) where
-		P: PackedField<Scalar: BinaryField>;
+		F: BinaryField,
+		P: PackedField<Scalar = F>;
 }
 
 fn bench_helper<P, BT: BenchTransformationFunc>(
@@ -102,15 +103,16 @@ fn bench_forward_transform(c: &mut Criterion) {
 	struct ForwardBench;
 
 	impl BenchTransformationFunc for ForwardBench {
-		fn run_bench<P>(
+		fn run_bench<F, P>(
 			group: &mut BenchmarkGroup<WallTime>,
-			ntt: &impl AdditiveNTT<P>,
+			ntt: &impl AdditiveNTT<F>,
 			data: &mut [P],
 			name: &str,
 			param: &str,
 			log_batch_size: usize,
 		) where
-			P: PackedField<Scalar: BinaryField>,
+			F: BinaryField,
+			P: PackedField<Scalar = F>,
 		{
 			group.bench_function(BenchmarkId::new(name, param), |b| {
 				b.iter(|| ntt.forward_transform(data, 0, log_batch_size));
@@ -125,15 +127,16 @@ fn bench_inverse_transform(c: &mut Criterion) {
 	struct InverseBench;
 
 	impl BenchTransformationFunc for InverseBench {
-		fn run_bench<P>(
+		fn run_bench<F, P>(
 			group: &mut BenchmarkGroup<WallTime>,
-			ntt: &impl AdditiveNTT<P>,
+			ntt: &impl AdditiveNTT<F>,
 			data: &mut [P],
 			name: &str,
 			param: &str,
 			log_batch_size: usize,
 		) where
-			P: PackedField<Scalar: BinaryField>,
+			F: BinaryField,
+			P: PackedField<Scalar = F>,
 		{
 			group.bench_function(BenchmarkId::new(name, param), |b| {
 				b.iter(|| ntt.inverse_transform(data, 0, log_batch_size));

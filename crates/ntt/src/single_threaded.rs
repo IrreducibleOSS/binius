@@ -72,11 +72,10 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA, P> AdditiveNTT<P> for SingleThreadedNTT<F, TA>
+impl<F, TA: TwiddleAccess<F>> AdditiveNTT<F> for SingleThreadedNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
-	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
 		self.log_domain_size()
@@ -86,22 +85,28 @@ where
 		self.get_subspace_eval(i, j)
 	}
 
-	fn forward_transform(
+	fn forward_transform<P>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error> {
+	) -> Result<(), Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		forward_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}
 
-	fn inverse_transform(
+	fn inverse_transform<P>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error> {
+	) -> Result<(), Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		inverse_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}

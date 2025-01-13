@@ -162,26 +162,28 @@ pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	_marker: PhantomData<F>,
 }
 
-impl<F, TA, P> AdditiveNTT<P> for SimpleAdditiveNTT<F, TA>
+impl<F, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
-	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
 		self.log_domain_size
 	}
 
-	fn get_subspace_eval(&self, _i: usize, _j: usize) -> <P as PackedField>::Scalar {
+	fn get_subspace_eval(&self, _i: usize, _j: usize) -> F {
 		unimplemented!()
 	}
 
-	fn forward_transform(
+	fn forward_transform<P>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error> {
+	) -> Result<(), Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			forward_transform_simple(self.log_domain_size, &self.s_evals, &mut batch, coset)?;
@@ -190,12 +192,15 @@ where
 		Ok(())
 	}
 
-	fn inverse_transform(
+	fn inverse_transform<P>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error> {
+	) -> Result<(), Error>
+	where
+		P: PackedField<Scalar = F>,
+	{
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			inverse_transform_simple(self.log_domain_size, &self.s_evals, &mut batch, coset)?;

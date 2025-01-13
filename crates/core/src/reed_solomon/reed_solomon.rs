@@ -69,7 +69,7 @@ where
 		})
 	}
 
-	pub const fn get_ntt(&self) -> &impl AdditiveNTT<P> {
+	pub const fn get_ntt(&self) -> &impl AdditiveNTT<P::Scalar> {
 		&self.ntt
 	}
 
