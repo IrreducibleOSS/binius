@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField};
+use binius_math::BinarySubspace;
 use binius_utils::checked_arithmetics::log2_strict_usize;
 
 use super::error::Error;
@@ -10,7 +11,12 @@ use super::error::Error;
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 pub trait AdditiveNTT<F: BinaryField> {
 	/// Base-2 logarithm of the size of the NTT domain.
-	fn log_domain_size(&self) -> usize;
+	fn log_domain_size(&self) -> usize {
+		self.subspace().dim()
+	}
+
+	/// Returns the binary subspace describing the evaluation domain.
+	fn subspace(&self) -> &BinarySubspace<F>;
 
 	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
 	///

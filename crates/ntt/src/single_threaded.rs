@@ -1,8 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{cmp, marker::PhantomData};
+use std::cmp;
 
 use binius_field::{BinaryField, PackedField, TowerField};
+use binius_math::BinarySubspace;
 
 use super::{additive_ntt::AdditiveNTT, error::Error, twiddle::TwiddleAccess};
 use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTwiddleAccess};
@@ -10,28 +11,37 @@ use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTw
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
 pub struct SingleThreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F>> {
+	subspace: BinarySubspace<F>,
+	// TODO: Can I remove?
 	pub(super) s_evals: Vec<TA>,
-	_marker: PhantomData<F>,
 }
 
 impl<F: BinaryField> SingleThreadedNTT<F> {
 	/// Default constructor constructs an NTT over the canonical subspace for the field using
 	/// on-the-fly computed twiddle factors.
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
-		Self::with_domain_field::<F>(log_domain_size)
+		let subspace = BinarySubspace::with_dim(log_domain_size)?;
+		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
+		Ok(Self::with_twiddle_access(subspace, twiddle_access))
 	}
 
 	/// Constructs an NTT over an isomorphic subspace for the given domain field using on-the-fly
 	/// computed twiddle factors.
-	pub fn with_domain_field<DomainField: BinaryField + Into<F>>(
-		log_domain_size: usize,
-	) -> Result<Self, Error> {
-		let twiddle_access = OnTheFlyTwiddleAccess::generate::<DomainField>(log_domain_size)?;
-		Ok(Self::with_twiddle_access(twiddle_access))
+	pub fn with_domain_field<DomainField>(log_domain_size: usize) -> Result<Self, Error>
+	where
+		DomainField: BinaryField,
+		F: From<DomainField>,
+	{
+		let subspace = BinarySubspace::<DomainField>::with_dim(log_domain_size)?.isomorphic();
+		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
+		Ok(Self::with_twiddle_access(subspace, twiddle_access))
 	}
 
 	pub fn precompute_twiddles(&self) -> SingleThreadedNTT<F, PrecomputedTwiddleAccess<F>> {
-		SingleThreadedNTT::with_twiddle_access(expand_subspace_evals(&self.s_evals))
+		SingleThreadedNTT::with_twiddle_access(
+			self.subspace.clone(),
+			expand_subspace_evals(&self.s_evals),
+		)
 	}
 }
 
@@ -43,26 +53,11 @@ impl<F: TowerField> SingleThreadedNTT<F> {
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
-	pub const fn with_twiddle_access(twiddle_access: Vec<TA>) -> Self {
+	const fn with_twiddle_access(subspace: BinarySubspace<F>, twiddle_access: Vec<TA>) -> Self {
 		Self {
+			subspace,
 			s_evals: twiddle_access,
-			_marker: PhantomData,
 		}
-	}
-
-	/// Base-2 logarithm of the size of the NTT domain.
-	pub fn log_domain_size(&self) -> usize {
-		self.s_evals.len()
-	}
-
-	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
-	///
-	/// ## Preconditions
-	///
-	/// * `i` must be less than `self.log_domain_size()`
-	/// * `j` must be less than `self.log_domain_size() - i`
-	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.s_evals[i].get(j)
 	}
 }
 
@@ -77,12 +72,12 @@ where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
 {
-	fn log_domain_size(&self) -> usize {
-		self.log_domain_size()
+	fn subspace(&self) -> &BinarySubspace<F> {
+		&self.subspace
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.get_subspace_eval(i, j)
+		self.s_evals[i].get(j)
 	}
 
 	fn forward_transform<P>(

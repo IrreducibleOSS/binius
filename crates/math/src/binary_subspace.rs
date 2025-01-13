@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::BinaryField;
-use binius_utils::iter::IterExtensions;
+use binius_utils::{bail, iter::IterExtensions};
 
 use super::error::Error;
 
@@ -9,12 +9,64 @@ use super::error::Error;
 ///
 /// The subspace is defined by a basis of elements from a binary field. The basis elements are
 /// ordered, which implies an ordering on the subspace elements.
+///
+/// ## Invariants
+///
+/// This struct requires that if the subspace dimension is non-zero, then the 0'th basis element is
+/// `F::ONE`.
 #[derive(Debug, Clone)]
 pub struct BinarySubspace<F: BinaryField> {
 	basis: Vec<F>,
 }
 
 impl<F: BinaryField> BinarySubspace<F> {
+	/// Creates a new subspace of this binary subspace with the given dimension.
+	///
+	/// This creates a new sub-subspace using a prefix of the default $\mathbb{F}_2$ basis elements
+	/// of the field.
+	///
+	/// ## Throws
+	///
+	/// * `Error::DomainSizeTooLarge` if `dim` is greater than this subspace's dimension.
+	pub fn with_dim(dim: usize) -> Result<Self, Error> {
+		let basis = (0..dim)
+			.map(|i| F::basis(i).map_err(|_| Error::DomainSizeTooLarge))
+			.collect::<Result<Vec<_>, _>>()?;
+		Ok(Self { basis })
+	}
+
+	/// Creates a new subspace of this binary subspace with reduced dimension.
+	///
+	/// This creates a new sub-subspace using a prefix of the ordered basis elements.
+	///
+	/// ## Throws
+	///
+	/// * `Error::DomainSizeTooLarge` if `dim` is greater than this subspace's dimension.
+	pub fn reduce_dim(&self, dim: usize) -> Result<Self, Error> {
+		if dim > self.dim() {
+			bail!(Error::DomainSizeTooLarge);
+		}
+		Ok(BinarySubspace {
+			basis: self.basis[..dim].to_vec(),
+		})
+	}
+
+	/// Creates a new subspace isomorphic to the given one.
+	pub fn isomorphic<FIso>(&self) -> BinarySubspace<FIso>
+	where
+		FIso: BinaryField + From<F>,
+	{
+		BinarySubspace {
+			basis: self.basis.iter().copied().map(FIso::from).collect(),
+		}
+	}
+
+	/// Returns the dimension of the subspace.
+	pub fn dim(&self) -> usize {
+		self.basis.len()
+	}
+
+	/// Returns the slice of ordered basis elements.
 	pub fn basis(&self) -> &[F] {
 		&self.basis
 	}

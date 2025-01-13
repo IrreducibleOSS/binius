@@ -2,6 +2,7 @@
 
 use binius_field::{BinaryField, PackedField};
 use binius_maybe_rayon::prelude::*;
+use binius_math::BinarySubspace;
 use binius_utils::rayon::get_log_max_threads;
 
 use super::{
@@ -21,23 +22,6 @@ pub struct MultithreadedNTT<
 > {
 	single_threaded: SingleThreadedNTT<F, TA>,
 	log_max_threads: usize,
-}
-
-impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> MultithreadedNTT<F, TA> {
-	/// Base-2 logarithm of the size of the NTT domain.
-	pub fn log_domain_size(&self) -> usize {
-		self.single_threaded.log_domain_size()
-	}
-
-	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
-	///
-	/// ## Preconditions
-	///
-	/// * `i` must be less than `self.log_domain_size()`
-	/// * `j` must be less than `self.log_domain_size() - i`
-	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.single_threaded.get_subspace_eval(i, j)
-	}
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
@@ -65,11 +49,15 @@ where
 	TA: TwiddleAccess<F>,
 {
 	fn log_domain_size(&self) -> usize {
-		self.log_domain_size()
+		self.single_threaded.log_domain_size()
+	}
+
+	fn subspace(&self) -> &BinarySubspace<F> {
+		self.single_threaded.subspace()
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.get_subspace_eval(i, j)
+		self.single_threaded.get_subspace_eval(i, j)
 	}
 
 	fn forward_transform<P>(

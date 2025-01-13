@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, PackedField};
+use binius_math::BinarySubspace;
 use binius_utils::rayon::get_log_max_threads;
 
 use super::{
@@ -86,6 +87,15 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 			Self::SingleThreadedPrecompute(ntt) => ntt.log_domain_size(),
 			Self::MultiThreaded(ntt) => ntt.log_domain_size(),
 			Self::MultiThreadedPrecompute(ntt) => ntt.log_domain_size(),
+		}
+	}
+
+	fn subspace(&self) -> &BinarySubspace<F> {
+		match self {
+			DynamicDispatchNTT::SingleThreaded(ntt) => ntt.subspace(),
+			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => ntt.subspace(),
+			DynamicDispatchNTT::MultiThreaded(ntt) => ntt.subspace(),
+			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => ntt.subspace(),
 		}
 	}
 
