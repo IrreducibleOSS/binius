@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, PackedField};
-use binius_maybe_rayon::prelude::*;
 use binius_math::BinarySubspace;
+use binius_maybe_rayon::prelude::*;
 use binius_utils::rayon::get_log_max_threads;
 
 use super::{
@@ -16,10 +16,8 @@ use crate::twiddle::OnTheFlyTwiddleAccess;
 
 /// Implementation of `AdditiveNTT` that performs the computation multithreaded.
 #[derive(Debug)]
-pub struct MultithreadedNTT<
-	F: BinaryField,
-	TA: TwiddleAccess<F> + Sync = OnTheFlyTwiddleAccess<F, Vec<F>>,
-> {
+pub struct MultithreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F, Vec<F>>>
+{
 	single_threaded: SingleThreadedNTT<F, TA>,
 	log_max_threads: usize,
 }
@@ -43,32 +41,29 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA: TwiddleAccess<F> + Sync> AdditiveNTT<F> for MultithreadedNTT<F, TA>
+impl<F, TA> AdditiveNTT<F> for MultithreadedNTT<F, TA>
 where
 	F: BinaryField,
-	TA: TwiddleAccess<F>,
+	TA: TwiddleAccess<F> + Sync,
 {
 	fn log_domain_size(&self) -> usize {
 		self.single_threaded.log_domain_size()
 	}
 
-	fn subspace(&self) -> &BinarySubspace<F> {
-		self.single_threaded.subspace()
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
+		self.single_threaded.subspace(i)
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
 		self.single_threaded.get_subspace_eval(i, j)
 	}
 
-	fn forward_transform<P>(
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		forward_transform(
 			self.log_domain_size(),
 			self.single_threaded.twiddles(),
@@ -79,15 +74,12 @@ where
 		)
 	}
 
-	fn inverse_transform<P>(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		inverse_transform(
 			self.log_domain_size(),
 			self.single_threaded.twiddles(),

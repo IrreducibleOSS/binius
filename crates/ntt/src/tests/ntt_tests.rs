@@ -10,8 +10,8 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedBinaryField16x32b,
-	PackedBinaryField8x32b, PackedExtension, PackedField, RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, PackedBinaryField16x32b, PackedBinaryField8x32b,
+	PackedExtension, PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 

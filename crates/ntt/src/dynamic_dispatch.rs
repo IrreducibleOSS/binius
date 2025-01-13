@@ -90,12 +90,12 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		}
 	}
 
-	fn subspace(&self) -> &BinarySubspace<F> {
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
 		match self {
-			DynamicDispatchNTT::SingleThreaded(ntt) => ntt.subspace(),
-			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => ntt.subspace(),
-			DynamicDispatchNTT::MultiThreaded(ntt) => ntt.subspace(),
-			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => ntt.subspace(),
+			Self::SingleThreaded(ntt) => ntt.subspace(i),
+			Self::SingleThreadedPrecompute(ntt) => ntt.subspace(i),
+			Self::MultiThreaded(ntt) => ntt.subspace(i),
+			Self::MultiThreadedPrecompute(ntt) => ntt.subspace(i),
 		}
 	}
 
@@ -108,15 +108,12 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		}
 	}
 
-	fn forward_transform<P>(
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		match self {
 			Self::SingleThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
 			Self::SingleThreadedPrecompute(ntt) => {
@@ -129,15 +126,12 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		}
 	}
 
-	fn inverse_transform<P>(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		match self {
 			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
 			Self::SingleThreadedPrecompute(ntt) => {

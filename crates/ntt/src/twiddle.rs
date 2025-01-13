@@ -1,9 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Deref};
+use std::{iter, marker::PhantomData, ops::Deref};
 
 use binius_field::{BinaryField, Field};
 use binius_math::BinarySubspace;
+use binius_utils::bail;
 
 use crate::Error;
 
@@ -40,6 +41,12 @@ use crate::Error;
 pub trait TwiddleAccess<F: BinaryField> {
 	/// Base-2 logarithm of the number of twiddle factors in this round.
 	fn log_n(&self) -> usize;
+
+	/// The twiddle values are the span of this binary subspace, excluding 1 as a basis element,
+	/// and with an affine shift.
+	///
+	/// Returns a tuple with the subspace and shift value.
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F);
 
 	/// Get the twiddle factor at the given index.
 	///
@@ -116,6 +123,15 @@ where
 		self.log_n
 	}
 
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F) {
+		let subspace = BinarySubspace::new_unchecked(
+			iter::once(F::ONE)
+				.chain(self.s_evals.iter().copied())
+				.collect(),
+		);
+		(subspace, self.offset)
+	}
+
 	#[inline]
 	fn get(&self, i: usize) -> F {
 		self.offset + subset_sum(&self.s_evals, self.log_n, i)
@@ -180,6 +196,16 @@ where
 		self.log_n
 	}
 
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F) {
+		let shift = self.s_evals[0];
+		let subspace = BinarySubspace::new_unchecked(
+			iter::once(F::ONE)
+				.chain((0..self.log_n()).map(|i| self.s_evals[1 << i] - shift))
+				.collect(),
+		);
+		(subspace, shift)
+	}
+
 	#[inline]
 	fn get(&self, i: usize) -> F {
 		self.s_evals[i]
@@ -213,9 +239,12 @@ fn precompute_subspace_evals<F: BinaryField>(
 ) -> Result<Vec<Vec<F>>, Error> {
 	let log_domain_size = subspace.dim();
 	if log_domain_size == 0 {
-		return Err(Error::DomainTooSmall {
+		bail!(Error::DomainTooSmall {
 			log_required_domain_size: 1,
 		});
+	}
+	if subspace.basis()[0] != F::ONE {
+		bail!(Error::DomainMustIncludeOne);
 	}
 
 	let mut s_evals = Vec::with_capacity(log_domain_size);
@@ -267,6 +296,7 @@ fn precompute_subspace_evals<F: BinaryField>(
 
 	Ok(s_evals)
 }
+
 /// Computes the function $(e,c)\mapsto e^2+ce$.
 ///
 /// This is primarily used to compute $W\_{i+1}(X)$ from $W\_i(X)$ in the binary field setting.

@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::marker::PhantomData;
+
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
 	BinaryField, ExtensionField, PackedField,
@@ -156,32 +158,31 @@ where
 
 /// Simple NTT implementation that uses the reference implementation for the forward and inverse NTT.
 pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
-	subspace: BinarySubspace<F>,
 	s_evals: Vec<TA>,
+	_marker: PhantomData<F>,
 }
 
-impl<F, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<F, TA>
-where
-	F: BinaryField,
-	TA: TwiddleAccess<F>,
-{
-	fn subspace(&self) -> &BinarySubspace<F> {
-		&self.subspace
+impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<F, TA> {
+	fn log_domain_size(&self) -> usize {
+		self.s_evals[0].log_n() + 1
 	}
 
-	fn get_subspace_eval(&self, _i: usize, _j: usize) -> F {
-		unimplemented!()
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
+		let (subspace, shift) = self.s_evals[i].affine_subspace();
+		debug_assert_eq!(shift, F::ZERO, "s_evals subspaces must be linear by construction");
+		subspace
 	}
 
-	fn forward_transform<P>(
+	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
+		self.s_evals[i].get(j)
+	}
+
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			forward_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;
@@ -190,15 +191,12 @@ where
 		Ok(())
 	}
 
-	fn inverse_transform<P>(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			inverse_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;
@@ -215,8 +213,8 @@ where
 {
 	pub(super) fn into_simple_ntt(self) -> SimpleAdditiveNTT<F, TA> {
 		SimpleAdditiveNTT {
-			subspace: self.subspace().clone(),
 			s_evals: self.s_evals,
+			_marker: PhantomData,
 		}
 	}
 }

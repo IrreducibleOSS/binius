@@ -9,17 +9,19 @@ use super::error::Error;
 ///
 /// The subspace is defined by a basis of elements from a binary field. The basis elements are
 /// ordered, which implies an ordering on the subspace elements.
-///
-/// ## Invariants
-///
-/// This struct requires that if the subspace dimension is non-zero, then the 0'th basis element is
-/// `F::ONE`.
 #[derive(Debug, Clone)]
 pub struct BinarySubspace<F: BinaryField> {
 	basis: Vec<F>,
 }
 
 impl<F: BinaryField> BinarySubspace<F> {
+	/// Creates a new subspace from a vector of ordered basis elements.
+	///
+	/// This constructor does not check that the basis elements are linearly independent.
+	pub const fn new_unchecked(basis: Vec<F>) -> Self {
+		Self { basis }
+	}
+
 	/// Creates a new subspace of this binary subspace with the given dimension.
 	///
 	/// This creates a new sub-subspace using a prefix of the default $\mathbb{F}_2$ basis elements
@@ -46,7 +48,7 @@ impl<F: BinaryField> BinarySubspace<F> {
 		if dim > self.dim() {
 			bail!(Error::DomainSizeTooLarge);
 		}
-		Ok(BinarySubspace {
+		Ok(Self {
 			basis: self.basis[..dim].to_vec(),
 		})
 	}

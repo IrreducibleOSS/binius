@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::cmp;
+use std::{cmp, marker::PhantomData};
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_math::BinarySubspace;
@@ -11,9 +11,9 @@ use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTw
 /// Implementation of `AdditiveNTT` that performs the computation single-threaded.
 #[derive(Debug)]
 pub struct SingleThreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F>> {
-	subspace: BinarySubspace<F>,
 	// TODO: Figure out how to make this private, it should not be `pub(super)`.
 	pub(super) s_evals: Vec<TA>,
+	_marker: PhantomData<F>,
 }
 
 impl<F: BinaryField> SingleThreadedNTT<F> {
@@ -22,26 +22,23 @@ impl<F: BinaryField> SingleThreadedNTT<F> {
 	pub fn new(log_domain_size: usize) -> Result<Self, Error> {
 		let subspace = BinarySubspace::with_dim(log_domain_size)?;
 		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
-		Ok(Self::with_twiddle_access(subspace, twiddle_access))
+		Ok(Self::with_twiddle_access(twiddle_access))
 	}
 
 	/// Constructs an NTT over an isomorphic subspace for the given domain field using on-the-fly
 	/// computed twiddle factors.
-	pub fn with_domain_field<DomainField>(log_domain_size: usize) -> Result<Self, Error>
+	pub fn with_domain_field<FDomain>(log_domain_size: usize) -> Result<Self, Error>
 	where
-		DomainField: BinaryField,
-		F: From<DomainField>,
+		FDomain: BinaryField,
+		F: From<FDomain>,
 	{
-		let subspace = BinarySubspace::<DomainField>::with_dim(log_domain_size)?.isomorphic();
+		let subspace = BinarySubspace::<FDomain>::with_dim(log_domain_size)?.isomorphic();
 		let twiddle_access = OnTheFlyTwiddleAccess::generate(&subspace)?;
-		Ok(Self::with_twiddle_access(subspace, twiddle_access))
+		Ok(Self::with_twiddle_access(twiddle_access))
 	}
 
 	pub fn precompute_twiddles(&self) -> SingleThreadedNTT<F, PrecomputedTwiddleAccess<F>> {
-		SingleThreadedNTT::with_twiddle_access(
-			self.subspace.clone(),
-			expand_subspace_evals(&self.s_evals),
-		)
+		SingleThreadedNTT::with_twiddle_access(expand_subspace_evals(&self.s_evals))
 	}
 }
 
@@ -53,10 +50,10 @@ impl<F: TowerField> SingleThreadedNTT<F> {
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
-	const fn with_twiddle_access(subspace: BinarySubspace<F>, twiddle_access: Vec<TA>) -> Self {
+	const fn with_twiddle_access(twiddle_access: Vec<TA>) -> Self {
 		Self {
-			subspace,
 			s_evals: twiddle_access,
+			_marker: PhantomData,
 		}
 	}
 }
@@ -67,41 +64,41 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA: TwiddleAccess<F>> AdditiveNTT<F> for SingleThreadedNTT<F, TA>
+impl<F, TA> AdditiveNTT<F> for SingleThreadedNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
 {
-	fn subspace(&self) -> &BinarySubspace<F> {
-		&self.subspace
+	fn log_domain_size(&self) -> usize {
+		self.s_evals.len()
+	}
+
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
+		let (subspace, shift) = self.s_evals[i].affine_subspace();
+		debug_assert_eq!(shift, F::ZERO, "s_evals subspaces must be linear by construction");
+		subspace
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
 		self.s_evals[i].get(j)
 	}
 
-	fn forward_transform<P>(
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		forward_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}
 
-	fn inverse_transform<P>(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		P: PackedField<Scalar = F>,
-	{
+	) -> Result<(), Error> {
 		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		inverse_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}
@@ -383,6 +380,7 @@ mod tests {
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedFieldIndexable,
 	};
+	use binius_math::Error as MathError;
 	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
@@ -391,10 +389,15 @@ mod tests {
 	fn test_additive_ntt_fails_with_field_too_small() {
 		assert_matches!(
 			SingleThreadedNTT::<BinaryField8b>::new(10),
-			Err(Error::FieldTooSmall {
-				log_domain_size: 10
-			})
+			Err(Error::MathError(MathError::DomainSizeTooLarge))
 		);
+	}
+
+	#[test]
+	fn test_subspace_size_agrees_with_domain_size() {
+		let ntt = SingleThreadedNTT::<BinaryField16b>::new(10).expect("msg");
+		assert_eq!(ntt.subspace(0).dim(), 10);
+		assert_eq!(ntt.subspace(9).dim(), 1);
 	}
 
 	#[test]

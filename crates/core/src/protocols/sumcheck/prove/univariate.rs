@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
-	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked,
+	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked, BinaryField,
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
 	TowerField,
 };
