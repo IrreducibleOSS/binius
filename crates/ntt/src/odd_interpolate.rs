@@ -19,6 +19,9 @@ impl<F: BinaryField> OddInterpolate<F> {
 	where
 		TA: TwiddleAccess<F>,
 	{
+		// TODO: This constructor should accept an `impl AdditiveNTT` instead of an
+		// `impl TwiddleAccess`. It can use `AdditiveNTT::get_subspace_eval` instead of the twiddle
+		// accessors directly. `AdditiveNTT` is a more public interface.
 		let vandermonde = novel_vandermonde(d, ell, twiddle_access)?;
 
 		let mut vandermonde_inverse = Matrix::zeros(d, d);

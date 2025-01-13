@@ -12,7 +12,7 @@ use crate::twiddle::{expand_subspace_evals, OnTheFlyTwiddleAccess, PrecomputedTw
 #[derive(Debug)]
 pub struct SingleThreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F>> {
 	subspace: BinarySubspace<F>,
-	// TODO: Can I remove?
+	// TODO: Figure out how to make this private, it should not be `pub(super)`.
 	pub(super) s_evals: Vec<TA>,
 }
 
