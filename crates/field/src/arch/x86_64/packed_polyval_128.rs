@@ -4,8 +4,8 @@ use std::ops::Mul;
 
 use super::{super::portable::packed::PackedPrimitiveType, m128::M128};
 use crate::{
-	arch::{cfg_if, ReuseMultiplyStrategy, SimdStrategy},
-	arithmetic_traits::{impl_square_with, impl_transformation_with_strategy, InvertOrZero},
+	arch::{cfg_if, ReuseMultiplyStrategy},
+	arithmetic_traits::{impl_square_with, InvertOrZero},
 	packed::PackedField,
 	BinaryField128bPolyval,
 };
@@ -63,4 +63,12 @@ impl InvertOrZero for PackedBinaryPolyval1x128b {
 }
 
 // Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, SimdStrategy);
+cfg_if! {
+	if #[cfg(target_feature = "gfni")] {
+		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
+
+		impl_transformation_with_gfni_nxn!(PackedBinaryPolyval1x128b, 16);
+	} else {
+		crate::arithmetic_traits::impl_transformation_with_strategy!(PackedBinaryPolyval1x128b, crate::arch::SimdStrategy);
+	}
+}

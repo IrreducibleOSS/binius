@@ -4,11 +4,8 @@ use cfg_if::cfg_if;
 
 use super::m256::M256;
 use crate::{
-	arch::{
-		portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy,
-		SimdStrategy,
-	},
-	arithmetic_traits::{impl_invert_with, impl_square_with, impl_transformation_with_strategy},
+	arch::{portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy},
+	arithmetic_traits::{impl_invert_with, impl_square_with},
 	BinaryField128bPolyval,
 };
 
@@ -46,4 +43,13 @@ impl_square_with!(PackedBinaryPolyval2x128b @ ReuseMultiplyStrategy);
 impl_invert_with!(PackedBinaryPolyval2x128b @ PairwiseStrategy);
 
 // Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryPolyval2x128b, SimdStrategy);
+// Define linear transformations
+cfg_if! {
+	if #[cfg(target_feature = "gfni")] {
+		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
+
+		impl_transformation_with_gfni_nxn!(PackedBinaryPolyval2x128b, 16);
+	} else {
+		crate::arithmetic_traits::impl_transformation_with_strategy!(PackedBinaryPolyval2x128b, crate::arch::SimdStrategy);
+	}
+}

@@ -42,4 +42,12 @@ impl_square_with!(PackedBinaryPolyval4x128b @ ReuseMultiplyStrategy);
 impl_invert_with!(PackedBinaryPolyval4x128b @ PairwiseStrategy);
 
 // Define linear transformations
-impl_transformation_with_strategy!(PackedBinaryPolyval4x128b, SimdStrategy);
+cfg_if! {
+	if #[cfg(target_feature = "gfni")] {
+		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
+
+		impl_transformation_with_gfni_nxn!(PackedBinaryPolyval4x128b, 16);
+	} else {
+		impl_transformation_with_strategy!(PackedBinaryPolyval4x128b, SimdStrategy);
+	}
+}

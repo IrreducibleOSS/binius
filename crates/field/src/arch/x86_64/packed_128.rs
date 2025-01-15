@@ -120,19 +120,18 @@ impl_transformation_with_strategy!(PackedBinaryField64x2b, SimdStrategy);
 impl_transformation_with_strategy!(PackedBinaryField32x4b, SimdStrategy);
 cfg_if! {
 	if #[cfg(target_feature = "gfni")] {
-		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni;
 		use crate::arch::x86_64::gfni::gfni_arithmetics::impl_transformation_with_gfni_nxn;
 
-		impl_transformation_with_gfni!(PackedBinaryField16x8b);
+		impl_transformation_with_strategy!(PackedBinaryField16x8b, crate::arch::GfniStrategy);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField8x16b, 2);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField4x32b, 4);
 		impl_transformation_with_gfni_nxn!(PackedBinaryField2x64b, 8);
+		impl_transformation_with_gfni_nxn!(PackedBinaryField1x128b, 16);
 	} else {
 		impl_transformation_with_strategy!(PackedBinaryField16x8b, SimdStrategy);
 		impl_transformation_with_strategy!(PackedBinaryField8x16b, SimdStrategy);
 		impl_transformation_with_strategy!(PackedBinaryField4x32b, SimdStrategy);
 		impl_transformation_with_strategy!(PackedBinaryField2x64b, SimdStrategy);
+		impl_transformation_with_strategy!(PackedBinaryField1x128b, SimdStrategy);
 	}
 }
-
-impl_transformation_with_strategy!(PackedBinaryField1x128b, SimdStrategy);

@@ -162,6 +162,7 @@ macro_rules! impl_transformation_with_strategy {
 				+ $crate::underlier::WithUnderlier<
 					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
 				>,
+			Self: $crate::arithmetic_traits::TaggedPackedTransformationFactory<$strategy, OP>,
 		{
 			type PackedTransformation<Data: std::ops::Deref<Target = [OP::Scalar]>> =
 				<Self as $crate::arithmetic_traits::TaggedPackedTransformationFactory<

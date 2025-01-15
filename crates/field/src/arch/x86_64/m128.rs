@@ -323,7 +323,7 @@ pub struct AlignedData(pub [u128; 1]);
 macro_rules! m128_from_u128 {
 	($val:expr) => {{
 		let aligned_data = $crate::arch::x86_64::m128::AlignedData([$val]);
-		unsafe { *(aligned_data.0.as_ptr() as *const __m128i) }
+		unsafe { *(aligned_data.0.as_ptr() as *const core::arch::x86_64::__m128i) }
 	}};
 }
 

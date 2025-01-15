@@ -37,6 +37,7 @@ impl TowerSimdType for M256 {
 	fn set1_epi128(val: __m128i) -> Self {
 		unsafe { _mm256_broadcastsi128_si256(val) }.into()
 	}
+
 	#[inline(always)]
 	fn set_epi_64(val: i64) -> Self {
 		unsafe { _mm256_set1_epi64x(val) }.into()

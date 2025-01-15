@@ -2,18 +2,20 @@
 
 use std::{array, ops::Deref};
 
+use binius_utils::checked_arithmetics::checked_int_div;
+
 use crate::{
 	arch::{
-		portable::packed::PackedPrimitiveType, x86_64::simd::simd_arithmetic::TowerSimdType,
+		portable::packed::PackedPrimitiveType,
+		x86_64::{m128::m128_from_u128, simd::simd_arithmetic::TowerSimdType},
 		GfniStrategy,
 	},
-	arithmetic_traits::{TaggedInvertOrZero, TaggedMul},
+	arithmetic_traits::{TaggedInvertOrZero, TaggedMul, TaggedPackedTransformationFactory},
 	is_aes_tower, is_canonical_tower,
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	packed::PackedBinaryField,
-	underlier::{UnderlierType, WithUnderlier},
-	BinaryField, BinaryField16b, BinaryField32b, BinaryField64b, BinaryField8b, PackedField,
-	TowerField,
+	underlier::{Divisible, UnderlierType, WithUnderlier},
+	BinaryField, PackedField, TowerField,
 };
 
 #[rustfmt::skip]
@@ -126,6 +128,24 @@ fn transpose_8x8(mut matrix: i64) -> i64 {
 	result
 }
 
+/// Get 8x8 matrix block from the linear transformation.
+/// `row` and `col` are indices of the 8x8 block in the transformation matrix.
+pub(super) fn get_8x8_matrix<OF, Data>(
+	transformation: &FieldLinearTransformation<OF, Data>,
+	row: usize,
+	col: usize,
+) -> i64
+where
+	OF: BinaryField<Underlier: Divisible<u8>>,
+	Data: Deref<Target = [OF]>,
+{
+	transpose_8x8(i64::from_le_bytes(array::from_fn(|k| {
+		transformation.bases()[k + 8 * col]
+			.to_underlier()
+			.split_ref()[row]
+	})))
+}
+
 #[allow(private_bounds)]
 impl<OP> GfniTransformation<OP>
 where
@@ -148,8 +168,8 @@ where
 
 impl<IP, OP, U> Transformation<IP, OP> for GfniTransformation<OP>
 where
-	IP: PackedField + WithUnderlier<Underlier = U>,
-	OP: PackedField + WithUnderlier<Underlier = U>,
+	IP: PackedField<Scalar: WithUnderlier<Underlier = u8>> + WithUnderlier<Underlier = U>,
+	OP: PackedField<Scalar: WithUnderlier<Underlier = u8>> + WithUnderlier<Underlier = U>,
 	U: GfniType,
 {
 	fn transform(&self, data: &IP) -> OP {
@@ -157,84 +177,49 @@ where
 	}
 }
 
-/// Implement packed transformation factory with GFNI instructions for 8-bit packed field
-macro_rules! impl_transformation_with_gfni {
-	($name:ty) => {
-		impl<OP> $crate::linear_transformation::PackedTransformationFactory<OP> for $name
-		where
-			OP: $crate::packed::PackedBinaryField<
-					Scalar: $crate::underlier::WithUnderlier<Underlier = u8>,
-				> + $crate::underlier::WithUnderlier<
-					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
-				>,
-		{
-			type PackedTransformation<
-				Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>,
-			> = $crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformation<OP>;
+impl<IP, OP, U> TaggedPackedTransformationFactory<GfniStrategy, OP> for IP
+where
+	IP: PackedField<Scalar: BinaryField + WithUnderlier<Underlier = u8>>
+		+ WithUnderlier<Underlier = U>,
+	OP: PackedField<Scalar: BinaryField + WithUnderlier<Underlier = u8>>
+		+ WithUnderlier<Underlier = U>,
+	U: GfniType,
+{
+	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = GfniTransformation<OP>;
 
-			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
-				transformation: $crate::linear_transformation::FieldLinearTransformation<
-					OP::Scalar,
-					Data,
-				>,
-			) -> Self::PackedTransformation<Data> {
-				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformation::new(
-					transformation,
-				)
-			}
-		}
-	};
-}
-
-pub(crate) use impl_transformation_with_gfni;
-
-/// Value that can be converted to a little-endian byte array
-pub trait ToLEBytes<const N: usize> {
-	fn to_le_bytes(self) -> [u8; N];
-}
-
-impl ToLEBytes<1> for u8 {
-	fn to_le_bytes(self) -> [u8; 1] {
-		self.to_le_bytes()
-	}
-}
-
-impl ToLEBytes<2> for u16 {
-	fn to_le_bytes(self) -> [u8; 2] {
-		self.to_le_bytes()
-	}
-}
-
-impl ToLEBytes<4> for u32 {
-	fn to_le_bytes(self) -> [u8; 4] {
-		self.to_le_bytes()
-	}
-}
-
-impl ToLEBytes<8> for u64 {
-	fn to_le_bytes(self) -> [u8; 8] {
-		self.to_le_bytes()
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+		transformation: FieldLinearTransformation<OP::Scalar, Data>,
+	) -> Self::PackedTransformation<Data> {
+		GfniTransformation::new(transformation)
 	}
 }
 
 /// Linear transformation for packed scalars of size `BLOCKS*8`.
 /// Splits elements itself and transformation matrix to 8-bit size blocks and uses `gf2p8affine_epi64_epi8`
 /// to perform multiplications of those.
-/// Transformation complexity is `BLOCKS^2`.
+/// Transformation complexity is `BLOCKS^2/2` since two 8x8 matrices multiplications are done with a single instruction.
+///
+/// All operations scale by lane count, so this transformation works for any register size.
+/// `MATRICES` is actually a half of `BLOCKS`, since two 8x8 matrices are processed at once.
 #[allow(private_bounds)]
-pub struct GfniTransformationNxN<OP, const BLOCKS: usize>
+pub struct GfniTransformationNxN<OP, const BLOCKS: usize, const MATRICES: usize>
 where
 	OP: WithUnderlier<Underlier: GfniType>,
 {
-	bases_8x8: [[OP::Underlier; BLOCKS]; BLOCKS],
+	// Each element contains two matrices in a single 128-bit lane
+	bases_8x8: [[OP::Underlier; MATRICES]; BLOCKS],
+	// Each element contains a shuffle mask to to put 8-bit blocks in the right order.
+	shuffles: [[OP::Underlier; MATRICES]; BLOCKS],
+	// Final shuffle to put all 8-bit blocks in the right order in the result.
+	final_shuffle: OP::Underlier,
 }
 
 #[allow(private_bounds)]
-impl<OP, const BLOCKS: usize> GfniTransformationNxN<OP, BLOCKS>
+impl<OP, const BLOCKS: usize, const MATRICES: usize> GfniTransformationNxN<OP, BLOCKS, MATRICES>
 where
 	OP: WithUnderlier<Underlier: GfniType>
-		+ PackedBinaryField<Scalar: WithUnderlier<Underlier: ToLEBytes<BLOCKS>>>,
-	[[OP::Underlier; BLOCKS]; BLOCKS]: Default,
+		+ PackedBinaryField<Scalar: WithUnderlier<Underlier: Divisible<u8>>>,
+	[[OP::Underlier; MATRICES]; BLOCKS]: Default,
 {
 	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
@@ -243,141 +228,120 @@ where
 		debug_assert_eq!(transformation.bases().len(), BLOCKS * 8);
 
 		// Convert bases matrix into `BLOCKS`x`BLOCKS` matrix of 8x8 blocks.
-		let mut bases_8x8 = <[[OP::Underlier; BLOCKS]; BLOCKS]>::default();
-		for (i, row) in bases_8x8.iter_mut().enumerate() {
-			for (j, matr) in row.iter_mut().enumerate() {
-				let matrix8x8 = transpose_8x8(i64::from_le_bytes(array::from_fn(|k| {
-					transformation.bases()[k + 8 * i]
-						.to_underlier()
-						.to_le_bytes()[j]
-				})));
-				*matr = OP::Underlier::set_epi_64(matrix8x8);
-			}
-		}
+		let bases_8x8 = array::from_fn(|col| {
+			array::from_fn(|row| {
+				let odd_matrix = get_8x8_matrix(&transformation, row, col) as u64 as u128;
+				let even_matrix =
+					get_8x8_matrix(&transformation, row + MATRICES, col) as u64 as u128;
+				let matrices_u128 = (even_matrix << 64) | odd_matrix;
+				let matrices_m128 = m128_from_u128!(matrices_u128);
 
-		Self { bases_8x8 }
+				OP::Underlier::set1_epi128(matrices_m128)
+			})
+		});
+
+		// precompute shuffles
+		let shuffles = array::from_fn(|col| {
+			array::from_fn(|row| {
+				let mut half_u128_lane = [255u8; 8];
+				for i in 0..checked_int_div(8, MATRICES) {
+					half_u128_lane[row + i * MATRICES] = (col + i * BLOCKS) as u8;
+				}
+
+				let byte_indices = array::from_fn(|i| {
+					// all shuffle indices are repated with cycle 8.
+					half_u128_lane[i % 8]
+				});
+				let mask_u128 = u128::from_le_bytes(byte_indices);
+				let mask_m128 = m128_from_u128!(mask_u128);
+
+				OP::Underlier::set1_epi128(mask_m128)
+			})
+		});
+		let final_shuffle = {
+			let mut shuffle = [0u8; 16];
+			for i in 0..checked_int_div(16, BLOCKS) {
+				for k in 0..MATRICES {
+					shuffle[i * BLOCKS + k] = (i * MATRICES + k) as _;
+					shuffle[i * BLOCKS + k + MATRICES] = (i * MATRICES + k + 8) as _;
+				}
+			}
+			let mask_u128 = u128::from_le_bytes(shuffle);
+			let mask_m128 = m128_from_u128!(mask_u128);
+
+			OP::Underlier::set1_epi128(mask_m128)
+		};
+
+		Self {
+			bases_8x8,
+			shuffles,
+			final_shuffle,
+		}
 	}
 }
 
-impl<IP, OP, U, const BLOCKS: usize> Transformation<IP, OP> for GfniTransformationNxN<OP, BLOCKS>
+impl<U, IP, OP, const BLOCKS: usize, const MATRICES: usize> Transformation<IP, OP>
+	for GfniTransformationNxN<OP, BLOCKS, MATRICES>
 where
 	IP: PackedField + WithUnderlier<Underlier = U>,
 	OP: PackedField + WithUnderlier<Underlier = U>,
-	U: GfniType + TowerSimdType + std::fmt::Debug,
-	BlendHeight<BLOCKS>: BlendValues<U>,
+	U: GfniType + std::fmt::Debug,
 {
 	fn transform(&self, data: &IP) -> OP {
-		let packed_values: [OP::Underlier; BLOCKS] = array::from_fn(|i| {
-			(0..BLOCKS)
-				.map(|j| {
-					// move meaningful value to the `i` index
-					shift_bytes(
-						U::gf2p8affine_epi64_epi8(data.to_underlier(), self.bases_8x8[j][i]),
-						i as i32 - j as i32,
-					)
-				})
-				.reduce(U::xor)
-				.expect("collection is never empty")
-		});
+		let mut result = OP::Underlier::default();
 
-		// Put `i`'s component of each value to the result
-		OP::from_underlier(BlendHeight::<BLOCKS>::blend_values(&packed_values))
-	}
-}
+		for col in 0..BLOCKS {
+			for row in 0..MATRICES {
+				// shuffle [b_0,... b_15] to have [0, .., b_col, 0, .. 0, ,b_col, 0, .. 0]
+				//                                         /\                /\
+				//                                         row            row + 8
+				let shuffled = U::shuffle_epi8(data.to_underlier(), self.shuffles[col][row]);
 
-/// Shift `value` by `count` bytes, where `count` can be negative.
-/// Positive `count` value corresponds to a left shift, negative - to the right.
-#[inline(always)]
-fn shift_bytes<T: GfniType>(value: T, count: i32) -> T {
-	match count {
-		0 => value,
-		1 => value.bslli_epi128::<1>(),
-		2 => value.bslli_epi128::<2>(),
-		3 => value.bslli_epi128::<3>(),
-		4 => value.bslli_epi128::<4>(),
-		5 => value.bslli_epi128::<5>(),
-		6 => value.bslli_epi128::<6>(),
-		7 => value.bslli_epi128::<7>(),
-		8 => value.bslli_epi128::<8>(),
-		-1 => value.bsrli_epi128::<1>(),
-		-2 => value.bsrli_epi128::<2>(),
-		-3 => value.bsrli_epi128::<3>(),
-		-4 => value.bsrli_epi128::<4>(),
-		-5 => value.bsrli_epi128::<5>(),
-		-6 => value.bsrli_epi128::<6>(),
-		-7 => value.bsrli_epi128::<7>(),
-		-8 => value.bsrli_epi128::<8>(),
-		_ => panic!("unsupported byte shift"),
-	}
-}
+				// Multiply `A_col_row` by `b_col` and `A_col_(row+MATRICES)` by `b_col`
+				result =
+					U::xor(result, U::gf2p8affine_epi64_epi8(shuffled, self.bases_8x8[col][row]));
+			}
+		}
 
-/// Implementing `blend_values` for different sizes for different structures
-/// allows compiler efficiently inline all the codes.
-/// Version with a single function with a match statement is less efficient.
-struct BlendHeight<const LENGTH: usize>;
+		// put the 8-bit blocks to the right order
+		result = U::shuffle_epi8(result, self.final_shuffle);
 
-trait BlendValues<T: TowerSimdType> {
-	/// Creates a packed value where
-	/// - components at index `0` are from `values[0]`
-	/// - components at index `1` are from `values[1]`
-	///   ...
-	/// - components at index `values.len() - 1` are from `values[values.len() - 1]`
-	fn blend_values(values: &[T]) -> T;
-}
-
-impl<T: TowerSimdType> BlendValues<T> for BlendHeight<1> {
-	#[inline(always)]
-	fn blend_values(values: &[T]) -> T {
-		values[0]
-	}
-}
-
-impl<T: TowerSimdType> BlendValues<T> for BlendHeight<2> {
-	#[inline(always)]
-	fn blend_values(values: &[T]) -> T {
-		T::blend_odd_even::<BinaryField8b>(values[1], values[0])
-	}
-}
-
-impl<T: TowerSimdType> BlendValues<T> for BlendHeight<4> {
-	#[inline(always)]
-	fn blend_values(values: &[T]) -> T {
-		T::blend_odd_even::<BinaryField16b>(
-			BlendHeight::<2>::blend_values(&values[2..4]),
-			BlendHeight::<2>::blend_values(&values[0..2]),
-		)
-	}
-}
-
-impl<T: TowerSimdType> BlendValues<T> for BlendHeight<8> {
-	#[inline(always)]
-	fn blend_values(values: &[T]) -> T {
-		T::blend_odd_even::<BinaryField32b>(
-			BlendHeight::<4>::blend_values(&values[4..8]),
-			BlendHeight::<4>::blend_values(&values[0..4]),
-		)
-	}
-}
-
-impl<T: TowerSimdType> BlendValues<T> for BlendHeight<16> {
-	#[inline(always)]
-	fn blend_values(values: &[T]) -> T {
-		T::blend_odd_even::<BinaryField64b>(
-			BlendHeight::<8>::blend_values(&values[8..16]),
-			BlendHeight::<8>::blend_values(&values[0..8]),
-		)
+		OP::from_underlier(result)
 	}
 }
 
 /// Implement packed transformation factory with GFNI instructions for scalars bigger than 8 bits
 macro_rules! impl_transformation_with_gfni_nxn {
 	($name:ty, $blocks:literal) => {
-		impl<OP> $crate::linear_transformation::PackedTransformationFactory<OP> for $name where OP: $crate::packed::PackedBinaryField<Scalar: $crate::underlier::WithUnderlier<Underlier: $crate::arch::x86_64::gfni::gfni_arithmetics::ToLEBytes<$blocks>>> + $crate::underlier::WithUnderlier<Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier> {
-			type PackedTransformation<Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>> =
-				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN::<OP, $blocks>;
+		impl<OP> $crate::linear_transformation::PackedTransformationFactory<OP> for $name
+		where
+			OP: $crate::packed::PackedBinaryField<
+					Scalar: $crate::underlier::WithUnderlier<
+						Underlier: $crate::underlier::Divisible<u8>,
+					>,
+				> + $crate::underlier::WithUnderlier<
+					Underlier = <$name as $crate::underlier::WithUnderlier>::Underlier,
+				>,
+		{
+			type PackedTransformation<
+				Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>,
+			> = $crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN<
+				OP,
+				$blocks,
+				{ $blocks / 2 },
+			>;
 
-			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(transformation: $crate::linear_transformation::FieldLinearTransformation<OP::Scalar, Data>) -> Self::PackedTransformation<Data> {
-				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN::<OP, $blocks>::new(transformation)
+			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
+				transformation: $crate::linear_transformation::FieldLinearTransformation<
+					OP::Scalar,
+					Data,
+				>,
+			) -> Self::PackedTransformation<Data> {
+				$crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN::<
+					OP,
+					$blocks,
+					{ $blocks / 2 },
+				>::new(transformation)
 			}
 		}
 	};

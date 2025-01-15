@@ -19,6 +19,9 @@ pub struct ReuseMultiplyStrategy;
 
 /// Use operations with GFNI instructions
 pub struct GfniStrategy;
+/// Specialized versions of the above to resolve conflicting implementations
+pub struct GfniSpecializedStrategy256b;
+pub struct GfniSpecializedStrategy512b;
 
 /// Strategy for packed canonical tower fields.
 /// Performs conversion to the packed isomorphic AES field, applies the operation and

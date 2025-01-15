@@ -21,7 +21,7 @@ use crate::{
 	BinaryField, BinaryField8b, PackedField, TowerField,
 };
 
-pub trait TowerSimdType: Sized + Copy {
+pub trait TowerSimdType: Sized + Copy + UnderlierWithBitOps {
 	/// Blend odd and even elements
 	fn blend_odd_even<Scalar: BinaryField>(a: Self, b: Self) -> Self;
 	/// Set alpha to even elements
