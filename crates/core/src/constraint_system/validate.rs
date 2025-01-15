@@ -39,10 +39,13 @@ where
 		let mut zero_claims = vec![];
 		for constraint in constraint_set.constraints.iter() {
 			match constraint.predicate {
-				ConstraintPredicate::Zero => zero_claims.push(ArithCircuitPoly::with_n_vars(
-					multilinears.len(),
-					constraint.composition.clone(),
-				)?),
+				ConstraintPredicate::Zero => zero_claims.push((
+					constraint.name.clone(),
+					ArithCircuitPoly::with_n_vars(
+						multilinears.len(),
+						constraint.composition.clone(),
+					)?,
+				)),
 				ConstraintPredicate::Sum(_) => unimplemented!(),
 			}
 		}

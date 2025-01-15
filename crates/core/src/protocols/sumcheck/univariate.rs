@@ -441,14 +441,17 @@ mod tests {
 
 		let prover_compositions = [
 			(
+				"pair".into(),
 				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),
 			(
+				"triple".into(),
 				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),
 			(
+				"quad".into(),
 				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
 				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
 			),

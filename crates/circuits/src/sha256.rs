@@ -283,11 +283,13 @@ where
 		// (a * b + a * c + b * c) can be replaced with (a * (b + c) + b * c)
 		// Reference: https://x.com/bartolomeo_diaz/status/1866788688799080922
 		builder.assert_zero(
+			format!("ch_{i}"),
 			[e, f, g, ch[i]],
 			arith_expr!([e, f, g, ch] = (g + e * (f + g)) - ch).convert_field(),
 		);
 
 		builder.assert_zero(
+			format!("maj_{i}"),
 			[a, b, c, maj[i]],
 			arith_expr!([a, b, c, maj] = maj - (a * (b + c)) + b * c).convert_field(),
 		);

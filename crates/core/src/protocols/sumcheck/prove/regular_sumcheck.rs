@@ -49,6 +49,7 @@ where
 		let CompositeSumClaim {
 			composition,
 			sum: expected_sum,
+			..
 		} = claim;
 		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
 		let sum = (0..(1 << n_vars))

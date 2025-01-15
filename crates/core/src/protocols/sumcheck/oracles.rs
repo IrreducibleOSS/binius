@@ -39,6 +39,7 @@ pub fn constraint_set_sumcheck_claim<F: TowerField>(
 	for Constraint {
 		composition,
 		predicate,
+		..
 	} in constraints
 	{
 		match predicate {
@@ -67,6 +68,7 @@ pub fn constraint_set_zerocheck_claim<F: TowerField>(
 	for Constraint {
 		composition,
 		predicate,
+		..
 	} in constraints
 	{
 		match predicate {

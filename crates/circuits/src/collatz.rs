@@ -192,6 +192,7 @@ where
 	let lsb = arithmetic::u32::select_bit(builder, "lsb", input, 0)?;
 	let selector = transparent::step_down(builder, "count", log_32b_rows, count)?;
 	builder.assert_zero(
+		"is_odd",
 		[lsb, selector],
 		arith_expr!([lsb, selector] = selector * (lsb + 1)).convert_field(),
 	);

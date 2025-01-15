@@ -77,7 +77,7 @@ where
 		// Shift overflow checking
 		for i in 32 - offset..32 {
 			let x = select_bit(builder, format!("bit{i}"), input, i)?;
-			builder.assert_zero([x], arith_expr!([x] = x).convert_field());
+			builder.assert_zero("overflow", [x], arith_expr!([x] = x).convert_field());
 		}
 	}
 
@@ -126,11 +126,13 @@ where
 	}
 
 	builder.assert_zero(
+		"sum",
 		[xin, yin, cin, zout],
 		arith_expr!([xin, yin, cin, zout] = xin + yin + cin - zout).convert_field(),
 	);
 
 	builder.assert_zero(
+		"carry",
 		[xin, yin, cin, cout],
 		arith_expr!([xin, yin, cin, cout] = (xin + cin) * (yin + cin) + cin - cout).convert_field(),
 	);
@@ -138,7 +140,11 @@ where
 	// Overflow checking
 	if matches!(flags, super::Flags::Checked) {
 		let last_cout = select_bit(builder, "last_cout", cout, 31)?;
-		builder.assert_zero([last_cout], arith_expr!([last_cout] = last_cout).convert_field());
+		builder.assert_zero(
+			"overflow",
+			[last_cout],
+			arith_expr!([last_cout] = last_cout).convert_field(),
+		);
 	}
 
 	builder.pop_namespace();
@@ -158,7 +164,7 @@ where
 	if matches!(flags, super::Flags::Checked) {
 		// Assert that the number is even
 		let lsb = select_bit(builder, "lsb", input, 0)?;
-		builder.assert_zero([lsb], arith_expr!([lsb] = lsb).convert_field());
+		builder.assert_zero("is_even", [lsb], arith_expr!([lsb] = lsb).convert_field());
 	}
 	shr(builder, name, input, 1)
 }
@@ -276,7 +282,11 @@ where
 		witness.set(output_packed, packed)?;
 		witness.set(transparent, packed)?;
 	}
-	builder.assert_zero([output_packed, transparent], arith_expr!([x, y] = x - y).convert_field());
+	builder.assert_zero(
+		"unpack",
+		[output_packed, transparent],
+		arith_expr!([x, y] = x - y).convert_field(),
+	);
 	builder.pop_namespace();
 	Ok(output)
 }

@@ -397,6 +397,7 @@ where
 
 				if x == 0 && y == 0 {
 					builder.assert_zero(
+						format!("chi_iota(round_within_row={round_within_row}, x={x}, y={y})"),
 						[
 							this_round_output,
 							b[round_within_row][x + 5 * y],
@@ -408,6 +409,7 @@ where
 					);
 				} else {
 					builder.assert_zero(
+						format!("chi(round_within_row={round_within_row}, x={x}, y={y})"),
 						[
 							this_round_output,
 							b[round_within_row][x + 5 * y],
@@ -426,6 +428,7 @@ where
 
 	for xy in 0..STATE_SIZE {
 		builder.assert_zero(
+			format!("next_state_in_is_state_out_{xy}"),
 			[state_out[xy], next_state_in[xy], selector],
 			selector_consistency.clone().convert_field(),
 		)

@@ -69,8 +69,11 @@ where
 	}
 
 	for s in 0..STATE_SIZE {
-		builder
-			.assert_zero([p_in[s], round_0_input[s]], vision_round_begin_expr(s).convert_field());
+		builder.assert_zero(
+			format!("vision_round_begin_{s}"),
+			[p_in[s], round_0_input[s]],
+			vision_round_begin_expr(s).convert_field(),
+		);
 	}
 
 	let perm_out = (0..N_ROUNDS).try_fold(round_0_input, |state, round_i| {
@@ -450,15 +453,25 @@ where
 	// zero check constraints
 	for s in 0..STATE_SIZE {
 		// Making sure inv_0 is the inverse of the permutation input
-		builder.assert_zero([perm_in[s], inv_0[s]], inv_constraint_expr()?);
+		builder.assert_zero(format!("inv0_{s}"), [perm_in[s], inv_0[s]], inv_constraint_expr()?);
 		// Making sure inv_1 is the inverse of round_out_0
-		builder.assert_zero([round_out_0[s], inv_1[s]], inv_constraint_expr()?);
+		builder.assert_zero(
+			format!("inv1_{s}"),
+			[round_out_0[s], inv_1[s]],
+			inv_constraint_expr()?,
+		);
 
 		// Sbox composition checks
-		builder
-			.assert_zero([s_box_out_0[s], inv_0[s]], s_box_linearized_eval_expr().convert_field());
-		builder
-			.assert_zero([inv_1[s], s_box_out_1[s]], s_box_linearized_eval_expr().convert_field());
+		builder.assert_zero(
+			format!("sbox_linearized0_{s}"),
+			[s_box_out_0[s], inv_0[s]],
+			s_box_linearized_eval_expr().convert_field(),
+		);
+		builder.assert_zero(
+			format!("sbox_linearized1_{s}"),
+			[inv_1[s], s_box_out_1[s]],
+			s_box_linearized_eval_expr().convert_field(),
+		);
 	}
 
 	Ok(perm_out)

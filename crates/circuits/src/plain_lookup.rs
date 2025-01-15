@@ -198,7 +198,11 @@ where
 		component - (bit.clone() * table + (Expr::one() - bit) * Expr::Const(balancer_value))
 	};
 	(0..LOG_MAX_MULTIPLICITY).for_each(|i| {
-		builder.assert_zero([table, bits[i], components[i]], expression.convert_field());
+		builder.assert_zero(
+			format!("lookup_{i}"),
+			[table, bits[i], components[i]],
+			expression.convert_field(),
+		);
 	});
 
 	Ok(components)

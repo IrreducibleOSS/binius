@@ -205,8 +205,11 @@ where
 	let consistency = arith_expr!([x, y] = x - y);
 
 	for byte_idx in 0..LevelOut::WIDTH {
-		builder
-			.assert_zero([ab[byte_idx], qm_plus_r[byte_idx]], consistency.clone().convert_field());
+		builder.assert_zero(
+			format!("byte_consistency_{byte_idx}"),
+			[ab[byte_idx], qm_plus_r[byte_idx]],
+			consistency.clone().convert_field(),
+		);
 	}
 
 	builder.pop_namespace();

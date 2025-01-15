@@ -41,7 +41,7 @@ use crate::{
 
 pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],
-	zero_claims: impl IntoIterator<Item = &'a Composition>,
+	zero_claims: impl IntoIterator<Item = &'a (Arc<str>, Composition)>,
 ) -> Result<(), Error>
 where
 	F: Field,
@@ -61,12 +61,12 @@ where
 
 	let multilinears = multilinears.iter().collect::<Vec<_>>();
 
-	for (i, composition) in zero_claims.into_iter().enumerate() {
+	for (name, composition) in zero_claims.into_iter() {
 		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
 		(0..(1 << n_vars)).into_par_iter().try_for_each(|j| {
 			if witness.evaluate_on_hypercube(j)? != F::ZERO {
 				return Err(Error::ZerocheckNaiveValidationFailure {
-					composition_index: i,
+					composition_name: name.to_string(),
 					vertex_index: j,
 				});
 			}
@@ -99,7 +99,7 @@ where
 	#[getset(get = "pub")]
 	multilinears: Vec<M>,
 	switchover_rounds: Vec<usize>,
-	compositions: Vec<(CompositionBase, Composition)>,
+	compositions: Vec<(Arc<str>, CompositionBase, Composition)>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	domains: Vec<InterpolationDomain<FDomain>>,
 	backend: &'a Backend,
@@ -122,7 +122,7 @@ where
 {
 	pub fn new(
 		multilinears: Vec<M>,
-		zero_claims: impl IntoIterator<Item = (CompositionBase, Composition)>,
+		zero_claims: impl IntoIterator<Item = (Arc<str>, CompositionBase, Composition)>,
 		zerocheck_challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
@@ -131,7 +131,7 @@ where
 		let n_vars = equal_n_vars_check(&multilinears)?;
 
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
-		for (composition_base, composition) in compositions.iter() {
+		for (_, composition_base, composition) in compositions.iter() {
 			if composition_base.n_vars() != multilinears.len()
 				|| composition.n_vars() != multilinears.len()
 				|| composition_base.degree() != composition.degree()
@@ -144,8 +144,11 @@ where
 		}
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
-			let compositions = compositions.iter().map(|(_, a)| a);
-			validate_witness(&multilinears, compositions)?;
+			let compositions = compositions
+				.iter()
+				.map(|(name, _, a)| (name.clone(), a))
+				.collect::<Vec<_>>();
+			validate_witness(&multilinears, &compositions)?;
 		}
 
 		small_field_embedding_degree_check::<PBase, P, _>(&multilinears)?;
@@ -155,7 +158,7 @@ where
 
 		let domains = compositions
 			.iter()
-			.map(|(_, composition)| {
+			.map(|(_, _, composition)| {
 				let degree = composition.degree();
 				let domain = evaluation_domain_factory.create(degree + 1)?;
 				Ok(domain.into())
@@ -210,8 +213,12 @@ where
 
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
-			let compositions = self.compositions.iter().map(|(_, a)| a);
-			validate_witness(&multilinears, compositions)?;
+			let compositions = self
+				.compositions
+				.iter()
+				.map(|(name, _, a)| (name.clone(), a))
+				.collect::<Vec<_>>();
+			validate_witness(&multilinears, &compositions)?;
 		}
 
 		// Evaluate zerocheck partial indicator in variables 1..n_vars
@@ -225,7 +232,10 @@ where
 		ZerocheckProver::new(
 			multilinears,
 			self.switchover_rounds,
-			self.compositions,
+			self.compositions
+				.into_iter()
+				.map(|(_, a, b)| (a, b))
+				.collect(),
 			partial_eq_ind_evals,
 			self.zerocheck_challenges,
 			claimed_sums,
@@ -257,7 +267,7 @@ where
 	fn domain_size(&self, skip_rounds: usize) -> usize {
 		self.compositions
 			.iter()
-			.map(|(composition, _)| domain_size(composition.degree(), skip_rounds))
+			.map(|(_, composition, _)| domain_size(composition.degree(), skip_rounds))
 			.max()
 			.unwrap_or(0)
 	}
@@ -277,7 +287,7 @@ where
 		let compositions_base = self
 			.compositions
 			.iter()
-			.map(|(composition_base, _)| composition_base)
+			.map(|(_, composition_base, _)| composition_base)
 			.collect::<Vec<_>>();
 
 		// Output contains values that are needed for computations that happen after
@@ -380,7 +390,10 @@ where
 		let regular_prover = ZerocheckProver::new(
 			partial_low_multilinears,
 			switchover_rounds,
-			self.compositions,
+			self.compositions
+				.into_iter()
+				.map(|(_, a, b)| (a, b))
+				.collect(),
 			partial_eq_ind_evals,
 			zerocheck_challenges,
 			claimed_prime_sums,

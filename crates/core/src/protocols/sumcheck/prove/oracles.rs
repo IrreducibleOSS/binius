@@ -63,6 +63,7 @@ where
 	for Constraint {
 		composition,
 		predicate,
+		name,
 	} in constraints
 	{
 		let composition_base = composition
@@ -72,6 +73,7 @@ where
 		match predicate {
 			ConstraintPredicate::Zero => {
 				zeros.push((
+					name,
 					ArithCircuitPoly::with_n_vars(multilinears.len(), composition_base)?,
 					ArithCircuitPoly::with_n_vars(multilinears.len(), composition)?,
 				));
@@ -113,6 +115,7 @@ where
 	for Constraint {
 		composition,
 		predicate,
+		..
 	} in constraints
 	{
 		match predicate {

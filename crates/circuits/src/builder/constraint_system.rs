@@ -143,10 +143,12 @@ where
 
 	pub fn assert_zero(
 		&mut self,
+		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
 		composition: ArithExpr<F>,
 	) {
-		self.constraints.add_zerocheck(oracle_ids, composition);
+		self.constraints
+			.add_zerocheck(name, oracle_ids, composition);
 	}
 
 	pub fn assert_not_zero(&mut self, oracle_id: OracleId) {

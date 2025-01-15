@@ -151,7 +151,11 @@ where
 			mix_shift_oracles[k + 1] = p_sub_bytes_out[i_prime * 8 + j_prime];
 		}
 		// This is not required if the columns are virtual
-		builder.assert_zero(mix_shift_oracles, mix_column_expr().convert_field());
+		builder.assert_zero(
+			"mix_column_{ij}",
+			mix_shift_oracles,
+			mix_column_expr().convert_field(),
+		);
 	}
 
 	builder.pop_namespace();
@@ -214,7 +218,7 @@ where
 		}
 	}
 
-	builder.assert_zero([input, inv], s_box_expr()?);
+	builder.assert_zero("s_box", [input, inv], s_box_expr()?);
 	builder.pop_namespace();
 	Ok(output)
 }

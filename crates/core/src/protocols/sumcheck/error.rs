@@ -35,9 +35,9 @@ pub enum Error {
 	IncorrectNumberOfEvaluators { expected: usize },
 	#[error("sumcheck naive witness validation failed: composition index {composition_index}")]
 	SumcheckNaiveValidationFailure { composition_index: usize },
-	#[error("zerocheck naive witness validation failed: composition index {composition_index}, vertex index {vertex_index}")]
+	#[error("zerocheck naive witness validation failed: {composition_name}, vertex index {vertex_index}")]
 	ZerocheckNaiveValidationFailure {
-		composition_index: usize,
+		composition_name: String,
 		vertex_index: usize,
 	},
 	#[error("nonzerocheck naive witness validation failed: oracle {oracle}, hypercube index {hypercube_index}")]

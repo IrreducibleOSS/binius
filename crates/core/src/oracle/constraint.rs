@@ -17,6 +17,7 @@ pub type TypeErasedComposition<P> = Arc<dyn CompositionPolyOS<P>>;
 /// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
 #[derive(Debug, Clone)]
 pub struct Constraint<F: Field> {
+	pub name: Arc<str>,
 	pub composition: ArithExpr<F>,
 	pub predicate: ConstraintPredicate<F>,
 }
@@ -40,6 +41,7 @@ pub struct ConstraintSet<F: Field> {
 // A deferred constraint constructor that instantiates index composition after the superset of oracles is known
 #[allow(clippy::type_complexity)]
 struct UngroupedConstraint<F: Field> {
+	name: Arc<str>,
 	oracle_ids: Vec<OracleId>,
 	composition: ArithExpr<F>,
 	predicate: ConstraintPredicate<F>,
@@ -66,6 +68,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 		sum: F,
 	) {
 		self.constraints.push(UngroupedConstraint {
+			name: "sumcheck".into(),
 			oracle_ids: oracle_ids.into_iter().collect(),
 			composition,
 			predicate: ConstraintPredicate::Sum(sum),
@@ -74,10 +77,12 @@ impl<F: Field> ConstraintSetBuilder<F> {
 
 	pub fn add_zerocheck(
 		&mut self,
+		name: impl ToString,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
 		composition: ArithExpr<F>,
 	) {
 		self.constraints.push(UngroupedConstraint {
+			name: name.to_string().into(),
 			oracle_ids: oracle_ids.into_iter().collect(),
 			composition,
 			predicate: ConstraintPredicate::Zero,
@@ -126,6 +131,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			self.constraints
 				.into_iter()
 				.map(|constraint| Constraint {
+					name: constraint.name,
 					composition: constraint
 						.composition
 						.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(
@@ -236,6 +242,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 				let constraints = constraints
 					.into_iter()
 					.map(|constraint| Constraint {
+						name: constraint.name,
 						composition: constraint
 							.composition
 							.remap_vars(&positions(&constraint.oracle_ids, &oracle_ids).expect(

@@ -286,7 +286,7 @@ mod tests {
 		let multilins =
 			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
-		let binding = [TestProductComposition::new(n_multilinears)];
+		let binding = [("test_product".into(), TestProductComposition::new(n_multilinears))];
 		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
 		let mut prove_transcript_1 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
@@ -296,7 +296,7 @@ mod tests {
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 		let reference_prover = make_regular_sumcheck_prover_for_zerocheck::<_, FDomain, _, _, _, _>(
 			multilins.clone(),
-			binding,
+			binding.into_iter().map(|(_, composition)| composition),
 			&challenges,
 			domain_factory.clone(),
 			|_| switchover_rd,
@@ -311,7 +311,7 @@ mod tests {
 		let composition = TestProductComposition::new(n_multilinears);
 		let optimized_prover = UnivariateZerocheck::<FDomain, PBase, P, _, _, _, _>::new(
 			multilins,
-			[(composition.clone(), composition)],
+			[("test_product".into(), composition.clone(), composition)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,
@@ -347,7 +347,7 @@ mod tests {
 		let multilins =
 			generate_zero_product_multilinears::<PBase, P>(&mut rng, n_vars, n_multilinears);
 
-		let binding = [TestProductComposition::new(n_multilinears)];
+		let binding = [("test_product".into(), TestProductComposition::new(n_multilinears))];
 		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
 		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
@@ -359,7 +359,7 @@ mod tests {
 		let composition = TestProductComposition::new(n_multilinears);
 		let prover = UnivariateZerocheck::<FDomain, PBase, P, _, _, _, _>::new(
 			multilins.clone(),
-			[(composition.clone(), composition)],
+			[("test_product".into(), composition.clone(), composition)],
 			&challenges,
 			domain_factory,
 			|_| switchover_rd,

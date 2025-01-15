@@ -67,6 +67,7 @@ where
 	}
 
 	builder.assert_zero(
+		"step",
 		[sum_packed, next_next_packed, enabled],
 		arith_expr!(F[a, b, enabled] = (a - b) * enabled),
 	);

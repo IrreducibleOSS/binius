@@ -20,8 +20,9 @@ where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
+	builder.push_namespace(name);
 	let log_rows = builder.log_rows([xin, yin])?;
-	let zout = builder.add_committed(name, log_rows, BinaryField1b::TOWER_LEVEL);
+	let zout = builder.add_committed("zout", log_rows, BinaryField1b::TOWER_LEVEL);
 	if let Some(witness) = builder.witness() {
 		(
 			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
@@ -35,7 +36,12 @@ where
 				*zout = (*xin) & (*yin);
 			});
 	}
-	builder.assert_zero([xin, yin, zout], arith_expr!([x, y, z] = x * y - z).convert_field());
+	builder.assert_zero(
+		"bitwise_and",
+		[xin, yin, zout],
+		arith_expr!([x, y, z] = x * y - z).convert_field(),
+	);
+	builder.pop_namespace();
 	Ok(zout)
 }
 
@@ -49,8 +55,9 @@ where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
+	builder.push_namespace(name);
 	let log_rows = builder.log_rows([xin, yin])?;
-	let zout = builder.add_linear_combination(name, log_rows, [(xin, F::ONE), (yin, F::ONE)])?;
+	let zout = builder.add_linear_combination("zout", log_rows, [(xin, F::ONE), (yin, F::ONE)])?;
 	if let Some(witness) = builder.witness() {
 		(
 			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
@@ -64,6 +71,7 @@ where
 				*zout = (*xin) ^ (*yin);
 			});
 	}
+	builder.pop_namespace();
 	Ok(zout)
 }
 
@@ -77,8 +85,9 @@ where
 	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
+	builder.push_namespace(name);
 	let log_rows = builder.log_rows([xin, yin])?;
-	let zout = builder.add_committed(name, log_rows, BinaryField1b::TOWER_LEVEL);
+	let zout = builder.add_committed("zout", log_rows, BinaryField1b::TOWER_LEVEL);
 	if let Some(witness) = builder.witness() {
 		(
 			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
@@ -93,8 +102,10 @@ where
 			});
 	}
 	builder.assert_zero(
+		"bitwise_or",
 		[xin, yin, zout],
 		arith_expr!([x, y, z] = (x + y) + (x * y) - z).convert_field(),
 	);
+	builder.pop_namespace();
 	Ok(zout)
 }

@@ -78,6 +78,7 @@ fn main() -> Result<()> {
 	}
 
 	builder.assert_zero(
+		"b32_mul",
 		[in_a, in_b, out],
 		arith_expr!([in_a, in_b, out] = in_a * in_b - out).convert_field(),
 	);
