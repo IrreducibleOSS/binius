@@ -66,20 +66,20 @@ where
 	#[inline(always)]
 	fn add_into(field_element: &Self::Data, destination: &mut Self::Data) {
 		for i in 0..Self::WIDTH {
-			destination.as_mut()[i] += field_element.as_ref()[i];
+			destination[i] += field_element[i];
 		}
 	}
 
 	#[inline(always)]
 	fn copy_into(field_element: &Self::Data, destination: &mut Self::Data) {
 		for i in 0..Self::WIDTH {
-			destination.as_mut()[i] = field_element.as_ref()[i];
+			destination[i] = field_element[i];
 		}
 	}
 
 	#[inline(always)]
 	fn sum(field_element_a: &Self::Data, field_element_b: &Self::Data) -> Self::Data {
-		Self::from_fn(|i| field_element_a.as_ref()[i] + field_element_b.as_ref()[i])
+		Self::from_fn(|i| field_element_a[i] + field_element_b[i])
 	}
 }
 
