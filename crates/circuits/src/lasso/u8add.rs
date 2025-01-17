@@ -107,7 +107,7 @@ where
 		u_to_t_mapping = u_to_t_mapping_witness;
 	}
 
-	lookup_batch.add(lookup_u, u_to_t_mapping, 1 << log_size);
+	lookup_batch.add([lookup_u], u_to_t_mapping, 1 << log_size);
 
 	builder.pop_namespace();
 	Ok((carry_out, sum))

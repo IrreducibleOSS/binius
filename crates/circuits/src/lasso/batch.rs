@@ -6,14 +6,15 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	ExtensionField, PackedFieldIndexable, TowerField,
 };
+use itertools::Itertools;
 
 use super::lasso::lasso;
 use crate::builder::ConstraintSystemBuilder;
 pub struct LookupBatch {
-	lookup_us: Vec<OracleId>,
+	lookup_us: Vec<Vec<OracleId>>,
 	u_to_t_mappings: Vec<Vec<usize>>,
 	lookup_col_lens: Vec<usize>,
-	lookup_t: OracleId,
+	lookup_t: Vec<OracleId>,
 	executed: bool,
 }
 
@@ -26,9 +27,9 @@ impl Drop for LookupBatch {
 }
 
 impl LookupBatch {
-	pub fn new(t_table_id: OracleId) -> Self {
+	pub fn new(t_oracles: impl IntoIterator<Item = OracleId>) -> Self {
 		Self {
-			lookup_t: t_table_id,
+			lookup_t: t_oracles.into_iter().collect_vec(),
 			lookup_us: vec![],
 			u_to_t_mappings: vec![],
 			lookup_col_lens: vec![],
@@ -36,13 +37,18 @@ impl LookupBatch {
 		}
 	}
 
-	pub fn add(&mut self, lookup_u: OracleId, u_to_t_mapping: Vec<usize>, lookup_u_col_len: usize) {
-		self.lookup_us.push(lookup_u);
+	pub fn add(
+		&mut self,
+		lookup_u: impl IntoIterator<Item = OracleId>,
+		u_to_t_mapping: Vec<usize>,
+		lookup_u_col_len: usize,
+	) {
+		self.lookup_us.push(lookup_u.into_iter().collect_vec());
 		self.u_to_t_mappings.push(u_to_t_mapping);
 		self.lookup_col_lens.push(lookup_u_col_len);
 	}
 
-	pub fn execute<U, F, FS, FC>(
+	pub fn execute<U, F, FC>(
 		mut self,
 		builder: &mut ConstraintSystemBuilder<U, F>,
 	) -> Result<(), anyhow::Error>
@@ -50,18 +56,17 @@ impl LookupBatch {
 		U: PackScalar<FC> + PackScalar<F>,
 		PackedType<U, FC>: PackedFieldIndexable,
 		FC: TowerField,
-		FS: TowerField,
 		F: ExtensionField<FC> + TowerField,
 	{
 		let channel = builder.add_channel();
 
-		lasso::<_, _, FS, FC>(
+		lasso::<_, _, FC>(
 			builder,
 			"batched lasso",
 			&self.lookup_col_lens,
 			&self.u_to_t_mappings,
 			&self.lookup_us,
-			self.lookup_t,
+			&self.lookup_t,
 			channel,
 		)?;
 

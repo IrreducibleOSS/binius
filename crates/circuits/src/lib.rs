@@ -91,7 +91,7 @@ mod tests {
 
 		let lookup_t =
 			lookups::u8_arithmetic::add_carryfree_lookup(&mut builder, "add cf table").unwrap();
-		let mut lookup_batch = LookupBatch::new(lookup_t);
+		let mut lookup_batch = LookupBatch::new([lookup_t]);
 		let _sum_and_cout = lasso::u8add_carryfree(
 			&mut builder,
 			&mut lookup_batch,
@@ -104,7 +104,7 @@ mod tests {
 		.unwrap();
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.execute::<_, _, BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -168,7 +168,7 @@ mod tests {
 		let mul_lookup_table =
 			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
 
-		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
 		let _product = lasso::u8mul(
 			&mut builder,
@@ -181,7 +181,7 @@ mod tests {
 		.unwrap();
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.execute::<_, _, BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -198,7 +198,7 @@ mod tests {
 		let mul_lookup_table =
 			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
 
-		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
 		for _ in 0..10 {
 			let mult_a =
@@ -218,7 +218,7 @@ mod tests {
 		}
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.execute::<_, _, BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -237,7 +237,7 @@ mod tests {
 		let mul_lookup_table =
 			lookups::u8_arithmetic::add_lookup(&mut builder, "mul table").unwrap();
 
-		let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
 		// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
 		for _ in 0..10 {
@@ -258,7 +258,7 @@ mod tests {
 		}
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)
+			.execute::<_, _, BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();

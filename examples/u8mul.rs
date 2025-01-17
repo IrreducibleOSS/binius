@@ -59,7 +59,7 @@ fn main() -> Result<()> {
 
 	let mul_lookup_table = lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
 
-	let mut lookup_batch = LookupBatch::new(mul_lookup_table);
+	let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
 	let _product = binius_circuits::lasso::u8mul(
 		&mut builder,
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 		args.n_multiplications as usize,
 	)?;
 
-	lookup_batch.execute::<_, _, BinaryField32b, BinaryField32b>(&mut builder)?;
+	lookup_batch.execute::<_, _, BinaryField32b>(&mut builder)?;
 	drop(trace_gen_scope);
 
 	let witness = builder

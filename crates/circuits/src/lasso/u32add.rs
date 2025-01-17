@@ -59,7 +59,7 @@ where
 pub struct SeveralU32add<U, F> {
 	n_lookups: Vec<usize>,
 	lookup_t: OracleId,
-	lookups_u: Vec<OracleId>,
+	lookups_u: Vec<[OracleId; 1]>,
 	u_to_t_mappings: Vec<Vec<usize>>,
 	finalized: bool,
 	_phantom: PhantomData<(U, F)>,
@@ -223,7 +223,7 @@ where
 			self.u_to_t_mappings.push(u_to_t_mapping_witness)
 		}
 
-		self.lookups_u.push(lookup_u);
+		self.lookups_u.push([lookup_u]);
 		self.n_lookups.push(1 << b8_log_size);
 
 		builder.pop_namespace();
@@ -237,13 +237,13 @@ where
 	) -> Result<()> {
 		let channel = builder.add_channel();
 		self.finalized = true;
-		lasso::<_, _, B32, B32>(
+		lasso::<_, _, B32>(
 			builder,
 			name,
 			&self.n_lookups,
 			&self.u_to_t_mappings,
 			&self.lookups_u,
-			self.lookup_t,
+			[self.lookup_t],
 			channel,
 		)
 	}

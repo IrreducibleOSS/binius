@@ -70,12 +70,12 @@ where
 		dci_lookup(builder, "dci table")?
 	};
 
-	let mut lookup_batch_mul = LookupBatch::new(lookup_t_mul);
-	let mut lookup_batch_add = LookupBatch::new(lookup_t_add);
-	let mut lookup_batch_add_carryfree = LookupBatch::new(lookup_t_add_carryfree);
+	let mut lookup_batch_mul = LookupBatch::new([lookup_t_mul]);
+	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
+	let mut lookup_batch_add_carryfree = LookupBatch::new([lookup_t_add_carryfree]);
 
 	// This batch WILL NOT get executed if we are instantiating it for 8b mul
-	let mut lookup_batch_dci = LookupBatch::new(lookup_t_dci);
+	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 
 	let mut quotient = LevelIn::default();
 	let mut remainder = LevelIn::default();
@@ -194,12 +194,12 @@ where
 		&mut lookup_batch_add_carryfree,
 	)?;
 
-	lookup_batch_mul.execute::<_, _, BinaryField32b, BinaryField32b>(builder)?;
-	lookup_batch_add.execute::<_, _, BinaryField32b, BinaryField32b>(builder)?;
-	lookup_batch_add_carryfree.execute::<_, _, BinaryField32b, BinaryField32b>(builder)?;
+	lookup_batch_mul.execute::<_, _, BinaryField32b>(builder)?;
+	lookup_batch_add.execute::<_, _, BinaryField32b>(builder)?;
+	lookup_batch_add_carryfree.execute::<_, _, BinaryField32b>(builder)?;
 
 	if LevelIn::WIDTH != 1 {
-		lookup_batch_dci.execute::<_, _, BinaryField32b, BinaryField32b>(builder)?;
+		lookup_batch_dci.execute::<_, _, BinaryField32b>(builder)?;
 	}
 
 	let consistency = arith_expr!([x, y] = x - y);

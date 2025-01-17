@@ -52,7 +52,7 @@ where
 
 	let lookup_t_add = add_lookup(&mut builder, "add table").unwrap();
 
-	let mut lookup_batch_add = LookupBatch::new(lookup_t_add);
+	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
 	let _sum_and_cout = byte_sliced_add::<_, _, TL>(
 		&mut builder,
 		"lasso_bytesliced_add",
@@ -64,9 +64,7 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_add
-		.execute::<_, _, B32, B32>(&mut builder)
-		.unwrap();
+	lookup_batch_add.execute::<_, _, B32>(&mut builder).unwrap();
 
 	let witness = builder.take_witness().unwrap();
 	let constraint_system = builder.build().unwrap();
@@ -129,8 +127,8 @@ where
 	let lookup_t_add = add_lookup(&mut builder, "add table").unwrap();
 	let lookup_t_add_carryfree = add_carryfree_lookup(&mut builder, "add table").unwrap();
 
-	let mut lookup_batch_add = LookupBatch::new(lookup_t_add);
-	let mut lookup_batch_add_carryfree = LookupBatch::new(lookup_t_add_carryfree);
+	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
+	let mut lookup_batch_add_carryfree = LookupBatch::new([lookup_t_add_carryfree]);
 
 	let _sum_and_cout = byte_sliced_add_carryfree::<_, _, TL>(
 		&mut builder,
@@ -144,11 +142,9 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_add
-		.execute::<_, _, B32, B32>(&mut builder)
-		.unwrap();
+	lookup_batch_add.execute::<_, _, B32>(&mut builder).unwrap();
 	lookup_batch_add_carryfree
-		.execute::<_, _, B32, B32>(&mut builder)
+		.execute::<_, _, B32>(&mut builder)
 		.unwrap();
 
 	let witness = builder.take_witness().unwrap();
@@ -182,7 +178,7 @@ where
 		transparent::constant(&mut builder, "zero carry", log_size, BinaryField1b::ZERO).unwrap();
 	let lookup_t_dci = dci_lookup(&mut builder, "add table").unwrap();
 
-	let mut lookup_batch_dci = LookupBatch::new(lookup_t_dci);
+	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 
 	let _sum_and_cout = byte_sliced_double_conditional_increment::<_, _, TL>(
 		&mut builder,
@@ -196,9 +192,7 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_dci
-		.execute::<_, _, B32, B32>(&mut builder)
-		.unwrap();
+	lookup_batch_dci.execute::<_, _, B32>(&mut builder).unwrap();
 
 	let witness = builder.take_witness().unwrap();
 	let constraint_system = builder.build().unwrap();
@@ -232,9 +226,9 @@ where
 	let lookup_t_add = add_lookup(&mut builder, "add lookup").unwrap();
 	let lookup_t_dci = dci_lookup(&mut builder, "dci lookup").unwrap();
 
-	let mut lookup_batch_mul = LookupBatch::new(lookup_t_mul);
-	let mut lookup_batch_add = LookupBatch::new(lookup_t_add);
-	let mut lookup_batch_dci = LookupBatch::new(lookup_t_dci);
+	let mut lookup_batch_mul = LookupBatch::new([lookup_t_mul]);
+	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
+	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 
 	let _sum_and_cout = byte_sliced_mul::<_, _, TL::Base, TL>(
 		&mut builder,

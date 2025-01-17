@@ -86,7 +86,7 @@ where
 		u_to_t_mapping = u_to_t_mapping_witness;
 	}
 
-	lookup_batch.add(lookup_u, u_to_t_mapping, n_multiplications);
+	lookup_batch.add([lookup_u], u_to_t_mapping, n_multiplications);
 
 	builder.pop_namespace();
 	Ok(product)

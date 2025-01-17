@@ -16,7 +16,7 @@ use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::Canon
 use binius_field::{
 	arch::OptimalUnderlier,
 	tower_levels::{TowerLevel4, TowerLevel8},
-	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b, Field,
+	BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b, Field,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -81,9 +81,9 @@ fn main() -> Result<()> {
 	let lookup_t_add = add_lookup(&mut builder, "add lookup")?;
 	let lookup_t_dci = dci_lookup(&mut builder, "dci lookup")?;
 
-	let mut lookup_batch_mul = LookupBatch::new(lookup_t_mul);
-	let mut lookup_batch_add = LookupBatch::new(lookup_t_add);
-	let mut lookup_batch_dci = LookupBatch::new(lookup_t_dci);
+	let mut lookup_batch_mul = LookupBatch::new([lookup_t_mul]);
+	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
+	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 	let _mul_and_cout = byte_sliced_mul::<_, _, TowerLevel4, TowerLevel8>(
 		&mut builder,
 		"lasso_bytesliced_mul",
@@ -95,9 +95,9 @@ fn main() -> Result<()> {
 		&mut lookup_batch_add,
 		&mut lookup_batch_dci,
 	)?;
-	lookup_batch_mul.execute::<U, BinaryField128b, BinaryField16b, BinaryField32b>(&mut builder)?;
-	lookup_batch_add.execute::<U, BinaryField128b, BinaryField16b, BinaryField32b>(&mut builder)?;
-	lookup_batch_dci.execute::<U, BinaryField128b, BinaryField16b, BinaryField32b>(&mut builder)?;
+	lookup_batch_mul.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
+	lookup_batch_add.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
+	lookup_batch_dci.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
 
 	drop(trace_gen_scope);
 
