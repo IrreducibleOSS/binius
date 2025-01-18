@@ -987,64 +987,68 @@ unsafe fn interleave_bits_imm<const BLOCK_LEN: i32>(
 	(a_prime, b_prime)
 }
 
-static LOG_B8_1: [__m256i; 16] = precompute_spread_mask::<16>(1, 3);
-static LOG_B8_2: [__m256i; 8] = precompute_spread_mask::<8>(2, 3);
-static LOG_B8_3: [__m256i; 4] = precompute_spread_mask::<4>(3, 3);
-static LOG_B8_4: [__m256i; 2] = precompute_spread_mask::<2>(4, 3);
+cfg_if! {
+	if #[cfg(target_feature = "avx512f")] {
+		static LOG_B8_1: [__m256i; 16] = precompute_spread_mask::<16>(1, 3);
+		static LOG_B8_2: [__m256i; 8] = precompute_spread_mask::<8>(2, 3);
+		static LOG_B8_3: [__m256i; 4] = precompute_spread_mask::<4>(3, 3);
+		static LOG_B8_4: [__m256i; 2] = precompute_spread_mask::<2>(4, 3);
 
-static LOG_B16_1: [__m256i; 8] = precompute_spread_mask::<8>(1, 4);
-static LOG_B16_2: [__m256i; 4] = precompute_spread_mask::<4>(2, 4);
-static LOG_B16_3: [__m256i; 2] = precompute_spread_mask::<2>(3, 4);
+		static LOG_B16_1: [__m256i; 8] = precompute_spread_mask::<8>(1, 4);
+		static LOG_B16_2: [__m256i; 4] = precompute_spread_mask::<4>(2, 4);
+		static LOG_B16_3: [__m256i; 2] = precompute_spread_mask::<2>(3, 4);
 
-static LOG_B32_1: [__m256i; 4] = precompute_spread_mask::<4>(1, 5);
-static LOG_B32_2: [__m256i; 2] = precompute_spread_mask::<2>(2, 5);
+		static LOG_B32_1: [__m256i; 4] = precompute_spread_mask::<4>(1, 5);
+		static LOG_B32_2: [__m256i; 2] = precompute_spread_mask::<2>(2, 5);
 
-static LOG_B64_1: [__m256i; 2] = precompute_spread_mask::<2>(1, 6);
+		static LOG_B64_1: [__m256i; 2] = precompute_spread_mask::<2>(1, 6);
 
-const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
-	log_block_len: usize,
-	t_log_bits: usize,
-) -> [__m256i; BLOCK_IDX_AMOUNT] {
-	let element_log_width = t_log_bits - 3;
+		const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
+			log_block_len: usize,
+			t_log_bits: usize,
+		) -> [__m256i; BLOCK_IDX_AMOUNT] {
+			let element_log_width = t_log_bits - 3;
 
-	let element_width = 1 << element_log_width;
+			let element_width = 1 << element_log_width;
 
-	let block_size = 1 << (log_block_len + element_log_width);
-	let repeat = 1 << (5 - element_log_width - log_block_len);
-	let mut masks = [[0u8; 32]; BLOCK_IDX_AMOUNT];
+			let block_size = 1 << (log_block_len + element_log_width);
+			let repeat = 1 << (5 - element_log_width - log_block_len);
+			let mut masks = [[0u8; 32]; BLOCK_IDX_AMOUNT];
 
-	let mut block_idx = 0;
+			let mut block_idx = 0;
 
-	while block_idx < BLOCK_IDX_AMOUNT {
-		let base = block_idx * block_size;
-		let mut j = 0;
-		while j < 32 {
-			masks[block_idx][j] =
-				(base + ((j / element_width) / repeat) * element_width + j % element_width) as u8;
-			j += 1;
-		}
-		block_idx += 1;
-	}
-	let mut m256_masks = [m256_from_u128s!(0, 0,); BLOCK_IDX_AMOUNT];
-
-	let mut block_idx = 0;
-
-	while block_idx < BLOCK_IDX_AMOUNT {
-		let mut u128s = [0; 2];
-		let mut i = 0;
-		while i < 2 {
-			unsafe {
-				u128s[i] = u128::from_le_bytes(
-					*(masks[block_idx].as_ptr().add(16 * i) as *const [u8; 16]),
-				);
+			while block_idx < BLOCK_IDX_AMOUNT {
+				let base = block_idx * block_size;
+				let mut j = 0;
+				while j < 32 {
+					masks[block_idx][j] =
+						(base + ((j / element_width) / repeat) * element_width + j % element_width) as u8;
+					j += 1;
+				}
+				block_idx += 1;
 			}
-			i += 1;
-		}
-		m256_masks[block_idx] = m256_from_u128s!(u128s[0], u128s[1],);
-		block_idx += 1;
-	}
+			let mut m256_masks = [m256_from_u128s!(0, 0,); BLOCK_IDX_AMOUNT];
 
-	m256_masks
+			let mut block_idx = 0;
+
+			while block_idx < BLOCK_IDX_AMOUNT {
+				let mut u128s = [0; 2];
+				let mut i = 0;
+				while i < 2 {
+					unsafe {
+						u128s[i] = u128::from_le_bytes(
+							*(masks[block_idx].as_ptr().add(16 * i) as *const [u8; 16]),
+						);
+					}
+					i += 1;
+				}
+				m256_masks[block_idx] = m256_from_u128s!(u128s[0], u128s[1],);
+				block_idx += 1;
+			}
+
+			m256_masks
+		}
+	}
 }
 
 impl_iteration!(M256,
