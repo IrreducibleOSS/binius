@@ -18,10 +18,10 @@ use crate::{
 };
 
 #[instrument(skip_all, level = "debug")]
-pub fn construct_grand_product_witnesses<'a, U, F>(
+pub fn construct_grand_product_witnesses<U, F>(
 	ids: &[OracleId],
-	witness_index: &MultilinearExtensionIndex<'a, U, F>,
-) -> Result<Vec<GrandProductWitness<'a, PackedType<U, F>>>, Error>
+	witness_index: &MultilinearExtensionIndex<U, F>,
+) -> Result<Vec<GrandProductWitness<PackedType<U, F>>>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: Field,

@@ -33,8 +33,8 @@ use crate::{
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
-pub fn batch_prove<'a, F, P, FDomain, Transcript, Backend>(
-	witnesses: impl IntoIterator<Item = GrandProductWitness<'a, P>>,
+pub fn batch_prove<F, P, FDomain, Transcript, Backend>(
+	witnesses: impl IntoIterator<Item = GrandProductWitness<P>>,
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	mut transcript: Transcript,
@@ -186,7 +186,7 @@ where
 	/// Create a new GrandProductProverState
 	fn new(
 		claim: &GrandProductClaim<F>,
-		witness: &'a GrandProductWitness<'a, P>,
+		witness: &'a GrandProductWitness<P>,
 		backend: Backend,
 	) -> Result<Self, Error> {
 		let n_vars = claim.n_vars;

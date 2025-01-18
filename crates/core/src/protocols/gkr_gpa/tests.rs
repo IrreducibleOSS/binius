@@ -57,7 +57,7 @@ struct CreateClaimsWitnessesOutput<
 	F: TowerField,
 > {
 	new_claims: Vec<GrandProductClaim<F>>,
-	new_witnesses: Vec<GrandProductWitness<'a, P>>,
+	new_witnesses: Vec<GrandProductWitness<P>>,
 	oracle_set: MultilinearOracleSet<F>,
 	witness_index: MultilinearExtensionIndex<'a, U, F>,
 	rng: StdRng,

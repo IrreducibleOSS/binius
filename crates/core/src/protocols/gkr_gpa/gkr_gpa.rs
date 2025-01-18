@@ -22,14 +22,14 @@ pub struct GrandProductClaim<F: Field> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GrandProductWitness<'a, PW: PackedField> {
-	poly: MultilinearWitness<'a, PW>,
+pub struct GrandProductWitness<PW: PackedField> {
+	n_vars: usize,
 	circuit_evals: Vec<Vec<PW>>,
 }
 
-impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
+impl<PW: PackedField> GrandProductWitness<PW> {
 	#[instrument(skip_all, level = "debug", name = "GrandProductWitness::new")]
-	pub fn new(poly: MultilinearWitness<'a, PW>) -> Result<Self, Error> {
+	pub fn new(poly: MultilinearWitness<PW>) -> Result<Self, Error> {
 		// Compute the circuit layers from bottom to top
 		// TODO: Why does this fully copy the input layer?
 		let mut input_layer = zeroed_vec(1 << poly.n_vars().saturating_sub(PW::LOG_WIDTH));
@@ -88,14 +88,14 @@ impl<'a, PW: PackedField> GrandProductWitness<'a, PW> {
 		// Reverse the layers
 		all_layers.reverse();
 		Ok(Self {
-			poly,
+			n_vars: poly.n_vars(),
 			circuit_evals: all_layers,
 		})
 	}
 
 	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
 	pub fn n_vars(&self) -> usize {
-		self.poly.n_vars()
+		self.n_vars
 	}
 
 	/// Returns the evaluation of the GKR grand product circuit
