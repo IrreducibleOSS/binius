@@ -1,8 +1,14 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == 'main'
+
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/toolchains/cargo"
   RUSTUP_HOME: "$CI_PROJECT_DIR/toolchains"
   GIT_CLEAN_FLAGS: "-ffdx --exclude toolchains"
   FF_TIMESTAMPS: true
+
 
 stages:
   - lint
