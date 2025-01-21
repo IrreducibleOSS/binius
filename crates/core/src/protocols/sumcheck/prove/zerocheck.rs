@@ -387,7 +387,7 @@ where
 
 		// This is also regular multilinear zerocheck constructor, but "jump started" in round
 		// `skip_rounds` while using witness with a projected univariate round.
-		// NB: first round evaluator has to be overriden due to issues proving
+		// NB: first round evaluator has to be overridden due to issues proving
 		// `P: RepackedExtension<P>` relation in the generic context, as well as the need
 		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
 		let regular_prover = ZerocheckProver::new(
