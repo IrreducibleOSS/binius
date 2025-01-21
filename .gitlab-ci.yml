@@ -2,6 +2,7 @@ variables:
   CARGO_HOME: "$CI_PROJECT_DIR/toolchains/cargo"
   RUSTUP_HOME: "$CI_PROJECT_DIR/toolchains"
   GIT_CLEAN_FLAGS: "-ffdx --exclude toolchains"
+  FF_TIMESTAMPS: true
 
 stages:
   - lint
@@ -13,9 +14,9 @@ stages:
 .job_template_amd:
   image: rustlang/rust:nightly
   variables:
-    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-c6i-large"
-    KUBERNETES_CPU_REQUEST: "1"
-    KUBERNETES_MEMORY_REQUEST: "4Gi"
+    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-c7i-2xlarge"
+    KUBERNETES_CPU_REQUEST: "6"
+    KUBERNETES_MEMORY_REQUEST: "14Gi"
     GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_amd"
   tags:
     - k8s
@@ -34,10 +35,10 @@ stages:
 .job_template_arm:
   image: rustlang/rust:nightly
   variables:
-    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-t4g-xlarge"
+    KUBERNETES_NODE_SELECTOR_INSTANCE_TYPE: "ulvt-node-pool=ulvt-c8g-2xlarge"
     KUBERNETES_NODE_SELECTOR_ARCH: 'kubernetes.io/arch=arm64'
-    KUBERNETES_CPU_REQUEST: "2"
-    KUBERNETES_MEMORY_REQUEST: "4Gi"
+    KUBERNETES_CPU_REQUEST: "6"
+    KUBERNETES_MEMORY_REQUEST: "14Gi"
     GIT_CLONE_PATH: "$CI_BUILDS_DIR/binius_arm"
   before_script:
     - if [ "$(uname -m)" != "aarch64" ]; then echo "This job is intended to run on ARM architecture only."; exit 1; fi
