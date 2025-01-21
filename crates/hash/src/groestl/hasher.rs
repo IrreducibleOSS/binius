@@ -300,7 +300,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_aes_binary_convertion() {
+	fn test_aes_binary_conversion() {
 		let mut rng = thread_rng();
 		let input_aes: [PackedAESBinaryField32x8b; 90] =
 			array::from_fn(|_| PackedAESBinaryField32x8b::random(&mut rng));
