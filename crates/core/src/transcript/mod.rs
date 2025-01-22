@@ -31,6 +31,7 @@ use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
 #[derive(Debug, Default)]
 pub struct TranscriptWriter<Challenger> {
 	combined: FiatShamirBuf<BytesMut, Challenger>,
+	debug_assertions: bool,
 }
 
 /// Writable(Prover) advice that `CanWrite`
@@ -39,6 +40,7 @@ pub struct TranscriptWriter<Challenger> {
 #[derive(Debug, Default)]
 pub struct AdviceWriter {
 	buffer: BytesMut,
+	debug_assertions: bool,
 }
 
 /// Readable(Verifier) transcript over some Challenger that `CanRead` and `CanSample<F: TowerField>`
@@ -48,6 +50,7 @@ pub struct AdviceWriter {
 #[derive(Debug)]
 pub struct TranscriptReader<Challenger> {
 	combined: FiatShamirBuf<Bytes, Challenger>,
+	debug_assertions: bool,
 }
 
 /// Readable(Verifier) advice that `CanRead`
@@ -57,6 +60,7 @@ pub struct TranscriptReader<Challenger> {
 #[derive(Debug)]
 pub struct AdviceReader {
 	buffer: Bytes,
+	debug_assertions: bool,
 }
 
 /// Helper struct combining Transcript and Advice data to create a Proof object
@@ -117,7 +121,10 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 
 impl<Challenger: Default> TranscriptWriter<Challenger> {
 	pub fn new() -> Self {
-		Self::default()
+		Self {
+			combined: Default::default(),
+			debug_assertions: cfg!(debug_assertions),
+		}
 	}
 
 	pub fn finalize(self) -> Vec<u8> {
@@ -127,11 +134,18 @@ impl<Challenger: Default> TranscriptWriter<Challenger> {
 	pub fn into_reader(self) -> TranscriptReader<Challenger> {
 		TranscriptReader::new(self.finalize())
 	}
+
+	pub fn set_debug(&mut self, debug: bool) {
+		self.debug_assertions = debug;
+	}
 }
 
 impl AdviceWriter {
 	pub fn new() -> Self {
-		Self::default()
+		Self {
+			buffer: Default::default(),
+			debug_assertions: cfg!(debug_assertions),
+		}
 	}
 
 	pub fn finalize(self) -> Vec<u8> {
@@ -140,6 +154,10 @@ impl AdviceWriter {
 
 	pub fn into_reader(self) -> AdviceReader {
 		AdviceReader::new(self.finalize())
+	}
+
+	pub fn set_debug(&mut self, debug: bool) {
+		self.debug_assertions = debug;
 	}
 }
 
@@ -166,6 +184,7 @@ impl<Challenger: Default> TranscriptReader<Challenger> {
 				challenger: Challenger::default(),
 				buffer: Bytes::from(vec),
 			},
+			debug_assertions: cfg!(debug_assertions),
 		}
 	}
 
@@ -176,6 +195,10 @@ impl<Challenger: Default> TranscriptReader<Challenger> {
 			});
 		}
 		Ok(())
+	}
+
+	pub fn set_debug(&mut self, debug: bool) {
+		self.debug_assertions = debug;
 	}
 }
 
@@ -203,6 +226,7 @@ impl AdviceReader {
 	pub fn new(vec: Vec<u8>) -> Self {
 		Self {
 			buffer: Bytes::from(vec),
+			debug_assertions: cfg!(debug_assertions),
 		}
 	}
 
@@ -213,6 +237,10 @@ impl AdviceReader {
 			});
 		}
 		Ok(())
+	}
+
+	pub fn set_debug(&mut self, debug: bool) {
+		self.debug_assertions = debug;
 	}
 }
 
@@ -284,17 +312,37 @@ pub trait CanRead {
 		}
 		Ok(packed)
 	}
+
+	fn read_debug(&mut self, msg: &str);
 }
 
 impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
 	fn buffer(&mut self) -> impl Buf + '_ {
 		&mut self.combined
 	}
+
+	fn read_debug(&mut self, msg: &str) {
+		if self.debug_assertions {
+			let msg_bytes = msg.as_bytes();
+			let mut buffer = vec![0; msg_bytes.len()];
+			assert!(self.read_bytes(&mut buffer).is_ok());
+			assert_eq!(msg_bytes, buffer);
+		}
+	}
 }
 
 impl CanRead for AdviceReader {
 	fn buffer(&mut self) -> impl Buf + '_ {
 		&mut self.buffer
+	}
+
+	fn read_debug(&mut self, msg: &str) {
+		if self.debug_assertions {
+			let msg_bytes = msg.as_bytes();
+			let mut buffer = vec![0; msg_bytes.len()];
+			assert!(self.read_bytes(&mut buffer).is_ok());
+			assert_eq!(msg_bytes, buffer);
+		}
 	}
 }
 
@@ -342,17 +390,31 @@ pub trait CanWrite {
 			self.write_packed(packed)
 		}
 	}
+
+	fn write_debug(&mut self, msg: &str);
 }
 
 impl<Challenger_: Challenger> CanWrite for TranscriptWriter<Challenger_> {
 	fn buffer(&mut self) -> impl BufMut + '_ {
 		&mut self.combined
 	}
+
+	fn write_debug(&mut self, msg: &str) {
+		if self.debug_assertions {
+			self.write_bytes(msg.as_bytes())
+		}
+	}
 }
 
 impl CanWrite for AdviceWriter {
 	fn buffer(&mut self) -> impl BufMut + '_ {
 		&mut self.buffer
+	}
+
+	fn write_debug(&mut self, msg: &str) {
+		if self.debug_assertions {
+			self.write_bytes(msg.as_bytes())
+		}
 	}
 }
 
@@ -564,5 +626,24 @@ mod tests {
 		}
 
 		transcript.finalize().unwrap();
+	}
+
+	#[test]
+	fn test_transcript_debug() {
+		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+
+		transcript.write_debug("test_transcript_debug");
+		transcript.into_reader().read_debug("test_transcript_debug");
+	}
+
+	#[test]
+	#[should_panic]
+	fn test_transcript_debug_fail() {
+		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+
+		transcript.write_debug("test_transcript_debug");
+		transcript
+			.into_reader()
+			.read_debug("test_transcript_debug_should_fail");
 	}
 }
