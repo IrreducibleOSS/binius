@@ -2,10 +2,7 @@
 
 use std::{cmp::Reverse, iter};
 
-use binius_field::{
-	as_packed_field::PackedType, BinaryField, PackedField, PackedFieldIndexable, RepackedExtension,
-	TowerField,
-};
+use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
@@ -62,8 +59,6 @@ where
 	Hash: Digest + BlockSizeUser,
 	Compress: PseudoCompressionFunction<Output<Hash>, 2> + Default + Sync,
 	Challenger_: Challenger + Default,
-	PackedType<U, Tower::B128>:
-		PackedTop<Tower> + PackedFieldIndexable + RepackedExtension<PackedType<U, Tower::B128>>,
 {
 	let ConstraintSystem {
 		mut oracles,
