@@ -290,16 +290,7 @@ pub trait CanRead {
 	}
 
 	fn read_packed<P: PackedField<Scalar: TowerField>>(&mut self) -> Result<P, Error> {
-		let mut pack = P::default();
-
-		for i in 0..P::WIDTH {
-			let x = self.read_scalar()?;
-			unsafe {
-				pack.set_unchecked(i, x);
-			};
-		}
-
-		Ok(pack)
+		P::try_from_fn(|_| self.read_scalar())
 	}
 
 	fn read_packed_slice<P: PackedField<Scalar: TowerField>>(
