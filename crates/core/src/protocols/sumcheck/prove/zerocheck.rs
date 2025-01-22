@@ -12,11 +12,11 @@ use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
 	MultilinearPoly, MultilinearQuery,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
 use itertools::izip;
-use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 

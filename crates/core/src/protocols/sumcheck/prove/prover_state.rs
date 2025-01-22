@@ -12,10 +12,10 @@ use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMult
 use binius_math::{
 	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use getset::CopyGetters;
 use itertools::izip;
-use rayon::prelude::*;
 use tracing::instrument;
 
 use crate::{

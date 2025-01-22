@@ -5,8 +5,8 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_macros::arith_expr;
+use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
-use rayon::prelude::*;
 
 use crate::builder::ConstraintSystemBuilder;
 

@@ -12,11 +12,11 @@ use binius_hash::PseudoCompressionFunction;
 use binius_math::{
 	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use either::Either;
 use itertools::{chain, izip};
-use rayon::prelude::*;
 use tracing::instrument;
 
 use super::{
@@ -93,7 +93,7 @@ where
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
-		rayon_threads = rayon::current_num_threads(),
+		rayon_threads = binius_maybe_rayon::current_num_threads(),
 		"using computation backend: {backend:?}"
 	);
 

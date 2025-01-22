@@ -5,8 +5,8 @@ use std::{iter, sync::Arc};
 use binius_field::{PackedField, PackedFieldIndexable, TowerField};
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{MLEDirectAdapter, MultilinearPoly, MultilinearQuery};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
-use rayon::prelude::*;
 use tracing::instrument;
 
 use super::{

@@ -3,9 +3,9 @@
 use std::cmp::max;
 
 use binius_field::{Field, PackedField};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use rayon::prelude::*;
 
 use crate::Error;
 

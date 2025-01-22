@@ -2,8 +2,8 @@
 
 use std::iter;
 
+use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::checked_int_div;
-use rayon::prelude::*;
 
 use crate::{packed::get_packed_slice_unchecked, ExtensionField, Field, PackedField};
 

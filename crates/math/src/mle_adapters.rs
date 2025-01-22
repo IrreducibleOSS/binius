@@ -8,8 +8,8 @@ use binius_field::{
 	},
 	ExtensionField, Field, PackedField, RepackedExtension,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use rayon::prelude::*;
 
 use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
 

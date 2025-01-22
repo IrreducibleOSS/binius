@@ -3,7 +3,7 @@
 use core::slice;
 use std::ops::{Index, IndexMut, Range};
 
-use rayon::prelude::*;
+use binius_maybe_rayon::prelude::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

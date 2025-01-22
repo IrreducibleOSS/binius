@@ -5,13 +5,13 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
-binius_utils = { path = "../utils" }
+binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
+binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 derive_more.workspace = true
 rand.workspace = true
-rayon.workspace = true
 seq-macro.workspace = true
 subtle.workspace = true
 thiserror.workspace = true

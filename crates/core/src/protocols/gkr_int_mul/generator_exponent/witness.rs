@@ -6,11 +6,11 @@ use binius_field::{
 	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, Field, PackedExtension,
 	PackedField, PackedFieldIndexable,
 };
-use bytemuck::zeroed_vec;
-use rayon::{
+use binius_maybe_rayon::{
 	prelude::{IndexedParallelIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
+use bytemuck::zeroed_vec;
 
 use crate::{protocols::gkr_gpa::Error, witness::MultilinearWitness};
 pub struct GeneratorExponentWitness<

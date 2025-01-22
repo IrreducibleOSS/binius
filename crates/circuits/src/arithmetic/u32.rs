@@ -6,8 +6,8 @@ use binius_field::{
 	ExtensionField, Field, TowerField,
 };
 use binius_macros::arith_expr;
+use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
-use rayon::prelude::*;
 
 use crate::{builder::ConstraintSystemBuilder, transparent};
 

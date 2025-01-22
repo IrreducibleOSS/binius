@@ -4,10 +4,10 @@ use std::iter::successors;
 
 use binius_field::{Field, PackedField, TowerField};
 use binius_math::MultilinearExtension;
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::{izip, Itertools};
-use rayon::prelude::*;
 
 use crate::polynomial::{Error, MultivariatePoly};
 

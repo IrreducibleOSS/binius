@@ -9,7 +9,7 @@ use binius_field::{ExtensionField, Field, PackedExtension, PackedField, Repacked
 use binius_math::{
 	CompositionPolyOS, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
-use rayon::iter::FromParallelIterator;
+use binius_maybe_rayon::iter::FromParallelIterator;
 use tracing::instrument;
 
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};

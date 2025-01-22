@@ -4,9 +4,9 @@ use std::{array, fmt::Debug, mem::MaybeUninit};
 
 use binius_field::{serialize_canonical, TowerField};
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
+use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
 use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
-use rayon::{prelude::*, slice::ParallelSlice};
 use tracing::instrument;
 
 use super::errors::Error;

@@ -14,7 +14,7 @@ binius_hal = { path = "../crates/hal" }
 binius_hash = { path = "../crates/hash" }
 binius_macros = { path = "../crates/macros" }
 binius_math = { path = "../crates/math" }
-binius_utils = { path = "../crates/utils" }
+binius_utils = { path = "../crates/utils", default-features = false }
 bumpalo.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.20", features = ["derive"] }
@@ -80,6 +80,9 @@ path = "b32_mul.rs"
 needless_range_loop = "allow"
 
 [features]
+default = ["rayon"]
 aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
+rayon = ["binius_utils/rayon"]
+

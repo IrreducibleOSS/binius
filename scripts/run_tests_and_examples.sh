@@ -4,11 +4,12 @@ set -e
 
 export RUST_BACKTRACE=full
 CARGO_PROFILE="${CARGO_PROFILE:-test}"
+CARGO_EXTRA_FLAGS="${CARGO_EXTRA_FLAGS:-}"
 TOOLCHAIN="${CARGO_STABLE:+ +$RUST_VERSION}"
 PACKAGES="${CARGO_STABLE:+ -p binius_utils -p binius_hash -p binius_field -p binius_core}"
 FEATURES="${CARGO_STABLE:+ --features=stable_only}"
 
-cargo $TOOLCHAIN test --profile $CARGO_PROFILE $PACKAGES $FEATURES
+cargo $TOOLCHAIN test --profile $CARGO_PROFILE $PACKAGES $FEATURES $CARGO_EXTRA_FLAGS
 
 # Run examples only if CARGO_STABLE is not set since now they won't compile with stable toolchain.
 if [ -z "$CARGO_STABLE" ]; then
@@ -21,6 +22,6 @@ if [ -z "$CARGO_STABLE" ]; then
     # Cargo plugins such as "cargo-examples" do suport it but without a possibility to specify "release" profile.
     for example in examples/*.rs
     do
-        cargo run --profile $CARGO_PROFILE --example "$(basename "${example%.rs}")"
+        cargo run --profile $CARGO_PROFILE --example "$(basename "${example%.rs}")" $CARGO_EXTRA_FLAGS
     done
 fi

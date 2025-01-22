@@ -9,9 +9,9 @@ use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
-use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use tracing::{debug_span, instrument};
 
@@ -251,7 +251,7 @@ where
 	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
 		self.update_eq_ind_eval(challenge);
 		let n_rounds_remaining = self.n_rounds_remaining();
-		rayon::join(
+		binius_maybe_rayon::join(
 			|| self.state.fold(challenge),
 			|| {
 				common::fold_partial_eq_ind::<P, Backend>(

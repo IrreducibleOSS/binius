@@ -2,7 +2,7 @@
 
 use binius_field::{packed::get_packed_slice, Field, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
-use rayon::prelude::*;
+use binius_maybe_rayon::prelude::*;
 use tracing::instrument;
 
 use crate::protocols::utils::packed_from_fn_with_offset;

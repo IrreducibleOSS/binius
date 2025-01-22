@@ -10,8 +10,8 @@ use binius_field::{
 	AESTowerField8b, BinaryField1b, BinaryField8b, ExtensionField, PackedField, TowerField,
 };
 use binius_math::ArithExpr;
+use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
-use rayon::prelude::*;
 
 use crate::{builder::ConstraintSystemBuilder, transparent, unconstrained::unconstrained};
 

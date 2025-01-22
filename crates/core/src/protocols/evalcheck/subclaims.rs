@@ -20,8 +20,8 @@ use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use rayon::prelude::*;
 
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{

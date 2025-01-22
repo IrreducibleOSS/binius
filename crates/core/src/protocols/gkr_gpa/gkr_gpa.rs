@@ -3,9 +3,9 @@
 use std::slice;
 
 use binius_field::{packed::get_packed_slice, Field, PackedField};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use rayon::prelude::*;
 use tracing::{debug_span, instrument};
 
 use super::{packed_field_storage::PackedFieldStorage, Error};

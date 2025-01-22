@@ -2,9 +2,9 @@
 
 use binius_field::TowerField;
 use binius_hash::PseudoCompressionFunction;
+use binius_maybe_rayon::iter::IndexedParallelIterator;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use getset::Getters;
-use rayon::iter::IndexedParallelIterator;
 use tracing::instrument;
 
 use super::{

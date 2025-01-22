@@ -11,9 +11,9 @@ use binius_math::{
 	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
 };
+use binius_maybe_rayon::prelude::*;
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};

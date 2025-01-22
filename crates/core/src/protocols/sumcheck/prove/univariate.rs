@@ -11,11 +11,11 @@ use binius_math::{
 	CompositionPolyOS, Error as MathError, EvaluationDomainFactory,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, OddInterpolate, SingleThreadedNTT};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use rayon::prelude::*;
 use stackalloc::stackalloc_with_iter;
 use tracing::instrument;
 use transpose::transpose;

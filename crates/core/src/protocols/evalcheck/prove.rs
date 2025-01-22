@@ -7,9 +7,9 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::MultilinearExtension;
+use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
 use itertools::izip;
-use rayon::prelude::*;
 use tracing::instrument;
 
 use super::{

@@ -1,6 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use rayon::prelude::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use binius_maybe_rayon::prelude::{
+	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 
 use crate::{Error, ExtensionField, Field, PackedExtension, PackedField};
 

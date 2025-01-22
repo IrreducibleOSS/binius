@@ -12,7 +12,8 @@ binius_hal = { path = "../hal" }
 binius_hash = { path = "../hash" }
 binius_math = { path = "../math" }
 binius_ntt = { path = "../ntt" }
-binius_utils = { path = "../utils" }
+binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
+binius_utils = { path = "../utils", default-features = false }
 bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 derive_more.workspace = true
@@ -21,7 +22,6 @@ either.workspace = true
 getset.workspace = true
 itertools.workspace = true
 rand.workspace = true
-rayon.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

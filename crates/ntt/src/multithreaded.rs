@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, PackedField};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::rayon::get_log_max_threads;
-use rayon::prelude::*;
 
 use super::{
 	error::Error,

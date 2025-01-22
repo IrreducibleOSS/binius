@@ -211,7 +211,7 @@ where
 #[cfg(test)]
 pub mod test_plain_lookup {
 	use binius_field::BinaryField32b;
-	use rayon::prelude::*;
+	use binius_maybe_rayon::prelude::*;
 
 	use super::*;
 	use crate::transparent;

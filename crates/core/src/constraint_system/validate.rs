@@ -267,8 +267,8 @@ fn check_eval<F: TowerField>(
 pub mod nonzerocheck {
 	use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
 	use binius_math::MultilinearPoly;
+	use binius_maybe_rayon::prelude::*;
 	use binius_utils::bail;
-	use rayon::prelude::*;
 
 	use crate::{
 		oracle::{MultilinearOracleSet, OracleId},

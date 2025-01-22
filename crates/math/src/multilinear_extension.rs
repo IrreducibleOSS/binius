@@ -9,9 +9,9 @@ use binius_field::{
 	util::inner_product_par,
 	ExtensionField, Field, PackedField,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
 use bytemuck::zeroed_vec;
-use rayon::prelude::*;
 use tracing::instrument;
 
 use crate::{fold, Error, MultilinearQueryRef, PackingDeref};

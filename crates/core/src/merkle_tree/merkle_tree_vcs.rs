@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use rayon::iter::IndexedParallelIterator;
+use binius_maybe_rayon::iter::IndexedParallelIterator;
 
 use super::errors::Error;
 use crate::transcript::{CanRead, CanWrite};

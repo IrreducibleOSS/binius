@@ -7,9 +7,9 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
-use rayon::prelude::*;
 
 use super::error::Error;
 use crate::{

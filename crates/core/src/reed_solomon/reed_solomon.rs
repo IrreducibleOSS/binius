@@ -13,10 +13,10 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, PackedField};
+use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
 use binius_utils::bail;
 use getset::CopyGetters;
-use rayon::prelude::*;
 
 use crate::linear_code::LinearCode;
 

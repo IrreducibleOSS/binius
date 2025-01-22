@@ -2,10 +2,10 @@
 
 use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
+use binius_maybe_rayon::prelude::*;
 use binius_utils::{bail, serialization::SerializeBytes};
 use bytemuck::zeroed_vec;
 use itertools::izip;
-use rayon::prelude::*;
 use tracing::instrument;
 
 use super::{
@@ -130,7 +130,7 @@ pub struct CommitOutput<P, VCSCommitment, VCSCommitted> {
 pub fn to_par_scalar_big_chunks<P>(
 	packed_slice: &[P],
 	chunk_size: usize,
-) -> impl IndexedParallelIterator<Item = impl Iterator<Item = P::Scalar> + Send + '_>
+) -> impl IndexedParallelIterator<Item: Iterator<Item = P::Scalar> + Send + '_>
 where
 	P: PackedField,
 {
@@ -142,7 +142,7 @@ where
 pub fn to_par_scalar_small_chunks<P>(
 	packed_slice: &[P],
 	chunk_size: usize,
-) -> impl IndexedParallelIterator<Item = impl Iterator<Item = P::Scalar> + Send + '_>
+) -> impl IndexedParallelIterator<Item: Iterator<Item = P::Scalar> + Send + '_>
 where
 	P: PackedField,
 {

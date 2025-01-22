@@ -11,13 +11,13 @@ use binius_field::{
 	PackedBinaryField256x1b, PackedBinaryField32x1b, PackedBinaryField512x1b,
 	PackedBinaryField64x1b, PackedBinaryField8x1b, PackedField,
 };
-use binius_utils::bail;
-use bytemuck::Pod;
-use itertools::max;
-use rayon::{
+use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
+use binius_utils::bail;
+use bytemuck::Pod;
+use itertools::max;
 
 use crate::Error;
 

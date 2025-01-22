@@ -6,9 +6,9 @@ use binius_field::{
 	ExtensionField, TowerField,
 };
 use binius_macros::arith_expr;
+use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
 use rand::{thread_rng, Rng};
-use rayon::prelude::*;
 
 use crate::{arithmetic, builder::ConstraintSystemBuilder, transparent::step_down};
 

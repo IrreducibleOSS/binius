@@ -8,11 +8,11 @@ use binius_hal::ComputationBackend;
 use binius_math::{
 	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
+use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use binius_utils::{bail, serialization::SerializeBytes, sorting::is_sorted_ascending};
 use either::Either;
 use itertools::{chain, Itertools};
-use rayon::{iter::IntoParallelIterator, prelude::*};
 
 use super::{
 	error::Error,

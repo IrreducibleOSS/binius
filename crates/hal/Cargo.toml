@@ -8,11 +8,11 @@ authors.workspace = true
 auto_impl.workspace = true
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
-binius_utils = { path = "../utils" }
+binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
+binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 itertools.workspace = true
 rand.workspace = true
-rayon.workspace = true
 stackalloc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

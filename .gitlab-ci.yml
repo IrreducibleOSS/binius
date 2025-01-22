@@ -94,6 +94,18 @@ build-debug-amd:
       - Cargo.lock
     expire_in: 1 day
 
+# Build without default features
+# This checks if build without `rayon` feature works.
+build-debug-amd-no-default-features:
+  extends: .job_template_amd
+  stage: build
+  script:
+    - cargo build --tests --benches --examples --no-default-features
+  artifacts:
+    paths:
+      - Cargo.lock
+    expire_in: 1 day
+
 build-debug-amd-stable:
   extends: .job_template_amd_stable
   stage: build
@@ -143,6 +155,11 @@ unit-test-single-threaded:
   extends: .test_job_template_amd
   script:
     - RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
+
+unit-test-no-default-features:
+  extends: .test_job_template_amd
+  script:
+    - CARGO_EXTRA_FLAGS="--no-default-features" RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh
 
 unit-test-amd:
   extends: .test_job_template_amd

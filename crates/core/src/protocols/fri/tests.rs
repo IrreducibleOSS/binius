@@ -12,10 +12,10 @@ use binius_field::{
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::MultilinearExtension;
+use binius_maybe_rayon::prelude::ParallelIterator;
 use binius_ntt::NTTOptions;
 use groestl_crypto::Groestl256;
 use rand::prelude::*;
-use rayon::prelude::ParallelIterator;
 
 use super::to_par_scalar_big_chunks;
 use crate::{

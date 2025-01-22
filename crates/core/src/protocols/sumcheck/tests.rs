@@ -19,11 +19,11 @@ use binius_math::{
 	ArithExpr, CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
+use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use groestl_crypto::Groestl256;
 use itertools::izip;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rayon::{current_num_threads, prelude::*};
 
 use super::{
 	common::CompositeSumClaim,
