@@ -6,6 +6,8 @@ use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
 use stackalloc::{helpers::slice_assume_init, stackalloc_uninit};
 
+use super::MultivariatePoly;
+
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
 	expr: &ArithExpr<F>,
@@ -316,6 +318,24 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS
 
 	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		CompositionPoly::batch_evaluate(self, batch_query, evals)
+	}
+}
+
+impl<F: TowerField> MultivariatePoly<F> for ArithCircuitPoly<F> {
+	fn degree(&self) -> usize {
+		CompositionPoly::degree(&self)
+	}
+
+	fn n_vars(&self) -> usize {
+		CompositionPoly::n_vars(&self)
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		CompositionPoly::binary_tower_level(&self)
+	}
+
+	fn evaluate(&self, query: &[F]) -> Result<F, super::Error> {
+		CompositionPoly::evaluate(&self, query).map_err(|e| e.into())
 	}
 }
 
