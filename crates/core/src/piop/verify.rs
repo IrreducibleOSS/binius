@@ -53,28 +53,19 @@ impl CommitMeta {
 	/// * `n_multilins_by_vars` - a vector index mapping numbers of variables to the number of
 	///     multilinears in the batch with that number of variables
 	pub fn new(n_multilins_by_vars: Vec<usize>) -> Self {
-		let offsets_by_vars = n_multilins_by_vars
-			.iter()
-			.copied()
-			.scan(0, |offset, n_multilins| {
-				let last_offset = *offset;
-				*offset += n_multilins;
-				Some(last_offset)
-			})
-			.collect();
-
-		let total_elems = n_multilins_by_vars
-			.iter()
-			.enumerate()
-			.map(|(n_vars, n_pieces)| n_pieces << n_vars)
-			.sum::<usize>();
-		let total_vars = total_elems.next_power_of_two().ilog2() as usize;
-		let total_multilins = n_multilins_by_vars.iter().copied().sum();
+		let (offsets_by_vars, total_multilins, total_elems) =
+			n_multilins_by_vars.iter().enumerate().fold(
+				(Vec::with_capacity(n_multilins_by_vars.len()), 0, 0),
+				|(mut offsets, total_multilins, total_elems), (n_vars, &count)| {
+					offsets.push(total_multilins);
+					(offsets, total_multilins + count, total_elems + (count << n_vars))
+				},
+			);
 
 		Self {
 			offsets_by_vars,
 			n_multilins_by_vars,
-			total_vars,
+			total_vars: total_elems.next_power_of_two().ilog2() as usize,
 			total_multilins,
 		}
 	}
@@ -82,7 +73,7 @@ impl CommitMeta {
 	/// Constructs a new [`CommitMeta`] from a sequence of committed polynomials described by their
 	/// number of variables.
 	pub fn with_vars(n_varss: impl IntoIterator<Item = usize>) -> Self {
-		let mut n_multilins_by_vars = ResizeableIndex::<usize>::new();
+		let mut n_multilins_by_vars = ResizeableIndex::new();
 		for n_vars in n_varss {
 			*n_multilins_by_vars.get_mut(n_vars) += 1;
 		}
@@ -477,4 +468,127 @@ where
 		multilinear_evals,
 		fri_final,
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_commit_meta_new_empty() {
+		let n_multilins_by_vars = vec![];
+		let commit_meta = CommitMeta::new(n_multilins_by_vars);
+
+		assert_eq!(commit_meta.total_vars, 0);
+		assert_eq!(commit_meta.total_multilins, 0);
+		assert_eq!(commit_meta.n_multilins_by_vars, vec![]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![]);
+	}
+
+	#[test]
+	fn test_commit_meta_new_single_variable() {
+		let n_multilins_by_vars = vec![4];
+		let commit_meta = CommitMeta::new(n_multilins_by_vars.clone());
+
+		assert_eq!(commit_meta.total_vars, 2);
+		assert_eq!(commit_meta.total_multilins, 4);
+		assert_eq!(commit_meta.n_multilins_by_vars, n_multilins_by_vars);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0]);
+	}
+
+	#[test]
+	fn test_commit_meta_new_multiple_variables() {
+		let n_multilins_by_vars = vec![3, 5, 2];
+
+		let commit_meta = CommitMeta::new(n_multilins_by_vars.clone());
+
+		// Sum is 3*2^0 + 5*2^1 + 2*2^2 = 21, next power of 2's log2 is 5
+		assert_eq!(commit_meta.total_vars, 5);
+		// 3 + 5 + 2
+		assert_eq!(commit_meta.total_multilins, 10);
+		assert_eq!(commit_meta.n_multilins_by_vars, n_multilins_by_vars);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0, 3, 8]);
+	}
+
+	#[test]
+	#[allow(clippy::identity_op)]
+	fn test_commit_meta_new_large_numbers() {
+		let n_multilins_by_vars = vec![1_000_000, 2_000_000];
+		let commit_meta = CommitMeta::new(n_multilins_by_vars.clone());
+
+		let expected_total_elems = 1_000_000 * (1 << 0) + 2_000_000 * (1 << 1) as usize;
+		let expected_total_vars = expected_total_elems.next_power_of_two().ilog2() as usize;
+
+		assert_eq!(commit_meta.total_vars, expected_total_vars);
+		assert_eq!(commit_meta.total_multilins, 3_000_000);
+		assert_eq!(commit_meta.n_multilins_by_vars, n_multilins_by_vars);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0, 1_000_000]);
+	}
+
+	#[test]
+	fn test_with_vars_empty() {
+		let commit_meta = CommitMeta::with_vars(vec![]);
+
+		assert_eq!(commit_meta.total_vars, 0);
+		assert_eq!(commit_meta.total_multilins, 0);
+		assert_eq!(commit_meta.n_multilins_by_vars(), &[]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![]);
+	}
+
+	#[test]
+	fn test_with_vars_single_variable() {
+		let commit_meta = CommitMeta::with_vars(vec![0, 0, 0, 0]);
+
+		assert_eq!(commit_meta.total_vars, 2);
+		assert_eq!(commit_meta.total_multilins, 4);
+		assert_eq!(commit_meta.n_multilins_by_vars(), &[4]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0]);
+	}
+
+	#[test]
+	#[allow(clippy::identity_op)]
+	fn test_with_vars_multiple_variables() {
+		let commit_meta = CommitMeta::with_vars(vec![2, 3, 3, 4]);
+
+		let expected_total_elems = 1 * (1 << 2) + 2 * (1 << 3) + 1 * (1 << 4) as usize;
+		let expected_total_vars = expected_total_elems.next_power_of_two().ilog2() as usize;
+
+		assert_eq!(commit_meta.total_vars, expected_total_vars);
+		assert_eq!(commit_meta.total_multilins, 4);
+		assert_eq!(commit_meta.n_multilins_by_vars(), &[0, 0, 1, 2, 1]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0, 0, 0, 1, 3]);
+	}
+
+	#[test]
+	fn test_with_vars_large_numbers() {
+		// 1,000,000 polynomials with 0 variables
+		let vars = vec![0; 1_000_000];
+		let commit_meta = CommitMeta::with_vars(vars);
+
+		// All polynomials with 0 variables
+		let expected_total_elems = 1_000_000 * (1 << 0) as usize;
+		let expected_total_vars = expected_total_elems.next_power_of_two().ilog2() as usize;
+
+		assert_eq!(commit_meta.total_vars, expected_total_vars);
+		assert_eq!(commit_meta.total_multilins, 1_000_000);
+		assert_eq!(commit_meta.n_multilins_by_vars(), &[1_000_000]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0]);
+	}
+
+	#[test]
+	#[allow(clippy::identity_op)]
+	fn test_with_vars_mixed_variables() {
+		let vars = vec![0, 1, 1, 2, 2, 2, 3];
+		let commit_meta = CommitMeta::with_vars(vars);
+
+		// Sum of evaluations
+		let expected_total_elems =
+			1 * (1 << 0) + 2 * (1 << 1) + 3 * (1 << 2) + 1 * (1 << 3) as usize;
+		let expected_total_vars = expected_total_elems.next_power_of_two().ilog2() as usize;
+
+		assert_eq!(commit_meta.total_vars, expected_total_vars);
+		assert_eq!(commit_meta.total_multilins, 7); // Total polynomials
+		assert_eq!(commit_meta.n_multilins_by_vars(), &[1, 2, 3, 1]);
+		assert_eq!(commit_meta.offsets_by_vars, vec![0, 1, 3, 6]);
+	}
 }
