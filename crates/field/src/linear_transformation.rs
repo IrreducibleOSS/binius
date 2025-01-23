@@ -7,7 +7,7 @@ use rand::RngCore;
 use crate::{packed::PackedBinaryField, BinaryField, BinaryField1b, ExtensionField};
 
 /// Generic transformation trait that is used both for scalars and packed fields
-pub trait Transformation<Input, Output> {
+pub trait Transformation<Input, Output>: Sync {
 	fn transform(&self, data: &Input) -> Output;
 }
 
@@ -17,7 +17,10 @@ pub trait Transformation<Input, Output> {
 /// parameter because we want to be able both to have const instances that reference static arrays
 /// and owning vector elements.
 #[derive(Debug, Clone)]
-pub struct FieldLinearTransformation<OF: BinaryField, Data: Deref<Target = [OF]> = &'static [OF]> {
+pub struct FieldLinearTransformation<
+	OF: BinaryField,
+	Data: Deref<Target = [OF]> + Sync = &'static [OF],
+> {
 	bases: Data,
 }
 
@@ -29,7 +32,7 @@ impl<OF: BinaryField> FieldLinearTransformation<OF, &'static [OF]> {
 	}
 }
 
-impl<OF: BinaryField, Data: Deref<Target = [OF]>> FieldLinearTransformation<OF, Data> {
+impl<OF: BinaryField, Data: Deref<Target = [OF]> + Sync> FieldLinearTransformation<OF, Data> {
 	pub fn new(bases: Data) -> Self {
 		debug_assert_eq!(bases.deref().len(), OF::DEGREE);
 
@@ -41,7 +44,7 @@ impl<OF: BinaryField, Data: Deref<Target = [OF]>> FieldLinearTransformation<OF, 
 	}
 }
 
-impl<IF: BinaryField, OF: BinaryField, Data: Deref<Target = [OF]>> Transformation<IF, OF>
+impl<IF: BinaryField, OF: BinaryField, Data: Deref<Target = [OF]> + Sync> Transformation<IF, OF>
 	for FieldLinearTransformation<OF, Data>
 {
 	fn transform(&self, data: &IF) -> OF {
@@ -68,9 +71,9 @@ pub trait PackedTransformationFactory<OP>: PackedBinaryField
 where
 	OP: PackedBinaryField,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync>: Transformation<Self, OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data>;
 }

@@ -147,9 +147,9 @@ pub trait TaggedPackedTransformationFactory<Strategy, OP>: PackedBinaryField
 where
 	OP: PackedBinaryField,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]>>: Transformation<Self, OP>;
+	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync>: Transformation<Self, OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data>;
 }
@@ -164,13 +164,13 @@ macro_rules! impl_transformation_with_strategy {
 				>,
 			Self: $crate::arithmetic_traits::TaggedPackedTransformationFactory<$strategy, OP>,
 		{
-			type PackedTransformation<Data: std::ops::Deref<Target = [OP::Scalar]>> =
+			type PackedTransformation<Data: std::ops::Deref<Target = [OP::Scalar]> + Sync> =
 				<Self as $crate::arithmetic_traits::TaggedPackedTransformationFactory<
 					$strategy,
 					OP,
 				>>::PackedTransformation<Data>;
 
-			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
+			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]> + Sync>(
 				transformation: $crate::linear_transformation::FieldLinearTransformation<
 					OP::Scalar,
 					Data,

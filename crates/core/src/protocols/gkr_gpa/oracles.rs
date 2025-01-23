@@ -38,8 +38,8 @@ where
 
 pub fn get_grand_products_from_witnesses<PW, F>(witnesses: &[GrandProductWitness<PW>]) -> Vec<F>
 where
-	PW: PackedField,
-	F: Field + From<PW::Scalar>,
+	PW: PackedField<Scalar: Into<F>>,
+	F: Field,
 {
 	witnesses
 		.iter()

@@ -137,7 +137,7 @@ pub(super) fn get_8x8_matrix<OF, Data>(
 ) -> i64
 where
 	OF: BinaryField<Underlier: Divisible<u8>>,
-	Data: Deref<Target = [OF]>,
+	Data: Deref<Target = [OF]> + Sync,
 {
 	transpose_8x8(i64::from_le_bytes(array::from_fn(|k| {
 		transformation.bases()[k + 8 * col]
@@ -152,7 +152,7 @@ where
 	OP: WithUnderlier<Underlier: GfniType>
 		+ PackedBinaryField<Scalar: WithUnderlier<Underlier = u8>>,
 {
-	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
+	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		debug_assert_eq!(OP::Scalar::N_BITS, 8);
@@ -185,9 +185,9 @@ where
 		+ WithUnderlier<Underlier = U>,
 	U: GfniType,
 {
-	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = GfniTransformation<OP>;
+	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]> + Sync> = GfniTransformation<OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		GfniTransformation::new(transformation)
@@ -221,7 +221,7 @@ where
 		+ PackedBinaryField<Scalar: WithUnderlier<Underlier: Divisible<u8>>>,
 	[[OP::Underlier; MATRICES]; BLOCKS]: Default,
 {
-	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
+	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		debug_assert_eq!(OP::Scalar::N_BITS, BLOCKS * 8);
@@ -249,7 +249,7 @@ where
 				}
 
 				let byte_indices = array::from_fn(|i| {
-					// all shuffle indices are repated with cycle 8.
+					// all shuffle indices are repeated with cycle 8.
 					half_u128_lane[i % 8]
 				});
 				let mask_u128 = u128::from_le_bytes(byte_indices);
@@ -324,14 +324,14 @@ macro_rules! impl_transformation_with_gfni_nxn {
 				>,
 		{
 			type PackedTransformation<
-				Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]>,
+				Data: std::ops::Deref<Target = [<OP as $crate::packed::PackedField>::Scalar]> + Sync,
 			> = $crate::arch::x86_64::gfni::gfni_arithmetics::GfniTransformationNxN<
 				OP,
 				$blocks,
 				{ $blocks / 2 },
 			>;
 
-			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]>>(
+			fn make_packed_transformation<Data: std::ops::Deref<Target = [OP::Scalar]> + Sync>(
 				transformation: $crate::linear_transformation::FieldLinearTransformation<
 					OP::Scalar,
 					Data,

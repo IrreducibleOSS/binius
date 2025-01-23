@@ -301,7 +301,7 @@ impl<OP> SimdTransformation<OP>
 where
 	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType + UnderlierWithBitOps>,
 {
-	pub fn new<Data: Deref<Target = [OP::Scalar]>>(
+	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		Self {
@@ -349,9 +349,9 @@ where
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 	IP::Underlier: TowerSimdType,
 {
-	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = SimdTransformation<OP>;
+	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]> + Sync> = SimdTransformation<OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		SimdTransformation::new(transformation)

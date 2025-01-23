@@ -21,6 +21,15 @@ pub struct GrandProductClaim<F: Field> {
 	pub product: F,
 }
 
+impl<F: Field> GrandProductClaim<F> {
+	pub fn isomorphic<FI: Field + From<F>>(self) -> GrandProductClaim<FI> {
+		GrandProductClaim {
+			n_vars: self.n_vars,
+			product: self.product.into(),
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct GrandProductWitness<PW: PackedField> {
 	n_vars: usize,
@@ -147,6 +156,18 @@ impl<PW: PackedField> GrandProductWitness<PW> {
 pub struct LayerClaim<F: Field> {
 	pub eval_point: Vec<F>,
 	pub eval: F,
+}
+
+impl<F: Field> LayerClaim<F> {
+	pub fn isomorphic<FI: Field>(self) -> LayerClaim<FI>
+	where
+		F: Into<FI>,
+	{
+		LayerClaim {
+			eval_point: self.eval_point.into_iter().map(Into::into).collect(),
+			eval: self.eval.into(),
+		}
+	}
 }
 
 #[derive(Debug, Default)]

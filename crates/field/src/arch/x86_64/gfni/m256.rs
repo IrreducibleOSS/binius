@@ -46,7 +46,7 @@ impl GfniTransformation256b {
 	pub fn new<OP, Data>(transformation: FieldLinearTransformation<OP::Scalar, Data>) -> Self
 	where
 		OP: PackedField<Scalar: BinaryField<Underlier = u128>> + WithUnderlier<Underlier = M256>,
-		Data: Deref<Target = [OP::Scalar]>,
+		Data: Deref<Target = [OP::Scalar]> + Sync,
 	{
 		let bases_8x8 = array::from_fn(|col| {
 			array::from_fn(|row| unsafe {
@@ -134,9 +134,9 @@ where
 	OP: PackedField<Scalar: BinaryField + WithUnderlier<Underlier = u128>>
 		+ WithUnderlier<Underlier = M256>,
 {
-	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]>> = GfniTransformation256b;
+	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]> + Sync> = GfniTransformation256b;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]>>(
+	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		GfniTransformation256b::new::<OP, Data>(transformation)
