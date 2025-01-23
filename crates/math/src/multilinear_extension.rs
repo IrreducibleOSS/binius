@@ -10,7 +10,7 @@ use binius_field::{
 	ExtensionField, Field, PackedField,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use tracing::instrument;
 
@@ -32,22 +32,20 @@ pub struct MultilinearExtension<P: PackedField, Data: Deref<Target = [P]> = Vec<
 
 impl<P: PackedField> MultilinearExtension<P> {
 	pub fn zeros(n_vars: usize) -> Result<Self, Error> {
-		assert!(P::WIDTH.is_power_of_two());
-		if n_vars < log2_strict_usize(P::WIDTH) {
+		if n_vars < P::LOG_WIDTH {
 			bail!(Error::ArgumentRangeError {
-				arg: "n_vars".to_string(),
-				range: log2_strict_usize(P::WIDTH)..32,
+				arg: "n_vars".into(),
+				range: P::LOG_WIDTH..32,
 			});
 		}
-
-		Ok(MultilinearExtension {
+		Ok(Self {
 			mu: n_vars,
-			evals: vec![P::default(); 1 << (n_vars - log2(P::WIDTH))],
+			evals: vec![P::default(); 1 << (n_vars - P::LOG_WIDTH)],
 		})
 	}
 
 	pub fn from_values(v: Vec<P>) -> Result<Self, Error> {
-		MultilinearExtension::from_values_generic(v)
+		Self::from_values_generic(v)
 	}
 }
 
@@ -95,7 +93,7 @@ where
 	Data: Deref<Target = [U]>,
 {
 	pub fn from_underliers(v: Data) -> Result<Self, Error> {
-		MultilinearExtension::from_values_generic(PackingDeref::new(v))
+		Self::from_values_generic(PackingDeref::new(v))
 	}
 }
 
