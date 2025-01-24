@@ -1,0 +1,39 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, ]
+  pull_request:
+    branches: [main, ]
+
+jobs:
+  copyright-check:
+    name: Copyright Check
+    runs-on: ubuntu-latest
+    container: rustlang/rust:nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Copyright Check
+        run: ./scripts/check_copyright_notice.sh
+
+  cargofmt:
+    name: Cargo Format Check
+    runs-on: ubuntu-latest
+    container: rustlang/rust:nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Run Cargo Fmt
+        run: cargo fmt --check
+
+  clippy:
+    name: Cargo Clippy Linter
+    runs-on: ubuntu-latest
+    container: rustlang/rust:nightly
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Run Cargo Clippy
+        run: cargo clippy --all --all-features --tests --benches --examples -- -D warnings
