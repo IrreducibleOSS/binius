@@ -9,7 +9,7 @@ use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
 use super::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme};
-use crate::transcript::AdviceWriter;
+use crate::{fiat_shamir::HasherChallenger, transcript::ProverTranscript};
 
 #[test]
 fn test_binary_merkle_vcs_commit_prove_open_correctly() {
@@ -25,15 +25,22 @@ fn test_binary_merkle_vcs_commit_prove_open_correctly() {
 	assert_eq!(commitment.root, tree.root());
 
 	for (i, value) in data.iter().enumerate() {
-		let mut proof_writer = AdviceWriter::new();
+		let mut proof_writer = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		mr_prover
-			.prove_opening(&tree, 0, i, &mut proof_writer)
+			.prove_opening(&tree, 0, i, &mut proof_writer.message())
 			.unwrap();
 
-		let mut proof_reader = proof_writer.into_reader();
+		let mut proof_reader = proof_writer.into_verifier();
 		mr_prover
 			.scheme()
-			.verify_opening(i, slice::from_ref(value), 0, 4, &[commitment.root], &mut proof_reader)
+			.verify_opening(
+				i,
+				slice::from_ref(value),
+				0,
+				4,
+				&[commitment.root],
+				&mut proof_reader.message(),
+			)
 			.unwrap();
 	}
 }
@@ -57,15 +64,22 @@ fn test_binary_merkle_vcs_commit_layer_prove_open_correctly() {
 			.verify_layer(&commitment.root, layer_depth, layer)
 			.unwrap();
 		for (i, value) in data.iter().enumerate() {
-			let mut proof_writer = AdviceWriter::new();
+			let mut proof_writer = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 			mr_prover
-				.prove_opening(&tree, layer_depth, i, &mut proof_writer)
+				.prove_opening(&tree, layer_depth, i, &mut proof_writer.message())
 				.unwrap();
 
-			let mut proof_reader = proof_writer.into_reader();
+			let mut proof_reader = proof_writer.into_verifier();
 			mr_prover
 				.scheme()
-				.verify_opening(i, slice::from_ref(value), layer_depth, 5, layer, &mut proof_reader)
+				.verify_opening(
+					i,
+					slice::from_ref(value),
+					layer_depth,
+					5,
+					layer,
+					&mut proof_reader.message(),
+				)
 				.unwrap();
 		}
 	}

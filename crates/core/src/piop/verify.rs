@@ -12,7 +12,7 @@ use tracing::instrument;
 use super::error::{Error, VerificationError};
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	fiat_shamir::{CanSample, CanSampleBits},
+	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::MerkleTreeScheme,
 	piop::util::ResizeableIndex,
 	polynomial::MultivariatePoly,
@@ -23,7 +23,7 @@ use crate::{
 		},
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{CanRead, Proof},
+	transcript::VerifierTranscript,
 };
 
 /// Metadata about a batch of committed multilinear polynomials.
@@ -278,20 +278,19 @@ pub fn make_sumcheck_claim_descs<F: Field>(
 ///     described by `commit_meta` and the transparent polynomials in `transparents`
 /// * `proof` - the proof reader
 #[instrument("piop::verify", skip_all)]
-pub fn verify<'a, F, FEncode, Transcript, Advice, MTScheme>(
+pub fn verify<'a, F, FEncode, Challenger_, MTScheme>(
 	commit_meta: &CommitMeta,
 	merkle_scheme: &MTScheme,
 	fri_params: &FRIParams<F, FEncode>,
 	commitment: &MTScheme::Digest,
 	transparents: &[impl Borrow<dyn MultivariatePoly<F> + 'a>],
 	claims: &[PIOPSumcheckClaim<F>],
-	proof: &mut Proof<Transcript, Advice>,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
-	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
-	Advice: CanRead,
+	Challenger_: Challenger,
 	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	// Map of n_vars to sumcheck claim descriptions
@@ -329,7 +328,7 @@ where
 		merkle_scheme,
 		&sumcheck_claims,
 		commitment,
-		proof,
+		transcript,
 	)?;
 
 	let mut piecewise_evals = verify_transparent_evals(
@@ -401,37 +400,35 @@ struct BatchInterleavedSumcheckFRIOutput<F> {
 /// * `n_rounds` is greater than or equal to the maximum number of variables of any claim
 /// * `claims` are sorted in ascending order by number of variables
 #[instrument(skip_all)]
-fn verify_interleaved_fri_sumcheck<F, FEncode, Transcript, Advice, MTScheme>(
+fn verify_interleaved_fri_sumcheck<F, FEncode, Challenger_, MTScheme>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_scheme: &MTScheme,
 	claims: &[SumcheckClaim<F, IndexComposition<BivariateProduct, 2>>],
 	codeword_commitment: &MTScheme::Digest,
-	proof: &mut Proof<Transcript, Advice>,
+	proof: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchInterleavedSumcheckFRIOutput<F>, Error>
 where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
-	Transcript: CanSample<F> + CanRead + CanSampleBits<usize>,
-	Advice: CanRead,
+	Challenger_: Challenger,
 	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	let mut arities_iter = fri_params.fold_arities().iter();
 	let mut fri_commitments = Vec::with_capacity(fri_params.n_oracles());
 	let mut next_commit_round = arities_iter.next().copied();
 
-	let mut sumcheck_verifier = SumcheckBatchVerifier::new(claims, &mut proof.transcript)?;
+	let mut sumcheck_verifier = SumcheckBatchVerifier::new(claims, proof)?;
 	let mut multilinear_evals = Vec::with_capacity(claims.len());
 	let mut challenges = Vec::with_capacity(n_rounds);
 	for round_no in 0..n_rounds {
-		while let Some(claim_multilinear_evals) =
-			sumcheck_verifier.try_finish_claim(&mut proof.transcript)?
-		{
+		let mut reader = proof.message();
+		while let Some(claim_multilinear_evals) = sumcheck_verifier.try_finish_claim(&mut reader)? {
 			multilinear_evals.push(claim_multilinear_evals);
 		}
-		sumcheck_verifier.receive_round_proof(&mut proof.transcript)?;
+		sumcheck_verifier.receive_round_proof(&mut reader)?;
 
-		let challenge = proof.transcript.sample();
+		let challenge = proof.sample();
 		challenges.push(challenge);
 
 		sumcheck_verifier.finish_round(challenge)?;
@@ -439,7 +436,7 @@ where
 		let observe_fri_comm = next_commit_round.is_some_and(|round| round == round_no + 1);
 		if observe_fri_comm {
 			let comm = proof
-				.transcript
+				.message()
 				.read()
 				.map_err(VerificationError::Transcript)?;
 			fri_commitments.push(comm);
@@ -447,9 +444,8 @@ where
 		}
 	}
 
-	while let Some(claim_multilinear_evals) =
-		sumcheck_verifier.try_finish_claim(&mut proof.transcript)?
-	{
+	let mut reader = proof.message();
+	while let Some(claim_multilinear_evals) = sumcheck_verifier.try_finish_claim(&mut reader)? {
 		multilinear_evals.push(claim_multilinear_evals);
 	}
 	sumcheck_verifier.finish()?;
@@ -461,7 +457,7 @@ where
 		&fri_commitments,
 		&challenges,
 	)?;
-	let fri_final = verifier.verify(&mut proof.advice, &mut proof.transcript)?;
+	let fri_final = verifier.verify(proof)?;
 
 	Ok(BatchInterleavedSumcheckFRIOutput {
 		challenges,

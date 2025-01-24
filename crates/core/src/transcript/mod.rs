@@ -24,49 +24,24 @@ use tracing::warn;
 
 use crate::fiat_shamir::{CanSample, CanSampleBits, Challenger};
 
-/// Writable(Prover) transcript over some Challenger that `CanWrite` and `CanSample<F: TowerField>`
+/// Prover transcript over some Challenger that writes to the internal tape and `CanSample<F: TowerField>`
 ///
 /// A Transcript is an abstraction over Fiat-Shamir so the prover and verifier can send and receive
-/// data, everything that gets written to or read from the transcript will be observed
-#[derive(Debug, Default)]
-pub struct TranscriptWriter<Challenger> {
+/// data.
+#[derive(Debug)]
+pub struct ProverTranscript<Challenger> {
 	combined: FiatShamirBuf<BytesMut, Challenger>,
 	debug_assertions: bool,
 }
 
-/// Writable(Prover) advice that `CanWrite`
-///
-/// Advice holds meta-data to the transcript that need not be Fiat-Shamir'ed
-#[derive(Debug, Default)]
-pub struct AdviceWriter {
-	buffer: BytesMut,
-	debug_assertions: bool,
-}
-
-/// Readable(Verifier) transcript over some Challenger that `CanRead` and `CanSample<F: TowerField>`
+/// Verifier transcript over some Challenger that reads from the internal tape and `CanSample<F: TowerField>`
 ///
 /// You must manually call the destructor with `finalize()` to check anything that's written is
 /// fully read out
 #[derive(Debug)]
-pub struct TranscriptReader<Challenger> {
+pub struct VerifierTranscript<Challenger> {
 	combined: FiatShamirBuf<Bytes, Challenger>,
 	debug_assertions: bool,
-}
-
-/// Readable(Verifier) advice that `CanRead`
-///
-/// You must manually call the destructor with `finalize()` to check anything that's written is
-/// fully read out
-#[derive(Debug)]
-pub struct AdviceReader {
-	buffer: Bytes,
-	debug_assertions: bool,
-}
-
-/// Helper struct combining Transcript and Advice data to create a Proof object
-pub struct Proof<Transcript, Advice> {
-	pub transcript: Transcript,
-	pub advice: Advice,
 }
 
 #[derive(Debug, Default)]
@@ -107,7 +82,7 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 		assert!(cnt <= written.len());
 
 		// NOTE: This is the unsafe part, you are reading the next cnt bytes on the assumption that
-		// caller is ensured us the next cnt bytes are initialized.
+		// caller has ensured us the next cnt bytes are initialized.
 		let written: &[u8] = slice::from_raw_parts(written.as_mut_ptr(), cnt);
 
 		self.challenger.observer().put_slice(written);
@@ -119,7 +94,11 @@ unsafe impl<Inner: BufMut, Challenger_: Challenger> BufMut for FiatShamirBuf<Inn
 	}
 }
 
-impl<Challenger: Default> TranscriptWriter<Challenger> {
+impl<Challenger_: Default + Challenger> ProverTranscript<Challenger_> {
+	/// Creates a new prover transcript.
+	///
+	/// By default debug assertions are set to the feature flag `debug_assertions`. You may also
+	/// change the debug flag with [`Self::set_debug`].
 	pub fn new() -> Self {
 		Self {
 			combined: Default::default(),
@@ -127,67 +106,85 @@ impl<Challenger: Default> TranscriptWriter<Challenger> {
 		}
 	}
 
+	pub fn into_verifier(self) -> VerifierTranscript<Challenger_> {
+		VerifierTranscript::new(self.finalize())
+	}
+}
+
+impl<Challenger_: Default + Challenger> Default for ProverTranscript<Challenger_> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
+impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	pub fn finalize(self) -> Vec<u8> {
 		self.combined.buffer.to_vec()
 	}
 
-	pub fn into_reader(self) -> TranscriptReader<Challenger> {
-		TranscriptReader::new(self.finalize())
-	}
-
+	/// Sets the debug flag.
+	///
+	/// This flag is used to enable debug assertions in the [`TranscriptReader`] and
+	/// [`TranscriptWriter`] methods.
 	pub fn set_debug(&mut self, debug: bool) {
 		self.debug_assertions = debug;
 	}
-}
 
-impl AdviceWriter {
-	pub fn new() -> Self {
-		Self {
-			buffer: Default::default(),
-			debug_assertions: cfg!(debug_assertions),
+	/// Returns a writeable buffer that only observes the data written, without writing it to the
+	/// proof tape.
+	///
+	/// This method should be used to observe the input statement.
+	pub fn observe<'a, 'b>(&'a mut self) -> TranscriptWriter<'b, impl BufMut + 'b>
+	where
+		'a: 'b,
+	{
+		TranscriptWriter {
+			buffer: self.combined.challenger.observer(),
+			debug_assertions: self.debug_assertions,
 		}
 	}
 
-	pub fn finalize(self) -> Vec<u8> {
-		self.buffer.to_vec()
+	/// Returns a writeable buffer that only writes the data to the proof tape, without observing it.
+	///
+	/// This method should only be used to write openings of commitments that were already written
+	/// to the transcript as an observed message. For example, in the FRI protocol, the prover sends
+	/// a Merkle tree root as a commitment, and later sends leaf openings. The leaf openings should
+	/// be written using [`Self::decommitment`] because they are verified with respect to the
+	/// previously sent Merkle root.
+	pub fn decommitment(&mut self) -> TranscriptWriter<impl BufMut> {
+		TranscriptWriter {
+			buffer: &mut self.combined.buffer,
+			debug_assertions: self.debug_assertions,
+		}
 	}
 
-	pub fn into_reader(self) -> AdviceReader {
-		AdviceReader::new(self.finalize())
-	}
-
-	pub fn set_debug(&mut self, debug: bool) {
-		self.debug_assertions = debug;
-	}
-}
-
-impl<Challenger: Default> Proof<TranscriptWriter<Challenger>, AdviceWriter> {
-	pub fn into_verifier(self) -> Proof<TranscriptReader<Challenger>, AdviceReader> {
-		Proof {
-			transcript: self.transcript.into_reader(),
-			advice: self.advice.into_reader(),
+	/// Returns a writeable buffer that observes the data written and writes it to the proof tape.
+	///
+	/// This method should be used by default to write prover messages in an interactive protocol.
+	pub fn message<'a, 'b>(&'a mut self) -> TranscriptWriter<'b, impl BufMut>
+	where
+		'a: 'b,
+	{
+		TranscriptWriter {
+			buffer: &mut self.combined,
+			debug_assertions: self.debug_assertions,
 		}
 	}
 }
 
-impl<Challenger: Default> Proof<TranscriptReader<Challenger>, AdviceReader> {
-	pub fn finalize(self) -> Result<(), Error> {
-		self.transcript.finalize()?;
-		self.advice.finalize()
-	}
-}
-
-impl<Challenger: Default> TranscriptReader<Challenger> {
+impl<Challenger_: Default + Challenger> VerifierTranscript<Challenger_> {
 	pub fn new(vec: Vec<u8>) -> Self {
 		Self {
 			combined: FiatShamirBuf {
-				challenger: Challenger::default(),
+				challenger: Challenger_::default(),
 				buffer: Bytes::from(vec),
 			},
 			debug_assertions: cfg!(debug_assertions),
 		}
 	}
+}
 
+impl<Challenger_: Challenger> VerifierTranscript<Challenger_> {
 	pub fn finalize(self) -> Result<(), Error> {
 		if self.combined.buffer.has_remaining() {
 			return Err(Error::TranscriptNotEmpty {
@@ -200,10 +197,47 @@ impl<Challenger: Default> TranscriptReader<Challenger> {
 	pub fn set_debug(&mut self, debug: bool) {
 		self.debug_assertions = debug;
 	}
+
+	/// Returns a writable buffer that only observes the data written, without reading it from the
+	/// proof tape.
+	///
+	/// This method should be used to observe the input statement.
+	pub fn observe<'a, 'b>(&'a mut self) -> TranscriptWriter<'b, impl BufMut + 'b>
+	where
+		'a: 'b,
+	{
+		TranscriptWriter {
+			buffer: self.combined.challenger.observer(),
+			debug_assertions: self.debug_assertions,
+		}
+	}
+
+	/// Returns a readable buffer that only reads the data from the proof tape, without observing it.
+	///
+	/// This method should only be used to read advice that was previously written to the transcript as an observed message.
+	pub fn decommitment(&mut self) -> TranscriptReader<impl Buf + '_> {
+		TranscriptReader {
+			buffer: &mut self.combined.buffer,
+			debug_assertions: self.debug_assertions,
+		}
+	}
+
+	/// Returns a readable buffer that observes the data read.
+	///
+	/// This method should be used by default to read verifier messages in an interactive protocol.
+	pub fn message<'a, 'b>(&'a mut self) -> TranscriptReader<'b, impl Buf>
+	where
+		'a: 'b,
+	{
+		TranscriptReader {
+			buffer: &mut self.combined,
+			debug_assertions: self.debug_assertions,
+		}
+	}
 }
 
 // Useful warnings to see if we are neglecting to read any advice or transcript entirely
-impl<Challenger> Drop for TranscriptReader<Challenger> {
+impl<Challenger> Drop for VerifierTranscript<Challenger> {
 	fn drop(&mut self) {
 		if self.combined.buffer.has_remaining() {
 			warn!(
@@ -214,54 +248,29 @@ impl<Challenger> Drop for TranscriptReader<Challenger> {
 	}
 }
 
-impl Drop for AdviceReader {
-	fn drop(&mut self) {
-		if self.buffer.has_remaining() {
-			warn!("Advice reader is not fully read out: {:?} bytes left", self.buffer.remaining())
-		}
-	}
+pub struct TranscriptReader<'a, B: Buf> {
+	buffer: &'a mut B,
+	debug_assertions: bool,
 }
 
-impl AdviceReader {
-	pub fn new(vec: Vec<u8>) -> Self {
-		Self {
-			buffer: Bytes::from(vec),
-			debug_assertions: cfg!(debug_assertions),
-		}
+impl<B: Buf> TranscriptReader<'_, B> {
+	pub fn buffer(&mut self) -> &mut B {
+		self.buffer
 	}
 
-	pub fn finalize(self) -> Result<(), Error> {
-		if self.buffer.has_remaining() {
-			return Err(Error::TranscriptNotEmpty {
-				remaining: self.buffer.remaining(),
-			});
-		}
-		Ok(())
-	}
-
-	pub fn set_debug(&mut self, debug: bool) {
-		self.debug_assertions = debug;
-	}
-}
-
-/// Trait that is used to read bytes and field elements from transcript/advice
-#[auto_impl::auto_impl(&mut)]
-pub trait CanRead {
-	fn buffer(&mut self) -> impl Buf + '_;
-
-	fn read<T: DeserializeBytes>(&mut self) -> Result<T, Error> {
+	pub fn read<T: DeserializeBytes>(&mut self) -> Result<T, Error> {
 		T::deserialize(self.buffer()).map_err(Into::into)
 	}
 
-	fn read_vec<T: DeserializeBytes>(&mut self, n: usize) -> Result<Vec<T>, Error> {
+	pub fn read_vec<T: DeserializeBytes>(&mut self, n: usize) -> Result<Vec<T>, Error> {
 		let mut buffer = self.buffer();
 		repeat_with(move || T::deserialize(&mut buffer).map_err(Into::into))
 			.take(n)
 			.collect()
 	}
 
-	fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
-		let mut buffer = self.buffer();
+	pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), Error> {
+		let buffer = self.buffer();
 		if buffer.remaining() < buf.len() {
 			return Err(Error::NotEnoughBytes);
 		}
@@ -269,13 +278,13 @@ pub trait CanRead {
 		Ok(())
 	}
 
-	fn read_scalar<F: TowerField>(&mut self) -> Result<F, Error> {
+	pub fn read_scalar<F: TowerField>(&mut self) -> Result<F, Error> {
 		let mut out = F::default();
 		self.read_scalar_slice_into(slice::from_mut(&mut out))?;
 		Ok(out)
 	}
 
-	fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
+	pub fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
 		let mut buffer = self.buffer();
 		for elem in buf {
 			*elem = deserialize_canonical(&mut buffer)?;
@@ -283,17 +292,17 @@ pub trait CanRead {
 		Ok(())
 	}
 
-	fn read_scalar_slice<F: TowerField>(&mut self, len: usize) -> Result<Vec<F>, Error> {
+	pub fn read_scalar_slice<F: TowerField>(&mut self, len: usize) -> Result<Vec<F>, Error> {
 		let mut elems = vec![F::default(); len];
 		self.read_scalar_slice_into(&mut elems)?;
 		Ok(elems)
 	}
 
-	fn read_packed<P: PackedField<Scalar: TowerField>>(&mut self) -> Result<P, Error> {
+	pub fn read_packed<P: PackedField<Scalar: TowerField>>(&mut self) -> Result<P, Error> {
 		P::try_from_fn(|_| self.read_scalar())
 	}
 
-	fn read_packed_slice<P: PackedField<Scalar: TowerField>>(
+	pub fn read_packed_slice<P: PackedField<Scalar: TowerField>>(
 		&mut self,
 		len: usize,
 	) -> Result<Vec<P>, Error> {
@@ -304,15 +313,7 @@ pub trait CanRead {
 		Ok(packed)
 	}
 
-	fn read_debug(&mut self, msg: &str);
-}
-
-impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
-	fn buffer(&mut self) -> impl Buf + '_ {
-		&mut self.combined
-	}
-
-	fn read_debug(&mut self, msg: &str) {
+	pub fn read_debug(&mut self, msg: &str) {
 		if self.debug_assertions {
 			let msg_bytes = msg.as_bytes();
 			let mut buffer = vec![0; msg_bytes.len()];
@@ -322,94 +323,64 @@ impl<Challenger_: Challenger> CanRead for TranscriptReader<Challenger_> {
 	}
 }
 
-impl CanRead for AdviceReader {
-	fn buffer(&mut self) -> impl Buf + '_ {
-		&mut self.buffer
-	}
-
-	fn read_debug(&mut self, msg: &str) {
-		if self.debug_assertions {
-			let msg_bytes = msg.as_bytes();
-			let mut buffer = vec![0; msg_bytes.len()];
-			assert!(self.read_bytes(&mut buffer).is_ok());
-			assert_eq!(msg_bytes, buffer);
-		}
-	}
+pub struct TranscriptWriter<'a, B: BufMut> {
+	buffer: &'a mut B,
+	debug_assertions: bool,
 }
 
-/// Trait that is used to write bytes and field elements to transcript/advice
-#[auto_impl::auto_impl(&mut)]
-pub trait CanWrite {
-	fn buffer(&mut self) -> impl BufMut + '_;
+impl<B: BufMut> TranscriptWriter<'_, B> {
+	pub fn buffer(&mut self) -> &mut B {
+		self.buffer
+	}
 
-	fn write<T: SerializeBytes>(&mut self, value: &T) {
+	pub fn write<T: SerializeBytes>(&mut self, value: &T) {
 		value
 			.serialize(self.buffer())
 			.expect("TODO: propagate error")
 	}
 
-	fn write_slice<T: SerializeBytes>(&mut self, values: &[T]) {
+	pub fn write_slice<T: SerializeBytes>(&mut self, values: &[T]) {
 		let mut buffer = self.buffer();
 		for value in values {
 			value.serialize(&mut buffer).expect("TODO: propagate error")
 		}
 	}
 
-	fn write_bytes(&mut self, data: &[u8]) {
+	pub fn write_bytes(&mut self, data: &[u8]) {
 		self.buffer().put_slice(data);
 	}
 
-	fn write_scalar<F: TowerField>(&mut self, f: F) {
+	pub fn write_scalar<F: TowerField>(&mut self, f: F) {
 		self.write_scalar_slice(slice::from_ref(&f));
 	}
 
-	fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
+	pub fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
 		let mut buffer = self.buffer();
 		for elem in elems {
 			serialize_canonical(*elem, &mut buffer).expect("TODO: propagate error");
 		}
 	}
 
-	fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
+	pub fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
 		for scalar in packed.iter() {
 			self.write_scalar(scalar);
 		}
 	}
 
-	fn write_packed_slice<P: PackedField<Scalar: TowerField>>(&mut self, packed_slice: &[P]) {
+	pub fn write_packed_slice<P: PackedField<Scalar: TowerField>>(&mut self, packed_slice: &[P]) {
 		for &packed in packed_slice {
 			self.write_packed(packed)
 		}
 	}
 
-	fn write_debug(&mut self, msg: &str);
-}
-
-impl<Challenger_: Challenger> CanWrite for TranscriptWriter<Challenger_> {
-	fn buffer(&mut self) -> impl BufMut + '_ {
-		&mut self.combined
-	}
-
-	fn write_debug(&mut self, msg: &str) {
+	pub fn write_debug(&mut self, msg: &str) {
 		if self.debug_assertions {
 			self.write_bytes(msg.as_bytes())
 		}
 	}
 }
 
-impl CanWrite for AdviceWriter {
-	fn buffer(&mut self) -> impl BufMut + '_ {
-		&mut self.buffer
-	}
-
-	fn write_debug(&mut self, msg: &str) {
-		if self.debug_assertions {
-			self.write_bytes(msg.as_bytes())
-		}
-	}
-}
-
-impl<F, Challenger_> CanSample<F> for TranscriptReader<Challenger_>
+impl<F, Challenger_> CanSample<F> for VerifierTranscript<Challenger_>
 where
 	F: TowerField,
 	Challenger_: Challenger,
@@ -420,7 +391,7 @@ where
 	}
 }
 
-impl<F, Challenger_> CanSample<F> for TranscriptWriter<Challenger_>
+impl<F, Challenger_> CanSample<F> for ProverTranscript<Challenger_>
 where
 	F: TowerField,
 	Challenger_: Challenger,
@@ -449,7 +420,7 @@ fn sample_bits_reader<Reader: Buf>(mut reader: Reader, bits: usize) -> usize {
 	mask & unmasked
 }
 
-impl<Challenger_> CanSampleBits<usize> for TranscriptReader<Challenger_>
+impl<Challenger_> CanSampleBits<usize> for VerifierTranscript<Challenger_>
 where
 	Challenger_: Challenger,
 {
@@ -458,7 +429,7 @@ where
 	}
 }
 
-impl<Challenger_> CanSampleBits<usize> for TranscriptWriter<Challenger_>
+impl<Challenger_> CanSampleBits<usize> for ProverTranscript<Challenger_>
 where
 	Challenger_: Challenger,
 {
@@ -468,13 +439,13 @@ where
 }
 
 /// Helper functions for serializing native types
-pub fn read_u64<Transcript: CanRead>(transcript: &mut Transcript) -> Result<u64, Error> {
+pub fn read_u64<B: Buf>(transcript: &mut TranscriptReader<B>) -> Result<u64, Error> {
 	let mut as_bytes = [0; size_of::<u64>()];
 	transcript.read_bytes(&mut as_bytes)?;
 	Ok(u64::from_le_bytes(as_bytes))
 }
 
-pub fn write_u64<Transcript: CanWrite>(transcript: &mut Transcript, n: u64) {
+pub fn write_u64<B: BufMut>(transcript: &mut TranscriptWriter<B>, n: u64) {
 	transcript.write_bytes(&n.to_le_bytes());
 }
 
@@ -492,28 +463,33 @@ mod tests {
 
 	#[test]
 	fn test_transcripting() {
-		let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+		let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let mut writable = prover_transcript.message();
 
-		prover_transcript.write_scalar(BinaryField8b::new(0x96));
-		prover_transcript.write_scalar(BinaryField32b::new(0xDEADBEEF));
-		prover_transcript.write_scalar(BinaryField128b::new(0x55669900112233550000CCDDFFEEAABB));
+		writable.write_scalar(BinaryField8b::new(0x96));
+		writable.write_scalar(BinaryField32b::new(0xDEADBEEF));
+		writable.write_scalar(BinaryField128b::new(0x55669900112233550000CCDDFFEEAABB));
 		let sampled_fanpaar1: BinaryField128b = prover_transcript.sample();
 
-		prover_transcript.write_scalar(AESTowerField8b::new(0x52));
-		prover_transcript.write_scalar(AESTowerField32b::new(0x12345678));
-		prover_transcript.write_scalar(AESTowerField128b::new(0xDDDDBBBBCCCCAAAA2222999911117777));
+		let mut writable = prover_transcript.message();
+
+		writable.write_scalar(AESTowerField8b::new(0x52));
+		writable.write_scalar(AESTowerField32b::new(0x12345678));
+		writable.write_scalar(AESTowerField128b::new(0xDDDDBBBBCCCCAAAA2222999911117777));
 
 		let sampled_aes1: AESTowerField16b = prover_transcript.sample();
 
 		prover_transcript
+			.message()
 			.write_scalar(BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
 		let sampled_polyval1: BinaryField128bPolyval = prover_transcript.sample();
 
-		let mut verifier_transcript = prover_transcript.into_reader();
+		let mut verifier_transcript = prover_transcript.into_verifier();
+		let mut readable = verifier_transcript.message();
 
-		let fp_8: BinaryField8b = verifier_transcript.read_scalar().unwrap();
-		let fp_32: BinaryField32b = verifier_transcript.read_scalar().unwrap();
-		let fp_128: BinaryField128b = verifier_transcript.read_scalar().unwrap();
+		let fp_8: BinaryField8b = readable.read_scalar().unwrap();
+		let fp_32: BinaryField32b = readable.read_scalar().unwrap();
+		let fp_128: BinaryField128b = readable.read_scalar().unwrap();
 
 		assert_eq!(fp_8.val(), 0x96);
 		assert_eq!(fp_32.val(), 0xDEADBEEF);
@@ -523,9 +499,11 @@ mod tests {
 
 		assert_eq!(sampled_fanpaar1_res, sampled_fanpaar1);
 
-		let aes_8: AESTowerField8b = verifier_transcript.read_scalar().unwrap();
-		let aes_32: AESTowerField32b = verifier_transcript.read_scalar().unwrap();
-		let aes_128: AESTowerField128b = verifier_transcript.read_scalar().unwrap();
+		let mut readable = verifier_transcript.message();
+
+		let aes_8: AESTowerField8b = readable.read_scalar().unwrap();
+		let aes_32: AESTowerField32b = readable.read_scalar().unwrap();
+		let aes_128: AESTowerField128b = readable.read_scalar().unwrap();
 
 		assert_eq!(aes_8.val(), 0x52);
 		assert_eq!(aes_32.val(), 0x12345678);
@@ -535,7 +513,8 @@ mod tests {
 
 		assert_eq!(sampled_aes_res, sampled_aes1);
 
-		let polyval_128: BinaryField128bPolyval = verifier_transcript.read_scalar().unwrap();
+		let polyval_128: BinaryField128bPolyval =
+			verifier_transcript.message().read_scalar().unwrap();
 		assert_eq!(polyval_128, BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
 
 		let sampled_polyval_res: BinaryField128bPolyval = verifier_transcript.sample();
@@ -546,7 +525,8 @@ mod tests {
 
 	#[test]
 	fn test_advicing() {
-		let mut advice_writer = AdviceWriter::new();
+		let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let mut advice_writer = prover_transcript.decommitment();
 
 		advice_writer.write_scalar(BinaryField8b::new(0x96));
 		advice_writer.write_scalar(BinaryField32b::new(0xDEADBEEF));
@@ -558,7 +538,8 @@ mod tests {
 
 		advice_writer.write_scalar(BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
 
-		let mut advice_reader = advice_writer.into_reader();
+		let mut verifier_transcript = prover_transcript.into_verifier();
+		let mut advice_reader = verifier_transcript.decommitment();
 
 		let fp_8: BinaryField8b = advice_reader.read_scalar().unwrap();
 		let fp_32: BinaryField32b = advice_reader.read_scalar().unwrap();
@@ -579,12 +560,13 @@ mod tests {
 		let polyval_128: BinaryField128bPolyval = advice_reader.read_scalar().unwrap();
 		assert_eq!(polyval_128, BinaryField128bPolyval::new(0xFFFF12345678DDDDEEEE87654321AAAA));
 
-		advice_reader.finalize().unwrap();
+		verifier_transcript.finalize().unwrap();
 	}
 
 	#[test]
-	fn test_challenger() {
-		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+	fn test_challenger_and_observing() {
+		let mut taped_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let mut untaped_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let mut challenger = HasherChallenger::<Groestl256>::default();
 
 		const NUM_SAMPLING: usize = 32;
@@ -593,48 +575,63 @@ mod tests {
 		let mut sampled_arrays = [[0u8; 8]; NUM_SAMPLING];
 
 		for i in 0..NUM_SAMPLING {
-			transcript.write_scalar(BinaryField64b::new(u64::from_le_bytes(
-				random_bytes[i * 8..i * 8 + 8].to_vec().try_into().unwrap(),
-			)));
+			taped_transcript
+				.message()
+				.write_scalar(BinaryField64b::new(u64::from_le_bytes(
+					random_bytes[i * 8..i * 8 + 8].to_vec().try_into().unwrap(),
+				)));
+			untaped_transcript
+				.observe()
+				.write_scalar(BinaryField64b::new(u64::from_le_bytes(
+					random_bytes[i * 8..i * 8 + 8].to_vec().try_into().unwrap(),
+				)));
 			challenger
 				.observer()
 				.put_slice(&random_bytes[i * 8..i * 8 + 8]);
 
-			let sampled_out_transcript: BinaryField64b = transcript.sample();
+			let sampled_out_transcript1: BinaryField64b = taped_transcript.sample();
+			let sampled_out_transcript2: BinaryField64b = untaped_transcript.sample();
 			let mut challenger_out = [0u8; 8];
 			challenger.sampler().copy_to_slice(&mut challenger_out);
-			assert_eq!(challenger_out, sampled_out_transcript.val().to_le_bytes());
+			assert_eq!(challenger_out, sampled_out_transcript1.val().to_le_bytes());
+			assert_eq!(challenger_out, sampled_out_transcript2.val().to_le_bytes());
 			sampled_arrays[i] = challenger_out;
 		}
 
-		let mut transcript = transcript.into_reader();
+		let mut taped_transcript = taped_transcript.into_verifier();
+
+		assert!(untaped_transcript.finalize().is_empty());
 
 		for array in sampled_arrays.into_iter() {
-			let _: BinaryField64b = transcript.read_scalar().unwrap();
-			let sampled_out_transcript: BinaryField64b = transcript.sample();
+			let _: BinaryField64b = taped_transcript.message().read_scalar().unwrap();
+			let sampled_out_transcript: BinaryField64b = taped_transcript.sample();
 
 			assert_eq!(array, sampled_out_transcript.val().to_le_bytes());
 		}
 
-		transcript.finalize().unwrap();
+		taped_transcript.finalize().unwrap();
 	}
 
 	#[test]
 	fn test_transcript_debug() {
-		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+		let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-		transcript.write_debug("test_transcript_debug");
-		transcript.into_reader().read_debug("test_transcript_debug");
+		transcript.message().write_debug("test_transcript_debug");
+		transcript
+			.into_verifier()
+			.message()
+			.read_debug("test_transcript_debug");
 	}
 
 	#[test]
 	#[should_panic]
 	fn test_transcript_debug_fail() {
-		let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::new();
+		let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-		transcript.write_debug("test_transcript_debug");
+		transcript.message().write_debug("test_transcript_debug");
 		transcript
-			.into_reader()
+			.into_verifier()
+			.message()
 			.read_debug("test_transcript_debug_should_fail");
 	}
 }

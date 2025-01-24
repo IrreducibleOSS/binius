@@ -39,7 +39,7 @@ use crate::{
 	},
 	ring_switch,
 	tower::{PackedTop, TowerFamily, TowerUnderlier},
-	transcript::{AdviceReader, CanRead, Proof as ProofReader, TranscriptReader},
+	transcript::VerifierTranscript,
 	transparent::{eq_ind::EqIndPartialEval, step_down},
 };
 
@@ -72,10 +72,9 @@ where
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
 
-	let Proof { transcript, advice } = proof;
+	let Proof { transcript } = proof;
 
-	let mut transcript = TranscriptReader::<Challenger_>::new(transcript);
-	let mut advice = AdviceReader::new(advice);
+	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
@@ -87,11 +86,12 @@ where
 	)?;
 
 	// Read polynomial commitment polynomials
-	let commitment = transcript.read::<Output<Hash>>()?;
+	let mut reader = transcript.message();
+	let commitment = reader.read::<Output<Hash>>()?;
 
 	// Grand product arguments
 	// Grand products for non-zero checks
-	let non_zero_products = transcript.read_scalar_slice(non_zero_oracle_ids.len())?;
+	let non_zero_products = reader.read_scalar_slice(non_zero_oracle_ids.len())?;
 	if non_zero_products
 		.iter()
 		.any(|count| *count == Tower::B128::zero())
@@ -115,7 +115,9 @@ where
 		make_flush_oracles(&mut oracles, &flushes, mixing_challenge, &permutation_challenges)?;
 	let flush_counts = flushes.iter().map(|flush| flush.count).collect::<Vec<_>>();
 
-	let flush_products = transcript.read_scalar_slice(flush_oracle_ids.len())?;
+	let flush_products = transcript
+		.message()
+		.read_scalar_slice(flush_oracle_ids.len())?;
 	verify_channels_balance(
 		&flushes,
 		&flush_products,
@@ -262,21 +264,16 @@ where
 			.into_iter()
 			.chain(zerocheck_eval_claims),
 		&mut transcript,
-		&mut advice,
 	)?;
 
 	// Reduce committed evaluation claims to PIOP sumcheck claims
 	let system =
 		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
 
-	let mut proof_reader = ProofReader {
-		transcript: &mut transcript,
-		advice: &mut advice,
-	};
 	let ring_switch::ReducedClaim {
 		transparents,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::verify::<_, Tower, _, _>(&system, &mut proof_reader)?;
+	} = ring_switch::verify::<_, Tower, _>(&system, &mut transcript)?;
 
 	// Prove evaluation claims using PIOP compiler
 	piop::verify(
@@ -286,11 +283,10 @@ where
 		&commitment,
 		&transparents,
 		&piop_sumcheck_claims,
-		&mut proof_reader,
+		&mut transcript,
 	)?;
 
 	transcript.finalize()?;
-	advice.finalize()?;
 
 	Ok(())
 }

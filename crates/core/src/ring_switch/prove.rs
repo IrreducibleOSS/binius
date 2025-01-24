@@ -15,11 +15,11 @@ use super::{
 	tower_tensor_algebra::TowerTensorAlgebra,
 };
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
 	ring_switch::{common::EvalClaimSuffixDesc, eq_ind::RingSwitchEqInd},
 	tower::{PackedTop, TowerFamily},
-	transcript::{CanWrite, Proof},
+	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
 
@@ -32,10 +32,10 @@ pub struct ReducedWitness<P: PackedField> {
 }
 
 #[tracing::instrument("ring_switch::prove", skip_all)]
-pub fn prove<F, P, M, Tower, Transcript, Advice, Backend>(
+pub fn prove<F, P, M, Tower, Challenger_, Backend>(
 	system: &EvalClaimSystem<F>,
 	witnesses: &[M],
-	proof: &mut Proof<Transcript, Advice>,
+	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<ReducedWitness<P>, Error>
 where
@@ -44,7 +44,7 @@ where
 	M: MultilinearPoly<P> + Sync,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
-	Transcript: CanWrite + CanSample<F>,
+	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
 	if witnesses.len() != system.commit_meta.total_multilins() {
@@ -56,7 +56,7 @@ where
 	// Sample enough randomness to batch tensor elements corresponding to claims that share an
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
-	let mixing_challenges = proof.transcript.sample_vec(n_mixing_challenges);
+	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, send one batched partial evaluation.
@@ -67,21 +67,20 @@ where
 		&system.prefix_descs,
 		&system.eval_claim_to_prefix_desc_index,
 	)?;
+	let mut writer = transcript.message();
 	for (mixed_tensor_elem, prefix_desc) in iter::zip(mixed_tensor_elems, &system.prefix_descs) {
 		debug_assert_eq!(mixed_tensor_elem.vertical_elems().len(), 1 << prefix_desc.kappa());
-		proof
-			.transcript
-			.write_scalar_slice(mixed_tensor_elem.vertical_elems());
+		writer.write_scalar_slice(mixed_tensor_elem.vertical_elems());
 	}
 
 	// Sample the row-batching randomness.
-	let row_batch_challenges = proof.transcript.sample_vec(system.max_claim_kappa());
+	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
 	let row_batch_coeffs =
 		Arc::from(MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion());
 
 	let row_batched_evals =
 		compute_row_batched_sumcheck_evals(scaled_tensor_elems, &row_batch_coeffs);
-	proof.transcript.write_scalar_slice(&row_batched_evals);
+	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, P, Tower>(

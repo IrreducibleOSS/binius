@@ -138,7 +138,7 @@ mod tests {
 			},
 			sumcheck,
 		},
-		transcript::TranscriptWriter,
+		transcript::ProverTranscript,
 	};
 
 	fn generate_poly_helper<P>(
@@ -184,7 +184,7 @@ mod tests {
 			.collect::<Vec<_>>();
 		let prod_multilin = prod_mle.specialize_arc_dyn::<PackedType<U, FE>>();
 
-		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let mut prove_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let challenges: Vec<FE> = prove_transcript.sample_vec(n_vars);
 
 		let sum = prod_multilin
@@ -215,7 +215,7 @@ mod tests {
 		let sumcheck_claim = reduce_to_sumcheck(&[claim]).unwrap();
 		let sumcheck_claims = [sumcheck_claim];
 
-		let mut verify_challenger = prove_transcript.into_reader();
+		let mut verify_challenger = prove_transcript.into_verifier();
 		let _: Vec<FE> = verify_challenger.sample_vec(n_vars);
 		let batch_output =
 			sumcheck::batch_verify(&sumcheck_claims, &mut verify_challenger).unwrap();

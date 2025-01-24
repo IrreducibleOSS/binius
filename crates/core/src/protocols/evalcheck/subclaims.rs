@@ -25,7 +25,7 @@ use binius_utils::bail;
 
 use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::Challenger,
 	oracle::{
 		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
 		Packed, ProjectionVariant, Shifted,
@@ -36,7 +36,7 @@ use crate::{
 		prove::oracles::{constraint_sets_sumcheck_provers_metas, SumcheckProversWithMetas},
 		Error as SumcheckError,
 	},
-	transcript::CanWrite,
+	transcript::ProverTranscript,
 	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -398,11 +398,11 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
-pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
+pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Challenger_, Backend>(
 	oracles: &MultilinearOracleSet<F>,
 	witness: &MultilinearExtensionIndex<U, F>,
 	constraint_sets: Vec<ConstraintSet<F>>,
-	transcript: &mut Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -411,7 +411,7 @@ where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(

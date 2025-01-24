@@ -5,13 +5,13 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		prove::{batch_prove::BatchProveStart, SumcheckProver},
 		univariate::LagrangeRoundEvals,
 		Error,
 	},
-	transcript::CanWrite,
+	transcript::ProverTranscript,
 };
 
 /// A univariate zerocheck prover interface.
@@ -101,15 +101,15 @@ pub struct BatchZerocheckUnivariateProveOutput<F: Field, Prover> {
 /// verification.
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-pub fn batch_prove_zerocheck_univariate_round<'a, F, Prover, Transcript>(
+pub fn batch_prove_zerocheck_univariate_round<'a, F, Prover, Challenger_>(
 	mut provers: Vec<Prover>,
 	skip_rounds: usize,
-	mut transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchZerocheckUnivariateProveOutput<F, Box<dyn SumcheckProver<F> + 'a>>, Error>
 where
 	F: TowerField,
 	Prover: UnivariateZerocheckProver<'a, F>,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	// Check that the provers are in descending order by n_vars
 	if !is_sorted_ascending(provers.iter().map(|prover| prover.n_vars()).rev()) {
@@ -149,7 +149,7 @@ where
 		bail!(Error::IncorrectZerosPrefixLen);
 	}
 
-	transcript.write_scalar_slice(&round_evals.evals);
+	transcript.message().write_scalar_slice(&round_evals.evals);
 	let univariate_challenge = transcript.sample();
 
 	let mut reduction_provers = Vec::with_capacity(provers.len());

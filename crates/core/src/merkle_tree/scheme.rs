@@ -8,6 +8,7 @@ use binius_utils::{
 	bail,
 	checked_arithmetics::{log2_ceil_usize, log2_strict_usize},
 };
+use bytes::Buf;
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use getset::Getters;
 
@@ -15,7 +16,7 @@ use super::{
 	errors::{Error, VerificationError},
 	merkle_tree_vcs::MerkleTreeScheme,
 };
-use crate::transcript::CanRead;
+use crate::transcript::TranscriptReader;
 
 #[derive(Debug, Getters)]
 pub struct BinaryMerkleTreeScheme<T, H, C> {
@@ -105,14 +106,14 @@ where
 		Ok(())
 	}
 
-	fn verify_opening<Proof: CanRead>(
+	fn verify_opening<B: Buf>(
 		&self,
 		index: usize,
 		values: &[F],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
-		mut proof: Proof,
+		proof: &mut TranscriptReader<B>,
 	) -> Result<(), Error> {
 		if 1 << layer_depth != layer_digests.len() {
 			bail!(VerificationError::IncorrectVectorLength)

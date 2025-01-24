@@ -9,14 +9,14 @@ use super::{
 	super::error::Error, common::GeneratorExponentReductionOutput, utils::first_layer_inverse,
 };
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::Challenger,
 	polynomial::MultivariatePoly,
 	protocols::{
 		gkr_gpa::LayerClaim,
 		gkr_int_mul::generator_exponent::compositions::MultiplyOrDont,
 		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
 	},
-	transcript::CanRead,
+	transcript::VerifierTranscript,
 	transparent::eq_ind::EqIndPartialEval,
 };
 
@@ -35,15 +35,15 @@ use crate::{
 /// Input: One evaluation claim on n
 ///
 /// Output: EXPONENT_BITS_WIDTH separate claims (at different points) on each of the a_i's
-pub fn verify<FGenerator, F, Transcript, const EXPONENT_BIT_WIDTH: usize>(
+pub fn verify<FGenerator, F, Challenger_, const EXPONENT_BIT_WIDTH: usize>(
 	claim: &LayerClaim<F>,
-	mut transcript: Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 	log_size: usize,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
 where
 	FGenerator: TowerField,
 	F: TowerField + ExtensionField<FGenerator>,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	let mut eval_claims_on_bit_columns: [_; EXPONENT_BIT_WIDTH] =
 		array::from_fn(|_| LayerClaim::<F>::default());
@@ -68,7 +68,7 @@ where
 		)?;
 
 		let sumcheck_verification_output =
-			sumcheck::batch_verify(&[this_round_sumcheck_claim], &mut transcript)?;
+			sumcheck::batch_verify(&[this_round_sumcheck_claim], transcript)?;
 
 		// Verify claims on transparent polynomials
 

@@ -256,7 +256,7 @@ mod tests {
 			},
 			test_utils::generate_zero_product_multilinears,
 		},
-		transcript::{AdviceWriter, Proof, TranscriptWriter},
+		transcript::ProverTranscript,
 	};
 
 	#[test]
@@ -326,12 +326,8 @@ mod tests {
 			provers.push(prover);
 		}
 
-		let mut prove_challenger = Proof {
-			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
-			advice: AdviceWriter::default(),
-		};
-		let batch_sumcheck_output_prove =
-			batch_prove(provers, &mut prove_challenger.transcript).unwrap();
+		let mut prove_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+		let batch_sumcheck_output_prove = batch_prove(provers, &mut prove_challenger).unwrap();
 
 		for ((skip_rounds, multilinears), multilinear_evals) in
 			iter::zip(&all_multilinears, batch_sumcheck_output_prove.multilinear_evals)
@@ -358,7 +354,7 @@ mod tests {
 
 		let mut verify_challenger = prove_challenger.into_verifier();
 		let batch_sumcheck_output_verify =
-			batch_verify(claims.as_slice(), &mut verify_challenger.transcript).unwrap();
+			batch_verify(claims.as_slice(), &mut verify_challenger).unwrap();
 		let batch_sumcheck_output_post = verify_sumcheck_outputs(
 			claims.as_slice(),
 			univariate_challenge,
@@ -470,13 +466,9 @@ mod tests {
 		];
 
 		for skip_rounds in 0..=max_n_vars {
-			let mut proof = Proof {
-				transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::new(),
-				advice: AdviceWriter::new(),
-			};
+			let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-			let prover_zerocheck_challenges: Vec<FI> =
-				proof.transcript.sample_vec(max_n_vars - skip_rounds);
+			let prover_zerocheck_challenges: Vec<FI> = proof.sample_vec(max_n_vars - skip_rounds);
 
 			let mut prover_zerocheck_claims = Vec::new();
 			let mut univariate_provers = Vec::new();
@@ -530,25 +522,21 @@ mod tests {
 				})
 				.collect::<Vec<_>>();
 
-			let prover_univariate_output = batch_prove_zerocheck_univariate_round(
-				univariate_provers,
-				skip_rounds,
-				&mut proof.transcript,
-			)
-			.unwrap();
+			let prover_univariate_output =
+				batch_prove_zerocheck_univariate_round(univariate_provers, skip_rounds, &mut proof)
+					.unwrap();
 
 			let _ = batch_prove_with_start(
 				prover_univariate_output.batch_prove_start,
 				tail_zerocheck_provers,
-				&mut proof.transcript,
+				&mut proof,
 			)
 			.unwrap();
 
 			let mut verifier_proof = proof.into_verifier();
 
-			let verifier_zerocheck_challenges: Vec<F> = verifier_proof
-				.transcript
-				.sample_vec(max_n_vars - skip_rounds);
+			let verifier_zerocheck_challenges: Vec<F> =
+				verifier_proof.sample_vec(max_n_vars - skip_rounds);
 			assert_eq!(
 				prover_zerocheck_challenges
 					.into_iter()
@@ -571,7 +559,7 @@ mod tests {
 			let verifier_univariate_output = batch_verify_zerocheck_univariate_round(
 				&verifier_zerocheck_claims[..univariate_cnt],
 				skip_rounds,
-				&mut verifier_proof.transcript,
+				&mut verifier_proof,
 			)
 			.unwrap();
 
@@ -579,7 +567,7 @@ mod tests {
 			let _verifier_sumcheck_output = batch_verify_with_start(
 				verifier_univariate_output.batch_verify_start,
 				&verifier_sumcheck_claims,
-				&mut verifier_proof.transcript,
+				&mut verifier_proof,
 			)
 			.unwrap();
 

@@ -1,9 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_maybe_rayon::iter::IndexedParallelIterator;
+use bytes::{Buf, BufMut};
 
 use super::errors::Error;
-use crate::transcript::{CanRead, CanWrite};
+use crate::transcript::{TranscriptReader, TranscriptWriter};
 
 /// A Merkle tree commitment.
 ///
@@ -53,14 +54,14 @@ pub trait MerkleTreeScheme<T>: Sync {
 	) -> Result<(), Error>;
 
 	/// Verify an opening proof for an entry in a committed vector at the given index.
-	fn verify_opening<Proof: CanRead>(
+	fn verify_opening<B: Buf>(
 		&self,
 		index: usize,
 		values: &[T],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
-		proof: Proof,
+		proof: &mut TranscriptReader<B>,
 	) -> Result<(), Error>;
 }
 
@@ -108,11 +109,11 @@ pub trait MerkleTreeProver<T>: Sync {
 	/// * `committed` - helper data generated during commitment
 	/// * `layer_depth` - depth of the layer to prove inclusion in
 	/// * `index` - the entry index
-	fn prove_opening<Proof: CanWrite>(
+	fn prove_opening<B: BufMut>(
 		&self,
 		committed: &Self::Committed,
 		layer_depth: usize,
 		index: usize,
-		proof: Proof,
+		proof: &mut TranscriptWriter<B>,
 	) -> Result<(), Error>;
 }

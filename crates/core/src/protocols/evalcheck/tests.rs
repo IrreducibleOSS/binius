@@ -500,15 +500,16 @@ fn test_evalcheck_serialization() {
 			.chain(transparent[..20].iter()),
 	);
 
-	let mut transcript = crate::transcript::TranscriptWriter::<
+	let mut transcript = crate::transcript::ProverTranscript::<
 		crate::fiat_shamir::HasherChallenger<groestl_crypto::Groestl256>,
-	>::default();
+	>::new();
 
-	serialize_evalcheck_proof(&mut transcript, &second_linear_combination);
-	let mut transcript = transcript.into_reader();
+	let mut writer = transcript.message();
+	serialize_evalcheck_proof(&mut writer, &second_linear_combination);
+	let mut transcript = transcript.into_verifier();
+	let mut reader = transcript.message();
 
-	let out_deserialized =
-		deserialize_evalcheck_proof::<_, BinaryField128b>(&mut transcript).unwrap();
+	let out_deserialized = deserialize_evalcheck_proof::<_, BinaryField128b>(&mut reader).unwrap();
 
 	assert_eq!(out_deserialized, second_linear_combination);
 

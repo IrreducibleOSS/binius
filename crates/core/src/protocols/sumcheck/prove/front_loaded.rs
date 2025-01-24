@@ -4,12 +4,13 @@ use std::{collections::VecDeque, iter};
 
 use binius_field::{Field, TowerField};
 use binius_utils::sorting::is_sorted_ascending;
+use bytes::BufMut;
 
 use super::batch_prove::SumcheckProver;
 use crate::{
 	fiat_shamir::CanSample,
 	protocols::sumcheck::{Error, RoundCoeffs},
-	transcript::CanWrite,
+	transcript::TranscriptWriter,
 };
 
 /// Prover for a front-loaded batch sumcheck protocol execution.
@@ -61,9 +62,9 @@ where
 		Ok(Self { provers, round: 0 })
 	}
 
-	fn finish_claim_provers<Transcript>(&mut self, transcript: &mut Transcript) -> Result<(), Error>
+	fn finish_claim_provers<B>(&mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
 	where
-		Transcript: CanWrite,
+		B: BufMut,
 	{
 		while let Some((prover, _)) = self.provers.front() {
 			if prover.n_vars() != self.round {
@@ -77,9 +78,9 @@ where
 	}
 
 	/// Computes the round message and writes it to the proof transcript.
-	pub fn send_round_proof<Transcript>(&mut self, transcript: &mut Transcript) -> Result<(), Error>
+	pub fn send_round_proof<B>(&mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
 	where
-		Transcript: CanWrite,
+		B: BufMut,
 	{
 		self.finish_claim_provers(transcript)?;
 
@@ -104,9 +105,9 @@ where
 	}
 
 	/// Finishes the remaining instance provers and checks that all rounds are completed.
-	pub fn finish<Transcript>(mut self, transcript: &mut Transcript) -> Result<(), Error>
+	pub fn finish<B>(mut self, transcript: &mut TranscriptWriter<B>) -> Result<(), Error>
 	where
-		Transcript: CanWrite,
+		B: BufMut,
 	{
 		self.finish_claim_provers(transcript)?;
 		if !self.provers.is_empty() {

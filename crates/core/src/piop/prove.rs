@@ -19,7 +19,7 @@ use super::{
 	verify::{make_sumcheck_claim_descs, PIOPSumcheckClaim},
 };
 use crate::{
-	fiat_shamir::{CanSample, CanSampleBits},
+	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	piop::CommitMeta,
 	protocols::{
@@ -35,7 +35,7 @@ use crate::{
 		},
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{CanWrite, Proof},
+	transcript::ProverTranscript,
 };
 
 // ## Preconditions
@@ -152,19 +152,7 @@ where
 /// The arguments corresponding to the committed multilinears must be the output of [`commit`].
 #[allow(clippy::too_many_arguments)]
 #[tracing::instrument("piop::prove", skip_all)]
-pub fn prove<
-	F,
-	FDomain,
-	FEncode,
-	P,
-	M,
-	DomainFactory,
-	MTScheme,
-	MTProver,
-	Transcript,
-	Advice,
-	Backend,
->(
+pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Challenger_, Backend>(
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
 	domain_factory: DomainFactory,
@@ -174,7 +162,7 @@ pub fn prove<
 	committed_multilins: &[M],
 	transparent_multilins: &[M],
 	claims: &[PIOPSumcheckClaim<F>],
-	proof: &mut Proof<Transcript, Advice>,
+	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<(), Error>
 where
@@ -186,8 +174,7 @@ where
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
-	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
-	Advice: CanWrite,
+	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
 	// Map of n_vars to sumcheck claim descriptions
@@ -245,20 +232,20 @@ where
 		sumcheck_provers,
 		codeword,
 		committed,
-		proof,
+		transcript,
 	)?;
 
 	Ok(())
 }
 
-fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Transcript, Advice>(
+fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_>(
 	n_rounds: usize,
 	fri_params: &FRIParams<F, FEncode>,
 	merkle_prover: &MTProver,
 	sumcheck_provers: Vec<impl SumcheckProver<F>>,
 	codeword: &[P],
 	committed: MTProver::Committed,
-	proof: &mut Proof<Transcript, Advice>,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
 	F: TowerField + ExtensionField<FEncode>,
@@ -266,30 +253,28 @@ where
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
-	Transcript: CanSample<F> + CanWrite + CanSampleBits<usize>,
-	Advice: CanWrite,
+	Challenger_: Challenger,
 {
 	let mut fri_prover =
 		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), &committed)?;
 
-	let mut sumcheck_batch_prover =
-		SumcheckBatchProver::new(sumcheck_provers, &mut proof.transcript)?;
+	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 
 	for _ in 0..n_rounds {
-		sumcheck_batch_prover.send_round_proof(&mut proof.transcript)?;
-		let challenge = proof.transcript.sample();
+		sumcheck_batch_prover.send_round_proof(&mut transcript.message())?;
+		let challenge = transcript.sample();
 		sumcheck_batch_prover.receive_challenge(challenge)?;
 
 		match fri_prover.execute_fold_round(challenge)? {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				proof.transcript.write(&round_commitment);
+				transcript.message().write(&round_commitment);
 			}
 		}
 	}
 
-	sumcheck_batch_prover.finish(&mut proof.transcript)?;
-	fri_prover.finish_proof(&mut proof.advice, &mut proof.transcript)?;
+	sumcheck_batch_prover.finish(&mut transcript.message())?;
+	fri_prover.finish_proof(transcript)?;
 	Ok(())
 }
 

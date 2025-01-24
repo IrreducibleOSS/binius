@@ -5,6 +5,7 @@ use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::{bail, serialization::SerializeBytes};
 use bytemuck::zeroed_vec;
+use bytes::BufMut;
 use itertools::izip;
 use tracing::instrument;
 
@@ -14,12 +15,12 @@ use super::{
 	TerminateCodeword,
 };
 use crate::{
-	fiat_shamir::CanSampleBits,
+	fiat_shamir::{CanSampleBits, Challenger},
 	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::CanWrite,
+	transcript::{ProverTranscript, TranscriptWriter},
 };
 
 #[instrument(skip_all, level = "debug")]
@@ -435,16 +436,15 @@ where
 		Ok((terminate_codeword, query_prover))
 	}
 
-	pub fn finish_proof<Transcript, Advice>(
+	pub fn finish_proof<Challenger_>(
 		self,
-		advice: &mut Advice,
-		transcript: &mut Transcript,
+		transcript: &mut ProverTranscript<Challenger_>,
 	) -> Result<(), Error>
 	where
-		Transcript: CanSampleBits<usize>,
-		Advice: CanWrite,
+		Challenger_: Challenger,
 	{
 		let (terminate_codeword, query_prover) = self.finalize()?;
+		let mut advice = transcript.decommitment();
 		advice.write_scalar_slice(&terminate_codeword);
 
 		let layers = query_prover.vcs_optimal_layers()?;
@@ -453,11 +453,10 @@ where
 		}
 
 		let params = query_prover.params;
-		let indexes_iter = std::iter::repeat_with(|| transcript.sample_bits(params.index_bits()))
-			.take(params.n_test_queries());
 
-		for index in indexes_iter {
-			query_prover.prove_query(index, advice)?;
+		for _ in 0..params.n_test_queries() {
+			let index = transcript.sample_bits(params.index_bits());
+			query_prover.prove_query(index, transcript.decommitment())?;
 		}
 
 		Ok(())
@@ -497,9 +496,13 @@ where
 	///
 	/// * `index` - an index into the original codeword domain
 	#[instrument(skip_all, name = "fri::FRIQueryProver::prove_query", level = "debug")]
-	pub fn prove_query<Advice>(&self, mut index: usize, advice: &mut Advice) -> Result<(), Error>
+	pub fn prove_query<B>(
+		&self,
+		mut index: usize,
+		mut advice: TranscriptWriter<B>,
+	) -> Result<(), Error>
 	where
-		Advice: CanWrite,
+		B: BufMut,
 	{
 		let mut arities_and_optimal_layers_depths = self
 			.params
@@ -524,7 +527,7 @@ where
 			index,
 			first_fold_arity,
 			first_optimal_layer_depth,
-			advice,
+			&mut advice,
 		)?;
 
 		for ((codeword, committed), (arity, optimal_layer_depth)) in
@@ -538,7 +541,7 @@ where
 				index,
 				arity,
 				optimal_layer_depth,
-				advice,
+				&mut advice,
 			)?;
 		}
 
@@ -561,19 +564,19 @@ where
 	}
 }
 
-fn prove_coset_opening<F, MTProver, Advice>(
+fn prove_coset_opening<F, MTProver, B>(
 	merkle_prover: &MTProver,
 	codeword: &[F],
 	committed: &MTProver::Committed,
 	coset_index: usize,
 	log_coset_size: usize,
 	optimal_layer_depth: usize,
-	advice: &mut Advice,
+	advice: &mut TranscriptWriter<B>,
 ) -> Result<(), Error>
 where
 	F: TowerField,
 	MTProver: MerkleTreeProver<F>,
-	Advice: CanWrite,
+	B: BufMut,
 {
 	let values = &codeword[(coset_index << log_coset_size)..((coset_index + 1) << log_coset_size)];
 	advice.write_scalar_slice(values);

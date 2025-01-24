@@ -22,9 +22,9 @@ use super::{
 };
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
-	fiat_shamir::CanSample,
+	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{self, CompositeSumClaim},
-	transcript::CanWrite,
+	transcript::ProverTranscript,
 };
 
 /// Proves batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
@@ -33,11 +33,11 @@ use crate::{
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
-pub fn batch_prove<F, P, FDomain, Transcript, Backend>(
+pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
 	witnesses: impl IntoIterator<Item = GrandProductWitness<P>>,
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	mut transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
@@ -45,7 +45,7 @@ where
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 	P::Scalar: Field + ExtensionField<FDomain>,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
 	//  Ensure witnesses and claims are of the same length, zip them together
@@ -94,7 +94,7 @@ where
 				evaluation_domain_factory.clone(),
 			)?;
 
-			sumcheck::batch_prove(vec![gpa_sumcheck_prover], &mut transcript)?
+			sumcheck::batch_prove(vec![gpa_sumcheck_prover], transcript)?
 		};
 
 		// Step 3: Sample a challenge for the next layer

@@ -14,12 +14,12 @@ use super::{
 	utils::first_layer_inverse, witness::GeneratorExponentWitness,
 };
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::Challenger,
 	protocols::{
 		gkr_gpa::{gpa_sumcheck::prove::GPAProver, Error, LayerClaim},
 		sumcheck::{self, CompositeSumClaim},
 	},
-	transcript::CanWrite,
+	transcript::ProverTranscript,
 };
 
 pub fn prove<
@@ -29,14 +29,14 @@ pub fn prove<
 	PChallenge,
 	PGenerator,
 	FDomain,
-	Transcript,
+	Challenger_,
 	Backend,
 	const EXPONENT_BIT_WIDTH: usize,
 >(
 	witness: &GeneratorExponentWitness<'_, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>,
 	claim: &LayerClaim<F>, // this is a claim about the evaluation of the result layer at a random point
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	mut transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
 where
@@ -53,7 +53,7 @@ where
 	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + BinaryField + TowerField,
 	FGenerator: Field + TowerField,
 	Backend: ComputationBackend,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	let mut eval_claims_on_bit_columns: [_; EXPONENT_BIT_WIDTH] =
 		array::from_fn(|_| LayerClaim::<F>::default());
@@ -91,8 +91,7 @@ where
 			backend,
 		)?;
 
-		let sumcheck_proof_output =
-			sumcheck::batch_prove(vec![this_round_prover], &mut transcript)?;
+		let sumcheck_proof_output = sumcheck::batch_prove(vec![this_round_prover], transcript)?;
 
 		eval_point = sumcheck_proof_output.challenges.clone();
 		eval = sumcheck_proof_output.multilinear_evals[0][0];

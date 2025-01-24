@@ -46,11 +46,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 #[derive(Debug, Clone)]
 pub struct Proof {
 	pub transcript: Vec<u8>,
-	pub advice: Vec<u8>,
 }
 
 impl Proof {
 	pub fn get_proof_size(&self) -> usize {
-		self.transcript.len() + self.advice.len()
+		self.transcript.len()
 	}
 }

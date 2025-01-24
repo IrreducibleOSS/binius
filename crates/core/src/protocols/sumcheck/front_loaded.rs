@@ -5,6 +5,7 @@ use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
 use binius_field::{Field, TowerField};
 use binius_math::{evaluate_univariate, CompositionPolyOS};
 use binius_utils::sorting::is_sorted_ascending;
+use bytes::Buf;
 
 use super::{
 	common::batch_weighted_value,
@@ -12,7 +13,9 @@ use super::{
 	verify::compute_expected_batch_composite_evaluation_single_claim,
 	RoundCoeffs, RoundProof,
 };
-use crate::{fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcript::CanRead};
+use crate::{
+	fiat_shamir::CanSample, protocols::sumcheck::SumcheckClaim, transcript::TranscriptReader,
+};
 
 #[derive(Debug)]
 enum CoeffsOrSums<F: Field> {
@@ -128,12 +131,12 @@ where
 	}
 
 	/// Processes the next finished sumcheck claim, if all of its rounds are complete.
-	pub fn try_finish_claim<Transcript>(
+	pub fn try_finish_claim<B>(
 		&mut self,
-		transcript: &mut Transcript,
+		transcript: &mut TranscriptReader<B>,
 	) -> Result<Option<Vec<F>>, Error>
 	where
-		Transcript: CanRead,
+		B: Buf,
 	{
 		let Some(SumcheckClaimWithContext { claim, .. }) = self.claims.front() else {
 			return Ok(None);
@@ -177,12 +180,12 @@ where
 	}
 
 	/// Reads the round message from the proof transcript.
-	pub fn receive_round_proof<Transcript>(
+	pub fn receive_round_proof<B>(
 		&mut self,
-		transcript: &mut Transcript,
+		transcript: &mut TranscriptReader<B>,
 	) -> Result<(), Error>
 	where
-		Transcript: CanRead,
+		B: Buf,
 	{
 		let degree = match self.claims.front() {
 			Some(SumcheckClaimWithContext {

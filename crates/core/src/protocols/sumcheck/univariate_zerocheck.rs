@@ -10,7 +10,10 @@ use super::{
 	verify::BatchVerifyStart,
 	zerocheck::ZerocheckClaim,
 };
-use crate::{fiat_shamir::CanSample, transcript::CanRead};
+use crate::{
+	fiat_shamir::{CanSample, Challenger},
+	transcript::VerifierTranscript,
+};
 
 #[derive(Debug)]
 pub struct BatchZerocheckUnivariateOutput<F: Field> {
@@ -40,15 +43,15 @@ pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize)
 /// of the underlying composites, checks that univariatized round polynomial agrees with them on
 /// challenge point, and outputs sumcheck claims for `batch_verify` on the remaining variables.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_zerocheck_univariate_round<F, Composition, Transcript>(
+pub fn batch_verify_zerocheck_univariate_round<F, Composition, Challenger_>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	skip_rounds: usize,
-	mut transcript: Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanRead + CanSample<F>,
+	Challenger_: Challenger,
 {
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
@@ -79,7 +82,9 @@ where
 		max_degree = max_degree.max(claim.max_individual_degree() + 1);
 	}
 
-	let round_evals = transcript.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
+	let round_evals = transcript
+		.message()
+		.read_scalar_slice(max_domain_size - zeros_prefix_len)?;
 	let univariate_challenge = transcript.sample();
 
 	let evaluation_domain = EvaluationDomainFactory::<F>::create(

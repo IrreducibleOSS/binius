@@ -7,12 +7,12 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
 		common::{BatchSumcheckOutput, RoundCoeffs},
 		error::Error,
 	},
-	transcript::CanWrite,
+	transcript::ProverTranscript,
 };
 
 /// A sumcheck prover with a round-by-round execution interface.
@@ -90,14 +90,14 @@ impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Pro
 /// The provers in the `provers` parameter must in the same order as the corresponding claims
 /// provided to [`crate::protocols::sumcheck::batch_verify`] during proof verification.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
-pub fn batch_prove<F, Prover, Transcript>(
+pub fn batch_prove<F, Prover, Challenger_>(
 	provers: Vec<Prover>,
-	transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Prover: SumcheckProver<F>,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	let start = BatchProveStart {
 		batch_coeffs: Vec::new(),
@@ -118,15 +118,15 @@ pub struct BatchProveStart<F: Field, Prover> {
 
 /// Prove a batched sumcheck protocol execution, but after some rounds have been processed.
 #[instrument(skip_all, name = "sumcheck::batch_prove")]
-pub fn batch_prove_with_start<F, Prover, Transcript>(
+pub fn batch_prove_with_start<F, Prover, Challenger_>(
 	start: BatchProveStart<F, Prover>,
 	mut provers: Vec<Prover>,
-	mut transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Prover: SumcheckProver<F>,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	let BatchProveStart {
 		mut batch_coeffs,
@@ -169,7 +169,7 @@ where
 				break;
 			}
 
-			let next_batch_coeff = transcript.sample();
+			let next_batch_coeff: F = transcript.sample();
 			batch_coeffs.push(next_batch_coeff);
 			active_index += 1;
 		}
@@ -184,7 +184,9 @@ where
 		}
 
 		let round_proof = round_coeffs.truncate();
-		transcript.write_scalar_slice(round_proof.coeffs());
+		transcript
+			.message()
+			.write_scalar_slice(round_proof.coeffs());
 
 		let challenge = transcript.sample();
 		challenges.push(challenge);
@@ -198,7 +200,7 @@ where
 	while let Some(prover) = provers.get(active_index) {
 		debug_assert_eq!(prover.n_vars(), 0);
 
-		let _next_batch_coeff = transcript.sample();
+		let _next_batch_coeff: F = transcript.sample();
 		active_index += 1;
 	}
 
@@ -207,8 +209,9 @@ where
 		.map(|prover| Box::new(prover).finish())
 		.collect::<Result<Vec<_>, _>>()?;
 
+	let mut writer = transcript.message();
 	for multilinear_evals in multilinear_evals.iter() {
-		transcript.write_scalar_slice(multilinear_evals);
+		writer.write_scalar_slice(multilinear_evals);
 	}
 
 	let output = BatchSumcheckOutput {

@@ -5,10 +5,11 @@ use std::{iter, sync::Arc};
 use binius_field::{Field, TowerField};
 use binius_math::{MultilinearExtension, MultilinearQuery};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
+use bytes::Buf;
 use itertools::izip;
 
 use crate::{
-	fiat_shamir::CanSample,
+	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
 	polynomial::MultivariatePoly,
 	ring_switch::{
@@ -16,7 +17,7 @@ use crate::{
 		EvalClaimSuffixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc, VerificationError,
 	},
 	tower::{PackedTop, TowerFamily},
-	transcript::{CanRead, Proof},
+	transcript::{TranscriptReader, VerifierTranscript},
 };
 
 type FExt<Tower> = <Tower as TowerFamily>::B128;
@@ -27,34 +28,35 @@ pub struct ReducedClaim<'a, F: Field> {
 	pub sumcheck_claims: Vec<PIOPSumcheckClaim<F>>,
 }
 
-pub fn verify<'a, F, Tower, Transcript, Advice>(
+pub fn verify<'a, F, Tower, Challenger_>(
 	system: &'a EvalClaimSystem<F>,
-	proof: &mut Proof<Transcript, Advice>,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<ReducedClaim<'a, F>, Error>
 where
 	F: TowerField,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
-	Transcript: CanRead + CanSample<F>,
+	Challenger_: Challenger,
 {
 	// Sample enough randomness to batch tensor elements corresponding to claims that share an
 	// evaluation point prefix.
 	let n_mixing_challenges = log2_ceil_usize(system.sumcheck_claim_descs.len());
-	let mixing_challenges = proof.transcript.sample_vec(n_mixing_challenges);
+	let mixing_challenges = transcript.sample_vec(n_mixing_challenges);
 	let mixing_coeffs = MultilinearQuery::expand(&mixing_challenges).into_expansion();
 
 	// For each evaluation point prefix, receive one batched tensor algebra element and verify
 	// that it is consistent with the evaluation claims.
-	let tensor_elems = verify_receive_tensor_elems(system, &mixing_coeffs, &mut proof.transcript)?;
+	let tensor_elems =
+		verify_receive_tensor_elems(system, &mixing_coeffs, &mut transcript.message())?;
 
 	// Sample the row-batching randomness.
-	let row_batch_challenges = proof.transcript.sample_vec(system.max_claim_kappa());
+	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
 	let row_batch_coeffs =
 		Arc::from(MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion());
 
 	// For each original evaluation claim, receive the row-batched evaluation claim.
-	let row_batched_evals = proof
-		.transcript
+	let row_batched_evals = transcript
+		.message()
 		.read_scalar_slice(system.sumcheck_claim_descs.len())?;
 
 	// Check that the row-batched evaluation claims sent by the prover are consistent with the
@@ -96,16 +98,16 @@ where
 	})
 }
 
-fn verify_receive_tensor_elems<F, Tower, Transcript>(
+fn verify_receive_tensor_elems<F, Tower, B>(
 	system: &EvalClaimSystem<F>,
 	mixing_coeffs: &[F],
-	transcript: &mut Transcript,
+	transcript: &mut TranscriptReader<B>,
 ) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
 where
 	F: TowerField,
 	Tower: TowerFamily<B128 = F>,
 	F: PackedTop<Tower>,
-	Transcript: CanRead,
+	B: Buf,
 {
 	let expected_tensor_elem_evals = compute_mixed_evaluations(
 		system

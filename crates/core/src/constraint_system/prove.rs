@@ -54,7 +54,7 @@ use crate::{
 	},
 	ring_switch,
 	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier, TowerFamily},
-	transcript::{AdviceWriter, CanWrite, Proof as ProofWriter, TranscriptWriter},
+	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -105,8 +105,7 @@ where
 
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
-	let mut transcript = TranscriptWriter::<Challenger_>::default();
-	let mut advice = AdviceWriter::default();
+	let mut transcript = ProverTranscript::<Challenger_>::new();
 
 	let ConstraintSystem {
 		mut oracles,
@@ -144,7 +143,8 @@ where
 	} = piop::commit(&fri_params, &merkle_prover, &committed_multilins)?;
 
 	// Observe polynomial commitment
-	transcript.write(&commitment);
+	let mut writer = transcript.message();
+	writer.write(&commitment);
 
 	// Grand product arguments
 	// Grand products for non-zero checking
@@ -164,7 +164,7 @@ where
 		bail!(Error::Zeros);
 	}
 
-	transcript.write_scalar_slice(&non_zero_products);
+	writer.write_scalar_slice(&non_zero_products);
 
 	let non_zero_prodcheck_claims = gkr_gpa::construct_grand_product_claims(
 		&non_zero_oracle_ids,
@@ -197,7 +197,7 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 	let flush_products = gkr_gpa::get_grand_products_from_witnesses(&flush_prodcheck_witnesses);
 
-	transcript.write_scalar_slice(&flush_products);
+	transcript.message().write_scalar_slice(&flush_products);
 
 	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
@@ -405,7 +405,6 @@ where
 			.chain(zerocheck_eval_claims),
 		switchover_fn,
 		&mut transcript,
-		&mut advice,
 		&domain_factory,
 		backend,
 	)?;
@@ -414,22 +413,18 @@ where
 	let system =
 		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
 
-	let mut proof_writer = ProofWriter {
-		transcript: &mut transcript,
-		advice: &mut advice,
-	};
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims: piop_sumcheck_claims,
-	} = ring_switch::prove::<_, _, _, Tower, _, _, _>(
+	} = ring_switch::prove::<_, _, _, Tower, _, _>(
 		&system,
 		&committed_multilins,
-		&mut proof_writer,
+		&mut transcript,
 		backend,
 	)?;
 
 	// Prove evaluation claims using PIOP compiler
-	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _, _>(
+	piop::prove::<_, FDomain<Tower>, _, _, _, _, _, _, _, _>(
 		&fri_params,
 		&merkle_prover,
 		domain_factory,
@@ -439,13 +434,12 @@ where
 		&committed_multilins,
 		&transparent_multilins,
 		&piop_sumcheck_claims,
-		&mut proof_writer,
+		&mut transcript,
 		&backend,
 	)?;
 
 	Ok(Proof {
 		transcript: transcript.finalize(),
-		advice: advice.finalize(),
 	})
 }
 

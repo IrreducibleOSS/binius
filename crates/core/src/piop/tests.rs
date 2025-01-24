@@ -27,7 +27,7 @@ use crate::{
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
 	polynomial::MultivariatePoly,
 	protocols::fri::CommitOutput,
-	transcript::{AdviceWriter, CanRead, CanWrite, Proof, TranscriptWriter},
+	transcript::ProverTranscript,
 	transparent,
 };
 
@@ -150,11 +150,8 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	let sumcheck_claims =
 		make_sumcheck_claims(&committed_multilins, transparent_multilins.as_slice());
 
-	let mut proof = Proof {
-		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
-		advice: AdviceWriter::default(),
-	};
-	proof.transcript.write(&commitment);
+	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	proof.message().write(&commitment);
 
 	let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
 	prove(
@@ -189,7 +186,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		.map(|poly| poly as &dyn MultivariatePoly<F>)
 		.collect::<Vec<_>>();
 
-	let commitment = proof.transcript.read().unwrap();
+	let commitment = proof.message().read().unwrap();
 	verify(
 		commit_meta,
 		merkle_scheme,

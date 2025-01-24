@@ -5,7 +5,7 @@ use std::iter::repeat_with;
 use binius_core::{
 	fiat_shamir::HasherChallenger,
 	protocols::gkr_gpa::{self, GrandProductClaim, GrandProductWitness},
-	transcript::TranscriptWriter,
+	transcript::ProverTranscript,
 };
 use binius_field::{
 	arch::OptimalUnderlier,
@@ -46,7 +46,7 @@ where
 	F: TowerField + From<BinaryField128b>,
 	BenchFn: Fn(
 		usize,
-		&mut TranscriptWriter<HasherChallenger<Groestl256>>,
+		&mut ProverTranscript<HasherChallenger<Groestl256>>,
 		&[U::Packed],
 		&IsomorphicEvaluationDomainFactory<FDomain>,
 		&CpuBackend,
@@ -65,7 +65,7 @@ where
 
 			let backend = make_portable_backend();
 
-			let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+			let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::default();
 			bench.iter(|| {
 				bench_fn(n_vars, &mut prover_transcript, &numerator, &domain_factory, &backend)
 			});

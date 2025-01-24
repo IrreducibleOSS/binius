@@ -42,7 +42,7 @@ use crate::{
 		sumcheck::prove::SumcheckProver,
 		test_utils::{AddOneComposition, TestProductComposition},
 	},
-	transcript::TranscriptWriter,
+	transcript::ProverTranscript,
 };
 
 #[derive(Debug, Clone)]
@@ -167,12 +167,12 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	)
 	.unwrap();
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let prover_reduced_claims =
 		batch_prove(vec![prover], &mut prover_transcript).expect("failed to prove sumcheck");
 
 	let prover_sample = CanSample::<FExt>::sample(&mut prover_transcript);
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_transcript = prover_transcript.into_verifier();
 	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
@@ -373,13 +373,13 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 		provers.push(prover);
 	}
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let prover_output =
 		batch_prove(provers, &mut prover_transcript).expect("failed to prove sumcheck");
 
 	let prover_sample = CanSample::<FE>::sample(&mut prover_transcript);
 
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_transcript = prover_transcript.into_verifier();
 	let verifier_output = batch_verify(&claims, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
@@ -452,35 +452,37 @@ fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 		.max()
 		.unwrap_or(0);
 
-	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 	let mut batch_prover = FrontLoadedBatchProver::new(provers, &mut transcript).unwrap();
 	for _ in 0..n_rounds {
-		batch_prover.send_round_proof(&mut transcript).unwrap();
+		batch_prover
+			.send_round_proof(&mut transcript.message())
+			.unwrap();
 		let challenge = transcript.sample();
 		batch_prover.receive_challenge(challenge).unwrap();
 	}
-	batch_prover.finish(&mut transcript).unwrap();
+	batch_prover.finish(&mut transcript.message()).unwrap();
 
-	let mut transcript = transcript.into_reader();
+	let mut transcript = transcript.into_verifier();
 	let mut challenges = Vec::with_capacity(n_rounds);
 	let mut multilinear_evals = Vec::with_capacity(claims.len());
 
 	let mut verifier = FrontLoadedBatchVerifier::new(&claims, &mut transcript).unwrap();
 	for _ in 0..n_rounds {
-		while let Some(claim_multilinear_evals) =
-			verifier.try_finish_claim(&mut transcript).unwrap()
-		{
+		let mut writer = transcript.message();
+		while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
 			multilinear_evals.push(claim_multilinear_evals);
 		}
-		verifier.receive_round_proof(&mut transcript).unwrap();
+		verifier.receive_round_proof(&mut writer).unwrap();
 
 		let challenge = transcript.sample();
 		verifier.finish_round(challenge).unwrap();
 		challenges.push(challenge);
 	}
 
-	while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut transcript).unwrap() {
+	let mut writer = transcript.message();
+	while let Some(claim_multilinear_evals) = verifier.try_finish_claim(&mut writer).unwrap() {
 		multilinear_evals.push(claim_multilinear_evals);
 	}
 	verifier.finish().unwrap();

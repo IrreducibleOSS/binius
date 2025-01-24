@@ -1,19 +1,20 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter, iter::repeat_with};
+use std::iter;
 
 use binius_field::{BinaryField, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::{bail, serialization::DeserializeBytes};
+use bytes::Buf;
 use itertools::izip;
 use tracing::instrument;
 
 use super::{common::vcs_optimal_layers_depths_iter, error::Error, VerificationError};
 use crate::{
-	fiat_shamir::CanSampleBits,
+	fiat_shamir::{CanSampleBits, Challenger},
 	merkle_tree::MerkleTreeScheme,
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk, FRIParams},
-	transcript::CanRead,
+	transcript::{TranscriptReader, VerifierTranscript},
 };
 
 /// A verifier for the FRI query phase.
@@ -91,18 +92,17 @@ where
 		self.params.n_oracles()
 	}
 
-	pub fn verify<Transcript, Advice>(
+	pub fn verify<Challenger_>(
 		&self,
-		advice: &mut Advice,
-		transcript: &mut Transcript,
+		transcript: &mut VerifierTranscript<Challenger_>,
 	) -> Result<F, Error>
 	where
-		Transcript: CanSampleBits<usize>,
-		Advice: CanRead,
+		Challenger_: Challenger,
 	{
 		// Verify that the last oracle sent is a codeword.
 		let terminate_codeword_len =
 			1 << (self.params.n_final_challenges() + self.params.rs_code().log_inv_rate());
+		let mut advice = transcript.decommitment();
 		let terminate_codeword = advice
 			.read_scalar_slice(terminate_codeword_len)
 			.map_err(Error::TranscriptError)?;
@@ -123,16 +123,15 @@ where
 		}
 
 		// Verify the random openings against the decommitted layers.
-		let indexes_iter = repeat_with(|| transcript.sample_bits(self.params.index_bits()))
-			.take(self.params.n_test_queries());
 
 		let mut scratch_buffer = self.create_scratch_buffer();
-		for index in indexes_iter {
+		for _ in 0..self.params.n_test_queries() {
+			let index = transcript.sample_bits(self.params.index_bits());
 			self.verify_query_internal(
 				index,
 				&terminate_codeword,
 				&layers,
-				advice,
+				&mut transcript.decommitment(),
 				&mut scratch_buffer,
 			)?
 		}
@@ -220,12 +219,12 @@ where
 	///
 	/// * `index` - an index into the original codeword domain
 	/// * `proof` - a query proof
-	pub fn verify_query<Advice: CanRead>(
+	pub fn verify_query<B: Buf>(
 		&self,
 		index: usize,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
-		advice: &mut Advice,
+		advice: &mut TranscriptReader<B>,
 	) -> Result<(), Error> {
 		self.verify_query_internal(
 			index,
@@ -237,12 +236,12 @@ where
 	}
 
 	#[instrument(skip_all, name = "fri::FRIVerifier::verify_query", level = "debug")]
-	fn verify_query_internal<Advice: CanRead>(
+	fn verify_query_internal<B: Buf>(
 		&self,
 		mut index: usize,
 		terminate_codeword: &[F],
 		layers: &[Vec<VCS::Digest>],
-		advice: &mut Advice,
+		advice: &mut TranscriptReader<B>,
 		scratch_buffer: &mut [F],
 	) -> Result<(), Error> {
 		let mut arities_iter = self.params.fold_arities().iter().copied();
@@ -352,19 +351,19 @@ where
 
 /// Verifies that the coset opening provided in the proof is consistent with the VCS commitment.
 #[allow(clippy::too_many_arguments)]
-fn verify_coset_opening<F, MTScheme, Advice>(
+fn verify_coset_opening<F, MTScheme, B>(
 	vcs: &MTScheme,
 	coset_index: usize,
 	log_coset_size: usize,
 	optimal_layer_depth: usize,
 	tree_depth: usize,
 	layer_digests: &[MTScheme::Digest],
-	advice: &mut Advice,
+	advice: &mut TranscriptReader<B>,
 ) -> Result<Vec<F>, Error>
 where
 	F: TowerField,
 	MTScheme: MerkleTreeScheme<F>,
-	Advice: CanRead,
+	B: Buf,
 {
 	let values = advice.read_scalar_slice::<F>(1 << log_coset_size)?;
 	vcs.verify_opening(

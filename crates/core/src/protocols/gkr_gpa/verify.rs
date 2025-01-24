@@ -13,17 +13,21 @@ use super::{
 	gpa_sumcheck::verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
 	Error, GrandProductClaim,
 };
-use crate::{fiat_shamir::CanSample, protocols::sumcheck, transcript::CanRead};
+use crate::{
+	fiat_shamir::{CanSample, Challenger},
+	protocols::sumcheck,
+	transcript::VerifierTranscript,
+};
 
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
 #[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]
-pub fn batch_verify<F, Transcript>(
+pub fn batch_verify<F, Challenger_>(
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
-	mut transcript: Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	let (original_indices, mut sorted_claims) = stable_sort(claims, |claim| claim.n_vars, true);
 	let max_n_vars = sorted_claims.first().map(|claim| claim.n_vars).unwrap_or(0);
@@ -50,7 +54,7 @@ where
 			&mut reverse_sorted_evalcheck_claims,
 		);
 
-		layer_claims = reduce_layer_claim_batch(layer_claims, &mut transcript)?;
+		layer_claims = reduce_layer_claim_batch(layer_claims, transcript)?;
 	}
 	process_finished_claims(
 		n_claims,
@@ -97,13 +101,13 @@ fn process_finished_claims<F: Field>(
 /// * `claims` - The kth layer LayerClaims
 /// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
 /// * `transcript` - The verifier transcript
-fn reduce_layer_claim_batch<F, Transcript>(
+fn reduce_layer_claim_batch<F, Challenger_>(
 	claims: Vec<LayerClaim<F>>,
-	mut transcript: Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
 	F: TowerField,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	// Validation
 	if claims.is_empty() {
@@ -127,7 +131,7 @@ where
 	let sumcheck_claim = reduce_to_sumcheck(&gpa_sumcheck_claims)?;
 	let sumcheck_claims = [sumcheck_claim];
 
-	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, &mut transcript)?;
+	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, transcript)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;

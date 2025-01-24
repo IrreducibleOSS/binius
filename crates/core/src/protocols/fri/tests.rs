@@ -27,7 +27,7 @@ use crate::{
 		FoldRoundOutput,
 	},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	transcript::{AdviceWriter, CanRead, CanWrite, TranscriptWriter},
+	transcript::ProverTranscript,
 };
 
 fn test_commit_prove_verify_success<U, F, FA>(
@@ -85,48 +85,35 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let mut prover_challenger = crate::transcript::Proof {
-		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
-		advice: AdviceWriter::default(),
-	};
-	prover_challenger.transcript.write(&codeword_commitment);
+	let mut prover_challenger = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	prover_challenger.message().write(&codeword_commitment);
 	let mut round_commitments = Vec::with_capacity(params.n_oracles());
 	for _i in 0..params.n_fold_rounds() {
-		let challenge = prover_challenger.transcript.sample();
+		let challenge = prover_challenger.sample();
 		let fold_round_output = round_prover.execute_fold_round(challenge).unwrap();
 		match fold_round_output {
 			FoldRoundOutput::NoCommitment => {}
 			FoldRoundOutput::Commitment(round_commitment) => {
-				prover_challenger.transcript.write(&round_commitment);
+				prover_challenger.message().write(&round_commitment);
 				round_commitments.push(round_commitment);
 			}
 		}
 	}
 
-	round_prover
-		.finish_proof(&mut prover_challenger.advice, &mut prover_challenger.transcript)
-		.unwrap();
+	round_prover.finish_proof(&mut prover_challenger).unwrap();
 	// Now run the verifier
 	let mut verifier_challenger = prover_challenger.into_verifier();
-	codeword_commitment = verifier_challenger.transcript.read().unwrap();
+	codeword_commitment = verifier_challenger.message().read().unwrap();
 	let mut verifier_challenges = Vec::with_capacity(params.n_fold_rounds());
 
 	assert_eq!(round_commitments.len(), n_round_commitments);
 	for (i, commitment) in round_commitments.iter().enumerate() {
-		verifier_challenges.append(
-			&mut verifier_challenger
-				.transcript
-				.sample_vec(params.fold_arities()[i]),
-		);
+		verifier_challenges.append(&mut verifier_challenger.sample_vec(params.fold_arities()[i]));
 		let mut _commitment = *commitment;
-		_commitment = verifier_challenger.transcript.read().unwrap();
+		_commitment = verifier_challenger.message().read().unwrap();
 	}
 
-	verifier_challenges.append(
-		&mut verifier_challenger
-			.transcript
-			.sample_vec(params.n_final_challenges()),
-	);
+	verifier_challenges.append(&mut verifier_challenger.sample_vec(params.n_final_challenges()));
 
 	assert_eq!(verifier_challenges.len(), params.n_fold_rounds());
 
@@ -149,9 +136,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	)
 	.unwrap();
 
-	let final_fri_value = verifier
-		.verify(&mut verifier_challenger.advice, &mut verifier_challenger.transcript)
-		.unwrap();
+	let final_fri_value = verifier.verify(&mut verifier_challenger).unwrap();
 	assert_eq!(computed_eval, final_fri_value);
 }
 

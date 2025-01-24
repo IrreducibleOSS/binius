@@ -31,7 +31,7 @@ use crate::{
 	protocols::{evalcheck::EvalcheckMultilinearClaim, fri::CommitOutput},
 	ring_switch::prove::ReducedWitness,
 	tower::{CanonicalTowerFamily, PackedTop, TowerFamily, TowerUnderlier},
-	transcript::{AdviceWriter, CanRead, CanWrite, Proof, TranscriptWriter},
+	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -233,22 +233,19 @@ fn test_prove_verify_claim_reduction_with_naive_validation() {
 	let oracles = make_test_oracle_set();
 
 	with_test_instance_from_oracles::<U, Tower, _>(rng, &oracles, |_rng, system, witnesses| {
-		let mut proof = Proof {
-			transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
-			advice: AdviceWriter::default(),
-		};
+		let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 		let backend = make_portable_backend();
 		let ReducedWitness {
 			transparents: transparent_witnesses,
 			sumcheck_claims: prover_sumcheck_claims,
-		} = prove::<_, _, _, Tower, _, _, _>(&system, &witnesses, &mut proof, &backend).unwrap();
+		} = prove::<_, _, _, Tower, _, _>(&system, &witnesses, &mut proof, &backend).unwrap();
 
 		let mut proof = proof.into_verifier();
 		let ReducedClaim {
 			transparents: _,
 			sumcheck_claims: verifier_sumcheck_claims,
-		} = verify::<_, Tower, _, _>(&system, &mut proof).unwrap();
+		} = verify::<_, Tower, _>(&system, &mut proof).unwrap();
 
 		assert_eq!(prover_sumcheck_claims, verifier_sumcheck_claims);
 
@@ -307,17 +304,14 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let system = EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
 	check_eval_point_consistency(&system);
 
-	let mut proof = Proof {
-		transcript: TranscriptWriter::<HasherChallenger<Groestl256>>::default(),
-		advice: AdviceWriter::default(),
-	};
-	proof.transcript.write(&commitment);
+	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	proof.message().write(&commitment);
 
 	let backend = make_portable_backend();
 	let ReducedWitness {
 		transparents: transparent_multilins,
 		sumcheck_claims,
-	} = prove::<_, _, _, Tower, _, _, _>(&system, &committed_multilins, &mut proof, &backend).unwrap();
+	} = prove::<_, _, _, Tower, _, _>(&system, &committed_multilins, &mut proof, &backend).unwrap();
 
 	let domain_factory = DefaultEvaluationDomainFactory::<Tower::B8>::default();
 	piop::prove(
@@ -336,12 +330,12 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	.unwrap();
 
 	let mut proof = proof.into_verifier();
-	let commitment = proof.transcript.read().unwrap();
+	let commitment = proof.message().read().unwrap();
 
 	let ReducedClaim {
 		transparents,
 		sumcheck_claims,
-	} = verify::<_, Tower, _, _>(&system, &mut proof).unwrap();
+	} = verify::<_, Tower, _>(&system, &mut proof).unwrap();
 
 	piop::verify(
 		&commit_meta,

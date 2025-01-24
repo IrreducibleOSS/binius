@@ -11,7 +11,10 @@ use super::{
 	error::{Error, VerificationError},
 	RoundCoeffs,
 };
-use crate::{fiat_shamir::CanSample, transcript::CanRead};
+use crate::{
+	fiat_shamir::{CanSample, Challenger},
+	transcript::VerifierTranscript,
+};
 
 /// Verify a batched sumcheck protocol execution.
 ///
@@ -25,14 +28,14 @@ use crate::{fiat_shamir::CanSample, transcript::CanRead};
 /// For each sumcheck claim, we sample one random mixing coefficient. The multiple composite claims
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
 /// coefficient.
-pub fn batch_verify<F, Composition, Transcript>(
+pub fn batch_verify<F, Composition, Challenger_>(
 	claims: &[SumcheckClaim<F, Composition>],
-	transcript: &mut Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	let start = BatchVerifyStart {
 		batch_coeffs: Vec::new(),
@@ -59,15 +62,15 @@ pub struct BatchVerifyStart<F: Field> {
 
 /// Verify a batched sumcheck protocol execution, but after some rounds have been processed.
 #[instrument(skip_all, level = "debug")]
-pub fn batch_verify_with_start<F, Composition, Transcript>(
+pub fn batch_verify_with_start<F, Composition, Challenger_>(
 	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],
-	transcript: &mut Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	let BatchVerifyStart {
 		mut batch_coeffs,
@@ -118,7 +121,7 @@ where
 			active_index += 1;
 		}
 
-		let coeffs = transcript.read_scalar_slice(max_degree)?;
+		let coeffs = transcript.message().read_scalar_slice(max_degree)?;
 		let round_proof = RoundProof(RoundCoeffs(coeffs));
 
 		let challenge = transcript.sample();
@@ -146,8 +149,9 @@ where
 	}
 
 	let mut multilinear_evals = Vec::with_capacity(claims.len());
+	let mut reader = transcript.message();
 	for claim in claims.iter() {
-		let evals = transcript.read_scalar_slice::<F>(claim.n_multilinears())?;
+		let evals = reader.read_scalar_slice::<F>(claim.n_multilinears())?;
 		multilinear_evals.push(evals);
 	}
 

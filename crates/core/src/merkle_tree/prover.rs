@@ -3,6 +3,7 @@
 use binius_field::TowerField;
 use binius_hash::PseudoCompressionFunction;
 use binius_maybe_rayon::iter::IndexedParallelIterator;
+use bytes::BufMut;
 use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use getset::Getters;
 use tracing::instrument;
@@ -13,7 +14,7 @@ use super::{
 	merkle_tree_vcs::{Commitment, MerkleTreeProver},
 	scheme::BinaryMerkleTreeScheme,
 };
-use crate::transcript::CanWrite;
+use crate::transcript::TranscriptWriter;
 
 #[derive(Debug, Getters)]
 pub struct BinaryMerkleTreeProver<T, H, C> {
@@ -66,12 +67,12 @@ where
 		committed.layer(depth)
 	}
 
-	fn prove_opening<Proof: CanWrite>(
+	fn prove_opening<B: BufMut>(
 		&self,
 		committed: &Self::Committed,
 		layer_depth: usize,
 		index: usize,
-		mut proof: Proof,
+		proof: &mut TranscriptWriter<B>,
 	) -> Result<(), Error> {
 		let branch = committed.branch(index, layer_depth)?;
 		proof.write_slice(&branch);

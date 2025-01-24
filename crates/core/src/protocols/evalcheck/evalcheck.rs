@@ -7,11 +7,12 @@ use std::{
 };
 
 use binius_field::{Field, TowerField};
+use bytes::{Buf, BufMut};
 
 use super::error::Error;
 use crate::{
 	oracle::{MultilinearPolyOracle, OracleId},
-	transcript::{CanRead, CanWrite},
+	transcript::{TranscriptReader, TranscriptWriter},
 };
 
 #[derive(Debug, Clone)]
@@ -88,8 +89,8 @@ impl EvalcheckNumerics {
 }
 
 /// Serializes the `EvalcheckProof` into the transcript
-pub fn serialize_evalcheck_proof<Transcript: CanWrite, F: TowerField>(
-	transcript: &mut Transcript,
+pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
+	transcript: &mut TranscriptWriter<B>,
 	evalcheck: &EvalcheckProof<F>,
 ) {
 	match evalcheck {
@@ -127,8 +128,8 @@ pub fn serialize_evalcheck_proof<Transcript: CanWrite, F: TowerField>(
 }
 
 /// Deserializes the `EvalcheckProof` object from the given transcript.
-pub fn deserialize_evalcheck_proof<Transcript: CanRead, F: TowerField>(
-	transcript: &mut Transcript,
+pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
+	transcript: &mut TranscriptReader<B>,
 ) -> Result<EvalcheckProof<F>, Error> {
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;

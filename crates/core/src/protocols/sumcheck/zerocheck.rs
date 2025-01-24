@@ -217,7 +217,7 @@ mod tests {
 			},
 			test_utils::{generate_zero_product_multilinears, TestProductComposition},
 		},
-		transcript::TranscriptWriter,
+		transcript::ProverTranscript,
 		transparent::eq_ind::EqIndPartialEval,
 		witness::MultilinearWitness,
 	};
@@ -289,7 +289,7 @@ mod tests {
 		let binding = [("test_product".into(), TestProductComposition::new(n_multilinears))];
 		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
-		let mut prove_transcript_1 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let mut prove_transcript_1 = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let backend = make_portable_backend();
 		let challenges = prove_transcript_1.sample_vec(n_vars);
 
@@ -321,7 +321,7 @@ mod tests {
 		.into_regular_zerocheck()
 		.unwrap();
 
-		let mut prove_transcript_2 = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let mut prove_transcript_2 = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let _: Vec<BinaryField128b> = prove_transcript_2.sample_vec(n_vars);
 		let BatchSumcheckOutput {
 			challenges: sumcheck_challenges_2,
@@ -350,7 +350,7 @@ mod tests {
 		let binding = [("test_product".into(), TestProductComposition::new(n_multilinears))];
 		zerocheck::validate_witness(&multilins, &binding).unwrap();
 
-		let mut prove_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+		let mut prove_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 		let challenges = prove_transcript.sample_vec(n_vars);
 
 		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
@@ -391,7 +391,7 @@ mod tests {
 		.unwrap();
 
 		let prover_sample = CanSample::<FE>::sample(&mut prove_transcript);
-		let mut verify_transcript = prove_transcript.into_reader();
+		let mut verify_transcript = prove_transcript.into_verifier();
 		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
 
 		let sumcheck_claims = reduce_to_sumchecks(&zerocheck_claims).unwrap();

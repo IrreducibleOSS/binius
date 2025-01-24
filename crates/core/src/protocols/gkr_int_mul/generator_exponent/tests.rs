@@ -19,12 +19,12 @@ use rand::{thread_rng, Rng};
 
 use super::{common::GeneratorExponentReductionOutput, prove};
 use crate::{
-	fiat_shamir::{CanSample, HasherChallenger},
+	fiat_shamir::{Challenger, HasherChallenger},
 	protocols::{
 		gkr_gpa::LayerClaim,
 		gkr_int_mul::generator_exponent::{verify, witness::GeneratorExponentWitness},
 	},
-	transcript::{CanWrite, TranscriptWriter},
+	transcript::ProverTranscript,
 };
 
 type PBits = PackedBinaryField128x1b;
@@ -66,16 +66,16 @@ fn generate_witness_and_prove<
 	const LOG_SIZE: usize,
 	const COLUMN_LEN: usize,
 	const EXPONENT_BIT_WIDTH: usize,
-	Transcript,
+	Challenger_,
 >(
-	transcript: &mut Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> (
 	LayerClaim<F>,
 	GeneratorExponentWitness<'static, PBits, PGenerator, PChallenge, 64>,
 	GeneratorExponentReductionOutput<F, 64>,
 )
 where
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	let mut rng = thread_rng();
 
@@ -135,7 +135,7 @@ fn prove_reduces_to_correct_claims() {
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
 	const EXPONENT_BIT_WIDTH: usize = 64usize;
 
-	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let reduced_claims =
 		generate_witness_and_prove::<LOG_SIZE, COLUMN_LEN, EXPONENT_BIT_WIDTH, _>(&mut transcript);
 
@@ -164,18 +164,20 @@ fn good_proof_verifies() {
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
 	const EXPONENT_BIT_WIDTH: usize = 64usize;
 
-	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let reduced_claims =
 		generate_witness_and_prove::<LOG_SIZE, COLUMN_LEN, EXPONENT_BIT_WIDTH, _>(&mut transcript);
 
 	let (claim, _, _) = reduced_claims;
 
-	let verifier_transcript = transcript.into_reader();
+	let mut verifier_transcript = transcript.into_verifier();
 
 	let _reduced_claims = verify::verify::<FGenerator, _, _, EXPONENT_BIT_WIDTH>(
 		&claim,
-		verifier_transcript,
+		&mut verifier_transcript,
 		LOG_SIZE,
 	)
 	.unwrap();
+
+	verifier_transcript.finalize().unwrap()
 }

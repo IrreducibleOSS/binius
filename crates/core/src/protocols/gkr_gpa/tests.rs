@@ -20,7 +20,7 @@ use crate::{
 	fiat_shamir::HasherChallenger,
 	oracle::MultilinearOracleSet,
 	protocols::gkr_gpa::{batch_prove, batch_verify, GrandProductBatchProveOutput},
-	transcript::TranscriptWriter,
+	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };
 
@@ -172,7 +172,7 @@ where
 	// Prove and Verify
 	let _ = (oracle_set, witness_index, rng);
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let GrandProductBatchProveOutput {
 		final_layer_claims: final_layer_claim,
 	} = batch_prove::<_, _, FS, _, _>(
@@ -184,7 +184,7 @@ where
 	)
 	.unwrap();
 
-	let mut verify_transcript = prover_transcript.into_reader();
+	let mut verify_transcript = prover_transcript.into_verifier();
 	let verified_evalcheck_multilinear_claims =
 		batch_verify(claims.clone(), &mut verify_transcript).unwrap();
 

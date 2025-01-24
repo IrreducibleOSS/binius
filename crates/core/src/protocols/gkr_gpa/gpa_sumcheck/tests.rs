@@ -25,7 +25,7 @@ use crate::{
 		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
 		test_utils::AddOneComposition,
 	},
-	transcript::TranscriptWriter,
+	transcript::ProverTranscript,
 };
 
 fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
@@ -60,7 +60,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 		.evaluate(MultilinearQuery::expand(&gpa_round_challenges).to_ref())
 		.unwrap();
 
-	let mut transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
 	let backend = make_portable_backend();
 	let evaluation_domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
@@ -84,7 +84,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 
 	let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
 
-	let mut verifier_transcript = transcript.into_reader();
+	let mut verifier_transcript = transcript.into_verifier();
 
 	let verifier_composite_claim = CompositeSumClaim {
 		sum,
