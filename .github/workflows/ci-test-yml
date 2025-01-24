@@ -1,8 +1,6 @@
-name: Rust CI
+name: Rust CI Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
