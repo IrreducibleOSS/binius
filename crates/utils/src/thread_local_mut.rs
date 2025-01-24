@@ -6,7 +6,7 @@ use thread_local::ThreadLocal;
 
 /// Creates a "scratch space" within each thread with mutable access.
 ///
-/// This is mainly meant to be used as an optimization to avoid unneccesary allocs/frees within rayon code.
+/// This is mainly meant to be used as an optimization to avoid unnecessary allocs/frees within rayon code.
 /// You only pay for allocation of this scratch space once per thread.
 ///
 /// Since the space is local to each thread you also don't have to worry about atomicity.

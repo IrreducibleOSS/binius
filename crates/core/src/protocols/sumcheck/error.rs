@@ -45,7 +45,7 @@ pub enum Error {
 		oracle: String,
 		hypercube_index: usize,
 	},
-	#[error("constraint set containts multilinears of different heights")]
+	#[error("constraint set contains multilinears of different heights")]
 	ConstraintSetNumberOfVariablesMismatch,
 	#[error("batching sumchecks and zerochecks is not supported yet")]
 	MixedBatchingNotSupported,
