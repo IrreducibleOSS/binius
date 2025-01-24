@@ -1,0 +1,29 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main, ]
+  pull_request:
+    branches: [main, ]
+
+jobs:
+
+  build-debug:
+    name: Build Debug
+    runs-on: ${{ matrix.runner }}
+    container: rustlang/rust:nightly
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    continue-on-error: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Debug
+        run: cargo build --tests --benches --examples
