@@ -16,7 +16,6 @@ use super::{
 };
 use crate::{
 	fiat_shamir::{CanSampleBits, Challenger},
-	linear_code::LinearCode,
 	merkle_tree::{MerkleTreeProver, MerkleTreeScheme},
 	protocols::fri::common::{fold_chunk, fold_interleaved_chunk},
 	reed_solomon::reed_solomon::ReedSolomonCode,

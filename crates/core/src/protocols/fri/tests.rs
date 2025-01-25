@@ -20,7 +20,6 @@ use rand::prelude::*;
 use super::to_par_scalar_big_chunks;
 use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
-	linear_code::LinearCode,
 	merkle_tree::BinaryMerkleTreeProver,
 	protocols::fri::{
 		self, to_par_scalar_small_chunks, CommitOutput, FRIFolder, FRIParams, FRIVerifier,

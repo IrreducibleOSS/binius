@@ -9,7 +9,7 @@ use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 
 use crate::{
-	linear_code::LinearCode, merkle_tree::MerkleTreeScheme, protocols::fri::Error,
+	merkle_tree::MerkleTreeScheme, protocols::fri::Error,
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 

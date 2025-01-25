@@ -12,13 +12,12 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{BinaryField, PackedField};
+use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
-use binius_utils::bail;
+use binius_utils::{bail, checked_arithmetics::checked_log_2};
 use getset::CopyGetters;
-
-use crate::linear_code::LinearCode;
+use tracing::instrument;
 
 #[derive(Debug, CopyGetters)]
 pub struct ReedSolomonCode<P>
@@ -70,53 +69,55 @@ where
 		})
 	}
 
-	pub fn get_ntt(&self) -> &impl AdditiveNTT<P> {
+	pub const fn get_ntt(&self) -> &impl AdditiveNTT<P> {
 		&self.ntt
 	}
 
-	pub fn log_dim(&self) -> usize {
+	/// The dimension.
+	pub const fn dim(&self) -> usize {
+		1 << self.dim_bits()
+	}
+
+	pub const fn log_dim(&self) -> usize {
 		self.log_dimension
 	}
 
-	pub fn log_len(&self) -> usize {
+	pub const fn log_len(&self) -> usize {
 		self.log_dimension + self.log_inv_rate
 	}
-}
 
-impl<P, F> LinearCode for ReedSolomonCode<P>
-where
-	P: PackedField<Scalar = F>,
-	F: BinaryField,
-{
-	type P = P;
-	type EncodeError = Error;
-
-	fn len(&self) -> usize {
+	/// The block length.
+	#[allow(clippy::len_without_is_empty)]
+	pub const fn len(&self) -> usize {
 		1 << (self.log_dimension + self.log_inv_rate)
 	}
 
-	fn dim_bits(&self) -> usize {
+	/// The base-2 log of the dimension.
+	const fn dim_bits(&self) -> usize {
 		self.log_dimension
 	}
 
-	fn min_dist(&self) -> usize {
-		self.len() - self.dim() + 1
-	}
-
-	fn inv_rate(&self) -> usize {
+	/// The reciprocal of the rate, ie. `self.len() / self.dim()`.
+	pub const fn inv_rate(&self) -> usize {
 		1 << self.log_inv_rate
 	}
 
-	fn encode_batch_inplace(
-		&self,
-		code: &mut [Self::P],
-		log_batch_size: usize,
-	) -> Result<(), Self::EncodeError> {
+	/// Encode a batch of interleaved messages in-place in a provided buffer.
+	///
+	/// The message symbols are interleaved in the buffer, which improves the cache-efficiency of
+	/// the encoding procedure. The interleaved codeword is stored in the buffer when the method
+	/// completes.
+	///
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field
+	///   elements.
+	fn encode_batch_inplace(&self, code: &mut [P], log_batch_size: usize) -> Result<(), Error> {
 		let _scope = tracing::trace_span!(
 			"Reed–Solomon encode",
 			log_len = self.log_len(),
 			log_batch_size = log_batch_size,
-			symbol_bits = F::N_BITS,
+			symbol_bits = P::Scalar::N_BITS,
 		)
 		.entered();
 		if (code.len() << log_batch_size) < self.len() {
@@ -143,5 +144,32 @@ where
 				.zip(code.chunks_exact_mut(msgs_len))
 				.try_for_each(|(i, data)| self.ntt.forward_transform(data, i, log_batch_size))
 		}
+	}
+
+	/// Encode a batch of interleaved messages of extension field elements in-place in a provided
+	/// buffer.
+	///
+	/// A linear code can be naturally extended to a code over extension fields by encoding each
+	/// dimension of the extension as a vector-space separately.
+	///
+	/// ## Preconditions
+	///
+	/// * `PE::Scalar::DEGREE` must be a power of two.
+	///
+	/// ## Throws
+	///
+	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
+	#[instrument(skip_all, level = "debug")]
+	pub fn encode_ext_batch_inplace<PE>(
+		&self,
+		code: &mut [PE],
+		log_batch_size: usize,
+	) -> Result<(), Error>
+	where
+		PE: RepackedExtension<P>,
+		PE::Scalar: ExtensionField<<P as PackedField>::Scalar>,
+	{
+		let log_degree = checked_log_2(PE::Scalar::DEGREE);
+		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + log_degree)
 	}
 }
