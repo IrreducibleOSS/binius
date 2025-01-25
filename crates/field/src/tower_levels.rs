@@ -361,7 +361,7 @@ where
 	const WIDTH: usize = 1;
 
 	type Data = [T; 1];
-	type Base = TowerLevel1;
+	type Base = Self;
 
 	// Level 1 is the atomic unit of backing data and must not be split.
 

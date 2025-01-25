@@ -145,7 +145,7 @@ struct SubfieldTransformer<IP, OP, T> {
 }
 
 impl<IP, OP, T> SubfieldTransformer<IP, OP, T> {
-	fn new(inner_transform: T) -> Self {
+	const fn new(inner_transform: T) -> Self {
 		Self {
 			inner_transform,
 			_ip_pd: PhantomData,

@@ -443,7 +443,7 @@ mod tests {
 
 	/// Compile-time test to ensure packed fields implement `PackedTransformationFactory`.
 	#[allow(unused)]
-	fn test_implement_transformation_factory() {
+	const fn test_implement_transformation_factory() {
 		// 8 bit packed aes tower
 		implements_transformation_factory::<PackedAESBinaryField1x8b, PackedAESBinaryField1x8b>();
 		implements_transformation_factory::<PackedBinaryField1x8b, PackedAESBinaryField1x8b>();

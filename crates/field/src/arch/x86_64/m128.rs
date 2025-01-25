@@ -92,7 +92,7 @@ impl<const N: usize> From<SmallU<N>> for M128 {
 impl From<M128> for u128 {
 	fn from(value: M128) -> Self {
 		let mut result = 0u128;
-		unsafe { _mm_storeu_si128(&mut result as *mut u128 as *mut __m128i, value.0) };
+		unsafe { _mm_storeu_si128(&mut result as *mut Self as *mut __m128i, value.0) };
 
 		result
 	}
@@ -499,9 +499,8 @@ impl UnderlierWithBitOps for M128 {
 	#[inline(always)]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps,
+		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
-		T: NumCast<Self>,
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
@@ -782,24 +781,24 @@ impl UnderlierWithBitConstants for M128 {
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		unsafe {
 			let (c, d) = interleave_bits(
-				Into::<M128>::into(self).into(),
-				Into::<M128>::into(other).into(),
+				Into::<Self>::into(self).into(),
+				Into::<Self>::into(other).into(),
 				log_block_len,
 			);
-			(M128::from(c), M128::from(d))
+			(Self::from(c), Self::from(d))
 		}
 	}
 }
 
 impl<Scalar: BinaryField> From<__m128i> for PackedPrimitiveType<M128, Scalar> {
 	fn from(value: __m128i) -> Self {
-		PackedPrimitiveType::from(M128::from(value))
+		M128::from(value).into()
 	}
 }
 
 impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
 	fn from(value: u128) -> Self {
-		PackedPrimitiveType::from(M128::from(value))
+		M128::from(value).into()
 	}
 }
 

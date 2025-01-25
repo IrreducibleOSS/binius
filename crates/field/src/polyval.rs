@@ -254,8 +254,8 @@ impl Square for BinaryField128bPolyval {
 }
 
 impl Field for BinaryField128bPolyval {
-	const ZERO: Self = BinaryField128bPolyval(0);
-	const ONE: Self = BinaryField128bPolyval(0xc2000000000000000000000000000001);
+	const ZERO: Self = Self(0);
+	const ONE: Self = Self(0xc2000000000000000000000000000001);
 
 	fn random(mut rng: impl RngCore) -> Self {
 		Self(rng.gen())
@@ -446,8 +446,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 }
 
 impl BinaryField for BinaryField128bPolyval {
-	const MULTIPLICATIVE_GENERATOR: BinaryField128bPolyval =
-		BinaryField128bPolyval(0x72bdf2504ce49c03105433c1c25a4a7);
+	const MULTIPLICATIVE_GENERATOR: Self = Self(0x72bdf2504ce49c03105433c1c25a4a7);
 }
 
 impl TowerField for BinaryField128bPolyval {
@@ -731,7 +730,7 @@ pub const POLYVAL_TO_BINARY_TRANSFORMATION: FieldLinearTransformation<BinaryFiel
 	]);
 
 impl From<BinaryField128bPolyval> for BinaryField128b {
-	fn from(value: BinaryField128bPolyval) -> BinaryField128b {
+	fn from(value: BinaryField128bPolyval) -> Self {
 		POLYVAL_TO_BINARY_TRANSFORMATION.transform(&value)
 	}
 }
@@ -1147,10 +1146,10 @@ mod tests {
 		fn test_invert_or_zero(a_val in any::<u128>()) {
 			let a = BinaryField128bPolyval::new(a_val);
 			let a_invert = InvertOrZero::invert_or_zero(a);
-			if a != BinaryField128bPolyval::ZERO {
-				assert_eq!(a * a_invert, BinaryField128bPolyval::ONE);
-			} else {
+			if a == BinaryField128bPolyval::ZERO {
 				assert_eq!(a_invert, BinaryField128bPolyval::ZERO);
+			} else {
+				assert_eq!(a * a_invert, BinaryField128bPolyval::ONE);
 			}
 		}
 	}

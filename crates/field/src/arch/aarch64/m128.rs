@@ -41,7 +41,7 @@ impl M128 {
 
 	#[inline]
 	pub fn shuffle_u8(self, src: [u8; 16]) -> Self {
-		unsafe { vqtbl1q_u8(self.into(), M128::from_le_bytes(src).into()).into() }
+		unsafe { vqtbl1q_u8(self.into(), Self::from_le_bytes(src).into()).into() }
 	}
 }
 
@@ -405,7 +405,7 @@ impl UnderlierWithBitConstants for M128 {
 
 impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
 	fn from(value: u128) -> Self {
-		PackedPrimitiveType::from(M128::from(value))
+		Self::from(M128::from(value))
 	}
 }
 

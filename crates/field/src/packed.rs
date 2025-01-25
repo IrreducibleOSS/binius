@@ -340,7 +340,7 @@ pub fn set_packed_slice_checked<P: PackedField>(
 		})
 }
 
-pub fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
+pub const fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 	packed.len() * P::WIDTH
 }
 

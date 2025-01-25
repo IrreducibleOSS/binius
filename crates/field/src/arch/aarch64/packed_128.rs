@@ -121,6 +121,6 @@ impl_transformation_with_strategy!(PackedBinaryField1x128b, PairwiseStrategy);
 
 impl From<PackedAESBinaryField16x8b> for PackedBinaryField16x8b {
 	fn from(value: PackedAESBinaryField16x8b) -> Self {
-		PackedBinaryField16x8b::from_underlier(packed_aes_16x8b_into_tower(value.to_underlier()))
+		Self::from_underlier(packed_aes_16x8b_into_tower(value.to_underlier()))
 	}
 }

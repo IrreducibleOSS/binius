@@ -17,13 +17,13 @@ pub struct ScaledUnderlier<U, const N: usize>(pub [U; N]);
 
 impl<U: Default, const N: usize> Default for ScaledUnderlier<U, N> {
 	fn default() -> Self {
-		ScaledUnderlier(array::from_fn(|_| U::default()))
+		Self(array::from_fn(|_| U::default()))
 	}
 }
 
 impl<U: Random, const N: usize> Random for ScaledUnderlier<U, N> {
 	fn random(mut rng: impl RngCore) -> Self {
-		ScaledUnderlier(array::from_fn(|_| U::random(&mut rng)))
+		Self(array::from_fn(|_| U::random(&mut rng)))
 	}
 }
 
@@ -61,7 +61,7 @@ impl<U: UnderlierType + Pod, const N: usize> UnderlierType for ScaledUnderlier<U
 
 unsafe impl<U, const N: usize> Divisible<U> for ScaledUnderlier<U, N>
 where
-	ScaledUnderlier<U, N>: UnderlierType,
+	Self: UnderlierType,
 	U: UnderlierType,
 {
 	type Array = [U; N];
@@ -84,7 +84,7 @@ where
 
 unsafe impl<U> Divisible<U> for ScaledUnderlier<ScaledUnderlier<U, 2>, 2>
 where
-	ScaledUnderlier<ScaledUnderlier<U, 2>, 2>: UnderlierType + NoUninit,
+	Self: UnderlierType + NoUninit,
 	U: UnderlierType + Pod,
 {
 	type Array = [U; 4];

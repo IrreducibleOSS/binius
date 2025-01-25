@@ -113,9 +113,8 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps,
+		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
-		T: NumCast<Self>,
 	{
 		spread_fallback(self, log_block_len, block_idx)
 	}
@@ -138,10 +137,8 @@ where
 /// `block_idx` must be less than `1 << (U::LOG_BITS - log_block_len)`.
 pub(crate) unsafe fn spread_fallback<U, T>(value: U, log_block_len: usize, block_idx: usize) -> U
 where
-	U: UnderlierWithBitOps,
-	T: UnderlierWithBitOps,
-	U: From<T>,
-	T: NumCast<U>,
+	U: UnderlierWithBitOps + From<T>,
+	T: UnderlierWithBitOps + NumCast<U>,
 {
 	debug_assert!(
 		log_block_len + T::LOG_BITS <= U::LOG_BITS,

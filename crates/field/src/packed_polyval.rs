@@ -194,7 +194,7 @@ mod tests {
 
 	/// Compile-time test to ensure packed fields implement `PackedTransformationFactory`.
 	#[allow(unused)]
-	fn test_implement_transformation_factory() {
+	const fn test_implement_transformation_factory() {
 		// 128 bit packed polyval
 		implements_transformation_factory::<PackedBinaryPolyval1x128b, PackedBinaryPolyval1x128b>();
 		implements_transformation_factory::<PackedBinaryField1x128b, PackedBinaryPolyval1x128b>();

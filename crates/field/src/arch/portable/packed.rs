@@ -52,7 +52,7 @@ impl<U: UnderlierType, Scalar: BinaryField> PackedPrimitiveType<U, Scalar> {
 	};
 
 	#[inline]
-	pub fn from_underlier(val: U) -> Self {
+	pub const fn from_underlier(val: U) -> Self {
 		Self(val, PhantomData)
 	}
 
@@ -279,12 +279,11 @@ unsafe impl<U: UnderlierType + Zeroable, Scalar: BinaryField> Zeroable
 
 unsafe impl<U: UnderlierType + Pod, Scalar: BinaryField> Pod for PackedPrimitiveType<U, Scalar> {}
 
-impl<U: UnderlierWithBitOps, Scalar: BinaryField> PackedField for PackedPrimitiveType<U, Scalar>
+impl<U: UnderlierWithBitOps, Scalar> PackedField for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + Square + InvertOrZero + Mul<Output = Self>,
-	U: UnderlierWithBitConstants + Send + Sync + 'static,
-	Scalar: WithUnderlier<Underlier: UnderlierWithBitOps>,
-	U: From<Scalar::Underlier>,
+	U: UnderlierWithBitConstants + From<Scalar::Underlier> + Send + Sync + 'static,
+	Scalar: BinaryField + WithUnderlier<Underlier: UnderlierWithBitOps>,
 	Scalar::Underlier: NumCast<U>,
 	IterationMethods<Scalar::Underlier, U>: IterationStrategy<Scalar::Underlier, U>,
 {

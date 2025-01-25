@@ -365,7 +365,7 @@ where
 		let ones = OP::one().to_underlier();
 		let mut input = input.to_underlier();
 
-		for base in self.bases.iter() {
+		for base in &self.bases {
 			let base_component = input & ones;
 			// contains ones at positions which correspond to non-zero components
 			let mask = broadcast_lowest_bit(base_component, OF::LOG_DEGREE);

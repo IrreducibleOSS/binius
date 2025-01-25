@@ -75,7 +75,7 @@ pub struct PairwiseTransformation<I> {
 }
 
 impl<I> PairwiseTransformation<I> {
-	pub fn new(inner: I) -> Self {
+	pub const fn new(inner: I) -> Self {
 		Self { inner }
 	}
 }

@@ -773,7 +773,7 @@ pub mod test_utils {
 
 	/// Helper function for compile-time checks
 	#[allow(unused)]
-	pub fn implements_transformation_factory<
+	pub const fn implements_transformation_factory<
 		P1: PackedField<Scalar: BinaryField>,
 		P2: PackedTransformationFactory<P1>,
 	>() {
@@ -1020,7 +1020,7 @@ mod tests {
 
 	/// Compile-time test to ensure packed fields implement `PackedTransformationFactory`.
 	#[allow(unused)]
-	fn test_implement_transformation_factory() {
+	const fn test_implement_transformation_factory() {
 		// 1 bit packed binary tower
 		implements_transformation_factory::<PackedBinaryField1x1b, PackedBinaryField1x1b>();
 

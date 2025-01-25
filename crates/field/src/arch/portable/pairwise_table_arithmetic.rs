@@ -29,7 +29,7 @@ where
 	}
 }
 
-fn mul_binary_tower_4b(a: u8, b: u8) -> u8 {
+const fn mul_binary_tower_4b(a: u8, b: u8) -> u8 {
 	#[rustfmt::skip]
 	const MUL_4B_LOOKUP: [u8; 128] = [
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

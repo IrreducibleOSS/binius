@@ -313,7 +313,7 @@ pub struct ScaledTransformation<I> {
 }
 
 impl<I> ScaledTransformation<I> {
-	fn new(inner: I) -> Self {
+	const fn new(inner: I) -> Self {
 		Self { inner }
 	}
 }
@@ -331,7 +331,7 @@ where
 impl<OP, IP, const N: usize> PackedTransformationFactory<ScaledPackedField<OP, N>>
 	for ScaledPackedField<IP, N>
 where
-	ScaledPackedField<IP, N>: PackedBinaryField,
+	Self: PackedBinaryField,
 	ScaledPackedField<OP, N>: PackedBinaryField<Scalar = OP::Scalar>,
 	OP: PackedBinaryField,
 	IP: PackedTransformationFactory<OP>,
@@ -475,8 +475,7 @@ impl<U, F, const N: usize> PackScalar<F> for ScaledUnderlier<U, N>
 where
 	U: PackScalar<F> + UnderlierType + Pod,
 	F: Field,
-	ScaledPackedField<U::Packed, N>:
-		PackedField<Scalar = F> + WithUnderlier<Underlier = ScaledUnderlier<U, N>>,
+	ScaledPackedField<U::Packed, N>: PackedField<Scalar = F> + WithUnderlier<Underlier = Self>,
 {
 	type Packed = ScaledPackedField<U::Packed, N>;
 }

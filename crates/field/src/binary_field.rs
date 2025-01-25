@@ -94,7 +94,7 @@ macro_rules! binary_field {
 				Self(value)
 			}
 
-			pub fn val(self) -> $typ {
+			pub const fn val(self) -> $typ {
 				self.0
 			}
 		}
@@ -780,7 +780,7 @@ pub fn deserialize_canonical<F: TowerField, R: Buf>(
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
-		Choice::from(val.val().val())
+		Self::from(val.val().val())
 	}
 }
 
