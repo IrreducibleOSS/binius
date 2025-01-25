@@ -25,18 +25,18 @@ cfg_if::cfg_if! {
 		pub struct ThreadPoolBuilder();
 		impl ThreadPoolBuilder {
 			#[inline(always)]
-			pub fn new() -> ThreadPoolBuilder {
-				ThreadPoolBuilder()
+			pub const fn new() -> Self {
+				Self()
 			}
 
 			#[inline(always)]
-			pub fn build(self) -> Result<ThreadPool, ::core::convert::Infallible> {
+			pub const fn build(self) -> Result<ThreadPool, ::core::convert::Infallible> {
 				Ok(ThreadPool())
 			}
 
 			#[inline(always)]
-			pub fn num_threads(self, _num_threads: usize) -> ThreadPoolBuilder {
-				ThreadPoolBuilder()
+			pub const fn num_threads(self, _num_threads: usize) -> Self {
+				Self()
 			}
 		}
 
@@ -67,7 +67,7 @@ cfg_if::cfg_if! {
 		}
 
 		#[inline(always)]
-		pub fn current_num_threads() -> usize {
+		pub const fn current_num_threads() -> usize {
 			1
 		}
 
@@ -91,7 +91,7 @@ cfg_if::cfg_if! {
 			#[inline(always)]
 			pub fn spawn<BODY>(&self, body: BODY)
 			where
-				BODY: FnOnce(&Scope<'scope>) + Send + 'scope,
+				BODY: FnOnce(&Self) + Send + 'scope,
 			{
 				body(self)
 			}

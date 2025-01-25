@@ -34,7 +34,7 @@ impl<T, const N: usize> IntoParallelIterator for [T; N] {
 
 impl<T> IntoParallelIterator for Vec<T> {
 	type Item = T;
-	type Iter = ParallelWrapper<<Vec<T> as IntoIterator>::IntoIter>;
+	type Iter = ParallelWrapper<<Self as IntoIterator>::IntoIter>;
 
 	#[inline(always)]
 	fn into_par_iter(self) -> Self::Iter {
@@ -44,7 +44,7 @@ impl<T> IntoParallelIterator for Vec<T> {
 
 impl<T> IntoParallelIterator for HashSet<T> {
 	type Item = T;
-	type Iter = ParallelWrapper<<HashSet<T> as IntoIterator>::IntoIter>;
+	type Iter = ParallelWrapper<<Self as IntoIterator>::IntoIter>;
 
 	#[inline(always)]
 	fn into_par_iter(self) -> Self::Iter {
@@ -77,7 +77,7 @@ where
 	Self: Iterator<Item = Idx>,
 {
 	type Item = Idx;
-	type Iter = ParallelWrapper<std::ops::Range<Idx>>;
+	type Iter = ParallelWrapper<Self>;
 
 	#[inline(always)]
 	fn into_par_iter(self) -> Self::Iter {

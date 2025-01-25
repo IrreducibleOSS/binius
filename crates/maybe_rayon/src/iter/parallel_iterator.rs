@@ -303,7 +303,7 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 		R: Try<Output = T>,
 	{
 		let mut accum = init;
-		for item in self.into_iter() {
+		for item in self {
 			accum = match fold_op(accum, item).branch() {
 				ControlFlow::Break(r) => return std::iter::once(R::from_residual(r)),
 				ControlFlow::Continue(c) => c,
@@ -535,7 +535,7 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 			I: Iterator,
 			I::Item: Clone,
 		{
-			fn new(iter: I, element: I::Item) -> Self {
+			const fn new(iter: I, element: I::Item) -> Self {
 				Self {
 					iter,
 					element,
@@ -593,7 +593,7 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 
 	#[inline]
 	fn collect_vec_list(self) -> LinkedList<Vec<Self::Item>> {
-		LinkedList::from_iter(std::iter::once(Iterator::collect(self)))
+		std::iter::once(Iterator::collect(self)).collect()
 	}
 
 	#[inline(always)]
@@ -1230,16 +1230,16 @@ mod private {
 
 		fn from_residual(residual: Self::Residual) -> Self {
 			match residual {
-				Err(e) => Poll::Ready(Err(e)),
+				Err(e) => Self::Ready(Err(e)),
 				Ok(_) => unreachable!(),
 			}
 		}
 
 		fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
 			match self {
-				Poll::Pending => Continue(Poll::Pending),
-				Poll::Ready(Ok(c)) => Continue(Poll::Ready(c)),
-				Poll::Ready(Err(e)) => Break(Err(e)),
+				Self::Pending => Continue(Poll::Pending),
+				Self::Ready(Ok(c)) => Continue(Poll::Ready(c)),
+				Self::Ready(Err(e)) => Break(Err(e)),
 			}
 		}
 	}
@@ -1250,24 +1250,24 @@ mod private {
 
 		fn from_output(output: Self::Output) -> Self {
 			match output {
-				Poll::Ready(o) => Poll::Ready(o.map(Ok)),
-				Poll::Pending => Poll::Pending,
+				Poll::Ready(o) => Self::Ready(o.map(Ok)),
+				Poll::Pending => Self::Pending,
 			}
 		}
 
 		fn from_residual(residual: Self::Residual) -> Self {
 			match residual {
-				Err(e) => Poll::Ready(Some(Err(e))),
+				Err(e) => Self::Ready(Some(Err(e))),
 				Ok(_) => unreachable!(),
 			}
 		}
 
 		fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
 			match self {
-				Poll::Pending => Continue(Poll::Pending),
-				Poll::Ready(None) => Continue(Poll::Ready(None)),
-				Poll::Ready(Some(Ok(c))) => Continue(Poll::Ready(Some(c))),
-				Poll::Ready(Some(Err(e))) => Break(Err(e)),
+				Self::Pending => Continue(Poll::Pending),
+				Self::Ready(None) => Continue(Poll::Ready(None)),
+				Self::Ready(Some(Ok(c))) => Continue(Poll::Ready(Some(c))),
+				Self::Ready(Some(Err(e))) => Break(Err(e)),
 			}
 		}
 	}

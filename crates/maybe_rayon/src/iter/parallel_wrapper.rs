@@ -8,7 +8,7 @@ pub struct ParallelWrapper<I>(pub(crate) I);
 
 impl<I> ParallelWrapper<I> {
 	#[inline(always)]
-	pub(crate) fn new(iter: I) -> Self {
+	pub(crate) const fn new(iter: I) -> Self {
 		Self(iter)
 	}
 }
