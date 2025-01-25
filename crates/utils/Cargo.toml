@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 bytes.workspace = true

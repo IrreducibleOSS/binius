@@ -42,7 +42,7 @@ impl<T, Data: Deref<Target = [T]>> Array2D<T, Data> {
 	}
 
 	/// Returns the number of columns in the array.
-	pub fn cols(&self) -> usize {
+	pub const fn cols(&self) -> usize {
 		self.cols
 	}
 

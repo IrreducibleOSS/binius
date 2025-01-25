@@ -26,7 +26,7 @@ pub struct SkippableMap<I, F> {
 }
 
 impl<I, F> SkippableMap<I, F> {
-	fn new(iter: I, func: F) -> Self {
+	const fn new(iter: I, func: F) -> Self {
 		Self { iter, func }
 	}
 }

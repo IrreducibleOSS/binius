@@ -14,7 +14,7 @@ use thread_local::ThreadLocal;
 pub struct ThreadLocalMut<T: Send>(ThreadLocal<UnsafeCell<T>>);
 
 impl<T: Send> ThreadLocalMut<T> {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self(ThreadLocal::new())
 	}
 

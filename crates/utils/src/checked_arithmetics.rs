@@ -48,7 +48,7 @@ mod tests {
 
 	#[test]
 	#[should_panic]
-	fn test_checked_int_div_fail() {
+	const fn test_checked_int_div_fail() {
 		_ = checked_int_div(5, 2);
 	}
 
@@ -62,7 +62,7 @@ mod tests {
 
 	#[test]
 	#[should_panic]
-	fn test_checked_log2_fail() {
+	const fn test_checked_log2_fail() {
 		_ = checked_log_2(6)
 	}
 }

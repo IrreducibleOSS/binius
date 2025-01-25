@@ -38,7 +38,7 @@ pub fn connected_components(data: &[&[usize]]) -> Vec<usize> {
 	for ids in data {
 		if ids.len() > 1 {
 			let &base = ids.iter().min().unwrap();
-			for &node in ids.iter() {
+			for &node in *ids {
 				if node != base {
 					uf.union(base, node);
 				}
@@ -66,7 +66,7 @@ struct UnionFind {
 
 impl UnionFind {
 	fn new(n: usize) -> Self {
-		UnionFind {
+		Self {
 			parent: (0..n).collect(),
 			rank: vec![0; n],
 			min_element: (0..n).collect(),
