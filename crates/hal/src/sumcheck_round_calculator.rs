@@ -85,7 +85,7 @@ where
 	Composition: CompositionPolyOS<P>,
 {
 	let empty_query = MultilinearQuery::with_capacity(0);
-	let query = tensor_query.unwrap_or(empty_query.to_ref());
+	let query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
 
 	let accesses = multilinears
 		.iter()
@@ -325,7 +325,7 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
 {
-	fn new(multilinear: &'a SumcheckMultilinear<P, M>) -> Self {
+	const fn new(multilinear: &'a SumcheckMultilinear<P, M>) -> Self {
 		Self {
 			multilinear,
 			_marker: PhantomData,

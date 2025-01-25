@@ -18,7 +18,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct CpuBackend;
 
-pub fn make_portable_backend() -> CpuBackend {
+pub const fn make_portable_backend() -> CpuBackend {
 	CpuBackend
 }
 
