@@ -21,18 +21,18 @@ impl ThreadingSettings {
 	/// Get the log2 of the number of threads to use.
 	pub fn log_threads_count(&self) -> usize {
 		match self {
-			ThreadingSettings::SingleThreaded => 0,
-			ThreadingSettings::MultithreadedDefault => get_log_max_threads(),
-			ThreadingSettings::ExplicitThreadsCount { log_threads } => *log_threads,
+			Self::SingleThreaded => 0,
+			Self::MultithreadedDefault => get_log_max_threads(),
+			Self::ExplicitThreadsCount { log_threads } => *log_threads,
 		}
 	}
 
 	/// Check if settings imply multithreading.
-	pub fn is_multithreaded(&self) -> bool {
+	pub const fn is_multithreaded(&self) -> bool {
 		match self {
-			ThreadingSettings::SingleThreaded => false,
-			ThreadingSettings::MultithreadedDefault => true,
-			ThreadingSettings::ExplicitThreadsCount { log_threads } => *log_threads > 0,
+			Self::SingleThreaded => false,
+			Self::MultithreadedDefault => true,
+			Self::ExplicitThreadsCount { log_threads } => *log_threads > 0,
 		}
 	}
 }
@@ -57,17 +57,15 @@ impl<F: BinaryField> DynamicDispatchNTT<F> {
 	pub fn new(log_domain_size: usize, options: NTTOptions) -> Result<Self, crate::error::Error> {
 		let log_threads = options.thread_settings.log_threads_count();
 		let result = match (options.precompute_twiddles, log_threads) {
-			(false, 0) => {
-				DynamicDispatchNTT::SingleThreaded(SingleThreadedNTT::new(log_domain_size)?)
-			}
-			(true, 0) => DynamicDispatchNTT::SingleThreadedPrecompute(
+			(false, 0) => Self::SingleThreaded(SingleThreadedNTT::new(log_domain_size)?),
+			(true, 0) => Self::SingleThreadedPrecompute(
 				SingleThreadedNTT::new(log_domain_size)?.precompute_twiddles(),
 			),
-			(false, _) => DynamicDispatchNTT::MultiThreaded(
+			(false, _) => Self::MultiThreaded(
 				SingleThreadedNTT::new(log_domain_size)?
 					.multithreaded_with_max_threads(log_threads),
 			),
-			(true, _) => DynamicDispatchNTT::MultiThreadedPrecompute(
+			(true, _) => Self::MultiThreadedPrecompute(
 				SingleThreadedNTT::new(log_domain_size)?
 					.precompute_twiddles()
 					.multithreaded_with_max_threads(log_threads),
@@ -85,19 +83,19 @@ where
 {
 	fn log_domain_size(&self) -> usize {
 		match self {
-			DynamicDispatchNTT::SingleThreaded(ntt) => ntt.log_domain_size(),
-			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => ntt.log_domain_size(),
-			DynamicDispatchNTT::MultiThreaded(ntt) => ntt.log_domain_size(),
-			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => ntt.log_domain_size(),
+			Self::SingleThreaded(ntt) => ntt.log_domain_size(),
+			Self::SingleThreadedPrecompute(ntt) => ntt.log_domain_size(),
+			Self::MultiThreaded(ntt) => ntt.log_domain_size(),
+			Self::MultiThreadedPrecompute(ntt) => ntt.log_domain_size(),
 		}
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
 		match self {
-			DynamicDispatchNTT::SingleThreaded(ntt) => ntt.get_subspace_eval(i, j),
-			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => ntt.get_subspace_eval(i, j),
-			DynamicDispatchNTT::MultiThreaded(ntt) => ntt.get_subspace_eval(i, j),
-			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => ntt.get_subspace_eval(i, j),
+			Self::SingleThreaded(ntt) => ntt.get_subspace_eval(i, j),
+			Self::SingleThreadedPrecompute(ntt) => ntt.get_subspace_eval(i, j),
+			Self::MultiThreaded(ntt) => ntt.get_subspace_eval(i, j),
+			Self::MultiThreadedPrecompute(ntt) => ntt.get_subspace_eval(i, j),
 		}
 	}
 
@@ -108,16 +106,12 @@ where
 		log_batch_size: usize,
 	) -> Result<(), crate::error::Error> {
 		match self {
-			DynamicDispatchNTT::SingleThreaded(ntt) => {
+			Self::SingleThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
+			Self::SingleThreadedPrecompute(ntt) => {
 				ntt.forward_transform(data, coset, log_batch_size)
 			}
-			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => {
-				ntt.forward_transform(data, coset, log_batch_size)
-			}
-			DynamicDispatchNTT::MultiThreaded(ntt) => {
-				ntt.forward_transform(data, coset, log_batch_size)
-			}
-			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => {
+			Self::MultiThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
+			Self::MultiThreadedPrecompute(ntt) => {
 				ntt.forward_transform(data, coset, log_batch_size)
 			}
 		}
@@ -130,16 +124,12 @@ where
 		log_batch_size: usize,
 	) -> Result<(), crate::error::Error> {
 		match self {
-			DynamicDispatchNTT::SingleThreaded(ntt) => {
+			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
+			Self::SingleThreadedPrecompute(ntt) => {
 				ntt.inverse_transform(data, coset, log_batch_size)
 			}
-			DynamicDispatchNTT::SingleThreadedPrecompute(ntt) => {
-				ntt.inverse_transform(data, coset, log_batch_size)
-			}
-			DynamicDispatchNTT::MultiThreaded(ntt) => {
-				ntt.inverse_transform(data, coset, log_batch_size)
-			}
-			DynamicDispatchNTT::MultiThreadedPrecompute(ntt) => {
+			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
+			Self::MultiThreadedPrecompute(ntt) => {
 				ntt.inverse_transform(data, coset, log_batch_size)
 			}
 		}

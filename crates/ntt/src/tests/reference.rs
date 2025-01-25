@@ -162,7 +162,7 @@ pub struct SimpleAdditiveNTT<F: BinaryField, TA: TwiddleAccess<F>> {
 	_marker: PhantomData<F>,
 }
 
-impl<F, TA: TwiddleAccess<F>, P> AdditiveNTT<P> for SimpleAdditiveNTT<F, TA>
+impl<F, TA, P> AdditiveNTT<P> for SimpleAdditiveNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,

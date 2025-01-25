@@ -43,7 +43,7 @@ impl<F: TowerField> SingleThreadedNTT<F> {
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
-	pub fn with_twiddle_access(twiddle_access: Vec<TA>) -> Self {
+	pub const fn with_twiddle_access(twiddle_access: Vec<TA>) -> Self {
 		Self {
 			s_evals: twiddle_access,
 			_marker: PhantomData,
@@ -72,7 +72,7 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA: TwiddleAccess<F>, P> AdditiveNTT<P> for SingleThreadedNTT<F, TA>
+impl<F, TA, P> AdditiveNTT<P> for SingleThreadedNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F>,
@@ -294,7 +294,7 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	Ok(())
 }
 
-pub fn check_batch_transform_inputs<PB: PackedField>(
+pub const fn check_batch_transform_inputs<PB: PackedField>(
 	log_domain_size: usize,
 	data: &[PB],
 	coset: u32,
@@ -325,7 +325,7 @@ pub fn check_batch_transform_inputs<PB: PackedField>(
 	Ok(NTTParams { log_n, log_w })
 }
 
-pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
+pub const fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	log_domain_size: usize,
 	data: &[PB],
 	coset: u32,

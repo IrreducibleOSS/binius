@@ -48,7 +48,10 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	}
 
 	/// Returns multithreaded NTT implementation which uses `1 << log_max_threads` threads.
-	pub fn multithreaded_with_max_threads(self, log_max_threads: usize) -> MultithreadedNTT<F, TA> {
+	pub const fn multithreaded_with_max_threads(
+		self,
+		log_max_threads: usize,
+	) -> MultithreadedNTT<F, TA> {
 		MultithreadedNTT {
 			single_threaded: self,
 			log_max_threads,
@@ -56,10 +59,10 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA: TwiddleAccess<F> + Sync, P> AdditiveNTT<P> for MultithreadedNTT<F, TA>
+impl<F, TA, P> AdditiveNTT<P> for MultithreadedNTT<F, TA>
 where
 	F: BinaryField,
-	TA: TwiddleAccess<F>,
+	TA: TwiddleAccess<F> + Sync,
 	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {

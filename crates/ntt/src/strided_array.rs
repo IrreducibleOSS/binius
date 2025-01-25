@@ -56,11 +56,11 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 			.get_unchecked_mut(i * self.data_width + j + self.cols.start)
 	}
 
-	pub fn height(&self) -> usize {
+	pub const fn height(&self) -> usize {
 		self.height
 	}
 
-	pub fn width(&self) -> usize {
+	pub const fn width(&self) -> usize {
 		self.cols.end - self.cols.start
 	}
 

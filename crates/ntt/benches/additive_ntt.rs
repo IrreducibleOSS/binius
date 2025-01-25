@@ -65,8 +65,8 @@ fn bench_helper<P, BT: BenchTransformationFunc>(
 
 fn run_benchmarks_on_packed_fields<BT: BenchTransformationFunc>(c: &mut Criterion, name: &str) {
 	let mut group = c.benchmark_group(name);
-	for &log_n in [16].iter() {
-		for &log_batch_size in [0, 4].iter() {
+	for &log_n in std::iter::once(&16) {
+		for &log_batch_size in &[0, 4] {
 			// 128 bit registers
 			bench_helper::<PackedBinaryField8x16b, BT>(&mut group, "8x16b", log_n, log_batch_size);
 			bench_helper::<PackedBinaryField4x32b, BT>(&mut group, "4x32b", log_n, log_batch_size);

@@ -236,7 +236,7 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 		&simple_ntt,
 		&dynamic_dispatch_ntt,
 		&mut data,
-		cosets.clone(),
+		cosets,
 	);
 }
 

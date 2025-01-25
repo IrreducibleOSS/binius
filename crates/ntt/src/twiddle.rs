@@ -58,7 +58,7 @@ pub trait TwiddleAccess<F: BinaryField> {
 	/// index to `coset`.
 	///
 	/// Recall that a `TwiddleAccess` has an implicit NTT round $i$. Let $j=d-coset_{bits}$.
-	/// Then`coset` returns a `TwiddleAccess` object (of NTT round i) for the following affine  
+	/// Then`coset` returns a `TwiddleAccess` object (of NTT round i) for the following affine
 	/// subspace of $K/U_{i-1}$: the set of all elements of $K/U_{i-1}$
 	/// whose coordinates in the basis $\beta_i,\ldots ,\beta_{d-1}$ is:
 	/// $(*, \cdots, *, coset_{0}, \ldots , coset_{bits-1})$, where the first $j$ coordinates are arbitrary.
@@ -94,7 +94,7 @@ impl<F: BinaryField> OnTheFlyTwiddleAccess<F> {
 		let s_evals = precompute_subspace_evals::<F, DomainField>(log_domain_size)?
 			.into_iter()
 			.enumerate()
-			.map(|(i, s_evals_i)| OnTheFlyTwiddleAccess {
+			.map(|(i, s_evals_i)| Self {
 				log_n: log_domain_size - 1 - i,
 				offset: F::ZERO,
 				s_evals: s_evals_i,

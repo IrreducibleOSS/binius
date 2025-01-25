@@ -4,9 +4,12 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 binius_field = { path = "../field" }
-binius_math = { path = "../math"}
+binius_math = { path = "../math" }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 rand.workspace = true
