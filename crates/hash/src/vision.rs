@@ -227,7 +227,7 @@ where
 	type Digest = PackedType<U, F>;
 
 	fn new(msg_len: u64) -> Self {
-		let mut this = VisionHasher {
+		let mut this = Self {
 			state: [PackedAESBinaryField8x32b::zero(); 3],
 			committed_len: msg_len,
 			current_len: 0,

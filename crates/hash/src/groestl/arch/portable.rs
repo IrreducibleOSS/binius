@@ -16,7 +16,7 @@ const ROUND_SIZE: usize = 10;
 
 /// The shift of a given index of the state of P permutation as per the `ShiftBytes` step
 #[inline(always)]
-fn shift_p_func(row: usize, col: usize) -> usize {
+const fn shift_p_func(row: usize, col: usize) -> usize {
 	let new_row = row;
 	let new_col = (row + col) % 8;
 	new_col * 8 + new_row
@@ -24,7 +24,7 @@ fn shift_p_func(row: usize, col: usize) -> usize {
 
 /// The shift of a given index of the state of Q permutation as per the `ShiftBytes` step
 #[inline(always)]
-fn shift_q_func(row: usize, col: usize) -> usize {
+const fn shift_q_func(row: usize, col: usize) -> usize {
 	let new_row = row;
 	let new_col = (col + 2 * row - row / 4 + 1) % 8;
 	new_col * 8 + new_row
