@@ -148,7 +148,7 @@ where
 	pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, U, FW>, Error> {
 		let mut result = MultilinearExtensionIndex::new();
 		let entries = Rc::into_inner(self.entries)
-			.ok_or(anyhow!("Failed to build. There are still entries refs. Make sure there are no pending column insertions."))?
+			.ok_or_else(|| anyhow!("Failed to build. There are still entries refs. Make sure there are no pending column insertions."))?
 			.into_inner()
 			.into_iter()
 			.enumerate()
@@ -172,7 +172,7 @@ impl<'arena, U: PackScalar<FS>, FS: TowerField> WitnessEntry<'arena, U, FS> {
 		WithUnderlier::from_underliers_ref(self.data)
 	}
 
-	pub fn repacked<FW>(&self) -> WitnessEntry<'arena, U, FW>
+	pub const fn repacked<FW>(&self) -> WitnessEntry<'arena, U, FW>
 	where
 		FW: TowerField + ExtensionField<FS>,
 		U: PackScalar<FW>,
@@ -184,14 +184,14 @@ impl<'arena, U: PackScalar<FS>, FS: TowerField> WitnessEntry<'arena, U, FS> {
 		}
 	}
 
-	pub fn low_rows(&self) -> usize {
+	pub const fn low_rows(&self) -> usize {
 		self.log_rows
 	}
 }
 
 impl<'arena, U: PackScalar<FS> + Pod, FS: TowerField> WitnessEntry<'arena, U, FS> {
 	#[inline]
-	pub fn as_slice<T: Pod>(&self) -> &'arena [T] {
+	pub const fn as_slice<T: Pod>(&self) -> &'arena [T] {
 		must_cast_slice(self.data)
 	}
 }

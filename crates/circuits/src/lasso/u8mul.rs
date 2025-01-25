@@ -33,7 +33,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 	let log_rows = builder.log_rows([mult_a, mult_b])?;
 	let product = builder.add_committed_multiple("product", log_rows, B8::TOWER_LEVEL);
 

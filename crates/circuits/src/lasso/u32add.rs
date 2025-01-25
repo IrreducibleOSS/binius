@@ -39,7 +39,6 @@ where
 		+ PackScalar<FOutput>,
 	PackedType<U, B32>: PackedFieldIndexable,
 	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
 	B8: ExtensionField<FInput> + ExtensionField<FOutput>,
 	F: TowerField
 		+ ExtensionField<B32>

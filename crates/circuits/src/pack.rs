@@ -16,8 +16,7 @@ pub fn pack<U, F, FInput, FOutput>(
 where
 	F: TowerField + ExtensionField<FInput> + ExtensionField<FOutput>,
 	FInput: TowerField,
-	FOutput: TowerField,
-	FOutput: ExtensionField<FInput>,
+	FOutput: TowerField + ExtensionField<FInput>,
 	U: UnderlierType + PackScalar<F> + PackScalar<FInput> + PackScalar<FOutput>,
 {
 	if FInput::TOWER_LEVEL == FOutput::TOWER_LEVEL {

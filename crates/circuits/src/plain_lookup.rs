@@ -216,7 +216,7 @@ pub mod test_plain_lookup {
 	use super::*;
 	use crate::transparent;
 
-	fn into_lookup_claim(x: u8, y: u8, z: u16) -> u32 {
+	const fn into_lookup_claim(x: u8, y: u8, z: u16) -> u32 {
 		((z as u32) << 16) | ((y as u32) << 8) | (x as u32)
 	}
 

@@ -275,7 +275,7 @@ mod tests {
 
 		let mut several_u32_add = SeveralU32add::new(&mut builder).unwrap();
 
-		[11, 12, 13].into_iter().for_each(|log_size| {
+		for log_size in [11, 12, 13] {
 			// BinaryField8b is used here because we utilize an 8x8x1→8 table
 			let add_a_u8 =
 				unconstrained::<_, _, BinaryField8b>(&mut builder, "add_a", log_size).unwrap();
@@ -289,7 +289,7 @@ mod tests {
 					add_b_u8,
 				)
 				.unwrap();
-		});
+		}
 
 		several_u32_add
 			.finalize(&mut builder, "lasso_u32add")

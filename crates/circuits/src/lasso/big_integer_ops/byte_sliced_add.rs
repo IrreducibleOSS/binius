@@ -53,7 +53,7 @@ where
 		return Ok((carry_out, sum_arr));
 	}
 
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let (lower_half_x, upper_half_x) = Level::split(x_in);
 	let (lower_half_y, upper_half_y) = Level::split(y_in);

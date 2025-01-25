@@ -40,7 +40,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let sum = builder.add_committed("sum", log_size, B8::TOWER_LEVEL);
 

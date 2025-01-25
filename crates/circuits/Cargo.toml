@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 binius_core = { path = "../core" }
 binius_field = { path = "../field" }

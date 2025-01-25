@@ -30,7 +30,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_MUL, B32::TOWER_LEVEL);
 
@@ -64,7 +64,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
 
@@ -106,7 +106,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
 
@@ -150,7 +150,7 @@ where
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
 {
-	builder.push_namespace(name.clone());
+	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_DCI, B32::TOWER_LEVEL);
 

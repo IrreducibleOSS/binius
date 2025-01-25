@@ -21,7 +21,7 @@ pub struct Collatz {
 }
 
 impl Collatz {
-	pub fn new(x0: u32) -> Self {
+	pub const fn new(x0: u32) -> Self {
 		Self {
 			x0,
 			evens: vec![],

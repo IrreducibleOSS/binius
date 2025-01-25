@@ -68,9 +68,9 @@ where
 			table_constraints,
 			non_zero_oracle_ids: self.non_zero_oracle_ids,
 			oracles: Rc::into_inner(self.oracles)
-				.ok_or(anyhow!(
-					"Failed to build ConstraintSystem: references still exist to oracles"
-				))?
+				.ok_or_else(|| {
+					anyhow!("Failed to build ConstraintSystem: references still exist to oracles")
+				})?
 				.into_inner(),
 			flushes: self.flushes,
 		})
