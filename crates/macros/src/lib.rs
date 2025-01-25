@@ -119,11 +119,10 @@ pub fn iter_oracle_derive(input: TokenStream) -> TokenStream {
 				}
 				syn::Type::Array(array) => {
 					if let syn::Type::Path(type_path) = *array.elem.clone() {
-						if type_path.path.is_ident("OracleId") {
-							Some(quote!(self.#name.into_iter()))
-						} else {
-							None
-						}
+						type_path
+							.path
+							.is_ident("OracleId")
+							.then(|| quote!(self.#name.into_iter()))
 					} else {
 						None
 					}
@@ -224,14 +223,9 @@ pub(crate) fn generic_vars_with_trait(
 					}
 					_ => false,
 				});
-				if is_bounded_by_trait_name {
-					Some(type_param.ident.clone())
-				} else {
-					None
-				}
+				is_bounded_by_trait_name.then(|| type_param.ident.clone())
 			}
-			syn::GenericParam::Const(_) => None,
-			syn::GenericParam::Lifetime(_) => None,
+			syn::GenericParam::Const(_) | syn::GenericParam::Lifetime(_) => None,
 		})
 		.collect()
 }

@@ -140,7 +140,7 @@ impl Parse for CompositionPolyItem {
 	fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
 		let name = input.parse::<syn::Ident>();
 		let is_anonymous = name.is_err();
-		let name = name.unwrap_or(parse_quote!(UnnamedCompositionPoly));
+		let name = name.unwrap_or_else(|_| parse_quote!(UnnamedCompositionPoly));
 		let vars = {
 			let content;
 			bracketed!(content in input);
