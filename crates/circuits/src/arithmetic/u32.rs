@@ -151,6 +151,73 @@ where
 	Ok(zout)
 }
 
+pub fn sub<U, F>(
+	builder: &mut ConstraintSystemBuilder<U, F>,
+	name: impl ToString,
+	zin: OracleId,
+	yin: OracleId,
+	flags: super::Flags,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
+	F: TowerField,
+{
+	builder.push_namespace(name);
+	let log_rows = builder.log_rows([zin, yin])?;
+	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
+	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
+	let xout = builder.add_committed("xin", log_rows, BinaryField1b::TOWER_LEVEL);
+
+	if let Some(witness) = builder.witness() {
+		(
+			witness.get::<BinaryField1b>(zin)?.as_slice::<u32>(),
+			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
+			witness
+				.new_column::<BinaryField1b>(xout)
+				.as_mut_slice::<u32>(),
+			witness
+				.new_column::<BinaryField1b>(cout)
+				.as_mut_slice::<u32>(),
+			witness
+				.new_column::<BinaryField1b>(cin)
+				.as_mut_slice::<u32>(),
+		)
+			.into_par_iter()
+			.for_each(|(zout, yin, xin, cout, cin)| {
+				let carry;
+				(*xin, carry) = (*zout).overflowing_sub(*yin);
+				*cin = (*xin) ^ (*yin) ^ (*zout);
+				*cout = ((carry as u32) << 31) | (*cin >> 1);
+			});
+	}
+
+	builder.assert_zero(
+		"sum",
+		[xout, yin, cin, zin],
+		arith_expr!([xout, yin, cin, zin] = xout + yin + cin - zin).convert_field(),
+	);
+
+	builder.assert_zero(
+		"carry",
+		[xout, yin, cin, cout],
+		arith_expr!([xout, yin, cin, cout] = (xout + cin) * (yin + cin) + cin - cout)
+			.convert_field(),
+	);
+
+	// Underflow checking
+	if matches!(flags, super::Flags::Checked) {
+		let last_cout = select_bit(builder, "last_cout", cout, 31)?;
+		builder.assert_zero(
+			"underflow",
+			[last_cout],
+			arith_expr!([last_cout] = last_cout).convert_field(),
+		);
+	}
+
+	builder.pop_namespace();
+	Ok(xout)
+}
+
 pub fn half<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
@@ -296,7 +363,7 @@ mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, TowerField};
 
-	use crate::{arithmetic, builder::ConstraintSystemBuilder};
+	use crate::{arithmetic, builder::ConstraintSystemBuilder, unconstrained::unconstrained};
 
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -317,6 +384,22 @@ mod tests {
 
 		let _c = arithmetic::u32::mul_const(&mut builder, "mul3", a, 3, arithmetic::Flags::Checked)
 			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_sub() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+
+		let a = unconstrained::<U, F, BinaryField1b>(&mut builder, "a", 7).unwrap();
+		let b = unconstrained::<U, F, BinaryField1b>(&mut builder, "a", 7).unwrap();
+		let _c =
+			arithmetic::u32::sub(&mut builder, "c", a, b, arithmetic::Flags::Unchecked).unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraint_system = builder.build().unwrap();
