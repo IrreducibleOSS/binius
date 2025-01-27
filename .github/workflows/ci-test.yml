@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     name: build-debug-${{ matrix.expand.name }}
-    runs-on: ${{ github.run_id }}
+    runs-on: ${{ matrix.expand.runner }}
     container: rustlang/rust:nightly
     strategy:
       matrix:
@@ -16,7 +16,7 @@ jobs:
             name: "wasm"
             cmd: "rustup target add wasm32-unknown-unknown && cargo build --package binius_field --target wasm32-unknown-unknown"
           - runner: "ubuntu-latest"
-            name: "c7a-2xlarge"
+            name: "amd"
             cmd: "cargo build --tests --benches --examples"
           - runner: "c7a-2xlarge"
             name: "amd-no-default-features"
@@ -24,7 +24,7 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "amd-stable"
             cmd: "cargo +1.83.0 build --tests --benches --examples -p binius_core --features stable_only"
-          - runner: "t4g-large"
+          - runner: "t4g-xlarge"
             name: "arm"
             cmd: "cargo build --tests --benches --examples"
     continue-on-error: true
