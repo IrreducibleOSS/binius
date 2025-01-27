@@ -52,6 +52,10 @@ harness = false
 name = "prodcheck"
 harness = false
 
+[[bench]]
+name = "high_to_low_sumcheck"
+harness = false
+
 [features]
 debug_validate_sumcheck = []
 stable_only = [

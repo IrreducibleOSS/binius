@@ -221,3 +221,24 @@ where
 
 	Ok(output)
 }
+
+#[instrument(skip_all, name = "sumcheck::batch_prove")]
+pub fn high_to_low_batch_prove<F, Prover, Transcript>(
+	provers: Vec<Prover>,
+	transcript: Transcript,
+) -> Result<BatchSumcheckOutput<F>, Error>
+where
+	F: TowerField,
+	Prover: SumcheckProver<F>,
+	Transcript: CanSample<F> + CanWrite,
+{
+	let start = BatchProveStart {
+		batch_coeffs: Vec::new(),
+		reduction_provers: Vec::<Prover>::new(),
+	};
+
+	batch_prove_with_start(start, provers, transcript).map(|mut res| {
+		res.challenges.reverse();
+		res
+	})
+}

@@ -63,4 +63,23 @@ impl ComputationBackend for CpuBackend {
 	) -> Result<MultilinearExtension<P>, Error> {
 		Ok(multilinear.evaluate_partial_high(query_expansion)?)
 	}
+
+	fn high_to_low_sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		F: Field + ExtensionField<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPolyOS<P>,
+	{
+		todo!()
+	}
 }

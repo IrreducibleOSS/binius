@@ -58,6 +58,22 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>;
 
+	fn high_to_low_sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		F: Field + ExtensionField<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPolyOS<P>;
+
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	fn evaluate_partial_high<P: PackedField>(
 		&self,
@@ -116,6 +132,25 @@ where
 		query_expansion: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error> {
 		T::evaluate_partial_high(self, multilinear, query_expansion)
+	}
+
+	fn high_to_low_sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+		&self,
+		n_vars: usize,
+		tensor_query: Option<MultilinearQueryRef<P>>,
+		multilinears: &[SumcheckMultilinear<P, M>],
+		evaluators: &[Evaluator],
+		evaluation_points: &[FDomain],
+	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
+	where
+		FDomain: Field,
+		F: Field + ExtensionField<FDomain>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		M: MultilinearPoly<P> + Send + Sync,
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPolyOS<P>,
+	{
+		todo!()
 	}
 }
 

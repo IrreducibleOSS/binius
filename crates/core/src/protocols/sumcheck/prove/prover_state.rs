@@ -210,6 +210,83 @@ where
 		Ok(())
 	}
 
+	#[instrument(skip_all, name = "ProverState::high_to_low_fold", level = "debug")]
+	pub fn high_to_low_fold(&mut self, challenge: F) -> Result<(), Error> {
+		if self.n_vars == 0 {
+			bail!(Error::ExpectedFinish);
+		}
+
+		// Update the stored multilinear sums.
+		match self.last_coeffs_or_sums {
+			ProverStateCoeffsOrSums::Coeffs(ref round_coeffs) => {
+				let new_sums = round_coeffs
+					.par_iter()
+					.map(|coeffs| evaluate_univariate(&coeffs.0, challenge))
+					.collect();
+				self.last_coeffs_or_sums = ProverStateCoeffsOrSums::Sums(new_sums);
+			}
+			ProverStateCoeffsOrSums::Sums(_) => {
+				bail!(Error::ExpectedExecution);
+			}
+		}
+
+		// Update the tensor query.
+		if let Some(tensor_query) = self.tensor_query.take() {
+			self.tensor_query = Some(tensor_query.update(&[challenge])?);
+		}
+
+		// Use Relaxed ordering for writes and the read, because:
+		// * all writes can only update this value in the same direction of false->true
+		// * the barrier at the end of rayon "parallel for" is a big enough synchronization point to be Relaxed about memory ordering of accesses to this Atomic.
+		let any_transparent_left = AtomicBool::new(false);
+		self.multilinears
+			.par_iter_mut()
+			.try_for_each(|multilinear| {
+				match multilinear {
+					SumcheckMultilinear::Transparent {
+						multilinear: inner_multilinear,
+						ref mut switchover_round,
+					} => {
+						if *switchover_round == 0 {
+							let tensor_query = self.tensor_query.as_ref()
+							.expect(
+								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
+							);
+
+							// At switchover, perform inner products in large field and save them in a
+							// newly created MLE.
+							let large_field_folded_multilinear = MLEDirectAdapter::from(
+								inner_multilinear.evaluate_partial_high(tensor_query.to_ref())?,
+							);
+
+							*multilinear = SumcheckMultilinear::Folded {
+								large_field_folded_multilinear,
+							};
+						} else {
+							*switchover_round -= 1;
+							any_transparent_left.store(true, Ordering::Relaxed);
+						}
+					}
+					SumcheckMultilinear::Folded {
+						ref mut large_field_folded_multilinear,
+					} => {
+						// Post-switchover, simply plug in challenge for the zeroth variable.
+						*large_field_folded_multilinear = MLEDirectAdapter::from(
+							large_field_folded_multilinear.evaluate_last_variable(challenge)?,
+						);
+					}
+				};
+				Ok::<(), Error>(())
+			})?;
+
+		if !any_transparent_left.load(Ordering::Relaxed) {
+			self.tensor_query = None;
+		}
+
+		self.n_vars -= 1;
+		Ok(())
+	}
+
 	pub fn finish(self) -> Result<Vec<F>, Error> {
 		match self.last_coeffs_or_sums {
 			ProverStateCoeffsOrSums::Coeffs(_) => {
@@ -256,6 +333,28 @@ where
 		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.sumcheck_compute_round_evals(
+			self.n_vars,
+			self.tensor_query.as_ref().map(Into::into),
+			&self.multilinears,
+			evaluators,
+			&self.evaluation_points,
+		)?)
+	}
+
+	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
+	///
+	/// See [`Self::calculate_first_round_evals`] for an optimized version of this method that
+	/// operates over small fields in the first round.
+	#[instrument(skip_all, level = "debug")]
+	pub fn hight_to_low_calculate_later_round_evals<Evaluator, Composition>(
+		&self,
+		evaluators: &[Evaluator],
+	) -> Result<Vec<RoundEvals<F>>, Error>
+	where
+		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Composition: CompositionPolyOS<P>,
+	{
+		Ok(self.backend.sumcheck_compute_later_round_evals(
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,

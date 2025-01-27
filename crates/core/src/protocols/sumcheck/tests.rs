@@ -10,14 +10,14 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, Field,
-	PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension, PackedField,
-	RepackedExtension, TowerField,
+	AESTowerField8b, BinaryField, BinaryField128b, BinaryField32b, BinaryField8b,
+	ByteSlicedAES32x8b, ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField4x32b,
+	PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -29,7 +29,8 @@ use super::{
 	common::CompositeSumClaim,
 	front_loaded::BatchVerifier as FrontLoadedBatchVerifier,
 	prove::{
-		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, RegularSumcheckProver,
+		batch_prove, front_loaded::BatchProver as FrontLoadedBatchProver, high_to_low_batch_prove,
+		RegularSumcheckProver,
 	},
 	verify::batch_verify,
 	BatchSumcheckOutput, SumcheckClaim,
@@ -39,7 +40,7 @@ use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::{
-		sumcheck::prove::SumcheckProver,
+		sumcheck::prove::{high_to_low_sumcheck::HighToLowSumcheckProver, SumcheckProver},
 		test_utils::{AddOneComposition, TestProductComposition},
 	},
 	transcript::ProverTranscript,
@@ -248,6 +249,88 @@ fn test_sumcheck_prove_verify_with_nontrivial_packing() {
 		BinaryField8b,
 		BinaryField128b,
 	>(n_vars, n_multilinears, switchover_rd);
+}
+
+fn test_high_to_low_prove_verify_product_helper<P, FDomain>(n_vars: usize, n_multilinears: usize)
+where
+	P: PackedField + PackedExtension<FDomain>,
+	P::Scalar: TowerField + ExtensionField<FDomain>,
+	FDomain: BinaryField,
+{
+	let mut rng = StdRng::seed_from_u64(0);
+
+	let multilins = generate_random_multilinears::<P>(&mut rng, n_vars, n_multilinears)
+		.into_iter()
+		.map(MLEDirectAdapter::<P>::from)
+		.collect::<Vec<_>>();
+	let product_composition = TestProductComposition::new(n_multilinears);
+	let composition = AddOneComposition::new(product_composition);
+	let sum = compute_composite_sum(&multilins, &composition);
+
+	let claim = SumcheckClaim::new(
+		n_vars,
+		n_multilinears,
+		vec![CompositeSumClaim {
+			composition: &composition,
+			sum,
+		}],
+	)
+	.unwrap();
+
+	let backend = make_portable_backend();
+	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
+	let prover = HighToLowSumcheckProver::<FDomain, _, _, _, _>::new(
+		multilins.iter().collect(),
+		[CompositeSumClaim {
+			composition: &composition,
+			sum,
+		}],
+		domain_factory,
+		&backend,
+	)
+	.unwrap();
+
+	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let prover_reduced_claims = high_to_low_batch_prove(vec![prover], &mut prover_transcript)
+		.expect("failed to prove sumcheck");
+
+	let prover_sample = CanSample::<P::Scalar>::sample(&mut prover_transcript);
+	let mut verifier_transcript = prover_transcript.into_reader();
+	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
+
+	// Check that challengers are in the same state
+	assert_eq!(prover_sample, CanSample::<P::Scalar>::sample(&mut verifier_transcript));
+	verifier_transcript.finalize().unwrap();
+
+	assert_eq!(verifier_reduced_claims, prover_reduced_claims);
+
+	// Verify that the evaluation claims are correct
+	let BatchSumcheckOutput {
+		challenges,
+		multilinear_evals,
+	} = verifier_reduced_claims;
+
+	let eval_point = &challenges;
+	assert_eq!(multilinear_evals.len(), 1);
+	assert_eq!(multilinear_evals[0].len(), n_multilinears);
+
+	// Verify the reduced multilinear evaluations are correct
+	let multilin_query = backend.multilinear_query(eval_point).unwrap();
+	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
+		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
+	}
+}
+
+#[test]
+pub fn test_prove_verify_high_to_low() {
+	for n_vars in 2..8 {
+		for n_multilinears in 1..4 {
+			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x8b, AESTowerField8b>(
+				n_vars,
+				n_multilinears,
+			);
+		}
+	}
 }
 
 #[derive(Clone)]

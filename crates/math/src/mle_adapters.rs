@@ -298,6 +298,33 @@ where
 	pub fn upcast_arc_dyn(self) -> Arc<dyn MultilinearPoly<P> + Send + Sync + 'a> {
 		Arc::new(self)
 	}
+
+	/// Given a ($mu$-variate) multilinear function $f$ and an element $r$,
+	/// return the multilinear function $f(X_0, X_1, ..., r)$.
+	pub fn evaluate_last_variable(&self, r: P::Scalar) -> Result<MultilinearExtension<P>, Error> {
+		let multilin = &self.0;
+		let mu = multilin.n_vars();
+		if mu == 0 {
+			bail!(Error::ConstantFold);
+		}
+
+		let evals = multilin.evals();
+
+		if evals.len() == 1 {
+			let single_variable_query = MultilinearQueryRef::expand(&[r]);
+
+			return self.evaluate_partial_high(single_variable_query);
+		}
+
+		let (low, high) = evals.split_at(evals.len() / 2);
+
+		let result: Vec<P> = low
+			.iter()
+			.zip(high)
+			.map(|(&l, &h)| (h - l) * r + l)
+			.collect::<Vec<_>>();
+		MultilinearExtension::new(mu - 1, result)
+	}
 }
 
 impl<P, Data> From<MultilinearExtension<P, Data>> for MLEDirectAdapter<P, Data>

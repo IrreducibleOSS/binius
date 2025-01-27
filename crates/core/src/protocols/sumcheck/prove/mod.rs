@@ -4,13 +4,16 @@ mod batch_prove;
 mod batch_prove_univariate_zerocheck;
 pub(crate) mod common;
 pub mod front_loaded;
+pub mod high_to_low_sumcheck;
 pub mod oracles;
 pub mod prover_state;
 pub mod regular_sumcheck;
 pub mod univariate;
 pub mod zerocheck;
 
-pub use batch_prove::{batch_prove, batch_prove_with_start, SumcheckProver};
+pub use batch_prove::{
+	batch_prove, batch_prove_with_start, high_to_low_batch_prove, SumcheckProver,
+};
 pub use batch_prove_univariate_zerocheck::{
 	batch_prove_zerocheck_univariate_round, UnivariateZerocheckProver,
 };

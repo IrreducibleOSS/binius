@@ -15,7 +15,7 @@ use crate::{
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	PackedField,
+	PackedExtension, PackedField,
 };
 
 /// Represents 32 AES Tower Field elements in byte-sliced form backed by Packed 32x8b AES fields.
@@ -262,6 +262,50 @@ macro_rules! define_byte_sliced {
 				}
 
 				result
+			}
+		}
+
+		impl PackedExtension<$scalar_type> for $name {
+			type PackedSubfield = Self;
+
+			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
+				packed
+			}
+
+			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
+				packed
+			}
+
+			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
+				packed
+			}
+
+			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
+				packed
+			}
+
+			fn cast_base(self) -> Self::PackedSubfield {
+				self
+			}
+
+			fn cast_base_ref(&self) -> &Self::PackedSubfield {
+				self
+			}
+
+			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
+				self
+			}
+
+			fn cast_ext(base: Self::PackedSubfield) -> Self {
+				base
+			}
+
+			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
+				base
+			}
+
+			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
+				base
 			}
 		}
 	};

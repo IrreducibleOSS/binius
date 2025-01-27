@@ -171,6 +171,28 @@ where
 	})
 }
 
+pub fn high_to_low_batch_verify<F, Composition, Transcript>(
+	claims: &[SumcheckClaim<F, Composition>],
+	transcript: &mut Transcript,
+) -> Result<BatchSumcheckOutput<F>, Error>
+where
+	F: TowerField,
+	Composition: CompositionPolyOS<F>,
+	Transcript: CanSample<F> + CanRead,
+{
+	let start = BatchVerifyStart {
+		batch_coeffs: Vec::new(),
+		sum: F::ZERO,
+		max_degree: 0,
+		skip_rounds: 0,
+	};
+
+	batch_verify_with_start(start, claims, transcript).map(|mut res| {
+		res.challenges.reverse();
+		res
+	})
+}
+
 pub fn compute_expected_batch_composite_evaluation_single_claim<F: Field, Composition>(
 	batch_coeff: F,
 	claim: &SumcheckClaim<F, Composition>,

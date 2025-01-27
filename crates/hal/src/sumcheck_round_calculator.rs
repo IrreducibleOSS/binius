@@ -71,7 +71,13 @@ where
 		})
 		.collect_vec();
 
-	calculate_round_evals_with_access(n_vars, &later_rounds_accesses, evaluators, evaluation_points)
+	calculate_round_evals_with_access(
+		n_vars,
+		&later_rounds_accesses,
+		evaluators,
+		evaluation_points,
+		false,
+	)
 }
 
 fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Composition>(
@@ -79,6 +85,7 @@ fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Compositi
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
+	high_to_low: bool,
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
@@ -116,22 +123,35 @@ where
 				} = &mut par_fold_states;
 
 				for (multilinear, evals) in iter::zip(multilinears, multilinear_evals.iter_mut()) {
-					multilinear
-						.subcube_evaluations(
-							subcube_vars + 1,
-							subcube_index,
-							interleaved_evals.as_mut_slice(),
-						)
-						.expect("indices are in range");
+					if high_to_low {
+						multilinear
+							.subcube_evaluations(subcube_vars, subcube_index, &mut evals.evals_0)
+							.expect("indices are in range");
+						multilinear
+							.subcube_evaluations(
+								subcube_vars,
+								(1 << (n_vars - 1 - subcube_vars)) + subcube_index,
+								&mut evals.evals_1,
+							)
+							.expect("indices are in range");
+					} else {
+						multilinear
+							.subcube_evaluations(
+								subcube_vars + 1,
+								subcube_index,
+								interleaved_evals.as_mut_slice(),
+							)
+							.expect("indices are in range");
 
-					// Returned slice has interleaved 0/1 evals due to round variable
-					// being the lowermost one. Deinterleave into two slices.
-					deinterleave(subcube_vars, interleaved_evals.as_slice()).for_each(
-						|(i, even, odd)| {
-							evals.evals_0[i] = even;
-							evals.evals_1[i] = odd;
-						},
-					);
+						// Returned slice has interleaved 0/1 evals due to round variable
+						// being the lowermost one. Deinterleave into two slices.
+						deinterleave(subcube_vars, interleaved_evals.as_slice()).for_each(
+							|(i, even, odd)| {
+								evals.evals_0[i] = even;
+								evals.evals_1[i] = odd;
+							},
+						);
+					}
 				}
 
 				// Proceed by evaluation point first to share interpolation work between evaluators.
