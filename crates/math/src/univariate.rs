@@ -53,11 +53,10 @@ impl<F: BinaryField> EvaluationDomainFactory<F> for DefaultEvaluationDomainFacto
 	}
 }
 
-impl<FSrc: BinaryField, FTgt: BinaryField> EvaluationDomainFactory<FTgt>
-	for IsomorphicEvaluationDomainFactory<FSrc>
+impl<FSrc, FTgt> EvaluationDomainFactory<FTgt> for IsomorphicEvaluationDomainFactory<FSrc>
 where
 	FSrc: BinaryField,
-	FTgt: Field + From<FSrc>,
+	FTgt: Field + From<FSrc> + BinaryField,
 {
 	fn create(&self, size: usize) -> Result<EvaluationDomain<FTgt>, Error> {
 		let points = make_evaluation_points(&self.subspace, size)?;
@@ -77,7 +76,7 @@ fn make_evaluation_points<F: BinaryField>(
 }
 
 impl<F: Field> From<EvaluationDomain<F>> for InterpolationDomain<F> {
-	fn from(evaluation_domain: EvaluationDomain<F>) -> InterpolationDomain<F> {
+	fn from(evaluation_domain: EvaluationDomain<F>) -> Self {
 		let n = evaluation_domain.size();
 		let evaluation_matrix = vandermonde(evaluation_domain.points());
 		let mut interpolation_matrix = Matrix::zeros(n, n);
@@ -90,7 +89,7 @@ impl<F: Field> From<EvaluationDomain<F>> for InterpolationDomain<F> {
 				matrix is non-singular because it is Vandermonde with no duplicate points",
 			);
 
-		InterpolationDomain {
+		Self {
 			evaluation_domain,
 			interpolation_matrix,
 		}

@@ -155,13 +155,13 @@ mod tests {
 		let concatenated_multilinear_coeffs = multilinear_coefficients
 			.iter()
 			.flat_map(|coeffs| coeffs.iter())
-			.cloned()
+			.copied()
 			.chain(repeat_with(|| F::ZERO).take(zero_padding_length))
 			.collect::<Vec<_>>();
 
 		let concatenated_multilinear = MultilinearExtension::<F, Vec<F>>::new(
 			total_number_of_variables,
-			concatenated_multilinear_coeffs.clone(),
+			concatenated_multilinear_coeffs,
 		)
 		.unwrap();
 

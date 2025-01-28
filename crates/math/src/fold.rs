@@ -80,6 +80,7 @@ unsafe impl SequentialBytes for PackedBinaryField512x1b {}
 /// Returns true if T implements `SequentialBytes` trait.
 /// Use a hack that exploits that array copying is optimized for the `Copy` types.
 /// Unfortunately there is no more proper way to perform this check this in Rust at runtime.
+#[allow(clippy::redundant_clone)]
 fn is_sequential_bytes<T>() -> bool {
 	struct X<U>(bool, std::marker::PhantomData<U>);
 
@@ -141,7 +142,7 @@ fn iterate_bytes<P: PackedField>(data: &[P], mut f: impl FnMut(u8)) {
 		let bytes = unsafe {
 			std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
 		};
-		for byte in bytes.iter() {
+		for byte in bytes {
 			f(*byte);
 		}
 	} else {

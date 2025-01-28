@@ -8,7 +8,7 @@ use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
 };
 
-fn packed_size<P: PackedField>(log_size: usize) -> usize {
+const fn packed_size<P: PackedField>(log_size: usize) -> usize {
 	(1usize << log_size).div_ceil(P::WIDTH)
 }
 

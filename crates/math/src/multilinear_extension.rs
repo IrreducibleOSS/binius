@@ -98,6 +98,7 @@ where
 }
 
 impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
+	#[allow(clippy::missing_const_for_fn)]
 	pub fn from_values_slice(v: &'a [P]) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
 			bail!(Error::PowerOfTwoLengthRequired);
@@ -108,11 +109,11 @@ impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
 }
 
 impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.mu
 	}
 
-	pub fn size(&self) -> usize {
+	pub const fn size(&self) -> usize {
 		1 << self.mu
 	}
 
@@ -323,7 +324,7 @@ impl<F: Field + AsSinglePacked, Data: Deref<Target = [F]>> MultilinearExtension<
 	}
 }
 
-fn log2(v: usize) -> usize {
+const fn log2(v: usize) -> usize {
 	63 - (v as u64).leading_zeros() as usize
 }
 
@@ -426,7 +427,7 @@ mod tests {
 
 		let mut partial_result = poly;
 		let mut index = q.len();
-		for split_vars in splits[0..splits.len() - 1].iter() {
+		for split_vars in &splits[0..splits.len() - 1] {
 			let split_vars = *split_vars;
 			let query = multilinear_query(&q[index - split_vars..index]);
 			partial_result = partial_result
@@ -498,7 +499,7 @@ mod tests {
 
 		let query = multilinear_query::<P>(&q);
 
-		let packed = P::from_scalars(values.clone());
+		let packed = P::from_scalars(values);
 		let me = MultilinearExtension::new(n_vars, vec![packed]).unwrap();
 
 		let eval = me.evaluate(&query).unwrap();

@@ -18,7 +18,7 @@ impl<U, F, Data> PackingDeref<U, F, Data>
 where
 	Data: Deref<Target = [U]>,
 {
-	pub fn new(data: Data) -> Self {
+	pub const fn new(data: Data) -> Self {
 		Self(data, PhantomData)
 	}
 }

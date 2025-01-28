@@ -64,7 +64,7 @@ impl<F: Field> Matrix<F> {
 		}
 	}
 
-	pub fn elements(&self) -> &[F] {
+	pub const fn elements(&self) -> &[F] {
 		&self.elements
 	}
 
@@ -76,7 +76,7 @@ impl<F: Field> Matrix<F> {
 		}
 	}
 
-	pub fn dim(&self) -> (usize, usize) {
+	pub const fn dim(&self) -> (usize, usize) {
 		(self.m, self.n)
 	}
 

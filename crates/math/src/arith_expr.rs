@@ -41,36 +41,34 @@ impl<F: Field> ArithExpr<F> {
 	/// The number of variables the expression contains.
 	pub fn n_vars(&self) -> usize {
 		match self {
-			ArithExpr::Const(_) => 0,
-			ArithExpr::Var(index) => *index + 1,
-			ArithExpr::Add(left, right) | ArithExpr::Mul(left, right) => {
-				max(left.n_vars(), right.n_vars())
-			}
-			ArithExpr::Pow(id, _) => id.n_vars(),
+			Self::Const(_) => 0,
+			Self::Var(index) => *index + 1,
+			Self::Add(left, right) | Self::Mul(left, right) => max(left.n_vars(), right.n_vars()),
+			Self::Pow(id, _) => id.n_vars(),
 		}
 	}
 
 	/// The total degree of the polynomial the expression represents.
 	pub fn degree(&self) -> usize {
 		match self {
-			ArithExpr::Const(_) => 0,
-			ArithExpr::Var(_) => 1,
-			ArithExpr::Add(left, right) => max(left.degree(), right.degree()),
-			ArithExpr::Mul(left, right) => left.degree() + right.degree(),
-			ArithExpr::Pow(base, exp) => base.degree() * *exp as usize,
+			Self::Const(_) => 0,
+			Self::Var(_) => 1,
+			Self::Add(left, right) => max(left.degree(), right.degree()),
+			Self::Mul(left, right) => left.degree() + right.degree(),
+			Self::Pow(base, exp) => base.degree() * *exp as usize,
 		}
 	}
 
 	pub fn pow(self, exp: u64) -> Self {
-		ArithExpr::Pow(Box::new(self), exp)
+		Self::Pow(Box::new(self), exp)
 	}
 
 	pub const fn zero() -> Self {
-		ArithExpr::Const(F::ZERO)
+		Self::Const(F::ZERO)
 	}
 
 	pub const fn one() -> Self {
-		ArithExpr::Const(F::ONE)
+		Self::Const(F::ONE)
 	}
 
 	/// Creates a new expression with the variable indices remapped.
@@ -84,8 +82,8 @@ impl<F: Field> ArithExpr<F> {
 	///   variables
 	pub fn remap_vars(self, indices: &[usize]) -> Result<Self, Error> {
 		let expr = match self {
-			ArithExpr::Const(_) => self,
-			ArithExpr::Var(index) => {
+			Self::Const(_) => self,
+			Self::Var(index) => {
 				let new_index =
 					indices
 						.get(index)
@@ -93,21 +91,21 @@ impl<F: Field> ArithExpr<F> {
 							arg: "subset".to_string(),
 							expected: index,
 						})?;
-				ArithExpr::Var(*new_index)
+				Self::Var(*new_index)
 			}
-			ArithExpr::Add(left, right) => {
+			Self::Add(left, right) => {
 				let new_left = left.remap_vars(indices)?;
 				let new_right = right.remap_vars(indices)?;
-				ArithExpr::Add(Box::new(new_left), Box::new(new_right))
+				Self::Add(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Mul(left, right) => {
+			Self::Mul(left, right) => {
 				let new_left = left.remap_vars(indices)?;
 				let new_right = right.remap_vars(indices)?;
-				ArithExpr::Mul(Box::new(new_left), Box::new(new_right))
+				Self::Mul(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Pow(base, exp) => {
+			Self::Pow(base, exp) => {
 				let new_base = base.remap_vars(indices)?;
-				ArithExpr::Pow(Box::new(new_base), exp)
+				Self::Pow(Box::new(new_base), exp)
 			}
 		};
 		Ok(expr)
@@ -115,19 +113,19 @@ impl<F: Field> ArithExpr<F> {
 
 	pub fn convert_field<FTgt: Field + From<F>>(&self) -> ArithExpr<FTgt> {
 		match self {
-			ArithExpr::Const(val) => ArithExpr::Const((*val).into()),
-			ArithExpr::Var(index) => ArithExpr::Var(*index),
-			ArithExpr::Add(left, right) => {
+			Self::Const(val) => ArithExpr::Const((*val).into()),
+			Self::Var(index) => ArithExpr::Var(*index),
+			Self::Add(left, right) => {
 				let new_left = left.convert_field();
 				let new_right = right.convert_field();
 				ArithExpr::Add(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Mul(left, right) => {
+			Self::Mul(left, right) => {
 				let new_left = left.convert_field();
 				let new_right = right.convert_field();
 				ArithExpr::Mul(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Pow(base, exp) => {
+			Self::Pow(base, exp) => {
 				let new_base = base.convert_field();
 				ArithExpr::Pow(Box::new(new_base), *exp)
 			}
@@ -138,19 +136,19 @@ impl<F: Field> ArithExpr<F> {
 		&self,
 	) -> Result<ArithExpr<FTgt>, <FTgt as TryFrom<F>>::Error> {
 		Ok(match self {
-			ArithExpr::Const(val) => ArithExpr::Const((*val).try_into()?),
-			ArithExpr::Var(index) => ArithExpr::Var(*index),
-			ArithExpr::Add(left, right) => {
+			Self::Const(val) => ArithExpr::Const((*val).try_into()?),
+			Self::Var(index) => ArithExpr::Var(*index),
+			Self::Add(left, right) => {
 				let new_left = left.try_convert_field()?;
 				let new_right = right.try_convert_field()?;
 				ArithExpr::Add(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Mul(left, right) => {
+			Self::Mul(left, right) => {
 				let new_left = left.try_convert_field()?;
 				let new_right = right.try_convert_field()?;
 				ArithExpr::Mul(Box::new(new_left), Box::new(new_right))
 			}
-			ArithExpr::Pow(base, exp) => {
+			Self::Pow(base, exp) => {
 				let new_base = base.try_convert_field()?;
 				ArithExpr::Pow(Box::new(new_base), *exp)
 			}
@@ -174,7 +172,7 @@ where
 	type Output = Self;
 
 	fn add(self, rhs: Self) -> Self {
-		ArithExpr::Add(Box::new(self), Box::new(rhs))
+		Self::Add(Box::new(self), Box::new(rhs))
 	}
 }
 
@@ -194,7 +192,7 @@ where
 	type Output = Self;
 
 	fn sub(self, rhs: Self) -> Self {
-		ArithExpr::Add(Box::new(self), Box::new(rhs))
+		Self::Add(Box::new(self), Box::new(rhs))
 	}
 }
 
@@ -214,7 +212,7 @@ where
 	type Output = Self;
 
 	fn mul(self, rhs: Self) -> Self {
-		ArithExpr::Mul(Box::new(self), Box::new(rhs))
+		Self::Mul(Box::new(self), Box::new(rhs))
 	}
 }
 
@@ -297,7 +295,7 @@ mod tests {
 		let expr =
 			((ArithExpr::Var(0) + ArithExpr::Const(F::ONE)) * ArithExpr::Const(F::new(222))).pow(3);
 
-		assert!(expr.clone().try_convert_field::<BinaryField1b>().is_err());
+		assert!(expr.try_convert_field::<BinaryField1b>().is_err());
 
 		let expected = ((ArithExpr::Var(0) + ArithExpr::Const(F8::ONE))
 			* ArithExpr::Const(F8::new(222)))

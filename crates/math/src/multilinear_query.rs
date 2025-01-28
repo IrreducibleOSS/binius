@@ -48,7 +48,7 @@ impl<'a, P: PackedField> MultilinearQueryRef<'a, P> {
 		}
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 
@@ -96,7 +96,7 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 		})
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 
