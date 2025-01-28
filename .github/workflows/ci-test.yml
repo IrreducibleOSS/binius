@@ -7,8 +7,8 @@ on:
 jobs:
   build:
     name: build-debug-${{ matrix.expand.name }}
-    runs-on: ${{ matrix.expand.runner }}
-    container: rustlang/rust:nightly
+    runs-on: [${{ matrix.expand.runner }}]
+#    container: rustlang/rust:nightly
     strategy:
       matrix:
         expand:
@@ -27,7 +27,6 @@ jobs:
           - runner: "t4g-xlarge"
             name: "arm"
             cmd: "cargo build --tests --benches --examples"
-    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
