@@ -80,6 +80,12 @@ impl ComputationBackend for CpuBackend {
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		todo!()
+		high_to_low_calculate_later_round_evals(
+			n_vars,
+			tensor_query,
+			multilinears,
+			evaluators,
+			evaluation_points,
+		)
 	}
 }

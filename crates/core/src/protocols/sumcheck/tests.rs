@@ -40,7 +40,10 @@ use crate::{
 	fiat_shamir::{CanSample, HasherChallenger},
 	polynomial::{IdentityCompositionPoly, MultilinearComposite},
 	protocols::{
-		sumcheck::prove::{high_to_low_sumcheck::HighToLowSumcheckProver, SumcheckProver},
+		sumcheck::{
+			prove::{high_to_low_sumcheck::HighToLowSumcheckProver, SumcheckProver},
+			verify::high_to_low_batch_verify,
+		},
 		test_utils::{AddOneComposition, TestProductComposition},
 	},
 	transcript::ProverTranscript,
@@ -296,7 +299,8 @@ where
 
 	let prover_sample = CanSample::<P::Scalar>::sample(&mut prover_transcript);
 	let mut verifier_transcript = prover_transcript.into_reader();
-	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
+	let verifier_reduced_claims =
+		high_to_low_batch_verify(&[claim], &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
 	assert_eq!(prover_sample, CanSample::<P::Scalar>::sample(&mut verifier_transcript));
@@ -322,10 +326,22 @@ where
 }
 
 #[test]
-pub fn test_prove_verify_high_to_low() {
+pub fn test_prove_verify_high_to_low_byte_sliced() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x8b, AESTowerField8b>(
+				n_vars,
+				n_multilinears,
+			);
+		}
+	}
+}
+
+#[test]
+pub fn test_prove_verify_high_to_low() {
+	for n_vars in 2..8 {
+		for n_multilinears in 1..4 {
+			test_high_to_low_prove_verify_product_helper::<BinaryField128b, BinaryField8b>(
 				n_vars,
 				n_multilinears,
 			);

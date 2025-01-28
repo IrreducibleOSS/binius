@@ -354,13 +354,15 @@ where
 		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		Ok(self.backend.sumcheck_compute_later_round_evals(
-			self.n_vars,
-			self.tensor_query.as_ref().map(Into::into),
-			&self.multilinears,
-			evaluators,
-			&self.evaluation_points,
-		)?)
+		Ok(self
+			.backend
+			.high_to_low_sumcheck_compute_later_round_evals(
+				self.n_vars,
+				self.tensor_query.as_ref().map(Into::into),
+				&self.multilinears,
+				evaluators,
+				&self.evaluation_points,
+			)?)
 	}
 
 	/// Calculate the batched round coefficients from the domain evaluations.

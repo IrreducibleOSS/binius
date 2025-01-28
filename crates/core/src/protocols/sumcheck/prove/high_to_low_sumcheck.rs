@@ -179,7 +179,7 @@ where
 
 	#[instrument("HighToLowSumcheckProver::fold", skip_all, level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
-		self.state.fold(challenge)?;
+		self.state.high_to_low_fold(challenge)?;
 		Ok(())
 	}
 

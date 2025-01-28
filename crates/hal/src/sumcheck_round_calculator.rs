@@ -114,7 +114,7 @@ where
 	let packed_accumulators = (0..(1 << (n_vars - 1 - subcube_vars)))
 		.into_par_iter()
 		.fold(
-			|| ParFoldStates::new(n_multilinears, n_round_evals.clone(), subcube_vars),
+			|| ParFoldStates::new(n_multilinears, n_round_evals.clone(), subcube_vars, high_to_low),
 			|mut par_fold_states, subcube_index| {
 				let ParFoldStates {
 					multilinear_evals,
@@ -288,6 +288,7 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 		n_multilinears: usize,
 		n_round_evals: impl Iterator<Item = usize>,
 		subcube_vars: usize,
+		high_to_low: bool,
 	) -> Self {
 		Self {
 			multilinear_evals: (0..n_multilinears)
@@ -295,7 +296,11 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 				.collect(),
 			interleaved_evals: vec![
 				PBase::default();
-				1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)
+				if high_to_low {
+					0
+				} else {
+					1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)
+				}
 			],
 			round_evals: n_round_evals
 				.map(|n_round_evals| zeroed_vec(n_round_evals))
