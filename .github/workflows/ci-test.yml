@@ -26,7 +26,7 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "amd-stable"
             cmd: "cargo +$RUST_VERSION build --tests --benches --examples -p binius_core --features stable_only"
-          - runner: "t4g-xlarge"
+          - runner: "c8g-2xlarge"
             name: "arm"
             cmd: "cargo build --tests --benches --examples"
     continue-on-error: true
