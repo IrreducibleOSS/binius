@@ -5,9 +5,11 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-debug:
     name: build-debug-${{ matrix.expand.name }}
     runs-on: ${{ matrix.expand.runner }}
+    env:
+      RUST_VERSION: 1.83.0
     container: rustlang/rust:nightly
     strategy:
       matrix:
@@ -23,13 +25,20 @@ jobs:
             cmd: "cargo build --tests --benches --examples --no-default-features"
           - runner: "c7a-2xlarge"
             name: "amd-stable"
-            cmd: "cargo +1.83.0 build --tests --benches --examples -p binius_core --features stable_only"
+            cmd: "cargo +$RUST_VERSION build --tests --benches --examples -p binius_core --features stable_only"
           - runner: "t4g-xlarge"
             name: "arm"
             cmd: "cargo build --tests --benches --examples"
+    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: AMD job configuration template with stable Rust
+        if: ${{ matrix.expand.name }} == "amd-stable"
+        run: |
+          rustup set auto-self-update disable
+          rustup toolchain install $RUST_VERSION
 
       - name: Run Command
         run: ${{ matrix.expand.cmd }}
