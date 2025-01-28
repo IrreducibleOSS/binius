@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     name: build-debug-${{ matrix.expand.name }}
-    runs-on: [${{ matrix.expand.runner }}]
+    runs-on: ${{ matrix.expand.runner }}
 #    container: rustlang/rust:nightly
     strategy:
       matrix:
