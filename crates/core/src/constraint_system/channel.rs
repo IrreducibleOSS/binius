@@ -217,3 +217,128 @@ impl<F: TowerField> Channel<F> {
 		self.multiplicities.iter().all(|(_, m)| *m == 0)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_field::BinaryField64b;
+
+	use super::*;
+
+	#[test]
+	fn test_flush_push_single_row() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Push a single row of data
+		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+		let result = channel.flush(&FlushDirection::Push, 1, values.clone());
+
+		assert!(result.is_ok());
+		assert!(!channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+	}
+
+	#[test]
+	fn test_flush_pull_single_row() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Pull a single row of data
+		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+		let result = channel.flush(&FlushDirection::Pull, 1, values.clone());
+
+		assert!(result.is_ok());
+		assert!(!channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap(), &-1);
+	}
+
+	#[test]
+	fn test_flush_push_pull_single_row() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Push and then pull the same row
+		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+		channel
+			.flush(&FlushDirection::Push, 1, values.clone())
+			.unwrap();
+		let result = channel.flush(&FlushDirection::Pull, 1, values.clone());
+
+		assert!(result.is_ok());
+		assert!(channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
+	}
+
+	#[test]
+	fn test_flush_multiplicity() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Push multiple rows with a multiplicity of 2
+		let values = vec![BinaryField64b::from(3), BinaryField64b::from(4)];
+		channel
+			.flush(&FlushDirection::Push, 2, values.clone())
+			.unwrap();
+
+		// Pull the same row with a multiplicity of 1
+		channel
+			.flush(&FlushDirection::Pull, 1, values.clone())
+			.unwrap();
+
+		// The channel should not be balanced yet
+		assert!(!channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+
+		// Pull the same row again with a multiplicity of 1
+		channel
+			.flush(&FlushDirection::Pull, 1, values.clone())
+			.unwrap();
+
+		// Now the channel should be balanced
+		assert!(channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap_or(&0), &0);
+	}
+
+	#[test]
+	fn test_flush_width_mismatch() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Push a row with width 2
+		let values1 = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
+		channel.flush(&FlushDirection::Push, 1, values1).unwrap();
+
+		// Attempt to push a row with width 3
+		let values2 = vec![
+			BinaryField64b::from(3),
+			BinaryField64b::from(4),
+			BinaryField64b::from(5),
+		];
+		let result = channel.flush(&FlushDirection::Push, 1, values2);
+
+		assert!(result.is_err());
+		if let Err(Error::ChannelFlushWidthMismatch { expected, got }) = result {
+			assert_eq!(expected, 2);
+			assert_eq!(got, 3);
+		} else {
+			panic!("Expected ChannelFlushWidthMismatch error");
+		}
+	}
+
+	#[test]
+	fn test_flush_direction_effects() {
+		let mut channel = Channel::<BinaryField64b>::new();
+
+		// Push a row
+		let values = vec![BinaryField64b::from(7), BinaryField64b::from(8)];
+		channel
+			.flush(&FlushDirection::Push, 1, values.clone())
+			.unwrap();
+
+		// Pull a different row
+		let values2 = vec![BinaryField64b::from(9), BinaryField64b::from(10)];
+		channel
+			.flush(&FlushDirection::Pull, 1, values2.clone())
+			.unwrap();
+
+		// The channel should not be balanced because different rows were pushed and pulled
+		assert!(!channel.is_balanced());
+		assert_eq!(channel.multiplicities.get(&values).unwrap(), &1);
+		assert_eq!(channel.multiplicities.get(&values2).unwrap(), &-1);
+	}
+}
