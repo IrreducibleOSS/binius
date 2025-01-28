@@ -7,9 +7,9 @@ use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
 };
+use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use binius_utils::bail;
 use itertools::izip;
-use rayon::prelude::*;
 use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 

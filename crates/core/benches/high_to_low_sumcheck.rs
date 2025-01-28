@@ -15,21 +15,22 @@ use binius_core::{
 		},
 		test_utils::{AddOneComposition, TestProductComposition},
 	},
-	transcript::TranscriptWriter,
+	transcript::ProverTranscript,
 };
 use binius_field::{
-	packed::set_packed_slice, AESTowerField8b, BinaryField, ByteSlicedAES32x8b, ExtensionField,
-	PackedAESBinaryField32x8b, PackedExtension, PackedField, TowerField,
+	packed::set_packed_slice, AESTowerField8b, BinaryField, ByteSlicedAES32x128b,
+	ByteSlicedAES32x8b, ExtensionField, PackedAESBinaryField2x128b, PackedAESBinaryField32x8b,
+	PackedExtension, PackedField, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
 	CompositionPolyOS, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
 	MultilinearPoly,
 };
+use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use criterion::{criterion_group, criterion_main, Criterion};
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 fn compute_composite_sum<P, M, Composition>(
 	multilinears: &[M],
@@ -106,7 +107,7 @@ fn bench_high_to_low_sumcheck<FDomain, P>(
 
 			let backend = make_portable_backend();
 			let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
-			let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+			let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 			if high_to_low {
 				bench.iter(|| {
 					let prover = HighToLowSumcheckProver::<FDomain, _, _, _, _>::new(
@@ -146,29 +147,28 @@ fn bench_high_to_low_sumcheck<FDomain, P>(
 	group.finish()
 }
 
-fn bench_byte_sliced(c: &mut Criterion) {
+fn bench_high_to_low_sumcheck_8b(c: &mut Criterion) {
 	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
 		c,
 		4,
 		"ByteSlicedAES32x8b/high_to_low",
 		true,
 	);
-	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
-		c,
-		4,
-		"ByteSlicedAES32x8b",
-		false,
-	);
-}
-
-fn bench_aes_tower(c: &mut Criterion) {
 	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField32x8b>(
 		c,
 		4,
 		"PackedAESBinaryField32x8b/high_to_low",
 		true,
 	);
+}
 
+fn bench_sumcheck_8b(c: &mut Criterion) {
+	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
+		c,
+		4,
+		"ByteSlicedAES32x8b",
+		false,
+	);
 	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField32x8b>(
 		c,
 		4,
@@ -176,6 +176,41 @@ fn bench_aes_tower(c: &mut Criterion) {
 		false,
 	);
 }
+fn bench_high_to_low_sumcheck_128b(c: &mut Criterion) {
+	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x128b>(
+		c,
+		4,
+		"ByteSlicedAES32x128b/high_to_low",
+		true,
+	);
+	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField2x128b>(
+		c,
+		4,
+		"PackedAESBinaryField2x128b/high_to_low",
+		true,
+	);
+}
+
+fn bench_sumcheck_128b(c: &mut Criterion) {
+	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x128b>(
+		c,
+		4,
+		"ByteSlicedAES32x128b",
+		false,
+	);
+	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField2x128b>(
+		c,
+		4,
+		"PackedAESBinaryField2x128b",
+		false,
+	);
+}
 
 criterion_main!(high_to_low_sumcheck);
-criterion_group!(high_to_low_sumcheck, bench_byte_sliced, bench_aes_tower);
+criterion_group!(
+	high_to_low_sumcheck,
+	bench_high_to_low_sumcheck_8b,
+	bench_sumcheck_8b,
+	bench_high_to_low_sumcheck_128b,
+	bench_sumcheck_128b
+);

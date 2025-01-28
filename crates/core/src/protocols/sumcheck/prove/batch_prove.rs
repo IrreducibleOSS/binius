@@ -222,15 +222,15 @@ where
 	Ok(output)
 }
 
-#[instrument(skip_all, name = "sumcheck::batch_prove")]
-pub fn high_to_low_batch_prove<F, Prover, Transcript>(
+#[instrument(skip_all, name = "sumcheck::high_to_low_batch_prove")]
+pub fn high_to_low_batch_prove<F, Prover, Challenger_>(
 	provers: Vec<Prover>,
-	transcript: Transcript,
+	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Prover: SumcheckProver<F>,
-	Transcript: CanSample<F> + CanWrite,
+	Challenger_: Challenger,
 {
 	let start = BatchProveStart {
 		batch_coeffs: Vec::new(),

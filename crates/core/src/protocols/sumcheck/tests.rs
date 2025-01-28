@@ -11,15 +11,15 @@ use binius_field::{
 	packed::set_packed_slice,
 	underlier::UnderlierType,
 	AESTowerField8b, BinaryField, BinaryField128b, BinaryField32b, BinaryField8b,
-	ByteSlicedAES32x8b, ExtensionField, Field, PackedBinaryField1x128b, PackedBinaryField4x32b,
-	PackedExtension, PackedField, RepackedExtension, TowerField,
+	ByteSlicedAES32x128b, ByteSlicedAES32x8b, ExtensionField, Field, PackedBinaryField1x128b,
+	PackedBinaryField4x32b, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
 	ArithExpr, CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
-use binius_maybe_rayon::{current_num_threads, prelude::*};
+use binius_maybe_rayon::{current_num_threads, iter::IntoParallelIterator, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use groestl_crypto::Groestl256;
 use itertools::izip;
@@ -293,12 +293,12 @@ where
 	)
 	.unwrap();
 
-	let mut prover_transcript = TranscriptWriter::<HasherChallenger<Groestl256>>::default();
+	let mut prover_transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 	let prover_reduced_claims = high_to_low_batch_prove(vec![prover], &mut prover_transcript)
 		.expect("failed to prove sumcheck");
 
 	let prover_sample = CanSample::<P::Scalar>::sample(&mut prover_transcript);
-	let mut verifier_transcript = prover_transcript.into_reader();
+	let mut verifier_transcript = prover_transcript.into_verifier();
 	let verifier_reduced_claims =
 		high_to_low_batch_verify(&[claim], &mut verifier_transcript).unwrap();
 
@@ -326,10 +326,22 @@ where
 }
 
 #[test]
-pub fn test_prove_verify_high_to_low_byte_sliced() {
+pub fn test_prove_verify_high_to_low_byte_sliced_8b() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
 			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x8b, AESTowerField8b>(
+				n_vars,
+				n_multilinears,
+			);
+		}
+	}
+}
+
+#[test]
+pub fn test_prove_verify_high_to_low_byte_sliced_128b() {
+	for n_vars in 2..8 {
+		for n_multilinears in 1..4 {
+			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x128b, AESTowerField8b>(
 				n_vars,
 				n_multilinears,
 			);

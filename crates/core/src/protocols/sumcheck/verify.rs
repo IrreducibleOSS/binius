@@ -171,14 +171,14 @@ where
 	})
 }
 
-pub fn high_to_low_batch_verify<F, Composition, Transcript>(
+pub fn high_to_low_batch_verify<F, Composition, Challenger_>(
 	claims: &[SumcheckClaim<F, Composition>],
-	transcript: &mut Transcript,
+	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
 	Composition: CompositionPolyOS<F>,
-	Transcript: CanSample<F> + CanRead,
+	Challenger_: Challenger,
 {
 	let start = BatchVerifyStart {
 		batch_coeffs: Vec::new(),
