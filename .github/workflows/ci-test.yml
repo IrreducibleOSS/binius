@@ -7,7 +7,7 @@ on:
 jobs:
   pre-build:
     name: prebuild-amd
-    runs-on: c7a-2xlarge
+    runs-on: [self-hosted, c7a-2xlarge]
     container: rustlang/rust:nightly
     steps:
       - name: Checkout Repository
