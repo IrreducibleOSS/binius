@@ -100,9 +100,9 @@ where
 		.iter()
 		.map(|evaluator| evaluator.eval_point_indices().len());
 
-	/// Process batches of vertices in parallel, accumulating the round evaluations.
-	const MAX_SUBCUBE_VARS: usize = 5;
-	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars) - 1;
+	// Process batches of vertices in parallel, accumulating the round evaluations.
+	let max_subcube_vars: usize = (P::LOG_WIDTH + 1).max(5);
+	let subcube_vars = max_subcube_vars.min(n_vars) - 1;
 
 	// Compute the union of all evaluation point index ranges.
 	let eval_point_indices = evaluators

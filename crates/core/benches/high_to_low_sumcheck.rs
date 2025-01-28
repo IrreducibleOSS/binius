@@ -150,7 +150,7 @@ fn bench_byte_sliced(c: &mut Criterion) {
 	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
 		c,
 		4,
-		"high_to_low_ByteSlicedAES32x8b",
+		"ByteSlicedAES32x8b/high_to_low",
 		true,
 	);
 	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
@@ -165,7 +165,7 @@ fn bench_aes_tower(c: &mut Criterion) {
 	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField32x8b>(
 		c,
 		4,
-		"high_to_low_PackedAESBinaryField32x8b",
+		"PackedAESBinaryField32x8b/high_to_low",
 		true,
 	);
 

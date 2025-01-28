@@ -136,11 +136,11 @@ where
 
 	fn high_to_low_sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 		&self,
-		n_vars: usize,
-		tensor_query: Option<MultilinearQueryRef<P>>,
-		multilinears: &[SumcheckMultilinear<P, M>],
-		evaluators: &[Evaluator],
-		evaluation_points: &[FDomain],
+		_n_vars: usize,
+		_tensor_query: Option<MultilinearQueryRef<P>>,
+		_multilinears: &[SumcheckMultilinear<P, M>],
+		_evaluators: &[Evaluator],
+		_evaluation_points: &[FDomain],
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
