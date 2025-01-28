@@ -88,11 +88,11 @@ fn test_shifted_evaluation_whole_cube() {
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
 
-	let claims: Vec<_> = [oracles.oracle(poly_id), oracles.oracle(shifted_id)]
+	let claims: Vec<_> = [poly_id, shifted_id]
 		.into_iter()
 		.zip(evals)
-		.map(|(poly, eval)| EvalcheckMultilinearClaim {
-			poly,
+		.map(|(id, eval)| EvalcheckMultilinearClaim {
+			id,
 			eval_point: eval_point.clone().into(),
 			eval,
 		})
@@ -154,11 +154,11 @@ fn test_shifted_evaluation_subcube() {
 	let evals =
 		[poly_witness.clone(), shifted_witness.clone()].map(|w| w.evaluate(&query).unwrap());
 
-	let claims: Vec<_> = [oracles.oracle(poly_id), oracles.oracle(shifted_id)]
+	let claims: Vec<_> = [poly_id, shifted_id]
 		.into_iter()
 		.zip(evals)
-		.map(|(poly, eval)| EvalcheckMultilinearClaim {
-			poly,
+		.map(|(id, eval)| EvalcheckMultilinearClaim {
+			id,
 			eval_point: eval_point.clone().into(),
 			eval,
 		})
@@ -206,7 +206,6 @@ fn test_evalcheck_linear_combination() {
 			],
 		)
 		.unwrap();
-	let lin_com = oracles.oracle(lin_com_id);
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
@@ -241,10 +240,8 @@ fn test_evalcheck_linear_combination() {
 
 	// Make the claim a composite oracle over a linear combination, in order to test the case
 	// of requiring nested composite evalcheck proofs.
-	let claim_oracle = lin_com.clone();
-
 	let claim = EvalcheckMultilinearClaim {
-		poly: claim_oracle,
+		id: lin_com_id,
 		eval_point: eval_point.into(),
 		eval,
 	};
@@ -282,7 +279,6 @@ fn test_evalcheck_linear_combination_size_one() {
 	let lin_com_id = oracles
 		.add_linear_combination_with_offset(n_vars, offset, [(select_row_oracle_id, coef)])
 		.unwrap();
-	let lin_com = oracles.oracle(lin_com_id);
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
@@ -303,10 +299,8 @@ fn test_evalcheck_linear_combination_size_one() {
 
 	// Make the claim a composite oracle over a linear combination, in order to test the case
 	// of requiring nested composite evalcheck proofs.
-	let claim_oracle = lin_com.clone();
-
 	let claim = EvalcheckMultilinearClaim {
-		poly: claim_oracle,
+		id: lin_com_id,
 		eval_point: eval_point.into(),
 		eval,
 	};
@@ -349,7 +343,6 @@ fn test_evalcheck_repeating() {
 		.specialize_arc_dyn();
 
 	let repeating_id = oracles.add_repeating(select_row_oracle_id, 2).unwrap();
-	let repeating = oracles.oracle(repeating_id);
 
 	let mut rng = StdRng::seed_from_u64(0);
 	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
@@ -359,7 +352,7 @@ fn test_evalcheck_repeating() {
 	let eval = select_row.evaluate(&eval_point[..n_vars]).unwrap();
 
 	let claim = EvalcheckMultilinearClaim {
-		poly: repeating.clone(),
+		id: repeating_id,
 		eval_point: eval_point.into(),
 		eval,
 	};
@@ -418,8 +411,6 @@ fn test_evalcheck_zero_padded() {
 		.add_zero_padded(select_row_oracle_id, n_vars)
 		.unwrap();
 
-	let zero_padded = oracles.oracle(zero_padded_id);
-
 	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
 	witness_index
 		.update_multilin_poly(vec![
@@ -448,7 +439,7 @@ fn test_evalcheck_zero_padded() {
 	}
 
 	let claim = EvalcheckMultilinearClaim {
-		poly: zero_padded,
+		id: zero_padded_id,
 		eval_point: eval_point.into(),
 		eval: inner_eval,
 	};

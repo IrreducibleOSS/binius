@@ -31,10 +31,12 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 
 		let inner = TransparentPolyOracle::new(Arc::new(poly))?;
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::Transparent {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			inner,
+			n_vars: inner.poly.n_vars(),
+			tower_level: inner.poly.binary_tower_level(),
 			name: self.name,
+			variant: MultilinearPolyVariant::Transparent(inner),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -68,11 +70,15 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 
 		let inner = self.mut_ref.get_from_set(inner_id);
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::Repeating {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			inner,
-			log_count,
+			n_vars: inner.n_vars + log_count,
+			tower_level: inner.tower_level,
 			name: self.name,
+			variant: MultilinearPolyVariant::Repeating {
+				id: inner_id,
+				log_count,
+			},
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -89,10 +95,10 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			bail!(Error::InvalidOracleId(inner_id));
 		}
 
-		let inner_n_vars = self.mut_ref.n_vars(inner_id);
-		if block_bits > inner_n_vars {
+		let inner = self.mut_ref.get_from_set(inner_id);
+		if block_bits > inner.n_vars {
 			bail!(PolynomialError::InvalidBlockSize {
-				n_vars: inner_n_vars,
+				n_vars: inner.n_vars,
 			});
 		}
 
@@ -103,14 +109,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let inner = self.mut_ref.get_from_set(inner_id);
+		let shifted = Shifted::new(&inner, offset, block_bits, variant)?;
 
-		let shifted = Shifted::new(inner, offset, block_bits, variant)?;
-
-		let oracle = |id: OracleId| MultilinearPolyOracle::Shifted {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			shifted,
+			n_vars: inner.n_vars,
+			tower_level: inner.tower_level,
 			name: self.name,
+			variant: MultilinearPolyVariant::Shifted(shifted),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -129,15 +135,19 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
+		let inner_tower_level = self.mut_ref.tower_level(inner_id);
+
 		let packed = Packed {
-			inner: self.mut_ref.get_from_set(inner_id),
+			id: inner_id,
 			log_degree,
 		};
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::Packed {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			packed,
+			n_vars: inner_n_vars - log_degree,
+			tower_level: inner_tower_level + log_degree,
 			name: self.name,
+			variant: MultilinearPolyVariant::Packed(packed),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -158,12 +168,17 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			});
 		}
 
-		let projected = Projected::new(self.mut_ref.get_from_set(inner_id), values, variant)?;
+		let inner = self.mut_ref.get_from_set(inner_id);
+		// TODO: This is wrong, should be F::TOWER_LEVEL
+		let tower_level = inner.binary_tower_level();
+		let projected = Projected::new(&inner, values, variant)?;
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::Projected {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			projected,
+			n_vars: inner_n_vars - values_len,
+			tower_level,
 			name: self.name,
+			variant: MultilinearPolyVariant::Projected(projected),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -196,12 +211,20 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
+		let tower_level = inner
+			.iter()
+			.map(|(oracle, _)| oracle.binary_tower_level())
+			.max()
+			.unwrap_or(0);
+
 		let linear_combination = LinearCombination::new(n_vars, offset, inner)?;
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::LinearCombination {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			linear_combination,
+			n_vars,
+			tower_level,
 			name: self.name,
+			variant: MultilinearPolyVariant::LinearCombination(linear_combination),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -220,11 +243,12 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 
 		let inner = self.mut_ref.get_from_set(inner_id);
 
-		let oracle = |id: OracleId| MultilinearPolyOracle::ZeroPadded {
+		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
-			inner,
 			n_vars,
+			tower_level: inner.tower_level,
 			name: self.name,
+			variant: MultilinearPolyVariant::ZeroPadded(inner_id),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -236,11 +260,12 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		tower_level: usize,
 		name: Option<String>,
 	) -> OracleId {
-		let oracle = |oracle_id: OracleId| MultilinearPolyOracle::Committed {
-			oracle_id,
+		let oracle = |oracle_id: OracleId| MultilinearPolyOracle {
+			id: oracle_id,
 			n_vars,
 			tower_level,
 			name: name.clone(),
+			variant: MultilinearPolyVariant::Committed,
 		};
 
 		self.mut_ref.add_to_set(oracle)
@@ -414,50 +439,24 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MultilinearPolyOracle<F: Field> {
-	Transparent {
-		id: OracleId,
-		inner: TransparentPolyOracle<F>,
-		name: Option<String>,
-	},
-	Committed {
-		oracle_id: OracleId,
-		n_vars: usize,
-		tower_level: usize,
-		name: Option<String>,
-	},
-	Repeating {
-		id: OracleId,
-		inner: Arc<MultilinearPolyOracle<F>>,
-		log_count: usize,
-		name: Option<String>,
-	},
-	Projected {
-		id: OracleId,
-		projected: Projected<F>,
-		name: Option<String>,
-	},
-	Shifted {
-		id: OracleId,
-		shifted: Shifted<F>,
-		name: Option<String>,
-	},
-	Packed {
-		id: OracleId,
-		packed: Packed<F>,
-		name: Option<String>,
-	},
-	LinearCombination {
-		id: OracleId,
-		linear_combination: LinearCombination<F>,
-		name: Option<String>,
-	},
-	ZeroPadded {
-		id: OracleId,
-		inner: Arc<MultilinearPolyOracle<F>>,
-		n_vars: usize,
-		name: Option<String>,
-	},
+pub struct MultilinearPolyOracle<F: TowerField> {
+	pub id: OracleId,
+	pub name: Option<String>,
+	pub n_vars: usize,
+	pub tower_level: usize,
+	pub variant: MultilinearPolyVariant<F>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MultilinearPolyVariant<F: TowerField> {
+	Committed,
+	Transparent(TransparentPolyOracle<F>),
+	Repeating { id: usize, log_count: usize },
+	Projected(Projected<F>),
+	Shifted(Shifted),
+	Packed(Packed),
+	LinearCombination(LinearCombination<F>),
+	ZeroPadded(OracleId),
 }
 
 /// A transparent multilinear polynomial oracle.
@@ -502,35 +501,32 @@ pub enum ProjectionVariant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
-pub struct Projected<F: Field> {
-	#[get = "pub"]
-	inner: Arc<MultilinearPolyOracle<F>>,
+pub struct Projected<F: TowerField> {
+	#[get_copy = "pub"]
+	id: OracleId,
 	#[get = "pub"]
 	values: Vec<F>,
 	#[get_copy = "pub"]
 	projection_variant: ProjectionVariant,
 }
 
-impl<F: Field> Projected<F> {
+impl<F: TowerField> Projected<F> {
 	fn new(
-		inner: Arc<MultilinearPolyOracle<F>>,
+		oracle: &MultilinearPolyOracle<F>,
 		values: Vec<F>,
 		projection_variant: ProjectionVariant,
 	) -> Result<Self, Error> {
-		let n_vars = inner.n_vars();
-		let values_len = values.len();
-		if values_len > n_vars {
-			bail!(Error::InvalidProjection { n_vars, values_len });
+		if values.len() > oracle.n_vars() {
+			bail!(Error::InvalidProjection {
+				n_vars: oracle.n_vars(),
+				values_len: values.len()
+			});
 		}
 		Ok(Self {
-			inner,
+			id: oracle.id(),
 			values,
 			projection_variant,
 		})
-	}
-
-	fn n_vars(&self) -> usize {
-		self.inner.n_vars() - self.values.len()
 	}
 }
 
@@ -542,8 +538,9 @@ pub enum ShiftVariant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
-pub struct Shifted<F: Field> {
-	inner: Arc<MultilinearPolyOracle<F>>,
+pub struct Shifted {
+	#[get_copy = "pub"]
+	id: OracleId,
 	#[get_copy = "pub"]
 	shift_offset: usize,
 	#[get_copy = "pub"]
@@ -552,16 +549,16 @@ pub struct Shifted<F: Field> {
 	shift_variant: ShiftVariant,
 }
 
-impl<F: Field> Shifted<F> {
-	fn new(
-		inner: Arc<MultilinearPolyOracle<F>>,
+impl Shifted {
+	fn new<F: TowerField>(
+		oracle: &MultilinearPolyOracle<F>,
 		shift_offset: usize,
 		block_size: usize,
 		shift_variant: ShiftVariant,
 	) -> Result<Self, Error> {
-		if block_size > inner.n_vars() {
+		if block_size > oracle.n_vars() {
 			bail!(PolynomialError::InvalidBlockSize {
-				n_vars: inner.n_vars(),
+				n_vars: oracle.n_vars(),
 			});
 		}
 
@@ -573,22 +570,18 @@ impl<F: Field> Shifted<F> {
 		}
 
 		Ok(Self {
-			inner,
+			id: oracle.id(),
 			shift_offset,
 			block_size,
 			shift_variant,
 		})
 	}
-
-	pub fn inner(&self) -> &MultilinearPolyOracle<F> {
-		&self.inner
-	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
-pub struct Packed<F: Field> {
-	#[get = "pub"]
-	inner: Arc<MultilinearPolyOracle<F>>,
+pub struct Packed {
+	#[get_copy = "pub"]
+	id: OracleId,
 	/// The number of tower levels increased by the packing operation.
 	///
 	/// This is the base 2 logarithm of the field extension, and is called $\kappa$ in [DP23],
@@ -600,25 +593,30 @@ pub struct Packed<F: Field> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
-pub struct LinearCombination<F: Field> {
+pub struct LinearCombination<F: TowerField> {
 	#[get_copy = "pub"]
 	n_vars: usize,
 	#[get_copy = "pub"]
 	offset: F,
-	inner: Vec<(Arc<MultilinearPolyOracle<F>>, F)>,
+	inner: Vec<(OracleId, F)>,
 }
 
-impl<F: Field> LinearCombination<F> {
+impl<F: TowerField> LinearCombination<F> {
 	fn new(
 		n_vars: usize,
 		offset: F,
 		inner: impl IntoIterator<Item = (Arc<MultilinearPolyOracle<F>>, F)>,
 	) -> Result<Self, Error> {
-		let inner = inner.into_iter().collect::<Vec<_>>();
-
-		if !inner.iter().all(|(poly, _)| poly.n_vars() == n_vars) {
-			return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
-		}
+		let inner = inner
+			.into_iter()
+			.map(|(oracle, value)| {
+				if oracle.n_vars() != n_vars {
+					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
+				} else {
+					Ok((oracle.id(), value))
+				}
+			})
+			.collect::<Result<Vec<_>, _>>()?;
 		Ok(Self {
 			n_vars,
 			offset,
@@ -630,8 +628,8 @@ impl<F: Field> LinearCombination<F> {
 		self.inner.len()
 	}
 
-	pub fn polys(&self) -> impl Iterator<Item = &MultilinearPolyOracle<F>> {
-		self.inner.iter().map(|(poly, _)| poly.as_ref())
+	pub fn polys(&self) -> impl Iterator<Item = OracleId> + '_ {
+		self.inner.iter().map(|(id, _)| *id)
 	}
 
 	pub fn coefficients(&self) -> impl Iterator<Item = F> + '_ {
@@ -639,19 +637,9 @@ impl<F: Field> LinearCombination<F> {
 	}
 }
 
-impl<F: Field> MultilinearPolyOracle<F> {
+impl<F: TowerField> MultilinearPolyOracle<F> {
 	pub fn id(&self) -> OracleId {
-		use MultilinearPolyOracle::*;
-		match self {
-			Transparent { id, .. } => *id,
-			Committed { oracle_id, .. } => *oracle_id,
-			Repeating { id, .. } => *id,
-			Projected { id, .. } => *id,
-			Shifted { id, .. } => *id,
-			Packed { id, .. } => *id,
-			LinearCombination { id, .. } => *id,
-			ZeroPadded { id, .. } => *id,
-		}
+		self.id
 	}
 
 	pub fn label(&self) -> String {
@@ -662,22 +650,12 @@ impl<F: Field> MultilinearPolyOracle<F> {
 	}
 
 	pub fn name(&self) -> Option<&str> {
-		use MultilinearPolyOracle::*;
-		match self {
-			Transparent { name, .. } => name.as_deref(),
-			Committed { name, .. } => name.as_deref(),
-			Repeating { name, .. } => name.as_deref(),
-			Projected { name, .. } => name.as_deref(),
-			Shifted { name, .. } => name.as_deref(),
-			Packed { name, .. } => name.as_deref(),
-			LinearCombination { name, .. } => name.as_deref(),
-			ZeroPadded { name, .. } => name.as_deref(),
-		}
+		self.name.as_deref()
 	}
 
 	fn type_str(&self) -> &str {
-		use MultilinearPolyOracle::*;
-		match self {
+		use MultilinearPolyVariant::*;
+		match self.variant {
 			Transparent { .. } => "Transparent",
 			Committed { .. } => "Committed",
 			Repeating { .. } => "Repeating",
@@ -690,44 +668,12 @@ impl<F: Field> MultilinearPolyOracle<F> {
 	}
 
 	pub fn n_vars(&self) -> usize {
-		use MultilinearPolyOracle::*;
-		match self {
-			Transparent { inner, .. } => inner.poly().n_vars(),
-			Committed { n_vars, .. } => *n_vars,
-			Repeating {
-				inner, log_count, ..
-			} => inner.n_vars() + log_count,
-			Projected { projected, .. } => projected.n_vars(),
-			Shifted { shifted, .. } => shifted.inner().n_vars(),
-			Packed { packed, .. } => packed.inner().n_vars() - packed.log_degree(),
-			LinearCombination {
-				linear_combination, ..
-			} => linear_combination.n_vars,
-			ZeroPadded { n_vars, .. } => *n_vars,
-		}
+		self.n_vars
 	}
 
 	/// Maximum tower level of the oracle's values over the boolean hypercube.
 	pub fn binary_tower_level(&self) -> usize {
-		use MultilinearPolyOracle::*;
-		match self {
-			Transparent { inner, .. } => inner.binary_tower_level(),
-			Committed { tower_level, .. } => *tower_level,
-			Repeating { inner, .. } => inner.binary_tower_level(),
-			// TODO: This is wrong, should be F::TOWER_LEVEL
-			Projected { projected, .. } => projected.inner().binary_tower_level(),
-			Shifted { shifted, .. } => shifted.inner().binary_tower_level(),
-			Packed { packed, .. } => packed.log_degree + packed.inner().binary_tower_level(),
-			LinearCombination {
-				linear_combination, ..
-			} => linear_combination
-				.inner
-				.iter()
-				.map(|(poly, _)| poly.binary_tower_level())
-				.max()
-				.unwrap_or(0),
-			ZeroPadded { inner, .. } => inner.binary_tower_level(),
-		}
+		self.tower_level
 	}
 
 	pub fn into_composite(self) -> CompositePolyOracle<F> {

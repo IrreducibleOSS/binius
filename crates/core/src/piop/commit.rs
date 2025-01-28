@@ -9,7 +9,7 @@ use binius_utils::sparse_index::SparseIndex;
 
 use super::{error::Error, util::ResizeableIndex, verify::CommitMeta};
 use crate::{
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -42,12 +42,12 @@ pub fn make_oracle_commit_meta<F: TowerField>(
 	let mut first_pass_index = SparseIndex::new(oracles.size());
 	let mut n_multilins_by_vars = ResizeableIndex::<usize>::new();
 	for oracle in oracles.iter() {
-		if let MultilinearPolyOracle::Committed { oracle_id: id, .. } = &oracle {
+		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			let n_packed_vars = n_packed_vars_for_committed_oracle(&oracle)?;
 			let n_multilins_for_vars = n_multilins_by_vars.get_mut(n_packed_vars);
 
 			first_pass_index.set(
-				*id,
+				oracle.id(),
 				CommitIDFirstPass {
 					n_packed_vars,
 					idx_in_bucket: *n_multilins_for_vars,

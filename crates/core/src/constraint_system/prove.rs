@@ -37,7 +37,7 @@ use crate::{
 	},
 	fiat_shamir::{CanSample, Challenger},
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::{Constraint, MultilinearOracleSet, MultilinearPolyOracle, OracleId},
+	oracle::{Constraint, MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
 	protocols::{
 		fri::CommitOutput,
@@ -228,7 +228,7 @@ where
 
 	// Reduce non_zero_final_layer_claims to evalcheck claims
 	let non_zero_prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(&oracles, non_zero_oracle_ids, non_zero_final_layer_claims)?;
+		gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
 
 	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
 	let (flush_oracle_ids, flush_counts, flush_final_layer_claims) = reorder_for_flushing_by_n_vars(
@@ -393,7 +393,7 @@ where
 	)?;
 
 	let zerocheck_eval_claims =
-		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
+		sumcheck::make_eval_claims(zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Prove evaluation claims
 	let eval_claims = greedy_evalcheck::prove::<_, _, FDomain<Tower>, _, _>(
@@ -410,8 +410,12 @@ where
 	)?;
 
 	// Reduce committed evaluation claims to PIOP sumcheck claims
-	let system =
-		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
+	let system = ring_switch::EvalClaimSystem::new(
+		&oracles,
+		&commit_meta,
+		oracle_to_commit_index,
+		&eval_claims,
+	)?;
 
 	let ring_switch::ReducedWitness {
 		transparents: transparent_multilins,
@@ -546,16 +550,14 @@ where
 	let flush_witnesses: Result<Vec<MultilinearWitness<'a, _>>, Error> = flush_oracle_ids
 		.par_iter()
 		.map(|&oracle_id| {
-			let MultilinearPolyOracle::LinearCombination {
-				linear_combination: lincom,
-				..
-			} = oracles.oracle(oracle_id)
+			let MultilinearPolyVariant::LinearCombination(lincom) =
+				oracles.oracle(oracle_id).variant
 			else {
 				unreachable!("make_flush_oracles adds linear combination oracles");
 			};
 			let polys = lincom
 				.polys()
-				.map(|oracle| witness.get_multilin_poly(oracle.id()))
+				.map(|id| witness.get_multilin_poly(id))
 				.collect::<Result<Vec<_>, _>>()?;
 
 			let packed_len = 1

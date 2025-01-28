@@ -140,7 +140,7 @@ where
 
 	// Reduce non_zero_final_layer_claims to evalcheck claims
 	let non_zero_prodcheck_eval_claims =
-		gkr_gpa::make_eval_claims(&oracles, non_zero_oracle_ids, non_zero_final_layer_claims)?;
+		gkr_gpa::make_eval_claims(non_zero_oracle_ids, non_zero_final_layer_claims)?;
 
 	// Reduce flush_final_layer_claims to sumcheck claims then evalcheck claims
 	let (flush_oracle_ids, flush_counts, flush_final_layer_claims) = reorder_for_flushing_by_n_vars(
@@ -254,7 +254,7 @@ where
 	)?;
 
 	let zerocheck_eval_claims =
-		sumcheck::make_eval_claims(&oracles, zerocheck_oracle_metas, multilinear_zerocheck_output)?;
+		sumcheck::make_eval_claims(zerocheck_oracle_metas, multilinear_zerocheck_output)?;
 
 	// Evalcheck
 	let eval_claims = greedy_evalcheck::verify(
@@ -267,8 +267,12 @@ where
 	)?;
 
 	// Reduce committed evaluation claims to PIOP sumcheck claims
-	let system =
-		ring_switch::EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims)?;
+	let system = ring_switch::EvalClaimSystem::new(
+		&oracles,
+		&commit_meta,
+		oracle_to_commit_index,
+		&eval_claims,
+	)?;
 
 	let ring_switch::ReducedClaim {
 		transparents,
@@ -628,7 +632,7 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 			let eval_point = sumcheck_output.challenges[max_n_vars - meta.n_vars..].into();
 
 			evalcheck_claims.push(EvalcheckMultilinearClaim {
-				poly: oracles.oracle(meta.step_down_oracle_id),
+				id: meta.step_down_oracle_id,
 				eval_point,
 				eval,
 			});
@@ -639,7 +643,7 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 			let eval_point = sumcheck_output.challenges[max_n_vars - n_vars..].into();
 
 			evalcheck_claims.push(EvalcheckMultilinearClaim {
-				poly: oracles.oracle(flush_oracle),
+				id: flush_oracle,
 				eval_point,
 				eval,
 			});

@@ -60,19 +60,15 @@ where
 	}
 
 	Ok(iter::zip(ids, products)
-		.map(|(id, product)| {
-			let oracle = oracles.oracle(*id);
-			GrandProductClaim {
-				n_vars: oracle.n_vars(),
-				product: *product,
-			}
+		.map(|(id, product)| GrandProductClaim {
+			n_vars: oracles.n_vars(*id),
+			product: *product,
 		})
 		.collect::<Vec<_>>())
 }
 
 #[instrument(skip_all, level = "debug")]
 pub fn make_eval_claims<F: TowerField>(
-	oracles: &MultilinearOracleSet<F>,
 	metas: impl IntoIterator<Item = OracleId>,
 	final_layer_claims: impl IntoIterator<IntoIter: ExactSizeIterator<Item = LayerClaim<F>>>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
@@ -84,14 +80,10 @@ pub fn make_eval_claims<F: TowerField>(
 	}
 
 	Ok(iter::zip(metas, final_layer_claims)
-		.map(|(oracle_id, claim)| {
-			let poly = oracles.oracle(oracle_id);
-
-			EvalcheckMultilinearClaim {
-				poly,
-				eval_point: claim.eval_point.into(),
-				eval: claim.eval,
-			}
+		.map(|(oracle_id, claim)| EvalcheckMultilinearClaim {
+			id: oracle_id,
+			eval_point: claim.eval_point.into(),
+			eval: claim.eval,
 		})
 		.collect::<Vec<_>>())
 }

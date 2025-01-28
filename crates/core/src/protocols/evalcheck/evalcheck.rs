@@ -11,14 +11,14 @@ use bytes::{Buf, BufMut};
 
 use super::error::Error;
 use crate::{
-	oracle::{MultilinearPolyOracle, OracleId},
+	oracle::OracleId,
 	transcript::{TranscriptReader, TranscriptWriter},
 };
 
 #[derive(Debug, Clone)]
 pub struct EvalcheckMultilinearClaim<F: Field> {
 	/// Virtual Polynomial Oracle for which the evaluation is claimed
-	pub poly: MultilinearPolyOracle<F>,
+	pub id: OracleId,
 	/// Evaluation Point
 	pub eval_point: EvalPoint<F>,
 	/// Claimed Evaluation

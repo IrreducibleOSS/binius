@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::Field;
+use binius_field::TowerField;
 
 use crate::{
 	oracle::{CompositePolyOracle, Error as OracleError, OracleId},
@@ -44,7 +44,9 @@ pub enum VerificationError {
 }
 
 impl VerificationError {
-	pub fn incorrect_composite_poly_evaluation<F: Field>(oracle: CompositePolyOracle<F>) -> Self {
+	pub fn incorrect_composite_poly_evaluation<F: TowerField>(
+		oracle: CompositePolyOracle<F>,
+	) -> Self {
 		let names = oracle
 			.inner_polys()
 			.iter()

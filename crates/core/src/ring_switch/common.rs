@@ -7,7 +7,8 @@ use binius_utils::sparse_index::SparseIndex;
 
 use super::error::Error;
 use crate::{
-	oracle::MultilinearPolyOracle, piop::CommitMeta,
+	oracle::{MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant},
+	piop::CommitMeta,
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
 
@@ -69,6 +70,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 	///     metadata.
 	/// * `eval_claims` - the evaluation claims on committed multilinear polynomials.
 	pub fn new(
+		oracles: &MultilinearOracleSet<F>,
 		commit_meta: &'a CommitMeta,
 		oracle_to_commit_index: SparseIndex<usize>,
 		eval_claims: &'a [EvalcheckMultilinearClaim<F>],
@@ -76,13 +78,14 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 		// Sort evaluation claims in ascending order by number of packed variables. This must
 		// happen before we do any further index mapping.
 		let mut eval_claims = eval_claims.iter().collect::<Vec<_>>();
-		eval_claims.sort_by_key(|claim| match claim.poly {
+		eval_claims.sort_by_key(|claim| match oracles.oracle(claim.id) {
 			// The number of packed variables is n_vars + tower_level - F::TOWER_LEVEL. Just use
 			// n_vars + tower_level as the sort key because we haven't checked that the subtraction
 			// wouldn't underflow yet.
-			MultilinearPolyOracle::Committed {
+			MultilinearPolyOracle {
 				n_vars,
 				tower_level,
+				variant: MultilinearPolyVariant::Committed,
 				..
 			} => n_vars + tower_level,
 			// Ignore any non-committed oracles for now, they'll be caught later in a context where
@@ -95,24 +98,20 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 			eval_claim_to_prefix_desc_index,
 			suffix_descs,
 			eval_claim_to_suffix_desc_index,
-		) = group_claims_by_eval_point(&eval_claims)?;
+		) = group_claims_by_eval_point(oracles, &eval_claims)?;
 
 		let sumcheck_claim_descs = eval_claims
 			.into_iter()
 			.enumerate()
 			.map(|(i, eval_claim)| {
-				let MultilinearPolyOracle::Committed { oracle_id, .. } = eval_claim.poly else {
-					return Err(Error::EvalcheckClaimForDerivedPoly {
-						id: eval_claim.poly.id(),
-					});
-				};
-				let committed_idx =
-					oracle_to_commit_index
-						.get(oracle_id)
-						.copied()
-						.ok_or_else(|| Error::OracleToCommitIndexMissingEntry {
-							id: eval_claim.poly.id(),
-						})?;
+				let oracle = oracles.oracle(eval_claim.id);
+				if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+					return Err(Error::EvalcheckClaimForDerivedPoly { id: eval_claim.id });
+				}
+				let committed_idx = oracle_to_commit_index
+					.get(oracle.id())
+					.copied()
+					.ok_or_else(|| Error::OracleToCommitIndexMissingEntry { id: eval_claim.id })?;
 				let suffix_desc_idx = eval_claim_to_suffix_desc_index[i];
 				Ok(PIOPSumcheckClaimDesc {
 					committed_idx,
@@ -142,6 +141,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 
 #[allow(clippy::type_complexity)]
 fn group_claims_by_eval_point<F: TowerField>(
+	oracles: &MultilinearOracleSet<F>,
 	claims: &[&EvalcheckMultilinearClaim<F>],
 ) -> Result<(Vec<EvalClaimPrefixDesc<F>>, Vec<usize>, Vec<EvalClaimSuffixDesc<F>>, Vec<usize>), Error>
 {
@@ -150,15 +150,14 @@ fn group_claims_by_eval_point<F: TowerField>(
 	let mut claim_to_prefix_index = Vec::with_capacity(claims.len());
 	let mut claim_to_suffix_index = Vec::with_capacity(claims.len());
 	for claim in claims {
-		let MultilinearPolyOracle::Committed {
-			oracle_id: id,
+		let MultilinearPolyOracle {
+			id,
 			tower_level,
+			variant: MultilinearPolyVariant::Committed,
 			..
-		} = claim.poly
+		} = oracles.oracle(claim.id)
 		else {
-			return Err(Error::EvalcheckClaimForDerivedPoly {
-				id: claim.poly.id(),
-			});
+			return Err(Error::EvalcheckClaimForDerivedPoly { id: claim.id });
 		};
 		let kappa = F::TOWER_LEVEL.checked_sub(tower_level).ok_or_else(|| {
 			Error::OracleTowerLevelTooHigh {

@@ -50,8 +50,7 @@ where
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
 		let sumcheck_output = batch_verify(&claims, transcript)?;
 
-		let new_evalcheck_claims =
-			sumcheck::make_eval_claims(evalcheck_verifier.oracles, metas, sumcheck_output)?;
+		let new_evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
 		let mut evalcheck_proofs = Vec::with_capacity(new_evalcheck_claims.len());
 		let mut reader = transcript.message();

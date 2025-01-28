@@ -26,7 +26,7 @@ use super::{
 use crate::{
 	fiat_shamir::HasherChallenger,
 	merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver, MerkleTreeScheme},
-	oracle::{MultilinearOracleSet, MultilinearPolyOracle},
+	oracle::{MultilinearOracleSet, MultilinearPolyVariant, OracleId},
 	piop,
 	protocols::{evalcheck::EvalcheckMultilinearClaim, fri::CommitOutput},
 	ring_switch::prove::ReducedWitness,
@@ -66,14 +66,9 @@ where
 	let mut witness_index = MultilinearExtensionIndex::new();
 
 	for oracle in oracles.iter() {
-		if let MultilinearPolyOracle::Committed {
-			oracle_id: id,
-			n_vars,
-			tower_level,
-			..
-		} = oracle
-		{
-			let witness = match tower_level {
+		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
+			let n_vars = oracle.n_vars();
+			let witness = match oracle.binary_tower_level() {
 				0 => generate_multilinear::<U, Tower::B1, FExt<Tower>>(&mut rng, n_vars),
 				3 => generate_multilinear::<U, Tower::B8, FExt<Tower>>(&mut rng, n_vars),
 				4 => generate_multilinear::<U, Tower::B16, FExt<Tower>>(&mut rng, n_vars),
@@ -82,7 +77,9 @@ where
 				7 => generate_multilinear::<U, Tower::B128, FExt<Tower>>(&mut rng, n_vars),
 				_ => panic!("unsupported tower level"),
 			};
-			witness_index.update_multilin_poly([(id, witness)]).unwrap();
+			witness_index
+				.update_multilin_poly([(oracle.id(), witness)])
+				.unwrap();
 		}
 	}
 
@@ -94,19 +91,19 @@ fn random_eval_point<F: Field>(mut rng: impl Rng, n_vars: usize) -> Vec<F> {
 }
 
 fn make_eval_claim<U, F>(
-	oracle: &MultilinearPolyOracle<F>,
+	oracle_id: OracleId,
 	eval_point: Vec<F>,
 	witness_index: &MultilinearExtensionIndex<U, F>,
 ) -> EvalcheckMultilinearClaim<F>
 where
 	U: UnderlierType + PackScalar<F>,
-	F: Field,
+	F: TowerField,
 {
-	let witness = witness_index.get_multilin_poly(oracle.id()).unwrap();
+	let witness = witness_index.get_multilin_poly(oracle_id).unwrap();
 	let query = MultilinearQuery::expand(&eval_point);
 	let eval = witness.evaluate(query.to_ref()).unwrap();
 	EvalcheckMultilinearClaim {
-		poly: oracle.clone(),
+		id: oracle_id,
 		eval_point: eval_point.into(),
 		eval,
 	}
@@ -139,7 +136,7 @@ where
 {
 	let max_n_vars = oracles
 		.iter()
-		.filter(|oracle| matches!(oracle, MultilinearPolyOracle::Committed { .. }))
+		.filter(|oracle| matches!(oracle.variant, MultilinearPolyVariant::Committed))
 		.map(|oracle| oracle.n_vars())
 		.max()
 		.unwrap();
@@ -149,7 +146,7 @@ where
 
 	let mut eval_claims = Vec::new();
 	for oracle in oracles.iter() {
-		if !matches!(oracle, MultilinearPolyOracle::Committed { .. }) {
+		if !matches!(oracle.variant, MultilinearPolyVariant::Committed) {
 			continue;
 		}
 
@@ -159,18 +156,22 @@ where
 					// Create both back-loaded and front-loaded claims to test both shared prefixes
 					// and suffixes.
 					eval_claims.push(make_eval_claim(
-						&oracle,
+						oracle.id(),
 						eval_point[..oracle.n_vars()].to_vec(),
 						witness_index,
 					));
 					eval_claims.push(make_eval_claim(
-						&oracle,
+						oracle.id(),
 						eval_point[eval_point.len() - oracle.n_vars()..].to_vec(),
 						witness_index,
 					));
 				}
 				Ordering::Equal => {
-					eval_claims.push(make_eval_claim(&oracle, eval_point.clone(), witness_index));
+					eval_claims.push(make_eval_claim(
+						oracle.id(),
+						eval_point.clone(),
+						witness_index,
+					));
 				}
 				_ => panic!("eval_point does not have enough coordinates"),
 			}
@@ -206,7 +207,8 @@ fn with_test_instance_from_oracles<U, Tower, R>(
 	let eval_claims = setup_test_eval_claims(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
-	let system = EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
+	let system =
+		EvalClaimSystem::new(oracles, &commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
 	check_eval_point_consistency(&system);
 
 	func(rng, system, witnesses)
@@ -301,7 +303,8 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	let eval_claims = setup_test_eval_claims(&mut rng, oracles, &witness_index);
 
 	// Finish setting up the test case
-	let system = EvalClaimSystem::new(&commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
+	let system =
+		EvalClaimSystem::new(oracles, &commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
 	check_eval_point_consistency(&system);
 
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();

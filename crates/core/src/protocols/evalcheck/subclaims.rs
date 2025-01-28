@@ -46,12 +46,12 @@ use crate::{
 /// Projects to first `block_size()` vars.
 pub fn shifted_sumcheck_meta<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	shifted: &Shifted<F>,
+	shifted: &Shifted,
 	eval_point: &[F],
 ) -> Result<ProjectedBivariateMeta, Error> {
 	projected_bivariate_meta(
 		oracles,
-		shifted.inner().id(),
+		shifted.id(),
 		shifted.block_size(),
 		eval_point,
 		|projected_eval_point| {
@@ -68,7 +68,7 @@ pub fn shifted_sumcheck_meta<F: TowerField>(
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_shifted_sumcheck<U, F>(
-	shifted: &Shifted<F>,
+	shifted: &Shifted,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
@@ -109,19 +109,19 @@ where
 /// Returns metadata object with oracle identifiers.
 pub fn packed_sumcheck_meta<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	packed: &Packed<F>,
+	packed: &Packed,
 	eval_point: &[F],
 ) -> Result<ProjectedBivariateMeta, Error> {
-	let n_vars = packed.inner().n_vars();
+	let n_vars = oracles.n_vars(packed.id());
 	let log_degree = packed.log_degree();
-	let binary_tower_level = packed.inner().binary_tower_level();
+	let binary_tower_level = oracles.oracle(packed.id()).binary_tower_level();
 
 	if log_degree > n_vars {
 		bail!(OracleError::NotEnoughVarsForPacking { n_vars, log_degree });
 	}
 
 	// NB. projected_n_vars = 0 because eval_point length is log_degree less than inner n_vars
-	projected_bivariate_meta(oracles, packed.inner().id(), 0, eval_point, |_| {
+	projected_bivariate_meta(oracles, packed.id(), 0, eval_point, |_| {
 		Ok(TowerBasis::new(log_degree, binary_tower_level)?)
 	})
 }
@@ -151,7 +151,8 @@ fn add_bivariate_sumcheck_to_constraint_builder<F: Field>(
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
 #[allow(clippy::too_many_arguments)]
 pub fn process_packed_sumcheck<U, F>(
-	packed: &Packed<F>,
+	oracles: &MultilinearOracleSet<F>,
+	packed: &Packed,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,
@@ -164,7 +165,7 @@ where
 	F: TowerField,
 {
 	let log_degree = packed.log_degree();
-	let binary_tower_level = packed.inner().binary_tower_level();
+	let binary_tower_level = oracles.oracle(packed.id()).binary_tower_level();
 
 	process_projected_bivariate_witness(
 		witness_index,
@@ -398,11 +399,10 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 type SumcheckProofEvalcheckClaims<F> = Vec<EvalcheckMultilinearClaim<F>>;
 
-pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Challenger_, Backend>(
-	oracles: &MultilinearOracleSet<F>,
+pub fn prove_bivariate_sumchecks_with_switchover<U, F, DomainField, Transcript, Backend>(
 	witness: &MultilinearExtensionIndex<U, F>,
 	constraint_sets: Vec<ConstraintSet<F>>,
-	transcript: &mut ProverTranscript<Challenger_>,
+	transcript: &mut ProverTranscript<Transcript>,
 	switchover_fn: impl Fn(usize) -> usize + 'static,
 	domain_factory: impl EvaluationDomainFactory<DomainField>,
 	backend: &Backend,
@@ -411,7 +411,7 @@ where
 	U: UnderlierType + PackScalar<F> + PackScalar<DomainField>,
 	F: TowerField + ExtensionField<DomainField>,
 	DomainField: Field,
-	Challenger_: Challenger,
+	Transcript: Challenger,
 	Backend: ComputationBackend,
 {
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(
@@ -424,7 +424,7 @@ where
 
 	let sumcheck_output = sumcheck::batch_prove(provers, transcript)?;
 
-	let evalcheck_claims = sumcheck::make_eval_claims(oracles, metas, sumcheck_output)?;
+	let evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
 }

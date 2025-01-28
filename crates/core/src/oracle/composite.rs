@@ -2,20 +2,20 @@
 
 use std::sync::Arc;
 
-use binius_field::Field;
+use binius_field::TowerField;
 use binius_math::CompositionPolyOS;
 use binius_utils::bail;
 
 use crate::oracle::{Error, MultilinearPolyOracle, OracleId};
 
 #[derive(Debug, Clone)]
-pub struct CompositePolyOracle<F: Field> {
+pub struct CompositePolyOracle<F: TowerField> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
 	composition: Arc<dyn CompositionPolyOS<F>>,
 }
 
-impl<F: Field> CompositePolyOracle<F> {
+impl<F: TowerField> CompositePolyOracle<F> {
 	pub fn new<C: CompositionPolyOS<F> + 'static>(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<F>>,

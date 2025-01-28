@@ -62,7 +62,6 @@ where
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
 		let new_evalcheck_claims =
 			prove_bivariate_sumchecks_with_switchover::<_, _, DomainField, _, _>(
-				evalcheck_prover.oracles,
 				evalcheck_prover.witness_index,
 				new_sumchecks,
 				transcript,

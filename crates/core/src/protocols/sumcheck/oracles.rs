@@ -7,10 +7,7 @@ use binius_utils::bail;
 
 use super::{BatchSumcheckOutput, CompositeSumClaim, Error, SumcheckClaim, ZerocheckClaim};
 use crate::{
-	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
-		TypeErasedComposition,
-	},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet, OracleId, TypeErasedComposition},
 	polynomial::ArithCircuitPoly,
 	protocols::evalcheck::EvalcheckMultilinearClaim,
 };
@@ -97,7 +94,6 @@ fn split_constraint_set<F: Field>(
 
 /// Constructs evalcheck claims from metadata returned by constraint set claim constructors.
 pub fn make_eval_claims<F: TowerField>(
-	oracles: &MultilinearOracleSet<F>,
 	metas: impl IntoIterator<Item = OracleClaimMeta>,
 	batch_sumcheck_output: BatchSumcheckOutput<F>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
@@ -119,11 +115,10 @@ pub fn make_eval_claims<F: TowerField>(
 		}
 
 		for (oracle_id, eval) in iter::zip(meta.oracle_ids, prover_evals) {
-			let poly = oracles.oracle(oracle_id);
 			let eval_point = batch_sumcheck_output.challenges[max_n_vars - meta.n_vars..].to_vec();
 
 			let claim = EvalcheckMultilinearClaim {
-				poly,
+				id: oracle_id,
 				eval_point: eval_point.into(),
 				eval,
 			};

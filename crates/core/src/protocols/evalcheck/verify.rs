@@ -16,7 +16,7 @@ use super::{
 };
 use crate::oracle::{
 	ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet,
-	MultilinearPolyOracle, ProjectionVariant,
+	MultilinearPolyVariant, OracleId, ProjectionVariant,
 };
 
 /// A mutable verifier state.
@@ -84,13 +84,14 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		evalcheck_proof: EvalcheckProof<F>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
-			poly: multilinear,
+			id,
 			eval_point,
 			eval,
 		} = evalcheck_claim;
 
-		match multilinear {
-			MultilinearPolyOracle::Transparent { id, inner, name } => {
+		let multilinear = self.oracles.oracle(id);
+		match multilinear.variant.clone() {
+			MultilinearPolyVariant::Transparent(inner) => {
 				match evalcheck_proof {
 					EvalcheckProof::Transparent => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -99,20 +100,20 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				let actual_eval = inner.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
 					return Err(VerificationError::IncorrectEvaluation(
-						name.unwrap_or(id.to_string()),
+						self.oracles.oracle(id).label(),
 					)
 					.into());
 				}
 			}
 
-			MultilinearPolyOracle::Committed { .. } => {
+			MultilinearPolyVariant::Committed => {
 				match evalcheck_proof {
 					EvalcheckProof::Committed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				}
 
 				let claim = EvalcheckMultilinearClaim {
-					poly: multilinear,
+					id: multilinear.id(),
 					eval_point,
 					eval,
 				};
@@ -120,15 +121,14 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.committed_eval_claims.push(claim);
 			}
 
-			MultilinearPolyOracle::Repeating { inner, .. } => {
+			MultilinearPolyVariant::Repeating { id, .. } => {
 				let subproof = match evalcheck_proof {
 					EvalcheckProof::Repeating(subproof) => subproof,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
-
-				let n_vars = inner.n_vars();
+				let n_vars = self.oracles.n_vars(id);
 				let subclaim = EvalcheckMultilinearClaim {
-					poly: (*inner).clone(),
+					id,
 					eval_point: eval_point[..n_vars].into(),
 					eval,
 				};
@@ -136,8 +136,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear(subclaim, *subproof)?;
 			}
 
-			MultilinearPolyOracle::Projected { projected, .. } => {
-				let (inner, values) = (projected.inner(), projected.values());
+			MultilinearPolyVariant::Projected(projected) => {
+				let (id, values) = (projected.id(), projected.values());
 				let eval_point = match projected.projection_variant() {
 					ProjectionVariant::LastVars => {
 						let mut eval_point = eval_point.to_vec();
@@ -150,7 +150,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				};
 
 				let new_claim = EvalcheckMultilinearClaim {
-					poly: (**inner).clone(),
+					id,
 					eval_point: eval_point.into(),
 					eval,
 				};
@@ -158,7 +158,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				self.verify_multilinear(new_claim, evalcheck_proof)?;
 			}
 
-			MultilinearPolyOracle::Shifted { shifted, .. } => {
+			MultilinearPolyVariant::Shifted(shifted) => {
 				match evalcheck_proof {
 					EvalcheckProof::Shifted => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -173,7 +173,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)
 			}
 
-			MultilinearPolyOracle::Packed { packed, .. } => {
+			MultilinearPolyVariant::Packed(packed) => {
 				match evalcheck_proof {
 					EvalcheckProof::Packed => {}
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -188,11 +188,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)
 			}
 
-			MultilinearPolyOracle::LinearCombination {
-				id,
-				linear_combination,
-				name,
-			} => {
+			MultilinearPolyVariant::LinearCombination(linear_combination) => {
 				let subproofs = match evalcheck_proof {
 					EvalcheckProof::LinearCombination { subproofs } => subproofs,
 					_ => return Err(VerificationError::SubproofMismatch.into()),
@@ -210,33 +206,23 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					);
 
 				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(
-						name.unwrap_or(id.to_string()),
-					)
-					.into());
+					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
 				}
 
 				subproofs
 					.into_iter()
 					.zip(linear_combination.polys())
-					.try_for_each(|((eval, subproof), suboracle)| {
-						self.verify_multilinear_subclaim(
-							eval,
-							subproof,
-							suboracle.clone(),
-							&eval_point,
-						)
+					.try_for_each(|((eval, subproof), suboracle_id)| {
+						self.verify_multilinear_subclaim(eval, subproof, suboracle_id, &eval_point)
 					})?;
 			}
-			MultilinearPolyOracle::ZeroPadded {
-				id, inner, name, ..
-			} => {
+			MultilinearPolyVariant::ZeroPadded(inner) => {
 				let (inner_eval, subproof) = match evalcheck_proof {
 					EvalcheckProof::ZeroPadded(eval, subproof) => (eval, subproof),
 					_ => return Err(VerificationError::SubproofMismatch.into()),
 				};
 
-				let inner_n_vars = inner.n_vars();
+				let inner_n_vars = self.oracles.n_vars(inner);
 
 				let (subclaim_eval_point, zs) = eval_point.split_at(inner_n_vars);
 
@@ -248,16 +234,13 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				}
 
 				if extrapolate_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(
-						name.unwrap_or(id.to_string()),
-					)
-					.into());
+					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
 				}
 
 				self.verify_multilinear_subclaim(
 					inner_eval,
 					*subproof,
-					(*inner).clone(),
+					inner,
 					subclaim_eval_point,
 				)?;
 			}
@@ -270,11 +253,11 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		&mut self,
 		eval: F,
 		subproof: EvalcheckProof<F>,
-		poly: MultilinearPolyOracle<F>,
+		oracle_id: OracleId,
 		eval_point: &[F],
 	) -> Result<(), Error> {
 		let subclaim = EvalcheckMultilinearClaim {
-			poly,
+			id: oracle_id,
 			eval_point: eval_point.into(),
 			eval,
 		};

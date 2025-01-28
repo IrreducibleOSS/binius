@@ -13,7 +13,9 @@ use super::{
 	ConstraintSystem,
 };
 use crate::{
-	oracle::{ConstraintPredicate, MultilinearPolyOracle},
+	oracle::{
+		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
+	},
 	polynomial::{test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
@@ -69,7 +71,7 @@ where
 
 	// Check consistency of virtual oracle witnesses (eg. that shift polynomials are actually shifts).
 	for oracle in constraint_system.oracles.iter() {
-		validate_virtual_oracle_witness(oracle, witness)?;
+		validate_virtual_oracle_witness(oracle, &constraint_system.oracles, witness)?;
 	}
 
 	Ok(())
@@ -77,13 +79,14 @@ where
 
 pub fn validate_virtual_oracle_witness<U, F>(
 	oracle: MultilinearPolyOracle<F>,
+	oracles: &MultilinearOracleSet<F>,
 	witness: &MultilinearExtensionIndex<U, F>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b>,
 	F: TowerField,
 {
-	use MultilinearPolyOracle::*;
+	use MultilinearPolyVariant::*;
 
 	let oracle_label = &oracle.label();
 	let n_vars = oracle.n_vars();
@@ -97,11 +100,11 @@ where
 		})
 	}
 
-	match oracle {
-		Committed { .. } => {
+	match oracle.variant {
+		Committed => {
 			// Committed oracles don't need to be checked as they are allowed to contain any data here
 		}
-		Transparent { inner, .. } => {
+		Transparent(inner) => {
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
 				let expected = inner
@@ -110,12 +113,10 @@ where
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
-		LinearCombination {
-			linear_combination, ..
-		} => {
+		LinearCombination(linear_combination) => {
 			let uncombined_polys = linear_combination
 				.polys()
-				.map(|oracle| witness.get_multilin_poly(oracle.id()))
+				.map(|id| witness.get_multilin_poly(id))
 				.collect::<Result<Vec<_>, _>>()?;
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
@@ -128,9 +129,9 @@ where
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
-		Repeating { inner, .. } => {
-			let unrepeated_poly = witness.get_multilin_poly(inner.id())?;
-			let unrepeated_n_vars = inner.n_vars();
+		Repeating { id, .. } => {
+			let unrepeated_poly = witness.get_multilin_poly(id)?;
+			let unrepeated_n_vars = oracles.n_vars(id);
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
 				let expected =
@@ -138,8 +139,8 @@ where
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
-		Shifted { shifted, .. } => {
-			let unshifted_poly = witness.get_multilin_poly(shifted.inner().id())?;
+		Shifted(shifted) => {
+			let unshifted_poly = witness.get_multilin_poly(shifted.id())?;
 			let block_len = 1 << shifted.block_size();
 			let shift_offset = shifted.shift_offset();
 			for block_start in (0..1 << n_vars).step_by(block_len) {
@@ -201,9 +202,9 @@ where
 				}
 			}
 		}
-		Projected { projected, .. } => {
+		Projected(projected) => {
 			use crate::oracle::ProjectionVariant::*;
-			let unprojected_poly = witness.get_multilin_poly(projected.inner().id())?;
+			let unprojected_poly = witness.get_multilin_poly(projected.id())?;
 			let partial_query =
 				binius_hal::make_portable_backend().multilinear_query(projected.values())?;
 			let projected_poly = match projected.projection_variant() {
@@ -219,8 +220,8 @@ where
 				)?;
 			}
 		}
-		ZeroPadded { inner, n_vars, .. } => {
-			let unpadded_poly = witness.get_multilin_poly(inner.id())?;
+		ZeroPadded(inner_id) => {
+			let unpadded_poly = witness.get_multilin_poly(inner_id)?;
 			for i in 0..1 << unpadded_poly.n_vars() {
 				check_eval(
 					oracle_label,
@@ -233,10 +234,9 @@ where
 				check_eval(oracle_label, i, F::ZERO, poly.evaluate_on_hypercube(i)?)?;
 			}
 		}
-		Packed { id, packed, .. } => {
-			let inner = packed.inner();
-			let expected = witness.get_multilin_poly(inner.id())?;
-			let got = witness.get_multilin_poly(id)?;
+		Packed(ref packed) => {
+			let expected = witness.get_multilin_poly(packed.id())?;
+			let got = witness.get_multilin_poly(oracle.id())?;
 			if expected.packed_evals() != got.packed_evals() {
 				return Err(Error::PackedUnderlierMismatch {
 					oracle: oracle_label.into(),

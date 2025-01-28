@@ -8,7 +8,7 @@ use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
 use itertools::Itertools;
 
-use super::{Error, MultilinearOracleSet, MultilinearPolyOracle, OracleId};
+use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.
@@ -160,24 +160,14 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.constraints
 			.iter()
 			.map(|constraint| constraint.oracle_ids.clone())
-			.chain(oracles.iter().filter_map(|oracle| {
-				match oracle {
-					MultilinearPolyOracle::Shifted { id, shifted, .. } => {
-						Some(vec![id, shifted.inner().id()])
-					}
-					MultilinearPolyOracle::LinearCombination {
-						id,
-						linear_combination,
-						..
-					} => Some(
-						linear_combination
-							.polys()
-							.map(|p| p.id())
-							.chain([id])
-							.collect(),
-					),
-					_ => None,
+			.chain(oracles.iter().filter_map(|oracle| match oracle.variant {
+				MultilinearPolyVariant::Shifted(ref shifted) => {
+					Some(vec![oracle.id(), shifted.id()])
 				}
+				MultilinearPolyVariant::LinearCombination(ref linear_combination) => {
+					Some(linear_combination.polys().chain([oracle.id()]).collect())
+				}
+				_ => None,
 			}))
 			.collect::<Vec<_>>();
 
