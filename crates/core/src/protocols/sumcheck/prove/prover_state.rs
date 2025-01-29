@@ -131,11 +131,7 @@ where
 		})
 	}
 
-	#[instrument(
-		skip_all,
-		level = "debug",
-		name = "ProverState::new_with_switchover_rounds"
-	)]
+	#[instrument(skip_all, level = "debug", name = "ProverState::new_big_field")]
 	pub fn new_big_field(
 		multilinears: Vec<M>,
 		claimed_sums: Vec<F>,
