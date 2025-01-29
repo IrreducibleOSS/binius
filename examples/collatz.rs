@@ -83,6 +83,7 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 		&constraint_system,
 		log_inv_rate,
 		SECURITY_BITS,
+		&boundaries,
 		witness,
 		&domain_factory,
 		&make_portable_backend(),
@@ -106,7 +107,7 @@ fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<
 		Groestl256,
 		Groestl256ByteCompression,
 		HasherChallenger<Groestl256>,
-	>(&constraint_system, log_inv_rate, SECURITY_BITS, boundaries, proof)?;
+	>(&constraint_system, log_inv_rate, SECURITY_BITS, &boundaries, proof)?;
 
 	Ok(())
 }

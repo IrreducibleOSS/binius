@@ -52,9 +52,10 @@
 use std::collections::HashMap;
 
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use bytes::BufMut;
 
 use super::error::{Error, VerificationError};
-use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
+use crate::{oracle::OracleId, transcript::TranscriptWriter, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
@@ -215,6 +216,26 @@ impl<F: TowerField> Channel<F> {
 
 	fn is_balanced(&self) -> bool {
 		self.multiplicities.iter().all(|(_, m)| *m == 0)
+	}
+}
+
+impl<F: TowerField> Boundary<F> {
+	pub fn write_to(&self, writer: &mut TranscriptWriter<impl BufMut>) {
+		writer.buffer().put_u64(self.values.len() as u64);
+		writer.write_slice(
+			&self
+				.values
+				.iter()
+				.copied()
+				.map(F::Canonical::from)
+				.collect::<Vec<_>>(),
+		);
+		writer.buffer().put_u64(self.channel_id as u64);
+		writer.buffer().put_u64(self.multiplicity);
+		writer.buffer().put_u64(match self.direction {
+			FlushDirection::Pull => 0,
+			FlushDirection::Push => 1,
+		});
 	}
 }
 

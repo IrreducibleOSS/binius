@@ -23,6 +23,7 @@ use itertools::{chain, izip};
 use tracing::instrument;
 
 use super::{
+	channel::Boundary,
 	error::Error,
 	verify::{
 		get_post_flush_sumcheck_eval_claims_without_eq, make_flush_oracles,
@@ -64,6 +65,7 @@ pub fn prove<U, Tower, DomainFactory, Hash, Compress, Challenger_, Backend>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
+	boundaries: &[Boundary<FExt<Tower>>],
 	mut witness: MultilinearExtensionIndex<U, FExt<Tower>>,
 	domain_factory: DomainFactory,
 	backend: &Backend,
@@ -102,6 +104,12 @@ where
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
+	{
+		let mut observer = transcript.observe();
+		for boundary in boundaries.iter() {
+			boundary.write_to(&mut observer);
+		}
+	}
 
 	let ConstraintSystem {
 		mut oracles,

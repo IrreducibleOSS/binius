@@ -543,6 +543,8 @@ mod tests {
 			multiplicity: 1,
 		};
 
+		let boundaries = vec![pull_boundaries, push_boundaries];
+
 		let even = builder.add_committed("even", log_size, 3);
 
 		let half = builder.add_committed("half", log_size, 3);
@@ -611,7 +613,7 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, witness, &domain_factory, &backend)
+		>(&constraint_system, 1, 10, &boundaries, witness, &domain_factory, &backend)
 		.unwrap();
 
 		constraint_system::verify::<
@@ -620,7 +622,7 @@ mod tests {
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&constraint_system, 1, 10, vec![pull_boundaries, push_boundaries], proof)
+		>(&constraint_system, 1, 10, &boundaries, proof)
 		.unwrap();
 	}
 
@@ -636,7 +638,7 @@ mod tests {
 			let allocator = bumpalo::Bump::new();
 			let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 
-			let _boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
+			let boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
 				_,
 				_,
 				MAX_LOG_MULTIPLICITY,
@@ -658,7 +660,15 @@ mod tests {
 				Groestl256ByteCompression,
 				HasherChallenger<Groestl256>,
 				_,
-			>(&constraint_system, log_inv_rate, security_bits, witness, &domain_factory, &backend)
+			>(
+				&constraint_system,
+				log_inv_rate,
+				security_bits,
+				&[boundary],
+				witness,
+				&domain_factory,
+				&backend,
+			)
 			.unwrap()
 		};
 
@@ -681,7 +691,7 @@ mod tests {
 				Groestl256,
 				Groestl256ByteCompression,
 				HasherChallenger<Groestl256>,
-			>(&constraint_system, log_inv_rate, security_bits, vec![boundary], proof)
+			>(&constraint_system, log_inv_rate, security_bits, &[boundary], proof)
 			.unwrap();
 		}
 	}

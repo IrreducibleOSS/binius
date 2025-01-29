@@ -49,7 +49,7 @@ pub fn verify<U, Tower, Hash, Compress, Challenger_>(
 	constraint_system: &ConstraintSystem<FExt<Tower>>,
 	log_inv_rate: usize,
 	security_bits: usize,
-	boundaries: Vec<Boundary<FExt<Tower>>>,
+	boundaries: &[Boundary<FExt<Tower>>],
 	proof: Proof,
 ) -> Result<(), Error>
 where
@@ -75,6 +75,12 @@ where
 	let Proof { transcript } = proof;
 
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
+	{
+		let mut observer = transcript.observe();
+		for boundary in boundaries.iter() {
+			boundary.write_to(&mut observer);
+		}
+	}
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;
@@ -337,7 +343,7 @@ where
 fn verify_channels_balance<F: TowerField>(
 	flushes: &[Flush],
 	flush_products: &[F],
-	boundaries: Vec<Boundary<F>>,
+	boundaries: &[Boundary<F>],
 	mixing_challenge: F,
 	permutation_challenges: &[F],
 ) -> Result<(), Error> {
