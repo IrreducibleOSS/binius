@@ -1,70 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Range};
-
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
-use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_hal::ComputationBackend;
 use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
 };
-use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use binius_utils::bail;
 use itertools::izip;
-use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
-use super::{batch_prove::SumcheckProver, prover_state::ProverState};
-use crate::{
-	polynomial::{Error as PolynomialError, MultilinearComposite},
-	protocols::sumcheck::{
-		common::{CompositeSumClaim, RoundCoeffs},
-		error::Error,
-		prove::prover_state::SumcheckInterpolator,
-	},
+use super::{
+	batch_prove::SumcheckProver, prover_state::ProverState,
+	regular_sumcheck::RegularSumcheckEvaluator,
 };
-
-pub fn validate_witness<'a, F, P, M, Composition>(
-	multilinears: &[M],
-	sum_claims: impl IntoIterator<Item = CompositeSumClaim<F, &'a Composition>>,
-) -> Result<(), Error>
-where
-	F: Field,
-	P: PackedField<Scalar = F>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P> + 'a,
-{
-	let n_vars = multilinears
-		.first()
-		.map(|multilinear| multilinear.n_vars())
-		.unwrap_or_default();
-	for multilinear in multilinears.iter() {
-		if multilinear.n_vars() != n_vars {
-			bail!(Error::NumberOfVariablesMismatch);
-		}
-	}
-
-	let multilinears = multilinears.iter().collect::<Vec<_>>();
-
-	for (i, claim) in sum_claims.into_iter().enumerate() {
-		let CompositeSumClaim {
-			composition,
-			sum: expected_sum,
-			..
-		} = claim;
-		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
-		let sum = (0..(1 << n_vars))
-			.into_par_iter()
-			.map(|j| witness.evaluate_on_hypercube(j))
-			.try_reduce(|| F::ZERO, |a, b| Ok(a + b))?;
-
-		if sum != expected_sum {
-			bail!(Error::SumcheckNaiveValidationFailure {
-				composition_index: i,
-			});
-		}
-	}
-	Ok(())
-}
+use crate::protocols::sumcheck::{
+	common::{CompositeSumClaim, RoundCoeffs},
+	error::Error,
+};
 
 pub struct HighToLowSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
@@ -107,7 +59,7 @@ where
 					composition: &x.composition,
 				})
 				.collect::<Vec<_>>();
-			validate_witness(&multilinears, composite_claims)?;
+			super::regular_sumcheck::validate_witness(&multilinears, composite_claims)?;
 		}
 
 		for claim in composite_claims.iter() {
@@ -180,10 +132,8 @@ where
 	#[instrument("HighToLowSumcheckProver::execute", skip_all, level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let evaluators = izip!(&self.compositions, &self.domains)
-			.map(|(composition, interpolation_domain)| RegularSumcheckEvaluator {
-				composition,
-				interpolation_domain,
-				_marker: PhantomData,
+			.map(|(composition, interpolation_domain)| {
+				RegularSumcheckEvaluator::new(composition, interpolation_domain)
 			})
 			.collect::<Vec<_>>();
 
@@ -196,76 +146,5 @@ where
 
 	fn finish(self: Box<Self>) -> Result<Vec<F>, Error> {
 		self.state.finish()
-	}
-}
-
-struct RegularSumcheckEvaluator<'a, P, FDomain, Composition>
-where
-	P: PackedField,
-	FDomain: Field,
-{
-	composition: &'a Composition,
-	interpolation_domain: &'a InterpolationDomain<FDomain>,
-	_marker: PhantomData<P>,
-}
-
-impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
-	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
-where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
-{
-	fn eval_point_indices(&self) -> Range<usize> {
-		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the
-		// current_round_sum - $r(1)$.
-		1..self.composition.degree() + 1
-	}
-
-	fn process_subcube_at_eval_point(
-		&self,
-		_subcube_vars: usize,
-		_subcube_index: usize,
-		batch_query: &[&[P]],
-	) -> P {
-		let row_len = batch_query.first().map_or(0, |row| row.len());
-
-		stackalloc_with_default(row_len, |evals| {
-			self.composition
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
-
-			evals.iter().copied().sum()
-		})
-	}
-
-	fn composition(&self) -> &Composition {
-		self.composition
-	}
-
-	fn eq_ind_partial_eval(&self) -> Option<&[P]> {
-		None
-	}
-}
-
-impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
-	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
-where
-	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	FDomain: Field,
-{
-	fn round_evals_to_coeffs(
-		&self,
-		last_round_sum: F,
-		mut round_evals: Vec<F>,
-	) -> Result<Vec<F>, PolynomialError> {
-		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
-		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
-		round_evals.insert(0, last_round_sum - round_evals[0]);
-
-		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
-		Ok(coeffs)
 	}
 }

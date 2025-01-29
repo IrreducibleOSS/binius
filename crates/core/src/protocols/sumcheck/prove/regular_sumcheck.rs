@@ -203,7 +203,7 @@ where
 	}
 }
 
-struct RegularSumcheckEvaluator<'a, P, FDomain, Composition>
+pub struct RegularSumcheckEvaluator<'a, P, FDomain, Composition>
 where
 	P: PackedField,
 	FDomain: Field,
@@ -211,6 +211,23 @@ where
 	composition: &'a Composition,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	_marker: PhantomData<P>,
+}
+
+impl<'a, P, FDomain, Composition> RegularSumcheckEvaluator<'_, P, FDomain, Composition>
+where
+	P: PackedField,
+	FDomain: Field,
+{
+	pub fn new(
+		composition: &'a Composition,
+		interpolation_domain: &'a InterpolationDomain<FDomain>,
+	) -> Self {
+		Self {
+			composition,
+			interpolation_domain,
+			_marker: PhantomData,
+		}
+	}
 }
 
 impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>

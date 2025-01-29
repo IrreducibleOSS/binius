@@ -143,13 +143,18 @@ where
 		let multilinears = multilinears
 			.iter()
 			.map(|multilinear| {
-				let packed_evals = multilinear.packed_evals().unwrap().to_vec();
-				let mle = MultilinearExtension::new(multilinear.n_vars(), packed_evals).unwrap();
-				SumcheckMultilinear::Folded {
-					large_field_folded_multilinear: MLEDirectAdapter::from(mle),
-				}
+				let packed_evals = multilinear
+					.packed_evals()
+					.expect("multilinear contains evals")
+					.to_vec();
+
+				MultilinearExtension::new(multilinear.n_vars(), packed_evals).map(|mle| {
+					SumcheckMultilinear::Folded {
+						large_field_folded_multilinear: MLEDirectAdapter::from(mle),
+					}
+				})
 			})
-			.collect();
+			.collect::<Result<Vec<_>, _>>()?;
 
 		Ok(Self {
 			n_vars,
@@ -373,9 +378,6 @@ where
 	}
 
 	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
-	///
-	/// See [`Self::calculate_first_round_evals`] for an optimized version of this method that
-	/// operates over small fields in the first round.
 	#[instrument(skip_all, level = "debug")]
 	pub fn hight_to_low_calculate_later_round_evals<Evaluator, Composition>(
 		&self,

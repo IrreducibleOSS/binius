@@ -56,16 +56,9 @@ macro_rules! define_byte_sliced {
 			const LOG_WIDTH: usize = 5;
 
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-				let mut result_underlier = 0;
-				for (byte_index, val) in self.data.iter().enumerate() {
-					// Safety:
-					// - `byte_index` is less than 16
-					// - `i` must be less than 32 due to safety conditions of this method
-					unsafe {
-						result_underlier
-							.set_subvalue(byte_index, val.get_unchecked(i).to_underlier())
-					}
-				}
+				let result_underlier = <Self::Scalar as WithUnderlier>::Underlier::from_fn(|j| {
+					self.data[j].get_unchecked(i).to_underlier()
+				});
 
 				Self::Scalar::from_underlier(result_underlier)
 			}

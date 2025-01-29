@@ -11,6 +11,7 @@ use binius_field::{
 use binius_utils::bail;
 
 use super::{Error, MultilinearExtension, MultilinearPoly, MultilinearQueryRef};
+use crate::MultilinearQuery;
 
 /// An adapter for [`MultilinearExtension`] that implements [`MultilinearPoly`] over a packed
 /// extension field.
@@ -311,9 +312,9 @@ where
 		let evals = multilin.evals();
 
 		if evals.len() == 1 {
-			let single_variable_query = MultilinearQueryRef::expand(&[r]);
+			let single_variable_query = MultilinearQuery::expand(&[r]);
 
-			return self.evaluate_partial_high(single_variable_query);
+			return self.evaluate_partial_high(single_variable_query.to_ref());
 		}
 
 		let (low, high) = evals.split_at(evals.len() / 2);
