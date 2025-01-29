@@ -104,8 +104,7 @@ impl<F: Field> RoundCoeffs<F> {
 
 	/// Truncate one coefficient from the polynomial to a more compact round proof.
 	pub fn truncate(mut self) -> RoundProof<F> {
-		let new_len = self.0.len().saturating_sub(1);
-		self.0.truncate(new_len);
+		self.0.pop();
 		RoundProof(self)
 	}
 }
@@ -302,4 +301,27 @@ where
 pub fn batch_weighted_value<F: Field>(batch_coeff: F, values: impl Iterator<Item = F>) -> F {
 	// Multiplying by batch_coeff is important for security!
 	batch_coeff * inner_product_unchecked(powers(batch_coeff), values)
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_field::BinaryField64b;
+
+	use super::*;
+
+	type F = BinaryField64b;
+
+	#[test]
+	fn test_round_coeffs_truncate_non_empty() {
+		let coeffs = RoundCoeffs(vec![F::from(1), F::from(2), F::from(3)]);
+		let truncated = coeffs.clone().truncate();
+		assert_eq!(truncated.0 .0, vec![F::from(1), F::from(2)]);
+	}
+
+	#[test]
+	fn test_round_coeffs_truncate_empty() {
+		let coeffs = RoundCoeffs::<F>(vec![]);
+		let truncated = coeffs.truncate();
+		assert!(truncated.0 .0.is_empty());
+	}
 }
