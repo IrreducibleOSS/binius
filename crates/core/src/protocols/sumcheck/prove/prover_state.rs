@@ -8,7 +8,8 @@ use std::{
 use binius_field::{util::powers, ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -125,6 +126,40 @@ where
 			multilinears,
 			evaluation_points,
 			tensor_query: Some(tensor_query),
+			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
+			backend,
+		})
+	}
+
+	#[instrument(
+		skip_all,
+		level = "debug",
+		name = "ProverState::new_with_switchover_rounds"
+	)]
+	pub fn new_big_field(
+		multilinears: Vec<M>,
+		claimed_sums: Vec<F>,
+		evaluation_points: Vec<FDomain>,
+		backend: &'a Backend,
+	) -> Result<Self, Error> {
+		let n_vars = equal_n_vars_check(&multilinears)?;
+
+		let multilinears = multilinears
+			.iter()
+			.map(|multilinear| {
+				let packed_evals = multilinear.packed_evals().unwrap().to_vec();
+				let mle = MultilinearExtension::new(multilinear.n_vars(), packed_evals).unwrap();
+				SumcheckMultilinear::Folded {
+					large_field_folded_multilinear: MLEDirectAdapter::from(mle),
+				}
+			})
+			.collect();
+
+		Ok(Self {
+			n_vars,
+			multilinears,
+			evaluation_points,
+			tensor_query: None,
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
 			backend,
 		})

@@ -19,7 +19,6 @@ use crate::{
 	protocols::sumcheck::{
 		common::{CompositeSumClaim, RoundCoeffs},
 		error::Error,
-		immediate_switchover_heuristic,
 		prove::prover_state::SumcheckInterpolator,
 	},
 };
@@ -145,11 +144,10 @@ where
 			.max_by_key(|domain| domain.points().len())
 			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
 
-		let state = ProverState::new(
+		let state = ProverState::new_big_field(
 			multilinears,
 			claimed_sums,
 			evaluation_points,
-			immediate_switchover_heuristic,
 			backend,
 		)?;
 		let n_vars = state.n_vars();
