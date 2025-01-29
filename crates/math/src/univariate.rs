@@ -218,9 +218,9 @@ where
 /// Evaluate a univariate polynomial specified by its monomial coefficients.
 pub fn evaluate_univariate<F: Field>(coeffs: &[F], x: F) -> F {
 	// Evaluate using Horner's method
-	let mut rev_coeffs = coeffs.iter().copied().rev();
-	let last_coeff = rev_coeffs.next().unwrap_or(F::ZERO);
-	rev_coeffs.fold(last_coeff, |eval, coeff| eval * x + coeff)
+	coeffs
+		.iter()
+		.rfold(F::ZERO, |eval, &coeff| eval * x + coeff)
 }
 
 fn compute_barycentric_weights<F: Field>(points: &[F]) -> Result<Vec<F>, Error> {
