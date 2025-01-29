@@ -154,6 +154,14 @@ impl<F: Field> ArithExpr<F> {
 			}
 		})
 	}
+
+	/// Whether expression is a composite node, and not a leaf.
+	pub fn is_composite(&self) -> bool {
+		match self {
+			ArithExpr::Const(_) | ArithExpr::Var(_) => false,
+			ArithExpr::Add(_, _) | ArithExpr::Mul(_, _) | ArithExpr::Pow(_, _) => true,
+		}
+	}
 }
 
 impl<F> Default for ArithExpr<F>
