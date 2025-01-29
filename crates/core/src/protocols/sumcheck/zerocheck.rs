@@ -68,7 +68,7 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPolyOS<F>>(
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let sumcheck_claims = claims
+	claims
 		.iter()
 		.map(|zerocheck_claim| {
 			let ZerocheckClaim {
@@ -89,9 +89,7 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPolyOS<F>>(
 					.collect(),
 			)
 		})
-		.collect::<Result<Vec<_>, _>>()?;
-
-	Ok(sumcheck_claims)
+		.collect()
 }
 
 /// Verify the validity of the sumcheck outputs for a reduced zerocheck.
