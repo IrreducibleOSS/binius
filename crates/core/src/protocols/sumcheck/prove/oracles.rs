@@ -3,8 +3,7 @@
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
-	TowerField,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationDomainFactory;
@@ -20,13 +19,13 @@ use crate::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
-pub type OracleZerocheckProver<'a, PBase, P, FDomain, Backend> = UnivariateZerocheck<
+pub type OracleZerocheckProver<'a, P, FBase, FDomain, Backend> = UnivariateZerocheck<
 	'a,
 	'a,
 	FDomain,
-	PBase,
+	FBase,
 	P,
-	ArithCircuitPoly<<PBase as PackedField>::Scalar>,
+	ArithCircuitPoly<FBase>,
 	ArithCircuitPoly<<P as PackedField>::Scalar>,
 	MultilinearWitness<'a, P>,
 	Backend,
@@ -42,19 +41,21 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 >;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-pub fn constraint_set_zerocheck_prover<'a, PBase, P, FDomain, Backend>(
+pub fn constraint_set_zerocheck_prover<'a, P, F, FBase, FDomain, Backend>(
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	switchover_fn: impl Fn(usize) -> usize + Clone,
 	zerocheck_challenges: &[P::Scalar],
 	backend: &'a Backend,
-) -> Result<OracleZerocheckProver<'a, PBase, P, FDomain, Backend>, Error>
+) -> Result<OracleZerocheckProver<'a, P, FBase, FDomain, Backend>, Error>
 where
-	PBase: PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-	P: PackedFieldIndexable + PackedExtension<FDomain> + RepackedExtension<PBase>,
-	PBase::Scalar: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
-	P::Scalar: TowerField + ExtensionField<FDomain> + ExtensionField<PBase::Scalar>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
+		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+	F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
+	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
 	Backend: ComputationBackend,
 {
@@ -68,7 +69,7 @@ where
 	{
 		let composition_base = composition
 			.clone()
-			.try_convert_field::<PBase::Scalar>()
+			.try_convert_field::<FBase>()
 			.map_err(|_| Error::CircuitFieldDowncastFailed)?;
 		match predicate {
 			ConstraintPredicate::Zero => {

@@ -270,7 +270,10 @@ where
 	F: Field + ExtensionField<P::Scalar> + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedField,
-	PExt: PackedField<Scalar = F> + RepackedExtension<P> + PackedExtension<FDomain>,
+	PExt: PackedField<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = PExt>
+		+ RepackedExtension<P>
+		+ PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 {
 	let TestSumcheckClaimShape {

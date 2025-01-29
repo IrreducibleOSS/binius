@@ -84,7 +84,7 @@ impl<'a, F, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -168,7 +168,7 @@ impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -213,11 +213,11 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<F, P, Composition>
 	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Composition: CompositionPolyOS<P>,
 {

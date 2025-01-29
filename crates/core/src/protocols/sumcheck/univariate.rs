@@ -226,8 +226,7 @@ mod tests {
 		as_packed_field::{PackScalar, PackedType},
 		underlier::UnderlierType,
 		AESTowerField128b, AESTowerField16b, AESTowerField8b, BinaryField128b, BinaryField16b,
-		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedExtension,
-		PackedFieldIndexable, RepackedExtension, TowerField,
+		Field, PackedBinaryField1x128b, PackedBinaryField4x32b, PackedFieldIndexable, TowerField,
 	};
 	use binius_hal::ComputationBackend;
 	use binius_math::{
@@ -417,9 +416,9 @@ mod tests {
 		FBase: TowerField + ExtensionField<FDomain>,
 		FDomain: TowerField,
 		FWitness: Field,
-		PackedType<U, FBase>:
-			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-		PackedType<U, FI>: PackedFieldIndexable + RepackedExtension<PackedType<U, FBase>>,
+		PackedType<U, FBase>: PackedFieldIndexable,
+		PackedType<U, FDomain>: PackedFieldIndexable,
+		PackedType<U, FI>: PackedFieldIndexable,
 	{
 		let max_n_vars = 6;
 		let n_multilinears = 9;
@@ -487,24 +486,17 @@ mod tests {
 				)
 				.unwrap();
 
-				let prover = UnivariateZerocheck::<
-					FDomain,
-					PackedType<U, FBase>,
-					PackedType<U, FI>,
-					_,
-					_,
-					_,
-					_,
-				>::new(
-					multilinears,
-					prover_compositions.to_vec(),
-					&prover_zerocheck_challenges
-						[(max_n_vars - n_vars).saturating_sub(skip_rounds)..],
-					domain_factory.clone(),
-					switchover_fn,
-					&backend,
-				)
-				.unwrap();
+				let prover =
+					UnivariateZerocheck::<FDomain, FBase, PackedType<U, FI>, _, _, _, _>::new(
+						multilinears,
+						prover_compositions.to_vec(),
+						&prover_zerocheck_challenges
+							[(max_n_vars - n_vars).saturating_sub(skip_rounds)..],
+						domain_factory.clone(),
+						switchover_fn,
+						&backend,
+					)
+					.unwrap();
 
 				prover_zerocheck_claims.push(claim);
 				univariate_provers.push(prover);

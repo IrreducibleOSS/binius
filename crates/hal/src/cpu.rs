@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
 use binius_math::{
 	eq_ind_partial_eval, CompositionPolyOS, MultilinearExtension, MultilinearPoly,
 	MultilinearQueryRef,
@@ -37,7 +37,7 @@ impl ComputationBackend for CpuBackend {
 		Ok(eq_ind_partial_eval(query))
 	}
 
-	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
+	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,
 		multilinears: &[SumcheckMultilinear<P, M>],
@@ -48,13 +48,17 @@ impl ComputationBackend for CpuBackend {
 		FDomain: Field,
 		FBase: ExtensionField<FDomain>,
 		F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-		PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
-		P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+		P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FBase>,
 		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		calculate_first_round_evals(n_vars, multilinears, evaluators, evaluation_points)
+		calculate_first_round_evals::<_, FBase, _, _, _, _, _>(
+			n_vars,
+			multilinears,
+			evaluators,
+			evaluation_points,
+		)
 	}
 
 	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
@@ -68,9 +72,11 @@ impl ComputationBackend for CpuBackend {
 	where
 		FDomain: Field,
 		F: Field + ExtensionField<FDomain>,
-		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		P: PackedField<Scalar = F>
+			+ PackedExtension<F, PackedSubfield = P>
+			+ PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
 		calculate_later_round_evals(

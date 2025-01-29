@@ -5,9 +5,7 @@ use std::{
 	sync::atomic::{AtomicBool, Ordering},
 };
 
-use binius_field::{
-	util::powers, ExtensionField, Field, PackedExtension, PackedField, RepackedExtension,
-};
+use binius_field::{util::powers, ExtensionField, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
 	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
@@ -73,7 +71,7 @@ impl<'a, FDomain, F, P, M, Backend> ProverState<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -246,14 +244,15 @@ where
 
 	/// Calculate the accumulated evaluations for the first sumcheck round.
 	#[instrument(skip_all, level = "debug")]
-	pub fn calculate_first_round_evals<PBase, Evaluator, Composition>(
+	pub fn calculate_first_round_evals<FBase, Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
-		PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
-		P: PackedField<Scalar: ExtensionField<PBase::Scalar>> + RepackedExtension<PBase>,
-		Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+		FBase: ExtensionField<FDomain>,
+		F: ExtensionField<FBase>,
+		P: PackedExtension<FBase>,
+		Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.sumcheck_compute_first_round_evals(
@@ -274,7 +273,7 @@ where
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
-		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.sumcheck_compute_later_round_evals(

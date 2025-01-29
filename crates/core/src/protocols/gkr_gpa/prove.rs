@@ -42,7 +42,9 @@ pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>,
 	FDomain: Field,
 	P::Scalar: Field + ExtensionField<FDomain>,
 	Challenger_: Challenger,
@@ -133,9 +135,8 @@ fn process_finished_provers<F, P, Backend>(
 	reverse_sorted_final_layer_claims: &mut Vec<LayerClaim<F>>,
 ) -> Result<(), Error>
 where
-	P: PackedFieldIndexable<Scalar = F>,
-	F: Field + From<P::Scalar>,
-	P::Scalar: Field + From<F>,
+	F: Field,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
 	Backend: ComputationBackend,
 {
 	while let Some(prover) = sorted_provers.last() {
@@ -179,8 +180,7 @@ where
 impl<'a, F, P, Backend> GrandProductProverState<'a, F, P, Backend>
 where
 	F: Field + From<P::Scalar>,
-	P: PackedFieldIndexable<Scalar = F>,
-	P::Scalar: Field + From<F>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
 	Backend: ComputationBackend,
 {
 	/// Create a new GrandProductProverState

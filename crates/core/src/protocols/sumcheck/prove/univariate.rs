@@ -3,8 +3,9 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
-	get_packed_subfields_at_pe_idx, util::inner_product_unchecked, ExtensionField, Field,
-	PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension, TowerField,
+	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked,
+	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
+	TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -96,7 +97,9 @@ pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
 where
 	F: TowerField + ExtensionField<FDomain>,
 	FDomain: TowerField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 {
 	let skip_rounds = equal_n_vars_check(&reduced_multilinears)?;
@@ -129,20 +132,30 @@ where
 }
 
 #[derive(Debug)]
-struct ParFoldStates<PBase: PackedField, P: PackedField> {
+struct ParFoldStates<FBase: PackedField, P: PackedField>
+where
+	FBase: Field,
+	P: PackedField + PackedExtension<FBase>,
+	P::Scalar: ExtensionField<FBase>,
+{
 	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals). Scratch space.
 	evals: Vec<P>,
 	/// `evals` cast to base field and transposed to 2^skip_rounds * 2^log_batch row-major form. Scratch space.
-	interleaved_evals: Vec<PBase>,
+	interleaved_evals: Vec<PackedSubfield<P, FBase>>,
 	/// `interleaved_evals` extrapolated beyond first 2^skip_rounds domain points, per multilinear.
-	extrapolated_evals: Vec<Vec<PBase>>,
+	extrapolated_evals: Vec<Vec<PackedSubfield<P, FBase>>>,
 	/// Evals of a single composition over extrapolated multilinears. Scratch space.
-	composition_evals: Vec<PBase>,
+	composition_evals: Vec<PackedSubfield<P, FBase>>,
 	/// Round evals accumulators, per multilinear.
 	round_evals: Vec<Vec<P::Scalar>>,
 }
 
-impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
+impl<FBase, P> ParFoldStates<FBase, P>
+where
+	FBase: Field,
+	P: PackedField + PackedExtension<FBase>,
+	P::Scalar: ExtensionField<FBase>,
+{
 	fn new(
 		n_multilinears: usize,
 		skip_rounds: usize,
@@ -152,12 +165,16 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 	) -> Self {
 		let subcube_vars = skip_rounds + log_batch;
 		let composition_max_degree = composition_degrees.clone().max().unwrap_or(0);
-		let extrapolated_packed_pbase_len =
-			extrapolated_evals_packed_len::<PBase>(composition_max_degree, skip_rounds, log_batch);
+		let extrapolated_packed_pbase_len = extrapolated_evals_packed_len::<PackedSubfield<P, FBase>>(
+			composition_max_degree,
+			skip_rounds,
+			log_batch,
+		);
 
 		let evals =
 			zeroed_vec(1 << subcube_vars.saturating_sub(P::LOG_WIDTH + log_embedding_degree));
-		let interleaved_evals = zeroed_vec(1 << subcube_vars.saturating_sub(PBase::LOG_WIDTH));
+		let interleaved_evals =
+			zeroed_vec(1 << subcube_vars.saturating_sub(<PackedSubfield<P, FBase>>::LOG_WIDTH));
 
 		let extrapolated_evals = (0..n_multilinears)
 			.map(|_| zeroed_vec(extrapolated_packed_pbase_len))
@@ -307,7 +324,7 @@ where
 /// [LCH14]: <https://arxiv.org/abs/1404.3458>
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
 #[instrument(skip_all, level = "debug")]
-pub fn zerocheck_univariate_evals<F, FDomain, PBase, P, Composition, M, Backend>(
+pub fn zerocheck_univariate_evals<F, FDomain, FBase, P, Composition, M, Backend>(
 	multilinears: &[M],
 	compositions: &[Composition],
 	zerocheck_challenges: &[F],
@@ -317,11 +334,12 @@ pub fn zerocheck_univariate_evals<F, FDomain, PBase, P, Composition, M, Backend>
 ) -> Result<ZerocheckUnivariateEvalsOutput<F, P, Backend>, Error>
 where
 	FDomain: TowerField,
-	F: TowerField + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
-	PBase: PackedFieldIndexable<Scalar: ExtensionField<FDomain>>
+	FBase: ExtensionField<FDomain>,
+	F: TowerField + ExtensionField<FBase> + ExtensionField<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-	P: PackedFieldIndexable<Scalar = F> + RepackedExtension<PBase>,
-	Composition: CompositionPolyOS<PBase>,
+	Composition: CompositionPolyOS<PackedSubfield<P, FBase>>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -337,9 +355,9 @@ where
 		bail!(Error::IncorrectZerocheckChallengesLength);
 	}
 
-	small_field_embedding_degree_check::<PBase, P, _>(multilinears)?;
+	small_field_embedding_degree_check::<_, FBase, P, _>(multilinears)?;
 
-	let log_embedding_degree = <P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE;
+	let log_embedding_degree = <F as ExtensionField<FBase>>::LOG_DEGREE;
 	let composition_degrees = compositions.iter().map(|composition| composition.degree());
 	let composition_max_degree = composition_degrees.clone().max().unwrap_or(0);
 
@@ -353,7 +371,7 @@ where
 	}
 
 	// Batching factors for strided NTTs.
-	let log_extension_degree_base_domain = <PBase::Scalar as ExtensionField<FDomain>>::LOG_DEGREE;
+	let log_extension_degree_base_domain = <FBase as ExtensionField<FDomain>>::LOG_DEGREE;
 
 	// Only a domain size NTT is needed.
 	let fdomain_ntt = SingleThreadedNTT::<FDomain>::with_canonical_field(min_domain_bits)
@@ -376,7 +394,11 @@ where
 	let pbase_prefix_lens = composition_degrees
 		.clone()
 		.map(|composition_degree| {
-			extrapolated_evals_packed_len::<PBase>(composition_degree, skip_rounds, log_batch)
+			extrapolated_evals_packed_len::<PackedSubfield<P, FBase>>(
+				composition_degree,
+				skip_rounds,
+				log_batch,
+			)
 		})
 		.collect::<Vec<_>>();
 
@@ -392,7 +414,7 @@ where
 		.into_par_iter()
 		.try_fold(
 			|| {
-				ParFoldStates::<PBase, P>::new(
+				ParFoldStates::<FBase, P>::new(
 					n_multilinears,
 					skip_rounds,
 					log_batch,
@@ -423,7 +445,8 @@ where
 					)?;
 
 					// Use the PackedExtension bound to cast evals to base field.
-					let evals_base = P::cast_bases_mut(evals.as_mut_slice());
+					let evals_base =
+						<P as PackedExtension<FBase>>::cast_bases_mut(evals.as_mut_slice());
 
 					// The evals subcube can be seen as 2^log_batch subcubes of skip_rounds
 					// variables, laid out sequentially in memory; this can be seen as
@@ -434,10 +457,12 @@ where
 						evals_base
 					} else {
 						let evals_base_scalars =
-							&PBase::unpack_scalars(evals_base)[..1 << subcube_vars];
-						let interleaved_evals_scalars =
-							&mut PBase::unpack_scalars_mut(interleaved_evals.as_mut_slice())
+							&<PackedSubfield<P, FBase>>::unpack_scalars(evals_base)
 								[..1 << subcube_vars];
+						let interleaved_evals_scalars =
+							&mut <PackedSubfield<P, FBase>>::unpack_scalars_mut(
+								interleaved_evals.as_mut_slice(),
+							)[..1 << subcube_vars];
 
 						transpose(
 							evals_base_scalars,
@@ -453,8 +478,10 @@ where
 					// degree. When evals are correctly strided, we can use additive NTT to
 					// extrapolate them beyond the first 2^skip_rounds. We use the fact that an NTT
 					// over the extension is just a strided NTT over the base field.
-					let interleaved_evals_bases = PBase::cast_bases_mut(interleaved_evals_ref);
-					let extrapolated_evals_bases = PBase::cast_bases_mut(extrapolated_evals);
+					let interleaved_evals_bases =
+						recast_packed_mut::<P, FBase, FDomain>(interleaved_evals_ref);
+					let extrapolated_evals_bases =
+						recast_packed_mut::<P, FBase, FDomain>(extrapolated_evals);
 
 					ntt_extrapolate(
 						&fdomain_ntt,
@@ -492,7 +519,9 @@ where
 					// zerocheck equality indicator
 					if log_batch < P::LOG_WIDTH {
 						let composition_evals_scalars =
-							PBase::unpack_scalars_mut(composition_evals.as_mut_slice());
+							<PackedSubfield<P, FBase>>::unpack_scalars_mut(
+								composition_evals.as_mut_slice(),
+							);
 
 						for (round_eval, composition_evals) in izip!(
 							round_evals.iter_mut(),
@@ -508,23 +537,24 @@ where
 					} else {
 						#[allow(clippy::needless_range_loop)]
 						for i in 0..round_evals.len() {
-							let mut temp = PBase::zero();
+							let mut temp = <PackedSubfield<P, FBase>>::zero();
 
 							for j in 0..1 << packed_log_batch {
 								let idx = i * (1 << packed_log_batch) + j;
 								let broadcasted_rhs = unsafe {
-									// SAFETY: Width of PBase is always >= the width of the PBase::Scalar
-									get_packed_subfields_at_pe_idx::<P, PBase::Scalar>(
+									// SAFETY: Width of PBase is always >= the width of the FBase
+									get_packed_subfields_at_pe_idx::<P, FBase>(
 										composition_evals,
 										idx,
 									)
 								};
-								temp += partial_eq_ind_evals_subslice
-									[idx % partial_eq_ind_evals_subslice.len()]
-								.cast_base() * broadcasted_rhs;
+								temp += <P as PackedExtension<FBase>>::cast_base(
+									partial_eq_ind_evals_subslice
+										[idx % partial_eq_ind_evals_subslice.len()],
+								) * broadcasted_rhs;
 							}
 
-							let temp = &[P::cast_ext(temp)];
+							let temp = &[<P as PackedExtension<FBase>>::cast_ext(temp)];
 
 							let unpacked = P::unpack_scalars(temp);
 							for scalar in unpacked {
@@ -720,8 +750,7 @@ mod tests {
 		as_packed_field::{PackScalar, PackedType},
 		underlier::UnderlierType,
 		BinaryField128b, BinaryField16b, BinaryField1b, BinaryField8b, ExtensionField, Field,
-		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable,
-		RepackedExtension, TowerField,
+		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{
@@ -842,9 +871,9 @@ mod tests {
 		F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
 		FBase: TowerField + ExtensionField<FDomain>,
 		FDomain: TowerField + From<u8>,
-		PackedType<U, FBase>:
-			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-		PackedType<U, F>: PackedFieldIndexable + RepackedExtension<PackedType<U, FBase>>,
+		PackedType<U, FBase>: PackedFieldIndexable,
+		PackedType<U, FDomain>: PackedFieldIndexable,
+		PackedType<U, F>: PackedFieldIndexable,
 	{
 		let mut rng = StdRng::seed_from_u64(0);
 
@@ -874,23 +903,16 @@ mod tests {
 
 		for skip_rounds in 0usize..=5 {
 			let max_domain_size = domain_size(5, skip_rounds);
-			let output = zerocheck_univariate_evals::<
-				F,
-				FDomain,
-				PackedType<U, FBase>,
-				PackedType<U, F>,
-				_,
-				_,
-				_,
-			>(
-				&multilinears,
-				&compositions,
-				&zerocheck_challenges[skip_rounds..],
-				skip_rounds,
-				max_domain_size,
-				&backend,
-			)
-			.unwrap();
+			let output =
+				zerocheck_univariate_evals::<F, FDomain, FBase, PackedType<U, F>, _, _, _>(
+					&multilinears,
+					&compositions,
+					&zerocheck_challenges[skip_rounds..],
+					skip_rounds,
+					max_domain_size,
+					&backend,
+				)
+				.unwrap();
 
 			let zerocheck_eq_ind = EqIndPartialEval::new(
 				n_vars - skip_rounds,
@@ -936,10 +958,9 @@ mod tests {
 								evals.as_mut_slice(),
 							)
 							.unwrap();
-						let evals_scalars =
-							&PackedType::<U, FBase>::unpack_scalars(
-								PackedType::<U, F>::cast_bases(evals.as_slice()),
-							)[..1 << skip_rounds];
+						let evals_scalars = &PackedType::<U, FBase>::unpack_scalars(
+							PackedExtension::<FBase>::cast_bases(evals.as_slice()),
+						)[..1 << skip_rounds];
 						let extrapolated = domain.extrapolate(evals_scalars, x.into()).unwrap();
 						*query = extrapolated;
 					}

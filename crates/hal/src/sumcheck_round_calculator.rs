@@ -6,7 +6,10 @@
 
 use std::{iter, marker::PhantomData};
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, RepackedExtension};
+use binius_field::{
+	recast_packed, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield,
+	RepackedExtension,
+};
 use binius_math::{
 	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
@@ -42,7 +45,7 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 }
 
 /// Calculate the accumulated evaluations for the first sumcheck round.
-pub(crate) fn calculate_first_round_evals<FDomain, FBase, F, PBase, P, M, Evaluator, Composition>(
+pub(crate) fn calculate_first_round_evals<FDomain, FBase, F, P, M, Evaluator, Composition>(
 	n_vars: usize,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
@@ -52,17 +55,21 @@ where
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
 	F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-	PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FBase>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
+	Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
 	Composition: CompositionPolyOS<P>,
 {
 	let accesses = multilinears
 		.iter()
 		.map(FirstRoundAccess::new)
 		.collect::<Vec<_>>();
-	calculate_round_evals(n_vars, &accesses, evaluators, evaluation_points)
+	calculate_round_evals::<_, FBase, _, _, _, _, _>(
+		n_vars,
+		&accesses,
+		evaluators,
+		evaluation_points,
+	)
 }
 
 /// Calculate the accumulated evaluations for an arbitrary sumcheck round.
@@ -79,9 +86,9 @@ pub(crate) fn calculate_later_round_evals<FDomain, F, P, M, Evaluator, Compositi
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+	Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
 	Composition: CompositionPolyOS<P>,
 {
 	let empty_query = MultilinearQuery::with_capacity(0);
@@ -94,10 +101,10 @@ where
 			tensor_query: query,
 		})
 		.collect::<Vec<_>>();
-	calculate_round_evals(n_vars, &accesses, evaluators, evaluation_points)
+	calculate_round_evals::<_, F, _, _, _, _, _>(n_vars, &accesses, evaluators, evaluation_points)
 }
 
-fn calculate_round_evals<FDomain, FBase, F, PBase, P, Evaluator, Access, Composition>(
+fn calculate_round_evals<FDomain, FBase, F, P, Evaluator, Access, Composition>(
 	n_vars: usize,
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
@@ -107,10 +114,9 @@ where
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
 	F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-	PBase: PackedField<Scalar = FBase> + PackedExtension<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
-	Evaluator: SumcheckEvaluator<PBase, P, Composition> + Sync,
-	Access: SumcheckMultilinearAccess<PBase> + Sync,
+	P: PackedField<Scalar = F> + PackedExtension<FBase> + PackedExtension<FDomain>,
+	Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
+	Access: SumcheckMultilinearAccess<PackedSubfield<P, FBase>> + Sync,
 	Composition: CompositionPolyOS<P>,
 {
 	let n_multilinears = multilinears.len();
@@ -162,8 +168,7 @@ where
 				// Proceed by evaluation point first to share interpolation work between evaluators.
 				for eval_point_index in eval_point_indices.clone() {
 					let eval_point = evaluation_points[eval_point_index];
-					let eval_point_broadcast =
-						<PBase as PackedExtension<FDomain>>::PackedSubfield::broadcast(eval_point);
+					let eval_point_broadcast = <PackedSubfield<P, FDomain>>::broadcast(eval_point);
 
 					// Only points with indices two and above need to be interpolated.
 					if eval_point_index >= 2 {
@@ -177,9 +182,9 @@ where
 								// `binius_math::univariate::extrapolate_line`, except that we do
 								// not repeat the broadcast of the subfield element to a packed
 								// subfield.
-								*eval_z = PBase::cast_ext(extrapolate_lines(
-									PBase::cast_base(eval_0),
-									PBase::cast_base(eval_1),
+								*eval_z = recast_packed::<P, FDomain, FBase>(extrapolate_lines(
+									recast_packed::<P, FBase, FDomain>(eval_0),
+									recast_packed::<P, FBase, FDomain>(eval_1),
 									eval_point_broadcast,
 								));
 							}

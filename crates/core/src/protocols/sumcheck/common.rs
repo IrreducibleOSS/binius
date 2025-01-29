@@ -282,16 +282,15 @@ where
 /// type of small field `PBase`.
 ///
 /// Returns binary logarithm of the embedding degree.
-pub fn small_field_embedding_degree_check<PBase, P, M>(multilinears: &[M]) -> Result<(), Error>
+pub fn small_field_embedding_degree_check<F, FBase, P, M>(multilinears: &[M]) -> Result<(), Error>
 where
-	PBase: PackedField,
-	P: PackedField<Scalar: ExtensionField<PBase::Scalar>>,
+	F: Field + ExtensionField<FBase>,
+	FBase: Field,
+	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P>,
 {
-	let log_embedding_degree = <P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE;
-
 	for multilinear in multilinears {
-		if multilinear.log_extension_degree() < log_embedding_degree {
+		if multilinear.log_extension_degree() < F::LOG_DEGREE {
 			bail!(Error::MultilinearEvalsCannotBeEmbeddedInBaseField);
 		}
 	}

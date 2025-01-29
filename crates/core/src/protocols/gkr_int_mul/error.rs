@@ -7,8 +7,6 @@ use crate::{
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("Incorrect evaluation of transparent eq-ind claimed (couldn't verify)")]
-	EqEvalDoesntVerify,
 	#[error("GKR Failure: {0}")]
 	GKRError(#[from] GKRError),
 	#[error("sumcheck failure: {0}")]

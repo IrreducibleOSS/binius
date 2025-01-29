@@ -88,14 +88,10 @@ where
 		+ PackedTransformationFactory<PackedType<U, Tower::FastB128>>,
 	PackedType<U, Tower::FastB128>:
 		PackedFieldIndexable + PackedTransformationFactory<PackedType<U, Tower::B128>>,
-	PackedType<U, Tower::B8>: PackedFieldIndexable
-		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
-	PackedType<U, Tower::B16>: PackedFieldIndexable
-		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
-	PackedType<U, Tower::B32>: PackedFieldIndexable
-		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
-	PackedType<U, Tower::B64>: PackedFieldIndexable
-		+ PackedExtension<FDomain<Tower>, PackedSubfield: PackedFieldIndexable>,
+	PackedType<U, Tower::B8>: PackedFieldIndexable,
+	PackedType<U, Tower::B16>: PackedFieldIndexable,
+	PackedType<U, Tower::B32>: PackedFieldIndexable,
+	PackedType<U, Tower::B64>: PackedFieldIndexable,
 {
 	tracing::debug!(
 		arch = env::consts::ARCH,
@@ -311,11 +307,11 @@ where
 			};
 
 		let either_prover = match base_tower_level {
-			0..=3 => constructor.create::<PackedType<U, Tower::B8>>(univariate_decider)?,
-			4 => constructor.create::<PackedType<U, Tower::B16>>(univariate_decider)?,
-			5 => constructor.create::<PackedType<U, Tower::B32>>(univariate_decider)?,
-			6 => constructor.create::<PackedType<U, Tower::B64>>(univariate_decider)?,
-			7 => constructor.create::<PackedType<U, Tower::B128>>(univariate_decider)?,
+			0..=3 => constructor.create::<Tower::B8>(univariate_decider)?,
+			4 => constructor.create::<Tower::B16>(univariate_decider)?,
+			5 => constructor.create::<Tower::B32>(univariate_decider)?,
+			6 => constructor.create::<Tower::B64>(univariate_decider)?,
+			7 => constructor.create::<Tower::B128>(univariate_decider)?,
 			_ => unreachable!(),
 		};
 
@@ -489,34 +485,36 @@ where
 	_fdomain_marker: PhantomData<FDomain>,
 }
 
-impl<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
+impl<'a, P, F, FDomain, DomainFactory, SwitchoverFn, Backend>
 	ZerocheckProverConstructor<'a, P, FDomain, DomainFactory, SwitchoverFn, Backend>
 where
-	P: PackedFieldIndexable,
+	F: Field,
+	P: PackedFieldIndexable<Scalar = F>,
 	FDomain: TowerField,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	SwitchoverFn: Fn(usize) -> usize + Clone,
 	Backend: ComputationBackend,
 {
-	fn create<PBase>(
+	fn create<FBase>(
 		self,
 		is_univariate: impl FnOnce(usize) -> bool,
-	) -> Result<TypeErasedProver<'a, P::Scalar>, Error>
+	) -> Result<TypeErasedProver<'a, F>, Error>
 	where
-		PBase:
-			PackedFieldIndexable + PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-		PBase::Scalar: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
-		P: PackedExtension<FDomain> + RepackedExtension<PBase>,
-		P::Scalar: TowerField + ExtensionField<FDomain> + ExtensionField<PBase::Scalar>,
+		FBase: TowerField + ExtensionField<FDomain> + TryFrom<F>,
+		P: PackedExtension<F, PackedSubfield = P>
+			+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
+			+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
+		F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
 	{
-		let univariate_prover = sumcheck::prove::constraint_set_zerocheck_prover::<PBase, _, _, _>(
-			self.constraints,
-			self.multilinears,
-			self.domain_factory,
-			self.switchover_fn,
-			self.zerocheck_challenges,
-			self.backend,
-		)?;
+		let univariate_prover =
+			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _>(
+				self.constraints,
+				self.multilinears,
+				self.domain_factory,
+				self.switchover_fn,
+				self.zerocheck_challenges,
+				self.backend,
+			)?;
 
 		let type_erased_prover = if is_univariate(univariate_prover.n_vars()) {
 			let type_erased_univariate_prover =

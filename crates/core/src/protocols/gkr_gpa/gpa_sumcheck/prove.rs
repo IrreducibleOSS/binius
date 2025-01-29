@@ -50,7 +50,9 @@ impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Compo
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -193,7 +195,9 @@ impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -283,11 +287,11 @@ where
 	gpa_round_challenge: P::Scalar,
 }
 
-impl<F, P, FDomain, Composition> SumcheckEvaluator<P, P, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<F, P, Composition>
 	for GPAEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Composition: CompositionPolyOS<P>,
 {

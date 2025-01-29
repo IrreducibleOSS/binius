@@ -169,7 +169,10 @@ where
 	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
 	FDomain: Field,
 	FEncode: BinaryField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FEncode>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>
+		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,

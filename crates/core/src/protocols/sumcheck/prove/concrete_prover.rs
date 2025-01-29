@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, RepackedExtension,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hal::ComputationBackend;
 use binius_math::{CompositionPolyOS, MultilinearPoly};
 
@@ -22,14 +20,17 @@ where
 	Zerocheck(ZerocheckProver<'a, FDomain, PBase, P, CompositionBase, Composition, M, Backend>),
 }
 
-impl<F, FDomain, PBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
-	for ConcreteProver<'_, FDomain, PBase, P, CompositionBase, Composition, M, Backend>
+impl<F, FDomain, FBase, P, CompositionBase, Composition, M, Backend> SumcheckProver<F>
+	for ConcreteProver<'_, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: Field + ExtensionField<PBase::Scalar> + ExtensionField<FDomain>,
+	F: Field + ExtensionField<FBase> + ExtensionField<FDomain>,
 	FDomain: Field,
-	PBase: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<PBase>,
-	CompositionBase: CompositionPolyOS<PBase>,
+	FBase: ExtensionField<FDomain>,
+	P: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = P>
+		+ PackedExtension<FDomain>
+		+ PackedExtension<FBase>,
+	CompositionBase: CompositionPolyOS<<P as PackedExtension<FBase>>::PackedSubfield>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,

@@ -17,19 +17,19 @@ use super::{
 	arithmetic_traits::InvertOrZero,
 	binary_field::{binary_field, impl_field_extension, BinaryField, BinaryField1b},
 	binary_field_arithmetic::TowerFieldArithmetic,
-	mul_by_binary_field_1b, BinaryField8b, Error,
+	mul_by_binary_field_1b, BinaryField8b, Error, PackedExtension, PackedSubfield,
 };
 use crate::{
-	as_packed_field::{AsPackedField, PackScalar, PackedType},
+	as_packed_field::AsPackedField,
 	binary_field_arithmetic::{impl_arithmetic_using_packed, impl_mul_primitive},
 	binary_tower,
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::PackedField,
-	underlier::{WithUnderlier, U1},
+	underlier::U1,
 	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	RepackedExtension, TowerField,
+	TowerField,
 };
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
@@ -138,13 +138,13 @@ impl From<BinaryField8b> for AESTowerField8b {
 /// 1. Cast to base b-bit packed field
 /// 2. Apply linear transformation between aes and binary b8 tower fields
 /// 3. Cast back to the target field
-struct SubfieldTransformer<IP, OP, T> {
+struct SubfieldTransformer<IF, OF, T> {
 	inner_transform: T,
-	_ip_pd: PhantomData<IP>,
-	_op_pd: PhantomData<OP>,
+	_ip_pd: PhantomData<IF>,
+	_op_pd: PhantomData<OF>,
 }
 
-impl<IP, OP, T> SubfieldTransformer<IP, OP, T> {
+impl<IF, OF, T> SubfieldTransformer<IF, OF, T> {
 	const fn new(inner_transform: T) -> Self {
 		Self {
 			inner_transform,
@@ -154,22 +154,16 @@ impl<IP, OP, T> SubfieldTransformer<IP, OP, T> {
 	}
 }
 
-impl<IP, OP, IEP, OEP, T> Transformation<IEP, OEP> for SubfieldTransformer<IP, OP, T>
+impl<IF, OF, IEP, OEP, T> Transformation<IEP, OEP> for SubfieldTransformer<IF, OF, T>
 where
-	IP: PackedField + WithUnderlier,
-	OP: PackedField + WithUnderlier<Underlier = IP::Underlier>,
-	IEP: RepackedExtension<IP, Scalar: ExtensionField<IP::Scalar>>
-		+ WithUnderlier<Underlier = IP::Underlier>,
-	OEP: RepackedExtension<OP, Scalar: ExtensionField<OP::Scalar>>
-		+ WithUnderlier<Underlier = IP::Underlier>,
-	T: Transformation<IP, OP>,
+	IF: Field,
+	OF: Field,
+	IEP: PackedExtension<IF, Scalar: ExtensionField<IF>>,
+	OEP: PackedExtension<OF, Scalar: ExtensionField<OF>>,
+	T: Transformation<PackedSubfield<IEP, IF>, PackedSubfield<OEP, OF>>,
 {
 	fn transform(&self, input: &IEP) -> OEP {
-		OEP::from_underlier(
-			self.inner_transform
-				.transform(&IP::from_underlier(input.to_underlier()))
-				.to_underlier(),
-		)
+		OEP::cast_ext(self.inner_transform.transform(IEP::cast_base_ref(input)))
 	}
 }
 
@@ -177,19 +171,17 @@ where
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
 pub fn make_aes_to_binary_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
 where
-	IP: PackedField<Scalar: ExtensionField<AESTowerField8b>> + WithUnderlier,
-	OP: PackedField<Scalar: ExtensionField<BinaryField8b>>
-		+ WithUnderlier<Underlier = IP::Underlier>,
-	IP::Underlier: PackScalar<
-			AESTowerField8b,
-			Packed: PackedTransformationFactory<PackedType<IP::Underlier, BinaryField8b>>,
-		> + PackScalar<BinaryField8b>,
+	IP: PackedExtension<AESTowerField8b>,
+	IP::Scalar: ExtensionField<AESTowerField8b>,
+	OP: PackedExtension<BinaryField8b>,
+	OP::Scalar: ExtensionField<BinaryField8b>,
+	PackedSubfield<IP, AESTowerField8b>:
+		PackedTransformationFactory<PackedSubfield<OP, BinaryField8b>>,
 {
-	SubfieldTransformer::<
-		PackedType<IP::Underlier, AESTowerField8b>,
-		PackedType<IP::Underlier, BinaryField8b>,
-		_,
-	>::new(PackedType::<IP::Underlier, AESTowerField8b>::make_packed_transformation(
+	SubfieldTransformer::<AESTowerField8b, BinaryField8b, _>::new(PackedSubfield::<
+		IP,
+		AESTowerField8b,
+	>::make_packed_transformation(
 		AES_TO_BINARY_LINEAR_TRANSFORMATION,
 	))
 }
@@ -198,21 +190,18 @@ where
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
 pub fn make_binary_to_aes_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
 where
-	IP: PackedField<Scalar: ExtensionField<BinaryField8b>> + WithUnderlier,
-	OP: PackedField<Scalar: ExtensionField<AESTowerField8b>>
-		+ WithUnderlier<Underlier = IP::Underlier>,
-	IP::Underlier: PackScalar<
-			BinaryField8b,
-			Packed: PackedTransformationFactory<PackedType<IP::Underlier, AESTowerField8b>>,
-		> + PackScalar<AESTowerField8b>,
+	IP: PackedExtension<BinaryField8b>,
+	IP::Scalar: ExtensionField<BinaryField8b>,
+	OP: PackedExtension<AESTowerField8b>,
+	OP::Scalar: ExtensionField<AESTowerField8b>,
+	PackedSubfield<IP, BinaryField8b>:
+		PackedTransformationFactory<PackedSubfield<OP, AESTowerField8b>>,
 {
-	SubfieldTransformer::<
-		PackedType<IP::Underlier, BinaryField8b>,
-		PackedType<IP::Underlier, AESTowerField8b>,
-		_,
-	>::new(PackedType::<IP::Underlier, BinaryField8b>::make_packed_transformation(
-		BINARY_TO_AES_LINEAR_TRANSFORMATION,
-	))
+	SubfieldTransformer::<BinaryField8b, AESTowerField8b, _>::new(
+		PackedSubfield::<IP, BinaryField8b>::make_packed_transformation(
+			BINARY_TO_AES_LINEAR_TRANSFORMATION,
+		),
+	)
 }
 
 /// Values isomorphic to 0x02, 0x04 and 0x10 in BinaryField8b
@@ -301,9 +290,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		binary_field::tests::is_binary_field_valid_generator, deserialize_canonical,
-		serialize_canonical, PackedAESBinaryField16x32b, PackedAESBinaryField4x32b,
-		PackedAESBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField4x32b,
-		PackedBinaryField8x32b,
+		serialize_canonical, underlier::WithUnderlier, PackedAESBinaryField16x32b,
+		PackedAESBinaryField4x32b, PackedAESBinaryField8x32b, PackedBinaryField16x32b,
+		PackedBinaryField4x32b, PackedBinaryField8x32b,
 	};
 
 	fn check_square(f: impl Field) {
