@@ -35,7 +35,7 @@ use crate::{
 pub struct M512(pub(super) __m512i);
 
 impl M512 {
-	pub const fn from_equal_u128s(val: u128) -> M512 {
+	pub const fn from_equal_u128s(val: u128) -> Self {
 		unsafe { transmute_copy(&AlignedData([val, val, val, val])) }
 	}
 }
@@ -689,9 +689,8 @@ impl UnderlierWithBitOps for M512 {
 	#[inline(always)]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps,
+		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
-		T: NumCast<Self>,
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
@@ -868,13 +867,13 @@ unsafe impl Sync for M512 {}
 
 impl<Scalar: BinaryField> From<__m512i> for PackedPrimitiveType<M512, Scalar> {
 	fn from(value: __m512i) -> Self {
-		PackedPrimitiveType::from(M512::from(value))
+		Self::from(M512::from(value))
 	}
 }
 
 impl<Scalar: BinaryField> From<[u128; 4]> for PackedPrimitiveType<M512, Scalar> {
 	fn from(value: [u128; 4]) -> Self {
-		PackedPrimitiveType::from(M512::from(value))
+		Self::from(M512::from(value))
 	}
 }
 
@@ -1136,7 +1135,7 @@ mod tests {
 	struct ByteData([u128; 4]);
 
 	impl ByteData {
-		fn get_bit(&self, i: usize) -> u8 {
+		const fn get_bit(&self, i: usize) -> u8 {
 			if self.0[i / 128] & (1u128 << (i % 128)) == 0 {
 				0
 			} else {

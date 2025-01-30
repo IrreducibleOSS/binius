@@ -546,9 +546,8 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps,
+		T: UnderlierWithBitOps + NumCast<Self>,
 		Self: From<T>,
-		T: NumCast<Self>,
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
@@ -848,13 +847,13 @@ unsafe impl Sync for M256 {}
 
 impl<Scalar: BinaryField> From<__m256i> for PackedPrimitiveType<M256, Scalar> {
 	fn from(value: __m256i) -> Self {
-		PackedPrimitiveType::from(M256::from(value))
+		Self::from(M256::from(value))
 	}
 }
 
 impl<Scalar: BinaryField> From<[u128; 2]> for PackedPrimitiveType<M256, Scalar> {
 	fn from(value: [u128; 2]) -> Self {
-		PackedPrimitiveType::from(M256::from(value))
+		Self::from(M256::from(value))
 	}
 }
 
@@ -1083,7 +1082,7 @@ mod tests {
 	struct ByteData([u128; 2]);
 
 	impl ByteData {
-		fn get_bit(&self, i: usize) -> u8 {
+		const fn get_bit(&self, i: usize) -> u8 {
 			if self.0[i / 128] & (1u128 << (i % 128)) == 0 {
 				0
 			} else {
@@ -1141,12 +1140,14 @@ mod tests {
 	}
 
 	proptest! {
+		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_conversion(a in any::<u128>(), b in any::<u128>()) {
 			check_roundtrip::<[u128; 2]>([a, b].into());
 			check_roundtrip::<__m256i>([a, b].into());
 		}
 
+		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_binary_bit_operations([a, b, c, d] in any::<[u128;4]>()) {
 			assert_eq!(M256::from([a & b, c & d]), M256::from([a, c]) & M256::from([b, d]));
@@ -1154,6 +1155,7 @@ mod tests {
 			assert_eq!(M256::from([a ^ b, c ^ d]), M256::from([a, c]) ^ M256::from([b, d]));
 		}
 
+		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_negate(a in any::<u128>(), b in any::<u128>()) {
 			assert_eq!(M256::from([!a, ! b]), !M256::from([a, b]))

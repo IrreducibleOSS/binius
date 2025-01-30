@@ -34,7 +34,7 @@ pub use binary_subspace::*;
 pub use composition_poly::*;
 pub use deinterleave::*;
 pub use error::*;
-pub use fold::fold;
+pub use fold::fold_right;
 pub use matrix::*;
 pub use mle_adapters::*;
 pub use multilinear::*;

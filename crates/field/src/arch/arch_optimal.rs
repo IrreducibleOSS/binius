@@ -4,11 +4,13 @@ use cfg_if::cfg_if;
 
 use crate::{
 	as_packed_field::{PackScalar, PackedType},
+	underlier::WithUnderlier,
 	Field, PackedField,
 };
 
 pub trait ArchOptimal: Field {
-	type OptimalThroughputPacked: PackedField<Scalar = Self>;
+	type OptimalThroughputPacked: PackedField<Scalar = Self>
+		+ WithUnderlier<Underlier = OptimalUnderlier>;
 }
 
 impl<F> ArchOptimal for F
