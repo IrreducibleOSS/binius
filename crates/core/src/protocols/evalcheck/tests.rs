@@ -111,7 +111,7 @@ fn test_shifted_evaluation_whole_cube() {
 	assert_eq!(prover_state.committed_eval_claims().len(), 1);
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(claims.clone(), proof).unwrap();
+	verifier_state.verify(claims, proof).unwrap();
 	assert_eq!(verifier_state.committed_eval_claims().len(), 1);
 }
 
@@ -369,7 +369,7 @@ fn test_evalcheck_repeating() {
 	assert_matches!(proof[0], EvalcheckProof::Repeating(..));
 
 	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
-	verifier_state.verify(vec![claim.clone()], proof).unwrap();
+	verifier_state.verify(vec![claim], proof).unwrap();
 }
 
 #[test]

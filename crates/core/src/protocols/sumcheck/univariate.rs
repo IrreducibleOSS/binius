@@ -36,8 +36,8 @@ pub struct LagrangeRoundEvals<F: Field> {
 
 impl<F: Field> LagrangeRoundEvals<F> {
 	/// A Lagrange representation of a zero polynomial, on a given domain.
-	pub fn zeros(zeros_prefix_len: usize) -> Self {
-		LagrangeRoundEvals {
+	pub const fn zeros(zeros_prefix_len: usize) -> Self {
+		Self {
 			zeros_prefix_len,
 			evals: Vec::new(),
 		}
@@ -71,7 +71,7 @@ impl<F: Field> LagrangeRoundEvals<F> {
 }
 
 impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
-	type Output = LagrangeRoundEvals<F>;
+	type Output = Self;
 
 	fn mul(mut self, rhs: F) -> Self::Output {
 		self *= rhs;
@@ -81,7 +81,7 @@ impl<F: Field> Mul<F> for LagrangeRoundEvals<F> {
 
 impl<F: Field> MulAssign<F> for LagrangeRoundEvals<F> {
 	fn mul_assign(&mut self, rhs: F) {
-		for eval in self.evals.iter_mut() {
+		for eval in &mut self.evals {
 			*eval *= rhs;
 		}
 	}

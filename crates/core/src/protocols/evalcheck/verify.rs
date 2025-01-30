@@ -145,7 +145,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 						eval_point
 					}
 					ProjectionVariant::FirstVars => {
-						values.iter().cloned().chain(eval_point.to_vec()).collect()
+						values.iter().copied().chain(eval_point.to_vec()).collect()
 					}
 				};
 

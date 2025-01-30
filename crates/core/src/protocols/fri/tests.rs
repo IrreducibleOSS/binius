@@ -36,8 +36,7 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	arities: &[usize],
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FA>,
-	F: TowerField + ExtensionField<FA>,
-	F: PackedField<Scalar = F>,
+	F: TowerField + ExtensionField<FA> + PackedField<Scalar = F>,
 	FA: BinaryField,
 	PackedType<U, F>: PackedFieldIndexable,
 	PackedType<U, FA>: PackedFieldIndexable,

@@ -53,7 +53,7 @@ where
 		.first()
 		.map(|multilinear| multilinear.n_vars())
 		.unwrap_or_default();
-	for multilinear in multilinears.iter() {
+	for multilinear in multilinears {
 		if multilinear.n_vars() != n_vars {
 			bail!(Error::NumberOfVariablesMismatch);
 		}
@@ -61,7 +61,7 @@ where
 
 	let multilinears = multilinears.iter().collect::<Vec<_>>();
 
-	for (name, composition) in zero_claims.into_iter() {
+	for (name, composition) in zero_claims {
 		let witness = MultilinearComposite::new(n_vars, composition, multilinears.clone())?;
 		(0..(1 << n_vars)).into_par_iter().try_for_each(|j| {
 			if witness.evaluate_on_hypercube(j)? != F::ZERO {
@@ -134,7 +134,7 @@ where
 		let n_vars = equal_n_vars_check(&multilinears)?;
 
 		let compositions = zero_claims.into_iter().collect::<Vec<_>>();
-		for (_, composition_base, composition) in compositions.iter() {
+		for (_, composition_base, composition) in &compositions {
 			if composition_base.n_vars() != multilinears.len()
 				|| composition.n_vars() != multilinears.len()
 				|| composition_base.degree() != composition.degree()
@@ -385,7 +385,7 @@ where
 			.map(|switchover_round| switchover_round.saturating_sub(skip_rounds))
 			.collect();
 
-		let zerocheck_challenges = self.zerocheck_challenges.to_vec();
+		let zerocheck_challenges = self.zerocheck_challenges.clone();
 
 		// This is also regular multilinear zerocheck constructor, but "jump started" in round
 		// `skip_rounds` while using witness with a projected univariate round.

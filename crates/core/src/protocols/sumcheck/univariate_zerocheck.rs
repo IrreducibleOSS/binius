@@ -27,12 +27,12 @@ pub struct BatchZerocheckUnivariateOutput<F: Field> {
 /// can be uniquely determined by its evaluations on $d (2^n - 1) + 1$ points. We however
 /// deliberately round this number up to $d 2^n$ to be able to use additive NTT interpolation
 /// techniques on round evaluations.
-pub fn domain_size(composition_degree: usize, skip_rounds: usize) -> usize {
+pub const fn domain_size(composition_degree: usize, skip_rounds: usize) -> usize {
 	composition_degree << skip_rounds
 }
 
 /// For zerocheck, we know that a honest prover would evaluate to zero on the skipped domain.
-pub fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize) -> usize {
+pub const fn extrapolated_scalars_count(composition_degree: usize, skip_rounds: usize) -> usize {
 	composition_degree.saturating_sub(1) << skip_rounds
 }
 

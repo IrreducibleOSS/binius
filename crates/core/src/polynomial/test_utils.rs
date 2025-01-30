@@ -50,7 +50,7 @@ where
 		.unwrap_or(0)
 		.div_ceil(P::WIDTH);
 	let mut result: Vec<P> = vec![P::default(); packed_len];
-	for (range, value) in assignments.iter() {
+	for (range, value) in assignments {
 		for i in range.clone() {
 			set_packed_slice(&mut result, i, P::Scalar::from(*value));
 		}

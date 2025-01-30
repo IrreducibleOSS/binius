@@ -31,9 +31,8 @@ impl SelectRow {
 				arg: "index".into(),
 				range: 0..(1 << n_vars),
 			})
-		} else {
-			Ok(Self { n_vars, index })
 		}
+		Ok(Self { n_vars, index })
 	}
 
 	pub fn multilinear_extension<P: PackedField<Scalar = BinaryField1b>>(

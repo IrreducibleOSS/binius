@@ -27,7 +27,7 @@ impl<F: Field> EqIndPartialEval<F> {
 		Ok(Self { n_vars, r })
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 

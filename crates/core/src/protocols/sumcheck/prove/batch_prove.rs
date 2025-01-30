@@ -191,7 +191,7 @@ where
 		let challenge = transcript.sample();
 		challenges.push(challenge);
 
-		for prover in provers[..active_index].iter_mut() {
+		for prover in &mut provers[..active_index] {
 			prover.fold(challenge)?;
 		}
 	}
@@ -210,7 +210,7 @@ where
 		.collect::<Result<Vec<_>, _>>()?;
 
 	let mut writer = transcript.message();
-	for multilinear_evals in multilinear_evals.iter() {
+	for multilinear_evals in &multilinear_evals {
 		writer.write_scalar_slice(multilinear_evals);
 	}
 

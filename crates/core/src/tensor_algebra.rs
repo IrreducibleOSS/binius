@@ -68,7 +68,7 @@ where
 	}
 
 	/// Returns the byte size of an element.
-	pub fn byte_size() -> usize {
+	pub const fn byte_size() -> usize {
 		mem::size_of::<FE>() << Self::kappa()
 	}
 
@@ -117,7 +117,7 @@ where
 
 	/// Multiply by an element from the vertical subring.
 	pub fn scale_vertical(mut self, scalar: FE) -> Self {
-		for elem_i in self.elems.iter_mut() {
+		for elem_i in &mut self.elems {
 			*elem_i *= scalar;
 		}
 		self

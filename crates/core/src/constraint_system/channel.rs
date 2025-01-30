@@ -185,7 +185,7 @@ impl<F: TowerField> Channel<F> {
 	}
 
 	fn _print_unbalanced_values(&self) {
-		for (key, val) in self.multiplicities.iter() {
+		for (key, val) in &self.multiplicities {
 			if *val != 0 {
 				println!("{key:?}: {val}");
 			}

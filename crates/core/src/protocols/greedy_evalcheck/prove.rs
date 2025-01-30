@@ -49,7 +49,7 @@ where
 	let evalcheck_proofs = evalcheck_prover.prove(claims)?;
 	write_u64(&mut transcript.decommitment(), evalcheck_proofs.len() as u64);
 	let mut writer = transcript.message();
-	for evalcheck_proof in evalcheck_proofs.iter() {
+	for evalcheck_proof in &evalcheck_proofs {
 		serialize_evalcheck_proof(&mut writer, evalcheck_proof)
 	}
 
@@ -73,7 +73,7 @@ where
 		let new_evalcheck_proofs = evalcheck_prover.prove(new_evalcheck_claims)?;
 
 		let mut writer = transcript.message();
-		for evalcheck_proof in new_evalcheck_proofs.iter() {
+		for evalcheck_proof in &new_evalcheck_proofs {
 			serialize_evalcheck_proof(&mut writer, evalcheck_proof);
 		}
 	}

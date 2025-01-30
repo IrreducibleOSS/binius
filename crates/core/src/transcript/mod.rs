@@ -602,7 +602,7 @@ mod tests {
 
 		assert!(untaped_transcript.finalize().is_empty());
 
-		for array in sampled_arrays.into_iter() {
+		for array in sampled_arrays {
 			let _: BinaryField64b = taped_transcript.message().read_scalar().unwrap();
 			let sampled_out_transcript: BinaryField64b = taped_transcript.sample();
 

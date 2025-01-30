@@ -232,7 +232,7 @@ where
 		.fold_arities()
 		.first()
 		.copied()
-		.unwrap_or(rs_code.log_inv_rate());
+		.unwrap_or_else(|| rs_code.log_inv_rate());
 
 	let log_len = params.log_len() - coset_log_len;
 
@@ -314,12 +314,12 @@ where
 	}
 
 	/// Number of fold rounds, including the final fold.
-	pub fn n_rounds(&self) -> usize {
+	pub const fn n_rounds(&self) -> usize {
 		self.params.n_fold_rounds()
 	}
 
 	/// Number of times `execute_fold_round` has been called.
-	pub fn curr_round(&self) -> usize {
+	pub const fn curr_round(&self) -> usize {
 		self.curr_round
 	}
 
@@ -376,7 +376,7 @@ where
 			.fold_arities()
 			.get(self.round_committed.len() + 1)
 			.map(|log| 1 << log)
-			.unwrap_or(self.params.rs_code().inv_rate());
+			.unwrap_or_else(|| self.params.rs_code().inv_rate());
 
 		let (commitment, committed) = self
 			.merkle_prover
@@ -411,7 +411,7 @@ where
 		let terminate_codeword = self
 			.round_committed
 			.last()
-			.map(|(codeword, _)| codeword.to_vec())
+			.map(|(codeword, _)| codeword.clone())
 			.unwrap_or_else(|| self.codeword.to_vec());
 
 		self.unprocessed_challenges.clear();

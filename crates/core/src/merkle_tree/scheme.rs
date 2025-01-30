@@ -29,7 +29,7 @@ pub struct BinaryMerkleTreeScheme<T, H, C> {
 
 impl<T, H, C> BinaryMerkleTreeScheme<T, H, C> {
 	pub fn new(compression: C) -> Self {
-		BinaryMerkleTreeScheme {
+		Self {
 			compression,
 			_phantom: PhantomData,
 		}

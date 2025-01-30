@@ -118,15 +118,16 @@ where
 fn bench_gpa_isomorphic<U>(name: &str, c: &mut Criterion)
 where
 	U: PackScalar<
-		BinaryField128b,
-		Packed: PackedFieldIndexable
-		            + PackedTransformationFactory<<U as PackScalar<BinaryField128bPolyval>>::Packed>,
-	>,
-	U: PackScalar<
-		BinaryField128bPolyval,
-		Packed: PackedFieldIndexable
-		            + PackedTransformationFactory<<U as PackScalar<BinaryField128b>>::Packed>,
-	>,
+			BinaryField128b,
+			Packed: PackedFieldIndexable
+			            + PackedTransformationFactory<
+				<U as PackScalar<BinaryField128bPolyval>>::Packed,
+			>,
+		> + PackScalar<
+			BinaryField128bPolyval,
+			Packed: PackedFieldIndexable
+			            + PackedTransformationFactory<<U as PackScalar<BinaryField128b>>::Packed>,
+		>,
 {
 	let transform_to_polyval =
 		<U as PackScalar<BinaryField128b>>::Packed::make_packed_transformation(
@@ -162,13 +163,7 @@ where
 				BinaryField128bPolyval,
 				_,
 				_,
-			>(
-				gpa_witnesses.clone(),
-				&gpa_claims,
-				domain_factory.clone(),
-				prover_transcript,
-				&backend,
-			)
+			>(gpa_witnesses, &gpa_claims, domain_factory.clone(), prover_transcript, &backend)
 		},
 	);
 }

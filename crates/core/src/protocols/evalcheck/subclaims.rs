@@ -324,7 +324,7 @@ pub struct MemoizedQueries<P: PackedField, Backend: ComputationBackend> {
 
 impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	#[allow(clippy::new_without_default)]
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self { memo: Vec::new() }
 	}
 
@@ -332,7 +332,7 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 	/// Assumes that each `eval_point` is given at most once.
 	/// Does not check that the input is valid.
 	#[allow(clippy::type_complexity)]
-	pub fn new_from_known_queries(
+	pub const fn new_from_known_queries(
 		data: Vec<(Vec<P::Scalar>, MultilinearQuery<P, Backend::Vec<P>>)>,
 	) -> Self {
 		Self { memo: data }
@@ -417,7 +417,7 @@ where
 	let SumcheckProversWithMetas { provers, metas } = constraint_sets_sumcheck_provers_metas(
 		constraint_sets,
 		witness,
-		domain_factory.clone(),
+		domain_factory,
 		&switchover_fn,
 		backend,
 	)?;

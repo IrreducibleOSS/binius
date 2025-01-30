@@ -50,7 +50,7 @@ impl<Tower: TowerFamily> TowerTensorAlgebra<Tower> {
 	}
 
 	/// Returns $\kappa$, the base-2 logarithm of the extension degree.
-	pub fn kappa(&self) -> usize {
+	pub const fn kappa(&self) -> usize {
 		match self {
 			Self::B1(_) => 7,
 			Self::B8(_) => 4,
@@ -104,7 +104,7 @@ impl<Tower: TowerFamily> TowerTensorAlgebra<Tower> {
 	}
 }
 
-impl<Tower: TowerFamily> TowerTensorAlgebra<Tower>
+impl<Tower> TowerTensorAlgebra<Tower>
 where
 	Tower: TowerFamily,
 	FExt<Tower>: PackedTop<Tower>,

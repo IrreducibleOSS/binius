@@ -5,7 +5,7 @@ pub struct ResizeableIndex<T> {
 }
 
 impl<T: Default> ResizeableIndex<T> {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self {
 			entries: Vec::new(),
 		}

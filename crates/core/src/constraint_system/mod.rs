@@ -31,14 +31,8 @@ pub struct ConstraintSystem<F: TowerField> {
 }
 
 impl<F: TowerField> ConstraintSystem<F> {
-	pub fn no_base_constraints(self) -> ConstraintSystem<F> {
-		ConstraintSystem {
-			oracles: self.oracles,
-			table_constraints: self.table_constraints,
-			non_zero_oracle_ids: self.non_zero_oracle_ids,
-			flushes: self.flushes,
-			max_channel_id: self.max_channel_id,
-		}
+	pub const fn no_base_constraints(self) -> Self {
+		self
 	}
 }
 

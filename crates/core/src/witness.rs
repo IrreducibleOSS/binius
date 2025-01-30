@@ -21,7 +21,7 @@ pub type MultilinearWitness<'a, P> = Arc<dyn MultilinearPoly<P> + Send + Sync + 
 /// over a subfield. This is possible because the [`MultilinearExtensionIndex::get`] method is
 /// generic over the subfield type and the struct itself only stores the underlying data.
 #[derive(Default, Debug)]
-pub struct MultilinearExtensionIndex<'a, U: UnderlierType, FW>
+pub struct MultilinearExtensionIndex<'a, U, FW>
 where
 	U: UnderlierType + PackScalar<FW>,
 	FW: Field,

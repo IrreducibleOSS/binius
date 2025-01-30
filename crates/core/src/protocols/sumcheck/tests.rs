@@ -109,7 +109,7 @@ where
 		.first()
 		.map(|multilinear| multilinear.n_vars())
 		.unwrap_or_default();
-	for multilinear in multilinears.iter() {
+	for multilinear in multilinears {
 		assert_eq!(multilinear.n_vars(), n_vars);
 	}
 
@@ -341,7 +341,7 @@ where
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
 		multilins,
 		prover_composite_sums,
-		domain_factory.clone(),
+		domain_factory,
 		|_| (n_vars / 2).max(1),
 		backend,
 	)
@@ -361,17 +361,15 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
-	let mut mles = Vec::with_capacity(claim_shapes.len());
 	let mut claims = Vec::with_capacity(claim_shapes.len());
 	let mut provers = Vec::with_capacity(claim_shapes.len());
 	for claim_shape in claim_shapes {
-		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+		let (_, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
 			claim_shape,
 			&mut rng,
 			&domain_factory,
 			&backend,
 		);
-		mles.push(mles_i);
 		claims.push(claim);
 		provers.push(prover);
 	}

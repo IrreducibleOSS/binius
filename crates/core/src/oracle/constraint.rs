@@ -55,7 +55,7 @@ pub struct ConstraintSetBuilder<F: Field> {
 }
 
 impl<F: Field> ConstraintSetBuilder<F> {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self {
 			constraints: Vec::new(),
 		}
@@ -103,7 +103,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			// Do not bail!, this error is handled in evalcheck.
 			return Err(Error::EmptyConstraintSet);
 		}
-		for id in oracle_ids.iter() {
+		for id in &oracle_ids {
 			if !oracles.is_valid_oracle_id(*id) {
 				bail!(Error::InvalidOracleId(*id));
 			}
@@ -116,7 +116,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 			.map(|id| oracles.n_vars(*id))
 			.unwrap_or_default();
 
-		for id in oracle_ids.iter() {
+		for id in &oracle_ids {
 			if oracles.n_vars(*id) != n_vars {
 				bail!(Error::ConstraintSetNvarsMismatch {
 					expected: n_vars,
@@ -185,7 +185,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 				if constraint.oracle_ids.is_empty() {
 					bail!(Error::EmptyConstraintSet);
 				}
-				for id in constraint.oracle_ids.iter() {
+				for id in &constraint.oracle_ids {
 					if !oracles.is_valid_oracle_id(*id) {
 						bail!(Error::InvalidOracleId(*id));
 					}
@@ -196,7 +196,7 @@ impl<F: Field> ConstraintSetBuilder<F> {
 					.map(|id| oracles.n_vars(*id))
 					.unwrap();
 
-				for id in constraint.oracle_ids.iter() {
+				for id in &constraint.oracle_ids {
 					if oracles.n_vars(*id) != n_vars {
 						bail!(Error::ConstraintSetNvarsMismatch {
 							expected: n_vars,

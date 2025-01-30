@@ -110,6 +110,7 @@ where
 }
 
 #[test]
+#[allow(clippy::large_stack_frames)]
 fn witness_gen_happens_correctly() {
 	const LOG_SIZE: usize = 13usize;
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;

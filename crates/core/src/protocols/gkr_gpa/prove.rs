@@ -240,7 +240,7 @@ where
 		})
 	}
 
-	fn input_vars(&self) -> usize {
+	const fn input_vars(&self) -> usize {
 		self.n_vars
 	}
 

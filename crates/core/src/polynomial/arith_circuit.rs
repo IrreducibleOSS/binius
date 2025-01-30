@@ -81,8 +81,8 @@ impl CircuitNode {
 		row_len: usize,
 	) -> &'a [P] {
 		match self {
-			CircuitNode::Var(index) => inputs[*index],
-			CircuitNode::Slot(slot) => &evals[slot * row_len..(slot + 1) * row_len],
+			Self::Var(index) => inputs[*index],
+			Self::Slot(slot) => &evals[slot * row_len..(slot + 1) * row_len],
 		}
 	}
 }

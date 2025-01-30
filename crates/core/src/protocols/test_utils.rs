@@ -14,7 +14,7 @@ pub struct AddOneComposition<Inner> {
 }
 
 impl<Inner> AddOneComposition<Inner> {
-	pub fn new(inner: Inner) -> Self {
+	pub const fn new(inner: Inner) -> Self {
 		Self { inner }
 	}
 }
@@ -51,7 +51,7 @@ pub struct TestProductComposition {
 }
 
 impl TestProductComposition {
-	pub fn new(arity: usize) -> Self {
+	pub const fn new(arity: usize) -> Self {
 		Self { arity }
 	}
 }
@@ -129,7 +129,7 @@ where
 	OF: Field + From<F> + Into<F>,
 	Data: Deref<Target = [F]>,
 {
-	let values = multilin.evals().iter().cloned().map(OF::from).collect();
+	let values = multilin.evals().iter().copied().map(OF::from).collect();
 
 	Ok(MultilinearExtension::from_values(values)?)
 }

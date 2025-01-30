@@ -52,7 +52,7 @@ where
 {
 	// TODO: Parallelize the data copying
 	let mut packed_offset = 0;
-	let mut mle_iter = multilins.iter().rev().peekable();
+	let mut mle_iter = multilins.iter().rev();
 
 	// First copy all the polynomials where the number of elements is a multiple of the packing
 	// width.

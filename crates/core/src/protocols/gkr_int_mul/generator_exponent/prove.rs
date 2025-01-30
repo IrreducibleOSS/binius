@@ -42,14 +42,14 @@ pub fn prove<
 where
 	FDomain: Field,
 	PBits: PackedField,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PGenerator::Scalar: ExtensionField<PBits::Scalar>,
-	PGenerator: PackedFieldIndexable<Scalar = FGenerator>,
-	PGenerator: PackedExtension<FDomain>,
-	PGenerator::Scalar: ExtensionField<FDomain>,
-	PChallenge: PackedField + PackedFieldIndexable<Scalar = F>,
-	PChallenge:
-		PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator> + PackedExtension<FDomain>,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
+		+ PackedFieldIndexable<Scalar = FGenerator>
+		+ PackedExtension<FDomain>,
+	PGenerator::Scalar: ExtensionField<PBits::Scalar> + ExtensionField<FDomain>,
+	PChallenge: PackedField
+		+ PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>
+		+ PackedExtension<FDomain>,
 	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + BinaryField + TowerField,
 	FGenerator: Field + TowerField,
 	Backend: ComputationBackend,

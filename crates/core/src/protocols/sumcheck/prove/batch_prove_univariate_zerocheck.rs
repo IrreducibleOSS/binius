@@ -131,7 +131,7 @@ where
 
 	let mut batch_coeffs = Vec::with_capacity(provers.len());
 	let mut round_evals = LagrangeRoundEvals::zeros(max_domain_size);
-	for prover in provers.iter_mut() {
+	for prover in &mut provers {
 		let next_batch_coeff = transcript.sample();
 		batch_coeffs.push(next_batch_coeff);
 

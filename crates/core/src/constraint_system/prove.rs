@@ -106,7 +106,7 @@ where
 	let mut transcript = ProverTranscript::<Challenger_>::new();
 	{
 		let mut observer = transcript.observe();
-		for boundary in boundaries.iter() {
+		for boundary in boundaries {
 			boundary.write_to(&mut observer);
 		}
 	}

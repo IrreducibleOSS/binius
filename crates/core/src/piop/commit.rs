@@ -142,18 +142,18 @@ mod tests {
 
 		let (commit_meta, index) = make_oracle_commit_meta(&oracles).unwrap();
 		assert_eq!(commit_meta.n_multilins_by_vars(), &[0, 2, 0, 4, 0, 4, 0, 2]);
-		assert_eq!(index.get(batch_0_0_ids[0]).cloned(), Some(0));
-		assert_eq!(index.get(batch_0_0_ids[1]).cloned(), Some(1));
-		assert_eq!(index.get(batch_0_1_ids[0]).cloned(), Some(2));
-		assert_eq!(index.get(batch_0_1_ids[1]).cloned(), Some(3));
-		assert_eq!(index.get(batch_0_2_ids[0]).cloned(), Some(6));
-		assert_eq!(index.get(batch_0_2_ids[1]).cloned(), Some(7));
-		assert_eq!(index.get(batch_2_0_ids[0]).cloned(), Some(4));
-		assert_eq!(index.get(batch_2_0_ids[1]).cloned(), Some(5));
-		assert_eq!(index.get(batch_2_1_ids[0]).cloned(), Some(8));
-		assert_eq!(index.get(batch_2_1_ids[1]).cloned(), Some(9));
-		assert_eq!(index.get(batch_2_2_ids[0]).cloned(), Some(10));
-		assert_eq!(index.get(batch_2_2_ids[1]).cloned(), Some(11));
-		assert_eq!(index.get(repeat).cloned(), None);
+		assert_eq!(index.get(batch_0_0_ids[0]).copied(), Some(0));
+		assert_eq!(index.get(batch_0_0_ids[1]).copied(), Some(1));
+		assert_eq!(index.get(batch_0_1_ids[0]).copied(), Some(2));
+		assert_eq!(index.get(batch_0_1_ids[1]).copied(), Some(3));
+		assert_eq!(index.get(batch_0_2_ids[0]).copied(), Some(6));
+		assert_eq!(index.get(batch_0_2_ids[1]).copied(), Some(7));
+		assert_eq!(index.get(batch_2_0_ids[0]).copied(), Some(4));
+		assert_eq!(index.get(batch_2_0_ids[1]).copied(), Some(5));
+		assert_eq!(index.get(batch_2_1_ids[0]).copied(), Some(8));
+		assert_eq!(index.get(batch_2_1_ids[1]).copied(), Some(9));
+		assert_eq!(index.get(batch_2_2_ids[0]).copied(), Some(10));
+		assert_eq!(index.get(batch_2_2_ids[1]).copied(), Some(11));
+		assert_eq!(index.get(repeat).copied(), None);
 	}
 }

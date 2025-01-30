@@ -77,7 +77,7 @@ where
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
 	{
 		let mut observer = transcript.observe();
-		for boundary in boundaries.iter() {
+		for boundary in boundaries {
 			boundary.write_to(&mut observer);
 		}
 	}
@@ -423,7 +423,7 @@ pub fn make_flush_oracles<F: TowerField>(
 	permutation_challenges: &[F],
 ) -> Result<Vec<OracleId>, Error> {
 	let mut mixing_powers = vec![F::ONE];
-	let mut flush_iter = flushes.iter().peekable();
+	let mut flush_iter = flushes.iter();
 	permutation_challenges
 		.iter()
 		.enumerate()

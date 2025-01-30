@@ -150,7 +150,7 @@ where
 
 	let mut multilinear_evals = Vec::with_capacity(claims.len());
 	let mut reader = transcript.message();
-	for claim in claims.iter() {
+	for claim in claims {
 		let evals = reader.read_scalar_slice::<F>(claim.n_multilinears())?;
 		multilinear_evals.push(evals);
 	}

@@ -20,8 +20,8 @@ pub struct Powers<F: Field> {
 }
 
 impl<F: Field> Powers<F> {
-	pub fn new(n_vars: usize, base: F) -> Self {
-		Powers { n_vars, base }
+	pub const fn new(n_vars: usize, base: F) -> Self {
+		Self { n_vars, base }
 	}
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>>(

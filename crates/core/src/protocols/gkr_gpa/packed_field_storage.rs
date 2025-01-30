@@ -28,12 +28,12 @@ impl<'a, P: PackedField> PackedFieldStorage<'a, P> {
 	}
 
 	/// Creates a new packed field storage from a slice of packed field elements.
-	pub fn new_slice(data: &'a [P]) -> Self {
+	pub const fn new_slice(data: &'a [P]) -> Self {
 		Self::SliceRef(data)
 	}
 
 	/// Returns the number of scalar elements in the packed field storage.
-	pub fn n_scalars(&self) -> usize {
+	pub const fn n_scalars(&self) -> usize {
 		match self {
 			PackedFieldStorage::SliceRef(data) => data.len() * P::WIDTH,
 			PackedFieldStorage::Inline { size, .. } => *size,

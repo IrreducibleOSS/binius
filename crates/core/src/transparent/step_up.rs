@@ -33,12 +33,11 @@ impl StepUp {
 				arg: "index".into(),
 				range: 0..(1 << n_vars) + 1,
 			})
-		} else {
-			Ok(Self { n_vars, index })
 		}
+		Ok(Self { n_vars, index })
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 

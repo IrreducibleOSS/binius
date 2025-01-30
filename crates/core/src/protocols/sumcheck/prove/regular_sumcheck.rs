@@ -37,7 +37,7 @@ where
 		.first()
 		.map(|multilinear| multilinear.n_vars())
 		.unwrap_or_default();
-	for multilinear in multilinears.iter() {
+	for multilinear in multilinears {
 		if multilinear.n_vars() != n_vars {
 			bail!(Error::NumberOfVariablesMismatch);
 		}
@@ -111,7 +111,7 @@ where
 			validate_witness(&multilinears, composite_claims)?;
 		}
 
-		for claim in composite_claims.iter() {
+		for claim in &composite_claims {
 			if claim.composition.n_vars() != multilinears.len() {
 				bail!(Error::InvalidComposition {
 					actual: claim.composition.n_vars(),

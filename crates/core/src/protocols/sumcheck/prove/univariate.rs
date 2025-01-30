@@ -132,9 +132,9 @@ where
 }
 
 #[derive(Debug)]
-struct ParFoldStates<FBase: PackedField, P: PackedField>
+struct ParFoldStates<FBase, P>
 where
-	FBase: Field,
+	FBase: Field + PackedField,
 	P: PackedField + PackedExtension<FBase>,
 	P::Scalar: ExtensionField<FBase>,
 {
@@ -733,7 +733,7 @@ where
 	Ok(())
 }
 
-fn extrapolated_evals_packed_len<P: PackedField>(
+const fn extrapolated_evals_packed_len<P: PackedField>(
 	composition_degree: usize,
 	skip_rounds: usize,
 	log_batch: usize,

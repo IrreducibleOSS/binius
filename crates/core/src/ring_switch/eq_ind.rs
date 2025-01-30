@@ -150,8 +150,7 @@ mod tests {
 
 		let mixing_coeff = <F as Field>::random(&mut rng);
 
-		let rs_eq =
-			RingSwitchEqInd::<FS, _>::new(z_vals.clone(), row_batch_coeffs, mixing_coeff).unwrap();
+		let rs_eq = RingSwitchEqInd::<FS, _>::new(z_vals, row_batch_coeffs, mixing_coeff).unwrap();
 		let mle = rs_eq.multilinear_extension::<F>().unwrap();
 
 		let val1 = rs_eq.evaluate(&eval_point).unwrap();

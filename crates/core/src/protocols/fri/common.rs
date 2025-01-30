@@ -206,7 +206,7 @@ where
 		})
 	}
 
-	pub fn n_fold_rounds(&self) -> usize {
+	pub const fn n_fold_rounds(&self) -> usize {
 		self.rs_code.log_dim() + self.log_batch_size
 	}
 
@@ -325,11 +325,7 @@ pub fn estimate_optimal_arity(
 		.scan(None, |old: &mut Option<(usize, usize)>, new| {
 			let should_continue = !matches!(*old, Some(ref old) if new.1 > old.1);
 			*old = Some(new);
-			if should_continue {
-				Some(new)
-			} else {
-				None
-			}
+			should_continue.then_some(new)
 		})
 		.last()
 		.map(|(arity, _)| arity)

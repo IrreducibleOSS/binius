@@ -165,8 +165,7 @@ impl<F: Field> ShiftIndPartialEval<F> {
 		}
 
 		let left_shift_offset = match self.shift_variant {
-			ShiftVariant::CircularLeft => self.shift_offset,
-			ShiftVariant::LogicalLeft => self.shift_offset,
+			ShiftVariant::CircularLeft | ShiftVariant::LogicalLeft => self.shift_offset,
 			ShiftVariant::LogicalRight => get_left_shift_offset(self.block_size, self.shift_offset),
 		};
 
@@ -200,11 +199,12 @@ impl<F: TowerField> MultivariatePoly<F> for ShiftIndPartialEval<F> {
 }
 
 /// Gets right shift offset from left shift offset
-fn get_left_shift_offset(block_size: usize, right_shift_offset: usize) -> usize {
+const fn get_left_shift_offset(block_size: usize, right_shift_offset: usize) -> usize {
 	(1 << block_size) - right_shift_offset
 }
 
 /// Checks validity of shift indicator arguments
+#[allow(clippy::missing_const_for_fn)]
 fn assert_valid_shift_ind_args<F: Field>(
 	block_size: usize,
 	shift_offset: usize,

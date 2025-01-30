@@ -286,7 +286,7 @@ pub struct MultilinearOracleSet<F: TowerField> {
 }
 
 impl<F: TowerField> MultilinearOracleSet<F> {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self {
 			oracles: Vec::new(),
 		}
@@ -328,7 +328,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		id
 	}
 
-	fn get_from_set(&mut self, id: OracleId) -> Arc<MultilinearPolyOracle<F>> {
+	fn get_from_set(&self, id: OracleId) -> Arc<MultilinearPolyOracle<F>> {
 		self.oracles[id].clone()
 	}
 
@@ -475,7 +475,7 @@ impl<F: TowerField> TransparentPolyOracle<F> {
 				tower_level: poly.binary_tower_level(),
 			});
 		}
-		Ok(TransparentPolyOracle { poly })
+		Ok(Self { poly })
 	}
 }
 
@@ -550,6 +550,7 @@ pub struct Shifted {
 }
 
 impl Shifted {
+	#[allow(clippy::missing_const_for_fn)]
 	fn new<F: TowerField>(
 		oracle: &MultilinearPolyOracle<F>,
 		shift_offset: usize,
@@ -610,10 +611,10 @@ impl<F: TowerField> LinearCombination<F> {
 		let inner = inner
 			.into_iter()
 			.map(|(oracle, value)| {
-				if oracle.n_vars() != n_vars {
-					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
-				} else {
+				if oracle.n_vars() == n_vars {
 					Ok((oracle.id(), value))
+				} else {
+					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
 				}
 			})
 			.collect::<Result<Vec<_>, _>>()?;
@@ -638,7 +639,7 @@ impl<F: TowerField> LinearCombination<F> {
 }
 
 impl<F: TowerField> MultilinearPolyOracle<F> {
-	pub fn id(&self) -> OracleId {
+	pub const fn id(&self) -> OracleId {
 		self.id
 	}
 
@@ -653,26 +654,25 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 		self.name.as_deref()
 	}
 
-	fn type_str(&self) -> &str {
-		use MultilinearPolyVariant::*;
+	const fn type_str(&self) -> &str {
 		match self.variant {
-			Transparent { .. } => "Transparent",
-			Committed { .. } => "Committed",
-			Repeating { .. } => "Repeating",
-			Projected { .. } => "Projected",
-			Shifted { .. } => "Shifted",
-			Packed { .. } => "Packed",
-			LinearCombination { .. } => "LinearCombination",
-			ZeroPadded { .. } => "ZeroPadded",
+			MultilinearPolyVariant::Transparent { .. } => "Transparent",
+			MultilinearPolyVariant::Committed { .. } => "Committed",
+			MultilinearPolyVariant::Repeating { .. } => "Repeating",
+			MultilinearPolyVariant::Projected { .. } => "Projected",
+			MultilinearPolyVariant::Shifted { .. } => "Shifted",
+			MultilinearPolyVariant::Packed { .. } => "Packed",
+			MultilinearPolyVariant::LinearCombination { .. } => "LinearCombination",
+			MultilinearPolyVariant::ZeroPadded { .. } => "ZeroPadded",
 		}
 	}
 
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 
 	/// Maximum tower level of the oracle's values over the boolean hypercube.
-	pub fn binary_tower_level(&self) -> usize {
+	pub const fn binary_tower_level(&self) -> usize {
 		self.tower_level
 	}
 

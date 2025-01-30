@@ -21,7 +21,7 @@ pub struct GPASumcheckClaim<F: Field> {
 }
 
 impl<F: Field> GPASumcheckClaim<F> {
-	pub fn new(n_vars: usize, sum: F) -> Result<Self, Error> {
+	pub const fn new(n_vars: usize, sum: F) -> Result<Self, Error> {
 		Ok(Self { n_vars, sum })
 	}
 }
@@ -202,7 +202,7 @@ mod tests {
 			multilins,
 			Some(prod_multilins),
 			composite_claims,
-			domain_factory.clone(),
+			domain_factory,
 			&challenges,
 			&backend,
 		)

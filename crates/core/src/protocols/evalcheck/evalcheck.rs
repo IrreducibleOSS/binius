@@ -53,20 +53,18 @@ pub enum EvalcheckProof<F: Field> {
 impl<F: Field> EvalcheckProof<F> {
 	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
 		match self {
-			EvalcheckProof::Transparent => EvalcheckProof::Transparent,
-			EvalcheckProof::Committed => EvalcheckProof::Committed,
-			EvalcheckProof::Shifted => EvalcheckProof::Shifted,
-			EvalcheckProof::Packed => EvalcheckProof::Packed,
-			EvalcheckProof::Repeating(proof) => {
-				EvalcheckProof::Repeating(Box::new(proof.isomorphic()))
-			}
-			EvalcheckProof::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
+			Self::Transparent => EvalcheckProof::Transparent,
+			Self::Committed => EvalcheckProof::Committed,
+			Self::Shifted => EvalcheckProof::Shifted,
+			Self::Packed => EvalcheckProof::Packed,
+			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
+			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
 				subproofs: subproofs
 					.into_iter()
 					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
 					.collect::<Vec<_>>(),
 			},
-			EvalcheckProof::ZeroPadded(eval, proof) => {
+			Self::ZeroPadded(eval, proof) => {
 				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
 			}
 		}
@@ -74,15 +72,15 @@ impl<F: Field> EvalcheckProof<F> {
 }
 
 impl EvalcheckNumerics {
-	fn from(x: u8) -> Result<Self, Error> {
+	const fn from(x: u8) -> Result<Self, Error> {
 		match x {
-			1 => Ok(EvalcheckNumerics::Transparent),
-			2 => Ok(EvalcheckNumerics::Committed),
-			3 => Ok(EvalcheckNumerics::Shifted),
-			4 => Ok(EvalcheckNumerics::Packed),
-			5 => Ok(EvalcheckNumerics::Repeating),
-			6 => Ok(EvalcheckNumerics::LinearCombination),
-			7 => Ok(EvalcheckNumerics::ZeroPadded),
+			1 => Ok(Self::Transparent),
+			2 => Ok(Self::Committed),
+			3 => Ok(Self::Shifted),
+			4 => Ok(Self::Packed),
+			5 => Ok(Self::Repeating),
+			6 => Ok(Self::LinearCombination),
+			7 => Ok(Self::ZeroPadded),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}

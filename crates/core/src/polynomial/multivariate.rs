@@ -74,7 +74,7 @@ where
 	P: PackedField,
 	Composition: CompositionPolyOS<P>,
 {
-	pub fn new(composition: Composition) -> Self {
+	pub const fn new(composition: Composition) -> Self {
 		Self {
 			composition,
 			_marker: PhantomData,
@@ -101,7 +101,7 @@ where
 	}
 
 	fn evaluate(&self, query: &[F]) -> Result<F, binius_math::Error> {
-		let packed_query = query.iter().cloned().map(P::set_single).collect::<Vec<_>>();
+		let packed_query = query.iter().copied().map(P::set_single).collect::<Vec<_>>();
 		let packed_result = self.composition.evaluate(&packed_query)?;
 		Ok(packed_result.get(0))
 	}
@@ -227,7 +227,7 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 }

@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 assert_matches.workspace = true
 auto_impl.workspace = true
@@ -51,4 +54,8 @@ harness = false
 
 [features]
 debug_validate_sumcheck = []
-stable_only = ["binius_utils/stable_only", "binius_field/stable_only", "binius_hash/stable_only"]
+stable_only = [
+    "binius_utils/stable_only",
+    "binius_field/stable_only",
+    "binius_hash/stable_only",
+]

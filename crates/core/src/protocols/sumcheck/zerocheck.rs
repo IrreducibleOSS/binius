@@ -29,7 +29,7 @@ where
 		n_multilinears: usize,
 		composite_zeros: Vec<Composition>,
 	) -> Result<Self, Error> {
-		for composition in composite_zeros.iter() {
+		for composition in &composite_zeros {
 			if composition.n_vars() != n_multilinears {
 				bail!(Error::InvalidComposition {
 					actual: composition.n_vars(),

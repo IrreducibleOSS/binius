@@ -28,9 +28,8 @@ pub struct GeneratorExponentWitness<
 fn copy_witness_into_vec<P, PE>(poly: &MultilinearWitness<PE>) -> Vec<P>
 where
 	P: PackedField,
-	PE: PackedField,
+	PE: PackedField + PackedExtension<P::Scalar, PackedSubfield = P>,
 	PE::Scalar: ExtensionField<P::Scalar>,
-	PE: PackedExtension<P::Scalar, PackedSubfield = P>,
 {
 	let mut input_layer: Vec<P> = zeroed_vec(1 << poly.n_vars().saturating_sub(P::LOG_WIDTH));
 
@@ -69,11 +68,9 @@ fn evaluate_single_bit_output_packed<PBits, PGenerator>(
 ) -> Vec<PGenerator>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator: PackedField,
-	PGenerator: PackedFieldIndexable,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PGenerator::Scalar: ExtensionField<BinaryField1b>,
-	PGenerator::Scalar: BinaryField,
+	PGenerator:
+		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: ExtensionField<BinaryField1b> + BinaryField,
 {
 	debug_assert_eq!(
 		PBits::WIDTH * exponent_bit.len(),
@@ -101,9 +98,8 @@ fn evaluate_first_layer_output_packed<PBits, PGenerator>(
 ) -> Vec<PGenerator>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator: PackedField,
-	PGenerator: PackedFieldIndexable,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator:
+		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 	PGenerator::Scalar: ExtensionField<BinaryField1b>,
 {
 	let mut result = vec![PGenerator::zero(); exponent_bit.len() * PGenerator::Scalar::DEGREE];
@@ -123,12 +119,10 @@ impl<'a, PBits, PGenerator, PChallenge, const EXPONENT_BIT_WIDTH: usize>
 	GeneratorExponentWitness<'a, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator: PackedField,
-	PGenerator: PackedFieldIndexable,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator:
+		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 	PGenerator::Scalar: ExtensionField<BinaryField1b> + BinaryField,
-	PChallenge: PackedField,
-	PChallenge: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PChallenge: PackedField + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 	PChallenge::Scalar: ExtensionField<BinaryField1b>,
 {
 	pub fn new(

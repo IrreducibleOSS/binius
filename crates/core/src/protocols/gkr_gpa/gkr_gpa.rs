@@ -103,7 +103,7 @@ impl<PW: PackedField> GrandProductWitness<PW> {
 	}
 
 	/// Returns the base-two log of the number of inputs to the GKR grand product circuit
-	pub fn n_vars(&self) -> usize {
+	pub const fn n_vars(&self) -> usize {
 		self.n_vars
 	}
 

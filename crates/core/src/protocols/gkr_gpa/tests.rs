@@ -74,9 +74,10 @@ fn create_claims_witnesses_helper<
 	n_vars: usize,
 	n_multilins: usize,
 ) -> CreateClaimsWitnessesOutput<'_, U, P, F> {
-	if n_vars == 0 || n_multilins == 0 {
-		panic!("Require at least one variable and multilinear polynomial");
-	}
+	assert!(
+		!(n_vars == 0 || n_multilins == 0),
+		"Require at least one variable and multilinear polynomial"
+	);
 	let multilin_oracles = (0..n_multilins)
 		.map(|_| {
 			let id = oracle_set.add_committed(n_vars, F::TOWER_LEVEL);

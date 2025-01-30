@@ -33,9 +33,8 @@ pub fn verify<'a, F, Tower, Challenger_>(
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<ReducedClaim<'a, F>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 	Challenger_: Challenger,
 {
 	// Sample enough randomness to batch tensor elements corresponding to claims that share an
@@ -104,9 +103,8 @@ fn verify_receive_tensor_elems<F, Tower, B>(
 	transcript: &mut TranscriptReader<B>,
 ) -> Result<Vec<TowerTensorAlgebra<Tower>>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 	B: Buf,
 {
 	let expected_tensor_elem_evals = compute_mixed_evaluations(
@@ -179,9 +177,8 @@ fn make_ring_switch_eq_inds<F, Tower>(
 	mixing_coeffs: &[F],
 ) -> Result<Vec<Box<dyn MultivariatePoly<F>>>, Error>
 where
-	F: TowerField,
+	F: TowerField + PackedTop<Tower>,
 	Tower: TowerFamily<B128 = F>,
-	F: PackedTop<Tower>,
 {
 	iter::zip(sumcheck_claim_descs, mixing_coeffs)
 		.map(|(claim_desc, &mixing_coeff)| {

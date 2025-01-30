@@ -52,7 +52,7 @@ where
 			binary_merkle_tree::build::<_, H, _>(self.scheme.compression(), data, batch_size)?;
 
 		let commitment = Commitment {
-			root: tree.root().clone(),
+			root: tree.root(),
 			depth: tree.log_len,
 		};
 
@@ -99,7 +99,7 @@ where
 		)?;
 
 		let commitment = Commitment {
-			root: tree.root().clone(),
+			root: tree.root(),
 			depth: tree.log_len,
 		};
 

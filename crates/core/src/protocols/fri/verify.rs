@@ -341,7 +341,7 @@ where
 			.params
 			.fold_arities()
 			.iter()
-			.cloned()
+			.copied()
 			.max()
 			.unwrap_or_default();
 		let max_buffer_size = 2 * (1 << max_arity);
