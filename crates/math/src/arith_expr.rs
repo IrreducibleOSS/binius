@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::Field;
+use binius_field::{Field, PackedField};
 
 use super::error::Error;
 
@@ -160,6 +160,39 @@ impl<F: Field> ArithExpr<F> {
 		match self {
 			Self::Const(_) | Self::Var(_) => false,
 			Self::Add(_, _) | Self::Mul(_, _) | Self::Pow(_, _) => true,
+		}
+	}
+
+	/// Creates a new optimized expression.
+	///
+	/// Recursively rewrites expression for better evaluation performance.
+	pub fn optimize(&self) -> Self {
+		match self {
+			Self::Const(_) | Self::Var(_) => self.clone(),
+			Self::Add(left, right) => {
+				let left = left.optimize();
+				let right = right.optimize();
+				match (left, right) {
+					(Self::Const(left), Self::Const(right)) => Self::Const(left + right),
+					(left, right) => Self::Add(Box::new(left), Box::new(right)),
+				}
+			}
+			Self::Mul(left, right) => {
+				let left = left.optimize();
+				let right = right.optimize();
+				match (left, right) {
+					(Self::Const(left), Self::Const(right)) => Self::Const(left * right),
+					(left, right) => Self::Mul(Box::new(left), Box::new(right)),
+				}
+			}
+			Self::Pow(id, exp) => {
+				let id = id.optimize();
+				match id {
+					Self::Const(value) => Self::Const(PackedField::pow(value, *exp)),
+					Self::Pow(id_inner, exp_inner) => Self::Pow(id_inner, *exp * exp_inner),
+					id => Self::Pow(Box::new(id), *exp),
+				}
+			}
 		}
 	}
 }

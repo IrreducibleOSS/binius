@@ -184,6 +184,18 @@ pub trait PackedField:
 	/// Returns the value multiplied by itself
 	fn square(self) -> Self;
 
+	/// Returns the value to the power `exp`.
+	fn pow(self, exp: u64) -> Self {
+		let mut res = Self::one();
+		for i in (0..64).rev() {
+			res = res.square();
+			if ((exp >> i) & 1) == 1 {
+				res.mul_assign(self)
+			}
+		}
+		res
+	}
+
 	/// Returns the packed inverse values or zeroes at indices where `self` is zero.
 	fn invert_or_zero(self) -> Self;
 

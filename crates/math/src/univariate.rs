@@ -269,7 +269,7 @@ mod tests {
 		coeffs
 			.iter()
 			.enumerate()
-			.map(|(i, &coeff)| coeff * x.pow(slice::from_ref(&(i as u64))))
+			.map(|(i, &coeff)| coeff * Field::pow(&x, slice::from_ref(&(i as u64))))
 			.sum()
 	}
 
