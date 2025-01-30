@@ -116,7 +116,7 @@ impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
 	}
 
 	pub fn evals(&self) -> &[P] {
-		self.evals.as_ref()
+		&self.evals
 	}
 
 	pub fn to_ref(&self) -> MultilinearExtension<P, &[P]> {

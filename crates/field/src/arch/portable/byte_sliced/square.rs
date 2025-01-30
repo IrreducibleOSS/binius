@@ -24,9 +24,9 @@ pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBina
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
-			destination.as_mut()[0] = field_element.as_ref()[0].square();
+			destination.as_mut()[0] = field_element[0].square();
 		} else {
-			destination.as_mut()[0] += field_element.as_ref()[0].square();
+			destination.as_mut()[0] += field_element[0].square();
 		}
 		return;
 	}

@@ -106,7 +106,7 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 		}
 		EvalcheckProof::Repeating(inner) => {
 			transcript.write_bytes(&[EvalcheckNumerics::Repeating as u8]);
-			serialize_evalcheck_proof(transcript, inner.as_ref());
+			serialize_evalcheck_proof(transcript, inner);
 		}
 		EvalcheckProof::LinearCombination { subproofs } => {
 			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
@@ -120,7 +120,7 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 		EvalcheckProof::ZeroPadded(val, subproof) => {
 			transcript.write_bytes(&[EvalcheckNumerics::ZeroPadded as u8]);
 			transcript.write_scalar(*val);
-			serialize_evalcheck_proof(transcript, subproof.as_ref());
+			serialize_evalcheck_proof(transcript, subproof);
 		}
 	}
 }

@@ -24,9 +24,9 @@ pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinary
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
-			destination.as_mut()[0] = field_element.as_ref()[0] * base_alpha;
+			destination.as_mut()[0] = field_element[0] * base_alpha;
 		} else {
-			destination.as_mut()[0] += field_element.as_ref()[0] * base_alpha;
+			destination.as_mut()[0] += field_element[0] * base_alpha;
 		}
 		return;
 	}
@@ -61,9 +61,9 @@ pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryF
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
-			destination.as_mut()[0] = field_element_a.as_ref()[0] * field_element_b.as_ref()[0];
+			destination.as_mut()[0] = field_element_a[0] * field_element_b[0];
 		} else {
-			destination.as_mut()[0] += field_element_a.as_ref()[0] * field_element_b.as_ref()[0];
+			destination.as_mut()[0] += field_element_a[0] * field_element_b[0];
 		}
 		return;
 	}
