@@ -319,7 +319,9 @@ where
 
 		let (low, high) = evals.split_at(evals.len() / 2);
 
-		let result: Vec<P> = low
+		let r = P::broadcast(r);
+
+		let result = low
 			.iter()
 			.zip(high)
 			.map(|(&l, &h)| (h - l) * r + l)

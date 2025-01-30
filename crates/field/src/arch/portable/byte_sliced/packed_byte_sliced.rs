@@ -7,6 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::Zeroable;
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
@@ -130,6 +131,27 @@ macro_rules! define_byte_sliced {
 			}
 		}
 
+		impl Mul for $name {
+			type Output = Self;
+
+			fn mul(self, rhs: Self) -> Self {
+				let mut result = $name {
+					data: [PackedAESBinaryField32x8b::default();
+						<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH],
+				};
+
+				mul::<$tower_level>(&self.data, &rhs.data, &mut result.data);
+
+				result
+			}
+		}
+
+		impl_common!($scalar_type, $name);
+	};
+}
+
+macro_rules! impl_common {
+	($scalar_type:ty, $name:ident) => {
 		impl Add for $name {
 			type Output = Self;
 
@@ -189,21 +211,6 @@ macro_rules! define_byte_sliced {
 		impl SubAssign<$scalar_type> for $name {
 			fn sub_assign(&mut self, rhs: $scalar_type) {
 				self.add_assign(rhs)
-			}
-		}
-
-		impl Mul for $name {
-			type Output = Self;
-
-			fn mul(self, rhs: Self) -> Self {
-				let mut result = $name {
-					data: [PackedAESBinaryField32x8b::default();
-						<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH],
-				};
-
-				mul::<$tower_level>(&self.data, &rhs.data, &mut result.data);
-
-				result
 			}
 		}
 
@@ -314,7 +321,7 @@ define_byte_sliced!(ByteSlicedAES32x16b, AESTowerField16b, TowerLevel2);
 define_byte_sliced!(ByteSlicedAES32x8b, AESTowerField8b, TowerLevel1);
 
 macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
-	($name:ident, $data_width:expr, $log_width:expr, $original_byte_sliced:ty) => {
+	($name:ident, $data_width:expr, $original_byte_sliced:ty) => {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable)]
 		pub struct $name {
 			pub(super) data: [PackedAESBinaryField32x8b; $data_width],
@@ -338,7 +345,8 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 		impl PackedField for $name {
 			type Scalar = AESTowerField8b;
 
-			const LOG_WIDTH: usize = $log_width;
+			const LOG_WIDTH: usize =
+				PackedAESBinaryField32x8b::LOG_WIDTH + checked_log_2($data_width);
 
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				self.data
@@ -402,67 +410,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			}
 		}
 
-		impl Add for $name {
-			type Output = Self;
-
-			fn add(self, rhs: Self) -> Self {
-				Self {
-					data: array::from_fn(|byte_number| {
-						self.data[byte_number] + rhs.data[byte_number]
-					}),
-				}
-			}
-		}
-
-		impl Add<AESTowerField8b> for $name {
-			type Output = Self;
-
-			fn add(self, rhs: AESTowerField8b) -> $name {
-				self + Self::broadcast(rhs)
-			}
-		}
-
-		impl AddAssign for $name {
-			fn add_assign(&mut self, rhs: Self) {
-				for (data, rhs) in zip(&mut self.data, &rhs.data) {
-					*data += *rhs
-				}
-			}
-		}
-
-		impl AddAssign<AESTowerField8b> for $name {
-			fn add_assign(&mut self, rhs: AESTowerField8b) {
-				*self += Self::broadcast(rhs)
-			}
-		}
-
-		impl Sub for $name {
-			type Output = Self;
-
-			fn sub(self, rhs: Self) -> Self {
-				self.add(rhs)
-			}
-		}
-
-		impl Sub<AESTowerField8b> for $name {
-			type Output = Self;
-
-			fn sub(self, rhs: AESTowerField8b) -> $name {
-				self.add(rhs)
-			}
-		}
-
-		impl SubAssign for $name {
-			fn sub_assign(&mut self, rhs: Self) {
-				self.add_assign(rhs);
-			}
-		}
-
-		impl SubAssign<AESTowerField8b> for $name {
-			fn sub_assign(&mut self, rhs: AESTowerField8b) {
-				self.add_assign(rhs)
-			}
-		}
+		impl_common!(AESTowerField8b, $name);
 
 		impl Mul for $name {
 			type Output = Self;
@@ -475,104 +423,6 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				}
 			}
 		}
-
-		impl Mul<AESTowerField8b> for $name {
-			type Output = Self;
-
-			fn mul(self, rhs: AESTowerField8b) -> $name {
-				self * Self::broadcast(rhs)
-			}
-		}
-
-		impl MulAssign for $name {
-			fn mul_assign(&mut self, rhs: Self) {
-				*self = *self * rhs;
-			}
-		}
-
-		impl MulAssign<AESTowerField8b> for $name {
-			fn mul_assign(&mut self, rhs: AESTowerField8b) {
-				*self *= Self::broadcast(rhs);
-			}
-		}
-
-		impl Product for $name {
-			fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
-				let mut result = Self::one();
-
-				let mut is_first_item = true;
-				for item in iter {
-					if is_first_item {
-						result = item;
-					} else {
-						result *= item;
-					}
-
-					is_first_item = false;
-				}
-
-				result
-			}
-		}
-
-		impl Sum for $name {
-			fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-				let mut result = Self::zero();
-
-				for item in iter {
-					result += item;
-				}
-
-				result
-			}
-		}
-
-		impl PackedExtension<AESTowerField8b> for $name {
-			type PackedSubfield = Self;
-
-			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
-				packed
-			}
-
-			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
-				packed
-			}
-
-			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
-				packed
-			}
-
-			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
-				packed
-			}
-
-			fn cast_base(self) -> Self::PackedSubfield {
-				self
-			}
-
-			fn cast_base_ref(&self) -> &Self::PackedSubfield {
-				self
-			}
-
-			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
-				self
-			}
-
-			fn cast_ext(base: Self::PackedSubfield) -> Self {
-				base
-			}
-
-			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
-				base
-			}
-
-			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
-				base
-			}
-		}
-
-		unsafe impl bytemuck::NoUninit for $name {}
-		unsafe impl bytemuck::AnyBitPattern for $name {}
 
 		impl PackedExtension<AESTowerField8b> for $original_byte_sliced {
 			type PackedSubfield = $name;
@@ -623,24 +473,8 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	_ByteSlicedAES512x8b,
 	16,
-	9,
 	ByteSlicedAES32x128b
 );
-define_8b_extension_packed_subfield_for_byte_sliced!(
-	_ByteSlicedAES256x8b,
-	8,
-	8,
-	ByteSlicedAES32x64b
-);
-define_8b_extension_packed_subfield_for_byte_sliced!(
-	_ByteSlicedAES128x8b,
-	4,
-	7,
-	ByteSlicedAES32x32b
-);
-define_8b_extension_packed_subfield_for_byte_sliced!(
-	_ByteSlicedAES64x8b,
-	2,
-	6,
-	ByteSlicedAES32x16b
-);
+define_8b_extension_packed_subfield_for_byte_sliced!(_ByteSlicedAES256x8b, 8, ByteSlicedAES32x64b);
+define_8b_extension_packed_subfield_for_byte_sliced!(_ByteSlicedAES128x8b, 4, ByteSlicedAES32x32b);
+define_8b_extension_packed_subfield_for_byte_sliced!(_ByteSlicedAES64x8b, 2, ByteSlicedAES32x16b);
