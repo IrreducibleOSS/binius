@@ -125,7 +125,7 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 		T: 'a + Clone,
 		Self::Item: Deref<Target = T>,
 	{
-		Iterator::map(self, |x| x.deref().clone())
+		Iterator::map(self, |x| x.clone())
 	}
 
 	#[inline]
@@ -134,7 +134,7 @@ pub(crate) trait ParallelIteratorInner: Sized + Iterator {
 		T: 'a + Copy,
 		Self::Item: Deref<Target = T>,
 	{
-		Iterator::map(self, |x: <Self as Iterator>::Item| *x.deref())
+		Iterator::map(self, |x: <Self as Iterator>::Item| *x)
 	}
 
 	#[inline]

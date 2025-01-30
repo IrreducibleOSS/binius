@@ -34,7 +34,7 @@ impl<OF: BinaryField> FieldLinearTransformation<OF, &'static [OF]> {
 
 impl<OF: BinaryField, Data: Deref<Target = [OF]> + Sync> FieldLinearTransformation<OF, Data> {
 	pub fn new(bases: Data) -> Self {
-		debug_assert_eq!(bases.deref().len(), OF::DEGREE);
+		debug_assert_eq!(bases.len(), OF::DEGREE);
 
 		Self { bases }
 	}

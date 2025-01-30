@@ -71,7 +71,7 @@ impl<T, Data: Deref<Target = [T]>> Array2D<T, Data> {
 		}
 
 		Some(Array2D {
-			data: self.data.deref(),
+			data: &self.data,
 			rows,
 			cols,
 		})

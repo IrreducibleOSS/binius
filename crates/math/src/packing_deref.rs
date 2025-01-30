@@ -32,6 +32,6 @@ where
 	type Target = [PackedType<U, F>];
 
 	fn deref(&self) -> &Self::Target {
-		<PackedType<U, F>>::from_underliers_ref(self.0.deref())
+		<PackedType<U, F>>::from_underliers_ref(&self.0)
 	}
 }
