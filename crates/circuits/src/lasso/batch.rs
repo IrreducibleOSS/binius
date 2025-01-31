@@ -4,7 +4,7 @@ use anyhow::Ok;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	ExtensionField, PackedFieldIndexable, TowerField,
+	BinaryField1b, ExtensionField, PackedFieldIndexable, TowerField,
 };
 use itertools::Itertools;
 
@@ -53,7 +53,7 @@ impl LookupBatch {
 		builder: &mut ConstraintSystemBuilder<U, F>,
 	) -> Result<(), anyhow::Error>
 	where
-		U: PackScalar<FC> + PackScalar<F>,
+		U: PackScalar<FC> + PackScalar<F> + PackScalar<BinaryField1b>,
 		PackedType<U, FC>: PackedFieldIndexable,
 		FC: TowerField,
 		F: ExtensionField<FC> + TowerField,

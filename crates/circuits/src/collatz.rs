@@ -82,10 +82,10 @@ impl Collatz {
 		let half = arithmetic::u32::half(builder, "half", even, arithmetic::Flags::Checked)?;
 
 		let even_packed = arithmetic::u32::packed(builder, "even_packed", even)?;
-		builder.receive(channel, count, [even_packed]);
+		builder.receive(channel, count, [even_packed])?;
 
 		let half_packed = arithmetic::u32::packed(builder, "half_packed", half)?;
-		builder.send(channel, count, [half_packed]);
+		builder.send(channel, count, [half_packed])?;
 
 		Ok(())
 	}
@@ -127,11 +127,11 @@ impl Collatz {
 		)?;
 
 		let odd_packed = arithmetic::u32::packed(builder, "odd_packed", odd)?;
-		builder.receive(channel, count, [odd_packed]);
+		builder.receive(channel, count, [odd_packed])?;
 
 		let triple_plus_one_packed =
 			arithmetic::u32::packed(builder, "triple_plus_one_packed", triple_plus_one)?;
-		builder.send(channel, count, [triple_plus_one_packed]);
+		builder.send(channel, count, [triple_plus_one_packed])?;
 
 		Ok(())
 	}

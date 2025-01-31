@@ -41,6 +41,10 @@ impl StepDown {
 		self.n_vars
 	}
 
+	pub const fn index(&self) -> usize {
+		self.index
+	}
+
 	pub fn multilinear_extension<P: PackedField>(&self) -> Result<MultilinearExtension<P>, Error> {
 		if self.n_vars < P::LOG_WIDTH {
 			bail!(Error::PackedFieldNotFilled {

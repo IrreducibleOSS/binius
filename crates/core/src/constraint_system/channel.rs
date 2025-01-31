@@ -64,7 +64,7 @@ pub struct Flush {
 	pub oracles: Vec<OracleId>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
-	pub count: usize,
+	pub selector: OracleId,
 	pub multiplicity: u64,
 }
 
@@ -107,31 +107,31 @@ where
 				got: channel_id,
 			});
 		}
-		channels[channel_id].flush(&direction, multiplicity, values.clone())?;
+		channels[channel_id].flush(direction, multiplicity, values.clone())?;
 	}
 
 	for flush in flushes {
-		let Flush {
-			oracles,
+		let &Flush {
+			ref oracles,
 			channel_id,
 			direction,
-			count,
+			selector,
 			multiplicity,
 		} = flush;
 
-		if *channel_id > max_channel_id {
+		if channel_id > max_channel_id {
 			return Err(Error::ChannelIdOutOfRange {
 				max: max_channel_id,
-				got: *channel_id,
+				got: channel_id,
 			});
 		}
 
-		let channel = &mut channels[*channel_id];
+		let channel = &mut channels[channel_id];
 
 		let polys = oracles
 			.iter()
-			.map(|id| witness.get_multilin_poly(*id).unwrap())
-			.collect::<Vec<_>>();
+			.map(|&id| witness.get_multilin_poly(id))
+			.collect::<Result<Vec<_>, _>>()?;
 
 		// Ensure that all the polys in a single flush have the same n_vars
 		if let Some(first_poly) = polys.first() {
@@ -145,21 +145,22 @@ where
 				}
 			}
 
-			// Check count is within range
-			if *count > 1 << n_vars {
-				let id = oracles.first().expect("polys is not empty");
-				return Err(Error::FlushCountExceedsOracleSize {
-					id: *id,
-					count: *count,
-				});
+			let selector_poly = witness.get_multilin_poly(selector)?;
+			// Check selector polynomial is compatible
+			if selector_poly.n_vars() != n_vars {
+				let id = oracles.first().copied().expect("polys is not empty");
+				return Err(Error::IncompatibleFlushSelector { id, selector });
 			}
 
-			for i in 0..*count {
+			for i in 0..1 << selector_poly.n_vars() {
+				if selector_poly.evaluate_on_hypercube(i)?.is_zero() {
+					continue;
+				}
 				let values = polys
 					.iter()
-					.map(|poly| poly.evaluate_on_hypercube(i).unwrap())
-					.collect();
-				channel.flush(direction, *multiplicity, values)?;
+					.map(|poly| poly.evaluate_on_hypercube(i))
+					.collect::<Result<Vec<_>, _>>()?;
+				channel.flush(direction, multiplicity, values)?;
 			}
 		}
 	}
@@ -194,13 +195,13 @@ impl<F: TowerField> Channel<F> {
 
 	fn flush(
 		&mut self,
-		direction: &FlushDirection,
+		direction: FlushDirection,
 		multiplicity: u64,
 		values: Vec<F>,
 	) -> Result<(), Error> {
 		if self.width.is_none() {
 			self.width = Some(values.len());
-		} else if self.width.unwrap() != values.len() {
+		} else if self.width.expect("checked for None above") != values.len() {
 			return Err(Error::ChannelFlushWidthMismatch {
 				expected: self.width.unwrap(),
 				got: values.len(),
@@ -251,7 +252,7 @@ mod tests {
 
 		// Push a single row of data
 		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		let result = channel.flush(&FlushDirection::Push, 1, values.clone());
+		let result = channel.flush(FlushDirection::Push, 1, values.clone());
 
 		assert!(result.is_ok());
 		assert!(!channel.is_balanced());
@@ -264,7 +265,7 @@ mod tests {
 
 		// Pull a single row of data
 		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		let result = channel.flush(&FlushDirection::Pull, 1, values.clone());
+		let result = channel.flush(FlushDirection::Pull, 1, values.clone());
 
 		assert!(result.is_ok());
 		assert!(!channel.is_balanced());
@@ -278,9 +279,9 @@ mod tests {
 		// Push and then pull the same row
 		let values = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
 		channel
-			.flush(&FlushDirection::Push, 1, values.clone())
+			.flush(FlushDirection::Push, 1, values.clone())
 			.unwrap();
-		let result = channel.flush(&FlushDirection::Pull, 1, values.clone());
+		let result = channel.flush(FlushDirection::Pull, 1, values.clone());
 
 		assert!(result.is_ok());
 		assert!(channel.is_balanced());
@@ -294,12 +295,12 @@ mod tests {
 		// Push multiple rows with a multiplicity of 2
 		let values = vec![BinaryField64b::from(3), BinaryField64b::from(4)];
 		channel
-			.flush(&FlushDirection::Push, 2, values.clone())
+			.flush(FlushDirection::Push, 2, values.clone())
 			.unwrap();
 
 		// Pull the same row with a multiplicity of 1
 		channel
-			.flush(&FlushDirection::Pull, 1, values.clone())
+			.flush(FlushDirection::Pull, 1, values.clone())
 			.unwrap();
 
 		// The channel should not be balanced yet
@@ -308,7 +309,7 @@ mod tests {
 
 		// Pull the same row again with a multiplicity of 1
 		channel
-			.flush(&FlushDirection::Pull, 1, values.clone())
+			.flush(FlushDirection::Pull, 1, values.clone())
 			.unwrap();
 
 		// Now the channel should be balanced
@@ -322,7 +323,7 @@ mod tests {
 
 		// Push a row with width 2
 		let values1 = vec![BinaryField64b::from(1), BinaryField64b::from(2)];
-		channel.flush(&FlushDirection::Push, 1, values1).unwrap();
+		channel.flush(FlushDirection::Push, 1, values1).unwrap();
 
 		// Attempt to push a row with width 3
 		let values2 = vec![
@@ -330,7 +331,7 @@ mod tests {
 			BinaryField64b::from(4),
 			BinaryField64b::from(5),
 		];
-		let result = channel.flush(&FlushDirection::Push, 1, values2);
+		let result = channel.flush(FlushDirection::Push, 1, values2);
 
 		assert!(result.is_err());
 		if let Err(Error::ChannelFlushWidthMismatch { expected, got }) = result {
@@ -348,13 +349,13 @@ mod tests {
 		// Push a row
 		let values = vec![BinaryField64b::from(7), BinaryField64b::from(8)];
 		channel
-			.flush(&FlushDirection::Push, 1, values.clone())
+			.flush(FlushDirection::Push, 1, values.clone())
 			.unwrap();
 
 		// Pull a different row
 		let values2 = vec![BinaryField64b::from(9), BinaryField64b::from(10)];
 		channel
-			.flush(&FlushDirection::Pull, 1, values2.clone())
+			.flush(FlushDirection::Pull, 1, values2.clone())
 			.unwrap();
 
 		// The channel should not be balanced because different rows were pushed and pulled

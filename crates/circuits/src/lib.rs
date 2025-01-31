@@ -591,10 +591,18 @@ mod tests {
 			}
 		}
 
-		builder.flush(FlushDirection::Pull, channel_id, even_counter, [even]);
-		builder.flush(FlushDirection::Push, channel_id, even_counter, [half]);
-		builder.flush(FlushDirection::Pull, channel_id, odd_counter, [odd]);
-		builder.flush(FlushDirection::Push, channel_id, odd_counter, [output]);
+		builder
+			.flush(FlushDirection::Pull, channel_id, even_counter, [even])
+			.unwrap();
+		builder
+			.flush(FlushDirection::Push, channel_id, even_counter, [half])
+			.unwrap();
+		builder
+			.flush(FlushDirection::Pull, channel_id, odd_counter, [odd])
+			.unwrap();
+		builder
+			.flush(FlushDirection::Push, channel_id, odd_counter, [output])
+			.unwrap();
 
 		let witness = builder
 			.take_witness()

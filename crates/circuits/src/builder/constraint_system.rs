@@ -1,9 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use core::iter::IntoIterator;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection},
@@ -14,9 +13,12 @@ use binius_core::{
 		ProjectionVariant, ShiftVariant,
 	},
 	polynomial::MultivariatePoly,
+	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
+use binius_field::{
+	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
+};
 use binius_math::ArithExpr;
 use binius_utils::bail;
 
@@ -32,6 +34,7 @@ where
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
+	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena, U, F>>,
 	next_channel_id: ChannelId,
 	namespace_path: Vec<String>,
@@ -95,15 +98,12 @@ where
 		direction: FlushDirection,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId>,
-	) {
-		self.flushes.push(Flush {
-			channel_id,
-			direction,
-			count,
-			oracles: oracle_ids.into_iter().collect(),
-			multiplicity: 1,
-		})
+		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+	) -> anyhow::Result<()>
+	where
+		U: PackScalar<BinaryField1b>,
+	{
+		self.flush_with_multiplicity(direction, channel_id, count, oracle_ids, 1)
 	}
 
 	pub fn flush_with_multiplicity(
@@ -111,24 +111,71 @@ where
 		direction: FlushDirection,
 		channel_id: ChannelId,
 		count: usize,
+		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+		multiplicity: u64,
+	) -> anyhow::Result<()>
+	where
+		U: PackScalar<BinaryField1b>,
+	{
+		let n_vars = self.log_rows(oracle_ids.clone())?;
+
+		let selector = if let Some(&selector) = self.step_down_dedup.get(&(n_vars, count)) {
+			selector
+		} else {
+			let step_down = StepDown::new(n_vars, count)?;
+			let selector = self.add_transparent(
+				format!("internal step_down {count}-{n_vars}"),
+				step_down.clone(),
+			)?;
+
+			if let Some(witness) = self.witness() {
+				step_down.populate(witness.new_column::<BinaryField1b>(selector).packed());
+			}
+
+			self.step_down_dedup.insert((n_vars, count), selector);
+			selector
+		};
+
+		self.flush_custom(direction, channel_id, selector, oracle_ids, multiplicity)
+	}
+
+	pub fn flush_custom(
+		&mut self,
+		direction: FlushDirection,
+		channel_id: ChannelId,
+		selector: OracleId,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
 		multiplicity: u64,
-	) {
+	) -> anyhow::Result<()> {
+		let oracles = oracle_ids.into_iter().collect::<Vec<_>>();
+		let log_rows = self.log_rows(oracles.iter().copied())?;
+		ensure!(
+			log_rows == self.log_rows([selector])?,
+			"Selector {} n_vars does not match flush {:?}",
+			selector,
+			oracles
+		);
+
 		self.flushes.push(Flush {
 			channel_id,
 			direction,
-			count,
-			oracles: oracle_ids.into_iter().collect(),
+			selector,
+			oracles,
 			multiplicity,
-		})
+		});
+
+		Ok(())
 	}
 
 	pub fn send(
 		&mut self,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId>,
-	) {
+		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+	) -> anyhow::Result<()>
+	where
+		U: PackScalar<BinaryField1b>,
+	{
 		self.flush(FlushDirection::Push, channel_id, count, oracle_ids)
 	}
 
@@ -136,8 +183,11 @@ where
 		&mut self,
 		channel_id: ChannelId,
 		count: usize,
-		oracle_ids: impl IntoIterator<Item = OracleId>,
-	) {
+		oracle_ids: impl IntoIterator<Item = OracleId> + Clone,
+	) -> anyhow::Result<()>
+	where
+		U: PackScalar<BinaryField1b>,
+	{
 		self.flush(FlushDirection::Pull, channel_id, count, oracle_ids)
 	}
 
@@ -334,7 +384,7 @@ where
 	pub fn log_rows(
 		&self,
 		oracle_ids: impl IntoIterator<Item = OracleId>,
-	) -> Result<usize, anyhow::Error> {
+	) -> anyhow::Result<usize> {
 		let mut oracle_ids = oracle_ids.into_iter();
 		let oracles = self.oracles.borrow();
 		let Some(first_id) = oracle_ids.next() else {

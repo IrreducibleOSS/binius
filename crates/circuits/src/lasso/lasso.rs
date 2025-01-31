@@ -5,7 +5,7 @@ use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	ExtensionField, PackedFieldIndexable, TowerField,
+	BinaryField1b, ExtensionField, PackedFieldIndexable, TowerField,
 };
 use itertools::{izip, Itertools};
 
@@ -21,7 +21,7 @@ pub fn lasso<U, F, FC>(
 	channel: ChannelId,
 ) -> Result<()>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FC>,
+	U: UnderlierType + PackScalar<F> + PackScalar<FC> + PackScalar<BinaryField1b>,
 	F: TowerField + ExtensionField<FC> + From<FC>,
 	PackedType<U, FC>: PackedFieldIndexable,
 	FC: TowerField,
@@ -119,19 +119,20 @@ where
 	let oracles_prefix_t = lookup_t.as_ref().iter().copied();
 
 	// populate table using initial timestamps
-	builder.send(channel, 1 << t_log_rows, oracles_prefix_t.clone().chain([lookup_o]));
+	builder.send(channel, 1 << t_log_rows, oracles_prefix_t.clone().chain([lookup_o]))?;
 
 	// for every value looked up, pull using current timestamp and push with incremented timestamp
-	izip!(lookups_u, lookups_r, lookups_w, n_lookups).for_each(
-		|(lookup_u, lookup_r, lookup_w, &n_lookup)| {
+	izip!(lookups_u, lookups_r, lookups_w, n_lookups).try_for_each(
+		|(lookup_u, lookup_r, lookup_w, &n_lookup)| -> Result<()> {
 			let oracle_prefix_u = lookup_u.as_ref().iter().copied();
-			builder.receive(channel, n_lookup, oracle_prefix_u.clone().chain([lookup_r]));
-			builder.send(channel, n_lookup, oracle_prefix_u.chain([lookup_w]));
+			builder.receive(channel, n_lookup, oracle_prefix_u.clone().chain([lookup_r]))?;
+			builder.send(channel, n_lookup, oracle_prefix_u.chain([lookup_w]))?;
+			Ok(())
 		},
-	);
+	)?;
 
 	// depopulate table using final timestamps
-	builder.receive(channel, 1 << t_log_rows, oracles_prefix_t.chain([lookup_f]));
+	builder.receive(channel, 1 << t_log_rows, oracles_prefix_t.chain([lookup_f]))?;
 
 	Ok(())
 }

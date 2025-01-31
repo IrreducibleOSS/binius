@@ -37,8 +37,8 @@ pub enum Error {
 		witness_num_vars: usize,
 	},
 
-	#[error("cannot flush {count} rows of oracle {id}")]
-	FlushCountExceedsOracleSize { id: OracleId, count: usize },
+	#[error("flush selector oracle {selector} incompatible with oracle {id}")]
+	IncompatibleFlushSelector { id: OracleId, selector: OracleId },
 
 	#[error("Non-zero oracles contain zeros")]
 	Zeros,
