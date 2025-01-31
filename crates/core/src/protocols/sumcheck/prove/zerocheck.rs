@@ -480,8 +480,8 @@ where
 	) -> Result<Self, Error> {
 		let evaluation_points = domains
 			.iter()
-			.max_by_key(|domain| domain.points().len())
-			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
+			.max_by_key(|domain| domain.size())
+			.map_or_else(|| Vec::new(), |domain| domain.finite_points().to_vec());
 
 		if claimed_prime_sums.len() != compositions.len() {
 			bail!(Error::IncorrectClaimedPrimeSumsLength);

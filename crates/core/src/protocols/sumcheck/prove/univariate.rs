@@ -823,7 +823,7 @@ mod tests {
 							.map(|i| interleaved_scalars[(i << log_batch) + batch_idx])
 							.collect::<Vec<_>>();
 
-						for (i, &point) in max_domain.points()[1 << skip_rounds..]
+						for (i, &point) in max_domain.finite_points()[1 << skip_rounds..]
 							[..extrapolated_scalars_cnt]
 							.iter()
 							.enumerate()

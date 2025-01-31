@@ -10,6 +10,8 @@ pub enum Error {
 	MatrixNotSquare,
 	#[error("the matrix is singular")]
 	MatrixIsSingular,
+	#[error("domain size needs to be at least one")]
+	DomainSizeAtLeastOne,
 	#[error("domain size is larger than the field")]
 	DomainSizeTooLarge,
 	#[error("the inputted packed values slice had an unexpected length")]

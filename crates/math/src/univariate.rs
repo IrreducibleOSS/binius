@@ -7,6 +7,7 @@ use binius_field::{
 	PackedField,
 };
 use binius_utils::bail;
+use itertools::{izip, Either};
 
 use super::{binary_subspace::BinarySubspace, error::Error};
 use crate::Matrix;
@@ -17,8 +18,9 @@ use crate::Matrix;
 /// to reconstruct a degree <= d. This struct supports Barycentric extrapolation.
 #[derive(Debug, Clone)]
 pub struct EvaluationDomain<F: Field> {
-	points: Vec<F>,
+	finite_points: Vec<F>,
 	weights: Vec<F>,
+	with_infinity: bool,
 }
 
 /// An extended version of `EvaluationDomain` that supports interpolation to monomial form. Takes
@@ -32,9 +34,20 @@ pub struct InterpolationDomain<F: Field> {
 /// Wraps type information to enable instantiating EvaluationDomains.
 #[auto_impl(&)]
 pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
-	/// Instantiates an EvaluationDomain from a set of points isomorphic to direct
-	/// lexicographic successors of zero in Fan-Paar tower
-	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error>;
+	/// Instantiates an EvaluationDomain from `size` lexicographically first values from the
+	/// binary subspace.
+	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
+		self.create_with_infinity(size, false)
+	}
+
+	/// Instantiates an EvaluationDomain from `size` values in total: lexicographically first values
+	/// from the binary subspace and potentially Karatsuba "infinity" point (which is the coefficient of
+	/// the highest power in the interpolated polynomial).
+	fn create_with_infinity(
+		&self,
+		size: usize,
+		with_infinity: bool,
+	) -> Result<EvaluationDomain<DomainField>, Error>;
 }
 
 #[derive(Default, Clone)]
@@ -48,8 +61,18 @@ pub struct IsomorphicEvaluationDomainFactory<F: BinaryField> {
 }
 
 impl<F: BinaryField> EvaluationDomainFactory<F> for DefaultEvaluationDomainFactory<F> {
-	fn create(&self, size: usize) -> Result<EvaluationDomain<F>, Error> {
-		EvaluationDomain::from_points(make_evaluation_points(&self.subspace, size)?)
+	fn create_with_infinity(
+		&self,
+		size: usize,
+		with_infinity: bool,
+	) -> Result<EvaluationDomain<F>, Error> {
+		if size == 0 && with_infinity {
+			bail!(Error::DomainSizeAtLeastOne);
+		}
+		EvaluationDomain::from_points(
+			make_evaluation_points(&self.subspace, size - if with_infinity { 1 } else { 0 })?,
+			with_infinity,
+		)
 	}
 }
 
@@ -58,9 +81,17 @@ where
 	FSrc: BinaryField,
 	FTgt: Field + From<FSrc> + BinaryField,
 {
-	fn create(&self, size: usize) -> Result<EvaluationDomain<FTgt>, Error> {
-		let points = make_evaluation_points(&self.subspace, size)?;
-		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect())
+	fn create_with_infinity(
+		&self,
+		size: usize,
+		with_infinity: bool,
+	) -> Result<EvaluationDomain<FTgt>, Error> {
+		if size == 0 && with_infinity {
+			bail!(Error::DomainSizeAtLeastOne);
+		}
+		let points =
+			make_evaluation_points(&self.subspace, size - if with_infinity { 1 } else { 0 })?;
+		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect(), false)
 	}
 }
 
@@ -78,7 +109,8 @@ fn make_evaluation_points<F: BinaryField>(
 impl<F: Field> From<EvaluationDomain<F>> for InterpolationDomain<F> {
 	fn from(evaluation_domain: EvaluationDomain<F>) -> Self {
 		let n = evaluation_domain.size();
-		let evaluation_matrix = vandermonde(evaluation_domain.points());
+		let evaluation_matrix =
+			vandermonde(evaluation_domain.finite_points(), evaluation_domain.with_infinity());
 		let mut interpolation_matrix = Matrix::zeros(n, n);
 		evaluation_matrix
 			.inverse_into(&mut interpolation_matrix)
@@ -97,17 +129,25 @@ impl<F: Field> From<EvaluationDomain<F>> for InterpolationDomain<F> {
 }
 
 impl<F: Field> EvaluationDomain<F> {
-	pub fn from_points(points: Vec<F>) -> Result<Self, Error> {
-		let weights = compute_barycentric_weights(&points)?;
-		Ok(Self { points, weights })
+	pub fn from_points(finite_points: Vec<F>, with_infinity: bool) -> Result<Self, Error> {
+		let weights = compute_barycentric_weights(&finite_points)?;
+		Ok(Self {
+			finite_points,
+			weights,
+			with_infinity,
+		})
 	}
 
 	pub fn size(&self) -> usize {
-		self.points.len()
+		self.finite_points.len() + if self.with_infinity { 1 } else { 0 }
 	}
 
-	pub fn points(&self) -> &[F] {
-		self.points.as_slice()
+	pub fn finite_points(&self) -> &[F] {
+		self.finite_points.as_slice()
+	}
+
+	pub const fn with_infinity(&self) -> bool {
+		self.with_infinity
 	}
 
 	/// Compute a vector of Lagrange polynomial evaluations in $O(N)$ at a given point `x`.
@@ -116,19 +156,23 @@ impl<F: Field> EvaluationDomain<F> {
 	/// are defined by
 	/// $$L_i(x) = \sum_{j \neq i}\frac{x - \pi_j}{\pi_i - \pi_j}$$
 	pub fn lagrange_evals<FE: ExtensionField<F>>(&self, x: FE) -> Vec<FE> {
-		let num_evals = self.size();
+		let num_evals = self.finite_points().len();
 
 		let mut result: Vec<FE> = vec![FE::ONE; num_evals];
 
 		// Multiply the product suffixes
 		for i in (1..num_evals).rev() {
-			result[i - 1] = result[i] * (x - self.points[i]);
+			result[i - 1] = result[i] * (x - self.finite_points[i]);
 		}
 
 		let mut prefix = FE::ONE;
 
 		// Multiply the product prefixes and weights
-		for ((r, &point), &weight) in result.iter_mut().zip(&self.points).zip(&self.weights) {
+		for ((r, &point), &weight) in result
+			.iter_mut()
+			.zip(&self.finite_points)
+			.zip(&self.weights)
+		{
 			*r *= prefix * weight;
 			prefix *= x - point;
 		}
@@ -141,18 +185,26 @@ impl<F: Field> EvaluationDomain<F> {
 	where
 		PE: PackedField<Scalar: ExtensionField<F>>,
 	{
-		let lagrange_eval_results = self.lagrange_evals(x);
-
-		let n = self.size();
-		if values.len() != n {
+		if values.len() != self.size() {
 			bail!(Error::ExtrapolateNumberOfEvaluations);
 		}
 
-		let result = lagrange_eval_results
-			.into_iter()
-			.zip(values)
-			.map(|(evaluation, &value)| value * evaluation)
-			.sum::<PE>();
+		let (values_iter, infinity_term) = if self.with_infinity {
+			let (&value_at_infinity, finite_values) =
+				values.split_last().expect("values length checked above");
+			let highest_degree = finite_values.len() as u64;
+			let iter = izip!(&self.finite_points, finite_values).map(move |(&point, &value)| {
+				value - value_at_infinity * PE::Scalar::from(point).pow(highest_degree)
+			});
+			(Either::Left(iter), value_at_infinity * x.pow(highest_degree))
+		} else {
+			(Either::Right(values.iter().copied()), PE::zero())
+		};
+
+		let result = izip!(self.lagrange_evals(x), values_iter)
+			.map(|(lagrange_at_x, value)| value * lagrange_at_x)
+			.sum::<PE>()
+			+ infinity_term;
 
 		Ok(result)
 	}
@@ -163,8 +215,12 @@ impl<F: Field> InterpolationDomain<F> {
 		self.evaluation_domain.size()
 	}
 
-	pub fn points(&self) -> &[F] {
-		self.evaluation_domain.points()
+	pub fn finite_points(&self) -> &[F] {
+		self.evaluation_domain.finite_points()
+	}
+
+	pub const fn with_infinity(&self) -> bool {
+		self.evaluation_domain.with_infinity()
 	}
 
 	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
@@ -175,8 +231,7 @@ impl<F: Field> InterpolationDomain<F> {
 	}
 
 	pub fn interpolate<FE: ExtensionField<F>>(&self, values: &[FE]) -> Result<Vec<FE>, Error> {
-		let n = self.evaluation_domain.size();
-		if values.len() != n {
+		if values.len() != self.evaluation_domain.size() {
 			bail!(Error::ExtrapolateNumberOfEvaluations);
 		}
 
@@ -236,8 +291,8 @@ fn compute_barycentric_weights<F: Field>(points: &[F]) -> Result<Vec<F>, Error> 
 		.collect()
 }
 
-fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
-	let n = xs.len();
+fn vandermonde<F: Field>(xs: &[F], with_infinity: bool) -> Matrix<F> {
+	let n = xs.len() + if with_infinity { 1 } else { 0 };
 
 	let mut mat = Matrix::zeros(n, n);
 	for (i, x_i) in xs.iter().copied().enumerate() {
@@ -249,6 +304,11 @@ fn vandermonde<F: Field>(xs: &[F]) -> Matrix<F> {
 			mat[(i, j)] = acc;
 		}
 	}
+
+	if with_infinity {
+		mat[(n - 1, n - 1)] = F::ONE;
+	}
+
 	mat
 }
 
@@ -277,7 +337,7 @@ mod tests {
 	fn test_new_domain() {
 		let domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
 		assert_eq!(
-			domain_factory.create(3).unwrap().points,
+			domain_factory.create(3).unwrap().finite_points,
 			&[
 				BinaryField8b::new(0),
 				BinaryField8b::new(1),
@@ -292,7 +352,7 @@ mod tests {
 		let iso_domain_factory = IsomorphicEvaluationDomainFactory::<BinaryField32b>::default();
 		let domain_1: EvaluationDomain<BinaryField32b> = default_domain_factory.create(10).unwrap();
 		let domain_2: EvaluationDomain<BinaryField32b> = iso_domain_factory.create(10).unwrap();
-		assert_eq!(domain_1.points, domain_2.points);
+		assert_eq!(domain_1.finite_points, domain_2.finite_points);
 	}
 
 	#[test]
@@ -303,11 +363,11 @@ mod tests {
 		let domain_2: EvaluationDomain<AESTowerField32b> = iso_domain_factory.create(10).unwrap();
 		assert_eq!(
 			domain_1
-				.points
+				.finite_points
 				.into_iter()
 				.map(AESTowerField32b::from)
 				.collect::<Vec<_>>(),
-			domain_2.points
+			domain_2.finite_points
 		);
 	}
 
@@ -343,6 +403,7 @@ mod tests {
 			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
 				.take(degree + 1)
 				.collect(),
+			false,
 		)
 		.unwrap();
 
@@ -351,7 +412,7 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let values = domain
-			.points()
+			.finite_points()
 			.iter()
 			.map(|&x| evaluate_univariate(&coeffs, x))
 			.collect::<Vec<_>>();
@@ -370,6 +431,7 @@ mod tests {
 			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
 				.take(degree + 1)
 				.collect(),
+			false,
 		)
 		.unwrap();
 
@@ -378,10 +440,44 @@ mod tests {
 			.collect::<Vec<_>>();
 
 		let values = domain
-			.points()
+			.finite_points()
 			.iter()
 			.map(|&x| evaluate_univariate(&coeffs, x))
 			.collect::<Vec<_>>();
+
+		let interpolated = InterpolationDomain::from(domain)
+			.interpolate(&values)
+			.unwrap();
+		assert_eq!(interpolated, coeffs);
+	}
+
+	#[test]
+	fn test_infinity() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let degree = 6;
+
+		let domain = EvaluationDomain::from_points(
+			repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
+				.take(degree)
+				.collect(),
+			true,
+		)
+		.unwrap();
+
+		let coeffs = repeat_with(|| <BinaryField32b as Field>::random(&mut rng))
+			.take(degree + 1)
+			.collect::<Vec<_>>();
+
+		let mut values = domain
+			.finite_points()
+			.iter()
+			.map(|&x| evaluate_univariate(&coeffs, x))
+			.collect::<Vec<_>>();
+		values.push(coeffs.last().copied().unwrap());
+
+		let x = <BinaryField32b as Field>::random(&mut rng);
+		let expected_y = evaluate_univariate(&coeffs, x);
+		assert_eq!(domain.extrapolate(&values, x).unwrap(), expected_y);
 
 		let interpolated = InterpolationDomain::from(domain)
 			.interpolate(&values)
