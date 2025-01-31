@@ -472,7 +472,6 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 	};
 }
 
-
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	_ByteSlicedAES512x8b,
 	16,
