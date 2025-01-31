@@ -322,6 +322,8 @@ define_byte_sliced!(ByteSlicedAES32x8b, AESTowerField8b, TowerLevel1);
 
 macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 	($name:ident, $data_width:expr, $original_byte_sliced:ty) => {
+		#[doc = concat!("This is a PackedFields helper that is used like a PackedSubfield of [`PackedExtension<AESTowerField8b>`] for [`", stringify!($original_byte_sliced), "`]")]
+		/// and has no particular meaning outside of this purpose.
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable)]
 		pub struct $name {
 			pub(super) data: [PackedAESBinaryField32x8b; $data_width],
@@ -469,6 +471,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 		}
 	};
 }
+
 
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	_ByteSlicedAES512x8b,

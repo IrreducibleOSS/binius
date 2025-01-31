@@ -18,6 +18,9 @@ use crate::protocols::sumcheck::{
 	error::Error,
 };
 
+/// This prover processes the polynomial from the highest to the lowest variable,  
+/// which allows minimizing interaction with Scalars instead of PackedFields  
+/// compared to [super::RegularSumcheckProver].  
 pub struct HighToLowSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
 	FDomain: Field,
@@ -36,7 +39,7 @@ impl<'a, F, FDomain, P, Composition, M, Backend>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -62,7 +65,7 @@ where
 			super::regular_sumcheck::validate_witness(&multilinears, composite_claims)?;
 		}
 
-		for claim in composite_claims.iter() {
+		for claim in &composite_claims {
 			if claim.composition.n_vars() != multilinears.len() {
 				bail!(Error::InvalidComposition {
 					actual: claim.composition.n_vars(),
@@ -96,8 +99,12 @@ where
 			.max_by_key(|domain| domain.points().len())
 			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
 
-		let state =
-			ProverState::new_big_field(multilinears, claimed_sums, evaluation_points, backend)?;
+		let state = ProverState::new_with_big_field(
+			multilinears,
+			claimed_sums,
+			evaluation_points,
+			backend,
+		)?;
 		let n_vars = state.n_vars();
 
 		Ok(Self {
@@ -114,7 +121,7 @@ impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 where
 	F: Field + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -137,9 +144,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self
-			.state
-			.hight_to_low_calculate_later_round_evals(&evaluators)?;
+		let evals = self.state.hight_to_low_calculate_round_evals(&evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}

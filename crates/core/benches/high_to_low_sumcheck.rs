@@ -45,7 +45,7 @@ where
 		.first()
 		.map(|multilinear| multilinear.n_vars())
 		.unwrap_or_default();
-	for multilinear in multilinears.iter() {
+	for multilinear in multilinears {
 		assert_eq!(multilinear.n_vars(), n_vars);
 	}
 
@@ -81,14 +81,14 @@ where
 	.collect()
 }
 
-fn bench_high_to_low_sumcheck<FDomain, P>(
+fn bench_high_to_low_sumcheck<F, FDomain, P>(
 	c: &mut Criterion,
 	n_multilinears: usize,
 	id: &str,
 	high_to_low: bool,
 ) where
-	P: PackedField + PackedExtension<FDomain>,
-	P::Scalar: TowerField + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: BinaryField,
 {
 	let mut group = c.benchmark_group(id);
@@ -148,13 +148,13 @@ fn bench_high_to_low_sumcheck<FDomain, P>(
 }
 
 fn bench_high_to_low_sumcheck_8b(c: &mut Criterion) {
-	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, ByteSlicedAES32x8b>(
 		c,
 		4,
 		"ByteSlicedAES32x8b/high_to_low",
 		true,
 	);
-	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField32x8b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, PackedAESBinaryField32x8b>(
 		c,
 		4,
 		"PackedAESBinaryField32x8b/high_to_low",
@@ -163,13 +163,13 @@ fn bench_high_to_low_sumcheck_8b(c: &mut Criterion) {
 }
 
 fn bench_sumcheck_8b(c: &mut Criterion) {
-	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x8b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, ByteSlicedAES32x8b>(
 		c,
 		4,
 		"ByteSlicedAES32x8b",
 		false,
 	);
-	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField32x8b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, PackedAESBinaryField32x8b>(
 		c,
 		4,
 		"PackedAESBinaryField32x8b",
@@ -177,13 +177,13 @@ fn bench_sumcheck_8b(c: &mut Criterion) {
 	);
 }
 fn bench_high_to_low_sumcheck_128b(c: &mut Criterion) {
-	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x128b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, ByteSlicedAES32x128b>(
 		c,
 		4,
 		"ByteSlicedAES32x128b/high_to_low",
 		true,
 	);
-	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField2x128b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, PackedAESBinaryField2x128b>(
 		c,
 		4,
 		"PackedAESBinaryField2x128b/high_to_low",
@@ -192,13 +192,13 @@ fn bench_high_to_low_sumcheck_128b(c: &mut Criterion) {
 }
 
 fn bench_sumcheck_128b(c: &mut Criterion) {
-	bench_high_to_low_sumcheck::<AESTowerField8b, ByteSlicedAES32x128b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, ByteSlicedAES32x128b>(
 		c,
 		4,
 		"ByteSlicedAES32x128b",
 		false,
 	);
-	bench_high_to_low_sumcheck::<AESTowerField8b, PackedAESBinaryField2x128b>(
+	bench_high_to_low_sumcheck::<_, AESTowerField8b, PackedAESBinaryField2x128b>(
 		c,
 		4,
 		"PackedAESBinaryField2x128b",

@@ -254,10 +254,10 @@ fn test_sumcheck_prove_verify_with_nontrivial_packing() {
 	>(n_vars, n_multilinears, switchover_rd);
 }
 
-fn test_high_to_low_prove_verify_product_helper<P, FDomain>(n_vars: usize, n_multilinears: usize)
+fn test_high_to_low_prove_verify_product_helper<F, P, FDomain>(n_vars: usize, n_multilinears: usize)
 where
-	P: PackedField + PackedExtension<FDomain>,
-	P::Scalar: TowerField + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: BinaryField,
 {
 	let mut rng = StdRng::seed_from_u64(0);
@@ -329,7 +329,7 @@ where
 pub fn test_prove_verify_high_to_low_byte_sliced_8b() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
-			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x8b, AESTowerField8b>(
+			test_high_to_low_prove_verify_product_helper::<_, ByteSlicedAES32x8b, AESTowerField8b>(
 				n_vars,
 				n_multilinears,
 			);
@@ -341,7 +341,7 @@ pub fn test_prove_verify_high_to_low_byte_sliced_8b() {
 pub fn test_prove_verify_high_to_low_byte_sliced_128b() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
-			test_high_to_low_prove_verify_product_helper::<ByteSlicedAES32x128b, AESTowerField8b>(
+			test_high_to_low_prove_verify_product_helper::<_, ByteSlicedAES32x128b, AESTowerField8b>(
 				n_vars,
 				n_multilinears,
 			);
@@ -353,10 +353,11 @@ pub fn test_prove_verify_high_to_low_byte_sliced_128b() {
 pub fn test_prove_verify_high_to_low() {
 	for n_vars in 2..8 {
 		for n_multilinears in 1..4 {
-			test_high_to_low_prove_verify_product_helper::<BinaryField128b, BinaryField8b>(
-				n_vars,
-				n_multilinears,
-			);
+			test_high_to_low_prove_verify_product_helper::<
+				BinaryField128b,
+				PackedBinaryField1x128b,
+				BinaryField8b,
+			>(n_vars, n_multilinears);
 		}
 	}
 }

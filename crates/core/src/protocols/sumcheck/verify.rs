@@ -188,6 +188,7 @@ where
 	};
 
 	batch_verify_with_start(start, claims, transcript).map(|mut res| {
+		// Challenges must be reverted because folding happens in reverse order.  
 		res.challenges.reverse();
 		res
 	})

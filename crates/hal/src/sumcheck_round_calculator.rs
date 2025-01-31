@@ -55,7 +55,7 @@ pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Composition: CompositionPolyOS<P>,
@@ -85,7 +85,7 @@ fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Compositi
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
-	high_to_low: bool,
+	is_high_to_low: bool,
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
@@ -114,7 +114,14 @@ where
 	let packed_accumulators = (0..(1 << (n_vars - 1 - subcube_vars)))
 		.into_par_iter()
 		.fold(
-			|| ParFoldStates::new(n_multilinears, n_round_evals.clone(), subcube_vars, high_to_low),
+			|| {
+				ParFoldStates::new(
+					n_multilinears,
+					n_round_evals.clone(),
+					subcube_vars,
+					is_high_to_low,
+				)
+			},
 			|mut par_fold_states, subcube_index| {
 				let ParFoldStates {
 					multilinear_evals,
@@ -123,7 +130,7 @@ where
 				} = &mut par_fold_states;
 
 				for (multilinear, evals) in iter::zip(multilinears, multilinear_evals.iter_mut()) {
-					if high_to_low {
+					if is_high_to_low {
 						multilinear
 							.subcube_evaluations(subcube_vars, subcube_index, &mut evals.evals_0)
 							.expect("indices are in range");
@@ -288,7 +295,7 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 		n_multilinears: usize,
 		n_round_evals: impl Iterator<Item = usize>,
 		subcube_vars: usize,
-		high_to_low: bool,
+		is_high_to_low: bool,
 	) -> Self {
 		Self {
 			multilinear_evals: (0..n_multilinears)
@@ -296,7 +303,7 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 				.collect(),
 			interleaved_evals: vec![
 				PBase::default();
-				if high_to_low {
+				if is_high_to_low {
 					0
 				} else {
 					1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)

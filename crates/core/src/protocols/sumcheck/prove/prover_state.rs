@@ -131,8 +131,10 @@ where
 		})
 	}
 
+	/// Create a prover state for the case when we work with big fields from the first round.  
+	/// This allows us to avoid using a non-optimal folding in the first round.
 	#[instrument(skip_all, level = "debug", name = "ProverState::new_big_field")]
-	pub fn new_big_field(
+	pub fn new_with_big_field(
 		multilinears: Vec<M>,
 		claimed_sums: Vec<F>,
 		evaluation_points: Vec<FDomain>,
@@ -377,25 +379,23 @@ where
 		)?)
 	}
 
-	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
+	/// Calculate the accumulated evaluations for an arbitrary high to low sumcheck round.
 	#[instrument(skip_all, level = "debug")]
-	pub fn hight_to_low_calculate_later_round_evals<Evaluator, Composition>(
+	pub fn hight_to_low_calculate_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
-		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		Ok(self
-			.backend
-			.high_to_low_sumcheck_compute_later_round_evals(
-				self.n_vars,
-				self.tensor_query.as_ref().map(Into::into),
-				&self.multilinears,
-				evaluators,
-				&self.evaluation_points,
-			)?)
+		Ok(self.backend.high_to_low_sumcheck_compute_round_evals(
+			self.n_vars,
+			self.tensor_query.as_ref().map(Into::into),
+			&self.multilinears,
+			evaluators,
+			&self.evaluation_points,
+		)?)
 	}
 
 	/// Calculate the batched round coefficients from the domain evaluations.

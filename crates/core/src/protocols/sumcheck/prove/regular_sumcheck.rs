@@ -218,7 +218,7 @@ where
 	P: PackedField,
 	FDomain: Field,
 {
-	pub fn new(
+	pub const fn new(
 		composition: &'a Composition,
 		interpolation_domain: &'a InterpolationDomain<FDomain>,
 	) -> Self {

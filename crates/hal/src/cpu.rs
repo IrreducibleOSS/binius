@@ -64,7 +64,7 @@ impl ComputationBackend for CpuBackend {
 		Ok(multilinear.evaluate_partial_high(query_expansion)?)
 	}
 
-	fn high_to_low_sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+	fn high_to_low_sumcheck_compute_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
@@ -75,12 +75,14 @@ impl ComputationBackend for CpuBackend {
 	where
 		FDomain: Field,
 		F: Field + ExtensionField<FDomain>,
-		P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+		P: PackedField<Scalar = F>
+			+ PackedExtension<F, PackedSubfield = P>
+			+ PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<P, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		high_to_low_calculate_later_round_evals(
+		high_to_low_calculate_round_evals(
 			n_vars,
 			tensor_query,
 			multilinears,
