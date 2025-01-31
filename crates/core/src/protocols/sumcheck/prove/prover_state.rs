@@ -71,7 +71,7 @@ impl<'a, FDomain, F, P, M, Backend> ProverState<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -242,41 +242,17 @@ where
 			.collect()
 	}
 
-	/// Calculate the accumulated evaluations for the first sumcheck round.
-	#[instrument(skip_all, level = "debug")]
-	pub fn calculate_first_round_evals<FBase, Evaluator, Composition>(
-		&self,
-		evaluators: &[Evaluator],
-	) -> Result<Vec<RoundEvals<F>>, Error>
-	where
-		FBase: ExtensionField<FDomain>,
-		F: ExtensionField<FBase>,
-		P: PackedExtension<FBase>,
-		Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>,
-	{
-		Ok(self.backend.sumcheck_compute_first_round_evals(
-			self.n_vars,
-			&self.multilinears,
-			evaluators,
-			&self.evaluation_points,
-		)?)
-	}
-
 	/// Calculate the accumulated evaluations for an arbitrary sumcheck round.
-	///
-	/// See [`Self::calculate_first_round_evals`] for an optimized version of this method that
-	/// operates over small fields in the first round.
 	#[instrument(skip_all, level = "debug")]
-	pub fn calculate_later_round_evals<Evaluator, Composition>(
+	pub fn calculate_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
-		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		Ok(self.backend.sumcheck_compute_later_round_evals(
+		Ok(self.backend.sumcheck_compute_round_evals(
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,

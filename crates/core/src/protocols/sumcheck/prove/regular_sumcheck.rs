@@ -193,7 +193,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.calculate_later_round_evals(&evaluators)?;
+		let evals = self.state.calculate_round_evals(&evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}
@@ -213,7 +213,7 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<F, P, FDomain, Composition> SumcheckEvaluator<F, P, Composition>
+impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field + ExtensionField<FDomain>,

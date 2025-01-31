@@ -3,7 +3,6 @@
 mod batch_prove;
 mod batch_prove_univariate_zerocheck;
 pub(crate) mod common;
-mod concrete_prover;
 pub mod front_loaded;
 pub mod oracles;
 pub mod prover_state;
@@ -15,7 +14,6 @@ pub use batch_prove::{batch_prove, batch_prove_with_start, SumcheckProver};
 pub use batch_prove_univariate_zerocheck::{
 	batch_prove_zerocheck_univariate_round, UnivariateZerocheckProver,
 };
-pub use concrete_prover::ConcreteProver;
 pub use oracles::{
 	constraint_set_sumcheck_prover, constraint_set_zerocheck_prover, split_constraint_set,
 };

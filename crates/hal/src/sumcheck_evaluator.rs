@@ -2,17 +2,13 @@
 
 use std::ops::Range;
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedSubfield};
+use binius_field::{Field, PackedField};
 
 /// Evaluations of a polynomial at a set of evaluation points.
 #[derive(Debug, Clone)]
 pub struct RoundEvals<F: Field>(pub Vec<F>);
 
-pub trait SumcheckEvaluator<FBase, P, Composition>
-where
-	FBase: Field,
-	P: PackedField<Scalar: ExtensionField<FBase>> + PackedExtension<FBase>,
-{
+pub trait SumcheckEvaluator<P: PackedField, Composition> {
 	/// The range of eval point indices over which composition evaluation and summation should happen.
 	/// Returned range must equal the result of `n_round_evals()` in length.
 	fn eval_point_indices(&self) -> Range<usize>;
@@ -27,7 +23,7 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
-		batch_query: &[&[PackedSubfield<P, FBase>]],
+		batch_query: &[&[P]],
 	) -> P;
 
 	/// Returns the composition evaluated by this object.

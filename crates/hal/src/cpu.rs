@@ -10,8 +10,8 @@ use binius_math::{
 use tracing::instrument;
 
 use crate::{
-	sumcheck_round_calculator::{calculate_first_round_evals, calculate_later_round_evals},
-	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
+	sumcheck_round_calculator::calculate_round_evals, ComputationBackend, Error, RoundEvals,
+	SumcheckEvaluator, SumcheckMultilinear,
 };
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
@@ -37,31 +37,7 @@ impl ComputationBackend for CpuBackend {
 		Ok(eq_ind_partial_eval(query))
 	}
 
-	fn sumcheck_compute_first_round_evals<FDomain, FBase, F, P, M, Evaluator, Composition>(
-		&self,
-		n_vars: usize,
-		multilinears: &[SumcheckMultilinear<P, M>],
-		evaluators: &[Evaluator],
-		evaluation_points: &[FDomain],
-	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
-	where
-		FDomain: Field,
-		FBase: ExtensionField<FDomain>,
-		F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-		P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FBase>,
-		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>,
-	{
-		calculate_first_round_evals::<_, FBase, _, _, _, _, _>(
-			n_vars,
-			multilinears,
-			evaluators,
-			evaluation_points,
-		)
-	}
-
-	fn sumcheck_compute_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+	fn sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
@@ -71,21 +47,12 @@ impl ComputationBackend for CpuBackend {
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
-		F: Field + ExtensionField<FDomain>,
-		P: PackedField<Scalar = F>
-			+ PackedExtension<F, PackedSubfield = P>
-			+ PackedExtension<FDomain>,
+		P: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
-		calculate_later_round_evals(
-			n_vars,
-			tensor_query,
-			multilinears,
-			evaluators,
-			evaluation_points,
-		)
+		calculate_round_evals(n_vars, tensor_query, multilinears, evaluators, evaluation_points)
 	}
 
 	#[instrument(skip_all, name = "CpuBackend::evaluate_partial_high")]

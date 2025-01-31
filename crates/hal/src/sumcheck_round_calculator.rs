@@ -4,19 +4,16 @@
 //!
 //! This is one of the core computational tasks in the sumcheck proving algorithm.
 
-use std::{iter, marker::PhantomData};
+use std::iter;
 
-use binius_field::{
-	recast_packed, ExtensionField, Field, PackedExtension, PackedField, PackedSubfield,
-	RepackedExtension,
-};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedSubfield};
 use binius_math::{
 	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
 use bytemuck::zeroed_vec;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use stackalloc::stackalloc_with_iter;
 
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
@@ -44,39 +41,11 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 	) -> Result<(), Error>;
 }
 
-/// Calculate the accumulated evaluations for the first sumcheck round.
-pub(crate) fn calculate_first_round_evals<FDomain, FBase, F, P, M, Evaluator, Composition>(
-	n_vars: usize,
-	multilinears: &[SumcheckMultilinear<P, M>],
-	evaluators: &[Evaluator],
-	evaluation_points: &[FDomain],
-) -> Result<Vec<RoundEvals<F>>, Error>
-where
-	FDomain: Field,
-	FBase: ExtensionField<FDomain>,
-	F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain> + PackedExtension<FBase>,
-	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
-	Composition: CompositionPolyOS<P>,
-{
-	let accesses = multilinears
-		.iter()
-		.map(FirstRoundAccess::new)
-		.collect::<Vec<_>>();
-	calculate_round_evals::<_, FBase, _, _, _, _, _>(
-		n_vars,
-		&accesses,
-		evaluators,
-		evaluation_points,
-	)
-}
-
 /// Calculate the accumulated evaluations for an arbitrary sumcheck round.
 ///
 /// See [`calculate_first_round_evals`] for an optimized version of this method
 /// that works over small fields in the first round.
-pub(crate) fn calculate_later_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	n_vars: usize,
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
@@ -86,25 +55,26 @@ pub(crate) fn calculate_later_round_evals<FDomain, F, P, M, Evaluator, Compositi
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
+	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Composition: CompositionPolyOS<P>,
 {
 	let empty_query = MultilinearQuery::with_capacity(0);
-	let query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
+	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
 
-	let accesses = multilinears
+	let later_rounds_accesses = multilinears
 		.iter()
-		.map(|multilinear| LaterRoundAccess {
+		.map(|multilinear| LargeFieldAccess {
 			multilinear,
-			tensor_query: query,
+			tensor_query,
 		})
-		.collect::<Vec<_>>();
-	calculate_round_evals::<_, F, _, _, _, _, _>(n_vars, &accesses, evaluators, evaluation_points)
+		.collect_vec();
+
+	calculate_round_evals_with_access(n_vars, &later_rounds_accesses, evaluators, evaluation_points)
 }
 
-fn calculate_round_evals<FDomain, FBase, F, P, Evaluator, Access, Composition>(
+fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Composition>(
 	n_vars: usize,
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
@@ -112,11 +82,10 @@ fn calculate_round_evals<FDomain, FBase, F, P, Evaluator, Access, Composition>(
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
-	FBase: ExtensionField<FDomain>,
-	F: Field + ExtensionField<FDomain> + ExtensionField<FBase>,
-	P: PackedField<Scalar = F> + PackedExtension<FBase> + PackedExtension<FDomain>,
-	Evaluator: SumcheckEvaluator<FBase, P, Composition> + Sync,
-	Access: SumcheckMultilinearAccess<PackedSubfield<P, FBase>> + Sync,
+	F: ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
+	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPolyOS<P>,
 {
 	let n_multilinears = multilinears.len();
@@ -182,9 +151,9 @@ where
 								// `binius_math::univariate::extrapolate_line`, except that we do
 								// not repeat the broadcast of the subfield element to a packed
 								// subfield.
-								*eval_z = recast_packed::<P, FDomain, FBase>(extrapolate_lines(
-									recast_packed::<P, FBase, FDomain>(eval_0),
-									recast_packed::<P, FBase, FDomain>(eval_1),
+								*eval_z = P::cast_ext(extrapolate_lines(
+									P::cast_base(eval_0),
+									P::cast_base(eval_1),
 									eval_point_broadcast,
 								));
 							}
@@ -316,57 +285,7 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 }
 
 #[derive(Debug)]
-struct FirstRoundAccess<'a, PBase, P, M>
-where
-	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
-{
-	multilinear: &'a SumcheckMultilinear<P, M>,
-	_marker: PhantomData<PBase>,
-}
-
-impl<'a, PBase, P, M> FirstRoundAccess<'a, PBase, P, M>
-where
-	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
-{
-	const fn new(multilinear: &'a SumcheckMultilinear<P, M>) -> Self {
-		Self {
-			multilinear,
-			_marker: PhantomData,
-		}
-	}
-}
-
-impl<PBase, P, M> SumcheckMultilinearAccess<PBase> for FirstRoundAccess<'_, PBase, P, M>
-where
-	PBase: PackedField,
-	P: RepackedExtension<PBase>,
-	P::Scalar: ExtensionField<PBase::Scalar>,
-	M: MultilinearPoly<P> + Send + Sync,
-{
-	fn subcube_evaluations(
-		&self,
-		subcube_vars: usize,
-		subcube_index: usize,
-		evals: &mut [PBase],
-	) -> Result<(), Error> {
-		if let SumcheckMultilinear::Transparent { multilinear, .. } = self.multilinear {
-			let evals = <P as PackedExtension<PBase::Scalar>>::cast_exts_mut(evals);
-			Ok(multilinear.subcube_evals(
-				subcube_vars,
-				subcube_index,
-				<P::Scalar as ExtensionField<PBase::Scalar>>::LOG_DEGREE,
-				evals,
-			)?)
-		} else {
-			panic!("precondition: no folded multilinears in the first round");
-		}
-	}
-}
-
-#[derive(Debug)]
-struct LaterRoundAccess<'a, P, M>
+struct LargeFieldAccess<'a, P, M>
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
@@ -375,7 +294,7 @@ where
 	tensor_query: MultilinearQueryRef<'a, P>,
 }
 
-impl<P, M> SumcheckMultilinearAccess<P> for LaterRoundAccess<'_, P, M>
+impl<P, M> SumcheckMultilinearAccess<P> for LargeFieldAccess<'_, P, M>
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
@@ -388,28 +307,28 @@ where
 	) -> Result<(), Error> {
 		match self.multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
-				// TODO: Stop using LaterRoundAccess for first round in RegularSumcheckProver and
-				// GPASumcheckProver, then remove this conditional.
 				if self.tensor_query.n_vars() == 0 {
-					Ok(multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals)?)
+					multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals)?
 				} else {
-					Ok(multilinear.subcube_inner_products(
+					multilinear.subcube_inner_products(
 						self.tensor_query,
 						subcube_vars,
 						subcube_index,
 						evals,
-					)?)
+					)?
 				}
 			}
 
 			SumcheckMultilinear::Folded {
 				large_field_folded_multilinear,
-			} => Ok(large_field_folded_multilinear.subcube_evals(
+			} => large_field_folded_multilinear.subcube_evals(
 				subcube_vars,
 				subcube_index,
 				0,
 				evals,
-			)?),
+			)?,
 		}
+
+		Ok(())
 	}
 }
