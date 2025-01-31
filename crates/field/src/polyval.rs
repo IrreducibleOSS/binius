@@ -4,12 +4,12 @@
 
 use std::{
 	any::TypeId,
-	array,
 	fmt::{self, Debug, Display, Formatter},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::iter::IterExtensions;
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -29,7 +29,7 @@ use crate::{
 		invert_or_zero_using_packed, multiple_using_packed, square_using_packed,
 	},
 	linear_transformation::{FieldLinearTransformation, Transformation},
-	underlier::UnderlierWithBitOps,
+	underlier::{IterationMethods, IterationStrategy, UnderlierWithBitOps, U1},
 	Field,
 };
 
@@ -414,7 +414,6 @@ impl Mul<BinaryField128bPolyval> for BinaryField1b {
 }
 
 impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
-	type Iterator = <[BinaryField1b; 128] as IntoIterator>::IntoIter;
 	const LOG_DEGREE: usize = 7;
 
 	#[inline]
@@ -439,9 +438,15 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	}
 
 	#[inline]
-	fn iter_bases(&self) -> Self::Iterator {
-		let base_elems = array::from_fn(|i| BinaryField1b::from((self.0 >> i) as u8));
-		base_elems.into_iter()
+	fn iter_bases(&self) -> impl Iterator<Item = BinaryField1b> {
+		IterationMethods::<U1, Self::Underlier>::value_iter(self.0)
+			.map_skippable(BinaryField1b::from)
+	}
+
+	#[inline]
+	fn into_iter_bases(self) -> impl Iterator<Item = BinaryField1b> {
+		IterationMethods::<U1, Self::Underlier>::value_iter(self.0)
+			.map_skippable(BinaryField1b::from)
 	}
 }
 

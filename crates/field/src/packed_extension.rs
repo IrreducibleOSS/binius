@@ -54,7 +54,7 @@ where
 ///         PE: PackedField<Scalar: ExtensionField<F>>,
 ///         F: Field,
 /// {
-///     packed.iter().flat_map(|ext| ext.iter_bases())
+///     packed.iter().flat_map(|ext| ext.into_iter_bases())
 /// }
 ///
 /// fn cast_then_iter<'a, F, PE>(packed: &'a PE) -> impl Iterator<Item=F> + 'a

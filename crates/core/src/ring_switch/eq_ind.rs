@@ -1,10 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter, marker::PhantomData, sync::Arc};
+use std::{any::TypeId, iter, marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	util::inner_product_unchecked, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
+	byte_iteration::{
+		can_iterate_bytes, create_partial_sums_lookup_tables, iterate_bytes, ByteIteratorCallback,
+	},
+	util::inner_product_unchecked,
+	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	TowerField,
 };
 use binius_math::{tensor_prod_eq_ind, MultilinearExtension};
 use binius_maybe_rayon::prelude::*;
@@ -17,6 +21,34 @@ use crate::{
 	tensor_algebra::TensorAlgebra,
 };
 
+/// Information about the row-batching coefficients.
+#[derive(Debug)]
+pub struct RowBatchCoeffs<F> {
+	coeffs: Vec<F>,
+	/// This is a lookup table for the partial sums of the coefficients
+	/// that is used to efficiently fold with 1-bit coefficients.
+	partial_sums_lookup_table: Vec<F>,
+}
+
+impl<F: Field> RowBatchCoeffs<F> {
+	pub fn new(coeffs: Vec<F>) -> Self {
+		let partial_sums_lookup_table = if coeffs.len() >= 8 {
+			create_partial_sums_lookup_tables(coeffs.as_slice())
+		} else {
+			Vec::new()
+		};
+
+		Self {
+			coeffs,
+			partial_sums_lookup_table,
+		}
+	}
+
+	pub fn coeffs(&self) -> &[F] {
+		&self.coeffs
+	}
+}
+
 /// The multilinear function $A$ from [DP24] Section 5.
 ///
 /// The function $A$ is $\ell':= \ell - \kappa$-variate and depends on the last $\ell'$ coordinates
@@ -27,7 +59,7 @@ use crate::{
 pub struct RingSwitchEqInd<FSub, F> {
 	/// $z_{\kappa}, \ldots, z_{\ell-1}$
 	z_vals: Arc<[F]>,
-	row_batch_coeffs: Arc<[F]>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeff: F,
 	_marker: PhantomData<FSub>,
 }
@@ -39,10 +71,10 @@ where
 {
 	pub fn new(
 		z_vals: Arc<[F]>,
-		row_batch_coeffs: Arc<[F]>,
+		row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 		mixing_coeff: F,
 	) -> Result<Self, Error> {
-		if row_batch_coeffs.len() < F::DEGREE {
+		if row_batch_coeffs.coeffs.len() < F::DEGREE {
 			bail!(Error::InvalidArgs(
 				"RingSwitchEqInd::new expects row_batch_coeffs length greater than or equal to \
 				the extension degree"
@@ -67,13 +99,46 @@ where
 		P::unpack_scalars_mut(&mut evals)
 			.par_iter_mut()
 			.for_each(|val| {
-				let vert = *val;
-				*val = inner_product_unchecked(
-					self.row_batch_coeffs.iter().copied(),
-					ExtensionField::<FSub>::iter_bases(&vert),
-				);
+				*val = inner_product_subfield(*val, &self.row_batch_coeffs);
 			});
 		Ok(MultilinearExtension::from_values(evals)?)
+	}
+}
+
+#[inline(always)]
+fn inner_product_subfield<FSub, F>(value: F, row_batch_coeffs: &RowBatchCoeffs<F>) -> F
+where
+	FSub: Field,
+	F: ExtensionField<FSub>,
+{
+	if TypeId::of::<FSub>() == TypeId::of::<BinaryField1b>() && can_iterate_bytes::<F>() {
+		// Special case when we are folding with 1-bit coefficients.
+		// Use partial sums lookup table to speed up the computation.
+
+		struct Callback<'a, F> {
+			partial_sums_lookup: &'a [F],
+			result: F,
+		}
+
+		impl<F: Field> ByteIteratorCallback for Callback<'_, F> {
+			#[inline(always)]
+			fn call(&mut self, iter: impl Iterator<Item = u8>) {
+				for (byte_index, byte) in iter.enumerate() {
+					self.result += self.partial_sums_lookup[(byte_index << 8) + byte as usize];
+				}
+			}
+		}
+
+		let mut callback = Callback {
+			partial_sums_lookup: &row_batch_coeffs.partial_sums_lookup_table,
+			result: F::ZERO,
+		};
+		iterate_bytes(std::slice::from_ref(&value), &mut callback);
+
+		callback.result
+	} else {
+		// fall back to the general case
+		inner_product_unchecked(row_batch_coeffs.coeffs.iter().copied(), F::iter_bases(&value))
 	}
 }
 
@@ -108,7 +173,7 @@ where
 			},
 		);
 
-		let folded_eval = tensor_eval.fold_vertical(&self.row_batch_coeffs);
+		let folded_eval = tensor_eval.fold_vertical(&self.row_batch_coeffs.coeffs);
 		Ok(folded_eval)
 	}
 
@@ -141,7 +206,8 @@ mod tests {
 
 		let row_batch_coeffs = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(1 << kappa)
-			.collect::<Arc<[_]>>();
+			.collect::<Vec<_>>();
+		let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(row_batch_coeffs));
 
 		let eval_point = repeat_with(|| <F as Field>::random(&mut rng))
 			.take(n_vars)

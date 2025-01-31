@@ -18,9 +18,6 @@ pub trait ExtensionField<F: Field>:
 	+ SubAssign<F>
 	+ MulAssign<F>
 {
-	/// Iterator returned by `iter_bases`.
-	type Iterator: Iterator<Item = F>;
-
 	/// Base-2 logarithm of the extension degree.
 	const LOG_DEGREE: usize;
 
@@ -47,12 +44,13 @@ pub trait ExtensionField<F: Field>:
 	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error>;
 
 	/// Iterator over base field elements.
-	fn iter_bases(&self) -> Self::Iterator;
+	fn iter_bases(&self) -> impl Iterator<Item = F>;
+
+	/// Convert into an iterator over base field elements.
+	fn into_iter_bases(self) -> impl Iterator<Item = F>;
 }
 
 impl<F: Field> ExtensionField<F> for F {
-	type Iterator = iter::Once<F>;
-
 	const LOG_DEGREE: usize = 0;
 
 	fn basis(i: usize) -> Result<Self, Error> {
@@ -74,7 +72,11 @@ impl<F: Field> ExtensionField<F> for F {
 		}
 	}
 
-	fn iter_bases(&self) -> Self::Iterator {
+	fn iter_bases(&self) -> impl Iterator<Item = F> {
 		iter::once(*self)
+	}
+
+	fn into_iter_bases(self) -> impl Iterator<Item = F> {
+		iter::once(self)
 	}
 }

@@ -20,6 +20,7 @@ pub mod arithmetic_traits;
 pub mod as_packed_field;
 pub mod binary_field;
 mod binary_field_arithmetic;
+pub mod byte_iteration;
 pub mod error;
 pub mod extension;
 pub mod field;

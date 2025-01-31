@@ -8,6 +8,7 @@ use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytes::Buf;
 use itertools::izip;
 
+use super::eq_ind::RowBatchCoeffs;
 use crate::{
 	fiat_shamir::{CanSample, Challenger},
 	piop::PIOPSumcheckClaim,
@@ -50,8 +51,9 @@ where
 
 	// Sample the row-batching randomness.
 	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
-	let row_batch_coeffs =
-		Arc::from(MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion());
+	let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
+		MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
+	));
 
 	// For each original evaluation claim, receive the row-batched evaluation claim.
 	let row_batched_evals = transcript
@@ -66,7 +68,7 @@ where
 		&system.eval_claim_to_prefix_desc_index,
 	);
 	for (expected, tensor_elem) in iter::zip(mixed_row_batched_evals, tensor_elems) {
-		if tensor_elem.fold_vertical(&row_batch_coeffs) != expected {
+		if tensor_elem.fold_vertical(row_batch_coeffs.coeffs()) != expected {
 			return Err(VerificationError::IncorrectRowBatchedSum.into());
 		}
 	}
@@ -173,7 +175,7 @@ fn accumulate_evaluations_by_prefixes<F: TowerField>(
 fn make_ring_switch_eq_inds<F, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
-	row_batch_coeffs: Arc<[F]>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
 ) -> Result<Vec<Box<dyn MultivariatePoly<F>>>, Error>
 where
@@ -190,7 +192,7 @@ where
 
 fn make_ring_switch_eq_ind<Tower>(
 	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
-	row_batch_coeffs: Arc<[FExt<Tower>]>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<FExt<Tower>>>,
 	mixing_coeff: FExt<Tower>,
 ) -> Result<Box<dyn MultivariatePoly<FExt<Tower>>>, Error>
 where

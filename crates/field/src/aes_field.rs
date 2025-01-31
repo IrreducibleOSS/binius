@@ -2,7 +2,6 @@
 
 use std::{
 	any::TypeId,
-	array,
 	fmt::{Debug, Display, Formatter},
 	iter::{Product, Sum},
 	marker::PhantomData,

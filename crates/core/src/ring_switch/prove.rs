@@ -11,6 +11,7 @@ use tracing::instrument;
 
 use super::{
 	common::{EvalClaimPrefixDesc, EvalClaimSystem, PIOPSumcheckClaimDesc},
+	eq_ind::RowBatchCoeffs,
 	error::Error,
 	tower_tensor_algebra::TowerTensorAlgebra,
 };
@@ -75,11 +76,12 @@ where
 
 	// Sample the row-batching randomness.
 	let row_batch_challenges = transcript.sample_vec(system.max_claim_kappa());
-	let row_batch_coeffs =
-		Arc::from(MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion());
+	let row_batch_coeffs = Arc::new(RowBatchCoeffs::new(
+		MultilinearQuery::<F, _>::expand(&row_batch_challenges).into_expansion(),
+	));
 
 	let row_batched_evals =
-		compute_row_batched_sumcheck_evals(scaled_tensor_elems, &row_batch_coeffs);
+		compute_row_batched_sumcheck_evals(scaled_tensor_elems, row_batch_coeffs.coeffs());
 	transcript.message().write_scalar_slice(&row_batched_evals);
 
 	// Create the reduced PIOP sumcheck witnesses.
@@ -217,7 +219,7 @@ where
 fn make_ring_switch_eq_inds<F, P, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
-	row_batch_coeffs: Arc<[F]>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
 ) -> Result<Vec<MultilinearWitness<'static, P>>, Error>
 where
@@ -238,7 +240,7 @@ where
 
 fn make_ring_switch_eq_ind<P, Tower>(
 	suffix_desc: &EvalClaimSuffixDesc<FExt<Tower>>,
-	row_batch_coeffs: Arc<[FExt<Tower>]>,
+	row_batch_coeffs: Arc<RowBatchCoeffs<FExt<Tower>>>,
 	mixing_coeff: FExt<Tower>,
 ) -> Result<MultilinearWitness<'static, P>, Error>
 where

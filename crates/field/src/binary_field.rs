@@ -2,7 +2,6 @@
 
 use std::{
 	any::TypeId,
-	array,
 	fmt::{Debug, Display, Formatter},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -564,7 +563,6 @@ macro_rules! impl_field_extension {
 		}
 
 		impl ExtensionField<$subfield_name> for $name {
-			type Iterator = <[$subfield_name; 1 << $log_degree] as IntoIterator>::IntoIter;
 			const LOG_DEGREE: usize = $log_degree;
 
 			#[inline]
@@ -597,15 +595,21 @@ macro_rules! impl_field_extension {
 			}
 
 			#[inline]
-			fn iter_bases(&self) -> Self::Iterator {
-				use $crate::underlier::NumCast;
+			fn iter_bases(&self) -> impl Iterator<Item = $subfield_name> {
+				use $crate::underlier::{WithUnderlier, IterationMethods, IterationStrategy};
+				use binius_utils::iter::IterExtensions;
 
-				let base_elems = array::from_fn(|i| {
-					<$subfield_name>::new(<$subfield_typ>::num_cast_from(
-						(self.0 >> (i * $subfield_name::N_BITS)),
-					))
-				});
-				base_elems.into_iter()
+				IterationMethods::<<$subfield_name as WithUnderlier>::Underlier, Self::Underlier>::ref_iter(&self.0)
+					.map_skippable($subfield_name::from)
+			}
+
+			#[inline]
+			fn into_iter_bases(self) -> impl Iterator<Item = $subfield_name> {
+				use $crate::underlier::{WithUnderlier, IterationMethods, IterationStrategy};
+				use binius_utils::iter::IterExtensions;
+
+				IterationMethods::<<$subfield_name as WithUnderlier>::Underlier, Self::Underlier>::value_iter(self.0)
+					.map_skippable($subfield_name::from)
 			}
 		}
 	};
