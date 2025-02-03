@@ -807,6 +807,63 @@ pub mod test_utils {
 			check_interleave::<P>(lhs, rhs, log_block_len);
 		}
 	}
+
+	pub fn check_transpose<P: PackedField + WithUnderlier>(
+		lhs: P::Underlier,
+		rhs: P::Underlier,
+		log_block_len: usize,
+	) {
+		let lhs = P::from_underlier(lhs);
+		let rhs = P::from_underlier(rhs);
+		let block_len = 1 << log_block_len;
+		let (a, b) = lhs.transpose(rhs, log_block_len);
+		for i in (0..P::WIDTH / 2).step_by(block_len) {
+			for j in 0..block_len {
+				assert_eq!(
+					a.get(i + j),
+					lhs.get(2 * i + j),
+					"i: {}, j: {}, log_block_len: {}, P: {:?}",
+					i,
+					j,
+					log_block_len,
+					P::zero()
+				);
+				assert_eq!(
+					b.get(i + j),
+					lhs.get(2 * i + j + block_len),
+					"i: {}, j: {}, log_block_len: {}, P: {:?}",
+					i,
+					j,
+					log_block_len,
+					P::zero()
+				);
+			}
+		}
+
+		for i in (0..P::WIDTH / 2).step_by(block_len) {
+			for j in 0..block_len {
+				assert_eq!(
+					a.get(i + j + P::WIDTH / 2),
+					rhs.get(2 * i + j),
+					"i: {}, j: {}, log_block_len: {}, P: {:?}",
+					i,
+					j,
+					log_block_len,
+					P::zero()
+				);
+				assert_eq!(b.get(i + j + P::WIDTH / 2), rhs.get(2 * i + j + block_len));
+			}
+		}
+	}
+
+	pub fn check_transpose_all_heights<P: PackedField + WithUnderlier>(
+		lhs: P::Underlier,
+		rhs: P::Underlier,
+	) {
+		for log_block_len in 0..P::LOG_WIDTH {
+			check_transpose::<P>(lhs, rhs, log_block_len);
+		}
+	}
 }
 
 #[cfg(test)]
@@ -831,6 +888,7 @@ mod tests {
 		},
 		arithmetic_traits::MulAlpha,
 		linear_transformation::PackedTransformationFactory,
+		test_utils::check_transpose_all_heights,
 		underlier::{U2, U4},
 		Field, PackedField, PackedFieldIndexable,
 	};
@@ -1205,6 +1263,94 @@ mod tests {
 			check_interleave_all_heights::<PackedBinaryField16x32b>(a_val.into(), b_val.into());
 			check_interleave_all_heights::<PackedBinaryField8x64b>(a_val.into(), b_val.into());
 			check_interleave_all_heights::<PackedBinaryField4x128b>(a_val.into(), b_val.into());
+		}
+
+		#[test]
+		fn check_transpose_2b(a_val in 0u8..3, b_val in 0u8..3) {
+			check_transpose_all_heights::<PackedBinaryField2x1b>(U2::new(a_val), U2::new(b_val));
+			check_transpose_all_heights::<PackedBinaryField1x2b>(U2::new(a_val), U2::new(b_val));
+		}
+
+		#[test]
+		fn check_transpose_4b(a_val in 0u8..16, b_val in 0u8..16) {
+			check_transpose_all_heights::<PackedBinaryField4x1b>(U4::new(a_val), U4::new(b_val));
+			check_transpose_all_heights::<PackedBinaryField2x2b>(U4::new(a_val), U4::new(b_val));
+			check_transpose_all_heights::<PackedBinaryField1x4b>(U4::new(a_val), U4::new(b_val));
+		}
+
+		#[test]
+		fn check_transpose_8b(a_val in 0u8.., b_val in 0u8..) {
+			check_transpose_all_heights::<PackedBinaryField8x1b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField4x2b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField2x4b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField1x8b>(a_val, b_val);
+		}
+
+		#[test]
+		fn check_transpose_16b(a_val in 0u16.., b_val in 0u16..) {
+			check_transpose_all_heights::<PackedBinaryField16x1b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField8x2b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField4x4b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField2x8b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField1x16b>(a_val, b_val);
+		}
+
+		#[test]
+		fn check_transpose_32b(a_val in 0u32.., b_val in 0u32..) {
+			check_transpose_all_heights::<PackedBinaryField32x1b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField16x2b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField8x4b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField4x8b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField2x16b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField1x32b>(a_val, b_val);
+		}
+
+		#[test]
+		fn check_transpose_64b(a_val in 0u64.., b_val in 0u64..) {
+			check_transpose_all_heights::<PackedBinaryField64x1b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField32x2b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField16x4b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField8x8b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField4x16b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField2x32b>(a_val, b_val);
+			check_transpose_all_heights::<PackedBinaryField1x64b>(a_val, b_val);
+		}
+
+		#[test]
+		#[allow(clippy::useless_conversion)] // this warning depends on the target platform
+		fn check_transpose_128b(a_val in 0u128.., b_val in 0u128..) {
+			check_transpose_all_heights::<PackedBinaryField128x1b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField64x2b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField32x4b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField16x8b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField8x16b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField4x32b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField2x64b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField1x128b>(a_val.into(), b_val.into());
+		}
+
+		#[test]
+		fn check_transpose_256b(a_val in any::<[u128; 2]>(), b_val in any::<[u128; 2]>()) {
+			check_transpose_all_heights::<PackedBinaryField256x1b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField128x2b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField64x4b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField32x8b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField16x16b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField8x32b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField4x64b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField2x128b>(a_val.into(), b_val.into());
+		}
+
+		#[test]
+		fn check_transpose_512b(a_val in any::<[u128; 4]>(), b_val in any::<[u128; 4]>()) {
+			check_transpose_all_heights::<PackedBinaryField512x1b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField256x2b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField128x4b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField64x8b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField32x16b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField16x32b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField8x64b>(a_val.into(), b_val.into());
+			check_transpose_all_heights::<PackedBinaryField4x128b>(a_val.into(), b_val.into());
 		}
 	}
 }

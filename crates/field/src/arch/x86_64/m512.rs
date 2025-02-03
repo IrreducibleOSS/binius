@@ -932,6 +932,12 @@ impl UnderlierWithBitConstants for M512 {
 		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
 		(Self(a), Self(b))
 	}
+
+	#[inline(always)]
+	fn transpose(self, other: Self, log_bit_len: usize) -> (Self, Self) {
+		let (a, b) = unsafe { transpose_bits(self.0, other.0, log_bit_len) };
+		(Self(a), Self(b))
+	}
 }
 
 #[inline]
@@ -1101,6 +1107,95 @@ const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
 	}
 
 	m512_masks
+}
+
+#[inline(always)]
+unsafe fn transpose_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m512i, __m512i) {
+	match log_block_len {
+		0..=3 => {
+			let shuffle = _mm512_set_epi8(
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
+				14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+			);
+			let (mut a, mut b) = transpose_with_shuffle(a, b, shuffle);
+			for log_block_len in (log_block_len..3).rev() {
+				(a, b) = interleave_bits(a, b, log_block_len);
+			}
+
+			(a, b)
+		}
+		4 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
+				13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15,
+				14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0,
+			);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		5 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
+				11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15,
+				14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0,
+			);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		6 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
+				b,
+			),
+		),
+		7 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1101, 0b1100, 0b1001, 0b1000, 0b0101, 0b0100, 0b0001, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b1011, 0b1010, 0b0111, 0b0110, 0b0011, 0b0010),
+				b,
+			),
+		),
+		8 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
+				b,
+			),
+		),
+		_ => panic!("unsupported block length"),
+	}
+}
+
+unsafe fn transpose_with_shuffle(a: __m512i, b: __m512i, shuffle: __m512i) -> (__m512i, __m512i) {
+	let (a, b) = (_mm512_shuffle_epi8(a, shuffle), _mm512_shuffle_epi8(b, shuffle));
+
+	(
+		_mm512_permutex2var_epi64(
+			a,
+			_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
+			b,
+		),
+		_mm512_permutex2var_epi64(
+			a,
+			_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
+			b,
+		),
+	)
 }
 
 impl_iteration!(M512,

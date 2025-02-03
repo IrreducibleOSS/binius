@@ -216,14 +216,17 @@ where
 		Self(array::from_fn(|_| PT::random(&mut rng)))
 	}
 
+	#[inline]
 	fn broadcast(scalar: Self::Scalar) -> Self {
 		Self(array::from_fn(|_| PT::broadcast(scalar)))
 	}
 
+	#[inline]
 	fn square(self) -> Self {
 		Self(self.0.map(|v| v.square()))
 	}
 
+	#[inline]
 	fn invert_or_zero(self) -> Self {
 		Self(self.0.map(|v| v.invert_or_zero()))
 	}
@@ -247,6 +250,40 @@ where
 		} else {
 			for i in 0..N {
 				(first[i], second[i]) = self.0[i].interleave(other.0[i], log_block_len);
+			}
+		}
+
+		(Self(first), Self(second))
+	}
+
+	fn transpose(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		let mut first = [Default::default(); N];
+		let mut second = [Default::default(); N];
+
+		if log_block_len >= PT::LOG_WIDTH {
+			let block_in_pts = 1 << (log_block_len - PT::LOG_WIDTH);
+			for i in (0..N / 2).step_by(block_in_pts) {
+				first[i..i + block_in_pts].copy_from_slice(&self.0[2 * i..2 * i + block_in_pts]);
+
+				second[i..i + block_in_pts]
+					.copy_from_slice(&self.0[2 * i + block_in_pts..2 * (i + block_in_pts)]);
+			}
+
+			for i in (0..N / 2).step_by(block_in_pts) {
+				first[i + N / 2..i + N / 2 + block_in_pts]
+					.copy_from_slice(&other.0[2 * i..2 * i + block_in_pts]);
+
+				second[i + N / 2..i + N / 2 + block_in_pts]
+					.copy_from_slice(&other.0[2 * i + block_in_pts..2 * (i + block_in_pts)]);
+			}
+		} else {
+			for i in 0..N / 2 {
+				(first[i], second[i]) = self.0[2 * i].transpose(self.0[2 * i + 1], log_block_len);
+			}
+
+			for i in 0..N / 2 {
+				(first[i + N / 2], second[i + N / 2]) =
+					other.0[2 * i].transpose(other.0[2 * i + 1], log_block_len);
 			}
 		}
 
