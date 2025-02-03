@@ -30,14 +30,11 @@ pub fn deinterleave<P: PackedField>(
 	}
 
 	let deinterleaved = (0..1 << (log_scalar_count - P::LOG_WIDTH)).map(|i| {
-		let mut even = interleaved[2 * i];
-		let mut odd = interleaved[2 * i + 1];
-
-		for log_block_len in (0..P::LOG_WIDTH).rev() {
-			let (even_interleaved, odd_interleaved) = even.interleave(odd, log_block_len);
-			even = even_interleaved;
-			odd = odd_interleaved;
-		}
+		let (even, odd) = if P::LOG_WIDTH > 0 {
+			P::transpose(interleaved[2 * i], interleaved[2 * i + 1], 0)
+		} else {
+			(interleaved[2 * i], interleaved[2 * i + 1])
+		};
 
 		(i, even, odd)
 	});
