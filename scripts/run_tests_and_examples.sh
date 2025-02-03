@@ -19,7 +19,7 @@ if [ -z "$CARGO_STABLE" ]; then
 
     # Execute examples. 
     # Unfortunately there cargo doesn't support executing all examples with a single command.
-    # Cargo plugins such as "cargo-examples" do suport it but without a possibility to specify "release" profile.
+    # Cargo plugins such as "cargo-examples" do support it but without a possibility to specify "release" profile.
     for example in examples/*.rs
     do
         cargo run --profile $CARGO_PROFILE --example "$(basename "${example%.rs}")" $CARGO_EXTRA_FLAGS
