@@ -334,20 +334,25 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 	}
 
 	pub fn write<T: SerializeBytes>(&mut self, value: &T) {
-		value
-			.serialize(self.buffer())
-			.expect("TODO: propagate error")
+		self.proof_size_event_wrapper(|buffer| {
+			value.serialize(buffer).expect("TODO: propagate error");
+		});
 	}
 
 	pub fn write_slice<T: SerializeBytes>(&mut self, values: &[T]) {
-		let mut buffer = self.buffer();
-		for value in values {
-			value.serialize(&mut buffer).expect("TODO: propagate error")
-		}
+		self.proof_size_event_wrapper(|buffer| {
+			for value in values {
+				value
+					.serialize(&mut *buffer)
+					.expect("TODO: propagate error");
+			}
+		});
 	}
 
 	pub fn write_bytes(&mut self, data: &[u8]) {
-		self.buffer().put_slice(data);
+		self.proof_size_event_wrapper(|buffer| {
+			buffer.put_slice(data);
+		});
 	}
 
 	pub fn write_scalar<F: TowerField>(&mut self, f: F) {
@@ -355,10 +360,11 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 	}
 
 	pub fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
-		let mut buffer = self.buffer();
-		for elem in elems {
-			serialize_canonical(*elem, &mut buffer).expect("TODO: propagate error");
-		}
+		self.proof_size_event_wrapper(|buffer| {
+			for elem in elems {
+				serialize_canonical(*elem, &mut *buffer).expect("TODO: propagate error");
+			}
+		});
 	}
 
 	pub fn write_packed<P: PackedField<Scalar: TowerField>>(&mut self, packed: P) {
@@ -377,6 +383,14 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 		if self.debug_assertions {
 			self.write_bytes(msg.as_bytes())
 		}
+	}
+
+	fn proof_size_event_wrapper<F: Fn(&mut B)>(&mut self, f: F) {
+		let buffer = self.buffer();
+		let start_bytes = buffer.remaining_mut();
+		f(buffer);
+		let end_bytes = buffer.remaining_mut();
+		tracing::event!(name: "proof_size", tracing::Level::INFO, counter=true, incremental=true, value=start_bytes - end_bytes);
 	}
 }
 
