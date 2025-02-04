@@ -1,0 +1,138 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: ${{ matrix.expand.name }}
+    runs-on: ${{ matrix.expand.runner }}
+    container: rustlang/rust:nightly
+    strategy:
+      matrix:
+        expand:
+          - runner: "ubuntu-latest"
+            name: "copyright-check"
+            cmd: "./scripts/check_copyright_notice.sh"
+          - runner: "ubuntu-latest"
+            name: "cargofmt"
+            cmd: "cargo fmt --check"
+          - runner: "ubuntu-latest"
+            name: "clippy"
+            cmd: "cargo clippy --all --all-features --tests --benches --examples -- -D warnings"
+    continue-on-error: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Command
+        run: ${{ matrix.expand.cmd }}
+  build:
+    name: build-${{ matrix.expand.name }}
+    needs: [lint]
+    runs-on: ${{ matrix.expand.runner }}
+    env:
+      RUST_VERSION: 1.83.0
+    container: rustlang/rust:nightly
+    strategy:
+      matrix:
+        expand:
+          - runner: "c7a-2xlarge"
+            name: "debug-wasm"
+            cmd: "rustup target add wasm32-unknown-unknown && cargo build --package binius_field --target wasm32-unknown-unknown"
+          - runner: "c7a-2xlarge"
+            name: "debug-amd"
+            cmd: "cargo build --tests --benches --examples"
+          - runner: "c7a-2xlarge"
+            name: "debug-amd-no-default-features"
+            cmd: "cargo build --tests --benches --examples --no-default-features"
+          - runner: "c7a-2xlarge"
+            name: "debug-amd-stable"
+            cmd: "cargo +$RUST_VERSION build --tests --benches --examples -p binius_core --features stable_only"
+          - runner: "c8g-2xlarge"
+            name: "debug-arm"
+            cmd: "cargo build --tests --benches --examples"
+          - runner: "c7a-2xlarge"
+            name: "docs"
+            cmd: 'cargo doc --no-deps; echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=/binius_core/\"></head><body></body></html>" > target/doc/index.html'
+    continue-on-error: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: AMD job configuration template with stable Rust
+        if: ${{ matrix.expand.name == 'debug-amd-stable' }}
+        run: |
+          rustup set auto-self-update disable
+          rustup toolchain install $RUST_VERSION
+      - name: Run Command
+        run: ${{ matrix.expand.cmd }}
+      - name: Upload static files as artifact
+        if: ${{ matrix.expand.name == 'docs' }}
+        id: deployment
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "target/doc"
+  test:
+    name: unit-test-${{ matrix.expand.name }}
+    needs: [build]
+    runs-on: ${{ matrix.expand.runner }}
+    env:
+      RUST_VERSION: 1.83.0
+    container: rustlang/rust:nightly
+    strategy:
+      matrix:
+        expand:
+          - runner: "c7a-2xlarge"
+            name: "amd"
+            cmd: 'RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
+          - runner: "c7a-2xlarge"
+            name: "amd-portable"
+            cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
+          - runner: "c7a-2xlarge"
+            name: "amd-stable"
+            cmd: 'RUSTFLAGS="-C target-cpu=native" CARGO_STABLE=true ./scripts/run_tests_and_examples.sh'
+          - runner: "c7a-2xlarge"
+            name: "single-threaded"
+            cmd: 'RAYON_NUM_THREADS=1 RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
+          - runner: "c7a-2xlarge"
+            name: "no-default-features"
+            cmd: 'CARGO_EXTRA_FLAGS="--no-default-features" RUSTFLAGS="-C target-cpu=native" ./scripts/run_tests_and_examples.sh'
+          - runner: "c8g-2xlarge"
+            name: "arm"
+            cmd: 'RUSTFLAGS="-C target-cpu=native -C target-feature=+aes" ./scripts/run_tests_and_examples.sh'
+          - runner: "c8g-2xlarge"
+            name: "arm-portable"
+            cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
+    continue-on-error: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: AMD job configuration template with stable Rust
+        if: ${{ matrix.expand.name == 'amd-stable' }}
+        run: |
+          rustup set auto-self-update disable
+          rustup toolchain install $RUST_VERSION
+      - name: Run Command
+        run: ${{ matrix.expand.cmd }}
+  deploy:
+    name: deploy-pages
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'main'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,85 @@
+name: Nightly Benchmark
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      ec2_instance_type:
+        description: 'Select EC2 instance type'
+        required: true
+        default: 'c7a-4xlarge'
+        type: choice
+        options:
+          - c7a-2xlarge
+          - c7a-4xlarge
+          - c8g-2xlarge
+
+permissions:
+  contents: write
+  checks: write
+  pull-requests: write
+
+jobs:
+    benchmark:
+      name: Continuous Benchmarking with Bencher
+      container: rustlang/rust:nightly
+      permissions:
+        checks: write
+        actions: write
+      runs-on: ${{ github.event_name == 'push' && github.ref_name == 'main' && 'c7a-4xlarge' || github.event.inputs.ec2_instance_type }}
+      steps:
+        - name: Checkout Private GitLab Repository # Will be replaced with actual repository
+          uses: actions/checkout@v4
+          with:
+            repository: ulvetanna/binius
+            github-server-url: https://gitlab.com
+            ref: anexj/benchmark_script
+            ssh-key: ${{ secrets.GITLAB_SSH_KEY }}
+            ssh-known-hosts: |
+              gitlab.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsj2bNKTBSpIYDEGk9KxsGh3mySTRgMtXL583qmBpzeQ+jqCMRgBqB98u3z++J1sKlXHWfM9dyhSevkMwSbhoR8XIq/U0tCNyokEi/ueaBMCvbcTHhO7FcwzY92WK4Yt0aGROY5qX2UKSeOvuP4D6TPqKF1onrSzH9bx9XUf2lEdWT/ia1NEKjunUqu1xOB/StKDHMoX4/OKyIzuS0q/T1zOATthvasJFoPrAjkohTyaDUz2LN5JoH839hViyEG82yB+MjcFV5MU3N1l1QL3cVUCh93xSaua1N85qivl+siMkPGbO5xR/En4iEY6K2XPASUEMaieWVNTRCtJ4S8H+9
+        - name: Setup Bencher
+          uses: bencherdev/bencher@main
+        - name: Create Output Directory
+          run: mkdir output
+        - name: Execute Benchmark Tests
+          run: ./scripts/nightly_benchmarks.py --export-file output/result.json
+        - name: Track base branch benchmarks with Bencher
+          run: |
+            bencher run \
+            --project ben \
+            --token '${{ secrets.BENCHER_API_TOKEN }}' \
+            --branch main \
+            --testbed c7a-4xlarge \
+            --threshold-measure latency \
+            --threshold-test t_test \
+            --threshold-max-sample-size 64 \
+            --threshold-upper-boundary 0.99 \
+            --thresholds-reset \
+            --err \
+            --adapter json \
+            --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+            --file output/result.json
+        - name: Upload artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: gh-pages
+            path: output/
+    publish_results:
+      name: Publish Results to Github Page
+      needs: [benchmark]
+      runs-on: ubuntu-latest
+      steps:
+        - name: Download artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: gh-pages
+        - name: Deploy to GitHub Pages
+          uses: crazy-max/ghaction-github-pages@v4
+          with:
+            repo: irreducibleoss/binius-benchmark
+            fqdn: benchmark.binius.xyz
+            target_branch: main
+            build_dir: ./
+          env:
+            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
