@@ -388,7 +388,7 @@ where
 	// univariatized subcube.
 	// NB: expansion of the first `skip_rounds` variables is applied to the round evals sum
 	let partial_eq_ind_evals = backend.tensor_product_full_query(zerocheck_challenges)?;
-	let partial_eq_ind_evals_scalars = P::unpack_scalars(&partial_eq_ind_evals[..]);
+	let partial_eq_ind_evals_scalars = P::unpack_scalars(&partial_eq_ind_evals);
 
 	// Evaluate each composition on a minimal packed prefix corresponding to the degree
 	let pbase_prefix_lens = composition_degrees

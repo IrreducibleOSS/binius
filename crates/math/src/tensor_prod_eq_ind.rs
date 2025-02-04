@@ -62,7 +62,7 @@ pub fn tensor_prod_eq_ind<P: PackedField>(
 			xs.par_iter_mut()
 				.zip(ys.par_iter_mut())
 				.with_min_len(64)
-				.for_each(|(x, y): (&mut P, &mut P)| {
+				.for_each(|(x, y)| {
 					// x = x * (1 - packed_r_i) = x - x * packed_r_i
 					// y = x * packed_r_i
 					// Notice that we can reuse the multiplication: (x * packed_r_i)
@@ -95,8 +95,7 @@ pub fn eq_ind_partial_eval<P: PackedField>(point: &[P::Scalar]) -> Vec<P> {
 	let len = 1 << n.saturating_sub(P::LOG_WIDTH);
 	let mut buffer = zeroed_vec::<P>(len);
 	buffer[0].set(0, P::Scalar::ONE);
-	tensor_prod_eq_ind(0, &mut buffer[..], point)
-		.expect("buffer is allocated with the correct length");
+	tensor_prod_eq_ind(0, &mut buffer, point).expect("buffer is allocated with the correct length");
 	buffer
 }
 
@@ -107,10 +106,11 @@ mod tests {
 
 	use super::*;
 
+	type P = PackedBinaryField4x32b;
+	type F = <P as PackedField>::Scalar;
+
 	#[test]
 	fn test_tensor_prod_eq_ind() {
-		type P = PackedBinaryField4x32b;
-		type F = <P as PackedField>::Scalar;
 		let v0 = F::new(1);
 		let v1 = F::new(2);
 		let query = vec![v0, v1];
@@ -127,5 +127,60 @@ mod tests {
 				v0 * v1
 			]
 		);
+	}
+
+	#[test]
+	fn test_eq_ind_partial_eval_empty() {
+		let result = eq_ind_partial_eval::<P>(&[]);
+		let expected = vec![P::set_single(F::ONE)];
+		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_eq_ind_partial_eval_single_var() {
+		// Only one query coordinate
+		let r0 = F::new(2);
+		let result = eq_ind_partial_eval::<P>(&[r0]);
+		let expected = vec![(F::ONE - r0), r0, F::ZERO, F::ZERO];
+		let result = PackedField::iter_slice(&result).collect_vec();
+		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_eq_ind_partial_eval_two_vars() {
+		// Two query coordinates
+		let r0 = F::new(2);
+		let r1 = F::new(3);
+		let result = eq_ind_partial_eval::<P>(&[r0, r1]);
+		let result = PackedField::iter_slice(&result).collect_vec();
+		let expected = vec![
+			(F::ONE - r0) * (F::ONE - r1),
+			r0 * (F::ONE - r1),
+			(F::ONE - r0) * r1,
+			r0 * r1,
+		];
+		assert_eq!(result, expected);
+	}
+
+	#[test]
+	fn test_eq_ind_partial_eval_three_vars() {
+		// Case with three query coordinates
+		let r0 = F::new(2);
+		let r1 = F::new(3);
+		let r2 = F::new(5);
+		let result = eq_ind_partial_eval::<P>(&[r0, r1, r2]);
+		let result = PackedField::iter_slice(&result).collect_vec();
+
+		let expected = vec![
+			(F::ONE - r0) * (F::ONE - r1) * (F::ONE - r2),
+			r0 * (F::ONE - r1) * (F::ONE - r2),
+			(F::ONE - r0) * r1 * (F::ONE - r2),
+			r0 * r1 * (F::ONE - r2),
+			(F::ONE - r0) * (F::ONE - r1) * r2,
+			r0 * (F::ONE - r1) * r2,
+			(F::ONE - r0) * r1 * r2,
+			r0 * r1 * r2,
+		];
+		assert_eq!(result, expected);
 	}
 }

@@ -36,7 +36,7 @@ impl<'a, P: PackedField, Data: DerefMut<Target = [P]>> From<&'a MultilinearQuery
 	for MultilinearQueryRef<'a, P>
 {
 	fn from(query: &'a MultilinearQuery<P, Data>) -> Self {
-		MultilinearQueryRef::new(query)
+		Self::new(query)
 	}
 }
 
