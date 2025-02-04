@@ -73,7 +73,7 @@ impl<P: PackedField> MultilinearQuery<P, Vec<P>> {
 	}
 
 	pub fn expand(query: &[P::Scalar]) -> Self {
-		let expanded_query = eq_ind_partial_eval::<P>(query);
+		let expanded_query = eq_ind_partial_eval(query);
 		Self {
 			expanded_query,
 			n_vars: query.len(),
@@ -148,11 +148,15 @@ impl<P: PackedField, Data: DerefMut<Target = [P]>> MultilinearQuery<P, Data> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{Field, PackedField};
+	use binius_field::{Field, PackedBinaryField4x32b, PackedField};
 	use binius_utils::felts;
+	use itertools::Itertools;
 
 	use super::*;
 	use crate::tensor_prod_eq_ind;
+
+	type P = PackedBinaryField4x32b;
+	type F = <P as PackedField>::Scalar;
 
 	fn tensor_prod<P: PackedField>(p: &[P::Scalar]) -> Vec<P> {
 		let mut result = vec![P::default(); 1 << p.len().saturating_sub(P::LOG_WIDTH)];
@@ -251,5 +255,99 @@ mod tests {
 			expand_query!(BinaryField16b[2, 2, 2, 2], Packing = PackedBinaryField8x16b),
 			felts!(BinaryField16b[3, 2, 2, 1, 2, 1, 1, 3, 2, 1, 1, 3, 1, 3, 3, 2])
 		);
+	}
+
+	#[test]
+	fn test_update_single_var() {
+		let query = MultilinearQuery::<P>::with_capacity(2);
+		let r0 = F::new(2);
+		let extra_query = [r0];
+
+		let updated_query = query.update(&extra_query).unwrap();
+
+		assert_eq!(updated_query.n_vars(), 1);
+
+		let expansion = updated_query.into_expansion();
+		let expansion = PackedField::iter_slice(&expansion).collect_vec();
+
+		assert_eq!(expansion, vec![(F::ONE - r0), r0, F::ZERO, F::ZERO]);
+	}
+
+	#[test]
+	fn test_update_two_vars() {
+		let query = MultilinearQuery::<P>::with_capacity(3);
+		let r0 = F::new(2);
+		let r1 = F::new(3);
+		let extra_query = [r0, r1];
+
+		let updated_query = query.update(&extra_query).unwrap();
+		assert_eq!(updated_query.n_vars(), 2);
+
+		let expansion = updated_query.expansion();
+		let expansion = PackedField::iter_slice(expansion).collect_vec();
+
+		assert_eq!(
+			expansion,
+			vec![
+				(F::ONE - r0) * (F::ONE - r1),
+				r0 * (F::ONE - r1),
+				(F::ONE - r0) * r1,
+				r0 * r1,
+			]
+		);
+	}
+
+	#[test]
+	fn test_update_three_vars() {
+		let query = MultilinearQuery::<P>::with_capacity(4);
+		let r0 = F::new(2);
+		let r1 = F::new(3);
+		let r2 = F::new(5);
+		let extra_query = [r0, r1, r2];
+
+		let updated_query = query.update(&extra_query).unwrap();
+		assert_eq!(updated_query.n_vars(), 3);
+
+		let expansion = updated_query.expansion();
+		let expansion = PackedField::iter_slice(expansion).collect_vec();
+
+		assert_eq!(
+			expansion,
+			vec![
+				(F::ONE - r0) * (F::ONE - r1) * (F::ONE - r2),
+				r0 * (F::ONE - r1) * (F::ONE - r2),
+				(F::ONE - r0) * r1 * (F::ONE - r2),
+				r0 * r1 * (F::ONE - r2),
+				(F::ONE - r0) * (F::ONE - r1) * r2,
+				r0 * (F::ONE - r1) * r2,
+				(F::ONE - r0) * r1 * r2,
+				r0 * r1 * r2,
+			]
+		);
+	}
+
+	#[test]
+	fn test_update_exceeds_capacity() {
+		let query = MultilinearQuery::<P>::with_capacity(2);
+		// More than allowed capacity
+		let extra_query = [F::new(2), F::new(3), F::new(5)];
+
+		let result = query.update(&extra_query);
+		// Expecting an error due to exceeding max_query_vars
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_update_empty() {
+		let query = MultilinearQuery::<P>::with_capacity(2);
+		// Updating with no new coordinates should be fine
+		let updated_query = query.update(&[]).unwrap();
+
+		assert_eq!(updated_query.n_vars(), 0);
+
+		let expansion = updated_query.expansion();
+		let expansion = PackedField::iter_slice(expansion).collect_vec();
+
+		assert_eq!(expansion, vec![F::ONE, F::ZERO, F::ZERO, F::ZERO]);
 	}
 }
