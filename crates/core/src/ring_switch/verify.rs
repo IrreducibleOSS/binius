@@ -77,7 +77,7 @@ where
 	let ring_switch_eq_inds = make_ring_switch_eq_inds::<_, Tower>(
 		&system.sumcheck_claim_descs,
 		&system.suffix_descs,
-		row_batch_coeffs,
+		&row_batch_coeffs,
 		&mixing_coeffs,
 	)?;
 	let sumcheck_claims = iter::zip(&system.sumcheck_claim_descs, row_batched_evals)
@@ -175,7 +175,7 @@ fn accumulate_evaluations_by_prefixes<F: TowerField>(
 fn make_ring_switch_eq_inds<F, Tower>(
 	sumcheck_claim_descs: &[PIOPSumcheckClaimDesc<F>],
 	suffix_descs: &[EvalClaimSuffixDesc<F>],
-	row_batch_coeffs: Arc<RowBatchCoeffs<F>>,
+	row_batch_coeffs: &Arc<RowBatchCoeffs<F>>,
 	mixing_coeffs: &[F],
 ) -> Result<Vec<Box<dyn MultivariatePoly<F>>>, Error>
 where

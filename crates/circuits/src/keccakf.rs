@@ -27,7 +27,7 @@ pub struct KeccakfOracles {
 
 pub fn keccakf<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
-	input_witness: Option<impl AsRef<[KeccakfState]>>,
+	input_witness: &Option<impl AsRef<[KeccakfState]>>,
 	log_size: usize,
 ) -> Result<KeccakfOracles, anyhow::Error>
 where

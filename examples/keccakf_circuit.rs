@@ -52,7 +52,7 @@ fn main() -> Result<()> {
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let input_witness = vec![];
 	let _state_out =
-		binius_circuits::keccakf::keccakf(&mut builder, Some(input_witness), log_size)?;
+		binius_circuits::keccakf::keccakf(&mut builder, &Some(input_witness), log_size)?;
 	drop(trace_gen_scope);
 
 	let witness = builder

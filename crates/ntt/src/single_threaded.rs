@@ -187,7 +187,7 @@ pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
 		let block_twiddle = calculate_twiddle::<P>(
-			s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
+			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
 			log_block_len,
 		);
 
@@ -263,7 +263,7 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
 		let block_twiddle = calculate_twiddle::<P>(
-			s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
+			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
 			log_block_len,
 		);
 
@@ -357,7 +357,7 @@ pub const fn check_batch_transform_inputs_and_params<PB: PackedField>(
 }
 
 #[inline]
-fn calculate_twiddle<P>(s_evals: impl TwiddleAccess<P::Scalar>, log_block_len: usize) -> P
+fn calculate_twiddle<P>(s_evals: &impl TwiddleAccess<P::Scalar>, log_block_len: usize) -> P
 where
 	P: PackedField<Scalar: BinaryField>,
 {

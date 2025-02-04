@@ -46,14 +46,14 @@ fn test_commit_prove_verify_success<U, F, FA>(
 	let committed_rs_code_packed = ReedSolomonCode::<PackedType<U, FA>>::new(
 		log_dimension,
 		log_inv_rate,
-		NTTOptions::default(),
+		&NTTOptions::default(),
 	)
 	.unwrap();
 
 	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
 
 	let committed_rs_code =
-		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, NTTOptions::default()).unwrap();
+		ReedSolomonCode::<FA>::new(log_dimension, log_inv_rate, &NTTOptions::default()).unwrap();
 
 	let n_test_queries = 3;
 	let params =

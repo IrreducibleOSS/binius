@@ -137,7 +137,7 @@ where
 	let log_batch_size = fold_arities.first().copied().unwrap_or(0);
 	let log_dim = commit_meta.total_vars - log_batch_size;
 
-	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, NTTOptions::default())?;
+	let rs_code = ReedSolomonCode::new(log_dim, log_inv_rate, &NTTOptions::default())?;
 	let n_test_queries = fri::calculate_n_test_queries::<F, _>(security_bits, &rs_code)?;
 	let fri_params = FRIParams::new(rs_code, log_batch_size, fold_arities, n_test_queries)?;
 	Ok(fri_params)

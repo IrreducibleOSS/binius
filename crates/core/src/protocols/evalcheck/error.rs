@@ -45,7 +45,7 @@ pub enum VerificationError {
 
 impl VerificationError {
 	pub fn incorrect_composite_poly_evaluation<F: TowerField>(
-		oracle: CompositePolyOracle<F>,
+		oracle: &CompositePolyOracle<F>,
 	) -> Self {
 		let names = oracle
 			.inner_polys()

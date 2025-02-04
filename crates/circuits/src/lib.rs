@@ -377,7 +377,7 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let input_states = vec![KeccakfState(rng.gen())];
-		let _state_out = keccakf(&mut builder, Some(input_states), log_size);
+		let _state_out = keccakf(&mut builder, &Some(input_states), log_size);
 
 		let witness = builder.take_witness().unwrap();
 

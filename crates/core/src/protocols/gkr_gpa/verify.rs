@@ -54,7 +54,7 @@ where
 			&mut reverse_sorted_evalcheck_claims,
 		);
 
-		layer_claims = reduce_layer_claim_batch(layer_claims, transcript)?;
+		layer_claims = reduce_layer_claim_batch(&layer_claims, transcript)?;
 	}
 	process_finished_claims(
 		n_claims,
@@ -102,7 +102,7 @@ fn process_finished_claims<F: Field>(
 /// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
 /// * `transcript` - The verifier transcript
 fn reduce_layer_claim_batch<F, Challenger_>(
-	claims: Vec<LayerClaim<F>>,
+	claims: &[LayerClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where

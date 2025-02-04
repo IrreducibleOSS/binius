@@ -155,7 +155,7 @@ where
 	let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
 		reorder_for_flushing_by_n_vars(
 			&oracles,
-			flush_oracle_ids,
+			&flush_oracle_ids,
 			flush_selectors,
 			flush_final_layer_claims,
 		);
@@ -284,7 +284,7 @@ where
 	let system = ring_switch::EvalClaimSystem::new(
 		&oracles,
 		&commit_meta,
-		oracle_to_commit_index,
+		&oracle_to_commit_index,
 		&eval_claims,
 	)?;
 
@@ -698,7 +698,7 @@ pub fn get_flush_dedup_sumcheck_claims<F: TowerField>(
 
 pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
-	flush_oracle_ids: Vec<OracleId>,
+	flush_oracle_ids: &[OracleId],
 	flush_selectors: Vec<OracleId>,
 	flush_final_layer_claims: Vec<LayerClaim<F>>,
 ) -> (Vec<OracleId>, Vec<usize>, Vec<LayerClaim<F>>) {

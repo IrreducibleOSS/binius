@@ -54,7 +54,7 @@ pub enum DynamicDispatchNTT<F: BinaryField> {
 
 impl<F: BinaryField> DynamicDispatchNTT<F> {
 	/// Create a new AdditiveNTT based on the given settings.
-	pub fn new(log_domain_size: usize, options: NTTOptions) -> Result<Self, crate::error::Error> {
+	pub fn new(log_domain_size: usize, options: &NTTOptions) -> Result<Self, crate::error::Error> {
 		let log_threads = options.thread_settings.log_threads_count();
 		let result = match (options.precompute_twiddles, log_threads) {
 			(false, 0) => Self::SingleThreaded(SingleThreadedNTT::new(log_domain_size)?),
@@ -144,24 +144,24 @@ mod tests {
 
 	#[test]
 	fn test_creation() {
-		fn make_ntt(options: NTTOptions) -> DynamicDispatchNTT<BinaryField8b> {
+		fn make_ntt(options: &NTTOptions) -> DynamicDispatchNTT<BinaryField8b> {
 			DynamicDispatchNTT::<BinaryField8b>::new(6, options).unwrap()
 		}
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: false,
 			thread_settings: ThreadingSettings::SingleThreaded,
 		});
 		assert!(matches!(ntt, DynamicDispatchNTT::SingleThreaded(_)));
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: true,
 			thread_settings: ThreadingSettings::SingleThreaded,
 		});
 		assert!(matches!(ntt, DynamicDispatchNTT::SingleThreadedPrecompute(_)));
 
 		let multithreaded = get_log_max_threads() > 0;
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: false,
 			thread_settings: ThreadingSettings::MultithreadedDefault,
 		});
@@ -171,7 +171,7 @@ mod tests {
 			assert!(matches!(ntt, DynamicDispatchNTT::SingleThreaded(_)));
 		}
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: true,
 			thread_settings: ThreadingSettings::MultithreadedDefault,
 		});
@@ -181,19 +181,19 @@ mod tests {
 			assert!(matches!(ntt, DynamicDispatchNTT::SingleThreadedPrecompute(_)));
 		}
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: false,
 			thread_settings: ThreadingSettings::ExplicitThreadsCount { log_threads: 2 },
 		});
 		assert!(matches!(ntt, DynamicDispatchNTT::MultiThreaded(_)));
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: true,
 			thread_settings: ThreadingSettings::ExplicitThreadsCount { log_threads: 0 },
 		});
 		assert!(matches!(ntt, DynamicDispatchNTT::SingleThreadedPrecompute(_)));
 
-		let ntt = make_ntt(NTTOptions {
+		let ntt = make_ntt(&NTTOptions {
 			precompute_twiddles: false,
 			thread_settings: ThreadingSettings::ExplicitThreadsCount { log_threads: 0 },
 		});

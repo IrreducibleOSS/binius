@@ -241,7 +241,7 @@ where
 	let (flush_oracle_ids, flush_selectors, flush_final_layer_claims) =
 		reorder_for_flushing_by_n_vars(
 			&oracles,
-			flush_oracle_ids,
+			&flush_oracle_ids,
 			flush_selectors,
 			flush_final_layer_claims,
 		);
@@ -423,7 +423,7 @@ where
 	let system = ring_switch::EvalClaimSystem::new(
 		&oracles,
 		&commit_meta,
-		oracle_to_commit_index,
+		&oracle_to_commit_index,
 		&eval_claims,
 	)?;
 

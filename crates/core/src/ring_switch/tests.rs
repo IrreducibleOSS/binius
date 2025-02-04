@@ -208,7 +208,7 @@ fn with_test_instance_from_oracles<U, Tower, R>(
 
 	// Finish setting up the test case
 	let system =
-		EvalClaimSystem::new(oracles, &commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
+		EvalClaimSystem::new(oracles, &commit_meta, &oracle_to_commit_index, &eval_claims).unwrap();
 	check_eval_point_consistency(&system);
 
 	func(rng, system, witnesses)
@@ -304,7 +304,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 
 	// Finish setting up the test case
 	let system =
-		EvalClaimSystem::new(oracles, &commit_meta, oracle_to_commit_index, &eval_claims).unwrap();
+		EvalClaimSystem::new(oracles, &commit_meta, &oracle_to_commit_index, &eval_claims).unwrap();
 	check_eval_point_consistency(&system);
 
 	let mut proof = ProverTranscript::<HasherChallenger<Groestl256>>::new();

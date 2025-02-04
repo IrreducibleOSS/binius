@@ -343,13 +343,13 @@ mod tests {
 	#[test]
 	fn test_calculate_n_test_queries() {
 		let security_bits = 96;
-		let rs_code = ReedSolomonCode::new(28, 1, NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::new(28, 1, &NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
 				.unwrap();
 		assert_eq!(n_test_queries, 232);
 
-		let rs_code = ReedSolomonCode::new(28, 2, NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::new(28, 2, &NTTOptions::default()).unwrap();
 		let n_test_queries =
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code)
 				.unwrap();
@@ -359,7 +359,7 @@ mod tests {
 	#[test]
 	fn test_calculate_n_test_queries_unsatisfiable() {
 		let security_bits = 128;
-		let rs_code = ReedSolomonCode::new(28, 1, NTTOptions::default()).unwrap();
+		let rs_code = ReedSolomonCode::new(28, 1, &NTTOptions::default()).unwrap();
 		assert_matches!(
 			calculate_n_test_queries::<BinaryField128b, BinaryField32b>(security_bits, &rs_code),
 			Err(Error::ParameterError)

@@ -133,7 +133,7 @@ where
 	let rs_code = ReedSolomonCode::new(
 		fri_params.rs_code().log_dim(),
 		fri_params.rs_code().log_inv_rate(),
-		NTTOptions {
+		&NTTOptions {
 			precompute_twiddles: true,
 			thread_settings: ThreadingSettings::MultithreadedDefault,
 		},
@@ -234,7 +234,7 @@ where
 		merkle_prover,
 		sumcheck_provers,
 		codeword,
-		committed,
+		&committed,
 		transcript,
 	)?;
 
@@ -247,7 +247,7 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 	merkle_prover: &MTProver,
 	sumcheck_provers: Vec<impl SumcheckProver<F>>,
 	codeword: &[P],
-	committed: MTProver::Committed,
+	committed: &MTProver::Committed,
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
@@ -259,7 +259,7 @@ where
 	Challenger_: Challenger,
 {
 	let mut fri_prover =
-		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), &committed)?;
+		FRIFolder::new(fri_params, merkle_prover, P::unpack_scalars(codeword), committed)?;
 
 	let mut sumcheck_batch_prover = SumcheckBatchProver::new(sumcheck_provers, transcript)?;
 

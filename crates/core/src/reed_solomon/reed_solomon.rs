@@ -40,7 +40,7 @@ where
 	pub fn new(
 		log_dimension: usize,
 		log_inv_rate: usize,
-		ntt_options: NTTOptions,
+		ntt_options: &NTTOptions,
 	) -> Result<Self, Error> {
 		// Since we split work between log_inv_rate threads, we need to decrease the number of threads per each NTT transformation.
 		let ntt_log_threads = ntt_options
@@ -49,11 +49,11 @@ where
 			.saturating_sub(log_inv_rate);
 		let ntt = DynamicDispatchNTT::new(
 			log_dimension + log_inv_rate,
-			NTTOptions {
+			&NTTOptions {
 				thread_settings: ThreadingSettings::ExplicitThreadsCount {
 					log_threads: ntt_log_threads,
 				},
-				..ntt_options
+				precompute_twiddles: ntt_options.precompute_twiddles,
 			},
 		)?;
 

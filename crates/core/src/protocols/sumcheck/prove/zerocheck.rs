@@ -229,7 +229,7 @@ where
 		// This is a regular multilinear zerocheck constructor, split over two creation stages.
 		ZerocheckProver::new(
 			multilinears,
-			self.switchover_rounds,
+			&self.switchover_rounds,
 			compositions,
 			partial_eq_ind_evals,
 			self.zerocheck_challenges,
@@ -375,7 +375,7 @@ where
 			.switchover_rounds
 			.into_iter()
 			.map(|switchover_round| switchover_round.saturating_sub(skip_rounds))
-			.collect();
+			.collect::<Vec<_>>();
 
 		let zerocheck_challenges = self.zerocheck_challenges.clone();
 
@@ -392,7 +392,7 @@ where
 		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
 		let regular_prover = ZerocheckProver::new(
 			partial_low_multilinears,
-			switchover_rounds,
+			&switchover_rounds,
 			compositions,
 			partial_eq_ind_evals,
 			zerocheck_challenges,
@@ -457,7 +457,7 @@ where
 	#[allow(clippy::too_many_arguments)]
 	fn new(
 		multilinears: Vec<M>,
-		switchover_rounds: Vec<usize>,
+		switchover_rounds: &[usize],
 		compositions: Vec<Composition>,
 		partial_eq_ind_evals: Backend::Vec<P>,
 		zerocheck_challenges: Vec<F>,
@@ -477,7 +477,7 @@ where
 
 		let state = ProverState::new_with_switchover_rounds(
 			multilinears,
-			&switchover_rounds,
+			switchover_rounds,
 			claimed_prime_sums,
 			evaluation_points,
 			backend,

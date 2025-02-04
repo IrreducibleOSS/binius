@@ -122,7 +122,7 @@ where
 }
 
 pub fn transform_poly<F, OF, Data>(
-	multilin: MultilinearExtension<F, Data>,
+	multilin: &MultilinearExtension<F, Data>,
 ) -> Result<MultilinearExtension<OF>, PolynomialError>
 where
 	F: Field,

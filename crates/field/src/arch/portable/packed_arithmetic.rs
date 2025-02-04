@@ -331,7 +331,7 @@ where
 	OP: PackedBinaryField,
 {
 	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
-		transformation: FieldLinearTransformation<OP::Scalar, Data>,
+		transformation: &FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		Self {
 			bases: transformation
@@ -387,7 +387,7 @@ where
 	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
-		PackedTransformation::new(transformation)
+		PackedTransformation::new(&transformation)
 	}
 }
 

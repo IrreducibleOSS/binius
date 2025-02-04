@@ -72,7 +72,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 	pub fn new(
 		oracles: &MultilinearOracleSet<F>,
 		commit_meta: &'a CommitMeta,
-		oracle_to_commit_index: SparseIndex<usize>,
+		oracle_to_commit_index: &SparseIndex<usize>,
 		eval_claims: &'a [EvalcheckMultilinearClaim<F>],
 	) -> Result<Self, Error> {
 		// Sort evaluation claims in ascending order by number of packed variables. This must

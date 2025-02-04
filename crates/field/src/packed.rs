@@ -495,7 +495,7 @@ mod tests {
 	}
 
 	/// Run the test for all the packed fields defined in this crate.
-	fn run_for_all_packed_fields(test: impl PackedFieldTest) {
+	fn run_for_all_packed_fields(test: &impl PackedFieldTest) {
 		// canonical tower
 
 		test.run::<BinaryField1b>();
@@ -665,6 +665,6 @@ mod tests {
 
 	#[test]
 	fn test_iteration() {
-		run_for_all_packed_fields(PackedFieldIterationTest);
+		run_for_all_packed_fields(&PackedFieldIterationTest);
 	}
 }
