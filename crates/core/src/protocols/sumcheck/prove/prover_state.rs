@@ -191,8 +191,11 @@ where
 						ref mut large_field_folded_multilinear,
 					} => {
 						// Post-switchover, simply plug in challenge for the zeroth variable.
+						let single_variable_query = MultilinearQuery::expand(&[challenge]);
 						*large_field_folded_multilinear = MLEDirectAdapter::from(
-							large_field_folded_multilinear.evaluate_zeroth_variable(challenge)?,
+							large_field_folded_multilinear
+								.as_ref()
+								.evaluate_partial_low(single_variable_query.to_ref())?,
 						);
 					}
 				};

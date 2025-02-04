@@ -245,6 +245,7 @@ where
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
 		let query = query.into();
+
 		if self.mu < query.n_vars() {
 			bail!(Error::IncorrectQuerySize { expected: self.mu });
 		}
@@ -275,15 +276,6 @@ where
 		PE: PackedField,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
-		if self.mu < query.n_vars() {
-			bail!(Error::IncorrectQuerySize { expected: self.mu });
-		}
-		if out.len() != 1 << ((self.mu - query.n_vars()).saturating_sub(PE::LOG_WIDTH)) {
-			bail!(Error::IncorrectOutputPolynomialSize {
-				expected: self.mu - query.n_vars(),
-			});
-		}
-
 		// This operation is a matrix-vector product of the matrix of multilinear coefficients with
 		// the vector of tensor product-expanded query coefficients.
 		fold_right(&self.evals, self.mu, query.expansion(), query.n_vars(), out)
@@ -557,6 +549,28 @@ mod tests {
 				.get(0),
 			eval
 		);
+	}
+
+	#[test]
+	fn test_evaluate_partial_low_single_and_multiple_var_consistent() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let values: Vec<_> = repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
+			.take(1 << 8)
+			.collect();
+
+		let mle = MultilinearExtension::from_values(values).unwrap();
+		let r1 = <BinaryField32b as PackedField>::random(&mut rng);
+		let r2 = <BinaryField32b as PackedField>::random(&mut rng);
+
+		let eval_1: MultilinearExtension<PackedBinaryField4x32b> = mle
+			.evaluate_partial_low::<PackedBinaryField4x32b>(multilinear_query(&[r1]).to_ref())
+			.unwrap()
+			.evaluate_partial_low(multilinear_query(&[r2]).to_ref())
+			.unwrap();
+		let eval_2 = mle
+			.evaluate_partial_low(multilinear_query(&[r1, r2]).to_ref())
+			.unwrap();
+		assert_eq!(eval_1, eval_2);
 	}
 
 	#[test]

@@ -9,7 +9,7 @@ use binius_field::{
 		can_iterate_bytes, create_partial_sums_lookup_tables, is_sequential_bytes, iterate_bytes,
 		ByteIteratorCallback, PackedSlice,
 	},
-	packed::{get_packed_slice, set_packed_slice_unchecked},
+	packed::{get_packed_slice, get_packed_slice_unchecked, set_packed_slice_unchecked},
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
 	Field, PackedField,
@@ -48,7 +48,16 @@ where
 		return Ok(());
 	}
 
-	fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
+	// Use linear interpolation for single variable multilinear queries.
+	let is_lerp = log_query_size == 1
+		&& get_packed_slice(query, 0) + get_packed_slice(query, 1) == PE::Scalar::ONE;
+
+	if is_lerp {
+		let lerp_query = get_packed_slice(query, 1);
+		fold_right_lerp(evals, log_evals_size, lerp_query, out);
+	} else {
+		fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
+	}
 
 	Ok(())
 }
@@ -298,6 +307,46 @@ where
 		7 => fold_right_1bit_evals_medium_query::<P, PE, 7>(evals, query, out),
 		_ => false,
 	}
+}
+
+/// Specialized implementation for a single parameter right fold using linear interpolation
+/// instead of tensor expansion resulting in  a single multiplication instead of two:
+///   f(r||w) = r * (f(1||w) - f(0||w)) + f(0||w).
+///
+/// The same approach may be generalized to higher variable counts, with diminishing returns.
+fn fold_right_lerp<P, PE>(
+	evals: &[P],
+	log_evals_size: usize,
+	lerp_query: PE::Scalar,
+	out: &mut [PE],
+) where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	assert_eq!(1 << log_evals_size.saturating_sub(PE::LOG_WIDTH + 1), out.len());
+
+	out.iter_mut()
+		.enumerate()
+		.for_each(|(i, packed_result_eval)| {
+			for j in 0..min(PE::WIDTH, 1 << (log_evals_size - 1)) {
+				let index = (i << PE::LOG_WIDTH) | j;
+
+				let (eval0, eval1) = unsafe {
+					(
+						get_packed_slice_unchecked(evals, index << 1),
+						get_packed_slice_unchecked(evals, (index << 1) | 1),
+					)
+				};
+
+				let result_eval =
+					PE::Scalar::from(eval1 - eval0) * lerp_query + PE::Scalar::from(eval0);
+
+				// Safety: `j` < `PE::WIDTH`
+				unsafe {
+					packed_result_eval.set_unchecked(j, result_eval);
+				}
+			}
+		})
 }
 
 /// Fallback implementation for fold that can be executed for any field types and sizes.
