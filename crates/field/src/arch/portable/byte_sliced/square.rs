@@ -7,20 +7,23 @@ use crate::{
 };
 
 #[inline(always)]
-pub fn square<Level: TowerLevel<PackedAESBinaryField32x8b>>(
+pub fn square<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
 ) {
-	let base_alpha =
-		PackedAESBinaryField32x8b::from_scalars([AESTowerField8b::from_underlier(0xd3); 32]);
-	square_main::<true, Level>(field_element, destination, base_alpha);
+	let base_alpha = P::broadcast(AESTowerField8b::from_underlier(0xd3));
+	square_main::<true, P, Level>(field_element, destination, base_alpha);
 }
 
 #[inline(always)]
-pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
+pub fn square_main<
+	const WRITING_TO_ZEROS: bool,
+	P: PackedField<Scalar = AESTowerField8b>,
+	Level: TowerLevel<P>,
+>(
 	field_element: &Level::Data,
 	destination: &mut Level::Data,
-	base_alpha: PackedAESBinaryField32x8b,
+	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
@@ -34,15 +37,13 @@ pub fn square_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBina
 	let (a0, a1) = Level::split(field_element);
 
 	let (result0, result1) = Level::split_mut(destination);
-	let mut a1_squared = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
-		PackedAESBinaryField32x8b,
-	>>::default();
+	let mut a1_squared = <<Level as TowerLevel<P>>::Base as TowerLevel<P>>::default();
 
-	square_main::<true, Level::Base>(a1, &mut a1_squared, base_alpha);
+	square_main::<true, P, Level::Base>(a1, &mut a1_squared, base_alpha);
 
-	mul_alpha::<WRITING_TO_ZEROS, Level::Base>(&a1_squared, result1, base_alpha);
+	mul_alpha::<WRITING_TO_ZEROS, P, Level::Base>(&a1_squared, result1, base_alpha);
 
-	square_main::<WRITING_TO_ZEROS, Level::Base>(a0, result0, base_alpha);
+	square_main::<WRITING_TO_ZEROS, P, Level::Base>(a0, result0, base_alpha);
 
 	Level::Base::add_into(&a1_squared, result0);
 }

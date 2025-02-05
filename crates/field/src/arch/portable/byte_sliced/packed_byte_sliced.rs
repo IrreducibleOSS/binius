@@ -24,16 +24,16 @@ use crate::{
 /// multiplication circuit on GFNI machines, since multiplication of two 32x8b field elements is
 /// handled in one instruction.
 macro_rules! define_byte_sliced {
-	($name:ident, $scalar_type:ty, $tower_level: ty) => {
+	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable)]
 		pub struct $name {
-			pub(super) data: [PackedAESBinaryField32x8b;
-				<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH],
+			pub(super) data:
+				[$packed_storage; <$tower_level as TowerLevel<$packed_storage>>::WIDTH],
 		}
 
 		impl $name {
-			pub const BYTES: usize = PackedAESBinaryField32x8b::WIDTH
-				* <$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH;
+			pub const BYTES: usize =
+				<$packed_storage>::WIDTH * <$tower_level as TowerLevel<$packed_storage>>::WIDTH;
 
 			/// Get the byte at the given index.
 			///
@@ -41,11 +41,8 @@ macro_rules! define_byte_sliced {
 			/// The caller must ensure that `byte_index` is less than `BYTES`.
 			#[allow(clippy::modulo_one)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data
-					[byte_index % <$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH]
-					.get(
-						byte_index / <$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH,
-					)
+				self.data[byte_index % <$tower_level as TowerLevel<$packed_storage>>::WIDTH]
+					.get(byte_index / <$tower_level as TowerLevel<$packed_storage>>::WIDTH)
 					.to_underlier()
 			}
 		}
@@ -73,8 +70,7 @@ macro_rules! define_byte_sliced {
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				let underlier = scalar.to_underlier();
 
-				for byte_index in 0..<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH
-				{
+				for byte_index in 0..<$tower_level as TowerLevel<$packed_storage>>::WIDTH {
 					self.data[byte_index].set_unchecked(
 						i,
 						AESTowerField8b::from_underlier(underlier.get_subvalue(byte_index)),
@@ -89,9 +85,9 @@ macro_rules! define_byte_sliced {
 			fn broadcast(scalar: Self::Scalar) -> Self {
 				Self {
 					data: array::from_fn(|byte_index| {
-						PackedAESBinaryField32x8b::broadcast(AESTowerField8b::from_underlier(
-							unsafe { scalar.to_underlier().get_subvalue(byte_index) },
-						))
+						<$packed_storage>::broadcast(AESTowerField8b::from_underlier(unsafe {
+							scalar.to_underlier().get_subvalue(byte_index)
+						}))
 					}),
 				}
 			}
@@ -110,14 +106,14 @@ macro_rules! define_byte_sliced {
 			fn square(self) -> Self {
 				let mut result = Self::default();
 
-				square::<$tower_level>(&self.data, &mut result.data);
+				square::<$packed_storage, $tower_level>(&self.data, &mut result.data);
 
 				result
 			}
 
 			fn invert_or_zero(self) -> Self {
 				let mut result = Self::default();
-				invert_or_zero::<$tower_level>(&self.data, &mut result.data);
+				invert_or_zero::<$packed_storage, $tower_level>(&self.data, &mut result.data);
 				result
 			}
 
@@ -125,7 +121,7 @@ macro_rules! define_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH {
+				for byte_num in 0..<$tower_level as TowerLevel<$packed_storage>>::WIDTH {
 					let (this_byte_result1, this_byte_result2) =
 						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
 
@@ -203,12 +199,13 @@ macro_rules! define_byte_sliced {
 			type Output = Self;
 
 			fn mul(self, rhs: Self) -> Self {
-				let mut result = $name {
-					data: [PackedAESBinaryField32x8b::default();
-						<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH],
-				};
+				let mut result = Self::default();
 
-				mul::<$tower_level>(&self.data, &rhs.data, &mut result.data);
+				mul::<PackedAESBinaryField32x8b, $tower_level>(
+					&self.data,
+					&rhs.data,
+					&mut result.data,
+				);
 
 				result
 			}
@@ -267,8 +264,13 @@ macro_rules! define_byte_sliced {
 	};
 }
 
-define_byte_sliced!(ByteSlicedAES32x128b, AESTowerField128b, TowerLevel16);
-define_byte_sliced!(ByteSlicedAES32x64b, AESTowerField64b, TowerLevel8);
-define_byte_sliced!(ByteSlicedAES32x32b, AESTowerField32b, TowerLevel4);
-define_byte_sliced!(ByteSlicedAES32x16b, AESTowerField16b, TowerLevel2);
-define_byte_sliced!(ByteSlicedAES32x8b, AESTowerField8b, TowerLevel1);
+define_byte_sliced!(
+	ByteSlicedAES32x128b,
+	AESTowerField128b,
+	PackedAESBinaryField32x8b,
+	TowerLevel16
+);
+define_byte_sliced!(ByteSlicedAES32x64b, AESTowerField64b, PackedAESBinaryField32x8b, TowerLevel8);
+define_byte_sliced!(ByteSlicedAES32x32b, AESTowerField32b, PackedAESBinaryField32x8b, TowerLevel4);
+define_byte_sliced!(ByteSlicedAES32x16b, AESTowerField16b, PackedAESBinaryField32x8b, TowerLevel2);
+define_byte_sliced!(ByteSlicedAES32x8b, AESTowerField8b, PackedAESBinaryField32x8b, TowerLevel1);
