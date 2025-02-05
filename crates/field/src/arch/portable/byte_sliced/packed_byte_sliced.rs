@@ -27,13 +27,11 @@ macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable)]
 		pub struct $name {
-			pub(super) data:
-				[$packed_storage; <$tower_level as TowerLevel<$packed_storage>>::WIDTH],
+			pub(super) data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
-			pub const BYTES: usize =
-				<$packed_storage>::WIDTH * <$tower_level as TowerLevel<$packed_storage>>::WIDTH;
+			pub const BYTES: usize = <$packed_storage>::WIDTH * <$tower_level as TowerLevel>::WIDTH;
 
 			/// Get the byte at the given index.
 			///
@@ -41,8 +39,8 @@ macro_rules! define_byte_sliced {
 			/// The caller must ensure that `byte_index` is less than `BYTES`.
 			#[allow(clippy::modulo_one)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data[byte_index % <$tower_level as TowerLevel<$packed_storage>>::WIDTH]
-					.get(byte_index / <$tower_level as TowerLevel<$packed_storage>>::WIDTH)
+				self.data[byte_index % <$tower_level as TowerLevel>::WIDTH]
+					.get(byte_index / <$tower_level as TowerLevel>::WIDTH)
 					.to_underlier()
 			}
 		}
@@ -70,7 +68,7 @@ macro_rules! define_byte_sliced {
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				let underlier = scalar.to_underlier();
 
-				for byte_index in 0..<$tower_level as TowerLevel<$packed_storage>>::WIDTH {
+				for byte_index in 0..<$tower_level as TowerLevel>::WIDTH {
 					self.data[byte_index].set_unchecked(
 						i,
 						AESTowerField8b::from_underlier(underlier.get_subvalue(byte_index)),
@@ -121,7 +119,7 @@ macro_rules! define_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..<$tower_level as TowerLevel<$packed_storage>>::WIDTH {
+				for byte_num in 0..<$tower_level as TowerLevel>::WIDTH {
 					let (this_byte_result1, this_byte_result2) =
 						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
 

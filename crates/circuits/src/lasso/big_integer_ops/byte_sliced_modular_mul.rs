@@ -28,21 +28,16 @@ type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_modular_mul<
-	U,
-	F,
-	LevelIn: TowerLevel<OracleId>,
-	LevelOut: TowerLevel<OracleId, Base = LevelIn>,
->(
+pub fn byte_sliced_modular_mul<U, F, LevelIn: TowerLevel, LevelOut: TowerLevel<Base = LevelIn>>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
-	mult_a: &LevelIn::Data,
-	mult_b: &LevelIn::Data,
+	mult_a: &LevelIn::Data<OracleId>,
+	mult_b: &LevelIn::Data<OracleId>,
 	modulus_input: &[u8],
 	log_size: usize,
 	zero_byte_oracle: OracleId,
 	zero_carry_oracle: OracleId,
-) -> Result<LevelIn::Data, anyhow::Error>
+) -> Result<LevelIn::Data<OracleId>, anyhow::Error>
 where
 	U: Pod
 		+ UnderlierType

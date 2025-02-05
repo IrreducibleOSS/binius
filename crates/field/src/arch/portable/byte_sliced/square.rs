@@ -3,13 +3,13 @@ use super::multiply::mul_alpha;
 use crate::{
 	tower_levels::{TowerLevel, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
-	AESTowerField8b, PackedAESBinaryField32x8b, PackedField,
+	AESTowerField8b, PackedField,
 };
 
 #[inline(always)]
-pub fn square<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
-	field_element: &Level::Data,
-	destination: &mut Level::Data,
+pub fn square<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
+	field_element: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
 ) {
 	let base_alpha = P::broadcast(AESTowerField8b::from_underlier(0xd3));
 	square_main::<true, P, Level>(field_element, destination, base_alpha);
@@ -19,10 +19,10 @@ pub fn square<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
 pub fn square_main<
 	const WRITING_TO_ZEROS: bool,
 	P: PackedField<Scalar = AESTowerField8b>,
-	Level: TowerLevel<P>,
+	Level: TowerLevel,
 >(
-	field_element: &Level::Data,
-	destination: &mut Level::Data,
+	field_element: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
 	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
@@ -37,7 +37,7 @@ pub fn square_main<
 	let (a0, a1) = Level::split(field_element);
 
 	let (result0, result1) = Level::split_mut(destination);
-	let mut a1_squared = <<Level as TowerLevel<P>>::Base as TowerLevel<P>>::default();
+	let mut a1_squared = <<Level as TowerLevel>::Base as TowerLevel>::default();
 
 	square_main::<true, P, Level::Base>(a1, &mut a1_squared, base_alpha);
 

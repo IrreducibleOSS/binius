@@ -23,16 +23,16 @@ type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_double_conditional_increment<U, F, Level: TowerLevel<OracleId>>(
+pub fn byte_sliced_double_conditional_increment<U, F, Level: TowerLevel>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,
-	x_in: &Level::Data,
+	x_in: &Level::Data<OracleId>,
 	first_carry_in: OracleId,
 	second_carry_in: OracleId,
 	log_size: usize,
 	zero_oracle_carry: usize,
 	lookup_batch_dci: &mut LookupBatch,
-) -> Result<(OracleId, Level::Data), anyhow::Error>
+) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error>
 where
 	U: Pod
 		+ UnderlierType
@@ -45,7 +45,7 @@ where
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-	Level::Data: Sized,
+	Level::Data<OracleId>: Sized,
 {
 	if Level::WIDTH == 1 {
 		let (carry_out, sum) = u8_double_conditional_increment(

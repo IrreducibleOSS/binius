@@ -22,15 +22,15 @@ type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-pub fn byte_sliced_add<U, F, Level: TowerLevel<OracleId>>(
+pub fn byte_sliced_add<U, F, Level: TowerLevel>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString + Clone,
-	x_in: &Level::Data,
-	y_in: &Level::Data,
+	x_in: &Level::Data<OracleId>,
+	y_in: &Level::Data<OracleId>,
 	carry_in: OracleId,
 	log_size: usize,
 	lookup_batch_add: &mut LookupBatch,
-) -> Result<(OracleId, Level::Data), anyhow::Error>
+) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error>
 where
 	U: Pod
 		+ UnderlierType
@@ -43,7 +43,7 @@ where
 	PackedType<U, B16>: PackedFieldIndexable,
 	PackedType<U, B32>: PackedFieldIndexable,
 	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-	Level::Data: Sized,
+	Level::Data<OracleId>: Sized,
 {
 	if Level::WIDTH == 1 {
 		let (carry_out, sum) =

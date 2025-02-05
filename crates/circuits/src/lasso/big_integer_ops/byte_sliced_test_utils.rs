@@ -34,7 +34,7 @@ pub fn random_u512(rng: &mut ThreadRng) -> U512 {
 
 pub fn test_bytesliced_add<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -42,12 +42,10 @@ where
 	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let x_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap()
-	});
-	let y_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "y", log_size).unwrap()
-	});
+	let x_in =
+		TL::from_fn(|_| unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap());
+	let y_in =
+		TL::from_fn(|_| unconstrained::<_, _, BinaryField8b>(&mut builder, "y", log_size).unwrap());
 	let c_in = unconstrained::<_, _, BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
 
 	let lookup_t_add = add_lookup(&mut builder, "add table").unwrap();
@@ -74,15 +72,15 @@ where
 
 pub fn test_bytesliced_add_carryfree<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 	let log_size = 14;
-	let x_in = array::from_fn(|_| builder.add_committed("x", log_size, BinaryField8b::TOWER_LEVEL));
-	let y_in = array::from_fn(|_| builder.add_committed("y", log_size, BinaryField8b::TOWER_LEVEL));
+	let x_in = TL::from_fn(|_| builder.add_committed("x", log_size, BinaryField8b::TOWER_LEVEL));
+	let y_in = TL::from_fn(|_| builder.add_committed("y", log_size, BinaryField8b::TOWER_LEVEL));
 	let c_in = builder.add_committed("c", log_size, BinaryField1b::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
@@ -155,7 +153,7 @@ where
 
 pub fn test_bytesliced_double_conditional_increment<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -164,9 +162,8 @@ where
 	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let x_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap()
-	});
+	let x_in =
+		TL::from_fn(|_| unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap());
 
 	let first_c_in =
 		unconstrained::<_, _, BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
@@ -202,8 +199,7 @@ where
 
 pub fn test_bytesliced_mul<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId>,
-	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;
@@ -212,10 +208,10 @@ where
 	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let mult_a = array::from_fn(|_| {
+	let mult_a = TL::Base::from_fn(|_| {
 		unconstrained::<_, _, BinaryField8b>(&mut builder, "a", log_size).unwrap()
 	});
-	let mult_b = array::from_fn(|_| {
+	let mult_b = TL::Base::from_fn(|_| {
 		unconstrained::<_, _, BinaryField8b>(&mut builder, "b", log_size).unwrap()
 	});
 
@@ -251,9 +247,8 @@ where
 
 pub fn test_bytesliced_modular_mul<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId>,
-	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
-	<TL as TowerLevel<usize>>::Data: Debug,
+	TL: TowerLevel<Data<usize>: Debug>,
+	TL::Base: TowerLevel<Data<usize> = [OracleId; WIDTH]>,
 {
 	type U = OptimalUnderlier;
 	type F = BinaryField128b;

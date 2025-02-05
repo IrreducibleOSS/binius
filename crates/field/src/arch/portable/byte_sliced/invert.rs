@@ -10,9 +10,9 @@ use crate::{
 };
 
 #[inline(always)]
-pub fn invert_or_zero<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
-	field_element: &Level::Data,
-	destination: &mut Level::Data,
+pub fn invert_or_zero<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
+	field_element: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
 ) {
 	let base_alpha = P::broadcast(AESTowerField8b::from_underlier(0xd3));
 
@@ -20,9 +20,9 @@ pub fn invert_or_zero<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLeve
 }
 
 #[inline(always)]
-fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
-	field_element: &Level::Data,
-	destination: &mut Level::Data,
+fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
+	field_element: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
 	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
@@ -34,7 +34,7 @@ fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
 
 	let (result0, result1) = Level::split_mut(destination);
 
-	let mut intermediate = <<Level as TowerLevel<P>>::Base as TowerLevel<P>>::default();
+	let mut intermediate = <<Level as TowerLevel>::Base as TowerLevel>::default();
 
 	// intermediate = subfield_alpha*a1
 	mul_alpha::<true, P, Level::Base>(a1, &mut intermediate, base_alpha);
@@ -42,8 +42,7 @@ fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
 	// intermediate = a0 + subfield_alpha*a1
 	Level::Base::add_into(a0, &mut intermediate);
 
-	let mut delta: <<Level as TowerLevel<P>>::Base as TowerLevel<P>>::Data =
-		<<Level as TowerLevel<P>>::Base as TowerLevel<P>>::default();
+	let mut delta = <<Level as TowerLevel>::Base as TowerLevel>::default();
 
 	// delta = intermediate * a0
 	mul_main::<true, P, Level::Base>(&intermediate, a0, &mut delta, base_alpha);
@@ -51,7 +50,7 @@ fn inv_main<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel<P>>(
 	// delta = intermediate * a0 + a1^2
 	square_main::<false, P, Level::Base>(a1, &mut delta, base_alpha);
 
-	let mut delta_inv = <<Level as TowerLevel<P>>::Base as TowerLevel<P>>::default();
+	let mut delta_inv = <<Level as TowerLevel>::Base as TowerLevel>::default();
 
 	// delta_inv = 1/delta
 	inv_main::<P, Level::Base>(&delta, &mut delta_inv, base_alpha);
