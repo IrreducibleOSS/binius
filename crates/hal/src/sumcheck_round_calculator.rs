@@ -55,7 +55,7 @@ pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 where
 	FDomain: Field,
 	F: Field + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Composition: CompositionPolyOS<P>,
@@ -77,6 +77,40 @@ where
 		evaluators,
 		evaluation_points,
 		false,
+	)
+}
+
+pub(crate) fn high_to_low_calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+	n_vars: usize,
+	tensor_query: Option<MultilinearQueryRef<P>>,
+	multilinears: &[SumcheckMultilinear<P, M>],
+	evaluators: &[Evaluator],
+	evaluation_points: &[FDomain],
+) -> Result<Vec<RoundEvals<F>>, Error>
+where
+	FDomain: Field,
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
+	Composition: CompositionPolyOS<P>,
+{
+	let empty_query = MultilinearQuery::with_capacity(0);
+	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
+
+	let later_rounds_accesses = multilinears
+		.iter()
+		.map(|multilinear| LargeFieldAccess {
+			multilinear,
+			tensor_query,
+		})
+		.collect_vec();
+	calculate_round_evals_with_access(
+		n_vars,
+		&later_rounds_accesses,
+		evaluators,
+		evaluation_points,
+		true,
 	)
 }
 

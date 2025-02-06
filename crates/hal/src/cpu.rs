@@ -10,8 +10,8 @@ use binius_math::{
 use tracing::instrument;
 
 use crate::{
-	sumcheck_round_calculator::calculate_round_evals, ComputationBackend, Error, RoundEvals,
-	SumcheckEvaluator, SumcheckMultilinear,
+	sumcheck_round_calculator::{calculate_round_evals, high_to_low_calculate_round_evals},
+	ComputationBackend, Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear,
 };
 
 /// Implementation of ComputationBackend for the default Backend that uses the CPU for all computations.
@@ -64,7 +64,7 @@ impl ComputationBackend for CpuBackend {
 		Ok(multilinear.evaluate_partial_high(query_expansion)?)
 	}
 
-	fn high_to_low_sumcheck_compute_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+	fn high_to_low_sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
 		n_vars: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
@@ -74,12 +74,9 @@ impl ComputationBackend for CpuBackend {
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
-		F: Field + ExtensionField<FDomain>,
-		P: PackedField<Scalar = F>
-			+ PackedExtension<F, PackedSubfield = P>
-			+ PackedExtension<FDomain>,
+		P: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
-		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
 		high_to_low_calculate_round_evals(

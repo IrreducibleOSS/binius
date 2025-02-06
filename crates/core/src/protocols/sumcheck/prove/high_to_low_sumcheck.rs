@@ -96,8 +96,8 @@ where
 
 		let evaluation_points = domains
 			.iter()
-			.max_by_key(|domain| domain.points().len())
-			.map_or_else(|| Vec::new(), |domain| domain.points().to_vec());
+			.max_by_key(|domain| domain.size())
+			.map_or_else(|| Vec::new(), |domain| domain.finite_points().to_vec());
 
 		let state = ProverState::new_with_big_field(
 			multilinears,
@@ -144,7 +144,7 @@ where
 			})
 			.collect::<Vec<_>>();
 
-		let evals = self.state.hight_to_low_calculate_round_evals(&evaluators)?;
+		let evals = self.state.high_to_low_calculate_round_evals(&evaluators)?;
 		self.state
 			.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)
 	}

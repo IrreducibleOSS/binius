@@ -308,7 +308,7 @@ where
 					SumcheckMultilinear::Folded {
 						ref mut large_field_folded_multilinear,
 					} => {
-						// Post-switchover, simply plug in challenge for the zeroth variable.
+						// Post-switchover, simply plug in challenge for the last variable.
 						*large_field_folded_multilinear = MLEDirectAdapter::from(
 							large_field_folded_multilinear.evaluate_last_variable(challenge)?,
 						);
@@ -381,12 +381,12 @@ where
 
 	/// Calculate the accumulated evaluations for an arbitrary high to low sumcheck round.
 	#[instrument(skip_all, level = "debug")]
-	pub fn hight_to_low_calculate_round_evals<Evaluator, Composition>(
+	pub fn high_to_low_calculate_round_evals<Evaluator, Composition>(
 		&self,
 		evaluators: &[Evaluator],
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
-		Evaluator: SumcheckEvaluator<F, P, Composition> + Sync,
+		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,
 	{
 		Ok(self.backend.high_to_low_sumcheck_compute_round_evals(

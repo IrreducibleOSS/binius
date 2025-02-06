@@ -213,7 +213,7 @@ where
 	_marker: PhantomData<P>,
 }
 
-impl<'a, P, FDomain, Composition> RegularSumcheckEvaluator<'_, P, FDomain, Composition>
+impl<'a, P, FDomain, Composition> RegularSumcheckEvaluator<'a, P, FDomain, Composition>
 where
 	P: PackedField,
 	FDomain: Field,
