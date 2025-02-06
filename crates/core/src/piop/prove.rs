@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
+	PackedFieldIndexable, SerializeCanonical, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -10,7 +10,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, serialization::SerializeBytes, sorting::is_sorted_ascending};
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use either::Either;
 use itertools::{chain, Itertools};
 
@@ -175,7 +175,7 @@ where
 		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
@@ -254,7 +254,7 @@ where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {

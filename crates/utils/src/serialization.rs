@@ -9,6 +9,10 @@ pub enum Error {
 	WriteBufferFull,
 	#[error("Not enough data in read buffer to deserialize")]
 	NotEnoughBytes,
+	#[error("Unknown enum variant index {name}::{index}")]
+	UnknownEnumVariant { name: &'static str, index: u8 },
+	#[error("FromUtf8Error: {0}")]
+	FromUtf8Error(#[from] std::string::FromUtf8Error),
 }
 
 /// Represents type that can be serialized to a byte buffer.

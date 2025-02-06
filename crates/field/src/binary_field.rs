@@ -766,22 +766,6 @@ serialize_deserialize!(BinaryField32b, u32);
 serialize_deserialize!(BinaryField64b, u64);
 serialize_deserialize!(BinaryField128b, u128);
 
-/// Serializes a [`TowerField`] element to a byte buffer with a canonical encoding.
-pub fn serialize_canonical<F: TowerField, W: BufMut>(
-	elem: F,
-	mut writer: W,
-) -> Result<(), SerializationError> {
-	F::Canonical::from(elem).serialize(&mut writer)
-}
-
-/// Deserializes a [`TowerField`] element from a byte buffer with a canonical encoding.
-pub fn deserialize_canonical<F: TowerField, R: Buf>(
-	mut reader: R,
-) -> Result<F, SerializationError> {
-	let as_canonical = F::Canonical::deserialize(&mut reader)?;
-	Ok(F::from(as_canonical))
-}
-
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
 		Self::from(val.val().val())

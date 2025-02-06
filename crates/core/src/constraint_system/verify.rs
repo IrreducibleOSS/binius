@@ -77,9 +77,7 @@ where
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
 	{
 		let mut observer = transcript.observe();
-		for boundary in boundaries {
-			boundary.write_to(&mut observer);
-		}
+		observer.write_slice(boundaries);
 	}
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
