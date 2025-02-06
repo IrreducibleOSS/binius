@@ -34,7 +34,7 @@ type F = BinaryField128b;
 type PChallenge = PackedBinaryField1x128b;
 
 fn generate_witness_for_testing<const COLUMN_LEN: usize>(
-	exponents_in_each_row: [u128; COLUMN_LEN],
+	exponents_in_each_row: [u64; COLUMN_LEN],
 ) -> GeneratorExponentWitness<'static, PBits, PGenerator, PChallenge, 64> {
 	let exponent_witnesses_as_vec: [_; 64] = array::from_fn(|i| {
 		let mut column_witness = vec![PBits::default(); COLUMN_LEN / <PBits as PackedField>::WIDTH];
@@ -79,7 +79,7 @@ where
 {
 	let mut rng = thread_rng();
 
-	let exponent: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen());
+	let exponent: [u64; COLUMN_LEN] = array::from_fn(|_| rng.gen());
 	let witness = generate_witness_for_testing::<COLUMN_LEN>(exponent);
 
 	let eval_point = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
@@ -116,7 +116,7 @@ fn witness_gen_happens_correctly() {
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
 
 	let mut rng = thread_rng();
-	let exponent: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen());
+	let exponent: [u64; COLUMN_LEN] = array::from_fn(|_| rng.gen());
 
 	let witness = generate_witness_for_testing(exponent);
 
