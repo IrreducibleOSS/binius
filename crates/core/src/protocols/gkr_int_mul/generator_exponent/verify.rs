@@ -3,17 +3,18 @@
 use std::array;
 
 use binius_field::{ExtensionField, TowerField};
-use binius_utils::bail;
 
 use super::{
-	super::error::Error, common::GeneratorExponentReductionOutput, utils::first_layer_inverse,
+	super::error::Error,
+	common::{GeneratorExponentClaim, GeneratorExponentReductionOutput},
+	utils::first_layer_inverse,
 };
 use crate::{
 	fiat_shamir::Challenger,
 	polynomial::MultivariatePoly,
 	protocols::{
 		gkr_gpa::LayerClaim,
-		gkr_int_mul::generator_exponent::compositions::MultiplyOrDont,
+		gkr_int_mul::{error::VerificationError, generator_exponent::compositions::MultiplyOrDont},
 		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
 	},
 	transcript::VerifierTranscript,
@@ -36,7 +37,7 @@ use crate::{
 ///
 /// Output: EXPONENT_BITS_WIDTH separate claims (at different points) on each of the a_i's
 pub fn verify<FGenerator, F, Challenger_, const EXPONENT_BIT_WIDTH: usize>(
-	claim: &LayerClaim<F>,
+	claim: &GeneratorExponentClaim<F>,
 	transcript: &mut VerifierTranscript<Challenger_>,
 	log_size: usize,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
@@ -78,7 +79,7 @@ where
 			EqIndPartialEval::new(log_size, sumcheck_query_point.clone())?.evaluate(&eval_point)?;
 
 		if sumcheck_verification_output.multilinear_evals[0][2] != eq_eval {
-			bail!(Error::EqEvalDoesntVerify)
+			return Err(VerificationError::IncorrectEqIndEvaluation.into());
 		}
 
 		eval_claims_on_bit_columns[exponent_bit_number] = LayerClaim {

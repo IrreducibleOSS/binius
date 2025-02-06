@@ -3,15 +3,17 @@
 use std::array;
 
 use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension};
 
 use super::{
-	common::GeneratorExponentReductionOutput, compositions::MultiplyOrDont,
-	utils::first_layer_inverse, witness::GeneratorExponentWitness,
+	common::{GeneratorExponentClaim, GeneratorExponentReductionOutput},
+	compositions::MultiplyOrDont,
+	utils::first_layer_inverse,
+	witness::GeneratorExponentWitness,
 };
 use crate::{
 	fiat_shamir::Challenger,
@@ -34,24 +36,23 @@ pub fn prove<
 	const EXPONENT_BIT_WIDTH: usize,
 >(
 	witness: &GeneratorExponentWitness<'_, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>,
-	claim: &LayerClaim<F>, // this is a claim about the evaluation of the result layer at a random point
+	claim: &GeneratorExponentClaim<F>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
 where
+	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
-	PBits: PackedField,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
-		+ PackedFieldIndexable<Scalar = FGenerator>
+	FGenerator: TowerField + ExtensionField<PBits::Scalar> + ExtensionField<FDomain>,
+	PBits: PackedField<Scalar = BinaryField1b>,
+	PGenerator: PackedField<Scalar = FGenerator>
+		+ PackedExtension<PBits::Scalar>
 		+ PackedExtension<FDomain>,
-	PGenerator::Scalar: ExtensionField<PBits::Scalar> + ExtensionField<FDomain>,
-	PChallenge: PackedField
-		+ PackedFieldIndexable<Scalar = F>
+	PChallenge: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = PChallenge>
 		+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>
 		+ PackedExtension<FDomain>,
-	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + BinaryField + TowerField,
-	FGenerator: Field + TowerField,
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
@@ -60,10 +61,11 @@ where
 
 	let mut eval_point = claim.eval_point.clone();
 	let mut eval = claim.eval;
+
 	for exponent_bit_number in (1..EXPONENT_BIT_WIDTH).rev() {
 		let this_round_exponent_bit = witness.exponent[exponent_bit_number].clone();
 		let this_round_generator_power_constant =
-			F::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow([1 << exponent_bit_number]));
+			F::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow(1 << exponent_bit_number));
 
 		let this_round_input_data =
 			witness.single_bit_output_layers_data[exponent_bit_number - 1].clone();
@@ -96,13 +98,13 @@ where
 		eval_point = sumcheck_proof_output.challenges.clone();
 		eval = sumcheck_proof_output.multilinear_evals[0][0];
 
-		eval_claims_on_bit_columns[exponent_bit_number] = LayerClaim::<F> {
+		eval_claims_on_bit_columns[exponent_bit_number] = GeneratorExponentClaim::<F> {
 			eval_point: sumcheck_proof_output.challenges,
 			eval: sumcheck_proof_output.multilinear_evals[0][1],
 		}
 	}
 
-	eval_claims_on_bit_columns[0] = LayerClaim::<F> {
+	eval_claims_on_bit_columns[0] = GeneratorExponentClaim::<F> {
 		eval_point,
 		eval: first_layer_inverse::<FGenerator, _>(eval),
 	};
