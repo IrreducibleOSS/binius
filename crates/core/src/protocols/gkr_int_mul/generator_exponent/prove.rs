@@ -12,8 +12,10 @@ use binius_math::{
 };
 
 use super::{
-	common::GeneratorExponentReductionOutput, compositions::MultiplyOrDont,
-	utils::first_layer_inverse, witness::GeneratorExponentWitness,
+	common::{GeneratorExponentClaim, GeneratorExponentReductionOutput},
+	compositions::MultiplyOrDont,
+	utils::first_layer_inverse,
+	witness::GeneratorExponentWitness,
 };
 use crate::{
 	fiat_shamir::Challenger,
@@ -36,7 +38,7 @@ pub fn prove<
 	const EXPONENT_BIT_WIDTH: usize,
 >(
 	witness: &GeneratorExponentWitness<'_, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>,
-	claim: &LayerClaim<F>, // this is a claim about the evaluation of the result layer at a random point
+	claim: &GeneratorExponentClaim<F>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
@@ -99,13 +101,13 @@ where
 		eval_point = sumcheck_proof_output.challenges.clone();
 		eval = sumcheck_proof_output.multilinear_evals[0][0];
 
-		eval_claims_on_bit_columns[exponent_bit_number] = LayerClaim::<F> {
+		eval_claims_on_bit_columns[exponent_bit_number] = GeneratorExponentClaim::<F> {
 			eval_point: sumcheck_proof_output.challenges,
 			eval: sumcheck_proof_output.multilinear_evals[0][1],
 		}
 	}
 
-	eval_claims_on_bit_columns[0] = LayerClaim::<F> {
+	eval_claims_on_bit_columns[0] = GeneratorExponentClaim::<F> {
 		eval_point,
 		eval: first_layer_inverse::<FGenerator, _>(eval),
 	};

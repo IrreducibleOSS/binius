@@ -6,7 +6,9 @@ use binius_field::{ExtensionField, TowerField};
 use binius_math::EvaluationOrder;
 
 use super::{
-	super::error::Error, common::GeneratorExponentReductionOutput, utils::first_layer_inverse,
+	super::error::Error,
+	common::{GeneratorExponentClaim, GeneratorExponentReductionOutput},
+	utils::first_layer_inverse,
 };
 use crate::{
 	fiat_shamir::Challenger,
@@ -36,7 +38,7 @@ use crate::{
 ///
 /// Output: EXPONENT_BITS_WIDTH separate claims (at different points) on each of the a_i's
 pub fn verify<FGenerator, F, Challenger_, const EXPONENT_BIT_WIDTH: usize>(
-	claim: &LayerClaim<F>,
+	claim: &GeneratorExponentClaim<F>,
 	transcript: &mut VerifierTranscript<Challenger_>,
 	log_size: usize,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
