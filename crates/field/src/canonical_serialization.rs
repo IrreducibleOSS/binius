@@ -140,13 +140,34 @@ impl DeserializeCanonical for u8 {
 	}
 }
 
-impl SerializeCanonical for String {
+impl<T> SerializeCanonical for std::marker::PhantomData<T> {
+	fn serialize_canonical(&self, _write_buf: impl BufMut) -> Result<(), Error> {
+		Ok(())
+	}
+}
+
+impl<T> DeserializeCanonical for std::marker::PhantomData<T> {
+	fn deserialize_canonical(_read_buf: impl Buf) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok(Self)
+	}
+}
+
+impl SerializeCanonical for &str {
 	fn serialize_canonical(&self, mut write_buf: impl BufMut) -> Result<(), Error> {
 		let bytes = self.as_bytes();
 		SerializeCanonical::serialize_canonical(&bytes.len(), &mut write_buf)?;
 		assert_enough_space_for(&write_buf, bytes.len())?;
 		write_buf.put_slice(bytes);
 		Ok(())
+	}
+}
+
+impl SerializeCanonical for String {
+	fn serialize_canonical(&self, mut write_buf: impl BufMut) -> Result<(), Error> {
+		SerializeCanonical::serialize_canonical(&self.as_str(), &mut write_buf)
 	}
 }
 
