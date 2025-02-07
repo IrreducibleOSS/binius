@@ -141,13 +141,13 @@ macro_rules! define_byte_sliced {
 			}
 
 			#[inline]
-			fn transpose(self, other: Self, log_block_len: usize) -> (Self, Self) {
+			fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
 				for byte_num in 0..<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH {
 					(result1.data[byte_num], result2.data[byte_num]) =
-						self.data[byte_num].transpose(other.data[byte_num], log_block_len);
+						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
 				}
 
 				(result1, result2)

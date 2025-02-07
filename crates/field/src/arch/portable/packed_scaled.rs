@@ -256,7 +256,7 @@ where
 		(Self(first), Self(second))
 	}
 
-	fn transpose(self, other: Self, log_block_len: usize) -> (Self, Self) {
+	fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
 		let mut first = [Default::default(); N];
 		let mut second = [Default::default(); N];
 
@@ -278,12 +278,12 @@ where
 			}
 		} else {
 			for i in 0..N / 2 {
-				(first[i], second[i]) = self.0[2 * i].transpose(self.0[2 * i + 1], log_block_len);
+				(first[i], second[i]) = self.0[2 * i].unzip(self.0[2 * i + 1], log_block_len);
 			}
 
 			for i in 0..N / 2 {
 				(first[i + N / 2], second[i + N / 2]) =
-					other.0[2 * i].transpose(other.0[2 * i + 1], log_block_len);
+					other.0[2 * i].unzip(other.0[2 * i + 1], log_block_len);
 			}
 		}
 

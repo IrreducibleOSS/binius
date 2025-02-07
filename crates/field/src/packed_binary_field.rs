@@ -808,7 +808,7 @@ pub mod test_utils {
 		}
 	}
 
-	pub fn check_transpose<P: PackedField + WithUnderlier>(
+	pub fn check_unzip<P: PackedField + WithUnderlier>(
 		lhs: P::Underlier,
 		rhs: P::Underlier,
 		log_block_len: usize,
@@ -816,7 +816,7 @@ pub mod test_utils {
 		let lhs = P::from_underlier(lhs);
 		let rhs = P::from_underlier(rhs);
 		let block_len = 1 << log_block_len;
-		let (a, b) = lhs.transpose(rhs, log_block_len);
+		let (a, b) = lhs.unzip(rhs, log_block_len);
 		for i in (0..P::WIDTH / 2).step_by(block_len) {
 			for j in 0..block_len {
 				assert_eq!(
@@ -861,7 +861,7 @@ pub mod test_utils {
 		rhs: P::Underlier,
 	) {
 		for log_block_len in 0..P::LOG_WIDTH {
-			check_transpose::<P>(lhs, rhs, log_block_len);
+			check_unzip::<P>(lhs, rhs, log_block_len);
 		}
 	}
 }

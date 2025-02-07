@@ -31,7 +31,7 @@ pub fn deinterleave<P: PackedField>(
 
 	let deinterleaved = (0..1 << (log_scalar_count - P::LOG_WIDTH)).map(|i| {
 		let (even, odd) = if P::LOG_WIDTH > 0 {
-			P::transpose(interleaved[2 * i], interleaved[2 * i + 1], 0)
+			P::unzip(interleaved[2 * i], interleaved[2 * i + 1], 0)
 		} else {
 			(interleaved[2 * i], interleaved[2 * i + 1])
 		};
