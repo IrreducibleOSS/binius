@@ -183,7 +183,7 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 /// };
 /// MyStruct::serialize_canonical(&value, &mut buf).unwrap();
 /// assert_eq!(
-///     MyStruct::<BinaryField128b>::deserialize_canonical(buf.as_slice()),
+///     MyStruct::<BinaryField128b>::deserialize_canonical(buf.as_slice()).unwrap(),
 ///     value
 /// );
 /// ```
