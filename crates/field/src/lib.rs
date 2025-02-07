@@ -45,6 +45,7 @@ pub mod util;
 pub use aes_field::*;
 pub use arch::byte_sliced::*;
 pub use binary_field::*;
+pub use bytes;
 pub use error::*;
 pub use extension::*;
 pub use field::Field;
