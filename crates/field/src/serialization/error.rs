@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 #[derive(Clone, thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Write buffer is full")]

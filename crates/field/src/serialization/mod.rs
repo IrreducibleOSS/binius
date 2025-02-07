@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 mod bytes;
 mod canonical;
 mod error;
