@@ -75,10 +75,7 @@ where
 	let Proof { transcript } = proof;
 
 	let mut transcript = VerifierTranscript::<Challenger_>::new(transcript);
-	{
-		let mut observer = transcript.observe();
-		observer.write_slice(boundaries);
-	}
+	transcript.observe().write_slice(boundaries);
 
 	let merkle_scheme = BinaryMerkleTreeScheme::<_, Hash, _>::new(Compress::default());
 	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles)?;

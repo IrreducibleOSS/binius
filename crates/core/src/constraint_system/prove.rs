@@ -104,10 +104,7 @@ where
 	let fast_domain_factory = IsomorphicEvaluationDomainFactory::<FFastExt<Tower>>::default();
 
 	let mut transcript = ProverTranscript::<Challenger_>::new();
-	{
-		let mut observer = transcript.observe();
-		observer.write_slice(boundaries);
-	}
+	transcript.observe().write_slice(boundaries);
 
 	let ConstraintSystem {
 		mut oracles,
