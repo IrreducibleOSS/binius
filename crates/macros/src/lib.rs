@@ -132,7 +132,7 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 	};
 	quote! {
 		impl #impl_generics binius_field::SerializeCanonical for #name #ty_generics #where_clause {
-			fn serialize_canonical(&self, mut write_buf: impl bytes::BufMut) -> Result<(), binius_utils::serialization::Error> {
+			fn serialize_canonical(&self, mut write_buf: impl bytes::BufMut) -> Result<(), binius_field::serialization::Error> {
 				#body
 				Ok(())
 			}
@@ -204,7 +204,7 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 				Ok(match variant_index {
 					#(#variants,)*
 					_ => {
-						return Err(binius_utils::serialization::Error::UnknownEnumVariant {
+						return Err(binius_field::serialization::Error::UnknownEnumVariant {
 							name: #name,
 							index: variant_index
 						})
@@ -215,7 +215,7 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 	};
 	quote! {
 		impl #impl_generics binius_field::DeserializeCanonical for #name #ty_generics #where_clause {
-			fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, binius_utils::serialization::Error>
+			fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, binius_field::serialization::Error>
 			where
 				Self: Sized
 			{

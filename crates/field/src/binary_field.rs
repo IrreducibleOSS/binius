@@ -7,7 +7,6 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut};
 use rand::RngCore;
@@ -17,6 +16,7 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 };
 use crate::{
+	serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes},
 	underlier::{SmallU, U1, U2, U4},
 	Field,
 };

@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_utils::serialization::{DeserializeBytes, Error, SerializeBytes};
 use bytes::{Buf, BufMut};
 use generic_array::{ArrayLength, GenericArray};
 
+use super::{DeserializeBytes, Error, SerializeBytes};
 use crate::TowerField;
 
 /// Serialization where [`TowerField`] elements are written with canonical encoding.
