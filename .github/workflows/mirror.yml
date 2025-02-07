@@ -1,0 +1,26 @@
+name: Mirror Repository
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Mirror Repository to GitLab
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
+          name: id_rsa
+          known_hosts: ${{ secrets.GIT_SSH_KNOWN_HOSTS }}
+      - name: Mirror current ref to GitLab
+        run: |
+          git remote add gitlab ssh://git@gitlab.com/IrreducibleOSS/binius.git
+          git push gitlab ${{ github.ref }}
