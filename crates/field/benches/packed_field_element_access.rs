@@ -3,7 +3,7 @@
 use std::array;
 
 use binius_field::{
-	PackedBinaryField128x1b, PackedBinaryField16x32b, PackedBinaryField16x8b,
+	ByteSlicedAES32x128b, PackedBinaryField128x1b, PackedBinaryField16x32b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField256x1b, PackedBinaryField2x128b,
 	PackedBinaryField2x64b, PackedBinaryField32x8b, PackedBinaryField4x128b,
 	PackedBinaryField4x32b, PackedBinaryField4x64b, PackedBinaryField512x1b,
@@ -86,5 +86,11 @@ fn packed_512(c: &mut Criterion) {
 	benchmark_get_set!(PackedBinaryField4x128b, group);
 }
 
-criterion_group!(get_set, packed_128, packed_256, packed_512);
+fn bytes_sliced_128(c: &mut Criterion) {
+	let mut group = c.benchmark_group("bytes_sliced_128");
+
+	benchmark_get_set!(ByteSlicedAES32x128b, group);
+}
+
+criterion_group!(get_set, packed_128, packed_256, packed_512, bytes_sliced_128);
 criterion_main!(get_set);
