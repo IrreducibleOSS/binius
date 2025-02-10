@@ -845,7 +845,7 @@ impl UnderlierWithBitOps for M256 {
 		// In our code this is always the case.
 		seq!(N in 0..128 {
 			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm256_srli_si256, _mm256_srli_epi64, _mm256_slli_epi64, _mm256_or_si256));
+				return Self(bitshift_128b!(self.0, N, _mm256_bsrli_epi128, _mm256_srli_epi64, _mm256_slli_epi64, _mm256_or_si256));
 			}
 		});
 
@@ -858,7 +858,7 @@ impl UnderlierWithBitOps for M256 {
 		// In our code this is always the case.
 		seq!(N in 0..128 {
 			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm256_slli_si256, _mm256_slli_epi64, _mm256_srli_epi64, _mm256_or_si256));
+				return Self(bitshift_128b!(self.0, N, _mm256_bslli_epi128, _mm256_slli_epi64, _mm256_srli_epi64, _mm256_or_si256));
 			}
 		});
 

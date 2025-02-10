@@ -199,11 +199,14 @@ macro_rules! bitshift_128b {
 		unsafe {
 			let carry = $byte_shift($val, 8);
 			if $count >= 64 {
-				$bit_shift_64(carry, crate::arch::x86_64::m128::max_i32($count - 64, 0))
+				$bit_shift_64(
+					carry,
+					crate::arch::x86_64::m128::max_i32(($count - 64) as i32, 0) as _,
+				)
 			} else {
 				let carry = $bit_shift_64_opposite(
 					carry,
-					crate::arch::x86_64::m128::max_i32(64 - $count, 0),
+					crate::arch::x86_64::m128::max_i32((64 - $count) as i32, 0) as _,
 				);
 
 				let val = $bit_shift_64($val, $count);
@@ -224,7 +227,7 @@ impl Shr<usize> for M128 {
 		// In our code this is always the case.
 		seq!(N in 0..128 {
 			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm_srli_si128, _mm_srli_epi64, _mm_slli_epi64, _mm_or_si128));
+				return Self(bitshift_128b!(self.0, N, _mm_bsrli_si128, _mm_srli_epi64, _mm_slli_epi64, _mm_or_si128));
 			}
 		});
 
@@ -241,7 +244,7 @@ impl Shl<usize> for M128 {
 		// In our code this is always the case.
 		seq!(N in 0..128 {
 			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm_slli_si128, _mm_slli_epi64, _mm_srli_epi64, _mm_or_si128));
+				return Self(bitshift_128b!(self.0, N, _mm_bslli_si128, _mm_slli_epi64, _mm_srli_epi64, _mm_or_si128));
 			}
 		});
 
