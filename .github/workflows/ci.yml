@@ -27,7 +27,6 @@ jobs:
           - runner: "ubuntu-latest"
             name: "clippy"
             cmd: "cargo clippy --all --all-features --tests --benches --examples -- -D warnings"
-    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -62,7 +61,6 @@ jobs:
           - runner: "c7a-2xlarge"
             name: "docs"
             cmd: 'cargo doc --no-deps; echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=/binius_core/\"></head><body></body></html>" > target/doc/index.html'
-    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -110,7 +108,6 @@ jobs:
           - runner: "c8g-2xlarge"
             name: "arm-portable"
             cmd: 'RUSTFLAGS="-C target-cpu=generic" ./scripts/run_tests_and_examples.sh'
-    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
