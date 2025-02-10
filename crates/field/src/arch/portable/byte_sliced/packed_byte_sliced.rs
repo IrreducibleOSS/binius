@@ -15,7 +15,7 @@ use crate::{
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	PackedField,
+	PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedField,
 };
 
 /// Represents 32 AES Tower Field elements in byte-sliced form backed by Packed 32x8b AES fields.
@@ -48,7 +48,7 @@ macro_rules! define_byte_sliced {
 		impl PackedField for $name {
 			type Scalar = $scalar_type;
 
-			const LOG_WIDTH: usize = 5;
+			const LOG_WIDTH: usize = <$packed_storage>::LOG_WIDTH;
 
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				let result_underlier =
@@ -196,11 +196,7 @@ macro_rules! define_byte_sliced {
 			fn mul(self, rhs: Self) -> Self {
 				let mut result = Self::default();
 
-				mul::<PackedAESBinaryField32x8b, $tower_level>(
-					&self.data,
-					&rhs.data,
-					&mut result.data,
-				);
+				mul::<$packed_storage, $tower_level>(&self.data, &rhs.data, &mut result.data);
 
 				result
 			}
@@ -259,6 +255,19 @@ macro_rules! define_byte_sliced {
 	};
 }
 
+// 128 bit
+define_byte_sliced!(
+	ByteSlicedAES16x128b,
+	AESTowerField128b,
+	PackedAESBinaryField16x8b,
+	TowerLevel16
+);
+define_byte_sliced!(ByteSlicedAES16x64b, AESTowerField64b, PackedAESBinaryField16x8b, TowerLevel8);
+define_byte_sliced!(ByteSlicedAES16x32b, AESTowerField32b, PackedAESBinaryField16x8b, TowerLevel4);
+define_byte_sliced!(ByteSlicedAES16x16b, AESTowerField16b, PackedAESBinaryField16x8b, TowerLevel2);
+define_byte_sliced!(ByteSlicedAES16x8b, AESTowerField8b, PackedAESBinaryField16x8b, TowerLevel1);
+
+// 256 bit
 define_byte_sliced!(
 	ByteSlicedAES32x128b,
 	AESTowerField128b,
@@ -269,3 +278,15 @@ define_byte_sliced!(ByteSlicedAES32x64b, AESTowerField64b, PackedAESBinaryField3
 define_byte_sliced!(ByteSlicedAES32x32b, AESTowerField32b, PackedAESBinaryField32x8b, TowerLevel4);
 define_byte_sliced!(ByteSlicedAES32x16b, AESTowerField16b, PackedAESBinaryField32x8b, TowerLevel2);
 define_byte_sliced!(ByteSlicedAES32x8b, AESTowerField8b, PackedAESBinaryField32x8b, TowerLevel1);
+
+// 512 bit
+define_byte_sliced!(
+	ByteSlicedAES64x128b,
+	AESTowerField128b,
+	PackedAESBinaryField64x8b,
+	TowerLevel16
+);
+define_byte_sliced!(ByteSlicedAES64x64b, AESTowerField64b, PackedAESBinaryField64x8b, TowerLevel8);
+define_byte_sliced!(ByteSlicedAES64x32b, AESTowerField32b, PackedAESBinaryField64x8b, TowerLevel4);
+define_byte_sliced!(ByteSlicedAES64x16b, AESTowerField16b, PackedAESBinaryField64x8b, TowerLevel2);
+define_byte_sliced!(ByteSlicedAES64x8b, AESTowerField8b, PackedAESBinaryField64x8b, TowerLevel1);
