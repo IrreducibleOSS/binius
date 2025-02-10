@@ -51,11 +51,7 @@ pub trait AdditiveNTT<P: PackedField> {
 		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
-		if !PE::Scalar::DEGREE.is_power_of_two() {
-			return Err(Error::PowerOfTwoExtensionDegreeRequired);
-		}
-
-		let log_batch_size = log2_strict_usize(PE::Scalar::DEGREE);
+		let log_batch_size = log2_strict_usize(PE::Scalar::LOG_DEGREE);
 		self.forward_transform(PE::cast_bases_mut(data), coset, log_batch_size)
 	}
 
@@ -64,11 +60,7 @@ pub trait AdditiveNTT<P: PackedField> {
 		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
-		if !PE::Scalar::DEGREE.is_power_of_two() {
-			return Err(Error::PowerOfTwoExtensionDegreeRequired);
-		}
-
-		let log_batch_size = log2_strict_usize(PE::Scalar::DEGREE);
+		let log_batch_size = log2_strict_usize(PE::Scalar::LOG_DEGREE);
 		self.inverse_transform(PE::cast_bases_mut(data), coset, log_batch_size)
 	}
 }

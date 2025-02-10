@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use binius_field::{BinaryField, ExtensionField, PackedField, RepackedExtension};
 use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, DynamicDispatchNTT, Error, NTTOptions, ThreadingSettings};
-use binius_utils::{bail, checked_arithmetics::checked_log_2};
+use binius_utils::bail;
 use getset::CopyGetters;
 use tracing::instrument;
 
@@ -169,7 +169,6 @@ where
 		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<<P as PackedField>::Scalar>,
 	{
-		let log_degree = checked_log_2(PE::Scalar::DEGREE);
-		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + log_degree)
+		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + PE::Scalar::LOG_DEGREE)
 	}
 }
