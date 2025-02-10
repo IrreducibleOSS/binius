@@ -9,6 +9,7 @@ use std::{
 use bytemuck::{must_cast, Pod, Zeroable};
 use cfg_if::cfg_if;
 use rand::{Rng, RngCore};
+use seq_macro::seq;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
@@ -20,11 +21,13 @@ use crate::{
 				interleave_mask_even, interleave_mask_odd, UnderlierWithBitConstants,
 			},
 		},
+		x86_64::m128::bitshift_128b,
 	},
 	arithmetic_traits::Broadcast,
 	underlier::{
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		NumCast, Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -323,7 +326,7 @@ impl UnderlierType for M256 {
 
 impl UnderlierWithBitOps for M256 {
 	const ZERO: Self = { Self(m256_from_u128s!(0, 0,)) };
-	const ONE: Self = { Self(m256_from_u128s!(0, 1,)) };
+	const ONE: Self = { Self(m256_from_u128s!(1, 0,)) };
 	const ONES: Self = { Self(m256_from_u128s!(u128::MAX, u128::MAX,)) };
 
 	#[inline]
@@ -835,6 +838,56 @@ impl UnderlierWithBitOps for M256 {
 			_ => spread_fallback(self, log_block_len, block_idx),
 		}
 	}
+
+	#[inline]
+	fn shr_128b_lanes(self, rhs: usize) -> Self {
+		// This implementation is effective when `rhs` is known at compile-time.
+		// In our code this is always the case.
+		seq!(N in 0..128 {
+			if rhs == N {
+				return Self(bitshift_128b!(self.0, N, _mm256_srli_si256, _mm256_srli_epi64, _mm256_slli_epi64, _mm256_or_si256));
+			}
+		});
+
+		Self::default()
+	}
+
+	#[inline]
+	fn shl_128b_lanes(self, rhs: usize) -> Self {
+		// This implementation is effective when `rhs` is known at compile-time.
+		// In our code this is always the case.
+		seq!(N in 0..128 {
+			if rhs == N {
+				return Self(bitshift_128b!(self.0, N, _mm256_slli_si256, _mm256_slli_epi64, _mm256_srli_epi64, _mm256_or_si256));
+			}
+		});
+
+		Self::default()
+	}
+
+	#[inline]
+	fn unpack_lo_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
+		match log_block_len {
+			0..3 => unpack_lo_128b_fallback(self, other, log_block_len),
+			3 => unsafe { _mm256_unpacklo_epi8(self.0, other.0).into() },
+			4 => unsafe { _mm256_unpacklo_epi16(self.0, other.0).into() },
+			5 => unsafe { _mm256_unpacklo_epi32(self.0, other.0).into() },
+			6 => unsafe { _mm256_unpacklo_epi64(self.0, other.0).into() },
+			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline]
+	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
+		match log_block_len {
+			0..3 => unpack_hi_128b_fallback(self, other, log_block_len),
+			3 => unsafe { _mm256_unpackhi_epi8(self.0, other.0).into() },
+			4 => unsafe { _mm256_unpackhi_epi16(self.0, other.0).into() },
+			5 => unsafe { _mm256_unpackhi_epi32(self.0, other.0).into() },
+			6 => unsafe { _mm256_unpackhi_epi64(self.0, other.0).into() },
+			_ => panic!("unsupported block length"),
+		}
+	}
 }
 
 unsafe impl Zeroable for M256 {}
@@ -1075,7 +1128,7 @@ mod tests {
 	fn test_constants() {
 		assert_eq!(M256::default(), M256::ZERO);
 		assert_eq!(M256::from(0u128), M256::ZERO);
-		assert_eq!(M256::from([0u128, 1u128]), M256::ONE);
+		assert_eq!(M256::from([1u128, 0u128]), M256::ONE);
 	}
 
 	#[derive(Default)]
@@ -1139,6 +1192,10 @@ mod tests {
 		}
 	}
 
+	fn get(value: M256, log_block_len: usize, index: usize) -> M256 {
+		(value >> (index << log_block_len)) & single_element_mask_bits::<M256>(1 << log_block_len)
+	}
+
 	proptest! {
 		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
@@ -1175,14 +1232,41 @@ mod tests {
 			let (c, d) = (M256::from(c), M256::from(d));
 
 			let block_len = 1usize << height;
-			let get = |v, i| {
-				u128::num_cast_from((v >> (i * block_len)) & single_element_mask_bits::<M256>(1 << height))
-			};
 			for i in (0..256/block_len).step_by(2) {
-				assert_eq!(get(c, i), get(a, i));
-				assert_eq!(get(c, i+1), get(b, i));
-				assert_eq!(get(d, i), get(a, i+1));
-				assert_eq!(get(d, i+1), get(b, i+1));
+				assert_eq!(get(c, height, i), get(a, height, i));
+				assert_eq!(get(c, height, i+1), get(b, height, i));
+				assert_eq!(get(d, height, i), get(a, height, i+1));
+				assert_eq!(get(d, height, i+1), get(b, height, i+1));
+			}
+		}
+
+		#[test]
+		fn test_unpack_lo(a in any::<[u128; 2]>(), b in any::<[u128; 2]>(), height in 0usize..7) {
+			let a = M256::from(a);
+			let b = M256::from(b);
+
+			let result = a.unpack_lo_128b_lanes(b, height);
+			let half_block_count = 128>>(height + 1);
+			for i in 0..half_block_count {
+				assert_eq!(get(result, height, 2*i), get(a, height, i));
+				assert_eq!(get(result, height, 2*i+1), get(b, height, i));
+				assert_eq!(get(result, height, 2*(i + half_block_count)), get(a, height, 2 * half_block_count + i));
+				assert_eq!(get(result, height, 2*(i + half_block_count)+1), get(b, height, 2 * half_block_count + i));
+			}
+		}
+
+		#[test]
+		fn test_unpack_hi(a in any::<[u128; 2]>(), b in any::<[u128; 2]>(), height in 0usize..7) {
+			let a = M256::from(a);
+			let b = M256::from(b);
+
+			let result = a.unpack_hi_128b_lanes(b, height);
+			let half_block_count = 128>>(height + 1);
+			for i in 0..half_block_count {
+				assert_eq!(get(result, height, 2*i), get(a, height, i + half_block_count));
+				assert_eq!(get(result, height, 2*i+1), get(b, height, i + half_block_count));
+				assert_eq!(get(result, height, 2*(half_block_count + i)), get(a, height, 3*half_block_count + i));
+				assert_eq!(get(result, height, 2*(half_block_count + i) +1), get(b, height, 3*half_block_count + i));
 			}
 		}
 	}

@@ -855,6 +855,66 @@ impl UnderlierWithBitOps for M512 {
 			_ => spread_fallback(self, log_block_len, block_idx),
 		}
 	}
+
+	#[inline]
+	fn unpack_lo(self, other: Self, log_block_len: usize) -> Self {
+		match log_block_len {
+			0..3 => unpack_hi_fallback(self, other, log_block_len),
+			3 => unsafe { _mm512_unpacklo_epi8(self.0, other.0).into() },
+			4 => unsafe { _mm512_unpacklo_epi16(self.0, other.0).into() },
+			5 => unsafe { _mm512_unpacklo_epi32(self.0, other.0).into() },
+			6 => unsafe { _mm512_unpacklo_epi64(self.0, other.0).into() },
+			7 => unsafe {
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1101, 0b1100, 0b0101, 0b0100, 0b1001, 0b1000, 0b0001, 0b0000,
+					),
+					b,
+				)
+			},
+			8 => unsafe {
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000,
+					),
+					b,
+				)
+			},
+			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline]
+	fn unpack_hi(self, other: Self, log_block_len: usize) -> Self {
+		match log_block_len {
+			0..3 => unpack_hi_fallback(self, other, log_block_len),
+			3 => unsafe { _mm512_unpackhi_epi8(self.0, other.0).into() },
+			4 => unsafe { _mm512_unpackhi_epi16(self.0, other.0).into() },
+			5 => unsafe { _mm512_unpackhi_epi32(self.0, other.0).into() },
+			6 => unsafe { _mm512_unpackhi_epi64(self.0, other.0).into() },
+			7 => unsafe {
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1111, 0b1110, 0b0111, 0b0110, 0b1011, 0b1010, 0b0011, 0b0010,
+					),
+					b,
+				)
+			},
+			8 => unsafe {
+				_mm512_permutex2var_epi64(
+					a,
+					_mm512_set_epi64(
+						0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100,
+					),
+					b,
+				)
+			},
+			_ => panic!("unsupported block length"),
+		}
+	}
 }
 
 unsafe impl Zeroable for M512 {}
@@ -1192,6 +1252,10 @@ mod tests {
 		}
 	}
 
+	fn get(value: M512, log_block_len: usize, index: usize) -> M512 {
+		(value >> (index << log_block_len)) & single_element_mask_bits::<M512>(1 << log_block_len)
+	}
+
 	proptest! {
 		#[test]
 		fn test_conversion(a in any::<[u128; 4]>()) {
@@ -1225,14 +1289,36 @@ mod tests {
 			let (c, d) = (M512::from(c), M512::from(d));
 
 			let block_len = 1usize << height;
-			let get = |v, i| {
-				u128::num_cast_from((v >> (i * block_len)) & single_element_mask_bits::<M512>(1 << height))
-			};
 			for i in (0..512/block_len).step_by(2) {
-				assert_eq!(get(c, i), get(a, i));
-				assert_eq!(get(c, i+1), get(b, i));
-				assert_eq!(get(d, i), get(a, i+1));
-				assert_eq!(get(d, i+1), get(b, i+1));
+				assert_eq!(get(c, height, i), get(a, height, i));
+				assert_eq!(get(c, height, i+1), get(b, height, i));
+				assert_eq!(get(d, height, i), get(a, height, i+1));
+				assert_eq!(get(d, height, i+1), get(b, height, i+1));
+			}
+		}
+
+		#[test]
+		fn test_unpack_lo(a in any::<[u128; 4]>(), b in any::<[u128; 4]>(), height in 0usize..9) {
+			let a = M512::from(a);
+			let b = M512::from(b);
+
+			let result = a.unpack_lo(b, height);
+			for i in 0..512>>(height + 1) {
+				assert_eq!(get(result, height, 2*i), get(a, height, i));
+				assert_eq!(get(result, height, 2*i+1), get(b, height, i));
+			}
+		}
+
+		#[test]
+		fn test_unpack_hi(a in any::<[u128; 4]>(), b in any::<[u128; 4]>(), height in 0usize..9) {
+			let a = M512::from(a);
+			let b = M512::from(b);
+
+			let result = a.unpack_hi(b, height);
+			let half_block_count = 512>>(height + 1);
+			for i in 0..half_block_count {
+				assert_eq!(get(result, height, 2*i), get(a, height, i + half_block_count));
+				assert_eq!(get(result, height, 2*i+1), get(b, height, i + half_block_count));
 			}
 		}
 	}

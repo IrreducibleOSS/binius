@@ -118,6 +118,18 @@ pub trait UnderlierWithBitOps:
 	{
 		spread_fallback(self, log_block_len, block_idx)
 	}
+
+	fn shl_128b_lanes(self, shift: usize) -> Self;
+
+	fn shr_128b_lanes(self, shift: usize) -> Self;
+
+	fn unpack_lo_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
+		unpack_lo_128b_fallback(self, other, log_block_len)
+	}
+
+	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
+		unpack_hi_128b_fallback(self, other, log_block_len)
+	}
 }
 
 /// Returns a bit mask for a single `T` element inside underlier type.
@@ -166,6 +178,55 @@ where
 
 	for i in 0..log_repeat {
 		result |= result << (1 << (T::LOG_BITS + i));
+	}
+
+	result
+}
+
+#[inline(always)]
+fn single_element_mask_bits_128b_lanes<T: UnderlierWithBitOps>(log_block_len: usize) -> T {
+	let mut mask = single_element_mask_bits(1 << log_block_len);
+	for i in 0..T::BITS / 128 {
+		mask |= mask << (i + 1) * 128;
+	}
+
+	mask
+}
+
+pub(crate) fn unpack_lo_128b_fallback<T: UnderlierWithBitOps>(
+	lhs: T,
+	rhs: T,
+	log_block_len: usize,
+) -> T {
+	assert!(log_block_len <= 6);
+
+	let mask = single_element_mask_bits_128b_lanes::<T>(log_block_len);
+
+	let mut result = T::ZERO;
+	for i in 0..1 << (6 - log_block_len) {
+		result |= ((lhs.shr_128b_lanes(i << log_block_len)) & mask)
+			.shl_128b_lanes(i << (log_block_len + 1));
+		result |= ((rhs.shr_128b_lanes(i << log_block_len)) & mask)
+			.shl_128b_lanes((2 * i + 1) << log_block_len);
+	}
+
+	result
+}
+
+pub(crate) fn unpack_hi_128b_fallback<T: UnderlierWithBitOps>(
+	lhs: T,
+	rhs: T,
+	log_block_len: usize,
+) -> T {
+	assert!(log_block_len <= 6);
+
+	let mask = single_element_mask_bits_128b_lanes::<T>(log_block_len);
+	let mut result = T::ZERO;
+	for i in 0..1 << (6 - log_block_len) {
+		result |= ((lhs.shr_128b_lanes(64 + (i << log_block_len))) & mask)
+			.shl_128b_lanes(i << (log_block_len + 1));
+		result |= ((rhs.shr_128b_lanes(64 + (i << log_block_len))) & mask)
+			.shl_128b_lanes((2 * i + 1) << log_block_len);
 	}
 
 	result
