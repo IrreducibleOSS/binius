@@ -12,7 +12,7 @@ ENV_VARS = {
     "RUSTFLAGS": "-C target-cpu=native",
 }
 
-SAMPLE_SIZE = 10
+SAMPLE_SIZE = 5
 
 KECCAKF_PERMS = 1 << 13
 GROESTLP_PERMS = 1 << 14
