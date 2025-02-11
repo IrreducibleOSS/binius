@@ -10,12 +10,14 @@ use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::Zeroable;
 use derive_more::{Add, AddAssign, Sub, SubAssign, Sum};
 
+use super::ByteSlicedAES64x128b;
 use crate::{
 	arch::portable::packed_scaled::{packed_scaled_field, ScaledPackedField},
 	binary_field::BinaryField,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	ByteSlicedAES16x128b, ByteSlicedAES32x128b, PackedAESBinaryField16x8b,
-	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField32x8b, PackedField,
+	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField32x8b,
+	PackedAESBinaryField4x128b, PackedAESBinaryField64x8b, PackedField,
 };
 
 macro_rules! define_transposed_byte_sliced {
@@ -257,6 +259,7 @@ macro_rules! define_transposed_byte_sliced {
 // define big scaled packed fields
 packed_scaled_field!(ScaledAES16x1x128b = [PackedAESBinaryField1x128b; 16]);
 packed_scaled_field!(ScaledAES16x2x128b = [PackedAESBinaryField2x128b; 16]);
+packed_scaled_field!(ScaledAES16x4x128b = [PackedAESBinaryField4x128b; 16]);
 
 // 128 bits
 define_transposed_byte_sliced!(
@@ -272,6 +275,14 @@ define_transposed_byte_sliced!(
 	PackedAESBinaryField2x128b,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x128b
+);
+
+// 512 bits
+define_transposed_byte_sliced!(
+	TransposedAESByteSliced64x128b,
+	PackedAESBinaryField4x128b,
+	PackedAESBinaryField64x8b,
+	ByteSlicedAES64x128b
 );
 
 #[cfg(test)]

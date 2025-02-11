@@ -138,9 +138,21 @@ pub mod tests {
 	define_byte_sliced_test!(tests_32x16, ByteSlicedAES32x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_32x8, ByteSlicedAES32x8b, AESTowerField8b);
 
+	define_byte_sliced_test!(
+		tests_32x128_transposed,
+		TransposedAESByteSliced32x128b,
+		AESTowerField128b
+	);
+
 	define_byte_sliced_test!(tests_64x128, ByteSlicedAES64x128b, AESTowerField128b);
 	define_byte_sliced_test!(tests_64x64, ByteSlicedAES64x64b, AESTowerField64b);
 	define_byte_sliced_test!(tests_64x32, ByteSlicedAES64x32b, AESTowerField32b);
 	define_byte_sliced_test!(tests_64x16, ByteSlicedAES64x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_64x8, ByteSlicedAES64x8b, AESTowerField8b);
+
+	define_byte_sliced_test!(
+		tests_64x128_transposed,
+		TransposedAESByteSliced64x128b,
+		AESTowerField128b
+	);
 }
