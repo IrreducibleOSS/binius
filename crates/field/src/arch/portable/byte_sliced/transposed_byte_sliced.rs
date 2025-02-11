@@ -6,13 +6,16 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::Zeroable;
 use derive_more::{Add, AddAssign, Sub, SubAssign, Sum};
 
 use crate::{
 	arch::portable::packed_scaled::{packed_scaled_field, ScaledPackedField},
+	binary_field::BinaryField,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	ByteSlicedAES16x128b, PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedField,
+	ByteSlicedAES16x128b, ByteSlicedAES32x128b, PackedAESBinaryField16x8b,
+	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField32x8b, PackedField,
 };
 
 macro_rules! define_transposed_byte_sliced {
@@ -32,21 +35,24 @@ macro_rules! define_transposed_byte_sliced {
 			Sum,
 		)]
 		pub struct $name {
-			inner: ScaledPackedField<$packed, { <$byte_sliced>::WIDTH }>,
+			inner: ScaledPackedField<$packed, { <$packed as PackedField>::Scalar::N_BITS / 8 }>,
 		}
 
 		impl $name {
+			const ARRAY_SIZE: usize = { <$packed as PackedField>::Scalar::N_BITS / 8 };
+			const LOG_ARRAY_SIZE: usize = checked_log_2(Self::ARRAY_SIZE);
+
 			fn transpose_forward(self) -> $byte_sliced {
 				assert_eq!(
 					TypeId::of::<<$packed as WithUnderlier>::Underlier>(),
 					TypeId::of::<<$packed_transposed as WithUnderlier>::Underlier>()
 				);
 
-				let mut transposed_data: [<$packed as WithUnderlier>::Underlier;
-					<$byte_sliced>::WIDTH] = bytemuck::must_cast(self.inner.0);
+				let mut transposed_data: [<$packed as WithUnderlier>::Underlier; Self::ARRAY_SIZE] =
+					bytemuck::must_cast(self.inner.0);
 
-				for log_block_len in (1..=<$byte_sliced>::LOG_WIDTH).rev() {
-					for block_index in 0..<$byte_sliced>::WIDTH / (1 << log_block_len) {
+				for log_block_len in (1..=Self::LOG_ARRAY_SIZE).rev() {
+					for block_index in 0..Self::ARRAY_SIZE / (1 << log_block_len) {
 						for i in 0..(1 << (log_block_len - 1)) {
 							let first_index = i + (block_index << log_block_len);
 							let second_index = first_index + (1 << (log_block_len - 1));
@@ -54,18 +60,18 @@ macro_rules! define_transposed_byte_sliced {
 							(transposed_data[first_index], transposed_data[second_index]) = (
 								transposed_data[first_index].unpack_lo_128b_lanes(
 									transposed_data[second_index],
-									<$byte_sliced>::LOG_WIDTH - log_block_len + 3,
+									Self::LOG_ARRAY_SIZE - log_block_len + 3,
 								),
 								transposed_data[first_index].unpack_hi_128b_lanes(
 									transposed_data[second_index],
-									<$byte_sliced>::LOG_WIDTH - log_block_len + 3,
+									Self::LOG_ARRAY_SIZE - log_block_len + 3,
 								),
 							);
 						}
 					}
 				}
 
-				let byte_sliced_data: [$packed_transposed; <$byte_sliced>::WIDTH] =
+				let byte_sliced_data: [$packed_transposed; Self::ARRAY_SIZE] =
 					bytemuck::must_cast(transposed_data);
 
 				<$byte_sliced>::new(byte_sliced_data)
@@ -78,10 +84,10 @@ macro_rules! define_transposed_byte_sliced {
 				);
 
 				let mut transposed_data: [<$packed_transposed as WithUnderlier>::Underlier;
-					<$byte_sliced>::WIDTH] = bytemuck::must_cast(byte_sliced.data);
+					Self::ARRAY_SIZE] = bytemuck::must_cast(byte_sliced.data);
 
-				for log_block_len in 1..=<$byte_sliced>::LOG_WIDTH {
-					for block_index in 0..<$byte_sliced>::WIDTH / (1 << log_block_len) {
+				for log_block_len in 1..=Self::LOG_ARRAY_SIZE {
+					for block_index in 0..Self::ARRAY_SIZE / (1 << log_block_len) {
 						for i in 0..(1 << (log_block_len - 1)) {
 							let first_index = i + (block_index << log_block_len);
 							let second_index = first_index + (1 << (log_block_len - 1));
@@ -100,7 +106,7 @@ macro_rules! define_transposed_byte_sliced {
 					}
 				}
 
-				let byte_sliced_data: [$packed; <$byte_sliced>::WIDTH] =
+				let byte_sliced_data: [$packed; Self::ARRAY_SIZE] =
 					bytemuck::must_cast(transposed_data);
 
 				Self {
@@ -146,16 +152,16 @@ macro_rules! define_transposed_byte_sliced {
 
 			#[inline]
 			fn square(self) -> Self {
-				Self {
-					inner: self.inner.square(),
-				}
+				let transposed = self.transpose_forward();
+				let squared = transposed.square();
+				Self::transpose_backward(squared)
 			}
 
 			#[inline]
 			fn invert_or_zero(self) -> Self {
-				Self {
-					inner: self.inner.invert_or_zero(),
-				}
+				let transposed = self.transpose_forward();
+				let inverted = transposed.invert_or_zero();
+				Self::transpose_backward(inverted)
 			}
 
 			#[inline]
@@ -250,7 +256,9 @@ macro_rules! define_transposed_byte_sliced {
 
 // define big scaled packed fields
 packed_scaled_field!(ScaledAES16x1x128b = [PackedAESBinaryField1x128b; 16]);
+packed_scaled_field!(ScaledAES16x2x128b = [PackedAESBinaryField2x128b; 16]);
 
+// 128 bits
 define_transposed_byte_sliced!(
 	TransposedAESByteSliced16x128b,
 	PackedAESBinaryField1x128b,
@@ -258,31 +266,59 @@ define_transposed_byte_sliced!(
 	ByteSlicedAES16x128b
 );
 
+// 256 bits
+define_transposed_byte_sliced!(
+	TransposedAESByteSliced32x128b,
+	PackedAESBinaryField2x128b,
+	PackedAESBinaryField32x8b,
+	ByteSlicedAES32x128b
+);
+
 #[cfg(test)]
 mod tests {
 	use std::collections::HashSet;
 
+	use rand::{rngs::StdRng, SeedableRng};
+
 	use super::*;
+
+	macro_rules! check_transposition_roundtrip {
+		($name:ty, $rand:ident) => {
+			let val = <$name>::random(&mut $rand);
+			let transposed = val.transpose_forward();
+			let transposed_back = <$name>::transpose_backward(transposed);
+
+			assert_eq!(val, transposed_back);
+		};
+	}
 
 	#[test]
 	fn test_transposition_roundtrip() {
-		let val = TransposedAESByteSliced16x128b::random(&mut rand::thread_rng());
-		let transposed = val.transpose_forward();
-		let transposed_back = TransposedAESByteSliced16x128b::transpose_backward(transposed);
+		let mut rand = StdRng::seed_from_u64(0);
 
-		assert_eq!(val, transposed_back);
+		check_transposition_roundtrip!(TransposedAESByteSliced16x128b, rand);
+		check_transposition_roundtrip!(TransposedAESByteSliced32x128b, rand);
+	}
+
+	macro_rules! check_transpose_preserves_scalars {
+		($name:ty, $rand:ident) => {
+			let val = <$name>::random(&mut $rand);
+			let original_scalars = val.iter().map(|x| u128::from(x)).collect::<HashSet<_>>();
+			let transposed_scalars = val
+				.transpose_forward()
+				.iter()
+				.map(|x| u128::from(x))
+				.collect::<HashSet<_>>();
+
+			assert_eq!(original_scalars, transposed_scalars);
+		};
 	}
 
 	#[test]
 	fn transpose_preserves_scalars() {
-		let val = TransposedAESByteSliced16x128b::random(&mut rand::thread_rng());
-		let original_scalars = val.iter().map(|x| u128::from(x)).collect::<HashSet<_>>();
-		let transposed_scalars = val
-			.transpose_forward()
-			.iter()
-			.map(|x| u128::from(x))
-			.collect::<HashSet<_>>();
+		let mut rand = StdRng::seed_from_u64(0);
 
-		assert_eq!(original_scalars, transposed_scalars);
+		check_transpose_preserves_scalars!(TransposedAESByteSliced16x128b, rand);
+		check_transpose_preserves_scalars!(TransposedAESByteSliced32x128b, rand);
 	}
 }
