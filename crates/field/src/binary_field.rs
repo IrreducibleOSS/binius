@@ -48,8 +48,8 @@ where
 	/// Returns the smallest valid `TOWER_LEVEL` in the tower that can fit the same value.
 	///
 	/// Since which `TOWER_LEVEL` values are valid depends on the tower,
-	/// `F::Canonical::from(elem).binary_tower_level()` can return a different result
-	/// from `elem.binary_tower_level()`.
+	/// `F::Canonical::from(elem).min_tower_level()` can return a different result
+	/// from `elem.min_tower_level()`.
 	fn min_tower_level(self) -> usize;
 
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
