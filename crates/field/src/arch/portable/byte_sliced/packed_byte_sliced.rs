@@ -137,7 +137,7 @@ macro_rules! define_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH {
+				for byte_num in 0..<$tower_level as TowerLevel>::WIDTH {
 					(result1.data[byte_num], result2.data[byte_num]) =
 						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
 				}
