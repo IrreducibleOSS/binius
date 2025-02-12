@@ -2,7 +2,7 @@
 
 use std::{marker::PhantomData, ops::Range};
 
-use binius_field::{Field, PackedExtension, PackedField};
+use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
@@ -13,9 +13,9 @@ use tracing::instrument;
 
 use super::{batch_prove::SumcheckProver, prover_state::ProverState};
 use crate::{
-	polynomial::{Error as PolynomialError, MultilinearComposite},
+	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
-		common::{CompositeSumClaim, RoundCoeffs},
+		common::{get_nontrivial_evaluation_points, CompositeSumClaim, RoundCoeffs},
 		error::Error,
 		prove::prover_state::SumcheckInterpolator,
 	},
@@ -127,7 +127,8 @@ where
 			.iter()
 			.map(|composite_claim| {
 				let degree = composite_claim.composition.degree();
-				let domain = evaluation_domain_factory.create(degree + 1)?;
+				let domain =
+					evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
 				Ok(domain.into())
 			})
 			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
@@ -138,15 +139,12 @@ where
 			.map(|claim| claim.composition)
 			.collect();
 
-		let evaluation_points = domains
-			.iter()
-			.max_by_key(|domain| domain.size())
-			.map_or_else(|| Vec::new(), |domain| domain.finite_points().to_vec());
+		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new(
 			multilinears,
 			claimed_sums,
-			evaluation_points,
+			nontrivial_evaluation_points,
 			switchover_fn,
 			backend,
 		)?;
@@ -164,7 +162,7 @@ where
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for RegularSumcheckProver<'_, FDomain, P, Composition, M, Backend>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
@@ -186,6 +184,9 @@ where
 		let evaluators = izip!(&self.compositions, &self.domains)
 			.map(|(composition, interpolation_domain)| RegularSumcheckEvaluator {
 				composition,
+				composition_highest_degree_only: ArithCircuitPoly::new(
+					composition.expression().highest_degree_only().1,
+				),
 				interpolation_domain,
 				_marker: PhantomData,
 			})
@@ -207,6 +208,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
+	composition_highest_degree_only: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	_marker: PhantomData<P>,
 }
@@ -214,7 +216,7 @@ where
 impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
@@ -229,14 +231,21 @@ where
 		&self,
 		_subcube_vars: usize,
 		_subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P {
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			self.composition
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
+			if is_infinity_point {
+				self.composition_highest_degree_only
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			} else {
+				self.composition
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			}
 
 			evals.iter().copied().sum()
 		})
@@ -266,6 +275,13 @@ where
 		// Given $r(1), \ldots, r(d+1)$, letting $s$ be the current round's claimed sum,
 		// we can compute $r(0)$ using the identity $r(0) = s - r(1)$
 		round_evals.insert(0, last_round_sum - round_evals[0]);
+
+		if round_evals.len() > 3 {
+			// Reorder eval at infinity point from index 2 to the last position
+			// (as expected by the InterpolationDomain).
+			let infinity_round_eval = round_evals.remove(2);
+			round_evals.push(infinity_round_eval);
+		}
 
 		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)

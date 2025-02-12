@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{
-	cmp::max,
+	cmp::{max, Ordering},
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -57,6 +57,33 @@ impl<F: Field> ArithExpr<F> {
 			Self::Add(left, right) => max(left.degree(), right.degree()),
 			Self::Mul(left, right) => left.degree() + right.degree(),
 			Self::Pow(base, exp) => base.degree() * *exp as usize,
+		}
+	}
+
+	/// Return a new arithmetic expression that contains only the terms of highest degree
+	/// (useful for interpolation at Karatsuba infinity point).
+	pub fn highest_degree_only(&self) -> (usize, Self) {
+		match self {
+			expr @ Self::Const(_) => (0, expr.clone()),
+			expr @ Self::Var(_) => (1, expr.clone()),
+			Self::Add(left, right) => {
+				let (lhs_degree, lhs) = left.highest_degree_only();
+				let (rhs_degree, rhs) = right.highest_degree_only();
+				match lhs_degree.cmp(&rhs_degree) {
+					Ordering::Less => (rhs_degree, rhs),
+					Ordering::Equal => (lhs_degree, Self::Add(Box::new(lhs), Box::new(rhs))),
+					Ordering::Greater => (lhs_degree, lhs),
+				}
+			}
+			Self::Mul(left, right) => {
+				let (lhs_degree, lhs) = left.highest_degree_only();
+				let (rhs_degree, rhs) = right.highest_degree_only();
+				(lhs_degree + rhs_degree, Self::Mul(Box::new(lhs), Box::new(rhs)))
+			}
+			Self::Pow(base, exp) => {
+				let (base_degree, base) = base.highest_degree_only();
+				(base_degree * *exp as usize, Self::Pow(Box::new(base), *exp))
+			}
 		}
 	}
 
@@ -295,7 +322,7 @@ impl<F: Field> Product for ArithExpr<F> {
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{BinaryField128b, BinaryField1b, BinaryField8b};
+	use binius_field::{BinaryField, BinaryField128b, BinaryField1b, BinaryField8b};
 
 	use super::*;
 
@@ -309,6 +336,24 @@ mod tests {
 
 		let expr: ArithExpr<BinaryField8b> = (ArithExpr::Var(0) * ArithExpr::Var(1)).pow(7);
 		assert_eq!(expr.degree(), 14);
+	}
+
+	#[test]
+	fn test_highest_degree_only() {
+		let expr = ArithExpr::Var(0)
+			* (ArithExpr::Var(1)
+				* ArithExpr::Var(2)
+				* ArithExpr::Const(BinaryField8b::MULTIPLICATIVE_GENERATOR)
+				+ ArithExpr::Var(4))
+			+ ArithExpr::Var(5).pow(3)
+			+ ArithExpr::Const(BinaryField8b::ONE);
+
+		let expected_expr = ArithExpr::Var(0)
+			* ((ArithExpr::Var(1) * ArithExpr::Var(2))
+				* ArithExpr::Const(BinaryField8b::MULTIPLICATIVE_GENERATOR))
+			+ ArithExpr::Var(5).pow(3);
+
+		assert_eq!(expr.highest_degree_only(), (3, expected_expr));
 	}
 
 	#[test]

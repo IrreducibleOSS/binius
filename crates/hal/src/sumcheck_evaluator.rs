@@ -23,6 +23,7 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P;
 

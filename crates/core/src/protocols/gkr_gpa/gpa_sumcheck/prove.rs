@@ -2,7 +2,9 @@
 
 use std::ops::Range;
 
-use binius_field::{util::eq, Field, PackedExtension, PackedField, PackedFieldIndexable};
+use binius_field::{
+	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
@@ -13,10 +15,10 @@ use tracing::{debug_span, instrument};
 
 use super::error::Error;
 use crate::{
-	polynomial::Error as PolynomialError,
+	polynomial::{ArithCircuitPoly, Error as PolynomialError},
 	protocols::{
 		sumcheck::{
-			immediate_switchover_heuristic,
+			get_nontrivial_evaluation_points, immediate_switchover_heuristic,
 			prove::{common, prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
 			CompositeSumClaim, Error as SumcheckError, RoundCoeffs,
 		},
@@ -44,7 +46,7 @@ where
 
 impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Composition, M, Backend>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
@@ -85,7 +87,8 @@ where
 			.par_iter()
 			.map(|composite_claim| {
 				let degree = composite_claim.composition.degree();
-				let domain = evaluation_domain_factory.create(degree + 1)?;
+				let domain =
+					evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
 				Ok(domain.into())
 			})
 			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
@@ -96,15 +99,12 @@ where
 			.map(|claim| claim.composition)
 			.collect();
 
-		let evaluation_points = domains
-			.iter()
-			.max_by_key(|domain| domain.size())
-			.map_or_else(|| Vec::new(), |domain| domain.finite_points().to_vec());
+		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new(
 			multilinears,
 			claimed_sums,
-			evaluation_points,
+			nontrivial_evaluation_points,
 			// We use GPA protocol only for big fields, which is why switchover is trivial
 			immediate_switchover_heuristic,
 			backend,
@@ -187,7 +187,7 @@ where
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for GPAProver<'_, FDomain, P, Composition, M, Backend>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -213,8 +213,12 @@ where
 					.map(|first_round_eval_1s| first_round_eval_1s[index])
 					.filter(|_| round == 0);
 
+				let composition_highest_degree_only =
+					ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+
 				GPAEvaluator {
 					composition,
+					composition_highest_degree_only,
 					interpolation_domain,
 					first_round_eval_1,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
@@ -275,6 +279,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
+	composition_highest_degree_only: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 	first_round_eval_1: Option<P::Scalar>,
@@ -284,7 +289,7 @@ where
 impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for GPAEvaluator<'_, P, FDomain, Composition>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
@@ -308,14 +313,21 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P {
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			self.composition
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
+			if is_infinity_point {
+				self.composition_highest_degree_only
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			} else {
+				self.composition
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			};
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			for (i, eval) in evals.iter_mut().enumerate() {
@@ -365,6 +377,13 @@ where
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 
 		round_evals.insert(0, zero_evaluation);
+
+		if round_evals.len() > 3 {
+			// Reorder eval at infinity point from index 2 to the last position
+			// (as expected by the InterpolationDomain).
+			let infinity_round_eval = round_evals.remove(2);
+			round_evals.push(infinity_round_eval);
+		}
 
 		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
