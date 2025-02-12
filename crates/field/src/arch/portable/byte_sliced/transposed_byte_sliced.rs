@@ -1,7 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
 use std::{
-	any::TypeId,
 	iter::Product,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
@@ -10,14 +9,12 @@ use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Add, AddAssign, Sub, SubAssign, Sum};
 
-use super::ByteSlicedAES64x128b;
 use crate::{
 	arch::portable::packed_scaled::{packed_scaled_field, ScaledPackedField},
 	binary_field::BinaryField,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
-	ByteSlicedAES16x128b, ByteSlicedAES32x128b, PackedAESBinaryField16x8b,
-	PackedAESBinaryField1x128b, PackedAESBinaryField2x128b, PackedAESBinaryField32x8b,
-	PackedAESBinaryField4x128b, PackedAESBinaryField64x8b, PackedField,
+	ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b, PackedAESBinaryField1x128b,
+	PackedAESBinaryField2x128b, PackedAESBinaryField4x128b, PackedField,
 };
 
 macro_rules! define_transposed_byte_sliced {
@@ -50,6 +47,9 @@ macro_rules! define_transposed_byte_sliced {
 			fn transpose_forward(
 				values: &mut [<$packed as WithUnderlier>::Underlier; Self::ARRAY_SIZE],
 			) {
+				// All the functions below can easily be implemented in a generic way.
+				// But in this case the compiler doesn't unroll all the loops and the performance is worse.
+				// TODO: support scalar size 8-64b
 				match Self::ARRAY_SIZE {
 					16 => transpose_forward_8b(values),
 					_ => panic!("unsupported length"),
@@ -60,6 +60,9 @@ macro_rules! define_transposed_byte_sliced {
 			fn transpose_backward(
 				values: &mut [<$packed as WithUnderlier>::Underlier; Self::ARRAY_SIZE],
 			) {
+				// All the functions below can easily be implemented in a generic way.
+				// But in this case the compiler doesn't unroll all the loops and the performance is worse.
+				// TODO: support scalar size 8-64b
 				match Self::ARRAY_SIZE {
 					16 => transpose_backward_8b(values),
 					_ => panic!("unsupported length"),
@@ -239,35 +242,6 @@ macro_rules! define_transposed_byte_sliced {
 }
 
 #[inline(always)]
-fn transpose_backward_8b<U: UnderlierWithBitOps, const N: usize>(values: &mut [U; N]) {
-	debug_assert_eq!(values.len(), 16);
-
-	for i in [0, 2, 4, 6, 8, 10, 12, 14].iter().copied() {
-		let tmp = values[i].unpack_lo_128b_lanes(values[i + 1], 3);
-		values[i + 1] = values[i].unpack_hi_128b_lanes(values[i + 1], 3);
-		values[i] = tmp;
-	}
-
-	for i in [0, 1, 4, 5, 8, 9, 12, 13].iter().copied() {
-		let tmp = values[i].unpack_lo_128b_lanes(values[i + 2], 4);
-		values[i + 2] = values[i].unpack_hi_128b_lanes(values[i + 2], 4);
-		values[i] = tmp;
-	}
-
-	for i in [0, 1, 2, 3, 8, 9, 10, 11].iter().copied() {
-		let tmp = values[i].unpack_lo_128b_lanes(values[i + 4], 5);
-		values[i + 4] = values[i].unpack_hi_128b_lanes(values[i + 4], 5);
-		values[i] = tmp;
-	}
-
-	for i in 0..8 {
-		let tmp = values[i].unpack_lo_128b_lanes(values[i + 8], 6);
-		values[i + 8] = values[i].unpack_hi_128b_lanes(values[i + 8], 6);
-		values[i] = tmp;
-	}
-}
-
-#[inline(always)]
 fn transpose_forward_8b<U: UnderlierWithBitOps>(values: &mut [U]) {
 	debug_assert_eq!(values.len(), 16);
 
@@ -296,6 +270,35 @@ fn transpose_forward_8b<U: UnderlierWithBitOps>(values: &mut [U]) {
 	}
 }
 
+#[inline(always)]
+fn transpose_backward_8b<U: UnderlierWithBitOps, const N: usize>(values: &mut [U; N]) {
+	debug_assert_eq!(values.len(), 16);
+
+	for i in [0, 2, 4, 6, 8, 10, 12, 14].iter().copied() {
+		let tmp = values[i].unpack_lo_128b_lanes(values[i + 1], 3);
+		values[i + 1] = values[i].unpack_hi_128b_lanes(values[i + 1], 3);
+		values[i] = tmp;
+	}
+
+	for i in [0, 1, 4, 5, 8, 9, 12, 13].iter().copied() {
+		let tmp = values[i].unpack_lo_128b_lanes(values[i + 2], 4);
+		values[i + 2] = values[i].unpack_hi_128b_lanes(values[i + 2], 4);
+		values[i] = tmp;
+	}
+
+	for i in [0, 1, 2, 3, 8, 9, 10, 11].iter().copied() {
+		let tmp = values[i].unpack_lo_128b_lanes(values[i + 4], 5);
+		values[i + 4] = values[i].unpack_hi_128b_lanes(values[i + 4], 5);
+		values[i] = tmp;
+	}
+
+	for i in 0..8 {
+		let tmp = values[i].unpack_lo_128b_lanes(values[i + 8], 6);
+		values[i + 8] = values[i].unpack_hi_128b_lanes(values[i + 8], 6);
+		values[i] = tmp;
+	}
+}
+
 // define big scaled packed fields
 packed_scaled_field!(ScaledAES16x1x128b = [PackedAESBinaryField1x128b; 16]);
 packed_scaled_field!(ScaledAES16x2x128b = [PackedAESBinaryField2x128b; 16]);
@@ -303,7 +306,7 @@ packed_scaled_field!(ScaledAES16x4x128b = [PackedAESBinaryField4x128b; 16]);
 
 // 128 bits
 define_transposed_byte_sliced!(
-	TransposedAESByteSliced16x128b,
+	TransposedByteSlicedAES16x128b,
 	PackedAESBinaryField1x128b,
 	PackedAESBinaryField16x8b,
 	ByteSlicedAES16x128b
@@ -311,7 +314,7 @@ define_transposed_byte_sliced!(
 
 // 256 bits
 define_transposed_byte_sliced!(
-	TransposedAESByteSliced32x128b,
+	TransposedByteSlicedAES32x128b,
 	PackedAESBinaryField2x128b,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x128b
@@ -319,7 +322,7 @@ define_transposed_byte_sliced!(
 
 // 512 bits
 define_transposed_byte_sliced!(
-	TransposedAESByteSliced64x128b,
+	TransposedByteSlicedAES64x128b,
 	PackedAESBinaryField4x128b,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x128b
@@ -349,21 +352,25 @@ mod tests {
 	fn test_transposition_roundtrip() {
 		let mut rand = StdRng::seed_from_u64(0);
 
-		check_transposition_roundtrip!(TransposedAESByteSliced16x128b, rand);
-		check_transposition_roundtrip!(TransposedAESByteSliced32x128b, rand);
+		check_transposition_roundtrip!(TransposedByteSlicedAES16x128b, rand);
+		check_transposition_roundtrip!(TransposedByteSlicedAES32x128b, rand);
+		check_transposition_roundtrip!(TransposedByteSlicedAES64x128b, rand);
 	}
 
 	macro_rules! check_transpose_preserves_scalars {
 		($name:ty, $byte_sliced:ty, $rand:ident) => {
 			let val = <$name>::random(&mut $rand);
-			let original_scalars = val.iter().map(|x| u128::from(x)).collect::<HashSet<_>>();
+			let original_scalars = val
+				.iter()
+				.map(|x| u128::from(x.to_underlier()))
+				.collect::<HashSet<_>>();
 
 			let mut transposed_data = bytemuck::must_cast(val);
 			<$name>::transpose_forward(&mut transposed_data);
 			let value_transposed: $byte_sliced = bytemuck::must_cast(transposed_data);
 			let transposed_scalars = value_transposed
 				.iter()
-				.map(|x| u128::from(x))
+				.map(|x| u128::from(x.to_underlier()))
 				.collect::<HashSet<_>>();
 
 			assert_eq!(original_scalars, transposed_scalars);
@@ -375,13 +382,18 @@ mod tests {
 		let mut rand = StdRng::seed_from_u64(0);
 
 		check_transpose_preserves_scalars!(
-			TransposedAESByteSliced16x128b,
+			TransposedByteSlicedAES16x128b,
 			ByteSlicedAES16x128b,
 			rand
 		);
 		check_transpose_preserves_scalars!(
-			TransposedAESByteSliced32x128b,
+			TransposedByteSlicedAES32x128b,
 			ByteSlicedAES32x128b,
+			rand
+		);
+		check_transpose_preserves_scalars!(
+			TransposedByteSlicedAES64x128b,
+			ByteSlicedAES64x128b,
 			rand
 		);
 	}

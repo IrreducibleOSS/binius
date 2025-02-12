@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use bytemuck::Zeroable;
+use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
@@ -25,7 +25,8 @@ use crate::{
 /// handled in one instruction.
 macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable)]
+		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+		#[repr(transparent)]
 		pub struct $name {
 			pub(super) data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
 		}
@@ -44,6 +45,7 @@ macro_rules! define_byte_sliced {
 					.to_underlier()
 			}
 
+			#[inline(always)]
 			pub(super) fn new(
 				data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
 			) -> Self {

@@ -128,7 +128,7 @@ pub mod tests {
 
 	define_byte_sliced_test!(
 		tests_16x128_transposed,
-		TransposedAESByteSliced16x128b,
+		TransposedByteSlicedAES16x128b,
 		AESTowerField128b
 	);
 
@@ -140,7 +140,7 @@ pub mod tests {
 
 	define_byte_sliced_test!(
 		tests_32x128_transposed,
-		TransposedAESByteSliced32x128b,
+		TransposedByteSlicedAES32x128b,
 		AESTowerField128b
 	);
 
@@ -152,7 +152,7 @@ pub mod tests {
 
 	define_byte_sliced_test!(
 		tests_64x128_transposed,
-		TransposedAESByteSliced64x128b,
+		TransposedByteSlicedAES64x128b,
 		AESTowerField128b
 	);
 }
