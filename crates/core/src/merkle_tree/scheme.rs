@@ -125,17 +125,17 @@ where
 			});
 		}
 
-		let mut root = hash_field_elems::<_, H>(values);
+		let mut leaf_digest = hash_field_elems::<_, H>(values);
 		for branch_node in proof.read_vec(tree_depth - layer_depth)? {
-			root = self.compression.compress(if index & 1 == 0 {
-				[root, branch_node]
+			leaf_digest = self.compression.compress(if index & 1 == 0 {
+				[leaf_digest, branch_node]
 			} else {
-				[branch_node, root]
+				[branch_node, leaf_digest]
 			});
 			index >>= 1;
 		}
 
-		(root == layer_digests[index])
+		(leaf_digest == layer_digests[index])
 			.then_some(())
 			.ok_or_else(|| VerificationError::InvalidProof.into())
 	}
