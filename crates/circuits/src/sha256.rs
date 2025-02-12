@@ -5,16 +5,21 @@ use binius_core::{
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, PackedField, TowerField,
+	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField1b, Field, PackedField,
+	TowerField,
 };
 use binius_macros::arith_expr;
 use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{pod_collect_to_vec, Pod};
 use itertools::izip;
 
-use crate::{arithmetic, builder::ConstraintSystemBuilder};
+use crate::{
+	arithmetic,
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+};
 
 const LOG_U32_BITS: usize = checked_log_2(32);
 
@@ -41,15 +46,11 @@ pub enum RotateRightType {
 	Logical,
 }
 
-pub fn rotate_and_xor<F, U>(
+pub fn rotate_and_xor(
 	log_size: usize,
-	builder: &mut ConstraintSystemBuilder<U, F>,
+	builder: &mut ConstraintSystemBuilder,
 	r: &[(OracleId, usize, RotateRightType)],
-) -> Result<OracleId, anyhow::Error>
-where
-	F: TowerField,
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<B1>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let shifted_oracle_ids = r
 		.iter()
 		.map(|(oracle_id, shift, t)| {
@@ -76,7 +77,7 @@ where
 	let result_oracle_id = builder.add_linear_combination(
 		format!("linear combination of {:?}", shifted_oracle_ids),
 		log_size,
-		shifted_oracle_ids.iter().map(|s| (*s, F::ONE)),
+		shifted_oracle_ids.iter().map(|s| (*s, Field::ONE)),
 	)?;
 
 	if let Some(witness) = builder.witness() {
@@ -116,16 +117,12 @@ where
 		.collect()
 }
 
-pub fn u32const_repeating<F, U>(
+pub fn u32const_repeating(
 	log_size: usize,
-	builder: &mut ConstraintSystemBuilder<U, F>,
+	builder: &mut ConstraintSystemBuilder,
 	x: u32,
 	name: &str,
-) -> Result<OracleId, anyhow::Error>
-where
-	F: TowerField,
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<B1>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let brodcasted = vec![x; 1 << (PackedType::<U, B1>::LOG_WIDTH.saturating_sub(LOG_U32_BITS))];
 
 	let transparent_id = builder.add_transparent(
@@ -152,15 +149,11 @@ where
 	Ok(repeating_id)
 }
 
-pub fn sha256<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn sha256(
+	builder: &mut ConstraintSystemBuilder,
 	input: [OracleId; 16],
 	log_size: usize,
-) -> Result<[OracleId; 8], anyhow::Error>
-where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<B1>,
-	F: TowerField,
-{
+) -> Result<[OracleId; 8], anyhow::Error> {
 	if log_size < <PackedType<U, BinaryField1b>>::LOG_WIDTH {
 		Err(anyhow::Error::msg("log_size too small"))?
 	}

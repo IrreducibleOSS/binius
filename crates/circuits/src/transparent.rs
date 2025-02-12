@@ -3,23 +3,20 @@
 use binius_core::{oracle::OracleId, transparent};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
 	BinaryField1b, ExtensionField, PackedField, TowerField,
 };
-use bytemuck::Pod;
 
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
+};
 
-pub fn step_down<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn step_down(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 	index: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let step_down = transparent::step_down::StepDown::new(log_size, index)?;
 	let id = builder.add_transparent(name, step_down.clone())?;
 	if let Some(witness) = builder.witness() {
@@ -28,16 +25,12 @@ where
 	Ok(id)
 }
 
-pub fn step_up<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn step_up(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 	index: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: UnderlierType + PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let step_up = transparent::step_up::StepUp::new(log_size, index)?;
 	let id = builder.add_transparent(name, step_up.clone())?;
 	if let Some(witness) = builder.witness() {
@@ -46,14 +39,14 @@ where
 	Ok(id)
 }
 
-pub fn constant<U, F, FS>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn constant<FS>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 	value: FS,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FS>,
+	U: PackScalar<FS>,
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {
@@ -68,13 +61,13 @@ where
 	Ok(id)
 }
 
-pub fn make_transparent<U, F, FS>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn make_transparent<FS>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	values: &[FS],
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: PackScalar<F> + PackScalar<FS>,
+	U: PackScalar<FS>,
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {

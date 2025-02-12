@@ -2,11 +2,11 @@
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::ConstraintSystemBuilder,
+	builder::{types::U, ConstraintSystemBuilder},
 	lasso::{batch::LookupBatch, lookups},
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b, BinaryField8b};
+use binius_field::{BinaryField32b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -27,7 +27,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -43,15 +42,15 @@ fn main() -> Result<()> {
 	let log_n_multiplications = log2_ceil_usize(args.n_multiplications as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 		&mut builder,
 		"in_a",
 		log_n_multiplications,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 		&mut builder,
 		"in_b",
 		log_n_multiplications,
@@ -70,7 +69,7 @@ fn main() -> Result<()> {
 		args.n_multiplications as usize,
 	)?;
 
-	lookup_batch.execute::<_, _, BinaryField32b>(&mut builder)?;
+	lookup_batch.execute::<BinaryField32b>(&mut builder)?;
 	drop(trace_gen_scope);
 
 	let witness = builder

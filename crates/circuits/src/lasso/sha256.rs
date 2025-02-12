@@ -1,21 +1,19 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::marker::PhantomData;
-
 use anyhow::Result;
 use binius_core::oracle::OracleId;
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField16b, BinaryField1b, BinaryField32b, BinaryField4b, BinaryField8b, ExtensionField,
+	as_packed_field::PackedType, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField4b,
 	PackedFieldIndexable, TowerField,
 };
-use bytemuck::Pod;
 use itertools::izip;
 
 use super::{lasso::lasso, u32add::SeveralU32add};
 use crate::{
-	builder::ConstraintSystemBuilder,
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
 	pack::pack,
 	sha256::{rotate_and_xor, u32const_repeating, RotateRightType, INIT, ROUND_CONSTS_K},
 };
@@ -24,36 +22,19 @@ pub const CH_MAJ_T_LOG_SIZE: usize = 12;
 
 type B1 = BinaryField1b;
 type B4 = BinaryField4b;
-type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-struct SeveralBitwise<U, F> {
+struct SeveralBitwise {
 	n_lookups: Vec<usize>,
 	lookup_t: OracleId,
 	lookups_u: Vec<[OracleId; 1]>,
 	u_to_t_mappings: Vec<Vec<usize>>,
 	f: fn(u32, u32, u32) -> u32,
-	_phantom: PhantomData<(U, F)>,
 }
 
-impl<U, F> SeveralBitwise<U, F>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<B1>
-		+ PackScalar<B4>
-		+ PackScalar<B16>
-		+ PackScalar<B32>,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + ExtensionField<B4> + ExtensionField<B16> + ExtensionField<B32>,
-{
-	pub fn new(
-		builder: &mut ConstraintSystemBuilder<U, F>,
-		f: fn(u32, u32, u32) -> u32,
-	) -> Result<Self> {
+impl SeveralBitwise {
+	pub fn new(builder: &mut ConstraintSystemBuilder, f: fn(u32, u32, u32) -> u32) -> Result<Self> {
 		let lookup_t =
 			builder.add_committed("bitwise lookup_t", CH_MAJ_T_LOG_SIZE, B16::TOWER_LEVEL);
 
@@ -80,13 +61,12 @@ where
 			lookups_u: Vec::new(),
 			u_to_t_mappings: Vec::new(),
 			f,
-			_phantom: PhantomData,
 		})
 	}
 
 	pub fn calculate(
 		&mut self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		name: impl ToString,
 		params: [OracleId; 3],
 	) -> Result<OracleId> {
@@ -94,9 +74,9 @@ where
 
 		let log_size = builder.log_rows(params)?;
 
-		let xin_packed = pack::<U, F, B1, B4>(xin, builder, "xin_packed")?;
-		let yin_packed = pack::<U, F, B1, B4>(yin, builder, "yin_packed")?;
-		let zin_packed = pack::<U, F, B1, B4>(zin, builder, "zin_packed")?;
+		let xin_packed = pack::<B1, B4>(xin, builder, "xin_packed")?;
+		let yin_packed = pack::<B1, B4>(yin, builder, "yin_packed")?;
+		let zin_packed = pack::<B1, B4>(zin, builder, "zin_packed")?;
 
 		let res = builder.add_committed(name, log_size, B1::TOWER_LEVEL);
 
@@ -160,12 +140,12 @@ where
 
 	pub fn finalize(
 		self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		name: impl ToString,
 	) -> Result<()> {
 		let channel = builder.add_channel();
 
-		lasso::<_, _, B32>(
+		lasso::<B32>(
 			builder,
 			name,
 			&self.n_lookups,
@@ -177,29 +157,11 @@ where
 	}
 }
 
-pub fn sha256<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn sha256(
+	builder: &mut ConstraintSystemBuilder,
 	input: [OracleId; 16],
 	log_size: usize,
-) -> Result<[OracleId; 8], anyhow::Error>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<B1>
-		+ PackScalar<B4>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField
-		+ ExtensionField<B4>
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>,
-{
+) -> Result<[OracleId; 8], anyhow::Error> {
 	let n_vars = log_size;
 
 	let mut several_u32_add = SeveralU32add::new(builder)?;

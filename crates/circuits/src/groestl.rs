@@ -378,3 +378,28 @@ fn s_box(x: AESTowerField8b) -> AESTowerField8b {
 	let idx = u8::from(x) as usize;
 	AESTowerField8b::from(S_BOX[idx])
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use binius_field::{arch::OptimalUnderlier, AESTowerField16b};
+
+	use super::groestl_p_permutation;
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_groestl() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder =
+			ConstraintSystemBuilder::<OptimalUnderlier, AESTowerField16b>::new_with_witness(
+				&allocator,
+			);
+		let log_size = 9;
+		let _state_out = groestl_p_permutation(&mut builder, log_size).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}

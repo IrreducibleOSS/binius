@@ -2,34 +2,19 @@
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{BinaryField32b, TowerField};
 
 use crate::builder::ConstraintSystemBuilder;
 
-type B8 = BinaryField8b;
-type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 const T_LOG_SIZE_MUL: usize = 16;
 const T_LOG_SIZE_ADD: usize = 17;
 const T_LOG_SIZE_DCI: usize = 10;
 
-pub fn mul_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn mul_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_MUL, B32::TOWER_LEVEL);
@@ -53,17 +38,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn add_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
@@ -95,17 +73,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_carryfree_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn add_carryfree_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
@@ -139,17 +110,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn dci_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn dci_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_DCI, B32::TOWER_LEVEL);

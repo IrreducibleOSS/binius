@@ -16,35 +16,28 @@ use binius_core::{
 	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
-};
+use binius_field::{as_packed_field::PackScalar, BinaryField1b};
 use binius_math::ArithExpr;
 use binius_utils::bail;
 
-use crate::builder::witness;
+use crate::builder::{
+	types::{F, U},
+	witness,
+};
 
 #[derive(Default)]
-pub struct ConstraintSystemBuilder<'arena, U, F>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-{
+pub struct ConstraintSystemBuilder<'arena> {
 	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
-	witness: Option<witness::Builder<'arena, U, F>>,
+	witness: Option<witness::Builder<'arena>>,
 	next_channel_id: ChannelId,
 	namespace_path: Vec<String>,
 }
 
-impl<'arena, U, F> ConstraintSystemBuilder<'arena, U, F>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-{
+impl<'arena> ConstraintSystemBuilder<'arena> {
 	pub fn new() -> Self {
 		Self::default()
 	}
@@ -79,7 +72,7 @@ where
 		})
 	}
 
-	pub fn witness(&mut self) -> Option<&mut witness::Builder<'arena, U, F>> {
+	pub fn witness(&mut self) -> Option<&mut witness::Builder<'arena>> {
 		self.witness.as_mut()
 	}
 

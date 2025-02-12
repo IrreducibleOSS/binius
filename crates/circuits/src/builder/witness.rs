@@ -10,35 +10,33 @@ use binius_core::{
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::WithUnderlier,
-	ExtensionField, Field, PackedField, TowerField,
+	ExtensionField, PackedField, TowerField,
 };
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 
-pub struct Builder<'arena, U: PackScalar<FW>, FW: TowerField> {
+use super::types::{F, U};
+
+pub struct Builder<'arena> {
 	bump: &'arena bumpalo::Bump,
 
-	oracles: Rc<RefCell<MultilinearOracleSet<FW>>>,
+	oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 
 	#[allow(clippy::type_complexity)]
-	entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena, U, FW>>>>>,
+	entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena>>>>>,
 }
 
-struct WitnessBuilderEntry<'arena, U: PackScalar<FW>, FW: Field> {
-	witness: Result<MultilinearWitness<'arena, PackedType<U, FW>>, binius_math::Error>,
+struct WitnessBuilderEntry<'arena> {
+	witness: Result<MultilinearWitness<'arena, PackedType<U, F>>, binius_math::Error>,
 	tower_level: usize,
 	data: &'arena [U],
 }
 
-impl<'arena, U, FW> Builder<'arena, U, FW>
-where
-	U: PackScalar<FW>,
-	FW: TowerField,
-{
+impl<'arena> Builder<'arena> {
 	pub fn new(
 		allocator: &'arena bumpalo::Bump,
-		oracles: Rc<RefCell<MultilinearOracleSet<FW>>>,
+		oracles: Rc<RefCell<MultilinearOracleSet<F>>>,
 	) -> Self {
 		Self {
 			bump: allocator,
@@ -47,10 +45,10 @@ where
 		}
 	}
 
-	pub fn new_column<FS: TowerField>(&self, id: OracleId) -> EntryBuilder<'arena, U, FW, FS>
+	pub fn new_column<FS: TowerField>(&self, id: OracleId) -> EntryBuilder<'arena, FS>
 	where
 		U: PackScalar<FS>,
-		FW: ExtensionField<FS>,
+		F: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
@@ -69,10 +67,10 @@ where
 		&self,
 		id: OracleId,
 		default: FS,
-	) -> EntryBuilder<'arena, U, FW, FS>
+	) -> EntryBuilder<'arena, FS>
 	where
 		U: PackScalar<FS>,
-		FW: ExtensionField<FS>,
+		F: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
 		let log_rows = oracles.n_vars(id);
@@ -88,10 +86,11 @@ where
 		}
 	}
 
-	pub fn get<FS: TowerField>(&self, id: OracleId) -> Result<WitnessEntry<'arena, U, FS>, Error>
+	pub fn get<FS>(&self, id: OracleId) -> Result<WitnessEntry<'arena, FS>, Error>
 	where
+		FS: TowerField,
 		U: PackScalar<FS>,
-		FW: ExtensionField<FS>,
+		F: ExtensionField<FS>,
 	{
 		let entries = self.entries.borrow();
 		let oracles = self.oracles.borrow();
@@ -122,11 +121,11 @@ where
 	pub fn set<FS: TowerField>(
 		&self,
 		id: OracleId,
-		entry: WitnessEntry<'arena, U, FS>,
+		entry: WitnessEntry<'arena, FS>,
 	) -> Result<(), Error>
 	where
 		U: PackScalar<FS>,
-		FW: ExtensionField<FS>,
+		F: ExtensionField<FS>,
 	{
 		let oracles = self.oracles.borrow();
 		if !oracles.is_valid_oracle_id(id) {
@@ -145,7 +144,7 @@ where
 		Ok(())
 	}
 
-	pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, U, FW>, Error> {
+	pub fn build(self) -> Result<MultilinearExtensionIndex<'arena, U, F>, Error> {
 		let mut result = MultilinearExtensionIndex::new();
 		let entries = Rc::into_inner(self.entries)
 			.ok_or_else(|| anyhow!("Failed to build. There are still entries refs. Make sure there are no pending column insertions."))?
@@ -160,26 +159,37 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WitnessEntry<'arena, U: PackScalar<FS>, FS: TowerField> {
+pub struct WitnessEntry<'arena, FS: TowerField>
+where
+	U: PackScalar<FS>,
+{
 	data: &'arena [U],
 	log_rows: usize,
 	_marker: PhantomData<FS>,
 }
 
-impl<'arena, U: PackScalar<FS>, FS: TowerField> WitnessEntry<'arena, U, FS> {
+impl<'arena, FS: TowerField> WitnessEntry<'arena, FS>
+where
+	U: PackScalar<FS>,
+{
 	#[inline]
 	pub fn packed(&self) -> &'arena [PackedType<U, FS>] {
 		WithUnderlier::from_underliers_ref(self.data)
 	}
 
-	pub const fn repacked<FW>(&self) -> WitnessEntry<'arena, U, FW>
+	#[inline]
+	pub const fn as_slice<T: Pod>(&self) -> &'arena [T] {
+		must_cast_slice(self.data)
+	}
+
+	pub const fn repacked<FE>(&self) -> WitnessEntry<'arena, FE>
 	where
-		FW: TowerField + ExtensionField<FS>,
-		U: PackScalar<FW>,
+		FE: TowerField + ExtensionField<FS>,
+		U: PackScalar<FE>,
 	{
 		WitnessEntry {
 			data: self.data,
-			log_rows: self.log_rows - <FW as ExtensionField<FS>>::LOG_DEGREE,
+			log_rows: self.log_rows - <FE as ExtensionField<FS>>::LOG_DEGREE,
 			_marker: PhantomData,
 		}
 	}
@@ -189,36 +199,34 @@ impl<'arena, U: PackScalar<FS>, FS: TowerField> WitnessEntry<'arena, U, FS> {
 	}
 }
 
-impl<'arena, U: PackScalar<FS> + Pod, FS: TowerField> WitnessEntry<'arena, U, FS> {
-	#[inline]
-	pub const fn as_slice<T: Pod>(&self) -> &'arena [T] {
-		must_cast_slice(self.data)
-	}
-}
-
-pub struct EntryBuilder<'arena, U, FW, FS>
+pub struct EntryBuilder<'arena, FS>
 where
-	U: PackScalar<FW> + PackScalar<FS>,
 	FS: TowerField,
-	FW: TowerField + ExtensionField<FS>,
+	U: PackScalar<FS>,
+	F: ExtensionField<FS>,
 {
 	_marker: PhantomData<FS>,
 	#[allow(clippy::type_complexity)]
-	entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena, U, FW>>>>>,
+	entries: Rc<RefCell<Vec<Option<WitnessBuilderEntry<'arena>>>>>,
 	id: OracleId,
 	log_rows: usize,
 	data: Option<&'arena mut [U]>,
 }
 
-impl<U, FW, FS> EntryBuilder<'_, U, FW, FS>
+impl<FS> EntryBuilder<'_, FS>
 where
-	U: PackScalar<FW> + PackScalar<FS>,
 	FS: TowerField,
-	FW: TowerField + ExtensionField<FS>,
+	U: PackScalar<FS>,
+	F: ExtensionField<FS>,
 {
 	#[inline]
 	pub fn packed(&mut self) -> &mut [PackedType<U, FS>] {
 		PackedType::<U, FS>::from_underliers_ref_mut(self.underliers())
+	}
+
+	#[inline]
+	pub fn as_mut_slice<T: Pod>(&mut self) -> &mut [T] {
+		must_cast_slice_mut(self.underliers())
 	}
 
 	#[inline]
@@ -229,23 +237,11 @@ where
 	}
 }
 
-impl<U, FW, FS> EntryBuilder<'_, U, FW, FS>
+impl<FS> Drop for EntryBuilder<'_, FS>
 where
-	U: PackScalar<FW> + PackScalar<FS> + Pod,
 	FS: TowerField,
-	FW: TowerField + ExtensionField<FS>,
-{
-	#[inline]
-	pub fn as_mut_slice<T: Pod>(&mut self) -> &mut [T] {
-		must_cast_slice_mut(self.underliers())
-	}
-}
-
-impl<U, FW, FS> Drop for EntryBuilder<'_, U, FW, FS>
-where
-	U: PackScalar<FW> + PackScalar<FS>,
-	FS: TowerField,
-	FW: TowerField + ExtensionField<FS>,
+	U: PackScalar<FS>,
+	F: ExtensionField<FS>,
 {
 	fn drop(&mut self) {
 		let data = Option::take(&mut self.data).expect("data is always Some until this point");

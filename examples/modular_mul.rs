@@ -5,15 +5,14 @@ use std::array;
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_circuits::{
-	builder::ConstraintSystemBuilder,
+	builder::{types::U, ConstraintSystemBuilder},
 	lasso::big_integer_ops::{byte_sliced_modular_mul, byte_sliced_test_utils::random_u512},
 	transparent,
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
-	arch::OptimalUnderlier128b,
 	tower_levels::{TowerLevel4, TowerLevel8},
-	BinaryField128b, BinaryField1b, BinaryField8b, Field, TowerField,
+	BinaryField1b, BinaryField8b, Field, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -36,8 +35,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier128b;
-	type F = BinaryField128b;
 	type B8 = BinaryField8b;
 	const SECURITY_BITS: usize = 100;
 	const WIDTH: usize = 4;
@@ -53,7 +50,7 @@ fn main() -> Result<()> {
 	println!("Verifying {} u32 modular multiplications", args.n_multiplications);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = log2_ceil_usize(args.n_multiplications as usize);
 
 	let mut rng = thread_rng();
@@ -98,7 +95,7 @@ fn main() -> Result<()> {
 	let zero_oracle_carry =
 		transparent::constant(&mut builder, "zero carry", log_size, BinaryField1b::ZERO).unwrap();
 
-	let _modded_product = byte_sliced_modular_mul::<_, _, TowerLevel4, TowerLevel8>(
+	let _modded_product = byte_sliced_modular_mul::<TowerLevel4, TowerLevel8>(
 		&mut builder,
 		"lasso_bytesliced_mul",
 		&mult_a,

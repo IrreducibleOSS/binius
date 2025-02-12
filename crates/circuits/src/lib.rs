@@ -13,7 +13,6 @@ pub mod arithmetic;
 pub mod bitwise;
 pub mod builder;
 pub mod collatz;
-pub mod groestl;
 pub mod keccakf;
 pub mod lasso;
 mod pack;
@@ -39,12 +38,10 @@ mod tests {
 		tower::CanonicalTowerFamily,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier,
 		as_packed_field::PackedType,
 		tower_levels::{TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
 		underlier::WithUnderlier,
-		AESTowerField16b, BinaryField128b, BinaryField1b, BinaryField32b, BinaryField64b,
-		BinaryField8b, Field, TowerField,
+		BinaryField1b, BinaryField32b, BinaryField8b, Field, TowerField,
 	};
 	use binius_hal::make_portable_backend;
 	use binius_hash::compress::Groestl256ByteCompression;
@@ -55,8 +52,10 @@ mod tests {
 
 	use crate::{
 		arithmetic, bitwise,
-		builder::ConstraintSystemBuilder,
-		groestl::groestl_p_permutation,
+		builder::{
+			types::{F, U},
+			ConstraintSystemBuilder,
+		},
 		keccakf::{keccakf, KeccakfState},
 		lasso::{
 			self,
@@ -73,21 +72,17 @@ mod tests {
 		sha256::sha256,
 		u32fib::u32fib,
 		unconstrained::unconstrained,
-		vision::vision_permutation,
 	};
-
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
 
 	#[test]
 	fn test_lasso_u8add_carryfree_rejects_carry() {
 		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from randomness
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 14;
-		let x_in = unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap();
-		let y_in = unconstrained::<_, _, BinaryField8b>(&mut builder, "y", log_size).unwrap();
-		let c_in = unconstrained::<_, _, BinaryField1b>(&mut builder, "c", log_size).unwrap();
+		let x_in = unconstrained::<BinaryField8b>(&mut builder, "x", log_size).unwrap();
+		let y_in = unconstrained::<BinaryField8b>(&mut builder, "y", log_size).unwrap();
+		let c_in = unconstrained::<BinaryField1b>(&mut builder, "c", log_size).unwrap();
 
 		let lookup_t =
 			lookups::u8_arithmetic::add_carryfree_lookup(&mut builder, "add cf table").unwrap();
@@ -104,7 +99,7 @@ mod tests {
 		.unwrap();
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b>(&mut builder)
+			.execute::<BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -157,13 +152,11 @@ mod tests {
 	#[test]
 	fn test_lasso_u8mul() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 10;
 
-		let mult_a =
-			unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-		let mult_b =
-			unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+		let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+		let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
 
 		let mul_lookup_table =
 			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
@@ -181,7 +174,7 @@ mod tests {
 		.unwrap();
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b>(&mut builder)
+			.execute::<BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -193,7 +186,7 @@ mod tests {
 	#[test]
 	fn test_lasso_batched_u8mul() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 10;
 		let mul_lookup_table =
 			lookups::u8_arithmetic::mul_lookup(&mut builder, "mul table").unwrap();
@@ -201,10 +194,8 @@ mod tests {
 		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
 		for _ in 0..10 {
-			let mult_a =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-			let mult_b =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
 
 			let _product = lasso::u8mul(
 				&mut builder,
@@ -218,7 +209,7 @@ mod tests {
 		}
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b>(&mut builder)
+			.execute::<BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -230,7 +221,7 @@ mod tests {
 	#[test]
 	fn test_lasso_batched_u8mul_rejects() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 10;
 
 		// We try to feed in the add table instead
@@ -241,10 +232,8 @@ mod tests {
 
 		// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
 		for _ in 0..10 {
-			let mult_a =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-			let mult_b =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
 
 			let _product = lasso::u8mul(
 				&mut builder,
@@ -258,7 +247,7 @@ mod tests {
 		}
 
 		lookup_batch
-			.execute::<_, _, BinaryField32b>(&mut builder)
+			.execute::<BinaryField32b>(&mut builder)
 			.unwrap();
 
 		let witness = builder.take_witness().unwrap();
@@ -271,16 +260,14 @@ mod tests {
 	#[test]
 	fn test_several_lasso_u32add() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 		let mut several_u32_add = SeveralU32add::new(&mut builder).unwrap();
 
 		for log_size in [11, 12, 13] {
 			// BinaryField8b is used here because we utilize an 8x8x1→8 table
-			let add_a_u8 =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "add_a", log_size).unwrap();
-			let add_b_u8 =
-				unconstrained::<_, _, BinaryField8b>(&mut builder, "add_b", log_size).unwrap();
+			let add_a_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_a", log_size).unwrap();
+			let add_b_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_b", log_size).unwrap();
 			let _sum = several_u32_add
 				.u32add::<BinaryField8b, BinaryField8b>(
 					&mut builder,
@@ -304,12 +291,12 @@ mod tests {
 	#[test]
 	fn test_lasso_u32add() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 14;
 
-		let add_a = unconstrained::<_, _, BinaryField1b>(&mut builder, "add_a", log_size).unwrap();
-		let add_b = unconstrained::<_, _, BinaryField1b>(&mut builder, "add_b", log_size).unwrap();
-		let _sum = lasso::u32add::<_, _, BinaryField1b, BinaryField1b>(
+		let add_a = unconstrained::<BinaryField1b>(&mut builder, "add_a", log_size).unwrap();
+		let add_b = unconstrained::<BinaryField1b>(&mut builder, "add_b", log_size).unwrap();
+		let _sum = lasso::u32add::<BinaryField1b, BinaryField1b>(
 			&mut builder,
 			"lasso_u32add",
 			add_a,
@@ -326,10 +313,10 @@ mod tests {
 	#[test]
 	fn test_u32add() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 14;
-		let a = unconstrained::<_, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
-		let b = unconstrained::<_, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
+		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
+		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
 		let _c = arithmetic::u32::add(&mut builder, "u32add", a, b, arithmetic::Flags::Unchecked)
 			.unwrap();
 
@@ -342,7 +329,7 @@ mod tests {
 	#[test]
 	fn test_u32fib() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size_1b = 14;
 		let _ = u32fib(&mut builder, "u32fib", log_size_1b).unwrap();
 
@@ -355,10 +342,10 @@ mod tests {
 	#[test]
 	fn test_bitwise() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 6;
-		let a = unconstrained::<_, _, BinaryField1b>(&mut builder, "a", log_size).unwrap();
-		let b = unconstrained::<_, _, BinaryField1b>(&mut builder, "b", log_size).unwrap();
+		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
+		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
 		let _and = bitwise::and(&mut builder, "and", a, b).unwrap();
 		let _xor = bitwise::xor(&mut builder, "xor", a, b).unwrap();
 		let _or = bitwise::or(&mut builder, "or", a, b).unwrap();
@@ -372,7 +359,7 @@ mod tests {
 	#[test]
 	fn test_keccakf() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = 5;
 
 		let mut rng = StdRng::seed_from_u64(0);
@@ -391,20 +378,27 @@ mod tests {
 	#[test]
 	fn test_sha256() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, BinaryField1b>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = PackedType::<U, BinaryField1b>::LOG_WIDTH;
-		let input: [OracleId; 16] = array::from_fn(|i| {
-			unconstrained::<_, _, BinaryField1b>(&mut builder, i, log_size).unwrap()
-		});
+		let input: [OracleId; 16] =
+			array::from_fn(|i| unconstrained::<BinaryField1b>(&mut builder, i, log_size).unwrap());
 		let state_output = sha256(&mut builder, input, log_size).unwrap();
 
 		let witness = builder.witness().unwrap();
 
-		let input_witneses: [_; 16] =
-			array::from_fn(|i| witness.get(input[i]).unwrap().as_slice::<u32>());
+		let input_witneses: [_; 16] = array::from_fn(|i| {
+			witness
+				.get::<BinaryField1b>(input[i])
+				.unwrap()
+				.as_slice::<u32>()
+		});
 
-		let output_witneses: [_; 8] =
-			array::from_fn(|i| witness.get(state_output[i]).unwrap().as_slice::<u32>());
+		let output_witneses: [_; 8] = array::from_fn(|i| {
+			witness
+				.get::<BinaryField1b>(state_output[i])
+				.unwrap()
+				.as_slice::<u32>()
+		});
 
 		let mut generic_array_input = GenericArray::<u8, _>::default();
 
@@ -434,12 +428,10 @@ mod tests {
 	#[test]
 	fn test_sha256_lasso() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder =
-			ConstraintSystemBuilder::<U, BinaryField32b>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 		let log_size = PackedType::<U, BinaryField1b>::LOG_WIDTH + BinaryField8b::TOWER_LEVEL;
-		let input: [OracleId; 16] = array::from_fn(|i| {
-			unconstrained::<_, _, BinaryField1b>(&mut builder, i, log_size).unwrap()
-		});
+		let input: [OracleId; 16] =
+			array::from_fn(|i| unconstrained::<BinaryField1b>(&mut builder, i, log_size).unwrap());
 		let state_output = lasso::sha256(&mut builder, input, log_size).unwrap();
 
 		let witness = builder.witness().unwrap();
@@ -484,46 +476,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_groestl() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder =
-			ConstraintSystemBuilder::<OptimalUnderlier, AESTowerField16b>::new_with_witness(
-				&allocator,
-			);
-		let log_size = 9;
-		let _state_out = groestl_p_permutation(&mut builder, log_size).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
-	}
-
-	#[test]
-	fn test_vision32b() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder =
-			ConstraintSystemBuilder::<OptimalUnderlier, BinaryField64b>::new_with_witness(
-				&allocator,
-			);
-		let log_size = 8;
-		let state_in: [OracleId; 24] = array::from_fn(|i| {
-			unconstrained::<_, _, BinaryField32b>(&mut builder, format!("p_in[{i}]"), log_size)
-				.unwrap()
-		});
-		let _state_out = vision_permutation(&mut builder, log_size, state_in).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
-	}
-
-	#[test]
 	fn test_boundaries() {
 		// Proving Collatz Orbits
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 		let log_size = PackedType::<U, BinaryField8b>::LOG_WIDTH + 2;
 
@@ -644,11 +600,9 @@ mod tests {
 
 		let proof = {
 			let allocator = bumpalo::Bump::new();
-			let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+			let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 			let boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
-				_,
-				_,
 				MAX_LOG_MULTIPLICITY,
 			>(&mut builder, log_lookup_count)
 			.unwrap();
@@ -682,11 +636,9 @@ mod tests {
 
 		// verify
 		{
-			let mut builder = ConstraintSystemBuilder::<U, F>::new();
+			let mut builder = ConstraintSystemBuilder::new();
 
 			let boundary = plain_lookup::test_plain_lookup::test_u8_mul_lookup::<
-				_,
-				_,
 				MAX_LOG_MULTIPLICITY,
 			>(&mut builder, log_lookup_count)
 			.unwrap();

@@ -4,15 +4,20 @@ use anyhow::{ensure, Error, Result};
 use binius_core::{constraint_system::channel::ChannelId, oracle::OracleId};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField1b, ExtensionField, PackedFieldIndexable, TowerField,
+	ExtensionField, Field, PackedFieldIndexable, TowerField,
 };
 use itertools::{izip, Itertools};
 
-use crate::{builder::ConstraintSystemBuilder, transparent};
+use crate::{
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+	transparent,
+};
 
-pub fn lasso<U, F, FC>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn lasso<FC>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	n_lookups: &[usize],
 	u_to_t_mappings: &[impl AsRef<[usize]>],
@@ -21,10 +26,10 @@ pub fn lasso<U, F, FC>(
 	channel: ChannelId,
 ) -> Result<()>
 where
-	U: UnderlierType + PackScalar<F> + PackScalar<FC> + PackScalar<BinaryField1b>,
-	F: TowerField + ExtensionField<FC> + From<FC>,
-	PackedType<U, FC>: PackedFieldIndexable,
 	FC: TowerField,
+	U: PackScalar<FC>,
+	F: ExtensionField<FC> + From<FC>,
+	PackedType<U, FC>: PackedFieldIndexable,
 {
 	if n_lookups.len() != lookups_u.len() {
 		Err(anyhow::Error::msg("n_vars and lookups_u must be of the same length"))?;
@@ -55,7 +60,7 @@ where
 	}
 
 	let t_log_rows = builder.log_rows(lookup_t.as_ref().iter().copied())?;
-	let lookup_o = transparent::constant(builder, "lookup_o", t_log_rows, F::ONE)?;
+	let lookup_o = transparent::constant(builder, "lookup_o", t_log_rows, Field::ONE)?;
 	let lookup_f = builder.add_committed("lookup_f", t_log_rows, FC::TOWER_LEVEL);
 	let lookups_r = u_log_rows
 		.iter()

@@ -1,25 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::oracle::{OracleId, ProjectionVariant, ShiftVariant};
-use binius_field::{
-	as_packed_field::PackScalar, packed::set_packed_slice, BinaryField1b, BinaryField32b,
-	ExtensionField, Field, TowerField,
-};
+use binius_field::{packed::set_packed_slice, BinaryField1b, BinaryField32b, Field, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
-use bytemuck::Pod;
 
 use crate::{builder::ConstraintSystemBuilder, transparent};
 
-pub fn packed<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn packed(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b> + Pod,
-	F: TowerField + ExtensionField<BinaryField32b>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let packed = builder.add_packed(name, input, 5)?;
 	if let Some(witness) = builder.witness() {
 		witness.set(
@@ -32,17 +24,13 @@ where
 	Ok(packed)
 }
 
-pub fn mul_const<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn mul_const(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
 	value: u32,
 	flags: super::Flags,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	if value == 0 {
 		let log_rows = builder.log_rows([input])?;
 		return transparent::constant(builder, name, log_rows, BinaryField1b::ZERO);
@@ -85,17 +73,13 @@ where
 	Ok(result)
 }
 
-pub fn add<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn add(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	xin: OracleId,
 	yin: OracleId,
 	flags: super::Flags,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	let log_rows = builder.log_rows([xin, yin])?;
 	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
@@ -151,17 +135,13 @@ where
 	Ok(zout)
 }
 
-pub fn sub<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn sub(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	zin: OracleId,
 	yin: OracleId,
 	flags: super::Flags,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	let log_rows = builder.log_rows([zin, yin])?;
 	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
@@ -218,16 +198,12 @@ where
 	Ok(xout)
 }
 
-pub fn half<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn half(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
 	flags: super::Flags,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	if matches!(flags, super::Flags::Checked) {
 		// Assert that the number is even
 		let lsb = select_bit(builder, "lsb", input, 0)?;
@@ -236,23 +212,24 @@ where
 	shr(builder, name, input, 1)
 }
 
-pub fn shl<F, U>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn shl(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
 	offset: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	if offset == 0 {
 		return Ok(input);
 	}
 
 	let shifted = builder.add_shifted(name, input, offset, 5, ShiftVariant::LogicalLeft)?;
 	if let Some(witness) = builder.witness() {
-		(witness.new_column(shifted).as_mut_slice::<u32>(), witness.get(input)?.as_slice::<u32>())
+		(
+			witness
+				.new_column::<BinaryField1b>(shifted)
+				.as_mut_slice::<u32>(),
+			witness.get::<BinaryField1b>(input)?.as_slice::<u32>(),
+		)
 			.into_par_iter()
 			.for_each(|(shifted, input)| *shifted = *input << offset);
 	}
@@ -260,23 +237,24 @@ where
 	Ok(shifted)
 }
 
-pub fn shr<F, U>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn shr(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
 	offset: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	if offset == 0 {
 		return Ok(input);
 	}
 
 	let shifted = builder.add_shifted(name, input, offset, 5, ShiftVariant::LogicalRight)?;
 	if let Some(witness) = builder.witness() {
-		(witness.new_column(shifted).as_mut_slice::<u32>(), witness.get(input)?.as_slice::<u32>())
+		(
+			witness
+				.new_column::<BinaryField1b>(shifted)
+				.as_mut_slice::<u32>(),
+			witness.get::<BinaryField1b>(input)?.as_slice::<u32>(),
+		)
 			.into_par_iter()
 			.for_each(|(shifted, input)| *shifted = *input >> offset);
 	}
@@ -284,16 +262,12 @@ where
 	Ok(shifted)
 }
 
-pub fn select_bit<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn select_bit(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	input: OracleId,
 	index: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<OracleId, anyhow::Error> {
 	let log_rows = builder.log_rows([input])?;
 	anyhow::ensure!(log_rows >= 5, "Polynomial must have n_vars >= 5. Got {log_rows}");
 	anyhow::ensure!(index < 32, "Only index values between 0 and 32 are allowed. Got {index}");
@@ -304,7 +278,7 @@ where
 	if let Some(witness) = builder.witness() {
 		let mut bits = witness.new_column::<BinaryField1b>(bits);
 		let bits = bits.packed();
-		let input = witness.get(input)?.as_slice::<u32>();
+		let input = witness.get::<BinaryField1b>(input)?.as_slice::<u32>();
 		input.iter().enumerate().for_each(|(i, &val)| {
 			let value = match (val >> index) & 1 {
 				0 => BinaryField1b::ZERO,
@@ -317,16 +291,12 @@ where
 	Ok(bits)
 }
 
-pub fn constant<F, U>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn constant(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_count: usize,
 	value: u32,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b> + Pod,
-	F: TowerField + ExtensionField<BinaryField32b>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	// This would not need to be committed if we had `builder.add_unpacked(..)`
 	let output = builder.add_committed("output", log_count + 5, BinaryField1b::TOWER_LEVEL);
@@ -361,17 +331,14 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b, TowerField};
+	use binius_field::{BinaryField1b, TowerField};
 
 	use crate::{arithmetic, builder::ConstraintSystemBuilder, unconstrained::unconstrained};
-
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
 
 	#[test]
 	fn test_mul_const() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 		let a = builder.add_committed("a", 5, BinaryField1b::TOWER_LEVEL);
 		if let Some(witness) = builder.witness() {
@@ -394,10 +361,10 @@ mod tests {
 	#[test]
 	fn test_sub() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let a = unconstrained::<U, F, BinaryField1b>(&mut builder, "a", 7).unwrap();
-		let b = unconstrained::<U, F, BinaryField1b>(&mut builder, "a", 7).unwrap();
+		let a = unconstrained::<BinaryField1b>(&mut builder, "a", 7).unwrap();
+		let b = unconstrained::<BinaryField1b>(&mut builder, "a", 7).unwrap();
 		let _c =
 			arithmetic::u32::sub(&mut builder, "c", a, b, arithmetic::Flags::Unchecked).unwrap();
 

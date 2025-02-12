@@ -1,21 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
-};
+use binius_field::{as_packed_field::PackScalar, ExtensionField, TowerField};
 use binius_maybe_rayon::prelude::*;
 use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
+};
 
-pub fn unconstrained<U, F, FS>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn unconstrained<FS>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FS>,
+	U: PackScalar<FS> + Pod,
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {
