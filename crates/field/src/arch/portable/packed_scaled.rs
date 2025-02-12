@@ -400,7 +400,7 @@ macro_rules! packed_scaled_field {
 			fn sub_assign(&mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) {
 				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
 				for v in self.0.iter_mut() {
-					*v += broadcast;
+					*v -= broadcast;
 				}
 			}
 		}

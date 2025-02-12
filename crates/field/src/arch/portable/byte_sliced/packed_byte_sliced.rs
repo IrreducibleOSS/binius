@@ -44,13 +44,6 @@ macro_rules! define_byte_sliced {
 					.get(byte_index / <$tower_level as TowerLevel>::WIDTH)
 					.to_underlier()
 			}
-
-			#[inline(always)]
-			pub(super) fn new(
-				data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
-			) -> Self {
-				Self { data }
-			}
 		}
 
 		impl PackedField for $name {

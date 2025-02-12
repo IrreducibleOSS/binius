@@ -56,12 +56,12 @@ benchmark_packed_operation!(
 	bench_type @ binary_op,
 	strategies @ (
 		(main, SelfMul, mul_main),
-		// (pairwise, TaggedMul::<PairwiseStrategy>, mul_pairwise),
-		// (pairwise_recursive, TaggedMul::<PairwiseRecursiveStrategy>, mul_pairwise_recursive),
-		// (pairwise_table, TaggedMul::<PairwiseTableStrategy>, mul_pairwise_table),
-		// (hybrid_recursive, TaggedMul::<HybridRecursiveStrategy>, mul_hybrid_recursive),
-		// (packed, TaggedMul::<PackedStrategy>, mul_packed),
-		// (simd, TaggedMul::<SimdStrategy>, mul_simd),
+		(pairwise, TaggedMul::<PairwiseStrategy>, mul_pairwise),
+		(pairwise_recursive, TaggedMul::<PairwiseRecursiveStrategy>, mul_pairwise_recursive),
+		(pairwise_table, TaggedMul::<PairwiseTableStrategy>, mul_pairwise_table),
+		(hybrid_recursive, TaggedMul::<HybridRecursiveStrategy>, mul_hybrid_recursive),
+		(packed, TaggedMul::<PackedStrategy>, mul_packed),
+		(simd, TaggedMul::<SimdStrategy>, mul_simd),
 	)
 );
 
