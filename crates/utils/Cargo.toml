@@ -9,7 +9,6 @@ workspace = true
 
 [dependencies]
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
-bytes.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 cfg-if.workspace = true
 generic-array.workspace = true
