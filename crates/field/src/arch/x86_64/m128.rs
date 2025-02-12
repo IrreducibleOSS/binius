@@ -779,14 +779,27 @@ impl UnderlierWithBitConstants for M128 {
 
 	#[inline(always)]
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
-		unsafe {
-			let (c, d) = interleave_bits(
+		let (c, d) = unsafe {
+			interleave_bits(
 				Into::<Self>::into(self).into(),
 				Into::<Self>::into(other).into(),
 				log_block_len,
-			);
-			(Self::from(c), Self::from(d))
-		}
+			)
+		};
+		(Self::from(c), Self::from(d))
+	}
+
+	#[inline(always)]
+	fn transpose(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		let (c, d) = unsafe {
+			transpose_bits(
+				Into::<Self>::into(self).into(),
+				Into::<Self>::into(other).into(),
+				log_block_len,
+			)
+		};
+
+		(Self::from(c), Self::from(d))
 	}
 }
 
@@ -880,6 +893,46 @@ unsafe fn interleave_bits(a: __m128i, b: __m128i, log_block_len: usize) -> (__m1
 		}
 		_ => panic!("unsupported block length"),
 	}
+}
+
+#[inline]
+unsafe fn transpose_bits(a: __m128i, b: __m128i, log_block_len: usize) -> (__m128i, __m128i) {
+	match log_block_len {
+		0..=3 => {
+			let shuffle = _mm_set_epi8(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
+			let (mut a, mut b) = transpose_with_shuffle(a, b, shuffle);
+			for log_block_len in (log_block_len..3).rev() {
+				(a, b) = interleave_bits(a, b, log_block_len);
+			}
+
+			(a, b)
+		}
+		4 => {
+			let shuffle = _mm_set_epi8(15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		5 => {
+			let shuffle = _mm_set_epi8(15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		6 => {
+			let c = _mm_unpacklo_epi64(a, b);
+			let d = _mm_unpackhi_epi64(a, b);
+			(c, d)
+		}
+		_ => panic!("unsupported block length"),
+	}
+}
+
+#[inline(always)]
+unsafe fn transpose_with_shuffle(
+	a: __m128i,
+	b: __m128i,
+	shuffle_mask: __m128i,
+) -> (__m128i, __m128i) {
+	let a = _mm_shuffle_epi8(a, shuffle_mask);
+	let b = _mm_shuffle_epi8(b, shuffle_mask);
+	(_mm_unpacklo_epi64(a, b), _mm_unpackhi_epi64(a, b))
 }
 
 #[inline]

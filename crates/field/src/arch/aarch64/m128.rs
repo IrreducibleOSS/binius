@@ -401,6 +401,37 @@ impl UnderlierWithBitConstants for M128 {
 			}
 		}
 	}
+
+	#[inline]
+	fn transpose(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		unsafe {
+			match log_block_len {
+				0..=3 => {
+					let (a, b) = (self.into(), other.into());
+					let (mut a, mut b) = (Self::from(vuzp1q_u8(a, b)), Self::from(vuzp2q_u8(a, b)));
+
+					for log_block_len in (log_block_len..3).rev() {
+						(a, b) = a.interleave(b, log_block_len);
+					}
+
+					(a, b)
+				}
+				4 => {
+					let (a, b) = (self.into(), other.into());
+					(vuzp1q_u16(a, b).into(), vuzp2q_u16(a, b).into())
+				}
+				5 => {
+					let (a, b) = (self.into(), other.into());
+					(vuzp1q_u32(a, b).into(), vuzp2q_u32(a, b).into())
+				}
+				6 => {
+					let (a, b) = (self.into(), other.into());
+					(vuzp1q_u64(a, b).into(), vuzp2q_u64(a, b).into())
+				}
+				_ => panic!("Unsupported block length"),
+			}
+		}
+	}
 }
 
 impl<Scalar: BinaryField> From<u128> for PackedPrimitiveType<M128, Scalar> {
