@@ -51,8 +51,7 @@ pub trait AdditiveNTT<P: PackedField> {
 		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
-		let log_batch_size = log2_strict_usize(PE::Scalar::LOG_DEGREE);
-		self.forward_transform(PE::cast_bases_mut(data), coset, log_batch_size)
+		self.forward_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
 	}
 
 	fn inverse_transform_ext<PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
@@ -60,7 +59,6 @@ pub trait AdditiveNTT<P: PackedField> {
 		PE: RepackedExtension<P>,
 		PE::Scalar: ExtensionField<P::Scalar>,
 	{
-		let log_batch_size = log2_strict_usize(PE::Scalar::LOG_DEGREE);
-		self.inverse_transform(PE::cast_bases_mut(data), coset, log_batch_size)
+		self.inverse_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
 	}
 }
