@@ -78,6 +78,13 @@ impl_arithmetic_using_packed!(AESTowerField128b);
 impl TowerField for AESTowerField8b {
 	type Canonical = BinaryField8b;
 
+	fn min_tower_level(self) -> usize {
+		match self {
+			Self::ZERO | Self::ONE => 0,
+			_ => 3,
+		}
+	}
+
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		match iota {
 			0..=1 => Ok(self * ISOMORPHIC_ALPHAS[iota]),
