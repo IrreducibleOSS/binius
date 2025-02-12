@@ -45,6 +45,10 @@ pub enum Error {
 		oracle: String,
 		hypercube_index: usize,
 	},
+	#[error("evaluation domain should start with zero and one, and contain Karatsuba infinity for degrees above 1")]
+	IncorrectSumcheckEvaluationDomain,
+	#[error("evaluation domains are not proper prefixes of each other")]
+	NonProperPrefixEvaluationDomain,
 	#[error("constraint set contains multilinears of different heights")]
 	ConstraintSetNumberOfVariablesMismatch,
 	#[error("batching sumchecks and zerochecks is not supported yet")]
