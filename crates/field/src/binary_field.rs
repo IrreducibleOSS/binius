@@ -7,7 +7,6 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut};
 use rand::RngCore;
@@ -17,6 +16,7 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 };
 use crate::{
+	serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes},
 	underlier::{SmallU, U1, U2, U4},
 	Field,
 };
@@ -765,22 +765,6 @@ serialize_deserialize!(BinaryField16b, u16);
 serialize_deserialize!(BinaryField32b, u32);
 serialize_deserialize!(BinaryField64b, u64);
 serialize_deserialize!(BinaryField128b, u128);
-
-/// Serializes a [`TowerField`] element to a byte buffer with a canonical encoding.
-pub fn serialize_canonical<F: TowerField, W: BufMut>(
-	elem: F,
-	mut writer: W,
-) -> Result<(), SerializationError> {
-	F::Canonical::from(elem).serialize(&mut writer)
-}
-
-/// Deserializes a [`TowerField`] element from a byte buffer with a canonical encoding.
-pub fn deserialize_canonical<F: TowerField, R: Buf>(
-	mut reader: R,
-) -> Result<F, SerializationError> {
-	let as_canonical = F::Canonical::deserialize(&mut reader)?;
-	Ok(F::from(as_canonical))
-}
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
