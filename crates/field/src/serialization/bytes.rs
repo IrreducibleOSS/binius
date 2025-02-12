@@ -3,13 +3,7 @@
 use bytes::{Buf, BufMut};
 use generic_array::{ArrayLength, GenericArray};
 
-#[derive(Clone, thiserror::Error, Debug)]
-pub enum Error {
-	#[error("Write buffer is full")]
-	WriteBufferFull,
-	#[error("Not enough data in read buffer to deserialize")]
-	NotEnoughBytes,
-}
+use super::Error;
 
 /// Represents type that can be serialized to a byte buffer.
 pub trait SerializeBytes {

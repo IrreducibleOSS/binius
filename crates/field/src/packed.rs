@@ -216,6 +216,20 @@ pub trait PackedField:
 	/// * `log_block_len` must be strictly less than `LOG_WIDTH`.
 	fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self);
 
+	/// Unzips interleaved blocks of this packed vector with another packed vector.
+	/// 
+	/// Consider this example, where `LOG_WIDTH` is 3 and `log_block_len` is 1:
+	///    A = [a0, a1, b0, b1, a2, a3, b2, b3]
+	///    B = [a4, a5, b4, b5, a6, a7, b6, b7]
+	/// 
+	/// The transposed result is
+	///    A' = [a0, a1, a2, a3, a4, a5, a6, a7]
+	///    B' = [b0, b1, b2, b3, b4, b5, b6, b7]
+	///
+	/// ## Preconditions
+	/// * `log_block_len` must be strictly less than `LOG_WIDTH`.
+	fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self);
+
 	/// Spread takes a block of elements within a packed field and repeats them to the full packing
 	/// width.
 	///
@@ -425,6 +439,10 @@ impl<F: Field> PackedField for F {
 
 	fn interleave(self, _other: Self, _log_block_len: usize) -> (Self, Self) {
 		panic!("cannot interleave when WIDTH = 1");
+	}
+
+	fn unzip(self, _other: Self, _log_block_len: usize) -> (Self, Self) {
+		panic!("cannot transpose when WIDTH = 1");
 	}
 
 	fn broadcast(scalar: Self::Scalar) -> Self {

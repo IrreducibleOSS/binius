@@ -14,6 +14,7 @@ bytemuck.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 derive_more.workspace = true
+generic-array.workspace = true
 rand.workspace = true
 seq-macro.workspace = true
 subtle.workspace = true

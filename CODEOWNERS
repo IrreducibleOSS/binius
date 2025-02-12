@@ -1,0 +1,5 @@
+# Code owners for the entire repository
+* @jimpo-ulvt @onesk
+
+# Code owners for the .github path
+.github/* @IrreducibleOSS/Infrastructure

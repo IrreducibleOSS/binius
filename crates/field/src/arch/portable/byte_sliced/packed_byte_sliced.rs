@@ -51,6 +51,7 @@ macro_rules! define_byte_sliced {
 
 			const LOG_WIDTH: usize = <$packed_storage>::LOG_WIDTH;
 
+			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				let result_underlier =
 					<Self::Scalar as WithUnderlier>::Underlier::from_fn(|byte_index| unsafe {
@@ -63,6 +64,7 @@ macro_rules! define_byte_sliced {
 				Self::Scalar::from_underlier(result_underlier)
 			}
 
+			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				let underlier = scalar.to_underlier();
 
@@ -78,6 +80,7 @@ macro_rules! define_byte_sliced {
 				Self::from_scalars([Self::Scalar::random(rng); 32])
 			}
 
+			#[inline]
 			fn broadcast(scalar: Self::Scalar) -> Self {
 				Self {
 					data: array::from_fn(|byte_index| {
@@ -88,6 +91,7 @@ macro_rules! define_byte_sliced {
 				}
 			}
 
+			#[inline]
 			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 				let mut result = Self::default();
 
@@ -99,6 +103,7 @@ macro_rules! define_byte_sliced {
 				result
 			}
 
+			#[inline]
 			fn square(self) -> Self {
 				let mut result = Self::default();
 
@@ -107,22 +112,34 @@ macro_rules! define_byte_sliced {
 				result
 			}
 
+			#[inline]
 			fn invert_or_zero(self) -> Self {
 				let mut result = Self::default();
 				invert_or_zero::<$packed_storage, $tower_level>(&self.data, &mut result.data);
 				result
 			}
 
+			#[inline]
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
 				for byte_num in 0..<$tower_level as TowerLevel>::WIDTH {
-					let (this_byte_result1, this_byte_result2) =
+					(result1.data[byte_num], result2.data[byte_num]) =
 						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
+				}
 
-					result1.data[byte_num] = this_byte_result1;
-					result2.data[byte_num] = this_byte_result2;
+				(result1, result2)
+			}
+
+			#[inline]
+			fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				let mut result1 = Self::default();
+				let mut result2 = Self::default();
+
+				for byte_num in 0..<$tower_level as TowerLevel<PackedAESBinaryField32x8b>>::WIDTH {
+					(result1.data[byte_num], result2.data[byte_num]) =
+						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
 				}
 
 				(result1, result2)

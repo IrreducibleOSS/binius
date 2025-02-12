@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 assert_matches.workspace = true
 auto_impl.workspace = true
+binius_macros = { path = "../macros" }
 binius_field = { path = "../field" }
 binius_hal = { path = "../hal" }
 binius_hash = { path = "../hash" }

@@ -7,7 +7,7 @@
 //! performance, while verifier-side functions are optimized for auditability and security.
 
 // This is to silence clippy errors around suspicious usage of XOR
-// in our arithmetic. This is safe to do becasue we're operating
+// in our arithmetic. This is safe to do because we're operating
 // over binary fields.
 #![allow(clippy::suspicious_arithmetic_impl)]
 #![allow(clippy::suspicious_op_assign_impl)]

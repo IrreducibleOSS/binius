@@ -963,6 +963,13 @@ impl UnderlierWithBitConstants for M256 {
 		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
 		(Self(a), Self(b))
 	}
+
+	fn transpose(mut self, mut other: Self, log_block_len: usize) -> (Self, Self) {
+		let (a, b) = unsafe { transpose_bits(self.0, other.0, log_block_len) };
+		self.0 = a;
+		other.0 = b;
+		(self, other)
+	}
 }
 
 #[inline]
@@ -1025,6 +1032,57 @@ unsafe fn interleave_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m2
 		}
 		_ => panic!("unsupported block length"),
 	}
+}
+
+#[inline]
+unsafe fn transpose_bits(a: __m256i, b: __m256i, log_block_len: usize) -> (__m256i, __m256i) {
+	match log_block_len {
+		0..=3 => {
+			let shuffle = _mm256_set_epi8(
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
+				14, 12, 10, 8, 6, 4, 2, 0,
+			);
+			let (mut a, mut b) = transpose_with_shuffle(a, b, shuffle);
+			for log_block_len in (log_block_len..3).rev() {
+				(a, b) = interleave_bits(a, b, log_block_len);
+			}
+
+			(a, b)
+		}
+		4 => {
+			let shuffle = _mm256_set_epi8(
+				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
+				13, 12, 9, 8, 5, 4, 1, 0,
+			);
+
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		5 => {
+			let shuffle = _mm256_set_epi8(
+				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
+				11, 10, 9, 8, 3, 2, 1, 0,
+			);
+
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		6 => {
+			let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
+
+			(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
+		}
+		7 => (_mm256_permute2x128_si256(a, b, 0x20), _mm256_permute2x128_si256(a, b, 0x31)),
+		_ => panic!("unsupported block length"),
+	}
+}
+
+#[inline(always)]
+unsafe fn transpose_with_shuffle(a: __m256i, b: __m256i, shuffle: __m256i) -> (__m256i, __m256i) {
+	let a = _mm256_shuffle_epi8(a, shuffle);
+	let b = _mm256_shuffle_epi8(b, shuffle);
+
+	let (a, b) = (_mm256_unpacklo_epi64(a, b), _mm256_unpackhi_epi64(a, b));
+
+	(_mm256_permute4x64_epi64(a, 0b11011000), _mm256_permute4x64_epi64(b, 0b11011000))
 }
 
 #[inline]

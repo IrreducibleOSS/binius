@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_utils::serialization::Error as SerializationError;
+use binius_field::serialization::Error as SerializationError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

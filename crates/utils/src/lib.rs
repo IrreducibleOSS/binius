@@ -13,7 +13,6 @@ pub mod felts;
 pub mod graph;
 pub mod iter;
 pub mod rayon;
-pub mod serialization;
 pub mod sorting;
 pub mod sparse_index;
 pub mod thread_local_mut;
