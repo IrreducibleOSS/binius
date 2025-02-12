@@ -139,6 +139,13 @@ macro_rules! define_transposed_byte_sliced {
 
 				(Self { inner: c }, Self { inner: d })
 			}
+
+			#[inline]
+			fn unzip(self, rhs: Self, log_block_len: usize) -> (Self, Self) {
+				let (c, d) = self.inner.unzip(rhs.inner, log_block_len);
+
+				(Self { inner: c }, Self { inner: d })
+			}
 		}
 
 		impl Mul for $name {
