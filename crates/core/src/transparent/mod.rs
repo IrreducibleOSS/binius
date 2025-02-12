@@ -6,6 +6,7 @@ pub mod eq_ind;
 pub mod multilinear_extension;
 pub mod powers;
 pub mod select_row;
+pub mod serialization;
 pub mod shift_ind;
 pub mod step_down;
 pub mod step_up;

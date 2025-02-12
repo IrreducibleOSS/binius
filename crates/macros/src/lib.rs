@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, parse_quote, spanned::Spanned, Data, DeriveInput, Fields, ItemImpl};
 
 use crate::{
 	arith_circuit_poly::ArithCircuitPolyItem, arith_expr::ArithExprItem,
@@ -275,6 +275,37 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 				#body
 			}
 		}
+	}
+	.into()
+}
+
+#[proc_macro_attribute]
+pub fn erased_serialize_canonical(_attr: TokenStream, item: TokenStream) -> TokenStream {
+	let mut item_impl: ItemImpl = parse_macro_input!(item);
+	let syn::Type::Path(p) = &*item_impl.self_ty else {
+		return syn::Error::new(
+			item_impl.span(),
+			"#[erased_serialize_canonical] can only be used on an impl for a concrete type",
+		)
+		.into_compile_error()
+		.into();
+	};
+	let name = p.path.segments.last().unwrap().ident.to_string();
+
+	let method = parse_quote! {
+		fn erased_serialize_canonical(
+			&self,
+			write_buf: &mut dyn binius_field::bytes::BufMut,
+		) -> Result<(), binius_field::serialization::Error> {
+			binius_field::SerializeCanonical::serialize_canonical(&#name, &mut *write_buf)?;
+			binius_field::SerializeCanonical::serialize_canonical(self, &mut *write_buf)
+		}
+	};
+
+	item_impl.items.push(syn::ImplItem::Fn(method));
+
+	quote! {
+		#item_impl
 	}
 	.into()
 }

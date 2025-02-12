@@ -59,7 +59,7 @@ use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
 pub struct Flush {
 	pub oracles: Vec<OracleId>,
 	pub channel_id: ChannelId,
