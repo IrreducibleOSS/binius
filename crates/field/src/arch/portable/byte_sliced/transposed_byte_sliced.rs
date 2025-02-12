@@ -17,6 +17,10 @@ use crate::{
 	PackedAESBinaryField2x128b, PackedAESBinaryField4x128b, PackedField,
 };
 
+/// This macro defines a "transposed" byte-sliced packed field.
+/// The idea is that we store the packed field as a big scaled field of packed elements in
+/// the "normal" order. But when we are doing arithmetic operations, we rearrange bytes
+/// into a byte-sliced form, perform the operation, and then rearrange them back.
 macro_rules! define_transposed_byte_sliced {
 	($name:ident, $packed:ty, $packed_transposed:ty, $byte_sliced:ty) => {
 		#[derive(
@@ -43,12 +47,18 @@ macro_rules! define_transposed_byte_sliced {
 			const ARRAY_SIZE: usize = { <$packed as PackedField>::Scalar::N_BITS / 8 };
 			const LOG_ARRAY_SIZE: usize = checked_log_2(Self::ARRAY_SIZE);
 
+			/// "Transpose" the bytes into a byte-sliced form.
+			///
+			/// NOTE: the order of the scalar elements may not be preserved, but we don't care about that
+			/// while `transpose_backward` puts the bytes back in the original order.
+			///
+			/// NOTE: it appeared that transforming in-place and using bytemuck::must_cast on the caller side
+			/// allows compiler producing more efficient code. That's why instead of type-safe conversion methods
+			/// we're using these signatures for `transpose_forward` and `transpose_backward`.
 			#[inline(always)]
 			fn transpose_forward(
 				values: &mut [<$packed as WithUnderlier>::Underlier; Self::ARRAY_SIZE],
 			) {
-				// All the functions below can easily be implemented in a generic way.
-				// But in this case the compiler doesn't unroll all the loops and the performance is worse.
 				// TODO: support scalar size 8-64b
 				match Self::ARRAY_SIZE {
 					16 => transpose_forward_8b(values),
@@ -56,6 +66,7 @@ macro_rules! define_transposed_byte_sliced {
 				}
 			}
 
+			/// "Transpose" the bytes back into the original order from the byte-slice order.
 			#[inline(always)]
 			fn transpose_backward(
 				values: &mut [<$packed as WithUnderlier>::Underlier; Self::ARRAY_SIZE],
@@ -185,15 +196,13 @@ macro_rules! define_transposed_byte_sliced {
 			type Output = Self;
 
 			fn mul(self, rhs: <$packed as PackedField>::Scalar) -> Self {
-				Self {
-					inner: self.inner * rhs,
-				}
+				self * Self::broadcast(rhs)
 			}
 		}
 
 		impl MulAssign<<$packed as PackedField>::Scalar> for $name {
 			fn mul_assign(&mut self, rhs: <$packed as PackedField>::Scalar) {
-				self.inner *= rhs;
+				*self = *self * Self::broadcast(rhs);
 			}
 		}
 
@@ -248,6 +257,8 @@ macro_rules! define_transposed_byte_sliced {
 	};
 }
 
+// The code below can easily be implemented in a generic way.
+// But in this case the compiler doesn't unroll all the loops and the performance is significantly worse.
 #[inline(always)]
 fn transpose_forward_8b<U: UnderlierWithBitOps>(values: &mut [U]) {
 	debug_assert_eq!(values.len(), 16);
@@ -384,6 +395,7 @@ mod tests {
 		};
 	}
 
+	/// "Transpositions" may not preserve the order of scalar elements, but they should preserve the set of values.
 	#[test]
 	fn transpose_preserves_scalars() {
 		let mut rand = StdRng::seed_from_u64(0);
