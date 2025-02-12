@@ -363,3 +363,83 @@ mod count_multiplicity_tests {
 		assert_eq!(result, vec![1, 2, 3]);
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+	use binius_hal::make_portable_backend;
+	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_math::DefaultEvaluationDomainFactory;
+	use groestl_crypto::Groestl256;
+
+	use super::test_plain_lookup;
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_plain_u8_mul_lookup() {
+		const MAX_LOG_MULTIPLICITY: usize = 18;
+		let log_lookup_count = 19;
+
+		let log_inv_rate = 1;
+		let security_bits = 20;
+
+		let proof = {
+			let allocator = bumpalo::Bump::new();
+			let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+			let boundary = test_plain_lookup::test_u8_mul_lookup::<MAX_LOG_MULTIPLICITY>(
+				&mut builder,
+				log_lookup_count,
+			)
+			.unwrap();
+
+			let witness = builder.take_witness().unwrap();
+			let constraint_system = builder.build().unwrap();
+			// validating witness with `validate_witness` is too slow for large transparents like the `table`
+
+			let domain_factory = DefaultEvaluationDomainFactory::default();
+			let backend = make_portable_backend();
+
+			binius_core::constraint_system::prove::<
+				crate::builder::types::U,
+				CanonicalTowerFamily,
+				_,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+				_,
+			>(
+				&constraint_system,
+				log_inv_rate,
+				security_bits,
+				&[boundary],
+				witness,
+				&domain_factory,
+				&backend,
+			)
+			.unwrap()
+		};
+
+		// verify
+		{
+			let mut builder = ConstraintSystemBuilder::new();
+
+			let boundary = test_plain_lookup::test_u8_mul_lookup::<MAX_LOG_MULTIPLICITY>(
+				&mut builder,
+				log_lookup_count,
+			)
+			.unwrap();
+
+			let constraint_system = builder.build().unwrap();
+
+			binius_core::constraint_system::verify::<
+				crate::builder::types::U,
+				CanonicalTowerFamily,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+			>(&constraint_system, log_inv_rate, security_bits, &[boundary], proof)
+			.unwrap();
+		}
+	}
+}

@@ -505,3 +505,31 @@ const KECCAKF_RC: [u64; ROUNDS_PER_PERMUTATION] = [
 	0x0000000080000001,
 	0x8000000080008008,
 ];
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
+
+	use super::KeccakfState;
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_keccakf() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 5;
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let input_states = vec![KeccakfState(rng.gen())];
+		let _state_out = super::keccakf(&mut builder, &Some(input_states), log_size);
+
+		let witness = builder.take_witness().unwrap();
+
+		let constraint_system = builder.build().unwrap();
+
+		let boundaries = vec![];
+
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}

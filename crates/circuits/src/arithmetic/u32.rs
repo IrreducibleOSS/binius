@@ -359,6 +359,22 @@ mod tests {
 	}
 
 	#[test]
+	fn test_add() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 14;
+		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
+		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
+		let _c = arithmetic::u32::add(&mut builder, "u32add", a, b, arithmetic::Flags::Unchecked)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
 	fn test_sub() {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);

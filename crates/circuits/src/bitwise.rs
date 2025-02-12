@@ -95,3 +95,28 @@ pub fn or(
 	builder.pop_namespace();
 	Ok(zout)
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use binius_field::BinaryField1b;
+
+	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+
+	#[test]
+	fn test_bitwise() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 6;
+		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
+		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
+		let _and = super::and(&mut builder, "and", a, b).unwrap();
+		let _xor = super::xor(&mut builder, "xor", a, b).unwrap();
+		let _or = super::or(&mut builder, "or", a, b).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}

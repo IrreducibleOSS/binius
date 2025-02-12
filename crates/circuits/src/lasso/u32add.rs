@@ -233,3 +233,65 @@ impl Drop for SeveralU32add {
 		assert!(self.finalized)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use binius_field::{BinaryField1b, BinaryField8b};
+
+	use super::SeveralU32add;
+	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+
+	#[test]
+	fn test_several_lasso_u32add() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		let mut several_u32_add = SeveralU32add::new(&mut builder).unwrap();
+
+		for log_size in [11, 12, 13] {
+			// BinaryField8b is used here because we utilize an 8x8x1→8 table
+			let add_a_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_a", log_size).unwrap();
+			let add_b_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_b", log_size).unwrap();
+			let _sum = several_u32_add
+				.u32add::<BinaryField8b, BinaryField8b>(
+					&mut builder,
+					"lasso_u32add",
+					add_a_u8,
+					add_b_u8,
+				)
+				.unwrap();
+		}
+
+		several_u32_add
+			.finalize(&mut builder, "lasso_u32add")
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_u32add() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 14;
+
+		let add_a = unconstrained::<BinaryField1b>(&mut builder, "add_a", log_size).unwrap();
+		let add_b = unconstrained::<BinaryField1b>(&mut builder, "add_b", log_size).unwrap();
+		let _sum = super::u32add::<BinaryField1b, BinaryField1b>(
+			&mut builder,
+			"lasso_u32add",
+			add_a,
+			add_b,
+		)
+		.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}

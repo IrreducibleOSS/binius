@@ -71,3 +71,23 @@ pub fn u32fib(
 	builder.pop_namespace();
 	Ok(current)
 }
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_u32fib() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size_1b = 14;
+		let _ = super::u32fib(&mut builder, "u32fib", log_size_1b).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}
