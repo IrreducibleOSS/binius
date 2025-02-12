@@ -843,26 +843,28 @@ impl UnderlierWithBitOps for M256 {
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
-		seq!(N in 0..128 {
-			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm256_bsrli_epi128, _mm256_srli_epi64, _mm256_slli_epi64, _mm256_or_si256));
-			}
-		});
-
-		Self::default()
+		bitshift_128b!(
+			self.0,
+			rhs,
+			_mm256_bsrli_epi128,
+			_mm256_srli_epi64,
+			_mm256_slli_epi64,
+			_mm256_or_si256
+		)
 	}
 
 	#[inline]
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
-		seq!(N in 0..128 {
-			if rhs == N {
-				return Self(bitshift_128b!(self.0, N, _mm256_bslli_epi128, _mm256_slli_epi64, _mm256_srli_epi64, _mm256_or_si256));
-			}
-		});
-
-		Self::default()
+		bitshift_128b!(
+			self.0,
+			rhs,
+			_mm256_bslli_epi128,
+			_mm256_slli_epi64,
+			_mm256_srli_epi64,
+			_mm256_or_si256
+		);
 	}
 
 	#[inline]

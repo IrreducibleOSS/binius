@@ -865,26 +865,28 @@ impl UnderlierWithBitOps for M512 {
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
-		seq!(N in 0..128 {
-			if rhs == N as usize {
-				return Self(bitshift_128b!(self.0, N, _mm512_bsrli_epi128, _mm512_srli_epi64, _mm512_slli_epi64, _mm512_or_si512));
-			}
-		});
-
-		Self::default()
+		bitshift_128b!(
+			self.0,
+			N,
+			_mm512_bsrli_epi128,
+			_mm512_srli_epi64,
+			_mm512_slli_epi64,
+			_mm512_or_si512
+		);
 	}
 
 	#[inline]
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
 		// This implementation is effective when `rhs` is known at compile-time.
 		// In our code this is always the case.
-		seq!(N in 0..128 {
-			if rhs == N as usize {
-				return Self(bitshift_128b!(self.0, N, _mm512_bslli_epi128, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_or_si512));
-			}
-		});
-
-		Self::default()
+		bitshift_128b!(
+			self.0,
+			N,
+			_mm512_bslli_epi128,
+			_mm512_slli_epi64,
+			_mm512_srli_epi64,
+			_mm512_or_si512
+		);
 	}
 
 	#[inline]
