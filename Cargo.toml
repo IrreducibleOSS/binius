@@ -137,4 +137,4 @@ opt-level = 1
 debug = true
 debug-assertions = true
 overflow-checks = true
-lto = false
+lto = "off"
