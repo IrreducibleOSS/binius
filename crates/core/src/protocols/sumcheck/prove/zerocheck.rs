@@ -41,7 +41,7 @@ use crate::{
 
 pub fn validate_witness<'a, F, P, M, Composition>(
 	multilinears: &[M],
-	zero_claims: impl IntoIterator<Item = &'a (Arc<str>, Composition)>,
+	zero_claims: impl IntoIterator<Item = &'a (String, Composition)>,
 ) -> Result<(), Error>
 where
 	F: Field,
@@ -99,7 +99,7 @@ where
 	#[getset(get = "pub")]
 	multilinears: Vec<M>,
 	switchover_rounds: Vec<usize>,
-	compositions: Vec<(Arc<str>, CompositionBase, Composition)>,
+	compositions: Vec<(String, CompositionBase, Composition)>,
 	zerocheck_challenges: Vec<P::Scalar>,
 	domains: Vec<InterpolationDomain<FDomain>>,
 	backend: &'a Backend,
@@ -125,7 +125,7 @@ where
 {
 	pub fn new(
 		multilinears: Vec<M>,
-		zero_claims: impl IntoIterator<Item = (Arc<str>, CompositionBase, Composition)>,
+		zero_claims: impl IntoIterator<Item = (String, CompositionBase, Composition)>,
 		zerocheck_challenges: &[F],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,

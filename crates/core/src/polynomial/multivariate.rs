@@ -2,11 +2,12 @@
 
 use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
 
-use binius_field::{Field, PackedField};
+use binius_field::{serialization, Field, PackedField};
 use binius_math::{
 	ArithExpr, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
 use binius_utils::bail;
+use bytes::BufMut;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -28,6 +29,16 @@ pub trait MultivariatePoly<P>: Debug + Send + Sync {
 
 	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
 	fn binary_tower_level(&self) -> usize;
+
+	/// Serialize a type erased MultivariatePoly.
+	/// Since not every MultivariatePoly implements serialization, this defaults to returning an error.
+	fn erased_serialize_canonical(
+		&self,
+		write_buf: &mut dyn BufMut,
+	) -> Result<(), serialization::Error> {
+		let _ = write_buf;
+		Err(serialization::Error::SerializationNotImplemented)
+	}
 }
 
 /// Identity composition function $g(X) = X$.

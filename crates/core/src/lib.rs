@@ -28,3 +28,5 @@ pub mod tower;
 pub mod transcript;
 pub mod transparent;
 pub mod witness;
+
+pub use inventory;
