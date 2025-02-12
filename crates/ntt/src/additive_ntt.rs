@@ -1,7 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, PackedField, RepackedExtension};
-use binius_utils::checked_arithmetics::log2_strict_usize;
 
 use super::error::Error;
 
