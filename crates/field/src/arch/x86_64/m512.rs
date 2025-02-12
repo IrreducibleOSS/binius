@@ -867,7 +867,7 @@ impl UnderlierWithBitOps for M512 {
 		// In our code this is always the case.
 		bitshift_128b!(
 			self.0,
-			N,
+			rhs,
 			_mm512_bsrli_epi128,
 			_mm512_srli_epi64,
 			_mm512_slli_epi64,
@@ -881,7 +881,7 @@ impl UnderlierWithBitOps for M512 {
 		// In our code this is always the case.
 		bitshift_128b!(
 			self.0,
-			N,
+			rhs,
 			_mm512_bslli_epi128,
 			_mm512_slli_epi64,
 			_mm512_srli_epi64,
