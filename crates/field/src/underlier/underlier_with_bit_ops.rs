@@ -130,11 +130,11 @@ pub trait UnderlierWithBitOps:
 	/// Unpacks `1 << log_block_len`-bit values from low parts of `self` and `other` within 128-bit lanes.
 	///
 	/// Example:
-	///     self:  [a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_7]
-	///     other: [b_0, b_1, b_2, b_3, b_4, b_5, b_6, b_7]
-	///     log_block_len: 1
+	///    self:  [a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_7]
+	///    other: [b_0, b_1, b_2, b_3, b_4, b_5, b_6, b_7]
+	///    log_block_len: 1
 	///
-	///     result: [a_0, a_0, b_0, b_1, a_2, a_3, b_2, b_3]
+	///    result: [a_0, a_0, b_0, b_1, a_2, a_3, b_2, b_3]
 	fn unpack_lo_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		unpack_lo_128b_fallback(self, other, log_block_len)
 	}
