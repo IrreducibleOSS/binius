@@ -457,6 +457,13 @@ impl BinaryField for BinaryField128bPolyval {
 impl TowerField for BinaryField128bPolyval {
 	type Canonical = BinaryField128b;
 
+	fn min_tower_level(self) -> usize {
+		match self {
+			Self::ZERO | Self::ONE => 0,
+			_ => 7,
+		}
+	}
+
 	fn mul_primitive(self, _iota: usize) -> Result<Self, Error> {
 		// This method could be implemented by multiplying by isomorphic alpha value
 		// But it's not being used as for now
