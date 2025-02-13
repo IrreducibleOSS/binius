@@ -2,7 +2,7 @@
 
 use std::{marker::PhantomData, ops::Range};
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
@@ -82,7 +82,7 @@ where
 impl<'a, F, FDomain, P, Composition, M, Backend>
 	RegularSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
@@ -166,7 +166,7 @@ where
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for RegularSumcheckProver<'_, FDomain, P, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
@@ -216,7 +216,7 @@ where
 impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Composition: CompositionPolyOS<P>,
@@ -256,7 +256,7 @@ where
 impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
 	for RegularSumcheckEvaluator<'_, P, FDomain, Composition>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 {

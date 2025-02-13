@@ -6,21 +6,17 @@ use binius_maybe_rayon::prelude::{
 
 use crate::{Error, ExtensionField, Field, PackedExtension, PackedField};
 
-pub fn ext_base_mul<PE, F>(lhs: &mut [PE], rhs: &[PE::PackedSubfield]) -> Result<(), Error>
-where
-	PE: PackedExtension<F>,
-	PE::Scalar: ExtensionField<F>,
-	F: Field,
-{
+pub fn ext_base_mul<PE: PackedExtension<F>, F: Field>(
+	lhs: &mut [PE],
+	rhs: &[PE::PackedSubfield],
+) -> Result<(), Error> {
 	ext_base_op(lhs, rhs, |_, lhs, broadcasted_rhs| PE::cast_ext(lhs.cast_base() * broadcasted_rhs))
 }
 
-pub fn ext_base_mul_par<PE, F>(lhs: &mut [PE], rhs: &[PE::PackedSubfield]) -> Result<(), Error>
-where
-	PE: PackedExtension<F>,
-	PE::Scalar: ExtensionField<F>,
-	F: Field,
-{
+pub fn ext_base_mul_par<PE: PackedExtension<F>, F: Field>(
+	lhs: &mut [PE],
+	rhs: &[PE::PackedSubfield],
+) -> Result<(), Error> {
 	ext_base_op_par(lhs, rhs, |_, lhs, broadcasted_rhs| {
 		PE::cast_ext(lhs.cast_base() * broadcasted_rhs)
 	})
@@ -29,15 +25,10 @@ where
 /// # Safety
 ///
 /// Width of PackedSubfield is >= the width of the field implementing PackedExtension.
-pub unsafe fn get_packed_subfields_at_pe_idx<PE, F>(
+pub unsafe fn get_packed_subfields_at_pe_idx<PE: PackedExtension<F>, F: Field>(
 	packed_subfields: &[PE::PackedSubfield],
 	i: usize,
-) -> PE::PackedSubfield
-where
-	PE: PackedExtension<F>,
-	PE::Scalar: ExtensionField<F>,
-	F: Field,
-{
+) -> PE::PackedSubfield {
 	let bottom_most_scalar_idx = i * PE::WIDTH;
 	let bottom_most_scalar_idx_in_subfield_arr = bottom_most_scalar_idx / PE::PackedSubfield::WIDTH;
 	let bottom_most_scalar_idx_within_packed_subfield =
@@ -67,7 +58,6 @@ pub fn ext_base_op<PE, F, Func>(
 ) -> Result<(), Error>
 where
 	PE: PackedExtension<F>,
-	PE::Scalar: ExtensionField<F>,
 	F: Field,
 	Func: Fn(usize, PE, PE::PackedSubfield) -> PE,
 {
@@ -93,7 +83,6 @@ pub fn ext_base_op_par<PE, F, Func>(
 ) -> Result<(), Error>
 where
 	PE: PackedExtension<F>,
-	PE::Scalar: ExtensionField<F>,
 	F: Field,
 	Func: Fn(usize, PE, PE::PackedSubfield) -> PE + std::marker::Sync,
 {

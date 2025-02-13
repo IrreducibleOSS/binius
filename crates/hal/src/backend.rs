@@ -5,7 +5,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
 	CompositionPolyOS, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
@@ -53,7 +53,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
-		P: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>;
@@ -95,7 +95,7 @@ where
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
-		P: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,

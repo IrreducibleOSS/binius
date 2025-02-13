@@ -176,7 +176,7 @@ pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
 	message: &[P],
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: BinaryField,
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
@@ -211,7 +211,7 @@ pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	message_writer: impl FnOnce(&mut [P]),
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: BinaryField,
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,

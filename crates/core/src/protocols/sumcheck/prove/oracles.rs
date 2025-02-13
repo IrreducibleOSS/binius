@@ -54,7 +54,7 @@ where
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
 		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
-	F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
+	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
 	Backend: ComputationBackend,

@@ -195,8 +195,8 @@ mod tests {
 	use std::{iter, sync::Arc};
 
 	use binius_field::{
-		BinaryField128b, BinaryField32b, BinaryField8b, ExtensionField, PackedBinaryField1x128b,
-		PackedExtension, PackedFieldIndexable, PackedSubfield, RepackedExtension,
+		BinaryField128b, BinaryField32b, BinaryField8b, PackedBinaryField1x128b, PackedExtension,
+		PackedFieldIndexable, PackedSubfield, RepackedExtension,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 	use binius_math::{
@@ -236,7 +236,7 @@ mod tests {
 		Backend,
 	>
 	where
-		F: Field + ExtensionField<FDomain>,
+		F: Field,
 		FDomain: Field,
 		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
 		Composition: CompositionPolyOS<P>,

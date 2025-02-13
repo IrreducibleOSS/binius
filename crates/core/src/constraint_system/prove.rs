@@ -513,7 +513,7 @@ where
 		P: PackedExtension<F, PackedSubfield = P>
 			+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>
 			+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>,
-		F: TowerField + ExtensionField<FDomain> + ExtensionField<FBase>,
+		F: TowerField,
 	{
 		let univariate_prover =
 			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _>(

@@ -1,8 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{
 	extrapolate_line_scalar, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
@@ -46,7 +44,6 @@ where
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>,
 	FDomain: Field,
-	P::Scalar: Field + ExtensionField<FDomain>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
 {
@@ -266,7 +263,6 @@ where
 	where
 		FDomain: Field,
 		P: PackedExtension<FDomain>,
-		F: ExtensionField<FDomain>,
 	{
 		// test same layer
 		let Some(first_prover) = provers.first() else {

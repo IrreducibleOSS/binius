@@ -111,7 +111,7 @@ where
 impl<'a, 'm, F, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
 	UnivariateZerocheck<'a, 'm, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FBase> + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	FBase: ExtensionField<FDomain>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -245,7 +245,7 @@ impl<'a, 'm, F, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
 	UnivariateZerocheckProver<'a, F>
 	for UnivariateZerocheck<'a, 'm, FDomain, FBase, P, CompositionBase, Composition, M, Backend>
 where
-	F: TowerField + ExtensionField<FBase> + ExtensionField<FDomain>,
+	F: TowerField,
 	FDomain: TowerField,
 	FBase: ExtensionField<FDomain>,
 	P: PackedFieldIndexable<Scalar = F>
@@ -447,7 +447,7 @@ where
 impl<'a, F, FDomain, P, Composition, M, Backend>
 	ZerocheckProver<'a, FDomain, P, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
@@ -537,7 +537,7 @@ where
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for ZerocheckProver<'_, FDomain, P, Composition, M, Backend>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
@@ -766,7 +766,7 @@ where
 impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
 	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
 where
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 {

@@ -273,11 +273,9 @@ where
 	P: PackedField,
 	Data: Deref<Target = [P]> + Send + Sync + Debug + 'a,
 {
-	pub fn specialize_arc_dyn<PE>(self) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a>
-	where
-		PE: PackedField + RepackedExtension<P>,
-		PE::Scalar: ExtensionField<P::Scalar>,
-	{
+	pub fn specialize_arc_dyn<PE: RepackedExtension<P>>(
+		self,
+	) -> Arc<dyn MultilinearPoly<PE> + Send + Sync + 'a> {
 		self.specialize().upcast_arc_dyn()
 	}
 }

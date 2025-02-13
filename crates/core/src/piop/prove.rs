@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
+	packed::set_packed_slice, BinaryField, Field, PackedExtension, PackedField,
 	PackedFieldIndexable, SerializeCanonical, TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -101,7 +101,7 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	multilins: &[M],
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FEncode>,
+	F: BinaryField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
@@ -166,7 +166,7 @@ pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Chall
 	backend: &Backend,
 ) -> Result<(), Error>
 where
-	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
+	F: TowerField,
 	FDomain: Field,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F>
@@ -251,7 +251,7 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
-	F: TowerField + ExtensionField<FEncode>,
+	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
 	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,

@@ -3,7 +3,7 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, DeserializeCanonical, ExtensionField, Field,
+	BinaryField, BinaryField16b, BinaryField8b, DeserializeCanonical, Field,
 	PackedBinaryField2x128b, PackedExtension, PackedField, PackedFieldIndexable,
 	SerializeCanonical, TowerField,
 };
@@ -104,7 +104,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
 	log_inv_rate: usize,
 ) where
-	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
+	F: TowerField,
 	FDomain: BinaryField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F>

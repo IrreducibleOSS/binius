@@ -95,7 +95,7 @@ pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
 	backend: &'a Backend,
 ) -> Result<Prover<'a, FDomain, P, Backend>, Error>
 where
-	F: TowerField + ExtensionField<FDomain>,
+	F: TowerField,
 	FDomain: TowerField,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -132,12 +132,7 @@ where
 }
 
 #[derive(Debug)]
-struct ParFoldStates<FBase, P>
-where
-	FBase: Field + PackedField,
-	P: PackedField + PackedExtension<FBase>,
-	P::Scalar: ExtensionField<FBase>,
-{
+struct ParFoldStates<FBase: Field, P: PackedExtension<FBase>> {
 	/// Evaluations of a multilinear subcube, embedded into P (see MultilinearPoly::subcube_evals). Scratch space.
 	evals: Vec<P>,
 	/// `evals` cast to base field and transposed to 2^skip_rounds * 2^log_batch row-major form. Scratch space.
@@ -150,12 +145,7 @@ where
 	round_evals: Vec<Vec<P::Scalar>>,
 }
 
-impl<FBase, P> ParFoldStates<FBase, P>
-where
-	FBase: Field,
-	P: PackedField + PackedExtension<FBase>,
-	P::Scalar: ExtensionField<FBase>,
-{
+impl<FBase: Field, P: PackedExtension<FBase>> ParFoldStates<FBase, P> {
 	fn new(
 		n_multilinears: usize,
 		skip_rounds: usize,
@@ -335,7 +325,7 @@ pub fn zerocheck_univariate_evals<F, FDomain, FBase, P, Composition, M, Backend>
 where
 	FDomain: TowerField,
 	FBase: ExtensionField<FDomain>,
-	F: TowerField + ExtensionField<FBase> + ExtensionField<FDomain>,
+	F: TowerField,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,

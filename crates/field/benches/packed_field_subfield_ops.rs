@@ -5,8 +5,8 @@ use std::array;
 use binius_field::{
 	packed::mul_by_subfield_scalar,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, ExtensionField,
-	Field, PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x128b,
+	BinaryField1b, BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, Field,
+	PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField2x128b,
 	PackedBinaryField32x8b, PackedBinaryField4x128b, PackedBinaryField4x32b,
 	PackedBinaryField64x8b, PackedBinaryField8x32b, PackedBinaryField8x64b, PackedExtension,
 };
@@ -17,11 +17,7 @@ use rand::thread_rng;
 
 const BATCH_SIZE: usize = 32;
 
-fn bench_mul_subfield<PE, F>(group: &mut BenchmarkGroup<'_, WallTime>)
-where
-	PE: PackedExtension<F, Scalar: ExtensionField<F>>,
-	F: Field,
-{
+fn bench_mul_subfield<PE: PackedExtension<F>, F: Field>(group: &mut BenchmarkGroup<'_, WallTime>) {
 	let mut rng = thread_rng();
 	let packed: [PE; BATCH_SIZE] = array::from_fn(|_| PE::random(&mut rng));
 	let scalars: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
