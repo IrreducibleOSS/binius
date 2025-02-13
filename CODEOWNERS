@@ -2,4 +2,4 @@
 * @jimpo-ulvt @onesk
 
 # Code owners for the .github path
-.github/* @IrreducibleOSS/Infrastructure
+/.github/ @IrreducibleOSS/Infrastructure
