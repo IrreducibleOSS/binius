@@ -133,8 +133,7 @@ inherits = "release"
 debug = true
 
 [profile.test]
-# FIXME: revert
-opt-level = 0
+opt-level = 1
 debug = true
 debug-assertions = true
 overflow-checks = true
