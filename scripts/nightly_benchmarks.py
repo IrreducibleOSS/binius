@@ -15,7 +15,6 @@ ENV_VARS = {
 SAMPLE_SIZE = 5
 
 KECCAKF_PERMS = 1 << 13
-GROESTLP_PERMS = 1 << 14
 VISION32B_PERMS = 1 << 14
 SHA256_PERMS = 1 << 14
 NUM_BINARY_OPS = 1 << 22
@@ -28,13 +27,6 @@ HASHER_TO_RUN = {
         "export": "keccakf-report.csv",
         "args": ["keccakf_circuit", "--", "--n-permutations"],
         "n_ops": KECCAKF_PERMS,
-    },
-    "groestlp": {
-        "type": "hasher",
-        "display": r"Grøstl P",
-        "export": "groestl-report.csv",
-        "args": ["groestl_circuit", "--", "--n-permutations"],
-        "n_ops": GROESTLP_PERMS,
     },
     "vision32b": {
         "type": "hasher",
