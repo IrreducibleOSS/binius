@@ -2,12 +2,13 @@ use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
-use binius_macros::arith_expr;
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::Pod;
 
 use crate::{arithmetic, arithmetic::Flags, builder::ConstraintSystemBuilder};
 
 type F1 = BinaryField1b;
+const LOG_U32_BITS: usize = checked_log_2(32);
 
 // Gadget that performs two u32 variables XOR and then rotates the result
 fn xor_rotate_right<U, F>(
@@ -34,7 +35,7 @@ where
 		"rotate",
 		xor,
 		32 - rotate_right_offset as usize,
-		crate::sha256::LOG_U32_BITS,
+		LOG_U32_BITS,
 		ShiftVariant::CircularLeft,
 	)?;
 
@@ -55,8 +56,6 @@ where
 			*v = xor_value[idx].rotate_right(rotate_right_offset);
 		}
 	}
-
-	builder.assert_zero("xor", [a, b, xor], arith_expr!([a, b, xor] = a + b - xor).convert_field());
 
 	builder.pop_namespace();
 

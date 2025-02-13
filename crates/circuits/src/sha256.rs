@@ -21,7 +21,7 @@ use crate::{
 	},
 };
 
-pub const LOG_U32_BITS: usize = checked_log_2(32);
+const LOG_U32_BITS: usize = checked_log_2(32);
 
 type B1 = BinaryField1b;
 
