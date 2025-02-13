@@ -10,8 +10,8 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, ExtensionField, PackedBinaryField16x32b,
-	PackedBinaryField8x32b, PackedField, RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, PackedBinaryField16x32b, PackedBinaryField8x32b,
+	PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -144,16 +144,12 @@ fn tests_field_512_bits() {
 	check_roundtrip_all_ntts::<PackedBinaryField16x32b>(12, 6, 4, 0);
 }
 
-fn check_packed_extension_roundtrip_with_reference<P, PE>(
+fn check_packed_extension_roundtrip_with_reference<P: PackedField, PE: RepackedExtension<P>>(
 	reference_ntt: &impl AdditiveNTT<P>,
 	ntt: &impl AdditiveNTT<P>,
 	data: &mut [PE],
 	cosets: Range<u32>,
-) where
-	P: PackedField,
-	PE: RepackedExtension<P>,
-	PE::Scalar: ExtensionField<P::Scalar>,
-{
+) {
 	let data_copy = data.to_vec();
 	let mut data_copy_2 = data.to_vec();
 
@@ -182,7 +178,6 @@ fn check_packed_extension_roundtrip_all_ntts<P, PE>(
 ) where
 	P: PackedField<Scalar: BinaryField>,
 	PE: RepackedExtension<P> + WithUnderlier<Underlier: NumCast<u128>>,
-	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	let simple_ntt = SingleThreadedNTT::<P::Scalar>::new(log_domain_size)
 		.unwrap()

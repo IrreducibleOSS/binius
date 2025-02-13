@@ -153,7 +153,6 @@ impl<P, F> Hasher<P> for Groestl256<P, F>
 where
 	F: BinaryField + From<AESTowerField8b> + Into<AESTowerField8b>,
 	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<F>,
 	OptimalUnderlier256b: PackScalar<F> + Divisible<F::Underlier>,
 	Self: UpdateOverSlice<Elem = F>,
 {

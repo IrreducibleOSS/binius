@@ -2,34 +2,19 @@
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{BinaryField32b, TowerField};
 
 use crate::builder::ConstraintSystemBuilder;
 
-type B8 = BinaryField8b;
-type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 const T_LOG_SIZE_MUL: usize = 16;
 const T_LOG_SIZE_ADD: usize = 17;
 const T_LOG_SIZE_DCI: usize = 10;
 
-pub fn mul_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn mul_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_MUL, B32::TOWER_LEVEL);
@@ -53,17 +38,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn add_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
@@ -95,17 +73,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn add_carryfree_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn add_carryfree_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_ADD, B32::TOWER_LEVEL);
@@ -139,17 +110,10 @@ where
 	Ok(lookup_t)
 }
 
-pub fn dci_lookup<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn dci_lookup(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t = builder.add_committed("lookup_t", T_LOG_SIZE_DCI, B32::TOWER_LEVEL);
@@ -181,4 +145,155 @@ where
 
 	builder.pop_namespace();
 	Ok(lookup_t)
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use binius_field::{BinaryField1b, BinaryField32b, BinaryField8b};
+
+	use crate::{
+		builder::ConstraintSystemBuilder,
+		lasso::{self, batch::LookupBatch},
+		unconstrained::unconstrained,
+	};
+
+	#[test]
+	fn test_lasso_u8add_carryfree_rejects_carry() {
+		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from randomness
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 14;
+		let x_in = unconstrained::<BinaryField8b>(&mut builder, "x", log_size).unwrap();
+		let y_in = unconstrained::<BinaryField8b>(&mut builder, "y", log_size).unwrap();
+		let c_in = unconstrained::<BinaryField1b>(&mut builder, "c", log_size).unwrap();
+
+		let lookup_t = super::add_carryfree_lookup(&mut builder, "add cf table").unwrap();
+		let mut lookup_batch = LookupBatch::new([lookup_t]);
+		let _sum_and_cout = lasso::u8add_carryfree(
+			&mut builder,
+			&mut lookup_batch,
+			"lasso_u8add",
+			x_in,
+			y_in,
+			c_in,
+			log_size,
+		)
+		.unwrap();
+
+		lookup_batch
+			.execute::<BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness)
+			.expect_err("Rejected overflowing add");
+	}
+
+	#[test]
+	fn test_lasso_u8mul() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 10;
+
+		let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+		let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+
+		let mul_lookup_table = super::mul_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+
+		let _product = lasso::u8mul(
+			&mut builder,
+			&mut lookup_batch,
+			"lasso_u8mul",
+			mult_a,
+			mult_b,
+			1 << log_size,
+		)
+		.unwrap();
+
+		lookup_batch
+			.execute::<BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_batched_u8mul() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 10;
+		let mul_lookup_table = super::mul_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+
+		for _ in 0..10 {
+			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+
+			let _product = lasso::u8mul(
+				&mut builder,
+				&mut lookup_batch,
+				"lasso_u8mul",
+				mult_a,
+				mult_b,
+				1 << log_size,
+			)
+			.unwrap();
+		}
+
+		lookup_batch
+			.execute::<BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_batched_u8mul_rejects() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 10;
+
+		// We try to feed in the add table instead
+		let mul_lookup_table = super::add_lookup(&mut builder, "mul table").unwrap();
+
+		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+
+		// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
+		for _ in 0..10 {
+			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
+			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+
+			let _product = lasso::u8mul(
+				&mut builder,
+				&mut lookup_batch,
+				"lasso_u8mul",
+				mult_a,
+				mult_b,
+				1 << log_size,
+			)
+			.unwrap();
+		}
+
+		lookup_batch
+			.execute::<BinaryField32b>(&mut builder)
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness)
+			.expect_err("Channels should be unbalanced");
+	}
 }

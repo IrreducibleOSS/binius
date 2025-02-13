@@ -12,36 +12,22 @@ use std::array;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	linear_transformation::Transformation,
-	make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice,
-	underlier::UnderlierType,
-	BinaryField1b, BinaryField32b, BinaryField64b, ExtensionField, PackedAESBinaryField8x32b,
-	PackedBinaryField8x32b, PackedField, TowerField,
+	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
+	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedField, TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
 use binius_math::ArithExpr;
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::must_cast_slice;
 
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{types::F, ConstraintSystemBuilder};
 
-pub fn vision_permutation<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn vision_permutation(
+	builder: &mut ConstraintSystemBuilder,
 	log_size: usize,
 	p_in: [OracleId; STATE_SIZE],
-) -> Result<[OracleId; STATE_SIZE]>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<BinaryField32b>
-		+ PackScalar<BinaryField64b>,
-	F: TowerField + ExtensionField<BinaryField64b> + ExtensionField<BinaryField32b>,
-	PackedType<U, BinaryField32b>: Pod,
-{
+) -> Result<[OracleId; STATE_SIZE]> {
 	// This only acts as a shorthand
 	type B32 = BinaryField32b;
 
@@ -77,7 +63,7 @@ where
 	}
 
 	let perm_out = (0..N_ROUNDS).try_fold(round_0_input, |state, round_i| {
-		vision_round::<U, F>(builder, log_size, round_i, state)
+		vision_round(builder, log_size, round_i, state)
 	})?;
 
 	#[cfg(debug_assertions)]
@@ -237,22 +223,13 @@ fn inv_constraint_expr<F: TowerField>() -> Result<ArithExpr<F>> {
 	Ok(non_zero_case * zero_case)
 }
 
-fn vision_round<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+fn vision_round(
+	builder: &mut ConstraintSystemBuilder,
 	log_size: usize,
 	round_i: usize,
 	perm_in: [OracleId; STATE_SIZE],
 ) -> Result<[OracleId; STATE_SIZE]>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<BinaryField32b>
-		+ PackScalar<BinaryField64b>,
-	F: TowerField + ExtensionField<BinaryField64b> + ExtensionField<BinaryField32b>,
-	PackedType<U, BinaryField32b>: Pod,
-{
+where {
 	builder.push_namespace(format!("round[{round_i}]"));
 	let inv_0 = builder.add_committed_multiple::<STATE_SIZE>(
 		"inv_evens",
@@ -318,7 +295,10 @@ where
 			.add_linear_combination(
 				format!("round_out_evens_{}", row),
 				log_size,
-				[(mds_out_0[row], F::ONE), (even_round_consts[row], F::ONE)],
+				[
+					(mds_out_0[row], Field::ONE),
+					(even_round_consts[row], Field::ONE),
+				],
 			)
 			.unwrap()
 	});
@@ -328,7 +308,10 @@ where
 			.add_linear_combination(
 				format!("round_out_odd_{}", row),
 				log_size,
-				[(mds_out_1[row], F::ONE), (odd_round_consts[row], F::ONE)],
+				[
+					(mds_out_1[row], Field::ONE),
+					(odd_round_consts[row], Field::ONE),
+				],
 			)
 			.unwrap()
 	});
@@ -475,4 +458,29 @@ where
 	}
 
 	Ok(perm_out)
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
+	use binius_field::BinaryField32b;
+
+	use super::vision_permutation;
+	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+
+	#[test]
+	fn test_vision32b() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 8;
+		let state_in: [OracleId; 24] = std::array::from_fn(|i| {
+			unconstrained::<BinaryField32b>(&mut builder, format!("p_in[{i}]"), log_size).unwrap()
+		});
+		let _state_out = vision_permutation(&mut builder, log_size, state_in).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
 }

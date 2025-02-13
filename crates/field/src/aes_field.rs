@@ -78,6 +78,13 @@ impl_arithmetic_using_packed!(AESTowerField128b);
 impl TowerField for AESTowerField8b {
 	type Canonical = BinaryField8b;
 
+	fn min_tower_level(self) -> usize {
+		match self {
+			Self::ZERO | Self::ONE => 0,
+			_ => 3,
+		}
+	}
+
 	fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 		match iota {
 			0..=1 => Ok(self * ISOMORPHIC_ALPHAS[iota]),
@@ -157,8 +164,8 @@ impl<IF, OF, IEP, OEP, T> Transformation<IEP, OEP> for SubfieldTransformer<IF, O
 where
 	IF: Field,
 	OF: Field,
-	IEP: PackedExtension<IF, Scalar: ExtensionField<IF>>,
-	OEP: PackedExtension<OF, Scalar: ExtensionField<OF>>,
+	IEP: PackedExtension<IF>,
+	OEP: PackedExtension<OF>,
 	T: Transformation<PackedSubfield<IEP, IF>, PackedSubfield<OEP, OF>>,
 {
 	fn transform(&self, input: &IEP) -> OEP {
@@ -171,9 +178,7 @@ where
 pub fn make_aes_to_binary_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
 where
 	IP: PackedExtension<AESTowerField8b>,
-	IP::Scalar: ExtensionField<AESTowerField8b>,
 	OP: PackedExtension<BinaryField8b>,
-	OP::Scalar: ExtensionField<BinaryField8b>,
 	PackedSubfield<IP, AESTowerField8b>:
 		PackedTransformationFactory<PackedSubfield<OP, BinaryField8b>>,
 {
@@ -190,9 +195,7 @@ where
 pub fn make_binary_to_aes_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
 where
 	IP: PackedExtension<BinaryField8b>,
-	IP::Scalar: ExtensionField<BinaryField8b>,
 	OP: PackedExtension<AESTowerField8b>,
-	OP::Scalar: ExtensionField<AESTowerField8b>,
 	PackedSubfield<IP, BinaryField8b>:
 		PackedTransformationFactory<PackedSubfield<OP, AESTowerField8b>>,
 {

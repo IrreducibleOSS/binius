@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::{Field, PackedField};
+use binius_field::{Field, PackedField, TowerField};
 
 use super::error::Error;
 
@@ -193,6 +193,19 @@ impl<F: Field> ArithExpr<F> {
 					id => Self::Pow(Box::new(id), *exp),
 				}
 			}
+		}
+	}
+}
+
+impl<F: TowerField> ArithExpr<F> {
+	pub fn binary_tower_level(&self) -> usize {
+		match self {
+			Self::Const(value) => value.min_tower_level(),
+			Self::Var(_) => 0,
+			Self::Add(left, right) | Self::Mul(left, right) => {
+				max(left.binary_tower_level(), right.binary_tower_level())
+			}
+			Self::Pow(base, _) => base.binary_tower_level(),
 		}
 	}
 }

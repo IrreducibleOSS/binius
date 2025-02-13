@@ -7,8 +7,8 @@ use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
 	underlier::{UnderlierType, WithUnderlier},
-	BinaryField128b, BinaryField32b, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, RepackedExtension, TowerField,
+	BinaryField128b, BinaryField32b, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	RepackedExtension, TowerField,
 };
 use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::zeroed_vec;
@@ -24,15 +24,11 @@ use crate::{
 	witness::MultilinearExtensionIndex,
 };
 
-fn generate_poly_helper<P, F>(
+fn generate_poly_helper<P: PackedExtension<F>, F: Field>(
 	rng: &mut StdRng,
 	n_vars: usize,
 	n_multilinears: usize,
-) -> Vec<(MultilinearExtension<P>, F)>
-where
-	P: PackedField<Scalar: ExtensionField<F>>,
-	F: Field,
-{
+) -> Vec<(MultilinearExtension<P>, F)> {
 	repeat_with(|| {
 		let values = repeat_with(|| F::random(&mut *rng))
 			.take(1 << n_vars)
@@ -119,7 +115,7 @@ fn run_prove_verify_batch_test<U, F, FS, P>()
 where
 	U: UnderlierType + PackScalar<F, Packed = P>,
 	P: PackedExtension<FS, Scalar = F> + RepackedExtension<P> + PackedFieldIndexable,
-	F: TowerField + ExtensionField<FS>,
+	F: TowerField,
 	FS: TowerField,
 {
 	let rng = StdRng::seed_from_u64(0);

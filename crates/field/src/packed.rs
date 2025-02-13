@@ -20,8 +20,7 @@ use super::{
 	Error,
 };
 use crate::{
-	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, ExtensionField, Field,
-	PackedExtension,
+	arithmetic_traits::InvertOrZero, underlier::WithUnderlier, BinaryField, Field, PackedExtension,
 };
 
 /// A packed field represents a vector of underlying field elements.
@@ -371,11 +370,7 @@ pub const fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 }
 
 /// Multiply packed field element by a subfield scalar.
-pub fn mul_by_subfield_scalar<P, FS>(val: P, multiplier: FS) -> P
-where
-	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
-	FS: Field,
-{
+pub fn mul_by_subfield_scalar<P: PackedExtension<FS>, FS: Field>(val: P, multiplier: FS) -> P {
 	use crate::underlier::UnderlierType;
 
 	// This is a workaround not to make the multiplication slower in certain cases.

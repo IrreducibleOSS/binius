@@ -25,10 +25,6 @@ tracing-profile.workspace = true
 tracing.workspace = true
 
 [[example]]
-name = "groestl_circuit"
-path = "groestl_circuit.rs"
-
-[[example]]
 name = "keccakf_circuit"
 path = "keccakf_circuit.rs"
 
@@ -85,4 +81,3 @@ aes-tower = []
 bail_panic = ["binius_utils/bail_panic"]
 fp-tower = []
 rayon = ["binius_utils/rayon"]
-

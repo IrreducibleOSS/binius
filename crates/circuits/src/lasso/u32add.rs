@@ -7,14 +7,19 @@ use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
-	underlier::{UnderlierType, U1},
+	underlier::U1,
 	BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField, PackedFieldIndexable, TowerField,
 };
-use bytemuck::Pod;
 use itertools::izip;
 
 use super::lasso::lasso;
-use crate::{builder::ConstraintSystemBuilder, pack::pack};
+use crate::{
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+	pack::pack,
+};
 
 const ADD_T_LOG_SIZE: usize = 17;
 
@@ -22,32 +27,18 @@ type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 type B32 = BinaryField32b;
 
-pub fn u32add<U, F, FInput, FOutput>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u32add<FInput, FOutput>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
 	xin: OracleId,
 	yin: OracleId,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<B32>
-		+ PackScalar<BinaryField8b>
-		+ PackScalar<BinaryField1b>
-		+ PackScalar<FInput>
-		+ PackScalar<FOutput>,
-	PackedType<U, B32>: PackedFieldIndexable,
-	PackedType<U, B8>: PackedFieldIndexable,
-	B8: ExtensionField<FInput> + ExtensionField<FOutput>,
-	F: TowerField
-		+ ExtensionField<B32>
-		+ ExtensionField<BinaryField8b>
-		+ ExtensionField<FInput>
-		+ ExtensionField<FOutput>,
 	FInput: TowerField,
 	FOutput: TowerField,
-	B32: TowerField,
+	U: PackScalar<FInput> + PackScalar<FOutput>,
+	B8: ExtensionField<FInput> + ExtensionField<FOutput>,
+	F: ExtensionField<FInput> + ExtensionField<FOutput>,
 {
 	let mut several = SeveralU32add::new(builder)?;
 	let sum = several.u32add::<FInput, FOutput>(builder, name.clone(), xin, yin)?;
@@ -55,7 +46,7 @@ where
 	Ok(sum)
 }
 
-pub struct SeveralU32add<U, F> {
+pub struct SeveralU32add {
 	n_lookups: Vec<usize>,
 	lookup_t: OracleId,
 	lookups_u: Vec<[OracleId; 1]>,
@@ -64,19 +55,8 @@ pub struct SeveralU32add<U, F> {
 	_phantom: PhantomData<(U, F)>,
 }
 
-impl<U, F> SeveralU32add<U, F>
-where
-	U: UnderlierType
-		+ Pod
-		+ PackScalar<F>
-		+ PackScalar<B32>
-		+ PackScalar<BinaryField8b>
-		+ PackScalar<BinaryField1b>,
-	PackedType<U, B32>: PackedFieldIndexable,
-	PackedType<U, B8>: PackedFieldIndexable,
-	F: TowerField + ExtensionField<B32> + ExtensionField<BinaryField8b>,
-{
-	pub fn new(builder: &mut ConstraintSystemBuilder<U, F>) -> Result<Self> {
+impl SeveralU32add {
+	pub fn new(builder: &mut ConstraintSystemBuilder) -> Result<Self> {
 		let lookup_t = builder.add_committed("lookup_t", ADD_T_LOG_SIZE, B32::TOWER_LEVEL);
 
 		if let Some(witness) = builder.witness() {
@@ -111,15 +91,15 @@ where
 
 	pub fn u32add<FInput, FOutput>(
 		&mut self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		name: impl ToString,
 		xin: OracleId,
 		yin: OracleId,
 	) -> Result<OracleId, anyhow::Error>
 	where
-		U: PackScalar<FInput> + PackScalar<FOutput>,
 		FInput: TowerField,
 		FOutput: TowerField,
+		U: PackScalar<FInput> + PackScalar<FOutput>,
 		F: ExtensionField<FInput> + ExtensionField<FOutput>,
 		B8: ExtensionField<FInput> + ExtensionField<FOutput>,
 	{
@@ -143,8 +123,8 @@ where
 
 		let cin = builder.add_shifted("cin", cout, 1, 2, ShiftVariant::LogicalLeft)?;
 
-		let xin_u8 = pack::<_, _, FInput, B8>(xin, builder, "repacked xin")?;
-		let yin_u8 = pack::<_, _, FInput, B8>(yin, builder, "repacked yin")?;
+		let xin_u8 = pack::<FInput, B8>(xin, builder, "repacked xin")?;
+		let yin_u8 = pack::<FInput, B8>(yin, builder, "repacked yin")?;
 
 		let lookup_u = builder.add_linear_combination(
 			"lookup_u",
@@ -231,12 +211,12 @@ where
 
 	pub fn finalize(
 		mut self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		name: impl ToString,
 	) -> Result<()> {
 		let channel = builder.add_channel();
 		self.finalized = true;
-		lasso::<_, _, B32>(
+		lasso::<B32>(
 			builder,
 			name,
 			&self.n_lookups,
@@ -248,8 +228,70 @@ where
 	}
 }
 
-impl<U, F> Drop for SeveralU32add<U, F> {
+impl Drop for SeveralU32add {
 	fn drop(&mut self) {
 		assert!(self.finalized)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use binius_field::{BinaryField1b, BinaryField8b};
+
+	use super::SeveralU32add;
+	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+
+	#[test]
+	fn test_several_lasso_u32add() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		let mut several_u32_add = SeveralU32add::new(&mut builder).unwrap();
+
+		for log_size in [11, 12, 13] {
+			// BinaryField8b is used here because we utilize an 8x8x1→8 table
+			let add_a_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_a", log_size).unwrap();
+			let add_b_u8 = unconstrained::<BinaryField8b>(&mut builder, "add_b", log_size).unwrap();
+			let _sum = several_u32_add
+				.u32add::<BinaryField8b, BinaryField8b>(
+					&mut builder,
+					"lasso_u32add",
+					add_a_u8,
+					add_b_u8,
+				)
+				.unwrap();
+		}
+
+		several_u32_add
+			.finalize(&mut builder, "lasso_u32add")
+			.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+
+	#[test]
+	fn test_lasso_u32add() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 14;
+
+		let add_a = unconstrained::<BinaryField1b>(&mut builder, "add_a", log_size).unwrap();
+		let add_b = unconstrained::<BinaryField1b>(&mut builder, "add_b", log_size).unwrap();
+		let _sum = super::u32add::<BinaryField1b, BinaryField1b>(
+			&mut builder,
+			"lasso_u32add",
+			add_a,
+			add_b,
+		)
+		.unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 }

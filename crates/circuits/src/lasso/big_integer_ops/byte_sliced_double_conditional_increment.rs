@@ -3,14 +3,7 @@
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	tower_levels::TowerLevel,
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{tower_levels::TowerLevel, BinaryField1b, BinaryField8b};
 
 use crate::{
 	builder::ConstraintSystemBuilder,
@@ -19,12 +12,10 @@ use crate::{
 
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;
-type B16 = BinaryField16b;
-type B32 = BinaryField32b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_double_conditional_increment<U, F, Level: TowerLevel>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn byte_sliced_double_conditional_increment<Level: TowerLevel<Data<OracleId>: Sized>>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	x_in: &Level::Data<OracleId>,
 	first_carry_in: OracleId,
@@ -32,21 +23,7 @@ pub fn byte_sliced_double_conditional_increment<U, F, Level: TowerLevel>(
 	log_size: usize,
 	zero_oracle_carry: usize,
 	lookup_batch_dci: &mut LookupBatch,
-) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error>
-where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-	Level::Data<OracleId>: Sized,
-{
+) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error> {
 	if Level::WIDTH == 1 {
 		let (carry_out, sum) = u8_double_conditional_increment(
 			builder,
@@ -66,7 +43,7 @@ where
 
 	let (lower_half_x, upper_half_x) = Level::split(x_in);
 
-	let (internal_carry, lower_sum) = byte_sliced_double_conditional_increment::<_, _, Level::Base>(
+	let (internal_carry, lower_sum) = byte_sliced_double_conditional_increment::<Level::Base>(
 		builder,
 		format!("lower sum {}b", Level::Base::WIDTH),
 		lower_half_x,
@@ -77,7 +54,7 @@ where
 		lookup_batch_dci,
 	)?;
 
-	let (carry_out, upper_sum) = byte_sliced_double_conditional_increment::<_, _, Level::Base>(
+	let (carry_out, upper_sum) = byte_sliced_double_conditional_increment::<Level::Base>(
 		builder,
 		format!("upper sum {}b", Level::Base::WIDTH),
 		upper_half_x,

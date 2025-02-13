@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::ConstraintSystemBuilder,
+	builder::{types::U, ConstraintSystemBuilder},
 	collatz::{Advice, Collatz},
 };
 use binius_core::{
@@ -10,7 +10,6 @@ use binius_core::{
 	fiat_shamir::HasherChallenger,
 	tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier, BinaryField128b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -28,9 +27,6 @@ struct Args {
 	#[arg(long, default_value_t = 1, value_parser = value_parser!(u32).range(1..))]
 	log_inv_rate: u32,
 }
-
-type U = OptimalUnderlier;
-type F = BinaryField128b;
 
 const SECURITY_BITS: usize = 100;
 
@@ -59,7 +55,7 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 	let advice = collatz.init_prover();
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let boundaries = collatz.build(&mut builder, advice)?;
 
@@ -95,7 +91,7 @@ fn prove(x0: u32, log_inv_rate: usize) -> Result<(Advice, Proof), anyhow::Error>
 fn verify(x0: u32, advice: Advice, proof: Proof, log_inv_rate: usize) -> Result<(), anyhow::Error> {
 	let collatz = Collatz::new(x0);
 
-	let mut builder = ConstraintSystemBuilder::<U, F>::new();
+	let mut builder = ConstraintSystemBuilder::new();
 
 	let boundaries = collatz.build(&mut builder, advice)?;
 

@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
 	eq_ind_partial_eval, CompositionPolyOS, MultilinearExtension, MultilinearPoly,
 	MultilinearQueryRef,
@@ -47,7 +47,7 @@ impl ComputationBackend for CpuBackend {
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
-		P: PackedField<Scalar: ExtensionField<FDomain>> + PackedExtension<FDomain>,
+		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPolyOS<P>,

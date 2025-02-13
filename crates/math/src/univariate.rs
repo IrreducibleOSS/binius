@@ -223,10 +223,11 @@ impl<F: Field> InterpolationDomain<F> {
 		self.evaluation_domain.with_infinity()
 	}
 
-	pub fn extrapolate<PE>(&self, values: &[PE], x: PE::Scalar) -> Result<PE, Error>
-	where
-		PE: PackedExtension<F, Scalar: ExtensionField<F>>,
-	{
+	pub fn extrapolate<PE: PackedExtension<F>>(
+		&self,
+		values: &[PE],
+		x: PE::Scalar,
+	) -> Result<PE, Error> {
 		self.evaluation_domain.extrapolate(values, x)
 	}
 
@@ -243,11 +244,7 @@ impl<F: Field> InterpolationDomain<F> {
 
 /// Extrapolates lines through a pair of packed fields at a single point from a subfield.
 #[inline]
-pub fn extrapolate_line<P, FS>(x0: P, x1: P, z: FS) -> P
-where
-	P: PackedExtension<FS, Scalar: ExtensionField<FS>>,
-	FS: Field,
-{
+pub fn extrapolate_line<P: PackedExtension<FS>, FS: Field>(x0: P, x1: P, z: FS) -> P {
 	x0 + mul_by_subfield_scalar(x1 - x0, z)
 }
 

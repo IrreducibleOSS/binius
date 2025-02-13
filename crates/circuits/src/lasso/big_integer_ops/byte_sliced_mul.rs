@@ -3,14 +3,7 @@
 use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	tower_levels::TowerLevel,
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{tower_levels::TowerLevel, BinaryField8b};
 
 use super::{byte_sliced_add, byte_sliced_double_conditional_increment};
 use crate::{
@@ -18,14 +11,11 @@ use crate::{
 	lasso::{batch::LookupBatch, u8mul::u8mul_bytesliced},
 };
 
-type B1 = BinaryField1b;
 type B8 = BinaryField8b;
-type B16 = BinaryField16b;
-type B32 = BinaryField32b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_mul<U, F, LevelIn: TowerLevel, LevelOut: TowerLevel<Base = LevelIn>>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn byte_sliced_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = LevelIn>>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	mult_a: &LevelIn::Data<OracleId>,
 	mult_b: &LevelIn::Data<OracleId>,
@@ -34,20 +24,7 @@ pub fn byte_sliced_mul<U, F, LevelIn: TowerLevel, LevelOut: TowerLevel<Base = Le
 	lookup_batch_mul: &mut LookupBatch,
 	lookup_batch_add: &mut LookupBatch,
 	lookup_batch_dci: &mut LookupBatch,
-) -> Result<LevelOut::Data<OracleId>, anyhow::Error>
-where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<LevelOut::Data<OracleId>, anyhow::Error> {
 	if LevelIn::WIDTH == 1 {
 		let result_of_u8mul = u8mul_bytesliced(
 			builder,
@@ -72,7 +49,7 @@ where
 	let (mult_a_low, mult_a_high) = LevelIn::split(mult_a);
 	let (mult_b_low, mult_b_high) = LevelIn::split(mult_b);
 
-	let a_lo_b_lo = byte_sliced_mul::<_, _, LevelIn::Base, LevelOut::Base>(
+	let a_lo_b_lo = byte_sliced_mul::<LevelIn::Base, LevelOut::Base>(
 		builder,
 		format!("lo*lo {}b", LevelIn::Base::WIDTH),
 		mult_a_low,
@@ -83,7 +60,7 @@ where
 		lookup_batch_add,
 		lookup_batch_dci,
 	)?;
-	let a_lo_b_hi = byte_sliced_mul::<_, _, LevelIn::Base, LevelOut::Base>(
+	let a_lo_b_hi = byte_sliced_mul::<LevelIn::Base, LevelOut::Base>(
 		builder,
 		format!("lo*hi {}b", LevelIn::Base::WIDTH),
 		mult_a_low,
@@ -94,7 +71,7 @@ where
 		lookup_batch_add,
 		lookup_batch_dci,
 	)?;
-	let a_hi_b_lo = byte_sliced_mul::<_, _, LevelIn::Base, LevelOut::Base>(
+	let a_hi_b_lo = byte_sliced_mul::<LevelIn::Base, LevelOut::Base>(
 		builder,
 		format!("hi*lo {}b", LevelIn::Base::WIDTH),
 		mult_a_high,
@@ -105,7 +82,7 @@ where
 		lookup_batch_add,
 		lookup_batch_dci,
 	)?;
-	let a_hi_b_hi = byte_sliced_mul::<_, _, LevelIn::Base, LevelOut::Base>(
+	let a_hi_b_hi = byte_sliced_mul::<LevelIn::Base, LevelOut::Base>(
 		builder,
 		format!("hi*hi {}b", LevelIn::Base::WIDTH),
 		mult_a_high,
@@ -117,7 +94,7 @@ where
 		lookup_batch_dci,
 	)?;
 
-	let (karatsuba_carry_for_high_chunk, karatsuba_term) = byte_sliced_add::<_, _, LevelIn>(
+	let (karatsuba_carry_for_high_chunk, karatsuba_term) = byte_sliced_add::<LevelIn>(
 		builder,
 		format!("karastsuba addition {}b", LevelIn::WIDTH),
 		&a_lo_b_hi,
@@ -130,7 +107,7 @@ where
 	let (a_lo_b_lo_lower_half, a_lo_b_lo_upper_half) = LevelIn::split(&a_lo_b_lo);
 	let (a_hi_b_hi_lower_half, a_hi_b_hi_upper_half) = LevelIn::split(&a_hi_b_hi);
 
-	let (additional_carry_for_high_chunk, final_middle_chunk) = byte_sliced_add::<_, _, LevelIn>(
+	let (additional_carry_for_high_chunk, final_middle_chunk) = byte_sliced_add::<LevelIn>(
 		builder,
 		format!("post kartsuba middle term addition {}b", LevelIn::WIDTH),
 		&karatsuba_term,
@@ -140,7 +117,7 @@ where
 		lookup_batch_add,
 	)?;
 
-	let (_, final_high_chunk) = byte_sliced_double_conditional_increment::<_, _, LevelIn::Base>(
+	let (_, final_high_chunk) = byte_sliced_double_conditional_increment::<LevelIn::Base>(
 		builder,
 		format!("high chunk DCI {}b", LevelIn::Base::WIDTH),
 		a_hi_b_hi_upper_half,

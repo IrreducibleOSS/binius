@@ -2,37 +2,24 @@
 
 use anyhow::{ensure, Result};
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{BinaryField16b, BinaryField32b, BinaryField8b, TowerField};
 use itertools::izip;
 
 use super::batch::LookupBatch;
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{types::F, ConstraintSystemBuilder};
 
 type B8 = BinaryField8b;
 type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-pub fn u8mul_bytesliced<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u8mul_bytesliced(
+	builder: &mut ConstraintSystemBuilder,
 	lookup_batch: &mut LookupBatch,
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
 	n_multiplications: usize,
-) -> Result<[OracleId; 2], anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<[OracleId; 2], anyhow::Error> {
 	builder.push_namespace(name);
 	let log_rows = builder.log_rows([mult_a, mult_b])?;
 	let product = builder.add_committed_multiple("product", log_rows, B8::TOWER_LEVEL);
@@ -92,21 +79,14 @@ where
 	Ok(product)
 }
 
-pub fn u8mul<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u8mul(
+	builder: &mut ConstraintSystemBuilder,
 	lookup_batch: &mut LookupBatch,
 	name: impl ToString + Clone,
 	mult_a: OracleId,
 	mult_b: OracleId,
 	n_multiplications: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod + UnderlierType + PackScalar<B8> + PackScalar<B16> + PackScalar<B32> + PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name.clone());
 
 	let product_bytesliced =
