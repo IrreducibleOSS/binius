@@ -61,7 +61,7 @@ where
 	#[getset(get_copy = "pub")]
 	n_vars: usize,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
-	evaluation_points: Vec<FDomain>,
+	nontrivial_evaluation_points: Vec<FDomain>,
 	tensor_query: Option<MultilinearQuery<P>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
 	backend: &'a Backend,
@@ -78,7 +78,7 @@ where
 	pub fn new(
 		multilinears: Vec<M>,
 		claimed_sums: Vec<F>,
-		evaluation_points: Vec<FDomain>,
+		nontrivial_evaluation_points: Vec<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
@@ -87,7 +87,7 @@ where
 			multilinears,
 			&switchover_rounds,
 			claimed_sums,
-			evaluation_points,
+			nontrivial_evaluation_points,
 			backend,
 		)
 	}
@@ -101,7 +101,7 @@ where
 		multilinears: Vec<M>,
 		switchover_rounds: &[usize],
 		claimed_sums: Vec<F>,
-		evaluation_points: Vec<FDomain>,
+		nontrivial_evaluation_points: Vec<FDomain>,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
 		let n_vars = equal_n_vars_check(&multilinears)?;
@@ -123,7 +123,7 @@ where
 		Ok(Self {
 			n_vars,
 			multilinears,
-			evaluation_points,
+			nontrivial_evaluation_points,
 			tensor_query: Some(tensor_query),
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
 			backend,
@@ -260,7 +260,7 @@ where
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
 			evaluators,
-			&self.evaluation_points,
+			&self.nontrivial_evaluation_points,
 		)?)
 	}
 

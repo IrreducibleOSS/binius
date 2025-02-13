@@ -12,6 +12,7 @@ use binius_math::{
 	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use itertools::{izip, Itertools};
 use stackalloc::stackalloc_with_iter;
@@ -50,7 +51,7 @@ pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 	tensor_query: Option<MultilinearQueryRef<P>>,
 	multilinears: &[SumcheckMultilinear<P, M>],
 	evaluators: &[Evaluator],
-	evaluation_points: &[FDomain],
+	finite_evaluation_points: &[FDomain],
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
@@ -71,14 +72,19 @@ where
 		})
 		.collect_vec();
 
-	calculate_round_evals_with_access(n_vars, &later_rounds_accesses, evaluators, evaluation_points)
+	calculate_round_evals_with_access(
+		n_vars,
+		&later_rounds_accesses,
+		evaluators,
+		finite_evaluation_points,
+	)
 }
 
 fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Composition>(
 	n_vars: usize,
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
-	evaluation_points: &[FDomain],
+	nontrivial_evaluation_points: &[FDomain],
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
@@ -103,6 +109,11 @@ where
 		.map(|evaluator| evaluator.eval_point_indices())
 		.reduce(|range1, range2| range1.start.min(range2.start)..range1.end.max(range2.end))
 		.unwrap_or(0..0);
+
+	// Check that finite evaluation points  are of correct length (accounted for 0, 1 & infinity point).
+	if nontrivial_evaluation_points.len() != eval_point_indices.end.saturating_sub(3) {
+		bail!(Error::IncorrectNontrivialEvalPointsLength);
+	}
 
 	let packed_accumulators = (0..(1 << (n_vars - 1 - subcube_vars)))
 		.into_par_iter()
@@ -136,37 +147,54 @@ where
 
 				// Proceed by evaluation point first to share interpolation work between evaluators.
 				for eval_point_index in eval_point_indices.clone() {
-					let eval_point = evaluation_points[eval_point_index];
-					let eval_point_broadcast = <PackedSubfield<P, FDomain>>::broadcast(eval_point);
+					// Infinity point requires special evaluation rules
+					let is_infinity_point = eval_point_index == 2;
 
-					// Only points with indices two and above need to be interpolated.
-					if eval_point_index >= 2 {
-						for evals in multilinear_evals.iter_mut() {
-							for (&eval_0, &eval_1, eval_z) in izip!(
-								evals.evals_0.as_slice(),
-								evals.evals_1.as_slice(),
-								evals.evals_z.as_mut_slice(),
-							) {
-								// This is logically the same as calling
-								// `binius_math::univariate::extrapolate_line`, except that we do
-								// not repeat the broadcast of the subfield element to a packed
-								// subfield.
-								*eval_z = P::cast_ext(extrapolate_lines(
-									P::cast_base(eval_0),
-									P::cast_base(eval_1),
-									eval_point_broadcast,
-								));
-							}
-						}
-					}
-
+					// Multilinears are evaluated at a point t via linear interpolation:
+					//   f(z, xs) = f(0, xs) + z * (f(1, xs) - f(0, xs))
+					// The first three points are treated specially:
+					//   index 0 - z = 0   => f(z, xs) = f(0, xs)
+					//   index 1 - z = 1   => f(z, xs) = f(z, xs)
+					//   index 2 = z = inf => f(inf, xs) = high (f(0, xs) + z * (f(1, xs) - f(0, xs))) =
+					//                                   = f(1, xs) - f(0, xs)
+					//   index 3 and above - remaining finite evaluation points
 					let evals_z_iter =
 						multilinear_evals
-							.iter()
+							.iter_mut()
 							.map(|evals| match eval_point_index {
 								0 => evals.evals_0.as_slice(),
 								1 => evals.evals_1.as_slice(),
-								_ => evals.evals_z.as_slice(),
+								2 => {
+									// infinity point
+									izip!(&mut evals.evals_z, &evals.evals_0, &evals.evals_1)
+										.for_each(|(eval_z, &eval_0, &eval_1)| {
+											*eval_z = eval_1 - eval_0;
+										});
+
+									evals.evals_z.as_slice()
+								}
+								3.. => {
+									// Account for the gap occupied by the 0, 1 & infinity point
+									let eval_point =
+										nontrivial_evaluation_points[eval_point_index - 3];
+									let eval_point_broadcast =
+										<PackedSubfield<P, FDomain>>::broadcast(eval_point);
+
+									izip!(&mut evals.evals_z, &evals.evals_0, &evals.evals_1)
+										.for_each(|(eval_z, &eval_0, &eval_1)| {
+											// This is logically the same as calling
+											// `binius_math::univariate::extrapolate_line`, except that we do
+											// not repeat the broadcast of the subfield element to a packed
+											// subfield.
+											*eval_z = P::cast_ext(extrapolate_lines(
+												P::cast_base(eval_0),
+												P::cast_base(eval_1),
+												eval_point_broadcast,
+											));
+										});
+
+									evals.evals_z.as_slice()
+								}
 							});
 
 					stackalloc_with_iter(n_multilinears, evals_z_iter, |evals_z| {
@@ -182,6 +210,7 @@ where
 								.process_subcube_at_eval_point(
 									subcube_vars,
 									subcube_index,
+									is_infinity_point,
 									evals_z,
 								);
 						}

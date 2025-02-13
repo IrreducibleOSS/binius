@@ -49,7 +49,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
-		evaluation_points: &[FDomain],
+		nontrivial_evaluation_points: &[FDomain],
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
@@ -91,7 +91,7 @@ where
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
-		evaluation_points: &[FDomain],
+		nontrivial_evaluation_points: &[FDomain],
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
@@ -106,7 +106,7 @@ where
 			tensor_query,
 			multilinears,
 			evaluators,
-			evaluation_points,
+			nontrivial_evaluation_points,
 		)
 	}
 

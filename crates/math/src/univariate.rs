@@ -91,7 +91,7 @@ where
 		}
 		let points =
 			make_evaluation_points(&self.subspace, size - if with_infinity { 1 } else { 0 })?;
-		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect(), false)
+		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect(), with_infinity)
 	}
 }
 
