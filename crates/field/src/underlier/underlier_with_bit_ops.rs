@@ -206,8 +206,8 @@ where
 #[inline(always)]
 fn single_element_mask_bits_128b_lanes<T: UnderlierWithBitOps>(log_block_len: usize) -> T {
 	let mut mask = single_element_mask_bits(1 << log_block_len);
-	for i in 0..T::BITS / 128 {
-		mask |= mask << ((i + 1) * 128);
+	for i in 1..T::BITS / 128 {
+		mask |= mask << (i * 128);
 	}
 
 	mask
