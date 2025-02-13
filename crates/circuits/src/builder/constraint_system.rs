@@ -347,7 +347,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 	///
 	/// let log_size = 14;
 	///
-	/// let mut builder = ConstraintSystemBuilder::<OptimalUnderlier, BinaryField128b>::new();
+	/// let mut builder = ConstraintSystemBuilder::new();
 	/// builder.push_namespace("a");
 	/// let x = builder.add_committed("x", log_size, BinaryField1b::TOWER_LEVEL);
 	/// builder.push_namespace("b");
