@@ -10,7 +10,14 @@ use binius_field::{
 use binius_macros::arith_expr;
 use bytemuck::Pod;
 
-use crate::{arithmetic, builder::ConstraintSystemBuilder, transparent};
+use crate::{
+	arithmetic,
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+	transparent,
+};
 
 pub type Advice = (usize, usize);
 
@@ -37,9 +44,9 @@ impl Collatz {
 		(self.evens.len(), self.odds.len())
 	}
 
-	pub fn build<U, F>(
+	pub fn build(
 		self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		advice: Advice,
 	) -> Result<Vec<Boundary<F>>, anyhow::Error>
 	where
@@ -58,16 +65,12 @@ impl Collatz {
 		Ok(boundaries)
 	}
 
-	fn even<U, F>(
+	fn even(
 		&self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		channel: ChannelId,
 		count: usize,
-	) -> Result<(), anyhow::Error>
-	where
-		U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b> + Pod,
-		F: TowerField + ExtensionField<BinaryField32b>,
-	{
+	) -> Result<(), anyhow::Error> {
 		let log_1b_rows = 5 + binius_utils::checked_arithmetics::log2_ceil_usize(count);
 		let even = builder.add_committed("even", log_1b_rows, BinaryField1b::TOWER_LEVEL);
 		if let Some(witness) = builder.witness() {
@@ -90,16 +93,12 @@ impl Collatz {
 		Ok(())
 	}
 
-	fn odd<U, F>(
+	fn odd(
 		&self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
+		builder: &mut ConstraintSystemBuilder,
 		channel: ChannelId,
 		count: usize,
-	) -> Result<(), anyhow::Error>
-	where
-		U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b> + Pod,
-		F: TowerField + ExtensionField<BinaryField32b>,
-	{
+	) -> Result<(), anyhow::Error> {
 		let log_32b_rows = binius_utils::checked_arithmetics::log2_ceil_usize(count);
 		let log_1b_rows = 5 + log_32b_rows;
 
@@ -136,10 +135,7 @@ impl Collatz {
 		Ok(())
 	}
 
-	fn get_boundaries<F>(&self, channel_id: usize) -> Vec<Boundary<F>>
-	where
-		F: TowerField + From<BinaryField32b>,
-	{
+	fn get_boundaries(&self, channel_id: usize) -> Vec<Boundary<F>> {
 		vec![
 			Boundary {
 				channel_id,
@@ -179,15 +175,11 @@ pub fn collatz_orbit(x0: u32) -> Vec<u32> {
 	res
 }
 
-pub fn ensure_odd<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn ensure_odd(
+	builder: &mut ConstraintSystemBuilder,
 	input: OracleId,
 	count: usize,
-) -> Result<(), anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField,
-{
+) -> Result<(), anyhow::Error> {
 	let log_32b_rows = builder.log_rows([input])? - 5;
 	let lsb = arithmetic::u32::select_bit(builder, "lsb", input, 0)?;
 	let selector = transparent::step_down(builder, "count", log_32b_rows, count)?;
@@ -202,17 +194,13 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, BinaryField128b};
 
 	use crate::{builder::ConstraintSystemBuilder, collatz::Collatz};
 
 	#[test]
 	fn test_collatz() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder =
-			ConstraintSystemBuilder::<OptimalUnderlier, BinaryField128b>::new_with_witness(
-				&allocator,
-			);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 		let x0 = 9999999;
 

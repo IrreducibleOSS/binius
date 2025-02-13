@@ -5,11 +5,14 @@
 use std::array;
 
 use anyhow::Result;
-use binius_circuits::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+use binius_circuits::{
+	builder::{types::U, ConstraintSystemBuilder},
+	unconstrained::unconstrained,
+};
 use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b};
+use binius_field::BinaryField1b;
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -32,7 +35,6 @@ struct Args {
 const COMPRESSION_LOG_LEN: usize = 5;
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -48,15 +50,11 @@ fn main() -> Result<()> {
 	let log_n_compressions = log2_ceil_usize(args.n_compressions as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let input: [OracleId; 16] = array::try_from_fn(|i| {
-		unconstrained::<_, _, BinaryField1b>(
-			&mut builder,
-			i,
-			log_n_compressions + COMPRESSION_LOG_LEN,
-		)
+		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
 	})?;
 
 	let _state_out = binius_circuits::sha256::sha256(

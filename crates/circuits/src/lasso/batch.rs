@@ -4,12 +4,15 @@ use anyhow::Ok;
 use binius_core::oracle::OracleId;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
-	BinaryField1b, ExtensionField, PackedFieldIndexable, TowerField,
+	ExtensionField, PackedFieldIndexable, TowerField,
 };
 use itertools::Itertools;
 
 use super::lasso::lasso;
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
+};
 pub struct LookupBatch {
 	lookup_us: Vec<Vec<OracleId>>,
 	u_to_t_mappings: Vec<Vec<usize>>,
@@ -48,19 +51,16 @@ impl LookupBatch {
 		self.lookup_col_lens.push(lookup_u_col_len);
 	}
 
-	pub fn execute<U, F, FC>(
-		mut self,
-		builder: &mut ConstraintSystemBuilder<U, F>,
-	) -> Result<(), anyhow::Error>
+	pub fn execute<FC>(mut self, builder: &mut ConstraintSystemBuilder) -> Result<(), anyhow::Error>
 	where
-		U: PackScalar<FC> + PackScalar<F> + PackScalar<BinaryField1b>,
-		PackedType<U, FC>: PackedFieldIndexable,
 		FC: TowerField,
-		F: ExtensionField<FC> + TowerField,
+		U: PackScalar<FC>,
+		F: ExtensionField<FC>,
+		PackedType<U, FC>: PackedFieldIndexable,
 	{
 		let channel = builder.add_channel();
 
-		lasso::<_, _, FC>(
+		lasso::<FC>(
 			builder,
 			"batched lasso",
 			&self.lookup_col_lens,

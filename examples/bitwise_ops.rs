@@ -3,11 +3,9 @@
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{
-	arch::OptimalUnderlier, BinaryField128b, BinaryField1b, BinaryField32b, TowerField,
-};
+use binius_field::{BinaryField1b, BinaryField32b, TowerField};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_macros::arith_expr;
@@ -63,7 +61,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -80,16 +77,16 @@ fn main() -> Result<()> {
 		log2_ceil_usize(args.n_u32_ops as usize) + BinaryField32b::TOWER_LEVEL;
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	// Assuming our 32bit values have been committed as bits
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
+	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 		&mut builder,
 		"in_a",
 		log_n_1b_operations,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField1b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 		&mut builder,
 		"in_b",
 		log_n_1b_operations,

@@ -2,22 +2,23 @@
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, ExtensionField, TowerField,
+use binius_field::{as_packed_field::PackScalar, ExtensionField, TowerField};
+
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
 };
 
-use crate::builder::ConstraintSystemBuilder;
-
-pub fn pack<U, F, FInput, FOutput>(
+pub fn pack<FInput, FOutput>(
 	oracle_id: OracleId,
-	builder: &mut ConstraintSystemBuilder<U, F>,
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 ) -> Result<OracleId>
 where
-	F: TowerField + ExtensionField<FInput> + ExtensionField<FOutput>,
+	F: ExtensionField<FInput> + ExtensionField<FOutput>,
 	FInput: TowerField,
 	FOutput: TowerField + ExtensionField<FInput>,
-	U: UnderlierType + PackScalar<F> + PackScalar<FInput> + PackScalar<FOutput>,
+	U: PackScalar<FInput> + PackScalar<FOutput>,
 {
 	if FInput::TOWER_LEVEL == FOutput::TOWER_LEVEL {
 		return Ok(oracle_id);

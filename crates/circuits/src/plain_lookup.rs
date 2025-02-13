@@ -11,7 +11,10 @@ use binius_field::{
 use bytemuck::Pod;
 use itertools::izip;
 
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{
+	types::{F, U},
+	ConstraintSystemBuilder,
+};
 
 /// Checks values in `lookup_values` to be in `table`.
 ///
@@ -48,8 +51,8 @@ use crate::builder::ConstraintSystemBuilder;
 /// To rectify this we put `balancer_value` in a boundary value and push this boundary value to the channel with a multiplicity that will balance the channel.
 /// This boundary value is returned from the gadget.
 ///
-pub fn plain_lookup<U, F, FS, const LOG_MAX_MULTIPLICITY: usize>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn plain_lookup<FS, const LOG_MAX_MULTIPLICITY: usize>(
+	builder: &mut ConstraintSystemBuilder,
 	table: OracleId,
 	table_count: usize,
 	balancer_value: FS,
@@ -57,8 +60,8 @@ pub fn plain_lookup<U, F, FS, const LOG_MAX_MULTIPLICITY: usize>(
 	lookup_values_count: usize,
 ) -> Result<Boundary<F>, anyhow::Error>
 where
-	U: PackScalar<F> + PackScalar<FS> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField + ExtensionField<FS>,
+	U: PackScalar<FS> + Pod,
+	F: ExtensionField<FS>,
 	FS: TowerField + Pod,
 {
 	let n_vars = builder.log_rows([table])?;
@@ -81,14 +84,13 @@ where
 		)?);
 	}
 
-	let components: [OracleId; LOG_MAX_MULTIPLICITY] =
-		get_components::<_, _, FS, LOG_MAX_MULTIPLICITY>(
-			builder,
-			table,
-			table_count,
-			balancer_value,
-			multiplicities,
-		)?;
+	let components: [OracleId; LOG_MAX_MULTIPLICITY] = get_components::<FS, LOG_MAX_MULTIPLICITY>(
+		builder,
+		table,
+		table_count,
+		balancer_value,
+		multiplicities,
+	)?;
 
 	components
 		.into_iter()
@@ -117,16 +119,16 @@ where
 }
 
 // the `i`'th returned component holds values that are the product of the `table` values and the bits had by taking the `i`'th bit across the multiplicities.
-fn get_components<U, F, FS, const LOG_MAX_MULTIPLICITY: usize>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+fn get_components<FS, const LOG_MAX_MULTIPLICITY: usize>(
+	builder: &mut ConstraintSystemBuilder,
 	table: OracleId,
 	table_count: usize,
 	balancer_value: FS,
 	multiplicities: Option<Vec<usize>>,
 ) -> Result<[OracleId; LOG_MAX_MULTIPLICITY], anyhow::Error>
 where
-	U: PackScalar<F> + PackScalar<FS> + PackScalar<BinaryField1b> + Pod,
-	F: TowerField + ExtensionField<FS>,
+	U: PackScalar<FS>,
+	F: ExtensionField<FS>,
 	FS: TowerField + Pod,
 {
 	let n_vars = builder.log_rows([table])?;
@@ -242,14 +244,10 @@ pub mod test_plain_lookup {
 		});
 	}
 
-	pub fn test_u8_mul_lookup<U, F, const LOG_MAX_MULTIPLICITY: usize>(
-		builder: &mut ConstraintSystemBuilder<U, F>,
+	pub fn test_u8_mul_lookup<const LOG_MAX_MULTIPLICITY: usize>(
+		builder: &mut ConstraintSystemBuilder,
 		log_lookup_count: usize,
-	) -> Result<Boundary<F>, anyhow::Error>
-	where
-		U: PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b> + Pod,
-		F: TowerField + ExtensionField<BinaryField32b>,
-	{
+	) -> Result<Boundary<F>, anyhow::Error> {
 		let table_values = generate_u8_mul_table();
 		let table = transparent::make_transparent(
 			builder,
@@ -272,7 +270,7 @@ pub mod test_plain_lookup {
 			generate_random_u8_mul_claims(&mut mut_slice[0..lookup_values_count]);
 		}
 
-		let boundary = plain_lookup::<U, F, BinaryField32b, LOG_MAX_MULTIPLICITY>(
+		let boundary = plain_lookup::<BinaryField32b, LOG_MAX_MULTIPLICITY>(
 			builder,
 			table,
 			table_count,
@@ -363,5 +361,85 @@ mod count_multiplicity_tests {
 		let values = vec!["a", "b", "b", "c", "c", "c"];
 		let result = count_multiplicities(&table, &values, true).unwrap();
 		assert_eq!(result, vec![1, 2, 3]);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_core::{fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
+	use binius_hal::make_portable_backend;
+	use binius_hash::compress::Groestl256ByteCompression;
+	use binius_math::DefaultEvaluationDomainFactory;
+	use groestl_crypto::Groestl256;
+
+	use super::test_plain_lookup;
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_plain_u8_mul_lookup() {
+		const MAX_LOG_MULTIPLICITY: usize = 18;
+		let log_lookup_count = 19;
+
+		let log_inv_rate = 1;
+		let security_bits = 20;
+
+		let proof = {
+			let allocator = bumpalo::Bump::new();
+			let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+			let boundary = test_plain_lookup::test_u8_mul_lookup::<MAX_LOG_MULTIPLICITY>(
+				&mut builder,
+				log_lookup_count,
+			)
+			.unwrap();
+
+			let witness = builder.take_witness().unwrap();
+			let constraint_system = builder.build().unwrap();
+			// validating witness with `validate_witness` is too slow for large transparents like the `table`
+
+			let domain_factory = DefaultEvaluationDomainFactory::default();
+			let backend = make_portable_backend();
+
+			binius_core::constraint_system::prove::<
+				crate::builder::types::U,
+				CanonicalTowerFamily,
+				_,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+				_,
+			>(
+				&constraint_system,
+				log_inv_rate,
+				security_bits,
+				&[boundary],
+				witness,
+				&domain_factory,
+				&backend,
+			)
+			.unwrap()
+		};
+
+		// verify
+		{
+			let mut builder = ConstraintSystemBuilder::new();
+
+			let boundary = test_plain_lookup::test_u8_mul_lookup::<MAX_LOG_MULTIPLICITY>(
+				&mut builder,
+				log_lookup_count,
+			)
+			.unwrap();
+
+			let constraint_system = builder.build().unwrap();
+
+			binius_core::constraint_system::verify::<
+				crate::builder::types::U,
+				CanonicalTowerFamily,
+				Groestl256,
+				Groestl256ByteCompression,
+				HasherChallenger<Groestl256>,
+			>(&constraint_system, log_inv_rate, security_bits, &[boundary], proof)
+			.unwrap();
+		}
 	}
 }
