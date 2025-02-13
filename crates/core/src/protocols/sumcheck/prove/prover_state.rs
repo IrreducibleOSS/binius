@@ -5,7 +5,7 @@ use std::{
 	sync::atomic::{AtomicBool, Ordering},
 };
 
-use binius_field::{util::powers, ExtensionField, Field, PackedExtension, PackedField};
+use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
 	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
@@ -70,7 +70,7 @@ where
 impl<'a, FDomain, F, P, M, Backend> ProverState<'a, FDomain, P, M, Backend>
 where
 	FDomain: Field,
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,

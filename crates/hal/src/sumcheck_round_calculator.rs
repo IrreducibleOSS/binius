@@ -6,7 +6,7 @@
 
 use std::iter;
 
-use binius_field::{ExtensionField, Field, PackedExtension, PackedField, PackedSubfield};
+use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
 use binius_math::{
 	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
@@ -54,7 +54,7 @@ pub(crate) fn calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
-	F: Field + ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
@@ -82,7 +82,7 @@ fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Compositi
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
-	F: ExtensionField<FDomain>,
+	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Access: SumcheckMultilinearAccess<P> + Sync,

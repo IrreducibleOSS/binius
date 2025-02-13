@@ -2,7 +2,7 @@
 
 use binius_utils::checked_arithmetics::log2_strict_usize;
 
-use super::{packed::PackedField, ExtensionField, PackedFieldIndexable, RepackedExtension};
+use super::{packed::PackedField, Field, PackedFieldIndexable, RepackedExtension};
 
 /// Error thrown when a transpose operation fails.
 #[derive(Clone, thiserror::Error, Debug)]
@@ -76,7 +76,7 @@ pub fn square_transpose<P: PackedField>(log_n: usize, elems: &mut [P]) -> Result
 pub fn transpose_scalars<P, FE, PE>(src: &[PE], dst: &mut [P]) -> Result<(), Error>
 where
 	P: PackedField,
-	FE: ExtensionField<P::Scalar>,
+	FE: Field,
 	PE: PackedFieldIndexable<Scalar = FE> + RepackedExtension<P>,
 {
 	let len = src.len();

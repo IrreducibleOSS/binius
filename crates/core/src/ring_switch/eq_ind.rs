@@ -145,7 +145,7 @@ where
 impl<FSub, F> MultivariatePoly<F> for RingSwitchEqInd<FSub, F>
 where
 	FSub: TowerField,
-	F: TowerField + PackedField<Scalar = F> + ExtensionField<FSub> + PackedExtension<FSub>,
+	F: TowerField + PackedField<Scalar = F> + PackedExtension<FSub>,
 {
 	fn n_vars(&self) -> usize {
 		self.z_vals.len()

@@ -160,15 +160,11 @@ where
 	///
 	/// * If the `code` buffer does not have capacity for `len() << log_batch_size` field elements.
 	#[instrument(skip_all, level = "debug")]
-	pub fn encode_ext_batch_inplace<PE>(
+	pub fn encode_ext_batch_inplace<PE: RepackedExtension<P>>(
 		&self,
 		code: &mut [PE],
 		log_batch_size: usize,
-	) -> Result<(), Error>
-	where
-		PE: RepackedExtension<P>,
-		PE::Scalar: ExtensionField<<P as PackedField>::Scalar>,
-	{
+	) -> Result<(), Error> {
 		self.encode_batch_inplace(PE::cast_bases_mut(code), log_batch_size + PE::Scalar::LOG_DEGREE)
 	}
 }

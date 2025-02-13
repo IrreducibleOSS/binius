@@ -45,19 +45,19 @@ pub trait AdditiveNTT<P: PackedField> {
 		log_batch_size: usize,
 	) -> Result<(), Error>;
 
-	fn forward_transform_ext<PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PE: RepackedExtension<P>,
-		PE::Scalar: ExtensionField<P::Scalar>,
-	{
+	fn forward_transform_ext<PE: RepackedExtension<P>>(
+		&self,
+		data: &mut [PE],
+		coset: u32,
+	) -> Result<(), Error> {
 		self.forward_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
 	}
 
-	fn inverse_transform_ext<PE>(&self, data: &mut [PE], coset: u32) -> Result<(), Error>
-	where
-		PE: RepackedExtension<P>,
-		PE::Scalar: ExtensionField<P::Scalar>,
-	{
+	fn inverse_transform_ext<PE: RepackedExtension<P>>(
+		&self,
+		data: &mut [PE],
+		coset: u32,
+	) -> Result<(), Error> {
 		self.inverse_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
 	}
 }

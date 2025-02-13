@@ -59,7 +59,7 @@ where
 ///
 /// fn cast_then_iter<'a, F, PE>(packed: &'a PE) -> impl Iterator<Item=F> + 'a
 ///     where
-///         PE: PackedExtension<F, Scalar: ExtensionField<F>>,
+///         PE: PackedExtension<F>,
 ///         F: Field,
 /// {
 ///     PE::cast_base_ref(packed).into_iter()
@@ -71,9 +71,8 @@ where
 /// In order for the above relation to be guaranteed, the memory representation of
 /// `PackedExtensionField` element must be the same as a slice of the underlying `PackedField`
 /// element.
-pub trait PackedExtension<FS: Field>: PackedField
-where
-	Self::Scalar: ExtensionField<FS>,
+pub trait PackedExtension<FS: Field>:
+	PackedField<Scalar: ExtensionField<FS>> + WithUnderlier<Underlier: PackScalar<FS>>
 {
 	type PackedSubfield: PackedField<Scalar = FS>;
 
@@ -187,9 +186,7 @@ where
 /// This trait is a shorthand for the case `PackedExtension<P::Scalar, PackedSubfield = P>` which is a
 /// quite common case in our codebase.
 pub trait RepackedExtension<P: PackedField>:
-	PackedExtension<P::Scalar, PackedSubfield = P>
-where
-	Self::Scalar: ExtensionField<P::Scalar>,
+	PackedField<Scalar: ExtensionField<P::Scalar>> + PackedExtension<P::Scalar, PackedSubfield = P>
 {
 }
 
@@ -202,10 +199,8 @@ where
 
 /// This trait adds shortcut methods for the case `PackedExtension<F, PackedSubfield: PackedFieldIndexable>` which is a
 /// quite common case in our codebase.
-pub trait PackedExtensionIndexable<F: Field>: PackedExtension<F>
-where
-	Self::Scalar: ExtensionField<F>,
-	Self::PackedSubfield: PackedFieldIndexable,
+pub trait PackedExtensionIndexable<F: Field>:
+	PackedExtension<F, PackedSubfield: PackedFieldIndexable> + PackedField<Scalar: ExtensionField<F>>
 {
 	fn unpack_base_scalars(packed: &[Self]) -> &[F] {
 		Self::PackedSubfield::unpack_scalars(Self::cast_bases(packed))
@@ -219,7 +214,7 @@ where
 impl<F, PT> PackedExtensionIndexable<F> for PT
 where
 	F: Field,
-	PT: PackedExtension<F, Scalar: ExtensionField<F>, PackedSubfield: PackedFieldIndexable>,
+	PT: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
 {
 }
 

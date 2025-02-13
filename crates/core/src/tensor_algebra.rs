@@ -123,12 +123,7 @@ where
 	}
 }
 
-impl<F, FE> TensorAlgebra<F, FE>
-where
-	F: Field,
-	FE: ExtensionField<F> + PackedExtension<F>,
-	FE::Scalar: ExtensionField<F>,
-{
+impl<F: Field, FE: ExtensionField<F> + PackedExtension<F>> TensorAlgebra<F, FE> {
 	/// Multiply by an element from the vertical subring.
 	///
 	/// Internally, this performs a transpose, vertical scaling, then transpose sequence. If
