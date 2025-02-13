@@ -29,7 +29,7 @@ jobs:
         actions: write
       runs-on: ${{ github.event_name == 'push' && github.ref_name == 'main' && 'c7a-4xlarge' || github.event.inputs.ec2_instance_type }}
       steps:
-        - name: Checkout Private GitLab Repository
+        - name: Checkout Repository
           uses: actions/checkout@v4
         - name: Setup Bencher
           uses: bencherdev/bencher@main
