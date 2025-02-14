@@ -115,7 +115,7 @@ where
 			.iter()
 			.enumerate()
 			.for_each(|(i, multiplicity)| {
-				for j in 0..LOG_MAX_MULTIPLICITY {
+				(0..LOG_MAX_MULTIPLICITY).for_each(|j| {
 					let bit_set = multiplicity & (1 << j) != 0;
 					set_packed_slice(
 						packed_bit_cols[j],
@@ -125,7 +125,7 @@ where
 							false => BinaryField1b::ZERO,
 						},
 					);
-				}
+				})
 			});
 	}
 
