@@ -20,19 +20,16 @@ use crate::{
 type B8 = BinaryField8b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_modular_mul<
-	LevelIn: TowerLevel<OracleId>,
-	LevelOut: TowerLevel<OracleId, Base = LevelIn>,
->(
+pub fn byte_sliced_modular_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = LevelIn>>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	mult_a: &LevelIn::Data,
-	mult_b: &LevelIn::Data,
+	mult_a: &LevelIn::Data<OracleId>,
+	mult_b: &LevelIn::Data<OracleId>,
 	modulus_input: &[u8],
 	log_size: usize,
 	zero_byte_oracle: OracleId,
 	zero_carry_oracle: OracleId,
-) -> Result<LevelIn::Data, anyhow::Error> {
+) -> Result<LevelIn::Data<OracleId>, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t_mul = mul_lookup(builder, "mul table")?;

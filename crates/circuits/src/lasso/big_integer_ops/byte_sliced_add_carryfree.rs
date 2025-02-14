@@ -15,16 +15,16 @@ type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_add_carryfree<Level: TowerLevel<OracleId, Data: Sized>>(
+pub fn byte_sliced_add_carryfree<Level: TowerLevel<Data<OracleId>: Sized>>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	x_in: &Level::Data,
-	y_in: &Level::Data,
+	x_in: &Level::Data<OracleId>,
+	y_in: &Level::Data<OracleId>,
 	carry_in: OracleId,
 	log_size: usize,
 	lookup_batch_add: &mut LookupBatch,
 	lookup_batch_add_carryfree: &mut LookupBatch,
-) -> Result<Level::Data, anyhow::Error> {
+) -> Result<Level::Data<OracleId>, anyhow::Error> {
 	if Level::WIDTH == 1 {
 		let sum = u8add_carryfree(
 			builder,

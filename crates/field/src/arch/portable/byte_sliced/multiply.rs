@@ -2,25 +2,28 @@
 use crate::{
 	tower_levels::{TowerLevel, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
-	AESTowerField8b, PackedAESBinaryField32x8b, PackedField,
+	AESTowerField8b, PackedField,
 };
 
 #[inline(always)]
-pub fn mul<Level: TowerLevel<PackedAESBinaryField32x8b>>(
-	field_element_a: &Level::Data,
-	field_element_b: &Level::Data,
-	destination: &mut Level::Data,
+pub fn mul<P: PackedField<Scalar = AESTowerField8b>, Level: TowerLevel>(
+	field_element_a: &Level::Data<P>,
+	field_element_b: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
 ) {
-	let base_alpha =
-		PackedAESBinaryField32x8b::from_scalars([AESTowerField8b::from_underlier(0xd3); 32]);
-	mul_main::<true, Level>(field_element_a, field_element_b, destination, base_alpha);
+	let base_alpha = P::broadcast(AESTowerField8b::from_underlier(0xd3));
+	mul_main::<true, P, Level>(field_element_a, field_element_b, destination, base_alpha);
 }
 
 #[inline(always)]
-pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
-	field_element: &Level::Data,
-	destination: &mut Level::Data,
-	base_alpha: PackedAESBinaryField32x8b,
+pub fn mul_alpha<
+	const WRITING_TO_ZEROS: bool,
+	P: PackedField<Scalar = AESTowerField8b>,
+	Level: TowerLevel,
+>(
+	field_element: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
+	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
@@ -49,15 +52,19 @@ pub fn mul_alpha<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinary
 		Level::Base::add_into(a1, result0);
 	}
 	// Copy alpha*a1 into upper half
-	mul_alpha::<false, Level::Base>(a1, result1, base_alpha);
+	mul_alpha::<false, P, Level::Base>(a1, result1, base_alpha);
 }
 
 #[inline(always)]
-pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryField32x8b>>(
-	field_element_a: &Level::Data,
-	field_element_b: &Level::Data,
-	destination: &mut Level::Data,
-	base_alpha: PackedAESBinaryField32x8b,
+pub fn mul_main<
+	const WRITING_TO_ZEROS: bool,
+	P: PackedField<Scalar = AESTowerField8b>,
+	Level: TowerLevel,
+>(
+	field_element_a: &Level::Data<P>,
+	field_element_b: &Level::Data<P>,
+	destination: &mut Level::Data<P>,
+	base_alpha: P,
 ) {
 	if Level::WIDTH == 1 {
 		if WRITING_TO_ZEROS {
@@ -78,21 +85,19 @@ pub fn mul_main<const WRITING_TO_ZEROS: bool, Level: TowerLevel<PackedAESBinaryF
 
 	let xored_halves_b = Level::Base::sum(b0, b1);
 
-	let mut z2_z0 = <<Level as TowerLevel<PackedAESBinaryField32x8b>>::Base as TowerLevel<
-		PackedAESBinaryField32x8b,
-	>>::default();
+	let mut z2_z0 = <<Level as TowerLevel>::Base as TowerLevel>::default();
 
 	// z2_z0 = z2
-	mul_main::<true, Level::Base>(a1, b1, &mut z2_z0, base_alpha);
+	mul_main::<true, P, Level::Base>(a1, b1, &mut z2_z0, base_alpha);
 
 	// result1 = z2 * alpha
-	mul_alpha::<WRITING_TO_ZEROS, Level::Base>(&z2_z0, result1, base_alpha);
+	mul_alpha::<WRITING_TO_ZEROS, P, Level::Base>(&z2_z0, result1, base_alpha);
 
 	// z2_z0 = z2 + z0
-	mul_main::<false, Level::Base>(a0, b0, &mut z2_z0, base_alpha);
+	mul_main::<false, P, Level::Base>(a0, b0, &mut z2_z0, base_alpha);
 
 	// result1 = z1 + z2 * alpha
-	mul_main::<false, Level::Base>(&xored_halves_a, &xored_halves_b, result1, base_alpha);
+	mul_main::<false, P, Level::Base>(&xored_halves_a, &xored_halves_b, result1, base_alpha);
 
 	// result1 = z2+ z0+ z1 + z2 * alpha
 	Level::Base::add_into(&z2_z0, result1);
