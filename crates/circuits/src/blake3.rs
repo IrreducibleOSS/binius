@@ -80,7 +80,8 @@ where
 {
 	builder.push_namespace(name);
 
-	let a1 = arithmetic::u32::add3(builder, "a_in + b_in + mx", a_in, b_in, mx, Flags::Unchecked)?;
+	let ab = arithmetic::u32::add(builder, "a_in + b_in", a_in, b_in, Flags::Unchecked)?;
+	let a1 = arithmetic::u32::add(builder, "a_in + b_in + mx", ab, mx, Flags::Unchecked)?;
 
 	let d1 = xor_rotate_right(builder, "(d_in ^ a1).rotate_right(16)", log_size, d_in, a1, 16u32)?;
 
@@ -88,7 +89,8 @@ where
 
 	let b1 = xor_rotate_right(builder, "(b_in ^ c1).rotate_right(12)", log_size, b_in, c1, 12u32)?;
 
-	let a2 = arithmetic::u32::add3(builder, "a1 + b1 + my_in", a1, b1, my, Flags::Unchecked)?;
+	let a1b1 = arithmetic::u32::add(builder, "a1 + b1", a1, b1, Flags::Unchecked)?;
+	let a2 = arithmetic::u32::add(builder, "a1 + b1 + my_in", a1b1, my, Flags::Unchecked)?;
 
 	let d2 = xor_rotate_right(builder, "(d1 ^ a2).rotate_right(8)", log_size, d1, a2, 8u32)?;
 
