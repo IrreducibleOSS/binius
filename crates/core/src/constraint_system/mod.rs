@@ -1,17 +1,19 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 pub mod channel;
-mod common;
+pub mod common;
 pub mod error;
-mod prove;
+pub mod prove;
 pub mod validate;
-mod verify;
+pub mod verify;
 
 use binius_field::{BinaryField128b, TowerField};
 use binius_macros::SerializeBytes;
 use binius_utils::{DeserializeBytes, SerializationError, SerializationMode};
 use channel::{ChannelId, Flush};
+pub use prove as prover;
 pub use prove::prove;
+pub use verify as verifier;
 pub use verify::verify;
 
 use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
