@@ -31,7 +31,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub max_channel_id: ChannelId,
 }
 
-impl binius_field::DeserializeCanonical for ConstraintSystem<BinaryField128b> {
+impl DeserializeCanonical for ConstraintSystem<BinaryField128b> {
 	fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, serialization::Error>
 	where
 		Self: Sized,

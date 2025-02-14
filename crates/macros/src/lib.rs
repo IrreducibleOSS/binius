@@ -279,6 +279,11 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 	.into()
 }
 
+/// Use on an impl block for MultivariatePoly, to automatically implement erased_serialize_canonical.
+///
+/// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data type.
+///
+/// This prefix can be used to figure out which concrete data type it should use for deserialization later.
 #[proc_macro_attribute]
 pub fn erased_serialize_canonical(_attr: TokenStream, item: TokenStream) -> TokenStream {
 	let mut item_impl: ItemImpl = parse_macro_input!(item);
