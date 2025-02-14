@@ -98,25 +98,21 @@ pub fn or(
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::BinaryField1b;
 
-	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+	use crate::{builder::test_utils::test_circuit, unconstrained::unconstrained};
 
 	#[test]
 	fn test_bitwise() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 6;
-		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
-		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _and = super::and(&mut builder, "and", a, b).unwrap();
-		let _xor = super::xor(&mut builder, "xor", a, b).unwrap();
-		let _or = super::or(&mut builder, "or", a, b).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let log_size = 6;
+			let a = unconstrained::<BinaryField1b>(builder, "a", log_size)?;
+			let b = unconstrained::<BinaryField1b>(builder, "b", log_size)?;
+			let _and = super::and(builder, "and", a, b)?;
+			let _xor = super::xor(builder, "xor", a, b)?;
+			let _or = super::or(builder, "or", a, b)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }
