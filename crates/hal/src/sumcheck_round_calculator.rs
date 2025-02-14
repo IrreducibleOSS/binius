@@ -71,7 +71,47 @@ where
 		})
 		.collect_vec();
 
-	calculate_round_evals_with_access(n_vars, &later_rounds_accesses, evaluators, evaluation_points)
+	calculate_round_evals_with_access(
+		n_vars,
+		&later_rounds_accesses,
+		evaluators,
+		evaluation_points,
+		false,
+	)
+}
+
+pub(crate) fn high_to_low_calculate_round_evals<FDomain, F, P, M, Evaluator, Composition>(
+	n_vars: usize,
+	tensor_query: Option<MultilinearQueryRef<P>>,
+	multilinears: &[SumcheckMultilinear<P, M>],
+	evaluators: &[Evaluator],
+	evaluation_points: &[FDomain],
+) -> Result<Vec<RoundEvals<F>>, Error>
+where
+	FDomain: Field,
+	F: Field + ExtensionField<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
+	Composition: CompositionPolyOS<P>,
+{
+	let empty_query = MultilinearQuery::with_capacity(0);
+	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
+
+	let later_rounds_accesses = multilinears
+		.iter()
+		.map(|multilinear| LargeFieldAccess {
+			multilinear,
+			tensor_query,
+		})
+		.collect_vec();
+	calculate_round_evals_with_access(
+		n_vars,
+		&later_rounds_accesses,
+		evaluators,
+		evaluation_points,
+		true,
+	)
 }
 
 fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Composition>(
@@ -79,6 +119,7 @@ fn calculate_round_evals_with_access<FDomain, F, P, Evaluator, Access, Compositi
 	multilinears: &[Access],
 	evaluators: &[Evaluator],
 	evaluation_points: &[FDomain],
+	is_high_to_low: bool,
 ) -> Result<Vec<RoundEvals<F>>, Error>
 where
 	FDomain: Field,
@@ -93,9 +134,9 @@ where
 		.iter()
 		.map(|evaluator| evaluator.eval_point_indices().len());
 
-	/// Process batches of vertices in parallel, accumulating the round evaluations.
-	const MAX_SUBCUBE_VARS: usize = 5;
-	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars) - 1;
+	// Process batches of vertices in parallel, accumulating the round evaluations.
+	let max_subcube_vars: usize = (P::LOG_WIDTH + 1).max(5);
+	let subcube_vars = max_subcube_vars.min(n_vars) - 1;
 
 	// Compute the union of all evaluation point index ranges.
 	let eval_point_indices = evaluators
@@ -107,7 +148,14 @@ where
 	let packed_accumulators = (0..(1 << (n_vars - 1 - subcube_vars)))
 		.into_par_iter()
 		.fold(
-			|| ParFoldStates::new(n_multilinears, n_round_evals.clone(), subcube_vars),
+			|| {
+				ParFoldStates::new(
+					n_multilinears,
+					n_round_evals.clone(),
+					subcube_vars,
+					is_high_to_low,
+				)
+			},
 			|mut par_fold_states, subcube_index| {
 				let ParFoldStates {
 					multilinear_evals,
@@ -116,22 +164,35 @@ where
 				} = &mut par_fold_states;
 
 				for (multilinear, evals) in iter::zip(multilinears, multilinear_evals.iter_mut()) {
-					multilinear
-						.subcube_evaluations(
-							subcube_vars + 1,
-							subcube_index,
-							interleaved_evals.as_mut_slice(),
-						)
-						.expect("indices are in range");
+					if is_high_to_low {
+						multilinear
+							.subcube_evaluations(subcube_vars, subcube_index, &mut evals.evals_0)
+							.expect("indices are in range");
+						multilinear
+							.subcube_evaluations(
+								subcube_vars,
+								(1 << (n_vars - 1 - subcube_vars)) + subcube_index,
+								&mut evals.evals_1,
+							)
+							.expect("indices are in range");
+					} else {
+						multilinear
+							.subcube_evaluations(
+								subcube_vars + 1,
+								subcube_index,
+								interleaved_evals.as_mut_slice(),
+							)
+							.expect("indices are in range");
 
-					// Returned slice has interleaved 0/1 evals due to round variable
-					// being the lowermost one. Deinterleave into two slices.
-					deinterleave(subcube_vars, interleaved_evals.as_slice()).for_each(
-						|(i, even, odd)| {
-							evals.evals_0[i] = even;
-							evals.evals_1[i] = odd;
-						},
-					);
+						// Returned slice has interleaved 0/1 evals due to round variable
+						// being the lowermost one. Deinterleave into two slices.
+						deinterleave(subcube_vars, interleaved_evals.as_slice()).for_each(
+							|(i, even, odd)| {
+								evals.evals_0[i] = even;
+								evals.evals_1[i] = odd;
+							},
+						);
+					}
 				}
 
 				// Proceed by evaluation point first to share interpolation work between evaluators.
@@ -268,6 +329,7 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 		n_multilinears: usize,
 		n_round_evals: impl Iterator<Item = usize>,
 		subcube_vars: usize,
+		is_high_to_low: bool,
 	) -> Self {
 		Self {
 			multilinear_evals: (0..n_multilinears)
@@ -275,7 +337,11 @@ impl<PBase: PackedField, P: PackedField> ParFoldStates<PBase, P> {
 				.collect(),
 			interleaved_evals: vec![
 				PBase::default();
-				1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)
+				if is_high_to_low {
+					0
+				} else {
+					1 << (subcube_vars + 1).saturating_sub(PBase::LOG_WIDTH)
+				}
 			],
 			round_evals: n_round_evals
 				.map(|n_round_evals| zeroed_vec(n_round_evals))

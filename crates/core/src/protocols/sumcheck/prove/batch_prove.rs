@@ -221,3 +221,25 @@ where
 
 	Ok(output)
 }
+
+#[instrument(skip_all, name = "sumcheck::high_to_low_batch_prove")]
+pub fn high_to_low_batch_prove<F, Prover, Challenger_>(
+	provers: Vec<Prover>,
+	transcript: &mut ProverTranscript<Challenger_>,
+) -> Result<BatchSumcheckOutput<F>, Error>
+where
+	F: TowerField,
+	Prover: SumcheckProver<F>,
+	Challenger_: Challenger,
+{
+	let start = BatchProveStart {
+		batch_coeffs: Vec::new(),
+		reduction_provers: Vec::<Prover>::new(),
+	};
+
+	batch_prove_with_start(start, provers, transcript).map(|mut res| {
+		// Challenges must be reverted because folding happens in reverse order.
+		res.challenges.reverse();
+		res
+	})
+}
