@@ -13,7 +13,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	arch::{
-		binary_utils::{as_array_mut, make_func_to_i8},
+		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
 			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
@@ -420,39 +420,41 @@ impl UnderlierWithBitOps for M128 {
 	#[inline(always)]
 	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: WithUnderlier,
-		T::Underlier: NumCast<Self>,
+		T: UnderlierType + NumCast<Self>,
 	{
-		match T::Underlier::BITS {
-			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::Underlier::BITS;
-				let chunk_64 = unsafe {
-					if i >= elements_in_64 {
-						_mm_extract_epi64(self.0, 1)
-					} else {
-						_mm_extract_epi64(self.0, 0)
-					}
-				};
+		match T::BITS {
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mut value_u8 = as_array_ref::<_, u8, 16, _>(self, |arr| unsafe {
+					*arr.get_unchecked(i / elements_in_8)
+				});
 
-				let result_64 = if T::Underlier::BITS == 64 {
-					chunk_64
-				} else {
-					let ones = ((1u128 << T::Underlier::BITS) - 1) as u64;
-					let val_64 = (chunk_64 as u64)
-						>> (T::Underlier::BITS
-							* (if i >= elements_in_64 {
-								i - elements_in_64
-							} else {
-								i
-							})) & ones;
+				let shift = (i % elements_in_8) * T::BITS;
+				value_u8 >>= shift;
 
-					val_64 as i64
-				};
-				T::from_underlier(T::Underlier::num_cast_from(Self(unsafe {
-					_mm_set_epi64x(0, result_64)
-				})))
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
 			}
-			128 => T::from_underlier(T::Underlier::num_cast_from(*self)),
+			8 => {
+				let value_u8 =
+					as_array_ref::<_, u8, 16, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+			}
+			16 => {
+				let value_u16 =
+					as_array_ref::<_, u16, 8, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u16)))
+			}
+			32 => {
+				let value_u32 =
+					as_array_ref::<_, u32, 4, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u32)))
+			}
+			64 => {
+				let value_u64 =
+					as_array_ref::<_, u64, 2, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u64)))
+			}
+			128 => T::from_underlier(T::num_cast_from(*self)),
 			_ => panic!("unsupported bit count"),
 		}
 	}
@@ -471,23 +473,23 @@ impl UnderlierWithBitOps for M128 {
 				let val = u8::num_cast_from(Self::from(val)) << shift;
 				let mask = mask << shift;
 
-				as_array_mut::<_, u8, 16>(self, |array| {
-					let element = &mut array[i / elements_in_8];
+				as_array_mut::<_, u8, 16>(self, |array| unsafe {
+					let element = array.get_unchecked_mut(i / elements_in_8);
 					*element &= !mask;
 					*element |= val;
 				});
 			}
-			8 => as_array_mut::<_, u8, 16>(self, |array| {
-				array[i] = u8::num_cast_from(Self::from(val));
+			8 => as_array_mut::<_, u8, 16>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
 			}),
-			16 => as_array_mut::<_, u16, 8>(self, |array| {
-				array[i] = u16::num_cast_from(Self::from(val));
+			16 => as_array_mut::<_, u16, 8>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
 			}),
-			32 => as_array_mut::<_, u32, 4>(self, |array| {
-				array[i] = u32::num_cast_from(Self::from(val));
+			32 => as_array_mut::<_, u32, 4>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
 			}),
-			64 => as_array_mut::<_, u64, 2>(self, |array| {
-				array[i] = u64::num_cast_from(Self::from(val));
+			64 => as_array_mut::<_, u64, 2>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
 			128 => {
 				*self = Self::from(val);
