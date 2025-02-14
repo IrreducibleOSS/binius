@@ -193,24 +193,17 @@ pub fn ensure_odd(
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
-
-	use crate::{builder::ConstraintSystemBuilder, collatz::Collatz};
+	use crate::{builder::test_utils::test_circuit, collatz::Collatz};
 
 	#[test]
 	fn test_collatz() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let x0 = 9999999;
-
-		let mut collatz = Collatz::new(x0);
-		let advice = collatz.init_prover();
-
-		let boundaries = collatz.build(&mut builder, advice).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let x0 = 9999999;
+			let mut collatz = Collatz::new(x0);
+			let advice = collatz.init_prover();
+			let boundaries = collatz.build(builder, advice)?;
+			Ok(boundaries)
+		})
+		.unwrap();
 	}
 }

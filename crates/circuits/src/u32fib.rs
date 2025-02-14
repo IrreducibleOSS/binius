@@ -74,20 +74,15 @@ pub fn u32fib(
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
-
-	use crate::builder::ConstraintSystemBuilder;
+	use crate::builder::test_utils::test_circuit;
 
 	#[test]
 	fn test_u32fib() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size_1b = 14;
-		let _ = super::u32fib(&mut builder, "u32fib", log_size_1b).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let log_size_1b = 14;
+			let _ = super::u32fib(builder, "u32fib", log_size_1b)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }
