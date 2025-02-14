@@ -36,14 +36,14 @@ where
 }
 
 // Same as 'unconstrained' but uses some pre-defined values instead of a random ones
-pub fn fixed_u32<U, F, FS>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn fixed_u32<FS>(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 	value: Vec<u32>,
 ) -> Result<OracleId, anyhow::Error>
 where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<FS>,
+	U: PackScalar<FS> + Pod,
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {

@@ -1,27 +1,22 @@
 use binius_core::oracle::{OracleId, ShiftVariant};
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
-};
+use binius_field::{BinaryField1b, Field};
 use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::Pod;
 
 use crate::{arithmetic, arithmetic::Flags, builder::ConstraintSystemBuilder};
+use crate::builder::types::F;
 
 type F1 = BinaryField1b;
 const LOG_U32_BITS: usize = checked_log_2(32);
 
 // Gadget that performs two u32 variables XOR and then rotates the result
-fn xor_rotate_right<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+fn xor_rotate_right(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
 	a: OracleId,
 	b: OracleId,
 	rotate_right_offset: u32,
 ) -> Result<OracleId, anyhow::Error>
-where
-	U: PackScalar<F> + PackScalar<F1> + Pod,
-	F: TowerField,
 {
 	assert!(rotate_right_offset <= 32);
 
@@ -63,8 +58,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn blake3_g<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn blake3_g(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	a_in: OracleId,
 	b_in: OracleId,
@@ -74,9 +69,6 @@ pub fn blake3_g<U, F>(
 	my: OracleId,
 	log_size: usize,
 ) -> Result<[OracleId; 4], anyhow::Error>
-where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b>,
-	F: TowerField,
 {
 	builder.push_namespace(name);
 
@@ -106,7 +98,7 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_core::constraint_system::validate::validate_witness;
-	use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField1b};
+	use binius_field::BinaryField1b;
 	use binius_maybe_rayon::prelude::*;
 
 	use crate::{
@@ -115,8 +107,6 @@ mod tests {
 		unconstrained::{fixed_u32, unconstrained},
 	};
 
-	type U = OptimalUnderlier;
-	type F128 = BinaryField128b;
 	type F1 = BinaryField1b;
 
 	const LOG_SIZE: usize = 5;
@@ -160,14 +150,14 @@ mod tests {
 		let size = 1 << LOG_SIZE;
 
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F128>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let a_in = fixed_u32::<U, F128, F1>(&mut builder, "a", LOG_SIZE, vec![a; size]).unwrap();
-		let b_in = fixed_u32::<U, F128, F1>(&mut builder, "b", LOG_SIZE, vec![b; size]).unwrap();
-		let c_in = fixed_u32::<U, F128, F1>(&mut builder, "c", LOG_SIZE, vec![c; size]).unwrap();
-		let d_in = fixed_u32::<U, F128, F1>(&mut builder, "d", LOG_SIZE, vec![d; size]).unwrap();
-		let mx_in = fixed_u32::<U, F128, F1>(&mut builder, "mx", LOG_SIZE, vec![mx; size]).unwrap();
-		let my_in = fixed_u32::<U, F128, F1>(&mut builder, "my", LOG_SIZE, vec![my; size]).unwrap();
+		let a_in = fixed_u32::<F1>(&mut builder, "a", LOG_SIZE, vec![a; size]).unwrap();
+		let b_in = fixed_u32::<F1>(&mut builder, "b", LOG_SIZE, vec![b; size]).unwrap();
+		let c_in = fixed_u32::<F1>(&mut builder, "c", LOG_SIZE, vec![c; size]).unwrap();
+		let d_in = fixed_u32::<F1>(&mut builder, "d", LOG_SIZE, vec![d; size]).unwrap();
+		let mx_in = fixed_u32::<F1>(&mut builder, "mx", LOG_SIZE, vec![mx; size]).unwrap();
+		let my_in = fixed_u32::<F1>(&mut builder, "my", LOG_SIZE, vec![my; size]).unwrap();
 
 		let output =
 			blake3_g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
@@ -197,14 +187,14 @@ mod tests {
 	#[test]
 	fn test_random_input() {
 		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::<U, F128>::new_with_witness(&allocator);
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let a_in = unconstrained::<U, F128, F1>(&mut builder, "a", LOG_SIZE).unwrap();
-		let b_in = unconstrained::<U, F128, F1>(&mut builder, "b", LOG_SIZE).unwrap();
-		let c_in = unconstrained::<U, F128, F1>(&mut builder, "c", LOG_SIZE).unwrap();
-		let d_in = unconstrained::<U, F128, F1>(&mut builder, "d", LOG_SIZE).unwrap();
-		let mx_in = unconstrained::<U, F128, F1>(&mut builder, "mx", LOG_SIZE).unwrap();
-		let my_in = unconstrained::<U, F128, F1>(&mut builder, "my", LOG_SIZE).unwrap();
+		let a_in = unconstrained::<F1>(&mut builder, "a", LOG_SIZE).unwrap();
+		let b_in = unconstrained::<F1>(&mut builder, "b", LOG_SIZE).unwrap();
+		let c_in = unconstrained::<F1>(&mut builder, "c", LOG_SIZE).unwrap();
+		let d_in = unconstrained::<F1>(&mut builder, "d", LOG_SIZE).unwrap();
+		let mx_in = unconstrained::<F1>(&mut builder, "mx", LOG_SIZE).unwrap();
+		let my_in = unconstrained::<F1>(&mut builder, "my", LOG_SIZE).unwrap();
 
 		blake3_g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
 
