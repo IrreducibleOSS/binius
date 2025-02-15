@@ -103,16 +103,18 @@ where
 	fn split(
 		data: &Self::Data,
 	) -> (&<Self::Base as TowerLevel<T>>::Data, &<Self::Base as TowerLevel<T>>::Data) {
-		((data[0..32].try_into().unwrap()), (data[32..64].try_into().unwrap()))
+		let left = unsafe { &*(data.as_ptr() as *const [T; 32]) };
+		let right = unsafe { &*(data.as_ptr().add(32) as *const [T; 32]) };
+		(left, right)
 	}
 
 	#[inline(always)]
 	fn split_mut(
 		data: &mut Self::Data,
 	) -> (&mut <Self::Base as TowerLevel<T>>::Data, &mut <Self::Base as TowerLevel<T>>::Data) {
-		let (chunk_1, chunk_2) = data.split_at_mut(32);
-
-		((chunk_1.try_into().unwrap()), (chunk_2.try_into().unwrap()))
+		let left = unsafe { &mut *(data.as_mut_ptr() as *mut [T; 32]) };
+		let right = unsafe { &mut *(data.as_mut_ptr().add(32) as *mut [T; 32]) };
+		(left, right)
 	}
 
 	#[inline(always)]
