@@ -12,7 +12,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	ArithExpr, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MLEDirectAdapter,
+	EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MLEDirectAdapter,
 	MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -54,7 +54,7 @@ use crate::{
 		},
 	},
 	ring_switch,
-	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier, TowerFamily},
+	tower::{PackedTop, ProverTowerFamily, ProverTowerUnderlier},
 	transcript::ProverTranscript,
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
@@ -297,7 +297,7 @@ where
 				.map(|multilinear| 7 - multilinear.log_extension_degree()),
 			constraints
 				.iter()
-				.map(|constraint| arith_expr_base_tower_level::<Tower>(&constraint.composition))
+				.map(|constraint| constraint.composition.binary_tower_level())
 		)
 		.max()
 		.unwrap_or(0);
@@ -450,30 +450,6 @@ where
 	Ok(Proof {
 		transcript: transcript.finalize(),
 	})
-}
-
-fn arith_expr_base_tower_level<Tower: TowerFamily>(composition: &ArithExpr<FExt<Tower>>) -> usize {
-	if composition.try_convert_field::<Tower::B1>().is_ok() {
-		return 0;
-	}
-
-	if composition.try_convert_field::<Tower::B8>().is_ok() {
-		return 3;
-	}
-
-	if composition.try_convert_field::<Tower::B16>().is_ok() {
-		return 4;
-	}
-
-	if composition.try_convert_field::<Tower::B32>().is_ok() {
-		return 5;
-	}
-
-	if composition.try_convert_field::<Tower::B64>().is_ok() {
-		return 6;
-	}
-
-	7
 }
 
 type TypeErasedUnivariateZerocheck<'a, F> = Box<dyn UnivariateZerocheckProver<'a, F> + 'a>;

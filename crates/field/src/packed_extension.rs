@@ -71,9 +71,7 @@ where
 /// In order for the above relation to be guaranteed, the memory representation of
 /// `PackedExtensionField` element must be the same as a slice of the underlying `PackedField`
 /// element.
-pub trait PackedExtension<FS: Field>:
-	PackedField<Scalar: ExtensionField<FS>> + WithUnderlier<Underlier: PackScalar<FS>>
-{
+pub trait PackedExtension<FS: Field>: PackedField<Scalar: ExtensionField<FS>> {
 	type PackedSubfield: PackedField<Scalar = FS>;
 
 	fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield];
