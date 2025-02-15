@@ -123,8 +123,16 @@ where
 		right: &<Self::Base as TowerLevel<T>>::Data,
 	) -> Self::Data {
 		let mut result = [T::default(); 64];
-		result[..32].copy_from_slice(left);
-		result[32..].copy_from_slice(right);
+
+		unsafe {
+			let dst = result.as_mut_ptr();
+			let src_left = left.as_ptr();
+			let src_right = right.as_ptr();
+
+			std::ptr::copy_nonoverlapping(src_left, dst, 32);
+			std::ptr::copy_nonoverlapping(src_right, dst.add(32), 32);
+		}
+
 		result
 	}
 
