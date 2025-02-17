@@ -7,13 +7,13 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::RngCore;
 
 use crate::{
 	arithmetic_traits::{InvertOrZero, Square},
 	as_packed_field::PackScalar,
 	underlier::WithUnderlier,
-	DeserializeBytes, SerializeBytes,
 };
 
 /// This trait is based on `ff::Field` with some unused functionality removed.

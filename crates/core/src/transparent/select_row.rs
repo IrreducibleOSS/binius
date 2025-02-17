@@ -1,11 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	packed::set_packed_slice, BinaryField128b, BinaryField1b, DeserializeBytes, Field, PackedField,
-};
+use binius_field::{packed::set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField};
 use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 

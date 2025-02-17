@@ -9,7 +9,11 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use binius_utils::iter::IterExtensions;
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	iter::IterExtensions,
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -30,7 +34,7 @@ use crate::{
 	},
 	linear_transformation::{FieldLinearTransformation, Transformation},
 	underlier::{IterationMethods, IterationStrategy, UnderlierWithBitOps, U1},
-	DeserializeBytes, Field, SerializationError, SerializationMode, SerializeBytes,
+	Field,
 };
 
 #[derive(
@@ -453,7 +457,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 impl SerializeBytes for BinaryField128bPolyval {
 	fn serialize(
 		&self,
-		write_buf: impl bytes::BufMut,
+		write_buf: impl BufMut,
 		mode: SerializationMode,
 	) -> Result<(), SerializationError> {
 		match mode {
@@ -466,10 +470,7 @@ impl SerializeBytes for BinaryField128bPolyval {
 }
 
 impl DeserializeBytes for BinaryField128bPolyval {
-	fn deserialize(
-		read_buf: impl bytes::Buf,
-		mode: SerializationMode,
-	) -> Result<Self, SerializationError>
+	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
@@ -1063,7 +1064,7 @@ pub fn is_polyval_tower<F: TowerField>() -> bool {
 
 #[cfg(test)]
 mod tests {
-	use bytes::BytesMut;
+	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
 	use proptest::prelude::*;
 	use rand::thread_rng;
 
@@ -1077,7 +1078,7 @@ mod tests {
 		linear_transformation::PackedTransformationFactory,
 		AESTowerField128b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
 		PackedAESBinaryField4x128b, PackedBinaryField1x128b, PackedBinaryField2x128b,
-		PackedBinaryField4x128b, PackedField, SerializationMode,
+		PackedBinaryField4x128b, PackedField,
 	};
 
 	#[test]

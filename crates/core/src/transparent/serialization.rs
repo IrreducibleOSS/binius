@@ -10,10 +10,8 @@
 
 use std::{collections::HashMap, sync::LazyLock};
 
-use binius_field::{
-	BinaryField128b, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
-	TowerField,
-};
+use binius_field::{BinaryField128b, TowerField};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 
 use crate::polynomial::MultivariatePoly;
 

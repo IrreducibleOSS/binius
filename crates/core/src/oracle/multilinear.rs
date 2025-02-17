@@ -2,12 +2,9 @@
 
 use std::{array, fmt::Debug, sync::Arc};
 
-use binius_field::{
-	BinaryField128b, DeserializeBytes, Field, SerializationError, SerializationMode,
-	SerializeBytes, TowerField,
-};
+use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use bytes::Buf;
 use getset::{CopyGetters, Getters};
 

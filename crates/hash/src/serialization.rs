@@ -2,7 +2,7 @@
 
 use std::{borrow::Borrow, cmp::min};
 
-use binius_field::{SerializationMode, SerializeBytes};
+use binius_utils::{SerializationMode, SerializeBytes};
 use bytes::{buf::UninitSlice, BufMut};
 use digest::{
 	core_api::{Block, BlockSizeUser},

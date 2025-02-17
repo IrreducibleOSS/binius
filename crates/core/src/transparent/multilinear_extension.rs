@@ -5,12 +5,12 @@ use std::{fmt::Debug, ops::Deref};
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, packed::pack_slice, BinaryField128b,
 	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b,
-	BinaryField8b, DeserializeBytes, ExtensionField, PackedField, RepackedExtension,
-	SerializationError, SerializationMode, SerializeBytes, TowerField,
+	BinaryField8b, ExtensionField, PackedField, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
 use binius_macros::erased_serialize_bytes;
 use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 

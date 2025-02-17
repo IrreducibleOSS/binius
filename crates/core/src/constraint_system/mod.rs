@@ -7,10 +7,9 @@ mod prove;
 pub mod validate;
 mod verify;
 
-use binius_field::{
-	BinaryField128b, DeserializeBytes, SerializationError, SerializationMode, TowerField,
-};
+use binius_field::{BinaryField128b, TowerField};
 use binius_macros::SerializeBytes;
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode};
 use channel::{ChannelId, Flush};
 pub use prove::prove;
 pub use verify::verify;

@@ -74,7 +74,7 @@ pub fn arith_circuit_poly(input: TokenStream) -> TokenStream {
 		.into()
 }
 
-/// Derives the trait binius_field::DeserializeBytes for a struct or enum
+/// Derives the trait binius_utils::DeserializeBytes for a struct or enum
 ///
 /// See the DeserializeBytes derive macro docs for examples/tests
 #[proc_macro_derive(SerializeBytes)]
@@ -86,7 +86,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 	generics.type_params_mut().for_each(|type_param| {
 		type_param
 			.bounds
-			.push(parse_quote!(binius_field::SerializeBytes))
+			.push(parse_quote!(binius_utils::SerializeBytes))
 	});
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let body = match input.data {
@@ -94,7 +94,7 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 		Data::Struct(data) => {
 			let fields = field_names(data.fields, None);
 			quote! {
-				#(binius_field::SerializeBytes::serialize(&self.#fields, &mut write_buf, mode)?;)*
+				#(binius_utils::SerializeBytes::serialize(&self.#fields, &mut write_buf, mode)?;)*
 			}
 		}
 		Data::Enum(data) => {
@@ -107,8 +107,8 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 					let variant_index = i as u8;
 					let fields = field_names(variant.fields.clone(), Some("field_"));
 					let serialize_variant = quote! {
-						binius_field::SerializeBytes::serialize(&#variant_index, &mut write_buf, mode)?;
-						#(binius_field::SerializeBytes::serialize(#fields, &mut write_buf, mode)?;)*
+						binius_utils::SerializeBytes::serialize(&#variant_index, &mut write_buf, mode)?;
+						#(binius_utils::SerializeBytes::serialize(#fields, &mut write_buf, mode)?;)*
 					};
 					match variant.fields {
 						Fields::Named(_) => quote! {
@@ -138,8 +138,8 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 		}
 	};
 	quote! {
-		impl #impl_generics binius_field::SerializeBytes for #name #ty_generics #where_clause {
-			fn serialize(&self, mut write_buf: impl binius_field::bytes::BufMut, mode: binius_field::serialization::SerializationMode) -> Result<(), binius_field::serialization::Error> {
+		impl #impl_generics binius_utils::SerializeBytes for #name #ty_generics #where_clause {
+			fn serialize(&self, mut write_buf: impl binius_utils::bytes::BufMut, mode: binius_utils::SerializationMode) -> Result<(), binius_utils::SerializationError> {
 				#body
 				Ok(())
 			}
@@ -147,10 +147,10 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 	}.into()
 }
 
-/// Derives the trait binius_field::DeserializeBytes for a struct or enum
+/// Derives the trait binius_utils::DeserializeBytes for a struct or enum
 ///
 /// ```
-/// use binius_field::{BinaryField128b, SerializeBytes, DeserializeBytes, SerializationMode};
+/// use binius_utils::{BinaryField128b, SerializeBytes, DeserializeBytes, SerializationMode};
 /// use binius_macros::{SerializeBytes, DeserializeBytes};
 ///
 /// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
@@ -194,11 +194,11 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	generics.type_params_mut().for_each(|type_param| {
 		type_param
 			.bounds
-			.push(parse_quote!(binius_field::DeserializeBytes))
+			.push(parse_quote!(binius_utils::DeserializeBytes))
 	});
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
-		binius_field::DeserializeBytes::deserialize(&mut read_buf, mode)?
+		binius_utils::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
 	let body = match input.data {
 		Data::Union(_) => syn::Error::new(span, "Unions are not supported").into_compile_error(),
@@ -255,7 +255,7 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 				Ok(match variant_index {
 					#(#variants,)*
 					_ => {
-						return Err(binius_field::serialization::Error::UnknownEnumVariant {
+						return Err(binius_utils::SerializationError::UnknownEnumVariant {
 							name: #name,
 							index: variant_index
 						})
@@ -265,8 +265,8 @@ pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 		}
 	};
 	quote! {
-		impl #impl_generics binius_field::DeserializeBytes for #name #ty_generics #where_clause {
-			fn deserialize(mut read_buf: impl binius_field::bytes::Buf, mode: binius_field::serialization::SerializationMode) -> Result<Self, binius_field::serialization::Error>
+		impl #impl_generics binius_utils::DeserializeBytes for #name #ty_generics #where_clause {
+			fn deserialize(mut read_buf: impl binius_utils::bytes::Buf, mode: binius_utils::SerializationMode) -> Result<Self, binius_utils::SerializationError>
 			where
 				Self: Sized
 			{
@@ -297,11 +297,11 @@ pub fn erased_serialize_bytes(_attr: TokenStream, item: TokenStream) -> TokenStr
 	item_impl.items.push(syn::ImplItem::Fn(parse_quote! {
 		fn erased_serialize(
 			&self,
-			write_buf: &mut dyn binius_field::bytes::BufMut,
-			mode: binius_field::serialization::SerializationMode,
-		) -> Result<(), binius_field::serialization::Error> {
-			binius_field::SerializeBytes::serialize(&#name, &mut *write_buf, mode)?;
-			binius_field::SerializeBytes::serialize(self, &mut *write_buf, mode)
+			write_buf: &mut dyn binius_utils::bytes::BufMut,
+			mode: binius_utils::SerializationMode,
+		) -> Result<(), binius_utils::SerializationError> {
+			binius_utils::SerializeBytes::serialize(&#name, &mut *write_buf, mode)?;
+			binius_utils::SerializeBytes::serialize(self, &mut *write_buf, mode)
 		}
 	}));
 	quote! {

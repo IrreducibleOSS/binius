@@ -2,10 +2,12 @@
 
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
-use binius_field::{SerializationMode, SerializeBytes, TowerField};
+use binius_field::TowerField;
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
+use binius_utils::{
+	bail, checked_arithmetics::log2_strict_usize, SerializationMode, SerializeBytes,
+};
 use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
 use tracing::instrument;
 

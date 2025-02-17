@@ -3,14 +3,15 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, DeserializeBytes, Field, PackedBinaryField2x128b,
-	PackedExtension, PackedField, PackedFieldIndexable, SerializeBytes, TowerField,
+	BinaryField, BinaryField16b, BinaryField8b, Field, PackedBinaryField2x128b, PackedExtension,
+	PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
+use binius_utils::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 

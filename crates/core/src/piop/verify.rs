@@ -2,10 +2,10 @@
 
 use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
-use binius_field::{BinaryField, DeserializeBytes, ExtensionField, Field, TowerField};
+use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
 use binius_ntt::NTTOptions;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 use getset::CopyGetters;
 use tracing::instrument;
 

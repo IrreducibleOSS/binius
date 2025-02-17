@@ -7,8 +7,11 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, Zeroable};
-use bytes::{Buf, BufMut};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
@@ -17,7 +20,7 @@ use super::{
 };
 use crate::{
 	underlier::{U1, U2, U4},
-	DeserializeBytes, Field, SerializationError, SerializationMode, SerializeBytes,
+	Field,
 };
 
 /// A finite field with characteristic 2.
@@ -852,14 +855,13 @@ impl From<BinaryField4b> for u8 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-	use bytes::BytesMut;
+	use binius_utils::{bytes::BytesMut, SerializationMode};
 	use proptest::prelude::*;
 
 	use super::{
 		BinaryField16b as BF16, BinaryField1b as BF1, BinaryField2b as BF2, BinaryField4b as BF4,
 		BinaryField64b as BF64, BinaryField8b as BF8, *,
 	};
-	use crate::SerializationMode;
 
 	#[test]
 	fn test_gf2_add() {

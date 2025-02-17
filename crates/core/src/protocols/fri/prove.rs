@@ -1,11 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{
-	BinaryField, ExtensionField, PackedExtension, PackedField, SerializeBytes, TowerField,
-};
+use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::bail;
+use binius_utils::{bail, SerializeBytes};
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;

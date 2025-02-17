@@ -6,8 +6,7 @@ use binius_field::{
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	DeserializeBytes, ExtensionField, Field, PackedField, PackedFieldIndexable, SerializeBytes,
-	TowerField,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -15,6 +14,7 @@ use binius_math::{
 	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
+use binius_utils::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::prelude::*;
 

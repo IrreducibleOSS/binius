@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{BinaryField128b, DeserializeBytes, ExtensionField, TowerField};
+use binius_field::{BinaryField128b, ExtensionField, TowerField};
 use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 

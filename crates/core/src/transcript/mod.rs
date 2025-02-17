@@ -16,7 +16,8 @@ mod error;
 
 use std::{iter::repeat_with, slice};
 
-use binius_field::{DeserializeBytes, PackedField, SerializationMode, SerializeBytes, TowerField};
+use binius_field::{PackedField, TowerField};
+use binius_utils::{DeserializeBytes, SerializationMode, SerializeBytes};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
 use tracing::warn;

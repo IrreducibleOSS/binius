@@ -8,6 +8,10 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
@@ -27,8 +31,8 @@ use crate::{
 	},
 	packed::PackedField,
 	underlier::U1,
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, DeserializeBytes,
-	ExtensionField, Field, SerializationError, SerializationMode, SerializeBytes, TowerField,
+	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
+	TowerField,
 };
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
@@ -288,7 +292,7 @@ macro_rules! serialize_deserialize_non_canonical {
 		impl SerializeBytes for $field {
 			fn serialize(
 				&self,
-				write_buf: impl bytes::BufMut,
+				write_buf: impl BufMut,
 				mode: SerializationMode,
 			) -> Result<(), SerializationError> {
 				match mode {
@@ -302,7 +306,7 @@ macro_rules! serialize_deserialize_non_canonical {
 
 		impl DeserializeBytes for $field {
 			fn deserialize(
-				read_buf: impl bytes::Buf,
+				read_buf: impl Buf,
 				mode: SerializationMode,
 			) -> Result<Self, SerializationError>
 			where
@@ -329,16 +333,15 @@ serialize_deserialize_non_canonical!(AESTowerField128b, canonical = BinaryField1
 
 #[cfg(test)]
 mod tests {
-	use bytes::BytesMut;
+	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
 	use proptest::{arbitrary::any, proptest};
 	use rand::thread_rng;
 
 	use super::*;
 	use crate::{
 		binary_field::tests::is_binary_field_valid_generator, underlier::WithUnderlier,
-		DeserializeBytes, PackedAESBinaryField16x32b, PackedAESBinaryField4x32b,
-		PackedAESBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField4x32b,
-		PackedBinaryField8x32b, SerializeBytes,
+		PackedAESBinaryField16x32b, PackedAESBinaryField4x32b, PackedAESBinaryField8x32b,
+		PackedBinaryField16x32b, PackedBinaryField4x32b, PackedBinaryField8x32b,
 	};
 
 	fn check_square(f: impl Field) {

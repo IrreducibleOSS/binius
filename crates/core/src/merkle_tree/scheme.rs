@@ -2,11 +2,12 @@
 
 use std::{array, fmt::Debug, marker::PhantomData};
 
-use binius_field::{SerializationMode, SerializeBytes, TowerField};
+use binius_field::TowerField;
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
 use binius_utils::{
 	bail,
 	checked_arithmetics::{log2_ceil_usize, log2_strict_usize},
+	SerializationMode, SerializeBytes,
 };
 use bytes::Buf;
 use digest::{core_api::BlockSizeUser, Digest, Output};

@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::set_packed_slice, BinaryField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, SerializeBytes, TowerField,
+	PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -10,7 +10,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, sorting::is_sorted_ascending};
+use binius_utils::{bail, sorting::is_sorted_ascending, SerializeBytes};
 use either::Either;
 use itertools::{chain, Itertools};
 

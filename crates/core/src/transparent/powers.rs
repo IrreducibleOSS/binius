@@ -2,11 +2,11 @@
 
 use std::iter::successors;
 
-use binius_field::{BinaryField128b, DeserializeBytes, PackedField, TowerField};
+use binius_field::{BinaryField128b, PackedField, TowerField};
 use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 use bytemuck::zeroed_vec;
 use itertools::{izip, Itertools};
 

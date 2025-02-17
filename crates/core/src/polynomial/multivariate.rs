@@ -2,11 +2,11 @@
 
 use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sync::Arc};
 
-use binius_field::{Field, PackedField, SerializationError, SerializationMode};
+use binius_field::{Field, PackedField};
 use binius_math::{
 	ArithExpr, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::bail;
+use binius_utils::{bail, SerializationError, SerializationMode};
 use bytes::BufMut;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};

@@ -33,7 +33,6 @@ pub mod packed_extension;
 pub mod packed_extension_ops;
 mod packed_polyval;
 pub mod polyval;
-pub mod serialization;
 #[cfg(test)]
 mod tests;
 pub mod tower_levels;
@@ -45,7 +44,6 @@ pub mod util;
 pub use aes_field::*;
 pub use arch::byte_sliced::*;
 pub use binary_field::*;
-pub use bytes;
 pub use error::*;
 pub use extension::*;
 pub use field::Field;
@@ -56,7 +54,4 @@ pub use packed_extension::*;
 pub use packed_extension_ops::*;
 pub use packed_polyval::*;
 pub use polyval::*;
-pub use serialization::{
-	DeserializeBytes, Error as SerializationError, SerializationMode, SerializeBytes,
-};
 pub use transpose::{square_transpose, transpose_scalars, Error as TransposeError};
