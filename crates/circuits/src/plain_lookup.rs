@@ -68,7 +68,7 @@ where
 		)?);
 	}
 
-	let bits: [OracleId; LOG_MAX_MULTIPLICITY] = get_bits(builder, table, multiplicities).unwrap();
+	let bits: [OracleId; LOG_MAX_MULTIPLICITY] = get_bits(builder, table, multiplicities)?;
 	bits.into_iter().enumerate().try_for_each(|(i, bit)| {
 		builder.flush_custom(FlushDirection::Pull, channel, bit, [table], 1 << i)
 	})?;
