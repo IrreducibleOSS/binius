@@ -51,29 +51,20 @@ fn circuit_steps_for_expr<F: Field>(
 				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 			}
 			ArithExpr::Pow(base, exp) => {
-				let mut exp = *exp;
-				let mut base_arg = to_circuit_inner(base, result);
-				let mut acc = CircuitStepArgument::Const(F::ONE);
+				let mut acc = to_circuit_inner(base, result);
+				let base_expr = acc;
+				let highest_bit = exp.ilog2() as u32;
 
-				while exp > 0 {
-					if exp & 1 != 0 {
-						match acc {
-							CircuitStepArgument::Const(c) if c == F::ONE => {
-								acc = base_arg;
-							}
-							_ => {
-								result.push(CircuitStep::Mul(base_arg, acc));
-								acc =
-									CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
-							}
-						}
-					}
-					exp >>= 1;
-					if exp > 0 {
-						result.push(CircuitStep::Square(base_arg));
-						base_arg = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+				for i in (0..highest_bit).rev() {
+					result.push(CircuitStep::Square(acc));
+					acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+
+					if (exp >> i) & 1 != 0 {
+						result.push(CircuitStep::Mul(acc, base_expr));
+						acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
 					}
 				}
+
 				acc
 			}
 		}
@@ -1031,7 +1022,10 @@ mod tests {
 		));
 		assert!(matches!(
 			steps[1],
-			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+				CircuitStepArgument::Expr(CircuitNode::Var(6))
+			)
 		));
 		assert!(matches!(
 			steps[2],
@@ -1039,10 +1033,7 @@ mod tests {
 		));
 		assert!(matches!(
 			steps[3],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(2)),
-				CircuitStepArgument::Expr(CircuitNode::Slot(1))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(2)))
 		));
 
 		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
@@ -1061,24 +1052,24 @@ mod tests {
 		));
 		assert!(matches!(
 			steps[1],
-			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
-		));
-		assert!(matches!(
-			steps[2],
 			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
+				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
 				CircuitStepArgument::Expr(CircuitNode::Var(7))
 			)
 		));
 		assert!(matches!(
-			steps[3],
+			steps[2],
 			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(2)))
 		));
 		assert!(matches!(
 			steps[4],
 			CircuitStep::Mul(
 				CircuitStepArgument::Expr(CircuitNode::Slot(3)),
-				CircuitStepArgument::Expr(CircuitNode::Slot(2))
+				CircuitStepArgument::Expr(CircuitNode::Var(7))
 			)
 		));
 		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(4))));
