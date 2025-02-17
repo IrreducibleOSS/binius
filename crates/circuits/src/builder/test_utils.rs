@@ -7,11 +7,17 @@ use super::{types::F, ConstraintSystemBuilder};
 pub fn test_circuit(
 	build_circuit: fn(&mut ConstraintSystemBuilder) -> Result<Vec<Boundary<F>>, anyhow::Error>,
 ) -> Result<(), anyhow::Error> {
+	let mut verifier_builder = ConstraintSystemBuilder::new();
+	let verifier_boundaries = build_circuit(&mut verifier_builder)?;
+	let verifier_constraint_system = verifier_builder.build()?;
+
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-	let boundaries = build_circuit(&mut builder)?;
-	let witness = builder.take_witness()?;
-	let constraint_system = builder.build()?;
-	validate_witness(&constraint_system, &boundaries, &witness)?;
+	let mut prover_builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+	let prover_boundaries = build_circuit(&mut prover_builder)?;
+	let prover_witness = prover_builder.take_witness()?;
+	let _prover_constraint_system = prover_builder.build()?;
+
+	assert_eq!(verifier_boundaries, prover_boundaries);
+	validate_witness(&verifier_constraint_system, &verifier_boundaries, &prover_witness)?;
 	Ok(())
 }
