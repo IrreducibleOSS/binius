@@ -11,7 +11,7 @@ use digest::{
 
 /// Adapter that wraps a [`Digest`] references and exposes the [`BufMut`] interface.
 ///
-/// This adapter is useful so that structs that implement [`SerializeCanonical`] can be serialized
+/// This adapter is useful so that structs that implement [`SerializeBytes`] can be serialized
 /// directly to a hasher.
 #[derive(Debug)]
 pub struct HashBuffer<'a, D: Digest + BlockSizeUser> {
