@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, PackedField};
+use binius_macros::{erased_serialize_canonical, DeserializeCanonical, SerializeCanonical};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -20,10 +21,20 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// ```
 ///
 /// This is useful for making constraints that are not enforced at the last rows of the trace
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
 pub struct StepDown {
 	n_vars: usize,
 	index: usize,
+}
+
+inventory::submit! {
+	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+		"StepDown",
+		|buf: &mut dyn bytes::Buf| {
+			let deserialized = <StepDown as binius_field::DeserializeCanonical>::deserialize_canonical(&mut *buf)?;
+			Ok(Box::new(deserialized))
+		}
+	)
 }
 
 impl StepDown {
@@ -68,6 +79,7 @@ impl StepDown {
 	}
 }
 
+#[erased_serialize_canonical]
 impl<F: Field> MultivariatePoly<F> for StepDown {
 	fn degree(&self) -> usize {
 		self.n_vars

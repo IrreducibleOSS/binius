@@ -24,6 +24,7 @@ derive_more.workspace = true
 digest.workspace = true
 either.workspace = true
 getset.workspace = true
+inventory.workspace = true
 itertools.workspace = true
 rand.workspace = true
 stackalloc.workspace = true
