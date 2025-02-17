@@ -53,7 +53,7 @@ fn circuit_steps_for_expr<F: Field>(
 			ArithExpr::Pow(base, exp) => {
 				let mut acc = to_circuit_inner(base, result);
 				let base_expr = acc;
-				let highest_bit = exp.ilog2() as u32;
+				let highest_bit = exp.ilog2();
 
 				for i in (0..highest_bit).rev() {
 					result.push(CircuitStep::Square(acc));
