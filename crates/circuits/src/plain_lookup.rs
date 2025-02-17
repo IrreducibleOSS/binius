@@ -32,11 +32,14 @@ use crate::builder::{
 /// We also must pull valid table values (i.e. values that appear in `table`) from the channel if the channel is to balance.
 /// By ensuring that only valid table values get pulled from the channel, and observing the channel to balance, we ensure that only valid table values get pushed (by the prover) into the channel.
 /// Therefore our construction is sound.
-/// In order for the construction to be complete, allowing an honest prover to pass, we must pull each table value from the channel with exactly the same multiplicity (duplicate count) that the prover pushed that table value into the channel.
+/// In order for the construction to be complete, allowing an honest prover to pass, we must pull each
+/// table value from the channel with exactly the same multiplicity (duplicate count) that the prover pushed that table value into the channel.
 /// To do so, we allow the prover to commit information on the multiplicity of each table value.
 ///
-/// The prover counts the multiplicity of each table value, and creates a bit column for each of the LOG_MAX_MULTIPLICITY bits in the bit-decomposition of the multiplicities.
-/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit column as the 'selector' oracle to select which values in the table actually get pushed into the channel flushed. When flushing the table with the i'th bit column as the selector, we flush with multiplicity 1 << i.
+/// The prover counts the multiplicity of each table value, and creates a bit column for
+/// each of the LOG_MAX_MULTIPLICITY bits in the bit-decomposition of the multiplicities.
+/// Then we flush the table values LOG_MAX_MULTIPLICITY times, each time using a different bit column as the 'selector' oracle to select which values in the
+/// table actually get pushed into the channel flushed. When flushing the table with the i'th bit column as the selector, we flush with multiplicity 1 << i.
 ///
 pub fn plain_lookup<FS, const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
