@@ -2,8 +2,8 @@
 
 use std::iter::successors;
 
-use binius_field::{PackedField, TowerField};
-use binius_macros::{erased_serialize_canonical, DeserializeCanonical, SerializeCanonical};
+use binius_field::{BinaryField128b, DeserializeBytes, PackedField, TowerField};
+use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -14,19 +14,16 @@ use crate::polynomial::{Error, MultivariatePoly};
 
 /// A transparent multilinear polynomial whose evaluation at index $i$ is $g^i$ for
 /// some field element $g$.
-#[derive(Debug, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, SerializeBytes, DeserializeBytes)]
 pub struct Powers<F: TowerField> {
 	n_vars: usize,
 	base: F,
 }
 
 inventory::submit! {
-	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+	<dyn MultivariatePoly<BinaryField128b>>::register_deserializer(
 		"Powers",
-		|buf: &mut dyn bytes::Buf| {
-			let deserialized = <Powers<binius_field::BinaryField128b> as binius_field::DeserializeCanonical>::deserialize_canonical(&mut *buf)?;
-			Ok(Box::new(deserialized))
-		}
+		|buf, mode| Ok(Box::new(Powers::<BinaryField128b>::deserialize(&mut *buf, mode)?))
 	)
 }
 
@@ -60,7 +57,7 @@ impl<F: TowerField> Powers<F> {
 	}
 }
 
-#[erased_serialize_canonical]
+#[erased_serialize_bytes]
 impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for Powers<F> {
 	fn n_vars(&self) -> usize {
 		self.n_vars

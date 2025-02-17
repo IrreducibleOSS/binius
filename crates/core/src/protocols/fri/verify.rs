@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use binius_field::{BinaryField, DeserializeCanonical, ExtensionField, TowerField};
+use binius_field::{BinaryField, DeserializeBytes, ExtensionField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_utils::bail;
 use bytes::Buf;
@@ -44,7 +44,7 @@ impl<'a, F, FA, VCS> FRIVerifier<'a, F, FA, VCS>
 where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
-	VCS: MerkleTreeScheme<F, Digest: DeserializeCanonical>,
+	VCS: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(

@@ -3,9 +3,8 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, DeserializeCanonical, Field,
-	PackedBinaryField2x128b, PackedExtension, PackedField, PackedFieldIndexable,
-	SerializeCanonical, TowerField,
+	BinaryField, BinaryField16b, BinaryField8b, DeserializeBytes, Field, PackedBinaryField2x128b,
+	PackedExtension, PackedField, PackedFieldIndexable, SerializeBytes, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -111,7 +110,7 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical + DeserializeCanonical>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 

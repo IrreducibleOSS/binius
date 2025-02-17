@@ -7,8 +7,10 @@ mod prove;
 pub mod validate;
 mod verify;
 
-use binius_field::{serialization, BinaryField128b, DeserializeCanonical, TowerField};
-use binius_macros::SerializeCanonical;
+use binius_field::{
+	BinaryField128b, DeserializeBytes, SerializationError, SerializationMode, TowerField,
+};
+use binius_macros::SerializeBytes;
 use channel::{ChannelId, Flush};
 pub use prove::prove;
 pub use verify::verify;
@@ -22,7 +24,7 @@ use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
 ///
 /// As a result, a ConstraintSystem allows us to validate all of these
 /// constraints against a witness, as well as enabling generic prove/verify
-#[derive(Debug, Clone, SerializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes)]
 pub struct ConstraintSystem<F: TowerField> {
 	pub oracles: MultilinearOracleSet<F>,
 	pub table_constraints: Vec<ConstraintSet<F>>,
@@ -31,17 +33,20 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub max_channel_id: ChannelId,
 }
 
-impl DeserializeCanonical for ConstraintSystem<BinaryField128b> {
-	fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, serialization::Error>
+impl DeserializeBytes for ConstraintSystem<BinaryField128b> {
+	fn deserialize(
+		mut read_buf: impl bytes::Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
 		Ok(Self {
-			oracles: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			table_constraints: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			non_zero_oracle_ids: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			flushes: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			max_channel_id: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
+			oracles: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			table_constraints: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			non_zero_oracle_ids: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			flushes: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			max_channel_id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 		})
 	}
 }

@@ -74,11 +74,11 @@ pub fn arith_circuit_poly(input: TokenStream) -> TokenStream {
 		.into()
 }
 
-/// Derives the trait binius_field::SerializeCanonical for a struct or enum
+/// Derives the trait binius_field::DeserializeBytes for a struct or enum
 ///
-/// See the DeserializeCanonical derive macro docs for examples/tests
-#[proc_macro_derive(SerializeCanonical)]
-pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
+/// See the DeserializeBytes derive macro docs for examples/tests
+#[proc_macro_derive(SerializeBytes)]
+pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
 	let name = input.ident;
@@ -86,7 +86,7 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 	generics.type_params_mut().for_each(|type_param| {
 		type_param
 			.bounds
-			.push(parse_quote!(binius_field::SerializeCanonical))
+			.push(parse_quote!(binius_field::SerializeBytes))
 	});
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let body = match input.data {
@@ -94,7 +94,7 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 		Data::Struct(data) => {
 			let fields = field_names(data.fields, None);
 			quote! {
-				#(binius_field::SerializeCanonical::serialize_canonical(&self.#fields, &mut write_buf)?;)*
+				#(binius_field::SerializeBytes::serialize(&self.#fields, &mut write_buf, mode)?;)*
 			}
 		}
 		Data::Enum(data) => {
@@ -107,8 +107,8 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 					let variant_index = i as u8;
 					let fields = field_names(variant.fields.clone(), Some("field_"));
 					let serialize_variant = quote! {
-						binius_field::SerializeCanonical::serialize_canonical(&#variant_index, &mut write_buf)?;
-						#(binius_field::SerializeCanonical::serialize_canonical(#fields, &mut write_buf)?;)*
+						binius_field::SerializeBytes::serialize(&#variant_index, &mut write_buf, mode)?;
+						#(binius_field::SerializeBytes::serialize(#fields, &mut write_buf, mode)?;)*
 					};
 					match variant.fields {
 						Fields::Named(_) => quote! {
@@ -138,8 +138,8 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 		}
 	};
 	quote! {
-		impl #impl_generics binius_field::SerializeCanonical for #name #ty_generics #where_clause {
-			fn serialize_canonical(&self, mut write_buf: impl binius_field::bytes::BufMut) -> Result<(), binius_field::serialization::Error> {
+		impl #impl_generics binius_field::SerializeBytes for #name #ty_generics #where_clause {
+			fn serialize(&self, mut write_buf: impl binius_field::bytes::BufMut, mode: binius_field::serialization::SerializationMode) -> Result<(), binius_field::serialization::Error> {
 				#body
 				Ok(())
 			}
@@ -147,13 +147,13 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 	}.into()
 }
 
-/// Derives the trait binius_field::DeserializeCanonical for a struct or enum
+/// Derives the trait binius_field::DeserializeBytes for a struct or enum
 ///
 /// ```
-/// use binius_field::{BinaryField128b, SerializeCanonical, DeserializeCanonical};
-/// use binius_macros::{SerializeCanonical, DeserializeCanonical};
+/// use binius_field::{BinaryField128b, SerializeBytes, DeserializeBytes, SerializationMode};
+/// use binius_macros::{SerializeBytes, DeserializeBytes};
 ///
-/// #[derive(Debug, PartialEq, SerializeCanonical, DeserializeCanonical)]
+/// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
 /// enum MyEnum {
 ///     A(usize),
 ///     B { x: u32, y: u32 },
@@ -163,14 +163,14 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 ///
 /// let mut buf = vec![];
 /// let value = MyEnum::B { x: 42, y: 1337 };
-/// MyEnum::serialize_canonical(&value, &mut buf).unwrap();
+/// MyEnum::serialize(&value, &mut buf, SerializationMode::Native).unwrap();
 /// assert_eq!(
-///     MyEnum::deserialize_canonical(buf.as_slice()).unwrap(),
+///     MyEnum::deserialize(buf.as_slice(), SerializationMode::Native).unwrap(),
 ///     value
 /// );
 ///
 ///
-/// #[derive(Debug, PartialEq, SerializeCanonical, DeserializeCanonical)]
+/// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
 /// struct MyStruct<F> {
 ///     data: Vec<F>
 /// }
@@ -179,14 +179,14 @@ pub fn derive_serialize_canonical(input: TokenStream) -> TokenStream {
 /// let value = MyStruct {
 ///    data: vec![BinaryField128b::new(1234), BinaryField128b::new(5678)]
 /// };
-/// MyStruct::serialize_canonical(&value, &mut buf).unwrap();
+/// MyStruct::serialize(&value, &mut buf, SerializationMode::CanonicalTower).unwrap();
 /// assert_eq!(
-///     MyStruct::<BinaryField128b>::deserialize_canonical(buf.as_slice()).unwrap(),
+///     MyStruct::<BinaryField128b>::deserialize(buf.as_slice(), SerializationMode::CanonicalTower).unwrap(),
 ///     value
 /// );
 /// ```
-#[proc_macro_derive(DeserializeCanonical)]
-pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeserializeBytes)]
+pub fn derive_deserialize_bytes(input: TokenStream) -> TokenStream {
 	let input: DeriveInput = parse_macro_input!(input);
 	let span = input.span();
 	let name = input.ident;
@@ -194,11 +194,11 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 	generics.type_params_mut().for_each(|type_param| {
 		type_param
 			.bounds
-			.push(parse_quote!(binius_field::DeserializeCanonical))
+			.push(parse_quote!(binius_field::DeserializeBytes))
 	});
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 	let deserialize_value = quote! {
-		binius_field::DeserializeCanonical::deserialize_canonical(&mut read_buf)?
+		binius_field::DeserializeBytes::deserialize(&mut read_buf, mode)?
 	};
 	let body = match input.data {
 		Data::Union(_) => syn::Error::new(span, "Unions are not supported").into_compile_error(),
@@ -265,8 +265,8 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 		}
 	};
 	quote! {
-		impl #impl_generics binius_field::DeserializeCanonical for #name #ty_generics #where_clause {
-			fn deserialize_canonical(mut read_buf: impl binius_field::bytes::Buf) -> Result<Self, binius_field::serialization::Error>
+		impl #impl_generics binius_field::DeserializeBytes for #name #ty_generics #where_clause {
+			fn deserialize(mut read_buf: impl binius_field::bytes::Buf, mode: binius_field::serialization::SerializationMode) -> Result<Self, binius_field::serialization::Error>
 			where
 				Self: Sized
 			{
@@ -277,36 +277,33 @@ pub fn derive_deserialize_canonical(input: TokenStream) -> TokenStream {
 	.into()
 }
 
-/// Use on an impl block for MultivariatePoly, to automatically implement erased_serialize_canonical.
+/// Use on an impl block for MultivariatePoly, to automatically implement erased_serialize_bytes.
 ///
 /// Importantly, this will serialize the concrete instance, prefixed by the identifier of the data type.
 ///
 /// This prefix can be used to figure out which concrete data type it should use for deserialization later.
 #[proc_macro_attribute]
-pub fn erased_serialize_canonical(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn erased_serialize_bytes(_attr: TokenStream, item: TokenStream) -> TokenStream {
 	let mut item_impl: ItemImpl = parse_macro_input!(item);
 	let syn::Type::Path(p) = &*item_impl.self_ty else {
 		return syn::Error::new(
 			item_impl.span(),
-			"#[erased_serialize_canonical] can only be used on an impl for a concrete type",
+			"#[erased_serialize_bytes] can only be used on an impl for a concrete type",
 		)
 		.into_compile_error()
 		.into();
 	};
 	let name = p.path.segments.last().unwrap().ident.to_string();
-
-	let method = parse_quote! {
-		fn erased_serialize_canonical(
+	item_impl.items.push(syn::ImplItem::Fn(parse_quote! {
+		fn erased_serialize(
 			&self,
 			write_buf: &mut dyn binius_field::bytes::BufMut,
+			mode: binius_field::serialization::SerializationMode,
 		) -> Result<(), binius_field::serialization::Error> {
-			binius_field::SerializeCanonical::serialize_canonical(&#name, &mut *write_buf)?;
-			binius_field::SerializeCanonical::serialize_canonical(self, &mut *write_buf)
+			binius_field::SerializeBytes::serialize(&#name, &mut *write_buf, mode)?;
+			binius_field::SerializeBytes::serialize(self, &mut *write_buf, mode)
 		}
-	};
-
-	item_impl.items.push(syn::ImplItem::Fn(method));
-
+	}));
 	quote! {
 		#item_impl
 	}

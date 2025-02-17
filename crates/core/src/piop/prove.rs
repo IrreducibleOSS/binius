@@ -2,7 +2,7 @@
 
 use binius_field::{
 	packed::set_packed_slice, BinaryField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, SerializeCanonical, TowerField,
+	PackedFieldIndexable, SerializeBytes, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -175,7 +175,7 @@ where
 		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
@@ -254,7 +254,7 @@ where
 	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {

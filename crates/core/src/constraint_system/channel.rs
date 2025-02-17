@@ -52,14 +52,14 @@
 use std::collections::HashMap;
 
 use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType, TowerField};
-use binius_macros::{DeserializeCanonical, SerializeCanonical};
+use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::{Error, VerificationError};
 use crate::{oracle::OracleId, witness::MultilinearExtensionIndex};
 
 pub type ChannelId = usize;
 
-#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Flush {
 	pub oracles: Vec<OracleId>,
 	pub channel_id: ChannelId,
@@ -68,7 +68,7 @@ pub struct Flush {
 	pub multiplicity: u64,
 }
 
-#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Boundary<F: TowerField> {
 	pub values: Vec<F>,
 	pub channel_id: ChannelId,
@@ -76,7 +76,7 @@ pub struct Boundary<F: TowerField> {
 	pub multiplicity: u64,
 }
 
-#[derive(Debug, Clone, Copy, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes)]
 pub enum FlushDirection {
 	Push,
 	Pull,

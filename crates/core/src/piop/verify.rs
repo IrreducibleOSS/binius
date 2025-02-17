@@ -2,7 +2,7 @@
 
 use std::{borrow::Borrow, cmp::Ordering, iter, ops::Range};
 
-use binius_field::{BinaryField, DeserializeCanonical, ExtensionField, Field, TowerField};
+use binius_field::{BinaryField, DeserializeBytes, ExtensionField, Field, TowerField};
 use binius_math::evaluate_piecewise_multilinear;
 use binius_ntt::NTTOptions;
 use binius_utils::bail;
@@ -291,7 +291,7 @@ where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 	Challenger_: Challenger,
-	MTScheme: MerkleTreeScheme<F, Digest: DeserializeCanonical>,
+	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	// Map of n_vars to sumcheck claim descriptions
 	let sumcheck_claim_descs = make_sumcheck_claim_descs(
@@ -412,7 +412,7 @@ where
 	F: TowerField + ExtensionField<FEncode>,
 	FEncode: BinaryField,
 	Challenger_: Challenger,
-	MTScheme: MerkleTreeScheme<F, Digest: DeserializeCanonical>,
+	MTScheme: MerkleTreeScheme<F, Digest: DeserializeBytes>,
 {
 	let mut arities_iter = fri_params.fold_arities().iter();
 	let mut fri_commitments = Vec::with_capacity(fri_params.n_oracles());

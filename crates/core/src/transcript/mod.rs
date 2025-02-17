@@ -16,7 +16,7 @@ mod error;
 
 use std::{iter::repeat_with, slice};
 
-use binius_field::{DeserializeCanonical, PackedField, SerializeCanonical, TowerField};
+use binius_field::{DeserializeBytes, PackedField, SerializationMode, SerializeBytes, TowerField};
 use bytes::{buf::UninitSlice, Buf, BufMut, Bytes, BytesMut};
 pub use error::Error;
 use tracing::warn;
@@ -257,13 +257,15 @@ impl<B: Buf> TranscriptReader<'_, B> {
 		self.buffer
 	}
 
-	pub fn read<T: DeserializeCanonical>(&mut self) -> Result<T, Error> {
-		T::deserialize_canonical(self.buffer()).map_err(Into::into)
+	pub fn read<T: DeserializeBytes>(&mut self) -> Result<T, Error> {
+		let mode = SerializationMode::CanonicalTower;
+		T::deserialize(self.buffer(), mode).map_err(Into::into)
 	}
 
-	pub fn read_vec<T: DeserializeCanonical>(&mut self, n: usize) -> Result<Vec<T>, Error> {
+	pub fn read_vec<T: DeserializeBytes>(&mut self, n: usize) -> Result<Vec<T>, Error> {
+		let mode = SerializationMode::CanonicalTower;
 		let mut buffer = self.buffer();
-		repeat_with(move || T::deserialize_canonical(&mut buffer).map_err(Into::into))
+		repeat_with(move || T::deserialize(&mut buffer, mode).map_err(Into::into))
 			.take(n)
 			.collect()
 	}
@@ -286,7 +288,8 @@ impl<B: Buf> TranscriptReader<'_, B> {
 	pub fn read_scalar_slice_into<F: TowerField>(&mut self, buf: &mut [F]) -> Result<(), Error> {
 		let mut buffer = self.buffer();
 		for elem in buf {
-			*elem = DeserializeCanonical::deserialize_canonical(&mut buffer)?;
+			let mode = SerializationMode::CanonicalTower;
+			*elem = DeserializeBytes::deserialize(&mut buffer, mode)?;
 		}
 		Ok(())
 	}
@@ -332,19 +335,19 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 		self.buffer
 	}
 
-	pub fn write<T: SerializeCanonical>(&mut self, value: &T) {
+	pub fn write<T: SerializeBytes>(&mut self, value: &T) {
 		self.proof_size_event_wrapper(|buffer| {
 			value
-				.serialize_canonical(buffer)
+				.serialize(buffer, SerializationMode::CanonicalTower)
 				.expect("TODO: propagate error");
 		});
 	}
 
-	pub fn write_slice<T: SerializeCanonical>(&mut self, values: &[T]) {
+	pub fn write_slice<T: SerializeBytes>(&mut self, values: &[T]) {
 		self.proof_size_event_wrapper(|buffer| {
 			for value in values {
 				value
-					.serialize_canonical(&mut *buffer)
+					.serialize(&mut *buffer, SerializationMode::CanonicalTower)
 					.expect("TODO: propagate error");
 			}
 		});
@@ -363,7 +366,7 @@ impl<B: BufMut> TranscriptWriter<'_, B> {
 	pub fn write_scalar_slice<F: TowerField>(&mut self, elems: &[F]) {
 		self.proof_size_event_wrapper(|buffer| {
 			for elem in elems {
-				SerializeCanonical::serialize_canonical(elem, &mut *buffer)
+				SerializeBytes::serialize(elem, &mut *buffer, SerializationMode::CanonicalTower)
 					.expect("TODO: propagate error");
 			}
 		});
@@ -402,7 +405,8 @@ where
 	Challenger_: Challenger,
 {
 	fn sample(&mut self) -> F {
-		DeserializeCanonical::deserialize_canonical(self.combined.challenger.sampler())
+		let mode = SerializationMode::CanonicalTower;
+		DeserializeBytes::deserialize(self.combined.challenger.sampler(), mode)
 			.expect("challenger has infinite buffer")
 	}
 }
@@ -413,7 +417,8 @@ where
 	Challenger_: Challenger,
 {
 	fn sample(&mut self) -> F {
-		DeserializeCanonical::deserialize_canonical(self.combined.challenger.sampler())
+		let mode = SerializationMode::CanonicalTower;
+		DeserializeBytes::deserialize(self.combined.challenger.sampler(), mode)
 			.expect("challenger has infinite buffer")
 	}
 }

@@ -13,6 +13,7 @@ use crate::{
 	arithmetic_traits::{InvertOrZero, Square},
 	as_packed_field::PackScalar,
 	underlier::WithUnderlier,
+	DeserializeBytes, SerializeBytes,
 };
 
 /// This trait is based on `ff::Field` with some unused functionality removed.
@@ -49,6 +50,8 @@ pub trait Field:
 	+ InvertOrZero
 	// `Underlier: PackScalar<Self>` is an obvious property but it can't be deduced by the compiler so we are id here.
 	+ WithUnderlier<Underlier: PackScalar<Self>>
+	+ SerializeBytes
+	+ DeserializeBytes
 {
 	/// The zero element of the field, the additive identity.
 	const ZERO: Self;

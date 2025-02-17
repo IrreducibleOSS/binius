@@ -3,10 +3,12 @@
 use std::{array, fmt::Debug, sync::Arc};
 
 use binius_field::{
-	serialization, BinaryField128b, DeserializeCanonical, Field, SerializeCanonical, TowerField,
+	BinaryField128b, DeserializeBytes, Field, SerializationError, SerializationMode,
+	SerializeBytes, TowerField,
 };
-use binius_macros::{DeserializeCanonical, SerializeCanonical};
+use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_utils::bail;
+use bytes::Buf;
 use getset::{CopyGetters, Getters};
 
 use crate::{
@@ -283,18 +285,18 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 ///
 /// The oracle set also tracks the committed polynomial in batches where each batch is committed
 /// together with a polynomial commitment scheme.
-#[derive(Default, Debug, Clone, SerializeCanonical)]
+#[derive(Default, Debug, Clone, SerializeBytes)]
 pub struct MultilinearOracleSet<F: TowerField> {
 	oracles: Vec<MultilinearPolyOracle<F>>,
 }
 
-impl binius_field::DeserializeCanonical for MultilinearOracleSet<BinaryField128b> {
-	fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, serialization::Error>
+impl DeserializeBytes for MultilinearOracleSet<BinaryField128b> {
+	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
 		Ok(Self {
-			oracles: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
+			oracles: DeserializeBytes::deserialize(read_buf, mode)?,
 		})
 	}
 }
@@ -451,7 +453,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 ///    other oracles. This is formalized in [DP23] Section 4.
 ///
 /// [DP23]: <https://eprint.iacr.org/2023/1784>
-#[derive(Debug, Clone, PartialEq, Eq, SerializeCanonical)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes)]
 pub struct MultilinearPolyOracle<F: TowerField> {
 	pub id: OracleId,
 	pub name: Option<String>,
@@ -460,22 +462,25 @@ pub struct MultilinearPolyOracle<F: TowerField> {
 	pub variant: MultilinearPolyVariant<F>,
 }
 
-impl DeserializeCanonical for MultilinearPolyOracle<BinaryField128b> {
-	fn deserialize_canonical(mut read_buf: impl bytes::Buf) -> Result<Self, serialization::Error>
+impl DeserializeBytes for MultilinearPolyOracle<BinaryField128b> {
+	fn deserialize(
+		mut read_buf: impl bytes::Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
 		Ok(Self {
-			id: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			name: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			n_vars: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			tower_level: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
-			variant: DeserializeCanonical::deserialize_canonical(&mut read_buf)?,
+			id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			name: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			n_vars: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			tower_level: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			variant: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 		})
 	}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, SerializeCanonical)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes)]
 pub enum MultilinearPolyVariant<F: TowerField> {
 	Committed,
 	Transparent(TransparentPolyOracle<F>),
@@ -487,25 +492,28 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	ZeroPadded(OracleId),
 }
 
-impl DeserializeCanonical for MultilinearPolyVariant<BinaryField128b> {
-	fn deserialize_canonical(mut buf: impl bytes::Buf) -> Result<Self, serialization::Error>
+impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
+	fn deserialize(
+		mut buf: impl bytes::Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		Ok(match u8::deserialize_canonical(&mut buf)? {
+		Ok(match u8::deserialize(&mut buf, mode)? {
 			0 => Self::Committed,
-			1 => Self::Transparent(DeserializeCanonical::deserialize_canonical(&mut buf)?),
+			1 => Self::Transparent(DeserializeBytes::deserialize(buf, mode)?),
 			2 => Self::Repeating {
-				id: DeserializeCanonical::deserialize_canonical(&mut buf)?,
-				log_count: DeserializeCanonical::deserialize_canonical(&mut buf)?,
+				id: DeserializeBytes::deserialize(&mut buf, mode)?,
+				log_count: DeserializeBytes::deserialize(buf, mode)?,
 			},
-			3 => Self::Projected(DeserializeCanonical::deserialize_canonical(&mut buf)?),
-			4 => Self::Shifted(DeserializeCanonical::deserialize_canonical(&mut buf)?),
-			5 => Self::Packed(DeserializeCanonical::deserialize_canonical(&mut buf)?),
-			6 => Self::LinearCombination(DeserializeCanonical::deserialize_canonical(&mut buf)?),
-			7 => Self::ZeroPadded(DeserializeCanonical::deserialize_canonical(&mut buf)?),
+			3 => Self::Projected(DeserializeBytes::deserialize(buf, mode)?),
+			4 => Self::Shifted(DeserializeBytes::deserialize(buf, mode)?),
+			5 => Self::Packed(DeserializeBytes::deserialize(buf, mode)?),
+			6 => Self::LinearCombination(DeserializeBytes::deserialize(buf, mode)?),
+			7 => Self::ZeroPadded(DeserializeBytes::deserialize(buf, mode)?),
 			variant_index => {
-				return Err(serialization::Error::UnknownEnumVariant {
+				return Err(SerializationError::UnknownEnumVariant {
 					name: "MultilinearPolyVariant",
 					index: variant_index,
 				});
@@ -523,25 +531,27 @@ pub struct TransparentPolyOracle<F: Field> {
 	poly: Arc<dyn MultivariatePoly<F>>,
 }
 
-impl<F: TowerField> SerializeCanonical for TransparentPolyOracle<F> {
-	fn serialize_canonical(
+impl<F: TowerField> SerializeBytes for TransparentPolyOracle<F> {
+	fn serialize(
 		&self,
 		mut write_buf: impl bytes::BufMut,
-	) -> Result<(), binius_field::serialization::Error> {
-		self.poly.erased_serialize_canonical(&mut write_buf)
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		self.poly.erased_serialize(&mut write_buf, mode)
 	}
 }
 
-impl DeserializeCanonical for TransparentPolyOracle<BinaryField128b> {
-	fn deserialize_canonical(
-		mut read_buf: impl bytes::Buf,
-	) -> Result<Self, binius_field::serialization::Error>
+impl DeserializeBytes for TransparentPolyOracle<BinaryField128b> {
+	fn deserialize(
+		read_buf: impl bytes::Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
 	where
 		Self: Sized,
 	{
-		let poly: Box<dyn MultivariatePoly<BinaryField128b>> =
-			DeserializeCanonical::deserialize_canonical(&mut read_buf)?;
-		Ok(Self { poly: poly.into() })
+		Ok(Self {
+			poly: Box::<dyn MultivariatePoly<BinaryField128b>>::deserialize(read_buf, mode)?.into(),
+		})
 	}
 }
 
@@ -571,15 +581,13 @@ impl<F: Field> PartialEq for TransparentPolyOracle<F> {
 
 impl<F: Field> Eq for TransparentPolyOracle<F> {}
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub enum ProjectionVariant {
 	FirstVars,
 	LastVars,
 }
 
-#[derive(
-	Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeCanonical, DeserializeCanonical,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct Projected<F: TowerField> {
 	#[get_copy = "pub"]
 	id: OracleId,
@@ -609,16 +617,14 @@ impl<F: TowerField> Projected<F> {
 	}
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub enum ShiftVariant {
 	CircularLeft,
 	LogicalLeft,
 	LogicalRight,
 }
 
-#[derive(
-	Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeCanonical, DeserializeCanonical,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct Shifted {
 	#[get_copy = "pub"]
 	id: OracleId,
@@ -660,9 +666,7 @@ impl Shifted {
 	}
 }
 
-#[derive(
-	Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeCanonical, DeserializeCanonical,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct Packed {
 	#[get_copy = "pub"]
 	id: OracleId,
@@ -676,9 +680,7 @@ pub struct Packed {
 	log_degree: usize,
 }
 
-#[derive(
-	Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeCanonical, DeserializeCanonical,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes, DeserializeBytes)]
 pub struct LinearCombination<F: TowerField> {
 	#[get_copy = "pub"]
 	n_vars: usize,

@@ -56,5 +56,7 @@ pub use packed_extension::*;
 pub use packed_extension_ops::*;
 pub use packed_polyval::*;
 pub use polyval::*;
-pub use serialization::{DeserializeCanonical, SerializeCanonical};
+pub use serialization::{
+	DeserializeBytes, Error as SerializationError, SerializationMode, SerializeBytes,
+};
 pub use transpose::{square_transpose, transpose_scalars, Error as TransposeError};

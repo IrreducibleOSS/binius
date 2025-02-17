@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	BinaryField, ExtensionField, PackedExtension, PackedField, SerializeCanonical, TowerField,
+	BinaryField, ExtensionField, PackedExtension, PackedField, SerializeBytes, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
@@ -287,7 +287,7 @@ where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<F, Digest: SerializeCanonical>,
+	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
 {
 	/// Constructs a new folder.
 	pub fn new(

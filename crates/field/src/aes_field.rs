@@ -27,8 +27,8 @@ use crate::{
 	},
 	packed::PackedField,
 	underlier::U1,
-	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, ExtensionField, Field,
-	TowerField,
+	BinaryField128b, BinaryField16b, BinaryField32b, BinaryField64b, DeserializeBytes,
+	ExtensionField, Field, SerializationError, SerializationMode, SerializeBytes, TowerField,
 };
 
 // These fields represent a tower based on AES GF(2^8) field (GF(256)/x^8+x^4+x^3+x+1)
@@ -283,6 +283,50 @@ impl_tower_field_conversion!(AESTowerField32b, BinaryField32b);
 impl_tower_field_conversion!(AESTowerField64b, BinaryField64b);
 impl_tower_field_conversion!(AESTowerField128b, BinaryField128b);
 
+macro_rules! serialize_deserialize_non_canonical {
+	($field:ident, canonical=$canonical:ident) => {
+		impl SerializeBytes for $field {
+			fn serialize(
+				&self,
+				write_buf: impl bytes::BufMut,
+				mode: SerializationMode,
+			) -> Result<(), SerializationError> {
+				match mode {
+					SerializationMode::Native => self.0.serialize(write_buf, mode),
+					SerializationMode::CanonicalTower => {
+						$canonical::from(*self).serialize(write_buf, mode)
+					}
+				}
+			}
+		}
+
+		impl DeserializeBytes for $field {
+			fn deserialize(
+				read_buf: impl bytes::Buf,
+				mode: SerializationMode,
+			) -> Result<Self, SerializationError>
+			where
+				Self: Sized,
+			{
+				match mode {
+					SerializationMode::Native => {
+						Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?))
+					}
+					SerializationMode::CanonicalTower => {
+						Ok(Self::from($canonical::deserialize(read_buf, mode)?))
+					}
+				}
+			}
+		}
+	};
+}
+
+serialize_deserialize_non_canonical!(AESTowerField8b, canonical = BinaryField8b);
+serialize_deserialize_non_canonical!(AESTowerField16b, canonical = BinaryField16b);
+serialize_deserialize_non_canonical!(AESTowerField32b, canonical = BinaryField32b);
+serialize_deserialize_non_canonical!(AESTowerField64b, canonical = BinaryField64b);
+serialize_deserialize_non_canonical!(AESTowerField128b, canonical = BinaryField128b);
+
 #[cfg(test)]
 mod tests {
 	use bytes::BytesMut;
@@ -292,9 +336,9 @@ mod tests {
 	use super::*;
 	use crate::{
 		binary_field::tests::is_binary_field_valid_generator, underlier::WithUnderlier,
-		DeserializeCanonical, PackedAESBinaryField16x32b, PackedAESBinaryField4x32b,
+		DeserializeBytes, PackedAESBinaryField16x32b, PackedAESBinaryField4x32b,
 		PackedAESBinaryField8x32b, PackedBinaryField16x32b, PackedBinaryField4x32b,
-		PackedBinaryField8x32b, SerializeCanonical,
+		PackedBinaryField8x32b, SerializeBytes,
 	};
 
 	fn check_square(f: impl Field) {
@@ -593,22 +637,24 @@ mod tests {
 		let aes64 = <AESTowerField64b as Field>::random(&mut rng);
 		let aes128 = <AESTowerField128b as Field>::random(&mut rng);
 
-		SerializeCanonical::serialize_canonical(&aes8, &mut buffer).unwrap();
-		SerializeCanonical::serialize_canonical(&aes16, &mut buffer).unwrap();
-		SerializeCanonical::serialize_canonical(&aes32, &mut buffer).unwrap();
-		SerializeCanonical::serialize_canonical(&aes64, &mut buffer).unwrap();
-		SerializeCanonical::serialize_canonical(&aes128, &mut buffer).unwrap();
+		let mode = SerializationMode::CanonicalTower;
 
-		SerializeCanonical::serialize_canonical(&aes128, &mut buffer).unwrap();
+		SerializeBytes::serialize(&aes8, &mut buffer, mode).unwrap();
+		SerializeBytes::serialize(&aes16, &mut buffer, mode).unwrap();
+		SerializeBytes::serialize(&aes32, &mut buffer, mode).unwrap();
+		SerializeBytes::serialize(&aes64, &mut buffer, mode).unwrap();
+		SerializeBytes::serialize(&aes128, &mut buffer, mode).unwrap();
+
+		SerializeBytes::serialize(&aes128, &mut buffer, mode).unwrap();
 
 		let mut read_buffer = buffer.freeze();
 
-		assert_eq!(AESTowerField8b::deserialize_canonical(&mut read_buffer).unwrap(), aes8);
-		assert_eq!(AESTowerField16b::deserialize_canonical(&mut read_buffer).unwrap(), aes16);
-		assert_eq!(AESTowerField32b::deserialize_canonical(&mut read_buffer).unwrap(), aes32);
-		assert_eq!(AESTowerField64b::deserialize_canonical(&mut read_buffer).unwrap(), aes64);
-		assert_eq!(AESTowerField128b::deserialize_canonical(&mut read_buffer).unwrap(), aes128);
+		assert_eq!(AESTowerField8b::deserialize(&mut read_buffer, mode).unwrap(), aes8);
+		assert_eq!(AESTowerField16b::deserialize(&mut read_buffer, mode).unwrap(), aes16);
+		assert_eq!(AESTowerField32b::deserialize(&mut read_buffer, mode).unwrap(), aes32);
+		assert_eq!(AESTowerField64b::deserialize(&mut read_buffer, mode).unwrap(), aes64);
+		assert_eq!(AESTowerField128b::deserialize(&mut read_buffer, mode).unwrap(), aes128);
 
-		assert_eq!(BinaryField128b::deserialize_canonical(&mut read_buffer).unwrap(), aes128.into())
+		assert_eq!(BinaryField128b::deserialize(&mut read_buffer, mode).unwrap(), aes128.into())
 	}
 }
