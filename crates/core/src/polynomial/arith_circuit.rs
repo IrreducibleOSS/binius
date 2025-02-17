@@ -125,7 +125,6 @@ enum CircuitStepArgument<F> {
 enum CircuitStep<F: Field> {
 	Add(CircuitStepArgument<F>, CircuitStepArgument<F>),
 	Mul(CircuitStepArgument<F>, CircuitStepArgument<F>),
-	Pow(CircuitStepArgument<F>, u64),
 	Square(CircuitStepArgument<F>),
 	AddMul(usize, CircuitStepArgument<F>, CircuitStepArgument<F>),
 }
@@ -259,9 +258,6 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 					CircuitStep::Square(x) => {
 						write_result(after, get_argument_value(*x, before).square())
 					}
-					CircuitStep::Pow(id, exp) => {
-						write_result(after, get_argument_value(*id, before).pow(*exp))
-					}
 				};
 			}
 
@@ -343,29 +339,6 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 							}
 						}
 					}
-					CircuitStep::Pow(id, exp) => match id {
-						CircuitStepArgument::Expr(id) => {
-							let id = id.get_sparse_chunk(batch_query, before, row_len);
-							for j in 0..row_len {
-								// Safety: `current` and `id` have length equal to `row_len`
-								unsafe {
-									current
-										.get_unchecked_mut(j)
-										.write(id.get_unchecked(j).pow(*exp));
-								}
-							}
-						}
-						CircuitStepArgument::Const(id) => {
-							let id: P = P::broadcast((*id).into());
-							let result = id.pow(*exp);
-							for j in 0..row_len {
-								// Safety: `current` has length equal to `row_len`
-								unsafe {
-									current.get_unchecked_mut(j).write(result);
-								}
-							}
-						}
-					},
 					CircuitStep::AddMul(target, left, right) => {
 						let target = &before[row_len * target..(target + 1) * row_len];
 						// Safety: by construction of steps and evaluation order we know
