@@ -7,7 +7,7 @@ use binius_core::oracle::OracleId;
 use binius_field::{
 	tower_levels::TowerLevel, BinaryField1b, BinaryField32b, BinaryField8b, Field, TowerField,
 };
-use rand::{rngs::ThreadRng, thread_rng, Rng};
+use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 use super::{
 	byte_sliced_add, byte_sliced_add_carryfree, byte_sliced_double_conditional_increment,
@@ -26,7 +26,7 @@ use crate::{
 type B8 = BinaryField8b;
 type B32 = BinaryField32b;
 
-pub fn random_u512(rng: &mut ThreadRng) -> U512 {
+pub fn random_u512(rng: &mut impl Rng) -> U512 {
 	let limbs = array::from_fn(|_| rng.gen());
 	U512::from_limbs(limbs)
 }
@@ -211,7 +211,8 @@ where
 		let mult_a = builder.add_committed_multiple::<WIDTH>("a", log_size, B8::TOWER_LEVEL);
 		let mult_b = builder.add_committed_multiple::<WIDTH>("b", log_size, B8::TOWER_LEVEL);
 		let input_bitmask = (U512::from(1u8) << (8 * WIDTH)) - U512::from(1u8);
-		let modulus = (random_u512(&mut rng) % input_bitmask) + U512::from(1u8);
+		let modulus =
+			(random_u512(&mut StdRng::from_seed([42; 32])) % input_bitmask) + U512::from(1u8);
 
 		if let Some(witness) = builder.witness() {
 			let mut mult_a: [_; WIDTH] =
