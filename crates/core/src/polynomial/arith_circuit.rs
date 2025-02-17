@@ -59,14 +59,22 @@ fn circuit_steps_for_expr<F: Field>(
 					return base_arg;
 				}
 
-				// Start with x^2 = x * x
-				result.push(CircuitStep::Mul(base_arg, base_arg));
-				let mut acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+				let mut acc = base_arg;
+				let mut current_exp = 1;
 
-				// Multiply further for higher exponents
-				for _ in 2..exp {
-					result.push(CircuitStep::Mul(acc, base_arg));
+				// Apply square and minimize multiplications
+				while current_exp * 2 <= exp {
+					result.push(CircuitStep::Square(acc));
 					acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+					current_exp *= 2;
+				}
+
+				// If remaining exponentiation, multiply by base_arg
+				if current_exp < exp {
+					for _ in current_exp..exp {
+						result.push(CircuitStep::Mul(acc, base_arg));
+						acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+					}
 				}
 
 				acc
@@ -118,6 +126,7 @@ enum CircuitStep<F: Field> {
 	Add(CircuitStepArgument<F>, CircuitStepArgument<F>),
 	Mul(CircuitStepArgument<F>, CircuitStepArgument<F>),
 	Pow(CircuitStepArgument<F>, u64),
+	Square(CircuitStepArgument<F>),
 	AddMul(usize, CircuitStepArgument<F>, CircuitStepArgument<F>),
 }
 
@@ -242,6 +251,9 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 						after,
 						get_argument_value(*x, before) * get_argument_value(*y, before),
 					),
+					CircuitStep::Square(x) => {
+						write_result(after, get_argument_value(*x, before).square())
+					}
 					CircuitStep::Pow(id, exp) => {
 						write_result(after, get_argument_value(*id, before).pow(*exp))
 					}
@@ -300,6 +312,31 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 								out.write(left * right);
 							},
 						);
+					}
+					CircuitStep::Square(arg) => {
+						match arg {
+							CircuitStepArgument::Expr(node) => {
+								let id_chunk = node.get_sparse_chunk(batch_query, before, row_len);
+								for j in 0..row_len {
+									// Safety: `current` and `id_chunk` have length equal to `row_len`
+									unsafe {
+										current
+											.get_unchecked_mut(j)
+											.write(id_chunk.get_unchecked(j).square());
+									}
+								}
+							}
+							CircuitStepArgument::Const(value) => {
+								let value: P = P::broadcast((*value).into());
+								let result = value.square();
+								for j in 0..row_len {
+									// Safety: `current` has length equal to `row_len`
+									unsafe {
+										current.get_unchecked_mut(j).write(result);
+									}
+								}
+							}
+						}
 					}
 					CircuitStep::Pow(id, exp) => match id {
 						CircuitStepArgument::Expr(id) => {
@@ -840,19 +877,30 @@ mod tests {
 	}
 
 	#[test]
+	fn test_circuit_steps_for_expr_pow_1() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(12).pow(1);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		// No steps should be generated for x^1
+		assert_eq!(steps.len(), 0, "Pow(1) should not generate any computation steps");
+
+		// The return value should just be the variable itself
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Var(12))));
+	}
+
+	#[test]
 	fn test_circuit_steps_for_expr_pow_2() {
 		type F = BinaryField8b;
 
 		let expr = ArithExpr::<F>::Var(10).pow(2);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 1, "Pow(2) should generate one multiplication step");
+		assert_eq!(steps.len(), 1, "Pow(2) should generate one squaring step");
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(10)),
-				CircuitStepArgument::Expr(CircuitNode::Var(10))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(10)))
 		));
 		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(0))));
 	}
@@ -864,13 +912,14 @@ mod tests {
 		let expr = ArithExpr::<F>::Var(5).pow(3);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 2, "Pow(3) should generate two multiplication steps");
+		assert_eq!(
+			steps.len(),
+			2,
+			"Pow(3) should generate one squaring and one multiplication step"
+		);
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(5)),
-				CircuitStepArgument::Expr(CircuitNode::Var(5))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(5)))
 		));
 		assert!(matches!(
 			steps[1],
@@ -889,30 +938,18 @@ mod tests {
 		let expr = ArithExpr::<F>::Var(7).pow(4);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 3, "Pow(4) should generate three multiplication steps");
+		assert_eq!(steps.len(), 2, "Pow(4) should generate two squaring steps");
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(7)),
-				CircuitStepArgument::Expr(CircuitNode::Var(7))
-			)
-		));
-		assert!(matches!(
-			steps[1],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
-				CircuitStepArgument::Expr(CircuitNode::Var(7))
-			)
-		));
-		assert!(matches!(
-			steps[2],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
-				CircuitStepArgument::Expr(CircuitNode::Var(7))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(7)))
 		));
 
-		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(1))));
 	}
 
 	#[test]
@@ -922,20 +959,18 @@ mod tests {
 		let expr = ArithExpr::<F>::Var(3).pow(5);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 4, "Pow(5) should generate four multiplication steps");
+		assert_eq!(
+			steps.len(),
+			3,
+			"Pow(5) should generate two squaring steps and one multiplication"
+		);
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(3)),
-				CircuitStepArgument::Expr(CircuitNode::Var(3))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(3)))
 		));
 		assert!(matches!(
 			steps[1],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
-				CircuitStepArgument::Expr(CircuitNode::Var(3))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
 		));
 		assert!(matches!(
 			steps[2],
@@ -944,15 +979,8 @@ mod tests {
 				CircuitStepArgument::Expr(CircuitNode::Var(3))
 			)
 		));
-		assert!(matches!(
-			steps[3],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(2)),
-				CircuitStepArgument::Expr(CircuitNode::Var(3))
-			)
-		));
 
-		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))));
 	}
 
 	#[test]
@@ -962,58 +990,21 @@ mod tests {
 		let expr = ArithExpr::<F>::Var(4).pow(8);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 7, "Pow(8) should generate seven multiplication steps");
+		assert_eq!(steps.len(), 3, "Pow(8) should generate three squaring steps");
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(4)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(4)))
 		));
 		assert!(matches!(
 			steps[1],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
 		));
 		assert!(matches!(
 			steps[2],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
-		));
-		assert!(matches!(
-			steps[3],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(2)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
-		));
-		assert!(matches!(
-			steps[4],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(3)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
-		));
-		assert!(matches!(
-			steps[5],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(4)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
-		));
-		assert!(matches!(
-			steps[6],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(5)),
-				CircuitStepArgument::Expr(CircuitNode::Var(4))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
 		));
 
-		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(6))));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))));
 	}
 
 	#[test]
@@ -1023,27 +1014,22 @@ mod tests {
 		let expr = ArithExpr::<F>::Var(8).pow(9);
 		let (steps, retval) = circuit_steps_for_expr(&expr);
 
-		assert_eq!(steps.len(), 8, "Pow(9) should generate eight multiplication steps");
+		assert_eq!(
+			steps.len(),
+			4,
+			"Pow(9) should generate three squaring steps and one multiplication"
+		);
 		assert!(matches!(
 			steps[0],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Var(8)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(8)))
 		));
 		assert!(matches!(
 			steps[1],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
 		));
 		assert!(matches!(
 			steps[2],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
 		));
 		assert!(matches!(
 			steps[3],
@@ -1052,36 +1038,8 @@ mod tests {
 				CircuitStepArgument::Expr(CircuitNode::Var(8))
 			)
 		));
-		assert!(matches!(
-			steps[4],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(3)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
-		));
-		assert!(matches!(
-			steps[5],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(4)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
-		));
-		assert!(matches!(
-			steps[6],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(5)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
-		));
-		assert!(matches!(
-			steps[7],
-			CircuitStep::Mul(
-				CircuitStepArgument::Expr(CircuitNode::Slot(6)),
-				CircuitStepArgument::Expr(CircuitNode::Var(8))
-			)
-		));
 
-		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(7))));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
 	}
 
 	#[test]
