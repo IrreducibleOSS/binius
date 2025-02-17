@@ -292,38 +292,38 @@ mod tests {
 			});
 			let state_output = super::sha256(builder, input, log_size).unwrap();
 
-			let witness = builder.witness().unwrap();
+			if let Some(witness) = builder.witness() {
+				let input_witneses: [_; 16] = std::array::from_fn(|i| {
+					witness
+						.get::<BinaryField1b>(input[i])
+						.unwrap()
+						.as_slice::<u32>()
+				});
 
-			let input_witneses: [_; 16] = std::array::from_fn(|i| {
-				witness
-					.get::<BinaryField1b>(input[i])
-					.unwrap()
-					.as_slice::<u32>()
-			});
+				let output_witneses: [_; 8] = std::array::from_fn(|i| {
+					witness
+						.get::<BinaryField1b>(state_output[i])
+						.unwrap()
+						.as_slice::<u32>()
+				});
 
-			let output_witneses: [_; 8] = std::array::from_fn(|i| {
-				witness
-					.get::<BinaryField1b>(state_output[i])
-					.unwrap()
-					.as_slice::<u32>()
-			});
+				let mut generic_array_input = GenericArray::<u8, _>::default();
 
-			let mut generic_array_input = GenericArray::<u8, _>::default();
+				let n_compressions = input_witneses[0].len();
 
-			let n_compressions = input_witneses[0].len();
-
-			for j in 0..n_compressions {
-				for i in 0..16 {
-					for z in 0..4 {
-						generic_array_input[i * 4 + z] = input_witneses[i][j].to_be_bytes()[z];
+				for j in 0..n_compressions {
+					for i in 0..16 {
+						for z in 0..4 {
+							generic_array_input[i * 4 + z] = input_witneses[i][j].to_be_bytes()[z];
+						}
 					}
-				}
 
-				let mut output = crate::sha256::INIT;
-				compress256(&mut output, &[generic_array_input]);
+					let mut output = crate::sha256::INIT;
+					compress256(&mut output, &[generic_array_input]);
 
-				for i in 0..8 {
-					assert_eq!(output[i], output_witneses[i][j]);
+					for i in 0..8 {
+						assert_eq!(output[i], output_witneses[i][j]);
+					}
 				}
 			}
 
