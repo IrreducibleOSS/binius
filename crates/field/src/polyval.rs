@@ -457,6 +457,13 @@ impl BinaryField for BinaryField128bPolyval {
 impl TowerField for BinaryField128bPolyval {
 	type Canonical = BinaryField128b;
 
+	fn min_tower_level(self) -> usize {
+		match self {
+			Self::ZERO | Self::ONE => 0,
+			_ => 7,
+		}
+	}
+
 	fn mul_primitive(self, _iota: usize) -> Result<Self, Error> {
 		// This method could be implemented by multiplying by isomorphic alpha value
 		// But it's not being used as for now
@@ -1035,11 +1042,10 @@ mod tests {
 			packed_polyval_512::PackedBinaryPolyval4x128b,
 		},
 		binary_field::tests::is_binary_field_valid_generator,
-		deserialize_canonical,
 		linear_transformation::PackedTransformationFactory,
-		serialize_canonical, AESTowerField128b, PackedAESBinaryField1x128b,
+		AESTowerField128b, DeserializeCanonical, PackedAESBinaryField1x128b,
 		PackedAESBinaryField2x128b, PackedAESBinaryField4x128b, PackedBinaryField1x128b,
-		PackedBinaryField2x128b, PackedBinaryField4x128b, PackedField,
+		PackedBinaryField2x128b, PackedBinaryField4x128b, PackedField, SerializeCanonical,
 	};
 
 	#[test]
@@ -1188,19 +1194,17 @@ mod tests {
 		let b128_poly1 = <BinaryField128bPolyval as Field>::random(&mut rng);
 		let b128_poly2 = <BinaryField128bPolyval as Field>::random(&mut rng);
 
-		serialize_canonical(b128_poly1, &mut buffer).unwrap();
-		serialize_canonical(b128_poly2, &mut buffer).unwrap();
+		SerializeCanonical::serialize_canonical(&b128_poly1, &mut buffer).unwrap();
+		SerializeCanonical::serialize_canonical(&b128_poly2, &mut buffer).unwrap();
 
 		let mut read_buffer = buffer.freeze();
 
 		assert_eq!(
-			deserialize_canonical::<BinaryField128bPolyval, _>(&mut read_buffer).unwrap(),
+			BinaryField128bPolyval::deserialize_canonical(&mut read_buffer).unwrap(),
 			b128_poly1
 		);
 		assert_eq!(
-			BinaryField128bPolyval::from(
-				deserialize_canonical::<BinaryField128b, _>(&mut read_buffer).unwrap()
-			),
+			BinaryField128bPolyval::deserialize_canonical(&mut read_buffer).unwrap(),
 			b128_poly2
 		);
 	}

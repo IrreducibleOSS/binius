@@ -4,37 +4,27 @@ use alloy_primitives::U512;
 use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	tower_levels::TowerLevel,
-	underlier::{UnderlierType, WithUnderlier},
-	BinaryField, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
+	tower_levels::TowerLevel, underlier::WithUnderlier, BinaryField32b, BinaryField8b, TowerField,
 };
 use binius_macros::arith_expr;
-use bytemuck::Pod;
 
 use super::{byte_sliced_add_carryfree, byte_sliced_mul};
 use crate::{
-	builder::ConstraintSystemBuilder,
+	builder::{types::F, ConstraintSystemBuilder},
 	lasso::{
 		batch::LookupBatch,
 		lookups::u8_arithmetic::{add_carryfree_lookup, add_lookup, dci_lookup, mul_lookup},
 	},
 };
 
-type B1 = BinaryField1b;
 type B8 = BinaryField8b;
-type B16 = BinaryField16b;
-type B32 = BinaryField32b;
 
 #[allow(clippy::too_many_arguments)]
 pub fn byte_sliced_modular_mul<
-	U,
-	F,
 	LevelIn: TowerLevel<OracleId>,
 	LevelOut: TowerLevel<OracleId, Base = LevelIn>,
 >(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	mult_a: &LevelIn::Data,
 	mult_b: &LevelIn::Data,
@@ -42,21 +32,7 @@ pub fn byte_sliced_modular_mul<
 	log_size: usize,
 	zero_byte_oracle: OracleId,
 	zero_carry_oracle: OracleId,
-) -> Result<LevelIn::Data, anyhow::Error>
-where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-	<F as WithUnderlier>::Underlier: From<u8>,
-{
+) -> Result<LevelIn::Data, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let lookup_t_mul = mul_lookup(builder, "mul table")?;
@@ -88,12 +64,14 @@ where
 			"modulus",
 			Constant::new(
 				log_size,
-				F::from_underlier(<u8 as Into<F::Underlier>>::into(modulus_input[byte_idx])),
+				<F as WithUnderlier>::from_underlier(<u8 as Into<
+					<F as WithUnderlier>::Underlier,
+				>>::into(modulus_input[byte_idx])),
 			),
 		)?;
 	}
 
-	let ab = byte_sliced_mul::<_, _, LevelIn, LevelOut>(
+	let ab = byte_sliced_mul::<LevelIn, LevelOut>(
 		builder,
 		"ab",
 		mult_a,
@@ -166,7 +144,7 @@ where
 		}
 	}
 
-	let qm = byte_sliced_mul::<_, _, LevelIn, LevelOut>(
+	let qm = byte_sliced_mul::<LevelIn, LevelOut>(
 		builder,
 		"qm",
 		&quotient,
@@ -183,7 +161,7 @@ where
 		repeating_zero[byte_idx] = zero_byte_oracle;
 	}
 
-	let qm_plus_r = byte_sliced_add_carryfree::<_, _, LevelOut>(
+	let qm_plus_r = byte_sliced_add_carryfree::<LevelOut>(
 		builder,
 		"hi*lo",
 		&qm,
@@ -194,12 +172,12 @@ where
 		&mut lookup_batch_add_carryfree,
 	)?;
 
-	lookup_batch_mul.execute::<_, _, BinaryField32b>(builder)?;
-	lookup_batch_add.execute::<_, _, BinaryField32b>(builder)?;
-	lookup_batch_add_carryfree.execute::<_, _, BinaryField32b>(builder)?;
+	lookup_batch_mul.execute::<BinaryField32b>(builder)?;
+	lookup_batch_add.execute::<BinaryField32b>(builder)?;
+	lookup_batch_add_carryfree.execute::<BinaryField32b>(builder)?;
 
 	if LevelIn::WIDTH != 1 {
-		lookup_batch_dci.execute::<_, _, BinaryField32b>(builder)?;
+		lookup_batch_dci.execute::<BinaryField32b>(builder)?;
 	}
 
 	let consistency = arith_expr!([x, y] = x - y);

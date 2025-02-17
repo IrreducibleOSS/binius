@@ -267,7 +267,7 @@ fn make_test_sumcheck<'a, F, FDomain, P, PExt, Backend>(
 	impl SumcheckProver<F> + 'a,
 )
 where
-	F: Field + ExtensionField<P::Scalar> + ExtensionField<FDomain>,
+	F: Field,
 	FDomain: Field,
 	P: PackedField,
 	PExt: PackedField<Scalar = F>

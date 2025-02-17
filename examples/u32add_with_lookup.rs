@@ -1,11 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField128b, BinaryField1b,
-	BinaryField8b,
+	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField1b, BinaryField8b,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -29,7 +28,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -45,20 +43,20 @@ fn main() -> Result<()> {
 	let log_n_additions = log2_ceil_usize(args.n_additions as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 		&mut builder,
 		"in_a",
 		log_n_additions + 2,
 	)?;
-	let in_b = binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+	let in_b = binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 		&mut builder,
 		"in_b",
 		log_n_additions + 2,
 	)?;
-	let _product = binius_circuits::lasso::u32add::<_, _, BinaryField8b, BinaryField8b>(
+	let _product = binius_circuits::lasso::u32add::<BinaryField8b, BinaryField8b>(
 		&mut builder,
 		"out_c",
 		in_a,

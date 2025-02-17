@@ -2,44 +2,24 @@
 
 use anyhow::Result;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-	BinaryField, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField8b, ExtensionField,
-	PackedFieldIndexable, TowerField,
-};
-use bytemuck::Pod;
+use binius_field::{BinaryField1b, BinaryField32b, BinaryField8b, TowerField};
 
 use super::batch::LookupBatch;
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{types::F, ConstraintSystemBuilder};
 
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;
-type B16 = BinaryField16b;
 type B32 = BinaryField32b;
 
-pub fn u8add_carryfree<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u8add_carryfree(
+	builder: &mut ConstraintSystemBuilder,
 	lookup_batch: &mut LookupBatch,
 	name: impl ToString + Clone,
 	x_in: OracleId,
 	y_in: OracleId,
 	carry_in: OracleId,
 	log_size: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: Pod
-		+ UnderlierType
-		+ PackScalar<B1>
-		+ PackScalar<B8>
-		+ PackScalar<B16>
-		+ PackScalar<B32>
-		+ PackScalar<F>,
-	PackedType<U, B8>: PackedFieldIndexable,
-	PackedType<U, B16>: PackedFieldIndexable,
-	PackedType<U, B32>: PackedFieldIndexable,
-	F: TowerField + BinaryField + ExtensionField<B8> + ExtensionField<B16> + ExtensionField<B32>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 
 	let sum = builder.add_committed("sum", log_size, B8::TOWER_LEVEL);

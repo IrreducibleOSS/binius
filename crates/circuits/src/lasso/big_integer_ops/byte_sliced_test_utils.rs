@@ -5,8 +5,7 @@ use std::{array, fmt::Debug};
 use alloy_primitives::U512;
 use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 use binius_field::{
-	arch::OptimalUnderlier, tower_levels::TowerLevel, BinaryField128b, BinaryField1b,
-	BinaryField32b, BinaryField8b, Field, TowerField,
+	tower_levels::TowerLevel, BinaryField1b, BinaryField32b, BinaryField8b, Field, TowerField,
 };
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
@@ -36,24 +35,20 @@ pub fn test_bytesliced_add<const WIDTH: usize, TL>()
 where
 	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
 {
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let x_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap()
-	});
-	let y_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "y", log_size).unwrap()
-	});
-	let c_in = unconstrained::<_, _, BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
+	let x_in =
+		array::from_fn(|_| unconstrained::<BinaryField8b>(&mut builder, "x", log_size).unwrap());
+	let y_in =
+		array::from_fn(|_| unconstrained::<BinaryField8b>(&mut builder, "y", log_size).unwrap());
+	let c_in = unconstrained::<BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
 
 	let lookup_t_add = add_lookup(&mut builder, "add table").unwrap();
 
 	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
-	let _sum_and_cout = byte_sliced_add::<_, _, TL>(
+	let _sum_and_cout = byte_sliced_add::<TL>(
 		&mut builder,
 		"lasso_bytesliced_add",
 		&x_in,
@@ -64,7 +59,7 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_add.execute::<_, _, B32>(&mut builder).unwrap();
+	lookup_batch_add.execute::<B32>(&mut builder).unwrap();
 
 	let witness = builder.take_witness().unwrap();
 	let constraint_system = builder.build().unwrap();
@@ -76,10 +71,8 @@ pub fn test_bytesliced_add_carryfree<const WIDTH: usize, TL>()
 where
 	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
 {
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = 14;
 	let x_in = array::from_fn(|_| builder.add_committed("x", log_size, BinaryField8b::TOWER_LEVEL));
 	let y_in = array::from_fn(|_| builder.add_committed("y", log_size, BinaryField8b::TOWER_LEVEL));
@@ -130,7 +123,7 @@ where
 	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
 	let mut lookup_batch_add_carryfree = LookupBatch::new([lookup_t_add_carryfree]);
 
-	let _sum_and_cout = byte_sliced_add_carryfree::<_, _, TL>(
+	let _sum_and_cout = byte_sliced_add_carryfree::<TL>(
 		&mut builder,
 		"lasso_bytesliced_add_carryfree",
 		&x_in,
@@ -142,9 +135,9 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_add.execute::<_, _, B32>(&mut builder).unwrap();
+	lookup_batch_add.execute::<B32>(&mut builder).unwrap();
 	lookup_batch_add_carryfree
-		.execute::<_, _, B32>(&mut builder)
+		.execute::<B32>(&mut builder)
 		.unwrap();
 
 	let witness = builder.take_witness().unwrap();
@@ -157,22 +150,16 @@ pub fn test_bytesliced_double_conditional_increment<const WIDTH: usize, TL>()
 where
 	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
 {
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
-
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let x_in = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "x", log_size).unwrap()
-	});
+	let x_in =
+		array::from_fn(|_| unconstrained::<BinaryField8b>(&mut builder, "x", log_size).unwrap());
 
-	let first_c_in =
-		unconstrained::<_, _, BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
+	let first_c_in = unconstrained::<BinaryField1b>(&mut builder, "cin first", log_size).unwrap();
 
-	let second_c_in =
-		unconstrained::<_, _, BinaryField1b>(&mut builder, "cin second", log_size).unwrap();
+	let second_c_in = unconstrained::<BinaryField1b>(&mut builder, "cin second", log_size).unwrap();
 
 	let zero_oracle_carry =
 		transparent::constant(&mut builder, "zero carry", log_size, BinaryField1b::ZERO).unwrap();
@@ -180,7 +167,7 @@ where
 
 	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 
-	let _sum_and_cout = byte_sliced_double_conditional_increment::<_, _, TL>(
+	let _sum_and_cout = byte_sliced_double_conditional_increment::<TL>(
 		&mut builder,
 		"lasso_bytesliced_DCI",
 		&x_in,
@@ -192,7 +179,7 @@ where
 	)
 	.unwrap();
 
-	lookup_batch_dci.execute::<_, _, B32>(&mut builder).unwrap();
+	lookup_batch_dci.execute::<B32>(&mut builder).unwrap();
 
 	let witness = builder.take_witness().unwrap();
 	let constraint_system = builder.build().unwrap();
@@ -205,19 +192,14 @@ where
 	TL: TowerLevel<OracleId>,
 	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
 {
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
-
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = 14;
 
-	let mult_a = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "a", log_size).unwrap()
-	});
-	let mult_b = array::from_fn(|_| {
-		unconstrained::<_, _, BinaryField8b>(&mut builder, "b", log_size).unwrap()
-	});
+	let mult_a =
+		array::from_fn(|_| unconstrained::<BinaryField8b>(&mut builder, "a", log_size).unwrap());
+	let mult_b =
+		array::from_fn(|_| unconstrained::<BinaryField8b>(&mut builder, "b", log_size).unwrap());
 
 	let zero_oracle_carry =
 		transparent::constant(&mut builder, "zero carry", log_size, BinaryField1b::ZERO).unwrap();
@@ -230,7 +212,7 @@ where
 	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
 	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
 
-	let _sum_and_cout = byte_sliced_mul::<_, _, TL::Base, TL>(
+	let _sum_and_cout = byte_sliced_mul::<TL::Base, TL>(
 		&mut builder,
 		"lasso_bytesliced_mul",
 		&mult_a,
@@ -255,11 +237,8 @@ where
 	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
 	<TL as TowerLevel<usize>>::Data: Debug,
 {
-	type U = OptimalUnderlier;
-	type F = BinaryField128b;
-
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, F>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 	let log_size = 14;
 
 	let mut rng = thread_rng();
@@ -304,7 +283,7 @@ where
 	let zero_oracle_carry =
 		transparent::constant(&mut builder, "zero carry", log_size, BinaryField1b::ZERO).unwrap();
 
-	let _modded_product = byte_sliced_modular_mul::<_, _, TL::Base, TL>(
+	let _modded_product = byte_sliced_modular_mul::<TL::Base, TL>(
 		&mut builder,
 		"lasso_bytesliced_mul",
 		&mult_a,

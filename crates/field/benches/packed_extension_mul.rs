@@ -16,7 +16,6 @@ fn benchmark_packed_extension_mul<F>(
 	label: &str,
 ) where
 	F: Field,
-	BinaryField128b: ExtensionField<F>,
 	PackedBinaryField2x128b: PackedExtension<F>,
 {
 	let mut rng = thread_rng();

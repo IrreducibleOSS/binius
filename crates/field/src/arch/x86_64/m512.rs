@@ -12,7 +12,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	arch::{
-		binary_utils::{as_array_mut, make_func_to_i8},
+		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
 			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
@@ -617,31 +617,41 @@ impl UnderlierWithBitOps for M512 {
 		T: UnderlierType + NumCast<Self>,
 	{
 		match T::BITS {
-			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::BITS;
-				let shuffle = unsafe { _mm512_set1_epi64((i / elements_in_64) as i64) };
-				let chunk_64 =
-					u64::num_cast_from(Self(unsafe { _mm512_permutexvar_epi64(shuffle, self.0) }));
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mut value_u8 = as_array_ref::<_, u8, 64, _>(self, |arr| unsafe {
+					*arr.get_unchecked(i / elements_in_8)
+				});
 
-				let result_64 = if T::BITS == 64 {
-					chunk_64
-				} else {
-					let ones = ((1u128 << T::BITS) - 1) as u64;
-					(chunk_64 >> (T::BITS * (i % elements_in_64))) & ones
-				};
+				let shift = (i % elements_in_8) * T::BITS;
+				value_u8 >>= shift;
 
-				T::num_cast_from(Self::from(result_64))
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+			}
+			8 => {
+				let value_u8 =
+					as_array_ref::<_, u8, 64, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+			}
+			16 => {
+				let value_u16 =
+					as_array_ref::<_, u16, 32, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u16)))
+			}
+			32 => {
+				let value_u32 =
+					as_array_ref::<_, u32, 16, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u32)))
+			}
+			64 => {
+				let value_u64 =
+					as_array_ref::<_, u64, 8, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u64)))
 			}
 			128 => {
-				let chunk_128 = unsafe {
-					match i {
-						0 => _mm512_extracti32x4_epi32(self.0, 0),
-						1 => _mm512_extracti32x4_epi32(self.0, 1),
-						2 => _mm512_extracti32x4_epi32(self.0, 2),
-						_ => _mm512_extracti32x4_epi32(self.0, 3),
-					}
-				};
-				T::num_cast_from(Self(unsafe { _mm512_castsi128_si512(chunk_128) }))
+				let value_u128 =
+					as_array_ref::<_, u128, 4, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u128)))
 			}
 			_ => panic!("unsupported bit count"),
 		}
@@ -661,26 +671,26 @@ impl UnderlierWithBitOps for M512 {
 				let val = u8::num_cast_from(Self::from(val)) << shift;
 				let mask = mask << shift;
 
-				as_array_mut::<_, u8, 64>(self, |array| {
-					let element = &mut array[i / elements_in_8];
+				as_array_mut::<_, u8, 64>(self, |array| unsafe {
+					let element = array.get_unchecked_mut(i / elements_in_8);
 					*element &= !mask;
 					*element |= val;
 				});
 			}
-			8 => as_array_mut::<_, u8, 64>(self, |array| {
-				array[i] = u8::num_cast_from(Self::from(val));
+			8 => as_array_mut::<_, u8, 64>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
 			}),
-			16 => as_array_mut::<_, u16, 32>(self, |array| {
-				array[i] = u16::num_cast_from(Self::from(val));
+			16 => as_array_mut::<_, u16, 32>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
 			}),
-			32 => as_array_mut::<_, u32, 16>(self, |array| {
-				array[i] = u32::num_cast_from(Self::from(val));
+			32 => as_array_mut::<_, u32, 16>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
 			}),
-			64 => as_array_mut::<_, u64, 8>(self, |array| {
-				array[i] = u64::num_cast_from(Self::from(val));
+			64 => as_array_mut::<_, u64, 8>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
 			128 => as_array_mut::<_, u128, 4>(self, |array| {
-				array[i] = u128::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
 		}
@@ -932,6 +942,12 @@ impl UnderlierWithBitConstants for M512 {
 		let (a, b) = unsafe { interleave_bits(self.0, other.0, log_block_len) };
 		(Self(a), Self(b))
 	}
+
+	#[inline(always)]
+	fn transpose(self, other: Self, log_bit_len: usize) -> (Self, Self) {
+		let (a, b) = unsafe { transpose_bits(self.0, other.0, log_bit_len) };
+		(Self(a), Self(b))
+	}
 }
 
 #[inline]
@@ -1101,6 +1117,95 @@ const fn precompute_spread_mask<const BLOCK_IDX_AMOUNT: usize>(
 	}
 
 	m512_masks
+}
+
+#[inline(always)]
+unsafe fn transpose_bits(a: __m512i, b: __m512i, log_block_len: usize) -> (__m512i, __m512i) {
+	match log_block_len {
+		0..=3 => {
+			let shuffle = _mm512_set_epi8(
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1,
+				14, 12, 10, 8, 6, 4, 2, 0, 15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+				15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0,
+			);
+			let (mut a, mut b) = transpose_with_shuffle(a, b, shuffle);
+			for log_block_len in (log_block_len..3).rev() {
+				(a, b) = interleave_bits(a, b, log_block_len);
+			}
+
+			(a, b)
+		}
+		4 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2,
+				13, 12, 9, 8, 5, 4, 1, 0, 15, 14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0, 15,
+				14, 11, 10, 7, 6, 3, 2, 13, 12, 9, 8, 5, 4, 1, 0,
+			);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		5 => {
+			let shuffle = _mm512_set_epi8(
+				15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4,
+				11, 10, 9, 8, 3, 2, 1, 0, 15, 14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0, 15,
+				14, 13, 12, 7, 6, 5, 4, 11, 10, 9, 8, 3, 2, 1, 0,
+			);
+			transpose_with_shuffle(a, b, shuffle)
+		}
+		6 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
+				b,
+			),
+		),
+		7 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1101, 0b1100, 0b1001, 0b1000, 0b0101, 0b0100, 0b0001, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b1011, 0b1010, 0b0111, 0b0110, 0b0011, 0b0010),
+				b,
+			),
+		),
+		8 => (
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1011, 0b1010, 0b1001, 0b1000, 0b0011, 0b0010, 0b0001, 0b0000),
+				b,
+			),
+			_mm512_permutex2var_epi64(
+				a,
+				_mm512_set_epi64(0b1111, 0b1110, 0b1101, 0b1100, 0b0111, 0b0110, 0b0101, 0b0100),
+				b,
+			),
+		),
+		_ => panic!("unsupported block length"),
+	}
+}
+
+unsafe fn transpose_with_shuffle(a: __m512i, b: __m512i, shuffle: __m512i) -> (__m512i, __m512i) {
+	let (a, b) = (_mm512_shuffle_epi8(a, shuffle), _mm512_shuffle_epi8(b, shuffle));
+
+	(
+		_mm512_permutex2var_epi64(
+			a,
+			_mm512_set_epi64(0b1110, 0b1100, 0b1010, 0b1000, 0b0110, 0b0100, 0b0010, 0b0000),
+			b,
+		),
+		_mm512_permutex2var_epi64(
+			a,
+			_mm512_set_epi64(0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001),
+			b,
+		),
+	)
 }
 
 impl_iteration!(M512,

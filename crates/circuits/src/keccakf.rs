@@ -8,14 +8,19 @@ use binius_core::{
 	transparent::multilinear_extension::MultilinearExtensionTransparent,
 };
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::{UnderlierType, WithUnderlier},
-	BinaryField1b, BinaryField64b, ExtensionField, PackedField, TowerField,
+	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField1b, BinaryField64b, Field,
+	PackedField, TowerField,
 };
 use binius_macros::arith_expr;
 use bytemuck::{pod_collect_to_vec, Pod};
 
-use crate::{builder::ConstraintSystemBuilder, transparent::step_down};
+use crate::{
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+	transparent::step_down,
+};
 
 #[derive(Default, Clone, Copy)]
 pub struct KeccakfState(pub [u64; STATE_SIZE]);
@@ -25,15 +30,11 @@ pub struct KeccakfOracles {
 	pub output: [OracleId; STATE_SIZE],
 }
 
-pub fn keccakf<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn keccakf(
+	builder: &mut ConstraintSystemBuilder,
 	input_witness: &Option<impl AsRef<[KeccakfState]>>,
 	log_size: usize,
-) -> Result<KeccakfOracles, anyhow::Error>
-where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField64b> + PackScalar<BinaryField1b>,
-	F: TowerField + ExtensionField<BinaryField64b>,
-{
+) -> Result<KeccakfOracles, anyhow::Error> {
 	let internal_log_size = log_size + LOG_BIT_ROWS_PER_PERMUTATION;
 	let round_consts_single: [OracleId; ROUNDS_PER_STATE_ROW] =
 		array::try_from_fn(|round_within_row| {
@@ -124,7 +125,7 @@ where
 		builder.add_projected(
 			"output",
 			packed_state_out[xy],
-			vec![F::ONE; LOG_STATE_ROWS_PER_PERMUTATION],
+			vec![Field::ONE; LOG_STATE_ROWS_PER_PERMUTATION],
 			ProjectionVariant::FirstVars,
 		)
 	})?;
@@ -135,7 +136,7 @@ where
 				"c",
 				internal_log_size,
 				array::from_fn::<_, 5, _>(|offset| {
-					(state[round_within_row][x + 5 * offset], F::ONE)
+					(state[round_within_row][x + 5 * offset], Field::ONE)
 				}),
 			)
 		})
@@ -159,8 +160,8 @@ where
 				"d",
 				internal_log_size,
 				[
-					(c[round_within_row][(x + 4) % 5], F::ONE),
-					(c_shift[round_within_row][(x + 1) % 5], F::ONE),
+					(c[round_within_row][(x + 4) % 5], Field::ONE),
+					(c_shift[round_within_row][(x + 1) % 5], Field::ONE),
 				],
 			)
 		})
@@ -174,8 +175,8 @@ where
 					format!("a_theta[{xy}]"),
 					internal_log_size,
 					[
-						(state[round_within_row][xy], F::ONE),
-						(d[round_within_row][x], F::ONE),
+						(state[round_within_row][xy], Field::ONE),
+						(d[round_within_row][x], Field::ONE),
 					],
 				)
 			})
@@ -504,3 +505,31 @@ const KECCAKF_RC: [u64; ROUNDS_PER_PERMUTATION] = [
 	0x0000000080000001,
 	0x8000000080008008,
 ];
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+	use rand::{rngs::StdRng, Rng, SeedableRng};
+
+	use super::KeccakfState;
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_keccakf() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size = 5;
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let input_states = vec![KeccakfState(rng.gen())];
+		let _state_out = super::keccakf(&mut builder, &Some(input_states), log_size);
+
+		let witness = builder.take_witness().unwrap();
+
+		let constraint_system = builder.build().unwrap();
+
+		let boundaries = vec![];
+
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
+}

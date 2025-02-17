@@ -3,15 +3,15 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	BinaryField, BinaryField16b, BinaryField8b, ExtensionField, Field, PackedBinaryField2x128b,
-	PackedExtension, PackedField, PackedFieldIndexable, TowerField,
+	BinaryField, BinaryField16b, BinaryField8b, DeserializeCanonical, Field,
+	PackedBinaryField2x128b, PackedExtension, PackedField, PackedFieldIndexable,
+	SerializeCanonical, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{
 	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
 };
-use binius_utils::serialization::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -104,14 +104,14 @@ fn commit_prove_verify<F, FDomain, FEncode, P, MTScheme>(
 	merkle_prover: &impl MerkleTreeProver<F, Scheme = MTScheme>,
 	log_inv_rate: usize,
 ) where
-	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
+	F: TowerField,
 	FDomain: BinaryField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<FDomain>
 		+ PackedExtension<FEncode>
 		+ PackedExtension<F, PackedSubfield = P>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes + DeserializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical + DeserializeCanonical>,
 {
 	let merkle_scheme = merkle_prover.scheme();
 

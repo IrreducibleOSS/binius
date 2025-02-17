@@ -4,7 +4,7 @@ use std::array;
 
 use anyhow::Result;
 use binius_circuits::{
-	builder::ConstraintSystemBuilder,
+	builder::{types::U, ConstraintSystemBuilder},
 	lasso::{
 		batch::LookupBatch,
 		big_integer_ops::byte_sliced_mul,
@@ -14,9 +14,8 @@ use binius_circuits::{
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
 use binius_field::{
-	arch::OptimalUnderlier,
 	tower_levels::{TowerLevel4, TowerLevel8},
-	BinaryField128b, BinaryField1b, BinaryField32b, BinaryField8b, Field,
+	BinaryField1b, BinaryField32b, BinaryField8b, Field,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -38,7 +37,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -54,12 +52,12 @@ fn main() -> Result<()> {
 	let log_n_muls = log2_ceil_usize(args.n_muls as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	// Assuming our input data is already transposed, i.e a length 4 array of B8's
 	let in_a = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 			&mut builder,
 			format!("in_a_{}", i),
 			log_n_muls,
@@ -67,7 +65,7 @@ fn main() -> Result<()> {
 		.unwrap()
 	});
 	let in_b = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField8b>(
+		binius_circuits::unconstrained::unconstrained::<BinaryField8b>(
 			&mut builder,
 			format!("in_b_{}", i),
 			log_n_muls,
@@ -84,7 +82,7 @@ fn main() -> Result<()> {
 	let mut lookup_batch_mul = LookupBatch::new([lookup_t_mul]);
 	let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
 	let mut lookup_batch_dci = LookupBatch::new([lookup_t_dci]);
-	let _mul_and_cout = byte_sliced_mul::<_, _, TowerLevel4, TowerLevel8>(
+	let _mul_and_cout = byte_sliced_mul::<TowerLevel4, TowerLevel8>(
 		&mut builder,
 		"lasso_bytesliced_mul",
 		&in_a,
@@ -95,9 +93,9 @@ fn main() -> Result<()> {
 		&mut lookup_batch_add,
 		&mut lookup_batch_dci,
 	)?;
-	lookup_batch_mul.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
-	lookup_batch_add.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
-	lookup_batch_dci.execute::<U, BinaryField128b, BinaryField32b>(&mut builder)?;
+	lookup_batch_mul.execute::<BinaryField32b>(&mut builder)?;
+	lookup_batch_add.execute::<BinaryField32b>(&mut builder)?;
+	lookup_batch_dci.execute::<BinaryField32b>(&mut builder)?;
 
 	drop(trace_gen_scope);
 

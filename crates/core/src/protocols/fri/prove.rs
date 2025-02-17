@@ -1,9 +1,11 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{BinaryField, ExtensionField, PackedExtension, PackedField, TowerField};
+use binius_field::{
+	BinaryField, ExtensionField, PackedExtension, PackedField, SerializeCanonical, TowerField,
+};
 use binius_hal::{make_portable_backend, ComputationBackend};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::{bail, serialization::SerializeBytes};
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use bytes::BufMut;
 use itertools::izip;
@@ -174,7 +176,7 @@ pub fn commit_interleaved<F, FA, P, PA, MerkleProver, VCS>(
 	message: &[P],
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: BinaryField,
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
@@ -209,7 +211,7 @@ pub fn commit_interleaved_with<F, FA, P, PA, MerkleProver, VCS>(
 	message_writer: impl FnOnce(&mut [P]),
 ) -> Result<CommitOutput<P, VCS::Digest, MerkleProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FA>,
+	F: BinaryField,
 	FA: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FA, PackedSubfield = PA>,
 	PA: PackedField<Scalar = FA>,
@@ -285,7 +287,7 @@ where
 	F: TowerField + ExtensionField<FA>,
 	FA: BinaryField,
 	MerkleProver: MerkleTreeProver<F, Scheme = VCS>,
-	VCS: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	VCS: MerkleTreeScheme<F, Digest: SerializeCanonical>,
 {
 	/// Constructs a new folder.
 	pub fn new(

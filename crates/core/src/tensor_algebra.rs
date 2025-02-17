@@ -10,7 +10,6 @@ use std::{
 use binius_field::{
 	square_transpose, util::inner_product_unchecked, ExtensionField, Field, PackedExtension,
 };
-use binius_utils::checked_arithmetics::checked_log_2;
 
 /// An element of the tensor algebra defined as the tensor product of `FE` and `FE` as fields.
 ///
@@ -64,7 +63,7 @@ where
 
 	/// Returns $\kappa$, the base-2 logarithm of the extension degree.
 	pub const fn kappa() -> usize {
-		checked_log_2(FE::DEGREE)
+		FE::LOG_DEGREE
 	}
 
 	/// Returns the byte size of an element.
@@ -124,12 +123,7 @@ where
 	}
 }
 
-impl<F, FE> TensorAlgebra<F, FE>
-where
-	F: Field,
-	FE: ExtensionField<F> + PackedExtension<F>,
-	FE::Scalar: ExtensionField<F>,
-{
+impl<F: Field, FE: ExtensionField<F> + PackedExtension<F>> TensorAlgebra<F, FE> {
 	/// Multiply by an element from the vertical subring.
 	///
 	/// Internally, this performs a transpose, vertical scaling, then transpose sequence. If

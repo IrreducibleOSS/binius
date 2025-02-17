@@ -2,7 +2,7 @@
 
 use std::{array, fmt::Debug, marker::PhantomData};
 
-use binius_field::{serialize_canonical, TowerField};
+use binius_field::{SerializeCanonical, TowerField};
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
 use binius_utils::{
 	bail,
@@ -108,42 +108,36 @@ where
 
 	fn verify_opening<B: Buf>(
 		&self,
-		index: usize,
+		mut index: usize,
 		values: &[F],
 		layer_depth: usize,
 		tree_depth: usize,
 		layer_digests: &[Self::Digest],
 		proof: &mut TranscriptReader<B>,
 	) -> Result<(), Error> {
-		if 1 << layer_depth != layer_digests.len() {
-			bail!(VerificationError::IncorrectVectorLength)
+		if (1 << layer_depth) != layer_digests.len() {
+			bail!(VerificationError::IncorrectVectorLength);
 		}
 
-		if index > (1 << tree_depth) - 1 {
+		if index >= (1 << tree_depth) {
 			bail!(Error::IndexOutOfRange {
-				max: (1 << tree_depth) - 1,
+				max: (1 << tree_depth) - 1
 			});
 		}
 
-		let leaf_digest = hash_field_elems::<_, H>(values);
-		let branch = proof.read_vec(tree_depth - layer_depth)?;
-
-		let mut index = index;
-		let root = branch.into_iter().fold(leaf_digest, |node, branch_node| {
-			let next_node = if index & 1 == 0 {
-				self.compression.compress([node, branch_node])
+		let mut leaf_digest = hash_field_elems::<_, H>(values);
+		for branch_node in proof.read_vec(tree_depth - layer_depth)? {
+			leaf_digest = self.compression.compress(if index & 1 == 0 {
+				[leaf_digest, branch_node]
 			} else {
-				self.compression.compress([branch_node, node])
-			};
+				[branch_node, leaf_digest]
+			});
 			index >>= 1;
-			next_node
-		});
-
-		if root == layer_digests[index] {
-			Ok(())
-		} else {
-			bail!(VerificationError::InvalidProof)
 		}
+
+		(leaf_digest == layer_digests[index])
+			.then_some(())
+			.ok_or_else(|| VerificationError::InvalidProof.into())
 	}
 }
 
@@ -178,8 +172,9 @@ where
 	let mut hasher = H::new();
 	{
 		let mut buffer = HashBuffer::new(&mut hasher);
-		for &elem in elems {
-			serialize_canonical(elem, &mut buffer).expect("HashBuffer has infinite capacity");
+		for elem in elems {
+			SerializeCanonical::serialize_canonical(elem, &mut buffer)
+				.expect("HashBuffer has infinite capacity");
 		}
 	}
 	hasher.finalize()

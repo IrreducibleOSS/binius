@@ -186,8 +186,6 @@ impl<F: Field> Matrix<F> {
 	}
 
 	fn scale_row(&mut self, i: usize, scalar: F) {
-		assert!(i < self.m);
-
 		for x in self.row_mut(i) {
 			*x *= scalar;
 		}

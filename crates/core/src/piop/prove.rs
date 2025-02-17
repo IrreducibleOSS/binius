@@ -1,8 +1,8 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{
-	packed::set_packed_slice, BinaryField, ExtensionField, Field, PackedExtension, PackedField,
-	PackedFieldIndexable, TowerField,
+	packed::set_packed_slice, BinaryField, Field, PackedExtension, PackedField,
+	PackedFieldIndexable, SerializeCanonical, TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
@@ -10,7 +10,7 @@ use binius_math::{
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use binius_utils::{bail, serialization::SerializeBytes, sorting::is_sorted_ascending};
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use either::Either;
 use itertools::{chain, Itertools};
 
@@ -101,7 +101,7 @@ pub fn commit<F, FEncode, P, M, MTScheme, MTProver>(
 	multilins: &[M],
 ) -> Result<fri::CommitOutput<P, MTScheme::Digest, MTProver::Committed>, Error>
 where
-	F: BinaryField + ExtensionField<FEncode>,
+	F: BinaryField,
 	FEncode: BinaryField,
 	P: PackedField<Scalar = F> + PackedExtension<FEncode>,
 	M: MultilinearPoly<P>,
@@ -166,7 +166,7 @@ pub fn prove<F, FDomain, FEncode, P, M, DomainFactory, MTScheme, MTProver, Chall
 	backend: &Backend,
 ) -> Result<(), Error>
 where
-	F: TowerField + ExtensionField<FDomain> + ExtensionField<FEncode>,
+	F: TowerField,
 	FDomain: Field,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F>
@@ -175,7 +175,7 @@ where
 		+ PackedExtension<FEncode>,
 	M: MultilinearPoly<P> + Send + Sync,
 	DomainFactory: EvaluationDomainFactory<FDomain>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
@@ -251,10 +251,10 @@ fn prove_interleaved_fri_sumcheck<F, FEncode, P, MTScheme, MTProver, Challenger_
 	transcript: &mut ProverTranscript<Challenger_>,
 ) -> Result<(), Error>
 where
-	F: TowerField + ExtensionField<FEncode>,
+	F: TowerField,
 	FEncode: BinaryField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FEncode>,
-	MTScheme: MerkleTreeScheme<F, Digest: SerializeBytes>,
+	MTScheme: MerkleTreeScheme<F, Digest: SerializeCanonical>,
 	MTProver: MerkleTreeProver<F, Scheme = MTScheme>,
 	Challenger_: Challenger,
 {

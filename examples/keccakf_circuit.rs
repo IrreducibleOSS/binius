@@ -5,9 +5,8 @@
 use std::vec;
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{arch::OptimalUnderlier, BinaryField128b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -28,7 +27,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -45,7 +43,7 @@ fn main() -> Result<()> {
 
 	let allocator = bumpalo::Bump::new();
 
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let log_size = log_n_permutations;
 

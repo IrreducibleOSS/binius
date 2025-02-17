@@ -7,7 +7,6 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use binius_utils::serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes};
 use bytemuck::{Pod, Zeroable};
 use bytes::{Buf, BufMut};
 use rand::RngCore;
@@ -17,6 +16,7 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 };
 use crate::{
+	serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes},
 	underlier::{SmallU, U1, U2, U4},
 	Field,
 };
@@ -44,6 +44,13 @@ where
 	/// The canonical field isomorphic to this tower field.
 	/// Currently for every tower field, the canonical field is Fan-Paar's binary field of the same degree.
 	type Canonical: TowerField + SerializeBytes + DeserializeBytes;
+
+	/// Returns the smallest valid `TOWER_LEVEL` in the tower that can fit the same value.
+	///
+	/// Since which `TOWER_LEVEL` values are valid depends on the tower,
+	/// `F::Canonical::from(elem).min_tower_level()` can return a different result
+	/// from `elem.min_tower_level()`.
+	fn min_tower_level(self) -> usize;
 
 	fn basis(iota: usize, i: usize) -> Result<Self, Error> {
 		if iota > Self::TOWER_LEVEL {
@@ -625,10 +632,16 @@ pub(super) trait MulPrimitive: Sized {
 
 #[macro_export]
 macro_rules! binary_tower {
-	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty)) => {
-		binary_tower!($subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ, $name));
+	(BinaryField1b($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty $(, $canonical:ident)?) $(< $extfield_name:ident($extfield_typ:ty $(, $canonical_ext:ident)?))+) => {
+		binary_tower!([BinaryField1b::TOWER_LEVEL]; BinaryField1b($subfield_typ $(, $canonical_subfield)?) < $name($typ $(, $canonical)?) $(< $extfield_name($extfield_typ $(, $canonical_ext)?))+);
 	};
-	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty, $canonical:ident)) => {
+	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty $(, $canonical:ident)?) $(< $extfield_name:ident($extfield_typ:ty $(, $canonical_ext:ident)?))+) => {
+		binary_tower!([BinaryField1b::TOWER_LEVEL, $subfield_name::TOWER_LEVEL]; $subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ $(, $canonical)?) $(< $extfield_name($extfield_typ $(, $canonical_ext)?))+);
+	};
+	([$($valid_tower_levels:tt)*]; $subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty)) => {
+		binary_tower!([$($valid_tower_levels)*]; $subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ, $name));
+	};
+	([$($valid_tower_levels:tt)*]; $subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty, $canonical:ident)) => {
 		impl From<$name> for ($subfield_name, $subfield_name) {
 			#[inline]
 			fn from(src: $name) -> ($subfield_name, $subfield_name) {
@@ -652,6 +665,16 @@ macro_rules! binary_tower {
 
 			type Canonical = $canonical;
 
+			fn min_tower_level(self) -> usize {
+				let zero = <$typ as $crate::underlier::UnderlierWithBitOps>::ZERO;
+				for level in [$($valid_tower_levels)*] {
+					if self.0 >> (1 << level) == zero {
+						return level;
+					}
+				}
+				Self::TOWER_LEVEL
+			}
+
 			fn mul_primitive(self, iota: usize) -> Result<Self, Error> {
 				<Self as $crate::binary_field::MulPrimitive>::mul_primitive(self, iota)
 			}
@@ -663,14 +686,13 @@ macro_rules! binary_tower {
 
 		binary_tower!($subfield_name($subfield_typ) < @1 => $name($typ));
 	};
-	($subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty $(, $canonical:ident)?) $(< $extfield_name:ident($extfield_typ:ty $(, $canonical_ext:ident)?))+) => {
-		binary_tower!($subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ $(, $canonical)?));
-		binary_tower!($name($typ $(, $canonical)?) $(< $extfield_name($extfield_typ $(, $canonical_ext)?))+);
+	([$($valid_tower_levels:tt)*]; $subfield_name:ident($subfield_typ:ty $(, $canonical_subfield:ident)?) < $name:ident($typ:ty $(, $canonical:ident)?) $(< $extfield_name:ident($extfield_typ:ty $(, $canonical_ext:ident)?))+) => {
+		binary_tower!([$($valid_tower_levels)*]; $subfield_name($subfield_typ $(, $canonical_subfield)?) < $name($typ $(, $canonical)?));
+		binary_tower!([$($valid_tower_levels)*, $name::TOWER_LEVEL]; $name($typ $(, $canonical)?) $(< $extfield_name($extfield_typ $(, $canonical_ext)?))+);
 		binary_tower!($subfield_name($subfield_typ) < @2 => $($extfield_name($extfield_typ))<+);
 	};
 	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty)) => {
 		$crate::binary_field::impl_field_extension!($subfield_name($subfield_typ) < @$log_degree => $name($typ));
-
 		$crate::binary_field::binary_tower_subfield_mul!($subfield_name, $name);
 	};
 	($subfield_name:ident($subfield_typ:ty) < @$log_degree:expr => $name:ident($typ:ty) $(< $extfield_name:ident($extfield_typ:ty))+) => {
@@ -765,22 +787,6 @@ serialize_deserialize!(BinaryField16b, u16);
 serialize_deserialize!(BinaryField32b, u32);
 serialize_deserialize!(BinaryField64b, u64);
 serialize_deserialize!(BinaryField128b, u128);
-
-/// Serializes a [`TowerField`] element to a byte buffer with a canonical encoding.
-pub fn serialize_canonical<F: TowerField, W: BufMut>(
-	elem: F,
-	mut writer: W,
-) -> Result<(), SerializationError> {
-	F::Canonical::from(elem).serialize(&mut writer)
-}
-
-/// Deserializes a [`TowerField`] element from a byte buffer with a canonical encoding.
-pub fn deserialize_canonical<F: TowerField, R: Buf>(
-	mut reader: R,
-) -> Result<F, SerializationError> {
-	let as_canonical = F::Canonical::deserialize(&mut reader)?;
-	Ok(F::from(as_canonical))
-}
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {

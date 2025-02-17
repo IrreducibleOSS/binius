@@ -10,11 +10,11 @@
 use std::array;
 
 use anyhow::Result;
-use binius_circuits::builder::ConstraintSystemBuilder;
+use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
-use binius_field::{arch::OptimalUnderlier, BinaryField128b, BinaryField32b, BinaryField8b};
+use binius_field::{BinaryField32b, BinaryField8b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::IsomorphicEvaluationDomainFactory;
@@ -35,7 +35,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-	type U = OptimalUnderlier;
 	const SECURITY_BITS: usize = 100;
 
 	adjust_thread_pool()
@@ -51,11 +50,11 @@ fn main() -> Result<()> {
 	let log_n_permutations = log2_ceil_usize(args.n_permutations as usize);
 
 	let allocator = bumpalo::Bump::new();
-	let mut builder = ConstraintSystemBuilder::<U, BinaryField128b>::new_with_witness(&allocator);
+	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
 	let state_in: [OracleId; 24] = array::from_fn(|i| {
-		binius_circuits::unconstrained::unconstrained::<_, _, BinaryField32b>(
+		binius_circuits::unconstrained::unconstrained::<BinaryField32b>(
 			&mut builder,
 			format!("p_in_{i}"),
 			log_n_permutations,

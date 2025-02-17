@@ -337,6 +337,14 @@ where
 	}
 
 	#[inline]
+	fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
+		assert!(log_block_len < Self::LOG_WIDTH);
+		let log_bit_len = Self::Scalar::N_BITS.ilog2() as usize;
+		let (c, d) = self.0.transpose(other.0, log_block_len + log_bit_len);
+		(c.into(), d.into())
+	}
+
+	#[inline]
 	unsafe fn spread_unchecked(self, log_block_len: usize, block_idx: usize) -> Self {
 		debug_assert!(log_block_len <= Self::LOG_WIDTH, "{} <= {}", log_block_len, Self::LOG_WIDTH);
 		debug_assert!(

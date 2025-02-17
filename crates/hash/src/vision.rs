@@ -221,7 +221,6 @@ where
 	U: PackScalar<F> + Divisible<u32>,
 	F: BinaryField + From<AESTowerField32b> + Into<AESTowerField32b>,
 	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
-	P::Scalar: ExtensionField<F>,
 	PackedAESBinaryField8x32b: WithUnderlier<Underlier = U>,
 {
 	type Digest = PackedType<U, F>;

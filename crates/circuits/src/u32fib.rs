@@ -1,26 +1,22 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_core::oracle::{OracleId, ShiftVariant};
-use binius_field::{
-	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, BinaryField32b,
-	ExtensionField, TowerField,
-};
+use binius_field::{BinaryField1b, BinaryField32b, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
-use bytemuck::Pod;
 use rand::{thread_rng, Rng};
 
-use crate::{arithmetic, builder::ConstraintSystemBuilder, transparent::step_down};
+use crate::{
+	arithmetic,
+	builder::{types::F, ConstraintSystemBuilder},
+	transparent::step_down,
+};
 
-pub fn u32fib<U, F>(
-	builder: &mut ConstraintSystemBuilder<U, F>,
+pub fn u32fib(
+	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
-) -> Result<OracleId, anyhow::Error>
-where
-	U: UnderlierType + Pod + PackScalar<F> + PackScalar<BinaryField1b> + PackScalar<BinaryField32b>,
-	F: TowerField + ExtensionField<BinaryField32b>,
-{
+) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	let current = builder.add_committed("current", log_size, BinaryField1b::TOWER_LEVEL);
 	let next = builder.add_shifted("next", current, 32, log_size, ShiftVariant::LogicalRight)?;
@@ -74,4 +70,24 @@ where
 
 	builder.pop_namespace();
 	Ok(current)
+}
+
+#[cfg(test)]
+mod tests {
+	use binius_core::constraint_system::validate::validate_witness;
+
+	use crate::builder::ConstraintSystemBuilder;
+
+	#[test]
+	fn test_u32fib() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+		let log_size_1b = 14;
+		let _ = super::u32fib(&mut builder, "u32fib", log_size_1b).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraint_system = builder.build().unwrap();
+		let boundaries = vec![];
+		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+	}
 }

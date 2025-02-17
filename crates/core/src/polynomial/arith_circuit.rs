@@ -144,12 +144,14 @@ pub struct ArithCircuitPoly<F: Field> {
 	retval: CircuitStepArgument<F>,
 	degree: usize,
 	n_vars: usize,
+	tower_level: usize,
 }
 
-impl<F: Field> ArithCircuitPoly<F> {
+impl<F: TowerField> ArithCircuitPoly<F> {
 	pub fn new(expr: ArithExpr<F>) -> Self {
 		let degree = expr.degree();
 		let n_vars = expr.n_vars();
+		let tower_level = expr.binary_tower_level();
 		let (exprs, retval) = circuit_steps_for_expr(&expr);
 
 		Self {
@@ -158,6 +160,7 @@ impl<F: Field> ArithCircuitPoly<F> {
 			retval,
 			degree,
 			n_vars,
+			tower_level,
 		}
 	}
 
@@ -167,6 +170,7 @@ impl<F: Field> ArithCircuitPoly<F> {
 	/// arithmetic expression.
 	pub fn with_n_vars(n_vars: usize, expr: ArithExpr<F>) -> Result<Self, Error> {
 		let degree = expr.degree();
+		let tower_level = expr.binary_tower_level();
 		if n_vars < expr.n_vars() {
 			return Err(Error::IncorrectNumberOfVariables {
 				expected: expr.n_vars(),
@@ -181,6 +185,7 @@ impl<F: Field> ArithCircuitPoly<F> {
 			retval,
 			n_vars,
 			degree,
+			tower_level,
 		})
 	}
 }
@@ -195,7 +200,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 	}
 
 	fn binary_tower_level(&self) -> usize {
-		F::TOWER_LEVEL
+		self.tower_level
 	}
 
 	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
@@ -554,7 +559,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
@@ -582,7 +587,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
@@ -602,7 +607,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
@@ -628,7 +633,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 13);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
@@ -654,7 +659,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 3);
 		assert_eq!(typed_circuit.n_vars(), 2);
 
@@ -775,7 +780,7 @@ mod tests {
 		assert_eq!(circuit.steps.len(), 1);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 1);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
@@ -802,7 +807,7 @@ mod tests {
 		assert_eq!(circuit.steps.len(), 1);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
-		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
+		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 24);
 		assert_eq!(typed_circuit.n_vars(), 1);
 
