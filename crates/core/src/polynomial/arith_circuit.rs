@@ -51,32 +51,29 @@ fn circuit_steps_for_expr<F: Field>(
 				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 			}
 			ArithExpr::Pow(base, exp) => {
-				let exp = *exp;
-				let base_arg = to_circuit_inner(base, result);
+				let mut exp = *exp;
+				let mut base_arg = to_circuit_inner(base, result);
+				let mut acc = CircuitStepArgument::Const(F::ONE);
 
-				if exp == 1 {
-					// x^1 = x
-					return base_arg;
-				}
-
-				let mut acc = base_arg;
-				let mut current_exp = 1;
-
-				// Apply square and minimize multiplications
-				while current_exp * 2 <= exp {
-					result.push(CircuitStep::Square(acc));
-					acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
-					current_exp *= 2;
-				}
-
-				// If remaining exponentiation, multiply by base_arg
-				if current_exp < exp {
-					for _ in current_exp..exp {
-						result.push(CircuitStep::Mul(acc, base_arg));
-						acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+				while exp > 0 {
+					if exp & 1 != 0 {
+						match acc {
+							CircuitStepArgument::Const(c) if c == F::ONE => {
+								acc = base_arg;
+							}
+							_ => {
+								result.push(CircuitStep::Mul(base_arg, acc));
+								acc =
+									CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+							}
+						}
+					}
+					exp >>= 1;
+					if exp > 0 {
+						result.push(CircuitStep::Square(base_arg));
+						base_arg = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
 					}
 				}
-
 				acc
 			}
 		}
@@ -777,7 +774,7 @@ mod tests {
 		// ((x0^2)^3)^4
 		let expr = ArithExpr::Var(0).pow(2).pow(3).pow(4);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
-		assert_eq!(circuit.steps.len(), 1);
+		assert_eq!(circuit.steps.len(), 5);
 
 		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
@@ -1021,6 +1018,73 @@ mod tests {
 	}
 
 	#[test]
+	fn test_circuit_steps_for_expr_pow_12() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(6).pow(12);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 4, "Pow(12) should use 4 steps.");
+
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(6)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(2)),
+				CircuitStepArgument::Expr(CircuitNode::Slot(1))
+			)
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_13() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(7).pow(13);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 5, "Pow(13) should use 5 steps.");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(7)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
+				CircuitStepArgument::Expr(CircuitNode::Var(7))
+			)
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[4],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(3)),
+				CircuitStepArgument::Expr(CircuitNode::Slot(2))
+			)
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(4))));
+	}
+
+	#[test]
 	fn test_circuit_steps_for_expr_complex() {
 		type F = BinaryField8b;
 
@@ -1029,8 +1093,6 @@ mod tests {
 			- ArithExpr::Var(3);
 
 		let (steps, retval) = circuit_steps_for_expr(&expr);
-
-		println!("steps: {:?}", steps);
 
 		assert_eq!(steps.len(), 4, "Expression should generate 4 computation steps");
 
