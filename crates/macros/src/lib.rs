@@ -150,7 +150,8 @@ pub fn derive_serialize_bytes(input: TokenStream) -> TokenStream {
 /// Derives the trait binius_utils::DeserializeBytes for a struct or enum
 ///
 /// ```
-/// use binius_utils::{BinaryField128b, SerializeBytes, DeserializeBytes, SerializationMode};
+/// use binius_field::BinaryField128b;
+/// use binius_utils::{SerializeBytes, DeserializeBytes, SerializationMode};
 /// use binius_macros::{SerializeBytes, DeserializeBytes};
 ///
 /// #[derive(Debug, PartialEq, SerializeBytes, DeserializeBytes)]
