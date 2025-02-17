@@ -3,7 +3,7 @@
 use super::gpa_sumcheck::error::Error as GPASumcheckError;
 use crate::{
 	polynomial::Error as PolynomialError, protocols::sumcheck::Error as SumcheckError,
-	witness::Error as WitnessErrror,
+	witness::Error as WitnessError,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -41,7 +41,7 @@ pub enum Error {
 	#[error("sumcheck failure: {0}")]
 	SumcheckError(#[from] SumcheckError),
 	#[error("witness failure: {0}")]
-	WitnessErrror(#[from] WitnessErrror),
+	WitnessError(#[from] WitnessError),
 	#[error("HAL error: {0}")]
 	HalError(#[from] binius_hal::Error),
 	#[error("Math error: {0}")]
