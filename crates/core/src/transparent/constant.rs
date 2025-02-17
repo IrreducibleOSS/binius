@@ -1,16 +1,27 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{ExtensionField, TowerField};
+use binius_macros::{erased_serialize_canonical, DeserializeCanonical, SerializeCanonical};
 use binius_utils::bail;
 
 use crate::polynomial::{Error, MultivariatePoly};
 
 /// A constant polynomial.
-#[derive(Debug, Copy, Clone)]
-pub struct Constant<F> {
+#[derive(Debug, Copy, Clone, SerializeCanonical, DeserializeCanonical)]
+pub struct Constant<F: TowerField> {
 	n_vars: usize,
 	value: F,
 	tower_level: usize,
+}
+
+inventory::submit! {
+	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+		"Constant",
+		|buf: &mut dyn bytes::Buf| {
+			let deserialized = <Constant<binius_field::BinaryField128b> as binius_field::DeserializeCanonical>::deserialize_canonical(&mut *buf)?;
+			Ok(Box::new(deserialized))
+		}
+	)
 }
 
 impl<F: TowerField> Constant<F> {
@@ -26,6 +37,7 @@ impl<F: TowerField> Constant<F> {
 	}
 }
 
+#[erased_serialize_canonical]
 impl<F: TowerField> MultivariatePoly<F> for Constant<F> {
 	fn n_vars(&self) -> usize {
 		self.n_vars

@@ -106,10 +106,10 @@ mod tests {
 
 	use crate::{
 		ext_base_mul, ext_base_mul_par,
-		packed::{get_packed_slice, set_packed_slice},
+		packed::{get_packed_slice, pack_slice},
 		underlier::WithUnderlier,
 		BinaryField128b, BinaryField16b, BinaryField8b, PackedBinaryField16x16b,
-		PackedBinaryField2x128b, PackedBinaryField32x8b, PackedField,
+		PackedBinaryField2x128b, PackedBinaryField32x8b,
 	};
 
 	fn strategy_8b_scalars() -> impl Strategy<Value = [BinaryField8b; 32]> {
@@ -125,16 +125,6 @@ mod tests {
 	fn strategy_128b_scalars() -> impl Strategy<Value = [BinaryField128b; 32]> {
 		any::<[<BinaryField128b as WithUnderlier>::Underlier; 32]>()
 			.prop_map(|arr| arr.map(<BinaryField128b>::from_underlier))
-	}
-
-	fn pack_slice<P: PackedField>(scalar_slice: &[P::Scalar]) -> Vec<P> {
-		let mut packed_slice = vec![P::default(); scalar_slice.len() / P::WIDTH];
-
-		for (i, scalar) in scalar_slice.iter().enumerate() {
-			set_packed_slice(&mut packed_slice, i, *scalar);
-		}
-
-		packed_slice
 	}
 
 	proptest! {
