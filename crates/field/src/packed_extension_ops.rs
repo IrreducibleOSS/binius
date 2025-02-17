@@ -74,7 +74,7 @@ where
 	Ok(())
 }
 
-/// A multithreaded version of the funcion directly above, use for long arrays
+/// A multithreaded version of the function directly above, use for long arrays
 /// on the prover side
 pub fn ext_base_op_par<PE, F, Func>(
 	lhs: &mut [PE],
