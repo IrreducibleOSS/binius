@@ -34,7 +34,7 @@ pub fn prove<
 	const EXPONENT_BIT_WIDTH: usize,
 >(
 	witness: &GeneratorExponentWitness<'_, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>,
-	claim: &LayerClaim<F>,
+	claim: &LayerClaim<F>, // this is a claim about the evaluation of the result layer at a random point
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
