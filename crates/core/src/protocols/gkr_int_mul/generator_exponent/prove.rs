@@ -3,7 +3,7 @@
 use std::array;
 
 use binius_field::{
-	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	BinaryField1b, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	TowerField,
 };
 use binius_hal::ComputationBackend;
@@ -40,18 +40,17 @@ pub fn prove<
 	backend: &Backend,
 ) -> Result<GeneratorExponentReductionOutput<F, EXPONENT_BIT_WIDTH>, Error>
 where
+	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
-	PBits: PackedField,
-	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
-		+ PackedFieldIndexable<Scalar = FGenerator>
+	FGenerator: TowerField + ExtensionField<PBits::Scalar> + ExtensionField<FDomain>,
+	PBits: PackedField<Scalar = BinaryField1b>,
+	PGenerator: PackedField<Scalar = FGenerator>
+		+ PackedExtension<PBits::Scalar>
 		+ PackedExtension<FDomain>,
-	PGenerator::Scalar: ExtensionField<PBits::Scalar> + ExtensionField<FDomain>,
-	PChallenge: PackedField
-		+ PackedFieldIndexable<Scalar = F>
+	PChallenge: PackedFieldIndexable<Scalar = F>
+		+ PackedExtension<F, PackedSubfield = PChallenge>
 		+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>
 		+ PackedExtension<FDomain>,
-	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + BinaryField + TowerField,
-	FGenerator: Field + TowerField,
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
@@ -60,10 +59,11 @@ where
 
 	let mut eval_point = claim.eval_point.clone();
 	let mut eval = claim.eval;
+
 	for exponent_bit_number in (1..EXPONENT_BIT_WIDTH).rev() {
 		let this_round_exponent_bit = witness.exponent[exponent_bit_number].clone();
 		let this_round_generator_power_constant =
-			F::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow([1 << exponent_bit_number]));
+			F::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow(1 << exponent_bit_number));
 
 		let this_round_input_data =
 			witness.single_bit_output_layers_data[exponent_bit_number - 1].clone();
