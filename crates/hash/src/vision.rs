@@ -142,10 +142,10 @@ impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
 	fn permute_mut(&self, input: &mut [PackedAESBinaryField8x32b; 3]) {
 		add_packed_768(input, &ROUND_KEYS_PACKED_AES[0]);
 		for r in 0..NUM_ROUNDS {
-			*input = self.sbox_step(*input, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
+			self.sbox_step(input, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
 			self.mds.transform(input);
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES[1 + 2 * r]);
-			*input = self.sbox_step(*input, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
+			self.sbox_step(input, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
 			self.mds.transform(input);
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES[2 + 2 * r]);
 		}
@@ -157,24 +157,27 @@ impl Vision32bPermutation {
 		Self::default()
 	}
 
+	#[inline]
 	fn sbox_packed_affine(
 		&self,
-		chunk: &PackedAESBinaryField8x32b,
+		chunk: &mut PackedAESBinaryField8x32b,
 		packed_linear_trans: &PackedTransformationType8x32bAES,
 		constant: PackedAESBinaryField8x32b,
-	) -> PackedAESBinaryField8x32b {
+	) {
 		let x_inv_eval = chunk.invert_or_zero();
 		let result = packed_linear_trans.transform(&x_inv_eval);
-		result + constant
+		*chunk = result + constant
 	}
 
 	fn sbox_step(
 		&self,
-		d: [PackedAESBinaryField8x32b; 3],
+		d: &mut [PackedAESBinaryField8x32b; 3],
 		packed_linear_trans: &PackedTransformationType8x32bAES,
 		constant: PackedAESBinaryField8x32b,
-	) -> [PackedAESBinaryField8x32b; 3] {
-		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_linear_trans, constant))
+	) {
+		for chunk in d.iter_mut() {
+			self.sbox_packed_affine(chunk, packed_linear_trans, constant);
+		}
 	}
 
 	/// Simple function interface to do a permutation of vision
@@ -695,8 +698,10 @@ mod tests {
 					.unwrap(),
 			);
 
-			let got1 = vs.sbox_packed_affine(&chunk, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
-			let got2 = vs.sbox_packed_affine(&chunk, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
+			let mut got1 = chunk;
+			vs.sbox_packed_affine(&mut got1, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
+			let mut got2 = chunk;
+			vs.sbox_packed_affine(&mut got2, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
 
 			assert_eq!(expected1, got1);
 			assert_eq!(expected2, got2)
