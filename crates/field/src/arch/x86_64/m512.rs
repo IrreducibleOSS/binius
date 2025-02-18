@@ -13,7 +13,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
 use crate::{
 	arch::{
-		binary_utils::{as_array_mut, make_func_to_i8},
+		binary_utils::{as_array_mut, as_array_ref, make_func_to_i8},
 		portable::{
 			packed::{impl_pack_scalar, PackedPrimitiveType},
 			packed_arithmetic::{
@@ -622,31 +622,41 @@ impl UnderlierWithBitOps for M512 {
 		T: UnderlierType + NumCast<Self>,
 	{
 		match T::BITS {
-			1 | 2 | 4 | 8 | 16 | 32 | 64 => {
-				let elements_in_64 = 64 / T::BITS;
-				let shuffle = unsafe { _mm512_set1_epi64((i / elements_in_64) as i64) };
-				let chunk_64 =
-					u64::num_cast_from(Self(unsafe { _mm512_permutexvar_epi64(shuffle, self.0) }));
+			1 | 2 | 4 => {
+				let elements_in_8 = 8 / T::BITS;
+				let mut value_u8 = as_array_ref::<_, u8, 64, _>(self, |arr| unsafe {
+					*arr.get_unchecked(i / elements_in_8)
+				});
 
-				let result_64 = if T::BITS == 64 {
-					chunk_64
-				} else {
-					let ones = ((1u128 << T::BITS) - 1) as u64;
-					(chunk_64 >> (T::BITS * (i % elements_in_64))) & ones
-				};
+				let shift = (i % elements_in_8) * T::BITS;
+				value_u8 >>= shift;
 
-				T::num_cast_from(Self::from(result_64))
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+			}
+			8 => {
+				let value_u8 =
+					as_array_ref::<_, u8, 64, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+			}
+			16 => {
+				let value_u16 =
+					as_array_ref::<_, u16, 32, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u16)))
+			}
+			32 => {
+				let value_u32 =
+					as_array_ref::<_, u32, 16, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u32)))
+			}
+			64 => {
+				let value_u64 =
+					as_array_ref::<_, u64, 8, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u64)))
 			}
 			128 => {
-				let chunk_128 = unsafe {
-					match i {
-						0 => _mm512_extracti32x4_epi32(self.0, 0),
-						1 => _mm512_extracti32x4_epi32(self.0, 1),
-						2 => _mm512_extracti32x4_epi32(self.0, 2),
-						_ => _mm512_extracti32x4_epi32(self.0, 3),
-					}
-				};
-				T::num_cast_from(Self(unsafe { _mm512_castsi128_si512(chunk_128) }))
+				let value_u128 =
+					as_array_ref::<_, u128, 4, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
+				T::from_underlier(T::num_cast_from(Self::from(value_u128)))
 			}
 			_ => panic!("unsupported bit count"),
 		}
@@ -666,26 +676,26 @@ impl UnderlierWithBitOps for M512 {
 				let val = u8::num_cast_from(Self::from(val)) << shift;
 				let mask = mask << shift;
 
-				as_array_mut::<_, u8, 64>(self, |array| {
-					let element = &mut array[i / elements_in_8];
+				as_array_mut::<_, u8, 64>(self, |array| unsafe {
+					let element = array.get_unchecked_mut(i / elements_in_8);
 					*element &= !mask;
 					*element |= val;
 				});
 			}
-			8 => as_array_mut::<_, u8, 64>(self, |array| {
-				array[i] = u8::num_cast_from(Self::from(val));
+			8 => as_array_mut::<_, u8, 64>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
 			}),
-			16 => as_array_mut::<_, u16, 32>(self, |array| {
-				array[i] = u16::num_cast_from(Self::from(val));
+			16 => as_array_mut::<_, u16, 32>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
 			}),
-			32 => as_array_mut::<_, u32, 16>(self, |array| {
-				array[i] = u32::num_cast_from(Self::from(val));
+			32 => as_array_mut::<_, u32, 16>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
 			}),
-			64 => as_array_mut::<_, u64, 8>(self, |array| {
-				array[i] = u64::num_cast_from(Self::from(val));
+			64 => as_array_mut::<_, u64, 8>(self, |array| unsafe {
+				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
 			}),
 			128 => as_array_mut::<_, u128, 4>(self, |array| {
-				array[i] = u128::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
 		}

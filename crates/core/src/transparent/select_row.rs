@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_macros::{erased_serialize_canonical, DeserializeCanonical, SerializeCanonical};
 use binius_math::MultilinearExtension;
 use binius_utils::bail;
 
@@ -18,10 +19,20 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// ```
 ///
 /// This is useful for defining boundary constraints
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
 pub struct SelectRow {
 	n_vars: usize,
 	index: usize,
+}
+
+inventory::submit! {
+	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+		"SelectRow",
+		|buf: &mut dyn bytes::Buf| {
+			let deserialized = <SelectRow as binius_field::DeserializeCanonical>::deserialize_canonical(&mut *buf)?;
+			Ok(Box::new(deserialized))
+		}
+	)
 }
 
 impl SelectRow {
@@ -50,6 +61,7 @@ impl SelectRow {
 	}
 }
 
+#[erased_serialize_canonical]
 impl<F: Field> MultivariatePoly<F> for SelectRow {
 	fn degree(&self) -> usize {
 		self.n_vars

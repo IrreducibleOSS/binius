@@ -140,6 +140,21 @@ impl DeserializeCanonical for u8 {
 	}
 }
 
+impl SerializeCanonical for bool {
+	fn serialize_canonical(&self, write_buf: impl BufMut) -> Result<(), Error> {
+		u8::serialize_canonical(&(*self as u8), write_buf)
+	}
+}
+
+impl DeserializeCanonical for bool {
+	fn deserialize_canonical(read_buf: impl Buf) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok(u8::deserialize_canonical(read_buf)? != 0)
+	}
+}
+
 impl<T> SerializeCanonical for std::marker::PhantomData<T> {
 	fn serialize_canonical(&self, _write_buf: impl BufMut) -> Result<(), Error> {
 		Ok(())
@@ -199,6 +214,49 @@ impl<T: DeserializeCanonical> DeserializeCanonical for Vec<T> {
 		(0..len)
 			.map(|_| DeserializeCanonical::deserialize_canonical(&mut read_buf))
 			.collect()
+	}
+}
+
+impl<T: SerializeCanonical> SerializeCanonical for Option<T> {
+	fn serialize_canonical(&self, mut write_buf: impl BufMut) -> Result<(), Error> {
+		match self {
+			Some(value) => {
+				SerializeCanonical::serialize_canonical(&true, &mut write_buf)?;
+				SerializeCanonical::serialize_canonical(value, &mut write_buf)?;
+			}
+			None => {
+				SerializeCanonical::serialize_canonical(&false, write_buf)?;
+			}
+		}
+		Ok(())
+	}
+}
+
+impl<T: DeserializeCanonical> DeserializeCanonical for Option<T> {
+	fn deserialize_canonical(mut read_buf: impl Buf) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok(match bool::deserialize_canonical(&mut read_buf)? {
+			true => Some(T::deserialize_canonical(&mut read_buf)?),
+			false => None,
+		})
+	}
+}
+
+impl<U: SerializeCanonical, V: SerializeCanonical> SerializeCanonical for (U, V) {
+	fn serialize_canonical(&self, mut write_buf: impl BufMut) -> Result<(), Error> {
+		U::serialize_canonical(&self.0, &mut write_buf)?;
+		V::serialize_canonical(&self.1, write_buf)
+	}
+}
+
+impl<U: DeserializeCanonical, V: DeserializeCanonical> DeserializeCanonical for (U, V) {
+	fn deserialize_canonical(mut read_buf: impl Buf) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok((U::deserialize_canonical(&mut read_buf)?, V::deserialize_canonical(read_buf)?))
 	}
 }
 

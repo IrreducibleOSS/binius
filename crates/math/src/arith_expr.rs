@@ -7,7 +7,8 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{DeserializeCanonical, Field, PackedField, SerializeCanonical, TowerField};
+use binius_macros::{DeserializeCanonical, SerializeCanonical};
 
 use super::error::Error;
 
@@ -16,13 +17,33 @@ use super::error::Error;
 /// Arithmetic expressions are trees, where the leaves are either constants or variables, and the
 /// non-leaf nodes are arithmetic operations, such as addition, multiplication, etc. They are
 /// specific representations of multivariate polynomials.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeCanonical, DeserializeCanonical)]
 pub enum ArithExpr<F: Field> {
 	Const(F),
 	Var(usize),
 	Add(Box<ArithExpr<F>>, Box<ArithExpr<F>>),
 	Mul(Box<ArithExpr<F>>, Box<ArithExpr<F>>),
 	Pow(Box<ArithExpr<F>>, u64),
+}
+
+impl<F: Field + SerializeCanonical> SerializeCanonical for Box<ArithExpr<F>> {
+	fn serialize_canonical(
+		&self,
+		write_buf: impl binius_field::bytes::BufMut,
+	) -> Result<(), binius_field::serialization::Error> {
+		ArithExpr::<F>::serialize_canonical(&self.to_owned(), write_buf)
+	}
+}
+
+impl<F: Field + DeserializeCanonical> DeserializeCanonical for Box<ArithExpr<F>> {
+	fn deserialize_canonical(
+		read_buf: impl binius_field::bytes::Buf,
+	) -> Result<Self, binius_field::serialization::Error>
+	where
+		Self: Sized,
+	{
+		Ok(Self::new(ArithExpr::<F>::deserialize_canonical(read_buf)?))
+	}
 }
 
 impl<F: Field + Display> Display for ArithExpr<F> {
@@ -136,7 +157,7 @@ impl<F: Field> ArithExpr<F> {
 		&self,
 	) -> Result<ArithExpr<FTgt>, <FTgt as TryFrom<F>>::Error> {
 		Ok(match self {
-			Self::Const(val) => ArithExpr::Const((*val).try_into()?),
+			Self::Const(val) => ArithExpr::Const(FTgt::try_from(*val)?),
 			Self::Var(index) => ArithExpr::Var(*index),
 			Self::Add(left, right) => {
 				let new_left = left.try_convert_field()?;
