@@ -1,7 +1,5 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::collections::HashMap;
-
 use binius_core::{
 	constraint_system::{
 		channel::{Flush, FlushDirection},
@@ -17,7 +15,6 @@ use binius_core::{
 	},
 	tower::CanonicalTowerFamily,
 	transcript::ProverTranscript,
-	transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -38,14 +35,14 @@ type FFast = BinaryField128bPolyval;
 
 // We do not deal with boundaries here.
 // Assume we are working on a single channel (channel_id = 0)
+// Since the flushes are powers of 2 we are disregarding selector for flushes
 
 fn gen_poly_with_selectors(
 	oracles: &mut MultilinearOracleSet<F>,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	counts: &[usize],
-	step_down_dedup: &mut HashMap<(usize, usize), OracleId>,
 	global_values: &[F],
-) -> Vec<(OracleId, OracleId)> {
+) -> Vec<OracleId> {
 	type P = PackedType<U, F>;
 	let (oracles, _) = counts
 		.iter()
@@ -64,28 +61,7 @@ fn gen_poly_with_selectors(
 				.update_multilin_poly([(oracle_id, witness)])
 				.unwrap();
 
-			let selector = if let Some(&selector) = step_down_dedup.get(&(n_vars, count)) {
-				selector
-			} else {
-				let step_down = StepDown::new(n_vars, count).unwrap();
-				let selector = oracles.add_transparent(step_down.clone()).unwrap();
-
-				let mut step_down_witness = vec![P::default(); 1 << n_vars];
-				step_down.populate(&mut step_down_witness);
-				let step_down_witness = MultilinearExtension::new(n_vars, step_down_witness)
-					.unwrap()
-					.specialize_arc_dyn();
-
-				witness_index
-					.update_multilin_poly([(selector, step_down_witness)])
-					.unwrap();
-
-				step_down_dedup.insert((n_vars, count), selector);
-
-				selector
-			};
-
-			new_oracles.push((oracle_id, selector));
+			new_oracles.push(oracle_id);
 			(new_oracles, sum + count)
 		});
 	oracles
@@ -101,21 +77,17 @@ fn create_balancing_flushes(
 ) {
 	assert_eq!(counts.iter().sum::<usize>(), 1 << log_size);
 
-	let mut step_down_dedup = HashMap::<(usize, usize), OracleId>::new();
-
 	let mut rng = thread_rng();
 	let mut values = vec![F::default(); 1 << log_size];
 	rng.fill_bytes(cast_slice_mut(&mut values));
 
 	// Create pushes along with selectors.
-	for (oracle_id, selector) in
-		gen_poly_with_selectors(oracles, witness_index, &counts, &mut step_down_dedup, &values)
-	{
+	for oracle_id in gen_poly_with_selectors(oracles, witness_index, &counts, &values) {
 		flushes.push(Flush {
 			channel_id,
 			oracles: vec![oracle_id],
 			direction: FlushDirection::Push,
-			selector,
+			selector: usize::MAX,
 			multiplicity: 1,
 		});
 	}
@@ -125,14 +97,12 @@ fn create_balancing_flushes(
 	let mut rng = thread_rng();
 	counts.shuffle(&mut rng);
 
-	for (oracle_id, selector) in
-		gen_poly_with_selectors(oracles, witness_index, &counts, &mut step_down_dedup, &values)
-	{
+	for oracle_id in gen_poly_with_selectors(oracles, witness_index, &counts, &values) {
 		flushes.push(Flush {
 			channel_id,
 			oracles: vec![oracle_id],
 			direction: FlushDirection::Pull,
-			selector,
+			selector: usize::MAX,
 			multiplicity: 1,
 		});
 	}
@@ -171,10 +141,6 @@ fn create_gkr_gpa(
 	let permutation_challenge = [F::random(&mut rng)];
 	let flush_oracle_id =
 		make_flush_oracles(oracles, &flushes, mixing_challenge, &permutation_challenge).unwrap();
-	let flush_selectors = flushes
-		.iter()
-		.map(|flush| flush.selector)
-		.collect::<Vec<_>>();
 
 	make_unmasked_flush_witnesses::<_, CanonicalTowerFamily>(
 		oracles,
@@ -187,7 +153,7 @@ fn create_gkr_gpa(
 		oracles,
 		witness_index,
 		&flush_oracle_id,
-		Some(&flush_selectors),
+		None,
 	)
 	.unwrap();
 
