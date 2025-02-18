@@ -26,7 +26,7 @@ use binius_hal::make_portable_backend;
 use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::cast_slice_mut;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use groestl_crypto::Groestl256;
 use rand::{seq::SliceRandom, thread_rng, RngCore};
 
@@ -206,6 +206,10 @@ fn create_gkr_gpa(
 	(flush_prodcheck_witnesses, flush_prodcheck_claims)
 }
 
+const FLUSH_START: usize = 18;
+const FLUSH_END: usize = 23;
+const LOG_SIZE: usize = 24;
+
 fn bench_gkr_gpa(c: &mut Criterion) {
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let mut witness_index = MultilinearExtensionIndex::<U, F>::new();
@@ -215,9 +219,11 @@ fn bench_gkr_gpa(c: &mut Criterion) {
 	let backend = make_portable_backend();
 
 	let (flush_prodcheck_witnesses, flush_prodcheck_claims) =
-		create_gkr_gpa(&mut oracles, &mut witness_index, 18, 23, 24);
+		create_gkr_gpa(&mut oracles, &mut witness_index, FLUSH_START, FLUSH_END, LOG_SIZE);
 
-	c.bench_function("flush product logsize 24", |b| {
+	let mut group = c.benchmark_group(format!("Flush products log_size {}", LOG_SIZE));
+	group.throughput(Throughput::Elements(1 << LOG_SIZE as u64));
+	group.bench_function("grk_gpa", |b| {
 		b.iter_batched(
 			|| flush_prodcheck_witnesses.clone(),
 			|flush_prodcheck_witnesses| {
@@ -239,6 +245,7 @@ fn bench_gkr_gpa(c: &mut Criterion) {
 			BatchSize::SmallInput,
 		);
 	});
+	group.finish();
 }
 
 criterion_main!(poly_commit);
