@@ -7,13 +7,13 @@ use binius_core::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField128b,
-	BinaryField32b, PackedField, TowerField,
+	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField,
+	BinaryField128b, BinaryField32b, PackedField, TowerField,
 };
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{MultilinearExtension, MultilinearPoly};
 use binius_ntt::{NTTOptions, ThreadingSettings};
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use groestl_crypto::Groestl256;
 use itertools::Itertools;
 use rand::thread_rng;
@@ -59,7 +59,9 @@ const LOG_SIZE: usize = 20;
 
 fn bench_poly_commit(c: &mut Criterion) {
 	let (fri_params, merkle_prover, committed_multilins) = create_poly_commit(LOG_SIZE);
-	c.bench_function(format!("PolyCommit log_size {}", LOG_SIZE).as_str(), |b| {
+	let mut group = c.benchmark_group("Polynomial Commitment");
+	group.throughput(Throughput::Bytes(((1 << LOG_SIZE) * BinaryField128b::N_BITS / 8) as u64));
+	group.bench_function(BenchmarkId::new("log_size", LOG_SIZE), |b| {
 		b.iter(|| {
 			let rs_code = ReedSolomonCode::new(
 				fri_params.rs_code().log_dim(),
@@ -76,6 +78,7 @@ fn bench_poly_commit(c: &mut Criterion) {
 			.unwrap();
 		});
 	});
+	group.finish();
 }
 
 #[allow(clippy::type_complexity)]
