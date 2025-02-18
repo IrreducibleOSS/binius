@@ -2,10 +2,12 @@
 
 use std::{array, fmt::Debug, mem::MaybeUninit};
 
-use binius_field::{SerializeCanonical, TowerField};
+use binius_field::TowerField;
 use binius_hash::{HashBuffer, PseudoCompressionFunction};
 use binius_maybe_rayon::{prelude::*, slice::ParallelSlice};
-use binius_utils::{bail, checked_arithmetics::log2_strict_usize};
+use binius_utils::{
+	bail, checked_arithmetics::log2_strict_usize, SerializationMode, SerializeBytes,
+};
 use digest::{crypto_common::BlockSizeUser, Digest, FixedOutputReset, Output};
 use tracing::instrument;
 
@@ -210,7 +212,8 @@ where
 			{
 				let mut hash_buffer = HashBuffer::new(hasher);
 				for elem in elems {
-					SerializeCanonical::serialize_canonical(&elem, &mut hash_buffer)
+					let mode = SerializationMode::CanonicalTower;
+					SerializeBytes::serialize(&elem, &mut hash_buffer, mode)
 						.expect("HashBuffer has infinite capacity");
 				}
 			}

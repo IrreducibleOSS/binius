@@ -2,7 +2,7 @@
 
 use std::{borrow::Borrow, cmp::min};
 
-use binius_field::SerializeCanonical;
+use binius_utils::{SerializationMode, SerializeBytes};
 use bytes::{buf::UninitSlice, BufMut};
 use digest::{
 	core_api::{Block, BlockSizeUser},
@@ -11,7 +11,7 @@ use digest::{
 
 /// Adapter that wraps a [`Digest`] references and exposes the [`BufMut`] interface.
 ///
-/// This adapter is useful so that structs that implement [`SerializeCanonical`] can be serialized
+/// This adapter is useful so that structs that implement [`SerializeBytes`] can be serialized
 /// directly to a hasher.
 #[derive(Debug)]
 pub struct HashBuffer<'a, D: Digest + BlockSizeUser> {
@@ -67,7 +67,7 @@ impl<D: Digest + BlockSizeUser> Drop for HashBuffer<'_, D> {
 /// Hashes a sequence of serializable items.
 pub fn hash_serialize<T, D>(items: impl IntoIterator<Item = impl Borrow<T>>) -> Output<D>
 where
-	T: SerializeCanonical,
+	T: SerializeBytes,
 	D: Digest + BlockSizeUser,
 {
 	let mut hasher = D::new();
@@ -75,7 +75,7 @@ where
 		let mut buffer = HashBuffer::new(&mut hasher);
 		for item in items {
 			item.borrow()
-				.serialize_canonical(&mut buffer)
+				.serialize(&mut buffer, SerializationMode::CanonicalTower)
 				.expect("HashBuffer has infinite capacity");
 		}
 	}

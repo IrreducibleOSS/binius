@@ -4,7 +4,7 @@ use core::iter::IntoIterator;
 use std::sync::Arc;
 
 use binius_field::{Field, TowerField};
-use binius_macros::{DeserializeCanonical, SerializeCanonical};
+use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::{ArithExpr, CompositionPolyOS};
 use binius_utils::bail;
 use itertools::Itertools;
@@ -16,7 +16,7 @@ use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
 pub type TypeErasedComposition<P> = Arc<dyn CompositionPolyOS<P>>;
 
 /// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
-#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct Constraint<F: Field> {
 	pub name: String,
 	pub composition: ArithExpr<F>,
@@ -25,14 +25,14 @@ pub struct Constraint<F: Field> {
 
 /// Predicate can either be a sum of values of a composition on the hypercube (sumcheck) or equality to zero
 /// on the hypercube (zerocheck)
-#[derive(Clone, Debug, SerializeCanonical, DeserializeCanonical)]
+#[derive(Clone, Debug, SerializeBytes, DeserializeBytes)]
 pub enum ConstraintPredicate<F: Field> {
 	Sum(F),
 	Zero,
 }
 
 /// Constraint set is a group of constraints that operate over the same set of oracle-identified multilinears
-#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct ConstraintSet<F: Field> {
 	pub n_vars: usize,
 	pub oracle_ids: Vec<OracleId>,

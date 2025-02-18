@@ -9,7 +9,11 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use binius_utils::iter::IterExtensions;
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	iter::IterExtensions,
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use rand::{Rng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -447,6 +451,35 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	fn into_iter_bases(self) -> impl Iterator<Item = BinaryField1b> {
 		IterationMethods::<U1, Self::Underlier>::value_iter(self.0)
 			.map_skippable(BinaryField1b::from)
+	}
+}
+
+impl SerializeBytes for BinaryField128bPolyval {
+	fn serialize(
+		&self,
+		write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		match mode {
+			SerializationMode::Native => self.0.serialize(write_buf, mode),
+			SerializationMode::CanonicalTower => {
+				BinaryField128b::from(*self).serialize(write_buf, mode)
+			}
+		}
+	}
+}
+
+impl DeserializeBytes for BinaryField128bPolyval {
+	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		match mode {
+			SerializationMode::Native => Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?)),
+			SerializationMode::CanonicalTower => {
+				Ok(Self::from(BinaryField128b::deserialize(read_buf, mode)?))
+			}
+		}
 	}
 }
 
@@ -1031,7 +1064,7 @@ pub fn is_polyval_tower<F: TowerField>() -> bool {
 
 #[cfg(test)]
 mod tests {
-	use bytes::BytesMut;
+	use binius_utils::{bytes::BytesMut, SerializationMode, SerializeBytes};
 	use proptest::prelude::*;
 	use rand::thread_rng;
 
@@ -1043,9 +1076,9 @@ mod tests {
 		},
 		binary_field::tests::is_binary_field_valid_generator,
 		linear_transformation::PackedTransformationFactory,
-		AESTowerField128b, DeserializeCanonical, PackedAESBinaryField1x128b,
-		PackedAESBinaryField2x128b, PackedAESBinaryField4x128b, PackedBinaryField1x128b,
-		PackedBinaryField2x128b, PackedBinaryField4x128b, PackedField, SerializeCanonical,
+		AESTowerField128b, PackedAESBinaryField1x128b, PackedAESBinaryField2x128b,
+		PackedAESBinaryField4x128b, PackedBinaryField1x128b, PackedBinaryField2x128b,
+		PackedBinaryField4x128b, PackedField,
 	};
 
 	#[test]
@@ -1188,23 +1221,25 @@ mod tests {
 
 	#[test]
 	fn test_canonical_serialization() {
+		let mode = SerializationMode::CanonicalTower;
 		let mut buffer = BytesMut::new();
 		let mut rng = thread_rng();
 
 		let b128_poly1 = <BinaryField128bPolyval as Field>::random(&mut rng);
 		let b128_poly2 = <BinaryField128bPolyval as Field>::random(&mut rng);
 
-		SerializeCanonical::serialize_canonical(&b128_poly1, &mut buffer).unwrap();
-		SerializeCanonical::serialize_canonical(&b128_poly2, &mut buffer).unwrap();
+		SerializeBytes::serialize(&b128_poly1, &mut buffer, mode).unwrap();
+		SerializeBytes::serialize(&b128_poly2, &mut buffer, mode).unwrap();
 
+		let mode = SerializationMode::CanonicalTower;
 		let mut read_buffer = buffer.freeze();
 
 		assert_eq!(
-			BinaryField128bPolyval::deserialize_canonical(&mut read_buffer).unwrap(),
+			BinaryField128bPolyval::deserialize(&mut read_buffer, mode).unwrap(),
 			b128_poly1
 		);
 		assert_eq!(
-			BinaryField128bPolyval::deserialize_canonical(&mut read_buffer).unwrap(),
+			BinaryField128bPolyval::deserialize(&mut read_buffer, mode).unwrap(),
 			b128_poly2
 		);
 	}
