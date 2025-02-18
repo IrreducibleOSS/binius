@@ -1,9 +1,14 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, Field};
 use binius_utils::checked_arithmetics::checked_log_2;
 
-use crate::{arithmetic, arithmetic::Flags, builder::ConstraintSystemBuilder};
-use crate::builder::types::F;
+use crate::{
+	arithmetic,
+	arithmetic::Flags,
+	builder::{types::F, ConstraintSystemBuilder},
+};
 
 type F1 = BinaryField1b;
 const LOG_U32_BITS: usize = checked_log_2(32);
@@ -16,8 +21,7 @@ fn xor_rotate_right(
 	a: OracleId,
 	b: OracleId,
 	rotate_right_offset: u32,
-) -> Result<OracleId, anyhow::Error>
-{
+) -> Result<OracleId, anyhow::Error> {
 	assert!(rotate_right_offset <= 32);
 
 	builder.push_namespace(name);
@@ -68,8 +72,7 @@ pub fn blake3_g(
 	mx: OracleId,
 	my: OracleId,
 	log_size: usize,
-) -> Result<[OracleId; 4], anyhow::Error>
-{
+) -> Result<[OracleId; 4], anyhow::Error> {
 	builder.push_namespace(name);
 
 	let ab = arithmetic::u32::add(builder, "a_in + b_in", a_in, b_in, Flags::Unchecked)?;
