@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use binius_core::{
 	merkle_tree::BinaryMerkleTreeProver,
 	oracle::MultilinearOracleSet,
