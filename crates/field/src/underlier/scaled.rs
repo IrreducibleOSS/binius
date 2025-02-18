@@ -213,10 +213,12 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 	};
 	const ONES: Self = Self([U::ONES; N]);
 
+	#[inline]
 	fn fill_with_bit(val: u8) -> Self {
 		Self(array::from_fn(|_| U::fill_with_bit(val)))
 	}
 
+	#[inline]
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
@@ -226,6 +228,7 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		Self(self.0.map(|x| x.shl_128b_lanes(rhs)))
 	}
 
+	#[inline]
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
@@ -235,6 +238,7 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		Self(self.0.map(|x| x.shr_128b_lanes(rhs)))
 	}
 
+	#[inline]
 	fn unpack_lo_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.
@@ -244,6 +248,7 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		Self(array::from_fn(|i| self.0[i].unpack_lo_128b_lanes(other.0[i], log_block_len)))
 	}
 
+	#[inline]
 	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		// We assume that the underlier type has at least 128 bits as the current implementation
 		// is valid for this case only.

@@ -159,6 +159,84 @@ macro_rules! define_transposed_byte_sliced {
 			}
 		}
 
+		unsafe impl WithUnderlier for $name {
+			type Underlier = crate::underlier::ScaledUnderlier<
+				<$packed as WithUnderlier>::Underlier,
+				{ Self::ARRAY_SIZE },
+			>;
+
+			#[inline(always)]
+			fn to_underlier(self) -> Self::Underlier {
+				self.inner.to_underlier()
+			}
+
+			#[inline(always)]
+			fn to_underlier_ref(&self) -> &Self::Underlier {
+				self.inner.to_underlier_ref()
+			}
+
+			#[inline(always)]
+			fn to_underlier_ref_mut(&mut self) -> &mut Self::Underlier {
+				self.inner.to_underlier_ref_mut()
+			}
+
+			#[inline(always)]
+			fn to_underliers_ref(val: &[Self]) -> &[Self::Underlier] {
+				let scaled_fields = bytemuck::TransparentWrapper::peel_slice(val);
+
+				bytemuck::TransparentWrapper::peel_slice(scaled_fields)
+			}
+
+			#[inline(always)]
+			fn to_underliers_ref_mut(val: &mut [Self]) -> &mut [Self::Underlier] {
+				let scaled_fields = bytemuck::TransparentWrapper::peel_slice_mut(val);
+
+				bytemuck::TransparentWrapper::peel_slice_mut(scaled_fields)
+			}
+
+			#[inline(always)]
+			fn from_underlier(val: Self::Underlier) -> Self {
+				Self {
+					inner: ScaledPackedField::from_underlier(val),
+				}
+			}
+
+			#[inline(always)]
+			fn from_underlier_ref(val: &Self::Underlier) -> &Self {
+				let scaled_field_ref = bytemuck::TransparentWrapper::wrap_ref(val);
+
+				bytemuck::TransparentWrapper::wrap_ref(scaled_field_ref)
+			}
+
+			#[inline(always)]
+			fn from_underlier_ref_mut(val: &mut Self::Underlier) -> &mut Self {
+				let scaled_field_ref = bytemuck::TransparentWrapper::wrap_mut(val);
+
+				bytemuck::TransparentWrapper::wrap_mut(scaled_field_ref)
+			}
+
+			#[inline(always)]
+			fn from_underliers_ref(val: &[Self::Underlier]) -> &[Self] {
+				let scaled_fields = bytemuck::TransparentWrapper::wrap_slice(val);
+
+				bytemuck::TransparentWrapper::wrap_slice(scaled_fields)
+			}
+
+			#[inline(always)]
+			fn from_underliers_ref_mut(val: &mut [Self::Underlier]) -> &mut [Self] {
+				let scaled_fields = bytemuck::TransparentWrapper::wrap_slice_mut(val);
+
+				bytemuck::TransparentWrapper::wrap_slice_mut(scaled_fields)
+			}
+		}
+
+		unsafe impl
+			bytemuck::TransparentWrapper<
+				ScaledPackedField<$packed, { <$packed as PackedField>::Scalar::N_BITS / 8 }>,
+			> for $name
+		{
+		}
+
 		impl Mul for $name {
 			type Output = Self;
 
