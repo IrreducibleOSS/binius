@@ -47,11 +47,11 @@ where
 	F: TowerField + ExtensionField<FS>,
 	FS: TowerField,
 {
-	let rng = builder.add_committed(name, log_size, FS::TOWER_LEVEL);
+	let fixed = builder.add_committed(name, log_size, FS::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
 		witness
-			.new_column::<FS>(rng)
+			.new_column::<FS>(fixed)
 			.as_mut_slice::<u32>()
 			.into_par_iter()
 			.zip(value.into_par_iter())
@@ -60,5 +60,5 @@ where
 			});
 	}
 
-	Ok(rng)
+	Ok(fixed)
 }
