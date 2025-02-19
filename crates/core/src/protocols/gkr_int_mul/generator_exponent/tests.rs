@@ -139,17 +139,18 @@ fn generate_mul_witnesses_claims_with_different_log_size() -> (
 ) {
 	const LOG_SIZE_1: usize = 13usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
+	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
 
 	const LOG_SIZE_2: usize = 14usize;
 	const COLUMN_LEN_2: usize = 1usize << LOG_SIZE_2;
 
-	const EXPONENT_BIT_WIDTH: usize = 2usize;
+	const EXPONENT_BIT_WIDTH_2: usize = 2usize;
 
 	let (claims_1, witnesses_1) =
-		generate_mul_witnesses_claims::<LOG_SIZE_1, COLUMN_LEN_1>(EXPONENT_BIT_WIDTH);
+		generate_mul_witnesses_claims::<LOG_SIZE_1, COLUMN_LEN_1>(EXPONENT_BIT_WIDTH_1);
 
 	let (claims_2, witnesses_2) =
-		generate_mul_witnesses_claims::<LOG_SIZE_2, COLUMN_LEN_2>(EXPONENT_BIT_WIDTH);
+		generate_mul_witnesses_claims::<LOG_SIZE_2, COLUMN_LEN_2>(EXPONENT_BIT_WIDTH_2);
 
 	let witnesses = [witnesses_1, witnesses_2].concat();
 
