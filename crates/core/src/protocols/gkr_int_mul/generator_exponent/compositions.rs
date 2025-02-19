@@ -71,7 +71,7 @@ where
 				generator_power_constant,
 			} => Ok(query[0] * ((P::one() - query[1]) + query[1] * *generator_power_constant)),
 			Self::DynamicGenerator => {
-				Ok(query[0] * query[0] * ((P::one() - query[1]) + query[1] * query[2]))
+				Ok(query[0].square() * ((P::one() - query[1]) + query[1] * query[2]))
 			}
 			Self::DynamicGeneratorLastLayer => Ok((P::one() - query[1]) + query[1] * query[0]),
 		}
