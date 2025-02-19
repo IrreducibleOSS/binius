@@ -5,7 +5,7 @@
 // Lookups
 // Columns <- Associated with tables
 
-use std::{array, iter, marker::PhantomData};
+use std::marker::PhantomData;
 
 // Statement
 // - Channel boundaries
