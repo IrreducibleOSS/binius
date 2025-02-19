@@ -149,11 +149,10 @@ pub fn dci_lookup(
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{BinaryField1b, BinaryField32b, BinaryField8b};
 
 	use crate::{
-		builder::ConstraintSystemBuilder,
+		builder::test_utils::test_circuit,
 		lasso::{self, batch::LookupBatch},
 		unconstrained::unconstrained,
 	};
@@ -161,139 +160,111 @@ mod tests {
 	#[test]
 	fn test_lasso_u8add_carryfree_rejects_carry() {
 		// TODO: Make this test 100% certain to pass instead of 2^14 bits of security from randomness
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 14;
-		let x_in = unconstrained::<BinaryField8b>(&mut builder, "x", log_size).unwrap();
-		let y_in = unconstrained::<BinaryField8b>(&mut builder, "y", log_size).unwrap();
-		let c_in = unconstrained::<BinaryField1b>(&mut builder, "c", log_size).unwrap();
+		test_circuit(|builder| {
+			let log_size = 14;
+			let x_in = unconstrained::<BinaryField8b>(builder, "x", log_size)?;
+			let y_in = unconstrained::<BinaryField8b>(builder, "y", log_size)?;
+			let c_in = unconstrained::<BinaryField1b>(builder, "c", log_size)?;
 
-		let lookup_t = super::add_carryfree_lookup(&mut builder, "add cf table").unwrap();
-		let mut lookup_batch = LookupBatch::new([lookup_t]);
-		let _sum_and_cout = lasso::u8add_carryfree(
-			&mut builder,
-			&mut lookup_batch,
-			"lasso_u8add",
-			x_in,
-			y_in,
-			c_in,
-			log_size,
-		)
-		.unwrap();
-
-		lookup_batch
-			.execute::<BinaryField32b>(&mut builder)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness)
-			.expect_err("Rejected overflowing add");
+			let lookup_t = super::add_carryfree_lookup(builder, "add cf table")?;
+			let mut lookup_batch = LookupBatch::new([lookup_t]);
+			let _sum_and_cout = lasso::u8add_carryfree(
+				builder,
+				&mut lookup_batch,
+				"lasso_u8add",
+				x_in,
+				y_in,
+				c_in,
+				log_size,
+			)?;
+			lookup_batch.execute::<BinaryField32b>(builder)?;
+			Ok(vec![])
+		})
+		.expect_err("Rejected overflowing add");
 	}
 
 	#[test]
 	fn test_lasso_u8mul() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 10;
+		test_circuit(|builder| {
+			let log_size = 10;
 
-		let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-		let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+			let mult_a = unconstrained::<BinaryField8b>(builder, "mult_a", log_size)?;
+			let mult_b = unconstrained::<BinaryField8b>(builder, "mult_b", log_size)?;
 
-		let mul_lookup_table = super::mul_lookup(&mut builder, "mul table").unwrap();
+			let mul_lookup_table = super::mul_lookup(builder, "mul table")?;
 
-		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+			let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
-		let _product = lasso::u8mul(
-			&mut builder,
-			&mut lookup_batch,
-			"lasso_u8mul",
-			mult_a,
-			mult_b,
-			1 << log_size,
-		)
+			let _product = lasso::u8mul(
+				builder,
+				&mut lookup_batch,
+				"lasso_u8mul",
+				mult_a,
+				mult_b,
+				1 << log_size,
+			)?;
+
+			lookup_batch.execute::<BinaryField32b>(builder)?;
+			Ok(vec![])
+		})
 		.unwrap();
-
-		lookup_batch
-			.execute::<BinaryField32b>(&mut builder)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
 	}
 
 	#[test]
 	fn test_lasso_batched_u8mul() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 10;
-		let mul_lookup_table = super::mul_lookup(&mut builder, "mul table").unwrap();
+		test_circuit(|builder| {
+			let log_size = 10;
+			let mul_lookup_table = super::mul_lookup(builder, "mul table")?;
 
-		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+			let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
-		for _ in 0..10 {
-			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+			for _ in 0..10 {
+				let mult_a = unconstrained::<BinaryField8b>(builder, "mult_a", log_size)?;
+				let mult_b = unconstrained::<BinaryField8b>(builder, "mult_b", log_size)?;
 
-			let _product = lasso::u8mul(
-				&mut builder,
-				&mut lookup_batch,
-				"lasso_u8mul",
-				mult_a,
-				mult_b,
-				1 << log_size,
-			)
-			.unwrap();
-		}
+				let _product = lasso::u8mul(
+					builder,
+					&mut lookup_batch,
+					"lasso_u8mul",
+					mult_a,
+					mult_b,
+					1 << log_size,
+				)?;
+			}
 
-		lookup_batch
-			.execute::<BinaryField32b>(&mut builder)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+			lookup_batch.execute::<BinaryField32b>(builder)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 
 	#[test]
 	fn test_lasso_batched_u8mul_rejects() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 10;
+		test_circuit(|builder| {
+			let log_size = 10;
 
-		// We try to feed in the add table instead
-		let mul_lookup_table = super::add_lookup(&mut builder, "mul table").unwrap();
+			// We try to feed in the add table instead
+			let mul_lookup_table = super::add_lookup(builder, "mul table")?;
 
-		let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
+			let mut lookup_batch = LookupBatch::new([mul_lookup_table]);
 
-		// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
-		for _ in 0..10 {
-			let mult_a = unconstrained::<BinaryField8b>(&mut builder, "mult_a", log_size).unwrap();
-			let mult_b = unconstrained::<BinaryField8b>(&mut builder, "mult_b", log_size).unwrap();
+			// TODO?: Make this test fail 100% of the time, even though its almost impossible with rng
+			for _ in 0..10 {
+				let mult_a = unconstrained::<BinaryField8b>(builder, "mult_a", log_size)?;
+				let mult_b = unconstrained::<BinaryField8b>(builder, "mult_b", log_size)?;
+				let _product = lasso::u8mul(
+					builder,
+					&mut lookup_batch,
+					"lasso_u8mul",
+					mult_a,
+					mult_b,
+					1 << log_size,
+				)?;
+			}
 
-			let _product = lasso::u8mul(
-				&mut builder,
-				&mut lookup_batch,
-				"lasso_u8mul",
-				mult_a,
-				mult_b,
-				1 << log_size,
-			)
-			.unwrap();
-		}
-
-		lookup_batch
-			.execute::<BinaryField32b>(&mut builder)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness)
-			.expect_err("Channels should be unbalanced");
+			lookup_batch.execute::<BinaryField32b>(builder)?;
+			Ok(vec![])
+		})
+		.expect_err("Channels should be unbalanced");
 	}
 }

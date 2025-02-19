@@ -68,7 +68,7 @@ pub struct Flush {
 	pub multiplicity: u64,
 }
 
-#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub struct Boundary<F: TowerField> {
 	pub values: Vec<F>,
 	pub channel_id: ChannelId,
@@ -76,7 +76,7 @@ pub struct Boundary<F: TowerField> {
 	pub multiplicity: u64,
 }
 
-#[derive(Debug, Clone, Copy, SerializeBytes, DeserializeBytes)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerializeBytes, DeserializeBytes)]
 pub enum FlushDirection {
 	Push,
 	Pull,

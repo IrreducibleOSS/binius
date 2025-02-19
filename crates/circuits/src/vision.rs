@@ -462,25 +462,22 @@ where {
 
 #[cfg(test)]
 mod tests {
-	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
+	use binius_core::oracle::OracleId;
 	use binius_field::BinaryField32b;
 
 	use super::vision_permutation;
-	use crate::{builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+	use crate::{builder::test_utils::test_circuit, unconstrained::unconstrained};
 
 	#[test]
 	fn test_vision32b() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 8;
-		let state_in: [OracleId; 24] = std::array::from_fn(|i| {
-			unconstrained::<BinaryField32b>(&mut builder, format!("p_in[{i}]"), log_size).unwrap()
-		});
-		let _state_out = vision_permutation(&mut builder, log_size, state_in).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let log_size = 8;
+			let state_in: [OracleId; 24] = std::array::from_fn(|i| {
+				unconstrained::<BinaryField32b>(builder, format!("p_in[{i}]"), log_size).unwrap()
+			});
+			let _state_out = vision_permutation(builder, log_size, state_in).unwrap();
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }
