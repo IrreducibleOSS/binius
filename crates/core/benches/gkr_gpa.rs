@@ -3,7 +3,6 @@
 use binius_core::{
 	constraint_system::{
 		channel::{Flush, FlushDirection},
-		common::FFastExt,
 		prover::{make_fast_masked_flush_witnesses, make_unmasked_flush_witnesses},
 		verifier::make_flush_oracles,
 	},
@@ -13,7 +12,7 @@ use binius_core::{
 		gkr_gpa,
 		gkr_gpa::{GrandProductClaim, GrandProductWitness},
 	},
-	tower::CanonicalTowerFamily,
+	tower::{CanonicalTowerFamily, ProverTowerFamily},
 	transcript::ProverTranscript,
 	witness::MultilinearExtensionIndex,
 };
@@ -179,6 +178,8 @@ const FLUSH_END: usize = 23;
 const LOG_SIZE: usize = 24;
 
 fn bench_gkr_gpa(c: &mut Criterion) {
+	type FFastExt<Tower> = <Tower as ProverTowerFamily>::FastB128;
+
 	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
 	let mut witness_index = MultilinearExtensionIndex::<U, F>::new();
 	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();

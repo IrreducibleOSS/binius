@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 pub mod channel;
-pub mod common;
+mod common;
 pub mod error;
 pub mod prove;
 pub mod validate;
