@@ -1,31 +1,37 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::fmt::Debug;
+
 use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
 #[derive(Debug)]
-pub struct MultiplyOrDont<F>
+pub enum ExponentCompositions<F>
 where
 	F: Field,
 {
-	pub generator_power_constant: F,
+	StaticGenerator { generator_power_constant: F },
+	DynamicGenerator,
+	DynamicGeneratorLastLayer,
 }
 
-impl<P: PackedField> CompositionPoly<P> for MultiplyOrDont<P::Scalar> {
+impl<P> CompositionPoly<P> for ExponentCompositions<P::Scalar>
+where
+	P: PackedField,
+{
 	fn n_vars(&self) -> usize {
-		2
+		match self {
+			Self::StaticGenerator { .. } | Self::DynamicGeneratorLastLayer => 2,
+			Self::DynamicGenerator => 3,
+		}
 	}
 
 	fn degree(&self) -> usize {
-		2
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		if query.len() != 2 {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: 2 });
+		match self {
+			Self::StaticGenerator { .. } | Self::DynamicGeneratorLastLayer => 2,
+			Self::DynamicGenerator => 4,
 		}
-		Ok(query[0] * ((P::one() - query[1]) + query[1] * self.generator_power_constant))
 	}
 
 	fn binary_tower_level(&self) -> usize {
@@ -33,8 +39,41 @@ impl<P: PackedField> CompositionPoly<P> for MultiplyOrDont<P::Scalar> {
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		ArithExpr::Var(0)
-			* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-				+ ArithExpr::Var(1) * ArithExpr::Const(self.generator_power_constant))
+		match self {
+			Self::StaticGenerator {
+				generator_power_constant,
+			} => {
+				ArithExpr::Var(0)
+					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
+						+ ArithExpr::Var(1) * ArithExpr::Const(*generator_power_constant))
+			}
+			Self::DynamicGenerator => {
+				ArithExpr::Var(0)
+					* ArithExpr::Var(0)
+					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
+						+ ArithExpr::Var(1) * ArithExpr::Var(2))
+			}
+			Self::DynamicGeneratorLastLayer => {
+				(ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
+					+ ArithExpr::Var(1) * ArithExpr::Var(0)
+			}
+		}
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+		if query.len() != CompositionPoly::<P>::n_vars(self) {
+			bail!(binius_math::Error::IncorrectQuerySize {
+				expected: CompositionPoly::<P>::n_vars(self)
+			});
+		}
+		match self {
+			Self::StaticGenerator {
+				generator_power_constant,
+			} => Ok(query[0] * ((P::one() - query[1]) + query[1] * *generator_power_constant)),
+			Self::DynamicGenerator => {
+				Ok(query[0] * query[0] * ((P::one() - query[1]) + query[1] * query[2]))
+			}
+			Self::DynamicGeneratorLastLayer => Ok((P::one() - query[1]) + query[1] * query[0]),
+		}
 	}
 }
