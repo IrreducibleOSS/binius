@@ -80,7 +80,7 @@ where
 	let _ = ext_base_op_par(&mut result, exponent_bit, |i, prev_out, exp_bit_broadcasted| {
 		let (generator, prev_out) = match &generator {
 			Generator::Static(g) => (*g, prev_out),
-			Generator::Dynamic(g) => (g[i], prev_out * prev_out),
+			Generator::Dynamic(g) => (g[i], prev_out.square()),
 		};
 
 		prev_out
