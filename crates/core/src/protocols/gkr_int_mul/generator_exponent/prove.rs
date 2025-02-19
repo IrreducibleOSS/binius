@@ -35,7 +35,7 @@ use crate::{
 /// * The ith witness corresponds to the ith claim
 ///
 /// RECOMMENDATIONS:
-/// * Witnesses and claims should be grouped by evaluation points from claims,
+/// * Witnesses and claims should be grouped by evaluation points from claims
 pub fn batch_prove<'a, FGenerator, F, P, PGenerator, FDomain, Challenger_, Backend>(
 	witnesses: impl IntoIterator<Item = GeneratorExponentWitness<'a, PGenerator, P>>,
 	claims: &[GeneratorExponentClaim<F>],

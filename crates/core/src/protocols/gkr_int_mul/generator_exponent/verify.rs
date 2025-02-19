@@ -24,21 +24,22 @@ use crate::{
 	transparent::eq_ind::EqIndPartialEval,
 };
 
-/// This is the verification side of the following interactive protocol
-/// Consider the multilinears a_0, a_1, ..., a_63 (here EXPONENT_BIT_WIDTH = 64)
-/// At each point on the hypercube, we construct the 64-bit integer a(X) as
-/// a(X) = 2^0 * a_0(X) + 2^1 * a_1(X) + 2^2 * a_2(X) ... + 2^63 * a_63(X)
+/// This is the verification side of the following interactive protocol.
 ///
-/// The multilinear n has values at each point on the hypercube such that
+/// Consider the multilinears a_0, a_1, ..., a_{n - 1}.
+/// At each point on the hypercube, we construct the n-bit integer a(X) as:
 ///
-/// g^a(X) = n(X) for all X on the hypercube
+/// a(X) = 2^0 * a_0(X) + 2^1 * a_1(X) + 2^2 * a_2(X) + ... + 2^{n - 1} * a_{n - 1}(X)
 ///
-/// This interactive protocol reduces a claimed evaluation of n to claimed evaluations of
-/// the a_i's
+/// The multilinear w has values at each point on the hypercube such that:
 ///
-/// Input: One evaluation claim on n
+/// g^a(X) = w(X) for all X on the hypercube.
 ///
-/// Output: EXPONENT_BITS_WIDTH separate claims (at different points) on each of the a_i's
+/// This interactive protocol reduces a vector of claimed evaluations of w  
+/// to corresponding vector of claimed evaluations of the a_i's.
+///
+/// **Input:** A vector of evaluation claims on w.  
+/// **Output:** n separate vectors of claims (at different points) on each of the a_i's.
 pub fn batch_verify<FGenerator, F, Challenger_>(
 	mut claims: Vec<GeneratorExponentClaim<F>>,
 	transcript: &mut VerifierTranscript<Challenger_>,
