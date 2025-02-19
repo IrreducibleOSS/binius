@@ -9,6 +9,7 @@ anyhow.workspace = true
 binius_core = { path = "../core" }
 binius_field = { path = "../field" }
 binius_math = { path = "../math" }
+binius_maybe_rayon = { path = "../maybe_rayon" }
 binius_utils = { path = "../utils" }
 bumpalo.workspace = true
 bytemuck.workspace = true
