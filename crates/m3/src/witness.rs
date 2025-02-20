@@ -7,18 +7,22 @@ use std::{
 	slice,
 };
 
+use binius_core::witness::MultilinearExtensionIndex;
 use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	PackedField, TowerField,
+	Field, PackedField, TowerField,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::iter::IterExtensions;
 use getset::CopyGetters;
 
 use super::error::Error;
-use crate::constraint_system::{ColumnId, ColumnShape, TableId};
+use crate::{
+	builder::Col,
+	constraint_system::{ColumnId, ColumnShape, TableId},
+};
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
 #[derive(Debug, Default, CopyGetters)]
@@ -29,6 +33,19 @@ pub struct WitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 	pub fn get_table(&mut self, table_id: TableId) -> Option<&mut TableWitnessIndex<'a, U>> {
 		self.tables.get_mut(table_id)
+	}
+
+	pub fn fill_table_sequential<T: TableFiller<U>>(
+		&mut self,
+		table: &T,
+		rows: &[T::Event],
+	) -> Result<(), Error> {
+		let table_id = table.id();
+		let table = self
+			.get_table(table_id)
+			.ok_or(Error::MissingTable { table_id })?;
+		fill_table_sequential(table, rows, table).map_err(|err| Error::TableFill(Box::new(err)))?;
+		Ok(())
 	}
 }
 
@@ -170,6 +187,14 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 				}
 			})
 	}
+
+	pub fn into_multilinear_extension_index<F>(self) -> MultilinearExtensionIndex<'a, U, F>
+	where
+		F: Field,
+		U: PackScalar<F>,
+	{
+		todo!()
+	}
 }
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -254,7 +279,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	/// A struct that specifies the row contents.
 	type Event;
 
-	type Error: std::error::Error + Send + Sync + 'static;
+	type Error;
 
 	fn id(&self) -> TableId;
 
@@ -262,24 +287,24 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	fn fill(
 		&self,
 		rows: &[Self::Event],
-		witness: TableWitnessIndexSegment<U>,
+		witness: &mut TableWitnessIndexSegment<U>,
 	) -> Result<(), Self::Error>;
 }
 
 pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
-	table: &mut T,
+	table: &T,
 	rows: &[T::Event],
-	mut witness: TableWitnessIndex<U>,
+	mut witness: &mut TableWitnessIndex<U>,
 ) -> Result<(), T::Error> {
 	let log_segment_size = witness.min_log_segment_size();
 
 	// TODO: Handle the case when rows are not a multiple of the segment size
 	assert_eq!(rows.len() % (1 << log_segment_size), 0);
 
-	for (row_chunk, witness_segment) in
+	for (row_chunk, mut witness_segment) in
 		iter::zip(rows.chunks(1 << log_segment_size), witness.segments(log_segment_size))
 	{
-		table.fill(row_chunk, witness_segment)?;
+		table.fill(row_chunk, &mut witness_segment)?;
 	}
 
 	Ok(())
