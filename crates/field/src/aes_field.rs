@@ -144,7 +144,7 @@ impl From<BinaryField8b> for AESTowerField8b {
 /// 1. Cast to base b-bit packed field
 /// 2. Apply linear transformation between aes and binary b8 tower fields
 /// 3. Cast back to the target field
-struct SubfieldTransformer<IF, OF, T> {
+pub struct SubfieldTransformer<IF, OF, T> {
 	inner_transform: T,
 	_ip_pd: PhantomData<IF>,
 	_op_pd: PhantomData<OF>,
@@ -173,9 +173,25 @@ where
 	}
 }
 
+pub type StaticSubfieldTransformerAesToBinary<IP, OP> = SubfieldTransformer<
+	AESTowerField8b,
+	BinaryField8b,
+	<PackedSubfield<IP, AESTowerField8b> as PackedTransformationFactory<
+		PackedSubfield<OP, BinaryField8b>,
+	>>::PackedTransformation<&'static [BinaryField8b]>,
+>;
+pub type StaticSubfieldTransformerBinaryToAes<IP, OP> = SubfieldTransformer<
+	BinaryField8b,
+	AESTowerField8b,
+	<PackedSubfield<IP, BinaryField8b> as PackedTransformationFactory<
+		PackedSubfield<OP, AESTowerField8b>,
+	>>::PackedTransformation<&'static [AESTowerField8b]>,
+>;
+
 /// Creates transformation object from AES tower to binary tower for packed field.
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
-pub fn make_aes_to_binary_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
+pub fn make_aes_to_binary_packed_transformer<IP, OP>(
+) -> StaticSubfieldTransformerAesToBinary<IP, OP>
 where
 	IP: PackedExtension<AESTowerField8b>,
 	OP: PackedExtension<BinaryField8b>,
@@ -192,7 +208,8 @@ where
 
 /// Creates transformation object from AES tower to binary tower for packed field.
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
-pub fn make_binary_to_aes_packed_transformer<IP, OP>() -> impl Transformation<IP, OP>
+pub fn make_binary_to_aes_packed_transformer<IP, OP>(
+) -> StaticSubfieldTransformerBinaryToAes<IP, OP>
 where
 	IP: PackedExtension<BinaryField8b>,
 	OP: PackedExtension<AESTowerField8b>,
@@ -538,7 +555,7 @@ mod tests {
 		fn test_aes_to_binary_packed_transform_128(val in 0u128..) {
 			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField4x32b, PackedBinaryField4x32b>();
 			let input = PackedAESBinaryField4x32b::from(val);
-			let result = transform.transform(&input);
+			let result: PackedBinaryField4x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 
@@ -546,7 +563,7 @@ mod tests {
 		fn test_binary_to_aes_packed_transform_128(val in 0u128..) {
 			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField4x32b, PackedAESBinaryField4x32b>();
 			let input = PackedBinaryField4x32b::from(val);
-			let result = transform.transform(&input);
+			let result: PackedAESBinaryField4x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 
@@ -554,7 +571,7 @@ mod tests {
 		fn test_aes_to_binary_packed_transform_256(val in any::<[u128; 2]>()) {
 			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
 			let input = PackedAESBinaryField8x32b::from(val);
-			let result = transform.transform(&input);
+			let result: PackedBinaryField8x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 
@@ -562,7 +579,7 @@ mod tests {
 		fn test_binary_to_aes_packed_transform_256(val in any::<[u128; 2]>()) {
 			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField8x32b, PackedAESBinaryField8x32b>();
 			let input = PackedBinaryField8x32b::from(val);
-			let result = transform.transform(&input);
+			let result: PackedAESBinaryField8x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 
@@ -570,7 +587,7 @@ mod tests {
 		fn test_aes_to_binary_packed_transform_512(val in any::<[u128; 4]>()) {
 			let transform = make_aes_to_binary_packed_transformer::<PackedAESBinaryField16x32b, PackedBinaryField16x32b>();
 			let input = PackedAESBinaryField16x32b::from_underlier(val.into());
-			let result = transform.transform(&input);
+			let result: PackedBinaryField16x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 
@@ -578,7 +595,7 @@ mod tests {
 		fn test_binary_to_aes_packed_transform_512(val in any::<[u128; 4]>()) {
 			let transform = make_binary_to_aes_packed_transformer::<PackedBinaryField16x32b, PackedAESBinaryField16x32b>();
 			let input = PackedBinaryField16x32b::from_underlier(val.into());
-			let result = transform.transform(&input);
+			let result: PackedAESBinaryField16x32b = transform.transform(&input);
 			assert_eq!(result, convert_pairwise(input));
 		}
 	}
