@@ -519,7 +519,7 @@ where
 }
 
 #[instrument(skip_all, level = "debug")]
-pub fn make_unmasked_flush_witnesses<'a, U, Tower>(
+fn make_unmasked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	flush_oracle_ids: &[OracleId],
@@ -575,7 +575,7 @@ where
 
 #[allow(clippy::type_complexity)]
 #[instrument(skip_all, level = "debug")]
-pub fn make_fast_masked_flush_witnesses<'a, U, Tower>(
+fn make_fast_masked_flush_witnesses<'a, U, Tower>(
 	oracles: &MultilinearOracleSet<FExt<Tower>>,
 	witness: &MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	flush_oracles: &[OracleId],

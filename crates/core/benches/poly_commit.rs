@@ -1,19 +1,20 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::iter::repeat_with;
+
 use binius_core::{
 	merkle_tree::BinaryMerkleTreeProver,
-	oracle::MultilinearOracleSet,
 	piop,
+	piop::CommitMeta,
 	protocols::{fri, fri::FRIParams},
 	reed_solomon::reed_solomon::ReedSolomonCode,
-	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField,
-	BinaryField128b, BinaryField32b, PackedField, TowerField,
+	BinaryField128b, BinaryField32b, PackedField,
 };
 use binius_hash::compress::Groestl256ByteCompression;
-use binius_math::{MultilinearExtension, MultilinearPoly};
+use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
 use binius_ntt::{NTTOptions, ThreadingSettings};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use groestl_crypto::Groestl256;
@@ -61,19 +62,19 @@ const LOG_SIZE: usize = 20;
 
 fn bench_poly_commit(c: &mut Criterion) {
 	let (fri_params, merkle_prover, committed_multilins) = create_poly_commit(LOG_SIZE);
+	let rs_code = ReedSolomonCode::new(
+		fri_params.rs_code().log_dim(),
+		fri_params.rs_code().log_inv_rate(),
+		&NTTOptions {
+			precompute_twiddles: true,
+			thread_settings: ThreadingSettings::MultithreadedDefault,
+		},
+	)
+	.unwrap();
 	let mut group = c.benchmark_group("Polynomial Commitment");
-	group.throughput(Throughput::Bytes(((1 << LOG_SIZE) * BinaryField128b::N_BITS / 8) as u64));
+	group.throughput(Throughput::Bytes(((1 << LOG_SIZE) * std::mem::size_of::<F>()) as u64));
 	group.bench_function(BenchmarkId::new("log_size", LOG_SIZE), |b| {
 		b.iter(|| {
-			let rs_code = ReedSolomonCode::new(
-				fri_params.rs_code().log_dim(),
-				fri_params.rs_code().log_inv_rate(),
-				&NTTOptions {
-					precompute_twiddles: true,
-					thread_settings: ThreadingSettings::SingleThreaded,
-				},
-			)
-			.unwrap();
 			fri::commit_interleaved_with(&rs_code, &fri_params, &merkle_prover, |message_buffer| {
 				merge_multilins(&committed_multilins, message_buffer)
 			})
@@ -87,44 +88,26 @@ fn bench_poly_commit(c: &mut Criterion) {
 fn create_poly_commit(
 	log_size: usize,
 ) -> (
-	FRIParams<BinaryField128b, BinaryField32b>,
-	BinaryMerkleTreeProver<BinaryField128b, Groestl256, Groestl256ByteCompression>,
-	Vec<MultilinearWitness<'static, PackedType<U, BinaryField128b>>>,
+	FRIParams<F, BinaryField32b>,
+	BinaryMerkleTreeProver<F, Groestl256, Groestl256ByteCompression>,
+	Vec<impl MultilinearPoly<PackedType<U, F>>>,
 ) {
 	const LOG_INV_RATE: usize = 1;
 	const SECURITY_BITS: usize = 100;
 
-	let mut oracles = MultilinearOracleSet::<BinaryField128b>::new();
-	let mut witness_index = MultilinearExtensionIndex::<U, F>::new();
-
 	let mut rng = thread_rng();
-	let len = 1usize << log_size.saturating_sub(<PackedType<U, F>>::LOG_WIDTH);
-	{
-		let poly_id = oracles.add_committed(log_size, BinaryField128b::TOWER_LEVEL);
-		let mut poly_data = vec![PackedType::<U, BinaryField128b>::default(); len];
-		poly_data
-			.iter_mut()
-			.for_each(|x| *x = PackedType::<U, BinaryField128b>::random(&mut rng));
+	let poly_data = repeat_with(|| PackedType::<U, F>::random(&mut rng))
+		.take(1 << LOG_SIZE.saturating_sub(PackedType::<U, F>::LOG_WIDTH))
+		.collect::<Vec<_>>();
 
-		let witness = MultilinearExtension::new(log_size, poly_data)
-			.unwrap()
-			.specialize_arc_dyn();
-		witness_index
-			.update_multilin_poly([(poly_id, witness)])
-			.unwrap();
-	}
+	let committed_multilins = vec![MLEDirectAdapter::from(
+		MultilinearExtension::new(log_size, poly_data).unwrap(),
+	)];
 
 	let merkle_prover = BinaryMerkleTreeProver::new(Groestl256ByteCompression);
 	let merkle_scheme = merkle_prover.scheme();
 
-	let (commit_meta, oracle_to_commit_index) = piop::make_oracle_commit_meta(&oracles).unwrap();
-	let committed_multilins = piop::collect_committed_witnesses(
-		&commit_meta,
-		&oracle_to_commit_index,
-		&oracles,
-		&witness_index,
-	)
-	.unwrap();
+	let commit_meta = CommitMeta::with_vars([LOG_SIZE]);
 
 	let fri_params = piop::make_commit_params_with_optimal_arity::<_, _, _>(
 		&commit_meta,

@@ -304,7 +304,7 @@ where
 	Ok(())
 }
 
-pub(crate) fn max_n_vars_and_skip_rounds<F, Composition>(
+pub fn max_n_vars_and_skip_rounds<F, Composition>(
 	zerocheck_claims: &[ZerocheckClaim<F, Composition>],
 	domain_bits: usize,
 ) -> (usize, usize)
@@ -484,7 +484,7 @@ pub struct FlushSumcheckMeta<F: TowerField> {
 	pub eval_point: Vec<F>,
 }
 
-pub(crate) fn get_flush_dedup_sumcheck_metas<F: TowerField>(
+pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: &[OracleId],
 	flush_selectors: &[OracleId],
@@ -592,7 +592,7 @@ impl<P: PackedField> CompositionPoly<P> for FlushSumcheckComposition {
 	}
 }
 
-pub(crate) fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
+pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_selectors_unique_by_claim: &[Vec<OracleId>],
 	flush_oracle_ids_by_claim: &[Vec<OracleId>],
@@ -639,7 +639,7 @@ pub(crate) fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 	Ok(evalcheck_claims)
 }
 
-pub(crate) struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPoly<F>> {
+pub struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPoly<F>> {
 	sumcheck_claims: Vec<SumcheckClaim<F, Composition>>,
 	gkr_eval_points: Vec<Vec<F>>,
 	flush_selectors_unique_by_claim: Vec<Vec<OracleId>>,
@@ -647,7 +647,7 @@ pub(crate) struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPol
 }
 
 #[allow(clippy::type_complexity)]
-pub(crate) fn get_flush_dedup_sumcheck_claims<F: TowerField>(
+pub fn get_flush_dedup_sumcheck_claims<F: TowerField>(
 	flush_sumcheck_metas: Vec<FlushSumcheckMeta<F>>,
 ) -> Result<DedupSumcheckClaims<F, impl CompositionPoly<F>>, Error> {
 	let n_claims = flush_sumcheck_metas.len();
@@ -691,7 +691,7 @@ pub(crate) fn get_flush_dedup_sumcheck_claims<F: TowerField>(
 	})
 }
 
-pub(crate) fn reorder_for_flushing_by_n_vars<F: TowerField>(
+pub fn reorder_for_flushing_by_n_vars<F: TowerField>(
 	oracles: &MultilinearOracleSet<F>,
 	flush_oracle_ids: &[OracleId],
 	flush_selectors: Vec<OracleId>,

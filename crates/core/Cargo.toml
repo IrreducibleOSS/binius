@@ -55,7 +55,7 @@ name = "prodcheck"
 harness = false
 
 [[bench]]
-name = "gkr_gpa"
+name = "binary_merkle_tree"
 harness = false
 
 [[bench]]

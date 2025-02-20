@@ -3,17 +3,15 @@
 pub mod channel;
 mod common;
 pub mod error;
-pub mod prove;
+mod prove;
 pub mod validate;
-pub mod verify;
+mod verify;
 
 use binius_field::{BinaryField128b, TowerField};
 use binius_macros::SerializeBytes;
 use binius_utils::{DeserializeBytes, SerializationError, SerializationMode};
 use channel::{ChannelId, Flush};
-pub use prove as prover;
 pub use prove::prove;
-pub use verify as verifier;
 pub use verify::verify;
 
 use crate::oracle::{ConstraintSet, MultilinearOracleSet, OracleId};
