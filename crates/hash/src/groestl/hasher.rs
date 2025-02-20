@@ -288,7 +288,7 @@ mod tests {
 			PackedAESBinaryField64x8b,
 			PackedBinaryField64x8b,
 		>();
-		let zero_perm_bin = aes_to_bin_transform.transform(&zero_perm);
+		let zero_perm_bin: PackedBinaryField64x8b = aes_to_bin_transform.transform(&zero_perm);
 		let digest = GroestlDigestCompression::<BinaryField8b>::default().compress([
 			GroestlDigest::<BinaryField8b>::default(),
 			GroestlDigest::<BinaryField8b>::default(),

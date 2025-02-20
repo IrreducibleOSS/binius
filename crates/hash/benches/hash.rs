@@ -7,7 +7,7 @@ use binius_field::{
 };
 use binius_hash::{
 	FixedLenHasherDigest, Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest,
-	HasherDigest, PseudoCompressionFunction, Vision32b, VisionHasher,
+	HasherDigest, PseudoCompressionFunction, VisionHasherDigest,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -90,22 +90,13 @@ fn bench_vision32(c: &mut Criterion) {
 
 	let mut rng = thread_rng();
 
-	const N: usize = 1 << 14;
-	let data_bin = (0..N)
-		.map(|_| BinaryField32b::random(&mut rng))
-		.collect::<Vec<_>>();
-	let data_aes = (0..N)
-		.map(|_| AESTowerField32b::random(&mut rng))
-		.collect::<Vec<_>>();
+	const N: usize = 1 << 16;
+	let mut data = [0u8; N];
+	rng.fill_bytes(&mut data);
 
-	group.throughput(Throughput::Bytes((N * 4) as u64));
-	group.bench_function("Vision over BinaryField32b", |bench| {
-		bench.iter(|| FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_bin.as_slice()))
-	});
-	group.bench_function("Vision over AESTowerField32b", |bench| {
-		bench.iter(|| {
-			FixedLenHasherDigest::<_, VisionHasher<AESTowerField32b, _>>::hash(data_aes.as_slice())
-		})
+	group.throughput(Throughput::Bytes(N as u64));
+	group.bench_function("Vision single instance", |bench| {
+		bench.iter(|| VisionHasherDigest::digest(&data))
 	});
 
 	group.finish()
