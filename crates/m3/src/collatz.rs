@@ -1,8 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{underlier::UnderlierType, TowerField};
-use bytemuck::must_cast_slice_mut;
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	underlier::UnderlierType,
+	TowerField,
+};
+use bytemuck::{must_cast_slice_mut, Pod};
 
 use super::{
 	builder::{Col, ConstraintSystemBuilder},
@@ -13,7 +17,7 @@ use crate::{
 	constraint_system::TableId,
 	types::*,
 	u32::{U32Add, U32AddFlags},
-	witness::{TableFiller, TableWitnessIndex},
+	witness::{TableFiller, TableWitnessIndex, TableWitnessIndexSegment},
 };
 
 #[derive(Debug)]
@@ -25,8 +29,8 @@ pub struct EvensTable {
 	pub out_val: Col<B32>,
 }
 
-impl<F: TowerField> EvensTable {
-	pub fn new(cs: &mut ConstraintSystemBuilder<F>, seq_chan: ChannelId) -> Self {
+impl EvensTable {
+	pub fn new(cs: &mut ConstraintSystemBuilder, seq_chan: ChannelId) -> Self {
 		let mut table = cs.add_table("evens");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
@@ -35,11 +39,11 @@ impl<F: TowerField> EvensTable {
 		let out_bits =
 			table.add_shifted::<B1, 5>("out_bits", in_bits, 5, 1, ShiftVariant::LogicalRight);
 
-		let in_val = table.add_packed::<B32, 0, _, _>("in", in_bits);
-		let out_val = table.add_packed::<B32, 0, _, _>("out", out_bits);
+		let in_val = table.add_packed::<B32, 0, _, 5>("in", in_bits);
+		let out_val = table.add_packed::<B32, 0, _, 5>("out", out_bits);
 
-		table.pull(seq_chan, [in_val]);
-		table.push(seq_chan, [out_val]);
+		table.pull_one(seq_chan, in_val);
+		table.push_one(seq_chan, out_val);
 
 		Self {
 			id: table.id(),
@@ -51,7 +55,11 @@ impl<F: TowerField> EvensTable {
 	}
 }
 
-impl<U: UnderlierType> TableFiller<U> for EvensTable {
+impl<U> TableFiller<U> for EvensTable
+where
+	U: UnderlierType + PackScalar<B32>,
+	PackedType<U, B32>: Pod,
+{
 	type Event = EvensEvent;
 	type Error = anyhow::Error;
 
@@ -62,15 +70,17 @@ impl<U: UnderlierType> TableFiller<U> for EvensTable {
 	fn fill(
 		&self,
 		rows: &[Self::Event],
-		witness: TableWitnessIndex<U>,
+		witness: &mut TableWitnessIndexSegment<U>,
 	) -> Result<(), anyhow::Error> {
-		let in_val = must_cast_slice_mut::<u32, _>(&mut *witness.get_mut(self.in_val));
-		let out_val = must_cast_slice_mut::<u32, _>(&mut *witness.get_mut(self.out_val));
+		let in_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_val)?);
+		let out_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.out_val)?);
 
 		for (i, event) in rows.iter().enumerate() {
 			in_val[i] = event.val;
 			out_val[i] = event.val / 2;
 		}
+
+		Ok(())
 	}
 }
 
@@ -86,8 +96,8 @@ pub struct OddsTable {
 	pub out_val: Col<B32>,
 }
 
-impl<F: TowerField> OddsTable {
-	pub fn new(cs: &mut ConstraintSystemBuilder<F>, seq_chan: ChannelId) -> Self {
+impl OddsTable {
+	pub fn new(cs: &mut ConstraintSystemBuilder, seq_chan: ChannelId) -> Self {
 		let mut table = cs.add_table("odds");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
@@ -98,7 +108,7 @@ impl<F: TowerField> OddsTable {
 		// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
 		// multilinear extension of some constant vector, repeating for the number of rows.
 		// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-		let carry_bit = table.add_commited::<B1, 5>("carry_bit");
+		let carry_bit = table.add_committed::<B1, 5>("carry_bit");
 
 		// Input times 3 + 1
 		let add_in_x3 = U32Add::new(
@@ -111,11 +121,11 @@ impl<F: TowerField> OddsTable {
 			},
 		);
 
-		let in_val = table.add_packed::<B32, 0, _, _>("in", in_bits);
-		let out_val = table.add_packed::<B32, 0, _, _>("out", add_in_x3.zout);
+		let in_val = table.add_packed::<B32, 0, _, 5>("in", in_bits);
+		let out_val = table.add_packed::<B32, 0, _, 5>("out", add_in_x3.zout);
 
-		table.pull(seq_chan, [in_val]);
-		table.push(seq_chan, [out_val]);
+		table.pull_one(seq_chan, in_val);
+		table.push_one(seq_chan, out_val);
 
 		Self {
 			id: table.id(),
@@ -124,12 +134,17 @@ impl<F: TowerField> OddsTable {
 			carry_bit,
 			add_in_x3,
 			in_val,
-			out_val: table.get_col("out"),
+			out_val,
 		}
 	}
 }
 
-impl<U: UnderlierType> TableFiller<U> for OddsTable {
+impl<U: UnderlierType> TableFiller<U> for OddsTable
+where
+	U: UnderlierType + PackScalar<B1> + PackScalar<B32>,
+	PackedType<U, B1>: Pod,
+	PackedType<U, B32>: Pod,
+{
 	type Event = OddsEvent;
 	type Error = anyhow::Error;
 
@@ -140,11 +155,11 @@ impl<U: UnderlierType> TableFiller<U> for OddsTable {
 	fn fill(
 		&self,
 		rows: &[Self::Event],
-		mut witness: TableWitnessIndex<U>,
+		witness: &mut TableWitnessIndexSegment<U>,
 	) -> Result<(), anyhow::Error> {
-		let in_val = must_cast_slice_mut::<u32, _>(&mut *witness.get_mut(self.in_val));
-		let in_dbl = must_cast_slice_mut::<u32, _>(&mut *witness.get_mut(self.in_dbl));
-		let carry_bit = must_cast_slice_mut::<u32, _>(&mut *witness.get_mut(self.carry_bit));
+		let in_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_val)?);
+		let in_dbl = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_dbl)?);
+		let carry_bit = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.carry_bit)?);
 
 		for (i, event) in rows.iter().enumerate() {
 			in_val[i] = event.val;
@@ -153,12 +168,15 @@ impl<U: UnderlierType> TableFiller<U> for OddsTable {
 		}
 
 		self.add_in_x3.populate(&mut witness);
+
+		Ok(())
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use binius_core::constraint_system::channel::{Boundary, FlushDirection};
+	use binius_field::arch::OptimalUnderlier128b;
 	use bumpalo::Bump;
 
 	use super::*;
@@ -196,16 +214,18 @@ mod tests {
 		};
 
 		let allocator = Bump::new();
-		let witness = cs.build_witness(&allocator, &instance).unwrap();
+		let mut witness = cs
+			.build_witness::<OptimalUnderlier128b>(&allocator, &instance)
+			.unwrap();
 
-		// TODO: Maybe we can consolidate these calls too onto WitnessIndex
-		let evens_witness = witness.get_table(evens_table.id()).unwrap();
-		fill_table_sequential(&evens_table, &trace.evens, evens_witness).unwrap();
+		witness
+			.fill_table_sequential(&evens_table, &trace.evens)
+			.unwrap();
+		witness
+			.fill_table_sequential(&odds_table, &trace.odds)
+			.unwrap();
 
-		let odds_witness = witness.get_table(odds_table.id());
-		fill_table_sequential(&odds_table, &trace.odds, odds_witness).unwrap();
-
-		let compiled_cs = cs.compile(instance).unwrap();
+		let compiled_cs = cs.compile(&instance).unwrap();
 
 		// TODO: Convert the WitnessIndex into MultilinearExtensionIndex
 

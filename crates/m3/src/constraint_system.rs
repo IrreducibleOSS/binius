@@ -17,13 +17,13 @@ use binius_core::{
 	constraint_system::ConstraintSystem as CompiledConstraintSystem,
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 };
-use binius_field::TowerField;
+use binius_field::{underlier::UnderlierType, TowerField};
 use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bumpalo::Bump;
 
 use super::error::Error;
-use crate::{types::B128, witness::TableWitnessIndex};
+use crate::{types::B128, witness::WitnessIndex};
 
 pub type TableId = usize;
 pub type ChannelId = usize;
@@ -45,10 +45,12 @@ pub struct ColumnId {
 // TODO: Impl Add/Sub/Mul for Col, returning Expr
 
 // feature: TableBuilder needs namespacing
+#[derive(Debug)]
 pub enum Column {
 	Committed { tower_level: usize },
 }
 
+#[derive(Debug)]
 pub struct ColumnInfo {
 	pub col: Column,
 	pub name: String,
@@ -57,6 +59,7 @@ pub struct ColumnInfo {
 	pub is_nonzero: bool,
 }
 
+#[derive(Debug)]
 pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
@@ -70,6 +73,7 @@ pub struct Table<F: TowerField = B128> {
 	pub is_fixed: bool,
 }
 
+#[derive(Debug)]
 pub struct Flush {
 	pub column_indices: Vec<usize>,
 	pub channel_id: ChannelId,
@@ -91,7 +95,8 @@ pub struct Instance<F: TowerField = B128> {
 	pub table_sizes: Vec<usize>,
 }
 
-pub struct Channel<F: TowerField = B128> {
+#[derive(Debug)]
+pub struct Channel {
 	pub name: String,
 }
 
@@ -190,7 +195,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 		})
 	}
 
-	pub fn build_witness(&self, allocator: &Bump, instance: &Instance) -> TableWitnessIndex<F> {
+	pub fn build_witness<U: UnderlierType>(
+		&self,
+		allocator: &Bump,
+		instance: &Instance,
+	) -> Result<WitnessIndex<U>, Error> {
 		todo!()
 	}
 }

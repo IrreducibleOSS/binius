@@ -5,7 +5,7 @@ use binius_field::{packed::set_packed_slice, underlier::UnderlierType, Field};
 use bytemuck::{cast_slice_mut, must_cast_slice, must_cast_slice_mut};
 
 use super::{
-	constraint_system::{Col, Expr, TableBuilder},
+	builder::{Col, TableBuilder},
 	types::{B1, B128, B16, B32, B64, B8},
 	witness::WitnessIndex,
 };

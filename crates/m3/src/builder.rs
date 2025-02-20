@@ -1,15 +1,16 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, marker::PhantomData};
+use std::{array, iter, marker::PhantomData};
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
+use static_assertions::const_assert_eq;
 
 use crate::{
 	constraint_system::{
 		Channel, ChannelId, Column, ColumnId, ColumnIndex, ColumnInfo, ColumnShape,
-		ConstraintSystem, Table, TableId,
+		ConstraintSystem, Flush, Table, TableId,
 	},
 	types::B128,
 };
@@ -85,8 +86,9 @@ pub struct Expr<F: TowerField, const V: usize> {
 ///   number of table columns (the length of `column_info`).
 /// * All flushes in `flushes` contain column indices less than the number of table columns (the
 ///   length of `column_info`).
+#[derive(Debug)]
 pub struct TableBuilder<F: TowerField = B128> {
-	table: Table,
+	table: Table<F>,
 }
 
 impl<F: TowerField> TableBuilder<F> {
@@ -158,7 +160,7 @@ impl<F: TowerField> TableBuilder<F> {
 		name: impl ToString,
 		original: Col<FSub, LOG_VALS_PER_ROW>,
 		index: usize,
-	) -> Col<FSub, 1>
+	) -> Col<FSub, 0>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
@@ -181,7 +183,7 @@ impl<F: TowerField> TableBuilder<F> {
 	pub fn add_linear_combination_with_offset<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		cols: impl IntoIterator<Item = Col<FSub, V>>,
+		cols: impl IntoIterator<Item = (Col<FSub, V>, FSub)>,
 		offset: FSub,
 	) -> Col<FSub, V>
 	where
@@ -203,8 +205,66 @@ impl<F: TowerField> TableBuilder<F> {
 		array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
 	}
 
+	pub fn add_packed<FSub, const V: usize, FSubSub, const VSub: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSubSub, VSub>,
+	) -> Col<FSub, V>
+	where
+		FSub: TowerField + ExtensionField<FSubSub>,
+		FSubSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		assert_eq!(FSub::TOWER_LEVEL + V, FSubSub::TOWER_LEVEL + VSub);
+		todo!()
+	}
+
 	pub fn assert_zero<const V: usize>(&mut self, name: impl ToString, expr: Expr<F, V>) {
 		self.table.zero_constraints.push(expr.expr);
+	}
+
+	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.pull(channel, iter::once(upcast_col(col)))
+	}
+
+	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.push(channel, iter::once(upcast_col(col)))
+	}
+
+	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
+		self.flush(channel, FlushDirection::Pull, cols)
+	}
+
+	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
+		self.flush(channel, FlushDirection::Push, cols)
+	}
+
+	fn flush(
+		&mut self,
+		channel_id: ChannelId,
+		direction: FlushDirection,
+		cols: impl IntoIterator<Item = Col<F, 0>>,
+	) {
+		let column_indices = cols
+			.into_iter()
+			.map(|col| {
+				assert_eq!(col.table_id, self.table.id);
+				col.index
+			})
+			.collect();
+		self.table.flushes.push(Flush {
+			column_indices,
+			channel_id,
+			direction,
+		});
 	}
 
 	pub fn build(self) -> Table<F> {
@@ -215,7 +275,7 @@ impl<F: TowerField> TableBuilder<F> {
 #[derive(Debug, Default)]
 pub struct ConstraintSystemBuilder<F: TowerField = B128> {
 	tables: Vec<TableBuilder<F>>,
-	channels: Vec<Channel<F>>,
+	channels: Vec<Channel>,
 	/// All valid channel IDs are strictly less than this bound.
 	channel_id_bound: ChannelId,
 }
