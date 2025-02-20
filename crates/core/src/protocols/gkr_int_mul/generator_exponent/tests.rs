@@ -6,7 +6,8 @@ use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
 	underlier::SmallU,
 	BinaryField, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field,
-	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField2x64b, PackedField,
+	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField2x64b, PackedExtension,
+	PackedField,
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
@@ -23,20 +24,21 @@ use crate::{
 		common::GeneratorExponentClaim, verify, witness::GeneratorExponentWitness,
 	},
 	transcript::ProverTranscript,
+	witness::MultilinearWitness,
 };
 
 type PBits = PackedBinaryField128x1b;
 type FGenerator = BinaryField64b;
 type PGenerator = PackedBinaryField2x64b;
 type F = BinaryField128b;
-type PChallenge = PackedBinaryField1x128b;
+type P = PackedBinaryField1x128b;
 
 fn generate_claim_witness<const COLUMN_LEN: usize>(
 	exponents_in_each_row: [u128; COLUMN_LEN],
 	exponent_bit_width: usize,
-	generator: Option<&[PGenerator]>,
+	generator: Option<MultilinearWitness<'static, P>>,
 	eval_point: &[F],
-) -> (GeneratorExponentWitness<'static, PGenerator, PChallenge>, GeneratorExponentClaim<F>) {
+) -> (GeneratorExponentWitness<'static, P>, GeneratorExponentClaim<F>) {
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
@@ -58,37 +60,34 @@ fn generate_claim_witness<const COLUMN_LEN: usize>(
 		.into_iter()
 		.map(|column| {
 			let mle = MultilinearExtension::from_values(column).unwrap();
-			MLEEmbeddingAdapter::<PBits, PChallenge>::from(mle).upcast_arc_dyn()
+			MLEEmbeddingAdapter::<PBits, P>::from(mle).upcast_arc_dyn()
 		})
 		.collect::<Vec<_>>();
 
 	let witness = if let Some(generator) = generator {
-		GeneratorExponentWitness::<'_, PGenerator, PChallenge>::new_with_dynamic_generator(
+		GeneratorExponentWitness::<'_, P>::new_with_dynamic_generator::<PBits, PGenerator>(
 			exponent_witnesses,
 			generator,
 		)
 		.unwrap()
 	} else {
-		GeneratorExponentWitness::<'_, PGenerator, PChallenge>::new_with_static_generator(
+		GeneratorExponentWitness::<'_, P>::new_with_static_generator::<PBits, PGenerator>(
 			exponent_witnesses,
 		)
 		.unwrap()
 	};
 
-	let exponentiation_result = witness.exponentiation_result().unwrap();
-
-	let last_layer_mle = MultilinearExtension::from_values(exponentiation_result.to_vec()).unwrap();
-
-	let last_layer_witness = MLEEmbeddingAdapter::<PGenerator, PChallenge>::from(last_layer_mle);
+	let exponentiation_result_witness = witness.exponentiation_result_witness();
 
 	let last_layer_query = MultilinearQuery::expand(eval_point);
 
 	let claim = GeneratorExponentClaim {
 		eval_point: eval_point.to_vec(),
-		eval: last_layer_witness
+		eval: exponentiation_result_witness
 			.evaluate(MultilinearQueryRef::new(&last_layer_query))
 			.unwrap(),
 		exponent_bit_width: witness.exponent.len(),
+		n_vars: eval_point.len(),
 		with_dynamic_generator: witness.generator.is_some(),
 	};
 	(witness, claim)
@@ -97,10 +96,7 @@ fn generate_claim_witness<const COLUMN_LEN: usize>(
 #[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims<const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (
-	Vec<GeneratorExponentClaim<F>>,
-	Vec<GeneratorExponentWitness<'static, PGenerator, PChallenge>>,
-) {
+) -> (Vec<GeneratorExponentClaim<F>>, Vec<GeneratorExponentWitness<'static, P>>) {
 	let mut rng = thread_rng();
 
 	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
@@ -117,7 +113,7 @@ fn generate_mul_witnesses_claims<const LOG_SIZE: usize, const COLUMN_LEN: usize>
 	let (b_witness, b_claim) = generate_claim_witness::<COLUMN_LEN>(
 		b,
 		exponent_bit_width,
-		Some(a_witness.exponentiation_result().unwrap()),
+		Some(a_witness.exponentiation_result_witness()),
 		&eval_point_2,
 	);
 
@@ -133,15 +129,13 @@ fn generate_mul_witnesses_claims<const LOG_SIZE: usize, const COLUMN_LEN: usize>
 }
 
 #[allow(clippy::type_complexity)]
-fn generate_mul_witnesses_claims_with_different_log_size() -> (
-	Vec<GeneratorExponentWitness<'static, PGenerator, PChallenge>>,
-	Vec<GeneratorExponentClaim<F>>,
-) {
-	const LOG_SIZE_1: usize = 13usize;
+fn generate_mul_witnesses_claims_with_different_log_size(
+) -> (Vec<GeneratorExponentWitness<'static, P>>, Vec<GeneratorExponentClaim<F>>) {
+	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
 
-	const LOG_SIZE_2: usize = 14usize;
+	const LOG_SIZE_2: usize = 13usize;
 	const COLUMN_LEN_2: usize = 1usize << LOG_SIZE_2;
 
 	const EXPONENT_BIT_WIDTH_2: usize = 2usize;
@@ -176,36 +170,45 @@ fn witness_gen_happens_correctly() {
 
 	let (a_witness, _) =
 		generate_claim_witness::<COLUMN_LEN>(a, EXPONENT_BIT_WIDTH, None, &eval_point);
-	let a_exponentiation_result = a_witness.exponentiation_result().unwrap();
+	let a_exponentiation_result = a_witness.exponentiation_result_witness();
+
+	let a_exponentiation_result_evals =
+		P::cast_bases(a_exponentiation_result.packed_evals().unwrap());
 
 	for (row_idx, this_row_exponent) in a.into_iter().enumerate() {
 		assert_eq!(
-			<PGenerator as PackedField>::Scalar::MULTIPLICATIVE_GENERATOR
-				.pow(this_row_exponent as u64),
-			get_packed_slice(a_exponentiation_result, row_idx)
+			FGenerator::MULTIPLICATIVE_GENERATOR.pow(this_row_exponent as u64),
+			get_packed_slice(a_exponentiation_result_evals, row_idx)
 		);
 	}
 
 	let (b_witness, _) = generate_claim_witness::<COLUMN_LEN>(
 		b,
 		EXPONENT_BIT_WIDTH,
-		Some(a_exponentiation_result),
+		Some(a_exponentiation_result.clone()),
 		&eval_point,
 	);
-	let b_exponentiation_result = b_witness.exponentiation_result().unwrap();
+	let b_exponentiation_result = b_witness.exponentiation_result_witness();
+
+	let b_exponentiation_result_evals =
+		P::cast_bases(b_exponentiation_result.packed_evals().unwrap());
 
 	for (row_idx, this_row_exponent) in b.into_iter().enumerate() {
 		assert_eq!(
-			get_packed_slice(a_exponentiation_result, row_idx).pow(this_row_exponent as u64),
-			get_packed_slice(b_exponentiation_result, row_idx)
+			get_packed_slice(a_exponentiation_result_evals, row_idx).pow(this_row_exponent as u64),
+			get_packed_slice(b_exponentiation_result_evals, row_idx)
 		);
 	}
 
 	let (c_witness, _) =
 		generate_claim_witness::<COLUMN_LEN>(c, EXPONENT_BIT_WIDTH * 2, None, &eval_point);
-	let c_exponentiation_result = c_witness.exponentiation_result().unwrap();
 
-	assert_eq!(b_exponentiation_result, c_exponentiation_result);
+	let c_exponentiation_result = c_witness.exponentiation_result_witness();
+
+	assert_eq!(
+		b_exponentiation_result_evals,
+		P::cast_bases(c_exponentiation_result.packed_evals().unwrap())
+	);
 }
 
 #[test]
@@ -221,7 +224,7 @@ fn prove_reduces_to_correct_claims() {
 
 	let GeneratorExponentReductionOutput {
 		eval_claims_on_exponent_bit_columns,
-	} = prove::batch_prove(
+	} = prove::batch_prove::<FGenerator, _, _, _, _, _>(
 		witnesses.clone(),
 		&claims,
 		evaluation_domain_factory,
@@ -271,8 +274,14 @@ fn good_proof_verifies() {
 
 	let backend = make_portable_backend();
 
-	prove::batch_prove(witnesses, &claims, evaluation_domain_factory, &mut transcript, &backend)
-		.unwrap();
+	prove::batch_prove::<FGenerator, _, _, _, _, _>(
+		witnesses,
+		&claims,
+		evaluation_domain_factory,
+		&mut transcript,
+		&backend,
+	)
+	.unwrap();
 
 	let mut verifier_transcript = transcript.into_verifier();
 

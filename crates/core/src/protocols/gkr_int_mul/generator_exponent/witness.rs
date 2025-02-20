@@ -10,17 +10,18 @@ use binius_maybe_rayon::{
 	prelude::{IndexedParallelIterator, ParallelIterator},
 	slice::ParallelSliceMut,
 };
+use binius_utils::bail;
 use bytemuck::zeroed_vec;
 
 use crate::{
-	protocols::{gkr_gpa::Error, sumcheck::equal_n_vars_check},
+	protocols::{gkr_int_mul::error::Error, sumcheck::equal_n_vars_check},
 	witness::MultilinearWitness,
 };
 
 #[derive(Clone)]
-pub struct GeneratorExponentWitness<'a, PGenerator: PackedField, P: PackedField> {
+pub struct GeneratorExponentWitness<'a, P: PackedField> {
 	pub exponent: Vec<MultilinearWitness<'a, P>>,
-	pub single_bit_output_layers_data: Vec<Vec<PGenerator>>,
+	pub single_bit_output_layers_data: Vec<MultilinearWitness<'a, P>>,
 	pub generator: Option<MultilinearWitness<'a, P>>,
 }
 
@@ -122,24 +123,28 @@ where
 	result
 }
 
-impl<'a, PGenerator, P> GeneratorExponentWitness<'a, PGenerator, P>
+impl<'a, P> GeneratorExponentWitness<'a, P>
 where
-	PGenerator: PackedField,
-	PGenerator::Scalar: BinaryField,
-	P: PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>,
-	P::Scalar: BinaryField + ExtensionField<PGenerator::Scalar>,
+	P: PackedField,
 {
-	pub fn new_with_static_generator<PBits>(
+	pub fn new_with_static_generator<PBits, PGenerator>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 	) -> Result<Self, Error>
 	where
 		PBits: PackedField<Scalar = BinaryField1b>,
 		PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+		PGenerator::Scalar: BinaryField,
+		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
+			+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>,
+		P::Scalar: ExtensionField<PGenerator::Scalar>,
 	{
-		equal_n_vars_check(&exponent)?;
-
 		let exponent_bit_width = exponent.len();
+
+		if exponent_bit_width == 0 {
+			bail!(Error::EmptyExponent)
+		}
+
+		equal_n_vars_check(&exponent)?;
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
 
@@ -161,6 +166,15 @@ where
 			);
 		}
 
+		let single_bit_output_layers_data = single_bit_output_layers_data
+			.into_iter()
+			.map(|single_bit_output_layers_data| {
+				MultilinearExtension::new(exponent[0].n_vars(), single_bit_output_layers_data)
+					.map(MLEEmbeddingAdapter::<PGenerator, P>::from)
+					.map(|mle| mle.upcast_arc_dyn())
+			})
+			.collect::<Result<Vec<_>, binius_math::Error>>()?;
+
 		Ok(Self {
 			exponent,
 			single_bit_output_layers_data,
@@ -168,39 +182,51 @@ where
 		})
 	}
 
-	pub fn new_with_dynamic_generator<PBits>(
+	pub fn new_with_dynamic_generator<PBits, PGenerator>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
-		generator_evals: &[PGenerator],
+		generator: MultilinearWitness<'a, P>,
 	) -> Result<Self, Error>
 	where
 		PBits: PackedField<Scalar = BinaryField1b>,
 		PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+		PGenerator::Scalar: BinaryField,
+		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
+			+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>,
+		P::Scalar: ExtensionField<PGenerator::Scalar>,
 	{
-		equal_n_vars_check(&exponent)?;
-
 		let exponent_bit_width = exponent.len();
+
+		if exponent_bit_width == 0 {
+			bail!(Error::EmptyExponent)
+		}
+
+		equal_n_vars_check(&exponent)?;
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
 
+		let generator_evals = copy_witness_into_vec::<PGenerator, P>(&generator);
+
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<PBits, PGenerator>(
 			&copy_witness_into_vec(&exponent[exponent_bit_width - 1]),
-			Generator::Dynamic(generator_evals),
+			Generator::Dynamic(&generator_evals),
 		);
 
 		for layer_idx_from_left in 1..exponent_bit_width {
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&copy_witness_into_vec(&exponent[exponent_bit_width - layer_idx_from_left - 1]),
-				Generator::Dynamic(generator_evals),
+				Generator::Dynamic(&generator_evals),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			);
 		}
 
-		let n_vars = exponent[0].n_vars();
-
-		let generator = MultilinearExtension::new(n_vars, generator_evals.to_vec())
-			.map(MLEEmbeddingAdapter::<PGenerator, P>::from)?
-			.upcast_arc_dyn();
+		let single_bit_output_layers_data = single_bit_output_layers_data
+			.into_iter()
+			.map(|single_bit_output_layers_data| {
+				MultilinearExtension::from_values(single_bit_output_layers_data)
+					.map(MLEEmbeddingAdapter::<PGenerator, P>::from)
+					.map(|mle| mle.upcast_arc_dyn())
+			})
+			.collect::<Result<Vec<_>, binius_math::Error>>()?;
 
 		Ok(Self {
 			exponent,
@@ -209,9 +235,18 @@ where
 		})
 	}
 
-	pub fn exponentiation_result(&self) -> Option<&[PGenerator]> {
+	pub fn with_dynamic_generator(&self) -> bool {
+		self.generator.is_some()
+	}
+
+	pub fn n_vars(&self) -> usize {
+		self.exponent[0].n_vars()
+	}
+
+	pub fn exponentiation_result_witness(&self) -> MultilinearWitness<'a, P> {
 		self.single_bit_output_layers_data
 			.last()
-			.map(|value| value.as_slice())
+			.expect("witness contains single_bit_output_layers_data")
+			.clone()
 	}
 }

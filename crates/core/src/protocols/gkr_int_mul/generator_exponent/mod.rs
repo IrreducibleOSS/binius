@@ -7,6 +7,7 @@
 
 mod common;
 mod compositions;
+pub mod oracles;
 pub mod prove;
 mod utils;
 pub mod verify;

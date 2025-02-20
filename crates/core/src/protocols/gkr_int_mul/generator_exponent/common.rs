@@ -9,7 +9,7 @@ pub struct GeneratorExponentClaim<F: Field> {
 	pub eval_point: Vec<F>,
 	pub eval: F,
 	pub exponent_bit_width: usize,
-	// pub n_vars: usize,
+	pub n_vars: usize,
 	pub with_dynamic_generator: bool,
 }
 

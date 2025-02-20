@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, ExtensionField, Field, PackedField, TowerField};
-use binius_utils::sorting::{stable_sort, unsort};
+use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
 	super::error::Error,
@@ -56,18 +56,23 @@ where
 		.map(|claim| claim.exponent_bit_width)
 		.unwrap_or(0);
 
+	if claims.is_empty() {
+		return Ok(GeneratorExponentReductionOutput {
+			eval_claims_on_exponent_bit_columns,
+		});
+	}
+
+	// Check that the witnesses are in descending order by n_vars
+	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars).rev()) {
+		bail!(Error::ClaimsOutOfOrder);
+	}
+
 	for layer_no in 0..max_exponent_bit_number {
 		let gkr_sumcheck_claims =
 			build_layer_gkr_sumcheck_claims::<_, FGenerator>(&claims, layer_no)?;
 
-		let (original_indices, sorted_gkr_sumcheck_claims) =
-			stable_sort(gkr_sumcheck_claims, |claim| claim.n_vars(), true);
-
-		let mut sumcheck_verification_output =
-			sumcheck::batch_verify(&sorted_gkr_sumcheck_claims, transcript)?;
-
-		sumcheck_verification_output.multilinear_evals =
-			unsort(original_indices, sumcheck_verification_output.multilinear_evals);
+		let sumcheck_verification_output =
+			sumcheck::batch_verify(&gkr_sumcheck_claims, transcript)?;
 
 		let layer_exponent_claims = build_layer_exponent_claims::<_, FGenerator>(
 			&mut claims,
