@@ -211,8 +211,6 @@ impl CryptographicPermutation<[BinaryField32b; 24]> for Vision32bPermutation {}
 pub struct VisionHasher<F, P> {
 	// The hashed state
 	state: [PackedAESBinaryField8x32b; 3],
-	// The length that are committing to hash
-	committed_len: u64,
 	// Current length we have hashed so far
 	current_len: u64,
 	_p_marker: PhantomData<P>,
@@ -228,10 +226,9 @@ where
 {
 	type Digest = PackedType<U, F>;
 
-	fn new(msg_len: u64) -> Self {
+	fn new(_msg_len: u64) -> Self {
 		let mut this = Self {
 			state: [PackedAESBinaryField8x32b::zero(); 3],
-			committed_len: msg_len,
 			current_len: 0,
 			_p_marker: PhantomData,
 			_f_marker: PhantomData,
@@ -270,21 +267,6 @@ where
 	}
 
 	fn finalize(mut self) -> Result<Self::Digest, HashError> {
-		// Pad here and output the hash
-		if self.current_len < self.committed_len {
-			return Err(HashError::NotEnoughData {
-				committed: self.committed_len,
-				hashed: self.current_len,
-			});
-		}
-
-		if self.current_len > self.committed_len {
-			return Err(HashError::TooMuchData {
-				committed: self.committed_len,
-				received: self.current_len,
-			});
-		}
-
 		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
 		if cur_block != 0 {
 			// Pad and absorb
@@ -299,30 +281,6 @@ where
 
 	fn reset(&mut self) {
 		self.state.fill(PackedAESBinaryField8x32b::zero());
-
-		// Write the byte-length of the message into the initial state
-		let bytes_per_elem = P::WIDTH
-			* P::Scalar::DEGREE
-			* <BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE;
-		let msg_len_bytes = self
-			.committed_len
-			.checked_mul(bytes_per_elem as u64)
-			.expect("Overflow on message length");
-		let msg_len_bytes_enc = msg_len_bytes.to_le_bytes();
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[0..4].try_into().unwrap(),
-			))),
-		);
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32 + 1,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[4..8].try_into().unwrap(),
-			))),
-		);
 	}
 }
 

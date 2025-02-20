@@ -23,7 +23,7 @@ thiserror.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 hex-literal.workspace = true
-rand.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
 
 [features]
 stable_only = ["binius_utils/stable_only", "binius_field/stable_only"]
