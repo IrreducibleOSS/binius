@@ -7,16 +7,19 @@ use binius_field::{
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
+	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
 	packed::set_packed_slice,
 	underlier::{Divisible, WithUnderlier},
-	AESTowerField32b, AESTowerField8b, BinaryField, BinaryField32b, BinaryField8b, ExtensionField,
-	Field, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension,
-	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	AESTowerField32b, AESTowerField8b, AesToBinaryTransformation, BinaryField, BinaryField32b,
+	BinaryField8b, BinaryToAesTransformation, ExtensionField, Field, PackedAESBinaryField32x8b,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable,
+	PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
 	SingleThreadedNTT,
 };
+use digest::consts::U64;
 use lazy_static::lazy_static;
 
 use crate::{
@@ -29,6 +32,7 @@ use crate::{
 };
 
 const RATE_AS_U32: usize = 16;
+const RATE_AS_U8: usize = RATE_AS_U32 * std::mem::size_of::<u32>();
 
 const SCALAR_FWD_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
 	FieldLinearTransformation::new_const(&AFFINE_FWD_AES);
@@ -78,6 +82,11 @@ lazy_static! {
 		});
 
 	static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
+
+	static ref TRANS_AES_TO_CANONICAL: AesToBinaryTransformation<PackedAESBinaryField8x32b, PackedBinaryField8x32b> =
+		make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
+	static ref TRANS_CANONICAL_TO_AES: BinaryToAesTransformation<PackedBinaryField8x32b, PackedAESBinaryField8x32b> =
+		make_binary_to_aes_packed_transformer::<PackedBinaryField8x32b, PackedAESBinaryField8x32b>();
 }
 
 #[inline]
@@ -281,6 +290,92 @@ where
 
 	fn reset(&mut self) {
 		self.state.fill(PackedAESBinaryField8x32b::zero());
+	}
+}
+
+struct VisionStateUpdater {
+	state: [PackedAESBinaryField8x32b; 3],
+	unfilled_bytes: usize,
+}
+
+#[derive(Clone)]
+pub struct VisionHasherDigest {
+	// The hashed state
+	state: [PackedAESBinaryField8x32b; 3],
+	buffer: [u8; RATE_AS_U8],
+	unfilled_bytes: usize,
+}
+
+impl Default for VisionHasherDigest {
+	fn default() -> Self {
+		Self {
+			state: [PackedAESBinaryField8x32b::zero(); 3],
+			buffer: [0; RATE_AS_U8],
+			unfilled_bytes: RATE_AS_U8,
+		}
+	}
+}
+
+impl VisionHasherDigest {
+	fn permute(state: &mut [PackedAESBinaryField8x32b; 3], data: &[u8]) {
+		debug_assert_eq!(data.len(), RATE_AS_U8);
+
+		let state_as_scalars: &mut [AESTowerField32b] =
+			PackedAESBinaryField8x32b::unpack_base_scalars_mut(state);
+		let state_as_u32s: &mut [u32] = AESTowerField32b::to_underliers_ref_mut(state_as_scalars);
+
+		for (i, chunk) in data.chunks_exact(4).enumerate() {
+			state_as_u32s[i] = u32::from_le_bytes(chunk.try_into().expect("chunk is 4 bytes"));
+		}
+
+		PERMUTATION.permute_mut(state);
+	}
+}
+
+impl digest::Update for VisionHasherDigest {
+	fn update(&mut self, mut data: &[u8]) {
+		if self.unfilled_bytes != 0 {
+			let to_copy = std::cmp::min(data.len(), self.unfilled_bytes);
+			self.buffer[self.unfilled_bytes..self.unfilled_bytes + to_copy]
+				.copy_from_slice(&data[..to_copy]);
+			data = &data[to_copy..];
+			self.unfilled_bytes -= to_copy;
+
+			if self.unfilled_bytes == 0 {
+				Self::permute(&mut self.state, &self.buffer);
+				self.unfilled_bytes = 0;
+			}
+		}
+
+		let mut chunks = data.chunks_exact(RATE_AS_U8);
+		for chunk in &mut chunks {
+			Self::permute(&mut self.state, chunk);
+		}
+
+		let remaining = chunks.remainder();
+		if !remaining.is_empty() {
+			self.buffer[..remaining.len()].copy_from_slice(remaining);
+			self.unfilled_bytes = RATE_AS_U8 - remaining.len();
+		}
+	}
+}
+
+impl digest::OutputSizeUser for VisionHasherDigest {
+	type OutputSize = U64;
+}
+
+impl digest::FixedOutput for VisionHasherDigest {
+	fn finalize_into(mut self, out: &mut digest::Output<Self>) {
+		if self.unfilled_bytes > 0 {
+			self.buffer[self.unfilled_bytes..].fill(0);
+			Self::permute(&mut self.state, &self.buffer);
+		}
+
+		let canonical_tower: PackedBinaryField8x32b =
+			TRANS_AES_TO_CANONICAL.transform(&self.state[0]);
+		out.copy_from_slice(BinaryField8b::to_underliers_ref(
+			PackedBinaryField8x32b::unpack_base_scalars(std::slice::from_ref(&canonical_tower)),
+		));
 	}
 }
 
@@ -801,13 +896,10 @@ mod tests {
 	fn test_aes_to_binary_hash() {
 		let mut rng = thread_rng();
 
-		let aes_transformer_1 = make_binary_to_aes_packed_transformer();
-		let aes_transformer_2 = make_aes_to_binary_packed_transformer();
-
 		let data_bin: [PackedBinaryField4x64b; 100] =
 			array::from_fn(|_| PackedBinaryField4x64b::random(&mut rng));
 		let data_aes: [PackedAESBinaryField4x64b; 100] =
-			array::from_fn(|i| aes_transformer_1.transform(&data_bin[i]));
+			array::from_fn(|i| TRANS_CANONICAL_TO_AES.transform(&data_bin[i]));
 
 		let hasher_32b = Vision32b::new(100);
 		let hasher_aes32b = VisionHasher::<AESTowerField32b, _>::new(100);
@@ -815,6 +907,6 @@ mod tests {
 		let digest_as_bin = hasher_32b.chain_update(data_bin).finalize().unwrap();
 		let digest_as_aes = hasher_aes32b.chain_update(data_aes).finalize().unwrap();
 
-		assert_eq!(digest_as_bin, aes_transformer_2.transform(&digest_as_aes));
+		assert_eq!(digest_as_bin, TRANS_AES_TO_CANONICAL.transform(&digest_as_aes));
 	}
 }

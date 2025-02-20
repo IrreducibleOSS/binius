@@ -173,14 +173,14 @@ where
 	}
 }
 
-pub type StaticSubfieldTransformerAesToBinary<IP, OP> = SubfieldTransformer<
+pub type AesToBinaryTransformation<IP, OP> = SubfieldTransformer<
 	AESTowerField8b,
 	BinaryField8b,
 	<PackedSubfield<IP, AESTowerField8b> as PackedTransformationFactory<
 		PackedSubfield<OP, BinaryField8b>,
 	>>::PackedTransformation<&'static [BinaryField8b]>,
 >;
-pub type StaticSubfieldTransformerBinaryToAes<IP, OP> = SubfieldTransformer<
+pub type BinaryToAesTransformation<IP, OP> = SubfieldTransformer<
 	BinaryField8b,
 	AESTowerField8b,
 	<PackedSubfield<IP, BinaryField8b> as PackedTransformationFactory<
@@ -190,8 +190,7 @@ pub type StaticSubfieldTransformerBinaryToAes<IP, OP> = SubfieldTransformer<
 
 /// Creates transformation object from AES tower to binary tower for packed field.
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
-pub fn make_aes_to_binary_packed_transformer<IP, OP>(
-) -> StaticSubfieldTransformerAesToBinary<IP, OP>
+pub fn make_aes_to_binary_packed_transformer<IP, OP>() -> AesToBinaryTransformation<IP, OP>
 where
 	IP: PackedExtension<AESTowerField8b>,
 	OP: PackedExtension<BinaryField8b>,
@@ -208,8 +207,7 @@ where
 
 /// Creates transformation object from AES tower to binary tower for packed field.
 /// Note that creation of this object is not cheap, so it is better to create it once and reuse.
-pub fn make_binary_to_aes_packed_transformer<IP, OP>(
-) -> StaticSubfieldTransformerBinaryToAes<IP, OP>
+pub fn make_binary_to_aes_packed_transformer<IP, OP>() -> BinaryToAesTransformation<IP, OP>
 where
 	IP: PackedExtension<BinaryField8b>,
 	OP: PackedExtension<AESTowerField8b>,
