@@ -253,7 +253,7 @@ mod tests {
 
 	type F1 = BinaryField1b;
 
-	const LOG_SIZE: usize = 5;
+	const LOG_SIZE: usize = 10;
 
 	// The Blake3 mixing function, G, which mixes either a column or a diagonal.
 	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L42
