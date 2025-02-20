@@ -10,6 +10,12 @@ use crate::{
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("claims must be sorted by number of variables")]
+	ClaimsOutOfOrder,
+	#[error("vector of exponent is empty")]
+	EmptyExponent,
+	#[error("witneses and claims have mismatched lengths")]
+	MismatchedWitnessClaimLength,
 	#[error("GKR Failure: {0}")]
 	GKRError(#[from] GKRError),
 	#[error("sumcheck failure: {0}")]

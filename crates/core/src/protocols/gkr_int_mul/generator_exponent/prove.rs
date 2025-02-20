@@ -5,10 +5,8 @@ use binius_field::{
 	TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{
-	EvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-};
-use binius_utils::sorting::{stable_sort, unsort};
+use binius_math::{EvaluationDomainFactory, MultilinearPoly};
+use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
 
@@ -24,7 +22,7 @@ use crate::{
 	protocols::{
 		gkr_gpa::{gpa_sumcheck::prove::GPAProver, LayerClaim},
 		gkr_int_mul::error::Error,
-		sumcheck::{self, prove::SumcheckProver, BatchSumcheckOutput, CompositeSumClaim},
+		sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
@@ -36,28 +34,43 @@ use crate::{
 ///
 /// RECOMMENDATIONS:
 /// * Witnesses and claims should be grouped by evaluation points from claims
-pub fn batch_prove<'a, FGenerator, F, P, PGenerator, FDomain, Challenger_, Backend>(
-	witnesses: impl IntoIterator<Item = GeneratorExponentWitness<'a, PGenerator, P>>,
+pub fn batch_prove<'a, FGenerator, F, P, FDomain, Challenger_, Backend>(
+	witnesses: impl IntoIterator<Item = GeneratorExponentWitness<'a, P>>,
 	claims: &[GeneratorExponentClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
 ) -> Result<GeneratorExponentReductionOutput<F>, Error>
 where
-	F: ExtensionField<PGenerator::Scalar> + ExtensionField<FDomain> + TowerField,
+	F: ExtensionField<FGenerator> + ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
 	FGenerator: TowerField + ExtensionField<FDomain>,
-	PGenerator: PackedField<Scalar = FGenerator> + PackedExtension<FDomain>,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>
 		+ PackedExtension<FDomain>,
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
+	let witness_vec = witnesses.into_iter().collect::<Vec<_>>();
+
+	if witness_vec.len() != claims.len() {
+		bail!(Error::MismatchedWitnessClaimLength);
+	}
+
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
-	let mut provers = witnesses
+	if witness_vec.is_empty() {
+		return Ok(GeneratorExponentReductionOutput {
+			eval_claims_on_exponent_bit_columns,
+		});
+	}
+
+	// Check that the witnesses are in descending order by n_vars
+	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars).rev()) {
+		bail!(Error::ClaimsOutOfOrder);
+	}
+
+	let mut provers = witness_vec
 		.into_iter()
 		.zip(claims)
 		.map(|(witness, claim)| GeneratorExponentProverState::new(witness, claim.clone()))
@@ -66,29 +79,19 @@ where
 	let max_exponent_bit_number = provers.first().map(|p| p.exponent_bit_width()).unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
-		let gkr_sumcheck_provers = GeneratorExponentProverState::build_layer_gkr_sumcheck_provers(
-			&mut provers,
-			layer_no,
-			evaluation_domain_factory.clone(),
-			backend,
-		)?;
+		let gkr_sumcheck_provers =
+			GeneratorExponentProverState::build_layer_gkr_sumcheck_provers::<FGenerator, _, _>(
+				&mut provers,
+				layer_no,
+				evaluation_domain_factory.clone(),
+				backend,
+			)?;
 
-		// Since the provers can have different n_vars with the same exponent_bit_number, we need to sort them before the sumcheck proof.
-		let (original_indices, sorted_gkr_sumcheck_provers) =
-			stable_sort(gkr_sumcheck_provers, |prover| prover.n_vars(), true);
+		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
 
-		let mut sumcheck_proof_output =
-			sumcheck::batch_prove(sorted_gkr_sumcheck_provers, transcript)?;
-
-		// Unsort multilinear_evals to match the provers.
-		sumcheck_proof_output.multilinear_evals =
-			unsort(original_indices, sumcheck_proof_output.multilinear_evals);
-
-		let layer_exponent_claims = GeneratorExponentProverState::build_layer_exponent_claims(
-			&mut provers,
-			sumcheck_proof_output,
-			layer_no,
-		)?;
+		let layer_exponent_claims = GeneratorExponentProverState::build_layer_exponent_claims::<
+			FGenerator,
+		>(&mut provers, sumcheck_proof_output, layer_no)?;
 
 		eval_claims_on_exponent_bit_columns.push(layer_exponent_claims);
 
@@ -100,24 +103,21 @@ where
 	})
 }
 
-struct GeneratorExponentProverState<'a, PGenerator, P>
+struct GeneratorExponentProverState<'a, P>
 where
 	P: PackedField,
-	PGenerator: PackedField,
 {
-	witness: GeneratorExponentWitness<'a, PGenerator, P>,
+	witness: GeneratorExponentWitness<'a, P>,
 	current_layer_claim: LayerClaim<P::Scalar>,
 }
 
-impl<'a, P, PGenerator> GeneratorExponentProverState<'a, PGenerator, P>
+impl<'a, P> GeneratorExponentProverState<'a, P>
 where
-	P: PackedField + PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>,
-	P::Scalar: ExtensionField<PGenerator::Scalar>,
-	PGenerator: PackedField,
-	PGenerator::Scalar: BinaryField,
+	P: PackedField,
+	P::Scalar: BinaryField,
 {
 	fn new(
-		witness: GeneratorExponentWitness<'a, PGenerator, P>,
+		witness: GeneratorExponentWitness<'a, P>,
 		claim: GeneratorExponentClaim<P::Scalar>,
 	) -> Result<Self, Error> {
 		Ok(Self {
@@ -143,18 +143,12 @@ where
 	}
 
 	pub fn current_layer_single_bit_output_layers_data(
-		&mut self,
+		&self,
 		layer_no: usize,
-	) -> Result<MultilinearWitness<'a, P>, Error> {
+	) -> MultilinearWitness<'a, P> {
 		let index = self.witness.single_bit_output_layers_data.len() - layer_no - 2;
 
-		let single_bit_output_layers_data =
-			std::mem::take(&mut self.witness.single_bit_output_layers_data[index]);
-
-		Ok(MLEEmbeddingAdapter::<PGenerator, P>::from(MultilinearExtension::from_values(
-			single_bit_output_layers_data,
-		)?)
-		.upcast_arc_dyn())
+		self.witness.single_bit_output_layers_data[index].clone()
 	}
 
 	fn with_dynamic_generator(&self) -> bool {
@@ -177,7 +171,7 @@ where
 
 	#[allow(clippy::type_complexity)]
 	#[instrument(skip_all, level = "debug")]
-	fn build_layer_gkr_sumcheck_provers<FDomain, Backend>(
+	fn build_layer_gkr_sumcheck_provers<FGenerator, FDomain, Backend>(
 		provers: &mut [Self],
 		layer_no: usize,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -197,8 +191,9 @@ where
 	>
 	where
 		FDomain: Field,
+		FGenerator: BinaryField,
 		P: PackedFieldIndexable + PackedExtension<FDomain>,
-		P::Scalar: BinaryField + ExtensionField<FDomain>,
+		P::Scalar: ExtensionField<FDomain> + ExtensionField<FGenerator>,
 		Backend: ComputationBackend,
 	{
 		assert!(!provers.is_empty());
@@ -214,7 +209,10 @@ where
 		for i in 0..provers.len() {
 			if provers[i].current_layer_claim.eval_point != *eval_points[eval_points.len() - 1] {
 				let (eval_point_composite_claims, eval_point_multilinears) =
-					Self::build_eval_point_claims(&mut provers[active_index..i], layer_no)?;
+					Self::build_eval_point_claims::<FGenerator>(
+						&mut provers[active_index..i],
+						layer_no,
+					)?;
 
 				if eval_point_composite_claims.is_empty() {
 					eval_points.pop();
@@ -228,7 +226,10 @@ where
 
 			if i == provers.len() - 1 {
 				let (eval_point_composite_claims, eval_point_multilinears) =
-					Self::build_eval_point_claims(&mut provers[active_index..=i], layer_no)?;
+					Self::build_eval_point_claims::<FGenerator>(
+						&mut provers[active_index..=i],
+						layer_no,
+					)?;
 
 				if !eval_point_composite_claims.is_empty() {
 					composite_claims.push(eval_point_composite_claims);
@@ -252,7 +253,7 @@ where
 	}
 
 	#[allow(clippy::type_complexity)]
-	fn build_eval_point_claims(
+	fn build_eval_point_claims<FGenerator>(
 		provers: &mut [Self],
 		layer_no: usize,
 	) -> Result<
@@ -266,7 +267,11 @@ where
 			Vec<MultilinearWitness<'a, P>>,
 		),
 		Error,
-	> {
+	>
+	where
+		FGenerator: BinaryField,
+		P::Scalar: ExtensionField<FGenerator>,
+	{
 		let (composite_claims_n_multilinears, n_claims) =
 			provers
 				.iter()
@@ -304,7 +309,7 @@ where
 					// Non-last internal layer with a dynamic generator.
 					(Some(generator), false) => {
 						let this_round_input =
-							prover.current_layer_single_bit_output_layers_data(layer_no)?;
+							prover.current_layer_single_bit_output_layers_data(layer_no);
 
 						let this_round_multilinears =
 							[this_round_input.clone(), exponent_bit.clone(), generator].to_vec();
@@ -319,13 +324,13 @@ where
 					// Non-last internal layer with static generator
 					(None, false) => {
 						let this_round_input =
-							prover.current_layer_single_bit_output_layers_data(layer_no)?;
+							prover.current_layer_single_bit_output_layers_data(layer_no);
 
 						let this_round_multilinears =
 							[this_round_input.clone(), exponent_bit.clone()].to_vec();
 
 						let generator_power_constant = P::Scalar::from(
-							PGenerator::Scalar::MULTIPLICATIVE_GENERATOR
+							FGenerator::MULTIPLICATIVE_GENERATOR
 								.pow(1 << prover.current_layer_exponent_bit_no(layer_no)),
 						);
 						let composition = IndexComposition::new(
@@ -355,13 +360,14 @@ where
 		Ok((composite_claims, multilinears))
 	}
 
-	pub fn build_layer_exponent_claims(
+	pub fn build_layer_exponent_claims<FGenerator>(
 		provers: &mut [Self],
 		sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 		layer_no: usize,
 	) -> Result<Vec<LayerClaim<P::Scalar>>, Error>
 	where
-		P::Scalar: BinaryField,
+		P::Scalar: ExtensionField<FGenerator>,
+		FGenerator: BinaryField,
 	{
 		let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
@@ -376,7 +382,7 @@ where
 
 				let exponent_claim = LayerClaim::<P::Scalar> {
 					eval_point,
-					eval: first_layer_inverse::<PGenerator::Scalar, _>(eval),
+					eval: first_layer_inverse::<FGenerator, _>(eval),
 				};
 				eval_claims_on_exponent_bit_columns.push(exponent_claim);
 
