@@ -564,13 +564,16 @@ where
 			round == 0 && matches!(self.first_round, RegularFirstRound::SkipCube);
 		let coeffs = if skip_cube_first_round {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckFirstRoundEvaluator {
-					composition,
-					composition_highest_degree_only: ArithCircuitPoly::new(
-						composition.expression().highest_degree_only().1,
-					),
-					interpolation_domain,
-					partial_eq_ind_evals: &self.partial_eq_ind_evals,
+				.map(|(composition, interpolation_domain)| {
+					let composition_at_infinity =
+						ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+
+					ZerocheckFirstRoundEvaluator {
+						composition,
+						composition_at_infinity,
+						interpolation_domain,
+						partial_eq_ind_evals: &self.partial_eq_ind_evals,
+					}
 				})
 				.collect::<Vec<_>>();
 			let evals = self.state.calculate_round_evals(&evaluators)?;
@@ -578,14 +581,17 @@ where
 				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckLaterRoundEvaluator {
-					composition,
-					composition_highest_degree_only: ArithCircuitPoly::new(
-						composition.expression().highest_degree_only().1,
-					),
-					interpolation_domain,
-					partial_eq_ind_evals: &self.partial_eq_ind_evals,
-					round_zerocheck_challenge: self.zerocheck_challenges[round],
+				.map(|(composition, interpolation_domain)| {
+					let composition_at_infinity =
+						ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+
+					ZerocheckLaterRoundEvaluator {
+						composition,
+						composition_at_infinity,
+						interpolation_domain,
+						partial_eq_ind_evals: &self.partial_eq_ind_evals,
+						round_zerocheck_challenge: self.zerocheck_challenges[round],
+					}
 				})
 				.collect::<Vec<_>>();
 			let evals = self.state.calculate_round_evals(&evaluators)?;
@@ -624,7 +630,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	composition_highest_degree_only: ArithCircuitPoly<P::Scalar>,
+	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 }
@@ -660,7 +666,7 @@ where
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {
-				self.composition_highest_degree_only
+				self.composition_at_infinity
 					.batch_evaluate(batch_query, evals)
 					.expect("correct by query construction invariant");
 			} else {
@@ -709,8 +715,10 @@ where
 		round_evals.insert(0, P::Scalar::ZERO);
 
 		if round_evals.len() > 3 {
-			// Reorder eval at infinity point from index 2 to the last position
-			// (as expected by the InterpolationDomain).
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
+			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
+			// Putting "special" evaluation points at the beginning of domain allows benefitting from
+			// faster/skipped interpolation even in case of mixed degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}
@@ -726,7 +734,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	composition_highest_degree_only: ArithCircuitPoly<P::Scalar>,
+	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 	round_zerocheck_challenge: P::Scalar,
@@ -763,7 +771,7 @@ where
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {
-				self.composition_highest_degree_only
+				self.composition_at_infinity
 					.batch_evaluate(batch_query, evals)
 					.expect("correct by query construction invariant");
 			} else {
@@ -816,8 +824,10 @@ where
 		round_evals.insert(0, zero_evaluation);
 
 		if round_evals.len() > 3 {
-			// Reorder eval at infinity point from index 2 to the last position
-			// (as expected by the InterpolationDomain).
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
+			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
+			// Putting "special" evaluation points at the beginning of domain allows benefitting from
+			// faster/skipped interpolation even in case of mixed degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}

@@ -16,6 +16,12 @@ use crate::Matrix;
 ///
 /// An evaluation domain of size d + 1 along with polynomial values on that domain are sufficient
 /// to reconstruct a degree <= d. This struct supports Barycentric extrapolation.
+///
+/// A domain may optionally include a Karatsuba "infinity" point, "evaluating" a polynomial at which
+/// results in taking the coefficient at the highest degree term. This point requires special treatment
+/// but sometimes unlocks optimization opportunities. The "Evaluation" section of the Wikipedia article
+/// on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) gives
+/// a great explanation of the concept.
 #[derive(Debug, Clone)]
 pub struct EvaluationDomain<F: Field> {
 	finite_points: Vec<F>,

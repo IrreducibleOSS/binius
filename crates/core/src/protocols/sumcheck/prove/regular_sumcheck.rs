@@ -182,13 +182,16 @@ where
 	#[instrument("RegularSumcheckProver::execute", skip_all, level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let evaluators = izip!(&self.compositions, &self.domains)
-			.map(|(composition, interpolation_domain)| RegularSumcheckEvaluator {
-				composition,
-				composition_highest_degree_only: ArithCircuitPoly::new(
-					composition.expression().highest_degree_only().1,
-				),
-				interpolation_domain,
-				_marker: PhantomData,
+			.map(|(composition, interpolation_domain)| {
+				let composition_at_infinity =
+					ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+
+				RegularSumcheckEvaluator {
+					composition,
+					composition_at_infinity,
+					interpolation_domain,
+					_marker: PhantomData,
+				}
 			})
 			.collect::<Vec<_>>();
 
@@ -208,7 +211,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
-	composition_highest_degree_only: ArithCircuitPoly<P::Scalar>,
+	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	_marker: PhantomData<P>,
 }
@@ -238,7 +241,7 @@ where
 
 		stackalloc_with_default(row_len, |evals| {
 			if is_infinity_point {
-				self.composition_highest_degree_only
+				self.composition_at_infinity
 					.batch_evaluate(batch_query, evals)
 					.expect("correct by query construction invariant");
 			} else {
@@ -277,8 +280,10 @@ where
 		round_evals.insert(0, last_round_sum - round_evals[0]);
 
 		if round_evals.len() > 3 {
-			// Reorder eval at infinity point from index 2 to the last position
-			// (as expected by the InterpolationDomain).
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
+			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
+			// Putting "special" evaluation points at the beginning of domain allows benefitting from
+			// faster/skipped interpolation even in case of mixed degree compositions .
 			let infinity_round_eval = round_evals.remove(2);
 			round_evals.push(infinity_round_eval);
 		}
