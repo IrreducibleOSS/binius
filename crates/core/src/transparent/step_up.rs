@@ -1,9 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{Field, PackedField};
-use binius_macros::{erased_serialize_canonical, DeserializeCanonical, SerializeCanonical};
+use binius_field::{BinaryField128b, Field, PackedField};
+use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -21,19 +21,16 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// ```
 ///
 /// This is useful for making constraints that are not enforced at the first rows of the trace
-#[derive(Debug, Clone, SerializeCanonical, DeserializeCanonical)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct StepUp {
 	n_vars: usize,
 	index: usize,
 }
 
 inventory::submit! {
-	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+	<dyn MultivariatePoly<BinaryField128b>>::register_deserializer(
 		"StepUp",
-		|buf: &mut dyn bytes::Buf| {
-			let deserialized = <StepUp as binius_field::DeserializeCanonical>::deserialize_canonical(&mut *buf)?;
-			Ok(Box::new(deserialized))
-		}
+		|buf, mode| Ok(Box::new(StepUp::deserialize(&mut *buf, mode)?))
 	)
 }
 
@@ -75,7 +72,7 @@ impl StepUp {
 	}
 }
 
-#[erased_serialize_canonical]
+#[erased_serialize_bytes]
 impl<F: Field> MultivariatePoly<F> for StepUp {
 	fn degree(&self) -> usize {
 		self.n_vars

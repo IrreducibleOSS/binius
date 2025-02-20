@@ -3,7 +3,6 @@
 use std::array;
 
 use binius_field::{ExtensionField, TowerField};
-use binius_utils::bail;
 
 use super::{
 	super::error::Error, common::GeneratorExponentReductionOutput, utils::first_layer_inverse,
@@ -13,7 +12,7 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::{
 		gkr_gpa::LayerClaim,
-		gkr_int_mul::generator_exponent::compositions::MultiplyOrDont,
+		gkr_int_mul::{error::VerificationError, generator_exponent::compositions::MultiplyOrDont},
 		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
 	},
 	transcript::VerifierTranscript,
@@ -78,7 +77,7 @@ where
 			EqIndPartialEval::new(log_size, sumcheck_query_point.clone())?.evaluate(&eval_point)?;
 
 		if sumcheck_verification_output.multilinear_evals[0][2] != eq_eval {
-			bail!(Error::EqEvalDoesntVerify)
+			return Err(VerificationError::IncorrectEqIndEvaluation.into());
 		}
 
 		eval_claims_on_bit_columns[exponent_bit_number] = LayerClaim {

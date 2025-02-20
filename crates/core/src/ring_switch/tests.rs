@@ -6,8 +6,7 @@ use binius_field::{
 	arch::OptimalUnderlier128b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	DeserializeCanonical, ExtensionField, Field, PackedField, PackedFieldIndexable,
-	SerializeCanonical, TowerField,
+	ExtensionField, Field, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
@@ -15,6 +14,7 @@ use binius_math::{
 	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
 	MultilinearQuery,
 };
+use binius_utils::{DeserializeBytes, SerializeBytes};
 use groestl_crypto::Groestl256;
 use rand::prelude::*;
 
@@ -269,7 +269,7 @@ fn commit_prove_verify_piop<U, Tower, MTScheme, MTProver>(
 	Tower: TowerFamily,
 	PackedType<U, FExt<Tower>>: PackedFieldIndexable,
 	FExt<Tower>: PackedTop<Tower>,
-	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeCanonical + DeserializeCanonical>,
+	MTScheme: MerkleTreeScheme<FExt<Tower>, Digest: SerializeBytes + DeserializeBytes>,
 	MTProver: MerkleTreeProver<FExt<Tower>, Scheme = MTScheme>,
 {
 	let mut rng = StdRng::seed_from_u64(0);

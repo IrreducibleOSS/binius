@@ -34,3 +34,31 @@ where
 
 	Ok(rng)
 }
+
+// Same as 'unconstrained' but uses some pre-defined values instead of a random ones
+pub fn fixed_u32<FS>(
+	builder: &mut ConstraintSystemBuilder,
+	name: impl ToString,
+	log_size: usize,
+	value: Vec<u32>,
+) -> Result<OracleId, anyhow::Error>
+where
+	U: PackScalar<FS> + Pod,
+	F: TowerField + ExtensionField<FS>,
+	FS: TowerField,
+{
+	let rng = builder.add_committed(name, log_size, FS::TOWER_LEVEL);
+
+	if let Some(witness) = builder.witness() {
+		witness
+			.new_column::<FS>(rng)
+			.as_mut_slice::<u32>()
+			.into_par_iter()
+			.zip(value.into_par_iter())
+			.for_each(|(data, value)| {
+				*data = value;
+			});
+	}
+
+	Ok(rng)
+}

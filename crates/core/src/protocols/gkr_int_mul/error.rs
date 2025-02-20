@@ -13,4 +13,12 @@ pub enum Error {
 	SumcheckError(#[from] SumcheckError),
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
+	#[error("verification failure: {0}")]
+	Verification(#[from] VerificationError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum VerificationError {
+	#[error("the proof contains an incorrect evaluation of the eq indicator")]
+	IncorrectEqIndEvaluation,
 }

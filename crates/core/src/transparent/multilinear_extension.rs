@@ -4,12 +4,13 @@ use std::{fmt::Debug, ops::Deref};
 
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, packed::pack_slice, BinaryField128b,
-	DeserializeCanonical, ExtensionField, PackedField, RepackedExtension, SerializeCanonical,
-	TowerField,
+	BinaryField16b, BinaryField1b, BinaryField2b, BinaryField32b, BinaryField4b, BinaryField64b,
+	BinaryField8b, ExtensionField, PackedField, RepackedExtension, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_macros::erased_serialize_canonical;
+use binius_macros::erased_serialize_bytes;
 use binius_math::{MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -31,49 +32,50 @@ where
 	data: MLEEmbeddingAdapter<P, PE, Data>,
 }
 
-impl<P, PE, Data> SerializeCanonical for MultilinearExtensionTransparent<P, PE, Data>
+impl<P, PE, Data> SerializeBytes for MultilinearExtensionTransparent<P, PE, Data>
 where
 	P: PackedField,
 	PE: RepackedExtension<P>,
 	PE::Scalar: TowerField + ExtensionField<P::Scalar>,
 	Data: Deref<Target = [P]> + Debug + Send + Sync,
 {
-	fn serialize_canonical(
+	fn serialize(
 		&self,
 		write_buf: impl bytes::BufMut,
-	) -> Result<(), binius_field::serialization::Error> {
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
 		let elems = PE::iter_slice(
 			self.data
 				.packed_evals()
 				.expect("Evals should always be available here"),
 		)
 		.collect::<Vec<_>>();
-		SerializeCanonical::serialize_canonical(&elems, write_buf)
+		SerializeBytes::serialize(&elems, write_buf, mode)
 	}
 }
 
 inventory::submit! {
-	<dyn MultivariatePoly<binius_field::BinaryField128b>>::register_deserializer(
+	<dyn MultivariatePoly<BinaryField128b>>::register_deserializer(
 		"MultilinearExtensionTransparent",
-		|buf: &mut dyn bytes::Buf| {
+		|buf, mode| {
 			type U = OptimalUnderlier;
 			type F = BinaryField128b;
 			type P = PackedType<U, F>;
-			let hypercube_evals: Vec<F> = DeserializeCanonical::deserialize_canonical(&mut *buf)?;
+			let hypercube_evals = Vec::<F>::deserialize(&mut *buf, mode)?;
 			let result: Box<dyn MultivariatePoly<F>> = if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField1b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField1b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField2b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField2b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField4b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField4b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField8b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField8b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField16b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField16b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField32b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField32b>, P, _>::from_values(packed_evals).unwrap())
 			} else if let Some(packed_evals) = try_pack_slice(&hypercube_evals) {
-				Box::new(MultilinearExtensionTransparent::<PackedType<U, binius_field::BinaryField64b>, P, _>::from_values(packed_evals).unwrap())
+				Box::new(MultilinearExtensionTransparent::<PackedType<U, BinaryField64b>, P, _>::from_values(packed_evals).unwrap())
 			} else {
 				Box::new(MultilinearExtensionTransparent::<P, P, _>::from_values(pack_slice(&hypercube_evals)).unwrap())
 			};
@@ -119,7 +121,7 @@ where
 	}
 }
 
-#[erased_serialize_canonical]
+#[erased_serialize_bytes]
 impl<F, P, PE, Data> MultivariatePoly<F> for MultilinearExtensionTransparent<P, PE, Data>
 where
 	F: TowerField + ExtensionField<P::Scalar>,

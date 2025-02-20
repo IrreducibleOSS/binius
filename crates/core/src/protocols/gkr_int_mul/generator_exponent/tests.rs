@@ -124,7 +124,7 @@ fn witness_gen_happens_correctly() {
 	for (row_idx, this_row_exponent) in exponent.into_iter().enumerate() {
 		assert_eq!(
 			<PGenerator as PackedField>::Scalar::MULTIPLICATIVE_GENERATOR
-				.pow([this_row_exponent as u64]),
+				.pow(this_row_exponent as u64),
 			get_packed_slice(results, row_idx)
 		);
 	}

@@ -48,9 +48,7 @@ impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Compo
 where
 	F: Field,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPolyOS<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
