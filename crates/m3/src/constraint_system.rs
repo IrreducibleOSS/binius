@@ -5,7 +5,7 @@
 // Lookups
 // Columns <- Associated with tables
 
-use std::marker::PhantomData;
+use std::iter;
 
 // Statement
 // - Channel boundaries
@@ -15,17 +15,15 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::ConstraintSystem as CompiledConstraintSystem,
-	oracle::{
-		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
-		ShiftVariant,
-	},
+	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 };
-use binius_field::{BinaryField128b, ExtensionField, Field, TowerField};
+use binius_field::TowerField;
 use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
+use bumpalo::Bump;
 
 use super::error::Error;
-use crate::types::B128;
+use crate::{types::B128, witness::TableWitnessIndex};
 
 pub type TableId = usize;
 pub type ChannelId = usize;
@@ -46,80 +44,19 @@ pub struct ColumnId {
 
 // TODO: Impl Add/Sub/Mul for Col, returning Expr
 
-/// A type representing a column in a table.
-///
-/// The column has entries that are elements of `F`. In practice, the fields used will always be
-/// from the canonical tower (B1, B8, B16, B32, B64, B128). The second constant represents how many
-/// elements are packed vertically into a single logical row. For example, a column of type
-/// `Col<B1, 5>` will have 2^5 = 32 elements of `B1` packed into a single row.
-#[derive(Debug, Clone, Copy)]
-pub struct Col<F: TowerField, const LOG_VALS_PER_ROW: usize = 0> {
-	// REVIEW: Maybe this should have denormalized name for debugging.
-	pub table_id: TableId,
-	pub index: ColumnIndex,
-	_marker: PhantomData<F>,
-}
-
-impl<F: TowerField, const V: usize> Col<F, V> {
-	pub fn new(id: ColumnId) -> Self {
-		Self {
-			table_id: id.table_id,
-			index: id.index,
-			_marker: PhantomData,
-		}
-	}
-
-	pub fn shape(&self) -> ColumnShape {
-		ColumnShape {
-			tower_height: F::TOWER_LEVEL,
-			pack_factor: V,
-		}
-	}
-}
-
-pub fn upcast_col<F, FSub, const V: usize>(col: Col<FSub, V>) -> Col<F, V>
-where
-	FSub: TowerField,
-	F: TowerField + ExtensionField<FSub>,
-{
-	Col {
-		table_id: col.table_id,
-		index: col.index,
-		_marker: PhantomData,
-	}
-}
-
-/// A type representing an arithmetic expression composed over some table columns.
-///
-/// If the expression degree is 1, then it is a linear expression.
-pub struct Expr<F: TowerField, const LOG_VALS_PER_ROW: usize> {
-	expr: ArithExpr<F>,
-	cols: Vec<Col<F, LOG_VALS_PER_ROW>>,
-}
-
 // feature: TableBuilder needs namespacing
-
-/*
 pub enum Column {
 	Committed { tower_level: usize },
 }
 
 pub struct ColumnInfo {
-	col: Column,
-	name: String,
+	pub col: Column,
+	pub name: String,
 	/// This represents how many
-	pack_factor: usize,
-	is_nonzero: bool,
+	pub pack_factor: usize,
+	pub is_nonzero: bool,
 }
 
-/// A table in an M3 constraint system.
-///
-/// ## Invariants
-///
-/// * All expressions in `zero_constraints` have a number of variables less than or equal to the
-///   number of table columns (the length of `column_info`).
-/// * All flushes in `flushes` contain column indices less than the number of table columns (the
-///   length of `column_info`).
 pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
@@ -133,130 +70,14 @@ pub struct Table<F: TowerField = B128> {
 	pub is_fixed: bool,
 }
 
-impl<F: TowerField> Table<F> {
-	pub fn new(id: TableId, name: impl ToString) -> Self {
-		Self {
-			id,
-			name: name.to_string(),
-			column_info: Vec::new(),
-			flushes: Vec::new(),
-			zero_constraints: Vec::new(),
-			is_fixed: false,
-		}
-	}
-
-	pub fn new_fixed(id: TableId, name: impl ToString) -> Self {
-		Self {
-			is_fixed: true,
-			..Self::new(id, name)
-		}
-	}
-
-	pub fn add_committed<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-	) -> Col<FSub, LOG_VALS_PER_ROW>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let index = self.column_info.len();
-		self.column_info.push(ColumnInfo {
-			col: Column::Committed {
-				tower_level: FSub::TOWER_LEVEL,
-			},
-			name: name.to_string(),
-			pack_factor: LOG_VALS_PER_ROW,
-			is_nonzero: false,
-		});
-		Col {
-			table_id: self.id,
-			index,
-			_marker: PhantomData,
-		}
-	}
-
-	pub fn add_shifted<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		original: Col<FSub, LOG_VALS_PER_ROW>,
-		shift_bits: usize,
-		shift: usize,
-		shift_mode: ShiftVariant,
-	) -> Col<FSub, LOG_VALS_PER_ROW>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		todo!()
-	}
-
-	// Selected is a special form of projected with hypercube indices
-	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		original: Col<FSub, LOG_VALS_PER_ROW>,
-		index: usize,
-	) -> Col<FSub, 1>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		todo!()
-	}
-
-	pub fn add_linear_combination<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		cols: impl IntoIterator<Item = (Col<FSub, V>, FSub)>,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.add_linear_combination_with_offset(name, cols, FSub::ZERO)
-	}
-
-	pub fn add_linear_combination_with_offset<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		cols: impl IntoIterator<Item = Col<FSub, V>>,
-		offset: FSub,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		todo!()
-	}
-
-	pub fn add_committed_multiple<FSub, const LOG_VALS_PER_ROW: usize, const N: usize>(
-		&mut self,
-		name: impl ToString,
-		tower_level: usize,
-	) -> [Col<FSub, LOG_VALS_PER_ROW>; N]
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
-	}
-}
-
 pub struct Flush {
 	pub column_indices: Vec<usize>,
 	pub channel_id: ChannelId,
 	pub direction: FlushDirection,
 }
 
-pub struct ConstraintSystem<F: TowerField = B128> {
-	tables: Vec<Table<F>>,
-	/// All valid channel IDs are strictly less than this bound.
-	channel_id_bound: ChannelId,
-}
-
 pub struct Instance<F: TowerField = B128> {
-	boundaries: Vec<Boundary<F>>,
+	pub boundaries: Vec<Boundary<F>>,
 	/// Direct index mapping table IDs to the count of rows per table.
 	///
 	/// The table sizes seem like advice values that don't affect the semantic meaning of the
@@ -267,7 +88,17 @@ pub struct Instance<F: TowerField = B128> {
 	/// 3. For some constraint systems, the verifier does care about the values. For example, the
 	///    statement could be that a VM execution state is reachable within a certain number of
 	///    cycles.
-	table_sizes: Vec<usize>,
+	pub table_sizes: Vec<usize>,
+}
+
+pub struct Channel<F: TowerField = B128> {
+	pub name: String,
+}
+
+pub struct ConstraintSystem<F: TowerField = B128> {
+	tables: Vec<Table<F>>,
+	/// All valid channel IDs are strictly less than this bound.
+	channel_id_bound: ChannelId,
 }
 
 impl<F: TowerField> ConstraintSystem<F> {
@@ -292,6 +123,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut non_zero_oracle_ids = Vec::new();
 		for (table, &count) in iter::zip(&self.tables, &statement.table_sizes) {
 			let Table {
+				id,
+				name,
 				column_info,
 				flushes,
 				zero_constraints,
@@ -356,6 +189,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 			max_channel_id: self.channel_id_bound.saturating_sub(1),
 		})
 	}
+
+	pub fn build_witness(&self, allocator: &Bump, instance: &Instance) -> TableWitnessIndex<F> {
+		todo!()
+	}
 }
 
 fn add_oracle_for_column<F: TowerField>(
@@ -369,4 +206,3 @@ fn add_oracle_for_column<F: TowerField>(
 		Column::Committed { tower_level } => addition.add_committed(n_vars, *tower_level),
 	}
 }
-*/
