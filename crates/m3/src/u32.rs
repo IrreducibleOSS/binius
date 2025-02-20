@@ -1,14 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{packed::set_packed_slice, Field};
+use binius_field::{packed::set_packed_slice, underlier::UnderlierType, Field};
 use bytemuck::{cast_slice_mut, must_cast_slice, must_cast_slice_mut};
 
 use super::{
-	constraint_system::{Col, Expr, Table},
+	constraint_system::{Col, Expr, TableBuilder},
 	types::{B1, B128, B16, B32, B64, B8},
 	witness::WitnessIndex,
 };
+use crate::witness::TableWitnessIndexSegment;
 
 // Concepts:
 //
@@ -19,6 +20,7 @@ use super::{
 //
 // - Provide functions to populate table rows and row segments. Row segments for better parallelism.
 
+#[derive(Debug)]
 pub struct U32Add {
 	// Inputs
 	pub xin: Col<B1, 5>,
@@ -31,8 +33,7 @@ pub struct U32Add {
 
 	// Outputs
 	pub final_carry: Option<Col<B1>>,
-	pub zout: Expr<B1, 5>,
-
+	pub zout: Col<B1, 5>,
 	pub flags: U32AddFlags,
 }
 
@@ -41,6 +42,7 @@ pub struct U32AddFlags {
 	// Optionally a column for a dynamic carry in bit. This *must* be zero in all bits except the
 	// 0th.
 	pub carry_in_bit: Option<Col<B1, 5>>,
+	pub commit_zout: bool,
 	pub expose_final_carry: bool,
 }
 
@@ -49,7 +51,7 @@ pub struct U32AddFlags {
 impl U32Add {
 	/// Constructs a new `U32Add` component.
 	pub fn new(
-		table: &mut Table<B128>,
+		table: &mut TableBuilder<B128>,
 		xin: Col<B1, 5>,
 		yin: Col<B1, 5>,
 		flags: U32AddFlags,
@@ -69,8 +71,14 @@ impl U32Add {
 
 		table.assert_zero("carry_out", (xin + cin) * (yin + cin) + cin - cout);
 
-		// REVIEW: This is awkward because we need to populate zout witness
-		let zout = xin + yin + cin;
+		// TODO: Depending on the
+		let zout = if flags.commit_zout {
+			let zout = table.add_committed::<B1, 5>("zout");
+			table.assert_zero("zout", xin + yin + cin - zout);
+			zout
+		} else {
+			table.add_linear_combination("zout", xin + yin + cin)
+		};
 
 		Self {
 			xin,
@@ -84,29 +92,35 @@ impl U32Add {
 		}
 	}
 
-	/// index here is assumed to be a witness index segment
-	pub fn populate<U: UnderlierType>(&self, index: &mut TableWitnessIndex<U>) {
+	pub fn populate<U: UnderlierType>(&self, index: &mut TableWitnessIndexSegment<U>) {
 		let xin = must_cast_slice::<_, u32>(&**index.get(self.xin));
 		let yin = must_cast_slice::<_, u32>(&**index.get(self.yin));
 		let cout = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cout));
 		let final_carry = self
 			.final_carry
 			.map(|final_carry| &**index.get_mut(final_carry));
-		// let zout = index.get_mut(self.zout);
 
-		if let Some(carry_in_bit) = self.flags.carry_in_bit {
+		if let Some(carry_in_bit_col) = self.flags.carry_in_bit {
+			// This is u32 assumed to be either 0 or 1.
+			let carry_in_bit = must_cast_slice_mut::<_, u32>(&**index.get_mut(carry_in_bit_col));
+
 			let cin = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cin));
 			let cout_shl = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cout_shl));
-			for i in 0..index.n_rows() {
-				// let carry;
-				let (zout, carry) = xin[i].overflowing_add(yin[i]);
+			for i in 0..index.size() {
+				let (x_plus_y, carry0) = xin[i].overflowing_add(yin[i]);
+				let (zout, carry1) = x_plus_y.overflowing_add(carry_in_bit[i]);
+				let carry = carry0 | carry1;
+
 				cin[i] = xin[i] ^ yin[i] ^ zout;
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
+				cout_shl[i] = cout[i] << 1;
+
 				if let Some(final_carry) = final_carry {
 					set_packed_slice(final_carry, i, if carry { B1::ONE } else { B1::ZERO });
 				}
 			}
 		} else {
+			// When the carry in bit is fixed to zero, we can simplify the logic.
 			let cin = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cin));
 			for i in 0..index.n_rows() {
 				let (zout, carry) = xin[i].overflowing_add(yin[i]);
@@ -116,6 +130,6 @@ impl U32Add {
 					set_packed_slice(final_carry, i, if carry { B1::ONE } else { B1::ZERO });
 				}
 			}
-		}
+		};
 	}
 }

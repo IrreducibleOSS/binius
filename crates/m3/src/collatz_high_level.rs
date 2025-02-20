@@ -44,8 +44,8 @@ impl<T: Hash + Eq> Channel<T> {
 }
 
 #[derive(Debug, Default, Clone)]
-struct EvensEvent {
-	val: u32,
+pub struct EvensEvent {
+	pub val: u32,
 }
 
 impl EvensEvent {
@@ -58,8 +58,8 @@ impl EvensEvent {
 }
 
 #[derive(Debug, Default, Clone)]
-struct OddsEvent {
-	val: u32,
+pub struct OddsEvent {
+	pub val: u32,
 }
 
 impl OddsEvent {
@@ -77,13 +77,13 @@ impl OddsEvent {
 }
 
 #[derive(Debug, Default)]
-struct CollatzTrace {
-	evens: Vec<EvensEvent>,
-	odds: Vec<OddsEvent>,
+pub struct CollatzTrace {
+	pub evens: Vec<EvensEvent>,
+	pub odds: Vec<OddsEvent>,
 }
 
 impl CollatzTrace {
-	fn generate(initial_val: u32) -> Self {
+	pub fn generate(initial_val: u32) -> Self {
 		assert_ne!(initial_val, 0);
 
 		let mut trace = CollatzTrace::default();

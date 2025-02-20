@@ -18,12 +18,18 @@ use binius_utils::iter::IterExtensions;
 use getset::CopyGetters;
 
 use super::error::Error;
-use crate::constraint_system::{Col, ColumnId, ColumnShape, TableId};
+use crate::constraint_system::{ColumnId, ColumnShape, TableId};
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	tables: Vec<TableWitnessIndex<'a, U>>,
+}
+
+impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
+	pub fn get_table(&mut self, table_id: TableId) -> Option<&mut TableWitnessIndex<'a, U>> {
+		self.tables.get_mut(table_id)
+	}
 }
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -233,6 +239,10 @@ impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
 	}
+
+	pub fn size(&self) -> usize {
+		1 << self.log_size
+	}
 }
 
 unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
@@ -240,23 +250,25 @@ unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
 }
 
 /// A struct that can populate segments of a table witness using row descriptors.
-trait TableFiller<U: UnderlierType = OptimalUnderlier> {
+pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	/// A struct that specifies the row contents.
-	type Row;
+	type Event;
 
 	type Error: std::error::Error + Send + Sync + 'static;
+
+	fn id(&self) -> TableId;
 
 	/// Fill the table witness with data derived from the given rows.
 	fn fill(
 		&self,
-		rows: &[Self::Row],
+		rows: &[Self::Event],
 		witness: TableWitnessIndexSegment<U>,
 	) -> Result<(), Self::Error>;
 }
 
 pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	table: &mut T,
-	rows: &[T::Row],
+	rows: &[T::Event],
 	mut witness: TableWitnessIndex<U>,
 ) -> Result<(), T::Error> {
 	let log_segment_size = witness.min_log_segment_size();
