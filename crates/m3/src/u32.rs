@@ -104,19 +104,22 @@ impl U32Add {
 		// insufficient.
 		PackedType<U, B1>: Pod,
 	{
-		let xin = must_cast_slice::<_, u32>(&*index.get(self.xin)?);
-		let yin = must_cast_slice::<_, u32>(&*index.get(self.yin)?);
-		let cout = must_cast_slice_mut::<_, u32>(&mut *index.get_mut(self.cout)?);
-		let final_carry = self
-			.final_carry
-			.map(|final_carry| &mut *index.get_mut(final_carry))?;
+		let mut xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
+		let mut yin = index.get_mut_as(self.yin)?;
+		let mut cout = index.get_mut_as(self.cout)?;
+		let mut final_carry = if let Some(final_carry) = self.final_carry {
+			let final_carry = index.get_mut(final_carry)?;
+			Some(final_carry)
+		} else {
+			None
+		};
 
 		if let Some(carry_in_bit_col) = self.flags.carry_in_bit {
 			// This is u32 assumed to be either 0 or 1.
-			let carry_in_bit = must_cast_slice_mut::<_, u32>(&**index.get_mut(carry_in_bit_col));
+			let carry_in_bit = index.get_mut_as(carry_in_bit_col)?;
 
-			let cin = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cin));
-			let cout_shl = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cout_shl));
+			let mut cin = index.get_mut_as(self.cin)?;
+			let mut cout_shl = index.get_mut_as(self.cout_shl)?;
 			for i in 0..index.size() {
 				let (x_plus_y, carry0) = xin[i].overflowing_add(yin[i]);
 				let (zout, carry1) = x_plus_y.overflowing_add(carry_in_bit[i]);
@@ -126,21 +129,22 @@ impl U32Add {
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
 				cout_shl[i] = cout[i] << 1;
 
-				if let Some(final_carry) = final_carry {
-					set_packed_slice(final_carry, i, if carry { B1::ONE } else { B1::ZERO });
+				if let Some(ref mut final_carry) = final_carry {
+					set_packed_slice(&mut *final_carry, i, if carry { B1::ONE } else { B1::ZERO });
 				}
 			}
 		} else {
 			// When the carry in bit is fixed to zero, we can simplify the logic.
-			let cin = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cin));
-			for i in 0..index.n_rows() {
+			let mut cin = index.get_mut_as(self.cin)?;
+			for i in 0..index.size() {
 				let (zout, carry) = xin[i].overflowing_add(yin[i]);
 				cin[i] = xin[i] ^ yin[i] ^ zout;
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
-				if let Some(final_carry) = final_carry {
-					set_packed_slice(final_carry, i, if carry { B1::ONE } else { B1::ZERO });
+				if let Some(ref mut final_carry) = final_carry {
+					set_packed_slice(&mut *final_carry, i, if carry { B1::ONE } else { B1::ZERO });
 				}
 			}
 		};
+		Ok(())
 	}
 }

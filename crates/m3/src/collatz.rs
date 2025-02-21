@@ -57,11 +57,9 @@ impl EvensTable {
 
 impl<U> TableFiller<U> for EvensTable
 where
-	U: UnderlierType + PackScalar<B32>,
-	PackedType<U, B32>: Pod,
+	U: Pod + PackScalar<B32>,
 {
 	type Event = EvensEvent;
-	type Error = anyhow::Error;
 
 	fn id(&self) -> TableId {
 		self.id
@@ -72,8 +70,8 @@ where
 		rows: &[Self::Event],
 		witness: &mut TableWitnessIndexSegment<U>,
 	) -> Result<(), anyhow::Error> {
-		let in_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_val)?);
-		let out_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.out_val)?);
+		let mut in_val = witness.get_mut_as(self.in_val)?;
+		let mut out_val = witness.get_mut_as(self.out_val)?;
 
 		for (i, event) in rows.iter().enumerate() {
 			in_val[i] = event.val;
@@ -146,7 +144,6 @@ where
 	PackedType<U, B32>: Pod,
 {
 	type Event = OddsEvent;
-	type Error = anyhow::Error;
 
 	fn id(&self) -> TableId {
 		self.id
@@ -157,18 +154,18 @@ where
 		rows: &[Self::Event],
 		witness: &mut TableWitnessIndexSegment<U>,
 	) -> Result<(), anyhow::Error> {
-		let in_val = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_val)?);
-		let in_dbl = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.in_dbl)?);
-		let carry_bit = must_cast_slice_mut::<_, u32>(&mut *witness.get_mut(self.carry_bit)?);
+		{
+			let mut in_val = witness.get_mut_as(self.in_val)?;
+			let mut in_dbl = witness.get_mut_as(self.in_dbl)?;
+			let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
-		for (i, event) in rows.iter().enumerate() {
-			in_val[i] = event.val;
-			(in_dbl[i], _) = event.val.overflowing_shl(1);
-			carry_bit[i] = 1u32;
+			for (i, event) in rows.iter().enumerate() {
+				in_val[i] = event.val;
+				(in_dbl[i], _) = event.val.overflowing_shl(1);
+				carry_bit[i] = 1u32;
+			}
 		}
-
-		self.add_in_x3.populate(&mut witness);
-
+		self.add_in_x3.populate(witness);
 		Ok(())
 	}
 }

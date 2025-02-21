@@ -26,7 +26,7 @@ pub enum Error {
 	#[error("witness borrow error: {0}")]
 	WitnessBorrowMut(#[source] BorrowMutError),
 	#[error("table fill error: {0}")]
-	TableFill(Box<dyn std::error::Error + Send + Sync>),
+	TableFill(anyhow::Error),
 	#[error("math error: {0}")]
 	Math(#[from] MathError),
 	#[error("oracle error: {0}")]

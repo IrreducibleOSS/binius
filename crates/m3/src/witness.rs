@@ -5,6 +5,7 @@ use std::{
 	iter,
 	ops::{Deref, DerefMut},
 	slice,
+	sync::Arc,
 };
 
 use binius_core::witness::MultilinearExtensionIndex;
@@ -42,10 +43,10 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		rows: &[T::Event],
 	) -> Result<(), Error> {
 		let table_id = table.id();
-		let table = self
+		let witness = self
 			.get_table(table_id)
 			.ok_or(Error::MissingTable { table_id })?;
-		fill_table_sequential(table, rows, table).map_err(|err| Error::TableFill(Box::new(err)))?;
+		fill_table_sequential(table, rows, witness).map_err(|err| Error::TableFill(err))?;
 		Ok(())
 	}
 
@@ -302,8 +303,6 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	/// A struct that specifies the row contents.
 	type Event;
 
-	type Error;
-
 	fn id(&self) -> TableId;
 
 	/// Fill the table witness with data derived from the given rows.
@@ -311,14 +310,14 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 		&self,
 		rows: &[Self::Event],
 		witness: &mut TableWitnessIndexSegment<U>,
-	) -> Result<(), Self::Error>;
+	) -> anyhow::Result<()>;
 }
 
 pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	table: &T,
 	rows: &[T::Event],
 	mut witness: &mut TableWitnessIndex<U>,
-) -> Result<(), T::Error> {
+) -> anyhow::Result<()> {
 	let log_segment_size = witness.min_log_segment_size();
 
 	// TODO: Handle the case when rows are not a multiple of the segment size
