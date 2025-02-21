@@ -16,8 +16,9 @@ pub use binius_core::constraint_system::channel::{
 use binius_core::{
 	constraint_system::ConstraintSystem as CompiledConstraintSystem,
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
+	transparent::step_down::StepDown,
 };
-use binius_field::{underlier::UnderlierType, TowerField};
+use binius_field::{underlier::UnderlierType, Field, TowerField};
 use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bumpalo::Bump;
@@ -60,12 +61,18 @@ pub struct ColumnInfo {
 }
 
 #[derive(Debug)]
+pub struct ZeroConstraint<F: Field> {
+	pub name: String,
+	pub expr: ArithExpr<F>,
+}
+
+#[derive(Debug)]
 pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub column_info: Vec<ColumnInfo>,
 	pub flushes: Vec<Flush>,
-	pub zero_constraints: Vec<ArithExpr<F>>,
+	pub zero_constraints: Vec<ZeroConstraint<F>>,
 	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
 	///
 	/// Fixed tables are either entirely transparent or committed during a preprocessing step that
@@ -149,6 +156,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 				})
 				.collect::<Vec<_>>();
 
+			// TODO: How do we add StepDown data to the witness index?
+			let selector = oracles.add_transparent(StepDown::new(n_vars, count)?)?;
+
 			// Translate flushes for the compiled constraint system.
 			for Flush {
 				column_indices,
@@ -164,7 +174,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 					oracles: flush_oracles,
 					channel_id: *channel_id,
 					direction: *direction,
-					count,
+					selector,
+					multiplicity: count as u64,
 				});
 			}
 
@@ -172,8 +183,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 			let compiled_constraints = zero_constraints
 				.iter()
 				.map(|zero_constraint| {
-					let composition = zero_constraint.clone().remap_vars(&table_oracle_ids)?;
-					Ok(Constraint {
+					// The table zero constraint is an expression with column indices in the table.
+					// We need to remap these column indices to oracle IDs.
+					let composition = zero_constraint.expr.clone().remap_vars(&table_oracle_ids)?;
+					Ok::<_, Error>(Constraint {
+						name: zero_constraint.name.clone(),
 						composition,
 						predicate: ConstraintPredicate::Zero,
 					})
@@ -210,8 +224,8 @@ fn add_oracle_for_column<F: TowerField>(
 	n_vars: usize,
 ) -> OracleId {
 	let ColumnInfo { col, name, .. } = column_info;
-	let addition = oracles.add_named(Some(name.clone()));
+	let addition = oracles.add_named(name.clone());
 	match col {
-		Column::Committed { tower_level } => addition.add_committed(n_vars, *tower_level),
+		Column::Committed { tower_level } => addition.committed(n_vars, *tower_level),
 	}
 }

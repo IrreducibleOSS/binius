@@ -47,6 +47,14 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		fill_table_sequential(table, rows, table).map_err(|err| Error::TableFill(Box::new(err)))?;
 		Ok(())
 	}
+
+	pub fn into_multilinear_extension_index<F>(self) -> MultilinearExtensionIndex<'a, U, F>
+	where
+		F: Field,
+		U: PackScalar<F>,
+	{
+		todo!()
+	}
 }
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -186,14 +194,6 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 					log_size,
 				}
 			})
-	}
-
-	pub fn into_multilinear_extension_index<F>(self) -> MultilinearExtensionIndex<'a, U, F>
-	where
-		F: Field,
-		U: PackScalar<F>,
-	{
-		todo!()
 	}
 }
 
