@@ -12,6 +12,7 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	binary_field::BinaryField,
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
@@ -384,17 +385,17 @@ define_byte_sliced!(ByteSlicedAES64x8b, AESTowerField8b, PackedAESBinaryField64x
 
 /// This macro is used to define 8b packed fields that can be used as repacked base fields for byte-sliced AES fields.
 macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
-	($name:ident, $data_width:expr, $packed_storage:ty, $original_byte_sliced:ty) => {
+	($name:ident, $packed_storage:ty, $original_byte_sliced:ty) => {
 		#[doc = concat!("This is a PackedFields helper that is used like a PackedSubfield of [`PackedExtension<AESTowerField8b>`] for [`", stringify!($original_byte_sliced), "`]")]
 		/// and has no particular meaning outside of this purpose.
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [$packed_storage; $data_width],
+			pub(super) data: [$packed_storage; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
 		}
 
 		impl $name {
-			pub const BYTES: usize = <$packed_storage>::WIDTH * $data_width;
+			pub const BYTES: usize = <$packed_storage>::WIDTH * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
 
 			/// Get the byte at the given index.
 			///
@@ -403,8 +404,8 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data.get_unchecked(byte_index % $data_width)
-					.get_unchecked(byte_index / $data_width)
+				self.data.get_unchecked(byte_index % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.get_unchecked(byte_index / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
 					.to_underlier()
 			}
 		}
@@ -413,20 +414,20 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			type Scalar = AESTowerField8b;
 
 			const LOG_WIDTH: usize =
-				<$packed_storage>::LOG_WIDTH + checked_log_2($data_width);
+				<$packed_storage>::LOG_WIDTH + checked_log_2(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
 
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				self.data
-					.get_unchecked(i % $data_width)
-					.get_unchecked(i / $data_width)
+					.get_unchecked(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.get_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
 			}
 
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				self.data
-					.get_unchecked_mut(i % $data_width)
-					.set_unchecked(i / $data_width, scalar);
+					.get_unchecked_mut(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.set_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8), scalar);
 			}
 
 			fn random(mut rng: impl rand::RngCore) -> Self {
@@ -437,7 +438,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			fn broadcast(scalar: Self::Scalar) -> Self {
 				let column = <$packed_storage>::broadcast(scalar);
 				Self {
-					data: [column; $data_width],
+					data: [column; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
 				}
 			}
 
@@ -445,7 +446,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 				Self {
 					data: array::from_fn(|i|
-						<$packed_storage>::from_fn(|j| f(i * $data_width + j))
+						<$packed_storage>::from_fn(|j| f(i * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) + j))
 					),
 				}
 			}
@@ -469,7 +470,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..$data_width {
+				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
 					let (this_byte_result1, this_byte_result2) =
 						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
 
@@ -485,7 +486,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..$data_width{
+				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
 					(result1.data[byte_num], result2.data[byte_num]) =
 						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
 				}
@@ -629,25 +630,21 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 // 128 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES16x16x8b,
-	16,
 	PackedAESBinaryField16x8b,
 	ByteSlicedAES16x128b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES8x16x8b,
-	8,
 	PackedAESBinaryField16x8b,
 	ByteSlicedAES16x64b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES4x16x8b,
-	4,
 	PackedAESBinaryField16x8b,
 	ByteSlicedAES16x32b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES2x16x8b,
-	2,
 	PackedAESBinaryField16x8b,
 	ByteSlicedAES16x16b
 );
@@ -655,25 +652,21 @@ define_8b_extension_packed_subfield_for_byte_sliced!(
 // 256 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES16x32x8b,
-	16,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x128b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES8x32x8b,
-	8,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x64b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES4x32x8b,
-	4,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x32b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES2x32x8b,
-	2,
 	PackedAESBinaryField32x8b,
 	ByteSlicedAES32x16b
 );
@@ -681,25 +674,21 @@ define_8b_extension_packed_subfield_for_byte_sliced!(
 // 512 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES16x64x8b,
-	16,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x128b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES8x64x8b,
-	8,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x64b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES4x64x8b,
-	4,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x32b
 );
 define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES2x64x8b,
-	2,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x16b
 );
