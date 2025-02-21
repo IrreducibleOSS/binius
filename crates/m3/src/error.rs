@@ -2,6 +2,9 @@
 
 use std::cell::{BorrowError, BorrowMutError};
 
+use binius_core::{oracle::Error as OracleError, polynomial::Error as PolynomialError};
+use binius_math::Error as MathError;
+
 use crate::constraint_system::{ColumnId, TableId};
 
 #[derive(Debug, thiserror::Error)]
@@ -24,4 +27,10 @@ pub enum Error {
 	WitnessBorrowMut(#[source] BorrowMutError),
 	#[error("table fill error: {0}")]
 	TableFill(Box<dyn std::error::Error + Send + Sync>),
+	#[error("math error: {0}")]
+	Math(#[from] MathError),
+	#[error("oracle error: {0}")]
+	Oracle(#[from] OracleError),
+	#[error("polynomial error: {0}")]
+	Polynomial(#[from] PolynomialError),
 }

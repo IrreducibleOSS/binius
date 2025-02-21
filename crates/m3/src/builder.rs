@@ -10,7 +10,7 @@ use static_assertions::const_assert_eq;
 use crate::{
 	constraint_system::{
 		Channel, ChannelId, Column, ColumnId, ColumnIndex, ColumnInfo, ColumnShape,
-		ConstraintSystem, Flush, Table, TableId,
+		ConstraintSystem, Flush, Table, TableId, ZeroConstraint,
 	},
 	types::B128,
 };
@@ -68,6 +68,8 @@ where
 		_marker: PhantomData,
 	}
 }
+
+// TODO: Do we need upcast_expr too?
 
 /// A type representing an arithmetic expression composed over some table columns.
 ///
@@ -220,7 +222,10 @@ impl<F: TowerField> TableBuilder<F> {
 	}
 
 	pub fn assert_zero<const V: usize>(&mut self, name: impl ToString, expr: Expr<F, V>) {
-		self.table.zero_constraints.push(expr.expr);
+		self.table.zero_constraints.push(ZeroConstraint {
+			name: name.to_string(),
+			expr: expr.expr,
+		});
 	}
 
 	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)

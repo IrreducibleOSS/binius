@@ -182,7 +182,7 @@ mod tests {
 	use super::*;
 	use crate::{
 		builder::ConstraintSystemBuilder, collatz_high_level::CollatzTrace,
-		constraint_system::Instance, witness::fill_table_sequential,
+		constraint_system::Instance,
 	};
 
 	#[test]
@@ -226,7 +226,7 @@ mod tests {
 			.unwrap();
 
 		let compiled_cs = cs.compile(&instance).unwrap();
-
+		let witness = witness.into_multilinear_extension_index::<B128>();
 		// TODO: Convert the WitnessIndex into MultilinearExtensionIndex
 
 		// prove/verify with compiled_cs and witness
