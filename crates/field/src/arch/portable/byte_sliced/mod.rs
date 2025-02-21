@@ -4,10 +4,8 @@ mod invert;
 mod multiply;
 mod packed_byte_sliced;
 mod square;
-mod transposed_byte_sliced;
 
 pub use packed_byte_sliced::*;
-pub use transposed_byte_sliced::*;
 
 #[cfg(test)]
 pub mod tests {
@@ -126,33 +124,15 @@ pub mod tests {
 	define_byte_sliced_test!(tests_16x16, ByteSlicedAES16x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_16x8, ByteSlicedAES16x8b, AESTowerField8b);
 
-	define_byte_sliced_test!(
-		tests_16x128_transposed,
-		TransposedByteSlicedAES16x128b,
-		AESTowerField128b
-	);
-
 	define_byte_sliced_test!(tests_32x128, ByteSlicedAES32x128b, AESTowerField128b);
 	define_byte_sliced_test!(tests_32x64, ByteSlicedAES32x64b, AESTowerField64b);
 	define_byte_sliced_test!(tests_32x32, ByteSlicedAES32x32b, AESTowerField32b);
 	define_byte_sliced_test!(tests_32x16, ByteSlicedAES32x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_32x8, ByteSlicedAES32x8b, AESTowerField8b);
 
-	define_byte_sliced_test!(
-		tests_32x128_transposed,
-		TransposedByteSlicedAES32x128b,
-		AESTowerField128b
-	);
-
 	define_byte_sliced_test!(tests_64x128, ByteSlicedAES64x128b, AESTowerField128b);
 	define_byte_sliced_test!(tests_64x64, ByteSlicedAES64x64b, AESTowerField64b);
 	define_byte_sliced_test!(tests_64x32, ByteSlicedAES64x32b, AESTowerField32b);
 	define_byte_sliced_test!(tests_64x16, ByteSlicedAES64x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_64x8, ByteSlicedAES64x8b, AESTowerField8b);
-
-	define_byte_sliced_test!(
-		tests_64x128_transposed,
-		TransposedByteSlicedAES64x128b,
-		AESTowerField128b
-	);
 }
