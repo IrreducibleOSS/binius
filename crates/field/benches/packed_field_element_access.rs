@@ -11,8 +11,7 @@ use binius_field::{
 	PackedBinaryField256x1b, PackedBinaryField2x128b, PackedBinaryField2x64b,
 	PackedBinaryField32x8b, PackedBinaryField4x128b, PackedBinaryField4x32b,
 	PackedBinaryField4x64b, PackedBinaryField512x1b, PackedBinaryField64x8b,
-	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField, TransposedByteSlicedAES16x128b,
-	TransposedByteSlicedAES32x128b, TransposedByteSlicedAES64x128b,
+	PackedBinaryField8x32b, PackedBinaryField8x64b, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion, Throughput,
@@ -99,8 +98,6 @@ fn byte_sliced_128(c: &mut Criterion) {
 	benchmark_get_set!(ByteSlicedAES16x32b, group);
 	benchmark_get_set!(ByteSlicedAES16x64b, group);
 	benchmark_get_set!(ByteSlicedAES16x128b, group);
-
-	benchmark_get_set!(TransposedByteSlicedAES16x128b, group);
 }
 
 fn byte_sliced_256(c: &mut Criterion) {
@@ -111,8 +108,6 @@ fn byte_sliced_256(c: &mut Criterion) {
 	benchmark_get_set!(ByteSlicedAES32x32b, group);
 	benchmark_get_set!(ByteSlicedAES32x64b, group);
 	benchmark_get_set!(ByteSlicedAES32x128b, group);
-
-	benchmark_get_set!(TransposedByteSlicedAES32x128b, group);
 }
 
 fn byte_sliced_512(c: &mut Criterion) {
@@ -123,8 +118,6 @@ fn byte_sliced_512(c: &mut Criterion) {
 	benchmark_get_set!(ByteSlicedAES64x32b, group);
 	benchmark_get_set!(ByteSlicedAES64x64b, group);
 	benchmark_get_set!(ByteSlicedAES64x128b, group);
-
-	benchmark_get_set!(TransposedByteSlicedAES64x128b, group);
 }
 
 criterion_group!(

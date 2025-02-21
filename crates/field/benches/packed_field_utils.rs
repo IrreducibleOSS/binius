@@ -291,11 +291,6 @@ macro_rules! benchmark_packed_operation {
 				ByteSlicedAES64x32b
 				ByteSlicedAES64x64b
 				ByteSlicedAES64x128b
-
-				// Transposed byte sliced AES fields
-				TransposedByteSlicedAES16x128b
-				TransposedByteSlicedAES32x128b
-				TransposedByteSlicedAES64x128b
 			]);
 	};
 }
