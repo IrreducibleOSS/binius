@@ -185,31 +185,7 @@ impl Vision32bPermutation {
 			self.sbox_packed_affine(chunk, packed_linear_trans, constant);
 		}
 	}
-
-	/// Simple function interface to do a permutation of vision
-	pub fn permute_elems(&self, input: &mut [BinaryField32b; 24]) {
-		self.permute_mut(input)
-	}
 }
-
-impl Permutation<[BinaryField32b; 24]> for Vision32bPermutation {
-	fn permute_mut(&self, input: &mut [BinaryField32b; 24]) {
-		let mut input_packed = [PackedAESBinaryField8x32b::default(); 3];
-		let input_unpacked = PackedFieldIndexable::unpack_scalars_mut(&mut input_packed[..]);
-		for (aes_in, &bin_in) in input_unpacked.iter_mut().zip(input.iter()) {
-			*aes_in = AESTowerField32b::from(bin_in);
-		}
-
-		self.permute_mut(&mut input_packed);
-
-		let output_as_bin = PackedAESBinaryField8x32b::unpack_scalars(&input_packed);
-		for (bin_out, &aes_out) in input.iter_mut().zip(output_as_bin.iter()) {
-			*bin_out = BinaryField32b::from(aes_out);
-		}
-	}
-}
-
-impl CryptographicPermutation<[BinaryField32b; 24]> for Vision32bPermutation {}
 
 #[derive(Clone)]
 pub struct VisionHasherDigest {
