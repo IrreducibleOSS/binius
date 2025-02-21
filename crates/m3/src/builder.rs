@@ -1,10 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, iter, marker::PhantomData};
+use std::{array, iter, marker::PhantomData, ops::Add};
 
 use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
+use getset::{CopyGetters, Getters};
 use static_assertions::const_assert_eq;
 
 use crate::{
@@ -55,6 +56,37 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 	}
 }
 
+impl<F: TowerField, const V: usize> Add<Self> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let lhs_expr = ArithExpr::Var(self.index);
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: lhs_expr + rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Add<Col<F, V>> for &Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: Col<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr.clone() + rhs_expr,
+		}
+	}
+}
+
 /// Upcast a columns from a subfield to an extension field..
 pub fn upcast_col<F, FSub, const V: usize>(col: Col<FSub, V>) -> Col<F, V>
 where
@@ -74,10 +106,18 @@ where
 /// A type representing an arithmetic expression composed over some table columns.
 ///
 /// If the expression degree is 1, then it is a linear expression.
-#[derive(Debug)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Expr<F: TowerField, const V: usize> {
+	#[get_copy = "pub"]
+	table_id: TableId,
+	#[get = "pub"]
 	expr: ArithExpr<F>,
-	cols: Vec<Col<F, V>>,
+}
+
+impl<F: TowerField, const V: usize> Expr<F, V> {
+	pub fn degree(&self) -> usize {
+		self.expr.degree()
+	}
 }
 
 /// A table in an M3 constraint system.
@@ -173,26 +213,30 @@ impl<F: TowerField> TableBuilder<F> {
 	pub fn add_linear_combination<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		cols: impl IntoIterator<Item = (Col<FSub, V>, FSub)>,
+		expr: Expr<FSub, V>,
 	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.add_linear_combination_with_offset(name, cols, FSub::ZERO)
-	}
+		let lincom = expr
+			.expr
+			.convert_field::<F>()
+			.linear_normal_form()
+			.expect("pre-condition: expression must be linear");
 
-	pub fn add_linear_combination_with_offset<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		cols: impl IntoIterator<Item = (Col<FSub, V>, FSub)>,
-		offset: FSub,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		todo!()
+		let index = self.table.column_info.len();
+		self.table.column_info.push(ColumnInfo {
+			col: Column::LinearCombination(lincom),
+			name: name.to_string(),
+			pack_factor: V,
+			is_nonzero: false,
+		});
+		Col {
+			table_id: self.table.id,
+			index,
+			_marker: PhantomData,
+		}
 	}
 
 	pub fn add_committed_multiple<FSub, const V: usize, const N: usize>(
