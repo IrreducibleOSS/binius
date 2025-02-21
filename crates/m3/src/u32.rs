@@ -1,8 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{packed::set_packed_slice, underlier::UnderlierType, Field};
-use bytemuck::{cast_slice_mut, must_cast_slice, must_cast_slice_mut};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	packed::set_packed_slice,
+	underlier::UnderlierType,
+	Field,
+};
+use bytemuck::{cast_slice_mut, must_cast_slice, must_cast_slice_mut, Pod};
 
 use super::{
 	builder::{Col, TableBuilder},
@@ -51,7 +56,7 @@ pub struct U32AddFlags {
 impl U32Add {
 	/// Constructs a new `U32Add` component.
 	pub fn new(
-		table: &mut TableBuilder<B128>,
+		table: &mut TableBuilder,
 		xin: Col<B1, 5>,
 		yin: Col<B1, 5>,
 		flags: U32AddFlags,
@@ -92,13 +97,19 @@ impl U32Add {
 		}
 	}
 
-	pub fn populate<U: UnderlierType>(&self, index: &mut TableWitnessIndexSegment<U>) {
-		let xin = must_cast_slice::<_, u32>(&**index.get(self.xin));
-		let yin = must_cast_slice::<_, u32>(&**index.get(self.yin));
-		let cout = must_cast_slice_mut::<_, u32>(&**index.get_mut(self.cout));
+	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<(), anyhow::Error>
+	where
+		U: Pod + PackScalar<B1>,
+		// The index only returns packed fields, so knowing the underlier itself is pod is
+		// insufficient.
+		PackedType<U, B1>: Pod,
+	{
+		let xin = must_cast_slice::<_, u32>(&*index.get(self.xin)?);
+		let yin = must_cast_slice::<_, u32>(&*index.get(self.yin)?);
+		let cout = must_cast_slice_mut::<_, u32>(&mut *index.get_mut(self.cout)?);
 		let final_carry = self
 			.final_carry
-			.map(|final_carry| &**index.get_mut(final_carry));
+			.map(|final_carry| &mut *index.get_mut(final_carry))?;
 
 		if let Some(carry_in_bit_col) = self.flags.carry_in_bit {
 			// This is u32 assumed to be either 0 or 1.

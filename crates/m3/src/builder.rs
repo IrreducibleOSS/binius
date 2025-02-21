@@ -1,6 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{array, iter, marker::PhantomData, ops::Add};
+use std::{
+	array, iter,
+	marker::PhantomData,
+	ops::{Add, Mul, Sub},
+};
 
 use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVariant};
 use binius_field::{ExtensionField, TowerField};
@@ -72,7 +76,7 @@ impl<F: TowerField, const V: usize> Add<Self> for Col<F, V> {
 	}
 }
 
-impl<F: TowerField, const V: usize> Add<Col<F, V>> for &Expr<F, V> {
+impl<F: TowerField, const V: usize> Add<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
@@ -82,7 +86,108 @@ impl<F: TowerField, const V: usize> Add<Col<F, V>> for &Expr<F, V> {
 
 		Expr {
 			table_id: self.table_id,
-			expr: self.expr.clone() + rhs_expr,
+			expr: self.expr + rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Add<Expr<F, V>> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: Expr<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr + rhs.expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Sub<Self> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: Self) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let lhs_expr = ArithExpr::Var(self.index);
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: lhs_expr - rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Sub<Col<F, V>> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: Col<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr - rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Sub<Expr<F, V>> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: Expr<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr - rhs.expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Mul<Self> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let lhs_expr = ArithExpr::Var(self.index);
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: lhs_expr * rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Mul<Col<F, V>> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: Col<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		let rhs_expr = ArithExpr::Var(rhs.index);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr * rhs_expr,
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> Mul<Expr<F, V>> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: Expr<F, V>) -> Self::Output {
+		assert_eq!(self.table_id, rhs.table_id);
+
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr * rhs.expr,
 		}
 	}
 }
@@ -265,10 +370,16 @@ impl<F: TowerField> TableBuilder<F> {
 		todo!()
 	}
 
-	pub fn assert_zero<const V: usize>(&mut self, name: impl ToString, expr: Expr<F, V>) {
+	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		// TODO: Should we dynamically keep track of FSub::TOWER_LEVEL?
+		// On the other hand, ArithExpr does introspect that already
 		self.table.zero_constraints.push(ZeroConstraint {
 			name: name.to_string(),
-			expr: expr.expr,
+			expr: expr.expr.convert_field(),
 		});
 	}
 
