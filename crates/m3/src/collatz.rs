@@ -141,7 +141,7 @@ impl OddsTable {
 
 impl<U: UnderlierType> TableFiller<U> for OddsTable
 where
-	U: UnderlierType + PackScalar<B1> + PackScalar<B32>,
+	U: Pod + PackScalar<B1> + PackScalar<B32>,
 	PackedType<U, B1>: Pod,
 	PackedType<U, B32>: Pod,
 {

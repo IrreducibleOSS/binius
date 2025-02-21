@@ -16,6 +16,7 @@ use binius_field::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::iter::IterExtensions;
+use bytemuck::{must_cast_slice, Pod};
 use getset::CopyGetters;
 
 use super::error::Error;
@@ -263,6 +264,28 @@ impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
 		})?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
+	}
+
+	// TODO: Something similar to WitnessEntry::as_slice<T: Pod> that casts the underliers to T
+	pub fn get_as<F: TowerField, const V: usize, T: Pod>(
+		&self,
+		col: Col<F, V>,
+	) -> Result<Ref<[T]>, Error>
+	where
+		U: Pod,
+	{
+		todo!()
+	}
+
+	// TODO: Something similar to WitnessEntry::as_slice<T: Pod> that casts the underliers to T
+	pub fn get_mut_as<F: TowerField, const V: usize, T: Pod>(
+		&self,
+		col: Col<F, V>,
+	) -> Result<RefMut<[T]>, Error>
+	where
+		U: Pod,
+	{
+		todo!()
 	}
 
 	pub fn size(&self) -> usize {
