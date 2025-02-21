@@ -113,25 +113,21 @@ impl Default for Vision32MDSTransform {
 }
 
 impl Vision32MDSTransform {
-	pub fn transform(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
+	pub fn transform(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
 		INVERSE_FAST_TRANSFORM.inverse(data);
 
-		{
-			let data = PackedExtension::cast_bases_mut(data);
+		data[1] += data[0];
+		let x = self.x * data[1];
+		data[2] += x + data[0];
 
-			data[1] += data[0];
-			let x = self.x * data[1];
-			data[2] += x + data[0];
+		let y = self.y * data[1];
+		let z = self.z * data[2];
 
-			let y = self.y * data[1];
-			let z = self.z * data[2];
-
-			let stash_0 = data[0];
-			let stash_1 = data[1];
-			data[0] += x + data[1] + data[2];
-			data[1] = stash_0 + y + z;
-			data[2] = data[1] + stash_1;
-		}
+		let stash_0 = data[0];
+		let stash_1 = data[1];
+		data[0] += x + data[1] + data[2];
+		data[1] = stash_0 + y + z;
+		data[2] = data[1] + stash_1;
 
 		FORWARD_FAST_TRANSFORM.forward(data);
 	}
@@ -149,10 +145,14 @@ impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
 		add_packed_768(input, &ROUND_KEYS_PACKED_AES[0]);
 		for r in 0..NUM_ROUNDS {
 			self.sbox_step(input, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
-			self.mds.transform(input);
+			let input_bases = PackedAESBinaryField8x32b::cast_bases_mut(input);
+			self.mds
+				.transform(input_bases.try_into().expect("input is 3 elements"));
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES[1 + 2 * r]);
 			self.sbox_step(input, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
-			self.mds.transform(input);
+			let input_bases = PackedAESBinaryField8x32b::cast_bases_mut(input);
+			self.mds
+				.transform(input_bases.try_into().expect("input is 3 elements"));
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES[2 + 2 * r]);
 		}
 	}
@@ -386,10 +386,7 @@ impl FastNTT {
 	/// This method executes the transformation equivalent to `AdditiveNTT::inverse_transform`.
 	/// Each `data` element is treated as 32 8-bit AES field elements.
 	#[inline]
-	fn inverse(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
-		let data: &mut [PackedAESBinaryField32x8b] =
-			PackedAESBinaryField8x32b::cast_bases_mut(data);
-
+	fn inverse(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let mut inverse_round = |twiddles: &[PackedAESBinaryField32x8b; 2], block_size| {
 			(data[0], data[1]) =
 				Self::transform_inverse_round_pair(twiddles[0], data[0], data[1], block_size);
@@ -439,10 +436,7 @@ impl FastNTT {
 	/// This method executes the transformation equivalent to `AdditiveNTT::forward_transform`.
 	/// Each `data` element is treated as 32 8-bit AES field elements.
 	#[inline]
-	fn forward(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
-		let data: &mut [PackedAESBinaryField32x8b] =
-			PackedAESBinaryField8x32b::cast_bases_mut(data);
-
+	fn forward(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let mut forward_round_simd = |twiddles: &[PackedAESBinaryField32x8b; 2], log_block_size| {
 			(data[0], data[1]) =
 				Self::transform_forward_round_pair(twiddles[0], data[0], data[1], log_block_size);
@@ -479,7 +473,7 @@ mod tests {
 	use super::*;
 	use crate::{FixedLenHasherDigest, HashDigest};
 
-	fn mds_transform(data: &mut [PackedAESBinaryField8x32b; 3]) {
+	fn mds_transform(data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let vision = Vision32MDSTransform::default();
 		vision.transform(data);
 	}
@@ -618,7 +612,11 @@ mod tests {
 			let mut data = [PackedAESBinaryField8x32b::zero(); 3];
 			set_packed_slice(&mut data, i, AESTowerField32b::one());
 
-			mds_transform(&mut data);
+			mds_transform(
+				PackedAESBinaryField8x32b::cast_bases_mut(&mut data)
+					.try_into()
+					.unwrap(),
+			);
 
 			let actual = from_u32_to_packed_768(&col[0..24].try_into().unwrap());
 			assert_eq!(data, actual);
