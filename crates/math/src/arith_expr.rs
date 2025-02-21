@@ -196,6 +196,17 @@ impl<F: Field> ArithExpr<F> {
 			}
 		}
 	}
+
+	/// Returns the normal form of an expression if it is linear.
+	///
+	/// ## Throws
+	///
+	/// - [`Error::NonLinearExpression`] if the expression is not linear.
+	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
+		// Check that the degree of the expression is 1
+		// Flatten the expression into a linear normal form
+		todo!()
+	}
 }
 
 impl<F: TowerField> ArithExpr<F> {
@@ -290,6 +301,15 @@ impl<F: Field> Product for ArithExpr<F> {
 	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 		iter.reduce(|acc, item| acc * item).unwrap_or(Self::one())
 	}
+}
+
+/// A normal form for a linear expression.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LinearNormalForm<F: Field> {
+	/// The constant offset of the expression.
+	pub constant: F,
+	/// A vector mapping variable indices to their coefficients.
+	pub var_coeffs: Vec<F>,
 }
 
 #[cfg(test)]

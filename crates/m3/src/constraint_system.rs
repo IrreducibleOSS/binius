@@ -15,11 +15,12 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::ConstraintSystem as CompiledConstraintSystem,
+	oracle,
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, Field, TowerField};
-use binius_math::ArithExpr;
+use binius_math::{ArithExpr, LinearNormalForm};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bumpalo::Bump;
 
@@ -47,13 +48,14 @@ pub struct ColumnId {
 
 // feature: TableBuilder needs namespacing
 #[derive(Debug)]
-pub enum Column {
+pub enum Column<F: TowerField = B128> {
 	Committed { tower_level: usize },
+	LinearCombination(LinearNormalForm<F>),
 }
 
 #[derive(Debug)]
-pub struct ColumnInfo {
-	pub col: Column,
+pub struct ColumnInfo<F: TowerField = B128> {
+	pub col: Column<F>,
 	pub name: String,
 	/// This represents how many
 	pub pack_factor: usize,
@@ -70,7 +72,7 @@ pub struct ZeroConstraint<F: Field> {
 pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
-	pub column_info: Vec<ColumnInfo>,
+	pub column_info: Vec<ColumnInfo<F>>,
 	pub flushes: Vec<Flush>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
@@ -143,18 +145,24 @@ impl<F: TowerField> ConstraintSystem<F> {
 				is_fixed: _,
 			} = table;
 			let n_vars = log2_ceil_usize(count);
+			let first_oracle_id_in_table = oracles.size();
 
 			// Add multilinear oracles for all table columns.
 			let table_oracle_ids = column_info
 				.iter()
 				.map(|column_info| {
-					let oracle_id = add_oracle_for_column(&mut oracles, column_info, n_vars);
+					let oracle_id = add_oracle_for_column(
+						&mut oracles,
+						first_oracle_id_in_table,
+						column_info,
+						n_vars,
+					)?;
 					if column_info.is_nonzero {
 						non_zero_oracle_ids.push(oracle_id);
 					}
-					oracle_id
+					Ok::<_, Error>(oracle_id)
 				})
-				.collect::<Vec<_>>();
+				.collect::<Result<Vec<_>, _>>()?;
 
 			// TODO: How do we add StepDown data to the witness index?
 			let selector = oracles.add_transparent(StepDown::new(n_vars, count)?)?;
@@ -168,7 +176,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			{
 				let flush_oracles = column_indices
 					.iter()
-					.map(|&column_index| table_oracle_ids[column_index])
+					.map(|&column_index| first_oracle_id_in_table + column_index)
 					.collect::<Vec<_>>();
 				compiled_flushes.push(CompiledFlush {
 					oracles: flush_oracles,
@@ -220,12 +228,24 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	column_info: &ColumnInfo,
+	first_oracle_id_in_table: OracleId,
+	//table_id: TableId,
+	column_info: &ColumnInfo<F>,
 	n_vars: usize,
-) -> OracleId {
+) -> Result<OracleId, Error> {
 	let ColumnInfo { col, name, .. } = column_info;
 	let addition = oracles.add_named(name.clone());
-	match col {
+	let oracle_id = match col {
 		Column::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-	}
+		Column::LinearCombination(lincom) => {
+			let inner_oracles = lincom
+				.var_coeffs
+				.iter()
+				.enumerate()
+				.map(|(index, &coeff)| (first_oracle_id_in_table + index, coeff))
+				.collect::<Vec<_>>();
+			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
+		}
+	};
+	Ok(oracle_id)
 }
