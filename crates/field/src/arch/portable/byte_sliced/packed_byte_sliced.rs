@@ -4,7 +4,7 @@ use std::{
 	array,
 	fmt::Debug,
 	iter::{zip, Product, Sum},
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;
@@ -13,6 +13,9 @@ use bytemuck::{Pod, Zeroable};
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
 	binary_field::BinaryField,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
+	},
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
@@ -624,8 +627,28 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				bytemuck::must_cast_mut(base)
 			}
 		}
+
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapper<Inner> {
+			fn transform(&self, data: &$name) -> $name {
+				$name {
+					data: data.data.map(|x| self.0.transform(&x)),
+				}
+			}
+		}
+
+		impl PackedTransformationFactory<$name> for $name {
+			type PackedTransformation<Data: Deref<Target = [AESTowerField8b]> + Sync> = TransformationWrapper<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<Data>>;
+
+			fn make_packed_transformation<Data: Deref<Target = [AESTowerField8b]> + Sync>(
+				transformation: FieldLinearTransformation<AESTowerField8b, Data>,
+			) -> Self::PackedTransformation<Data> {
+				TransformationWrapper(<$packed_storage>::make_packed_transformation(transformation))
+			}
+		}
 	};
 }
+
+pub struct TransformationWrapper<Inner>(Inner);
 
 // 128 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(
