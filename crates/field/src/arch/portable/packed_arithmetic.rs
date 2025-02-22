@@ -342,7 +342,7 @@ impl<OP> PackedTransformation<OP>
 where
 	OP: PackedBinaryField,
 {
-	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	pub fn new<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: &FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		Self {
@@ -394,9 +394,9 @@ where
 	IP: PackedBinaryField + WithUnderlier<Underlier: UnderlierWithBitOps>,
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync> = PackedTransformation<OP>;
+	type PackedTransformation<Data: AsRef<[OP::Scalar]> + Sync> = PackedTransformation<OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	fn make_packed_transformation<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		PackedTransformation::new(&transformation)

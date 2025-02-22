@@ -266,6 +266,34 @@ macro_rules! define_byte_sliced {
 				base
 			}
 		}
+
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
+			fn transform(&self, data: &$name) -> $name {
+				let data = array::from_fn(|row| {
+					let row_transformations = &self.0[row];
+					let mut transformed_row = <$packed_storage>::zero();
+
+					for col in 0..<$tower_level as TowerLevel>::WIDTH {
+						transformed_row += row_transformations[col].transform(&data.data[col]);
+					}
+
+
+					transformed_row
+				});
+
+				$name { data }
+			}
+		}
+
+		impl PackedTransformationFactory<$name> for $name {
+			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> = TransformationWrapperNxN<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<[AESTowerField8b; 8]>, {<$tower_level as TowerLevel>::WIDTH}>;
+
+			fn make_packed_transformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync>(
+				transformation: FieldLinearTransformation<<$name as PackedField>::Scalar, Data>,
+			) -> Self::PackedTransformation<Data> {
+				todo!()
+			}
+		}
 	};
 }
 
@@ -628,7 +656,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			}
 		}
 
-		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapper<Inner> {
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapper8b<Inner> {
 			fn transform(&self, data: &$name) -> $name {
 				$name {
 					data: data.data.map(|x| self.0.transform(&x)),
@@ -637,18 +665,20 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 		}
 
 		impl PackedTransformationFactory<$name> for $name {
-			type PackedTransformation<Data: Deref<Target = [AESTowerField8b]> + Sync> = TransformationWrapper<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<Data>>;
+			type PackedTransformation<Data: AsRef<[AESTowerField8b]> + Sync> = TransformationWrapper8b<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<Data>>;
 
-			fn make_packed_transformation<Data: Deref<Target = [AESTowerField8b]> + Sync>(
+			fn make_packed_transformation<Data: AsRef<[AESTowerField8b]> + Sync>(
 				transformation: FieldLinearTransformation<AESTowerField8b, Data>,
 			) -> Self::PackedTransformation<Data> {
-				TransformationWrapper(<$packed_storage>::make_packed_transformation(transformation))
+				TransformationWrapper8b(<$packed_storage>::make_packed_transformation(transformation))
 			}
 		}
 	};
 }
 
-pub struct TransformationWrapper<Inner>(Inner);
+pub struct TransformationWrapper8b<Inner>(Inner);
+
+pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
 // 128 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(

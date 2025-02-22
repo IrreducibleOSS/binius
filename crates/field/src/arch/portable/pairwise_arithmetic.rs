@@ -96,10 +96,10 @@ where
 	IP: PackedBinaryField,
 	OP: PackedBinaryField,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync> =
+	type PackedTransformation<Data: AsRef<[OP::Scalar]> + Sync> =
 		PairwiseTransformation<FieldLinearTransformation<OP::Scalar, Data>>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	fn make_packed_transformation<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		PairwiseTransformation::new(transformation)

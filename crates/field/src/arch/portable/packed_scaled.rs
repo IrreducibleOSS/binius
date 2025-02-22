@@ -373,10 +373,10 @@ where
 	OP: PackedBinaryField,
 	IP: PackedTransformationFactory<OP>,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync> =
+	type PackedTransformation<Data: AsRef<[OP::Scalar]> + Sync> =
 		ScaledTransformation<IP::PackedTransformation<Data>>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	fn make_packed_transformation<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<
 			<ScaledPackedField<OP, N> as PackedField>::Scalar,
 			Data,
