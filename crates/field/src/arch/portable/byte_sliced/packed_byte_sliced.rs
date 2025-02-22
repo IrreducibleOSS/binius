@@ -4,7 +4,7 @@ use std::{
 	array,
 	fmt::Debug,
 	iter::{zip, Product, Sum},
-	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;
@@ -20,7 +20,8 @@ use crate::{
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension, PackedField,
+	ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension,
+	PackedField,
 };
 
 /// Represents AES Tower Field elements in byte-sliced form backed by Packed Nx8b AES fields
@@ -291,7 +292,19 @@ macro_rules! define_byte_sliced {
 			fn make_packed_transformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync>(
 				transformation: FieldLinearTransformation<<$name as PackedField>::Scalar, Data>,
 			) -> Self::PackedTransformation<Data> {
-				todo!()
+				let transformations_8b = array::from_fn(|row| {
+					array::from_fn(|col| {
+						let row = row * 8;
+						let linear_transformation_8b = array::from_fn::<_, 8, _>(|row_8b| {
+							<<$name as PackedField>::Scalar as ExtensionField<AESTowerField8b>>::get_base(&transformation.bases()[row + row_8b], col)
+						});
+
+						<$packed_storage as PackedTransformationFactory<$packed_storage
+						>>::make_packed_transformation(FieldLinearTransformation::new(linear_transformation_8b))
+					})
+				});
+
+				TransformationWrapperNxN(transformations_8b)
 			}
 		}
 	};
