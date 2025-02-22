@@ -10,10 +10,14 @@ use crate::{
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("incorrect witness type")]
+	IncorrectWitnessType,
 	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
 	#[error("vector of exponent is empty")]
 	EmptyExponent,
+	#[error("generator fild to small")]
+	SmallGeneratorField,
 	#[error("witneses and claims have mismatched lengths")]
 	MismatchedWitnessClaimLength,
 	#[error("GKR Failure: {0}")]
