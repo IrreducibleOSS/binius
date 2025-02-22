@@ -33,12 +33,12 @@ type PGenerator = PackedBinaryField2x64b;
 type F = BinaryField128b;
 type P = PackedBinaryField1x128b;
 
-fn generate_claim_witness<const COLUMN_LEN: usize>(
+fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 	exponents_in_each_row: [u128; COLUMN_LEN],
 	exponent_bit_width: usize,
-	generator: Option<MultilinearWitness<'static, P>>,
+	generator: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
-) -> (GeneratorExponentWitness<'static, P>, GeneratorExponentClaim<F>) {
+) -> (GeneratorExponentWitness<'a, P>, GeneratorExponentClaim<F>) {
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
@@ -94,9 +94,9 @@ fn generate_claim_witness<const COLUMN_LEN: usize>(
 }
 
 #[allow(clippy::type_complexity)]
-fn generate_mul_witnesses_claims<const LOG_SIZE: usize, const COLUMN_LEN: usize>(
+fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (Vec<GeneratorExponentClaim<F>>, Vec<GeneratorExponentWitness<'static, P>>) {
+) -> (Vec<GeneratorExponentClaim<F>>, Vec<GeneratorExponentWitness<'a, P>>) {
 	let mut rng = thread_rng();
 
 	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
@@ -129,8 +129,8 @@ fn generate_mul_witnesses_claims<const LOG_SIZE: usize, const COLUMN_LEN: usize>
 }
 
 #[allow(clippy::type_complexity)]
-fn generate_mul_witnesses_claims_with_different_log_size(
-) -> (Vec<GeneratorExponentWitness<'static, P>>, Vec<GeneratorExponentClaim<F>>) {
+fn generate_mul_witnesses_claims_with_different_log_size<'a>(
+) -> (Vec<GeneratorExponentWitness<'a, P>>, Vec<GeneratorExponentClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
@@ -257,6 +257,9 @@ fn prove_reduces_to_correct_claims() {
 			let actual_evaluation = exponent
 				.evaluate(MultilinearQueryRef::new(&this_bit_query))
 				.unwrap();
+
+			println!("!!!! {} {}", exponent_bit_number, j);
+
 			assert_eq!(claimed_evaluation, actual_evaluation);
 			j += 1;
 		}

@@ -144,6 +144,10 @@ where
 			bail!(Error::EmptyExponent)
 		}
 
+		if exponent.len() > PGenerator::Scalar::N_BITS {
+			bail!(Error::SmallGeneratorField)
+		}
+
 		equal_n_vars_check(&exponent)?;
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
@@ -198,6 +202,10 @@ where
 
 		if exponent_bit_width == 0 {
 			bail!(Error::EmptyExponent)
+		}
+
+		if exponent.len() > PGenerator::Scalar::N_BITS {
+			bail!(Error::SmallGeneratorField)
 		}
 
 		equal_n_vars_check(&exponent)?;
