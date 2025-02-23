@@ -11,13 +11,15 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{GeneratorExponentClaim, GeneratorExponentReductionOutput},
-	compositions::ExponentCompositions,
-	provers::{DynamicProver, GeneratorProver, ProverLayerClaimMeta, StaticProver},
+	common::{ExponentiationClaim, GeneratorExponentReductionOutput},
+	compositions::ProverExponentiationComposition,
+	provers::{
+		ExponentiationDynamicProver, ExponentiationProver, ExponentiationStaticProver,
+		ProverLayerClaimMeta,
+	},
 	witness::GeneratorExponentWitness,
 };
 use crate::{
-	composition::ComplexIndexComposition,
 	fiat_shamir::Challenger,
 	protocols::{
 		gkr_gpa::{gpa_sumcheck::prove::GPAProver, LayerClaim},
@@ -36,7 +38,7 @@ use crate::{
 /// * Witnesses and claims should be grouped by evaluation points from claims
 pub fn batch_prove<'a, FGenerator, F, P, FDomain, Challenger_, Backend>(
 	witnesses: impl IntoIterator<Item = GeneratorExponentWitness<'a, P>>,
-	claims: &[GeneratorExponentClaim<F>],
+	claims: &[ExponentiationClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
@@ -51,15 +53,15 @@ where
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
-	let witness_vec = witnesses.into_iter().collect::<Vec<_>>();
+	let witnesses = witnesses.into_iter().collect::<Vec<_>>();
 
-	if witness_vec.len() != claims.len() {
+	if witnesses.len() != claims.len() {
 		bail!(Error::MismatchedWitnessClaimLength);
 	}
 
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
-	if witness_vec.is_empty() {
+	if witnesses.is_empty() {
 		return Ok(GeneratorExponentReductionOutput {
 			eval_claims_on_exponent_bit_columns,
 		});
@@ -70,8 +72,7 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let mut provers: Vec<Box<dyn GeneratorProver<'a, P>>> =
-		make_provers::<_, FGenerator>(witness_vec, claims)?;
+	let mut provers = make_provers::<_, FGenerator>(witnesses, claims)?;
 
 	let max_exponent_bit_number = provers.first().map(|p| p.exponent_bit_width()).unwrap_or(0);
 
@@ -101,24 +102,24 @@ where
 	})
 }
 
-type GKRProvers<'a, 'b, F, P, FDomain, Backend> = Vec<
+type GKRProvers<'a, F, P, FDomain, Backend> = Vec<
 	GPAProver<
-		'b,
+		'a,
 		FDomain,
 		P,
-		ComplexIndexComposition<ExponentCompositions<F>>,
+		ProverExponentiationComposition<F>,
 		MultilinearWitness<'a, P>,
 		Backend,
 	>,
 >;
 
 #[instrument(skip_all, level = "debug")]
-fn build_layer_gkr_sumcheck_provers<'a, 'b, P, FGenerator, FDomain, Backend>(
-	provers: &mut [Box<dyn GeneratorProver<'a, P>>],
+fn build_layer_gkr_sumcheck_provers<'a, P, FGenerator, FDomain, Backend>(
+	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	layer_no: usize,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	backend: &'b Backend,
-) -> Result<GKRProvers<'a, 'b, P::Scalar, P, FDomain, Backend>, Error>
+	backend: &'a Backend,
+) -> Result<GKRProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
 where
 	FDomain: Field,
 	FGenerator: BinaryField,
@@ -131,29 +132,35 @@ where
 	let mut composite_claims = Vec::new();
 	let mut multilinears = Vec::new();
 
-	let first_eval_point = provers[0].eval_point().to_vec();
+	let first_eval_point = provers[0].layer_claim_eval_point().to_vec();
 	let mut eval_points = vec![first_eval_point];
 
 	let mut active_index = 0;
 
 	for i in 0..provers.len() {
-		if provers[i].eval_point() != eval_points[eval_points.len() - 1] {
-			let (eval_point_composite_claims, eval_point_multilinears) =
-				build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..i], layer_no)?;
+		if provers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
+			let CompositeSumClaimWithMultilinears {
+				composite_claims: eval_point_composite_claims,
+				multilinears: eval_point_multilinears,
+			} = build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..i], layer_no)?;
 
 			if eval_point_composite_claims.is_empty() {
+				// extract the last point because provers with this point will not participate in the sumcheck.
 				eval_points.pop();
 			} else {
 				composite_claims.push(eval_point_composite_claims);
 				multilinears.push(eval_point_multilinears);
 			}
-			eval_points.push(provers[i].eval_point().to_vec());
+
+			eval_points.push(provers[i].layer_claim_eval_point().to_vec());
 			active_index = i;
 		}
 
 		if i == provers.len() - 1 {
-			let (eval_point_composite_claims, eval_point_multilinears) =
-				build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..], layer_no)?;
+			let CompositeSumClaimWithMultilinears {
+				composite_claims: eval_point_composite_claims,
+				multilinears: eval_point_multilinears,
+			} = build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..], layer_no)?;
 
 			if !eval_point_composite_claims.is_empty() {
 				composite_claims.push(eval_point_composite_claims);
@@ -164,7 +171,7 @@ where
 
 	izip!(composite_claims, multilinears, eval_points)
 		.map(|(composite_claims, multilinears, eval_point)| {
-			GPAProver::<'b, FDomain, P, _, _, Backend>::new(
+			GPAProver::<'a, FDomain, P, _, _, Backend>::new(
 				multilinears,
 				None,
 				composite_claims,
@@ -177,17 +184,15 @@ where
 		.map_err(Error::from)
 }
 
-#[allow(clippy::type_complexity)]
+struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
+	composite_claims: Vec<CompositeSumClaim<P::Scalar, ProverExponentiationComposition<P::Scalar>>>,
+	multilinears: Vec<MultilinearWitness<'a, P>>,
+}
+
 fn build_eval_point_claims<'a, P, FGenerator>(
-	provers: &mut [Box<dyn GeneratorProver<'a, P>>],
+	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	layer_no: usize,
-) -> Result<
-	(
-		Vec<CompositeSumClaim<P::Scalar, ComplexIndexComposition<ExponentCompositions<P::Scalar>>>>,
-		Vec<MultilinearWitness<'a, P>>,
-	),
-	Error,
->
+) -> Result<CompositeSumClaimWithMultilinears<'a, P>, Error>
 where
 	P: PackedField,
 	FGenerator: BinaryField,
@@ -213,7 +218,7 @@ where
 		let ProverLayerClaimMeta {
 			claim: composite_claim,
 			multilinears: this_round_multilinears,
-		} = prover.get_layer_composite_sum_claim(
+		} = prover.layer_composite_sum_claim(
 			layer_no,
 			composite_claims_n_multilinears,
 			multilinears_index,
@@ -225,11 +230,14 @@ where
 			multilinears.extend(this_round_multilinears);
 		}
 	}
-	Ok((composite_claims, multilinears))
+	Ok(CompositeSumClaimWithMultilinears {
+		composite_claims,
+		multilinears,
+	})
 }
 
 pub fn build_layer_exponent_claims<'a, P, FGenerator>(
-	provers: &mut [Box<dyn GeneratorProver<'a, P>>],
+	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 	layer_no: usize,
 ) -> Result<Vec<LayerClaim<P::Scalar>>, Error>
@@ -240,6 +248,7 @@ where
 {
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
+	// extract eq_ind_evals
 	sumcheck_output
 		.multilinear_evals
 		.iter_mut()
@@ -250,18 +259,20 @@ where
 	let mut multilinear_evals = sumcheck_output.multilinear_evals.into_iter().flatten();
 
 	for prover in provers {
+		let (this_porver_n_multilinears, _) = prover.layer_n_multilinears_n_claims(layer_no);
+
 		let this_porver_multilinear_evals = multilinear_evals
 			.by_ref()
-			.take(prover.layer_n_multilinears_n_claims(layer_no).0)
+			.take(this_porver_n_multilinears)
 			.collect::<Vec<_>>();
 
-		let layer_claim = prover.finish_layer(
+		let exponent_bit_claim = prover.finish_layer(
 			layer_no,
 			&this_porver_multilinear_evals,
 			&sumcheck_output.challenges,
 		);
 
-		eval_claims_on_exponent_bit_columns.push(layer_claim);
+		eval_claims_on_exponent_bit_columns.push(exponent_bit_claim);
 	}
 
 	Ok(eval_claims_on_exponent_bit_columns)
@@ -269,8 +280,8 @@ where
 
 fn make_provers<'a, P, FGenerator>(
 	witnesses: Vec<GeneratorExponentWitness<'a, P>>,
-	claims: &[GeneratorExponentClaim<P::Scalar>],
-) -> Result<Vec<Box<dyn GeneratorProver<'a, P> + 'a>>, Error>
+	claims: &[ExponentiationClaim<P::Scalar>],
+) -> Result<Vec<Box<dyn ExponentiationProver<'a, P> + 'a>>, Error>
 where
 	P: PackedField,
 	FGenerator: BinaryField,
@@ -283,11 +294,13 @@ where
 			let is_dynamic_prover = witness.generator.is_some();
 
 			if is_dynamic_prover {
-				DynamicProver::new(witness, claim)
-					.map(move |prover| Box::new(prover) as Box<dyn GeneratorProver<'a, P> + 'a>)
+				ExponentiationDynamicProver::new(witness, claim).map(move |prover| {
+					Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>
+				})
 			} else {
-				StaticProver::<'a, P, FGenerator>::new(witness, claim)
-					.map(move |prover| Box::new(prover) as Box<dyn GeneratorProver<'a, P> + 'a>)
+				ExponentiationStaticProver::<'a, P, FGenerator>::new(witness, claim).map(
+					move |prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>,
+				)
 			}
 		})
 		.collect::<Result<Vec<_>, Error>>()

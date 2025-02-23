@@ -5,13 +5,14 @@
 //!
 //! <https://www.irreducible.com/posts/integer-multiplication-in-binius>
 
+pub mod batch_prove;
+pub mod batch_verify;
 mod common;
 mod compositions;
 pub mod oracles;
-pub mod prove;
 mod provers;
 mod utils;
-pub mod verify;
+mod verifiers;
 mod witness;
 
 #[cfg(test)]
