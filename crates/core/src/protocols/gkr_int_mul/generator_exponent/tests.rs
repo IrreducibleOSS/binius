@@ -4,7 +4,6 @@ use std::array;
 
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
-	underlier::SmallU,
 	BinaryField, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field,
 	PackedBinaryField128x1b, PackedBinaryField1x128b, PackedBinaryField2x64b, PackedExtension,
 	PackedField,
@@ -17,11 +16,11 @@ use binius_math::{
 use groestl_crypto::Groestl256;
 use rand::{thread_rng, Rng};
 
-use super::{common::GeneratorExponentReductionOutput, prove};
+use super::{batch_prove, common::GeneratorExponentReductionOutput};
 use crate::{
 	fiat_shamir::HasherChallenger,
 	protocols::gkr_int_mul::generator_exponent::{
-		common::GeneratorExponentClaim, verify, witness::GeneratorExponentWitness,
+		batch_verify, common::ExponentiationClaim, witness::GeneratorExponentWitness,
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
@@ -38,16 +37,20 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
 	generator: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
-) -> (GeneratorExponentWitness<'a, P>, GeneratorExponentClaim<F>) {
+) -> (GeneratorExponentWitness<'a, P>, ExponentiationClaim<F>) {
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
 				vec![PBits::default(); COLUMN_LEN / <PBits as PackedField>::WIDTH];
 
 			for (row, this_row_exponent) in exponents_in_each_row.iter().enumerate() {
-				let this_bit_of_exponent = ((this_row_exponent >> i) & 1) as u8;
+				let this_bit_of_exponent = (this_row_exponent >> i) & 1;
 
-				let single_bit_value = BinaryField1b::from(SmallU::<1>::new(this_bit_of_exponent));
+				let single_bit_value = if this_bit_of_exponent == 1 {
+					BinaryField1b::ONE
+				} else {
+					BinaryField1b::ZERO
+				};
 
 				set_packed_slice(&mut column_witness, row, single_bit_value);
 			}
@@ -81,7 +84,7 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 
 	let last_layer_query = MultilinearQuery::expand(eval_point);
 
-	let claim = GeneratorExponentClaim {
+	let claim = ExponentiationClaim {
 		eval_point: eval_point.to_vec(),
 		eval: exponentiation_result_witness
 			.evaluate(MultilinearQueryRef::new(&last_layer_query))
@@ -93,10 +96,9 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 	(witness, claim)
 }
 
-#[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (Vec<GeneratorExponentClaim<F>>, Vec<GeneratorExponentWitness<'a, P>>) {
+) -> (Vec<ExponentiationClaim<F>>, Vec<GeneratorExponentWitness<'a, P>>) {
 	let mut rng = thread_rng();
 
 	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
@@ -130,7 +132,7 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 
 #[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims_with_different_log_size<'a>(
-) -> (Vec<GeneratorExponentWitness<'a, P>>, Vec<GeneratorExponentClaim<F>>) {
+) -> (Vec<GeneratorExponentWitness<'a, P>>, Vec<ExponentiationClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
@@ -224,7 +226,7 @@ fn prove_reduces_to_correct_claims() {
 
 	let GeneratorExponentReductionOutput {
 		eval_claims_on_exponent_bit_columns,
-	} = prove::batch_prove::<FGenerator, _, _, _, _, _>(
+	} = batch_prove::batch_prove::<FGenerator, _, _, _, _, _>(
 		witnesses.clone(),
 		&claims,
 		evaluation_domain_factory,
@@ -258,8 +260,6 @@ fn prove_reduces_to_correct_claims() {
 				.evaluate(MultilinearQueryRef::new(&this_bit_query))
 				.unwrap();
 
-			println!("!!!! {} {}", exponent_bit_number, j);
-
 			assert_eq!(claimed_evaluation, actual_evaluation);
 			j += 1;
 		}
@@ -277,7 +277,7 @@ fn good_proof_verifies() {
 
 	let backend = make_portable_backend();
 
-	prove::batch_prove::<FGenerator, _, _, _, _, _>(
+	batch_prove::batch_prove::<FGenerator, _, _, _, _, _>(
 		witnesses,
 		&claims,
 		evaluation_domain_factory,
@@ -289,7 +289,7 @@ fn good_proof_verifies() {
 	let mut verifier_transcript = transcript.into_verifier();
 
 	let _reduced_claims =
-		verify::batch_verify::<FGenerator, _, _>(claims, &mut verifier_transcript).unwrap();
+		batch_verify::batch_verify::<FGenerator, _, _>(&claims, &mut verifier_transcript).unwrap();
 
 	verifier_transcript.finalize().unwrap()
 }

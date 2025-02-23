@@ -6,8 +6,10 @@ use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
+use crate::{composition::ComplexIndexComposition, protocols::sumcheck::zerocheck::ExtraProduct};
+
 #[derive(Debug)]
-pub enum ExponentCompositions<F>
+pub enum ExponentiationCompositions<F>
 where
 	F: Field,
 {
@@ -16,7 +18,7 @@ where
 	DynamicGeneratorLastLayer,
 }
 
-impl<P> CompositionPoly<P> for ExponentCompositions<P::Scalar>
+impl<P> CompositionPoly<P> for ExponentiationCompositions<P::Scalar>
 where
 	P: PackedField,
 {
@@ -77,3 +79,8 @@ where
 		}
 	}
 }
+
+pub type ProverExponentiationComposition<F> =
+	ComplexIndexComposition<ExponentiationCompositions<F>>;
+pub type VerifierExponentiationComposition<F> =
+	ComplexIndexComposition<ExtraProduct<ExponentiationCompositions<F>>>;

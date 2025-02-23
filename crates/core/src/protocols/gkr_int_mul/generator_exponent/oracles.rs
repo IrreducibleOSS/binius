@@ -5,7 +5,7 @@ use binius_math::{MultilinearPoly, MultilinearQuery, MultilinearQueryRef};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 
-use super::{common::GeneratorExponentClaim, witness::GeneratorExponentWitness};
+use super::{common::ExponentiationClaim, witness::GeneratorExponentWitness};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{MultilinearOracleSet, OracleId},
@@ -51,7 +51,7 @@ pub fn construct_grand_product_claims<F, P, Challenger_>(
 	meta: &[GrandProductClaimMeta<P::Scalar>],
 	oracles: &MultilinearOracleSet<F>,
 	r: &[F],
-) -> Result<Vec<GeneratorExponentClaim<F>>, Error>
+) -> Result<Vec<ExponentiationClaim<F>>, Error>
 where
 	F: TowerField,
 	P: PackedField<Scalar = F>,
@@ -75,7 +75,7 @@ where
 				with_dynamic_generator,
 			} = meta;
 
-			GeneratorExponentClaim {
+			ExponentiationClaim {
 				eval_point: r[..n_vars].to_vec(),
 				eval,
 				exponent_bit_width: exponents_ids.len(),
