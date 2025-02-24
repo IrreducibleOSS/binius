@@ -9,10 +9,8 @@ use stackalloc::stackalloc_with_default;
 use crate::{ArithExpr, Error};
 
 /// A multivariate polynomial that is used as a composition of several multilinear polynomials.
-///
-/// This is an object-safe version of the [`CompositionPoly`] trait.
 #[auto_impl(Arc, &)]
-pub trait CompositionPolyOS<P>: Debug + Send + Sync
+pub trait CompositionPoly<P>: Debug + Send + Sync
 where
 	P: PackedField,
 {

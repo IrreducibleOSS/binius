@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use binius_field::TowerField;
-use binius_math::CompositionPolyOS;
+use binius_math::CompositionPoly;
 use binius_utils::bail;
 
 use crate::oracle::{Error, MultilinearPolyOracle, OracleId};
@@ -12,11 +12,11 @@ use crate::oracle::{Error, MultilinearPolyOracle, OracleId};
 pub struct CompositePolyOracle<F: TowerField> {
 	n_vars: usize,
 	inner: Vec<MultilinearPolyOracle<F>>,
-	composition: Arc<dyn CompositionPolyOS<F>>,
+	composition: Arc<dyn CompositionPoly<F>>,
 }
 
 impl<F: TowerField> CompositePolyOracle<F> {
-	pub fn new<C: CompositionPolyOS<F> + 'static>(
+	pub fn new<C: CompositionPoly<F> + 'static>(
 		n_vars: usize,
 		inner: Vec<MultilinearPolyOracle<F>>,
 		composition: C,
@@ -67,7 +67,7 @@ impl<F: TowerField> CompositePolyOracle<F> {
 		self.inner.clone()
 	}
 
-	pub fn composition(&self) -> Arc<dyn CompositionPolyOS<F>> {
+	pub fn composition(&self) -> Arc<dyn CompositionPoly<F>> {
 		self.composition.clone()
 	}
 }
@@ -82,7 +82,7 @@ mod tests {
 
 	#[derive(Clone, Debug)]
 	struct TestByteComposition;
-	impl CompositionPolyOS<BinaryField128b> for TestByteComposition {
+	impl CompositionPoly<BinaryField128b> for TestByteComposition {
 		fn n_vars(&self) -> usize {
 			3
 		}

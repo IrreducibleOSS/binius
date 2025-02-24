@@ -43,7 +43,7 @@ impl ToTokens for CompositionPolyItem {
 			#[derive(Debug, Clone, Copy)]
 			struct #name;
 
-			impl<P> binius_math::CompositionPolyOS<P> for #name
+			impl<P> binius_math::CompositionPoly<P> for #name
 			where
 				P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>,
 			{

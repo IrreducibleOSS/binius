@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use binius_field::{Field, PackedField};
-use binius_math::{ArithExpr, CompositionPolyOS};
+use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
 use crate::polynomial::Error;
@@ -34,7 +34,7 @@ impl<C, const N: usize> IndexComposition<C, N> {
 	}
 }
 
-impl<P: PackedField, C: CompositionPolyOS<P>, const N: usize> CompositionPolyOS<P>
+impl<P: PackedField, C: CompositionPoly<P>, const N: usize> CompositionPoly<P>
 	for IndexComposition<C, N>
 {
 	fn n_vars(&self) -> usize {
@@ -159,7 +159,7 @@ mod tests {
 		};
 
 		assert_eq!(
-			(&composition as &dyn CompositionPolyOS<BinaryField1b>).expression(),
+			(&composition as &dyn CompositionPoly<BinaryField1b>).expression(),
 			ArithExpr::Add(
 				Box::new(ArithExpr::Var(1)),
 				Box::new(ArithExpr::Mul(

@@ -8,7 +8,7 @@ use binius_field::{
 	PackedField,
 };
 use binius_macros::{arith_circuit_poly, composition_poly};
-use binius_math::{ArithExpr as Expr, CompositionPolyOS};
+use binius_math::{ArithExpr as Expr, CompositionPoly};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use rand::{thread_rng, RngCore};
 
@@ -28,7 +28,7 @@ fn generate_input_data<P: PackedField>(mut rng: impl RngCore) -> Vec<Vec<P>> {
 
 fn evaluate_arith_circuit_poly<P: PackedField>(
 	query: &[&[P]],
-	arith_circuit_poly: &impl CompositionPolyOS<P>,
+	arith_circuit_poly: &impl CompositionPoly<P>,
 ) {
 	for i in 0..BATCH_SIZE {
 		let result = arith_circuit_poly
