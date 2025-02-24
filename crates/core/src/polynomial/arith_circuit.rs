@@ -3,13 +3,11 @@
 use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
+use binius_math::{ArithExpr, CompositionPolyOS, Error};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
 };
-
-use super::MultivariatePoly;
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
@@ -177,7 +175,9 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 	}
 }
 
-impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
+impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS<P>
+	for ArithCircuitPoly<F>
+{
 	fn degree(&self) -> usize {
 		self.degree
 	}
@@ -190,11 +190,11 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		self.tower_level
 	}
 
-	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
+	fn expression(&self) -> ArithExpr<P::Scalar> {
 		self.expr.convert_field()
 	}
 
-	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -258,11 +258,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		})
 	}
 
-	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
-		&self,
-		batch_query: &[&[P]],
-		evals: &mut [P],
-	) -> Result<(), Error> {
+	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
 		if batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
@@ -365,52 +361,6 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		});
 
 		Ok(())
-	}
-}
-
-impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS<P>
-	for ArithCircuitPoly<F>
-{
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(self)
-	}
-
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.expr.convert_field()
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(self)
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
-		CompositionPoly::evaluate(self, query)
-	}
-
-	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
-		CompositionPoly::batch_evaluate(self, batch_query, evals)
-	}
-}
-
-impl<F: TowerField> MultivariatePoly<F> for ArithCircuitPoly<F> {
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(&self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(&self)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(&self)
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, super::Error> {
-		CompositionPoly::evaluate(&self, query).map_err(|e| e.into())
 	}
 }
 
@@ -553,7 +503,7 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			CompositionPoly::evaluate(&circuit, &[P::broadcast(F::new(0).into())]).unwrap(),
+			CompositionPolyOS::evaluate(&circuit, &[P::broadcast(F::new(0).into())]).unwrap(),
 			P::broadcast(F::new(123).into())
 		);
 	}
@@ -573,7 +523,7 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
@@ -599,7 +549,7 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
@@ -626,7 +576,7 @@ mod tests {
 
 		// test evaluate
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[
 					P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 4, 5, 6, 7])),
@@ -656,7 +606,7 @@ mod tests {
 		let expected3 = P::from_scalars(felts!(BinaryField16b[0, 30, 59, 36, 151, 140, 170, 176]));
 
 		let mut batch_result = vec![P::zero(); 3];
-		CompositionPoly::batch_evaluate(
+		CompositionPolyOS::batch_evaluate(
 			&circuit,
 			&[
 				&[query1[0], query2[0], query3[0]],
@@ -688,7 +638,7 @@ mod tests {
 
 		// test evaluate
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[
 					P::from_scalars(felts!(BinaryField16b[0, 1, 2, 3, 4, 5, 6, 7])),
@@ -718,7 +668,7 @@ mod tests {
 			P::from_scalars(felts!(BinaryField16b[100, 49, 206, 155, 177, 228, 27, 78]));
 
 		let mut batch_result = vec![P::zero(); 3];
-		CompositionPoly::batch_evaluate(
+		CompositionPolyOS::batch_evaluate(
 			&circuit,
 			&[
 				&[query1[0], query2[0], query3[0]],
@@ -746,7 +696,7 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
@@ -773,7 +723,7 @@ mod tests {
 		assert_eq!(typed_circuit.n_vars(), 1);
 
 		assert_eq!(
-			CompositionPoly::evaluate(
+			CompositionPolyOS::evaluate(
 				&circuit,
 				&[P::from_scalars(
 					felts!(BinaryField16b[0, 1, 2, 3, 122, 123, 124, 125]),
