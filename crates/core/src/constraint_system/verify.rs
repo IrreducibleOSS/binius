@@ -4,7 +4,7 @@ use std::{cmp::Reverse, iter};
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
-use binius_math::{ArithExpr, CompositionPolyOS};
+use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{izip, multiunzip, Itertools};
@@ -310,7 +310,7 @@ pub fn max_n_vars_and_skip_rounds<F, Composition>(
 ) -> (usize, usize)
 where
 	F: TowerField,
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 {
 	let max_n_vars = max_n_vars(zerocheck_claims);
 
@@ -334,7 +334,7 @@ where
 fn max_n_vars<F, Composition>(zerocheck_claims: &[ZerocheckClaim<F, Composition>]) -> usize
 where
 	F: TowerField,
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 {
 	zerocheck_claims
 		.iter()
@@ -567,7 +567,7 @@ pub fn get_flush_dedup_sumcheck_metas<F: TowerField>(
 #[derive(Debug)]
 pub struct FlushSumcheckComposition;
 
-impl<P: PackedField> CompositionPolyOS<P> for FlushSumcheckComposition {
+impl<P: PackedField> CompositionPoly<P> for FlushSumcheckComposition {
 	fn n_vars(&self) -> usize {
 		2
 	}
@@ -639,7 +639,7 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 	Ok(evalcheck_claims)
 }
 
-pub struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPolyOS<F>> {
+pub struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPoly<F>> {
 	sumcheck_claims: Vec<SumcheckClaim<F, Composition>>,
 	gkr_eval_points: Vec<Vec<F>>,
 	flush_selectors_unique_by_claim: Vec<Vec<OracleId>>,
@@ -649,7 +649,7 @@ pub struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPolyOS<F>>
 #[allow(clippy::type_complexity)]
 pub fn get_flush_dedup_sumcheck_claims<F: TowerField>(
 	flush_sumcheck_metas: Vec<FlushSumcheckMeta<F>>,
-) -> Result<DedupSumcheckClaims<F, impl CompositionPolyOS<F>>, Error> {
+) -> Result<DedupSumcheckClaims<F, impl CompositionPoly<F>>, Error> {
 	let n_claims = flush_sumcheck_metas.len();
 	let mut sumcheck_claims = Vec::with_capacity(n_claims);
 	let mut gkr_eval_points = Vec::with_capacity(n_claims);

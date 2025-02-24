@@ -8,7 +8,7 @@ use std::iter;
 
 use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
 use binius_math::{
-	deinterleave, extrapolate_lines, CompositionPolyOS, MultilinearPoly, MultilinearQuery,
+	deinterleave, extrapolate_lines, CompositionPoly, MultilinearPoly, MultilinearQuery,
 	MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
@@ -58,7 +58,7 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
@@ -86,7 +86,7 @@ where
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 	Access: SumcheckMultilinearAccess<P> + Sync,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators

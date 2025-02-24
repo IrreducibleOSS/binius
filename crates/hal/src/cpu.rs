@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
-	eq_ind_partial_eval, CompositionPolyOS, MultilinearExtension, MultilinearPoly,
+	eq_ind_partial_eval, CompositionPoly, MultilinearExtension, MultilinearPoly,
 	MultilinearQueryRef,
 };
 use tracing::instrument;
@@ -50,7 +50,7 @@ impl ComputationBackend for CpuBackend {
 		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>,
+		Composition: CompositionPoly<P>,
 	{
 		calculate_round_evals(n_vars, tensor_query, multilinears, evaluators, evaluation_points)
 	}

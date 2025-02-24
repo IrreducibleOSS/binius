@@ -16,7 +16,7 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
 	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
@@ -50,7 +50,7 @@ struct PowerComposition {
 	exponent: usize,
 }
 
-impl<P: PackedField> CompositionPolyOS<P> for PowerComposition {
+impl<P: PackedField> CompositionPoly<P> for PowerComposition {
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -103,7 +103,7 @@ fn compute_composite_sum<P, M, Composition>(
 where
 	P: PackedField,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	let n_vars = multilinears
 		.first()
@@ -263,7 +263,7 @@ fn make_test_sumcheck<'a, F, FDomain, P, PExt, Backend>(
 	backend: &'a Backend,
 ) -> (
 	Vec<MultilinearExtension<P>>,
-	SumcheckClaim<F, impl CompositionPolyOS<F> + Clone + 'static>,
+	SumcheckClaim<F, impl CompositionPoly<F> + Clone + 'static>,
 	impl SumcheckProver<F> + 'a,
 )
 where
@@ -287,10 +287,9 @@ where
 		.map(MLEEmbeddingAdapter::<_, PExt, _>::from)
 		.collect::<Vec<_>>();
 
-	let mut claim_composite_sums =
-		Vec::<CompositeSumClaim<F, Arc<dyn CompositionPolyOS<F>>>>::new();
+	let mut claim_composite_sums = Vec::<CompositeSumClaim<F, Arc<dyn CompositionPoly<F>>>>::new();
 	let mut prover_composite_sums =
-		Vec::<CompositeSumClaim<F, Arc<dyn CompositionPolyOS<PExt>>>>::new();
+		Vec::<CompositeSumClaim<F, Arc<dyn CompositionPoly<PExt>>>>::new();
 
 	if max_degree >= 1 {
 		let identity_composition =
