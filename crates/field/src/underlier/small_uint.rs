@@ -159,6 +159,14 @@ impl<const N: usize> UnderlierWithBitOps for SmallU<N> {
 	fn fill_with_bit(val: u8) -> Self {
 		Self(u8::fill_with_bit(val)) & Self::ONES
 	}
+
+	fn shl_128b_lanes(self, rhs: usize) -> Self {
+		self << rhs
+	}
+
+	fn shr_128b_lanes(self, rhs: usize) -> Self {
+		self >> rhs
+	}
 }
 
 impl<const N: usize> From<SmallU<N>> for u8 {

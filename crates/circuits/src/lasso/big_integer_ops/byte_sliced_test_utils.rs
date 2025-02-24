@@ -33,14 +33,12 @@ pub fn random_u512(rng: &mut impl Rng) -> U512 {
 
 pub fn test_bytesliced_add<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	test_circuit(|builder| {
 		let log_size = 14;
-		let x_in =
-			array::from_fn(|_| unconstrained::<BinaryField8b>(builder, "x", log_size).unwrap());
-		let y_in =
-			array::from_fn(|_| unconstrained::<BinaryField8b>(builder, "y", log_size).unwrap());
+		let x_in = TL::from_fn(|_| unconstrained::<BinaryField8b>(builder, "x", log_size).unwrap());
+		let y_in = TL::from_fn(|_| unconstrained::<BinaryField8b>(builder, "y", log_size).unwrap());
 		let c_in = unconstrained::<BinaryField1b>(builder, "cin first", log_size)?;
 		let lookup_t_add = add_lookup(builder, "add table")?;
 		let mut lookup_batch_add = LookupBatch::new([lookup_t_add]);
@@ -61,14 +59,14 @@ where
 
 pub fn test_bytesliced_add_carryfree<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	test_circuit(|builder| {
 		let log_size = 14;
 		let x_in =
-			array::from_fn(|_| builder.add_committed("x", log_size, BinaryField8b::TOWER_LEVEL));
+			TL::from_fn(|_| builder.add_committed("x", log_size, BinaryField8b::TOWER_LEVEL));
 		let y_in =
-			array::from_fn(|_| builder.add_committed("y", log_size, BinaryField8b::TOWER_LEVEL));
+			TL::from_fn(|_| builder.add_committed("y", log_size, BinaryField8b::TOWER_LEVEL));
 		let c_in = builder.add_committed("c", log_size, BinaryField1b::TOWER_LEVEL);
 
 		if let Some(witness) = builder.witness() {
@@ -136,12 +134,11 @@ where
 
 pub fn test_bytesliced_double_conditional_increment<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	test_circuit(|builder| {
 		let log_size = 14;
-		let x_in =
-			array::from_fn(|_| unconstrained::<BinaryField8b>(builder, "x", log_size).unwrap());
+		let x_in = TL::from_fn(|_| unconstrained::<BinaryField8b>(builder, "x", log_size).unwrap());
 		let first_c_in = unconstrained::<BinaryField1b>(builder, "cin first", log_size)?;
 		let second_c_in = unconstrained::<BinaryField1b>(builder, "cin second", log_size)?;
 		let zero_oracle_carry =
@@ -166,15 +163,14 @@ where
 
 pub fn test_bytesliced_mul<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId>,
-	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
+	TL: TowerLevel,
 {
 	test_circuit(|builder| {
 		let log_size = 14;
 		let mult_a =
-			array::from_fn(|_| unconstrained::<BinaryField8b>(builder, "a", log_size).unwrap());
+			TL::Base::from_fn(|_| unconstrained::<BinaryField8b>(builder, "a", log_size).unwrap());
 		let mult_b =
-			array::from_fn(|_| unconstrained::<BinaryField8b>(builder, "b", log_size).unwrap());
+			TL::Base::from_fn(|_| unconstrained::<BinaryField8b>(builder, "b", log_size).unwrap());
 		let zero_oracle_carry =
 			transparent::constant(builder, "zero carry", log_size, BinaryField1b::ZERO)?;
 		let lookup_t_mul = mul_lookup(builder, "mul lookup")?;
@@ -201,9 +197,8 @@ where
 
 pub fn test_bytesliced_modular_mul<const WIDTH: usize, TL>()
 where
-	TL: TowerLevel<OracleId>,
-	TL::Base: TowerLevel<OracleId, Data = [OracleId; WIDTH]>,
-	<TL as TowerLevel<usize>>::Data: Debug,
+	TL: TowerLevel<Data<usize>: Debug>,
+	TL::Base: TowerLevel<Data<usize> = [OracleId; WIDTH]>,
 {
 	test_circuit(|builder| {
 		let log_size = 14;

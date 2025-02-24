@@ -14,20 +14,17 @@ use crate::{
 type B8 = BinaryField8b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_mul<
-	LevelIn: TowerLevel<OracleId>,
-	LevelOut: TowerLevel<OracleId, Base = LevelIn>,
->(
+pub fn byte_sliced_mul<LevelIn: TowerLevel, LevelOut: TowerLevel<Base = LevelIn>>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	mult_a: &LevelIn::Data,
-	mult_b: &LevelIn::Data,
+	mult_a: &LevelIn::Data<OracleId>,
+	mult_b: &LevelIn::Data<OracleId>,
 	log_size: usize,
 	zero_carry_oracle: OracleId,
 	lookup_batch_mul: &mut LookupBatch,
 	lookup_batch_add: &mut LookupBatch,
 	lookup_batch_dci: &mut LookupBatch,
-) -> Result<LevelOut::Data, anyhow::Error> {
+) -> Result<LevelOut::Data<OracleId>, anyhow::Error> {
 	if LevelIn::WIDTH == 1 {
 		let result_of_u8mul = u8mul_bytesliced(
 			builder,
