@@ -79,7 +79,7 @@ where
 	let _ = ext_base_op_par(&mut result, exponent_bit, |i, prev_out, exp_bit_broadcasted| {
 		let (base, prev_out) = match &base {
 			Base::Generator(g) => (*g, prev_out),
-			Base::DynamicBase(g) => (g[i], prev_out.square()),
+			Base::Dynamic(g) => (g[i], prev_out.square()),
 		};
 
 		prev_out
@@ -92,7 +92,7 @@ where
 
 enum Base<'a, PBase: PackedField> {
 	Generator(PBase),
-	DynamicBase(&'a [PBase]),
+	Dynamic(&'a [PBase]),
 }
 
 fn evaluate_first_layer_output_packed<PBits, PBase>(
@@ -109,7 +109,7 @@ where
 	let _ = ext_base_op_par(&mut result, exponent_bit, |i, _, exp_bit_broadcasted| {
 		let base = match &base {
 			Base::Generator(g) => *g,
-			Base::DynamicBase(g) => g[i],
+			Base::Dynamic(g) => g[i],
 		};
 
 		PBase::cast_ext(PBase::cast_base(base - PBase::one()) * exp_bit_broadcasted) + PBase::one()
@@ -211,13 +211,13 @@ where
 
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<PBits, PBase>(
 			&copy_witness_into_vec(&exponent[exponent_bit_width - 1]),
-			Base::DynamicBase(&base_evals),
+			Base::Dynamic(&base_evals),
 		);
 
 		for layer_idx_from_left in 1..exponent_bit_width {
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&copy_witness_into_vec(&exponent[exponent_bit_width - layer_idx_from_left - 1]),
-				Base::DynamicBase(&base_evals),
+				Base::Dynamic(&base_evals),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			);
 		}

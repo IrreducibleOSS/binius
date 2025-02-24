@@ -33,6 +33,7 @@ use crate::{
 /// REQUIRES:
 /// * witnesses and claims are of the same length
 /// * The ith witness corresponds to the ith claim
+/// * witnesses and claims must be in descending order by n_vars
 ///
 /// RECOMMENDATIONS:
 /// * Witnesses and claims should be grouped by evaluation points from claims
@@ -87,7 +88,7 @@ where
 		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
 
 		let layer_exponent_claims =
-			build_layer_exponent_claims::<_>(&mut provers, sumcheck_proof_output, layer_no)?;
+			build_layer_exponent_bit_claims(&mut provers, sumcheck_proof_output, layer_no)?;
 
 		eval_claims_on_exponent_bit_columns.push(layer_exponent_claims);
 
@@ -133,6 +134,7 @@ where
 
 	let mut active_index = 0;
 
+	// group provers by evaluation points and build composite sum claims.
 	for i in 0..provers.len() {
 		if provers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
 			let CompositeSumClaimWithMultilinears {
@@ -230,7 +232,7 @@ where
 	})
 }
 
-pub fn build_layer_exponent_claims<'a, P>(
+pub fn build_layer_exponent_bit_claims<'a, P>(
 	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 	layer_no: usize,
@@ -283,13 +285,11 @@ where
 			let is_dynamic_prover = witness.base.is_some();
 
 			if is_dynamic_prover {
-				DynamicBaseExponentiationProver::new(witness, claim).map(move |prover| {
-					Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>
-				})
+				DynamicBaseExponentiationProver::new(witness, claim)
+					.map(|prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>)
 			} else {
-				GeneratorExponentiationProver::<'a, P, FBase>::new(witness, claim).map(
-					move |prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>,
-				)
+				GeneratorExponentiationProver::<'a, P, FBase>::new(witness, claim)
+					.map(|prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>)
 			}
 		})
 		.collect::<Result<Vec<_>, Error>>()

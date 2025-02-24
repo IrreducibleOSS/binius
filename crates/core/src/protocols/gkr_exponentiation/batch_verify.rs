@@ -75,7 +75,7 @@ where
 
 		let sumcheck_verification_output = sumcheck::batch_verify(&sumcheck_claims, transcript)?;
 
-		let layer_exponent_claims = build_layer_exponent_claims(
+		let layer_exponent_claims = build_layer_exponent_bit_claims(
 			&mut verifiers,
 			sumcheck_verification_output,
 			eval_points,
@@ -111,6 +111,7 @@ where
 
 	let mut active_index = 0;
 
+	// group verifiers by evaluation points and build sumcheck claims.
 	for i in 0..verifiers.len() {
 		if verifiers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
 			let sumcheck_claim = build_eval_point_claims(&verifiers[active_index..i], layer_no)?;
@@ -194,7 +195,7 @@ where
 		.map_err(Error::from)
 }
 
-pub fn build_layer_exponent_claims<'a, F>(
+pub fn build_layer_exponent_bit_claims<'a, F>(
 	verifiers: &mut [Box<dyn ExponentiationVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
 	eval_points: Vec<Vec<F>>,

@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-//! Exponentiation of a Base with a series of bit columns based on the data-parallel
+//! Exponentiation of a base with a series of bit columns based on the data-parallel
 //! GKR circuit described here:
 //!
 //! <https://www.irreducible.com/posts/integer-multiplication-in-binius>
