@@ -10,8 +10,8 @@ use binius_core::{
 	reed_solomon::reed_solomon::ReedSolomonCode,
 };
 use binius_field::{
-	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField,
-	BinaryField128b, BinaryField32b, PackedField,
+	arch::OptimalUnderlier, as_packed_field::PackedType, packed::set_packed_slice, BinaryField128b,
+	BinaryField32b, PackedField,
 };
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::{MLEDirectAdapter, MultilinearExtension, MultilinearPoly};
