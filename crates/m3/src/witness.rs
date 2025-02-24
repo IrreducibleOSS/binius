@@ -17,7 +17,7 @@ use binius_field::{
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::iter::IterExtensions;
-use bytemuck::{must_cast_slice, Pod};
+use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 
 use super::error::Error;
@@ -267,26 +267,45 @@ impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
 	}
 
-	// TODO: Something similar to WitnessEntry::as_slice<T: Pod> that casts the underliers to T
-	pub fn get_as<F: TowerField, const V: usize, T: Pod>(
+	pub fn get_as<T: Pod, F: TowerField, const V: usize>(
 		&self,
 		col: Col<F, V>,
 	) -> Result<Ref<[T]>, Error>
 	where
 		U: Pod,
 	{
-		todo!()
+		let col = self.cols.get(col.index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: col.table_id,
+				index: col.index,
+			})
+		})?;
+		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
+		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
 	}
 
-	// TODO: Something similar to WitnessEntry::as_slice<T: Pod> that casts the underliers to T
-	pub fn get_mut_as<F: TowerField, const V: usize, T: Pod>(
+	pub fn get_mut_as<T: Pod, F: TowerField, const V: usize>(
 		&self,
 		col: Col<F, V>,
 	) -> Result<RefMut<[T]>, Error>
 	where
 		U: Pod,
 	{
-		todo!()
+		if col.table_id != self.table_id {
+			return Err(Error::TableMismatch {
+				column_table_id: col.table_id,
+				witness_table_id: self.table_id,
+			});
+		}
+
+		let col = self.cols.get(col.index).ok_or_else(|| {
+			Error::MissingColumn(ColumnId {
+				table_id: col.table_id,
+				index: col.index,
+			})
+		})?;
+		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
+		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))
 	}
 
 	pub fn size(&self) -> usize {
