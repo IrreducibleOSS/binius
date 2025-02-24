@@ -9,7 +9,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
+	CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
 	MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
@@ -47,7 +47,7 @@ where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P> + 'a,
+	Composition: CompositionPoly<P> + 'a,
 {
 	let n_vars = multilinears
 		.first()
@@ -118,8 +118,8 @@ where
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FBase>
 		+ PackedExtension<FDomain>,
-	CompositionBase: CompositionPolyOS<<P as PackedExtension<FBase>>::PackedSubfield>,
-	Composition: CompositionPolyOS<P>,
+	CompositionBase: CompositionPoly<<P as PackedExtension<FBase>>::PackedSubfield>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync + 'm,
 	Backend: ComputationBackend,
 {
@@ -252,8 +252,8 @@ where
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-	CompositionBase: CompositionPolyOS<PackedSubfield<P, FBase>> + 'static,
-	Composition: CompositionPolyOS<P> + 'static,
+	CompositionBase: CompositionPoly<PackedSubfield<P, FBase>> + 'static,
+	Composition: CompositionPoly<P> + 'static,
 	M: MultilinearPoly<P> + Send + Sync + 'm,
 	Backend: ComputationBackend,
 {
@@ -450,7 +450,7 @@ where
 	F: Field,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -540,7 +540,7 @@ where
 	F: Field,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -629,7 +629,7 @@ impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 where
 	P: PackedField<Scalar: ExtensionField<FDomain>>,
 	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// In the first round of zerocheck we can uniquely determine the degree d
@@ -717,7 +717,7 @@ impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 where
 	P: PackedField<Scalar: ExtensionField<FDomain>>,
 	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// We can uniquely derive the degree d univariate round polynomial r from evaluations at

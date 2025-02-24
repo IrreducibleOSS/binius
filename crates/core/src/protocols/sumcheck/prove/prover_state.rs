@@ -8,7 +8,7 @@ use std::{
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	evaluate_univariate, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -253,7 +253,7 @@ where
 	) -> Result<Vec<RoundEvals<F>>, Error>
 	where
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>,
+		Composition: CompositionPoly<P>,
 	{
 		Ok(self.backend.sumcheck_compute_round_evals(
 			self.n_vars,

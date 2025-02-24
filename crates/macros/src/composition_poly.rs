@@ -43,7 +43,10 @@ impl ToTokens for CompositionPolyItem {
 			#[derive(Debug, Clone, Copy)]
 			struct #name;
 
-			impl binius_math::CompositionPoly<#scalar_type> for #name {
+			impl<P> binius_math::CompositionPoly<P> for #name
+			where
+				P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>,
+			{
 				fn n_vars(&self) -> usize {
 					#n_vars
 				}
@@ -56,18 +59,18 @@ impl ToTokens for CompositionPolyItem {
 					0
 				}
 
-				fn expression<FE: binius_field::ExtensionField<#scalar_type>>(&self) -> binius_math::ArithExpr<FE> {
+				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
 					(#expr).convert_field()
 				}
 
-				fn evaluate<P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>>(&self, query: &[P]) -> Result<P, binius_math::Error> {
+				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
 					if query.len() != #n_vars {
 						return Err(binius_math::Error::IncorrectQuerySize { expected: #n_vars });
 					}
 					Ok(#eval_single)
 				}
 
-				fn batch_evaluate<P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>>(
+				fn batch_evaluate(
 					&self,
 					batch_query: &[&[P]],
 					evals: &mut [P],
@@ -89,36 +92,6 @@ impl ToTokens for CompositionPolyItem {
 					Ok(())
 				}
 			}
-
-			impl<P> binius_math::CompositionPolyOS<P> for #name
-			where
-				P: binius_field::PackedField<Scalar: binius_field::ExtensionField<#scalar_type>>,
-			{
-				fn n_vars(&self) -> usize {
-					<Self as binius_math::CompositionPoly<_>>::n_vars(self)
-				}
-
-				fn degree(&self) -> usize {
-					<Self as binius_math::CompositionPoly<_>>::degree(self)
-				}
-
-				fn binary_tower_level(&self) -> usize {
-					<Self as binius_math::CompositionPoly<_>>::binary_tower_level(self)
-				}
-
-				fn expression(&self) -> binius_math::ArithExpr<P::Scalar> {
-					<Self as binius_math::CompositionPoly<_>>::expression(self)
-				}
-
-				fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-					<Self as binius_math::CompositionPoly<_>>::evaluate(self, query)
-				}
-
-				fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), binius_math::Error> {
-					<Self as binius_math::CompositionPoly<_>>::batch_evaluate(self, batch_query, evals)
-				}
-			}
-
 		};
 
 		if *is_anonymous {

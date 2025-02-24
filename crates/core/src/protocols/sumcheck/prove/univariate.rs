@@ -9,7 +9,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	CompositionPolyOS, Error as MathError, EvaluationDomainFactory,
+	CompositionPoly, Error as MathError, EvaluationDomainFactory,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -329,7 +329,7 @@ where
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<FBase, PackedSubfield: PackedFieldIndexable>
 		+ PackedExtension<FDomain, PackedSubfield: PackedFieldIndexable>,
-	Composition: CompositionPolyOS<PackedSubfield<P, FBase>>,
+	Composition: CompositionPoly<PackedSubfield<P, FBase>>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -744,7 +744,7 @@ mod tests {
 	};
 	use binius_hal::make_portable_backend;
 	use binius_math::{
-		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory, MultilinearPoly,
+		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, MultilinearPoly,
 	};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -879,11 +879,11 @@ mod tests {
 
 		let compositions = [
 			Arc::new(IndexComposition::new(9, [0, 1], ProductComposition::<2> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
 			Arc::new(IndexComposition::new(9, [2, 3, 4], ProductComposition::<3> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
 			Arc::new(IndexComposition::new(9, [5, 6, 7, 8], ProductComposition::<4> {}).unwrap())
-				as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
+				as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
 		];
 
 		let backend = make_portable_backend();

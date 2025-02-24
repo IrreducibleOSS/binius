@@ -7,7 +7,7 @@ use std::{
 
 use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
-	CompositionPolyOS, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
 use binius_maybe_rayon::iter::FromParallelIterator;
 use tracing::instrument;
@@ -56,7 +56,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>;
+		Composition: CompositionPoly<P>;
 
 	/// Partially evaluate the polynomial with assignment to the high-indexed variables.
 	fn evaluate_partial_high<P: PackedField>(
@@ -98,7 +98,7 @@ where
 		P: PackedExtension<FDomain>,
 		M: MultilinearPoly<P> + Send + Sync,
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
-		Composition: CompositionPolyOS<P>,
+		Composition: CompositionPoly<P>,
 	{
 		T::sumcheck_compute_round_evals(
 			self,
