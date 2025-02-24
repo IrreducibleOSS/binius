@@ -12,6 +12,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	Field, TowerField,
 };
+use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
@@ -51,7 +52,19 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		F: Field,
 		U: PackScalar<F>,
 	{
-		todo!()
+		let mut index = MultilinearExtensionIndex::new();
+		let mut oracle_id = 0;
+		for table in self.tables {
+			for (data, _) in table.cols {
+				let data = PackedType::<U, F>::from_underliers_ref(data);
+				let witness = MultilinearExtension::new(table.log_capacity, data)
+					.unwrap()
+					.specialize_arc_dyn();
+				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+				oracle_id += 1;
+			}
+		}
+		index
 	}
 }
 
