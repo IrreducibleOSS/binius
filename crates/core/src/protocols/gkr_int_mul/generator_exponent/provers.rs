@@ -12,7 +12,7 @@ use super::{
 	witness::GeneratorExponentWitness,
 };
 use crate::{
-	composition::{IndexComposition, PresizedIndexCompositions},
+	composition::{FixedDimIndexCompositions, IndexComposition},
 	protocols::{gkr_gpa::LayerClaim, gkr_int_mul::error::Error, sumcheck::CompositeSumClaim},
 	witness::MultilinearWitness,
 };
@@ -174,7 +174,7 @@ where
 			},
 		)?;
 
-		let composition = PresizedIndexCompositions::Bivariate(composition);
+		let composition = FixedDimIndexCompositions::Bivariate(composition);
 
 		let this_layer_composite_claim = CompositeSumClaim {
 			sum: self.0.current_layer_claim.eval,
@@ -270,7 +270,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 				[multilinears_index, multilinears_index + 1],
 				ExponentiationCompositions::DynamicGeneratorLastLayer,
 			)?;
-			let composition = PresizedIndexCompositions::Bivariate(composition);
+			let composition = FixedDimIndexCompositions::Bivariate(composition);
 			(composition, this_layer_multilinears)
 		} else {
 			let this_layer_input = self
@@ -288,7 +288,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 				],
 				ExponentiationCompositions::DynamicGenerator,
 			)?;
-			let composition = PresizedIndexCompositions::Trivariate(composition);
+			let composition = FixedDimIndexCompositions::Trivariate(composition);
 			(composition, this_layer_multilinears)
 		};
 
