@@ -93,14 +93,18 @@ where
 		} else {
 			let n_vars = self.layer_claim_eval_point().len();
 
+			let layer_eval = multilinear_evals[0];
+
+			let exponent_bit_eval = multilinear_evals[1];
+
 			let eval_point = &r[r.len() - n_vars..];
 			if !self.is_last_layer(layer_no) {
-				self.0.eval = multilinear_evals[0];
+				self.0.eval = layer_eval;
 				self.0.eval_point = eval_point.to_vec();
 			}
 
 			LayerClaim {
-				eval: multilinear_evals[1],
+				eval: exponent_bit_eval,
 				eval_point: eval_point.to_vec(),
 			}
 		}
@@ -164,10 +168,10 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 
 	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
 		if self.is_last_layer(layer_no) {
-			// Base, exponent_bit
+			// base, exponent_bit
 			(2, 1)
 		} else {
-			// this_round_input, exponent_bit, Base
+			// this_round_input, exponent_bit, base
 			(3, 1)
 		}
 	}
@@ -175,14 +179,18 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F> {
 		let n_vars = self.layer_claim_eval_point().len();
 
+		let layer_eval = multilinear_evals[0];
+
+		let exponent_bit_eval = multilinear_evals[1];
+
 		let eval_point = &r[r.len() - n_vars..];
 		if !self.is_last_layer(layer_no) {
-			self.0.eval = multilinear_evals[0];
+			self.0.eval = layer_eval;
 			self.0.eval_point = eval_point.to_vec();
 		}
 
 		LayerClaim {
-			eval: multilinear_evals[1],
+			eval: exponent_bit_eval,
 			eval_point: eval_point.to_vec(),
 		}
 	}

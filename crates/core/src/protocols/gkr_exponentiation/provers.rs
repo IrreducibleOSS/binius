@@ -94,15 +94,19 @@ impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
 		let n_vars = self.eval_point().len();
 		let eval_point = &r[r.len() - n_vars..];
 
+		let layer_eval = multilinear_evals[0];
+
+		let exponent_bit_eval = multilinear_evals[1];
+
 		if !self.is_last_layer(layer_no) {
 			self.current_layer_claim = LayerClaim {
-				eval: multilinear_evals[0],
+				eval: layer_eval,
 				eval_point: eval_point.to_vec(),
 			};
 		}
 
 		LayerClaim {
-			eval: multilinear_evals[1],
+			eval: exponent_bit_eval,
 			eval_point: eval_point.to_vec(),
 		}
 	}
@@ -306,10 +310,10 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 
 	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
 		if self.is_last_layer(layer_no) {
-			// Base, exponent_bit
+			// base, exponent_bit
 			(2, 1)
 		} else {
-			// this_layer_input, exponent_bit, Base
+			// this_layer_input, exponent_bit, base
 			(3, 1)
 		}
 	}
