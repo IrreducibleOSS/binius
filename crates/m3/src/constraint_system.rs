@@ -109,9 +109,9 @@ pub struct Channel {
 }
 
 pub struct ConstraintSystem<F: TowerField = B128> {
-	tables: Vec<Table<F>>,
+	pub tables: Vec<Table<F>>,
 	/// All valid channel IDs are strictly less than this bound.
-	channel_id_bound: ChannelId,
+	pub channel_id_bound: ChannelId,
 }
 
 impl<F: TowerField> ConstraintSystem<F> {

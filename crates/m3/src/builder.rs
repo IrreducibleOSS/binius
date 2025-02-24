@@ -427,7 +427,7 @@ impl<F: TowerField> TableBuilder<F> {
 	}
 
 	pub fn build(self) -> Table<F> {
-		todo!()
+		self.table
 	}
 }
 
@@ -459,6 +459,9 @@ impl<F: TowerField> ConstraintSystemBuilder<F> {
 	}
 
 	pub fn build(self) -> ConstraintSystem<F> {
-		todo!()
+		ConstraintSystem {
+			tables: self.tables.into_iter().map(|t| t.build()).collect(),
+			channel_id_bound: self.channel_id_bound,
+		}
 	}
 }
