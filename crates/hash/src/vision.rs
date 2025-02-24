@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter::repeat, marker::PhantomData};
+use std::{array, iter::repeat};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -12,8 +12,8 @@ use binius_field::{
 	underlier::{Divisible, WithUnderlier},
 	AESTowerField32b, AESTowerField8b, AesToBinaryTransformation, BinaryField, BinaryField32b,
 	BinaryField8b, BinaryToAesTransformation, ExtensionField, Field, PackedAESBinaryField32x8b,
-	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable,
-	PackedField, PackedFieldIndexable,
+	PackedAESBinaryField8x32b, PackedBinaryField32x8b, PackedBinaryField8x32b, PackedExtension,
+	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
@@ -209,12 +209,19 @@ impl VisionHasherDigest {
 	fn permute(state: &mut [PackedAESBinaryField8x32b; 3], data: &[u8]) {
 		debug_assert_eq!(data.len(), RATE_AS_U8);
 
-		let state_as_scalars: &mut [AESTowerField32b] =
-			PackedAESBinaryField8x32b::unpack_base_scalars_mut(state);
-		let state_as_u32s: &mut [u32] = AESTowerField32b::to_underliers_ref_mut(state_as_scalars);
+		let mut data_packed = [PackedBinaryField8x32b::zero(); 2];
+		for (i, value_32) in WithUnderlier::to_underliers_ref_mut(
+			PackedBinaryField8x32b::unpack_scalars_mut(&mut data_packed),
+		)
+		.iter_mut()
+		.enumerate()
+		{
+			*value_32 =
+				u32::from_le_bytes(data[i * 4..i * 4 + 4].try_into().expect("chunk is 4 bytes"));
+		}
 
-		for (i, chunk) in data.chunks_exact(4).enumerate() {
-			state_as_u32s[i] = u32::from_le_bytes(chunk.try_into().expect("chunk is 4 bytes"));
+		for i in 0..2 {
+			state[i] = TRANS_CANONICAL_TO_AES.transform(&data_packed[i]);
 		}
 
 		PERMUTATION.permute_mut(state);
@@ -656,7 +663,7 @@ mod tests {
 		hasher.update(&[0xde, 0xad, 0xbe, 0xef]);
 		let out = hasher.finalize();
 		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
-		let expected = &hex!("69e1764144099730124ab8ef1414570895ae9de0b74dedf364c72d118851cf65");
+		let expected = &hex!("a42b46ccea1a81cafc4b312c0bc233f169f8ecb2377e951d14461acfefc6b7b5");
 		assert_eq!(expected, &*out);
 	}
 
