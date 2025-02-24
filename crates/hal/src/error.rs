@@ -11,6 +11,8 @@ pub enum Error {
 	MathError(#[from] binius_math::Error),
 	#[error("the query must have size {expected}")]
 	IncorrectQuerySize { expected: usize },
+	#[error("provided nontrivial evaluation points are of incorrect length")]
+	IncorrectNontrivialEvalPointsLength,
 	#[error("{0}")]
 	FieldError(#[from] binius_field::Error),
 }
