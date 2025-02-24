@@ -2,10 +2,7 @@
 
 use std::{
 	cell::{Ref, RefCell, RefMut},
-	iter,
-	ops::{Deref, DerefMut},
-	slice,
-	sync::Arc,
+	iter, slice,
 };
 
 use binius_core::witness::MultilinearExtensionIndex;
@@ -13,10 +10,9 @@ use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	Field, PackedField, TowerField,
+	Field, TowerField,
 };
 use binius_maybe_rayon::prelude::*;
-use binius_utils::iter::IterExtensions;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 

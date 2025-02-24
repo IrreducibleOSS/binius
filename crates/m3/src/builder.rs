@@ -10,7 +10,6 @@ use binius_core::{constraint_system::channel::FlushDirection, oracle::ShiftVaria
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
 use getset::{CopyGetters, Getters};
-use static_assertions::const_assert_eq;
 
 use crate::{
 	constraint_system::{
@@ -356,17 +355,17 @@ impl<F: TowerField> TableBuilder<F> {
 		array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
 	}
 
-	pub fn add_packed<FSub, const V: usize, FSubSub, const VSub: usize>(
+	pub fn add_packed<FSub, const V: usize, FSubSub, const VSUB: usize>(
 		&mut self,
 		name: impl ToString,
-		col: Col<FSubSub, VSub>,
+		col: Col<FSubSub, VSUB>,
 	) -> Col<FSub, V>
 	where
 		FSub: TowerField + ExtensionField<FSubSub>,
 		FSubSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		assert_eq!(FSub::TOWER_LEVEL + V, FSubSub::TOWER_LEVEL + VSub);
+		assert_eq!(FSub::TOWER_LEVEL + V, FSubSub::TOWER_LEVEL + VSUB);
 		todo!()
 	}
 

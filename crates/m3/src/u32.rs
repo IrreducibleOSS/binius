@@ -4,15 +4,13 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	packed::set_packed_slice,
-	underlier::UnderlierType,
 	Field,
 };
-use bytemuck::{cast_slice_mut, must_cast_slice, must_cast_slice_mut, Pod};
+use bytemuck::Pod;
 
 use super::{
 	builder::{Col, TableBuilder},
-	types::{B1, B128, B16, B32, B64, B8},
-	witness::WitnessIndex,
+	types::B1,
 };
 use crate::witness::TableWitnessIndexSegment;
 
@@ -104,8 +102,8 @@ impl U32Add {
 		// insufficient.
 		PackedType<U, B1>: Pod,
 	{
-		let mut xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
-		let mut yin = index.get_mut_as(self.yin)?;
+		let xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
+		let yin = index.get_mut_as(self.yin)?;
 		let mut cout = index.get_mut_as(self.cout)?;
 		let mut final_carry = if let Some(final_carry) = self.final_carry {
 			let final_carry = index.get_mut(final_carry)?;

@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::{BinaryField1b, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;

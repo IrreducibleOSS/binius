@@ -15,7 +15,6 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::ConstraintSystem as CompiledConstraintSystem,
-	oracle,
 	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
 	transparent::step_down::StepDown,
 };
