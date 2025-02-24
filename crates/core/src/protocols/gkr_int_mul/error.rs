@@ -10,6 +10,8 @@ use crate::{
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("metas length does not conform to the provided indexed claims")]
+	MetasClaimMismatch,
 	#[error("incorrect witness type")]
 	IncorrectWitnessType,
 	#[error("claims must be sorted by number of variables")]
