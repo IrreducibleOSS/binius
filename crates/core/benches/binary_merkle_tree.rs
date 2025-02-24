@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use std::iter::repeat_with;
 
 use binius_core::merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver};
