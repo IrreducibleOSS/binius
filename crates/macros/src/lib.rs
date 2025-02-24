@@ -14,15 +14,15 @@ use crate::{
 	composition_poly::CompositionPolyItem,
 };
 
-/// Useful for concisely creating structs that implement CompositionPolyOS.
+/// Useful for concisely creating structs that implement CompositionPoly.
 /// This currently only supports creating composition polynomials of tower level 0.
 ///
 /// ```
 /// use binius_macros::composition_poly;
-/// use binius_math::CompositionPolyOS;
+/// use binius_math::CompositionPoly;
 /// use binius_field::{Field, BinaryField1b as F};
 ///
-/// // Defines named struct without any fields that implements CompositionPolyOS
+/// // Defines named struct without any fields that implements CompositionPoly
 /// composition_poly!(MyComposition[x, y, z] = x + y * z);
 /// assert_eq!(
 ///     MyComposition.evaluate(&[F::ONE, F::ONE, F::ONE]).unwrap(),

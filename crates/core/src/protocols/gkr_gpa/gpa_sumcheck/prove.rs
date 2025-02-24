@@ -4,9 +4,7 @@ use std::ops::Range;
 
 use binius_field::{util::eq, Field, PackedExtension, PackedField, PackedFieldIndexable};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
-};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
@@ -49,7 +47,7 @@ where
 	F: Field,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -194,7 +192,7 @@ where
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -289,7 +287,7 @@ where
 	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// By definition of grand product GKR circuit, the composition evaluation is a multilinear
@@ -343,7 +341,7 @@ where
 	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	#[instrument(
 		skip_all,

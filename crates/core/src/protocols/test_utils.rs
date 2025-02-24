@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use binius_field::{ExtensionField, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPolyOS, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{ArithExpr, CompositionPoly, MLEEmbeddingAdapter, MultilinearExtension};
 use rand::Rng;
 
 use crate::polynomial::Error as PolynomialError;
@@ -19,10 +19,10 @@ impl<Inner> AddOneComposition<Inner> {
 	}
 }
 
-impl<P, Inner> CompositionPolyOS<P> for AddOneComposition<Inner>
+impl<P, Inner> CompositionPoly<P> for AddOneComposition<Inner>
 where
 	P: PackedField,
-	Inner: CompositionPolyOS<P>,
+	Inner: CompositionPoly<P>,
 {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars()
@@ -56,7 +56,7 @@ impl TestProductComposition {
 	}
 }
 
-impl<P> CompositionPolyOS<P> for TestProductComposition
+impl<P> CompositionPoly<P> for TestProductComposition
 where
 	P: PackedField,
 {
