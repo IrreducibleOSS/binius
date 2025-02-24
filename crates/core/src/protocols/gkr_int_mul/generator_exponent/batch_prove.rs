@@ -248,16 +248,16 @@ where
 	let mut multilinear_evals = sumcheck_output.multilinear_evals.into_iter().flatten();
 
 	for prover in provers {
-		let (this_porver_n_multilinears, _) = prover.layer_n_multilinears_n_claims(layer_no);
+		let (this_prover_n_multilinears, _) = prover.layer_n_multilinears_n_claims(layer_no);
 
-		let this_porver_multilinear_evals = multilinear_evals
+		let this_prover_multilinear_evals = multilinear_evals
 			.by_ref()
-			.take(this_porver_n_multilinears)
+			.take(this_prover_n_multilinears)
 			.collect::<Vec<_>>();
 
 		let exponent_bit_claim = prover.finish_layer(
 			layer_no,
-			&this_porver_multilinear_evals,
+			&this_prover_multilinear_evals,
 			&sumcheck_output.challenges,
 		);
 
