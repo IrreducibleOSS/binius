@@ -330,63 +330,47 @@ pub fn constant(
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
 	use binius_field::{BinaryField1b, TowerField};
 
-	use crate::{arithmetic, builder::ConstraintSystemBuilder, unconstrained::unconstrained};
+	use crate::{arithmetic, builder::test_utils::test_circuit, unconstrained::unconstrained};
 
 	#[test]
 	fn test_mul_const() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let a = builder.add_committed("a", 5, BinaryField1b::TOWER_LEVEL);
-		if let Some(witness) = builder.witness() {
-			witness
-				.new_column::<BinaryField1b>(a)
-				.as_mut_slice::<u32>()
-				.iter_mut()
-				.for_each(|v| *v = 0b01000000_00000000_00000000_00000000u32);
-		}
-
-		let _c = arithmetic::u32::mul_const(&mut builder, "mul3", a, 3, arithmetic::Flags::Checked)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let a = builder.add_committed("a", 5, BinaryField1b::TOWER_LEVEL);
+			if let Some(witness) = builder.witness() {
+				witness
+					.new_column::<BinaryField1b>(a)
+					.as_mut_slice::<u32>()
+					.iter_mut()
+					.for_each(|v| *v = 0b01000000_00000000_00000000_00000000u32);
+			}
+			let _c = arithmetic::u32::mul_const(builder, "mul3", a, 3, arithmetic::Flags::Checked)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 
 	#[test]
 	fn test_add() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-		let log_size = 14;
-		let a = unconstrained::<BinaryField1b>(&mut builder, "a", log_size).unwrap();
-		let b = unconstrained::<BinaryField1b>(&mut builder, "b", log_size).unwrap();
-		let _c = arithmetic::u32::add(&mut builder, "u32add", a, b, arithmetic::Flags::Unchecked)
-			.unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let log_size = 14;
+			let a = unconstrained::<BinaryField1b>(builder, "a", log_size)?;
+			let b = unconstrained::<BinaryField1b>(builder, "b", log_size)?;
+			let _c = arithmetic::u32::add(builder, "u32add", a, b, arithmetic::Flags::Unchecked)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 
 	#[test]
 	fn test_sub() {
-		let allocator = bumpalo::Bump::new();
-		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
-
-		let a = unconstrained::<BinaryField1b>(&mut builder, "a", 7).unwrap();
-		let b = unconstrained::<BinaryField1b>(&mut builder, "a", 7).unwrap();
-		let _c =
-			arithmetic::u32::sub(&mut builder, "c", a, b, arithmetic::Flags::Unchecked).unwrap();
-
-		let witness = builder.take_witness().unwrap();
-		let constraint_system = builder.build().unwrap();
-		let boundaries = vec![];
-		validate_witness(&constraint_system, &boundaries, &witness).unwrap();
+		test_circuit(|builder| {
+			let a = unconstrained::<BinaryField1b>(builder, "a", 7).unwrap();
+			let b = unconstrained::<BinaryField1b>(builder, "a", 7).unwrap();
+			let _c = arithmetic::u32::sub(builder, "c", a, b, arithmetic::Flags::Unchecked)?;
+			Ok(vec![])
+		})
+		.unwrap();
 	}
 }

@@ -3,13 +3,11 @@
 use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
+use binius_math::{ArithExpr, CompositionPoly, Error};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
 };
-
-use super::MultivariatePoly;
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
@@ -50,10 +48,22 @@ fn circuit_steps_for_expr<F: Field>(
 				result.push(CircuitStep::Mul(left, right));
 				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
 			}
-			ArithExpr::Pow(id, exp) => {
-				let id = to_circuit_inner(id, result);
-				result.push(CircuitStep::Pow(id, *exp));
-				CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1))
+			ArithExpr::Pow(base, exp) => {
+				let mut acc = to_circuit_inner(base, result);
+				let base_expr = acc;
+				let highest_bit = exp.ilog2();
+
+				for i in (0..highest_bit).rev() {
+					result.push(CircuitStep::Square(acc));
+					acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+
+					if (exp >> i) & 1 != 0 {
+						result.push(CircuitStep::Mul(acc, base_expr));
+						acc = CircuitStepArgument::Expr(CircuitNode::Slot(result.len() - 1));
+					}
+				}
+
+				acc
 			}
 		}
 	}
@@ -63,7 +73,7 @@ fn circuit_steps_for_expr<F: Field>(
 }
 
 /// Input of the circuit calculation step
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CircuitNode {
 	/// Input variable
 	Var(usize),
@@ -87,7 +97,7 @@ impl CircuitNode {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CircuitStepArgument<F> {
 	Expr(CircuitNode),
 	Const(F),
@@ -101,15 +111,15 @@ enum CircuitStepArgument<F> {
 enum CircuitStep<F: Field> {
 	Add(CircuitStepArgument<F>, CircuitStepArgument<F>),
 	Mul(CircuitStepArgument<F>, CircuitStepArgument<F>),
-	Pow(CircuitStepArgument<F>, u64),
+	Square(CircuitStepArgument<F>),
 	AddMul(usize, CircuitStepArgument<F>, CircuitStepArgument<F>),
 }
 
 /// Describes polynomial evaluations using a directed acyclic graph of expressions.
 ///
-/// This is meant as an alternative to a hard-coded CompositionPolyOS.
+/// This is meant as an alternative to a hard-coded CompositionPoly.
 ///
-/// The advantage over a hard coded CompositionPolyOS is that this can be constructed and manipulated dynamically at runtime
+/// The advantage over a hard coded CompositionPoly is that this can be constructed and manipulated dynamically at runtime
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: Field> {
@@ -165,7 +175,9 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 	}
 }
 
-impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
+impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>
+	for ArithCircuitPoly<F>
+{
 	fn degree(&self) -> usize {
 		self.degree
 	}
@@ -178,11 +190,11 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		self.tower_level
 	}
 
-	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
+	fn expression(&self) -> ArithExpr<P::Scalar> {
 		self.expr.convert_field()
 	}
 
-	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -231,8 +243,8 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 						after,
 						get_argument_value(*x, before) * get_argument_value(*y, before),
 					),
-					CircuitStep::Pow(id, exp) => {
-						write_result(after, get_argument_value(*id, before).pow(*exp))
+					CircuitStep::Square(x) => {
+						write_result(after, get_argument_value(*x, before).square())
 					}
 				};
 			}
@@ -246,11 +258,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		})
 	}
 
-	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
-		&self,
-		batch_query: &[&[P]],
-		evals: &mut [P],
-	) -> Result<(), Error> {
+	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
 		if batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
@@ -290,29 +298,31 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 							},
 						);
 					}
-					CircuitStep::Pow(id, exp) => match id {
-						CircuitStepArgument::Expr(id) => {
-							let id = id.get_sparse_chunk(batch_query, before, row_len);
-							for j in 0..row_len {
-								// Safety: `current` and `id` have length equal to `row_len`
-								unsafe {
-									current
-										.get_unchecked_mut(j)
-										.write(id.get_unchecked(j).pow(*exp));
+					CircuitStep::Square(arg) => {
+						match arg {
+							CircuitStepArgument::Expr(node) => {
+								let id_chunk = node.get_sparse_chunk(batch_query, before, row_len);
+								for j in 0..row_len {
+									// Safety: `current` and `id_chunk` have length equal to `row_len`
+									unsafe {
+										current
+											.get_unchecked_mut(j)
+											.write(id_chunk.get_unchecked(j).square());
+									}
+								}
+							}
+							CircuitStepArgument::Const(value) => {
+								let value: P = P::broadcast((*value).into());
+								let result = value.square();
+								for j in 0..row_len {
+									// Safety: `current` has length equal to `row_len`
+									unsafe {
+										current.get_unchecked_mut(j).write(result);
+									}
 								}
 							}
 						}
-						CircuitStepArgument::Const(id) => {
-							let id: P = P::broadcast((*id).into());
-							let result = id.pow(*exp);
-							for j in 0..row_len {
-								// Safety: `current` has length equal to `row_len`
-								unsafe {
-									current.get_unchecked_mut(j).write(result);
-								}
-							}
-						}
-					},
+					}
 					CircuitStep::AddMul(target, left, right) => {
 						let target = &before[row_len * target..(target + 1) * row_len];
 						// Safety: by construction of steps and evaluation order we know
@@ -351,52 +361,6 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		});
 
 		Ok(())
-	}
-}
-
-impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS<P>
-	for ArithCircuitPoly<F>
-{
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(self)
-	}
-
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.expr.convert_field()
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(self)
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
-		CompositionPoly::evaluate(self, query)
-	}
-
-	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
-		CompositionPoly::batch_evaluate(self, batch_query, evals)
-	}
-}
-
-impl<F: TowerField> MultivariatePoly<F> for ArithCircuitPoly<F> {
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(&self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(&self)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(&self)
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, super::Error> {
-		CompositionPoly::evaluate(&self, query).map_err(|e| e.into())
 	}
 }
 
@@ -471,7 +435,7 @@ mod tests {
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
-	use binius_math::CompositionPolyOS;
+	use binius_math::CompositionPoly;
 	use binius_utils::felts;
 
 	use super::*;
@@ -484,7 +448,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123));
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
 		assert_eq!(typed_circuit.degree(), 0);
 		assert_eq!(typed_circuit.n_vars(), 0);
@@ -505,7 +469,7 @@ mod tests {
 		let expr = ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -533,7 +497,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123)) + ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -553,7 +517,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123)) * ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -579,7 +543,7 @@ mod tests {
 		let expr = ArithExpr::Var(0).pow(13);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 13);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -605,7 +569,7 @@ mod tests {
 		let expr = ArithExpr::Var(0).pow(2) * (ArithExpr::Var(1) + ArithExpr::Const(F::new(123)));
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 3);
 		assert_eq!(typed_circuit.n_vars(), 2);
@@ -667,7 +631,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 		assert_eq!(circuit.steps.len(), 2);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 2);
@@ -726,7 +690,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 		assert_eq!(circuit.steps.len(), 1);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 1);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -751,9 +715,9 @@ mod tests {
 		// ((x0^2)^3)^4
 		let expr = ArithExpr::Var(0).pow(2).pow(3).pow(4);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
-		assert_eq!(circuit.steps.len(), 1);
+		assert_eq!(circuit.steps.len(), 5);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 24);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -767,6 +731,360 @@ mod tests {
 			)
 			.unwrap(),
 			P::from_scalars(felts!(BinaryField16b[0, 1, 1, 1, 20, 152, 41, 170])),
+		);
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_constant() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::Const(F::new(5));
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert!(steps.is_empty(), "No steps should be generated for a constant");
+		assert_eq!(retval, CircuitStepArgument::Const(F::new(5)));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_variable() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(18);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert!(steps.is_empty(), "No steps should be generated for a variable");
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Var(18))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_addition() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(14) + ArithExpr::<F>::Var(56);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 1, "One addition step should be generated");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Add(
+				CircuitStepArgument::Expr(CircuitNode::Var(14)),
+				CircuitStepArgument::Expr(CircuitNode::Var(56))
+			)
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(0))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_multiplication() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(36) * ArithExpr::Var(26);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 1, "One multiplication step should be generated");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Var(36)),
+				CircuitStepArgument::Expr(CircuitNode::Var(26))
+			)
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(0))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_1() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(12).pow(1);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		// No steps should be generated for x^1
+		assert_eq!(steps.len(), 0, "Pow(1) should not generate any computation steps");
+
+		// The return value should just be the variable itself
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Var(12))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_2() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(10).pow(2);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 1, "Pow(2) should generate one squaring step");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(10)))
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(0))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_3() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(5).pow(3);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(
+			steps.len(),
+			2,
+			"Pow(3) should generate one squaring and one multiplication step"
+		);
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(5)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+				CircuitStepArgument::Expr(CircuitNode::Var(5))
+			)
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(1))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_4() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(7).pow(4);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 2, "Pow(4) should generate two squaring steps");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(7)))
+		));
+
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(1))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_5() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(3).pow(5);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(
+			steps.len(),
+			3,
+			"Pow(5) should generate two squaring steps and one multiplication"
+		);
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(3)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(1)),
+				CircuitStepArgument::Expr(CircuitNode::Var(3))
+			)
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_8() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(4).pow(8);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 3, "Pow(8) should generate three squaring steps");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(4)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(2))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_9() {
+		type F = BinaryField8b;
+
+		let expr = ArithExpr::<F>::Var(8).pow(9);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(
+			steps.len(),
+			4,
+			"Pow(9) should generate three squaring steps and one multiplication"
+		);
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(8)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(0)))
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(2)),
+				CircuitStepArgument::Expr(CircuitNode::Var(8))
+			)
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_12() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(6).pow(12);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 4, "Pow(12) should use 4 steps.");
+
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(6)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+				CircuitStepArgument::Expr(CircuitNode::Var(6))
+			)
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(2)))
+		));
+
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_pow_13() {
+		type F = BinaryField8b;
+		let expr = ArithExpr::<F>::Var(7).pow(13);
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 5, "Pow(13) should use 5 steps.");
+		assert!(matches!(
+			steps[0],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Var(7)))
+		));
+		assert!(matches!(
+			steps[1],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+				CircuitStepArgument::Expr(CircuitNode::Var(7))
+			)
+		));
+		assert!(matches!(
+			steps[2],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(1)))
+		));
+		assert!(matches!(
+			steps[3],
+			CircuitStep::Square(CircuitStepArgument::Expr(CircuitNode::Slot(2)))
+		));
+		assert!(matches!(
+			steps[4],
+			CircuitStep::Mul(
+				CircuitStepArgument::Expr(CircuitNode::Slot(3)),
+				CircuitStepArgument::Expr(CircuitNode::Var(7))
+			)
+		));
+		assert!(matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(4))));
+	}
+
+	#[test]
+	fn test_circuit_steps_for_expr_complex() {
+		type F = BinaryField8b;
+
+		let expr = (ArithExpr::<F>::Var(0) * ArithExpr::Var(1))
+			+ (ArithExpr::Const(F::ONE) - ArithExpr::Var(0)) * ArithExpr::Var(2)
+			- ArithExpr::Var(3);
+
+		let (steps, retval) = circuit_steps_for_expr(&expr);
+
+		assert_eq!(steps.len(), 4, "Expression should generate 4 computation steps");
+
+		assert!(
+			matches!(
+				steps[0],
+				CircuitStep::Mul(
+					CircuitStepArgument::Expr(CircuitNode::Var(0)),
+					CircuitStepArgument::Expr(CircuitNode::Var(1))
+				)
+			),
+			"First step should be multiplication x0 * x1"
+		);
+
+		assert!(
+			matches!(
+				steps[1],
+				CircuitStep::Add(
+					CircuitStepArgument::Const(F::ONE),
+					CircuitStepArgument::Expr(CircuitNode::Var(0))
+				)
+			),
+			"Second step should be (1 - x0)"
+		);
+
+		assert!(
+			matches!(
+				steps[2],
+				CircuitStep::AddMul(
+					0,
+					CircuitStepArgument::Expr(CircuitNode::Slot(1)),
+					CircuitStepArgument::Expr(CircuitNode::Var(2))
+				)
+			),
+			"Third step should be (1 - x0) * x2"
+		);
+
+		assert!(
+			matches!(
+				steps[3],
+				CircuitStep::Add(
+					CircuitStepArgument::Expr(CircuitNode::Slot(0)),
+					CircuitStepArgument::Expr(CircuitNode::Var(3))
+				)
+			),
+			"Fourth step should be x0 * x1 + (1 - x0) * x2 + x3"
+		);
+
+		assert!(
+			matches!(retval, CircuitStepArgument::Expr(CircuitNode::Slot(3))),
+			"Final result should be stored in Slot(3)"
 		);
 	}
 }

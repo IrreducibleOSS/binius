@@ -7,8 +7,11 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	DeserializeBytes, SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{Pod, Zeroable};
-use bytes::{Buf, BufMut};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
@@ -16,8 +19,7 @@ use super::{
 	binary_field_arithmetic::TowerFieldArithmetic, error::Error, extension::ExtensionField,
 };
 use crate::{
-	serialization::{DeserializeBytes, Error as SerializationError, SerializeBytes},
-	underlier::{SmallU, U1, U2, U4},
+	underlier::{U1, U2, U4},
 	Field,
 };
 
@@ -618,6 +620,13 @@ macro_rules! impl_field_extension {
 				IterationMethods::<<$subfield_name as WithUnderlier>::Underlier, Self::Underlier>::value_iter(self.0)
 					.map_skippable($subfield_name::from)
 			}
+
+			#[inline]
+			unsafe fn get_base_unchecked(&self, i: usize) -> $subfield_name {
+				use $crate::underlier::{WithUnderlier, UnderlierWithBitOps};
+
+				$subfield_name::from_underlier(self.to_underlier().get_subvalue(i))
+			}
 		}
 	};
 }
@@ -733,60 +742,36 @@ pub fn is_canonical_tower<F: TowerField>() -> bool {
 }
 
 macro_rules! serialize_deserialize {
-	($bin_type:ty, SmallU<$U:literal>) => {
+	($bin_type:ty) => {
 		impl SerializeBytes for $bin_type {
-			fn serialize(&self, mut write_buf: impl BufMut) -> Result<(), SerializationError> {
-				if write_buf.remaining_mut() < 1 {
-					::binius_utils::bail!(SerializationError::WriteBufferFull);
-				}
-				let b = self.0.val();
-				write_buf.put_u8(b);
-				Ok(())
+			fn serialize(
+				&self,
+				write_buf: impl BufMut,
+				mode: SerializationMode,
+			) -> Result<(), SerializationError> {
+				self.0.serialize(write_buf, mode)
 			}
 		}
 
 		impl DeserializeBytes for $bin_type {
-			fn deserialize(mut read_buf: impl Buf) -> Result<Self, SerializationError> {
-				if read_buf.remaining() < 1 {
-					::binius_utils::bail!(SerializationError::NotEnoughBytes);
-				}
-				let b: u8 = read_buf.get_u8();
-				Ok(Self(SmallU::<$U>::new(b)))
-			}
-		}
-	};
-	($bin_type:ty, $inner_type:ty) => {
-		impl SerializeBytes for $bin_type {
-			fn serialize(&self, mut write_buf: impl BufMut) -> Result<(), SerializationError> {
-				if write_buf.remaining_mut() < (<$inner_type>::BITS / 8) as usize {
-					::binius_utils::bail!(SerializationError::WriteBufferFull);
-				}
-				write_buf.put_slice(&self.0.to_le_bytes());
-				Ok(())
-			}
-		}
-
-		impl DeserializeBytes for $bin_type {
-			fn deserialize(mut read_buf: impl Buf) -> Result<Self, SerializationError> {
-				let mut inner = <$inner_type>::default().to_le_bytes();
-				if read_buf.remaining() < inner.len() {
-					::binius_utils::bail!(SerializationError::NotEnoughBytes);
-				}
-				read_buf.copy_to_slice(&mut inner);
-				Ok(Self(<$inner_type>::from_le_bytes(inner)))
+			fn deserialize(
+				read_buf: impl Buf,
+				mode: SerializationMode,
+			) -> Result<Self, SerializationError> {
+				Ok(Self(DeserializeBytes::deserialize(read_buf, mode)?))
 			}
 		}
 	};
 }
 
-serialize_deserialize!(BinaryField1b, SmallU<1>);
-serialize_deserialize!(BinaryField2b, SmallU<2>);
-serialize_deserialize!(BinaryField4b, SmallU<4>);
-serialize_deserialize!(BinaryField8b, u8);
-serialize_deserialize!(BinaryField16b, u16);
-serialize_deserialize!(BinaryField32b, u32);
-serialize_deserialize!(BinaryField64b, u64);
-serialize_deserialize!(BinaryField128b, u128);
+serialize_deserialize!(BinaryField1b);
+serialize_deserialize!(BinaryField2b);
+serialize_deserialize!(BinaryField4b);
+serialize_deserialize!(BinaryField8b);
+serialize_deserialize!(BinaryField16b);
+serialize_deserialize!(BinaryField32b);
+serialize_deserialize!(BinaryField64b);
+serialize_deserialize!(BinaryField128b);
 
 impl From<BinaryField1b> for Choice {
 	fn from(val: BinaryField1b) -> Self {
@@ -877,7 +862,7 @@ impl From<BinaryField4b> for u8 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-	use bytes::BytesMut;
+	use binius_utils::{bytes::BytesMut, SerializationMode};
 	use proptest::prelude::*;
 
 	use super::{
@@ -1246,6 +1231,7 @@ pub(crate) mod tests {
 
 	#[test]
 	fn test_serialization() {
+		let mode = SerializationMode::CanonicalTower;
 		let mut buffer = BytesMut::new();
 		let b1 = BinaryField1b::from(0x1);
 		let b8 = BinaryField8b::new(0x12);
@@ -1256,25 +1242,25 @@ pub(crate) mod tests {
 		let b64 = BinaryField64b::new(0x13579BDF02468ACE);
 		let b128 = BinaryField128b::new(0x147AD0369CF258BE8899AABBCCDDEEFF);
 
-		b1.serialize(&mut buffer).unwrap();
-		b8.serialize(&mut buffer).unwrap();
-		b2.serialize(&mut buffer).unwrap();
-		b16.serialize(&mut buffer).unwrap();
-		b32.serialize(&mut buffer).unwrap();
-		b4.serialize(&mut buffer).unwrap();
-		b64.serialize(&mut buffer).unwrap();
-		b128.serialize(&mut buffer).unwrap();
+		b1.serialize(&mut buffer, mode).unwrap();
+		b8.serialize(&mut buffer, mode).unwrap();
+		b2.serialize(&mut buffer, mode).unwrap();
+		b16.serialize(&mut buffer, mode).unwrap();
+		b32.serialize(&mut buffer, mode).unwrap();
+		b4.serialize(&mut buffer, mode).unwrap();
+		b64.serialize(&mut buffer, mode).unwrap();
+		b128.serialize(&mut buffer, mode).unwrap();
 
 		let mut read_buffer = buffer.freeze();
 
-		assert_eq!(BinaryField1b::deserialize(&mut read_buffer).unwrap(), b1);
-		assert_eq!(BinaryField8b::deserialize(&mut read_buffer).unwrap(), b8);
-		assert_eq!(BinaryField2b::deserialize(&mut read_buffer).unwrap(), b2);
-		assert_eq!(BinaryField16b::deserialize(&mut read_buffer).unwrap(), b16);
-		assert_eq!(BinaryField32b::deserialize(&mut read_buffer).unwrap(), b32);
-		assert_eq!(BinaryField4b::deserialize(&mut read_buffer).unwrap(), b4);
-		assert_eq!(BinaryField64b::deserialize(&mut read_buffer).unwrap(), b64);
-		assert_eq!(BinaryField128b::deserialize(&mut read_buffer).unwrap(), b128);
+		assert_eq!(BinaryField1b::deserialize(&mut read_buffer, mode).unwrap(), b1);
+		assert_eq!(BinaryField8b::deserialize(&mut read_buffer, mode).unwrap(), b8);
+		assert_eq!(BinaryField2b::deserialize(&mut read_buffer, mode).unwrap(), b2);
+		assert_eq!(BinaryField16b::deserialize(&mut read_buffer, mode).unwrap(), b16);
+		assert_eq!(BinaryField32b::deserialize(&mut read_buffer, mode).unwrap(), b32);
+		assert_eq!(BinaryField4b::deserialize(&mut read_buffer, mode).unwrap(), b4);
+		assert_eq!(BinaryField64b::deserialize(&mut read_buffer, mode).unwrap(), b64);
+		assert_eq!(BinaryField128b::deserialize(&mut read_buffer, mode).unwrap(), b128);
 	}
 
 	#[test]

@@ -2,9 +2,10 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{BinaryField128b, Field, PackedField, TowerField};
+use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -20,11 +21,18 @@ use crate::polynomial::{Error, MultivariatePoly};
 ///
 /// Thus, $\mathcal{T}_{\iota+k}$ has a $\mathcal{T}_{\iota}$-basis of size $2^k$:
 /// * $1, X_{\iota}, X_{\iota+1}, X_{\iota}X_{\iota+1}, X_{\iota+2}, \ldots, X_{\iota} X_{\iota+1} \ldots X_{\iota+k-1}$
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, SerializeBytes, DeserializeBytes)]
 pub struct TowerBasis<F: Field> {
 	k: usize,
 	iota: usize,
 	_marker: PhantomData<F>,
+}
+
+inventory::submit! {
+	<dyn MultivariatePoly<BinaryField128b>>::register_deserializer(
+		"TowerBasis",
+		|buf, mode| Ok(Box::new(TowerBasis::<BinaryField128b>::deserialize(&mut *buf, mode)?))
+	)
 }
 
 impl<F: TowerField> TowerBasis<F> {
@@ -62,6 +70,7 @@ impl<F: TowerField> TowerBasis<F> {
 	}
 }
 
+#[erased_serialize_bytes]
 impl<F> MultivariatePoly<F> for TowerBasis<F>
 where
 	F: TowerField,

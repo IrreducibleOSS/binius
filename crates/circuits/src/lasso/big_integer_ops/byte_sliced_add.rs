@@ -13,15 +13,15 @@ use crate::{
 type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 
-pub fn byte_sliced_add<Level: TowerLevel<OracleId, Data: Sized>>(
+pub fn byte_sliced_add<Level: TowerLevel<Data<OracleId>: Sized>>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString + Clone,
-	x_in: &Level::Data,
-	y_in: &Level::Data,
+	x_in: &Level::Data<OracleId>,
+	y_in: &Level::Data<OracleId>,
 	carry_in: OracleId,
 	log_size: usize,
 	lookup_batch_add: &mut LookupBatch,
-) -> Result<(OracleId, Level::Data), anyhow::Error> {
+) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error> {
 	if Level::WIDTH == 1 {
 		let (carry_out, sum) =
 			u8add(builder, lookup_batch_add, name, x_in[0], y_in[0], carry_in, log_size)?;

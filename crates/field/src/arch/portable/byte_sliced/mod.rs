@@ -15,8 +15,8 @@ pub mod tests {
 				use proptest::prelude::*;
 				use crate::{$scalar_type, underlier::WithUnderlier, packed::PackedField, arch::byte_sliced::$name};
 
-				fn scalar_array_strategy() -> impl Strategy<Value = [$scalar_type; 32]> {
-					any::<[<$scalar_type as WithUnderlier>::Underlier; 32]>().prop_map(|arr| arr.map(<$scalar_type>::from_underlier))
+				fn scalar_array_strategy() -> impl Strategy<Value = [$scalar_type; <$name>::WIDTH]> {
+					any::<[<$scalar_type as WithUnderlier>::Underlier; <$name>::WIDTH]>().prop_map(|arr| arr.map(<$scalar_type>::from_underlier))
 				}
 
 				proptest! {
@@ -27,7 +27,7 @@ pub mod tests {
 
 						let bytesliced_result = bytesliced_a + bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_result.get(i));
 						}
 					}
@@ -39,7 +39,7 @@ pub mod tests {
 
 						bytesliced_a += bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] + scalar_elems_b[i], bytesliced_a.get(i));
 						}
 					}
@@ -51,7 +51,7 @@ pub mod tests {
 
 						let bytesliced_result = bytesliced_a - bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_result.get(i));
 						}
 					}
@@ -63,7 +63,7 @@ pub mod tests {
 
 						bytesliced_a -= bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] - scalar_elems_b[i], bytesliced_a.get(i));
 						}
 					}
@@ -75,7 +75,7 @@ pub mod tests {
 
 						let bytesliced_result = bytesliced_a * bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_result.get(i));
 						}
 					}
@@ -87,7 +87,7 @@ pub mod tests {
 
 						bytesliced_a *= bytesliced_b;
 
-						for i in 0..32 {
+						for i in 0..<$name>::WIDTH {
 							assert_eq!(scalar_elems_a[i] * scalar_elems_b[i], bytesliced_a.get(i));
 						}
 					}
@@ -113,14 +113,61 @@ pub mod tests {
 							assert_eq!(scalar_elem.square(), bytesliced_result.get(i));
 						}
 					}
+
+					#[test]
+					fn check_linear_transformation(scalar_elems in scalar_array_strategy()) {
+						use crate::linear_transformation::{PackedTransformationFactory, FieldLinearTransformation, Transformation};
+						use rand::{rngs::StdRng, SeedableRng};
+
+						let bytesliced = <$name>::from_scalars(scalar_elems);
+
+						let linear_transformation = FieldLinearTransformation::random(StdRng::seed_from_u64(0));
+						let packed_transformation = <$name>::make_packed_transformation(linear_transformation.clone());
+
+						let bytesliced_result = packed_transformation.transform(&bytesliced);
+
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(linear_transformation.transform(&scalar_elems[i]), bytesliced_result.get(i));
+						}
+					}
 				}
 			}
 		};
 	}
 
+	// 128-bit byte-sliced
+	define_byte_sliced_test!(tests_16x128, ByteSlicedAES16x128b, AESTowerField128b);
+	define_byte_sliced_test!(tests_16x64, ByteSlicedAES16x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_16x32, ByteSlicedAES16x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_16x16, ByteSlicedAES16x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_16x8, ByteSlicedAES16x8b, AESTowerField8b);
+
+	define_byte_sliced_test!(tests_16x16x8b, ByteSlicedAES16x16x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_8x16x8b, ByteSlicedAES8x16x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_4x16x8b, ByteSlicedAES4x16x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_2x16x8b, ByteSlicedAES2x16x8b, AESTowerField8b);
+
+	// 256-bit byte-sliced
 	define_byte_sliced_test!(tests_32x128, ByteSlicedAES32x128b, AESTowerField128b);
 	define_byte_sliced_test!(tests_32x64, ByteSlicedAES32x64b, AESTowerField64b);
 	define_byte_sliced_test!(tests_32x32, ByteSlicedAES32x32b, AESTowerField32b);
 	define_byte_sliced_test!(tests_32x16, ByteSlicedAES32x16b, AESTowerField16b);
 	define_byte_sliced_test!(tests_32x8, ByteSlicedAES32x8b, AESTowerField8b);
+
+	define_byte_sliced_test!(tests_16x32x8b, ByteSlicedAES16x32x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_8x32x8b, ByteSlicedAES8x32x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_4x32x8b, ByteSlicedAES4x32x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_2x32x8b, ByteSlicedAES2x32x8b, AESTowerField8b);
+
+	// 512-bit byte-sliced
+	define_byte_sliced_test!(tests_64x128, ByteSlicedAES64x128b, AESTowerField128b);
+	define_byte_sliced_test!(tests_64x64, ByteSlicedAES64x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_64x32, ByteSlicedAES64x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_64x16, ByteSlicedAES64x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_64x8, ByteSlicedAES64x8b, AESTowerField8b);
+
+	define_byte_sliced_test!(tests_16x64x8b, ByteSlicedAES16x64x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_8x64x8b, ByteSlicedAES8x64x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_4x64x8b, ByteSlicedAES4x64x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_2x64x8b, ByteSlicedAES2x64x8b, AESTowerField8b);
 }

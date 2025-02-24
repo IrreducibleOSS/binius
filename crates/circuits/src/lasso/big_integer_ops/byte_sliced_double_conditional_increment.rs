@@ -14,16 +14,16 @@ type B1 = BinaryField1b;
 type B8 = BinaryField8b;
 
 #[allow(clippy::too_many_arguments)]
-pub fn byte_sliced_double_conditional_increment<Level: TowerLevel<OracleId, Data: Sized>>(
+pub fn byte_sliced_double_conditional_increment<Level: TowerLevel<Data<OracleId>: Sized>>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	x_in: &Level::Data,
+	x_in: &Level::Data<OracleId>,
 	first_carry_in: OracleId,
 	second_carry_in: OracleId,
 	log_size: usize,
 	zero_oracle_carry: usize,
 	lookup_batch_dci: &mut LookupBatch,
-) -> Result<(OracleId, Level::Data), anyhow::Error> {
+) -> Result<(OracleId, Level::Data<OracleId>), anyhow::Error> {
 	if Level::WIDTH == 1 {
 		let (carry_out, sum) = u8_double_conditional_increment(
 			builder,

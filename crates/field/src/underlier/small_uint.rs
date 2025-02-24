@@ -6,7 +6,12 @@ use std::{
 	ops::{Not, Shl, Shr},
 };
 
-use binius_utils::checked_arithmetics::checked_log_2;
+use binius_utils::{
+	bytes::{Buf, BufMut},
+	checked_arithmetics::checked_log_2,
+	serialization::DeserializeBytes,
+	SerializationError, SerializationMode, SerializeBytes,
+};
 use bytemuck::{NoUninit, Zeroable};
 use derive_more::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
 use rand::{
@@ -154,6 +159,14 @@ impl<const N: usize> UnderlierWithBitOps for SmallU<N> {
 	fn fill_with_bit(val: u8) -> Self {
 		Self(u8::fill_with_bit(val)) & Self::ONES
 	}
+
+	fn shl_128b_lanes(self, rhs: usize) -> Self {
+		self << rhs
+	}
+
+	fn shr_128b_lanes(self, rhs: usize) -> Self {
+		self >> rhs
+	}
 }
 
 impl<const N: usize> From<SmallU<N>> for u8 {
@@ -222,3 +235,22 @@ impl From<SmallU<2>> for SmallU<4> {
 pub type U1 = SmallU<1>;
 pub type U2 = SmallU<2>;
 pub type U4 = SmallU<4>;
+
+impl<const N: usize> SerializeBytes for SmallU<N> {
+	fn serialize(
+		&self,
+		write_buf: impl BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		self.val().serialize(write_buf, mode)
+	}
+}
+
+impl<const N: usize> DeserializeBytes for SmallU<N> {
+	fn deserialize(read_buf: impl Buf, mode: SerializationMode) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		Ok(Self::new(DeserializeBytes::deserialize(read_buf, mode)?))
+	}
+}

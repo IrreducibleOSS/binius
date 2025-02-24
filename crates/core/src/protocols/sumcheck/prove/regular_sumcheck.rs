@@ -4,9 +4,7 @@ use std::{marker::PhantomData, ops::Range};
 
 use binius_field::{Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{
-	CompositionPolyOS, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly,
-};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
@@ -31,7 +29,7 @@ where
 	F: Field,
 	P: PackedField<Scalar = F>,
 	M: MultilinearPoly<P> + Send + Sync,
-	Composition: CompositionPolyOS<P> + 'a,
+	Composition: CompositionPoly<P> + 'a,
 {
 	let n_vars = multilinears
 		.first()
@@ -85,7 +83,7 @@ where
 	F: Field,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -169,7 +167,7 @@ where
 	F: Field,
 	FDomain: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
@@ -219,7 +217,7 @@ where
 	F: Field,
 	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
 	FDomain: Field,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
 		// NB: We skip evaluation of $r(X)$ at $X = 0$ as it is derivable from the

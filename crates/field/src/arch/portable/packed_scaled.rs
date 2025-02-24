@@ -3,7 +3,7 @@
 use std::{
 	array,
 	iter::{Product, Sum},
-	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;
@@ -373,10 +373,10 @@ where
 	OP: PackedBinaryField,
 	IP: PackedTransformationFactory<OP>,
 {
-	type PackedTransformation<Data: Deref<Target = [OP::Scalar]> + Sync> =
+	type PackedTransformation<Data: AsRef<[OP::Scalar]> + Sync> =
 		ScaledTransformation<IP::PackedTransformation<Data>>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	fn make_packed_transformation<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<
 			<ScaledPackedField<OP, N> as PackedField>::Scalar,
 			Data,
@@ -397,20 +397,23 @@ macro_rules! packed_scaled_field {
 		impl std::ops::Add<<$inner as $crate::packed::PackedField>::Scalar> for $name {
 			type Output = Self;
 
-			fn add(self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
-				let mut result = Self::default();
-				for i in 0..Self::WIDTH_IN_PT {
-					result.0[i] = self.0[i] + rhs;
+			#[inline]
+			fn add(mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v += broadcast;
 				}
 
-				result
+				self
 			}
 		}
 
 		impl std::ops::AddAssign<<$inner as $crate::packed::PackedField>::Scalar> for $name {
+			#[inline]
 			fn add_assign(&mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) {
-				for i in 0..Self::WIDTH_IN_PT {
-					self.0[i] += rhs;
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v += broadcast;
 				}
 			}
 		}
@@ -418,20 +421,23 @@ macro_rules! packed_scaled_field {
 		impl std::ops::Sub<<$inner as $crate::packed::PackedField>::Scalar> for $name {
 			type Output = Self;
 
-			fn sub(self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
-				let mut result = Self::default();
-				for i in 0..Self::WIDTH_IN_PT {
-					result.0[i] = self.0[i] - rhs;
+			#[inline]
+			fn sub(mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v -= broadcast;
 				}
 
-				result
+				self
 			}
 		}
 
 		impl std::ops::SubAssign<<$inner as $crate::packed::PackedField>::Scalar> for $name {
+			#[inline]
 			fn sub_assign(&mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) {
-				for i in 0..Self::WIDTH_IN_PT {
-					self.0[i] -= rhs;
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v -= broadcast;
 				}
 			}
 		}
@@ -439,20 +445,23 @@ macro_rules! packed_scaled_field {
 		impl std::ops::Mul<<$inner as $crate::packed::PackedField>::Scalar> for $name {
 			type Output = Self;
 
-			fn mul(self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
-				let mut result = Self::default();
-				for i in 0..Self::WIDTH_IN_PT {
-					result.0[i] = self.0[i] * rhs;
+			#[inline]
+			fn mul(mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) -> Self {
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v *= broadcast;
 				}
 
-				result
+				self
 			}
 		}
 
 		impl std::ops::MulAssign<<$inner as $crate::packed::PackedField>::Scalar> for $name {
+			#[inline]
 			fn mul_assign(&mut self, rhs: <$inner as $crate::packed::PackedField>::Scalar) {
-				for i in 0..Self::WIDTH_IN_PT {
-					self.0[i] *= rhs;
+				let broadcast = <$inner as $crate::packed::PackedField>::broadcast(rhs);
+				for v in self.0.iter_mut() {
+					*v *= broadcast;
 				}
 			}
 		}

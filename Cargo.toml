@@ -100,6 +100,7 @@ generic-array = "0.14.7"
 getset = "0.1.2"
 groestl_crypto = { package = "groestl", version = "0.10.1" }
 hex-literal = "0.4.1"
+inventory = "0.3.19"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 paste = "1.0.15"

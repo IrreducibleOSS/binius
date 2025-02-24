@@ -7,6 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+use binius_utils::{DeserializeBytes, SerializeBytes};
 use rand::RngCore;
 
 use crate::{
@@ -49,6 +50,8 @@ pub trait Field:
 	+ InvertOrZero
 	// `Underlier: PackScalar<Self>` is an obvious property but it can't be deduced by the compiler so we are id here.
 	+ WithUnderlier<Underlier: PackScalar<Self>>
+	+ SerializeBytes
+	+ DeserializeBytes
 {
 	/// The zero element of the field, the additive identity.
 	const ZERO: Self;

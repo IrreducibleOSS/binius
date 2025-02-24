@@ -1,8 +1,9 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::set_packed_slice, BinaryField1b, Field, PackedField};
+use binius_field::{packed::set_packed_slice, BinaryField128b, BinaryField1b, Field, PackedField};
+use binius_macros::{erased_serialize_bytes, DeserializeBytes, SerializeBytes};
 use binius_math::MultilinearExtension;
-use binius_utils::bail;
+use binius_utils::{bail, DeserializeBytes};
 
 use crate::polynomial::{Error, MultivariatePoly};
 
@@ -18,10 +19,17 @@ use crate::polynomial::{Error, MultivariatePoly};
 /// ```
 ///
 /// This is useful for defining boundary constraints
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub struct SelectRow {
 	n_vars: usize,
 	index: usize,
+}
+
+inventory::submit! {
+	<dyn MultivariatePoly<BinaryField128b>>::register_deserializer(
+		"SelectRow",
+		|buf, mode| Ok(Box::new(SelectRow::deserialize(&mut *buf, mode)?))
+	)
 }
 
 impl SelectRow {
@@ -50,6 +58,7 @@ impl SelectRow {
 	}
 }
 
+#[erased_serialize_bytes]
 impl<F: Field> MultivariatePoly<F> for SelectRow {
 	fn degree(&self) -> usize {
 		self.n_vars

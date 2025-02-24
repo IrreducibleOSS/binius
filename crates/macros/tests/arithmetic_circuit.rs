@@ -2,7 +2,7 @@
 
 use binius_field::*;
 use binius_macros::arith_circuit_poly;
-use binius_math::CompositionPolyOS;
+use binius_math::CompositionPoly;
 use paste::paste;
 use rand::{rngs::StdRng, SeedableRng};
 

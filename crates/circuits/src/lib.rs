@@ -11,6 +11,7 @@
 
 pub mod arithmetic;
 pub mod bitwise;
+pub mod blake3;
 pub mod builder;
 pub mod collatz;
 pub mod keccakf;

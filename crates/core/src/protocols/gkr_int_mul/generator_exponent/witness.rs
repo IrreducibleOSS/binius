@@ -3,8 +3,7 @@
 use std::{array, cmp::min, slice};
 
 use binius_field::{
-	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, Field, PackedExtension,
-	PackedField, PackedFieldIndexable,
+	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, PackedExtension, PackedField,
 };
 use binius_maybe_rayon::{
 	prelude::{IndexedParallelIterator, ParallelIterator},
@@ -28,7 +27,7 @@ pub struct GeneratorExponentWitness<
 fn copy_witness_into_vec<P, PE>(poly: &MultilinearWitness<PE>) -> Vec<P>
 where
 	P: PackedField,
-	PE: PackedField + PackedExtension<P::Scalar, PackedSubfield = P>,
+	PE: PackedExtension<P::Scalar, PackedSubfield = P>,
 	PE::Scalar: ExtensionField<P::Scalar>,
 {
 	let mut input_layer: Vec<P> = zeroed_vec(1 << poly.n_vars().saturating_sub(P::LOG_WIDTH));
@@ -68,9 +67,8 @@ fn evaluate_single_bit_output_packed<PBits, PGenerator>(
 ) -> Vec<PGenerator>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator:
-		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PGenerator::Scalar: ExtensionField<BinaryField1b> + BinaryField,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: BinaryField,
 {
 	debug_assert_eq!(
 		PBits::WIDTH * exponent_bit.len(),
@@ -98,9 +96,8 @@ fn evaluate_first_layer_output_packed<PBits, PGenerator>(
 ) -> Vec<PGenerator>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator:
-		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PGenerator::Scalar: ExtensionField<BinaryField1b>,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: BinaryField,
 {
 	let mut result = vec![PGenerator::zero(); exponent_bit.len() * PGenerator::Scalar::DEGREE];
 
@@ -119,11 +116,10 @@ impl<'a, PBits, PGenerator, PChallenge, const EXPONENT_BIT_WIDTH: usize>
 	GeneratorExponentWitness<'a, PBits, PGenerator, PChallenge, EXPONENT_BIT_WIDTH>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
-	PGenerator:
-		PackedField + PackedFieldIndexable + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PGenerator::Scalar: ExtensionField<BinaryField1b> + BinaryField,
-	PChallenge: PackedField + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-	PChallenge::Scalar: ExtensionField<BinaryField1b>,
+	PGenerator: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PGenerator::Scalar: BinaryField,
+	PChallenge: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
+	PChallenge::Scalar: BinaryField,
 {
 	pub fn new(
 		exponent: [MultilinearWitness<'a, PChallenge>; EXPONENT_BIT_WIDTH],
@@ -140,12 +136,15 @@ where
 			PGenerator::Scalar::MULTIPLICATIVE_GENERATOR,
 		);
 
+		let mut generator_power_constant = PGenerator::Scalar::MULTIPLICATIVE_GENERATOR.square();
+
 		for layer_idx_from_left in 1..EXPONENT_BIT_WIDTH {
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&exponent_data[layer_idx_from_left],
-				PGenerator::Scalar::MULTIPLICATIVE_GENERATOR.pow([1 << layer_idx_from_left]),
+				generator_power_constant,
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
-			)
+			);
+			generator_power_constant = generator_power_constant.square();
 		}
 
 		Ok(Self {

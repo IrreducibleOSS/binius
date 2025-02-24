@@ -4,9 +4,10 @@ use std::{borrow::Borrow, fmt::Debug, iter::repeat_with, marker::PhantomData, sy
 
 use binius_field::{Field, PackedField};
 use binius_math::{
-	ArithExpr, CompositionPolyOS, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
+	ArithExpr, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQueryRef,
 };
-use binius_utils::bail;
+use binius_utils::{bail, SerializationError, SerializationMode};
+use bytes::BufMut;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -14,8 +15,8 @@ use super::error::Error;
 
 /// A multivariate polynomial over a binary tower field.
 ///
-/// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPolyOS`], except that
-/// `MultivariatePoly` is _object safe_, whereas `CompositionPolyOS` is not.
+/// The definition `MultivariatePoly` is nearly identical to that of [`CompositionPoly`], except that
+/// `MultivariatePoly` is _object safe_, whereas `CompositionPoly` is not.
 pub trait MultivariatePoly<P>: Debug + Send + Sync {
 	/// The number of variables.
 	fn n_vars(&self) -> usize;
@@ -28,13 +29,24 @@ pub trait MultivariatePoly<P>: Debug + Send + Sync {
 
 	/// Returns the maximum binary tower level of all constants in the arithmetic expression.
 	fn binary_tower_level(&self) -> usize;
+
+	/// Serialize a type erased MultivariatePoly.
+	/// Since not every MultivariatePoly implements serialization, this defaults to returning an error.
+	fn erased_serialize(
+		&self,
+		write_buf: &mut dyn BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		let _ = (write_buf, mode);
+		Err(SerializationError::SerializationNotImplemented)
+	}
 }
 
 /// Identity composition function $g(X) = X$.
 #[derive(Clone, Debug)]
 pub struct IdentityCompositionPoly;
 
-impl<P: PackedField> CompositionPolyOS<P> for IdentityCompositionPoly {
+impl<P: PackedField> CompositionPoly<P> for IdentityCompositionPoly {
 	fn n_vars(&self) -> usize {
 		1
 	}
@@ -59,7 +71,7 @@ impl<P: PackedField> CompositionPolyOS<P> for IdentityCompositionPoly {
 	}
 }
 
-/// An adapter that constructs a [`CompositionPolyOS`] for a field from a [`CompositionPolyOS`] for a
+/// An adapter that constructs a [`CompositionPoly`] for a field from a [`CompositionPoly`] for a
 /// packing of that field.
 ///
 /// This is not intended for use in performance-critical code sections.
@@ -72,7 +84,7 @@ pub struct CompositionScalarAdapter<P, Composition> {
 impl<P, Composition> CompositionScalarAdapter<P, Composition>
 where
 	P: PackedField,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	pub const fn new(composition: Composition) -> Self {
 		Self {
@@ -82,11 +94,11 @@ where
 	}
 }
 
-impl<F, P, Composition> CompositionPolyOS<F> for CompositionScalarAdapter<P, Composition>
+impl<F, P, Composition> CompositionPoly<F> for CompositionScalarAdapter<P, Composition>
 where
 	F: Field,
 	P: PackedField<Scalar = F>,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn n_vars(&self) -> usize {
 		self.composition.n_vars()
@@ -141,7 +153,7 @@ where
 impl<P, C, M> MultilinearComposite<P, C, M>
 where
 	P: PackedField,
-	C: CompositionPolyOS<P>,
+	C: CompositionPoly<P>,
 	M: MultilinearPoly<P>,
 {
 	pub fn new(n_vars: usize, composition: C, multilinears: Vec<M>) -> Result<Self, Error> {
@@ -207,12 +219,10 @@ where
 impl<P, C, M> MultilinearComposite<P, C, M>
 where
 	P: PackedField,
-	C: CompositionPolyOS<P> + 'static,
+	C: CompositionPoly<P> + 'static,
 	M: MultilinearPoly<P>,
 {
-	pub fn to_arc_dyn_composition(
-		self,
-	) -> MultilinearComposite<P, Arc<dyn CompositionPolyOS<P>>, M> {
+	pub fn to_arc_dyn_composition(self) -> MultilinearComposite<P, Arc<dyn CompositionPoly<P>>, M> {
 		MultilinearComposite {
 			n_vars: self.n_vars,
 			composition: Arc::new(self.composition),
@@ -267,7 +277,7 @@ where
 /// for two distinct multivariate polynomials f and g.
 ///
 /// NOTE: THIS IS NOT ADVERSARIALLY COLLISION RESISTANT, COLLISIONS CAN BE MANUFACTURED EASILY
-pub fn composition_hash<P: PackedField, C: CompositionPolyOS<P>>(composition: &C) -> P {
+pub fn composition_hash<P: PackedField, C: CompositionPoly<P>>(composition: &C) -> P {
 	let mut rng = StdRng::from_seed([0; 32]);
 
 	let random_point = repeat_with(|| P::random(&mut rng))
@@ -281,7 +291,7 @@ pub fn composition_hash<P: PackedField, C: CompositionPolyOS<P>>(composition: &C
 
 #[cfg(test)]
 mod tests {
-	use binius_math::{ArithExpr, CompositionPolyOS};
+	use binius_math::{ArithExpr, CompositionPoly};
 
 	#[test]
 	fn test_fingerprint_same_32b() {
@@ -291,7 +301,7 @@ mod tests {
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField8x32b>;
+			as &dyn CompositionPoly<PackedBinaryField8x32b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 
@@ -308,7 +318,7 @@ mod tests {
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField8x32b>;
+			as &dyn CompositionPoly<PackedBinaryField8x32b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 
@@ -326,7 +336,7 @@ mod tests {
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField4x64b>;
+			as &dyn CompositionPoly<PackedBinaryField4x64b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 
@@ -342,7 +352,7 @@ mod tests {
 
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField4x64b>;
+			as &dyn CompositionPoly<PackedBinaryField4x64b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 
@@ -360,7 +370,7 @@ mod tests {
 		let expr =
 			(ArithExpr::Var(0) + ArithExpr::Var(1)) * ArithExpr::Var(0) + ArithExpr::Var(0).pow(2);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField2x128b>;
+			as &dyn CompositionPoly<PackedBinaryField2x128b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 
@@ -376,7 +386,7 @@ mod tests {
 
 		let expr = ArithExpr::Var(0) + ArithExpr::Var(1);
 		let circuit_poly = &crate::polynomial::ArithCircuitPoly::<BinaryField1b>::new(expr)
-			as &dyn CompositionPolyOS<PackedBinaryField2x128b>;
+			as &dyn CompositionPoly<PackedBinaryField2x128b>;
 
 		let product_composition = crate::composition::ProductComposition::<2> {};
 

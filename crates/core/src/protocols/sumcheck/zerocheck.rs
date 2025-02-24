@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPolyOS};
+use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
@@ -22,7 +22,7 @@ pub struct ZerocheckClaim<F: Field, Composition> {
 
 impl<F: Field, Composition> ZerocheckClaim<F, Composition>
 where
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 {
 	pub fn new(
 		n_vars: usize,
@@ -60,7 +60,7 @@ where
 }
 
 /// Requirement: zerocheck challenges have been sampled before this is called
-pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPolyOS<F>>(
+pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[ZerocheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
 	// Check that the claims are in descending order by n_vars
@@ -100,7 +100,7 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPolyOS<F>>(
 ///
 /// Note that due to univariatization of some rounds the number of challenges may be less than
 /// the maximum number of variables among claims.
-pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPolyOS<F>>(
+pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[ZerocheckClaim<F, Composition>],
 	zerocheck_challenges: &[F],
 	sumcheck_output: BatchSumcheckOutput<F>,
@@ -158,10 +158,10 @@ pub struct ExtraProduct<Composition> {
 	pub inner: Composition,
 }
 
-impl<P, Composition> CompositionPolyOS<P> for ExtraProduct<Composition>
+impl<P, Composition> CompositionPoly<P> for ExtraProduct<Composition>
 where
 	P: PackedField,
-	Composition: CompositionPolyOS<P>,
+	Composition: CompositionPoly<P>,
 {
 	fn n_vars(&self) -> usize {
 		self.inner.n_vars() + 1
@@ -239,7 +239,7 @@ mod tests {
 		F: Field,
 		FDomain: Field,
 		P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain> + RepackedExtension<P>,
-		Composition: CompositionPolyOS<P>,
+		Composition: CompositionPoly<P>,
 		M: MultilinearPoly<P> + Send + Sync + 'static,
 		Backend: ComputationBackend,
 	{

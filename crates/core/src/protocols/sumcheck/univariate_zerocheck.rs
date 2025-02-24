@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{util::inner_product_unchecked, Field, TowerField};
-use binius_math::{CompositionPolyOS, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -50,7 +50,7 @@ pub fn batch_verify_zerocheck_univariate_round<F, Composition, Challenger_>(
 ) -> Result<BatchZerocheckUnivariateOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 	Challenger_: Challenger,
 {
 	// Check that the claims are in descending order by n_vars
