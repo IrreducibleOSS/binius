@@ -67,7 +67,7 @@ where
 		.iter()
 		.zip(meta)
 		.map(|(exponents_ids, &meta)| {
-			let id = *exponents_ids.last().unwrap();
+			let id = *exponents_ids.last().expect("exponents_ids not empty");
 			let n_vars = oracles.n_vars(id);
 
 			let GrandProductClaimMeta {

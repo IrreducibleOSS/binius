@@ -135,14 +135,14 @@ where
 }
 
 #[derive(Debug)]
-pub enum ComplexIndexComposition<C> {
+pub enum PresizedIndexCompositions<C> {
 	Quadrivariate(IndexComposition<C, 4>),
 	Trivariate(IndexComposition<C, 3>),
 	Bivariate(IndexComposition<C, 2>),
 }
 
 impl<P: PackedField, C: CompositionPolyOS<P> + Debug + Send + Sync> CompositionPolyOS<P>
-	for ComplexIndexComposition<C>
+	for PresizedIndexCompositions<C>
 {
 	fn n_vars(&self) -> usize {
 		match self {

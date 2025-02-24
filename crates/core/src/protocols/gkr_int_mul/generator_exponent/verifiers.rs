@@ -11,7 +11,7 @@ use super::{
 	utils::first_layer_inverse,
 };
 use crate::{
-	composition::{ComplexIndexComposition, IndexComposition},
+	composition::{IndexComposition, PresizedIndexCompositions},
 	protocols::{
 		gkr_gpa::LayerClaim,
 		gkr_int_mul::error::Error,
@@ -133,7 +133,7 @@ where
 
 			let this_round_composite_claim = CompositeSumClaim {
 				sum: self.0.eval,
-				composition: ComplexIndexComposition::Trivariate(composition),
+				composition: PresizedIndexCompositions::Trivariate(composition),
 			};
 
 			Ok(Some(this_round_composite_claim))
@@ -203,7 +203,7 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 				},
 			)?;
 
-			ComplexIndexComposition::Trivariate(composition)
+			PresizedIndexCompositions::Trivariate(composition)
 		} else {
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
@@ -218,7 +218,7 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 				},
 			)?;
 
-			ComplexIndexComposition::Quadrivariate(composition)
+			PresizedIndexCompositions::Quadrivariate(composition)
 		};
 
 		let this_round_composite_claim = CompositeSumClaim {

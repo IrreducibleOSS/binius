@@ -72,11 +72,11 @@ where
 		let SumcheckClaimsWithEvalPoints {
 			sumcheck_claims,
 			eval_points,
-		} = build_layer_gkr_sumcheck_claims::<_, FGenerator>(&verifiers, layer_no)?;
+		} = build_layer_gkr_sumcheck_claims(&verifiers, layer_no)?;
 
 		let sumcheck_verification_output = sumcheck::batch_verify(&sumcheck_claims, transcript)?;
 
-		let layer_exponent_claims = build_layer_exponent_claims::<_, FGenerator>(
+		let layer_exponent_claims = build_layer_exponent_claims(
 			&mut verifiers,
 			sumcheck_verification_output,
 			eval_points,
@@ -98,13 +98,12 @@ struct SumcheckClaimsWithEvalPoints<F: Field> {
 	eval_points: Vec<Vec<F>>,
 }
 
-fn build_layer_gkr_sumcheck_claims<'a, F, FGenerator>(
+fn build_layer_gkr_sumcheck_claims<'a, F>(
 	verifiers: &[Box<dyn ExponentiationVerifier<F> + 'a>],
 	layer_no: usize,
 ) -> Result<SumcheckClaimsWithEvalPoints<F>, Error>
 where
-	FGenerator: BinaryField,
-	F: ExtensionField<FGenerator>,
+	F: Field,
 {
 	let mut sumcheck_claims = Vec::new();
 
@@ -115,11 +114,10 @@ where
 
 	for i in 0..verifiers.len() {
 		if verifiers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
-			let this_round_sumcheck_claim =
-				build_eval_point_claims(&verifiers[active_index..i], layer_no)?;
+			let sumcheck_claim = build_eval_point_claims(&verifiers[active_index..i], layer_no)?;
 
-			if let Some(this_round_sumcheck_claim) = this_round_sumcheck_claim {
-				sumcheck_claims.push(this_round_sumcheck_claim);
+			if let Some(sumcheck_claim) = sumcheck_claim {
+				sumcheck_claims.push(sumcheck_claim);
 			} else {
 				// extract the last point because verifiers with this point will not participate in the sumcheck.
 				eval_points.pop();
@@ -131,11 +129,10 @@ where
 		}
 
 		if i == verifiers.len() - 1 {
-			let this_round_sumcheck_claim =
-				build_eval_point_claims(&verifiers[active_index..], layer_no)?;
+			let sumcheck_claim = build_eval_point_claims(&verifiers[active_index..], layer_no)?;
 
-			if let Some(this_round_sumcheck_claim) = this_round_sumcheck_claim {
-				sumcheck_claims.push(this_round_sumcheck_claim);
+			if let Some(sumcheck_claim) = sumcheck_claim {
+				sumcheck_claims.push(sumcheck_claim);
 			}
 		}
 	}
@@ -146,13 +143,12 @@ where
 	})
 }
 
-fn build_eval_point_claims<'a, F, FGenerator>(
+fn build_eval_point_claims<'a, F>(
 	verifiers: &[Box<dyn ExponentiationVerifier<F> + 'a>],
 	layer_no: usize,
 ) -> Result<Option<SumcheckClaim<F, VerifierExponentiationComposition<F>>>, Error>
 where
-	F: Field + ExtensionField<FGenerator>,
-	FGenerator: BinaryField,
+	F: Field,
 {
 	let (mut composite_claims_n_multilinears, n_claims) =
 		verifiers
@@ -199,15 +195,14 @@ where
 		.map_err(Error::from)
 }
 
-pub fn build_layer_exponent_claims<'a, F, FGenerator>(
+pub fn build_layer_exponent_claims<'a, F>(
 	verifiers: &mut [Box<dyn ExponentiationVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
 	eval_points: Vec<Vec<F>>,
 	layer_no: usize,
 ) -> Result<Vec<LayerClaim<F>>, Error>
 where
-	F: TowerField + ExtensionField<FGenerator>,
-	FGenerator: BinaryField,
+	F: TowerField,
 {
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 

@@ -12,7 +12,7 @@ use super::{
 	witness::GeneratorExponentWitness,
 };
 use crate::{
-	composition::{ComplexIndexComposition, IndexComposition},
+	composition::{IndexComposition, PresizedIndexCompositions},
 	protocols::{gkr_gpa::LayerClaim, gkr_int_mul::error::Error, sumcheck::CompositeSumClaim},
 	witness::MultilinearWitness,
 };
@@ -66,7 +66,7 @@ impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
 		self.witness.exponent.len()
 	}
 
-	pub fn current_layer_single_bit_output_layers_data(
+	fn current_layer_single_bit_output_layers_data(
 		&self,
 		layer_no: usize,
 	) -> MultilinearWitness<'a, P> {
@@ -79,7 +79,7 @@ impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
 		&self.current_layer_claim.eval_point
 	}
 
-	pub fn current_layer_exponent_bit(&self, index: usize) -> MultilinearWitness<'a, P> {
+	fn current_layer_exponent_bit(&self, index: usize) -> MultilinearWitness<'a, P> {
 		self.witness.exponent[index].clone()
 	}
 
@@ -128,10 +128,12 @@ impl<'a, P: PackedField, FGenerator> ExponentiationStaticProver<'a, P, FGenerato
 	}
 }
 
-impl<'a, P: PackedField, FGenerator: BinaryField> ExponentiationProver<'a, P>
+impl<'a, P, FGenerator> ExponentiationProver<'a, P>
 	for ExponentiationStaticProver<'a, P, FGenerator>
 where
 	P::Scalar: BinaryField + ExtensionField<FGenerator>,
+	P: PackedField,
+	FGenerator: BinaryField,
 {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width()
@@ -152,14 +154,14 @@ where
 
 		let internal_layer_index = self.exponent_bit_width() - 1 - layer_no;
 
-		let this_round_input = self.0.current_layer_single_bit_output_layers_data(layer_no);
+		let this_layer_input = self.0.current_layer_single_bit_output_layers_data(layer_no);
 
 		let exponent_bit = self
 			.0
 			.current_layer_exponent_bit(internal_layer_index)
 			.clone();
 
-		let this_round_multilinears = vec![this_round_input, exponent_bit];
+		let this_layer_multilinears = vec![this_layer_input, exponent_bit];
 
 		let generator_power_constant =
 			P::Scalar::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
@@ -172,16 +174,16 @@ where
 			},
 		)?;
 
-		let composition = ComplexIndexComposition::Bivariate(composition);
+		let composition = PresizedIndexCompositions::Bivariate(composition);
 
-		let this_round_composite_claim = CompositeSumClaim {
+		let this_layer_composite_claim = CompositeSumClaim {
 			sum: self.0.current_layer_claim.eval,
 			composition,
 		};
 
 		Ok(ProverLayerClaimMeta {
-			claim: Some(this_round_composite_claim),
-			multilinears: this_round_multilinears,
+			claim: Some(this_layer_composite_claim),
+			multilinears: this_layer_multilinears,
 		})
 	}
 
@@ -193,7 +195,7 @@ where
 		if self.is_last_layer(layer_no) {
 			(0, 0)
 		} else {
-			// this_round_input, exponent_bit
+			// this_layer_input, exponent_bit
 			(2, 1)
 		}
 	}
@@ -260,23 +262,23 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 
 		let exponent_bit = self.0.current_layer_exponent_bit(layer_no);
 
-		let (composition, this_round_multilinears) = if self.0.is_last_layer(layer_no) {
-			let this_round_multilinears = vec![generator, exponent_bit];
+		let (composition, this_layer_multilinears) = if self.0.is_last_layer(layer_no) {
+			let this_layer_multilinears = vec![generator, exponent_bit];
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1],
 				ExponentiationCompositions::DynamicGeneratorLastLayer,
 			)?;
-			let composition = ComplexIndexComposition::Bivariate(composition);
-			(composition, this_round_multilinears)
+			let composition = PresizedIndexCompositions::Bivariate(composition);
+			(composition, this_layer_multilinears)
 		} else {
-			let this_round_input = self
+			let this_layer_input = self
 				.0
 				.current_layer_single_bit_output_layers_data(layer_no)
 				.clone();
 
-			let this_round_multilinears = vec![this_round_input, exponent_bit, generator];
+			let this_layer_multilinears = vec![this_layer_input, exponent_bit, generator];
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[
@@ -286,18 +288,18 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 				],
 				ExponentiationCompositions::DynamicGenerator,
 			)?;
-			let composition = ComplexIndexComposition::Trivariate(composition);
-			(composition, this_round_multilinears)
+			let composition = PresizedIndexCompositions::Trivariate(composition);
+			(composition, this_layer_multilinears)
 		};
 
-		let this_round_composite_claim = CompositeSumClaim {
+		let this_layer_composite_claim = CompositeSumClaim {
 			sum: self.0.current_layer_claim.eval,
 			composition,
 		};
 
 		Ok(ProverLayerClaimMeta {
-			claim: Some(this_round_composite_claim),
-			multilinears: this_round_multilinears,
+			claim: Some(this_layer_composite_claim),
+			multilinears: this_layer_multilinears,
 		})
 	}
 
@@ -310,7 +312,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 			// generator, exponent_bit
 			(2, 1)
 		} else {
-			// this_round_input, exponent_bit, generator
+			// this_layer_input, exponent_bit, generator
 			(3, 1)
 		}
 	}
