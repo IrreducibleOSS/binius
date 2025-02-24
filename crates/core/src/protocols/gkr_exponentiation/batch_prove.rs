@@ -11,19 +11,19 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{ExponentiationClaim, GeneratorExponentReductionOutput},
+	common::{BaseExponentReductionOutput, ExponentiationClaim},
 	compositions::ProverExponentiationComposition,
+	error::Error,
 	provers::{
-		ExponentiationDynamicProver, ExponentiationProver, ExponentiationStaticProver,
+		DynamicBaseExponentiationProver, ExponentiationProver, GeneratorExponentiationProver,
 		ProverLayerClaimMeta,
 	},
-	witness::GeneratorExponentWitness,
+	witness::BaseExponentWitness,
 };
 use crate::{
 	fiat_shamir::Challenger,
 	protocols::{
 		gkr_gpa::{gpa_sumcheck::prove::GPAProver, LayerClaim},
-		gkr_int_mul::error::Error,
 		sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
 	},
 	transcript::ProverTranscript,
@@ -36,17 +36,17 @@ use crate::{
 ///
 /// RECOMMENDATIONS:
 /// * Witnesses and claims should be grouped by evaluation points from claims
-pub fn batch_prove<'a, FGenerator, F, P, FDomain, Challenger_, Backend>(
-	witnesses: impl IntoIterator<Item = GeneratorExponentWitness<'a, P>>,
+pub fn batch_prove<'a, FBase, F, P, FDomain, Challenger_, Backend>(
+	witnesses: impl IntoIterator<Item = BaseExponentWitness<'a, P>>,
 	claims: &[ExponentiationClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
-) -> Result<GeneratorExponentReductionOutput<F>, Error>
+) -> Result<BaseExponentReductionOutput<F>, Error>
 where
-	F: ExtensionField<FGenerator> + ExtensionField<FDomain> + TowerField,
+	F: ExtensionField<FBase> + ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
-	FGenerator: TowerField + ExtensionField<FDomain>,
+	FBase: TowerField + ExtensionField<FDomain>,
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
 		+ PackedExtension<FDomain>,
@@ -62,7 +62,7 @@ where
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
 	if witnesses.is_empty() {
-		return Ok(GeneratorExponentReductionOutput {
+		return Ok(BaseExponentReductionOutput {
 			eval_claims_on_exponent_bit_columns,
 		});
 	}
@@ -72,7 +72,7 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let mut provers = make_provers::<_, FGenerator>(witnesses, claims)?;
+	let mut provers = make_provers::<_, FBase>(witnesses, claims)?;
 
 	let max_exponent_bit_number = provers.first().map(|p| p.exponent_bit_width()).unwrap_or(0);
 
@@ -94,7 +94,7 @@ where
 		provers.retain(|prover| !prover.is_last_layer(layer_no));
 	}
 
-	Ok(GeneratorExponentReductionOutput {
+	Ok(BaseExponentReductionOutput {
 		eval_claims_on_exponent_bit_columns,
 	})
 }
@@ -267,27 +267,27 @@ where
 	Ok(eval_claims_on_exponent_bit_columns)
 }
 
-fn make_provers<'a, P, FGenerator>(
-	witnesses: Vec<GeneratorExponentWitness<'a, P>>,
+fn make_provers<'a, P, FBase>(
+	witnesses: Vec<BaseExponentWitness<'a, P>>,
 	claims: &[ExponentiationClaim<P::Scalar>],
 ) -> Result<Vec<Box<dyn ExponentiationProver<'a, P> + 'a>>, Error>
 where
 	P: PackedField,
-	FGenerator: BinaryField,
-	P::Scalar: BinaryField + ExtensionField<FGenerator>,
+	FBase: BinaryField,
+	P::Scalar: BinaryField + ExtensionField<FBase>,
 {
 	witnesses
 		.into_iter()
 		.zip(claims)
 		.map(|(witness, claim)| {
-			let is_dynamic_prover = witness.generator.is_some();
+			let is_dynamic_prover = witness.base.is_some();
 
 			if is_dynamic_prover {
-				ExponentiationDynamicProver::new(witness, claim).map(move |prover| {
+				DynamicBaseExponentiationProver::new(witness, claim).map(move |prover| {
 					Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>
 				})
 			} else {
-				ExponentiationStaticProver::<'a, P, FGenerator>::new(witness, claim).map(
+				GeneratorExponentiationProver::<'a, P, FBase>::new(witness, claim).map(
 					move |prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>,
 				)
 			}

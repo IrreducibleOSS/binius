@@ -18,8 +18,8 @@ pub enum Error {
 	ClaimsOutOfOrder,
 	#[error("vector of exponent is empty")]
 	EmptyExponent,
-	#[error("generator fild to small")]
-	SmallGeneratorField,
+	#[error("base fild to small")]
+	SmallBaseField,
 	#[error("witneses and claims have mismatched lengths")]
 	MismatchedWitnessClaimLength,
 	#[error("GKR Failure: {0}")]

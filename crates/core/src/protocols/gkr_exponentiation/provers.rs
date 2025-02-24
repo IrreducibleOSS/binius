@@ -8,12 +8,13 @@ use binius_utils::bail;
 use super::{
 	common::ExponentiationClaim,
 	compositions::{ExponentiationCompositions, ProverExponentiationComposition},
+	error::Error,
 	utils::first_layer_inverse,
-	witness::GeneratorExponentWitness,
+	witness::BaseExponentWitness,
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
-	protocols::{gkr_gpa::LayerClaim, gkr_int_mul::error::Error, sumcheck::CompositeSumClaim},
+	protocols::{gkr_gpa::LayerClaim, sumcheck::CompositeSumClaim},
 	witness::MultilinearWitness,
 };
 
@@ -47,15 +48,12 @@ pub trait ExponentiationProver<'a, P: PackedField> {
 }
 
 struct ExponentiationCommonProver<'a, P: PackedField> {
-	witness: GeneratorExponentWitness<'a, P>,
+	witness: BaseExponentWitness<'a, P>,
 	current_layer_claim: LayerClaim<P::Scalar>,
 }
 
 impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
-	fn new(
-		witness: GeneratorExponentWitness<'a, P>,
-		claim: ExponentiationClaim<P::Scalar>,
-	) -> Self {
+	fn new(witness: BaseExponentWitness<'a, P>, claim: ExponentiationClaim<P::Scalar>) -> Self {
 		Self {
 			witness,
 			current_layer_claim: claim.into(),
@@ -110,17 +108,17 @@ impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
 	}
 }
 
-pub struct ExponentiationStaticProver<'a, P: PackedField, FGenerator>(
+pub struct GeneratorExponentiationProver<'a, P: PackedField, FBase>(
 	ExponentiationCommonProver<'a, P>,
-	PhantomData<FGenerator>,
+	PhantomData<FBase>,
 );
 
-impl<'a, P: PackedField, FGenerator> ExponentiationStaticProver<'a, P, FGenerator> {
+impl<'a, P: PackedField, FBase> GeneratorExponentiationProver<'a, P, FBase> {
 	pub fn new(
-		witness: GeneratorExponentWitness<'a, P>,
+		witness: BaseExponentWitness<'a, P>,
 		claim: &ExponentiationClaim<P::Scalar>,
 	) -> Result<Self, Error> {
-		if witness.generator.is_some() {
+		if witness.base.is_some() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -128,12 +126,11 @@ impl<'a, P: PackedField, FGenerator> ExponentiationStaticProver<'a, P, FGenerato
 	}
 }
 
-impl<'a, P, FGenerator> ExponentiationProver<'a, P>
-	for ExponentiationStaticProver<'a, P, FGenerator>
+impl<'a, P, FBase> ExponentiationProver<'a, P> for GeneratorExponentiationProver<'a, P, FBase>
 where
-	P::Scalar: BinaryField + ExtensionField<FGenerator>,
+	P::Scalar: BinaryField + ExtensionField<FBase>,
 	P: PackedField,
-	FGenerator: BinaryField,
+	FBase: BinaryField,
 {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width()
@@ -163,14 +160,14 @@ where
 
 		let this_layer_multilinears = vec![this_layer_input, exponent_bit];
 
-		let generator_power_constant =
-			P::Scalar::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
+		let base_power_constant =
+			P::Scalar::from(FBase::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
 
 		let composition = IndexComposition::new(
 			composite_claims_n_multilinears,
 			[multilinears_index, multilinears_index + 1],
-			ExponentiationCompositions::StaticGenerator {
-				generator_power_constant,
+			ExponentiationCompositions::GeneratorBase {
+				base_power_constant,
 			},
 		)?;
 
@@ -213,7 +210,7 @@ where
 
 			let exponent_claim = LayerClaim::<P::Scalar> {
 				eval_point,
-				eval: first_layer_inverse::<FGenerator, _>(eval),
+				eval: first_layer_inverse::<FBase, _>(eval),
 			};
 			return exponent_claim;
 		}
@@ -222,14 +219,14 @@ where
 	}
 }
 
-pub struct ExponentiationDynamicProver<'a, P: PackedField>(ExponentiationCommonProver<'a, P>);
+pub struct DynamicBaseExponentiationProver<'a, P: PackedField>(ExponentiationCommonProver<'a, P>);
 
-impl<'a, P: PackedField> ExponentiationDynamicProver<'a, P> {
+impl<'a, P: PackedField> DynamicBaseExponentiationProver<'a, P> {
 	pub fn new(
-		witness: GeneratorExponentWitness<'a, P>,
+		witness: BaseExponentWitness<'a, P>,
 		claim: &ExponentiationClaim<P::Scalar>,
 	) -> Result<Self, Error> {
-		if witness.generator.is_none() {
+		if witness.base.is_none() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -242,7 +239,7 @@ pub struct ProverLayerClaimMeta<'a, P: PackedField> {
 	pub multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
-impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicProver<'a, P> {
+impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiationProver<'a, P> {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width()
 	}
@@ -253,22 +250,22 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
 	) -> Result<ProverLayerClaimMeta<'a, P>, Error> {
-		let generator = self
+		let base = self
 			.0
 			.witness
-			.generator
+			.base
 			.clone()
-			.expect("dynamic generator witness must contain generator");
+			.expect("DynamicBase witness must contain base");
 
 		let exponent_bit = self.0.current_layer_exponent_bit(layer_no);
 
 		let (composition, this_layer_multilinears) = if self.0.is_last_layer(layer_no) {
-			let this_layer_multilinears = vec![generator, exponent_bit];
+			let this_layer_multilinears = vec![base, exponent_bit];
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1],
-				ExponentiationCompositions::DynamicGeneratorLastLayer,
+				ExponentiationCompositions::DynamicBaseLastLayer,
 			)?;
 			let composition = FixedDimIndexCompositions::Bivariate(composition);
 			(composition, this_layer_multilinears)
@@ -278,7 +275,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 				.current_layer_single_bit_output_layers_data(layer_no)
 				.clone();
 
-			let this_layer_multilinears = vec![this_layer_input, exponent_bit, generator];
+			let this_layer_multilinears = vec![this_layer_input, exponent_bit, base];
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[
@@ -286,7 +283,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 					multilinears_index + 1,
 					multilinears_index + 2,
 				],
-				ExponentiationCompositions::DynamicGenerator,
+				ExponentiationCompositions::DynamicBase,
 			)?;
 			let composition = FixedDimIndexCompositions::Trivariate(composition);
 			(composition, this_layer_multilinears)
@@ -309,10 +306,10 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for ExponentiationDynamicPr
 
 	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
 		if self.is_last_layer(layer_no) {
-			// generator, exponent_bit
+			// Base, exponent_bit
 			(2, 1)
 		} else {
-			// this_layer_input, exponent_bit, generator
+			// this_layer_input, exponent_bit, Base
 			(3, 1)
 		}
 	}

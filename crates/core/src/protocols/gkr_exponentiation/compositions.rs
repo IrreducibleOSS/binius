@@ -13,9 +13,9 @@ pub enum ExponentiationCompositions<F>
 where
 	F: Field,
 {
-	StaticGenerator { generator_power_constant: F },
-	DynamicGenerator,
-	DynamicGeneratorLastLayer,
+	GeneratorBase { base_power_constant: F },
+	DynamicBase,
+	DynamicBaseLastLayer,
 }
 
 impl<P> CompositionPoly<P> for ExponentiationCompositions<P::Scalar>
@@ -24,15 +24,15 @@ where
 {
 	fn n_vars(&self) -> usize {
 		match self {
-			Self::StaticGenerator { .. } | Self::DynamicGeneratorLastLayer => 2,
-			Self::DynamicGenerator => 3,
+			Self::GeneratorBase { .. } | Self::DynamicBaseLastLayer => 2,
+			Self::DynamicBase => 3,
 		}
 	}
 
 	fn degree(&self) -> usize {
 		match self {
-			Self::StaticGenerator { .. } | Self::DynamicGeneratorLastLayer => 2,
-			Self::DynamicGenerator => 4,
+			Self::GeneratorBase { .. } | Self::DynamicBaseLastLayer => 2,
+			Self::DynamicBase => 4,
 		}
 	}
 
@@ -42,20 +42,20 @@ where
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
 		match self {
-			Self::StaticGenerator {
-				generator_power_constant,
+			Self::GeneratorBase {
+				base_power_constant,
 			} => {
 				ArithExpr::Var(0)
 					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-						+ ArithExpr::Var(1) * ArithExpr::Const(*generator_power_constant))
+						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_constant))
 			}
-			Self::DynamicGenerator => {
+			Self::DynamicBase => {
 				ArithExpr::Var(0)
 					* ArithExpr::Var(0)
 					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
 						+ ArithExpr::Var(1) * ArithExpr::Var(2))
 			}
-			Self::DynamicGeneratorLastLayer => {
+			Self::DynamicBaseLastLayer => {
 				(ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
 					+ ArithExpr::Var(1) * ArithExpr::Var(0)
 			}
@@ -69,13 +69,13 @@ where
 			});
 		}
 		match self {
-			Self::StaticGenerator {
-				generator_power_constant,
-			} => Ok(query[0] * ((P::one() - query[1]) + query[1] * *generator_power_constant)),
-			Self::DynamicGenerator => {
+			Self::GeneratorBase {
+				base_power_constant,
+			} => Ok(query[0] * ((P::one() - query[1]) + query[1] * *base_power_constant)),
+			Self::DynamicBase => {
 				Ok(query[0].square() * ((P::one() - query[1]) + query[1] * query[2]))
 			}
-			Self::DynamicGeneratorLastLayer => Ok((P::one() - query[1]) + query[1] * query[0]),
+			Self::DynamicBaseLastLayer => Ok((P::one() - query[1]) + query[1] * query[0]),
 		}
 	}
 }

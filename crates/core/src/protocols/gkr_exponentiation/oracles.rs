@@ -7,34 +7,32 @@ use binius_utils::bail;
 use itertools::izip;
 use tracing::instrument;
 
-use super::{common::ExponentiationClaim, witness::GeneratorExponentWitness};
+use super::{common::ExponentiationClaim, error::Error, witness::BaseExponentWitness};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{MultilinearOracleSet, OracleId},
-	protocols::{
-		evalcheck::EvalcheckMultilinearClaim, gkr_gpa::LayerClaim, gkr_int_mul::error::Error,
-	},
+	protocols::{evalcheck::EvalcheckMultilinearClaim, gkr_gpa::LayerClaim},
 };
 
 #[derive(Clone)]
 pub struct ExponentiationClaimMeta<F> {
 	evals: Vec<F>,
-	pub with_dynamic_generator: Vec<bool>,
+	pub with_dynamic_base: Vec<bool>,
 }
 
-pub fn get_evals_and_with_dynamic_generator_from_witnesses<P, PGenerator>(
-	witnesses: &[GeneratorExponentWitness<P>],
+pub fn get_evals_and_with_dynamic_base_from_witnesses<P, PBase>(
+	witnesses: &[BaseExponentWitness<P>],
 	r: &[P::Scalar],
 ) -> Result<ExponentiationClaimMeta<P::Scalar>, Error>
 where
-	PGenerator: PackedField,
-	PGenerator::Scalar: BinaryField,
-	P: PackedExtension<PGenerator::Scalar, PackedSubfield = PGenerator>,
-	P::Scalar: BinaryField + ExtensionField<PGenerator::Scalar>,
+	PBase: PackedField,
+	PBase::Scalar: BinaryField,
+	P: PackedExtension<PBase::Scalar, PackedSubfield = PBase>,
+	P::Scalar: BinaryField + ExtensionField<PBase::Scalar>,
 {
-	let with_dynamic_generator = witnesses
+	let with_dynamic_base = witnesses
 		.iter()
-		.map(|witness| witness.with_dynamic_generator())
+		.map(|witness| witness.with_dynamic_base())
 		.collect::<Vec<_>>();
 
 	let evals = witnesses
@@ -51,7 +49,7 @@ where
 
 	Ok(ExponentiationClaimMeta {
 		evals,
-		with_dynamic_generator,
+		with_dynamic_base,
 	})
 }
 
@@ -74,11 +72,11 @@ where
 
 	let ExponentiationClaimMeta {
 		evals,
-		with_dynamic_generator,
+		with_dynamic_base,
 	} = meta;
 
-	let claims = izip!(exponents_ids, evals, with_dynamic_generator)
-		.map(|(exponents_ids, eval, with_dynamic_generator)| {
+	let claims = izip!(exponents_ids, evals, with_dynamic_base)
+		.map(|(exponents_ids, eval, with_dynamic_base)| {
 			let id = *exponents_ids.last().expect("exponents_ids not empty");
 			let n_vars = oracles.n_vars(id);
 
@@ -87,7 +85,7 @@ where
 				eval,
 				exponent_bit_width: exponents_ids.len(),
 				n_vars,
-				with_dynamic_generator,
+				with_dynamic_base,
 			}
 		})
 		.collect::<Vec<_>>();
@@ -99,22 +97,22 @@ where
 pub fn make_eval_claims<F: TowerField>(
 	metas: Vec<Vec<OracleId>>,
 	mut final_layer_claims: Vec<Vec<LayerClaim<F>>>,
-	with_dynamic_generator: Vec<bool>,
+	with_dynamic_base: Vec<bool>,
 ) -> Result<Vec<EvalcheckMultilinearClaim<F>>, Error> {
 	let max_exponent_bit_number = metas.iter().map(|meta| meta.len()).max().unwrap();
 
 	let mut evalcheck_claims = Vec::new();
 
 	for layer_no in 0..max_exponent_bit_number {
-		for (&is_dynamic, meta) in with_dynamic_generator.iter().zip(&metas).rev() {
+		for (&with_dynamic_base, meta) in with_dynamic_base.iter().zip(&metas).rev() {
 			if layer_no > meta.len() - 1 {
 				continue;
 			}
 
-			let oracle_id = if is_dynamic {
+			let oracle_id = if with_dynamic_base {
 				meta[layer_no]
 			} else {
-				// the exponentiation of a static generator uses reverse order.
+				// the exponentiation of a generator uses reverse order.
 				meta[meta.len() - 1 - layer_no]
 			};
 
