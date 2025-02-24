@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::{Field, PackedField, TowerField};
+use binius_field::{BinaryField1b, Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;
@@ -203,9 +203,35 @@ impl<F: Field> ArithExpr<F> {
 	///
 	/// - [`Error::NonLinearExpression`] if the expression is not linear.
 	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
-		// Check that the degree of the expression is 1
-		// Flatten the expression into a linear normal form
-		todo!()
+		if self.degree() > 1 {
+			return Err(Error::NonLinearExpression);
+		}
+
+		let mut normal_form = LinearNormalForm::default();
+		let n_vars = self.n_vars();
+	
+		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
+		// Evaluating with all variables set to 0, should give the constant term
+		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
+
+		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
+		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
+		for i in 0..n_vars {
+			let mut vars = vec![F::ZERO; n_vars];
+			vars[i] = F::ONE;
+			normal_form.var_coeffs.push(self.evaluate(&vars) - constant);
+		}
+		Ok(normal_form)
+	}
+
+	fn evaluate(&self, vars: &[F]) -> F {
+		match self {
+			Self::Const(val) => *val,
+			Self::Var(index) => vars[*index],
+			Self::Add(left, right) => left.evaluate(vars) + right.evaluate(vars),
+			Self::Mul(left, right) => left.evaluate(vars) * right.evaluate(vars),
+			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
+		}
 	}
 }
 
@@ -376,5 +402,15 @@ mod tests {
 			* ArithExpr::Const(F8::new(222)))
 		.pow(3);
 		assert_eq!(expr.try_convert_field::<BinaryField8b>().unwrap(), expected);
+	}
+
+	#[test]
+	fn test_linear_normal_form() {
+		type F = BinaryField128b;
+		use ArithExpr::{Const, Var};
+		let expr = Const(F::new(133)) + Const(F::new(42)) * Var(0) + Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
+		let normal_form = expr.linear_normal_form().unwrap();
+		assert_eq!(normal_form.constant, F::ZERO);
+		assert_eq!(normal_form.var_coeffs, vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]);
 	}
 }
