@@ -7,7 +7,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_field::{BinaryField1b, Field, PackedField, TowerField};
+use binius_field::{Field, PackedField, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
 
 use super::error::Error;
@@ -209,7 +209,7 @@ impl<F: Field> ArithExpr<F> {
 
 		let mut normal_form = LinearNormalForm::default();
 		let n_vars = self.n_vars();
-	
+
 		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
 		// Evaluating with all variables set to 0, should give the constant term
 		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
@@ -408,9 +408,14 @@ mod tests {
 	fn test_linear_normal_form() {
 		type F = BinaryField128b;
 		use ArithExpr::{Const, Var};
-		let expr = Const(F::new(133)) + Const(F::new(42)) * Var(0) + Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
+		let expr = Const(F::new(133))
+			+ Const(F::new(42)) * Var(0)
+			+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
 		let normal_form = expr.linear_normal_form().unwrap();
 		assert_eq!(normal_form.constant, F::ZERO);
-		assert_eq!(normal_form.var_coeffs, vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]);
+		assert_eq!(
+			normal_form.var_coeffs,
+			vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]
+		);
 	}
 }

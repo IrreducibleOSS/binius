@@ -4,9 +4,8 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	TowerField,
 };
-use bytemuck::{must_cast_slice_mut, Pod};
+use bytemuck::Pod;
 
 use super::{
 	builder::{Col, ConstraintSystemBuilder},
@@ -17,7 +16,7 @@ use crate::{
 	constraint_system::TableId,
 	types::*,
 	u32::{U32Add, U32AddFlags},
-	witness::{TableFiller, TableWitnessIndex, TableWitnessIndexSegment},
+	witness::{TableFiller, TableWitnessIndexSegment},
 };
 
 #[derive(Debug)]
@@ -31,7 +30,7 @@ pub struct EvensTable {
 
 impl EvensTable {
 	pub fn new(cs: &mut ConstraintSystemBuilder, seq_chan: ChannelId) -> Self {
-		let mut table = cs.add_table("evens");
+		let table = cs.add_table("evens");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
 
@@ -165,7 +164,7 @@ where
 				carry_bit[i] = 1u32;
 			}
 		}
-		self.add_in_x3.populate(witness);
+		self.add_in_x3.populate(witness)?;
 		Ok(())
 	}
 }

@@ -63,7 +63,7 @@ pub struct OddsEvent {
 }
 
 impl OddsEvent {
-	fn fire(&self, sequence_chan: &mut Channel<u32>) {
+	pub fn fire(&self, sequence_chan: &mut Channel<u32>) {
 		assert_eq!(self.val % 2, 1);
 		let next_val = self
 			.val
@@ -102,7 +102,7 @@ impl CollatzTrace {
 		trace
 	}
 
-	fn validate(&self, initial_val: u32) {
+	pub fn validate(&self, initial_val: u32) {
 		let mut sequence_chan = Channel::default();
 
 		// Boundaries
