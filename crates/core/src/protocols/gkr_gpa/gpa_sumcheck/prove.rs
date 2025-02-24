@@ -214,7 +214,7 @@ where
 					.filter(|_| round == 0);
 
 				let composition_at_infinity =
-					ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+					ArithCircuitPoly::new(composition.expression().leading_term());
 
 				GPAEvaluator {
 					composition,

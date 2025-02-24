@@ -62,13 +62,19 @@ impl<F: Field> ArithExpr<F> {
 
 	/// Return a new arithmetic expression that contains only the terms of highest degree
 	/// (useful for interpolation at Karatsuba infinity point).
-	pub fn highest_degree_only(&self) -> (usize, Self) {
+	pub fn leading_term(&self) -> Self {
+		let (_, expr) = self.leading_term_with_degree();
+		expr
+	}
+
+	/// Same as `leading_term`, but returns the total degree as the first tuple element as well.
+	pub fn leading_term_with_degree(&self) -> (usize, Self) {
 		match self {
 			expr @ Self::Const(_) => (0, expr.clone()),
 			expr @ Self::Var(_) => (1, expr.clone()),
 			Self::Add(left, right) => {
-				let (lhs_degree, lhs) = left.highest_degree_only();
-				let (rhs_degree, rhs) = right.highest_degree_only();
+				let (lhs_degree, lhs) = left.leading_term_with_degree();
+				let (rhs_degree, rhs) = right.leading_term_with_degree();
 				match lhs_degree.cmp(&rhs_degree) {
 					Ordering::Less => (rhs_degree, rhs),
 					Ordering::Equal => (lhs_degree, Self::Add(Box::new(lhs), Box::new(rhs))),
@@ -76,12 +82,12 @@ impl<F: Field> ArithExpr<F> {
 				}
 			}
 			Self::Mul(left, right) => {
-				let (lhs_degree, lhs) = left.highest_degree_only();
-				let (rhs_degree, rhs) = right.highest_degree_only();
+				let (lhs_degree, lhs) = left.leading_term_with_degree();
+				let (rhs_degree, rhs) = right.leading_term_with_degree();
 				(lhs_degree + rhs_degree, Self::Mul(Box::new(lhs), Box::new(rhs)))
 			}
 			Self::Pow(base, exp) => {
-				let (base_degree, base) = base.highest_degree_only();
+				let (base_degree, base) = base.leading_term_with_degree();
 				(base_degree * *exp as usize, Self::Pow(Box::new(base), *exp))
 			}
 		}
@@ -339,7 +345,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_highest_degree_only() {
+	fn test_leading_term_with_degree() {
 		let expr = ArithExpr::Var(0)
 			* (ArithExpr::Var(1)
 				* ArithExpr::Var(2)
@@ -353,7 +359,7 @@ mod tests {
 				* ArithExpr::Const(BinaryField8b::MULTIPLICATIVE_GENERATOR))
 			+ ArithExpr::Var(5).pow(3);
 
-		assert_eq!(expr.highest_degree_only(), (3, expected_expr));
+		assert_eq!(expr.leading_term_with_degree(), (3, expected_expr));
 	}
 
 	#[test]

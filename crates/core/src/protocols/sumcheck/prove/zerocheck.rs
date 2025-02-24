@@ -566,7 +566,7 @@ where
 			let evaluators = izip!(&self.compositions, &self.domains)
 				.map(|(composition, interpolation_domain)| {
 					let composition_at_infinity =
-						ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+						ArithCircuitPoly::new(composition.expression().leading_term());
 
 					ZerocheckFirstRoundEvaluator {
 						composition,
@@ -583,7 +583,7 @@ where
 			let evaluators = izip!(&self.compositions, &self.domains)
 				.map(|(composition, interpolation_domain)| {
 					let composition_at_infinity =
-						ArithCircuitPoly::new(composition.expression().highest_degree_only().1);
+						ArithCircuitPoly::new(composition.expression().leading_term());
 
 					ZerocheckLaterRoundEvaluator {
 						composition,
