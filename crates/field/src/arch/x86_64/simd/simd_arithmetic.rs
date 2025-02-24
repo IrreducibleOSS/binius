@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{any::TypeId, arch::x86_64::*, ops::Deref};
+use std::{any::TypeId, arch::x86_64::*};
 
 use crate::{
 	aes_field::AESTowerField8b,

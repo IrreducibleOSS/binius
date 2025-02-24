@@ -271,11 +271,10 @@ macro_rules! define_byte_sliced {
 		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
 			fn transform(&self, data: &$name) -> $name {
 				let data = array::from_fn(|row| {
-					let row_transformations = &self.0[row];
 					let mut transformed_row = <$packed_storage>::zero();
 
 					for col in 0..<$tower_level as TowerLevel>::WIDTH {
-						transformed_row += row_transformations[col].transform(&data.data[col]);
+						transformed_row += self.0[col][row].transform(&data.data[col]);
 					}
 
 

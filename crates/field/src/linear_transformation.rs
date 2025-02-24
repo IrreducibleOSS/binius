@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Deref};
+use std::marker::PhantomData;
 
 use rand::RngCore;
 

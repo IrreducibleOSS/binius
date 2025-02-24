@@ -3,7 +3,7 @@
 use std::{
 	array,
 	iter::{Product, Sum},
-	ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use binius_utils::checked_arithmetics::checked_log_2;

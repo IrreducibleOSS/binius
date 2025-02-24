@@ -1,7 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::ops::Deref;
-
 use crate::{
 	arch::PackedStrategy,
 	arithmetic_traits::{

@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, ops::Deref};
+use std::array;
 
 use binius_utils::checked_arithmetics::checked_int_div;
 
