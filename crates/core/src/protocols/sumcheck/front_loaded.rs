@@ -3,7 +3,7 @@
 use std::{cmp, cmp::Ordering, collections::VecDeque, iter};
 
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPolyOS};
+use binius_math::{evaluate_univariate, CompositionPoly};
 use binius_utils::sorting::is_sorted_ascending;
 use bytes::Buf;
 
@@ -60,7 +60,7 @@ pub struct BatchVerifier<F: Field, C> {
 impl<F, C> BatchVerifier<F, C>
 where
 	F: TowerField,
-	C: CompositionPolyOS<F> + Clone,
+	C: CompositionPoly<F> + Clone,
 {
 	/// Constructs a new verifier for the front-loaded batched sumcheck.
 	///

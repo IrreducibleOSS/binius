@@ -3,13 +3,11 @@
 use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
-use binius_math::{ArithExpr, CompositionPoly, CompositionPolyOS, Error};
+use binius_math::{ArithExpr, CompositionPoly, Error};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
 };
-
-use super::MultivariatePoly;
 
 /// Convert the expression to a sequence of arithmetic operations that can be evaluated in sequence.
 fn circuit_steps_for_expr<F: Field>(
@@ -119,9 +117,9 @@ enum CircuitStep<F: Field> {
 
 /// Describes polynomial evaluations using a directed acyclic graph of expressions.
 ///
-/// This is meant as an alternative to a hard-coded CompositionPolyOS.
+/// This is meant as an alternative to a hard-coded CompositionPoly.
 ///
-/// The advantage over a hard coded CompositionPolyOS is that this can be constructed and manipulated dynamically at runtime
+/// The advantage over a hard coded CompositionPoly is that this can be constructed and manipulated dynamically at runtime
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: Field> {
@@ -177,7 +175,9 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 	}
 }
 
-impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
+impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>
+	for ArithCircuitPoly<F>
+{
 	fn degree(&self) -> usize {
 		self.degree
 	}
@@ -190,11 +190,11 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		self.tower_level
 	}
 
-	fn expression<FE: ExtensionField<F>>(&self) -> ArithExpr<FE> {
+	fn expression(&self) -> ArithExpr<P::Scalar> {
 		self.expr.convert_field()
 	}
 
-	fn evaluate<P: PackedField<Scalar: ExtensionField<F>>>(&self, query: &[P]) -> Result<P, Error> {
+	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
 		if query.len() != self.n_vars {
 			return Err(Error::IncorrectQuerySize {
 				expected: self.n_vars,
@@ -258,11 +258,7 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 		})
 	}
 
-	fn batch_evaluate<P: PackedField<Scalar: ExtensionField<F>>>(
-		&self,
-		batch_query: &[&[P]],
-		evals: &mut [P],
-	) -> Result<(), Error> {
+	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
 		if batch_query.iter().any(|row| row.len() != row_len) {
 			return Err(Error::BatchEvaluateSizeMismatch);
@@ -368,52 +364,6 @@ impl<F: TowerField> CompositionPoly<F> for ArithCircuitPoly<F> {
 	}
 }
 
-impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPolyOS<P>
-	for ArithCircuitPoly<F>
-{
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(self)
-	}
-
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.expr.convert_field()
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(self)
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
-		CompositionPoly::evaluate(self, query)
-	}
-
-	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
-		CompositionPoly::batch_evaluate(self, batch_query, evals)
-	}
-}
-
-impl<F: TowerField> MultivariatePoly<F> for ArithCircuitPoly<F> {
-	fn degree(&self) -> usize {
-		CompositionPoly::degree(&self)
-	}
-
-	fn n_vars(&self) -> usize {
-		CompositionPoly::n_vars(&self)
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		CompositionPoly::binary_tower_level(&self)
-	}
-
-	fn evaluate(&self, query: &[F]) -> Result<F, super::Error> {
-		CompositionPoly::evaluate(&self, query).map_err(|e| e.into())
-	}
-}
-
 /// Apply a binary operation to two arguments and store the result in `current_evals`.
 /// `op` must be a function that takes two arguments and initialized the result with the third argument.
 fn apply_binary_op<F: Field, P: PackedField<Scalar: ExtensionField<F>>>(
@@ -485,7 +435,7 @@ mod tests {
 	use binius_field::{
 		BinaryField16b, BinaryField8b, PackedBinaryField8x16b, PackedField, TowerField,
 	};
-	use binius_math::CompositionPolyOS;
+	use binius_math::CompositionPoly;
 	use binius_utils::felts;
 
 	use super::*;
@@ -498,7 +448,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123));
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
 		assert_eq!(typed_circuit.degree(), 0);
 		assert_eq!(typed_circuit.n_vars(), 0);
@@ -519,7 +469,7 @@ mod tests {
 		let expr = ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -547,7 +497,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123)) + ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -567,7 +517,7 @@ mod tests {
 		let expr = ArithExpr::Const(F::new(123)) * ArithExpr::Var(0);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -593,7 +543,7 @@ mod tests {
 		let expr = ArithExpr::Var(0).pow(13);
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 13);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -619,7 +569,7 @@ mod tests {
 		let expr = ArithExpr::Var(0).pow(2) * (ArithExpr::Var(1) + ArithExpr::Const(F::new(123)));
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 3);
 		assert_eq!(typed_circuit.degree(), 3);
 		assert_eq!(typed_circuit.n_vars(), 2);
@@ -681,7 +631,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 		assert_eq!(circuit.steps.len(), 2);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), F::TOWER_LEVEL);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 2);
@@ -740,7 +690,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 		assert_eq!(circuit.steps.len(), 1);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 1);
 		assert_eq!(typed_circuit.degree(), 1);
 		assert_eq!(typed_circuit.n_vars(), 1);
@@ -767,7 +717,7 @@ mod tests {
 		let circuit = ArithCircuitPoly::<F>::new(expr);
 		assert_eq!(circuit.steps.len(), 5);
 
-		let typed_circuit: &dyn CompositionPolyOS<P> = &circuit;
+		let typed_circuit: &dyn CompositionPoly<P> = &circuit;
 		assert_eq!(typed_circuit.binary_tower_level(), 0);
 		assert_eq!(typed_circuit.degree(), 24);
 		assert_eq!(typed_circuit.n_vars(), 1);

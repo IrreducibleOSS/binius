@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPolyOS};
+use binius_math::{evaluate_univariate, CompositionPoly};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
@@ -34,7 +34,7 @@ pub fn batch_verify<F, Composition, Challenger_>(
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 	Challenger_: Challenger,
 {
 	let start = BatchVerifyStart {
@@ -69,7 +69,7 @@ pub fn batch_verify_with_start<F, Composition, Challenger_>(
 ) -> Result<BatchSumcheckOutput<F>, Error>
 where
 	F: TowerField,
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 	Challenger_: Challenger,
 {
 	let BatchVerifyStart {
@@ -177,7 +177,7 @@ pub fn compute_expected_batch_composite_evaluation_single_claim<F: Field, Compos
 	multilinear_evals: &[F],
 ) -> Result<F, Error>
 where
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 {
 	let composite_evals = claim
 		.composite_sums()
@@ -193,7 +193,7 @@ fn compute_expected_batch_composite_evaluation_multi_claim<F: Field, Composition
 	multilinear_evals: &[Vec<F>],
 ) -> Result<F, Error>
 where
-	Composition: CompositionPolyOS<F>,
+	Composition: CompositionPoly<F>,
 {
 	izip!(batch_coeffs, claims, multilinear_evals.iter())
 		.map(|(batch_coeff, claim, multilinear_evals)| {

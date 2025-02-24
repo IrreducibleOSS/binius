@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use binius_field::{Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
-use binius_math::{ArithExpr, CompositionPolyOS};
+use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 use itertools::Itertools;
 
@@ -13,7 +13,7 @@ use super::{Error, MultilinearOracleSet, MultilinearPolyVariant, OracleId};
 
 /// Composition trait object that can be used to create lists of compositions of differing
 /// concrete types.
-pub type TypeErasedComposition<P> = Arc<dyn CompositionPolyOS<P>>;
+pub type TypeErasedComposition<P> = Arc<dyn CompositionPoly<P>>;
 
 /// Constraint is a type erased composition along with a predicate on its values on the boolean hypercube
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]

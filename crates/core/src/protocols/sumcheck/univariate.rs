@@ -230,7 +230,7 @@ mod tests {
 	};
 	use binius_hal::ComputationBackend;
 	use binius_math::{
-		CompositionPolyOS, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
@@ -437,31 +437,31 @@ mod tests {
 		let prover_compositions = [
 			(
 				"pair".into(),
-				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
-				pair.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
+				pair.clone() as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
+				pair.clone() as Arc<dyn CompositionPoly<PackedType<U, FI>>>,
 			),
 			(
 				"triple".into(),
-				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
-				triple.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
+				triple.clone() as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
+				triple.clone() as Arc<dyn CompositionPoly<PackedType<U, FI>>>,
 			),
 			(
 				"quad".into(),
-				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FBase>>>,
-				quad.clone() as Arc<dyn CompositionPolyOS<PackedType<U, FI>>>,
+				quad.clone() as Arc<dyn CompositionPoly<PackedType<U, FBase>>>,
+				quad.clone() as Arc<dyn CompositionPoly<PackedType<U, FI>>>,
 			),
 		];
 
 		let prover_adapter_compositions = [
-			CompositionScalarAdapter::new(pair.clone() as Arc<dyn CompositionPolyOS<FI>>),
-			CompositionScalarAdapter::new(triple.clone() as Arc<dyn CompositionPolyOS<FI>>),
-			CompositionScalarAdapter::new(quad.clone() as Arc<dyn CompositionPolyOS<FI>>),
+			CompositionScalarAdapter::new(pair.clone() as Arc<dyn CompositionPoly<FI>>),
+			CompositionScalarAdapter::new(triple.clone() as Arc<dyn CompositionPoly<FI>>),
+			CompositionScalarAdapter::new(quad.clone() as Arc<dyn CompositionPoly<FI>>),
 		];
 
 		let verifier_compositions = [
-			pair as Arc<dyn CompositionPolyOS<F>>,
-			triple as Arc<dyn CompositionPolyOS<F>>,
-			quad as Arc<dyn CompositionPolyOS<F>>,
+			pair as Arc<dyn CompositionPoly<F>>,
+			triple as Arc<dyn CompositionPoly<F>>,
+			quad as Arc<dyn CompositionPoly<F>>,
 		];
 
 		for skip_rounds in 0..=max_n_vars {
