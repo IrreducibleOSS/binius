@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
-use crate::{composition::ComplexIndexComposition, protocols::sumcheck::zerocheck::ExtraProduct};
+use crate::{composition::PresizedIndexCompositions, protocols::sumcheck::zerocheck::ExtraProduct};
 
 #[derive(Debug)]
 pub enum ExponentiationCompositions<F>
@@ -81,6 +81,6 @@ where
 }
 
 pub type ProverExponentiationComposition<F> =
-	ComplexIndexComposition<ExponentiationCompositions<F>>;
+	PresizedIndexCompositions<ExponentiationCompositions<F>>;
 pub type VerifierExponentiationComposition<F> =
-	ComplexIndexComposition<ExtraProduct<ExponentiationCompositions<F>>>;
+	PresizedIndexCompositions<ExtraProduct<ExponentiationCompositions<F>>>;

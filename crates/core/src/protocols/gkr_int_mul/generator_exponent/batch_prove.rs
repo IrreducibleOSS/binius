@@ -77,7 +77,7 @@ where
 	let max_exponent_bit_number = provers.first().map(|p| p.exponent_bit_width()).unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
-		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers::<_, FGenerator, _, _>(
+		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
 			&mut provers,
 			layer_no,
 			evaluation_domain_factory.clone(),
@@ -86,11 +86,8 @@ where
 
 		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
 
-		let layer_exponent_claims = build_layer_exponent_claims::<_, FGenerator>(
-			&mut provers,
-			sumcheck_proof_output,
-			layer_no,
-		)?;
+		let layer_exponent_claims =
+			build_layer_exponent_claims::<_>(&mut provers, sumcheck_proof_output, layer_no)?;
 
 		eval_claims_on_exponent_bit_columns.push(layer_exponent_claims);
 
@@ -114,7 +111,7 @@ type GKRProvers<'a, F, P, FDomain, Backend> = Vec<
 >;
 
 #[instrument(skip_all, level = "debug")]
-fn build_layer_gkr_sumcheck_provers<'a, P, FGenerator, FDomain, Backend>(
+fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
 	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	layer_no: usize,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -122,9 +119,8 @@ fn build_layer_gkr_sumcheck_provers<'a, P, FGenerator, FDomain, Backend>(
 ) -> Result<GKRProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
 where
 	FDomain: Field,
-	FGenerator: BinaryField,
 	P: PackedFieldIndexable + PackedExtension<FDomain>,
-	P::Scalar: BinaryField + ExtensionField<FDomain> + ExtensionField<FGenerator>,
+	P::Scalar: ExtensionField<FDomain>,
 	Backend: ComputationBackend,
 {
 	assert!(!provers.is_empty());
@@ -142,7 +138,7 @@ where
 			let CompositeSumClaimWithMultilinears {
 				composite_claims: eval_point_composite_claims,
 				multilinears: eval_point_multilinears,
-			} = build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..i], layer_no)?;
+			} = build_eval_point_claims::<P>(&mut provers[active_index..i], layer_no)?;
 
 			if eval_point_composite_claims.is_empty() {
 				// extract the last point because provers with this point will not participate in the sumcheck.
@@ -160,7 +156,7 @@ where
 			let CompositeSumClaimWithMultilinears {
 				composite_claims: eval_point_composite_claims,
 				multilinears: eval_point_multilinears,
-			} = build_eval_point_claims::<P, FGenerator>(&mut provers[active_index..], layer_no)?;
+			} = build_eval_point_claims::<P>(&mut provers[active_index..], layer_no)?;
 
 			if !eval_point_composite_claims.is_empty() {
 				composite_claims.push(eval_point_composite_claims);
@@ -189,14 +185,12 @@ struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
-fn build_eval_point_claims<'a, P, FGenerator>(
+fn build_eval_point_claims<'a, P>(
 	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	layer_no: usize,
 ) -> Result<CompositeSumClaimWithMultilinears<'a, P>, Error>
 where
 	P: PackedField,
-	FGenerator: BinaryField,
-	P::Scalar: BinaryField + ExtensionField<FGenerator>,
 {
 	let (composite_claims_n_multilinears, n_claims) =
 		provers
@@ -217,7 +211,7 @@ where
 
 		let ProverLayerClaimMeta {
 			claim: composite_claim,
-			multilinears: this_round_multilinears,
+			multilinears: this_layer_multilinears,
 		} = prover.layer_composite_sum_claim(
 			layer_no,
 			composite_claims_n_multilinears,
@@ -227,7 +221,7 @@ where
 		if let Some(composite_claim) = composite_claim {
 			composite_claims.push(composite_claim);
 
-			multilinears.extend(this_round_multilinears);
+			multilinears.extend(this_layer_multilinears);
 		}
 	}
 	Ok(CompositeSumClaimWithMultilinears {
@@ -236,25 +230,20 @@ where
 	})
 }
 
-pub fn build_layer_exponent_claims<'a, P, FGenerator>(
+pub fn build_layer_exponent_claims<'a, P>(
 	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 	layer_no: usize,
 ) -> Result<Vec<LayerClaim<P::Scalar>>, Error>
 where
 	P: PackedField,
-	P::Scalar: BinaryField + ExtensionField<FGenerator>,
-	FGenerator: BinaryField,
 {
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
 	// extract eq_ind_evals
-	sumcheck_output
-		.multilinear_evals
-		.iter_mut()
-		.for_each(|multilinear_evals| {
-			multilinear_evals.pop();
-		});
+	for multilinear_evals in &mut sumcheck_output.multilinear_evals {
+		multilinear_evals.pop();
+	}
 
 	let mut multilinear_evals = sumcheck_output.multilinear_evals.into_iter().flatten();
 
