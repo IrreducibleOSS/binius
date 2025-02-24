@@ -8,13 +8,13 @@ use binius_utils::bail;
 use super::{
 	common::ExponentiationClaim,
 	compositions::{ExponentiationCompositions, VerifierExponentiationComposition},
+	error::Error,
 	utils::first_layer_inverse,
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
 	protocols::{
 		gkr_gpa::LayerClaim,
-		gkr_int_mul::error::Error,
 		sumcheck::{zerocheck::ExtraProduct, CompositeSumClaim},
 	},
 };
@@ -44,14 +44,14 @@ pub trait ExponentiationVerifier<F: Field> {
 	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F>;
 }
 
-pub struct ExponentiationStaticVerifier<F: Field, FGenerator>(
+pub struct GeneratorExponentiationVerifier<F: Field, FBase>(
 	ExponentiationClaim<F>,
-	PhantomData<FGenerator>,
+	PhantomData<FBase>,
 );
 
-impl<F: Field, FGenerator> ExponentiationStaticVerifier<F, FGenerator> {
+impl<F: Field, FBase> GeneratorExponentiationVerifier<F, FBase> {
 	pub fn new(claim: &ExponentiationClaim<F>) -> Result<Self, Error> {
-		if claim.with_dynamic_generator {
+		if claim.with_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -59,10 +59,10 @@ impl<F: Field, FGenerator> ExponentiationStaticVerifier<F, FGenerator> {
 	}
 }
 
-impl<F, FGenerator> ExponentiationVerifier<F> for ExponentiationStaticVerifier<F, FGenerator>
+impl<F, FBase> ExponentiationVerifier<F> for GeneratorExponentiationVerifier<F, FBase>
 where
-	FGenerator: BinaryField,
-	F: BinaryField + ExtensionField<FGenerator>,
+	FBase: BinaryField,
+	F: BinaryField + ExtensionField<FBase>,
 {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width
@@ -88,7 +88,7 @@ where
 
 			LayerClaim {
 				eval_point: self.0.eval_point.clone(),
-				eval: first_layer_inverse::<FGenerator, _>(self.0.eval),
+				eval: first_layer_inverse::<FBase, _>(self.0.eval),
 			}
 		} else {
 			let n_vars = self.layer_claim_eval_point().len();
@@ -118,15 +118,15 @@ where
 		} else {
 			let internal_layer_index = self.exponent_bit_width() - 1 - layer_no;
 
-			let generator_power_constant =
-				F::from(FGenerator::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
+			let base_power_constant =
+				F::from(FBase::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
 
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1, eq_ind_index],
 				ExtraProduct {
-					inner: ExponentiationCompositions::StaticGenerator {
-						generator_power_constant,
+					inner: ExponentiationCompositions::GeneratorBase {
+						base_power_constant,
 					},
 				},
 			)?;
@@ -145,7 +145,7 @@ pub struct ExponentiationDynamicVerifier<F: Field>(ExponentiationClaim<F>);
 
 impl<F: Field> ExponentiationDynamicVerifier<F> {
 	pub fn new(claim: &ExponentiationClaim<F>) -> Result<Self, Error> {
-		if !claim.with_dynamic_generator {
+		if !claim.with_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -164,10 +164,10 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 
 	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
 		if self.is_last_layer(layer_no) {
-			// generator, exponent_bit
+			// Base, exponent_bit
 			(2, 1)
 		} else {
-			// this_round_input, exponent_bit, generator
+			// this_round_input, exponent_bit, Base
 			(3, 1)
 		}
 	}
@@ -199,7 +199,7 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1, eq_ind_index],
 				ExtraProduct {
-					inner: ExponentiationCompositions::DynamicGeneratorLastLayer,
+					inner: ExponentiationCompositions::DynamicBaseLastLayer,
 				},
 			)?;
 
@@ -214,7 +214,7 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 					eq_ind_index,
 				],
 				ExtraProduct {
-					inner: ExponentiationCompositions::DynamicGenerator,
+					inner: ExponentiationCompositions::DynamicBase,
 				},
 			)?;
 

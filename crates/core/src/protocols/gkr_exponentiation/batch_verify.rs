@@ -4,11 +4,11 @@ use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
-	super::error::Error,
-	common::{ExponentiationClaim, GeneratorExponentReductionOutput},
+	common::{BaseExponentReductionOutput, ExponentiationClaim},
 	compositions::VerifierExponentiationComposition,
+	error::{Error, VerificationError},
 	verifiers::{
-		ExponentiationDynamicVerifier, ExponentiationStaticVerifier, ExponentiationVerifier,
+		ExponentiationDynamicVerifier, ExponentiationVerifier, GeneratorExponentiationVerifier,
 	},
 };
 use crate::{
@@ -16,7 +16,6 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::{
 		gkr_gpa::LayerClaim,
-		gkr_int_mul::error::VerificationError,
 		sumcheck::{self, BatchSumcheckOutput, SumcheckClaim},
 	},
 	transcript::VerifierTranscript,
@@ -39,19 +38,19 @@ use crate::{
 ///
 /// **Input:** A vector of evaluation claims on w.  
 /// **Output:** n separate vectors of claims (at different points) on each of the a_i's.
-pub fn batch_verify<FGenerator, F, Challenger_>(
+pub fn batch_verify<FBase, F, Challenger_>(
 	claims: &[ExponentiationClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
-) -> Result<GeneratorExponentReductionOutput<F>, Error>
+) -> Result<BaseExponentReductionOutput<F>, Error>
 where
-	FGenerator: TowerField,
-	F: TowerField + ExtensionField<FGenerator>,
+	FBase: TowerField,
+	F: TowerField + ExtensionField<FBase>,
 	Challenger_: Challenger,
 {
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
 	if claims.is_empty() {
-		return Ok(GeneratorExponentReductionOutput {
+		return Ok(BaseExponentReductionOutput {
 			eval_claims_on_exponent_bit_columns,
 		});
 	}
@@ -61,7 +60,7 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let mut verifiers = make_verifiers::<_, FGenerator>(claims)?;
+	let mut verifiers = make_verifiers::<_, FBase>(claims)?;
 
 	let max_exponent_bit_number = verifiers
 		.first()
@@ -88,7 +87,7 @@ where
 		verifiers.retain(|verifier| !verifier.is_last_layer(layer_no));
 	}
 
-	Ok(GeneratorExponentReductionOutput {
+	Ok(BaseExponentReductionOutput {
 		eval_claims_on_exponent_bit_columns,
 	})
 }
@@ -249,22 +248,22 @@ where
 	Ok(eval_claims_on_exponent_bit_columns)
 }
 
-fn make_verifiers<'a, F, FGenerator>(
+fn make_verifiers<'a, F, FBase>(
 	claims: &[ExponentiationClaim<F>],
 ) -> Result<Vec<Box<dyn ExponentiationVerifier<F> + 'a>>, Error>
 where
-	FGenerator: BinaryField,
-	F: BinaryField + ExtensionField<FGenerator>,
+	FBase: BinaryField,
+	F: BinaryField + ExtensionField<FBase>,
 {
 	claims
 		.iter()
 		.map(|claim| {
-			if claim.with_dynamic_generator {
+			if claim.with_dynamic_base {
 				ExponentiationDynamicVerifier::new(claim).map(move |verifier| {
 					Box::new(verifier) as Box<dyn ExponentiationVerifier<F> + 'a>
 				})
 			} else {
-				ExponentiationStaticVerifier::<F, FGenerator>::new(claim).map(move |verifier| {
+				GeneratorExponentiationVerifier::<F, FBase>::new(claim).map(move |verifier| {
 					Box::new(verifier) as Box<dyn ExponentiationVerifier<F> + 'a>
 				})
 			}

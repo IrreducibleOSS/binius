@@ -10,7 +10,7 @@ pub struct ExponentiationClaim<F: Field> {
 	pub eval: F,
 	pub exponent_bit_width: usize,
 	pub n_vars: usize,
-	pub with_dynamic_generator: bool,
+	pub with_dynamic_base: bool,
 }
 
 impl<F: Field> From<ExponentiationClaim<F>> for LayerClaim<F> {
@@ -22,6 +22,6 @@ impl<F: Field> From<ExponentiationClaim<F>> for LayerClaim<F> {
 	}
 }
 
-pub struct GeneratorExponentReductionOutput<F: Field> {
+pub struct BaseExponentReductionOutput<F: Field> {
 	pub eval_claims_on_exponent_bit_columns: Vec<Vec<LayerClaim<F>>>,
 }

@@ -29,8 +29,8 @@
 
 pub mod evalcheck;
 pub mod fri;
+pub mod gkr_exponentiation;
 pub mod gkr_gpa;
-pub mod gkr_int_mul;
 pub mod greedy_evalcheck;
 pub mod sumcheck;
 
