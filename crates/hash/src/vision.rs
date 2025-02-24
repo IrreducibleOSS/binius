@@ -337,13 +337,13 @@ impl FastNTT {
 	/// This method does a single inverse NTT transformation round for two pairs '(data, coset)'.
 	/// `twiddles` must contain interleaved twiddles for the given round.
 	/// Given an input:
-	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1, ...].
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_1_twiddles_1, ...].
 	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
 	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
 	/// returns
 	/// (
-	///   [data_0_0 + (data_0_0 + data_0_1) * coset_0_twiddles_0, (data_0_0 + data_0_1) * coset_0_twiddles_0, ...],
-	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, (data_1_0 + data_1_1) * coset_1_twiddles_0, ...],
+	///   [data_0_0 + (data_0_0 + data_0_1) * coset_0_twiddles_0, data_0_0 + data_0_1, ...],
+	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, data_1_0 + data_1_1, ...],
 	/// )
 	///
 	/// This method allows us to perform inverse NTT transformation for two pieces of data using the same number of vector operations as for one piece.
