@@ -225,17 +225,13 @@ impl<F: TowerField> ConstraintSystem<F> {
 			// Translate zero constraints for the compiled constraint system.
 			let compiled_constraints = zero_constraints
 				.iter()
-				.map(|zero_constraint| {
-					// The table zero constraint is an expression with column indices in the table.
-					// We need to remap these column indices to oracle IDs.
-					let composition = zero_constraint.expr.clone().remap_vars(&table_oracle_ids)?;
-					Ok::<_, Error>(Constraint {
-						name: zero_constraint.name.clone(),
-						composition,
-						predicate: ConstraintPredicate::Zero,
-					})
+				.map(|zero_constraint| Constraint {
+					name: zero_constraint.name.clone(),
+					composition: zero_constraint.expr.clone(),
+					predicate: ConstraintPredicate::Zero,
 				})
-				.collect::<Result<Vec<_>, _>>()?;
+				.collect::<Vec<_>>();
+
 			table_constraints.push(ConstraintSet {
 				n_vars,
 				oracle_ids: table_oracle_ids,
