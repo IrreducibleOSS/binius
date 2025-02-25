@@ -17,7 +17,6 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
-use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bumpalo::Bump;
 
