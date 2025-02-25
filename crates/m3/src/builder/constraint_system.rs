@@ -38,6 +38,68 @@ pub struct ConstraintSystem<F: TowerField = B128> {
 	pub channel_id_bound: ChannelId,
 }
 
+impl std::fmt::Display for ConstraintSystem {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		writeln!(f, "ConstraintSystem {{")?;
+
+		for channel in self.channels.iter() {
+			writeln!(f, "    CHANNEL {}", channel.name)?;
+		}
+
+		let mut oracle_id = 0;
+
+		for table in self.tables.iter() {
+			writeln!(f, "    TABLE {} {{", table.name)?;
+
+			for flush in table.flushes.iter() {
+				let channel = self.channels[flush.channel_id].name.clone();
+				let columns = flush
+					.column_indices
+					.iter()
+					.map(|i| table.column_info[*i].name.clone())
+					.collect::<Vec<_>>()
+					.join(", ");
+				match flush.direction {
+					FlushDirection::Push => writeln!(f, "        PUSH ({columns}) to {channel}")?,
+					FlushDirection::Pull => writeln!(f, "        PULL ({columns}) from {channel}")?,
+				};
+			}
+
+			if !table.column_info.is_empty() && !table.flushes.is_empty() {
+				writeln!(f, "")?;
+			}
+
+			for col in table.column_info.iter() {
+				let name = col.name.clone();
+				let pack_factor = 1 << col.shape.pack_factor;
+				let field = match col.shape.tower_height {
+					0 => "B1",
+					1 => "B2",
+					2 => "B4",
+					3 => "B8",
+					4 => "B16",
+					5 => "B32",
+					6 => "B64",
+					_ => "B128",
+				};
+
+				let type_str = if pack_factor > 1 {
+					format!("{field}x{pack_factor}")
+				} else {
+					format!("{field}")
+				};
+				writeln!(f, "        {oracle_id:04} {type_str} {name}")?;
+				oracle_id += 1;
+			}
+
+			oracle_id += 1; // step_down selector for the table
+
+			writeln!(f, "    }}")?;
+		}
+		writeln!(f, "}}")
+	}
+}
+
 impl<F: TowerField> ConstraintSystem<F> {
 	pub fn new() -> Self {
 		Self::default()
