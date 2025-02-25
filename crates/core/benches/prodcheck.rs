@@ -57,9 +57,7 @@ where
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
 	for n_vars in N_VARS {
-		group.throughput(Throughput::Bytes(
-			((1 << n_vars) * std::mem::size_of::<F>() * N_CLAIMS) as u64,
-		));
+		group.throughput(Throughput::Elements(((1 << n_vars) * N_CLAIMS) as u64));
 		if n_vars >= 20 {
 			group.sample_size(10);
 		}
