@@ -87,17 +87,35 @@ impl<F: TowerField> Table<F> {
 
 	pub fn add_shifted<FSub, const LOG_VALS_PER_ROW: usize>(
 		&mut self,
-		_name: impl ToString,
-		_original: Col<FSub, LOG_VALS_PER_ROW>,
-		_shift_bits: usize,
-		_shift: usize,
-		_shift_mode: ShiftVariant,
+		name: impl ToString,
+		col: Col<FSub, LOG_VALS_PER_ROW>,
+		log_block_size: usize,
+		offset: usize,
+		variant: ShiftVariant,
 	) -> Col<FSub, LOG_VALS_PER_ROW>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		todo!()
+		assert!(log_block_size <= LOG_VALS_PER_ROW);
+		assert!(offset <= 1 << log_block_size);
+		let index = self.column_info.len();
+		self.column_info.push(ColumnInfo {
+			col: Column::Shifted {
+				col_index: col.index,
+				offset,
+				log_block_size,
+				variant,
+			},
+			name: name.to_string(),
+			pack_factor: LOG_VALS_PER_ROW,
+			is_nonzero: false,
+		});
+		Col {
+			table_id: self.id,
+			index,
+			_marker: PhantomData,
+		}
 	}
 
 	// Selected is a special form of projected with hypercube indices

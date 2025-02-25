@@ -169,7 +169,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	first_oracle_id_in_table: OracleId,
-	//table_id: TableId,
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
@@ -185,6 +184,14 @@ fn add_oracle_for_column<F: TowerField>(
 				.map(|(index, &coeff)| (first_oracle_id_in_table + index, coeff))
 				.collect::<Vec<_>>();
 			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
+		}
+		Column::Shifted {
+			col_index: col,
+			offset,
+			log_block_size,
+			variant,
+		} => {
+			addition.shifted(first_oracle_id_in_table + *col, *offset, *log_block_size, *variant)?
 		}
 	};
 	Ok(oracle_id)
