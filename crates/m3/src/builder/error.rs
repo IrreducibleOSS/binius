@@ -5,7 +5,7 @@ use std::cell::{BorrowError, BorrowMutError};
 use binius_core::{oracle::Error as OracleError, polynomial::Error as PolynomialError};
 use binius_math::Error as MathError;
 
-use crate::constraint_system::{ColumnId, TableId};
+use super::{column::ColumnId, table::TableId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

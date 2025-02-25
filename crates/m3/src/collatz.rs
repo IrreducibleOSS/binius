@@ -1,22 +1,22 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
 };
 use bytemuck::Pod;
 
-use super::{
-	builder::{Col, ConstraintSystemBuilder},
-	constraint_system::ChannelId,
-};
 use crate::{
+	builder::{
+		column::Col,
+		constraint_system::ConstraintSystem,
+		table::TableId,
+		types::{B1, B32},
+		witness::{TableFiller, TableWitnessIndexSegment},
+	},
 	collatz_high_level::{EvensEvent, OddsEvent},
-	constraint_system::TableId,
-	types::*,
 	u32::{U32Add, U32AddFlags},
-	witness::{TableFiller, TableWitnessIndexSegment},
 };
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ pub struct EvensTable {
 }
 
 impl EvensTable {
-	pub fn new(cs: &mut ConstraintSystemBuilder, seq_chan: ChannelId) -> Self {
+	pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
 		let table = cs.add_table("evens");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
@@ -94,7 +94,7 @@ pub struct OddsTable {
 }
 
 impl OddsTable {
-	pub fn new(cs: &mut ConstraintSystemBuilder, seq_chan: ChannelId) -> Self {
+	pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
 		let mut table = cs.add_table("odds");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
@@ -177,17 +177,16 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		builder::ConstraintSystemBuilder, collatz_high_level::CollatzTrace,
-		constraint_system::Instance,
+		builder::{constraint_system::ConstraintSystem, statement::Instance, types::B128},
+		collatz_high_level::CollatzTrace,
 	};
 
 	#[test]
 	fn test_collatz() {
-		let mut cs_builder = ConstraintSystemBuilder::new();
-		let sequence_chan = cs_builder.add_channel("sequence");
-		let evens_table = EvensTable::new(&mut cs_builder, sequence_chan);
-		let odds_table = OddsTable::new(&mut cs_builder, sequence_chan);
-		let cs = cs_builder.build();
+		let mut cs = ConstraintSystem::new();
+		let sequence_chan = cs.add_channel("sequence");
+		let evens_table = EvensTable::new(&mut cs, sequence_chan);
+		let odds_table = OddsTable::new(&mut cs, sequence_chan);
 
 		let trace = CollatzTrace::generate(3999);
 		// TODO: Refactor boundary creation
@@ -223,7 +222,13 @@ mod tests {
 
 		let compiled_cs = cs.compile(&instance).unwrap();
 		let witness = witness.into_multilinear_extension_index::<B128>();
-		// TODO: Convert the WitnessIndex into MultilinearExtensionIndex
+
+		binius_core::constraint_system::validate::validate_witness(
+			&compiled_cs,
+			&instance.boundaries,
+			&witness,
+		)
+		.unwrap();
 
 		// prove/verify with compiled_cs and witness
 	}

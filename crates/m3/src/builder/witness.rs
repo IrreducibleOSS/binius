@@ -17,10 +17,10 @@ use binius_maybe_rayon::prelude::*;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 
-use super::error::Error;
-use crate::{
-	builder::Col,
-	constraint_system::{ColumnId, ColumnShape, TableId},
+use super::{
+	column::{Col, ColumnId, ColumnShape},
+	error::Error,
+	table::TableId,
 };
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -369,7 +369,7 @@ mod tests {
 	use binius_field::{arch::OptimalUnderlier128b, packed::len_packed_slice};
 
 	use super::*;
-	use crate::types::{B1, B32, B8};
+	use crate::builder::types::{B1, B32, B8};
 
 	#[test]
 	fn test_table_witness_borrows() {
