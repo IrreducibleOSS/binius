@@ -87,6 +87,44 @@ pub trait PackedExtension<FS: Field>: PackedField<Scalar: ExtensionField<FS>> {
 	fn cast_ext(base: Self::PackedSubfield) -> Self;
 	fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self;
 	fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self;
+
+	#[inline(always)]
+	fn cast_base_arr<const N: usize>(packed: [Self; N]) -> [Self::PackedSubfield; N] {
+		packed.map(Self::cast_base)
+	}
+
+	#[inline(always)]
+	fn cast_base_arr_ref<const N: usize>(packed: &[Self; N]) -> &[Self::PackedSubfield; N] {
+		Self::cast_bases(packed)
+			.try_into()
+			.expect("array has size N")
+	}
+
+	#[inline(always)]
+	fn cast_base_arr_mut<const N: usize>(packed: &mut [Self; N]) -> &mut [Self::PackedSubfield; N] {
+		Self::cast_bases_mut(packed)
+			.try_into()
+			.expect("array has size N")
+	}
+
+	#[inline(always)]
+	fn cast_ext_arr<const N: usize>(packed: [Self::PackedSubfield; N]) -> [Self; N] {
+		packed.map(Self::cast_ext)
+	}
+
+	#[inline(always)]
+	fn cast_ext_arr_ref<const N: usize>(packed: &[Self::PackedSubfield; N]) -> &[Self; N] {
+		Self::cast_exts(packed)
+			.try_into()
+			.expect("array has size N")
+	}
+
+	#[inline(always)]
+	fn cast_ext_arr_mut<const N: usize>(packed: &mut [Self::PackedSubfield; N]) -> &mut [Self; N] {
+		Self::cast_exts_mut(packed)
+			.try_into()
+			.expect("array has size N")
+	}
 }
 
 impl<PT, FS> PackedExtension<FS> for PT

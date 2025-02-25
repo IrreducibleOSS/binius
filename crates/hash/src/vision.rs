@@ -1,6 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{array, iter::repeat};
+use std::{
+	array,
+	iter::repeat,
+	ops::{Add, AddAssign, Mul},
+};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -11,9 +15,10 @@ use binius_field::{
 	packed::set_packed_slice,
 	underlier::{Divisible, WithUnderlier},
 	AESTowerField32b, AESTowerField8b, AesToBinaryTransformation, BinaryField, BinaryField32b,
-	BinaryField8b, BinaryToAesTransformation, ExtensionField, Field, PackedAESBinaryField32x8b,
-	PackedAESBinaryField8x32b, PackedBinaryField32x8b, PackedBinaryField8x32b, PackedExtension,
-	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, ExtensionField, Field,
+	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedBinaryField32x8b,
+	PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable, PackedField,
+	PackedFieldIndexable,
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
@@ -65,8 +70,8 @@ lazy_static! {
 		PackedAESBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
 
-	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_FWD_CONST_AES);
-	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_INV_CONST_AES);
+	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_INV_CONST_AES);
 
 	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS.map(|key| {
 			let arr: [PackedAESBinaryField8x32b; 3] = key
@@ -93,28 +98,57 @@ fn add_packed_768<P: PackedField>(a: &mut [P; 3], b: &[P; 3]) {
 	}
 }
 
-/// The MDS step in the Vision Permutation which uses AdditiveNTT to compute matrix multiplication
-/// of the state vector 24x32b
-#[derive(Debug, Clone)]
-pub struct Vision32MDSTransform {
-	x: PackedAESBinaryField32x8b,
-	y: PackedAESBinaryField32x8b,
-	z: PackedAESBinaryField32x8b,
+trait PackedStateElement<Scalar: Field>:
+	Mul<Output = Self> + Add<Output = Self> + AddAssign + Copy
+{
+	fn broadcast(scalar: Scalar) -> Self;
+	fn interleave(self, other: Self, log_block_size: usize) -> (Self, Self);
 }
 
-impl Default for Vision32MDSTransform {
-	fn default() -> Self {
-		let x = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1));
-		let y = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2));
-		let z = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1));
+impl<P: PackedField> PackedStateElement<P::Scalar> for P {
+	fn broadcast(scalar: P::Scalar) -> Self {
+		Self::broadcast(scalar)
+	}
 
-		Self { x, y, z }
+	fn interleave(self, other: Self, log_block_size: usize) -> (Self, Self) {
+		self.interleave(other, log_block_size)
 	}
 }
 
-impl Vision32MDSTransform {
-	pub fn transform(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
-		INVERSE_FAST_TRANSFORM.inverse(data);
+/// The MDS step in the Vision Permutation which uses AdditiveNTT to compute matrix multiplication
+/// of the state vector 24x32b
+#[derive(Debug, Clone)]
+pub struct Vision32MDSTransform<P: PackedStateElement<AESTowerField8b>, Ntt: NTT<P> + 'static> {
+	x: P,
+	y: P,
+	z: P,
+	forward_ntt: &'static Ntt,
+	inverse_ntt: &'static Ntt,
+}
+
+impl Default for Vision32MDSTransform<PackedAESBinaryField32x8b, FastNTT> {
+	fn default() -> Self {
+		Self::new(&*FORWARD_FAST_TRANSFORM, &*INVERSE_FAST_TRANSFORM)
+	}
+}
+
+impl<P: PackedStateElement<AESTowerField8b>, Ntt: NTT<P> + 'static> Vision32MDSTransform<P, Ntt> {
+	fn new(forward_ntt: &'static Ntt, inverse_ntt: &'static Ntt) -> Self {
+		let x = P::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1));
+		let y = P::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2));
+		let z = P::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1));
+
+		Self {
+			x,
+			y,
+			z,
+			forward_ntt,
+			inverse_ntt,
+		}
+	}
+
+	pub fn transform(&self, data: &mut [P; 3]) {
+		self.inverse_ntt.inverse(data);
 
 		data[1] += data[0];
 		let x = self.x * data[1];
@@ -129,15 +163,23 @@ impl Vision32MDSTransform {
 		data[1] = stash_0 + y + z;
 		data[2] = data[1] + stash_1;
 
-		FORWARD_FAST_TRANSFORM.forward(data);
+		self.forward_ntt.forward(data);
 	}
 }
 
 /// This is the complete permutation function for the Vision hash which implements `Permutation`
 /// and `CryptographicPermutation` traits over `PackedAESBinary8x32b` as well as `BinaryField32b`
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Vision32bPermutation {
-	mds: Vision32MDSTransform,
+	mds: Vision32MDSTransform<PackedAESBinaryField32x8b, FastNTT>,
+}
+
+impl Default for Vision32bPermutation {
+	fn default() -> Self {
+		Self {
+			mds: Vision32MDSTransform::new(&FORWARD_FAST_TRANSFORM, &INVERSE_FAST_TRANSFORM),
+		}
+	}
 }
 
 impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
@@ -277,9 +319,15 @@ impl digest::FixedOutput for VisionHasherDigest {
 	}
 }
 
+trait NTT<P> {
+	fn forward(&self, data: &mut [P; 3]);
+	fn inverse(&self, data: &mut [P; 3]);
+}
+
 /// This structure represents fast additive NTT transformation that transforms
 /// 3 x `PackedAESBinaryField8x32b` with a different coset for each item in a single go.
-struct FastNTT {
+#[derive(Clone)]
+pub struct FastNTT {
 	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
 	round_0_twiddles: [PackedAESBinaryField32x8b; 2],
 	round_1_twiddles: [PackedAESBinaryField32x8b; 2],
@@ -336,7 +384,7 @@ impl FastNTT {
 						.take(16)
 						.chain(repeat(cosets_twiddles_2[1].get(0)).take(16)),
 				),
-				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_2[2].get(0)),
+				PackedField::broadcast(cosets_twiddles_2[2].get(0)),
 			],
 		}
 	}
@@ -360,10 +408,10 @@ impl FastNTT {
 		data_1: PackedAESBinaryField32x8b,
 		log_block_size: usize,
 	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
-		let (odds, evens) = data_0.interleave(data_1, log_block_size);
+		let (odds, evens) = PackedField::interleave(data_0, data_1, log_block_size);
 		let result_evens = odds + evens;
 		let result_odds = odds + twiddles * result_evens;
-		result_odds.interleave(result_evens, log_block_size)
+		PackedField::interleave(result_odds, result_evens, log_block_size)
 	}
 
 	/// This method executes the transformation equivalent to `AdditiveNTT::inverse_transform`.
@@ -410,10 +458,10 @@ impl FastNTT {
 		data_1: PackedAESBinaryField32x8b,
 		log_block_size: usize,
 	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
-		let (odds, evens) = data_0.interleave(data_1, log_block_size);
+		let (odds, evens) = PackedField::interleave(data_0, data_1, log_block_size);
 		let result_odds = odds + evens * twiddles;
 		let result_evens = evens + result_odds;
-		result_odds.interleave(result_evens, log_block_size)
+		PackedField::interleave(result_odds, result_evens, log_block_size)
 	}
 
 	/// This method executes the transformation equivalent to `AdditiveNTT::forward_transform`.
@@ -442,6 +490,57 @@ impl FastNTT {
 	}
 }
 
+impl NTT<PackedAESBinaryField32x8b> for FastNTT {
+	fn forward(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
+		self.forward(data);
+	}
+
+	fn inverse(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
+		self.inverse(data);
+	}
+}
+
+#[derive(Copy, Clone, Default)]
+struct ByteSlicedDoubleElement<P: PackedField>(P, P);
+
+impl<P: PackedField> Add for ByteSlicedDoubleElement<P> {
+	type Output = Self;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		Self(self.0 + rhs.0, self.1 + rhs.1)
+	}
+}
+
+impl<P: PackedField> AddAssign for ByteSlicedDoubleElement<P> {
+	fn add_assign(&mut self, rhs: Self) {
+		self.0 += rhs.0;
+		self.1 += rhs.1;
+	}
+}
+
+impl<P: PackedField> Mul for ByteSlicedDoubleElement<P> {
+	type Output = Self;
+
+	fn mul(self, rhs: Self) -> Self::Output {
+		Self(self.0 * rhs.0, self.1 * rhs.1)
+	}
+}
+
+impl<P: PackedField> PackedStateElement<P::Scalar> for ByteSlicedDoubleElement<P> {
+	fn broadcast(scalar: P::Scalar) -> Self {
+		let broadcast = P::broadcast(scalar);
+		Self(broadcast, broadcast)
+	}
+
+	fn interleave(self, other: Self, log_block_size: usize) -> (Self, Self) {
+		let (a0, b0) = PackedField::interleave(self.0, other.0, log_block_size);
+		let (a1, b1) = PackedField::interleave(self.1, other.1, log_block_size);
+		(Self(a0, a1), Self(b0, b1))
+	}
+}
+
+struct ByteSlicedNtt {}
+
 #[cfg(test)]
 mod tests {
 	use std::array;
@@ -457,7 +556,7 @@ mod tests {
 	use crate::{FixedLenHasherDigest, HashDigest};
 
 	fn mds_transform(data: &mut [PackedAESBinaryField32x8b; 3]) {
-		let vision = Vision32MDSTransform::default();
+		let vision = Vision32MDSTransform::new(&*FORWARD_FAST_TRANSFORM, &*INVERSE_FAST_TRANSFORM);
 		vision.transform(data);
 	}
 
