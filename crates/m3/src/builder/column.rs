@@ -79,8 +79,7 @@ pub struct ColumnId {
 pub struct ColumnInfo<F: TowerField = B128> {
 	pub col: Column<F>,
 	pub name: String,
-	/// This represents how many
-	pub pack_factor: usize,
+	pub shape: ColumnShape,
 	pub is_nonzero: bool,
 }
 

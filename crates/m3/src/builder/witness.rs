@@ -26,7 +26,7 @@ use super::{
 /// Runtime borrow checking on columns. Maybe read-write lock?
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
-	tables: Vec<TableWitnessIndex<'a, U>>,
+	pub tables: Vec<TableWitnessIndex<'a, U>>,
 }
 
 impl<'a, U: UnderlierType> WitnessIndex<'a, U> {

@@ -8,7 +8,7 @@ use binius_field::{ExtensionField, TowerField};
 
 use super::{
 	channel::Flush,
-	column::{upcast_col, Col, Column, ColumnInfo},
+	column::{upcast_col, Col, Column, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
 };
@@ -75,7 +75,10 @@ impl<F: TowerField> Table<F> {
 				tower_level: FSub::TOWER_LEVEL,
 			},
 			name: name.to_string(),
-			pack_factor: LOG_VALS_PER_ROW,
+			shape: ColumnShape {
+				pack_factor: LOG_VALS_PER_ROW,
+				tower_height: FSub::TOWER_LEVEL,
+			},
 			is_nonzero: false,
 		});
 		Col {
@@ -108,7 +111,10 @@ impl<F: TowerField> Table<F> {
 				variant,
 			},
 			name: name.to_string(),
-			pack_factor: LOG_VALS_PER_ROW,
+			shape: ColumnShape {
+				pack_factor: LOG_VALS_PER_ROW,
+				tower_height: FSub::TOWER_LEVEL,
+			},
 			is_nonzero: false,
 		});
 		Col {
@@ -151,7 +157,10 @@ impl<F: TowerField> Table<F> {
 		self.column_info.push(ColumnInfo {
 			col: Column::LinearCombination(lincom),
 			name: name.to_string(),
-			pack_factor: V,
+			shape: ColumnShape {
+				pack_factor: V,
+				tower_height: FSub::TOWER_LEVEL,
+			},
 			is_nonzero: false,
 		});
 		Col {
@@ -193,7 +202,10 @@ impl<F: TowerField> Table<F> {
 				log_degree: FSub::TOWER_LEVEL - FSubSub::TOWER_LEVEL,
 			},
 			name: name.to_string(),
-			pack_factor: V,
+			shape: ColumnShape {
+				pack_factor: V,
+				tower_height: FSub::TOWER_LEVEL,
+			},
 			is_nonzero: false,
 		});
 		Col {
