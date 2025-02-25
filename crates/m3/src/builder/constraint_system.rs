@@ -17,6 +17,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
+use binius_math::ArithExpr;
 use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bumpalo::Bump;
 
@@ -29,6 +30,7 @@ use super::{
 	types::B128,
 	witness::WitnessIndex,
 };
+use crate::builder::expr::ArithExprNamedVars;
 
 #[derive(Debug, Default)]
 pub struct ConstraintSystem<F: TowerField = B128> {
@@ -50,6 +52,21 @@ impl std::fmt::Display for ConstraintSystem {
 
 		for table in self.tables.iter() {
 			writeln!(f, "    TABLE {} {{", table.name)?;
+
+			let names = table
+				.column_info
+				.iter()
+				.map(|c| c.name.clone())
+				.collect::<Vec<_>>();
+			for constraint in table.zero_constraints.iter() {
+				let name = constraint.name.clone();
+				let expr = ArithExprNamedVars(&constraint.expr, &names);
+				writeln!(f, "        ZERO {name}: {expr}")?;
+			}
+
+			if !table.zero_constraints.is_empty() && !table.flushes.is_empty() {
+				writeln!(f, "")?;
+			}
 
 			for flush in table.flushes.iter() {
 				let channel = self.channels[flush.channel_id].name.clone();
