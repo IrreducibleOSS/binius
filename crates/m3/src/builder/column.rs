@@ -99,4 +99,8 @@ pub enum Column<F: TowerField = B128> {
 		log_block_size: usize,
 		variant: ShiftVariant,
 	},
+	Packed {
+		col_index: ColumnIndex,
+		log_degree: usize,
+	},
 }

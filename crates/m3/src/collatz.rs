@@ -38,8 +38,8 @@ impl EvensTable {
 		let out_bits =
 			table.add_shifted::<B1, 5>("out_bits", in_bits, 5, 1, ShiftVariant::LogicalRight);
 
-		let in_val = table.add_packed::<B32, 0, _, 5>("in", in_bits);
-		let out_val = table.add_packed::<B32, 0, _, 5>("out", out_bits);
+		let in_val = table.add_packed::<_, 5, B32, 0>("in", in_bits);
+		let out_val = table.add_packed::<_, 5, B32, 0>("out", out_bits);
 
 		table.pull_one(seq_chan, in_val);
 		table.push_one(seq_chan, out_val);
@@ -118,8 +118,8 @@ impl OddsTable {
 			},
 		);
 
-		let in_val = table.add_packed::<B32, 0, _, 5>("in", in_bits);
-		let out_val = table.add_packed::<B32, 0, _, 5>("out", add_in_x3.zout);
+		let in_val = table.add_packed::<_, 5, B32, 0>("in", in_bits);
+		let out_val = table.add_packed::<_, 5, B32, 0>("out", add_in_x3.zout);
 
 		table.pull_one(seq_chan, in_val);
 		table.push_one(seq_chan, out_val);
