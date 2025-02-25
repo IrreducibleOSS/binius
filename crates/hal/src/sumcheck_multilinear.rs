@@ -8,7 +8,7 @@ use binius_math::{MLEDirectAdapter, MultilinearPoly};
 pub enum SumcheckMultilinear<P, M>
 where
 	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
+	M: MultilinearPoly<P>,
 {
 	/// Small field polynomial - to be folded into large field at `switchover` round
 	Transparent {

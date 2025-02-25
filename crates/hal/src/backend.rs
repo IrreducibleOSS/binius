@@ -7,7 +7,8 @@ use std::{
 
 use binius_field::{Field, PackedExtension, PackedField};
 use binius_math::{
-	CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
+	CompositionPoly, EvaluationOrder, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	MultilinearQueryRef,
 };
 use binius_maybe_rayon::iter::FromParallelIterator;
 use tracing::instrument;
@@ -45,6 +46,7 @@ pub trait ComputationBackend: Send + Sync + Debug {
 	/// Calculate the accumulated evaluations for an arbitrary round of zerocheck.
 	fn sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
+		evaluation_order: EvaluationOrder,
 		n_vars: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
@@ -87,6 +89,7 @@ where
 
 	fn sumcheck_compute_round_evals<FDomain, P, M, Evaluator, Composition>(
 		&self,
+		evaluation_order: EvaluationOrder,
 		n_vars: usize,
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
@@ -102,6 +105,7 @@ where
 	{
 		T::sumcheck_compute_round_evals(
 			self,
+			evaluation_order,
 			n_vars,
 			tensor_query,
 			multilinears,
