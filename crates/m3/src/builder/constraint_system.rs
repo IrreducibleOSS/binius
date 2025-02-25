@@ -24,7 +24,7 @@ use super::{
 	channel::{Channel, Flush},
 	column::{Column, ColumnInfo},
 	error::Error,
-	statement::Instance,
+	statement::Statement,
 	table::Table,
 	types::B128,
 	witness::WitnessIndex,
@@ -60,7 +60,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	pub fn build_witness<U: UnderlierType>(
 		&self,
 		_allocator: &Bump,
-		_instance: &Instance,
+		_instance: &Statement,
 	) -> Result<WitnessIndex<U>, Error> {
 		todo!()
 	}
@@ -71,7 +71,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// oracles for all columns. The main difference between column definitions and oracle
 	/// definitions is that multilinear oracle definitions have a number of variables, whereas the
 	/// column definitions contained in a [`ConstraintSystem`] do not have size information.
-	pub fn compile(&self, statement: &Instance<F>) -> Result<CompiledConstraintSystem<F>, Error> {
+	pub fn compile(&self, statement: &Statement<F>) -> Result<CompiledConstraintSystem<F>, Error> {
 		if statement.table_sizes.len() != self.tables.len() {
 			return Err(Error::StatementMissingTableSize {
 				expected: self.tables.len(),

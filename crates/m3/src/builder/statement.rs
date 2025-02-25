@@ -3,7 +3,7 @@ use binius_field::TowerField;
 
 use super::types::B128;
 
-pub struct Instance<F: TowerField = B128> {
+pub struct Statement<F: TowerField = B128> {
 	pub boundaries: Vec<Boundary<F>>,
 	/// Direct index mapping table IDs to the count of rows per table.
 	///

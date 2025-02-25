@@ -177,7 +177,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		builder::{constraint_system::ConstraintSystem, statement::Instance, types::B128},
+		builder::{constraint_system::ConstraintSystem, statement::Statement, types::B128},
 		collatz_high_level::CollatzTrace,
 	};
 
@@ -190,7 +190,7 @@ mod tests {
 
 		let trace = CollatzTrace::generate(3999);
 		// TODO: Refactor boundary creation
-		let instance = Instance {
+		let instance = Statement {
 			boundaries: vec![
 				Boundary {
 					values: vec![B128::new(3999)],
