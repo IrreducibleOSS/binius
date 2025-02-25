@@ -160,3 +160,31 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Expr<F, V>> for Expr<F, V> {
 		}
 	}
 }
+
+/// This exists only to implement Display for ArithExpr with named variables.
+pub struct ArithExprNamedVars<'a, F: TowerField>(pub &'a ArithExpr<F>, pub &'a [String]);
+
+impl<F: TowerField> std::fmt::Display for ArithExprNamedVars<'_, F> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let Self(expr, names) = self;
+		match expr {
+			ArithExpr::Const(v) => write!(f, "{v}"),
+			ArithExpr::Var(i) => write!(f, "{}", names[*i]),
+			ArithExpr::Add(x, y) => {
+				write!(f, "{} + {}", self.expr(x), self.expr(y))
+			}
+			ArithExpr::Mul(x, y) => {
+				write!(f, "({}) * ({})", self.expr(x), self.expr(y))
+			}
+			ArithExpr::Pow(x, p) => {
+				write!(f, "({})^{p}", self.expr(x))
+			}
+		}
+	}
+}
+
+impl<'a, F: TowerField> ArithExprNamedVars<'a, F> {
+	fn expr(&self, expr: &'a ArithExpr<F>) -> Self {
+		Self(expr, self.1)
+	}
+}
