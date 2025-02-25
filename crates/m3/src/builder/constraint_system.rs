@@ -57,12 +57,32 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
-	pub fn build_witness<U: UnderlierType>(
+	pub fn build_witness<'a, U: UnderlierType>(
 		&self,
-		_allocator: &Bump,
-		_instance: &Statement,
-	) -> Result<WitnessIndex<U>, Error> {
-		todo!()
+		allocator: &'a Bump,
+		statement: &Statement,
+	) -> Result<WitnessIndex<'a, U>, Error> {
+		let mut witness = WitnessIndex::<U>::default();
+		witness.tables = self
+			.tables
+			.iter()
+			.enumerate()
+			.map(|(i, table)| {
+				let log_capacity = log2_ceil_usize(statement.table_sizes[i]);
+				let column_shapes = table
+					.column_info
+					.iter()
+					.map(|col| col.shape)
+					.collect::<Vec<_>>();
+				super::witness::TableWitnessIndex::new(
+					allocator,
+					table.id,
+					&column_shapes,
+					log_capacity,
+				)
+			})
+			.collect();
+		Ok(witness)
 	}
 
 	/// Compiles a [`CompiledConstraintSystem`] for a particular statement.
@@ -193,10 +213,10 @@ fn add_oracle_for_column<F: TowerField>(
 		} => {
 			addition.shifted(first_oracle_id_in_table + *col, *offset, *log_block_size, *variant)?
 		}
-		Column::Packed { col_index, log_degree } => {
-			addition.packed(first_oracle_id_in_table + *col_index, *log_degree)?
-		}
+		Column::Packed {
+			col_index,
+			log_degree,
+		} => addition.packed(first_oracle_id_in_table + *col_index, *log_degree)?,
 	};
 	Ok(oracle_id)
 }
-
