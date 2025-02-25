@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use binius_core::oracle::ShiftVariant;
 use binius_field::{ExtensionField, TowerField};
 use binius_math::LinearNormalForm;
 
@@ -88,6 +89,14 @@ pub struct ColumnInfo<F: TowerField = B128> {
 // feature: TableBuilder needs namespacing
 #[derive(Debug)]
 pub enum Column<F: TowerField = B128> {
-	Committed { tower_level: usize },
+	Committed {
+		tower_level: usize,
+	},
 	LinearCombination(LinearNormalForm<F>),
+	Shifted {
+		col_index: ColumnIndex,
+		offset: usize,
+		log_block_size: usize,
+		variant: ShiftVariant,
+	},
 }
