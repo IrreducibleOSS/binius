@@ -233,7 +233,7 @@ impl digest::HashMarker for VisionHasherDigest {}
 impl digest::Update for VisionHasherDigest {
 	fn update(&mut self, mut data: &[u8]) {
 		if self.filled_bytes != 0 {
-			let to_copy = std::cmp::min(data.len(), self.filled_bytes);
+			let to_copy = std::cmp::min(data.len(), RATE_AS_U8 - self.filled_bytes);
 			self.buffer[self.filled_bytes..self.filled_bytes + to_copy]
 				.copy_from_slice(&data[..to_copy]);
 			data = &data[to_copy..];
@@ -680,15 +680,15 @@ mod tests {
 		hasher.update(input.as_bytes());
 		let out = hasher.finalize();
 
-		let expected = &hex!("6ade8ba2a45a070a3abaff6f1bf9483686c78d4afca2d0d8d3c7897fdfe2df91");
+		let expected = &hex!("406ea77bc164afc0fbb461bb6e2cf763612c0c55bf66c98f295dba8f9e5f3426");
 		assert_eq!(expected, &*out);
 
 		let mut hasher = VisionHasherDigest::default();
 		let input_as_b = input.as_bytes();
-		hasher.update(&input_as_b[0..119]);
-		hasher.update(&input_as_b[119..238]);
-		hasher.update(&input_as_b[238..357]);
-		hasher.update(&input_as_b[357..]);
+		hasher.update(&input_as_b[0..63]);
+		hasher.update(&input_as_b[63..128]);
+		hasher.update(&input_as_b[128..163]);
+		hasher.update(&input_as_b[163..]);
 
 		assert_eq!(expected, &*hasher.finalize());
 	}
@@ -699,7 +699,7 @@ mod tests {
 		let input = "You can prove anything you want by coldly logical reason--if you pick the proper postulates.";
 		hasher.update(input.as_bytes());
 
-		let expected = &hex!("2819814fd9da83ab358533900adaf87f4c9e0f88657f572a9a6e83d95b88a9ea");
+		let expected = &hex!("7e0dcd26520e1e9956de65b1f9dea85815ed9ae0c4b3f48559679acea71729f2");
 		let out = hasher.finalize();
 		assert_eq!(expected, &*out);
 	}
