@@ -59,8 +59,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 	pub fn build_witness<U: UnderlierType>(
 		&self,
-		allocator: &Bump,
-		instance: &Instance,
+		_allocator: &Bump,
+		_instance: &Instance,
 	) -> Result<WitnessIndex<U>, Error> {
 		todo!()
 	}
@@ -86,12 +86,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut non_zero_oracle_ids = Vec::new();
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let Table {
-				id,
-				name,
 				column_info,
 				flushes,
 				zero_constraints,
 				is_fixed: _,
+				..
 			} = table;
 			let n_vars = log2_ceil_usize(count);
 			let first_oracle_id_in_table = oracles.size();
