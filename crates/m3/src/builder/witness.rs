@@ -10,7 +10,7 @@ use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	Field, TowerField,
+	TowerField,
 };
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
