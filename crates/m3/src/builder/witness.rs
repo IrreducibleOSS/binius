@@ -43,7 +43,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		let witness = self
 			.get_table(table_id)
 			.ok_or(Error::MissingTable { table_id })?;
-		fill_table_sequential(table, rows, witness).map_err(|err| Error::TableFill(err))?;
+		fill_table_sequential(table, rows, witness).map_err(Error::TableFill)?;
 		Ok(())
 	}
 
@@ -217,7 +217,7 @@ pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier> {
 	log_size: usize,
 }
 
-impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
+impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 	pub fn get<F: TowerField, const V: usize>(
 		&self,
 		col: Col<F, V>,
@@ -322,6 +322,7 @@ impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
 	}
 }
 
+// TODO: clippy error (clippy::mut_from_ref): mutable borrow from immutable input(s)
 unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
 	slice::from_raw_parts_mut(slice.as_ptr() as *mut T, slice.len())
 }
@@ -344,7 +345,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	table: &T,
 	rows: &[T::Event],
-	mut witness: &mut TableWitnessIndex<U>,
+	witness: &mut TableWitnessIndex<U>,
 ) -> anyhow::Result<()> {
 	let log_segment_size = witness.min_log_segment_size();
 
@@ -395,7 +396,7 @@ mod tests {
 
 		{
 			let col0_ref0 = segment.get(col0).unwrap();
-			let col0_ref1 = segment.get(col0).unwrap();
+			let _col0_ref1 = segment.get(col0).unwrap();
 			assert_matches!(segment.get_mut(col0), Err(Error::WitnessBorrowMut(_)));
 			drop(col0_ref0);
 
@@ -404,10 +405,10 @@ mod tests {
 			drop(col1_ref);
 		}
 
-		assert_eq!(len_packed_slice(&*segment.get_mut(col0).unwrap()), 1 << 9);
-		assert_eq!(len_packed_slice(&*segment.get_mut(col1).unwrap()), 1 << 11);
-		assert_eq!(len_packed_slice(&*segment.get_mut(col2).unwrap()), 1 << 6);
-		assert_eq!(len_packed_slice(&*segment.get_mut(col3).unwrap()), 1 << 6);
+		assert_eq!(len_packed_slice(&segment.get_mut(col0).unwrap()), 1 << 9);
+		assert_eq!(len_packed_slice(&segment.get_mut(col1).unwrap()), 1 << 11);
+		assert_eq!(len_packed_slice(&segment.get_mut(col2).unwrap()), 1 << 6);
+		assert_eq!(len_packed_slice(&segment.get_mut(col3).unwrap()), 1 << 6);
 	}
 
 	#[test]
@@ -433,18 +434,18 @@ mod tests {
 
 		assert_eq!(index.min_log_segment_size(), 4);
 		let mut iter = index.segments(5);
-		let mut seg0 = iter.next().unwrap();
-		let mut seg1 = iter.next().unwrap();
+		let seg0 = iter.next().unwrap();
+		let seg1 = iter.next().unwrap();
 		assert!(iter.next().is_none());
 
-		assert_eq!(len_packed_slice(&*seg0.get_mut(col0).unwrap()), 1 << 8);
-		assert_eq!(len_packed_slice(&*seg0.get_mut(col1).unwrap()), 1 << 10);
-		assert_eq!(len_packed_slice(&*seg0.get_mut(col2).unwrap()), 1 << 5);
-		assert_eq!(len_packed_slice(&*seg0.get_mut(col3).unwrap()), 1 << 5);
+		assert_eq!(len_packed_slice(&seg0.get_mut(col0).unwrap()), 1 << 8);
+		assert_eq!(len_packed_slice(&seg0.get_mut(col1).unwrap()), 1 << 10);
+		assert_eq!(len_packed_slice(&seg0.get_mut(col2).unwrap()), 1 << 5);
+		assert_eq!(len_packed_slice(&seg0.get_mut(col3).unwrap()), 1 << 5);
 
-		assert_eq!(len_packed_slice(&*seg1.get_mut(col0).unwrap()), 1 << 8);
-		assert_eq!(len_packed_slice(&*seg1.get_mut(col1).unwrap()), 1 << 10);
-		assert_eq!(len_packed_slice(&*seg1.get_mut(col2).unwrap()), 1 << 5);
-		assert_eq!(len_packed_slice(&*seg1.get_mut(col3).unwrap()), 1 << 5);
+		assert_eq!(len_packed_slice(&seg1.get_mut(col0).unwrap()), 1 << 8);
+		assert_eq!(len_packed_slice(&seg1.get_mut(col1).unwrap()), 1 << 10);
+		assert_eq!(len_packed_slice(&seg1.get_mut(col2).unwrap()), 1 << 5);
+		assert_eq!(len_packed_slice(&seg1.get_mut(col3).unwrap()), 1 << 5);
 	}
 }

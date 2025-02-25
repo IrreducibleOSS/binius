@@ -87,11 +87,11 @@ impl<F: TowerField> Table<F> {
 
 	pub fn add_shifted<FSub, const LOG_VALS_PER_ROW: usize>(
 		&mut self,
-		name: impl ToString,
-		original: Col<FSub, LOG_VALS_PER_ROW>,
-		shift_bits: usize,
-		shift: usize,
-		shift_mode: ShiftVariant,
+		_name: impl ToString,
+		_original: Col<FSub, LOG_VALS_PER_ROW>,
+		_shift_bits: usize,
+		_shift: usize,
+		_shift_mode: ShiftVariant,
 	) -> Col<FSub, LOG_VALS_PER_ROW>
 	where
 		FSub: TowerField,
@@ -103,9 +103,9 @@ impl<F: TowerField> Table<F> {
 	// Selected is a special form of projected with hypercube indices
 	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
 		&mut self,
-		name: impl ToString,
-		original: Col<FSub, LOG_VALS_PER_ROW>,
-		index: usize,
+		_name: impl ToString,
+		_original: Col<FSub, LOG_VALS_PER_ROW>,
+		_index: usize,
 	) -> Col<FSub, 0>
 	where
 		FSub: TowerField,
@@ -146,7 +146,7 @@ impl<F: TowerField> Table<F> {
 	pub fn add_committed_multiple<FSub, const V: usize, const N: usize>(
 		&mut self,
 		name: impl ToString,
-		tower_level: usize,
+		_tower_level: usize,
 	) -> [Col<FSub, V>; N]
 	where
 		FSub: TowerField,
@@ -157,8 +157,8 @@ impl<F: TowerField> Table<F> {
 
 	pub fn add_packed<FSub, const V: usize, FSubSub, const VSUB: usize>(
 		&mut self,
-		name: impl ToString,
-		col: Col<FSubSub, VSUB>,
+		_name: impl ToString,
+		_col: Col<FSubSub, VSUB>,
 	) -> Col<FSub, V>
 	where
 		FSub: TowerField + ExtensionField<FSubSub>,

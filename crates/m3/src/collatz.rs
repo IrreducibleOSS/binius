@@ -22,8 +22,8 @@ use crate::{
 #[derive(Debug)]
 pub struct EvensTable {
 	pub id: TableId,
-	in_bits: Col<B1, 5>,
-	out_bits: Col<B1, 5>,
+	pub in_bits: Col<B1, 5>,
+	pub out_bits: Col<B1, 5>,
 	pub in_val: Col<B32>,
 	pub out_val: Col<B32>,
 }
@@ -85,7 +85,7 @@ where
 #[derive(Debug)]
 pub struct OddsTable {
 	id: TableId,
-	in_bits: Col<B1, 5>,
+	pub in_bits: Col<B1, 5>,
 	in_dbl: Col<B1, 5>,
 	carry_bit: Col<B1, 5>,
 	add_in_x3: U32Add,
@@ -95,7 +95,7 @@ pub struct OddsTable {
 
 impl OddsTable {
 	pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
-		let mut table = cs.add_table("odds");
+		let table = cs.add_table("odds");
 
 		let in_bits = table.add_committed::<B1, 5>("in_bits");
 
@@ -109,7 +109,7 @@ impl OddsTable {
 
 		// Input times 3 + 1
 		let add_in_x3 = U32Add::new(
-			&mut table,
+			table,
 			in_dbl,
 			in_bits,
 			U32AddFlags {
