@@ -32,7 +32,7 @@ macro_rules! define_byte_sliced {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
+			data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
@@ -49,6 +49,22 @@ macro_rules! define_byte_sliced {
 					.get_unchecked(byte_index % <$tower_level as TowerLevel>::WIDTH)
 					.get_unchecked(byte_index / <$tower_level as TowerLevel>::WIDTH)
 					.to_underlier()
+			}
+
+			/// Returns the underlying storage.
+			/// Note that the bytes in the storage are in the "transposed" order, so use this method
+			/// for some low-level operations only.
+			#[inline(always)]
+			pub fn data(&self) -> &[$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
+				&self.data
+			}
+
+			/// Returns the mutable reference to the underlying storage.
+			/// Note that the bytes in the storage are in the "transposed" order, so use this method
+			/// for some low-level operations only.
+			#[inline(always)]
+			pub fn data_mut(&mut self) -> &mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
+				&mut self.data
 			}
 		}
 
@@ -438,7 +454,8 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 		}
 
 		impl $name {
-			pub const BYTES: usize = <$packed_storage>::WIDTH * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
+			const WIDTH: usize = <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8;
+			pub const BYTES: usize = <$packed_storage>::WIDTH * Self::WIDTH;
 
 			/// Get the byte at the given index.
 			///
@@ -447,9 +464,25 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data.get_unchecked(byte_index % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
-					.get_unchecked(byte_index / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+				self.data.get_unchecked(byte_index % Self::WIDTH)
+					.get_unchecked(byte_index / Self::WIDTH)
 					.to_underlier()
+			}
+
+			/// Returns the underlying storage.
+			/// Note that the bytes in the storage are in the "transposed" order, so use this method
+			/// for some low-level operations only.
+			#[inline(always)]
+			pub fn data(&self) -> &[$packed_storage; Self::WIDTH] {
+				&self.data
+			}
+
+			/// Returns the mutable reference to the underlying storage.
+			/// Note that the bytes in the storage are in the "transposed" order, so use this method
+			/// for some low-level operations only.
+			#[inline(always)]
+			pub fn data_mut(&mut self) -> &mut [$packed_storage; Self::WIDTH] {
+				&mut self.data
 			}
 		}
 
