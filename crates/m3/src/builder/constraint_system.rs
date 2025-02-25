@@ -193,6 +193,10 @@ fn add_oracle_for_column<F: TowerField>(
 		} => {
 			addition.shifted(first_oracle_id_in_table + *col, *offset, *log_block_size, *variant)?
 		}
+		Column::Packed { col_index, log_degree } => {
+			addition.packed(first_oracle_id_in_table + *col_index, *log_degree)?
+		}
 	};
 	Ok(oracle_id)
 }
+

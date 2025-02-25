@@ -173,18 +173,34 @@ impl<F: TowerField> Table<F> {
 		std::array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
 	}
 
-	pub fn add_packed<FSub, const V: usize, FSubSub, const VSUB: usize>(
+	pub fn add_packed<FSubSub, const VSUB: usize, FSub, const V: usize>(
 		&mut self,
-		_name: impl ToString,
-		_col: Col<FSubSub, VSUB>,
+		name: impl ToString,
+		col: Col<FSubSub, VSUB>,
 	) -> Col<FSub, V>
 	where
 		FSub: TowerField + ExtensionField<FSubSub>,
 		FSubSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
+		assert!(FSubSub::TOWER_LEVEL < FSub::TOWER_LEVEL);
+		assert!(VSUB > V);
 		assert_eq!(FSub::TOWER_LEVEL + V, FSubSub::TOWER_LEVEL + VSUB);
-		todo!()
+		let index = self.column_info.len();
+		self.column_info.push(ColumnInfo {
+			col: Column::Packed {
+				col_index: col.index,
+				log_degree: FSub::TOWER_LEVEL - FSubSub::TOWER_LEVEL,
+			},
+			name: name.to_string(),
+			pack_factor: V,
+			is_nonzero: false,
+		});
+		Col {
+			table_id: self.id,
+			index,
+			_marker: PhantomData,
+		}
 	}
 
 	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
