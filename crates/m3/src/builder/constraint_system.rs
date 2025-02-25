@@ -132,7 +132,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				})
 				.collect::<Result<Vec<_>, _>>()?;
 
-			// TODO: How do we add StepDown data to the witness index?
+			// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 			let selector = oracles.add_transparent(StepDown::new(n_vars, count)?)?;
 
 			// Translate flushes for the compiled constraint system.
