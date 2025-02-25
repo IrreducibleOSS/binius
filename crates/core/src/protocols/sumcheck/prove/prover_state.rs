@@ -9,6 +9,7 @@ use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
 	evaluate_univariate, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+    EvaluationOrder,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -256,6 +257,7 @@ where
 		Composition: CompositionPoly<P>,
 	{
 		Ok(self.backend.sumcheck_compute_round_evals(
+            EvaluationOrder::LowToHigh,
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
