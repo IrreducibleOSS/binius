@@ -5,7 +5,7 @@ use std::{
 	iter, slice,
 };
 
-use binius_core::witness::MultilinearExtensionIndex;
+use binius_core::{transparent::step_down::StepDown, witness::MultilinearExtensionIndex};
 use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
@@ -20,7 +20,9 @@ use getset::CopyGetters;
 use super::{
 	column::{Col, ColumnId, ColumnShape},
 	error::Error,
+	statement::Statement,
 	table::TableId,
+	types::B1,
 };
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -47,22 +49,34 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		Ok(())
 	}
 
-	pub fn into_multilinear_extension_index<F>(self) -> MultilinearExtensionIndex<'a, U, F>
+	pub fn into_multilinear_extension_index<F>(
+		self,
+		statement: &Statement<F>,
+	) -> MultilinearExtensionIndex<'a, U, F>
 	where
-		F: Field,
-		U: PackScalar<F>,
+		F: TowerField,
+		U: PackScalar<F> + PackScalar<B1>,
 	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut oracle_id = 0;
 		for table in self.tables {
-			for (data, _) in table.cols {
+			for (data, log_cell_bits) in table.cols {
 				let data = PackedType::<U, F>::from_underliers_ref(data);
-				let witness = MultilinearExtension::new(table.log_capacity, data)
+				let witness = MultilinearExtension::new(log_cell_bits, data)
 					.unwrap()
 					.specialize_arc_dyn();
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				oracle_id += 1;
 			}
+
+			// Every table has a step_down appended to the end of the table to support non-power of two height tables
+			let witness = StepDown::new(table.log_capacity, statement.table_sizes[table.table_id])
+				.unwrap()
+				.multilinear_extension()
+				.unwrap()
+				.specialize_arc_dyn();
+			index.update_multilin_poly([(oracle_id, witness)]).unwrap();
+			oracle_id += 1;
 		}
 		index
 	}
