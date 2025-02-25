@@ -92,6 +92,11 @@ impl std::fmt::Display for ConstraintSystem {
 				oracle_id += 1;
 			}
 
+			if !table.column_info.is_empty() && !table.flushes.is_empty() {
+				writeln!(f, "")?;
+			}
+
+			writeln!(f, "        {oracle_id:04} B1 (ROW_SELECTOR)")?;
 			oracle_id += 1; // step_down selector for the table
 
 			writeln!(f, "    }}")?;
