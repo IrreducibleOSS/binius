@@ -8,8 +8,8 @@ use std::iter;
 
 use binius_field::{Field, PackedExtension, PackedField, PackedSubfield};
 use binius_math::{
-	extrapolate_lines, CompositionPoly, EvaluationOrder, MultilinearPoly, MultilinearQuery,
-	MultilinearQueryRef,
+	extrapolate_lines, CompositionPoly, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -42,6 +42,7 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 		multilinear: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
+		subcube_count: usize,
 		scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
@@ -71,18 +72,22 @@ where
 	let empty_query = MultilinearQuery::with_capacity(0);
 	let tensor_query = tensor_query.unwrap_or_else(|| empty_query.to_ref());
 
-	let access = match evaluation_order {
-		EvaluationOrder::LowToHigh => LowToHighAccess { tensor_query },
-		EvaluationOrder::HighToLow => todo!(),
-	};
-
-	calculate_round_evals_with_access(
-		n_vars,
-		&access,
-		multilinears,
-		evaluators,
-		finite_evaluation_points,
-	)
+	match evaluation_order {
+		EvaluationOrder::LowToHigh => calculate_round_evals_with_access(
+			n_vars,
+			&LowToHighAccess { tensor_query },
+			multilinears,
+			evaluators,
+			finite_evaluation_points,
+		),
+		EvaluationOrder::HighToLow => calculate_round_evals_with_access(
+			n_vars,
+			&HighToLowAccess { tensor_query },
+			multilinears,
+			evaluators,
+			finite_evaluation_points,
+		),
+	}
 }
 
 fn calculate_round_evals_with_access<FDomain, F, P, M, Evaluator, Access, Composition>(
@@ -124,7 +129,8 @@ where
 		bail!(Error::IncorrectNontrivialEvalPointsLength);
 	}
 
-	let packed_accumulators = (0..(1 << (n_vars - subcube_vars)))
+	let subcube_count = 1 << (n_vars - subcube_vars);
+	let packed_accumulators = (0..subcube_count)
 		.into_par_iter()
 		.try_fold(
 			|| ParFoldStates::new(access, n_multilinears, n_round_evals.clone(), subcube_vars),
@@ -140,6 +146,7 @@ where
 						multilinear,
 						subcube_vars,
 						subcube_index,
+						subcube_count,
 						scratch_space.as_deref_mut(),
 						&mut evals.evals_0,
 						&mut evals.evals_1,
@@ -207,7 +214,7 @@ where
 								continue;
 							}
 
-                            // TODO comments
+							// TODO comments
 							round_evals[eval_point_index - eval_point_indices.start] += evaluator
 								.process_subcube_at_eval_point(
 									subcube_vars - 1,
@@ -332,6 +339,7 @@ impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'a, P>
 		multilinear: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
+		_subcube_count: usize,
 		scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
@@ -354,7 +362,7 @@ impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'a, P>
 				if self.tensor_query.n_vars() == 0 {
 					multilinear.subcube_evals(subcube_vars, subcube_index, 0, scratch_space)?
 				} else {
-					multilinear.subcube_inner_products(
+					multilinear.subcube_partial_low_evals(
 						self.tensor_query,
 						subcube_vars,
 						subcube_index,
@@ -364,13 +372,18 @@ impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'a, P>
 			}
 
 			SumcheckMultilinear::Folded {
-				large_field_folded_multilinear,
-			} => large_field_folded_multilinear.subcube_evals(
-				subcube_vars,
-				subcube_index,
-				0,
-				scratch_space,
-			)?,
+				large_field_folded_evals,
+			} => {
+				let multilinear =
+					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
+
+				MLEDirectAdapter::from(multilinear).subcube_evals(
+					subcube_vars,
+					subcube_index,
+					0,
+					scratch_space,
+				)?
+			}
 		}
 
 		let zeros = P::default();
@@ -391,6 +404,85 @@ impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'a, P>
 
 			*evals_0 = deinterleaved_0;
 			*evals_1 = deinterleaved_1;
+		}
+
+		Ok(())
+	}
+}
+
+#[derive(Debug)]
+struct HighToLowAccess<'a, P: PackedField> {
+	tensor_query: MultilinearQueryRef<'a, P>,
+}
+
+impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'a, P> {
+	fn scratch_space_len(&self, _subcube_vars: usize) -> Option<usize> {
+		None
+	}
+
+	fn subcube_evaluations<M: MultilinearPoly<P>>(
+		&self,
+		multilinear: &SumcheckMultilinear<P, M>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		subcube_count: usize,
+		scratch_space: Option<&mut [P]>,
+		evals_0: &mut [P],
+		evals_1: &mut [P],
+	) -> Result<(), Error> {
+		// subcube_vars > 0
+		// scratch_space == None
+
+		if evals_0.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
+			|| evals_1.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
+		{
+			todo!();
+		}
+
+		match multilinear {
+			SumcheckMultilinear::Transparent { multilinear, .. } => {
+				if self.tensor_query.n_vars() == 0 {
+					multilinear.subcube_evals(subcube_vars - 1, subcube_index, 0, evals_0)?;
+					multilinear.subcube_evals(
+						subcube_vars - 1,
+						subcube_index + subcube_count,
+						0,
+						evals_1,
+					)?;
+				} else {
+					multilinear.subcube_partial_high_evals(
+						self.tensor_query,
+						subcube_vars - 1,
+						subcube_index,
+						evals_0,
+					)?;
+
+					multilinear.subcube_partial_high_evals(
+						self.tensor_query,
+						subcube_vars - 1,
+						subcube_index + subcube_count,
+						evals_1,
+					)?;
+				}
+			}
+
+			SumcheckMultilinear::Folded {
+				large_field_folded_evals,
+			} => {
+				let multilinear =
+					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
+
+				let adapter = MLEDirectAdapter::from(multilinear);
+
+				adapter.subcube_evals(subcube_vars - 1, subcube_index, 0, evals_0)?;
+
+				adapter.subcube_evals(
+					subcube_vars - 1,
+					subcube_index + subcube_count,
+					0,
+					evals_1,
+				)?;
+			}
 		}
 
 		Ok(())

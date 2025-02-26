@@ -124,7 +124,7 @@ mod tests {
 		BinaryField8b, PackedField,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+	use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory, MultilinearExtension};
 	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -199,6 +199,7 @@ mod tests {
 		let prod_multilins = vec![prod_multilin];
 
 		let prover = GPAProver::<FDomain, _, _, _, _>::new(
+			EvaluationOrder::LowToHigh,
 			multilins,
 			Some(prod_multilins),
 			composite_claims,

@@ -10,8 +10,8 @@ use binius_field::{
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
-	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
+	DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery,
 };
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
@@ -72,6 +72,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	};
 
 	let prover = GPAProver::<FDomain, _, _, _, _>::new(
+		EvaluationOrder::LowToHigh,
 		vec![a_mle, b_mle],
 		Some(vec![ab1_mle]).filter(|_| use_first_round_eval1_advice),
 		[prover_composite_claim],

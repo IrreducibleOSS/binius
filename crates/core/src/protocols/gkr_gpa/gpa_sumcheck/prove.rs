@@ -6,7 +6,9 @@ use binius_field::{
 	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
+use binius_math::{
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
+};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
@@ -55,6 +57,7 @@ where
 {
 	#[instrument(skip_all, level = "debug", name = "GPAProver::new")]
 	pub fn new(
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		first_layer_mle_advice: Option<Vec<M>>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
@@ -102,6 +105,7 @@ where
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new(
+			evaluation_order,
 			multilinears,
 			claimed_sums,
 			nontrivial_evaluation_points,

@@ -16,8 +16,9 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -156,6 +157,7 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
+		EvaluationOrder::LowToHigh,
 		multilins.iter().collect(),
 		[CompositeSumClaim {
 			composition: &composition,
@@ -338,6 +340,7 @@ where
 	let claim = SumcheckClaim::new(n_vars, 3, claim_composite_sums).unwrap();
 
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
+		EvaluationOrder::LowToHigh,
 		multilins,
 		prover_composite_sums,
 		domain_factory,

@@ -200,7 +200,8 @@ mod tests {
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 	use binius_math::{
-		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearPoly,
+		EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory,
+		MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -261,6 +262,7 @@ mod tests {
 				sum: F::ZERO,
 			});
 		RegularSumcheckProver::new(
+			EvaluationOrder::LowToHigh,
 			multilinears,
 			composite_sum_claims,
 			evaluation_domain_factory,

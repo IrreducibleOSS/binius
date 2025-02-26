@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::PackedField;
-use binius_math::{MLEDirectAdapter, MultilinearPoly};
+use binius_math::MultilinearPoly;
 
 /// An individual multilinear polynomial in a multivariate composite.
 #[derive(Debug, Clone)]
@@ -10,13 +10,11 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	/// Small field polynomial - to be folded into large field at `switchover` round
+	/// Small field multilinear - to be folded into large field at `switchover` round
 	Transparent {
 		multilinear: M,
 		switchover_round: usize,
 	},
-	/// Large field polynomial - halved in size each round
-	Folded {
-		large_field_folded_multilinear: MLEDirectAdapter<P>,
-	},
+	/// Large field multilinear - halved in size each round
+	Folded { large_field_folded_evals: Vec<P> },
 }

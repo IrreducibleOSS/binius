@@ -6,7 +6,7 @@ use binius_field::{
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::EvaluationDomainFactory;
+use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::bail;
 
 use super::{RegularSumcheckProver, UnivariateZerocheck};
@@ -97,6 +97,7 @@ where
 
 /// Construct regular sumcheck prover from the constraint set. Fails when constraint set contains zerochecks.
 pub fn constraint_set_sumcheck_prover<'a, U, FW, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
 	constraint_set: ConstraintSet<FW>,
 	witness: &MultilinearExtensionIndex<'a, U, FW>,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -129,6 +130,7 @@ where
 	}
 
 	let prover = RegularSumcheckProver::new(
+		evaluation_order,
 		multilinears,
 		sums,
 		evaluation_domain_factory,
@@ -203,6 +205,7 @@ where
 	for constraint_set in constraint_sets {
 		let (_, meta) = constraint_set_sumcheck_claim(constraint_set.clone())?;
 		let prover = constraint_set_sumcheck_prover(
+			EvaluationOrder::LowToHigh,
 			constraint_set,
 			witness,
 			evaluation_domain_factory.clone(),

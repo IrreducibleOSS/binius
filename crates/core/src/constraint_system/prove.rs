@@ -12,7 +12,7 @@ use binius_field::{
 use binius_hal::ComputationBackend;
 use binius_hash::PseudoCompressionFunction;
 use binius_math::{
-	EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MLEDirectAdapter,
+	EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter,
 	MultilinearExtension, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -720,6 +720,7 @@ where
 		}
 
 		let prover = GPAProver::new(
+			EvaluationOrder::LowToHigh,
 			multilinears,
 			None,
 			composite_sum_claims,
