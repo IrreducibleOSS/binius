@@ -8,8 +8,8 @@ use std::{
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, fold_right_lerp, CompositionPoly, EvaluationOrder, MultilinearPoly,
-	MultilinearQuery,
+	evaluate_univariate, fold_left_lerp_inplace, fold_right_lerp, CompositionPoly, EvaluationOrder,
+	MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -184,9 +184,14 @@ where
 							// At switchover, perform inner products in large field and save them in a
 							// newly created MLE.
 
-							let large_field_folded_evals = inner_multilinear
-								.evaluate_partial_low(tensor_query.to_ref())?
-								.into_evals();
+							let large_field_folded_evals = match self.evaluation_order {
+								EvaluationOrder::LowToHigh => inner_multilinear
+									.evaluate_partial_low(tensor_query.to_ref())?
+									.into_evals(),
+								EvaluationOrder::HighToLow => inner_multilinear
+									.evaluate_partial_high(tensor_query.to_ref())?
+									.into_evals(),
+							};
 
 							*multilinear = SumcheckMultilinear::Folded {
 								large_field_folded_evals,
@@ -201,17 +206,30 @@ where
 					} => {
 						// TODO
 						// Post-switchover, simply plug in challenge for the zeroth variable.
-						let mut new_large_field_folded_evals =
-							zeroed_vec(1 << self.n_vars.saturating_sub(1 + P::LOG_WIDTH));
 
-						fold_right_lerp(
-							&*large_field_folded_evals,
-							self.n_vars,
-							challenge,
-							&mut new_large_field_folded_evals,
-						);
+						match self.evaluation_order {
+							EvaluationOrder::LowToHigh => {
+								let mut new_large_field_folded_evals =
+									zeroed_vec(1 << self.n_vars.saturating_sub(1 + P::LOG_WIDTH));
 
-						*large_field_folded_evals = new_large_field_folded_evals;
+								fold_right_lerp(
+									&*large_field_folded_evals,
+									self.n_vars,
+									challenge,
+									&mut new_large_field_folded_evals,
+								)?;
+
+								*large_field_folded_evals = new_large_field_folded_evals;
+							}
+
+							EvaluationOrder::HighToLow => {
+								fold_left_lerp_inplace(
+									large_field_folded_evals,
+									self.n_vars,
+									challenge,
+								)?;
+							}
+						}
 					}
 				};
 				Ok::<(), Error>(())
