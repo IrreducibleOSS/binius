@@ -1,11 +1,28 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_core::oracle::{OracleId, ProjectionVariant, ShiftVariant};
-use binius_field::{packed::set_packed_slice, BinaryField1b, BinaryField32b, Field, TowerField};
+use binius_core::{
+	oracle::{OracleId, ProjectionVariant, ShiftVariant},
+	transparent::MultilinearExtensionTransparent,
+};
+use binius_field::{
+	as_packed_field::PackedType, packed::set_packed_slice, underlier::WithUnderlier, BinaryField1b,
+	BinaryField32b, Field, PackedField, TowerField,
+};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::prelude::*;
+use binius_utils::checked_arithmetics::checked_log_2;
+use bytemuck::{pod_collect_to_vec, Pod};
 
-use crate::{builder::ConstraintSystemBuilder, transparent};
+use crate::{
+	builder::{
+		types::{F, U},
+		ConstraintSystemBuilder,
+	},
+	transparent,
+};
+
+type B1 = BinaryField1b;
+type B32 = BinaryField32b;
 
 pub fn packed(
 	builder: &mut ConstraintSystemBuilder,
@@ -14,12 +31,7 @@ pub fn packed(
 ) -> Result<OracleId, anyhow::Error> {
 	let packed = builder.add_packed(name, input, 5)?;
 	if let Some(witness) = builder.witness() {
-		witness.set(
-			packed,
-			witness
-				.get::<BinaryField1b>(input)?
-				.repacked::<BinaryField32b>(),
-		)?;
+		witness.set(packed, witness.get::<B1>(input)?.repacked::<B32>())?;
 	}
 	Ok(packed)
 }
@@ -33,7 +45,7 @@ pub fn mul_const(
 ) -> Result<OracleId, anyhow::Error> {
 	if value == 0 {
 		let log_rows = builder.log_rows([input])?;
-		return transparent::constant(builder, name, log_rows, BinaryField1b::ZERO);
+		return transparent::constant(builder, name, log_rows, B1::ZERO);
 	}
 
 	if value == 1 {
@@ -82,23 +94,17 @@ pub fn add(
 ) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	let log_rows = builder.log_rows([xin, yin])?;
-	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
+	let cout = builder.add_committed("cout", log_rows, B1::TOWER_LEVEL);
 	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
-	let zout = builder.add_committed("zout", log_rows, BinaryField1b::TOWER_LEVEL);
+	let zout = builder.add_committed("zout", log_rows, B1::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
 		(
-			witness.get::<BinaryField1b>(xin)?.as_slice::<u32>(),
-			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(zout)
-				.as_mut_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(cout)
-				.as_mut_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(cin)
-				.as_mut_slice::<u32>(),
+			witness.get::<B1>(xin)?.as_slice::<u32>(),
+			witness.get::<B1>(yin)?.as_slice::<u32>(),
+			witness.new_column::<B1>(zout).as_mut_slice::<u32>(),
+			witness.new_column::<B1>(cout).as_mut_slice::<u32>(),
+			witness.new_column::<B1>(cin).as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
 			.for_each(|(xin, yin, zout, cout, cin)| {
@@ -144,23 +150,17 @@ pub fn sub(
 ) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	let log_rows = builder.log_rows([zin, yin])?;
-	let cout = builder.add_committed("cout", log_rows, BinaryField1b::TOWER_LEVEL);
+	let cout = builder.add_committed("cout", log_rows, B1::TOWER_LEVEL);
 	let cin = builder.add_shifted("cin", cout, 1, 5, ShiftVariant::LogicalLeft)?;
-	let xout = builder.add_committed("xin", log_rows, BinaryField1b::TOWER_LEVEL);
+	let xout = builder.add_committed("xin", log_rows, B1::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
 		(
-			witness.get::<BinaryField1b>(zin)?.as_slice::<u32>(),
-			witness.get::<BinaryField1b>(yin)?.as_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(xout)
-				.as_mut_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(cout)
-				.as_mut_slice::<u32>(),
-			witness
-				.new_column::<BinaryField1b>(cin)
-				.as_mut_slice::<u32>(),
+			witness.get::<B1>(zin)?.as_slice::<u32>(),
+			witness.get::<B1>(yin)?.as_slice::<u32>(),
+			witness.new_column::<B1>(xout).as_mut_slice::<u32>(),
+			witness.new_column::<B1>(cout).as_mut_slice::<u32>(),
+			witness.new_column::<B1>(cin).as_mut_slice::<u32>(),
 		)
 			.into_par_iter()
 			.for_each(|(zout, yin, xin, cout, cin)| {
@@ -225,10 +225,8 @@ pub fn shl(
 	let shifted = builder.add_shifted(name, input, offset, 5, ShiftVariant::LogicalLeft)?;
 	if let Some(witness) = builder.witness() {
 		(
-			witness
-				.new_column::<BinaryField1b>(shifted)
-				.as_mut_slice::<u32>(),
-			witness.get::<BinaryField1b>(input)?.as_slice::<u32>(),
+			witness.new_column::<B1>(shifted).as_mut_slice::<u32>(),
+			witness.get::<B1>(input)?.as_slice::<u32>(),
 		)
 			.into_par_iter()
 			.for_each(|(shifted, input)| *shifted = *input << offset);
@@ -250,10 +248,8 @@ pub fn shr(
 	let shifted = builder.add_shifted(name, input, offset, 5, ShiftVariant::LogicalRight)?;
 	if let Some(witness) = builder.witness() {
 		(
-			witness
-				.new_column::<BinaryField1b>(shifted)
-				.as_mut_slice::<u32>(),
-			witness.get::<BinaryField1b>(input)?.as_slice::<u32>(),
+			witness.new_column::<B1>(shifted).as_mut_slice::<u32>(),
+			witness.get::<B1>(input)?.as_slice::<u32>(),
 		)
 			.into_par_iter()
 			.for_each(|(shifted, input)| *shifted = *input >> offset);
@@ -276,13 +272,13 @@ pub fn select_bit(
 	let bits = builder.add_projected(name, input, query, ProjectionVariant::FirstVars)?;
 
 	if let Some(witness) = builder.witness() {
-		let mut bits = witness.new_column::<BinaryField1b>(bits);
+		let mut bits = witness.new_column::<B1>(bits);
 		let bits = bits.packed();
-		let input = witness.get::<BinaryField1b>(input)?.as_slice::<u32>();
+		let input = witness.get::<B1>(input)?.as_slice::<u32>();
 		input.iter().enumerate().for_each(|(i, &val)| {
 			let value = match (val >> index) & 1 {
-				0 => BinaryField1b::ZERO,
-				_ => BinaryField1b::ONE,
+				0 => B1::ZERO,
+				_ => B1::ONE,
 			};
 			set_packed_slice(bits, i, value);
 		});
@@ -299,23 +295,18 @@ pub fn constant(
 ) -> Result<OracleId, anyhow::Error> {
 	builder.push_namespace(name);
 	// This would not need to be committed if we had `builder.add_unpacked(..)`
-	let output = builder.add_committed("output", log_count + 5, BinaryField1b::TOWER_LEVEL);
+	let output = builder.add_committed("output", log_count + 5, B1::TOWER_LEVEL);
 	if let Some(witness) = builder.witness() {
-		witness
-			.new_column::<BinaryField1b>(output)
-			.as_mut_slice()
-			.fill(value);
+		witness.new_column::<B1>(output).as_mut_slice().fill(value);
 	}
 
 	let output_packed = builder.add_packed("output_packed", output, 5)?;
 	let transparent = builder.add_transparent(
 		"transparent",
-		binius_core::transparent::constant::Constant::new(log_count, BinaryField32b::new(value)),
+		binius_core::transparent::constant::Constant::new(log_count, B32::new(value)),
 	)?;
 	if let Some(witness) = builder.witness() {
-		let packed = witness
-			.get::<BinaryField1b>(output)?
-			.repacked::<BinaryField32b>();
+		let packed = witness.get::<B1>(output)?.repacked::<B32>();
 		witness.set(output_packed, packed)?;
 		witness.set(transparent, packed)?;
 	}
@@ -326,6 +317,52 @@ pub fn constant(
 	);
 	builder.pop_namespace();
 	Ok(output)
+}
+
+pub const LOG_U32_BITS: usize = checked_log_2(32);
+
+#[inline]
+fn into_packed_vec<P>(src: &[impl Pod]) -> Vec<P>
+where
+	P: PackedField + WithUnderlier,
+	P::Underlier: Pod,
+{
+	pod_collect_to_vec::<_, P::Underlier>(src)
+		.into_iter()
+		.map(P::from_underlier)
+		.collect()
+}
+
+pub fn u32const_repeating(
+	log_size: usize,
+	builder: &mut ConstraintSystemBuilder,
+	x: u32,
+	name: &str,
+) -> Result<OracleId, anyhow::Error> {
+	let brodcasted = vec![x; 1 << (PackedType::<U, B1>::LOG_WIDTH.saturating_sub(LOG_U32_BITS))];
+
+	let transparent_id = builder.add_transparent(
+		format!("transparent {}", name),
+		MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(into_packed_vec::<
+			PackedType<U, B1>,
+		>(&brodcasted))?,
+	)?;
+
+	let repeating_id = builder.add_repeating(
+		format!("repeating {}", name),
+		transparent_id,
+		log_size - PackedType::<U, B1>::LOG_WIDTH,
+	)?;
+
+	if let Some(witness) = builder.witness() {
+		let mut transparent_witness = witness.new_column::<B1>(transparent_id);
+		transparent_witness.as_mut_slice::<u32>().fill(x);
+
+		let mut repeating_witness = witness.new_column::<B1>(repeating_id);
+		repeating_witness.as_mut_slice::<u32>().fill(x);
+	}
+
+	Ok(repeating_id)
 }
 
 #[cfg(test)]

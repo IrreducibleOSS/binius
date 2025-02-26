@@ -1,20 +1,21 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::array;
+
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, Field};
-use binius_utils::checked_arithmetics::checked_log_2;
 
 use crate::{
-	arithmetic,
-	arithmetic::Flags,
+	arithmetic::{
+		self,
+		u32::{u32const_repeating, LOG_U32_BITS},
+		Flags,
+	},
 	bitwise,
 	builder::{types::F, ConstraintSystemBuilder},
-	sha256::u32const_repeating,
-	unconstrained::fixed_u32,
 };
 
 type F1 = BinaryField1b;
-const LOG_U32_BITS: usize = checked_log_2(32);
 const CHAINING_VALUE_LEN: usize = 8;
 const BLAKE3_STATE_LEN: usize = 16;
 const MSG_PERMUTATION: [usize; BLAKE3_STATE_LEN] =
@@ -111,13 +112,10 @@ pub fn g(
 pub fn round(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	state: &[OracleId],
-	m: &[OracleId],
+	state: &[OracleId; BLAKE3_STATE_LEN],
+	m: &[OracleId; BLAKE3_STATE_LEN],
 	log_size: usize,
 ) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
-	assert_eq!(state.len(), m.len());
-	assert_eq!(state.len(), BLAKE3_STATE_LEN);
-
 	builder.push_namespace(name);
 
 	// Mixing columns
@@ -149,14 +147,8 @@ pub fn round(
 	])
 }
 
-// TODO: implement permutation constraining
-pub fn permute(block_words: &[OracleId]) -> [OracleId; BLAKE3_STATE_LEN] {
-	assert_eq!(block_words.len(), BLAKE3_STATE_LEN);
-	let mut permuted = [OracleId::MAX; BLAKE3_STATE_LEN];
-	for i in 0..permuted.len() {
-		permuted[i] = block_words[MSG_PERMUTATION[i]];
-	}
-	permuted
+pub fn permute(block_words: &[OracleId; BLAKE3_STATE_LEN]) -> [OracleId; BLAKE3_STATE_LEN] {
+	array::from_fn(|i| block_words[MSG_PERMUTATION[i]])
 }
 
 // Gadget for Blake3 compress function
@@ -164,16 +156,13 @@ pub fn permute(block_words: &[OracleId]) -> [OracleId; BLAKE3_STATE_LEN] {
 pub fn compress(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	chaining_value: &[OracleId],
-	block_words: &[OracleId],
+	chaining_value: &[OracleId; CHAINING_VALUE_LEN],
+	block_words: &[OracleId; BLAKE3_STATE_LEN],
 	counter: u64,
 	block_len: u32,
 	flags: u32,
 	log_size: usize,
 ) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
-	assert_eq!(chaining_value.len(), CHAINING_VALUE_LEN);
-	assert_eq!(block_words.len(), BLAKE3_STATE_LEN);
-
 	builder.push_namespace(name);
 
 	let counter_low = counter as u32;
@@ -187,15 +176,13 @@ pub fn compress(
 
 	state[8..12].copy_from_slice(&iv_oracles);
 
-	state[12] =
-		fixed_u32::<F1>(builder, "counter_low", log_size, vec![counter_low; 1 << log_size])?;
+	state[12] = u32const_repeating(log_size, builder, counter_low, "counter_low")?;
 
-	state[13] =
-		fixed_u32::<F1>(builder, "counter_high", log_size, vec![counter_high; 1 << log_size])?;
+	state[13] = u32const_repeating(log_size, builder, counter_high, "counter_high")?;
 
-	state[14] = fixed_u32::<F1>(builder, "block_len", log_size, vec![block_len; 1 << log_size])?;
+	state[14] = u32const_repeating(log_size, builder, block_len, "block_len")?;
 
-	state[15] = fixed_u32::<F1>(builder, "flags", log_size, vec![flags; 1 << log_size])?;
+	state[15] = u32const_repeating(log_size, builder, flags, "flags")?;
 
 	let new_state = round(builder, "round_1", &state, block_words, log_size)?;
 	let new_block_words = permute(block_words);
@@ -241,12 +228,16 @@ pub fn compress(
 
 #[cfg(test)]
 mod tests {
+	use std::array;
+
 	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 	use binius_field::BinaryField1b;
 	use binius_maybe_rayon::prelude::*;
 
 	use crate::{
-		blake3::{compress, g, round, BLAKE3_STATE_LEN, IV_0_4, MSG_PERMUTATION},
+		blake3::{
+			compress, g, round, BLAKE3_STATE_LEN, CHAINING_VALUE_LEN, IV_0_4, MSG_PERMUTATION,
+		},
 		builder::ConstraintSystemBuilder,
 		unconstrained::{fixed_u32, unconstrained},
 	};
@@ -399,18 +390,15 @@ mod tests {
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 		// populate State and Message columns with some fixed values
-		let state = (0..state.len())
-			.map(|idx| {
-				fixed_u32::<F1>(&mut builder, format!("s{}", idx), LOG_SIZE, vec![state[idx]; size])
-					.unwrap()
-			})
-			.collect::<Vec<OracleId>>();
-		let m = (0..m.len())
-			.map(|idx| {
-				fixed_u32::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE, vec![m[idx]; size])
-					.unwrap()
-			})
-			.collect::<Vec<OracleId>>();
+		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE, vec![state[idx]; size])
+				.unwrap()
+		});
+
+		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE, vec![m[idx]; size])
+				.unwrap()
+		});
 
 		// execute 'round' gadget
 		let actual = round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
@@ -434,13 +422,13 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let state = (0..BLAKE3_STATE_LEN)
-			.map(|idx| unconstrained::<F1>(&mut builder, format!("s{}", idx), LOG_SIZE).unwrap())
-			.collect::<Vec<OracleId>>();
+		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE).unwrap()
+		});
 
-		let m = (0..BLAKE3_STATE_LEN)
-			.map(|idx| unconstrained::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE).unwrap())
-			.collect::<Vec<OracleId>>();
+		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE).unwrap()
+		});
 
 		round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
 
@@ -532,23 +520,20 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let chaining_value = (0..chaining_value.len())
-			.map(|idx| {
-				fixed_u32::<F1>(
-					&mut builder,
-					format!("s{}", idx),
-					LOG_SIZE,
-					vec![chaining_value[idx]; size],
-				)
+		let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(
+				&mut builder,
+				format!("cv{}", idx),
+				LOG_SIZE,
+				vec![chaining_value[idx]; size],
+			)
+			.unwrap()
+		});
+
+		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE, vec![m[idx]; size])
 				.unwrap()
-			})
-			.collect::<Vec<OracleId>>();
-		let block_words = (0..m.len())
-			.map(|idx| {
-				fixed_u32::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE, vec![m[idx]; size])
-					.unwrap()
-			})
-			.collect::<Vec<OracleId>>();
+		});
 
 		let actual = compress(
 			&mut builder,
@@ -581,13 +566,13 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-		let chaining_values = (0..8)
-			.map(|idx| unconstrained::<F1>(&mut builder, format!("s{}", idx), LOG_SIZE).unwrap())
-			.collect::<Vec<OracleId>>();
+		let chaining_values: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("cv{}", idx), LOG_SIZE).unwrap()
+		});
 
-		let block_words = (0..BLAKE3_STATE_LEN)
-			.map(|idx| unconstrained::<F1>(&mut builder, format!("s{}", idx), LOG_SIZE).unwrap())
-			.collect::<Vec<OracleId>>();
+		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE).unwrap()
+		});
 
 		let counter = u64::MAX;
 		let block_len = u32::MAX;

@@ -1,27 +1,15 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_core::{
-	oracle::{OracleId, ShiftVariant},
-	transparent::multilinear_extension::MultilinearExtensionTransparent,
-};
-use binius_field::{
-	as_packed_field::PackedType, underlier::WithUnderlier, BinaryField1b, Field, PackedField,
-	TowerField,
-};
+use binius_core::oracle::{OracleId, ShiftVariant};
+use binius_field::{as_packed_field::PackedType, BinaryField1b, Field, TowerField};
 use binius_macros::arith_expr;
-use binius_utils::checked_arithmetics::checked_log_2;
-use bytemuck::{pod_collect_to_vec, Pod};
 use itertools::izip;
 
 use crate::{
 	arithmetic,
-	builder::{
-		types::{F, U},
-		ConstraintSystemBuilder,
-	},
+	arithmetic::u32::{u32const_repeating, LOG_U32_BITS},
+	builder::{types::U, ConstraintSystemBuilder},
 };
-
-const LOG_U32_BITS: usize = checked_log_2(32);
 
 type B1 = BinaryField1b;
 
@@ -103,50 +91,6 @@ pub fn rotate_and_xor(
 	}
 
 	Ok(result_oracle_id)
-}
-
-#[inline]
-fn into_packed_vec<P>(src: &[impl Pod]) -> Vec<P>
-where
-	P: PackedField + WithUnderlier,
-	P::Underlier: Pod,
-{
-	pod_collect_to_vec::<_, P::Underlier>(src)
-		.into_iter()
-		.map(P::from_underlier)
-		.collect()
-}
-
-pub fn u32const_repeating(
-	log_size: usize,
-	builder: &mut ConstraintSystemBuilder,
-	x: u32,
-	name: &str,
-) -> Result<OracleId, anyhow::Error> {
-	let brodcasted = vec![x; 1 << (PackedType::<U, B1>::LOG_WIDTH.saturating_sub(LOG_U32_BITS))];
-
-	let transparent_id = builder.add_transparent(
-		format!("transparent {}", name),
-		MultilinearExtensionTransparent::<_, PackedType<U, F>, _>::from_values(into_packed_vec::<
-			PackedType<U, B1>,
-		>(&brodcasted))?,
-	)?;
-
-	let repeating_id = builder.add_repeating(
-		format!("repeating {}", name),
-		transparent_id,
-		log_size - PackedType::<U, B1>::LOG_WIDTH,
-	)?;
-
-	if let Some(witness) = builder.witness() {
-		let mut transparent_witness = witness.new_column::<B1>(transparent_id);
-		transparent_witness.as_mut_slice::<u32>().fill(x);
-
-		let mut repeating_witness = witness.new_column::<B1>(repeating_id);
-		repeating_witness.as_mut_slice::<u32>().fill(x);
-	}
-
-	Ok(repeating_id)
 }
 
 pub fn sha256(
