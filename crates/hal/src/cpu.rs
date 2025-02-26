@@ -43,7 +43,7 @@ impl ComputationBackend for CpuBackend {
 		tensor_query: Option<MultilinearQueryRef<P>>,
 		multilinears: &[SumcheckMultilinear<P, M>],
 		evaluators: &[Evaluator],
-		evaluation_points: &[FDomain],
+		nontrivial_evaluation_points: &[FDomain],
 	) -> Result<Vec<RoundEvals<P::Scalar>>, Error>
 	where
 		FDomain: Field,
@@ -52,7 +52,13 @@ impl ComputationBackend for CpuBackend {
 		Evaluator: SumcheckEvaluator<P, Composition> + Sync,
 		Composition: CompositionPoly<P>,
 	{
-		calculate_round_evals(n_vars, tensor_query, multilinears, evaluators, evaluation_points)
+		calculate_round_evals(
+			n_vars,
+			tensor_query,
+			multilinears,
+			evaluators,
+			nontrivial_evaluation_points,
+		)
 	}
 
 	#[instrument(skip_all, name = "CpuBackend::evaluate_partial_high")]

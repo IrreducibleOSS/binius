@@ -18,11 +18,15 @@ pub trait SumcheckEvaluator<P: PackedField, Composition> {
 	/// `batch_query` should contain multilinears evals over a subcube represented
 	/// by `subcube_vars` and `subcube_index`.
 	///
+	/// See doc comments to [EvaluationDomain](binius_math::EvaluationDomain) for the intuition
+	/// behind `is_infinity_point`.
+	///
 	/// Returns a packed sum (which may be spread across scalars).
 	fn process_subcube_at_eval_point(
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P;
 

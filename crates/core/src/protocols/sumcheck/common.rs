@@ -6,7 +6,7 @@ use binius_field::{
 	util::{inner_product_unchecked, powers},
 	ExtensionField, Field, PackedField,
 };
-use binius_math::{CompositionPoly, MultilinearPoly};
+use binius_math::{CompositionPoly, InterpolationDomain, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use tracing::instrument;
@@ -301,6 +301,39 @@ where
 pub fn batch_weighted_value<F: Field>(batch_coeff: F, values: impl Iterator<Item = F>) -> F {
 	// Multiplying by batch_coeff is important for security!
 	batch_coeff * inner_product_unchecked(powers(batch_coeff), values)
+}
+
+/// Validate the sumcheck evaluation domains to conform to the shape expected by the
+/// `SumcheckRoundCalculator`:
+///   1) First three points are zero, one, and Karatsuba infinity (for degrees above 1)
+///   2) All finite evaluation point slices are proper prefixes of the largest evaluation domain
+pub fn get_nontrivial_evaluation_points<F: Field>(
+	domains: &[InterpolationDomain<F>],
+) -> Result<Vec<F>, Error> {
+	let Some(largest_domain) = domains.iter().max_by_key(|domain| domain.size()) else {
+		return Ok(Vec::new());
+	};
+
+	#[allow(clippy::get_first)]
+	if !domains.iter().all(|domain| {
+		(domain.size() <= 2 || domain.with_infinity())
+			&& domain.finite_points().get(0).unwrap_or(&F::ZERO) == &F::ZERO
+			&& domain.finite_points().get(1).unwrap_or(&F::ONE) == &F::ONE
+	}) {
+		bail!(Error::IncorrectSumcheckEvaluationDomain);
+	}
+
+	let finite_points = largest_domain.finite_points();
+
+	if domains
+		.iter()
+		.any(|domain| !finite_points.starts_with(domain.finite_points()))
+	{
+		bail!(Error::NonProperPrefixEvaluationDomain);
+	}
+
+	let nontrivial_evaluation_points = finite_points[2.min(finite_points.len())..].to_vec();
+	Ok(nontrivial_evaluation_points)
 }
 
 #[cfg(test)]

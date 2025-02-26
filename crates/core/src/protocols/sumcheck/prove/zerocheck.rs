@@ -21,9 +21,9 @@ use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{Error as PolynomialError, MultilinearComposite},
+	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
-		common::{determine_switchovers, equal_n_vars_check},
+		common::{determine_switchovers, equal_n_vars_check, get_nontrivial_evaluation_points},
 		prove::{
 			common::fold_partial_eq_ind,
 			univariate::{
@@ -161,7 +161,8 @@ where
 			.iter()
 			.map(|(_, _, composition)| {
 				let degree = composition.degree();
-				let domain = evaluation_domain_factory.create(degree + 1)?;
+				let domain =
+					evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
 				Ok(domain.into())
 			})
 			.collect::<Result<Vec<InterpolationDomain<FDomain>>, _>>()
@@ -466,20 +467,17 @@ where
 		first_round: RegularFirstRound,
 		backend: &'a Backend,
 	) -> Result<Self, Error> {
-		let evaluation_points = domains
-			.iter()
-			.max_by_key(|domain| domain.size())
-			.map_or_else(|| Vec::new(), |domain| domain.finite_points().to_vec());
-
 		if claimed_prime_sums.len() != compositions.len() {
 			bail!(Error::IncorrectClaimedPrimeSumsLength);
 		}
+
+		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new_with_switchover_rounds(
 			multilinears,
 			switchover_rounds,
 			claimed_prime_sums,
-			evaluation_points,
+			nontrivial_evaluation_points,
 			backend,
 		)?;
 		let n_vars = state.n_vars();
@@ -537,7 +535,7 @@ where
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for ZerocheckProver<'_, FDomain, P, Composition, M, Backend>
 where
-	F: Field,
+	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
 	Composition: CompositionPoly<P>,
@@ -566,10 +564,16 @@ where
 			round == 0 && matches!(self.first_round, RegularFirstRound::SkipCube);
 		let coeffs = if skip_cube_first_round {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckFirstRoundEvaluator {
-					composition,
-					interpolation_domain,
-					partial_eq_ind_evals: &self.partial_eq_ind_evals,
+				.map(|(composition, interpolation_domain)| {
+					let composition_at_infinity =
+						ArithCircuitPoly::new(composition.expression().leading_term());
+
+					ZerocheckFirstRoundEvaluator {
+						composition,
+						composition_at_infinity,
+						interpolation_domain,
+						partial_eq_ind_evals: &self.partial_eq_ind_evals,
+					}
 				})
 				.collect::<Vec<_>>();
 			let evals = self.state.calculate_round_evals(&evaluators)?;
@@ -577,11 +581,17 @@ where
 				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?
 		} else {
 			let evaluators = izip!(&self.compositions, &self.domains)
-				.map(|(composition, interpolation_domain)| ZerocheckLaterRoundEvaluator {
-					composition,
-					interpolation_domain,
-					partial_eq_ind_evals: &self.partial_eq_ind_evals,
-					round_zerocheck_challenge: self.zerocheck_challenges[round],
+				.map(|(composition, interpolation_domain)| {
+					let composition_at_infinity =
+						ArithCircuitPoly::new(composition.expression().leading_term());
+
+					ZerocheckLaterRoundEvaluator {
+						composition,
+						composition_at_infinity,
+						interpolation_domain,
+						partial_eq_ind_evals: &self.partial_eq_ind_evals,
+						round_zerocheck_challenge: self.zerocheck_challenges[round],
+					}
 				})
 				.collect::<Vec<_>>();
 			let evals = self.state.calculate_round_evals(&evaluators)?;
@@ -620,6 +630,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
+	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 }
@@ -627,7 +638,7 @@ where
 impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for ZerocheckFirstRoundEvaluator<'_, P, FDomain, Composition>
 where
-	P: PackedField<Scalar: ExtensionField<FDomain>>,
+	P: PackedField<Scalar: TowerField + ExtensionField<FDomain>>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
@@ -642,6 +653,7 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P {
 		// If the composition is a linear polynomial, then the composite multivariate polynomial
@@ -653,9 +665,15 @@ where
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			self.composition
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
+			if is_infinity_point {
+				self.composition_at_infinity
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			} else {
+				self.composition
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			}
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			let partial_eq_ind_evals_slice = &self.partial_eq_ind_evals[subcube_start..];
@@ -696,6 +714,15 @@ where
 		round_evals.insert(0, P::Scalar::ZERO);
 		round_evals.insert(0, P::Scalar::ZERO);
 
+		if round_evals.len() > 3 {
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
+			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
+			// Putting "special" evaluation points at the beginning of domain allows benefitting from
+			// faster/skipped interpolation even in case of mixed degree compositions .
+			let infinity_round_eval = round_evals.remove(2);
+			round_evals.push(infinity_round_eval);
+		}
+
 		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
 	}
@@ -707,6 +734,7 @@ where
 	FDomain: Field,
 {
 	composition: &'a Composition,
+	composition_at_infinity: ArithCircuitPoly<P::Scalar>,
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
 	partial_eq_ind_evals: &'a [P],
 	round_zerocheck_challenge: P::Scalar,
@@ -715,7 +743,7 @@ where
 impl<P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for ZerocheckLaterRoundEvaluator<'_, P, FDomain, Composition>
 where
-	P: PackedField<Scalar: ExtensionField<FDomain>>,
+	P: PackedField<Scalar: TowerField + ExtensionField<FDomain>>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
@@ -730,6 +758,7 @@ where
 		&self,
 		subcube_vars: usize,
 		subcube_index: usize,
+		is_infinity_point: bool,
 		batch_query: &[&[P]],
 	) -> P {
 		// If the composition is a linear polynomial, then the composite multivariate polynomial
@@ -741,9 +770,15 @@ where
 		let row_len = batch_query.first().map_or(0, |row| row.len());
 
 		stackalloc_with_default(row_len, |evals| {
-			self.composition
-				.batch_evaluate(batch_query, evals)
-				.expect("correct by query construction invariant");
+			if is_infinity_point {
+				self.composition_at_infinity
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			} else {
+				self.composition
+					.batch_evaluate(batch_query, evals)
+					.expect("correct by query construction invariant");
+			}
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			for (i, eval) in evals.iter_mut().enumerate() {
@@ -787,6 +822,15 @@ where
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 
 		round_evals.insert(0, zero_evaluation);
+
+		if round_evals.len() > 3 {
+			// SumcheckRoundCalculator orders interpolation points as 0, 1, "infinity", then subspace points.
+			// InterpolationDomain expects "infinity" at the last position, thus reordering is needed.
+			// Putting "special" evaluation points at the beginning of domain allows benefitting from
+			// faster/skipped interpolation even in case of mixed degree compositions .
+			let infinity_round_eval = round_evals.remove(2);
+			round_evals.push(infinity_round_eval);
+		}
 
 		let coeffs = self.interpolation_domain.interpolate(&round_evals)?;
 		Ok(coeffs)
