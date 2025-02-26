@@ -157,8 +157,6 @@ where
 		multilinear_evals.push(evals);
 	}
 
-	println!("evals {:?} {:#?}", evaluation_order, multilinear_evals);
-
 	let expected_sum = compute_expected_batch_composite_evaluation_multi_claim(
 		batch_coeffs,
 		claims,
