@@ -459,6 +459,10 @@ where
 {
 	#[allow(clippy::too_many_arguments)]
 	fn new(
+		// REVIEW: given that high-to-low zerocheck may only be instantiated via
+		//         reduction from high-to-low univariate prover, actual implementation
+		//         of high-to-low zerocheck is deferred until the introduction of high-to-low
+		//         univariate skip.
 		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		switchover_rounds: &[usize],
@@ -527,6 +531,7 @@ where
 	#[instrument(skip_all, level = "debug")]
 	fn fold_partial_eq_ind(&mut self) {
 		fold_partial_eq_ind::<P, Backend>(
+			self.state.evaluation_order(),
 			self.n_rounds_remaining(),
 			&mut self.partial_eq_ind_evals,
 		);
