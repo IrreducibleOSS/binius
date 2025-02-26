@@ -22,7 +22,7 @@ use crate::{
 /// Since the protocol is verify bit-by-bit on each layer, we can batch verifiers starting from the first layer.
 ///
 /// This protocol groups consecutive verifiers by their `eval_point` and reduces them to sumcheck provers on each layer.
-/// The sumcheck output, in turn, is reduce to exponent LayerClaim's and internal prover [ExpClaim] for next layer.
+/// The sumcheck output, in turn, is reduce to LayerClaim's that uses for Evalcheck and internal prover [ExpClaim] for next layer.
 ///
 /// # Requirements
 /// - Claims must be in the same order as in [super::batch_prove].
@@ -36,12 +36,10 @@ where
 	F: TowerField + ExtensionField<FBase>,
 	Challenger_: Challenger,
 {
-	let mut eval_claims_on_exponent_bit_columns = Vec::new();
+	let mut layers_claims = Vec::new();
 
 	if claims.is_empty() {
-		return Ok(BaseExpReductionOutput {
-			eval_claims_on_exponent_bit_columns,
-		});
+		return Ok(BaseExpReductionOutput { layers_claims });
 	}
 
 	// Check that the witnesses are in descending order by n_vars
@@ -71,14 +69,12 @@ where
 			layer_no,
 		)?;
 
-		eval_claims_on_exponent_bit_columns.push(layer_exponent_claims);
+		layers_claims.push(layer_exponent_claims);
 
 		verifiers.retain(|verifier| !verifier.is_last_layer(layer_no));
 	}
 
-	Ok(BaseExpReductionOutput {
-		eval_claims_on_exponent_bit_columns,
-	})
+	Ok(BaseExpReductionOutput { layers_claims })
 }
 
 struct SumcheckClaimsWithEvalPoints<F: Field> {
@@ -186,7 +182,7 @@ where
 		.map_err(Error::from)
 }
 
-/// Reduces the sumcheck output to exponent [LayerClaim]s and updates the internal provers [ExpClaim]s for the next layer.
+/// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [ExpClaim]s for the next layer.
 pub fn build_layer_exponent_bit_claims<'a, F>(
 	verifiers: &mut [Box<dyn ExpVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
@@ -229,13 +225,13 @@ where
 			.take(this_verifier_n_multilinears)
 			.collect::<Vec<_>>();
 
-		let layer_claim = verifier.finish_layer(
+		let layer_claims = verifier.finish_layer(
 			layer_no,
 			&this_verifier_multilinear_evals,
 			&sumcheck_output.challenges,
 		);
 
-		eval_claims_on_exponent_bit_columns.push(layer_claim);
+		eval_claims_on_exponent_bit_columns.extend(layer_claims);
 	}
 
 	Ok(eval_claims_on_exponent_bit_columns)

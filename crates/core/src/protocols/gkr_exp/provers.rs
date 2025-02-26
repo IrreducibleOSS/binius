@@ -50,7 +50,7 @@ pub trait ExpProver<'a, P: PackedField> {
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
-	) -> LayerClaim<P::Scalar>;
+	) -> Vec<LayerClaim<P::Scalar>>;
 }
 
 struct ExpCommonProver<'a, P: PackedField> {
@@ -89,32 +89,6 @@ impl<'a, P: PackedField> ExpCommonProver<'a, P> {
 
 	pub fn is_last_layer(&self, layer_no: usize) -> bool {
 		self.exponent_bit_width() - 1 - layer_no == 0
-	}
-
-	fn finish_layer(
-		&mut self,
-		layer_no: usize,
-		multilinear_evals: &[P::Scalar],
-		r: &[P::Scalar],
-	) -> LayerClaim<P::Scalar> {
-		let n_vars = self.eval_point().len();
-		let eval_point = &r[r.len() - n_vars..];
-
-		let layer_eval = multilinear_evals[0];
-
-		let exponent_bit_eval = multilinear_evals[1];
-
-		if !self.is_last_layer(layer_no) {
-			self.current_layer_claim = LayerClaim {
-				eval: layer_eval,
-				eval_point: eval_point.to_vec(),
-			};
-		}
-
-		LayerClaim {
-			eval: exponent_bit_eval,
-			eval_point: eval_point.to_vec(),
-		}
 	}
 }
 
@@ -197,20 +171,38 @@ where
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
-	) -> LayerClaim<P::Scalar> {
-		if self.0.is_last_layer(layer_no) {
+	) -> Vec<LayerClaim<P::Scalar>> {
+		let exponent_bit_claim = if self.is_last_layer(layer_no) {
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
 			// a_0(x) = (V_0(x) - 1)/(g - 1)
 			let LayerClaim { eval_point, eval } = self.0.current_layer_claim.clone();
 
-			let exponent_claim = LayerClaim::<P::Scalar> {
+			LayerClaim::<P::Scalar> {
 				eval_point,
 				eval: first_layer_inverse::<FBase, _>(eval),
-			};
-			return exponent_claim;
-		}
+			}
+		} else {
+			let n_vars = self.layer_claim_eval_point().len();
 
-		self.0.finish_layer(layer_no, multilinear_evals, r)
+			let layer_eval = multilinear_evals[0];
+
+			let exponent_bit_eval = multilinear_evals[1];
+
+			let eval_point = &r[r.len() - n_vars..];
+			if !self.is_last_layer(layer_no) {
+				self.0.current_layer_claim = LayerClaim {
+					eval: layer_eval,
+					eval_point: eval_point.to_vec(),
+				};
+			}
+
+			LayerClaim {
+				eval: exponent_bit_eval,
+				eval_point: eval_point.to_vec(),
+			}
+		};
+
+		vec![exponent_bit_claim]
 	}
 
 	fn layer_n_multilinears(&self, layer_no: usize) -> usize {
@@ -318,8 +310,48 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
-	) -> LayerClaim<P::Scalar> {
-		self.0.finish_layer(layer_no, multilinear_evals, r)
+	) -> Vec<LayerClaim<P::Scalar>> {
+		let n_vars = self.0.eval_point().len();
+		let eval_point = &r[r.len() - n_vars..];
+
+		let mut claims = Vec::with_capacity(2);
+
+		let exponent_bit_eval = multilinear_evals[1];
+
+		let exponent_bit_claim = LayerClaim {
+			eval: exponent_bit_eval,
+			eval_point: eval_point.to_vec(),
+		};
+
+		claims.push(exponent_bit_claim);
+
+		if !self.is_last_layer(layer_no) {
+			let layer_eval = multilinear_evals[0];
+
+			self.0.current_layer_claim = LayerClaim {
+				eval: layer_eval,
+				eval_point: eval_point.to_vec(),
+			};
+
+			let base_eval = multilinear_evals[2];
+
+			let base_claim = LayerClaim {
+				eval: base_eval,
+				eval_point: eval_point.to_vec(),
+			};
+
+			claims.push(base_claim)
+		} else {
+			let base_eval = multilinear_evals[0];
+
+			let base_claim = LayerClaim {
+				eval: base_eval,
+				eval_point: eval_point.to_vec(),
+			};
+			claims.push(base_claim)
+		}
+
+		claims
 	}
 
 	fn layer_n_multilinears(&self, layer_no: usize) -> usize {

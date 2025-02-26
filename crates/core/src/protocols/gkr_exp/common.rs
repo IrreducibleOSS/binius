@@ -39,9 +39,9 @@ pub struct BaseExpReductionOutput<F: Field> {
 	/// Reduced evalcheck claims for every prover for each layer.
 	///
 	/// The first dimension of the vector represents each layer,
-	/// and the second dimension represents the provers.
+	/// and the second dimension represents the provers LayerClaims.
 	///
-	/// Since [super::batch_prove] works with exponents of different widths,
+	/// Since [super::batch_prove] works with exponents of different widths and different types of base,
 	/// the length of each layer can vary.
-	pub eval_claims_on_exponent_bit_columns: Vec<Vec<LayerClaim<F>>>,
+	pub layers_claims: Vec<Vec<LayerClaim<F>>>,
 }
