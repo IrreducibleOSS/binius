@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
@@ -11,39 +11,45 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{BaseExponentReductionOutput, ExponentiationClaim},
-	compositions::ProverExponentiationComposition,
+	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
+	compositions::ProverExpComposition,
 	error::Error,
 	provers::{
-		DynamicBaseExponentiationProver, ExponentiationProver, GeneratorExponentiationProver,
-		ProverLayerClaimMeta,
+		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, GeneratorExpProver,
 	},
-	witness::BaseExponentWitness,
+	witness::BaseExpWitness,
 };
 use crate::{
 	fiat_shamir::Challenger,
 	protocols::{
-		gkr_gpa::{gpa_sumcheck::prove::GPAProver, LayerClaim},
+		gkr_gpa::gpa_sumcheck::prove::GPAProver,
 		sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
 	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
 
-/// REQUIRES:
-/// * witnesses and claims are of the same length
-/// * The ith witness corresponds to the ith claim
-/// * witnesses and claims must be in descending order by n_vars
+/// Prove a batched GKR exponentiation protocol execution.
 ///
-/// RECOMMENDATIONS:
-/// * Witnesses and claims should be grouped by evaluation points from claims
+/// Since the protocol is proven bit-by-bit on each layer, we can batch provers starting from the first layer.
+///
+/// This protocol groups consecutive provers by their `eval_point` and reduces them to sumcheck provers on each layer.
+/// The sumcheck output, in turn, is reduce to exponent LayerClaim's and internal prover LayerClaim for next layer.
+///
+/// # Requirements
+/// - Witnesses and claims must be of the same length.
+/// - The `i`th witness must correspond to the `i`th claim.
+/// - Witnesses and claims must be sorted in descending order by `n_vars`.
+///
+/// # Recommendations
+/// - Witnesses and claims should be grouped by evaluation points from the claims.
 pub fn batch_prove<'a, FBase, F, P, FDomain, Challenger_, Backend>(
-	witnesses: impl IntoIterator<Item = BaseExponentWitness<'a, P>>,
-	claims: &[ExponentiationClaim<F>],
+	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P>>,
+	claims: &[ExpClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
 	backend: &Backend,
-) -> Result<BaseExponentReductionOutput<F>, Error>
+) -> Result<BaseExpReductionOutput<F>, Error>
 where
 	F: ExtensionField<FBase> + ExtensionField<FDomain> + TowerField,
 	FDomain: Field,
@@ -63,7 +69,7 @@ where
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
 	if witnesses.is_empty() {
-		return Ok(BaseExponentReductionOutput {
+		return Ok(BaseExpReductionOutput {
 			eval_claims_on_exponent_bit_columns,
 		});
 	}
@@ -95,25 +101,18 @@ where
 		provers.retain(|prover| !prover.is_last_layer(layer_no));
 	}
 
-	Ok(BaseExponentReductionOutput {
+	Ok(BaseExpReductionOutput {
 		eval_claims_on_exponent_bit_columns,
 	})
 }
 
-type GKRProvers<'a, F, P, FDomain, Backend> = Vec<
-	GPAProver<
-		'a,
-		FDomain,
-		P,
-		ProverExponentiationComposition<F>,
-		MultilinearWitness<'a, P>,
-		Backend,
-	>,
->;
+type GKRProvers<'a, F, P, FDomain, Backend> =
+	Vec<GPAProver<'a, FDomain, P, ProverExpComposition<F>, MultilinearWitness<'a, P>, Backend>>;
 
+/// Groups consecutive provers by their `eval_point` and reduces them to sumcheck provers.
 #[instrument(skip_all, level = "debug")]
 fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
-	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
+	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	layer_no: usize,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	backend: &'a Backend,
@@ -121,7 +120,7 @@ fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
 where
 	FDomain: Field,
 	P: PackedFieldIndexable + PackedExtension<FDomain>,
-	P::Scalar: ExtensionField<FDomain>,
+	P::Scalar: TowerField + ExtensionField<FDomain>,
 	Backend: ComputationBackend,
 {
 	assert!(!provers.is_empty());
@@ -137,7 +136,7 @@ where
 	// group provers by evaluation points and build composite sum claims.
 	for i in 0..provers.len() {
 		if provers[i].layer_claim_eval_point() != eval_points[eval_points.len() - 1] {
-			let CompositeSumClaimWithMultilinears {
+			let CompositeSumClaimsWithMultilinears {
 				composite_claims: eval_point_composite_claims,
 				multilinears: eval_point_multilinears,
 			} = build_eval_point_claims::<P>(&mut provers[active_index..i], layer_no)?;
@@ -155,7 +154,7 @@ where
 		}
 
 		if i == provers.len() - 1 {
-			let CompositeSumClaimWithMultilinears {
+			let CompositeSumClaimsWithMultilinears {
 				composite_claims: eval_point_composite_claims,
 				multilinears: eval_point_multilinears,
 			} = build_eval_point_claims::<P>(&mut provers[active_index..], layer_no)?;
@@ -182,15 +181,16 @@ where
 		.map_err(Error::from)
 }
 
-struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
-	composite_claims: Vec<CompositeSumClaim<P::Scalar, ProverExponentiationComposition<P::Scalar>>>,
+struct CompositeSumClaimsWithMultilinears<'a, P: PackedField> {
+	composite_claims: Vec<CompositeSumClaim<P::Scalar, ProverExpComposition<P::Scalar>>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
+/// Builds composite claims and multilinears for provers that share the same `eval_point` from their internal [LayerClaim]s.
 fn build_eval_point_claims<'a, P>(
-	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
+	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	layer_no: usize,
-) -> Result<CompositeSumClaimWithMultilinears<'a, P>, Error>
+) -> Result<CompositeSumClaimsWithMultilinears<'a, P>, Error>
 where
 	P: PackedField,
 {
@@ -198,8 +198,8 @@ where
 		provers
 			.iter()
 			.fold((0, 0), |(n_multilinears, n_claims), prover| {
-				let (layer_n_multilinears, layer_n_claims) =
-					prover.layer_n_multilinears_n_claims(layer_no);
+				let layer_n_multilinears = prover.layer_n_multilinears(layer_no);
+				let layer_n_claims = prover.layer_n_claims(layer_no);
 
 				(n_multilinears + layer_n_multilinears, n_claims + layer_n_claims)
 			});
@@ -211,29 +211,32 @@ where
 	for prover in provers {
 		let multilinears_index = multilinears.len();
 
-		let ProverLayerClaimMeta {
-			claim: composite_claim,
-			multilinears: this_layer_multilinears,
-		} = prover.layer_composite_sum_claim(
+		let meta = prover.layer_composite_sum_claim(
 			layer_no,
 			composite_claims_n_multilinears,
 			multilinears_index,
 		)?;
 
-		if let Some(composite_claim) = composite_claim {
-			composite_claims.push(composite_claim);
+		if let Some(meta) = meta {
+			let CompositeSumClaimWithMultilinears {
+				claim,
+				multilinears: this_layer_multilinears,
+			} = meta;
+
+			composite_claims.push(claim);
 
 			multilinears.extend(this_layer_multilinears);
 		}
 	}
-	Ok(CompositeSumClaimWithMultilinears {
+	Ok(CompositeSumClaimsWithMultilinears {
 		composite_claims,
 		multilinears,
 	})
 }
 
-pub fn build_layer_exponent_bit_claims<'a, P>(
-	provers: &mut [Box<dyn ExponentiationProver<'a, P> + 'a>],
+/// Reduces the sumcheck output to exponent [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
+fn build_layer_exponent_bit_claims<'a, P>(
+	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 	layer_no: usize,
 ) -> Result<Vec<LayerClaim<P::Scalar>>, Error>
@@ -250,7 +253,7 @@ where
 	let mut multilinear_evals = sumcheck_output.multilinear_evals.into_iter().flatten();
 
 	for prover in provers {
-		let (this_prover_n_multilinears, _) = prover.layer_n_multilinears_n_claims(layer_no);
+		let this_prover_n_multilinears = prover.layer_n_multilinears(layer_no);
 
 		let this_prover_multilinear_evals = multilinear_evals
 			.by_ref()
@@ -269,10 +272,11 @@ where
 	Ok(eval_claims_on_exponent_bit_columns)
 }
 
+/// Creates a vector of boxed [ExpProver]s from the given witnesses and claims.
 fn make_provers<'a, P, FBase>(
-	witnesses: Vec<BaseExponentWitness<'a, P>>,
-	claims: &[ExponentiationClaim<P::Scalar>],
-) -> Result<Vec<Box<dyn ExponentiationProver<'a, P> + 'a>>, Error>
+	witnesses: Vec<BaseExpWitness<'a, P>>,
+	claims: &[ExpClaim<P::Scalar>],
+) -> Result<Vec<Box<dyn ExpProver<'a, P> + 'a>>, Error>
 where
 	P: PackedField,
 	FBase: BinaryField,
@@ -285,11 +289,11 @@ where
 			let is_dynamic_prover = witness.base.is_some();
 
 			if is_dynamic_prover {
-				DynamicBaseExponentiationProver::new(witness, claim)
-					.map(|prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>)
+				DynamicBaseExpProver::new(witness, claim)
+					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			} else {
-				GeneratorExponentiationProver::<'a, P, FBase>::new(witness, claim)
-					.map(|prover| Box::new(prover) as Box<dyn ExponentiationProver<'a, P> + 'a>)
+				GeneratorExpProver::<'a, P, FBase>::new(witness, claim)
+					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			}
 		})
 		.collect::<Result<Vec<_>, Error>>()

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::array;
 
@@ -16,12 +16,10 @@ use binius_math::{
 use groestl_crypto::Groestl256;
 use rand::{thread_rng, Rng};
 
-use super::{batch_prove, common::BaseExponentReductionOutput};
+use super::{batch_prove, common::BaseExpReductionOutput};
 use crate::{
 	fiat_shamir::HasherChallenger,
-	protocols::gkr_exponentiation::{
-		batch_verify, common::ExponentiationClaim, witness::BaseExponentWitness,
-	},
+	protocols::gkr_exp::{batch_verify, common::ExpClaim, witness::BaseExpWitness},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
@@ -37,7 +35,7 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
 	base: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
-) -> (BaseExponentWitness<'a, P>, ExponentiationClaim<F>) {
+) -> (BaseExpWitness<'a, P>, ExpClaim<F>) {
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
@@ -68,13 +66,10 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 		.collect::<Vec<_>>();
 
 	let witness = if let Some(base) = base {
-		BaseExponentWitness::<'_, P>::new_with_dynamic_base::<PBits, PBase>(
-			exponent_witnesses,
-			base,
-		)
-		.unwrap()
+		BaseExpWitness::<'_, P>::new_with_dynamic_base::<PBits, PBase>(exponent_witnesses, base)
+			.unwrap()
 	} else {
-		BaseExponentWitness::<'_, P>::new_with_generator_base::<PBits, PBase>(exponent_witnesses)
+		BaseExpWitness::<'_, P>::new_with_generator_base::<PBits, PBase>(exponent_witnesses)
 			.unwrap()
 	};
 
@@ -82,7 +77,7 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 
 	let last_layer_query = MultilinearQuery::expand(eval_point);
 
-	let claim = ExponentiationClaim {
+	let claim = ExpClaim {
 		eval_point: eval_point.to_vec(),
 		eval: exponentiation_result_witness
 			.evaluate(MultilinearQueryRef::new(&last_layer_query))
@@ -96,7 +91,7 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 
 fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (Vec<ExponentiationClaim<F>>, Vec<BaseExponentWitness<'a, P>>) {
+) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P>>) {
 	let mut rng = thread_rng();
 
 	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
@@ -130,7 +125,7 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 
 #[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims_with_different_log_size<'a>(
-) -> (Vec<BaseExponentWitness<'a, P>>, Vec<ExponentiationClaim<F>>) {
+) -> (Vec<BaseExpWitness<'a, P>>, Vec<ExpClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
@@ -222,7 +217,7 @@ fn prove_reduces_to_correct_claims() {
 
 	let backend = make_portable_backend();
 
-	let BaseExponentReductionOutput {
+	let BaseExpReductionOutput {
 		eval_claims_on_exponent_bit_columns,
 	} = batch_prove::batch_prove::<FBase, _, _, _, _, _>(
 		witnesses.clone(),

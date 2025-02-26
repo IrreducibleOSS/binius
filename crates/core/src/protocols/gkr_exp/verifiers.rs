@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::marker::PhantomData;
 
@@ -6,51 +6,51 @@ use binius_field::{BinaryField, ExtensionField, Field, PackedField};
 use binius_utils::bail;
 
 use super::{
-	common::ExponentiationClaim,
-	compositions::{ExponentiationCompositions, VerifierExponentiationComposition},
+	common::{ExpClaim, LayerClaim},
+	compositions::{ExpCompositions, VerifierExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
-	protocols::{
-		gkr_gpa::LayerClaim,
-		sumcheck::{zerocheck::ExtraProduct, CompositeSumClaim},
-	},
+	protocols::sumcheck::{zerocheck::ExtraProduct, CompositeSumClaim},
 };
 
-pub trait ExponentiationVerifier<F: Field> {
+pub trait ExpVerifier<F: Field> {
 	fn exponent_bit_width(&self) -> usize;
 
 	fn is_last_layer(&self, layer_no: usize) -> bool {
 		self.exponent_bit_width() - 1 - layer_no == 0
 	}
 
-	// return the eval_point of the current layer claim.
+	/// return the `eval_point` of the internal [ExpClaim].
 	fn layer_claim_eval_point(&self) -> &[F];
 
+	/// return [CompositeSumClaim] and multilinears that it contains,
+	/// If the verifier does not participate in the sumcheck for this layer,
+	/// the function returns `None`.
 	fn layer_composite_sum_claim(
 		&self,
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
 		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExponentiationComposition<F>>>, Error>;
+	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error>;
 
-	// return a tuple of the number of multilinears and the sumcheck claims used by this verifier for the current layer
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize);
+	/// return a tuple of the number of multilinears used by this verifier for this layer.
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize;
 
-	// update the current exponentiation layer claim and return the exponent bit layer claim
+	/// return a tuple of the number of sumcheck claims used by this verifier for this layer.
+	fn layer_n_claims(&self, layer_no: usize) -> usize;
+
+	/// update prover internal [ExpClaim] and return the exponent bit [LayerClaim]
 	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F>;
 }
 
-pub struct GeneratorExponentiationVerifier<F: Field, FBase>(
-	ExponentiationClaim<F>,
-	PhantomData<FBase>,
-);
+pub struct GeneratorExpVerifier<F: Field, FBase>(ExpClaim<F>, PhantomData<FBase>);
 
-impl<F: Field, FBase> GeneratorExponentiationVerifier<F, FBase> {
-	pub fn new(claim: &ExponentiationClaim<F>) -> Result<Self, Error> {
+impl<F: Field, FBase> GeneratorExpVerifier<F, FBase> {
+	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
 		if claim.with_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
@@ -59,7 +59,7 @@ impl<F: Field, FBase> GeneratorExponentiationVerifier<F, FBase> {
 	}
 }
 
-impl<F, FBase> ExponentiationVerifier<F> for GeneratorExponentiationVerifier<F, FBase>
+impl<F, FBase> ExpVerifier<F> for GeneratorExpVerifier<F, FBase>
 where
 	FBase: BinaryField,
 	F: BinaryField + ExtensionField<FBase>,
@@ -72,20 +72,10 @@ where
 		&self.0.eval_point
 	}
 
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
-		if self.is_last_layer(layer_no) {
-			(0, 0)
-		} else {
-			// this_round_input, exponent_bit
-			(2, 1)
-		}
-	}
-
 	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F> {
 		if self.is_last_layer(layer_no) {
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
 			// a_0(x) = (V_0(x) - 1)/(g - 1)
-
 			LayerClaim {
 				eval_point: self.0.eval_point.clone(),
 				eval: first_layer_inverse::<FBase, _>(self.0.eval),
@@ -116,7 +106,7 @@ where
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
 		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExponentiationComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
 		if self.is_last_layer(layer_no) {
 			Ok(None)
 		} else {
@@ -129,7 +119,7 @@ where
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1, eq_ind_index],
 				ExtraProduct {
-					inner: ExponentiationCompositions::GeneratorBase {
+					inner: ExpCompositions::GeneratorBase {
 						base_power_constant,
 					},
 				},
@@ -143,12 +133,29 @@ where
 			Ok(Some(this_round_composite_claim))
 		}
 	}
+
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			0
+		} else {
+			// this_layer_input, exponent_bit
+			2
+		}
+	}
+
+	fn layer_n_claims(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			0
+		} else {
+			1
+		}
+	}
 }
 
-pub struct ExponentiationDynamicVerifier<F: Field>(ExponentiationClaim<F>);
+pub struct ExpDynamicVerifier<F: Field>(ExpClaim<F>);
 
-impl<F: Field> ExponentiationDynamicVerifier<F> {
-	pub fn new(claim: &ExponentiationClaim<F>) -> Result<Self, Error> {
+impl<F: Field> ExpDynamicVerifier<F> {
+	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
 		if !claim.with_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
@@ -157,23 +164,13 @@ impl<F: Field> ExponentiationDynamicVerifier<F> {
 	}
 }
 
-impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
+impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width
 	}
 
 	fn layer_claim_eval_point(&self) -> &[F] {
 		&self.0.eval_point
-	}
-
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
-		if self.is_last_layer(layer_no) {
-			// base, exponent_bit
-			(2, 1)
-		} else {
-			// this_round_input, exponent_bit, base
-			(3, 1)
-		}
 	}
 
 	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F> {
@@ -201,13 +198,13 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
 		eq_ind_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExponentiationComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
 		let composition = if self.is_last_layer(layer_no) {
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1, eq_ind_index],
 				ExtraProduct {
-					inner: ExponentiationCompositions::DynamicBaseLastLayer,
+					inner: ExpCompositions::DynamicBaseLastLayer,
 				},
 			)?;
 
@@ -222,7 +219,7 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 					eq_ind_index,
 				],
 				ExtraProduct {
-					inner: ExponentiationCompositions::DynamicBase,
+					inner: ExpCompositions::DynamicBase,
 				},
 			)?;
 
@@ -235,5 +232,19 @@ impl<F: Field> ExponentiationVerifier<F> for ExponentiationDynamicVerifier<F> {
 		};
 
 		Ok(Some(this_round_composite_claim))
+	}
+
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			// base, exponent_bit
+			2
+		} else {
+			// this_layer_input, exponent_bit, base
+			3
+		}
+	}
+
+	fn layer_n_claims(&self, _layer_no: usize) -> usize {
+		1
 	}
 }

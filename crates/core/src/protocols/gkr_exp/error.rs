@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use crate::{
 	polynomial::Error as PolynomialError,
@@ -17,7 +17,7 @@ pub enum Error {
 	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
 	#[error("vector of exponent is empty")]
-	EmptyExponent,
+	EmptyExp,
 	#[error("base fild to small")]
 	SmallBaseField,
 	#[error("witneses and claims have mismatched lengths")]

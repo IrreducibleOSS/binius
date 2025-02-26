@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::marker::PhantomData;
 
@@ -6,39 +6,45 @@ use binius_field::{BinaryField, ExtensionField, PackedField};
 use binius_utils::bail;
 
 use super::{
-	common::ExponentiationClaim,
-	compositions::{ExponentiationCompositions, ProverExponentiationComposition},
+	common::{ExpClaim, LayerClaim},
+	compositions::{ExpCompositions, ProverExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
-	witness::BaseExponentWitness,
+	witness::BaseExpWitness,
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
-	protocols::{gkr_gpa::LayerClaim, sumcheck::CompositeSumClaim},
+	protocols::sumcheck::CompositeSumClaim,
 	witness::MultilinearWitness,
 };
 
-pub trait ExponentiationProver<'a, P: PackedField> {
+pub trait ExpProver<'a, P: PackedField> {
 	fn exponent_bit_width(&self) -> usize;
 
 	fn is_last_layer(&self, layer_no: usize) -> bool {
 		self.exponent_bit_width() - 1 - layer_no == 0
 	}
 
-	// return the eval_point of the current layer claim.
+	/// return the eval_point of the internal [LayerClaim].
 	fn layer_claim_eval_point(&self) -> &[P::Scalar];
 
+	/// return [CompositeSumClaim] and multilinears that it contains,
+	/// If the prover does not participate in the sumcheck for this layer,
+	/// the function returns `None`.
 	fn layer_composite_sum_claim(
 		&self,
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<ProverLayerClaimMeta<'a, P>, Error>;
+	) -> Result<Option<CompositeSumClaimWithMultilinears<'a, P>>, Error>;
 
-	// return a tuple of the number of multilinears and the sumcheck claims used by this prover for the current layer.
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize);
+	/// return a tuple of the number of multilinears used by this prover for this layer.
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize;
 
-	// update the current exponentiation layer claim and return the exponent bit layer claim
+	/// return a tuple of the number of sumcheck claims used by this prover for this layer.
+	fn layer_n_claims(&self, layer_no: usize) -> usize;
+
+	/// update prover internal [LayerClaim] and return the exponent bit [LayerClaim]
 	fn finish_layer(
 		&mut self,
 		layer_no: usize,
@@ -47,13 +53,13 @@ pub trait ExponentiationProver<'a, P: PackedField> {
 	) -> LayerClaim<P::Scalar>;
 }
 
-struct ExponentiationCommonProver<'a, P: PackedField> {
-	witness: BaseExponentWitness<'a, P>,
+struct ExpCommonProver<'a, P: PackedField> {
+	witness: BaseExpWitness<'a, P>,
 	current_layer_claim: LayerClaim<P::Scalar>,
 }
 
-impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
-	fn new(witness: BaseExponentWitness<'a, P>, claim: ExponentiationClaim<P::Scalar>) -> Self {
+impl<'a, P: PackedField> ExpCommonProver<'a, P> {
+	fn new(witness: BaseExpWitness<'a, P>, claim: ExpClaim<P::Scalar>) -> Self {
 		Self {
 			witness,
 			current_layer_claim: claim.into(),
@@ -112,25 +118,22 @@ impl<'a, P: PackedField> ExponentiationCommonProver<'a, P> {
 	}
 }
 
-pub struct GeneratorExponentiationProver<'a, P: PackedField, FBase>(
-	ExponentiationCommonProver<'a, P>,
+pub struct GeneratorExpProver<'a, P: PackedField, FBase>(
+	ExpCommonProver<'a, P>,
 	PhantomData<FBase>,
 );
 
-impl<'a, P: PackedField, FBase> GeneratorExponentiationProver<'a, P, FBase> {
-	pub fn new(
-		witness: BaseExponentWitness<'a, P>,
-		claim: &ExponentiationClaim<P::Scalar>,
-	) -> Result<Self, Error> {
+impl<'a, P: PackedField, FBase> GeneratorExpProver<'a, P, FBase> {
+	pub fn new(witness: BaseExpWitness<'a, P>, claim: &ExpClaim<P::Scalar>) -> Result<Self, Error> {
 		if witness.base.is_some() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
-		Ok(Self(ExponentiationCommonProver::new(witness, claim.clone()), PhantomData))
+		Ok(Self(ExpCommonProver::new(witness, claim.clone()), PhantomData))
 	}
 }
 
-impl<'a, P, FBase> ExponentiationProver<'a, P> for GeneratorExponentiationProver<'a, P, FBase>
+impl<'a, P, FBase> ExpProver<'a, P> for GeneratorExpProver<'a, P, FBase>
 where
 	P::Scalar: BinaryField + ExtensionField<FBase>,
 	P: PackedField,
@@ -145,12 +148,9 @@ where
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<ProverLayerClaimMeta<'a, P>, Error> {
+	) -> Result<Option<CompositeSumClaimWithMultilinears<'a, P>>, Error> {
 		if self.0.is_last_layer(layer_no) {
-			return Ok(ProverLayerClaimMeta {
-				claim: None,
-				multilinears: Vec::new(),
-			});
+			return Ok(None);
 		}
 
 		let internal_layer_index = self.exponent_bit_width() - 1 - layer_no;
@@ -170,7 +170,7 @@ where
 		let composition = IndexComposition::new(
 			composite_claims_n_multilinears,
 			[multilinears_index, multilinears_index + 1],
-			ExponentiationCompositions::GeneratorBase {
+			ExpCompositions::GeneratorBase {
 				base_power_constant,
 			},
 		)?;
@@ -182,23 +182,14 @@ where
 			composition,
 		};
 
-		Ok(ProverLayerClaimMeta {
-			claim: Some(this_layer_composite_claim),
+		Ok(Some(CompositeSumClaimWithMultilinears {
+			claim: this_layer_composite_claim,
 			multilinears: this_layer_multilinears,
-		})
+		}))
 	}
 
 	fn layer_claim_eval_point(&self) -> &[<P as PackedField>::Scalar] {
 		self.0.eval_point()
-	}
-
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
-		if self.is_last_layer(layer_no) {
-			(0, 0)
-		} else {
-			// this_layer_input, exponent_bit
-			(2, 1)
-		}
 	}
 
 	fn finish_layer(
@@ -221,29 +212,43 @@ where
 
 		self.0.finish_layer(layer_no, multilinear_evals, r)
 	}
+
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			0
+		} else {
+			// this_layer_input, exponent_bit
+			2
+		}
+	}
+
+	fn layer_n_claims(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			0
+		} else {
+			1
+		}
+	}
 }
 
-pub struct DynamicBaseExponentiationProver<'a, P: PackedField>(ExponentiationCommonProver<'a, P>);
+pub struct DynamicBaseExpProver<'a, P: PackedField>(ExpCommonProver<'a, P>);
 
-impl<'a, P: PackedField> DynamicBaseExponentiationProver<'a, P> {
-	pub fn new(
-		witness: BaseExponentWitness<'a, P>,
-		claim: &ExponentiationClaim<P::Scalar>,
-	) -> Result<Self, Error> {
+impl<'a, P: PackedField> DynamicBaseExpProver<'a, P> {
+	pub fn new(witness: BaseExpWitness<'a, P>, claim: &ExpClaim<P::Scalar>) -> Result<Self, Error> {
 		if witness.base.is_none() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
-		Ok(Self(ExponentiationCommonProver::new(witness, claim.clone())))
+		Ok(Self(ExpCommonProver::new(witness, claim.clone())))
 	}
 }
 
-pub struct ProverLayerClaimMeta<'a, P: PackedField> {
-	pub claim: Option<CompositeSumClaim<P::Scalar, ProverExponentiationComposition<P::Scalar>>>,
+pub struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
+	pub claim: CompositeSumClaim<P::Scalar, ProverExpComposition<P::Scalar>>,
 	pub multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
-impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiationProver<'a, P> {
+impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width()
 	}
@@ -253,7 +258,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<ProverLayerClaimMeta<'a, P>, Error> {
+	) -> Result<Option<CompositeSumClaimWithMultilinears<'a, P>>, Error> {
 		let base = self
 			.0
 			.witness
@@ -269,7 +274,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[multilinears_index, multilinears_index + 1],
-				ExponentiationCompositions::DynamicBaseLastLayer,
+				ExpCompositions::DynamicBaseLastLayer,
 			)?;
 			let composition = FixedDimIndexCompositions::Bivariate(composition);
 			(composition, this_layer_multilinears)
@@ -287,7 +292,7 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 					multilinears_index + 1,
 					multilinears_index + 2,
 				],
-				ExponentiationCompositions::DynamicBase,
+				ExpCompositions::DynamicBase,
 			)?;
 			let composition = FixedDimIndexCompositions::Trivariate(composition);
 			(composition, this_layer_multilinears)
@@ -298,24 +303,14 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 			composition,
 		};
 
-		Ok(ProverLayerClaimMeta {
-			claim: Some(this_layer_composite_claim),
+		Ok(Some(CompositeSumClaimWithMultilinears {
+			claim: this_layer_composite_claim,
 			multilinears: this_layer_multilinears,
-		})
+		}))
 	}
 
 	fn layer_claim_eval_point(&self) -> &[<P as PackedField>::Scalar] {
 		self.0.eval_point()
-	}
-
-	fn layer_n_multilinears_n_claims(&self, layer_no: usize) -> (usize, usize) {
-		if self.is_last_layer(layer_no) {
-			// base, exponent_bit
-			(2, 1)
-		} else {
-			// this_layer_input, exponent_bit, base
-			(3, 1)
-		}
 	}
 
 	fn finish_layer(
@@ -325,5 +320,19 @@ impl<'a, P: PackedField> ExponentiationProver<'a, P> for DynamicBaseExponentiati
 		r: &[P::Scalar],
 	) -> LayerClaim<P::Scalar> {
 		self.0.finish_layer(layer_no, multilinear_evals, r)
+	}
+
+	fn layer_n_multilinears(&self, layer_no: usize) -> usize {
+		if self.is_last_layer(layer_no) {
+			// base, exponent_bit
+			2
+		} else {
+			// this_layer_input, exponent_bit, base
+			3
+		}
+	}
+
+	fn layer_n_claims(&self, _layer_no: usize) -> usize {
+		1
 	}
 }
