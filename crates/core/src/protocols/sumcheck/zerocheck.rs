@@ -401,7 +401,9 @@ mod tests {
 		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
 
 		let sumcheck_claims = reduce_to_sumchecks(&zerocheck_claims).unwrap();
-		let verifier_output = batch_verify(&sumcheck_claims, &mut verify_transcript).unwrap();
+		let verifier_output =
+			batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, &mut verify_transcript)
+				.unwrap();
 
 		let BatchSumcheckOutput {
 			challenges: verifier_eval_point,

@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvaluationOrder {
 	LowToHigh,
 	HighToLow,

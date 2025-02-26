@@ -93,8 +93,12 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 
 	let verifier_claim = SumcheckClaim::new(n_vars, 3, vec![verifier_composite_claim]).unwrap();
 
-	let _sumcheck_verify_output =
-		sumcheck::batch_verify(&[verifier_claim], &mut verifier_transcript).unwrap();
+	let _sumcheck_verify_output = sumcheck::batch_verify(
+		EvaluationOrder::LowToHigh,
+		&[verifier_claim],
+		&mut verifier_transcript,
+	)
+	.unwrap();
 }
 
 #[test]

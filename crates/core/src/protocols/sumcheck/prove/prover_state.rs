@@ -62,6 +62,7 @@ where
 	/// state is folded.
 	#[getset(get_copy = "pub")]
 	n_vars: usize,
+	#[getset(get_copy = "pub")]
 	evaluation_order: EvaluationOrder,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	nontrivial_evaluation_points: Vec<FDomain>,
@@ -291,7 +292,7 @@ where
 		Composition: CompositionPoly<P>,
 	{
 		Ok(self.backend.sumcheck_compute_round_evals(
-			EvaluationOrder::LowToHigh,
+			self.evaluation_order,
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,

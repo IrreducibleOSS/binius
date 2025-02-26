@@ -13,6 +13,8 @@ pub enum Error {
 	InvalidComposition { actual: usize, expected: usize },
 	#[error("claims must be sorted by number of variables")]
 	ClaimsOutOfOrder,
+	#[error("claims have inconsistent evaluation orders")]
+	InconsistentEvaluationOrder,
 	#[error("failed to downcast a composition expression into a subfield expression")]
 	CircuitFieldDowncastFailed,
 	#[error("expected a call to try_finish_claim")]
