@@ -40,7 +40,7 @@ pub fn fixed_u32<FS>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	log_size: usize,
-	value: Vec<u32>,
+	values: Vec<u32>,
 ) -> Result<OracleId, anyhow::Error>
 where
 	U: PackScalar<FS> + Pod,
@@ -54,7 +54,7 @@ where
 			.new_column::<FS>(fixed)
 			.as_mut_slice::<u32>()
 			.into_par_iter()
-			.zip(value.into_par_iter())
+			.zip(values.into_par_iter())
 			.for_each(|(data, value)| {
 				*data = value;
 			});
