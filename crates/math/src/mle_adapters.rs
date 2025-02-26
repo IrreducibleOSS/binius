@@ -540,7 +540,7 @@ fn validate_subcube_partial_evals_params<P: PackedField>(
 	query: MultilinearQueryRef<P>,
 	subcube_vars: usize,
 	subcube_index: usize,
-	partial_evals: &mut [P],
+	partial_evals: &[P],
 ) -> Result<(), Error> {
 	let query_n_vars = query.n_vars();
 	if query_n_vars + subcube_vars > n_vars {
