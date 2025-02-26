@@ -20,8 +20,13 @@ SHA256_PERMS = 1 << 14
 NUM_BINARY_OPS = 1 << 22
 NUM_MULS = 1 << 20
 
-HASHER_TO_RUN = {
+# Examples to run
+# Every example is run in multi-threaded mode by default
+# To include single-threaded as well, set the `single_threaded` flag to True
+
+EXAMPLES_TO_RUN = {
     r"keccakf": {
+        "single_threaded": True,
         "type": "hasher",
         "display": r"Keccak-f",
         "export": "keccakf-report.csv",
@@ -29,6 +34,7 @@ HASHER_TO_RUN = {
         "n_ops": KECCAKF_PERMS,
     },
     "vision32b": {
+        "single_threaded": True,
         "type": "hasher",
         "display": r"Vision Mark-32",
         "export": "vision32b-report.csv",
@@ -36,6 +42,7 @@ HASHER_TO_RUN = {
         "n_ops": VISION32B_PERMS,
     },
     "sha256": {
+        "single_threaded": True,
         "type": "hasher",
         "display": "SHA-256",
         "export": "sha256-report.csv",
@@ -43,6 +50,7 @@ HASHER_TO_RUN = {
         "n_ops": SHA256_PERMS,
     },
     "b32_mul": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "BinaryField32b mul",
         "export": "b32-mul-report.csv",
@@ -50,6 +58,7 @@ HASHER_TO_RUN = {
         "n_ops": NUM_MULS,
     },
     "u32_add": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "u32 add",
         "export": "u32-add-report.csv",
@@ -57,6 +66,7 @@ HASHER_TO_RUN = {
         "n_ops": NUM_BINARY_OPS,
     },
     "u32_mul": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "u32 mul",
         "export": "u32-mul-report.csv",
@@ -64,6 +74,7 @@ HASHER_TO_RUN = {
         "n_ops": NUM_MULS,
     },
     "xor": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "Xor",
         "export": "xor-report.csv",
@@ -71,6 +82,7 @@ HASHER_TO_RUN = {
         "n_ops": NUM_BINARY_OPS,
     },
     "and": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "And",
         "export": "and-report.csv",
@@ -78,6 +90,7 @@ HASHER_TO_RUN = {
         "n_ops": NUM_BINARY_OPS,
     },
     "or": {
+        "single_threaded": False,
         "type": "binary_ops",
         "display": "Or",
         "export": "or-report.csv",
@@ -90,7 +103,7 @@ HASHER_BENCHMARKS = {}
 BINARY_OPS_BENCHMARKS = {}
 
 
-def run_benchmark(benchmark_args) -> tuple[bytes, bytes]:
+def run_benchmark(benchmark_args, include_single_threaded) -> tuple[bytes, bytes]:
     command = (
         ["cargo", "run", "--release", "--example"]
         + benchmark_args["args"]
@@ -101,6 +114,10 @@ def run_benchmark(benchmark_args) -> tuple[bytes, bytes]:
         **ENV_VARS,
         "PROFILE_CSV_FILE": benchmark_args["export"],
     }
+    if include_single_threaded:
+        env_vars_to_run["RAYON_NUM_THREADS"] = "1"
+    else:
+        env_vars_to_run["RAYON_NUM_THREADS"] = "0"
     process = subprocess.run(
         command, env=env_vars_to_run, capture_output=True, check=True
     )
@@ -160,12 +177,16 @@ def nano_to_seconds(nano) -> float:
     return float(nano) / 1000000000.0
 
 
-def run_and_parse_benchmark(benchmark, benchmark_args) -> tuple[dict, int]:
+def run_and_parse_benchmark(
+    benchmark, benchmark_args, include_single_threaded
+) -> tuple[dict, int]:
     data = {}
     stdout = None
-    print(f"Running benchmark: {benchmark} with {SAMPLE_SIZE} samples")
+    print(
+        f"Running benchmark {benchmark} {'single-threaded' if include_single_threaded else 'multi-threaded'} with {SAMPLE_SIZE} samples"
+    )
     for _ in range(SAMPLE_SIZE):
-        stdout, _stderr = run_benchmark(benchmark_args)
+        stdout, _stderr = run_benchmark(benchmark_args, include_single_threaded)
         result = parse_csv_file(benchmark_args["export"])
         # Parse the csv file
         if len(result.keys()) != 3:
@@ -190,12 +211,24 @@ def run_benchmark_group(benchmarks) -> dict:
     benchmark_results = {}
     for benchmark, benchmark_args in benchmarks.items():
         try:
-            data, proof_size = run_and_parse_benchmark(benchmark, benchmark_args)
+            data, proof_size = run_and_parse_benchmark(benchmark, benchmark_args, False)
             benchmark_results[benchmark] = {"proof_size_kib": proof_size}
             data["n_ops"] = benchmark_args["n_ops"]
             data["display"] = benchmark_args["display"]
             data["type"] = benchmark_args["type"]
             benchmark_results[benchmark].update(data)
+
+            if benchmark_args["single_threaded"]:
+                data, proof_size = run_and_parse_benchmark(
+                    benchmark, benchmark_args, True
+                )
+                benchmark_results[benchmark + "_single_threaded"] = {
+                    "proof_size_kib": proof_size
+                }
+                data["n_ops"] = benchmark_args["n_ops"]
+                data["display"] = benchmark_args["display"] + " (single-threaded)"
+                data["type"] = benchmark_args["type"]
+                benchmark_results[benchmark + "_single_threaded"].update(data)
 
         except Exception as e:
             print(f"Failed to run benchmark: {benchmark} with error {e} \nExiting...")
@@ -250,7 +283,7 @@ def main():
 
     args = parser.parse_args()
 
-    benchmarks = run_benchmark_group(HASHER_TO_RUN)
+    benchmarks = run_benchmark_group(EXAMPLES_TO_RUN)
 
     bencher_data = dict_to_bencher(benchmarks)
     if args.export_file is None:
