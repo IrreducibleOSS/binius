@@ -1,24 +1,17 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{
-	array,
-	iter::repeat,
-	ops::{Add, AddAssign, Mul},
-};
+use std::iter::repeat;
 
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
-	packed::set_packed_slice,
-	underlier::{Divisible, WithUnderlier},
-	AESTowerField32b, AESTowerField8b, AesToBinaryTransformation, BinaryField, BinaryField32b,
-	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, ExtensionField, Field,
-	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedBinaryField32x8b,
-	PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable, PackedField,
-	PackedFieldIndexable, RepackedExtension,
+	underlier::WithUnderlier,
+	AESTowerField32b, AESTowerField8b, AesToBinaryTransformation, BinaryField8b,
+	BinaryToAesTransformation, ByteSlicedAES32x32b, PackedAESBinaryField32x8b,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedExtensionIndexable,
+	PackedField, PackedFieldIndexable, RepackedExtension,
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
@@ -28,8 +21,8 @@ use digest::consts::U32;
 use lazy_static::lazy_static;
 
 use crate::{
-	hasher::{FixedLenHasher, HashError},
-	permutation::{CryptographicPermutation, Permutation},
+	hasher::FixedLenHasher,
+	permutation::Permutation,
 	vision_constants::{
 		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
 		ROUND_KEYS,
@@ -182,7 +175,7 @@ PackedAESBinaryField8x32b,
 			&INVERSE_FAST_TRANSFORM,
 			&FWD_PACKED_TRANS_AES,
 			&INV_PACKED_TRANS_AES,
-			&*ROUND_KEYS_PACKED_AES)
+			&ROUND_KEYS_PACKED_AES)
 	}
 }
 
@@ -699,17 +692,12 @@ impl NttExecutor<ByteSlicedAES32x32b> for ByteSlicedNtt {
 
 #[cfg(test)]
 mod tests {
-	use std::array;
 
-	use binius_field::{
-		BinaryField64b, PackedAESBinaryField4x64b, PackedBinaryField4x64b, PackedBinaryField8x32b,
-	};
+	use binius_field::PackedBinaryField8x32b;
 	use digest::Digest;
 	use hex_literal::hex;
-	use rand::thread_rng;
 
 	use super::*;
-	use crate::{FixedLenHasherDigest, HashDigest};
 
 	fn mds_transform(data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let vision = Vision32MDSTransform::new(&*FORWARD_FAST_TRANSFORM, &*INVERSE_FAST_TRANSFORM);
@@ -915,7 +903,7 @@ mod tests {
 	#[test]
 	fn test_simple_hash() {
 		let mut hasher = VisionHasherDigest::default();
-		hasher.update(&[0xde, 0xad, 0xbe, 0xef]);
+		hasher.update([0xde, 0xad, 0xbe, 0xef]);
 		let out = hasher.finalize();
 		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
 		let expected = &hex!("a42b46ccea1a81cafc4b312c0bc233f169f8ecb2377e951d14461acfefc6b7b5");

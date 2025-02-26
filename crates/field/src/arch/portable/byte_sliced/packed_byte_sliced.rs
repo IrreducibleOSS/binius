@@ -55,7 +55,7 @@ macro_rules! define_byte_sliced {
 			/// Note that the bytes in the storage are in the "transposed" order, so use this method
 			/// for some low-level operations only.
 			#[inline(always)]
-			pub fn data(&self) -> &[$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
+			pub const fn data(&self) -> &[$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
 				&self.data
 			}
 
@@ -473,7 +473,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			/// Note that the bytes in the storage are in the "transposed" order, so use this method
 			/// for some low-level operations only.
 			#[inline(always)]
-			pub fn data(&self) -> &[$packed_storage; Self::WIDTH] {
+			pub const fn data(&self) -> &[$packed_storage; Self::WIDTH] {
 				&self.data
 			}
 

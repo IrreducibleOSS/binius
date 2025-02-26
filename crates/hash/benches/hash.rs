@@ -2,12 +2,11 @@
 use std::array;
 
 use binius_field::{
-	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, PackedAESBinaryField32x8b,
-	PackedBinaryField32x8b, PackedField,
+	AESTowerField8b, BinaryField8b, PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
 };
 use binius_hash::{
-	FixedLenHasherDigest, Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest,
-	HasherDigest, PseudoCompressionFunction, VisionHasherDigest,
+	Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest, HasherDigest,
+	PseudoCompressionFunction, VisionHasherDigest,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -96,7 +95,7 @@ fn bench_vision32(c: &mut Criterion) {
 
 	group.throughput(Throughput::Bytes(N as u64));
 	group.bench_function("Vision single instance", |bench| {
-		bench.iter(|| VisionHasherDigest::digest(&data))
+		bench.iter(|| VisionHasherDigest::digest(data))
 	});
 
 	group.finish()
