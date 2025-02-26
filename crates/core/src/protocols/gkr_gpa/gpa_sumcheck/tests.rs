@@ -6,8 +6,7 @@ use binius_field::{
 	arch::OptimalUnderlier512b,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::UnderlierType,
-	BinaryField, BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
-	TowerField,
+	BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable, TowerField,
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
@@ -34,7 +33,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 ) where
 	U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
 	F: TowerField + ExtensionField<FDomain>,
-	FDomain: BinaryField,
+	FDomain: TowerField,
 	PackedType<U, F>: PackedFieldIndexable,
 {
 	let mut rng = StdRng::seed_from_u64(0);

@@ -24,9 +24,10 @@ use crate::{
 	PackedField,
 };
 
-/// Represents AES Tower Field elements in byte-sliced form backed by Packed Nx8b AES fields
-/// where N is the number of bytes `$packed_storage` can hold, usually 16, 32, or 64 to fit
-/// into SIMD registers.
+/// Represents AES Tower Field elements in byte-sliced form.
+///
+/// The data layout is backed by Packed Nx8b AES fields where N is the number of bytes `$packed_storage`
+/// can hold, usually 16, 32, or 64 to fit into SIMD registers.
 macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
