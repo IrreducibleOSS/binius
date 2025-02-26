@@ -282,6 +282,7 @@ struct TestSumcheckClaimShape {
 }
 
 fn make_test_sumcheck<'a, F, FDomain, P, PExt, Backend>(
+	evaluation_order: EvaluationOrder,
 	claim_shape: &TestSumcheckClaimShape,
 	mut rng: impl Rng,
 	domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -363,7 +364,7 @@ where
 	let claim = SumcheckClaim::new(n_vars, 3, claim_composite_sums).unwrap();
 
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
-		EvaluationOrder::LowToHigh,
+		evaluation_order,
 		multilins,
 		prover_composite_sums,
 		domain_factory,
@@ -376,6 +377,15 @@ where
 }
 
 fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		prove_verify_batch_with_evaluation_order(evaluation_order, claim_shapes);
+	}
+}
+
+fn prove_verify_batch_with_evaluation_order(
+	evaluation_order: EvaluationOrder,
+	claim_shapes: &[TestSumcheckClaimShape],
+) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -390,6 +400,7 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	let mut provers = Vec::with_capacity(claim_shapes.len());
 	for claim_shape in claim_shapes {
 		let (_, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			evaluation_order,
 			claim_shape,
 			&mut rng,
 			&domain_factory,
@@ -407,7 +418,7 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 
 	let mut verifier_transcript = prover_transcript.into_verifier();
 	let verifier_output =
-		batch_verify(EvaluationOrder::LowToHigh, &claims, &mut verifier_transcript).unwrap();
+		batch_verify(evaluation_order, &claims, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
 
@@ -463,6 +474,7 @@ fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 	let mut provers = Vec::with_capacity(claim_shapes.len());
 	for claim_shape in claim_shapes {
 		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			EvaluationOrder::LowToHigh,
 			claim_shape,
 			&mut rng,
 			&domain_factory,

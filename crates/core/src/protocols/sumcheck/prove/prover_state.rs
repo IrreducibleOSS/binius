@@ -66,6 +66,7 @@ where
 	evaluation_order: EvaluationOrder,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	nontrivial_evaluation_points: Vec<FDomain>,
+	challenges: Vec<P::Scalar>,
 	tensor_query: Option<MultilinearQuery<P>>,
 	last_coeffs_or_sums: ProverStateCoeffsOrSums<P::Scalar>,
 	backend: &'a Backend,
@@ -127,11 +128,13 @@ where
 			.collect();
 
 		let tensor_query = MultilinearQuery::with_capacity(max_switchover_round + 1);
+
 		Ok(Self {
 			n_vars,
 			evaluation_order,
 			multilinears,
 			nontrivial_evaluation_points,
+			challenges: Vec::new(),
 			tensor_query: Some(tensor_query),
 			last_coeffs_or_sums: ProverStateCoeffsOrSums::Sums(claimed_sums),
 			backend,
@@ -159,8 +162,19 @@ where
 		}
 
 		// Update the tensor query.
+		match self.evaluation_order {
+			EvaluationOrder::LowToHigh => self.challenges.push(challenge),
+			EvaluationOrder::HighToLow => self.challenges.insert(0, challenge),
+		}
+
 		if let Some(tensor_query) = self.tensor_query.take() {
-			self.tensor_query = Some(tensor_query.update(&[challenge])?);
+			self.tensor_query = match self.evaluation_order {
+				EvaluationOrder::LowToHigh => Some(tensor_query.update(&[challenge])?),
+				// REVIEW: not spending effort to come up with an inplace update method here, as the
+				//         future of switchover is somewhat unclear in light of univariate skip, and
+				//         switchover tensors are small-ish anyway.
+				EvaluationOrder::HighToLow => Some(MultilinearQuery::expand(&self.challenges)),
+			}
 		}
 
 		// Use Relaxed ordering for writes and the read, because:
