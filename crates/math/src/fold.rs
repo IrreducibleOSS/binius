@@ -314,7 +314,8 @@ where
 ///   f(r||w) = r * (f(1||w) - f(0||w)) + f(0||w).
 ///
 /// The same approach may be generalized to higher variable counts, with diminishing returns.
-fn fold_right_lerp<P, PE>(
+/// TODO validate!!!
+pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
 	log_evals_size: usize,
 	lerp_query: PE::Scalar,

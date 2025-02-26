@@ -9,7 +9,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	CompositionPoly, Error as MathError, EvaluationDomainFactory,
+	CompositionPoly, Error as MathError, EvaluationDomainFactory, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -121,6 +121,7 @@ where
 		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
 
 	let prover = RegularSumcheckProver::new(
+		EvaluationOrder::LowToHigh,
 		reduced_multilinears,
 		composite_sum_claims,
 		evaluation_domain_factory,

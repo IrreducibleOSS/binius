@@ -61,12 +61,21 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 	///
 	/// Equivalent computation is `evaluate_partial_low(query)` followed by a `subcube_evals`
 	/// on a result. This method is more efficient due to handling it as a special case.
-	fn subcube_inner_products(
+	/// TODO
+	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<P>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		inner_products: &mut [P],
+		partial_low_evals: &mut [P],
+	) -> Result<(), Error>;
+
+	fn subcube_partial_high_evals(
+		&self,
+		query: MultilinearQueryRef<P>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		partial_high_evals: &mut [P],
 	) -> Result<(), Error>;
 
 	/// Get a subcube of the boolean hypercube of a given size.
@@ -156,17 +165,32 @@ where
 		either::for_both!(self, inner => inner.evaluate_partial_high(query))
 	}
 
-	fn subcube_inner_products(
+	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<P>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		inner_products: &mut [P],
+		partial_low_evals: &mut [P],
 	) -> Result<(), Error> {
 		either::for_both!(
 			self,
 			inner => {
-				inner.subcube_inner_products(query, subcube_vars, subcube_index, inner_products)
+				inner.subcube_partial_low_evals(query, subcube_vars, subcube_index, partial_low_evals)
+			}
+		)
+	}
+
+	fn subcube_partial_high_evals(
+		&self,
+		query: MultilinearQueryRef<P>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		partial_high_evals: &mut [P],
+	) -> Result<(), Error> {
+		either::for_both!(
+			self,
+			inner => {
+				inner.subcube_partial_high_evals(query, subcube_vars, subcube_index, partial_high_evals)
 			}
 		)
 	}

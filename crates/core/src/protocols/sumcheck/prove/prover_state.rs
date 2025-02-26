@@ -8,11 +8,12 @@ use std::{
 use binius_field::{util::powers, Field, PackedExtension, PackedField};
 use binius_hal::{ComputationBackend, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 use binius_math::{
-	evaluate_univariate, CompositionPoly, MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
-    EvaluationOrder,
+	evaluate_univariate, fold_right_lerp, CompositionPoly, EvaluationOrder, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
+use bytemuck::zeroed_vec;
 use getset::CopyGetters;
 use itertools::izip;
 use tracing::instrument;
@@ -61,6 +62,7 @@ where
 	/// state is folded.
 	#[getset(get_copy = "pub")]
 	n_vars: usize,
+	evaluation_order: EvaluationOrder,
 	multilinears: Vec<SumcheckMultilinear<P, M>>,
 	nontrivial_evaluation_points: Vec<FDomain>,
 	tensor_query: Option<MultilinearQuery<P>>,
@@ -77,6 +79,7 @@ where
 	Backend: ComputationBackend,
 {
 	pub fn new(
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		claimed_sums: Vec<F>,
 		nontrivial_evaluation_points: Vec<FDomain>,
@@ -85,6 +88,7 @@ where
 	) -> Result<Self, Error> {
 		let switchover_rounds = determine_switchovers(&multilinears, switchover_fn);
 		Self::new_with_switchover_rounds(
+			evaluation_order,
 			multilinears,
 			&switchover_rounds,
 			claimed_sums,
@@ -99,6 +103,7 @@ where
 		name = "ProverState::new_with_switchover_rounds"
 	)]
 	pub fn new_with_switchover_rounds(
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		switchover_rounds: &[usize],
 		claimed_sums: Vec<F>,
@@ -123,6 +128,7 @@ where
 		let tensor_query = MultilinearQuery::with_capacity(max_switchover_round + 1);
 		Ok(Self {
 			n_vars,
+			evaluation_order,
 			multilinears,
 			nontrivial_evaluation_points,
 			tensor_query: Some(tensor_query),
@@ -174,14 +180,16 @@ where
 								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
 							);
 
+							// TODO
 							// At switchover, perform inner products in large field and save them in a
 							// newly created MLE.
-							let large_field_folded_multilinear = MLEDirectAdapter::from(
-								inner_multilinear.evaluate_partial_low(tensor_query.to_ref())?,
-							);
+
+							let large_field_folded_evals = inner_multilinear
+								.evaluate_partial_low(tensor_query.to_ref())?
+								.into_evals();
 
 							*multilinear = SumcheckMultilinear::Folded {
-								large_field_folded_multilinear,
+								large_field_folded_evals,
 							};
 						} else {
 							*switchover_round -= 1;
@@ -189,15 +197,21 @@ where
 						}
 					}
 					SumcheckMultilinear::Folded {
-						ref mut large_field_folded_multilinear,
+						ref mut large_field_folded_evals,
 					} => {
+						// TODO
 						// Post-switchover, simply plug in challenge for the zeroth variable.
-						let single_variable_query = MultilinearQuery::expand(&[challenge]);
-						*large_field_folded_multilinear = MLEDirectAdapter::from(
-							large_field_folded_multilinear
-								.as_ref()
-								.evaluate_partial_low(single_variable_query.to_ref())?,
+						let mut new_large_field_folded_evals =
+							zeroed_vec(1 << self.n_vars.saturating_sub(1 + P::LOG_WIDTH));
+
+						fold_right_lerp(
+							&*large_field_folded_evals,
+							self.n_vars,
+							challenge,
+							&mut new_large_field_folded_evals,
 						);
+
+						*large_field_folded_evals = new_large_field_folded_evals;
 					}
 				};
 				Ok::<(), Error>(())
@@ -222,7 +236,6 @@ where
 			},
 		};
 
-		let empty_query = MultilinearQuery::with_capacity(0);
 		self.multilinears
 			.into_iter()
 			.map(|multilinear| {
@@ -238,8 +251,11 @@ where
 						inner_multilinear.evaluate(tensor_query.to_ref())
 					}
 					SumcheckMultilinear::Folded {
-						large_field_folded_multilinear,
-					} => large_field_folded_multilinear.evaluate(empty_query.to_ref()),
+						large_field_folded_evals,
+					} => Ok(large_field_folded_evals
+						.first()
+						.expect("exactly one packed field element left after folding")
+						.get(0)),
 				}
 				.map_err(Error::MathError)
 			})
@@ -257,7 +273,7 @@ where
 		Composition: CompositionPoly<P>,
 	{
 		Ok(self.backend.sumcheck_compute_round_evals(
-            EvaluationOrder::LowToHigh,
+			EvaluationOrder::LowToHigh,
 			self.n_vars,
 			self.tensor_query.as_ref().map(Into::into),
 			&self.multilinears,
