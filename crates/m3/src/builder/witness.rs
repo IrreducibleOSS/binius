@@ -10,7 +10,7 @@ use binius_field::{
 	arch::OptimalUnderlier,
 	as_packed_field::{PackScalar, PackedType},
 	underlier::{UnderlierType, WithUnderlier},
-	TowerField,
+	ExtensionField, TowerField,
 };
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
@@ -22,7 +22,7 @@ use super::{
 	error::Error,
 	statement::Statement,
 	table::TableId,
-	types::B1,
+	types::{B1, B128, B16, B32, B64, B8},
 };
 
 /// Runtime borrow checking on columns. Maybe read-write lock?
@@ -54,17 +54,68 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		statement: &Statement<F>,
 	) -> MultilinearExtensionIndex<'a, U, F>
 	where
-		F: TowerField,
-		U: PackScalar<F> + PackScalar<B1>,
+		F: TowerField
+			+ ExtensionField<B1>
+			+ ExtensionField<B8>
+			+ ExtensionField<B16>
+			+ ExtensionField<B32>
+			+ ExtensionField<B64>
+			+ ExtensionField<B128>,
+		U: PackScalar<F>
+			+ PackScalar<B1>
+			+ PackScalar<B8>
+			+ PackScalar<B16>
+			+ PackScalar<B32>
+			+ PackScalar<B64>
+			+ PackScalar<B128>,
 	{
 		let mut index = MultilinearExtensionIndex::new();
 		let mut oracle_id = 0;
 		for table in self.tables {
-			for (data, log_cell_bits) in table.cols {
-				let data = PackedType::<U, F>::from_underliers_ref(data);
-				let witness = MultilinearExtension::new(log_cell_bits, data)
+			for (data, shape) in table.cols {
+				let n_vars = table.log_capacity + shape.pack_factor;
+				let witness = match shape.tower_height {
+					0 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B1>::from_underliers_ref(data),
+					)
 					.unwrap()
-					.specialize_arc_dyn();
+					.specialize_arc_dyn(),
+					3 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B8>::from_underliers_ref(data),
+					)
+					.unwrap()
+					.specialize_arc_dyn(),
+					4 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B16>::from_underliers_ref(data),
+					)
+					.unwrap()
+					.specialize_arc_dyn(),
+					5 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B32>::from_underliers_ref(data),
+					)
+					.unwrap()
+					.specialize_arc_dyn(),
+					6 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B64>::from_underliers_ref(data),
+					)
+					.unwrap()
+					.specialize_arc_dyn(),
+					7 => MultilinearExtension::new(
+						n_vars,
+						PackedType::<U, B128>::from_underliers_ref(data),
+					)
+					.unwrap()
+					.specialize_arc_dyn(),
+					_ => {
+						panic!("Unsupported tower height: {}", shape.tower_height);
+					}
+				};
+
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				oracle_id += 1;
 			}
@@ -72,7 +123,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 			// Every table has a step_down appended to the end of the table to support non-power of two height tables
 			let witness = StepDown::new(table.log_capacity, statement.table_sizes[table.table_id])
 				.unwrap()
-				.multilinear_extension()
+				.multilinear_extension::<PackedType<U, B1>>()
 				.unwrap()
 				.specialize_arc_dyn();
 			index.update_multilin_poly([(oracle_id, witness)]).unwrap();
@@ -86,7 +137,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
-	cols: Vec<(&'a mut [U], usize)>,
+	cols: Vec<(&'a mut [U], ColumnShape)>,
 	#[get_copy = "pub"]
 	log_capacity: usize,
 	/// Binary logarithm of the mininimum segment size.
@@ -121,7 +172,7 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 				// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
 				// Underlier is Pod.
 				let col_data = bump.alloc_slice_fill_default(1 << (log_col_bits - U::LOG_BITS));
-				(col_data, log_cell_bits)
+				(col_data, *info)
 			})
 			.collect();
 		Self {
@@ -162,7 +213,8 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 			let col_strides = self_ref
 				.cols
 				.iter()
-				.map(|(col_ref, log_cell_bits)| {
+				.map(|(col_ref, shape)| {
+					let log_cell_bits = shape.tower_height + shape.pack_factor;
 					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 					// Safety: The function borrows self mutably, so we have mutable access to
 					// all columns and thus none can be borrowed by anyone else. The loop is
@@ -199,7 +251,8 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 				let col_strides = self_ref
 					.cols
 					.iter()
-					.map(|(col_ref, log_cell_bits)| {
+					.map(|(col_ref, shape)| {
+						let log_cell_bits = shape.tower_height + shape.pack_factor;
 						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 						// Safety: The function borrows self mutably, so we have mutable access to
 						// all columns and thus none can be borrowed by anyone else. The loop is
