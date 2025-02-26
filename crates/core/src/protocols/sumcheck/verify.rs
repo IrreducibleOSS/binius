@@ -167,7 +167,7 @@ where
 		return Err(VerificationError::IncorrectBatchEvaluation.into());
 	}
 
-	if let EvaluationOrder::HighToLow = evaluation_order {
+	if EvaluationOrder::HighToLow == evaluation_order {
 		challenges.reverse();
 	}
 

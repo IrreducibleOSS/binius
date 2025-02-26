@@ -230,7 +230,7 @@ where
 		writer.write_scalar_slice(multilinear_evals);
 	}
 
-	if let EvaluationOrder::HighToLow = evaluation_order {
+	if EvaluationOrder::HighToLow == evaluation_order {
 		challenges.reverse();
 	}
 

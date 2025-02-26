@@ -36,7 +36,8 @@ trait SumcheckMultilinearAccess<P: PackedField> {
 	/// * `subcube_vars` - the number of variables in the subcube to evaluate over
 	/// * `subcube_index` - the index of the subcube within the hypercube domain of the multilinear
 	/// * `evals` - the output buffer to write the evaluations into
-	/// TODO comments
+	///   TODO comments
+	#[allow(clippy::too_many_arguments)]
 	fn subcube_evaluations<M: MultilinearPoly<P>>(
 		&self,
 		multilinear: &SumcheckMultilinear<P, M>,
@@ -329,7 +330,7 @@ struct LowToHighAccess<'a, P: PackedField> {
 	tensor_query: MultilinearQueryRef<'a, P>,
 }
 
-impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'a, P> {
+impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 	fn scratch_space_len(&self, subcube_vars: usize) -> Option<usize> {
 		Some(1 << subcube_vars.saturating_sub(P::LOG_WIDTH))
 	}
@@ -415,7 +416,7 @@ struct HighToLowAccess<'a, P: PackedField> {
 	tensor_query: MultilinearQueryRef<'a, P>,
 }
 
-impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'a, P> {
+impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 	fn scratch_space_len(&self, _subcube_vars: usize) -> Option<usize> {
 		None
 	}
@@ -426,7 +427,7 @@ impl<'a, P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'a, P>
 		subcube_vars: usize,
 		subcube_index: usize,
 		subcube_count: usize,
-		scratch_space: Option<&mut [P]>,
+		_scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
 	) -> Result<(), Error> {
