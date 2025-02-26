@@ -218,7 +218,7 @@ fn prove_reduces_to_correct_claims() {
 	let backend = make_portable_backend();
 
 	let BaseExpReductionOutput {
-		eval_claims_on_exponent_bit_columns,
+		layers_claims: layer_eval_claims,
 	} = batch_prove::batch_prove::<FBase, _, _, _, _, _>(
 		witnesses.clone(),
 		&claims,
@@ -228,9 +228,7 @@ fn prove_reduces_to_correct_claims() {
 	)
 	.unwrap();
 
-	for (exponent_bit_number, eval_claims_on_exponent_bit_columns) in
-		eval_claims_on_exponent_bit_columns.iter().enumerate()
-	{
+	for (exponent_bit_number, layer_eval_claim) in layer_eval_claims.iter().enumerate() {
 		let mut j = 0;
 		for witness in &witnesses {
 			let exponent_len = witness.exponent.len() - 1;
@@ -239,21 +237,44 @@ fn prove_reduces_to_correct_claims() {
 				continue;
 			}
 
-			let this_claim = &eval_claims_on_exponent_bit_columns[j];
+			let this_claim = &layer_eval_claim[j];
 			let this_bit_query = MultilinearQuery::expand(&this_claim.eval_point);
-			let claimed_evaluation = this_claim.eval;
 
-			let exponent = if witness.base.is_some() {
-				witness.exponent[exponent_bit_number].clone()
+			if witness.base.is_some() {
+				let exponent = witness.exponent[exponent_bit_number].clone();
+
+				let claimed_evaluation = this_claim.eval;
+
+				let actual_evaluation = exponent
+					.evaluate(MultilinearQueryRef::new(&this_bit_query))
+					.unwrap();
+
+				assert_eq!(claimed_evaluation, actual_evaluation);
+
+				j += 1;
+
+				let claimed_evaluation = layer_eval_claim[j].eval;
+
+				let actual_evaluation = witness
+					.base
+					.clone()
+					.unwrap()
+					.evaluate(MultilinearQueryRef::new(&this_bit_query))
+					.unwrap();
+
+				assert_eq!(claimed_evaluation, actual_evaluation);
 			} else {
-				witness.exponent[exponent_len - exponent_bit_number].clone()
+				let exponent = witness.exponent[exponent_len - exponent_bit_number].clone();
+
+				let claimed_evaluation = this_claim.eval;
+
+				let actual_evaluation = exponent
+					.evaluate(MultilinearQueryRef::new(&this_bit_query))
+					.unwrap();
+
+				assert_eq!(claimed_evaluation, actual_evaluation);
 			};
 
-			let actual_evaluation = exponent
-				.evaluate(MultilinearQueryRef::new(&this_bit_query))
-				.unwrap();
-
-			assert_eq!(claimed_evaluation, actual_evaluation);
 			j += 1;
 		}
 	}

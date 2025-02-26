@@ -44,7 +44,12 @@ pub trait ExpVerifier<F: Field> {
 	fn layer_n_claims(&self, layer_no: usize) -> usize;
 
 	/// update prover internal [ExpClaim] and return the exponent bit [LayerClaim]
-	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F>;
+	fn finish_layer(
+		&mut self,
+		layer_no: usize,
+		multilinear_evals: &[F],
+		r: &[F],
+	) -> Vec<LayerClaim<F>>;
 }
 
 pub struct GeneratorExpVerifier<F: Field, FBase>(ExpClaim<F>, PhantomData<FBase>);
@@ -72,8 +77,13 @@ where
 		&self.0.eval_point
 	}
 
-	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F> {
-		if self.is_last_layer(layer_no) {
+	fn finish_layer(
+		&mut self,
+		layer_no: usize,
+		multilinear_evals: &[F],
+		r: &[F],
+	) -> Vec<LayerClaim<F>> {
+		let exponent_bit_claim = if self.is_last_layer(layer_no) {
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
 			// a_0(x) = (V_0(x) - 1)/(g - 1)
 			LayerClaim {
@@ -97,7 +107,9 @@ where
 				eval: exponent_bit_eval,
 				eval_point: eval_point.to_vec(),
 			}
-		}
+		};
+
+		vec![exponent_bit_claim]
 	}
 
 	fn layer_composite_sum_claim(
@@ -173,23 +185,51 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 		&self.0.eval_point
 	}
 
-	fn finish_layer(&mut self, layer_no: usize, multilinear_evals: &[F], r: &[F]) -> LayerClaim<F> {
+	fn finish_layer(
+		&mut self,
+		layer_no: usize,
+		multilinear_evals: &[F],
+		r: &[F],
+	) -> Vec<LayerClaim<F>> {
 		let n_vars = self.layer_claim_eval_point().len();
+		let eval_point = &r[r.len() - n_vars..];
 
-		let layer_eval = multilinear_evals[0];
+		let mut claims = Vec::with_capacity(2);
 
 		let exponent_bit_eval = multilinear_evals[1];
 
-		let eval_point = &r[r.len() - n_vars..];
-		if !self.is_last_layer(layer_no) {
-			self.0.eval = layer_eval;
-			self.0.eval_point = eval_point.to_vec();
-		}
-
-		LayerClaim {
+		let exponent_bit_claim = LayerClaim {
 			eval: exponent_bit_eval,
 			eval_point: eval_point.to_vec(),
+		};
+
+		claims.push(exponent_bit_claim);
+
+		if !self.is_last_layer(layer_no) {
+			let layer_eval = multilinear_evals[0];
+
+			self.0.eval = layer_eval;
+			self.0.eval_point = eval_point.to_vec();
+
+			let base_eval = multilinear_evals[2];
+
+			let base_claim = LayerClaim {
+				eval: base_eval,
+				eval_point: eval_point.to_vec(),
+			};
+
+			claims.push(base_claim)
+		} else {
+			let base_eval = multilinear_evals[0];
+
+			let base_claim = LayerClaim {
+				eval: base_eval,
+				eval_point: eval_point.to_vec(),
+			};
+			claims.push(base_claim)
 		}
+
+		claims
 	}
 
 	fn layer_composite_sum_claim(

@@ -34,7 +34,7 @@ use crate::{
 /// Since the protocol is proven bit-by-bit on each layer, we can batch provers starting from the first layer.
 ///
 /// This protocol groups consecutive provers by their `eval_point` and reduces them to sumcheck provers on each layer.
-/// The sumcheck output, in turn, is reduce to exponent LayerClaim's and internal prover LayerClaim for next layer.
+/// The sumcheck output, in turn, is reduce to LayerClaim's that uses for Evalcheck and internal prover LayerClaim for next layer.
 ///
 /// # Requirements
 /// - Witnesses and claims must be of the same length.
@@ -66,12 +66,10 @@ where
 		bail!(Error::MismatchedWitnessClaimLength);
 	}
 
-	let mut eval_claims_on_exponent_bit_columns = Vec::new();
+	let mut layers_claims = Vec::new();
 
 	if witnesses.is_empty() {
-		return Ok(BaseExpReductionOutput {
-			eval_claims_on_exponent_bit_columns,
-		});
+		return Ok(BaseExpReductionOutput { layers_claims });
 	}
 
 	// Check that the witnesses are in descending order by n_vars
@@ -96,14 +94,12 @@ where
 		let layer_exponent_claims =
 			build_layer_exponent_bit_claims(&mut provers, sumcheck_proof_output, layer_no)?;
 
-		eval_claims_on_exponent_bit_columns.push(layer_exponent_claims);
+		layers_claims.push(layer_exponent_claims);
 
 		provers.retain(|prover| !prover.is_last_layer(layer_no));
 	}
 
-	Ok(BaseExpReductionOutput {
-		eval_claims_on_exponent_bit_columns,
-	})
+	Ok(BaseExpReductionOutput { layers_claims })
 }
 
 type GKRProvers<'a, F, P, FDomain, Backend> =
@@ -234,7 +230,7 @@ where
 	})
 }
 
-/// Reduces the sumcheck output to exponent [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
+/// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
 fn build_layer_exponent_bit_claims<'a, P>(
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
@@ -260,13 +256,13 @@ where
 			.take(this_prover_n_multilinears)
 			.collect::<Vec<_>>();
 
-		let exponent_bit_claim = prover.finish_layer(
+		let exponent_bit_claims = prover.finish_layer(
 			layer_no,
 			&this_prover_multilinear_evals,
 			&sumcheck_output.challenges,
 		);
 
-		eval_claims_on_exponent_bit_columns.push(exponent_bit_claim);
+		eval_claims_on_exponent_bit_columns.extend(exponent_bit_claims);
 	}
 
 	Ok(eval_claims_on_exponent_bit_columns)
