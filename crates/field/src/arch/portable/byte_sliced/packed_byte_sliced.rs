@@ -7,22 +7,23 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
+use binius_utils::checked_arithmetics::checked_log_2;
 use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	binary_field::BinaryField,
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedField,
+	PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension, PackedField,
 };
 
-/// Represents 32 AES Tower Field elements in byte-sliced form backed by Packed 32x8b AES fields.
+/// Represents AES Tower Field elements in byte-sliced form.
 ///
-/// This allows us to multiply 32 128b values in parallel using an efficient tower
-/// multiplication circuit on GFNI machines, since multiplication of two 32x8b field elements is
-/// handled in one instruction.
+/// The data layout is backed by Packed Nx8b AES fields where N is the number of bytes `$packed_storage`
+/// can hold, usually 16, 32, or 64 to fit into SIMD registers.
 macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
@@ -39,9 +40,11 @@ macro_rules! define_byte_sliced {
 			/// # Safety
 			/// The caller must ensure that `byte_index` is less than `BYTES`.
 			#[allow(clippy::modulo_one)]
+			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data[byte_index % <$tower_level as TowerLevel>::WIDTH]
-					.get(byte_index / <$tower_level as TowerLevel>::WIDTH)
+				self.data
+					.get_unchecked(byte_index % <$tower_level as TowerLevel>::WIDTH)
+					.get_unchecked(byte_index / <$tower_level as TowerLevel>::WIDTH)
 					.to_underlier()
 			}
 		}
@@ -146,68 +149,6 @@ macro_rules! define_byte_sliced {
 			}
 		}
 
-		impl Add for $name {
-			type Output = Self;
-
-			fn add(self, rhs: Self) -> Self {
-				Self {
-					data: array::from_fn(|byte_number| {
-						self.data[byte_number] + rhs.data[byte_number]
-					}),
-				}
-			}
-		}
-
-		impl Add<$scalar_type> for $name {
-			type Output = Self;
-
-			fn add(self, rhs: $scalar_type) -> $name {
-				self + Self::broadcast(rhs)
-			}
-		}
-
-		impl AddAssign for $name {
-			fn add_assign(&mut self, rhs: Self) {
-				for (data, rhs) in zip(&mut self.data, &rhs.data) {
-					*data += *rhs
-				}
-			}
-		}
-
-		impl AddAssign<$scalar_type> for $name {
-			fn add_assign(&mut self, rhs: $scalar_type) {
-				*self += Self::broadcast(rhs)
-			}
-		}
-
-		impl Sub for $name {
-			type Output = Self;
-
-			fn sub(self, rhs: Self) -> Self {
-				self.add(rhs)
-			}
-		}
-
-		impl Sub<$scalar_type> for $name {
-			type Output = Self;
-
-			fn sub(self, rhs: $scalar_type) -> $name {
-				self.add(rhs)
-			}
-		}
-
-		impl SubAssign for $name {
-			fn sub_assign(&mut self, rhs: Self) {
-				self.add_assign(rhs);
-			}
-		}
-
-		impl SubAssign<$scalar_type> for $name {
-			fn sub_assign(&mut self, rhs: $scalar_type) {
-				self.add_assign(rhs)
-			}
-		}
-
 		impl Mul for $name {
 			type Output = Self;
 
@@ -220,23 +161,157 @@ macro_rules! define_byte_sliced {
 			}
 		}
 
+		impl Add<$scalar_type> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn add(self, rhs: $scalar_type) -> $name {
+				self + Self::broadcast(rhs)
+			}
+		}
+
+		impl AddAssign<$scalar_type> for $name {
+			#[inline]
+			fn add_assign(&mut self, rhs: $scalar_type) {
+				*self += Self::broadcast(rhs)
+			}
+		}
+
+		impl Sub<$scalar_type> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn sub(self, rhs: $scalar_type) -> $name {
+				self.add(rhs)
+			}
+		}
+
+		impl SubAssign<$scalar_type> for $name {
+			#[inline]
+			fn sub_assign(&mut self, rhs: $scalar_type) {
+				self.add_assign(rhs)
+			}
+		}
+
 		impl Mul<$scalar_type> for $name {
 			type Output = Self;
 
+			#[inline]
 			fn mul(self, rhs: $scalar_type) -> $name {
 				self * Self::broadcast(rhs)
 			}
 		}
 
-		impl MulAssign for $name {
-			fn mul_assign(&mut self, rhs: Self) {
-				*self = *self * rhs;
+		impl MulAssign<$scalar_type> for $name {
+			#[inline]
+			fn mul_assign(&mut self, rhs: $scalar_type) {
+				*self *= Self::broadcast(rhs);
 			}
 		}
 
-		impl MulAssign<$scalar_type> for $name {
-			fn mul_assign(&mut self, rhs: $scalar_type) {
-				*self *= Self::broadcast(rhs);
+		common_byte_sliced_impls!($name, $scalar_type);
+
+		impl PackedExtension<$scalar_type> for $name {
+			type PackedSubfield = Self;
+
+			#[inline(always)]
+			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_base(self) -> Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_base_ref(&self) -> &Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_ext(base: Self::PackedSubfield) -> Self {
+				base
+			}
+
+			#[inline(always)]
+			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
+				base
+			}
+
+			#[inline(always)]
+			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
+				base
+			}
+		}
+	};
+}
+
+/// Implements common operations both for byte-sliced AES fields and 8b base fields.
+macro_rules! common_byte_sliced_impls {
+	($name:ident, $scalar_type:ty) => {
+		impl Add for $name {
+			type Output = Self;
+
+			#[inline]
+			fn add(self, rhs: Self) -> Self {
+				Self {
+					data: array::from_fn(|byte_number| {
+						self.data[byte_number] + rhs.data[byte_number]
+					}),
+				}
+			}
+		}
+
+		impl AddAssign for $name {
+			#[inline]
+			fn add_assign(&mut self, rhs: Self) {
+				for (data, rhs) in zip(&mut self.data, &rhs.data) {
+					*data += *rhs
+				}
+			}
+		}
+
+		impl Sub for $name {
+			type Output = Self;
+
+			#[inline]
+			fn sub(self, rhs: Self) -> Self {
+				self.add(rhs)
+			}
+		}
+
+		impl SubAssign for $name {
+			#[inline]
+			fn sub_assign(&mut self, rhs: Self) {
+				self.add_assign(rhs);
+			}
+		}
+
+		impl MulAssign for $name {
+			#[inline]
+			fn mul_assign(&mut self, rhs: Self) {
+				*self = *self * rhs;
 			}
 		}
 
@@ -308,3 +383,313 @@ define_byte_sliced!(ByteSlicedAES64x64b, AESTowerField64b, PackedAESBinaryField6
 define_byte_sliced!(ByteSlicedAES64x32b, AESTowerField32b, PackedAESBinaryField64x8b, TowerLevel4);
 define_byte_sliced!(ByteSlicedAES64x16b, AESTowerField16b, PackedAESBinaryField64x8b, TowerLevel2);
 define_byte_sliced!(ByteSlicedAES64x8b, AESTowerField8b, PackedAESBinaryField64x8b, TowerLevel1);
+
+/// This macro is used to define 8b packed fields that can be used as repacked base fields for byte-sliced AES fields.
+macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
+	($name:ident, $packed_storage:ty, $original_byte_sliced:ty) => {
+		#[doc = concat!("This is a PackedFields helper that is used like a PackedSubfield of [`PackedExtension<AESTowerField8b>`] for [`", stringify!($original_byte_sliced), "`]")]
+		/// and has no particular meaning outside of this purpose.
+		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable, Pod)]
+		#[repr(transparent)]
+		pub struct $name {
+			pub(super) data: [$packed_storage; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
+		}
+
+		impl $name {
+			pub const BYTES: usize = <$packed_storage>::WIDTH * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
+
+			/// Get the byte at the given index.
+			///
+			/// # Safety
+			/// The caller must ensure that `byte_index` is less than `BYTES`.
+			#[allow(clippy::modulo_one)]
+			#[inline(always)]
+			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
+				self.data.get_unchecked(byte_index % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.get_unchecked(byte_index / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.to_underlier()
+			}
+		}
+
+		impl PackedField for $name {
+			type Scalar = AESTowerField8b;
+
+			const LOG_WIDTH: usize =
+				<$packed_storage>::LOG_WIDTH + checked_log_2(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
+
+			#[inline(always)]
+			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
+				self.data
+					.get_unchecked(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.get_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+			}
+
+			#[inline(always)]
+			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
+				self.data
+					.get_unchecked_mut(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.set_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8), scalar);
+			}
+
+			fn random(mut rng: impl rand::RngCore) -> Self {
+				Self::from_scalars(std::iter::repeat_with(|| Self::Scalar::random(&mut rng)))
+			}
+
+			#[inline(always)]
+			fn broadcast(scalar: Self::Scalar) -> Self {
+				let column = <$packed_storage>::broadcast(scalar);
+				Self {
+					data: [column; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
+				}
+			}
+
+			#[inline]
+			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+				Self {
+					data: array::from_fn(|i|
+						<$packed_storage>::from_fn(|j| f(i * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) + j))
+					),
+				}
+			}
+
+			#[inline]
+			fn square(self) -> Self {
+				Self {
+					data: array::from_fn(|i| self.data[i].square()),
+				}
+			}
+
+			#[inline]
+			fn invert_or_zero(self) -> Self {
+				Self {
+					data: array::from_fn(|i| self.data[i].invert_or_zero()),
+				}
+			}
+
+			#[inline]
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				let mut result1 = Self::default();
+				let mut result2 = Self::default();
+
+				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
+					let (this_byte_result1, this_byte_result2) =
+						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
+
+					result1.data[byte_num] = this_byte_result1;
+					result2.data[byte_num] = this_byte_result2;
+				}
+
+				(result1, result2)
+			}
+
+			#[inline]
+			fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				let mut result1 = Self::default();
+				let mut result2 = Self::default();
+
+				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
+					(result1.data[byte_num], result2.data[byte_num]) =
+						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
+				}
+
+				(result1, result2)
+			}
+		}
+
+		common_byte_sliced_impls!($name, AESTowerField8b);
+
+		impl Mul for $name {
+			type Output = Self;
+
+			fn mul(self, rhs: Self) -> Self {
+				Self {
+					data: array::from_fn(|byte_number| {
+						self.data[byte_number] * rhs.data[byte_number]
+					}),
+				}
+			}
+		}
+
+		impl Add<AESTowerField8b> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn add(self, rhs: AESTowerField8b) -> $name {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				Self {
+					data: self.data.map(|column| column + broadcasted),
+				}
+			}
+		}
+
+		impl AddAssign<AESTowerField8b> for $name {
+			#[inline]
+			fn add_assign(&mut self, rhs: AESTowerField8b) {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				for column in &mut self.data {
+					*column += broadcasted;
+				}
+			}
+		}
+
+			impl Sub<AESTowerField8b> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn sub(self, rhs: AESTowerField8b) -> $name {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				Self {
+					data: self.data.map(|column| column + broadcasted),
+				}
+			}
+		}
+
+		impl SubAssign<AESTowerField8b> for $name {
+			#[inline]
+			fn sub_assign(&mut self, rhs: AESTowerField8b) {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				for column in &mut self.data {
+					*column -= broadcasted;
+				}
+			}
+		}
+
+		impl Mul<AESTowerField8b> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn mul(self, rhs: AESTowerField8b) -> $name {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				Self {
+					data: self.data.map(|column| column * broadcasted),
+				}
+			}
+		}
+
+		impl MulAssign<AESTowerField8b> for $name {
+			#[inline]
+			fn mul_assign(&mut self, rhs: AESTowerField8b) {
+				let broadcasted = <$packed_storage>::broadcast(rhs);
+
+				for column in &mut self.data {
+					*column *= broadcasted;
+				}
+			}
+		}
+
+		impl PackedExtension<AESTowerField8b> for $original_byte_sliced {
+			type PackedSubfield = $name;
+
+			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
+				bytemuck::must_cast_slice(packed)
+			}
+
+			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
+				bytemuck::must_cast_slice_mut(packed)
+			}
+
+			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
+				bytemuck::must_cast_slice(packed)
+			}
+
+			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
+				bytemuck::must_cast_slice_mut(packed)
+			}
+
+			fn cast_base(self) -> Self::PackedSubfield {
+				Self::PackedSubfield { data: self.data }
+			}
+
+			fn cast_base_ref(&self) -> &Self::PackedSubfield {
+				bytemuck::must_cast_ref(self)
+			}
+
+			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
+				bytemuck::must_cast_mut(self)
+			}
+
+			fn cast_ext(base: Self::PackedSubfield) -> Self {
+				Self { data: base.data }
+			}
+
+			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
+				bytemuck::must_cast_ref(base)
+			}
+
+			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
+				bytemuck::must_cast_mut(base)
+			}
+		}
+	};
+}
+
+// 128 bit
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES16x16x8b,
+	PackedAESBinaryField16x8b,
+	ByteSlicedAES16x128b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES8x16x8b,
+	PackedAESBinaryField16x8b,
+	ByteSlicedAES16x64b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES4x16x8b,
+	PackedAESBinaryField16x8b,
+	ByteSlicedAES16x32b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES2x16x8b,
+	PackedAESBinaryField16x8b,
+	ByteSlicedAES16x16b
+);
+
+// 256 bit
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES16x32x8b,
+	PackedAESBinaryField32x8b,
+	ByteSlicedAES32x128b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES8x32x8b,
+	PackedAESBinaryField32x8b,
+	ByteSlicedAES32x64b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES4x32x8b,
+	PackedAESBinaryField32x8b,
+	ByteSlicedAES32x32b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES2x32x8b,
+	PackedAESBinaryField32x8b,
+	ByteSlicedAES32x16b
+);
+
+// 512 bit
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES16x64x8b,
+	PackedAESBinaryField64x8b,
+	ByteSlicedAES64x128b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES8x64x8b,
+	PackedAESBinaryField64x8b,
+	ByteSlicedAES64x64b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES4x64x8b,
+	PackedAESBinaryField64x8b,
+	ByteSlicedAES64x32b
+);
+define_8b_extension_packed_subfield_for_byte_sliced!(
+	ByteSlicedAES2x64x8b,
+	PackedAESBinaryField64x8b,
+	ByteSlicedAES64x16b
+);
