@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::{cmp::min, slice};
 
@@ -17,9 +17,14 @@ use super::error::Error;
 use crate::{protocols::sumcheck::equal_n_vars_check, witness::MultilinearWitness};
 
 #[derive(Clone)]
-pub struct BaseExponentWitness<'a, P: PackedField> {
+pub struct BaseExpWitness<'a, P: PackedField> {
+	/// Multilinears that represent an integers by its bits.
 	pub exponent: Vec<MultilinearWitness<'a, P>>,
+	/// Circuit layer-multilinears
 	pub single_bit_output_layers_data: Vec<MultilinearWitness<'a, P>>,
+	/// The base to be used for exponentiation.
+	/// - `None`: Indicates that the default base, `MULTIPLICATIVE_GENERATOR`, is used.
+	/// - `Some(multilinear)`: Specifies a base for the computation.
 	pub base: Option<MultilinearWitness<'a, P>>,
 }
 
@@ -118,10 +123,11 @@ where
 	result
 }
 
-impl<'a, P> BaseExponentWitness<'a, P>
+impl<'a, P> BaseExpWitness<'a, P>
 where
 	P: PackedField,
 {
+	/// Constructs a witness where the base is the field multiplicative generator.
 	pub fn new_with_generator_base<PBits, PBase>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 	) -> Result<Self, Error>
@@ -136,7 +142,7 @@ where
 		let exponent_bit_width = exponent.len();
 
 		if exponent_bit_width == 0 {
-			bail!(Error::EmptyExponent)
+			bail!(Error::EmptyExp)
 		}
 
 		if exponent.len() > PBase::Scalar::N_BITS {
@@ -181,6 +187,7 @@ where
 		})
 	}
 
+	/// Constructs a witness with a specified multilinear base.
 	pub fn new_with_dynamic_base<PBits, PBase>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 		base: MultilinearWitness<'a, P>,
@@ -196,7 +203,7 @@ where
 		let exponent_bit_width = exponent.len();
 
 		if exponent_bit_width == 0 {
-			bail!(Error::EmptyExponent)
+			bail!(Error::EmptyExp)
 		}
 
 		if exponent.len() > PBase::Scalar::N_BITS {
@@ -238,6 +245,7 @@ where
 		})
 	}
 
+	/// true mean that witness use
 	pub fn with_dynamic_base(&self) -> bool {
 		self.base.is_some()
 	}
@@ -246,6 +254,7 @@ where
 		self.exponent[0].n_vars()
 	}
 
+	/// Returns the multilinear that corresponds to the exponentiation of the base to an integers.
 	pub fn exponentiation_result_witness(&self) -> MultilinearWitness<'a, P> {
 		self.single_bit_output_layers_data
 			.last()

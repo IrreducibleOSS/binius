@@ -1,47 +1,36 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
-	common::{BaseExponentReductionOutput, ExponentiationClaim},
-	compositions::VerifierExponentiationComposition,
+	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
+	compositions::VerifierExpComposition,
 	error::{Error, VerificationError},
-	verifiers::{
-		ExponentiationDynamicVerifier, ExponentiationVerifier, GeneratorExponentiationVerifier,
-	},
+	verifiers::{ExpDynamicVerifier, ExpVerifier, GeneratorExpVerifier},
 };
 use crate::{
 	fiat_shamir::Challenger,
 	polynomial::MultivariatePoly,
-	protocols::{
-		gkr_gpa::LayerClaim,
-		sumcheck::{self, BatchSumcheckOutput, SumcheckClaim},
-	},
+	protocols::sumcheck::{self, BatchSumcheckOutput, SumcheckClaim},
 	transcript::VerifierTranscript,
 	transparent::eq_ind::EqIndPartialEval,
 };
 
-/// This is the verification side of the following interactive protocol.
+/// Verify a batched GKR exponentiation protocol execution.
 ///
-/// Consider the multilinears a_0, a_1, ..., a_{n - 1}.
-/// At each point on the hypercube, we construct the n-bit integer a(X) as:
+/// Since the protocol is verify bit-by-bit on each layer, we can batch verifiers starting from the first layer.
 ///
-/// a(X) = 2^0 * a_0(X) + 2^1 * a_1(X) + 2^2 * a_2(X) + ... + 2^{n - 1} * a_{n - 1}(X)
+/// This protocol groups consecutive verifiers by their `eval_point` and reduces them to sumcheck provers on each layer.
+/// The sumcheck output, in turn, is reduce to exponent LayerClaim's and internal prover [ExpClaim] for next layer.
 ///
-/// The multilinear w has values at each point on the hypercube such that:
-///
-/// g^a(X) = w(X) for all X on the hypercube.
-///
-/// This interactive protocol reduces a vector of claimed evaluations of w  
-/// to corresponding vector of claimed evaluations of the a_i's.
-///
-/// **Input:** A vector of evaluation claims on w.  
-/// **Output:** n separate vectors of claims (at different points) on each of the a_i's.
+/// # Requirements
+/// - Claims must be in the same order as in [super::batch_prove].
+/// - Claims must be sorted in descending order by `n_vars`.
 pub fn batch_verify<FBase, F, Challenger_>(
-	claims: &[ExponentiationClaim<F>],
+	claims: &[ExpClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
-) -> Result<BaseExponentReductionOutput<F>, Error>
+) -> Result<BaseExpReductionOutput<F>, Error>
 where
 	FBase: TowerField,
 	F: TowerField + ExtensionField<FBase>,
@@ -50,7 +39,7 @@ where
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
 	if claims.is_empty() {
-		return Ok(BaseExponentReductionOutput {
+		return Ok(BaseExpReductionOutput {
 			eval_claims_on_exponent_bit_columns,
 		});
 	}
@@ -87,18 +76,19 @@ where
 		verifiers.retain(|verifier| !verifier.is_last_layer(layer_no));
 	}
 
-	Ok(BaseExponentReductionOutput {
+	Ok(BaseExpReductionOutput {
 		eval_claims_on_exponent_bit_columns,
 	})
 }
 
 struct SumcheckClaimsWithEvalPoints<F: Field> {
-	sumcheck_claims: Vec<SumcheckClaim<F, VerifierExponentiationComposition<F>>>,
+	sumcheck_claims: Vec<SumcheckClaim<F, VerifierExpComposition<F>>>,
 	eval_points: Vec<Vec<F>>,
 }
 
+/// Groups consecutive provers by their `eval_point` and reduces them to sumcheck claims.
 fn build_layer_gkr_sumcheck_claims<'a, F>(
-	verifiers: &[Box<dyn ExponentiationVerifier<F> + 'a>],
+	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
 ) -> Result<SumcheckClaimsWithEvalPoints<F>, Error>
 where
@@ -143,19 +133,20 @@ where
 	})
 }
 
+/// Builds sumcheck claims for verifiers that share the same `eval_point` from their internal [ExpClaim]s.
 fn build_eval_point_claims<'a, F>(
-	verifiers: &[Box<dyn ExponentiationVerifier<F> + 'a>],
+	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
-) -> Result<Option<SumcheckClaim<F, VerifierExponentiationComposition<F>>>, Error>
+) -> Result<Option<SumcheckClaim<F, VerifierExpComposition<F>>>, Error>
 where
 	F: Field,
 {
 	let (mut composite_claims_n_multilinears, n_claims) =
 		verifiers
 			.iter()
-			.fold((0, 0), |(n_multilinears, n_claims), claim| {
-				let (layer_n_multilinears, layer_n_claims) =
-					claim.layer_n_multilinears_n_claims(layer_no);
+			.fold((0, 0), |(n_multilinears, n_claims), verifier| {
+				let layer_n_multilinears = verifier.layer_n_multilinears(layer_no);
+				let layer_n_claims = verifier.layer_n_claims(layer_no);
 
 				(n_multilinears + layer_n_multilinears, n_claims + layer_n_claims)
 			});
@@ -187,7 +178,7 @@ where
 			composite_sums.push(composite_sum_claim);
 		}
 
-		multilinears_index += verifier.layer_n_multilinears_n_claims(layer_no).0;
+		multilinears_index += verifier.layer_n_multilinears(layer_no);
 	}
 
 	SumcheckClaim::new(n_vars, composite_claims_n_multilinears, composite_sums)
@@ -195,8 +186,9 @@ where
 		.map_err(Error::from)
 }
 
+/// Reduces the sumcheck output to exponent [LayerClaim]s and updates the internal provers [ExpClaim]s for the next layer.
 pub fn build_layer_exponent_bit_claims<'a, F>(
-	verifiers: &mut [Box<dyn ExponentiationVerifier<F> + 'a>],
+	verifiers: &mut [Box<dyn ExpVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
 	eval_points: Vec<Vec<F>>,
 	layer_no: usize,
@@ -230,7 +222,7 @@ where
 	let mut multilinear_evals = sumcheck_output.multilinear_evals.into_iter().flatten();
 
 	for verifier in verifiers {
-		let (this_verifier_n_multilinears, _) = verifier.layer_n_multilinears_n_claims(layer_no);
+		let this_verifier_n_multilinears = verifier.layer_n_multilinears(layer_no);
 
 		let this_verifier_multilinear_evals = multilinear_evals
 			.by_ref()
@@ -249,9 +241,10 @@ where
 	Ok(eval_claims_on_exponent_bit_columns)
 }
 
+/// Creates a vector of boxed [ExpVerifier]s from the given claims.
 fn make_verifiers<'a, F, FBase>(
-	claims: &[ExponentiationClaim<F>],
-) -> Result<Vec<Box<dyn ExponentiationVerifier<F> + 'a>>, Error>
+	claims: &[ExpClaim<F>],
+) -> Result<Vec<Box<dyn ExpVerifier<F> + 'a>>, Error>
 where
 	FBase: BinaryField,
 	F: BinaryField + ExtensionField<FBase>,
@@ -260,13 +253,11 @@ where
 		.iter()
 		.map(|claim| {
 			if claim.with_dynamic_base {
-				ExponentiationDynamicVerifier::new(claim).map(move |verifier| {
-					Box::new(verifier) as Box<dyn ExponentiationVerifier<F> + 'a>
-				})
+				ExpDynamicVerifier::new(claim)
+					.map(move |verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			} else {
-				GeneratorExponentiationVerifier::<F, FBase>::new(claim).map(move |verifier| {
-					Box::new(verifier) as Box<dyn ExponentiationVerifier<F> + 'a>
-				})
+				GeneratorExpVerifier::<F, FBase>::new(claim)
+					.map(move |verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			}
 		})
 		.collect::<Result<Vec<_>, Error>>()

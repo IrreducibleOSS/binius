@@ -141,29 +141,25 @@ pub enum FixedDimIndexCompositions<C> {
 	Bivariate(IndexComposition<C, 2>),
 }
 
-impl<P: PackedField, C: CompositionPolyOS<P> + Debug + Send + Sync> CompositionPolyOS<P>
+impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPoly<P>
 	for FixedDimIndexCompositions<C>
 {
 	fn n_vars(&self) -> usize {
 		match self {
-			Self::Trivariate(index_composition) => {
-				CompositionPolyOS::<P>::n_vars(index_composition)
-			}
-			Self::Bivariate(index_composition) => CompositionPolyOS::<P>::n_vars(index_composition),
+			Self::Trivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
+			Self::Bivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
 			Self::Quadrivariate(index_composition) => {
-				CompositionPolyOS::<P>::n_vars(index_composition)
+				CompositionPoly::<P>::n_vars(index_composition)
 			}
 		}
 	}
 
 	fn degree(&self) -> usize {
 		match self {
-			Self::Trivariate(index_composition) => {
-				CompositionPolyOS::<P>::degree(index_composition)
-			}
-			Self::Bivariate(index_composition) => CompositionPolyOS::<P>::degree(index_composition),
+			Self::Trivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
+			Self::Bivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
 			Self::Quadrivariate(index_composition) => {
-				CompositionPolyOS::<P>::degree(index_composition)
+				CompositionPoly::<P>::degree(index_composition)
 			}
 		}
 	}
@@ -171,13 +167,13 @@ impl<P: PackedField, C: CompositionPolyOS<P> + Debug + Send + Sync> CompositionP
 	fn binary_tower_level(&self) -> usize {
 		match self {
 			Self::Trivariate(index_composition) => {
-				CompositionPolyOS::<P>::binary_tower_level(index_composition)
+				CompositionPoly::<P>::binary_tower_level(index_composition)
 			}
 			Self::Bivariate(index_composition) => {
-				CompositionPolyOS::<P>::binary_tower_level(index_composition)
+				CompositionPoly::<P>::binary_tower_level(index_composition)
 			}
 			Self::Quadrivariate(index_composition) => {
-				CompositionPolyOS::<P>::binary_tower_level(index_composition)
+				CompositionPoly::<P>::binary_tower_level(index_composition)
 			}
 		}
 	}
@@ -185,13 +181,13 @@ impl<P: PackedField, C: CompositionPolyOS<P> + Debug + Send + Sync> CompositionP
 	fn expression(&self) -> ArithExpr<P::Scalar> {
 		match self {
 			Self::Trivariate(index_composition) => {
-				CompositionPolyOS::<P>::expression(index_composition)
+				CompositionPoly::<P>::expression(index_composition)
 			}
 			Self::Bivariate(index_composition) => {
-				CompositionPolyOS::<P>::expression(index_composition)
+				CompositionPoly::<P>::expression(index_composition)
 			}
 			Self::Quadrivariate(index_composition) => {
-				CompositionPolyOS::<P>::expression(index_composition)
+				CompositionPoly::<P>::expression(index_composition)
 			}
 		}
 	}

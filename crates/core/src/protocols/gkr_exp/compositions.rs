@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
 use std::fmt::Debug;
 
@@ -9,7 +9,7 @@ use binius_utils::bail;
 use crate::{composition::FixedDimIndexCompositions, protocols::sumcheck::zerocheck::ExtraProduct};
 
 #[derive(Debug)]
-pub enum ExponentiationCompositions<F>
+pub enum ExpCompositions<F>
 where
 	F: Field,
 {
@@ -18,7 +18,7 @@ where
 	DynamicBaseLastLayer,
 }
 
-impl<P> CompositionPoly<P> for ExponentiationCompositions<P::Scalar>
+impl<P> CompositionPoly<P> for ExpCompositions<P::Scalar>
 where
 	P: PackedField,
 {
@@ -80,7 +80,5 @@ where
 	}
 }
 
-pub type ProverExponentiationComposition<F> =
-	FixedDimIndexCompositions<ExponentiationCompositions<F>>;
-pub type VerifierExponentiationComposition<F> =
-	FixedDimIndexCompositions<ExtraProduct<ExponentiationCompositions<F>>>;
+pub type ProverExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;
+pub type VerifierExpComposition<F> = FixedDimIndexCompositions<ExtraProduct<ExpCompositions<F>>>;
