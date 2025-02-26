@@ -325,7 +325,15 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 
 		claims.push(exponent_bit_claim);
 
-		if !self.is_last_layer(layer_no) {
+		if self.is_last_layer(layer_no) {
+			let base_eval = multilinear_evals[0];
+
+			let base_claim = LayerClaim {
+				eval: base_eval,
+				eval_point: eval_point.to_vec(),
+			};
+			claims.push(base_claim)
+		} else {
 			let layer_eval = multilinear_evals[0];
 
 			self.0.current_layer_claim = LayerClaim {
@@ -340,14 +348,6 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 				eval_point: eval_point.to_vec(),
 			};
 
-			claims.push(base_claim)
-		} else {
-			let base_eval = multilinear_evals[0];
-
-			let base_claim = LayerClaim {
-				eval: base_eval,
-				eval_point: eval_point.to_vec(),
-			};
 			claims.push(base_claim)
 		}
 
