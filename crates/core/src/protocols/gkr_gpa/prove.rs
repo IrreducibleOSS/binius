@@ -132,7 +132,7 @@ fn process_finished_provers<F, P, Backend>(
 	reverse_sorted_final_layer_claims: &mut Vec<LayerClaim<F>>,
 ) -> Result<(), Error>
 where
-	F: Field,
+	F: TowerField,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
 	Backend: ComputationBackend,
 {
@@ -176,7 +176,7 @@ where
 
 impl<'a, F, P, Backend> GrandProductProverState<'a, F, P, Backend>
 where
-	F: Field + From<P::Scalar>,
+	F: TowerField + From<P::Scalar>,
 	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
 	Backend: ComputationBackend,
 {
@@ -314,7 +314,7 @@ where
 		if self.current_layer_no() >= self.input_vars() {
 			bail!(Error::TooManyRounds);
 		}
-		let new_eval = extrapolate_line_scalar(zero_eval, one_eval, gpa_challenge);
+		let new_eval = extrapolate_line_scalar::<F, F>(zero_eval, one_eval, gpa_challenge);
 		let mut layer_challenge = sumcheck_challenge;
 		layer_challenge.push(gpa_challenge);
 

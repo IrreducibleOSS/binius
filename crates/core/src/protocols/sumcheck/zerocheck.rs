@@ -172,7 +172,7 @@ where
 	}
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::Var(self.inner.n_vars() - 1)
+		self.inner.expression() * ArithExpr::Var(self.inner.n_vars())
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
