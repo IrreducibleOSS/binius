@@ -254,7 +254,11 @@ where
 		let subcube_lagrange_coeffs = subcube_evaluation_domain.lagrange_evals(challenge);
 
 		// Zerocheck tensor expansion for the reduced zerocheck should be one variable less
-		fold_partial_eq_ind::<P, Backend>(remaining_rounds, &mut partial_eq_ind_evals);
+		fold_partial_eq_ind::<P, Backend>(
+			EvaluationOrder::LowToHigh,
+			remaining_rounds,
+			&mut partial_eq_ind_evals,
+		);
 
 		// Lagrange extrapolation for the entire univariate domain
 		let round_evals_lagrange_coeffs = max_domain.lagrange_evals(challenge);

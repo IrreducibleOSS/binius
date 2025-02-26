@@ -36,6 +36,26 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	FDomain: TowerField,
 	PackedType<U, F>: PackedFieldIndexable,
 {
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		// for evaluation_order in [EvaluationOrder::LowToHigh] {
+		test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
+			evaluation_order,
+			n_vars,
+			use_first_round_eval1_advice,
+		);
+	}
+}
+
+fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDomain>(
+	evaluation_order: EvaluationOrder,
+	n_vars: usize,
+	use_first_round_eval1_advice: bool,
+) where
+	U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: TowerField,
+	PackedType<U, F>: PackedFieldIndexable,
+{
 	let mut rng = StdRng::seed_from_u64(0);
 
 	let packed_len = 1 << n_vars.saturating_sub(PackedType::<U, F>::LOG_WIDTH);
@@ -72,7 +92,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	};
 
 	let prover = GPAProver::<FDomain, _, _, _, _>::new(
-		EvaluationOrder::LowToHigh,
+		evaluation_order,
 		vec![a_mle, b_mle],
 		Some(vec![ab1_mle]).filter(|_| use_first_round_eval1_advice),
 		[prover_composite_claim],
@@ -93,12 +113,9 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 
 	let verifier_claim = SumcheckClaim::new(n_vars, 3, vec![verifier_composite_claim]).unwrap();
 
-	let _sumcheck_verify_output = sumcheck::batch_verify(
-		EvaluationOrder::LowToHigh,
-		&[verifier_claim],
-		&mut verifier_transcript,
-	)
-	.unwrap();
+	let _sumcheck_verify_output =
+		sumcheck::batch_verify(evaluation_order, &[verifier_claim], &mut verifier_transcript)
+			.unwrap();
 }
 
 #[test]
