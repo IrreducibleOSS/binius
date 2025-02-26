@@ -201,6 +201,10 @@ where
 		self.n_vars
 	}
 
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
+	}
+
 	#[instrument(skip_all, name = "GPAProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();

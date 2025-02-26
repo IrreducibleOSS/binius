@@ -547,6 +547,10 @@ where
 		self.n_vars
 	}
 
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
+	}
+
 	#[instrument(skip_all, name = "ZerocheckProver::fold", level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		self.update_eq_ind_eval(challenge);

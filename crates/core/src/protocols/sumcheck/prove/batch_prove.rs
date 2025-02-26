@@ -3,6 +3,7 @@
 use std::iter;
 
 use binius_field::{Field, TowerField};
+use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use tracing::instrument;
 
@@ -39,6 +40,8 @@ pub trait SumcheckProver<F: Field> {
 	/// The number of variables in the multivariate polynomial.
 	fn n_vars(&self) -> usize;
 
+	fn evaluation_order(&self) -> EvaluationOrder;
+
 	/// Computes the prover message for this round as a univariate polynomial.
 	///
 	/// The prover message mixes the univariate polynomials of the underlying composites using the
@@ -66,6 +69,10 @@ pub trait SumcheckProver<F: Field> {
 impl<F: Field, Prover: SumcheckProver<F> + ?Sized> SumcheckProver<F> for Box<Prover> {
 	fn n_vars(&self) -> usize {
 		(**self).n_vars()
+	}
+
+	fn evaluation_order(&self) -> EvaluationOrder {
+		(**self).evaluation_order()
 	}
 
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
@@ -135,11 +142,20 @@ where
 
 	provers.splice(0..0, reduction_provers);
 
-	if provers.is_empty() {
+	let Some(first_prover) = provers.first() else {
 		return Ok(BatchSumcheckOutput {
 			challenges: Vec::new(),
 			multilinear_evals: Vec::new(),
 		});
+	};
+
+	let evaluation_order = first_prover.evaluation_order();
+
+	if provers
+		.iter()
+		.any(|prover| prover.evaluation_order() != evaluation_order)
+	{
+		bail!(Error::InconsistentEvaluationOrder);
 	}
 
 	// Check that the provers are in descending order by n_vars
@@ -212,6 +228,10 @@ where
 	let mut writer = transcript.message();
 	for multilinear_evals in &multilinear_evals {
 		writer.write_scalar_slice(multilinear_evals);
+	}
+
+	if let EvaluationOrder::HighToLow = evaluation_order {
+		challenges.reverse();
 	}
 
 	let output = BatchSumcheckOutput {

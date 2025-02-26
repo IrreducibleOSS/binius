@@ -122,7 +122,8 @@ where
 		.sum()
 }
 
-fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
+fn test_prove_verify_product_helper_with_evaluation_order<U, F, FDomain, FExt>(
+	evaluation_order: EvaluationOrder,
 	n_vars: usize,
 	n_multilinears: usize,
 	switchover_rd: usize,
@@ -157,7 +158,7 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
-		EvaluationOrder::LowToHigh,
+		evaluation_order,
 		multilins.iter().collect(),
 		[CompositeSumClaim {
 			composition: &composition,
@@ -175,7 +176,8 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 
 	let prover_sample = CanSample::<FExt>::sample(&mut prover_transcript);
 	let mut verifier_transcript = prover_transcript.into_verifier();
-	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
+	let verifier_reduced_claims =
+		batch_verify(evaluation_order, &[claim], &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
 	assert_eq!(prover_sample, CanSample::<FExt>::sample(&mut verifier_transcript));
@@ -197,6 +199,27 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	let multilin_query = backend.multilinear_query(eval_point).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
+	}
+}
+
+fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
+	n_vars: usize,
+	n_multilinears: usize,
+	switchover_rd: usize,
+) where
+	U: UnderlierType + PackScalar<F> + PackScalar<FDomain> + PackScalar<FExt>,
+	F: Field,
+	FDomain: BinaryField,
+	FExt: TowerField + ExtensionField<F> + ExtensionField<FDomain>,
+	BinaryField128b: From<FExt> + Into<FExt>,
+{
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		test_prove_verify_product_helper_with_evaluation_order::<U, F, FDomain, FExt>(
+			evaluation_order,
+			n_vars,
+			n_multilinears,
+			switchover_rd,
+		);
 	}
 }
 
@@ -383,7 +406,8 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	let prover_sample = CanSample::<FE>::sample(&mut prover_transcript);
 
 	let mut verifier_transcript = prover_transcript.into_verifier();
-	let verifier_output = batch_verify(&claims, &mut verifier_transcript).unwrap();
+	let verifier_output =
+		batch_verify(EvaluationOrder::LowToHigh, &claims, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
 

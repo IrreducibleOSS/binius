@@ -177,6 +177,10 @@ where
 		self.n_vars
 	}
 
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
+	}
+
 	#[instrument("RegularSumcheckProver::fold", skip_all, level = "debug")]
 	fn fold(&mut self, challenge: F) -> Result<(), Error> {
 		self.state.fold(challenge)?;
