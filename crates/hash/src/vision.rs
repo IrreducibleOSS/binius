@@ -785,7 +785,7 @@ impl VisionHasherDigestByteSliced {
 impl MultiDigest<4> for VisionHasherDigestByteSliced {
 	type Digest = VisionHasherDigest;
 
-	fn update(&mut self, mut data: [&[u8]; 4]) {
+	fn update(&mut self, data: [&[u8]; 4]) {
 		for row in 1..4 {
 			debug_assert_eq!(data[row].len(), data[0].len());
 		}
@@ -795,8 +795,6 @@ impl MultiDigest<4> for VisionHasherDigestByteSliced {
 			for row in 0..4 {
 				self.buffer[row][self.filled_bytes..self.filled_bytes + to_copy]
 					.copy_from_slice(&data[row][..to_copy]);
-
-				data[row] = &data[row][to_copy..];
 			}
 
 			self.filled_bytes += to_copy;
@@ -1111,5 +1109,56 @@ mod tests {
 		let expected = &hex!("7e0dcd26520e1e9956de65b1f9dea85815ed9ae0c4b3f48559679acea71729f2");
 		let out = hasher.finalize();
 		assert_eq!(expected, &*out);
+	}
+
+	fn check_multihash_consistency(chunks: &[[&[u8]; 4]]) {
+		let mut scalar_digests = array::from_fn::<_, 4, _>(|_| VisionHasherDigest::default());
+		let mut multidigest = VisionHasherDigestByteSliced::default();
+
+		for chunk in chunks {
+			for (scalar_digest, data) in scalar_digests.iter_mut().zip(chunk.iter()) {
+				scalar_digest.update(data);
+			}
+
+			multidigest.update(*chunk);
+		}
+
+		let scalar_digests = scalar_digests.map(|d| d.finalize());
+		let mut output = [MaybeUninit::uninit(); 4];
+		multidigest.finalize_into(&mut output);
+		let output = unsafe { array::from_fn::<_, 4, _>(|i| output[i].assume_init()) };
+
+		for i in 0..4 {
+			assert_eq!(&*scalar_digests[i], &*output[i]);
+		}
+	}
+
+	#[test]
+	fn test_multihash_consistency_small_data() {
+		check_multihash_consistency(&[[
+			&[0xde, 0xad, 0xbe, 0xef],
+			&[0x00, 0x01, 0x02, 0x03],
+			&[0x04, 0x05, 0x06, 0x07],
+			&[0x08, 0x09, 0x0a, 0x0b],
+		]]);
+	}
+
+	#[test]
+	fn test_multihash_consistency_small_rate() {
+		check_multihash_consistency(&[[&[0u8; 64], &[1u8; 64], &[2u8; 64], &[3u8; 64]]]);
+	}
+
+	#[test]
+	fn test_multihash_consistency_large_rate() {
+		check_multihash_consistency(&[[&[0u8; 1024], &[1u8; 1024], &[2u8; 1024], &[3u8; 1024]]]);
+	}
+
+	#[test]
+	fn test_multihash_consistency_several_chunks() {
+		check_multihash_consistency(&[
+			[&[0u8; 48], &[1u8; 48], &[2u8; 48], &[3u8; 48]],
+			[&[0u8; 32], &[1u8; 32], &[2u8; 32], &[3u8; 32]],
+			[&[0u8; 128], &[1u8; 128], &[2u8; 128], &[3u8; 128]],
+		]);
 	}
 }
