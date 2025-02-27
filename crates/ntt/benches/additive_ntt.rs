@@ -3,13 +3,9 @@
 use std::{iter::repeat_with, mem};
 
 use binius_field::{
-	arch::{
-		byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
-		OptimalUnderlier,
-	},
-	as_packed_field::PackedType,
-	BinaryField, BinaryField128b, BinaryField32b, PackedBinaryField16x16b, PackedBinaryField4x32b,
-	PackedBinaryField8x16b, PackedBinaryField8x32b, PackedField,
+	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
+	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
+	PackedBinaryField8x32b, PackedField,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
