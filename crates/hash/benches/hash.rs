@@ -1,12 +1,12 @@
 // Copyright 2024-2025 Irreducible Inc.
-use std::array;
+use std::{array, mem::MaybeUninit};
 
 use binius_field::{
 	AESTowerField8b, BinaryField8b, PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
 };
 use binius_hash::{
-	Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest, HasherDigest,
-	PseudoCompressionFunction, VisionHasherDigest,
+	Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest, HasherDigest, MultiDigest,
+	PseudoCompressionFunction, VisionHasherDigest, VisionHasherDigestByteSliced,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -96,6 +96,23 @@ fn bench_vision32(c: &mut Criterion) {
 	group.throughput(Throughput::Bytes(N as u64));
 	group.bench_function("Vision single instance", |bench| {
 		bench.iter(|| VisionHasherDigest::digest(data))
+	});
+
+	group.bench_function("Vision parallel instances", |bench| {
+		bench.iter(|| {
+			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 4];
+			VisionHasherDigestByteSliced::digest(
+				[
+					&data[0..N / 4],
+					&data[N / 4..N / 2],
+					&data[N / 2..(3 * N) / 4],
+					&data[(3 * N) / 4..N],
+				],
+				&mut out,
+			);
+
+			out
+		})
 	});
 
 	group.finish()

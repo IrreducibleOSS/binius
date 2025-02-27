@@ -30,7 +30,7 @@ use crate::{
 /// can hold, usually 16, 32, or 64 to fit into SIMD registers.
 macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+		#[derive(Default, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
 			data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
@@ -66,6 +66,11 @@ macro_rules! define_byte_sliced {
 			#[inline(always)]
 			pub fn data_mut(&mut self) -> &mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
 				&mut self.data
+			}
+
+			/// Creates a new instance from raw underlying storage.
+			pub fn from_raw_data(data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> Self {
+				Self { data }
 			}
 		}
 
@@ -329,6 +334,18 @@ macro_rules! define_byte_sliced {
 /// Implements common operations both for byte-sliced AES fields and 8b base fields.
 macro_rules! common_byte_sliced_impls {
 	($name:ident, $scalar_type:ty) => {
+		impl Debug for $name {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				let values_str = self
+					.iter()
+					.map(|value| format!("{}", value))
+					.collect::<Vec<_>>()
+					.join(",");
+
+				write!(f, "{}([{}])", stringify!($name), values_str)
+			}
+		}
+
 		impl Add for $name {
 			type Output = Self;
 
@@ -448,7 +465,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 	($name:ident, $packed_storage:ty, $original_byte_sliced:ty) => {
 		#[doc = concat!("This is a PackedFields helper that is used like a PackedSubfield of [`PackedExtension<AESTowerField8b>`] for [`", stringify!($original_byte_sliced), "`]")]
 		/// and has no particular meaning outside of this purpose.
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable, Pod)]
+		#[derive(Default, Clone, Copy, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
 		pub struct $name {
 			pub(super) data: [$packed_storage; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
@@ -474,7 +491,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			/// Note that the bytes in the storage are in the "transposed" order, so use this method
 			/// for some low-level operations only.
 			#[inline(always)]
-			pub const fn data(&self) -> &[$packed_storage; Self::WIDTH] {
+			pub const fn data(&self) -> &[$packed_storage; Self::ARRAY_LEN] {
 				&self.data
 			}
 
@@ -482,8 +499,13 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			/// Note that the bytes in the storage are in the "transposed" order, so use this method
 			/// for some low-level operations only.
 			#[inline(always)]
-			pub fn data_mut(&mut self) -> &mut [$packed_storage; Self::WIDTH] {
+			pub fn data_mut(&mut self) -> &mut [$packed_storage; Self::ARRAY_LEN] {
 				&mut self.data
+			}
+
+			/// Creates a new instance from raw underlying storage.
+			pub fn from_raw_data(data: [$packed_storage; Self::ARRAY_LEN]) -> Self {
+				Self { data }
 			}
 		}
 

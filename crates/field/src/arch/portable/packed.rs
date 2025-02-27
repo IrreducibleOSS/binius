@@ -311,19 +311,19 @@ where
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		IterationMethods::<Scalar::Underlier, U>::ref_iter(&self.0)
 			.map(|underlier| Scalar::from_underlier(underlier))
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send {
+	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send + Clone {
 		IterationMethods::<Scalar::Underlier, U>::value_iter(self.0)
 			.map(|underlier| Scalar::from_underlier(underlier))
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		IterationMethods::<Scalar::Underlier, U>::slice_iter(Self::to_underliers_ref(slice))
 			.map_skippable(|underlier| Scalar::from_underlier(underlier))
 	}

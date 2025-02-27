@@ -110,21 +110,21 @@ pub trait PackedField:
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Send {
+	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Send + Clone {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send + Clone + '_ {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item=Self::Scalar> + Send + Clone + '_ {
 		slice.iter().flat_map(Self::iter)
 	}
 
@@ -422,17 +422,17 @@ impl<F: Field> PackedField for F {
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		iter::once(*self)
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send {
+	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send + Clone {
 		iter::once(self)
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		slice.iter().copied()
 	}
 
