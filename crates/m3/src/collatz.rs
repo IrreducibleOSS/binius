@@ -190,7 +190,7 @@ mod tests {
 
 		let trace = CollatzTrace::generate(3999);
 		// TODO: Refactor boundary creation
-		let instance = Statement {
+		let statement = Statement {
 			boundaries: vec![
 				Boundary {
 					values: vec![B128::new(3999)],
@@ -210,7 +210,7 @@ mod tests {
 
 		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &instance)
+			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
 			.unwrap();
 
 		witness
@@ -220,12 +220,12 @@ mod tests {
 			.fill_table_sequential(&odds_table, &trace.odds)
 			.unwrap();
 
-		let compiled_cs = cs.compile(&instance).unwrap();
-		let witness = witness.into_multilinear_extension_index::<B128>();
+		let compiled_cs = cs.compile(&statement).unwrap();
+		let witness = witness.into_multilinear_extension_index::<B128>(&statement);
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,
-			&instance.boundaries,
+			&statement.boundaries,
 			&witness,
 		)
 		.unwrap();
