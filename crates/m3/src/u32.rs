@@ -96,6 +96,7 @@ impl U32Add {
 		let xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
 		let yin = index.get_mut_as(self.yin)?;
 		let mut cout = index.get_mut_as(self.cout)?;
+		let mut zout = index.get_mut_as(self.zout)?;
 		let mut final_carry = if let Some(final_carry) = self.final_carry {
 			let final_carry = index.get_mut(final_carry)?;
 			Some(final_carry)
@@ -111,10 +112,11 @@ impl U32Add {
 			let mut cout_shl = index.get_mut_as(self.cout_shl)?;
 			for i in 0..index.size() {
 				let (x_plus_y, carry0) = xin[i].overflowing_add(yin[i]);
-				let (zout, carry1) = x_plus_y.overflowing_add(carry_in_bit[i]);
+				let carry1;
+				(zout[i], carry1) = x_plus_y.overflowing_add(carry_in_bit[i]);
 				let carry = carry0 | carry1;
 
-				cin[i] = xin[i] ^ yin[i] ^ zout;
+				cin[i] = xin[i] ^ yin[i] ^ zout[i];
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
 				cout_shl[i] = cout[i] << 1;
 
