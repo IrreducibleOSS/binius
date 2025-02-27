@@ -236,7 +236,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						channel_id: *channel_id,
 						direction: *direction,
 						selector,
-						multiplicity: count as u64,
+						multiplicity: 1,
 					});
 				}
 
