@@ -1,17 +1,26 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::array;
+
 use binius_core::oracle::{OracleId, ShiftVariant};
 use binius_field::{BinaryField1b, Field};
-use binius_utils::checked_arithmetics::checked_log_2;
 
 use crate::{
-	arithmetic,
-	arithmetic::Flags,
+	arithmetic::{
+		self,
+		u32::{u32const_repeating, LOG_U32_BITS},
+		Flags,
+	},
+	bitwise,
 	builder::{types::F, ConstraintSystemBuilder},
 };
 
 type F1 = BinaryField1b;
-const LOG_U32_BITS: usize = checked_log_2(32);
+const CHAINING_VALUE_LEN: usize = 8;
+const BLAKE3_STATE_LEN: usize = 16;
+const MSG_PERMUTATION: [usize; BLAKE3_STATE_LEN] =
+	[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+const IV_0_4: [u32; 4] = [0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A];
 
 // Gadget that performs two u32 variables XOR and then rotates the result
 fn xor_rotate_right(
@@ -61,8 +70,9 @@ fn xor_rotate_right(
 	Ok(rotate)
 }
 
+// Gadget for Blake3 g function
 #[allow(clippy::too_many_arguments)]
-pub fn blake3_g(
+pub fn g(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	a_in: OracleId,
@@ -72,7 +82,7 @@ pub fn blake3_g(
 	mx: OracleId,
 	my: OracleId,
 	log_size: usize,
-) -> Result<[OracleId; 4], anyhow::Error> {
+) -> Result<(OracleId, OracleId, OracleId, OracleId), anyhow::Error> {
 	builder.push_namespace(name);
 
 	let ab = arithmetic::u32::add(builder, "a_in + b_in", a_in, b_in, Flags::Unchecked)?;
@@ -95,28 +105,150 @@ pub fn blake3_g(
 
 	builder.pop_namespace();
 
-	Ok([a2, b2, c2, d2])
+	Ok((a2, b2, c2, d2))
+}
+
+// Gadget for Blake3 round function
+pub fn round(
+	builder: &mut ConstraintSystemBuilder,
+	name: impl ToString,
+	state: &[OracleId; BLAKE3_STATE_LEN],
+	m: &[OracleId; BLAKE3_STATE_LEN],
+	log_size: usize,
+) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
+	builder.push_namespace(name);
+
+	// Mixing columns
+	let (s0, s4, s8, s12) =
+		g(builder, "mix-columns-0", state[0], state[4], state[8], state[12], m[0], m[1], log_size)?;
+
+	let (s1, s5, s9, s13) =
+		g(builder, "mix-columns-1", state[1], state[5], state[9], state[13], m[2], m[3], log_size)?;
+	#[rustfmt::skip]
+	let (s2, s6, s10, s14) =
+		g(builder, "mix-columns-2", state[2], state[6], state[10], state[14], m[4], m[5], log_size)?;
+	#[rustfmt::skip]
+	let (s3, s7, s11, s15) =
+		g(builder, "mix-columns-3", state[3], state[7], state[11], state[15], m[6], m[7], log_size)?;
+
+	// Mixing diagonals
+	let (s0, s5, s10, s15) = g(builder, "mix-diagonals-0", s0, s5, s10, s15, m[8], m[9], log_size)?;
+	#[rustfmt::skip]
+	let (s1, s6, s11, s12) = g(builder, "mix-diagonals-1", s1, s6, s11, s12, m[10], m[11], log_size)?;
+
+	let (s2, s7, s8, s13) = g(builder, "mix-diagonals-2", s2, s7, s8, s13, m[12], m[13], log_size)?;
+
+	let (s3, s4, s9, s14) = g(builder, "mix-diagonals-3", s3, s4, s9, s14, m[14], m[15], log_size)?;
+
+	builder.pop_namespace();
+
+	Ok([
+		s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15,
+	])
+}
+
+pub fn permute(block_words: &[OracleId; BLAKE3_STATE_LEN]) -> [OracleId; BLAKE3_STATE_LEN] {
+	array::from_fn(|i| block_words[MSG_PERMUTATION[i]])
+}
+
+// Gadget for Blake3 compress function
+#[allow(clippy::too_many_arguments)]
+pub fn compress(
+	builder: &mut ConstraintSystemBuilder,
+	name: impl ToString,
+	chaining_value: &[OracleId; CHAINING_VALUE_LEN],
+	block_words: &[OracleId; BLAKE3_STATE_LEN],
+	counter: u64,
+	block_len: u32,
+	flags: u32,
+	log_size: usize,
+) -> Result<[OracleId; BLAKE3_STATE_LEN], anyhow::Error> {
+	builder.push_namespace(name);
+
+	let counter_low = counter as u32;
+	let counter_high = (counter >> 32) as u32;
+
+	let mut state = [OracleId::MAX; BLAKE3_STATE_LEN];
+	state[0..8].copy_from_slice(chaining_value);
+
+	let iv_oracles =
+		IV_0_4.map(|val| u32const_repeating(log_size, builder, val, "blake3_iv").unwrap());
+
+	state[8..12].copy_from_slice(&iv_oracles);
+
+	state[12] = u32const_repeating(log_size, builder, counter_low, "counter_low")?;
+
+	state[13] = u32const_repeating(log_size, builder, counter_high, "counter_high")?;
+
+	state[14] = u32const_repeating(log_size, builder, block_len, "block_len")?;
+
+	state[15] = u32const_repeating(log_size, builder, flags, "flags")?;
+
+	let new_state = round(builder, "round_1", &state, block_words, log_size)?;
+	let new_block_words = permute(block_words);
+
+	let new_state = round(builder, "round_2", &new_state, &new_block_words, log_size)?;
+	let new_block_words = permute(&new_block_words);
+
+	let new_state = round(builder, "round_3", &new_state, &new_block_words, log_size)?;
+	let new_block_words = permute(&new_block_words);
+
+	let new_state = round(builder, "round_4", &new_state, &new_block_words, log_size)?;
+	let new_block_words = permute(&new_block_words);
+
+	let new_state = round(builder, "round_5", &new_state, &new_block_words, log_size)?;
+	let new_block_words = permute(&new_block_words);
+
+	let new_state = round(builder, "round_6", &new_state, &new_block_words, log_size)?;
+	let new_block_words = permute(&new_block_words);
+
+	let pre_final_state = round(builder, "round_7", &new_state, &new_block_words, log_size)?;
+
+	let final_state_left = (0..8)
+		.map(|idx| {
+			bitwise::xor(builder, "final_state_0_8", pre_final_state[idx], pre_final_state[idx + 8])
+				.unwrap()
+		})
+		.collect::<Vec<OracleId>>();
+
+	let final_state_right = (0..8)
+		.map(|idx| {
+			bitwise::xor(builder, "final_state_8_16", pre_final_state[idx + 8], chaining_value[idx])
+				.unwrap()
+		})
+		.collect::<Vec<OracleId>>();
+
+	builder.pop_namespace();
+
+	Ok([final_state_left, final_state_right]
+		.concat()
+		.try_into()
+		.unwrap())
 }
 
 #[cfg(test)]
 mod tests {
-	use binius_core::constraint_system::validate::validate_witness;
+	use std::array;
+
+	use binius_core::{constraint_system::validate::validate_witness, oracle::OracleId};
 	use binius_field::BinaryField1b;
 	use binius_maybe_rayon::prelude::*;
 
 	use crate::{
-		blake3::blake3_g,
+		blake3::{
+			compress, g, round, BLAKE3_STATE_LEN, CHAINING_VALUE_LEN, IV_0_4, MSG_PERMUTATION,
+		},
 		builder::ConstraintSystemBuilder,
 		unconstrained::{fixed_u32, unconstrained},
 	};
 
 	type F1 = BinaryField1b;
 
-	const LOG_SIZE: usize = 5;
+	const LOG_SIZE: usize = 10;
 
 	// The Blake3 mixing function, G, which mixes either a column or a diagonal.
-	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs
-	const fn g(
+	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L42
+	const fn g_out_of_circuit(
 		a_in: u32,
 		b_in: u32,
 		c_in: u32,
@@ -138,7 +270,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_vector() {
+	fn test_vector_g() {
 		// Let's use some fixed data input to check that our in-circuit computation
 		// produces same output as out-of-circuit one
 		let a = 0xaaaaaaaau32;
@@ -148,7 +280,7 @@ mod tests {
 		let mx = 0xffff00ffu32;
 		let my = 0xff00ffffu32;
 
-		let (expected_0, expected_1, expected_2, expected_3) = g(a, b, c, d, mx, my);
+		let (expected_0, expected_1, expected_2, expected_3) = g_out_of_circuit(a, b, c, d, mx, my);
 
 		let size = 1 << LOG_SIZE;
 
@@ -162,15 +294,14 @@ mod tests {
 		let mx_in = fixed_u32::<F1>(&mut builder, "mx", LOG_SIZE, vec![mx; size]).unwrap();
 		let my_in = fixed_u32::<F1>(&mut builder, "my", LOG_SIZE, vec![my; size]).unwrap();
 
-		let output =
-			blake3_g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
+		let output = g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
 
 		if let Some(witness) = builder.witness() {
 			(
-				witness.get::<F1>(output[0]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[1]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[2]).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output[3]).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output.0).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output.1).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output.2).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output.3).unwrap().as_slice::<u32>(),
 			)
 				.into_par_iter()
 				.for_each(|(actual_0, actual_1, actual_2, actual_3)| {
@@ -188,7 +319,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_random_input() {
+	fn test_random_input_g() {
 		let allocator = bumpalo::Bump::new();
 		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
@@ -199,7 +330,265 @@ mod tests {
 		let mx_in = unconstrained::<F1>(&mut builder, "mx", LOG_SIZE).unwrap();
 		let my_in = unconstrained::<F1>(&mut builder, "my", LOG_SIZE).unwrap();
 
-		blake3_g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
+		g(&mut builder, "g", a_in, b_in, c_in, d_in, mx_in, my_in, LOG_SIZE).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraints_system = builder.build().unwrap();
+
+		validate_witness(&constraints_system, &[], &witness).unwrap();
+	}
+
+	// The Blake3 round function:
+	// https://github.com/BLAKE3-team/BLAKE3/blob/master/reference_impl/reference_impl.rs#L53
+	const fn round_out_of_circuit(
+		state: &[u32; BLAKE3_STATE_LEN],
+		m: &[u32; BLAKE3_STATE_LEN],
+	) -> [u32; BLAKE3_STATE_LEN] {
+		// Mix the columns.
+		let (s0, s4, s8, s12) =
+			g_out_of_circuit(state[0], state[4], state[8], state[12], m[0], m[1]);
+		let (s1, s5, s9, s13) =
+			g_out_of_circuit(state[1], state[5], state[9], state[13], m[2], m[3]);
+		let (s2, s6, s10, s14) =
+			g_out_of_circuit(state[2], state[6], state[10], state[14], m[4], m[5]);
+		let (s3, s7, s11, s15) =
+			g_out_of_circuit(state[3], state[7], state[11], state[15], m[6], m[7]);
+
+		// Mix the diagonals.
+		let (s0, s5, s10, s15) = g_out_of_circuit(s0, s5, s10, s15, m[8], m[9]);
+		let (s1, s6, s11, s12) = g_out_of_circuit(s1, s6, s11, s12, m[10], m[11]);
+		let (s2, s7, s8, s13) = g_out_of_circuit(s2, s7, s8, s13, m[12], m[13]);
+		let (s3, s4, s9, s14) = g_out_of_circuit(s3, s4, s9, s14, m[14], m[15]);
+
+		[
+			s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15,
+		]
+	}
+
+	#[test]
+	fn test_vector_round() {
+		let state = [
+			0xfffffff0, 0xfffffff1, 0xfffffff2, 0xfffffff3, 0xfffffff4, 0xfffffff5, 0xfffffff6,
+			0xfffffff7, 0xfffffff8, 0xfffffff9, 0xfffffffa, 0xfffffffb, 0xfffffffc, 0xfffffffd,
+			0xfffffffe, 0xffffffff,
+		];
+
+		let m = [
+			0x09ffffff, 0x08ffffff, 0x07ffffff, 0x06ffffff, 0x05ffffff, 0x04ffffff, 0x03ffffff,
+			0x02ffffff, 0x01ffffff, 0x00ffffff, 0x0fffffff, 0x0effffff, 0x0dffffff, 0x0cffffff,
+			0x0bffffff, 0x0affffff,
+		];
+
+		assert_eq!(state.len(), BLAKE3_STATE_LEN);
+		assert_eq!(state.len(), m.len());
+
+		let expected = round_out_of_circuit(&state, &m);
+
+		let size = 1 << LOG_SIZE;
+
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		// populate State and Message columns with some fixed values
+		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE, vec![state[idx]; size])
+				.unwrap()
+		});
+
+		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE, vec![m[idx]; size])
+				.unwrap()
+		});
+
+		// execute 'round' gadget
+		let actual = round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
+
+		// compare output values with expected ones
+		if let Some(witness) = builder.witness() {
+			for (i, expected_i) in expected.into_iter().enumerate() {
+				let values = witness.get::<F1>(actual[i]).unwrap().as_slice::<u32>();
+				assert!(values.iter().all(|v| *v == expected_i));
+			}
+		}
+
+		let witness = builder.take_witness().unwrap();
+		let constraints_system = builder.build().unwrap();
+
+		validate_witness(&constraints_system, &[], &witness).unwrap();
+	}
+
+	#[test]
+	fn test_random_input_round() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		let state: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("state{}", idx), LOG_SIZE).unwrap()
+		});
+
+		let m: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("m{}", idx), LOG_SIZE).unwrap()
+		});
+
+		round(&mut builder, "round", &state, &m, LOG_SIZE).unwrap();
+
+		let witness = builder.take_witness().unwrap();
+		let constraints_system = builder.build().unwrap();
+
+		validate_witness(&constraints_system, &[], &witness).unwrap();
+	}
+
+	fn compress_out_of_circuit(
+		chaining_value: &[u32; 8],
+		block_words: &[u32; 16],
+		counter: u64,
+		block_len: u32,
+		flags: u32,
+	) -> [u32; 16] {
+		fn permute(m: &mut [u32; 16]) {
+			let mut permuted = [0; 16];
+			for i in 0..16 {
+				permuted[i] = m[MSG_PERMUTATION[i]];
+			}
+			*m = permuted;
+		}
+
+		let counter_low = counter as u32;
+		let counter_high = (counter >> 32) as u32;
+
+		let mut state = [
+			chaining_value[0],
+			chaining_value[1],
+			chaining_value[2],
+			chaining_value[3],
+			chaining_value[4],
+			chaining_value[5],
+			chaining_value[6],
+			chaining_value[7],
+			IV_0_4[0],
+			IV_0_4[1],
+			IV_0_4[2],
+			IV_0_4[3],
+			counter_low,
+			counter_high,
+			block_len,
+			flags,
+		];
+		let mut block = *block_words;
+
+		state = round_out_of_circuit(&state, &block); // round 1
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 2
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 3
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 4
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 5
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 6
+		permute(&mut block);
+		state = round_out_of_circuit(&state, &block); // round 7
+
+		for i in 0..8 {
+			state[i] ^= state[i + 8];
+			state[i + 8] ^= chaining_value[i];
+		}
+		state
+	}
+
+	#[test]
+	fn test_vector_compress() {
+		let chaining_value = [
+			0xfffffff0, 0xfffffff1, 0xfffffff2, 0xfffffff3, 0xfffffff4, 0xfffffff5, 0xfffffff6,
+			0xfffffff7,
+		];
+
+		let m = [
+			0x09ffffff, 0x08ffffff, 0x07ffffff, 0x06ffffff, 0x05ffffff, 0x04ffffff, 0x03ffffff,
+			0x02ffffff, 0x01ffffff, 0x00ffffff, 0x0fffffff, 0x0effffff, 0x0dffffff, 0x0cffffff,
+			0x0bffffff, 0x0affffff,
+		];
+
+		let counter = u64::MAX;
+		let block_len = u32::MAX;
+		let flags = u32::MAX;
+
+		let expected = compress_out_of_circuit(&chaining_value, &m, counter, block_len, flags);
+
+		let size = 1 << LOG_SIZE;
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(
+				&mut builder,
+				format!("cv{}", idx),
+				LOG_SIZE,
+				vec![chaining_value[idx]; size],
+			)
+			.unwrap()
+		});
+
+		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			fixed_u32::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE, vec![m[idx]; size])
+				.unwrap()
+		});
+
+		let actual = compress(
+			&mut builder,
+			"compress",
+			&chaining_value,
+			&block_words,
+			counter,
+			block_len,
+			flags,
+			LOG_SIZE,
+		)
+		.unwrap();
+
+		// compare output values with expected ones
+		if let Some(witness) = builder.witness() {
+			for (i, expected_i) in expected.into_iter().enumerate() {
+				let values = witness.get::<F1>(actual[i]).unwrap().as_slice::<u32>();
+				assert!(values.iter().all(|v| *v == expected_i));
+			}
+		}
+
+		let witness = builder.take_witness().unwrap();
+		let constraints_system = builder.build().unwrap();
+
+		validate_witness(&constraints_system, &[], &witness).unwrap();
+	}
+
+	#[test]
+	fn test_random_input_compress() {
+		let allocator = bumpalo::Bump::new();
+		let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
+
+		let chaining_values: [OracleId; CHAINING_VALUE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("cv{}", idx), LOG_SIZE).unwrap()
+		});
+
+		let block_words: [OracleId; BLAKE3_STATE_LEN] = array::from_fn(|idx| {
+			unconstrained::<F1>(&mut builder, format!("block{}", idx), LOG_SIZE).unwrap()
+		});
+
+		let counter = u64::MAX;
+		let block_len = u32::MAX;
+		let flags = u32::MAX;
+
+		compress(
+			&mut builder,
+			"compress",
+			&chaining_values,
+			&block_words,
+			counter,
+			block_len,
+			flags,
+			LOG_SIZE,
+		)
+		.unwrap();
 
 		let witness = builder.take_witness().unwrap();
 		let constraints_system = builder.build().unwrap();
