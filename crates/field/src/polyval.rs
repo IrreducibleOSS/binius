@@ -260,6 +260,7 @@ impl Square for BinaryField128bPolyval {
 impl Field for BinaryField128bPolyval {
 	const ZERO: Self = Self(0);
 	const ONE: Self = Self(0xc2000000000000000000000000000001);
+	const CHARACTERISTIC: usize = 2;
 
 	fn random(mut rng: impl RngCore) -> Self {
 		Self(rng.gen())

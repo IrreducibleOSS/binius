@@ -294,6 +294,7 @@ macro_rules! binary_field {
 		impl Field for $name {
 			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ZERO);
 			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ONE);
+			const CHARACTERISTIC: usize = 2;
 
 			fn random(mut rng: impl RngCore) -> Self {
 				Self(<$typ as $crate::underlier::Random>::random(&mut rng))
