@@ -472,7 +472,6 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 						subcube_index,
 						evals_0,
 					)?;
-
 					multilinear.subcube_partial_high_evals(
 						self.tensor_query,
 						subcube_vars,
@@ -487,11 +486,8 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 			} => {
 				let multilinear =
 					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
-
 				let adapter = MLEDirectAdapter::from(multilinear);
-
 				adapter.subcube_evals(subcube_vars, subcube_index, 0, evals_0)?;
-
 				adapter.subcube_evals(subcube_vars, subcube_index | 1 << index_vars, 0, evals_1)?;
 			}
 		}
