@@ -194,7 +194,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 				} = partition;
 
 				let n_vars = log2_ceil_usize(count) + pack_factor;
-				let first_oracle_id_in_table = oracles.size();
 
 				// Add multilinear oracles for all table columns.
 				let partition_oracle_ids = column_info
@@ -229,7 +228,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| first_oracle_id_in_table + column_index)
+						.map(|&column_index| oracle_lookup[partition.partition_index][column_index])
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
