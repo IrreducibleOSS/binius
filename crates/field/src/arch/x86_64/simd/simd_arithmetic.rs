@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{any::TypeId, arch::x86_64::*, ops::Deref};
+use std::{any::TypeId, arch::x86_64::*};
 
 use crate::{
 	aes_field::AESTowerField8b,
@@ -301,7 +301,7 @@ impl<OP> SimdTransformation<OP>
 where
 	OP: PackedBinaryField + WithUnderlier<Underlier: TowerSimdType + UnderlierWithBitOps>,
 {
-	pub fn new<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	pub fn new<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self {
 		Self {
@@ -349,9 +349,9 @@ where
 	OP: PackedBinaryField + WithUnderlier<Underlier = IP::Underlier>,
 	IP::Underlier: TowerSimdType,
 {
-	type PackedTransformation<Data: Deref<Target = [<OP>::Scalar]> + Sync> = SimdTransformation<OP>;
+	type PackedTransformation<Data: AsRef<[<OP>::Scalar]> + Sync> = SimdTransformation<OP>;
 
-	fn make_packed_transformation<Data: Deref<Target = [OP::Scalar]> + Sync>(
+	fn make_packed_transformation<Data: AsRef<[OP::Scalar]> + Sync>(
 		transformation: FieldLinearTransformation<OP::Scalar, Data>,
 	) -> Self::PackedTransformation<Data> {
 		SimdTransformation::new(transformation)

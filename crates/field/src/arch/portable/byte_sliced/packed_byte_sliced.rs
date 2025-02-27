@@ -13,11 +13,15 @@ use bytemuck::{Pod, Zeroable};
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
 	binary_field::BinaryField,
+	linear_transformation::{
+		FieldLinearTransformation, PackedTransformationFactory, Transformation,
+	},
 	packed_aes_field::PackedAESBinaryField32x8b,
 	tower_levels::*,
 	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
-	PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension, PackedField,
+	ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension,
+	PackedField,
 };
 
 /// Represents AES Tower Field elements in byte-sliced form.
@@ -262,6 +266,45 @@ macro_rules! define_byte_sliced {
 			#[inline(always)]
 			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
 				base
+			}
+		}
+
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
+			fn transform(&self, data: &$name) -> $name {
+				let data = array::from_fn(|row| {
+					let mut transformed_row = <$packed_storage>::zero();
+
+					for col in 0..<$tower_level as TowerLevel>::WIDTH {
+						transformed_row += self.0[col][row].transform(&data.data[col]);
+					}
+
+
+					transformed_row
+				});
+
+				$name { data }
+			}
+		}
+
+		impl PackedTransformationFactory<$name> for $name {
+			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> = TransformationWrapperNxN<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<[AESTowerField8b; 8]>, {<$tower_level as TowerLevel>::WIDTH}>;
+
+			fn make_packed_transformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync>(
+				transformation: FieldLinearTransformation<<$name as PackedField>::Scalar, Data>,
+			) -> Self::PackedTransformation<Data> {
+				let transformations_8b = array::from_fn(|row| {
+					array::from_fn(|col| {
+						let row = row * 8;
+						let linear_transformation_8b = array::from_fn::<_, 8, _>(|row_8b| {
+							<<$name as PackedField>::Scalar as ExtensionField<AESTowerField8b>>::get_base(&transformation.bases()[row + row_8b], col)
+						});
+
+						<$packed_storage as PackedTransformationFactory<$packed_storage
+						>>::make_packed_transformation(FieldLinearTransformation::new(linear_transformation_8b))
+					})
+				});
+
+				TransformationWrapperNxN(transformations_8b)
 			}
 		}
 	};
@@ -625,8 +668,34 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				bytemuck::must_cast_mut(base)
 			}
 		}
+
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapper8b<Inner> {
+			fn transform(&self, data: &$name) -> $name {
+				$name {
+					data: data.data.map(|x| self.0.transform(&x)),
+				}
+			}
+		}
+
+		impl PackedTransformationFactory<$name> for $name {
+			type PackedTransformation<Data: AsRef<[AESTowerField8b]> + Sync> = TransformationWrapper8b<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<Data>>;
+
+			fn make_packed_transformation<Data: AsRef<[AESTowerField8b]> + Sync>(
+				transformation: FieldLinearTransformation<AESTowerField8b, Data>,
+			) -> Self::PackedTransformation<Data> {
+				TransformationWrapper8b(<$packed_storage>::make_packed_transformation(transformation))
+			}
+		}
 	};
 }
+
+/// Packed transformation for 8b byte-sliced fields.
+pub struct TransformationWrapper8b<Inner>(Inner);
+
+/// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
+///
+/// `N` is the number of bytes in the scalar.
+pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
 // 128 bit
 define_8b_extension_packed_subfield_for_byte_sliced!(

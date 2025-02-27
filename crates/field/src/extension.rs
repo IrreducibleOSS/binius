@@ -48,11 +48,25 @@ pub trait ExtensionField<F: Field>:
 
 	/// Convert into an iterator over base field elements.
 	fn into_iter_bases(self) -> impl Iterator<Item = F>;
+
+	/// Returns the i-th base field element.
+	#[inline]
+	fn get_base(&self, i: usize) -> F {
+		assert!(i < Self::DEGREE, "index out of bounds");
+		unsafe { self.get_base_unchecked(i) }
+	}
+
+	/// Returns the i-th base field element without bounds checking.
+	///
+	/// # Safety
+	/// `i` must be less than `DEGREE`.
+	unsafe fn get_base_unchecked(&self, i: usize) -> F;
 }
 
 impl<F: Field> ExtensionField<F> for F {
 	const LOG_DEGREE: usize = 0;
 
+	#[inline(always)]
 	fn basis(i: usize) -> Result<Self, Error> {
 		if i != 0 {
 			return Err(Error::ExtensionDegreeMismatch);
@@ -60,6 +74,7 @@ impl<F: Field> ExtensionField<F> for F {
 		Ok(Self::ONE)
 	}
 
+	#[inline(always)]
 	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error> {
 		if log_stride != 0 {
 			return Err(Error::ExtensionDegreeMismatch);
@@ -72,11 +87,19 @@ impl<F: Field> ExtensionField<F> for F {
 		}
 	}
 
+	#[inline(always)]
 	fn iter_bases(&self) -> impl Iterator<Item = F> {
 		iter::once(*self)
 	}
 
+	#[inline(always)]
 	fn into_iter_bases(self) -> impl Iterator<Item = F> {
 		iter::once(self)
+	}
+
+	#[inline(always)]
+	unsafe fn get_base_unchecked(&self, i: usize) -> F {
+		debug_assert_eq!(i, 0);
+		*self
 	}
 }

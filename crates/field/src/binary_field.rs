@@ -620,6 +620,13 @@ macro_rules! impl_field_extension {
 				IterationMethods::<<$subfield_name as WithUnderlier>::Underlier, Self::Underlier>::value_iter(self.0)
 					.map_skippable($subfield_name::from)
 			}
+
+			#[inline]
+			unsafe fn get_base_unchecked(&self, i: usize) -> $subfield_name {
+				use $crate::underlier::{WithUnderlier, UnderlierWithBitOps};
+
+				$subfield_name::from_underlier(self.to_underlier().get_subvalue(i))
+			}
 		}
 	};
 }
