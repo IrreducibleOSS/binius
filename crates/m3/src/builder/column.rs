@@ -88,8 +88,6 @@ pub struct ColumnId {
 	pub index: ColumnIndex,
 }
 
-// TODO: Impl Add/Sub/Mul for Col, returning Expr
-
 // feature: TableBuilder needs namespacing
 #[derive(Debug)]
 pub enum Column<F: TowerField = B128> {
