@@ -3,9 +3,13 @@
 use std::{iter::repeat_with, mem};
 
 use binius_field::{
-	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
-	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
-	PackedBinaryField8x32b, PackedField,
+	arch::{
+		byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
+		OptimalUnderlier,
+	},
+	as_packed_field::PackedType,
+	BinaryField, BinaryField128b, PackedBinaryField16x16b, PackedBinaryField4x32b,
+	PackedBinaryField8x16b, PackedBinaryField8x32b, PackedField,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
@@ -147,5 +151,42 @@ fn bench_inverse_transform(c: &mut Criterion) {
 	run_benchmarks_on_packed_fields::<InverseBench>(c, "inverse_transform");
 }
 
-criterion_group!(ntt, bench_forward_transform, bench_inverse_transform);
+fn bench_large_transform(c: &mut Criterion) {
+	type U = OptimalUnderlier;
+	type F = BinaryField128b;
+	type P = PackedType<U, F>;
+
+	let mut group = c.benchmark_group("slow/transform");
+	group.sample_size(10);
+	for log_n in std::iter::once(20) {
+		for log_batch_size in [1, 2] {
+			let input_len = 1 << (log_n - P::LOG_WIDTH);
+			let data_len = 1 << (log_n + log_batch_size - P::LOG_WIDTH);
+			let mut rng = thread_rng();
+			let mut data = repeat_with(|| P::random(&mut rng))
+				.take(data_len)
+				.collect::<Vec<_>>();
+
+			let params = format!("field=BinaryField128b/log_n={log_n}/log_b={log_batch_size}");
+			group.throughput(Throughput::Bytes((input_len * size_of::<P>()) as u64));
+
+			let ntt = SingleThreadedNTT::<F>::new(log_n)
+				.unwrap()
+				.precompute_twiddles();
+			group.bench_function(BenchmarkId::new("single-thread/precompute", &params), |b| {
+				b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
+			});
+
+			let ntt = SingleThreadedNTT::<F>::new(log_n)
+				.unwrap()
+				.precompute_twiddles()
+				.multithreaded();
+			group.bench_function(BenchmarkId::new("multithread/precompute", &params), |b| {
+				b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
+			});
+		}
+	}
+}
+
+criterion_group!(ntt, bench_forward_transform, bench_inverse_transform, bench_large_transform);
 criterion_main!(ntt);
