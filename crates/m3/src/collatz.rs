@@ -35,8 +35,7 @@ impl EvensTable {
 		let even = table.add_committed::<B1, 5>("even");
 
 		// Logical right shift is division by 2
-		let half =
-			table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
+		let half = table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
 
 		let even_packed = table.add_packed::<_, 5, B32, 0>("even_packed", even);
 		let half_packed = table.add_packed::<_, 5, B32, 0>("half_packed", half);
@@ -104,7 +103,8 @@ impl OddsTable {
 		let odd = table.add_committed::<B1, 5>("odd_bits");
 
 		// Input times 2
-		let double = table.add_shifted::<B1, 5>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
+		let double =
+			table.add_shifted::<B1, 5>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
 		// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
 		// multilinear extension of some constant vector, repeating for the number of rows.
@@ -123,7 +123,8 @@ impl OddsTable {
 		);
 
 		let odd_packed = table.add_packed::<_, 5, B32, 0>("odd_packed", odd);
-		let triple_plus_one_packed = table.add_packed::<_, 5, B32, 0>("triple_plus_one_packed", triple_plus_one.zout);
+		let triple_plus_one_packed =
+			table.add_packed::<_, 5, B32, 0>("triple_plus_one_packed", triple_plus_one.zout);
 
 		table.pull_one(seq_chan, odd_packed);
 		table.push_one(seq_chan, triple_plus_one_packed);
