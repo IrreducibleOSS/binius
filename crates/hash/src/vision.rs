@@ -15,7 +15,7 @@ use binius_field::{
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
-	SingleThreadedNTT,
+	AdditiveNTT, SingleThreadedNTT,
 };
 use lazy_static::lazy_static;
 
