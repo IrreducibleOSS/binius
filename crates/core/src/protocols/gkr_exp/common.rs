@@ -2,6 +2,8 @@
 
 use binius_field::Field;
 
+use crate::protocols::gkr_gpa::gpa_sumcheck::prove::GPAProver;
+
 /// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
 ///
 /// Notation:
@@ -13,7 +15,7 @@ pub struct LayerClaim<F: Field> {
 	pub eval: F,
 }
 
-/// ExpClaim is claim about the evaluation of the first layer-multilinear at a specific evaluation point
+/// ExpClaim is a claim about the evaluation of the first layer-multilinear at a specific evaluation point.
 #[derive(Clone)]
 pub struct ExpClaim<F: Field> {
 	pub eval_point: Vec<F>,
@@ -39,9 +41,12 @@ pub struct BaseExpReductionOutput<F: Field> {
 	/// Reduced evalcheck claims for every prover for each layer.
 	///
 	/// The first dimension of the vector represents each layer,
-	/// and the second dimension represents the provers LayerClaims.
+	/// and the second dimension represents the LayerClaims.
 	///
 	/// Since [super::batch_prove] works with exponents of different widths and different types of base,
 	/// the length of each layer can vary.
 	pub layers_claims: Vec<Vec<LayerClaim<F>>>,
 }
+
+pub type GKRExpProver<'a, FDomain, P, Composition, M, Backend> =
+	GPAProver<'a, FDomain, P, Composition, M, Backend>;

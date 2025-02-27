@@ -43,7 +43,8 @@ pub trait ExpVerifier<F: Field> {
 	/// return a tuple of the number of sumcheck claims used by this verifier for this layer.
 	fn layer_n_claims(&self, layer_no: usize) -> usize;
 
-	/// update prover internal [ExpClaim] and return the exponent bit [LayerClaim]
+	/// update verifier internal [ExpClaim] and return the [LayerClaim]s of multilinears,
+	/// excluding `this_layer_input`.
 	fn finish_layer(
 		&mut self,
 		layer_no: usize,
@@ -127,11 +128,14 @@ where
 			let base_power_constant =
 				F::from(FBase::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
 
+			let this_layer_input_index = multilinears_index;
+			let exponent_bit_index = multilinears_index + 1;
+
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[multilinears_index, multilinears_index + 1, eq_ind_index],
+				[this_layer_input_index, exponent_bit_index, eq_ind_index],
 				ExtraProduct {
-					inner: ExpCompositions::GeneratorBase {
+					inner: ExpCompositions::ConstantBase {
 						base_power_constant,
 					},
 				},
@@ -240,9 +244,12 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 		eq_ind_index: usize,
 	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
 		let composition = if self.is_last_layer(layer_no) {
+			let base_index = multilinears_index;
+			let exponent_bit_index = multilinears_index + 1;
+
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[multilinears_index, multilinears_index + 1, eq_ind_index],
+				[base_index, exponent_bit_index, eq_ind_index],
 				ExtraProduct {
 					inner: ExpCompositions::DynamicBaseLastLayer,
 				},
@@ -250,12 +257,16 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 
 			FixedDimIndexCompositions::Trivariate(composition)
 		} else {
+			let this_layer_input_index = multilinears_index;
+			let exponent_bit_index = multilinears_index + 1;
+			let base_index = multilinears_index + 2;
+
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
 				[
-					multilinears_index,
-					multilinears_index + 1,
-					multilinears_index + 2,
+					this_layer_input_index,
+					exponent_bit_index,
+					base_index,
 					eq_ind_index,
 				],
 				ExtraProduct {

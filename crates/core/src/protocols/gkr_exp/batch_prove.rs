@@ -11,7 +11,7 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
+	common::{BaseExpReductionOutput, ExpClaim, GKRExpProver, LayerClaim},
 	compositions::ProverExpComposition,
 	error::Error,
 	provers::{
@@ -21,25 +21,24 @@ use super::{
 };
 use crate::{
 	fiat_shamir::Challenger,
-	protocols::{
-		gkr_gpa::gpa_sumcheck::prove::GPAProver,
-		sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
-	},
+	protocols::sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
 
 /// Prove a batched GKR exponentiation protocol execution.
 ///
-/// Since the protocol is proven bit-by-bit on each layer, we can batch provers starting from the first layer.
-///
-/// This protocol groups consecutive provers by their `eval_point` and reduces them to sumcheck provers on each layer.
-/// The sumcheck output, in turn, is reduce to LayerClaim's that uses for Evalcheck and internal prover LayerClaim for next layer.
+/// The protocol can be batched over multiple instances by grouping consecutive provers over
+/// `eval_points` in internal `LayerClaims` into `GkrExpProvers`. To achieve this, we use
+/// [`crate::composition::IndexComposition`]. Since exponents can have different bit sizes, resulting
+/// in a varying number of layers, we group them starting from the first layer to maximize the
+/// opportunity to share the same evaluation point.
 ///
 /// # Requirements
+/// - Witnesses and claims must be in the same order as in [`super::batch_verify`] during proof verification.
+/// - Witnesses and claims must be sorted in descending order by n_vars.
 /// - Witnesses and claims must be of the same length.
 /// - The `i`th witness must correspond to the `i`th claim.
-/// - Witnesses and claims must be sorted in descending order by `n_vars`.
 ///
 /// # Recommendations
 /// - Witnesses and claims should be grouped by evaluation points from the claims.
@@ -102,8 +101,8 @@ where
 	Ok(BaseExpReductionOutput { layers_claims })
 }
 
-type GKRProvers<'a, F, P, FDomain, Backend> =
-	Vec<GPAProver<'a, FDomain, P, ProverExpComposition<F>, MultilinearWitness<'a, P>, Backend>>;
+type GKRExpProvers<'a, F, P, FDomain, Backend> =
+	Vec<GKRExpProver<'a, FDomain, P, ProverExpComposition<F>, MultilinearWitness<'a, P>, Backend>>;
 
 /// Groups consecutive provers by their `eval_point` and reduces them to sumcheck provers.
 #[instrument(skip_all, level = "debug")]
@@ -112,7 +111,7 @@ fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
 	layer_no: usize,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	backend: &'a Backend,
-) -> Result<GKRProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
+) -> Result<GKRExpProvers<'a, P::Scalar, P, FDomain, Backend>, Error>
 where
 	FDomain: Field,
 	P: PackedFieldIndexable + PackedExtension<FDomain>,
@@ -164,7 +163,7 @@ where
 
 	izip!(composite_claims, multilinears, eval_points)
 		.map(|(composite_claims, multilinears, eval_point)| {
-			GPAProver::<'a, FDomain, P, _, _, Backend>::new(
+			GKRExpProver::<'a, FDomain, P, _, _, Backend>::new(
 				multilinears,
 				None,
 				composite_claims,
