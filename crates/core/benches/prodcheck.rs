@@ -58,9 +58,7 @@ where
 
 	for n_vars in N_VARS {
 		group.throughput(Throughput::Elements(((1 << n_vars) * N_CLAIMS) as u64));
-		if n_vars >= 20 {
-			group.sample_size(10);
-		}
+		group.sample_size(10);
 		group.bench_function(format!("n_vars={n_vars}"), |bench| {
 			// Setup witness
 			let numerator = create_numerator::<U::Packed>(n_vars);

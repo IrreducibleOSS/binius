@@ -2,7 +2,9 @@
 
 use std::iter::repeat_with;
 
-use binius_field::{arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField32b};
+use binius_field::{
+	arch::OptimalUnderlier, as_packed_field::PackedType, BinaryField32b, PackedField,
+};
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
@@ -13,9 +15,8 @@ fn bench_large_transform(c: &mut Criterion) {
 	type P = PackedType<U, F>;
 
 	let mut group = c.benchmark_group("slow/transform");
-	group.sample_size(10);
-	for log_n in std::iter::once(20) {
-		for log_batch_size in [1, 2] {
+	for log_n in std::iter::once(17) {
+		for log_batch_size in [4, 6] {
 			let data_len = 1 << (log_n + log_batch_size - P::LOG_WIDTH);
 			let mut rng = thread_rng();
 			let mut data = repeat_with(|| P::random(&mut rng))
@@ -45,7 +46,7 @@ fn bench_large_transform(c: &mut Criterion) {
 
 criterion_group! {
 	name = large_transform;
-	config = Criterion::default();
+	config = Criterion::default().sample_size(10);
 	targets = bench_large_transform
 }
 criterion_main!(large_transform);

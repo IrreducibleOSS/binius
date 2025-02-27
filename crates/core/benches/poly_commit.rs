@@ -72,7 +72,9 @@ fn bench_poly_commit(c: &mut Criterion) {
 	)
 	.unwrap();
 	let mut group = c.benchmark_group("Polynomial Commitment");
-	group.throughput(Throughput::Bytes(((1 << LOG_SIZE) * std::mem::size_of::<F>()) as u64));
+	group.throughput(Throughput::Bytes(
+		((1 << LOG_SIZE) * committed_multilins.len() * std::mem::size_of::<F>()) as u64,
+	));
 	group.bench_function(BenchmarkId::new("log_size", LOG_SIZE), |b| {
 		b.iter(|| {
 			fri::commit_interleaved_with(&rs_code, &fri_params, &merkle_prover, |message_buffer| {

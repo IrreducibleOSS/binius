@@ -4,36 +4,44 @@ use std::iter::repeat_with;
 
 use binius_core::merkle_tree::{BinaryMerkleTreeProver, MerkleTreeProver};
 use binius_field::{BinaryField128b, Field};
-use binius_hash::compress::Groestl256ByteCompression;
+use binius_hash::{compress::Groestl256ByteCompression, PseudoCompressionFunction};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use digest::{core_api::BlockSizeUser, Digest, FixedOutputReset, Output};
 use groestl_crypto::Groestl256;
 use rand::thread_rng;
 
-const LOG_TREE_SIZE: usize = 24;
-const NUM_LEAVES: usize = 1 << (LOG_TREE_SIZE - 1);
-const ELEMS_IN_LEAF: usize = 16;
+const LOG_ELEMS: usize = 17;
+const LOG_ELEMS_IN_LEAF: usize = 4;
 
 type F = BinaryField128b;
 
-fn bench_binary_merkle_tree(c: &mut Criterion) {
-	let merkle_prover = BinaryMerkleTreeProver::<_, Groestl256, _>::new(Groestl256ByteCompression);
+fn bench_binary_merkle_tree<H, C>(c: &mut Criterion, compression: C, hash_name: &str)
+where
+	H: Digest + BlockSizeUser + FixedOutputReset,
+	C: PseudoCompressionFunction<Output<H>, 2> + Sync,
+{
+	let merkle_prover = BinaryMerkleTreeProver::<_, H, C>::new(compression);
 	let mut rng = thread_rng();
 	let data: Vec<F> = repeat_with(|| Field::random(&mut rng))
-		.take(NUM_LEAVES * ELEMS_IN_LEAF)
+		.take(1 << (LOG_ELEMS + LOG_ELEMS_IN_LEAF))
 		.collect();
-	let mut group = c.benchmark_group("slow/merkle_tree");
+	let mut group = c.benchmark_group(format!("slow/merkle_tree/{}", hash_name));
 	group.throughput(Throughput::Bytes(
-		(NUM_LEAVES * ELEMS_IN_LEAF * std::mem::size_of::<F>()) as u64,
+		((1 << (LOG_ELEMS + LOG_ELEMS_IN_LEAF)) * std::mem::size_of::<F>()) as u64,
 	));
 	group.sample_size(10);
 	group.bench_function(
-		format!("{} log tree size {}xBinaryField128b leaf", LOG_TREE_SIZE, ELEMS_IN_LEAF),
+		format!("{} log elems size {}xBinaryField128b leaf", LOG_ELEMS, 1 << LOG_ELEMS_IN_LEAF),
 		|b| {
-			b.iter(|| merkle_prover.commit(&data, ELEMS_IN_LEAF));
+			b.iter(|| merkle_prover.commit(&data, 1 << LOG_ELEMS_IN_LEAF));
 		},
 	);
 	group.finish()
 }
 
+fn bench_groestl_merkle_tree(c: &mut Criterion) {
+	bench_binary_merkle_tree::<Groestl256, _>(c, Groestl256ByteCompression, "Gröstl-256");
+}
+
 criterion_main!(binary_merkle_tree);
-criterion_group!(binary_merkle_tree, bench_binary_merkle_tree);
+criterion_group!(binary_merkle_tree, bench_groestl_merkle_tree);
