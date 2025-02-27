@@ -250,8 +250,9 @@ where
 		// Convert v' polynomial into v polynomial
 
 		// eq(X, α) = (1 − α) + (2 α − 1) X
-		// NB: In binary fields, this expression is simply  eq(X, α) = 1 + α + X
-		// However, we opt to keep this prover generic over all fields.
+		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
+		// we opt to keep this prover generic over all fields. These two multiplications per round
+		// have negligible performance impact.
 		let constant_scalar = F::ONE - alpha;
 		let linear_scalar = alpha.double() - F::ONE;
 

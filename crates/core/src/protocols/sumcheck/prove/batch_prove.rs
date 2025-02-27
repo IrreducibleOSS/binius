@@ -40,6 +40,7 @@ pub trait SumcheckProver<F: Field> {
 	/// The number of variables in the multivariate polynomial.
 	fn n_vars(&self) -> usize;
 
+	/// Sumcheck evaluation order assumed by this specific prover.
 	fn evaluation_order(&self) -> EvaluationOrder;
 
 	/// Computes the prover message for this round as a univariate polynomial.

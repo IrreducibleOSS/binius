@@ -37,7 +37,6 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	PackedType<U, F>: PackedFieldIndexable,
 {
 	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
-		// for evaluation_order in [EvaluationOrder::LowToHigh] {
 		test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
 			evaluation_order,
 			n_vars,

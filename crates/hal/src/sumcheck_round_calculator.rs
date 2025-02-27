@@ -125,7 +125,7 @@ where
 	Access: SumcheckMultilinearAccess<P> + Sync,
 	Composition: CompositionPoly<P>,
 {
-	// n_vars > 0
+	assert!(n_vars > 0, "Computing round evaluations requires at least a single variable.");
 
 	let n_multilinears = multilinears.len();
 	let n_round_evals = evaluators
