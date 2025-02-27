@@ -195,10 +195,7 @@ where
 								"tensor_query is guaranteed to be Some while there is still a transparent multilinear"
 							);
 
-							// TODO
-							// At switchover, perform inner products in large field and save them in a
-							// newly created MLE.
-
+							// At switchover we partially evaluate the multilinear at an expanded tensor query.
 							let large_field_folded_evals = match self.evaluation_order {
 								EvaluationOrder::LowToHigh => inner_multilinear
 									.evaluate_partial_low(tensor_query.to_ref())?
@@ -219,10 +216,11 @@ where
 					SumcheckMultilinear::Folded {
 						ref mut large_field_folded_evals,
 					} => {
-						// TODO
-						// Post-switchover, simply plug in challenge for the zeroth variable.
+						// Post-switchover, we perform single variable folding (linear interpolation).
 
 						match self.evaluation_order {
+							// Lerp folding in low-to-high evaluation order can be made inplace, but not
+							// easily so if multithreading is desired.
 							EvaluationOrder::LowToHigh => {
 								let mut new_large_field_folded_evals =
 									zeroed_vec(1 << self.n_vars.saturating_sub(1 + P::LOG_WIDTH));
@@ -237,7 +235,10 @@ where
 								*large_field_folded_evals = new_large_field_folded_evals;
 							}
 
+							// High-to-low evaluation order allows trivial inplace multithreaded folding.
 							EvaluationOrder::HighToLow => {
+								// REVIEW: note that this method is currently _not_ multithreaded, as
+								//         traces are usually sufficiently wide
 								fold_left_lerp_inplace(
 									large_field_folded_evals,
 									self.n_vars,

@@ -344,6 +344,11 @@ where
 ///   f(r||w) = r * (f(1||w) - f(0||w)) + f(0||w).
 ///
 /// The same approach may be generalized to higher variable counts, with diminishing returns.
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
+/// use more efficient optimizations for special cases. If we ever need a parallel version of this
+/// function, we can implement it separately.
 pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
 	log_evals_size: usize,
@@ -383,6 +388,11 @@ where
 }
 
 /// Inplace left fold
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
+/// use more efficient optimizations for special cases. If we ever need a parallel version of this
+/// function, we can implement it separately.
 pub fn fold_left_lerp_inplace<P>(
 	evals: &mut Vec<P>,
 	log_evals_size: usize,

@@ -57,11 +57,10 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		query: MultilinearQueryRef<P>,
 	) -> Result<MultilinearExtension<P>, Error>;
 
-	/// Compute inner products of a multilinear query inside a subcube.
+	/// Get a subcube of the boolean hypercube after `evaluate_partial_low`.
 	///
 	/// Equivalent computation is `evaluate_partial_low(query)` followed by a `subcube_evals`
 	/// on a result. This method is more efficient due to handling it as a special case.
-	/// TODO
 	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<P>,
@@ -70,6 +69,10 @@ pub trait MultilinearPoly<P: PackedField>: Debug {
 		partial_low_evals: &mut [P],
 	) -> Result<(), Error>;
 
+	/// Get a subcube of the boolean hypercube after `evaluate_partial_high`.
+	///
+	/// Equivalent computation is `evaluate_partial_high(query)` followed by a `subcube_evals`
+	/// on a result. This method is more efficient due to handling it as a special case.
 	fn subcube_partial_high_evals(
 		&self,
 		query: MultilinearQueryRef<P>,
