@@ -64,7 +64,7 @@ impl<P: PackedField> CompositionPoly<P> for PowerComposition {
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		Ok(iter::repeat(query[0]).take(self.exponent).product())
+		Ok(std::iter::repeat_n(query[0], self.exponent).product())
 	}
 
 	fn binary_tower_level(&self) -> usize {

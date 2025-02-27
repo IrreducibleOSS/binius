@@ -96,7 +96,6 @@ where
 }
 
 impl<'a, P: PackedField> MultilinearExtension<P, &'a [P]> {
-	#[allow(clippy::missing_const_for_fn)]
 	pub fn from_values_slice(v: &'a [P]) -> Result<Self, Error> {
 		if !v.len().is_power_of_two() {
 			bail!(Error::PowerOfTwoLengthRequired);

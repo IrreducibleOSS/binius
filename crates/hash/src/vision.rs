@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{iter::repeat, marker::PhantomData};
+use std::marker::PhantomData;
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -344,43 +344,38 @@ impl FastNTT {
 		Self {
 			round_0_twiddles: [
 				PackedAESBinaryField32x8b::from_scalars(
-					repeat(cosets_twiddles_0[0].get(0))
-						.take(4)
-						.chain(repeat(cosets_twiddles_0[1].get(0)).take(4))
-						.chain(repeat(cosets_twiddles_0[0].get(1)).take(4))
-						.chain(repeat(cosets_twiddles_0[1].get(1)).take(4))
-						.chain(repeat(cosets_twiddles_0[0].get(2)).take(4))
-						.chain(repeat(cosets_twiddles_0[1].get(2)).take(4))
-						.chain(repeat(cosets_twiddles_0[0].get(3)).take(4))
-						.chain(repeat(cosets_twiddles_0[1].get(3)).take(4)),
+					std::iter::repeat_n(cosets_twiddles_0[0].get(0), 4)
+						.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(0), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(1), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(1), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(2), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(2), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(3), 4))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(3), 4)),
 				),
 				PackedAESBinaryField32x8b::from_scalars(
-					repeat(cosets_twiddles_0[2].get(0))
-						.take(8)
-						.chain(repeat(cosets_twiddles_0[2].get(1)).take(8))
-						.chain(repeat(cosets_twiddles_0[2].get(2)).take(8))
-						.chain(repeat(cosets_twiddles_0[2].get(3)).take(8)),
+					std::iter::repeat_n(cosets_twiddles_0[2].get(0), 8)
+						.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(1), 8))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(2), 8))
+						.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(3), 8)),
 				),
 			],
 			round_1_twiddles: [
 				PackedAESBinaryField32x8b::from_scalars(
-					repeat(cosets_twiddles_1[0].get(0))
-						.take(8)
-						.chain(repeat(cosets_twiddles_1[1].get(0)).take(8))
-						.chain(repeat(cosets_twiddles_1[0].get(1)).take(8))
-						.chain(repeat(cosets_twiddles_1[1].get(1)).take(8)),
+					std::iter::repeat_n(cosets_twiddles_1[0].get(0), 8)
+						.chain(std::iter::repeat_n(cosets_twiddles_1[1].get(0), 8))
+						.chain(std::iter::repeat_n(cosets_twiddles_1[0].get(1), 8))
+						.chain(std::iter::repeat_n(cosets_twiddles_1[1].get(1), 8)),
 				),
 				PackedAESBinaryField32x8b::from_scalars(
-					repeat(cosets_twiddles_1[2].get(0))
-						.take(16)
-						.chain(repeat(cosets_twiddles_1[2].get(1)).take(16)),
+					std::iter::repeat_n(cosets_twiddles_1[2].get(0), 16)
+						.chain(std::iter::repeat_n(cosets_twiddles_1[2].get(1), 16)),
 				),
 			],
 			round_2_twiddles: [
 				PackedAESBinaryField32x8b::from_scalars(
-					repeat(cosets_twiddles_2[0].get(0))
-						.take(16)
-						.chain(repeat(cosets_twiddles_2[1].get(0)).take(16)),
+					std::iter::repeat_n(cosets_twiddles_2[0].get(0), 16)
+						.chain(std::iter::repeat_n(cosets_twiddles_2[1].get(0), 16)),
 				),
 				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_2[2].get(0)),
 			],

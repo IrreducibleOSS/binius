@@ -24,7 +24,11 @@ pub struct StridedArray2DViewMut<'a, T> {
 
 impl<'a, T> StridedArray2DViewMut<'a, T> {
 	/// Create a single-piece view of the data.
-	pub fn without_stride(data: &'a mut [T], height: usize, width: usize) -> Result<Self, Error> {
+	pub const fn without_stride(
+		data: &'a mut [T],
+		height: usize,
+		width: usize,
+	) -> Result<Self, Error> {
 		if width * height != data.len() {
 			return Err(Error::DimensionMismatch);
 		}
