@@ -67,7 +67,7 @@ impl<'a, F: TowerField> EvalClaimSystem<'a, F> {
 	///
 	/// * `commit_meta` - metadata about the polynomial commitment.
 	/// * `oracle_to_commit_index` - a sparse index mapping oracle IDs to IDs in the commit
-	///     metadata.
+	///   metadata.
 	/// * `eval_claims` - the evaluation claims on committed multilinear polynomials.
 	pub fn new(
 		oracles: &MultilinearOracleSet<F>,

@@ -72,7 +72,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		})
 	}
 
-	pub fn witness(&mut self) -> Option<&mut witness::Builder<'arena>> {
+	pub const fn witness(&mut self) -> Option<&mut witness::Builder<'arena>> {
 		self.witness.as_mut()
 	}
 
@@ -198,7 +198,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.non_zero_oracle_ids.push(oracle_id);
 	}
 
-	pub fn add_channel(&mut self) -> ChannelId {
+	pub const fn add_channel(&mut self) -> ChannelId {
 		let channel_id = self.next_channel_id;
 		self.next_channel_id += 1;
 		channel_id

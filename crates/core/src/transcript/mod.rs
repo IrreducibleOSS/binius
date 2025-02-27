@@ -126,7 +126,7 @@ impl<Challenger_: Challenger> ProverTranscript<Challenger_> {
 	///
 	/// This flag is used to enable debug assertions in the [`TranscriptReader`] and
 	/// [`TranscriptWriter`] methods.
-	pub fn set_debug(&mut self, debug: bool) {
+	pub const fn set_debug(&mut self, debug: bool) {
 		self.debug_assertions = debug;
 	}
 
@@ -194,7 +194,7 @@ impl<Challenger_: Challenger> VerifierTranscript<Challenger_> {
 		Ok(())
 	}
 
-	pub fn set_debug(&mut self, debug: bool) {
+	pub const fn set_debug(&mut self, debug: bool) {
 		self.debug_assertions = debug;
 	}
 
@@ -254,7 +254,7 @@ pub struct TranscriptReader<'a, B: Buf> {
 }
 
 impl<B: Buf> TranscriptReader<'_, B> {
-	pub fn buffer(&mut self) -> &mut B {
+	pub const fn buffer(&mut self) -> &mut B {
 		self.buffer
 	}
 
@@ -332,7 +332,7 @@ pub struct TranscriptWriter<'a, B: BufMut> {
 }
 
 impl<B: BufMut> TranscriptWriter<'_, B> {
-	pub fn buffer(&mut self) -> &mut B {
+	pub const fn buffer(&mut self) -> &mut B {
 		self.buffer
 	}
 

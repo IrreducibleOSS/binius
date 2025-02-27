@@ -230,7 +230,7 @@ where
 	}
 
 	#[inline]
-	fn underliers(&mut self) -> &mut [U] {
+	const fn underliers(&mut self) -> &mut [U] {
 		self.data
 			.as_mut()
 			.expect("Should only be None after Drop::drop has run")

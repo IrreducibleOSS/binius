@@ -11,11 +11,11 @@
 //!
 //! Naming Convention for challenges:
 //! 1) Sumcheck challenge: $r'_k$
-//!     $k$-variate sumcheck challenge vector generated during the course of gpa_sumcheck
+//!    $k$-variate sumcheck challenge vector generated during the course of gpa_sumcheck
 //! 2) GPA Challenge $\mu_k$
-//!     1-variate generated during layer proving after the sumcheck proof is created after the layer k to k+1 sumcheck
+//!    1-variate generated during layer proving after the sumcheck proof is created after the layer k to k+1 sumcheck
 //! 3) Layer Challenge $r_{k+1} := (r_k, \mu_k)$
-//!     $k+1$ variate, materialized as a combination of the above two, used in `LayerClaim`
+//!    $k+1$ variate, materialized as a combination of the above two, used in `LayerClaim`
 //!
 //! See [Thaler13] Section 5.3.1 for further background on the GKR polynomial identities for a binary tree circuit.
 //!
