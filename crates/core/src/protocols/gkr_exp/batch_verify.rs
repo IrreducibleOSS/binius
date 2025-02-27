@@ -19,13 +19,13 @@ use crate::{
 
 /// Verify a batched GKR exponentiation protocol execution.
 ///
-/// Since the protocol is verify bit-by-bit on each layer, we can batch verifiers starting from the first layer.
-///
-/// This protocol groups consecutive verifiers by their `eval_point` and reduces them to sumcheck provers on each layer.
-/// The sumcheck output, in turn, is reduce to LayerClaim's that uses for Evalcheck and internal prover [ExpClaim] for next layer.
+/// The protocol can be batched over multiple instances by grouping consecutive verifiers over
+/// eval_points in [ExpClaim] into [SumcheckClaim]s. To achieve this, we use
+/// [crate::composition::IndexComposition], where eq indicator is always the last element. Since
+/// exponents can have different bit sizes, resulting in a varying number of layers, we group
+/// them starting from the first layer to maximize the opportunity to share the same evaluation point.
 ///
 /// # Requirements
-/// - Claims must be in the same order as in [super::batch_prove].
 /// - Claims must be sorted in descending order by `n_vars`.
 pub fn batch_verify<FBase, F, Challenger_>(
 	claims: &[ExpClaim<F>],
@@ -82,7 +82,7 @@ struct SumcheckClaimsWithEvalPoints<F: Field> {
 	eval_points: Vec<Vec<F>>,
 }
 
-/// Groups consecutive provers by their `eval_point` and reduces them to sumcheck claims.
+/// Groups consecutive verifier by their `eval_point` and reduces them to sumcheck claims.
 fn build_layer_gkr_sumcheck_claims<'a, F>(
 	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
@@ -129,7 +129,9 @@ where
 	})
 }
 
-/// Builds sumcheck claims for verifiers that share the same `eval_point` from their internal [ExpClaim]s.
+/// Builds sumcheck claim for verifiers that share the same `eval_point` from their internal
+/// [ExpClaim]s. The batched multilinears are structured as a single concatenated vector of all
+/// multilinears used by the verifiers, with the eq indicator positioned at the end.
 fn build_eval_point_claims<'a, F>(
 	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
@@ -182,7 +184,7 @@ where
 		.map_err(Error::from)
 }
 
-/// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [ExpClaim]s for the next layer.
+/// Reduces the sumcheck output to [LayerClaim]s and updates the internal verifier [ExpClaim]s for the next layer.
 pub fn build_layer_exponent_bit_claims<'a, F>(
 	verifiers: &mut [Box<dyn ExpVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
@@ -250,10 +252,10 @@ where
 		.map(|claim| {
 			if claim.with_dynamic_base {
 				ExpDynamicVerifier::new(claim)
-					.map(move |verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
+					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			} else {
 				GeneratorExpVerifier::<F, FBase>::new(claim)
-					.map(move |verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
+					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			}
 		})
 		.collect::<Result<Vec<_>, Error>>()

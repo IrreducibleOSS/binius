@@ -44,7 +44,8 @@ pub trait ExpProver<'a, P: PackedField> {
 	/// return a tuple of the number of sumcheck claims used by this prover for this layer.
 	fn layer_n_claims(&self, layer_no: usize) -> usize;
 
-	/// update prover internal [LayerClaim] and return the exponent bit [LayerClaim]
+	/// update the prover internal [LayerClaim] and return the [LayerClaim]s of multilinears,
+	/// excluding `this_layer_input`.
 	fn finish_layer(
 		&mut self,
 		layer_no: usize,
@@ -138,13 +139,16 @@ where
 
 		let this_layer_multilinears = vec![this_layer_input, exponent_bit];
 
+		let this_layer_input_index = multilinears_index;
+		let exponent_bit_index = multilinears_index + 1;
+
 		let base_power_constant =
 			P::Scalar::from(FBase::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
 
 		let composition = IndexComposition::new(
 			composite_claims_n_multilinears,
-			[multilinears_index, multilinears_index + 1],
-			ExpCompositions::GeneratorBase {
+			[this_layer_input_index, exponent_bit_index],
+			ExpCompositions::ConstantBase {
 				base_power_constant,
 			},
 		)?;
@@ -174,7 +178,7 @@ where
 	) -> Vec<LayerClaim<P::Scalar>> {
 		let exponent_bit_claim = if self.is_last_layer(layer_no) {
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
-			// a_0(x) = (V_0(x) - 1)/(g - 1)
+			// $a_0(x) = (V_0(x) - 1)/(g - 1)$
 			let LayerClaim { eval_point, eval } = self.0.current_layer_claim.clone();
 
 			LayerClaim::<P::Scalar> {
@@ -184,14 +188,14 @@ where
 		} else {
 			let n_vars = self.layer_claim_eval_point().len();
 
-			let layer_eval = multilinear_evals[0];
+			let this_layer_input_eval = multilinear_evals[0];
 
 			let exponent_bit_eval = multilinear_evals[1];
 
 			let eval_point = &r[r.len() - n_vars..];
 			if !self.is_last_layer(layer_no) {
 				self.0.current_layer_claim = LayerClaim {
-					eval: layer_eval,
+					eval: this_layer_input_eval,
 					eval_point: eval_point.to_vec(),
 				};
 			}
@@ -263,9 +267,12 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 		let (composition, this_layer_multilinears) = if self.0.is_last_layer(layer_no) {
 			let this_layer_multilinears = vec![base, exponent_bit];
 
+			let base_index = multilinears_index;
+			let exponent_bit_index = multilinears_index + 1;
+
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[multilinears_index, multilinears_index + 1],
+				[base_index, exponent_bit_index],
 				ExpCompositions::DynamicBaseLastLayer,
 			)?;
 			let composition = FixedDimIndexCompositions::Bivariate(composition);
@@ -277,13 +284,14 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 				.clone();
 
 			let this_layer_multilinears = vec![this_layer_input, exponent_bit, base];
+
+			let this_layer_input_index = multilinears_index;
+			let exponent_bit_index = multilinears_index + 1;
+			let base_index = multilinears_index + 2;
+
 			let composition = IndexComposition::new(
 				composite_claims_n_multilinears,
-				[
-					multilinears_index,
-					multilinears_index + 1,
-					multilinears_index + 2,
-				],
+				[this_layer_input_index, exponent_bit_index, base_index],
 				ExpCompositions::DynamicBase,
 			)?;
 			let composition = FixedDimIndexCompositions::Trivariate(composition);
@@ -334,10 +342,10 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 			};
 			claims.push(base_claim)
 		} else {
-			let layer_eval = multilinear_evals[0];
+			let this_layer_input_eval = multilinear_evals[0];
 
 			self.0.current_layer_claim = LayerClaim {
-				eval: layer_eval,
+				eval: this_layer_input_eval,
 				eval_point: eval_point.to_vec(),
 			};
 
