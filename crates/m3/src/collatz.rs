@@ -71,10 +71,14 @@ where
 	) -> Result<(), anyhow::Error> {
 		let mut even = witness.get_mut_as(self.even)?;
 		let mut half = witness.get_mut_as(self.half)?;
+		let mut even_packed = witness.get_mut_as(self.even_packed)?;
+		let mut half_packed = witness.get_mut_as(self.half_packed)?;
 
 		for (i, event) in rows.iter().enumerate() {
 			even[i] = event.val;
-			half[i] = event.val / 2;
+			half[i] = event.val >> 1;
+			even_packed[i] = event.val;
+			half_packed[i] = event.val >> 1;
 		}
 
 		Ok(())
@@ -155,12 +159,18 @@ where
 	) -> Result<(), anyhow::Error> {
 		{
 			let mut odd_packed = witness.get_mut_as(self.odd_packed)?;
+			let mut triple_plus_one_packed = witness.get_mut_as(self.triple_plus_one_packed)?;
+
+			let mut odd = witness.get_mut_as(self.odd)?;
 			let mut double = witness.get_mut_as(self.double)?;
 			let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
 			for (i, event) in rows.iter().enumerate() {
 				odd_packed[i] = event.val;
-				(double[i], _) = event.val.overflowing_shl(1);
+				triple_plus_one_packed[i] = 3 * event.val + 1;
+
+				odd[i] = event.val;
+				double[i] = event.val << 1;
 				carry_bit[i] = 1u32;
 			}
 		}
