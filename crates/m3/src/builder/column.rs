@@ -4,11 +4,10 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{ExtensionField, TowerField};
 use binius_math::LinearNormalForm;
 
-use super::{
-	table::{ColumnIndex, TableId},
-	types::B128,
-};
+use super::{table::TableId, types::B128};
 
+pub type ColumnIndex = usize; // REVIEW: Could make these opaque without a constructor, to protect
+							  // access
 /// A type representing a column in a table.
 ///
 /// The column has entries that are elements of `F`. In practice, the fields used will always be
@@ -21,6 +20,7 @@ pub struct Col<F: TowerField, const V: usize = 0> {
 
 	// REVIEW: Maybe this should have denormalized name for debugging.
 	pub table_id: TableId,
+	pub partition: usize,
 	pub index: ColumnIndex,
 	pub _marker: PhantomData<F>,
 }
@@ -29,6 +29,7 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 	pub fn new(id: ColumnId) -> Self {
 		Self {
 			table_id: id.table_id,
+			partition: id.partition,
 			index: id.index,
 			_marker: PhantomData,
 		}
@@ -44,6 +45,7 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 	pub fn id(&self) -> ColumnId {
 		ColumnId {
 			table_id: self.table_id,
+			partition: self.partition,
 			index: self.index,
 		}
 	}
@@ -58,9 +60,19 @@ where
 	// REVIEW: Maybe this should retain the info of the smallest tower level
 	Col {
 		table_id: col.table_id,
+		partition: col.partition,
 		index: col.index,
 		_marker: PhantomData,
 	}
+}
+
+#[derive(Debug)]
+pub struct ColumnInfo<F: TowerField = B128> {
+	pub id: ColumnId,
+	pub col: Column<F>,
+	pub name: String,
+	pub shape: ColumnShape,
+	pub is_nonzero: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,18 +81,11 @@ pub struct ColumnShape {
 	pub pack_factor: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ColumnId {
 	pub table_id: TableId,
+	pub partition: usize,
 	pub index: ColumnIndex,
-}
-
-#[derive(Debug)]
-pub struct ColumnInfo<F: TowerField = B128> {
-	pub col: Column<F>,
-	pub name: String,
-	pub shape: ColumnShape,
-	pub is_nonzero: bool,
 }
 
 // TODO: Impl Add/Sub/Mul for Col, returning Expr
@@ -93,13 +98,13 @@ pub enum Column<F: TowerField = B128> {
 	},
 	LinearCombination(LinearNormalForm<F>),
 	Shifted {
-		col_index: ColumnIndex,
+		col: ColumnId,
 		offset: usize,
 		log_block_size: usize,
 		variant: ShiftVariant,
 	},
 	Packed {
-		col_index: ColumnIndex,
+		col: ColumnId,
 		log_degree: usize,
 	},
 }
