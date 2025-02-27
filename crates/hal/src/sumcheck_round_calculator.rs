@@ -20,30 +20,48 @@ use stackalloc::stackalloc_with_iter;
 use crate::{Error, RoundEvals, SumcheckEvaluator, SumcheckMultilinear};
 
 trait SumcheckMultilinearAccess<P: PackedField> {
+	/// The size of `Vec<P>` scratchspace used by [`subcube_evaluations`], if any.
 	fn scratch_space_len(&self, subcube_vars: usize) -> Option<usize>;
 
-	/// Calculate the evaluations of a sumcheck multilinear over a subcube.
+	/// A way to obtain multilinear evaluations during sumcheck.
 	///
-	/// A sumcheck multilinear with $n$ variables is either expressed as folded $n$-variate
-	/// multilinear extension, given by $2^n$ evaluations, or as a transparent $n + r$-variate
-	/// multilinear, with its low $r$ variables projected onto $r$ round challenges.
+	/// Sumcheck is conducted over boolean hypercubes represented in little endian form
+	/// (faster strides correspond to lower variable indexes). Evaluation order may proceed both
+	/// from lowest variable to highest, as well as in reverse. The $n$-dimensional evaluation
+	/// hypercube can be split into subcubes of `subcube_vars` by substituting higher variables
+	/// for the little endian binary representation of some index.
 	///
-	/// This method computes the evaluations over a subcube with the given number of variables and
-	/// index.
+	/// Assume $r$ round challenges have been sampled already. A sumcheck multilinear then
+	/// is either an $n + r$-variate transparent where $r$ of its variables (lowest or highest)
+	/// are to be projected onto round challenges, or $n$-variate folded multilinear where this
+	/// projection has already taken place. It is further split into two $n-1$ variate subcubes
+	/// by substituting 0 and 1 for its lowest or highest variable, depending on evaluation order.
+	///
+	/// Assuming `subcube_vars + index_vars = n-1` holds, we substitute the binary representation
+	/// of `subcube_index` into higher indexed variables. Note that this sub-subcube ordering
+	/// _does not_ depend on evaluation order.
+	///
+	/// Indexed subcube evaluations are written into `evals_0` and `evals_1` slices, where scalar
+	/// order corresponds to the lower `P::LOG_WIDTH` variables of the `subcube_vars`-variate hypercube.
+	///
+	/// The method can potentially require a `&mut [P]` scratch space, whose length is given by a query
+	/// to [`scratch_space_len`] and should be uniquely determined by `subcube_vars`.
 	///
 	/// ## Arguments
 	///
-	/// * `subcube_vars` - the number of variables in the subcube to evaluate over
-	/// * `subcube_index` - the index of the subcube within the hypercube domain of the multilinear
-	/// * `evals` - the output buffer to write the evaluations into
-	///   TODO comments
+	/// * `subcube_vars`  - the number of variables in the sub-subcube to evaluate over
+	/// * `subcube_index` - the index of the subcube within the $n-1$-variate hypercube
+	/// * `index_vars`    - number of bits in the `subcube_index`
+	/// * `scratch_space` - optional scratch space
+	/// * `evals_0`       - `subcube_vars`-variate hypercube with current variables substituted for 0
+	/// * `evals_1`       - `subcube_vars`-variate hypercube with current variables substituted for 1
 	#[allow(clippy::too_many_arguments)]
 	fn subcube_evaluations<M: MultilinearPoly<P>>(
 		&self,
 		multilinear: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		subcube_count: usize,
+		index_vars: usize,
 		scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
@@ -116,7 +134,7 @@ where
 
 	/// Process batches of vertices in parallel, accumulating the round evaluations.
 	const MAX_SUBCUBE_VARS: usize = 6;
-	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars);
+	let subcube_vars = MAX_SUBCUBE_VARS.min(n_vars - 1);
 
 	// Compute the union of all evaluation point index ranges.
 	let eval_point_indices = evaluators
@@ -130,8 +148,8 @@ where
 		bail!(Error::IncorrectNontrivialEvalPointsLength);
 	}
 
-	let subcube_count = 1 << (n_vars - subcube_vars);
-	let packed_accumulators = (0..subcube_count)
+	let index_vars = n_vars - 1 - subcube_vars;
+	let packed_accumulators = (0..1 << index_vars)
 		.into_par_iter()
 		.try_fold(
 			|| ParFoldStates::new(access, n_multilinears, n_round_evals.clone(), subcube_vars),
@@ -147,7 +165,7 @@ where
 						multilinear,
 						subcube_vars,
 						subcube_index,
-						subcube_count,
+						index_vars,
 						scratch_space.as_deref_mut(),
 						&mut evals.evals_0,
 						&mut evals.evals_1,
@@ -163,7 +181,7 @@ where
 					//   f(z, xs) = f(0, xs) + z * (f(1, xs) - f(0, xs))
 					// The first three points are treated specially:
 					//   index 0 - z = 0   => f(z, xs) = f(0, xs)
-					//   index 1 - z = 1   => f(z, xs) = f(z, xs)
+					//   index 1 - z = 1   => f(z, xs) = f(1, xs)
 					//   index 2 = z = inf => f(inf, xs) = high (f(0, xs) + z * (f(1, xs) - f(0, xs))) =
 					//                                   = f(1, xs) - f(0, xs)
 					//   index 3 and above - remaining finite evaluation points
@@ -215,10 +233,9 @@ where
 								continue;
 							}
 
-							// TODO comments
 							round_evals[eval_point_index - eval_point_indices.start] += evaluator
 								.process_subcube_at_eval_point(
-									subcube_vars - 1,
+									subcube_vars,
 									subcube_index,
 									is_infinity_point,
 									evals_z,
@@ -259,8 +276,8 @@ where
 		.map(|vals| {
 			RoundEvals(
 				vals.into_iter()
-					// TODO
-					.map(|packed_val| packed_val.iter().take(1 << (subcube_vars - 1)).sum())
+					// Truncate subcubes smaller than packing width.
+					.map(|packed_val| packed_val.iter().take(1 << subcube_vars).sum())
 					.collect(),
 			)
 		})
@@ -279,7 +296,7 @@ struct MultilinearEvals<P: PackedField> {
 
 impl<P: PackedField> MultilinearEvals<P> {
 	fn new(subcube_vars: usize) -> Self {
-		let len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1);
+		let len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
 		Self {
 			evals_0: zeroed_vec(len),
 			evals_1: zeroed_vec(len),
@@ -294,7 +311,7 @@ struct ParFoldStates<P: PackedField> {
 	// Evaluations at 0, 1 and domain points, per MLE. Scratch space.
 	multilinear_evals: Vec<MultilinearEvals<P>>,
 
-	// Scratch space.
+	// Additional scratch space.
 	scratch_space: Option<Vec<P>>,
 
 	// Accumulated sums of evaluations over univariate domain.
@@ -332,7 +349,8 @@ struct LowToHighAccess<'a, P: PackedField> {
 
 impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 	fn scratch_space_len(&self, subcube_vars: usize) -> Option<usize> {
-		Some(1 << subcube_vars.saturating_sub(P::LOG_WIDTH))
+		// We need to sample evaluations at both 0 & 1 prior to deinterleaving, thus +1.
+		Some(1 << (subcube_vars + 1).saturating_sub(P::LOG_WIDTH))
 	}
 
 	fn subcube_evaluations<M: MultilinearPoly<P>>(
@@ -340,32 +358,30 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 		multilinear: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		_subcube_count: usize,
+		_index_vars: usize,
 		scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
 	) -> Result<(), Error> {
-		// subcube_vars > 0
-
 		let Some(scratch_space) = scratch_space else {
-			todo!();
+			bail!(Error::NoScratchSpace);
 		};
 
-		if scratch_space.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH)
-			|| evals_0.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
-			|| evals_1.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
+		if scratch_space.len() != 1 << (subcube_vars + 1).saturating_sub(P::LOG_WIDTH)
+			|| evals_0.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH)
+			|| evals_1.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH)
 		{
-			todo!();
+			bail!(Error::IncorrectDestSliceLengths);
 		}
 
 		match multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
 				if self.tensor_query.n_vars() == 0 {
-					multilinear.subcube_evals(subcube_vars, subcube_index, 0, scratch_space)?
+					multilinear.subcube_evals(subcube_vars + 1, subcube_index, 0, scratch_space)?
 				} else {
 					multilinear.subcube_partial_low_evals(
 						self.tensor_query,
-						subcube_vars,
+						subcube_vars + 1,
 						subcube_index,
 						scratch_space,
 					)?
@@ -379,7 +395,7 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 					MultilinearExtension::from_values_generic(large_field_folded_evals.as_slice())?;
 
 				MLEDirectAdapter::from(multilinear).subcube_evals(
-					subcube_vars,
+					subcube_vars + 1,
 					subcube_index,
 					0,
 					scratch_space,
@@ -387,6 +403,8 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for LowToHighAccess<'_, P> {
 			}
 		}
 
+		// Evaluations at 0 & 1 are interleaved (the substituted variable is the lowest one), need
+		// to deinterleave them first. This requires scratch space to enable simple linear time algorithm.
 		let zeros = P::default();
 		let interleaved_tuples = if scratch_space.len() == 1 {
 			Either::Left(iter::once((scratch_space.first().expect("len==1"), &zeros)))
@@ -426,42 +444,39 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 		multilinear: &SumcheckMultilinear<P, M>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		subcube_count: usize,
+		index_vars: usize,
 		_scratch_space: Option<&mut [P]>,
 		evals_0: &mut [P],
 		evals_1: &mut [P],
 	) -> Result<(), Error> {
-		// subcube_vars > 0
-		// scratch_space == None
-
-		if evals_0.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
-			|| evals_1.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH + 1)
+		if evals_0.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH)
+			|| evals_1.len() != 1 << subcube_vars.saturating_sub(P::LOG_WIDTH)
 		{
-			todo!();
+			bail!(Error::IncorrectDestSliceLengths);
 		}
 
 		match multilinear {
 			SumcheckMultilinear::Transparent { multilinear, .. } => {
 				if self.tensor_query.n_vars() == 0 {
-					multilinear.subcube_evals(subcube_vars - 1, subcube_index, 0, evals_0)?;
+					multilinear.subcube_evals(subcube_vars, subcube_index, 0, evals_0)?;
 					multilinear.subcube_evals(
-						subcube_vars - 1,
-						subcube_index + subcube_count,
+						subcube_vars,
+						subcube_index | 1 << index_vars,
 						0,
 						evals_1,
 					)?;
 				} else {
 					multilinear.subcube_partial_high_evals(
 						self.tensor_query,
-						subcube_vars - 1,
+						subcube_vars,
 						subcube_index,
 						evals_0,
 					)?;
 
 					multilinear.subcube_partial_high_evals(
 						self.tensor_query,
-						subcube_vars - 1,
-						subcube_index + subcube_count,
+						subcube_vars,
+						subcube_index | 1 << index_vars,
 						evals_1,
 					)?;
 				}
@@ -475,14 +490,9 @@ impl<P: PackedField> SumcheckMultilinearAccess<P> for HighToLowAccess<'_, P> {
 
 				let adapter = MLEDirectAdapter::from(multilinear);
 
-				adapter.subcube_evals(subcube_vars - 1, subcube_index, 0, evals_0)?;
+				adapter.subcube_evals(subcube_vars, subcube_index, 0, evals_0)?;
 
-				adapter.subcube_evals(
-					subcube_vars - 1,
-					subcube_index + subcube_count,
-					0,
-					evals_1,
-				)?;
+				adapter.subcube_evals(subcube_vars, subcube_index | 1 << index_vars, 0, evals_1)?;
 			}
 		}
 

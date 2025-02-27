@@ -571,7 +571,6 @@ fn validate_subcube_partial_evals_params<P: PackedField>(
 
 #[cfg(test)]
 mod tests {
-	// TODO tests!
 	use std::iter::repeat_with;
 
 	use binius_field::{
