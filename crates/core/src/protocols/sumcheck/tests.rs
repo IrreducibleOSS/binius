@@ -16,8 +16,9 @@ use binius_field::{
 };
 use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder,
+	IsomorphicEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::{current_num_threads, prelude::*};
 use binius_utils::checked_arithmetics::log2_ceil_usize;
@@ -121,7 +122,8 @@ where
 		.sum()
 }
 
-fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
+fn test_prove_verify_product_helper_with_evaluation_order<U, F, FDomain, FExt>(
+	evaluation_order: EvaluationOrder,
 	n_vars: usize,
 	n_multilinears: usize,
 	switchover_rd: usize,
@@ -156,6 +158,7 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	let backend = make_portable_backend();
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
+		evaluation_order,
 		multilins.iter().collect(),
 		[CompositeSumClaim {
 			composition: &composition,
@@ -173,7 +176,8 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 
 	let prover_sample = CanSample::<FExt>::sample(&mut prover_transcript);
 	let mut verifier_transcript = prover_transcript.into_verifier();
-	let verifier_reduced_claims = batch_verify(&[claim], &mut verifier_transcript).unwrap();
+	let verifier_reduced_claims =
+		batch_verify(evaluation_order, &[claim], &mut verifier_transcript).unwrap();
 
 	// Check that challengers are in the same state
 	assert_eq!(prover_sample, CanSample::<FExt>::sample(&mut verifier_transcript));
@@ -195,6 +199,27 @@ fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
 	let multilin_query = backend.multilinear_query(eval_point).unwrap();
 	for (multilinear, &expected) in iter::zip(multilins, multilinear_evals[0].iter()) {
 		assert_eq!(multilinear.evaluate(multilin_query.to_ref()).unwrap(), expected);
+	}
+}
+
+fn test_prove_verify_product_helper<U, F, FDomain, FExt>(
+	n_vars: usize,
+	n_multilinears: usize,
+	switchover_rd: usize,
+) where
+	U: UnderlierType + PackScalar<F> + PackScalar<FDomain> + PackScalar<FExt>,
+	F: Field,
+	FDomain: BinaryField,
+	FExt: TowerField + ExtensionField<F> + ExtensionField<FDomain>,
+	BinaryField128b: From<FExt> + Into<FExt>,
+{
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		test_prove_verify_product_helper_with_evaluation_order::<U, F, FDomain, FExt>(
+			evaluation_order,
+			n_vars,
+			n_multilinears,
+			switchover_rd,
+		);
 	}
 }
 
@@ -257,6 +282,7 @@ struct TestSumcheckClaimShape {
 }
 
 fn make_test_sumcheck<'a, F, FDomain, P, PExt, Backend>(
+	evaluation_order: EvaluationOrder,
 	claim_shape: &TestSumcheckClaimShape,
 	mut rng: impl Rng,
 	domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -338,6 +364,7 @@ where
 	let claim = SumcheckClaim::new(n_vars, 3, claim_composite_sums).unwrap();
 
 	let prover = RegularSumcheckProver::<FDomain, _, _, _, _>::new(
+		evaluation_order,
 		multilins,
 		prover_composite_sums,
 		domain_factory,
@@ -350,6 +377,15 @@ where
 }
 
 fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		prove_verify_batch_with_evaluation_order(evaluation_order, claim_shapes);
+	}
+}
+
+fn prove_verify_batch_with_evaluation_order(
+	evaluation_order: EvaluationOrder,
+	claim_shapes: &[TestSumcheckClaimShape],
+) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -364,6 +400,7 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	let mut provers = Vec::with_capacity(claim_shapes.len());
 	for claim_shape in claim_shapes {
 		let (_, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			evaluation_order,
 			claim_shape,
 			&mut rng,
 			&domain_factory,
@@ -380,7 +417,8 @@ fn prove_verify_batch(claim_shapes: &[TestSumcheckClaimShape]) {
 	let prover_sample = CanSample::<FE>::sample(&mut prover_transcript);
 
 	let mut verifier_transcript = prover_transcript.into_verifier();
-	let verifier_output = batch_verify(&claims, &mut verifier_transcript).unwrap();
+	let verifier_output =
+		batch_verify(evaluation_order, &claims, &mut verifier_transcript).unwrap();
 
 	assert_eq!(prover_output, verifier_output);
 
@@ -421,6 +459,15 @@ fn test_prove_verify_batch_constant_polys() {
 }
 
 fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		prove_verify_batch_front_loaded_with_evaluation_order(evaluation_order, claim_shapes);
+	}
+}
+
+fn prove_verify_batch_front_loaded_with_evaluation_order(
+	evaluation_order: EvaluationOrder,
+	claim_shapes: &[TestSumcheckClaimShape],
+) {
 	type P = PackedBinaryField4x32b;
 	type FDomain = BinaryField8b;
 	type FE = BinaryField128b;
@@ -436,6 +483,7 @@ fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 	let mut provers = Vec::with_capacity(claim_shapes.len());
 	for claim_shape in claim_shapes {
 		let (mles_i, claim, prover) = make_test_sumcheck::<FE, FDomain, P, PE, _>(
+			evaluation_order,
 			claim_shape,
 			&mut rng,
 			&domain_factory,
@@ -478,6 +526,7 @@ fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 
 		let challenge = transcript.sample();
 		verifier.finish_round(challenge).unwrap();
+
 		challenges.push(challenge);
 	}
 
@@ -491,7 +540,11 @@ fn prove_verify_batch_front_loaded(claim_shapes: &[TestSumcheckClaimShape]) {
 
 	for (claim_shape, mles_i, multilinear_evals_i) in izip!(claim_shapes, mles, multilinear_evals) {
 		let TestSumcheckClaimShape { n_vars, .. } = claim_shape.clone();
-		let query = MultilinearQuery::<PE>::expand(&challenges[..n_vars]);
+		let mle_challenges = match evaluation_order {
+			EvaluationOrder::LowToHigh => challenges[..n_vars].to_vec(),
+			EvaluationOrder::HighToLow => challenges[..n_vars].iter().copied().rev().collect(),
+		};
+		let query = MultilinearQuery::<PE>::expand(&mle_challenges);
 		for (mle, eval) in iter::zip(mles_i, multilinear_evals_i) {
 			assert_eq!(mle.evaluate(&query).unwrap(), eval);
 		}

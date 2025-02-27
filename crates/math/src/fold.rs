@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use core::slice;
-use std::{any::TypeId, cmp::min, mem::MaybeUninit};
+use std::{any::TypeId, cmp::min, iter, mem::MaybeUninit};
 
 use binius_field::{
 	arch::{ArchOptimal, OptimalUnderlier},
@@ -54,7 +54,7 @@ where
 
 	if is_lerp {
 		let lerp_query = get_packed_slice(query, 1);
-		fold_right_lerp(evals, log_evals_size, lerp_query, out);
+		fold_right_lerp(evals, log_evals_size, lerp_query, out)?;
 	} else {
 		fold_right_fallback(evals, log_evals_size, query, log_query_size, out);
 	}
@@ -131,6 +131,36 @@ where
 	if PE::LOG_WIDTH + out.len() < log_evals_size - log_query_size {
 		bail!(Error::IncorrectOutputPolynomialSize {
 			expected: log_evals_size - log_query_size
+		});
+	}
+
+	Ok(())
+}
+
+#[inline]
+fn check_lerp_fold_arguments<P, PE>(
+	evals: &[P],
+	log_evals_size: usize,
+	out: &[PE],
+) -> Result<(), Error>
+where
+	P: PackedField,
+	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
+{
+	if log_evals_size == 0 {
+		bail!(Error::IncorrectQuerySize { expected: 1 });
+	}
+
+	if P::LOG_WIDTH + evals.len() < log_evals_size {
+		bail!(Error::IncorrectArgumentLength {
+			arg: "evals".into(),
+			expected: log_evals_size
+		});
+	}
+
+	if PE::LOG_WIDTH + out.len() + 1 < log_evals_size {
+		bail!(Error::IncorrectOutputPolynomialSize {
+			expected: log_evals_size - 1
 		});
 	}
 
@@ -314,16 +344,22 @@ where
 ///   f(r||w) = r * (f(1||w) - f(0||w)) + f(0||w).
 ///
 /// The same approach may be generalized to higher variable counts, with diminishing returns.
-fn fold_right_lerp<P, PE>(
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
+/// use more efficient optimizations for special cases. If we ever need a parallel version of this
+/// function, we can implement it separately.
+pub fn fold_right_lerp<P, PE>(
 	evals: &[P],
 	log_evals_size: usize,
 	lerp_query: PE::Scalar,
 	out: &mut [PE],
-) where
+) -> Result<(), Error>
+where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	assert_eq!(1 << log_evals_size.saturating_sub(PE::LOG_WIDTH + 1), out.len());
+	check_lerp_fold_arguments(evals, log_evals_size, out)?;
 
 	out.iter_mut()
 		.enumerate()
@@ -346,7 +382,50 @@ fn fold_right_lerp<P, PE>(
 					packed_result_eval.set_unchecked(j, result_eval);
 				}
 			}
-		})
+		});
+
+	Ok(())
+}
+
+/// Inplace left fold
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
+/// use more efficient optimizations for special cases. If we ever need a parallel version of this
+/// function, we can implement it separately.
+pub fn fold_left_lerp_inplace<P>(
+	evals: &mut Vec<P>,
+	log_evals_size: usize,
+	lerp_query: P::Scalar,
+) -> Result<(), Error>
+where
+	P: PackedField,
+{
+	check_lerp_fold_arguments(evals, log_evals_size, evals)?;
+
+	if log_evals_size > P::LOG_WIDTH {
+		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
+		let (evals_0, evals_1) = evals.split_at_mut(packed_len);
+
+		for (eval_0, eval_1) in iter::zip(evals_0, evals_1) {
+			*eval_0 += (*eval_1 - *eval_0) * lerp_query;
+		}
+
+		evals.truncate(evals.len() >> 1);
+	} else {
+		let only_packed = *evals.first().expect("log_evals_size > 0");
+		let mut folded = P::zero();
+
+		for i in 0..1 << (log_evals_size - 1) {
+			let eval_0 = only_packed.get(i);
+			let eval_1 = only_packed.get(i | 1 << (log_evals_size - 1));
+			folded.set(i, eval_0 + lerp_query * (eval_1 - eval_0));
+		}
+
+		*evals.first_mut().expect("log_evals_size > 0") = folded;
+	}
+
+	Ok(())
 }
 
 /// Fallback implementation for fold that can be executed for any field types and sizes.
@@ -382,11 +461,11 @@ fn fold_right_fallback<P, PE>(
 	}
 }
 
-type ArchOptimaType<F> = <F as ArchOptimal>::OptimalThroughputPacked;
+type ArchOptimalType<F> = <F as ArchOptimal>::OptimalThroughputPacked;
 
 #[inline(always)]
 fn get_arch_optimal_packed_type_id<F: ArchOptimal>() -> TypeId {
-	TypeId::of::<ArchOptimaType<F>>()
+	TypeId::of::<ArchOptimalType<F>>()
 }
 
 /// Use optimized algorithm for 1-bit evaluations with 128-bit query values packed with the optimal underlier.
@@ -440,8 +519,8 @@ where
 		F: ArchOptimal,
 	{
 		if TypeId::of::<PE>() == get_arch_optimal_packed_type_id::<F>() {
-			let query = cast_same_type_slice::<_, ArchOptimaType<F>>(query);
-			let out = cast_same_type_slice_mut::<_, MaybeUninit<ArchOptimaType<F>>>(out);
+			let query = cast_same_type_slice::<_, ArchOptimalType<F>>(query);
+			let out = cast_same_type_slice_mut::<_, MaybeUninit<ArchOptimalType<F>>>(out);
 
 			fold_left_1b_128b_impl(
 				lookup_table,
@@ -839,7 +918,7 @@ mod tests {
 		}
 	}
 
-	type B128bOptimal = ArchOptimaType<BinaryField128b>;
+	type B128bOptimal = ArchOptimalType<BinaryField128b>;
 
 	#[test]
 	fn test_fold_left_1b_128b_optimal() {
@@ -875,6 +954,35 @@ mod tests {
 
 		for log_query_size in 0..10 {
 			check_fold_left(&evals, LOG_EVALS_SIZE, &query, log_query_size);
+		}
+	}
+
+	#[test]
+	fn test_fold_left_lerp_inplace_conforms_reference() {
+		const LOG_EVALS_SIZE: usize = 14;
+		let mut rng = StdRng::seed_from_u64(0);
+		let mut evals = repeat_with(|| B128bOptimal::random(&mut rng))
+			.take(1 << LOG_EVALS_SIZE.saturating_sub(B128bOptimal::LOG_WIDTH))
+			.collect::<Vec<_>>();
+		let lerp_query = <BinaryField128b as Field>::random(&mut rng);
+		let mut query =
+			vec![B128bOptimal::default(); 1 << 1usize.saturating_sub(B128bOptimal::LOG_WIDTH)];
+		set_packed_slice(&mut query, 0, BinaryField128b::ONE - lerp_query);
+		set_packed_slice(&mut query, 1, lerp_query);
+
+		for log_evals_size in (1..=LOG_EVALS_SIZE).rev() {
+			let mut out = vec![
+				MaybeUninit::uninit();
+				1 << log_evals_size.saturating_sub(B128bOptimal::LOG_WIDTH + 1)
+			];
+			fold_left(&evals, log_evals_size, &query, 1, &mut out).unwrap();
+			fold_left_lerp_inplace(&mut evals, log_evals_size, lerp_query).unwrap();
+
+			for (out, &inplace) in iter::zip(&out, &evals) {
+				unsafe {
+					assert_eq!(out.assume_init(), inplace);
+				}
+			}
 		}
 	}
 }

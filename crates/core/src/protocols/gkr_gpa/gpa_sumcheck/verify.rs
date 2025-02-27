@@ -124,7 +124,7 @@ mod tests {
 		BinaryField8b, PackedField,
 	};
 	use binius_hal::{make_portable_backend, ComputationBackendExt};
-	use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+	use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory, MultilinearExtension};
 	use groestl_crypto::Groestl256;
 	use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -199,6 +199,7 @@ mod tests {
 		let prod_multilins = vec![prod_multilin];
 
 		let prover = GPAProver::<FDomain, _, _, _, _>::new(
+			EvaluationOrder::LowToHigh,
 			multilins,
 			Some(prod_multilins),
 			composite_claims,
@@ -217,8 +218,12 @@ mod tests {
 
 		let mut verify_challenger = prove_transcript.into_verifier();
 		let _: Vec<FE> = verify_challenger.sample_vec(n_vars);
-		let batch_output =
-			sumcheck::batch_verify(&sumcheck_claims, &mut verify_challenger).unwrap();
+		let batch_output = sumcheck::batch_verify(
+			EvaluationOrder::LowToHigh,
+			&sumcheck_claims,
+			&mut verify_challenger,
+		)
+		.unwrap();
 		verify_challenger.finalize().unwrap();
 
 		let claim = GPASumcheckClaim::new(n_vars, sum).unwrap();

@@ -111,40 +111,26 @@ where
 		self.0.evaluate_partial_high(query)
 	}
 
-	fn subcube_inner_products(
+	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<PE>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		inner_products: &mut [PE],
+		partial_low_evals: &mut [PE],
 	) -> Result<(), Error> {
+		validate_subcube_partial_evals_params(
+			self.n_vars(),
+			query,
+			subcube_vars,
+			subcube_index,
+			partial_low_evals,
+		)?;
+
 		let query_n_vars = query.n_vars();
-		if query_n_vars + subcube_vars > self.n_vars() {
-			bail!(Error::ArgumentRangeError {
-				arg: "query.n_vars() + subcube_vars".into(),
-				range: 0..self.n_vars(),
-			});
-		}
-
-		let max_index = 1 << (self.n_vars() - query_n_vars - subcube_vars);
-		if subcube_index >= max_index {
-			bail!(Error::ArgumentRangeError {
-				arg: "subcube_index".into(),
-				range: 0..max_index,
-			});
-		}
-
-		let correct_len = 1 << subcube_vars.saturating_sub(PE::LOG_WIDTH);
-		if inner_products.len() != correct_len {
-			bail!(Error::ArgumentRangeError {
-				arg: "evals.len()".to_string(),
-				range: correct_len..correct_len + 1,
-			});
-		}
+		let subcube_start = subcube_index << (query_n_vars + subcube_vars);
 
 		// REVIEW: not spending effort to optimize this as the future of switchover
 		//         is somewhat unclear in light of univariate skip
-		let subcube_start = subcube_index << (query_n_vars + subcube_vars);
 		for scalar_index in 0..1 << subcube_vars {
 			let evals_start = subcube_start + (scalar_index << query_n_vars);
 			let mut inner_product = PE::Scalar::ZERO;
@@ -153,7 +139,52 @@ where
 					* get_packed_slice(self.0.evals(), evals_start + i);
 			}
 
-			set_packed_slice(inner_products, scalar_index, inner_product);
+			set_packed_slice(partial_low_evals, scalar_index, inner_product);
+		}
+
+		Ok(())
+	}
+
+	fn subcube_partial_high_evals(
+		&self,
+		query: MultilinearQueryRef<PE>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		partial_high_evals: &mut [PE],
+	) -> Result<(), Error> {
+		validate_subcube_partial_evals_params(
+			self.n_vars(),
+			query,
+			subcube_vars,
+			subcube_index,
+			partial_high_evals,
+		)?;
+
+		let query_n_vars = query.n_vars();
+
+		// REVIEW: not spending effort to optimize this as the future of switchover
+		//         is somewhat unclear in light of univariate skip
+		partial_high_evals.fill(PE::zero());
+
+		for query_index in 0..1 << query_n_vars {
+			let query_factor = get_packed_slice(query.expansion(), query_index);
+			let subcube_start =
+				subcube_index << subcube_vars | query_index << (self.n_vars() - query_n_vars);
+			for (outer_index, packed) in partial_high_evals.iter_mut().enumerate() {
+				*packed += PE::from_fn(|inner_index| {
+					let index = subcube_start | outer_index << PE::LOG_WIDTH | inner_index;
+					query_factor * get_packed_slice(self.0.evals(), index)
+				});
+			}
+		}
+
+		if subcube_vars < PE::LOG_WIDTH {
+			for i in 1 << subcube_vars..PE::WIDTH {
+				partial_high_evals
+					.first_mut()
+					.expect("at least one")
+					.set(i, PE::Scalar::ZERO);
+			}
 		}
 
 		Ok(())
@@ -361,39 +392,26 @@ where
 		self.0.evaluate_partial_high(query)
 	}
 
-	fn subcube_inner_products(
+	fn subcube_partial_low_evals(
 		&self,
 		query: MultilinearQueryRef<P>,
 		subcube_vars: usize,
 		subcube_index: usize,
-		inner_products: &mut [P],
+		partial_low_evals: &mut [P],
 	) -> Result<(), Error> {
+		// TODO: think of a way to factor out duplicated implementation in direct & embedded adapters.
+		validate_subcube_partial_evals_params(
+			self.n_vars(),
+			query,
+			subcube_vars,
+			subcube_index,
+			partial_low_evals,
+		)?;
+
 		let query_n_vars = query.n_vars();
-		if query_n_vars + subcube_vars > self.n_vars() {
-			bail!(Error::ArgumentRangeError {
-				arg: "query.n_vars() + subcube_vars".into(),
-				range: 0..self.n_vars(),
-			});
-		}
-
-		let max_index = 1 << (self.n_vars() - query_n_vars - subcube_vars);
-		if subcube_index >= max_index {
-			bail!(Error::ArgumentRangeError {
-				arg: "subcube_index".into(),
-				range: 0..max_index,
-			});
-		}
-
-		let correct_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
-		if inner_products.len() != correct_len {
-			bail!(Error::ArgumentRangeError {
-				arg: "evals.len()".to_string(),
-				range: correct_len..correct_len + 1,
-			});
-		}
+		let subcube_start = subcube_index << (query_n_vars + subcube_vars);
 
 		// TODO: Maybe optimize me
-		let subcube_start = subcube_index << (query_n_vars + subcube_vars);
 		for scalar_index in 0..1 << subcube_vars {
 			let evals_start = subcube_start + (scalar_index << query_n_vars);
 			let mut inner_product = F::ZERO;
@@ -402,7 +420,53 @@ where
 					* get_packed_slice(self.0.evals(), evals_start + i);
 			}
 
-			set_packed_slice(inner_products, scalar_index, inner_product);
+			set_packed_slice(partial_low_evals, scalar_index, inner_product);
+		}
+
+		Ok(())
+	}
+
+	fn subcube_partial_high_evals(
+		&self,
+		query: MultilinearQueryRef<P>,
+		subcube_vars: usize,
+		subcube_index: usize,
+		partial_high_evals: &mut [P],
+	) -> Result<(), Error> {
+		// TODO: think of a way to factor out duplicated implementation in direct & embedded adapters.
+		validate_subcube_partial_evals_params(
+			self.n_vars(),
+			query,
+			subcube_vars,
+			subcube_index,
+			partial_high_evals,
+		)?;
+
+		let query_n_vars = query.n_vars();
+
+		// REVIEW: not spending effort to optimize this as the future of switchover
+		//         is somewhat unclear in light of univariate skip
+		partial_high_evals.fill(P::zero());
+
+		for query_index in 0..1 << query_n_vars {
+			let query_factor = get_packed_slice(query.expansion(), query_index);
+			let subcube_start =
+				subcube_index << subcube_vars | query_index << (self.n_vars() - query_n_vars);
+			for (outer_index, packed) in partial_high_evals.iter_mut().enumerate() {
+				*packed += P::from_fn(|inner_index| {
+					let index = subcube_start | outer_index << P::LOG_WIDTH | inner_index;
+					query_factor * get_packed_slice(self.0.evals(), index)
+				});
+			}
+		}
+
+		if subcube_vars < P::LOG_WIDTH {
+			for i in 1 << subcube_vars..P::WIDTH {
+				partial_high_evals
+					.first_mut()
+					.expect("at least one")
+					.set(i, P::Scalar::ZERO);
+			}
 		}
 
 		Ok(())
@@ -471,6 +535,40 @@ where
 	}
 }
 
+fn validate_subcube_partial_evals_params<P: PackedField>(
+	n_vars: usize,
+	query: MultilinearQueryRef<P>,
+	subcube_vars: usize,
+	subcube_index: usize,
+	partial_evals: &[P],
+) -> Result<(), Error> {
+	let query_n_vars = query.n_vars();
+	if query_n_vars + subcube_vars > n_vars {
+		bail!(Error::ArgumentRangeError {
+			arg: "query.n_vars() + subcube_vars".into(),
+			range: 0..n_vars,
+		});
+	}
+
+	let max_index = 1 << (n_vars - query_n_vars - subcube_vars);
+	if subcube_index >= max_index {
+		bail!(Error::ArgumentRangeError {
+			arg: "subcube_index".into(),
+			range: 0..max_index,
+		});
+	}
+
+	let correct_len = 1 << subcube_vars.saturating_sub(P::LOG_WIDTH);
+	if partial_evals.len() != correct_len {
+		bail!(Error::ArgumentRangeError {
+			arg: "partial_evals.len()".to_string(),
+			range: correct_len..correct_len + 1,
+		});
+	}
+
+	Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 	use std::iter::repeat_with;
@@ -478,8 +576,8 @@ mod tests {
 	use binius_field::{
 		arch::OptimalUnderlier256b, as_packed_field::PackedType, BinaryField128b, BinaryField16b,
 		BinaryField32b, BinaryField8b, PackedBinaryField16x8b, PackedBinaryField1x128b,
-		PackedBinaryField4x32b, PackedBinaryField8x16b, PackedExtension, PackedField,
-		PackedFieldIndexable,
+		PackedBinaryField4x128b, PackedBinaryField4x32b, PackedBinaryField64x8b,
+		PackedBinaryField8x16b, PackedExtension, PackedField, PackedFieldIndexable,
 	};
 	use rand::prelude::*;
 
@@ -497,7 +595,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_evaluate_subcube_and_evaluate_partial_low_consistent() {
+	fn test_evaluate_subcube_and_evaluate_partial_consistent() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let poly = MultilinearExtension::from_values(
 			repeat_with(|| PackedBinaryField4x32b::random(&mut rng))
@@ -513,13 +611,24 @@ mod tests {
 		let query = multilinear_query(&q);
 
 		let partial_low = poly.evaluate_partial_low(query.to_ref()).unwrap();
+		let partial_high = poly.evaluate_partial_high(query.to_ref()).unwrap();
 
-		let mut inner_products = vec![PackedBinaryField1x128b::zero(); 16];
-		poly.subcube_inner_products(query.to_ref(), 4, 0, inner_products.as_mut_slice())
+		let mut subcube_partial_low = vec![PackedBinaryField1x128b::zero(); 16];
+		let mut subcube_partial_high = vec![PackedBinaryField1x128b::zero(); 16];
+		poly.subcube_partial_low_evals(query.to_ref(), 4, 0, &mut subcube_partial_low)
+			.unwrap();
+		poly.subcube_partial_high_evals(query.to_ref(), 4, 0, &mut subcube_partial_high)
 			.unwrap();
 
-		for (idx, inner_product) in PackedField::iter_slice(&inner_products).enumerate() {
-			assert_eq!(inner_product, partial_low.evaluate_on_hypercube(idx).unwrap(),);
+		for (idx, subcube_partial_low) in PackedField::iter_slice(&subcube_partial_low).enumerate()
+		{
+			assert_eq!(subcube_partial_low, partial_low.evaluate_on_hypercube(idx).unwrap(),);
+		}
+
+		for (idx, subcube_partial_high) in
+			PackedField::iter_slice(&subcube_partial_high).enumerate()
+		{
+			assert_eq!(subcube_partial_high, partial_high.evaluate_on_hypercube(idx).unwrap(),);
 		}
 	}
 
@@ -528,24 +637,36 @@ mod tests {
 		let mut rng = StdRng::seed_from_u64(0);
 		let poly = MultilinearExtension::new(
 			2,
-			vec![PackedBinaryField16x8b::from_scalars(
+			vec![PackedBinaryField64x8b::from_scalars(
 				[2, 2, 9, 9].map(BinaryField8b::new),
 			)],
 		)
 		.unwrap()
-		.specialize::<PackedBinaryField1x128b>();
+		.specialize::<PackedBinaryField4x128b>();
 
 		let q = repeat_with(|| <BinaryField128b as PackedField>::random(&mut rng))
 			.take(1)
 			.collect::<Vec<_>>();
 		let query = multilinear_query(&q);
 
-		let mut inner_products = vec![PackedBinaryField1x128b::zero(); 2];
-		poly.subcube_inner_products(query.to_ref(), 1, 0, inner_products.as_mut_slice())
+		let mut subcube_partial_low = vec![PackedBinaryField4x128b::zero(); 1];
+		let mut subcube_partial_high = vec![PackedBinaryField4x128b::zero(); 1];
+		poly.subcube_partial_low_evals(query.to_ref(), 1, 0, &mut subcube_partial_low)
+			.unwrap();
+		poly.subcube_partial_high_evals(query.to_ref(), 1, 0, &mut subcube_partial_high)
 			.unwrap();
 
-		assert_eq!(get_packed_slice(&inner_products, 0), BinaryField128b::new(2));
-		assert_eq!(get_packed_slice(&inner_products, 1), BinaryField128b::new(9));
+		let expected_partial_high = BinaryField128b::new(2)
+			+ (BinaryField128b::new(2) + BinaryField128b::new(9)) * q.first().unwrap();
+
+		assert_eq!(get_packed_slice(&subcube_partial_low, 0), BinaryField128b::new(2));
+		assert_eq!(get_packed_slice(&subcube_partial_low, 1), BinaryField128b::new(9));
+		assert_eq!(get_packed_slice(&subcube_partial_low, 2), BinaryField128b::ZERO);
+		assert_eq!(get_packed_slice(&subcube_partial_low, 3), BinaryField128b::ZERO);
+		assert_eq!(get_packed_slice(&subcube_partial_high, 0), expected_partial_high);
+		assert_eq!(get_packed_slice(&subcube_partial_high, 1), expected_partial_high);
+		assert_eq!(get_packed_slice(&subcube_partial_high, 2), BinaryField128b::ZERO);
+		assert_eq!(get_packed_slice(&subcube_partial_high, 3), BinaryField128b::ZERO);
 	}
 
 	#[test]
@@ -601,7 +722,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_subcube_inner_products_and_evaluate_partial_low_conform() {
+	fn test_subcube_partial_and_evaluate_partial_conform() {
 		let mut rng = StdRng::seed_from_u64(0);
 		let n_vars = 12;
 		let evals = repeat_with(|| P::random(&mut rng))
@@ -613,22 +734,37 @@ mod tests {
 			.take(6)
 			.collect::<Vec<F>>();
 		let query = multilinear_query(&q);
-		let partial_eval = mles.evaluate_partial_low(query.to_ref()).unwrap();
+		let partial_low_eval = mles.evaluate_partial_low(query.to_ref()).unwrap();
+		let partial_high_eval = mles.evaluate_partial_high(query.to_ref()).unwrap();
 
 		let subcube_vars = 4;
-		let mut evals = vec![P::default(); 1 << (subcube_vars - P::LOG_WIDTH)];
+		let mut subcube_partial_low_evals = vec![P::default(); 1 << (subcube_vars - P::LOG_WIDTH)];
+		let mut subcube_partial_high_evals = vec![P::default(); 1 << (subcube_vars - P::LOG_WIDTH)];
 		for subcube_index in 0..(n_vars - query.n_vars() - subcube_vars) {
-			mles.subcube_inner_products(
+			mles.subcube_partial_low_evals(
 				query.to_ref(),
 				subcube_vars,
 				subcube_index,
-				evals.as_mut_slice(),
+				&mut subcube_partial_low_evals,
+			)
+			.unwrap();
+			mles.subcube_partial_high_evals(
+				query.to_ref(),
+				subcube_vars,
+				subcube_index,
+				&mut subcube_partial_high_evals,
 			)
 			.unwrap();
 			for hypercube_idx in 0..(1 << subcube_vars) {
 				assert_eq!(
-					get_packed_slice(&evals, hypercube_idx),
-					partial_eval
+					get_packed_slice(&subcube_partial_low_evals, hypercube_idx),
+					partial_low_eval
+						.evaluate_on_hypercube(hypercube_idx + (subcube_index << subcube_vars))
+						.unwrap()
+				);
+				assert_eq!(
+					get_packed_slice(&subcube_partial_high_evals, hypercube_idx),
+					partial_high_eval
 						.evaluate_on_hypercube(hypercube_idx + (subcube_index << subcube_vars))
 						.unwrap()
 				);

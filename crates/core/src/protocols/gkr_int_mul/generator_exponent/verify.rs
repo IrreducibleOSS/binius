@@ -3,6 +3,7 @@
 use std::array;
 
 use binius_field::{ExtensionField, TowerField};
+use binius_math::EvaluationOrder;
 
 use super::{
 	super::error::Error, common::GeneratorExponentReductionOutput, utils::first_layer_inverse,
@@ -66,8 +67,11 @@ where
 			}],
 		)?;
 
-		let sumcheck_verification_output =
-			sumcheck::batch_verify(&[this_round_sumcheck_claim], transcript)?;
+		let sumcheck_verification_output = sumcheck::batch_verify(
+			EvaluationOrder::LowToHigh,
+			&[this_round_sumcheck_claim],
+			transcript,
+		)?;
 
 		// Verify claims on transparent polynomials
 

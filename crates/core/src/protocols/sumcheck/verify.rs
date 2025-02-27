@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
-use binius_math::{evaluate_univariate, CompositionPoly};
+use binius_math::{evaluate_univariate, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
@@ -29,6 +29,7 @@ use crate::{
 /// within each claim over a group of multilinears are mixed using the powers of the mixing
 /// coefficient.
 pub fn batch_verify<F, Composition, Challenger_>(
+	evaluation_order: EvaluationOrder,
 	claims: &[SumcheckClaim<F, Composition>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BatchSumcheckOutput<F>, Error>
@@ -44,7 +45,7 @@ where
 		skip_rounds: 0,
 	};
 
-	batch_verify_with_start(start, claims, transcript)
+	batch_verify_with_start(evaluation_order, start, claims, transcript)
 }
 
 /// A struct describing the starting state of batched sumcheck verify invocation.
@@ -63,6 +64,7 @@ pub struct BatchVerifyStart<F: Field> {
 /// Verify a batched sumcheck protocol execution, but after some rounds have been processed.
 #[instrument(skip_all, level = "debug")]
 pub fn batch_verify_with_start<F, Composition, Challenger_>(
+	evaluation_order: EvaluationOrder,
 	start: BatchVerifyStart<F>,
 	claims: &[SumcheckClaim<F, Composition>],
 	transcript: &mut VerifierTranscript<Challenger_>,
@@ -163,6 +165,10 @@ where
 
 	if sum != expected_sum {
 		return Err(VerificationError::IncorrectBatchEvaluation.into());
+	}
+
+	if EvaluationOrder::HighToLow == evaluation_order {
+		challenges.reverse();
 	}
 
 	Ok(BatchSumcheckOutput {

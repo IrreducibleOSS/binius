@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::TowerField;
+use binius_math::EvaluationOrder;
 use binius_utils::bail;
 
 use super::error::Error;
@@ -48,7 +49,7 @@ where
 		}
 
 		// Reduce the new sumcheck claims for virtual polynomial openings to new evalcheck claims.
-		let sumcheck_output = batch_verify(&claims, transcript)?;
+		let sumcheck_output = batch_verify(EvaluationOrder::LowToHigh, &claims, transcript)?;
 
 		let new_evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
