@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 // TODO: Do we need upcast_expr too?
 
 use binius_field::{Field, TowerField};

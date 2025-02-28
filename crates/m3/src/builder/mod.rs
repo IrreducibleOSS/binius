@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 pub mod channel;
 pub mod column;
 pub mod constraint_system;
