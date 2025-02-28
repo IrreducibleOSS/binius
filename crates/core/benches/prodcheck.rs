@@ -9,13 +9,16 @@ use binius_core::{
 };
 use binius_field::{
 	arch::OptimalUnderlier,
-	as_packed_field::PackScalar,
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	BinaryField128b, BinaryField128bPolyval, PackedField, PackedFieldIndexable, TowerField,
-	BINARY_TO_POLYVAL_TRANSFORMATION,
+	AESTowerField8b, BinaryField, BinaryField128b, BinaryField128bPolyval, BinaryField8b,
+	ByteSlicedAES16x128b, ByteSlicedAES32x128b, ByteSlicedAES64x128b, PackedExtension, PackedField,
+	PackedFieldIndexable, TowerField, BINARY_TO_POLYVAL_TRANSFORMATION,
 };
 use binius_hal::{make_portable_backend, CpuBackend};
-use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+use binius_math::{
+	EvaluationOrder, IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
+};
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::Groestl256;
@@ -41,14 +44,14 @@ const N_VARS: [usize; 4] = [12, 16, 20, 24];
 const N_CLAIMS: usize = 10;
 type FDomain = BinaryField128b;
 
-fn bench_gpa_generic<U, F, R, BenchFn>(name: &str, c: &mut Criterion, bench_fn: &BenchFn)
+fn bench_gpa_generic<P, FDomain, R, BenchFn>(name: &str, c: &mut Criterion, bench_fn: &BenchFn)
 where
-	U: PackScalar<F, Packed: PackedFieldIndexable>,
-	F: TowerField + From<BinaryField128b>,
+	P: PackedField<Scalar: TowerField + From<BinaryField128b>> + PackedExtension<FDomain>,
+	FDomain: BinaryField,
 	BenchFn: Fn(
 		usize,
 		&mut ProverTranscript<HasherChallenger<Groestl256>>,
-		&[U::Packed],
+		&[P],
 		&IsomorphicEvaluationDomainFactory<FDomain>,
 		&CpuBackend,
 	) -> R,
@@ -61,7 +64,7 @@ where
 		group.sample_size(10);
 		group.bench_function(format!("n_vars={n_vars}"), |bench| {
 			// Setup witness
-			let numerator = create_numerator::<U::Packed>(n_vars);
+			let numerator = create_numerator::<P>(n_vars);
 
 			let backend = make_portable_backend();
 
@@ -74,12 +77,12 @@ where
 	group.finish()
 }
 
-fn bench_gpa<U, F>(name: &str, c: &mut Criterion)
+fn bench_gpa<P, FDomain>(name: &str, evaluation_order: EvaluationOrder, c: &mut Criterion)
 where
-	U: PackScalar<F, Packed: PackedFieldIndexable>,
-	F: TowerField + From<BinaryField128b>,
+	P: PackedField<Scalar: TowerField + From<BinaryField128b>> + PackedExtension<FDomain>,
+	FDomain: BinaryField,
 {
-	bench_gpa_generic::<U, F, _, _>(
+	bench_gpa_generic::<P, FDomain, _, _>(
 		name,
 		c,
 		&|n_vars, prover_transcript, numerator, domain_factory, backend| {
@@ -87,12 +90,9 @@ where
 				.into_par_iter()
 				.map(|_| {
 					let numerator =
-						MultilinearExtension::<U::Packed, &[U::Packed]>::from_values_generic(
-							numerator,
-						)
-						.unwrap();
-					let gpa_witness = GrandProductWitness::<<U as PackScalar<F>>::Packed>::new(
-						numerator.specialize_arc_dyn(),
+						MultilinearExtension::<P, &[P]>::from_values_generic(numerator).unwrap();
+					let gpa_witness = GrandProductWitness::<P>::new(
+						MLEDirectAdapter::from(numerator).upcast_arc_dyn(),
 					)
 					.unwrap();
 
@@ -104,7 +104,8 @@ where
 				.into_iter()
 				.unzip();
 
-			gkr_gpa::batch_prove::<F, U::Packed, F, _, _>(
+			gkr_gpa::batch_prove::<P::Scalar, P, FDomain, _, _>(
+				evaluation_order,
 				gpa_witnesses,
 				&gpa_claims,
 				domain_factory.clone(),
@@ -115,8 +116,11 @@ where
 	);
 }
 
-fn bench_gpa_isomorphic<U>(name: &str, c: &mut Criterion)
-where
+fn bench_gpa_polyval_with_isomorphism<U>(
+	name: &str,
+	evaluation_order: EvaluationOrder,
+	c: &mut Criterion,
+) where
 	U: PackScalar<
 			BinaryField128b,
 			Packed: PackedFieldIndexable
@@ -134,7 +138,7 @@ where
 			BINARY_TO_POLYVAL_TRANSFORMATION,
 		);
 
-	bench_gpa_generic::<U, BinaryField128b, _, _>(
+	bench_gpa_generic::<PackedType<U, BinaryField128b>, FDomain, _, _>(
 		name,
 		c,
 		&|n_vars, prover_transcript, numerator, domain_factory, backend| {
@@ -163,22 +167,85 @@ where
 				BinaryField128bPolyval,
 				_,
 				_,
-			>(gpa_witnesses, &gpa_claims, domain_factory.clone(), prover_transcript, &backend)
+			>(
+				evaluation_order,
+				gpa_witnesses,
+				&gpa_claims,
+				domain_factory.clone(),
+				prover_transcript,
+				&backend,
+			)
 		},
 	);
 }
 
 fn bench_polyval(c: &mut Criterion) {
-	bench_gpa::<OptimalUnderlier, BinaryField128bPolyval>("polyval", c);
+	bench_gpa::<PackedType<OptimalUnderlier, BinaryField128bPolyval>, BinaryField128bPolyval>(
+		"gpa_polyval_128b",
+		EvaluationOrder::LowToHigh,
+		c,
+	);
 }
 
-fn bench_binary(c: &mut Criterion) {
-	bench_gpa::<OptimalUnderlier, BinaryField128b>("binary_128b", c);
+fn bench_polyval_high_to_low(c: &mut Criterion) {
+	bench_gpa::<PackedType<OptimalUnderlier, BinaryField128bPolyval>, BinaryField128bPolyval>(
+		"gpa_polyval_128b_high_to_low",
+		EvaluationOrder::HighToLow,
+		c,
+	);
 }
 
-fn bench_binary_isomorphic(c: &mut Criterion) {
-	bench_gpa_isomorphic::<OptimalUnderlier>("binary_128b_isomorphic", c);
+fn bench_binary_128b(c: &mut Criterion) {
+	bench_gpa::<PackedType<OptimalUnderlier, BinaryField128b>, BinaryField8b>(
+		"gpa_binary_128b",
+		EvaluationOrder::LowToHigh,
+		c,
+	);
+}
+
+fn bench_byte_sliced_aes_128b(c: &mut Criterion) {
+	// TODO: this benchmarks should account for the byte sliced transposition time
+	bench_gpa::<ByteSlicedAES16x128b, AESTowerField8b>(
+		"gpa_byte_sliced_aes_128b",
+		EvaluationOrder::HighToLow,
+		c,
+	);
+}
+
+fn bench_byte_sliced_aes_256b(c: &mut Criterion) {
+	// TODO: this benchmarks should account for the byte sliced transposition time
+	bench_gpa::<ByteSlicedAES32x128b, AESTowerField8b>(
+		"gpa_byte_sliced_aes_256b",
+		EvaluationOrder::HighToLow,
+		c,
+	);
+}
+
+fn bench_byte_sliced_aes_512b(c: &mut Criterion) {
+	// TODO: this benchmarks should account for the byte sliced transposition time
+	bench_gpa::<ByteSlicedAES64x128b, AESTowerField8b>(
+		"gpa_byte_sliced_aes_512b",
+		EvaluationOrder::HighToLow,
+		c,
+	);
+}
+
+fn bench_binary_128b_isomorphic(c: &mut Criterion) {
+	bench_gpa_polyval_with_isomorphism::<OptimalUnderlier>(
+		"gpa_binary_128b_isomorphic",
+		EvaluationOrder::LowToHigh,
+		c,
+	);
 }
 
 criterion_main!(prodcheck);
-criterion_group!(prodcheck, bench_polyval, bench_binary, bench_binary_isomorphic);
+criterion_group!(
+	prodcheck,
+	bench_polyval,
+	bench_polyval_high_to_low,
+	bench_binary_128b,
+	bench_byte_sliced_aes_128b,
+	bench_byte_sliced_aes_256b,
+	bench_byte_sliced_aes_512b,
+	bench_binary_128b_isomorphic
+);

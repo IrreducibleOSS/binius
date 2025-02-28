@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{
 	extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
@@ -41,9 +41,7 @@ pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
@@ -135,7 +133,7 @@ fn process_finished_provers<F, P, Backend>(
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
+	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
 	while let Some(prover) = sorted_provers.last() {
@@ -179,7 +177,7 @@ where
 impl<'a, F, P, Backend> GrandProductProverState<'a, F, P, Backend>
 where
 	F: TowerField + From<P::Scalar>,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
+	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
 	/// Create a new GrandProductProverState
