@@ -113,6 +113,23 @@ pub mod tests {
 							assert_eq!(scalar_elem.square(), bytesliced_result.get(i));
 						}
 					}
+
+					#[test]
+					fn check_linear_transformation(scalar_elems in scalar_array_strategy()) {
+						use crate::linear_transformation::{PackedTransformationFactory, FieldLinearTransformation, Transformation};
+						use rand::{rngs::StdRng, SeedableRng};
+
+						let bytesliced = <$name>::from_scalars(scalar_elems);
+
+						let linear_transformation = FieldLinearTransformation::random(StdRng::seed_from_u64(0));
+						let packed_transformation = <$name>::make_packed_transformation(linear_transformation.clone());
+
+						let bytesliced_result = packed_transformation.transform(&bytesliced);
+
+						for i in 0..<$name>::WIDTH {
+							assert_eq!(linear_transformation.transform(&scalar_elems[i]), bytesliced_result.get(i));
+						}
+					}
 				}
 			}
 		};
