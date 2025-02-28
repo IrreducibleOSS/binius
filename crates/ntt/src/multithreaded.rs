@@ -1,6 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, PackedField};
+use binius_math::BinarySubspace;
 use binius_maybe_rayon::prelude::*;
 use binius_utils::rayon::get_log_max_threads;
 
@@ -15,29 +16,10 @@ use crate::twiddle::OnTheFlyTwiddleAccess;
 
 /// Implementation of `AdditiveNTT` that performs the computation multithreaded.
 #[derive(Debug)]
-pub struct MultithreadedNTT<
-	F: BinaryField,
-	TA: TwiddleAccess<F> + Sync = OnTheFlyTwiddleAccess<F, Vec<F>>,
-> {
+pub struct MultithreadedNTT<F: BinaryField, TA: TwiddleAccess<F> = OnTheFlyTwiddleAccess<F, Vec<F>>>
+{
 	single_threaded: SingleThreadedNTT<F, TA>,
 	log_max_threads: usize,
-}
-
-impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> MultithreadedNTT<F, TA> {
-	/// Base-2 logarithm of the size of the NTT domain.
-	pub fn log_domain_size(&self) -> usize {
-		self.single_threaded.log_domain_size()
-	}
-
-	/// Get the normalized subspace polynomial evaluation $\hat{W}_i(\beta_j)$.
-	///
-	/// ## Preconditions
-	///
-	/// * `i` must be less than `self.log_domain_size()`
-	/// * `j` must be less than `self.log_domain_size() - i`
-	pub fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.single_threaded.get_subspace_eval(i, j)
-	}
 }
 
 impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
@@ -59,21 +41,24 @@ impl<F: BinaryField, TA: TwiddleAccess<F> + Sync> SingleThreadedNTT<F, TA> {
 	}
 }
 
-impl<F, TA, P> AdditiveNTT<P> for MultithreadedNTT<F, TA>
+impl<F, TA> AdditiveNTT<F> for MultithreadedNTT<F, TA>
 where
 	F: BinaryField,
 	TA: TwiddleAccess<F> + Sync,
-	P: PackedField<Scalar = F>,
 {
 	fn log_domain_size(&self) -> usize {
-		self.log_domain_size()
+		self.single_threaded.log_domain_size()
+	}
+
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
+		self.single_threaded.subspace(i)
 	}
 
 	fn get_subspace_eval(&self, i: usize, j: usize) -> F {
-		self.get_subspace_eval(i, j)
+		self.single_threaded.get_subspace_eval(i, j)
 	}
 
-	fn forward_transform(
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
@@ -89,7 +74,7 @@ where
 		)
 	}
 
-	fn inverse_transform(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,

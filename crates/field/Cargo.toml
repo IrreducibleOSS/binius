@@ -27,6 +27,7 @@ paste.workspace = true
 proptest.workspace = true
 
 [features]
+benchmark_alternative_strategies = []
 trace_multiplications = []
 stable_only = ["binius_utils/stable_only"]
 

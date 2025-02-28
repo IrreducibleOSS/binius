@@ -59,6 +59,9 @@ pub trait Field:
 	/// The one element of the field, the multiplicative identity.
 	const ONE: Self;
 
+	/// The characteristic of the field.
+	const CHARACTERISTIC: usize;
+
 	/// Returns an element chosen uniformly at random using a user-provided RNG.
 	fn random(rng: impl RngCore) -> Self;
 

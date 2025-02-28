@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
-	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked,
+	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked, BinaryField,
 	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
 	TowerField,
 };
@@ -659,8 +659,8 @@ fn ntt_extrapolate<NTT, P>(
 	extrapolated_evals: &mut [P],
 ) -> Result<(), Error>
 where
-	P: PackedFieldIndexable,
-	NTT: AdditiveNTT<P> + AdditiveNTT<P::Scalar>,
+	P: PackedFieldIndexable<Scalar: BinaryField>,
+	NTT: AdditiveNTT<P::Scalar>,
 {
 	let subcube_vars = skip_rounds + log_batch;
 	debug_assert_eq!(
@@ -672,7 +672,7 @@ where
 		extrapolated_evals.len()
 	);
 	debug_assert!(
-		<NTT as AdditiveNTT<P>>::log_domain_size(ntt)
+		NTT::log_domain_size(ntt)
 			>= log2_ceil_usize(domain_size(composition_max_degree, skip_rounds))
 	);
 
@@ -702,8 +702,8 @@ fn ntt_extrapolate_chunks_exact<NTT, P>(
 	extrapolated_evals: &mut [P],
 ) -> Result<(), Error>
 where
-	P: PackedField,
-	NTT: AdditiveNTT<P>,
+	P: PackedField<Scalar: BinaryField>,
+	NTT: AdditiveNTT<P::Scalar>,
 {
 	debug_assert!(interleaved_evals.len().is_power_of_two());
 	debug_assert!(extrapolated_evals.len() % interleaved_evals.len() == 0);

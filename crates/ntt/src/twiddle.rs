@@ -1,8 +1,10 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Deref};
+use std::{iter, marker::PhantomData, ops::Deref};
 
 use binius_field::{BinaryField, Field};
+use binius_math::BinarySubspace;
+use binius_utils::bail;
 
 use crate::Error;
 
@@ -39,6 +41,12 @@ use crate::Error;
 pub trait TwiddleAccess<F: BinaryField> {
 	/// Base-2 logarithm of the number of twiddle factors in this round.
 	fn log_n(&self) -> usize;
+
+	/// The twiddle values are the span of this binary subspace, excluding 1 as a basis element,
+	/// and with an affine shift.
+	///
+	/// Returns a tuple with the subspace and shift value.
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F);
 
 	/// Get the twiddle factor at the given index.
 	///
@@ -88,10 +96,9 @@ pub struct OnTheFlyTwiddleAccess<F, SEvals = Vec<F>> {
 
 impl<F: BinaryField> OnTheFlyTwiddleAccess<F> {
 	/// Generate a vector of OnTheFlyTwiddleAccess objects, one for each NTT round.
-	pub fn generate<DomainField: BinaryField + Into<F>>(
-		log_domain_size: usize,
-	) -> Result<Vec<Self>, Error> {
-		let s_evals = precompute_subspace_evals::<F, DomainField>(log_domain_size)?
+	pub fn generate(subspace: &BinarySubspace<F>) -> Result<Vec<Self>, Error> {
+		let log_domain_size = subspace.dim();
+		let s_evals = precompute_subspace_evals(subspace)?
 			.into_iter()
 			.enumerate()
 			.map(|(i, s_evals_i)| Self {
@@ -114,6 +121,15 @@ where
 	#[inline]
 	fn log_n(&self) -> usize {
 		self.log_n
+	}
+
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F) {
+		let subspace = BinarySubspace::new_unchecked(
+			iter::once(F::ONE)
+				.chain(self.s_evals.iter().copied())
+				.collect(),
+		);
+		(subspace, self.offset)
 	}
 
 	#[inline]
@@ -164,10 +180,8 @@ pub struct PrecomputedTwiddleAccess<F, SEvals = Vec<F>> {
 }
 
 impl<F: BinaryField> PrecomputedTwiddleAccess<F> {
-	pub fn generate<DomainField: BinaryField + Into<F>>(
-		log_domain_size: usize,
-	) -> Result<Vec<Self>, Error> {
-		let on_the_fly = OnTheFlyTwiddleAccess::<F, _>::generate::<DomainField>(log_domain_size)?;
+	pub fn generate(subspace: &BinarySubspace<F>) -> Result<Vec<Self>, Error> {
+		let on_the_fly = OnTheFlyTwiddleAccess::generate(subspace)?;
 		Ok(expand_subspace_evals(&on_the_fly))
 	}
 }
@@ -180,6 +194,16 @@ where
 	#[inline]
 	fn log_n(&self) -> usize {
 		self.log_n
+	}
+
+	fn affine_subspace(&self) -> (BinarySubspace<F>, F) {
+		let shift = self.s_evals[0];
+		let subspace = BinarySubspace::new_unchecked(
+			iter::once(F::ONE)
+				.chain((0..self.log_n()).map(|i| self.s_evals[1 << i] - shift))
+				.collect(),
+		);
+		(subspace, shift)
 	}
 
 	#[inline]
@@ -210,11 +234,17 @@ where
 /// Let $\hat{W}\_i(X)$ be the normalized subspace polynomial of degree $2^i$ that vanishes on $U_i$
 /// and is $1$ on $\beta_i$.
 /// Return a vector whose $i$th entry is a vector of evaluations of $\hat{W}\_i$ at $\beta_{i+1},\ldots ,\beta_{d-1}$.
-fn precompute_subspace_evals<F: BinaryField, DomainField: BinaryField + Into<F>>(
-	log_domain_size: usize,
+fn precompute_subspace_evals<F: BinaryField>(
+	subspace: &BinarySubspace<F>,
 ) -> Result<Vec<Vec<F>>, Error> {
-	if DomainField::N_BITS < log_domain_size {
-		return Err(Error::FieldTooSmall { log_domain_size });
+	let log_domain_size = subspace.dim();
+	if log_domain_size == 0 {
+		bail!(Error::DomainTooSmall {
+			log_required_domain_size: 1,
+		});
+	}
+	if subspace.basis()[0] != F::ONE {
+		bail!(Error::DomainMustIncludeOne);
 	}
 
 	let mut s_evals = Vec::with_capacity(log_domain_size);
@@ -224,14 +254,7 @@ fn precompute_subspace_evals<F: BinaryField, DomainField: BinaryField + Into<F>>
 	// $\beta_0 = 1$ and $W\_0(X) = X$, so $W\_0(\beta_0) = \beta_0 = 1$
 	normalization_consts.push(F::ONE);
 	//`s0_evals` = $(\beta_1,\ldots ,\beta_{d-1}) = (W\_0(\beta_1), \ldots , W\_0(\beta_{d-1}))$
-	let s0_evals = (1..log_domain_size)
-		.map(|i| {
-			DomainField::basis(i)
-				.expect("basis vector must exist because of FieldTooSmall check above")
-				.into()
-		})
-		.collect::<Vec<F>>();
-
+	let s0_evals = subspace.basis()[1..].to_vec();
 	s_evals.push(s0_evals);
 	// let $W\_i(X)$ be the *unnormalized* subspace polynomial, i.e., $\prod_{u\in U_{i}}(X-u)$.
 	// Then $W\_{i+1}(X) = W\_i(X)(W\_i(X)+W\_i(\beta_i))$. This crucially uses the "linearity" of
@@ -273,12 +296,14 @@ fn precompute_subspace_evals<F: BinaryField, DomainField: BinaryField + Into<F>>
 
 	Ok(s_evals)
 }
+
 /// Computes the function $(e,c)\mapsto e^2+ce$.
 ///
 /// This is primarily used to compute $W\_{i+1}(X)$ from $W\_i(X)$ in the binary field setting.
 fn subspace_map<F: Field>(elem: F, constant: F) -> F {
 	elem.square() + constant * elem
 }
+
 /// Given `OnTheFlyTwiddleAccess` instances for each NTT round, returns a vector of `PrecomputedTwiddleAccess` objects,
 /// one for each NTT round.
 ///
@@ -321,6 +346,7 @@ where
 #[cfg(test)]
 mod tests {
 	use binius_field::{BinaryField, BinaryField16b, BinaryField32b, BinaryField8b};
+	use binius_math::BinarySubspace;
 	use lazy_static::lazy_static;
 	use proptest::prelude::*;
 
@@ -330,19 +356,19 @@ mod tests {
 		// Precomputed and OnTheFlytwiddle access objects for various binary field sizes.
 		// We avoided doing the 32B precomputed twiddle access because the tests take too long.
 		static ref PRECOMPUTED_TWIDDLE_ACCESS_8B: Vec<PrecomputedTwiddleAccess<BinaryField8b>> =
-			PrecomputedTwiddleAccess::<BinaryField8b>::generate::<BinaryField8b>(8).unwrap();
+			PrecomputedTwiddleAccess::<BinaryField8b>::generate(&BinarySubspace::default()).unwrap();
 
 		static ref OTF_TWIDDLE_ACCESS_8B: Vec<OnTheFlyTwiddleAccess<BinaryField8b>> =
-			OnTheFlyTwiddleAccess::<BinaryField8b>::generate::<BinaryField8b>(8).unwrap();
+			OnTheFlyTwiddleAccess::<BinaryField8b>::generate(&BinarySubspace::default()).unwrap();
 
 		static ref PRECOMPUTED_TWIDDLE_ACCESS_16B: Vec<PrecomputedTwiddleAccess<BinaryField16b>> =
-			PrecomputedTwiddleAccess::<BinaryField16b>::generate::<BinaryField16b>(16).unwrap();
+			PrecomputedTwiddleAccess::<BinaryField16b>::generate(&BinarySubspace::default()).unwrap();
 
 		static ref OTF_TWIDDLE_ACCESS_16B: Vec<OnTheFlyTwiddleAccess<BinaryField16b>> =
-			OnTheFlyTwiddleAccess::<BinaryField16b>::generate::<BinaryField16b>(16).unwrap();
+			OnTheFlyTwiddleAccess::<BinaryField16b>::generate(&BinarySubspace::default()).unwrap();
 
 		static ref OTF_TWIDDLE_ACCESS_32B: Vec<OnTheFlyTwiddleAccess<BinaryField32b>> =
-			OnTheFlyTwiddleAccess::<BinaryField32b>::generate::<BinaryField32b>(32).unwrap();
+			OnTheFlyTwiddleAccess::<BinaryField32b>::generate(&BinarySubspace::default()).unwrap();
 	}
 
 	// Tests that `PrecomputedTwiddleAccess` and `OnTheFlyTwiddleAccess`is linear.

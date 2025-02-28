@@ -54,6 +54,14 @@ harness = false
 name = "prodcheck"
 harness = false
 
+[[bench]]
+name = "binary_merkle_tree"
+harness = false
+
+[[bench]]
+name = "poly_commit"
+harness = false
+
 [features]
 debug_validate_sumcheck = []
 stable_only = [

@@ -161,9 +161,6 @@ where
 	fn update_eq_ind_eval(&mut self, challenge: F) {
 		// Update the running eq ind evaluation.
 		let alpha = self.gpa_round_challenges[self.round()];
-		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
-		// we opt to keep this prover generic over all fields. These two multiplications per round
-		// have negligible performance impact.
 		self.eq_ind_eval *= eq(alpha, challenge);
 	}
 
