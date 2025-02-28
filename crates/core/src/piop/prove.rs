@@ -6,7 +6,8 @@ use binius_field::{
 };
 use binius_hal::ComputationBackend;
 use binius_math::{
-	EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
+	EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly,
 };
 use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::*};
 use binius_ntt::{NTTOptions, ThreadingSettings};
@@ -219,6 +220,7 @@ where
 			)
 			.collect::<Vec<_>>();
 			RegularSumcheckProver::new(
+				EvaluationOrder::LowToHigh,
 				multilins,
 				desc.composite_sums.iter().cloned(),
 				&domain_factory,

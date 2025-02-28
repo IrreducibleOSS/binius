@@ -45,6 +45,10 @@ impl<P: PackedField> MultilinearExtension<P> {
 	pub fn from_values(v: Vec<P>) -> Result<Self, Error> {
 		Self::from_values_generic(v)
 	}
+
+	pub fn into_evals(self) -> Vec<P> {
+		self.evals
+	}
 }
 
 impl<P: PackedField, Data: Deref<Target = [P]>> MultilinearExtension<P, Data> {
