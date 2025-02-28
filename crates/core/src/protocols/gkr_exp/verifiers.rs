@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField, Field, PackedField};
+use binius_math::EvaluationOrder;
 use binius_utils::bail;
 
 use super::{
@@ -47,6 +48,7 @@ pub trait ExpVerifier<F: Field> {
 	/// excluding `this_layer_input`.
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[F],
 		r: &[F],
@@ -80,6 +82,7 @@ where
 
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[F],
 		r: &[F],
@@ -98,15 +101,19 @@ where
 
 			let exponent_bit_eval = multilinear_evals[1];
 
-			let eval_point = &r[r.len() - n_vars..];
+			let eval_point = match evaluation_order {
+				EvaluationOrder::LowToHigh => r[r.len() - n_vars..].to_vec(),
+				EvaluationOrder::HighToLow => r[..n_vars].to_vec(),
+			};
+
 			if !self.is_last_layer(layer_no) {
 				self.0.eval = layer_eval;
-				self.0.eval_point = eval_point.to_vec();
+				self.0.eval_point = eval_point.clone();
 			}
 
 			LayerClaim {
 				eval: exponent_bit_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			}
 		};
 
@@ -191,12 +198,17 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[F],
 		r: &[F],
 	) -> Vec<LayerClaim<F>> {
 		let n_vars = self.layer_claim_eval_point().len();
-		let eval_point = &r[r.len() - n_vars..];
+
+		let eval_point = match evaluation_order {
+			EvaluationOrder::LowToHigh => r[r.len() - n_vars..].to_vec(),
+			EvaluationOrder::HighToLow => r[..n_vars].to_vec(),
+		};
 
 		let mut claims = Vec::with_capacity(2);
 
@@ -204,7 +216,7 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 
 		let exponent_bit_claim = LayerClaim {
 			eval: exponent_bit_eval,
-			eval_point: eval_point.to_vec(),
+			eval_point: eval_point.clone(),
 		};
 
 		claims.push(exponent_bit_claim);
@@ -214,20 +226,20 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 
 			let base_claim = LayerClaim {
 				eval: base_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			};
 			claims.push(base_claim)
 		} else {
 			let layer_eval = multilinear_evals[0];
 
 			self.0.eval = layer_eval;
-			self.0.eval_point = eval_point.to_vec();
+			self.0.eval_point = eval_point.clone();
 
 			let base_eval = multilinear_evals[2];
 
 			let base_claim = LayerClaim {
 				eval: base_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			};
 
 			claims.push(base_claim)

@@ -10,8 +10,8 @@ use binius_field::{
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
-	DefaultEvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery, MultilinearQueryRef,
+	DefaultEvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery, MultilinearQueryRef,
 };
 use groestl_crypto::Groestl256;
 use rand::{thread_rng, Rng};
@@ -226,6 +226,7 @@ fn prove_reduces_to_correct_claims() {
 	let BaseExpReductionOutput {
 		layers_claims: layer_eval_claims,
 	} = batch_prove::batch_prove::<FBase, _, _, _, _, _>(
+		EvaluationOrder::LowToHigh,
 		witnesses.clone(),
 		&claims,
 		evaluation_domain_factory,
@@ -288,28 +289,35 @@ fn prove_reduces_to_correct_claims() {
 
 #[test]
 fn good_proof_verifies() {
-	let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+	for evaluation_order in [EvaluationOrder::HighToLow, EvaluationOrder::LowToHigh] {
+		let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
 
-	let (witnesses, claims): (Vec<_>, Vec<_>) =
-		generate_mul_witnesses_claims_with_different_log_size();
+		let (witnesses, claims): (Vec<_>, Vec<_>) =
+			generate_mul_witnesses_claims_with_different_log_size();
 
-	let evaluation_domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
+		let evaluation_domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
 
-	let backend = make_portable_backend();
+		let backend = make_portable_backend();
 
-	batch_prove::batch_prove::<FBase, _, _, _, _, _>(
-		witnesses,
-		&claims,
-		evaluation_domain_factory,
-		&mut transcript,
-		&backend,
-	)
-	.unwrap();
+		batch_prove::batch_prove::<FBase, _, _, _, _, _>(
+			evaluation_order,
+			witnesses,
+			&claims,
+			evaluation_domain_factory,
+			&mut transcript,
+			&backend,
+		)
+		.unwrap();
 
-	let mut verifier_transcript = transcript.into_verifier();
+		let mut verifier_transcript = transcript.into_verifier();
 
-	let _reduced_claims =
-		batch_verify::batch_verify::<FBase, _, _>(&claims, &mut verifier_transcript).unwrap();
+		let _reduced_claims = batch_verify::batch_verify::<FBase, _, _>(
+			evaluation_order,
+			&claims,
+			&mut verifier_transcript,
+		)
+		.unwrap();
 
-	verifier_transcript.finalize().unwrap()
+		verifier_transcript.finalize().unwrap()
+	}
 }

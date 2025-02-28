@@ -1,6 +1,7 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{BinaryField, ExtensionField, Field, TowerField};
+use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
@@ -28,6 +29,7 @@ use crate::{
 /// # Requirements
 /// - Claims must be sorted in descending order by `n_vars`.
 pub fn batch_verify<FBase, F, Challenger_>(
+	evaluation_order: EvaluationOrder,
 	claims: &[ExpClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BaseExpReductionOutput<F>, Error>
@@ -60,9 +62,11 @@ where
 			eval_points,
 		} = build_layer_gkr_sumcheck_claims(&verifiers, layer_no)?;
 
-		let sumcheck_verification_output = sumcheck::batch_verify(&sumcheck_claims, transcript)?;
+		let sumcheck_verification_output =
+			sumcheck::batch_verify(evaluation_order, &sumcheck_claims, transcript)?;
 
 		let layer_exponent_claims = build_layer_exponent_bit_claims(
+			evaluation_order,
 			&mut verifiers,
 			sumcheck_verification_output,
 			eval_points,
@@ -186,6 +190,7 @@ where
 
 /// Reduces the sumcheck output to [LayerClaim]s and updates the internal verifier [ExpClaim]s for the next layer.
 pub fn build_layer_exponent_bit_claims<'a, F>(
+	evaluation_order: EvaluationOrder,
 	verifiers: &mut [Box<dyn ExpVerifier<F> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<F>,
 	eval_points: Vec<Vec<F>>,
@@ -201,12 +206,18 @@ where
 		.iter_mut()
 		.zip(eval_points.into_iter())
 	{
-		let eval_point = &sumcheck_output.challenges
-			[sumcheck_output.challenges.len() - current_eval_point.len()..];
+		let n_vars = current_eval_point.len();
+
+		let eval_point = match evaluation_order {
+			EvaluationOrder::LowToHigh => {
+				sumcheck_output.challenges[sumcheck_output.challenges.len() - n_vars..].to_vec()
+			}
+			EvaluationOrder::HighToLow => sumcheck_output.challenges[..n_vars].to_vec(),
+		};
 
 		let expected_eq_ind_eval =
 			EqIndPartialEval::new(current_eval_point.len(), current_eval_point)
-				.and_then(|eq_ind| eq_ind.evaluate(eval_point))?;
+				.and_then(|eq_ind| eq_ind.evaluate(&eval_point))?;
 
 		let eq_ind_eval = multilinear_evals
 			.pop()
@@ -228,6 +239,7 @@ where
 			.collect::<Vec<_>>();
 
 		let layer_claims = verifier.finish_layer(
+			evaluation_order,
 			layer_no,
 			&this_verifier_multilinear_evals,
 			&sumcheck_output.challenges,

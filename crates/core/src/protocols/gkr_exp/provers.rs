@@ -3,6 +3,7 @@
 use std::marker::PhantomData;
 
 use binius_field::{BinaryField, ExtensionField, Field, PackedField};
+use binius_math::EvaluationOrder;
 use binius_utils::bail;
 
 use super::{
@@ -48,6 +49,7 @@ pub trait ExpProver<'a, P: PackedField> {
 	/// excluding `this_layer_input`.
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
@@ -175,6 +177,7 @@ where
 
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
@@ -195,17 +198,21 @@ where
 
 			let exponent_bit_eval = multilinear_evals[1];
 
-			let eval_point = &r[r.len() - n_vars..];
+			let eval_point = match evaluation_order {
+				EvaluationOrder::LowToHigh => r[r.len() - n_vars..].to_vec(),
+				EvaluationOrder::HighToLow => r[..n_vars].to_vec(),
+			};
+
 			if !self.is_last_layer(layer_no) {
 				self.0.current_layer_claim = LayerClaim {
 					eval: this_layer_input_eval,
-					eval_point: eval_point.to_vec(),
+					eval_point: eval_point.clone(),
 				};
 			}
 
 			LayerClaim {
 				eval: exponent_bit_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			}
 		};
 
@@ -323,12 +330,17 @@ impl<'a, P: PackedField, FBase: BinaryField> ExpProver<'a, P>
 
 	fn finish_layer(
 		&mut self,
+		evaluation_order: EvaluationOrder,
 		layer_no: usize,
 		multilinear_evals: &[P::Scalar],
 		r: &[P::Scalar],
 	) -> Vec<LayerClaim<P::Scalar>> {
 		let n_vars = self.0.eval_point().len();
-		let eval_point = &r[r.len() - n_vars..];
+
+		let eval_point = match evaluation_order {
+			EvaluationOrder::LowToHigh => r[r.len() - n_vars..].to_vec(),
+			EvaluationOrder::HighToLow => r[..n_vars].to_vec(),
+		};
 
 		let mut claims = Vec::with_capacity(2);
 
@@ -336,7 +348,7 @@ impl<'a, P: PackedField, FBase: BinaryField> ExpProver<'a, P>
 
 		let exponent_bit_claim = LayerClaim {
 			eval: exponent_bit_eval,
-			eval_point: eval_point.to_vec(),
+			eval_point: eval_point.clone(),
 		};
 
 		claims.push(exponent_bit_claim);
@@ -346,7 +358,7 @@ impl<'a, P: PackedField, FBase: BinaryField> ExpProver<'a, P>
 
 			let base_claim = LayerClaim {
 				eval: base_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			};
 			claims.push(base_claim)
 		} else {
@@ -354,14 +366,14 @@ impl<'a, P: PackedField, FBase: BinaryField> ExpProver<'a, P>
 
 			self.0.current_layer_claim = LayerClaim {
 				eval: this_layer_input_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point: eval_point.clone(),
 			};
 
 			let base_eval = multilinear_evals[2];
 
 			let base_claim = LayerClaim {
 				eval: base_eval,
-				eval_point: eval_point.to_vec(),
+				eval_point,
 			};
 
 			claims.push(base_claim)

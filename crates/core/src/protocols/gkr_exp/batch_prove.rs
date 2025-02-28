@@ -5,7 +5,7 @@ use binius_field::{
 	TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::EvaluationDomainFactory;
+use binius_math::{EvaluationDomainFactory, EvaluationOrder};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
@@ -43,6 +43,7 @@ use crate::{
 /// # Recommendations
 /// - Witnesses and claims should be grouped by evaluation points from the claims.
 pub fn batch_prove<'a, FBase, F, P, FDomain, Challenger_, Backend>(
+	evaluation_order: EvaluationOrder,
 	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P, FBase>>,
 	claims: &[ExpClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -82,6 +83,7 @@ where
 
 	for layer_no in 0..max_exponent_bit_number {
 		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
+			evaluation_order,
 			&mut provers,
 			layer_no,
 			evaluation_domain_factory.clone(),
@@ -90,8 +92,12 @@ where
 
 		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
 
-		let layer_exponent_claims =
-			build_layer_exponent_bit_claims(&mut provers, sumcheck_proof_output, layer_no)?;
+		let layer_exponent_claims = build_layer_exponent_bit_claims(
+			evaluation_order,
+			&mut provers,
+			sumcheck_proof_output,
+			layer_no,
+		)?;
 
 		layers_claims.push(layer_exponent_claims);
 
@@ -107,6 +113,7 @@ type GKRExpProvers<'a, F, P, FDomain, Backend> =
 /// Groups consecutive provers by their `eval_point` and reduces them to sumcheck provers.
 #[instrument(skip_all, level = "debug")]
 fn build_layer_gkr_sumcheck_provers<'a, P, FDomain, Backend>(
+	evaluation_order: EvaluationOrder,
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	layer_no: usize,
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -164,6 +171,7 @@ where
 	izip!(composite_claims, multilinears, eval_points)
 		.map(|(composite_claims, multilinears, eval_point)| {
 			GKRExpProver::<'a, FDomain, P, _, _, Backend>::new(
+				evaluation_order,
 				multilinears,
 				None,
 				composite_claims,
@@ -231,6 +239,7 @@ where
 
 /// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
 fn build_layer_exponent_bit_claims<'a, P>(
+	evaluation_order: EvaluationOrder,
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
 	mut sumcheck_output: BatchSumcheckOutput<P::Scalar>,
 	layer_no: usize,
@@ -256,6 +265,7 @@ where
 			.collect::<Vec<_>>();
 
 		let exponent_bit_claims = prover.finish_layer(
+			evaluation_order,
 			layer_no,
 			&this_prover_multilinear_evals,
 			&sumcheck_output.challenges,
