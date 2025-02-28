@@ -128,6 +128,7 @@ where
 
 		let first_round_eval_1s = debug_span!("first_round_eval_1s").in_scope(|| {
 			// This block takes non-trivial amount of time, therefore, instrumenting it is needed.
+			let high_to_low_offset = 1 << n_vars.saturating_sub(1);
 			first_layer_mle_advice.map(|first_layer_mle_advice| {
 				first_layer_mle_advice
 					.into_par_iter()
@@ -140,13 +141,13 @@ where
 									* packed_from_fn_with_offset::<P>(i, |j| {
 										let index = match evaluation_order {
 											EvaluationOrder::LowToHigh => j << 1 | 1,
-											EvaluationOrder::HighToLow => j | 1 << (n_vars - 1),
+											EvaluationOrder::HighToLow => j | high_to_low_offset,
 										};
 										poly_mle.evaluate_on_hypercube(index).unwrap_or(F::ZERO)
 									})
 							})
 							.sum::<P>();
-						packed_sum.iter().sum()
+						packed_sum.iter().take(1 << n_vars).sum()
 					})
 					.collect::<Vec<_>>()
 			})
