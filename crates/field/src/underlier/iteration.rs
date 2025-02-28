@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use binius_utils::{checked_arithmetics::checked_int_div, iter::IterExtensions};
 
-use super::{Divisible, NumCast, UnderlierType, UnderlierWithBitOps, U1, U2, U4};
+use super::{Divisible, NumCast, SubUnderlier, UnderlierType, UnderlierWithBitOps, U1, U2, U4};
 
 /// The iteration strategy for the given underlier type 'U' that is treated as a packed collection of 'T's.
 pub trait IterationStrategy<T, U> {
@@ -24,7 +24,7 @@ pub struct BitIterationStrategy;
 impl<U> IterationStrategy<U1, U> for BitIterationStrategy
 where
 	U: Divisible<u8> + UnderlierWithBitOps,
-	U1: NumCast<U>,
+	U1: SubUnderlier<U::BiggestSubElement>,
 {
 	#[inline]
 	fn ref_iter(value: &U) -> impl Iterator<Item = U1> + Send + Clone + '_ {
@@ -71,7 +71,7 @@ pub struct FallbackStrategy;
 
 impl<T, U> IterationStrategy<T, U> for FallbackStrategy
 where
-	T: UnderlierType + NumCast<U>,
+	T: SubUnderlier<U::BiggestSubElement>,
 	U: UnderlierWithBitOps,
 {
 	#[inline]

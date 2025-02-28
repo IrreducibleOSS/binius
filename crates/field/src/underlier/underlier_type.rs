@@ -156,3 +156,15 @@ impl<U: UnderlierType> NumCast<U> for U {
 		val
 	}
 }
+
+pub trait SubUnderlier<U: UnderlierType>:
+	UnderlierType + NumCast<U> + imply_hack::Imply<U, Is: From<Self>> + Sized
+{
+}
+
+impl<T: UnderlierType, U: UnderlierType> SubUnderlier<U> for T
+where
+	T: NumCast<U>,
+	U: From<T>,
+{
+}

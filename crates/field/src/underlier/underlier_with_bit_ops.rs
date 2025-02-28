@@ -6,7 +6,7 @@ use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
 use super::{
 	underlier_type::{NumCast, UnderlierType},
-	U1, U2, U4,
+	SubUnderlier, U1, U2, U4,
 };
 
 /// Underlier type that supports bit arithmetic.
@@ -21,10 +21,13 @@ pub trait UnderlierWithBitOps:
 	+ Shr<usize, Output = Self>
 	+ Shl<usize, Output = Self>
 	+ Not<Output = Self>
+	+ From<Self::BiggestSubElement>
 {
 	const ZERO: Self;
 	const ONE: Self;
 	const ONES: Self;
+
+	type BiggestSubElement: UnderlierWithBitOps;
 
 	/// Fill value with the given bit
 	/// `val` must be 0 or 1.
@@ -52,13 +55,12 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	fn broadcast_subvalue<T>(value: T) -> Self
 	where
-		T: UnderlierType,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement>,
 	{
 		// This implementation is optimal for the case when `Self` us u8..u128.
 		// For SIMD types/arrays specialization would be more performant.
 		let height = checked_log_2(checked_int_div(Self::BITS, T::BITS));
-		let mut result = Self::from(value);
+		let mut result = Self::from(Self::BiggestSubElement::from(value));
 		for i in 0..height {
 			result |= result << ((1 << i) * T::BITS);
 		}
@@ -74,7 +76,7 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: UnderlierType + NumCast<Self>,
+		T: SubUnderlier<Self::BiggestSubElement>,
 	{
 		debug_assert!(
 			i < checked_int_div(Self::BITS, T::BITS),
@@ -83,7 +85,7 @@ pub trait UnderlierWithBitOps:
 			Self::BITS,
 			T::BITS
 		);
-		T::num_cast_from(*self >> (i * T::BITS))
+		T::num_cast_from(Self::BiggestSubElement::num_cast_from(*self >> (i * T::BITS)))
 	}
 
 	/// Sets the subvalue in the given position.
@@ -94,14 +96,13 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
-		T: UnderlierWithBitOps,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
 	{
 		debug_assert!(i < checked_int_div(Self::BITS, T::BITS));
-		let mask = Self::from(single_element_mask::<T>());
+		let mask = Self::from(Self::BiggestSubElement::from(single_element_mask::<T>()));
 
 		*self &= !(mask << (i * T::BITS));
-		*self |= Self::from(val) << (i * T::BITS);
+		*self |= Self::from(Self::BiggestSubElement::from(val)) << (i * T::BITS);
 	}
 
 	/// Spread takes a block of sub_elements of `T` type within the current value and
@@ -113,10 +114,9 @@ pub trait UnderlierWithBitOps:
 	#[inline]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps + NumCast<Self>,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
 	{
-		spread_fallback(self, log_block_len, block_idx)
+		spread_fallback::<Self, T>(self, log_block_len, block_idx)
 	}
 
 	/// Left shift within 128-bit lanes.
@@ -169,8 +169,8 @@ where
 /// `block_idx` must be less than `1 << (U::LOG_BITS - log_block_len)`.
 pub(crate) unsafe fn spread_fallback<U, T>(value: U, log_block_len: usize, block_idx: usize) -> U
 where
-	U: UnderlierWithBitOps + From<T>,
-	T: UnderlierWithBitOps + NumCast<U>,
+	U: UnderlierWithBitOps,
+	T: SubUnderlier<U::BiggestSubElement> + UnderlierWithBitOps,
 {
 	debug_assert!(
 		log_block_len + T::LOG_BITS <= U::LOG_BITS,
@@ -192,7 +192,7 @@ where
 	let log_repeat = U::LOG_BITS - T::LOG_BITS - log_block_len;
 	for i in 0..1 << log_block_len {
 		unsafe {
-			result.set_subvalue(i << log_repeat, value.get_subvalue(block_offset + i));
+			result.set_subvalue(i << log_repeat, value.get_subvalue::<T>(block_offset + i));
 		}
 	}
 
@@ -309,8 +309,8 @@ pub(crate) unsafe fn get_block_values<U, T, const BLOCK_LEN: usize>(
 	block_idx: usize,
 ) -> [T; BLOCK_LEN]
 where
-	U: UnderlierWithBitOps + From<T>,
-	T: UnderlierType + NumCast<U>,
+	U: UnderlierWithBitOps,
+	T: SubUnderlier<U::BiggestSubElement>,
 {
 	std::array::from_fn(|i| value.get_subvalue::<T>(block_idx * BLOCK_LEN + i))
 }
@@ -326,8 +326,8 @@ pub(crate) unsafe fn get_spread_bytes<U, T, const BLOCK_LEN: usize>(
 	block_idx: usize,
 ) -> [u8; BLOCK_LEN]
 where
-	U: UnderlierWithBitOps + From<T>,
-	T: UnderlierType + SpreadToByte + NumCast<U>,
+	U: UnderlierWithBitOps,
+	T: SubUnderlier<U::BiggestSubElement> + SpreadToByte,
 {
 	get_block_values::<U, T, BLOCK_LEN>(value, block_idx).map(SpreadToByte::spread_to_byte)
 }

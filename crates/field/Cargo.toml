@@ -13,6 +13,7 @@ binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 cfg-if.workspace = true
 derive_more.workspace = true
+imply-hack.workspace = true
 rand.workspace = true
 seq-macro.workspace = true
 subtle.workspace = true

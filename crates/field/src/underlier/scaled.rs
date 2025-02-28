@@ -36,15 +36,18 @@ impl<U, const N: usize> From<ScaledUnderlier<U, N>> for [U; N] {
 	}
 }
 
-impl<T, U: From<T>, const N: usize> From<[T; N]> for ScaledUnderlier<U, N> {
-	fn from(value: [T; N]) -> Self {
-		Self(value.map(U::from))
+impl<U, const N: usize> From<[U; N]> for ScaledUnderlier<U, N> {
+	fn from(value: [U; N]) -> Self {
+		Self(value)
 	}
 }
 
-impl<T: Copy, U: From<[T; 2]>> From<[T; 4]> for ScaledUnderlier<U, 2> {
-	fn from(value: [T; 4]) -> Self {
-		Self([[value[0], value[1]], [value[2], value[3]]].map(Into::into))
+impl<U: Copy> From<[U; 4]> for ScaledUnderlier<ScaledUnderlier<U, 2>, 2> {
+	fn from(value: [U; 4]) -> Self {
+		Self([
+			ScaledUnderlier([value[0], value[1]]),
+			ScaledUnderlier([value[0], value[1]]),
+		])
 	}
 }
 
@@ -204,6 +207,12 @@ impl<U: Not<Output = U>, const N: usize> Not for ScaledUnderlier<U, N> {
 	}
 }
 
+impl<U: UnderlierWithBitOps, const N: usize> From<U> for ScaledUnderlier<U, N> {
+	fn from(value: U) -> Self {
+		Self(array::from_fn(|i| if i == 0 { value } else { U::ZERO }))
+	}
+}
+
 impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N> {
 	const ZERO: Self = Self([U::ZERO; N]);
 	const ONE: Self = {
@@ -212,6 +221,8 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		Self(arr)
 	};
 	const ONES: Self = Self([U::ONES; N]);
+
+	type BiggestSubElement = U::BiggestSubElement;
 
 	#[inline]
 	fn fill_with_bit(val: u8) -> Self {
