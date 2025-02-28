@@ -36,8 +36,9 @@ fn apply_transformation<IP, OP>(
 	input.iter().map(|x| transformation.transform(x)).collect()
 }
 
-const N_VARS: [usize; 3] = [12, 16, 20];
-const N_CLAIMS: usize = 20;
+const N_VARS: [usize; 4] = [12, 16, 20, 24];
+
+const N_CLAIMS: usize = 10;
 type FDomain = BinaryField128b;
 
 fn bench_gpa_generic<U, F, R, BenchFn>(name: &str, c: &mut Criterion, bench_fn: &BenchFn)
@@ -56,9 +57,8 @@ where
 	let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain>::default();
 
 	for n_vars in N_VARS {
-		group.throughput(Throughput::Bytes(
-			((1 << n_vars) * std::mem::size_of::<F>() * N_CLAIMS) as u64,
-		));
+		group.throughput(Throughput::Elements(((1 << n_vars) * N_CLAIMS) as u64));
+		group.sample_size(10);
 		group.bench_function(format!("n_vars={n_vars}"), |bench| {
 			// Setup witness
 			let numerator = create_numerator::<U::Packed>(n_vars);
