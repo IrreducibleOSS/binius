@@ -72,6 +72,10 @@ path = "bitwise_ops.rs"
 name = "b32_mul"
 path = "b32_mul.rs"
 
+[[example]]
+name = "blake3_circuit"
+path = "blake3_circuit.rs"
+
 [lints.clippy]
 needless_range_loop = "allow"
 
