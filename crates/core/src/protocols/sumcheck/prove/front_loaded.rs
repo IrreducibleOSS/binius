@@ -55,6 +55,15 @@ where
 			return Err(Error::ClaimsOutOfOrder);
 		}
 
+		if let Some(first_prover) = provers.first() {
+			if provers
+				.iter()
+				.any(|prover| prover.evaluation_order() != first_prover.evaluation_order())
+			{
+				return Err(Error::InconsistentEvaluationOrder);
+			}
+		}
+
 		// Sample batch mixing coefficients
 		let batch_coeffs = transcript.sample_vec(provers.len());
 		let provers = iter::zip(provers, batch_coeffs).collect();

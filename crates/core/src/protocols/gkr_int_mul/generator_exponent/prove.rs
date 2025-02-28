@@ -7,7 +7,9 @@ use binius_field::{
 	TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{EvaluationDomainFactory, MLEEmbeddingAdapter, MultilinearExtension};
+use binius_math::{
+	EvaluationDomainFactory, EvaluationOrder, MLEEmbeddingAdapter, MultilinearExtension,
+};
 
 use super::{
 	common::GeneratorExponentReductionOutput, compositions::MultiplyOrDont,
@@ -83,6 +85,7 @@ where
 		};
 
 		let this_round_prover = GPAProver::<FDomain, PChallenge, _, _, Backend>::new(
+			EvaluationOrder::LowToHigh,
 			this_round_multilinears.to_vec(),
 			None,
 			[this_round_composite_claim],

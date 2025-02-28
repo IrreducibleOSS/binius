@@ -200,7 +200,8 @@ mod tests {
 	};
 	use binius_hal::{make_portable_backend, ComputationBackend, ComputationBackendExt};
 	use binius_math::{
-		EvaluationDomainFactory, IsomorphicEvaluationDomainFactory, MultilinearPoly,
+		EvaluationDomainFactory, EvaluationOrder, IsomorphicEvaluationDomainFactory,
+		MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -261,6 +262,7 @@ mod tests {
 				sum: F::ZERO,
 			});
 		RegularSumcheckProver::new(
+			EvaluationOrder::LowToHigh,
 			multilinears,
 			composite_sum_claims,
 			evaluation_domain_factory,
@@ -399,7 +401,9 @@ mod tests {
 		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
 
 		let sumcheck_claims = reduce_to_sumchecks(&zerocheck_claims).unwrap();
-		let verifier_output = batch_verify(&sumcheck_claims, &mut verify_transcript).unwrap();
+		let verifier_output =
+			batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, &mut verify_transcript)
+				.unwrap();
 
 		let BatchSumcheckOutput {
 			challenges: verifier_eval_point,

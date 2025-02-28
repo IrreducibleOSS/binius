@@ -10,12 +10,13 @@ use itertools::izip;
 
 use super::{lasso::lasso, u32add::SeveralU32add};
 use crate::{
+	arithmetic::u32::u32const_repeating,
 	builder::{
 		types::{F, U},
 		ConstraintSystemBuilder,
 	},
 	pack::pack,
-	sha256::{rotate_and_xor, u32const_repeating, RotateRightType, INIT, ROUND_CONSTS_K},
+	sha256::{rotate_and_xor, RotateRightType, INIT, ROUND_CONSTS_K},
 };
 
 pub const CH_MAJ_T_LOG_SIZE: usize = 12;
