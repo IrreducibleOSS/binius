@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::mem::MaybeUninit;
+use std::{array, mem::MaybeUninit};
 
 use digest::Output;
 
@@ -45,4 +45,44 @@ pub trait MultiDigest<const N: usize>: Default {
 
 	/// Compute hash of `data`.
 	fn digest(data: [&[u8]; N], out: &mut [MaybeUninit<Output<Self::Digest>>; N]);
+}
+
+pub trait ParallelDigestSource {
+	/// Number of hashes to calculate
+	fn hashes(&self) -> usize;
+
+	/// Number of data chunks to calculate each hash digest
+	fn chunks(&self) -> usize;
+
+	/// Get the data chunk
+	fn get_chunk(&self, hash: usize, chunk: usize) -> &[u8];
+}
+
+pub fn parallel_digest<const N: usize, Digest: MultiDigest<N>>(
+	source: &impl ParallelDigestSource,
+) -> impl Iterator<Item = digest::Output<Digest::Digest>> + '_ {
+	let hashes = source.hashes();
+	let chunks = source.chunks();
+	let multihashes = hashes / N;
+	(0..multihashes)
+		.flat_map(move |i| {
+			let mut hasher = Digest::default();
+			for chunk in 0..chunks {
+				let data = array::from_fn(|j| source.get_chunk(i * N + j, chunk));
+				hasher.update(data);
+			}
+
+			let mut out = array::from_fn(|_| MaybeUninit::uninit());
+			hasher.finalize_into(&mut out);
+			out.into_iter().map(|out| unsafe { out.assume_init() })
+		})
+		.chain((0..hashes % N).map(move |i| {
+			use digest::Digest as _;
+			let mut hasher = Digest::Digest::new();
+
+			for chunk in 0..chunks {
+				hasher.update(source.get_chunk(multihashes * N + i, chunk));
+			}
+			hasher.finalize()
+		}))
 }
