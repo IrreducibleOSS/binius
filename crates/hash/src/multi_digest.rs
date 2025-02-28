@@ -6,7 +6,7 @@ use digest::Output;
 
 /// An object that efficiently computes many instances of a cryptographic hash function
 /// in parallel.
-pub trait MultiDigest<const N: usize>: Default {
+pub trait MultiDigest<const N: usize>: Default + Clone {
 	/// The corresponding non-parallelized hash function.
 	type Digest: digest::Digest;
 
@@ -58,31 +58,56 @@ pub trait ParallelDigestSource {
 	fn get_chunk(&self, hash: usize, chunk: usize) -> &[u8];
 }
 
-pub fn parallel_digest<const N: usize, Digest: MultiDigest<N>>(
-	source: &impl ParallelDigestSource,
-) -> impl Iterator<Item = digest::Output<Digest::Digest>> + '_ {
-	let hashes = source.hashes();
-	let chunks = source.chunks();
-	let multihashes = hashes / N;
-	(0..multihashes)
-		.flat_map(move |i| {
-			let mut hasher = Digest::default();
-			for chunk in 0..chunks {
-				let data = array::from_fn(|j| source.get_chunk(i * N + j, chunk));
-				hasher.update(data);
-			}
+pub trait ParallelDigest {
+	/// The corresponding non-parallelized hash function.
+	type Digest: digest::Digest;
 
-			let mut out = array::from_fn(|_| MaybeUninit::uninit());
-			hasher.finalize_into(&mut out);
-			out.into_iter().map(|out| unsafe { out.assume_init() })
-		})
-		.chain((0..hashes % N).map(move |i| {
-			use digest::Digest as _;
-			let mut hasher = Digest::Digest::new();
+	/// Create new hasher instance which has processed the provided data.
+	fn new_with_prefix(data: impl AsRef<[u8]>) -> Self;
 
-			for chunk in 0..chunks {
-				hasher.update(source.get_chunk(multihashes * N + i, chunk));
-			}
-			hasher.finalize()
-		}))
+	/// Calculate the digest of multiple hashes of data chunks of the same length
+	fn digest(
+		&self,
+		source: &impl ParallelDigestSource,
+	) -> impl Iterator<Item = Output<Self::Digest>>;
+}
+
+struct ParallelDigestImpl<D: MultiDigest<N>, const N: usize>(D);
+
+impl<D: MultiDigest<N>, const N: usize> ParallelDigest for ParallelDigestImpl<D, N> {
+	type Digest = D::Digest;
+
+	fn new_with_prefix(data: impl AsRef<[u8]>) -> Self {
+		Self(D::new_with_prefix(data))
+	}
+
+	fn digest(
+		&self,
+		source: &impl ParallelDigestSource,
+	) -> impl Iterator<Item = Output<Self::Digest>> {
+		let hashes = source.hashes();
+		let chunks = source.chunks();
+		let multihashes = hashes / N;
+		(0..multihashes)
+			.flat_map(move |i| {
+				let mut hasher = self.0.clone();
+				for chunk in 0..chunks {
+					let data = array::from_fn(|j| source.get_chunk(i * N + j, chunk));
+					hasher.update(data);
+				}
+
+				let mut out = array::from_fn(|_| MaybeUninit::uninit());
+				hasher.finalize_into(&mut out);
+				out.into_iter().map(|out| unsafe { out.assume_init() })
+			})
+			.chain((0..hashes % N).map(move |i| {
+				use digest::Digest as _;
+				let mut hasher = D::Digest::new();
+
+				for chunk in 0..chunks {
+					hasher.update(source.get_chunk(multihashes * N + i, chunk));
+				}
+				hasher.finalize()
+			}))
+	}
 }

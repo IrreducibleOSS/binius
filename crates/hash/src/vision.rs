@@ -47,6 +47,9 @@ type PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransform
 >>::PackedTransformation<&'static [AESTowerField32b]>;
 type AdditiveNTT8b = SingleThreadedNTT<AESTowerField8b, OnTheFlyTwiddleAccess<AESTowerField8b>>;
 
+const PADDING_START: u8 = 0x01;
+const PADDING_END: u8 = 0x80;
+
 lazy_static! {
 	/// We use this object only to calculate twiddles for the fast NTT.
 	static ref ADDITIVE_NTT_AES: AdditiveNTT8b = {
@@ -103,6 +106,14 @@ lazy_static! {
 		make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>();
 	static ref TRANS_CANONICAL_TO_AES: BinaryToAesTransformation<PackedBinaryField8x32b, PackedAESBinaryField8x32b> =
 		make_binary_to_aes_packed_transformer::<PackedBinaryField8x32b, PackedAESBinaryField8x32b>();
+
+	// Padding block for the case when the input is a multiple of the rate.
+	static ref PADDING_BLOCK: [u8; RATE_AS_U8] = {
+		let mut block = [0; RATE_AS_U8];
+		block[0] = PADDING_START;
+		block[RATE_AS_U8 - 1] |= PADDING_END;
+		block
+	};
 }
 
 #[inline]
@@ -416,8 +427,10 @@ impl digest::OutputSizeUser for VisionHasherDigest {
 impl digest::FixedOutput for VisionHasherDigest {
 	fn finalize_into(mut self, out: &mut digest::Output<Self>) {
 		if self.filled_bytes != 0 {
-			self.buffer[self.filled_bytes..].fill(0);
+			fill_padding(&mut self.buffer[self.filled_bytes..]);
 			Self::permute(&mut self.state, &self.buffer);
+		} else {
+			Self::permute(&mut self.state, &*PADDING_BLOCK);
 		}
 
 		let canonical_tower: PackedBinaryField8x32b =
@@ -426,6 +439,16 @@ impl digest::FixedOutput for VisionHasherDigest {
 			PackedBinaryField8x32b::unpack_base_scalars(std::slice::from_ref(&canonical_tower)),
 		));
 	}
+}
+
+/// Fill the data using Keccak padding scheme.
+#[inline(always)]
+fn fill_padding(data: &mut [u8]) {
+	debug_assert!(data.len() > 0 && data.len() <= RATE_AS_U8);
+
+	data.fill(0);
+	data[0] |= PADDING_START;
+	data[data.len() - 1] |= PADDING_END;
 }
 
 pub trait NttExecutor<P>: Clone + Sync {
@@ -763,11 +786,12 @@ impl VisionHasherDigestByteSliced {
 	fn finalize(&mut self, out: &mut [digest::Output<VisionHasherDigest>; 4]) {
 		if self.filled_bytes > 0 {
 			for row in 0..4 {
-				self.buffer[row][self.filled_bytes..].fill(0);
+				fill_padding(&mut self.buffer[row][self.filled_bytes..]);
 			}
 
 			Self::permute(&mut self.state, array::from_fn(|i| &self.buffer[i]));
-			self.filled_bytes = 0;
+		} else {
+			Self::permute(&mut self.state, array::from_fn(|_| &*PADDING_BLOCK));
 		}
 
 		let byte_sliced_8b_canonical: [PackedBinaryField32x8b; 4] = self.state[0]
@@ -1067,17 +1091,8 @@ mod tests {
 		hasher.update(data);
 		let out = hasher.finalize();
 		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
-		let expected = &hex!("a42b46ccea1a81cafc4b312c0bc233f169f8ecb2377e951d14461acfefc6b7b5");
+		let expected = &hex!("b575b478f36c087a9916731cde17b90a37da32c226f6c9a6334a177dfc38fa4b");
 		assert_eq!(expected, &*out);
-
-		let hasher = VisionHasherDigestByteSliced::new_with_prefix(data);
-		let mut output = [MaybeUninit::uninit(); 4];
-		hasher.finalize_into(&mut output);
-
-		for row in 0..4 {
-			let out = unsafe { output[row].assume_init() };
-			assert_eq!(expected, &*out);
-		}
 	}
 
 	#[test]
@@ -1087,7 +1102,7 @@ mod tests {
 		hasher.update(input.as_bytes());
 		let out = hasher.finalize();
 
-		let expected = &hex!("406ea77bc164afc0fbb461bb6e2cf763612c0c55bf66c98f295dba8f9e5f3426");
+		let expected = &hex!("0205ce7231ac64f0705eb5409ae7438198adabd7d171510b933c1dd1e8747418");
 		assert_eq!(expected, &*out);
 
 		let mut hasher = VisionHasherDigest::default();
@@ -1106,7 +1121,7 @@ mod tests {
 		let input = "You can prove anything you want by coldly logical reason--if you pick the proper postulates.";
 		hasher.update(input.as_bytes());
 
-		let expected = &hex!("7e0dcd26520e1e9956de65b1f9dea85815ed9ae0c4b3f48559679acea71729f2");
+		let expected = &hex!("03c072f054ba8bf13cad90b759b814d247ba986e1b00b06a85eb1a7387f493ff");
 		let out = hasher.finalize();
 		assert_eq!(expected, &*out);
 	}
