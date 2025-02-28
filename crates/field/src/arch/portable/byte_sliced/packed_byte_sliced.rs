@@ -752,8 +752,12 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 	};
 }
 
+/// Packed transformation for 8b byte-sliced fields.
 pub struct TransformationWrapper8b<Inner>(Inner);
 
+/// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
+///
+/// `N` is the number of bytes in the scalar.
 pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
 // 128 bit

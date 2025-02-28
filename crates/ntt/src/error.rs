@@ -8,6 +8,8 @@ pub enum Error {
 	FieldTooSmall { log_domain_size: usize },
 	#[error("domain size is less than 2**{log_required_domain_size}")]
 	DomainTooSmall { log_required_domain_size: usize },
+	#[error("evaluation subspace must include the 1 element")]
+	DomainMustIncludeOne,
 	#[error("the packing width must divide the code dimension")]
 	PackingWidthMustDivideDimension,
 	#[error("the input length must be a power of two")]

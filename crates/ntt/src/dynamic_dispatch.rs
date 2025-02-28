@@ -1,9 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{BinaryField, PackedField};
+use binius_math::BinarySubspace;
 use binius_utils::rayon::get_log_max_threads;
 
-use crate::{twiddle::PrecomputedTwiddleAccess, AdditiveNTT, MultithreadedNTT, SingleThreadedNTT};
+use super::{
+	additive_ntt::AdditiveNTT, error::Error, multithreaded::MultithreadedNTT,
+	single_threaded::SingleThreadedNTT, twiddle::PrecomputedTwiddleAccess,
+};
 
 /// How many threads to use (threads number is a power of 2).
 #[derive(Default, Debug, Clone, Copy)]
@@ -54,7 +58,7 @@ pub enum DynamicDispatchNTT<F: BinaryField> {
 
 impl<F: BinaryField> DynamicDispatchNTT<F> {
 	/// Create a new AdditiveNTT based on the given settings.
-	pub fn new(log_domain_size: usize, options: &NTTOptions) -> Result<Self, crate::error::Error> {
+	pub fn new(log_domain_size: usize, options: &NTTOptions) -> Result<Self, Error> {
 		let log_threads = options.thread_settings.log_threads_count();
 		let result = match (options.precompute_twiddles, log_threads) {
 			(false, 0) => Self::SingleThreaded(SingleThreadedNTT::new(log_domain_size)?),
@@ -76,17 +80,22 @@ impl<F: BinaryField> DynamicDispatchNTT<F> {
 	}
 }
 
-impl<F, P> AdditiveNTT<P> for DynamicDispatchNTT<F>
-where
-	F: BinaryField,
-	P: PackedField<Scalar = F>,
-{
+impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 	fn log_domain_size(&self) -> usize {
 		match self {
 			Self::SingleThreaded(ntt) => ntt.log_domain_size(),
 			Self::SingleThreadedPrecompute(ntt) => ntt.log_domain_size(),
 			Self::MultiThreaded(ntt) => ntt.log_domain_size(),
 			Self::MultiThreadedPrecompute(ntt) => ntt.log_domain_size(),
+		}
+	}
+
+	fn subspace(&self, i: usize) -> BinarySubspace<F> {
+		match self {
+			Self::SingleThreaded(ntt) => ntt.subspace(i),
+			Self::SingleThreadedPrecompute(ntt) => ntt.subspace(i),
+			Self::MultiThreaded(ntt) => ntt.subspace(i),
+			Self::MultiThreadedPrecompute(ntt) => ntt.subspace(i),
 		}
 	}
 
@@ -99,12 +108,12 @@ where
 		}
 	}
 
-	fn forward_transform(
+	fn forward_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), crate::error::Error> {
+	) -> Result<(), Error> {
 		match self {
 			Self::SingleThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
 			Self::SingleThreadedPrecompute(ntt) => {
@@ -117,12 +126,12 @@ where
 		}
 	}
 
-	fn inverse_transform(
+	fn inverse_transform<P: PackedField<Scalar = F>>(
 		&self,
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
-	) -> Result<(), crate::error::Error> {
+	) -> Result<(), Error> {
 		match self {
 			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
 			Self::SingleThreadedPrecompute(ntt) => {
