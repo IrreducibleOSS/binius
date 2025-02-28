@@ -32,6 +32,7 @@ use crate::{
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
 pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
+	evaluation_order: EvaluationOrder,
 	witnesses: impl IntoIterator<Item = GrandProductWitness<P>>,
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -89,6 +90,7 @@ where
 		// Step 2: Create sumcheck batch proof
 		let batch_sumcheck_output = {
 			let gpa_sumcheck_prover = GrandProductProverState::stage_gpa_sumcheck_provers(
+				evaluation_order,
 				&sorted_provers,
 				evaluation_domain_factory.clone(),
 			)?;
@@ -248,6 +250,7 @@ where
 	#[allow(clippy::type_complexity)]
 	#[instrument(skip_all, level = "debug")]
 	fn stage_gpa_sumcheck_provers<FDomain>(
+		evaluation_order: EvaluationOrder,
 		provers: &[Self],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	) -> Result<
@@ -295,7 +298,7 @@ where
 			.collect::<Vec<_>>();
 
 		Ok(GPAProver::new(
-			EvaluationOrder::LowToHigh,
+			evaluation_order,
 			multilinears,
 			Some(first_layer_mle_advice),
 			composite_claims,
