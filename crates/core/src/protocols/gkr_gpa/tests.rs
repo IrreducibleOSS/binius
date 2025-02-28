@@ -10,7 +10,7 @@ use binius_field::{
 	BinaryField128b, BinaryField32b, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	RepackedExtension, TowerField,
 };
-use binius_math::{IsomorphicEvaluationDomainFactory, MultilinearExtension};
+use binius_math::{EvaluationOrder, IsomorphicEvaluationDomainFactory, MultilinearExtension};
 use bytemuck::zeroed_vec;
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
@@ -118,6 +118,18 @@ where
 	F: TowerField,
 	FS: TowerField,
 {
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		run_prove_verify_batch_test_with_evaluation_order::<U, F, FS, P>(evaluation_order)
+	}
+}
+
+fn run_prove_verify_batch_test_with_evaluation_order<U, F, FS, P>(evaluation_order: EvaluationOrder)
+where
+	U: UnderlierType + PackScalar<F, Packed = P>,
+	P: PackedExtension<FS, Scalar = F> + RepackedExtension<P> + PackedFieldIndexable,
+	F: TowerField,
+	FS: TowerField,
+{
 	let rng = StdRng::seed_from_u64(0);
 	let oracle_set = MultilinearOracleSet::<F>::new();
 	let witness_index = MultilinearExtensionIndex::<U, F>::new();
@@ -173,6 +185,7 @@ where
 	let GrandProductBatchProveOutput {
 		final_layer_claims: final_layer_claim,
 	} = batch_prove::<_, _, FS, _, _>(
+		evaluation_order,
 		witnesses,
 		&claims,
 		domain_factory,
@@ -183,7 +196,7 @@ where
 
 	let mut verify_transcript = prover_transcript.into_verifier();
 	let verified_evalcheck_multilinear_claims =
-		batch_verify(claims.clone(), &mut verify_transcript).unwrap();
+		batch_verify(evaluation_order, claims.clone(), &mut verify_transcript).unwrap();
 
 	assert_eq!(final_layer_claim.len(), verified_evalcheck_multilinear_claims.len());
 	for (proved_eval_claim, verified_layer_laim) in final_layer_claim
