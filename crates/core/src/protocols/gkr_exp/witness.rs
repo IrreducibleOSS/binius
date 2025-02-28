@@ -3,7 +3,8 @@
 use std::{cmp::min, slice};
 
 use binius_field::{
-	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, PackedExtension, PackedField,
+	ext_base_op_par, BinaryField, BinaryField1b, ExtensionField, Field, PackedExtension,
+	PackedField,
 };
 use binius_math::{MLEEmbeddingAdapter, MultilinearExtension};
 use binius_maybe_rayon::{
@@ -17,15 +18,19 @@ use super::error::Error;
 use crate::{protocols::sumcheck::equal_n_vars_check, witness::MultilinearWitness};
 
 #[derive(Clone)]
-pub struct BaseExpWitness<'a, P: PackedField> {
+pub struct BaseExpWitness<'a, P: PackedField, FBase: Field> {
 	/// Multilinears that represent an integers by its bits.
 	pub exponent: Vec<MultilinearWitness<'a, P>>,
 	/// Circuit layer-multilinears
 	pub single_bit_output_layers_data: Vec<MultilinearWitness<'a, P>>,
 	/// The base to be used for exponentiation.
-	/// - `None`: Indicates that the default base, `MULTIPLICATIVE_GENERATOR`, is used.
-	/// - `Some(multilinear)`: Specifies a base for the computation.
-	pub base: Option<MultilinearWitness<'a, P>>,
+	pub base: BaseWitness<'a, P, FBase>,
+}
+
+#[derive(Clone)]
+pub enum BaseWitness<'a, P: PackedField, FBase: Field> {
+	Constant(FBase),
+	Dynamic(MultilinearWitness<'a, P>),
 }
 
 fn copy_witness_into_vec<P, PE>(poly: &MultilinearWitness<PE>) -> Vec<P>
@@ -66,7 +71,7 @@ where
 
 fn evaluate_single_bit_output_packed<PBits, PBase>(
 	exponent_bit: &[PBits],
-	base: Base<PBase>,
+	base: BaseEvals<PBase>,
 	previous_single_bit_output: &[PBase],
 ) -> Vec<PBase>
 where
@@ -83,8 +88,8 @@ where
 
 	let _ = ext_base_op_par(&mut result, exponent_bit, |i, prev_out, exp_bit_broadcasted| {
 		let (base, prev_out) = match &base {
-			Base::Generator(g) => (*g, prev_out),
-			Base::Dynamic(g) => (g[i], prev_out.square()),
+			BaseEvals::Constant(g) => (*g, prev_out),
+			BaseEvals::Dynamic(g) => (g[i], prev_out.square()),
 		};
 
 		prev_out
@@ -95,14 +100,14 @@ where
 	result
 }
 
-enum Base<'a, PBase: PackedField> {
-	Generator(PBase),
+enum BaseEvals<'a, PBase: PackedField> {
+	Constant(PBase),
 	Dynamic(&'a [PBase]),
 }
 
 fn evaluate_first_layer_output_packed<PBits, PBase>(
 	exponent_bit: &[PBits],
-	base: Base<PBase>,
+	base: BaseEvals<PBase>,
 ) -> Vec<PBase>
 where
 	PBits: PackedField<Scalar = BinaryField1b>,
@@ -113,8 +118,8 @@ where
 
 	let _ = ext_base_op_par(&mut result, exponent_bit, |i, _, exp_bit_broadcasted| {
 		let base = match &base {
-			Base::Generator(g) => *g,
-			Base::Dynamic(g) => g[i],
+			BaseEvals::Constant(g) => *g,
+			BaseEvals::Dynamic(g) => g[i],
 		};
 
 		PBase::cast_ext(PBase::cast_base(base - PBase::one()) * exp_bit_broadcasted) + PBase::one()
@@ -123,18 +128,19 @@ where
 	result
 }
 
-impl<'a, P> BaseExpWitness<'a, P>
+impl<'a, P, FBase> BaseExpWitness<'a, P, FBase>
 where
 	P: PackedField,
+	FBase: BinaryField,
 {
-	/// Constructs a witness where the base is the field multiplicative generator.
-	pub fn new_with_generator_base<PBits, PBase>(
+	/// Constructs a witness where the base is the constant [BinaryField].
+	pub fn new_with_constant_base<PBits, PBase>(
 		exponent: Vec<MultilinearWitness<'a, P>>,
+		base: PBase::Scalar,
 	) -> Result<Self, Error>
 	where
 		PBits: PackedField<Scalar = BinaryField1b>,
-		PBase: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-		PBase::Scalar: BinaryField,
+		PBase: PackedField<Scalar = FBase> + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
 			+ PackedExtension<PBase::Scalar, PackedSubfield = PBase>,
 		P::Scalar: ExtensionField<PBase::Scalar>,
@@ -153,12 +159,11 @@ where
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
 
-		let mut packed_base_power_constant =
-			PBase::broadcast(PBase::Scalar::MULTIPLICATIVE_GENERATOR);
+		let mut packed_base_power_constant = PBase::broadcast(base);
 
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<PBits, PBase>(
 			&copy_witness_into_vec(&exponent[0]),
-			Base::Generator(packed_base_power_constant),
+			BaseEvals::Constant(packed_base_power_constant),
 		);
 
 		for layer_idx_from_left in 1..exponent_bit_width {
@@ -166,7 +171,7 @@ where
 
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&copy_witness_into_vec(&exponent[layer_idx_from_left]),
-				Base::Generator(packed_base_power_constant),
+				BaseEvals::Constant(packed_base_power_constant),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			);
 		}
@@ -183,7 +188,7 @@ where
 		Ok(Self {
 			exponent,
 			single_bit_output_layers_data,
-			base: None,
+			base: BaseWitness::Constant(base),
 		})
 	}
 
@@ -194,8 +199,7 @@ where
 	) -> Result<Self, Error>
 	where
 		PBits: PackedField<Scalar = BinaryField1b>,
-		PBase: PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
-		PBase::Scalar: BinaryField,
+		PBase: PackedField<Scalar = FBase> + PackedExtension<PBits::Scalar, PackedSubfield = PBits>,
 		P: PackedExtension<PBits::Scalar, PackedSubfield = PBits>
 			+ PackedExtension<PBase::Scalar, PackedSubfield = PBase>,
 		P::Scalar: ExtensionField<PBase::Scalar>,
@@ -218,13 +222,13 @@ where
 
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed::<PBits, PBase>(
 			&copy_witness_into_vec(&exponent[exponent_bit_width - 1]),
-			Base::Dynamic(&base_evals),
+			BaseEvals::Dynamic(&base_evals),
 		);
 
 		for layer_idx_from_left in 1..exponent_bit_width {
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				&copy_witness_into_vec(&exponent[exponent_bit_width - layer_idx_from_left - 1]),
-				Base::Dynamic(&base_evals),
+				BaseEvals::Dynamic(&base_evals),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			);
 		}
@@ -241,13 +245,15 @@ where
 		Ok(Self {
 			exponent,
 			single_bit_output_layers_data,
-			base: Some(base),
+			base: BaseWitness::Dynamic(base),
 		})
 	}
 
-	/// true mean that witness use
-	pub fn with_dynamic_base(&self) -> bool {
-		self.base.is_some()
+	pub const fn uses_dynamic_base(&self) -> bool {
+		match self.base {
+			BaseWitness::Constant(_) => false,
+			BaseWitness::Dynamic(_) => true,
+		}
 	}
 
 	pub fn n_vars(&self) -> usize {

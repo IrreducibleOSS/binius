@@ -250,7 +250,7 @@ where
 	claims
 		.iter()
 		.map(|claim| {
-			if claim.with_dynamic_base {
+			if claim.uses_dynamic_base {
 				ExpDynamicVerifier::new(claim)
 					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			} else {

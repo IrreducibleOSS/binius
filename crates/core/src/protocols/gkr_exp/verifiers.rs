@@ -57,7 +57,7 @@ pub struct GeneratorExpVerifier<F: Field, FBase>(ExpClaim<F>, PhantomData<FBase>
 
 impl<F: Field, FBase> GeneratorExpVerifier<F, FBase> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if claim.with_dynamic_base {
+		if claim.uses_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -172,7 +172,7 @@ pub struct ExpDynamicVerifier<F: Field>(ExpClaim<F>);
 
 impl<F: Field> ExpDynamicVerifier<F> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if !claim.with_dynamic_base {
+		if !claim.uses_dynamic_base {
 			bail!(Error::IncorrectWitnessType);
 		}
 

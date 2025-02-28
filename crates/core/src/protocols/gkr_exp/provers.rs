@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{BinaryField, ExtensionField, PackedField};
+use binius_field::{BinaryField, ExtensionField, Field, PackedField};
 use binius_utils::bail;
 
 use super::{
@@ -10,7 +10,7 @@ use super::{
 	compositions::{ExpCompositions, ProverExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
-	witness::BaseExpWitness,
+	witness::{BaseExpWitness, BaseWitness},
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
@@ -54,13 +54,13 @@ pub trait ExpProver<'a, P: PackedField> {
 	) -> Vec<LayerClaim<P::Scalar>>;
 }
 
-struct ExpCommonProver<'a, P: PackedField> {
-	witness: BaseExpWitness<'a, P>,
+struct ExpCommonProver<'a, P: PackedField, FBase: Field> {
+	witness: BaseExpWitness<'a, P, FBase>,
 	current_layer_claim: LayerClaim<P::Scalar>,
 }
 
-impl<'a, P: PackedField> ExpCommonProver<'a, P> {
-	fn new(witness: BaseExpWitness<'a, P>, claim: ExpClaim<P::Scalar>) -> Self {
+impl<'a, P: PackedField, FBase: Field> ExpCommonProver<'a, P, FBase> {
+	fn new(witness: BaseExpWitness<'a, P, FBase>, claim: ExpClaim<P::Scalar>) -> Self {
 		Self {
 			witness,
 			current_layer_claim: claim.into(),
@@ -93,14 +93,17 @@ impl<'a, P: PackedField> ExpCommonProver<'a, P> {
 	}
 }
 
-pub struct GeneratorExpProver<'a, P: PackedField, FBase>(
-	ExpCommonProver<'a, P>,
+pub struct GeneratorExpProver<'a, P: PackedField, FBase: Field>(
+	ExpCommonProver<'a, P, FBase>,
 	PhantomData<FBase>,
 );
 
-impl<'a, P: PackedField, FBase> GeneratorExpProver<'a, P, FBase> {
-	pub fn new(witness: BaseExpWitness<'a, P>, claim: &ExpClaim<P::Scalar>) -> Result<Self, Error> {
-		if witness.base.is_some() {
+impl<'a, P: PackedField, FBase: BinaryField> GeneratorExpProver<'a, P, FBase> {
+	pub fn new(
+		witness: BaseExpWitness<'a, P, FBase>,
+		claim: &ExpClaim<P::Scalar>,
+	) -> Result<Self, Error> {
+		if witness.uses_dynamic_base() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -227,11 +230,16 @@ where
 	}
 }
 
-pub struct DynamicBaseExpProver<'a, P: PackedField>(ExpCommonProver<'a, P>);
+pub struct DynamicBaseExpProver<'a, P: PackedField, FBase: BinaryField>(
+	ExpCommonProver<'a, P, FBase>,
+);
 
-impl<'a, P: PackedField> DynamicBaseExpProver<'a, P> {
-	pub fn new(witness: BaseExpWitness<'a, P>, claim: &ExpClaim<P::Scalar>) -> Result<Self, Error> {
-		if witness.base.is_none() {
+impl<'a, P: PackedField, FBase: BinaryField> DynamicBaseExpProver<'a, P, FBase> {
+	pub fn new(
+		witness: BaseExpWitness<'a, P, FBase>,
+		claim: &ExpClaim<P::Scalar>,
+	) -> Result<Self, Error> {
+		if !witness.uses_dynamic_base() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -244,7 +252,9 @@ pub struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
 	pub multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 
-impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
+impl<'a, P: PackedField, FBase: BinaryField> ExpProver<'a, P>
+	for DynamicBaseExpProver<'a, P, FBase>
+{
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width()
 	}
@@ -255,12 +265,10 @@ impl<'a, P: PackedField> ExpProver<'a, P> for DynamicBaseExpProver<'a, P> {
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
 	) -> Result<Option<CompositeSumClaimWithMultilinears<'a, P>>, Error> {
-		let base = self
-			.0
-			.witness
-			.base
-			.clone()
-			.expect("DynamicBase witness must contain base");
+		let base = match self.0.witness.base.clone() {
+			BaseWitness::Dynamic(base) => base,
+			_ => unreachable!("DynamicBase witness must contain base"),
+		};
 
 		let exponent_bit = self.0.current_layer_exponent_bit(layer_no);
 

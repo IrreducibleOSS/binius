@@ -23,9 +23,9 @@ pub struct ExpClaim<F: Field> {
 	/// The number of bits used to represent the integer.
 	pub exponent_bit_width: usize,
 	pub n_vars: usize,
-	/// - `true`: Indicates that the specified base is used
-	/// - `false`: Indicates that the default base, `MULTIPLICATIVE_GENERATOR`, is used.
-	pub with_dynamic_base: bool,
+	/// - `true`: Indicates that the dynamic base is used
+	/// - `false`: Indicates that the constant base is used.
+	pub uses_dynamic_base: bool,
 }
 
 impl<F: Field> From<ExpClaim<F>> for LayerClaim<F> {

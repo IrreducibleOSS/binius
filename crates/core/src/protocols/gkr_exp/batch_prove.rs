@@ -43,7 +43,7 @@ use crate::{
 /// # Recommendations
 /// - Witnesses and claims should be grouped by evaluation points from the claims.
 pub fn batch_prove<'a, FBase, F, P, FDomain, Challenger_, Backend>(
-	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P>>,
+	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P, FBase>>,
 	claims: &[ExpClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
@@ -269,7 +269,7 @@ where
 
 /// Creates a vector of boxed [ExpProver]s from the given witnesses and claims.
 fn make_provers<'a, P, FBase>(
-	witnesses: Vec<BaseExpWitness<'a, P>>,
+	witnesses: Vec<BaseExpWitness<'a, P, FBase>>,
 	claims: &[ExpClaim<P::Scalar>],
 ) -> Result<Vec<Box<dyn ExpProver<'a, P> + 'a>>, Error>
 where
@@ -281,9 +281,7 @@ where
 		.into_iter()
 		.zip(claims)
 		.map(|(witness, claim)| {
-			let is_dynamic_prover = witness.base.is_some();
-
-			if is_dynamic_prover {
+			if witness.uses_dynamic_base() {
 				DynamicBaseExpProver::new(witness, claim)
 					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			} else {

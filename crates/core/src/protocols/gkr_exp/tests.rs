@@ -35,7 +35,7 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
 	base: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
-) -> (BaseExpWitness<'a, P>, ExpClaim<F>) {
+) -> (BaseExpWitness<'a, P, FBase>, ExpClaim<F>) {
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
@@ -66,11 +66,17 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 		.collect::<Vec<_>>();
 
 	let witness = if let Some(base) = base {
-		BaseExpWitness::<'_, P>::new_with_dynamic_base::<PBits, PBase>(exponent_witnesses, base)
-			.unwrap()
+		BaseExpWitness::<'_, P, FBase>::new_with_dynamic_base::<PBits, PBase>(
+			exponent_witnesses,
+			base,
+		)
+		.unwrap()
 	} else {
-		BaseExpWitness::<'_, P>::new_with_generator_base::<PBits, PBase>(exponent_witnesses)
-			.unwrap()
+		BaseExpWitness::<'_, P, FBase>::new_with_constant_base::<PBits, PBase>(
+			exponent_witnesses,
+			FBase::MULTIPLICATIVE_GENERATOR,
+		)
+		.unwrap()
 	};
 
 	let exponentiation_result_witness = witness.exponentiation_result_witness();
@@ -84,14 +90,14 @@ fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
 			.unwrap(),
 		exponent_bit_width: witness.exponent.len(),
 		n_vars: eval_point.len(),
-		with_dynamic_base: witness.base.is_some(),
+		uses_dynamic_base: witness.uses_dynamic_base(),
 	};
 	(witness, claim)
 }
 
 fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: usize>(
 	exponent_bit_width: usize,
-) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P>>) {
+) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P, FBase>>) {
 	let mut rng = thread_rng();
 
 	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
@@ -125,7 +131,7 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 
 #[allow(clippy::type_complexity)]
 fn generate_mul_witnesses_claims_with_different_log_size<'a>(
-) -> (Vec<BaseExpWitness<'a, P>>, Vec<ExpClaim<F>>) {
+) -> (Vec<BaseExpWitness<'a, P, FBase>>, Vec<ExpClaim<F>>) {
 	const LOG_SIZE_1: usize = 14usize;
 	const COLUMN_LEN_1: usize = 1usize << LOG_SIZE_1;
 	const EXPONENT_BIT_WIDTH_1: usize = 3usize;
@@ -240,40 +246,40 @@ fn prove_reduces_to_correct_claims() {
 			let this_claim = &layer_eval_claim[j];
 			let this_bit_query = MultilinearQuery::expand(&this_claim.eval_point);
 
-			if witness.base.is_some() {
-				let exponent = witness.exponent[exponent_bit_number].clone();
+			match &witness.base {
+				super::witness::BaseWitness::Constant(_) => {
+					let exponent = witness.exponent[exponent_len - exponent_bit_number].clone();
 
-				let claimed_evaluation = this_claim.eval;
+					let claimed_evaluation = this_claim.eval;
 
-				let actual_evaluation = exponent
-					.evaluate(MultilinearQueryRef::new(&this_bit_query))
-					.unwrap();
+					let actual_evaluation = exponent
+						.evaluate(MultilinearQueryRef::new(&this_bit_query))
+						.unwrap();
 
-				assert_eq!(claimed_evaluation, actual_evaluation);
+					assert_eq!(claimed_evaluation, actual_evaluation);
+				}
+				super::witness::BaseWitness::Dynamic(multilinear_poly) => {
+					let exponent = witness.exponent[exponent_bit_number].clone();
 
-				j += 1;
+					let claimed_evaluation = this_claim.eval;
 
-				let claimed_evaluation = layer_eval_claim[j].eval;
+					let actual_evaluation = exponent
+						.evaluate(MultilinearQueryRef::new(&this_bit_query))
+						.unwrap();
 
-				let actual_evaluation = witness
-					.base
-					.clone()
-					.unwrap()
-					.evaluate(MultilinearQueryRef::new(&this_bit_query))
-					.unwrap();
+					assert_eq!(claimed_evaluation, actual_evaluation);
 
-				assert_eq!(claimed_evaluation, actual_evaluation);
-			} else {
-				let exponent = witness.exponent[exponent_len - exponent_bit_number].clone();
+					j += 1;
 
-				let claimed_evaluation = this_claim.eval;
+					let claimed_evaluation = layer_eval_claim[j].eval;
 
-				let actual_evaluation = exponent
-					.evaluate(MultilinearQueryRef::new(&this_bit_query))
-					.unwrap();
+					let actual_evaluation = multilinear_poly
+						.evaluate(MultilinearQueryRef::new(&this_bit_query))
+						.unwrap();
 
-				assert_eq!(claimed_evaluation, actual_evaluation);
-			};
+					assert_eq!(claimed_evaluation, actual_evaluation);
+				}
+			}
 
 			j += 1;
 		}
