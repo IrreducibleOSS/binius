@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug, Default)]

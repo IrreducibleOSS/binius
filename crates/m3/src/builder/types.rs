@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use binius_field::{
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
 };

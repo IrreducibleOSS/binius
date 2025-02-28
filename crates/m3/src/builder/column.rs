@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use std::marker::PhantomData;
 
 use binius_core::oracle::ShiftVariant;
