@@ -51,31 +51,35 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	// TODO: Parallelize the data copying
-	let mut packed_offset = 0;
 	let mut mle_iter = multilins.iter().rev();
 
 	// First copy all the polynomials where the number of elements is a multiple of the packing
 	// width.
 	let get_n_packed_vars = |mle: &M| mle.n_vars() - mle.log_extension_degree();
+	let mut full_packed_mles = Vec::new(); // (evals, corresponding buffer where to copy)
+	let mut remaining_buffer = message_buffer;
 	for mle in mle_iter.peeking_take_while(|mle| get_n_packed_vars(mle) >= P::LOG_WIDTH) {
 		let evals = mle
 			.packed_evals()
 			.expect("guaranteed by function precondition");
-		message_buffer[packed_offset..packed_offset + evals.len()].copy_from_slice(evals);
-		packed_offset += evals.len();
+		let (chunk, rest) = remaining_buffer.split_at_mut(evals.len());
+		full_packed_mles.push((evals, chunk));
+		remaining_buffer = rest;
 	}
+	full_packed_mles.into_par_iter().for_each(|(evals, chunk)| {
+		chunk.copy_from_slice(evals);
+	});
 
 	// Now copy scalars from the remaining multilinears, which have too few elements to copy full
 	// packed elements.
-	let mut scalar_offset = packed_offset << P::LOG_WIDTH;
+	let mut scalar_offset = 0;
 	for mle in mle_iter {
 		let evals = mle
 			.packed_evals()
 			.expect("guaranteed by function precondition");
 		let packed_eval = evals[0];
 		for i in 0..1 << mle.n_vars() {
-			set_packed_slice(message_buffer, scalar_offset, packed_eval.get(i));
+			set_packed_slice(remaining_buffer, scalar_offset, packed_eval.get(i));
 			scalar_offset += 1;
 		}
 	}
