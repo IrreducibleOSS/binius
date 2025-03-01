@@ -2,11 +2,11 @@
 
 use std::ops::Range;
 
-use binius_field::{
-	util::eq, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
-};
+use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
+use binius_math::{
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
+};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
@@ -48,13 +48,14 @@ impl<'a, F, FDomain, P, Composition, M, Backend> GPAProver<'a, FDomain, P, Compo
 where
 	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedExtension<FDomain, Scalar = F>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
 	#[instrument(skip_all, level = "debug", name = "GPAProver::new")]
 	pub fn new(
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		first_layer_mle_advice: Option<Vec<M>>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
@@ -102,6 +103,7 @@ where
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new(
+			evaluation_order,
 			multilinears,
 			claimed_sums,
 			nontrivial_evaluation_points,
@@ -115,15 +117,18 @@ where
 			return Err(Error::IncorrectGPARoundChallengesLength);
 		}
 
-		let partial_eq_ind_evals = if gpa_round_challenges.is_empty() {
-			backend.tensor_product_full_query(&[])
-		} else {
-			backend.tensor_product_full_query(&gpa_round_challenges[1..])
-		}
-		.map_err(SumcheckError::from)?;
+		let gpa_round_challenges = gpa_round_challenges.to_vec();
+
+		let partial_eq_ind_evals = backend
+			.tensor_product_full_query(match evaluation_order {
+				EvaluationOrder::LowToHigh => &gpa_round_challenges[n_vars.min(1)..],
+				EvaluationOrder::HighToLow => &gpa_round_challenges[..n_vars.saturating_sub(1)],
+			})
+			.map_err(SumcheckError::from)?;
 
 		let first_round_eval_1s = debug_span!("first_round_eval_1s").in_scope(|| {
 			// This block takes non-trivial amount of time, therefore, instrumenting it is needed.
+			let high_to_low_offset = 1 << n_vars.saturating_sub(1);
 			first_layer_mle_advice.map(|first_layer_mle_advice| {
 				first_layer_mle_advice
 					.into_par_iter()
@@ -134,13 +139,15 @@ where
 							.map(|(i, &eq_ind)| {
 								eq_ind
 									* packed_from_fn_with_offset::<P>(i, |j| {
-										poly_mle
-											.evaluate_on_hypercube(j << 1 | 1)
-											.unwrap_or(F::ZERO)
+										let index = match evaluation_order {
+											EvaluationOrder::LowToHigh => j << 1 | 1,
+											EvaluationOrder::HighToLow => j | high_to_low_offset,
+										};
+										poly_mle.evaluate_on_hypercube(index).unwrap_or(F::ZERO)
 									})
 							})
 							.sum::<P>();
-						packed_sum.iter().sum()
+						packed_sum.iter().take(1 << n_vars).sum()
 					})
 					.collect::<Vec<_>>()
 			})
@@ -151,22 +158,31 @@ where
 			state,
 			eq_ind_eval: F::ONE,
 			partial_eq_ind_evals,
-			gpa_round_challenges: gpa_round_challenges.to_vec(),
+			gpa_round_challenges,
 			compositions,
 			domains,
 			first_round_eval_1s,
 		})
 	}
 
+	fn gpa_round_challenge(&self) -> F {
+		match self.state.evaluation_order() {
+			EvaluationOrder::LowToHigh => self.gpa_round_challenges[self.round()],
+			EvaluationOrder::HighToLow => {
+				self.gpa_round_challenges[self.gpa_round_challenges.len() - 1 - self.round()]
+			}
+		}
+	}
+
 	fn update_eq_ind_eval(&mut self, challenge: F) {
 		// Update the running eq ind evaluation.
-		let alpha = self.gpa_round_challenges[self.round()];
-		self.eq_ind_eval *= eq(alpha, challenge);
+		self.eq_ind_eval *= eq(self.gpa_round_challenge(), challenge);
 	}
 
 	#[instrument(skip_all, name = "GPAProver::fold_partial_eq_ind", level = "trace")]
 	fn fold_partial_eq_ind(&mut self) {
 		common::fold_partial_eq_ind::<P, Backend>(
+			self.state.evaluation_order(),
 			self.n_rounds_remaining(),
 			&mut self.partial_eq_ind_evals,
 		);
@@ -186,9 +202,7 @@ impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 where
 	F: TowerField + ExtensionField<FDomain>,
 	FDomain: Field,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedExtension<FDomain, Scalar = F>,
 	Composition: CompositionPoly<P>,
 	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
@@ -197,9 +211,14 @@ where
 		self.n_vars
 	}
 
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
+	}
+
 	#[instrument(skip_all, name = "GPAProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, SumcheckError> {
 		let round = self.round();
+		let alpha = self.gpa_round_challenge();
 
 		let evaluators = izip!(&self.compositions, &self.domains)
 			.enumerate()
@@ -219,7 +238,7 @@ where
 					interpolation_domain,
 					first_round_eval_1,
 					partial_eq_ind_evals: &self.partial_eq_ind_evals,
-					gpa_round_challenge: self.gpa_round_challenges[round],
+					gpa_round_challenge: alpha,
 				}
 			})
 			.collect::<Vec<_>>();
@@ -230,11 +249,11 @@ where
 				.calculate_round_coeffs_from_evals(&evaluators, batch_coeff, evals)?;
 
 		// Convert v' polynomial into v polynomial
-		let alpha = self.gpa_round_challenges[round];
 
 		// eq(X, α) = (1 − α) + (2 α − 1) X
-		// NB: In binary fields, this expression is simply  eq(X, α) = 1 + α + X
-		// However, we opt to keep this prover generic over all fields.
+		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
+		// we opt to keep this prover generic over all fields. These two multiplications per round
+		// have negligible performance impact.
 		let constant_scalar = F::ONE - alpha;
 		let linear_scalar = alpha.double() - F::ONE;
 
@@ -250,10 +269,12 @@ where
 	fn fold(&mut self, challenge: F) -> Result<(), SumcheckError> {
 		self.update_eq_ind_eval(challenge);
 		let n_rounds_remaining = self.n_rounds_remaining();
+		let evaluation_order = self.state.evaluation_order();
 		binius_maybe_rayon::join(
 			|| self.state.fold(challenge),
 			|| {
 				common::fold_partial_eq_ind::<P, Backend>(
+					evaluation_order,
 					n_rounds_remaining - 1,
 					&mut self.partial_eq_ind_evals,
 				)
@@ -287,7 +308,7 @@ impl<F, P, FDomain, Composition> SumcheckEvaluator<P, Composition>
 	for GPAEvaluator<'_, P, FDomain, Composition>
 where
 	F: TowerField + ExtensionField<FDomain>,
-	P: PackedField<Scalar = F> + PackedExtension<F, PackedSubfield = P> + PackedExtension<FDomain>,
+	P: PackedExtension<FDomain, Scalar = F>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {
@@ -348,7 +369,7 @@ impl<F, P, FDomain, Composition> SumcheckInterpolator<F>
 	for GPAEvaluator<'_, P, FDomain, Composition>
 where
 	F: Field,
-	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
+	P: PackedExtension<FDomain, Scalar = F>,
 	FDomain: Field,
 	Composition: CompositionPoly<P>,
 {

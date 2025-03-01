@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use binius_field::{Field, TowerField};
-use binius_math::extrapolate_line_scalar;
+use binius_math::{extrapolate_line_scalar, EvaluationOrder};
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
@@ -131,7 +131,8 @@ where
 	let sumcheck_claim = reduce_to_sumcheck(&gpa_sumcheck_claims)?;
 	let sumcheck_claims = [sumcheck_claim];
 
-	let batch_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, transcript)?;
+	let batch_sumcheck_output =
+		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, transcript)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;

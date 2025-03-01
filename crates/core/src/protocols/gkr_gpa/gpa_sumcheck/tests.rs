@@ -10,8 +10,8 @@ use binius_field::{
 };
 use binius_hal::make_portable_backend;
 use binius_math::{
-	DefaultEvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearPoly,
-	MultilinearQuery,
+	DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
+	MultilinearPoly, MultilinearQuery,
 };
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
@@ -28,6 +28,25 @@ use crate::{
 };
 
 fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
+	n_vars: usize,
+	use_first_round_eval1_advice: bool,
+) where
+	U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: TowerField,
+	PackedType<U, F>: PackedFieldIndexable,
+{
+	for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+		test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
+			evaluation_order,
+			n_vars,
+			use_first_round_eval1_advice,
+		);
+	}
+}
+
+fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDomain>(
+	evaluation_order: EvaluationOrder,
 	n_vars: usize,
 	use_first_round_eval1_advice: bool,
 ) where
@@ -72,6 +91,7 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	};
 
 	let prover = GPAProver::<FDomain, _, _, _, _>::new(
+		evaluation_order,
 		vec![a_mle, b_mle],
 		Some(vec![ab1_mle]).filter(|_| use_first_round_eval1_advice),
 		[prover_composite_claim],
@@ -93,7 +113,8 @@ fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(
 	let verifier_claim = SumcheckClaim::new(n_vars, 3, vec![verifier_composite_claim]).unwrap();
 
 	let _sumcheck_verify_output =
-		sumcheck::batch_verify(&[verifier_claim], &mut verifier_transcript).unwrap();
+		sumcheck::batch_verify(evaluation_order, &[verifier_claim], &mut verifier_transcript)
+			.unwrap();
 }
 
 #[test]

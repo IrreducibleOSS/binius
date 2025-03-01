@@ -1,16 +1,20 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::get_packed_slice, Field, PackedFieldIndexable};
+use binius_field::{packed::get_packed_slice, PackedField};
 use binius_hal::ComputationBackend;
+use binius_math::EvaluationOrder;
 use binius_maybe_rayon::prelude::*;
 use tracing::instrument;
 
 use crate::protocols::utils::packed_from_fn_with_offset;
 
 #[instrument(skip_all, level = "debug")]
-pub fn fold_partial_eq_ind<P, Backend>(n_vars: usize, partial_eq_ind_evals: &mut Backend::Vec<P>)
-where
-	P: PackedFieldIndexable,
+pub fn fold_partial_eq_ind<P, Backend>(
+	evaluation_order: EvaluationOrder,
+	n_vars: usize,
+	partial_eq_ind_evals: &mut Backend::Vec<P>,
+) where
+	P: PackedField,
 	Backend: ComputationBackend,
 {
 	debug_assert_eq!(1 << n_vars.saturating_sub(P::LOG_WIDTH), partial_eq_ind_evals.len());
@@ -20,24 +24,48 @@ where
 	}
 
 	if partial_eq_ind_evals.len() == 1 {
-		let unpacked = P::unpack_scalars_mut(partial_eq_ind_evals);
-		let last = 1 << (n_vars - 1);
-		for i in 0..last {
-			unpacked[i] = unpacked[2 * i] + unpacked[2 * i + 1];
+		let only_packed = partial_eq_ind_evals.first().expect("len == 1");
+
+		let mut folded = P::zero();
+		for i in 0..1 << (n_vars - 1) {
+			folded.set(
+				i,
+				match evaluation_order {
+					EvaluationOrder::LowToHigh => {
+						only_packed.get(i << 1) + only_packed.get(i << 1 | 1)
+					}
+					EvaluationOrder::HighToLow => {
+						only_packed.get(i) + only_packed.get(i | 1 << (n_vars - 1))
+					}
+				},
+			);
 		}
-		unpacked[last..].fill(P::Scalar::ZERO);
+
+		*partial_eq_ind_evals.first_mut().expect("len == 1") = folded;
 	} else {
-		let current_evals = &*partial_eq_ind_evals;
-		let updated_evals = (0..current_evals.len() / 2)
-			.into_par_iter()
-			.map(|i| {
-				packed_from_fn_with_offset(i, |index| {
-					let eval0 = get_packed_slice(current_evals, index << 1);
-					let eval1 = get_packed_slice(current_evals, (index << 1) + 1);
-					eval0 + eval1
+		let new_packed_len = partial_eq_ind_evals.len() >> 1;
+		let updated_evals = match evaluation_order {
+			EvaluationOrder::LowToHigh => (0..new_packed_len)
+				.into_par_iter()
+				.map(|i| {
+					packed_from_fn_with_offset(i, |index| {
+						let eval0 = get_packed_slice(&*partial_eq_ind_evals, index << 1);
+						let eval1 = get_packed_slice(&*partial_eq_ind_evals, index << 1 | 1);
+						eval0 + eval1
+					})
 				})
-			})
-			.collect();
+				.collect(),
+
+			EvaluationOrder::HighToLow => {
+				// REVIEW: make this inplace, by enabling truncation in Backend::Vec
+				let (evals_0, evals_1) = partial_eq_ind_evals.split_at(new_packed_len);
+
+				(evals_0, evals_1)
+					.into_par_iter()
+					.map(|(&eval_0, &eval_1)| eval_0 + eval_1)
+					.collect()
+			}
+		};
 
 		*partial_eq_ind_evals = Backend::to_hal_slice(updated_evals);
 	}

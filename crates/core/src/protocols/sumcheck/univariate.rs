@@ -230,7 +230,7 @@ mod tests {
 	};
 	use binius_hal::ComputationBackend;
 	use binius_math::{
-		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory,
+		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
 		IsomorphicEvaluationDomainFactory, MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
@@ -353,7 +353,8 @@ mod tests {
 
 		let mut verify_challenger = prove_challenger.into_verifier();
 		let batch_sumcheck_output_verify =
-			batch_verify(claims.as_slice(), &mut verify_challenger).unwrap();
+			batch_verify(EvaluationOrder::LowToHigh, claims.as_slice(), &mut verify_challenger)
+				.unwrap();
 		let batch_sumcheck_output_post = verify_sumcheck_outputs(
 			claims.as_slice(),
 			univariate_challenge,
@@ -557,6 +558,7 @@ mod tests {
 
 			let verifier_sumcheck_claims = reduce_to_sumchecks(&verifier_zerocheck_claims).unwrap();
 			let _verifier_sumcheck_output = batch_verify_with_start(
+				EvaluationOrder::LowToHigh,
 				verifier_univariate_output.batch_verify_start,
 				&verifier_sumcheck_claims,
 				&mut verifier_proof,
