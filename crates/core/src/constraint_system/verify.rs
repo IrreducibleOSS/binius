@@ -4,7 +4,7 @@ use std::{cmp::Reverse, iter};
 
 use binius_field::{BinaryField, PackedField, TowerField};
 use binius_hash::PseudoCompressionFunction;
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_math::{ArithExpr, CompositionPoly, EvaluationOrder};
 use binius_utils::{bail, checked_arithmetics::log2_ceil_usize};
 use digest::{core_api::BlockSizeUser, Digest, Output};
 use itertools::{izip, multiunzip, Itertools};
@@ -169,7 +169,8 @@ where
 		flush_oracle_ids_by_claim,
 	} = get_flush_dedup_sumcheck_claims(flush_sumcheck_metas)?;
 
-	let flush_sumcheck_output = sumcheck::batch_verify(&sumcheck_claims, &mut transcript)?;
+	let flush_sumcheck_output =
+		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, &mut transcript)?;
 
 	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
 		&oracles,
@@ -225,6 +226,7 @@ where
 	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
 
 	let sumcheck_output = sumcheck::batch_verify_with_start(
+		EvaluationOrder::LowToHigh,
 		univariate_output.batch_verify_start,
 		&sumcheck_claims,
 		&mut transcript,
@@ -253,7 +255,8 @@ where
 		reduction_claims.push(reduction_claim);
 	}
 
-	let univariatizing_output = sumcheck::batch_verify(&reduction_claims, &mut transcript)?;
+	let univariatizing_output =
+		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &reduction_claims, &mut transcript)?;
 
 	let multilinear_zerocheck_output = sumcheck::univariate::verify_sumcheck_outputs(
 		&reduction_claims,

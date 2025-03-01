@@ -3,8 +3,8 @@
 use binius_field::{Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{
-	extrapolate_line_scalar, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
-	MultilinearPoly,
+	extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
+	MultilinearExtension, MultilinearPoly,
 };
 use binius_utils::{
 	bail,
@@ -295,6 +295,7 @@ where
 			.collect::<Vec<_>>();
 
 		Ok(GPAProver::new(
+			EvaluationOrder::LowToHigh,
 			multilinears,
 			Some(first_layer_mle_advice),
 			composite_claims,

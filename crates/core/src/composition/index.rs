@@ -134,6 +134,73 @@ where
 	})
 }
 
+#[derive(Debug)]
+pub enum FixedDimIndexCompositions<C> {
+	Quadrivariate(IndexComposition<C, 4>),
+	Trivariate(IndexComposition<C, 3>),
+	Bivariate(IndexComposition<C, 2>),
+}
+
+impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPoly<P>
+	for FixedDimIndexCompositions<C>
+{
+	fn n_vars(&self) -> usize {
+		match self {
+			Self::Trivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
+			Self::Bivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
+			Self::Quadrivariate(index_composition) => {
+				CompositionPoly::<P>::n_vars(index_composition)
+			}
+		}
+	}
+
+	fn degree(&self) -> usize {
+		match self {
+			Self::Trivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
+			Self::Bivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
+			Self::Quadrivariate(index_composition) => {
+				CompositionPoly::<P>::degree(index_composition)
+			}
+		}
+	}
+
+	fn binary_tower_level(&self) -> usize {
+		match self {
+			Self::Trivariate(index_composition) => {
+				CompositionPoly::<P>::binary_tower_level(index_composition)
+			}
+			Self::Bivariate(index_composition) => {
+				CompositionPoly::<P>::binary_tower_level(index_composition)
+			}
+			Self::Quadrivariate(index_composition) => {
+				CompositionPoly::<P>::binary_tower_level(index_composition)
+			}
+		}
+	}
+
+	fn expression(&self) -> ArithExpr<P::Scalar> {
+		match self {
+			Self::Trivariate(index_composition) => {
+				CompositionPoly::<P>::expression(index_composition)
+			}
+			Self::Bivariate(index_composition) => {
+				CompositionPoly::<P>::expression(index_composition)
+			}
+			Self::Quadrivariate(index_composition) => {
+				CompositionPoly::<P>::expression(index_composition)
+			}
+		}
+	}
+
+	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
+		match self {
+			Self::Trivariate(index_composition) => index_composition.evaluate(query),
+			Self::Bivariate(index_composition) => index_composition.evaluate(query),
+			Self::Quadrivariate(index_composition) => index_composition.evaluate(query),
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use binius_field::BinaryField1b;
