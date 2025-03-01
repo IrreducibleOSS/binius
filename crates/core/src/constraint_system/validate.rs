@@ -4,7 +4,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_hal::ComputationBackendExt;
-use binius_math::MultilinearPoly;
+use binius_math::{CompositionPoly, MultilinearPoly};
 use binius_utils::bail;
 
 use super::{
@@ -242,6 +242,21 @@ where
 				return Err(Error::PackedUnderlierMismatch {
 					oracle: oracle_label.into(),
 				});
+			}
+		}
+		MultilinearPolyVariant::Composite(composition) => {
+			let uncombined_polys = composition
+				.polys()
+				.map(|id| witness.get_multilin_poly(id))
+				.collect::<Result<Vec<_>, _>>()?;
+			for i in 0..1 << n_vars {
+				let got = poly.evaluate_on_hypercube(i)?;
+				let inner_evals = uncombined_polys
+					.iter()
+					.map(|poly| poly.evaluate_on_hypercube(i))
+					.collect::<Result<Vec<_>, _>>()?;
+				let expected = composition.comp.evaluate(&inner_evals)?;
+				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
 	}

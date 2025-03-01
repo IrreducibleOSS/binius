@@ -3,8 +3,9 @@
 use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
-use binius_math::extrapolate_line_scalar;
+use binius_math::{extrapolate_line_scalar, CompositionPoly};
 use getset::{Getters, MutGetters};
+use itertools::Itertools;
 use tracing::instrument;
 
 use super::{
@@ -243,6 +244,32 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					inner,
 					subclaim_eval_point,
 				)?;
+			}
+			MultilinearPolyVariant::Composite(composition) => {
+				let subproofs = match evalcheck_proof {
+					EvalcheckProof::Composite { subproofs } => subproofs,
+					_ => return Err(VerificationError::SubproofMismatch.into()),
+				};
+
+				if subproofs.len() != composition.n_polys() {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
+
+				// Verify the evaluation of the composition over the claimed inner evaluations
+				let actual_eval = composition
+					.comp
+					.evaluate(&subproofs.iter().map(|(eval, _)| *eval).collect_vec())?;
+
+				if actual_eval != eval {
+					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
+				}
+
+				subproofs
+					.into_iter()
+					.zip(composition.polys())
+					.try_for_each(|((eval, subproof), suboracle_id)| {
+						self.verify_multilinear_subclaim(eval, subproof, suboracle_id, &eval_point)
+					})?;
 			}
 		}
 

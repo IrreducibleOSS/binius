@@ -46,6 +46,8 @@ pub enum SerializationError {
 	DeserializerNameConflict { name: String },
 	#[error("FromUtf8Error: {0}")]
 	FromUtf8Error(#[from] std::string::FromUtf8Error),
+	#[error("Invalid construction of {name}")]
+	InvalidConstruction { name: &'static str },
 }
 
 // Copyright 2025 Irreducible Inc.
