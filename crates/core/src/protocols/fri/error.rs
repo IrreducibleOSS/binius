@@ -16,7 +16,7 @@ pub enum Error {
 	InvalidFoldAritySequence,
 	#[error("fold arity at index {index} in sequence is zero")]
 	FoldArityIsZero { index: usize },
-	#[error("the fold arity for the first fold be be at least the log batch size")]
+	#[error("the fold arity for the first fold should be at least the log batch size")]
 	FirstFoldArityTooSmall,
 	#[error("attempted to fold more than maximum of {max_folds} times")]
 	TooManyFoldExecutions { max_folds: usize },
