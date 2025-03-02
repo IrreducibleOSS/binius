@@ -212,6 +212,7 @@ where
 
 	let GrandProductBatchProveOutput { final_layer_claims } =
 		gkr_gpa::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+			EvaluationOrder::LowToHigh,
 			all_gpa_witnesses,
 			&all_gpa_claims,
 			&fast_domain_factory,

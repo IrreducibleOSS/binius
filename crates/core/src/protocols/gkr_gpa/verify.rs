@@ -22,6 +22,7 @@ use crate::{
 /// Verifies batch reduction turning each GrandProductClaim into an EvalcheckMultilinearClaim
 #[instrument(skip_all, name = "gkr_gpa::batch_verify", level = "debug")]
 pub fn batch_verify<F, Challenger_>(
+	evaluation_order: EvaluationOrder,
 	claims: impl IntoIterator<Item = GrandProductClaim<F>>,
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<Vec<LayerClaim<F>>, Error>
@@ -54,7 +55,7 @@ where
 			&mut reverse_sorted_evalcheck_claims,
 		);
 
-		layer_claims = reduce_layer_claim_batch(&layer_claims, transcript)?;
+		layer_claims = reduce_layer_claim_batch(evaluation_order, &layer_claims, transcript)?;
 	}
 	process_finished_claims(
 		n_claims,
@@ -102,6 +103,7 @@ fn process_finished_claims<F: Field>(
 /// * `proof` - The batch layer proof that reduces the kth layer claims of the product circuits to the (k+1)th
 /// * `transcript` - The verifier transcript
 fn reduce_layer_claim_batch<F, Challenger_>(
+	evaluation_order: EvaluationOrder,
 	claims: &[LayerClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<Vec<LayerClaim<F>>, Error>
@@ -132,7 +134,7 @@ where
 	let sumcheck_claims = [sumcheck_claim];
 
 	let batch_sumcheck_output =
-		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, transcript)?;
+		sumcheck::batch_verify(evaluation_order, &sumcheck_claims, transcript)?;
 
 	let batch_sumcheck_output =
 		verify_sumcheck_outputs(&gpa_sumcheck_claims, curr_layer_challenge, batch_sumcheck_output)?;

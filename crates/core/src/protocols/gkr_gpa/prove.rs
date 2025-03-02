@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{Field, PackedExtension, PackedField, PackedFieldIndexable, TowerField};
+use binius_field::{Field, PackedExtension, PackedField, TowerField};
 use binius_hal::ComputationBackend;
 use binius_math::{
 	extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
@@ -32,6 +32,7 @@ use crate::{
 /// * The ith witness corresponds to the ith claim
 #[instrument(skip_all, name = "gkr_gpa::batch_prove", level = "debug")]
 pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
+	evaluation_order: EvaluationOrder,
 	witnesses: impl IntoIterator<Item = GrandProductWitness<P>>,
 	claims: &[GrandProductClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -40,9 +41,7 @@ pub fn batch_prove<F, P, FDomain, Challenger_, Backend>(
 ) -> Result<GrandProductBatchProveOutput<F>, Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F>
-		+ PackedExtension<F, PackedSubfield = P>
-		+ PackedExtension<FDomain>,
+	P: PackedField<Scalar = F> + PackedExtension<FDomain>,
 	FDomain: Field,
 	Challenger_: Challenger,
 	Backend: ComputationBackend,
@@ -89,6 +88,7 @@ where
 		// Step 2: Create sumcheck batch proof
 		let batch_sumcheck_output = {
 			let gpa_sumcheck_prover = GrandProductProverState::stage_gpa_sumcheck_provers(
+				evaluation_order,
 				&sorted_provers,
 				evaluation_domain_factory.clone(),
 			)?;
@@ -133,7 +133,7 @@ fn process_finished_provers<F, P, Backend>(
 ) -> Result<(), Error>
 where
 	F: TowerField,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
+	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
 	while let Some(prover) = sorted_provers.last() {
@@ -177,7 +177,7 @@ where
 impl<'a, F, P, Backend> GrandProductProverState<'a, F, P, Backend>
 where
 	F: TowerField + From<P::Scalar>,
-	P: PackedFieldIndexable<Scalar = F> + PackedExtension<F, PackedSubfield = P>,
+	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
 	/// Create a new GrandProductProverState
@@ -248,6 +248,7 @@ where
 	#[allow(clippy::type_complexity)]
 	#[instrument(skip_all, level = "debug")]
 	fn stage_gpa_sumcheck_provers<FDomain>(
+		evaluation_order: EvaluationOrder,
 		provers: &[Self],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	) -> Result<
@@ -295,7 +296,7 @@ where
 			.collect::<Vec<_>>();
 
 		Ok(GPAProver::new(
-			EvaluationOrder::LowToHigh,
+			evaluation_order,
 			multilinears,
 			Some(first_layer_mle_advice),
 			composite_claims,
