@@ -4,7 +4,9 @@ use std::{marker::PhantomData, ops::Range};
 
 use binius_field::{ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
-use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
+use binius_math::{
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
+};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use itertools::izip;
@@ -89,6 +91,7 @@ where
 {
 	#[instrument(skip_all, level = "debug", name = "RegularSumcheckProver::new")]
 	pub fn new(
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
@@ -142,6 +145,7 @@ where
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new(
+			evaluation_order,
 			multilinears,
 			claimed_sums,
 			nontrivial_evaluation_points,
@@ -171,6 +175,10 @@ where
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars
+	}
+
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
 	}
 
 	#[instrument("RegularSumcheckProver::fold", skip_all, level = "debug")]

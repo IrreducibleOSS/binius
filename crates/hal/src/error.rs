@@ -13,6 +13,10 @@ pub enum Error {
 	IncorrectQuerySize { expected: usize },
 	#[error("provided nontrivial evaluation points are of incorrect length")]
 	IncorrectNontrivialEvalPointsLength,
+	#[error("scratch space not provided")]
+	NoScratchSpace,
+	#[error("incorrect multilinear access destination slice lengths")]
+	IncorrectDestSliceLengths,
 	#[error("{0}")]
 	FieldError(#[from] binius_field::Error),
 }

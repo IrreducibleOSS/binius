@@ -27,3 +27,7 @@ bench = false
 [[bench]]
 name = "additive_ntt"
 harness = false
+
+[[bench]]
+name = "large_transform"
+harness = false

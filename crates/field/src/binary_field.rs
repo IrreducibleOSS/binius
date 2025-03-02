@@ -294,6 +294,7 @@ macro_rules! binary_field {
 		impl Field for $name {
 			const ZERO: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ZERO);
 			const ONE: Self = $name::new(<$typ as $crate::underlier::UnderlierWithBitOps>::ONE);
+			const CHARACTERISTIC: usize = 2;
 
 			fn random(mut rng: impl RngCore) -> Self {
 				Self(<$typ as $crate::underlier::Random>::random(&mut rng))
@@ -619,6 +620,13 @@ macro_rules! impl_field_extension {
 
 				IterationMethods::<<$subfield_name as WithUnderlier>::Underlier, Self::Underlier>::value_iter(self.0)
 					.map_skippable($subfield_name::from)
+			}
+
+			#[inline]
+			unsafe fn get_base_unchecked(&self, i: usize) -> $subfield_name {
+				use $crate::underlier::{WithUnderlier, UnderlierWithBitOps};
+
+				$subfield_name::from_underlier(self.to_underlier().get_subvalue(i))
 			}
 		}
 	};

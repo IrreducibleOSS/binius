@@ -9,8 +9,8 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MLEDirectAdapter,
-	MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
+	MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -229,6 +229,7 @@ where
 
 		// This is a regular multilinear zerocheck constructor, split over two creation stages.
 		ZerocheckProver::new(
+			EvaluationOrder::LowToHigh,
 			multilinears,
 			&self.switchover_rounds,
 			compositions,
@@ -392,6 +393,7 @@ where
 		// `P: RepackedExtension<P>` relation in the generic context, as well as the need
 		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
 		let regular_prover = ZerocheckProver::new(
+			EvaluationOrder::LowToHigh,
 			partial_low_multilinears,
 			&switchover_rounds,
 			compositions,
@@ -457,6 +459,11 @@ where
 {
 	#[allow(clippy::too_many_arguments)]
 	fn new(
+		// REVIEW: given that high-to-low zerocheck may only be instantiated via
+		//         reduction from high-to-low univariate prover, actual implementation
+		//         of high-to-low zerocheck is deferred until the introduction of high-to-low
+		//         univariate skip.
+		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		switchover_rounds: &[usize],
 		compositions: Vec<Composition>,
@@ -474,6 +481,7 @@ where
 		let nontrivial_evaluation_points = get_nontrivial_evaluation_points(&domains)?;
 
 		let state = ProverState::new_with_switchover_rounds(
+			evaluation_order,
 			multilinears,
 			switchover_rounds,
 			claimed_prime_sums,
@@ -517,15 +525,13 @@ where
 	fn update_eq_ind_eval(&mut self, challenge: F) {
 		// Update the running eq ind evaluation.
 		let alpha = self.zerocheck_challenges[self.round()];
-		// NB: In binary fields, this expression can be simplified to 1 + α + challenge. However,
-		// we opt to keep this prover generic over all fields. These two multiplications per round
-		// have negligible performance impact.
 		self.eq_ind_eval *= eq(alpha, challenge);
 	}
 
 	#[instrument(skip_all, level = "debug")]
 	fn fold_partial_eq_ind(&mut self) {
 		fold_partial_eq_ind::<P, Backend>(
+			self.state.evaluation_order(),
 			self.n_rounds_remaining(),
 			&mut self.partial_eq_ind_evals,
 		);
@@ -544,6 +550,10 @@ where
 {
 	fn n_vars(&self) -> usize {
 		self.n_vars
+	}
+
+	fn evaluation_order(&self) -> EvaluationOrder {
+		self.state.evaluation_order()
 	}
 
 	#[instrument(skip_all, name = "ZerocheckProver::fold", level = "debug")]

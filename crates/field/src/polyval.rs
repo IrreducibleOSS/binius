@@ -33,7 +33,7 @@ use crate::{
 		invert_or_zero_using_packed, multiple_using_packed, square_using_packed,
 	},
 	linear_transformation::{FieldLinearTransformation, Transformation},
-	underlier::{IterationMethods, IterationStrategy, UnderlierWithBitOps, U1},
+	underlier::{IterationMethods, IterationStrategy, NumCast, UnderlierWithBitOps, U1},
 	Field,
 };
 
@@ -260,6 +260,7 @@ impl Square for BinaryField128bPolyval {
 impl Field for BinaryField128bPolyval {
 	const ZERO: Self = Self(0);
 	const ONE: Self = Self(0xc2000000000000000000000000000001);
+	const CHARACTERISTIC: usize = 2;
 
 	fn random(mut rng: impl RngCore) -> Self {
 		Self(rng.gen())
@@ -451,6 +452,11 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 	fn into_iter_bases(self) -> impl Iterator<Item = BinaryField1b> {
 		IterationMethods::<U1, Self::Underlier>::value_iter(self.0)
 			.map_skippable(BinaryField1b::from)
+	}
+
+	#[inline]
+	unsafe fn get_base_unchecked(&self, i: usize) -> BinaryField1b {
+		BinaryField1b(U1::num_cast_from(self.0 >> i))
 	}
 }
 
