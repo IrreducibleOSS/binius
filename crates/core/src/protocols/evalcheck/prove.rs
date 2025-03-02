@@ -383,6 +383,15 @@ where
 				self.incomplete_proof_claims
 					.insert(multilinear_id, eval_point, evalcheck_claim);
 			}
+
+			MultilinearPolyVariant::Composite(composition) => {
+				for suboracle_id in composition.polys() {
+					self.claims_without_evals
+						.push((self.oracles.oracle(suboracle_id), eval_point.clone()));
+				}
+				self.incomplete_proof_claims
+					.insert(multilinear_id, eval_point, evalcheck_claim);
+			}
 		};
 	}
 
@@ -460,6 +469,23 @@ where
 						);
 					})
 			}
+
+			MultilinearPolyVariant::Composite(composition) => composition
+				.polys()
+				.map(|suboracle_id| {
+					self.finalized_proofs
+						.get(suboracle_id, &evalcheck_claim.eval_point)
+						.map(|(eval, subproof)| (*eval, subproof.clone()))
+				})
+				.collect::<Option<Vec<_>>>()
+				.map(|subproofs| {
+					self.finalized_proofs.insert(
+						evalcheck_claim.id,
+						eval_point,
+						(eval, EvalcheckProof::Composite { subproofs }),
+					);
+				}),
+
 			_ => unreachable!(),
 		};
 		res.is_some()

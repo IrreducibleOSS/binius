@@ -4,6 +4,7 @@ use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPoly, Error};
+use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
@@ -130,6 +131,39 @@ pub struct ArithCircuitPoly<F: Field> {
 	degree: usize,
 	n_vars: usize,
 	tower_level: usize,
+}
+
+impl<F: Field> PartialEq for ArithCircuitPoly<F> {
+	fn eq(&self, other: &Self) -> bool {
+		self.n_vars == other.n_vars && self.expr == other.expr
+	}
+}
+
+impl<F: Field> Eq for ArithCircuitPoly<F> {}
+
+impl<F: TowerField> SerializeBytes for ArithCircuitPoly<F> {
+	fn serialize(
+		&self,
+		mut write_buf: impl bytes::BufMut,
+		mode: SerializationMode,
+	) -> Result<(), SerializationError> {
+		(&self.expr, self.n_vars).serialize(&mut write_buf, mode)
+	}
+}
+
+impl<F: TowerField> DeserializeBytes for ArithCircuitPoly<F> {
+	fn deserialize(
+		read_buf: impl bytes::Buf,
+		mode: SerializationMode,
+	) -> Result<Self, SerializationError>
+	where
+		Self: Sized,
+	{
+		let (expr, n_vars) = <(ArithExpr<F>, usize)>::deserialize(read_buf, mode)?;
+		Self::with_n_vars(n_vars, expr).map_err(|_| SerializationError::InvalidConstruction {
+			name: "ArithCircuitPoly",
+		})
+	}
 }
 
 impl<F: TowerField> ArithCircuitPoly<F> {
