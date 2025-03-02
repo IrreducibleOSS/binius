@@ -1,10 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Example of a Collatz M3 arithmetization.
+//!
+//! See [Collatz] M3 example documentation for further information.
+//!
+//! [Collatz]: <https://www.binius.xyz/basics/arithmetization/m3/collatz>
+
 use binius_core::{constraint_system::channel::ChannelId, oracle::ShiftVariant};
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	underlier::UnderlierType,
-};
+use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType};
 use bytemuck::Pod;
 
 use crate::{
@@ -19,6 +22,7 @@ use crate::{
 	u32::{U32Add, U32AddFlags},
 };
 
+/// Table of transitions for even numbers in the Collatz sequence.
 #[derive(Debug)]
 pub struct EvensTable {
 	pub id: TableId,
@@ -33,6 +37,9 @@ impl EvensTable {
 		let table = cs.add_table("evens");
 
 		let even = table.add_committed::<B1, 5>("even");
+
+		// TODO: Check that the bottom bit is 0. We can do this with a selected derived column and
+		// an assert_zero constraint.
 
 		// Logical right shift is division by 2
 		let half = table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
@@ -102,6 +109,9 @@ impl OddsTable {
 
 		let odd = table.add_committed::<B1, 5>("odd_bits");
 
+		// TODO: Check that the bottom bit is 1. We can do this with a selected derived column and
+		// an assert_zero constraint.
+
 		// Input times 2
 		let double =
 			table.add_shifted::<B1, 5>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
@@ -144,8 +154,6 @@ impl OddsTable {
 impl<U: UnderlierType> TableFiller<U> for OddsTable
 where
 	U: Pod + PackScalar<B1> + PackScalar<B32>,
-	PackedType<U, B1>: Pod,
-	PackedType<U, B32>: Pod,
 {
 	type Event = OddsEvent;
 

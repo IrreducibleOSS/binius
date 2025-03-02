@@ -26,7 +26,7 @@ use super::{
 	types::{B1, B128, B16, B32, B64, B8},
 };
 
-/// Runtime borrow checking on columns. Maybe read-write lock?
+/// Holds witness column data for all tables in a constraint system, indexed by column ID.
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	pub tables: Vec<TableWitnessIndex<'a, U>>,
@@ -142,7 +142,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 	}
 }
 
-/// Runtime borrow checking on columns. Maybe read-write lock?
+/// Holds witness column data for a table, indexed by column index.
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
@@ -205,6 +205,7 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 		1 << self.log_capacity
 	}
 
+	/// Returns a witness index segment covering the entire table.
 	pub fn full_segment(&mut self) -> TableWitnessIndexSegment<U> {
 		let cols = self
 			.cols
@@ -223,6 +224,7 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 		}
 	}
 
+	/// Returns an iterator over segments of witness index rows.
 	pub fn segments(
 		&mut self,
 		log_size: usize,
@@ -310,7 +312,10 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 	}
 }
 
-/// Runtime borrow checking on columns. Maybe read-write lock?
+/// A vertical segment of a table witness index.
+///
+/// This provides runtime-checked access to slices of the witness columns. This is used separately
+/// from [`TableWitnessIndex`] so that witness population can be parallelized over segments.
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
@@ -336,12 +341,6 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 			});
 		}
 
-		// let table_col = self
-		// 	.cols
-		// 	.get(col.table_id)
-		// 	.ok_or_else(|| Error::MissingTable {
-		// 		table_id: col.table_id,
-		// 	})?;
 		let col = self
 			.cols
 			.get(col.partition)
@@ -455,6 +454,7 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	/// A struct that specifies the row contents.
 	type Event;
 
+	/// Returns the table ID.
 	fn id(&self) -> TableId;
 
 	/// Fill the table witness with data derived from the given rows.
@@ -465,6 +465,9 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	) -> anyhow::Result<()>;
 }
 
+/// Fill a full table witness index using the given row data.
+///
+/// This function iterates through witness segments sequentially in a single thread.
 pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	table: &T,
 	rows: &[T::Event],
@@ -484,8 +487,8 @@ pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	Ok(())
 }
 
-// Also, fill_table_parallel
-// Also, a streaming version that streams in rows and fills in a background thread pool.
+// TODO: fill_table_parallel
+// TODO: a streaming version that streams in rows and fills in a background thread pool.
 
 #[cfg(test)]
 mod tests {

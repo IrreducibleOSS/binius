@@ -1,5 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Example of a high-level emulation of a Collatz M3 instance.
+
+// TODO: Move this into an examples directory
+
 use std::{collections::HashMap, hash::Hash};
 
 #[derive(Debug, Default)]

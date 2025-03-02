@@ -5,17 +5,11 @@ use binius_field::TowerField;
 
 use super::types::B128;
 
+/// A statement of values claimed to satisfy a constraint system.
 pub struct Statement<F: TowerField = B128> {
 	pub boundaries: Vec<Boundary<F>>,
+	// TODO: This doesn't belong in `Statement`. We should split this struct somehow. Perhaps table
+	// sizes go into a separate `Advice` struct.
 	/// Direct index mapping table IDs to the count of rows per table.
-	///
-	/// The table sizes seem like advice values that don't affect the semantic meaning of the
-	/// statement, but we include them in the statement directly. This makes sense because
-	///
-	/// 1. These values affect the control flow of the verification routine.
-	/// 2. These values are necessarily made public.
-	/// 3. For some constraint systems, the verifier does care about the values. For example, the
-	///    statement could be that a VM execution state is reachable within a certain number of
-	///    cycles.
 	pub table_sizes: Vec<usize>,
 }

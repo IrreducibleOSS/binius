@@ -10,7 +10,7 @@ use binius_field::{ExtensionField, TowerField};
 
 use super::{
 	channel::Flush,
-	column::{upcast_col, Col, Column, ColumnIndex, ColumnInfo, ColumnShape},
+	column::{upcast_col, Col, ColumnDef, ColumnIndex, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
 };
@@ -75,7 +75,7 @@ impl<F: TowerField> TablePartition<F> {
 		let index = self.column_info.len();
 		self.column_info.push(ColumnInfo {
 			id: self.column_id(index),
-			col: Column::Committed {
+			col: ColumnDef::Committed {
 				tower_level: FSub::TOWER_LEVEL,
 			},
 			name: name.to_string(),
@@ -110,7 +110,7 @@ impl<F: TowerField> TablePartition<F> {
 		let index = self.column_info.len();
 		self.column_info.push(ColumnInfo {
 			id: self.column_id(index),
-			col: Column::Shifted {
+			col: ColumnDef::Shifted {
 				col: col.id(),
 				offset,
 				log_block_size,
@@ -163,7 +163,7 @@ impl<F: TowerField> TablePartition<F> {
 		let index = self.column_info.len();
 		self.column_info.push(ColumnInfo {
 			id: self.column_id(index),
-			col: Column::LinearCombination(lincom),
+			col: ColumnDef::LinearCombination(lincom),
 			name: name.to_string(),
 			shape: ColumnShape {
 				pack_factor: V,
@@ -206,7 +206,7 @@ impl<F: TowerField> TablePartition<F> {
 		let index = self.column_info.len();
 		self.column_info.push(ColumnInfo {
 			id: self.column_id(index),
-			col: Column::Packed {
+			col: ColumnDef::Packed {
 				col: col.id(),
 				log_degree: FSub::TOWER_LEVEL - FSubSub::TOWER_LEVEL,
 			},
