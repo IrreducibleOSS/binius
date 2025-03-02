@@ -14,7 +14,6 @@ pub enum Error {
 /// A mutable view of an 2D array in row-major order that allows for parallel processing of
 /// vertical slices.
 #[derive(Debug)]
-#[allow(clippy::redundant_allocation)]
 pub struct StridedArray2DViewMut<'a, T> {
 	data: &'a mut [T],
 	data_width: usize,
@@ -80,7 +79,7 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 
 		cols.clone().step_by(stride).map(move |start| {
 			let end = (start + stride).min(cols.end);
-			StridedArray2DViewMut::<'a, T> {
+			Self {
 				// Safety: different instances of StridedArray2DViewMut created with the same data slice
 				// do not access overlapping indices.
 				data: unsafe { slice::from_raw_parts_mut(data.as_mut_ptr(), data.len()) },
@@ -103,7 +102,7 @@ impl<'a, T> StridedArray2DViewMut<'a, T> {
 			.map(move |start| {
 				let end = (start + stride).min(self.cols.end);
 				// We are setting the same lifetime as `self` captures.
-				StridedArray2DViewMut::<'a, T> {
+				Self {
 					// Safety: different instances of StridedArray2DViewMut created with the same data slice
 					// do not access overlapping indices.
 					data: unsafe {

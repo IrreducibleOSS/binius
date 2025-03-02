@@ -39,8 +39,7 @@ pub fn stable_sort<T>(
 	} else {
 		indexed_objs.sort_by(|a, b| key(&a.1).cmp(&key(&b.1)));
 	}
-	let (original_indices, sorted_objs) = indexed_objs.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
-	(original_indices, sorted_objs)
+	indexed_objs.into_iter().unzip()
 }
 
 /// Restores the original order of a collection of objects based on their original indices.
