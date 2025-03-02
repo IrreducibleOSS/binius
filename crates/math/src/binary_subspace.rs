@@ -33,7 +33,7 @@ impl<F: BinaryField> BinarySubspace<F> {
 	pub fn with_dim(dim: usize) -> Result<Self, Error> {
 		let basis = (0..dim)
 			.map(|i| F::basis(i).map_err(|_| Error::DomainSizeTooLarge))
-			.collect::<Result<Vec<_>, _>>()?;
+			.collect::<Result<_, _>>()?;
 		Ok(Self { basis })
 	}
 
@@ -59,7 +59,7 @@ impl<F: BinaryField> BinarySubspace<F> {
 		FIso: BinaryField + From<F>,
 	{
 		BinarySubspace {
-			basis: self.basis.iter().copied().map(FIso::from).collect(),
+			basis: self.basis.iter().copied().map(Into::into).collect(),
 		}
 	}
 
@@ -114,7 +114,7 @@ impl<F: BinaryField> Default for BinarySubspace<F> {
 	fn default() -> Self {
 		let basis = (0..F::DEGREE)
 			.map(|i| F::basis(i).expect("index is in range"))
-			.collect::<Vec<_>>();
+			.collect();
 		Self { basis }
 	}
 }

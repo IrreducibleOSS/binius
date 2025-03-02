@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{
-	cmp::{max, Ordering},
+	cmp::Ordering,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -44,7 +44,7 @@ impl<F: Field> ArithExpr<F> {
 		match self {
 			Self::Const(_) => 0,
 			Self::Var(index) => *index + 1,
-			Self::Add(left, right) | Self::Mul(left, right) => max(left.n_vars(), right.n_vars()),
+			Self::Add(left, right) | Self::Mul(left, right) => left.n_vars().max(right.n_vars()),
 			Self::Pow(id, _) => id.n_vars(),
 		}
 	}
@@ -54,7 +54,7 @@ impl<F: Field> ArithExpr<F> {
 		match self {
 			Self::Const(_) => 0,
 			Self::Var(_) => 1,
-			Self::Add(left, right) => max(left.degree(), right.degree()),
+			Self::Add(left, right) => left.degree().max(right.degree()),
 			Self::Mul(left, right) => left.degree() + right.degree(),
 			Self::Pow(base, exp) => base.degree() * *exp as usize,
 		}
@@ -237,7 +237,7 @@ impl<F: TowerField> ArithExpr<F> {
 			Self::Const(value) => value.min_tower_level(),
 			Self::Var(_) => 0,
 			Self::Add(left, right) | Self::Mul(left, right) => {
-				max(left.binary_tower_level(), right.binary_tower_level())
+				left.binary_tower_level().max(right.binary_tower_level())
 			}
 			Self::Pow(base, _) => base.binary_tower_level(),
 		}
