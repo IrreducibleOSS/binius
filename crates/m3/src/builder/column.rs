@@ -8,9 +8,10 @@ use binius_math::LinearNormalForm;
 
 use super::{table::TableId, types::B128};
 
-pub type ColumnIndex = usize; // REVIEW: Could make these opaque without a constructor, to protect
-							  // access
-/// A type representing a column in a table.
+/// An index of a column within a table.
+pub type ColumnIndex = usize;
+
+/// A typed identifier for a column in a table.
 ///
 /// The column has entries that are elements of `F`. In practice, the fields used will always be
 /// from the canonical tower (B1, B8, B16, B32, B64, B128). The second constant represents how many
@@ -19,8 +20,6 @@ pub type ColumnIndex = usize; // REVIEW: Could make these opaque without a const
 #[derive(Debug, Clone, Copy)]
 pub struct Col<F: TowerField, const V: usize = 0> {
 	// TODO: Maybe V should be powers of 2 instead of logarithmic
-
-	// REVIEW: Maybe this should have denormalized name for debugging.
 	pub table_id: TableId,
 	pub partition: usize,
 	pub index: ColumnIndex,
@@ -71,7 +70,7 @@ where
 #[derive(Debug)]
 pub struct ColumnInfo<F: TowerField = B128> {
 	pub id: ColumnId,
-	pub col: Column<F>,
+	pub col: ColumnDef<F>,
 	pub name: String,
 	pub shape: ColumnShape,
 	pub is_nonzero: bool,
@@ -86,13 +85,17 @@ pub struct ColumnShape {
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnId {
 	pub table_id: TableId,
+	// REVIEW: Does this strictly correspond to the packing factor?
+	// Should it be here or on columnInfo?
 	pub partition: usize,
 	pub index: ColumnIndex,
 }
 
 // feature: TableBuilder needs namespacing
+
+/// A definition of a column in a table.
 #[derive(Debug)]
-pub enum Column<F: TowerField = B128> {
+pub enum ColumnDef<F: TowerField = B128> {
 	Committed {
 		tower_level: usize,
 	},

@@ -1,5 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Type aliases for primitive data types.
+//!
+//! The primitive data types are fields in the canonical tower.
+
 use binius_field::{
 	BinaryField128b, BinaryField16b, BinaryField1b, BinaryField32b, BinaryField64b, BinaryField8b,
 };

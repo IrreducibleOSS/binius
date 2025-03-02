@@ -1,13 +1,12 @@
 // Copyright 2025 Irreducible Inc.
 
-// TODO: Do we need upcast_expr too?
-
 use binius_field::{Field, TowerField};
 use binius_math::ArithExpr;
 use getset::{CopyGetters, Getters};
 
 use super::{column::Col, table::TableId};
 
+/// A constraint that the evaluation of an expression over a table is zero at every row.
 #[derive(Debug)]
 pub struct ZeroConstraint<F: Field> {
 	pub name: String,
@@ -26,6 +25,7 @@ pub struct Expr<F: TowerField, const V: usize> {
 }
 
 impl<F: TowerField, const V: usize> Expr<F, V> {
+	/// Polynomial degree of the arithmetic expression.
 	pub fn degree(&self) -> usize {
 		self.expr.degree()
 	}

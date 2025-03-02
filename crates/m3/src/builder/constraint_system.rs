@@ -1,13 +1,5 @@
 // Copyright 2025 Irreducible Inc.
 
-// Tables
-
-// Lookups
-// Columns <- Associated with tables
-
-// Statement
-// - Channel boundaries
-// - Table sizes
 pub use binius_core::constraint_system::channel::{
 	Boundary, Flush as CompiledFlush, FlushDirection,
 };
@@ -22,7 +14,7 @@ use bumpalo::Bump;
 
 use super::{
 	channel::{Channel, Flush},
-	column::{Column, ColumnInfo},
+	column::{ColumnDef, ColumnInfo},
 	error::Error,
 	statement::Statement,
 	table::{Table, TablePartition},
@@ -31,6 +23,7 @@ use super::{
 };
 use crate::builder::expr::ArithExprNamedVars;
 
+/// An M3 constraint system, independent of the table sizes.
 #[derive(Debug, Default)]
 pub struct ConstraintSystem<F: TowerField = B128> {
 	pub tables: Vec<Table<F>>,
@@ -143,6 +136,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 		id
 	}
 
+	/// Creates and allocates the witness index for a statement.
+	///
+	/// The statement includes information about the tables sizes, which this requires in order to
+	/// allocate the column data correctly. The created witness index needs to be populated before
+	/// proving.
 	pub fn build_witness<'a, U: UnderlierType>(
 		&self,
 		allocator: &'a Bump,
@@ -215,6 +213,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 						Ok::<_, Error>(oracle_id)
 					})
 					.collect::<Result<Vec<_>, _>>()?;
+
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 				let selector =
 					oracles.add_transparent(StepDown::new(n_vars, count << pack_factor)?)?;
@@ -278,8 +277,8 @@ fn add_oracle_for_column<F: TowerField>(
 	let ColumnInfo { id, col, name, .. } = column_info;
 	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
-		Column::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		Column::LinearCombination(lincom) => {
+		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
+		ColumnDef::LinearCombination(lincom) => {
 			let inner_oracles = lincom
 				.var_coeffs
 				.iter()
@@ -288,7 +287,7 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect::<Vec<_>>();
 			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
 		}
-		Column::Shifted {
+		ColumnDef::Shifted {
 			col,
 			offset,
 			log_block_size,
@@ -302,10 +301,9 @@ fn add_oracle_for_column<F: TowerField>(
 				*variant,
 			)?
 		}
-		Column::Packed { col, log_degree } => {
+		ColumnDef::Packed { col, log_degree } => {
 			addition.packed(oracle_lookup[col.partition][col.index], *log_degree)?
 		}
 	};
 	Ok(oracle_id)
 }
-// table[partition][column] -> oracle_id

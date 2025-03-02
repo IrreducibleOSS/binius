@@ -1,24 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_core::oracle::ShiftVariant;
-use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
-	packed::set_packed_slice,
-	Field,
-};
+use binius_field::{as_packed_field::PackScalar, packed::set_packed_slice, Field};
 use bytemuck::Pod;
 
 use crate::builder::{column::Col, table::Table, types::B1, witness::TableWitnessIndexSegment};
 
-// Concepts:
-//
-// - Gadgets used within a single table. They derive data from input witness values, plus advice.
-// - Gadgets assume that their input columns have been populated already.
-//
-// - Table population just takes advice as a struct.
-//
-// - Provide functions to populate table rows and row segments. Row segments for better parallelism.
-
+/// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
+///
+/// This gadget has input columns `xin` and `yin` for the two 32-bit integers to be added, and an
+/// output column `zout`, and it constrains that `xin + yin = zout` as integers.
 #[derive(Debug)]
 pub struct U32Add {
 	// Inputs
@@ -31,11 +22,16 @@ pub struct U32Add {
 	cout_shl: Col<B1, 5>,
 
 	// Outputs
-	pub final_carry: Option<Col<B1>>,
+	/// The output column, either committed if `flags.commit_zout` is set, otherwise a linear
+	/// combination derived column.
 	pub zout: Col<B1, 5>,
+	/// This is `Some` if `flags.expose_final_carry` is set, otherwise it is `None`.
+	pub final_carry: Option<Col<B1>>,
+	/// Flags modifying the gadget's behavior.
 	pub flags: U32AddFlags,
 }
 
+/// Flags modifying the behavior of the [`U32Add`] gadget.
 #[derive(Debug, Default, Clone)]
 pub struct U32AddFlags {
 	// Optionally a column for a dynamic carry in bit. This *must* be zero in all bits except the
@@ -45,10 +41,7 @@ pub struct U32AddFlags {
 	pub expose_final_carry: bool,
 }
 
-/// Note that these methods are not trait impls, they are just regular methods. This gives
-/// flexibility to adapt method signatures to the specific needs of the component.
 impl U32Add {
-	/// Constructs a new `U32Add` component.
 	pub fn new(table: &mut Table, xin: Col<B1, 5>, yin: Col<B1, 5>, flags: U32AddFlags) -> Self {
 		let cout = table.add_committed::<B1, 5>("cout");
 		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
@@ -65,7 +58,6 @@ impl U32Add {
 
 		table.assert_zero("carry_out", (xin + cin) * (yin + cin) + cin - cout);
 
-		// TODO: Depending on the
 		let zout = if flags.commit_zout {
 			let zout = table.add_committed::<B1, 5>("zout");
 			table.assert_zero("zout", xin + yin + cin - zout);
@@ -89,9 +81,6 @@ impl U32Add {
 	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<(), anyhow::Error>
 	where
 		U: Pod + PackScalar<B1>,
-		// The index only returns packed fields, so knowing the underlier itself is pod is
-		// insufficient.
-		PackedType<U, B1>: Pod,
 	{
 		let xin: std::cell::RefMut<'_, [u32]> = index.get_mut_as(self.xin)?;
 		let yin = index.get_mut_as(self.yin)?;
