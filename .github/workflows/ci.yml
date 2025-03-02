@@ -2,9 +2,9 @@ name: Rust CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.event_name }}-${{ github.ref }}
@@ -38,7 +38,7 @@ jobs:
     needs: [lint]
     runs-on: ${{ matrix.expand.runner }}
     env:
-      RUST_VERSION: 1.83.0
+      RUST_VERSION: 1.85.0
     container: rustlang/rust:nightly
     strategy:
       matrix:
@@ -82,7 +82,7 @@ jobs:
     needs: [build]
     runs-on: ${{ matrix.expand.runner }}
     env:
-      RUST_VERSION: 1.83.0
+      RUST_VERSION: 1.85.0
     container: rustlang/rust:nightly
     strategy:
       matrix:

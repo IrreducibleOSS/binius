@@ -14,7 +14,6 @@ use thread_local::ThreadLocal;
 pub struct ThreadLocalMut<T: Send>(ThreadLocal<UnsafeCell<T>>);
 
 impl<T: Send> ThreadLocalMut<T> {
-	#[allow(clippy::missing_const_for_fn)]
 	pub fn new() -> Self {
 		Self(ThreadLocal::new())
 	}

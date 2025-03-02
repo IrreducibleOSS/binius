@@ -56,7 +56,7 @@ impl From<__m128i> for M128 {
 
 impl From<u128> for M128 {
 	fn from(value: u128) -> Self {
-		Self(unsafe { _mm_loadu_si128(&value as *const u128 as *const __m128i) })
+		Self(unsafe { _mm_loadu_si128(&raw const value as *const __m128i) })
 	}
 }
 
@@ -93,7 +93,7 @@ impl<const N: usize> From<SmallU<N>> for M128 {
 impl From<M128> for u128 {
 	fn from(value: M128) -> Self {
 		let mut result = 0u128;
-		unsafe { _mm_storeu_si128(&mut result as *mut Self as *mut __m128i, value.0) };
+		unsafe { _mm_storeu_si128(&raw mut result as *mut __m128i, value.0) };
 
 		result
 	}

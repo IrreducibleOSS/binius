@@ -204,7 +204,6 @@ const fn get_left_shift_offset(block_size: usize, right_shift_offset: usize) -> 
 }
 
 /// Checks validity of shift indicator arguments
-#[allow(clippy::missing_const_for_fn)]
 fn assert_valid_shift_ind_args<F: Field>(
 	block_size: usize,
 	shift_offset: usize,
