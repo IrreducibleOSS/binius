@@ -285,7 +285,7 @@ where
 				);
 			}
 
-			MultilinearPolyVariant::Committed { .. } => {
+			MultilinearPolyVariant::Committed => {
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,

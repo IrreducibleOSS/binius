@@ -51,7 +51,7 @@ impl CommitMeta {
 	/// ## Arguments
 	///
 	/// * `n_multilins_by_vars` - a vector index mapping numbers of variables to the number of
-	///     multilinears in the batch with that number of variables
+	///   multilinears in the batch with that number of variables
 	pub fn new(n_multilins_by_vars: Vec<usize>) -> Self {
 		let (offsets_by_vars, total_multilins, total_elems) =
 			n_multilins_by_vars.iter().enumerate().fold(
@@ -127,9 +127,8 @@ where
 {
 	assert!(arity > 0);
 
-	let fold_arities = iter::repeat(arity)
-		// The total arities must be strictly less than n_packed_vars, hence the -1
-		.take(commit_meta.total_vars.saturating_sub(1) / arity)
+	// The total arities must be strictly less than n_packed_vars, hence the -1
+	let fold_arities = std::iter::repeat_n(arity, commit_meta.total_vars.saturating_sub(1) / arity)
 		.collect::<Vec<_>>();
 
 	// Choose the interleaved code batch size to align with the first fold arity, which is

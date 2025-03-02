@@ -313,7 +313,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		(0..self.oracles.len()).map(|id| self.oracle(id))
 	}
 
-	pub fn add(&mut self) -> MultilinearOracleSetAddition<F> {
+	pub const fn add(&mut self) -> MultilinearOracleSetAddition<F> {
 		MultilinearOracleSetAddition {
 			name: None,
 			mut_ref: self,
@@ -634,7 +634,6 @@ pub struct Shifted {
 }
 
 impl Shifted {
-	#[allow(clippy::missing_const_for_fn)]
 	fn new<F: TowerField>(
 		oracle: &MultilinearPolyOracle<F>,
 		shift_offset: usize,
@@ -740,14 +739,14 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 
 	const fn type_str(&self) -> &str {
 		match self.variant {
-			MultilinearPolyVariant::Transparent { .. } => "Transparent",
-			MultilinearPolyVariant::Committed { .. } => "Committed",
+			MultilinearPolyVariant::Transparent(_) => "Transparent",
+			MultilinearPolyVariant::Committed => "Committed",
 			MultilinearPolyVariant::Repeating { .. } => "Repeating",
-			MultilinearPolyVariant::Projected { .. } => "Projected",
-			MultilinearPolyVariant::Shifted { .. } => "Shifted",
-			MultilinearPolyVariant::Packed { .. } => "Packed",
-			MultilinearPolyVariant::LinearCombination { .. } => "LinearCombination",
-			MultilinearPolyVariant::ZeroPadded { .. } => "ZeroPadded",
+			MultilinearPolyVariant::Projected(_) => "Projected",
+			MultilinearPolyVariant::Shifted(_) => "Shifted",
+			MultilinearPolyVariant::Packed(_) => "Packed",
+			MultilinearPolyVariant::LinearCombination(_) => "LinearCombination",
+			MultilinearPolyVariant::ZeroPadded(_) => "ZeroPadded",
 		}
 	}
 
