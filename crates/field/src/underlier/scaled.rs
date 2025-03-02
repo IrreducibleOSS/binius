@@ -30,24 +30,15 @@ impl<U: Random, const N: usize> Random for ScaledUnderlier<U, N> {
 	}
 }
 
-impl<U, const N: usize> From<ScaledUnderlier<U, N>> for [U; N] {
-	fn from(val: ScaledUnderlier<U, N>) -> Self {
-		val.0
+impl<T, U: From<T>, const N: usize> From<[T; N]> for ScaledUnderlier<U, N> {
+	fn from(value: [T; N]) -> Self {
+		Self(value.map(U::from))
 	}
 }
 
-impl<U, const N: usize> From<[U; N]> for ScaledUnderlier<U, N> {
-	fn from(value: [U; N]) -> Self {
-		Self(value)
-	}
-}
-
-impl<U: Copy> From<[U; 4]> for ScaledUnderlier<ScaledUnderlier<U, 2>, 2> {
-	fn from(value: [U; 4]) -> Self {
-		Self([
-			ScaledUnderlier([value[0], value[1]]),
-			ScaledUnderlier([value[0], value[1]]),
-		])
+impl<T: Copy, U: From<[T; 2]>> From<[T; 4]> for ScaledUnderlier<U, 2> {
+	fn from(value: [T; 4]) -> Self {
+		Self([[value[0], value[1]], [value[2], value[3]]].map(Into::into))
 	}
 }
 
@@ -214,6 +205,8 @@ impl<U: UnderlierWithBitOps, const N: usize> From<U> for ScaledUnderlier<U, N> {
 }
 
 impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N> {
+	type BiggestSubElement = U::BiggestSubElement;
+
 	const ZERO: Self = Self([U::ZERO; N]);
 	const ONE: Self = {
 		let mut arr = [U::ZERO; N];
@@ -222,7 +215,14 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 	};
 	const ONES: Self = Self([U::ONES; N]);
 
-	type BiggestSubElement = U::BiggestSubElement;
+	#[inline]
+	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
+	where
+		T: UnderlierType + super::SubUnderlier<Self::BiggestSubElement>,
+	{
+		let width = U::BITS / T::BITS;
+		Self(array::from_fn(|i| U::from_fn(|j| f(i * width + j))))
+	}
 
 	#[inline]
 	fn fill_with_bit(val: u8) -> Self {
@@ -267,6 +267,36 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		assert!(U::BITS >= 128);
 
 		Self(array::from_fn(|i| self.0[i].unpack_hi_128b_lanes(other.0[i], log_block_len)))
+	}
+
+	#[inline]
+	unsafe fn get_subvalue<T>(&self, i: usize) -> T
+	where
+		T: crate::underlier::SubUnderlier<Self::BiggestSubElement>,
+	{
+		let width = U::BITS / T::BITS;
+
+		self.0.get_unchecked(i / width).get_subvalue(i % width)
+	}
+
+	#[inline]
+	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
+	where
+		T: super::SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
+	{
+		let width = U::BITS / T::BITS;
+		self.0
+			.get_unchecked_mut(i / width)
+			.set_subvalue(i % width, val);
+	}
+
+	#[inline]
+	fn broadcast_subvalue<T>(value: T) -> Self
+	where
+		T: super::SubUnderlier<Self::BiggestSubElement>,
+	{
+		let broadcast = U::broadcast_subvalue(value);
+		Self(array::from_fn(|_| broadcast))
 	}
 }
 

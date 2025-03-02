@@ -4,10 +4,7 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, N
 
 use binius_utils::checked_arithmetics::{checked_int_div, checked_log_2};
 
-use super::{
-	underlier_type::{NumCast, UnderlierType},
-	SubUnderlier, U1, U2, U4,
-};
+use super::{underlier_type::UnderlierType, SubUnderlier, U1, U2, U4};
 
 /// Underlier type that supports bit arithmetic.
 pub trait UnderlierWithBitOps:
@@ -21,7 +18,6 @@ pub trait UnderlierWithBitOps:
 	+ Shr<usize, Output = Self>
 	+ Shl<usize, Output = Self>
 	+ Not<Output = Self>
-	+ From<Self::BiggestSubElement>
 {
 	const ZERO: Self;
 	const ONE: Self;
@@ -33,77 +29,34 @@ pub trait UnderlierWithBitOps:
 	/// `val` must be 0 or 1.
 	fn fill_with_bit(val: u8) -> Self;
 
-	#[inline]
-	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
+	/// Create a value from a function that generates subvalues.
+	fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self
 	where
-		T: UnderlierType,
-		Self: From<T>,
-	{
-		// This implementation is optimal for the case when `Self` us u8..u128.
-		// For SIMD types/arrays specialization would be more performant.
-		let mut result = Self::default();
-		let width = checked_int_div(Self::BITS, T::BITS);
-		for i in 0..width {
-			result |= Self::from(f(i)) << (i * T::BITS);
-		}
-
-		result
-	}
+		T: UnderlierType + SubUnderlier<Self::BiggestSubElement>;
 
 	/// Broadcast subvalue to fill `Self`.
 	/// `Self::BITS/T::BITS` is supposed to be a power of 2.
-	#[inline]
 	fn broadcast_subvalue<T>(value: T) -> Self
 	where
-		T: SubUnderlier<Self::BiggestSubElement>,
-	{
-		// This implementation is optimal for the case when `Self` us u8..u128.
-		// For SIMD types/arrays specialization would be more performant.
-		let height = checked_log_2(checked_int_div(Self::BITS, T::BITS));
-		let mut result = Self::from(Self::BiggestSubElement::from(value));
-		for i in 0..height {
-			result |= result << ((1 << i) * T::BITS);
-		}
-
-		result
-	}
+		T: SubUnderlier<Self::BiggestSubElement>;
 
 	/// Gets the subvalue from the given position.
 	/// Function panics in case when index is out of range.
 	///
 	/// # Safety
 	/// `i` must be less than `Self::BITS/T::BITS`.
-	#[inline]
 	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: SubUnderlier<Self::BiggestSubElement>,
-	{
-		debug_assert!(
-			i < checked_int_div(Self::BITS, T::BITS),
-			"i: {} Self::BITS: {}, T::BITS: {}",
-			i,
-			Self::BITS,
-			T::BITS
-		);
-		T::num_cast_from(Self::BiggestSubElement::num_cast_from(*self >> (i * T::BITS)))
-	}
+		T: SubUnderlier<Self::BiggestSubElement>;
 
 	/// Sets the subvalue in the given position.
 	/// Function panics in case when index is out of range.
 	///
 	/// # Safety
 	/// `i` must be less than `Self::BITS/T::BITS`.
-	#[inline]
 	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
-		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
-	{
-		debug_assert!(i < checked_int_div(Self::BITS, T::BITS));
-		let mask = Self::from(Self::BiggestSubElement::from(single_element_mask::<T>()));
-
-		*self &= !(mask << (i * T::BITS));
-		*self |= Self::from(Self::BiggestSubElement::from(val)) << (i * T::BITS);
-	}
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps;
 
 	/// Spread takes a block of sub_elements of `T` type within the current value and
 	/// repeats them to the full underlier width.
@@ -201,6 +154,72 @@ where
 	}
 
 	result
+}
+
+#[inline(always)]
+pub(crate) fn from_fn_fallback<U, T>(mut f: impl FnMut(usize) -> T) -> U
+where
+	U: UnderlierWithBitOps,
+	T: SubUnderlier<U>,
+{
+	// This implementation is optimal for the case when `Self` us u8..u128.
+	// For SIMD types/arrays specialization would be more performant.
+	let mut result = U::default();
+	let width = checked_int_div(U::BITS, T::BITS);
+	for i in 0..width {
+		result |= U::from(f(i)) << (i * T::BITS);
+	}
+
+	result
+}
+
+#[inline(always)]
+pub(crate) fn broadcast_subvalue_fallback<U, T>(value: T) -> U
+where
+	U: UnderlierWithBitOps,
+	T: SubUnderlier<U>,
+{
+	// This implementation is optimal for the case when `Self` us u8..u128.
+	// For SIMD types/arrays specialization would be more performant.
+	let height = checked_log_2(checked_int_div(U::BITS, T::BITS));
+	let mut result = U::from(value);
+	for i in 0..height {
+		result |= result << ((1 << i) * T::BITS);
+	}
+
+	result
+}
+
+#[inline(always)]
+pub(crate) unsafe fn get_subvalue_fallback<U: UnderlierWithBitOps, T>(value: &U, i: usize) -> T
+where
+	T: SubUnderlier<U>,
+{
+	use crate::underlier::underlier_type::NumCast;
+
+	debug_assert!(
+		i < checked_int_div(U::BITS, T::BITS),
+		"i: {} Self::BITS: {}, T::BITS: {}",
+		i,
+		U::BITS,
+		T::BITS
+	);
+	T::num_cast_from(U::num_cast_from(*value >> (i * T::BITS)))
+}
+
+#[inline]
+pub(crate) unsafe fn set_subvalue_fallback<U: UnderlierWithBitOps, T>(
+	value: &mut U,
+	i: usize,
+	val: T,
+) where
+	T: SubUnderlier<U> + UnderlierWithBitOps,
+{
+	debug_assert!(i < checked_int_div(U::BITS, T::BITS));
+	let mask = U::from(single_element_mask::<T>());
+
+	*value &= !(mask << (i * T::BITS));
+	*value |= U::from(val) << (i * T::BITS);
 }
 
 #[inline(always)]

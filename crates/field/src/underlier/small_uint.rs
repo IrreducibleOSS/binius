@@ -20,7 +20,10 @@ use rand::{
 };
 use subtle::{ConditionallySelectable, ConstantTimeEq};
 
-use super::{underlier_with_bit_ops::UnderlierWithBitOps, Random, UnderlierType};
+use super::{
+	broadcast_subvalue_fallback, from_fn_fallback, get_subvalue_fallback, set_subvalue_fallback,
+	underlier_with_bit_ops::UnderlierWithBitOps, Random, SubUnderlier, UnderlierType,
+};
 
 /// Unsigned type with a size strictly less than 8 bits.
 #[derive(
@@ -152,20 +155,57 @@ impl<const N: usize> UnderlierType for SmallU<N> {
 }
 
 impl<const N: usize> UnderlierWithBitOps for SmallU<N> {
+	type BiggestSubElement = Self;
+
 	const ZERO: Self = Self(0);
 	const ONE: Self = Self(1);
 	const ONES: Self = Self((1u8 << N) - 1);
 
+	#[inline]
 	fn fill_with_bit(val: u8) -> Self {
 		Self(u8::fill_with_bit(val)) & Self::ONES
 	}
 
+	#[inline]
 	fn shl_128b_lanes(self, rhs: usize) -> Self {
 		self << rhs
 	}
 
+	#[inline]
+	fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self
+	where
+		T: UnderlierType + SubUnderlier<Self::BiggestSubElement>,
+	{
+		from_fn_fallback(f)
+	}
+
+	#[inline]
 	fn shr_128b_lanes(self, rhs: usize) -> Self {
 		self >> rhs
+	}
+
+	#[inline]
+	unsafe fn get_subvalue<T>(&self, i: usize) -> T
+	where
+		T: SubUnderlier<Self::BiggestSubElement>,
+	{
+		get_subvalue_fallback(self, i)
+	}
+
+	#[inline]
+	unsafe fn set_subvalue<T>(&mut self, i: usize, value: T)
+	where
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
+	{
+		set_subvalue_fallback(self, i, value);
+	}
+
+	#[inline]
+	fn broadcast_subvalue<T>(value: T) -> Self
+	where
+		T: SubUnderlier<Self::BiggestSubElement>,
+	{
+		broadcast_subvalue_fallback(value)
 	}
 }
 

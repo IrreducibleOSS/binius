@@ -22,8 +22,8 @@ use super::packed_arithmetic::UnderlierWithBitConstants;
 use crate::{
 	arithmetic_traits::{Broadcast, InvertOrZero, MulAlpha, Square},
 	underlier::{
-		IterationMethods, IterationStrategy, NumCast, UnderlierType, UnderlierWithBitOps,
-		WithUnderlier, U1, U2, U4,
+		IterationMethods, IterationStrategy, NumCast, SubUnderlier, UnderlierType,
+		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField, PackedField,
 };
@@ -282,9 +282,9 @@ unsafe impl<U: UnderlierType + Pod, Scalar: BinaryField> Pod for PackedPrimitive
 impl<U: UnderlierWithBitOps, Scalar> PackedField for PackedPrimitiveType<U, Scalar>
 where
 	Self: Broadcast<Scalar> + Square + InvertOrZero + Mul<Output = Self>,
-	U: UnderlierWithBitConstants + From<Scalar::Underlier> + Send + Sync + 'static,
+	U: UnderlierWithBitConstants + Send + Sync + 'static,
 	Scalar: BinaryField + WithUnderlier<Underlier: UnderlierWithBitOps>,
-	Scalar::Underlier: NumCast<U>,
+	Scalar::Underlier: SubUnderlier<U::BiggestSubElement>,
 	IterationMethods<Scalar::Underlier, U>: IterationStrategy<Scalar::Underlier, U>,
 {
 	type Scalar = Scalar;

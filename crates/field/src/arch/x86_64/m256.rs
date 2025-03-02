@@ -26,8 +26,8 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	underlier::{
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SubUnderlier,
+		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -325,6 +325,8 @@ impl UnderlierType for M256 {
 }
 
 impl UnderlierWithBitOps for M256 {
+	type BiggestSubElement = u128;
+
 	const ZERO: Self = { Self(m256_from_u128s!(0, 0,)) };
 	const ONE: Self = { Self(m256_from_u128s!(1, 0,)) };
 	const ONES: Self = { Self(m256_from_u128s!(u128::MAX, u128::MAX,)) };
@@ -337,12 +339,11 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	fn from_fn<T>(mut f: impl FnMut(usize) -> T) -> Self
 	where
-		T: UnderlierType,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement>,
 	{
 		match T::BITS {
 			1 | 2 | 4 => {
-				let mut f = make_func_to_i8::<T, Self>(f);
+				let mut f = make_func_to_i8::<T, Self::BiggestSubElement>(f);
 
 				unsafe {
 					_mm256_set_epi8(
@@ -382,7 +383,7 @@ impl UnderlierWithBitOps for M256 {
 				}
 			}
 			8 => {
-				let mut f = |i| u8::num_cast_from(Self::from(f(i))) as i8;
+				let mut f = |i| u8::num_cast_from(u128::from(f(i))) as i8;
 				unsafe {
 					_mm256_set_epi8(
 						f(31),
@@ -421,7 +422,7 @@ impl UnderlierWithBitOps for M256 {
 				}
 			}
 			16 => {
-				let mut f = |i| u16::num_cast_from(Self::from(f(i))) as i16;
+				let mut f = |i| u16::num_cast_from(u128::from(f(i))) as i16;
 				unsafe {
 					_mm256_set_epi16(
 						f(15),
@@ -444,15 +445,15 @@ impl UnderlierWithBitOps for M256 {
 				}
 			}
 			32 => {
-				let mut f = |i| u32::num_cast_from(Self::from(f(i))) as i32;
+				let mut f = |i| u32::num_cast_from(u128::from(f(i))) as i32;
 				unsafe { _mm256_set_epi32(f(7), f(6), f(5), f(4), f(3), f(2), f(1), f(0)) }
 			}
 			64 => {
-				let mut f = |i| u64::num_cast_from(Self::from(f(i))) as i64;
+				let mut f = |i| u64::num_cast_from(u128::from(f(i))) as i64;
 				unsafe { _mm256_set_epi64x(f(3), f(2), f(1), f(0)) }
 			}
 			128 => {
-				let mut f = |i| M128::from(u128::num_cast_from(Self::from(f(i)))).0;
+				let mut f = |i| M128::from(u128::num_cast_from(u128::from(f(i)))).0;
 				unsafe { _mm256_set_m128i(f(1), f(0)) }
 			}
 			_ => panic!("unsupported bit count"),
@@ -463,7 +464,7 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	unsafe fn get_subvalue<T>(&self, i: usize) -> T
 	where
-		T: UnderlierType + NumCast<Self>,
+		T: SubUnderlier<Self::BiggestSubElement>,
 	{
 		match T::BITS {
 			1 | 2 | 4 => {
@@ -475,32 +476,32 @@ impl UnderlierWithBitOps for M256 {
 				let shift = (i % elements_in_8) * T::BITS;
 				value_u8 >>= shift;
 
-				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+				T::num_cast_from(value_u8 as u128)
 			}
 			8 => {
 				let value_u8 =
 					as_array_ref::<_, u8, 32, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
-				T::from_underlier(T::num_cast_from(Self::from(value_u8)))
+				T::num_cast_from(value_u8 as u128)
 			}
 			16 => {
 				let value_u16 =
 					as_array_ref::<_, u16, 16, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
-				T::from_underlier(T::num_cast_from(Self::from(value_u16)))
+				T::num_cast_from(value_u16 as u128)
 			}
 			32 => {
 				let value_u32 =
 					as_array_ref::<_, u32, 8, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
-				T::from_underlier(T::num_cast_from(Self::from(value_u32)))
+				T::num_cast_from(value_u32 as u128)
 			}
 			64 => {
 				let value_u64 =
 					as_array_ref::<_, u64, 4, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
-				T::from_underlier(T::num_cast_from(Self::from(value_u64)))
+				T::num_cast_from(value_u64 as u128)
 			}
 			128 => {
 				let value_u128 =
 					as_array_ref::<_, u128, 2, _>(self, |arr| unsafe { *arr.get_unchecked(i) });
-				T::from_underlier(T::num_cast_from(Self::from(value_u128)))
+				T::num_cast_from(value_u128 as u128)
 			}
 			_ => panic!("unsupported bit count"),
 		}
@@ -509,15 +510,14 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	unsafe fn set_subvalue<T>(&mut self, i: usize, val: T)
 	where
-		T: UnderlierWithBitOps,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
 	{
 		match T::BITS {
 			1 | 2 | 4 => {
 				let elements_in_8 = 8 / T::BITS;
 				let mask = (1u8 << T::BITS) - 1;
 				let shift = (i % elements_in_8) * T::BITS;
-				let val = u8::num_cast_from(Self::from(val)) << shift;
+				let val = u8::num_cast_from(Self::BiggestSubElement::from(val)) << shift;
 				let mask = mask << shift;
 
 				as_array_mut::<_, u8, 32>(self, |array| unsafe {
@@ -527,19 +527,23 @@ impl UnderlierWithBitOps for M256 {
 				});
 			}
 			8 => as_array_mut::<_, u8, 32>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) = u8::num_cast_from(Self::BiggestSubElement::from(val));
 			}),
 			16 => as_array_mut::<_, u16, 16>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u16::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) =
+					u16::num_cast_from(Self::BiggestSubElement::from(val));
 			}),
 			32 => as_array_mut::<_, u32, 8>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u32::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) =
+					u32::num_cast_from(Self::BiggestSubElement::from(val));
 			}),
 			64 => as_array_mut::<_, u64, 4>(self, |array| unsafe {
-				*array.get_unchecked_mut(i) = u64::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) =
+					u64::num_cast_from(Self::BiggestSubElement::from(val));
 			}),
 			128 => as_array_mut::<_, u128, 2>(self, |array| {
-				*array.get_unchecked_mut(i) = u128::num_cast_from(Self::from(val));
+				*array.get_unchecked_mut(i) =
+					u128::num_cast_from(Self::BiggestSubElement::from(val));
 			}),
 			_ => panic!("unsupported bit count"),
 		}
@@ -548,8 +552,7 @@ impl UnderlierWithBitOps for M256 {
 	#[inline(always)]
 	unsafe fn spread<T>(self, log_block_len: usize, block_idx: usize) -> Self
 	where
-		T: UnderlierWithBitOps + NumCast<Self>,
-		Self: From<T>,
+		T: SubUnderlier<Self::BiggestSubElement> + UnderlierWithBitOps,
 	{
 		match T::LOG_BITS {
 			0 => match log_block_len {
@@ -578,7 +581,7 @@ impl UnderlierWithBitOps for M256 {
 					let bits = get_block_values::<_, U1, 32>(self, block_idx);
 					Self::from_fn::<u8>(|i| u8::fill_with_bit(bits[i].val()))
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M256, T>(self, log_block_len, block_idx),
 			},
 			1 => match log_block_len {
 				0 => {
@@ -611,7 +614,7 @@ impl UnderlierWithBitOps for M256 {
 
 					Self::from_fn::<u8>(|i| bytes[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M256, T>(self, log_block_len, block_idx),
 			},
 			2 => match log_block_len {
 				0 => {
@@ -644,7 +647,7 @@ impl UnderlierWithBitOps for M256 {
 
 					Self::from_fn::<u8>(|i| bytes[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M256, T>(self, log_block_len, block_idx),
 			},
 			3 => {
 				cfg_if! {
@@ -834,7 +837,7 @@ impl UnderlierWithBitOps for M256 {
 				1 => self,
 				_ => panic!("unsupported block length"),
 			},
-			_ => spread_fallback(self, log_block_len, block_idx),
+			_ => spread_fallback::<M256, T>(self, log_block_len, block_idx),
 		}
 	}
 
@@ -887,6 +890,49 @@ impl UnderlierWithBitOps for M256 {
 			5 => unsafe { _mm256_unpackhi_epi32(self.0, other.0).into() },
 			6 => unsafe { _mm256_unpackhi_epi64(self.0, other.0).into() },
 			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline(always)]
+	fn broadcast_subvalue<T>(value: T) -> Self
+	where
+		T: crate::underlier::SubUnderlier<Self::BiggestSubElement>,
+	{
+		match T::LOG_BITS {
+			0 | 1 | 2 => {
+				let mut value = u8::num_cast_from(u128::from(value));
+				for i in 0..3 - T::LOG_BITS {
+					value |= value << (1 << i);
+				}
+
+				unsafe { _mm256_set1_epi8(value as i8) }.into()
+			}
+			3 => {
+				let value = u8::num_cast_from(u128::from(value));
+
+				unsafe { _mm256_set1_epi8(value as i8) }.into()
+			}
+			4 => {
+				let value = u16::num_cast_from(u128::from(value));
+
+				unsafe { _mm256_set1_epi16(value as i16) }.into()
+			}
+			5 => {
+				let value = u32::num_cast_from(u128::from(value));
+
+				unsafe { _mm256_set1_epi32(value as i32) }.into()
+			}
+			6 => {
+				let value = u64::num_cast_from(u128::from(value));
+
+				unsafe { _mm256_set1_epi64x(value as i64) }.into()
+			}
+			7 => {
+				let value = u128::from(value);
+
+				[value, value].into()
+			}
+			_ => panic!("unsupported bit count"),
 		}
 	}
 }

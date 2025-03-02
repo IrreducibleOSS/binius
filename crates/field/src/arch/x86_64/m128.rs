@@ -322,6 +322,8 @@ impl UnderlierType for M128 {
 }
 
 impl UnderlierWithBitOps for M128 {
+	type BiggestSubElement = Self;
+
 	const ZERO: Self = { Self(m128_from_u128!(0)) };
 	const ONE: Self = { Self(m128_from_u128!(1)) };
 	const ONES: Self = { Self(m128_from_u128!(u128::MAX)) };
@@ -557,7 +559,7 @@ impl UnderlierWithBitOps for M128 {
 					)
 					.into()
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M128, T>(self, log_block_len, block_idx),
 			},
 			1 => match log_block_len {
 				0 => {
@@ -596,7 +598,7 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| bytes[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M128, T>(self, log_block_len, block_idx),
 			},
 			2 => match log_block_len {
 				0 => {
@@ -636,7 +638,7 @@ impl UnderlierWithBitOps for M128 {
 
 					Self::from_fn::<u8>(|i| values[i])
 				}
-				_ => spread_fallback(self, log_block_len, block_idx),
+				_ => spread_fallback::<M128, T>(self, log_block_len, block_idx),
 			},
 			3 => match log_block_len {
 				0 => _mm_shuffle_epi8(self.0, LOG_B8_0[block_idx].0).into(),
@@ -727,6 +729,45 @@ impl UnderlierWithBitOps for M128 {
 			5 => unsafe { _mm_unpackhi_epi32(self.0, other.0).into() },
 			6 => unsafe { _mm_unpackhi_epi64(self.0, other.0).into() },
 			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline(always)]
+	fn broadcast_subvalue<T>(value: T) -> Self
+	where
+		T: crate::underlier::SubUnderlier<Self::BiggestSubElement>,
+	{
+		match T::LOG_BITS {
+			0 | 1 | 2 => {
+				let mut value = u8::num_cast_from(Self::from(value));
+				for i in 0..3 - T::LOG_BITS {
+					value |= value << (1 << i);
+				}
+
+				unsafe { _mm_set1_epi8(value as i8) }.into()
+			}
+			3 => {
+				let value = u8::num_cast_from(Self::from(value));
+
+				unsafe { _mm_set1_epi8(value as i8) }.into()
+			}
+			4 => {
+				let value = u16::num_cast_from(Self::from(value));
+
+				unsafe { _mm_set1_epi16(value as i16) }.into()
+			}
+			5 => {
+				let value = u32::num_cast_from(Self::from(value));
+
+				unsafe { _mm_set1_epi32(value as i32) }.into()
+			}
+			6 => {
+				let value = u64::num_cast_from(Self::from(value));
+
+				unsafe { _mm_set1_epi64x(value as i64) }.into()
+			}
+			7 => Self::from(value),
+			_ => panic!("unsupported bit count"),
 		}
 	}
 }

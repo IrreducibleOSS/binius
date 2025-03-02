@@ -10,7 +10,7 @@ use binius_field::{
 		ByteIteratorCallback, PackedSlice,
 	},
 	packed::{get_packed_slice, get_packed_slice_unchecked, set_packed_slice_unchecked},
-	underlier::{UnderlierWithBitOps, WithUnderlier},
+	underlier::{SubUnderlier, UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, BinaryField128b, BinaryField128bPolyval, BinaryField1b, ExtensionField,
 	Field, PackedField,
 };
@@ -583,7 +583,8 @@ fn cast_same_type_slice<T: Sized + 'static, U: Sized + 'static>(slice: &[T]) -> 
 /// by packed BinaryField1b values.
 fn init_lookup_table_width<U>() -> Vec<U>
 where
-	U: UnderlierWithBitOps + From<u128>,
+	U: UnderlierWithBitOps,
+	u128: SubUnderlier<U::BiggestSubElement>,
 {
 	let items_b128 = U::BITS / u128::BITS as usize;
 	assert!(items_b128 <= 8);

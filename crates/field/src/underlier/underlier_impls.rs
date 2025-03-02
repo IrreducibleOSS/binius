@@ -14,9 +14,19 @@ macro_rules! impl_underlier_type {
 		}
 
         impl UnderlierWithBitOps for $name {
+			type BiggestSubElement = Self;
+
 			const ZERO: Self = 0;
 			const ONE: Self = 1;
 			const ONES: Self = <$name>::MAX;
+
+			#[inline(always)]
+			fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self
+			where
+				T: crate::underlier::SubUnderlier<Self::BiggestSubElement>,
+			{
+				crate::underlier::from_fn_fallback(f)
+			}
 
 			#[inline(always)]
 			fn fill_with_bit(val: u8) -> Self {
@@ -32,6 +42,29 @@ macro_rules! impl_underlier_type {
 			#[inline(always)]
 			fn shr_128b_lanes(self, rhs: usize) -> Self {
 				self >> rhs
+			}
+
+			#[inline(always)]
+			unsafe fn get_subvalue<T>(&self, i: usize) -> T
+			where
+				T: crate::underlier::SubUnderlier<Self::BiggestSubElement>,
+			{
+				crate::underlier::get_subvalue_fallback(self, i)
+			}
+
+			#[inline]
+			unsafe fn set_subvalue<T>(&mut self, i: usize, value: T)
+			where
+				T: crate::underlier::SubUnderlier<Self::BiggestSubElement> + crate::underlier::UnderlierWithBitOps,
+			{
+				crate::underlier::set_subvalue_fallback(self, i, value);
+			}
+
+			#[inline]
+			fn broadcast_subvalue<T>(value: T) -> Self
+				where
+					T: crate::underlier::SubUnderlier<Self::BiggestSubElement> {
+				crate::underlier::broadcast_subvalue_fallback(value)
 			}
 		}
 	};
