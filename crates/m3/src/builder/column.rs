@@ -67,21 +67,30 @@ where
 	}
 }
 
+/// Complete description of a column within a table.
 #[derive(Debug)]
 pub struct ColumnInfo<F: TowerField = B128> {
 	pub id: ColumnId,
 	pub col: ColumnDef<F>,
 	pub name: String,
 	pub shape: ColumnShape,
+	/// Whether the column is constrained to be non-zero.
 	pub is_nonzero: bool,
 }
 
+/// The shape of each cell in a column.
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnShape {
+	/// The tower height of the field elements.
 	pub tower_height: usize,
+	/// The binary logarithm of the number of elements packed vertically per event row.
 	pub pack_factor: usize,
 }
 
+/// Unique identifier for a column within a constraint system.
+///
+/// IDs are assigned when columns are added to the constraint system and remain stable when more
+/// columns are added.
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnId {
 	pub table_id: TableId,
@@ -91,7 +100,7 @@ pub struct ColumnId {
 	pub index: ColumnIndex,
 }
 
-// feature: TableBuilder needs namespacing
+// TODO: TableBuilder needs namespacing
 
 /// A definition of a column in a table.
 #[derive(Debug)]
