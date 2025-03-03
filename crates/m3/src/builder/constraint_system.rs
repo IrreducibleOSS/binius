@@ -46,23 +46,16 @@ impl std::fmt::Display for ConstraintSystem {
 			writeln!(f, "    TABLE {} {{", table.name)?;
 
 			for partition in table.partitions.iter() {
-				let names = partition
-					.column_info
-					.iter()
-					.map(|c| c.name.clone())
-					.collect::<Vec<_>>();
-				for constraint in partition.zero_constraints.iter() {
-					let name = constraint.name.clone();
-					let expr = ArithExprNamedVars(&constraint.expr, &names);
-					writeln!(f, "        ZERO {name}: {expr}")?;
-				}
-
 				for flush in partition.flushes.iter() {
 					let channel = self.channels[flush.channel_id].name.clone();
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| partition.column_info[*i].name.clone())
+						.map(|i| {
+							table.columns[partition.columns[*i].table_index]
+								.name
+								.clone()
+						})
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -75,40 +68,50 @@ impl std::fmt::Display for ConstraintSystem {
 					};
 				}
 
-				for col in partition.column_info.iter() {
-					let name = col.name.clone();
-					let pack_factor = 1 << col.shape.pack_factor;
-					let field = match col.shape.tower_height {
-						0 => "B1",
-						1 => "B2",
-						2 => "B4",
-						3 => "B8",
-						4 => "B16",
-						5 => "B32",
-						6 => "B64",
-						_ => "B128",
-					};
+				let names = partition
+					.columns
+					.iter()
+					.map(|id| table.columns[id.table_index].name.clone())
+					.collect::<Vec<_>>();
 
-					let type_str = if pack_factor > 1 {
-						format!("{field}x{pack_factor}")
-					} else {
-						field.to_string()
-					};
-					writeln!(f, "        {oracle_id:04} {type_str} {name}")?;
-					oracle_id += 1;
+				for constraint in partition.zero_constraints.iter() {
+					let name = constraint.name.clone();
+					let expr = ArithExprNamedVars(&constraint.expr, &names);
+					writeln!(f, "        ZERO {name}: {expr}")?;
 				}
+			}
 
+			for col in table.columns.iter() {
+				let name = col.name.clone();
+				let pack_factor = 1 << col.shape.pack_factor;
+				let field = match col.shape.tower_height {
+					0 => "B1",
+					1 => "B2",
+					2 => "B4",
+					3 => "B8",
+					4 => "B16",
+					5 => "B32",
+					6 => "B64",
+					_ => "B128",
+				};
+				let type_str = if pack_factor > 1 {
+					format!("{field}x{pack_factor}")
+				} else {
+					field.to_string()
+				};
+				writeln!(f, "        {oracle_id:04} {type_str} {name}")?;
+				oracle_id += 1;
+			}
+
+			// step_down selectors for the table
+			for partition in table.partitions.iter() {
 				let selector_type_str = if partition.pack_factor > 1 {
 					format!("B1x{}", 1 << partition.pack_factor)
 				} else {
 					"B1".to_string()
 				};
 				writeln!(f, "        {oracle_id:04} {selector_type_str} (ROW_SELECTOR)")?;
-				oracle_id += 1; // step_down selector for the table
-
-				if partition.partition_index < table.partitions.len() - 1 {
-					writeln!(f)?;
-				}
+				oracle_id += 1;
 			}
 
 			writeln!(f, "    }}")?;
@@ -180,11 +183,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let mut oracle_lookup = Vec::new();
 
-			for partition in table.partitions.iter() {
-				oracle_lookup.push(Vec::new());
+			// Add multilinear oracles for all table columns.
+			for info in table.columns.iter() {
+				let n_vars = log2_ceil_usize(count) + info.shape.pack_factor;
+				let oracle_id =
+					add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars).unwrap();
+				oracle_lookup.push(oracle_id);
+				if info.is_nonzero {
+					non_zero_oracle_ids.push(oracle_id);
+				}
+			}
 
+			for partition in table.partitions.iter() {
 				let TablePartition {
-					column_info,
+					columns,
 					flushes,
 					zero_constraints,
 					pack_factor,
@@ -193,26 +205,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 				let n_vars = log2_ceil_usize(count) + pack_factor;
 
-				// Add multilinear oracles for all table columns.
-				let partition_oracle_ids = column_info
+				let partition_oracle_ids = columns
 					.iter()
-					.map(|column_info| {
-						let oracle_id = add_oracle_for_column(
-							&mut oracles,
-							&oracle_lookup,
-							column_info,
-							n_vars,
-						)
-						.unwrap();
-
-						oracle_lookup[column_info.id.partition].push(oracle_id);
-
-						if column_info.is_nonzero {
-							non_zero_oracle_ids.push(oracle_id);
-						}
-						Ok::<_, Error>(oracle_id)
-					})
-					.collect::<Result<Vec<_>, _>>()?;
+					.map(|id| oracle_lookup[id.table_index])
+					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 				let selector =
@@ -227,7 +223,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| oracle_lookup[partition.partition_index][column_index])
+						.map(|&column_index| partition_oracle_ids[column_index])
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
@@ -270,7 +266,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	oracle_lookup: &[Vec<OracleId>],
+	oracle_lookup: &[OracleId],
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
@@ -283,7 +279,7 @@ fn add_oracle_for_column<F: TowerField>(
 				.var_coeffs
 				.iter()
 				.enumerate()
-				.map(|(index, &coeff)| (oracle_lookup[id.partition][index], coeff))
+				.map(|(index, &coeff)| (oracle_lookup[index], coeff))
 				.collect::<Vec<_>>();
 			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
 		}
@@ -293,16 +289,11 @@ fn add_oracle_for_column<F: TowerField>(
 			log_block_size,
 			variant,
 		} => {
-			assert_eq!(col.partition, id.partition);
-			addition.shifted(
-				oracle_lookup[col.partition][col.index],
-				*offset,
-				*log_block_size,
-				*variant,
-			)?
+			assert_eq!(col.partition_id, id.partition_id);
+			addition.shifted(oracle_lookup[col.table_index], *offset, *log_block_size, *variant)?
 		}
 		ColumnDef::Packed { col, log_degree } => {
-			addition.packed(oracle_lookup[col.partition][col.index], *log_degree)?
+			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
 	};
 	Ok(oracle_id)
