@@ -53,12 +53,18 @@ impl<T> SparseIndex<T> {
 		self.entries.iter().flatten().count()
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item = &T> {
-		self.entries.iter().flatten()
+	pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {
+		self.entries
+			.iter()
+			.enumerate()
+			.filter_map(|(i, v)| v.as_ref().map(|v| (i, v)))
 	}
 
-	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-		self.entries.iter_mut().flatten()
+	pub fn iter_mut(&mut self) -> impl Iterator<Item = (usize, &mut T)> {
+		self.entries
+			.iter_mut()
+			.enumerate()
+			.filter_map(|(i, v)| v.as_mut().map(|v| (i, v)))
 	}
 
 	pub fn keys(&self) -> impl Iterator<Item = usize> + '_ {
@@ -67,14 +73,28 @@ impl<T> SparseIndex<T> {
 			.enumerate()
 			.filter_map(|(i, v)| v.as_ref().map(|_| i))
 	}
+
+	pub fn values(&self) -> impl Iterator<Item = &T> {
+		self.entries.iter().flatten()
+	}
+
+	pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+		self.entries.iter_mut().flatten()
+	}
 }
 
 impl<T> IntoIterator for SparseIndex<T> {
-	type Item = T;
-	type IntoIter = std::iter::Flatten<std::vec::IntoIter<Option<Self::Item>>>;
+	type Item = (usize, T);
+	type IntoIter = std::iter::FilterMap<
+		std::iter::Enumerate<std::vec::IntoIter<Option<T>>>,
+		fn((usize, Option<T>)) -> Option<(usize, T)>,
+	>;
 
 	fn into_iter(self) -> Self::IntoIter {
-		self.entries.into_iter().flatten()
+		self.entries
+			.into_iter()
+			.enumerate()
+			.filter_map(|(i, v)| v.map(|v| (i, v)))
 	}
 }
 
