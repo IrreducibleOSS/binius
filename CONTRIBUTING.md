@@ -120,7 +120,7 @@ The project welcomes first time contributions from developers who want to learn 
 on the open source cryptography community.
 
 If you are new to the project and don't know where to start, you can look for [open issues labeled
-`good first issue`](/IrreducibleOSS/binius/issues?q=is%3Aissue%20state%3Aopen%20label%3A"good%20first%20issue") or add
+`good first issue`](https://github.com/IrreducibleOSS/binius/issues) or add
 test coverage for existing code. Adding unit tests is a great way to learn how to interact with the codebase, make a
 meaningful contribution, and maybe even find bugs!
 
