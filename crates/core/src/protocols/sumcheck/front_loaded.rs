@@ -187,24 +187,24 @@ where
 	where
 		B: Buf,
 	{
-		let degree = match self.claims.front() {
-			Some(SumcheckClaimWithContext {
-				claim,
-				max_degree_remaining,
-				..
-			}) => {
-				// Must finish all claims that are ready this round before receiving the round proof.
-				if claim.n_vars() == self.round {
-					return Err(Error::ExpectedFinishClaim);
-				}
-				*max_degree_remaining
-			}
-			None => 0,
-		};
-
 		match self.last_coeffs_or_sum {
 			CoeffsOrSums::Coeffs(_) => Err(Error::ExpectedFinishRound),
 			CoeffsOrSums::Sum(sum) => {
+				let degree = match self.claims.front() {
+					Some(SumcheckClaimWithContext {
+						claim,
+						max_degree_remaining,
+						..
+					}) => {
+						// Must finish all claims that are ready this round before receiving the round proof.
+						if claim.n_vars() == self.round {
+							return Err(Error::ExpectedFinishClaim);
+						}
+						*max_degree_remaining
+					}
+					None => 0,
+				};
+
 				let proof_vals = transcript.read_scalar_slice(degree)?;
 				let round_proof = RoundProof(RoundCoeffs(proof_vals));
 				self.last_coeffs_or_sum = CoeffsOrSums::Coeffs(round_proof.recover(sum));
