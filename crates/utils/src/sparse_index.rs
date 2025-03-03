@@ -45,6 +45,10 @@ impl<T> SparseIndex<T> {
 		self.get(id).is_some()
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.entries.iter().all(|v| v.is_none())
+	}
+
 	pub fn len(&self) -> usize {
 		self.entries.iter().flatten().count()
 	}
@@ -76,7 +80,7 @@ impl<T> IntoIterator for SparseIndex<T> {
 
 impl<T> std::iter::FromIterator<(usize, T)> for SparseIndex<T> {
 	fn from_iter<I: IntoIterator<Item = (usize, T)>>(iter: I) -> Self {
-		let mut index = SparseIndex::new();
+		let mut index = Self::new();
 		for (i, v) in iter {
 			index.set(i, v);
 		}
