@@ -39,7 +39,7 @@ pub fn make_oracle_commit_meta<F: TowerField>(
 	}
 
 	// First pass: count the number of multilinears and index within buckets
-	let mut first_pass_index = SparseIndex::new(oracles.size());
+	let mut first_pass_index = SparseIndex::with_capacity(oracles.size());
 	let mut n_multilins_by_vars = ResizeableIndex::<usize>::new();
 	for oracle in oracles.iter() {
 		if matches!(oracle.variant, MultilinearPolyVariant::Committed) {
@@ -60,7 +60,7 @@ pub fn make_oracle_commit_meta<F: TowerField>(
 	let commit_meta = CommitMeta::new(n_multilins_by_vars.into_vec());
 
 	// Second pass: use commit_meta counts to finalized indices with offsets
-	let mut index = SparseIndex::new(oracles.size());
+	let mut index = SparseIndex::with_capacity(oracles.size());
 	for id in 0..oracles.size() {
 		if let Some(CommitIDFirstPass {
 			n_packed_vars,
