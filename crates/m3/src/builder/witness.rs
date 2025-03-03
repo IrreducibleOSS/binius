@@ -19,7 +19,7 @@ use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 
 use super::{
-	column::{Col, ColumnId, ColumnShape},
+	column::{Col, ColumnShape},
 	error::Error,
 	statement::Statement,
 	table::{Table, TableId},
@@ -334,24 +334,18 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 	{
 		// TODO: Check consistency of static params with column info
 
-		if col.table_id != self.table_id {
+		if col.id.table_id != self.table_id {
 			return Err(Error::TableMismatch {
-				column_table_id: col.table_id,
+				column_table_id: col.id.table_id,
 				witness_table_id: self.table_id,
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.partition)
-			.and_then(|partition| partition.get(col.index))
-			.ok_or_else(|| {
-				Error::MissingColumn(ColumnId {
-					table_id: col.table_id,
-					partition: col.partition,
-					index: col.index,
-				})
-			})?;
+			.get(col.id.partition)
+			.and_then(|partition| partition.get(col.id.index))
+			.ok_or_else(|| Error::MissingColumn(col.id))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref(x)))
 	}
@@ -365,24 +359,18 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 	{
 		// TODO: Check consistency of static params with column info
 
-		if col.table_id != self.table_id {
+		if col.id.table_id != self.table_id {
 			return Err(Error::TableMismatch {
-				column_table_id: col.table_id,
+				column_table_id: col.id.table_id,
 				witness_table_id: self.table_id,
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.partition)
-			.and_then(|partition| partition.get(col.index))
-			.ok_or_else(|| {
-				Error::MissingColumn(ColumnId {
-					table_id: col.table_id,
-					partition: col.partition,
-					index: col.index,
-				})
-			})?;
+			.get(col.id.partition)
+			.and_then(|partition| partition.get(col.id.index))
+			.ok_or_else(|| Error::MissingColumn(col.id))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
 	}
@@ -396,15 +384,9 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 	{
 		let col = self
 			.cols
-			.get(col.partition)
-			.and_then(|partition| partition.get(col.index))
-			.ok_or_else(|| {
-				Error::MissingColumn(ColumnId {
-					table_id: col.table_id,
-					partition: col.partition,
-					index: col.index,
-				})
-			})?;
+			.get(col.id.partition)
+			.and_then(|partition| partition.get(col.id.index))
+			.ok_or_else(|| Error::MissingColumn(col.id))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
 	}
@@ -416,24 +398,18 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 	where
 		U: Pod,
 	{
-		if col.table_id != self.table_id {
+		if col.id.table_id != self.table_id {
 			return Err(Error::TableMismatch {
-				column_table_id: col.table_id,
+				column_table_id: col.id.table_id,
 				witness_table_id: self.table_id,
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.partition)
-			.and_then(|partition| partition.get(col.index))
-			.ok_or_else(|| {
-				Error::MissingColumn(ColumnId {
-					table_id: col.table_id,
-					partition: col.partition,
-					index: col.index,
-				})
-			})?;
+			.get(col.id.partition)
+			.and_then(|partition| partition.get(col.id.index))
+			.ok_or_else(|| Error::MissingColumn(col.id))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))
 	}

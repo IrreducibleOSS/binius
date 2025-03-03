@@ -20,18 +20,14 @@ pub type ColumnIndex = usize;
 #[derive(Debug, Clone, Copy)]
 pub struct Col<F: TowerField, const V: usize = 0> {
 	// TODO: Maybe V should be powers of 2 instead of logarithmic
-	pub table_id: TableId,
-	pub partition: usize,
-	pub index: ColumnIndex,
+	pub id: ColumnId,
 	pub _marker: PhantomData<F>,
 }
 
 impl<F: TowerField, const V: usize> Col<F, V> {
 	pub fn new(id: ColumnId) -> Self {
 		Self {
-			table_id: id.table_id,
-			partition: id.partition,
-			index: id.index,
+			id,
 			_marker: PhantomData,
 		}
 	}
@@ -44,11 +40,7 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 	}
 
 	pub fn id(&self) -> ColumnId {
-		ColumnId {
-			table_id: self.table_id,
-			partition: self.partition,
-			index: self.index,
-		}
+		self.id
 	}
 }
 
@@ -60,9 +52,7 @@ where
 {
 	// REVIEW: Maybe this should retain the info of the smallest tower level
 	Col {
-		table_id: col.table_id,
-		partition: col.partition,
-		index: col.index,
+		id: col.id,
 		_marker: PhantomData,
 	}
 }

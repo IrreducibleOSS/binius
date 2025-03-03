@@ -86,9 +86,7 @@ impl<F: TowerField> TablePartition<F> {
 			is_nonzero: false,
 		});
 		Col {
-			table_id: self.table_id,
-			partition: self.partition_index,
-			index,
+			id: self.column_id(index),
 			_marker: PhantomData,
 		}
 	}
@@ -124,9 +122,7 @@ impl<F: TowerField> TablePartition<F> {
 			is_nonzero: false,
 		});
 		Col {
-			table_id: self.table_id,
-			partition: self.partition_index,
-			index,
+			id: self.column_id(index),
 			_marker: PhantomData,
 		}
 	}
@@ -172,9 +168,7 @@ impl<F: TowerField> TablePartition<F> {
 			is_nonzero: false,
 		});
 		Col {
-			table_id: self.table_id,
-			partition: self.partition_index,
-			index,
+			id: self.column_id(index),
 			_marker: PhantomData,
 		}
 	}
@@ -218,9 +212,7 @@ impl<F: TowerField> TablePartition<F> {
 			is_nonzero: false,
 		});
 		Col {
-			table_id: self.table_id,
-			partition: self.partition_index,
-			index,
+			id: self.column_id(index),
 			_marker: PhantomData,
 		}
 	}
@@ -271,9 +263,9 @@ impl<F: TowerField> TablePartition<F> {
 		let column_indices = cols
 			.into_iter()
 			.map(|col| {
-				assert_eq!(col.table_id, self.table_id);
-				assert_eq!(col.partition, self.partition_index);
-				col.index
+				assert_eq!(col.id.table_id, self.table_id);
+				assert_eq!(col.id.partition, self.partition_index);
+				col.id.index
 			})
 			.collect();
 		self.flushes.push(Flush {

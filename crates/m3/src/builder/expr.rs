@@ -35,13 +35,13 @@ impl<F: TowerField, const V: usize> std::ops::Add<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn add(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.id.table_id, rhs.id.table_id);
 
-		let lhs_expr = ArithExpr::Var(self.index);
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let lhs_expr = ArithExpr::Var(self.id.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
-			table_id: self.table_id,
+			table_id: self.id.table_id,
 			expr: lhs_expr + rhs_expr,
 		}
 	}
@@ -51,9 +51,9 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.table_id, rhs.id.table_id);
 
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
 			table_id: self.table_id,
@@ -79,13 +79,13 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn sub(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.id.table_id, rhs.id.table_id);
 
-		let lhs_expr = ArithExpr::Var(self.index);
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let lhs_expr = ArithExpr::Var(self.id.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
-			table_id: self.table_id,
+			table_id: self.id.table_id,
 			expr: lhs_expr - rhs_expr,
 		}
 	}
@@ -95,9 +95,9 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn sub(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.table_id, rhs.id.table_id);
 
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
 			table_id: self.table_id,
@@ -123,13 +123,13 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn mul(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.id.table_id, rhs.id.table_id);
 
-		let lhs_expr = ArithExpr::Var(self.index);
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let lhs_expr = ArithExpr::Var(self.id.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
-			table_id: self.table_id,
+			table_id: self.id.table_id,
 			expr: lhs_expr * rhs_expr,
 		}
 	}
@@ -139,9 +139,9 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn mul(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.table_id);
+		assert_eq!(self.table_id, rhs.id.table_id);
 
-		let rhs_expr = ArithExpr::Var(rhs.index);
+		let rhs_expr = ArithExpr::Var(rhs.id.index);
 
 		Expr {
 			table_id: self.table_id,
