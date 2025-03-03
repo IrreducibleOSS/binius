@@ -11,17 +11,17 @@ impl<T> SparseIndex<T> {
 		Self::default()
 	}
 
+	pub fn with_capacity(capacity: usize) -> Self {
+		let mut entries = Vec::with_capacity(capacity);
+		entries.resize_with(capacity, || None);
+		Self { entries }
+	}
+
 	pub fn entry(&mut self, id: usize) -> Entry<T> {
 		if self.entries.len() <= id {
 			self.entries.resize_with(id + 1, || None);
 		}
 		Entry(&mut self.entries[id])
-	}
-
-	pub fn with_capacity(capacity: usize) -> Self {
-		let mut entries = Vec::with_capacity(capacity);
-		entries.resize_with(capacity, || None);
-		Self { entries }
 	}
 
 	pub fn get(&self, id: usize) -> Option<&T> {
