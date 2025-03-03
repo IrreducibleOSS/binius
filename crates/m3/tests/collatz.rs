@@ -110,7 +110,7 @@ mod arithmetization {
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
 			B128, B32,
 		},
-		u32::{U32Add, U32AddFlags},
+		gadgets::u32::{U32Add, U32AddFlags},
 	};
 	use bumpalo::Bump;
 	use bytemuck::Pod;
