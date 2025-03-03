@@ -53,4 +53,6 @@ pub enum Error {
 	PiecewiseMultilinearIncompatibleEvals { actual: usize, expected: usize },
 	#[error("cannot fold a constant multilinear")]
 	ConstantFold,
+	#[error("the function expects the expression to have degree at most 1")]
+	NonLinearExpression,
 }
