@@ -1,16 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 /// An index mapping positive integer IDs to optional values.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SparseIndex<T> {
 	entries: Vec<Option<T>>,
 }
 
 impl<T> SparseIndex<T> {
 	pub fn new() -> Self {
-		Self {
-			entries: Vec::new(),
-		}
+		Self::default()
 	}
 
 	pub fn entry(&mut self, id: usize) -> Entry<T> {
@@ -42,7 +40,7 @@ impl<T> SparseIndex<T> {
 	}
 
 	pub fn contains_key(&self, id: usize) -> bool {
-		self.get(id).is_some()
+		self.entries.get(id).map(|x| x.is_some()).unwrap_or(false)
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -80,6 +78,14 @@ impl<T> SparseIndex<T> {
 
 	pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
 		self.entries.iter_mut().flatten()
+	}
+}
+
+impl<T> Default for SparseIndex<T> {
+	fn default() -> Self {
+		Self {
+			entries: Vec::new(),
+		}
 	}
 }
 
