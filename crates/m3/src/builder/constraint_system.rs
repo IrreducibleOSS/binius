@@ -5,7 +5,10 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{channel::ChannelId, ConstraintSystem as CompiledConstraintSystem},
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
+		ProjectionVariant,
+	},
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
@@ -283,6 +286,26 @@ fn add_oracle_for_column<F: TowerField>(
 				.map(|(index, &coeff)| (oracle_lookup[index], coeff))
 				.collect::<Vec<_>>();
 			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
+		}
+		ColumnDef::Selected {
+			col,
+			index,
+			index_bits,
+		} => {
+			let index_values = (0..*index_bits)
+				.map(|i| {
+					if (index >> i) & 1 == 0 {
+						F::ZERO
+					} else {
+						F::ONE
+					}
+				})
+				.collect();
+			addition.projected(
+				oracle_lookup[col.partition][col.index],
+				index_values,
+				ProjectionVariant::FirstVars,
+			)?
 		}
 		ColumnDef::Shifted {
 			col,

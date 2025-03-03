@@ -130,17 +130,36 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
+	pub fn add_selected<FSub, const V: usize>(
 		&mut self,
-		_name: impl ToString,
-		_original: Col<FSub, LOG_VALS_PER_ROW>,
-		_index: usize,
+		name: impl ToString,
+		original: Col<FSub, V>,
+		index: usize,
 	) -> Col<FSub, 0>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		todo!()
+		assert!(index < (1 << V));
+		let index = self.column_info.len();
+		self.column_info.push(ColumnInfo {
+			id: self.column_id(index),
+			col: ColumnDef::Selected {
+				col: col.id(),
+				index,
+				index_bits: col.shape().pack_factor,
+			},
+			name: name.to_string(),
+			shape: ColumnShape {
+				pack_factor: 0,
+				tower_height: FSub::TOWER_LEVEL,
+			},
+			is_nonzero: false,
+		});
+		Col {
+			id: self.column_id(index),
+			_marker: PhantomData,
+		}
 	}
 
 	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)

@@ -100,6 +100,11 @@ pub enum ColumnDef<F: TowerField = B128> {
 		tower_level: usize,
 	},
 	LinearCombination(LinearNormalForm<F>),
+	Selected {
+		col: ColumnId,
+		index: usize,
+		index_bits: usize,
+	},
 	Shifted {
 		col: ColumnId,
 		offset: usize,
