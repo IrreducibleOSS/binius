@@ -78,6 +78,5 @@
 //! and internal columns, and exposes only the output columns to the caller.
 
 pub mod builder;
-pub mod collatz;
-pub mod collatz_high_level;
+pub mod emulate;
 pub mod u32;
