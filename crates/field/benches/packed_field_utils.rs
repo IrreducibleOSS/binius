@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use core::time::Duration;
+
 use criterion::{measurement::WallTime, BenchmarkGroup};
 
 pub fn run_benchmark<R>(
@@ -168,7 +170,9 @@ macro_rules! benchmark_packed_operation {
             #[allow(non_snake_case)]
 			#[inline(never)]
             fn $packed_field(c: &mut criterion::Criterion) {
-                let mut group = c.benchmark_group(stringify!($packed_field:));
+                let mut group = c.benchmark_group(format!("{}/{}", stringify!($op_name), stringify!($packed_field)));
+                group.warm_up_time(Duration::from_secs(1));
+                group.measurement_time(Duration::from_secs(3));
                 group.throughput(criterion::Throughput::Elements((<$packed_field as binius_field::PackedField>::WIDTH *  $crate::packed_field_utils::BATCH_SIZE) as _));
 
                 let mut rng = rand::thread_rng();
