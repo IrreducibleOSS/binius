@@ -50,23 +50,23 @@
 //! [M3]: <https://www.binius.xyz/basics/arithmetization/m3>
 //! [Data Types]: <https://www.binius.xyz/basics/arithmetization/types>
 //!
-//! ## Builder API
+//! ## Build API
 //!
 //! This library provides an opinionated interface for constructing M3 constraint systems over the
 //! Binius core protocol. This means that it does not expose the full set of capabilities of the
 //! Binius protocol.
 //!
-//! The library exposes a [`builder::ConstraintSystemBuilder`] interface, which builds a
-//! [`ConstraintSystem`]. The M3 constraint system differs from a [`binius_core::ConstraintSystem`]
-//! in that does not implicitly contain table heights as part of its definition. This allows for
-//! flexibility in the statements supported, so that a verifier can audit a constraint system once
-//! and then accept proofs for different statements than require different table sizes.
+//! The library exposes a [`builder::ConstraintSystem`], which has mutating methods used to build
+//! an instance. The M3 constraint system differs from a
+//! [`binius_core::constraint_system::ConstraintSystem`] in that it does not implicitly contain
+//! table heights as part of its definition. This allows for flexibility in the statements
+//! supported, so that a verifier can audit a constraint system once and then accept proofs for
+//! different statements than require different table sizes.
 //!
-//! The library intends the code invoking the constraint system builder is trusted and audited and
-//! thus may panic if invoked incorrectly. Once the constraint system is built, it can be
-//! serialized and later deserialized during an online proving and verification process. All
-//! functions that interact with a constraint system after the build phase will return errors on
-//! invalid inputs.
+//! The library intends the code building the constraint system is trusted and audited and thus may
+//! panic if invoked incorrectly. Once the constraint system is built, it can be serialized and
+//! later deserialized during an online proving and verification process. All functions that
+//! interact with a constraint system after the build phase will return errors on invalid inputs.
 //!
 //! ### Gadgets
 //!

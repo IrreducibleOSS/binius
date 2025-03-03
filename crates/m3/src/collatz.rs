@@ -11,13 +11,7 @@ use binius_field::{as_packed_field::PackScalar, underlier::UnderlierType};
 use bytemuck::Pod;
 
 use crate::{
-	builder::{
-		column::Col,
-		constraint_system::ConstraintSystem,
-		table::TableId,
-		types::{B1, B32},
-		witness::{TableFiller, TableWitnessIndexSegment},
-	},
+	builder::{Col, ConstraintSystem, TableFiller, TableId, TableWitnessIndexSegment, B1, B32},
 	collatz_high_level::{EvensEvent, OddsEvent},
 	u32::{U32Add, U32AddFlags},
 };
