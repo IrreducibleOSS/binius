@@ -30,9 +30,9 @@
 //! Tables can have a few types of constraints:
 //!
 //! 1. **Zero constraints**: these are constraints that require a certain arithmetic expression to
-//! evaluate to zero over each row. A zero constraint must reference only columns within the same
-//! table with the same vertical packing factor. The constraint must evaluate to zero for each
-//! vertically packed entry.
+//!    evaluate to zero over each row. A zero constraint must reference only columns within the same
+//!    table with the same vertical packing factor. The constraint must evaluate to zero for each
+//!    vertically packed entry.
 //! 2. **Non-zero column constraints**: these enforce that a column has no non-zero entries.
 //!
 //! ### Channels
