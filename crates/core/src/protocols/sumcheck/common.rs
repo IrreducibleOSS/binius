@@ -265,16 +265,15 @@ where
 	P: PackedField,
 	M: MultilinearPoly<P>,
 {
-	let n_vars = multilinears
-		.first()
-		.map(|multilinear| multilinear.n_vars())
-		.unwrap_or_default();
-	for multilinear in multilinears {
-		if multilinear.n_vars() != n_vars {
-			bail!(Error::NumberOfVariablesMismatch);
-		}
+	let Some(n_vars) = multilinears.first().map(|m| m.n_vars()) else {
+		return Ok(0);
+	};
+
+	if multilinears.iter().any(|m| m.n_vars() != n_vars) {
+		Err(Error::NumberOfVariablesMismatch)
+	} else {
+		Ok(n_vars)
 	}
-	Ok(n_vars)
 }
 
 /// Check that evaluations of all multilinears can actually be embedded in the scalar
