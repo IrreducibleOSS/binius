@@ -31,14 +31,10 @@ impl<F: BinaryField> BinarySubspace<F> {
 	///
 	/// * `Error::DomainSizeTooLarge` if `dim` is greater than this subspace's dimension.
 	pub fn with_dim(dim: usize) -> Result<Self, Error> {
-		if dim > F::DEGREE {
-			bail!(Error::DomainSizeTooLarge);
-		}
-		Ok(Self {
-			basis: (0..dim)
-				.map(|i| F::basis(i).expect("index is in range"))
-				.collect(),
-		})
+		let basis = (0..dim)
+			.map(|i| F::basis(i).map_err(|_| Error::DomainSizeTooLarge))
+			.collect::<Result<_, _>>()?;
+		Ok(Self { basis })
 	}
 
 	/// Creates a new subspace of this binary subspace with reduced dimension.
