@@ -51,32 +51,32 @@ impl<T> SparseIndex<T> {
 		self.entries.iter().flatten().count()
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {
+	pub fn iter(&self) -> impl DoubleEndedIterator<Item = (usize, &T)> {
 		self.entries
 			.iter()
 			.enumerate()
 			.filter_map(|(i, v)| v.as_ref().map(|v| (i, v)))
 	}
 
-	pub fn iter_mut(&mut self) -> impl Iterator<Item = (usize, &mut T)> {
+	pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (usize, &mut T)> {
 		self.entries
 			.iter_mut()
 			.enumerate()
 			.filter_map(|(i, v)| v.as_mut().map(|v| (i, v)))
 	}
 
-	pub fn keys(&self) -> impl Iterator<Item = usize> + '_ {
+	pub fn keys(&self) -> impl DoubleEndedIterator<Item = usize> + '_ {
 		self.entries
 			.iter()
 			.enumerate()
 			.filter_map(|(i, v)| v.as_ref().map(|_| i))
 	}
 
-	pub fn values(&self) -> impl Iterator<Item = &T> {
+	pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> {
 		self.entries.iter().flatten()
 	}
 
-	pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+	pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T> {
 		self.entries.iter_mut().flatten()
 	}
 }
