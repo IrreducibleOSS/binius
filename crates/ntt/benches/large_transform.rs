@@ -6,6 +6,7 @@ use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField32b, BinaryField32b,
 	ByteSlicedAES16x32b, PackedField, TowerField,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;
@@ -15,30 +16,46 @@ fn bench_large_transform<F: TowerField, P: PackedField<Scalar = F>>(
 	field: &str,
 ) {
 	let mut group = c.benchmark_group("slow/transform");
-	for log_n in std::iter::once(17) {
-		for log_batch_size in [4, 6] {
-			let data_len = 1 << (log_n + log_batch_size - P::LOG_WIDTH);
+	const LOG_BATCH_SIZE: usize = 6;
+	for log_dim in std::iter::once(16) {
+		for log_inv_rate in [1, 2] {
+			let data_len = 1 << (log_dim + LOG_BATCH_SIZE + log_inv_rate - P::LOG_WIDTH);
 			let mut rng = thread_rng();
 			let mut data = repeat_with(|| P::random(&mut rng))
 				.take(data_len)
 				.collect::<Vec<_>>();
 
-			let params = format!("{field}/log_n={log_n}/log_b={log_batch_size}");
+			let params = format!(
+				"{field}/log_dim={log_dim}/log_inv_rate={log_inv_rate}/log_b={LOG_BATCH_SIZE}"
+			);
 			group.throughput(Throughput::Bytes((data_len * size_of::<P>()) as u64));
 
-			let ntt = SingleThreadedNTT::<F>::new(log_n)
+			let ntt = SingleThreadedNTT::<F>::new(log_dim + log_inv_rate)
 				.unwrap()
 				.precompute_twiddles();
 			group.bench_function(BenchmarkId::new("single-thread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
+				let msgs_len = ((1 << log_dim) / P::WIDTH) << LOG_BATCH_SIZE;
+				b.iter(|| {
+					(0..(1 << log_inv_rate))
+						.zip(data.chunks_exact_mut(msgs_len))
+						.try_for_each(|(i, data)| ntt.forward_transform(data, i, LOG_BATCH_SIZE))
+						.expect("Failed to run ntt")
+				});
 			});
 
-			let ntt = SingleThreadedNTT::<F>::new(log_n)
+			let ntt = SingleThreadedNTT::<F>::new(log_dim + log_inv_rate)
 				.unwrap()
 				.precompute_twiddles()
 				.multithreaded();
 			group.bench_function(BenchmarkId::new("multithread/precompute", &params), |b| {
-				b.iter(|| ntt.forward_transform(&mut data, 0, log_batch_size));
+				let msgs_len = ((1 << log_dim) / P::WIDTH) << LOG_BATCH_SIZE;
+				b.iter(|| {
+					(0..(1 << log_inv_rate))
+						.into_par_iter()
+						.zip(data.par_chunks_exact_mut(msgs_len))
+						.try_for_each(|(i, data)| ntt.forward_transform(data, i, LOG_BATCH_SIZE))
+						.expect("Failed to run ntt")
+				});
 			});
 		}
 	}
