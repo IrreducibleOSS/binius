@@ -94,11 +94,9 @@ fn bench_vision32(c: &mut Criterion) {
 	rng.fill_bytes(&mut data);
 
 	group.throughput(Throughput::Bytes(N as u64));
-	group.bench_function("Vision single instance", |bench| {
-		bench.iter(|| VisionHasherDigest::digest(data))
-	});
+	group.bench_function("Vision-Single", |bench| bench.iter(|| VisionHasherDigest::digest(data)));
 
-	group.bench_function("Vision parallel instances", |bench| {
+	group.bench_function("Vision-Parallel32", |bench| {
 		bench.iter(|| {
 			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 32];
 			VisionHasherDigestByteSliced::digest(
