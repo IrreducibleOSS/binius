@@ -33,7 +33,7 @@ pub fn bench_create_partial_sums<P>(
 				self.0.len()
 			}
 			fn get(&self, i: usize) -> P {
-				self.0[i].clone()
+				self.0[i]
 			}
 		}
 

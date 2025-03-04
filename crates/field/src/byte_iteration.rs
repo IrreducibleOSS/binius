@@ -478,8 +478,8 @@ mod tests {
 
 		assert_eq!(lookup_table.len(), 256);
 
-		for i in 0..256 {
-			assert_eq!(lookup_table[i], BinaryField32b::from(0));
+		for &l in lookup_table.iter().take(256) {
+			assert_eq!(l, BinaryField32b::from(0));
 		}
 	}
 

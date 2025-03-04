@@ -676,8 +676,7 @@ mod tests {
 
 	use binius_field::{
 		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
-		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField512x1b,
-		PackedBinaryField64x8b,
+		PackedBinaryField16x8b, PackedBinaryField512x1b, PackedBinaryField64x8b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
 
