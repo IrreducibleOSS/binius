@@ -2,9 +2,9 @@ name: Rust CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.event_name }}-${{ github.ref }}
@@ -14,7 +14,6 @@ jobs:
   lint:
     name: ${{ matrix.expand.name }}
     runs-on: ${{ matrix.expand.runner }}
-    container: rustlang/rust:nightly
     strategy:
       matrix:
         expand:
@@ -30,7 +29,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
       - name: Run Command
         run: ${{ matrix.expand.cmd }}
   build:
@@ -38,8 +40,7 @@ jobs:
     needs: [lint]
     runs-on: ${{ matrix.expand.runner }}
     env:
-      RUST_VERSION: 1.83.0
-    container: rustlang/rust:nightly
+      RUST_VERSION: 1.85.0
     strategy:
       matrix:
         expand:
@@ -64,6 +65,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo yum -y install gcc
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: AMD job configuration template with stable Rust
         if: ${{ matrix.expand.name == 'debug-amd-stable' }}
         run: |
@@ -82,8 +87,7 @@ jobs:
     needs: [build]
     runs-on: ${{ matrix.expand.runner }}
     env:
-      RUST_VERSION: 1.83.0
-    container: rustlang/rust:nightly
+      RUST_VERSION: 1.85.0
     strategy:
       matrix:
         expand:
@@ -111,6 +115,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo yum -y install gcc
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: AMD job configuration template with stable Rust
         if: ${{ matrix.expand.name == 'amd-stable' }}
         run: |

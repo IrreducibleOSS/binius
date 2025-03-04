@@ -1,0 +1,20 @@
+[package]
+name = "binius_m3"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+binius_core = { path = "../core" }
+binius_field = { path = "../field" }
+binius_math = { path = "../math" }
+binius_maybe_rayon = { path = "../maybe_rayon" }
+binius_utils = { path = "../utils" }
+bumpalo.workspace = true
+bytemuck.workspace = true
+getset.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+assert_matches.workspace = true

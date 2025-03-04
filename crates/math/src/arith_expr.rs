@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use std::{
-	cmp::{max, Ordering},
+	cmp::Ordering,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -44,7 +44,7 @@ impl<F: Field> ArithExpr<F> {
 		match self {
 			Self::Const(_) => 0,
 			Self::Var(index) => *index + 1,
-			Self::Add(left, right) | Self::Mul(left, right) => max(left.n_vars(), right.n_vars()),
+			Self::Add(left, right) | Self::Mul(left, right) => left.n_vars().max(right.n_vars()),
 			Self::Pow(id, _) => id.n_vars(),
 		}
 	}
@@ -54,7 +54,7 @@ impl<F: Field> ArithExpr<F> {
 		match self {
 			Self::Const(_) => 0,
 			Self::Var(_) => 1,
-			Self::Add(left, right) => max(left.degree(), right.degree()),
+			Self::Add(left, right) => left.degree().max(right.degree()),
 			Self::Mul(left, right) => left.degree() + right.degree(),
 			Self::Pow(base, exp) => base.degree() * *exp as usize,
 		}
@@ -229,6 +229,43 @@ impl<F: Field> ArithExpr<F> {
 			}
 		}
 	}
+
+	/// Returns the normal form of an expression if it is linear.
+	///
+	/// ## Throws
+	///
+	/// - [`Error::NonLinearExpression`] if the expression is not linear.
+	pub fn linear_normal_form(&self) -> Result<LinearNormalForm<F>, Error> {
+		if self.degree() > 1 {
+			return Err(Error::NonLinearExpression);
+		}
+
+		let mut normal_form = LinearNormalForm::default();
+		let n_vars = self.n_vars();
+
+		// Linear normal form: f(x0, x1, ... x{n-1}) = c + a0*x0 + a1*x1 + ... + a{n-1}*x{n-1}
+		// Evaluating with all variables set to 0, should give the constant term
+		let constant = self.evaluate(&vec![F::ZERO; n_vars]);
+
+		// Evaluating with x{k} set to 1 and all other x{i} set to 0, gives us `constant + a{k}`
+		// That means we can subtract the constant from the evaluated expression to get the coefficient a{k}
+		for i in 0..n_vars {
+			let mut vars = vec![F::ZERO; n_vars];
+			vars[i] = F::ONE;
+			normal_form.var_coeffs.push(self.evaluate(&vars) - constant);
+		}
+		Ok(normal_form)
+	}
+
+	fn evaluate(&self, vars: &[F]) -> F {
+		match self {
+			Self::Const(val) => *val,
+			Self::Var(index) => vars[*index],
+			Self::Add(left, right) => left.evaluate(vars) + right.evaluate(vars),
+			Self::Mul(left, right) => left.evaluate(vars) * right.evaluate(vars),
+			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
+		}
+	}
 }
 
 impl<F: TowerField> ArithExpr<F> {
@@ -237,7 +274,7 @@ impl<F: TowerField> ArithExpr<F> {
 			Self::Const(value) => value.min_tower_level(),
 			Self::Var(_) => 0,
 			Self::Add(left, right) | Self::Mul(left, right) => {
-				max(left.binary_tower_level(), right.binary_tower_level())
+				left.binary_tower_level().max(right.binary_tower_level())
 			}
 			Self::Pow(base, _) => base.binary_tower_level(),
 		}
@@ -325,6 +362,15 @@ impl<F: Field> Product for ArithExpr<F> {
 	}
 }
 
+/// A normal form for a linear expression.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LinearNormalForm<F: Field> {
+	/// The constant offset of the expression.
+	pub constant: F,
+	/// A vector mapping variable indices to their coefficients.
+	pub var_coeffs: Vec<F>,
+}
+
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
@@ -407,5 +453,20 @@ mod tests {
 			* ArithExpr::Const(F8::new(222)))
 		.pow(3);
 		assert_eq!(expr.try_convert_field::<BinaryField8b>().unwrap(), expected);
+	}
+
+	#[test]
+	fn test_linear_normal_form() {
+		type F = BinaryField128b;
+		use ArithExpr::{Const, Var};
+		let expr = Const(F::new(133))
+			+ Const(F::new(42)) * Var(0)
+			+ Var(2) + Const(F::new(11)) * Const(F::new(37)) * Var(3);
+		let normal_form = expr.linear_normal_form().unwrap();
+		assert_eq!(normal_form.constant, F::ZERO);
+		assert_eq!(
+			normal_form.var_coeffs,
+			vec![F::new(42), F::ZERO, F::ONE, F::new(11) * F::new(37)]
+		);
 	}
 }

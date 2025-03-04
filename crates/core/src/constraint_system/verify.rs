@@ -135,6 +135,7 @@ where
 
 	// Verify grand products
 	let mut final_layer_claims = gkr_gpa::batch_verify(
+		EvaluationOrder::LowToHigh,
 		[flush_prodcheck_claims, non_zero_prodcheck_claims].concat(),
 		&mut transcript,
 	)?;

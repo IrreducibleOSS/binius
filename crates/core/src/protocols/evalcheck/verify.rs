@@ -41,7 +41,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 	/// Create a new verifier state from a mutable reference to the oracle set
 	/// (it needs to be mutable because `new_sumcheck` reduction may add new
 	/// oracles & multilinears)
-	pub fn new(oracles: &'a mut MultilinearOracleSet<F>) -> Self {
+	pub const fn new(oracles: &'a mut MultilinearOracleSet<F>) -> Self {
 		Self {
 			oracles,
 			committed_eval_claims: Vec::new(),
