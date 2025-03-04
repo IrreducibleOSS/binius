@@ -14,8 +14,7 @@ use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
 	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
-	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension,
-	PackedField, TowerField,
+	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
@@ -328,7 +327,7 @@ where {
 
 	builder.pop_namespace();
 
-	let mds_trans = Vision32MDSTransform::<PackedAESBinaryField32x8b, _>::default();
+	let mds_trans = Vision32MDSTransform::default();
 	let aes_to_bin_packed =
 		make_aes_to_binary_packed_transformer::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>(
 		);

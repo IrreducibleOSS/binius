@@ -72,6 +72,14 @@ macro_rules! define_byte_sliced {
 			pub fn from_raw_data(data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> Self {
 				Self { data }
 			}
+
+			pub fn from_raw_data_ref(data: &[$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> &Self {
+				unsafe { &*(data as *const [$packed_storage; <$tower_level as TowerLevel>::WIDTH] as *const Self) }
+			}
+
+			pub fn from_raw_data_mut(data: &mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> &mut Self {
+				unsafe { &mut *(data as *mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH] as *mut Self) }
+			}
 		}
 
 		impl PackedField for $name {
@@ -506,6 +514,14 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			/// Creates a new instance from raw underlying storage.
 			pub fn from_raw_data(data: [$packed_storage; Self::ARRAY_LEN]) -> Self {
 				Self { data }
+			}
+
+			pub fn from_raw_data_ref(data: &[$packed_storage; Self::ARRAY_LEN]) -> &Self {
+				unsafe { &*(data as *const [$packed_storage; Self::ARRAY_LEN] as *const Self) }
+			}
+
+			pub fn from_raw_data_mut(data: &mut [$packed_storage; Self::ARRAY_LEN]) -> &mut Self {
+				unsafe { &mut *(data as *mut [$packed_storage; Self::ARRAY_LEN] as *mut Self) }
 			}
 		}
 

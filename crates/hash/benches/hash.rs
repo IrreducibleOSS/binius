@@ -100,14 +100,9 @@ fn bench_vision32(c: &mut Criterion) {
 
 	group.bench_function("Vision parallel instances", |bench| {
 		bench.iter(|| {
-			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 4];
+			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 32];
 			VisionHasherDigestByteSliced::digest(
-				[
-					&data[0..N / 4],
-					&data[N / 4..N / 2],
-					&data[N / 2..(3 * N) / 4],
-					&data[(3 * N) / 4..N],
-				],
+				array::from_fn(|i| &data[i * N / 32..(i + 1) * N / 32]),
 				&mut out,
 			);
 
