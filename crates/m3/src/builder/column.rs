@@ -84,10 +84,11 @@ pub struct ColumnShape {
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnId {
 	pub table_id: TableId,
+	pub table_index: ColumnIndex,
 	// REVIEW: Does this strictly correspond to the packing factor?
 	// Should it be here or on columnInfo?
-	pub partition: usize,
-	pub index: ColumnIndex,
+	pub partition_id: usize,
+	pub partition_index: ColumnIndex,
 }
 
 // TODO: TableBuilder needs namespacing
