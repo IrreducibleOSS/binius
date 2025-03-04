@@ -244,8 +244,7 @@ mod tests {
 		M: MultilinearPoly<P> + Send + Sync + 'static,
 		Backend: ComputationBackend,
 	{
-		let eq_ind = EqIndPartialEval::new(challenges.len(), challenges.to_vec())
-			.unwrap()
+		let eq_ind = EqIndPartialEval::new(challenges)
 			.multilinear_extension::<P, _>(backend)
 			.unwrap();
 

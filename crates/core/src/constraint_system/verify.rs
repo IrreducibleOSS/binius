@@ -183,7 +183,7 @@ where
 	// Check the eval claim on the transparent eq polynomial
 	for (gkr_eval_point, evals) in izip!(gkr_eval_points, flush_sumcheck_output.multilinear_evals) {
 		let gkr_eval_point_len = gkr_eval_point.len();
-		let eq_ind = EqIndPartialEval::new(gkr_eval_point_len, gkr_eval_point)?;
+		let eq_ind = EqIndPartialEval::new(gkr_eval_point);
 
 		let sumcheck_challenges_len = flush_sumcheck_output.challenges.len();
 		let expected_eval = eq_ind.evaluate(
