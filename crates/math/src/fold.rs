@@ -177,11 +177,7 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	if LOG_QUERY_SIZE >= 3 {
-		return false;
-	}
-
-	if P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH {
+	if LOG_QUERY_SIZE >= 3 || (P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH) {
 		return false;
 	}
 
@@ -249,11 +245,7 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	if LOG_QUERY_SIZE < 3 {
-		return false;
-	}
-
-	if P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH {
+	if LOG_QUERY_SIZE < 3 || (P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH) {
 		return false;
 	}
 
@@ -316,11 +308,7 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	if log_evals_size < P::LOG_WIDTH {
-		return false;
-	}
-
-	if !can_iterate_bytes::<P>() {
+	if log_evals_size < P::LOG_WIDTH || !can_iterate_bytes::<P>() {
 		return false;
 	}
 
@@ -413,16 +401,17 @@ where
 
 		evals.truncate(evals.len() >> 1);
 	} else {
-		let only_packed = *evals.first().expect("log_evals_size > 0");
+		let first_eval = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
+		let half_size = 1 << (log_evals_size - 1);
 
-		for i in 0..1 << (log_evals_size - 1) {
-			let eval_0 = only_packed.get(i);
-			let eval_1 = only_packed.get(i | 1 << (log_evals_size - 1));
+		for i in 0..half_size {
+			let eval_0 = first_eval.get(i);
+			let eval_1 = first_eval.get(i | half_size);
 			folded.set(i, eval_0 + lerp_query * (eval_1 - eval_0));
 		}
 
-		*evals.first_mut().expect("log_evals_size > 0") = folded;
+		*first_eval = folded;
 	}
 
 	Ok(())
@@ -687,7 +676,8 @@ mod tests {
 
 	use binius_field::{
 		packed::set_packed_slice, PackedBinaryField128x1b, PackedBinaryField16x32b,
-		PackedBinaryField16x8b, PackedBinaryField512x1b, PackedBinaryField64x8b,
+		PackedBinaryField16x8b, PackedBinaryField1x128b, PackedBinaryField512x1b,
+		PackedBinaryField64x8b,
 	};
 	use rand::{rngs::StdRng, SeedableRng};
 
@@ -984,5 +974,27 @@ mod tests {
 				}
 			}
 		}
+	}
+
+	#[test]
+	fn test_check_fold_arguments_valid() {
+		let evals = vec![PackedBinaryField128x1b::default(); 8];
+		let query = vec![PackedBinaryField128x1b::default(); 4];
+		let out = vec![PackedBinaryField128x1b::default(); 4];
+
+		// Should pass as query and output sizes are valid
+		let result = check_fold_arguments(&evals, 3, &query, 2, &out);
+		assert!(result.is_ok());
+	}
+
+	#[test]
+	fn test_check_fold_arguments_invalid_query_size() {
+		let evals = vec![PackedBinaryField128x1b::default(); 8];
+		let query = vec![PackedBinaryField128x1b::default(); 4];
+		let out = vec![PackedBinaryField128x1b::default(); 4];
+
+		// Should fail as log_query_size > log_evals_size
+		let result = check_fold_arguments(&evals, 2, &query, 3, &out);
+		assert!(matches!(result, Err(Error::IncorrectQuerySize { .. })));
 	}
 }

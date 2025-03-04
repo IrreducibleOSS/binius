@@ -320,6 +320,40 @@ pub fn create_partial_sums_lookup_tables<P: PackedField>(
 	result
 }
 
+// /// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding to bits in a byte.
+// /// The lookup table has the following structure:
+// /// [
+// ///     partial_sum_chunk_0_7_byte_0, partial_sum_chunk_0_7_byte_1, ..., partial_sum_chunk_0_7_byte_255,
+// ///     partial_sum_chunk_8_15_byte_0, partial_sum_chunk_8_15_byte_1, ..., partial_sum_chunk_8_15_byte_255,
+// ///    ...
+// /// ]
+// pub fn create_partial_sums_lookup_tables<P: PackedField>(
+// 	values: impl ScalarsCollection<P>,
+// ) -> Vec<P> {
+// 	let len = values.len();
+// 	assert!(len % 8 == 0);
+
+// 	let mut result = Vec::with_capacity(len * 32); // 256 / 8 = 32 per chunk
+
+// 	for chunk_start in (0..len).step_by(8) {
+// 		let mut sums = [P::zero(); 256];
+
+// 		for j in 0..8 {
+// 			let value = values.get(chunk_start + j);
+// 			let mask = 1 << j;
+// 			for i in (mask..256).step_by(mask * 2) {
+// 				for k in 0..mask {
+// 					sums[i + k] += value;
+// 				}
+// 			}
+// 		}
+
+// 		result.extend_from_slice(&sums);
+// 	}
+
+// 	result
+// }
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -436,5 +470,87 @@ mod tests {
 		assert!(!is_sequential_bytes::<ByteSlicedAES32x32b>());
 		assert!(!is_sequential_bytes::<ByteSlicedAES32x16b>());
 		assert!(!is_sequential_bytes::<ByteSlicedAES32x8b>());
+	}
+
+	#[test]
+	fn test_partial_sums_basic() {
+		let v1 = BinaryField32b::from(1);
+		let v2 = BinaryField32b::from(2);
+		let v3 = BinaryField32b::from(3);
+		let v4 = BinaryField32b::from(4);
+		let v5 = BinaryField32b::from(5);
+		let v6 = BinaryField32b::from(6);
+		let v7 = BinaryField32b::from(7);
+		let v8 = BinaryField32b::from(8);
+
+		let values = vec![v1, v2, v3, v4, v5, v6, v7, v8];
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Check specific precomputed sums
+		assert_eq!(lookup_table[0b0000_0000], BinaryField32b::from(0));
+		assert_eq!(lookup_table[0b0000_0001], v1);
+		assert_eq!(lookup_table[0b0000_0011], v1 + v2);
+		assert_eq!(lookup_table[0b0000_0111], v1 + v2 + v3);
+		assert_eq!(lookup_table[0b0000_1111], v1 + v2 + v3 + v4);
+		assert_eq!(lookup_table[0b0001_1111], v1 + v2 + v3 + v4 + v5);
+		assert_eq!(lookup_table[0b0011_1111], v1 + v2 + v3 + v4 + v5 + v6);
+		assert_eq!(lookup_table[0b0111_1111], v1 + v2 + v3 + v4 + v5 + v6 + v7);
+		assert_eq!(lookup_table[0b1111_1111], v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8);
+	}
+
+	#[test]
+	fn test_partial_sums_all_zeros() {
+		let values = vec![BinaryField32b::from(0); 8];
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		for i in 0..256 {
+			assert_eq!(lookup_table[i], BinaryField32b::from(0));
+		}
+	}
+
+	#[test]
+	fn test_partial_sums_single_element() {
+		let mut values = vec![BinaryField32b::from(0); 8];
+		// Set only the fourth element (index 3)
+		values[3] = BinaryField32b::from(10);
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Only cases where the 4th bit is set should have non-zero sums
+		assert_eq!(lookup_table[0b0000_0000], BinaryField32b::from(0));
+		assert_eq!(lookup_table[0b0000_1000], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b0000_1100], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b0001_1000], BinaryField32b::from(10));
+		assert_eq!(lookup_table[0b1111_1111], BinaryField32b::from(10));
+	}
+
+	#[test]
+	fn test_partial_sums_alternating_values() {
+		let v1 = BinaryField32b::from(10);
+		let v2 = BinaryField32b::from(20);
+		let v3 = BinaryField32b::from(30);
+		let v4 = BinaryField32b::from(40);
+
+		let zero = BinaryField32b::from(0);
+
+		let values = vec![v1, zero, v2, zero, v3, zero, v4, zero];
+
+		let lookup_table = create_partial_sums_lookup_tables(values.as_slice());
+
+		assert_eq!(lookup_table.len(), 256);
+
+		// Expect only the even indexed elements to contribute to the sum
+		assert_eq!(lookup_table[0b0000_0000], zero);
+		assert_eq!(lookup_table[0b0000_0001], v1);
+		assert_eq!(lookup_table[0b0000_0101], v1 + v2);
+		assert_eq!(lookup_table[0b0000_1111], v1 + v2);
+		assert_eq!(lookup_table[0b1111_1111], v1 + v2 + v3 + v4);
 	}
 }
