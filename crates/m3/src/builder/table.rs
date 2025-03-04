@@ -5,6 +5,7 @@ use binius_core::{
 	oracle::ShiftVariant,
 };
 use binius_field::{ExtensionField, TowerField};
+use binius_utils::sparse_index::SparseIndex;
 
 use super::{
 	channel::Flush,
@@ -29,7 +30,7 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	pub partitions: Vec<TablePartition<F>>,
+	pub partitions: SparseIndex<TablePartition<F>>,
 	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
 	///
 	/// Fixed tables are either entirely transparent or committed during a preprocessing step that
@@ -44,7 +45,6 @@ pub struct Table<F: TowerField = B128> {
 #[derive(Debug)]
 pub struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
-	pub partition_id: usize,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
 	pub columns: Vec<ColumnId>,
@@ -52,10 +52,9 @@ pub struct TablePartition<F: TowerField = B128> {
 }
 
 impl<F: TowerField> TablePartition<F> {
-	pub fn new(table_id: TableId, partition_id: usize, pack_factor: usize) -> Self {
+	pub fn new(table_id: TableId, pack_factor: usize) -> Self {
 		Self {
 			table_id,
-			partition_id,
 			pack_factor,
 			flushes: Vec::new(),
 			columns: Vec::new(),
@@ -110,7 +109,7 @@ impl<F: TowerField> TablePartition<F> {
 			.into_iter()
 			.map(|col| {
 				assert_eq!(col.id.table_id, self.table_id);
-				assert_eq!(col.id.partition_id, self.partition_id);
+				assert_eq!(col.id.partition_id, self.pack_factor);
 				col.id.partition_index
 			})
 			.collect();
@@ -128,7 +127,7 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
-			partitions: Vec::new(),
+			partitions: SparseIndex::new(),
 			is_fixed: false,
 		}
 	}
@@ -141,23 +140,6 @@ impl<F: TowerField> Table<F> {
 
 	pub fn id(&self) -> TableId {
 		self.id
-	}
-
-	fn partition_mut(&mut self, pack_factor: usize) -> &mut TablePartition<F> {
-		let index = self
-			.partitions
-			.iter()
-			.enumerate()
-			.find(|(_, p)| p.pack_factor == pack_factor)
-			.map(|(i, _)| i);
-		if let Some(index) = index {
-			self.partitions.get_mut(index).unwrap()
-		} else {
-			let index = self.partitions.len();
-			self.partitions
-				.push(TablePartition::new(self.id, index, pack_factor));
-			self.partitions.last_mut().unwrap()
-		}
 	}
 
 	pub fn add_committed<FSub, const LOG_VALS_PER_ROW: usize>(
@@ -293,15 +275,16 @@ impl<F: TowerField> Table<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let partition_id = self.get_or_create_partition_id(V);
+		let table_id = self.id;
+		let table_index = self.columns.len();
+		let partition = self.partition_mut(V);
 		let id = ColumnId {
-			table_id: self.id,
-			table_index: self.columns.len(),
-			partition_id,
-			partition_index: self.partitions[partition_id].columns.len(),
+			table_id,
+			table_index,
+			partition_id: partition.pack_factor,
+			partition_index: partition.columns.len(),
 		};
-		self.partitions[partition_id].columns.push(id);
-		self.columns.push(ColumnInfo {
+		let info = ColumnInfo {
 			id,
 			col,
 			name: name.to_string(),
@@ -310,24 +293,15 @@ impl<F: TowerField> Table<F> {
 				tower_height: FSub::TOWER_LEVEL,
 			},
 			is_nonzero: false,
-		});
+		};
+		partition.columns.push(id);
+		self.columns.push(info);
 		Col::new(id)
 	}
 
-	fn get_or_create_partition_id(&mut self, pack_factor: usize) -> usize {
-		let id = self
-			.partitions
-			.iter()
-			.enumerate()
-			.find(|(_, p)| p.pack_factor == pack_factor)
-			.map(|(i, _)| i);
-		if let Some(id) = id {
-			id
-		} else {
-			let id = self.partitions.len();
-			self.partitions
-				.push(TablePartition::new(self.id, id, pack_factor));
-			id
-		}
+	fn partition_mut(&mut self, pack_factor: usize) -> &mut TablePartition<F> {
+		self.partitions
+			.entry(pack_factor)
+			.or_insert_with(|| TablePartition::new(self.id, pack_factor))
 	}
 }
