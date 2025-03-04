@@ -1113,58 +1113,36 @@ mod tests {
 
 	#[test]
 	fn test_multihash_consistency_small_data() {
-		check_multihash_consistency(&[[
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-			&[0xde, 0xad, 0xbe, 0xef],
-			&[0x00, 0x01, 0x02, 0x03],
-			&[0x04, 0x05, 0x06, 0x07],
-			&[0x08, 0x09, 0x0a, 0x0b],
-		]]);
+		let data =
+			array::from_fn::<_, 32, _>(|i| [i as u8, (i + 1) as _, (i + 2) as _, (i + 3) as _]);
+
+		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
 	}
 
-	// #[test]
-	// fn test_multihash_consistency_small_rate() {
-	// 	check_multihash_consistency(&[[&[0u8; 64], &[1u8; 64], &[2u8; 64], &[3u8; 64]]]);
-	// }
+	#[test]
+	fn test_multihash_consistency_small_rate() {
+		let data = array::from_fn::<_, 32, _>(|i| [i as u8, 64]);
 
-	// #[test]
-	// fn test_multihash_consistency_large_rate() {
-	// 	check_multihash_consistency(&[[&[0u8; 1024], &[1u8; 1024], &[2u8; 1024], &[3u8; 1024]]]);
-	// }
+		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
+	}
 
-	// #[test]
-	// fn test_multihash_consistency_several_chunks() {
-	// 	check_multihash_consistency(&[
-	// 		[&[0u8; 48], &[1u8; 48], &[2u8; 48], &[3u8; 48]],
-	// 		[&[0u8; 32], &[1u8; 32], &[2u8; 32], &[3u8; 32]],
-	// 		[&[0u8; 128], &[1u8; 128], &[2u8; 128], &[3u8; 128]],
-	// 	]);
-	// }
+	#[test]
+	fn test_multihash_consistency_large_rate() {
+		let data = array::from_fn::<_, 32, _>(|i| [i as u8; 1024]);
+
+		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
+	}
+
+	#[test]
+	fn test_multihash_consistency_several_chunks() {
+		let data_0 = array::from_fn::<_, 32, _>(|i| [i as u8, 48]);
+		let data_1 = array::from_fn::<_, 32, _>(|i| [(i + 1) as u8, 64]);
+		let data_2 = array::from_fn::<_, 32, _>(|i| [(i + 2) as u8, 128]);
+
+		check_multihash_consistency(&[
+			array::from_fn::<_, 32, _>(|i| &data_0[i][..]),
+			array::from_fn::<_, 32, _>(|i| &data_1[i][..]),
+			array::from_fn::<_, 32, _>(|i| &data_2[i][..]),
+		]);
+	}
 }
