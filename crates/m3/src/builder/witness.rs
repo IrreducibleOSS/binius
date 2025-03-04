@@ -74,14 +74,9 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table in self.tables {
-			let mut pack_factors = Vec::new();
 			let mut count = 0;
 
 			for col in table.cols.into_iter() {
-				if !pack_factors.contains(&col.shape.pack_factor) {
-					pack_factors.push(col.shape.pack_factor);
-				}
-
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
 				let n_vars = table.log_capacity + col.shape.pack_factor;
 				let witness = match col.shape.tower_height {
@@ -130,7 +125,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 			}
 
 			// Every table partition has a step_down appended to the end of the table to support non-power of two height tables
-			for pack_factor in pack_factors.into_iter() {
+			for pack_factor in table.selector_pack_factors.into_iter() {
 				let oracle_id = first_oracle_id_in_table + count;
 				let size = statement.table_sizes[table.table_id] << pack_factor;
 				let log_size = log2_ceil_usize(size);
@@ -153,6 +148,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
+	selector_pack_factors: Vec<usize>,
 	cols: Vec<WitnessIndexColumn<'a, U>>,
 	#[get_copy = "pub"]
 	log_capacity: usize,
@@ -210,6 +206,7 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 
 		Self {
 			table_id: table.id,
+			selector_pack_factors: table.partitions.keys().collect(),
 			cols,
 			log_capacity,
 			min_log_segment_size: U::LOG_BITS - min_log_cell_bits,

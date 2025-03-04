@@ -45,7 +45,7 @@ impl std::fmt::Display for ConstraintSystem {
 		for table in self.tables.iter() {
 			writeln!(f, "    TABLE {} {{", table.name)?;
 
-			for partition in table.partitions.iter() {
+			for partition in table.partitions.values() {
 				for flush in partition.flushes.iter() {
 					let channel = self.channels[flush.channel_id].name.clone();
 					let columns = flush
@@ -104,9 +104,9 @@ impl std::fmt::Display for ConstraintSystem {
 			}
 
 			// step_down selectors for the table
-			for partition in table.partitions.iter() {
-				let selector_type_str = if partition.pack_factor > 1 {
-					format!("B1x{}", 1 << partition.pack_factor)
+			for pack_factor in table.partitions.keys() {
+				let selector_type_str = if pack_factor > 1 {
+					format!("B1x{}", 1 << pack_factor)
 				} else {
 					"B1".to_string()
 				};
@@ -194,7 +194,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				}
 			}
 
-			for partition in table.partitions.iter() {
+			for partition in table.partitions.values() {
 				let TablePartition {
 					columns,
 					flushes,
