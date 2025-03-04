@@ -17,16 +17,17 @@ use super::{
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
 	statement::Statement,
-	table::{Table, TablePartition},
+	table::TablePartition,
 	types::B128,
 	witness::{TableWitnessIndex, WitnessIndex},
+	TableBuilder,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
 /// An M3 constraint system, independent of the table sizes.
 #[derive(Debug, Default)]
 pub struct ConstraintSystem<F: TowerField = B128> {
-	pub tables: Vec<Table<F>>,
+	pub tables: Vec<TableBuilder<F>>,
 	pub channels: Vec<Channel>,
 	/// All valid channel IDs are strictly less than this bound.
 	pub channel_id_bound: ChannelId,
@@ -43,6 +44,7 @@ impl std::fmt::Display for ConstraintSystem {
 		let mut oracle_id = 0;
 
 		for table in self.tables.iter() {
+			let table = table.table();
 			writeln!(f, "    TABLE {} {{", table.name)?;
 
 			for partition in table.partitions.values() {
@@ -125,9 +127,9 @@ impl<F: TowerField> ConstraintSystem<F> {
 		Self::default()
 	}
 
-	pub fn add_table(&mut self, name: impl ToString) -> &mut Table<F> {
+	pub fn add_table(&mut self, name: impl ToString) -> &mut TableBuilder<F> {
 		let id = self.tables.len();
-		self.tables.push(Table::new(id, name));
+		self.tables.push(TableBuilder::new(id, name.to_string()));
 		self.tables.last_mut().expect("table was just pushed")
 	}
 
@@ -154,7 +156,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 				.tables
 				.iter()
 				.map(|table| {
-					TableWitnessIndex::new(allocator, table, statement.table_sizes[table.id])
+					let table = table.table();
+					TableWitnessIndex::new(allocator, &table, statement.table_sizes[table.id])
 				})
 				.collect(),
 		})
@@ -181,6 +184,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 		let mut non_zero_oracle_ids = Vec::new();
 
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
+			let table = table.table();
 			let mut oracle_lookup = Vec::new();
 
 			// Add multilinear oracles for all table columns.

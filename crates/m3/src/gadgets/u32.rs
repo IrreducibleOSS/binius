@@ -4,7 +4,7 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{as_packed_field::PackScalar, packed::set_packed_slice, Field};
 use bytemuck::Pod;
 
-use crate::builder::{column::Col, table::Table, types::B1, witness::TableWitnessIndexSegment};
+use crate::builder::{column::Col, types::B1, witness::TableWitnessIndexSegment, TableBuilder};
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
 ///
@@ -42,7 +42,12 @@ pub struct U32AddFlags {
 }
 
 impl U32Add {
-	pub fn new(table: &mut Table, xin: Col<B1, 5>, yin: Col<B1, 5>, flags: U32AddFlags) -> Self {
+	pub fn new(
+		table: &mut TableBuilder,
+		xin: Col<B1, 5>,
+		yin: Col<B1, 5>,
+		flags: U32AddFlags,
+	) -> Self {
 		let cout = table.add_committed::<B1, 5>("cout");
 		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
 
