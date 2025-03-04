@@ -22,12 +22,14 @@ use itertools::multizip;
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
 
+pub mod constants;
+
 use crate::{
-	permutation::Permutation,
-	vision_constants::{
+	constants::{
 		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
 		ROUND_KEYS,
 	},
+	permutation::Permutation,
 	MultiDigest,
 };
 
