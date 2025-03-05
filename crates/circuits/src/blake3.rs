@@ -16,8 +16,8 @@ use crate::{
 };
 
 type F1 = BinaryField1b;
-const CHAINING_VALUE_LEN: usize = 8;
-const BLAKE3_STATE_LEN: usize = 16;
+pub const CHAINING_VALUE_LEN: usize = 8;
+pub const BLAKE3_STATE_LEN: usize = 16;
 const MSG_PERMUTATION: [usize; BLAKE3_STATE_LEN] =
 	[2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
 const IV_0_4: [u32; 4] = [0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A];
@@ -82,7 +82,7 @@ pub fn g(
 	mx: OracleId,
 	my: OracleId,
 	log_size: usize,
-) -> Result<(OracleId, OracleId, OracleId, OracleId), anyhow::Error> {
+) -> Result<[OracleId; 4], anyhow::Error> {
 	builder.push_namespace(name);
 
 	let ab = arithmetic::u32::add(builder, "a_in + b_in", a_in, b_in, Flags::Unchecked)?;
@@ -105,7 +105,7 @@ pub fn g(
 
 	builder.pop_namespace();
 
-	Ok((a2, b2, c2, d2))
+	Ok([a2, b2, c2, d2])
 }
 
 // Gadget for Blake3 round function
@@ -119,26 +119,26 @@ pub fn round(
 	builder.push_namespace(name);
 
 	// Mixing columns
-	let (s0, s4, s8, s12) =
+	let [s0, s4, s8, s12] =
 		g(builder, "mix-columns-0", state[0], state[4], state[8], state[12], m[0], m[1], log_size)?;
 
-	let (s1, s5, s9, s13) =
+	let [s1, s5, s9, s13] =
 		g(builder, "mix-columns-1", state[1], state[5], state[9], state[13], m[2], m[3], log_size)?;
 	#[rustfmt::skip]
-	let (s2, s6, s10, s14) =
+	let [s2, s6, s10, s14] =
 		g(builder, "mix-columns-2", state[2], state[6], state[10], state[14], m[4], m[5], log_size)?;
 	#[rustfmt::skip]
-	let (s3, s7, s11, s15) =
+	let [s3, s7, s11, s15] =
 		g(builder, "mix-columns-3", state[3], state[7], state[11], state[15], m[6], m[7], log_size)?;
 
 	// Mixing diagonals
-	let (s0, s5, s10, s15) = g(builder, "mix-diagonals-0", s0, s5, s10, s15, m[8], m[9], log_size)?;
+	let [s0, s5, s10, s15] = g(builder, "mix-diagonals-0", s0, s5, s10, s15, m[8], m[9], log_size)?;
 	#[rustfmt::skip]
-	let (s1, s6, s11, s12) = g(builder, "mix-diagonals-1", s1, s6, s11, s12, m[10], m[11], log_size)?;
+	let [s1, s6, s11, s12] = g(builder, "mix-diagonals-1", s1, s6, s11, s12, m[10], m[11], log_size)?;
 
-	let (s2, s7, s8, s13) = g(builder, "mix-diagonals-2", s2, s7, s8, s13, m[12], m[13], log_size)?;
+	let [s2, s7, s8, s13] = g(builder, "mix-diagonals-2", s2, s7, s8, s13, m[12], m[13], log_size)?;
 
-	let (s3, s4, s9, s14) = g(builder, "mix-diagonals-3", s3, s4, s9, s14, m[14], m[15], log_size)?;
+	let [s3, s4, s9, s14] = g(builder, "mix-diagonals-3", s3, s4, s9, s14, m[14], m[15], log_size)?;
 
 	builder.pop_namespace();
 
@@ -298,10 +298,10 @@ mod tests {
 
 		if let Some(witness) = builder.witness() {
 			(
-				witness.get::<F1>(output.0).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output.1).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output.2).unwrap().as_slice::<u32>(),
-				witness.get::<F1>(output.3).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output[0]).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output[1]).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output[2]).unwrap().as_slice::<u32>(),
+				witness.get::<F1>(output[3]).unwrap().as_slice::<u32>(),
 			)
 				.into_par_iter()
 				.for_each(|(actual_0, actual_1, actual_2, actual_3)| {

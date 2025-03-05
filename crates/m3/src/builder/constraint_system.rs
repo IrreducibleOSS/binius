@@ -17,9 +17,10 @@ use super::{
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
 	statement::Statement,
-	table::{Table, TablePartition},
+	table::TablePartition,
 	types::B128,
 	witness::{TableWitnessIndex, WitnessIndex},
+	Table, TableBuilder,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -125,10 +126,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 		Self::default()
 	}
 
-	pub fn add_table(&mut self, name: impl ToString) -> &mut Table<F> {
+	pub fn add_table(&mut self, name: impl ToString) -> TableBuilder<'_, F> {
 		let id = self.tables.len();
-		self.tables.push(Table::new(id, name));
-		self.tables.last_mut().expect("table was just pushed")
+		self.tables.push(Table::new(id, name.to_string()));
+		TableBuilder::new(self.tables.last_mut().expect("table was just pushed"))
 	}
 
 	pub fn add_channel(&mut self, name: impl ToString) -> ChannelId {

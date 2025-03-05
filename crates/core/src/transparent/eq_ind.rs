@@ -7,28 +7,37 @@ use binius_utils::bail;
 
 use crate::polynomial::{Error, MultivariatePoly};
 
-/// Represents the MLE of the eq(X, Y) polynomial on 2*n_vars variables partially evaluated at Y = r
+/// Represents $\text{eq}(X, r)$, the partial evaluation of the
+/// [equality indicator polynomial](https://www.binius.xyz/blueprint/background/multilinears#the-equality-indicator-polynomial)
+/// at a point $r$.
 ///
-/// Recall that the multilinear polynomial eq(X, Y) is defined s.t. $\forall x, y \in \{0, 1\}^{\mu}$,
-/// eq(x, y) = 1 iff x = y and eq(x, y) = 0 otherwise.
-/// Specifically, the function is defined like so $\prod_{i=0}^{\mu - 1} (X_i * Y_i + (1 - X_i)(1-Y_i))$
+/// The $2 \mu$-variate multilinear polynomial $\text{eq}(X, Y)$ is defined as the multilinear
+/// extension of the map
+///
+/// $$
+/// (x, y) \mapsto \begin{cases}
+///   1 &\text{if } x = y \\\\
+///   0 &\text{if } x \ne y
+/// \end{cases}.
+/// $$
+///
+/// The polynomial can be efficiency computed with the following explicit formulation:
+///
+/// $$
+/// \text{eq}(X, Y) = \prod_{i=0}^{\mu - 1} \left(X_i Y_i + (1 - X_i)(1 - Y_i)\right).
+/// $$
 #[derive(Debug, Clone)]
 pub struct EqIndPartialEval<F: Field> {
-	n_vars: usize,
 	r: Vec<F>,
 }
 
 impl<F: Field> EqIndPartialEval<F> {
-	// TODO: n_vars param here is unnecessary
-	pub fn new(n_vars: usize, r: Vec<F>) -> Result<Self, Error> {
-		if r.len() != n_vars {
-			bail!(Error::IncorrectQuerySize { expected: n_vars });
-		}
-		Ok(Self { n_vars, r })
+	pub fn new(r: impl Into<Vec<F>>) -> Self {
+		Self { r: r.into() }
 	}
 
-	pub const fn n_vars(&self) -> usize {
-		self.n_vars
+	pub fn n_vars(&self) -> usize {
+		self.r.len()
 	}
 
 	pub fn multilinear_extension<P: PackedField<Scalar = F>, Backend: ComputationBackend>(
@@ -42,11 +51,11 @@ impl<F: Field> EqIndPartialEval<F> {
 
 impl<F: TowerField, P: PackedField<Scalar = F>> MultivariatePoly<P> for EqIndPartialEval<F> {
 	fn n_vars(&self) -> usize {
-		self.n_vars
+		self.r.len()
 	}
 
 	fn degree(&self) -> usize {
-		self.n_vars
+		self.r.len()
 	}
 
 	fn evaluate(&self, query: &[P]) -> Result<P, Error> {
@@ -95,7 +104,7 @@ mod tests {
 		let backend = make_portable_backend();
 
 		// Get Multivariate Poly version of eq_r
-		let eq_r_mvp = EqIndPartialEval::new(n_vars, r).unwrap();
+		let eq_r_mvp = EqIndPartialEval::new(r);
 		let eval_mvp = eq_r_mvp.evaluate(eval_point).unwrap();
 
 		// Get MultilinearExtension version of eq_r
