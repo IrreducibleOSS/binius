@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{ExtensionField, TowerField};
-use binius_math::LinearNormalForm;
 
 use super::{table::TableId, types::B128};
 
@@ -91,15 +90,16 @@ pub struct ColumnId {
 	pub partition_index: ColumnIndex,
 }
 
-// TODO: TableBuilder needs namespacing
-
 /// A definition of a column in a table.
 #[derive(Debug)]
 pub enum ColumnDef<F: TowerField = B128> {
 	Committed {
 		tower_level: usize,
 	},
-	LinearCombination(LinearNormalForm<F>),
+	LinearCombination {
+		offset: F,
+		col_scalars: Vec<(ColumnIndex, F)>,
+	},
 	Selected {
 		col: ColumnId,
 		index: usize,

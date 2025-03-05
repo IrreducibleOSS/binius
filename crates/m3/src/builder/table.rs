@@ -5,6 +5,7 @@ use binius_core::{
 	oracle::ShiftVariant,
 };
 use binius_field::{ExtensionField, TowerField};
+use binius_math::LinearNormalForm;
 use binius_utils::sparse_index::SparseIndex;
 
 use super::{
@@ -101,14 +102,36 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let lincom = expr
+		let LinearNormalForm {
+			constant: offset,
+			var_coeffs,
+		} = expr
 			.expr()
 			.convert_field::<F>()
 			.linear_normal_form()
 			.expect("pre-condition: expression must be linear");
 
-		self.table
-			.new_column(self.namespaced_name(name), ColumnDef::LinearCombination(lincom))
+		let col_scalars = var_coeffs
+			.into_iter()
+			.enumerate()
+			.filter_map(|(partition_index, coeff)| {
+				if coeff != F::ZERO {
+					let partition = &self.table.partitions[expr.partition_id()];
+					let col_index = partition.columns[partition_index].table_index;
+					Some((col_index, coeff))
+				} else {
+					None
+				}
+			})
+			.collect();
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::LinearCombination {
+				offset,
+				col_scalars: col_scalars,
+			},
+		)
 	}
 
 	pub fn add_packed<FSubSub, const VSUB: usize, FSub, const V: usize>(
@@ -133,7 +156,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	pub fn add_selected<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		original: Col<FSub, V>,
+		col: Col<FSub, V>,
 		index: usize,
 	) -> Col<FSub, 0>
 	where
@@ -141,25 +164,14 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		F: ExtensionField<FSub>,
 	{
 		assert!(index < (1 << V));
-		let index = self.column_info.len();
-		self.column_info.push(ColumnInfo {
-			id: self.column_id(index),
-			col: ColumnDef::Selected {
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Selected {
 				col: col.id(),
 				index,
-				index_bits: col.shape().pack_factor,
+				index_bits: V,
 			},
-			name: name.to_string(),
-			shape: ColumnShape {
-				pack_factor: 0,
-				tower_height: FSub::TOWER_LEVEL,
-			},
-			is_nonzero: false,
-		});
-		Col {
-			id: self.column_id(index),
-			_marker: PhantomData,
-		}
+		)
 	}
 
 	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
@@ -225,6 +237,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
+	// TODO: Swap this to ColumnIndex
 	pub columns: Vec<ColumnId>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 }

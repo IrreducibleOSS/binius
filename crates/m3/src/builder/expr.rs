@@ -37,7 +37,8 @@ impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
 	fn from(value: Col<F, V>) -> Self {
 		Expr {
 			table_id: value.id.table_id,
-			expr: ArithExpr::Var(value.id.index),
+			partition_id: value.id.partition_id,
+			expr: ArithExpr::Var(value.id.partition_index),
 		}
 	}
 }
@@ -97,6 +98,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 	fn add(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
+			partition_id: self.partition_id,
 			expr: self.expr + ArithExpr::Const(rhs),
 		}
 	}
@@ -155,6 +157,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	fn sub(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
+			partition_id: self.partition_id,
 			expr: self.expr - ArithExpr::Const(rhs),
 		}
 	}
@@ -213,6 +216,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 	fn mul(self, rhs: F) -> Self::Output {
 		Expr {
 			table_id: self.table_id,
+			partition_id: self.partition_id,
 			expr: self.expr * ArithExpr::Const(rhs),
 		}
 	}
