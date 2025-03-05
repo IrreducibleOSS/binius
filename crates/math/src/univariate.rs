@@ -323,6 +323,7 @@ mod tests {
 	use binius_field::{
 		util::inner_product_unchecked, AESTowerField32b, BinaryField32b, BinaryField8b,
 	};
+	use itertools::assert_equal;
 	use proptest::{collection::vec, proptest};
 	use rand::{rngs::StdRng, SeedableRng};
 
@@ -511,5 +512,143 @@ mod tests {
 			let lagrange_eval = inner_product_unchecked(lagrange_coeffs.into_iter(), field_values.into_iter());
 			assert_eq!(lagrange_eval, extrapolated);
 		}
+	}
+
+	#[test]
+	fn test_barycentric_weights_simple() {
+		let p1 = BinaryField32b::from(1);
+		let p2 = BinaryField32b::from(2);
+		let p3 = BinaryField32b::from(3);
+
+		let points = vec![p1, p2, p3];
+		let weights = compute_barycentric_weights(&points).unwrap();
+
+		// Expected weights
+		let w1 = ((p1 - p2) * (p1 - p3)).invert().unwrap();
+		let w2 = ((p2 - p1) * (p2 - p3)).invert().unwrap();
+		let w3 = ((p3 - p1) * (p3 - p2)).invert().unwrap();
+
+		assert_eq!(weights, vec![w1, w2, w3]);
+	}
+
+	#[test]
+	fn test_barycentric_weights_four_points() {
+		let p1 = BinaryField32b::from(1);
+		let p2 = BinaryField32b::from(2);
+		let p3 = BinaryField32b::from(3);
+		let p4 = BinaryField32b::from(4);
+
+		let points = vec![p1, p2, p3, p4];
+
+		let weights = compute_barycentric_weights(&points).unwrap();
+
+		// Expected weights
+		let w1 = ((p1 - p2) * (p1 - p3) * (p1 - p4)).invert().unwrap();
+		let w2 = ((p2 - p1) * (p2 - p3) * (p2 - p4)).invert().unwrap();
+		let w3 = ((p3 - p1) * (p3 - p2) * (p3 - p4)).invert().unwrap();
+		let w4 = ((p4 - p1) * (p4 - p2) * (p4 - p3)).invert().unwrap();
+
+		assert_eq!(weights, vec![w1, w2, w3, w4]);
+	}
+
+	#[test]
+	fn test_barycentric_weights_single_point() {
+		let p1 = BinaryField32b::from(5);
+
+		let points = vec![p1];
+		let result = compute_barycentric_weights(&points).unwrap();
+
+		assert_equal(result, vec![BinaryField32b::from(1)]);
+	}
+
+	#[test]
+	fn test_barycentric_weights_duplicate_points() {
+		let p1 = BinaryField32b::from(7);
+		let p2 = BinaryField32b::from(7); // Duplicate point
+
+		let points = vec![p1, p2];
+		let result = compute_barycentric_weights(&points);
+
+		// Expect an error due to duplicate domain points
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_vandermonde_basic() {
+		let p1 = BinaryField32b::from(1);
+		let p2 = BinaryField32b::from(2);
+		let p3 = BinaryField32b::from(3);
+
+		let points = vec![p1, p2, p3];
+
+		let matrix = vandermonde(&points, false);
+
+		// Expected Vandermonde matrix:
+		// [
+		//  [1, p1,  p1^2],
+		//  [1, p2,  p2^2],
+		//  [1, p3,  p3^2]
+		// ]
+		let expected = Matrix::new(
+			3,
+			3,
+			&[
+				BinaryField32b::from(1),
+				p1,
+				p1.pow(2),
+				BinaryField32b::from(1),
+				p2,
+				p2.pow(2),
+				BinaryField32b::from(1),
+				p3,
+				p3.pow(2),
+			],
+		)
+		.unwrap();
+
+		assert_eq!(matrix, expected);
+	}
+
+	#[test]
+	fn test_vandermonde_with_infinity() {
+		let p1 = BinaryField32b::from(1);
+		let p2 = BinaryField32b::from(2);
+		let p3 = BinaryField32b::from(3);
+
+		let points = vec![p1, p2, p3];
+		let matrix = vandermonde(&points, true);
+
+		// Expected Vandermonde matrix:
+		// [
+		//  [1, p1,  p1^2,  p1^3],
+		//  [1, p2,  p2^2,  p2^3],
+		//  [1, p3,  p3^2,  p3^3],
+		//  [0,  0,   0,     1  ]  <-- Row for infinity
+		// ]
+		let expected = Matrix::new(
+			4,
+			4,
+			&[
+				BinaryField32b::from(1),
+				p1,
+				p1.pow(2),
+				p1.pow(3),
+				BinaryField32b::from(1),
+				p2,
+				p2.pow(2),
+				p2.pow(3),
+				BinaryField32b::from(1),
+				p3,
+				p3.pow(2),
+				p3.pow(3),
+				BinaryField32b::from(0),
+				BinaryField32b::from(0),
+				BinaryField32b::from(0),
+				BinaryField32b::from(1),
+			],
+		)
+		.unwrap();
+
+		assert_eq!(matrix, expected);
 	}
 }
