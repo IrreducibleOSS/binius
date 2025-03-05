@@ -103,7 +103,10 @@ mod arithmetization {
 		oracle::ShiftVariant,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackScalar, underlier::UnderlierType,
+		arch::OptimalUnderlier128b,
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		Field, PackedField,
 	};
 	use binius_m3::{
 		builder::{
@@ -120,11 +123,12 @@ mod arithmetization {
 	/// Table of transitions for even numbers in the Collatz sequence.
 	#[derive(Debug)]
 	pub struct EvensTable {
-		pub id: TableId,
-		pub even: Col<B1, 5>,
-		pub half: Col<B1, 5>,
-		pub even_packed: Col<B32>,
-		pub half_packed: Col<B32>,
+		id: TableId,
+		even: Col<B1, 5>,
+		even_lsb: Col<B1>,
+		half: Col<B1, 5>,
+		even_packed: Col<B32>,
+		half_packed: Col<B32>,
 	}
 
 	impl EvensTable {
@@ -132,9 +136,9 @@ mod arithmetization {
 			let mut table = cs.add_table("evens");
 
 			let even = table.add_committed::<B1, 5>("even");
+			let even_lsb = table.add_selected("even_lsb", even, 0);
 
-			// TODO: Check that the bottom bit is 0. We can do this with a selected derived column and
-			// an assert_zero constraint.
+			table.assert_zero("even_lsb is 0", even_lsb.into());
 
 			// Logical right shift is division by 2
 			let half = table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
@@ -148,6 +152,7 @@ mod arithmetization {
 			Self {
 				id: table.id(),
 				even,
+				even_lsb,
 				half,
 				even_packed,
 				half_packed,
@@ -157,7 +162,7 @@ mod arithmetization {
 
 	impl<U> TableFiller<U> for EvensTable
 	where
-		U: Pod + PackScalar<B32>,
+		U: Pod + PackScalar<B1>,
 	{
 		type Event = model::EvensEvent;
 
@@ -165,22 +170,25 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill(
-			&self,
-			rows: &[Self::Event],
-			witness: &mut TableWitnessIndexSegment<U>,
+		fn fill<'a>(
+			&'a self,
+			rows: impl Iterator<Item = &'a Self::Event>,
+			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			let mut even = witness.get_mut_as(self.even)?;
+			let mut even_lsb = witness.get_mut(self.even_lsb)?;
 			let mut half = witness.get_mut_as(self.half)?;
 			let mut even_packed = witness.get_mut_as(self.even_packed)?;
 			let mut half_packed = witness.get_mut_as(self.half_packed)?;
 
-			for (i, event) in rows.iter().enumerate() {
+			for (i, event) in rows.enumerate() {
 				even[i] = event.val;
 				half[i] = event.val >> 1;
 				even_packed[i] = event.val;
 				half_packed[i] = event.val >> 1;
 			}
+
+			even_lsb.fill(<PackedType<U, B1>>::zero());
 
 			Ok(())
 		}
@@ -190,12 +198,13 @@ mod arithmetization {
 	#[derive(Debug)]
 	pub struct OddsTable {
 		id: TableId,
-		pub odd: Col<B1, 5>,
+		odd: Col<B1, 5>,
+		odd_lsb: Col<B1>,
 		double: Col<B1, 5>,
 		carry_bit: Col<B1, 5>,
 		triple_plus_one: U32Add,
-		pub odd_packed: Col<B32>,
-		pub triple_plus_one_packed: Col<B32>,
+		odd_packed: Col<B32>,
+		triple_plus_one_packed: Col<B32>,
 	}
 
 	impl OddsTable {
@@ -203,9 +212,9 @@ mod arithmetization {
 			let mut table = cs.add_table("odds");
 
 			let odd = table.add_committed::<B1, 5>("odd_bits");
+			let odd_lsb = table.add_selected("odd_lsb", odd, 0);
 
-			// TODO: Check that the bottom bit is 1. We can do this with a selected derived column and
-			// an assert_zero constraint.
+			table.assert_zero("odd_lsb is 1", odd_lsb - B1::ONE);
 
 			// Input times 2
 			let double =
@@ -237,6 +246,7 @@ mod arithmetization {
 			Self {
 				id: table.id(),
 				odd,
+				odd_lsb,
 				double,
 				carry_bit,
 				triple_plus_one,
@@ -248,7 +258,7 @@ mod arithmetization {
 
 	impl<U: UnderlierType> TableFiller<U> for OddsTable
 	where
-		U: Pod + PackScalar<B1> + PackScalar<B32>,
+		U: Pod + PackScalar<B1>,
 	{
 		type Event = model::OddsEvent;
 
@@ -256,20 +266,21 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill(
+		fn fill<'a>(
 			&self,
-			rows: &[Self::Event],
-			witness: &mut TableWitnessIndexSegment<U>,
+			rows: impl Iterator<Item = &'a Self::Event>,
+			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			{
 				let mut odd_packed = witness.get_mut_as(self.odd_packed)?;
 				let mut triple_plus_one_packed = witness.get_mut_as(self.triple_plus_one_packed)?;
 
 				let mut odd = witness.get_mut_as(self.odd)?;
+				let mut odd_lsb = witness.get_mut(self.odd_lsb)?;
 				let mut double = witness.get_mut_as(self.double)?;
 				let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
-				for (i, event) in rows.iter().enumerate() {
+				for (i, event) in rows.enumerate() {
 					odd_packed[i] = event.val;
 					triple_plus_one_packed[i] = 3 * event.val + 1;
 
@@ -277,6 +288,8 @@ mod arithmetization {
 					double[i] = event.val << 1;
 					carry_bit[i] = 1u32;
 				}
+
+				odd_lsb.fill(<PackedType<U, B1>>::one());
 			}
 			self.triple_plus_one.populate(witness)?;
 			Ok(())

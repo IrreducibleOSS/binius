@@ -5,6 +5,7 @@ use std::{
 	iter, slice,
 };
 
+use anyhow::ensure;
 use binius_core::{transparent::step_down::StepDown, witness::MultilinearExtensionIndex};
 use binius_field::{
 	arch::OptimalUnderlier,
@@ -425,10 +426,10 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	fn id(&self) -> TableId;
 
 	/// Fill the table witness with data derived from the given rows.
-	fn fill(
-		&self,
-		rows: &[Self::Event],
-		witness: &mut TableWitnessIndexSegment<U>,
+	fn fill<'a>(
+		&'a self,
+		rows: impl Iterator<Item = &'a Self::Event>,
+		witness: &'a mut TableWitnessIndexSegment<U>,
 	) -> anyhow::Result<()>;
 }
 
@@ -440,16 +441,37 @@ pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 	rows: &[T::Event],
 	witness: &mut TableWitnessIndex<U>,
 ) -> anyhow::Result<()> {
+	ensure!(witness.capacity() >= rows.len(), "rows exceed witness capacity");
+
 	let log_segment_size = witness.min_log_segment_size();
 
-	// TODO: Handle the case when rows are not a multiple of the segment size
-	assert_eq!(rows.len() % (1 << log_segment_size), 0);
+	let segment_size = 1 << log_segment_size;
+	let n_full_chunks = rows.len() / segment_size;
+	let n_extra_rows = rows.len() % segment_size;
+	let max_full_chunk_index = n_full_chunks * segment_size;
 
+	// Fill segments of the table with full chunks
+	let mut segments_iter = witness.segments(log_segment_size);
 	for (row_chunk, mut witness_segment) in
-		iter::zip(rows.chunks(1 << log_segment_size), witness.segments(log_segment_size))
+		iter::zip(rows[..max_full_chunk_index].chunks(segment_size), &mut segments_iter)
 	{
-		table.fill(row_chunk, &mut witness_segment)?;
+		table.fill(row_chunk.iter(), &mut witness_segment)?;
 	}
+
+	// Fill the segment that is only partially assigned row events.
+	if n_extra_rows != 0 {
+		let mut witness_segment = segments_iter
+			.next()
+			.expect("the witness capacity is at least as much as the number of rows");
+
+		let repeating_rows = rows[max_full_chunk_index..]
+			.iter()
+			.cycle()
+			.take(segment_size);
+		table.fill(repeating_rows, &mut witness_segment)?;
+	}
+
+	// TODO: copy a filled segment to the remaining segments
 
 	Ok(())
 }
