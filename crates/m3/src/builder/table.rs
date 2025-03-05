@@ -13,6 +13,7 @@ use super::{
 	column::{upcast_col, Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
+	ColumnIndex,
 };
 use crate::builder::column::ColumnId;
 
@@ -117,8 +118,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.filter_map(|(partition_index, coeff)| {
 				if coeff != F::ZERO {
 					let partition = &self.table.partitions[expr.partition_id()];
-					let col_index = partition.columns[partition_index].table_index;
-					Some((col_index, coeff))
+					Some((partition.columns[partition_index], coeff))
 				} else {
 					None
 				}
@@ -237,8 +237,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
-	// TODO: Swap this to ColumnIndex
-	pub columns: Vec<ColumnId>,
+	pub columns: Vec<ColumnIndex>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 }
 
@@ -361,7 +360,7 @@ impl<F: TowerField> Table<F> {
 			},
 			is_nonzero: false,
 		};
-		partition.columns.push(id);
+		partition.columns.push(table_index);
 		self.columns.push(info);
 		Col::new(id)
 	}

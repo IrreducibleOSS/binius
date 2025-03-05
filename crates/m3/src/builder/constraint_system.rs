@@ -55,11 +55,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| {
-							table.columns[partition.columns[*i].table_index]
-								.name
-								.clone()
-						})
+						.map(|i| table.columns[partition.columns[*i]].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -75,7 +71,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 				let names = partition
 					.columns
 					.iter()
-					.map(|id| table.columns[id.table_index].name.clone())
+					.map(|&index| table.columns[index].name.clone())
 					.collect::<Vec<_>>();
 
 				for constraint in partition.zero_constraints.iter() {
@@ -210,7 +206,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 				let partition_oracle_ids = columns
 					.iter()
-					.map(|id| oracle_lookup[id.table_index])
+					.map(|&index| oracle_lookup[index])
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
