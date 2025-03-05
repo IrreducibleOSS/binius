@@ -184,7 +184,7 @@ impl<F: Field> EvaluationDomain<F> {
 		let (values_iter, infinity_term) = if self.with_infinity {
 			let (&value_at_infinity, finite_values) =
 				values.split_last().expect("values length checked above");
-			let highest_degree = finite_values.len() as u64;
+			let highest_degree = finite_values.len() as u128;
 			let iter = izip!(&self.finite_points, finite_values).map(move |(&point, &value)| {
 				value - value_at_infinity * PE::Scalar::from(point).pow(highest_degree)
 			});
