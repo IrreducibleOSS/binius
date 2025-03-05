@@ -119,6 +119,8 @@ where
 
 	mul.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
+	// We must generate multiplication witnesses before committing, as this function
+	// adds the committed witnesses for exponentiation results to the witness index.
 	let mul_witnesses = mul::make_multiplication_witnesses(&mut witness, &mul)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
@@ -153,7 +155,6 @@ where
 	writer.write(&commitment);
 
 	// Multiplication
-
 	let mul_challenge = transcript.sample_vec(mul::max_n_vars(&mul, &oracles));
 
 	let mul_evals = gkr_exp::get_evals_in_point_from_witnesses(&mul_witnesses, &mul_challenge)?
