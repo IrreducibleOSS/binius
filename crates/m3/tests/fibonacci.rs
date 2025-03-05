@@ -66,8 +66,8 @@ mod arithmetization {
 	use binius_field::{arch::OptimalUnderlier128b, as_packed_field::PackScalar};
 	use binius_m3::{
 		builder::{
-			upcast_col, Boundary, Col, ConstraintSystem, FlushDirection, Statement,
-			TableFiller, TableId, TableWitnessIndexSegment, B1, B128, B32,
+			upcast_col, Boundary, Col, ConstraintSystem, FlushDirection, Statement, TableFiller,
+			TableId, TableWitnessIndexSegment, B1, B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
