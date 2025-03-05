@@ -182,7 +182,9 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
+		assert_eq!(log_n, data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size);
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			forward_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;
@@ -196,7 +198,9 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
+		assert_eq!(log_n, data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size);
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
 			inverse_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;

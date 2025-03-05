@@ -88,8 +88,8 @@ where
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
-		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		forward_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}
 
@@ -98,16 +98,10 @@ where
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
-		let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 		inverse_transform(self.log_domain_size(), &self.s_evals, data, coset, log_batch_size, log_n)
 	}
-}
-
-#[derive(Debug)]
-pub struct NTTParams {
-	pub log_n: usize,
-	pub log_w: usize,
 }
 
 pub fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
@@ -288,41 +282,16 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		}
 	}
 
+	if log_n + log_b < log_w {
+		for i in 1 << (log_n + log_b)..P::WIDTH {
+			data[0].set(i, F::ZERO);
+		}
+	}
+
 	Ok(())
 }
 
-pub const fn check_batch_transform_inputs<PB: PackedField>(
-	log_domain_size: usize,
-	data: &[PB],
-	coset: u32,
-	log_batch_size: usize,
-) -> Result<NTTParams, Error> {
-	if !data.len().is_power_of_two() {
-		return Err(Error::PowerOfTwoLengthRequired);
-	}
-	if !PB::WIDTH.is_power_of_two() {
-		return Err(Error::PackingWidthMustDivideDimension);
-	}
-
-	let n = (data.len() * PB::WIDTH) >> log_batch_size;
-	if n == 0 {
-		return Err(Error::BatchTooLarge);
-	}
-
-	let log_n = n.trailing_zeros() as usize;
-	let log_w = PB::WIDTH.trailing_zeros() as usize;
-
-	let coset_bits = 32 - coset.leading_zeros() as usize;
-	if log_n + coset_bits > log_domain_size {
-		return Err(Error::DomainTooSmall {
-			log_required_domain_size: log_n + coset_bits,
-		});
-	}
-
-	Ok(NTTParams { log_n, log_w })
-}
-
-pub const fn check_batch_transform_inputs_and_params<PB: PackedField>(
+pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	log_domain_size: usize,
 	data: &[PB],
 	coset: u32,
@@ -344,9 +313,13 @@ pub const fn check_batch_transform_inputs_and_params<PB: PackedField>(
 	}
 
 	let coset_bits = 32 - coset.leading_zeros() as usize;
-	if log_n + coset_bits > log_domain_size {
+
+	// The minimal domain size should cover at least two packed field elements
+	// for the implementation always be able to use PackedField::interleave.
+	let log_required_domain_size = (log_n + coset_bits).max(PB::LOG_WIDTH + 1);
+	if log_required_domain_size > log_domain_size {
 		return Err(Error::DomainTooSmall {
-			log_required_domain_size: log_n + coset_bits,
+			log_required_domain_size,
 		});
 	}
 
@@ -409,9 +382,9 @@ mod tests {
 
 		let unpacked = PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy);
 
-		let _ = s.forward_transform(&mut packed, 3, 0);
+		let _ = s.forward_transform(&mut packed, 3, 0, 3);
 
-		let _ = s.forward_transform(unpacked, 3, 0);
+		let _ = s.forward_transform(unpacked, 3, 0, 3);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -427,9 +400,9 @@ mod tests {
 
 		let unpacked = PackedBinaryField8x16b::unpack_scalars_mut(&mut packed_copy);
 
-		let _ = s.inverse_transform(&mut packed, 3, 0);
+		let _ = s.inverse_transform(&mut packed, 3, 0, 3);
 
-		let _ = s.inverse_transform(unpacked, 3, 0);
+		let _ = s.inverse_transform(unpacked, 3, 0, 3);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(8) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -447,7 +420,7 @@ mod tests {
 
 		let _ = forward_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 2);
 
-		let _ = s.forward_transform(unpacked, 3, 0);
+		let _ = s.forward_transform(unpacked, 3, 0, 2);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);
@@ -465,7 +438,7 @@ mod tests {
 
 		let _ = inverse_transform(s.log_domain_size(), &s.s_evals, &mut packed, 3, 0, 2);
 
-		let _ = s.inverse_transform(unpacked, 3, 0);
+		let _ = s.inverse_transform(unpacked, 3, 0, 2);
 
 		for (i, unpacked_item) in unpacked.iter().enumerate().take(4) {
 			assert_eq!(packed[0].get(i), *unpacked_item);

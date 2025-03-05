@@ -114,8 +114,9 @@ fn bench_forward_transform(c: &mut Criterion) {
 			F: BinaryField,
 			P: PackedField<Scalar = F>,
 		{
+			let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.forward_transform(data, 0, log_batch_size));
+				b.iter(|| ntt.forward_transform(data, 0, log_batch_size, log_n));
 			});
 		}
 	}
@@ -138,8 +139,9 @@ fn bench_inverse_transform(c: &mut Criterion) {
 			F: BinaryField,
 			P: PackedField<Scalar = F>,
 		{
+			let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 			group.bench_function(BenchmarkId::new(name, param), |b| {
-				b.iter(|| ntt.inverse_transform(data, 0, log_batch_size));
+				b.iter(|| ntt.inverse_transform(data, 0, log_batch_size, log_n));
 			});
 		}
 	}

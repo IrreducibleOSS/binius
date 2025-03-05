@@ -29,20 +29,23 @@ fn check_roundtrip_with_reference<F, P>(
 	F: BinaryField,
 	P: PackedField<Scalar = F>,
 {
+	let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
 	let data_copy = data.to_vec();
 	let mut data_copy_2 = data.to_vec();
 
 	for coset in cosets {
-		ntt.forward_transform(data, coset, log_batch_size).unwrap();
+		ntt.forward_transform(data, coset, log_batch_size, log_n)
+			.unwrap();
 		reference_ntt
-			.forward_transform(&mut data_copy_2, coset, log_batch_size)
+			.forward_transform(&mut data_copy_2, coset, log_batch_size, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy_2);
 
-		ntt.inverse_transform(data, coset, log_batch_size).unwrap();
+		ntt.inverse_transform(data, coset, log_batch_size, log_n)
+			.unwrap();
 		reference_ntt
-			.inverse_transform(&mut data_copy_2, coset, log_batch_size)
+			.inverse_transform(&mut data_copy_2, coset, log_batch_size, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy);
@@ -160,16 +163,18 @@ fn check_packed_extension_roundtrip_with_reference<F, PE>(
 	let mut data_copy_2 = data.to_vec();
 
 	for coset in cosets {
-		ntt.forward_transform_ext(data, coset).unwrap();
+		let log_n = data.len().ilog2() as usize + PE::LOG_WIDTH;
+
+		ntt.forward_transform_ext(data, coset, log_n).unwrap();
 		reference_ntt
-			.forward_transform_ext(&mut data_copy_2, coset)
+			.forward_transform_ext(&mut data_copy_2, coset, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy_2);
 
-		ntt.inverse_transform_ext(data, coset).unwrap();
+		ntt.inverse_transform_ext(data, coset, log_n).unwrap();
 		reference_ntt
-			.inverse_transform_ext(&mut data_copy_2, coset)
+			.inverse_transform_ext(&mut data_copy_2, coset, log_n)
 			.unwrap();
 
 		assert_eq!(data, &data_copy);
@@ -299,14 +304,17 @@ fn check_ntt_with_transform<P1, P2>(
 		let mut result_bin = data.clone();
 		let mut result_aes = data_as_aes.clone();
 		let mut result_aes_cob = data_as_aes.clone();
+
+		let log_n = data_size.ilog2() as usize + P1::LOG_WIDTH;
+
 		ntt_binary
-			.forward_transform(&mut result_bin, coset, 0)
+			.forward_transform(&mut result_bin, coset, 0, log_n)
 			.unwrap();
 		ntt_aes_1
-			.forward_transform(&mut result_aes, coset, 0)
+			.forward_transform(&mut result_aes, coset, 0, log_n)
 			.unwrap();
 		ntt_aes_2
-			.forward_transform(&mut result_aes_cob, coset, 0)
+			.forward_transform(&mut result_aes_cob, coset, 0, log_n)
 			.unwrap();
 
 		let result_bin_to_aes: Vec<_> = result_bin.iter().map(|x| P2::Scalar::from(*x)).collect();
@@ -315,13 +323,13 @@ fn check_ntt_with_transform<P1, P2>(
 		assert_ne!(result_bin_to_aes, result_aes);
 
 		ntt_binary
-			.inverse_transform(&mut result_bin, coset, 0)
+			.inverse_transform(&mut result_bin, coset, 0, log_n)
 			.unwrap();
 		ntt_aes_1
-			.inverse_transform(&mut result_aes, coset, 0)
+			.inverse_transform(&mut result_aes, coset, 0, log_n)
 			.unwrap();
 		ntt_aes_2
-			.inverse_transform(&mut result_aes_cob, coset, 0)
+			.inverse_transform(&mut result_aes_cob, coset, 0, log_n)
 			.unwrap();
 
 		let result_bin_to_aes: Vec<_> = result_bin.iter().map(|x| P2::Scalar::from(*x)).collect();

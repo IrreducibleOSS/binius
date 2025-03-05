@@ -113,15 +113,16 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
+			Self::SingleThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size, log_n),
 			Self::SingleThreadedPrecompute(ntt) => {
-				ntt.forward_transform(data, coset, log_batch_size)
+				ntt.forward_transform(data, coset, log_batch_size, log_n)
 			}
-			Self::MultiThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size),
+			Self::MultiThreaded(ntt) => ntt.forward_transform(data, coset, log_batch_size, log_n),
 			Self::MultiThreadedPrecompute(ntt) => {
-				ntt.forward_transform(data, coset, log_batch_size)
+				ntt.forward_transform(data, coset, log_batch_size, log_n)
 			}
 		}
 	}
@@ -131,15 +132,16 @@ impl<F: BinaryField> AdditiveNTT<F> for DynamicDispatchNTT<F> {
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		match self {
-			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
+			Self::SingleThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size, log_n),
 			Self::SingleThreadedPrecompute(ntt) => {
-				ntt.inverse_transform(data, coset, log_batch_size)
+				ntt.inverse_transform(data, coset, log_batch_size, log_n)
 			}
-			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size),
+			Self::MultiThreaded(ntt) => ntt.inverse_transform(data, coset, log_batch_size, log_n),
 			Self::MultiThreadedPrecompute(ntt) => {
-				ntt.inverse_transform(data, coset, log_batch_size)
+				ntt.inverse_transform(data, coset, log_batch_size, log_n)
 			}
 		}
 	}

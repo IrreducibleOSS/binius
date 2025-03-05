@@ -7,7 +7,7 @@ use binius_utils::rayon::get_log_max_threads;
 
 use super::{
 	error::Error,
-	single_threaded::{self, check_batch_transform_inputs, NTTParams},
+	single_threaded::{self, check_batch_transform_inputs_and_params},
 	strided_array::StridedArray2DViewMut,
 	twiddle::TwiddleAccess,
 	AdditiveNTT, SingleThreadedNTT,
@@ -63,6 +63,7 @@ where
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		forward_transform(
 			self.log_domain_size(),
@@ -70,6 +71,7 @@ where
 			data,
 			coset,
 			log_batch_size,
+			log_n,
 			self.log_max_threads,
 		)
 	}
@@ -79,6 +81,7 @@ where
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		inverse_transform(
 			self.log_domain_size(),
@@ -86,6 +89,7 @@ where
 			data,
 			coset,
 			log_batch_size,
+			log_n,
 			self.log_max_threads,
 		)
 	}
@@ -97,6 +101,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	coset: u32,
 	log_batch_size: usize,
+	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
 	match data.len() {
@@ -117,9 +122,11 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		_ => {}
 	};
 
+	let log_w = P::LOG_WIDTH;
+
 	let log_b = log_batch_size;
-	let NTTParams { log_n, log_w } =
-		check_batch_transform_inputs(log_domain_size, data, coset, log_b)?;
+
+	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
@@ -188,6 +195,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	data: &mut [P],
 	coset: u32,
 	log_batch_size: usize,
+	log_n: usize,
 	log_max_threads: usize,
 ) -> Result<(), Error> {
 	match data.len() {
@@ -201,16 +209,18 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					data,
 					coset,
 					log_batch_size,
-					P::LOG_WIDTH - log_batch_size,
+					log_n.saturating_sub(log_batch_size),
 				),
 			};
 		}
 		_ => {}
 	};
 
+	let log_w = P::LOG_WIDTH;
+
 	let log_b = log_batch_size;
-	let NTTParams { log_n, log_w } =
-		check_batch_transform_inputs(log_domain_size, data, coset, log_b)?;
+
+	check_batch_transform_inputs_and_params(log_domain_size, data, coset, log_b, log_n)?;
 
 	// Cutoff is the stage of the NTT where each the butterfly units are contained within
 	// packed base field elements.
@@ -266,6 +276,12 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 				}
 			}
 		});
+
+	if log_n + log_b < log_w {
+		for i in 1 << (log_n + log_b)..P::WIDTH {
+			data[0].set(i, F::ZERO);
+		}
+	}
 
 	Ok(())
 }
