@@ -124,9 +124,9 @@ mod arithmetization {
 	#[derive(Debug)]
 	pub struct EvensTable {
 		id: TableId,
-		even: Col<B1, 5>,
+		even: Col<B1, 32>,
 		even_lsb: Col<B1>,
-		half: Col<B1, 5>,
+		half: Col<B1, 32>,
 		even_packed: Col<B32>,
 		half_packed: Col<B32>,
 	}
@@ -135,16 +135,16 @@ mod arithmetization {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
 			let mut table = cs.add_table("evens");
 
-			let even = table.add_committed::<B1, 5>("even");
+			let even = table.add_committed::<B1, 32>("even");
 			let even_lsb = table.add_selected("even_lsb", even, 0);
 
 			table.assert_zero("even_lsb is 0", even_lsb.into());
 
 			// Logical right shift is division by 2
-			let half = table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
+			let half = table.add_shifted::<B1, 32>("half", even, 5, 1, ShiftVariant::LogicalRight);
 
-			let even_packed = table.add_packed::<_, 5, B32, 0>("even_packed", even);
-			let half_packed = table.add_packed::<_, 5, B32, 0>("half_packed", half);
+			let even_packed = table.add_packed::<_, 32, B32, 1>("even_packed", even);
+			let half_packed = table.add_packed::<_, 32, B32, 1>("half_packed", half);
 
 			table.pull_one(seq_chan, even_packed);
 			table.push_one(seq_chan, half_packed);
@@ -198,10 +198,10 @@ mod arithmetization {
 	#[derive(Debug)]
 	pub struct OddsTable {
 		id: TableId,
-		odd: Col<B1, 5>,
+		odd: Col<B1, 32>,
 		odd_lsb: Col<B1>,
-		double: Col<B1, 5>,
-		carry_bit: Col<B1, 5>,
+		double: Col<B1, 32>,
+		carry_bit: Col<B1, 32>,
 		triple_plus_one: U32Add,
 		odd_packed: Col<B32>,
 		triple_plus_one_packed: Col<B32>,
@@ -211,19 +211,19 @@ mod arithmetization {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
 			let mut table = cs.add_table("odds");
 
-			let odd = table.add_committed::<B1, 5>("odd_bits");
+			let odd = table.add_committed::<B1, 32>("odd_bits");
 			let odd_lsb = table.add_selected("odd_lsb", odd, 0);
 
 			table.assert_zero("odd_lsb is 1", odd_lsb - B1::ONE);
 
 			// Input times 2
 			let double =
-				table.add_shifted::<B1, 5>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
+				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
 			// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
 			// multilinear extension of some constant vector, repeating for the number of rows.
 			// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-			let carry_bit = table.add_committed::<B1, 5>("carry_bit");
+			let carry_bit = table.add_committed::<B1, 32>("carry_bit");
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
@@ -236,9 +236,9 @@ mod arithmetization {
 				},
 			);
 
-			let odd_packed = table.add_packed::<_, 5, B32, 0>("odd_packed", odd);
+			let odd_packed = table.add_packed::<_, 32, B32, 1>("odd_packed", odd);
 			let triple_plus_one_packed =
-				table.add_packed::<_, 5, B32, 0>("triple_plus_one_packed", triple_plus_one.zout);
+				table.add_packed::<_, 32, B32, 1>("triple_plus_one_packed", triple_plus_one.zout);
 
 			table.pull_one(seq_chan, odd_packed);
 			table.push_one(seq_chan, triple_plus_one_packed);
