@@ -83,6 +83,8 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
+		assert!(log_block_size <= LOG_VALS_PER_ROW);
+		assert!(offset <= 1 << log_block_size);
 		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Shifted {
@@ -144,6 +146,9 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSubSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
+		assert!(FSubSub::TOWER_LEVEL < FSub::TOWER_LEVEL);
+		assert!(VSUB > V);
+		assert_eq!(FSub::TOWER_LEVEL + V, FSubSub::TOWER_LEVEL + VSUB);
 		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Packed {
