@@ -1,12 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
-use std::{array, mem::MaybeUninit};
+use std::array;
 
 use binius_field::{
-	AESTowerField8b, BinaryField8b, PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
+	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, PackedAESBinaryField32x8b,
+	PackedBinaryField32x8b, PackedField,
 };
 use binius_hash::{
-	Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest, HasherDigest, MultiDigest,
-	PseudoCompressionFunction, VisionHasherDigest, VisionHasherDigestByteSliced,
+	FixedLenHasherDigest, Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest,
+	HasherDigest, PseudoCompressionFunction, Vision32b, VisionHasher,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -89,22 +90,21 @@ fn bench_vision32(c: &mut Criterion) {
 
 	let mut rng = thread_rng();
 
-	const N: usize = 1 << 16;
-	let mut data = [0u8; N];
-	rng.fill_bytes(&mut data);
+	const N: usize = 1 << 14;
+	let data_bin = (0..N)
+		.map(|_| BinaryField32b::random(&mut rng))
+		.collect::<Vec<_>>();
+	let data_aes = (0..N)
+		.map(|_| AESTowerField32b::random(&mut rng))
+		.collect::<Vec<_>>();
 
-	group.throughput(Throughput::Bytes(N as u64));
-	group.bench_function("Vision-Single", |bench| bench.iter(|| VisionHasherDigest::digest(data)));
-
-	group.bench_function("Vision-Parallel32", |bench| {
+	group.throughput(Throughput::Bytes((N * 4) as u64));
+	group.bench_function("Vision over BinaryField32b", |bench| {
+		bench.iter(|| FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_bin.as_slice()))
+	});
+	group.bench_function("Vision over AESTowerField32b", |bench| {
 		bench.iter(|| {
-			let mut out = [MaybeUninit::<digest::Output<VisionHasherDigest>>::uninit(); 32];
-			VisionHasherDigestByteSliced::digest(
-				array::from_fn(|i| &data[i * N / 32..(i + 1) * N / 32]),
-				&mut out,
-			);
-
-			out
+			FixedLenHasherDigest::<_, VisionHasher<AESTowerField32b, _>>::hash(data_aes.as_slice())
 		})
 	});
 

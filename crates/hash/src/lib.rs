@@ -21,7 +21,6 @@
 pub mod compression;
 mod groestl;
 pub mod hasher;
-pub mod multi_digest;
 pub mod permutation;
 mod serialization;
 pub mod sha2;
@@ -30,6 +29,5 @@ mod vision;
 pub use compression::*;
 pub use groestl::*;
 pub use hasher::*;
-pub use multi_digest::*;
 pub use serialization::*;
 pub use vision::*;

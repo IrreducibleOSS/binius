@@ -13,8 +13,9 @@ use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
-	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField, TowerField,
+	packed::get_packed_slice, AESTowerField32b, BinaryField1b, BinaryField32b, ExtensionField,
+	Field, PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField,
+	TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
@@ -79,18 +80,17 @@ pub fn vision_permutation(
 		let p_out_slice: [_; STATE_SIZE] = p_out_data.map(|elem| elem.as_slice::<B32>());
 		for z in 0..1 << log_size {
 			let mut in_out: [_; 3] = array::from_fn(|i| {
-				PackedAESBinaryField8x32b::from_fn(|j| {
-					p_in_slice[i * PackedAESBinaryField8x32b::WIDTH + j][z].into()
-				})
+				PackedAESBinaryField8x32b::from_fn(|j| p_in_slice[i * 8 + j][z].into())
 			});
-			let expected_out: [_; 3] = array::from_fn(|i| {
-				PackedAESBinaryField8x32b::from_fn(|j| {
-					p_out_slice[i * PackedAESBinaryField8x32b::WIDTH + j][z].into()
-				})
-			});
+			let expected_out: [B32; STATE_SIZE] = array::from_fn(|s| p_out_slice[s][z]);
 
 			vision_perm.permute_mut(&mut in_out);
-			assert_eq!(in_out, expected_out)
+
+			for (out, expected) in
+				PackedAESBinaryField8x32b::iter_slice(&in_out).zip(expected_out.iter())
+			{
+				assert_eq!(out, AESTowerField32b::from(*expected));
+			}
 		}
 	}
 
@@ -407,12 +407,8 @@ where {
 			});
 			mds_trans
 				.transform(PackedAESBinaryField8x32b::cast_base_arr_mut(&mut inp_as_packed_aes));
-			let inp_as_packed_bin = inp_as_packed_aes.map(|x| {
-				Transformation::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>::transform(
-					&aes_to_bin_packed,
-					&x,
-				)
-			});
+			let inp_as_packed_bin: [PackedBinaryField8x32b; 3] =
+				inp_as_packed_aes.map(|x| aes_to_bin_packed.transform(&x));
 
 			for i in 0..STATE_SIZE {
 				let mds_even_out: B32 = get_packed_slice(&inp_as_packed_bin, i);
