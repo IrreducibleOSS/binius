@@ -13,7 +13,7 @@ use digest::consts::U32;
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
 
-use super::permutation::PERMUTATION;
+use super::permutation::{HASHES_PER_BYTE_SLICED_PERMUTATION, PERMUTATION};
 use crate::{permutation::Permutation, MultiDigest};
 
 const RATE_AS_U32: usize = 16;
@@ -143,7 +143,7 @@ fn fill_padding(data: &mut [u8]) {
 pub struct VisionHasherDigestByteSliced {
 	// The hashed state
 	state: [ByteSlicedAES32x32b; 24],
-	buffer: [[u8; RATE_AS_U8]; 32],
+	buffer: [[u8; RATE_AS_U8]; HASHES_PER_BYTE_SLICED_PERMUTATION],
 	filled_bytes: usize,
 }
 
@@ -151,44 +151,51 @@ impl Default for VisionHasherDigestByteSliced {
 	fn default() -> Self {
 		Self {
 			state: [ByteSlicedAES32x32b::zero(); 24],
-			buffer: [[0; RATE_AS_U8]; 32],
+			buffer: [[0; RATE_AS_U8]; HASHES_PER_BYTE_SLICED_PERMUTATION],
 			filled_bytes: 0,
 		}
 	}
 }
 
 impl VisionHasherDigestByteSliced {
-	fn permute(state: &mut [ByteSlicedAES32x32b; 24], data: [&[u8; RATE_AS_U8]; 32]) {
+	fn permute(
+		state: &mut [ByteSlicedAES32x32b; 24],
+		data: [&[u8; RATE_AS_U8]; HASHES_PER_BYTE_SLICED_PERMUTATION],
+	) {
 		for row in &data {
 			debug_assert_eq!(row.len(), RATE_AS_U8);
 		}
 
 		for state_element_index in 0..2 {
-			let data_offset = state_element_index * 32;
+			let data_offset = state_element_index * HASHES_PER_BYTE_SLICED_PERMUTATION;
 
-			let mut canonical_data = [PackedBinaryField32x8b::zero(); 32];
-			for i in 0..32 {
-				for byte in 0..32 {
-					canonical_data[byte].set(i, data[i][data_offset + byte].into());
+			let mut canonical_data =
+				[PackedBinaryField32x8b::zero(); HASHES_PER_BYTE_SLICED_PERMUTATION];
+			for (i, row) in data.iter().enumerate() {
+				for (j, byte) in row[data_offset..data_offset + 32].iter().enumerate() {
+					canonical_data[j].set(i, (*byte).into());
 				}
 			}
 
-			let state_offset = state_element_index * 8;
-			for j in 0..8 {
-				let state_element = &mut state[state_offset + j];
-				for k in 0..4 {
-					state_element.data_mut()[k] =
-						TRANS_CANONICAL_TO_AES.transform(&canonical_data[j * 4 + k]);
-				}
+			for (state_element, canonical_data) in state
+				[state_element_index * 8..state_element_index * 8 + 8]
+				.iter_mut()
+				.flat_map(|x| x.data_mut().iter_mut())
+				.zip(canonical_data.into_iter())
+			{
+				*state_element = TRANS_CANONICAL_TO_AES.transform(&canonical_data);
 			}
 		}
 
 		PERMUTATION.permute_mut(state);
 	}
 
-	fn finalize(&mut self, out: &mut [digest::Output<VisionHasherDigest>; 32]) {
+	fn finalize(
+		&mut self,
+		out: &mut [digest::Output<VisionHasherDigest>; HASHES_PER_BYTE_SLICED_PERMUTATION],
+	) {
 		if self.filled_bytes > 0 {
-			for row in 0..32 {
+			for row in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
 				fill_padding(&mut self.buffer[row][self.filled_bytes..]);
 			}
 
@@ -197,29 +204,31 @@ impl VisionHasherDigestByteSliced {
 			Self::permute(&mut self.state, array::from_fn(|_| &*PADDING_BLOCK));
 		}
 
-		for (i, state_element) in self.state[0..8].iter().enumerate() {
-			for (j, bytes_aes) in state_element.data().iter().enumerate() {
-				let bytes_canonical: PackedBinaryField32x8b =
-					TRANS_AES_TO_CANONICAL.transform(bytes_aes);
-				for (k, byte) in bytes_canonical.into_iter().enumerate() {
-					out[k][i * 4 + j] = byte.to_underlier();
-				}
+		for (i, state_data) in self.state[0..8]
+			.iter()
+			.flat_map(|x| x.data().iter())
+			.enumerate()
+		{
+			let bytes_canonical: PackedBinaryField32x8b =
+				TRANS_AES_TO_CANONICAL.transform(state_data);
+			for (j, byte) in bytes_canonical.into_iter().enumerate() {
+				out[j][i] = byte.to_underlier();
 			}
 		}
 	}
 }
 
-impl MultiDigest<32> for VisionHasherDigestByteSliced {
+impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteSliced {
 	type Digest = VisionHasherDigest;
 
-	fn update(&mut self, data: [&[u8]; 32]) {
-		for row in 1..32 {
+	fn update(&mut self, data: [&[u8]; HASHES_PER_BYTE_SLICED_PERMUTATION]) {
+		for row in 1..HASHES_PER_BYTE_SLICED_PERMUTATION {
 			debug_assert_eq!(data[row].len(), data[0].len());
 		}
 
 		let mut offset = if self.filled_bytes > 0 {
 			let to_copy = std::cmp::min(data[0].len(), RATE_AS_U8 - self.filled_bytes);
-			for row in 0..32 {
+			for row in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
 				self.buffer[row][self.filled_bytes..self.filled_bytes + to_copy]
 					.copy_from_slice(&data[row][..to_copy]);
 			}
@@ -247,7 +256,7 @@ impl MultiDigest<32> for VisionHasherDigestByteSliced {
 		}
 
 		if offset < data[0].len() {
-			for row in 0..32 {
+			for row in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
 				self.buffer[row][..data[row].len() - offset].copy_from_slice(&data[row][offset..]);
 			}
 
@@ -255,14 +264,20 @@ impl MultiDigest<32> for VisionHasherDigestByteSliced {
 		}
 	}
 
-	fn finalize_into(mut self, out: &mut [MaybeUninit<digest::Output<Self::Digest>>; 32]) {
+	fn finalize_into(
+		mut self,
+		out: &mut [MaybeUninit<digest::Output<Self::Digest>>; HASHES_PER_BYTE_SLICED_PERMUTATION],
+	) {
 		let out = unsafe { slice_assume_init_mut(out) }
 			.try_into()
 			.expect("array is 4 elements");
 		self.finalize(out);
 	}
 
-	fn finalize_into_reset(&mut self, out: &mut [MaybeUninit<digest::Output<Self::Digest>>; 32]) {
+	fn finalize_into_reset(
+		&mut self,
+		out: &mut [MaybeUninit<digest::Output<Self::Digest>>; HASHES_PER_BYTE_SLICED_PERMUTATION],
+	) {
 		let out = unsafe { slice_assume_init_mut(out) }
 			.try_into()
 			.expect("array is 32 elements");
@@ -277,7 +292,10 @@ impl MultiDigest<32> for VisionHasherDigestByteSliced {
 		self.filled_bytes = 0;
 	}
 
-	fn digest(data: [&[u8]; 32], out: &mut [MaybeUninit<digest::Output<Self::Digest>>; 32]) {
+	fn digest(
+		data: [&[u8]; HASHES_PER_BYTE_SLICED_PERMUTATION],
+		out: &mut [MaybeUninit<digest::Output<Self::Digest>>; HASHES_PER_BYTE_SLICED_PERMUTATION],
+	) {
 		let mut digest = Self::default();
 		digest.update(data);
 		digest.finalize_into(out);
@@ -358,36 +376,55 @@ mod tests {
 
 	#[test]
 	fn test_multihash_consistency_small_data() {
-		let data =
-			array::from_fn::<_, 32, _>(|i| [i as u8, (i + 1) as _, (i + 2) as _, (i + 3) as _]);
+		let data = array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| {
+			[i as u8, (i + 1) as _, (i + 2) as _, (i + 3) as _]
+		});
 
-		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
+		check_multihash_consistency(&[array::from_fn::<
+			_,
+			{ HASHES_PER_BYTE_SLICED_PERMUTATION },
+			_,
+		>(|i| &data[i][..])]);
 	}
 
 	#[test]
 	fn test_multihash_consistency_small_rate() {
-		let data = array::from_fn::<_, 32, _>(|i| [i as u8, 64]);
+		let data =
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| [i as u8, 64]);
 
-		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
+		check_multihash_consistency(&[array::from_fn::<
+			_,
+			{ HASHES_PER_BYTE_SLICED_PERMUTATION },
+			_,
+		>(|i| &data[i][..])]);
 	}
 
 	#[test]
 	fn test_multihash_consistency_large_rate() {
-		let data = array::from_fn::<_, 32, _>(|i| [i as u8; 1024]);
+		let data =
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| [i as u8; 1024]);
 
-		check_multihash_consistency(&[array::from_fn::<_, 32, _>(|i| &data[i][..])]);
+		check_multihash_consistency(&[array::from_fn::<
+			_,
+			{ HASHES_PER_BYTE_SLICED_PERMUTATION },
+			_,
+		>(|i| &data[i][..])]);
 	}
 
 	#[test]
 	fn test_multihash_consistency_several_chunks() {
-		let data_0 = array::from_fn::<_, 32, _>(|i| [i as u8, 48]);
-		let data_1 = array::from_fn::<_, 32, _>(|i| [(i + 1) as u8, 64]);
-		let data_2 = array::from_fn::<_, 32, _>(|i| [(i + 2) as u8, 128]);
+		let data_0 =
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| [i as u8, 48]);
+		let data_1 =
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| [(i + 1) as u8, 64]);
+		let data_2 = array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| {
+			[(i + 2) as u8, 128]
+		});
 
 		check_multihash_consistency(&[
-			array::from_fn::<_, 32, _>(|i| &data_0[i][..]),
-			array::from_fn::<_, 32, _>(|i| &data_1[i][..]),
-			array::from_fn::<_, 32, _>(|i| &data_2[i][..]),
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| &data_0[i][..]),
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| &data_1[i][..]),
+			array::from_fn::<_, { HASHES_PER_BYTE_SLICED_PERMUTATION }, _>(|i| &data_2[i][..]),
 		]);
 	}
 }

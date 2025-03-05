@@ -444,6 +444,8 @@ fn get_coset_twiddles_for_round(
 	cosets.map(|coset| ntt.twiddles()[round].coset(3, coset as _))
 }
 
+pub const HASHES_PER_BYTE_SLICED_PERMUTATION: usize = 32;
+
 #[derive(Clone)]
 struct FastNttByteSliced {
 	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
@@ -485,16 +487,19 @@ impl FastNttByteSliced {
 	}
 
 	#[inline]
-	fn forward(&self, data: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
-		fn forward_round_simd<const N: usize>(
-			data: &mut [[PackedAESBinaryField32x8b; 32]; 3],
-			twiddles: &[[PackedAESBinaryField32x8b; N]; 3],
+	fn forward(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
+		fn forward_round_simd<const TWIDDLES_COUNT: usize>(
+			data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+			twiddles: &[[PackedAESBinaryField32x8b; TWIDDLES_COUNT]; 3],
 			log_block_size: usize,
 		) {
 			let block_size = 1 << log_block_size;
 
 			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
-				for block_index in 0..16 / block_size {
+				for block_index in 0..HASHES_PER_BYTE_SLICED_PERMUTATION / (2 * block_size) {
 					let block_offset = 2 * block_index * block_size;
 					for byte_index in 0..block_size {
 						let odds = data[byte_index + block_offset];
@@ -519,16 +524,19 @@ impl FastNttByteSliced {
 	}
 
 	#[inline]
-	fn inverse(&self, data: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
-		fn inverse_round_simd<const N: usize>(
-			data: &mut [[PackedAESBinaryField32x8b; 32]; 3],
-			twiddles: &[[PackedAESBinaryField32x8b; N]; 3],
+	fn inverse(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
+		fn inverse_round_simd<const TWIDDLES_COUNT: usize>(
+			data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+			twiddles: &[[PackedAESBinaryField32x8b; TWIDDLES_COUNT]; 3],
 			log_block_size: usize,
 		) {
 			let block_size = 1 << log_block_size;
 
 			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
-				for block_index in 0..16 / block_size {
+				for block_index in 0..HASHES_PER_BYTE_SLICED_PERMUTATION / (2 * block_size) {
 					let block_offset = 2 * block_index * block_size;
 					for byte_index in 0..block_size {
 						let odds = data[byte_index + block_offset];
@@ -758,16 +766,17 @@ mod tests {
 	#[test]
 	fn test_permutation_consistency() {
 		let mut rng = StdRng::seed_from_u64(0);
-		let mut data: [[PackedAESBinaryField32x8b; 32]; 3] =
+		let mut data: [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3] =
 			array::from_fn(|_| array::from_fn(|_| PackedAESBinaryField32x8b::random(&mut rng)));
 
-		let get_single_permutation = |i, data: &[[PackedAESBinaryField32x8b; 32]; 3]| {
-			array::from_fn(|j| {
-				PackedAESBinaryField8x32b::cast_ext(PackedAESBinaryField32x8b::from_fn(|k| {
-					data[j][k].get(i)
-				}))
-			})
-		};
+		let get_single_permutation =
+			|i, data: &[[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3]| {
+				array::from_fn(|j| {
+					PackedAESBinaryField8x32b::cast_ext(PackedAESBinaryField32x8b::from_fn(|k| {
+						data[j][k].get(i)
+					}))
+				})
+			};
 
 		let single_permutations = array::from_fn::<_, 32, _>(|i| {
 			let mut data = get_single_permutation(i, &data);
@@ -779,7 +788,7 @@ mod tests {
 		Vision32bPermutation::default()
 			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
 
-		for i in 0..32 {
+		for i in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
 			assert_eq!(single_permutations[i], get_single_permutation(i, &data));
 		}
 	}
