@@ -93,6 +93,9 @@ pub enum Error {
 
 	#[error("transcript error: {0}")]
 	TranscriptError(#[from] crate::transcript::Error),
+
+	#[error("gkr exp error: {0}")]
+	GkrExp(#[from] crate::protocols::gkr_exp::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
