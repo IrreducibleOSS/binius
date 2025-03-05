@@ -1,5 +1,13 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Multiplication based on exponentiation.
+//!
+//! The core idea of this method is to verify the equality $a \cdot b = c$
+//! by checking if $(g^a)^b = g^{\text{c_low}} \cdot (g^{2^{32}})^{\text{c_high}}$,
+//! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
+//!
+//! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
+
 use binius_field::{
 	as_packed_field::PackedType,
 	linear_transformation::{PackedTransformationFactory, Transformation},
@@ -60,6 +68,8 @@ pub fn mul_evals_amount(multiplications: &[Mul]) -> usize {
 type MultiplicationWitnesses<'a, U, Tower> =
 	Vec<BaseExpWitness<'a, PackedType<U, FFastExt<Tower>>>>;
 
+/// Constructs [`BaseExpWitness`] instances and adds the exponentiation-result witnesses
+/// to the [`MultiplicationWitnesses`].
 pub fn make_multiplication_witnesses<'a, U, Tower>(
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	multiplications: &[Mul],
