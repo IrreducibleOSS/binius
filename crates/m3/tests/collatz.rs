@@ -218,7 +218,7 @@ mod arithmetization {
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
-				&mut table.with_namespace("u32add"),
+				&mut table.with_namespace("triple_plus_one"),
 				double,
 				odd,
 				U32AddFlags {
