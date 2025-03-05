@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{BinaryField, ExtensionField, Field, TowerField};
+use binius_field::{BinaryField, Field, TowerField};
 use binius_math::EvaluationOrder;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 
@@ -8,7 +8,7 @@ use super::{
 	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
 	compositions::IndexedExpComposition,
 	error::{Error, VerificationError},
-	verifiers::{ExpDynamicVerifier, ExpVerifier, GeneratorExpVerifier},
+	verifiers::{ConstantBaseExpVerifier, ExpDynamicVerifier, ExpVerifier},
 };
 use crate::{
 	fiat_shamir::Challenger,
@@ -28,14 +28,13 @@ use crate::{
 ///
 /// # Requirements
 /// - Claims must be sorted in descending order by `n_vars`.
-pub fn batch_verify<FBase, F, Challenger_>(
+pub fn batch_verify<F, Challenger_>(
 	evaluation_order: EvaluationOrder,
 	claims: &[ExpClaim<F>],
 	transcript: &mut VerifierTranscript<Challenger_>,
 ) -> Result<BaseExpReductionOutput<F>, Error>
 where
-	FBase: TowerField,
-	F: TowerField + ExtensionField<FBase>,
+	F: TowerField,
 	Challenger_: Challenger,
 {
 	let mut layers_claims = Vec::new();
@@ -49,11 +48,12 @@ where
 		bail!(Error::ClaimsOutOfOrder);
 	}
 
-	let mut verifiers = make_verifiers::<_, FBase>(claims)?;
+	let mut verifiers = make_verifiers(claims)?;
 
 	let max_exponent_bit_number = verifiers
-		.first()
-		.map(|verifier| verifier.exponent_bit_width())
+		.iter()
+		.map(|p| p.exponent_bit_width())
+		.max()
 		.unwrap_or(0);
 
 	for layer_no in 0..max_exponent_bit_number {
@@ -248,21 +248,18 @@ where
 }
 
 /// Creates a vector of boxed [ExpVerifier]s from the given claims.
-fn make_verifiers<'a, F, FBase>(
-	claims: &[ExpClaim<F>],
-) -> Result<Vec<Box<dyn ExpVerifier<F> + 'a>>, Error>
+fn make_verifiers<'a, F>(claims: &[ExpClaim<F>]) -> Result<Vec<Box<dyn ExpVerifier<F> + 'a>>, Error>
 where
-	FBase: BinaryField,
-	F: BinaryField + ExtensionField<FBase>,
+	F: BinaryField,
 {
 	claims
 		.iter()
 		.map(|claim| {
-			if claim.uses_dynamic_base {
+			if claim.constant_base.is_none() {
 				ExpDynamicVerifier::new(claim)
 					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			} else {
-				GeneratorExpVerifier::<F, FBase>::new(claim)
+				ConstantBaseExpVerifier::<F>::new(claim)
 					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			}
 		})

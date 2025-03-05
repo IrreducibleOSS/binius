@@ -36,6 +36,7 @@ mod batch_verify;
 mod common;
 mod compositions;
 mod error;
+mod oracles;
 mod provers;
 mod utils;
 mod verifiers;
@@ -43,7 +44,9 @@ mod witness;
 
 pub use batch_prove::batch_prove;
 pub use batch_verify::batch_verify;
-pub use common::{BaseExpReductionOutput, ExpClaim};
+pub use common::{BaseExpReductionOutput, ExpClaim, LayerClaim};
+pub use error::Error;
+pub use oracles::{construct_gkr_exp_claims, get_evals_in_point_from_witnesses, make_eval_claims};
 pub use witness::BaseExpWitness;
 
 #[cfg(test)]
