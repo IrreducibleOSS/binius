@@ -1,7 +1,5 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::{cell::RefCell, rc::Rc};
-
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
@@ -20,36 +18,28 @@ use crate::builder::column::ColumnId;
 pub type TableId = usize;
 
 #[derive(Debug)]
-pub struct TableBuilder<F: TowerField = B128> {
+pub struct TableBuilder<'a, F: TowerField = B128> {
 	namespace: Option<String>,
-	table: Rc<RefCell<Table<F>>>,
+	table: &'a mut Table<F>,
 }
 
-impl<F: TowerField> TableBuilder<F> {
-	pub fn new(id: TableId, name: impl ToString) -> Self {
+impl<'a, F: TowerField> TableBuilder<'a, F> {
+	pub fn new(table: &'a mut Table<F>) -> Self {
 		Self {
 			namespace: None,
-			table: Rc::new(RefCell::new(Table::new(id, name))),
+			table,
 		}
 	}
 
-	pub fn with_namespace(&self, namespace: impl ToString) -> Self {
-		let namespace = namespace.to_string();
-		Self {
-			namespace: Some(match &self.namespace {
-				Some(prefix) => format!("{prefix}::{namespace}"),
-				None => namespace,
-			}),
-			table: self.table.clone(),
+	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
+		TableBuilder {
+			namespace: Some(self.namespaced_name(namespace)),
+			table: self.table,
 		}
-	}
-
-	pub fn table(&self) -> std::cell::Ref<'_, Table<F>> {
-		self.table.borrow()
 	}
 
 	pub fn id(&self) -> TableId {
-		self.table.borrow().id()
+		self.table.id()
 	}
 
 	pub fn add_committed<FSub, const LOG_VALS_PER_ROW: usize>(
@@ -60,7 +50,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.borrow_mut().new_column(
+		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Committed {
 				tower_level: FSub::TOWER_LEVEL,
@@ -91,7 +81,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.borrow_mut().new_column(
+		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Shifted {
 				col: col.id(),
@@ -118,7 +108,6 @@ impl<F: TowerField> TableBuilder<F> {
 			.expect("pre-condition: expression must be linear");
 
 		self.table
-			.borrow_mut()
 			.new_column(self.namespaced_name(name), ColumnDef::LinearCombination(lincom))
 	}
 
@@ -132,7 +121,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSubSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.borrow_mut().new_column(
+		self.table.new_column(
 			self.namespaced_name(name),
 			ColumnDef::Packed {
 				col: col.id(),
@@ -159,10 +148,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table
-			.borrow_mut()
-			.partition_mut(V)
-			.assert_zero(name, expr)
+		self.table.partition_mut(V).assert_zero(name, expr)
 	}
 
 	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
@@ -170,10 +156,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table
-			.borrow_mut()
-			.partition_mut(0)
-			.pull_one(channel, col)
+		self.table.partition_mut(0).pull_one(channel, col)
 	}
 
 	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
@@ -181,10 +164,7 @@ impl<F: TowerField> TableBuilder<F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table
-			.borrow_mut()
-			.partition_mut(0)
-			.push_one(channel, col)
+		self.table.partition_mut(0).push_one(channel, col)
 	}
 
 	fn namespaced_name(&self, name: impl ToString) -> String {

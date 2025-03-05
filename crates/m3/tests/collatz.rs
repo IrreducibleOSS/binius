@@ -129,7 +129,7 @@ mod arithmetization {
 
 	impl EvensTable {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
-			let table = cs.add_table("evens");
+			let mut table = cs.add_table("evens");
 
 			let even = table.add_committed::<B1, 5>("even");
 
@@ -200,7 +200,7 @@ mod arithmetization {
 
 	impl OddsTable {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
-			let table = cs.add_table("odds");
+			let mut table = cs.add_table("odds");
 
 			let odd = table.add_committed::<B1, 5>("odd_bits");
 

@@ -471,7 +471,8 @@ mod tests {
 	#[test]
 	fn test_table_witness_borrows() {
 		let table_id = 0;
-		let mut table = TableBuilder::<B128>::new(table_id, "table".to_string());
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
 		let col0 = table.add_committed::<B1, 3>("col0");
 		let col1 = table.add_committed::<B1, 5>("col1");
 		let col2 = table.add_committed::<B8, 0>("col2");
@@ -480,7 +481,7 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let table_size = 64;
 		let mut index =
-			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &table.table(), table_size);
+			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
 		let segment = index.full_segment();
 
 		{
@@ -503,7 +504,8 @@ mod tests {
 	#[test]
 	fn test_table_witness_segments() {
 		let table_id = 0;
-		let mut table = TableBuilder::<B128>::new(table_id, "table".to_string());
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
 		let col0 = table.add_committed::<B1, 3>("col0");
 		let col1 = table.add_committed::<B1, 5>("col1");
 		let col2 = table.add_committed::<B8, 0>("col2");
@@ -512,7 +514,7 @@ mod tests {
 		let allocator = bumpalo::Bump::new();
 		let table_size = 64;
 		let mut index =
-			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &table.table(), table_size);
+			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
 
 		assert_eq!(index.min_log_segment_size(), 4);
 		let mut iter = index.segments(5);
