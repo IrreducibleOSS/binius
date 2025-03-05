@@ -157,7 +157,6 @@ fn generate_mul_witnesses_claims_with_different_log_size<'a>(
 }
 
 #[test]
-#[allow(clippy::large_stack_frames)]
 fn witness_gen_happens_correctly() {
 	const LOG_SIZE: usize = 13usize;
 	const COLUMN_LEN: usize = 1usize << LOG_SIZE;
