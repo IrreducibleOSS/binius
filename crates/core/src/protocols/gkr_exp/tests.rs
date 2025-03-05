@@ -1,7 +1,5 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::array;
-
 use binius_field::{
 	packed::{get_packed_slice, set_packed_slice},
 	BinaryField, BinaryField128b, BinaryField1b, BinaryField64b, BinaryField8b, Field,
@@ -30,16 +28,18 @@ type PBase = PackedBinaryField2x64b;
 type F = BinaryField128b;
 type P = PackedBinaryField1x128b;
 
-fn generate_claim_witness<'a, const COLUMN_LEN: usize>(
-	exponents_in_each_row: [u128; COLUMN_LEN],
+fn generate_claim_witness<'a>(
+	exponents_in_each_row: &[u128],
 	exponent_bit_width: usize,
 	base: Option<MultilinearWitness<'a, P>>,
 	eval_point: &[F],
 ) -> (BaseExpWitness<'a, P, FBase>, ExpClaim<F>) {
+	let column_len = exponents_in_each_row.len();
+
 	let exponent_witnesses_as_vec: Vec<_> = (0..exponent_bit_width)
 		.map(|i| {
 			let mut column_witness =
-				vec![PBits::default(); COLUMN_LEN / <PBits as PackedField>::WIDTH];
+				vec![PBits::default(); column_len / <PBits as PackedField>::WIDTH];
 
 			for (row, this_row_exponent) in exponents_in_each_row.iter().enumerate() {
 				let this_bit_of_exponent = (this_row_exponent >> i) & 1;
@@ -100,26 +100,28 @@ fn generate_mul_witnesses_claims<'a, const LOG_SIZE: usize, const COLUMN_LEN: us
 ) -> (Vec<ExpClaim<F>>, Vec<BaseExpWitness<'a, P, FBase>>) {
 	let mut rng = thread_rng();
 
-	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
-	let b: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u128>() % (1 << exponent_bit_width));
-
-	let c: [u128; COLUMN_LEN] = array::from_fn(|i| a[i] * b[i]);
+	let a: Vec<_> = (0..COLUMN_LEN)
+		.map(|_| rng.gen::<u128>() % (1 << exponent_bit_width))
+		.collect();
+	let b: Vec<_> = (0..COLUMN_LEN)
+		.map(|_| rng.gen::<u128>() % (1 << exponent_bit_width))
+		.collect();
+	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
 	let eval_point_1 = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
 
 	let eval_point_2 = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
 
-	let (a_witness, a_claim) =
-		generate_claim_witness::<COLUMN_LEN>(a, exponent_bit_width, None, &eval_point_1);
-	let (b_witness, b_claim) = generate_claim_witness::<COLUMN_LEN>(
-		b,
+	let (a_witness, a_claim) = generate_claim_witness(&a, exponent_bit_width, None, &eval_point_1);
+	let (b_witness, b_claim) = generate_claim_witness(
+		&b,
 		exponent_bit_width,
 		Some(a_witness.exponentiation_result_witness()),
 		&eval_point_2,
 	);
 
 	let (c_witness, c_claim) =
-		generate_claim_witness::<COLUMN_LEN>(c, exponent_bit_width * 2, None, &eval_point_2);
+		generate_claim_witness(&c, exponent_bit_width * 2, None, &eval_point_2);
 
 	assert_eq!(b_claim.eval, c_claim.eval);
 
@@ -163,14 +165,13 @@ fn witness_gen_happens_correctly() {
 
 	let mut rng = thread_rng();
 
-	let a: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u8>() as u128);
-	let b: [u128; COLUMN_LEN] = array::from_fn(|_| rng.gen::<u8>() as u128);
-	let c: [u128; COLUMN_LEN] = array::from_fn(|i| a[i] * b[i]);
+	let a: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u128).collect();
+	let b: Vec<_> = (0..COLUMN_LEN).map(|_| rng.gen::<u8>() as u128).collect();
+	let c: Vec<_> = a.iter().zip(&b).map(|(ai, bi)| ai * bi).collect();
 
 	let eval_point = [F::default(); LOG_SIZE].map(|_| <F as Field>::random(&mut rng));
 
-	let (a_witness, _) =
-		generate_claim_witness::<COLUMN_LEN>(a, EXPONENT_BIT_WIDTH, None, &eval_point);
+	let (a_witness, _) = generate_claim_witness(&a, EXPONENT_BIT_WIDTH, None, &eval_point);
 	let a_exponentiation_result = a_witness.exponentiation_result_witness();
 
 	let a_exponentiation_result_evals =
@@ -183,8 +184,8 @@ fn witness_gen_happens_correctly() {
 		);
 	}
 
-	let (b_witness, _) = generate_claim_witness::<COLUMN_LEN>(
-		b,
+	let (b_witness, _) = generate_claim_witness(
+		&b,
 		EXPONENT_BIT_WIDTH,
 		Some(a_exponentiation_result.clone()),
 		&eval_point,
@@ -201,8 +202,7 @@ fn witness_gen_happens_correctly() {
 		);
 	}
 
-	let (c_witness, _) =
-		generate_claim_witness::<COLUMN_LEN>(c, EXPONENT_BIT_WIDTH * 2, None, &eval_point);
+	let (c_witness, _) = generate_claim_witness(&c, EXPONENT_BIT_WIDTH * 2, None, &eval_point);
 
 	let c_exponentiation_result = c_witness.exponentiation_result_witness();
 
