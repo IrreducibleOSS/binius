@@ -99,8 +99,7 @@ mod model {
 
 mod arithmetization {
 	use binius_core::{
-		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
-		oracle::ShiftVariant,
+		constraint_system::channel::{Boundary, ChannelId, FlushDirection}, fiat_shamir::HasherChallenger, oracle::ShiftVariant, tower::CanonicalTowerFamily
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b,
@@ -108,15 +107,18 @@ mod arithmetization {
 		underlier::UnderlierType,
 		Field, PackedField,
 	};
-	use binius_m3::{
+	use binius_hash::compress::Groestl256ByteCompression;
+use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
 			B128, B32,
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
-	use bumpalo::Bump;
+	use binius_math::DefaultEvaluationDomainFactory;
+use bumpalo::Bump;
 	use bytemuck::Pod;
+use groestl_crypto::Groestl256;
 
 	use super::model;
 
@@ -343,6 +345,43 @@ mod arithmetization {
 			&compiled_cs,
 			&statement.boundaries,
 			&witness,
+		)
+		.unwrap();
+
+		const LOG_INV_RATE: usize = 1;
+		const SECURITY_BITS: usize = 100;
+
+		let proof = binius_core::constraint_system::prove::<
+			_,
+			CanonicalTowerFamily,
+			_,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+			_,
+		>(
+			&compiled_cs,
+			LOG_INV_RATE,
+			SECURITY_BITS,
+			&statement.boundaries,
+			witness,
+			&DefaultEvaluationDomainFactory::default(),
+			&binius_hal::make_portable_backend(),
+		)
+		.unwrap();
+
+		binius_core::constraint_system::verify::<
+			OptimalUnderlier128b,
+			CanonicalTowerFamily,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+		>(
+			&compiled_cs,
+			LOG_INV_RATE,
+			SECURITY_BITS,
+			&statement.boundaries,
+			proof,
 		)
 		.unwrap();
 	}
