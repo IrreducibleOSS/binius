@@ -87,12 +87,14 @@ lazy_static! {
 				.unwrap();
 			arr
 		});
-	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[[PackedAESBinaryField32x8b; 32];3]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS_PACKED_AES.map(|round_consts| {
-		round_consts.map(|x| {
-			let consts_8b = PackedAESBinaryField8x32b::cast_base(x);
-			array::from_fn(|i| PackedAESBinaryField32x8b::broadcast(consts_8b.get(i)))
-			}
-		)
+	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSlicedAES32x32b; 24]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS_PACKED_AES.map(|round_consts| {
+		array::from_fn(|i| {
+			let raw_data = array::from_fn(|j|
+				PackedAESBinaryField32x8b::broadcast(PackedExtension::cast_base(round_consts[i / 8]).get((i % 8) * 4 + j))
+			);
+
+			ByteSlicedAES32x32b::from_raw_data(raw_data)
+		})
 	});
 
 	pub static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
@@ -125,9 +127,9 @@ impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
 	}
 }
 
-impl Permutation<[[PackedAESBinaryField32x8b; 32]; 3]> for Vision32bPermutation {
-	fn permute_mut(&self, input: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
-		add_packed_768_byte_sliced(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[0]);
+impl Permutation<[ByteSlicedAES32x32b; 24]> for Vision32bPermutation {
+	fn permute_mut(&self, input: &mut [ByteSlicedAES32x32b; 24]) {
+		add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[0]);
 		for r in 0..NUM_ROUNDS {
 			self.sbox_step_byte_sliced(
 				input,
@@ -138,7 +140,7 @@ impl Permutation<[[PackedAESBinaryField32x8b; 32]; 3]> for Vision32bPermutation 
 			self.mds
 				.transform_byte_sliced(bytemuck::must_cast_mut(input));
 
-			add_packed_768_byte_sliced(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[1 + 2 * r]);
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[1 + 2 * r]);
 			self.sbox_step_byte_sliced(
 				input,
 				&*FWD_PACKED_TRANS_AES_BYTE_SLICED,
@@ -146,7 +148,7 @@ impl Permutation<[[PackedAESBinaryField32x8b; 32]; 3]> for Vision32bPermutation 
 			);
 			self.mds
 				.transform_byte_sliced(bytemuck::must_cast_mut(input));
-			add_packed_768_byte_sliced(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[2 + 2 * r]);
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[2 + 2 * r]);
 		}
 	}
 }
@@ -192,34 +194,20 @@ impl Vision32bPermutation {
 
 	fn sbox_step_byte_sliced(
 		&self,
-		d: &mut [[PackedAESBinaryField32x8b; 32]; 3],
+		d: &mut [ByteSlicedAES32x32b; 24],
 		packed_linear_trans: &impl Transformation<ByteSlicedAES32x32b, ByteSlicedAES32x32b>,
 		constant: &[PackedAESBinaryField32x8b; 32],
 	) {
 		for chunk in d.iter_mut() {
-			for byte_sliced_chunk in chunk.chunks_exact_mut(4) {
-				let bytesliced = ByteSlicedAES32x32b::from_raw_data_mut(
-					byte_sliced_chunk.try_into().expect("chunk is 4 elements"),
-				);
-				self.sbox_packed_affine_byte_sliced(bytesliced, packed_linear_trans, constant)
-			}
+			self.sbox_packed_affine_byte_sliced(chunk, packed_linear_trans, constant)
 		}
 	}
 }
 
 #[inline]
-fn add_packed_768<P: PackedField>(a: &mut [P; 3], b: &[P; 3]) {
+fn add_packed_768<P: PackedField, const N: usize>(a: &mut [P; N], b: &[P; N]) {
 	for (a, b) in a.iter_mut().zip(b.iter()) {
 		*a += *b;
-	}
-}
-
-#[inline]
-fn add_packed_768_byte_sliced<P: PackedField>(a: &mut [[P; 32]; 3], b: &[[P; 32]; 3]) {
-	for (a, b) in a.iter_mut().zip(b.iter()) {
-		for (a, b) in a.iter_mut().zip(b.iter()) {
-			*a += *b;
-		}
 	}
 }
 
@@ -568,6 +556,7 @@ impl FastNttByteSliced {
 #[cfg(test)]
 mod tests {
 	use binius_field::{packed::set_packed_slice, BinaryField32b, PackedExtension};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
 
@@ -763,6 +752,35 @@ mod tests {
 
 			assert_eq!(expected1, got1);
 			assert_eq!(expected2, got2)
+		}
+	}
+
+	#[test]
+	fn test_permutation_consistency() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let mut data: [[PackedAESBinaryField32x8b; 32]; 3] =
+			array::from_fn(|_| array::from_fn(|_| PackedAESBinaryField32x8b::random(&mut rng)));
+
+		let get_single_permutation = |i, data: &[[PackedAESBinaryField32x8b; 32]; 3]| {
+			array::from_fn(|j| {
+				PackedAESBinaryField8x32b::cast_ext(PackedAESBinaryField32x8b::from_fn(|k| {
+					data[j][k].get(i)
+				}))
+			})
+		};
+
+		let single_permutations = array::from_fn::<_, 32, _>(|i| {
+			let mut data = get_single_permutation(i, &data);
+
+			Vision32bPermutation::default().permute_mut(&mut data);
+			data
+		});
+
+		Vision32bPermutation::default()
+			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
+
+		for i in 0..32 {
+			assert_eq!(single_permutations[i], get_single_permutation(i, &data));
 		}
 	}
 }

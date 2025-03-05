@@ -5,7 +5,7 @@ use std::{array, mem::MaybeUninit};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
 	make_binary_to_aes_packed_transformer, underlier::WithUnderlier, AesToBinaryTransformation,
-	BinaryField8b, BinaryToAesTransformation, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b,
+	BinaryField8b, BinaryToAesTransformation, ByteSlicedAES32x32b, PackedAESBinaryField8x32b,
 	PackedBinaryField32x8b, PackedBinaryField8x32b, PackedExtensionIndexable, PackedField,
 	PackedFieldIndexable,
 };
@@ -142,7 +142,7 @@ fn fill_padding(data: &mut [u8]) {
 #[derive(Clone)]
 pub struct VisionHasherDigestByteSliced {
 	// The hashed state
-	state: [[PackedAESBinaryField32x8b; 32]; 3],
+	state: [ByteSlicedAES32x32b; 24],
 	buffer: [[u8; RATE_AS_U8]; 32],
 	filled_bytes: usize,
 }
@@ -150,7 +150,7 @@ pub struct VisionHasherDigestByteSliced {
 impl Default for VisionHasherDigestByteSliced {
 	fn default() -> Self {
 		Self {
-			state: [[PackedAESBinaryField32x8b::zero(); 32]; 3],
+			state: [ByteSlicedAES32x32b::zero(); 24],
 			buffer: [[0; RATE_AS_U8]; 32],
 			filled_bytes: 0,
 		}
@@ -158,7 +158,7 @@ impl Default for VisionHasherDigestByteSliced {
 }
 
 impl VisionHasherDigestByteSliced {
-	fn permute(state: &mut [[PackedAESBinaryField32x8b; 32]; 3], data: [&[u8; RATE_AS_U8]; 32]) {
+	fn permute(state: &mut [ByteSlicedAES32x32b; 24], data: [&[u8; RATE_AS_U8]; 32]) {
 		for row in &data {
 			debug_assert_eq!(row.len(), RATE_AS_U8);
 		}
@@ -166,18 +166,20 @@ impl VisionHasherDigestByteSliced {
 		for state_element_index in 0..2 {
 			let data_offset = state_element_index * 32;
 
-			let mut state_canonical = [PackedBinaryField32x8b::zero(); 32];
+			let mut canonical_data = [PackedBinaryField32x8b::zero(); 32];
 			for i in 0..32 {
 				for byte in 0..32 {
-					state_canonical[byte].set(i, data[i][data_offset + byte].into());
+					canonical_data[byte].set(i, data[i][data_offset + byte].into());
 				}
 			}
 
-			for (state_aes, state_canonical) in state[state_element_index]
-				.iter_mut()
-				.zip(state_canonical.iter())
-			{
-				*state_aes = TRANS_CANONICAL_TO_AES.transform(state_canonical);
+			let state_offset = state_element_index * 8;
+			for j in 0..8 {
+				let state_element = &mut state[state_offset + j];
+				for k in 0..4 {
+					state_element.data_mut()[k] =
+						TRANS_CANONICAL_TO_AES.transform(&canonical_data[j * 4 + k]);
+				}
 			}
 		}
 
@@ -195,12 +197,13 @@ impl VisionHasherDigestByteSliced {
 			Self::permute(&mut self.state, array::from_fn(|_| &*PADDING_BLOCK));
 		}
 
-		let byte_sliced_8b_canonical: [PackedBinaryField32x8b; 32] =
-			self.state[0].map(|x| TRANS_AES_TO_CANONICAL.transform(&x));
-		for (row_i, row) in byte_sliced_8b_canonical.into_iter().enumerate() {
-			for (col, value) in row.into_iter().enumerate() {
-				let index = row_i + col * 32;
-				out[index / 32][index % 32] = value.to_underlier();
+		for (i, state_element) in self.state[0..8].iter().enumerate() {
+			for (j, bytes_aes) in state_element.data().iter().enumerate() {
+				let bytes_canonical: PackedBinaryField32x8b =
+					TRANS_AES_TO_CANONICAL.transform(bytes_aes);
+				for (k, byte) in bytes_canonical.into_iter().enumerate() {
+					out[k][i * 4 + j] = byte.to_underlier();
+				}
 			}
 		}
 	}
@@ -268,10 +271,8 @@ impl MultiDigest<32> for VisionHasherDigestByteSliced {
 	}
 
 	fn reset(&mut self) {
-		for s in &mut self.state {
-			for v in s.iter_mut() {
-				*v = PackedAESBinaryField32x8b::zero();
-			}
+		for v in &mut self.state {
+			*v = PackedField::zero();
 		}
 		self.filled_bytes = 0;
 	}
