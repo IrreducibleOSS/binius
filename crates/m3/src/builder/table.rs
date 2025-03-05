@@ -17,6 +17,165 @@ use crate::builder::column::ColumnId;
 
 pub type TableId = usize;
 
+#[derive(Debug)]
+pub struct TableBuilder<'a, F: TowerField = B128> {
+	namespace: Option<String>,
+	table: &'a mut Table<F>,
+}
+
+impl<'a, F: TowerField> TableBuilder<'a, F> {
+	pub fn new(table: &'a mut Table<F>) -> Self {
+		Self {
+			namespace: None,
+			table,
+		}
+	}
+
+	pub fn with_namespace(&mut self, namespace: impl ToString) -> TableBuilder<'_, F> {
+		TableBuilder {
+			namespace: Some(self.namespaced_name(namespace)),
+			table: self.table,
+		}
+	}
+
+	pub fn id(&self) -> TableId {
+		self.table.id()
+	}
+
+	pub fn add_committed<FSub, const LOG_VALS_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+	) -> Col<FSub, LOG_VALS_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Committed {
+				tower_level: FSub::TOWER_LEVEL,
+			},
+		)
+	}
+
+	pub fn add_committed_multiple<FSub, const V: usize, const N: usize>(
+		&mut self,
+		name: impl ToString,
+	) -> [Col<FSub, V>; N]
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		std::array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
+	}
+
+	pub fn add_shifted<FSub, const LOG_VALS_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSub, LOG_VALS_PER_ROW>,
+		log_block_size: usize,
+		offset: usize,
+		variant: ShiftVariant,
+	) -> Col<FSub, LOG_VALS_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Shifted {
+				col: col.id(),
+				offset,
+				log_block_size,
+				variant,
+			},
+		)
+	}
+
+	pub fn add_linear_combination<FSub, const V: usize>(
+		&mut self,
+		name: impl ToString,
+		expr: Expr<FSub, V>,
+	) -> Col<FSub, V>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		let lincom = expr
+			.expr()
+			.convert_field::<F>()
+			.linear_normal_form()
+			.expect("pre-condition: expression must be linear");
+
+		self.table
+			.new_column(self.namespaced_name(name), ColumnDef::LinearCombination(lincom))
+	}
+
+	pub fn add_packed<FSubSub, const VSUB: usize, FSub, const V: usize>(
+		&mut self,
+		name: impl ToString,
+		col: Col<FSubSub, VSUB>,
+	) -> Col<FSub, V>
+	where
+		FSub: TowerField + ExtensionField<FSubSub>,
+		FSubSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Packed {
+				col: col.id(),
+				log_degree: FSub::TOWER_LEVEL - FSubSub::TOWER_LEVEL,
+			},
+		)
+	}
+
+	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
+		&mut self,
+		_name: impl ToString,
+		_original: Col<FSub, LOG_VALS_PER_ROW>,
+		_index: usize,
+	) -> Col<FSub, 0>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		todo!()
+	}
+
+	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.partition_mut(V).assert_zero(name, expr)
+	}
+
+	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.partition_mut(0).pull_one(channel, col)
+	}
+
+	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		self.table.partition_mut(0).push_one(channel, col)
+	}
+
+	fn namespaced_name(&self, name: impl ToString) -> String {
+		let name = name.to_string();
+		match &self.namespace {
+			Some(namespace) => format!("{namespace}::{name}"),
+			None => name.to_string(),
+		}
+	}
+}
+
 /// A table in an M3 constraint system.
 ///
 /// ## Invariants
@@ -30,7 +189,7 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	pub partitions: SparseIndex<TablePartition<F>>,
+	pub(super) partitions: SparseIndex<TablePartition<F>>,
 	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
 	///
 	/// Fixed tables are either entirely transparent or committed during a preprocessing step that
@@ -43,7 +202,7 @@ pub struct Table<F: TowerField = B128> {
 ///
 /// Zerocheck constraints can only be defined within table partitions.
 #[derive(Debug)]
-pub struct TablePartition<F: TowerField = B128> {
+pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
@@ -140,130 +299,6 @@ impl<F: TowerField> Table<F> {
 
 	pub fn id(&self) -> TableId {
 		self.id
-	}
-
-	pub fn add_committed<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-	) -> Col<FSub, LOG_VALS_PER_ROW>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.new_column(
-			name,
-			ColumnDef::Committed {
-				tower_level: FSub::TOWER_LEVEL,
-			},
-		)
-	}
-
-	pub fn add_committed_multiple<FSub, const V: usize, const N: usize>(
-		&mut self,
-		name: impl ToString,
-	) -> [Col<FSub, V>; N]
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		std::array::from_fn(|i| self.add_committed(format!("{}[{}]", name.to_string(), i)))
-	}
-
-	pub fn add_shifted<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		col: Col<FSub, LOG_VALS_PER_ROW>,
-		log_block_size: usize,
-		offset: usize,
-		variant: ShiftVariant,
-	) -> Col<FSub, LOG_VALS_PER_ROW>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.new_column(
-			name,
-			ColumnDef::Shifted {
-				col: col.id(),
-				offset,
-				log_block_size,
-				variant,
-			},
-		)
-	}
-
-	pub fn add_linear_combination<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		expr: Expr<FSub, V>,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let lincom = expr
-			.expr()
-			.convert_field::<F>()
-			.linear_normal_form()
-			.expect("pre-condition: expression must be linear");
-
-		self.new_column(name, ColumnDef::LinearCombination(lincom))
-	}
-
-	pub fn add_packed<FSubSub, const VSUB: usize, FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		col: Col<FSubSub, VSUB>,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField + ExtensionField<FSubSub>,
-		FSubSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.new_column(
-			name,
-			ColumnDef::Packed {
-				col: col.id(),
-				log_degree: FSub::TOWER_LEVEL - FSubSub::TOWER_LEVEL,
-			},
-		)
-	}
-
-	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
-		&mut self,
-		_name: impl ToString,
-		_original: Col<FSub, LOG_VALS_PER_ROW>,
-		_index: usize,
-	) -> Col<FSub, 0>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		todo!()
-	}
-
-	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.partition_mut(V).assert_zero(name, expr)
-	}
-
-	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.partition_mut(0).pull_one(channel, col)
-	}
-
-	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.partition_mut(0).push_one(channel, col)
 	}
 
 	fn new_column<FSub, const V: usize>(
