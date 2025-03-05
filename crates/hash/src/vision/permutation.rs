@@ -499,12 +499,12 @@ impl FastNttByteSliced {
 			let block_size = 1 << log_block_size;
 
 			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
-				for block_index in 0..HASHES_PER_BYTE_SLICED_PERMUTATION / (2 * block_size) {
+				for (block_index, twiddle) in twiddles.iter().enumerate() {
 					let block_offset = 2 * block_index * block_size;
 					for byte_index in 0..block_size {
 						let odds = data[byte_index + block_offset];
 						let evens = data[byte_index + block_offset + block_size];
-						let result_odds = odds + evens * twiddles[block_index];
+						let result_odds = odds + evens * *twiddle;
 						let result_evens = evens + result_odds;
 						data[byte_index + block_offset] = result_odds;
 						data[byte_index + block_offset + block_size] = result_evens;
@@ -536,13 +536,13 @@ impl FastNttByteSliced {
 			let block_size = 1 << log_block_size;
 
 			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
-				for block_index in 0..HASHES_PER_BYTE_SLICED_PERMUTATION / (2 * block_size) {
+				for (block_index, twiddle) in twiddles.iter().enumerate() {
 					let block_offset = 2 * block_index * block_size;
 					for byte_index in 0..block_size {
 						let odds = data[byte_index + block_offset];
 						let evens = data[byte_index + block_offset + block_size];
 						let result_evens = odds + evens;
-						let result_odds = odds + twiddles[block_index] * result_evens;
+						let result_odds = odds + *twiddle * result_evens;
 						data[byte_index + block_offset] = result_odds;
 						data[byte_index + block_offset + block_size] = result_evens;
 					}
@@ -788,8 +788,12 @@ mod tests {
 		Vision32bPermutation::default()
 			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
 
-		for i in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
-			assert_eq!(single_permutations[i], get_single_permutation(i, &data));
+		for (i, single_permutation) in single_permutations
+			.iter()
+			.enumerate()
+			.take(HASHES_PER_BYTE_SLICED_PERMUTATION)
+		{
+			assert_eq!(*single_permutation, get_single_permutation(i, &data));
 		}
 	}
 }
