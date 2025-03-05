@@ -530,8 +530,7 @@ where
 							);
 						}
 					} else {
-						#[allow(clippy::needless_range_loop)]
-						for i in 0..round_evals.len() {
+						for (i, round_eval) in round_evals.iter_mut().enumerate() {
 							let mut temp = <PackedSubfield<P, FBase>>::zero();
 
 							for j in 0..1 << packed_log_batch {
@@ -553,7 +552,7 @@ where
 
 							let unpacked = P::unpack_scalars(temp);
 							for scalar in unpacked {
-								round_evals[i] += scalar;
+								*round_eval += scalar;
 							}
 						}
 					}
