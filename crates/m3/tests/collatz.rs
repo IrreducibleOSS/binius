@@ -103,6 +103,7 @@ mod arithmetization {
 		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
 		tower::CanonicalTowerFamily,
+		witness::MultilinearExtensionIndex,
 	};
 	use binius_field::{
 		arch::OptimalUnderlier128b,
@@ -301,8 +302,13 @@ mod arithmetization {
 		}
 	}
 
-	#[test]
-	fn test_collatz() {
+	pub struct Instance<'a> {
+		pub statement: Statement,
+		pub witness: MultilinearExtensionIndex<'a, OptimalUnderlier128b, B128>,
+		pub constraint_system: binius_core::constraint_system::ConstraintSystem<B128>,
+	}
+
+	pub fn collatz_instance(allocator: &Bump) -> Instance {
 		use model::CollatzTrace;
 
 		let mut cs = ConstraintSystem::new();
@@ -329,11 +335,9 @@ mod arithmetization {
 			],
 			table_sizes: vec![trace.evens.len(), trace.odds.len()],
 		};
-		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.build_witness::<OptimalUnderlier128b>(allocator, &statement)
 			.unwrap();
-
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)
 			.unwrap();
@@ -341,15 +345,38 @@ mod arithmetization {
 			.fill_table_sequential(&odds_table, &trace.odds)
 			.unwrap();
 
-		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index::<B128>(&statement);
+		Instance {
+			constraint_system: cs.compile(&statement).unwrap(),
+			witness: witness.into_multilinear_extension_index::<B128>(&statement),
+			statement,
+		}
+	}
+
+	#[test]
+	fn test_collatz_validate_witness() {
+		let allocator = Bump::new();
+		let Instance {
+			statement,
+			witness,
+			constraint_system,
+		} = collatz_instance(&allocator);
 
 		binius_core::constraint_system::validate::validate_witness(
-			&compiled_cs,
+			&constraint_system,
 			&statement.boundaries,
 			&witness,
 		)
 		.unwrap();
+	}
+
+	#[test]
+	fn test_collatz_prove_verify() {
+		let allocator = Bump::new();
+		let Instance {
+			statement,
+			witness,
+			constraint_system,
+		} = collatz_instance(&allocator);
 
 		const LOG_INV_RATE: usize = 1;
 		const SECURITY_BITS: usize = 100;
@@ -363,7 +390,7 @@ mod arithmetization {
 			HasherChallenger<Groestl256>,
 			_,
 		>(
-			&compiled_cs,
+			&constraint_system,
 			LOG_INV_RATE,
 			SECURITY_BITS,
 			&statement.boundaries,
@@ -379,7 +406,7 @@ mod arithmetization {
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&compiled_cs, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
+		>(&constraint_system, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
 		.unwrap();
 	}
 }
