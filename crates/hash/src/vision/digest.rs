@@ -180,7 +180,7 @@ impl VisionHasherDigestByteSliced {
 			for (state_element, canonical_data) in state
 				[state_element_index * 8..state_element_index * 8 + 8]
 				.iter_mut()
-				.flat_map(|x| x.data_mut().iter_mut())
+				.flat_map(|x| x.raw_data_mut().iter_mut())
 				.zip(canonical_data.into_iter())
 			{
 				*state_element = TRANS_CANONICAL_TO_AES.transform(&canonical_data);
@@ -206,7 +206,7 @@ impl VisionHasherDigestByteSliced {
 
 		for (i, state_data) in self.state[0..8]
 			.iter()
-			.flat_map(|x| x.data().iter())
+			.flat_map(|x| x.raw_data().iter())
 			.enumerate()
 		{
 			let bytes_canonical: PackedBinaryField32x8b =

@@ -186,7 +186,7 @@ impl Vision32bPermutation {
 		let x_inv_eval = chunk.invert_or_zero();
 		let result = packed_linear_trans.transform(&x_inv_eval);
 		for (chunk, constant, result) in
-			multizip((chunk.data_mut().iter_mut(), constant.iter(), result.data()))
+			multizip((chunk.raw_data_mut().iter_mut(), constant.iter(), result.raw_data()))
 		{
 			*chunk = *result + *constant
 		}
