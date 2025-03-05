@@ -189,7 +189,7 @@ pub struct Table<F: TowerField = B128> {
 	pub id: TableId,
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
-	pub partitions: SparseIndex<TablePartition<F>>,
+	pub(super) partitions: SparseIndex<TablePartition<F>>,
 	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
 	///
 	/// Fixed tables are either entirely transparent or committed during a preprocessing step that
@@ -202,7 +202,7 @@ pub struct Table<F: TowerField = B128> {
 ///
 /// Zerocheck constraints can only be defined within table partitions.
 #[derive(Debug)]
-pub struct TablePartition<F: TowerField = B128> {
+pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
