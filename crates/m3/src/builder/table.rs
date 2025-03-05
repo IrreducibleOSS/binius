@@ -129,7 +129,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			self.namespaced_name(name),
 			ColumnDef::LinearCombination {
 				offset,
-				col_scalars: col_scalars,
+				col_scalars,
 			},
 		)
 	}
