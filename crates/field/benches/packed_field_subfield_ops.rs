@@ -1,6 +1,6 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::array;
+use std::{array, time::Duration};
 
 use binius_field::{
 	packed::mul_by_subfield_scalar,
@@ -22,6 +22,8 @@ fn bench_mul_subfield<PE: PackedExtension<F>, F: Field>(group: &mut BenchmarkGro
 	let packed: [PE; BATCH_SIZE] = array::from_fn(|_| PE::random(&mut rng));
 	let scalars: [F; BATCH_SIZE] = array::from_fn(|_| F::random(&mut rng));
 
+	group.warm_up_time(Duration::from_secs(1));
+	group.measurement_time(Duration::from_secs(3));
 	group.throughput(Throughput::Elements((BATCH_SIZE * PE::WIDTH) as _));
 	let id = format!(
 		"mul/{}b_by_{}b",

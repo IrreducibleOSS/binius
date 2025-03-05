@@ -1,5 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::time::Duration;
+
 use binius_field::{
 	PackedBinaryField128x1b, PackedBinaryField16x32b, PackedBinaryField16x8b,
 	PackedBinaryField1x128b, PackedBinaryField256x1b, PackedBinaryField2x128b,
@@ -17,6 +19,8 @@ fn benchmark_get_impl<P: PackedField>(group: &mut BenchmarkGroup<'_, WallTime>, 
 	let value = P::random(&mut rng);
 
 	group.throughput(Throughput::Elements(P::WIDTH as _));
+	group.warm_up_time(Duration::from_secs(1));
+	group.measurement_time(Duration::from_secs(3));
 	group.bench_function(id, |b| b.iter(|| value.iter().collect::<Vec<_>>()));
 }
 
