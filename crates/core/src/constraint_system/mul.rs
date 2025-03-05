@@ -3,7 +3,7 @@
 //! Multiplication based on exponentiation.
 //!
 //! The core idea of this method is to verify the equality $a \cdot b = c$
-//! by checking if $(g^a)^b = g^{\text{c_low}} \cdot (g^{2^{32}})^{\text{c_high}}$,
+//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{32}})^{chigh}$,
 //! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
 //!
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
@@ -69,7 +69,7 @@ type MultiplicationWitnesses<'a, U, Tower> =
 	Vec<BaseExpWitness<'a, PackedType<U, FFastExt<Tower>>>>;
 
 /// Constructs [`BaseExpWitness`] instances and adds the exponentiation-result witnesses
-/// to the [`MultiplicationWitnesses`].
+/// to the MultiplicationWitnesses.
 pub fn make_multiplication_witnesses<'a, U, Tower>(
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	multiplications: &[Mul],
