@@ -5,7 +5,10 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{channel::ChannelId, ConstraintSystem as CompiledConstraintSystem},
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
+		ProjectionVariant,
+	},
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
@@ -33,7 +36,7 @@ pub struct ConstraintSystem<F: TowerField = B128> {
 	pub channel_id_bound: ChannelId,
 }
 
-impl std::fmt::Display for ConstraintSystem {
+impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		writeln!(f, "ConstraintSystem {{")?;
 
@@ -52,11 +55,7 @@ impl std::fmt::Display for ConstraintSystem {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| {
-							table.columns[partition.columns[*i].table_index]
-								.name
-								.clone()
-						})
+						.map(|i| table.columns[partition.columns[*i]].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -72,7 +71,7 @@ impl std::fmt::Display for ConstraintSystem {
 				let names = partition
 					.columns
 					.iter()
-					.map(|id| table.columns[id.table_index].name.clone())
+					.map(|&index| table.columns[index].name.clone())
 					.collect::<Vec<_>>();
 
 				for constraint in partition.zero_constraints.iter() {
@@ -187,8 +186,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
 				let n_vars = log2_ceil_usize(count) + info.shape.pack_factor;
-				let oracle_id =
-					add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars).unwrap();
+				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
 				if info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
@@ -208,7 +206,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 				let partition_oracle_ids = columns
 					.iter()
-					.map(|id| oracle_lookup[id.table_index])
+					.map(|&index| oracle_lookup[index])
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
@@ -265,6 +263,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 	}
 }
 
+/// Add a table column to the multilinear oracle set with a specified number of variables.
+///
+/// ## Arguments
+///
+/// * `oracles` - The set of multilinear oracles to add to.
+/// * `oracle_lookup` - mapping of column indices in the table to oracle IDs in the oracle set
+/// * `column_info` - information about the column to be added
+/// * `n_vars` - number of variables of the multilinear oracle
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
@@ -275,14 +281,35 @@ fn add_oracle_for_column<F: TowerField>(
 	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		ColumnDef::LinearCombination(lincom) => {
-			let inner_oracles = lincom
-				.var_coeffs
+		ColumnDef::LinearCombination {
+			offset,
+			col_scalars,
+		} => {
+			let inner_oracles = col_scalars
 				.iter()
-				.enumerate()
-				.map(|(index, &coeff)| (oracle_lookup[index], coeff))
+				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
 				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
+			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
+		}
+		ColumnDef::Selected {
+			col,
+			index,
+			index_bits,
+		} => {
+			let index_values = (0..*index_bits)
+				.map(|i| {
+					if (index >> i) & 1 == 0 {
+						F::ZERO
+					} else {
+						F::ONE
+					}
+				})
+				.collect();
+			addition.projected(
+				oracle_lookup[col.table_index],
+				index_values,
+				ProjectionVariant::FirstVars,
+			)?
 		}
 		ColumnDef::Shifted {
 			col,

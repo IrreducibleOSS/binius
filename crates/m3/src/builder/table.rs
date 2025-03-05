@@ -5,6 +5,7 @@ use binius_core::{
 	oracle::ShiftVariant,
 };
 use binius_field::{ExtensionField, TowerField};
+use binius_math::LinearNormalForm;
 use binius_utils::sparse_index::SparseIndex;
 
 use super::{
@@ -12,6 +13,7 @@ use super::{
 	column::{upcast_col, Col, ColumnDef, ColumnInfo, ColumnShape},
 	expr::{Expr, ZeroConstraint},
 	types::B128,
+	ColumnIndex,
 };
 use crate::builder::column::ColumnId;
 
@@ -101,14 +103,35 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let lincom = expr
+		let LinearNormalForm {
+			constant: offset,
+			var_coeffs,
+		} = expr
 			.expr()
 			.convert_field::<F>()
 			.linear_normal_form()
 			.expect("pre-condition: expression must be linear");
 
-		self.table
-			.new_column(self.namespaced_name(name), ColumnDef::LinearCombination(lincom))
+		let col_scalars = var_coeffs
+			.into_iter()
+			.enumerate()
+			.filter_map(|(partition_index, coeff)| {
+				if coeff != F::ZERO {
+					let partition = &self.table.partitions[expr.partition_id()];
+					Some((partition.columns[partition_index], coeff))
+				} else {
+					None
+				}
+			})
+			.collect();
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::LinearCombination {
+				offset,
+				col_scalars,
+			},
+		)
 	}
 
 	pub fn add_packed<FSubSub, const VSUB: usize, FSub, const V: usize>(
@@ -130,17 +153,25 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_selected<FSub, const LOG_VALS_PER_ROW: usize>(
+	pub fn add_selected<FSub, const V: usize>(
 		&mut self,
-		_name: impl ToString,
-		_original: Col<FSub, LOG_VALS_PER_ROW>,
-		_index: usize,
+		name: impl ToString,
+		col: Col<FSub, V>,
+		index: usize,
 	) -> Col<FSub, 0>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		todo!()
+		assert!(index < (1 << V));
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Selected {
+				col: col.id(),
+				index,
+				index_bits: V,
+			},
+		)
 	}
 
 	pub fn assert_zero<FSub, const V: usize>(&mut self, name: impl ToString, expr: Expr<FSub, V>)
@@ -206,7 +237,7 @@ pub(super) struct TablePartition<F: TowerField = B128> {
 	pub table_id: TableId,
 	pub pack_factor: usize,
 	pub flushes: Vec<Flush>,
-	pub columns: Vec<ColumnId>,
+	pub columns: Vec<ColumnIndex>,
 	pub zero_constraints: Vec<ZeroConstraint<F>>,
 }
 
@@ -329,7 +360,7 @@ impl<F: TowerField> Table<F> {
 			},
 			is_nonzero: false,
 		};
-		partition.columns.push(id);
+		partition.columns.push(table_index);
 		self.columns.push(info);
 		Col::new(id)
 	}
