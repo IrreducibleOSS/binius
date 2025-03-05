@@ -34,6 +34,7 @@ use super::{
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
+		mul,
 		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
@@ -42,8 +43,9 @@ use crate::{
 	piop,
 	protocols::{
 		fri::CommitOutput,
+		gkr_exp,
 		gkr_gpa::{
-			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
+			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput, GrandProductClaim,
 			GrandProductWitness, LayerClaim,
 		},
 		greedy_evalcheck,
@@ -110,9 +112,14 @@ where
 		mut oracles,
 		mut table_constraints,
 		mut flushes,
+		mut mul,
 		non_zero_oracle_ids,
 		max_channel_id,
 	} = constraint_system.clone();
+
+	mul.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+
+	let mul_witnesses = mul::make_multiplication_witnesses(&mut witness, &mul)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -145,6 +152,41 @@ where
 	let mut writer = transcript.message();
 	writer.write(&commitment);
 
+	// Multiplication
+
+	let mul_challenge = transcript.sample_vec(mul::max_n_vars(&mul, &oracles));
+
+	let mul_evals = gkr_exp::get_evals_in_point_from_witnesses(&mul_witnesses, &mul_challenge)?
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let mul_challenge = mul_challenge
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let mut writer = transcript.message();
+
+	writer.write_scalar_slice(&mul_evals);
+
+	let mul_claims = mul::make_claims::<FExt<Tower>>(&mul, &oracles, &mul_challenge, &mul_evals)?
+		.into_iter()
+		.map(|claim| claim.isomorphic())
+		.collect::<Vec<_>>();
+
+	let base_exp_output = gkr_exp::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+		EvaluationOrder::HighToLow,
+		mul_witnesses,
+		&mul_claims,
+		fast_domain_factory.clone(),
+		&mut transcript,
+		backend,
+	)?
+	.isomorphic();
+
+	let mul_eval_claims = mul::make_eval_claims(&mul, base_exp_output)?;
+
 	// Grand product arguments
 	// Grand products for non-zero checking
 	let non_zero_fast_witnesses =
@@ -162,6 +204,8 @@ where
 	{
 		bail!(Error::Zeros);
 	}
+
+	let mut writer = transcript.message();
 
 	writer.write_scalar_slice(&non_zero_products);
 
@@ -201,7 +245,7 @@ where
 
 	transcript.message().write_scalar_slice(&flush_products);
 
-	let flush_prodcheck_claims =
+	let flush_prodcheck_claims: Vec<GrandProductClaim<FExt<Tower>>> =
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
 	// Prove grand products
@@ -408,7 +452,8 @@ where
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
 			.concat()
 			.into_iter()
-			.chain(zerocheck_eval_claims),
+			.chain(zerocheck_eval_claims)
+			.chain(mul_eval_claims),
 		switchover_fn,
 		&mut transcript,
 		&domain_factory,

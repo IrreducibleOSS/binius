@@ -6,6 +6,7 @@ use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection},
+		mul::Mul,
 		ConstraintSystem,
 	},
 	oracle::{
@@ -31,6 +32,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
+	mul: Vec<Mul>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
 	next_channel_id: ChannelId,
@@ -69,6 +71,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 				})?
 				.into_inner(),
 			flushes: self.flushes,
+			mul: self.mul,
 		})
 	}
 
@@ -214,6 +217,10 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
 			.committed(n_vars, tower_level)
+	}
+
+	pub fn add_mul(&mut self, mul: Mul) {
+		self.mul.push(mul);
 	}
 
 	pub fn add_committed_multiple<const N: usize>(
