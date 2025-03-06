@@ -12,14 +12,14 @@ use crate::{
 	arch::byte_sliced::{invert::invert_or_zero, multiply::mul, square::square},
 	tower_levels::{TowerLevel16, TowerLevelWithArithOps},
 	underlier::WithUnderlier,
-	AESTowerField128b, AESTowerField8b, ExtensionField, PackedAESBinaryField1x128b, PackedField,
+	AESTowerField128b, AESTowerField8b, ExtensionField, PackedAESBinaryField16x8b,
+	PackedAESBinaryField1x128b, PackedField,
 };
 
 trait PodProps: Zeroable + Copy + Pod + Eq + Send + Sync {}
 
 impl<T: Zeroable + Copy + Pod + Eq + Send + Sync> PodProps for T {}
 
-#[derive(Clone, Copy, Zeroable)]
 #[repr(transparent)]
 #[allow(private_bounds)]
 pub struct ByteSliced2D<
@@ -33,6 +33,42 @@ pub struct ByteSliced2D<
 	_pd: PhantomData<F>,
 }
 
+impl<
+		F: ExtensionField<AESTowerField8b>,
+		PackedStorage: PackedField<Scalar = AESTowerField8b>,
+		TL: TowerLevelWithArithOps,
+	> Clone for ByteSliced2D<F, PackedStorage, TL>
+where
+	TL::Data<PackedStorage>: PodProps,
+{
+	fn clone(&self) -> Self {
+		Self {
+			data: self.data.clone(),
+			_pd: PhantomData,
+		}
+	}
+}
+
+impl<
+		F: ExtensionField<AESTowerField8b>,
+		PackedStorage: PackedField<Scalar = AESTowerField8b>,
+		TL: TowerLevelWithArithOps,
+	> Copy for ByteSliced2D<F, PackedStorage, TL>
+where
+	TL::Data<PackedStorage>: PodProps,
+{
+}
+
+unsafe impl<
+		F: ExtensionField<AESTowerField8b>,
+		PackedStorage: PackedField<Scalar = AESTowerField8b>,
+		TL: TowerLevelWithArithOps,
+	> Zeroable for ByteSliced2D<F, PackedStorage, TL>
+where
+	TL::Data<PackedStorage>: PodProps,
+{
+}
+
 unsafe impl<
 		F: ExtensionField<AESTowerField8b>,
 		PackedStorage: PackedField<Scalar = AESTowerField8b>,
@@ -40,7 +76,26 @@ unsafe impl<
 	> Pod for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
+{
+}
+
+unsafe impl<
+		F: ExtensionField<AESTowerField8b>,
+		PackedStorage: PackedField<Scalar = AESTowerField8b>,
+		TL: TowerLevelWithArithOps,
+	> Send for ByteSliced2D<F, PackedStorage, TL>
+where
+	TL::Data<PackedStorage>: PodProps,
+{
+}
+
+unsafe impl<
+		F: ExtensionField<AESTowerField8b>,
+		PackedStorage: PackedField<Scalar = AESTowerField8b>,
+		TL: TowerLevelWithArithOps,
+	> Sync for ByteSliced2D<F, PackedStorage, TL>
+where
+	TL::Data<PackedStorage>: PodProps,
 {
 }
 
@@ -51,7 +106,6 @@ impl<
 	> PartialEq for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	fn eq(&self, other: &Self) -> bool {
 		self.data.as_ref() == other.data.as_ref()
@@ -65,7 +119,6 @@ impl<
 	> Eq for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 }
 
@@ -76,7 +129,6 @@ impl<
 	> Debug for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let values_str = (0..TL::WIDTH)
@@ -95,7 +147,6 @@ impl<
 	> ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	pub const BYTES: usize = PackedStorage::WIDTH * TL::WIDTH;
 
@@ -121,7 +172,6 @@ impl<
 	> PackedField for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Scalar = F;
 
@@ -223,7 +273,6 @@ impl<
 	> Mul for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -243,7 +292,6 @@ impl<
 	> Add<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -260,7 +308,6 @@ impl<
 	> AddAssign<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn add_assign(&mut self, rhs: F) {
@@ -275,7 +322,6 @@ impl<
 	> Sub<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -292,7 +338,6 @@ impl<
 	> SubAssign<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn sub_assign(&mut self, rhs: F) {
@@ -307,7 +352,6 @@ impl<
 	> Mul<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -324,7 +368,6 @@ impl<
 	> MulAssign<F> for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn mul_assign(&mut self, rhs: F) {
@@ -339,7 +382,6 @@ impl<
 	> Default for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	fn default() -> Self {
 		Self {
@@ -355,7 +397,6 @@ impl<
 	> Add for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -375,7 +416,6 @@ impl<
 	> AddAssign for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn add_assign(&mut self, rhs: Self) {
@@ -392,7 +432,6 @@ impl<
 	> Sub for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	type Output = Self;
 
@@ -412,7 +451,6 @@ impl<
 	> SubAssign for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn sub_assign(&mut self, rhs: Self) {
@@ -429,7 +467,6 @@ impl<
 	> MulAssign for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	#[inline]
 	fn mul_assign(&mut self, rhs: Self) {
@@ -444,7 +481,6 @@ impl<
 	> std::iter::Product for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
 		let mut result = Self::default();
@@ -471,7 +507,6 @@ impl<
 	> std::iter::Sum for ByteSliced2D<F, PackedStorage, TL>
 where
 	TL::Data<PackedStorage>: PodProps,
-	Self: PodProps,
 {
 	fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
 		let mut result = Self::default();
@@ -484,5 +519,5 @@ where
 	}
 }
 
-type ByteSlicedAES16x128b =
-	ByteSliced2D<AESTowerField128b, PackedAESBinaryField1x128b, TowerLevel16>;
+pub type ByteSlicedAES16x128b =
+	ByteSliced2D<AESTowerField128b, PackedAESBinaryField16x8b, TowerLevel16>;
