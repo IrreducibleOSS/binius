@@ -324,7 +324,9 @@ where
 	Ok(())
 }
 
-pub fn calculate_projected_mles<U, F, Backend>(
+/// For each composite oracle, compute the MLE of eq (on eval_point)
+/// For each shifted / packed oracle, compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
+pub fn calculate_meta_mles<U, F, Backend>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],

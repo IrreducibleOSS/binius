@@ -16,8 +16,8 @@ use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
-		calculate_projected_mles, composite_sumcheck_meta, process_composite_sumcheck,
-		MemoizedQueries, ProjectedBivariateMeta,
+		calculate_meta_mles, composite_sumcheck_meta, process_composite_sumcheck, MemoizedQueries,
+		ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -220,7 +220,7 @@ where
 			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		let projected_mle = calculate_projected_mles(
+		let meta_mles = calculate_meta_mles(
 			&projected_bivariate_metas,
 			&mut self.memoized_queries,
 			&self.projected_bivariate_claims,
@@ -228,12 +228,12 @@ where
 			self.backend,
 		)?;
 
-		for (claim, meta, projected) in izip!(
+		for (claim, meta, meta_mle) in izip!(
 			std::mem::take(&mut self.projected_bivariate_claims),
 			projected_bivariate_metas,
-			projected_mle
+			meta_mles
 		) {
-			self.process_sumcheck(claim, meta, projected)?;
+			self.process_sumcheck(claim, meta, meta_mle)?;
 		}
 
 		// Step 4: Find and return the proofs of the original claims.
@@ -587,7 +587,7 @@ where
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		meta: ProjectedBivariateMeta,
-		projected: MultilinearExtension<PackedType<U, F>>,
+		meta_mle: MultilinearExtension<PackedType<U, F>>, // eq MLE for composite, projected MLE for packed / shifted
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
@@ -603,7 +603,7 @@ where
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				projected,
+				meta_mle,
 			),
 
 			MultilinearPolyVariant::Packed(packed) => process_packed_sumcheck(
@@ -614,7 +614,7 @@ where
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				projected,
+				meta_mle,
 			),
 
 			MultilinearPolyVariant::Composite(composite) => process_composite_sumcheck(
@@ -623,7 +623,7 @@ where
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				projected,
+				meta_mle,
 			),
 			_ => unreachable!(),
 		}
