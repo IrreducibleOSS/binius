@@ -29,6 +29,15 @@ impl<F: TowerField, const V: usize> Expr<F, V> {
 	pub fn degree(&self) -> usize {
 		self.expr.degree()
 	}
+
+	/// Exponentiate the expression by a constant power.
+	pub fn pow(self, exp: u64) -> Self {
+		Self {
+			table_id: self.table_id,
+			partition_id: self.partition_id,
+			expr: self.expr.pow(exp),
+		}
+	}
 }
 
 impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
@@ -93,6 +102,14 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 	}
 }
 
+impl<F: TowerField, const V: usize> std::ops::Add<Expr<F, V>> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: F) -> Self::Output {
+		Expr::from(self) + rhs
+	}
+}
+
 impl<F: TowerField, const V: usize> std::ops::Add<F> for Col<F, V> {
 	type Output = Expr<F, V>;
 
@@ -147,6 +164,14 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 	}
 }
 
+impl<F: TowerField, const V: usize> std::ops::Sub<Expr<F, V>> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: F) -> Self::Output {
+		Expr::from(self) - rhs
+	}
+}
+
 impl<F: TowerField, const V: usize> std::ops::Sub<F> for Col<F, V> {
 	type Output = Expr<F, V>;
 
@@ -191,6 +216,14 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 			table_id: self.table_id,
 			expr: self.expr * ArithExpr::Const(rhs),
 		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Mul<Expr<F, V>> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: F) -> Self::Output {
+		Expr::from(self) * rhs
 	}
 }
 
