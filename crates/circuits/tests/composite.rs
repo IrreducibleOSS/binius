@@ -12,7 +12,9 @@ use binius_math::{CompositionPoly, IsomorphicEvaluationDomainFactory};
 type B128 = BinaryField128b;
 type B64 = BinaryField64b;
 
-fn main() {
+#[test]
+#[ignore]
+fn test_composite_circuit() {
 	let backend = make_portable_backend();
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
