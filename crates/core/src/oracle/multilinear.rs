@@ -774,24 +774,29 @@ impl<F: TowerField> LinearCombination<F> {
 
 /// MLE of a multivariate polynomial evaluated on multilinear oracles.
 ///
-/// i.e. the MLE of the evaluations of C(M1, M2, ..., Mn) on {0, 1}^μ where:
-/// - C is a arbitrary polynomial in n variables
-/// - M1, M2, ..., Mn are multilinear oracles in μ variables
+/// i.e. the MLE of the evaluations of $C(M_1, M_2, \ldots, M_n)$ on $\{0, 1\}^\mu$ where:
+/// - $C$ is a arbitrary polynomial in $n$ variables
+/// - $M_1, M_2, \ldots, M_n$ are multilinear oracles in μ variables
 ///
-/// (C should be sufficiently lightweight to be evaluated by the verifier)
+/// ($C$ should be sufficiently lightweight to be evaluated by the verifier)
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes)]
 pub struct MultilinearComposition<F: TowerField> {
+	/// $\mu$
 	#[get_copy = "pub"]
-	n_vars: usize, // μ
-	pub(crate) inner: Vec<OracleId>,      // M1, M2, ..., Mn
-	pub(crate) comp: ArithCircuitPoly<F>, // C
+	n_vars: usize,
+	/// $M_1, M_2, \ldots, M_n$
+	#[getset(get = "pub")]
+	inner: Vec<OracleId>,
+	/// $C$
+	#[getset(get = "pub")]
+	c: ArithCircuitPoly<F>,
 }
 
 impl<F: TowerField> MultilinearComposition<F> {
 	pub fn new(
 		n_vars: usize,
 		inner: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
-		comp: ArithExpr<F>,
+		c: ArithExpr<F>,
 	) -> Result<Self, Error> {
 		let inner = inner
 			.into_iter()
@@ -803,13 +808,9 @@ impl<F: TowerField> MultilinearComposition<F> {
 				}
 			})
 			.collect::<Result<Vec<_>, _>>()?;
-		let comp = ArithCircuitPoly::with_n_vars(inner.len(), comp)
+		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
 			.map_err(|_| Error::CompositionMismatch)?; // occurs if `composition` has more variables than `inner.len()`
-		Ok(Self {
-			n_vars,
-			inner,
-			comp,
-		})
+		Ok(Self { n_vars, inner, c })
 	}
 
 	pub fn polys(&self) -> impl Iterator<Item = OracleId> + '_ {
@@ -818,6 +819,10 @@ impl<F: TowerField> MultilinearComposition<F> {
 
 	pub fn n_polys(&self) -> usize {
 		self.inner.len()
+	}
+
+	pub fn take_c(self) -> ArithCircuitPoly<F> {
+		self.c
 	}
 }
 

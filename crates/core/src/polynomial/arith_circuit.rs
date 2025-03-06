@@ -124,7 +124,7 @@ enum CircuitStep<F: Field> {
 /// and the object representing different polnomials can be stored in a homogeneous collection.
 #[derive(Debug, Clone)]
 pub struct ArithCircuitPoly<F: Field> {
-	pub(crate) expr: ArithExpr<F>,
+	expr: ArithExpr<F>,
 	steps: Arc<[CircuitStep<F>]>,
 	/// The "top level expression", which depends on circuit expression evaluations
 	retval: CircuitStepArgument<F>,
@@ -206,6 +206,11 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 			degree,
 			tower_level,
 		})
+	}
+
+	/// Warning: The resulting circuit may have fewer variables than `self.n_vars`
+	pub fn take_expr(self) -> ArithExpr<F> {
+		self.expr
 	}
 }
 

@@ -4,7 +4,7 @@ use binius_field::{
 	as_packed_field::PackScalar, underlier::UnderlierType, BinaryField1b, TowerField,
 };
 use binius_hal::ComputationBackendExt;
-use binius_math::{CompositionPoly, MultilinearPoly};
+use binius_math::MultilinearPoly;
 use binius_utils::bail;
 
 use super::{
@@ -17,7 +17,9 @@ use crate::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ProjectionVariant, ShiftVariant,
 	},
-	polynomial::{test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly},
+	polynomial::{
+		test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly, MultilinearComposite,
+	},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };
@@ -245,17 +247,14 @@ where
 			}
 		}
 		MultilinearPolyVariant::Composite(composition) => {
-			let uncombined_polys = composition
+			let inner_polys = composition
 				.polys()
 				.map(|id| witness.get_multilin_poly(id))
 				.collect::<Result<Vec<_>, _>>()?;
+			let composite = MultilinearComposite::new(n_vars, composition.c(), inner_polys)?;
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
-				let inner_evals = uncombined_polys
-					.iter()
-					.map(|poly| poly.evaluate_on_hypercube(i))
-					.collect::<Result<Vec<_>, _>>()?;
-				let expected = composition.comp.evaluate(&inner_evals)?;
+				let expected = composite.evaluate_on_hypercube(i)?;
 				check_eval(oracle_label, i, expected, got)?;
 			}
 		}

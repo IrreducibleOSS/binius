@@ -442,11 +442,14 @@ pub fn handle_composite_with_sumcheck<F: TowerField>(
 	let n_vars = composition.n_vars();
 	let eq_mle = EqIndPartialEval::new(eval_point.to_vec());
 	let eq_oracle = oracles.add_transparent(eq_mle.clone()).unwrap();
-	let mut oracle_ids = composition.inner.clone();
+	let mut oracle_ids = composition.inner().clone();
 	oracle_ids.push(eq_oracle);
 	let n_polys = composition.n_polys();
-	// Var(n_polys) corresponds to eq_oracle
-	let expr = ArithExpr::Mul(Box::new(composition.comp.expr), Box::new(ArithExpr::Var(n_polys)));
+
+	let expr = ArithExpr::Mul(
+		Box::new(composition.take_c().take_expr()),
+		Box::new(ArithExpr::Var(n_polys)), // Var(n_polys) corresponds to eq_oracle
+	);
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
 	}
