@@ -4,6 +4,9 @@ use anyhow::Error;
 use binius_core::{constraint_system::mul::Mul, oracle::OracleId};
 use binius_field::{BinaryField128b, BinaryField1b, TowerField};
 use binius_macros::arith_expr;
+use binius_maybe_rayon::iter::{
+	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 
 use crate::builder::ConstraintSystemBuilder;
 
@@ -131,28 +134,31 @@ fn columns_to_numbers(columns: &[&[u32]]) -> Vec<u128> {
 	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len()).unwrap_or(0) * 32];
 
 	for (bit, column) in columns.iter().enumerate() {
-		for (i, number) in numbers.iter_mut().enumerate() {
+		numbers.par_iter_mut().enumerate().for_each(|(i, number)| {
 			let num_idx = i / 32;
 			let bit_idx = i % 32;
 
 			if (column[num_idx] >> bit_idx) & 1 == 1 {
 				*number |= 1 << bit;
 			}
-		}
+		});
 	}
 	numbers
 }
 
 fn numbers_to_columns(numbers: &[u128], columns: &mut [&mut [u32]]) {
-	for (bit, column) in columns.iter_mut().enumerate() {
-		for (i, number) in numbers.iter().enumerate() {
-			if (number >> bit) & 1 == 1 {
-				let num_idx = i / 32;
-				let bit_idx = i % 32;
-				column[num_idx] |= 1 << bit_idx;
+	columns
+		.par_iter_mut()
+		.enumerate()
+		.for_each(|(bit, column)| {
+			for (i, number) in numbers.iter().enumerate() {
+				if (number >> bit) & 1 == 1 {
+					let num_idx = i / 32;
+					let bit_idx = i % 32;
+					column[num_idx] |= 1 << bit_idx;
+				}
 			}
-		}
-	}
+		});
 }
 
 #[cfg(test)]
