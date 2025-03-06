@@ -245,7 +245,11 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	if LOG_QUERY_SIZE < 3 || (P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH) {
+	if LOG_QUERY_SIZE < 3 {
+		return false;
+	}
+
+	if P::LOG_WIDTH + LOG_QUERY_SIZE > PE::LOG_WIDTH {
 		return false;
 	}
 
