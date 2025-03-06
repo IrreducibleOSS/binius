@@ -54,16 +54,10 @@ impl StepDown {
 	}
 
 	pub fn multilinear_extension<P: PackedField>(&self) -> Result<MultilinearExtension<P>, Error> {
-		if self.n_vars < P::LOG_WIDTH {
-			bail!(Error::PackedFieldNotFilled {
-				length: 1 << self.n_vars,
-				packed_width: 1 << P::LOG_WIDTH,
-			});
-		}
-		let log_packed_length = self.n_vars - P::LOG_WIDTH;
-		let mut data = vec![P::one(); 1 << log_packed_length];
+		let log_packed_length = self.n_vars.saturating_sub(P::LOG_WIDTH);
+		let mut data = vec![P::zero(); 1 << log_packed_length];
 		self.populate(&mut data);
-		Ok(MultilinearExtension::from_values(data)?)
+		Ok(MultilinearExtension::new(self.n_vars, data)?)
 	}
 
 	pub fn populate<P: PackedField>(&self, data: &mut [P]) {
