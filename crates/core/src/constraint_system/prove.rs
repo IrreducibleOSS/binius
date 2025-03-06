@@ -154,7 +154,7 @@ where
 	let mut writer = transcript.message();
 	writer.write(&commitment);
 
-	// Multiplication
+	// GKR exp multiplication
 	let mul_challenge = transcript.sample_vec(mul::max_n_vars(&mul, &oracles));
 
 	let mul_evals = gkr_exp::get_evals_in_point_from_witnesses(&mul_witnesses, &mul_challenge)?
@@ -162,21 +162,20 @@ where
 		.map(|x| x.into())
 		.collect::<Vec<_>>();
 
+	let mut writer = transcript.message();
+	writer.write_scalar_slice(&mul_evals);
+
 	let mul_challenge = mul_challenge
 		.into_iter()
 		.map(|x| x.into())
 		.collect::<Vec<_>>();
 
-	let mut writer = transcript.message();
-
-	writer.write_scalar_slice(&mul_evals);
-
-	let mul_claims = mul::make_claims::<FExt<Tower>>(&mul, &oracles, &mul_challenge, &mul_evals)?
+	let mul_claims = mul::make_claims(&mul, &oracles, &mul_challenge, &mul_evals)?
 		.into_iter()
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
 
-	let base_exp_output = gkr_exp::batch_prove::<FFastExt<Tower>, _, FFastExt<Tower>, _, _>(
+	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
 		EvaluationOrder::HighToLow,
 		mul_witnesses,
 		&mul_claims,
