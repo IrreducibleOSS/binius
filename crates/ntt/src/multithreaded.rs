@@ -115,7 +115,7 @@ fn forward_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					data,
 					coset,
 					log_batch_size,
-					P::LOG_WIDTH - log_batch_size,
+					log_n,
 				),
 			};
 		}
@@ -209,7 +209,7 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 					data,
 					coset,
 					log_batch_size,
-					log_n.saturating_sub(log_batch_size),
+					log_n,
 				),
 			};
 		}

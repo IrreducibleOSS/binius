@@ -67,7 +67,7 @@ impl<F: BinaryField> OddInterpolate<F> {
 		}
 
 		for (i, chunk) in data.chunks_exact_mut(1 << ell).enumerate() {
-			ntt.inverse_transform(chunk, i as u32, 0, chunk.len().ilog2() as usize)?;
+			ntt.inverse_transform(chunk, i as u32, 0, ell)?;
 		}
 
 		// Given M and a vector v, do the "strided product" M v. In more detail: we assume matrix is $d\times d$,

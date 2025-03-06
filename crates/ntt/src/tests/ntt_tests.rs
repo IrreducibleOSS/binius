@@ -10,8 +10,8 @@ use binius_field::{
 		packed_8::PackedBinaryField1x8b,
 	},
 	underlier::{NumCast, WithUnderlier},
-	AESTowerField8b, BinaryField, BinaryField8b, PackedBinaryField16x32b, PackedBinaryField8x32b,
-	PackedExtension, PackedField, RepackedExtension,
+	AESTowerField8b, BinaryField, BinaryField8b, PackedBinaryField16x32b, PackedBinaryField32x16b,
+	PackedBinaryField8x32b, PackedExtension, PackedField, RepackedExtension,
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -22,34 +22,50 @@ use crate::{dynamic_dispatch::DynamicDispatchNTT, AdditiveNTT, SingleThreadedNTT
 fn check_roundtrip_with_reference<F, P>(
 	reference_ntt: &impl AdditiveNTT<F>,
 	ntt: &impl AdditiveNTT<F>,
-	data: &mut [P],
+	data: &[P],
 	cosets: Range<u32>,
 	log_batch_size: usize,
 ) where
 	F: BinaryField,
 	P: PackedField<Scalar = F>,
 {
-	let log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
-	let data_copy = data.to_vec();
-	let mut data_copy_2 = data.to_vec();
+	let log_n_range = if data.len() > 1 {
+		let single_log_n = data.len().ilog2() as usize + P::LOG_WIDTH - log_batch_size;
+		single_log_n..single_log_n + 1
+	} else {
+		0..P::LOG_WIDTH - log_batch_size
+	};
 
-	for coset in cosets {
-		ntt.forward_transform(data, coset, log_batch_size, log_n)
-			.unwrap();
-		reference_ntt
-			.forward_transform(&mut data_copy_2, coset, log_batch_size, log_n)
-			.unwrap();
+	for log_n in log_n_range {
+		let mut orig_data = data.to_vec();
 
-		assert_eq!(data, &data_copy_2);
+		if log_n + log_batch_size < P::LOG_WIDTH {
+			for i in 1 << (log_n + log_batch_size)..P::WIDTH {
+				orig_data[0].set(i, F::ZERO);
+			}
+		}
 
-		ntt.inverse_transform(data, coset, log_batch_size, log_n)
-			.unwrap();
-		reference_ntt
-			.inverse_transform(&mut data_copy_2, coset, log_batch_size, log_n)
-			.unwrap();
+		let mut data_copy_impl = orig_data.clone();
+		let mut data_copy_ref = orig_data.clone();
 
-		assert_eq!(data, &data_copy);
-		assert_eq!(data, &data_copy_2);
+		for coset in cosets.clone() {
+			ntt.forward_transform(&mut data_copy_impl, coset, log_batch_size, log_n)
+				.unwrap();
+			reference_ntt
+				.forward_transform(&mut data_copy_ref, coset, log_batch_size, log_n)
+				.unwrap();
+
+			assert_eq!(&data_copy_impl, &data_copy_ref);
+
+			ntt.inverse_transform(&mut data_copy_impl, coset, log_batch_size, log_n)
+				.unwrap();
+			reference_ntt
+				.inverse_transform(&mut data_copy_ref, coset, log_batch_size, log_n)
+				.unwrap();
+
+			assert_eq!(&orig_data, &data_copy_impl);
+			assert_eq!(&orig_data, &data_copy_ref);
+		}
 	}
 }
 
@@ -81,7 +97,7 @@ fn check_roundtrip_all_ntts<P>(
 	);
 
 	let mut rng = StdRng::seed_from_u64(0);
-	let mut data = (0..1u128 << log_data_size)
+	let data = (0..1u128 << log_data_size)
 		.map(|_| P::random(&mut rng))
 		.collect::<Vec<_>>();
 
@@ -90,35 +106,35 @@ fn check_roundtrip_all_ntts<P>(
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&single_threaded_ntt,
-			&mut data,
+			&data,
 			cosets.clone(),
 			log_batch_size,
 		);
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&single_threaded_precompute_ntt,
-			&mut data,
+			&data,
 			cosets.clone(),
 			log_batch_size,
 		);
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&multithreaded_ntt,
-			&mut data,
+			&data,
 			cosets.clone(),
 			log_batch_size,
 		);
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&multithreaded_precompute_ntt,
-			&mut data,
+			&data,
 			cosets.clone(),
 			log_batch_size,
 		);
 		check_roundtrip_with_reference(
 			&simple_ntt,
 			&dynamic_dispatch_ntt,
-			&mut data,
+			&data,
 			cosets.clone(),
 			log_batch_size,
 		);
@@ -148,6 +164,11 @@ fn tests_field_256_bits() {
 #[test]
 fn tests_field_512_bits() {
 	check_roundtrip_all_ntts::<PackedBinaryField16x32b>(12, 6, 4, 0);
+}
+
+#[test]
+fn test_sub_packing_width() {
+	check_roundtrip_all_ntts::<PackedBinaryField32x16b>(12, 0, 2, 1);
 }
 
 fn check_packed_extension_roundtrip_with_reference<F, PE>(
