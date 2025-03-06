@@ -325,6 +325,14 @@ where
 				);
 			}
 
+			MultilinearPolyVariant::Composite(_) => {
+				self.finalized_proofs.insert(
+					multilinear_id,
+					eval_point,
+					(eval, EvalcheckProof::CompositeMLE),
+				);
+			}
+
 			MultilinearPolyVariant::Projected(projected) => {
 				let (id, values) = (projected.id(), projected.values());
 				let new_eval_point = match projected.projection_variant() {
@@ -385,14 +393,6 @@ where
 				self.claims_without_evals.push((inner, inner_eval_point));
 				self.incomplete_proof_claims
 					.insert(multilinear_id, eval_point, evalcheck_claim);
-			}
-
-			MultilinearPolyVariant::Composite(_) => {
-				self.finalized_proofs.insert(
-					multilinear_id,
-					eval_point,
-					(eval, EvalcheckProof::CompositeMLE),
-				);
 			}
 		};
 	}
