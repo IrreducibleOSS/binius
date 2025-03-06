@@ -19,7 +19,6 @@ groestl_crypto.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 sha2 = { workspace = true, features = ["compress"] }
-stackalloc.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
