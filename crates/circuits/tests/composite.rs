@@ -114,7 +114,7 @@ fn test_composite_circuit() {
 		.map(|i| B128::from(i as u128))
 		.collect::<Vec<_>>();
 	let values_y = (0..(1 << n_vars))
-		.map(|i| B128::from(i * i as u128))
+		.map(|i| B128::from(i * i))
 		.collect::<Vec<_>>();
 
 	let arith_poly_1 = ArithCircuitPoly::new(comp_1);
@@ -136,7 +136,7 @@ fn test_composite_circuit() {
 		.collect::<Vec<_>>();
 
 	let values_z = (0..(1 << (n_vars + 1)))
-		.map(|i| B64::from(i * i / 8 + i % 10 as u64))
+		.map(|i| B64::from(i * i / 8 + i % 10_u64))
 		.collect::<Vec<_>>();
 	let values_packed = (0..(1 << n_vars))
 		.map(|i| {
