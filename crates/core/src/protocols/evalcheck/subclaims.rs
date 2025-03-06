@@ -131,12 +131,11 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 
 pub fn composite_sumcheck_meta<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
-	id: OracleId,
 	eval_point: &[F],
 ) -> Result<ProjectedBivariateMeta, Error> {
 	Ok(ProjectedBivariateMeta {
 		multiplier_id: oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?,
-		inner_id: id,
+		inner_id: None,
 		projected_id: None,
 		projected_n_vars: eval_point.len(),
 	})
@@ -212,28 +211,29 @@ where
 pub fn process_composite_sumcheck<U, F>(
 	comp: &CompositeMLE<F>,
 	meta: ProjectedBivariateMeta,
-	eval_point: &[F],
 	eval: F,
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	backend: &impl ComputationBackend,
+	eq_mle: MultilinearExtension<PackedType<U, F>>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
 {
 	if !witness_index.has(meta.multiplier_id) {
-		let eq = EqIndPartialEval::new(eval_point.to_vec());
-		let eq_mle = MLEDirectAdapter::from(eq.multilinear_extension(backend)?).upcast_arc_dyn();
-		witness_index.update_multilin_poly(vec![(meta.multiplier_id, eq_mle)])?;
+		witness_index.update_multilin_poly(vec![(
+			meta.multiplier_id,
+			MLEDirectAdapter::from(eq_mle).upcast_arc_dyn(),
+		)])?;
 	}
 
 	add_composite_sumcheck_to_constraints(meta, constraint_builders, &comp, eval);
 	Ok(())
 }
+
 #[derive(Clone, Copy)]
 pub struct ProjectedBivariateMeta {
-	inner_id: OracleId,
+	inner_id: Option<OracleId>, // Some if shifted / packed, None if composite
 	projected_id: Option<OracleId>,
 	multiplier_id: OracleId,
 	projected_n_vars: usize,
@@ -242,7 +242,10 @@ pub struct ProjectedBivariateMeta {
 impl ProjectedBivariateMeta {
 	pub fn oracle_ids(&self) -> [OracleId; 2] {
 		[
-			self.projected_id.unwrap_or(self.inner_id),
+			self.projected_id.unwrap_or(
+				self.inner_id
+					.expect("oracle_ids() is only defined for shifted / packed"),
+			),
 			self.multiplier_id,
 		]
 	}
@@ -275,7 +278,7 @@ fn projected_bivariate_meta<F: TowerField, T: MultivariatePoly<F> + 'static>(
 		oracles.add_transparent(multiplier_transparent_ctr(projected_eval_point)?)?;
 
 	let meta = ProjectedBivariateMeta {
-		inner_id,
+		inner_id: Some(inner_id),
 		projected_id,
 		multiplier_id,
 		projected_n_vars,
@@ -333,34 +336,44 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
-	let inner_multilins = metas
-		.iter()
-		.map(|meta| {
-			witness_index
-				.get_multilin_poly(meta.inner_id)
-				.map_err(Error::from)
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	// Memoize queries for calculate_projected_mle
+	let mut queries_to_memoize = Vec::new();
 	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
-		let eval_point = &claim.eval_point[meta.projected_n_vars..];
-		memoized_queries.full_query(eval_point, backend)?;
+		let point = if meta.inner_id.is_some() {
+			// packed / shifted
+			&claim.eval_point[meta.projected_n_vars..]
+		} else {
+			// composite
+			&claim.eval_point
+		};
+		queries_to_memoize.push(point);
 	}
+	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
 
-	inner_multilins
+	projected_bivariate_claims
 		.par_iter()
-		.zip(projected_bivariate_claims)
 		.zip(metas)
-		.map(|((inner_multilin, claim), meta)| {
-			let eval_point = &claim.eval_point[meta.projected_n_vars..];
-			let query = memoized_queries
-				.full_query_readonly(eval_point)
-				.ok_or(Error::MissingQuery)?;
-
-			backend
-				.evaluate_partial_high(&inner_multilin, query.to_ref())
+		.map(|(claim, meta)| {
+			if let Some(inner_id) = meta.inner_id {
+				// packed / shifted
+				let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
+				let eval_point = &claim.eval_point[meta.projected_n_vars..];
+				let query = memoized_queries
+					.full_query_readonly(eval_point)
+					.ok_or(Error::MissingQuery)?;
+				backend
+					.evaluate_partial_high(&inner_multilin, query.to_ref())
+					.map_err(Error::from)
+			} else {
+				// composite
+				MultilinearExtension::from_values(
+					memoized_queries
+						.full_query_readonly(&claim.eval_point)
+						.ok_or(Error::MissingQuery)?
+						.expansion()
+						.to_vec(), // TODO avoid clone
+				)
 				.map_err(Error::from)
+			}
 		})
 		.collect::<Result<Vec<_>, Error>>()
 }

@@ -246,7 +246,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 
-				let meta = composite_sumcheck_meta(&mut self.oracles, id, &eval_point)?;
+				let meta = composite_sumcheck_meta(&mut self.oracles, &eval_point)?;
 				add_composite_sumcheck_to_constraints(
 					meta,
 					&mut self.new_sumcheck_constraints,

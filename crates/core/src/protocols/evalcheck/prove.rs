@@ -578,9 +578,7 @@ where
 			MultilinearPolyVariant::Packed(packed) => {
 				packed_sumcheck_meta(oracles, packed, eval_point)
 			}
-			MultilinearPolyVariant::Composite(_) => {
-				composite_sumcheck_meta(oracles, *id, eval_point)
-			}
+			MultilinearPolyVariant::Composite(_) => composite_sumcheck_meta(oracles, eval_point),
 			_ => unreachable!(),
 		}
 	}
@@ -622,11 +620,10 @@ where
 			MultilinearPolyVariant::Composite(composite) => process_composite_sumcheck(
 				&composite,
 				meta,
-				&eval_point,
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				self.backend,
+				projected,
 			),
 			_ => unreachable!(),
 		}
