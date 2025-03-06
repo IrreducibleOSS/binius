@@ -91,8 +91,7 @@ where
 	let mut reader = transcript.message();
 	let commitment = reader.read::<Output<Hash>>()?;
 
-	// Multiplication
-
+	// GKR exp multiplication
 	mul.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
 	let mul_challenge = transcript.sample_vec(mul::max_n_vars(&mul, &oracles));
@@ -100,15 +99,12 @@ where
 	let mut reader = transcript.message();
 	let mul_evals = reader.read_scalar_slice(mul::mul_evals_amount(&mul))?;
 
-	let mul_claims = mul::make_claims::<FExt<Tower>>(&mul, &oracles, &mul_challenge, &mul_evals)?
+	let mul_claims = mul::make_claims(&mul, &oracles, &mul_challenge, &mul_evals)?
 		.into_iter()
 		.collect::<Vec<_>>();
 
-	let base_exp_output = gkr_exp::batch_verify::<FExt<Tower>, _>(
-		EvaluationOrder::HighToLow,
-		&mul_claims,
-		&mut transcript,
-	)?;
+	let base_exp_output =
+		gkr_exp::batch_verify(EvaluationOrder::HighToLow, &mul_claims, &mut transcript)?;
 
 	let mul_eval_claims = mul::make_eval_claims(&mul, base_exp_output)?;
 
