@@ -227,7 +227,7 @@ where
 		)])?;
 	}
 
-	add_composite_sumcheck_to_constraints(meta, constraint_builders, &comp, eval);
+	add_composite_sumcheck_to_constraints(meta, constraint_builders, comp, eval);
 	Ok(())
 }
 
@@ -242,10 +242,10 @@ pub struct ProjectedBivariateMeta {
 impl ProjectedBivariateMeta {
 	pub fn oracle_ids(&self) -> [OracleId; 2] {
 		[
-			self.projected_id.unwrap_or(
+			self.projected_id.unwrap_or_else(|| {
 				self.inner_id
-					.expect("oracle_ids() is only defined for shifted / packed"),
-			),
+					.expect("oracle_ids() is only defined for shifted / packed")
+			}),
 			self.multiplier_id,
 		]
 	}
