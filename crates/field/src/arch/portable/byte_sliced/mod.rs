@@ -3,6 +3,7 @@
 mod invert;
 mod multiply;
 mod packed_byte_sliced;
+mod packed_byte_sliced_2d;
 mod square;
 
 pub use packed_byte_sliced::*;

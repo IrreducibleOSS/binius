@@ -32,7 +32,8 @@ pub trait ExtensionField<F: Field>:
 	/// Create an extension field element from a slice of base field elements in order
 	/// consistent with `basis(i)` return values.
 	/// Potentially faster than taking an inner product with a vector of basis elements.
-	fn from_bases(base_elems: &[F]) -> Result<Self, Error> {
+	#[inline]
+	fn from_bases(base_elems: impl Iterator<Item = F>) -> Result<Self, Error> {
 		Self::from_bases_sparse(base_elems, 0)
 	}
 
@@ -41,7 +42,10 @@ pub trait ExtensionField<F: Field>:
 	///
 	/// `base_elems` should have length at most `ceil(DEGREE / 2^LOG_STRIDE)`. Note that
 	/// [`ExtensionField::from_bases`] is a special case of `from_bases_sparse` with `log_stride = 0`.
-	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error>;
+	fn from_bases_sparse(
+		base_elems: impl Iterator<Item = F>,
+		log_stride: usize,
+	) -> Result<Self, Error>;
 
 	/// Iterator over base field elements.
 	fn iter_bases(&self) -> impl Iterator<Item = F>;
@@ -75,15 +79,17 @@ impl<F: Field> ExtensionField<F> for F {
 	}
 
 	#[inline(always)]
-	fn from_bases_sparse(base_elems: &[F], log_stride: usize) -> Result<Self, Error> {
+	fn from_bases_sparse(
+		mut base_elems: impl Iterator<Item = F>,
+		log_stride: usize,
+	) -> Result<Self, Error> {
 		if log_stride != 0 {
 			return Err(Error::ExtensionDegreeMismatch);
 		}
 
-		match base_elems.len() {
-			0 => Ok(F::ZERO),
-			1 => Ok(base_elems[0]),
-			_ => Err(Error::ExtensionDegreeMismatch),
+		match base_elems.next() {
+			Some(elem) => Ok(elem),
+			None => Ok(Self::ZERO),
 		}
 	}
 

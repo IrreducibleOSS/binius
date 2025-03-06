@@ -4,6 +4,7 @@ use std::{
 	array,
 	fmt::Debug,
 	iter::{zip, Product, Sum},
+	marker::PhantomData,
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
