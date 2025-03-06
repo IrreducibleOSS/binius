@@ -1,3 +1,5 @@
+// Copyright 2024-2025 Irreducible Inc.
+
 use binius_circuits::builder::ConstraintSystemBuilder;
 use binius_core::{
 	constraint_system::channel::validate_witness, fiat_shamir::HasherChallenger,
