@@ -45,6 +45,7 @@ mod model {
 
 	impl FibEvent {
 		pub fn fire(&self, sequence_chan: &mut Channel<(u32, u32)>) {
+			assert_eq!(self.f0 + self.f1, self.f2);
 			sequence_chan.pull((self.f0, self.f1));
 			sequence_chan.push((self.f1, self.f2));
 		}
