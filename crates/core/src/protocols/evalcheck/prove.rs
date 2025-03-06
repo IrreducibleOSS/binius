@@ -627,7 +627,6 @@ where
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				self.backend,
-				projected,
 			),
 			_ => unreachable!(),
 		}

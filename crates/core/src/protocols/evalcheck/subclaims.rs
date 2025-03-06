@@ -217,23 +217,16 @@ pub fn process_composite_sumcheck<U, F>(
 	witness_index: &mut MultilinearExtensionIndex<U, F>,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	backend: &impl ComputationBackend,
-	projected: MultilinearExtension<PackedType<U, F>>,
 ) -> Result<(), Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
 {
-	process_projected_bivariate_witness(
-		witness_index,
-		meta,
-		eval_point,
-		|_projected_eval_point| {
-			let eq = EqIndPartialEval::new(eval_point.to_vec());
-			let eq_mle = eq.multilinear_extension::<PackedType<U, F>, _>(backend)?;
-			Ok(MLEDirectAdapter::from(eq_mle).upcast_arc_dyn())
-		},
-		projected,
-	)?;
+	if !witness_index.has(meta.multiplier_id) {
+		let eq = EqIndPartialEval::new(eval_point.to_vec());
+		let eq_mle = MLEDirectAdapter::from(eq.multilinear_extension(backend)?).upcast_arc_dyn();
+		witness_index.update_multilin_poly(vec![(meta.multiplier_id, eq_mle)])?;
+	}
 
 	let mut oracle_ids = comp.inner().clone();
 	oracle_ids.push(meta.multiplier_id);
