@@ -158,7 +158,7 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	meta: ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	comp: CompositeMLE<F>,
+	comp: &CompositeMLE<F>,
 	eval: F,
 ) {
 	let n_vars = comp.n_vars();
@@ -228,15 +228,7 @@ where
 		witness_index.update_multilin_poly(vec![(meta.multiplier_id, eq_mle)])?;
 	}
 
-	let mut oracle_ids = comp.inner().clone();
-	oracle_ids.push(meta.multiplier_id);
-
-	if comp.n_vars() > constraint_builders.len() {
-		constraint_builders.resize_with(comp.n_vars(), || ConstraintSetBuilder::new());
-	}
-	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
-	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::Var(comp.n_polys());
-	constraint_builders[comp.n_vars() - 1].add_sumcheck(oracle_ids, expr, eval);
+	add_composite_sumcheck_to_constraints(meta, constraint_builders, &comp, eval);
 	Ok(())
 }
 #[derive(Clone, Copy)]

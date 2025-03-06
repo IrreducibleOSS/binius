@@ -250,7 +250,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				add_composite_sumcheck_to_constraints(
 					meta,
 					&mut self.new_sumcheck_constraints,
-					composition,
+					&composition,
 					eval,
 				)
 			}
