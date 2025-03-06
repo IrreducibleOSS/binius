@@ -2,8 +2,12 @@
 
 use binius_field::{BinaryField, PackedField};
 use binius_math::{MLEDirectAdapter, MultilinearExtension};
-use binius_maybe_rayon::{iter::IntoParallelIterator, prelude::ParallelIterator};
+use binius_maybe_rayon::{
+	iter::{IndexedParallelIterator, IntoParallelIterator},
+	prelude::ParallelIterator,
+};
 use binius_utils::bail;
+use tracing::instrument;
 
 use super::error::Error;
 use crate::{protocols::sumcheck::equal_n_vars_check, witness::MultilinearWitness};
@@ -24,6 +28,7 @@ pub enum BaseWitness<'a, P: PackedField> {
 	Dynamic(MultilinearWitness<'a, P>),
 }
 
+#[instrument(skip_all, name = "gkr_exp::evaluate_single_bit_output_packed")]
 fn evaluate_single_bit_output_packed<P>(
 	exponent_bit_witness: MultilinearWitness<P>,
 	base: Base<P>,
@@ -36,7 +41,7 @@ where
 	let one = P::one();
 
 	previous_single_bit_output
-		.iter()
+		.into_par_iter()
 		.enumerate()
 		.map(|(i, &prev_out)| {
 			let (base, prev_out) = match &base {
@@ -102,6 +107,7 @@ where
 	P: PackedField,
 {
 	/// Constructs a witness where the base is the constant [BinaryField].
+	#[instrument(skip_all, name = "gkr_exp::new_with_constant_base")]
 	pub fn new_with_constant_base(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 		base: P::Scalar,
@@ -158,6 +164,7 @@ where
 	}
 
 	/// Constructs a witness with a specified multilinear base.
+	#[instrument(skip_all, name = "gkr_exp::new_with_dynamic_base")]
 	pub fn new_with_dynamic_base(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 		base: MultilinearWitness<'a, P>,
