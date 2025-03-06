@@ -44,6 +44,7 @@ use crate::{
 ///
 /// # Recommendations
 /// - Witnesses and claims should be grouped by evaluation points from the claims.
+#[instrument(skip_all, name = "gkr_exp::batch_prove")]
 pub fn batch_prove<'a, F, P, FDomain, Challenger_, Backend>(
 	evaluation_order: EvaluationOrder,
 	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P>>,
