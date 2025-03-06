@@ -49,7 +49,7 @@ pub enum EvalcheckProof<F: Field> {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
 	ZeroPadded(F, Box<EvalcheckProof<F>>),
-	Composite,
+	CompositeMLE,
 }
 
 impl<F: Field> EvalcheckProof<F> {
@@ -69,7 +69,7 @@ impl<F: Field> EvalcheckProof<F> {
 			Self::ZeroPadded(eval, proof) => {
 				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
 			}
-			Self::Composite => EvalcheckProof::Composite,
+			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
 		}
 	}
 }
@@ -130,7 +130,7 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			transcript.write_scalar(*val);
 			serialize_evalcheck_proof(transcript, subproof);
 		}
-		EvalcheckProof::Composite => {
+		EvalcheckProof::CompositeMLE => {
 			transcript.write_bytes(&[EvalcheckNumerics::Composite as u8]);
 		}
 	}
@@ -175,7 +175,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
 		}
-		EvalcheckNumerics::Composite => Ok(EvalcheckProof::Composite),
+		EvalcheckNumerics::Composite => Ok(EvalcheckProof::CompositeMLE),
 	}
 }
 

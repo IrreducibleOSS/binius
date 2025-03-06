@@ -246,12 +246,12 @@ where
 				});
 			}
 		}
-		MultilinearPolyVariant::Composite(composition) => {
-			let inner_polys = composition
+		MultilinearPolyVariant::Composite(composite_mle) => {
+			let inner_polys = composite_mle
 				.polys()
 				.map(|id| witness.get_multilin_poly(id))
 				.collect::<Result<Vec<_>, _>>()?;
-			let composite = MultilinearComposite::new(n_vars, composition.c(), inner_polys)?;
+			let composite = MultilinearComposite::new(n_vars, composite_mle.c(), inner_polys)?;
 			for i in 0..1 << n_vars {
 				let got = poly.evaluate_on_hypercube(i)?;
 				let expected = composite.evaluate_on_hypercube(i)?;

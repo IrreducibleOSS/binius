@@ -341,7 +341,7 @@ fn test_evalcheck_composite() {
 	let comp = arith_expr!(BinaryField128b[x, y, z] = x * y * 15 + z * y * 8 + z * 2 + 77);
 
 	let composite_id = oracles
-		.add_composite(
+		.add_composite_mle(
 			n_vars,
 			[
 				select_row1_oracle_id,

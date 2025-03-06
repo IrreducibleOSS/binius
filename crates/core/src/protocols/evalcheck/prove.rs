@@ -391,7 +391,7 @@ where
 				self.finalized_proofs.insert(
 					multilinear_id,
 					eval_point,
-					(eval, EvalcheckProof::Composite),
+					(eval, EvalcheckProof::CompositeMLE),
 				);
 			}
 		};

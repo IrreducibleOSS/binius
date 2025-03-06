@@ -28,7 +28,7 @@ use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearComposition,
+		CompositeMLE, ConstraintSet, ConstraintSetBuilder, Error as OracleError,
 		MultilinearOracleSet, OracleId, Packed, ProjectionVariant, Shifted,
 	},
 	polynomial::MultivariatePoly,
@@ -158,7 +158,7 @@ pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	meta: ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	comp: MultilinearComposition<F>,
+	comp: CompositeMLE<F>,
 	eval: F,
 ) {
 	let n_vars = comp.n_vars();
@@ -210,7 +210,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub fn process_composite_sumcheck<U, F>(
-	comp: &MultilinearComposition<F>,
+	comp: &CompositeMLE<F>,
 	meta: ProjectedBivariateMeta,
 	eval_point: &[F],
 	eval: F,

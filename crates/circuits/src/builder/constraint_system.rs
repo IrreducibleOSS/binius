@@ -253,7 +253,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.linear_combination_with_offset(n_vars, offset, inner)
 	}
 
-	pub fn add_composite(
+	pub fn add_composite_mle(
 		&mut self,
 		name: impl ToString,
 		n_vars: usize,

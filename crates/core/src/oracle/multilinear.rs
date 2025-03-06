@@ -260,7 +260,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			.max()
 			.unwrap_or(0);
 
-		let composite = MultilinearComposition::new(n_vars, inner, comp)?;
+		let composite = CompositeMLE::new(n_vars, inner, comp)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
@@ -453,7 +453,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().zero_padded(id, n_vars)
 	}
 
-	pub fn add_composite(
+	pub fn add_composite_mle(
 		&mut self,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
@@ -537,7 +537,7 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	Packed(Packed),
 	LinearCombination(LinearCombination<F>),
 	ZeroPadded(OracleId),
-	Composite(MultilinearComposition<F>),
+	Composite(CompositeMLE<F>),
 }
 
 impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
@@ -780,7 +780,7 @@ impl<F: TowerField> LinearCombination<F> {
 ///
 /// ($C$ should be sufficiently lightweight to be evaluated by the verifier)
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes)]
-pub struct MultilinearComposition<F: TowerField> {
+pub struct CompositeMLE<F: TowerField> {
 	/// $\mu$
 	#[get_copy = "pub"]
 	n_vars: usize,
@@ -792,7 +792,7 @@ pub struct MultilinearComposition<F: TowerField> {
 	c: ArithCircuitPoly<F>,
 }
 
-impl<F: TowerField> MultilinearComposition<F> {
+impl<F: TowerField> CompositeMLE<F> {
 	pub fn new(
 		n_vars: usize,
 		inner: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
@@ -848,8 +848,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 			MultilinearPolyVariant::Packed(_) => "Packed",
 			MultilinearPolyVariant::LinearCombination(_) => "LinearCombination",
 			MultilinearPolyVariant::ZeroPadded(_) => "ZeroPadded",
-			MultilinearPolyVariant::Composite(_) => "Composition",
-
+			MultilinearPolyVariant::Composite(_) => "CompositeMLE",
 		}
 	}
 

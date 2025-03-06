@@ -242,7 +242,7 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {
-				if evalcheck_proof != EvalcheckProof::Composite {
+				if evalcheck_proof != EvalcheckProof::CompositeMLE {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
 

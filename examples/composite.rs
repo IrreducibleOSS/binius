@@ -27,7 +27,7 @@ fn main() {
 	let column_x = builder.add_committed("x", n_vars, 7);
 	let column_y = builder.add_committed("y", n_vars, 7);
 	let column_comp_1 = builder
-		.add_composite("comp1", n_vars, [column_x, column_y], comp_1.clone())
+		.add_composite_mle("comp1", n_vars, [column_x, column_y], comp_1.clone())
 		.unwrap();
 
 	let column_shift = builder
@@ -35,14 +35,14 @@ fn main() {
 		.unwrap();
 
 	let column_comp_2 = builder
-		.add_composite("comp2", n_vars, [column_y, column_comp_1, column_shift], comp_2.clone())
+		.add_composite_mle("comp2", n_vars, [column_y, column_comp_1, column_shift], comp_2.clone())
 		.unwrap();
 
 	let column_z = builder.add_committed("z", n_vars + 1, 6);
 	let column_packed = builder.add_packed("packed", column_z, 1).unwrap();
 
 	let column_comp_3 = builder
-		.add_composite(
+		.add_composite_mle(
 			"comp3",
 			n_vars,
 			[
