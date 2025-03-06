@@ -431,7 +431,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 
 	#[inline]
 	fn from_bases_sparse(
-		base_elems: impl Iterator<Item = BinaryField1b>,
+		base_elems: impl IntoIterator<Item = BinaryField1b>,
 		log_stride: usize,
 	) -> Result<Self, Error> {
 		if log_stride != 7 {
@@ -439,6 +439,7 @@ impl ExtensionField<BinaryField1b> for BinaryField128bPolyval {
 		}
 		// REVIEW: is this actually correct for a monomial field?
 		let value = base_elems
+			.into_iter()
 			.enumerate()
 			.fold(0, |value, (i, elem)| value | (u128::from(elem.0) << i));
 		Ok(Self::new(value))

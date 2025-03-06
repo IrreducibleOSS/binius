@@ -587,7 +587,7 @@ macro_rules! impl_field_extension {
 
 			#[inline]
 			fn from_bases_sparse(
-				base_elems: impl Iterator<Item = $subfield_name>,
+				base_elems: impl IntoIterator<Item = $subfield_name>,
 				log_stride: usize,
 			) -> Result<Self, Error> {
 				use $crate::underlier::UnderlierWithBitOps;
@@ -595,6 +595,7 @@ macro_rules! impl_field_extension {
 				debug_assert!($name::N_BITS.is_power_of_two());
 				let shift = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
 				let value = base_elems
+					.into_iter()
 					.enumerate()
 					.fold(<$typ>::ZERO, |value, (i, elem)|
 						value | (<$typ>::from(elem.val()) << (i * shift))
@@ -1123,14 +1124,14 @@ pub(crate) mod tests {
 		let c = BinaryField8b(0x03);
 		let d = BinaryField8b(0x04);
 		assert_eq!(
-			<BinaryField32b as ExtensionField<BinaryField8b>>::from_bases(&[]).unwrap(),
+			<BinaryField32b as ExtensionField<BinaryField8b>>::from_bases([]).unwrap(),
 			BinaryField32b(0)
 		);
-		assert_eq!(BinaryField32b::from_bases(&[a]).unwrap(), BinaryField32b(0x00000001));
-		assert_eq!(BinaryField32b::from_bases(&[a, b]).unwrap(), BinaryField32b(0x00000201));
-		assert_eq!(BinaryField32b::from_bases(&[a, b, c]).unwrap(), BinaryField32b(0x00030201));
-		assert_eq!(BinaryField32b::from_bases(&[a, b, c, d]).unwrap(), BinaryField32b(0x04030201));
-		assert!(BinaryField32b::from_bases(&[a, b, c, d, d]).is_err());
+		assert_eq!(BinaryField32b::from_bases([a]).unwrap(), BinaryField32b(0x00000001));
+		assert_eq!(BinaryField32b::from_bases([a, b]).unwrap(), BinaryField32b(0x00000201));
+		assert_eq!(BinaryField32b::from_bases([a, b, c]).unwrap(), BinaryField32b(0x00030201));
+		assert_eq!(BinaryField32b::from_bases([a, b, c, d]).unwrap(), BinaryField32b(0x04030201));
+		assert!(BinaryField32b::from_bases([a, b, c, d, d]).is_err());
 	}
 
 	#[test]

@@ -33,7 +33,7 @@ pub trait ExtensionField<F: Field>:
 	/// consistent with `basis(i)` return values.
 	/// Potentially faster than taking an inner product with a vector of basis elements.
 	#[inline]
-	fn from_bases(base_elems: impl Iterator<Item = F>) -> Result<Self, Error> {
+	fn from_bases(base_elems: impl IntoIterator<Item = F>) -> Result<Self, Error> {
 		Self::from_bases_sparse(base_elems, 0)
 	}
 
@@ -43,7 +43,7 @@ pub trait ExtensionField<F: Field>:
 	/// `base_elems` should have length at most `ceil(DEGREE / 2^LOG_STRIDE)`. Note that
 	/// [`ExtensionField::from_bases`] is a special case of `from_bases_sparse` with `log_stride = 0`.
 	fn from_bases_sparse(
-		base_elems: impl Iterator<Item = F>,
+		base_elems: impl IntoIterator<Item = F>,
 		log_stride: usize,
 	) -> Result<Self, Error>;
 
@@ -80,9 +80,10 @@ impl<F: Field> ExtensionField<F> for F {
 
 	#[inline(always)]
 	fn from_bases_sparse(
-		mut base_elems: impl Iterator<Item = F>,
+		base_elems: impl IntoIterator<Item = F>,
 		log_stride: usize,
 	) -> Result<Self, Error> {
+		let mut base_elems = base_elems.into_iter();
 		if log_stride != 0 {
 			return Err(Error::ExtensionDegreeMismatch);
 		}
