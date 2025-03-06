@@ -11,8 +11,8 @@ use super::{
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
-		add_bivariate_sumcheck_to_constraints, handle_composite_with_sumcheck,
-		packed_sumcheck_meta, shifted_sumcheck_meta,
+		add_bivariate_sumcheck_to_constraints, add_composite_sumcheck_to_constraints,
+		composite_sumcheck_meta, packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
 };
 use crate::oracle::{
@@ -93,10 +93,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 		let multilinear = self.oracles.oracle(id);
 		match multilinear.variant.clone() {
 			MultilinearPolyVariant::Transparent(inner) => {
-				match evalcheck_proof {
-					EvalcheckProof::Transparent => {}
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+				if evalcheck_proof != EvalcheckProof::Transparent {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
 
 				let actual_eval = inner.poly().evaluate(&eval_point)?;
 				if actual_eval != eval {
@@ -108,9 +107,8 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Committed => {
-				match evalcheck_proof {
-					EvalcheckProof::Committed => {}
-					_ => return Err(VerificationError::SubproofMismatch.into()),
+				if evalcheck_proof != EvalcheckProof::Committed {
+					return Err(VerificationError::SubproofMismatch.into());
 				}
 
 				let claim = EvalcheckMultilinearClaim {
@@ -160,10 +158,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Shifted(shifted) => {
-				match evalcheck_proof {
-					EvalcheckProof::Shifted => {}
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+				if evalcheck_proof != EvalcheckProof::Shifted {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
 
 				let meta = shifted_sumcheck_meta(self.oracles, &shifted, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
@@ -175,10 +172,9 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 			}
 
 			MultilinearPolyVariant::Packed(packed) => {
-				match evalcheck_proof {
-					EvalcheckProof::Packed => {}
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
+				if evalcheck_proof != EvalcheckProof::Packed {
+					return Err(VerificationError::SubproofMismatch.into());
+				}
 
 				let meta = packed_sumcheck_meta(self.oracles, &packed, &eval_point)?;
 				add_bivariate_sumcheck_to_constraints(
@@ -249,14 +245,14 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				if evalcheck_proof != EvalcheckProof::Composite {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
-				handle_composite_with_sumcheck(
-					&mut self.oracles,
+
+				let meta = composite_sumcheck_meta(&mut self.oracles, id, &eval_point)?;
+				add_composite_sumcheck_to_constraints(
+					meta,
 					&mut self.new_sumcheck_constraints,
 					composition,
-					&eval_point,
 					eval,
-					|_, _| (),
-				);
+				)
 			}
 		}
 

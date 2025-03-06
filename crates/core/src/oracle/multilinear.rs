@@ -820,10 +820,6 @@ impl<F: TowerField> MultilinearComposition<F> {
 	pub fn n_polys(&self) -> usize {
 		self.inner.len()
 	}
-
-	pub fn take_c(self) -> ArithCircuitPoly<F> {
-		self.c
-	}
 }
 
 impl<F: TowerField> MultilinearPolyOracle<F> {

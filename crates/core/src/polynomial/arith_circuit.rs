@@ -207,11 +207,6 @@ impl<F: TowerField> ArithCircuitPoly<F> {
 			tower_level,
 		})
 	}
-
-	/// Warning: The resulting circuit may have fewer variables than `self.n_vars`
-	pub fn take_expr(self) -> ArithExpr<F> {
-		self.expr
-	}
 }
 
 impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P>

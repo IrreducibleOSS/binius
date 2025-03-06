@@ -6,7 +6,7 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::{MLEDirectAdapter, MultilinearExtension};
+use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
 use itertools::izip;
@@ -16,8 +16,8 @@ use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
-		calculate_projected_mles, handle_composite_with_sumcheck, MemoizedQueries,
-		ProjectedBivariateMeta,
+		calculate_projected_mles, composite_sumcheck_meta, process_composite_sumcheck,
+		MemoizedQueries, ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -526,7 +526,9 @@ where
 				};
 				self.collect_projected_committed(subclaim);
 			}
-			MultilinearPolyVariant::Shifted { .. } | MultilinearPolyVariant::Packed { .. } => {
+			MultilinearPolyVariant::Shifted { .. }
+			| MultilinearPolyVariant::Packed { .. }
+			| MultilinearPolyVariant::Composite { .. } => {
 				self.projected_bivariate_claims.push(evalcheck_claim)
 			}
 			MultilinearPolyVariant::LinearCombination(linear_combination) => {
@@ -559,26 +561,6 @@ where
 				};
 				self.collect_projected_committed(subclaim);
 			}
-			MultilinearPolyVariant::Composite(composition) => {
-				handle_composite_with_sumcheck(
-					&mut self.oracles,
-					&mut self.new_sumchecks_constraints,
-					composition,
-					&eval_point,
-					eval,
-					|eq_oracle, eq_mle| {
-						self.witness_index
-							.update_multilin_poly(vec![(
-								eq_oracle,
-								MLEDirectAdapter::from(
-									eq_mle.multilinear_extension(self.backend).unwrap(),
-								)
-								.upcast_arc_dyn(),
-							)])
-							.unwrap();
-					},
-				);
-			}
 			_ => {}
 		}
 	}
@@ -596,7 +578,9 @@ where
 			MultilinearPolyVariant::Packed(packed) => {
 				packed_sumcheck_meta(oracles, packed, eval_point)
 			}
-
+			MultilinearPolyVariant::Composite(_) => {
+				composite_sumcheck_meta(oracles, *id, eval_point)
+			}
 			_ => unreachable!(),
 		}
 	}
@@ -622,7 +606,7 @@ where
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
-			)?,
+			),
 
 			MultilinearPolyVariant::Packed(packed) => process_packed_sumcheck(
 				self.oracles,
@@ -633,10 +617,20 @@ where
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
 				projected,
-			)?,
+			),
+
+			MultilinearPolyVariant::Composite(composite) => process_composite_sumcheck(
+				&composite,
+				meta,
+				&eval_point,
+				eval,
+				self.witness_index,
+				&mut self.new_sumchecks_constraints,
+				self.backend,
+				projected,
+			),
 			_ => unreachable!(),
-		};
-		Ok(())
+		}
 	}
 
 	fn make_new_eval_claim(

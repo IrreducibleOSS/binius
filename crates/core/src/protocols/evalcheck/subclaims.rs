@@ -18,7 +18,8 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	ArithExpr, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension, MultilinearQuery,
+	ArithExpr, CompositionPoly, EvaluationDomainFactory, MLEDirectAdapter, MultilinearExtension,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
@@ -128,7 +129,20 @@ pub fn packed_sumcheck_meta<F: TowerField>(
 	})
 }
 
-pub fn add_bivariate_sumcheck_to_constraints<F: Field>(
+pub fn composite_sumcheck_meta<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	id: OracleId,
+	eval_point: &[F],
+) -> Result<ProjectedBivariateMeta, Error> {
+	Ok(ProjectedBivariateMeta {
+		multiplier_id: oracles.add_transparent(EqIndPartialEval::new(eval_point.to_vec()))?,
+		inner_id: id,
+		projected_id: None,
+		projected_n_vars: eval_point.len(),
+	})
+}
+
+pub fn add_bivariate_sumcheck_to_constraints<F: TowerField>(
 	meta: ProjectedBivariateMeta,
 	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
 	n_vars: usize,
@@ -137,17 +151,26 @@ pub fn add_bivariate_sumcheck_to_constraints<F: Field>(
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
 	}
-
-	add_bivariate_sumcheck_to_constraint_builder(meta, &mut constraint_builders[n_vars - 1], eval);
+	let bivariate_product = ArithExpr::Var(0) * ArithExpr::Var(1);
+	constraint_builders[n_vars - 1].add_sumcheck(meta.oracle_ids(), bivariate_product, eval);
 }
 
-fn add_bivariate_sumcheck_to_constraint_builder<F: Field>(
+pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	meta: ProjectedBivariateMeta,
-	constraint_builder: &mut ConstraintSetBuilder<F>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
+	comp: MultilinearComposition<F>,
 	eval: F,
 ) {
-	let bivariate_product = ArithExpr::Var(0) * ArithExpr::Var(1);
-	constraint_builder.add_sumcheck(meta.oracle_ids(), bivariate_product, eval);
+	let n_vars = comp.n_vars();
+	let mut oracle_ids = comp.inner().clone();
+	oracle_ids.push(meta.multiplier_id); // eq
+
+	// Var(comp.n_polys()) corresponds to eq_oracle
+	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::Var(comp.n_polys());
+	if n_vars > constraint_builders.len() {
+		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
+	}
+	constraint_builders[n_vars - 1].add_sumcheck(oracle_ids, expr, eval);
 }
 
 /// Creates bivariate witness and adds them to the witness index, and add bivariate sumcheck constraint to the [`ConstraintSetBuilder`]
@@ -185,6 +208,44 @@ where
 	Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn process_composite_sumcheck<U, F>(
+	comp: &MultilinearComposition<F>,
+	meta: ProjectedBivariateMeta,
+	eval_point: &[F],
+	eval: F,
+	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
+	backend: &impl ComputationBackend,
+	projected: MultilinearExtension<PackedType<U, F>>,
+) -> Result<(), Error>
+where
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+{
+	process_projected_bivariate_witness(
+		witness_index,
+		meta,
+		eval_point,
+		|_projected_eval_point| {
+			let eq = EqIndPartialEval::new(eval_point.to_vec());
+			let eq_mle = eq.multilinear_extension::<PackedType<U, F>, _>(backend)?;
+			Ok(MLEDirectAdapter::from(eq_mle).upcast_arc_dyn())
+		},
+		projected,
+	)?;
+
+	let mut oracle_ids = comp.inner().clone();
+	oracle_ids.push(meta.multiplier_id);
+
+	if comp.n_vars() > constraint_builders.len() {
+		constraint_builders.resize_with(comp.n_vars(), || ConstraintSetBuilder::new());
+	}
+	// Var(comp.n_polys()) corresponds to eq_oracle
+	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::Var(comp.n_polys());
+	constraint_builders[comp.n_vars() - 1].add_sumcheck(oracle_ids, expr, eval);
+	Ok(())
+}
 #[derive(Clone, Copy)]
 pub struct ProjectedBivariateMeta {
 	inner_id: OracleId,
@@ -429,30 +490,4 @@ where
 	let evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
-}
-
-pub fn handle_composite_with_sumcheck<F: TowerField>(
-	oracles: &mut MultilinearOracleSet<F>,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	composition: MultilinearComposition<F>,
-	eval_point: &[F],
-	eval: F,
-	mut fill_witness: impl FnMut(OracleId, EqIndPartialEval<F>) -> (),
-) {
-	let n_vars = composition.n_vars();
-	let eq_mle = EqIndPartialEval::new(eval_point.to_vec());
-	let eq_oracle = oracles.add_transparent(eq_mle.clone()).unwrap();
-	let mut oracle_ids = composition.inner().clone();
-	oracle_ids.push(eq_oracle);
-	let n_polys = composition.n_polys();
-
-	let expr = ArithExpr::Mul(
-		Box::new(composition.take_c().take_expr()),
-		Box::new(ArithExpr::Var(n_polys)), // Var(n_polys) corresponds to eq_oracle
-	);
-	if n_vars > constraint_builders.len() {
-		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
-	}
-	constraint_builders[n_vars - 1].add_sumcheck(oracle_ids, expr, eval);
-	fill_witness(eq_oracle, eq_mle); // empty function for the verifier
 }
