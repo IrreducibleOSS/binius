@@ -35,7 +35,7 @@ enum EvalcheckNumerics {
 	Repeating,
 	LinearCombination,
 	ZeroPadded,
-	Composite,
+	CompositeMLE,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +84,7 @@ impl EvalcheckNumerics {
 			5 => Ok(Self::Repeating),
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
-			8 => Ok(Self::Composite),
+			8 => Ok(Self::CompositeMLE),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -95,16 +95,6 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 	transcript: &mut TranscriptWriter<B>,
 	evalcheck: &EvalcheckProof<F>,
 ) {
-	let mut serialize_sub_proofs =
-		|variant: EvalcheckNumerics, subproofs: &Vec<(F, EvalcheckProof<F>)>| {
-			transcript.write_bytes(&[variant as u8]);
-			let len_u64 = subproofs.len() as u64;
-			transcript.write_bytes(&len_u64.to_le_bytes());
-			for (scalar, subproof) in subproofs {
-				transcript.write_scalar(*scalar);
-				serialize_evalcheck_proof(transcript, subproof)
-			}
-		};
 	match evalcheck {
 		EvalcheckProof::Transparent => {
 			transcript.write_bytes(&[EvalcheckNumerics::Transparent as u8]);
@@ -123,7 +113,13 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			serialize_evalcheck_proof(transcript, inner);
 		}
 		EvalcheckProof::LinearCombination { subproofs } => {
-			serialize_sub_proofs(EvalcheckNumerics::LinearCombination, subproofs);
+			transcript.write_bytes(&[EvalcheckNumerics::LinearCombination as u8]);
+			let len_u64 = subproofs.len() as u64;
+			transcript.write_bytes(&len_u64.to_le_bytes());
+			for (scalar, subproof) in subproofs {
+				transcript.write_scalar(*scalar);
+				serialize_evalcheck_proof(transcript, subproof)
+			}
 		}
 		EvalcheckProof::ZeroPadded(val, subproof) => {
 			transcript.write_bytes(&[EvalcheckNumerics::ZeroPadded as u8]);
@@ -131,7 +127,7 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			serialize_evalcheck_proof(transcript, subproof);
 		}
 		EvalcheckProof::CompositeMLE => {
-			transcript.write_bytes(&[EvalcheckNumerics::Composite as u8]);
+			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
 		}
 	}
 }
@@ -144,19 +140,6 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
 
-	let mut deserialize_sub_proofs = || {
-		let mut len = [0u8; 8];
-		transcript.read_bytes(&mut len)?;
-		let len = u64::from_le_bytes(len) as usize;
-		let mut subproofs: Vec<(F, EvalcheckProof<F>)> = Vec::new();
-		for _ in 0..len {
-			let scalar = transcript.read_scalar()?;
-			let subproof = deserialize_evalcheck_proof(transcript)?;
-			subproofs.push((scalar, subproof));
-		}
-		Result::<_, Error>::Ok(subproofs)
-	};
-
 	match as_enum {
 		EvalcheckNumerics::Transparent => Ok(EvalcheckProof::Transparent),
 		EvalcheckNumerics::Committed => Ok(EvalcheckProof::Committed),
@@ -167,7 +150,15 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			Ok(EvalcheckProof::Repeating(Box::new(inner)))
 		}
 		EvalcheckNumerics::LinearCombination => {
-			let subproofs = deserialize_sub_proofs()?;
+			let mut len = [0u8; 8];
+			transcript.read_bytes(&mut len)?;
+			let len = u64::from_le_bytes(len) as usize;
+			let mut subproofs: Vec<(F, EvalcheckProof<F>)> = Vec::new();
+			for _ in 0..len {
+				let scalar = transcript.read_scalar()?;
+				let subproof = deserialize_evalcheck_proof(transcript)?;
+				subproofs.push((scalar, subproof));
+			}
 			Ok(EvalcheckProof::LinearCombination { subproofs })
 		}
 		EvalcheckNumerics::ZeroPadded => {
@@ -175,7 +166,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
 		}
-		EvalcheckNumerics::Composite => Ok(EvalcheckProof::CompositeMLE),
+		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
 	}
 }
 

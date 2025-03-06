@@ -165,7 +165,7 @@ pub fn add_composite_sumcheck_to_constraints<F: TowerField>(
 	let mut oracle_ids = comp.inner().clone();
 	oracle_ids.push(meta.multiplier_id); // eq
 
-	// Var(comp.n_polys()) corresponds to eq_oracle
+	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
 	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::Var(comp.n_polys());
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
@@ -241,7 +241,7 @@ where
 	if comp.n_vars() > constraint_builders.len() {
 		constraint_builders.resize_with(comp.n_vars(), || ConstraintSetBuilder::new());
 	}
-	// Var(comp.n_polys()) corresponds to eq_oracle
+	// Var(comp.n_polys()) corresponds to the eq MLE (meta.multiplier_id)
 	let expr = <_ as CompositionPoly<F>>::expression(comp.c()) * ArithExpr::Var(comp.n_polys());
 	constraint_builders[comp.n_vars() - 1].add_sumcheck(oracle_ids, expr, eval);
 	Ok(())

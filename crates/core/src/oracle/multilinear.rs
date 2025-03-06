@@ -809,7 +809,7 @@ impl<F: TowerField> CompositeMLE<F> {
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
-			.map_err(|_| Error::CompositionMismatch)?; // occurs if `composition` has more variables than `inner.len()`
+			.map_err(|_| Error::CompositionMismatch)?; // occurs if `c` has more variables than `inner.len()`
 		Ok(Self { n_vars, inner, c })
 	}
 
