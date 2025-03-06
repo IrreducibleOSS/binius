@@ -45,7 +45,7 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = (0..64)
+	let in_a = (0..8)
 		.map(|i| {
 			binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 				&mut builder,
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 			.unwrap()
 		})
 		.collect::<Vec<_>>();
-	let in_b = (0..64)
+	let in_b = (0..8)
 		.map(|i| {
 			binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 				&mut builder,

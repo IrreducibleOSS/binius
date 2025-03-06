@@ -17,6 +17,7 @@ use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::{MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension};
 use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use binius_utils::bail;
+use tracing::instrument;
 
 use super::{
 	common::{FExt, FFastExt},
@@ -70,6 +71,7 @@ type MultiplicationWitnesses<'a, U, Tower> =
 
 /// Constructs [`BaseExpWitness`] instances and adds the exponentiation-result witnesses
 /// to the MultiplicationWitnesses.
+#[instrument(skip_all, name = "mul::make_multiplication_witnesses")]
 pub fn make_multiplication_witnesses<'a, U, Tower>(
 	witness: &mut MultilinearExtensionIndex<'a, U, FExt<Tower>>,
 	multiplications: &[Mul],
