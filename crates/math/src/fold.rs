@@ -405,17 +405,17 @@ where
 
 		evals.truncate(evals.len() >> 1);
 	} else {
-		let first_eval = evals.first_mut().expect("log_evals_size > 0");
+		let only_packed = evals.first_mut().expect("log_evals_size > 0");
 		let mut folded = P::zero();
 		let half_size = 1 << (log_evals_size - 1);
 
 		for i in 0..half_size {
-			let eval_0 = first_eval.get(i);
-			let eval_1 = first_eval.get(i | half_size);
+			let eval_0 = only_packed.get(i);
+			let eval_1 = only_packed.get(i | half_size);
 			folded.set(i, eval_0 + lerp_query * (eval_1 - eval_0));
 		}
 
-		*first_eval = folded;
+		*only_packed = folded;
 	}
 
 	Ok(())
