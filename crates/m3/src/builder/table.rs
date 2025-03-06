@@ -212,11 +212,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 	}
 
 	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.table.partition_mut(0).pull(channel, cols);
+		self.table.partition_mut(1).pull(channel, cols);
 	}
 
 	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.table.partition_mut(0).push(channel, cols);
+		self.table.partition_mut(1).push(channel, cols);
 	}
 
 	fn namespaced_name(&self, name: impl ToString) -> String {

@@ -79,19 +79,19 @@ mod arithmetization {
 
 	pub struct FibonacciTable {
 		pub id: TableId,
-		pub f0: Col<B32, 0>,
-		pub f1: Col<B32, 0>,
-		pub f2: Col<B32, 0>,
-		pub f0_bits: Col<B1, 5>,
-		pub f1_bits: Col<B1, 5>,
+		pub f0: Col<B32>,
+		pub f1: Col<B32>,
+		pub f2: Col<B32>,
+		pub f0_bits: Col<B1, 32>,
+		pub f1_bits: Col<B1, 32>,
 		pub f2_bits: U32Add,
 	}
 
 	impl FibonacciTable {
 		pub fn new(cs: &mut ConstraintSystem, fibonacci_pairs: ChannelId) -> Self {
 			let mut table = cs.add_table("fibonacci");
-			let f0_bits: Col<B1, 5> = table.add_committed("f0_bits");
-			let f1_bits: Col<B1, 5> = table.add_committed("f1_bits");
+			let f0_bits = table.add_committed("f0_bits");
+			let f1_bits = table.add_committed("f1_bits");
 			let f2_bits = U32Add::new(
 				&mut table.with_namespace("f2_bits"),
 				f0_bits,
@@ -99,9 +99,9 @@ mod arithmetization {
 				U32AddFlags::default(),
 			);
 
-			let f0: Col<B32, 0> = table.add_packed("f0", f0_bits);
-			let f1: Col<B32, 0> = table.add_packed("f1", f1_bits);
-			let f2: Col<B32, 0> = table.add_packed("f2", f2_bits.zout);
+			let f0 = table.add_packed("f0", f0_bits);
+			let f1 = table.add_packed("f1", f1_bits);
+			let f2 = table.add_packed("f2", f2_bits.zout);
 
 			table.pull(fibonacci_pairs, [upcast_col(f0), upcast_col(f1)]);
 			table.push(fibonacci_pairs, [upcast_col(f1), upcast_col(f2)]);
