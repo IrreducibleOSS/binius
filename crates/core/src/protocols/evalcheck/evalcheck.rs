@@ -49,19 +49,11 @@ pub enum EvalcheckProof<F: Field> {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
 	ZeroPadded(F, Box<EvalcheckProof<F>>),
-	Composite {
-		subproofs: Vec<(F, EvalcheckProof<F>)>,
-	},
+	Composite,
 }
 
 impl<F: Field> EvalcheckProof<F> {
 	pub fn isomorphic<FI: Field + From<F>>(self) -> EvalcheckProof<FI> {
-		let isomorphic_subproofs = |subproofs: Vec<(F, EvalcheckProof<F>)>| {
-			subproofs
-				.into_iter()
-				.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
-				.collect()
-		};
 		match self {
 			Self::Transparent => EvalcheckProof::Transparent,
 			Self::Committed => EvalcheckProof::Committed,
@@ -69,14 +61,15 @@ impl<F: Field> EvalcheckProof<F> {
 			Self::Packed => EvalcheckProof::Packed,
 			Self::Repeating(proof) => EvalcheckProof::Repeating(Box::new(proof.isomorphic())),
 			Self::LinearCombination { subproofs } => EvalcheckProof::LinearCombination {
-				subproofs: isomorphic_subproofs(subproofs),
+				subproofs: subproofs
+					.into_iter()
+					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
+					.collect(),
 			},
 			Self::ZeroPadded(eval, proof) => {
 				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
 			}
-			Self::Composite { subproofs } => EvalcheckProof::Composite {
-				subproofs: isomorphic_subproofs(subproofs),
-			},
+			Self::Composite => EvalcheckProof::Composite,
 		}
 	}
 }
@@ -137,8 +130,8 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			transcript.write_scalar(*val);
 			serialize_evalcheck_proof(transcript, subproof);
 		}
-		EvalcheckProof::Composite { subproofs } => {
-			serialize_sub_proofs(EvalcheckNumerics::Composite, subproofs);
+		EvalcheckProof::Composite => {
+			transcript.write_bytes(&[EvalcheckNumerics::Composite as u8]);
 		}
 	}
 }
@@ -182,10 +175,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
 		}
-		EvalcheckNumerics::Composite => {
-			let subproofs = deserialize_sub_proofs()?;
-			Ok(EvalcheckProof::Composite { subproofs })
-		}
+		EvalcheckNumerics::Composite => Ok(EvalcheckProof::Composite),
 	}
 }
 

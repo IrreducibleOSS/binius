@@ -453,9 +453,6 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().zero_padded(id, n_vars)
 	}
 
-	/// Represents `composition(inner[0], inner[1], ...)` where:
-	/// - composition is a polynomial in `inner.len()` variables
-	/// - `inner[0]`, `inner[1]`, ... are MLE oracles in `n_vars` variables
 	pub fn add_composite(
 		&mut self,
 		n_vars: usize,
@@ -775,17 +772,18 @@ impl<F: TowerField> LinearCombination<F> {
 	}
 }
 
-/// A multivariate polynomial evaluated on multilinear oracles.
+/// MLE of a multivariate polynomial evaluated on multilinear oracles.
 ///
-/// i.e. C(M1, M2, ..., Mn) where C is a arbitrary polynomial in n variables,
-/// and M1, M2, ..., Mn are multilinear oracles in μ variables.
+/// i.e. the MLE of the evaluations of C(M1, M2, ..., Mn) on {0, 1}^μ where:
+/// - C is a arbitrary polynomial in n variables
+/// - M1, M2, ..., Mn are multilinear oracles in μ variables
 ///
 /// (C should be sufficiently lightweight to be evaluated by the verifier)
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes)]
 pub struct MultilinearComposition<F: TowerField> {
 	#[get_copy = "pub"]
 	n_vars: usize, // μ
-	inner: Vec<OracleId>,                 // M1, M2, ..., Mn
+	pub(crate) inner: Vec<OracleId>,                 // M1, M2, ..., Mn
 	pub(crate) comp: ArithCircuitPoly<F>, // C
 }
 

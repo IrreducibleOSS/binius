@@ -3,16 +3,16 @@
 use std::mem;
 
 use binius_field::{util::inner_product_unchecked, TowerField};
-use binius_math::{extrapolate_line_scalar, CompositionPoly};
+use binius_math::extrapolate_line_scalar;
 use getset::{Getters, MutGetters};
-use itertools::Itertools;
 use tracing::instrument;
 
 use super::{
 	error::{Error, VerificationError},
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
-		add_bivariate_sumcheck_to_constraints, packed_sumcheck_meta, shifted_sumcheck_meta,
+		add_bivariate_sumcheck_to_constraints, handle_composite_with_sumcheck,
+		packed_sumcheck_meta, shifted_sumcheck_meta,
 	},
 };
 use crate::oracle::{
@@ -246,30 +246,17 @@ impl<'a, F: TowerField> EvalcheckVerifier<'a, F> {
 				)?;
 			}
 			MultilinearPolyVariant::Composite(composition) => {
-				let subproofs = match evalcheck_proof {
-					EvalcheckProof::Composite { subproofs } => subproofs,
-					_ => return Err(VerificationError::SubproofMismatch.into()),
-				};
-
-				if subproofs.len() != composition.n_polys() {
+				if evalcheck_proof != EvalcheckProof::Composite {
 					return Err(VerificationError::SubproofMismatch.into());
 				}
-
-				// Verify the evaluation of the composition over the claimed inner evaluations
-				let actual_eval = composition
-					.comp
-					.evaluate(&subproofs.iter().map(|(eval, _)| *eval).collect_vec())?;
-
-				if actual_eval != eval {
-					return Err(VerificationError::IncorrectEvaluation(multilinear.label()).into());
-				}
-
-				subproofs
-					.into_iter()
-					.zip(composition.polys())
-					.try_for_each(|((eval, subproof), suboracle_id)| {
-						self.verify_multilinear_subclaim(eval, subproof, suboracle_id, &eval_point)
-					})?;
+				handle_composite_with_sumcheck(
+					&mut self.oracles,
+					&mut self.new_sumcheck_constraints,
+					composition,
+					&eval_point,
+					eval,
+					|_, _| (),
+				);
 			}
 		}
 

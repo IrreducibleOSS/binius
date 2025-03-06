@@ -6,7 +6,7 @@ use binius_field::{
 	PackedFieldIndexable, TowerField,
 };
 use binius_hal::ComputationBackend;
-use binius_math::MultilinearExtension;
+use binius_math::{MLEDirectAdapter, MultilinearExtension};
 use binius_maybe_rayon::prelude::*;
 use getset::{Getters, MutGetters};
 use itertools::izip;
@@ -15,7 +15,10 @@ use tracing::instrument;
 use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
-	subclaims::{calculate_projected_mles, MemoizedQueries, ProjectedBivariateMeta},
+	subclaims::{
+		calculate_projected_mles, handle_composite_with_sumcheck, MemoizedQueries,
+		ProjectedBivariateMeta,
+	},
 	EvalPoint, EvalPointOracleIdMap,
 };
 use crate::{
@@ -384,13 +387,12 @@ where
 					.insert(multilinear_id, eval_point, evalcheck_claim);
 			}
 
-			MultilinearPolyVariant::Composite(composition) => {
-				for suboracle_id in composition.polys() {
-					self.claims_without_evals
-						.push((self.oracles.oracle(suboracle_id), eval_point.clone()));
-				}
-				self.incomplete_proof_claims
-					.insert(multilinear_id, eval_point, evalcheck_claim);
+			MultilinearPolyVariant::Composite(_) => {
+				self.finalized_proofs.insert(
+					multilinear_id,
+					eval_point,
+					(eval, EvalcheckProof::Composite),
+				);
 			}
 		};
 	}
@@ -469,22 +471,6 @@ where
 						);
 					})
 			}
-
-			MultilinearPolyVariant::Composite(composition) => composition
-				.polys()
-				.map(|suboracle_id| {
-					self.finalized_proofs
-						.get(suboracle_id, &evalcheck_claim.eval_point)
-						.map(|(eval, subproof)| (*eval, subproof.clone()))
-				})
-				.collect::<Option<Vec<_>>>()
-				.map(|subproofs| {
-					self.finalized_proofs.insert(
-						evalcheck_claim.id,
-						eval_point,
-						(eval, EvalcheckProof::Composite { subproofs }),
-					);
-				}),
 
 			_ => unreachable!(),
 		};
@@ -573,6 +559,26 @@ where
 				};
 				self.collect_projected_committed(subclaim);
 			}
+			MultilinearPolyVariant::Composite(composition) => {
+				handle_composite_with_sumcheck(
+					&mut self.oracles,
+					&mut self.new_sumchecks_constraints,
+					composition,
+					&eval_point,
+					eval,
+					|eq_oracle, eq_mle| {
+						self.witness_index
+							.update_multilin_poly(vec![(
+								eq_oracle,
+								MLEDirectAdapter::from(
+									eq_mle.multilinear_extension(self.backend).unwrap(),
+								)
+								.upcast_arc_dyn(),
+							)])
+							.unwrap();
+					},
+				);
+			}
 			_ => {}
 		}
 	}
@@ -590,6 +596,7 @@ where
 			MultilinearPolyVariant::Packed(packed) => {
 				packed_sumcheck_meta(oracles, packed, eval_point)
 			}
+
 			_ => unreachable!(),
 		}
 	}

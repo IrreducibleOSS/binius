@@ -27,8 +27,8 @@ use super::{error::Error, evalcheck::EvalcheckMultilinearClaim};
 use crate::{
 	fiat_shamir::Challenger,
 	oracle::{
-		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearOracleSet, OracleId,
-		Packed, ProjectionVariant, Shifted,
+		ConstraintSet, ConstraintSetBuilder, Error as OracleError, MultilinearComposition,
+		MultilinearOracleSet, OracleId, Packed, ProjectionVariant, Shifted,
 	},
 	polynomial::MultivariatePoly,
 	protocols::sumcheck::{
@@ -37,7 +37,9 @@ use crate::{
 		Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
-	transparent::{shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis},
+	transparent::{
+		eq_ind::EqIndPartialEval, shift_ind::ShiftIndPartialEval, tower_basis::TowerBasis,
+	},
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
@@ -427,4 +429,28 @@ where
 	let evalcheck_claims = sumcheck::make_eval_claims(metas, sumcheck_output)?;
 
 	Ok(evalcheck_claims)
+}
+
+pub fn handle_composite_with_sumcheck<F: TowerField>(
+	oracles: &mut MultilinearOracleSet<F>,
+	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
+	composition: MultilinearComposition<F>,
+	eval_point: &[F],
+	eval: F,
+	mut fill_witness: impl FnMut(OracleId, EqIndPartialEval<F>) -> (),
+) {
+	let n_vars = composition.n_vars();
+	let eq_mle = EqIndPartialEval::new(eval_point.to_vec());
+	let eq_oracle = oracles.add_transparent(eq_mle.clone()).unwrap();
+	let mut oracle_ids = composition.inner.clone();
+	oracle_ids.push(eq_oracle);
+	let n_polys = composition.n_polys();
+	// Var(n_polys)) corresponds to eq_oracle
+	let expr = ArithExpr::Mul(Box::new(composition.comp.expr), Box::new(ArithExpr::Var(n_polys)));
+	if n_vars > constraint_builders.len() {
+		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
+	}
+	constraint_builders[n_vars - 1].add_sumcheck(oracle_ids, expr, eval);
+	// for the prover only:
+	fill_witness(eq_oracle, eq_mle);
 }
