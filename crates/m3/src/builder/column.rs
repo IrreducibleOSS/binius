@@ -15,16 +15,16 @@ pub type ColumnIndex = usize;
 /// The column has entries that are elements of `F`. In practice, the fields used will always be
 /// from the canonical tower (B1, B8, B16, B32, B64, B128). The second constant represents how many
 /// elements are packed vertically into a single logical row. For example, a column of type
-/// `Col<B1, 5>` will have 2^5 = 32 elements of `B1` packed into a single row.
+/// `Col<B1, 32>` will have 2^5 = 32 elements of `B1` packed into a single row.
 #[derive(Debug, Clone, Copy)]
-pub struct Col<F: TowerField, const V: usize = 0> {
-	// TODO: Maybe V should be powers of 2 instead of logarithmic
+pub struct Col<F: TowerField, const VALUES_PER_ROW: usize = 1> {
 	pub id: ColumnId,
-	pub _marker: PhantomData<F>,
+	_marker: PhantomData<F>,
 }
 
-impl<F: TowerField, const V: usize> Col<F, V> {
+impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 	pub fn new(id: ColumnId) -> Self {
+		assert!(VALUES_PER_ROW.is_power_of_two());
 		Self {
 			id,
 			_marker: PhantomData,
@@ -34,7 +34,7 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 	pub fn shape(&self) -> ColumnShape {
 		ColumnShape {
 			tower_height: F::TOWER_LEVEL,
-			pack_factor: V,
+			values_per_row: VALUES_PER_ROW,
 		}
 	}
 
@@ -44,7 +44,9 @@ impl<F: TowerField, const V: usize> Col<F, V> {
 }
 
 /// Upcast a columns from a subfield to an extension field..
-pub fn upcast_col<F, FSub, const V: usize>(col: Col<FSub, V>) -> Col<F, V>
+pub fn upcast_col<F, FSub, const VALUES_PER_ROW: usize>(
+	col: Col<FSub, VALUES_PER_ROW>,
+) -> Col<F, VALUES_PER_ROW>
 where
 	FSub: TowerField,
 	F: TowerField + ExtensionField<FSub>,
@@ -72,8 +74,8 @@ pub struct ColumnInfo<F: TowerField = B128> {
 pub struct ColumnShape {
 	/// The tower height of the field elements.
 	pub tower_height: usize,
-	/// The binary logarithm of the number of elements packed vertically per event row.
-	pub pack_factor: usize,
+	/// The number of elements packed vertically per event row.
+	pub values_per_row: usize,
 }
 
 /// Unique identifier for a column within a constraint system.
