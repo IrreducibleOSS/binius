@@ -235,7 +235,7 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
-	pub fn composite(
+	pub fn composite_mle(
 		self,
 		n_vars: usize,
 		inner: impl IntoIterator<Item = OracleId>,
@@ -260,14 +260,14 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 			.max()
 			.unwrap_or(0);
 
-		let composite = CompositeMLE::new(n_vars, inner, comp)?;
+		let composite_mle = CompositeMLE::new(n_vars, inner, comp)?;
 
 		let oracle = |id: OracleId| MultilinearPolyOracle {
 			id,
 			n_vars,
 			tower_level,
 			name: self.name,
-			variant: MultilinearPolyVariant::Composite(composite),
+			variant: MultilinearPolyVariant::Composite(composite_mle),
 		};
 
 		Ok(self.mut_ref.add_to_set(oracle))
@@ -459,7 +459,7 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		inner: impl IntoIterator<Item = OracleId>,
 		comp: ArithExpr<F>,
 	) -> Result<OracleId, Error> {
-		self.add().composite(n_vars, inner, comp)
+		self.add().composite_mle(n_vars, inner, comp)
 	}
 
 	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {

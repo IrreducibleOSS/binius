@@ -263,7 +263,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		self.oracles
 			.borrow_mut()
 			.add_named(self.scoped_name(name))
-			.composite(n_vars, inner, comp)
+			.composite_mle(n_vars, inner, comp)
 	}
 
 	pub fn add_packed(

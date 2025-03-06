@@ -23,6 +23,7 @@ fn main() {
 	let comp_2 =
 		arith_expr!(B128[x, y, z] = x*z*y*0x81115 +x*y*0x98888 + y*z + z*z*z*z*z*z + 0x155523);
 	let comp_3 = arith_expr!(B128[a, b, c, d, e, f] = e*f*f + a*b*c*2 + d*0x999 + 0x123);
+	let comp_4 = arith_expr!(B128[a, b] = a*(b+a));
 
 	let column_x = builder.add_committed("x", n_vars, 7);
 	let column_y = builder.add_committed("y", n_vars, 7);
@@ -47,13 +48,28 @@ fn main() {
 			n_vars,
 			[
 				column_x,
-				column_y,
+				column_x,
 				column_comp_1,
 				column_shift,
 				column_comp_2,
 				column_packed,
 			],
 			comp_3.clone(),
+		)
+		.unwrap();
+
+	let column_comp_4 = builder
+		.add_composite_mle(
+			"comp4",
+			n_vars,
+			[
+				column_comp_2,
+				column_comp_3,
+				column_x,
+				column_shift,
+				column_y,
+			],
+			comp_4.clone(),
 		)
 		.unwrap();
 
@@ -130,12 +146,21 @@ fn main() {
 			arith_poly_3
 				.evaluate(&[
 					values_x[i],
-					values_y[i],
+					values_x[i],
 					values_comp_1[i],
 					values_shift[i],
 					values_comp_2[i],
 					values_packed[i],
 				])
+				.unwrap()
+		})
+		.collect::<Vec<_>>();
+
+	let arith_poly_4 = ArithCircuitPoly::new(comp_4);
+	let values_comp_4 = (0..(1 << n_vars))
+		.map(|i| {
+			arith_poly_4
+				.evaluate(&[values_comp_2[i], values_comp_3[i]])
 				.unwrap()
 		})
 		.collect::<Vec<_>>();
@@ -155,6 +180,7 @@ fn main() {
 	add_witness_col_b128(column_comp_2, &values_comp_2);
 	add_witness_col_b128(column_packed, &values_packed);
 	add_witness_col_b128(column_comp_3, &values_comp_3);
+	add_witness_col_b128(column_comp_4, &values_comp_4);
 	builder
 		.witness()
 		.unwrap()
