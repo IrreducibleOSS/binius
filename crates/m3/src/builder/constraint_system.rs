@@ -12,7 +12,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bumpalo::Bump;
 
 use super::{
@@ -83,7 +83,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 
 			for col in table.columns.iter() {
 				let name = col.name.clone();
-				let pack_factor = 1 << col.shape.pack_factor;
+				let values_per_row = col.shape.values_per_row;
 				let field = match col.shape.tower_height {
 					0 => "B1",
 					1 => "B2",
@@ -94,8 +94,8 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					6 => "B64",
 					_ => "B128",
 				};
-				let type_str = if pack_factor > 1 {
-					format!("{field}x{pack_factor}")
+				let type_str = if values_per_row > 1 {
+					format!("{field}x{values_per_row}")
 				} else {
 					field.to_string()
 				};
@@ -104,9 +104,10 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			// step_down selectors for the table
-			for pack_factor in table.partitions.keys() {
-				let selector_type_str = if pack_factor > 1 {
-					format!("B1x{}", 1 << pack_factor)
+			for log_values_per_row in table.partitions.keys() {
+				let values_per_row = 1 << log_values_per_row;
+				let selector_type_str = if values_per_row > 1 {
+					format!("B1x{}", values_per_row)
 				} else {
 					"B1".to_string()
 				};
@@ -185,7 +186,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + info.shape.pack_factor;
+				let n_vars = log2_ceil_usize(count) + log2_strict_usize(info.shape.values_per_row);
 				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
 				if info.is_nonzero {
@@ -198,11 +199,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 					columns,
 					flushes,
 					zero_constraints,
-					pack_factor,
+					values_per_row,
 					..
 				} = partition;
 
-				let n_vars = log2_ceil_usize(count) + pack_factor;
+				let n_vars = log2_ceil_usize(count) + log2_strict_usize(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
@@ -211,7 +212,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 				let selector =
-					oracles.add_transparent(StepDown::new(n_vars, count << pack_factor)?)?;
+					oracles.add_transparent(StepDown::new(n_vars, count * values_per_row)?)?;
 
 				// Translate flushes for the compiled constraint system.
 				for Flush {
