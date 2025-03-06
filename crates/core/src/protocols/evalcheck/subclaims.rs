@@ -445,12 +445,11 @@ pub fn handle_composite_with_sumcheck<F: TowerField>(
 	let mut oracle_ids = composition.inner.clone();
 	oracle_ids.push(eq_oracle);
 	let n_polys = composition.n_polys();
-	// Var(n_polys)) corresponds to eq_oracle
+	// Var(n_polys) corresponds to eq_oracle
 	let expr = ArithExpr::Mul(Box::new(composition.comp.expr), Box::new(ArithExpr::Var(n_polys)));
 	if n_vars > constraint_builders.len() {
 		constraint_builders.resize_with(n_vars, || ConstraintSetBuilder::new());
 	}
 	constraint_builders[n_vars - 1].add_sumcheck(oracle_ids, expr, eval);
-	// for the prover only:
-	fill_witness(eq_oracle, eq_mle);
+	fill_witness(eq_oracle, eq_mle); // empty function for the verifier
 }
