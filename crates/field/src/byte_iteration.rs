@@ -290,6 +290,40 @@ impl<P: PackedField> ScalarsCollection<P::Scalar> for PackedSlice<'_, P> {
 	}
 }
 
+// /// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding to bits in a byte.
+// /// The lookup table has the following structure:
+// /// [
+// ///     partial_sum_chunk_0_7_byte_0, partial_sum_chunk_0_7_byte_1, ..., partial_sum_chunk_0_7_byte_255,
+// ///     partial_sum_chunk_8_15_byte_0, partial_sum_chunk_8_15_byte_1, ..., partial_sum_chunk_8_15_byte_255,
+// ///    ...
+// /// ]
+// pub fn create_partial_sums_lookup_tables<P: PackedField>(
+// 	values: impl ScalarsCollection<P>,
+// ) -> Vec<P> {
+// 	let len = values.len();
+// 	assert!(len % 8 == 0);
+
+// 	let mut result = Vec::with_capacity(len * 32); // 256 / 8 = 32 per chunk
+
+// 	for chunk_start in (0..len).step_by(8) {
+// 		let mut sums = [P::zero(); 256];
+
+// 		for j in 0..8 {
+// 			let value = values.get(chunk_start + j);
+// 			let mask = 1 << j;
+// 			for i in (mask..256).step_by(mask * 2) {
+// 				for k in 0..mask {
+// 					sums[i + k] += value;
+// 				}
+// 			}
+// 		}
+
+// 		result.extend_from_slice(&sums);
+// 	}
+
+// 	result
+// }
+
 /// Create a lookup table for partial sums of 8 consequent elements with coefficients corresponding to bits in a byte.
 /// The lookup table has the following structure:
 /// [
@@ -303,10 +337,11 @@ pub fn create_partial_sums_lookup_tables<P: PackedField>(
 	let len = values.len();
 	assert!(len % 8 == 0);
 
-	let mut result = Vec::with_capacity(len * 32); // 256 / 8 = 32 per chunk
+	let mut result = Vec::with_capacity(len * 32);
+	result.resize(result.capacity(), P::zero());
 
-	for chunk_start in (0..len).step_by(8) {
-		let mut sums = [P::zero(); 256];
+	for (chunk_idx, chunk_start) in (0..len).step_by(8).enumerate() {
+		let sums = &mut result[chunk_idx * 256..(chunk_idx + 1) * 256];
 
 		for j in 0..8 {
 			let value = values.get(chunk_start + j);
@@ -317,8 +352,6 @@ pub fn create_partial_sums_lookup_tables<P: PackedField>(
 				}
 			}
 		}
-
-		result.extend_from_slice(&sums);
 	}
 
 	result
