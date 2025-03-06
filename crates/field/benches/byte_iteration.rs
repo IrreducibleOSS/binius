@@ -3,8 +3,9 @@
 use std::iter::repeat_with;
 
 use binius_field::{
-	byte_iteration::{create_partial_sums_lookup_tables, ScalarsCollection},
-	BinaryField32b, PackedBinaryField16x8b, PackedField,
+	byte_iteration::{create_partial_sums_lookup_tables, PackedSlice},
+	BinaryField128b, BinaryField1b, BinaryField8b, PackedBinaryField128x1b,
+	PackedBinaryField1x128b, PackedBinaryField8x16b, PackedField,
 };
 use criterion::{
 	criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
@@ -25,19 +26,7 @@ pub fn bench_create_partial_sums<P>(
 			.take(count)
 			.collect::<Vec<P>>();
 
-		#[derive(Clone)]
-		struct ScalarsVec<'a, P: PackedField>(&'a [P]);
-
-		impl<P: PackedField> ScalarsCollection<P> for ScalarsVec<'_, P> {
-			fn len(&self) -> usize {
-				self.0.len()
-			}
-			fn get(&self, i: usize) -> P {
-				self.0[i]
-			}
-		}
-
-		let values_collection = ScalarsVec(&values);
+		let values_collection = PackedSlice::new(&values, count);
 
 		group.bench_function(format!("{name}/{count}"), |bench| {
 			bench.iter(|| create_partial_sums_lookup_tables(values_collection.clone()));
@@ -47,16 +36,29 @@ pub fn bench_create_partial_sums<P>(
 
 fn partial_sums_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("create_partial_sums_lookup_tables");
-	let counts = [8, 64, 512, 4096, 32768];
+	let counts = [8, 64, 128];
 
-	bench_create_partial_sums::<BinaryField32b>(
+	bench_create_partial_sums::<BinaryField1b>(&mut group, "BinaryField1b", counts.iter().copied());
+	bench_create_partial_sums::<BinaryField8b>(&mut group, "BinaryField8b", counts.iter().copied());
+	bench_create_partial_sums::<BinaryField128b>(
 		&mut group,
-		"BinaryField32b",
+		"BinaryField128b",
 		counts.iter().copied(),
 	);
-	bench_create_partial_sums::<PackedBinaryField16x8b>(
+
+	bench_create_partial_sums::<PackedBinaryField128x1b>(
 		&mut group,
-		"PackedBinaryField16x8b",
+		"PackedBinaryField128x1b",
+		counts.iter().copied(),
+	);
+	bench_create_partial_sums::<PackedBinaryField8x16b>(
+		&mut group,
+		"PackedBinaryField8x16b",
+		counts.iter().copied(),
+	);
+	bench_create_partial_sums::<PackedBinaryField1x128b>(
+		&mut group,
+		"PackedBinaryField1x128b",
 		counts.iter().copied(),
 	);
 }
