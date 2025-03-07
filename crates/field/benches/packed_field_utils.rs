@@ -282,17 +282,41 @@ macro_rules! benchmark_packed_operation {
 				ByteSlicedAES16x64b
 				ByteSlicedAES16x128b
 
+				ByteSlicedAES16x16x8b
+
+				ByteSliced3DAES256x8b
+				ByteSliced3DAES128x16b
+				ByteSliced3DAES64x32b
+				ByteSliced3DAES32x64b
+				ByteSliced3DAES16x128b
+
 				ByteSlicedAES32x8b
 				ByteSlicedAES32x16b
 				ByteSlicedAES32x32b
 				ByteSlicedAES32x64b
 				ByteSlicedAES32x128b
 
+				ByteSlicedAES16x32x8b
+
+				ByteSliced3DAES512x8b
+				ByteSliced3DAES256x16b
+				ByteSliced3DAES128x32b
+				ByteSliced3DAES64x64b
+				ByteSliced3DAES32x128b
+
 				ByteSlicedAES64x8b
 				ByteSlicedAES64x16b
 				ByteSlicedAES64x32b
 				ByteSlicedAES64x64b
 				ByteSlicedAES64x128b
+
+				ByteSlicedAES16x64x8b
+
+				ByteSliced3DAES1024x8b
+				ByteSliced3DAES512x16b
+				ByteSliced3DAES256x32b
+				ByteSliced3DAES128x64b
+				ByteSliced3DAES64x128b
 			]);
 	};
 }

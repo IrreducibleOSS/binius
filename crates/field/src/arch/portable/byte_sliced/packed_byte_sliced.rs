@@ -763,19 +763,21 @@ define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES64x16b
 );
 
+const BIGGEST_FIELD_BYTES: usize = AESTowerField128b::N_BITS / 8;
+
 macro_rules! define_byte_sliced_3d {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [$packed_storage; <$packed_storage>::WIDTH],
+			pub(super) data: [[$packed_storage; <$tower_level as TowerLevel>::WIDTH]; BIGGEST_FIELD_BYTES / <$tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
-			pub const BYTES: usize = <$packed_storage>::WIDTH * <$packed_storage>::WIDTH;
+			pub const BYTES: usize = BIGGEST_FIELD_BYTES * <$packed_storage>::WIDTH;
 
 			const SCALAR_BYTES: usize = <$scalar_type>::N_BITS / 8;
-			const HEIGHT: usize = <$packed_storage>::WIDTH / Self::SCALAR_BYTES;
+			const HEIGHT: usize = BIGGEST_FIELD_BYTES / Self::SCALAR_BYTES;
 			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT);
 
 			/// Get the byte at the given index.
@@ -785,9 +787,11 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
+				let row = byte_index % BIGGEST_FIELD_BYTES;
 				self.data
-					.get_unchecked(byte_index % <$packed_storage>::WIDTH)
-					.get_unchecked(byte_index / <$packed_storage>::WIDTH)
+					.get_unchecked(row / Self::SCALAR_BYTES)
+					.get_unchecked(row % Self::SCALAR_BYTES)
+					.get_unchecked(byte_index / BIGGEST_FIELD_BYTES)
 					.to_underlier()
 			}
 		}
@@ -803,15 +807,15 @@ macro_rules! define_byte_sliced_3d {
 		impl PackedField for $name {
 			type Scalar = $scalar_type;
 
-			const LOG_WIDTH: usize = <$packed_storage>::LOG_WIDTH;
+			const LOG_WIDTH: usize = <$packed_storage>::LOG_WIDTH + Self::LOG_HEIGHT;
 
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-				let byte_offset = (i % Self::HEIGHT) * Self::SCALAR_BYTES;
+				let element_rows = self.data.get_unchecked(i % Self::HEIGHT);
 				Self::Scalar::from_bases((0..Self::SCALAR_BYTES).map(|byte_index| {
-					self.data
-						.get_unchecked(byte_index + byte_offset)
+					element_rows
+						.get_unchecked(byte_index)
 						.get_unchecked(i / Self::HEIGHT)
 				}))
 				.expect("byte index is within bounds")
@@ -820,10 +824,10 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
-				let byte_offset = (i % Self::HEIGHT) * Self::SCALAR_BYTES;
+				let element_rows = self.data.get_unchecked_mut(i % Self::HEIGHT);
 				for byte_index in 0..Self::SCALAR_BYTES {
-					self.data
-						.get_unchecked_mut(byte_index + byte_offset)
+					element_rows
+						.get_unchecked_mut(byte_index)
 						.set_unchecked(
 							i / Self::HEIGHT,
 							scalar.get_base_unchecked(byte_index),
@@ -832,32 +836,32 @@ macro_rules! define_byte_sliced_3d {
 			}
 
 			fn random(mut rng: impl rand::RngCore) -> Self {
-				let data = array::from_fn(|_| <$packed_storage>::random(&mut rng));
+				let data = array::from_fn(|_| array::from_fn(|_| <$packed_storage>::random(&mut rng)));
 				Self { data }
 			}
 
 			#[inline]
 			fn broadcast(scalar: Self::Scalar) -> Self {
-				let data = match Self::SCALAR_BYTES {
+				let data: [[$packed_storage; Self::SCALAR_BYTES]; Self::HEIGHT] = match Self::SCALAR_BYTES {
 					1 => {
 						let packed_broadcast =
 							<$packed_storage>::broadcast(unsafe { scalar.get_base_unchecked(0) });
-						array::from_fn(|_| packed_broadcast)
+						array::from_fn(|_| array::from_fn(|_| packed_broadcast))
 					}
-					<$packed_storage>::WIDTH => array::from_fn(|byte_index| {
+					BIGGEST_FIELD_BYTES => array::from_fn(|_| array::from_fn(|byte_index| {
 						<$packed_storage>::broadcast(unsafe {
 							scalar.get_base_unchecked(byte_index)
 						})
-					}),
+					})),
 					_ => {
-						let mut data = [<$packed_storage>::zero(); <$packed_storage>::WIDTH];
+						let mut data = <[[$packed_storage; Self::SCALAR_BYTES]; Self::HEIGHT]>::zeroed();
 						for byte_index in 0..Self::SCALAR_BYTES {
 							let broadcast = <$packed_storage>::broadcast(unsafe {
 								scalar.get_base_unchecked(byte_index)
 							});
 
 							for i in 0..Self::HEIGHT {
-								data[i * Self::HEIGHT + byte_index] = broadcast;
+								data[i][byte_index] = broadcast;
 							}
 						}
 
@@ -885,14 +889,10 @@ macro_rules! define_byte_sliced_3d {
 			fn square(self) -> Self {
 				let mut result = Self::default();
 
-				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+				for i in 0..Self::HEIGHT {
 					square::<$packed_storage, $tower_level>(
-						&self.data[offset..offset + Self::SCALAR_BYTES]
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
-						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
+						&self.data[i],
+						&mut result.data[i],
 					);
 				}
 
@@ -903,14 +903,10 @@ macro_rules! define_byte_sliced_3d {
 			fn invert_or_zero(self) -> Self {
 				let mut result = Self::default();
 
-				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+				for i in 0..Self::HEIGHT {
 					invert_or_zero::<$packed_storage, $tower_level>(
-						&self.data[offset..offset + Self::SCALAR_BYTES]
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
-						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
+						&self.data[i],
+						&mut result.data[i],
 					);
 				}
 
@@ -924,8 +920,8 @@ macro_rules! define_byte_sliced_3d {
 
 				if log_block_len < Self::LOG_HEIGHT {
 					// Just copy rows in a different order
-					let block_size = 1 << (log_block_len + Self::SCALAR_BYTES);
-					for block_offset in (0..<$packed_storage>::WIDTH).step_by(2 * block_size) {
+					let block_size = 1 << log_block_len;
+					for block_offset in (0..Self::HEIGHT).step_by(2 * block_size) {
 						result1.data[block_offset..block_offset + block_size]
 							.copy_from_slice(&self.data[block_offset..block_offset + block_size]);
 						result1.data[block_offset + block_size..block_offset + 2 * block_size]
@@ -942,9 +938,11 @@ macro_rules! define_byte_sliced_3d {
 					}
 				} else {
 					// Interleave rows
-					for i in 0..<$packed_storage>::WIDTH {
-						(result1.data[i], result2.data[i]) = self.data[i]
-							.interleave(other.data[i], log_block_len - Self::LOG_HEIGHT);
+					for i in 0..Self::HEIGHT {
+						for j in 0..Self::SCALAR_BYTES {
+							(result1.data[i][j], result2.data[i][j]) = self.data[i][j]
+								.interleave(other.data[i][j], log_block_len - Self::LOG_HEIGHT);
+						}
 					}
 				}
 
@@ -957,8 +955,8 @@ macro_rules! define_byte_sliced_3d {
 				let mut result2 = Self::default();
 
 				if log_block_len < Self::LOG_HEIGHT {
-					let block_size = 1 << (log_block_len + Self::SCALAR_BYTES);
-					let half = <$packed_storage>::WIDTH / 2;
+					let block_size = 1 << log_block_len;
+					let half = Self::HEIGHT / 2;
 					for block_offset in (0..half).step_by(block_size) {
 						let target_offset = block_offset * 2;
 
@@ -979,9 +977,11 @@ macro_rules! define_byte_sliced_3d {
 							);
 					}
 				} else {
-					for i in 0..<$packed_storage>::WIDTH {
-						(result1.data[i], result2.data[i]) =
-							self.data[i].unzip(other.data[i], log_block_len - Self::LOG_HEIGHT);
+					for i in 0..Self::HEIGHT {
+						for j in 0..Self::SCALAR_BYTES {
+							(result1.data[i][j], result2.data[i][j]) =
+								self.data[i][j].unzip(other.data[i][j], log_block_len - Self::LOG_HEIGHT);
+						}
 					}
 				}
 
@@ -992,20 +992,15 @@ macro_rules! define_byte_sliced_3d {
 		impl Mul for $name {
 			type Output = Self;
 
+			#[inline]
 			fn mul(self, rhs: Self) -> Self {
 				let mut result = Self::default();
 
-				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+				for i in 0..Self::HEIGHT {
 					mul::<$packed_storage, $tower_level>(
-						&self.data[offset..offset + Self::SCALAR_BYTES]
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
-						&rhs.data[offset..offset + Self::SCALAR_BYTES]
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
-						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
-							.try_into()
-							.expect("array length is SCALAR_BYTES"),
+						&self.data[i],
+						&rhs.data[i],
+						&mut result.data[i],
 					);
 				}
 
@@ -1068,7 +1063,9 @@ macro_rules! define_byte_sliced_3d {
 			fn add(self, rhs: Self) -> Self {
 				Self {
 					data: array::from_fn(|byte_number| {
-						self.data[byte_number] + rhs.data[byte_number]
+						array::from_fn(|column|
+							self.data[byte_number][column] + rhs.data[byte_number][column]
+						)
 					}),
 				}
 			}
@@ -1078,7 +1075,9 @@ macro_rules! define_byte_sliced_3d {
 			#[inline]
 			fn add_assign(&mut self, rhs: Self) {
 				for (data, rhs) in zip(&mut self.data, &rhs.data) {
-					*data += *rhs
+					for (data, rhs) in zip(data, rhs) {
+						*data += *rhs
+					}
 				}
 			}
 		}
@@ -1193,19 +1192,19 @@ macro_rules! define_byte_sliced_3d {
 
 		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
 			fn transform(&self, data: &$name) -> $name {
-				let mut result = <[$packed_storage; <$packed_storage>::WIDTH]>::zeroed();
+				let mut result = <$name>::default();
 
 				for row in 0..<$name>::SCALAR_BYTES {
 					for col in 0..<$name>::SCALAR_BYTES {
 						let transformation = &self.0[col][row];
 
-						for offset in (0..<$packed_storage>::WIDTH).step_by(<$name>::SCALAR_BYTES) {
-							result[offset + row] += transformation.transform(&data.data[offset + col]);
+						for i in 0..<$name>::HEIGHT {
+							result.data[i][row] += transformation.transform(&data.data[i][col]);
 						}
 					}
 				}
 
-				$name { data: result }
+				result
 			}
 		}
 
