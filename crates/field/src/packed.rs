@@ -10,7 +10,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-use binius_utils::iter::IterExtensions;
+use binius_utils::{checked_arithmetics::log2_ceil_usize, iter::IterExtensions};
 use bytemuck::Zeroable;
 use rand::RngCore;
 
@@ -386,7 +386,8 @@ pub fn mul_by_subfield_scalar<P: PackedExtension<FS>, FS: Field>(val: P, multipl
 }
 
 pub fn pack_slice<P: PackedField>(scalars: &[P::Scalar]) -> Vec<P> {
-	let mut packed_slice = vec![P::default(); scalars.len() / P::WIDTH];
+	let log_width = log2_ceil_usize(scalars.len()).saturating_sub(P::LOG_WIDTH);
+	let mut packed_slice = vec![P::default(); 1 << log_width];
 	for (i, scalar) in scalars.iter().enumerate() {
 		set_packed_slice(&mut packed_slice, i, *scalar);
 	}
