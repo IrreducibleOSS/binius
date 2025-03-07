@@ -765,7 +765,7 @@ define_8b_extension_packed_subfield_for_byte_sliced!(
 
 macro_rules! define_byte_sliced_3d {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+		#[derive(Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
 			pub(super) data: [$packed_storage; <$packed_storage>::WIDTH],
@@ -792,6 +792,14 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
+		impl Default for $name {
+			fn default() -> Self {
+				Self {
+					data: bytemuck::Zeroable::zeroed(),
+				}
+			}
+		}
+
 		impl PackedField for $name {
 			type Scalar = $scalar_type;
 
@@ -800,11 +808,11 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
-				let byte_offset = (i % <$packed_storage>::WIDTH) / Self::SCALAR_BYTES;
+				let byte_offset = (i % Self::HEIGHT) * Self::SCALAR_BYTES;
 				Self::Scalar::from_bases((0..Self::SCALAR_BYTES).map(|byte_index| {
 					self.data
 						.get_unchecked(byte_index + byte_offset)
-						.get_unchecked(i / <$packed_storage>::WIDTH)
+						.get_unchecked(i / Self::HEIGHT)
 				}))
 				.expect("byte index is within bounds")
 			}
@@ -812,12 +820,12 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
-				let byte_offset = (i % <$packed_storage>::WIDTH) / Self::SCALAR_BYTES;
-				for byte_index in 0..Self::Scalar::N_BITS / 8 {
+				let byte_offset = (i % Self::HEIGHT) * Self::SCALAR_BYTES;
+				for byte_index in 0..Self::SCALAR_BYTES {
 					self.data
 						.get_unchecked_mut(byte_index + byte_offset)
 						.set_unchecked(
-							i / <$packed_storage>::WIDTH,
+							i / Self::HEIGHT,
 							scalar.get_base_unchecked(byte_index),
 						);
 				}
@@ -875,14 +883,14 @@ macro_rules! define_byte_sliced_3d {
 
 			#[inline]
 			fn square(self) -> Self {
-				let result = Self::default();
+				let mut result = Self::default();
 
 				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
 					square::<$packed_storage, $tower_level>(
 						&self.data[offset..offset + Self::SCALAR_BYTES]
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
-						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
 					);
@@ -893,14 +901,14 @@ macro_rules! define_byte_sliced_3d {
 
 			#[inline]
 			fn invert_or_zero(self) -> Self {
-				let result = Self::default();
+				let mut result = Self::default();
 
 				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
 					invert_or_zero::<$packed_storage, $tower_level>(
 						&self.data[offset..offset + Self::SCALAR_BYTES]
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
-						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
 					);
@@ -995,7 +1003,7 @@ macro_rules! define_byte_sliced_3d {
 						&rhs.data[offset..offset + Self::SCALAR_BYTES]
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
-						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+						(&mut result.data[offset..offset + Self::SCALAR_BYTES])
 							.try_into()
 							.expect("array length is SCALAR_BYTES"),
 					);
@@ -1128,12 +1136,195 @@ macro_rules! define_byte_sliced_3d {
 				result
 			}
 		}
+
+		impl PackedExtension<$scalar_type> for $name {
+			type PackedSubfield = Self;
+
+			#[inline(always)]
+			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
+				packed
+			}
+
+			#[inline(always)]
+			fn cast_base(self) -> Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_base_ref(&self) -> &Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
+				self
+			}
+
+			#[inline(always)]
+			fn cast_ext(base: Self::PackedSubfield) -> Self {
+				base
+			}
+
+			#[inline(always)]
+			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
+				base
+			}
+
+			#[inline(always)]
+			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
+				base
+			}
+		}
+
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
+			fn transform(&self, data: &$name) -> $name {
+				let mut result = <[$packed_storage; <$packed_storage>::WIDTH]>::zeroed();
+
+				for row in 0..<$name>::SCALAR_BYTES {
+					for col in 0..<$name>::SCALAR_BYTES {
+						let transformation = &self.0[col][row];
+
+						for offset in (0..<$packed_storage>::WIDTH).step_by(<$name>::SCALAR_BYTES) {
+							result[offset + row] += transformation.transform(&data.data[offset + col]);
+						}
+					}
+				}
+
+				$name { data: result }
+			}
+		}
+
+		impl PackedTransformationFactory<$name> for $name {
+			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> = TransformationWrapperNxN<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<[AESTowerField8b; 8]>, {<$tower_level as TowerLevel>::WIDTH}>;
+
+			fn make_packed_transformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync>(
+				transformation: FieldLinearTransformation<<$name as PackedField>::Scalar, Data>,
+			) -> Self::PackedTransformation<Data> {
+				let transformations_8b = array::from_fn(|row| {
+					array::from_fn(|col| {
+						let row = row * 8;
+						let linear_transformation_8b = array::from_fn::<_, 8, _>(|row_8b| unsafe {
+							<<$name as PackedField>::Scalar as ExtensionField<AESTowerField8b>>::get_base_unchecked(&transformation.bases()[row + row_8b], col)
+						});
+
+						<$packed_storage as PackedTransformationFactory<$packed_storage
+						>>::make_packed_transformation(FieldLinearTransformation::new(linear_transformation_8b))
+					})
+				});
+
+				TransformationWrapperNxN(transformations_8b)
+			}
+		}
 	};
 }
 
+// 128 bit
 define_byte_sliced_3d!(
-	ByteSlicedAES256x32b,
+	ByteSliced3DAES16x128b,
+	AESTowerField128b,
+	PackedAESBinaryField16x8b,
+	TowerLevel16
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES32x64b,
+	AESTowerField64b,
+	PackedAESBinaryField16x8b,
+	TowerLevel8
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES64x32b,
+	AESTowerField32b,
+	PackedAESBinaryField16x8b,
+	TowerLevel4
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES128x16b,
+	AESTowerField16b,
+	PackedAESBinaryField16x8b,
+	TowerLevel2
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES256x8b,
+	AESTowerField8b,
+	PackedAESBinaryField16x8b,
+	TowerLevel1
+);
+
+// 256 bit
+define_byte_sliced_3d!(
+	ByteSliced3DAES32x128b,
+	AESTowerField128b,
+	PackedAESBinaryField32x8b,
+	TowerLevel16
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES64x64b,
+	AESTowerField64b,
+	PackedAESBinaryField32x8b,
+	TowerLevel8
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES128x32b,
 	AESTowerField32b,
 	PackedAESBinaryField32x8b,
 	TowerLevel4
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES256x16b,
+	AESTowerField16b,
+	PackedAESBinaryField32x8b,
+	TowerLevel2
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES512x8b,
+	AESTowerField8b,
+	PackedAESBinaryField32x8b,
+	TowerLevel1
+);
+
+// 512 bit
+define_byte_sliced_3d!(
+	ByteSliced3DAES64x128b,
+	AESTowerField128b,
+	PackedAESBinaryField64x8b,
+	TowerLevel16
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES128x64b,
+	AESTowerField64b,
+	PackedAESBinaryField64x8b,
+	TowerLevel8
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES256x32b,
+	AESTowerField32b,
+	PackedAESBinaryField64x8b,
+	TowerLevel4
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES512x16b,
+	AESTowerField16b,
+	PackedAESBinaryField64x8b,
+	TowerLevel2
+);
+define_byte_sliced_3d!(
+	ByteSliced3DAES1024x8b,
+	AESTowerField8b,
+	PackedAESBinaryField64x8b,
+	TowerLevel1
 );
