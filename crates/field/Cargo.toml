@@ -89,3 +89,7 @@ harness = false
 [[bench]]
 name = "packed_field_subfield_ops"
 harness = false
+
+[[bench]]
+name = "byte_iteration"
+harness = false
