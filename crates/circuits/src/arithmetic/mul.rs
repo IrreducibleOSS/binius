@@ -1,4 +1,12 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
+
+//! Multiplication based on exponentiation.
+//!
+//! The core idea of this method is to verify the equality $a \cdot b = c$
+//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{32}})^{chigh}$,
+//! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
+//!
+//! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
 use anyhow::Error;
 use binius_core::{constraint_system::mul::Mul, oracle::OracleId};
