@@ -364,36 +364,41 @@ where
 	F: TowerField,
 	Backend: ComputationBackend,
 {
-	let (composite_metas, composite_eval_points): (Vec<&ProjectedBivariateMeta>, Vec<&[F]>) =
-		Iterator::unzip(
-			metas
-				.iter()
-				.zip(projected_bivariate_claims)
-				.filter(|(meta, _)| meta.inner_id.is_none())
-				.map(|(meta, claim)| (meta, claim.eval_point.as_ref())),
-		);
-	memoized_queries.memoize_query_par(&composite_eval_points, backend)?;
-
-	// composite eval_point -> eq MLE witness
-	let eq_mles: HashMap<&[F], MultilinearWitness<'_, _>> = composite_eval_points
+	let dedup_eval_points = metas
 		.iter()
+		.zip(projected_bivariate_claims)
+		.filter(|(meta, _)| meta.inner_id.is_none())
+		.map(|(_, claim)| claim.eval_point.as_ref())
+		.collect::<HashSet<_>>();
+
+	memoized_queries
+		.memoize_query_par(&dedup_eval_points.iter().copied().collect::<Vec<_>>(), backend)?;
+
+	let eq_indicators = dedup_eval_points
+		.into_iter()
 		.map(|eval_point| {
 			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
 				memoized_queries
-					.full_query(eval_point, backend)?
+					.full_query_readonly(eval_point)
+					.expect("computed above")
 					.expansion()
 					.to_vec(),
 			)?)
 			.upcast_arc_dyn();
-			Ok((*eval_point, mle))
+			Ok((eval_point, mle))
 		})
 		.collect::<Result<HashMap<_, _>, Error>>()?;
 
-	for (meta, eval_point) in composite_metas.iter().zip(&composite_eval_points) {
-		witness_index.update_multilin_poly(vec![(
-			meta.multiplier_id,
-			eq_mles.get(eval_point).expect("computed above").clone(),
-		)])?;
+	for (meta, claim) in metas
+		.iter()
+		.zip(projected_bivariate_claims)
+		.filter(|(meta, _)| meta.inner_id.is_none())
+	{
+		let eq_ind = eq_indicators
+			.get(claim.eval_point.as_ref())
+			.expect("was added above");
+
+		witness_index.update_multilin_poly(vec![(meta.multiplier_id, eq_ind.clone())])?;
 	}
 
 	Ok(())
