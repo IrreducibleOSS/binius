@@ -5,11 +5,15 @@
 use binius_field::{
 	as_packed_field::PackScalar,
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	polyval::{AES_TO_POLYVAL_TRANSFORMATION, BINARY_TO_POLYVAL_TRANSFORMATION},
+	polyval::{
+		AES_TO_POLYVAL_TRANSFORMATION, BINARY_TO_POLYVAL_TRANSFORMATION,
+		POLYVAL_TO_AES_TRANSFORMARION,
+	},
 	underlier::UnderlierType,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
 	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
+	POLYVAL_TO_BINARY_TRANSFORMATION,
 };
 use trait_set::trait_set;
 
@@ -38,12 +42,17 @@ pub trait TowerFamily: Sized {
 }
 
 pub trait ProverTowerFamily: TowerFamily {
-	type FastB128: TowerField + From<Self::B128> + Into<Self::B128>;
+	type FastB128: TowerField + From<Self::B128> + Into<Self::B128> + ExtensionField<Self::B1>;
 
 	fn packed_transformation_to_fast<Top, FastTop>() -> impl Transformation<Top, FastTop>
 	where
 		Top: PackedTop<Self> + PackedTransformationFactory<FastTop>,
 		FastTop: PackedField<Scalar = Self::FastB128>;
+
+	fn packed_transformation_from_fast<FastTop, Top>() -> impl Transformation<FastTop, Top>
+	where
+		FastTop: PackedTransformationFactory<Top>,
+		Top: PackedField<Scalar = Self::B128>;
 }
 
 /// The canonical Fan-Paar tower family.
@@ -69,6 +78,14 @@ impl ProverTowerFamily for CanonicalTowerFamily {
 	{
 		Top::make_packed_transformation(BINARY_TO_POLYVAL_TRANSFORMATION)
 	}
+
+	fn packed_transformation_from_fast<FastTop, Top>() -> impl Transformation<FastTop, Top>
+	where
+		FastTop: PackedTransformationFactory<Top>,
+		Top: PackedField<Scalar = Self::B128>,
+	{
+		FastTop::make_packed_transformation(POLYVAL_TO_BINARY_TRANSFORMATION)
+	}
 }
 
 /// The tower defined by Fan-Paar extensions built on top of the Rijndael field.
@@ -93,6 +110,14 @@ impl ProverTowerFamily for AESTowerFamily {
 		FastTop: PackedField<Scalar = Self::FastB128>,
 	{
 		Top::make_packed_transformation(AES_TO_POLYVAL_TRANSFORMATION)
+	}
+
+	fn packed_transformation_from_fast<FastTop, Top>() -> impl Transformation<FastTop, Top>
+	where
+		FastTop: PackedTransformationFactory<Top>,
+		Top: PackedField<Scalar = Self::B128>,
+	{
+		FastTop::make_packed_transformation(POLYVAL_TO_AES_TRANSFORMARION)
 	}
 }
 
