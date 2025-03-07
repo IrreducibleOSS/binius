@@ -39,8 +39,7 @@ pub struct Mul {
 	pub xin_exp_result_id: OracleId,
 	pub yin_bits: Vec<OracleId>,
 	pub yin_exp_result_id: OracleId,
-	pub cout_low_bits: Vec<OracleId>,
-	pub cout_high_bits: Vec<OracleId>,
+	pub cout_bits: Vec<OracleId>,
 	pub cout_low_exp_result_id: OracleId,
 	pub cout_high_exp_result_id: OracleId,
 }
@@ -85,7 +84,7 @@ where
 	let mut witnesses = Vec::with_capacity(multiplications.len() * 4);
 
 	for mul in multiplications {
-		if mul.cout_low_bits.len() + mul.cout_high_bits.len() > FExt::<Tower>::N_BITS {
+		if mul.cout_bits.len() > FExt::<Tower>::N_BITS {
 			bail!(gkr_exp::Error::SmallBaseField)
 		}
 
@@ -115,13 +114,15 @@ where
 			from_fast_witness::<U, Tower>(yin_exp_result_witness)?,
 		)])?;
 
-		let cout_low_exponent = get_fast_exponent_witnesses(witness, &mul.cout_low_bits)?;
+		let (cout_low_bits, cout_high_bits) = mul.cout_bits.split_at(mul.cout_bits.len() / 2);
 
-		let cout_high_exponent = get_fast_exponent_witnesses(witness, &mul.cout_high_bits)?;
+		let cout_low_exponent = get_fast_exponent_witnesses(witness, cout_low_bits)?;
+
+		let cout_high_exponent = get_fast_exponent_witnesses(witness, cout_high_bits)?;
 
 		let cout_high_witness = gkr_exp::BaseExpWitness::new_with_constant_base(
 			cout_high_exponent,
-			FFastExt::<Tower>::MULTIPLICATIVE_GENERATOR.pow(1 << mul.cout_low_bits.len()),
+			FFastExt::<Tower>::MULTIPLICATIVE_GENERATOR.pow(1 << cout_low_bits.len()),
 		)?;
 
 		let cout_high_result_witness = cout_high_witness.exponentiation_result_witness();
@@ -170,7 +171,7 @@ where
 				Some(F::MULTIPLICATIVE_GENERATOR),
 				None,
 				Some(F::MULTIPLICATIVE_GENERATOR),
-				Some(F::MULTIPLICATIVE_GENERATOR.pow(1 << mul.cout_low_bits.len())),
+				Some(F::MULTIPLICATIVE_GENERATOR.pow(1 << (mul.cout_bits.len() / 2))),
 			]
 		})
 		.collect::<Vec<_>>();
@@ -179,11 +180,13 @@ where
 		.iter()
 		.cloned()
 		.flat_map(|mul| {
+			let (cout_low_bits, cout_high_bits) = mul.cout_bits.split_at(mul.cout_bits.len() / 2);
+
 			[
 				mul.xin_bits,
 				mul.yin_bits,
-				mul.cout_low_bits,
-				mul.cout_high_bits,
+				cout_low_bits.to_vec(),
+				cout_high_bits.to_vec(),
 			]
 		})
 		.collect::<Vec<_>>();
@@ -205,11 +208,13 @@ pub fn make_eval_claims<F: TowerField>(
 		.iter()
 		.cloned()
 		.flat_map(|mul| {
+			let (cout_low_bits, cout_high_bits) = mul.cout_bits.split_at(mul.cout_bits.len() / 2);
+
 			[
 				mul.xin_bits,
 				mul.yin_bits,
-				mul.cout_low_bits,
-				mul.cout_high_bits,
+				cout_low_bits.to_vec(),
+				cout_high_bits.to_vec(),
 			]
 		})
 		.collect::<Vec<_>>();
