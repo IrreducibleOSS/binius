@@ -2,12 +2,13 @@
 use std::array;
 
 use binius_field::{
-	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, PackedAESBinaryField32x8b,
-	PackedBinaryField32x8b, PackedField,
+	AESTowerField32b, AESTowerField8b, BinaryField32b, BinaryField8b, ByteSlicedAES32x32b,
+	PackedAESBinaryField32x8b, PackedBinaryField32x8b, PackedField,
 };
 use binius_hash::{
-	FixedLenHasherDigest, Groestl256, GroestlDigest, GroestlDigestCompression, HashDigest,
-	HasherDigest, PseudoCompressionFunction, Vision32b, VisionHasher,
+	permutation::Permutation, FixedLenHasherDigest, Groestl256, GroestlDigest,
+	GroestlDigestCompression, HashDigest, HasherDigest, PseudoCompressionFunction, Vision32b,
+	Vision32bPermutation, VisionHasher,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use groestl_crypto::{Digest, Groestl256 as GenericGroestl256};
@@ -111,11 +112,30 @@ fn bench_vision32(c: &mut Criterion) {
 	group.finish()
 }
 
+fn bench_vision_permutation_simd(c: &mut Criterion) {
+	let mut group = c.benchmark_group("vision_permutation_simd");
+
+	let mut rng = thread_rng();
+
+	let state = array::from_fn::<_, 24, _>(|_| ByteSlicedAES32x32b::random(&mut rng));
+
+	group.throughput(Throughput::Bytes((ByteSlicedAES32x32b::WIDTH * 4) as u64));
+	let permutation = Vision32bPermutation::default();
+	group.bench_function("Vision over BinaryField32b", |bench| {
+		bench.iter(|| {
+			permutation.permute(state);
+		})
+	});
+
+	group.finish()
+}
+
 criterion_group!(
 	hash,
 	bench_groestl_compression,
 	bench_groestl,
 	bench_groestl_rustcrypto,
-	bench_vision32
+	bench_vision32,
+	bench_vision_permutation_simd,
 );
 criterion_main!(hash);
