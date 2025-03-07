@@ -69,8 +69,8 @@ lazy_static! {
 	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_FWD_CONST_AES);
 	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_INV_CONST_AES);
 
-	static ref FWD_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = PackedField::broadcast(AFFINE_FWD_CONST_AES);
-	static ref INV_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = PackedField::broadcast(AFFINE_INV_CONST_AES);
+	static ref FWD_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_INV_CONST_AES);
 
 	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] =
 		ROUND_KEYS.map(|round_consts| {
@@ -151,7 +151,30 @@ impl Vision32bPermutation {
 		constant: &P,
 	) {
 		for chunk in d.iter_mut() {
-			self.sbox(chunk, packed_linear_trans, constant);
+			self.sbox_packed_affine(chunk, packed_linear_trans, constant);
+		}
+	}
+	#[inline]
+	fn sbox_packed_affine_byte_sliced(
+		&self,
+		chunk: &mut ByteSlicedAES32x32b,
+		packed_linear_trans: &impl Transformation<ByteSlicedAES32x32b, ByteSlicedAES32x32b>,
+		constant: &ByteSlicedAES32x32b,
+	) {
+		let x_inv_eval = chunk.invert_or_zero();
+		let result = packed_linear_trans.transform(&x_inv_eval);
+
+		*chunk = result + *constant
+	}
+
+	fn sbox_step_byte_sliced(
+		&self,
+		d: &mut [ByteSlicedAES32x32b; 24],
+		packed_linear_trans: &impl Transformation<ByteSlicedAES32x32b, ByteSlicedAES32x32b>,
+		constant: &ByteSlicedAES32x32b,
+	) {
+		for chunk in d.iter_mut() {
+			self.sbox_packed_affine_byte_sliced(chunk, packed_linear_trans, constant)
 		}
 	}
 }

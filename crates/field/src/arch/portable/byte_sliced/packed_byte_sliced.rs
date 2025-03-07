@@ -51,45 +51,6 @@ macro_rules! define_byte_sliced {
 					.get_unchecked(byte_index / <$tower_level as TowerLevel>::WIDTH)
 					.to_underlier()
 			}
-
-			/// Returns the underlying storage.
-			/// Note that the bytes in the storage are in the "transposed" order, so use this method
-			/// for some low-level operations only.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub const fn raw_data(&self) -> &[$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
-				&self.data
-			}
-
-			/// Returns the mutable reference to the underlying storage.
-			/// Note that the bytes in the storage are in the "transposed" order, so use this method
-			/// for some low-level operations only.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn raw_data_mut(&mut self) -> &mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH] {
-				&mut self.data
-			}
-
-			/// Creates a new instance from raw underlying storage.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data(data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> Self {
-				Self { data }
-			}
-
-			/// Casts raw data to a reference to `Self`
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data_ref(data: &[$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> &Self {
-				unsafe { &*(data as *const [$packed_storage; <$tower_level as TowerLevel>::WIDTH] as *const Self) }
-			}
-
-			/// Casts mutable raw data to a mutable reference to `Self`
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data_mut(data: &mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH]) -> &mut Self {
-				unsafe { &mut *(data as *mut [$packed_storage; <$tower_level as TowerLevel>::WIDTH] as *mut Self) }
-			}
 		}
 
 		impl PackedField for $name {
@@ -503,45 +464,6 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				self.data.get_unchecked(byte_index % (Self::ARRAY_LEN))
 					.get_unchecked(byte_index / (Self::ARRAY_LEN))
 					.to_underlier()
-			}
-
-			/// Returns the underlying storage.
-			/// Note that the bytes in the storage are in the "transposed" order, so use this method
-			/// for some low-level operations only.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub const fn raw_data(&self) -> &[$packed_storage; Self::ARRAY_LEN] {
-				&self.data
-			}
-
-			/// Returns the mutable reference to the underlying storage.
-			/// Note that the bytes in the storage are in the "transposed" order, so use this method
-			/// for some low-level operations only.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn data_mut(&mut self) -> &mut [$packed_storage; Self::ARRAY_LEN] {
-				&mut self.data
-			}
-
-			/// Creates a new instance from raw underlying storage.
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data(data: [$packed_storage; Self::ARRAY_LEN]) -> Self {
-				Self { data }
-			}
-
-			/// Casts raw data to a reference to `Self`
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data_ref(data: &[$packed_storage; Self::ARRAY_LEN]) -> &Self {
-				unsafe { &*(data as *const [$packed_storage; Self::ARRAY_LEN] as *const Self) }
-			}
-
-			/// Casts mutable raw data to a mutable reference to `Self`
-			/// TODO: check if we still need this method after byte-sliced fields have underlier.
-			#[inline(always)]
-			pub fn from_raw_data_mut(data: &mut [$packed_storage; Self::ARRAY_LEN]) -> &mut Self {
-				unsafe { &mut *(data as *mut [$packed_storage; Self::ARRAY_LEN] as *mut Self) }
 			}
 		}
 
