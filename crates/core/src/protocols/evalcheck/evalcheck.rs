@@ -35,6 +35,7 @@ enum EvalcheckNumerics {
 	Repeating,
 	LinearCombination,
 	ZeroPadded,
+	CompositeMLE,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,7 @@ pub enum EvalcheckProof<F: Field> {
 		subproofs: Vec<(F, EvalcheckProof<F>)>,
 	},
 	ZeroPadded(F, Box<EvalcheckProof<F>>),
+	CompositeMLE,
 }
 
 impl<F: Field> EvalcheckProof<F> {
@@ -62,11 +64,12 @@ impl<F: Field> EvalcheckProof<F> {
 				subproofs: subproofs
 					.into_iter()
 					.map(|(eval, proof)| (eval.into(), proof.isomorphic()))
-					.collect::<Vec<_>>(),
+					.collect(),
 			},
 			Self::ZeroPadded(eval, proof) => {
 				EvalcheckProof::ZeroPadded(eval.into(), Box::new(proof.isomorphic()))
 			}
+			Self::CompositeMLE => EvalcheckProof::CompositeMLE,
 		}
 	}
 }
@@ -81,6 +84,7 @@ impl EvalcheckNumerics {
 			5 => Ok(Self::Repeating),
 			6 => Ok(Self::LinearCombination),
 			7 => Ok(Self::ZeroPadded),
+			8 => Ok(Self::CompositeMLE),
 			_ => Err(Error::EvalcheckSerializationError),
 		}
 	}
@@ -122,6 +126,9 @@ pub fn serialize_evalcheck_proof<B: BufMut, F: TowerField>(
 			transcript.write_scalar(*val);
 			serialize_evalcheck_proof(transcript, subproof);
 		}
+		EvalcheckProof::CompositeMLE => {
+			transcript.write_bytes(&[EvalcheckNumerics::CompositeMLE as u8]);
+		}
 	}
 }
 
@@ -132,6 +139,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 	let mut ty = 0;
 	transcript.read_bytes(slice::from_mut(&mut ty))?;
 	let as_enum = EvalcheckNumerics::from(ty)?;
+
 	match as_enum {
 		EvalcheckNumerics::Transparent => Ok(EvalcheckProof::Transparent),
 		EvalcheckNumerics::Committed => Ok(EvalcheckProof::Committed),
@@ -158,6 +166,7 @@ pub fn deserialize_evalcheck_proof<B: Buf, F: TowerField>(
 			let subproof = deserialize_evalcheck_proof(transcript)?;
 			Ok(EvalcheckProof::ZeroPadded(scalar, Box::new(subproof)))
 		}
+		EvalcheckNumerics::CompositeMLE => Ok(EvalcheckProof::CompositeMLE),
 	}
 }
 

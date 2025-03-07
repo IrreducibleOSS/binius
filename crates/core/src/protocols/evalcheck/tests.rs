@@ -10,14 +10,17 @@ use binius_field::{
 	PackedBinaryField1x128b, PackedField, TowerField,
 };
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_math::{extrapolate_line, MultilinearExtension, MultilinearPoly, MultilinearQuery};
+use binius_macros::arith_expr;
+use binius_math::{
+	extrapolate_line, CompositionPoly, MultilinearExtension, MultilinearPoly, MultilinearQuery,
+};
 use bytemuck::cast_slice_mut;
 use itertools::Either;
 use rand::{rngs::StdRng, thread_rng, SeedableRng};
 
 use crate::{
 	oracle::{MultilinearOracleSet, ShiftVariant},
-	polynomial::MultivariatePoly,
+	polynomial::{ArithCircuitPoly, MultivariatePoly},
 	protocols::evalcheck::{
 		deserialize_evalcheck_proof, serialize_evalcheck_proof, EvalcheckMultilinearClaim,
 		EvalcheckProof, EvalcheckProver, EvalcheckVerifier,
@@ -310,6 +313,94 @@ fn test_evalcheck_linear_combination_size_one() {
 		.update_multilin_poly(vec![
 			(select_row_oracle_id, select_row_witness.specialize_arc_dyn()),
 			(lin_com_id, lin_com_witness.specialize_arc_dyn()),
+		])
+		.unwrap();
+
+	let backend = make_portable_backend();
+	let mut prover_state = EvalcheckProver::new(&mut oracles, &mut witness_index, &backend);
+	let proof = prover_state.prove(vec![claim.clone()]).unwrap();
+
+	let mut verifier_state = EvalcheckVerifier::<FExtension>::new(&mut oracles);
+	verifier_state.verify(vec![claim], proof).unwrap();
+}
+
+#[test]
+fn test_evalcheck_composite() {
+	let n_vars = 8;
+
+	let select_row1 = SelectRow::new(n_vars, 0).unwrap();
+	let select_row2 = SelectRow::new(n_vars, 5).unwrap();
+	let select_row3 = SelectRow::new(n_vars, 10).unwrap();
+
+	let mut oracles = MultilinearOracleSet::new();
+
+	let select_row1_oracle_id = oracles.add_transparent(select_row1.clone()).unwrap();
+	let select_row2_oracle_id = oracles.add_transparent(select_row2.clone()).unwrap();
+	let select_row3_oracle_id = oracles.add_transparent(select_row3.clone()).unwrap();
+
+	let comp = arith_expr!(BinaryField128b[x, y, z] = x * y * 15 + z * y * 8 + z * 2 + 77);
+
+	let composite_id = oracles
+		.add_composite_mle(
+			n_vars,
+			[
+				select_row1_oracle_id,
+				select_row2_oracle_id,
+				select_row3_oracle_id,
+			],
+			comp.clone(),
+		)
+		.unwrap();
+
+	let mut rng = StdRng::seed_from_u64(0);
+	let eval_point = repeat_with(|| <FExtension as Field>::random(&mut rng))
+		.take(n_vars)
+		.collect::<Vec<_>>();
+
+	let eval = ArithCircuitPoly::new(comp)
+		.evaluate(&[
+			select_row1.evaluate(&eval_point).unwrap(),
+			select_row2.evaluate(&eval_point).unwrap(),
+			select_row3.evaluate(&eval_point).unwrap(),
+		])
+		.unwrap();
+
+	let select_row1_witness = select_row1
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let select_row2_witness = select_row2
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+	let select_row3_witness = select_row3
+		.multilinear_extension::<PackedBinaryField128x1b>()
+		.unwrap();
+
+	let lin_com_values = (0..1 << n_vars)
+		.map(|i| {
+			select_row1_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(2)
+				+ select_row2_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(3)
+				+ select_row3_witness.evaluate_on_hypercube(i).unwrap() * FExtension::new(4)
+				+ FExtension::new(1)
+		})
+		.map(PackedBinaryField1x128b::set_single)
+		.collect();
+	let lin_com_witness = MultilinearExtension::from_values(lin_com_values).unwrap();
+
+	// Make the claim a composite oracle over a linear combination, in order to test the case
+	// of requiring nested composite evalcheck proofs.
+	let claim = EvalcheckMultilinearClaim {
+		id: composite_id,
+		eval_point: eval_point.into(),
+		eval,
+	};
+
+	let mut witness_index = MultilinearExtensionIndex::<U, FExtension>::new();
+	witness_index
+		.update_multilin_poly(vec![
+			(select_row1_oracle_id, select_row1_witness.specialize_arc_dyn()),
+			(select_row2_oracle_id, select_row2_witness.specialize_arc_dyn()),
+			(select_row3_oracle_id, select_row3_witness.specialize_arc_dyn()),
+			(composite_id, lin_com_witness.specialize_arc_dyn()),
 		])
 		.unwrap();
 
