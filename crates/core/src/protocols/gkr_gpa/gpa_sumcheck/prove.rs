@@ -2,7 +2,10 @@
 
 use std::ops::Range;
 
-use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
+use binius_field::{
+	packed::packed_from_fn_with_offset, util::eq, ExtensionField, Field, PackedExtension,
+	PackedField, TowerField,
+};
 use binius_hal::{ComputationBackend, SumcheckEvaluator};
 use binius_math::{
 	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
@@ -16,13 +19,10 @@ use tracing::{debug_span, instrument};
 use super::error::Error;
 use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError},
-	protocols::{
-		sumcheck::{
-			get_nontrivial_evaluation_points, immediate_switchover_heuristic,
-			prove::{common, prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
-			CompositeSumClaim, Error as SumcheckError, RoundCoeffs,
-		},
-		utils::packed_from_fn_with_offset,
+	protocols::sumcheck::{
+		get_nontrivial_evaluation_points, immediate_switchover_heuristic,
+		prove::{common, prover_state::ProverState, SumcheckInterpolator, SumcheckProver},
+		CompositeSumClaim, Error as SumcheckError, RoundCoeffs,
 	},
 };
 

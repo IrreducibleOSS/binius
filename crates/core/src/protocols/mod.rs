@@ -37,4 +37,3 @@ pub mod sumcheck;
 #[allow(dead_code)]
 #[doc(hidden)]
 pub mod test_utils;
-mod utils;

@@ -6,6 +6,7 @@ use binius_field::{
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
+	packed::packed_from_fn_with_offset,
 	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b,
 	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension, PackedField,
 };
@@ -78,24 +79,14 @@ lazy_static! {
 		array::from_fn(|i| PackedAESBinaryField32x8b::broadcast(constants_8b.get(i)))
 	};
 
-	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS.map(|key| {
-			let arr: [PackedAESBinaryField8x32b; 3] = key
-				.chunks_exact(8)
-				.map(|x| PackedAESBinaryField8x32b::from_fn(|i| AESTowerField32b::from(x[i])))
-				.collect::<Vec<_>>()
-				.try_into()
-				.unwrap();
-			arr
+	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] =
+		ROUND_KEYS.map(|round_consts| {
+			array::from_fn(|i| packed_from_fn_with_offset(i, |j| round_consts[j].into()))
 		});
-	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSlicedAES32x32b; 24]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS_PACKED_AES.map(|round_consts| {
-		array::from_fn(|i| {
-			let raw_data = array::from_fn(|j|
-				PackedAESBinaryField32x8b::broadcast(PackedExtension::cast_base(round_consts[i / 8]).get((i % 8) * 4 + j))
-			);
-
-			ByteSlicedAES32x32b::from_raw_data(raw_data)
-		})
-	});
+	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSlicedAES32x32b; 24]; 2 * NUM_ROUNDS + 1] =
+		ROUND_KEYS.map(|round_consts| {
+			round_consts.map(|round_const_i| ByteSlicedAES32x32b::broadcast(round_const_i.into()))
+		});
 
 	pub static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
 }
