@@ -2,6 +2,7 @@
 
 use std::{
 	cmp::Ordering,
+	collections::HashSet,
 	fmt::{self, Display},
 	iter::{Product, Sum},
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -47,6 +48,27 @@ impl<F: Field> ArithExpr<F> {
 			Self::Add(left, right) | Self::Mul(left, right) => left.n_vars().max(right.n_vars()),
 			Self::Pow(id, _) => id.n_vars(),
 		}
+	}
+
+	/// The set of variable indices the expression contains.
+	pub fn vars(&self) -> HashSet<usize> {
+		match self {
+			Self::Const(_) => HashSet::new(),
+			Self::Var(index) => std::iter::once(*index).collect(),
+			Self::Add(left, right) | Self::Mul(left, right) => {
+				let mut set = left.vars();
+				set.extend(right.vars());
+				set
+			}
+			Self::Pow(base, _) => base.vars(),
+		}
+	}
+
+	/// The variable indices the expression contains, sorted and deduplicated.
+	pub fn vars_sorted(&self) -> Vec<usize> {
+		let mut vars = self.vars().into_iter().collect::<Vec<_>>();
+		vars.sort();
+		vars
 	}
 
 	/// The total degree of the polynomial the expression represents.
