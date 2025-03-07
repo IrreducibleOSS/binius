@@ -30,10 +30,10 @@ use crate::{
 /// can hold, usually 16, 32, or 64 to fit into SIMD registers.
 macro_rules! define_byte_sliced {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+		#[derive(Default, Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
+			data: [$packed_storage; <$tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
@@ -313,6 +313,18 @@ macro_rules! define_byte_sliced {
 /// Implements common operations both for byte-sliced AES fields and 8b base fields.
 macro_rules! common_byte_sliced_impls {
 	($name:ident, $scalar_type:ty) => {
+		impl Debug for $name {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				let values_str = self
+					.iter()
+					.map(|value| format!("{}", value))
+					.collect::<Vec<_>>()
+					.join(",");
+
+				write!(f, "{}([{}])", stringify!($name), values_str)
+			}
+		}
+
 		impl Add for $name {
 			type Output = Self;
 
@@ -432,14 +444,15 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 	($name:ident, $packed_storage:ty, $original_byte_sliced:ty) => {
 		#[doc = concat!("This is a PackedFields helper that is used like a PackedSubfield of [`PackedExtension<AESTowerField8b>`] for [`", stringify!($original_byte_sliced), "`]")]
 		/// and has no particular meaning outside of this purpose.
-		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Zeroable, Pod)]
+		#[derive(Default, Clone, Copy, PartialEq, Eq, Zeroable, Pod)]
 		#[repr(transparent)]
 		pub struct $name {
 			pub(super) data: [$packed_storage; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
 		}
 
 		impl $name {
-			pub const BYTES: usize = <$packed_storage>::WIDTH * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
+			const ARRAY_LEN: usize = <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8;
+			pub const BYTES: usize = <$packed_storage>::WIDTH * (Self::ARRAY_LEN);
 
 			/// Get the byte at the given index.
 			///
@@ -448,8 +461,8 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				self.data.get_unchecked(byte_index % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
-					.get_unchecked(byte_index / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+				self.data.get_unchecked(byte_index % (Self::ARRAY_LEN))
+					.get_unchecked(byte_index / (Self::ARRAY_LEN))
 					.to_underlier()
 			}
 		}
@@ -458,20 +471,20 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			type Scalar = AESTowerField8b;
 
 			const LOG_WIDTH: usize =
-				<$packed_storage>::LOG_WIDTH + checked_log_2(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8);
+				<$packed_storage>::LOG_WIDTH + checked_log_2(Self::ARRAY_LEN);
 
 			#[inline(always)]
 			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
 				self.data
-					.get_unchecked(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
-					.get_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
+					.get_unchecked(i % (Self::ARRAY_LEN))
+					.get_unchecked(i / (Self::ARRAY_LEN))
 			}
 
 			#[inline(always)]
 			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
 				self.data
-					.get_unchecked_mut(i % (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8))
-					.set_unchecked(i / (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8), scalar);
+					.get_unchecked_mut(i % (Self::ARRAY_LEN))
+					.set_unchecked(i / (Self::ARRAY_LEN), scalar);
 			}
 
 			fn random(mut rng: impl rand::RngCore) -> Self {
@@ -482,7 +495,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			fn broadcast(scalar: Self::Scalar) -> Self {
 				let column = <$packed_storage>::broadcast(scalar);
 				Self {
-					data: [column; <<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8],
+					data: [column; Self::ARRAY_LEN],
 				}
 			}
 
@@ -490,7 +503,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
 				Self {
 					data: array::from_fn(|i|
-						<$packed_storage>::from_fn(|j| f(i * (<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) + j))
+						<$packed_storage>::from_fn(|j| f(i * (Self::ARRAY_LEN) + j))
 					),
 				}
 			}
@@ -513,13 +526,21 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
+				let block_len = 1 << log_block_len;
 
-				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
-					let (this_byte_result1, this_byte_result2) =
-						self.data[byte_num].interleave(other.data[byte_num], log_block_len);
-
-					result1.data[byte_num] = this_byte_result1;
-					result2.data[byte_num] = this_byte_result2;
+				if block_len < Self::ARRAY_LEN {
+					for block_index in 0..(Self::ARRAY_LEN / block_len / 2) {
+						let offset = block_index * block_len * 2;
+						result1.data[offset..offset + block_len].copy_from_slice(&self.data[offset..offset + block_len]);
+						result1.data[offset + block_len..offset + block_len * 2].copy_from_slice(&other.data[offset..offset + block_len]);
+						result2.data[offset..offset + block_len].copy_from_slice(&self.data[offset + block_len..offset + block_len * 2]);
+						result2.data[offset + block_len..offset + block_len * 2].copy_from_slice(&other.data[offset + block_len..offset + block_len * 2]);
+					}
+				} else {
+					for byte_num in 0..(Self::ARRAY_LEN) {
+						(result1.data[byte_num], result2.data[byte_num]) =
+							self.data[byte_num].interleave(other.data[byte_num], log_block_len - checked_log_2(Self::ARRAY_LEN));
+					}
 				}
 
 				(result1, result2)
@@ -530,7 +551,7 @@ macro_rules! define_8b_extension_packed_subfield_for_byte_sliced {
 				let mut result1 = Self::default();
 				let mut result2 = Self::default();
 
-				for byte_num in 0..(<<$original_byte_sliced as PackedField>::Scalar>::N_BITS / 8) {
+				for byte_num in 0..(Self::ARRAY_LEN) {
 					(result1.data[byte_num], result2.data[byte_num]) =
 						self.data[byte_num].unzip(other.data[byte_num], log_block_len);
 				}

@@ -1,17 +1,14 @@
-// Copyright 2024-2025 Irreducible Inc.
+// Copyright 2025 Irreducible Inc.
 
-use std::{iter::repeat_n, marker::PhantomData};
+use std::array;
 
 use binius_field::{
-	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
-	packed::set_packed_slice,
-	underlier::{Divisible, WithUnderlier},
-	AESTowerField32b, AESTowerField8b, BinaryField, BinaryField32b, BinaryField8b, ExtensionField,
-	Field, PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension,
-	PackedExtensionIndexable, PackedField, PackedFieldIndexable,
+	packed::packed_from_fn_with_offset,
+	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b,
+	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension, PackedField,
 };
 use binius_ntt::{
 	twiddle::{OnTheFlyTwiddleAccess, TwiddleAccess},
@@ -19,29 +16,24 @@ use binius_ntt::{
 };
 use lazy_static::lazy_static;
 
-use crate::{
-	hasher::{FixedLenHasher, HashError},
-	permutation::{CryptographicPermutation, Permutation},
-	vision_constants::{
-		AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
-		ROUND_KEYS,
-	},
+use super::constants::{
+	AFFINE_FWD_AES, AFFINE_FWD_CONST_AES, AFFINE_INV_AES, AFFINE_INV_CONST_AES, NUM_ROUNDS,
+	ROUND_KEYS,
 };
+use crate::permutation::Permutation;
 
-const RATE_AS_U32: usize = 16;
+type PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
+	PackedAESBinaryField8x32b,
+>>::PackedTransformation<&'static [AESTowerField32b]>;
+type PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
+	ByteSlicedAES32x32b,
+>>::PackedTransformation<&'static [AESTowerField32b]>;
+type AdditiveNTT8b = SingleThreadedNTT<AESTowerField8b, OnTheFlyTwiddleAccess<AESTowerField8b>>;
 
 const SCALAR_FWD_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
 	FieldLinearTransformation::new_const(&AFFINE_FWD_AES);
 const SCALAR_INV_TRANS_AES: FieldLinearTransformation<AESTowerField32b> =
 	FieldLinearTransformation::new_const(&AFFINE_INV_AES);
-
-type PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
-	PackedAESBinaryField8x32b,
->>::PackedTransformation<&'static [AESTowerField32b]>;
-type AdditiveNTT8b = SingleThreadedNTT<AESTowerField8b, OnTheFlyTwiddleAccess<AESTowerField8b>>;
-
-/// The vision specialization over `BinaryField32b` as per [Vision Mark-32](https://eprint.iacr.org/2024/633)
-pub type Vision32b<P> = VisionHasher<BinaryField32b, P>;
 
 lazy_static! {
 	/// We use this object only to calculate twiddles for the fast NTT.
@@ -57,6 +49,9 @@ lazy_static! {
 	/// Specialized fast additive NTT to transform 3 x PackAESBinaryField8x32b with cosets [3, 4, 5]
 	static ref FORWARD_FAST_TRANSFORM: FastNTT = FastNTT::new(&ADDITIVE_NTT_AES, [3, 4, 5]);
 
+	static ref INVERSE_FAST_TRANSFORM_BYTE_SLICED: FastNttByteSliced = FastNttByteSliced::new(&ADDITIVE_NTT_AES, [0, 1, 2]);
+	static ref FORWARD_FAST_TRANSFORM_BYTE_SLICED: FastNttByteSliced = FastNttByteSliced::new(&ADDITIVE_NTT_AES, [3, 4, 5]);
+
 	pub static ref FWD_PACKED_TRANS_AES: PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
 		PackedAESBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_FWD_TRANS_AES);
@@ -64,26 +59,107 @@ lazy_static! {
 		PackedAESBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
 
-	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_FWD_CONST_AES);
-	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedAESBinaryField8x32b::broadcast(AFFINE_INV_CONST_AES);
+	pub static ref FWD_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
+		ByteSlicedAES32x32b,
+	>>::make_packed_transformation(SCALAR_FWD_TRANS_AES);
+	pub static ref INV_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
+		ByteSlicedAES32x32b,
+	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
 
-	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] = ROUND_KEYS.map(|key| {
-			let arr: [PackedAESBinaryField8x32b; 3] = key
-				.chunks_exact(8)
-				.map(|x| PackedAESBinaryField8x32b::from_fn(|i| AESTowerField32b::from(x[i])))
-				.collect::<Vec<_>>()
-				.try_into()
-				.unwrap();
-			arr
+	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_INV_CONST_AES);
+
+	static ref FWD_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_INV_CONST_AES);
+
+	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] =
+		ROUND_KEYS.map(|round_consts| {
+			array::from_fn(|i| packed_from_fn_with_offset(i, |j| round_consts[j].into()))
+		});
+	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSlicedAES32x32b; 24]; 2 * NUM_ROUNDS + 1] =
+		ROUND_KEYS.map(|round_consts| {
+			round_consts.map(|round_const_i| ByteSlicedAES32x32b::broadcast(round_const_i.into()))
 		});
 
-	static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
+	pub static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
+}
+
+/// This is the complete permutation function for the Vision hash which implements `Permutation`
+/// and `CryptographicPermutation` traits over `PackedAESBinary8x32b` as well as `BinaryField32b`
+#[derive(Clone, Default)]
+pub struct Vision32bPermutation {
+	mds: Vision32MDSTransform,
+}
+
+impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
+	fn permute_mut(&self, input: &mut [PackedAESBinaryField8x32b; 3]) {
+		add_packed_768(input, &ROUND_KEYS_PACKED_AES[0]);
+		for r in 0..NUM_ROUNDS {
+			self.sbox_multi(input, &*INV_PACKED_TRANS_AES, &*INV_CONST_AES);
+
+			let input_bases = PackedAESBinaryField8x32b::cast_bases_mut(input);
+			self.mds
+				.transform(input_bases.try_into().expect("input is 3 elements"));
+
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES[1 + 2 * r]);
+			self.sbox_multi(input, &*FWD_PACKED_TRANS_AES, &*FWD_CONST_AES);
+			let input_bases = PackedAESBinaryField8x32b::cast_bases_mut(input);
+			self.mds
+				.transform(input_bases.try_into().expect("input is 3 elements"));
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES[2 + 2 * r]);
+		}
+	}
+}
+
+impl Permutation<[ByteSlicedAES32x32b; 24]> for Vision32bPermutation {
+	fn permute_mut(&self, input: &mut [ByteSlicedAES32x32b; 24]) {
+		add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[0]);
+		for r in 0..NUM_ROUNDS {
+			self.sbox_multi(input, &*INV_PACKED_TRANS_AES_BYTE_SLICED, &INV_CONST_AES_BYTE_SLICED);
+
+			self.mds
+				.transform_byte_sliced(bytemuck::must_cast_mut(input));
+
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[1 + 2 * r]);
+			self.sbox_multi(input, &*FWD_PACKED_TRANS_AES_BYTE_SLICED, &FWD_CONST_AES_BYTE_SLICED);
+			self.mds
+				.transform_byte_sliced(bytemuck::must_cast_mut(input));
+			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[2 + 2 * r]);
+		}
+	}
+}
+
+impl Vision32bPermutation {
+	/// Apply the S-box transformation to a packed chunk of field elements.
+	#[inline]
+	fn sbox<P: PackedField>(
+		&self,
+		chunk: &mut P,
+		packed_linear_trans: &impl Transformation<P, P>,
+		constant: &P,
+	) {
+		let x_inv_eval = chunk.invert_or_zero();
+		let result = packed_linear_trans.transform(&x_inv_eval);
+		*chunk = result + *constant
+	}
+
+	/// Apply the S-box transformation to an array of packed field elements.
+	fn sbox_multi<P: PackedField, const N: usize>(
+		&self,
+		d: &mut [P; N],
+		packed_linear_trans: &impl Transformation<P, P>,
+		constant: &P,
+	) {
+		for chunk in d.iter_mut() {
+			self.sbox(chunk, packed_linear_trans, constant);
+		}
+	}
 }
 
 #[inline]
-fn add_packed_768<P: PackedField>(a: &mut [P; 3], b: &[P; 3]) {
-	for i in 0..3 {
-		a[i] += b[i];
+fn add_packed_768<P: PackedField, const N: usize>(a: &mut [P; N], b: &[P; N]) {
+	for (a, b) in a.iter_mut().zip(b.iter()) {
+		*a += *b;
 	}
 }
 
@@ -98,234 +174,60 @@ pub struct Vision32MDSTransform {
 
 impl Default for Vision32MDSTransform {
 	fn default() -> Self {
-		let x = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1));
-		let y = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2));
-		let z = PackedAESBinaryField32x8b::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1));
-
-		Self { x, y, z }
+		Self {
+			x: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 1)),
+			y: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(3, 2)),
+			z: PackedField::broadcast(ADDITIVE_NTT_AES.get_subspace_eval(4, 1)),
+		}
 	}
 }
 
 impl Vision32MDSTransform {
-	pub fn transform(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
+	pub fn transform(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
 		INVERSE_FAST_TRANSFORM.inverse(data);
 
-		{
-			let data = PackedExtension::cast_bases_mut(data);
+		data[1] += data[0];
+		let x = self.x * data[1];
+		data[2] += x + data[0];
 
-			data[1] += data[0];
-			let x = self.x * data[1];
-			data[2] += x + data[0];
+		let y = self.y * data[1];
+		let z = self.z * data[2];
 
-			let y = self.y * data[1];
-			let z = self.z * data[2];
-
-			let stash_0 = data[0];
-			let stash_1 = data[1];
-			data[0] += x + data[1] + data[2];
-			data[1] = stash_0 + y + z;
-			data[2] = data[1] + stash_1;
-		}
+		let stash_0 = data[0];
+		let stash_1 = data[1];
+		data[0] += x + data[1] + data[2];
+		data[1] = stash_0 + y + z;
+		data[2] = data[1] + stash_1;
 
 		FORWARD_FAST_TRANSFORM.forward(data);
 	}
-}
 
-/// This is the complete permutation function for the Vision hash which implements `Permutation`
-/// and `CryptographicPermutation` traits over `PackedAESBinary8x32b` as well as `BinaryField32b`
-#[derive(Clone, Default)]
-pub struct Vision32bPermutation {
-	mds: Vision32MDSTransform,
-}
+	pub fn transform_byte_sliced(&self, data: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
+		INVERSE_FAST_TRANSFORM_BYTE_SLICED.inverse(data);
 
-impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
-	fn permute_mut(&self, input: &mut [PackedAESBinaryField8x32b; 3]) {
-		add_packed_768(input, &ROUND_KEYS_PACKED_AES[0]);
-		for r in 0..NUM_ROUNDS {
-			*input = self.sbox_step(*input, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
-			self.mds.transform(input);
-			add_packed_768(input, &ROUND_KEYS_PACKED_AES[1 + 2 * r]);
-			*input = self.sbox_step(*input, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
-			self.mds.transform(input);
-			add_packed_768(input, &ROUND_KEYS_PACKED_AES[2 + 2 * r]);
-		}
-	}
-}
+		for i in 0..32 {
+			data[1][i] += data[0][i];
+			let x = self.x * data[1][i];
+			data[2][i] += x + data[0][i];
 
-impl Vision32bPermutation {
-	pub fn new() -> Self {
-		Self::default()
-	}
+			let y = self.y * data[1][i];
+			let z = self.z * data[2][i];
 
-	fn sbox_packed_affine(
-		&self,
-		chunk: &PackedAESBinaryField8x32b,
-		packed_linear_trans: &PackedTransformationType8x32bAES,
-		constant: PackedAESBinaryField8x32b,
-	) -> PackedAESBinaryField8x32b {
-		let x_inv_eval = chunk.invert_or_zero();
-		let result = packed_linear_trans.transform(&x_inv_eval);
-		result + constant
-	}
-
-	fn sbox_step(
-		&self,
-		d: [PackedAESBinaryField8x32b; 3],
-		packed_linear_trans: &PackedTransformationType8x32bAES,
-		constant: PackedAESBinaryField8x32b,
-	) -> [PackedAESBinaryField8x32b; 3] {
-		d.map(move |chunk| self.sbox_packed_affine(&chunk, packed_linear_trans, constant))
-	}
-
-	/// Simple function interface to do a permutation of vision
-	pub fn permute_elems(&self, input: &mut [BinaryField32b; 24]) {
-		self.permute_mut(input)
-	}
-}
-
-impl Permutation<[BinaryField32b; 24]> for Vision32bPermutation {
-	fn permute_mut(&self, input: &mut [BinaryField32b; 24]) {
-		let mut input_packed = [PackedAESBinaryField8x32b::default(); 3];
-		let input_unpacked = PackedFieldIndexable::unpack_scalars_mut(&mut input_packed[..]);
-		for (aes_in, &bin_in) in input_unpacked.iter_mut().zip(input.iter()) {
-			*aes_in = AESTowerField32b::from(bin_in);
+			let stash_0 = data[0][i];
+			let stash_1 = data[1][i];
+			data[0][i] += x + data[1][i] + data[2][i];
+			data[1][i] = stash_0 + y + z;
+			data[2][i] = data[1][i] + stash_1;
 		}
 
-		self.permute_mut(&mut input_packed);
-
-		let output_as_bin = PackedAESBinaryField8x32b::unpack_scalars(&input_packed);
-		for (bin_out, &aes_out) in input.iter_mut().zip(output_as_bin.iter()) {
-			*bin_out = BinaryField32b::from(aes_out);
-		}
-	}
-}
-
-impl CryptographicPermutation<[BinaryField32b; 24]> for Vision32bPermutation {}
-
-/// This is the struct that implements the Vision hash over `AESTowerField32b` and `BinaryField32b`
-/// isomorphically. Here the generic `P` represents the input type to the `update` function
-#[derive(Clone)]
-pub struct VisionHasher<F, P> {
-	// The hashed state
-	state: [PackedAESBinaryField8x32b; 3],
-	// The length that are committing to hash
-	committed_len: u64,
-	// Current length we have hashed so far
-	current_len: u64,
-	_p_marker: PhantomData<P>,
-	_f_marker: PhantomData<F>,
-}
-
-impl<U, F, P> FixedLenHasher<P> for VisionHasher<F, P>
-where
-	U: PackScalar<F> + Divisible<u32>,
-	F: BinaryField + From<AESTowerField32b> + Into<AESTowerField32b>,
-	P: PackedExtension<F, PackedSubfield: PackedFieldIndexable>,
-	PackedAESBinaryField8x32b: WithUnderlier<Underlier = U>,
-{
-	type Digest = PackedType<U, F>;
-
-	fn new(msg_len: u64) -> Self {
-		let mut this = Self {
-			state: [PackedAESBinaryField8x32b::zero(); 3],
-			committed_len: msg_len,
-			current_len: 0,
-			_p_marker: PhantomData,
-			_f_marker: PhantomData,
-		};
-		this.reset();
-		this
-	}
-
-	fn update(&mut self, msg: impl AsRef<[P]>) {
-		let msg = msg.as_ref();
-		if msg.is_empty() {
-			return;
-		}
-
-		let msg_scalars = P::unpack_base_scalars(msg).iter().copied().map(Into::into);
-
-		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
-		for (i, x) in msg_scalars.enumerate() {
-			let block_idx = (cur_block + i) % RATE_AS_U32;
-			let next_block = PackedAESBinaryField8x32b::unpack_scalars_mut(&mut self.state);
-			next_block[block_idx] = x;
-			if block_idx == RATE_AS_U32 - 1 {
-				self.state = PERMUTATION.permute(self.state);
-			}
-		}
-
-		self.current_len = self
-			.current_len
-			.checked_add(msg.len() as u64)
-			.expect("Overflow on message length");
-	}
-
-	fn chain_update(mut self, msg: impl AsRef<[P]>) -> Self {
-		self.update(msg);
-		self
-	}
-
-	fn finalize(mut self) -> Result<Self::Digest, HashError> {
-		// Pad here and output the hash
-		if self.current_len < self.committed_len {
-			return Err(HashError::NotEnoughData {
-				committed: self.committed_len,
-				hashed: self.current_len,
-			});
-		}
-
-		if self.current_len > self.committed_len {
-			return Err(HashError::TooMuchData {
-				committed: self.committed_len,
-				received: self.current_len,
-			});
-		}
-
-		let cur_block = (self.current_len as usize * P::WIDTH * P::Scalar::DEGREE) % RATE_AS_U32;
-		if cur_block != 0 {
-			// Pad and absorb
-			let next_block = PackedFieldIndexable::unpack_scalars_mut(&mut self.state[..2]);
-			next_block[cur_block..].fill(AESTowerField32b::ZERO);
-			self.state = PERMUTATION.permute(self.state);
-		}
-
-		let out_native = self.state[0];
-		Ok(Self::Digest::from_fn(|i| F::from(out_native.get(i))))
-	}
-
-	fn reset(&mut self) {
-		self.state.fill(PackedAESBinaryField8x32b::zero());
-
-		// Write the byte-length of the message into the initial state
-		let bytes_per_elem = P::WIDTH
-			* P::Scalar::DEGREE
-			* <BinaryField32b as ExtensionField<BinaryField8b>>::DEGREE;
-		let msg_len_bytes = self
-			.committed_len
-			.checked_mul(bytes_per_elem as u64)
-			.expect("Overflow on message length");
-		let msg_len_bytes_enc = msg_len_bytes.to_le_bytes();
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[0..4].try_into().unwrap(),
-			))),
-		);
-		set_packed_slice(
-			&mut self.state,
-			RATE_AS_U32 + 1,
-			AESTowerField32b::from(BinaryField32b::new(u32::from_le_bytes(
-				msg_len_bytes_enc[4..8].try_into().unwrap(),
-			))),
-		);
+		FORWARD_FAST_TRANSFORM_BYTE_SLICED.forward(data);
 	}
 }
 
 /// This structure represents fast additive NTT transformation that transforms
 /// 3 x `PackedAESBinaryField8x32b` with a different coset for each item in a single go.
-struct FastNTT {
+#[derive(Clone)]
+pub struct FastNTT {
 	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
 	round_0_twiddles: [PackedAESBinaryField32x8b; 2],
 	round_1_twiddles: [PackedAESBinaryField32x8b; 2],
@@ -335,104 +237,58 @@ struct FastNTT {
 impl FastNTT {
 	fn new(ntt: &AdditiveNTT8b, cosets: [u32; 3]) -> Self {
 		let get_coset_twiddles_for_round =
-			|round: usize| cosets.map(|coset| ntt.twiddles()[round].coset(3, coset as _));
+			|round: usize| get_coset_twiddles_for_round(round, cosets, ntt);
 
 		let cosets_twiddles_0 = get_coset_twiddles_for_round(0);
 		let cosets_twiddles_1 = get_coset_twiddles_for_round(1);
 		let cosets_twiddles_2 = get_coset_twiddles_for_round(2);
 
+		let round_0_twiddles = [
+			PackedAESBinaryField32x8b::from_scalars(
+				std::iter::repeat_n(cosets_twiddles_0[0].get(0), 4)
+					.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(0), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(1), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(1), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(2), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(2), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[0].get(3), 4))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[1].get(3), 4)),
+			),
+			PackedAESBinaryField32x8b::from_scalars(
+				std::iter::repeat_n(cosets_twiddles_0[2].get(0), 8)
+					.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(1), 8))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(2), 8))
+					.chain(std::iter::repeat_n(cosets_twiddles_0[2].get(3), 8))
+					.cycle(),
+			),
+		];
+		let round_1_twiddles = [
+			PackedAESBinaryField32x8b::from_scalars(
+				std::iter::repeat_n(cosets_twiddles_1[0].get(0), 8)
+					.chain(std::iter::repeat_n(cosets_twiddles_1[1].get(0), 8))
+					.chain(std::iter::repeat_n(cosets_twiddles_1[0].get(1), 8))
+					.chain(std::iter::repeat_n(cosets_twiddles_1[1].get(1), 8)),
+			),
+			PackedAESBinaryField32x8b::from_scalars(
+				std::iter::repeat_n(cosets_twiddles_1[2].get(0), 16)
+					.chain(std::iter::repeat_n(cosets_twiddles_1[2].get(1), 16))
+					.cycle(),
+			),
+		];
+		let round_2_twiddles = [
+			PackedAESBinaryField32x8b::from_scalars(
+				std::iter::repeat_n(cosets_twiddles_2[0].get(0), 16)
+					.chain(std::iter::repeat_n(cosets_twiddles_2[1].get(0), 16))
+					.cycle(),
+			),
+			PackedField::broadcast(cosets_twiddles_2[2].get(0)),
+		];
+
 		Self {
-			round_0_twiddles: [
-				PackedAESBinaryField32x8b::from_scalars(
-					repeat_n(cosets_twiddles_0[0].get(0), 4)
-						.chain(repeat_n(cosets_twiddles_0[1].get(0), 4))
-						.chain(repeat_n(cosets_twiddles_0[0].get(1), 4))
-						.chain(repeat_n(cosets_twiddles_0[1].get(1), 4))
-						.chain(repeat_n(cosets_twiddles_0[0].get(2), 4))
-						.chain(repeat_n(cosets_twiddles_0[1].get(2), 4))
-						.chain(repeat_n(cosets_twiddles_0[0].get(3), 4))
-						.chain(repeat_n(cosets_twiddles_0[1].get(3), 4)),
-				),
-				PackedAESBinaryField32x8b::from_scalars(
-					repeat_n(cosets_twiddles_0[2].get(0), 8)
-						.chain(repeat_n(cosets_twiddles_0[2].get(1), 8))
-						.chain(repeat_n(cosets_twiddles_0[2].get(2), 8))
-						.chain(repeat_n(cosets_twiddles_0[2].get(3), 8)),
-				),
-			],
-			round_1_twiddles: [
-				PackedAESBinaryField32x8b::from_scalars(
-					repeat_n(cosets_twiddles_1[0].get(0), 8)
-						.chain(repeat_n(cosets_twiddles_1[1].get(0), 8))
-						.chain(repeat_n(cosets_twiddles_1[0].get(1), 8))
-						.chain(repeat_n(cosets_twiddles_1[1].get(1), 8)),
-				),
-				PackedAESBinaryField32x8b::from_scalars(
-					repeat_n(cosets_twiddles_1[2].get(0), 16)
-						.chain(repeat_n(cosets_twiddles_1[2].get(1), 16)),
-				),
-			],
-			round_2_twiddles: [
-				PackedAESBinaryField32x8b::from_scalars(
-					repeat_n(cosets_twiddles_2[0].get(0), 16)
-						.chain(repeat_n(cosets_twiddles_2[1].get(0), 16)),
-				),
-				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_2[2].get(0)),
-			],
+			round_0_twiddles,
+			round_1_twiddles,
+			round_2_twiddles,
 		}
-	}
-
-	/// This method does a single inverse NTT transformation round for two pairs '(data, coset)'.
-	/// `twiddles` must contain interleaved twiddles for the given round.
-	/// Given an input:
-	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_0_twiddles_1, ...].
-	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
-	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
-	/// returns
-	/// (
-	///   [data_0_0 + (data_0_0 + data_0_1) * coset_0_twiddles_0, (data_0_0 + data_0_1) * coset_0_twiddles_0, ...],
-	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, (data_1_0 + data_1_1) * coset_1_twiddles_0, ...],
-	/// )
-	///
-	/// This method allows us to perform inverse NTT transformation for two pieces of data using the same number of vector operations as for one piece.
-	fn transform_inverse_round_pair(
-		twiddles: PackedAESBinaryField32x8b,
-		data_0: PackedAESBinaryField32x8b,
-		data_1: PackedAESBinaryField32x8b,
-		log_block_size: usize,
-	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
-		let (odds, evens) = data_0.interleave(data_1, log_block_size);
-		let result_evens = odds + evens;
-		let result_odds = odds + twiddles * result_evens;
-		result_odds.interleave(result_evens, log_block_size)
-	}
-
-	/// This method executes the transformation equivalent to `AdditiveNTT::inverse_transform`.
-	/// Each `data` element is treated as 32 8-bit AES field elements.
-	#[inline]
-	fn inverse(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
-		let data: &mut [PackedAESBinaryField32x8b] =
-			PackedAESBinaryField8x32b::cast_bases_mut(data);
-
-		let mut inverse_round = |twiddles: &[PackedAESBinaryField32x8b; 2], block_size| {
-			(data[0], data[1]) =
-				Self::transform_inverse_round_pair(twiddles[0], data[0], data[1], block_size);
-			(data[2], _) = Self::transform_inverse_round_pair(
-				twiddles[1],
-				data[2],
-				PackedAESBinaryField32x8b::zero(),
-				block_size,
-			);
-		};
-
-		// round 0
-		inverse_round(&self.round_0_twiddles, 2);
-
-		// round 1
-		inverse_round(&self.round_1_twiddles, 3);
-
-		// round 2
-		inverse_round(&self.round_2_twiddles, 4);
 	}
 
 	/// This method does a single forward NTT transformation round for two pairs (data, coset).
@@ -454,19 +310,14 @@ impl FastNTT {
 		data_1: PackedAESBinaryField32x8b,
 		log_block_size: usize,
 	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
-		let (odds, evens) = data_0.interleave(data_1, log_block_size);
+		let (odds, evens) = PackedField::interleave(data_0, data_1, log_block_size);
 		let result_odds = odds + evens * twiddles;
 		let result_evens = evens + result_odds;
-		result_odds.interleave(result_evens, log_block_size)
+		PackedField::interleave(result_odds, result_evens, log_block_size)
 	}
 
-	/// This method executes the transformation equivalent to `AdditiveNTT::forward_transform`.
-	/// Each `data` element is treated as 32 8-bit AES field elements.
 	#[inline]
-	fn forward(&self, data: &mut [PackedAESBinaryField8x32b; 3]) {
-		let data: &mut [PackedAESBinaryField32x8b] =
-			PackedAESBinaryField8x32b::cast_bases_mut(data);
-
+	fn forward(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let mut forward_round_simd = |twiddles: &[PackedAESBinaryField32x8b; 2], log_block_size| {
 			(data[0], data[1]) =
 				Self::transform_forward_round_pair(twiddles[0], data[0], data[1], log_block_size);
@@ -487,23 +338,189 @@ impl FastNTT {
 		// round 0
 		forward_round_simd(&self.round_0_twiddles, 2);
 	}
+
+	/// This method does a single inverse NTT transformation round for two pairs '(data, coset)'.
+	/// `twiddles` must contain interleaved twiddles for the given round.
+	/// Given an input:
+	/// twiddles = [coset_0_twiddles_0, coset_1_twiddles_0, coset_0_twiddles_1, coset_1_twiddles_1, ...].
+	/// data_0 = [data_0_0, data_0_1, data_0_2, data_0_3, ...]
+	/// data_1 = [data_1_0, data_1_1, data_1_2, data_1_3, ...]
+	/// returns
+	/// (
+	///   [data_0_0 + (data_0_0 + data_0_1) * coset_0_twiddles_0, data_0_0 + data_0_1, ...],
+	///   [data_1_0 + (data_1_0 + data_1_1) * coset_1_twiddles_0, data_1_0 + data_1_1, ...],
+	/// )
+	///
+	/// This method allows us to perform inverse NTT transformation for two pieces of data using the same number of vector operations as for one piece.
+	fn transform_inverse_round_pair(
+		twiddles: PackedAESBinaryField32x8b,
+		data_0: PackedAESBinaryField32x8b,
+		data_1: PackedAESBinaryField32x8b,
+		log_block_size: usize,
+	) -> (PackedAESBinaryField32x8b, PackedAESBinaryField32x8b) {
+		let (odds, evens) = PackedField::interleave(data_0, data_1, log_block_size);
+		let result_evens = odds + evens;
+		let result_odds = odds + twiddles * result_evens;
+		PackedField::interleave(result_odds, result_evens, log_block_size)
+	}
+
+	#[inline]
+	fn inverse(&self, data: &mut [PackedAESBinaryField32x8b; 3]) {
+		let mut inverse_round = |twiddles: &[PackedAESBinaryField32x8b; 2], block_size| {
+			(data[0], data[1]) =
+				Self::transform_inverse_round_pair(twiddles[0], data[0], data[1], block_size);
+			(data[2], _) = Self::transform_inverse_round_pair(
+				twiddles[1],
+				data[2],
+				PackedAESBinaryField32x8b::zero(),
+				block_size,
+			);
+		};
+
+		// round 0
+		inverse_round(&self.round_0_twiddles, 2);
+
+		// round 1
+		inverse_round(&self.round_1_twiddles, 3);
+
+		// round 2
+		inverse_round(&self.round_2_twiddles, 4);
+	}
+}
+
+fn get_coset_twiddles_for_round(
+	round: usize,
+	cosets: [u32; 3],
+	ntt: &AdditiveNTT8b,
+) -> [impl TwiddleAccess<AESTowerField8b> + '_; 3] {
+	cosets.map(|coset| ntt.twiddles()[round].coset(3, coset as _))
+}
+
+pub const HASHES_PER_BYTE_SLICED_PERMUTATION: usize = 32;
+
+#[derive(Clone)]
+struct FastNttByteSliced {
+	// Each of the arrays below contains [interleaved twiddles of cosets 0 and 1, broadcast twiddles for coset 2]
+	round_0_twiddles: [[PackedAESBinaryField32x8b; 4]; 3],
+	round_1_twiddles: [[PackedAESBinaryField32x8b; 2]; 3],
+	round_2_twiddles: [[PackedAESBinaryField32x8b; 1]; 3],
+}
+
+impl FastNttByteSliced {
+	fn new(ntt: &AdditiveNTT8b, cosets: [u32; 3]) -> Self {
+		let get_coset_twiddles_for_round =
+			|round: usize| get_coset_twiddles_for_round(round, cosets, ntt);
+
+		let cosets_twiddles_0 = get_coset_twiddles_for_round(0);
+		let cosets_twiddles_1 = get_coset_twiddles_for_round(1);
+		let cosets_twiddles_2 = get_coset_twiddles_for_round(2);
+
+		let round_0_twiddles = array::from_fn(|coset| {
+			array::from_fn(|i| {
+				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_0[coset].get(i))
+			})
+		});
+		let round_1_twiddles = array::from_fn(|coset| {
+			array::from_fn(|i| {
+				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_1[coset].get(i))
+			})
+		});
+		let round_2_twiddles = array::from_fn(|coset| {
+			array::from_fn(|i| {
+				PackedAESBinaryField32x8b::broadcast(cosets_twiddles_2[coset].get(i))
+			})
+		});
+
+		Self {
+			round_0_twiddles,
+			round_1_twiddles,
+			round_2_twiddles,
+		}
+	}
+
+	#[inline]
+	fn forward(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
+		fn forward_round_simd<const TWIDDLES_COUNT: usize>(
+			data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+			twiddles: &[[PackedAESBinaryField32x8b; TWIDDLES_COUNT]; 3],
+			log_block_size: usize,
+		) {
+			let block_size = 1 << log_block_size;
+
+			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
+				for (block_index, twiddle) in twiddles.iter().enumerate() {
+					let block_offset = 2 * block_index * block_size;
+					for byte_index in 0..block_size {
+						let odds = data[byte_index + block_offset];
+						let evens = data[byte_index + block_offset + block_size];
+						let result_odds = odds + evens * *twiddle;
+						let result_evens = evens + result_odds;
+						data[byte_index + block_offset] = result_odds;
+						data[byte_index + block_offset + block_size] = result_evens;
+					}
+				}
+			}
+		}
+
+		// round 2
+		forward_round_simd(data, &self.round_2_twiddles, 4);
+
+		// round 1
+		forward_round_simd(data, &self.round_1_twiddles, 3);
+
+		// round 0
+		forward_round_simd(data, &self.round_0_twiddles, 2);
+	}
+
+	#[inline]
+	fn inverse(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
+		fn inverse_round_simd<const TWIDDLES_COUNT: usize>(
+			data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+			twiddles: &[[PackedAESBinaryField32x8b; TWIDDLES_COUNT]; 3],
+			log_block_size: usize,
+		) {
+			let block_size = 1 << log_block_size;
+
+			for (data, twiddles) in data.iter_mut().zip(twiddles.iter()) {
+				for (block_index, twiddle) in twiddles.iter().enumerate() {
+					let block_offset = 2 * block_index * block_size;
+					for byte_index in 0..block_size {
+						let odds = data[byte_index + block_offset];
+						let evens = data[byte_index + block_offset + block_size];
+						let result_evens = odds + evens;
+						let result_odds = odds + *twiddle * result_evens;
+						data[byte_index + block_offset] = result_odds;
+						data[byte_index + block_offset + block_size] = result_evens;
+					}
+				}
+			}
+		}
+
+		// round 0
+		inverse_round_simd(data, &self.round_0_twiddles, 2);
+
+		// round 1
+		inverse_round_simd(data, &self.round_1_twiddles, 3);
+
+		// round 2
+		inverse_round_simd(data, &self.round_2_twiddles, 4);
+	}
 }
 
 #[cfg(test)]
 mod tests {
-	use std::array;
-
-	use binius_field::{
-		make_aes_to_binary_packed_transformer, make_binary_to_aes_packed_transformer,
-		BinaryField64b, PackedAESBinaryField4x64b, PackedBinaryField4x64b, PackedBinaryField8x32b,
-	};
-	use hex_literal::hex;
-	use rand::thread_rng;
+	use binius_field::{packed::set_packed_slice, BinaryField32b, PackedExtension};
+	use rand::{rngs::StdRng, SeedableRng};
 
 	use super::*;
-	use crate::{FixedLenHasherDigest, HashDigest};
 
-	fn mds_transform(data: &mut [PackedAESBinaryField8x32b; 3]) {
+	fn mds_transform(data: &mut [PackedAESBinaryField32x8b; 3]) {
 		let vision = Vision32MDSTransform::default();
 		vision.transform(data);
 	}
@@ -511,12 +528,6 @@ mod tests {
 	#[inline]
 	fn from_u32_to_packed_256(elements: &[AESTowerField32b; 8]) -> PackedAESBinaryField8x32b {
 		PackedAESBinaryField8x32b::from_fn(|i| elements[i])
-	}
-
-	fn from_bytes_to_packed_256(elements: &[u8; 32]) -> PackedBinaryField8x32b {
-		PackedBinaryField8x32b::from_fn(|i| {
-			BinaryField32b::new(u32::from_le_bytes(elements[i * 4..i * 4 + 4].try_into().unwrap()))
-		})
 	}
 
 	#[inline]
@@ -642,7 +653,11 @@ mod tests {
 			let mut data = [PackedAESBinaryField8x32b::zero(); 3];
 			set_packed_slice(&mut data, i, AESTowerField32b::one());
 
-			mds_transform(&mut data);
+			mds_transform(
+				PackedAESBinaryField8x32b::cast_bases_mut(&mut data)
+					.try_into()
+					.unwrap(),
+			);
 
 			let actual = from_u32_to_packed_768(&col[0..24].try_into().unwrap());
 			assert_eq!(data, actual);
@@ -690,8 +705,10 @@ mod tests {
 					.unwrap(),
 			);
 
-			let got1 = vs.sbox_packed_affine(&chunk, &INV_PACKED_TRANS_AES, *INV_CONST_AES);
-			let got2 = vs.sbox_packed_affine(&chunk, &FWD_PACKED_TRANS_AES, *FWD_CONST_AES);
+			let mut got1 = chunk;
+			vs.sbox(&mut got1, &*INV_PACKED_TRANS_AES, &*INV_CONST_AES);
+			let mut got2 = chunk;
+			vs.sbox(&mut got2, &*FWD_PACKED_TRANS_AES, &*FWD_CONST_AES);
 
 			assert_eq!(expected1, got1);
 			assert_eq!(expected2, got2)
@@ -699,154 +716,36 @@ mod tests {
 	}
 
 	#[test]
-	fn test_fixed_length_too_much_data() {
-		let mut hasher = Vision32b::new(20);
-		let data = [BinaryField32b::zero(); 30];
-		hasher.update(data);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::TooMuchData {
-				committed: 20,
-				received: 30,
-			}
-		);
-		assert!(successful_failure);
-	}
+	fn test_permutation_consistency() {
+		let mut rng = StdRng::seed_from_u64(0);
+		let mut data: [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3] =
+			array::from_fn(|_| array::from_fn(|_| PackedAESBinaryField32x8b::random(&mut rng)));
 
-	#[test]
-	fn test_fixed_length_not_enough_data() {
-		let mut hasher = Vision32b::new(20);
-		let data = [BinaryField32b::zero(); 3];
-		hasher.update(data);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 20,
-				hashed: 3,
-			}
-		);
-		assert!(successful_failure);
-	}
+		let get_single_permutation =
+			|i, data: &[[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3]| {
+				array::from_fn(|j| {
+					PackedAESBinaryField8x32b::cast_ext(PackedAESBinaryField32x8b::from_fn(|k| {
+						data[j][k].get(i)
+					}))
+				})
+			};
 
-	#[test]
-	fn test_empty_input_error() {
-		let hasher = Vision32b::<BinaryField32b>::new(0);
-		assert_eq!(hasher.finalize().unwrap(), PackedBinaryField8x32b::zero());
+		let single_permutations = array::from_fn::<_, 32, _>(|i| {
+			let mut data = get_single_permutation(i, &data);
 
-		let hasher: Vision32b<BinaryField32b> = Vision32b::new(25);
-		let successful_failure = matches!(
-			hasher.chain_update([]).finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 25,
-				hashed: 0
-			}
-		);
-		assert!(successful_failure);
+			Vision32bPermutation::default().permute_mut(&mut data);
+			data
+		});
 
-		let hasher: Vision32b<BinaryField32b> = Vision32b::new(25);
-		let successful_failure = matches!(
-			hasher.finalize().err().unwrap(),
-			HashError::NotEnoughData {
-				committed: 25,
-				hashed: 0,
-			}
-		);
-		assert!(successful_failure);
-	}
+		Vision32bPermutation::default()
+			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
 
-	#[test]
-	fn test_simple_hash() {
-		let mut hasher: Vision32b<BinaryField32b> = Vision32b::new(1);
-		hasher.update([BinaryField32b::new(u32::from_le_bytes([
-			0xde, 0xad, 0xbe, 0xef,
-		]))]);
-		let out = hasher.finalize().unwrap();
-		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
-		let expected = from_bytes_to_packed_256(&hex!(
-			"69e1764144099730124ab8ef1414570895ae9de0b74dedf364c72d118851cf65"
-		));
-		assert_eq!(expected, out);
-	}
-
-	fn from_bytes_to_b32s(inp: &[u8]) -> Vec<BinaryField32b> {
-		inp.chunks_exact(4)
-			.map(|x| BinaryField32b::new(u32::from_le_bytes(x.try_into().unwrap())))
-			.collect::<Vec<_>>()
-	}
-
-	#[test]
-	fn test_multi_block_aligned() {
-		let mut hasher: Vision32b<BinaryField32b> = Vision32b::new(64);
-		let input = "One part of the mysterious existence of Captain Nemo had been unveiled and, if his identity had not been recognised, at least, the nations united against him were no longer hunting a chimerical creature, but a man who had vowed a deadly hatred against them";
-		hasher.update(from_bytes_to_b32s(input.as_bytes()));
-		let out = hasher.finalize().unwrap();
-
-		let expected = from_bytes_to_packed_256(&hex!(
-			"6ade8ba2a45a070a3abaff6f1bf9483686c78d4afca2d0d8d3c7897fdfe2df91"
-		));
-		assert_eq!(expected, out);
-
-		let mut hasher = Vision32b::new(64);
-		let input_as_b = from_bytes_to_b32s(input.as_bytes());
-		hasher.update(&input_as_b[0..29]);
-		hasher.update(&input_as_b[29..31]);
-		hasher.update(&input_as_b[31..57]);
-		hasher.update(&input_as_b[57..]);
-
-		assert_eq!(expected, hasher.finalize().unwrap());
-	}
-
-	#[test]
-	fn test_extensions_and_packings() {
-		let mut rng = thread_rng();
-		let data_to_hash: [BinaryField32b; 200] =
-			array::from_fn(|_| <BinaryField32b as Field>::random(&mut rng));
-		let expected = FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_to_hash);
-
-		let data_as_u64 = data_to_hash
-			.chunks_exact(2)
-			.map(|x| BinaryField64b::from_bases(x).unwrap())
-			.collect::<Vec<_>>();
-		assert_eq!(FixedLenHasherDigest::<_, Vision32b<_>>::hash(&data_as_u64), expected);
-
-		let l = data_as_u64.len();
-		let data_as_packedu64 = (0..(l / 4))
-			.map(|j| PackedBinaryField4x64b::from_fn(|i| data_as_u64[j * 4 + i]))
-			.collect::<Vec<_>>();
-		assert_eq!(FixedLenHasherDigest::<_, Vision32b<_>>::hash(data_as_packedu64), expected);
-	}
-
-	#[test]
-	fn test_multi_block_unaligned() {
-		let mut hasher = Vision32b::new(23);
-		let input = "You can prove anything you want by coldly logical reason--if you pick the proper postulates.";
-		hasher.update(from_bytes_to_b32s(input.as_bytes()));
-
-		let expected = from_bytes_to_packed_256(&hex!(
-			"2819814fd9da83ab358533900adaf87f4c9e0f88657f572a9a6e83d95b88a9ea"
-		));
-		let out = hasher.finalize().unwrap();
-		assert_eq!(expected, out);
-	}
-
-	#[test]
-	fn test_aes_to_binary_hash() {
-		let mut rng = thread_rng();
-
-		let aes_transformer_1 = make_binary_to_aes_packed_transformer();
-		let aes_transformer_2 = make_aes_to_binary_packed_transformer();
-
-		let data_bin: [PackedBinaryField4x64b; 100] =
-			array::from_fn(|_| PackedBinaryField4x64b::random(&mut rng));
-		let data_aes: [PackedAESBinaryField4x64b; 100] =
-			array::from_fn(|i| aes_transformer_1.transform(&data_bin[i]));
-
-		let hasher_32b = Vision32b::new(100);
-		let hasher_aes32b = VisionHasher::<AESTowerField32b, _>::new(100);
-
-		let digest_as_bin = hasher_32b.chain_update(data_bin).finalize().unwrap();
-		let digest_as_aes = hasher_aes32b.chain_update(data_aes).finalize().unwrap();
-
-		assert_eq!(digest_as_bin, aes_transformer_2.transform(&digest_as_aes));
+		for (i, single_permutation) in single_permutations
+			.iter()
+			.enumerate()
+			.take(HASHES_PER_BYTE_SLICED_PERMUTATION)
+		{
+			assert_eq!(*single_permutation, get_single_permutation(i, &data));
+		}
 	}
 }

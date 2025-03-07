@@ -110,21 +110,21 @@ pub trait PackedField:
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Send {
+	fn into_iter(self) -> impl Iterator<Item=Self::Scalar> + Send + Clone {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
+	fn iter(&self) -> impl Iterator<Item=Self::Scalar> + Send + Clone + '_ {
 		(0..Self::WIDTH).map_skippable(move |i|
 			// Safety: `i` is always less than `WIDTH`
 			unsafe { self.get_unchecked(i) })
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item=Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item=Self::Scalar> + Send + Clone + '_ {
 		slice.iter().flat_map(Self::iter)
 	}
 
@@ -369,6 +369,17 @@ pub const fn len_packed_slice<P: PackedField>(packed: &[P]) -> usize {
 	packed.len() * P::WIDTH
 }
 
+/// Construct a packed field element from a function that returns scalar values by index with the
+/// given offset in packed elements. E.g. if `offset` is 2, and `WIDTH` is 4, `f(9)` will be used
+/// to set the scalar at index 1 in the packed element.
+#[inline]
+pub fn packed_from_fn_with_offset<P: PackedField>(
+	offset: usize,
+	mut f: impl FnMut(usize) -> P::Scalar,
+) -> P {
+	P::from_fn(|i| f(i + offset * P::WIDTH))
+}
+
 /// Multiply packed field element by a subfield scalar.
 pub fn mul_by_subfield_scalar<P: PackedExtension<FS>, FS: Field>(val: P, multiplier: FS) -> P {
 	use crate::underlier::UnderlierType;
@@ -422,17 +433,17 @@ impl<F: Field> PackedField for F {
 	}
 
 	#[inline]
-	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter(&self) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		iter::once(*self)
 	}
 
 	#[inline]
-	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send {
+	fn into_iter(self) -> impl Iterator<Item = Self::Scalar> + Send + Clone {
 		iter::once(self)
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		slice.iter().copied()
 	}
 

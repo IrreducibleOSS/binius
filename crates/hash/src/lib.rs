@@ -25,7 +25,6 @@ pub mod permutation;
 mod serialization;
 pub mod sha2;
 mod vision;
-mod vision_constants;
 
 pub use compression::*;
 pub use groestl::*;
