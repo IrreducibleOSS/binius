@@ -64,7 +64,7 @@ fn bench_all_fields<Op: FieldOperation>(c: &mut Criterion) {
 struct MultiplyOp;
 
 impl FieldOperation for MultiplyOp {
-	const NAME: &'static str = "multiply";
+	const NAME: &'static str = "scalar/multiply";
 	type Result<F> = F;
 
 	fn call<F: Field>(lhs: F, rhs: F) -> F {
@@ -79,7 +79,7 @@ fn multiply(c: &mut Criterion) {
 struct SquareOp;
 
 impl FieldOperation for SquareOp {
-	const NAME: &'static str = "square";
+	const NAME: &'static str = "scalar/square";
 	type Result<F> = F;
 
 	fn call<F: Field>(lhs: F, _: F) -> F {
@@ -94,7 +94,7 @@ fn square(c: &mut Criterion) {
 struct InvertOp;
 
 impl FieldOperation for InvertOp {
-	const NAME: &'static str = "invert";
+	const NAME: &'static str = "scalar/invert";
 	type Result<F> = Option<F>;
 
 	fn call<F: Field>(lhs: F, _: F) -> Option<F> {

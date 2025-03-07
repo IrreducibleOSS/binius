@@ -100,11 +100,18 @@ mod model {
 mod arithmetization {
 	use binius_core::{
 		constraint_system::channel::{Boundary, ChannelId, FlushDirection},
+		fiat_shamir::HasherChallenger,
 		oracle::ShiftVariant,
+		tower::CanonicalTowerFamily,
+		witness::MultilinearExtensionIndex,
 	};
 	use binius_field::{
-		arch::OptimalUnderlier128b, as_packed_field::PackScalar, underlier::UnderlierType,
+		arch::OptimalUnderlier128b,
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		Field, PackedField,
 	};
+	use binius_hash::compress::Groestl256ByteCompression;
 	use binius_m3::{
 		builder::{
 			Col, ConstraintSystem, Statement, TableFiller, TableId, TableWitnessIndexSegment, B1,
@@ -112,35 +119,38 @@ mod arithmetization {
 		},
 		gadgets::u32::{U32Add, U32AddFlags},
 	};
+	use binius_math::DefaultEvaluationDomainFactory;
 	use bumpalo::Bump;
 	use bytemuck::Pod;
+	use groestl_crypto::Groestl256;
 
 	use super::model;
 
 	/// Table of transitions for even numbers in the Collatz sequence.
 	#[derive(Debug)]
 	pub struct EvensTable {
-		pub id: TableId,
-		pub even: Col<B1, 5>,
-		pub half: Col<B1, 5>,
-		pub even_packed: Col<B32>,
-		pub half_packed: Col<B32>,
+		id: TableId,
+		even: Col<B1, 32>,
+		even_lsb: Col<B1>,
+		half: Col<B1, 32>,
+		even_packed: Col<B32>,
+		half_packed: Col<B32>,
 	}
 
 	impl EvensTable {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
-			let table = cs.add_table("evens");
+			let mut table = cs.add_table("evens");
 
-			let even = table.add_committed::<B1, 5>("even");
+			let even = table.add_committed::<B1, 32>("even");
+			let even_lsb = table.add_selected("even_lsb", even, 0);
 
-			// TODO: Check that the bottom bit is 0. We can do this with a selected derived column and
-			// an assert_zero constraint.
+			table.assert_zero("even_lsb is 0", even_lsb.into());
 
 			// Logical right shift is division by 2
-			let half = table.add_shifted::<B1, 5>("half", even, 5, 1, ShiftVariant::LogicalRight);
+			let half = table.add_shifted::<B1, 32>("half", even, 5, 1, ShiftVariant::LogicalRight);
 
-			let even_packed = table.add_packed::<_, 5, B32, 0>("even_packed", even);
-			let half_packed = table.add_packed::<_, 5, B32, 0>("half_packed", half);
+			let even_packed = table.add_packed::<_, 32, B32, 1>("even_packed", even);
+			let half_packed = table.add_packed::<_, 32, B32, 1>("half_packed", half);
 
 			table.pull_one(seq_chan, even_packed);
 			table.push_one(seq_chan, half_packed);
@@ -148,6 +158,7 @@ mod arithmetization {
 			Self {
 				id: table.id(),
 				even,
+				even_lsb,
 				half,
 				even_packed,
 				half_packed,
@@ -157,7 +168,7 @@ mod arithmetization {
 
 	impl<U> TableFiller<U> for EvensTable
 	where
-		U: Pod + PackScalar<B32>,
+		U: Pod + PackScalar<B1>,
 	{
 		type Event = model::EvensEvent;
 
@@ -165,22 +176,25 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill(
-			&self,
-			rows: &[Self::Event],
-			witness: &mut TableWitnessIndexSegment<U>,
+		fn fill<'a>(
+			&'a self,
+			rows: impl Iterator<Item = &'a Self::Event>,
+			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			let mut even = witness.get_mut_as(self.even)?;
+			let mut even_lsb = witness.get_mut(self.even_lsb)?;
 			let mut half = witness.get_mut_as(self.half)?;
 			let mut even_packed = witness.get_mut_as(self.even_packed)?;
 			let mut half_packed = witness.get_mut_as(self.half_packed)?;
 
-			for (i, event) in rows.iter().enumerate() {
+			for (i, event) in rows.enumerate() {
 				even[i] = event.val;
 				half[i] = event.val >> 1;
 				even_packed[i] = event.val;
 				half_packed[i] = event.val >> 1;
 			}
+
+			even_lsb.fill(<PackedType<U, B1>>::zero());
 
 			Ok(())
 		}
@@ -190,35 +204,36 @@ mod arithmetization {
 	#[derive(Debug)]
 	pub struct OddsTable {
 		id: TableId,
-		pub odd: Col<B1, 5>,
-		double: Col<B1, 5>,
-		carry_bit: Col<B1, 5>,
+		odd: Col<B1, 32>,
+		odd_lsb: Col<B1>,
+		double: Col<B1, 32>,
+		carry_bit: Col<B1, 32>,
 		triple_plus_one: U32Add,
-		pub odd_packed: Col<B32>,
-		pub triple_plus_one_packed: Col<B32>,
+		odd_packed: Col<B32>,
+		triple_plus_one_packed: Col<B32>,
 	}
 
 	impl OddsTable {
 		pub fn new(cs: &mut ConstraintSystem, seq_chan: ChannelId) -> Self {
-			let table = cs.add_table("odds");
+			let mut table = cs.add_table("odds");
 
-			let odd = table.add_committed::<B1, 5>("odd_bits");
+			let odd = table.add_committed::<B1, 32>("odd_bits");
+			let odd_lsb = table.add_selected("odd_lsb", odd, 0);
 
-			// TODO: Check that the bottom bit is 1. We can do this with a selected derived column and
-			// an assert_zero constraint.
+			table.assert_zero("odd_lsb is 1", odd_lsb - B1::ONE);
 
 			// Input times 2
 			let double =
-				table.add_shifted::<B1, 5>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
+				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
 			// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
 			// multilinear extension of some constant vector, repeating for the number of rows.
 			// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-			let carry_bit = table.add_committed::<B1, 5>("carry_bit");
+			let carry_bit = table.add_committed::<B1, 32>("carry_bit");
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
-				table,
+				&mut table.with_namespace("triple_plus_one"),
 				double,
 				odd,
 				U32AddFlags {
@@ -227,9 +242,9 @@ mod arithmetization {
 				},
 			);
 
-			let odd_packed = table.add_packed::<_, 5, B32, 0>("odd_packed", odd);
+			let odd_packed = table.add_packed::<_, 32, B32, 1>("odd_packed", odd);
 			let triple_plus_one_packed =
-				table.add_packed::<_, 5, B32, 0>("triple_plus_one_packed", triple_plus_one.zout);
+				table.add_packed::<_, 32, B32, 1>("triple_plus_one_packed", triple_plus_one.zout);
 
 			table.pull_one(seq_chan, odd_packed);
 			table.push_one(seq_chan, triple_plus_one_packed);
@@ -237,6 +252,7 @@ mod arithmetization {
 			Self {
 				id: table.id(),
 				odd,
+				odd_lsb,
 				double,
 				carry_bit,
 				triple_plus_one,
@@ -248,7 +264,7 @@ mod arithmetization {
 
 	impl<U: UnderlierType> TableFiller<U> for OddsTable
 	where
-		U: Pod + PackScalar<B1> + PackScalar<B32>,
+		U: Pod + PackScalar<B1>,
 	{
 		type Event = model::OddsEvent;
 
@@ -256,20 +272,21 @@ mod arithmetization {
 			self.id
 		}
 
-		fn fill(
+		fn fill<'a>(
 			&self,
-			rows: &[Self::Event],
-			witness: &mut TableWitnessIndexSegment<U>,
+			rows: impl Iterator<Item = &'a Self::Event>,
+			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			{
 				let mut odd_packed = witness.get_mut_as(self.odd_packed)?;
 				let mut triple_plus_one_packed = witness.get_mut_as(self.triple_plus_one_packed)?;
 
 				let mut odd = witness.get_mut_as(self.odd)?;
+				let mut odd_lsb = witness.get_mut(self.odd_lsb)?;
 				let mut double = witness.get_mut_as(self.double)?;
 				let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
-				for (i, event) in rows.iter().enumerate() {
+				for (i, event) in rows.enumerate() {
 					odd_packed[i] = event.val;
 					triple_plus_one_packed[i] = 3 * event.val + 1;
 
@@ -277,14 +294,21 @@ mod arithmetization {
 					double[i] = event.val << 1;
 					carry_bit[i] = 1u32;
 				}
+
+				odd_lsb.fill(<PackedType<U, B1>>::one());
 			}
 			self.triple_plus_one.populate(witness)?;
 			Ok(())
 		}
 	}
 
-	#[test]
-	fn test_collatz() {
+	pub struct Instance<'a> {
+		pub statement: Statement,
+		pub witness: MultilinearExtensionIndex<'a, OptimalUnderlier128b, B128>,
+		pub constraint_system: binius_core::constraint_system::ConstraintSystem<B128>,
+	}
+
+	pub fn collatz_instance(allocator: &Bump) -> Instance {
 		use model::CollatzTrace;
 
 		let mut cs = ConstraintSystem::new();
@@ -311,11 +335,9 @@ mod arithmetization {
 			],
 			table_sizes: vec![trace.evens.len(), trace.odds.len()],
 		};
-		let allocator = Bump::new();
 		let mut witness = cs
-			.build_witness::<OptimalUnderlier128b>(&allocator, &statement)
+			.build_witness::<OptimalUnderlier128b>(allocator, &statement)
 			.unwrap();
-
 		witness
 			.fill_table_sequential(&evens_table, &trace.evens)
 			.unwrap();
@@ -323,14 +345,68 @@ mod arithmetization {
 			.fill_table_sequential(&odds_table, &trace.odds)
 			.unwrap();
 
-		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index::<B128>(&statement);
+		Instance {
+			constraint_system: cs.compile(&statement).unwrap(),
+			witness: witness.into_multilinear_extension_index::<B128>(&statement),
+			statement,
+		}
+	}
+
+	#[test]
+	fn test_collatz_validate_witness() {
+		let allocator = Bump::new();
+		let Instance {
+			statement,
+			witness,
+			constraint_system,
+		} = collatz_instance(&allocator);
 
 		binius_core::constraint_system::validate::validate_witness(
-			&compiled_cs,
+			&constraint_system,
 			&statement.boundaries,
 			&witness,
 		)
+		.unwrap();
+	}
+
+	#[test]
+	fn test_collatz_prove_verify() {
+		let allocator = Bump::new();
+		let Instance {
+			statement,
+			witness,
+			constraint_system,
+		} = collatz_instance(&allocator);
+
+		const LOG_INV_RATE: usize = 1;
+		const SECURITY_BITS: usize = 100;
+
+		let proof = binius_core::constraint_system::prove::<
+			_,
+			CanonicalTowerFamily,
+			_,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+			_,
+		>(
+			&constraint_system,
+			LOG_INV_RATE,
+			SECURITY_BITS,
+			&statement.boundaries,
+			witness,
+			&DefaultEvaluationDomainFactory::default(),
+			&binius_hal::make_portable_backend(),
+		)
+		.unwrap();
+
+		binius_core::constraint_system::verify::<
+			OptimalUnderlier128b,
+			CanonicalTowerFamily,
+			Groestl256,
+			Groestl256ByteCompression,
+			HasherChallenger<Groestl256>,
+		>(&constraint_system, LOG_INV_RATE, SECURITY_BITS, &statement.boundaries, proof)
 		.unwrap();
 	}
 }

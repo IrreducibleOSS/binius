@@ -4,7 +4,7 @@ use binius_core::oracle::ShiftVariant;
 use binius_field::{as_packed_field::PackScalar, packed::set_packed_slice, Field};
 use bytemuck::Pod;
 
-use crate::builder::{column::Col, table::Table, types::B1, witness::TableWitnessIndexSegment};
+use crate::builder::{column::Col, types::B1, witness::TableWitnessIndexSegment, TableBuilder};
 
 /// A gadget for performing 32-bit integer addition on vertically-packed bit columns.
 ///
@@ -13,18 +13,18 @@ use crate::builder::{column::Col, table::Table, types::B1, witness::TableWitness
 #[derive(Debug)]
 pub struct U32Add {
 	// Inputs
-	pub xin: Col<B1, 5>,
-	pub yin: Col<B1, 5>,
+	pub xin: Col<B1, 32>,
+	pub yin: Col<B1, 32>,
 
 	// Private
-	cin: Col<B1, 5>,
-	cout: Col<B1, 5>,
-	cout_shl: Col<B1, 5>,
+	cin: Col<B1, 32>,
+	cout: Col<B1, 32>,
+	cout_shl: Col<B1, 32>,
 
 	// Outputs
 	/// The output column, either committed if `flags.commit_zout` is set, otherwise a linear
 	/// combination derived column.
-	pub zout: Col<B1, 5>,
+	pub zout: Col<B1, 32>,
 	/// This is `Some` if `flags.expose_final_carry` is set, otherwise it is `None`.
 	pub final_carry: Option<Col<B1>>,
 	/// Flags modifying the gadget's behavior.
@@ -36,14 +36,19 @@ pub struct U32Add {
 pub struct U32AddFlags {
 	// Optionally a column for a dynamic carry in bit. This *must* be zero in all bits except the
 	// 0th.
-	pub carry_in_bit: Option<Col<B1, 5>>,
+	pub carry_in_bit: Option<Col<B1, 32>>,
 	pub commit_zout: bool,
 	pub expose_final_carry: bool,
 }
 
 impl U32Add {
-	pub fn new(table: &mut Table, xin: Col<B1, 5>, yin: Col<B1, 5>, flags: U32AddFlags) -> Self {
-		let cout = table.add_committed::<B1, 5>("cout");
+	pub fn new(
+		table: &mut TableBuilder,
+		xin: Col<B1, 32>,
+		yin: Col<B1, 32>,
+		flags: U32AddFlags,
+	) -> Self {
+		let cout = table.add_committed::<B1, 32>("cout");
 		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
 
 		let cin = if let Some(carry_in_bit) = flags.carry_in_bit {
@@ -59,7 +64,7 @@ impl U32Add {
 		table.assert_zero("carry_out", (xin + cin) * (yin + cin) + cin - cout);
 
 		let zout = if flags.commit_zout {
-			let zout = table.add_committed::<B1, 5>("zout");
+			let zout = table.add_committed::<B1, 32>("zout");
 			table.assert_zero("zout", xin + yin + cin - zout);
 			zout
 		} else {

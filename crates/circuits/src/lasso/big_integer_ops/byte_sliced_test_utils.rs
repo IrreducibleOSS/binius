@@ -201,7 +201,7 @@ where
 	TL::Base: TowerLevel<Data<usize> = [OracleId; WIDTH]>,
 {
 	test_circuit(|builder| {
-		let log_size = 14;
+		let log_size = 12;
 		let mut rng = thread_rng();
 		let mult_a = builder.add_committed_multiple::<WIDTH>("a", log_size, B8::TOWER_LEVEL);
 		let mult_b = builder.add_committed_multiple::<WIDTH>("b", log_size, B8::TOWER_LEVEL);

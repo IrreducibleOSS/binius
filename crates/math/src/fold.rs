@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use core::slice;
-use std::{any::TypeId, cmp::min, iter, mem::MaybeUninit};
+use std::{any::TypeId, cmp::min, mem::MaybeUninit};
 
 use binius_field::{
 	arch::{ArchOptimal, OptimalUnderlier},
@@ -16,6 +16,7 @@ use binius_field::{
 };
 use binius_utils::bail;
 use bytemuck::fill_zeroes;
+use itertools::izip;
 use lazy_static::lazy_static;
 use stackalloc::helpers::slice_assume_init_mut;
 
@@ -91,7 +92,25 @@ where
 		return Ok(());
 	}
 
-	fold_left_fallback(evals, log_evals_size, query, log_query_size, out);
+	// Use linear interpolation for single variable multilinear queries.
+	// Unlike right folds, left folds are often used with packed fields which are not indexable
+	// and have quite slow scalar indexing methods. For now, we specialize the practically important
+	// case of single variable fold when PE == P.
+	let is_lerp = log_query_size == 1
+		&& get_packed_slice(query, 0) + get_packed_slice(query, 1) == PE::Scalar::ONE
+		&& TypeId::of::<P>() == TypeId::of::<PE>();
+
+	if is_lerp {
+		let lerp_query = get_packed_slice(query, 1);
+		// Safety: P == PE checked above.
+		let out_p =
+			unsafe { std::mem::transmute::<&mut [MaybeUninit<PE>], &mut [MaybeUninit<P>]>(out) };
+
+		let lerp_query_p = lerp_query.try_into().ok().expect("P == PE");
+		fold_left_lerp(evals, log_evals_size, lerp_query_p, out_p)?;
+	} else {
+		fold_left_fallback(evals, log_evals_size, query, log_query_size, out);
+	}
 
 	Ok(())
 }
@@ -138,10 +157,10 @@ where
 }
 
 #[inline]
-fn check_lerp_fold_arguments<P, PE>(
+fn check_lerp_fold_arguments<P, PE, POut>(
 	evals: &[P],
 	log_evals_size: usize,
-	out: &[PE],
+	out: &[POut],
 ) -> Result<(), Error>
 where
 	P: PackedField,
@@ -351,7 +370,7 @@ where
 	P: PackedField,
 	PE: PackedField<Scalar: ExtensionField<P::Scalar>>,
 {
-	check_lerp_fold_arguments(evals, log_evals_size, out)?;
+	check_lerp_fold_arguments::<_, PE, _>(evals, log_evals_size, out)?;
 
 	out.iter_mut()
 		.enumerate()
@@ -379,7 +398,53 @@ where
 	Ok(())
 }
 
-/// Inplace left fold
+/// Left linear interpolation (lerp, single variable) fold
+///
+/// Please note that this method is single threaded. Currently we always have some
+/// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
+/// use more efficient optimizations for special cases. If we ever need a parallel version of this
+/// function, we can implement it separately.
+///
+/// Also note that left folds are often intended to be used with non-indexable packed fields that
+/// have inefficient scalar access; fully generic handling of all interesting cases that can leverage
+/// spread multiplication requires dynamically checking the `PackedExtension` relations, so for now we
+/// just handle the simplest yet important case of a single variable left fold in packed field P with
+/// a lerp query of its scalar (and not a nontrivial extension field!).
+pub fn fold_left_lerp<P>(
+	evals: &[P],
+	log_evals_size: usize,
+	lerp_query: P::Scalar,
+	out: &mut [MaybeUninit<P>],
+) -> Result<(), Error>
+where
+	P: PackedField,
+{
+	check_lerp_fold_arguments::<_, P, _>(evals, log_evals_size, out)?;
+
+	if log_evals_size > P::LOG_WIDTH {
+		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
+		let (evals_0, evals_1) = evals.split_at(packed_len);
+
+		for (out, eval_0, eval_1) in izip!(out, evals_0, evals_1) {
+			out.write(*eval_0 + (*eval_1 - *eval_0) * lerp_query);
+		}
+	} else {
+		let only_packed = *evals.first().expect("log_evals_size > 0");
+		let mut folded = P::zero();
+
+		for i in 0..1 << (log_evals_size - 1) {
+			let eval_0 = only_packed.get(i);
+			let eval_1 = only_packed.get(i | 1 << (log_evals_size - 1));
+			folded.set(i, eval_0 + lerp_query * (eval_1 - eval_0));
+		}
+
+		out.first_mut().expect("log_evals_size > 0").write(folded);
+	}
+
+	Ok(())
+}
+
+/// Inplace left linear interpolation (lerp, single variable) fold
 ///
 /// Please note that this method is single threaded. Currently we always have some
 /// parallelism above this level, so it's not a problem. Having no parallelism inside allows us to
@@ -393,13 +458,13 @@ pub fn fold_left_lerp_inplace<P>(
 where
 	P: PackedField,
 {
-	check_lerp_fold_arguments(evals, log_evals_size, evals)?;
+	check_lerp_fold_arguments::<_, P, _>(evals, log_evals_size, evals)?;
 
 	if log_evals_size > P::LOG_WIDTH {
 		let packed_len = 1 << (log_evals_size - 1 - P::LOG_WIDTH);
 		let (evals_0, evals_1) = evals.split_at_mut(packed_len);
 
-		for (eval_0, eval_1) in iter::zip(evals_0, evals_1) {
+		for (eval_0, eval_1) in izip!(evals_0, evals_1) {
 			*eval_0 += (*eval_1 - *eval_0) * lerp_query;
 		}
 
@@ -971,7 +1036,7 @@ mod tests {
 			fold_left(&evals, log_evals_size, &query, 1, &mut out).unwrap();
 			fold_left_lerp_inplace(&mut evals, log_evals_size, lerp_query).unwrap();
 
-			for (out, &inplace) in iter::zip(&out, &evals) {
+			for (out, &inplace) in izip!(&out, &evals) {
 				unsafe {
 					assert_eq!(out.assume_init(), inplace);
 				}

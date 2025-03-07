@@ -5,11 +5,14 @@ pub use binius_core::constraint_system::channel::{
 };
 use binius_core::{
 	constraint_system::{channel::ChannelId, ConstraintSystem as CompiledConstraintSystem},
-	oracle::{Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId},
+	oracle::{
+		Constraint, ConstraintPredicate, ConstraintSet, MultilinearOracleSet, OracleId,
+		ProjectionVariant,
+	},
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bumpalo::Bump;
 
 use super::{
@@ -17,9 +20,10 @@ use super::{
 	column::{ColumnDef, ColumnInfo},
 	error::Error,
 	statement::Statement,
-	table::{Table, TablePartition},
+	table::TablePartition,
 	types::B128,
 	witness::{TableWitnessIndex, WitnessIndex},
+	Table, TableBuilder,
 };
 use crate::builder::expr::ArithExprNamedVars;
 
@@ -32,7 +36,7 @@ pub struct ConstraintSystem<F: TowerField = B128> {
 	pub channel_id_bound: ChannelId,
 }
 
-impl std::fmt::Display for ConstraintSystem {
+impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		writeln!(f, "ConstraintSystem {{")?;
 
@@ -51,11 +55,7 @@ impl std::fmt::Display for ConstraintSystem {
 					let columns = flush
 						.column_indices
 						.iter()
-						.map(|i| {
-							table.columns[partition.columns[*i].table_index]
-								.name
-								.clone()
-						})
+						.map(|i| table.columns[partition.columns[*i]].name.clone())
 						.collect::<Vec<_>>()
 						.join(", ");
 					match flush.direction {
@@ -71,7 +71,7 @@ impl std::fmt::Display for ConstraintSystem {
 				let names = partition
 					.columns
 					.iter()
-					.map(|id| table.columns[id.table_index].name.clone())
+					.map(|&index| table.columns[index].name.clone())
 					.collect::<Vec<_>>();
 
 				for constraint in partition.zero_constraints.iter() {
@@ -83,7 +83,7 @@ impl std::fmt::Display for ConstraintSystem {
 
 			for col in table.columns.iter() {
 				let name = col.name.clone();
-				let pack_factor = 1 << col.shape.pack_factor;
+				let values_per_row = col.shape.values_per_row;
 				let field = match col.shape.tower_height {
 					0 => "B1",
 					1 => "B2",
@@ -94,8 +94,8 @@ impl std::fmt::Display for ConstraintSystem {
 					6 => "B64",
 					_ => "B128",
 				};
-				let type_str = if pack_factor > 1 {
-					format!("{field}x{pack_factor}")
+				let type_str = if values_per_row > 1 {
+					format!("{field}x{values_per_row}")
 				} else {
 					field.to_string()
 				};
@@ -104,9 +104,10 @@ impl std::fmt::Display for ConstraintSystem {
 			}
 
 			// step_down selectors for the table
-			for pack_factor in table.partitions.keys() {
-				let selector_type_str = if pack_factor > 1 {
-					format!("B1x{}", 1 << pack_factor)
+			for log_values_per_row in table.partitions.keys() {
+				let values_per_row = 1 << log_values_per_row;
+				let selector_type_str = if values_per_row > 1 {
+					format!("B1x{}", values_per_row)
 				} else {
 					"B1".to_string()
 				};
@@ -125,10 +126,10 @@ impl<F: TowerField> ConstraintSystem<F> {
 		Self::default()
 	}
 
-	pub fn add_table(&mut self, name: impl ToString) -> &mut Table<F> {
+	pub fn add_table(&mut self, name: impl ToString) -> TableBuilder<'_, F> {
 		let id = self.tables.len();
-		self.tables.push(Table::new(id, name));
-		self.tables.last_mut().expect("table was just pushed")
+		self.tables.push(Table::new(id, name.to_string()));
+		TableBuilder::new(self.tables.last_mut().expect("table was just pushed"))
 	}
 
 	pub fn add_channel(&mut self, name: impl ToString) -> ChannelId {
@@ -185,9 +186,8 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + info.shape.pack_factor;
-				let oracle_id =
-					add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars).unwrap();
+				let n_vars = log2_ceil_usize(count) + log2_strict_usize(info.shape.values_per_row);
+				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
 				if info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
@@ -199,20 +199,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 					columns,
 					flushes,
 					zero_constraints,
-					pack_factor,
+					values_per_row,
 					..
 				} = partition;
 
-				let n_vars = log2_ceil_usize(count) + pack_factor;
+				let n_vars = log2_ceil_usize(count) + log2_strict_usize(*values_per_row);
 
 				let partition_oracle_ids = columns
 					.iter()
-					.map(|id| oracle_lookup[id.table_index])
+					.map(|&index| oracle_lookup[index])
 					.collect::<Vec<_>>();
 
 				// StepDown witness data is populated in WitnessIndex::into_multilinear_extension_index
 				let selector =
-					oracles.add_transparent(StepDown::new(n_vars, count << pack_factor)?)?;
+					oracles.add_transparent(StepDown::new(n_vars, count * values_per_row)?)?;
 
 				// Translate flushes for the compiled constraint system.
 				for Flush {
@@ -264,6 +264,14 @@ impl<F: TowerField> ConstraintSystem<F> {
 	}
 }
 
+/// Add a table column to the multilinear oracle set with a specified number of variables.
+///
+/// ## Arguments
+///
+/// * `oracles` - The set of multilinear oracles to add to.
+/// * `oracle_lookup` - mapping of column indices in the table to oracle IDs in the oracle set
+/// * `column_info` - information about the column to be added
+/// * `n_vars` - number of variables of the multilinear oracle
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
@@ -274,14 +282,35 @@ fn add_oracle_for_column<F: TowerField>(
 	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		ColumnDef::LinearCombination(lincom) => {
-			let inner_oracles = lincom
-				.var_coeffs
+		ColumnDef::LinearCombination {
+			offset,
+			col_scalars,
+		} => {
+			let inner_oracles = col_scalars
 				.iter()
-				.enumerate()
-				.map(|(index, &coeff)| (oracle_lookup[index], coeff))
+				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
 				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, lincom.constant, inner_oracles)?
+			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
+		}
+		ColumnDef::Selected {
+			col,
+			index,
+			index_bits,
+		} => {
+			let index_values = (0..*index_bits)
+				.map(|i| {
+					if (index >> i) & 1 == 0 {
+						F::ZERO
+					} else {
+						F::ONE
+					}
+				})
+				.collect();
+			addition.projected(
+				oracle_lookup[col.table_index],
+				index_values,
+				ProjectionVariant::FirstVars,
+			)?
 		}
 		ColumnDef::Shifted {
 			col,

@@ -216,8 +216,7 @@ where
 		};
 
 		let expected_eq_ind_eval =
-			EqIndPartialEval::new(current_eval_point.len(), current_eval_point)
-				.and_then(|eq_ind| eq_ind.evaluate(&eval_point))?;
+			EqIndPartialEval::new(current_eval_point).evaluate(&eval_point)?;
 
 		let eq_ind_eval = multilinear_evals
 			.pop()
