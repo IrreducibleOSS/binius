@@ -2,7 +2,7 @@
 
 use std::any::TypeId;
 
-use bytemuck::Pod;
+use bytemuck::{zeroed_vec, Pod};
 
 use crate::{
 	packed::get_packed_slice, AESTowerField128b, AESTowerField16b, AESTowerField32b,
@@ -304,8 +304,7 @@ pub fn create_partial_sums_lookup_tables<P: PackedField>(
 	let len = values.len();
 	assert!(len % 8 == 0);
 
-	let mut result = Vec::with_capacity(len * 32);
-	result.resize(result.capacity(), P::zero());
+	let mut result = zeroed_vec(len * 32);
 
 	for (chunk_idx, chunk_start) in (0..len).step_by(8).enumerate() {
 		let sums = &mut result[chunk_idx * 256..(chunk_idx + 1) * 256];
