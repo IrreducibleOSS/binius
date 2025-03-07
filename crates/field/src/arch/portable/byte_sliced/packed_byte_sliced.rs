@@ -295,8 +295,8 @@ macro_rules! define_byte_sliced {
 				let transformations_8b = array::from_fn(|row| {
 					array::from_fn(|col| {
 						let row = row * 8;
-						let linear_transformation_8b = array::from_fn::<_, 8, _>(|row_8b| {
-							<<$name as PackedField>::Scalar as ExtensionField<AESTowerField8b>>::get_base(&transformation.bases()[row + row_8b], col)
+						let linear_transformation_8b = array::from_fn::<_, 8, _>(|row_8b| unsafe {
+							<<$name as PackedField>::Scalar as ExtensionField<AESTowerField8b>>::get_base_unchecked(&transformation.bases()[row + row_8b], col)
 						});
 
 						<$packed_storage as PackedTransformationFactory<$packed_storage
@@ -761,4 +761,379 @@ define_8b_extension_packed_subfield_for_byte_sliced!(
 	ByteSlicedAES2x64x8b,
 	PackedAESBinaryField64x8b,
 	ByteSlicedAES64x16b
+);
+
+macro_rules! define_byte_sliced_3d {
+	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
+		#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+		#[repr(transparent)]
+		pub struct $name {
+			pub(super) data: [$packed_storage; <$packed_storage>::WIDTH],
+		}
+
+		impl $name {
+			pub const BYTES: usize = <$packed_storage>::WIDTH * <$packed_storage>::WIDTH;
+
+			const SCALAR_BYTES: usize = <$scalar_type>::N_BITS / 8;
+			const HEIGHT: usize = <$packed_storage>::WIDTH / Self::SCALAR_BYTES;
+			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT);
+
+			/// Get the byte at the given index.
+			///
+			/// # Safety
+			/// The caller must ensure that `byte_index` is less than `BYTES`.
+			#[allow(clippy::modulo_one)]
+			#[inline(always)]
+			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
+				self.data
+					.get_unchecked(byte_index % <$packed_storage>::WIDTH)
+					.get_unchecked(byte_index / <$packed_storage>::WIDTH)
+					.to_underlier()
+			}
+		}
+
+		impl PackedField for $name {
+			type Scalar = $scalar_type;
+
+			const LOG_WIDTH: usize = <$packed_storage>::LOG_WIDTH;
+
+			#[allow(clippy::modulo_one)]
+			#[inline(always)]
+			unsafe fn get_unchecked(&self, i: usize) -> Self::Scalar {
+				let byte_offset = (i % <$packed_storage>::WIDTH) / Self::SCALAR_BYTES;
+				Self::Scalar::from_bases((0..Self::SCALAR_BYTES).map(|byte_index| {
+					self.data
+						.get_unchecked(byte_index + byte_offset)
+						.get_unchecked(i / <$packed_storage>::WIDTH)
+				}))
+				.expect("byte index is within bounds")
+			}
+
+			#[allow(clippy::modulo_one)]
+			#[inline(always)]
+			unsafe fn set_unchecked(&mut self, i: usize, scalar: Self::Scalar) {
+				let byte_offset = (i % <$packed_storage>::WIDTH) / Self::SCALAR_BYTES;
+				for byte_index in 0..Self::Scalar::N_BITS / 8 {
+					self.data
+						.get_unchecked_mut(byte_index + byte_offset)
+						.set_unchecked(
+							i / <$packed_storage>::WIDTH,
+							scalar.get_base_unchecked(byte_index),
+						);
+				}
+			}
+
+			fn random(mut rng: impl rand::RngCore) -> Self {
+				let data = array::from_fn(|_| <$packed_storage>::random(&mut rng));
+				Self { data }
+			}
+
+			#[inline]
+			fn broadcast(scalar: Self::Scalar) -> Self {
+				let data = match Self::SCALAR_BYTES {
+					1 => {
+						let packed_broadcast =
+							<$packed_storage>::broadcast(unsafe { scalar.get_base_unchecked(0) });
+						array::from_fn(|_| packed_broadcast)
+					}
+					<$packed_storage>::WIDTH => array::from_fn(|byte_index| {
+						<$packed_storage>::broadcast(unsafe {
+							scalar.get_base_unchecked(byte_index)
+						})
+					}),
+					_ => {
+						let mut data = [<$packed_storage>::zero(); <$packed_storage>::WIDTH];
+						for byte_index in 0..Self::SCALAR_BYTES {
+							let broadcast = <$packed_storage>::broadcast(unsafe {
+								scalar.get_base_unchecked(byte_index)
+							});
+
+							for i in 0..Self::HEIGHT {
+								data[i * Self::HEIGHT + byte_index] = broadcast;
+							}
+						}
+
+						data
+					}
+				};
+
+				Self { data }
+			}
+
+			#[inline]
+			fn from_fn(mut f: impl FnMut(usize) -> Self::Scalar) -> Self {
+				let mut result = Self::default();
+
+				// TODO: use transposition here as soon as implemented
+				for i in 0..Self::WIDTH {
+					//SAFETY: i doesn't exceed Self::WIDTH
+					unsafe { result.set_unchecked(i, f(i)) };
+				}
+
+				result
+			}
+
+			#[inline]
+			fn square(self) -> Self {
+				let result = Self::default();
+
+				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+					square::<$packed_storage, $tower_level>(
+						&self.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+					);
+				}
+
+				result
+			}
+
+			#[inline]
+			fn invert_or_zero(self) -> Self {
+				let result = Self::default();
+
+				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+					invert_or_zero::<$packed_storage, $tower_level>(
+						&self.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+					);
+				}
+
+				result
+			}
+
+			#[inline]
+			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				let mut result1 = Self::default();
+				let mut result2 = Self::default();
+
+				if log_block_len < Self::LOG_HEIGHT {
+					// Just copy rows in a different order
+					let block_size = 1 << (log_block_len + Self::SCALAR_BYTES);
+					for block_offset in (0..<$packed_storage>::WIDTH).step_by(2 * block_size) {
+						result1.data[block_offset..block_offset + block_size]
+							.copy_from_slice(&self.data[block_offset..block_offset + block_size]);
+						result1.data[block_offset + block_size..block_offset + 2 * block_size]
+							.copy_from_slice(&other.data[block_offset..block_offset + block_size]);
+
+						result2.data[block_offset..block_offset + block_size].copy_from_slice(
+							&self.data[block_offset + block_size..block_offset + 2 * block_size],
+						);
+						result2.data[block_offset + block_size..block_offset + 2 * block_size]
+							.copy_from_slice(
+								&other.data
+									[block_offset + block_size..block_offset + 2 * block_size],
+							);
+					}
+				} else {
+					// Interleave rows
+					for i in 0..<$packed_storage>::WIDTH {
+						(result1.data[i], result2.data[i]) = self.data[i]
+							.interleave(other.data[i], log_block_len - Self::LOG_HEIGHT);
+					}
+				}
+
+				(result1, result2)
+			}
+
+			#[inline]
+			fn unzip(self, other: Self, log_block_len: usize) -> (Self, Self) {
+				let mut result1 = Self::default();
+				let mut result2 = Self::default();
+
+				if log_block_len < Self::LOG_HEIGHT {
+					let block_size = 1 << (log_block_len + Self::SCALAR_BYTES);
+					let half = <$packed_storage>::WIDTH / 2;
+					for block_offset in (0..half).step_by(block_size) {
+						let target_offset = block_offset * 2;
+
+						result1.data[block_offset..block_offset + block_size]
+							.copy_from_slice(&self.data[target_offset..target_offset + block_size]);
+						result1.data[half + target_offset..half + target_offset + block_size]
+							.copy_from_slice(
+								&other.data[target_offset..target_offset + block_size],
+							);
+
+						result2.data[block_offset..block_offset + block_size].copy_from_slice(
+							&self.data[target_offset + block_size..target_offset + 2 * block_size],
+						);
+						result2.data[half + target_offset..half + target_offset + block_size]
+							.copy_from_slice(
+								&other.data
+									[target_offset + block_size..target_offset + 2 * block_size],
+							);
+					}
+				} else {
+					for i in 0..<$packed_storage>::WIDTH {
+						(result1.data[i], result2.data[i]) =
+							self.data[i].unzip(other.data[i], log_block_len - Self::LOG_HEIGHT);
+					}
+				}
+
+				(result1, result2)
+			}
+		}
+
+		impl Mul for $name {
+			type Output = Self;
+
+			fn mul(self, rhs: Self) -> Self {
+				let mut result = Self::default();
+
+				for offset in (0..<$packed_storage>::WIDTH).step_by(Self::SCALAR_BYTES) {
+					mul::<$packed_storage, $tower_level>(
+						&self.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+						&rhs.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+						&mut result.data[offset..offset + Self::SCALAR_BYTES]
+							.try_into()
+							.expect("array length is SCALAR_BYTES"),
+					);
+				}
+
+				result
+			}
+		}
+
+		impl Add<$scalar_type> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn add(self, rhs: $scalar_type) -> $name {
+				self + Self::broadcast(rhs)
+			}
+		}
+
+		impl AddAssign<$scalar_type> for $name {
+			#[inline]
+			fn add_assign(&mut self, rhs: $scalar_type) {
+				*self += Self::broadcast(rhs)
+			}
+		}
+
+		impl Sub<$scalar_type> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn sub(self, rhs: $scalar_type) -> $name {
+				self.add(rhs)
+			}
+		}
+
+		impl SubAssign<$scalar_type> for $name {
+			#[inline]
+			fn sub_assign(&mut self, rhs: $scalar_type) {
+				self.add_assign(rhs)
+			}
+		}
+
+		impl Mul<$scalar_type> for $name {
+			type Output = Self;
+
+			#[inline]
+			fn mul(self, rhs: $scalar_type) -> $name {
+				self * Self::broadcast(rhs)
+			}
+		}
+
+		impl MulAssign<$scalar_type> for $name {
+			#[inline]
+			fn mul_assign(&mut self, rhs: $scalar_type) {
+				*self *= Self::broadcast(rhs);
+			}
+		}
+
+		impl Add for $name {
+			type Output = Self;
+
+			#[inline]
+			fn add(self, rhs: Self) -> Self {
+				Self {
+					data: array::from_fn(|byte_number| {
+						self.data[byte_number] + rhs.data[byte_number]
+					}),
+				}
+			}
+		}
+
+		impl AddAssign for $name {
+			#[inline]
+			fn add_assign(&mut self, rhs: Self) {
+				for (data, rhs) in zip(&mut self.data, &rhs.data) {
+					*data += *rhs
+				}
+			}
+		}
+
+		impl Sub for $name {
+			type Output = Self;
+
+			#[inline]
+			fn sub(self, rhs: Self) -> Self {
+				self.add(rhs)
+			}
+		}
+
+		impl SubAssign for $name {
+			#[inline]
+			fn sub_assign(&mut self, rhs: Self) {
+				self.add_assign(rhs);
+			}
+		}
+
+		impl MulAssign for $name {
+			#[inline]
+			fn mul_assign(&mut self, rhs: Self) {
+				*self = *self * rhs;
+			}
+		}
+
+		impl Product for $name {
+			fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+				let mut result = Self::one();
+
+				let mut is_first_item = true;
+				for item in iter {
+					if is_first_item {
+						result = item;
+					} else {
+						result *= item;
+					}
+
+					is_first_item = false;
+				}
+
+				result
+			}
+		}
+
+		impl Sum for $name {
+			fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+				let mut result = Self::zero();
+
+				for item in iter {
+					result += item;
+				}
+
+				result
+			}
+		}
+	};
+}
+
+define_byte_sliced_3d!(
+	ByteSlicedAES256x32b,
+	AESTowerField32b,
+	PackedAESBinaryField32x8b,
+	TowerLevel4
 );
