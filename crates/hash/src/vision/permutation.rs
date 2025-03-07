@@ -7,7 +7,7 @@ use binius_field::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::packed_from_fn_with_offset,
-	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b,
+	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b, ByteSlicedAES4x32x8b,
 	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension, PackedField,
 };
 use binius_ntt::{
@@ -89,6 +89,7 @@ lazy_static! {
 #[derive(Clone, Default)]
 pub struct Vision32bPermutation {
 	mds: Vision32MDSTransform,
+	mds_simd: Vision32MDSTransformSIMD<ByteSlicedAES4x32x8b>,
 }
 
 impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
@@ -116,14 +117,13 @@ impl Permutation<[ByteSlicedAES32x32b; 24]> for Vision32bPermutation {
 		add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[0]);
 		for r in 0..NUM_ROUNDS {
 			self.sbox_multi(input, &*INV_PACKED_TRANS_AES_BYTE_SLICED, &INV_CONST_AES_BYTE_SLICED);
-
-			self.mds
-				.transform_byte_sliced(bytemuck::must_cast_mut(input));
+			self.mds_simd
+				.transform(PackedExtension::<AESTowerField8b>::cast_base_arr_mut(input));
 
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[1 + 2 * r]);
 			self.sbox_multi(input, &*FWD_PACKED_TRANS_AES_BYTE_SLICED, &FWD_CONST_AES_BYTE_SLICED);
-			self.mds
-				.transform_byte_sliced(bytemuck::must_cast_mut(input));
+			self.mds_simd
+				.transform(PackedExtension::<AESTowerField8b>::cast_base_arr_mut(input));
 			add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[2 + 2 * r]);
 		}
 	}
@@ -160,6 +160,163 @@ impl Vision32bPermutation {
 fn add_packed_768<P: PackedField, const N: usize>(a: &mut [P; N], b: &[P; N]) {
 	for (a, b) in a.iter_mut().zip(b.iter()) {
 		*a += *b;
+	}
+}
+
+#[derive(Debug, Clone)]
+struct CosetTwiddles<P> {
+	round_0: [P; 4],
+	round_1: [P; 2],
+	round_2: [P; 1],
+}
+
+impl CosetTwiddles<AESTowerField8b> {
+	fn broadcast<P: PackedField<Scalar = AESTowerField8b>>(&self) -> CosetTwiddles<P> {
+		CosetTwiddles {
+			round_0: self.round_0.map(P::broadcast),
+			round_1: self.round_1.map(P::broadcast),
+			round_2: self.round_2.map(P::broadcast),
+		}
+	}
+}
+
+/// Optimized MDS matrix multiplication for SIMD Vision hashing.
+///
+/// This reimplements the additive NTT with the specific constants used in Vision and aggressive
+/// precomputation of packed constants.
+#[derive(Debug, Clone)]
+pub struct Vision32MDSTransformSIMD<P> {
+	inv_twiddles: [CosetTwiddles<P>; 3],
+	fwd_twiddles: [CosetTwiddles<P>; 3],
+	x: P,
+	y: P,
+	z: P,
+}
+
+impl<P: PackedField<Scalar = AESTowerField8b>> Default for Vision32MDSTransformSIMD<P> {
+	fn default() -> Self {
+		Vision32MDSTransformSIMD::scalar_default().broadcast()
+	}
+}
+
+impl Vision32MDSTransformSIMD<AESTowerField8b> {
+	fn scalar_default() -> Self {
+		#[allow(clippy::identity_op)]
+		Self {
+			inv_twiddles: array::from_fn(|i| CosetTwiddles {
+				round_0: array::from_fn(|j| ADDITIVE_NTT_AES.get_subspace_eval(0, (i << 2) | j)),
+				round_1: array::from_fn(|j| ADDITIVE_NTT_AES.get_subspace_eval(1, (i << 1) | j)),
+				round_2: array::from_fn(|j| ADDITIVE_NTT_AES.get_subspace_eval(2, (i << 0) | j)),
+			}),
+			fwd_twiddles: array::from_fn(|i| CosetTwiddles {
+				round_0: array::from_fn(|j| {
+					ADDITIVE_NTT_AES.get_subspace_eval(0, ((i + 3) << 2) | j)
+				}),
+				round_1: array::from_fn(|j| {
+					ADDITIVE_NTT_AES.get_subspace_eval(1, ((i + 3) << 1) | j)
+				}),
+				round_2: array::from_fn(|j| {
+					ADDITIVE_NTT_AES.get_subspace_eval(2, ((i + 3) << 0) | j)
+				}),
+			}),
+			x: ADDITIVE_NTT_AES.get_subspace_eval(3, 1),
+			y: ADDITIVE_NTT_AES.get_subspace_eval(3, 2),
+			z: ADDITIVE_NTT_AES.get_subspace_eval(4, 1),
+		}
+	}
+
+	fn broadcast<P: PackedField<Scalar = AESTowerField8b>>(&self) -> Vision32MDSTransformSIMD<P> {
+		Vision32MDSTransformSIMD {
+			inv_twiddles: self.inv_twiddles.each_ref().map(CosetTwiddles::broadcast),
+			fwd_twiddles: self.fwd_twiddles.each_ref().map(CosetTwiddles::broadcast),
+			x: P::broadcast(self.x),
+			y: P::broadcast(self.y),
+			z: P::broadcast(self.z),
+		}
+	}
+}
+
+#[allow(dead_code)]
+impl<P: PackedField<Scalar = AESTowerField8b>> Vision32MDSTransformSIMD<P> {
+	fn forward(&self, data: &mut [P; 24]) {
+		const N_ROUNDS: usize = 3;
+
+		for part_no in 0..3 {
+			let fwd_twiddles = &self.fwd_twiddles[part_no];
+
+			let twiddles = [
+				fwd_twiddles.round_0.as_slice(),
+				fwd_twiddles.round_1.as_slice(),
+				fwd_twiddles.round_2.as_slice(),
+			];
+			for i in (0..N_ROUNDS).rev() {
+				// i is the round
+				let round_twiddles = &twiddles[i];
+				for j in 0..1 << (N_ROUNDS - 1 - i) {
+					// j is the index of the stride
+					let twiddle = &round_twiddles[j];
+					for k in 0..1 << i {
+						// k is the index within the stride
+						let idx0 = (part_no << N_ROUNDS) + (j << (i + 1)) + k;
+						let idx1 = idx0 | (1 << i);
+						data[idx0] += data[idx1] * *twiddle;
+						data[idx1] += data[idx0];
+					}
+				}
+			}
+		}
+	}
+
+	fn inverse(&self, data: &mut [P; 24]) {
+		const N_ROUNDS: usize = 3;
+
+		for part_no in 0..3 {
+			let inv_twiddles = &self.inv_twiddles[part_no];
+
+			let twiddles = [
+				inv_twiddles.round_0.as_slice(),
+				inv_twiddles.round_1.as_slice(),
+				inv_twiddles.round_2.as_slice(),
+			];
+			#[allow(clippy::needless_range_loop)]
+			for i in 0..N_ROUNDS {
+				// i is the round
+				let round_twiddles = &twiddles[i];
+				for j in 0..1 << (N_ROUNDS - 1 - i) {
+					// j is the index of the stride
+					let twiddle = &round_twiddles[j];
+					for k in 0..1 << i {
+						// k is the index within the stride
+						let idx0 = (part_no << N_ROUNDS) + (j << (i + 1)) + k;
+						let idx1 = idx0 | (1 << i);
+						data[idx1] += data[idx0];
+						data[idx0] += data[idx1] * *twiddle;
+					}
+				}
+			}
+		}
+	}
+
+	pub fn transform(&self, data: &mut [P; 24]) {
+		self.inverse(data);
+
+		const STRIDE: usize = 8;
+		for i in 0..STRIDE {
+			data[STRIDE + i] += data[i];
+			let x = self.x * data[STRIDE + i];
+			data[2 * STRIDE + i] += x + data[i];
+
+			let y = self.y * data[STRIDE + i];
+			let z = self.z * data[2 * STRIDE + i];
+
+			let stash_0 = data[i];
+			let stash_1 = data[STRIDE + i];
+			data[i] += x + data[STRIDE + i] + data[2 * STRIDE + i];
+			data[STRIDE + i] = stash_0 + y + z;
+			data[2 * STRIDE + i] = data[STRIDE + i] + stash_1;
+		}
+
+		self.forward(data);
 	}
 }
 
