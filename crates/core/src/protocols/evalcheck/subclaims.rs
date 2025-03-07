@@ -9,7 +9,7 @@
 //!  * one multilin (the multiplier) is transparent (`shift_ind`, `eq_ind`, or tower basis)
 //!  * other multilin is a projection of one of the evalcheck claim multilins to its first variables
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
@@ -207,33 +207,10 @@ where
 	Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn process_composite_sumcheck<U, F>(
-	comp: &CompositeMLE<F>,
-	meta: ProjectedBivariateMeta,
-	eval: F,
-	witness_index: &mut MultilinearExtensionIndex<U, F>,
-	constraint_builders: &mut Vec<ConstraintSetBuilder<F>>,
-	eq_mle: MultilinearExtension<PackedType<U, F>>,
-) -> Result<(), Error>
-where
-	U: UnderlierType + PackScalar<F>,
-	F: TowerField,
-{
-	if !witness_index.has(meta.multiplier_id) {
-		witness_index.update_multilin_poly(vec![(
-			meta.multiplier_id,
-			MLEDirectAdapter::from(eq_mle).upcast_arc_dyn(),
-		)])?;
-	}
-
-	add_composite_sumcheck_to_constraints(meta, constraint_builders, comp, eval);
-	Ok(())
-}
-
 #[derive(Clone, Copy)]
 pub struct ProjectedBivariateMeta {
-	inner_id: Option<OracleId>, // Some if shifted / packed, None if composite
+	/// `Some` if shifted / packed, `None` if composite
+	inner_id: Option<OracleId>,
 	projected_id: Option<OracleId>,
 	multiplier_id: OracleId,
 	projected_n_vars: usize,
@@ -324,15 +301,16 @@ where
 	Ok(())
 }
 
-/// For each composite oracle, compute the MLE of eq (on eval_point)
-/// For each shifted / packed oracle, compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
-pub fn calculate_meta_mles<U, F, Backend>(
+/// shifted / packed oracle -> compute the projected MLE (i.e. the inner oracle evaluated on the projected eval_point)
+/// composite oracle -> None
+#[allow(clippy::type_complexity)]
+pub fn calculate_projected_mles<U, F, Backend>(
 	metas: &[ProjectedBivariateMeta],
 	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
 	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
 	witness_index: &MultilinearExtensionIndex<U, F>,
 	backend: &Backend,
-) -> Result<Vec<MultilinearExtension<PackedType<U, F>>>, Error>
+) -> Result<Vec<Option<MultilinearExtension<PackedType<U, F>>>>, Error>
 where
 	U: UnderlierType + PackScalar<F>,
 	F: TowerField,
@@ -340,44 +318,85 @@ where
 {
 	let mut queries_to_memoize = Vec::new();
 	for (meta, claim) in metas.iter().zip(projected_bivariate_claims) {
-		let point = if meta.inner_id.is_some() {
+		if meta.inner_id.is_some() {
 			// packed / shifted
-			&claim.eval_point[meta.projected_n_vars..]
-		} else {
-			// composite
-			&claim.eval_point
-		};
-		queries_to_memoize.push(point);
+			queries_to_memoize.push(&claim.eval_point[meta.projected_n_vars..]);
+		}
 	}
-	memoized_queries.memoize_query_par(queries_to_memoize, backend)?;
+	memoized_queries.memoize_query_par(&queries_to_memoize, backend)?;
 
 	projected_bivariate_claims
 		.par_iter()
 		.zip(metas)
 		.map(|(claim, meta)| {
-			if let Some(inner_id) = meta.inner_id {
-				// packed / shifted
-				let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
-				let eval_point = &claim.eval_point[meta.projected_n_vars..];
-				let query = memoized_queries
-					.full_query_readonly(eval_point)
-					.ok_or(Error::MissingQuery)?;
-				backend
-					.evaluate_partial_high(&inner_multilin, query.to_ref())
-					.map_err(Error::from)
-			} else {
-				// composite
-				MultilinearExtension::from_values(
-					memoized_queries
-						.full_query_readonly(&claim.eval_point)
-						.ok_or(Error::MissingQuery)?
-						.expansion()
-						.to_vec(), // TODO avoid clone
-				)
-				.map_err(Error::from)
+			match meta.inner_id {
+				Some(inner_id) => {
+					{
+						// packed / shifted
+						let inner_multilin = witness_index.get_multilin_poly(inner_id)?;
+						let eval_point = &claim.eval_point[meta.projected_n_vars..];
+						let query = memoized_queries
+							.full_query_readonly(eval_point)
+							.ok_or(Error::MissingQuery)?;
+						Ok(Some(
+							backend
+								.evaluate_partial_high(&inner_multilin, query.to_ref())
+								.map_err(Error::from)?,
+						))
+					}
+				}
+				None => Ok(None), // composite
 			}
 		})
-		.collect::<Result<Vec<_>, Error>>()
+		.collect::<Result<Vec<Option<_>>, Error>>()
+}
+
+/// Each composite oracle induces a new eq oracle, for which we need to fill the witness
+pub fn fill_eq_witness_for_composites<U, F, Backend>(
+	metas: &[ProjectedBivariateMeta],
+	memoized_queries: &mut MemoizedQueries<PackedType<U, F>, Backend>,
+	projected_bivariate_claims: &[EvalcheckMultilinearClaim<F>],
+	witness_index: &mut MultilinearExtensionIndex<U, F>,
+	backend: &Backend,
+) -> Result<(), Error>
+where
+	U: UnderlierType + PackScalar<F>,
+	F: TowerField,
+	Backend: ComputationBackend,
+{
+	let (composite_metas, composite_eval_points): (Vec<&ProjectedBivariateMeta>, Vec<&[F]>) =
+		Iterator::unzip(
+			metas
+				.iter()
+				.zip(projected_bivariate_claims)
+				.filter(|(meta, _)| meta.inner_id.is_none())
+				.map(|(meta, claim)| (meta, claim.eval_point.as_ref())),
+		);
+	memoized_queries.memoize_query_par(&composite_eval_points, backend)?;
+
+	// composite eval_point -> eq MLE witness
+	let eq_mles: HashMap<&[F], MultilinearWitness<'_, _>> = composite_eval_points
+		.iter()
+		.map(|eval_point| {
+			let mle = MLEDirectAdapter::from(MultilinearExtension::from_values(
+				memoized_queries
+					.full_query(eval_point, backend)?
+					.expansion()
+					.to_vec(),
+			)?)
+			.upcast_arc_dyn();
+			Ok((*eval_point, mle))
+		})
+		.collect::<Result<HashMap<_, _>, Error>>()?;
+
+	for (meta, eval_point) in composite_metas.iter().zip(&composite_eval_points) {
+		witness_index.update_multilin_poly(vec![(
+			meta.multiplier_id,
+			eq_mles.get(eval_point).expect("computed above").clone(),
+		)])?;
+	}
+
+	Ok(())
 }
 
 #[allow(clippy::type_complexity)]
@@ -438,10 +457,10 @@ impl<P: PackedField, Backend: ComputationBackend> MemoizedQueries<P, Backend> {
 
 	pub fn memoize_query_par(
 		&mut self,
-		eval_points: Vec<&[P::Scalar]>,
+		eval_points: &[&[P::Scalar]],
 		backend: &Backend,
 	) -> Result<(), Error> {
-		let deduplicated_eval_points = eval_points.into_iter().collect::<HashSet<_>>();
+		let deduplicated_eval_points = eval_points.iter().collect::<HashSet<_>>();
 
 		let new_queries = deduplicated_eval_points
 			.into_par_iter()

@@ -16,8 +16,8 @@ use super::{
 	error::Error,
 	evalcheck::{EvalcheckMultilinearClaim, EvalcheckProof},
 	subclaims::{
-		calculate_meta_mles, composite_sumcheck_meta, process_composite_sumcheck, MemoizedQueries,
-		ProjectedBivariateMeta,
+		add_composite_sumcheck_to_constraints, calculate_projected_mles, composite_sumcheck_meta,
+		fill_eq_witness_for_composites, MemoizedQueries, ProjectedBivariateMeta,
 	},
 	EvalPoint, EvalPointOracleIdMap,
 };
@@ -170,7 +170,7 @@ where
 				.collect::<Vec<_>>();
 
 			self.memoized_queries
-				.memoize_query_par(deduplicated_eval_points, self.backend)?;
+				.memoize_query_par(&deduplicated_eval_points, self.backend)?;
 
 			// Make new evaluation claims in parallel.
 			let subclaims = deduplicated_claims_without_evals
@@ -220,7 +220,7 @@ where
 			.map(|claim| Self::projected_bivariate_meta(self.oracles, claim))
 			.collect::<Result<Vec<_>, Error>>()?;
 
-		let meta_mles = calculate_meta_mles(
+		let projected_mles = calculate_projected_mles(
 			&projected_bivariate_metas,
 			&mut self.memoized_queries,
 			&self.projected_bivariate_claims,
@@ -228,12 +228,20 @@ where
 			self.backend,
 		)?;
 
-		for (claim, meta, meta_mle) in izip!(
+		fill_eq_witness_for_composites(
+			&projected_bivariate_metas,
+			&mut self.memoized_queries,
+			&self.projected_bivariate_claims,
+			self.witness_index,
+			self.backend,
+		)?;
+
+		for (claim, meta, projected) in izip!(
 			std::mem::take(&mut self.projected_bivariate_claims),
 			projected_bivariate_metas,
-			meta_mles
+			projected_mles
 		) {
-			self.process_sumcheck(claim, meta, meta_mle)?;
+			self.process_sumcheck(claim, meta, projected)?;
 		}
 
 		// Step 4: Find and return the proofs of the original claims.
@@ -587,7 +595,7 @@ where
 		&mut self,
 		evalcheck_claim: EvalcheckMultilinearClaim<F>,
 		meta: ProjectedBivariateMeta,
-		meta_mle: MultilinearExtension<PackedType<U, F>>, // eq MLE for composite, projected MLE for packed / shifted
+		projected: Option<MultilinearExtension<PackedType<U, F>>>,
 	) -> Result<(), Error> {
 		let EvalcheckMultilinearClaim {
 			id,
@@ -603,7 +611,7 @@ where
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				meta_mle,
+				projected.expect("projected is required by shifted oracle"),
 			),
 
 			MultilinearPolyVariant::Packed(packed) => process_packed_sumcheck(
@@ -614,17 +622,19 @@ where
 				eval,
 				self.witness_index,
 				&mut self.new_sumchecks_constraints,
-				meta_mle,
+				projected.expect("projected is required by packed oracle"),
 			),
 
-			MultilinearPolyVariant::Composite(composite) => process_composite_sumcheck(
-				&composite,
-				meta,
-				eval,
-				self.witness_index,
-				&mut self.new_sumchecks_constraints,
-				meta_mle,
-			),
+			MultilinearPolyVariant::Composite(composite) => {
+				// witness for eq MLE has been previously filled in `fill_eq_witness_for_composites`
+				add_composite_sumcheck_to_constraints(
+					meta,
+					&mut self.new_sumchecks_constraints,
+					&composite,
+					eval,
+				);
+				Ok(())
+			}
 			_ => unreachable!(),
 		}
 	}
