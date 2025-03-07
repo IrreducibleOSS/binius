@@ -282,12 +282,6 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		}
 	}
 
-	if log_n + log_b < log_w {
-		for i in 1 << (log_n + log_b)..P::WIDTH {
-			data[0].set(i, F::ZERO);
-		}
-	}
-
 	Ok(())
 }
 
@@ -314,8 +308,10 @@ pub fn check_batch_transform_inputs_and_params<PB: PackedField>(
 
 	let coset_bits = 32 - coset.leading_zeros() as usize;
 
-	// The minimal domain size should cover at least two packed field elements
-	// for the implementation always be able to use PackedField::interleave.
+	// The domain size should be at least large enough to represent the given coset;
+	// on the lower end, there is a fallback for data.len() == 1 which reduces to
+	// a forward/inverse NTT on the [PB; 2], which demands log_domain_size of at least
+	// PB::LOG_WIDTH + 1. Not enforcing this bound makes some twiddle values unavailable.
 	let log_required_domain_size = (log_n + coset_bits).max(PB::LOG_WIDTH + 1);
 	if log_required_domain_size > log_domain_size {
 		return Err(Error::DomainTooSmall {

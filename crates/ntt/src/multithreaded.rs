@@ -277,11 +277,5 @@ fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 			}
 		});
 
-	if log_n + log_b < log_w {
-		for i in 1 << (log_n + log_b)..P::WIDTH {
-			data[0].set(i, F::ZERO);
-		}
-	}
-
 	Ok(())
 }
