@@ -64,9 +64,6 @@ pub fn mul(
 		})
 		.collect::<Vec<_>>();
 
-	let cout_low_bits = cout_bits[0..cout_bits.len() / 2].to_vec();
-	let cout_high_bits = cout_bits[cout_bits.len() / 2..].to_vec();
-
 	if let Some(witness) = builder.witness() {
 		let xin_columns = xin_bits
 			.iter()
@@ -127,8 +124,7 @@ pub fn mul(
 		xin_exp_result_id,
 		yin_bits,
 		yin_exp_result_id,
-		cout_low_bits,
-		cout_high_bits,
+		cout_bits: cout_bits.clone(),
 		cout_low_exp_result_id,
 		cout_high_exp_result_id,
 	};
