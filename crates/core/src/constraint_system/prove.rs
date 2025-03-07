@@ -243,7 +243,7 @@ where
 
 	transcript.message().write_scalar_slice(&flush_products);
 
-	let flush_prodcheck_claims: Vec<GrandProductClaim<FExt<Tower>>> =
+	let flush_prodcheck_claims =
 		gkr_gpa::construct_grand_product_claims(&flush_oracle_ids, &oracles, &flush_products)?;
 
 	// Prove grand products
