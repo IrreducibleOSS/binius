@@ -25,12 +25,12 @@ fn transform<P: PackedField<Scalar: BinaryField>>(
 		(0..(1 << log_inv_rate))
 			.into_par_iter()
 			.zip(data.par_chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| ntt.forward_transform(data, i, log_batch_size))
+			.try_for_each(|(i, data)| ntt.forward_transform(data, i, log_batch_size, log_dim))
 			.expect("Failed to run ntt")
 	} else {
 		(0..(1 << log_inv_rate))
 			.zip(data.chunks_exact_mut(msgs_len))
-			.try_for_each(|(i, data)| ntt.forward_transform(data, i, log_batch_size))
+			.try_for_each(|(i, data)| ntt.forward_transform(data, i, log_batch_size, log_dim))
 			.expect("Failed to run ntt")
 	}
 }
