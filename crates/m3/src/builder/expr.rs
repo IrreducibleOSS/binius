@@ -16,8 +16,8 @@ pub struct ZeroConstraint<F: Field> {
 /// A type representing an arithmetic expression composed over some table columns.
 ///
 /// If the expression degree is 1, then it is a linear expression.
-#[derive(Debug, Getters, CopyGetters)]
-pub struct Expr<F: TowerField, const VALUES_PER_ROW: usize> {
+#[derive(Debug, Clone, Getters, CopyGetters)]
+pub struct Expr<F: TowerField, const V: usize> {
 	#[get_copy = "pub"]
 	table_id: TableId,
 	#[get = "pub"]
