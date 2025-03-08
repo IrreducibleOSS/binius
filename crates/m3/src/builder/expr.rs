@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{Field, TowerField};
+use binius_field::{ExtensionField, Field, TowerField};
 use binius_math::ArithExpr;
 use getset::{CopyGetters, Getters};
 
@@ -105,7 +105,7 @@ impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
 impl<F: TowerField, const V: usize> std::ops::Add<Expr<F, V>> for Col<F, V> {
 	type Output = Expr<F, V>;
 
-	fn add(self, rhs: F) -> Self::Output {
+	fn add(self, rhs: Expr<F, V>) -> Self::Output {
 		Expr::from(self) + rhs
 	}
 }
@@ -167,7 +167,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
 impl<F: TowerField, const V: usize> std::ops::Sub<Expr<F, V>> for Col<F, V> {
 	type Output = Expr<F, V>;
 
-	fn sub(self, rhs: F) -> Self::Output {
+	fn sub(self, rhs: Expr<F, V>) -> Self::Output {
 		Expr::from(self) - rhs
 	}
 }
@@ -222,7 +222,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
 impl<F: TowerField, const V: usize> std::ops::Mul<Expr<F, V>> for Col<F, V> {
 	type Output = Expr<F, V>;
 
-	fn mul(self, rhs: F) -> Self::Output {
+	fn mul(self, rhs: Expr<F, V>) -> Self::Output {
 		Expr::from(self) * rhs
 	}
 }
@@ -232,6 +232,24 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Col<F, V> {
 
 	fn mul(self, rhs: F) -> Self::Output {
 		Expr::from(self) * rhs
+	}
+}
+
+/// Upcast an expression from a subfield to an extension field..
+pub fn upcast_expr<F, FSub, const V: usize>(expr: Expr<FSub, V>) -> Expr<F, V>
+where
+	FSub: TowerField,
+	F: TowerField + ExtensionField<FSub>,
+{
+	let Expr {
+		table_id,
+		partition_id,
+		expr,
+	} = expr;
+	Expr {
+		table_id,
+		partition_id,
+		expr: expr.convert_field(),
 	}
 }
 
