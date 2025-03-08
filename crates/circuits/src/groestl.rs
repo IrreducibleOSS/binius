@@ -76,7 +76,6 @@ where
 	Ok(p_out)
 }
 
-#[allow(clippy::needless_range_loop)]
 fn groestl_p_permutation_round<U, F>(
 	builder: &mut ConstraintSystemBuilder<U, F>,
 	name: impl ToString,

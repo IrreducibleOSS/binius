@@ -76,9 +76,6 @@ path = "b32_mul.rs"
 name = "blake3_circuit"
 path = "blake3_circuit.rs"
 
-[lints.clippy]
-needless_range_loop = "allow"
-
 [features]
 default = ["rayon"]
 aes-tower = []

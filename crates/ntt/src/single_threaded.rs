@@ -243,9 +243,8 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 	// packed base field elements.
 	let cutoff = log_w.saturating_sub(log_b);
 
-	#[allow(clippy::needless_range_loop)]
-	for i in 0..cmp::min(cutoff, log_n) {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+	for (i, s_eval) in s_evals.iter().enumerate().take(cmp::min(cutoff, log_n)) {
+		let coset_twiddle = s_eval.coset(log_domain_size - log_n, coset as usize);
 
 		// A block is a block of butterfly units that all have the same twiddle factor. Since we
 		// are below the cutoff round, the block length is less than the packing width, and
@@ -253,10 +252,8 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		// polynomials are linear, we can calculate an additive factor that can be added to the
 		// packed twiddles for all packed butterfly units.
 		let log_block_len = i + log_b;
-		let block_twiddle = calculate_twiddle::<P>(
-			&s_evals[i].coset(log_domain_size - 1 - cutoff, 0),
-			log_block_len,
-		);
+		let block_twiddle =
+			calculate_twiddle::<P>(&s_eval.coset(log_domain_size - 1 - cutoff, 0), log_block_len);
 
 		for j in 0..data.len() / 2 {
 			let twiddle = P::broadcast(coset_twiddle.get(j << (cutoff - i))) + block_twiddle;
@@ -267,9 +264,14 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		}
 	}
 
-	#[allow(clippy::needless_range_loop)]
-	for i in cutoff..log_n {
-		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
+	for (i, s_eval) in s_evals
+		.iter()
+		.enumerate()
+		.skip(cutoff)
+		.take(log_n)
+		.skip(cutoff)
+	{
+		let coset_twiddle = s_eval.coset(log_domain_size - log_n, coset as usize);
 
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = P::broadcast(coset_twiddle.get(j));

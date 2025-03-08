@@ -1256,14 +1256,12 @@ mod tests {
 	}
 
 	proptest! {
-		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_conversion(a in any::<u128>(), b in any::<u128>()) {
 			check_roundtrip::<[u128; 2]>([a, b].into());
 			check_roundtrip::<__m256i>([a, b].into());
 		}
 
-		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_binary_bit_operations([a, b, c, d] in any::<[u128;4]>()) {
 			assert_eq!(M256::from([a & b, c & d]), M256::from([a, c]) & M256::from([b, d]));
@@ -1271,7 +1269,6 @@ mod tests {
 			assert_eq!(M256::from([a ^ b, c ^ d]), M256::from([a, c]) ^ M256::from([b, d]));
 		}
 
-		#[allow(clippy::tuple_array_conversions)] // false positive
 		#[test]
 		fn test_negate(a in any::<u128>(), b in any::<u128>()) {
 			assert_eq!(M256::from([!a, ! b]), !M256::from([a, b]))
