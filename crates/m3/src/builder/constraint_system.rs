@@ -324,6 +324,13 @@ fn add_oracle_for_column<F: TowerField>(
 		ColumnDef::Packed { col, log_degree } => {
 			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
+		ColumnDef::Computed { cols, expr } => {
+			let inner_oracles = cols
+				.iter()
+				.map(|&col_index| oracle_lookup[col_index])
+				.collect::<Vec<_>>();
+			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+		}
 	};
 	Ok(oracle_id)
 }
