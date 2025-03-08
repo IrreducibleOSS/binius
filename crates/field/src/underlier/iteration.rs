@@ -9,13 +9,13 @@ use super::{Divisible, NumCast, UnderlierType, UnderlierWithBitOps, U1, U2, U4};
 /// The iteration strategy for the given underlier type 'U' that is treated as a packed collection of 'T's.
 pub trait IterationStrategy<T, U> {
 	/// Iterate over the subvalues of the given reference.
-	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + '_;
+	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + Clone + '_;
 
 	/// Iterate over the subvalues of the given value.
-	fn value_iter(value: U) -> impl Iterator<Item = T> + Send;
+	fn value_iter(value: U) -> impl Iterator<Item = T> + Send + Clone;
 
 	/// Iterate over the subvalues of the given slice.
-	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + '_;
+	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + Clone + '_;
 }
 
 /// The iteration strategy for the given underlier type 'U' that is treated as a packed collection of bits.
@@ -27,17 +27,17 @@ where
 	U1: NumCast<U>,
 {
 	#[inline]
-	fn ref_iter(value: &U) -> impl Iterator<Item = U1> + Send + '_ {
+	fn ref_iter(value: &U) -> impl Iterator<Item = U1> + Send + Clone + '_ {
 		(0..U::BITS).map_skippable(move |i| unsafe { value.get_subvalue(i) })
 	}
 
 	#[inline]
-	fn value_iter(value: U) -> impl Iterator<Item = U1> + Send {
+	fn value_iter(value: U) -> impl Iterator<Item = U1> + Send + Clone {
 		(0..U::BITS).map_skippable(move |i| unsafe { value.get_subvalue(i) })
 	}
 
 	#[inline]
-	fn slice_iter(slice: &[U]) -> impl Iterator<Item = U1> + Send + '_ {
+	fn slice_iter(slice: &[U]) -> impl Iterator<Item = U1> + Send + Clone + '_ {
 		U::split_slice(slice)
 			.iter()
 			.flat_map(|val| (0..8).map(move |i| U1::new(*val >> i)))
@@ -51,17 +51,17 @@ impl<U: UnderlierType + Divisible<T>, T: UnderlierType> IterationStrategy<T, U>
 	for DivisibleStrategy
 {
 	#[inline]
-	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + '_ {
+	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + Clone + '_ {
 		U::split_ref(value).iter().copied()
 	}
 
 	#[inline]
-	fn value_iter(value: U) -> impl Iterator<Item = T> + Send {
+	fn value_iter(value: U) -> impl Iterator<Item = T> + Send + Clone {
 		U::split_val(value).into_iter()
 	}
 
 	#[inline]
-	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + '_ {
+	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + Clone + '_ {
 		U::split_slice(slice).iter().copied()
 	}
 }
@@ -75,19 +75,19 @@ where
 	U: UnderlierWithBitOps,
 {
 	#[inline]
-	fn value_iter(value: U) -> impl Iterator<Item = T> + Send {
+	fn value_iter(value: U) -> impl Iterator<Item = T> + Send + Clone {
 		(0..checked_int_div(U::BITS, T::BITS))
 			.map_skippable(move |i| unsafe { value.get_subvalue(i) })
 	}
 
 	#[inline]
-	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + '_ {
+	fn ref_iter(value: &U) -> impl Iterator<Item = T> + Send + Clone + '_ {
 		(0..checked_int_div(U::BITS, T::BITS))
 			.map_skippable(move |i| unsafe { value.get_subvalue(i) })
 	}
 
 	#[inline]
-	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> {
+	fn slice_iter(slice: &[U]) -> impl Iterator<Item = T> + Send + Clone + '_ {
 		slice.iter().flat_map(Self::ref_iter)
 	}
 }
@@ -100,15 +100,15 @@ macro_rules! impl_iteration {
 	(@pairs $strategy:ident, $bigger:ty,) => {};
 	(@pairs $strategy:ident, $bigger:ty, $smaller:ty, $($tail:ty,)*) => {
 		impl $crate::underlier::IterationStrategy<$smaller, $bigger> for $crate::underlier::IterationMethods<$smaller, $bigger> {
-			fn ref_iter(value: &$bigger) -> impl Iterator<Item = $smaller> + Send + '_ {
+			fn ref_iter(value: &$bigger) -> impl Iterator<Item = $smaller> + Send + Clone + '_ {
 				$crate::underlier::$strategy::ref_iter(value)
 			}
 
-			fn value_iter(value: $bigger) -> impl Iterator<Item = $smaller> + Send {
+			fn value_iter(value: $bigger) -> impl Iterator<Item = $smaller> + Send + Clone {
 				$crate::underlier::$strategy::value_iter(value)
 			}
 
-			fn slice_iter(slice: &[$bigger]) -> impl Iterator<Item = $smaller> + Send + '_ {
+			fn slice_iter(slice: &[$bigger]) -> impl Iterator<Item = $smaller> + Send + Clone + '_ {
 				$crate::underlier::$strategy::slice_iter(slice)
 			}
 		}

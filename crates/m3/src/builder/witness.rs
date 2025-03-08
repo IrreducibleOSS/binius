@@ -15,7 +15,7 @@ use binius_field::{
 };
 use binius_math::MultilinearExtension;
 use binius_maybe_rayon::prelude::*;
-use binius_utils::checked_arithmetics::log2_ceil_usize;
+use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 
@@ -79,7 +79,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 
 			for col in table.cols.into_iter() {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
-				let n_vars = table.log_capacity + col.shape.pack_factor;
+				let n_vars = table.log_capacity + log2_strict_usize(col.shape.values_per_row);
 				let witness = match col.shape.tower_height {
 					0 => MultilinearExtension::new(
 						n_vars,
@@ -126,9 +126,9 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 			}
 
 			// Every table partition has a step_down appended to the end of the table to support non-power of two height tables
-			for pack_factor in table.selector_pack_factors.into_iter() {
+			for log_values_per_row in table.selector_log_values_per_rows.into_iter() {
 				let oracle_id = first_oracle_id_in_table + count;
-				let size = statement.table_sizes[table.table_id] << pack_factor;
+				let size = statement.table_sizes[table.table_id] << log_values_per_row;
 				let log_size = log2_ceil_usize(size);
 				let witness = StepDown::new(log_size, size)
 					.unwrap()
@@ -149,7 +149,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
-	selector_pack_factors: Vec<usize>,
+	selector_log_values_per_rows: Vec<usize>,
 	cols: Vec<WitnessIndexColumn<'a, U>>,
 	#[get_copy = "pub"]
 	log_capacity: usize,
@@ -183,7 +183,8 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 			.columns
 			.iter()
 			.map(|col| {
-				let log_cell_bits = col.shape.tower_height + col.shape.pack_factor;
+				let log_cell_bits =
+					col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
 				min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
 				let log_col_bits = log_cell_bits + log_capacity;
 
@@ -207,7 +208,7 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 
 		Self {
 			table_id: table.id,
-			selector_pack_factors: table.partitions.keys().collect(),
+			selector_log_values_per_rows: table.partitions.keys().collect(),
 			cols,
 			log_capacity,
 			min_log_segment_size: U::LOG_BITS - min_log_cell_bits,
@@ -247,7 +248,8 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 				.cols
 				.iter()
 				.map(|col| {
-					let log_cell_bits = col.shape.tower_height + col.shape.pack_factor;
+					let log_cell_bits =
+						col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
 					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 					// Safety: The function borrows self mutably, so we have mutable access to
 					// all columns and thus none can be borrowed by anyone else. The loop is
@@ -285,7 +287,8 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 					.cols
 					.iter()
 					.map(|col| {
-						let log_cell_bits = col.shape.tower_height + col.shape.pack_factor;
+						let log_cell_bits =
+							col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
 						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 						// Safety: The function borrows self mutably, so we have mutable access to
 						// all columns and thus none can be borrowed by anyone else. The loop is
@@ -321,9 +324,9 @@ pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier> {
 }
 
 impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
-	pub fn get<F: TowerField, const V: usize>(
+	pub fn get<F: TowerField, const VALUES_PER_ROW: usize>(
 		&self,
-		col: Col<F, V>,
+		col: Col<F, VALUES_PER_ROW>,
 	) -> Result<Ref<[PackedType<U, F>]>, Error>
 	where
 		U: PackScalar<F>,
@@ -340,14 +343,14 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		let col = self
 			.cols
 			.get(col.id.table_index)
-			.ok_or_else(|| Error::MissingColumn(col.id))?;
+			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref(x)))
 	}
 
-	pub fn get_mut<F: TowerField, const V: usize>(
+	pub fn get_mut<F: TowerField, const VALUES_PER_ROW: usize>(
 		&self,
-		col: Col<F, V>,
+		col: Col<F, VALUES_PER_ROW>,
 	) -> Result<RefMut<[PackedType<U, F>]>, Error>
 	where
 		U: PackScalar<F>,
@@ -364,14 +367,14 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		let col = self
 			.cols
 			.get(col.id.table_index)
-			.ok_or_else(|| Error::MissingColumn(col.id))?;
+			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
 	}
 
-	pub fn get_as<T: Pod, F: TowerField, const V: usize>(
+	pub fn get_as<T: Pod, F: TowerField, const VALUES_PER_ROW: usize>(
 		&self,
-		col: Col<F, V>,
+		col: Col<F, VALUES_PER_ROW>,
 	) -> Result<Ref<[T]>, Error>
 	where
 		U: Pod,
@@ -379,14 +382,14 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		let col = self
 			.cols
 			.get(col.id.table_index)
-			.ok_or_else(|| Error::MissingColumn(col.id))?;
+			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
 	}
 
-	pub fn get_mut_as<T: Pod, F: TowerField, const V: usize>(
+	pub fn get_mut_as<T: Pod, F: TowerField, const VALUES_PER_ROW: usize>(
 		&self,
-		col: Col<F, V>,
+		col: Col<F, VALUES_PER_ROW>,
 	) -> Result<RefMut<[T]>, Error>
 	where
 		U: Pod,
@@ -401,7 +404,7 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		let col = self
 			.cols
 			.get(col.id.table_index)
-			.ok_or_else(|| Error::MissingColumn(col.id))?;
+			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))
 	}
@@ -495,10 +498,10 @@ mod tests {
 		let table_id = 0;
 		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
 		let mut table = TableBuilder::new(&mut inner_table);
-		let col0 = table.add_committed::<B1, 3>("col0");
-		let col1 = table.add_committed::<B1, 5>("col1");
-		let col2 = table.add_committed::<B8, 0>("col2");
-		let col3 = table.add_committed::<B32, 0>("col3");
+		let col0 = table.add_committed::<B1, 8>("col0");
+		let col1 = table.add_committed::<B1, 32>("col1");
+		let col2 = table.add_committed::<B8, 1>("col2");
+		let col3 = table.add_committed::<B32, 1>("col3");
 
 		let allocator = bumpalo::Bump::new();
 		let table_size = 64;
@@ -528,10 +531,10 @@ mod tests {
 		let table_id = 0;
 		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
 		let mut table = TableBuilder::new(&mut inner_table);
-		let col0 = table.add_committed::<B1, 3>("col0");
-		let col1 = table.add_committed::<B1, 5>("col1");
-		let col2 = table.add_committed::<B8, 0>("col2");
-		let col3 = table.add_committed::<B32, 0>("col3");
+		let col0 = table.add_committed::<B1, 8>("col0");
+		let col1 = table.add_committed::<B1, 32>("col1");
+		let col2 = table.add_committed::<B8, 1>("col2");
+		let col3 = table.add_committed::<B32, 1>("col3");
 
 		let allocator = bumpalo::Bump::new();
 		let table_size = 64;

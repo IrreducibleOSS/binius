@@ -4,9 +4,8 @@ use super::m512::M512;
 use crate::{
 	arch::{
 		cfg_if, portable::packed::PackedPrimitiveType, PairwiseStrategy, ReuseMultiplyStrategy,
-		SimdStrategy,
 	},
-	arithmetic_traits::{impl_invert_with, impl_square_with, impl_transformation_with_strategy},
+	arithmetic_traits::{impl_invert_with, impl_square_with},
 	BinaryField128bPolyval,
 };
 
@@ -48,6 +47,9 @@ cfg_if! {
 
 		impl_transformation_with_gfni_nxn!(PackedBinaryPolyval4x128b, 16);
 	} else {
+		use create::arch::SimdStrategy;
+		use crate::arithmetic_traits::impl_transformation_with_strategy;
+
 		impl_transformation_with_strategy!(PackedBinaryPolyval4x128b, SimdStrategy);
 	}
 }

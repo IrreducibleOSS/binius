@@ -17,7 +17,9 @@ use crate::{
 		ConstraintPredicate, MultilinearOracleSet, MultilinearPolyOracle, MultilinearPolyVariant,
 		ProjectionVariant, ShiftVariant,
 	},
-	polynomial::{test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly},
+	polynomial::{
+		test_utils::decompose_index_to_hypercube_point, ArithCircuitPoly, MultilinearComposite,
+	},
 	protocols::sumcheck::prove::zerocheck,
 	witness::MultilinearExtensionIndex,
 };
@@ -242,6 +244,18 @@ where
 				return Err(Error::PackedUnderlierMismatch {
 					oracle: oracle_label.into(),
 				});
+			}
+		}
+		MultilinearPolyVariant::Composite(composite_mle) => {
+			let inner_polys = composite_mle
+				.polys()
+				.map(|id| witness.get_multilin_poly(id))
+				.collect::<Result<Vec<_>, _>>()?;
+			let composite = MultilinearComposite::new(n_vars, composite_mle.c(), inner_polys)?;
+			for i in 0..1 << n_vars {
+				let got = poly.evaluate_on_hypercube(i)?;
+				let expected = composite.evaluate_on_hypercube(i)?;
+				check_eval(oracle_label, i, expected, got)?;
 			}
 		}
 	}

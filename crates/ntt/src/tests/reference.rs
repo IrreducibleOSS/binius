@@ -73,15 +73,12 @@ fn forward_transform_simple<F, FF>(
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl DataAccess<FF>,
 	coset: u32,
+	log_n: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let n = data.len();
-	assert!(n.is_power_of_two());
-
-	let log_n = n.trailing_zeros() as usize;
 	let coset_bits = 32 - coset.leading_zeros() as usize;
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
@@ -108,6 +105,10 @@ where
 		}
 	}
 
+	for i in 1 << log_n..data.len() {
+		data.set(i, FF::ZERO);
+	}
+
 	Ok(())
 }
 
@@ -117,15 +118,12 @@ fn inverse_transform_simple<F, FF>(
 	s_evals: &[impl TwiddleAccess<F>],
 	data: &mut impl DataAccess<FF>,
 	coset: u32,
+	log_n: usize,
 ) -> Result<(), Error>
 where
 	F: BinaryField,
 	FF: ExtensionField<F>,
 {
-	let n = data.len();
-	assert!(n.is_power_of_two());
-
-	let log_n = n.trailing_zeros() as usize;
 	let coset_bits = 32 - coset.leading_zeros() as usize;
 	if log_n + coset_bits > log_domain_size {
 		return Err(Error::DomainTooSmall {
@@ -182,10 +180,17 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			forward_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;
+			forward_transform_simple(
+				self.log_domain_size(),
+				&self.s_evals,
+				&mut batch,
+				coset,
+				log_n,
+			)?;
 		}
 
 		Ok(())
@@ -196,10 +201,17 @@ impl<F: BinaryField, TA: TwiddleAccess<F>> AdditiveNTT<F> for SimpleAdditiveNTT<
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error> {
 		for batch_index in 0..1 << log_batch_size {
 			let mut batch = BatchedPackedFieldSlice::new(data, log_batch_size, batch_index);
-			inverse_transform_simple(self.log_domain_size(), &self.s_evals, &mut batch, coset)?;
+			inverse_transform_simple(
+				self.log_domain_size(),
+				&self.s_evals,
+				&mut batch,
+				coset,
+				log_n,
+			)?;
 		}
 
 		Ok(())

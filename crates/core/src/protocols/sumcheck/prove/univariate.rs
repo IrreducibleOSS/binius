@@ -3,9 +3,8 @@
 use std::{collections::HashMap, iter::repeat_n};
 
 use binius_field::{
-	get_packed_subfields_at_pe_idx, recast_packed_mut, util::inner_product_unchecked, BinaryField,
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
-	TowerField,
+	recast_packed_mut, util::inner_product_unchecked, BinaryField, ExtensionField, Field,
+	PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield, TowerField,
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
@@ -360,13 +359,16 @@ where
 		bail!(Error::LagrangeDomainTooSmall);
 	}
 
-	let min_domain_bits = log2_ceil_usize(max_domain_size).max(1);
+	// Batching factors for strided NTTs.
+	let log_extension_degree_base_domain = <FBase as ExtensionField<FDomain>>::LOG_DEGREE;
+	let pdomain_log_width = <P as PackedExtension<FDomain>>::PackedSubfield::LOG_WIDTH;
+
+	// The lower bound is due to SingleThreadedNTT implementation quirk, which requires
+	// at least two packed field elements to be able to use PackedField::interleave.
+	let min_domain_bits = log2_ceil_usize(max_domain_size).max(pdomain_log_width + 1);
 	if min_domain_bits > FDomain::N_BITS {
 		bail!(MathError::DomainSizeTooLarge);
 	}
-
-	// Batching factors for strided NTTs.
-	let log_extension_degree_base_domain = <FBase as ExtensionField<FDomain>>::LOG_DEGREE;
 
 	// Only a domain size NTT is needed.
 	let fdomain_ntt = SingleThreadedNTT::<FDomain>::with_canonical_field(min_domain_bits)
@@ -376,7 +378,6 @@ where
 	// Smaller subcubes are batched together to reduce interpolation/evaluation overhead.
 	const MAX_SUBCUBE_VARS: usize = 12;
 	let log_batch = MAX_SUBCUBE_VARS.min(n_vars).saturating_sub(skip_rounds);
-	let packed_log_batch = log_batch.saturating_sub(P::LOG_WIDTH);
 
 	// Expand the multilinear query in all but the first `skip_rounds` variables,
 	// where each tensor expansion element serves as a constant factor of the whole
@@ -488,9 +489,6 @@ where
 					)?
 				}
 
-				let partial_eq_ind_evals_subslice = &partial_eq_ind_evals
-					[subcube_index << packed_log_batch..][..1 << packed_log_batch];
-
 				// Obtain 1 << log_batch partial equality indicator constant factors for each
 				// of the subcubes of size 1 << skip_rounds.
 				let partial_eq_ind_evals_scalars_subslice =
@@ -512,15 +510,19 @@ where
 
 					// Accumulate round evals and multiply by the constant part of the
 					// zerocheck equality indicator
-					if log_batch < P::LOG_WIDTH {
-						let composition_evals_scalars =
-							<PackedSubfield<P, FBase>>::unpack_scalars_mut(
-								composition_evals.as_mut_slice(),
-							);
+					let composition_evals_scalars = <PackedSubfield<P, FBase>>::unpack_scalars_mut(
+						composition_evals.as_mut_slice(),
+					);
 
+					for (round_evals_coset, composition_evals_scalars_coset) in izip!(
+						round_evals.chunks_exact_mut(1 << skip_rounds),
+						composition_evals_scalars.chunks_exact(
+							1 << subcube_vars.max(log_embedding_degree + P::LOG_WIDTH)
+						)
+					) {
 						for (round_eval, composition_evals) in izip!(
-							round_evals.iter_mut(),
-							composition_evals_scalars.chunks_exact(1 << log_batch),
+							round_evals_coset,
+							composition_evals_scalars_coset.chunks_exact(1 << log_batch),
 						) {
 							// Inner product is with the high n_vars - skip_rounds projection
 							// of the zerocheck equality indicator (one factor per subcube).
@@ -529,33 +531,10 @@ where
 								composition_evals.iter().copied(),
 							);
 						}
-					} else {
-						for (i, round_eval) in round_evals.iter_mut().enumerate() {
-							let mut temp = <PackedSubfield<P, FBase>>::zero();
-
-							for j in 0..1 << packed_log_batch {
-								let idx = i * (1 << packed_log_batch) + j;
-								let broadcasted_rhs = unsafe {
-									// SAFETY: Width of PBase is always >= the width of the FBase
-									get_packed_subfields_at_pe_idx::<P, FBase>(
-										composition_evals,
-										idx,
-									)
-								};
-								temp += <P as PackedExtension<FBase>>::cast_base(
-									partial_eq_ind_evals_subslice
-										[idx % partial_eq_ind_evals_subslice.len()],
-								) * broadcasted_rhs;
-							}
-
-							let temp = &[<P as PackedExtension<FBase>>::cast_ext(temp)];
-
-							let unpacked = P::unpack_scalars(temp);
-							for scalar in unpacked {
-								*round_eval += scalar;
-							}
-						}
 					}
+
+					// REVIEW: only slow path is left, fast path is to be reintroduced in the followup PRs
+					//         targeted on dropping PackedFieldIndexable
 				}
 
 				Ok(par_fold_states)
@@ -636,10 +615,10 @@ fn extrapolate_round_evals<F: TowerField>(
 		odd_interpolate.inverse_transform(&ntt, round_evals)?;
 
 		// Use forward NTT to extrapolate novel representation to the max domain size.
-		let next_power_of_two = 1 << log2_ceil_usize(max_domain_size);
-		round_evals.resize(next_power_of_two, F::ZERO);
+		let next_log_n = log2_ceil_usize(max_domain_size);
+		round_evals.resize(1 << next_log_n, F::ZERO);
 
-		ntt.forward_transform(round_evals, 0, 0)?;
+		ntt.forward_transform(round_evals, 0, 0, next_log_n)?;
 
 		// Sanity check: first 1 << skip_rounds evals are still zeros.
 		debug_assert!(round_evals[..1 << skip_rounds]
@@ -667,10 +646,7 @@ where
 	NTT: AdditiveNTT<P::Scalar>,
 {
 	let subcube_vars = skip_rounds + log_batch;
-	debug_assert_eq!(
-		1 << (skip_rounds + log_batch).saturating_sub(P::LOG_WIDTH),
-		interleaved_evals.len()
-	);
+	debug_assert_eq!(1 << subcube_vars.saturating_sub(P::LOG_WIDTH), interleaved_evals.len());
 	debug_assert_eq!(
 		extrapolated_evals_packed_len::<P>(composition_max_degree, skip_rounds, log_batch),
 		extrapolated_evals.len()
@@ -680,40 +656,8 @@ where
 			>= log2_ceil_usize(domain_size(composition_max_degree, skip_rounds))
 	);
 
-	if subcube_vars >= P::LOG_WIDTH {
-		// Things are simple when each NTT spans whole packed fields
-		ntt_extrapolate_chunks_exact(ntt, log_batch, interleaved_evals, extrapolated_evals)
-	} else {
-		// In the rare case where subcubes are smaller we downcast to scalars
-		let extrapolated_scalars_count =
-			extrapolated_scalars_count(composition_max_degree, skip_rounds)
-				.div_ceil(1 << skip_rounds)
-				<< subcube_vars;
-
-		ntt_extrapolate_chunks_exact(
-			ntt,
-			log_batch,
-			&mut P::unpack_scalars_mut(interleaved_evals)[..1 << subcube_vars],
-			&mut P::unpack_scalars_mut(extrapolated_evals)[..extrapolated_scalars_count],
-		)
-	}
-}
-
-fn ntt_extrapolate_chunks_exact<NTT, P>(
-	ntt: &NTT,
-	log_batch: usize,
-	interleaved_evals: &mut [P],
-	extrapolated_evals: &mut [P],
-) -> Result<(), Error>
-where
-	P: PackedField<Scalar: BinaryField>,
-	NTT: AdditiveNTT<P::Scalar>,
-{
-	debug_assert!(interleaved_evals.len().is_power_of_two());
-	debug_assert!(extrapolated_evals.len() % interleaved_evals.len() == 0);
-
 	// Inverse NTT: convert evals to novel basis representation
-	ntt.inverse_transform(interleaved_evals, 0, log_batch)?;
+	ntt.inverse_transform(interleaved_evals, 0, log_batch, skip_rounds)?;
 
 	// Forward NTT: evaluate novel basis representation at consecutive cosets
 	for (i, extrapolated_chunk) in extrapolated_evals
@@ -721,7 +665,7 @@ where
 		.enumerate()
 	{
 		extrapolated_chunk.copy_from_slice(interleaved_evals);
-		ntt.forward_transform(extrapolated_chunk, (i + 1) as u32, log_batch)?;
+		ntt.forward_transform(extrapolated_chunk, (i + 1) as u32, log_batch, skip_rounds)?;
 	}
 
 	Ok(())
@@ -793,9 +737,8 @@ mod tests {
 					let mut interleaved_evals_scratch = interleaved_evals.clone();
 
 					let interleaved_evals_domain =
-						P::cast_bases_mut(interleaved_evals_scratch.as_mut_slice());
-					let extrapolated_evals_domain =
-						P::cast_bases_mut(extrapolated_evals.as_mut_slice());
+						P::cast_bases_mut(&mut interleaved_evals_scratch);
+					let extrapolated_evals_domain = P::cast_bases_mut(&mut extrapolated_evals);
 
 					super::ntt_extrapolate(
 						&ntt,
@@ -808,8 +751,8 @@ mod tests {
 					.unwrap();
 
 					let interleaved_scalars =
-						&P::unpack_scalars(interleaved_evals.as_slice())[..1 << subcube_vars];
-					let extrapolated_scalars = &P::unpack_scalars(extrapolated_evals.as_slice())
+						&P::unpack_scalars(&interleaved_evals)[..1 << subcube_vars];
+					let extrapolated_scalars = &P::unpack_scalars(&extrapolated_evals)
 						[..extrapolated_scalars_cnt << log_batch];
 
 					for batch_idx in 0..1 << log_batch {
@@ -820,10 +763,10 @@ mod tests {
 						for (i, &point) in max_domain.finite_points()[1 << skip_rounds..]
 							[..extrapolated_scalars_cnt]
 							.iter()
+							.take(1 << skip_rounds)
 							.enumerate()
 						{
-							let extrapolated =
-								domain.extrapolate(values.as_slice(), point.into()).unwrap();
+							let extrapolated = domain.extrapolate(&values, point.into()).unwrap();
 							let expected = extrapolated_scalars[(i << log_batch) + batch_idx];
 							assert_eq!(extrapolated, expected);
 						}
@@ -945,11 +888,11 @@ mod tests {
 								skip_rounds,
 								subcube_index,
 								log_embedding_degree,
-								evals.as_mut_slice(),
+								&mut evals,
 							)
 							.unwrap();
 						let evals_scalars = &PackedType::<U, FBase>::unpack_scalars(
-							PackedExtension::<FBase>::cast_bases(evals.as_slice()),
+							PackedExtension::<FBase>::cast_bases(&evals),
 						)[..1 << skip_rounds];
 						let extrapolated = domain.extrapolate(evals_scalars, x.into()).unwrap();
 						*query = extrapolated;
@@ -959,7 +902,7 @@ mod tests {
 						.evaluate_on_hypercube(subcube_index)
 						.unwrap();
 					for (composition, sum) in compositions.iter().zip(composition_sums.iter_mut()) {
-						*sum += eq_ind_factor * composition.evaluate(query.as_slice()).unwrap();
+						*sum += eq_ind_factor * composition.evaluate(&query).unwrap();
 					}
 				}
 

@@ -4,13 +4,16 @@ use std::{array, fmt::Debug, sync::Arc};
 
 use binius_field::{BinaryField128b, Field, TowerField};
 use binius_macros::{DeserializeBytes, SerializeBytes};
+use binius_math::ArithExpr;
 use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use bytes::Buf;
 use getset::{CopyGetters, Getters};
 
 use crate::{
 	oracle::{CompositePolyOracle, Error},
-	polynomial::{Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly},
+	polynomial::{
+		ArithCircuitPoly, Error as PolynomialError, IdentityCompositionPoly, MultivariatePoly,
+	},
 };
 
 /// Identifier for a multilinear oracle in a [`MultilinearOracleSet`].
@@ -232,6 +235,44 @@ impl<F: TowerField> MultilinearOracleSetAddition<'_, F> {
 		Ok(self.mut_ref.add_to_set(oracle))
 	}
 
+	pub fn composite_mle(
+		self,
+		n_vars: usize,
+		inner: impl IntoIterator<Item = OracleId>,
+		comp: ArithExpr<F>,
+	) -> Result<OracleId, Error> {
+		let inner = inner
+			.into_iter()
+			.map(|inner_id| {
+				if inner_id >= self.mut_ref.oracles.len() {
+					return Err(Error::InvalidOracleId(inner_id));
+				}
+				if self.mut_ref.n_vars(inner_id) != n_vars {
+					return Err(Error::IncorrectNumberOfVariables { expected: n_vars });
+				}
+				Ok(self.mut_ref.get_from_set(inner_id))
+			})
+			.collect::<Result<Vec<_>, _>>()?;
+
+		let tower_level = inner
+			.iter()
+			.map(|oracle| oracle.binary_tower_level())
+			.max()
+			.unwrap_or(0);
+
+		let composite_mle = CompositeMLE::new(n_vars, inner, comp)?;
+
+		let oracle = |id: OracleId| MultilinearPolyOracle {
+			id,
+			n_vars,
+			tower_level,
+			name: self.name,
+			variant: MultilinearPolyVariant::Composite(composite_mle),
+		};
+
+		Ok(self.mut_ref.add_to_set(oracle))
+	}
+
 	pub fn zero_padded(self, inner_id: OracleId, n_vars: usize) -> Result<OracleId, Error> {
 		if inner_id >= self.mut_ref.oracles.len() {
 			bail!(Error::InvalidOracleId(inner_id));
@@ -412,6 +453,15 @@ impl<F: TowerField> MultilinearOracleSet<F> {
 		self.add().zero_padded(id, n_vars)
 	}
 
+	pub fn add_composite_mle(
+		&mut self,
+		n_vars: usize,
+		inner: impl IntoIterator<Item = OracleId>,
+		comp: ArithExpr<F>,
+	) -> Result<OracleId, Error> {
+		self.add().composite_mle(n_vars, inner, comp)
+	}
+
 	pub fn oracle(&self, id: OracleId) -> MultilinearPolyOracle<F> {
 		self.oracles[id].clone()
 	}
@@ -487,6 +537,7 @@ pub enum MultilinearPolyVariant<F: TowerField> {
 	Packed(Packed),
 	LinearCombination(LinearCombination<F>),
 	ZeroPadded(OracleId),
+	Composite(CompositeMLE<F>),
 }
 
 impl DeserializeBytes for MultilinearPolyVariant<BinaryField128b> {
@@ -721,6 +772,56 @@ impl<F: TowerField> LinearCombination<F> {
 	}
 }
 
+/// MLE of a multivariate polynomial evaluated on multilinear oracles.
+///
+/// i.e. the MLE of the evaluations of $C(M_1, M_2, \ldots, M_n)$ on $\{0, 1\}^\mu$ where:
+/// - $C$ is a arbitrary polynomial in $n$ variables
+/// - $M_1, M_2, \ldots, M_n$ are multilinear oracles in μ variables
+///
+/// ($C$ should be sufficiently lightweight to be evaluated by the verifier)
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters, SerializeBytes)]
+pub struct CompositeMLE<F: TowerField> {
+	/// $\mu$
+	#[get_copy = "pub"]
+	n_vars: usize,
+	/// $M_1, M_2, \ldots, M_n$
+	#[getset(get = "pub")]
+	inner: Vec<OracleId>,
+	/// $C$
+	#[getset(get = "pub")]
+	c: ArithCircuitPoly<F>,
+}
+
+impl<F: TowerField> CompositeMLE<F> {
+	pub fn new(
+		n_vars: usize,
+		inner: impl IntoIterator<Item = MultilinearPolyOracle<F>>,
+		c: ArithExpr<F>,
+	) -> Result<Self, Error> {
+		let inner = inner
+			.into_iter()
+			.map(|oracle| {
+				if oracle.n_vars() == n_vars {
+					Ok(oracle.id())
+				} else {
+					Err(Error::IncorrectNumberOfVariables { expected: n_vars })
+				}
+			})
+			.collect::<Result<Vec<_>, _>>()?;
+		let c = ArithCircuitPoly::with_n_vars(inner.len(), c)
+			.map_err(|_| Error::CompositionMismatch)?; // occurs if `c` has more variables than `inner.len()`
+		Ok(Self { n_vars, inner, c })
+	}
+
+	pub fn polys(&self) -> impl Iterator<Item = OracleId> + '_ {
+		self.inner.iter().copied()
+	}
+
+	pub fn n_polys(&self) -> usize {
+		self.inner.len()
+	}
+}
+
 impl<F: TowerField> MultilinearPolyOracle<F> {
 	pub const fn id(&self) -> OracleId {
 		self.id
@@ -747,6 +848,7 @@ impl<F: TowerField> MultilinearPolyOracle<F> {
 			MultilinearPolyVariant::Packed(_) => "Packed",
 			MultilinearPolyVariant::LinearCombination(_) => "LinearCombination",
 			MultilinearPolyVariant::ZeroPadded(_) => "ZeroPadded",
+			MultilinearPolyVariant::Composite(_) => "CompositeMLE",
 		}
 	}
 

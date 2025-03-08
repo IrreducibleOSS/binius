@@ -134,6 +134,27 @@ pub mod tests {
 							assert_eq!(linear_transformation.transform(&scalar_elems[i]), bytesliced_result.get(i));
 						}
 					}
+
+					#[test]
+					fn check_interleave(scalar_elems_a in scalar_array_strategy(), scalar_elems_b in scalar_array_strategy()) {
+						let bytesliced_a = <$name>::from_scalars(scalar_elems_a);
+						let bytesliced_b = <$name>::from_scalars(scalar_elems_b);
+
+						for log_block_len in 0..<$name>::LOG_WIDTH {
+							let (bytesliced_c, bytesliced_d) = bytesliced_a.interleave(bytesliced_b, log_block_len);
+
+							let block_len = 1 << log_block_len;
+							for offset in (0..<$name>::WIDTH).step_by(2 * block_len) {
+								for i in 0..block_len {
+									assert_eq!(bytesliced_c.get(offset + i), scalar_elems_a[offset + i]);
+									assert_eq!(bytesliced_c.get(offset + block_len + i), scalar_elems_b[offset + i]);
+
+									assert_eq!(bytesliced_d.get(offset + i), scalar_elems_a[offset + block_len + i]);
+									assert_eq!(bytesliced_d.get(offset + block_len + i), scalar_elems_b[offset + block_len + i]);
+								}
+							}
+						}
+					}
 				}
 			}
 		};

@@ -325,7 +325,7 @@ where
 	}
 
 	#[inline]
-	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + '_ {
+	fn iter_slice(slice: &[Self]) -> impl Iterator<Item = Self::Scalar> + Send + Clone + '_ {
 		// Safety: `Self` has the same layout as `[PT; N]` because it is a transparent wrapper.
 		let cast_slice =
 			unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const [PT; N], slice.len()) };

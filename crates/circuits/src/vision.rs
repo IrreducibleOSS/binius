@@ -13,8 +13,9 @@ use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField, Field,
-	PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedField, TowerField,
+	packed::get_packed_slice, AESTowerField32b, BinaryField1b, BinaryField32b, ExtensionField,
+	Field, PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField,
+	TowerField,
 };
 use binius_hash::{Vision32MDSTransform, INV_PACKED_TRANS_AES};
 use binius_macros::arith_expr;
@@ -68,7 +69,8 @@ pub fn vision_permutation(
 
 	#[cfg(debug_assertions)]
 	if let Some(witness) = builder.witness() {
-		use binius_hash::Vision32bPermutation;
+		use binius_hash::{permutation::Permutation, Vision32bPermutation};
+
 		let vision_perm = Vision32bPermutation::default();
 		let p_in_data: [_; STATE_SIZE] =
 			array::try_from_fn(|i| witness.get::<B32>(p_in[i])).unwrap();
@@ -77,11 +79,18 @@ pub fn vision_permutation(
 			array::try_from_fn(|i| witness.get::<B32>(perm_out[i])).unwrap();
 		let p_out_slice: [_; STATE_SIZE] = p_out_data.map(|elem| elem.as_slice::<B32>());
 		for z in 0..1 << log_size {
-			let mut in_out: [_; STATE_SIZE] = array::from_fn(|s| p_in_slice[s][z]);
+			let mut in_out: [_; 3] = array::from_fn(|i| {
+				PackedAESBinaryField8x32b::from_fn(|j| p_in_slice[i * 8 + j][z].into())
+			});
 			let expected_out: [B32; STATE_SIZE] = array::from_fn(|s| p_out_slice[s][z]);
 
-			vision_perm.permute_elems(&mut in_out);
-			assert_eq!(in_out, expected_out)
+			vision_perm.permute_mut(&mut in_out);
+
+			for (out, expected) in
+				PackedAESBinaryField8x32b::iter_slice(&in_out).zip(expected_out.iter())
+			{
+				assert_eq!(out, AESTowerField32b::from(*expected));
+			}
 		}
 	}
 
@@ -380,8 +389,10 @@ where {
 				let inp = PackedAESBinaryField8x32b::from_fn(|pack_idx| {
 					inverse_0[pack_idx + arr_idx * 8].into()
 				});
-				aes_to_bin_packed.transform(&INV_PACKED_TRANS_AES.transform(&inp))
-					+ inv_const_packed
+				Transformation::<PackedAESBinaryField8x32b, PackedBinaryField8x32b>::transform(
+					&aes_to_bin_packed,
+					&INV_PACKED_TRANS_AES.transform(&inp),
+				) + inv_const_packed
 			});
 
 			for i in 0..STATE_SIZE {
@@ -394,8 +405,10 @@ where {
 					s_box_out_0_slice[pack_idx + arr_idx * 8][z].into()
 				})
 			});
-			mds_trans.transform(&mut inp_as_packed_aes);
-			let inp_as_packed_bin = inp_as_packed_aes.map(|x| aes_to_bin_packed.transform(&x));
+			mds_trans
+				.transform(PackedAESBinaryField8x32b::cast_base_arr_mut(&mut inp_as_packed_aes));
+			let inp_as_packed_bin: [PackedBinaryField8x32b; 3] =
+				inp_as_packed_aes.map(|x| aes_to_bin_packed.transform(&x));
 
 			for i in 0..STATE_SIZE {
 				let mds_even_out: B32 = get_packed_slice(&inp_as_packed_bin, i);
@@ -421,7 +434,8 @@ where {
 					s_box_out_1_slice[pack_idx + arr_idx * 8][z].into()
 				})
 			});
-			mds_trans.transform(&mut inp_as_packed_aes);
+			mds_trans
+				.transform(PackedAESBinaryField8x32b::cast_base_arr_mut(&mut inp_as_packed_aes));
 			let inp_as_packed: [PackedBinaryField8x32b; 3] =
 				inp_as_packed_aes.map(|x| aes_to_bin_packed.transform(&x));
 			for i in 0..24 {

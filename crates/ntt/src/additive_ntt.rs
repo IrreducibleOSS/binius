@@ -55,6 +55,7 @@ pub trait AdditiveNTT<F: BinaryField> {
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error>;
 
 	/// Inverse transformation defined in [LCH14] on a batch of inputs.
@@ -68,21 +69,24 @@ pub trait AdditiveNTT<F: BinaryField> {
 		data: &mut [P],
 		coset: u32,
 		log_batch_size: usize,
+		log_n: usize,
 	) -> Result<(), Error>;
 
 	fn forward_transform_ext<PE: PackedExtension<F>>(
 		&self,
 		data: &mut [PE],
 		coset: u32,
+		log_n: usize,
 	) -> Result<(), Error> {
-		self.forward_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
+		self.forward_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE, log_n)
 	}
 
 	fn inverse_transform_ext<PE: PackedExtension<F>>(
 		&self,
 		data: &mut [PE],
 		coset: u32,
+		log_n: usize,
 	) -> Result<(), Error> {
-		self.inverse_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE)
+		self.inverse_transform(PE::cast_bases_mut(data), coset, PE::Scalar::LOG_DEGREE, log_n)
 	}
 }
