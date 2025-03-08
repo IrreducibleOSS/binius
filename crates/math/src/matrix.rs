@@ -205,8 +205,7 @@ impl<F: Field> Matrix<F> {
 impl<F: Field> Index<(usize, usize)> for Matrix<F> {
 	type Output = F;
 
-	fn index(&self, index: (usize, usize)) -> &Self::Output {
-		let (i, j) = index;
+	fn index(&self, (i, j): (usize, usize)) -> &Self::Output {
 		assert!(i < self.m);
 		assert!(j < self.n);
 		&self.elements[i * self.n + j]
@@ -214,8 +213,7 @@ impl<F: Field> Index<(usize, usize)> for Matrix<F> {
 }
 
 impl<F: Field> IndexMut<(usize, usize)> for Matrix<F> {
-	fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-		let (i, j) = index;
+	fn index_mut(&mut self, (i, j): (usize, usize)) -> &mut Self::Output {
 		assert!(i < self.m);
 		assert!(j < self.n);
 		&mut self.elements[i * self.n + j]
