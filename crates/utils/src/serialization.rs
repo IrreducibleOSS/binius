@@ -41,7 +41,7 @@ pub enum SerializationError {
 	#[error("Serialization has not been implemented")]
 	SerializationNotImplemented,
 	#[error("Deserializer has not been implemented")]
-	DeserializerNotImplented,
+	DeserializerNotImplemented,
 	#[error("Multiple deserializers with the same name {name} has been registered")]
 	DeserializerNameConflict { name: String },
 	#[error("FromUtf8Error: {0}")]
