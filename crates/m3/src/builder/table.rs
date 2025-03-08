@@ -1,10 +1,19 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::sync::Arc;
+
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
+	polynomial::MultivariatePoly,
+	transparent::MultilinearExtensionTransparent,
 };
-use binius_field::{ExtensionField, TowerField};
+use binius_field::{
+	arch::OptimalUnderlier,
+	as_packed_field::{PackScalar, PackedType},
+	packed::pack_slice,
+	ExtensionField, TowerField,
+};
 use binius_math::LinearNormalForm;
 use binius_utils::{checked_arithmetics::log2_strict_usize, sparse_index::SparseIndex};
 
@@ -119,7 +128,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.enumerate()
 			.filter_map(|(partition_index, coeff)| {
 				if coeff != F::ZERO {
-					let partition = &self.table.partitions[expr.partition_id()];
+					let partition = &self.table.partitions[expr.log_values_per_row()];
 					Some((partition.columns[partition_index], coeff))
 				} else {
 					None
@@ -182,6 +191,32 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_repeating_constants<FSub, const VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		constants: [FSub; VALUES_PER_ROW],
+	) -> Col<FSub, VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+		OptimalUnderlier: PackScalar<FSub> + PackScalar<F>,
+	{
+		let namespaced_name = self.namespaced_name(name);
+		let n_vars = log2_strict_usize(VALUES_PER_ROW);
+		let packed_values: Vec<PackedType<OptimalUnderlier, FSub>> = pack_slice(&constants);
+		let mle = MultilinearExtensionTransparent::<
+			PackedType<OptimalUnderlier, FSub>,
+			PackedType<OptimalUnderlier, F>,
+			_,
+		>::from_values_and_mu(packed_values, n_vars)
+		.unwrap();
+		let transparent: Col<FSub, VALUES_PER_ROW> = self
+			.table
+			.new_transparent_column(format!("{namespaced_name}_single"), Arc::new(mle));
+		self.table
+			.new_column(namespaced_name, ColumnDef::RepeatingTransparent(transparent.id))
+	}
+
 	pub fn assert_zero<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
@@ -242,11 +277,7 @@ pub struct Table<F: TowerField = B128> {
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
-	/// This indicates whether a table is fixed for constraint system or part of the dynamic trace.
-	///
-	/// Fixed tables are either entirely transparent or committed during a preprocessing step that
-	/// occurs before any statements are proven.
-	pub is_fixed: bool,
+	pub(super) single_row_columns: Vec<ColumnIndex>,
 }
 
 /// A table partition describes a part of a table where everything has the same pack factor (as well as height)
@@ -323,8 +354,8 @@ impl<F: TowerField> TablePartition<F> {
 			.into_iter()
 			.map(|col| {
 				assert_eq!(col.id.table_id, self.table_id);
-				assert_eq!(col.id.partition_id, log2_strict_usize(self.values_per_row));
-				col.id.partition_index
+				assert_eq!(col.shape().log_values_per_row, log2_strict_usize(self.values_per_row));
+				col.id.local_index
 			})
 			.collect();
 		self.flushes.push(Flush {
@@ -341,15 +372,9 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
+			single_row_columns: Vec::new(),
 			partitions: SparseIndex::new(),
-			is_fixed: false,
 		}
-	}
-
-	pub fn new_fixed(id: TableId, name: impl ToString) -> Self {
-		let mut builder = Self::new(id, name);
-		builder.is_fixed = true;
-		builder
 	}
 
 	pub fn id(&self) -> TableId {
@@ -371,21 +396,51 @@ impl<F: TowerField> Table<F> {
 		let id = ColumnId {
 			table_id,
 			table_index,
-			partition_id: log2_strict_usize(partition.values_per_row),
-			partition_index: partition.columns.len(),
+			local_index: partition.columns.len(),
 		};
 		let info = ColumnInfo {
 			id,
 			col,
 			name: name.to_string(),
 			shape: ColumnShape {
-				values_per_row: VALUES_PER_ROW,
 				tower_height: FSub::TOWER_LEVEL,
+				log_values_per_row: log2_strict_usize(VALUES_PER_ROW),
 			},
 			is_nonzero: false,
+			is_single_row: false,
 		};
 		partition.columns.push(table_index);
 		self.columns.push(info);
+		Col::new(id)
+	}
+
+	fn new_transparent_column<FSub, const VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		poly: Arc<dyn MultivariatePoly<F>>,
+	) -> Col<FSub, VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		let id = ColumnId {
+			table_id: self.id,
+			table_index: self.columns.len(),
+			local_index: self.single_row_columns.len(),
+		};
+		let info = ColumnInfo {
+			id,
+			col: ColumnDef::Transparent { poly },
+			name: name.to_string(),
+			shape: ColumnShape {
+				tower_height: FSub::TOWER_LEVEL,
+				log_values_per_row: log2_strict_usize(VALUES_PER_ROW),
+			},
+			is_nonzero: false,
+			is_single_row: true,
+		};
+		self.columns.push(info);
+		self.single_row_columns.push(id.table_index);
 		Col::new(id)
 	}
 

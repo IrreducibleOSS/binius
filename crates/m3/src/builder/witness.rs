@@ -3,6 +3,7 @@
 use std::{
 	cell::{Ref, RefCell, RefMut},
 	iter, slice,
+	sync::Arc,
 };
 
 use anyhow::ensure;
@@ -13,9 +14,9 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, TowerField,
 };
-use binius_math::MultilinearExtension;
+use binius_math::{MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
+use binius_utils::checked_arithmetics::log2_ceil_usize;
 use bytemuck::{must_cast_slice, must_cast_slice_mut, Pod};
 use getset::CopyGetters;
 
@@ -25,7 +26,7 @@ use super::{
 	statement::Statement,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
-	ColumnId,
+	ColumnDef, ColumnId, ColumnIndex,
 };
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
@@ -75,52 +76,23 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		let mut index = MultilinearExtensionIndex::new();
 		let mut first_oracle_id_in_table = 0;
 		for table in self.tables {
+			let immutable_cols = immutable_witness_index_columns(table.cols);
 			let mut count = 0;
-
-			for col in table.cols.into_iter() {
+			for col in immutable_cols.iter() {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
-				let n_vars = table.log_capacity + log2_strict_usize(col.shape.values_per_row);
-				let witness = match col.shape.tower_height {
-					0 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B1>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					3 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B8>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					4 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B16>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					5 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B32>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					6 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B64>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					7 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B128>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					_ => {
-						panic!("Unsupported tower height: {}", col.shape.tower_height);
-					}
+				let log_capacity = if col.is_single_row {
+					0
+				} else {
+					table.log_capacity
 				};
+				let n_vars = log_capacity + col.shape.log_values_per_row;
+				let underlier_count =
+					1 << (n_vars + col.shape.tower_height).saturating_sub(U::LOG_BITS);
+				let witness = multilin_poly_from_underlier_data::<U, F>(
+					&col.data[..underlier_count],
+					n_vars,
+					col.shape.tower_height,
+				);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -145,6 +117,52 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 	}
 }
 
+fn multilin_poly_from_underlier_data<U, F>(
+	data: &[U],
+	n_vars: usize,
+	tower_height: usize,
+) -> Arc<dyn MultilinearPoly<PackedType<U, F>> + Send + Sync + '_>
+where
+	F: TowerField
+		+ ExtensionField<B1>
+		+ ExtensionField<B8>
+		+ ExtensionField<B16>
+		+ ExtensionField<B32>
+		+ ExtensionField<B64>
+		+ ExtensionField<B128>,
+	U: PackScalar<F>
+		+ PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B64>
+		+ PackScalar<B128>,
+{
+	match tower_height {
+		0 => MultilinearExtension::new(n_vars, PackedType::<U, B1>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		3 => MultilinearExtension::new(n_vars, PackedType::<U, B8>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		4 => MultilinearExtension::new(n_vars, PackedType::<U, B16>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		5 => MultilinearExtension::new(n_vars, PackedType::<U, B32>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		6 => MultilinearExtension::new(n_vars, PackedType::<U, B64>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		7 => MultilinearExtension::new(n_vars, PackedType::<U, B128>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		_ => {
+			panic!("Unsupported tower height: {tower_height}");
+		}
+	}
+}
+
 /// Holds witness column data for a table, indexed by column index.
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
@@ -165,7 +183,46 @@ pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier> {
 pub struct WitnessIndexColumn<'a, U: UnderlierType> {
 	pub id: ColumnId,
 	pub shape: ColumnShape,
-	pub data: &'a mut [U],
+	pub data: Data<'a, U>,
+	pub is_single_row: bool,
+}
+
+#[derive(Debug)]
+pub enum Data<'a, U: UnderlierType> {
+	Owned(&'a mut [U]),
+	SameAsTableIndex(ColumnIndex),
+}
+
+#[derive(Debug)]
+pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
+	pub id: ColumnId,
+	pub shape: ColumnShape,
+	pub data: &'a [U],
+	pub is_single_row: bool,
+}
+
+fn immutable_witness_index_columns<'a, U: UnderlierType>(
+	data: Vec<WitnessIndexColumn<'a, U>>,
+) -> Vec<ImmutableWitnessIndexColumn<'a, U>> {
+	let mut result: Vec<ImmutableWitnessIndexColumn<'a, U>> = Vec::with_capacity(data.len());
+	for col in data {
+		result.push(ImmutableWitnessIndexColumn {
+			id: col.id,
+			shape: col.shape,
+			data: match col.data {
+				Data::Owned(data) => data,
+				Data::SameAsTableIndex(index) => result[index].data,
+			},
+			is_single_row: col.is_single_row,
+		});
+	}
+	result
+}
+
+#[derive(Debug)]
+pub enum RefCellData<'a, U: UnderlierType> {
+	Owned(RefCell<&'a mut [U]>),
+	SameAsTableIndex(ColumnIndex),
 }
 
 impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
@@ -178,30 +235,35 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 		let log_capacity = log2_ceil_usize(table_size);
 
 		let mut min_log_cell_bits = U::LOG_BITS;
-
 		let cols = table
 			.columns
 			.iter()
 			.map(|col| {
-				let log_cell_bits =
-					col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
-				min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
-				let log_col_bits = log_cell_bits + log_capacity;
+				let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
 
-				// TODO: Error instead of panic
-				if log_col_bits < U::LOG_BITS {
-					panic!("capacity is too low");
-				}
-
-				// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
-				// Underlier is Pod.
-				let col_data =
-					allocator.alloc_slice_fill_default(1 << (log_col_bits - U::LOG_BITS));
-
+				let data = match col.col {
+					ColumnDef::Packed { col: inner_col, .. } => {
+						Data::SameAsTableIndex(inner_col.table_index)
+					}
+					ColumnDef::RepeatingTransparent(inner_col) => {
+						Data::SameAsTableIndex(inner_col.table_index)
+					}
+					_ => {
+						let log_col_bits = log_cell_bits + log_capacity;
+						min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
+						// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
+						// Underlier is Pod.
+						let col_data = allocator.alloc_slice_fill_default(
+							1 << log_col_bits.saturating_sub(U::LOG_BITS),
+						);
+						Data::Owned(col_data)
+					}
+				};
 				WitnessIndexColumn {
 					id: col.id,
 					shape: col.shape,
-					data: col_data,
+					data,
+					is_single_row: col.is_single_row,
 				}
 			})
 			.collect();
@@ -224,7 +286,10 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 		let cols = self
 			.cols
 			.iter_mut()
-			.map(|col| RefCell::new(&mut *col.data))
+			.map(|col| match &mut col.data {
+				Data::Owned(data) => RefCellData::Owned(RefCell::new(&mut *data)),
+				Data::SameAsTableIndex(index) => RefCellData::SameAsTableIndex(*index),
+			})
 			.collect();
 		TableWitnessIndexSegment {
 			table_id: self.table_id,
@@ -248,17 +313,22 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 				.cols
 				.iter()
 				.map(|col| {
-					let log_cell_bits =
-						col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
-					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
-					// Safety: The function borrows self mutably, so we have mutable access to
-					// all columns and thus none can be borrowed by anyone else. The loop is
-					// constructed to borrow disjoint segments of each column -- if this loop
-					// were transposed, we would use `chunks_mut`.
-					let col_stride = unsafe {
-						cast_slice_ref_to_mut(&col.data[i << log_stride..(i + 1) << log_stride])
-					};
-					RefCell::new(col_stride)
+					match &col.data {
+						Data::SameAsTableIndex(index) => RefCellData::SameAsTableIndex(*index),
+						Data::Owned(data) => {
+							let log_cell_bits =
+								col.shape.tower_height + col.shape.log_values_per_row;
+							let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+							// Safety: The function borrows self mutably, so we have mutable access to
+							// all columns and thus none can be borrowed by anyone else. The loop is
+							// constructed to borrow disjoint segments of each column -- if this loop
+							// were transposed, we would use `chunks_mut`.
+							let col_stride = unsafe {
+								cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
+							};
+							RefCellData::Owned(RefCell::new(col_stride))
+						}
+					}
 				})
 				.collect();
 			TableWitnessIndexSegment {
@@ -287,19 +357,24 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 					.cols
 					.iter()
 					.map(|col| {
-						let log_cell_bits =
-							col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
-						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
-						// Safety: The function borrows self mutably, so we have mutable access to
-						// all columns and thus none can be borrowed by anyone else. The loop is
-						// constructed to borrow disjoint segments of each column -- if this loop
-						// were transposed, we would use `chunks_mut`.
-						let col_stride = unsafe {
-							cast_slice_ref_to_mut(
-								&col.data[start << log_stride..(start + 1) << log_stride],
-							)
-						};
-						RefCell::new(col_stride)
+						match &col.data {
+							Data::SameAsTableIndex(index) => RefCellData::SameAsTableIndex(*index),
+							Data::Owned(data) => {
+								let log_cell_bits =
+									col.shape.tower_height + col.shape.log_values_per_row;
+								let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+								// Safety: The function borrows self mutably, so we have mutable access to
+								// all columns and thus none can be borrowed by anyone else. The loop is
+								// constructed to borrow disjoint segments of each column -- if this loop
+								// were transposed, we would use `chunks_mut`.
+								let col_stride = unsafe {
+									cast_slice_ref_to_mut(
+										&data[start << log_stride..(start + 1) << log_stride],
+									)
+								};
+								RefCellData::Owned(RefCell::new(col_stride))
+							}
+						}
 					})
 					.collect();
 				TableWitnessIndexSegment {
@@ -318,12 +393,12 @@ impl<'a, U: UnderlierType> TableWitnessIndex<'a, U> {
 #[derive(Debug, Default, CopyGetters)]
 pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier> {
 	table_id: TableId,
-	cols: Vec<RefCell<&'a mut [U]>>,
+	cols: Vec<RefCellData<'a, U>>,
 	#[get_copy = "pub"]
 	log_size: usize,
 }
 
-impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
+impl<'a, U: UnderlierType> TableWitnessIndexSegment<'a, U> {
 	pub fn get<F: TowerField, const VALUES_PER_ROW: usize>(
 		&self,
 		col: Col<F, VALUES_PER_ROW>,
@@ -341,11 +416,18 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		}
 
 		let col = self
-			.cols
-			.get(col.id.table_index)
+			.get_col_data(col.id.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref(x)))
+	}
+
+	fn get_col_data(&self, table_index: usize) -> Option<&RefCell<&'a mut [U]>> {
+		match self.cols.get(table_index) {
+			Some(RefCellData::Owned(data)) => Some(data),
+			Some(RefCellData::SameAsTableIndex(table_index)) => self.get_col_data(*table_index),
+			None => None,
+		}
 	}
 
 	pub fn get_mut<F: TowerField, const VALUES_PER_ROW: usize>(
@@ -365,8 +447,7 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		}
 
 		let col = self
-			.cols
-			.get(col.id.table_index)
+			.get_col_data(col.id.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, F>>::from_underliers_ref_mut(x)))
@@ -380,8 +461,7 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		U: Pod,
 	{
 		let col = self
-			.cols
-			.get(col.id.table_index)
+			.get_col_data(col.id.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
@@ -402,8 +482,7 @@ impl<U: UnderlierType> TableWitnessIndexSegment<'_, U> {
 		}
 
 		let col = self
-			.cols
-			.get(col.id.table_index)
+			.get_col_data(col.id.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))

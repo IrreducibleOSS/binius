@@ -1,9 +1,10 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
+use binius_utils::checked_arithmetics::log2_strict_usize;
 
 use super::{table::TableId, types::B128};
 
@@ -34,7 +35,7 @@ impl<F: TowerField, const VALUES_PER_ROW: usize> Col<F, VALUES_PER_ROW> {
 	pub fn shape(&self) -> ColumnShape {
 		ColumnShape {
 			tower_height: F::TOWER_LEVEL,
-			values_per_row: VALUES_PER_ROW,
+			log_values_per_row: log2_strict_usize(VALUES_PER_ROW),
 		}
 	}
 
@@ -67,6 +68,8 @@ pub struct ColumnInfo<F: TowerField = B128> {
 	pub shape: ColumnShape,
 	/// Whether the column is constrained to be non-zero.
 	pub is_nonzero: bool,
+	/// Whether the column is transparent and only contains a single row.
+	pub is_single_row: bool,
 }
 
 /// The shape of each cell in a column.
@@ -74,8 +77,8 @@ pub struct ColumnInfo<F: TowerField = B128> {
 pub struct ColumnShape {
 	/// The tower height of the field elements.
 	pub tower_height: usize,
-	/// The number of elements packed vertically per event row.
-	pub values_per_row: usize,
+	/// The binary logarithm of the number of elements packed vertically per event row.
+	pub log_values_per_row: usize,
 }
 
 /// Unique identifier for a column within a constraint system.
@@ -88,8 +91,8 @@ pub struct ColumnId {
 	pub table_index: ColumnIndex,
 	// REVIEW: Does this strictly correspond to the packing factor?
 	// Should it be here or on columnInfo?
-	pub partition_id: usize,
-	pub partition_index: ColumnIndex,
+	// pub log_values_per_row: usize,
+	pub local_index: ColumnIndex,
 }
 
 /// A definition of a column in a table.
@@ -117,4 +120,8 @@ pub enum ColumnDef<F: TowerField = B128> {
 		col: ColumnId,
 		log_degree: usize,
 	},
+	Transparent {
+		poly: Arc<dyn MultivariatePoly<F>>,
+	},
+	RepeatingTransparent(ColumnId),
 }
