@@ -1327,3 +1327,70 @@ define_byte_sliced_3d!(
 	PackedAESBinaryField64x8b,
 	TowerLevel1
 );
+
+macro_rules! impl_packed_extension{
+	($packed_ext:ty, $packed_base:ty,) => {
+		impl PackedExtension<<$packed_base as PackedField>::Scalar> for $packed_ext {
+			type PackedSubfield = $packed_base;
+
+			fn cast_bases(packed: &[Self]) -> &[Self::PackedSubfield] {
+				bytemuck::must_cast_slice(packed)
+			}
+
+			fn cast_bases_mut(packed: &mut [Self]) -> &mut [Self::PackedSubfield] {
+				bytemuck::must_cast_slice_mut(packed)
+			}
+
+			fn cast_exts(packed: &[Self::PackedSubfield]) -> &[Self] {
+				bytemuck::must_cast_slice(packed)
+			}
+
+			fn cast_exts_mut(packed: &mut [Self::PackedSubfield]) -> &mut [Self] {
+				bytemuck::must_cast_slice_mut(packed)
+			}
+
+			fn cast_base(self) -> Self::PackedSubfield {
+				bytemuck::must_cast(self)
+			}
+
+			fn cast_base_ref(&self) -> &Self::PackedSubfield {
+				bytemuck::must_cast_ref(self)
+			}
+
+			fn cast_base_mut(&mut self) -> &mut Self::PackedSubfield {
+				bytemuck::must_cast_mut(self)
+			}
+
+			fn cast_ext(base: Self::PackedSubfield) -> Self {
+				bytemuck::must_cast(base)
+			}
+
+			fn cast_ext_ref(base: &Self::PackedSubfield) -> &Self {
+				bytemuck::must_cast_ref(base)
+			}
+
+			fn cast_ext_mut(base: &mut Self::PackedSubfield) -> &mut Self {
+				bytemuck::must_cast_mut(base)
+			}
+		}
+	};
+	(@pairs $head:ty, $next:ty,) => {
+		impl_packed_extension!($head, $next,);
+	};
+	(@pairs $head:ty, $next:ty, $($tail:ty,)*) => {
+		impl_packed_extension!($head, $next,);
+		impl_packed_extension!(@pairs $head, $($tail,)*);
+	};
+	($head:ty, $next:ty, $($tail:ty,)*) => {
+		impl_packed_extension!(@pairs $head, $next, $($tail,)*);
+		impl_packed_extension!($next, $($tail,)*);
+	};
+}
+
+impl_packed_extension!(
+	ByteSliced3DAES16x128b,
+	ByteSliced3DAES32x64b,
+	ByteSliced3DAES64x32b,
+	ByteSliced3DAES128x16b,
+	ByteSliced3DAES256x8b,
+);
