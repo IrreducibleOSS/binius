@@ -264,8 +264,9 @@ pub fn inverse_transform<F: BinaryField, P: PackedField<Scalar = F>>(
 		}
 	}
 
-	for (i, s_eval) in s_evals.iter().enumerate().skip(cutoff).take(log_n) {
-		let coset_twiddle = s_eval.coset(log_domain_size - log_n, coset as usize);
+	#[allow(clippy::needless_range_loop)]
+	for i in cutoff..log_n {
+		let coset_twiddle = s_evals[i].coset(log_domain_size - log_n, coset as usize);
 
 		for j in 0..1 << (log_n - 1 - i) {
 			let twiddle = P::broadcast(coset_twiddle.get(j));
