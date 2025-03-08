@@ -1,7 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-#![allow(clippy::needless_range_loop)]
-
 use std::array;
 
 use binius_field::{
@@ -109,11 +107,10 @@ impl Groestl256Core {
 
 		for col in 0..8 {
 			let mut final_col: PackedAESBinaryField8x8b = PackedAESBinaryField8x8b::zero();
-			for row in 0..8 {
+			for (row, t) in TABLE.iter().enumerate() {
 				let shifted = shift_func(row, col);
-				final_col += PackedAESBinaryField8x8b::from_underlier(
-					TABLE[row][input[shifted].val() as usize],
-				);
+				final_col +=
+					PackedAESBinaryField8x8b::from_underlier(t[input[shifted].val() as usize]);
 			}
 			let final_col = [final_col];
 			state[col * 8..col * 8 + 8]

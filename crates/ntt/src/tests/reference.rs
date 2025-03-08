@@ -131,11 +131,9 @@ where
 		});
 	}
 
-	#[allow(clippy::needless_range_loop)]
-	for i in 0..log_n {
-		let s_evals_i = &s_evals[i];
+	for (i, s_eval) in s_evals.iter().enumerate().take(log_n) {
 		for j in 0..1 << (log_n - 1 - i) {
-			let twiddle = s_evals_i.get((coset as usize) << (log_n - 1 - i) | j);
+			let twiddle = s_eval.get((coset as usize) << (log_n - 1 - i) | j);
 			for k in 0..1 << i {
 				let idx0 = j << (i + 1) | k;
 				let idx1 = idx0 | 1 << i;
