@@ -26,8 +26,8 @@ fn test_hash_eq(digest: PackedAESBinaryField32x8b, expected: [u8; 32]) {
 fn test_empty_input() {
 	// Empty input test
 	let hasher = Groestl256::<AESTowerField8b, AESTowerField8b>::default();
-	let exptected = hex!("1a52d11d550039be16107f9c58db9ebcc417f16f736adb2502567119f0083467");
-	test_hash_eq(hasher.finalize(), exptected);
+	let expected = hex!("1a52d11d550039be16107f9c58db9ebcc417f16f736adb2502567119f0083467");
+	test_hash_eq(hasher.finalize(), expected);
 }
 
 #[test]
