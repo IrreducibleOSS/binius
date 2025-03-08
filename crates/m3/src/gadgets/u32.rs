@@ -122,8 +122,9 @@ impl U32Add {
 			// When the carry in bit is fixed to zero, we can simplify the logic.
 			let mut cin = index.get_mut_as(self.cin)?;
 			for i in 0..index.size() {
-				let (zout, carry) = xin[i].overflowing_add(yin[i]);
-				cin[i] = xin[i] ^ yin[i] ^ zout;
+				let carry;
+				(zout[i], carry) = xin[i].overflowing_add(yin[i]);
+				cin[i] = xin[i] ^ yin[i] ^ zout[i];
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
 				if let Some(ref mut final_carry) = final_carry {
 					set_packed_slice(&mut *final_carry, i, if carry { B1::ONE } else { B1::ZERO });
