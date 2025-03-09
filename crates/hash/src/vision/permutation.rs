@@ -7,7 +7,7 @@ use binius_field::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::packed_from_fn_with_offset,
-	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSlicedAES32x32b,
+	AESTowerField32b, AESTowerField8b, BinaryField8b, ByteSliced3DAES128x32b,
 	PackedAESBinaryField32x8b, PackedAESBinaryField8x32b, PackedExtension, PackedField,
 };
 use binius_ntt::{
@@ -25,8 +25,8 @@ use crate::permutation::Permutation;
 type PackedTransformationType8x32bAES = <PackedAESBinaryField8x32b as PackedTransformationFactory<
 	PackedAESBinaryField8x32b,
 >>::PackedTransformation<&'static [AESTowerField32b]>;
-type PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
-	ByteSlicedAES32x32b,
+type PackedTransformationType32x32bAES = <ByteSliced3DAES128x32b as PackedTransformationFactory<
+	ByteSliced3DAES128x32b,
 >>::PackedTransformation<&'static [AESTowerField32b]>;
 type AdditiveNTT8b = SingleThreadedNTT<AESTowerField8b, OnTheFlyTwiddleAccess<AESTowerField8b>>;
 
@@ -59,26 +59,26 @@ lazy_static! {
 		PackedAESBinaryField8x32b,
 	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
 
-	pub static ref FWD_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
-		ByteSlicedAES32x32b,
+	pub static ref FWD_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSliced3DAES128x32b as PackedTransformationFactory<
+		ByteSliced3DAES128x32b,
 	>>::make_packed_transformation(SCALAR_FWD_TRANS_AES);
-	pub static ref INV_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSlicedAES32x32b as PackedTransformationFactory<
-		ByteSlicedAES32x32b,
+	pub static ref INV_PACKED_TRANS_AES_BYTE_SLICED: PackedTransformationType32x32bAES = <ByteSliced3DAES128x32b as PackedTransformationFactory<
+		ByteSliced3DAES128x32b,
 	>>::make_packed_transformation(SCALAR_INV_TRANS_AES);
 
 	static ref FWD_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_FWD_CONST_AES);
 	static ref INV_CONST_AES: PackedAESBinaryField8x32b = PackedField::broadcast(AFFINE_INV_CONST_AES);
 
-	static ref FWD_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_FWD_CONST_AES);
-	static ref INV_CONST_AES_BYTE_SLICED: ByteSlicedAES32x32b = ByteSlicedAES32x32b::broadcast(AFFINE_INV_CONST_AES);
+	static ref FWD_CONST_AES_BYTE_SLICED: ByteSliced3DAES128x32b = ByteSliced3DAES128x32b::broadcast(AFFINE_FWD_CONST_AES);
+	static ref INV_CONST_AES_BYTE_SLICED: ByteSliced3DAES128x32b = ByteSliced3DAES128x32b::broadcast(AFFINE_INV_CONST_AES);
 
 	static ref ROUND_KEYS_PACKED_AES: [[PackedAESBinaryField8x32b; 3]; 2 * NUM_ROUNDS + 1] =
 		ROUND_KEYS.map(|round_consts| {
 			array::from_fn(|i| packed_from_fn_with_offset(i, |j| round_consts[j].into()))
 		});
-	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSlicedAES32x32b; 24]; 2 * NUM_ROUNDS + 1] =
+	static ref ROUND_KEYS_PACKED_AES_BYTE_SLICED: [[ByteSliced3DAES128x32b; 24]; 2 * NUM_ROUNDS + 1] =
 		ROUND_KEYS.map(|round_consts| {
-			round_consts.map(|round_const_i| ByteSlicedAES32x32b::broadcast(round_const_i.into()))
+			round_consts.map(|round_const_i| ByteSliced3DAES128x32b::broadcast(round_const_i.into()))
 		});
 
 	pub static ref PERMUTATION: Vision32bPermutation = Vision32bPermutation::default();
@@ -111,8 +111,8 @@ impl Permutation<[PackedAESBinaryField8x32b; 3]> for Vision32bPermutation {
 	}
 }
 
-impl Permutation<[ByteSlicedAES32x32b; 24]> for Vision32bPermutation {
-	fn permute_mut(&self, input: &mut [ByteSlicedAES32x32b; 24]) {
+impl Permutation<[ByteSliced3DAES128x32b; 24]> for Vision32bPermutation {
+	fn permute_mut(&self, input: &mut [ByteSliced3DAES128x32b; 24]) {
 		add_packed_768(input, &ROUND_KEYS_PACKED_AES_BYTE_SLICED[0]);
 		for r in 0..NUM_ROUNDS {
 			self.sbox_multi(input, &*INV_PACKED_TRANS_AES_BYTE_SLICED, &INV_CONST_AES_BYTE_SLICED);
@@ -202,7 +202,10 @@ impl Vision32MDSTransform {
 		FORWARD_FAST_TRANSFORM.forward(data);
 	}
 
-	pub fn transform_byte_sliced(&self, data: &mut [[PackedAESBinaryField32x8b; 32]; 3]) {
+	pub fn transform_byte_sliced(
+		&self,
+		data: &mut [[PackedAESBinaryField32x8b; HASHES_PER_BYTE_SLICED_PERMUTATION]; 3],
+	) {
 		INVERSE_FAST_TRANSFORM_BYTE_SLICED.inverse(data);
 
 		for i in 0..32 {
@@ -396,7 +399,7 @@ fn get_coset_twiddles_for_round(
 	cosets.map(|coset| ntt.twiddles()[round].coset(3, coset as _))
 }
 
-pub const HASHES_PER_BYTE_SLICED_PERMUTATION: usize = 32;
+pub const HASHES_PER_BYTE_SLICED_PERMUTATION: usize = 128;
 
 #[derive(Clone)]
 struct FastNttByteSliced {
@@ -738,7 +741,7 @@ mod tests {
 		});
 
 		Vision32bPermutation::default()
-			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSlicedAES32x32b; 24]>(&mut data));
+			.permute_mut(bytemuck::must_cast_mut::<_, [ByteSliced3DAES128x32b; 24]>(&mut data));
 
 		for (i, single_permutation) in single_permutations
 			.iter()

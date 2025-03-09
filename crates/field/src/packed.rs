@@ -499,27 +499,31 @@ mod tests {
 	use crate::{
 		AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 		BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField2b,
-		BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, ByteSlicedAES32x128b,
-		ByteSlicedAES32x16b, ByteSlicedAES32x32b, ByteSlicedAES32x64b, ByteSlicedAES32x8b,
-		PackedBinaryField128x1b, PackedBinaryField128x2b, PackedBinaryField128x4b,
-		PackedBinaryField16x16b, PackedBinaryField16x1b, PackedBinaryField16x2b,
-		PackedBinaryField16x32b, PackedBinaryField16x4b, PackedBinaryField16x8b,
-		PackedBinaryField1x128b, PackedBinaryField1x16b, PackedBinaryField1x1b,
-		PackedBinaryField1x2b, PackedBinaryField1x32b, PackedBinaryField1x4b,
-		PackedBinaryField1x64b, PackedBinaryField1x8b, PackedBinaryField256x1b,
-		PackedBinaryField256x2b, PackedBinaryField2x128b, PackedBinaryField2x16b,
-		PackedBinaryField2x1b, PackedBinaryField2x2b, PackedBinaryField2x32b,
-		PackedBinaryField2x4b, PackedBinaryField2x64b, PackedBinaryField2x8b,
-		PackedBinaryField32x16b, PackedBinaryField32x1b, PackedBinaryField32x2b,
-		PackedBinaryField32x4b, PackedBinaryField32x8b, PackedBinaryField4x128b,
-		PackedBinaryField4x16b, PackedBinaryField4x1b, PackedBinaryField4x2b,
-		PackedBinaryField4x32b, PackedBinaryField4x4b, PackedBinaryField4x64b,
-		PackedBinaryField4x8b, PackedBinaryField512x1b, PackedBinaryField64x1b,
-		PackedBinaryField64x2b, PackedBinaryField64x4b, PackedBinaryField64x8b,
-		PackedBinaryField8x16b, PackedBinaryField8x1b, PackedBinaryField8x2b,
-		PackedBinaryField8x32b, PackedBinaryField8x4b, PackedBinaryField8x64b,
-		PackedBinaryField8x8b, PackedBinaryPolyval1x128b, PackedBinaryPolyval2x128b,
-		PackedBinaryPolyval4x128b, PackedField,
+		BinaryField32b, BinaryField4b, BinaryField64b, BinaryField8b, ByteSliced3DAES1024x8b,
+		ByteSliced3DAES128x16b, ByteSliced3DAES128x32b, ByteSliced3DAES128x64b,
+		ByteSliced3DAES16x128b, ByteSliced3DAES256x16b, ByteSliced3DAES256x32b,
+		ByteSliced3DAES256x8b, ByteSliced3DAES32x128b, ByteSliced3DAES32x64b,
+		ByteSliced3DAES512x16b, ByteSliced3DAES512x8b, ByteSliced3DAES64x128b,
+		ByteSliced3DAES64x32b, ByteSliced3DAES64x64b, PackedBinaryField128x1b,
+		PackedBinaryField128x2b, PackedBinaryField128x4b, PackedBinaryField16x16b,
+		PackedBinaryField16x1b, PackedBinaryField16x2b, PackedBinaryField16x32b,
+		PackedBinaryField16x4b, PackedBinaryField16x8b, PackedBinaryField1x128b,
+		PackedBinaryField1x16b, PackedBinaryField1x1b, PackedBinaryField1x2b,
+		PackedBinaryField1x32b, PackedBinaryField1x4b, PackedBinaryField1x64b,
+		PackedBinaryField1x8b, PackedBinaryField256x1b, PackedBinaryField256x2b,
+		PackedBinaryField2x128b, PackedBinaryField2x16b, PackedBinaryField2x1b,
+		PackedBinaryField2x2b, PackedBinaryField2x32b, PackedBinaryField2x4b,
+		PackedBinaryField2x64b, PackedBinaryField2x8b, PackedBinaryField32x16b,
+		PackedBinaryField32x1b, PackedBinaryField32x2b, PackedBinaryField32x4b,
+		PackedBinaryField32x8b, PackedBinaryField4x128b, PackedBinaryField4x16b,
+		PackedBinaryField4x1b, PackedBinaryField4x2b, PackedBinaryField4x32b,
+		PackedBinaryField4x4b, PackedBinaryField4x64b, PackedBinaryField4x8b,
+		PackedBinaryField512x1b, PackedBinaryField64x1b, PackedBinaryField64x2b,
+		PackedBinaryField64x4b, PackedBinaryField64x8b, PackedBinaryField8x16b,
+		PackedBinaryField8x1b, PackedBinaryField8x2b, PackedBinaryField8x32b,
+		PackedBinaryField8x4b, PackedBinaryField8x64b, PackedBinaryField8x8b,
+		PackedBinaryPolyval1x128b, PackedBinaryPolyval2x128b, PackedBinaryPolyval4x128b,
+		PackedField,
 	};
 
 	trait PackedFieldTest {
@@ -626,11 +630,21 @@ mod tests {
 		test.run::<PackedBinaryField16x32b>();
 		test.run::<PackedBinaryField8x64b>();
 		test.run::<PackedBinaryField4x128b>();
-		test.run::<ByteSlicedAES32x8b>();
-		test.run::<ByteSlicedAES32x64b>();
-		test.run::<ByteSlicedAES32x16b>();
-		test.run::<ByteSlicedAES32x32b>();
-		test.run::<ByteSlicedAES32x128b>();
+		test.run::<ByteSliced3DAES16x128b>();
+		test.run::<ByteSliced3DAES32x64b>();
+		test.run::<ByteSliced3DAES64x32b>();
+		test.run::<ByteSliced3DAES128x16b>();
+		test.run::<ByteSliced3DAES256x8b>();
+		test.run::<ByteSliced3DAES32x128b>();
+		test.run::<ByteSliced3DAES64x64b>();
+		test.run::<ByteSliced3DAES128x32b>();
+		test.run::<ByteSliced3DAES256x16b>();
+		test.run::<ByteSliced3DAES512x8b>();
+		test.run::<ByteSliced3DAES64x128b>();
+		test.run::<ByteSliced3DAES128x64b>();
+		test.run::<ByteSliced3DAES256x32b>();
+		test.run::<ByteSliced3DAES512x16b>();
+		test.run::<ByteSliced3DAES1024x8b>();
 
 		// polyval tower
 		test.run::<BinaryField128bPolyval>();
