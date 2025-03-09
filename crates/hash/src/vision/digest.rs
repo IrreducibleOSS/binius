@@ -290,7 +290,7 @@ mod tests {
 
 		let data_as_u64 = data_to_hash
 			.chunks_exact(2)
-			.map(|x| BinaryField64b::from_bases(x).unwrap())
+			.map(|x| BinaryField64b::from_bases(x.iter().copied()).unwrap())
 			.collect::<Vec<_>>();
 		assert_eq!(FixedLenHasherDigest::<_, Vision32b<_>>::hash(&data_as_u64), expected);
 
