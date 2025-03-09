@@ -6,7 +6,10 @@ use binius_core::{
 };
 use binius_field::{ExtensionField, TowerField};
 use binius_math::LinearNormalForm;
-use binius_utils::{checked_arithmetics::log2_strict_usize, sparse_index::SparseIndex};
+use binius_utils::{
+	checked_arithmetics::{checked_log_2, log2_strict_usize},
+	sparse_index::SparseIndex,
+};
 
 use super::{
 	channel::Flush,
@@ -96,11 +99,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_linear_combination<FSub, const VALUES_PER_ROW: usize>(
+	pub fn add_linear_combination<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		expr: Expr<FSub, VALUES_PER_ROW>,
-	) -> Col<FSub, VALUES_PER_ROW>
+		expr: Expr<FSub, V>,
+	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
@@ -119,7 +122,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.enumerate()
 			.filter_map(|(partition_index, coeff)| {
 				if coeff != F::ZERO {
-					let partition = &self.table.partitions[expr.partition_id()];
+					let partition = &self.table.partitions[partition_id::<V>()];
 					Some((partition.columns[partition_index], coeff))
 				} else {
 					None
@@ -317,14 +320,13 @@ impl<F: TowerField> TablePartition<F> {
 		&mut self,
 		channel_id: ChannelId,
 		direction: FlushDirection,
-		cols: impl IntoIterator<Item = Col<F, 1>>,
+		cols: impl IntoIterator<Item = Col<F>>,
 	) {
 		let column_indices = cols
 			.into_iter()
 			.map(|col| {
-				assert_eq!(col.id.table_id, self.table_id);
-				assert_eq!(col.id.partition_id, log2_strict_usize(self.values_per_row));
-				col.id.partition_index
+				assert_eq!(col.table_id, self.table_id);
+				col.table_index
 			})
 			.collect();
 		self.flushes.push(Flush {
@@ -356,37 +358,38 @@ impl<F: TowerField> Table<F> {
 		self.id
 	}
 
-	fn new_column<FSub, const VALUES_PER_ROW: usize>(
+	fn new_column<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
 		col: ColumnDef<F>,
-	) -> Col<FSub, VALUES_PER_ROW>
+	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
 		let table_id = self.id;
 		let table_index = self.columns.len();
-		let partition = self.partition_mut(VALUES_PER_ROW);
+		let log_values_per_row = checked_log_2(V);
+		let partition = self.partition_mut(V);
 		let id = ColumnId {
 			table_id,
 			table_index,
-			partition_id: log2_strict_usize(partition.values_per_row),
-			partition_index: partition.columns.len(),
 		};
 		let info = ColumnInfo {
 			id,
 			col,
 			name: name.to_string(),
 			shape: ColumnShape {
-				values_per_row: VALUES_PER_ROW,
 				tower_height: FSub::TOWER_LEVEL,
+				log_values_per_row,
 			},
 			is_nonzero: false,
 		};
+
+		let partition_index = partition.columns.len();
 		partition.columns.push(table_index);
 		self.columns.push(info);
-		Col::new(id)
+		Col::new(id, partition_index)
 	}
 
 	fn partition_mut(&mut self, values_per_row: usize) -> &mut TablePartition<F> {
@@ -394,4 +397,8 @@ impl<F: TowerField> Table<F> {
 			.entry(log2_strict_usize(values_per_row))
 			.or_insert_with(|| TablePartition::new(self.id, values_per_row))
 	}
+}
+
+const fn partition_id<const V: usize>() -> usize {
+	checked_log_2(V)
 }

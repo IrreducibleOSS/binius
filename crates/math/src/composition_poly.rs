@@ -4,6 +4,7 @@ use std::fmt::Debug;
 
 use auto_impl::auto_impl;
 use binius_field::PackedField;
+use binius_utils::bail;
 use stackalloc::stackalloc_with_default;
 
 use crate::{ArithExpr, Error};
@@ -47,8 +48,14 @@ where
 	/// This method has a default implementation.
 	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		if batch_query.iter().any(|row| row.len() != row_len) {
-			return Err(Error::BatchEvaluateSizeMismatch);
+		for (i, row) in batch_query.iter().enumerate() {
+			if row.len() != row_len {
+				bail!(Error::BatchEvaluateSizeMismatch {
+					index: i,
+					expected: row_len,
+					actual: row.len(),
+				});
+			}
 		}
 
 		stackalloc_with_default(batch_query.len(), |query| {

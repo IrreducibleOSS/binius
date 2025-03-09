@@ -4,7 +4,7 @@ use std::{fmt::Debug, mem::MaybeUninit, sync::Arc};
 
 use binius_field::{ExtensionField, Field, PackedField, TowerField};
 use binius_math::{ArithExpr, CompositionPoly, Error};
-use binius_utils::{DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
+use binius_utils::{bail, DeserializeBytes, SerializationError, SerializationMode, SerializeBytes};
 use stackalloc::{
 	helpers::{slice_assume_init, slice_assume_init_mut},
 	stackalloc_uninit,
@@ -294,8 +294,14 @@ impl<F: TowerField, P: PackedField<Scalar: ExtensionField<F>>> CompositionPoly<P
 
 	fn batch_evaluate(&self, batch_query: &[&[P]], evals: &mut [P]) -> Result<(), Error> {
 		let row_len = evals.len();
-		if batch_query.iter().any(|row| row.len() != row_len) {
-			return Err(Error::BatchEvaluateSizeMismatch);
+		for (i, row) in batch_query.iter().enumerate() {
+			if row.len() != row_len {
+				bail!(Error::BatchEvaluateSizeMismatch {
+					index: i,
+					expected: row_len,
+					actual: row.len(),
+				});
+			}
 		}
 
 		// `stackalloc_uninit` throws a debug assert if `size` is 0, so set minimum of 1.

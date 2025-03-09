@@ -347,7 +347,7 @@ mod arithmetization {
 
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
-			witness: witness.into_multilinear_extension_index::<B128>(&statement),
+			witness: witness.into_multilinear_extension_index(&statement),
 			statement,
 		}
 	}
