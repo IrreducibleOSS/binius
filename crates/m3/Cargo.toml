@@ -15,7 +15,6 @@ bumpalo.workspace = true
 bytemuck.workspace = true
 getset.workspace = true
 thiserror.workspace = true
-log = "0.4.26"
 
 [dev-dependencies]
 assert_matches.workspace = true

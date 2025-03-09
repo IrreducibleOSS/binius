@@ -469,6 +469,10 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&dummy_col))
 			.collect::<Vec<_>>();
 
+		// REVIEW: This could be inefficient with very large segments because batch evaluation
+		// allocates more memory, proportional to the size of the segment. Because of how segments
+		// get split up in practice, it's not a problem yet. If we see stack overflows, we should
+		// split up the evaluation into multiple batches.
 		let mut evals = zeroed_vec(1 << log_packed_elems);
 		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
