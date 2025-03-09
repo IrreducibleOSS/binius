@@ -457,14 +457,18 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 				.transpose()
 			})
 			.collect::<Result<Vec<_>, _>>()?;
+
+		let log_packed_elems =
+			(self.log_size + log_vals_per_row).saturating_sub(<PackedType<U, FSub>>::LOG_WIDTH);
+
+		// Batch evaluate requires value slices even for the indices it will not read.
+		let dummy_col = zeroed_vec(1 << log_packed_elems);
+
 		let cols = col_refs
 			.iter()
-			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&[]))
+			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&dummy_col))
 			.collect::<Vec<_>>();
 
-		let log_packed_elems = self
-			.log_size
-			.saturating_sub(<PackedType<U, FSub>>::LOG_WIDTH);
 		let mut evals = zeroed_vec(1 << log_packed_elems);
 		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
@@ -632,10 +636,12 @@ mod tests {
 		let col2 = table.add_committed::<B8, 2>("col0");
 
 		let allocator = bumpalo::Bump::new();
-		let table_size = 64;
+		let table_size = 1 << 6;
 		let mut index =
 			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
+
 		let segment = index.full_segment();
+		assert_eq!(segment.log_size(), 6);
 
 		// Fill the columns with a deterministic pattern.
 		{
@@ -643,7 +649,13 @@ mod tests {
 			let mut col1 = segment.get_mut(col1).unwrap();
 			let mut col2 = segment.get_mut(col2).unwrap();
 
-			for i in 0..table_size {
+			// 3 = 6 (log table size) + 1 (log values per row) - 4 (log packed field width)
+			let expected_slice_len = 1 << 3;
+			assert_eq!(col0.len(), expected_slice_len);
+			assert_eq!(col0.len(), expected_slice_len);
+			assert_eq!(col0.len(), expected_slice_len);
+
+			for i in 0..expected_slice_len * <PackedType<OptimalUnderlier128b, B8>>::WIDTH {
 				set_packed_slice(&mut *col0, i, B8::new(i as u8) + B8::new(0x00));
 				set_packed_slice(&mut *col1, i, B8::new(i as u8) + B8::new(0x40));
 				set_packed_slice(&mut *col2, i, B8::new(i as u8) + B8::new(0x80));
@@ -657,8 +669,8 @@ mod tests {
 			.enumerate()
 		{
 			let col0_val = B8::new(i as u8) + B8::new(0x00);
-			let col1_val = B8::new(i as u8) + B8::new(0x00);
-			let col2_val = B8::new(i as u8) + B8::new(0x00);
+			let col1_val = B8::new(i as u8) + B8::new(0x40);
+			let col2_val = B8::new(i as u8) + B8::new(0x80);
 			assert_eq!(eval_i, col0_val * col1_val - col2_val);
 		}
 	}
