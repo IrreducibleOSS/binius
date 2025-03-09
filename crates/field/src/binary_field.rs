@@ -593,13 +593,18 @@ macro_rules! impl_field_extension {
 				use $crate::underlier::UnderlierWithBitOps;
 
 				debug_assert!($name::N_BITS.is_power_of_two());
-				let shift = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
-				let value = base_elems
-					.into_iter()
-					.enumerate()
-					.fold(<$typ>::ZERO, |value, (i, elem)|
-						value | (<$typ>::from(elem.val()) << (i * shift))
-					);
+				let shift_step = ($subfield_name::N_BITS << log_stride) & ($name::N_BITS - 1);
+				let mut value = <$typ>::ZERO;
+				let mut shift = 0;
+
+				for elem in base_elems.into_iter() {
+					if shift >= $name::N_BITS {
+						return Err(Error::ExtensionDegreeMismatch);
+					}
+					value |= <$typ>::from(elem.val()) << shift;
+					shift += shift_step;
+				}
+
 				Ok(Self::new(value))
 			}
 
