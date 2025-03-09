@@ -20,6 +20,7 @@ pub struct ZeroConstraint<F: Field> {
 pub struct Expr<F: TowerField, const VALUES_PER_ROW: usize> {
 	#[get_copy = "pub"]
 	table_id: TableId,
+	// REVIEW: Shouldn't this always be V?
 	#[get_copy = "pub"]
 	partition_id: usize,
 	#[get = "pub"]

@@ -146,11 +146,11 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// allocate the column data correctly. The created witness index needs to be populated before
 	/// proving.
 	pub fn build_witness<'a, U: UnderlierType>(
-		&self,
+		&'a self,
 		allocator: &'a Bump,
 		statement: &Statement,
-	) -> Result<WitnessIndex<'a, U>, Error> {
-		Ok(WitnessIndex::<U> {
+	) -> Result<WitnessIndex<'a, U, F>, Error> {
+		Ok(WitnessIndex {
 			tables: self
 				.tables
 				.iter()

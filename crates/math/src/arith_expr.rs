@@ -266,6 +266,28 @@ impl<F: Field> ArithExpr<F> {
 			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
 		}
 	}
+
+	/// Returns a vector of booleans indicating which variables are used in the expression.
+	///
+	/// The vector is indexed by variable index, and the value at index `i` is `true` if and only
+	/// if the variable is used in the expression.
+	pub fn vars_usage(&self) -> Vec<bool> {
+		let mut usage = vec![false; self.n_vars()];
+		self.mark_vars_usage(&mut usage);
+		usage
+	}
+
+	fn mark_vars_usage(&self, usage: &mut [bool]) {
+		match self {
+			Self::Const(_) => (),
+			Self::Var(index) => usage[*index] = true,
+			Self::Add(left, right) | Self::Mul(left, right) => {
+				left.mark_vars_usage(usage);
+				right.mark_vars_usage(usage);
+			}
+			Self::Pow(base, _) => base.mark_vars_usage(usage),
+		}
+	}
 }
 
 impl<F: TowerField> ArithExpr<F> {
