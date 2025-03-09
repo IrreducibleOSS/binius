@@ -1,11 +1,17 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::array;
+use std::{array, iter::zip};
 
+use anyhow::Result;
 use binius_core::oracle::ShiftVariant;
-use binius_field::{AESTowerField8b, ExtensionField, Field};
+use binius_field::{
+	as_packed_field::{PackScalar, PackedType},
+	packed::{get_packed_slice, set_packed_slice},
+	AESTowerField8b, ExtensionField, Field, PackedField, TowerField,
+};
+use bytemuck::Pod;
 
-use crate::builder::{upcast_expr, Col, Expr, TableBuilder, B1, B8};
+use crate::builder::{upcast_expr, Col, Expr, TableBuilder, TableWitnessIndexSegment, B1, B8};
 
 /// The first row of the circulant matrix defining the MixBytes step in Grøstl.
 const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
@@ -90,6 +96,7 @@ impl PermutationRound {
 
 #[derive(Debug)]
 pub struct SBox<const V: usize> {
+	input: Expr<B8, V>,
 	/// Bits of the inverse of the input, in AES basis.
 	inv_bits: [Col<B1, V>; 8],
 	inv: Col<B8, V>,
@@ -134,10 +141,34 @@ impl<const V: usize> SBox<V> {
 		let output = table.add_linear_combination("output", pack_aes(output_bits));
 
 		Self {
+			input,
 			inv_bits,
 			inv,
 			output,
 		}
+	}
+
+	pub fn populate<U>(&self, index: &mut TableWitnessIndexSegment<U>) -> Result<()>
+	where
+		U: Pod + PackScalar<B8>,
+	{
+		let mut inv = index.get_mut(self.inv)?;
+		for (inv_i, val_i) in zip(&mut *inv, eval_expr(&self.input, index)) {
+			*inv_i = val_i.invert();
+		}
+
+		let mut inv_bits = self
+			.inv_bits
+			.try_map(|inv_bits_i| index.get_mut(inv_bits_i))?;
+		for i in 0..index.size() {
+			let inv_val = get_packed_slice(inv, i);
+			for (j, inv_bit_j) in ExtensionField::<B1>::iter_bases(&inv_val).enumerate() {
+				set_packed_slice(inv_bits[j], i, inv_bit_j);
+			}
+		}
+
+		// TODO: helper to evaluate an expression in the context of a witness index segment
+		Ok(())
 	}
 }
 

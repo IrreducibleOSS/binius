@@ -34,7 +34,6 @@ impl<F: TowerField, const V: usize> Expr<F, V> {
 	pub fn pow(self, exp: u64) -> Self {
 		Self {
 			table_id: self.table_id,
-			partition_id: self.partition_id,
 			expr: self.expr.pow(exp),
 		}
 	}
@@ -235,20 +234,15 @@ impl<F: TowerField, const V: usize> std::ops::Mul<F> for Col<F, V> {
 	}
 }
 
-/// Upcast an expression from a subfield to an extension field..
+/// Upcast an expression from a subfield to an extension field.
 pub fn upcast_expr<F, FSub, const V: usize>(expr: Expr<FSub, V>) -> Expr<F, V>
 where
 	FSub: TowerField,
 	F: TowerField + ExtensionField<FSub>,
 {
-	let Expr {
-		table_id,
-		partition_id,
-		expr,
-	} = expr;
+	let Expr { table_id, expr } = expr;
 	Expr {
 		table_id,
-		partition_id,
 		expr: expr.convert_field(),
 	}
 }
