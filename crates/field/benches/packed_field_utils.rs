@@ -276,23 +276,23 @@ macro_rules! benchmark_packed_operation {
 				PackedBinaryPolyval4x128b
 
 				// Byte sliced AES fields
-				ByteSliced3DAES256x8b
-				ByteSliced3DAES128x16b
-				ByteSliced3DAES64x32b
-				ByteSliced3DAES32x64b
-				ByteSliced3DAES16x128b
+				ByteSlicedAES256x8b
+				ByteSlicedAES128x16b
+				ByteSlicedAES64x32b
+				ByteSlicedAES32x64b
+				ByteSlicedAES16x128b
 
-				ByteSliced3DAES512x8b
-				ByteSliced3DAES256x16b
-				ByteSliced3DAES128x32b
-				ByteSliced3DAES64x64b
-				ByteSliced3DAES32x128b
+				ByteSlicedAES512x8b
+				ByteSlicedAES256x16b
+				ByteSlicedAES128x32b
+				ByteSlicedAES64x64b
+				ByteSlicedAES32x128b
 
-				ByteSliced3DAES1024x8b
-				ByteSliced3DAES512x16b
-				ByteSliced3DAES256x32b
-				ByteSliced3DAES128x64b
-				ByteSliced3DAES64x128b
+				ByteSlicedAES1024x8b
+				ByteSlicedAES512x16b
+				ByteSlicedAES256x32b
+				ByteSlicedAES128x64b
+				ByteSlicedAES64x128b
 			]);
 	};
 }

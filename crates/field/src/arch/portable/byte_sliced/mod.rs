@@ -161,24 +161,24 @@ pub mod tests {
 	}
 
 	// 128-bit byte-sliced
-	define_byte_sliced_test!(tests_3d_16x128, ByteSliced3DAES16x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_32x64, ByteSliced3DAES32x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_64x32, ByteSliced3DAES64x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_128x16, ByteSliced3DAES128x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_256x8, ByteSliced3DAES256x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_16x128, ByteSlicedAES16x128b, AESTowerField128b);
+	define_byte_sliced_test!(tests_3d_32x64, ByteSlicedAES32x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_64x32, ByteSlicedAES64x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_128x16, ByteSlicedAES128x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_256x8, ByteSlicedAES256x8b, AESTowerField8b);
 
 	// 256-bit byte-sliced
 
-	define_byte_sliced_test!(tests_3d_32x128, ByteSliced3DAES32x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_64x64, ByteSliced3DAES64x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_128x32, ByteSliced3DAES128x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_256x16, ByteSliced3DAES256x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_512x8, ByteSliced3DAES512x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_32x128, ByteSlicedAES32x128b, AESTowerField128b);
+	define_byte_sliced_test!(tests_3d_64x64, ByteSlicedAES64x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_128x32, ByteSlicedAES128x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_256x16, ByteSlicedAES256x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_512x8, ByteSlicedAES512x8b, AESTowerField8b);
 
 	// 512-bit byte-sliced
-	define_byte_sliced_test!(tests_3d_64x128, ByteSliced3DAES64x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_128x64, ByteSliced3DAES128x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_256x32, ByteSliced3DAES256x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_512x16, ByteSliced3DAES512x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_1024x8, ByteSliced3DAES1024x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_64x128, ByteSlicedAES64x128b, AESTowerField128b);
+	define_byte_sliced_test!(tests_3d_128x64, ByteSlicedAES128x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_256x32, ByteSlicedAES256x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_512x16, ByteSlicedAES512x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_1024x8, ByteSlicedAES1024x8b, AESTowerField8b);
 }

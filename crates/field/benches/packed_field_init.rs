@@ -71,31 +71,31 @@ fn packed_512(c: &mut Criterion) {
 fn byte_sliced_128(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_128");
 
-	benchmark_from_fn!(ByteSliced3DAES256x8b, group);
-	benchmark_from_fn!(ByteSliced3DAES128x16b, group);
-	benchmark_from_fn!(ByteSliced3DAES64x32b, group);
-	benchmark_from_fn!(ByteSliced3DAES32x64b, group);
-	benchmark_from_fn!(ByteSliced3DAES16x128b, group);
+	benchmark_from_fn!(ByteSlicedAES256x8b, group);
+	benchmark_from_fn!(ByteSlicedAES128x16b, group);
+	benchmark_from_fn!(ByteSlicedAES64x32b, group);
+	benchmark_from_fn!(ByteSlicedAES32x64b, group);
+	benchmark_from_fn!(ByteSlicedAES16x128b, group);
 }
 
 fn byte_sliced_256(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_256");
 
-	benchmark_from_fn!(ByteSliced3DAES512x8b, group);
-	benchmark_from_fn!(ByteSliced3DAES256x16b, group);
-	benchmark_from_fn!(ByteSliced3DAES128x32b, group);
-	benchmark_from_fn!(ByteSliced3DAES64x64b, group);
-	benchmark_from_fn!(ByteSliced3DAES32x128b, group);
+	benchmark_from_fn!(ByteSlicedAES512x8b, group);
+	benchmark_from_fn!(ByteSlicedAES256x16b, group);
+	benchmark_from_fn!(ByteSlicedAES128x32b, group);
+	benchmark_from_fn!(ByteSlicedAES64x64b, group);
+	benchmark_from_fn!(ByteSlicedAES32x128b, group);
 }
 
 fn byte_sliced_512(c: &mut Criterion) {
 	let mut group = c.benchmark_group("bytes_sliced_512");
 
-	benchmark_from_fn!(ByteSliced3DAES1024x8b, group);
-	benchmark_from_fn!(ByteSliced3DAES512x16b, group);
-	benchmark_from_fn!(ByteSliced3DAES256x32b, group);
-	benchmark_from_fn!(ByteSliced3DAES128x64b, group);
-	benchmark_from_fn!(ByteSliced3DAES64x128b, group);
+	benchmark_from_fn!(ByteSlicedAES1024x8b, group);
+	benchmark_from_fn!(ByteSlicedAES512x16b, group);
+	benchmark_from_fn!(ByteSlicedAES256x32b, group);
+	benchmark_from_fn!(ByteSlicedAES128x64b, group);
+	benchmark_from_fn!(ByteSlicedAES64x128b, group);
 }
 
 criterion_group!(

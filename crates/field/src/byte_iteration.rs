@@ -7,11 +7,11 @@ use bytemuck::Pod;
 use crate::{
 	packed::get_packed_slice, AESTowerField128b, AESTowerField16b, AESTowerField32b,
 	AESTowerField64b, AESTowerField8b, BinaryField128b, BinaryField128bPolyval, BinaryField16b,
-	BinaryField32b, BinaryField64b, BinaryField8b, ByteSliced3DAES1024x8b, ByteSliced3DAES128x16b,
-	ByteSliced3DAES128x32b, ByteSliced3DAES128x64b, ByteSliced3DAES16x128b, ByteSliced3DAES256x16b,
-	ByteSliced3DAES256x32b, ByteSliced3DAES256x8b, ByteSliced3DAES32x128b, ByteSliced3DAES32x64b,
-	ByteSliced3DAES512x16b, ByteSliced3DAES512x8b, ByteSliced3DAES64x128b, ByteSliced3DAES64x32b,
-	ByteSliced3DAES64x64b, Field, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
+	BinaryField32b, BinaryField64b, BinaryField8b, ByteSlicedAES1024x8b, ByteSlicedAES128x16b,
+	ByteSlicedAES128x32b, ByteSlicedAES128x64b, ByteSlicedAES16x128b, ByteSlicedAES256x16b,
+	ByteSlicedAES256x32b, ByteSlicedAES256x8b, ByteSlicedAES32x128b, ByteSlicedAES32x64b,
+	ByteSlicedAES512x16b, ByteSlicedAES512x8b, ByteSlicedAES64x128b, ByteSlicedAES64x32b,
+	ByteSlicedAES64x64b, Field, PackedAESBinaryField16x16b, PackedAESBinaryField16x32b,
 	PackedAESBinaryField16x8b, PackedAESBinaryField1x128b, PackedAESBinaryField1x16b,
 	PackedAESBinaryField1x32b, PackedAESBinaryField1x64b, PackedAESBinaryField1x8b,
 	PackedAESBinaryField2x128b, PackedAESBinaryField2x16b, PackedAESBinaryField2x32b,
@@ -180,21 +180,21 @@ pub fn can_iterate_bytes<P: PackedField>() -> bool {
 	// Byte-sliced fields
 	// Note: add more byte sliced types here as soon as they are added
 	match TypeId::of::<P>() {
-		x if x == TypeId::of::<ByteSliced3DAES16x128b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES32x64b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES64x32b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES128x16b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES256x8b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES32x128b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES64x64b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES128x32b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES256x16b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES512x8b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES64x128b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES128x64b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES256x32b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES512x16b>() => true,
-		x if x == TypeId::of::<ByteSliced3DAES1024x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES16x128b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES32x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES128x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES256x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES32x128b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES128x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES256x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES512x8b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES64x128b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES128x64b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES256x32b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES512x16b>() => true,
+		x if x == TypeId::of::<ByteSlicedAES1024x8b>() => true,
 		_ => false,
 	}
 }
@@ -237,50 +237,50 @@ pub fn iterate_bytes<P: PackedField>(data: &[P], callback: &mut impl ByteIterato
 	} else {
 		// Note: add more byte sliced types here as soon as they are added
 		match TypeId::of::<P>() {
-			x if x == TypeId::of::<ByteSliced3DAES16x128b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES16x128b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES16x128b>() => {
+				iterate_byte_sliced!(ByteSlicedAES16x128b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES32x64b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES32x64b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES32x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES32x64b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES64x32b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES64x32b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES64x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x32b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES128x16b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES128x16b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES128x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES128x16b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES256x8b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES256x8b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES256x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES256x8b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES32x128b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES32x128b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES32x128b>() => {
+				iterate_byte_sliced!(ByteSlicedAES32x128b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES64x64b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES64x64b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES64x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x64b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES128x32b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES128x32b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES128x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES128x32b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES256x16b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES256x16b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES256x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES256x16b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES512x8b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES512x8b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES512x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES512x8b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES64x128b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES64x128b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES64x128b>() => {
+				iterate_byte_sliced!(ByteSlicedAES64x128b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES128x64b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES128x64b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES128x64b>() => {
+				iterate_byte_sliced!(ByteSlicedAES128x64b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES256x32b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES256x32b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES256x32b>() => {
+				iterate_byte_sliced!(ByteSlicedAES256x32b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES512x16b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES512x16b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES512x16b>() => {
+				iterate_byte_sliced!(ByteSlicedAES512x16b, data, callback);
 			}
-			x if x == TypeId::of::<ByteSliced3DAES1024x8b>() => {
-				iterate_byte_sliced!(ByteSliced3DAES1024x8b, data, callback);
+			x if x == TypeId::of::<ByteSlicedAES1024x8b>() => {
+				iterate_byte_sliced!(ByteSlicedAES1024x8b, data, callback);
 			}
 
 			_ => unreachable!("packed field doesn't support byte iteration"),
@@ -476,7 +476,7 @@ mod tests {
 		assert!(!is_sequential_bytes::<PackedBinaryField2x1b>());
 		assert!(!is_sequential_bytes::<PackedBinaryField4x1b>());
 
-		assert!(!is_sequential_bytes::<ByteSliced3DAES32x128b>());
-		assert!(!is_sequential_bytes::<ByteSliced3DAES256x8b>());
+		assert!(!is_sequential_bytes::<ByteSlicedAES32x128b>());
+		assert!(!is_sequential_bytes::<ByteSlicedAES256x8b>());
 	}
 }

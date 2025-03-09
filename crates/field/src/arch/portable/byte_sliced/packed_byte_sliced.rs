@@ -30,6 +30,15 @@ pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
 const BIGGEST_FIELD_BYTES: usize = AESTowerField128b::N_BITS / 8;
 
+/// Byte-sliced packed field with a fixed size (16x$packed_storage).
+/// For example for 32-bit scalar the data layout is the following:
+/// [ element_0[0], element_4[0], ... ]
+/// [ element_0[1], element_4[1], ... ]
+/// [ element_0[2], element_4[2], ... ]
+/// [ element_0[3], element_4[3], ... ]
+/// [ element_1[0], element_5[0], ... ]
+/// [ element_1[1], element_5[1], ... ]
+///  ...
 macro_rules! define_byte_sliced_3d {
 	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
 		#[derive(Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
@@ -515,31 +524,31 @@ macro_rules! define_byte_sliced_3d {
 
 // 128 bit
 define_byte_sliced_3d!(
-	ByteSliced3DAES16x128b,
+	ByteSlicedAES16x128b,
 	AESTowerField128b,
 	PackedAESBinaryField16x8b,
 	TowerLevel16
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES32x64b,
+	ByteSlicedAES32x64b,
 	AESTowerField64b,
 	PackedAESBinaryField16x8b,
 	TowerLevel8
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES64x32b,
+	ByteSlicedAES64x32b,
 	AESTowerField32b,
 	PackedAESBinaryField16x8b,
 	TowerLevel4
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES128x16b,
+	ByteSlicedAES128x16b,
 	AESTowerField16b,
 	PackedAESBinaryField16x8b,
 	TowerLevel2
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES256x8b,
+	ByteSlicedAES256x8b,
 	AESTowerField8b,
 	PackedAESBinaryField16x8b,
 	TowerLevel1
@@ -547,31 +556,31 @@ define_byte_sliced_3d!(
 
 // 256 bit
 define_byte_sliced_3d!(
-	ByteSliced3DAES32x128b,
+	ByteSlicedAES32x128b,
 	AESTowerField128b,
 	PackedAESBinaryField32x8b,
 	TowerLevel16
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES64x64b,
+	ByteSlicedAES64x64b,
 	AESTowerField64b,
 	PackedAESBinaryField32x8b,
 	TowerLevel8
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES128x32b,
+	ByteSlicedAES128x32b,
 	AESTowerField32b,
 	PackedAESBinaryField32x8b,
 	TowerLevel4
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES256x16b,
+	ByteSlicedAES256x16b,
 	AESTowerField16b,
 	PackedAESBinaryField32x8b,
 	TowerLevel2
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES512x8b,
+	ByteSlicedAES512x8b,
 	AESTowerField8b,
 	PackedAESBinaryField32x8b,
 	TowerLevel1
@@ -579,31 +588,31 @@ define_byte_sliced_3d!(
 
 // 512 bit
 define_byte_sliced_3d!(
-	ByteSliced3DAES64x128b,
+	ByteSlicedAES64x128b,
 	AESTowerField128b,
 	PackedAESBinaryField64x8b,
 	TowerLevel16
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES128x64b,
+	ByteSlicedAES128x64b,
 	AESTowerField64b,
 	PackedAESBinaryField64x8b,
 	TowerLevel8
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES256x32b,
+	ByteSlicedAES256x32b,
 	AESTowerField32b,
 	PackedAESBinaryField64x8b,
 	TowerLevel4
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES512x16b,
+	ByteSlicedAES512x16b,
 	AESTowerField16b,
 	PackedAESBinaryField64x8b,
 	TowerLevel2
 );
 define_byte_sliced_3d!(
-	ByteSliced3DAES1024x8b,
+	ByteSlicedAES1024x8b,
 	AESTowerField8b,
 	PackedAESBinaryField64x8b,
 	TowerLevel1
@@ -669,25 +678,25 @@ macro_rules! impl_packed_extension{
 }
 
 impl_packed_extension!(
-	ByteSliced3DAES16x128b,
-	ByteSliced3DAES32x64b,
-	ByteSliced3DAES64x32b,
-	ByteSliced3DAES128x16b,
-	ByteSliced3DAES256x8b,
+	ByteSlicedAES16x128b,
+	ByteSlicedAES32x64b,
+	ByteSlicedAES64x32b,
+	ByteSlicedAES128x16b,
+	ByteSlicedAES256x8b,
 );
 
 impl_packed_extension!(
-	ByteSliced3DAES32x128b,
-	ByteSliced3DAES64x64b,
-	ByteSliced3DAES128x32b,
-	ByteSliced3DAES256x16b,
-	ByteSliced3DAES512x8b,
+	ByteSlicedAES32x128b,
+	ByteSlicedAES64x64b,
+	ByteSlicedAES128x32b,
+	ByteSlicedAES256x16b,
+	ByteSlicedAES512x8b,
 );
 
 impl_packed_extension!(
-	ByteSliced3DAES64x128b,
-	ByteSliced3DAES128x64b,
-	ByteSliced3DAES256x32b,
-	ByteSliced3DAES512x16b,
-	ByteSliced3DAES1024x8b,
+	ByteSlicedAES64x128b,
+	ByteSlicedAES128x64b,
+	ByteSlicedAES256x32b,
+	ByteSlicedAES512x16b,
+	ByteSlicedAES1024x8b,
 );
