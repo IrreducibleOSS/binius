@@ -660,9 +660,9 @@ mod tests {
 			assert_eq!(col0.len(), expected_slice_len);
 
 			for i in 0..expected_slice_len * <PackedType<OptimalUnderlier128b, B8>>::WIDTH {
-				set_packed_slice(&mut *col0, i, B8::new(i as u8) + B8::new(0x00));
-				set_packed_slice(&mut *col1, i, B8::new(i as u8) + B8::new(0x40));
-				set_packed_slice(&mut *col2, i, B8::new(i as u8) + B8::new(0x80));
+				set_packed_slice(&mut col0, i, B8::new(i as u8) + B8::new(0x00));
+				set_packed_slice(&mut col1, i, B8::new(i as u8) + B8::new(0x40));
+				set_packed_slice(&mut col2, i, B8::new(i as u8) + B8::new(0x80));
 			}
 		}
 
