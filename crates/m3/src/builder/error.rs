@@ -15,10 +15,10 @@ pub enum Error {
 	MissingTable { table_id: TableId },
 	#[error("missing column with ID: {0:?}")]
 	MissingColumn(ColumnId),
-	#[error("missing partition {partition_id} in table {table_id}")]
+	#[error("missing partition with log_vals_per_row={log_vals_per_row} in table {table_id}")]
 	MissingPartition {
 		table_id: TableId,
-		partition_id: usize,
+		log_vals_per_row: usize,
 	},
 	#[error("column is not in table; column table ID: {column_table_id}, witness table ID: {witness_table_id}")]
 	TableMismatch {

@@ -18,7 +18,7 @@ use binius_field::{
 };
 use binius_math::{CompositionPoly, MultilinearExtension};
 use binius_maybe_rayon::prelude::*;
-use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
+use binius_utils::checked_arithmetics::{checked_log_2, log2_ceil_usize};
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
 use getset::CopyGetters;
 
@@ -33,16 +33,19 @@ use super::{
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
 #[derive(Debug, Default, CopyGetters)]
-pub struct WitnessIndex<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
-	pub tables: Vec<TableWitnessIndex<'a, U, F>>,
+pub struct WitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
+	pub tables: Vec<TableWitnessIndex<'cs, 'alloc, U, F>>,
 }
 
-impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
-	pub fn get_table(&mut self, table_id: TableId) -> Option<&mut TableWitnessIndex<'a, U>> {
+impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, F> {
+	pub fn get_table(
+		&mut self,
+		table_id: TableId,
+	) -> Option<&mut TableWitnessIndex<'cs, 'alloc, U, F>> {
 		self.tables.get_mut(table_id)
 	}
 
-	pub fn fill_table_sequential<T: TableFiller<U>>(
+	pub fn fill_table_sequential<T: TableFiller<U, F>>(
 		&mut self,
 		table: &T,
 		rows: &[T::Event],
@@ -55,13 +58,12 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 		Ok(())
 	}
 
-	pub fn into_multilinear_extension_index<F>(
+	pub fn into_multilinear_extension_index(
 		self,
 		statement: &Statement<F>,
-	) -> MultilinearExtensionIndex<'a, U, F>
+	) -> MultilinearExtensionIndex<'alloc, U, F>
 	where
-		F: TowerField
-			+ ExtensionField<B1>
+		F: ExtensionField<B1>
 			+ ExtensionField<B8>
 			+ ExtensionField<B16>
 			+ ExtensionField<B32>
@@ -83,7 +85,7 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 
 			for col in table.cols.into_iter() {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
-				let n_vars = table.log_capacity + log2_strict_usize(col.shape.values_per_row);
+				let n_vars = table.log_capacity + col.shape.log_values_per_row;
 				let witness = match col.shape.tower_height {
 					0 => MultilinearExtension::new(
 						n_vars,
@@ -151,10 +153,11 @@ impl<'a, U: UnderlierType> WitnessIndex<'a, U> {
 
 /// Holds witness column data for a table, indexed by column index.
 #[derive(Debug, CopyGetters)]
-pub struct TableWitnessIndex<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
-	table: &'a Table<F>,
+pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
+{
+	table: &'cs Table<F>,
 	selector_log_values_per_rows: Vec<usize>,
-	cols: Vec<WitnessIndexColumn<'a, U>>,
+	cols: Vec<WitnessIndexColumn<'alloc, U>>,
 	#[get_copy = "pub"]
 	log_capacity: usize,
 	/// Binary logarithm of the mininimum segment size.
@@ -172,8 +175,8 @@ pub struct WitnessIndexColumn<'a, U: UnderlierType> {
 	pub data: &'a mut [U],
 }
 
-impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndex<'a, U, F> {
-	pub fn new(allocator: &'a bumpalo::Bump, table: &'a Table<F>, table_size: usize) -> Self {
+impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc, U, F> {
+	pub fn new(allocator: &'alloc bumpalo::Bump, table: &'cs Table<F>, table_size: usize) -> Self {
 		// TODO: Make packed columns alias the same slice data
 		let log_capacity = log2_ceil_usize(table_size);
 
@@ -183,8 +186,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndex<'a, U, F> {
 			.columns
 			.iter()
 			.map(|col| {
-				let log_cell_bits =
-					col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
+				let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
 				min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
 				let log_col_bits = log_cell_bits + log_capacity;
 
@@ -252,8 +254,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndex<'a, U, F> {
 				.cols
 				.iter()
 				.map(|col| {
-					let log_cell_bits =
-						col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
+					let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
 					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 					// Safety: The function borrows self mutably, so we have mutable access to
 					// all columns and thus none can be borrowed by anyone else. The loop is
@@ -291,8 +292,7 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndex<'a, U, F> {
 					.cols
 					.iter()
 					.map(|col| {
-						let log_cell_bits =
-							col.shape.tower_height + log2_strict_usize(col.shape.values_per_row);
+						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
 						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
 						// Safety: The function borrows self mutably, so we have mutable access to
 						// all columns and thus none can be borrowed by anyone else. The loop is
@@ -337,16 +337,16 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 	{
 		// TODO: Check consistency of static params with column info
 
-		if col.id.table_id != self.table.id() {
+		if col.table_id != self.table.id() {
 			return Err(Error::TableMismatch {
-				column_table_id: col.id.table_id,
+				column_table_id: col.table_id,
 				witness_table_id: self.table.id(),
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.id.table_index)
+			.get(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| <PackedType<U, FSub>>::from_underliers_ref(x)))
@@ -362,16 +362,16 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 	{
 		// TODO: Check consistency of static params with column info
 
-		if col.id.table_id != self.table.id() {
+		if col.table_id != self.table.id() {
 			return Err(Error::TableMismatch {
-				column_table_id: col.id.table_id,
+				column_table_id: col.table_id,
 				witness_table_id: self.table.id(),
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.id.table_index)
+			.get(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, FSub>>::from_underliers_ref_mut(x)))
@@ -387,7 +387,7 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 	{
 		let col = self
 			.cols
-			.get(col.id.table_index)
+			.get(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
@@ -401,21 +401,27 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		U: Pod,
 		F: ExtensionField<FSub>,
 	{
-		if col.id.table_id != self.table.id() {
+		if col.table_id != self.table.id() {
 			return Err(Error::TableMismatch {
-				column_table_id: col.id.table_id,
+				column_table_id: col.table_id,
 				witness_table_id: self.table.id(),
 			});
 		}
 
 		let col = self
 			.cols
-			.get(col.id.table_index)
+			.get(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))
 	}
 
+	/// Evaluate an expression over columns that are assumed to be already populated.
+	///
+	/// This function evaluates an expression over the columns in the segment and returns an
+	/// iterator over the packed elements. This borrows the columns segments it reads from, so
+	/// they must not be borrowed mutably elsewhere (which is possible due to runtime-checked
+	/// column borrowing).
 	pub fn eval_expr<FSub: TowerField, const V: usize>(
 		&self,
 		expr: &Expr<FSub, V>,
@@ -424,28 +430,29 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		U: PackScalar<FSub>,
 		F: ExtensionField<FSub>,
 	{
-		if expr.partition_id() != 1 << V {}
+		let log_vals_per_row = checked_log_2(V);
 
-		let partition = self
-			.table
-			.partitions
-			.get(expr.partition_id())
-			.ok_or_else(|| Error::MissingPartition {
-				table_id: self.table.id(),
-				partition_id: expr.partition_id(),
-			})?;
+		let partition =
+			self.table
+				.partitions
+				.get(log_vals_per_row)
+				.ok_or_else(|| Error::MissingPartition {
+					table_id: self.table.id(),
+					log_vals_per_row,
+				})?;
 		let col_refs = partition
 			.columns
 			.iter()
 			.zip(expr.expr().vars_usage())
 			.map(|(col_index, used)| {
 				used.then(|| {
-					self.get(Col::<FSub, V>::new(ColumnId {
-						table_id: self.table.id(),
-						table_index: todo!(),
-						partition_id: expr.partition_id(),
-						partition_index: *col_index,
-					}))
+					self.get(Col::<FSub, V>::new(
+						ColumnId {
+							table_id: self.table.id(),
+							table_index: partition.columns[*col_index],
+						},
+						*col_index,
+					))
 				})
 				.transpose()
 			})
@@ -455,11 +462,10 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 			.map(|col| col.as_ref().map(|col_ref| &**col_ref).unwrap_or(&[]))
 			.collect::<Vec<_>>();
 
-		let mut evals = zeroed_vec(
-			1 << self
-				.log_size
-				.saturating_sub(<PackedType<U, FSub>>::LOG_WIDTH),
-		);
+		let log_packed_elems = self
+			.log_size
+			.saturating_sub(<PackedType<U, FSub>>::LOG_WIDTH);
+		let mut evals = zeroed_vec(1 << log_packed_elems);
 		ArithCircuitPoly::new(expr.expr().clone()).batch_evaluate(&cols, &mut evals)?;
 		Ok(evals.into_iter())
 	}
@@ -476,7 +482,7 @@ unsafe fn cast_slice_ref_to_mut<T>(slice: &[T]) -> &mut [T] {
 }
 
 /// A struct that can populate segments of a table witness using row descriptors.
-pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
+pub trait TableFiller<U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	/// A struct that specifies the row contents.
 	type Event;
 
@@ -487,17 +493,17 @@ pub trait TableFiller<U: UnderlierType = OptimalUnderlier> {
 	fn fill<'a>(
 		&'a self,
 		rows: impl Iterator<Item = &'a Self::Event>,
-		witness: &'a mut TableWitnessIndexSegment<U>,
+		witness: &'a mut TableWitnessIndexSegment<U, F>,
 	) -> anyhow::Result<()>;
 }
 
 /// Fill a full table witness index using the given row data.
 ///
 /// This function iterates through witness segments sequentially in a single thread.
-pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
+pub fn fill_table_sequential<U: UnderlierType, F: TowerField, T: TableFiller<U, F>>(
 	table: &T,
 	rows: &[T::Event],
-	witness: &mut TableWitnessIndex<U>,
+	witness: &mut TableWitnessIndex<U, F>,
 ) -> anyhow::Result<()> {
 	ensure!(witness.capacity() >= rows.len(), "rows exceed witness capacity");
 
@@ -540,7 +546,10 @@ pub fn fill_table_sequential<U: UnderlierType, T: TableFiller<U>>(
 #[cfg(test)]
 mod tests {
 	use assert_matches::assert_matches;
-	use binius_field::{arch::OptimalUnderlier128b, packed::len_packed_slice};
+	use binius_field::{
+		arch::OptimalUnderlier128b,
+		packed::{len_packed_slice, set_packed_slice},
+	};
 
 	use super::*;
 	use crate::builder::{
@@ -611,5 +620,46 @@ mod tests {
 		assert_eq!(len_packed_slice(&seg1.get_mut(col1).unwrap()), 1 << 10);
 		assert_eq!(len_packed_slice(&seg1.get_mut(col2).unwrap()), 1 << 5);
 		assert_eq!(len_packed_slice(&seg1.get_mut(col3).unwrap()), 1 << 5);
+	}
+
+	#[test]
+	fn test_eval_expr() {
+		let table_id = 0;
+		let mut inner_table = Table::<B128>::new(table_id, "table".to_string());
+		let mut table = TableBuilder::new(&mut inner_table);
+		let col0 = table.add_committed::<B8, 2>("col0");
+		let col1 = table.add_committed::<B8, 2>("col0");
+		let col2 = table.add_committed::<B8, 2>("col0");
+
+		let allocator = bumpalo::Bump::new();
+		let table_size = 64;
+		let mut index =
+			TableWitnessIndex::<OptimalUnderlier128b>::new(&allocator, &inner_table, table_size);
+		let segment = index.full_segment();
+
+		// Fill the columns with a deterministic pattern.
+		{
+			let mut col0 = segment.get_mut(col0).unwrap();
+			let mut col1 = segment.get_mut(col1).unwrap();
+			let mut col2 = segment.get_mut(col2).unwrap();
+
+			for i in 0..table_size {
+				set_packed_slice(&mut *col0, i, B8::new(i as u8) + B8::new(0x00));
+				set_packed_slice(&mut *col1, i, B8::new(i as u8) + B8::new(0x40));
+				set_packed_slice(&mut *col2, i, B8::new(i as u8) + B8::new(0x80));
+			}
+		}
+
+		let evals = segment.eval_expr(&(col0 * col1 - col2)).unwrap();
+		for (i, eval_i) in evals
+			.into_iter()
+			.flat_map(PackedField::into_iter)
+			.enumerate()
+		{
+			let col0_val = B8::new(i as u8) + B8::new(0x00);
+			let col1_val = B8::new(i as u8) + B8::new(0x00);
+			let col2_val = B8::new(i as u8) + B8::new(0x00);
+			assert_eq!(eval_i, col0_val * col1_val - col2_val);
+		}
 	}
 }

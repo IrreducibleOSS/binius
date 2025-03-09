@@ -124,7 +124,7 @@ mod arithmetization {
 	{
 		type Event = model::FibEvent;
 
-		fn id(&self) -> binius_m3::builder::TableId {
+		fn id(&self) -> TableId {
 			self.id
 		}
 
@@ -186,7 +186,7 @@ mod arithmetization {
 			.unwrap();
 
 		let compiled_cs = cs.compile(&statement).unwrap();
-		let witness = witness.into_multilinear_extension_index::<B128>(&statement);
+		let witness = witness.into_multilinear_extension_index(&statement);
 
 		binius_core::constraint_system::validate::validate_witness(
 			&compiled_cs,
