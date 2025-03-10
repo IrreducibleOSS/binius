@@ -266,7 +266,7 @@ where
 				}
 
 				let extension_scalar = PE::Scalar::from_bases_sparse(
-					bases,
+					bases.iter().copied(),
 					log_extension_degree - log_embedding_degree,
 				)?;
 
