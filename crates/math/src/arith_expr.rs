@@ -49,21 +49,6 @@ impl<F: Field> ArithExpr<F> {
 		}
 	}
 
-	/// The variable indices the expression contains, sorted and deduplicated.
-	pub fn used_vars(&self) -> Vec<usize> {
-		match self {
-			Self::Const(_) => Vec::new(),
-			Self::Var(index) => vec![*index],
-			Self::Add(left, right) | Self::Mul(left, right) => {
-				let mut res = [left.used_vars(), right.used_vars()].concat();
-				res.sort();
-				res.dedup();
-				res
-			}
-			Self::Pow(base, _) => base.used_vars(),
-		}
-	}
-
 	/// The total degree of the polynomial the expression represents.
 	pub fn degree(&self) -> usize {
 		match self {

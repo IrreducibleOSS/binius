@@ -173,7 +173,14 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let partition_indexes = expr.expr().used_vars();
+		let partition_indexes = expr
+			.expr()
+			.vars_usage()
+			.iter()
+			.enumerate()
+			.filter(|(_, &used)| used)
+			.map(|(i, _)| i)
+			.collect::<Vec<_>>();
 		let cols = partition_indexes
 			.iter()
 			.map(|&partition_index| {
