@@ -164,11 +164,11 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_computed<FSub, const VALUES_PER_ROW: usize>(
+	pub fn add_computed<FSub, const V: usize>(
 		&mut self,
 		name: impl ToString,
-		expr: Expr<FSub, VALUES_PER_ROW>,
-	) -> Col<FSub, VALUES_PER_ROW>
+		expr: Expr<FSub, V>,
+	) -> Col<FSub, V>
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
@@ -177,7 +177,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		let cols = partition_indexes
 			.iter()
 			.map(|&partition_index| {
-				let partition = &self.table.partitions[expr.partition_id()];
+				let partition = &self.table.partitions[partition_id::<V>()];
 				partition.columns[partition_index]
 			})
 			.collect::<Vec<_>>();

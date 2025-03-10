@@ -105,7 +105,7 @@ fn test_m3_computed_col() {
 		.unwrap();
 
 	let constraint_system = cs.compile(&statement).unwrap();
-	let witness = witness.into_multilinear_extension_index::<B128>(&statement);
+	let witness = witness.into_multilinear_extension_index(&statement);
 
 	binius_core::constraint_system::validate::validate_witness(
 		&constraint_system,
