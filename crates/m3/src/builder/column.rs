@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use binius_core::oracle::ShiftVariant;
 use binius_field::{ExtensionField, TowerField};
+use binius_math::ArithExpr;
 
 use super::{table::TableId, types::B128};
 
@@ -132,5 +133,9 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Packed {
 		col: ColumnId,
 		log_degree: usize,
+	},
+	Computed {
+		cols: Vec<ColumnIndex>,
+		expr: ArithExpr<F>,
 	},
 }
