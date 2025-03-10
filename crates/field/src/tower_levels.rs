@@ -41,7 +41,6 @@ pub trait TowerLevel {
 	) -> (&mut <Self::Base as TowerLevel>::Data<T>, &mut <Self::Base as TowerLevel>::Data<T>);
 
 	// Join two equal-length arrays (the reverse of split)
-	#[allow(clippy::type_complexity)]
 	fn join<T: Copy + Default>(
 		first: &<Self::Base as TowerLevel>::Data<T>,
 		second: &<Self::Base as TowerLevel>::Data<T>,
@@ -367,4 +366,92 @@ impl TowerLevel for TowerLevel1 {
 	fn from_fn<T>(f: impl FnMut(usize) -> T) -> Self::Data<T> {
 		array::from_fn(f)
 	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	macro_rules! define_tower_test {
+		($module_name:ident, $tower:ty, $width:expr, $half_width:expr) => {
+			mod $module_name {
+				use std::array;
+
+				use super::*;
+
+				#[test]
+				fn split_and_join() {
+					let data = array::from_fn(|i| i as u32);
+					let (left, right) = <$tower>::split(&data);
+					assert_eq!(left, &data[..$half_width]);
+					assert_eq!(right, &data[$half_width..]);
+
+					let joined = <$tower>::join(left, right);
+					assert_eq!(joined, data);
+				}
+
+				#[test]
+				fn split_mut_and_join() {
+					let mut data = array::from_fn(|i| i as u32);
+					let expected_left: [u32; $half_width] = data[..$half_width].try_into().unwrap();
+					let expected_right: [u32; $half_width] =
+						data[$half_width..].try_into().unwrap();
+					let (left, right) = <$tower>::split_mut(&mut data);
+
+					assert_eq!(*left, expected_left);
+					assert_eq!(*right, expected_right);
+
+					let joined = <$tower>::join(left, right);
+					assert_eq!(joined, data);
+				}
+
+				#[test]
+				fn from_fn() {
+					let expected = array::from_fn(|i| i as u32);
+					let generated = <$tower>::from_fn(|i| i as u32);
+					assert_eq!(generated, expected);
+				}
+
+				#[test]
+				fn default() {
+					let generated = <$tower>::default::<u32>();
+					let expected = [0u32; $width];
+					assert_eq!(generated, expected);
+				}
+
+				#[test]
+				fn add_into() {
+					let a = array::from_fn(|i| i as u32);
+					let mut b = [0u32; $width];
+					<$tower>::add_into(&a, &mut b);
+					assert_eq!(b, a);
+				}
+
+				#[test]
+				fn copy_into() {
+					let a = array::from_fn(|i| i as u32);
+					let mut b = [0u32; $width];
+					<$tower>::copy_into(&a, &mut b);
+					assert_eq!(b, a);
+				}
+
+				#[test]
+				fn sum() {
+					let a = array::from_fn(|i| i as u32);
+					let b = array::from_fn(|i| i as u32);
+					let sum_result = <$tower>::sum(&a, &b);
+					let expected = array::from_fn(|i| 2 * (i as u32));
+					assert_eq!(sum_result, expected);
+				}
+			}
+		};
+	}
+
+	// Generate a test module for each TowerLevel
+	define_tower_test!(tower_level_64, TowerLevel64, 64, 32);
+	define_tower_test!(tower_level_32, TowerLevel32, 32, 16);
+	define_tower_test!(tower_level_16, TowerLevel16, 16, 8);
+	define_tower_test!(tower_level_8, TowerLevel8, 8, 4);
+	define_tower_test!(tower_level_4, TowerLevel4, 4, 2);
+	define_tower_test!(tower_level_2, TowerLevel2, 2, 1);
 }
