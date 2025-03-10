@@ -26,9 +26,9 @@ pub enum Error {
 		witness_table_id: TableId,
 	},
 	// TODO: These should have column IDs
-	#[error("witness borrow error: {0}")]
+	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrow(#[source] BorrowError),
-	#[error("witness borrow error: {0}")]
+	#[error("witness borrow error: {0}. Note that packed columns are aliases for the unpacked column when accessing witness data")]
 	WitnessBorrowMut(#[source] BorrowMutError),
 	#[error("table fill error: {0}")]
 	TableFill(anyhow::Error),
