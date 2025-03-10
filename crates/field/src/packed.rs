@@ -184,9 +184,9 @@ pub trait PackedField:
 	fn square(self) -> Self;
 
 	/// Returns the value to the power `exp`.
-	fn pow(self, exp: u64) -> Self {
+	fn pow(self, exp: u128) -> Self {
 		let mut res = Self::one();
-		for i in (0..64).rev() {
+		for i in (0..128-exp.leading_zeros()).rev() {
 			res = res.square();
 			if ((exp >> i) & 1) == 1 {
 				res.mul_assign(self)
