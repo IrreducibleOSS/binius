@@ -173,7 +173,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		let partition_indexes = expr.expr().vars_sorted();
+		let partition_indexes = expr.expr().used_vars();
 		let cols = partition_indexes
 			.iter()
 			.map(|&partition_index| {
