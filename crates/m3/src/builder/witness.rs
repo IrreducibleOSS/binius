@@ -61,17 +61,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 
 	pub fn into_multilinear_extension_index(
 		self,
-		statement: &Statement<F>,
-	) -> MultilinearExtensionIndex<'alloc, U, F>
+		statement: &Statement<B128>,
+	) -> MultilinearExtensionIndex<'alloc, U, B128>
 	where
-		F: ExtensionField<B1>
-			+ ExtensionField<B8>
-			+ ExtensionField<B16>
-			+ ExtensionField<B32>
-			+ ExtensionField<B64>
-			+ ExtensionField<B128>,
-		U: PackScalar<F>
-			+ PackScalar<B1>
+		U: PackScalar<B1>
 			+ PackScalar<B8>
 			+ PackScalar<B16>
 			+ PackScalar<B32>
@@ -88,11 +81,8 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			for col in cols {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
 				let n_vars = table.log_capacity + col.shape.log_values_per_row;
-				let witness = multilin_poly_from_underlier_data::<U, F>(
-					col.data,
-					n_vars,
-					col.shape.tower_height,
-				);
+				let witness =
+					multilin_poly_from_underlier_data(col.data, n_vars, col.shape.tower_height);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -117,21 +107,13 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 	}
 }
 
-fn multilin_poly_from_underlier_data<U, F>(
+fn multilin_poly_from_underlier_data<U>(
 	data: &[U],
 	n_vars: usize,
 	tower_height: usize,
-) -> Arc<dyn MultilinearPoly<PackedType<U, F>> + Send + Sync + '_>
+) -> Arc<dyn MultilinearPoly<PackedType<U, B128>> + Send + Sync + '_>
 where
-	F: TowerField
-		+ ExtensionField<B1>
-		+ ExtensionField<B8>
-		+ ExtensionField<B16>
-		+ ExtensionField<B32>
-		+ ExtensionField<B64>
-		+ ExtensionField<B128>,
-	U: PackScalar<F>
-		+ PackScalar<B1>
+	U: PackScalar<B1>
 		+ PackScalar<B8>
 		+ PackScalar<B16>
 		+ PackScalar<B32>
