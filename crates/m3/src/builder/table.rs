@@ -164,6 +164,43 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
+	pub fn add_computed<FSub, const VALUES_PER_ROW: usize>(
+		&mut self,
+		name: impl ToString,
+		expr: Expr<FSub, VALUES_PER_ROW>,
+	) -> Col<FSub, VALUES_PER_ROW>
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
+		let partition_indexes = expr.expr().vars_sorted();
+		let cols = partition_indexes
+			.iter()
+			.map(|&partition_index| {
+				let partition = &self.table.partitions[expr.partition_id()];
+				partition.columns[partition_index]
+			})
+			.collect::<Vec<_>>();
+
+		let mut var_remapping = vec![0; expr.expr().n_vars()];
+		for (new_index, &old_index) in partition_indexes.iter().enumerate() {
+			var_remapping[old_index] = new_index;
+		}
+		let remapped_expr = expr
+			.expr()
+			.convert_field()
+			.remap_vars(&var_remapping)
+			.expect("var_remapping should be large enought");
+
+		self.table.new_column(
+			self.namespaced_name(name),
+			ColumnDef::Computed {
+				cols,
+				expr: remapped_expr,
+			},
+		)
+	}
+
 	pub fn add_selected<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
