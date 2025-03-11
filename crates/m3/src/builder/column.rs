@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
 
@@ -88,6 +88,8 @@ pub struct ColumnInfo<F: TowerField = B128> {
 	pub shape: ColumnShape,
 	/// Whether the column is constrained to be non-zero.
 	pub is_nonzero: bool,
+	/// Whether the column is transparent and only contains a single row.
+	pub is_single_row: bool,
 }
 
 /// The shape of each cell in a column.
@@ -137,5 +139,11 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Computed {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
+	},
+	Transparent {
+		poly: Arc<dyn MultivariatePoly<F>>,
+	},
+	RepeatingTransparent {
+		col: ColumnId,
 	},
 }

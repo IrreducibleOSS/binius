@@ -80,9 +80,19 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			let mut count = 0;
 			for col in cols {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
-				let n_vars = table.log_capacity + col.shape.log_values_per_row;
-				let witness =
-					multilin_poly_from_underlier_data(col.data, n_vars, col.shape.tower_height);
+				let log_capacity = if col.is_single_row {
+					0
+				} else {
+					table.log_capacity
+				};
+				let n_vars = log_capacity + col.shape.log_values_per_row;
+				let underlier_count =
+					1 << (n_vars + col.shape.tower_height).saturating_sub(U::LOG_BITS);
+				let witness = multilin_poly_from_underlier_data(
+					&col.data[..underlier_count],
+					n_vars,
+					col.shape.tower_height,
+				);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -167,6 +177,7 @@ pub struct WitnessIndexColumn<'a, U: UnderlierType> {
 	pub id: ColumnId,
 	pub shape: ColumnShape,
 	pub data: WitnessDataMut<'a, U>,
+	pub is_single_row: bool,
 }
 
 #[derive(Debug)]
@@ -186,6 +197,7 @@ pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
 	pub id: ColumnId,
 	pub shape: ColumnShape,
 	pub data: &'a [U],
+	pub is_single_row: bool,
 }
 
 fn immutable_witness_index_columns<'a, U: UnderlierType>(
@@ -200,6 +212,7 @@ fn immutable_witness_index_columns<'a, U: UnderlierType>(
 				WitnessDataMut::Owned(data) => data,
 				WitnessDataMut::SameAsTableIndex(index) => result[index].data,
 			},
+			is_single_row: col.is_single_row,
 		});
 	}
 	result
@@ -218,6 +231,9 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.map(|col| {
 				let data = match col.col {
 					ColumnDef::Packed { col: inner_col, .. } => {
+						WitnessDataMut::SameAsTableIndex(inner_col.table_index)
+					}
+					ColumnDef::RepeatingTransparent { col: inner_col } => {
 						WitnessDataMut::SameAsTableIndex(inner_col.table_index)
 					}
 					_ => {
@@ -241,6 +257,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 					id: col.id,
 					shape: col.shape,
 					data,
+					is_single_row: col.is_single_row,
 				}
 			})
 			.collect();

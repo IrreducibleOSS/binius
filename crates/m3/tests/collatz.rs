@@ -108,7 +108,7 @@ mod arithmetization {
 	use binius_field::{
 		arch::OptimalUnderlier128b,
 		as_packed_field::{PackScalar, PackedType},
-		underlier::UnderlierType,
+		underlier::{SmallU, UnderlierType},
 		Field, PackedField,
 	};
 	use binius_hash::compress::Groestl256ByteCompression;
@@ -222,10 +222,7 @@ mod arithmetization {
 			let double =
 				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
-			// TODO: Figure out how to add repeating constants (repeating transparents). Basically a
-			// multilinear extension of some constant vector, repeating for the number of rows.
-			// This shouldn't actually be committed. It should be the carry bit, repeated for each row.
-			let carry_bit = table.add_committed::<B1, 32>("carry_bit");
+			let carry_bit = table.add_repeating_constants("carry_bit", decomposed_u32_bits(1));
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(
@@ -256,6 +253,10 @@ mod arithmetization {
 				_triple_plus_one_packed: triple_plus_one_packed,
 			}
 		}
+	}
+
+	fn decomposed_u32_bits(bits: u32) -> [B1; 32] {
+		std::array::from_fn(|i| B1::new(SmallU::new(((bits >> i) & 1) as u8)))
 	}
 
 	impl<U: UnderlierType> TableFiller<U> for OddsTable

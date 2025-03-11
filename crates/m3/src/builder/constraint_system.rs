@@ -187,6 +187,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
+				let count = if info.is_single_row { 1 } else { count };
 				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
@@ -279,7 +280,9 @@ fn add_oracle_for_column<F: TowerField>(
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
-	let ColumnInfo { col, name, .. } = column_info;
+	let ColumnInfo {
+		col, name, shape, ..
+	} = column_info;
 	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
@@ -332,6 +335,10 @@ fn add_oracle_for_column<F: TowerField>(
 				.map(|&col_index| oracle_lookup[col_index])
 				.collect::<Vec<_>>();
 			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+		}
+		ColumnDef::Transparent { poly, .. } => addition.transparent(poly.clone())?,
+		ColumnDef::RepeatingTransparent { col } => {
+			addition.repeating(oracle_lookup[col.table_index], n_vars - shape.log_values_per_row)?
 		}
 	};
 	Ok(oracle_id)
