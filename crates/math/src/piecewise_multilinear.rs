@@ -250,8 +250,8 @@ mod tests {
 		assert_eq!(
 			segment,
 			vec![
-				s0 * (BinaryField32b::from(1) - z) + s1 * z,
-				s2 * (BinaryField32b::from(1) - z) + s3 * z,
+				extrapolate_line_scalar(s0, s1, z),
+				extrapolate_line_scalar(s2, s3, z),
 				s2,
 				s3
 			]
@@ -266,7 +266,7 @@ mod tests {
 
 		fold_segment(&mut segment, z);
 
-		assert_eq!(segment, vec![s0 * (BinaryField32b::from(1) - z) + BinaryField32b::ZERO * z]);
+		assert_eq!(segment, vec![extrapolate_line_scalar(s0, BinaryField32b::ZERO, z),]);
 	}
 
 	#[test]
@@ -283,8 +283,8 @@ mod tests {
 		assert_eq!(
 			segment,
 			vec![
-				s0 * (BinaryField32b::from(1) - z) + s1 * z,
-				s2 * (BinaryField32b::from(1) - z),
+				extrapolate_line_scalar(s0, s1, z),
+				extrapolate_line_scalar(s2, BinaryField32b::ZERO, z),
 				s2
 			]
 		);
