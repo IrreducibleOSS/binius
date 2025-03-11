@@ -3,8 +3,9 @@
 use std::{iter::repeat_with, mem};
 
 use binius_field::{
-	BinaryField, ByteSlicedAES32x32b, ByteSlicedAES64x16b, PackedBinaryField16x16b,
-	PackedBinaryField4x32b, PackedBinaryField8x16b, PackedBinaryField8x32b, PackedField,
+	arch::byte_sliced::{ByteSlicedAES32x16b, ByteSlicedAES32x32b},
+	BinaryField, PackedBinaryField16x16b, PackedBinaryField4x32b, PackedBinaryField8x16b,
+	PackedBinaryField8x32b, PackedField,
 };
 use binius_ntt::{AdditiveNTT, SingleThreadedNTT};
 use criterion::{
@@ -81,15 +82,15 @@ fn run_benchmarks_on_packed_fields<BT: BenchTransformationFunc>(c: &mut Criterio
 			bench_helper::<PackedBinaryField8x32b, BT>(&mut group, "8x32b", log_n, log_batch_size);
 
 			// 256-bit registers with byte-slicing
-			bench_helper::<ByteSlicedAES64x16b, BT>(
+			bench_helper::<ByteSlicedAES32x16b, BT>(
 				&mut group,
-				"byte_sliced256x16",
+				"byte_sliced32x16",
 				log_n,
 				log_batch_size,
 			);
 			bench_helper::<ByteSlicedAES32x32b, BT>(
 				&mut group,
-				"byte_slicedx128x32",
+				"byte_sliced32x32",
 				log_n,
 				log_batch_size,
 			);
