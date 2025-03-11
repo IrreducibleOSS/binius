@@ -82,6 +82,9 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			for col in table.columns.iter() {
+				if matches!(col.col, ColumnDef::RepeatingTransparent { .. }) {
+					oracle_id += 1;
+				}
 				let name = col.name.clone();
 				let log_values_per_row = col.shape.log_values_per_row;
 				let field = match col.shape.tower_height {
@@ -187,7 +190,6 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
-				let count = if info.is_single_row { 1 } else { count };
 				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
@@ -283,9 +285,10 @@ fn add_oracle_for_column<F: TowerField>(
 	let ColumnInfo {
 		col, name, shape, ..
 	} = column_info;
-	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
-		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
+		ColumnDef::Committed { tower_level } => oracles
+			.add_named(name.clone())
+			.committed(n_vars, *tower_level),
 		ColumnDef::LinearCombination {
 			offset,
 			col_scalars,
@@ -294,7 +297,9 @@ fn add_oracle_for_column<F: TowerField>(
 				.iter()
 				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
 				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
+			oracles
+				.add_named(name.clone())
+				.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
 		}
 		ColumnDef::Selected {
 			col,
@@ -310,7 +315,7 @@ fn add_oracle_for_column<F: TowerField>(
 					}
 				})
 				.collect();
-			addition.projected(
+			oracles.add_named(name.clone()).projected(
 				oracle_lookup[col.table_index],
 				index_values,
 				ProjectionVariant::FirstVars,
@@ -323,22 +328,35 @@ fn add_oracle_for_column<F: TowerField>(
 			variant,
 		} => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
-			addition.shifted(oracle_lookup[col.table_index], *offset, *log_block_size, *variant)?
+			oracles.add_named(name.clone()).shifted(
+				oracle_lookup[col.table_index],
+				*offset,
+				*log_block_size,
+				*variant,
+			)?
 		}
 		ColumnDef::Packed { col, log_degree } => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
-			addition.packed(oracle_lookup[col.table_index], *log_degree)?
+			oracles
+				.add_named(name.clone())
+				.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
 		ColumnDef::Computed { cols, expr } => {
 			let inner_oracles = cols
 				.iter()
 				.map(|&col_index| oracle_lookup[col_index])
 				.collect::<Vec<_>>();
-			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			oracles
+				.add_named(name.clone())
+				.composite_mle(n_vars, inner_oracles, expr.clone())?
 		}
-		ColumnDef::Transparent { poly, .. } => addition.transparent(poly.clone())?,
-		ColumnDef::RepeatingTransparent { col } => {
-			addition.repeating(oracle_lookup[col.table_index], n_vars - shape.log_values_per_row)?
+		ColumnDef::RepeatingTransparent { poly } => {
+			let prev = oracles
+				.add_named(format!("{name}_single"))
+				.transparent(poly.clone())?;
+			oracles
+				.add_named(name.clone())
+				.repeating(prev, n_vars - shape.log_values_per_row)?
 		}
 	};
 	Ok(oracle_id)

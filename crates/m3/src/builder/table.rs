@@ -5,7 +5,6 @@ use std::sync::Arc;
 use binius_core::{
 	constraint_system::channel::{ChannelId, FlushDirection},
 	oracle::ShiftVariant,
-	polynomial::MultivariatePoly,
 	transparent::MultilinearExtensionTransparent,
 };
 use binius_field::{
@@ -257,13 +256,10 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			_,
 		>::from_values_and_mu(packed_values, n_vars)
 		.unwrap();
-		let transparent: Col<FSub, VALUES_PER_ROW> = self
-			.table
-			.new_transparent_column(format!("{namespaced_name}_single"), Arc::new(mle));
 		self.table.new_column(
 			namespaced_name,
 			ColumnDef::RepeatingTransparent {
-				col: transparent.id(),
+				poly: Arc::new(mle),
 			},
 		)
 	}
@@ -328,7 +324,6 @@ pub struct Table<F: TowerField = B128> {
 	pub name: String,
 	pub columns: Vec<ColumnInfo<F>>,
 	pub(super) partitions: SparseIndex<TablePartition<F>>,
-	pub(super) single_row_columns: Vec<ColumnIndex>,
 }
 
 /// A table partition describes a part of a table where everything has the same pack factor (as well as height)
@@ -422,7 +417,6 @@ impl<F: TowerField> Table<F> {
 			id,
 			name: name.to_string(),
 			columns: Vec::new(),
-			single_row_columns: Vec::new(),
 			partitions: SparseIndex::new(),
 		}
 	}
@@ -456,42 +450,11 @@ impl<F: TowerField> Table<F> {
 				log_values_per_row: log2_strict_usize(V),
 			},
 			is_nonzero: false,
-			is_single_row: false,
 		};
 
 		let partition_index = partition.columns.len();
 		partition.columns.push(table_index);
 		self.columns.push(info);
-		Col::new(id, partition_index)
-	}
-
-	fn new_transparent_column<FSub, const VALUES_PER_ROW: usize>(
-		&mut self,
-		name: impl ToString,
-		poly: Arc<dyn MultivariatePoly<F>>,
-	) -> Col<FSub, VALUES_PER_ROW>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let partition_index = self.single_row_columns.len();
-		let id = ColumnId {
-			table_id: self.id,
-			table_index: self.columns.len(),
-		};
-		let info = ColumnInfo {
-			id,
-			col: ColumnDef::Transparent { poly },
-			name: name.to_string(),
-			shape: ColumnShape {
-				tower_height: FSub::TOWER_LEVEL,
-				log_values_per_row: log2_strict_usize(VALUES_PER_ROW),
-			},
-			is_nonzero: false,
-			is_single_row: true,
-		};
-		self.columns.push(info);
-		self.single_row_columns.push(id.table_index);
 		Col::new(id, partition_index)
 	}
 

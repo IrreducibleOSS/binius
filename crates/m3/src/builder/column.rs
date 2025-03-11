@@ -88,8 +88,6 @@ pub struct ColumnInfo<F: TowerField = B128> {
 	pub shape: ColumnShape,
 	/// Whether the column is constrained to be non-zero.
 	pub is_nonzero: bool,
-	/// Whether the column is transparent and only contains a single row.
-	pub is_single_row: bool,
 }
 
 /// The shape of each cell in a column.
@@ -140,10 +138,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
 	},
-	Transparent {
-		poly: Arc<dyn MultivariatePoly<F>>,
-	},
 	RepeatingTransparent {
-		col: ColumnId,
+		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 }
