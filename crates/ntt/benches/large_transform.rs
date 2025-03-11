@@ -4,7 +4,7 @@ use std::iter::repeat_with;
 
 use binius_field::{
 	arch::OptimalUnderlier, as_packed_field::PackedType, AESTowerField32b, BinaryField,
-	BinaryField32b, ByteSlicedAES128x32b, ByteSlicedAES256x32b, ByteSlicedAES64x32b, PackedField,
+	BinaryField32b, ByteSlicedAES16x32b, ByteSlicedAES32x32b, ByteSlicedAES64x32b, PackedField,
 	TowerField,
 };
 use binius_maybe_rayon::prelude::*;
@@ -72,15 +72,15 @@ fn bench_large_transform<F: TowerField, P: PackedField<Scalar = F>>(
 
 // We are ignoring the transposition associated with byte slicing
 fn bench_byte_sliced(c: &mut Criterion) {
-	bench_large_transform::<AESTowerField32b, ByteSlicedAES64x32b>(
+	bench_large_transform::<AESTowerField32b, ByteSlicedAES16x32b>(
 		c,
 		"bytesliced=ByteSlicedAES64x32b",
 	);
-	bench_large_transform::<AESTowerField32b, ByteSlicedAES128x32b>(
+	bench_large_transform::<AESTowerField32b, ByteSlicedAES32x32b>(
 		c,
 		"bytesliced=ByteSlicedAES128x32b",
 	);
-	bench_large_transform::<AESTowerField32b, ByteSlicedAES256x32b>(
+	bench_large_transform::<AESTowerField32b, ByteSlicedAES64x32b>(
 		c,
 		"bytesliced=ByteSlicedAES256x32b",
 	);

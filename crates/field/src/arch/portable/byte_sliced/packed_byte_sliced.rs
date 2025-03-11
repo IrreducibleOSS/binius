@@ -28,8 +28,6 @@ use crate::{
 /// `N` is the number of bytes in the scalar.
 pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 
-const BIGGEST_FIELD_BYTES: usize = AESTowerField128b::N_BITS / 8;
-
 /// Byte-sliced packed field with a fixed size (16x$packed_storage).
 /// For example for 32-bit scalar the data layout is the following:
 /// [ element_0[0], element_4[0], ... ]
@@ -40,18 +38,18 @@ const BIGGEST_FIELD_BYTES: usize = AESTowerField128b::N_BITS / 8;
 /// [ element_1[1], element_5[1], ... ]
 ///  ...
 macro_rules! define_byte_sliced_3d {
-	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty) => {
-		#[derive(Clone, Debug, Copy, PartialEq, Eq, Pod, Zeroable)]
+	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty, $biggest_field_bytes:literal) => {
+		#[derive(Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [[$packed_storage; <$tower_level as TowerLevel>::WIDTH]; BIGGEST_FIELD_BYTES / <$tower_level as TowerLevel>::WIDTH],
+			pub(super) data: [[$packed_storage; <$tower_level as TowerLevel>::WIDTH]; $biggest_field_bytes / <$tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
-			pub const BYTES: usize = BIGGEST_FIELD_BYTES * <$packed_storage>::WIDTH;
+			pub const BYTES: usize = $biggest_field_bytes * <$packed_storage>::WIDTH;
 
 			const SCALAR_BYTES: usize = <$scalar_type>::N_BITS / 8;
-			const HEIGHT: usize = BIGGEST_FIELD_BYTES / Self::SCALAR_BYTES;
+			const HEIGHT: usize = $biggest_field_bytes / Self::SCALAR_BYTES;
 			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT);
 
 			/// Get the byte at the given index.
@@ -61,11 +59,11 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				let row = byte_index % BIGGEST_FIELD_BYTES;
+				let row = byte_index % $biggest_field_bytes;
 				self.data
 					.get_unchecked(row / Self::SCALAR_BYTES)
 					.get_unchecked(row % Self::SCALAR_BYTES)
-					.get_unchecked(byte_index / BIGGEST_FIELD_BYTES)
+					.get_unchecked(byte_index / $biggest_field_bytes)
 					.to_underlier()
 			}
 		}
@@ -75,6 +73,18 @@ macro_rules! define_byte_sliced_3d {
 				Self {
 					data: bytemuck::Zeroable::zeroed(),
 				}
+			}
+		}
+
+		impl Debug for $name {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				let values_str = self
+					.iter()
+					.map(|value| format!("{}", value))
+					.collect::<Vec<_>>()
+					.join(",");
+
+				write!(f, "ByteSlicedAES{}x{}([{}])", Self::WIDTH, <$scalar_type>::N_BITS, values_str)
 			}
 		}
 
@@ -114,6 +124,7 @@ macro_rules! define_byte_sliced_3d {
 				Self { data }
 			}
 
+			#[allow(unreachable_patterns)]
 			#[inline]
 			fn broadcast(scalar: Self::Scalar) -> Self {
 				let data: [[$packed_storage; Self::SCALAR_BYTES]; Self::HEIGHT] = match Self::SCALAR_BYTES {
@@ -122,7 +133,7 @@ macro_rules! define_byte_sliced_3d {
 							<$packed_storage>::broadcast(unsafe { scalar.get_base_unchecked(0) });
 						array::from_fn(|_| array::from_fn(|_| packed_broadcast))
 					}
-					BIGGEST_FIELD_BYTES => array::from_fn(|_| array::from_fn(|byte_index| {
+					$biggest_field_bytes => array::from_fn(|_| array::from_fn(|byte_index| {
 						<$packed_storage>::broadcast(unsafe {
 							scalar.get_base_unchecked(byte_index)
 						})
@@ -190,44 +201,13 @@ macro_rules! define_byte_sliced_3d {
 			#[inline(always)]
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 
-				let self_data: &[$packed_storage; BIGGEST_FIELD_BYTES] = bytemuck::must_cast_ref(&self.data);
-				let other_data: &[$packed_storage; BIGGEST_FIELD_BYTES] = bytemuck::must_cast_ref(&other.data);
+				let self_data: &[$packed_storage; $biggest_field_bytes] = bytemuck::must_cast_ref(&self.data);
+				let other_data: &[$packed_storage; $biggest_field_bytes] = bytemuck::must_cast_ref(&other.data);
+
 				// This implementation is faster than using a loop with `copy_from_slice` for the first 4 cases
-				let (data_1, data_2) = match checked_log_2(Self::SCALAR_BYTES) + log_block_len {
-					0 => {
-						(
-							[self_data[0], other_data[0], self_data[2], other_data[2], self_data[4], other_data[4], self_data[6], other_data[6], self_data[8], other_data[8], self_data[10], other_data[10], self_data[12], other_data[12], self_data[14], other_data[14]],
-							[self_data[1], other_data[1], self_data[3], other_data[3], self_data[5], other_data[5], self_data[7], other_data[7], self_data[9], other_data[9], self_data[11], other_data[11], self_data[13], other_data[13], self_data[15], other_data[15]])
-					},
-					1 => {
-						(
-							[self_data[0], self_data[1], other_data[0], other_data[1], self_data[4], self_data[5], other_data[4], other_data[5], self_data[8], self_data[9], other_data[8], other_data[9], self_data[12], self_data[13], other_data[12], other_data[13],],
-							[self_data[2], self_data[3], other_data[2], other_data[3], self_data[6], self_data[7], other_data[6], other_data[7], self_data[10], self_data[11], other_data[10], other_data[11], self_data[14], self_data[15], other_data[14], other_data[15],],
-						)
-					},
-					2 => {
-						(
-							[self_data[0], self_data[1], self_data[2], self_data[3], other_data[0], other_data[1], other_data[2], other_data[3], self_data[8], self_data[9], self_data[10], self_data[11], other_data[8], other_data[9], other_data[10], other_data[11],],
-							[self_data[4], self_data[5], self_data[6], self_data[7], other_data[4], other_data[5], other_data[6], other_data[7], self_data[12], self_data[13], self_data[14], self_data[15], other_data[12], other_data[13], other_data[14], other_data[15],],
-						)
-					},
-					3 => {
-						(
-							[self_data[0], self_data[1], self_data[2], self_data[3], self_data[4], self_data[5], self_data[6], self_data[7], other_data[0], other_data[1], other_data[2], other_data[3], other_data[4], other_data[5], other_data[6], other_data[7],],
-							[self_data[8], self_data[9], self_data[10], self_data[11], self_data[12], self_data[13], self_data[14], self_data[15], other_data[8], other_data[9], other_data[10], other_data[11], other_data[12], other_data[13], other_data[14], other_data[15],],
-						)
-					},
-					_ => {
-						let mut result_1: [$packed_storage; BIGGEST_FIELD_BYTES] = Zeroable::zeroed();
-						let mut result_2: [$packed_storage; BIGGEST_FIELD_BYTES] = Zeroable::zeroed();
-
-						for i in 0..BIGGEST_FIELD_BYTES {
-							(result_1[i], result_2[i]) = self_data[i].interleave(other_data[i], log_block_len - Self::LOG_HEIGHT);
-						}
-
-						(result_1, result_2)
-					}
-				};
+				let (data_1, data_2) = concat_idents::concat_idents!(interleave_fn = interleave_byte_sliced_, $biggest_field_bytes, {
+					interleave_fn(self_data, other_data, log_block_len + checked_log_2(Self::SCALAR_BYTES))
+				});
 
 				(
 					Self {
@@ -522,36 +502,206 @@ macro_rules! define_byte_sliced_3d {
 	};
 }
 
+#[inline(always)]
+fn interleave_byte_sliced_1<P: PackedField>(
+	lhs: &[P; 1],
+	rhs: &[P; 1],
+	log_block_len: usize,
+) -> ([P; 1], [P; 1]) {
+	let (lhs, rhs) = lhs[0].interleave(rhs[0], log_block_len);
+	([lhs], [rhs])
+}
+
+#[inline(always)]
+fn interleave_byte_sliced_2<P: PackedField>(
+	lhs: &[P; 2],
+	rhs: &[P; 2],
+	log_block_len: usize,
+) -> ([P; 2], [P; 2]) {
+	match log_block_len {
+		0 => ([lhs[0], rhs[0]], [lhs[1], rhs[1]]),
+		_ => interleave_big_block(lhs, rhs, log_block_len),
+	}
+}
+
+#[inline(always)]
+fn interleave_byte_sliced_4<P: PackedField>(
+	lhs: &[P; 4],
+	rhs: &[P; 4],
+	log_block_len: usize,
+) -> ([P; 4], [P; 4]) {
+	match log_block_len {
+		0 => ([lhs[0], rhs[0], lhs[2], rhs[2]], [lhs[1], rhs[1], lhs[3], rhs[3]]),
+		1 => ([lhs[0], lhs[1], rhs[0], rhs[1]], [lhs[2], lhs[3], rhs[2], rhs[3]]),
+		_ => interleave_big_block(lhs, rhs, log_block_len),
+	}
+}
+
+#[inline(always)]
+fn interleave_byte_sliced_8<P: PackedField>(
+	lhs: &[P; 8],
+	rhs: &[P; 8],
+	log_block_len: usize,
+) -> ([P; 8], [P; 8]) {
+	match log_block_len {
+		0 => (
+			[
+				lhs[0], rhs[0], lhs[2], rhs[2], lhs[4], rhs[4], lhs[6], rhs[6],
+			],
+			[
+				lhs[1], rhs[1], lhs[3], rhs[3], lhs[5], rhs[5], lhs[7], rhs[7],
+			],
+		),
+		1 => (
+			[
+				lhs[0], lhs[1], rhs[0], rhs[1], lhs[4], lhs[5], rhs[4], rhs[5],
+			],
+			[
+				lhs[2], lhs[3], rhs[2], rhs[3], lhs[6], lhs[7], rhs[6], rhs[7],
+			],
+		),
+		2 => (
+			[
+				lhs[0], lhs[1], lhs[2], lhs[3], rhs[0], rhs[1], rhs[2], rhs[3],
+			],
+			[
+				lhs[4], lhs[5], lhs[6], lhs[7], rhs[4], rhs[5], rhs[6], rhs[7],
+			],
+		),
+		_ => interleave_big_block(lhs, rhs, log_block_len),
+	}
+}
+
+#[inline(always)]
+fn interleave_byte_sliced_16<P: PackedField>(
+	lhs: &[P; 16],
+	rhs: &[P; 16],
+	log_block_len: usize,
+) -> ([P; 16], [P; 16]) {
+	match log_block_len {
+		0 => (
+			[
+				lhs[0], rhs[0], lhs[2], rhs[2], lhs[4], rhs[4], lhs[6], rhs[6], lhs[8], rhs[8],
+				lhs[10], rhs[10], lhs[12], rhs[12], lhs[14], rhs[14],
+			],
+			[
+				lhs[1], rhs[1], lhs[3], rhs[3], lhs[5], rhs[5], lhs[7], rhs[7], lhs[9], rhs[9],
+				lhs[11], rhs[11], lhs[13], rhs[13], lhs[15], rhs[15],
+			],
+		),
+		1 => (
+			[
+				lhs[0], lhs[1], rhs[0], rhs[1], lhs[4], lhs[5], rhs[4], rhs[5], lhs[8], lhs[9],
+				rhs[8], rhs[9], lhs[12], lhs[13], rhs[12], rhs[13],
+			],
+			[
+				lhs[2], lhs[3], rhs[2], rhs[3], lhs[6], lhs[7], rhs[6], rhs[7], lhs[10], lhs[11],
+				rhs[10], rhs[11], lhs[14], lhs[15], rhs[14], rhs[15],
+			],
+		),
+		2 => (
+			[
+				lhs[0], lhs[1], lhs[2], lhs[3], rhs[0], rhs[1], rhs[2], rhs[3], lhs[8], lhs[9],
+				lhs[10], lhs[11], rhs[8], rhs[9], rhs[10], rhs[11],
+			],
+			[
+				lhs[4], lhs[5], lhs[6], lhs[7], rhs[4], rhs[5], rhs[6], rhs[7], lhs[12], lhs[13],
+				lhs[14], lhs[15], rhs[12], rhs[13], rhs[14], rhs[15],
+			],
+		),
+		3 => (
+			[
+				lhs[0], lhs[1], lhs[2], lhs[3], lhs[4], lhs[5], lhs[6], lhs[7], rhs[0], rhs[1],
+				rhs[2], rhs[3], rhs[4], rhs[5], rhs[6], rhs[7],
+			],
+			[
+				lhs[8], lhs[9], lhs[10], lhs[11], lhs[12], lhs[13], lhs[14], lhs[15], rhs[8],
+				rhs[9], rhs[10], rhs[11], rhs[12], rhs[13], rhs[14], rhs[15],
+			],
+		),
+		_ => interleave_big_block(lhs, rhs, log_block_len),
+	}
+}
+
+#[inline(always)]
+fn interleave_big_block<P: PackedField, const N: usize>(
+	lhs: &[P; N],
+	rhs: &[P; N],
+	log_block_len: usize,
+) -> ([P; N], [P; N]) {
+	let mut result_1 = <[P; N]>::zeroed();
+	let mut result_2 = <[P; N]>::zeroed();
+
+	for i in 0..N {
+		(result_1[i], result_2[i]) = lhs[i].interleave(rhs[i], log_block_len - checked_log_2(N));
+	}
+
+	(result_1, result_2)
+}
+
 // 128 bit
 define_byte_sliced_3d!(
 	ByteSlicedAES16x128b,
 	AESTowerField128b,
 	PackedAESBinaryField16x8b,
-	TowerLevel16
+	TowerLevel16,
+	16
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES32x64b,
+	ByteSlicedAES16x64b,
 	AESTowerField64b,
 	PackedAESBinaryField16x8b,
-	TowerLevel8
+	TowerLevel8,
+	8
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES64x32b,
+	ByteSlicedAES2x16x64b,
+	AESTowerField64b,
+	PackedAESBinaryField16x8b,
+	TowerLevel8,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x32b,
 	AESTowerField32b,
 	PackedAESBinaryField16x8b,
-	TowerLevel4
+	TowerLevel4,
+	4
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES128x16b,
+	ByteSlicedAES4x16x32b,
+	AESTowerField32b,
+	PackedAESBinaryField16x8b,
+	TowerLevel4,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x16b,
 	AESTowerField16b,
 	PackedAESBinaryField16x8b,
-	TowerLevel2
+	TowerLevel2,
+	2
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES256x8b,
+	ByteSlicedAES8x16x16b,
+	AESTowerField16b,
+	PackedAESBinaryField16x8b,
+	TowerLevel2,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x8b,
 	AESTowerField8b,
 	PackedAESBinaryField16x8b,
-	TowerLevel1
+	TowerLevel1,
+	1
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x16x8b,
+	AESTowerField8b,
+	PackedAESBinaryField16x8b,
+	TowerLevel1,
+	16
 );
 
 // 256 bit
@@ -559,31 +709,64 @@ define_byte_sliced_3d!(
 	ByteSlicedAES32x128b,
 	AESTowerField128b,
 	PackedAESBinaryField32x8b,
-	TowerLevel16
+	TowerLevel16,
+	16
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES64x64b,
+	ByteSlicedAES32x64b,
 	AESTowerField64b,
 	PackedAESBinaryField32x8b,
-	TowerLevel8
+	TowerLevel8,
+	8
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES128x32b,
+	ByteSlicedAES2x32x64b,
+	AESTowerField64b,
+	PackedAESBinaryField32x8b,
+	TowerLevel8,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES32x32b,
 	AESTowerField32b,
 	PackedAESBinaryField32x8b,
-	TowerLevel4
+	TowerLevel4,
+	4
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES256x16b,
+	ByteSlicedAES4x32x32b,
+	AESTowerField32b,
+	PackedAESBinaryField32x8b,
+	TowerLevel4,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES32x16b,
 	AESTowerField16b,
 	PackedAESBinaryField32x8b,
-	TowerLevel2
+	TowerLevel2,
+	2
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES512x8b,
+	ByteSlicedAES8x32x16b,
+	AESTowerField16b,
+	PackedAESBinaryField32x8b,
+	TowerLevel2,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES32x8b,
 	AESTowerField8b,
 	PackedAESBinaryField32x8b,
-	TowerLevel1
+	TowerLevel1,
+	1
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x32x8b,
+	AESTowerField8b,
+	PackedAESBinaryField32x8b,
+	TowerLevel1,
+	16
 );
 
 // 512 bit
@@ -591,31 +774,64 @@ define_byte_sliced_3d!(
 	ByteSlicedAES64x128b,
 	AESTowerField128b,
 	PackedAESBinaryField64x8b,
-	TowerLevel16
+	TowerLevel16,
+	16
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES128x64b,
+	ByteSlicedAES64x64b,
 	AESTowerField64b,
 	PackedAESBinaryField64x8b,
-	TowerLevel8
+	TowerLevel8,
+	8
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES256x32b,
+	ByteSlicedAES2x64x64b,
+	AESTowerField64b,
+	PackedAESBinaryField64x8b,
+	TowerLevel8,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES64x32b,
 	AESTowerField32b,
 	PackedAESBinaryField64x8b,
-	TowerLevel4
+	TowerLevel4,
+	4
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES512x16b,
+	ByteSlicedAES4x64x32b,
+	AESTowerField32b,
+	PackedAESBinaryField64x8b,
+	TowerLevel4,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES64x16b,
 	AESTowerField16b,
 	PackedAESBinaryField64x8b,
-	TowerLevel2
+	TowerLevel2,
+	2
 );
 define_byte_sliced_3d!(
-	ByteSlicedAES1024x8b,
+	ByteSlicedAES8x64x16b,
+	AESTowerField16b,
+	PackedAESBinaryField64x8b,
+	TowerLevel2,
+	16
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES64x8b,
 	AESTowerField8b,
 	PackedAESBinaryField64x8b,
-	TowerLevel1
+	TowerLevel1,
+	1
+);
+define_byte_sliced_3d!(
+	ByteSlicedAES16x64x8b,
+	AESTowerField8b,
+	PackedAESBinaryField64x8b,
+	TowerLevel1,
+	16
 );
 
 macro_rules! impl_packed_extension{
@@ -679,24 +895,24 @@ macro_rules! impl_packed_extension{
 
 impl_packed_extension!(
 	ByteSlicedAES16x128b,
-	ByteSlicedAES32x64b,
-	ByteSlicedAES64x32b,
-	ByteSlicedAES128x16b,
-	ByteSlicedAES256x8b,
+	ByteSlicedAES2x16x64b,
+	ByteSlicedAES4x16x32b,
+	ByteSlicedAES8x16x16b,
+	ByteSlicedAES16x16x8b,
 );
 
 impl_packed_extension!(
 	ByteSlicedAES32x128b,
-	ByteSlicedAES64x64b,
-	ByteSlicedAES128x32b,
-	ByteSlicedAES256x16b,
-	ByteSlicedAES512x8b,
+	ByteSlicedAES2x32x64b,
+	ByteSlicedAES4x32x32b,
+	ByteSlicedAES8x32x16b,
+	ByteSlicedAES16x32x8b,
 );
 
 impl_packed_extension!(
 	ByteSlicedAES64x128b,
-	ByteSlicedAES128x64b,
-	ByteSlicedAES256x32b,
-	ByteSlicedAES512x16b,
-	ByteSlicedAES1024x8b,
+	ByteSlicedAES2x64x64b,
+	ByteSlicedAES4x64x32b,
+	ByteSlicedAES8x64x16b,
+	ByteSlicedAES16x64x8b,
 );

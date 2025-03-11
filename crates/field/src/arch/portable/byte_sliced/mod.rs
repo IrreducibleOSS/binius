@@ -162,23 +162,34 @@ pub mod tests {
 
 	// 128-bit byte-sliced
 	define_byte_sliced_test!(tests_3d_16x128, ByteSlicedAES16x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_32x64, ByteSlicedAES32x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_64x32, ByteSlicedAES64x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_128x16, ByteSlicedAES128x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_256x8, ByteSlicedAES256x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_16x64, ByteSlicedAES16x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_2x16x64, ByteSlicedAES2x16x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_16x32, ByteSlicedAES16x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_4x16x32, ByteSlicedAES4x16x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_16x16, ByteSlicedAES16x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_8x16x16, ByteSlicedAES8x16x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_16x8, ByteSlicedAES16x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_16x16x8, ByteSlicedAES16x16x8b, AESTowerField8b);
 
 	// 256-bit byte-sliced
-
 	define_byte_sliced_test!(tests_3d_32x128, ByteSlicedAES32x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_64x64, ByteSlicedAES64x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_128x32, ByteSlicedAES128x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_256x16, ByteSlicedAES256x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_512x8, ByteSlicedAES512x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_32x64, ByteSlicedAES32x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_2x32x64, ByteSlicedAES2x32x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_32x32, ByteSlicedAES32x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_4x32x32, ByteSlicedAES4x32x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_32x16, ByteSlicedAES32x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_8x32x16, ByteSlicedAES8x32x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_32x8, ByteSlicedAES32x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_16x32x8, ByteSlicedAES16x32x8b, AESTowerField8b);
 
 	// 512-bit byte-sliced
 	define_byte_sliced_test!(tests_3d_64x128, ByteSlicedAES64x128b, AESTowerField128b);
-	define_byte_sliced_test!(tests_3d_128x64, ByteSlicedAES128x64b, AESTowerField64b);
-	define_byte_sliced_test!(tests_3d_256x32, ByteSlicedAES256x32b, AESTowerField32b);
-	define_byte_sliced_test!(tests_3d_512x16, ByteSlicedAES512x16b, AESTowerField16b);
-	define_byte_sliced_test!(tests_3d_1024x8, ByteSlicedAES1024x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_64x64, ByteSlicedAES64x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_2x64x64, ByteSlicedAES2x64x64b, AESTowerField64b);
+	define_byte_sliced_test!(tests_3d_64x32, ByteSlicedAES64x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_4x64x32, ByteSlicedAES4x64x32b, AESTowerField32b);
+	define_byte_sliced_test!(tests_3d_64x16, ByteSlicedAES64x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_8x64x16, ByteSlicedAES8x64x16b, AESTowerField16b);
+	define_byte_sliced_test!(tests_3d_64x8, ByteSlicedAES64x8b, AESTowerField8b);
+	define_byte_sliced_test!(tests_3d_16x64x8, ByteSlicedAES16x64x8b, AESTowerField8b);
 }
