@@ -3,6 +3,7 @@
 use std::{
 	cell::{Ref, RefCell, RefMut},
 	iter, slice,
+	sync::Arc,
 };
 
 use anyhow::ensure;
@@ -16,7 +17,7 @@ use binius_field::{
 	underlier::{UnderlierType, WithUnderlier},
 	ExtensionField, PackedField, TowerField,
 };
-use binius_math::{CompositionPoly, MultilinearExtension};
+use binius_math::{CompositionPoly, MultilinearExtension, MultilinearPoly};
 use binius_maybe_rayon::prelude::*;
 use binius_utils::checked_arithmetics::{checked_log_2, log2_ceil_usize};
 use bytemuck::{must_cast_slice, must_cast_slice_mut, zeroed_vec, Pod};
@@ -28,7 +29,7 @@ use super::{
 	statement::Statement,
 	table::{Table, TableId},
 	types::{B1, B128, B16, B32, B64, B8},
-	ColumnId, Expr,
+	ColumnDef, ColumnId, ColumnIndex, Expr,
 };
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
@@ -60,17 +61,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 
 	pub fn into_multilinear_extension_index(
 		self,
-		statement: &Statement<F>,
-	) -> MultilinearExtensionIndex<'alloc, U, F>
+		statement: &Statement<B128>,
+	) -> MultilinearExtensionIndex<'alloc, U, B128>
 	where
-		F: ExtensionField<B1>
-			+ ExtensionField<B8>
-			+ ExtensionField<B16>
-			+ ExtensionField<B32>
-			+ ExtensionField<B64>
-			+ ExtensionField<B128>,
-		U: PackScalar<F>
-			+ PackScalar<B1>
+		U: PackScalar<B1>
 			+ PackScalar<B8>
 			+ PackScalar<B16>
 			+ PackScalar<B32>
@@ -81,52 +75,14 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 		let mut first_oracle_id_in_table = 0;
 		for table in self.tables {
 			let table_id = table.table_id();
-			let mut count = 0;
+			let cols = immutable_witness_index_columns(table.cols);
 
-			for col in table.cols.into_iter() {
+			let mut count = 0;
+			for col in cols {
 				let oracle_id = first_oracle_id_in_table + col.id.table_index;
 				let n_vars = table.log_capacity + col.shape.log_values_per_row;
-				let witness = match col.shape.tower_height {
-					0 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B1>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					3 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B8>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					4 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B16>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					5 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B32>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					6 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B64>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					7 => MultilinearExtension::new(
-						n_vars,
-						PackedType::<U, B128>::from_underliers_ref(col.data),
-					)
-					.unwrap()
-					.specialize_arc_dyn(),
-					_ => {
-						panic!("Unsupported tower height: {}", col.shape.tower_height);
-					}
-				};
+				let witness =
+					multilin_poly_from_underlier_data(col.data, n_vars, col.shape.tower_height);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -151,6 +107,44 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 	}
 }
 
+fn multilin_poly_from_underlier_data<U>(
+	data: &[U],
+	n_vars: usize,
+	tower_height: usize,
+) -> Arc<dyn MultilinearPoly<PackedType<U, B128>> + Send + Sync + '_>
+where
+	U: PackScalar<B1>
+		+ PackScalar<B8>
+		+ PackScalar<B16>
+		+ PackScalar<B32>
+		+ PackScalar<B64>
+		+ PackScalar<B128>,
+{
+	match tower_height {
+		0 => MultilinearExtension::new(n_vars, PackedType::<U, B1>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		3 => MultilinearExtension::new(n_vars, PackedType::<U, B8>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		4 => MultilinearExtension::new(n_vars, PackedType::<U, B16>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		5 => MultilinearExtension::new(n_vars, PackedType::<U, B32>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		6 => MultilinearExtension::new(n_vars, PackedType::<U, B64>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		7 => MultilinearExtension::new(n_vars, PackedType::<U, B128>::from_underliers_ref(data))
+			.unwrap()
+			.specialize_arc_dyn(),
+		_ => {
+			panic!("Unsupported tower height: {tower_height}");
+		}
+	}
+}
+
 /// Holds witness column data for a table, indexed by column index.
 #[derive(Debug, CopyGetters)]
 pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
@@ -172,7 +166,43 @@ pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F
 pub struct WitnessIndexColumn<'a, U: UnderlierType> {
 	pub id: ColumnId,
 	pub shape: ColumnShape,
-	pub data: &'a mut [U],
+	pub data: WitnessDataMut<'a, U>,
+}
+
+#[derive(Debug)]
+pub enum WitnessDataMut<'alloc, U: UnderlierType> {
+	Owned(&'alloc mut [U]),
+	SameAsTableIndex(ColumnIndex),
+}
+
+#[derive(Debug)]
+pub enum RefCellData<'alloc, U: UnderlierType> {
+	Owned(RefCell<&'alloc mut [U]>),
+	SameAsTableIndex(ColumnIndex),
+}
+
+#[derive(Debug)]
+pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
+	pub id: ColumnId,
+	pub shape: ColumnShape,
+	pub data: &'a [U],
+}
+
+fn immutable_witness_index_columns<'a, U: UnderlierType>(
+	cols: Vec<WitnessIndexColumn<'a, U>>,
+) -> Vec<ImmutableWitnessIndexColumn<'a, U>> {
+	let mut result: Vec<ImmutableWitnessIndexColumn<'a, U>> = Vec::with_capacity(cols.len());
+	for col in cols {
+		result.push(ImmutableWitnessIndexColumn {
+			id: col.id,
+			shape: col.shape,
+			data: match col.data {
+				WitnessDataMut::Owned(data) => data,
+				WitnessDataMut::SameAsTableIndex(index) => result[index].data,
+			},
+		});
+	}
+	result
 }
 
 impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc, U, F> {
@@ -186,24 +216,31 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.columns
 			.iter()
 			.map(|col| {
-				let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-				min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
-				let log_col_bits = log_cell_bits + log_capacity;
+				let data = match col.col {
+					ColumnDef::Packed { col: inner_col, .. } => {
+						WitnessDataMut::SameAsTableIndex(inner_col.table_index)
+					}
+					_ => {
+						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
+						min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
+						let log_col_bits = log_cell_bits + log_capacity;
 
-				// TODO: Error instead of panic
-				if log_col_bits < U::LOG_BITS {
-					panic!("capacity is too low");
-				}
+						// TODO: Error instead of panic
+						if log_col_bits < U::LOG_BITS {
+							panic!("capacity is too low");
+						}
 
-				// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
-				// Underlier is Pod.
-				let col_data =
-					allocator.alloc_slice_fill_default(1 << (log_col_bits - U::LOG_BITS));
-
+						// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
+						// Underlier is Pod.
+						WitnessDataMut::Owned(
+							allocator.alloc_slice_fill_default(1 << (log_col_bits - U::LOG_BITS)),
+						)
+					}
+				};
 				WitnessIndexColumn {
 					id: col.id,
 					shape: col.shape,
-					data: col_data,
+					data,
 				}
 			})
 			.collect();
@@ -230,7 +267,10 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		let cols = self
 			.cols
 			.iter_mut()
-			.map(|col| RefCell::new(&mut *col.data))
+			.map(|col| match &mut col.data {
+				WitnessDataMut::Owned(data) => RefCellData::Owned(RefCell::new(data)),
+				WitnessDataMut::SameAsTableIndex(index) => RefCellData::SameAsTableIndex(*index),
+			})
 			.collect();
 		TableWitnessIndexSegment {
 			table: self.table,
@@ -253,17 +293,21 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			let col_strides = self_ref
 				.cols
 				.iter()
-				.map(|col| {
-					let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
-					// Safety: The function borrows self mutably, so we have mutable access to
-					// all columns and thus none can be borrowed by anyone else. The loop is
-					// constructed to borrow disjoint segments of each column -- if this loop
-					// were transposed, we would use `chunks_mut`.
-					let col_stride = unsafe {
-						cast_slice_ref_to_mut(&col.data[i << log_stride..(i + 1) << log_stride])
-					};
-					RefCell::new(col_stride)
+				.map(|col| match &col.data {
+					WitnessDataMut::SameAsTableIndex(index) => {
+						RefCellData::SameAsTableIndex(*index)
+					}
+					WitnessDataMut::Owned(data) => {
+						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
+						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+						RefCellData::Owned(RefCell::new(unsafe {
+							// Safety: The function borrows self mutably, so we have mutable access to
+							// all columns and thus none can be borrowed by anyone else. The loop is
+							// constructed to borrow disjoint segments of each column -- if this loop
+							// were transposed, we would use `chunks_mut`.
+							cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
+						}))
+					}
 				})
 				.collect();
 			TableWitnessIndexSegment {
@@ -291,19 +335,24 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				let col_strides = self_ref
 					.cols
 					.iter()
-					.map(|col| {
-						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-						let log_stride = log_size + log_cell_bits - U::LOG_BITS;
-						// Safety: The function borrows self mutably, so we have mutable access to
-						// all columns and thus none can be borrowed by anyone else. The loop is
-						// constructed to borrow disjoint segments of each column -- if this loop
-						// were transposed, we would use `chunks_mut`.
-						let col_stride = unsafe {
-							cast_slice_ref_to_mut(
-								&col.data[start << log_stride..(start + 1) << log_stride],
-							)
-						};
-						RefCell::new(col_stride)
+					.map(|col| match &col.data {
+						WitnessDataMut::SameAsTableIndex(index) => {
+							RefCellData::SameAsTableIndex(*index)
+						}
+						WitnessDataMut::Owned(data) => {
+							let log_cell_bits =
+								col.shape.tower_height + col.shape.log_values_per_row;
+							let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+							RefCellData::Owned(RefCell::new(unsafe {
+								// Safety: The function borrows self mutably, so we have mutable access to
+								// all columns and thus none can be borrowed by anyone else. The loop is
+								// constructed to borrow disjoint segments of each column -- if this loop
+								// were transposed, we would use `chunks_mut`.
+								cast_slice_ref_to_mut(
+									&data[start << log_stride..(start + 1) << log_stride],
+								)
+							}))
+						}
 					})
 					.collect();
 				TableWitnessIndexSegment {
@@ -320,14 +369,18 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 /// This provides runtime-checked access to slices of the witness columns. This is used separately
 /// from [`TableWitnessIndex`] so that witness population can be parallelized over segments.
 #[derive(Debug, CopyGetters)]
-pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
-	table: &'a Table<F>,
-	cols: Vec<RefCell<&'a mut [U]>>,
+pub struct TableWitnessIndexSegment<
+	'alloc,
+	U: UnderlierType = OptimalUnderlier,
+	F: TowerField = B128,
+> {
+	table: &'alloc Table<F>,
+	cols: Vec<RefCellData<'alloc, U>>,
 	#[get_copy = "pub"]
 	log_size: usize,
 }
 
-impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
+impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U, F> {
 	pub fn get<FSub: TowerField, const V: usize>(
 		&self,
 		col: Col<FSub, V>,
@@ -345,8 +398,7 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		}
 
 		let col = self
-			.cols
-			.get(col.table_index)
+			.get_col_data(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| <PackedType<U, FSub>>::from_underliers_ref(x)))
@@ -370,8 +422,7 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		}
 
 		let col = self
-			.cols
-			.get(col.table_index)
+			.get_col_data(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| <PackedType<U, FSub>>::from_underliers_ref_mut(x)))
@@ -386,8 +437,7 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		F: ExtensionField<FSub>,
 	{
 		let col = self
-			.cols
-			.get(col.table_index)
+			.get_col_data(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow().map_err(Error::WitnessBorrow)?;
 		Ok(Ref::map(col_ref, |x| must_cast_slice(x)))
@@ -409,8 +459,7 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 		}
 
 		let col = self
-			.cols
-			.get(col.table_index)
+			.get_col_data(col.table_index)
 			.ok_or_else(|| Error::MissingColumn(col.id()))?;
 		let col_ref = col.try_borrow_mut().map_err(Error::WitnessBorrowMut)?;
 		Ok(RefMut::map(col_ref, |x| must_cast_slice_mut(x)))
@@ -480,6 +529,14 @@ impl<U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'_, U, F> {
 
 	pub fn size(&self) -> usize {
 		1 << self.log_size
+	}
+
+	fn get_col_data(&self, table_index: usize) -> Option<&RefCell<&'alloc mut [U]>> {
+		match self.cols.get(table_index) {
+			Some(RefCellData::Owned(data)) => Some(data),
+			Some(RefCellData::SameAsTableIndex(table_index)) => self.get_col_data(*table_index),
+			None => None,
+		}
 	}
 }
 
