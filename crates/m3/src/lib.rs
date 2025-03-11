@@ -1,5 +1,6 @@
-#![feature(array_try_map)]
 // Copyright 2025 Irreducible Inc.
+
+#![feature(array_try_map)]
 
 //! A library for building Binius constraint systems and instances using M3 arithmetization.
 //!
