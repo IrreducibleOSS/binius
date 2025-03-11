@@ -12,6 +12,7 @@ binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 cfg-if.workspace = true
+concat-idents.workspace = true
 derive_more.workspace = true
 rand.workspace = true
 seq-macro.workspace = true

@@ -101,7 +101,7 @@ fn test_extensions_and_packings() {
 
 	let data_as_b64 = data_to_hash
 		.chunks_exact(8)
-		.map(|x| AESTowerField64b::from_bases(x).unwrap())
+		.map(|x| AESTowerField64b::from_bases(x.iter().copied()).unwrap())
 		.collect::<Vec<_>>();
 	assert_eq!(HasherDigest::<_, Groestl256<_, AESTowerField8b>>::hash(&data_as_b64), expected);
 
