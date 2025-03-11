@@ -158,8 +158,6 @@ impl Vision32bPermutation {
 
 #[inline]
 fn add_packed_768<P: PackedField, const N: usize>(a: &mut [P; N], b: &[P; N]) {
-	println!("add_packed_768, b = {:?}", b);
-
 	for (a, b) in a.iter_mut().zip(b.iter()) {
 		*a += *b;
 	}
