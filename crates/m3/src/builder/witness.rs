@@ -571,7 +571,7 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 		oracle_id: OracleId,
 	) -> Option<&RefCell<&'alloc mut [U]>> {
 		match self.cols.get(oracle_id) {
-			Some(RefCellData::Owned(data)) => Some(&*data),
+			Some(RefCellData::Owned(data)) => Some(data),
 			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
