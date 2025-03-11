@@ -13,7 +13,7 @@ use binius_field::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField8b, ExtensionField, PackedField,
+	ExtensionField, PackedField,
 };
 use bytemuck::Pod;
 
@@ -134,7 +134,9 @@ impl<const V: usize> SBox<V> {
 
 #[cfg(test)]
 mod tests {
-	use binius_field::{arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero};
+	use binius_field::{
+		arch::OptimalUnderlier128b, arithmetic_traits::InvertOrZero, AESTowerField8b,
+	};
 	use bumpalo::Bump;
 	use rand::{prelude::StdRng, SeedableRng};
 
