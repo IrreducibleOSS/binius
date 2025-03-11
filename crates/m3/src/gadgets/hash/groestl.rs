@@ -7,23 +7,19 @@
 use std::{array, iter};
 
 use anyhow::Result;
-use binius_core::oracle::ShiftVariant;
 use binius_field::{
 	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed::{get_packed_slice, set_packed_slice},
-	AESTowerField8b, ExtensionField, Field, PackedField,
+	AESTowerField8b, ExtensionField, PackedField,
 };
 use bytemuck::Pod;
 
 use crate::builder::{
 	upcast_col, upcast_expr, Col, Expr, TableBuilder, TableWitnessIndexSegment, B1, B8,
 };
-
-/// The first row of the circulant matrix defining the MixBytes step in Grøstl.
-const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
 
 /// The affine transformation matrix for the Rijndael S-box, isomorphically converted to the
 /// canonical tower basis.
@@ -44,84 +40,6 @@ const S_BOX_TOWER_MATRIX_COLS: [B8; 8] = [
 /// The affine transformation offset for the Rijndael S-box, isomorphically converted to the
 /// canonical tower basis.
 const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermutationVariant {
-	P,
-	Q,
-}
-
-#[derive(Debug)]
-pub struct PermutationRound {
-	// Inputs
-	pub state_in: [Col<B8, 8>; 8],
-	round_const: Col<B8, 8>,
-	sbox: [SBox<8>; 8],
-	shift: [Col<B8, 8>; 8],
-	pub state_out: [Col<B8, 8>; 8],
-}
-
-impl PermutationRound {
-	pub fn new(
-		table: &mut TableBuilder,
-		pq: PermutationVariant,
-		state_in: [Col<B8, 8>; 8],
-	) -> Self {
-		let round_const = table.add_committed("RoundConstant");
-
-		// AddRoundConstant + SubBytes
-		let sbox = array::from_fn(|i| {
-			let sbox_in = match (i, pq) {
-				(0, PermutationVariant::P) => state_in[0] + round_const,
-				(_, PermutationVariant::P) => state_in[i].into(),
-				(7, PermutationVariant::Q) => state_in[7] + B8::new(0xFF) + round_const,
-				(_, PermutationVariant::Q) => state_in[i] + B8::new(0xFF),
-			};
-			SBox::new(&mut table.with_namespace(format!("SubBytes[{i}]")), sbox_in)
-		});
-
-		// ShiftBytes
-		let shift = array::from_fn(|i| {
-			let offset = match pq {
-				PermutationVariant::P => (8 - i) % 8,
-				PermutationVariant::Q => (8 - (2 * i + 1)) % 8,
-			};
-			if offset == 0 {
-				sbox[i].output
-			} else {
-				table.add_shifted(
-					format!("ShiftBytes[{i}]"),
-					sbox[i].output,
-					3,
-					i,
-					ShiftVariant::CircularLeft,
-				)
-			}
-		});
-
-		// MixBytes
-		let mix_bytes_scalars = MIX_BYTES_VEC.map(|byte| B8::from(AESTowerField8b::new(byte)));
-		let state_out = array::from_fn(|i| {
-			let mix_bytes: [_; 8] =
-				array::from_fn(|j| shift[i] * mix_bytes_scalars[(8 + i - j) % 8]);
-			table.add_linear_combination(
-				format!("MixBytes[{i}]"),
-				mix_bytes
-					.into_iter()
-					.reduce(|a, b| a + b)
-					.expect("mix_bytes has length 8"),
-			)
-		});
-
-		Self {
-			state_in,
-			round_const,
-			sbox,
-			shift,
-			state_out,
-		}
-	}
-}
 
 /// A gadget for the [Rijndael S-box].
 ///
@@ -257,15 +175,6 @@ mod tests {
 		let witness = witness.into_multilinear_extension_index(&statement);
 
 		binius_core::constraint_system::validate::validate_witness(&ccs, &[], &witness).unwrap();
-	}
-
-	#[test]
-	fn test_p_permutation_round() {
-		let mut cs = ConstraintSystem::new();
-		let mut table = cs.add_table("groestl permutation");
-
-		let state_in = array::from_fn(|i| table.add_committed(format!("state_in[{}]", i)));
-		let _round = PermutationRound::new(&mut table, PermutationVariant::P, state_in);
 	}
 
 	#[test]
