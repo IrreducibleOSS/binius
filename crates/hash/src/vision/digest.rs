@@ -15,8 +15,8 @@ use crate::permutation::Permutation;
 const RATE_AS_U32: usize = 16;
 const RATE_AS_U8: usize = RATE_AS_U32 * std::mem::size_of::<u32>();
 
-const PADDING_START: u8 = 0x01;
-const PADDING_END: u8 = 0x80;
+const PADDING_START: u8 = 0x80;
+const PADDING_END: u8 = 0x01;
 
 lazy_static! {
 	static ref TRANS_AES_TO_CANONICAL: AesToBinaryTransformation<PackedAESBinaryField8x32b, PackedBinaryField8x32b> =
@@ -148,8 +148,8 @@ mod tests {
 		let data = [0xde, 0xad, 0xbe, 0xef];
 		hasher.update(data);
 		let out = hasher.finalize();
-		// This hash is retrieved from a modified python implementation with the proposed padding and the changed mds matrix.
-		let expected = &hex!("b575b478f36c087a9916731cde17b90a37da32c226f6c9a6334a177dfc38fa4b");
+		// This hash is retrieved from a modified python implementation with the Keccak padding scheme and the changed mds matrix.
+		let expected = &hex!("8ed389809fabe91cead4786eb08e2d32647a9ac69143040de500e4465c72f173");
 		assert_eq!(expected, &*out);
 	}
 
@@ -160,7 +160,7 @@ mod tests {
 		hasher.update(input.as_bytes());
 		let out = hasher.finalize();
 
-		let expected = &hex!("0205ce7231ac64f0705eb5409ae7438198adabd7d171510b933c1dd1e8747418");
+		let expected = &hex!("b615664d0249149b5655a86919169f0fd4b44fec83d4c43e4f1f124c3f9a82c3");
 		assert_eq!(expected, &*out);
 
 		let mut hasher = VisionHasherDigest::default();
@@ -179,7 +179,7 @@ mod tests {
 		let input = "You can prove anything you want by coldly logical reason--if you pick the proper postulates.";
 		hasher.update(input.as_bytes());
 
-		let expected = &hex!("03c072f054ba8bf13cad90b759b814d247ba986e1b00b06a85eb1a7387f493ff");
+		let expected = &hex!("0aa2879dcac953550ebe5d9da2a91d3c0356feca9044acf4edca87b28d9959e1");
 		let out = hasher.finalize();
 		assert_eq!(expected, &*out);
 	}
