@@ -16,7 +16,7 @@ use std::{
 /// These separate implementations are necessary to overcome the limitations of const generics in Rust.
 /// These implementations eliminate costly bounds checking that would otherwise be imposed by the compiler
 /// and allow easy inlining of recursive functions.
-pub trait TowerLevel {
+pub trait TowerLevel: 'static {
 	// WIDTH is ALWAYS a power of 2
 	const WIDTH: usize;
 

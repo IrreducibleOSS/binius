@@ -1,12 +1,13 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{packed::get_packed_slice, PackedField};
+use binius_field::{
+	packed::{get_packed_slice, packed_from_fn_with_offset},
+	PackedField,
+};
 use binius_hal::ComputationBackend;
 use binius_math::EvaluationOrder;
 use binius_maybe_rayon::prelude::*;
 use tracing::instrument;
-
-use crate::protocols::utils::packed_from_fn_with_offset;
 
 #[instrument(skip_all, level = "debug")]
 pub fn fold_partial_eq_ind<P, Backend>(

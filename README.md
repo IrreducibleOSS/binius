@@ -57,7 +57,7 @@ cargo doc --no-deps
 
 This project is under active development. The developers will make breaking changes at will. Any modules that are stabilized will be explicitly documented as such.
 
-We use GitLab's issue system for tracking bugs, features, and other development tasks.
+We use GitHub's issue system for tracking bugs, features, and other development tasks.
 
 This codebase certainly contains bugs at this point in its development. *We discourage the use of this library for security-critical applications until future notice.* Any bugs, including those affecting the security of the system, may be filed publicly as an issue.
 

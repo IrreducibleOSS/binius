@@ -42,10 +42,22 @@ mod tests {
 	}
 
 	#[test]
-	fn test_lasso_modular_mul_bytesliced() {
+	fn test_lasso_modular_mul_bytesliced_level_2() {
 		test_bytesliced_modular_mul::<1, TowerLevel2>();
+	}
+
+	#[test]
+	fn test_lasso_modular_mul_bytesliced_level_4() {
 		test_bytesliced_modular_mul::<2, TowerLevel4>();
+	}
+
+	#[test]
+	fn test_lasso_modular_mul_bytesliced_level_8() {
 		test_bytesliced_modular_mul::<4, TowerLevel8>();
+	}
+
+	#[test]
+	fn test_lasso_modular_mul_bytesliced_level_16() {
 		test_bytesliced_modular_mul::<8, TowerLevel16>();
 	}
 

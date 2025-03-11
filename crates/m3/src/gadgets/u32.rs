@@ -13,18 +13,18 @@ use crate::builder::{column::Col, types::B1, witness::TableWitnessIndexSegment, 
 #[derive(Debug)]
 pub struct U32Add {
 	// Inputs
-	pub xin: Col<B1, 5>,
-	pub yin: Col<B1, 5>,
+	pub xin: Col<B1, 32>,
+	pub yin: Col<B1, 32>,
 
 	// Private
-	cin: Col<B1, 5>,
-	cout: Col<B1, 5>,
-	cout_shl: Col<B1, 5>,
+	cin: Col<B1, 32>,
+	cout: Col<B1, 32>,
+	cout_shl: Col<B1, 32>,
 
 	// Outputs
 	/// The output column, either committed if `flags.commit_zout` is set, otherwise a linear
 	/// combination derived column.
-	pub zout: Col<B1, 5>,
+	pub zout: Col<B1, 32>,
 	/// This is `Some` if `flags.expose_final_carry` is set, otherwise it is `None`.
 	pub final_carry: Option<Col<B1>>,
 	/// Flags modifying the gadget's behavior.
@@ -36,7 +36,7 @@ pub struct U32Add {
 pub struct U32AddFlags {
 	// Optionally a column for a dynamic carry in bit. This *must* be zero in all bits except the
 	// 0th.
-	pub carry_in_bit: Option<Col<B1, 5>>,
+	pub carry_in_bit: Option<Col<B1, 32>>,
 	pub commit_zout: bool,
 	pub expose_final_carry: bool,
 }
@@ -44,11 +44,11 @@ pub struct U32AddFlags {
 impl U32Add {
 	pub fn new(
 		table: &mut TableBuilder,
-		xin: Col<B1, 5>,
-		yin: Col<B1, 5>,
+		xin: Col<B1, 32>,
+		yin: Col<B1, 32>,
 		flags: U32AddFlags,
 	) -> Self {
-		let cout = table.add_committed::<B1, 5>("cout");
+		let cout = table.add_committed::<B1, 32>("cout");
 		let cout_shl = table.add_shifted("cout_shl", cout, 5, 1, ShiftVariant::LogicalLeft);
 
 		let cin = if let Some(carry_in_bit) = flags.carry_in_bit {
@@ -64,7 +64,7 @@ impl U32Add {
 		table.assert_zero("carry_out", (xin + cin) * (yin + cin) + cin - cout);
 
 		let zout = if flags.commit_zout {
-			let zout = table.add_committed::<B1, 5>("zout");
+			let zout = table.add_committed::<B1, 32>("zout");
 			table.assert_zero("zout", xin + yin + cin - zout);
 			zout
 		} else {
@@ -122,8 +122,9 @@ impl U32Add {
 			// When the carry in bit is fixed to zero, we can simplify the logic.
 			let mut cin = index.get_mut_as(self.cin)?;
 			for i in 0..index.size() {
-				let (zout, carry) = xin[i].overflowing_add(yin[i]);
-				cin[i] = xin[i] ^ yin[i] ^ zout;
+				let carry;
+				(zout[i], carry) = xin[i].overflowing_add(yin[i]);
+				cin[i] = xin[i] ^ yin[i] ^ zout[i];
 				cout[i] = (carry as u32) << 31 | cin[i] >> 1;
 				if let Some(ref mut final_carry) = final_carry {
 					set_packed_slice(&mut *final_carry, i, if carry { B1::ONE } else { B1::ZERO });

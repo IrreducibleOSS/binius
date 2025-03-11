@@ -1,7 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use core::arch::x86_64::*;
-use std::{array, ops::Deref};
+use std::array;
 
 use gfni_arithmetics::{get_8x8_matrix, GfniType};
 

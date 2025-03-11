@@ -21,7 +21,7 @@ pub unsafe trait Divisible<U: UnderlierType>: UnderlierType {
 
 	/// This is actually `[U; Self::WIDTH]` but we can't use it as the default value in the trait definition
 	/// without `generic_const_exprs` feature enabled.
-	type Array: IntoIterator<Item = U, IntoIter: Send>;
+	type Array: IntoIterator<Item = U, IntoIter: Send + Clone>;
 
 	fn split_val(self) -> Self::Array;
 	fn split_ref(&self) -> &[U];

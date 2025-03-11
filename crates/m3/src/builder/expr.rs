@@ -17,11 +17,9 @@ pub struct ZeroConstraint<F: Field> {
 ///
 /// If the expression degree is 1, then it is a linear expression.
 #[derive(Debug, Getters, CopyGetters)]
-pub struct Expr<F: TowerField, const V: usize> {
+pub struct Expr<F: TowerField, const VALUES_PER_ROW: usize> {
 	#[get_copy = "pub"]
 	table_id: TableId,
-	#[get_copy = "pub"]
-	partition_id: usize,
 	#[get = "pub"]
 	expr: ArithExpr<F>,
 }
@@ -33,19 +31,26 @@ impl<F: TowerField, const V: usize> Expr<F, V> {
 	}
 }
 
+impl<F: TowerField, const V: usize> From<Col<F, V>> for Expr<F, V> {
+	fn from(value: Col<F, V>) -> Self {
+		Expr {
+			table_id: value.table_id,
+			expr: ArithExpr::Var(value.partition_index),
+		}
+	}
+}
+
 impl<F: TowerField, const V: usize> std::ops::Add<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn add(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.id.table_id, rhs.id.table_id);
-		assert_eq!(self.id.partition_id, rhs.id.partition_id);
+		assert_eq!(self.table_id, rhs.table_id);
 
-		let lhs_expr = ArithExpr::Var(self.id.partition_index);
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
+		let lhs_expr = ArithExpr::Var(self.partition_index);
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 
 		Expr {
-			table_id: self.id.table_id,
-			partition_id: self.id.partition_id,
+			table_id: self.table_id,
 			expr: lhs_expr + rhs_expr,
 		}
 	}
@@ -55,14 +60,11 @@ impl<F: TowerField, const V: usize> std::ops::Add<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn add(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.id.table_id);
-		assert_eq!(self.partition_id, rhs.id.partition_id);
+		assert_eq!(self.table_id, rhs.table_id);
 
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
-
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 		Expr {
 			table_id: self.table_id,
-			partition_id: self.partition_id,
 			expr: self.expr + rhs_expr,
 		}
 	}
@@ -73,12 +75,29 @@ impl<F: TowerField, const V: usize> std::ops::Add<Expr<F, V>> for Expr<F, V> {
 
 	fn add(self, rhs: Expr<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		assert_eq!(self.partition_id, rhs.partition_id);
 		Expr {
 			table_id: self.table_id,
-			partition_id: self.partition_id,
 			expr: self.expr + rhs.expr,
 		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Add<F> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: F) -> Self::Output {
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr + ArithExpr::Const(rhs),
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Add<F> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn add(self, rhs: F) -> Self::Output {
+		Expr::from(self) + rhs
 	}
 }
 
@@ -86,14 +105,12 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn sub(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.id.table_id, rhs.id.table_id);
-		assert_eq!(self.id.partition_id, rhs.id.partition_id);
-		let lhs_expr = ArithExpr::Var(self.id.partition_index);
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
+		assert_eq!(self.table_id, rhs.table_id);
+		let lhs_expr = ArithExpr::Var(self.partition_index);
+		let rhs_expr = ArithExpr::Var(rhs.partition_index);
 
 		Expr {
-			table_id: self.id.table_id,
-			partition_id: self.id.partition_id,
+			table_id: self.table_id,
 			expr: lhs_expr - rhs_expr,
 		}
 	}
@@ -103,15 +120,7 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn sub(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.id.table_id);
-		assert_eq!(self.partition_id, rhs.id.partition_id);
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
-
-		Expr {
-			table_id: self.table_id,
-			partition_id: self.partition_id,
-			expr: self.expr - rhs_expr,
-		}
+		self - Expr::from(rhs)
 	}
 }
 
@@ -120,12 +129,29 @@ impl<F: TowerField, const V: usize> std::ops::Sub<Expr<F, V>> for Expr<F, V> {
 
 	fn sub(self, rhs: Expr<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		assert_eq!(self.partition_id, rhs.partition_id);
 		Expr {
 			table_id: self.table_id,
-			partition_id: self.partition_id,
 			expr: self.expr - rhs.expr,
 		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Sub<F> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: F) -> Self::Output {
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr - ArithExpr::Const(rhs),
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Sub<F> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn sub(self, rhs: F) -> Self::Output {
+		Expr::from(self) - rhs
 	}
 }
 
@@ -133,16 +159,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Self> for Col<F, V> {
 	type Output = Expr<F, V>;
 
 	fn mul(self, rhs: Self) -> Self::Output {
-		assert_eq!(self.id.table_id, rhs.id.table_id);
-		assert_eq!(self.id.partition_id, rhs.id.partition_id);
-		let lhs_expr = ArithExpr::Var(self.id.partition_index);
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
-
-		Expr {
-			table_id: self.id.table_id,
-			partition_id: self.id.partition_id,
-			expr: lhs_expr * rhs_expr,
-		}
+		Expr::from(self) * Expr::from(rhs)
 	}
 }
 
@@ -150,16 +167,7 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Col<F, V>> for Expr<F, V> {
 	type Output = Expr<F, V>;
 
 	fn mul(self, rhs: Col<F, V>) -> Self::Output {
-		assert_eq!(self.table_id, rhs.id.table_id);
-		assert_eq!(self.partition_id, rhs.id.partition_id);
-
-		let rhs_expr = ArithExpr::Var(rhs.id.partition_index);
-
-		Expr {
-			table_id: self.table_id,
-			partition_id: self.partition_id,
-			expr: self.expr * rhs_expr,
-		}
+		self * Expr::from(rhs)
 	}
 }
 
@@ -168,12 +176,29 @@ impl<F: TowerField, const V: usize> std::ops::Mul<Expr<F, V>> for Expr<F, V> {
 
 	fn mul(self, rhs: Expr<F, V>) -> Self::Output {
 		assert_eq!(self.table_id, rhs.table_id);
-		assert_eq!(self.partition_id, rhs.partition_id);
 		Expr {
 			table_id: self.table_id,
-			partition_id: self.partition_id,
 			expr: self.expr * rhs.expr,
 		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Mul<F> for Expr<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: F) -> Self::Output {
+		Expr {
+			table_id: self.table_id,
+			expr: self.expr * ArithExpr::Const(rhs),
+		}
+	}
+}
+
+impl<F: TowerField, const V: usize> std::ops::Mul<F> for Col<F, V> {
+	type Output = Expr<F, V>;
+
+	fn mul(self, rhs: F) -> Self::Output {
+		Expr::from(self) * rhs
 	}
 }
 
