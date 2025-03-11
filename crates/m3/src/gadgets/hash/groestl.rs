@@ -1,5 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
+//! Gadgets for verifying the [Grøstl] hash function.
+//!
+//! [Grøstl]: <https://www.groestl.info/>
+
 use std::{array, iter};
 
 use anyhow::Result;
@@ -23,10 +27,10 @@ const MIX_BYTES_VEC: [u8; 8] = [0x02, 0x02, 0x03, 0x04, 0x05, 0x03, 0x05, 0x07];
 
 /// The affine transformation matrix for the Rijndael S-box, isomorphically converted to the
 /// canonical tower basis.
-pub const S_BOX_TOWER_MATRIX: FieldLinearTransformation<B8> =
+const S_BOX_TOWER_MATRIX: FieldLinearTransformation<B8> =
 	FieldLinearTransformation::new_const(&S_BOX_TOWER_MATRIX_COLS);
 
-pub const S_BOX_TOWER_MATRIX_COLS: [B8; 8] = [
+const S_BOX_TOWER_MATRIX_COLS: [B8; 8] = [
 	B8::new(0x62),
 	B8::new(0xd2),
 	B8::new(0x79),
@@ -39,7 +43,7 @@ pub const S_BOX_TOWER_MATRIX_COLS: [B8; 8] = [
 
 /// The affine transformation offset for the Rijndael S-box, isomorphically converted to the
 /// canonical tower basis.
-pub const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
+const S_BOX_TOWER_OFFSET: B8 = B8::new(0x14);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermutationVariant {
@@ -119,6 +123,15 @@ impl PermutationRound {
 	}
 }
 
+/// A gadget for the [Rijndael S-box].
+///
+/// The Rijndael S-box, used in the AES block cipher, is a non-linear substitution box that is
+/// defined as a composition of field inversion and an $\mathbb{F}_2$-affine transformation on
+/// elements of $\mathbb{F}_{2^8}$. The S-box is typically defined over a univariate basis
+/// representation of $\mathbb{F}_{2^8}$, which is [`binius_field::AESTowerField8b`], thought we
+/// can translate the S-box to a transformation on [`B8`] elements, which are isomorphic.
+///
+/// [Rijndael S-box]: <https://en.wikipedia.org/wiki/Rijndael_S-box>
 #[derive(Debug)]
 pub struct SBox<const V: usize> {
 	input: Expr<B8, V>,
