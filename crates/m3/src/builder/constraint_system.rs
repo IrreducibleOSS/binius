@@ -83,7 +83,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 
 			for col in table.columns.iter() {
 				let name = col.name.clone();
-				let values_per_row = col.shape.values_per_row;
+				let log_values_per_row = col.shape.log_values_per_row;
 				let field = match col.shape.tower_height {
 					0 => "B1",
 					1 => "B2",
@@ -94,7 +94,8 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 					6 => "B64",
 					_ => "B128",
 				};
-				let type_str = if values_per_row > 1 {
+				let type_str = if log_values_per_row > 0 {
+					let values_per_row = 1 << log_values_per_row;
 					format!("{field}x{values_per_row}")
 				} else {
 					field.to_string()
@@ -145,12 +146,12 @@ impl<F: TowerField> ConstraintSystem<F> {
 	/// The statement includes information about the tables sizes, which this requires in order to
 	/// allocate the column data correctly. The created witness index needs to be populated before
 	/// proving.
-	pub fn build_witness<'a, U: UnderlierType>(
-		&self,
-		allocator: &'a Bump,
+	pub fn build_witness<'cs, 'alloc, U: UnderlierType>(
+		&'cs self,
+		allocator: &'alloc Bump,
 		statement: &Statement,
-	) -> Result<WitnessIndex<'a, U>, Error> {
-		Ok(WitnessIndex::<U> {
+	) -> Result<WitnessIndex<'cs, 'alloc, U, F>, Error> {
+		Ok(WitnessIndex {
 			tables: self
 				.tables
 				.iter()
@@ -186,7 +187,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			// Add multilinear oracles for all table columns.
 			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + log2_strict_usize(info.shape.values_per_row);
+				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
 				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
 				oracle_lookup.push(oracle_id);
 				if info.is_nonzero {
@@ -223,7 +224,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 				{
 					let flush_oracles = column_indices
 						.iter()
-						.map(|&column_index| partition_oracle_ids[column_index])
+						.map(|&column_index| oracle_lookup[column_index])
 						.collect::<Vec<_>>();
 					compiled_flushes.push(CompiledFlush {
 						oracles: flush_oracles,
@@ -278,7 +279,7 @@ fn add_oracle_for_column<F: TowerField>(
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
-	let ColumnInfo { id, col, name, .. } = column_info;
+	let ColumnInfo { col, name, .. } = column_info;
 	let addition = oracles.add_named(name.clone());
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
@@ -318,11 +319,19 @@ fn add_oracle_for_column<F: TowerField>(
 			log_block_size,
 			variant,
 		} => {
-			assert_eq!(col.partition_id, id.partition_id);
+			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
 			addition.shifted(oracle_lookup[col.table_index], *offset, *log_block_size, *variant)?
 		}
 		ColumnDef::Packed { col, log_degree } => {
+			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
 			addition.packed(oracle_lookup[col.table_index], *log_degree)?
+		}
+		ColumnDef::Computed { cols, expr } => {
+			let inner_oracles = cols
+				.iter()
+				.map(|&col_index| oracle_lookup[col_index])
+				.collect::<Vec<_>>();
+			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
 		}
 	};
 	Ok(oracle_id)
