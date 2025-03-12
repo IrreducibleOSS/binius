@@ -21,6 +21,7 @@
 pub mod compression;
 mod groestl;
 pub mod hasher;
+pub mod multi_digest;
 pub mod permutation;
 mod serialization;
 pub mod sha2;
