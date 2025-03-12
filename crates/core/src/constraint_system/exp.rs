@@ -188,11 +188,14 @@ where
 	let ext_degree = <Tower::B128 as ExtensionField<FExpBase>>::DEGREE;
 
 	let repacked_evals = fast_packed_evals
-		.into_par_iter()
-		.map(|packed_eval| from_fast.transform(&packed_eval))
-		.chunks(ext_degree)
-		.map(|packed_eval| {
-			let demoted = PackedType::<U, Tower::B128>::cast_bases(&packed_eval);
+		.par_chunks(ext_degree)
+		.map(|packed_evals| {
+			let packed_evals = packed_evals
+				.iter()
+				.map(|p| from_fast.transform(p))
+				.collect::<Vec<_>>();
+
+			let demoted = PackedType::<U, Tower::B128>::cast_bases(&packed_evals);
 
 			if demoted.len() == 1 {
 				demoted[0]
