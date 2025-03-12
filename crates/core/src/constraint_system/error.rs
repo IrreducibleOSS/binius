@@ -67,9 +67,6 @@ pub enum Error {
 	#[error("prodcheck error: {0}")]
 	Prodcheck(#[from] gkr_gpa::Error),
 
-	#[error("eq-ind sumcheck error: {0}")]
-	EqSumcheck(#[from] gkr_gpa::gpa_sumcheck::error::Error),
-
 	#[error("oracle error: {0}")]
 	Oracle(#[from] oracle::Error),
 

@@ -132,11 +132,10 @@ mod tests {
 		composition::BivariateProduct,
 		fiat_shamir::{CanSample, HasherChallenger},
 		protocols::{
-			gkr_gpa::gpa_sumcheck::{
-				prove::GPAProver,
-				verify::{reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim},
+			gkr_gpa::gpa_sumcheck::verify::{
+				reduce_to_sumcheck, verify_sumcheck_outputs, GPASumcheckClaim,
 			},
-			sumcheck,
+			sumcheck::{self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver},
 		},
 		transcript::ProverTranscript,
 	};
@@ -198,13 +197,14 @@ mod tests {
 
 		let prod_multilins = vec![prod_multilin];
 
-		let prover = GPAProver::<FDomain, _, _, _, _>::new(
+		let prover = EqIndSumcheckProver::<FDomain, _, _, _, _>::new(
 			EvaluationOrder::LowToHigh,
 			multilins,
-			Some(prod_multilins),
+			&challenges,
+			// Some(prod_multilins),
 			composite_claims,
 			domain_factory,
-			&challenges,
+			immediate_switchover_heuristic,
 			&backend,
 		)
 		.unwrap();

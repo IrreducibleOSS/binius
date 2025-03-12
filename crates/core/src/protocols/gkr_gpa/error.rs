@@ -1,6 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use super::gpa_sumcheck::error::Error as GPASumcheckError;
 use crate::{
 	polynomial::Error as PolynomialError, protocols::sumcheck::Error as SumcheckError,
 	witness::Error as WitnessErrror,
@@ -36,8 +35,6 @@ pub enum Error {
 	MetasProductsMismatch,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
-	#[error("gpa sumcheck failure: {0}")]
-	GPASumcheckError(#[from] GPASumcheckError),
 	#[error("sumcheck failure: {0}")]
 	SumcheckError(#[from] SumcheckError),
 	#[error("witness failure: {0}")]
