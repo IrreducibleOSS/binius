@@ -276,7 +276,7 @@ mod tests {
 		} = batch_prove(vec![reference_prover], &mut prove_transcript_1).unwrap();
 
 		let composition = TestProductComposition::new(n_multilinears);
-		let optimized_prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _>::new(
+		let optimized_prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _, _, _>::new(
 			multilins,
 			[("test_product".into(), composition.clone(), composition)],
 			&challenges,
@@ -327,7 +327,7 @@ mod tests {
 		let backend = make_portable_backend();
 
 		let composition = TestProductComposition::new(n_multilinears);
-		let prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _>::new(
+		let prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _, _, _>::new(
 			multilins.clone(),
 			[("test_product".into(), composition.clone(), composition)],
 			&challenges,

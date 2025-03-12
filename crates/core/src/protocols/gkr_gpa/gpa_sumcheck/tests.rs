@@ -21,7 +21,7 @@ use crate::{
 	composition::BivariateProduct,
 	fiat_shamir::HasherChallenger,
 	protocols::{
-		sumcheck::{self, zerocheck::ExtraProduct, CompositeSumClaim, SumcheckClaim},
+		sumcheck::{self, eq_ind::ExtraProduct, CompositeSumClaim, SumcheckClaim},
 		test_utils::AddOneComposition,
 	},
 	transcript::ProverTranscript,
