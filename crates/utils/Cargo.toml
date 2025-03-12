@@ -25,4 +25,5 @@ rand.workspace = true
 default = ["rayon"]
 bail_panic = []
 stable_only = []
+nightly_features = []
 rayon = ["binius_maybe_rayon/rayon"]

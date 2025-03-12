@@ -28,6 +28,10 @@ rand = { workspace = true, features = ["std", "std_rng"] }
 
 [features]
 stable_only = ["binius_utils/stable_only", "binius_field/stable_only"]
+nightly_features = [
+    "binius_utils/nightly_features",
+    "binius_field/nightly_features",
+]
 
 [lib]
 bench = false

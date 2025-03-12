@@ -31,6 +31,7 @@ proptest.workspace = true
 benchmark_alternative_strategies = []
 trace_multiplications = []
 stable_only = ["binius_utils/stable_only"]
+nightly_features = ["binius_utils/nightly_features"]
 
 [lib]
 bench = false
