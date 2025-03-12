@@ -7,7 +7,6 @@ use binius_field::{
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
-use tracing::instrument;
 
 use crate::{
 	builder::{types::F, ConstraintSystemBuilder},
