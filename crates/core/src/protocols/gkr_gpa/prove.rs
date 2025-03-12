@@ -14,14 +14,15 @@ use tracing::instrument;
 
 use super::{
 	gkr_gpa::{GrandProductBatchProveOutput, LayerClaim},
-	gpa_sumcheck::prove::GPAProver,
 	packed_field_storage::PackedFieldStorage,
 	Error, GrandProductClaim, GrandProductWitness,
 };
 use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
-	protocols::sumcheck::{self, CompositeSumClaim},
+	protocols::sumcheck::{
+		self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver, CompositeSumClaim,
+	},
 	transcript::ProverTranscript,
 };
 
@@ -252,7 +253,7 @@ where
 		provers: &[Self],
 		evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	) -> Result<
-		GPAProver<
+		EqIndSumcheckProver<
 			FDomain,
 			P,
 			IndexComposition<BivariateProduct, 2>,
@@ -295,13 +296,15 @@ where
 			.map(|prover| prover.layers[current_layer_no].clone())
 			.collect::<Vec<_>>();
 
-		Ok(GPAProver::new(
+		Ok(EqIndSumcheckProver::new(
 			evaluation_order,
 			multilinears,
-			Some(first_layer_mle_advice),
+			// Some(first_layer_mle_advice),
+			&first_prover.current_layer_claim.eval_point,
 			composite_claims,
 			evaluation_domain_factory,
-			&first_prover.current_layer_claim.eval_point,
+			// We use GPA protocol only for big fields, which is why switchover is trivial
+			immediate_switchover_heuristic,
 			&first_prover.backend,
 		)?)
 	}
