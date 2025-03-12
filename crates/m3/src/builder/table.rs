@@ -258,7 +258,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		.unwrap();
 		self.table.new_column(
 			namespaced_name,
-			ColumnDef::Transparent {
+			ColumnDef::Constant {
 				poly: Arc::new(mle),
 			},
 		)

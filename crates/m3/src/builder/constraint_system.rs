@@ -82,7 +82,7 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			for col in table.columns.iter() {
-				if matches!(col.col, ColumnDef::Transparent { .. }) {
+				if matches!(col.col, ColumnDef::Constant { .. }) {
 					oracle_id += 1;
 				}
 			}
@@ -193,7 +193,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 			let mut transparent_single = vec![None; table.columns.len()];
 			for (table_index, info) in table.columns.iter().enumerate() {
-				if let ColumnDef::Transparent { poly } = &info.col {
+				if let ColumnDef::Constant { poly } = &info.col {
 					let oracle_id = oracles
 						.add_named(format!("{}_single", info.name))
 						.transparent(poly.clone())?;
@@ -362,7 +362,7 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect::<Vec<_>>();
 			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
 		}
-		ColumnDef::Transparent { .. } => addition.repeating(
+		ColumnDef::Constant { .. } => addition.repeating(
 			transparent_single[id.table_index].unwrap(),
 			n_vars - shape.log_values_per_row,
 		)?,

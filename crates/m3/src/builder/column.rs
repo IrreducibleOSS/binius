@@ -144,7 +144,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
 	},
-	Transparent {
+	Constant {
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 }

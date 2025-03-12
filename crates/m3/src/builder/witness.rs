@@ -234,7 +234,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		let mut transparent_single_backing = vec![None; table.columns.len()];
 
 		for col in &table.columns {
-			if matches!(col.col, ColumnDef::Transparent { .. }) {
+			if matches!(col.col, ColumnDef::Constant { .. }) {
 				transparent_single_backing[col.id.table_index] = Some(oracle_offset);
 				cols.push(WitnessIndexColumn {
 					shape: col.shape,
@@ -254,7 +254,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				ColumnDef::Packed { col: inner_col, .. } => {
 					WitnessDataMut::SameAsOracleIndex(oracle_offset + inner_col.table_index)
 				}
-				ColumnDef::Transparent { .. } => WitnessDataMut::SameAsOracleIndex(
+				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleIndex(
 					transparent_single_backing[col.id.table_index].unwrap(),
 				),
 				_ => WitnessDataMut::new_owned(
