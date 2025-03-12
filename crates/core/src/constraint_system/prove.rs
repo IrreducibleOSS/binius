@@ -309,7 +309,7 @@ where
 			ZerocheckProverConstructor::<PackedType<U, FExt<Tower>>, FDomain<Tower>, _, _, _> {
 				constraints,
 				multilinears,
-				domain_factory: &domain_factory,
+				domain_factory: domain_factory.clone(),
 				switchover_fn,
 				zerocheck_challenges: &zerocheck_challenges[skip_challenges..],
 				backend,
@@ -477,8 +477,8 @@ where
 	F: Field,
 	P: PackedFieldIndexable<Scalar = F>,
 	FDomain: TowerField,
-	DomainFactory: EvaluationDomainFactory<FDomain>,
-	SwitchoverFn: Fn(usize) -> usize + Clone,
+	DomainFactory: EvaluationDomainFactory<FDomain> + 'a,
+	SwitchoverFn: Fn(usize) -> usize + Clone + 'a,
 	Backend: ComputationBackend,
 {
 	fn create<FBase>(
@@ -493,7 +493,7 @@ where
 		F: TowerField,
 	{
 		let univariate_prover =
-			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _>(
+			sumcheck::prove::constraint_set_zerocheck_prover::<_, _, FBase, _, _, _, _>(
 				self.constraints,
 				self.multilinears,
 				self.domain_factory,
