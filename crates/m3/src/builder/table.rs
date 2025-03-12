@@ -13,7 +13,6 @@ use binius_field::{
 	packed::pack_slice,
 	ExtensionField, TowerField,
 };
-use binius_math::LinearNormalForm;
 use binius_utils::{
 	checked_arithmetics::{checked_log_2, log2_strict_usize},
 	sparse_index::SparseIndex,
@@ -103,46 +102,6 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 				offset,
 				log_block_size,
 				variant,
-			},
-		)
-	}
-
-	pub fn add_linear_combination<FSub, const V: usize>(
-		&mut self,
-		name: impl ToString,
-		expr: Expr<FSub, V>,
-	) -> Col<FSub, V>
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		let LinearNormalForm {
-			constant: offset,
-			var_coeffs,
-		} = expr
-			.expr()
-			.convert_field::<F>()
-			.linear_normal_form()
-			.expect("pre-condition: expression must be linear");
-
-		let col_scalars = var_coeffs
-			.into_iter()
-			.enumerate()
-			.filter_map(|(partition_index, coeff)| {
-				if coeff != F::ZERO {
-					let partition = &self.table.partitions[partition_id::<V>()];
-					Some((partition.columns[partition_index], coeff))
-				} else {
-					None
-				}
-			})
-			.collect();
-
-		self.table.new_column(
-			self.namespaced_name(name),
-			ColumnDef::LinearCombination {
-				offset,
-				col_scalars,
 			},
 		)
 	}
