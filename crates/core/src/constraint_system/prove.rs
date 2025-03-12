@@ -34,7 +34,7 @@ use super::{
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
-		mul,
+		exp,
 		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
@@ -110,16 +110,16 @@ where
 		mut oracles,
 		mut table_constraints,
 		mut flushes,
-		mut mul,
+		mut exp,
 		non_zero_oracle_ids,
 		max_channel_id,
 	} = constraint_system.clone();
 
-	mul.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	exp.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
-	let mul_witnesses = mul::make_multiplication_witnesses(&mut witness, &mul)?;
+	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &exp)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -152,38 +152,38 @@ where
 	let mut writer = transcript.message();
 	writer.write(&commitment);
 
-	// GKR exp multiplication
-	let mul_challenge = transcript.sample_vec(mul::max_n_vars(&mul, &oracles));
+	// GKR exp
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exp, &oracles));
 
-	let mul_evals = gkr_exp::get_evals_in_point_from_witnesses(&mul_witnesses, &mul_challenge)?
+	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
 		.into_iter()
 		.map(|x| x.into())
 		.collect::<Vec<_>>();
 
 	let mut writer = transcript.message();
-	writer.write_scalar_slice(&mul_evals);
+	writer.write_scalar_slice(&exp_evals);
 
-	let mul_challenge = mul_challenge
+	let exp_challenge = exp_challenge
 		.into_iter()
 		.map(|x| x.into())
 		.collect::<Vec<_>>();
 
-	let mul_claims = mul::make_claims(&mul, &oracles, &mul_challenge, &mul_evals)?
+	let exp_claims = exp::make_claims(&exp, &oracles, &exp_challenge, &exp_evals)?
 		.into_iter()
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
 
 	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
 		EvaluationOrder::HighToLow,
-		mul_witnesses,
-		&mul_claims,
+		exp_witnesses,
+		&exp_claims,
 		fast_domain_factory.clone(),
 		&mut transcript,
 		backend,
 	)?
 	.isomorphic();
 
-	let mul_eval_claims = mul::make_eval_claims(&mul, base_exp_output)?;
+	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
 
 	// Grand product arguments
 	// Grand products for non-zero checking
@@ -452,7 +452,7 @@ where
 			.concat()
 			.into_iter()
 			.chain(zerocheck_eval_claims)
-			.chain(mul_eval_claims),
+			.chain(exp_eval_claims),
 		switchover_fn,
 		&mut transcript,
 		&domain_factory,
