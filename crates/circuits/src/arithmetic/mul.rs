@@ -10,57 +10,55 @@
 
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
-use binius_field::{BinaryField, BinaryField128b, BinaryField1b, PackedField, TowerField};
+use binius_field::{BinaryField1b, PackedField, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use binius_utils::bail;
 
-use crate::builder::ConstraintSystemBuilder;
+use crate::builder::{types::F, ConstraintSystemBuilder};
 
-pub fn mul(
+pub fn mul<FExpBase>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	xin_bits: Vec<OracleId>,
 	yin_bits: Vec<OracleId>,
-) -> Result<Vec<OracleId>, anyhow::Error> {
+) -> Result<Vec<OracleId>, anyhow::Error>
+where
+	FExpBase: TowerField,
+	F: From<FExpBase>,
+{
 	let name = name.to_string();
 
 	let log_rows = builder.log_rows([xin_bits.clone(), yin_bits.clone()].into_iter().flatten())?;
 
 	// $g^x$
-	let xin_exp_result_id = builder.add_committed(
-		format!("{} xin_exp_result", name),
-		log_rows,
-		BinaryField128b::TOWER_LEVEL,
-	);
+	let xin_exp_result_id =
+		builder.add_committed(format!("{} xin_exp_result", name), log_rows, FExpBase::TOWER_LEVEL);
 
 	// $(g^x)^y$
-	let yin_exp_result_id = builder.add_committed(
-		format!("{} yin_exp_result", name),
-		log_rows,
-		BinaryField128b::TOWER_LEVEL,
-	);
+	let yin_exp_result_id =
+		builder.add_committed(format!("{} yin_exp_result", name), log_rows, FExpBase::TOWER_LEVEL);
 
 	// $g^{clow}$
 	let cout_low_exp_result_id = builder.add_committed(
 		format!("{} cout_low_exp_result", name),
 		log_rows,
-		BinaryField128b::TOWER_LEVEL,
+		FExpBase::TOWER_LEVEL,
 	);
 
 	// $(g^{2^{32}})^{chigh}$
 	let cout_high_exp_result_id = builder.add_committed(
 		format!("{} cout_high_exp_result", name),
 		log_rows,
-		BinaryField128b::TOWER_LEVEL,
+		FExpBase::TOWER_LEVEL,
 	);
 
 	let result_bits = xin_bits.len() + yin_bits.len();
 
-	if result_bits > 128 {
-		bail!(anyhow::anyhow!("mul supports results of 128 bits or less."));
+	if result_bits > FExpBase::N_BITS {
+		bail!(anyhow::anyhow!("FExpBase to small"));
 	}
 
 	let cout_bits = (0..result_bits)
@@ -133,18 +131,30 @@ pub fn mul(
 	builder.add_exp(
 		xin_bits,
 		xin_exp_result_id,
-		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR),
+		ExpBase::Constant(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		FExpBase::TOWER_LEVEL,
 	);
-	builder.add_exp(yin_bits, yin_exp_result_id, ExpBase::Dynamic(xin_exp_result_id));
+	builder.add_exp(
+		yin_bits,
+		yin_exp_result_id,
+		ExpBase::Dynamic(xin_exp_result_id),
+		FExpBase::TOWER_LEVEL,
+	);
 	builder.add_exp(
 		cout_low_bits.to_vec(),
 		cout_low_exp_result_id,
-		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR),
+		ExpBase::Constant(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		FExpBase::TOWER_LEVEL,
 	);
 	builder.add_exp(
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR.pow(1 << cout_low_bits.len())),
+		ExpBase::Constant(
+			FExpBase::MULTIPLICATIVE_GENERATOR
+				.pow(1 << cout_low_bits.len())
+				.into(),
+		),
+		FExpBase::TOWER_LEVEL,
 	);
 
 	Ok(cout_bits)
@@ -188,7 +198,7 @@ mod tests {
 		fiat_shamir::HasherChallenger,
 		tower::CanonicalTowerFamily,
 	};
-	use binius_field::BinaryField1b;
+	use binius_field::{BinaryField1b, BinaryField8b};
 	use binius_hal::make_portable_backend;
 	use binius_hash::compress::Groestl256ByteCompression;
 	use binius_math::DefaultEvaluationDomainFactory;
@@ -220,7 +230,7 @@ mod tests {
 			})
 			.collect::<Vec<_>>();
 
-		mul(&mut builder, "test", in_a, in_b).unwrap();
+		mul::<BinaryField8b>(&mut builder, "test", in_a, in_b).unwrap();
 
 		let witness = builder
 			.take_witness()
