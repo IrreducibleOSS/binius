@@ -99,6 +99,12 @@ pub struct ColumnShape {
 	pub log_values_per_row: usize,
 }
 
+impl ColumnShape {
+	pub fn log_cell_size(&self) -> usize {
+		self.tower_height + self.log_values_per_row
+	}
+}
+
 /// Unique identifier for a column within a constraint system.
 ///
 /// IDs are assigned when columns are added to the constraint system and remain stable when more
@@ -138,7 +144,7 @@ pub enum ColumnDef<F: TowerField = B128> {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
 	},
-	RepeatingTransparent {
+	Transparent {
 		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 }

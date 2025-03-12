@@ -82,9 +82,12 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			for col in table.columns.iter() {
-				if matches!(col.col, ColumnDef::RepeatingTransparent { .. }) {
+				if matches!(col.col, ColumnDef::Transparent { .. }) {
 					oracle_id += 1;
 				}
+			}
+
+			for col in table.columns.iter() {
 				let name = col.name.clone();
 				let log_values_per_row = col.shape.log_values_per_row;
 				let field = match col.shape.tower_height {
@@ -188,12 +191,28 @@ impl<F: TowerField> ConstraintSystem<F> {
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let mut oracle_lookup = Vec::new();
 
+			let mut transparent_single = vec![None; table.columns.len()];
+			for (table_index, info) in table.columns.iter().enumerate() {
+				if let ColumnDef::Transparent { poly } = &info.col {
+					let oracle_id = oracles
+						.add_named(format!("{}_single", info.name))
+						.transparent(poly.clone())?;
+					transparent_single[table_index] = Some(oracle_id);
+				}
+			}
+
 			// Add multilinear oracles for all table columns.
-			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
-				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
+			for column_info in table.columns.iter() {
+				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let oracle_id = add_oracle_for_column(
+					&mut oracles,
+					&oracle_lookup,
+					&transparent_single,
+					column_info,
+					n_vars,
+				)?;
 				oracle_lookup.push(oracle_id);
-				if info.is_nonzero {
+				if column_info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
 				}
 			}
@@ -279,16 +298,20 @@ impl<F: TowerField> ConstraintSystem<F> {
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
+	transparent_single: &[Option<OracleId>],
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
 	let ColumnInfo {
-		col, name, shape, ..
+		id,
+		col,
+		name,
+		shape,
+		..
 	} = column_info;
+	let addition = oracles.add_named(name);
 	let oracle_id = match col {
-		ColumnDef::Committed { tower_level } => oracles
-			.add_named(name.clone())
-			.committed(n_vars, *tower_level),
+		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
 		ColumnDef::LinearCombination {
 			offset,
 			col_scalars,
@@ -297,9 +320,7 @@ fn add_oracle_for_column<F: TowerField>(
 				.iter()
 				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
 				.collect::<Vec<_>>();
-			oracles
-				.add_named(name.clone())
-				.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
+			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
 		}
 		ColumnDef::Selected {
 			col,
@@ -315,7 +336,7 @@ fn add_oracle_for_column<F: TowerField>(
 					}
 				})
 				.collect();
-			oracles.add_named(name.clone()).projected(
+			addition.projected(
 				oracle_lookup[col.table_index],
 				index_values,
 				ProjectionVariant::FirstVars,
@@ -328,36 +349,23 @@ fn add_oracle_for_column<F: TowerField>(
 			variant,
 		} => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
-			oracles.add_named(name.clone()).shifted(
-				oracle_lookup[col.table_index],
-				*offset,
-				*log_block_size,
-				*variant,
-			)?
+			addition.shifted(oracle_lookup[col.table_index], *offset, *log_block_size, *variant)?
 		}
 		ColumnDef::Packed { col, log_degree } => {
 			// TODO: debug assert column at col.table_index has the same values_per_row as col.id
-			oracles
-				.add_named(name.clone())
-				.packed(oracle_lookup[col.table_index], *log_degree)?
+			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
 		ColumnDef::Computed { cols, expr } => {
 			let inner_oracles = cols
 				.iter()
 				.map(|&col_index| oracle_lookup[col_index])
 				.collect::<Vec<_>>();
-			oracles
-				.add_named(name.clone())
-				.composite_mle(n_vars, inner_oracles, expr.clone())?
+			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
 		}
-		ColumnDef::RepeatingTransparent { poly } => {
-			let prev = oracles
-				.add_named(format!("{name}_single"))
-				.transparent(poly.clone())?;
-			oracles
-				.add_named(name.clone())
-				.repeating(prev, n_vars - shape.log_values_per_row)?
-		}
+		ColumnDef::Transparent { .. } => addition.repeating(
+			transparent_single[id.table_index].unwrap(),
+			n_vars - shape.log_values_per_row,
+		)?,
 	};
 	Ok(oracle_id)
 }
