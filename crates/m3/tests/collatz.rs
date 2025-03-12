@@ -222,7 +222,7 @@ mod arithmetization {
 			let double =
 				table.add_shifted::<B1, 32>("double_bits", odd, 5, 1, ShiftVariant::LogicalLeft);
 
-			let carry_bit = table.add_repeating_constants("carry_bit", decomposed_u32_bits(1));
+			let carry_bit = table.add_constant("carry_bit", decomposed_u32_bits(1));
 
 			// Input times 3 + 1
 			let triple_plus_one = U32Add::new(

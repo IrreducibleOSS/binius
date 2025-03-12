@@ -237,7 +237,7 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 		)
 	}
 
-	pub fn add_repeating_constants<FSub, const VALUES_PER_ROW: usize>(
+	pub fn add_constant<FSub, const VALUES_PER_ROW: usize>(
 		&mut self,
 		name: impl ToString,
 		constants: [FSub; VALUES_PER_ROW],
