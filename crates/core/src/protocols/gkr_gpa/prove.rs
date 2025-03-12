@@ -296,7 +296,7 @@ where
 			.map(|prover| prover.layers[current_layer_no].clone())
 			.collect::<Vec<_>>();
 
-        // REVIEW: actually use Some(first_layer_mle_advice),
+		// REVIEW: actually use Some(first_layer_mle_advice),
 		Ok(EqIndSumcheckProver::new(
 			evaluation_order,
 			multilinears,

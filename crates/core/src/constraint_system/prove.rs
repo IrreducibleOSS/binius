@@ -42,10 +42,7 @@ use crate::{
 	piop,
 	protocols::{
 		fri::CommitOutput,
-		gkr_gpa::{
-			self, GrandProductBatchProveOutput,
-			GrandProductWitness, LayerClaim,
-		},
+		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{
 			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
@@ -726,7 +723,7 @@ where
 			&eval_point,
 			composite_sum_claims,
 			domain_factory.clone(),
-            immediate_switchover_heuristic,
+			immediate_switchover_heuristic,
 			backend,
 		)?;
 
