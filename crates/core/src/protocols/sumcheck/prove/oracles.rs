@@ -19,7 +19,15 @@ use crate::{
 	witness::{MultilinearExtensionIndex, MultilinearWitness},
 };
 
-pub type OracleZerocheckProver<'a, P, FBase, FDomain, Backend> = UnivariateZerocheck<
+pub type OracleZerocheckProver<
+	'a,
+	P,
+	FBase,
+	FDomain,
+	InterpolationDomainFactory,
+	SwitchoverFn,
+	Backend,
+> = UnivariateZerocheck<
 	'a,
 	'a,
 	FDomain,
@@ -28,6 +36,8 @@ pub type OracleZerocheckProver<'a, P, FBase, FDomain, Backend> = UnivariateZeroc
 	ArithCircuitPoly<FBase>,
 	ArithCircuitPoly<<P as PackedField>::Scalar>,
 	MultilinearWitness<'a, P>,
+	InterpolationDomainFactory,
+	SwitchoverFn,
 	Backend,
 >;
 
@@ -41,14 +51,26 @@ pub type OracleSumcheckProver<'a, FDomain, P, Backend> = RegularSumcheckProver<
 >;
 
 /// Construct zerocheck prover from the constraint set. Fails when constraint set contains regular sumchecks.
-pub fn constraint_set_zerocheck_prover<'a, P, F, FBase, FDomain, Backend>(
+pub fn constraint_set_zerocheck_prover<
+	'a,
+	P,
+	F,
+	FBase,
+	FDomain,
+	InterpolationDomainFactory,
+	SwitchoverFn,
+	Backend,
+>(
 	constraints: Vec<Constraint<P::Scalar>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
-	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
-	switchover_fn: impl Fn(usize) -> usize + Clone,
-	zerocheck_challenges: &[P::Scalar],
+	interpolation_domain_factory: InterpolationDomainFactory,
+	switchover_fn: SwitchoverFn,
+	zerocheck_challenges: &[F],
 	backend: &'a Backend,
-) -> Result<OracleZerocheckProver<'a, P, FBase, FDomain, Backend>, Error>
+) -> Result<
+	OracleZerocheckProver<'a, P, FBase, FDomain, InterpolationDomainFactory, SwitchoverFn, Backend>,
+	Error,
+>
 where
 	P: PackedFieldIndexable<Scalar = F>
 		+ PackedExtension<F, PackedSubfield = P>
@@ -57,6 +79,8 @@ where
 	F: TowerField,
 	FBase: TowerField + ExtensionField<FDomain> + TryFrom<P::Scalar>,
 	FDomain: Field,
+	InterpolationDomainFactory: EvaluationDomainFactory<FDomain>,
+	SwitchoverFn: Fn(usize) -> usize + Clone,
 	Backend: ComputationBackend,
 {
 	let mut zeros = Vec::with_capacity(constraints.len());
@@ -83,11 +107,11 @@ where
 		}
 	}
 
-	let prover = OracleZerocheckProver::<_, _, FDomain, _>::new(
+	let prover = OracleZerocheckProver::<_, _, FDomain, _, _, _>::new(
 		multilinears,
 		zeros,
 		zerocheck_challenges,
-		evaluation_domain_factory,
+		interpolation_domain_factory,
 		switchover_fn,
 		backend,
 	)?;
