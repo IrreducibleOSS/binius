@@ -9,12 +9,13 @@
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
 use anyhow::Error;
-use binius_core::{constraint_system::mul::Mul, oracle::OracleId};
-use binius_field::{BinaryField128b, BinaryField1b, TowerField};
+use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
+use binius_field::{BinaryField, BinaryField128b, BinaryField1b, PackedField, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
+use binius_utils::bail;
 
 use crate::builder::ConstraintSystemBuilder;
 
@@ -28,24 +29,28 @@ pub fn mul(
 
 	let log_rows = builder.log_rows([xin_bits.clone(), yin_bits.clone()].into_iter().flatten())?;
 
+	// $g^x$
 	let xin_exp_result_id = builder.add_committed(
 		format!("{} xin_exp_result", name),
 		log_rows,
 		BinaryField128b::TOWER_LEVEL,
 	);
 
+	// $(g^x)^y$
 	let yin_exp_result_id = builder.add_committed(
 		format!("{} yin_exp_result", name),
 		log_rows,
 		BinaryField128b::TOWER_LEVEL,
 	);
 
+	// $g^{clow}$
 	let cout_low_exp_result_id = builder.add_committed(
 		format!("{} cout_low_exp_result", name),
 		log_rows,
 		BinaryField128b::TOWER_LEVEL,
 	);
 
+	// $(g^{2^{32}})^{chigh}$
 	let cout_high_exp_result_id = builder.add_committed(
 		format!("{} cout_high_exp_result", name),
 		log_rows,
@@ -53,6 +58,10 @@ pub fn mul(
 	);
 
 	let result_bits = xin_bits.len() + yin_bits.len();
+
+	if result_bits > 128 {
+		bail!(anyhow::anyhow!("mul supports results of 128 bits or less."));
+	}
 
 	let cout_bits = (0..result_bits)
 		.map(|i| {
@@ -108,7 +117,7 @@ pub fn mul(
 		arith_expr!([xin, yin, cout] = xin * yin - cout).convert_field(),
 	);
 
-	// (g^a)^b == g^c_low * (g^(2^32))^c_high
+	// $(g^x)^y = g^{clow} * (g^{2^{32}})^{chigh}$
 	builder.assert_zero(
 		name,
 		[
@@ -119,17 +128,24 @@ pub fn mul(
 		arith_expr!([yin, low, high] = low * high - yin).convert_field(),
 	);
 
-	let mul = Mul {
+	let (cout_low_bits, cout_high_bits) = cout_bits.split_at(cout_bits.len() / 2);
+
+	builder.add_exp(
 		xin_bits,
 		xin_exp_result_id,
-		yin_bits,
-		yin_exp_result_id,
-		cout_bits: cout_bits.clone(),
+		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR),
+	);
+	builder.add_exp(yin_bits, yin_exp_result_id, ExpBase::Dynamic(xin_exp_result_id));
+	builder.add_exp(
+		cout_low_bits.to_vec(),
 		cout_low_exp_result_id,
+		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR),
+	);
+	builder.add_exp(
+		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-	};
-
-	builder.add_mul(mul);
+		ExpBase::Constant(BinaryField128b::MULTIPLICATIVE_GENERATOR.pow(1 << cout_low_bits.len())),
+	);
 
 	Ok(cout_bits)
 }
