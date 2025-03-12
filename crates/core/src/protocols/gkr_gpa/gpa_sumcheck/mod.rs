@@ -13,8 +13,6 @@
 //! more efficient prover algorithm than the sumcheck module.
 //!
 
-pub mod error;
-pub mod prove;
 pub mod verify;
 
 #[cfg(test)]

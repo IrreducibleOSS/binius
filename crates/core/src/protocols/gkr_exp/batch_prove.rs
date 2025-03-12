@@ -21,7 +21,9 @@ use super::{
 };
 use crate::{
 	fiat_shamir::Challenger,
-	protocols::sumcheck::{self, BatchSumcheckOutput, CompositeSumClaim},
+	protocols::sumcheck::{
+		self, immediate_switchover_heuristic, BatchSumcheckOutput, CompositeSumClaim,
+	},
 	transcript::ProverTranscript,
 	witness::MultilinearWitness,
 };
@@ -173,10 +175,10 @@ where
 			GKRExpProver::<'a, FDomain, P, _, _, Backend>::new(
 				evaluation_order,
 				multilinears,
-				None,
+				&eval_point,
 				composite_claims,
 				evaluation_domain_factory.clone(),
-				&eval_point,
+				immediate_switchover_heuristic,
 				backend,
 			)
 		})

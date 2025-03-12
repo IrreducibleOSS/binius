@@ -258,7 +258,7 @@ where
 		};
 
 		let first_round_eval_1s = self.first_round_eval_1s.as_ref().filter(|_| round == 0);
-		let have_first_round_eval_1s = self.first_round_eval_1s.is_some();
+		let have_first_round_eval_1s = first_round_eval_1s.is_some();
 
 		let evaluators = self
 			.compositions
@@ -429,13 +429,14 @@ where
 			round_evals.insert(0, first_round_eval_1);
 		}
 
+		// TODO comment
 		let alpha = self.eq_ind_round_challenge;
-		let alpha_bar = F::ONE - alpha;
 		let one_evaluation = round_evals[0];
-		let zero_evaluation_numerator = last_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = alpha_bar.invert().unwrap_or(F::ZERO);
+		let adjusted_last_round_sum =
+			last_round_sum * self.eq_ind_prefix_eval.invert().unwrap_or(F::ZERO);
+		let zero_evaluation_numerator = adjusted_last_round_sum - one_evaluation * alpha;
+		let zero_evaluation_denominator_inv = (F::ONE - alpha).invert().unwrap_or(F::ZERO);
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
-
 		round_evals.insert(0, zero_evaluation);
 
 		if round_evals.len() > 3 {

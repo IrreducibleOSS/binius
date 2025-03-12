@@ -16,12 +16,14 @@ use binius_math::{
 use groestl_crypto::Groestl256;
 use rand::{rngs::StdRng, SeedableRng};
 
-use super::prove::GPAProver;
 use crate::{
 	composition::BivariateProduct,
 	fiat_shamir::HasherChallenger,
 	protocols::{
-		sumcheck::{self, eq_ind::ExtraProduct, CompositeSumClaim, SumcheckClaim},
+		sumcheck::{
+			self, eq_ind::ExtraProduct, immediate_switchover_heuristic,
+			prove::eq_ind::EqIndSumcheckProver, CompositeSumClaim, SumcheckClaim,
+		},
 		test_utils::AddOneComposition,
 	},
 	transcript::ProverTranscript,
@@ -90,13 +92,14 @@ fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDoma
 		composition: composition.clone(),
 	};
 
-	let prover = GPAProver::<FDomain, _, _, _, _>::new(
+	let prover = EqIndSumcheckProver::<FDomain, _, _, _, _>::new(
 		evaluation_order,
 		vec![a_mle, b_mle],
-		Some(vec![ab1_mle]).filter(|_| use_first_round_eval1_advice),
+		&gpa_round_challenges,
+		// Some(vec![ab1_mle]).filter(|_| use_first_round_eval1_advice),
 		[prover_composite_claim],
 		evaluation_domain_factory,
-		&gpa_round_challenges,
+		immediate_switchover_heuristic,
 		&backend,
 	)
 	.unwrap();

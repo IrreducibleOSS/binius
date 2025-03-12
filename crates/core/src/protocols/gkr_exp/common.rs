@@ -2,7 +2,7 @@
 
 use binius_field::Field;
 
-use crate::protocols::gkr_gpa::gpa_sumcheck::prove::GPAProver;
+use crate::protocols::sumcheck::prove::eq_ind::EqIndSumcheckProver;
 
 /// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
 ///
@@ -49,4 +49,4 @@ pub struct BaseExpReductionOutput<F: Field> {
 }
 
 pub type GKRExpProver<'a, FDomain, P, Composition, M, Backend> =
-	GPAProver<'a, FDomain, P, Composition, M, Backend>;
+	EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>;
