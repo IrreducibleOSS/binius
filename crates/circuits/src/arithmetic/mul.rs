@@ -12,13 +12,17 @@ use std::array;
 
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
-use binius_field::{BinaryField1b, PackedField, TowerField};
+use binius_field::{
+	underlier::WithUnderlier, BinaryField, BinaryField128b, BinaryField16b, BinaryField1b,
+	BinaryField64b, PackedField, TowerField,
+};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 use binius_utils::bail;
 
+use super::static_exp::static_exp_lookups;
 use crate::builder::{types::F, ConstraintSystemBuilder};
 
 pub fn mul<FExpBase>(
@@ -168,7 +172,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	xin: [OracleId; 2],
 	yin_bits: [OracleId; 32],
 ) -> Result<Vec<OracleId>, anyhow::Error> {
-	let log_rows = builder.log_rows(xin.clone())?;
+	let log_rows = builder.log_rows(xin)?;
 
 	let name = name.to_string();
 
@@ -216,11 +220,16 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	let yin_exp_result_id = builder.add_committed(
 		format!("{} yin_exp_result", name),
 		log_rows,
-		BinaryField128b::TOWER_LEVEL,
+		BinaryField64b::TOWER_LEVEL,
 	);
 	println!("yin_exp_result: log_rows: {} TOWER_LEVEL:{}", log_rows, BinaryField128b::TOWER_LEVEL);
 
-	builder.add_exp(yin_bits.to_vec(), yin_exp_result_id, ExpBase::Dynamic(xin_exp_result_id));
+	builder.add_exp(
+		yin_bits.to_vec(),
+		yin_exp_result_id,
+		ExpBase::Dynamic(xin_exp_result_id),
+		BinaryField64b::TOWER_LEVEL,
+	);
 
 	let cout: [OracleId; 4] =
 		builder.add_committed_multiple("cout", log_rows, BinaryField16b::TOWER_LEVEL);
@@ -267,7 +276,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 			builder,
 			format!("cout_exp_result_id {}", i),
 			cout[i],
-			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << 16 * i),
+			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << (16 * i)),
 		)
 		.unwrap()
 	});
@@ -349,12 +358,14 @@ mod tests {
 
 		let in_a = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{}", i), log_n_muls)?
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{}", i), log_n_muls)
+					.unwrap()
 			})
 			.collect::<Vec<_>>();
 		let in_b = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{}", i), log_n_muls)?
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{}", i), log_n_muls)
+					.unwrap()
 			})
 			.collect::<Vec<_>>();
 
@@ -364,7 +375,7 @@ mod tests {
 			.take_witness()
 			.expect("builder created with witness");
 
-		let constraint_system = builder.build()?;
+		let constraint_system = builder.build().unwrap();
 
 		let domain_factory = DefaultEvaluationDomainFactory::default();
 		let backend = make_portable_backend();
@@ -377,7 +388,8 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, &[], witness, &domain_factory, &backend)?;
+		>(&constraint_system, 1, 10, &[], witness, &domain_factory, &backend)
+		.unwrap();
 
 		constraint_system::verify::<
 			U,
@@ -385,6 +397,7 @@ mod tests {
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&constraint_system, 1, 10, &[], proof)?;
+		>(&constraint_system, 1, 10, &[], proof)
+		.unwrap();
 	}
 }
