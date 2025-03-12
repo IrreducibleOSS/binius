@@ -1,9 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-#![feature(array_try_from_fn)]
-
-use std::array;
-
 use anyhow::Result;
 use binius_circuits::{
 	builder::{types::U, ConstraintSystemBuilder},
@@ -57,7 +53,7 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating witness").entered();
-	let input: [OracleId; 16] = array::try_from_fn(|i| {
+	let input: [OracleId; 16] = array_util::try_from_fn(|i| {
 		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
 	})?;
 

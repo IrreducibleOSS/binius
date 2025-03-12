@@ -6,7 +6,6 @@
 //! [`crate::builder`] module. Most other modules contain circuit gadgets that can be used to build
 //! more complex constraint systems.
 
-#![feature(array_try_map, array_try_from_fn)]
 #![allow(clippy::module_inception)]
 
 pub mod arithmetic;
