@@ -3,7 +3,7 @@
 pub mod channel;
 mod common;
 pub mod error;
-pub mod mul;
+pub mod exp;
 mod prove;
 pub mod validate;
 mod verify;
@@ -12,7 +12,7 @@ use binius_field::{BinaryField128b, TowerField};
 use binius_macros::SerializeBytes;
 use binius_utils::{DeserializeBytes, SerializationError, SerializationMode};
 use channel::{ChannelId, Flush};
-use mul::Mul;
+use exp::Exp;
 pub use prove::prove;
 pub use verify::verify;
 
@@ -31,7 +31,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub table_constraints: Vec<ConstraintSet<F>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush>,
-	pub mul: Vec<Mul>,
+	pub exp: Vec<Exp<F>>,
 	pub max_channel_id: ChannelId,
 }
 
@@ -48,7 +48,7 @@ impl DeserializeBytes for ConstraintSystem<BinaryField128b> {
 			table_constraints: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			non_zero_oracle_ids: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			flushes: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			mul: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			exp: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			max_channel_id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 		})
 	}

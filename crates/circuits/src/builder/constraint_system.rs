@@ -6,7 +6,7 @@ use anyhow::{anyhow, ensure};
 use binius_core::{
 	constraint_system::{
 		channel::{ChannelId, Flush, FlushDirection},
-		mul::Mul,
+		exp::{Exp, ExpBase},
 		ConstraintSystem,
 	},
 	oracle::{
@@ -32,7 +32,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
-	mul: Vec<Mul>,
+	exp: Vec<Exp<F>>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
 	next_channel_id: ChannelId,
@@ -71,7 +71,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 				})?
 				.into_inner(),
 			flushes: self.flushes,
-			mul: self.mul,
+			exp: self.exp,
 		})
 	}
 
@@ -219,8 +219,14 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.committed(n_vars, tower_level)
 	}
 
-	pub fn add_mul(&mut self, mul: Mul) {
-		self.mul.push(mul);
+	/// Be careful, exp_result witness will be added during the proving stage,
+	/// so ensure the correct order is maintained.
+	pub fn add_exp(&mut self, bits_ids: Vec<OracleId>, exp_result_id: OracleId, base: ExpBase<F>) {
+		self.exp.push(Exp {
+			bits_ids,
+			exp_result_id,
+			base,
+		});
 	}
 
 	pub fn add_committed_multiple<const N: usize>(
