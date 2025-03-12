@@ -8,7 +8,9 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
 use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
+use crate::protocols::sumcheck::{
+	eq_ind::ExtraProduct, BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
+};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {
@@ -151,43 +153,6 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		challenges: sumcheck_challenges,
 		multilinear_evals,
 	})
-}
-
-#[derive(Debug)]
-pub struct ExtraProduct<Composition> {
-	pub inner: Composition,
-}
-
-impl<P, Composition> CompositionPoly<P> for ExtraProduct<Composition>
-where
-	P: PackedField,
-	Composition: CompositionPoly<P>,
-{
-	fn n_vars(&self) -> usize {
-		self.inner.n_vars() + 1
-	}
-
-	fn degree(&self) -> usize {
-		self.inner.degree() + 1
-	}
-
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::Var(self.inner.n_vars())
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		let n_vars = self.n_vars();
-		if query.len() != n_vars {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: n_vars });
-		}
-
-		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;
-		Ok(inner_eval * query[n_vars - 1])
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		self.inner.binary_tower_level()
-	}
 }
 
 #[cfg(test)]

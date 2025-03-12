@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
 	composition::{FixedDimIndexCompositions, IndexComposition},
-	protocols::sumcheck::{zerocheck::ExtraProduct, CompositeSumClaim},
+	protocols::sumcheck::{eq_ind::ExtraProduct, CompositeSumClaim},
 };
 
 pub trait ExpVerifier<F: Field> {

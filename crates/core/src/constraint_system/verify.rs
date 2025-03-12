@@ -32,8 +32,7 @@ use crate::{
 		gkr_gpa::LayerClaim,
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			zerocheck::{self, ExtraProduct},
+			self, constraint_set_zerocheck_claim, eq_ind::ExtraProduct, zerocheck,
 			BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim, ZerocheckClaim,
 		},
 	},

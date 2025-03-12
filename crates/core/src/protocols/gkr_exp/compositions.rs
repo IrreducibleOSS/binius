@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
-use crate::{composition::FixedDimIndexCompositions, protocols::sumcheck::zerocheck::ExtraProduct};
+use crate::{composition::FixedDimIndexCompositions, protocols::sumcheck::eq_ind::ExtraProduct};
 
 #[derive(Debug)]
 pub enum ExpCompositions<F>
