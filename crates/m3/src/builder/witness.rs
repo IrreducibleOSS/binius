@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::ensure;
 use binius_core::{
-	polynomial::ArithCircuitPoly, transparent::step_down::StepDown,
+	oracle::OracleId, polynomial::ArithCircuitPoly, transparent::step_down::StepDown,
 	witness::MultilinearExtensionIndex,
 };
 use binius_field::{
@@ -78,11 +78,21 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> WitnessIndex<'cs, 'alloc, U, 
 			let cols = immutable_witness_index_columns(table.cols);
 
 			let mut count = 0;
-			for col in cols {
-				let oracle_id = first_oracle_id_in_table + col.id.table_index;
-				let n_vars = table.log_capacity + col.shape.log_values_per_row;
-				let witness =
-					multilin_poly_from_underlier_data(col.data, n_vars, col.shape.tower_height);
+			for (oracle_id_offset, col) in cols.into_iter().enumerate() {
+				let oracle_id = first_oracle_id_in_table + oracle_id_offset;
+				let log_capacity = if col.is_single_row {
+					0
+				} else {
+					table.log_capacity
+				};
+				let n_vars = log_capacity + col.shape.log_values_per_row;
+				let underlier_count =
+					1 << (n_vars + col.shape.tower_height).saturating_sub(U::LOG_BITS);
+				let witness = multilin_poly_from_underlier_data(
+					&col.data[..underlier_count],
+					n_vars,
+					col.shape.tower_height,
+				);
 				index.update_multilin_poly([(oracle_id, witness)]).unwrap();
 				count += 1;
 			}
@@ -150,6 +160,7 @@ where
 pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128>
 {
 	table: &'cs Table<F>,
+	oracle_offset: usize,
 	selector_log_values_per_rows: Vec<usize>,
 	cols: Vec<WitnessIndexColumn<'alloc, U>>,
 	#[get_copy = "pub"]
@@ -164,28 +175,36 @@ pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F
 
 #[derive(Debug)]
 pub struct WitnessIndexColumn<'a, U: UnderlierType> {
-	pub id: ColumnId,
 	pub shape: ColumnShape,
 	pub data: WitnessDataMut<'a, U>,
+	pub is_single_row: bool,
 }
 
 #[derive(Debug)]
 pub enum WitnessDataMut<'alloc, U: UnderlierType> {
 	Owned(&'alloc mut [U]),
-	SameAsTableIndex(ColumnIndex),
+	SameAsOracleIndex(usize),
+}
+
+impl<'alloc, U: UnderlierType> WitnessDataMut<'alloc, U> {
+	pub fn new_owned(allocator: &'alloc bumpalo::Bump, log_underlier_count: usize) -> Self {
+		// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
+		// Underlier is Pod.
+		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
+	}
 }
 
 #[derive(Debug)]
 pub enum RefCellData<'alloc, U: UnderlierType> {
 	Owned(RefCell<&'alloc mut [U]>),
-	SameAsTableIndex(ColumnIndex),
+	SameAsOracleIndex(usize),
 }
 
 #[derive(Debug)]
 pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
-	pub id: ColumnId,
 	pub shape: ColumnShape,
 	pub data: &'a [U],
+	pub is_single_row: bool,
 }
 
 fn immutable_witness_index_columns<'a, U: UnderlierType>(
@@ -194,12 +213,12 @@ fn immutable_witness_index_columns<'a, U: UnderlierType>(
 	let mut result: Vec<ImmutableWitnessIndexColumn<'a, U>> = Vec::with_capacity(cols.len());
 	for col in cols {
 		result.push(ImmutableWitnessIndexColumn {
-			id: col.id,
 			shape: col.shape,
 			data: match col.data {
 				WitnessDataMut::Owned(data) => data,
-				WitnessDataMut::SameAsTableIndex(index) => result[index].data,
+				WitnessDataMut::SameAsOracleIndex(index) => result[index].data,
 			},
+			is_single_row: col.is_single_row,
 		});
 	}
 	result
@@ -210,47 +229,54 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 		// TODO: Make packed columns alias the same slice data
 		let log_capacity = log2_ceil_usize(table_size);
 
-		let mut min_log_cell_bits = U::LOG_BITS;
+		let mut cols = Vec::new();
+		let mut oracle_offset = 0;
+		let mut transparent_single_backing = vec![None; table.columns.len()];
 
-		let cols = table
-			.columns
-			.iter()
-			.map(|col| {
-				let data = match col.col {
-					ColumnDef::Packed { col: inner_col, .. } => {
-						WitnessDataMut::SameAsTableIndex(inner_col.table_index)
-					}
-					_ => {
-						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-						min_log_cell_bits = min_log_cell_bits.min(log_cell_bits);
-						let log_col_bits = log_cell_bits + log_capacity;
-
-						// TODO: Error instead of panic
-						if log_col_bits < U::LOG_BITS {
-							panic!("capacity is too low");
-						}
-
-						// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
-						// Underlier is Pod.
-						WitnessDataMut::Owned(
-							allocator.alloc_slice_fill_default(1 << (log_col_bits - U::LOG_BITS)),
-						)
-					}
-				};
-				WitnessIndexColumn {
-					id: col.id,
+		for col in &table.columns {
+			if matches!(col.col, ColumnDef::Constant { .. }) {
+				transparent_single_backing[col.id.table_index] = Some(oracle_offset);
+				cols.push(WitnessIndexColumn {
 					shape: col.shape,
-					data,
+					data: WitnessDataMut::new_owned(
+						allocator,
+						(col.shape.log_cell_size() + log_capacity).saturating_sub(U::LOG_BITS),
+					),
+					is_single_row: true,
+				});
+				oracle_offset += 1;
+			}
+		}
+
+		cols.extend(table.columns.iter().map(|col| WitnessIndexColumn {
+			shape: col.shape,
+			data: match col.col {
+				ColumnDef::Packed { col: inner_col, .. } => {
+					WitnessDataMut::SameAsOracleIndex(oracle_offset + inner_col.table_index)
 				}
-			})
-			.collect();
+				ColumnDef::Constant { .. } => WitnessDataMut::SameAsOracleIndex(
+					transparent_single_backing[col.id.table_index].unwrap(),
+				),
+				_ => WitnessDataMut::new_owned(
+					allocator,
+					(col.shape.log_cell_size() + log_capacity).saturating_sub(U::LOG_BITS),
+				),
+			},
+			is_single_row: false,
+		}));
 
 		Self {
 			table,
 			selector_log_values_per_rows: table.partitions.keys().collect(),
 			cols,
 			log_capacity,
-			min_log_segment_size: U::LOG_BITS - min_log_cell_bits,
+			min_log_segment_size: U::LOG_BITS
+				- table
+					.columns
+					.iter()
+					.map(|col| col.shape.log_cell_size())
+					.fold(U::LOG_BITS, |a, b| a.min(b)),
+			oracle_offset,
 		}
 	}
 
@@ -268,14 +294,15 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.cols
 			.iter_mut()
 			.map(|col| match &mut col.data {
+				WitnessDataMut::SameAsOracleIndex(index) => RefCellData::SameAsOracleIndex(*index),
 				WitnessDataMut::Owned(data) => RefCellData::Owned(RefCell::new(data)),
-				WitnessDataMut::SameAsTableIndex(index) => RefCellData::SameAsTableIndex(*index),
 			})
 			.collect();
 		TableWitnessIndexSegment {
 			table: self.table,
 			cols,
 			log_size: self.log_capacity,
+			oracle_offset: self.oracle_offset,
 		}
 	}
 
@@ -294,8 +321,8 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				.cols
 				.iter()
 				.map(|col| match &col.data {
-					WitnessDataMut::SameAsTableIndex(index) => {
-						RefCellData::SameAsTableIndex(*index)
+					WitnessDataMut::SameAsOracleIndex(index) => {
+						RefCellData::SameAsOracleIndex(*index)
 					}
 					WitnessDataMut::Owned(data) => {
 						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
@@ -314,6 +341,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 				table,
 				cols: col_strides,
 				log_size,
+				oracle_offset: self_ref.oracle_offset,
 			}
 		})
 	}
@@ -336,8 +364,8 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 					.cols
 					.iter()
 					.map(|col| match &col.data {
-						WitnessDataMut::SameAsTableIndex(index) => {
-							RefCellData::SameAsTableIndex(*index)
+						WitnessDataMut::SameAsOracleIndex(index) => {
+							RefCellData::SameAsOracleIndex(*index)
 						}
 						WitnessDataMut::Owned(data) => {
 							let log_cell_bits =
@@ -359,6 +387,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 					table,
 					cols: col_strides,
 					log_size,
+					oracle_offset: self_ref.oracle_offset,
 				}
 			})
 	}
@@ -378,6 +407,7 @@ pub struct TableWitnessIndexSegment<
 	cols: Vec<RefCellData<'alloc, U>>,
 	#[get_copy = "pub"]
 	log_size: usize,
+	oracle_offset: usize,
 }
 
 impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U, F> {
@@ -531,10 +561,17 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 		1 << self.log_size
 	}
 
-	fn get_col_data(&self, table_index: usize) -> Option<&RefCell<&'alloc mut [U]>> {
-		match self.cols.get(table_index) {
+	fn get_col_data(&self, table_index: ColumnIndex) -> Option<&RefCell<&'alloc mut [U]>> {
+		self.get_col_data_by_oracle_offset(self.oracle_offset + table_index)
+	}
+
+	fn get_col_data_by_oracle_offset(
+		&self,
+		oracle_id: OracleId,
+	) -> Option<&RefCell<&'alloc mut [U]>> {
+		match self.cols.get(oracle_id) {
 			Some(RefCellData::Owned(data)) => Some(data),
-			Some(RefCellData::SameAsTableIndex(table_index)) => self.get_col_data(*table_index),
+			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
 			None => None,
 		}
 	}

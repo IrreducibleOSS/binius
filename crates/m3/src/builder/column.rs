@@ -1,8 +1,8 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use binius_core::oracle::ShiftVariant;
+use binius_core::{oracle::ShiftVariant, polynomial::MultivariatePoly};
 use binius_field::{ExtensionField, TowerField};
 use binius_math::ArithExpr;
 
@@ -99,6 +99,12 @@ pub struct ColumnShape {
 	pub log_values_per_row: usize,
 }
 
+impl ColumnShape {
+	pub fn log_cell_size(&self) -> usize {
+		self.tower_height + self.log_values_per_row
+	}
+}
+
 /// Unique identifier for a column within a constraint system.
 ///
 /// IDs are assigned when columns are added to the constraint system and remain stable when more
@@ -137,5 +143,8 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Computed {
 		cols: Vec<ColumnIndex>,
 		expr: ArithExpr<F>,
+	},
+	Constant {
+		poly: Arc<dyn MultivariatePoly<F>>,
 	},
 }
