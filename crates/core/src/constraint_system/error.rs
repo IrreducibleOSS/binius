@@ -49,6 +49,9 @@ pub enum Error {
 	#[error("cannot commit tower level {tower_level}")]
 	CannotCommitTowerLevel { tower_level: usize },
 
+	#[error("Tower level cannot be more than 7")]
+	IncorrectTowerLevel,
+
 	#[error("{oracle} underlier witness data does not match")]
 	PackedUnderlierMismatch { oracle: String },
 
