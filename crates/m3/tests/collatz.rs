@@ -133,8 +133,8 @@ mod arithmetization {
 		even: Col<B1, 32>,
 		even_lsb: Col<B1>,
 		half: Col<B1, 32>,
-		even_packed: Col<B32>,
-		half_packed: Col<B32>,
+		_even_packed: Col<B32>,
+		_half_packed: Col<B32>,
 	}
 
 	impl EvensTable {
@@ -160,8 +160,8 @@ mod arithmetization {
 				even,
 				even_lsb,
 				half,
-				even_packed,
-				half_packed,
+				_even_packed: even_packed,
+				_half_packed: half_packed,
 			}
 		}
 	}
@@ -184,14 +184,10 @@ mod arithmetization {
 			let mut even = witness.get_mut_as(self.even)?;
 			let mut even_lsb = witness.get_mut(self.even_lsb)?;
 			let mut half = witness.get_mut_as(self.half)?;
-			let mut even_packed = witness.get_mut_as(self.even_packed)?;
-			let mut half_packed = witness.get_mut_as(self.half_packed)?;
 
 			for (i, event) in rows.enumerate() {
 				even[i] = event.val;
 				half[i] = event.val >> 1;
-				even_packed[i] = event.val;
-				half_packed[i] = event.val >> 1;
 			}
 
 			even_lsb.fill(<PackedType<U, B1>>::zero());
@@ -209,8 +205,8 @@ mod arithmetization {
 		double: Col<B1, 32>,
 		carry_bit: Col<B1, 32>,
 		triple_plus_one: U32Add,
-		odd_packed: Col<B32>,
-		triple_plus_one_packed: Col<B32>,
+		_odd_packed: Col<B32>,
+		_triple_plus_one_packed: Col<B32>,
 	}
 
 	impl OddsTable {
@@ -256,8 +252,8 @@ mod arithmetization {
 				double,
 				carry_bit,
 				triple_plus_one,
-				odd_packed,
-				triple_plus_one_packed,
+				_odd_packed: odd_packed,
+				_triple_plus_one_packed: triple_plus_one_packed,
 			}
 		}
 	}
@@ -278,18 +274,12 @@ mod arithmetization {
 			witness: &'a mut TableWitnessIndexSegment<U>,
 		) -> Result<(), anyhow::Error> {
 			{
-				let mut odd_packed = witness.get_mut_as(self.odd_packed)?;
-				let mut triple_plus_one_packed = witness.get_mut_as(self.triple_plus_one_packed)?;
-
 				let mut odd = witness.get_mut_as(self.odd)?;
 				let mut odd_lsb = witness.get_mut(self.odd_lsb)?;
 				let mut double = witness.get_mut_as(self.double)?;
 				let mut carry_bit = witness.get_mut_as(self.carry_bit)?;
 
 				for (i, event) in rows.enumerate() {
-					odd_packed[i] = event.val;
-					triple_plus_one_packed[i] = 3 * event.val + 1;
-
 					odd[i] = event.val;
 					double[i] = event.val << 1;
 					carry_bit[i] = 1u32;
@@ -347,7 +337,7 @@ mod arithmetization {
 
 		Instance {
 			constraint_system: cs.compile(&statement).unwrap(),
-			witness: witness.into_multilinear_extension_index::<B128>(&statement),
+			witness: witness.into_multilinear_extension_index(&statement),
 			statement,
 		}
 	}
