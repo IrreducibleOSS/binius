@@ -33,8 +33,12 @@ name = "u8mul"
 path = "u8mul.rs"
 
 [[example]]
-name = "u32add_with_lookup"
-path = "u32add_with_lookup.rs"
+name = "u32_mul_lookups"
+path = "u32_mul_lookups.rs"
+
+[[example]]
+name = "u32_mul_gkr_exp_lookups"
+path = "u32_mul_gkr_exp_lookups.rs"
 
 [[example]]
 name = "modular_mul"
