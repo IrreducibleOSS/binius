@@ -21,4 +21,4 @@ pub use oracles::{
 pub use prover_state::{ProverState, SumcheckInterpolator};
 pub use regular_sumcheck::RegularSumcheckProver;
 pub use univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover};
-pub use zerocheck::{UnivariateZerocheck, ZerocheckProver};
+pub use zerocheck::UnivariateZerocheck;

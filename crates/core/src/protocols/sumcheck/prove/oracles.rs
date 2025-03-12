@@ -29,7 +29,6 @@ pub type OracleZerocheckProver<
 	Backend,
 > = UnivariateZerocheck<
 	'a,
-	'a,
 	FDomain,
 	FBase,
 	P,
