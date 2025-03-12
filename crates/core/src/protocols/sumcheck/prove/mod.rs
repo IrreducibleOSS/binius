@@ -3,6 +3,7 @@
 mod batch_prove;
 mod batch_prove_univariate_zerocheck;
 pub(crate) mod common;
+pub mod eq_ind;
 pub mod front_loaded;
 pub mod oracles;
 pub mod prover_state;

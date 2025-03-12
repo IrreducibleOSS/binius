@@ -7,6 +7,7 @@
 //! polynomials.
 
 mod common;
+pub mod eq_ind;
 mod error;
 pub mod front_loaded;
 mod oracles;
