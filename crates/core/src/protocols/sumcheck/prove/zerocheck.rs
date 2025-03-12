@@ -1,44 +1,38 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use std::{marker::PhantomData, ops::Range, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use binius_field::{
-	util::{eq, powers},
-	ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable, PackedSubfield,
-	TowerField,
+	util::powers, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
+	PackedSubfield, TowerField,
 };
-use binius_hal::{ComputationBackend, SumcheckEvaluator};
+use binius_hal::ComputationBackend;
 use binius_math::{
-	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
-	MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearPoly,
+	MultilinearQuery,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
 use bytemuck::zeroed_vec;
 use getset::Getters;
-use itertools::{izip, Either};
-use stackalloc::stackalloc_with_default;
+use itertools::izip;
 use tracing::instrument;
 
 use crate::{
-	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
+	polynomial::MultilinearComposite,
 	protocols::sumcheck::{
-		common::{
-			determine_switchovers, equal_n_vars_check, get_nontrivial_evaluation_points,
-			interpolation_domains_for_composition_degrees, CompositeSumClaim,
-		},
+		common::{equal_n_vars_check, CompositeSumClaim},
 		prove::{
-			common::fold_partial_eq_ind,
 			eq_ind::EqIndSumcheckProver,
 			univariate::{
 				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
 				ZerocheckUnivariateFoldResult,
 			},
-			ProverState, SumcheckInterpolator, SumcheckProver, UnivariateZerocheckProver,
+			SumcheckProver, UnivariateZerocheckProver,
 		},
 		univariate::LagrangeRoundEvals,
 		univariate_zerocheck::domain_size,
-		Error, RoundCoeffs,
+		Error,
 	},
 	witness::MultilinearWitness,
 };
@@ -406,8 +400,6 @@ where
 			})
 			.collect::<Result<Vec<_>, _>>()?;
 
-		let zerocheck_challenges = self.zerocheck_challenges.clone();
-
 		let composite_claims = izip!(self.compositions, claimed_sums)
 			.into_iter()
 			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })
@@ -427,16 +419,11 @@ where
 			self.domain_factory,
 			|extension_degree| (self.switchover_fn)(extension_degree).saturating_sub(skip_rounds),
 			self.backend,
-		)?;
+		)?
+		.with_eq_ind_partial_evals(partial_eq_ind_evals)?;
 
 		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
-}
-
-#[derive(Debug, Clone, Copy)]
-enum RegularFirstRound {
-	SkipCube,
-	LaterRound,
 }
 
 // TODO repurpose this comment
