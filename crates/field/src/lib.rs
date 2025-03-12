@@ -10,7 +10,7 @@
 //! [DP23]: https://eprint.iacr.org/2023/1784
 
 #![cfg_attr(
-	all(target_arch = "x86_64", not(feature = "stable_only")),
+	all(target_arch = "x86_64", feature = "nightly_features"),
 	feature(stdarch_x86_avx512)
 )]
 
