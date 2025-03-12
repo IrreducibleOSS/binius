@@ -43,13 +43,13 @@ use crate::{
 	protocols::{
 		fri::CommitOutput,
 		gkr_gpa::{
-			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
+			self, GrandProductBatchProveOutput,
 			GrandProductWitness, LayerClaim,
 		},
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			prove::{SumcheckProver, UnivariateZerocheckProver},
+			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
+			prove::{eq_ind::EqIndSumcheckProver, SumcheckProver, UnivariateZerocheckProver},
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
@@ -720,13 +720,13 @@ where
 			multilinears.push(witness.get_multilin_poly(oracle_id)?);
 		}
 
-		let prover = GPAProver::new(
+		let prover = EqIndSumcheckProver::new(
 			EvaluationOrder::LowToHigh,
 			multilinears,
-			None,
+			&eval_point,
 			composite_sum_claims,
 			domain_factory.clone(),
-			&eval_point,
+            immediate_switchover_heuristic,
 			backend,
 		)?;
 

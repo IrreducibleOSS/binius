@@ -296,10 +296,10 @@ where
 			.map(|prover| prover.layers[current_layer_no].clone())
 			.collect::<Vec<_>>();
 
+        // REVIEW: actually use Some(first_layer_mle_advice),
 		Ok(EqIndSumcheckProver::new(
 			evaluation_order,
 			multilinears,
-			// Some(first_layer_mle_advice),
 			&first_prover.current_layer_claim.eval_point,
 			composite_claims,
 			evaluation_domain_factory,
