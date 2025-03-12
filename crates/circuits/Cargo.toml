@@ -17,6 +17,7 @@ binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_utils = { path = "../utils", default-features = false }
 anyhow.workspace = true
 alloy-primitives.workspace = true
+array-util.workspace = true
 bytemuck.workspace = true
 itertools.workspace = true
 rand = { workspace = true, features = ["std"] }

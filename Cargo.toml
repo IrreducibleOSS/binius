@@ -80,6 +80,7 @@ zero_sized_map_values = "warn"
 
 [workspace.dependencies]
 anyhow = "1.0.81"
+array-util = "1.0.2"
 assert_matches = "1.5.0"
 alloy-primitives = "0.8.14"
 auto_impl = "1.2.0"
