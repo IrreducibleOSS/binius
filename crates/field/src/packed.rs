@@ -397,11 +397,10 @@ pub fn mul_by_subfield_scalar<P: PackedExtension<FS>, FS: Field>(val: P, multipl
 }
 
 pub fn pack_slice<P: PackedField>(scalars: &[P::Scalar]) -> Vec<P> {
-	let mut packed_slice = vec![P::default(); scalars.len() / P::WIDTH];
-	for (i, scalar) in scalars.iter().enumerate() {
-		set_packed_slice(&mut packed_slice, i, *scalar);
-	}
-	packed_slice
+	scalars
+		.chunks(P::WIDTH)
+		.map(|chunk| P::from_scalars(chunk.iter().copied()))
+		.collect()
 }
 
 impl<F: Field> Broadcast<F> for F {

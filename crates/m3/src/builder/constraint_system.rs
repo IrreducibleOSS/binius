@@ -82,6 +82,12 @@ impl<F: TowerField> std::fmt::Display for ConstraintSystem<F> {
 			}
 
 			for col in table.columns.iter() {
+				if matches!(col.col, ColumnDef::Constant { .. }) {
+					oracle_id += 1;
+				}
+			}
+
+			for col in table.columns.iter() {
 				let name = col.name.clone();
 				let log_values_per_row = col.shape.log_values_per_row;
 				let field = match col.shape.tower_height {
@@ -185,12 +191,28 @@ impl<F: TowerField> ConstraintSystem<F> {
 		for (table, &count) in std::iter::zip(&self.tables, &statement.table_sizes) {
 			let mut oracle_lookup = Vec::new();
 
+			let mut transparent_single = vec![None; table.columns.len()];
+			for (table_index, info) in table.columns.iter().enumerate() {
+				if let ColumnDef::Constant { poly } = &info.col {
+					let oracle_id = oracles
+						.add_named(format!("{}_single", info.name))
+						.transparent(poly.clone())?;
+					transparent_single[table_index] = Some(oracle_id);
+				}
+			}
+
 			// Add multilinear oracles for all table columns.
-			for info in table.columns.iter() {
-				let n_vars = log2_ceil_usize(count) + info.shape.log_values_per_row;
-				let oracle_id = add_oracle_for_column(&mut oracles, &oracle_lookup, info, n_vars)?;
+			for column_info in table.columns.iter() {
+				let n_vars = log2_ceil_usize(count) + column_info.shape.log_values_per_row;
+				let oracle_id = add_oracle_for_column(
+					&mut oracles,
+					&oracle_lookup,
+					&transparent_single,
+					column_info,
+					n_vars,
+				)?;
 				oracle_lookup.push(oracle_id);
-				if info.is_nonzero {
+				if column_info.is_nonzero {
 					non_zero_oracle_ids.push(oracle_id);
 				}
 			}
@@ -276,11 +298,18 @@ impl<F: TowerField> ConstraintSystem<F> {
 fn add_oracle_for_column<F: TowerField>(
 	oracles: &mut MultilinearOracleSet<F>,
 	oracle_lookup: &[OracleId],
+	transparent_single: &[Option<OracleId>],
 	column_info: &ColumnInfo<F>,
 	n_vars: usize,
 ) -> Result<OracleId, Error> {
-	let ColumnInfo { col, name, .. } = column_info;
-	let addition = oracles.add_named(name.clone());
+	let ColumnInfo {
+		id,
+		col,
+		name,
+		shape,
+		..
+	} = column_info;
+	let addition = oracles.add_named(name);
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
 		ColumnDef::LinearCombination {
@@ -333,6 +362,10 @@ fn add_oracle_for_column<F: TowerField>(
 				.collect::<Vec<_>>();
 			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
 		}
+		ColumnDef::Constant { .. } => addition.repeating(
+			transparent_single[id.table_index].unwrap(),
+			n_vars - shape.log_values_per_row,
+		)?,
 	};
 	Ok(oracle_id)
 }
