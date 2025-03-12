@@ -8,6 +8,8 @@
 //!
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
+use std::array;
+
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
 use binius_field::{BinaryField1b, PackedField, TowerField};
@@ -160,6 +162,134 @@ where
 	Ok(cout_bits)
 }
 
+pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
+	builder: &mut ConstraintSystemBuilder,
+	name: impl ToString,
+	xin: [OracleId; 2],
+	yin_bits: [OracleId; 32],
+) -> Result<Vec<OracleId>, anyhow::Error> {
+	let log_rows = builder.log_rows(xin.clone())?;
+
+	let name = name.to_string();
+
+	let [xin_low, xin_high] = xin;
+
+	let xin_low_exp_res = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+		builder,
+		"xin_low_exp_res",
+		xin_low,
+		BinaryField64b::MULTIPLICATIVE_GENERATOR,
+	)?;
+
+	let xin_high_exp_res = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+		builder,
+		"xin_high_exp_res",
+		xin_high,
+		BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << 16),
+	)?;
+
+	let xin_exp_result_id = builder.add_composite_mle(
+		"exp_result",
+		log_rows,
+		[xin_low_exp_res, xin_high_exp_res],
+		arith_expr!([exp_low_result, exp_high_result] = exp_low_result * exp_high_result)
+			.convert_field(),
+	)?;
+
+	if let Some(witness) = builder.witness() {
+		let xin_low = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
+
+		let xin_high = witness.get::<BinaryField16b>(xin_high)?.as_slice::<u16>();
+
+		let mut xin_exp_result_id = witness.new_column::<BinaryField64b>(xin_exp_result_id);
+		let xin_exp_result_id = xin_exp_result_id.as_mut_slice::<u64>();
+		xin_exp_result_id
+			.par_iter_mut()
+			.enumerate()
+			.for_each(|(i, xin_exp_result)| {
+				*xin_exp_result = BinaryField64b::MULTIPLICATIVE_GENERATOR
+					.pow(xin_low[i] as u128 + (1 << 16) * xin_high[i] as u128)
+					.to_underlier();
+			});
+	}
+
+	let yin_exp_result_id = builder.add_committed(
+		format!("{} yin_exp_result", name),
+		log_rows,
+		BinaryField128b::TOWER_LEVEL,
+	);
+	println!("yin_exp_result: log_rows: {} TOWER_LEVEL:{}", log_rows, BinaryField128b::TOWER_LEVEL);
+
+	builder.add_exp(yin_bits.to_vec(), yin_exp_result_id, ExpBase::Dynamic(xin_exp_result_id));
+
+	let cout: [OracleId; 4] =
+		builder.add_committed_multiple("cout", log_rows, BinaryField16b::TOWER_LEVEL);
+
+	for i in 0..4 {
+		println!("cout_{}: log_rows: {} TOWER_LEVEL:{}", i, log_rows, BinaryField16b::TOWER_LEVEL);
+	}
+
+	if let Some(witness) = builder.witness() {
+		let mut cout = cout.map(|id| witness.new_column::<BinaryField16b>(id));
+
+		let mut cout = cout
+			.iter_mut()
+			.map(|cout| cout.as_mut_slice::<u16>())
+			.collect::<Vec<_>>();
+
+		let yin_columns = yin_bits
+			.iter()
+			.map(|&id| {
+				witness
+					.get::<BinaryField1b>(id)
+					.map(|x| x.as_slice::<u32>())
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+
+		let yin_numbers = columns_to_numbers(&yin_columns);
+
+		let xin_low_number = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
+
+		let xin_high_number = witness.get::<BinaryField16b>(xin_high)?.as_slice::<u16>();
+
+		cout.iter_mut().enumerate().for_each(|(j, cout)| {
+			cout.par_iter_mut().enumerate().for_each(|(i, cout)| {
+				let value = ((xin_low_number[i] as u32 + ((xin_high_number[i] as u32) << 16))
+					as u64) * (yin_numbers[i] as u64);
+
+				*cout = ((value >> (j * 16)) & 0xFFFF) as u16;
+			});
+		});
+	}
+
+	let cout_exp_result_id: [OracleId; 4] = array::from_fn(|i| {
+		static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+			builder,
+			format!("cout_exp_result_id {}", i),
+			cout[i],
+			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << 16 * i),
+		)
+		.unwrap()
+	});
+
+	builder.assert_zero(
+		name,
+		[
+			yin_exp_result_id,
+			cout_exp_result_id[0],
+			cout_exp_result_id[1],
+			cout_exp_result_id[2],
+			cout_exp_result_id[3],
+		],
+		arith_expr!(
+			[yin, cout_0, cout_1, cout_2, cout_3] = cout_0 * cout_1 * cout_2 * cout_3 - yin
+		)
+		.convert_field(),
+	);
+
+	Ok(cout.to_vec())
+}
+
 fn columns_to_numbers(columns: &[&[u32]]) -> Vec<u128> {
 	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len()).unwrap_or(0) * 32];
 
@@ -219,14 +349,12 @@ mod tests {
 
 		let in_a = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{}", i), log_n_muls)
-					.unwrap()
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_a_{}", i), log_n_muls)?
 			})
 			.collect::<Vec<_>>();
 		let in_b = (0..2)
 			.map(|i| {
-				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{}", i), log_n_muls)
-					.unwrap()
+				unconstrained::<BinaryField1b>(&mut builder, format!("in_b_{}", i), log_n_muls)?
 			})
 			.collect::<Vec<_>>();
 
@@ -236,7 +364,7 @@ mod tests {
 			.take_witness()
 			.expect("builder created with witness");
 
-		let constraint_system = builder.build().unwrap();
+		let constraint_system = builder.build()?;
 
 		let domain_factory = DefaultEvaluationDomainFactory::default();
 		let backend = make_portable_backend();
@@ -249,8 +377,7 @@ mod tests {
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
 			_,
-		>(&constraint_system, 1, 10, &[], witness, &domain_factory, &backend)
-		.unwrap();
+		>(&constraint_system, 1, 10, &[], witness, &domain_factory, &backend)?;
 
 		constraint_system::verify::<
 			U,
@@ -258,7 +385,6 @@ mod tests {
 			Groestl256,
 			Groestl256ByteCompression,
 			HasherChallenger<Groestl256>,
-		>(&constraint_system, 1, 10, &[], proof)
-		.unwrap();
+		>(&constraint_system, 1, 10, &[], proof)?;
 	}
 }
