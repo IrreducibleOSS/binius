@@ -1,13 +1,15 @@
 // Copyright 2025 Irreducible Inc.
 
 use binius_field::{
-	as_packed_field::PackedType,
+	as_packed_field::{PackScalar, PackedType},
 	linear_transformation::{PackedTransformationFactory, Transformation},
-	Field, PackedExtension, PackedField, RepackedExtension, TowerField,
+	packed::get_packed_slice,
+	ExtensionField, Field, PackedExtension, PackedField, RepackedExtension, TowerField,
 };
 use binius_macros::{DeserializeBytes, SerializeBytes};
 use binius_math::{MLEDirectAdapter, MLEEmbeddingAdapter, MultilinearExtension};
-use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
+use binius_maybe_rayon::prelude::*;
+use binius_utils::bail;
 use tracing::instrument;
 
 use super::{
@@ -29,6 +31,7 @@ pub struct Exp<F: Field> {
 	pub bits_ids: Vec<OracleId>,
 	pub base: ExpBase<F>,
 	pub exp_result_id: OracleId,
+	pub base_tower_level: usize,
 }
 
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
@@ -83,12 +86,26 @@ where
 				}
 			}?;
 
-			let exp_result_witness = exp_witness.exponentiation_result_witness();
+			let exp_result_witness = match exp.base_tower_level {
+				0..=3 => repack_witness::<U, Tower, Tower::B8>(
+					exp_witness.exponentiation_result_witness(),
+				)?,
+				4 => repack_witness::<U, Tower, Tower::B16>(
+					exp_witness.exponentiation_result_witness(),
+				)?,
+				5 => repack_witness::<U, Tower, Tower::B32>(
+					exp_witness.exponentiation_result_witness(),
+				)?,
+				6 => repack_witness::<U, Tower, Tower::B64>(
+					exp_witness.exponentiation_result_witness(),
+				)?,
+				7 => repack_witness::<U, Tower, Tower::B128>(
+					exp_witness.exponentiation_result_witness(),
+				)?,
+				_ => bail!(Error::IncorrectTowerLevel),
+			};
 
-			witness.update_multilin_poly([(
-				exp.exp_result_id,
-				from_fast_witness::<U, Tower>(exp_result_witness)?,
-			)])?;
+			witness.update_multilin_poly([(exp.exp_result_id, exp_result_witness)])?;
 
 			Ok(exp_witness)
 		})
@@ -143,13 +160,19 @@ pub fn make_eval_claims<F: TowerField>(
 	gkr_exp::make_eval_claims(metas, base_exp_output, dynamic_base_ids).map_err(Error::from)
 }
 
-fn from_fast_witness<U, Tower>(
+#[instrument(skip_all, name = "exp::repack_witness")]
+// Because the exponentiation witness operates in a large field, the number of leading zeroes
+// depends on the FExpBase. To optimize storage and avoid committing unnecessary zeroes, we
+// can repack B128 into FExpBase.
+fn repack_witness<U, Tower, FExpBase>(
 	witness: MultilinearWitness<PackedType<U, FFastExt<Tower>>>,
 ) -> Result<MultilinearWitness<PackedType<U, FExt<Tower>>>, Error>
 where
-	U: ProverTowerUnderlier<Tower>,
+	U: ProverTowerUnderlier<Tower> + PackScalar<FExpBase>,
 	Tower: ProverTowerFamily,
+	FExpBase: TowerField,
 	PackedType<U, Tower::FastB128>: PackedTransformationFactory<PackedType<U, Tower::B128>>,
+	PackedType<U, Tower::B128>: RepackedExtension<PackedType<U, FExpBase>>,
 {
 	let from_fast = Tower::packed_transformation_from_fast();
 
@@ -162,14 +185,24 @@ where
 
 	witness.subcube_evals(witness.n_vars(), 0, 0, &mut fast_packed_evals)?;
 
-	let packed_evals = fast_packed_evals
+	let ext_degree = <Tower::B128 as ExtensionField<FExpBase>>::DEGREE;
+
+	let repacked_evals = fast_packed_evals
 		.into_par_iter()
 		.map(|packed_eval| from_fast.transform(&packed_eval))
+		.chunks(ext_degree)
+		.map(|packed_eval| {
+			let demoted = PackedType::<U, Tower::B128>::cast_bases(&packed_eval);
+
+			if demoted.len() == 1 {
+				demoted[0]
+			} else {
+				PackedType::<U, FExpBase>::from_fn(|i| get_packed_slice(demoted, i * ext_degree))
+			}
+		})
 		.collect::<Vec<_>>();
 
-	MultilinearExtension::new(witness.n_vars(), packed_evals)
-		.map(|mle| MLEDirectAdapter::from(mle).upcast_arc_dyn())
-		.map_err(Error::from)
+	Ok(MultilinearExtension::new(witness.n_vars(), repacked_evals)?.specialize_arc_dyn())
 }
 
 fn to_fast_witness<U, Tower>(

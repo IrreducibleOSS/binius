@@ -221,11 +221,18 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 
 	/// Be careful, exp_result witness will be added during the proving stage,
 	/// so ensure the correct order is maintained.
-	pub fn add_exp(&mut self, bits_ids: Vec<OracleId>, exp_result_id: OracleId, base: ExpBase<F>) {
+	pub fn add_exp(
+		&mut self,
+		bits_ids: Vec<OracleId>,
+		exp_result_id: OracleId,
+		base: ExpBase<F>,
+		base_tower_level: usize,
+	) {
 		self.exp.push(Exp {
 			bits_ids,
 			exp_result_id,
 			base,
+			base_tower_level,
 		});
 	}
 

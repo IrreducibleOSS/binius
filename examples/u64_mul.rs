@@ -6,7 +6,7 @@ use binius_circuits::{
 	builder::{types::U, ConstraintSystemBuilder},
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::BinaryField1b;
+use binius_field::{BinaryField128b, BinaryField1b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 		})
 		.collect::<Vec<_>>();
 
-	mul::mul(&mut builder, "test", in_a, in_b).unwrap();
+	mul::mul::<BinaryField128b>(&mut builder, "u64_mul", in_a, in_b).unwrap();
 
 	drop(trace_gen_scope);
 
