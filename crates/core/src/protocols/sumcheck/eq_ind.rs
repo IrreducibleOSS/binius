@@ -201,3 +201,161 @@ where
 		self.inner.binary_tower_level()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use std::iter;
+
+	use binius_field::{
+		arch::{OptimalUnderlier128b, OptimalUnderlier256b, OptimalUnderlier512b},
+		as_packed_field::{PackScalar, PackedType},
+		underlier::UnderlierType,
+		BinaryField128b, BinaryField8b, ExtensionField, PackedField, PackedFieldIndexable,
+		TowerField,
+	};
+	use binius_hal::make_portable_backend;
+	use binius_math::{
+		DefaultEvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter, MultilinearExtension,
+		MultilinearPoly, MultilinearQuery,
+	};
+	use groestl_crypto::Groestl256;
+	use rand::{rngs::StdRng, SeedableRng};
+
+	use crate::{
+		composition::BivariateProduct,
+		fiat_shamir::HasherChallenger,
+		protocols::{
+			sumcheck::{
+				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver,
+				CompositeSumClaim, EqIndSumcheckClaim, SumcheckClaim,
+			},
+			test_utils::AddOneComposition,
+		},
+		transcript::ProverTranscript,
+	};
+
+	fn test_prove_verify_bivariate_product_helper<U, F, FDomain>(n_vars: usize)
+	where
+		U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
+		F: TowerField + ExtensionField<FDomain>,
+		FDomain: TowerField,
+		PackedType<U, F>: PackedFieldIndexable,
+	{
+		for evaluation_order in [EvaluationOrder::LowToHigh, EvaluationOrder::HighToLow] {
+			test_prove_verify_bivariate_product_helper_under_evaluation_order::<U, F, FDomain>(
+				evaluation_order,
+				n_vars,
+			);
+		}
+	}
+
+	fn test_prove_verify_bivariate_product_helper_under_evaluation_order<U, F, FDomain>(
+		evaluation_order: EvaluationOrder,
+		n_vars: usize,
+	) where
+		U: UnderlierType + PackScalar<F> + PackScalar<FDomain>,
+		F: TowerField + ExtensionField<FDomain>,
+		FDomain: TowerField,
+		PackedType<U, F>: PackedFieldIndexable,
+	{
+		let mut rng = StdRng::seed_from_u64(0);
+
+		let packed_len = 1 << n_vars.saturating_sub(PackedType::<U, F>::LOG_WIDTH);
+		let a_column = (0..packed_len)
+			.map(|_| PackedType::<U, F>::random(&mut rng))
+			.collect::<Vec<_>>();
+		let b_column = (0..packed_len)
+			.map(|_| PackedType::<U, F>::random(&mut rng))
+			.collect::<Vec<_>>();
+		let ab1_column = iter::zip(&a_column, &b_column)
+			.map(|(&a, &b)| a * b + PackedType::<U, F>::one())
+			.collect::<Vec<_>>();
+
+		let a_mle =
+			MLEDirectAdapter::from(MultilinearExtension::from_values_slice(&a_column).unwrap());
+		let b_mle =
+			MLEDirectAdapter::from(MultilinearExtension::from_values_slice(&b_column).unwrap());
+		let ab1_mle =
+			MLEDirectAdapter::from(MultilinearExtension::from_values_slice(&ab1_column).unwrap());
+
+		let eq_ind_challenges = (0..n_vars).map(|_| F::random(&mut rng)).collect::<Vec<_>>();
+		let sum = ab1_mle
+			.evaluate(MultilinearQuery::expand(&eq_ind_challenges).to_ref())
+			.unwrap();
+
+		let mut transcript = ProverTranscript::<HasherChallenger<Groestl256>>::new();
+
+		let backend = make_portable_backend();
+		let evaluation_domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
+
+		let composition = AddOneComposition::new(BivariateProduct {});
+
+		let composite_claim = CompositeSumClaim { sum, composition };
+
+		let prover = EqIndSumcheckProver::<FDomain, _, _, _, _>::new(
+			evaluation_order,
+			vec![a_mle, b_mle],
+			&eq_ind_challenges,
+			[composite_claim.clone()],
+			evaluation_domain_factory,
+			immediate_switchover_heuristic,
+			&backend,
+		)
+		.unwrap();
+
+		let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
+
+		let mut verifier_transcript = transcript.into_verifier();
+
+		let eq_ind_sumcheck_verifier_claim =
+			EqIndSumcheckClaim::new(n_vars, 2, vec![composite_claim]).unwrap();
+		let eq_ind_sumcheck_verifier_claims = [eq_ind_sumcheck_verifier_claim];
+		let regular_sumcheck_verifier_claims =
+			sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_verifier_claims)
+				.unwrap();
+
+		let _sumcheck_verify_output = sumcheck::batch_verify(
+			evaluation_order,
+			&regular_sumcheck_verifier_claims,
+			&mut verifier_transcript,
+		)
+		.unwrap();
+	}
+
+	#[test]
+	fn test_eq_ind_sumcheck_prove_verify_128b() {
+		let n_vars = 8;
+
+		test_prove_verify_bivariate_product_helper::<
+			OptimalUnderlier128b,
+			BinaryField128b,
+			BinaryField8b,
+		>(n_vars);
+	}
+
+	#[test]
+	fn test_eq_ind_sumcheck_prove_verify_256() {
+		let n_vars = 8;
+
+		// Using a 256-bit underlier with a 128-bit extension field means the packed field will have a
+		// non-trivial packing width of 2.
+		test_prove_verify_bivariate_product_helper::<
+			OptimalUnderlier256b,
+			BinaryField128b,
+			BinaryField8b,
+		>(n_vars);
+	}
+
+	#[test]
+	fn test_eq_ind_sumcheck_prove_verify_512b() {
+		let n_vars = 8;
+
+		// Using a 512-bit underlier with a 128-bit extension field means the packed field will have a
+		// non-trivial packing width of 4.
+		test_prove_verify_bivariate_product_helper::<
+			OptimalUnderlier512b,
+			BinaryField128b,
+			BinaryField8b,
+		>(n_vars);
+	}
+}
