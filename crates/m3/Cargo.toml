@@ -7,10 +7,10 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 binius_core = { path = "../core" }
-binius_field = { path = "../field" }
+binius_field = { path = "../field", default-features = false }
 binius_math = { path = "../math" }
 binius_maybe_rayon = { path = "../maybe_rayon" }
-binius_utils = { path = "../utils" }
+binius_utils = { path = "../utils", default-features = false }
 bumpalo.workspace = true
 bytemuck.workspace = true
 getset.workspace = true
@@ -19,5 +19,5 @@ thiserror.workspace = true
 [dev-dependencies]
 assert_matches.workspace = true
 binius_hal = { path = "../hal" }
-binius_hash = { path = "../hash" }
+binius_hash = { path = "../hash", default-features = false }
 groestl_crypto.workspace = true

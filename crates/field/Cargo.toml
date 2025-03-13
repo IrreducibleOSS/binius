@@ -30,6 +30,7 @@ proptest.workspace = true
 [features]
 benchmark_alternative_strategies = []
 trace_multiplications = []
+default = ["nightly_features"]
 nightly_features = ["binius_utils/nightly_features"]
 
 [lib]

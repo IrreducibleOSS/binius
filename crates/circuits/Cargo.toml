@@ -9,8 +9,8 @@ workspace = true
 
 [dependencies]
 binius_core = { path = "../core" }
-binius_field = { path = "../field" }
-binius_hash = { path = "../hash" }
+binius_field = { path = "../field", default-features = false }
+binius_hash = { path = "../hash", default-features = false }
 binius_macros = { path = "../macros" }
 binius_math = { path = "../math" }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }

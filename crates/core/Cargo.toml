@@ -11,9 +11,9 @@ workspace = true
 assert_matches.workspace = true
 auto_impl.workspace = true
 binius_macros = { path = "../macros" }
-binius_field = { path = "../field" }
+binius_field = { path = "../field", default-features = false }
 binius_hal = { path = "../hal" }
-binius_hash = { path = "../hash" }
+binius_hash = { path = "../hash", default-features = false }
 binius_math = { path = "../math" }
 binius_ntt = { path = "../ntt" }
 binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
@@ -64,8 +64,3 @@ harness = false
 
 [features]
 debug_validate_sumcheck = []
-nightly_features = [
-    "binius_utils/nightly_features",
-    "binius_field/nightly_features",
-    "binius_hash/nightly_features",
-]
