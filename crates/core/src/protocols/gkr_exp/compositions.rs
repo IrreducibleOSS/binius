@@ -6,7 +6,7 @@ use binius_field::{Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::bail;
 
-use crate::{composition::FixedDimIndexCompositions, protocols::sumcheck::eq_ind::ExtraProduct};
+use crate::composition::FixedDimIndexCompositions;
 
 #[derive(Debug)]
 pub enum ExpCompositions<F>
@@ -80,4 +80,4 @@ where
 }
 
 pub type ProverExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;
-pub type VerifierExpComposition<F> = FixedDimIndexCompositions<ExtraProduct<ExpCompositions<F>>>;
+pub type VerifierExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;
