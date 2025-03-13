@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 		.unwrap()
 	});
 
-	mul::u32_mul::<22>(&mut builder, "test", in_a, in_b).unwrap();
+	mul::u32_mul::<22>(&mut builder, "u32_mul", in_a, in_b).unwrap();
 
 	drop(trace_gen_scope);
 

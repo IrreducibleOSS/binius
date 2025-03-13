@@ -13,8 +13,8 @@ use std::array;
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
 use binius_field::{
-	underlier::WithUnderlier, BinaryField, BinaryField128b, BinaryField16b, BinaryField1b,
-	BinaryField64b, PackedField, TowerField,
+	underlier::WithUnderlier, BinaryField, BinaryField16b, BinaryField1b, BinaryField64b,
+	PackedField, TowerField,
 };
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
@@ -178,7 +178,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 	let [xin_low, xin_high] = xin;
 
-	let (xin_low_exp_res, _) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	let (xin_low_exp_res, g) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_low_exp_res",
 		xin_low,
@@ -198,7 +198,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		builder.add_committed("xin_exp_result_id", log_rows, BinaryField64b::TOWER_LEVEL);
 
 	builder.assert_zero(
-		"trololo",
+		"xin_exp_result_id assert_zero",
 		[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id],
 		arith_expr!(
 			[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id] =
@@ -229,7 +229,6 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		log_rows,
 		BinaryField64b::TOWER_LEVEL,
 	);
-	println!("yin_exp_result: log_rows: {} TOWER_LEVEL:{}", log_rows, BinaryField128b::TOWER_LEVEL);
 
 	builder.add_exp(
 		yin_bits.to_vec(),
@@ -240,10 +239,6 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 	let cout: [OracleId; 4] =
 		builder.add_committed_multiple("cout", log_rows, BinaryField16b::TOWER_LEVEL);
-
-	for i in 0..4 {
-		println!("cout_{}: log_rows: {} TOWER_LEVEL:{}", i, log_rows, BinaryField16b::TOWER_LEVEL);
-	}
 
 	if let Some(witness) = builder.witness() {
 		let mut cout = cout.map(|id| witness.new_column::<BinaryField16b>(id));
@@ -279,17 +274,22 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	}
 
 	let cout_exp_result_id: [OracleId; 4] = array::from_fn(|i| {
-		let g_table = (i == 1).then_some(g_16);
+		let g_table = match i {
+			0 => Some(g),
+			1 => Some(g_16),
+			_ => None,
+		};
 
-		static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+		let (cout_exp_result_id, _) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 			builder,
 			format!("cout_exp_result_id {}", i),
 			cout[i],
 			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << (16 * i)),
 			g_table,
 		)
-		.unwrap()
-		.0
+		.unwrap();
+
+		cout_exp_result_id
 	});
 
 	builder.assert_zero(
