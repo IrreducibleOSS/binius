@@ -192,13 +192,18 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << 16),
 	)?;
 
-	let xin_exp_result_id = builder.add_composite_mle(
-		"exp_result",
-		log_rows,
-		[xin_low_exp_res, xin_high_exp_res],
-		arith_expr!([exp_low_result, exp_high_result] = exp_low_result * exp_high_result)
-			.convert_field(),
-	)?;
+	let xin_exp_result_id =
+		builder.add_committed("xin_exp_result_id", log_rows, BinaryField64b::TOWER_LEVEL);
+
+	builder.assert_zero(
+		"trololo",
+		[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id],
+		arith_expr!(
+			[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id] =
+				xin_low_exp_res * xin_high_exp_res - xin_exp_result_id
+		)
+		.convert_field(),
+	);
 
 	if let Some(witness) = builder.witness() {
 		let xin_low = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
