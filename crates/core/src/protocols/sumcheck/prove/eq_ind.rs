@@ -260,8 +260,7 @@ where
 	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
 		let round = self.round();
-		let eq_ind_round_challenge = self.eq_ind_round_challenge();
-		let eq_ind_prefix_eval = self.eq_ind_prefix_eval;
+		let alpha = self.eq_ind_round_challenge();
 
 		let eq_ind_partial_evals = if let Some(eq_ind_partial_evals) = &self.eq_ind_partial_evals {
 			eq_ind_partial_evals
@@ -303,17 +302,32 @@ where
 			.enumerate()
 			.map(|(index, interpolation_domain)| Interpolator {
 				interpolation_domain,
-				eq_ind_round_challenge,
-				eq_ind_prefix_eval,
+                alpha,
 				first_round_eval_1: first_round_eval_1s
 					.map(|first_round_eval_1s| first_round_eval_1s[index]),
 			})
 			.collect::<Vec<_>>();
 
 		let evals = self.state.calculate_round_evals(&evaluators)?;
-		let coeffs =
+		let prime_coeffs =
 			self.state
 				.calculate_round_coeffs_from_evals(&interpolators, batch_coeff, evals)?;
+
+		// Convert v' polynomial into v polynomial
+
+		// eq(X, α) = (1 − α) + (2 α − 1) X
+		// NB: In binary fields, this expression can be simplified to 1 + α + challenge.
+		let (prime_coeffs_scaled_by_constant_term, mut prime_coeffs_scaled_by_linear_term) =
+			if F::CHARACTERISTIC == 2 {
+				(prime_coeffs.clone() * (F::ONE + alpha), prime_coeffs)
+			} else {
+				(prime_coeffs.clone() * (F::ONE - alpha), prime_coeffs * (alpha.double() - F::ONE))
+			};
+
+		prime_coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply prime polynomial by X
+
+		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
+			* self.eq_ind_prefix_eval;
 
 		Ok(coeffs)
 	}
@@ -403,7 +417,9 @@ where
 
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			for (i, eval) in evals.iter_mut().enumerate() {
-				// TODO spread!
+				// REVIEW: investigate whether its possible to access a subcube smaller than
+                //         the packing width and unaligned on the packed field binary; in that
+                //         case spread multiplication may be needed.
 				*eval *= self.eq_ind_partial_evals[subcube_start + i];
 			}
 
@@ -426,8 +442,7 @@ where
 	FDomain: Field,
 {
 	interpolation_domain: &'a InterpolationDomain<FDomain>,
-	eq_ind_round_challenge: F,
-	eq_ind_prefix_eval: F,
+	alpha: F,
 	first_round_eval_1: Option<F>,
 }
 
@@ -450,13 +465,9 @@ where
 			round_evals.insert(0, first_round_eval_1);
 		}
 
-		// TODO comment
-		let alpha = self.eq_ind_round_challenge;
 		let one_evaluation = round_evals[0];
-		let adjusted_last_round_sum =
-			last_round_sum * self.eq_ind_prefix_eval.invert().unwrap_or(F::ZERO);
-		let zero_evaluation_numerator = adjusted_last_round_sum - one_evaluation * alpha;
-		let zero_evaluation_denominator_inv = (F::ONE - alpha).invert().unwrap_or(F::ZERO);
+		let zero_evaluation_numerator = last_round_sum - one_evaluation * self.alpha;
+		let zero_evaluation_denominator_inv = (F::ONE - self.alpha).invert().unwrap_or(F::ZERO);
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 		round_evals.insert(0, zero_evaluation);
 
@@ -469,25 +480,6 @@ where
 			round_evals.push(infinity_round_eval);
 		}
 
-		// TODO write explanatory comment
-		let prime_coeffs = RoundCoeffs(self.interpolation_domain.interpolate(&round_evals)?);
-
-		// Convert v' polynomial into v polynomial
-
-		// eq(X, α) = (1 − α) + (2 α − 1) X
-		// NB: In binary fields, this expression can be simplified to 1 + α + challenge.
-		let (prime_coeffs_scaled_by_constant_term, mut prime_coeffs_scaled_by_linear_term) =
-			if F::CHARACTERISTIC == 2 {
-				(prime_coeffs.clone() * (F::ONE + alpha), prime_coeffs)
-			} else {
-				(prime_coeffs.clone() * (F::ONE - alpha), prime_coeffs * (alpha.double() - F::ONE))
-			};
-
-		prime_coeffs_scaled_by_linear_term.0.insert(0, F::ZERO); // Multiply prime polynomial by X
-
-		let coeffs = (prime_coeffs_scaled_by_constant_term + &prime_coeffs_scaled_by_linear_term)
-			* self.eq_ind_prefix_eval;
-
-		Ok(coeffs.0)
+		Ok(self.interpolation_domain.interpolate(&round_evals)?)
 	}
 }
