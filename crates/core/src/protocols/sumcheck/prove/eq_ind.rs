@@ -302,7 +302,7 @@ where
 			.enumerate()
 			.map(|(index, interpolation_domain)| Interpolator {
 				interpolation_domain,
-                alpha,
+				alpha,
 				first_round_eval_1: first_round_eval_1s
 					.map(|first_round_eval_1s| first_round_eval_1s[index]),
 			})
@@ -418,8 +418,8 @@ where
 			let subcube_start = subcube_index << subcube_vars.saturating_sub(P::LOG_WIDTH);
 			for (i, eval) in evals.iter_mut().enumerate() {
 				// REVIEW: investigate whether its possible to access a subcube smaller than
-                //         the packing width and unaligned on the packed field binary; in that
-                //         case spread multiplication may be needed.
+				//         the packing width and unaligned on the packed field binary; in that
+				//         case spread multiplication may be needed.
 				*eval *= self.eq_ind_partial_evals[subcube_start + i];
 			}
 
