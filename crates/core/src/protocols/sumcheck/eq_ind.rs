@@ -11,7 +11,11 @@ use super::{
 };
 use crate::protocols::sumcheck::BatchSumcheckOutput;
 
-/// TODO expand comment
+/// A group of claims about the sum of the values of multilinear composite polynomials over the
+/// boolean hypercube multiplied by the value of equality indicator.
+///
+/// Reductions transform this struct to a [SumcheckClaim] with an explicit equality indicator in
+/// the last position.
 #[derive(Debug, Clone, CopyGetters)]
 pub struct EqIndSumcheckClaim<F: Field, Composition> {
 	#[getset(get_copy = "pub")]
@@ -104,11 +108,10 @@ pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 		.collect()
 }
 
-/// TODO update this comment
-/// Verify the validity of the sumcheck outputs for a reduced zerocheck.
+/// Verify the validity of the sumcheck outputs for a reduced eq-ind sumcheck.
 ///
 /// This takes in the output of the reduced sumcheck protocol and returns the output for the
-/// zerocheck instance. This simply strips off the multilinear evaluation of the eq indicator
+/// eq-ind sumcheck instance. This simply strips off the multilinear evaluation of the eq indicator
 /// polynomial and verifies that the value is correct.
 ///
 /// Note that due to univariatization of some rounds the number of challenges may be less than

@@ -69,6 +69,18 @@ where
 	Ok(())
 }
 
+/// An "eq-ind" sumcheck prover.
+///
+/// The main difference of this prover from the []RegularSumcheckProver] is that
+/// it computes round evaluations of a much simpler "prime" polynomial
+/// multiplied by an already substituted portion of the equality indicator. This
+/// "prime" polynomial has the same degree as the underlying composition,
+/// reducing the number of would-be evaluation points by one, and avoids
+/// interpolating the tensor expansion of the equality indicator.  Round
+/// evaluations for the "full" assumed composition are computed in
+/// monomial form, out of hot loop.  See [Gruen24] Section 3.2 for details.
+///
+/// [Gruen24]: <https://eprint.iacr.org/2024/108>
 #[derive(Debug)]
 pub struct EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>
 where
@@ -384,13 +396,7 @@ where
 	Composition: CompositionPoly<P>,
 {
 	fn eval_point_indices(&self) -> Range<usize> {
-		// TODO rewrite this comment
-		// By definition of grand product GKR circuit, the composition evaluation is a multilinear
-		// extension representing the previous layer. Hence in first round we can use the previous
-		// layer as an advice instead of evaluating r(1).
-		// Also we can uniquely derive the degree d univariate round polynomial r from evaluations at
-		// X = 2, ..., d because we have an identity that relates r(0), r(1), and the current
-		// round's claimed sum.
+		// Do not evaluate r(1) in first round when its value is known
 		let start_index = if self.have_first_round_eval_1s { 2 } else { 1 };
 		start_index..self.composition.degree() + 1
 	}

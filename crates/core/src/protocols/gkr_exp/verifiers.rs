@@ -8,7 +8,7 @@ use binius_utils::bail;
 
 use super::{
 	common::{ExpClaim, LayerClaim},
-	compositions::{ExpCompositions, VerifierExpComposition},
+	compositions::{ExpCompositions, IndexedExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
 };
@@ -35,7 +35,7 @@ pub trait ExpVerifier<F: Field> {
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error>;
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error>;
 
 	/// return a tuple of the number of multilinears used by this verifier for this layer.
 	fn layer_n_multilinears(&self, layer_no: usize) -> usize;
@@ -124,7 +124,7 @@ where
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error> {
 		if self.is_last_layer(layer_no) {
 			Ok(None)
 		} else {
@@ -249,7 +249,7 @@ impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
 		layer_no: usize,
 		composite_claims_n_multilinears: usize,
 		multilinears_index: usize,
-	) -> Result<Option<CompositeSumClaim<F, VerifierExpComposition<F>>>, Error> {
+	) -> Result<Option<CompositeSumClaim<F, IndexedExpComposition<F>>>, Error> {
 		let composition = if self.is_last_layer(layer_no) {
 			let base_index = multilinears_index;
 			let exponent_bit_index = multilinears_index + 1;

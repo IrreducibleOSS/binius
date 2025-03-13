@@ -404,12 +404,8 @@ where
 			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })
 			.collect::<Vec<_>>();
 
-		// TODO comment
-		// This is also regular multilinear zerocheck constructor, but "jump started" in round
-		// `skip_rounds` while using witness with a projected univariate round.
-		// NB: first round evaluator has to be overridden due to issues proving
-		// `P: RepackedExtension<P>` relation in the generic context, as well as the need
-		// to use later round evaluator (as this _is_ a "later" round, albeit numbered at zero)
+		// The remaining non-univariate zerocheck rounds are an instance of EqIndSumcheck,
+		// due to the number of zerocheck challenges being equal to the number of remaining rounds.
 		let regular_prover = EqIndSumcheckProver::new(
 			EvaluationOrder::LowToHigh,
 			partial_low_multilinears,
