@@ -420,19 +420,3 @@ where
 		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
 }
-
-// TODO repurpose this comment
-// A "regular" multilinear zerocheck prover.
-//
-// The main difference of this prover from a regular sumcheck prover is that it computes
-// round evaluations of a much simpler "prime" polynomial multiplied by a "higher" portion
-// of the equality indicator. This "prime" polynomial has the same degree as the underlying
-// composition, reducing the number of would-be evaluation points by one, and the tensor
-// expansion of the zerocheck indicator doesn't have to be interpolated. Round evaluations
-// for the "full" assumed zerocheck composition are computed in monomial form, out of hot loop.
-// See [Gruen24] Section 3.2 for details.
-//
-// When "jump starting" a zerocheck prover in a middle of zerocheck, pay attention that
-// `claimed_prime_sums` are on "prime" polynomial, and not on full zerocheck polynomial.
-//
-// [Gruen24]: <https://eprint.iacr.org/2024/108>

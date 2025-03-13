@@ -72,8 +72,7 @@ where
 	}
 }
 
-/// TODO rewrite this comment
-/// Requirement: zerocheck challenges have been sampled before this is called
+/// Requirement: eq-ind sumcheck challenges have been sampled before this is called
 pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
