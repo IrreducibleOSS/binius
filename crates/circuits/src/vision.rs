@@ -13,7 +13,7 @@ use anyhow::Result;
 use binius_core::{oracle::OracleId, transparent::constant::Constant};
 use binius_field::{
 	linear_transformation::Transformation, make_aes_to_binary_packed_transformer,
-	packed::get_packed_slice, AESTowerField32b, BinaryField1b, BinaryField32b, ExtensionField,
+	packed::get_packed_slice, BinaryField1b, BinaryField32b, ExtensionField,
 	Field, PackedAESBinaryField8x32b, PackedBinaryField8x32b, PackedExtension, PackedField,
 	TowerField,
 };

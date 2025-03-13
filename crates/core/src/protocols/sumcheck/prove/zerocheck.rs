@@ -217,7 +217,7 @@ where
 				.iter()
 				.map(|(name, _, a)| (name.clone(), a))
 				.collect::<Vec<_>>();
-			validate_witness(&multilinears, &compositions)?;
+			validate_witness(&self.multilinears, &compositions)?;
 		}
 
 		let composite_claims = self
@@ -401,7 +401,6 @@ where
 			.collect::<Result<Vec<_>, _>>()?;
 
 		let composite_claims = izip!(self.compositions, claimed_sums)
-			.into_iter()
 			.map(|((_, _, composition), sum)| CompositeSumClaim { composition, sum })
 			.collect::<Vec<_>>();
 

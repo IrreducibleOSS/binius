@@ -5,14 +5,10 @@ use std::ops::Range;
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
 use binius_math::{
-	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
-	MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
+	CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
 use binius_utils::bail;
-use bytemuck::zeroed_vec;
-use getset::Getters;
-use itertools::izip;
 use stackalloc::stackalloc_with_default;
 use tracing::instrument;
 
@@ -20,7 +16,7 @@ use crate::{
 	polynomial::{ArithCircuitPoly, Error as PolynomialError, MultilinearComposite},
 	protocols::sumcheck::{
 		common::{
-			self, determine_switchovers, equal_n_vars_check, get_nontrivial_evaluation_points,
+			equal_n_vars_check, get_nontrivial_evaluation_points,
 			interpolation_domains_for_composition_degrees, RoundCoeffs,
 		},
 		prove::{common::fold_partial_eq_ind, ProverState, SumcheckInterpolator, SumcheckProver},
@@ -117,7 +113,14 @@ where
 
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
-			validate_witness(&multilinears, &composite_claims, eq_ind_challenges)?;
+			let composite_claims = composite_claims
+				.iter()
+				.map(|composite_claim| CompositeSumClaim {
+					composition: &composite_claim.composition,
+					sum: composite_claim.sum,
+				})
+				.collect::<Vec<_>>();
+			validate_witness(&multilinears, eq_ind_challenges, composite_claims.clone())?;
 		}
 
 		if eq_ind_challenges.len() != n_vars {
