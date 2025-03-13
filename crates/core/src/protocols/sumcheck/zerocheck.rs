@@ -2,16 +2,13 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_field::Field;
+use binius_math::CompositionPoly;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
-use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck::{
-	eq_ind::{EqIndSumcheckClaim, ExtraProduct},
-	BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim,
-};
+use super::error::Error;
+use crate::protocols::sumcheck::{eq_ind::EqIndSumcheckClaim, CompositeSumClaim};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {
@@ -116,9 +113,10 @@ mod tests {
 		protocols::{
 			sumcheck::{
 				batch_verify,
-				eq_ind::{reduce_to_regular_sumchecks, verify_sumcheck_outputs},
+				eq_ind::{reduce_to_regular_sumchecks, verify_sumcheck_outputs, ExtraProduct},
 				prove::{batch_prove, zerocheck, RegularSumcheckProver, UnivariateZerocheck},
 				zerocheck::reduce_to_eq_ind_sumchecks,
+				BatchSumcheckOutput,
 			},
 			test_utils::{generate_zero_product_multilinears, TestProductComposition},
 		},

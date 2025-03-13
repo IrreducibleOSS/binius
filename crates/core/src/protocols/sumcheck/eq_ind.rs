@@ -1,9 +1,9 @@
 // Copyright 2025 Irreducible Inc.
 
-use binius_field::{util::eq, Field, PackedExtension, PackedField};
+use binius_field::{util::eq, Field, PackedField};
 use binius_math::{ArithExpr, CompositionPoly};
 use binius_utils::{bail, sorting::is_sorted_ascending};
-use getset::{CopyGetters, Getters};
+use getset::CopyGetters;
 
 use super::{
 	common::{CompositeSumClaim, SumcheckClaim},
@@ -135,7 +135,7 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		.map(|claim| claim.n_vars())
 		.unwrap_or_default();
 
-	//	assert!(sumcheck_challenges.len() <= max_n_vars);
+	assert!(sumcheck_challenges.len() <= max_n_vars);
 	assert_eq!(eq_ind_challenges.len(), sumcheck_challenges.len());
 
 	let mut eq_ind_eval = F::ONE;
@@ -227,7 +227,7 @@ mod tests {
 		protocols::{
 			sumcheck::{
 				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver,
-				CompositeSumClaim, EqIndSumcheckClaim, SumcheckClaim,
+				CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::AddOneComposition,
 		},
