@@ -4,13 +4,14 @@ use binius_field::{
 	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField64b, PackedField,
 	TowerField,
 };
-use binius_maybe_rayon::iter::{
-	IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+use binius_maybe_rayon::{
+	iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+	slice::ParallelSliceMut,
 };
 
 use crate::{
 	builder::{types::F, ConstraintSystemBuilder},
-	plain_lookup, transparent,
+	plain_lookup,
 };
 
 pub fn build_exp_table(
@@ -20,29 +21,27 @@ pub fn build_exp_table(
 ) -> Result<OracleId, anyhow::Error> {
 	let chunk_size = 1024;
 
-	let table_values = (0..1 << 16)
-		.into_par_iter()
-		.chunks(chunk_size)
-		.enumerate()
-		.flat_map(|(i, chunk)| {
-			let start = i * chunk_size;
-			let mut current_g = g.pow(start as u128);
-			chunk
-				.iter()
-				.map(|&i| {
-					let val = ((i as u128) << 64) | (current_g.to_underlier() as u128);
-					current_g *= g;
-					val
-				})
-				.collect::<Vec<_>>()
-		})
-		.collect::<Vec<_>>();
+	let table = builder.add_committed(name, 16, BinaryField128b::TOWER_LEVEL);
 
-	transparent::make_transparent(
-		builder,
-		name,
-		bytemuck::cast_slice::<_, BinaryField128b>(&table_values),
-	)
+	if let Some(witness) = builder.witness() {
+		let mut table = witness.new_column::<BinaryField128b>(table);
+
+		let table = table.as_mut_slice::<u128>();
+
+		table
+			.par_chunks_mut(chunk_size)
+			.enumerate()
+			.for_each(|(i, chunk)| {
+				let start = i * chunk_size;
+				let mut current_g = g.pow(start as u128);
+				chunk.iter_mut().enumerate().for_each(|(i, el)| {
+					*el = ((start as u128 + i as u128) << 64) | (current_g.to_underlier() as u128);
+					current_g *= g;
+				})
+			})
+	}
+
+	Ok(table)
 }
 
 pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
@@ -50,7 +49,8 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 	name: impl ToString,
 	xin: OracleId,
 	g: BinaryField64b,
-) -> Result<OracleId, anyhow::Error> {
+	g_lookup_table: Option<OracleId>,
+) -> Result<(OracleId, OracleId), anyhow::Error> {
 	let log_rows = builder.log_rows([xin])?;
 
 	let name = name.to_string();
@@ -58,7 +58,11 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 	let exp_result = builder.add_committed("exp_result", log_rows, BinaryField64b::TOWER_LEVEL);
 	println!("{}: log_rows: {} TOWER_LEVEL:{}", name, log_rows, BinaryField64b::TOWER_LEVEL);
 
-	let g_lookup_table = build_exp_table(g, builder, "g")?;
+	let g_lookup_table = if let Some(id) = g_lookup_table {
+		id
+	} else {
+		build_exp_table(g, builder, "g")?
+	};
 
 	let lookup_values = builder.add_linear_combination(
 		"lookup_values",
@@ -99,5 +103,5 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 		1 << log_rows,
 	)?;
 
-	Ok(exp_result)
+	Ok((exp_result, g_lookup_table))
 }

@@ -178,18 +178,20 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 	let [xin_low, xin_high] = xin;
 
-	let xin_low_exp_res = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	let (xin_low_exp_res, _) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_low_exp_res",
 		xin_low,
 		BinaryField64b::MULTIPLICATIVE_GENERATOR,
+		None,
 	)?;
 
-	let xin_high_exp_res = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	let (xin_high_exp_res, g_16) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_high_exp_res",
 		xin_high,
 		BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << 16),
+		None,
 	)?;
 
 	let xin_exp_result_id =
@@ -277,13 +279,17 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	}
 
 	let cout_exp_result_id: [OracleId; 4] = array::from_fn(|i| {
+		let g_table = (i == 1).then_some(g_16);
+
 		static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 			builder,
 			format!("cout_exp_result_id {}", i),
 			cout[i],
 			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << (16 * i)),
+			g_table,
 		)
 		.unwrap()
+		.0
 	});
 
 	builder.assert_zero(
