@@ -79,5 +79,4 @@ where
 	}
 }
 
-pub type ProverExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;
-pub type VerifierExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;
+pub type IndexedExpComposition<F> = FixedDimIndexCompositions<ExpCompositions<F>>;

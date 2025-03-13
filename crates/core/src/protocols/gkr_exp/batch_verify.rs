@@ -6,7 +6,7 @@ use binius_utils::{bail, sorting::is_sorted_ascending};
 
 use super::{
 	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
-	compositions::VerifierExpComposition,
+	compositions::IndexedExpComposition,
 	error::{Error, VerificationError},
 	verifiers::{ExpDynamicVerifier, ExpVerifier, GeneratorExpVerifier},
 };
@@ -85,7 +85,7 @@ where
 }
 
 struct EqIndSumcheckClaimsWithEvalPoints<F: Field> {
-	eq_ind_sumcheck_claims: Vec<EqIndSumcheckClaim<F, VerifierExpComposition<F>>>,
+	eq_ind_sumcheck_claims: Vec<EqIndSumcheckClaim<F, IndexedExpComposition<F>>>,
 	eval_points: Vec<Vec<F>>,
 }
 
@@ -144,7 +144,7 @@ where
 fn build_eval_point_claims<'a, F>(
 	verifiers: &[Box<dyn ExpVerifier<F> + 'a>],
 	layer_no: usize,
-) -> Result<Option<EqIndSumcheckClaim<F, VerifierExpComposition<F>>>, Error>
+) -> Result<Option<EqIndSumcheckClaim<F, IndexedExpComposition<F>>>, Error>
 where
 	F: Field,
 {

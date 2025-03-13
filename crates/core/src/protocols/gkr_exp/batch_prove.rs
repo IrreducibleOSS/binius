@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use super::{
 	common::{BaseExpReductionOutput, ExpClaim, GKRExpProver, LayerClaim},
-	compositions::ProverExpComposition,
+	compositions::IndexedExpComposition,
 	error::Error,
 	provers::{
 		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, GeneratorExpProver,
@@ -110,7 +110,7 @@ where
 }
 
 type GKRExpProvers<'a, F, P, FDomain, Backend> =
-	Vec<GKRExpProver<'a, FDomain, P, ProverExpComposition<F>, MultilinearWitness<'a, P>, Backend>>;
+	Vec<GKRExpProver<'a, FDomain, P, IndexedExpComposition<F>, MultilinearWitness<'a, P>, Backend>>;
 
 /// Groups consecutive provers by their `eval_point` and reduces them to sumcheck provers.
 #[instrument(skip_all, level = "debug")]
@@ -187,7 +187,7 @@ where
 }
 
 struct CompositeSumClaimsWithMultilinears<'a, P: PackedField> {
-	composite_claims: Vec<CompositeSumClaim<P::Scalar, ProverExpComposition<P::Scalar>>>,
+	composite_claims: Vec<CompositeSumClaim<P::Scalar, IndexedExpComposition<P::Scalar>>>,
 	multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 

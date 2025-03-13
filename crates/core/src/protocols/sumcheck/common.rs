@@ -303,7 +303,7 @@ pub fn batch_weighted_value<F: Field>(batch_coeff: F, values: impl Iterator<Item
 	batch_coeff * inner_product_unchecked(powers(batch_coeff), values)
 }
 
-/// TODO
+/// Create interpolation domains for a sequence of composition degrees.
 pub fn interpolation_domains_for_composition_degrees<FDomain>(
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	degrees: impl IntoIterator<Item = usize>,
