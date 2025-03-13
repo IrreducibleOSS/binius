@@ -82,7 +82,7 @@ where
 ///
 /// This struct is an entrypoint to proving all zerochecks instances, univariatized and regular.
 /// "Regular" multilinear case is covered by calling [`Self::into_regular_zerocheck`] right away,
-/// producing a [`ZerocheckProver`]. Univariatized case is handled by using methods from a
+/// producing a [`EqIndSumcheckProver`]. Univariatized case is handled by using methods from a
 /// [`UnivariateZerocheckProver`] trait, where folding results in a reduced multilinear zerocheck
 /// prover for the remaining rounds.
 #[derive(Debug, Getters)]

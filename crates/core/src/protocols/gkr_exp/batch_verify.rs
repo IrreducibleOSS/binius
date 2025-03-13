@@ -21,7 +21,7 @@ use crate::{
 /// Verify a batched GKR exponentiation protocol execution.
 ///
 /// The protocol can be batched over multiple instances by grouping consecutive verifiers over
-/// eval_points in [ExpClaim] into [SumcheckClaim]s. To achieve this, we use
+/// eval_points in [ExpClaim] into [EqIndSumcheckClaim]s. To achieve this, we use
 /// [crate::composition::IndexComposition], where eq indicator is always the last element. Since
 /// exponents can have different bit sizes, resulting in a varying number of layers, we group
 /// them starting from the first layer to maximize the opportunity to share the same evaluation point.
