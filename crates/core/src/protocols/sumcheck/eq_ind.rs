@@ -9,6 +9,7 @@ use super::{
 	common::{CompositeSumClaim, SumcheckClaim},
 	error::{Error, VerificationError},
 };
+use crate::protocols::sumcheck::BatchSumcheckOutput;
 
 /// TODO expand comment
 #[derive(Debug, Clone, CopyGetters)]
@@ -69,7 +70,7 @@ where
 
 /// TODO rewrite this comment
 /// Requirement: zerocheck challenges have been sampled before this is called
-pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
+pub fn reduce_to_regular_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[EqIndSumcheckClaim<F, Composition>],
 ) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
 	// Check that the claims are in descending order by n_vars
@@ -101,6 +102,67 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 			)
 		})
 		.collect()
+}
+
+/// TODO update this comment
+/// Verify the validity of the sumcheck outputs for a reduced zerocheck.
+///
+/// This takes in the output of the reduced sumcheck protocol and returns the output for the
+/// zerocheck instance. This simply strips off the multilinear evaluation of the eq indicator
+/// polynomial and verifies that the value is correct.
+///
+/// Note that due to univariatization of some rounds the number of challenges may be less than
+/// the maximum number of variables among claims.
+pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
+	claims: &[EqIndSumcheckClaim<F, Composition>],
+	eq_ind_challenges: &[F],
+	sumcheck_output: BatchSumcheckOutput<F>,
+) -> Result<BatchSumcheckOutput<F>, Error> {
+	let BatchSumcheckOutput {
+		challenges: sumcheck_challenges,
+		mut multilinear_evals,
+	} = sumcheck_output;
+
+	assert_eq!(multilinear_evals.len(), claims.len());
+
+	// Check that the claims are in descending order by n_vars
+	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
+		bail!(Error::ClaimsOutOfOrder);
+	}
+
+	let max_n_vars = claims
+		.first()
+		.map(|claim| claim.n_vars())
+		.unwrap_or_default();
+
+	//	assert!(sumcheck_challenges.len() <= max_n_vars);
+	assert_eq!(eq_ind_challenges.len(), sumcheck_challenges.len());
+
+	let mut eq_ind_eval = F::ONE;
+	let mut last_n_vars = 0;
+	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
+		assert_eq!(claim.n_multilinears() + 1, multilinear_evals.len());
+
+		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
+			let sumcheck_challenge =
+				sumcheck_challenges[sumcheck_challenges.len() - 1 - last_n_vars];
+			let eq_ind_challenge = eq_ind_challenges[eq_ind_challenges.len() - 1 - last_n_vars];
+			eq_ind_eval *= eq(sumcheck_challenge, eq_ind_challenge);
+			last_n_vars += 1;
+		}
+
+		let multilinear_evals_last = multilinear_evals
+			.pop()
+			.expect("checked above that multilinear_evals length is at least 1");
+		if eq_ind_eval != multilinear_evals_last {
+			return Err(VerificationError::IncorrectEqIndEvaluation.into());
+		}
+	}
+
+	Ok(BatchSumcheckOutput {
+		challenges: sumcheck_challenges,
+		multilinear_evals,
+	})
 }
 
 #[derive(Debug)]

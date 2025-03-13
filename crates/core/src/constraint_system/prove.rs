@@ -271,6 +271,8 @@ where
 		.into_iter()
 		.unzip::<_, _, Vec<_>, Vec<_>>();
 
+	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
+
 	let (max_n_vars, skip_rounds) =
 		max_n_vars_and_skip_rounds(&zerocheck_claims, FDomain::<Tower>::N_BITS);
 
@@ -346,8 +348,8 @@ where
 		&mut transcript,
 	)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
+	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;

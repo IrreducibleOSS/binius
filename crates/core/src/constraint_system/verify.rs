@@ -223,17 +223,19 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
+	let regular_sumcheck_claims =
+		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
 	let sumcheck_output = sumcheck::batch_verify_with_start(
 		EvaluationOrder::LowToHigh,
 		univariate_output.batch_verify_start,
-		&sumcheck_claims,
+		&regular_sumcheck_claims,
 		&mut transcript,
 	)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
+	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;

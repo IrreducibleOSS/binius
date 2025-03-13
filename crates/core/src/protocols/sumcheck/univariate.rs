@@ -244,13 +244,14 @@ mod tests {
 		protocols::{
 			sumcheck::{
 				batch_verify, batch_verify_with_start, batch_verify_zerocheck_univariate_round,
+				eq_ind::reduce_to_regular_sumchecks,
 				prove::{
 					batch_prove, batch_prove_with_start, batch_prove_zerocheck_univariate_round,
 					univariate::{reduce_to_skipped_projection, univariatizing_reduction_prover},
 					SumcheckProver, UnivariateZerocheck,
 				},
 				standard_switchover_heuristic,
-				zerocheck::reduce_to_sumchecks,
+				zerocheck::reduce_to_eq_ind_sumchecks,
 				ZerocheckClaim,
 			},
 			test_utils::generate_zero_product_multilinears,
@@ -565,11 +566,14 @@ mod tests {
 			)
 			.unwrap();
 
-			let verifier_sumcheck_claims = reduce_to_sumchecks(&verifier_zerocheck_claims).unwrap();
+			let verifier_eq_ind_sumcheck_claims =
+				reduce_to_eq_ind_sumchecks(&verifier_zerocheck_claims).unwrap();
+			let verifier_regular_sumcheck_claims =
+				reduce_to_regular_sumchecks(&verifier_eq_ind_sumcheck_claims).unwrap();
 			let _verifier_sumcheck_output = batch_verify_with_start(
 				EvaluationOrder::LowToHigh,
 				verifier_univariate_output.batch_verify_start,
-				&verifier_sumcheck_claims,
+				&verifier_regular_sumcheck_claims,
 				&mut verifier_proof,
 			)
 			.unwrap();
