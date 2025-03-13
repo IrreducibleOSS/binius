@@ -284,7 +284,7 @@ where
 	if allowed_query_err <= 0.0 {
 		return Err(Error::ParameterError);
 	}
-	let n_queries = (allowed_query_err.log2() / per_query_err.log2()).ceil() as usize;
+	let n_queries = allowed_query_err.log(per_query_err).ceil() as usize;
 	Ok(n_queries)
 }
 
