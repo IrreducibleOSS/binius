@@ -22,6 +22,8 @@ use either::Either;
 use itertools::{chain, izip};
 use tracing::instrument;
 
+use std::time::Instant;
+
 use super::{
 	channel::Boundary,
 	error::Error,
@@ -175,6 +177,7 @@ where
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
 
+	let start = Instant::now();
 	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
 		EvaluationOrder::HighToLow,
 		exp_witnesses,
@@ -182,10 +185,10 @@ where
 		fast_domain_factory.clone(),
 		&mut transcript,
 		backend,
-	)?
-	.isomorphic();
-
-	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
+	)?;
+	let duration = start.elapsed();
+	println!("Время выполнения: {:?}", duration);
+	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output.isomorphic())?;
 
 	// Grand product arguments
 	// Grand products for non-zero checking

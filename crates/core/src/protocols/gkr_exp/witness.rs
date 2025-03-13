@@ -1,9 +1,11 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::{mem, sync::Arc, time::Instant};
+
 use binius_field::{BinaryField, PackedField};
 use binius_math::{MLEDirectAdapter, MultilinearExtension};
 use binius_maybe_rayon::{
-	iter::{IndexedParallelIterator, IntoParallelIterator},
+	iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator},
 	prelude::ParallelIterator,
 };
 use binius_utils::bail;
@@ -20,6 +22,20 @@ pub struct BaseExpWitness<'a, P: PackedField> {
 	pub single_bit_output_layers_data: Vec<MultilinearWitness<'a, P>>,
 	/// The base to be used for exponentiation.
 	pub base: BaseWitness<'a, P>,
+}
+
+impl<'a, P: PackedField> Drop for BaseExpWitness<'a, P> {
+	fn drop(&mut self) {
+
+		println!("{}", self.single_bit_output_layers_data[0].n_vars());
+
+		let start = Instant::now();
+		self.single_bit_output_layers_data.iter().for_each(|arc| println!("{}", Arc::strong_count(arc)));
+		
+		std::mem::drop(std::mem::take(&mut self.single_bit_output_layers_data));
+		let duration = start.elapsed();
+		println!("Время выполнения drop : {:?}", duration);
+	}
 }
 
 #[derive(Clone)]

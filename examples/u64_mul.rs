@@ -1,12 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
+use std::time::Instant;
+
 use anyhow::Result;
 use binius_circuits::{
 	arithmetic::mul,
 	builder::{types::U, ConstraintSystemBuilder},
 };
 use binius_core::{constraint_system, fiat_shamir::HasherChallenger, tower::CanonicalTowerFamily};
-use binius_field::{BinaryField128b, BinaryField1b};
+use binius_field::{BinaryField128b, BinaryField1b, BinaryField64b};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
 use binius_math::DefaultEvaluationDomainFactory;
@@ -35,7 +37,7 @@ fn main() -> Result<()> {
 
 	let args = Args::parse();
 
-	let _guard = init_tracing().expect("failed to initialize tracing");
+	// let _guard = init_tracing().expect("failed to initialize tracing");
 
 	println!("Verifying {} u64 multiplication", args.n_muls);
 
@@ -44,8 +46,8 @@ fn main() -> Result<()> {
 	let allocator = bumpalo::Bump::new();
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
-	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = (0..64)
+	// let trace_gen_scope = tracing::info_span!("generating trace").entered();
+	let in_a = (0..32)
 		.map(|i| {
 			binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 				&mut builder,
@@ -55,7 +57,7 @@ fn main() -> Result<()> {
 			.unwrap()
 		})
 		.collect::<Vec<_>>();
-	let in_b = (0..64)
+	let in_b = (0..32)
 		.map(|i| {
 			binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 				&mut builder,
@@ -66,9 +68,9 @@ fn main() -> Result<()> {
 		})
 		.collect::<Vec<_>>();
 
-	mul::mul::<BinaryField128b>(&mut builder, "u64_mul", in_a, in_b).unwrap();
+	mul::mul::<BinaryField64b>(&mut builder, "u64_mul", in_a, in_b).unwrap();
 
-	drop(trace_gen_scope);
+	// drop(trace_gen_scope);
 
 	let witness = builder
 		.take_witness()

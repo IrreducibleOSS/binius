@@ -1,11 +1,14 @@
 // Copyright 2025 Irreducible Inc.
 
+use std::{mem, time::Instant};
+
 use binius_field::{
 	BinaryField, ExtensionField, Field, PackedExtension, PackedField, PackedFieldIndexable,
 	TowerField,
 };
 use binius_hal::ComputationBackend;
 use binius_math::{EvaluationDomainFactory, EvaluationOrder};
+use binius_maybe_rayon::iter::{IntoParallelIterator, ParallelIterator};
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use itertools::izip;
 use tracing::instrument;
@@ -15,7 +18,8 @@ use super::{
 	compositions::ProverExpComposition,
 	error::Error,
 	provers::{
-		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, GeneratorExpProver,
+		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver,
+		GeneratorExpProver,
 	},
 	witness::BaseExpWitness,
 };
@@ -45,7 +49,7 @@ use crate::{
 #[instrument(skip_all, name = "gkr_exp::batch_prove")]
 pub fn batch_prove<'a, F, P, FDomain, Challenger_, Backend>(
 	evaluation_order: EvaluationOrder,
-	witnesses: impl IntoIterator<Item = BaseExpWitness<'a, P>>,
+	witnesses: Vec<BaseExpWitness<'a, P>>,
 	claims: &[ExpClaim<F>],
 	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	transcript: &mut ProverTranscript<Challenger_>,
@@ -60,55 +64,69 @@ where
 	Backend: ComputationBackend,
 	Challenger_: Challenger,
 {
-	let witnesses = witnesses.into_iter().collect::<Vec<_>>();
+	// if witnesses.is_empty() {
+	// 	return Ok(BaseExpReductionOutput {
+	// 		layers_claims: Vec::new(),
+	// 	});
+	// }
+
+	// // Check that the witnesses are in descending order by n_vars
+	// if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars).rev()) {
+	// 	bail!(Error::ClaimsOutOfOrder);
+	// }
 
 	if witnesses.len() != claims.len() {
 		bail!(Error::MismatchedWitnessClaimLength);
 	}
 
-	let mut layers_claims = Vec::new();
-
-	if witnesses.is_empty() {
-		return Ok(BaseExpReductionOutput { layers_claims });
-	}
-
-	// Check that the witnesses are in descending order by n_vars
-	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars).rev()) {
-		bail!(Error::ClaimsOutOfOrder);
-	}
-
 	let mut provers = make_provers(witnesses, claims)?;
 
-	let max_exponent_bit_number = provers
-		.iter()
-		.map(|p| p.exponent_bit_width())
-		.max()
-		.unwrap_or(0);
+	let start = Instant::now();
+	let layers_claims = {
+		let max_exponent_bit_number = provers
+			.iter()
+			.map(|p| p.exponent_bit_width())
+			.max()
+			.unwrap_or(0);
 
-	for layer_no in 0..max_exponent_bit_number {
-		let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
-			evaluation_order,
-			&mut provers,
-			layer_no,
-			evaluation_domain_factory.clone(),
-			backend,
-		)?;
+		let mut layers_claims = Vec::with_capacity(max_exponent_bit_number);
+		for layer_no in 0..max_exponent_bit_number {
+			let gkr_sumcheck_provers = build_layer_gkr_sumcheck_provers(
+				evaluation_order,
+				&mut provers,
+				layer_no,
+				evaluation_domain_factory.clone(),
+				backend,
+			)?;
 
-		let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
+			let sumcheck_proof_output = sumcheck::batch_prove(gkr_sumcheck_provers, transcript)?;
 
-		let layer_exponent_claims = build_layer_exponent_bit_claims(
-			evaluation_order,
-			&mut provers,
-			sumcheck_proof_output,
-			layer_no,
-		)?;
+			let layer_exponent_claims = build_layer_exponent_bit_claims(
+				evaluation_order,
+				&mut provers,
+				sumcheck_proof_output,
+				layer_no,
+			)?;
 
-		layers_claims.push(layer_exponent_claims);
+			layers_claims.push(layer_exponent_claims);
+			if layer_no != max_exponent_bit_number - 1 {
+				provers.retain(|prover| !prover.is_last_layer(layer_no));
+			}
+		}
+		layers_claims
+	};
+	let duration = start.elapsed();
+	println!("Время выполнения: {:?}", duration);
+	let start = Instant::now();
+	// provers.into_par_iter().for_each(|arc| {
+    //     drop(arc);
+    // });
 
-		provers.retain(|prover| !prover.is_last_layer(layer_no));
-	}
-
-	Ok(BaseExpReductionOutput { layers_claims })
+	drop(provers);
+	let duration = start.elapsed();
+	println!("Время выполнения drop : {:?}", duration);
+	let res = Ok(BaseExpReductionOutput { layers_claims });
+	res
 }
 
 type GKRExpProvers<'a, F, P, FDomain, Backend> =
@@ -200,6 +218,7 @@ fn build_eval_point_claims<'a, P>(
 ) -> Result<CompositeSumClaimsWithMultilinears<'a, P>, Error>
 where
 	P: PackedField,
+	P::Scalar: BinaryField,
 {
 	let (composite_claims_n_multilinears, n_claims) =
 		provers
@@ -242,6 +261,7 @@ where
 }
 
 /// Reduces the sumcheck output to [LayerClaim]s and updates the internal provers [LayerClaim]s for the next layer.
+#[instrument(skip_all, name = "gkr_exp::build_layer_exponent_bit_claims")]
 fn build_layer_exponent_bit_claims<'a, P>(
 	evaluation_order: EvaluationOrder,
 	provers: &mut [Box<dyn ExpProver<'a, P> + 'a>],
@@ -250,6 +270,7 @@ fn build_layer_exponent_bit_claims<'a, P>(
 ) -> Result<Vec<LayerClaim<P::Scalar>>, Error>
 where
 	P: PackedField,
+	P::Scalar: BinaryField,
 {
 	let mut eval_claims_on_exponent_bit_columns = Vec::new();
 
