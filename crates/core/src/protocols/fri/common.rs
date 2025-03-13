@@ -274,31 +274,18 @@ where
 	F: BinaryField + ExtensionField<PS::Scalar>,
 	PS: PackedField<Scalar: BinaryField>,
 {
-	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
-	let mut n_queries = (-(security_bits as f64) / per_query_err.log2()).ceil() as usize;
-	for _ in 0..10 {
-		if calculate_error_bound::<F, _>(code, n_queries) >= security_bits {
-			return Ok(n_queries);
-		}
-		n_queries += 1;
-	}
-	Err(Error::ParameterError)
-}
-
-fn calculate_error_bound<F, PS>(code: &ReedSolomonCode<PS>, n_queries: usize) -> usize
-where
-	F: BinaryField + ExtensionField<PS::Scalar>,
-	PS: PackedField<Scalar: BinaryField>,
-{
 	let field_size = 2.0_f64.powi(F::N_BITS as i32);
-	// ℓ' / |T_{τ}|
-	let sumcheck_err = code.log_dim() as f64 / field_size;
-	// 2^{ℓ' + R} / |T_{τ}|
+	let sumcheck_err = (2 * code.log_dim()) as f64 / field_size;
+	// 2 ⋅ ℓ' / |T_{τ}|
 	let folding_err = code.len() as f64 / field_size;
-	let per_query_err = 0.5 * (1.0 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
-	let query_err = per_query_err.powi(n_queries as i32);
-	let total_err = sumcheck_err + folding_err + query_err;
-	-total_err.log2() as usize
+	// 2^{ℓ' + R} / |T_{τ}|
+	let per_query_err = 0.5 * (1f64 + 2.0f64.powi(-(code.log_inv_rate() as i32)));
+	let allowed_query_err = 2.0_f64.powi(-(security_bits as i32)) - sumcheck_err - folding_err;
+	if allowed_query_err <= 0.0 {
+		return Err(Error::ParameterError);
+	}
+	let n_queries = (allowed_query_err.log2() / per_query_err.log2()).ceil() as usize;
+	Ok(n_queries)
 }
 
 /// Heuristic for estimating the optimal FRI folding arity that minimizes proof size.
