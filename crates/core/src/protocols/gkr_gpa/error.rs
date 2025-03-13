@@ -33,6 +33,8 @@ pub enum Error {
 	MetasClaimMismatch,
 	#[error("metas length does not conform to the provided indexed claims")]
 	MetasProductsMismatch,
+	#[error("first layer advice multilinears do not match provided n_vars")]
+	IncorrectFirstLayerAdviceLength,
 	#[error("polynomial error: {0}")]
 	Polynomial(#[from] PolynomialError),
 	#[error("sumcheck failure: {0}")]

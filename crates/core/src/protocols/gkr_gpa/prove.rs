@@ -1,11 +1,14 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-use binius_field::{Field, PackedExtension, PackedField, TowerField};
+use binius_field::{
+	packed::packed_from_fn_with_offset, Field, PackedExtension, PackedField, TowerField,
+};
 use binius_hal::ComputationBackend;
 use binius_math::{
 	extrapolate_line_scalar, EvaluationDomainFactory, EvaluationOrder, MLEDirectAdapter,
 	MultilinearExtension, MultilinearPoly,
 };
+use binius_maybe_rayon::prelude::*;
 use binius_utils::{
 	bail,
 	sorting::{stable_sort, unsort},
@@ -21,7 +24,9 @@ use crate::{
 	composition::{BivariateProduct, IndexComposition},
 	fiat_shamir::{CanSample, Challenger},
 	protocols::sumcheck::{
-		self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver, CompositeSumClaim,
+		self, equal_n_vars_check, immediate_switchover_heuristic,
+		prove::eq_ind::{eq_ind_expand, EqIndSumcheckProver},
+		CompositeSumClaim, Error as SumcheckError,
 	},
 	transcript::ProverTranscript,
 };
@@ -291,22 +296,38 @@ where
 			multilinears.extend(prover.next_layer_halves[current_layer_no].clone());
 		}
 
+		let eq_ind_challenges = &first_prover.current_layer_claim.eval_point;
+		let n_vars = eq_ind_challenges.len();
+
 		let first_layer_mle_advice = provers
 			.iter()
 			.map(|prover| prover.layers[current_layer_no].clone())
 			.collect::<Vec<_>>();
 
-		// REVIEW: actually use Some(first_layer_mle_advice),
-		Ok(EqIndSumcheckProver::new(
+		let eq_ind_partial_evals =
+			eq_ind_expand(evaluation_order, n_vars, eq_ind_challenges, &first_prover.backend)?;
+
+		let first_round_eval_1s = first_round_eval_1s_from_first_layer_mle_advice(
+			evaluation_order,
+			n_vars,
+			&first_layer_mle_advice,
+			&eq_ind_partial_evals,
+		)?;
+
+		let prover = EqIndSumcheckProver::new(
 			evaluation_order,
 			multilinears,
-			&first_prover.current_layer_claim.eval_point,
+			eq_ind_challenges,
 			composite_claims,
 			evaluation_domain_factory,
 			// We use GPA protocol only for big fields, which is why switchover is trivial
 			immediate_switchover_heuristic,
 			&first_prover.backend,
-		)?)
+		)?
+		.with_first_round_eval_1s(&first_round_eval_1s)?
+		.with_eq_ind_partial_evals(eq_ind_partial_evals)?;
+
+		Ok(prover)
 	}
 
 	fn finalize_batch_layer_proof(
@@ -342,4 +363,51 @@ where
 		};
 		Ok(final_layer_claim)
 	}
+}
+
+pub fn first_round_eval_1s_from_first_layer_mle_advice<P, M>(
+	evaluation_order: EvaluationOrder,
+	n_vars: usize,
+	first_layer_mle_advice: &[M],
+	eq_ind_partial_evals: &[P],
+) -> Result<Vec<P::Scalar>, Error>
+where
+	P: PackedField,
+	M: MultilinearPoly<P> + Sync,
+{
+	let advice_n_vars = equal_n_vars_check(first_layer_mle_advice)?;
+
+	if n_vars != advice_n_vars {
+		bail!(Error::IncorrectFirstLayerAdviceLength);
+	}
+
+	if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(P::LOG_WIDTH + 1) {
+		bail!(SumcheckError::IncorrectEqIndPartialEvalsSize);
+	}
+
+	let high_to_low_offset = 1 << n_vars.saturating_sub(1);
+	let first_round_eval_1s = first_layer_mle_advice
+		.into_par_iter()
+		.map(|advice_mle| {
+			let packed_sum = eq_ind_partial_evals
+				.par_iter()
+				.enumerate()
+				.map(|(i, &eq_ind)| {
+					eq_ind
+						* packed_from_fn_with_offset::<P>(i, |j| {
+							let index = match evaluation_order {
+								EvaluationOrder::LowToHigh => j << 1 | 1,
+								EvaluationOrder::HighToLow => j | high_to_low_offset,
+							};
+							advice_mle
+								.evaluate_on_hypercube(index)
+								.unwrap_or(P::Scalar::ZERO)
+						})
+				})
+				.sum::<P>();
+			packed_sum.iter().take(1 << n_vars).sum()
+		})
+		.collect();
+
+	Ok(first_round_eval_1s)
 }
