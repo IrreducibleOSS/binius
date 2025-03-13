@@ -8,13 +8,10 @@
 //!
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
-use std::array;
-
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
 use binius_field::{
-	underlier::WithUnderlier, BinaryField, BinaryField16b, BinaryField1b, BinaryField64b,
-	PackedField, TowerField,
+	BinaryField, BinaryField16b, BinaryField1b, BinaryField64b, PackedField, TowerField,
 };
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
@@ -208,19 +205,21 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	);
 
 	if let Some(witness) = builder.witness() {
-		let xin_low = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
+		let xin_low_exp_res = witness
+			.get::<BinaryField64b>(xin_low_exp_res)?
+			.as_slice::<BinaryField64b>();
 
-		let xin_high = witness.get::<BinaryField16b>(xin_high)?.as_slice::<u16>();
+		let xin_high_exp_res = witness
+			.get::<BinaryField64b>(xin_high_exp_res)?
+			.as_slice::<BinaryField64b>();
 
 		let mut xin_exp_result_id = witness.new_column::<BinaryField64b>(xin_exp_result_id);
-		let xin_exp_result_id = xin_exp_result_id.as_mut_slice::<u64>();
+		let xin_exp_result_id = xin_exp_result_id.as_mut_slice::<BinaryField64b>();
 		xin_exp_result_id
 			.par_iter_mut()
 			.enumerate()
 			.for_each(|(i, xin_exp_result)| {
-				*xin_exp_result = BinaryField64b::MULTIPLICATIVE_GENERATOR
-					.pow(xin_low[i] as u128 + (1 << 16) * xin_high[i] as u128)
-					.to_underlier();
+				*xin_exp_result = xin_low_exp_res[i] * xin_high_exp_res[i];
 			});
 	}
 
@@ -241,12 +240,9 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		builder.add_committed_multiple("cout", log_rows, BinaryField16b::TOWER_LEVEL);
 
 	if let Some(witness) = builder.witness() {
-		let mut cout = cout.map(|id| witness.new_column::<BinaryField16b>(id));
+		let xin_low_number = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
 
-		let mut cout = cout
-			.iter_mut()
-			.map(|cout| cout.as_mut_slice::<u16>())
-			.collect::<Vec<_>>();
+		let xin_high_number = witness.get::<BinaryField16b>(xin_high)?.as_slice::<u16>();
 
 		let yin_columns = yin_bits
 			.iter()
@@ -259,9 +255,12 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 		let yin_numbers = columns_to_numbers(&yin_columns);
 
-		let xin_low_number = witness.get::<BinaryField16b>(xin_low)?.as_slice::<u16>();
+		let mut cout = cout.map(|id| witness.new_column::<BinaryField16b>(id));
 
-		let xin_high_number = witness.get::<BinaryField16b>(xin_high)?.as_slice::<u16>();
+		let mut cout = cout
+			.iter_mut()
+			.map(|cout| cout.as_mut_slice::<u16>())
+			.collect::<Vec<_>>();
 
 		cout.iter_mut().enumerate().for_each(|(j, cout)| {
 			cout.par_iter_mut().enumerate().for_each(|(i, cout)| {
@@ -273,24 +272,24 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		});
 	}
 
-	let cout_exp_result_id: [OracleId; 4] = array::from_fn(|i| {
-		let g_table = match i {
-			0 => Some(g),
-			1 => Some(g_16),
-			_ => None,
-		};
+	let cout_exp_result_id = (0..4)
+		.map(|i| {
+			let g_table = match i {
+				0 => Some(g),
+				1 => Some(g_16),
+				_ => None,
+			};
 
-		let (cout_exp_result_id, _) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
-			builder,
-			format!("cout_exp_result_id {}", i),
-			cout[i],
-			BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << (16 * i)),
-			g_table,
-		)
-		.unwrap();
-
-		cout_exp_result_id
-	});
+			static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+				builder,
+				format!("cout_exp_result_id {}", i),
+				cout[i],
+				BinaryField64b::MULTIPLICATIVE_GENERATOR.pow(1 << (16 * i)),
+				g_table,
+			)
+			.map(|res| res.0)
+		})
+		.collect::<Result<Vec<_>, anyhow::Error>>()?;
 
 	builder.assert_zero(
 		name,

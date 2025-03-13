@@ -1,9 +1,6 @@
 use anyhow::Ok;
 use binius_core::oracle::OracleId;
-use binius_field::{
-	underlier::WithUnderlier, BinaryField128b, BinaryField16b, BinaryField64b, PackedField,
-	TowerField,
-};
+use binius_field::{BinaryField128b, BinaryField16b, BinaryField64b, PackedField, TowerField};
 use binius_maybe_rayon::{
 	iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
 	slice::ParallelSliceMut,
@@ -35,7 +32,8 @@ pub fn build_exp_table(
 				let start = i * chunk_size;
 				let mut current_g = g.pow(start as u128);
 				chunk.iter_mut().enumerate().for_each(|(i, el)| {
-					*el = ((start as u128 + i as u128) << 64) | (current_g.to_underlier() as u128);
+					let current_g_u64: u64 = current_g.into();
+					*el = (((start + i) as u128) << 64) | current_g_u64 as u128;
 					current_g *= g;
 				})
 			})
@@ -77,10 +75,10 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 
 		let mut exp_result = witness.new_column::<BinaryField64b>(exp_result);
 
-		let exp_result = exp_result.as_mut_slice::<u64>();
+		let exp_result = exp_result.as_mut_slice::<BinaryField64b>();
 
 		exp_result.par_iter_mut().enumerate().for_each(|(i, exp)| {
-			*exp = g.pow(xin[i] as u128).to_underlier();
+			*exp = g.pow(xin[i] as u128);
 		});
 
 		let mut lookup_values = witness.new_column::<BinaryField128b>(lookup_values);
@@ -91,7 +89,8 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 			.iter_mut()
 			.enumerate()
 			.for_each(|(i, look_val)| {
-				*look_val = ((xin[i] as u128) << 64) | exp_result[i] as u128;
+				let exp_result_u64: u64 = exp_result[i].into();
+				*look_val = ((xin[i] as u128) << 64) | exp_result_u64 as u128;
 			});
 	}
 
