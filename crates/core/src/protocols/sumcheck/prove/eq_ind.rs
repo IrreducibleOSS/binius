@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
-use binius_hal::{make_portable_backend, ComputationBackend, SumcheckEvaluator};
+use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
 use binius_math::{
 	ArithExpr, CompositionPoly, EvaluationDomainFactory, EvaluationOrder, InterpolationDomain,
 	MLEDirectAdapter, MultilinearPoly, MultilinearQuery,
@@ -216,6 +216,26 @@ where
 	}
 }
 
+pub fn eq_ind_expand<P, Backend>(
+	evaluation_order: EvaluationOrder,
+	n_vars: usize,
+	eq_ind_challenges: &[P::Scalar],
+	backend: &Backend,
+) -> Result<Backend::Vec<P>, HalError>
+where
+	P: PackedField,
+	Backend: ComputationBackend,
+{
+	if n_vars != eq_ind_challenges.len() {
+		bail!(HalError::IncorrectQuerySize { expected: n_vars });
+	}
+
+	backend.tensor_product_full_query(match evaluation_order {
+		EvaluationOrder::LowToHigh => &eq_ind_challenges[n_vars.min(1)..],
+		EvaluationOrder::HighToLow => &eq_ind_challenges[..n_vars.saturating_sub(1)],
+	})
+}
+
 impl<F, FDomain, P, Composition, M, Backend> SumcheckProver<F>
 	for EqIndSumcheckProver<'_, FDomain, P, Composition, M, Backend>
 where
@@ -243,13 +263,11 @@ where
 		let eq_ind_partial_evals = if let Some(eq_ind_partial_evals) = &self.eq_ind_partial_evals {
 			eq_ind_partial_evals
 		} else {
-			self.eq_ind_partial_evals = Some(self.backend.tensor_product_full_query(
-				match self.evaluation_order() {
-					EvaluationOrder::LowToHigh => &self.eq_ind_challenges[self.n_vars().min(1)..],
-					EvaluationOrder::HighToLow => {
-						&self.eq_ind_challenges[..self.n_vars().saturating_sub(1)]
-					}
-				},
+			self.eq_ind_partial_evals = Some(eq_ind_expand(
+				self.evaluation_order(),
+				self.n_vars(),
+				&self.eq_ind_challenges,
+				self.backend,
 			)?);
 
 			self.eq_ind_partial_evals
