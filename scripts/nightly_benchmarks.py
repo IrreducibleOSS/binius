@@ -27,7 +27,6 @@ NUM_MULS = 1 << 20
 EXAMPLES_TO_RUN = {
     r"keccakf": {
         "single_threaded": True,
-        "type": "E2E",
         "display": r"Keccak-f",
         "export": "keccakf-report.csv",
         "args": ["keccakf_circuit", "--", "--n-permutations"],
@@ -35,7 +34,6 @@ EXAMPLES_TO_RUN = {
     },
     "vision32b": {
         "single_threaded": True,
-        "type": "E2E",
         "display": r"Vision Mark-32",
         "export": "vision32b-report.csv",
         "args": ["vision32b_circuit", "--", "--n-permutations"],
@@ -43,7 +41,6 @@ EXAMPLES_TO_RUN = {
     },
     "sha256": {
         "single_threaded": True,
-        "type": "E2E",
         "display": "SHA-256",
         "export": "sha256-report.csv",
         "args": ["sha256_circuit", "--", "--n-compressions"],
@@ -51,7 +48,6 @@ EXAMPLES_TO_RUN = {
     },
     "b32_mul": {
         "single_threaded": False,
-        "type": "E2E",
         "display": "BinaryField32b mul",
         "export": "b32-mul-report.csv",
         "args": ["b32_mul", "--", "--n-ops"],
@@ -59,7 +55,6 @@ EXAMPLES_TO_RUN = {
     },
     "u32_add": {
         "single_threaded": False,
-        "type": "E2E",
         "display": "u32 add",
         "export": "u32-add-report.csv",
         "args": ["u32_add", "--", "--n-additions"],
@@ -67,7 +62,6 @@ EXAMPLES_TO_RUN = {
     },
     "u32_mul": {
         "single_threaded": False,
-        "type": "E2E",
         "display": "u32 mul",
         "export": "u32-mul-report.csv",
         "args": ["u32_mul", "--", "--n-muls"],
@@ -75,24 +69,21 @@ EXAMPLES_TO_RUN = {
     },
     "xor": {
         "single_threaded": False,
-        "type": "E2E",
-        "display": "Xor",
+        "display": "XOR (32-bit)",
         "export": "xor-report.csv",
         "args": ["bitwise_ops", "--", "--op", "xor", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
     },
     "and": {
         "single_threaded": False,
-        "type": "E2E",
-        "display": "And",
+        "display": "AND (32-bit)",
         "export": "and-report.csv",
         "args": ["bitwise_ops", "--", "--op", "and", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
     },
     "or": {
         "single_threaded": False,
-        "type": "E2E",
-        "display": "Or",
+        "display": "OR (32-bit)",
         "export": "or-report.csv",
         "args": ["bitwise_ops", "--", "--op", "or", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
@@ -230,7 +221,6 @@ def run_benchmark_group(benchmarks) -> dict:
                 multi_threaded_data[key + "-multi-thread"] = value
             multi_threaded_data["n_ops"] = benchmark_args["n_ops"]
             multi_threaded_data["display"] = benchmark_args["display"]
-            multi_threaded_data["type"] = benchmark_args["type"]
             benchmark_results[benchmark].update(multi_threaded_data)
 
             if benchmark_args["single_threaded"]:
@@ -267,10 +257,8 @@ def value_to_bencher(value: Union[list[float], int], metric_type: str) -> dict:
 def dict_to_bencher(data: dict) -> dict:
     bencher_data = {}
     for benchmark, value in data.items():
-        # Name is of the following format: <benchmark_type> / <benchmark_name> / n_ops
-        common_name = (
-            f"{value['type']} / {value['display']} / 2^{strict_log2(value['n_ops'])}"
-        )
+        # Name is of the following format: E2E / <benchmark_name> / n_ops
+        common_name = f"E2E / {value['display']} / 2^{strict_log2(value['n_ops'])}"
         if bencher_data.get(common_name) is None:
             bencher_data[common_name] = {}
         for key in [
