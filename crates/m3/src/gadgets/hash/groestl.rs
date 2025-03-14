@@ -73,7 +73,7 @@ impl<const V: usize> SBox<V> {
 		};
 
 		let inv_bits = array::from_fn(|i| table.add_committed(format!("inv_bits[{}]", i)));
-		let inv = table.add_linear_combination("inv", pack_b8(inv_bits.map(Expr::from)));
+		let inv = table.add_computed("inv", pack_b8(inv_bits.map(Expr::from)));
 
 		// input * inv == 1 OR inv == 0
 		table.assert_zero("inv_valid_or_inv_zero", input.clone() * Expr::from(inv).pow(2) - inv);
@@ -85,8 +85,8 @@ impl<const V: usize> SBox<V> {
 			.map(|(inv_bit_i, scalar)| upcast_col(inv_bit_i) * scalar)
 			.reduce(|a, b| a + b)
 			.expect("inv_bits and S_BOX_TOWER_MATRIX_COLS have length 8");
-		let output = table
-			.add_linear_combination("output", linear_transform_expr.clone() + S_BOX_TOWER_OFFSET);
+		let output =
+			table.add_computed("output", linear_transform_expr.clone() + S_BOX_TOWER_OFFSET);
 
 		Self {
 			input,
