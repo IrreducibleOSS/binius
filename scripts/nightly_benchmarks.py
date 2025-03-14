@@ -267,7 +267,7 @@ def value_to_bencher(value: Union[list[float], int], metric_type: str) -> dict:
 def dict_to_bencher(data: dict) -> dict:
     bencher_data = {}
     for benchmark, value in data.items():
-        # Name is of the following format: <benchmark_type>::<benchmark_name>::(trace_gen_time | proving_time | verification_time | proof-size | n_ops)
+        # Name is of the following format: <benchmark_type>::<benchmark_name>::n_ops
         common_name = (
             f"{value['type']}::{value['display']}::2^{strict_log2(value['n_ops'])}"
         )
