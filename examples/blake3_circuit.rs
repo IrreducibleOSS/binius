@@ -1,9 +1,5 @@
 // Copyright 2024-2025 Irreducible Inc.
 
-#![feature(array_try_from_fn)]
-
-use std::array;
-
 use anyhow::Result;
 use binius_circuits::{
 	blake3::{BLAKE3_STATE_LEN, CHAINING_VALUE_LEN},
@@ -55,11 +51,11 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let input: [OracleId; BLAKE3_STATE_LEN] = array::try_from_fn(|i| {
+	let input: [OracleId; BLAKE3_STATE_LEN] = array_util::try_from_fn(|i| {
 		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
 	})?;
 
-	let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array::try_from_fn(|i| {
+	let chaining_value: [OracleId; CHAINING_VALUE_LEN] = array_util::try_from_fn(|i| {
 		unconstrained::<BinaryField1b>(&mut builder, i, log_n_compressions + COMPRESSION_LOG_LEN)
 	})?;
 
