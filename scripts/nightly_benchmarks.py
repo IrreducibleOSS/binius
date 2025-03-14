@@ -27,7 +27,6 @@ NUM_MULS = 1 << 20
 EXAMPLES_TO_RUN = {
     r"keccakf": {
         "single_threaded": True,
-        "type": "hasher",
         "display": r"Keccak-f",
         "export": "keccakf-report.csv",
         "args": ["keccakf_circuit", "--", "--n-permutations"],
@@ -35,7 +34,6 @@ EXAMPLES_TO_RUN = {
     },
     "vision32b": {
         "single_threaded": True,
-        "type": "hasher",
         "display": r"Vision Mark-32",
         "export": "vision32b-report.csv",
         "args": ["vision32b_circuit", "--", "--n-permutations"],
@@ -43,7 +41,6 @@ EXAMPLES_TO_RUN = {
     },
     "sha256": {
         "single_threaded": True,
-        "type": "hasher",
         "display": "SHA-256",
         "export": "sha256-report.csv",
         "args": ["sha256_circuit", "--", "--n-compressions"],
@@ -51,7 +48,6 @@ EXAMPLES_TO_RUN = {
     },
     "b32_mul": {
         "single_threaded": False,
-        "type": "binary_ops",
         "display": "BinaryField32b mul",
         "export": "b32-mul-report.csv",
         "args": ["b32_mul", "--", "--n-ops"],
@@ -59,7 +55,6 @@ EXAMPLES_TO_RUN = {
     },
     "u32_add": {
         "single_threaded": False,
-        "type": "binary_ops",
         "display": "u32 add",
         "export": "u32-add-report.csv",
         "args": ["u32_add", "--", "--n-additions"],
@@ -67,7 +62,6 @@ EXAMPLES_TO_RUN = {
     },
     "u32_mul": {
         "single_threaded": False,
-        "type": "binary_ops",
         "display": "u32 mul",
         "export": "u32-mul-report.csv",
         "args": ["u32_mul", "--", "--n-muls"],
@@ -75,24 +69,21 @@ EXAMPLES_TO_RUN = {
     },
     "xor": {
         "single_threaded": False,
-        "type": "binary_ops",
-        "display": "Xor",
+        "display": "XOR (32-bit)",
         "export": "xor-report.csv",
         "args": ["bitwise_ops", "--", "--op", "xor", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
     },
     "and": {
         "single_threaded": False,
-        "type": "binary_ops",
-        "display": "And",
+        "display": "AND (32-bit)",
         "export": "and-report.csv",
         "args": ["bitwise_ops", "--", "--op", "and", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
     },
     "or": {
         "single_threaded": False,
-        "type": "binary_ops",
-        "display": "Or",
+        "display": "OR (32-bit)",
         "export": "or-report.csv",
         "args": ["bitwise_ops", "--", "--op", "or", "--n-u32-ops"],
         "n_ops": NUM_BINARY_OPS,
@@ -105,7 +96,7 @@ BINARY_OPS_BENCHMARKS = {}
 
 def run_benchmark(benchmark_args, include_single_threaded) -> tuple[bytes, bytes]:
     command = (
-        ["cargo", "run", "--release", "--example"]
+        ["cargo", "run", "--features", "perfetto", "--release", "--example"]
         + benchmark_args["args"]
         + [f"{benchmark_args['n_ops']}"]
     )
@@ -130,12 +121,22 @@ def parse_csv_file(file_name) -> dict:
         reader = csv.reader(file)
         for row in reader:
             if row[0] == "generating trace":
-                data.update({"trace_gen_time": int(row[2])})
+                data.update({"trace-gen-time": nano_to_milli(int(row[2]))})
             elif row[0] == "constraint_system::prove":
-                data.update({"proving_time": int(row[2])})
+                data.update({"prove-time": nano_to_milli(int(row[2]))})
             elif row[0] == "constraint_system::verify":
-                data.update({"verification_time": int(row[2])})
+                data.update({"verify-time": nano_to_milli(int(row[2]))})
     return data
+
+
+def strict_log2(x: int) -> int:
+    """
+    Calculate the strict log base 2 of an integer.
+    Raises ValueError if x is not a power of 2.
+    """
+    if x <= 0 or not (x & (x - 1) == 0):  # Check if x is power of 2
+        raise ValueError(f"{x} is not a positive power of 2")
+    return x.bit_length() - 1
 
 
 KIB_TO_BYTES = 1024.0
@@ -169,8 +170,8 @@ def parse_proof_size(proof_size: bytes) -> int:
     return int(byte_len / KIB_TO_BYTES)
 
 
-def nano_to_milli(nano) -> float:
-    return float(nano) / 1000000.0
+def nano_to_milli(nano) -> int:
+    return int(float(nano) / 1000000.0)
 
 
 def nano_to_seconds(nano) -> float:
@@ -198,6 +199,8 @@ def run_and_parse_benchmark(
             if data.get(key) is None:
                 data[key] = []
             data[key].append(value)
+    # Move perfetto trace to example specific file
+    os.rename("tracing.perfetto-trace", f"examples/{benchmark}.perfetto-trace")
     # Get proof sizes
     found = re.search(rb"Proof size: (.*)", stdout)
     if found:
@@ -212,23 +215,22 @@ def run_benchmark_group(benchmarks) -> dict:
     for benchmark, benchmark_args in benchmarks.items():
         try:
             data, proof_size = run_and_parse_benchmark(benchmark, benchmark_args, False)
-            benchmark_results[benchmark] = {"proof_size_kib": proof_size}
-            data["n_ops"] = benchmark_args["n_ops"]
-            data["display"] = benchmark_args["display"]
-            data["type"] = benchmark_args["type"]
-            benchmark_results[benchmark].update(data)
+            benchmark_results[benchmark] = {"proof-size": proof_size}
+            multi_threaded_data = {}
+            for key, value in data.items():
+                multi_threaded_data[key + "-multi-thread"] = value
+            multi_threaded_data["n_ops"] = benchmark_args["n_ops"]
+            multi_threaded_data["display"] = benchmark_args["display"]
+            benchmark_results[benchmark].update(multi_threaded_data)
 
             if benchmark_args["single_threaded"]:
-                data, proof_size = run_and_parse_benchmark(
+                data, _proof_size = run_and_parse_benchmark(
                     benchmark, benchmark_args, True
                 )
-                benchmark_results[benchmark + "_single_threaded"] = {
-                    "proof_size_kib": proof_size
-                }
-                data["n_ops"] = benchmark_args["n_ops"]
-                data["display"] = benchmark_args["display"] + " (single-threaded)"
-                data["type"] = benchmark_args["type"]
-                benchmark_results[benchmark + "_single_threaded"].update(data)
+                single_threaded_data = {}
+                for key, value in data.items():
+                    single_threaded_data[key + "-single-thread"] = value
+                benchmark_results[benchmark].update(single_threaded_data)
 
         except Exception as e:
             print(f"Failed to run benchmark: {benchmark} with error {e} \nExiting...")
@@ -236,37 +238,40 @@ def run_benchmark_group(benchmarks) -> dict:
     return benchmark_results
 
 
-def value_to_bencher(value: Union[list[float], int], throughput: bool = False) -> dict:
+def value_to_bencher(value: Union[list[float], int], metric_type: str) -> dict:
     if isinstance(value, list):
         avg_value = sum(value) / len(value)
         max_value = max(value)
         min_value = min(value)
-    else:
-        avg_value = max_value = min_value = value
-
-    metric_type = "throughput" if throughput else "latency"
-    return {
-        metric_type: {
-            "value": avg_value,
-            "upper_value": max_value,
-            "lower_value": min_value,
+        return {
+            metric_type: {
+                "value": avg_value,
+                "upper_value": max_value,
+                "lower_value": min_value,
+            }
         }
-    }
+    else:
+        return {metric_type: {"value": value}}
 
 
 def dict_to_bencher(data: dict) -> dict:
     bencher_data = {}
     for benchmark, value in data.items():
-        # Name is of the following format: <benchmark_type>::<benchmark_name>::(trace_gen_time | proving_time | verification_time | proof_size_kib | n_ops)
-        common_name = f"{value['type']}::{value['display']}"
+        # Name is of the following format: E2E / <benchmark_name> / n_ops
+        common_name = f"E2E / {value['display']} / 2^{strict_log2(value['n_ops'])}"
+        if bencher_data.get(common_name) is None:
+            bencher_data[common_name] = {}
         for key in [
-            "trace_gen_time",
-            "proving_time",
-            "verification_time",
-            "proof_size_kib",
-            "n_ops",
+            "trace-gen-time-multi-thread",
+            "trace-gen-time-single-thread",
+            "prove-time-multi-thread",
+            "prove-time-single-thread",
+            "verify-time-multi-thread",
+            "verify-time-single-thread",
+            "proof-size",
         ]:
-            bencher_data[f"{common_name}::{key}"] = value_to_bencher(value[key])
+            if value.get(key) is not None:
+                bencher_data[common_name].update(value_to_bencher(value[key], key))
     return bencher_data
 
 
