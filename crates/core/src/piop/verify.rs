@@ -128,7 +128,7 @@ where
 	assert!(arity > 0);
 
 	// The total arities must be strictly less than n_packed_vars, hence the -1
-	let fold_arities = std::iter::repeat_n(arity, commit_meta.total_vars.saturating_sub(1) / arity)
+	let fold_arities = std::iter::repeat_n(arity, commit_meta.total_vars / arity)
 		.collect::<Vec<_>>();
 
 	// Choose the interleaved code batch size to align with the first fold arity, which is

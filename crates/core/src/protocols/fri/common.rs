@@ -66,7 +66,6 @@ where
 	FS: BinaryField,
 {
 	// Preconditions
-	debug_assert!(!folding_challenges.is_empty());
 	debug_assert!(start_round + folding_challenges.len() <= rs_code.log_dim());
 	debug_assert_eq!(values.len(), 1 << folding_challenges.len());
 	debug_assert!(scratch_buffer.len() >= values.len());
@@ -184,7 +183,7 @@ where
 		fold_arities: Vec<usize>,
 		n_test_queries: usize,
 	) -> Result<Self, Error> {
-		if fold_arities.iter().sum::<usize>() >= rs_code.log_dim() + log_batch_size {
+		if fold_arities.iter().sum::<usize>() > rs_code.log_dim() + log_batch_size {
 			bail!(Error::InvalidFoldAritySequence)
 		}
 
