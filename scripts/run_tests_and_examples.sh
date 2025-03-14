@@ -7,8 +7,8 @@ CARGO_PROFILE="${CARGO_PROFILE:-test}"
 CARGO_EXTRA_FLAGS="${CARGO_EXTRA_FLAGS:-}"
 FEATURES="${FEATURES:-}"
 # Enable nightly_features unless building for stable
-if [ -z "$CARGO_STABLE" ]; then
-    FEATURES="$FEATURES --features=nightly_features"
+if [ ! -z "$CARGO_STABLE" ]; then
+    FEATURES="$FEATURES --no-default-features --features=rayon"
 fi
 CARGO="cargo ${CARGO_STABLE:+ +$RUST_VERSION}"
 
