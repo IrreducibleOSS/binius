@@ -15,7 +15,7 @@ use super::{
 	compositions::ProverExpComposition,
 	error::Error,
 	provers::{
-		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, GeneratorExpProver,
+		CompositeSumClaimWithMultilinears, DynamicBaseExpProver, ExpProver, StaticExpProver,
 	},
 	witness::BaseExpWitness,
 };
@@ -298,7 +298,7 @@ where
 				DynamicBaseExpProver::new(witness, claim)
 					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			} else {
-				GeneratorExpProver::<'a, P>::new(witness, claim)
+				StaticExpProver::<'a, P>::new(witness, claim)
 					.map(|prover| Box::new(prover) as Box<dyn ExpProver<'a, P> + 'a>)
 			}
 		})

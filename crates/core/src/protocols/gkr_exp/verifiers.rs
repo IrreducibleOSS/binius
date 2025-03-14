@@ -53,11 +53,11 @@ pub trait ExpVerifier<F: Field> {
 	) -> Vec<LayerClaim<F>>;
 }
 
-pub struct ConstantBaseExpVerifier<F: Field>(ExpClaim<F>);
+pub struct StaticBaseExpVerifier<F: Field>(ExpClaim<F>);
 
-impl<F: Field> ConstantBaseExpVerifier<F> {
+impl<F: Field> StaticBaseExpVerifier<F> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if claim.constant_base.is_none() {
+		if claim.static_base.is_none() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -65,7 +65,7 @@ impl<F: Field> ConstantBaseExpVerifier<F> {
 	}
 }
 
-impl<F> ExpVerifier<F> for ConstantBaseExpVerifier<F>
+impl<F> ExpVerifier<F> for StaticBaseExpVerifier<F>
 where
 	F: BinaryField,
 {
@@ -88,7 +88,7 @@ where
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
 			// a_0(x) = (V_0(x) - 1)/(g - 1)
 
-			let base = self.0.constant_base.expect("constant_base exist");
+			let base = self.0.static_base.expect("static_base exist");
 
 			LayerClaim {
 				eval_point: self.0.eval_point.clone(),
@@ -132,10 +132,10 @@ where
 		} else {
 			let internal_layer_index = self.exponent_bit_width() - 1 - layer_no;
 
-			let base_power_constant = self
+			let base_power_static = self
 				.0
-				.constant_base
-				.expect("constant_base exist")
+				.static_base
+				.expect("static_base exist")
 				.pow(1 << internal_layer_index);
 
 			let this_layer_input_index = multilinears_index;
@@ -145,9 +145,7 @@ where
 				composite_claims_n_multilinears,
 				[this_layer_input_index, exponent_bit_index, eq_ind_index],
 				ExtraProduct {
-					inner: ExpCompositions::ConstantBase {
-						base_power_constant,
-					},
+					inner: ExpCompositions::StaticBase { base_power_static },
 				},
 			)?;
 
@@ -178,11 +176,11 @@ where
 	}
 }
 
-pub struct ExpDynamicVerifier<F: Field>(ExpClaim<F>);
+pub struct DynamicExpVerifier<F: Field>(ExpClaim<F>);
 
-impl<F: Field> ExpDynamicVerifier<F> {
+impl<F: Field> DynamicExpVerifier<F> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if claim.constant_base.is_some() {
+		if claim.static_base.is_some() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -190,7 +188,7 @@ impl<F: Field> ExpDynamicVerifier<F> {
 	}
 }
 
-impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
+impl<F: Field> ExpVerifier<F> for DynamicExpVerifier<F> {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width
 	}
