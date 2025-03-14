@@ -24,7 +24,7 @@ pub struct BaseExpWitness<'a, P: PackedField> {
 
 #[derive(Clone)]
 pub enum BaseWitness<'a, P: PackedField> {
-	Constant(P::Scalar),
+	Static(P::Scalar),
 	Dynamic(MultilinearWitness<'a, P>),
 }
 
@@ -45,7 +45,7 @@ where
 		.enumerate()
 		.map(|(i, &prev_out)| {
 			let (base, prev_out) = match &base {
-				Base::Constant(g) => (*g, prev_out),
+				Base::Static(g) => (*g, prev_out),
 				Base::Dynamic(poly) => (
 					poly.packed_evals()
 						.expect("base and exponent_bit_witness have the same width")[i],
@@ -66,7 +66,7 @@ where
 }
 
 enum Base<'a, P: PackedField> {
-	Constant(P),
+	Static(P),
 	Dynamic(MultilinearWitness<'a, P>),
 }
 
@@ -84,7 +84,7 @@ where
 		.into_par_iter()
 		.map(|i| {
 			let base = match &base {
-				Base::Constant(g) => *g,
+				Base::Static(g) => *g,
 				Base::Dynamic(poly) => poly
 					.packed_evals()
 					.expect("base and exponent_bit_witness have the same width")[i],
@@ -106,9 +106,9 @@ impl<'a, P> BaseExpWitness<'a, P>
 where
 	P: PackedField,
 {
-	/// Constructs a witness where the base is the constant [BinaryField].
-	#[instrument(skip_all, name = "gkr_exp::new_with_constant_base")]
-	pub fn new_with_constant_base(
+	/// Constructs a witness where the base is the static [BinaryField].
+	#[instrument(skip_all, name = "gkr_exp::new_with_static_base")]
+	pub fn new_with_static_base(
 		exponent: Vec<MultilinearWitness<'a, P>>,
 		base: P::Scalar,
 	) -> Result<Self, Error>
@@ -130,19 +130,19 @@ where
 
 		let mut single_bit_output_layers_data = vec![Vec::new(); exponent_bit_width];
 
-		let mut packed_base_power_constant = P::broadcast(base);
+		let mut packed_base_power_static = P::broadcast(base);
 
 		single_bit_output_layers_data[0] = evaluate_first_layer_output_packed(
 			exponent[0].clone(),
-			Base::Constant(packed_base_power_constant),
+			Base::Static(packed_base_power_static),
 		);
 
 		for layer_idx_from_left in 1..exponent_bit_width {
-			packed_base_power_constant = packed_base_power_constant.square();
+			packed_base_power_static = packed_base_power_static.square();
 
 			single_bit_output_layers_data[layer_idx_from_left] = evaluate_single_bit_output_packed(
 				exponent[layer_idx_from_left].clone(),
-				Base::Constant(packed_base_power_constant),
+				Base::Static(packed_base_power_static),
 				&single_bit_output_layers_data[layer_idx_from_left - 1],
 			);
 		}
@@ -159,7 +159,7 @@ where
 		Ok(Self {
 			exponent,
 			single_bit_output_layers_data,
-			base: BaseWitness::Constant(base),
+			base: BaseWitness::Static(base),
 		})
 	}
 
@@ -222,7 +222,7 @@ where
 
 	pub const fn uses_dynamic_base(&self) -> bool {
 		match self.base {
-			BaseWitness::Constant(_) => false,
+			BaseWitness::Static(_) => false,
 			BaseWitness::Dynamic(_) => true,
 		}
 	}

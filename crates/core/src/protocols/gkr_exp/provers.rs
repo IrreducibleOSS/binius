@@ -93,9 +93,9 @@ impl<'a, P: PackedField> ExpCommonProver<'a, P> {
 	}
 }
 
-pub struct GeneratorExpProver<'a, P: PackedField>(ExpCommonProver<'a, P>);
+pub struct StaticExpProver<'a, P: PackedField>(ExpCommonProver<'a, P>);
 
-impl<'a, P: PackedField> GeneratorExpProver<'a, P> {
+impl<'a, P: PackedField> StaticExpProver<'a, P> {
 	pub fn new(witness: BaseExpWitness<'a, P>, claim: &ExpClaim<P::Scalar>) -> Result<Self, Error> {
 		if witness.uses_dynamic_base() {
 			bail!(Error::IncorrectWitnessType);
@@ -105,7 +105,7 @@ impl<'a, P: PackedField> GeneratorExpProver<'a, P> {
 	}
 }
 
-impl<'a, P> ExpProver<'a, P> for GeneratorExpProver<'a, P>
+impl<'a, P> ExpProver<'a, P> for StaticExpProver<'a, P>
 where
 	P::Scalar: BinaryField,
 	P: PackedField,
@@ -139,18 +139,16 @@ where
 		let exponent_bit_index = multilinears_index + 1;
 
 		let base = match self.0.witness.base.clone() {
-			BaseWitness::Constant(base) => base,
-			_ => unreachable!("witness must contain constant base"),
+			BaseWitness::Static(base) => base,
+			_ => unreachable!("witness must contain static base"),
 		};
 
-		let base_power_constant = base.pow(1 << internal_layer_index);
+		let base_power_static = base.pow(1 << internal_layer_index);
 
 		let composition = IndexComposition::new(
 			composite_claims_n_multilinears,
 			[this_layer_input_index, exponent_bit_index],
-			ExpCompositions::ConstantBase {
-				base_power_constant,
-			},
+			ExpCompositions::StaticBase { base_power_static },
 		)?;
 
 		let composition = FixedDimIndexCompositions::Bivariate(composition);
@@ -183,8 +181,8 @@ where
 			let LayerClaim { eval_point, eval } = self.0.current_layer_claim.clone();
 
 			let base = match self.0.witness.base.clone() {
-				BaseWitness::Constant(base) => base,
-				_ => unreachable!("witness must contain constant base"),
+				BaseWitness::Static(base) => base,
+				_ => unreachable!("witness must contain static base"),
 			};
 
 			LayerClaim::<P::Scalar> {

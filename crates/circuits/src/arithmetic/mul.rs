@@ -131,7 +131,7 @@ where
 	builder.add_exp(
 		xin_bits,
 		xin_exp_result_id,
-		ExpBase::Constant(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		ExpBase::Static(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
 		FExpBase::TOWER_LEVEL,
 	);
 	builder.add_exp(
@@ -143,13 +143,13 @@ where
 	builder.add_exp(
 		cout_low_bits.to_vec(),
 		cout_low_exp_result_id,
-		ExpBase::Constant(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
+		ExpBase::Static(FExpBase::MULTIPLICATIVE_GENERATOR.into()),
 		FExpBase::TOWER_LEVEL,
 	);
 	builder.add_exp(
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
-		ExpBase::Constant(
+		ExpBase::Static(
 			FExpBase::MULTIPLICATIVE_GENERATOR
 				.pow(1 << cout_low_bits.len())
 				.into(),

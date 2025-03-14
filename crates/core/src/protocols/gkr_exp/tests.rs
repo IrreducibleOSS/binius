@@ -65,7 +65,7 @@ fn generate_claim_witness<'a>(
 	let witness = if let Some(base) = base {
 		BaseExpWitness::<'_, P>::new_with_dynamic_base(exponent_witnesses, base).unwrap()
 	} else {
-		BaseExpWitness::<'_, P>::new_with_constant_base(
+		BaseExpWitness::<'_, P>::new_with_static_base(
 			exponent_witnesses,
 			F::MULTIPLICATIVE_GENERATOR,
 		)
@@ -76,7 +76,7 @@ fn generate_claim_witness<'a>(
 
 	let last_layer_query = MultilinearQuery::expand(eval_point);
 
-	let constant_base = if witness.uses_dynamic_base() {
+	let static_base = if witness.uses_dynamic_base() {
 		None
 	} else {
 		Some(F::MULTIPLICATIVE_GENERATOR)
@@ -89,7 +89,7 @@ fn generate_claim_witness<'a>(
 			.unwrap(),
 		exponent_bit_width: witness.exponent.len(),
 		n_vars: eval_point.len(),
-		constant_base,
+		static_base,
 	};
 	(witness, claim)
 }
@@ -247,7 +247,7 @@ fn prove_reduces_to_correct_claims() {
 			let this_bit_query = MultilinearQuery::expand(&this_claim.eval_point);
 
 			match &witness.base {
-				super::witness::BaseWitness::Constant(_) => {
+				super::witness::BaseWitness::Static(_) => {
 					let exponent = witness.exponent[exponent_len - exponent_bit_number].clone();
 
 					let claimed_evaluation = this_claim.eval;

@@ -36,7 +36,7 @@ pub struct Exp<F: Field> {
 
 #[derive(Debug, Clone, SerializeBytes, DeserializeBytes)]
 pub enum ExpBase<F: Field> {
-	Constant(F),
+	Static(F),
 	Dynamic(OracleId),
 }
 
@@ -71,7 +71,7 @@ where
 			let fast_exponent_witnesses = get_fast_exponent_witnesses(witness, &exp.bits_ids)?;
 
 			let exp_witness = match exp.base {
-				ExpBase::Constant(base) => gkr_exp::BaseExpWitness::new_with_constant_base(
+				ExpBase::Static(base) => gkr_exp::BaseExpWitness::new_with_static_base(
 					fast_exponent_witnesses,
 					base.into(),
 				),
@@ -124,7 +124,7 @@ where
 	let constant_bases = exps
 		.iter()
 		.map(|exp| match exp.base {
-			ExpBase::Constant(base) => Some(base),
+			ExpBase::Static(base) => Some(base),
 			ExpBase::Dynamic(_) => None,
 		})
 		.collect::<Vec<_>>();
@@ -146,7 +146,7 @@ pub fn make_eval_claims<F: TowerField>(
 	let dynamic_base_ids = exps
 		.iter()
 		.map(|exp| match exp.base {
-			ExpBase::Constant(_) => None,
+			ExpBase::Static(_) => None,
 			ExpBase::Dynamic(base_id) => Some(base_id),
 		})
 		.collect::<Vec<_>>();

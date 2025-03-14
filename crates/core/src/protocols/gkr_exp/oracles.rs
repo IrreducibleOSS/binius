@@ -37,7 +37,7 @@ where
 pub fn construct_gkr_exp_claims<F>(
 	exponents_ids: &[Vec<OracleId>],
 	evals: &[F],
-	constant_bases: Vec<Option<F>>,
+	static_bases: Vec<Option<F>>,
 	oracles: &MultilinearOracleSet<F>,
 	eval_point: &[F],
 ) -> Result<Vec<ExpClaim<F>>, Error>
@@ -50,8 +50,8 @@ where
 		}
 	}
 
-	let claims = izip!(exponents_ids, evals, constant_bases)
-		.map(|(exponents_ids, &eval, constant_base)| {
+	let claims = izip!(exponents_ids, evals, static_bases)
+		.map(|(exponents_ids, &eval, static_base)| {
 			let id = *exponents_ids.last().expect("exponents_ids not empty");
 			let n_vars = oracles.n_vars(id);
 
@@ -60,7 +60,7 @@ where
 				eval,
 				exponent_bit_width: exponents_ids.len(),
 				n_vars,
-				constant_base,
+				static_base,
 			}
 		})
 		.collect::<Vec<_>>();
