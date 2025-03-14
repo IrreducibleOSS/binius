@@ -13,7 +13,7 @@ pub enum ExpCompositions<F>
 where
 	F: Field,
 {
-	ConstantBase { base_power_constant: F },
+	StaticBase { base_power_static: F },
 	DynamicBase,
 	DynamicBaseLastLayer,
 }
@@ -24,14 +24,14 @@ where
 {
 	fn n_vars(&self) -> usize {
 		match self {
-			Self::ConstantBase { .. } | Self::DynamicBaseLastLayer => 2,
+			Self::StaticBase { .. } | Self::DynamicBaseLastLayer => 2,
 			Self::DynamicBase => 3,
 		}
 	}
 
 	fn degree(&self) -> usize {
 		match self {
-			Self::ConstantBase { .. } | Self::DynamicBaseLastLayer => 2,
+			Self::StaticBase { .. } | Self::DynamicBaseLastLayer => 2,
 			Self::DynamicBase => 4,
 		}
 	}
@@ -42,12 +42,10 @@ where
 
 	fn expression(&self) -> ArithExpr<P::Scalar> {
 		match self {
-			Self::ConstantBase {
-				base_power_constant,
-			} => {
+			Self::StaticBase { base_power_static } => {
 				ArithExpr::Var(0)
 					* ((ArithExpr::Const(P::Scalar::ONE) - ArithExpr::Var(1))
-						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_constant))
+						+ ArithExpr::Var(1) * ArithExpr::Const(*base_power_static))
 			}
 			Self::DynamicBase => {
 				ArithExpr::Pow(Box::new(ArithExpr::Var(0)), 2)
@@ -68,9 +66,9 @@ where
 			});
 		}
 		match self {
-			Self::ConstantBase {
-				base_power_constant,
-			} => Ok(query[0] * ((P::one() - query[1]) + query[1] * *base_power_constant)),
+			Self::StaticBase { base_power_static } => {
+				Ok(query[0] * ((P::one() - query[1]) + query[1] * *base_power_static))
+			}
 			Self::DynamicBase => {
 				Ok(query[0].square() * ((P::one() - query[1]) + query[1] * query[2]))
 			}

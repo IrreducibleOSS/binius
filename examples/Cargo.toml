@@ -65,6 +65,10 @@ name = "u32_mul"
 path = "u32_mul.rs"
 
 [[example]]
+name = "u64_mul"
+path = "u64_mul.rs"
+
+[[example]]
 name = "bitwise_ops"
 path = "bitwise_ops.rs"
 

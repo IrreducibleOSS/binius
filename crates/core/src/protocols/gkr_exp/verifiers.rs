@@ -1,8 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::marker::PhantomData;
-
-use binius_field::{BinaryField, ExtensionField, Field, PackedField};
+use binius_field::{BinaryField, Field, PackedField};
 use binius_math::EvaluationOrder;
 use binius_utils::bail;
 
@@ -55,22 +53,21 @@ pub trait ExpVerifier<F: Field> {
 	) -> Vec<LayerClaim<F>>;
 }
 
-pub struct GeneratorExpVerifier<F: Field, FBase>(ExpClaim<F>, PhantomData<FBase>);
+pub struct StaticBaseExpVerifier<F: Field>(ExpClaim<F>);
 
-impl<F: Field, FBase> GeneratorExpVerifier<F, FBase> {
+impl<F: Field> StaticBaseExpVerifier<F> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if claim.uses_dynamic_base {
+		if claim.static_base.is_none() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
-		Ok(Self(claim.clone(), PhantomData))
+		Ok(Self(claim.clone()))
 	}
 }
 
-impl<F, FBase> ExpVerifier<F> for GeneratorExpVerifier<F, FBase>
+impl<F> ExpVerifier<F> for StaticBaseExpVerifier<F>
 where
-	FBase: BinaryField,
-	F: BinaryField + ExtensionField<FBase>,
+	F: BinaryField,
 {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width
@@ -90,9 +87,12 @@ where
 		let exponent_bit_claim = if self.is_last_layer(layer_no) {
 			// the evaluation of the last exponent bit can be uniquely calculated from the previous exponentiation layer claim.
 			// a_0(x) = (V_0(x) - 1)/(g - 1)
+
+			let base = self.0.static_base.expect("static_base exist");
+
 			LayerClaim {
 				eval_point: self.0.eval_point.clone(),
-				eval: first_layer_inverse::<FBase, _>(self.0.eval),
+				eval: first_layer_inverse(self.0.eval, base),
 			}
 		} else {
 			let n_vars = self.layer_claim_eval_point().len();
@@ -132,8 +132,11 @@ where
 		} else {
 			let internal_layer_index = self.exponent_bit_width() - 1 - layer_no;
 
-			let base_power_constant =
-				F::from(FBase::MULTIPLICATIVE_GENERATOR.pow(1 << internal_layer_index));
+			let base_power_static = self
+				.0
+				.static_base
+				.expect("static_base exist")
+				.pow(1 << internal_layer_index);
 
 			let this_layer_input_index = multilinears_index;
 			let exponent_bit_index = multilinears_index + 1;
@@ -142,9 +145,7 @@ where
 				composite_claims_n_multilinears,
 				[this_layer_input_index, exponent_bit_index, eq_ind_index],
 				ExtraProduct {
-					inner: ExpCompositions::ConstantBase {
-						base_power_constant,
-					},
+					inner: ExpCompositions::StaticBase { base_power_static },
 				},
 			)?;
 
@@ -175,11 +176,11 @@ where
 	}
 }
 
-pub struct ExpDynamicVerifier<F: Field>(ExpClaim<F>);
+pub struct DynamicExpVerifier<F: Field>(ExpClaim<F>);
 
-impl<F: Field> ExpDynamicVerifier<F> {
+impl<F: Field> DynamicExpVerifier<F> {
 	pub fn new(claim: &ExpClaim<F>) -> Result<Self, Error> {
-		if !claim.uses_dynamic_base {
+		if claim.static_base.is_some() {
 			bail!(Error::IncorrectWitnessType);
 		}
 
@@ -187,7 +188,7 @@ impl<F: Field> ExpDynamicVerifier<F> {
 	}
 }
 
-impl<F: Field> ExpVerifier<F> for ExpDynamicVerifier<F> {
+impl<F: Field> ExpVerifier<F> for DynamicExpVerifier<F> {
 	fn exponent_bit_width(&self) -> usize {
 		self.0.exponent_bit_width
 	}

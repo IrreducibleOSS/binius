@@ -13,7 +13,7 @@ use tracing::instrument;
 use super::{
 	channel::Boundary,
 	error::{Error, VerificationError},
-	ConstraintSystem, Proof,
+	exp, ConstraintSystem, Proof,
 };
 use crate::{
 	composition::IndexComposition,
@@ -28,8 +28,8 @@ use crate::{
 	polynomial::MultivariatePoly,
 	protocols::{
 		evalcheck::EvalcheckMultilinearClaim,
-		gkr_gpa,
-		gkr_gpa::LayerClaim,
+		gkr_exp,
+		gkr_gpa::{self, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{
 			self, constraint_set_zerocheck_claim,
@@ -66,6 +66,7 @@ where
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
+		mut exp,
 		..
 	} = constraint_system.clone();
 
@@ -90,8 +91,26 @@ where
 	let mut reader = transcript.message();
 	let commitment = reader.read::<Output<Hash>>()?;
 
+	// GKR exp multiplication
+	exp.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exp, &oracles));
+
+	let mut reader = transcript.message();
+	let exp_evals = reader.read_scalar_slice(exp.len())?;
+
+	let exp_claims = exp::make_claims(&exp, &oracles, &exp_challenge, &exp_evals)?
+		.into_iter()
+		.collect::<Vec<_>>();
+
+	let base_exp_output =
+		gkr_exp::batch_verify(EvaluationOrder::HighToLow, &exp_claims, &mut transcript)?;
+
+	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
+
 	// Grand product arguments
 	// Grand products for non-zero checks
+	let mut reader = transcript.message();
 	let non_zero_products = reader.read_scalar_slice(non_zero_oracle_ids.len())?;
 	if non_zero_products
 		.iter()
@@ -275,7 +294,8 @@ where
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
 			.concat()
 			.into_iter()
-			.chain(zerocheck_eval_claims),
+			.chain(zerocheck_eval_claims)
+			.chain(exp_eval_claims),
 		&mut transcript,
 	)?;
 

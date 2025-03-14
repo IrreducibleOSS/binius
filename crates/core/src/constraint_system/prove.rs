@@ -34,6 +34,7 @@ use super::{
 use crate::{
 	constraint_system::{
 		common::{FDomain, FEncode, FExt, FFastExt},
+		exp,
 		verify::{get_flush_dedup_sumcheck_metas, FlushSumcheckMeta},
 	},
 	fiat_shamir::{CanSample, Challenger},
@@ -42,6 +43,7 @@ use crate::{
 	piop,
 	protocols::{
 		fri::CommitOutput,
+		gkr_exp,
 		gkr_gpa::{
 			self, gpa_sumcheck::prove::GPAProver, GrandProductBatchProveOutput,
 			GrandProductWitness, LayerClaim,
@@ -110,9 +112,16 @@ where
 		mut oracles,
 		mut table_constraints,
 		mut flushes,
+		mut exp,
 		non_zero_oracle_ids,
 		max_channel_id,
 	} = constraint_system.clone();
+
+	exp.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+
+	// We must generate multiplication witnesses before committing, as this function
+	// adds the committed witnesses for exponentiation results to the witness index.
+	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &exp)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -145,6 +154,39 @@ where
 	let mut writer = transcript.message();
 	writer.write(&commitment);
 
+	// GKR exp
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exp, &oracles));
+
+	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let mut writer = transcript.message();
+	writer.write_scalar_slice(&exp_evals);
+
+	let exp_challenge = exp_challenge
+		.into_iter()
+		.map(|x| x.into())
+		.collect::<Vec<_>>();
+
+	let exp_claims = exp::make_claims(&exp, &oracles, &exp_challenge, &exp_evals)?
+		.into_iter()
+		.map(|claim| claim.isomorphic())
+		.collect::<Vec<_>>();
+
+	let base_exp_output = gkr_exp::batch_prove::<_, _, FFastExt<Tower>, _, _>(
+		EvaluationOrder::HighToLow,
+		exp_witnesses,
+		&exp_claims,
+		fast_domain_factory.clone(),
+		&mut transcript,
+		backend,
+	)?
+	.isomorphic();
+
+	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
+
 	// Grand product arguments
 	// Grand products for non-zero checking
 	let non_zero_fast_witnesses =
@@ -162,6 +204,8 @@ where
 	{
 		bail!(Error::Zeros);
 	}
+
+	let mut writer = transcript.message();
 
 	writer.write_scalar_slice(&non_zero_products);
 
@@ -408,7 +452,8 @@ where
 		[non_zero_prodcheck_eval_claims, flush_eval_claims]
 			.concat()
 			.into_iter()
-			.chain(zerocheck_eval_claims),
+			.chain(zerocheck_eval_claims)
+			.chain(exp_eval_claims),
 		switchover_fn,
 		&mut transcript,
 		&domain_factory,

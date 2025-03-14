@@ -222,7 +222,7 @@ impl<F: Field> ArithExpr<F> {
 			Self::Pow(id, exp) => {
 				let id = id.optimize();
 				match id {
-					Self::Const(value) => Self::Const(PackedField::pow(value, *exp)),
+					Self::Const(value) => Self::Const(PackedField::pow(value, *exp as u128)),
 					Self::Pow(id_inner, exp_inner) => Self::Pow(id_inner, *exp * exp_inner),
 					id => Self::Pow(Box::new(id), *exp),
 				}
@@ -267,7 +267,7 @@ impl<F: Field> ArithExpr<F> {
 			Self::Var(index) => vars[*index],
 			Self::Add(left, right) => left.evaluate(vars) + right.evaluate(vars),
 			Self::Mul(left, right) => left.evaluate(vars) * right.evaluate(vars),
-			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp),
+			Self::Pow(base, exp) => base.evaluate(vars).pow(*exp as u128),
 		}
 	}
 
