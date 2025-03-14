@@ -44,7 +44,7 @@ pub fn build_exp_table(
 	Ok(table)
 }
 
-pub fn static_u32_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
+pub fn u16_static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	xin: OracleId,

@@ -11,7 +11,7 @@ use binius_maybe_rayon::iter::{
 };
 use binius_utils::bail;
 
-use super::static_exp::static_u32_exp_lookups;
+use super::static_exp::u16_static_exp_lookups;
 use crate::builder::{types::F, ConstraintSystemBuilder};
 
 /// Multiplication based on exponentiation.
@@ -182,7 +182,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	let [xin_low, xin_high] = xin_low_high;
 
 	//$g^{xlow}$
-	let (xin_low_exp_res_id, g) = static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	let (xin_low_exp_res_id, g) = u16_static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_low_exp_res",
 		xin_low,
@@ -191,7 +191,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	)?;
 
 	//$(g^{2^{16}})^{xhigh}$
-	let (xin_high_exp_res_id, g_16) = static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	let (xin_high_exp_res_id, g_16) = u16_static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_high_exp_res",
 		xin_high,
@@ -291,7 +291,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 				_ => None,
 			};
 
-			static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+			u16_static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 				builder,
 				format!("cout_exp_result_id {}", i),
 				cout[i],
