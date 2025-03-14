@@ -43,6 +43,7 @@ use crate::{
 	piop,
 	protocols::{
 		fri::CommitOutput,
+		gkr_exp,
 		gkr_gpa::{self, GrandProductBatchProveOutput, GrandProductWitness, LayerClaim},
 		greedy_evalcheck,
 		sumcheck::{

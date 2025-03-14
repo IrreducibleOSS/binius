@@ -39,8 +39,8 @@ pub struct ExpClaim<F: Field> {
 	pub exponent_bit_width: usize,
 	pub n_vars: usize,
 	/// - `true`: Indicates that the dynamic base is used
-	/// - `false`: Indicates that the constant base is used.
-	pub constant_base: Option<F>,
+	/// - `false`: Indicates that the static base is used.
+	pub static_base: Option<F>,
 }
 
 impl<F: Field> From<ExpClaim<F>> for LayerClaim<F> {
@@ -59,7 +59,7 @@ impl<F: Field> ExpClaim<F> {
 			eval,
 			exponent_bit_width,
 			n_vars,
-			constant_base,
+			static_base,
 		} = self;
 
 		ExpClaim {
@@ -67,7 +67,7 @@ impl<F: Field> ExpClaim<F> {
 			eval: eval.into(),
 			exponent_bit_width,
 			n_vars,
-			constant_base: constant_base.map(|base| base.into()),
+			static_base: static_base.map(|base| base.into()),
 		}
 	}
 }

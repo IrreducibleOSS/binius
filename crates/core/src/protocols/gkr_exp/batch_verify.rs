@@ -8,7 +8,7 @@ use super::{
 	common::{BaseExpReductionOutput, ExpClaim, LayerClaim},
 	compositions::IndexedExpComposition,
 	error::{Error, VerificationError},
-	verifiers::{ConstantBaseExpVerifier, ExpDynamicVerifier, ExpVerifier},
+	verifiers::{DynamicExpVerifier, ExpVerifier, StaticBaseExpVerifier},
 };
 use crate::{
 	fiat_shamir::Challenger,
@@ -255,11 +255,11 @@ where
 	claims
 		.iter()
 		.map(|claim| {
-			if claim.constant_base.is_none() {
-				ExpDynamicVerifier::new(claim)
+			if claim.static_base.is_none() {
+				DynamicExpVerifier::new(claim)
 					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			} else {
-				ConstantBaseExpVerifier::<F>::new(claim)
+				StaticBaseExpVerifier::<F>::new(claim)
 					.map(|verifier| Box::new(verifier) as Box<dyn ExpVerifier<F> + 'a>)
 			}
 		})
