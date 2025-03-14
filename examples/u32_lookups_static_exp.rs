@@ -4,15 +4,16 @@ use std::array;
 
 use anyhow::Result;
 use binius_circuits::{
-	arithmetic::{mul, static_exp::u16_static_exp_lookups},
+	arithmetic::static_exp::u16_static_exp_lookups,
 	builder::{types::U, ConstraintSystemBuilder},
 };
 use binius_core::{
 	constraint_system, fiat_shamir::HasherChallenger, oracle::OracleId, tower::CanonicalTowerFamily,
 };
-use binius_field::{BinaryField, BinaryField16b, BinaryField1b, BinaryField64b};
+use binius_field::{BinaryField, BinaryField16b, BinaryField64b, Field, TowerField};
 use binius_hal::make_portable_backend;
 use binius_hash::compress::Groestl256ByteCompression;
+use binius_macros::arith_expr;
 use binius_math::DefaultEvaluationDomainFactory;
 use binius_utils::{checked_arithmetics::log2_ceil_usize, rayon::adjust_thread_pool};
 use bytesize::ByteSize;
@@ -41,7 +42,7 @@ fn main() -> Result<()> {
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} u16 static exponentiation", args.n_exp);
+	println!("Verifying {} u32 static exponentiation", args.n_exp);
 
 	let log_n_muls = log2_ceil_usize(args.n_exp as usize);
 
@@ -49,23 +50,63 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = binius_circuits::unconstrained::unconstrained::<BinaryField16b>(
-		&mut builder,
-		format!("in_a"),
-		log_n_muls,
-	)
-	.unwrap();
+	let in_a: [OracleId; 2] = array::from_fn(|_| {
+		binius_circuits::unconstrained::unconstrained::<BinaryField16b>(
+			&mut builder,
+			"in_a",
+			log_n_muls,
+		)
+		.unwrap()
+	});
 
-	let (a_exp_res, _) = u16_static_exp_lookups::<32>(
+	let (a_low_exp_res_id, _) = u16_static_exp_lookups::<32>(
 		&mut builder,
 		"g^a",
-		in_a,
+		in_a[0],
 		BinaryField64b::MULTIPLICATIVE_GENERATOR,
 		None,
 	)
 	.unwrap();
 
-	builder.assert_not_zero(a_exp_res);
+	let (a_high_exp_res_id, _) = u16_static_exp_lookups::<32>(
+		&mut builder,
+		"g^a",
+		in_a[0],
+		BinaryField64b::MULTIPLICATIVE_GENERATOR.pow([1 << 16]),
+		None,
+	)
+	.unwrap();
+
+	let a_exp_res_id =
+		builder.add_committed("a_exp_result", log_n_muls, BinaryField64b::TOWER_LEVEL);
+
+	builder.assert_zero(
+		"a_exp_res_id zerocheck",
+		[a_low_exp_res_id, a_high_exp_res_id, a_exp_res_id],
+		arith_expr!(
+			[a_low_exp_res, a_high_exp_res, a_exp_result_id] =
+				a_low_exp_res * a_high_exp_res - a_exp_result_id
+		)
+		.convert_field(),
+	);
+
+	if let Some(witness) = builder.witness() {
+		let a_low_exp_res = witness
+			.get::<BinaryField64b>(a_low_exp_res_id)?
+			.as_slice::<BinaryField64b>();
+
+		let a_high_exp_res = witness
+			.get::<BinaryField64b>(a_high_exp_res_id)?
+			.as_slice::<BinaryField64b>();
+
+		let mut a_exp_res = witness.new_column::<BinaryField64b>(a_exp_res_id);
+		let a_exp_res = a_exp_res.as_mut_slice::<BinaryField64b>();
+		a_exp_res.iter_mut().enumerate().for_each(|(i, a_exp_res)| {
+			*a_exp_res = a_low_exp_res[i] * a_high_exp_res[i];
+		});
+	}
+
+	builder.assert_not_zero(a_exp_res_id);
 
 	drop(trace_gen_scope);
 

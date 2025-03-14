@@ -1,10 +1,7 @@
 // Copyright 2024-2025 Irreducible Inc.
 
 use anyhow::Result;
-use binius_circuits::{
-	arithmetic::mul,
-	builder::{types::U, ConstraintSystemBuilder},
-};
+use binius_circuits::builder::{types::U, ConstraintSystemBuilder};
 use binius_core::{
 	constraint_system::{self, exp::ExpBase},
 	fiat_shamir::HasherChallenger,
@@ -41,7 +38,7 @@ fn main() -> Result<()> {
 
 	let _guard = init_tracing().expect("failed to initialize tracing");
 
-	println!("Verifying {} u16 static exponentiation", args.n_exp);
+	println!("Verifying {} u32 static exponentiation", args.n_exp);
 
 	let log_n_exp = log2_ceil_usize(args.n_exp as usize);
 
@@ -49,7 +46,7 @@ fn main() -> Result<()> {
 	let mut builder = ConstraintSystemBuilder::new_with_witness(&allocator);
 
 	let trace_gen_scope = tracing::info_span!("generating trace").entered();
-	let in_a = (0..16)
+	let in_a = (0..32)
 		.map(|i| {
 			binius_circuits::unconstrained::unconstrained::<BinaryField1b>(
 				&mut builder,
@@ -65,7 +62,7 @@ fn main() -> Result<()> {
 	builder.add_exp(
 		in_a,
 		a_exp_res,
-		ExpBase::Constant(BinaryField64b::MULTIPLICATIVE_GENERATOR.into()),
+		ExpBase::Static(BinaryField64b::MULTIPLICATIVE_GENERATOR.into()),
 		BinaryField64b::TOWER_LEVEL,
 	);
 
