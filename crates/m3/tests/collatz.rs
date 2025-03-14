@@ -152,8 +152,8 @@ mod arithmetization {
 			let even_packed = table.add_packed::<_, 32, B32, 1>("even_packed", even);
 			let half_packed = table.add_packed::<_, 32, B32, 1>("half_packed", half);
 
-			table.pull_one(seq_chan, even_packed);
-			table.push_one(seq_chan, half_packed);
+			table.pull(seq_chan, [even_packed]);
+			table.push(seq_chan, [half_packed]);
 
 			Self {
 				id: table.id(),
@@ -239,8 +239,8 @@ mod arithmetization {
 			let triple_plus_one_packed =
 				table.add_packed::<_, 32, B32, 1>("triple_plus_one_packed", triple_plus_one.zout);
 
-			table.pull_one(seq_chan, odd_packed);
-			table.push_one(seq_chan, triple_plus_one_packed);
+			table.pull(seq_chan, [odd_packed]);
+			table.push(seq_chan, [triple_plus_one_packed]);
 
 			Self {
 				id: table.id(),

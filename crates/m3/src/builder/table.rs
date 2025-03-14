@@ -277,27 +277,19 @@ impl<'a, F: TowerField> TableBuilder<'a, F> {
 			.assert_zero(name, expr)
 	}
 
-	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.table.partition_mut(1).pull_one(channel, col)
-	}
-
-	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
-	where
-		FSub: TowerField,
-		F: ExtensionField<FSub>,
-	{
-		self.table.partition_mut(1).push_one(channel, col)
-	}
-
-	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
 		self.table.partition_mut(1).pull(channel, cols);
 	}
 
-	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
+	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
+	where
+		FSub: TowerField,
+		F: ExtensionField<FSub>,
+	{
 		self.table.partition_mut(1).push(channel, cols);
 	}
 
@@ -366,28 +358,20 @@ impl<F: TowerField> TablePartition<F> {
 		});
 	}
 
-	pub fn pull_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn pull<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.pull(channel, std::iter::once(upcast_col(col)))
+		self.flush(channel, FlushDirection::Pull, cols.into_iter().map(upcast_col))
 	}
 
-	pub fn push_one<FSub>(&mut self, channel: ChannelId, col: Col<FSub>)
+	pub fn push<FSub>(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<FSub>>)
 	where
 		FSub: TowerField,
 		F: ExtensionField<FSub>,
 	{
-		self.push(channel, std::iter::once(upcast_col(col)))
-	}
-
-	pub fn pull(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.flush(channel, FlushDirection::Pull, cols)
-	}
-
-	pub fn push(&mut self, channel: ChannelId, cols: impl IntoIterator<Item = Col<F>>) {
-		self.flush(channel, FlushDirection::Push, cols)
+		self.flush(channel, FlushDirection::Push, cols.into_iter().map(upcast_col))
 	}
 
 	fn flush(
