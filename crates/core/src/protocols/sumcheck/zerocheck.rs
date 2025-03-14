@@ -2,13 +2,13 @@
 
 use std::marker::PhantomData;
 
-use binius_field::{util::eq, Field, PackedField};
-use binius_math::{ArithExpr, CompositionPoly};
+use binius_field::Field;
+use binius_math::CompositionPoly;
 use binius_utils::{bail, sorting::is_sorted_ascending};
 use getset::CopyGetters;
 
-use super::error::{Error, VerificationError};
-use crate::protocols::sumcheck::{BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim};
+use super::error::Error;
+use crate::protocols::sumcheck::{eq_ind::EqIndSumcheckClaim, CompositeSumClaim};
 
 #[derive(Debug, CopyGetters)]
 pub struct ZerocheckClaim<F: Field, Composition> {
@@ -59,10 +59,9 @@ where
 	}
 }
 
-/// Requirement: zerocheck challenges have been sampled before this is called
-pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
+pub fn reduce_to_eq_ind_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims: &[ZerocheckClaim<F, Composition>],
-) -> Result<Vec<SumcheckClaim<F, ExtraProduct<&Composition>>>, Error> {
+) -> Result<Vec<EqIndSumcheckClaim<F, &Composition>>, Error> {
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
 		bail!(Error::ClaimsOutOfOrder);
@@ -71,123 +70,25 @@ pub fn reduce_to_sumchecks<F: Field, Composition: CompositionPoly<F>>(
 	claims
 		.iter()
 		.map(|zerocheck_claim| {
-			let ZerocheckClaim {
+			let &ZerocheckClaim {
 				n_vars,
 				n_multilinears,
-				composite_zeros,
+				ref composite_zeros,
 				..
 			} = zerocheck_claim;
-			SumcheckClaim::new(
-				*n_vars,
-				*n_multilinears + 1,
+			EqIndSumcheckClaim::new(
+				n_vars,
+				n_multilinears,
 				composite_zeros
 					.iter()
 					.map(|composition| CompositeSumClaim {
-						composition: ExtraProduct { inner: composition },
+						composition,
 						sum: F::ZERO,
 					})
 					.collect(),
 			)
 		})
 		.collect()
-}
-
-/// Verify the validity of the sumcheck outputs for a reduced zerocheck.
-///
-/// This takes in the output of the reduced sumcheck protocol and returns the output for the
-/// zerocheck instance. This simply strips off the multilinear evaluation of the eq indicator
-/// polynomial and verifies that the value is correct.
-///
-/// Note that due to univariatization of some rounds the number of challenges may be less than
-/// the maximum number of variables among claims.
-pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
-	claims: &[ZerocheckClaim<F, Composition>],
-	zerocheck_challenges: &[F],
-	sumcheck_output: BatchSumcheckOutput<F>,
-) -> Result<BatchSumcheckOutput<F>, Error> {
-	let BatchSumcheckOutput {
-		challenges: sumcheck_challenges,
-		mut multilinear_evals,
-	} = sumcheck_output;
-
-	assert_eq!(multilinear_evals.len(), claims.len());
-
-	// Check that the claims are in descending order by n_vars
-	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
-		bail!(Error::ClaimsOutOfOrder);
-	}
-
-	let max_n_vars = claims
-		.first()
-		.map(|claim| claim.n_vars())
-		.unwrap_or_default();
-
-	assert!(sumcheck_challenges.len() <= max_n_vars);
-	assert_eq!(zerocheck_challenges.len(), sumcheck_challenges.len());
-
-	let mut eq_ind_eval = F::ONE;
-	let mut last_n_vars = 0;
-	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
-		assert_eq!(claim.n_multilinears() + 1, multilinear_evals.len());
-
-		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
-			let sumcheck_challenge =
-				sumcheck_challenges[sumcheck_challenges.len() - 1 - last_n_vars];
-			let zerocheck_challenge =
-				zerocheck_challenges[zerocheck_challenges.len() - 1 - last_n_vars];
-			eq_ind_eval *= eq(sumcheck_challenge, zerocheck_challenge);
-			last_n_vars += 1;
-		}
-
-		let multilinear_evals_last = multilinear_evals
-			.pop()
-			.expect("checked above that multilinear_evals length is at least 1");
-		if eq_ind_eval != multilinear_evals_last {
-			return Err(VerificationError::IncorrectEqIndEvaluation.into());
-		}
-	}
-
-	Ok(BatchSumcheckOutput {
-		challenges: sumcheck_challenges,
-		multilinear_evals,
-	})
-}
-
-#[derive(Debug)]
-pub struct ExtraProduct<Composition> {
-	pub inner: Composition,
-}
-
-impl<P, Composition> CompositionPoly<P> for ExtraProduct<Composition>
-where
-	P: PackedField,
-	Composition: CompositionPoly<P>,
-{
-	fn n_vars(&self) -> usize {
-		self.inner.n_vars() + 1
-	}
-
-	fn degree(&self) -> usize {
-		self.inner.degree() + 1
-	}
-
-	fn expression(&self) -> ArithExpr<P::Scalar> {
-		self.inner.expression() * ArithExpr::Var(self.inner.n_vars())
-	}
-
-	fn evaluate(&self, query: &[P]) -> Result<P, binius_math::Error> {
-		let n_vars = self.n_vars();
-		if query.len() != n_vars {
-			bail!(binius_math::Error::IncorrectQuerySize { expected: n_vars });
-		}
-
-		let inner_eval = self.inner.evaluate(&query[..n_vars - 1])?;
-		Ok(inner_eval * query[n_vars - 1])
-	}
-
-	fn binary_tower_level(&self) -> usize {
-		self.inner.binary_tower_level()
-	}
 }
 
 #[cfg(test)]
@@ -212,7 +113,10 @@ mod tests {
 		protocols::{
 			sumcheck::{
 				batch_verify,
+				eq_ind::{reduce_to_regular_sumchecks, verify_sumcheck_outputs, ExtraProduct},
 				prove::{batch_prove, zerocheck, RegularSumcheckProver, UnivariateZerocheck},
+				zerocheck::reduce_to_eq_ind_sumchecks,
+				BatchSumcheckOutput,
 			},
 			test_utils::{generate_zero_product_multilinears, TestProductComposition},
 		},
@@ -311,7 +215,7 @@ mod tests {
 		} = batch_prove(vec![reference_prover], &mut prove_transcript_1).unwrap();
 
 		let composition = TestProductComposition::new(n_multilinears);
-		let optimized_prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _>::new(
+		let optimized_prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _, _, _>::new(
 			multilins,
 			[("test_product".into(), composition.clone(), composition)],
 			&challenges,
@@ -362,7 +266,7 @@ mod tests {
 		let backend = make_portable_backend();
 
 		let composition = TestProductComposition::new(n_multilinears);
-		let prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _>::new(
+		let prover = UnivariateZerocheck::<FDomain, FBase, P, _, _, _, _, _, _>::new(
 			multilins.clone(),
 			[("test_product".into(), composition.clone(), composition)],
 			&challenges,
@@ -383,11 +287,13 @@ mod tests {
 		)
 		.unwrap();
 		let zerocheck_claims = [claim];
+		let eq_ind_sumcheck_claims = reduce_to_eq_ind_sumchecks(&zerocheck_claims).unwrap();
+
 		let BatchSumcheckOutput {
 			challenges: prover_eval_point,
 			multilinear_evals: prover_multilinear_evals,
 		} = verify_sumcheck_outputs(
-			&zerocheck_claims,
+			&eq_ind_sumcheck_claims,
 			&challenges,
 			prove_output,
 			// prover_sumcheck_multilinear_evals,
@@ -399,15 +305,19 @@ mod tests {
 		let mut verify_transcript = prove_transcript.into_verifier();
 		let _: Vec<BinaryField128b> = verify_transcript.sample_vec(n_vars);
 
-		let sumcheck_claims = reduce_to_sumchecks(&zerocheck_claims).unwrap();
-		let verifier_output =
-			batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, &mut verify_transcript)
-				.unwrap();
+		let regular_sumcheck_claims = reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims).unwrap();
+
+		let verifier_output = batch_verify(
+			EvaluationOrder::LowToHigh,
+			&regular_sumcheck_claims,
+			&mut verify_transcript,
+		)
+		.unwrap();
 
 		let BatchSumcheckOutput {
 			challenges: verifier_eval_point,
 			multilinear_evals: verifier_multilinear_evals,
-		} = verify_sumcheck_outputs(&zerocheck_claims, &challenges, verifier_output).unwrap();
+		} = verify_sumcheck_outputs(&eq_ind_sumcheck_claims, &challenges, verifier_output).unwrap();
 
 		// Check that challengers are in the same state
 		assert_eq!(prover_sample, CanSample::<FE>::sample(&mut verify_transcript));

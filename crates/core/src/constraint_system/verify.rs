@@ -32,9 +32,8 @@ use crate::{
 		gkr_gpa::LayerClaim,
 		greedy_evalcheck,
 		sumcheck::{
-			self, constraint_set_zerocheck_claim,
-			zerocheck::{self, ExtraProduct},
-			BatchSumcheckOutput, CompositeSumClaim, SumcheckClaim, ZerocheckClaim,
+			self, constraint_set_zerocheck_claim, zerocheck, BatchSumcheckOutput,
+			CompositeSumClaim, EqIndSumcheckClaim, ZerocheckClaim,
 		},
 	},
 	ring_switch,
@@ -163,15 +162,21 @@ where
 		&flush_final_layer_claims,
 	)?;
 
-	let DedupSumcheckClaims {
-		sumcheck_claims,
+	let DedupEqIndSumcheckClaims {
+		eq_ind_sumcheck_claims,
 		gkr_eval_points,
 		flush_selectors_unique_by_claim,
 		flush_oracle_ids_by_claim,
-	} = get_flush_dedup_sumcheck_claims(flush_sumcheck_metas)?;
+	} = get_flush_dedup_eq_ind_sumcheck_claims(flush_sumcheck_metas)?;
 
-	let flush_sumcheck_output =
-		sumcheck::batch_verify(EvaluationOrder::LowToHigh, &sumcheck_claims, &mut transcript)?;
+	let regular_sumcheck_claims =
+		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
+
+	let flush_sumcheck_output = sumcheck::batch_verify(
+		EvaluationOrder::LowToHigh,
+		&regular_sumcheck_claims,
+		&mut transcript,
+	)?;
 
 	let flush_eval_claims = get_post_flush_sumcheck_eval_claims_without_eq(
 		&oracles,
@@ -224,17 +229,19 @@ where
 
 	let univariate_challenge = univariate_output.univariate_challenge;
 
-	let sumcheck_claims = zerocheck::reduce_to_sumchecks(&zerocheck_claims)?;
+	let eq_ind_sumcheck_claims = zerocheck::reduce_to_eq_ind_sumchecks(&zerocheck_claims)?;
+	let regular_sumcheck_claims =
+		sumcheck::eq_ind::reduce_to_regular_sumchecks(&eq_ind_sumcheck_claims)?;
 
 	let sumcheck_output = sumcheck::batch_verify_with_start(
 		EvaluationOrder::LowToHigh,
 		univariate_output.batch_verify_start,
-		&sumcheck_claims,
+		&regular_sumcheck_claims,
 		&mut transcript,
 	)?;
 
-	let zerocheck_output = zerocheck::verify_sumcheck_outputs(
-		&zerocheck_claims,
+	let zerocheck_output = sumcheck::eq_ind::verify_sumcheck_outputs(
+		&eq_ind_sumcheck_claims,
 		&zerocheck_challenges,
 		sumcheck_output,
 	)?;
@@ -643,19 +650,19 @@ pub fn get_post_flush_sumcheck_eval_claims_without_eq<F: TowerField>(
 	Ok(evalcheck_claims)
 }
 
-pub struct DedupSumcheckClaims<F: TowerField, Composition: CompositionPoly<F>> {
-	sumcheck_claims: Vec<SumcheckClaim<F, Composition>>,
+pub struct DedupEqIndSumcheckClaims<F: TowerField, Composition: CompositionPoly<F>> {
+	eq_ind_sumcheck_claims: Vec<EqIndSumcheckClaim<F, Composition>>,
 	gkr_eval_points: Vec<Vec<F>>,
 	flush_selectors_unique_by_claim: Vec<Vec<OracleId>>,
 	flush_oracle_ids_by_claim: Vec<Vec<OracleId>>,
 }
 
 #[allow(clippy::type_complexity)]
-pub fn get_flush_dedup_sumcheck_claims<F: TowerField>(
+pub fn get_flush_dedup_eq_ind_sumcheck_claims<F: TowerField>(
 	flush_sumcheck_metas: Vec<FlushSumcheckMeta<F>>,
-) -> Result<DedupSumcheckClaims<F, impl CompositionPoly<F>>, Error> {
+) -> Result<DedupEqIndSumcheckClaims<F, impl CompositionPoly<F>>, Error> {
 	let n_claims = flush_sumcheck_metas.len();
-	let mut sumcheck_claims = Vec::with_capacity(n_claims);
+	let mut eq_ind_sumcheck_claims = Vec::with_capacity(n_claims);
 	let mut gkr_eval_points = Vec::with_capacity(n_claims);
 	let mut flush_oracle_ids_by_claim = Vec::with_capacity(n_claims);
 	let mut flush_selectors_unique_by_claim = Vec::with_capacity(n_claims);
@@ -667,28 +674,19 @@ pub fn get_flush_dedup_sumcheck_claims<F: TowerField>(
 			eval_point,
 		} = flush_sumcheck_meta;
 
-		let composite_sum_claims = composite_sum_claims
-			.into_iter()
-			.map(|composite_sum_claim| CompositeSumClaim {
-				composition: ExtraProduct {
-					inner: composite_sum_claim.composition,
-				},
-				sum: composite_sum_claim.sum,
-			})
-			.collect::<Vec<_>>();
-
 		let n_vars = eval_point.len();
 		let n_multilinears = flush_selectors_unique.len() + flush_oracle_ids.len();
-		let sumcheck_claim = SumcheckClaim::new(n_vars, n_multilinears + 1, composite_sum_claims)?;
+		let eq_ind_sumcheck_claim =
+			EqIndSumcheckClaim::new(n_vars, n_multilinears, composite_sum_claims)?;
 
-		sumcheck_claims.push(sumcheck_claim);
+		eq_ind_sumcheck_claims.push(eq_ind_sumcheck_claim);
 		gkr_eval_points.push(eval_point);
 		flush_selectors_unique_by_claim.push(flush_selectors_unique);
 		flush_oracle_ids_by_claim.push(flush_oracle_ids);
 	}
 
-	Ok(DedupSumcheckClaims {
-		sumcheck_claims,
+	Ok(DedupEqIndSumcheckClaims {
+		eq_ind_sumcheck_claims,
 		gkr_eval_points,
 		flush_selectors_unique_by_claim,
 		flush_oracle_ids_by_claim,

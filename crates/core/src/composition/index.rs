@@ -136,7 +136,6 @@ where
 
 #[derive(Debug)]
 pub enum FixedDimIndexCompositions<C> {
-	Quadrivariate(IndexComposition<C, 4>),
 	Trivariate(IndexComposition<C, 3>),
 	Bivariate(IndexComposition<C, 2>),
 }
@@ -148,9 +147,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 		match self {
 			Self::Trivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
 			Self::Bivariate(index_composition) => CompositionPoly::<P>::n_vars(index_composition),
-			Self::Quadrivariate(index_composition) => {
-				CompositionPoly::<P>::n_vars(index_composition)
-			}
 		}
 	}
 
@@ -158,9 +154,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 		match self {
 			Self::Trivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
 			Self::Bivariate(index_composition) => CompositionPoly::<P>::degree(index_composition),
-			Self::Quadrivariate(index_composition) => {
-				CompositionPoly::<P>::degree(index_composition)
-			}
 		}
 	}
 
@@ -170,9 +163,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 				CompositionPoly::<P>::binary_tower_level(index_composition)
 			}
 			Self::Bivariate(index_composition) => {
-				CompositionPoly::<P>::binary_tower_level(index_composition)
-			}
-			Self::Quadrivariate(index_composition) => {
 				CompositionPoly::<P>::binary_tower_level(index_composition)
 			}
 		}
@@ -186,9 +176,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 			Self::Bivariate(index_composition) => {
 				CompositionPoly::<P>::expression(index_composition)
 			}
-			Self::Quadrivariate(index_composition) => {
-				CompositionPoly::<P>::expression(index_composition)
-			}
 		}
 	}
 
@@ -196,7 +183,6 @@ impl<P: PackedField, C: CompositionPoly<P> + Debug + Send + Sync> CompositionPol
 		match self {
 			Self::Trivariate(index_composition) => index_composition.evaluate(query),
 			Self::Bivariate(index_composition) => index_composition.evaluate(query),
-			Self::Quadrivariate(index_composition) => index_composition.evaluate(query),
 		}
 	}
 }

@@ -210,7 +210,7 @@ where
 {
 	pub skip_rounds: usize,
 	pub subcube_lagrange_coeffs: Vec<F>,
-	pub claimed_prime_sums: Vec<F>,
+	pub claimed_sums: Vec<F>,
 	pub partial_eq_ind_evals: Backend::Vec<P>,
 }
 
@@ -262,7 +262,7 @@ where
 		// Lagrange extrapolation for the entire univariate domain
 		let round_evals_lagrange_coeffs = max_domain.lagrange_evals(challenge);
 
-		let claimed_prime_sums = round_evals
+		let claimed_sums = round_evals
 			.into_iter()
 			.map(|evals| {
 				inner_product_unchecked::<F, F>(
@@ -277,7 +277,7 @@ where
 		Ok(ZerocheckUnivariateFoldResult {
 			skip_rounds,
 			subcube_lagrange_coeffs,
-			claimed_prime_sums,
+			claimed_sums,
 			partial_eq_ind_evals,
 		})
 	}
