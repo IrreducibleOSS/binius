@@ -152,49 +152,30 @@ where
 				1 << self.params.rs_code().log_inv_rate(),
 			)
 			.map_err(|err| Error::VectorCommit(Box::new(err)))?;
+			
+		if self.n_oracles() != 0 {
+			return Err(Error::NoOracles)
+		}
 
-		let repetition_codeword = if self.n_oracles() != 0 {
-			let n_final_challenges = self.params.n_final_challenges();
-			let n_prior_challenges = self.fold_challenges.len() - n_final_challenges;
-			let final_challenges = &self.fold_challenges[n_prior_challenges..];
-			let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
+		let n_final_challenges = self.params.n_final_challenges();
+		let n_prior_challenges = self.fold_challenges.len() - n_final_challenges;
+		let final_challenges = &self.fold_challenges[n_prior_challenges..];
+		let mut scratch_buffer = vec![F::default(); 1 << n_final_challenges];
 
-			terminate_codeword
-				.chunks(1 << n_final_challenges)
-				.enumerate()
-				.map(|(i, coset_values)| {
-					fold_chunk(
-						self.params.rs_code(),
-						n_prior_challenges,
-						i,
-						coset_values,
-						final_challenges,
-						&mut scratch_buffer,
-					)
-				})
-				.collect::<Vec<_>>()
-		} else {
-			// When the prover did not send any round oracles, fold the original interleaved
-			// codeword.
-
-			let fold_arity = self.params.rs_code().log_dim() + self.params.log_batch_size();
-			let mut scratch_buffer = vec![F::default(); 2 * (1 << fold_arity)];
-			terminate_codeword
-				.chunks(1 << fold_arity)
-				.enumerate()
-				.map(|(i, chunk)| {
-					fold_interleaved_chunk(
-						self.params.rs_code(),
-						self.params.log_batch_size(),
-						i,
-						chunk,
-						&self.interleave_tensor,
-						self.fold_challenges,
-						&mut scratch_buffer,
-					)
-				})
-				.collect::<Vec<_>>()
-		};
+		let repetition_codeword = terminate_codeword
+			.chunks(1 << n_final_challenges)
+			.enumerate()
+			.map(|(i, coset_values)| {
+				fold_chunk(
+					self.params.rs_code(),
+					n_prior_challenges,
+					i,
+					coset_values,
+					final_challenges,
+					&mut scratch_buffer,
+				)
+			})
+			.collect::<Vec<_>>();
 
 		let final_value = repetition_codeword[0];
 

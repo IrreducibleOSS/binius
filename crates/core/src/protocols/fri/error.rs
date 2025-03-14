@@ -12,6 +12,8 @@ pub enum Error {
 	InvalidArgs(String),
 	#[error("FRI message dimension is too small")]
 	MessageDimensionIsTooSmall,
+	#[error("No positive-indexed FRI oracles got committed to")]
+	NoOracles,
 	#[error("fold arities total exceeds the number of fold rounds")]
 	InvalidFoldAritySequence,
 	#[error("fold arity at index {index} in sequence is zero")]
