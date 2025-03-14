@@ -92,7 +92,7 @@ pub fn evaluate_piecewise_multilinear<F: Field>(
 	for (i, &point_i) in point.iter().enumerate() {
 		n_to_fold += n_pieces_by_vars.get(i).copied().unwrap_or(0);
 		fold_segment(&mut piece_evals[index - n_to_fold..index], point_i);
-		let n_folded_out = n_to_fold / 2;
+		let n_folded_out = n_to_fold >> 1;
 		index -= n_folded_out;
 		n_to_fold -= n_folded_out;
 	}
@@ -106,13 +106,12 @@ pub fn evaluate_piecewise_multilinear<F: Field>(
 /// $[a_0(1-r) + a_1r, a_2(1-r) + a_3r, \ldots, 0, \ldots]$. If $n$ is odd, then the last
 /// potentially non-zero element is $a_{n-1}(1-r)$, at index $(n-1)/2$.
 fn fold_segment<F: Field>(segment: &mut [F], z: F) {
-	let n_full_pairs = segment.len() / 2;
-	for i in 0..n_full_pairs {
-		segment[i] = extrapolate_line_scalar(segment[2 * i], segment[2 * i + 1], z);
+	for i in 0..segment.len() >> 1 {
+		segment[i] = extrapolate_line_scalar(segment[i << 1], segment[i << 1 | 1], z);
 	}
-	if segment.len() % 2 == 1 {
-		let i = segment.len() / 2;
-		segment[i] = extrapolate_line_scalar(segment[2 * i], F::ZERO, z);
+	if segment.len() & 0x01 == 0x01 {
+		let i = segment.len() >> 1;
+		segment[i] = extrapolate_line_scalar(segment[i << 1], F::ZERO, z);
 	}
 }
 
