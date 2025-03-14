@@ -29,8 +29,8 @@ rand = { workspace = true, features = ["std", "std_rng"] }
 [features]
 default = ["nightly_features"]
 nightly_features = [
-    "binius_utils/nightly_features",
     "binius_field/nightly_features",
+    "binius_utils/nightly_features",
 ]
 
 [lib]
