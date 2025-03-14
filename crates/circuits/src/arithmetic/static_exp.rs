@@ -1,3 +1,5 @@
+// Copyright 2025 Irreducible Inc.
+
 use anyhow::Ok;
 use binius_core::oracle::OracleId;
 use binius_field::{BinaryField128b, BinaryField16b, BinaryField64b, PackedField, TowerField};
@@ -42,7 +44,7 @@ pub fn build_exp_table(
 	Ok(table)
 }
 
-pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
+pub fn static_u32_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
 	xin: OracleId,
@@ -53,16 +55,20 @@ pub fn static_exp_lookups<const LOG_MAX_MULTIPLICITY: usize>(
 
 	let name = name.to_string();
 
-	let exp_result = builder.add_committed("exp_result", log_rows, BinaryField64b::TOWER_LEVEL);
+	let exp_result = builder.add_committed(
+		format!("{} exp_result", name),
+		log_rows,
+		BinaryField64b::TOWER_LEVEL,
+	);
 
 	let g_lookup_table = if let Some(id) = g_lookup_table {
 		id
 	} else {
-		build_exp_table(g, builder, name)?
+		build_exp_table(g, builder, format!("{} g_lookup_table", name))?
 	};
 
 	let lookup_values = builder.add_linear_combination(
-		"lookup_values",
+		format!("{} lookup_values", name),
 		log_rows,
 		[
 			(xin, <F as TowerField>::basis(4, 4)?),

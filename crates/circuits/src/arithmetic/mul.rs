@@ -1,13 +1,5 @@
 // Copyright 2025 Irreducible Inc.
 
-//! Multiplication based on exponentiation.
-//!
-//! The core idea of this method is to verify the equality $a \cdot b = c$
-//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{32}})^{chigh}$,
-//! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
-//!
-//! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
-
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
 use binius_field::{
@@ -19,9 +11,16 @@ use binius_maybe_rayon::iter::{
 };
 use binius_utils::bail;
 
-use super::static_exp::static_exp_lookups;
+use super::static_exp::static_u32_exp_lookups;
 use crate::builder::{types::F, ConstraintSystemBuilder};
 
+/// Multiplication based on exponentiation.
+///
+/// The core idea of this method is to verify the equality $x \cdot y = c$
+/// by checking if $(g^x)^y = g^{clow} \cdot (g^{2^{32}})^{chigh}$,
+/// where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
+///
+/// You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 pub fn mul<FExpBase>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
@@ -163,19 +162,27 @@ where
 	Ok(cout_bits)
 }
 
+/// u32 Multiplication based on plain lookups for static exponentiation
+/// and gkr_exp for dynamic exponentiation
+///
+/// The core idea of this method is to verify the equality $x \cdot y = c$
+/// by checking if
+///
+/// $(g^{xlow} \cdot (g^{2^{16}})^{xhigh})^y = \prod_{i=0}^{3} (g^{2^{(16 \cdot i)}})^{c_i} $,
 pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	builder: &mut ConstraintSystemBuilder,
 	name: impl ToString,
-	xin: [OracleId; 2],
+	xin_low_high: [OracleId; 2],
 	yin_bits: [OracleId; 32],
 ) -> Result<Vec<OracleId>, anyhow::Error> {
-	let log_rows = builder.log_rows(xin)?;
+	let log_rows = builder.log_rows(xin_low_high)?;
 
 	let name = name.to_string();
 
-	let [xin_low, xin_high] = xin;
+	let [xin_low, xin_high] = xin_low_high;
 
-	let (xin_low_exp_res, g) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	//$g^{xlow}$
+	let (xin_low_exp_res_id, g) = static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_low_exp_res",
 		xin_low,
@@ -183,7 +190,8 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		None,
 	)?;
 
-	let (xin_high_exp_res, g_16) = static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+	//$(g^{2^{16}})^{xhigh}$
+	let (xin_high_exp_res_id, g_16) = static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 		builder,
 		"xin_high_exp_res",
 		xin_high,
@@ -191,12 +199,13 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		None,
 	)?;
 
-	let xin_exp_result_id =
-		builder.add_committed("xin_exp_result_id", log_rows, BinaryField64b::TOWER_LEVEL);
+	//$g^{xin}$
+	let xin_exp_res_id =
+		builder.add_committed("xin_exp_result", log_rows, BinaryField64b::TOWER_LEVEL);
 
 	builder.assert_zero(
-		"xin_exp_result_id assert_zero",
-		[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id],
+		"xin_exp_res_id zerocheck",
+		[xin_low_exp_res_id, xin_high_exp_res_id, xin_exp_res_id],
 		arith_expr!(
 			[xin_low_exp_res, xin_high_exp_res, xin_exp_result_id] =
 				xin_low_exp_res * xin_high_exp_res - xin_exp_result_id
@@ -206,23 +215,24 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 
 	if let Some(witness) = builder.witness() {
 		let xin_low_exp_res = witness
-			.get::<BinaryField64b>(xin_low_exp_res)?
+			.get::<BinaryField64b>(xin_low_exp_res_id)?
 			.as_slice::<BinaryField64b>();
 
 		let xin_high_exp_res = witness
-			.get::<BinaryField64b>(xin_high_exp_res)?
+			.get::<BinaryField64b>(xin_high_exp_res_id)?
 			.as_slice::<BinaryField64b>();
 
-		let mut xin_exp_result_id = witness.new_column::<BinaryField64b>(xin_exp_result_id);
-		let xin_exp_result_id = xin_exp_result_id.as_mut_slice::<BinaryField64b>();
-		xin_exp_result_id
+		let mut xin_exp_res = witness.new_column::<BinaryField64b>(xin_exp_res_id);
+		let xin_exp_res = xin_exp_res.as_mut_slice::<BinaryField64b>();
+		xin_exp_res
 			.par_iter_mut()
 			.enumerate()
-			.for_each(|(i, xin_exp_result)| {
-				*xin_exp_result = xin_low_exp_res[i] * xin_high_exp_res[i];
+			.for_each(|(i, xin_exp_res)| {
+				*xin_exp_res = xin_low_exp_res[i] * xin_high_exp_res[i];
 			});
 	}
 
+	//$(g^{x})^{y}$
 	let yin_exp_result_id = builder.add_committed(
 		format!("{} yin_exp_result", name),
 		log_rows,
@@ -232,7 +242,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 	builder.add_exp(
 		yin_bits.to_vec(),
 		yin_exp_result_id,
-		ExpBase::Dynamic(xin_exp_result_id),
+		ExpBase::Dynamic(xin_exp_res_id),
 		BinaryField64b::TOWER_LEVEL,
 	);
 
@@ -272,7 +282,8 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		});
 	}
 
-	let cout_exp_result_id = (0..4)
+	//$(g^{2^{(16 \cdot i)}})^{c_i}$ where $c_i$ is a $i$ 16-bit
+	let cout_exp_res_id = (0..4)
 		.map(|i| {
 			let g_table = match i {
 				0 => Some(g),
@@ -280,7 +291,7 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 				_ => None,
 			};
 
-			static_exp_lookups::<LOG_MAX_MULTIPLICITY>(
+			static_u32_exp_lookups::<LOG_MAX_MULTIPLICITY>(
 				builder,
 				format!("cout_exp_result_id {}", i),
 				cout[i],
@@ -295,10 +306,10 @@ pub fn u32_mul<const LOG_MAX_MULTIPLICITY: usize>(
 		name,
 		[
 			yin_exp_result_id,
-			cout_exp_result_id[0],
-			cout_exp_result_id[1],
-			cout_exp_result_id[2],
-			cout_exp_result_id[3],
+			cout_exp_res_id[0],
+			cout_exp_res_id[1],
+			cout_exp_res_id[2],
+			cout_exp_res_id[3],
 		],
 		arith_expr!(
 			[yin, cout_0, cout_1, cout_2, cout_3] = cout_0 * cout_1 * cout_2 * cout_3 - yin
