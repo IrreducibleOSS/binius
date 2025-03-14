@@ -12,6 +12,7 @@ use binius_core::{
 	transparent::step_down::StepDown,
 };
 use binius_field::{underlier::UnderlierType, TowerField};
+use binius_math::LinearNormalForm;
 use binius_utils::checked_arithmetics::{log2_ceil_usize, log2_strict_usize};
 use bumpalo::Bump;
 
@@ -312,16 +313,6 @@ fn add_oracle_for_column<F: TowerField>(
 	let addition = oracles.add_named(name);
 	let oracle_id = match col {
 		ColumnDef::Committed { tower_level } => addition.committed(n_vars, *tower_level),
-		ColumnDef::LinearCombination {
-			offset,
-			col_scalars,
-		} => {
-			let inner_oracles = col_scalars
-				.iter()
-				.map(|(col_index, coeff)| (oracle_lookup[*col_index], *coeff))
-				.collect::<Vec<_>>();
-			addition.linear_combination_with_offset(n_vars, *offset, inner_oracles)?
-		}
 		ColumnDef::Selected {
 			col,
 			index,
@@ -356,11 +347,24 @@ fn add_oracle_for_column<F: TowerField>(
 			addition.packed(oracle_lookup[col.table_index], *log_degree)?
 		}
 		ColumnDef::Computed { cols, expr } => {
-			let inner_oracles = cols
-				.iter()
-				.map(|&col_index| oracle_lookup[col_index])
-				.collect::<Vec<_>>();
-			addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			if let Ok(LinearNormalForm {
+				constant: offset,
+				var_coeffs,
+			}) = expr.linear_normal_form()
+			{
+				let col_scalars = cols
+					.iter()
+					.zip(var_coeffs)
+					.map(|(&col_index, coeff)| (oracle_lookup[col_index], coeff))
+					.collect::<Vec<_>>();
+				addition.linear_combination_with_offset(n_vars, offset, col_scalars)?
+			} else {
+				let inner_oracles = cols
+					.iter()
+					.map(|&col_index| oracle_lookup[col_index])
+					.collect::<Vec<_>>();
+				addition.composite_mle(n_vars, inner_oracles, expr.clone())?
+			}
 		}
 		ColumnDef::Constant { .. } => addition.repeating(
 			transparent_single[id.table_index].unwrap(),

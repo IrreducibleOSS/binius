@@ -119,10 +119,6 @@ pub enum ColumnDef<F: TowerField = B128> {
 	Committed {
 		tower_level: usize,
 	},
-	LinearCombination {
-		offset: F,
-		col_scalars: Vec<(ColumnIndex, F)>,
-	},
 	Selected {
 		col: ColumnId,
 		index: usize,
