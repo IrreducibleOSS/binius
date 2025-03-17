@@ -19,8 +19,8 @@ use crate::{
 	arch::binary_utils::{as_array_mut, as_array_ref},
 	arithmetic_traits::Broadcast,
 	underlier::{
-		impl_divisible, impl_iteration, unpack_lo_128b_fallback, NumCast, Random, SmallU,
-		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		impl_divisible, impl_iteration, transpose_128b_values, unpack_lo_128b_fallback, NumCast,
+		Random, SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -370,6 +370,15 @@ impl UnderlierWithBitOps for M128 {
 			6 => unsafe { vzip2q_u64(self.into(), rhs.into()).into() },
 			_ => panic!("Unsupported block length"),
 		}
+	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		transpose_128b_values::<Self, TL>(values);
 	}
 }
 

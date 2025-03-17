@@ -205,6 +205,36 @@ pub(crate) fn transpose_square_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
 	}
 }
 
+#[inline(always)]
+pub(crate) fn transpose_128b_values<U: UnderlierWithBitOps, TL: TowerLevel>(
+	values: &mut TL::Data<U>,
+) {
+	assert!(U::BITS == 128);
+
+	transpose_square_blocks::<U, TL>(values);
+
+	// Elements are transposed, but we need to reorder them
+	match TL::LOG_WIDTH {
+		0 | 1 => {}
+		2 => {
+			values.as_mut().swap(1, 2);
+		}
+		3 => {
+			values.as_mut().swap(1, 4);
+			values.as_mut().swap(3, 6);
+		}
+		4 => {
+			values.as_mut().swap(1, 8);
+			values.as_mut().swap(2, 4);
+			values.as_mut().swap(3, 12);
+			values.as_mut().swap(5, 10);
+			values.as_mut().swap(7, 14);
+			values.as_mut().swap(11, 13);
+		}
+		_ => panic!("unsupported tower level"),
+	}
+}
+
 /// Fallback implementation of `spread` method.
 ///
 /// # Safety

@@ -24,7 +24,7 @@ use crate::{
 	arithmetic_traits::Broadcast,
 	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, transpose_square_blocks,
+		impl_divisible, impl_iteration, spread_fallback, transpose_128b_values,
 		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
 		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
@@ -737,28 +737,7 @@ impl UnderlierWithBitOps for M128 {
 		u8: NumCast<Self>,
 		Self: From<u8>,
 	{
-		transpose_square_blocks::<Self, TL>(values);
-
-		// Elements are transposed, but we need to reorder them
-		match TL::LOG_WIDTH {
-			0 | 1 => {}
-			2 => {
-				values.as_mut().swap(1, 2);
-			}
-			3 => {
-				values.as_mut().swap(1, 4);
-				values.as_mut().swap(3, 6);
-			}
-			4 => {
-				values.as_mut().swap(1, 8);
-				values.as_mut().swap(2, 4);
-				values.as_mut().swap(3, 12);
-				values.as_mut().swap(5, 10);
-				values.as_mut().swap(7, 14);
-				values.as_mut().swap(11, 13);
-			}
-			_ => panic!("unsupported tower level"),
-		}
+		transpose_128b_values::<Self, TL>(values);
 	}
 }
 
