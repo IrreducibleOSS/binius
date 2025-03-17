@@ -46,7 +46,7 @@ fn bench_large_transform<F: TowerField, PE: PackedExtension<F>>(c: &mut Criterio
 fn bench_byte_sliced(c: &mut Criterion) {
 	bench_large_transform::<AESTowerField32b, ByteSlicedAES32x128b>(
 		c,
-		"bytesliced=ByteSlicedAES32x32b",
+		"bytesliced=ByteSlicedAES32x128b",
 	);
 }
 
