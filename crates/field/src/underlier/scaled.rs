@@ -282,7 +282,7 @@ where
 			for col in 0..N {
 				let index = row * N + col;
 
-				result[index].0[col] = values[index / TL::WIDTH].0[index % TL::WIDTH];
+				result[row].0[col] = values[index % TL::WIDTH].0[index / TL::WIDTH];
 			}
 		}
 
