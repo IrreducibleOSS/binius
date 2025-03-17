@@ -405,7 +405,7 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 	pub fn par_segments(
 		&mut self,
 		log_size: usize,
-	) -> impl ParallelIterator<Item = TableWitnessIndexSegment<'_, U, F>> + '_ {
+	) -> impl ParallelIterator<Item = TableWitnessIndexSegment<U, F>> + '_ {
 		assert!(log_size < self.log_capacity);
 		assert!(log_size >= self.min_log_segment_size);
 
@@ -470,8 +470,6 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'a, U, F> {
 	where
 		U: PackScalar<FSub>,
 	{
-		// TODO: Check consistency of static params with column info
-
 		if col.table_id != self.table.id() {
 			return Err(Error::TableMismatch {
 				column_table_id: col.table_id,
@@ -494,8 +492,6 @@ impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'a, U, F> {
 		U: PackScalar<FSub>,
 		F: ExtensionField<FSub>,
 	{
-		// TODO: Check consistency of static params with column info
-
 		if col.table_id != self.table.id() {
 			return Err(Error::TableMismatch {
 				column_table_id: col.table_id,
