@@ -8,7 +8,7 @@ use binius_field::{
 };
 use binius_hal::{ComputationBackend, ComputationBackendExt};
 use binius_math::{
-	CompositionPoly, Error as MathError, EvaluationDomainFactory, EvaluationOrder,
+	BinarySubspace, CompositionPoly, Error as MathError, EvaluationDomain, EvaluationOrder,
 	IsomorphicEvaluationDomainFactory, MLEDirectAdapter, MultilinearPoly,
 };
 use binius_maybe_rayon::prelude::*;
@@ -90,7 +90,6 @@ pub fn univariatizing_reduction_prover<'a, F, FDomain, P, Backend>(
 	mut reduced_multilinears: Vec<MLEDirectAdapter<P>>,
 	univariatized_multilinear_evals: &[F],
 	univariate_challenge: F,
-	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
 	backend: &'a Backend,
 ) -> Result<Prover<'a, FDomain, P, Backend>, Error>
 where
@@ -107,14 +106,12 @@ where
 		bail!(VerificationError::NumberOfFinalEvaluations);
 	}
 
-	let evaluation_domain = EvaluationDomainFactory::<FDomain>::create(
-		&IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
-		1 << skip_rounds,
-	)?;
+	let subspace =
+		BinarySubspace::<FDomain::Canonical>::with_dim(skip_rounds)?.isomorphic::<FDomain>();
+	let ntt_domain = EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
 
-	reduced_multilinears.push(
-		lagrange_evals_multilinear_extension(&evaluation_domain, univariate_challenge)?.into(),
-	);
+	reduced_multilinears
+		.push(lagrange_evals_multilinear_extension(&ntt_domain, univariate_challenge)?.into());
 
 	let composite_sum_claims =
 		univariatizing_reduction_composite_sum_claims(univariatized_multilinear_evals);
@@ -123,7 +120,7 @@ where
 		EvaluationOrder::LowToHigh,
 		reduced_multilinears,
 		composite_sum_claims,
-		evaluation_domain_factory,
+		IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default(),
 		immediate_switchover_heuristic,
 		backend,
 	)?;
@@ -242,15 +239,22 @@ where
 			mut partial_eq_ind_evals,
 		} = self;
 
-		let domain_factory = IsomorphicEvaluationDomainFactory::<FDomain::Canonical>::default();
-		let max_domain =
-			EvaluationDomainFactory::<FDomain>::create(&domain_factory, max_domain_size)?;
+		// REVIEW: consider using novel basis for the univariate round representation
+		//         (instead of Lagrange)
+		let max_dim = log2_ceil_usize(max_domain_size);
+		let subspace =
+			BinarySubspace::<FDomain::Canonical>::with_dim(max_dim)?.isomorphic::<FDomain>();
+		let max_domain = EvaluationDomain::from_points(
+			subspace.iter().take(max_domain_size).collect::<Vec<_>>(),
+			false,
+		)?;
 
 		// Lagrange extrapolation over skipped subcube
-		let subcube_evaluation_domain =
-			EvaluationDomainFactory::<FDomain>::create(&domain_factory, 1 << skip_rounds)?;
-
-		let subcube_lagrange_coeffs = subcube_evaluation_domain.lagrange_evals(challenge);
+		let subcube_lagrange_coeffs = EvaluationDomain::from_points(
+			subspace.reduce_dim(skip_rounds)?.iter().collect::<Vec<_>>(),
+			false,
+		)?
+		.lagrange_evals(challenge);
 
 		// Zerocheck tensor expansion for the reduced zerocheck should be one variable less
 		fold_partial_eq_ind::<P, Backend>(
@@ -691,9 +695,7 @@ mod tests {
 		PackedBinaryField4x32b, PackedExtension, PackedField, PackedFieldIndexable, TowerField,
 	};
 	use binius_hal::make_portable_backend;
-	use binius_math::{
-		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, MultilinearPoly,
-	};
+	use binius_math::{BinarySubspace, CompositionPoly, EvaluationDomain, MultilinearPoly};
 	use binius_ntt::SingleThreadedNTT;
 	use rand::{prelude::StdRng, SeedableRng};
 
@@ -715,11 +717,15 @@ mod tests {
 
 		let mut rng = StdRng::seed_from_u64(0);
 		let ntt = SingleThreadedNTT::<FDomain>::new(10).unwrap();
-		let domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
-		let max_domain = domain_factory.create(1 << 10).unwrap();
+		let subspace = BinarySubspace::<FDomain>::with_dim(10).unwrap();
+		let max_domain =
+			EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false).unwrap();
 
 		for skip_rounds in 0..5usize {
-			let domain = domain_factory.create(1 << skip_rounds).unwrap();
+			let subsubspace = subspace.reduce_dim(skip_rounds).unwrap();
+			let domain =
+				EvaluationDomain::from_points(subsubspace.iter().collect::<Vec<_>>(), false)
+					.unwrap();
 			for log_batch in 0..3usize {
 				for composition_degree in 0..5usize {
 					let subcube_vars = skip_rounds + log_batch;
@@ -875,9 +881,9 @@ mod tests {
 					log_embedding_degree + PackedType::<U, F>::LOG_WIDTH
 				)
 			];
-			let domain = DefaultEvaluationDomainFactory::<FDomain>::default()
-				.create(1 << skip_rounds)
-				.unwrap();
+			let subspace = BinarySubspace::<FDomain>::with_dim(skip_rounds).unwrap();
+			let domain =
+				EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false).unwrap();
 			for round_evals_index in 0..round_evals_len {
 				let x = FDomain::from(((1 << skip_rounds) + round_evals_index) as u8);
 				let mut composition_sums = vec![F::ZERO; compositions.len()];

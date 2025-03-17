@@ -7,10 +7,7 @@ use std::{
 
 use binius_field::{ExtensionField, Field, PackedFieldIndexable, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackendExt};
-use binius_math::{
-	EvaluationDomain, EvaluationDomainFactory, IsomorphicEvaluationDomainFactory,
-	MultilinearExtension,
-};
+use binius_math::{BinarySubspace, EvaluationDomain, MultilinearExtension};
 use binius_utils::{bail, checked_arithmetics::log2_strict_usize, sorting::is_sorted_ascending};
 use bytemuck::zeroed_vec;
 
@@ -140,8 +137,9 @@ where
 	for (claim, multilinear_evals) in iter::zip(claims, multilinear_evals.iter_mut()) {
 		let skip_rounds = claim.n_vars();
 
-		let evaluation_domain = IsomorphicEvaluationDomainFactory::<F::Canonical>::default()
-			.create(1 << skip_rounds)?;
+		let subspace = BinarySubspace::<F::Canonical>::with_dim(skip_rounds)?.isomorphic::<F>();
+		let evaluation_domain =
+			EvaluationDomain::from_points(subspace.iter().collect::<Vec<_>>(), false)?;
 
 		let lagrange_mle = lagrange_evals_multilinear_extension::<F, F, F>(
 			&evaluation_domain,
@@ -230,8 +228,8 @@ mod tests {
 	};
 	use binius_hal::ComputationBackend;
 	use binius_math::{
-		CompositionPoly, DefaultEvaluationDomainFactory, EvaluationDomainFactory, EvaluationOrder,
-		IsomorphicEvaluationDomainFactory, MultilinearPoly,
+		BinarySubspace, CompositionPoly, EvaluationOrder, IsomorphicEvaluationDomainFactory,
+		MultilinearPoly,
 	};
 	use groestl_crypto::Groestl256;
 	use rand::{prelude::StdRng, SeedableRng};
@@ -273,8 +271,6 @@ mod tests {
 		let max_skip_rounds = 3;
 		let n_multilinears = 2;
 
-		let evaluation_domain_factory = DefaultEvaluationDomainFactory::<FDomain>::default();
-
 		let univariate_challenge = <F as Field>::random(&mut rng);
 
 		let sumcheck_challenges = (0..regular_vars)
@@ -291,10 +287,10 @@ mod tests {
 				generate_zero_product_multilinears::<P, PE>(&mut rng, n_vars, n_multilinears);
 			all_multilinears.push((skip_rounds, multilinears.clone()));
 
-			let domain = evaluation_domain_factory
-				.clone()
-				.create(1 << skip_rounds)
-				.unwrap();
+			let subspace = BinarySubspace::with_dim(skip_rounds).unwrap();
+			let ntt_domain =
+				EvaluationDomain::from_points(subspace.iter().collect::<Vec<FDomain>>(), false)
+					.unwrap();
 
 			let query = backend.multilinear_query(&sumcheck_challenges).unwrap();
 			let univariatized_multilinear_evals = multilinears
@@ -303,7 +299,7 @@ mod tests {
 					let partial_eval = backend
 						.evaluate_partial_high(multilinear, query.to_ref())
 						.unwrap();
-					domain
+					ntt_domain
 						.extrapolate(PE::unpack_scalars(partial_eval.evals()), univariate_challenge)
 						.unwrap()
 				})
@@ -314,11 +310,10 @@ mod tests {
 			let reduced_multilinears =
 				reduce_to_skipped_projection(multilinears, &sumcheck_challenges, &backend).unwrap();
 
-			let prover = univariatizing_reduction_prover(
+			let prover = univariatizing_reduction_prover::<_, FDomain, _, _>(
 				reduced_multilinears,
 				&univariatized_multilinear_evals,
 				univariate_challenge,
-				evaluation_domain_factory.clone(),
 				&backend,
 			)
 			.unwrap();

@@ -40,20 +40,18 @@ pub struct InterpolationDomain<F: Field> {
 /// Wraps type information to enable instantiating EvaluationDomains.
 #[auto_impl(&)]
 pub trait EvaluationDomainFactory<DomainField: Field>: Clone + Sync {
-	/// Instantiates an EvaluationDomain from `size` lexicographically first values from the
-	/// binary subspace.
-	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error> {
-		self.create_with_infinity(size, false)
-	}
-
-	/// Instantiates an EvaluationDomain from `size` values in total: lexicographically first values
-	/// from the binary subspace and potentially Karatsuba "infinity" point (which is the coefficient of
-	/// the highest power in the interpolated polynomial).
-	fn create_with_infinity(
-		&self,
-		size: usize,
-		with_infinity: bool,
-	) -> Result<EvaluationDomain<DomainField>, Error>;
+	/// Instantiates an EvaluationDomain of `size` points from $K \mathbin{/} \mathbb{F}\_2 \cup \infty$
+	/// where $K$ is a finite extension of degree $d$.
+	/// For `size >= 3`, the first `size - 1` domain points are a "lexicographic prefix" of the binary
+	/// subspace defined by the $\mathbb{F}\_2$-basis $\beta_0,\ldots ,\beta_{d-1}$. The additional assumption
+	/// $\beta_0 = 1$ means that first two points of the basis are always 0 and 1 of the field $K$.
+	/// The last point of the domain is Karatsuba "infinity" (denoted $\infty$), which is the coefficient of the
+	/// highest power in the interpolated polynomial (see the "Evaluation" section of the Wikipedia article
+	/// on [Toom-Cook multiplication](https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication) for
+	/// an introduction).
+	///
+	/// "Infinity" point is not included when `size <= 2`.
+	fn create(&self, size: usize) -> Result<EvaluationDomain<DomainField>, Error>;
 }
 
 #[derive(Default, Clone)]
@@ -67,14 +65,8 @@ pub struct IsomorphicEvaluationDomainFactory<F: BinaryField> {
 }
 
 impl<F: BinaryField> EvaluationDomainFactory<F> for DefaultEvaluationDomainFactory<F> {
-	fn create_with_infinity(
-		&self,
-		size: usize,
-		with_infinity: bool,
-	) -> Result<EvaluationDomain<F>, Error> {
-		if size == 0 && with_infinity {
-			bail!(Error::DomainSizeAtLeastOne);
-		}
+	fn create(&self, size: usize) -> Result<EvaluationDomain<F>, Error> {
+		let with_infinity = size >= 3;
 		EvaluationDomain::from_points(
 			make_evaluation_points(&self.subspace, size - if with_infinity { 1 } else { 0 })?,
 			with_infinity,
@@ -87,14 +79,8 @@ where
 	FSrc: BinaryField,
 	FTgt: Field + From<FSrc> + BinaryField,
 {
-	fn create_with_infinity(
-		&self,
-		size: usize,
-		with_infinity: bool,
-	) -> Result<EvaluationDomain<FTgt>, Error> {
-		if size == 0 && with_infinity {
-			bail!(Error::DomainSizeAtLeastOne);
-		}
+	fn create(&self, size: usize) -> Result<EvaluationDomain<FTgt>, Error> {
+		let with_infinity = size >= 3;
 		let points =
 			make_evaluation_points(&self.subspace, size - if with_infinity { 1 } else { 0 })?;
 		EvaluationDomain::from_points(points.into_iter().map(Into::into).collect(), with_infinity)
@@ -342,11 +328,7 @@ mod tests {
 		let domain_factory = DefaultEvaluationDomainFactory::<BinaryField8b>::default();
 		assert_eq!(
 			domain_factory.create(3).unwrap().finite_points,
-			&[
-				BinaryField8b::new(0),
-				BinaryField8b::new(1),
-				BinaryField8b::new(2)
-			]
+			&[BinaryField8b::new(0), BinaryField8b::new(1),]
 		);
 	}
 
@@ -502,8 +484,9 @@ mod tests {
 		#[test]
 		fn test_lagrange_evals(values in vec(0u32.., 0..100), z in 0u32..) {
 			let field_values = values.into_iter().map(BinaryField32b::from).collect::<Vec<_>>();
-			let factory = DefaultEvaluationDomainFactory::<BinaryField32b>::default();
-			let evaluation_domain = factory.create(field_values.len()).unwrap();
+			let subspace = BinarySubspace::<BinaryField32b>::with_dim(8).unwrap();
+			let domain_points = subspace.iter().take(field_values.len()).collect::<Vec<_>>();
+			let evaluation_domain = EvaluationDomain::from_points(domain_points, false).unwrap();
 
 			let z = BinaryField32b::new(z);
 

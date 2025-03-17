@@ -382,7 +382,6 @@ where
 				reduced_multilinears,
 				univariatized_multilinear_evals,
 				univariate_challenge,
-				&domain_factory,
 				backend,
 			)?;
 

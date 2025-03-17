@@ -313,10 +313,7 @@ where
 {
 	degrees
 		.into_iter()
-		.map(|degree| {
-			let domain = evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
-			Ok(domain.into())
-		})
+		.map(|degree| Ok(evaluation_domain_factory.create(degree + 1)?.into()))
 		.collect()
 }
 

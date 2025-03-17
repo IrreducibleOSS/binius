@@ -125,7 +125,9 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		mut multilinear_evals,
 	} = sumcheck_output;
 
-	assert_eq!(multilinear_evals.len(), claims.len());
+	if multilinear_evals.len() != claims.len() {
+		bail!(VerificationError::NumberOfFinalEvaluations);
+	}
 
 	// Check that the claims are in descending order by n_vars
 	if !is_sorted_ascending(claims.iter().map(|claim| claim.n_vars()).rev()) {
@@ -137,13 +139,18 @@ pub fn verify_sumcheck_outputs<F: Field, Composition: CompositionPoly<F>>(
 		.map(|claim| claim.n_vars())
 		.unwrap_or_default();
 
-	assert!(sumcheck_challenges.len() <= max_n_vars);
-	assert_eq!(eq_ind_challenges.len(), sumcheck_challenges.len());
+	if sumcheck_challenges.len() > max_n_vars
+		|| eq_ind_challenges.len() != sumcheck_challenges.len()
+	{
+		bail!(VerificationError::NumberOfRounds);
+	}
 
 	let mut eq_ind_eval = F::ONE;
 	let mut last_n_vars = 0;
 	for (claim, multilinear_evals) in claims.iter().zip(multilinear_evals.iter_mut()).rev() {
-		assert_eq!(claim.n_multilinears() + 1, multilinear_evals.len());
+		if claim.n_multilinears() + 1 != multilinear_evals.len() {
+			bail!(VerificationError::NumberOfMultilinearEvals);
+		}
 
 		while last_n_vars < claim.n_vars() && last_n_vars < sumcheck_challenges.len() {
 			let sumcheck_challenge =
