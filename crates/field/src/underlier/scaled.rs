@@ -205,9 +205,9 @@ impl<U: Not<Output = U>, const N: usize> Not for ScaledUnderlier<U, N> {
 	}
 }
 
-impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N>
+impl<U, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N>
 where
-	U: From<u8>,
+	U: UnderlierWithBitOps + Pod + From<u8>,
 	u8: NumCast<U>,
 {
 	const ZERO: Self = Self([U::ZERO; N]);
@@ -292,7 +292,7 @@ where
 
 impl<U: UnderlierType, const N: usize> NumCast<ScaledUnderlier<U, N>> for u8
 where
-	u8: NumCast<U>,
+	Self: NumCast<U>,
 {
 	fn num_cast_from(val: ScaledUnderlier<U, N>) -> Self {
 		Self::num_cast_from(val.0[0])

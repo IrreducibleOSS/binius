@@ -914,7 +914,7 @@ impl UnderlierWithBitOps for M256 {
 
 		// reorder rows
 		match TL::LOG_WIDTH {
-			0 | 1 | 2 => {}
+			0..=2 => {}
 			3 => {
 				values.as_mut().swap(1, 2);
 				values.as_mut().swap(5, 6);
