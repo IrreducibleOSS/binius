@@ -24,10 +24,11 @@ use crate::{
 		x86_64::m128::bitshift_128b,
 	},
 	arithmetic_traits::Broadcast,
+	tower_levels::TowerLevel,
 	underlier::{
 		get_block_values, get_spread_bytes, impl_divisible, impl_iteration, spread_fallback,
-		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		transpose_square_blocks, unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random,
+		SmallU, UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -887,6 +888,44 @@ impl UnderlierWithBitOps for M256 {
 			5 => unsafe { _mm256_unpackhi_epi32(self.0, other.0).into() },
 			6 => unsafe { _mm256_unpackhi_epi64(self.0, other.0).into() },
 			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		transpose_square_blocks::<Self, TL>(values);
+
+		let swap_128b = |data: &mut TL::Data<Self>, i: usize, j: usize| {
+			let new_i = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x20) };
+			let new_j = unsafe { _mm256_permute2x128_si256(data[i].0, data[j].0, 0x31) };
+
+			data[i] = Self(new_i);
+			data[j] = Self(new_j);
+		};
+
+		// reorder lanes
+		for i in 0..TL::WIDTH / 2 {
+			swap_128b(values, i, i + TL::WIDTH / 2);
+		}
+
+		// reorder rows
+		match TL::LOG_WIDTH {
+			0 | 1 | 2 => {}
+			3 => {
+				values.as_mut().swap(1, 2);
+				values.as_mut().swap(5, 6);
+			}
+			4 => {
+				values.as_mut().swap(1, 4);
+				values.as_mut().swap(3, 6);
+				values.as_mut().swap(9, 12);
+				values.as_mut().swap(11, 14);
+			}
+			_ => panic!("unsupported tower level"),
 		}
 	}
 }

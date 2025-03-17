@@ -22,10 +22,11 @@ use crate::{
 		},
 	},
 	arithmetic_traits::Broadcast,
+	tower_levels::TowerLevel,
 	underlier::{
-		impl_divisible, impl_iteration, spread_fallback, unpack_hi_128b_fallback,
-		unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte, UnderlierType,
-		UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
+		impl_divisible, impl_iteration, spread_fallback, transpose_square_blocks,
+		unpack_hi_128b_fallback, unpack_lo_128b_fallback, NumCast, Random, SmallU, SpreadToByte,
+		UnderlierType, UnderlierWithBitOps, WithUnderlier, U1, U2, U4,
 	},
 	BinaryField,
 };
@@ -727,6 +728,36 @@ impl UnderlierWithBitOps for M128 {
 			5 => unsafe { _mm_unpackhi_epi32(self.0, other.0).into() },
 			6 => unsafe { _mm_unpackhi_epi64(self.0, other.0).into() },
 			_ => panic!("unsupported block length"),
+		}
+	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		transpose_square_blocks::<Self, TL>(values);
+
+		// Elements are transposed, but we need to reorder them
+		match TL::LOG_WIDTH {
+			0 | 1 => {}
+			2 => {
+				values.as_mut().swap(1, 2);
+			}
+			3 => {
+				values.as_mut().swap(1, 4);
+				values.as_mut().swap(3, 6);
+			}
+			4 => {
+				values.as_mut().swap(1, 8);
+				values.as_mut().swap(2, 4);
+				values.as_mut().swap(3, 12);
+				values.as_mut().swap(5, 10);
+				values.as_mut().swap(7, 14);
+				values.as_mut().swap(11, 13);
+			}
+			_ => panic!("unsupported tower level"),
 		}
 	}
 }

@@ -12,17 +12,19 @@ use bytemuck::{Pod, Zeroable};
 
 use super::{invert::invert_or_zero, multiply::mul, square::square};
 use crate::{
+	as_packed_field::PackScalar,
 	binary_field::BinaryField,
 	linear_transformation::{
 		FieldLinearTransformation, PackedTransformationFactory, Transformation,
 	},
 	packed_aes_field::PackedAESBinaryField32x8b,
-	tower_levels::*,
-	underlier::WithUnderlier,
+	tower_levels::{TowerLevel, TowerLevel1, TowerLevel16, TowerLevel2, TowerLevel4, TowerLevel8},
+	underlier::{UnderlierWithBitOps, WithUnderlier},
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	ExtensionField, PackedAESBinaryField16x8b, PackedAESBinaryField64x8b, PackedExtension,
 	PackedField,
 };
+
 /// Packed transformation for byte-sliced fields with a scalar bigger than 8b.
 ///
 /// `N` is the number of bytes in the scalar.
@@ -38,18 +40,19 @@ pub struct TransformationWrapperNxN<Inner, const N: usize>([[Inner; N]; N]);
 /// [ element_1[1], element_5[1], ... ]
 ///  ...
 macro_rules! define_byte_sliced_3d {
-	($name:ident, $scalar_type:ty, $packed_storage:ty, $tower_level: ty, $biggest_field_bytes:literal) => {
+	($name:ident, $scalar_type:ty, $packed_storage:ty, $scalar_tower_level: ty, $storage_tower_level: ty) => {
 		#[derive(Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
 		#[repr(transparent)]
 		pub struct $name {
-			pub(super) data: [[$packed_storage; <$tower_level as TowerLevel>::WIDTH]; $biggest_field_bytes / <$tower_level as TowerLevel>::WIDTH],
+			pub(super) data: [[$packed_storage; <$scalar_tower_level as TowerLevel>::WIDTH]; <$storage_tower_level as TowerLevel>::WIDTH / <$scalar_tower_level as TowerLevel>::WIDTH],
 		}
 
 		impl $name {
-			pub const BYTES: usize = $biggest_field_bytes * <$packed_storage>::WIDTH;
+			pub const BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH * <$packed_storage>::WIDTH;
 
 			const SCALAR_BYTES: usize = <$scalar_type>::N_BITS / 8;
-			const HEIGHT: usize = $biggest_field_bytes / Self::SCALAR_BYTES;
+			pub(crate) const HEIGHT_BYTES: usize = <$storage_tower_level as TowerLevel>::WIDTH;
+			const HEIGHT: usize = Self::HEIGHT_BYTES / Self::SCALAR_BYTES;
 			const LOG_HEIGHT: usize = checked_log_2(Self::HEIGHT);
 
 			/// Get the byte at the given index.
@@ -59,12 +62,19 @@ macro_rules! define_byte_sliced_3d {
 			#[allow(clippy::modulo_one)]
 			#[inline(always)]
 			pub unsafe fn get_byte_unchecked(&self, byte_index: usize) -> u8 {
-				let row = byte_index % $biggest_field_bytes;
+				let row = byte_index % Self::HEIGHT_BYTES;
 				self.data
 					.get_unchecked(row / Self::SCALAR_BYTES)
 					.get_unchecked(row % Self::SCALAR_BYTES)
-					.get_unchecked(byte_index / $biggest_field_bytes)
+					.get_unchecked(byte_index / Self::HEIGHT_BYTES)
 					.to_underlier()
+			}
+
+			pub fn transpose_to(&self, out: &mut [<<$packed_storage as WithUnderlier>::Underlier as PackScalar<$scalar_type>>::Packed; Self::HEIGHT_BYTES]) {
+				let underliers = WithUnderlier::to_underliers_arr_ref_mut(out);
+				*underliers = bytemuck::must_cast(self.data);
+
+				UnderlierWithBitOps::transpose_bytes_from_byte_sliced::<$storage_tower_level>(underliers);
 			}
 		}
 
@@ -133,7 +143,7 @@ macro_rules! define_byte_sliced_3d {
 							<$packed_storage>::broadcast(unsafe { scalar.get_base_unchecked(0) });
 						array::from_fn(|_| array::from_fn(|_| packed_broadcast))
 					}
-					$biggest_field_bytes => array::from_fn(|_| array::from_fn(|byte_index| {
+					Self::HEIGHT_BYTES => array::from_fn(|_| array::from_fn(|byte_index| {
 						<$packed_storage>::broadcast(unsafe {
 							scalar.get_base_unchecked(byte_index)
 						})
@@ -175,7 +185,7 @@ macro_rules! define_byte_sliced_3d {
 				let mut result = Self::default();
 
 				for i in 0..Self::HEIGHT {
-					square::<$packed_storage, $tower_level>(
+					square::<$packed_storage, $scalar_tower_level>(
 						&self.data[i],
 						&mut result.data[i],
 					);
@@ -189,7 +199,7 @@ macro_rules! define_byte_sliced_3d {
 				let mut result = Self::default();
 
 				for i in 0..Self::HEIGHT {
-					invert_or_zero::<$packed_storage, $tower_level>(
+					invert_or_zero::<$packed_storage, $scalar_tower_level>(
 						&self.data[i],
 						&mut result.data[i],
 					);
@@ -201,14 +211,11 @@ macro_rules! define_byte_sliced_3d {
 			#[inline(always)]
 			fn interleave(self, other: Self, log_block_len: usize) -> (Self, Self) {
 
-				let self_data: &[$packed_storage; $biggest_field_bytes] = bytemuck::must_cast_ref(&self.data);
-				let other_data: &[$packed_storage; $biggest_field_bytes] = bytemuck::must_cast_ref(&other.data);
+				let self_data: &[$packed_storage; Self::HEIGHT_BYTES] = bytemuck::must_cast_ref(&self.data);
+				let other_data: &[$packed_storage; Self::HEIGHT_BYTES] = bytemuck::must_cast_ref(&other.data);
 
 				// This implementation is faster than using a loop with `copy_from_slice` for the first 4 cases
-				let (data_1, data_2) = concat_idents::concat_idents!(interleave_fn = interleave_byte_sliced_, $biggest_field_bytes, {
-					interleave_fn(self_data, other_data, log_block_len + checked_log_2(Self::SCALAR_BYTES))
-				});
-
+				let (data_1, data_2) = interleave_byte_sliced(self_data, other_data, log_block_len + checked_log_2(Self::SCALAR_BYTES));
 				(
 					Self {
 						data: bytemuck::must_cast(data_1),
@@ -267,7 +274,7 @@ macro_rules! define_byte_sliced_3d {
 				let mut result = Self::default();
 
 				for i in 0..Self::HEIGHT {
-					mul::<$packed_storage, $tower_level>(
+					mul::<$packed_storage, $scalar_tower_level>(
 						&self.data[i],
 						&rhs.data[i],
 						&mut result.data[i],
@@ -460,7 +467,7 @@ macro_rules! define_byte_sliced_3d {
 			}
 		}
 
-		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$tower_level as TowerLevel>::WIDTH}> {
+		impl<Inner: Transformation<$packed_storage, $packed_storage>> Transformation<$name, $name> for TransformationWrapperNxN<Inner, {<$scalar_tower_level as TowerLevel>::WIDTH}> {
 			fn transform(&self, data: &$name) -> $name {
 				let mut result = <$name>::default();
 
@@ -479,7 +486,7 @@ macro_rules! define_byte_sliced_3d {
 		}
 
 		impl PackedTransformationFactory<$name> for $name {
-			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> = TransformationWrapperNxN<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<[AESTowerField8b; 8]>, {<$tower_level as TowerLevel>::WIDTH}>;
+			type PackedTransformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync> = TransformationWrapperNxN<<$packed_storage as  PackedTransformationFactory<$packed_storage>>::PackedTransformation::<[AESTowerField8b; 8]>, {<$scalar_tower_level as TowerLevel>::WIDTH}>;
 
 			fn make_packed_transformation<Data: AsRef<[<$name as PackedField>::Scalar]> + Sync>(
 				transformation: FieldLinearTransformation<<$name as PackedField>::Scalar, Data>,
@@ -503,123 +510,53 @@ macro_rules! define_byte_sliced_3d {
 }
 
 #[inline(always)]
-fn interleave_byte_sliced_1<P: PackedField>(
-	lhs: &[P; 1],
-	rhs: &[P; 1],
-	log_block_len: usize,
-) -> ([P; 1], [P; 1]) {
-	let (lhs, rhs) = lhs[0].interleave(rhs[0], log_block_len);
-	([lhs], [rhs])
+fn interleave_internal_block<P: PackedField, const N: usize, const LOG_BLOCK_LEN: usize>(
+	lhs: &[P; N],
+	rhs: &[P; N],
+) -> ([P; N], [P; N]) {
+	debug_assert!(LOG_BLOCK_LEN < checked_log_2(N));
+
+	let result_1 = array::from_fn(|i| {
+		let block_index = i >> (LOG_BLOCK_LEN + 1);
+		let block_offset = i - (block_index << (LOG_BLOCK_LEN + 1));
+
+		let index = block_index * (1 << (LOG_BLOCK_LEN + 1)) + block_offset;
+		if block_offset < (1 << LOG_BLOCK_LEN) {
+			lhs[index]
+		} else {
+			rhs[index]
+		}
+	});
+	let result_2 = array::from_fn(|i| {
+		let block_index = i >> (LOG_BLOCK_LEN + 1);
+		let block_offset = i - (block_index << (LOG_BLOCK_LEN + 1));
+
+		let index = (2 * block_index + 1) * (1 << LOG_BLOCK_LEN) + block_offset;
+		if block_offset < (1 << LOG_BLOCK_LEN) {
+			rhs[index]
+		} else {
+			lhs[index]
+		}
+	});
+
+	(result_1, result_2)
 }
 
 #[inline(always)]
-fn interleave_byte_sliced_2<P: PackedField>(
-	lhs: &[P; 2],
-	rhs: &[P; 2],
+fn interleave_byte_sliced<P: PackedField, const N: usize>(
+	lhs: &[P; N],
+	rhs: &[P; N],
 	log_block_len: usize,
-) -> ([P; 2], [P; 2]) {
-	match log_block_len {
-		0 => ([lhs[0], rhs[0]], [lhs[1], rhs[1]]),
-		_ => interleave_big_block(lhs, rhs, log_block_len),
-	}
-}
+) -> ([P; N], [P; N]) {
+	debug_assert!(checked_log_2(N) <= 4);
 
-#[inline(always)]
-fn interleave_byte_sliced_4<P: PackedField>(
-	lhs: &[P; 4],
-	rhs: &[P; 4],
-	log_block_len: usize,
-) -> ([P; 4], [P; 4]) {
 	match log_block_len {
-		0 => ([lhs[0], rhs[0], lhs[2], rhs[2]], [lhs[1], rhs[1], lhs[3], rhs[3]]),
-		1 => ([lhs[0], lhs[1], rhs[0], rhs[1]], [lhs[2], lhs[3], rhs[2], rhs[3]]),
-		_ => interleave_big_block(lhs, rhs, log_block_len),
-	}
-}
-
-#[inline(always)]
-fn interleave_byte_sliced_8<P: PackedField>(
-	lhs: &[P; 8],
-	rhs: &[P; 8],
-	log_block_len: usize,
-) -> ([P; 8], [P; 8]) {
-	match log_block_len {
-		0 => (
-			[
-				lhs[0], rhs[0], lhs[2], rhs[2], lhs[4], rhs[4], lhs[6], rhs[6],
-			],
-			[
-				lhs[1], rhs[1], lhs[3], rhs[3], lhs[5], rhs[5], lhs[7], rhs[7],
-			],
-		),
-		1 => (
-			[
-				lhs[0], lhs[1], rhs[0], rhs[1], lhs[4], lhs[5], rhs[4], rhs[5],
-			],
-			[
-				lhs[2], lhs[3], rhs[2], rhs[3], lhs[6], lhs[7], rhs[6], rhs[7],
-			],
-		),
-		2 => (
-			[
-				lhs[0], lhs[1], lhs[2], lhs[3], rhs[0], rhs[1], rhs[2], rhs[3],
-			],
-			[
-				lhs[4], lhs[5], lhs[6], lhs[7], rhs[4], rhs[5], rhs[6], rhs[7],
-			],
-		),
-		_ => interleave_big_block(lhs, rhs, log_block_len),
-	}
-}
-
-#[inline(always)]
-fn interleave_byte_sliced_16<P: PackedField>(
-	lhs: &[P; 16],
-	rhs: &[P; 16],
-	log_block_len: usize,
-) -> ([P; 16], [P; 16]) {
-	match log_block_len {
-		0 => (
-			[
-				lhs[0], rhs[0], lhs[2], rhs[2], lhs[4], rhs[4], lhs[6], rhs[6], lhs[8], rhs[8],
-				lhs[10], rhs[10], lhs[12], rhs[12], lhs[14], rhs[14],
-			],
-			[
-				lhs[1], rhs[1], lhs[3], rhs[3], lhs[5], rhs[5], lhs[7], rhs[7], lhs[9], rhs[9],
-				lhs[11], rhs[11], lhs[13], rhs[13], lhs[15], rhs[15],
-			],
-		),
-		1 => (
-			[
-				lhs[0], lhs[1], rhs[0], rhs[1], lhs[4], lhs[5], rhs[4], rhs[5], lhs[8], lhs[9],
-				rhs[8], rhs[9], lhs[12], lhs[13], rhs[12], rhs[13],
-			],
-			[
-				lhs[2], lhs[3], rhs[2], rhs[3], lhs[6], lhs[7], rhs[6], rhs[7], lhs[10], lhs[11],
-				rhs[10], rhs[11], lhs[14], lhs[15], rhs[14], rhs[15],
-			],
-		),
-		2 => (
-			[
-				lhs[0], lhs[1], lhs[2], lhs[3], rhs[0], rhs[1], rhs[2], rhs[3], lhs[8], lhs[9],
-				lhs[10], lhs[11], rhs[8], rhs[9], rhs[10], rhs[11],
-			],
-			[
-				lhs[4], lhs[5], lhs[6], lhs[7], rhs[4], rhs[5], rhs[6], rhs[7], lhs[12], lhs[13],
-				lhs[14], lhs[15], rhs[12], rhs[13], rhs[14], rhs[15],
-			],
-		),
-		3 => (
-			[
-				lhs[0], lhs[1], lhs[2], lhs[3], lhs[4], lhs[5], lhs[6], lhs[7], rhs[0], rhs[1],
-				rhs[2], rhs[3], rhs[4], rhs[5], rhs[6], rhs[7],
-			],
-			[
-				lhs[8], lhs[9], lhs[10], lhs[11], lhs[12], lhs[13], lhs[14], lhs[15], rhs[8],
-				rhs[9], rhs[10], rhs[11], rhs[12], rhs[13], rhs[14], rhs[15],
-			],
-		),
-		_ => interleave_big_block(lhs, rhs, log_block_len),
+		x if x >= checked_log_2(N) => interleave_big_block::<P, N>(lhs, rhs, log_block_len),
+		0 => interleave_internal_block::<P, N, 0>(lhs, rhs),
+		1 => interleave_internal_block::<P, N, 1>(lhs, rhs),
+		2 => interleave_internal_block::<P, N, 2>(lhs, rhs),
+		3 => interleave_internal_block::<P, N, 3>(lhs, rhs),
+		_ => unreachable!(),
 	}
 }
 
@@ -645,63 +582,63 @@ define_byte_sliced_3d!(
 	AESTowerField128b,
 	PackedAESBinaryField16x8b,
 	TowerLevel16,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x64b,
 	AESTowerField64b,
 	PackedAESBinaryField16x8b,
 	TowerLevel8,
-	8
+	TowerLevel8
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES2x16x64b,
 	AESTowerField64b,
 	PackedAESBinaryField16x8b,
 	TowerLevel8,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x32b,
 	AESTowerField32b,
 	PackedAESBinaryField16x8b,
 	TowerLevel4,
-	4
+	TowerLevel4
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES4x16x32b,
 	AESTowerField32b,
 	PackedAESBinaryField16x8b,
 	TowerLevel4,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x16b,
 	AESTowerField16b,
 	PackedAESBinaryField16x8b,
 	TowerLevel2,
-	2
+	TowerLevel2
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES8x16x16b,
 	AESTowerField16b,
 	PackedAESBinaryField16x8b,
 	TowerLevel2,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x8b,
 	AESTowerField8b,
 	PackedAESBinaryField16x8b,
 	TowerLevel1,
-	1
+	TowerLevel1
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x16x8b,
 	AESTowerField8b,
 	PackedAESBinaryField16x8b,
 	TowerLevel1,
-	16
+	TowerLevel16
 );
 
 // 256 bit
@@ -710,63 +647,63 @@ define_byte_sliced_3d!(
 	AESTowerField128b,
 	PackedAESBinaryField32x8b,
 	TowerLevel16,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES32x64b,
 	AESTowerField64b,
 	PackedAESBinaryField32x8b,
 	TowerLevel8,
-	8
+	TowerLevel8
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES2x32x64b,
 	AESTowerField64b,
 	PackedAESBinaryField32x8b,
 	TowerLevel8,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES32x32b,
 	AESTowerField32b,
 	PackedAESBinaryField32x8b,
 	TowerLevel4,
-	4
+	TowerLevel4
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES4x32x32b,
 	AESTowerField32b,
 	PackedAESBinaryField32x8b,
 	TowerLevel4,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES32x16b,
 	AESTowerField16b,
 	PackedAESBinaryField32x8b,
 	TowerLevel2,
-	2
+	TowerLevel2
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES8x32x16b,
 	AESTowerField16b,
 	PackedAESBinaryField32x8b,
 	TowerLevel2,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES32x8b,
 	AESTowerField8b,
 	PackedAESBinaryField32x8b,
 	TowerLevel1,
-	1
+	TowerLevel1
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x32x8b,
 	AESTowerField8b,
 	PackedAESBinaryField32x8b,
 	TowerLevel1,
-	16
+	TowerLevel16
 );
 
 // 512 bit
@@ -775,63 +712,63 @@ define_byte_sliced_3d!(
 	AESTowerField128b,
 	PackedAESBinaryField64x8b,
 	TowerLevel16,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES64x64b,
 	AESTowerField64b,
 	PackedAESBinaryField64x8b,
 	TowerLevel8,
-	8
+	TowerLevel8
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES2x64x64b,
 	AESTowerField64b,
 	PackedAESBinaryField64x8b,
 	TowerLevel8,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES64x32b,
 	AESTowerField32b,
 	PackedAESBinaryField64x8b,
 	TowerLevel4,
-	4
+	TowerLevel4
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES4x64x32b,
 	AESTowerField32b,
 	PackedAESBinaryField64x8b,
 	TowerLevel4,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES64x16b,
 	AESTowerField16b,
 	PackedAESBinaryField64x8b,
 	TowerLevel2,
-	2
+	TowerLevel2
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES8x64x16b,
 	AESTowerField16b,
 	PackedAESBinaryField64x8b,
 	TowerLevel2,
-	16
+	TowerLevel16
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES64x8b,
 	AESTowerField8b,
 	PackedAESBinaryField64x8b,
 	TowerLevel1,
-	1
+	TowerLevel1
 );
 define_byte_sliced_3d!(
 	ByteSlicedAES16x64x8b,
 	AESTowerField8b,
 	PackedAESBinaryField64x8b,
 	TowerLevel1,
-	16
+	TowerLevel16
 );
 
 macro_rules! impl_packed_extension{

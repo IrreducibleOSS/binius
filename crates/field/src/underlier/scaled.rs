@@ -10,7 +10,8 @@ use bytemuck::{must_cast_mut, must_cast_ref, NoUninit, Pod, Zeroable};
 use rand::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use super::{Divisible, Random, UnderlierType, UnderlierWithBitOps};
+use super::{Divisible, NumCast, Random, UnderlierType, UnderlierWithBitOps};
+use crate::tower_levels::TowerLevel;
 
 /// A type that represents a pair of elements of the same underlier type.
 /// We use it as an underlier for the `ScaledPAckedField` type.
@@ -204,7 +205,11 @@ impl<U: Not<Output = U>, const N: usize> Not for ScaledUnderlier<U, N> {
 	}
 }
 
-impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N> {
+impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for ScaledUnderlier<U, N>
+where
+	U: From<u8>,
+	u8: NumCast<U>,
+{
 	const ZERO: Self = Self([U::ZERO; N]);
 	const ONE: Self = {
 		let mut arr = [U::ZERO; N];
@@ -256,6 +261,50 @@ impl<U: UnderlierWithBitOps + Pod, const N: usize> UnderlierWithBitOps for Scale
 		assert!(U::BITS >= 128);
 
 		Self(array::from_fn(|i| self.0[i].unpack_hi_128b_lanes(other.0[i], log_block_len)))
+	}
+
+	#[inline]
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		for col in 0..N {
+			let mut column = TL::from_fn(|row| values[row].0[col]);
+			U::transpose_bytes_from_byte_sliced::<TL>(&mut column);
+			for row in 0..TL::WIDTH {
+				values[row].0[col] = column[row];
+			}
+		}
+
+		let mut result = TL::default::<Self>();
+		for row in 0..TL::WIDTH {
+			for col in 0..N {
+				let index = row * N + col;
+
+				result[index].0[col] = values[index / TL::WIDTH].0[index % TL::WIDTH];
+			}
+		}
+
+		*values = result;
+	}
+}
+
+impl<U: UnderlierType, const N: usize> NumCast<ScaledUnderlier<U, N>> for u8
+where
+	u8: NumCast<U>,
+{
+	fn num_cast_from(val: ScaledUnderlier<U, N>) -> Self {
+		Self::num_cast_from(val.0[0])
+	}
+}
+
+impl<U, const N: usize> From<u8> for ScaledUnderlier<U, N>
+where
+	U: From<u8>,
+{
+	fn from(val: u8) -> Self {
+		Self(array::from_fn(|_| U::from(val)))
 	}
 }
 

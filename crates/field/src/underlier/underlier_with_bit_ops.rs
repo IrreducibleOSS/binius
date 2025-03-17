@@ -8,6 +8,7 @@ use super::{
 	underlier_type::{NumCast, UnderlierType},
 	U1, U2, U4,
 };
+use crate::tower_levels::TowerLevel;
 
 /// Underlier type that supports bit arithmetic.
 pub trait UnderlierWithBitOps:
@@ -150,6 +151,25 @@ pub trait UnderlierWithBitOps:
 	fn unpack_hi_128b_lanes(self, other: Self, log_block_len: usize) -> Self {
 		unpack_hi_128b_fallback(self, other, log_block_len)
 	}
+
+	fn transpose_bytes_from_byte_sliced<TL: TowerLevel>(values: &mut TL::Data<Self>)
+	where
+		u8: NumCast<Self>,
+		Self: From<u8>,
+	{
+		assert!(TL::LOG_WIDTH <= 4);
+
+		let result = TL::from_fn(|row| {
+			Self::from_fn(|col| {
+				let index = row * (Self::BITS / 8) + col;
+
+				// Safety: `index` is always less than `N * byte_count`.
+				unsafe { values[index % TL::WIDTH].get_subvalue::<u8>(index / TL::WIDTH) }
+			})
+		});
+
+		*values = result;
+	}
 }
 
 /// Returns a bit mask for a single `T` element inside underlier type.
@@ -160,6 +180,29 @@ where
 	T: UnderlierWithBitOps,
 {
 	single_element_mask_bits(T::BITS)
+}
+
+#[inline(always)]
+pub(crate) fn transpose_square_blocks<U: UnderlierWithBitOps, TL: TowerLevel>(
+	values: &mut TL::Data<U>,
+) {
+	assert!(TL::WIDTH <= 16);
+
+	if TL::WIDTH == 1 {
+		return;
+	}
+
+	let (left, right) = TL::split_mut(values);
+	transpose_square_blocks::<_, TL::Base>(left);
+	transpose_square_blocks::<_, TL::Base>(right);
+
+	let log_block_len = checked_log_2(TL::WIDTH) - 1;
+	for i in 0..TL::WIDTH / 2 {
+		(values[i], values[i + TL::WIDTH / 2]) = (
+			values[i].unpack_lo_128b_lanes(values[i + TL::WIDTH / 2], log_block_len + 3),
+			values[i].unpack_hi_128b_lanes(values[i + TL::WIDTH / 2], log_block_len + 3),
+		);
+	}
 }
 
 /// Fallback implementation of `spread` method.
@@ -340,6 +383,7 @@ mod tests {
 		super::small_uint::{U1, U2, U4},
 		*,
 	};
+	use crate::tower_levels::{TowerLevel1, TowerLevel2};
 
 	#[test]
 	fn test_from_fn() {
@@ -444,5 +488,16 @@ mod tests {
 				assert_eq!(init_val.get_subvalue::<u8>(i), val);
 			}
 		}
+	}
+
+	#[test]
+	fn test_transpose_from_byte_sliced() {
+		let mut value = [0x01234567u32];
+		u32::transpose_bytes_from_byte_sliced::<TowerLevel1>(&mut value);
+		assert_eq!(value, [0x01234567u32]);
+
+		let mut value = [0x67452301u32, 0xefcdab89u32];
+		u32::transpose_bytes_from_byte_sliced::<TowerLevel2>(&mut value);
+		assert_eq!(value, [0xab238901u32, 0xef67cd45u32]);
 	}
 }
