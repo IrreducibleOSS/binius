@@ -228,7 +228,7 @@ mod tests {
 		fiat_shamir::HasherChallenger,
 		protocols::{
 			sumcheck::{
-				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProver,
+				self, immediate_switchover_heuristic, prove::eq_ind::EqIndSumcheckProverBuilder,
 				CompositeSumClaim, EqIndSumcheckClaim,
 			},
 			test_utils::AddOneComposition,
@@ -294,16 +294,16 @@ mod tests {
 
 		let composite_claim = CompositeSumClaim { sum, composition };
 
-		let prover = EqIndSumcheckProver::<FDomain, _, _, _, _>::new(
-			evaluation_order,
-			vec![a_mle, b_mle],
-			&eq_ind_challenges,
-			[composite_claim.clone()],
-			evaluation_domain_factory,
-			immediate_switchover_heuristic,
-			&backend,
-		)
-		.unwrap();
+		let prover = EqIndSumcheckProverBuilder::new(&backend)
+			.build(
+				evaluation_order,
+				vec![a_mle, b_mle],
+				&eq_ind_challenges,
+				[composite_claim.clone()],
+				evaluation_domain_factory,
+				immediate_switchover_heuristic,
+			)
+			.unwrap();
 
 		let _sumcheck_proof_output = sumcheck::batch_prove(vec![prover], &mut transcript).unwrap();
 

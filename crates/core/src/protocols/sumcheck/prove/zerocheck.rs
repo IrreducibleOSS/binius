@@ -23,7 +23,7 @@ use crate::{
 	protocols::sumcheck::{
 		common::{equal_n_vars_check, CompositeSumClaim},
 		prove::{
-			eq_ind::EqIndSumcheckProver,
+			eq_ind::EqIndSumcheckProverBuilder,
 			univariate::{
 				zerocheck_univariate_evals, ZerocheckUnivariateEvalsOutput,
 				ZerocheckUnivariateFoldResult,
@@ -82,7 +82,7 @@ where
 ///
 /// This struct is an entrypoint to proving all zerochecks instances, univariatized and regular.
 /// "Regular" multilinear case is covered by calling [`Self::into_regular_zerocheck`] right away,
-/// producing a [`EqIndSumcheckProver`]. Univariatized case is handled by using methods from a
+/// producing a `EqIndSumcheckProver`. Univariatized case is handled by using methods from a
 /// [`UnivariateZerocheckProver`] trait, where folding results in a reduced multilinear zerocheck
 /// prover for the remaining rounds.
 #[derive(Debug, Getters)]
@@ -231,16 +231,16 @@ where
 
 		let first_round_eval_1s = composite_claims.iter().map(|_| F::ZERO).collect::<Vec<_>>();
 
-		let prover = EqIndSumcheckProver::new(
-			EvaluationOrder::LowToHigh,
-			self.multilinears,
-			&self.zerocheck_challenges,
-			composite_claims,
-			self.domain_factory,
-			self.switchover_fn,
-			self.backend,
-		)?
-		.with_first_round_eval_1s(&first_round_eval_1s)?;
+		let prover = EqIndSumcheckProverBuilder::new(self.backend)
+			.with_first_round_eval_1s(&first_round_eval_1s)
+			.build(
+				EvaluationOrder::LowToHigh,
+				self.multilinears,
+				&self.zerocheck_challenges,
+				composite_claims,
+				self.domain_factory,
+				self.switchover_fn,
+			)?;
 
 		Ok(Box::new(prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}
@@ -406,16 +406,18 @@ where
 
 		// The remaining non-univariate zerocheck rounds are an instance of EqIndSumcheck,
 		// due to the number of zerocheck challenges being equal to the number of remaining rounds.
-		let regular_prover = EqIndSumcheckProver::new(
-			EvaluationOrder::LowToHigh,
-			partial_low_multilinears,
-			&self.zerocheck_challenges,
-			composite_claims,
-			self.domain_factory,
-			|extension_degree| (self.switchover_fn)(extension_degree).saturating_sub(skip_rounds),
-			self.backend,
-		)?
-		.with_eq_ind_partial_evals(partial_eq_ind_evals)?;
+		let regular_prover = EqIndSumcheckProverBuilder::new(self.backend)
+			.with_eq_ind_partial_evals(partial_eq_ind_evals)
+			.build(
+				EvaluationOrder::LowToHigh,
+				partial_low_multilinears,
+				&self.zerocheck_challenges,
+				composite_claims,
+				self.domain_factory,
+				|extension_degree| {
+					(self.switchover_fn)(extension_degree).saturating_sub(skip_rounds)
+				},
+			)?;
 
 		Ok(Box::new(regular_prover) as Box<dyn SumcheckProver<F> + 'a>)
 	}

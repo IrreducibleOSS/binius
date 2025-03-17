@@ -1,6 +1,6 @@
 // Copyright 2025 Irreducible Inc.
 
-use std::ops::Range;
+use std::{marker::PhantomData, ops::Range};
 
 use binius_field::{util::eq, ExtensionField, Field, PackedExtension, PackedField, TowerField};
 use binius_hal::{make_portable_backend, ComputationBackend, Error as HalError, SumcheckEvaluator};
@@ -71,7 +71,7 @@ where
 
 /// An "eq-ind" sumcheck prover.
 ///
-/// The main difference of this prover from the []RegularSumcheckProver] is that
+/// The main difference of this prover from the `RegularSumcheckProver` is that
 /// it computes round evaluations of a much simpler "prime" polynomial
 /// multiplied by an already substituted portion of the equality indicator. This
 /// "prime" polynomial has the same degree as the underlying composition,
@@ -80,48 +80,70 @@ where
 /// evaluations for the "full" assumed composition are computed in
 /// monomial form, out of hot loop.  See [Gruen24] Section 3.2 for details.
 ///
+/// The rationale behind builder interface is the need to specify the pre-expanded
+/// equality indicator and potentially known evaluations at one in first round.
+///
 /// [Gruen24]: <https://eprint.iacr.org/2024/108>
-#[derive(Debug)]
-pub struct EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>
+pub struct EqIndSumcheckProverBuilder<'a, P, Backend>
 where
-	FDomain: Field,
 	P: PackedField,
-	M: MultilinearPoly<P> + Send + Sync,
 	Backend: ComputationBackend,
 {
-	n_vars: usize,
-	state: ProverState<'a, FDomain, P, M, Backend>,
-	eq_ind_prefix_eval: P::Scalar,
 	eq_ind_partial_evals: Option<Backend::Vec<P>>,
-	eq_ind_challenges: Vec<P::Scalar>,
-	compositions: Vec<Composition>,
-	domains: Vec<InterpolationDomain<FDomain>>,
 	first_round_eval_1s: Option<Vec<P::Scalar>>,
 	backend: &'a Backend,
 }
 
-impl<'a, F, FDomain, P, Composition, M, Backend>
-	EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>
+impl<'a, F, P, Backend> EqIndSumcheckProverBuilder<'a, P, Backend>
 where
-	F: TowerField + ExtensionField<FDomain>,
-	FDomain: Field,
-	P: PackedExtension<FDomain, Scalar = F>,
-	Composition: CompositionPoly<P>,
-	M: MultilinearPoly<P> + Send + Sync,
+	F: TowerField,
+	P: PackedField<Scalar = F>,
 	Backend: ComputationBackend,
 {
-	#[instrument(skip_all, level = "debug", name = "GPAProver::new")]
-	pub fn new(
+	pub fn new(backend: &'a Backend) -> Self {
+		Self {
+			backend,
+			eq_ind_partial_evals: None,
+			first_round_eval_1s: None,
+		}
+	}
+
+	/// Specify an existing tensor expansion for `eq_ind_challenges` in [`Self::build`]. Avoids duplicate work.
+	pub fn with_eq_ind_partial_evals(mut self, eq_ind_partial_evals: Backend::Vec<P>) -> Self {
+		self.eq_ind_partial_evals = Some(eq_ind_partial_evals);
+		self
+	}
+
+	/// Specify the value of round polynomial at 1 in the first round if it is available beforehand.
+	///
+	/// Prime example of this is GPA (grand product argument), where the value of the previous GKR layer
+	/// may be used as an advice to compute the round polynomial at 1 directly with less effort compared
+	/// to direct composite evaluation.
+	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Self {
+		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
+		self
+	}
+
+	#[instrument(skip_all, level = "debug", name = "EqIndSumcheckProverBuilder::build")]
+	pub fn build<FDomain, Composition, M>(
+		self,
 		evaluation_order: EvaluationOrder,
 		multilinears: Vec<M>,
 		eq_ind_challenges: &[F],
 		composite_claims: impl IntoIterator<Item = CompositeSumClaim<F, Composition>>,
 		domain_factory: impl EvaluationDomainFactory<FDomain>,
 		switchover_fn: impl Fn(usize) -> usize,
-		backend: &'a Backend,
-	) -> Result<Self, Error> {
+	) -> Result<EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>, Error>
+	where
+		F: ExtensionField<FDomain>,
+		P: PackedExtension<FDomain>,
+		FDomain: Field,
+		M: MultilinearPoly<P> + Send + Sync,
+		Composition: CompositionPoly<P>,
+	{
 		let n_vars = equal_n_vars_check(&multilinears)?;
 		let composite_claims = composite_claims.into_iter().collect::<Vec<_>>();
+		let backend = self.backend;
 
 		#[cfg(feature = "debug_validate_sumcheck")]
 		{
@@ -137,6 +159,24 @@ where
 
 		if eq_ind_challenges.len() != n_vars {
 			bail!(Error::IncorrectEqIndChallengesLength);
+		}
+
+		// Only one value of the expanded equality indicator is used per each
+		// 1-variable subcube, thus it should be twice smaller.
+		let eq_ind_partial_evals = if let Some(eq_ind_partial_evals) = self.eq_ind_partial_evals {
+			if eq_ind_partial_evals.len() != 1 << n_vars.saturating_sub(P::LOG_WIDTH + 1) {
+				bail!(Error::IncorrectEqIndPartialEvalsSize);
+			}
+
+			eq_ind_partial_evals
+		} else {
+			eq_ind_expand(evaluation_order, n_vars, eq_ind_challenges, backend)?
+		};
+
+		if let Some(ref first_round_eval_1s) = self.first_round_eval_1s {
+			if first_round_eval_1s.len() != composite_claims.len() {
+				bail!(Error::IncorrectFirstRoundEvalOnesLength);
+			}
 		}
 
 		for claim in &composite_claims {
@@ -171,43 +211,51 @@ where
 
 		let eq_ind_prefix_eval = F::ONE;
 		let eq_ind_challenges = eq_ind_challenges.to_vec();
+		let first_round_eval_1s = self.first_round_eval_1s;
 
-		Ok(Self {
+		Ok(EqIndSumcheckProver {
 			n_vars,
 			state,
 			eq_ind_prefix_eval,
+			eq_ind_partial_evals,
 			eq_ind_challenges,
 			compositions,
 			domains,
-			backend,
-			eq_ind_partial_evals: None,
-			first_round_eval_1s: None,
+			first_round_eval_1s,
+			backend: PhantomData,
 		})
 	}
+}
 
-	pub fn with_first_round_eval_1s(mut self, first_round_eval_1s: &[F]) -> Result<Self, Error> {
-		if first_round_eval_1s.len() != self.compositions.len() {
-			bail!(Error::IncorrectFirstRoundEvalOnesLength);
-		}
+#[derive(Debug)]
+pub struct EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>
+where
+	FDomain: Field,
+	P: PackedField,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
+	n_vars: usize,
+	state: ProverState<'a, FDomain, P, M, Backend>,
+	eq_ind_prefix_eval: P::Scalar,
+	eq_ind_partial_evals: Backend::Vec<P>,
+	eq_ind_challenges: Vec<P::Scalar>,
+	compositions: Vec<Composition>,
+	domains: Vec<InterpolationDomain<FDomain>>,
+	first_round_eval_1s: Option<Vec<P::Scalar>>,
+	backend: PhantomData<Backend>,
+}
 
-		self.first_round_eval_1s = Some(first_round_eval_1s.to_vec());
-		Ok(self)
-	}
-
-	pub fn with_eq_ind_partial_evals(
-		mut self,
-		eq_ind_partial_evals: Backend::Vec<P>,
-	) -> Result<Self, Error> {
-		// Only one value of the expanded equality indicator is used per each
-		// 1-variable subcube, thus it should be twice smaller.
-		if eq_ind_partial_evals.len() != 1 << self.n_vars().saturating_sub(P::LOG_WIDTH + 1) {
-			bail!(Error::IncorrectEqIndPartialEvalsSize);
-		}
-
-		self.eq_ind_partial_evals = Some(eq_ind_partial_evals);
-		Ok(self)
-	}
-
+impl<F, FDomain, P, Composition, M, Backend>
+	EqIndSumcheckProver<'_, FDomain, P, Composition, M, Backend>
+where
+	F: TowerField + ExtensionField<FDomain>,
+	FDomain: Field,
+	P: PackedExtension<FDomain, Scalar = F>,
+	Composition: CompositionPoly<P>,
+	M: MultilinearPoly<P> + Send + Sync,
+	Backend: ComputationBackend,
+{
 	fn round(&self) -> usize {
 		self.n_vars - self.n_rounds_remaining()
 	}
@@ -271,25 +319,10 @@ where
 
 	#[instrument(skip_all, name = "EqIndSumcheckProver::execute", level = "debug")]
 	fn execute(&mut self, batch_coeff: F) -> Result<RoundCoeffs<F>, Error> {
-		let round = self.round();
 		let alpha = self.eq_ind_round_challenge();
+		let eq_ind_partial_evals = &self.eq_ind_partial_evals;
 
-		let eq_ind_partial_evals = if let Some(eq_ind_partial_evals) = &self.eq_ind_partial_evals {
-			eq_ind_partial_evals
-		} else {
-			self.eq_ind_partial_evals = Some(eq_ind_expand(
-				self.evaluation_order(),
-				self.n_vars(),
-				&self.eq_ind_challenges,
-				self.backend,
-			)?);
-
-			self.eq_ind_partial_evals
-				.as_ref()
-				.expect("just constructed")
-		};
-
-		let first_round_eval_1s = self.first_round_eval_1s.as_ref().filter(|_| round == 0);
+		let first_round_eval_1s = self.first_round_eval_1s.take();
 		let have_first_round_eval_1s = first_round_eval_1s.is_some();
 
 		let evaluators = self
@@ -316,6 +349,7 @@ where
 				interpolation_domain,
 				alpha,
 				first_round_eval_1: first_round_eval_1s
+					.as_ref()
 					.map(|first_round_eval_1s| first_round_eval_1s[index]),
 			})
 			.collect::<Vec<_>>();
@@ -363,9 +397,7 @@ where
 				fold_partial_eq_ind::<P, Backend>(
 					evaluation_order,
 					n_rounds_remaining - 1,
-					eq_ind_partial_evals
-						.as_mut()
-						.expect("fold_partial_eq_end called after eq_ind instantiation"),
+					eq_ind_partial_evals,
 				);
 			},
 		)
@@ -473,7 +505,7 @@ where
 
 		let one_evaluation = round_evals[0];
 		let zero_evaluation_numerator = last_round_sum - one_evaluation * self.alpha;
-		let zero_evaluation_denominator_inv = (F::ONE - self.alpha).invert().unwrap_or(F::ZERO);
+		let zero_evaluation_denominator_inv = (F::ONE - self.alpha).invert_or_zero();
 		let zero_evaluation = zero_evaluation_numerator * zero_evaluation_denominator_inv;
 		round_evals.insert(0, zero_evaluation);
 

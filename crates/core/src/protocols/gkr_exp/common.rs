@@ -2,7 +2,7 @@
 
 use binius_field::Field;
 
-use crate::protocols::sumcheck::prove::eq_ind::EqIndSumcheckProver;
+use crate::protocols::sumcheck::prove::eq_ind::{EqIndSumcheckProver, EqIndSumcheckProverBuilder};
 
 /// LayerClaim is a claim about the evaluation of the kth layer-multilinear at a specific evaluation point
 ///
@@ -47,6 +47,8 @@ pub struct BaseExpReductionOutput<F: Field> {
 	/// the length of each layer can vary.
 	pub layers_claims: Vec<Vec<LayerClaim<F>>>,
 }
+
+pub type GKRExpProverBuilder<'a, P, Backend> = EqIndSumcheckProverBuilder<'a, P, Backend>;
 
 pub type GKRExpProver<'a, FDomain, P, Composition, M, Backend> =
 	EqIndSumcheckProver<'a, FDomain, P, Composition, M, Backend>;

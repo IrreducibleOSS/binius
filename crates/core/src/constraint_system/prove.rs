@@ -46,7 +46,9 @@ use crate::{
 		greedy_evalcheck,
 		sumcheck::{
 			self, constraint_set_zerocheck_claim, immediate_switchover_heuristic,
-			prove::{eq_ind::EqIndSumcheckProver, SumcheckProver, UnivariateZerocheckProver},
+			prove::{
+				eq_ind::EqIndSumcheckProverBuilder, SumcheckProver, UnivariateZerocheckProver,
+			},
 			standard_switchover_heuristic, zerocheck,
 		},
 	},
@@ -719,14 +721,13 @@ where
 			multilinears.push(witness.get_multilin_poly(oracle_id)?);
 		}
 
-		let prover = EqIndSumcheckProver::new(
+		let prover = EqIndSumcheckProverBuilder::new(backend).build(
 			EvaluationOrder::LowToHigh,
 			multilinears,
 			&eval_point,
 			composite_sum_claims,
 			domain_factory.clone(),
 			immediate_switchover_heuristic,
-			backend,
 		)?;
 
 		provers.push(prover);

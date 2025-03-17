@@ -11,7 +11,7 @@ use itertools::izip;
 use tracing::instrument;
 
 use super::{
-	common::{BaseExpReductionOutput, ExpClaim, GKRExpProver, LayerClaim},
+	common::{BaseExpReductionOutput, ExpClaim, GKRExpProver, GKRExpProverBuilder, LayerClaim},
 	compositions::IndexedExpComposition,
 	error::Error,
 	provers::{
@@ -172,14 +172,13 @@ where
 
 	izip!(composite_claims, multilinears, eval_points)
 		.map(|(composite_claims, multilinears, eval_point)| {
-			GKRExpProver::<'a, FDomain, P, _, _, Backend>::new(
+			GKRExpProverBuilder::<'a, P, Backend>::new(backend).build(
 				evaluation_order,
 				multilinears,
 				&eval_point,
 				composite_claims,
 				evaluation_domain_factory.clone(),
 				immediate_switchover_heuristic,
-				backend,
 			)
 		})
 		.collect::<Result<Vec<_>, _>>()
