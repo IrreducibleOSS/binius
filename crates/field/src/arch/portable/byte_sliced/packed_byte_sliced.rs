@@ -518,24 +518,24 @@ fn interleave_internal_block<P: PackedField, const N: usize, const LOG_BLOCK_LEN
 
 	let result_1 = array::from_fn(|i| {
 		let block_index = i >> (LOG_BLOCK_LEN + 1);
-		let block_offset = i - (block_index << (LOG_BLOCK_LEN + 1));
+		let block_start = block_index << (LOG_BLOCK_LEN + 1);
+		let block_offset = i - block_start;
 
-		let index = block_index * (1 << (LOG_BLOCK_LEN + 1)) + block_offset;
 		if block_offset < (1 << LOG_BLOCK_LEN) {
-			lhs[index]
+			lhs[i]
 		} else {
-			rhs[index]
+			rhs[i - (1 << LOG_BLOCK_LEN)]
 		}
 	});
 	let result_2 = array::from_fn(|i| {
 		let block_index = i >> (LOG_BLOCK_LEN + 1);
-		let block_offset = i - (block_index << (LOG_BLOCK_LEN + 1));
+		let block_start = block_index << (LOG_BLOCK_LEN + 1);
+		let block_offset = i - block_start;
 
-		let index = (2 * block_index + 1) * (1 << LOG_BLOCK_LEN) + block_offset;
 		if block_offset < (1 << LOG_BLOCK_LEN) {
-			rhs[index]
+			lhs[i + (1 << LOG_BLOCK_LEN)]
 		} else {
-			lhs[index]
+			rhs[i]
 		}
 	});
 
