@@ -142,6 +142,7 @@ impl<F: TowerField> ConstraintSystem<F> {
 
 	pub fn add_channel(&mut self, name: impl ToString) -> ChannelId {
 		let id = self.channels.len();
+		self.channel_id_bound += 1;
 		self.channels.push(Channel {
 			name: name.to_string(),
 		});
