@@ -7,13 +7,12 @@ use binius_field::{
 	linear_transformation::{PackedTransformationFactory, Transformation},
 	polyval::{
 		AES_TO_POLYVAL_TRANSFORMATION, BINARY_TO_POLYVAL_TRANSFORMATION,
-		POLYVAL_TO_AES_TRANSFORMARION,
+		POLYVAL_TO_AES_TRANSFORMARION, POLYVAL_TO_BINARY_TRANSFORMATION,
 	},
 	underlier::UnderlierType,
 	AESTowerField128b, AESTowerField16b, AESTowerField32b, AESTowerField64b, AESTowerField8b,
 	BinaryField128b, BinaryField128bPolyval, BinaryField16b, BinaryField1b, BinaryField32b,
 	BinaryField64b, BinaryField8b, ExtensionField, PackedExtension, PackedField, TowerField,
-	POLYVAL_TO_BINARY_TRANSFORMATION,
 };
 use trait_set::trait_set;
 

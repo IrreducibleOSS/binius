@@ -111,16 +111,16 @@ where
 		mut oracles,
 		mut table_constraints,
 		mut flushes,
-		mut exp,
+		mut exponents,
 		non_zero_oracle_ids,
 		max_channel_id,
 	} = constraint_system.clone();
 
-	exp.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
 	// We must generate multiplication witnesses before committing, as this function
 	// adds the committed witnesses for exponentiation results to the witness index.
-	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &exp)?;
+	let exp_witnesses = exp::make_exp_witnesses(&mut witness, &exponents)?;
 
 	// Stable sort constraint sets in descending order by number of variables.
 	table_constraints.sort_by_key(|constraint_set| Reverse(constraint_set.n_vars));
@@ -154,7 +154,7 @@ where
 	writer.write(&commitment);
 
 	// GKR exp
-	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exp, &oracles));
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
 	let exp_evals = gkr_exp::get_evals_in_point_from_witnesses(&exp_witnesses, &exp_challenge)?
 		.into_iter()
@@ -169,7 +169,7 @@ where
 		.map(|x| x.into())
 		.collect::<Vec<_>>();
 
-	let exp_claims = exp::make_claims(&exp, &oracles, &exp_challenge, &exp_evals)?
+	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
 		.into_iter()
 		.map(|claim| claim.isomorphic())
 		.collect::<Vec<_>>();
@@ -184,7 +184,7 @@ where
 	)?
 	.isomorphic();
 
-	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
+	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
 
 	// Grand product arguments
 	// Grand products for non-zero checking

@@ -31,7 +31,7 @@ pub struct ConstraintSystem<F: TowerField> {
 	pub table_constraints: Vec<ConstraintSet<F>>,
 	pub non_zero_oracle_ids: Vec<OracleId>,
 	pub flushes: Vec<Flush>,
-	pub exp: Vec<Exp<F>>,
+	pub exponents: Vec<Exp<F>>,
 	pub max_channel_id: ChannelId,
 }
 
@@ -48,7 +48,7 @@ impl DeserializeBytes for ConstraintSystem<BinaryField128b> {
 			table_constraints: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			non_zero_oracle_ids: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			flushes: DeserializeBytes::deserialize(&mut read_buf, mode)?,
-			exp: DeserializeBytes::deserialize(&mut read_buf, mode)?,
+			exponents: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 			max_channel_id: DeserializeBytes::deserialize(&mut read_buf, mode)?,
 		})
 	}

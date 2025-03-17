@@ -65,7 +65,7 @@ where
 		mut flushes,
 		non_zero_oracle_ids,
 		max_channel_id,
-		mut exp,
+		mut exponents,
 		..
 	} = constraint_system.clone();
 
@@ -91,21 +91,21 @@ where
 	let commitment = reader.read::<Output<Hash>>()?;
 
 	// GKR exp multiplication
-	exp.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
+	exponents.sort_by_key(|b| std::cmp::Reverse(b.n_vars(&oracles)));
 
-	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exp, &oracles));
+	let exp_challenge = transcript.sample_vec(exp::max_n_vars(&exponents, &oracles));
 
 	let mut reader = transcript.message();
-	let exp_evals = reader.read_scalar_slice(exp.len())?;
+	let exp_evals = reader.read_scalar_slice(exponents.len())?;
 
-	let exp_claims = exp::make_claims(&exp, &oracles, &exp_challenge, &exp_evals)?
+	let exp_claims = exp::make_claims(&exponents, &oracles, &exp_challenge, &exp_evals)?
 		.into_iter()
 		.collect::<Vec<_>>();
 
 	let base_exp_output =
 		gkr_exp::batch_verify(EvaluationOrder::HighToLow, &exp_claims, &mut transcript)?;
 
-	let exp_eval_claims = exp::make_eval_claims(&exp, base_exp_output)?;
+	let exp_eval_claims = exp::make_eval_claims(&exponents, base_exp_output)?;
 
 	// Grand product arguments
 	// Grand products for non-zero checks

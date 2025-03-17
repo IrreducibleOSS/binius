@@ -3,14 +3,14 @@
 //! Multiplication based on exponentiation.
 //!
 //! The core idea of this method is to verify the equality $a \cdot b = c$
-//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{32}})^{chigh}$,
+//! by checking if $(g^a)^b = g^{clow} \cdot (g^{2^{clowbits}})^{chigh}$,
 //! where exponentiation proofs can be efficiently verified using the GKR exponentiation protocol.
 //!
 //! You can read more information in [Integer Multiplication in Binius](https://www.irreducible.com/posts/integer-multiplication-in-binius).
 
 use anyhow::Error;
 use binius_core::{constraint_system::exp::ExpBase, oracle::OracleId};
-use binius_field::{BinaryField1b, PackedField, TowerField};
+use binius_field::{BinaryField, BinaryField1b, TowerField};
 use binius_macros::arith_expr;
 use binius_maybe_rayon::iter::{
 	IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
@@ -74,20 +74,12 @@ where
 	if let Some(witness) = builder.witness() {
 		let xin_columns = xin_bits
 			.iter()
-			.map(|&id| {
-				witness
-					.get::<BinaryField1b>(id)
-					.map(|x| x.as_slice::<u32>())
-			})
+			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.as_slice::<u8>()))
 			.collect::<Result<Vec<_>, Error>>()?;
 
 		let yin_columns = yin_bits
 			.iter()
-			.map(|&id| {
-				witness
-					.get::<BinaryField1b>(id)
-					.map(|x| x.as_slice::<u32>())
-			})
+			.map(|&id| witness.get::<BinaryField1b>(id).map(|x| x.as_slice::<u8>()))
 			.collect::<Result<Vec<_>, Error>>()?;
 
 		let result = columns_to_numbers(&xin_columns)
@@ -101,12 +93,12 @@ where
 			.map(|&id| witness.new_column::<BinaryField1b>(id))
 			.collect::<Vec<_>>();
 
-		let mut cout_columns_u32 = cout_columns
+		let mut cout_columns_u8 = cout_columns
 			.iter_mut()
-			.map(|column| column.as_mut_slice::<u32>())
+			.map(|column| column.as_mut_slice::<u8>())
 			.collect::<Vec<_>>();
 
-		numbers_to_columns(&result, &mut cout_columns_u32);
+		numbers_to_columns(&result, &mut cout_columns_u8);
 	}
 
 	builder.assert_zero(
@@ -150,9 +142,7 @@ where
 		cout_high_bits.to_vec(),
 		cout_high_exp_result_id,
 		ExpBase::Static(
-			FExpBase::MULTIPLICATIVE_GENERATOR
-				.pow(1 << cout_low_bits.len())
-				.into(),
+			exp_pow2(FExpBase::MULTIPLICATIVE_GENERATOR, 1 << cout_low_bits.len()).into(),
 		),
 		FExpBase::TOWER_LEVEL,
 	);
@@ -160,13 +150,21 @@ where
 	Ok(cout_bits)
 }
 
-fn columns_to_numbers(columns: &[&[u32]]) -> Vec<u128> {
-	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len()).unwrap_or(0) * 32];
+fn exp_pow2<F: BinaryField>(mut g: F, mut exp: u128) -> F {
+	while exp > 1 {
+		g *= g;
+		exp >>= 1;
+	}
+	g
+}
+
+fn columns_to_numbers(columns: &[&[u8]]) -> Vec<u128> {
+	let mut numbers: Vec<u128> = vec![0; columns.first().map(|c| c.len()).unwrap_or(0) * 8];
 
 	for (bit, column) in columns.iter().enumerate() {
 		numbers.par_iter_mut().enumerate().for_each(|(i, number)| {
-			let num_idx = i / 32;
-			let bit_idx = i % 32;
+			let num_idx = i / 8;
+			let bit_idx = i % 8;
 
 			if (column[num_idx] >> bit_idx) & 1 == 1 {
 				*number |= 1 << bit;
@@ -176,15 +174,15 @@ fn columns_to_numbers(columns: &[&[u32]]) -> Vec<u128> {
 	numbers
 }
 
-fn numbers_to_columns(numbers: &[u128], columns: &mut [&mut [u32]]) {
+fn numbers_to_columns(numbers: &[u128], columns: &mut [&mut [u8]]) {
 	columns
 		.par_iter_mut()
 		.enumerate()
 		.for_each(|(bit, column)| {
 			for (i, number) in numbers.iter().enumerate() {
 				if (number >> bit) & 1 == 1 {
-					let num_idx = i / 32;
-					let bit_idx = i % 32;
+					let num_idx = i / 8;
+					let bit_idx = i % 8;
 					column[num_idx] |= 1 << bit_idx;
 				}
 			}
