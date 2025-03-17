@@ -197,7 +197,8 @@ impl VisionHasherDigestByteSliced {
 
 	fn finalize(
 		&mut self,
-		out: &mut [digest::Output<VisionHasherDigest>; HASHES_PER_BYTE_SLICED_PERMUTATION],
+		out: &mut [MaybeUninit<digest::Output<VisionHasherDigest>>;
+			     HASHES_PER_BYTE_SLICED_PERMUTATION],
 	) {
 		if self.filled_bytes > 0 {
 			for row in 0..HASHES_PER_BYTE_SLICED_PERMUTATION {
@@ -210,6 +211,11 @@ impl VisionHasherDigestByteSliced {
 		}
 
 		// TODO: Use transposition function here as soon as it is merged in.
+
+		let out: &mut [digest::Output<VisionHasherDigest>; HASHES_PER_BYTE_SLICED_PERMUTATION] =
+			unsafe { slice_assume_init_mut(out) }
+				.try_into()
+				.expect("array is 32 elements");
 		for (i, state_data) in self.state[0..8]
 			.iter()
 			.flat_map(|x| bytemuck::must_cast_ref::<_, [PackedAESBinaryField8x32b; 4]>(x).iter())
@@ -282,9 +288,6 @@ impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteS
 		mut self,
 		out: &mut [MaybeUninit<digest::Output<Self::Digest>>; HASHES_PER_BYTE_SLICED_PERMUTATION],
 	) {
-		let out = unsafe { slice_assume_init_mut(out) }
-			.try_into()
-			.expect("array is 4 elements");
 		self.finalize(out);
 	}
 
@@ -292,17 +295,12 @@ impl MultiDigest<HASHES_PER_BYTE_SLICED_PERMUTATION> for VisionHasherDigestByteS
 		&mut self,
 		out: &mut [MaybeUninit<digest::Output<Self::Digest>>; HASHES_PER_BYTE_SLICED_PERMUTATION],
 	) {
-		let out = unsafe { slice_assume_init_mut(out) }
-			.try_into()
-			.expect("array is 32 elements");
 		self.finalize(out);
 		self.reset();
 	}
 
 	fn reset(&mut self) {
-		for v in &mut self.state {
-			*v = PackedField::zero();
-		}
+		bytemuck::fill_zeroes(&mut self.state);
 		self.filled_bytes = 0;
 	}
 

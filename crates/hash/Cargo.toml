@@ -9,8 +9,9 @@ workspace = true
 
 [dependencies]
 binius_field = { path = "../field" }
-binius_utils = { path = "../utils", default-features = false }
+binius_maybe_rayon = { path = "../maybe_rayon", default-features = false }
 binius_ntt = { path = "../ntt" }
+binius_utils = { path = "../utils", default-features = false }
 bytemuck.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
