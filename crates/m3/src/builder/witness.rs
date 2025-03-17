@@ -33,6 +33,12 @@ use super::{
 };
 
 /// Holds witness column data for all tables in a constraint system, indexed by column ID.
+///
+/// The struct has two lifetimes: `'cs` is the lifetime of the constraint system, and `'alloc` is
+/// the lifetime of the bump allocator. The reason these must be separate is that the witness index
+/// gets converted into a multilinear extension index, which maintains references to the data
+/// allocated by the allocator, but does not need to maintain a reference to the constraint system,
+/// which can then be dropped.
 #[derive(Debug, Default, CopyGetters)]
 pub struct WitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
 	pub tables: Vec<Option<TableWitnessIndex<'cs, 'alloc, U, F>>>,
@@ -182,30 +188,28 @@ pub struct TableWitnessIndex<'cs, 'alloc, U: UnderlierType = OptimalUnderlier, F
 
 #[derive(Debug)]
 pub struct WitnessIndexColumn<'a, U: UnderlierType> {
-	pub shape: ColumnShape,
-	pub data: WitnessDataMut<'a, U>,
-	pub is_single_row: bool,
+	shape: ColumnShape,
+	data: WitnessDataMut<'a, U>,
+	is_single_row: bool,
 }
 
 #[derive(Debug)]
-pub enum WitnessDataMut<'alloc, U: UnderlierType> {
-	Owned(&'alloc mut [U]),
+enum WitnessColumnInfo<T> {
+	Owned(T),
 	SameAsOracleIndex(usize),
 }
 
-impl<'alloc, U: UnderlierType> WitnessDataMut<'alloc, U> {
-	pub fn new_owned(allocator: &'alloc bumpalo::Bump, log_underlier_count: usize) -> Self {
+type WitnessDataMut<'a, U> = WitnessColumnInfo<&'a mut [U]>;
+
+impl<'a, U: UnderlierType> WitnessDataMut<'a, U> {
+	pub fn new_owned(allocator: &'a bumpalo::Bump, log_underlier_count: usize) -> Self {
 		// TODO: Allocate uninitialized memory and avoid filling. That should be OK because
 		// Underlier is Pod.
 		Self::Owned(allocator.alloc_slice_fill_default(1 << log_underlier_count))
 	}
 }
 
-#[derive(Debug)]
-pub enum RefCellData<'alloc, U: UnderlierType> {
-	Owned(RefCell<&'alloc mut [U]>),
-	SameAsOracleIndex(usize),
-}
+type RefCellData<'a, U> = WitnessColumnInfo<RefCell<&'a mut [U]>>;
 
 #[derive(Debug)]
 pub struct ImmutableWitnessIndexColumn<'a, U: UnderlierType> {
@@ -335,35 +339,66 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 			.min(self.log_capacity)
 			.max(self.min_log_segment_size);
 
-		let self_ref = self as &Self;
-		(0..1 << (self.log_capacity - log_size)).map(move |i| {
-			let table = self_ref.table;
-			let col_strides = self_ref
-				.cols
-				.iter()
-				.map(|col| match &col.data {
-					WitnessDataMut::SameAsOracleIndex(index) => {
-						RefCellData::SameAsOracleIndex(*index)
-					}
-					WitnessDataMut::Owned(data) => {
-						let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
-						let log_stride = (log_size + log_cell_bits).saturating_sub(U::LOG_BITS);
-						RefCellData::Owned(RefCell::new(unsafe {
-							// Safety: The function borrows self mutably, so we have mutable access to
-							// all columns and thus none can be borrowed by anyone else. The loop is
-							// constructed to borrow disjoint segments of each column -- if this loop
-							// were transposed, we would use `chunks_mut`.
-							cast_slice_ref_to_mut(&data[i << log_stride..(i + 1) << log_stride])
-						}))
-					}
-				})
-				.collect();
-			TableWitnessIndexSegment {
-				table,
-				cols: col_strides,
-				log_size,
-				oracle_offset: self_ref.oracle_offset,
+
+		let log_n = self.log_capacity - log_size;
+		let iters = self
+			.cols
+			.iter_mut()
+			.map(|col| match &mut col.data {
+				WitnessDataMut::SameAsOracleIndex(index) => itertools::Either::Left(
+					iter::repeat_n(*index, log_n).map(RefCellData::SameAsOracleIndex),
+				),
+				WitnessDataMut::Owned(data) => {
+					let log_cell_bits = col.shape.tower_height + col.shape.log_values_per_row;
+					let log_stride = log_size + log_cell_bits - U::LOG_BITS;
+					itertools::Either::Right(
+						data.chunks_mut(1 << log_stride)
+							.map(|x| RefCellData::Owned(RefCell::new(x))),
+					)
+				}
+			})
+			.collect::<Vec<_>>();
+
+		struct MultiIterator<I: Iterator> {
+			iters: Vec<I>,
+		}
+
+		impl<I: Iterator> Iterator for MultiIterator<I> {
+			type Item = Vec<I::Item>;
+
+			fn next(&mut self) -> Option<Vec<I::Item>> {
+				self.iters.iter_mut().map(Iterator::next).collect()
 			}
+
+			fn size_hint(&self) -> (usize, Option<usize>) {
+				let (min, max) = self.iters.iter().fold(
+					(None, Some(0)),
+					|(min, max): (Option<usize>, Option<usize>), next| {
+						let (next_min, next_max) = next.size_hint();
+						let new_min = match min {
+							None => Some(next_min),
+							Some(min) => Some(min.min(next_min)),
+						};
+						let new_max = match (max, next_max) {
+							(Some(a), Some(b)) => Some(a.max(b)),
+							_ => None,
+						};
+						(new_min, new_max)
+					},
+				);
+				(min.unwrap_or(0), max)
+			}
+		}
+
+		let iter = MultiIterator { iters };
+
+		let table = self.table;
+		let oracle_offset = self.oracle_offset;
+		iter.map(move |cols| TableWitnessIndexSegment {
+			table,
+			cols,
+			log_size,
+			oracle_offset,
 		})
 	}
 
@@ -419,19 +454,15 @@ impl<'cs, 'alloc, U: UnderlierType, F: TowerField> TableWitnessIndex<'cs, 'alloc
 /// This provides runtime-checked access to slices of the witness columns. This is used separately
 /// from [`TableWitnessIndex`] so that witness population can be parallelized over segments.
 #[derive(Debug, CopyGetters)]
-pub struct TableWitnessIndexSegment<
-	'alloc,
-	U: UnderlierType = OptimalUnderlier,
-	F: TowerField = B128,
-> {
-	table: &'alloc Table<F>,
-	cols: Vec<RefCellData<'alloc, U>>,
+pub struct TableWitnessIndexSegment<'a, U: UnderlierType = OptimalUnderlier, F: TowerField = B128> {
+	table: &'a Table<F>,
+	cols: Vec<RefCellData<'a, U>>,
 	#[get_copy = "pub"]
 	log_size: usize,
 	oracle_offset: usize,
 }
 
-impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U, F> {
+impl<'a, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'a, U, F> {
 	pub fn get<FSub: TowerField, const V: usize>(
 		&self,
 		col: Col<FSub, V>,
@@ -582,14 +613,11 @@ impl<'alloc, U: UnderlierType, F: TowerField> TableWitnessIndexSegment<'alloc, U
 		1 << self.log_size
 	}
 
-	fn get_col_data(&self, table_index: ColumnIndex) -> Option<&RefCell<&'alloc mut [U]>> {
+	fn get_col_data(&self, table_index: ColumnIndex) -> Option<&RefCell<&'a mut [U]>> {
 		self.get_col_data_by_oracle_offset(self.oracle_offset + table_index)
 	}
 
-	fn get_col_data_by_oracle_offset(
-		&self,
-		oracle_id: OracleId,
-	) -> Option<&RefCell<&'alloc mut [U]>> {
+	fn get_col_data_by_oracle_offset(&self, oracle_id: OracleId) -> Option<&RefCell<&'a mut [U]>> {
 		match self.cols.get(oracle_id) {
 			Some(RefCellData::Owned(data)) => Some(data),
 			Some(RefCellData::SameAsOracleIndex(id)) => self.get_col_data_by_oracle_offset(*id),
