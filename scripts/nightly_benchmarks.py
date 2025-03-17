@@ -95,9 +95,9 @@ BINARY_OPS_BENCHMARKS = {}
 
 
 def run_benchmark(
-    benchmark_args, include_single_threaded, no_perfetto
+    benchmark_args, include_single_threaded, perfetto
 ) -> tuple[bytes, bytes]:
-    if not no_perfetto:
+    if perfetto:
         cargo_cmd = ["cargo", "run", "--features", "perfetto", "--release", "--example"]
     else:
         cargo_cmd = ["cargo", "run", "--release", "--example"]
@@ -181,7 +181,7 @@ def nano_to_seconds(nano) -> float:
 
 
 def run_and_parse_benchmark(
-    benchmark, benchmark_args, include_single_threaded, no_perfetto
+    benchmark, benchmark_args, include_single_threaded, perfetto
 ) -> tuple[dict, int]:
     data = {}
     stdout = None
@@ -190,7 +190,7 @@ def run_and_parse_benchmark(
     )
     for _ in range(SAMPLE_SIZE):
         stdout, _stderr = run_benchmark(
-            benchmark_args, include_single_threaded, no_perfetto
+            benchmark_args, include_single_threaded, perfetto
         )
         result = parse_csv_file(benchmark_args["export"])
         # Parse the csv file
@@ -204,7 +204,7 @@ def run_and_parse_benchmark(
                 data[key] = []
             data[key].append(value)
     # Move perfetto trace to example specific file
-    if not no_perfetto:
+    if perfetto:
         if include_single_threaded:
             perfetto_file = os.path.join(
                 "examples", f"{benchmark}-single-thread.perfetto-trace"
@@ -221,12 +221,12 @@ def run_and_parse_benchmark(
         exit(1)
 
 
-def run_benchmark_group(benchmarks, no_perfetto) -> dict:
+def run_benchmark_group(benchmarks, perfetto) -> dict:
     benchmark_results = {}
     for benchmark, benchmark_args in benchmarks.items():
         try:
             data, proof_size = run_and_parse_benchmark(
-                benchmark, benchmark_args, False, no_perfetto
+                benchmark, benchmark_args, False, perfetto
             )
             benchmark_results[benchmark] = {"proof-size": proof_size}
             multi_threaded_data = {}
@@ -238,7 +238,7 @@ def run_benchmark_group(benchmarks, no_perfetto) -> dict:
 
             if benchmark_args["single_threaded"]:
                 data, _proof_size = run_and_parse_benchmark(
-                    benchmark, benchmark_args, True, no_perfetto
+                    benchmark, benchmark_args, True, perfetto
                 )
                 single_threaded_data = {}
                 for key, value in data.items():
@@ -299,15 +299,15 @@ def main():
         help="Export benchmarks results to file (defaults to stdout)",
     )
     parser.add_argument(
-        "--no-perfetto",
-        action="store_true",
-        default=False,
-        help="Don't generate perfetto traces",
+        "--perfetto",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate perfetto traces",
     )
 
     args = parser.parse_args()
 
-    benchmarks = run_benchmark_group(EXAMPLES_TO_RUN, args.no_perfetto)
+    benchmarks = run_benchmark_group(EXAMPLES_TO_RUN, args.perfetto)
 
     bencher_data = dict_to_bencher(benchmarks)
     if args.export_file is None:
