@@ -32,7 +32,7 @@ pub struct ConstraintSystemBuilder<'arena> {
 	constraints: ConstraintSetBuilder<F>,
 	non_zero_oracle_ids: Vec<OracleId>,
 	flushes: Vec<Flush>,
-	exp: Vec<Exp<F>>,
+	exponents: Vec<Exp<F>>,
 	step_down_dedup: HashMap<(usize, usize), OracleId>,
 	witness: Option<witness::Builder<'arena>>,
 	next_channel_id: ChannelId,
@@ -71,7 +71,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 				})?
 				.into_inner(),
 			flushes: self.flushes,
-			exp: self.exp,
+			exponents: self.exponents,
 		})
 	}
 
@@ -219,8 +219,17 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 			.committed(n_vars, tower_level)
 	}
 
-	/// Be careful, exp_result witness will be added during the proving stage,
+	/// Adds an exponentiation operation to the constraint system.
+	///
+	/// # Warning
+	/// Be careful, `exp_result` witness will be added during the proving stage,
 	/// so ensure the correct order is maintained.
+	///
+	/// # Parameters
+	/// - `bits_ids`: A vector of `OracleId` representing the exponent in little-endian bit order.
+	/// - `exp_result_id`: The `OracleId` that holds the result of the exponentiation..
+	/// - `base`: The base value for exponentiation, represented as an [`ExpBase`].
+	/// - `base_tower_level`: Specifies the field level in the tower where `base` is defined
 	pub fn add_exp(
 		&mut self,
 		bits_ids: Vec<OracleId>,
@@ -228,7 +237,7 @@ impl<'arena> ConstraintSystemBuilder<'arena> {
 		base: ExpBase<F>,
 		base_tower_level: usize,
 	) {
-		self.exp.push(Exp {
+		self.exponents.push(Exp {
 			bits_ids,
 			exp_result_id,
 			base,
