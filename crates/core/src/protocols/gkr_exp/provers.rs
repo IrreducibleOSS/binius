@@ -8,7 +8,7 @@ use binius_utils::bail;
 
 use super::{
 	common::{ExpClaim, LayerClaim},
-	compositions::{ExpCompositions, ProverExpComposition},
+	compositions::{ExpCompositions, IndexedExpComposition},
 	error::Error,
 	utils::first_layer_inverse,
 	witness::{BaseExpWitness, BaseWitness},
@@ -255,7 +255,7 @@ impl<'a, P: PackedField, FBase: BinaryField> DynamicBaseExpProver<'a, P, FBase> 
 }
 
 pub struct CompositeSumClaimWithMultilinears<'a, P: PackedField> {
-	pub claim: CompositeSumClaim<P::Scalar, ProverExpComposition<P::Scalar>>,
+	pub claim: CompositeSumClaim<P::Scalar, IndexedExpComposition<P::Scalar>>,
 	pub multilinears: Vec<MultilinearWitness<'a, P>>,
 }
 

@@ -6,7 +6,7 @@ use binius_field::{
 	util::{inner_product_unchecked, powers},
 	ExtensionField, Field, PackedField,
 };
-use binius_math::{CompositionPoly, InterpolationDomain, MultilinearPoly};
+use binius_math::{CompositionPoly, EvaluationDomainFactory, InterpolationDomain, MultilinearPoly};
 use binius_utils::bail;
 use getset::{CopyGetters, Getters};
 use tracing::instrument;
@@ -301,6 +301,23 @@ where
 pub fn batch_weighted_value<F: Field>(batch_coeff: F, values: impl Iterator<Item = F>) -> F {
 	// Multiplying by batch_coeff is important for security!
 	batch_coeff * inner_product_unchecked(powers(batch_coeff), values)
+}
+
+/// Create interpolation domains for a sequence of composition degrees.
+pub fn interpolation_domains_for_composition_degrees<FDomain>(
+	evaluation_domain_factory: impl EvaluationDomainFactory<FDomain>,
+	degrees: impl IntoIterator<Item = usize>,
+) -> Result<Vec<InterpolationDomain<FDomain>>, Error>
+where
+	FDomain: Field,
+{
+	degrees
+		.into_iter()
+		.map(|degree| {
+			let domain = evaluation_domain_factory.create_with_infinity(degree + 1, degree >= 2)?;
+			Ok(domain.into())
+		})
+		.collect()
 }
 
 /// Validate the sumcheck evaluation domains to conform to the shape expected by the
